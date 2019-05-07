@@ -1,0 +1,1 @@
+call C:\msys64\mingw64.exe ./build.sh
