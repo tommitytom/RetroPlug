@@ -1,0 +1,59 @@
+// Copyright (c) 2017-2019 Dr. Colin Hirsch and Daniel Frey
+// Please see LICENSE for license or visit https://github.com/taocpp/json/
+
+#ifndef TAO_JSON_EVENTS_VALIDATE_KEYS_HPP
+#define TAO_JSON_EVENTS_VALIDATE_KEYS_HPP
+
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include "../external/pegtl.hpp"
+
+namespace tao
+{
+   namespace json
+   {
+      namespace events
+      {
+         template< typename Consumer, typename Rule >
+         struct validate_keys
+            : public Consumer
+         {
+            using Consumer::Consumer;
+
+            void validate_key( const std::string_view v )
+            {
+               pegtl::memory_input< pegtl::tracking_mode::lazy > in( v.data(), v.size(), "validate_key" );
+               if( !pegtl::parse< Rule >( in ) ) {
+                  throw std::runtime_error( "invalid key: " + std::string( v ) );  // NOLINT
+               }
+            }
+
+            void key( const std::string_view v )
+            {
+               validate_key( v );
+               Consumer::key( v );
+            }
+
+            void key( const char* v )
+            {
+               validate_key( v );
+               Consumer::key( v );
+            }
+
+            void key( std::string&& v )
+            {
+               validate_key( v );
+               Consumer::key( std::move( v ) );
+            }
+         };
+
+      }  // namespace events
+
+   }  // namespace json
+
+}  // namespace tao
+
+#endif
