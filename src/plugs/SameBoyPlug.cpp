@@ -10,14 +10,14 @@
 
 const int FRAME_SIZE = 160 * 144 * 4;
 
-void SameboyMin::init(const std::string & gamePath) {
+void SameBoyPlug::init(const std::string & gamePath) {
+	// FIXME: Choose some better sizes here...
 	_bus.audio.init(1024 * 1024);
 	_bus.video.init(1024 * 1024);
 	_bus.buttons.init(64);
 	_bus.link.init(64);
 
 	_library.load(IDR_RCDATA1);
-	//_library.load(L"C:\\retro\\sameboy_min.dll");
 	_library.get("sameboy_init", _symbols.sameboy_init);
 	_library.get("sameboy_update", _symbols.sameboy_update);
 	_library.get("sameboy_audio_frames", _symbols.sameboy_audio_frames);
@@ -47,17 +47,17 @@ void SameboyMin::init(const std::string & gamePath) {
 	_resampler = resampler_sinc_init();
 }
 
-void SameboyMin::setSampleRate(double sampleRate) {
+void SameBoyPlug::setSampleRate(double sampleRate) {
 	_symbols.sameboy_set_sample_rate(_instance, sampleRate);
 }
 
-void SameboyMin::sendMidiBytes(int offset, const char* bytes, size_t count) {
+void SameBoyPlug::sendMidiBytes(int offset, const char* bytes, size_t count) {
 	if (_instance) {
 		_symbols.sameboy_set_midi_bytes(_instance, offset, bytes, count);
 	}
 }
 
-size_t SameboyMin::saveStateSize() {
+size_t SameBoyPlug::saveStateSize() {
 	if (_instance) {
 		return _symbols.sameboy_save_state_size(_instance);
 	}
@@ -65,23 +65,23 @@ size_t SameboyMin::saveStateSize() {
 	return 0;
 }
 
-void SameboyMin::loadBattery(const std::string& path) {
+void SameBoyPlug::loadBattery(const std::string& path) {
 	_symbols.sameboy_load_battery(_instance, path.c_str());
 }
 
-void SameboyMin::saveState(char* target, size_t size) {
+void SameBoyPlug::saveState(char* target, size_t size) {
 	if (_instance) {
 		_symbols.sameboy_save_state(_instance, target, size);
 	}
 }
 
-void SameboyMin::loadState(const char* source, size_t size) {
+void SameBoyPlug::loadState(const char* source, size_t size) {
 	if (_instance) {
 		_symbols.sameboy_load_state(_instance, source, size);
 	}
 }
 
-void SameboyMin::update() {
+void SameBoyPlug::update() {
 	if (_instance) {
 		while (_bus.buttons.readAvailable()) {
 			auto ev = _bus.buttons.readValue();
@@ -90,7 +90,7 @@ void SameboyMin::update() {
 
 		_symbols.sameboy_update(_instance);
 
-		int16_t audio[1024 * 32];
+		int16_t audio[1024 * 32]; // FIXME: Choose a realistic size for this...
 		char video[FRAME_SIZE];
 
 		int frameCount = _symbols.sameboy_audio_frames(_instance);
@@ -103,8 +103,8 @@ void SameboyMin::update() {
 		}
 
 		// Convert to float
-		float inputFloat[1024 * 32];
-		float outputFloat[1024 * 32];
+		float inputFloat[1024 * 32]; // FIXME: Choose a realistic size for this...
+		//float outputFloat[1024 * 32];
 		ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
 
 		float* outBuf = inputFloat;
@@ -127,7 +127,7 @@ void SameboyMin::update() {
 	}
 }
 
-void SameboyMin::shutdown() {
+void SameBoyPlug::shutdown() {
 	if (_instance) {
 		_symbols.sameboy_free(_instance);
 		_instance = nullptr;

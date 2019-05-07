@@ -12,43 +12,51 @@ enum class EmulatorType {
 
 class RetroPlug {
 private:
-	SameboyMin _sameboy;
+	SameBoyPlugPtr _sameboy;
 	double _sampleRate = 48000;
 	Lsdj _lsdj;
 
 public:
-	bool active() const { return _sameboy.active(); }
-
-	Lsdj& lsdj() { return _lsdj; }
-
 	void load(EmulatorType emulatorType, const std::string& romPath) {
-		_sameboy.init(romPath);
-		_sameboy.setSampleRate(_sampleRate);
-		size_t stateSize = _sameboy.saveStateSize();
+		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
+
+		plug->init(romPath);
+		plug->setSampleRate(_sampleRate);
+		size_t stateSize = plug->saveStateSize();
 
 		std::string savPath = changeExt(romPath, ".sav");
 		if (std::filesystem::exists(savPath)) {
-			_sameboy.loadBattery(savPath);
+			plug->loadBattery(savPath);
 		}
 
-		_lsdj.found = _sameboy.romName().find("LSDj") == 0;
+		_lsdj.found = plug->romName().find("LSDj") == 0;
 		if (_lsdj.found) {
-			_lsdj.version = _sameboy.romName().substr(5, 6);
+			_lsdj.version = plug->romName().substr(5, 6);
 		}
+
+		_sameboy = plug;
 	}
 
 	void setSampleRate(double sampleRate) {
 		_sampleRate = sampleRate;
-		if (active()) {
-			_sameboy.setSampleRate(sampleRate);
+		SameBoyPlugPtr plugPtr = _sameboy;
+		if (plugPtr) {
+			plugPtr->setSampleRate(sampleRate);
 		}
 	}
 
 	void setButtonState(const ButtonEvent& ev) {
-		_sameboy.messageBus()->buttons.writeValue(ev);
+		SameBoyPlugPtr plugPtr = _sameboy;
+		if (plugPtr) {
+			plugPtr->messageBus()->buttons.writeValue(ev);
+		}
 	}
 
-	SameboyMin* plug() {
-		return &_sameboy;
+	SameBoyPlugPtr plug() {
+		return _sameboy;
+	}
+
+	Lsdj& lsdj() { 
+		return _lsdj; 
 	}
 };

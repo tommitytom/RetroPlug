@@ -19,9 +19,9 @@ public:
 	bool SerializeState(IByteChunk& chunk) const override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;
 private:
-	void generateMidiClock(int frameCount);
+	void generateMidiClock(SameBoyPlug* plug, int frameCount);
 
-	void processSync(int tempoDivisor, char value);
+	void processSync(SameBoyPlug* plug, int tempoDivisor, char value);
 
 	double _lastPpq24 = 0;
 	int _clockRemain = 0;

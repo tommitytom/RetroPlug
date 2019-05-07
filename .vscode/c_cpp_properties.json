@@ -4,13 +4,13 @@
             "name": "Mac",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/../../WDL/**",
-                "${workspaceFolder}/../../IPlug/**",
-                "${workspaceFolder}/../../IGraphics/**",
-                "${workspaceFolder}/../../Dependencies/IPlug/**",
-                "${workspaceFolder}/../../Dependencies/IGraphics/**",
-                "${workspaceFolder}/../../Dependencies/Extras/**",
-                "${workspaceFolder}/../../Dependencies/Build/mac/include/**"
+                "${workspaceFolder}/thirdparty/iPlug2/WDL/**",
+                "${workspaceFolder}/thirdparty/iPlug2/IPlug/**",
+                "${workspaceFolder}/thirdparty/iPlug2/IGraphics/**",
+                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/IPlug/**",
+                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/IGraphics/**",
+                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/Extras/**",
+                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/Build/mac/include/**"
             ],
             "defines": [
                 "OS_MAC",
@@ -27,7 +27,7 @@
             ],
             "compilerPath": "/usr/bin/clang",
             "cStandard": "c11",
-            "cppStandard": "c++11",
+            "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"
         }
     ],

@@ -37,14 +37,19 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int nFrames) {
-	if (!_plug.active() || nFrames == 0) {
+	if (nFrames == 0) {
 		return;
 	}
 
-	SameboyMin* plug = _plug.plug();
+	SameBoyPlugPtr plugPtr = _plug.plug();
+	if (!plugPtr) {
+		return;
+	}
+
+	SameBoyPlug* plug = plugPtr.get();
 	MessageBus* bus = plug->messageBus();
 
-	generateMidiClock(nFrames);
+	generateMidiClock(plug, nFrames);
 
 	size_t frameCount = nFrames;
 	size_t sampleCount = frameCount * 2;
@@ -72,40 +77,35 @@ void RetroPlugInstrument::OnIdle() {
 
 bool RetroPlugInstrument::SerializeState(IByteChunk & chunk) const {
 	chunk.Resize(10);
-	//chunk.pu
-	int v = 20;
-	chunk.Put<int>(&v);
 	return true;
 }
 
 int RetroPlugInstrument::UnserializeState(const IByteChunk & chunk, int startPos) {
-	int v;
-	chunk.Get<int>(&v, startPos);
 	return 0;
 }
 
-void RetroPlugInstrument::generateMidiClock(int frameCount) {
+void RetroPlugInstrument::generateMidiClock(SameBoyPlug* plug, int frameCount) {
 	Lsdj& lsdj = _plug.lsdj();
 	if (mTimeInfo.mTransportIsRunning) {
 		switch (lsdj.syncMode) {
 			case LsdjSyncModes::Slave:
-				processSync(1, 0xF8);
+				processSync(plug, 1, 0xF8);
 				break;
 			case LsdjSyncModes::SlaveArduinoboy:
 				if (lsdj.arduinoboyPlaying) {
-					processSync(lsdj.tempoDivisor, 0xF8);
+					processSync(plug, lsdj.tempoDivisor, 0xF8);
 				}
 				break;
 			case LsdjSyncModes::MidiMap:
 				if (lsdj.arduinoboyPlaying) {
-					processSync(1, 0xFF);
+					processSync(plug, 1, 0xFF);
 				}
 				break;
 		}
 	}
 }
 
-void RetroPlugInstrument::processSync(int tempoDivisor, char value) {
+void RetroPlugInstrument::processSync(SameBoyPlug* plug, int tempoDivisor, char value) {
 	double ppq24 = mTimeInfo.mPPQPos * (24 / tempoDivisor);
 	bool sync = false;
 	if (ppq24 > _lastPpq24) {
@@ -115,7 +115,6 @@ void RetroPlugInstrument::processSync(int tempoDivisor, char value) {
 	}
 
 	if (sync) {
-		SameboyMin* plug = _plug.plug();
 		plug->sendMidiByte(0, value);
 	}
 
@@ -129,8 +128,8 @@ void RetroPlugInstrument::OnReset() {
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
 
-	SameboyMin* plug = _plug.plug();
-	if (!plug) {
+	SameBoyPlugPtr plugPtr = _plug.plug();
+	if (!plugPtr) {
 		return;
 	}
 
@@ -157,7 +156,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 			case LsdjSyncModes::MidiMap:
 				if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
 					// Select row
-					plug->sendMidiByte(0, msg.NoteNumber());
+					plugPtr->sendMidiByte(0, msg.NoteNumber());
 				}
 
 				break;
@@ -170,7 +169,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 		midiData[1] = msg.mData1;
 		midiData[2] = msg.mData2;
 
-		plug->sendMidiBytes(0, (const char*)midiData, 3);
+		plugPtr->sendMidiBytes(0, (const char*)midiData, 3);
 	}
 }
 

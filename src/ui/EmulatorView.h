@@ -58,7 +58,7 @@ public:
 	bool OnKeyUp(float x, float y, const IKeyPress& key) { return OnKey(key, false); }
 
 	bool OnKey(const IKeyPress& key, bool down) {
-		if (_plug->active()) {
+		if (_plug->plug()) {
 			ButtonEvent ev;
 			ev.id = _keyMap.getControllerButton(key.VK);
 			ev.down = down;
@@ -77,11 +77,17 @@ public:
 	}
 
 	void OnMouseDown(float x, float y, const IMouseMod& mod) override {
+		SameBoyPlugPtr plugPtr = _plug->plug();
+		if (!plugPtr) {
+			return;
+		}
+
 		if (mod.R) {
 			_menu = IPopupMenu();
 			_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
 
-			if (_plug->active() && _plug->lsdj().found) {
+			Lsdj& lsdj = _plug->lsdj();
+			if (lsdj.found) {
 				IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
 					"Off",
 					"Slave",
@@ -89,7 +95,7 @@ public:
 					"MIDI Map",
 				});
 
-				int selectedMode = GetLsdjModeMenuItem(_plug->lsdj().syncMode);
+				int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
 				arduboyMenu->CheckItem(selectedMode, true);
 
 				_menu.AddSeparator();
@@ -114,8 +120,9 @@ public:
 	}
 
 	void Draw(IGraphics& g) override {
-		if (_plug->active()) {
-			MessageBus* bus = _plug->plug()->messageBus();
+		SameBoyPlugPtr plugPtr = _plug->plug();
+		if (plugPtr) {
+			MessageBus* bus = plugPtr->messageBus();
 
 			size_t available = bus->video.readAvailable();
 			if (available > 0) {

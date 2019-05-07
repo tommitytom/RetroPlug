@@ -4,7 +4,7 @@
 #include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
 
-struct SameboyMinSymbols {
+struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
 	void(*sameboy_update)(void* state);
 	size_t(*sameboy_audio_frames)(void* state);
@@ -20,11 +20,11 @@ struct SameboyMinSymbols {
 	const char*(*sameboy_get_rom_name)(void* state);
 };
 
-class SameboyMin {
+class SameBoyPlug {
 private:
 	DynamicLibraryMemory _library;
 	//DynamicLibrary _library;
-	SameboyMinSymbols _symbols = { nullptr };
+	SameboyPlugSymbols _symbols = { nullptr };
 
 	void* _instance = nullptr;
 	void* _resampler = nullptr;
@@ -33,8 +33,8 @@ private:
 	MessageBus _bus;
 
 public:
-	SameboyMin() {}
-	~SameboyMin() { shutdown(); }
+	SameBoyPlug() {}
+	~SameBoyPlug() { shutdown(); }
 
 	void init(const std::string& gamePath);
 
@@ -62,3 +62,5 @@ public:
 
 	void shutdown();
 };
+
+using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
