@@ -1,0 +1,34 @@
+/*
+ ==============================================================================
+ 
+ This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers. 
+ 
+ See LICENSE.txt for  more info.
+ 
+ ==============================================================================
+*/
+
+/**
+ * @file
+ * @brief Used for choosing an editor delegate @see IEditorDelegate
+ */
+
+//#if defined PUGL_EDITOR_DELEGATE
+//  #include "PUGLEditorDelegate.h"
+//  typedef PUGLEditorDelegate EDITOR_DELEGATE_CLASS;
+//#el
+#if defined UIKIT_EDITOR_DELEGATE
+  #include "IPlugUIKitEditorDelegate.h"
+  typedef UIKitEditorDelegate EDITOR_DELEGATE_CLASS;
+#elif defined NO_IGRAPHICS
+  #include "IPlugEditorDelegate.h"
+  typedef IEditorDelegate EDITOR_DELEGATE_CLASS;
+#else
+  #if defined WEBSOCKET_SERVER
+    #include "IWebsocketEditorDelegate.h"
+    typedef IWebsocketEditorDelegate EDITOR_DELEGATE_CLASS;
+  #else
+    #include "IGraphicsEditorDelegate.h"
+    typedef IGEditorDelegate EDITOR_DELEGATE_CLASS;
+  #endif
+#endif

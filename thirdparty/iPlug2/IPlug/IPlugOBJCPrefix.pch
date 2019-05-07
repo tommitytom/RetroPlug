@@ -1,0 +1,47 @@
+/*
+ ==============================================================================
+ 
+ This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers. 
+ 
+ See LICENSE.txt for  more info.
+ 
+ ==============================================================================
+*/
+
+#ifdef __OBJC__
+  #import <Cocoa/Cocoa.h>
+   
+  //objective-c has a flat namespace, we need to customise the class name for all of our objective-c classes
+  //so that binaries using different versions don't conflict
+  #ifndef OBJC_PREFIX
+    #define OBJC_PREFIX vIPLUG2
+  #endif
+
+  #if defined(VST2_API)
+    #define API _vst
+  #elif defined(AU_API)
+    #define API _au
+  #elif defined(AUv3_API)
+    #define API _auv3
+  #elif defined(AAX_API)
+    #define API _aax
+  #elif defined(VST3_API)
+    #define API _vst3
+  #elif defined(APP_API)
+    #define API _app
+  #endif
+
+  #define CONCAT3(a,b,c) a##b##c
+  #define CONCAT2(a,b,c) CONCAT3(a,b,c)
+  #define CONCAT(cname) CONCAT2(cname,OBJC_PREFIX,API)
+
+  #define IGRAPHICS_VIEW CONCAT(IGraphicsView_)
+  #define IGRAPHICS_MENU CONCAT(IGraphicsMenu_)
+  #define IGRAPHICS_MENU_RCVR CONCAT(IGraphicsMenuRcvr_)
+  #define IGRAPHICS_FORMATTER CONCAT(IGraphicsFormatter_)
+  #define IGRAPHICS_TEXTFIELD CONCAT(IGraphicsTextField_)
+  #define IGRAPHICS_TEXTFIELDCELL CONCAT(IGraphicsTextFieldCell_)
+  #define IGRAPHICS_GLLAYER CONCAT(IGraphicsLayer_)
+  #define IGRAPHICS_IMGUIVIEW CONCAT(IGraphicsImGuiView_)
+#endif
+
