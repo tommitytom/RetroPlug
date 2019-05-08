@@ -57,7 +57,7 @@ extern "C" {
 
 RETRO_API void* sameboy_init(void* user_data, const char* path);
 
-RETRO_API void sameboy_update(void* state);
+RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);
 
@@ -73,9 +73,9 @@ RETRO_API void sameboy_save_state(void* state, char* target, size_t size);
 
 RETRO_API void sameboy_load_state(void* state, const char* source, size_t size);
 
-RETRO_API size_t sameboy_audio_frames(void* state);
+RETRO_API size_t sameboy_fetch_audio(void* state, int16_t* audio);
 
-RETRO_API void sameboy_fetch(void* state, int16_t* audio, uint32_t* video);
+RETRO_API size_t sameboy_fetch_video(void* state, uint32_t* video);
 
 RETRO_API void sameboy_free(void* state);
 

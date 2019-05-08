@@ -20,10 +20,10 @@ void SameBoyPlug::init(const std::string & gamePath) {
 	_library.load(IDR_RCDATA1);
 	_library.get("sameboy_init", _symbols.sameboy_init);
 	_library.get("sameboy_update", _symbols.sameboy_update);
-	_library.get("sameboy_audio_frames", _symbols.sameboy_audio_frames);
+	_library.get("sameboy_fetch_audio", _symbols.sameboy_fetch_audio);
+	_library.get("sameboy_fetch_video", _symbols.sameboy_fetch_video);
 	_library.get("sameboy_set_sample_rate", _symbols.sameboy_set_sample_rate);
 	_library.get("sameboy_set_midi_bytes", _symbols.sameboy_set_midi_bytes);
-	_library.get("sameboy_fetch", _symbols.sameboy_fetch);
 	_library.get("sameboy_free", _symbols.sameboy_free);
 	_library.get("sameboy_set_button", _symbols.sameboy_set_button);
 	_library.get("sameboy_save_state_size", _symbols.sameboy_save_state_size);
@@ -81,24 +81,24 @@ void SameBoyPlug::loadState(const char* source, size_t size) {
 	}
 }
 
-void SameBoyPlug::update() {
+void SameBoyPlug::update(size_t audioFrames) {
 	if (_instance) {
 		while (_bus.buttons.readAvailable()) {
 			auto ev = _bus.buttons.readValue();
 			_symbols.sameboy_set_button(_instance, ev.id, ev.down);
 		}
 
-		_symbols.sameboy_update(_instance);
+		_symbols.sameboy_update(_instance, audioFrames);
 
 		int16_t audio[1024 * 32]; // FIXME: Choose a realistic size for this...
 		char video[FRAME_SIZE];
 
-		int frameCount = _symbols.sameboy_audio_frames(_instance);
-		int sampleCount = frameCount * 2;
+		int sampleCount = audioFrames * 2;
 
-		_symbols.sameboy_fetch(_instance, audio, (uint32_t*)video);
+		_symbols.sameboy_fetch_audio(_instance, audio);
+		size_t videoAvailable = _symbols.sameboy_fetch_video(_instance, (uint32_t*)video);
 
-		if (_bus.video.writeAvailable() >= FRAME_SIZE) {
+		if (videoAvailable > 0 && _bus.video.writeAvailable() >= FRAME_SIZE) {
 			_bus.video.write(video, FRAME_SIZE);
 		}
 

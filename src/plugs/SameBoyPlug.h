@@ -6,10 +6,10 @@
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
-	void(*sameboy_update)(void* state);
-	size_t(*sameboy_audio_frames)(void* state);
+	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
+	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
+	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
 	void(*sameboy_set_sample_rate)(void* state, double sample_rate);
-	void(*sameboy_fetch)(void* state, int16_t* audio, uint32_t* video);
 	void(*sameboy_free)(void* state);
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
 	void(*sameboy_set_button)(void* state, int buttonId, bool down);
@@ -58,7 +58,7 @@ public:
 
 	MessageBus* messageBus() { return &_bus; }
 
-	void update();
+	void update(size_t audioFrames);
 
 	void shutdown();
 };

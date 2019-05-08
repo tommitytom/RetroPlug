@@ -21,9 +21,9 @@ public:
 private:
 	void generateMidiClock(SameBoyPlug* plug, int frameCount);
 
-	void processSync(SameBoyPlug* plug, int tempoDivisor, char value);
+	void processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
 
-	double _lastPpq24 = 0;
+	double _lastPpq24 = -1;
 	int _clockRemain = 0;
 
 	RetroPlug _plug;

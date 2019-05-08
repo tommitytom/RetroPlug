@@ -2,6 +2,7 @@
 #include "queue.h"
 
 #include <Core/gb.h>
+#include <windows.h>
 
 extern const unsigned char dmg_boot[], cgb_boot[], agb_boot[], sgb_boot[], sgb2_boot[];
 extern const unsigned dmg_boot_length, cgb_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;
@@ -29,10 +30,6 @@ typedef struct sameboy_state_t {
 
 static void vblankHandler(GB_gameboy_t* gb) {
     sameboy_state_t* state = (sameboy_state_t*)GB_get_user_data(gb);
-
-    state->currentAudioFrames = GB_apu_get_current_buffer_length(gb);
-    GB_apu_copy_buffer(gb, state->audioBuffer, state->currentAudioFrames);
-
     state->vblankOccurred = true;
 }
 
@@ -111,26 +108,34 @@ void sameboy_load_state(void* state, const char* source, size_t size) {
     GB_load_state_from_buffer(&s->gb, source, size);
 }
 
-size_t sameboy_audio_frames(void* state) {
+size_t sameboy_fetch_audio(void* state, int16_t* audio) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    return s->currentAudioFrames;
+    size_t size = s->currentAudioFrames;
+    if (size > 0) {
+        GB_apu_copy_buffer(&s->gb, audio, s->currentAudioFrames);
+        s->currentAudioFrames = 0;    
+    }
+    
+    return size;
 }
 
-void sameboy_fetch(void* state, int16_t* audio, uint32_t* video) {
+size_t sameboy_fetch_video(void* state, uint32_t* video) {
     sameboy_state_t* s = (sameboy_state_t*)state;
+    if (s->vblankOccurred) {
+        memcpy(video, s->frameBuffer, FRAME_BUFFER_SIZE);
+        return FRAME_BUFFER_SIZE;
+    }
 
-    memcpy(video, s->frameBuffer, FRAME_BUFFER_SIZE);
-    memcpy(audio, s->audioBuffer, s->currentAudioFrames * sizeof(GB_sample_t));
-    s->currentAudioFrames = 0;
+    return 0;
 }
 
-void sameboy_update(void* state) {
+void sameboy_update(void* state, size_t requiredAudioFrames) {
     sameboy_state_t* s = (sameboy_state_t*)state;
 
     s->vblankOccurred = false;
 
     int delta = 0;
-    while (!s->vblankOccurred) {
+    while (s->currentAudioFrames < requiredAudioFrames) {
         if (s->linkTicksRemain <= 0) {
             if (length(&s->midiQueue) && peek(&s->midiQueue).offset < delta) {
                 offset_byte_t b = dequeue(&s->midiQueue);
@@ -146,6 +151,8 @@ void sameboy_update(void* state) {
         int ticks = GB_run(&s->gb);
         delta += ticks;
         s->linkTicksRemain -= ticks;
+
+        s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
     }
 
     // If there are any midi events that still haven't been processed, set their

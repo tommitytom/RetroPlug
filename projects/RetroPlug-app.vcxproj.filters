@@ -288,9 +288,6 @@
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Platforms\IGraphicsWeb.h">
       <Filter>IGraphics\Platform</Filter>
     </ClInclude>
-    <ClInclude Include="..\config.h">
-      <Filter>config</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\audio\audio_renderer.h">
       <Filter>src\audio</Filter>
     </ClInclude>
@@ -353,6 +350,9 @@
     </ClInclude>
     <ClInclude Include="..\src\RetroPlugInstrument.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\config\config.h">
+      <Filter>config</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -19,7 +19,7 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 		pGraphics->HandleMouseOver(true);
 		pGraphics->LoadFont("Roboto-Regular", ROBOTTO_FN);
 
-	const IRECT b = pGraphics->GetBounds();
+		const IRECT b = pGraphics->GetBounds();
 		float mid = b.H() / 2;
 		IRECT topRow(b.L, mid - 25, b.R, mid);
 		IRECT bottomRow(b.L, mid, b.R, mid + 25);
@@ -53,11 +53,11 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 
 	size_t frameCount = nFrames;
 	size_t sampleCount = frameCount * 2;
+	//size_t available = bus->audio.readAvailable();
+
+	plug->update(frameCount);
 	size_t available = bus->audio.readAvailable();
-	while (available < sampleCount) {
-		plug->update();
-		available = bus->audio.readAvailable();
-	}
+	assert(available == sampleCount);
 
 	memset(_sampleScratch, 0, sampleCount * sizeof(float));
 	size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
@@ -89,30 +89,32 @@ void RetroPlugInstrument::generateMidiClock(SameBoyPlug* plug, int frameCount) {
 	if (mTimeInfo.mTransportIsRunning) {
 		switch (lsdj.syncMode) {
 			case LsdjSyncModes::Slave:
-				processSync(plug, 1, 0xF8);
+				processSync(plug, frameCount, 1, 0xF8);
 				break;
 			case LsdjSyncModes::SlaveArduinoboy:
 				if (lsdj.arduinoboyPlaying) {
-					processSync(plug, lsdj.tempoDivisor, 0xF8);
+					processSync(plug, frameCount, lsdj.tempoDivisor, 0xF8);
 				}
 				break;
 			case LsdjSyncModes::MidiMap:
 				if (lsdj.arduinoboyPlaying) {
-					processSync(plug, 1, 0xFF);
+					processSync(plug, frameCount, 1, 0xFF);
 				}
 				break;
 		}
 	}
 }
 
-void RetroPlugInstrument::processSync(SameBoyPlug* plug, int tempoDivisor, char value) {
+void RetroPlugInstrument::processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
+	double samplesPerMs = GetSampleRate() / 1000;
+	double beatLen = (60000 / mTimeInfo.mTempo) * samplesPerMs;
+	double qnLen = sampleCount / beatLen;
+	double ppq24Len = qnLen * (24 / tempoDivisor);
+
 	double ppq24 = mTimeInfo.mPPQPos * (24 / tempoDivisor);
-	bool sync = false;
-	if (ppq24 > _lastPpq24) {
-		sync = (int)ppq24 != (int)_lastPpq24;
-	} else {
-		sync = true;
-	}
+	double nextPpq24 = ppq24 + ppq24Len;
+
+	bool sync = ppq24 == 0 || (int)ppq24 != (int)nextPpq24;
 
 	if (sync) {
 		plug->sendMidiByte(0, value);
