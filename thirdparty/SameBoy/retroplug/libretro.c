@@ -137,7 +137,7 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
     int delta = 0;
     while (s->currentAudioFrames < requiredAudioFrames) {
         if (s->linkTicksRemain <= 0) {
-            if (length(&s->midiQueue) && peek(&s->midiQueue).offset < delta) {
+            if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
                 offset_byte_t b = dequeue(&s->midiQueue);
                 for (int i = 7; i >= 0; i--) {
                     bool bit = (bool)((b.byte & (1 << i)) >> i);

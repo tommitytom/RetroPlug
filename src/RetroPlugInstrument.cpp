@@ -106,18 +106,33 @@ void RetroPlugInstrument::generateMidiClock(SameBoyPlug* plug, int frameCount) {
 }
 
 void RetroPlugInstrument::processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
-	double samplesPerMs = GetSampleRate() / 1000;
-	double beatLen = (60000 / mTimeInfo.mTempo) * samplesPerMs;
-	double qnLen = sampleCount / beatLen;
-	double ppq24Len = qnLen * (24 / tempoDivisor);
+	int resolution = 24 / tempoDivisor;
+	double samplesPerMs = GetSampleRate() / 1000.0;
+	double beatLenMs = (60000.0 / mTimeInfo.mTempo);
+	double beatLenSamples = beatLenMs * samplesPerMs;
+	double beatLenSamples24 = beatLenSamples / resolution;
+	
+	double ppq24 = mTimeInfo.mPPQPos * resolution;
+	double framePpqLen = (sampleCount / beatLenSamples) * resolution;
 
-	double ppq24 = mTimeInfo.mPPQPos * (24 / tempoDivisor);
-	double nextPpq24 = ppq24 + ppq24Len;
+	double nextPpq24 = ppq24 + framePpqLen;
 
-	bool sync = ppq24 == 0 || (int)ppq24 != (int)nextPpq24;
+	bool sync = false;
+	int offset = 0;
+	if (ppq24 == 0) {
+		sync = true;
+	} else if ((int)ppq24 != (int)nextPpq24) {
+		sync = true;
+		double amount = ceil(ppq24) - ppq24;
+		offset = (int)(beatLenSamples24 * amount);
+		if (offset >= sampleCount) {
+			//consoleLogLine(("Overshot: " + std::to_string(offset - sampleCount)));
+			offset = 0;
+		}
+	}
 
 	if (sync) {
-		plug->sendMidiByte(0, value);
+		plug->sendMidiByte(offset, value);
 	}
 
 	_lastPpq24 = ppq24;
