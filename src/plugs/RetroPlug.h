@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 #include "plugs/SameBoyPlug.h"
 #include "util/String.h"
@@ -15,6 +16,7 @@ private:
 	SameBoyPlugPtr _sameboy;
 	double _sampleRate = 48000;
 	Lsdj _lsdj;
+	std::string _savePath;
 
 public:
 	void load(EmulatorType emulatorType, const std::string& romPath) {
@@ -24,9 +26,9 @@ public:
 		plug->setSampleRate(_sampleRate);
 		size_t stateSize = plug->saveStateSize();
 
-		std::string savPath = changeExt(romPath, ".sav");
-		if (std::filesystem::exists(savPath)) {
-			plug->loadBattery(savPath);
+		_savePath = changeExt(romPath, ".sav");
+		if (std::filesystem::exists(_savePath)) {
+			plug->loadBattery(_savePath);
 		}
 
 		_lsdj.found = plug->romName().find("LSDj") == 0;
@@ -58,5 +60,9 @@ public:
 
 	Lsdj& lsdj() { 
 		return _lsdj; 
+	}
+
+	const std::string& savePath() {
+		return _savePath;
 	}
 };

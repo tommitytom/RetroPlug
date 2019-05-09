@@ -48,9 +48,15 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 	}
 
 	SameBoyPlug* plug = plugPtr.get();
+
+	// I know it's bad to use a mutex here, but its only used when making settings changes
+	// or saving SRAM data to disk.  Should still probably swap this out for a different
+	// method at some point, but it works for now.
+	plug->lock().lock();
+
 	MessageBus* bus = plug->messageBus();
 
-	generateMidiClock(plug, frameCount);
+	GenerateMidiClock(plug, frameCount);
 
 	int sampleCount = frameCount * 2;
 
@@ -66,6 +72,8 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		outputs[0][i] = _sampleScratch[i * 2];
 		outputs[1][i] = _sampleScratch[i * 2 + 1];
 	}
+
+	plug->lock().unlock();
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -81,28 +89,28 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk & chunk, int startPos
 	return 0;
 }
 
-void RetroPlugInstrument::generateMidiClock(SameBoyPlug* plug, int frameCount) {
+void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 	Lsdj& lsdj = _plug.lsdj();
 	if (mTimeInfo.mTransportIsRunning) {
 		switch (lsdj.syncMode) {
 			case LsdjSyncModes::Slave:
-				processSync(plug, frameCount, 1, 0xF8);
+				ProcessSync(plug, frameCount, 1, 0xF8);
 				break;
 			case LsdjSyncModes::SlaveArduinoboy:
 				if (lsdj.arduinoboyPlaying) {
-					processSync(plug, frameCount, lsdj.tempoDivisor, 0xF8);
+					ProcessSync(plug, frameCount, lsdj.tempoDivisor, 0xF8);
 				}
 				break;
 			case LsdjSyncModes::MidiMap:
 				//if (lsdj.arduinoboyPlaying) {
-					processSync(plug, frameCount, 1, 0xFF);
+					ProcessSync(plug, frameCount, 1, 0xFF);
 				//}
 				break;
 		}
 	}
 }
 
-void RetroPlugInstrument::processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
+void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
 	int resolution = 24 / tempoDivisor;
 	double samplesPerMs = GetSampleRate() / 1000.0;
 	double beatLenMs = (60000.0 / mTimeInfo.mTempo);

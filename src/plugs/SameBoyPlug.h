@@ -3,6 +3,7 @@
 #include "platform/DynamicLibrary.h"
 #include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
+#include <mutex>
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
@@ -17,6 +18,7 @@ struct SameboyPlugSymbols {
 	void(*sameboy_save_state)(void* state, char* target, size_t size);
 	void(*sameboy_load_state)(void* state, const char* source, size_t size);
 	void(*sameboy_load_battery)(void* state, const char* path);
+	void(*sameboy_save_battery)(void* state, const char* path);
 	const char*(*sameboy_get_rom_name)(void* state);
 };
 
@@ -32,6 +34,8 @@ private:
 
 	MessageBus _bus;
 
+	std::mutex _lock;
+
 public:
 	SameBoyPlug() {}
 	~SameBoyPlug() { shutdown(); }
@@ -42,6 +46,8 @@ public:
 
 	const std::string& romName() const { return _romName; }
 
+	std::mutex& lock() { return _lock; }
+
 	void setSampleRate(double sampleRate);
 
 	void sendMidiByte(int offset, char byte) { sendMidiBytes(offset, &byte, 1); }
@@ -49,6 +55,8 @@ public:
 	void sendMidiBytes(int offset, const char* bytes, size_t count);
 
 	size_t saveStateSize();
+
+	void saveBattery(const std::string& path);
 
 	void loadBattery(const std::string& path);
 

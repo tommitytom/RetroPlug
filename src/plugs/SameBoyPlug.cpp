@@ -29,6 +29,7 @@ void SameBoyPlug::init(const std::string & gamePath) {
 	_library.get("sameboy_save_state_size", _symbols.sameboy_save_state_size);
 	_library.get("sameboy_save_state", _symbols.sameboy_save_state);
 	_library.get("sameboy_load_state", _symbols.sameboy_load_state);
+	_library.get("sameboy_save_battery", _symbols.sameboy_save_battery);
 	_library.get("sameboy_load_battery", _symbols.sameboy_load_battery);
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
 
@@ -63,6 +64,10 @@ size_t SameBoyPlug::saveStateSize() {
 	}
 
 	return 0;
+}
+
+void SameBoyPlug::saveBattery(const std::string& path) {
+	_symbols.sameboy_save_battery(_instance, path.c_str());
 }
 
 void SameBoyPlug::loadBattery(const std::string& path) {

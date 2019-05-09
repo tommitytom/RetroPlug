@@ -2,10 +2,22 @@
 
 #include "RingBuffer.h"
 #include "Types.h"
+#include "IPlugQueue.h"
+#include <string>
+
+struct SramCommand {
+	bool save;
+	std::string path;
+};
+
+struct SettingCommand {
+	std::string setting;
+	std::string value;
+};
 
 class MessageBus {
 public:
-	// Inputs
+	// Inputs (probably switch these out for IPlugQueue)
 	RingBuffer<ButtonEvent> buttons;
 	RingBuffer<LinkEvent> link;
 
@@ -13,8 +25,12 @@ public:
 	RingBuffer<float> audio;
 	RingBuffer<char> video;
 
-  MessageBus() {}
+	MessageBus() {}
 
-	MessageBus(size_t inputBufferSize, size_t audioBufferSize, size_t videoBufferSize)
-		: buttons(inputBufferSize), link(inputBufferSize), audio(audioBufferSize), video(videoBufferSize) {}
+	MessageBus(size_t inputBufferSize, size_t audioBufferSize, size_t videoBufferSize) :
+		buttons(inputBufferSize), 
+		link(inputBufferSize), 
+		audio(audioBufferSize), 
+		video(videoBufferSize)
+	{}
 };

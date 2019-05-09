@@ -9,16 +9,23 @@
 
 enum RootMenuItems : int {
 	LoadRom,
+	Sram,
 	Settings,
-	LsdjVersion = 3,
+	LsdjVersion = 4,
 	LsdjModes
 };
 
 enum LsdjModeMenuItems : int {
 	Off,
-	Slave,
-	SlaveArduinoboy,
+	MidiSync,
+	MidSyncArduinoboy,
 	MidiMap
+};
+
+enum SramMenuItems : int {
+	Save,
+	SaveAs,
+	Load
 };
 
 const int VIDEO_WIDTH = 160;
@@ -74,79 +81,19 @@ public:
 	}
 
 	void OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-		OpenFileDialog();
+		OpenLoadRomDialog();
 	}
 
 	void OnMouseDown(float x, float y, const IMouseMod& mod) override {
-		SameBoyPlugPtr plugPtr = _plug->plug();
-		if (!plugPtr) {
-			return;
-		}
-
 		if (mod.R) {
-			_menu = IPopupMenu();
-			_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
-			
-			//IPopupMenu* settingsMenu = new IPopupMenu();
-			//_menu.AddItem("Settings", settingsMenu, RootMenuItems::Settings);
-
-			std::map<std::string, std::vector<std::string>> settings;
-			settings["Color Correction"] = {
-				"Off",
-				"Correct Curves",
-				"Emulate Hardware",
-				"Preserve Brightness"
-			};
-
-			settings["High-pass Filter"] = {
-				"Off",
-				"Accurate",
-				"Remove DC Offset"
-			};
-			
-			for (auto& setting : settings) {
-				IPopupMenu* settingMenu = new IPopupMenu(0, true);
-				for (size_t i = 0; i < setting.second.size(); i++) {
-					auto& option = setting.second[i];
-					settingMenu->AddItem(option.c_str(), i);
-				}
-
-				//settingsMenu->AddItem(setting.first.c_str(), settingMenu);
-			}
-
-			//IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
-			//settingsMenu->AddItem("Oversampling", osMenu);
-
-			Lsdj& lsdj = _plug->lsdj();
-			if (lsdj.found) {
-				IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
-					"Off",
-					"MIDI Sync",
-					"MIDI Sync (Arduinoboy Mode)",
-					"MIDI Map",
-				});
-
-				int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
-				arduboyMenu->CheckItem(selectedMode, true);
-
-				_menu.AddSeparator();
-				_menu.AddItem(plugPtr->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
-				_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
-			}
-
-			GetUI()->CreatePopupMenu(_menu, x, y, this);
+			CreateMenu(x, y);
 		}
 	}
 
 	void OnPopupMenuSelection(IPopupMenu* selectedMenu) override {
 		if (selectedMenu) {
-			if (selectedMenu == &_menu) {
-				if (selectedMenu->GetChosenItemIdx() == RootMenuItems::LoadRom) {
-					OpenFileDialog();
-				}
-			} else {
-				_lsdjMode = (LsdjModeMenuItems)selectedMenu->GetChosenItemIdx();
-				_plug->lsdj().syncMode = GetLsdjModeFromMenu(_lsdjMode);
+			if (selectedMenu->GetFunction()) {
+				selectedMenu->ExecFunction();
 			}
 		}
 	}
@@ -195,18 +142,169 @@ public:
 	}
 
 private:
-	void OpenFileDialog() {
-		std::wstring path = BasicFileOpen();
+	void CreateMenu(float x, float y) {
+		SameBoyPlugPtr plugPtr = _plug->plug();
+		if (!plugPtr) {
+			return;
+		}
+
+		_menu = IPopupMenu();
+		_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
+		_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
+			switch (indexInMenu) {
+			case RootMenuItems::LoadRom: OpenLoadRomDialog();
+			}
+		});
+
+		IPopupMenu* sramMenu = new IPopupMenu();
+		sramMenu->AddItem("Save", SramMenuItems::Save);
+		sramMenu->AddItem("Save As...", SramMenuItems::SaveAs);
+		sramMenu->AddItem("Load...", SramMenuItems::Load);
+		_menu.AddItem("SRAM", sramMenu, RootMenuItems::Sram);
+
+		sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
+			switch (indexInMenu) {
+			case SramMenuItems::Save: SaveSram(); break;
+			case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
+			case SramMenuItems::Load: OpenLoadSramDialog(); break;
+			}
+		});
+
+		IPopupMenu* settingsMenu = CreateSettingsMenu();
+		IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
+		osMenu->CheckItem(0, true);
+		settingsMenu->AddItem("Oversampling", osMenu);
+		osMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
+			int amount = 1 << indexInMenu;
+		});
+
+		settingsMenu->AddSeparator();
+		settingsMenu->AddItem("Set as Default");
+		settingsMenu->AddItem("Open Button Map...");
+		_menu.AddItem("Settings", settingsMenu);
+		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item* itemChosen) {
+			if (indexInMenu == settingsMenu->NItems() - 1) {
+				// Open button map
+			}
+		});
+
+		Lsdj& lsdj = _plug->lsdj();
+		if (lsdj.found) {
+			_menu.AddSeparator();
+			_menu.AddItem(plugPtr->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
+
+			IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
+				"Off",
+				"MIDI Sync",
+				"MIDI Sync (Arduinoboy Mode)",
+				"MIDI Map",
+			});
+
+			_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
+
+			int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
+			arduboyMenu->CheckItem(selectedMode, true);
+			arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
+				_plug->lsdj().syncMode = GetLsdjModeFromMenu((LsdjModeMenuItems)indexInMenu);
+			});
+		}
+
+		GetUI()->CreatePopupMenu(_menu, x, y, this);
+	}
+
+	IPopupMenu* CreateSettingsMenu() {
+		IPopupMenu* settingsMenu = new IPopupMenu();
+		std::map<std::string, std::vector<std::string>> settings;
+		settings["Color Correction"] = {
+			"Off",
+			"Correct Curves",
+			"Emulate Hardware",
+			"Preserve Brightness"
+		};
+
+		settings["High-pass Filter"] = {
+			"Off",
+			"Accurate",
+			"Remove DC Offset"
+		};
+
+		for (auto& setting : settings) {
+			const std::string& name = setting.first;
+			IPopupMenu* settingMenu = new IPopupMenu(0, true);
+			for (size_t i = 0; i < setting.second.size(); i++) {
+				auto& option = setting.second[i];
+				settingMenu->AddItem(option.c_str(), i);
+			}
+
+			settingMenu->CheckItem(0, true);
+			settingsMenu->AddItem(name.c_str(), settingMenu);
+			settingMenu->SetFunction([this, &name](int indexInMenu, IPopupMenu::Item* itemChosen) {
+				
+			});
+		}
+
+		return settingsMenu;
+	}
+
+	void OpenLoadRomDialog() {
+		std::vector<FileDialogFilters> types = {
+			{ L"GameBoy Roms", L"*.gb;*.gbc" }
+		};
+
+		std::wstring path = BasicFileOpen(types);
 		if (path.size() > 0) {
 			std::string p = ws2s(path);
 			_plug->load(EmulatorType::SameBoy, p.c_str());
 		}
 	}
 
+	void OpenLoadSramDialog() {
+		std::vector<FileDialogFilters> types = {
+			{ L"GameBoy Saves", L"*.sav" }
+		};
+
+		std::wstring path = BasicFileOpen(types);
+		if (path.size() > 0) {
+			SameBoyPlugPtr plugPtr = _plug->plug();
+			if (!plugPtr) {
+				return;
+			}
+
+			std::string p = ws2s(path);
+
+			plugPtr->lock().lock();
+			plugPtr->loadBattery(p);
+			plugPtr->lock().unlock();
+		}
+	}
+
+	void OpenSaveSramDialog() {
+		std::vector<FileDialogFilters> types = {
+			{ L"GameBoy Saves", L"*.sav" }
+		};
+
+		std::wstring path = BasicFileSave(types);
+		if (path.size() > 0) {
+			SaveSram(path);
+		}
+	}
+
+	void SaveSram(std::wstring path = L"") {
+		SameBoyPlugPtr plugPtr = _plug->plug();
+		if (!plugPtr) {
+			return;
+		}
+
+		std::string p = ws2s(path);
+		plugPtr->lock().lock();
+		plugPtr->saveBattery(p);
+		plugPtr->lock().unlock();
+	}
+
 	LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {
-		case LsdjSyncModes::Slave: return LsdjModeMenuItems::Slave;
-		case LsdjSyncModes::SlaveArduinoboy: return LsdjModeMenuItems::SlaveArduinoboy;
+		case LsdjSyncModes::Slave: return LsdjModeMenuItems::MidiSync;
+		case LsdjSyncModes::SlaveArduinoboy: return LsdjModeMenuItems::MidSyncArduinoboy;
 		case LsdjSyncModes::MidiMap: return LsdjModeMenuItems::MidiMap;
 		default: return LsdjModeMenuItems::Off;
 		}
@@ -214,8 +312,8 @@ private:
 
 	LsdjSyncModes GetLsdjModeFromMenu(LsdjModeMenuItems item) {
 		switch (item) {
-		case LsdjModeMenuItems::Slave: return LsdjSyncModes::Slave;
-		case LsdjModeMenuItems::SlaveArduinoboy: return LsdjSyncModes::SlaveArduinoboy;
+		case LsdjModeMenuItems::MidiSync: return LsdjSyncModes::Slave;
+		case LsdjModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::SlaveArduinoboy;
 		case LsdjModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
 		default: return LsdjSyncModes::Off;
 		}

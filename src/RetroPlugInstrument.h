@@ -19,9 +19,9 @@ public:
 	bool SerializeState(IByteChunk& chunk) const override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;
 private:
-	void generateMidiClock(SameBoyPlug* plug, int frameCount);
+	void GenerateMidiClock(SameBoyPlug* plug, int frameCount);
 
-	void processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
+	void ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
 
 	RetroPlug _plug;
 	float* _sampleScratch;

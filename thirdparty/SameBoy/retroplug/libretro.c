@@ -91,6 +91,11 @@ size_t sameboy_save_state_size(void* state) {
     return GB_get_save_state_size(&s->gb);
 }
 
+void sameboy_save_battery(void* state, const char* path) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+    GB_save_battery(&s->gb, path);
+}
+
 void sameboy_load_battery(void* state, const char* path) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     GB_load_battery(&s->gb, path);

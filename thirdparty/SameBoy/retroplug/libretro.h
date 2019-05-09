@@ -65,6 +65,8 @@ RETRO_API void sameboy_set_midi_bytes(void* state, int offset, const char* byte,
 
 RETRO_API void sameboy_set_button(void* state, int buttonId, bool down);
 
+RETRO_API void sameboy_save_battery(void* state, const char* path);
+
 RETRO_API void sameboy_load_battery(void* state, const char* path);
 
 RETRO_API size_t sameboy_save_state_size(void* state);
