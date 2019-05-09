@@ -73,6 +73,9 @@
     <ClCompile Include="..\src\RetroPlugInstrument.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\ui\EmulatorView.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
