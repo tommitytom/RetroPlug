@@ -54,6 +54,18 @@ public:
 		}
 	}
 
+	void setSetting(const std::string& name, int value) {
+		_sameboy->lock().lock();
+		_sameboy->setSetting(name, value);
+		_sameboy->lock().unlock();
+	}
+
+	void setOversample(int value) {
+		_sameboy->lock().lock();
+		_sameboy->setOversample(value);
+		_sameboy->lock().unlock();
+	}
+
 	SameBoyPlugPtr plug() {
 		return _sameboy;
 	}

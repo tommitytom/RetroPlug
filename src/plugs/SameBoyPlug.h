@@ -20,6 +20,7 @@ struct SameboyPlugSymbols {
 	void(*sameboy_load_state)(void* state, const char* source, size_t size);
 	void(*sameboy_load_battery)(void* state, const char* path);
 	void(*sameboy_save_battery)(void* state, const char* path);
+	void(*sameboy_set_setting)(void* state, const char* name, int value);
 	const char*(*sameboy_get_rom_name)(void* state);
 };
 
@@ -64,6 +65,10 @@ public:
 	void saveState(char* target, size_t size);
 
 	void loadState(const char* source, size_t size);
+
+	void setSetting(const std::string& name, int value);
+
+	void setOversample(int value);
 
 	MessageBus* messageBus() { return &_bus; }
 

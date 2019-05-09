@@ -81,6 +81,8 @@ RETRO_API size_t sameboy_fetch_audio(void* state, int16_t* audio);
 
 RETRO_API size_t sameboy_fetch_video(void* state, uint32_t* video);
 
+RETRO_API void sameboy_set_setting(void* state, const char* name, int value);
+
 RETRO_API void sameboy_free(void* state);
 
 RETRO_API const char* sameboy_get_rom_name(void* state);

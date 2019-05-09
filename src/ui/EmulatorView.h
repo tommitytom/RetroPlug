@@ -5,6 +5,7 @@
 #include "IControl.h"
 #include "plugs/RetroPlug.h"
 #include "platform/FileDialog.h"
+#include "platform/Path.h"
 #include "KeyMap.h"
 
 enum RootMenuItems : int {
@@ -46,10 +47,17 @@ private:
 	IPopupMenu _menu;
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
 
+	std::map<std::string, int> _settings;
+
 public:
 	EmulatorView(IRECT bounds, RetroPlug* plug): IControl(bounds), _plug(plug) {
 		memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 		_keyMap.load();
+
+		_settings = {
+			{ "Color Correction", 2 },
+			{ "High-pass Filter", 1 }
+		};
 	}
 
 	void OnInit() override {
@@ -171,20 +179,20 @@ private:
 		});
 
 		IPopupMenu* settingsMenu = CreateSettingsMenu();
-		IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
+		/*IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
 		osMenu->CheckItem(0, true);
 		settingsMenu->AddItem("Oversampling", osMenu);
 		osMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			int amount = 1 << indexInMenu;
-		});
+		});*/
 
 		settingsMenu->AddSeparator();
-		settingsMenu->AddItem("Set as Default");
-		settingsMenu->AddItem("Open Button Map...");
+		//settingsMenu->AddItem("Set as Default");
+		settingsMenu->AddItem("Open Settings Folder...");
 		_menu.AddItem("Settings", settingsMenu);
 		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			if (indexInMenu == settingsMenu->NItems() - 1) {
-				// Open button map
+				ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 			}
 		});
 
@@ -236,10 +244,11 @@ private:
 				settingMenu->AddItem(option.c_str(), i);
 			}
 
-			settingMenu->CheckItem(0, true);
+			settingMenu->CheckItem(_settings[name], true);
 			settingsMenu->AddItem(name.c_str(), settingMenu);
-			settingMenu->SetFunction([this, &name](int indexInMenu, IPopupMenu::Item* itemChosen) {
-				
+			settingMenu->SetFunction([this, name](int indexInMenu, IPopupMenu::Item* itemChosen) {
+				_settings[name] = indexInMenu;
+				_plug->setSetting(name, indexInMenu);
 			});
 		}
 

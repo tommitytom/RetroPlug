@@ -50,7 +50,7 @@ void* sameboy_init(void* user_data, const char* path) {
     GB_set_rgb_encode_callback(&state->gb, rgbEncode);
     GB_set_vblank_callback(&state->gb, vblankHandler);
 
-    GB_set_color_correction_mode(&state->gb, GB_COLOR_CORRECTION_CORRECT_CURVES);
+    GB_set_color_correction_mode(&state->gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
     GB_set_highpass_filter_mode(&state->gb, GB_HIGHPASS_ACCURATE);
 
     if (GB_load_rom(&state->gb, path)) {
@@ -66,6 +66,15 @@ void* sameboy_init(void* user_data, const char* path) {
 void sameboy_reset(void* state) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     GB_reset(&s->gb);
+}
+
+void sameboy_set_setting(void* state, const char* name, int value) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+    if (strcmp(name, "Color Correction") == 0) {
+        GB_set_color_correction_mode(&s->gb, value);
+    } else if (strcmp(name, "High-pass Filter") == 0) {
+        GB_set_highpass_filter_mode(&s->gb, value);
+    }
 }
 
 void sameboy_set_sample_rate(void* state, double sample_rate) {

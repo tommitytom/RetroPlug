@@ -33,6 +33,7 @@ void SameBoyPlug::init(const std::string & gamePath) {
 	_library.get("sameboy_save_battery", _symbols.sameboy_save_battery);
 	_library.get("sameboy_load_battery", _symbols.sameboy_load_battery);
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
+	_library.get("sameboy_set_setting", _symbols.sameboy_set_setting);
 
 	_instance = _symbols.sameboy_init(this, gamePath.c_str());
 	const char* name = _symbols.sameboy_get_rom_name(_instance);
@@ -86,6 +87,14 @@ void SameBoyPlug::loadState(const char* source, size_t size) {
 	if (_instance) {
 		_symbols.sameboy_load_state(_instance, source, size);
 	}
+}
+
+void SameBoyPlug::setSetting(const std::string& name, int value) {
+	_symbols.sameboy_set_setting(_instance, name.c_str(), value);
+}
+
+void SameBoyPlug::setOversample(int value) {
+
 }
 
 void SameBoyPlug::update(size_t audioFrames) {
