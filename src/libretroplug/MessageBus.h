@@ -2,7 +2,6 @@
 
 #include "RingBuffer.h"
 #include "Types.h"
-#include "IPlugQueue.h"
 #include <string>
 
 struct SramCommand {

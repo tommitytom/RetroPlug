@@ -7,6 +7,7 @@
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
+	void(*sameboy_reset)(void* state);
 	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
 	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
 	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);

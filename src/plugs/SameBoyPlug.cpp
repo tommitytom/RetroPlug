@@ -19,6 +19,7 @@ void SameBoyPlug::init(const std::string & gamePath) {
 
 	_library.load(IDR_RCDATA1);
 	_library.get("sameboy_init", _symbols.sameboy_init);
+	_library.get("sameboy_reset", _symbols.sameboy_reset);
 	_library.get("sameboy_update", _symbols.sameboy_update);
 	_library.get("sameboy_fetch_audio", _symbols.sameboy_fetch_audio);
 	_library.get("sameboy_fetch_video", _symbols.sameboy_fetch_video);
@@ -72,6 +73,7 @@ void SameBoyPlug::saveBattery(const std::string& path) {
 
 void SameBoyPlug::loadBattery(const std::string& path) {
 	_symbols.sameboy_load_battery(_instance, path.c_str());
+	_symbols.sameboy_reset(_instance);
 }
 
 void SameBoyPlug::saveState(char* target, size_t size) {

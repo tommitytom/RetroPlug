@@ -63,6 +63,11 @@ void* sameboy_init(void* user_data, const char* path) {
     return state;
 }
 
+void sameboy_reset(void* state) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+    GB_reset(&s->gb);
+}
+
 void sameboy_set_sample_rate(void* state, double sample_rate) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     GB_set_sample_rate(&s->gb, (uint32_t)sample_rate);
@@ -118,9 +123,9 @@ size_t sameboy_fetch_audio(void* state, int16_t* audio) {
     size_t size = s->currentAudioFrames;
     if (size > 0) {
         GB_apu_copy_buffer(&s->gb, audio, s->currentAudioFrames);
-        s->currentAudioFrames = 0;    
+        s->currentAudioFrames = 0;
     }
-    
+
     return size;
 }
 

@@ -57,6 +57,8 @@ extern "C" {
 
 RETRO_API void* sameboy_init(void* user_data, const char* path);
 
+RETRO_API void sameboy_reset(void* state);
+
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);

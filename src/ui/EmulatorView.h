@@ -159,7 +159,7 @@ private:
 		IPopupMenu* sramMenu = new IPopupMenu();
 		sramMenu->AddItem("Save", SramMenuItems::Save);
 		sramMenu->AddItem("Save As...", SramMenuItems::SaveAs);
-		sramMenu->AddItem("Load...", SramMenuItems::Load);
+		sramMenu->AddItem("Load (and reset)...", SramMenuItems::Load);
 		_menu.AddItem("SRAM", sramMenu, RootMenuItems::Sram);
 
 		sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
