@@ -6,6 +6,7 @@
 RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 : IPLUG_CTOR(0, 0, instanceInfo)
 {
+	// FIXME: Choose a more realistic size for this based on GetBlockSize()
 	_sampleScratch = new float[1024 * 1024];
 
 #if IPLUG_EDITOR
@@ -36,8 +37,8 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 }
 
 #if IPLUG_DSP
-void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int nFrames) {
-	if (nFrames == 0) {
+void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
+	if (frameCount == 0) {
 		return;
 	}
 
@@ -49,11 +50,9 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 	SameBoyPlug* plug = plugPtr.get();
 	MessageBus* bus = plug->messageBus();
 
-	generateMidiClock(plug, nFrames);
+	generateMidiClock(plug, frameCount);
 
-	size_t frameCount = nFrames;
-	size_t sampleCount = frameCount * 2;
-	//size_t available = bus->audio.readAvailable();
+	int sampleCount = frameCount * 2;
 
 	plug->update(frameCount);
 	size_t available = bus->audio.readAvailable();
@@ -63,11 +62,9 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 	size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
 	assert(readAmount == sampleCount);
 
-	float gain = 1.f;
-
 	for (size_t i = 0; i < frameCount; i++) {
-		outputs[0][i] = _sampleScratch[i * 2] * gain;
-		outputs[1][i] = _sampleScratch[i * 2 + 1] * gain;
+		outputs[0][i] = _sampleScratch[i * 2];
+		outputs[1][i] = _sampleScratch[i * 2 + 1];
 	}
 }
 
@@ -97,9 +94,9 @@ void RetroPlugInstrument::generateMidiClock(SameBoyPlug* plug, int frameCount) {
 				}
 				break;
 			case LsdjSyncModes::MidiMap:
-				if (lsdj.arduinoboyPlaying) {
+				//if (lsdj.arduinoboyPlaying) {
 					processSync(plug, frameCount, 1, 0xFF);
-				}
+				//}
 				break;
 		}
 	}
@@ -127,15 +124,13 @@ void RetroPlugInstrument::processSync(SameBoyPlug* plug, int sampleCount, int te
 		offset = (int)(beatLenSamples24 * amount);
 		if (offset >= sampleCount) {
 			//consoleLogLine(("Overshot: " + std::to_string(offset - sampleCount)));
-			offset = 0;
+			offset = sampleCount - 1;
 		}
 	}
 
 	if (sync) {
 		plug->sendMidiByte(offset, value);
 	}
-
-	_lastPpq24 = ppq24;
 }
 
 void RetroPlugInstrument::OnReset() {
@@ -173,7 +168,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 			case LsdjSyncModes::MidiMap:
 				if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
 					// Select row
-					plugPtr->sendMidiByte(0, msg.NoteNumber());
+					plugPtr->sendMidiByte(msg.mOffset, msg.NoteNumber());
 				}
 
 				break;
@@ -186,7 +181,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 		midiData[1] = msg.mData1;
 		midiData[2] = msg.mData2;
 
-		plugPtr->sendMidiBytes(0, (const char*)midiData, 3);
+		plugPtr->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
 	}
 }
 

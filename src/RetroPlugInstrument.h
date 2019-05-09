@@ -23,11 +23,7 @@ private:
 
 	void processSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
 
-	double _lastPpq24 = -1;
-	int _clockRemain = 0;
-
 	RetroPlug _plug;
-
 	float* _sampleScratch;
 #endif
 };

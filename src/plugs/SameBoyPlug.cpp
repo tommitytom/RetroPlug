@@ -90,7 +90,7 @@ void SameBoyPlug::update(size_t audioFrames) {
 
 		_symbols.sameboy_update(_instance, audioFrames);
 
-		int16_t audio[1024 * 32]; // FIXME: Choose a realistic size for this...
+		int16_t audio[1024 * 4]; // FIXME: Choose a realistic size for this...
 		char video[FRAME_SIZE];
 
 		int sampleCount = audioFrames * 2;
@@ -103,7 +103,7 @@ void SameBoyPlug::update(size_t audioFrames) {
 		}
 
 		// Convert to float
-		float inputFloat[1024 * 32]; // FIXME: Choose a realistic size for this...
+		float inputFloat[1024 * 4]; // FIXME: Choose a realistic size for this...
 		//float outputFloat[1024 * 32];
 		ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
 
