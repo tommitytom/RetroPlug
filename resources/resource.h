@@ -4,10 +4,6 @@
 //
 #define IDR_ACCELERATOR2                105
 #define IDR_RCDATA1                     108
-#define IDB_BITMAP1                     111
-#define IDB_PNG1                        112
-#define IDR_TTF1                        113
-#define IDR_TTF2                        114
 #define IDR_ACCELERATOR1                40000
 #define IDD_DIALOG_MAIN                 40001
 #define IDD_DIALOG_PREF                 40002
