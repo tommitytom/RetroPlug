@@ -9,7 +9,9 @@
 
 enum RootMenuItems : int {
 	LoadRom,
-	LsdjModes = 2
+	Settings,
+	LsdjVersion = 3,
+	LsdjModes
 };
 
 enum LsdjModeMenuItems : int {
@@ -22,7 +24,7 @@ enum LsdjModeMenuItems : int {
 const int VIDEO_WIDTH = 160;
 const int VIDEO_HEIGHT = 144;
 const int VIDEO_FRAME_SIZE = VIDEO_WIDTH * VIDEO_HEIGHT * 4;
-const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE * 4;
+const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
 
 class EmulatorView : public IControl {
 private:
@@ -44,7 +46,6 @@ public:
 	}
 
 	void OnInit() override {
-		auto bmp = GetUI()->LoadBitmap("IDB_PNG1");
 	}
 
 	bool IsDirty() { return true; }
@@ -85,13 +86,43 @@ public:
 		if (mod.R) {
 			_menu = IPopupMenu();
 			_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
+			
+			//IPopupMenu* settingsMenu = new IPopupMenu();
+			//_menu.AddItem("Settings", settingsMenu, RootMenuItems::Settings);
+
+			std::map<std::string, std::vector<std::string>> settings;
+			settings["Color Correction"] = {
+				"Off",
+				"Correct Curves",
+				"Emulate Hardware",
+				"Preserve Brightness"
+			};
+
+			settings["High-pass Filter"] = {
+				"Off",
+				"Accurate",
+				"Remove DC Offset"
+			};
+			
+			for (auto& setting : settings) {
+				IPopupMenu* settingMenu = new IPopupMenu(0, true);
+				for (size_t i = 0; i < setting.second.size(); i++) {
+					auto& option = setting.second[i];
+					settingMenu->AddItem(option.c_str(), i);
+				}
+
+				//settingsMenu->AddItem(setting.first.c_str(), settingMenu);
+			}
+
+			//IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
+			//settingsMenu->AddItem("Oversampling", osMenu);
 
 			Lsdj& lsdj = _plug->lsdj();
 			if (lsdj.found) {
 				IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
 					"Off",
-					"Slave",
-					"Slave (Arduinoboy mode)",
+					"MIDI Sync",
+					"MIDI Sync (Arduinoboy Mode)",
 					"MIDI Map",
 				});
 
@@ -99,7 +130,8 @@ public:
 				arduboyMenu->CheckItem(selectedMode, true);
 
 				_menu.AddSeparator();
-				_menu.AddItem("LSDJ Sync", arduboyMenu, RootMenuItems::LsdjModes);
+				_menu.AddItem(plugPtr->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
+				_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
 			}
 
 			GetUI()->CreatePopupMenu(_menu, x, y, this);
