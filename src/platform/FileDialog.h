@@ -3,6 +3,10 @@
 #include <ShObjIdl.h>
 
 static std::wstring BasicFileOpen() {
+	COMDLG_FILTERSPEC filters[1];
+	filters[0].pszName = L"GameBoy Roms";
+	filters[0].pszSpec = L"*.gb;*.gbc";
+
 	std::wstring ret;
 	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 	if (SUCCEEDED(hr))
@@ -15,7 +19,11 @@ static std::wstring BasicFileOpen() {
 
 		if (SUCCEEDED(hr))
 		{
-			// Show the Open dialog box.
+			DWORD dwFlags;
+			pFileOpen->GetOptions(&dwFlags);
+			pFileOpen->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
+			pFileOpen->SetFileTypes(ARRAYSIZE(filters), filters);
+			pFileOpen->SetDefaultExtension(L"gb;gbc");
 			hr = pFileOpen->Show(NULL);
 
 			// Get the file name from the dialog box.
