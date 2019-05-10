@@ -67,7 +67,7 @@ public:
 
 	void OnMouseDown(float x, float y, const IMouseMod& mod) override;
 
-	void OnPopupMenuSelection(IPopupMenu* selectedMenu) override;
+	void OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int valIdx) override;
 
 	void Draw(IGraphics& g) override;
 

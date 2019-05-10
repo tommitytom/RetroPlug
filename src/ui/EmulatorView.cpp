@@ -42,7 +42,7 @@ void EmulatorView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	}
 }
 
-void EmulatorView::OnPopupMenuSelection(IPopupMenu* selectedMenu) {
+void EmulatorView::OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx) {
 	if (selectedMenu) {
 		if (selectedMenu->GetFunction()) {
 			selectedMenu->ExecFunction();
@@ -64,6 +64,7 @@ void EmulatorView::Draw(IGraphics& g) {
 
 			bus->video.read((char*)_videoScratch, VIDEO_FRAME_SIZE);
 
+			// TODO: This is all a bit unecessary and should be handled in the SameBoy wrapper
 			unsigned char* px = _videoScratch;
 			for (int i = 0; i < VIDEO_WIDTH; i++) {
 				for (int j = 0; j < VIDEO_HEIGHT; j++) {
@@ -101,11 +102,11 @@ void EmulatorView::CreateMenu(float x, float y) {
 
 	_menu = IPopupMenu();
 	_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
-	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
 		case RootMenuItems::LoadRom: OpenLoadRomDialog();
 		}
-		});
+	});
 
 	IPopupMenu* sramMenu = new IPopupMenu();
 	sramMenu->AddItem("Save", SramMenuItems::Save);
@@ -113,31 +114,31 @@ void EmulatorView::CreateMenu(float x, float y) {
 	sramMenu->AddItem("Load (and reset)...", SramMenuItems::Load);
 	_menu.AddItem("SRAM", sramMenu, RootMenuItems::Sram);
 
-	sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+	sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
 		case SramMenuItems::Save: SaveSram(); break;
 		case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
 		case SramMenuItems::Load: OpenLoadSramDialog(); break;
 		}
-		});
+	});
 
 	IPopupMenu* settingsMenu = CreateSettingsMenu();
 	/*IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
 	osMenu->CheckItem(0, true);
 	settingsMenu->AddItem("Oversampling", osMenu);
 	osMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-	int amount = 1 << indexInMenu;
+		int amount = 1 << indexInMenu;
 	});*/
 
 	settingsMenu->AddSeparator();
 	//settingsMenu->AddItem("Set as Default");
 	settingsMenu->AddItem("Open Settings Folder...");
 	_menu.AddItem("Settings", settingsMenu);
-	settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
+	settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		if (indexInMenu == settingsMenu->NItems() - 1) {
 			ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
-		});
+	});
 
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
@@ -149,22 +150,24 @@ void EmulatorView::CreateMenu(float x, float y) {
 			"MIDI Sync",
 			"MIDI Sync (Arduinoboy Mode)",
 			"MIDI Map",
-			});
+		});
 
 		_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
 
 		int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
 		arduboyMenu->CheckItem(selectedMode, true);
-		arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+		arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			_plug->lsdj().syncMode = GetLsdjModeFromMenu((LsdjModeMenuItems)indexInMenu);
-			});
+		});
 	}
 
-	GetUI()->CreatePopupMenu(_menu, x, y, this);
+	GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
 }
 
 IPopupMenu* EmulatorView::CreateSettingsMenu() {
 	IPopupMenu* settingsMenu = new IPopupMenu();
+
+	// TODO: These should be moved in to the SameBoy wrapper
 	std::map<std::string, std::vector<std::string>> settings;
 	settings["Color Correction"] = {
 		"Off",
@@ -189,10 +192,10 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 
 		settingMenu->CheckItem(_settings[name], true);
 		settingsMenu->AddItem(name.c_str(), settingMenu);
-		settingMenu->SetFunction([this, name](int indexInMenu, IPopupMenu::Item * itemChosen) {
+		settingMenu->SetFunction([this, name](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			_settings[name] = indexInMenu;
 			_plug->setSetting(name, indexInMenu);
-			});
+		});
 	}
 
 	return settingsMenu;
@@ -217,16 +220,7 @@ void EmulatorView::OpenLoadSramDialog() {
 
 	std::wstring path = BasicFileOpen(types);
 	if (path.size() > 0) {
-		SameBoyPlugPtr plugPtr = _plug->plug();
-		if (!plugPtr) {
-			return;
-		}
-
-		std::string p = ws2s(path);
-
-		plugPtr->lock().lock();
-		plugPtr->loadBattery(p);
-		plugPtr->lock().unlock();
+		_plug->loadBattery(path);
 	}
 }
 
@@ -242,13 +236,5 @@ void EmulatorView::OpenSaveSramDialog() {
 }
 
 void EmulatorView::SaveSram(std::wstring path) {
-	SameBoyPlugPtr plugPtr = _plug->plug();
-	if (!plugPtr) {
-		return;
-	}
-
-	std::string p = ws2s(path);
-	plugPtr->lock().lock();
-	plugPtr->saveBattery(p);
-	plugPtr->lock().unlock();
+	_plug->saveBattery(path);
 }

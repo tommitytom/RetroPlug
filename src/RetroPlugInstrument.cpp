@@ -31,8 +31,8 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 		EmulatorView* emulatorView = new EmulatorView(b, &_plug);
 		pGraphics->AttachControl(emulatorView);
 
-		pGraphics->SetKeyHandlerFunc([emulatorView](const IKeyPress& key) {
-			return emulatorView->OnKey(key);
+		pGraphics->SetKeyHandlerFunc([emulatorView](const IKeyPress& key, bool isUp) {
+			return emulatorView->OnKey(key, !isUp);
 		});
 	};
 #endif

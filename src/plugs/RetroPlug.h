@@ -66,6 +66,34 @@ public:
 		_sameboy->lock().unlock();
 	}
 
+	void saveBattery(const std::wstring& path) {
+		SameBoyPlugPtr plugPtr = _sameboy;
+		if (!plugPtr) {
+			return;
+		}
+
+		std::string p = ws2s(path);
+		if (p.size() == 0) {
+			p = _savePath;
+		}
+
+		plugPtr->lock().lock();
+		plugPtr->saveBattery(p);
+		plugPtr->lock().unlock();
+	}
+
+	void loadBattery(const std::wstring& path) {
+		SameBoyPlugPtr plugPtr = _sameboy;
+		if (!plugPtr) {
+			return;
+		}
+
+		std::string p = ws2s(path);
+		plugPtr->lock().lock();
+		plugPtr->loadBattery(p);
+		plugPtr->lock().unlock();
+	}
+
 	SameBoyPlugPtr plug() {
 		return _sameboy;
 	}
