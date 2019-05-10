@@ -74,8 +74,8 @@ public:
   bool SetTextInClipboard(const WDL_String& str) override;
   
 protected:
-  IPopupMenu* CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds, IControl* pCaller) override;
-  void CreatePlatformTextEntry(IControl& control, const IText& text, const IRECT& bounds, const char* str) override;
+  IPopupMenu* CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds) override;
+  void CreatePlatformTextEntry(int paramIdx, const IText& text, const IRECT& bounds, int length, const char* str) override;
 
   void SetTooltip(const char* tooltip);
   void ShowTooltip();
@@ -95,8 +95,8 @@ private:
   PlatformFontPtr LoadPlatformFont(const char* fontID, const char* fontName, ETextStyle style) override;
   void CachePlatformFont(const char* fontID, const PlatformFontPtr& font) override;
 
-  inline IMouseInfo IGraphicsWin::GetMouseInfo(LPARAM lParam, WPARAM wParam);
-  inline IMouseInfo IGraphicsWin::GetMouseInfoDeltas(float&dX, float& dY, LPARAM lParam, WPARAM wParam);
+  inline IMouseInfo GetMouseInfo(LPARAM lParam, WPARAM wParam);
+  inline IMouseInfo GetMouseInfoDeltas(float&dX, float& dY, LPARAM lParam, WPARAM wParam);
   bool MouseCursorIsLocked();
 
 #ifdef IGRAPHICS_GL
@@ -123,7 +123,10 @@ private:
   HFONT mEditFont = nullptr;
   DWORD mPID = 0;
 
-  IControl* mEdControl = nullptr;
+  const IParam* mEditParam = nullptr;
+  IText mEditText;
+  IRECT mEditRECT;
+
   EParamEditMsg mParamEditMsg = kNone;
   bool mShowingTooltip = false;
   float mHiddenCursorX;
