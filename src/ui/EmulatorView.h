@@ -57,9 +57,9 @@ public:
 
 	void OnDrop(const char* str) override;
 
-	bool OnKeyDown(float x, float y, const IKeyPress& key) override { return OnKey(key, true); }
+	//bool OnKeyDown(float x, float y, const IKeyPress& key) override { return OnKey(key, true); }
 
-	bool OnKeyUp(float x, float y, const IKeyPress& key) override { return OnKey(key, false); }
+	//bool OnKeyUp(float x, float y, const IKeyPress& key) override { return OnKey(key, false); }
 
 	bool OnKey(const IKeyPress& key, bool down);
 

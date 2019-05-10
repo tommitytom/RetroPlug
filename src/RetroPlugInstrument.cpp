@@ -27,7 +27,13 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 
 		pGraphics->AttachControl(new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE)));
 		pGraphics->AttachControl(new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE)));
-		pGraphics->AttachControl(new EmulatorView(b, &_plug));
+
+		EmulatorView* emulatorView = new EmulatorView(b, &_plug);
+		pGraphics->AttachControl(emulatorView);
+
+		pGraphics->SetKeyHandlerFunc([emulatorView](const IKeyPress& key) {
+			return emulatorView->OnKey(key);
+		});
 	};
 #endif
 }
@@ -81,11 +87,14 @@ void RetroPlugInstrument::OnIdle() {
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk & chunk) const {
-	chunk.Resize(10);
+	//chunk.Resize(10);
+	//chunk.PutStr("HI");
 	return true;
 }
 
 int RetroPlugInstrument::UnserializeState(const IByteChunk & chunk, int startPos) {
+	//WDL_String str;
+	//chunk.GetStr(str, startPos);
 	return 0;
 }
 
