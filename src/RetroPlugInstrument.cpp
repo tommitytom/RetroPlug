@@ -63,6 +63,13 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 
 	MessageBus* bus = plug->messageBus();
 
+	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
+		_transportRunning = mTimeInfo.mTransportIsRunning;
+		if (!_transportRunning && _plug.lsdj().found && _plug.lsdj().lastRow != -1) {
+			plug->sendMidiByte(0, 0xFE);
+		}
+	}
+
 	GenerateMidiClock(plug, frameCount);
 
 	int sampleCount = frameCount * 2;
@@ -113,9 +120,7 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 				}
 				break;
 			case LsdjSyncModes::MidiMap:
-				//if (lsdj.arduinoboyPlaying) {
-					ProcessSync(plug, frameCount, 1, 0xFF);
-				//}
+				ProcessSync(plug, frameCount, 1, 0xFF);
 				break;
 		}
 	}
@@ -177,17 +182,32 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 						case 28: lsdj.tempoDivisor = 4; break;
 						case 29: lsdj.tempoDivisor = 8; break;
 						default:
-							if (msg.NoteNumber() > 29) {
-								// TODO: Send row number
+							if (msg.NoteNumber() >= 30) {
+								plugPtr->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
 							}
 					}
 				}
 
 				break;
 			case LsdjSyncModes::MidiMap:
-				if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
-					// Select row
-					plugPtr->sendMidiByte(msg.mOffset, msg.NoteNumber());
+				switch (msg.StatusMsg()) {
+				case IMidiMsg::kNoteOn: {
+					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
+					if (rowIdx != -1) {
+						plugPtr->sendMidiByte(msg.mOffset, rowIdx);
+						lsdj.lastRow = rowIdx;
+					}
+
+					break;
+				}
+				case IMidiMsg::kNoteOff:
+					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
+					if (rowIdx == lsdj.lastRow) {
+						plugPtr->sendMidiByte(msg.mOffset, 0xFE);
+						lsdj.lastRow = -1;
+					}
+
+					break;
 				}
 
 				break;

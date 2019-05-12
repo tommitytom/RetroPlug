@@ -39,9 +39,11 @@ int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 	const std::string& stateDataStr = state.at("data").get_string();
 	std::string stateData = base64_decode(stateDataStr);
 
-	plug.load(EmulatorType::SameBoy, romPath);
-	const SameBoyPlugPtr plugPtr = plug.plug();
-	plugPtr->loadState((char*)stateData.data(), stateData.size());
+	if (std::filesystem::exists(romPath)) {
+		plug.load(EmulatorType::SameBoy, romPath);
+		const SameBoyPlugPtr plugPtr = plug.plug();
+		plugPtr->loadState((char*)stateData.data(), stateData.size());
+	}
 
 	return pos;
 }

@@ -25,5 +25,6 @@ private:
 
 	RetroPlug _plug;
 	float* _sampleScratch;
+	bool _transportRunning = false;
 #endif
 };
