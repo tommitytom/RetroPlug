@@ -2,6 +2,7 @@
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
 #include "src/ui/EmulatorView.h"
+#include "util/Serializer.h"
 
 RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 : IPLUG_CTOR(0, 0, instanceInfo)
@@ -86,16 +87,17 @@ void RetroPlugInstrument::OnIdle() {
 
 }
 
-bool RetroPlugInstrument::SerializeState(IByteChunk & chunk) const {
-	//chunk.Resize(10);
-	//chunk.PutStr("HI");
+bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
+	if (_plug.romPath().size() == 0) {
+		return true;
+	}
+	
+	Serialize(chunk, _plug);
 	return true;
 }
 
-int RetroPlugInstrument::UnserializeState(const IByteChunk & chunk, int startPos) {
-	//WDL_String str;
-	//chunk.GetStr(str, startPos);
-	return 0;
+int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int startPos) {
+	return Deserialize(chunk, _plug, startPos);
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {

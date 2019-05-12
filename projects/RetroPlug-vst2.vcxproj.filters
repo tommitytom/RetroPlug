@@ -76,6 +76,9 @@
     <ClCompile Include="..\src\ui\EmulatorView.cpp">
       <Filter>src\ui</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\util\base64.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -293,6 +296,12 @@
     </ClInclude>
     <ClInclude Include="..\config\config.h">
       <Filter>config</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\Serializer.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\base64.h">
+      <Filter>src\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

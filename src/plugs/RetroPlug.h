@@ -17,10 +17,13 @@ private:
 	double _sampleRate = 48000;
 	Lsdj _lsdj;
 	std::string _savePath;
+	std::string _romPath;
 
 public:
 	void load(EmulatorType emulatorType, const std::string& romPath) {
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
+
+		_romPath = romPath;
 
 		plug->init(romPath);
 		plug->setSampleRate(_sampleRate);
@@ -98,11 +101,19 @@ public:
 		return _sameboy;
 	}
 
+	SameBoyPlugPtr plug() const {
+		return _sameboy;
+	}
+
 	Lsdj& lsdj() { 
 		return _lsdj; 
 	}
 
-	const std::string& savePath() {
+	const std::string& savePath() const {
 		return _savePath;
+	}
+
+	const std::string& romPath() const {
+		return _romPath;
 	}
 };

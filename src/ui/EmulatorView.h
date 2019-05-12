@@ -55,12 +55,6 @@ public:
 
 	bool IsDirty() override { return true; }
 
-	void OnDrop(const char* str) override;
-
-	//bool OnKeyDown(float x, float y, const IKeyPress& key) override { return OnKey(key, true); }
-
-	//bool OnKeyUp(float x, float y, const IKeyPress& key) override { return OnKey(key, false); }
-
 	bool OnKey(const IKeyPress& key, bool down);
 
 	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
@@ -69,11 +63,13 @@ public:
 
 	void OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int valIdx) override;
 
+	void OnDrop(const char* str) override;
+
 	void Draw(IGraphics& g) override;
 
+private:
 	void DrawPixelBuffer(NVGcontext* vg);
 
-private:
 	void CreateMenu(float x, float y);
 
 	IPopupMenu* CreateSettingsMenu();
@@ -83,8 +79,6 @@ private:
 	void OpenLoadSramDialog();
 
 	void OpenSaveSramDialog();
-
-	void SaveSram(std::wstring path = L"");
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

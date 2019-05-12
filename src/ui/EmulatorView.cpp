@@ -116,7 +116,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 
 	sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
-		case SramMenuItems::Save: SaveSram(); break;
+		case SramMenuItems::Save: _plug->saveBattery(L""); break;
 		case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
 		case SramMenuItems::Load: OpenLoadSramDialog(); break;
 		}
@@ -231,10 +231,6 @@ void EmulatorView::OpenSaveSramDialog() {
 
 	std::wstring path = BasicFileSave(types);
 	if (path.size() > 0) {
-		SaveSram(path);
+		_plug->saveBattery(path);
 	}
-}
-
-void EmulatorView::SaveSram(std::wstring path) {
-	_plug->saveBattery(path);
 }
