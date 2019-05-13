@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <algorithm>
 
 #include "plugs/SameBoyPlug.h"
 #include "util/String.h"
@@ -34,7 +35,9 @@ public:
 			plug->loadBattery(_savePath);
 		}
 
-		_lsdj.found = plug->romName().find("LSDj") == 0;
+		std::string romName = plug->romName();
+		std::transform(romName.begin(), romName.end(), romName.begin(), ::tolower);
+		_lsdj.found = romName.find("lsdj") == 0;
 		if (_lsdj.found) {
 			_lsdj.version = plug->romName().substr(5, 6);
 		}
