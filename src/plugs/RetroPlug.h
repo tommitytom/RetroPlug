@@ -112,6 +112,10 @@ public:
 		return _lsdj; 
 	}
 
+	const Lsdj& lsdj() const {
+		return _lsdj;
+	}
+
 	const std::string& savePath() const {
 		return _savePath;
 	}

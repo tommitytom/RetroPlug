@@ -13,7 +13,6 @@ public:
 	void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
 	void ProcessMidiMsg(const IMidiMsg& msg) override;
 	void OnReset() override;
-	void OnParamChange(int paramIdx) override;
 	void OnIdle() override;
 
 	bool SerializeState(IByteChunk& chunk) const override;

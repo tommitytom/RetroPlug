@@ -111,10 +111,10 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 	Lsdj& lsdj = _plug.lsdj();
 	if (mTimeInfo.mTransportIsRunning) {
 		switch (lsdj.syncMode) {
-			case LsdjSyncModes::Slave:
+			case LsdjSyncModes::Midi:
 				ProcessSync(plug, frameCount, 1, 0xF8);
 				break;
-			case LsdjSyncModes::SlaveArduinoboy:
+			case LsdjSyncModes::MidiArduinoboy:
 				if (lsdj.arduinoboyPlaying) {
 					ProcessSync(plug, frameCount, lsdj.tempoDivisor, 0xF8);
 				}
@@ -172,7 +172,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	Lsdj& lsdj = _plug.lsdj();
 	if (lsdj.found) {
 		switch (lsdj.syncMode) {
-			case LsdjSyncModes::SlaveArduinoboy:
+			case LsdjSyncModes::MidiArduinoboy:
 				if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
 					switch (msg.NoteNumber()) {
 						case 24: lsdj.arduinoboyPlaying = true; break;
@@ -222,8 +222,5 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 
 		plugPtr->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
 	}
-}
-
-void RetroPlugInstrument::OnParamChange(int paramIdx) {
 }
 #endif

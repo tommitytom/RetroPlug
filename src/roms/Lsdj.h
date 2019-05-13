@@ -14,7 +14,7 @@ enum class LsdjSyncModes {
 	AnalogOut,
 	MidiMap,
 	MidiOut,
-	SlaveArduinoboy
+	MidiArduinoboy
 };
 
 static int midiMapRowNumber(int channel, int noteNumber) {
@@ -25,6 +25,23 @@ static int midiMapRowNumber(int channel, int noteNumber) {
 	}
 
 	return -1;
+}
+
+static std::string syncModeToString(LsdjSyncModes syncMode) {
+	switch (syncMode) {
+	case LsdjSyncModes::Midi: return "midiSync";
+	case LsdjSyncModes::MidiArduinoboy: return "midiSyncArduinoboy";
+	case LsdjSyncModes::MidiMap: return "midiMap";
+	}
+
+	return "";
+}
+
+static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
+	if (syncMode == "midiSync") return LsdjSyncModes::Midi;
+	if (syncMode == "midiSyncArduinoboy") return LsdjSyncModes::MidiArduinoboy;
+	if (syncMode == "midiMap") return LsdjSyncModes::MidiMap;
+	return LsdjSyncModes::Off;
 }
 
 class Lsdj {

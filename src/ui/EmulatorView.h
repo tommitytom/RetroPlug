@@ -82,8 +82,8 @@ private:
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {
-		case LsdjSyncModes::Slave: return LsdjModeMenuItems::MidiSync;
-		case LsdjSyncModes::SlaveArduinoboy: return LsdjModeMenuItems::MidSyncArduinoboy;
+		case LsdjSyncModes::Midi: return LsdjModeMenuItems::MidiSync;
+		case LsdjSyncModes::MidiArduinoboy: return LsdjModeMenuItems::MidSyncArduinoboy;
 		case LsdjSyncModes::MidiMap: return LsdjModeMenuItems::MidiMap;
 		default: return LsdjModeMenuItems::Off;
 		}
@@ -91,8 +91,8 @@ private:
 
 	inline LsdjSyncModes GetLsdjModeFromMenu(LsdjModeMenuItems item) {
 		switch (item) {
-		case LsdjModeMenuItems::MidiSync: return LsdjSyncModes::Slave;
-		case LsdjModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::SlaveArduinoboy;
+		case LsdjModeMenuItems::MidiSync: return LsdjSyncModes::Midi;
+		case LsdjModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::MidiArduinoboy;
 		case LsdjModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
 		default: return LsdjSyncModes::Off;
 		}
