@@ -19,7 +19,6 @@ public:
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;
 private:
 	void GenerateMidiClock(SameBoyPlug* plug, int frameCount);
-
 	void ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
 
 	RetroPlug _plug;

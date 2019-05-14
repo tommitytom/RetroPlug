@@ -393,6 +393,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       {
         // START HACK ----------------------
         IByteChunk& c = _this->mState;
+        c.Clear();
         bool ok = _this->SerializeState(c);
 
         if (ok && c.Size())
@@ -432,6 +433,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       if (ptr)
       {
         // START HACK ----------------------
+        _this->mState.Clear();
         _this->mState.Resize((int)value);
         memcpy(_this->mState.GetData(), ptr, value);
         int p = _this->UnserializeState(_this->mState, 0);
