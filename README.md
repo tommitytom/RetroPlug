@@ -7,6 +7,9 @@ A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
 
+## Download
+Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to download the latest version.
+
 ## Current limitations (subject to change)
 - VST2 only
 - Windows only
