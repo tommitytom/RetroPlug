@@ -2,10 +2,10 @@
 A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 
 ## Features
-- Wraps SameBoy 0.1.2
-- Full MIDI support for mGB
-- Syncs LSDJ to your DAW
-- Emulates various Arduinoboy modes
+- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) 0.1.2
+- Full MIDI support for [mGB](https://github.com/trash80/mGB)
+- Syncs [LSDj](https://www.littlesounddj.com) to your DAW
+- Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
 
 ## Current limitations (subject to change)
 - VST2 only
@@ -55,7 +55,7 @@ Backspace, Tab, Clear, Enter, Shift, Ctrl, Alt, Pause, Caps, Esc, Space, PageUp,
 All key names are CASE SENSITIVE!
 
 ## Dependencies
-- [SameBoy](https://github.com/LIJI32/SameBoy) - The emulato itself
+- [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
 - [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin framework
 - [tao json](https://github.com/taocpp/json) - JSON library used for dealing with configs and save states
 
