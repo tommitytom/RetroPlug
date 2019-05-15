@@ -303,6 +303,15 @@
     <ClInclude Include="..\src\util\base64.h">
       <Filter>src\util</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\ButtonQueue.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Types.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\LsdjKeyMap.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">

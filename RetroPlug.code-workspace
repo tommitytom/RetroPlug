@@ -7,7 +7,12 @@
 	"settings": {
 		"files.associations": {
 			"algorithm": "cpp",
-			"atomic": "cpp"
+			"atomic": "cpp",
+			"array": "cpp",
+			"bitset": "cpp",
+			"string_view": "cpp",
+			"initializer_list": "cpp",
+			"utility": "cpp"
 		}
 	}
 }

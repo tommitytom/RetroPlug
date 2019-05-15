@@ -5,8 +5,7 @@
 #include "util/Serializer.h"
 
 RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
-: IPLUG_CTOR(0, 0, instanceInfo)
-{
+: IPLUG_CTOR(0, 0, instanceInfo) {
 	// FIXME: Choose a more realistic size for this based on GetBlockSize()
 	_sampleScratch = new float[1024 * 1024];
 
@@ -65,11 +64,11 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 
 	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
 		_transportRunning = mTimeInfo.mTransportIsRunning;
-		if (!_transportRunning && _plug.lsdj().found && _plug.lsdj().lastRow != -1) {
-			plug->sendMidiByte(0, 0xFE);
-		}
+		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
+		HandleTransportChange(plug, _transportRunning);
 	}
 
+	_buttonQueue.update(bus, FramesToMs(frameCount));
 	GenerateMidiClock(plug, frameCount);
 
 	int sampleCount = frameCount * 2;
@@ -123,6 +122,17 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 				ProcessSync(plug, frameCount, 1, 0xFF);
 				break;
 		}
+	}
+}
+
+void RetroPlugInstrument::HandleTransportChange(SameBoyPlug* plug, bool running) {
+	if (_plug.lsdj().autoPlay) {
+		_buttonQueue.press(ButtonType::GB_KEY_START);
+		consoleLogLine("Pressing start");
+	}
+
+	if (!_transportRunning && _plug.lsdj().found && _plug.lsdj().lastRow != -1) {
+		plug->sendMidiByte(0, 0xFE);
 	}
 }
 

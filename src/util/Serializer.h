@@ -28,7 +28,8 @@ static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
 		std::string syncMode = syncModeToString(lsdj.syncMode);
 		if (syncMode.size() > 0) {
 			const tao::json::value lsdjSettings = {
-				{ "syncMode", syncMode }
+				{ "syncMode", syncMode },
+				{ "autoPlay", lsdj.autoPlay.load() }
 			};
 
 			settings.emplace("lsdj", lsdjSettings);
@@ -72,6 +73,11 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 			if (lsdjSettings) {
 				const std::string& syncMode = lsdjSettings->at("syncMode").get_string();
 				plug.lsdj().syncMode = syncModeFromString(syncMode);
+
+				const tao::json::value* autoPlay = lsdjSettings->find("autoPlay");
+				if (autoPlay) {
+					plug.lsdj().autoPlay = autoPlay->get_boolean();
+				}
 			}
 		}
 	}

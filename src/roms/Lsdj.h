@@ -46,10 +46,13 @@ static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
 
 class Lsdj {
 public:
-	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
 	bool found = true;
 	std::string version;
 	bool arduinoboyPlaying = false;
 	int tempoDivisor = 1;
 	int lastRow = -1;
+	
+	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
+	std::atomic<bool> autoPlay = false;
+	std::atomic<bool> keyboardMode = false;
 };

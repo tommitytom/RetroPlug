@@ -18,14 +18,23 @@ void EmulatorView::OnDrop(const char* str) {
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
-	if (_plug->plug()) {
-		ButtonEvent ev;
-		ev.id = _keyMap.getControllerButton(key.VK);
-		ev.down = down;
+	std::stringstream ss;
+	ss << "ASCII: " << key.utf8 << ", VK: " << key.VK << ", Mod: " << key.C << std::endl;
+	consoleLog(ss.str());
 
-		if (ev.id != -1) {
-			_plug->setButtonState(ev);
-			return true;
+	SameBoyPlugPtr plug = _plug->plug();
+	if (plug) {
+		if (_plug->lsdj().found && _plug->lsdj().keyboardMode) {
+			return _advKeyMap.onKey(key, down);
+		} else {
+			ButtonEvent ev;
+			ev.id = _keyMap.getControllerButton(key.VK);
+			ev.down = down;
+
+			if (ev.id != -1) {
+				_plug->setButtonState(ev);
+				return true;
+			}
 		}
 	}
 
@@ -54,6 +63,7 @@ void EmulatorView::Draw(IGraphics& g) {
 	SameBoyPlugPtr plugPtr = _plug->plug();
 	if (plugPtr) {
 		MessageBus* bus = plugPtr->messageBus();
+		_advKeyMap.update(bus, 33.3333333);
 
 		size_t available = bus->video.readAvailable();
 		if (available > 0) {
@@ -104,7 +114,8 @@ void EmulatorView::CreateMenu(float x, float y) {
 	_menu.AddItem("Load ROM...", RootMenuItems::LoadRom);
 	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
-		case RootMenuItems::LoadRom: OpenLoadRomDialog();
+		case RootMenuItems::LoadRom: OpenLoadRomDialog(); break;
+		case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 		}
 	});
 
@@ -152,12 +163,21 @@ void EmulatorView::CreateMenu(float x, float y) {
 			"MIDI Map",
 		});
 
+		arduboyMenu->AddSeparator();
+		arduboyMenu->AddItem("Auto Play", LsdjModeMenuItems::AutoPlay, lsdj.autoPlay ? IPopupMenu::Item::kChecked : 0);
+
 		_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
+		_menu.AddItem("Keyboard Mode", RootMenuItems::KeyboardMode, lsdj.keyboardMode ? IPopupMenu::Item::kChecked : 0);
 
 		int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
 		arduboyMenu->CheckItem(selectedMode, true);
 		arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-			_plug->lsdj().syncMode = GetLsdjModeFromMenu((LsdjModeMenuItems)indexInMenu);
+			LsdjModeMenuItems menuItem = (LsdjModeMenuItems)indexInMenu;
+			if (menuItem <= LsdjModeMenuItems::MidiMap) {
+				_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
+			} else {
+				_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
+			}
 		});
 	}
 
@@ -199,6 +219,10 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 	}
 
 	return settingsMenu;
+}
+
+void EmulatorView::ToggleKeyboardMode() {
+	_plug->lsdj().keyboardMode = !_plug->lsdj().keyboardMode;
 }
 
 void EmulatorView::OpenLoadRomDialog() {

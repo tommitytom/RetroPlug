@@ -5,6 +5,7 @@
 #include "IControl.h"
 #include "plugs/RetroPlug.h"
 #include "KeyMap.h"
+#include "LsdjKeyMap.h"
 #include "nanovg.h"
 
 enum RootMenuItems : int {
@@ -12,14 +13,16 @@ enum RootMenuItems : int {
 	Sram,
 	Settings,
 	LsdjVersion = 4,
-	LsdjModes
+	LsdjModes,
+	KeyboardMode
 };
 
 enum LsdjModeMenuItems : int {
 	Off,
 	MidiSync,
 	MidSyncArduinoboy,
-	MidiMap
+	MidiMap,
+	AutoPlay = 5
 };
 
 enum SramMenuItems : int {
@@ -42,6 +45,7 @@ private:
 	NVGpaint _imgPaint;
 
 	KeyMap _keyMap;
+	LsdjKeyMap _advKeyMap;
 
 	IPopupMenu _menu;
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
@@ -79,6 +83,8 @@ private:
 	void OpenLoadSramDialog();
 
 	void OpenSaveSramDialog();
+
+	void ToggleKeyboardMode();
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {
