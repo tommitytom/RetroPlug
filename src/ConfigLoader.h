@@ -7,7 +7,7 @@
 #include "util/String.h"
 #include "platform/Path.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Start\":\"Enter\",\"Select\":\"Ctrl\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\"},\"lsdj\":{\"UpTenRows\":\"PageUp\",\"DownTenRows\":\"PageDown\",\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\"}}";
+const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
 
 static void saveButtonConfig(const std::string& path, const tao::json::value& source) {
 	std::ofstream configOut(path);
