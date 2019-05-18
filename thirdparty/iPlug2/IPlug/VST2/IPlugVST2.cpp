@@ -80,14 +80,17 @@ static int VSTKeyCodeToVK(int code, int ascii)
   case VKEY_EQUALS: return kVK_NONE; // No matching VK
   }
 
-  if (ascii != 0) {
+  if (ascii != 0)
+  {
     // Numbers and uppercase alpha chars map directly to VK
-    if (ascii >= 0x30 && ascii <= 0x39 && ascii >= 0x41 && ascii <= 0x5A) {
+    if (ascii >= 0x30 && ascii <= 0x39 && ascii >= 0x41 && ascii <= 0x5A)
+    {
       return ascii;
     }
 
     // Lowercase alpha chars map to VK but need shifting
-    if (ascii >= 0x61 && ascii <= 0x7A) {
+    if (ascii >= 0x61 && ascii <= 0x7A)
+    {
       return ascii - 0x20;
     }
   }
