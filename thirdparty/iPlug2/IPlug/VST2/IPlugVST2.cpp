@@ -17,57 +17,81 @@
 
 const int VST_VERSION = 2400;
 
-static int VSTKeyCodeToVK(int code)
+static int VSTKeyCodeToVK(int code, int ascii)
 {
   switch (code)
   {
-  case 55: return kVK_CONTROL;
-  case 51: return kVK_BACK;
-  case 65: return kVK_DECIMAL;
-  case 67: return kVK_MULTIPLY;
-  case 69: return kVK_ADD;
-  case 71: return kVK_NUMLOCK;
-  case 75: return kVK_DIVIDE;
-  case 76: return kVK_RETURN | 0x8000;
-  case 78: return kVK_SUBTRACT;
-  case 81: return kVK_SEPARATOR;
-  case 82: return kVK_NUMPAD0;
-  case 83: return kVK_NUMPAD1;
-  case 84: return kVK_NUMPAD2;
-  case 85: return kVK_NUMPAD3;
-  case 86: return kVK_NUMPAD4;
-  case 87: return kVK_NUMPAD5;
-  case 88: return kVK_NUMPAD6;
-  case 89: return kVK_NUMPAD7;
-  case 91: return kVK_NUMPAD8;
-  case 92: return kVK_NUMPAD9;
-  case 96: return kVK_F5;
-  case 97: return kVK_F6;
-  case 98: return kVK_F7;
-  case 99: return kVK_F3;
-  case 100: return kVK_F8;
-  case 101: return kVK_F9;
-  case 109: return kVK_F10;
-  case 103: return kVK_F11;
-  case 111: return kVK_F12;
-  case 114: return kVK_INSERT;
-  case 115: return kVK_HOME;
-  case 117: return kVK_DELETE;
-  case 116: return kVK_PRIOR;
-  case 118: return kVK_F4;
-  case 119: return kVK_END;
-  case 120: return kVK_F2;
-  case 121: return kVK_NEXT;
-  case 122: return kVK_F1;
-  case 11: return kVK_LEFT;
-  case 13: return kVK_RIGHT;
-  case 14: return kVK_DOWN;
-  case 12: return kVK_UP;
-  case 0x69: return kVK_F13;
-  case 0x6B: return kVK_F14;
-  case 0x71: return kVK_F15;
-  case 0x6A: return kVK_F16;
+  case VKEY_BACK: return kVK_BACK;
+  case VKEY_TAB: return kVK_TAB;
+  case VKEY_CLEAR: return kVK_CLEAR;
+  case VKEY_RETURN: return kVK_RETURN;
+  case VKEY_PAUSE: return kVK_PAUSE;
+  case VKEY_ESCAPE: return kVK_ESCAPE;
+  case VKEY_SPACE: return kVK_SPACE;
+  case VKEY_NEXT: return kVK_NEXT;
+  case VKEY_END: return kVK_END;
+  case VKEY_HOME: return kVK_HOME;
+  case VKEY_LEFT: return kVK_LEFT;
+  case VKEY_UP: return kVK_UP;
+  case VKEY_RIGHT: return kVK_RIGHT;
+  case VKEY_DOWN: return kVK_DOWN;
+  case VKEY_PAGEUP: return kVK_PRIOR;
+  case VKEY_PAGEDOWN: return kVK_NEXT;
+  case VKEY_SELECT: return kVK_SELECT;
+  case VKEY_PRINT: return kVK_PRINT;
+  case VKEY_ENTER: return kVK_RETURN;
+  case VKEY_SNAPSHOT: return kVK_SNAPSHOT;
+  case VKEY_INSERT: return kVK_INSERT;
+  case VKEY_DELETE: return kVK_DELETE;
+  case VKEY_HELP: return kVK_HELP;
+  case VKEY_NUMPAD0: return kVK_NUMPAD0;
+  case VKEY_NUMPAD1: return kVK_NUMPAD1;
+  case VKEY_NUMPAD2: return kVK_NUMPAD2;
+  case VKEY_NUMPAD3: return kVK_NUMPAD3;
+  case VKEY_NUMPAD4: return kVK_NUMPAD4;
+  case VKEY_NUMPAD5: return kVK_NUMPAD5;
+  case VKEY_NUMPAD6: return kVK_NUMPAD6;
+  case VKEY_NUMPAD7: return kVK_NUMPAD7;
+  case VKEY_NUMPAD8: return kVK_NUMPAD8;
+  case VKEY_NUMPAD9: return kVK_NUMPAD9;
+  case VKEY_MULTIPLY: return kVK_MULTIPLY;
+  case VKEY_ADD: return kVK_ADD;
+  case VKEY_SEPARATOR: return kVK_SEPARATOR;
+  case VKEY_SUBTRACT: return kVK_SUBTRACT;
+  case VKEY_DECIMAL: return kVK_DECIMAL;
+  case VKEY_DIVIDE: return kVK_DIVIDE;
+  case VKEY_F1: return kVK_F1;
+  case VKEY_F2: return kVK_F2;
+  case VKEY_F3: return kVK_F3;
+  case VKEY_F4: return kVK_F4;
+  case VKEY_F5: return kVK_F5;
+  case VKEY_F6: return kVK_F6;
+  case VKEY_F7: return kVK_F7;
+  case VKEY_F8: return kVK_F8;
+  case VKEY_F9: return kVK_F9;
+  case VKEY_F10: return kVK_F10;
+  case VKEY_F11: return kVK_F11;
+  case VKEY_F12: return kVK_F12;
+  case VKEY_NUMLOCK: return kVK_NUMLOCK;
+  case VKEY_SCROLL: return kVK_SCROLL;
+  case VKEY_SHIFT: return kVK_SHIFT;
+  case VKEY_CONTROL: return kVK_CONTROL;
+  case VKEY_ALT: return kVK_MENU;
+  case VKEY_EQUALS: return kVK_NONE; // No matching VK
   }
+
+  if (ascii != 0) {
+    // Numbers and uppercase alpha chars map directly to VK
+    if (ascii >= 0x30 && ascii <= 0x39 && ascii >= 0x41 && ascii <= 0x5A) {
+      return ascii;
+    }
+
+    // Lowercase alpha chars map to VK but need shifting
+    if (ascii >= 0x61 && ascii <= 0x7A) {
+      return ascii - 0x20;
+    }
+  }
+
   return kVK_NONE;
 }
 
@@ -855,20 +879,13 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       str[0] = static_cast<char>(idx);
       str[1] = '\0';
 
-      int ascii = idx;
-      int vk = VSTKeyCodeToVK(value);
-      int modifiers = opt;
-
-      std::stringstream ss;
-      ss << "ASCII: " << str << ", VK: " << vk << ", Mod: " << modifiers << std::endl;
-
-      std::string strr = ss.str();
-      OutputDebugStringA((LPCSTR)strr.c_str());
+      int vk = VSTKeyCodeToVK(value, idx);
+      int modifiers = (int)opt;
 
       IKeyPress keyPress{ str, static_cast<int>(vk),
-                          static_cast<bool>(modifiers & 0x0001),
-                          static_cast<bool>(modifiers & 0x0010),
-                          false };
+                          static_cast<bool>(modifiers & MODIFIER_SHIFT),
+                          static_cast<bool>(modifiers & MODIFIER_CONTROL),
+                          static_cast<bool>(modifiers & MODIFIER_ALTERNATE) };
 
       bool handled;
       if (opCode == effEditKeyDown) {
