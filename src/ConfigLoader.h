@@ -26,11 +26,13 @@ static void loadButtonConfig(tao::json::value& target) {
 	if (std::filesystem::exists(buttonPath)) {
 		tao::json::value fileData = tao::json::parse_file(buttonPath);
 
+		bool obj = fileData.is_object();
+
 		auto gameboyConfig = fileData.find("gameboy");
 		auto lsdjConfig = fileData.find("lsdj");
 		
 		if (!gameboyConfig && !lsdjConfig) {
-			defaultConfig.emplace("gameboy", fileData);
+			defaultConfig.at("gameboy").swap(fileData);
 			target = defaultConfig;
 		} else {
 			target = fileData;
