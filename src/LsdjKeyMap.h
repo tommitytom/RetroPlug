@@ -74,6 +74,14 @@ public:
 		VirtualKey vk = (VirtualKey)key.VK;
 		ButtonType b = _gbKeyMap->getControllerButton(vk);
 
+		if (down && key.C) {
+			switch (vk) {
+			case VirtualKeys::X: cut(); return true;
+			case VirtualKeys::C: copy(); return true;
+			case VirtualKeys::V: paste(); return true;
+			}
+		}
+
 		switch (b) {
 		case ButtonTypes::Left:
 		case ButtonTypes::Right:
@@ -96,13 +104,7 @@ public:
 			return true;
 		case ButtonTypes::MAX:
 			// Key press does not relate to a button but may still be used
-			if (down && key.C) {
-				switch (vk) {
-				case VirtualKeys::X: cut(); return true;
-				case VirtualKeys::C: copy(); return true;
-				case VirtualKeys::V: paste(); return true;
-				}
-			} else if (down) {
+			if (down) {
 				auto found = _actionMap.find(vk);
 				if (found != _actionMap.end()) {
 					if (_state == State::None) {
@@ -126,17 +128,15 @@ public:
 
 			return false;
 		default:
-			// In selection mode, all button presses are ignored unless
-			// they are directional
 			if (_state == State::None) {
 				if (down) {
 					_presses.hold(b);
 				} else {
 					_presses.release(b);
 				}
-
-				return true;
 			}
+
+			return true;
 		}
 
 		return false;
@@ -159,22 +159,26 @@ private:
 
 	ButtonQueue& copy() {
 		consoleLogLine("copy");
+		int delay = 0;
 		if (_state != State::Selecting) {
 			beginSelect();
+			delay = 150;
 		}
 
 		_state = State::None;
-		return _presses.press(ButtonTypes::B);
+		return _presses.press(ButtonTypes::B, delay);
 	}
 
 	ButtonQueue& cut() {
 		consoleLogLine("cut");
+		int delay = 0;
 		if (_state != State::Selecting) {
 			beginSelect();
+			delay = 150;
 		}
 
 		_state = State::None;
-		return _presses.pressModified(ButtonTypes::A, ButtonTypes::Select);
+		return _presses.pressModified(ButtonTypes::A, ButtonTypes::Select, delay);
 	}
 
 	ButtonQueue& paste() {
