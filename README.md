@@ -72,7 +72,7 @@ All key names are CASE SENSITIVE!
   * This option is pretty dumb (it doesnt know if LSDj is playing or not), so it's possible to make it think it is in the wrong state if you manually press `Start`.  If this happens just press `Start` again.
 
 ### Additional options
-- **Keyboard Shortcuts**: Enables a set of common shortcuts that allows you to use LSDj with a keyboard in a more intuitive manner.  Many of the hotkeys for these settings can be modified in the button config file (see [Button mapping](#button-mapping)), although a few can't:
+- **Keyboard Shortcuts**: Enables a set of common shortcuts that allows you to use LSDj with a keyboard in a more intuitive manner.  This works by sending combinations of button presses to LSDj, so support for these may not always be perfect!  Many of the hotkeys for these settings can be modified in the button config file (see [Button mapping](#button-mapping)), although a few can't:
 
 | Action | Default key(s) | Configurable|
 |--------|----------------|-------------|
