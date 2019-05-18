@@ -1,10 +1,10 @@
 #pragma once
 
-#include "Types.h"
 #include <queue>
+#include "Types.h"
+#include "Buttons.h"
 #include "libretroplug/MessageBus.h"
 #include "platform/Logger.h"
-//#include "IPlugQueue.h"
 
 const double CONSECUTIVE_PRESS_DELAY = 50;
 const double MODIFIER_PRESS_DELAY = 100;
@@ -26,21 +26,6 @@ static std::string buttonPressString(ButtonPressType type) {
 	return "";
 }
 
-static std::string buttonString(ButtonType button) {
-	switch (button) {
-	case ButtonType::GB_KEY_LEFT: return "Left";
-	case ButtonType::GB_KEY_UP: return "Up";
-	case ButtonType::GB_KEY_RIGHT: return "Right";
-	case ButtonType::GB_KEY_DOWN: return "Down";
-	case ButtonType::GB_KEY_A: return "A";
-	case ButtonType::GB_KEY_B: return "B";
-	case ButtonType::GB_KEY_START: return "Start";
-	case ButtonType::GB_KEY_SELECT: return "Select";
-	}
-
-	return "";
-}
-
 struct ButtonPress {
 	ButtonType button;
 	ButtonPressType type;
@@ -52,7 +37,7 @@ struct ButtonPress {
 
 class ButtonQueue {
 private:
-	bool _state[ButtonType::GB_KEY_MAX] = { false };
+	bool _state[ButtonType::MAX] = { false };
 	std::vector<ButtonPress> _presses;
 
 public:
@@ -101,7 +86,7 @@ public:
 					press.complete = press.type != ButtonPressType::Press;
 					_state[press.button] = ev.down;
 
-					consoleLogLine("Button " + buttonPressString(press.type) + ": " + buttonString(press.button));
+					consoleLogLine("Button " + buttonPressString(press.type) + ": " + ButtonTypes::toString(press.button));
 				} else {
 					press.startTime -= delta;
 				}
@@ -113,7 +98,7 @@ public:
 					press.complete = true;
 					_state[press.button] = false;
 
-					consoleLogLine("Button Release: " + buttonString(press.button));
+					consoleLogLine("Button Release: " + ButtonTypes::toString(press.button));
 				} else {
 					press.duration -= delta;
 				}

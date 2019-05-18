@@ -29,7 +29,8 @@ static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
 		if (syncMode.size() > 0) {
 			const tao::json::value lsdjSettings = {
 				{ "syncMode", syncMode },
-				{ "autoPlay", lsdj.autoPlay.load() }
+				{ "autoPlay", lsdj.autoPlay.load() },
+				{ "keyboardShortcuts", lsdj.keyboardShortcuts.load() }
 			};
 
 			settings.emplace("lsdj", lsdjSettings);
@@ -61,13 +62,12 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 	const std::string& stateDataStr = state.at("data").get_string();
 	std::string stateData = base64_decode(stateDataStr);
 
-	const tao::json::value* settings = root.find("settings");
-
 	if (std::filesystem::exists(romPath)) {
 		plug.load(EmulatorType::SameBoy, romPath);
 		const SameBoyPlugPtr plugPtr = plug.plug();
 		plugPtr->loadState((char*)stateData.data(), stateData.size());
-
+		
+		const tao::json::value* settings = root.find("settings");
 		if (settings) {
 			const tao::json::value* lsdjSettings = settings->find("lsdj");
 			if (lsdjSettings) {
@@ -77,6 +77,11 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 				const tao::json::value* autoPlay = lsdjSettings->find("autoPlay");
 				if (autoPlay) {
 					plug.lsdj().autoPlay = autoPlay->get_boolean();
+				}
+
+				const tao::json::value* keyboardShortcuts = lsdjSettings->find("keyboardShortcuts");
+				if (autoPlay) {
+					plug.lsdj().keyboardShortcuts = keyboardShortcuts->get_boolean();
 				}
 			}
 		}

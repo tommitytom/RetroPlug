@@ -51,8 +51,8 @@ public:
 	bool arduinoboyPlaying = false;
 	int tempoDivisor = 1;
 	int lastRow = -1;
-	
+
 	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
 	std::atomic<bool> autoPlay = false;
-	std::atomic<bool> keyboardMode = false;
+	std::atomic<bool> keyboardShortcuts = true;
 };

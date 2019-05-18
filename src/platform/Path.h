@@ -2,10 +2,15 @@
 
 #include <Shlobj.h>
 
-static std::string getContentPath() {
+static std::string getContentPath(std::string file = "") {
 	TCHAR szPath[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, szPath))) {
-		return std::string(szPath) + "\\RetroPlug";
+		std::string out = std::string(szPath) + "\\RetroPlug";
+		if (file.size() > 0) {
+			out += "\\" + file;
+		}
+
+		return out;
 	}
 
 	return "";

@@ -25,6 +25,7 @@
 #include "IPlugParameter.h"
 #include "IPlugQueue.h"
 #include "IPlugTimer.h"
+#include "IGraphicsStructs.h"
 
 /**
  * @file
@@ -78,6 +79,10 @@ public:
    * @param width The selected width
    * @param height The selected height */
   virtual void OnHostSelectedViewConfiguration(int width, int height) {}
+
+  virtual bool OnKeyDown(const IKeyPress& key) { return false;  }
+
+  virtual bool OnKeyUp(const IKeyPress& key) { return false;  }
 
   /** Override this method to provide custom text linked to MIDI note numbers in API classes that support that (VST2)
    * Typically this might be used for a drum machine plug-in, in order to label a certainty "kick drum" etc.

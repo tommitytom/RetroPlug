@@ -45,7 +45,7 @@ private:
 	NVGpaint _imgPaint;
 
 	KeyMap _keyMap;
-	LsdjKeyMap _advKeyMap;
+	LsdjKeyMap _lsdjKeyMap;
 
 	IPopupMenu _menu;
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;

@@ -312,6 +312,15 @@
     <ClInclude Include="..\src\LsdjKeyMap.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\ConfigLoader.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Keys.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Buttons.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">

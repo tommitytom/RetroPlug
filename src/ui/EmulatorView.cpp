@@ -3,14 +3,20 @@
 #include "platform/FileDialog.h"
 #include "platform/Path.h"
 
+#include <tao/json.hpp>
+
 EmulatorView::EmulatorView(IRECT bounds, RetroPlug* plug) : IControl(bounds), _plug(plug) {
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
-	_keyMap.load();
 
 	_settings = {
 		{ "Color Correction", 2 },
 		{ "High-pass Filter", 1 }
 	};
+
+	tao::json::value config;
+	loadButtonConfig(config);
+	_keyMap.load(config.at("gameboy"));
+	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
 }
 
 void EmulatorView::OnDrop(const char* str) {
@@ -18,17 +24,13 @@ void EmulatorView::OnDrop(const char* str) {
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
-	std::stringstream ss;
-	ss << "ASCII: " << key.utf8 << ", VK: " << key.VK << ", Mod: " << key.C << std::endl;
-	consoleLog(ss.str());
-
 	SameBoyPlugPtr plug = _plug->plug();
 	if (plug) {
-		if (_plug->lsdj().found && _plug->lsdj().keyboardMode) {
-			return _advKeyMap.onKey(key, down);
+		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
+			return _lsdjKeyMap.onKey(key, down);
 		} else {
 			ButtonEvent ev;
-			ev.id = _keyMap.getControllerButton(key.VK);
+			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
 			ev.down = down;
 
 			if (ev.id != -1) {
@@ -63,7 +65,7 @@ void EmulatorView::Draw(IGraphics& g) {
 	SameBoyPlugPtr plugPtr = _plug->plug();
 	if (plugPtr) {
 		MessageBus* bus = plugPtr->messageBus();
-		_advKeyMap.update(bus, 33.3333333);
+		_lsdjKeyMap.update(bus, 33.3333333);
 
 		size_t available = bus->video.readAvailable();
 		if (available > 0) {
@@ -167,7 +169,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 		arduboyMenu->AddItem("Auto Play", LsdjModeMenuItems::AutoPlay, lsdj.autoPlay ? IPopupMenu::Item::kChecked : 0);
 
 		_menu.AddItem("LSDj Sync", arduboyMenu, RootMenuItems::LsdjModes);
-		_menu.AddItem("Keyboard Mode", RootMenuItems::KeyboardMode, lsdj.keyboardMode ? IPopupMenu::Item::kChecked : 0);
+		_menu.AddItem("Keyboard Shortcuts", RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
 
 		int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
 		arduboyMenu->CheckItem(selectedMode, true);
@@ -222,7 +224,7 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 }
 
 void EmulatorView::ToggleKeyboardMode() {
-	_plug->lsdj().keyboardMode = !_plug->lsdj().keyboardMode;
+	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
 void EmulatorView::OpenLoadRomDialog() {

@@ -11,8 +11,65 @@
 #include <cstdio>
 #include "IPlugVST2.h"
 #include "IPlugPluginBase.h"
+#include "IGraphics.h"
+
+#include <sstream>
 
 const int VST_VERSION = 2400;
+
+static int VSTKeyCodeToVK(int code)
+{
+  switch (code)
+  {
+  case 55: return kVK_CONTROL;
+  case 51: return kVK_BACK;
+  case 65: return kVK_DECIMAL;
+  case 67: return kVK_MULTIPLY;
+  case 69: return kVK_ADD;
+  case 71: return kVK_NUMLOCK;
+  case 75: return kVK_DIVIDE;
+  case 76: return kVK_RETURN | 0x8000;
+  case 78: return kVK_SUBTRACT;
+  case 81: return kVK_SEPARATOR;
+  case 82: return kVK_NUMPAD0;
+  case 83: return kVK_NUMPAD1;
+  case 84: return kVK_NUMPAD2;
+  case 85: return kVK_NUMPAD3;
+  case 86: return kVK_NUMPAD4;
+  case 87: return kVK_NUMPAD5;
+  case 88: return kVK_NUMPAD6;
+  case 89: return kVK_NUMPAD7;
+  case 91: return kVK_NUMPAD8;
+  case 92: return kVK_NUMPAD9;
+  case 96: return kVK_F5;
+  case 97: return kVK_F6;
+  case 98: return kVK_F7;
+  case 99: return kVK_F3;
+  case 100: return kVK_F8;
+  case 101: return kVK_F9;
+  case 109: return kVK_F10;
+  case 103: return kVK_F11;
+  case 111: return kVK_F12;
+  case 114: return kVK_INSERT;
+  case 115: return kVK_HOME;
+  case 117: return kVK_DELETE;
+  case 116: return kVK_PRIOR;
+  case 118: return kVK_F4;
+  case 119: return kVK_END;
+  case 120: return kVK_F2;
+  case 121: return kVK_NEXT;
+  case 122: return kVK_F1;
+  case 11: return kVK_LEFT;
+  case 13: return kVK_RIGHT;
+  case 14: return kVK_DOWN;
+  case 12: return kVK_UP;
+  case 0x69: return kVK_F13;
+  case 0x6B: return kVK_F14;
+  case 0x71: return kVK_F15;
+  case 0x6A: return kVK_F16;
+  }
+  return kVK_NONE;
+}
 
 int VSTSpkrArrType(int nchan)
 {
@@ -790,6 +847,37 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     case effGetVstVersion:
     {
       return VST_VERSION;
+    }
+    case effEditKeyDown:
+    case effEditKeyUp:
+    {
+      char str[2];
+      str[0] = static_cast<char>(idx);
+      str[1] = '\0';
+
+      int ascii = idx;
+      int vk = VSTKeyCodeToVK(value);
+      int modifiers = opt;
+
+      std::stringstream ss;
+      ss << "ASCII: " << str << ", VK: " << vk << ", Mod: " << modifiers << std::endl;
+
+      std::string strr = ss.str();
+      OutputDebugStringA((LPCSTR)strr.c_str());
+
+      IKeyPress keyPress{ str, static_cast<int>(vk),
+                          static_cast<bool>(modifiers & 0x0001),
+                          static_cast<bool>(modifiers & 0x0010),
+                          false };
+
+      bool handled;
+      if (opCode == effEditKeyDown) {
+        handled = _this->OnKeyDown(keyPress);
+      } else {
+        handled = _this->OnKeyUp(keyPress);
+      }
+
+      return handled ? 1 : 0;
     }
     case effEndSetProgram:
     case effBeginSetProgram:

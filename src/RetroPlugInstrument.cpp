@@ -127,7 +127,7 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 
 void RetroPlugInstrument::HandleTransportChange(SameBoyPlug* plug, bool running) {
 	if (_plug.lsdj().autoPlay) {
-		_buttonQueue.press(ButtonType::GB_KEY_START);
+		_buttonQueue.press(ButtonTypes::Start);
 		consoleLogLine("Pressing start");
 	}
 
