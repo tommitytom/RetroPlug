@@ -25,16 +25,13 @@ static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
 
 	const Lsdj& lsdj = plug.lsdj();
 	if (lsdj.found) {
-		std::string syncMode = syncModeToString(lsdj.syncMode);
-		if (syncMode.size() > 0) {
-			const tao::json::value lsdjSettings = {
-				{ "syncMode", syncMode },
-				{ "autoPlay", lsdj.autoPlay.load() },
-				{ "keyboardShortcuts", lsdj.keyboardShortcuts.load() }
-			};
+		const tao::json::value lsdjSettings = {
+			{ "syncMode", syncModeToString(lsdj.syncMode) },
+			{ "autoPlay", lsdj.autoPlay.load() },
+			{ "keyboardShortcuts", lsdj.keyboardShortcuts.load() }
+		};
 
-			settings.emplace("lsdj", lsdjSettings);
-		}
+		settings.emplace("lsdj", lsdjSettings);
 	}
 
 	const tao::json::value root = {

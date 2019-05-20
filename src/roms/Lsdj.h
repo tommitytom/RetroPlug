@@ -34,7 +34,7 @@ static std::string syncModeToString(LsdjSyncModes syncMode) {
 	case LsdjSyncModes::MidiMap: return "midiMap";
 	}
 
-	return "";
+	return "off";
 }
 
 static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
