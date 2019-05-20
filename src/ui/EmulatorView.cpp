@@ -33,7 +33,7 @@ bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
 			ev.down = down;
 
-			if (ev.id != -1) {
+			if (ev.id != ButtonTypes::MAX) {
 				_plug->setButtonState(ev);
 				return true;
 			}
