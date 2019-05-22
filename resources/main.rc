@@ -224,8 +224,11 @@ END
 // RCDATA
 //
 
-108                     RCDATA                  "dlls\\sameboy_retroplug.dll"
-
+#ifdef WIN64
+108                     RCDATA                  "dlls\\sameboy_retroplug-x64.dll"
+#else
+108                     RCDATA                  "dlls\\sameboy_retroplug-x86.dll"
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 //
