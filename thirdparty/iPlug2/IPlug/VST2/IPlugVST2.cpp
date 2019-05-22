@@ -11,14 +11,40 @@
 #include <cstdio>
 #include "IPlugVST2.h"
 #include "IPlugPluginBase.h"
-#include "IGraphics.h"
-
-#include <sstream>
+#include "IGraphicsStructs.h"
+#include "IGraphicsConstants.h"
 
 const int VST_VERSION = 2400;
 
+static int AsciiToVK(int ascii) {
+#ifdef WIN32
+  HKL layout = GetKeyboardLayout(0);
+  return VkKeyScanExA((CHAR)ascii, layout);
+#else
+  // Numbers and uppercase alpha chars map directly to VK
+  if ((ascii >= 0x30 && ascii <= 0x39) || (ascii >= 0x41 && ascii <= 0x5A))
+  {
+    return ascii;
+  }
+
+  // Lowercase alpha chars map to VK but need shifting
+  if (ascii >= 0x61 && ascii <= 0x7A)
+  {
+    return ascii - 0x20;
+  }
+
+  return kVK_NONE;
+#endif
+}
+
 static int VSTKeyCodeToVK(int code, int ascii)
 {
+  // If the keycode provided by the host is 0, we can still calculate the VK from the ascii value
+  // NOTE: VKEY_EQUALS Doesn't seem to map to a Windows VK, so get the VK from the ascii char instead
+  if (code == 0 || code == VKEY_EQUALS) {
+    return AsciiToVK(ascii);
+  }
+
   switch (code)
   {
   case VKEY_BACK: return kVK_BACK;
@@ -77,22 +103,7 @@ static int VSTKeyCodeToVK(int code, int ascii)
   case VKEY_SHIFT: return kVK_SHIFT;
   case VKEY_CONTROL: return kVK_CONTROL;
   case VKEY_ALT: return kVK_MENU;
-  case VKEY_EQUALS: return kVK_NONE; // No matching VK
-  }
-
-  if (ascii != 0)
-  {
-    // Numbers and uppercase alpha chars map directly to VK
-    if (ascii >= 0x30 && ascii <= 0x39 && ascii >= 0x41 && ascii <= 0x5A)
-    {
-      return ascii;
-    }
-
-    // Lowercase alpha chars map to VK but need shifting
-    if (ascii >= 0x61 && ascii <= 0x7A)
-    {
-      return ascii - 0x20;
-    }
+  case VKEY_EQUALS: return kVK_NONE;
   }
 
   return kVK_NONE;
