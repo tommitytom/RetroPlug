@@ -21,4 +21,5 @@ gui/*
 
 Icon?
 .DS_Stor*
-sameboy_retroplug.dll
+sameboy_retroplug-x86.dll
+sameboy_retroplug-x64.dll
