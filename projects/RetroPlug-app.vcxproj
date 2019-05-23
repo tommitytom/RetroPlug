@@ -538,7 +538,8 @@
     <None Include="..\config\RetroPlug-win.props">
       <SubType>Designer</SubType>
     </None>
-    <None Include="..\resources\dlls\sameboy_retroplug.dll" />
+    <None Include="..\resources\dlls\sameboy_retroplug-x64.dll" />
+    <None Include="..\resources\dlls\sameboy_retroplug-x86.dll" />
   </ItemGroup>
   <ItemGroup>
     <Font Include="..\resources\fonts\Early-GameBoy.ttf" />

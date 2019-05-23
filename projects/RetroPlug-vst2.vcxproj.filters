@@ -385,7 +385,10 @@
     <None Include="..\config\RetroPlug-win.props">
       <Filter>config</Filter>
     </None>
-    <None Include="..\resources\dlls\sameboy_retroplug.dll">
+    <None Include="..\resources\dlls\sameboy_retroplug-x64.dll">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="..\resources\dlls\sameboy_retroplug-x86.dll">
       <Filter>resources</Filter>
     </None>
   </ItemGroup>
