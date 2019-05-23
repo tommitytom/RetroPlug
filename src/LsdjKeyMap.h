@@ -23,7 +23,8 @@ enum class LsdjActionType {
 	ScreenDown,
 	ScreenLeft,
 	ScreenRight,
-	CancelSelection
+	CancelSelection,
+	Delete
 };
 
 const std::map<std::string, LsdjActionType> ActionLookup = {
@@ -33,7 +34,8 @@ const std::map<std::string, LsdjActionType> ActionLookup = {
 	{ "ScreenDown", LsdjActionType::ScreenDown },
 	{ "ScreenLeft", LsdjActionType::ScreenLeft },
 	{ "ScreenRight", LsdjActionType::ScreenRight },
-	{ "CancelSelection", LsdjActionType::CancelSelection }
+	{ "CancelSelection", LsdjActionType::CancelSelection },
+	{ "Delete", LsdjActionType::Delete }
 };
 
 class LsdjKeyMap {
@@ -115,6 +117,7 @@ public:
 						case LsdjActionType::ScreenDown: screenMove(ButtonTypes::Down); break;
 						case LsdjActionType::UpTenRows: rowJump(ButtonTypes::Up); break;
 						case LsdjActionType::DownTenRows: rowJump(ButtonTypes::Down); break;
+						case LsdjActionType::Delete: deleteSelection(); break;
 						}
 					} else {
 						switch (found->second) {
@@ -197,5 +200,10 @@ private:
 		consoleLogLine("rowJump");
 		assert(_state == State::None);
 		return _presses.pressModified(button, ButtonTypes::B);
+	}
+
+	ButtonQueue& deleteSelection() {
+		consoleLogLine("deleteSelection");
+		return _presses.pressModified(ButtonTypes::A, ButtonTypes::B);
 	}
 };
