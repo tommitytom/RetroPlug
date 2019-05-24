@@ -44,8 +44,10 @@ endif
 # Set tools
 
 # Use clang if it's available.
+ifeq ($(origin CC),default)
 ifneq (, $(shell which clang))
 CC := clang
+endif
 endif
 
 ifeq ($(PLATFORM),windows32)
@@ -63,7 +65,7 @@ endif
 
 # Set compilation and linkage flags based on target, platform and configuration
 
-CFLAGS += -Werror -Wall -Wno-unknown-warning-option -Wno-multichar -Wno-int-in-bool-context -std=gnu11 -D_GNU_SOURCE -DVERSION="$(VERSION)" -I. -D_USE_MATH_DEFINES
+CFLAGS += -Werror -Wall -Wno-strict-aliasing -Wno-unknown-warning -Wno-unknown-warning-option -Wno-multichar -Wno-int-in-bool-context -std=gnu11 -D_GNU_SOURCE -DVERSION="$(VERSION)" -I. -D_USE_MATH_DEFINES
 SDL_LDFLAGS := -lSDL2 -lGL
 ifeq ($(PLATFORM),windows32)
 CFLAGS += -IWindows
@@ -313,7 +315,7 @@ $(BIN)/BootROMs/%.bin: BootROMs/%.asm
 	-@$(MKDIR) -p $(dir $@)
 	cd BootROMs && rgbasm -o ../$@.tmp ../$<
 	rgblink -o $@.tmp2 $@.tmp
-	head -c $(if $(findstring dmg,$@)$(findstring sgb,$@), 256, 2304) $@.tmp2 > $@
+	dd if=$@.tmp2 of=$@ count=1 bs=$(if $(findstring dmg,$@)$(findstring sgb,$@),256,2304)
 	@rm $@.tmp $@.tmp2
 
 # Libretro Core (uses its own build system)

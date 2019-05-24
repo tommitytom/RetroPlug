@@ -414,7 +414,7 @@ static void init_for_current_model(unsigned id)
     descs[2].start = 0xC000;
     descs[2].len   = 0x1000;
 
-    descs[3].ptr   = descs[2].ptr + (bank * 0x1000);
+    descs[3].ptr   = descs[2].ptr + 0x1000; /* GB RAM/GBC RAM bank 1 */
     descs[3].start = 0xD000;
     descs[3].len   = 0x1000;
 
@@ -440,9 +440,9 @@ static void init_for_current_model(unsigned id)
     descs[8].start = 0xFE00;
     descs[8].len   = 0x00A0;
 
-    descs[9].ptr   = descs[2].ptr + 0x1000;
+    descs[9].ptr   = descs[2].ptr + 0x2000; /* GBC RAM bank 2 */
     descs[9].start = 0x10000;
-    descs[9].len   = GB_is_cgb(&gameboy[i]) ? 0x7000 : 0;
+    descs[9].len   = GB_is_cgb(&gameboy[i]) ? 0x6000 : 0; /* 0x1000 per bank (2-7), unmapped on GB */
 
     struct retro_memory_map mmaps;
     mmaps.descriptors = descs;
@@ -697,6 +697,11 @@ void retro_init(void)
         snprintf(retro_save_directory, sizeof(retro_save_directory), "%s", dir);
     else
         snprintf(retro_save_directory, sizeof(retro_save_directory), "%s", ".");
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging))
+        log_cb = logging.log;
+    else
+        log_cb = fallback_log;
 }
 
 void retro_deinit(void)
@@ -774,11 +779,6 @@ void retro_get_system_av_info(struct retro_system_av_info *info)
 void retro_set_environment(retro_environment_t cb)
 {
     environ_cb = cb;
-
-    if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging))
-        log_cb = logging.log;
-    else
-        log_cb = fallback_log;
 
     cb(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO,  (void*)subsystems);
 }

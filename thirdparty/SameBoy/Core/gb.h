@@ -29,6 +29,15 @@
 #define GB_MODEL_MGB_FAMILY 0x100
 #define GB_MODEL_CGB_FAMILY 0x200
 #define GB_MODEL_PAL_BIT 0x1000
+
+#if __clang__
+#define UNROLL _Pragma("unroll")
+#elif __GNUC__
+#define UNROLL _Pragma("GCC unroll 8")
+#else
+#define UNROLL
+#endif
+
 #endif
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -680,8 +689,8 @@ uint32_t GB_get_clock_rate(GB_gameboy_t *gb);
 #endif
 void GB_set_clock_multiplier(GB_gameboy_t *gb, double multiplier);
 
-size_t GB_get_screen_width(GB_gameboy_t *gb);
-size_t GB_get_screen_height(GB_gameboy_t *gb);
+unsigned GB_get_screen_width(GB_gameboy_t *gb);
+unsigned GB_get_screen_height(GB_gameboy_t *gb);
 
 unsigned GB_get_player_count(GB_gameboy_t *gb);
 
