@@ -11,6 +11,10 @@
 #endif
 #include "gb.h"
 
+long random(void) {
+    return rand();
+}
+
 #ifdef DISABLE_REWIND
 #define GB_rewind_free(...)
 #define GB_rewind_push(...)
