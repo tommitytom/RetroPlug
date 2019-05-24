@@ -2,7 +2,7 @@
 A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 
 ## Features
-- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.1.2
+- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.11.2
 - Full MIDI support for [mGB](https://github.com/trash80/mGB)
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
