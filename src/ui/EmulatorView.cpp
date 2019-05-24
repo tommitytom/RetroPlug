@@ -118,6 +118,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 		switch (indexInMenu) {
 		case RootMenuItems::LoadRom: OpenLoadRomDialog(); break;
 		case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
+		case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
 		}
 	});
 
@@ -181,6 +182,9 @@ void EmulatorView::CreateMenu(float x, float y) {
 				_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
 			}
 		});
+	} else {
+		_menu.AddSeparator();
+		_menu.AddItem("Send MIDI Clock", RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
 	}
 
 	GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <string>
+#include <assert.h>
 //#include "error.h"
 #include "resource.h"
 #include <iostream>
@@ -42,6 +43,7 @@ public:
 
 	void load(const char* data, size_t size) {
 		_handle = MemoryLoadLibrary(data, size);
+		assert(_handle);
 		if (!_handle) {
 			// Error!
 			return;

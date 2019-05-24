@@ -17,10 +17,19 @@ private:
 	SameBoyPlugPtr _sameboy;
 	double _sampleRate = 48000;
 	Lsdj _lsdj;
+	std::atomic<bool> _midiSync = false;
 	std::string _savePath;
 	std::string _romPath;
 
 public:
+	bool midiSync() {
+		return _midiSync;
+	}
+
+	void setMidiSync(bool v) {
+		_midiSync = v;
+	}
+
 	void load(EmulatorType emulatorType, const std::string& romPath) {
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 

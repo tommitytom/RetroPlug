@@ -12,6 +12,10 @@ enum RootMenuItems : int {
 	LoadRom,
 	Sram,
 	Settings,
+
+	SendClock = 4,
+
+	// LSDJ Specific
 	LsdjVersion = 4,
 	LsdjModes,
 	KeyboardMode

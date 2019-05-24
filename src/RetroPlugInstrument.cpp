@@ -62,14 +62,16 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 
 	MessageBus* bus = plug->messageBus();
 
+	bool transportChanged = false;
 	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
 		_transportRunning = mTimeInfo.mTransportIsRunning;
 		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 		HandleTransportChange(plug, _transportRunning);
+		transportChanged = true;
 	}
 
 	_buttonQueue.update(bus, FramesToMs(frameCount));
-	GenerateMidiClock(plug, frameCount);
+	GenerateMidiClock(plug, frameCount, transportChanged);
 
 	int sampleCount = frameCount * 2;
 
@@ -106,10 +108,19 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int startPos)
 	return Deserialize(chunk, _plug, startPos);
 }
 
-void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
-	Lsdj& lsdj = _plug.lsdj();
+void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {
+	if (transportChanged) {
+		if (mTimeInfo.mTransportIsRunning) {
+			plug->sendMidiByte(0, 0xFA);
+		} else {
+			plug->sendMidiByte(0, 0xFC);
+		}
+	}
+	
 	if (mTimeInfo.mTransportIsRunning) {
-		switch (lsdj.syncMode) {
+		Lsdj& lsdj = _plug.lsdj();
+		if (lsdj.found) {
+			switch (lsdj.syncMode) {
 			case LsdjSyncModes::Midi:
 				ProcessSync(plug, frameCount, 1, 0xF8);
 				break;
@@ -121,7 +132,10 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount) {
 			case LsdjSyncModes::MidiMap:
 				ProcessSync(plug, frameCount, 1, 0xFF);
 				break;
-		}
+			}
+		} else if (_plug.midiSync()) {
+			ProcessSync(plug, frameCount, 1, 0xF8);
+		}		
 	}
 }
 
