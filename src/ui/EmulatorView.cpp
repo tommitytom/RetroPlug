@@ -5,7 +5,7 @@
 
 #include <tao/json.hpp>
 
-EmulatorView::EmulatorView(IRECT bounds, RetroPlug* plug) : IControl(bounds), _plug(plug) {
+EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug) : IControl(bounds), _plug(plug) {
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 
 	_settings = {
@@ -20,12 +20,11 @@ EmulatorView::EmulatorView(IRECT bounds, RetroPlug* plug) : IControl(bounds), _p
 }
 
 void EmulatorView::OnDrop(const char* str) {
-	_plug->load(EmulatorType::SameBoy, str);
+	_plug->init(str);
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
-	SameBoyPlugPtr plug = _plug->plug();
-	if (plug) {
+	if (_plug->active()) {
 		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
 			return _lsdjKeyMap.onKey(key, down);
 		} else {
@@ -62,9 +61,12 @@ void EmulatorView::OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx) {
 }
 
 void EmulatorView::Draw(IGraphics& g) {
-	SameBoyPlugPtr plugPtr = _plug->plug();
-	if (plugPtr) {
-		MessageBus* bus = plugPtr->messageBus();
+	if (_plug->active()) {
+		MessageBus* bus = _plug->messageBus();
+
+		// FIXME: This constant is the delta time between frames.
+		// It is set to this because on windows iPlug doesn't go higher
+		// than 30fps!  Should probably add some proper time calculation here.
 		_lsdjKeyMap.update(bus, 33.3333333);
 
 		size_t available = bus->video.readAvailable();
@@ -100,15 +102,14 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 
 	nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, mRECT.T, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, 1.0f);
+	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, 0, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, 1.0f);
 	nvgRect(vg, mRECT.L, mRECT.T, mRECT.W(), mRECT.H());
 	nvgFillPaint(vg, imgPaint);
 	nvgFill(vg);
 }
 
 void EmulatorView::CreateMenu(float x, float y) {
-	SameBoyPlugPtr plugPtr = _plug->plug();
-	if (!plugPtr) {
+	if (!_plug) {
 		return;
 	}
 
@@ -117,6 +118,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
 		case RootMenuItems::LoadRom: OpenLoadRomDialog(); break;
+		case RootMenuItems::Duplicate: DuplicatePlug(); break;
 		case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 		case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
 		}
@@ -130,7 +132,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 
 	sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
-		case SramMenuItems::Save: _plug->saveBattery(L""); break;
+		case SramMenuItems::Save: _plug->saveBattery(""); break;
 		case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
 		case SramMenuItems::Load: OpenLoadSramDialog(); break;
 		}
@@ -154,10 +156,12 @@ void EmulatorView::CreateMenu(float x, float y) {
 		}
 	});
 
+	_menu.AddItem("Duplicate", RootMenuItems::Duplicate);
+
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		_menu.AddSeparator();
-		_menu.AddItem(plugPtr->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
+		_menu.AddItem(_plug->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
 
 		IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
 			"Off",
@@ -231,6 +235,12 @@ void EmulatorView::ToggleKeyboardMode() {
 	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
+void EmulatorView::DuplicatePlug() {
+	if (_duplicateCb) {
+		_duplicateCb(this);
+	}
+}
+
 void EmulatorView::OpenLoadRomDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ L"GameBoy Roms", L"*.gb;*.gbc" }
@@ -239,7 +249,7 @@ void EmulatorView::OpenLoadRomDialog() {
 	std::wstring path = BasicFileOpen(types);
 	if (path.size() > 0) {
 		std::string p = ws2s(path);
-		_plug->load(EmulatorType::SameBoy, p.c_str());
+		_plug->init(p.c_str());
 	}
 }
 
@@ -250,7 +260,8 @@ void EmulatorView::OpenLoadSramDialog() {
 
 	std::wstring path = BasicFileOpen(types);
 	if (path.size() > 0) {
-		_plug->loadBattery(path);
+		std::string p = ws2s(path);
+		_plug->loadBattery(p);
 	}
 }
 
@@ -261,6 +272,7 @@ void EmulatorView::OpenSaveSramDialog() {
 
 	std::wstring path = BasicFileSave(types);
 	if (path.size() > 0) {
-		_plug->saveBattery(path);
+		std::string p = ws2s(path);
+		_plug->saveBattery(p);
 	}
 }

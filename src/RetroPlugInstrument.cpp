@@ -2,6 +2,7 @@
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
 #include "src/ui/EmulatorView.h"
+#include "src/ui/RetroPlugRoot.h"
 #include "util/Serializer.h"
 
 RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
@@ -28,11 +29,11 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 		pGraphics->AttachControl(new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE)));
 		pGraphics->AttachControl(new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE)));
 
-		EmulatorView* emulatorView = new EmulatorView(b, &_plug);
-		pGraphics->AttachControl(emulatorView);
+		RetroPlugRoot* root = new RetroPlugRoot(b, &_plug);
+		pGraphics->AttachControl(root);
 
-		pGraphics->SetKeyHandlerFunc([emulatorView](const IKeyPress& key, bool isUp) {
-			return emulatorView->OnKey(key, !isUp);
+		pGraphics->SetKeyHandlerFunc([root](const IKeyPress& key, bool isUp) {
+			return root->OnKey(key, !isUp);
 		});
 	};
 #endif
@@ -48,47 +49,54 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		return;
 	}
 
-	SameBoyPlugPtr plugPtr = _plug.plug();
-	if (!plugPtr) {
-		return;
-	}
-
-	SameBoyPlug* plug = plugPtr.get();
-
-	// I know it's bad to use a mutex here, but its only used when making settings changes
-	// or saving SRAM data to disk.  Should still probably swap this out for a different
-	// method at some point, but it works for now.
-	plug->lock().lock();
-
-	MessageBus* bus = plug->messageBus();
-
 	bool transportChanged = false;
 	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
 		_transportRunning = mTimeInfo.mTransportIsRunning;
-		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
-		HandleTransportChange(plug, _transportRunning);
 		transportChanged = true;
+		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 	}
 
-	_buttonQueue.update(bus, FramesToMs(frameCount));
-	GenerateMidiClock(plug, frameCount, transportChanged);
+	for (size_t i = 0; i < MAX_INSTANCES; i++) {
+		// Keeping the shared pointer here makes sure that the reference count
+		// is at least 1 while we work with it
+		SameBoyPlugPtr plugPtr = _plug.plugs()[i];
+		if (!plugPtr || !plugPtr->active()) {
+			continue;
+		}
 
-	int sampleCount = frameCount * 2;
+		SameBoyPlug* plug = plugPtr.get();
 
-	plug->update(frameCount);
-	size_t available = bus->audio.readAvailable();
-	assert(available == sampleCount);
+		if (transportChanged) {
+			HandleTransportChange(plug, _transportRunning);
+		}
 
-	memset(_sampleScratch, 0, sampleCount * sizeof(float));
-	size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
-	assert(readAmount == sampleCount);
+		// I know it's bad to use a mutex here, but its only used when making settings changes
+		// or saving SRAM data to disk.  Should still probably swap this out for a different
+		// method at some point, but it works for now.
+		plug->lock().lock();
 
-	for (size_t i = 0; i < frameCount; i++) {
-		outputs[0][i] = _sampleScratch[i * 2];
-		outputs[1][i] = _sampleScratch[i * 2 + 1];
-	}
+		MessageBus* bus = plug->messageBus();
 
-	plug->lock().unlock();
+		_buttonQueue.update(bus, FramesToMs(frameCount));
+		GenerateMidiClock(plug, frameCount, transportChanged);
+
+		int sampleCount = frameCount * 2;
+
+		plug->update(frameCount);
+		size_t available = bus->audio.readAvailable();
+		assert(available == sampleCount);
+
+		memset(_sampleScratch, 0, sampleCount * sizeof(float));
+		size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
+		assert(readAmount == sampleCount);
+
+		for (size_t i = 0; i < frameCount; i++) {
+			outputs[0][i] = _sampleScratch[i * 2];
+			outputs[1][i] = _sampleScratch[i * 2 + 1];
+		}
+
+		plug->lock().unlock();
+	}	
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -96,10 +104,6 @@ void RetroPlugInstrument::OnIdle() {
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
-	if (_plug.romPath().size() == 0) {
-		return true;
-	}
-	
 	Serialize(chunk, _plug);
 	return true;
 }
@@ -118,7 +122,7 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 	}
 	
 	if (mTimeInfo.mTransportIsRunning) {
-		Lsdj& lsdj = _plug.lsdj();
+		Lsdj& lsdj = plug->lsdj();
 		if (lsdj.found) {
 			switch (lsdj.syncMode) {
 			case LsdjSyncModes::Midi:
@@ -133,19 +137,19 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 				ProcessSync(plug, frameCount, 1, 0xFF);
 				break;
 			}
-		} else if (_plug.midiSync()) {
+		} else if (plug->midiSync()) {
 			ProcessSync(plug, frameCount, 1, 0xF8);
-		}		
+		}
 	}
 }
 
 void RetroPlugInstrument::HandleTransportChange(SameBoyPlug* plug, bool running) {
-	if (_plug.lsdj().autoPlay) {
+	if (plug->lsdj().autoPlay) {
 		_buttonQueue.press(ButtonTypes::Start);
 		consoleLogLine("Pressing start");
 	}
 
-	if (!_transportRunning && _plug.lsdj().found && _plug.lsdj().lastRow != -1) {
+	if (!_transportRunning && plug->lsdj().found && plug->lsdj().lastRow != -1) {
 		plug->sendMidiByte(0, 0xFE);
 	}
 }
@@ -188,12 +192,12 @@ void RetroPlugInstrument::OnReset() {
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
 
-	SameBoyPlugPtr plugPtr = _plug.plug();
-	if (!plugPtr) {
+	SameBoyPlugPtr plug = _plug.plugs()[0];
+	if (!plug) {
 		return;
 	}
 
-	Lsdj& lsdj = _plug.lsdj();
+	Lsdj& lsdj = plug->lsdj();
 	if (lsdj.found) {
 		switch (lsdj.syncMode) {
 			case LsdjSyncModes::MidiArduinoboy:
@@ -207,7 +211,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 						case 29: lsdj.tempoDivisor = 8; break;
 						default:
 							if (msg.NoteNumber() >= 30) {
-								plugPtr->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
+								plug->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
 							}
 					}
 				}
@@ -218,7 +222,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 				case IMidiMsg::kNoteOn: {
 					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
 					if (rowIdx != -1) {
-						plugPtr->sendMidiByte(msg.mOffset, rowIdx);
+						plug->sendMidiByte(msg.mOffset, rowIdx);
 						lsdj.lastRow = rowIdx;
 					}
 
@@ -227,7 +231,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 				case IMidiMsg::kNoteOff:
 					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
 					if (rowIdx == lsdj.lastRow) {
-						plugPtr->sendMidiByte(msg.mOffset, 0xFE);
+						plug->sendMidiByte(msg.mOffset, 0xFE);
 						lsdj.lastRow = -1;
 					}
 
@@ -244,7 +248,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 		midiData[1] = msg.mData1;
 		midiData[2] = msg.mData2;
 
-		plugPtr->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
+		plug->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
 	}
 }
 #endif

@@ -12,11 +12,14 @@ enum RootMenuItems : int {
 	LoadRom,
 	Sram,
 	Settings,
+	Duplicate,
 
-	SendClock = 4,
+	Sep1,
+
+	SendClock = 5,
 
 	// LSDJ Specific
-	LsdjVersion = 4,
+	LsdjVersion = 5,
 	LsdjModes,
 	KeyboardMode
 };
@@ -42,7 +45,7 @@ const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
 
 class EmulatorView : public IControl {
 private:
-	RetroPlug* _plug;
+	SameBoyPlugPtr _plug;
 	unsigned char _videoScratch[VIDEO_SCRATCH_SIZE];
 
 	int _imageId = -1;
@@ -55,13 +58,20 @@ private:
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
 
 	std::map<std::string, int> _settings;
+	std::function<void(EmulatorView*)> _duplicateCb;
 
 public:
-	EmulatorView(IRECT bounds, RetroPlug* plug);
+	EmulatorView(IRECT bounds, SameBoyPlugPtr plug);
+
+	SameBoyPlugPtr Plug() { return _plug; }
 
 	void OnInit() override {}
 
 	bool IsDirty() override { return true; }
+
+	void OnDuplicateRequest(std::function<void(EmulatorView*)> cb) {
+		_duplicateCb = cb;
+	}
 
 	bool OnKey(const IKeyPress& key, bool down);
 
@@ -89,6 +99,8 @@ private:
 	void OpenSaveSramDialog();
 
 	void ToggleKeyboardMode();
+
+	void DuplicatePlug();
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

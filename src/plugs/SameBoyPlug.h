@@ -3,7 +3,9 @@
 #include "platform/DynamicLibrary.h"
 #include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
+#include "roms/Lsdj.h"
 #include <mutex>
+#include <atomic>
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
@@ -32,21 +34,36 @@ private:
 
 	void* _instance = nullptr;
 	void* _resampler = nullptr;
+
+	std::string _romPath;
+	std::string _savePath;
 	std::string _romName;
 
 	MessageBus _bus;
 
 	std::mutex _lock;
+	std::atomic<bool> _midiSync = false;
+	Lsdj _lsdj;
+
+	double _sampleRate = 48000;
 
 public:
 	SameBoyPlug() {}
 	~SameBoyPlug() { shutdown(); }
 
-	void init(const std::string& gamePath);
+	Lsdj& lsdj() { return _lsdj; }
+
+	bool midiSync() { return _midiSync.load(); }
+
+	void setMidiSync(bool enabled) { _midiSync = enabled; }
+
+	void init(const std::string& romPath);
 
 	bool active() const { return _instance != nullptr; }
 
 	const std::string& romName() const { return _romName; }
+
+	const std::string& romPath() const { return _romPath; }
 
 	std::mutex& lock() { return _lock; }
 
@@ -69,6 +86,8 @@ public:
 	void setSetting(const std::string& name, int value);
 
 	void setOversample(int value);
+
+	void setButtonState(const ButtonEvent& ev) { _bus.buttons.writeValue(ev); }
 
 	MessageBus* messageBus() { return &_bus; }
 

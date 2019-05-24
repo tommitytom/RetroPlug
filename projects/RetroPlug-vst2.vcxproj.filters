@@ -79,6 +79,9 @@
     <ClCompile Include="..\src\util\base64.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\ui\RetroPlugRoot.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -320,6 +323,9 @@
     </ClInclude>
     <ClInclude Include="..\src\Buttons.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ui\RetroPlugRoot.h">
+      <Filter>src\ui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
