@@ -148,6 +148,8 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
     return 0;
 }
 
+bool flip = false;
+
 void sameboy_update(void* state, size_t requiredAudioFrames) {
     sameboy_state_t* s = (sameboy_state_t*)state;
 
@@ -158,10 +160,21 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
         if (s->linkTicksRemain <= 0) {
             if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
                 offset_byte_t b = dequeue(&s->midiQueue);
-                for (int i = 7; i >= 0; i--) {
+
+                if (flip) {
+                    GB_serial_set_data_bit(&s->gb, 1);
+                    GB_serial_set_data_bit(&s->gb, 1);
+                } else {
+                    GB_serial_set_data_bit(&s->gb, 1);
+                    GB_serial_set_data_bit(&s->gb, 0);
+                }
+
+                flip = !flip;
+
+                /*for (int i = 7; i >= 0; i--) {
                     bool bit = (bool)((b.byte & (1 << i)) >> i);
                     GB_serial_set_data_bit(&s->gb, bit);
-                }
+                }*/
             }
 
             s->linkTicksRemain += LINK_TICKS_MAX;

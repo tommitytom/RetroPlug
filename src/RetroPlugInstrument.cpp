@@ -134,7 +134,8 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 				break;
 			}
 		} else if (_plug.midiSync()) {
-			ProcessSync(plug, frameCount, 1, 0xF8);
+			ProcessSync(plug, frameCount, 1, _syncSwitch ? 0b00000011 : 0b00000010);
+			_syncSwitch = !_syncSwitch;
 		}		
 	}
 }
