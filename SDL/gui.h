@@ -77,6 +77,7 @@ typedef struct {
         MODEL_DMG,
         MODEL_CGB,
         MODEL_AGB,
+        MODEL_SGB,
         MODEL_MAX,
     } model;
     
@@ -85,6 +86,14 @@ typedef struct {
     SDL_Scancode keys_2[32]; /* Rewind and underclock, + padding for the future */
     uint8_t joypad_configuration[32]; /* 12 Keys + padding for the future*/;
     uint8_t joypad_axises[JOYPAD_AXISES_MAX];
+    
+    /* v0.12 */
+    enum {
+        SGB_NTSC,
+        SGB_PAL,
+        SGB_2,
+        SGB_MAX
+    } sgb_revision;
 } configuration_t;
 
 extern configuration_t configuration;
