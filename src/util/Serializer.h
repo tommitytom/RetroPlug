@@ -63,7 +63,7 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 		plug.load(EmulatorType::SameBoy, romPath);
 		const SameBoyPlugPtr plugPtr = plug.plug();
 		plugPtr->loadState((char*)stateData.data(), stateData.size());
-		
+
 		const tao::json::value* settings = root.find("settings");
 		if (settings) {
 			const tao::json::value* lsdjSettings = settings->find("lsdj");
@@ -77,7 +77,7 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 				}
 
 				const tao::json::value* keyboardShortcuts = lsdjSettings->find("keyboardShortcuts");
-				if (autoPlay) {
+				if (keyboardShortcuts) {
 					plug.lsdj().keyboardShortcuts = keyboardShortcuts->get_boolean();
 				}
 			}
