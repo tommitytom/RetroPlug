@@ -7,7 +7,7 @@
 #include "util/String.h"
 #include "platform/Path.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
+const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
 
 static void saveButtonConfig(const std::string& path, const tao::json::value& source) {
 	std::ofstream configOut(path);
@@ -30,7 +30,7 @@ static void loadButtonConfig(tao::json::value& target) {
 
 		auto gameboyConfig = fileData.find("gameboy");
 		auto lsdjConfig = fileData.find("lsdj");
-		
+
 		if (!gameboyConfig && !lsdjConfig) {
 			defaultConfig.at("gameboy").swap(fileData);
 			target = defaultConfig;

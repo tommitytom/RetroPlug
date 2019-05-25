@@ -83,6 +83,7 @@ All key names are CASE SENSITIVE!
 |DownTenRows|PageDown|Yes|
 |UpTenRows|PageUp|Yes|
 |CancelSelection|Esc|Yes|
+|Delete|Delete|Yes|
 |StartSelection|Shift (Hold)|No|
 |CopySelection|Ctrl + C|No|
 |CutSelection|Ctrl + X|No|
