@@ -1,5 +1,6 @@
 #include "SameBoyPlug.h"
 #include "util/String.h"
+#include "Constants.h"
 #include <filesystem>
 
 #define RESAMPLER_IMPLEMENTATION
@@ -25,6 +26,7 @@ void SameBoyPlug::init(const std::string& romPath) {
 	_library.get("sameboy_init", _symbols.sameboy_init);
 	_library.get("sameboy_reset", _symbols.sameboy_reset);
 	_library.get("sameboy_update", _symbols.sameboy_update);
+	_library.get("sameboy_update_multiple", _symbols.sameboy_update_multiple);
 	_library.get("sameboy_fetch_audio", _symbols.sameboy_fetch_audio);
 	_library.get("sameboy_fetch_video", _symbols.sameboy_fetch_video);
 	_library.get("sameboy_set_sample_rate", _symbols.sameboy_set_sample_rate);
@@ -38,6 +40,7 @@ void SameBoyPlug::init(const std::string& romPath) {
 	_library.get("sameboy_load_battery", _symbols.sameboy_load_battery);
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
 	_library.get("sameboy_set_setting", _symbols.sameboy_set_setting);
+	_library.get("sameboy_set_link_target", _symbols.sameboy_set_link_target);
 
 	void* instance = _symbols.sameboy_init(this, romPath.c_str());
 	const char* name = _symbols.sameboy_get_rom_name(instance);
@@ -116,6 +119,12 @@ void SameBoyPlug::setSetting(const std::string& name, int value) {
 	_lock.unlock();
 }
 
+void SameBoyPlug::setLinkTarget(SameBoyPlug* linkTarget) {
+	_lock.lock();
+	_symbols.sameboy_set_link_target(_instance, linkTarget->instance());
+	_lock.unlock();
+}
+
 void SameBoyPlug::setOversample(int value) {
 
 }
@@ -127,13 +136,33 @@ void SameBoyPlug::sendMidiBytes(int offset, const char* bytes, size_t count) {
 
 // This is called from the audio thread
 void SameBoyPlug::update(size_t audioFrames) {
+	updateButtons();
+	_symbols.sameboy_update(_instance, audioFrames);
+	updateAV(audioFrames);
+}
+
+void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames) {
+	void* instances[MAX_INSTANCES];
+	for (size_t i = 0; i < plugCount; i++) {
+		instances[i] = plugs[i]->instance();
+		plugs[i]->updateButtons();
+	}
+
+	_symbols.sameboy_update_multiple(instances, plugCount, audioFrames);
+
+	for (size_t i = 0; i < plugCount; i++) {
+		plugs[i]->updateAV(audioFrames);
+	}
+}
+
+void SameBoyPlug::updateButtons() {
 	while (_bus.buttons.readAvailable()) {
 		auto ev = _bus.buttons.readValue();
 		_symbols.sameboy_set_button(_instance, ev.id, ev.down);
 	}
+}
 
-	_symbols.sameboy_update(_instance, audioFrames);
-
+void SameBoyPlug::updateAV(int audioFrames) {
 	int16_t audio[1024 * 4]; // FIXME: Choose a realistic size for this...
 	char video[FRAME_SIZE];
 

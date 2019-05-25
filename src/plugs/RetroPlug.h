@@ -6,12 +6,11 @@
 
 #include "plugs/SameBoyPlug.h"
 #include "util/String.h"
+#include "Constants.h"
 
 enum class EmulatorType {
 	SameBoy
 };
-
-const int MAX_INSTANCES = 4;
 
 class RetroPlug {
 private:

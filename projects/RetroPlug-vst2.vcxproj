@@ -264,6 +264,7 @@
     <ClInclude Include="..\resources\resource.h" />
     <ClInclude Include="..\src\Buttons.h" />
     <ClInclude Include="..\src\ConfigLoader.h" />
+    <ClInclude Include="..\src\Constants.h" />
     <ClInclude Include="..\src\Keys.h" />
     <ClInclude Include="..\src\LsdjKeyMap.h" />
     <ClInclude Include="..\src\audio\audio_renderer.h" />

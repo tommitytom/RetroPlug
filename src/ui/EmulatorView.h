@@ -50,6 +50,7 @@ private:
 
 	int _imageId = -1;
 	NVGpaint _imgPaint;
+	float _alpha = 1.0f;
 
 	KeyMap _keyMap;
 	LsdjKeyMap _lsdjKeyMap;
@@ -60,12 +61,16 @@ private:
 	std::map<std::string, int> _settings;
 	std::function<void(EmulatorView*)> _duplicateCb;
 
+	ITextControl* _textIds[2] = { nullptr, nullptr };
+
 public:
 	EmulatorView(IRECT bounds, SameBoyPlugPtr plug);
 
 	SameBoyPlugPtr Plug() { return _plug; }
 
-	void OnInit() override {}
+	void SetAlpha(float alpha) { _alpha = alpha; }
+
+	void OnInit() override;
 
 	bool IsDirty() override { return true; }
 
@@ -101,6 +106,8 @@ private:
 	void ToggleKeyboardMode();
 
 	void DuplicatePlug();
+
+	void HideText();
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

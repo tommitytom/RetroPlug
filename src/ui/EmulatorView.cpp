@@ -19,6 +19,19 @@ EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug) : IControl(bounds)
 	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
 }
 
+void EmulatorView::OnInit() {
+	const IRECT b = GetRECT();
+	float mid = b.H() / 2;
+	IRECT topRow(b.L, mid - 25, b.R, mid);
+	IRECT bottomRow(b.L, mid, b.R, mid + 25);
+
+	_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_BLACK));
+	_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_BLACK));
+
+	GetUI()->AttachControl(_textIds[0]);
+	GetUI()->AttachControl(_textIds[1]);
+}
+
 void EmulatorView::OnDrop(const char* str) {
 	_plug->init(str);
 }
@@ -102,7 +115,7 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 
 	nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, 0, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, 1.0f);
+	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, 0, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
 	nvgRect(vg, mRECT.L, mRECT.T, mRECT.W(), mRECT.H());
 	nvgFillPaint(vg, imgPaint);
 	nvgFill(vg);
@@ -239,6 +252,11 @@ void EmulatorView::DuplicatePlug() {
 	if (_duplicateCb) {
 		_duplicateCb(this);
 	}
+}
+
+void EmulatorView::HideText() {
+	_textIds[0]->ClearStr();
+	_textIds[1]->ClearStr();
 }
 
 void EmulatorView::OpenLoadRomDialog() {

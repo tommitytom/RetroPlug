@@ -11,6 +11,7 @@ struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
 	void(*sameboy_reset)(void* state);
 	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
+	void(*sameboy_update_multiple)(void** states, size_t stateCount, size_t requiredAudioFrames);
 	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
 	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
 	void(*sameboy_set_sample_rate)(void* state, double sample_rate);
@@ -23,6 +24,8 @@ struct SameboyPlugSymbols {
 	void(*sameboy_load_battery)(void* state, const char* path);
 	void(*sameboy_save_battery)(void* state, const char* path);
 	void(*sameboy_set_setting)(void* state, const char* name, int value);
+	void(*sameboy_set_link_target)(void* state, void* linkTarget);
+	
 	const char*(*sameboy_get_rom_name)(void* state);
 };
 
@@ -87,13 +90,24 @@ public:
 
 	void setOversample(int value);
 
+	void setLinkTarget(SameBoyPlug* linkTarget);
+
 	void setButtonState(const ButtonEvent& ev) { _bus.buttons.writeValue(ev); }
 
 	MessageBus* messageBus() { return &_bus; }
 
 	void update(size_t audioFrames);
 
+	void updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames);
+
 	void shutdown();
+
+	void* instance() { return _instance; }
+
+private:
+	void updateButtons();
+
+	void updateAV(int audioFrames);
 };
 
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;

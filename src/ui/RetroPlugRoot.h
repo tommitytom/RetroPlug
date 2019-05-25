@@ -11,6 +11,7 @@ private:
 	RetroPlug* _plug;
 	std::vector<EmulatorView*> _views;
 	EmulatorView* _active = nullptr;
+	size_t _activeIdx = 0;
 
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug);
@@ -24,9 +25,7 @@ public:
 		_active->OnMouseDblClick(x, y, mod);
 	}
 
-	void OnMouseDown(float x, float y, const IMouseMod& mod) {
-		_active->OnMouseDown(x, y, mod);
-	}
+	void OnMouseDown(float x, float y, const IMouseMod& mod);
 
 	void Draw(IGraphics& g) override {}
 
@@ -34,4 +33,6 @@ private:
 	void AddView(EmulatorView* view);
 
 	void DuplicatePlug(EmulatorView* view);
+
+	void SetActive(EmulatorView* view);
 };

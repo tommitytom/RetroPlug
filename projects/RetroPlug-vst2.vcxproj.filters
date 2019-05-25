@@ -327,6 +327,9 @@
     <ClInclude Include="..\src\ui\RetroPlugRoot.h">
       <Filter>src\ui</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\Constants.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">

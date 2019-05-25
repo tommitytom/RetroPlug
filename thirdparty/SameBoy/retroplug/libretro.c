@@ -26,11 +26,32 @@ typedef struct sameboy_state_t {
     Queue midiQueue;
     bool vblankOccurred;
     int linkTicksRemain;
+
+    struct sameboy_state_t* linkTarget;
+    bool bit_to_send;
 } sameboy_state_t;
 
 static void vblankHandler(GB_gameboy_t* gb) {
     sameboy_state_t* state = (sameboy_state_t*)GB_get_user_data(gb);
     state->vblankOccurred = true;
+}
+
+static void serial_start(GB_gameboy_t *gb, bool bit_received) {
+    sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
+    if (s->linkTarget) {
+        s->linkTarget->bit_to_send = bit_received;
+    }
+}
+
+static bool serial_end(GB_gameboy_t* gb) {
+    sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
+    if (s->linkTarget) {
+        bool ret = GB_serial_get_data_bit(&s->linkTarget->gb);
+        GB_serial_set_data_bit(&s->linkTarget->gb, s->linkTarget->bit_to_send);
+        return ret;
+    }
+
+    return false;
 }
 
 void* sameboy_init(void* user_data, const char* path) {
@@ -39,6 +60,8 @@ void* sameboy_init(void* user_data, const char* path) {
     state->vblankOccurred = false;
     state->currentAudioFrames = 0;
     state->linkTicksRemain = 0;
+    state->bit_to_send = true;
+    state->linkTarget = NULL;
 
     GB_init(&state->gb, GB_MODEL_CGB_E);
 	GB_load_boot_rom_from_buffer(&state->gb, cgb_boot, cgb_boot_length);
@@ -53,6 +76,9 @@ void* sameboy_init(void* user_data, const char* path) {
     GB_set_color_correction_mode(&state->gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
     GB_set_highpass_filter_mode(&state->gb, GB_HIGHPASS_ACCURATE);
 
+    GB_set_serial_transfer_bit_start_callback(&state->gb, serial_start);
+    GB_set_serial_transfer_bit_end_callback(&state->gb, serial_end);
+
     if (GB_load_rom(&state->gb, path)) {
         free(state);
         return NULL;
@@ -66,6 +92,11 @@ void* sameboy_init(void* user_data, const char* path) {
 void sameboy_reset(void* state) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     GB_reset(&s->gb);
+}
+
+void sameboy_set_link_target(void* state, void* linkTarget) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+    s->linkTarget = (sameboy_state_t*)linkTarget;
 }
 
 void sameboy_set_setting(void* state, const char* name, int value) {
@@ -146,6 +177,31 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
     }
 
     return 0;
+}
+
+const int MAX_INSTANCES = 4;
+
+void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames) {
+    sameboy_state_t* st[MAX_INSTANCES];
+    for (size_t i = 0; i < stateCount; i++) {
+        st[i] = (sameboy_state_t*)states[i];
+        st[i]->vblankOccurred = false;
+    }
+
+    size_t complete = 0;
+    while (complete != stateCount) {
+        for (size_t i = 0; i < stateCount; i++) {
+            sameboy_state_t* s = st[i];
+            if (s->currentAudioFrames < requiredAudioFrames) {
+                GB_run(&s->gb);
+
+                s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
+                if (s->currentAudioFrames >= requiredAudioFrames) {
+                    complete++;
+                }
+            }
+        }
+    }
 }
 
 void sameboy_update(void* state, size_t requiredAudioFrames) {

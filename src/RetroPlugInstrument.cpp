@@ -21,15 +21,7 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 		pGraphics->HandleMouseOver(true);
 		pGraphics->LoadFont("Roboto-Regular", ROBOTTO_FN);
 
-		const IRECT b = pGraphics->GetBounds();
-		float mid = b.H() / 2;
-		IRECT topRow(b.L, mid - 25, b.R, mid);
-		IRECT bottomRow(b.L, mid, b.R, mid + 25);
-
-		pGraphics->AttachControl(new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE)));
-		pGraphics->AttachControl(new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE)));
-
-		RetroPlugRoot* root = new RetroPlugRoot(b, &_plug);
+		RetroPlugRoot* root = new RetroPlugRoot(pGraphics->GetBounds(), &_plug);
 		pGraphics->AttachControl(root);
 
 		pGraphics->SetKeyHandlerFunc([root](const IKeyPress& key, bool isUp) {
@@ -45,7 +37,7 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
-	if (frameCount == 0) {
+	if (frameCount == 0 || !_plug.getPlug(0) || !_plug.getPlug(0)->active()) {
 		return;
 	}
 
@@ -56,33 +48,47 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 	}
 
+	for (size_t i = 0; i < frameCount; i++) {
+		outputs[0][i] = 0;
+		outputs[1][i] = 0;
+	}
+
+	// Keeping the shared pointer here makes sure that the reference count
+	// is at least 1 while we work with it
+	SameBoyPlugPtr plugPtrs[MAX_INSTANCES];
+	SameBoyPlug* plugs[MAX_INSTANCES];
+	size_t plugCount = 0;
+	int sampleCount = frameCount * 2;
+
 	for (size_t i = 0; i < MAX_INSTANCES; i++) {
-		// Keeping the shared pointer here makes sure that the reference count
-		// is at least 1 while we work with it
 		SameBoyPlugPtr plugPtr = _plug.plugs()[i];
-		if (!plugPtr || !plugPtr->active()) {
-			continue;
+		if (plugPtr && plugPtr->active()) {
+			SameBoyPlug* plug = plugPtr.get();
+			plugPtrs[i] = plugPtr;
+			plugs[i] = plug;
+			plugCount++;
+
+			if (transportChanged) {
+				HandleTransportChange(plug, _transportRunning);
+			}
+
+			// I know it's bad to use a mutex here, but its only used when making settings changes
+			// or saving SRAM data to disk.  Should still probably swap this out for a different
+			// method at some point, but it works for now.
+			plug->lock().lock();
+
+			MessageBus* bus = plug->messageBus();
+			_buttonQueue.update(bus, FramesToMs(frameCount));
+			GenerateMidiClock(plug, frameCount, transportChanged);
 		}
+	}
 
-		SameBoyPlug* plug = plugPtr.get();
+	plugs[0]->updateMultiple(plugs, plugCount, frameCount);
 
-		if (transportChanged) {
-			HandleTransportChange(plug, _transportRunning);
-		}
-
-		// I know it's bad to use a mutex here, but its only used when making settings changes
-		// or saving SRAM data to disk.  Should still probably swap this out for a different
-		// method at some point, but it works for now.
-		plug->lock().lock();
-
+	for (size_t i = 0; i < plugCount; i++) {
+		SameBoyPlug* plug = plugs[i];
 		MessageBus* bus = plug->messageBus();
 
-		_buttonQueue.update(bus, FramesToMs(frameCount));
-		GenerateMidiClock(plug, frameCount, transportChanged);
-
-		int sampleCount = frameCount * 2;
-
-		plug->update(frameCount);
 		size_t available = bus->audio.readAvailable();
 		assert(available == sampleCount);
 
@@ -91,12 +97,12 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		assert(readAmount == sampleCount);
 
 		for (size_t i = 0; i < frameCount; i++) {
-			outputs[0][i] = _sampleScratch[i * 2];
-			outputs[1][i] = _sampleScratch[i * 2 + 1];
+			outputs[0][i] += _sampleScratch[i * 2];
+			outputs[1][i] += _sampleScratch[i * 2 + 1];
 		}
 
 		plug->lock().unlock();
-	}	
+	}
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -120,7 +126,7 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 			plug->sendMidiByte(0, 0xFC);
 		}
 	}
-	
+
 	if (mTimeInfo.mTransportIsRunning) {
 		Lsdj& lsdj = plug->lsdj();
 		if (lsdj.found) {
@@ -160,7 +166,7 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 	double beatLenMs = (60000.0 / mTimeInfo.mTempo);
 	double beatLenSamples = beatLenMs * samplesPerMs;
 	double beatLenSamples24 = beatLenSamples / resolution;
-	
+
 	double ppq24 = mTimeInfo.mPPQPos * resolution;
 	double framePpqLen = (sampleCount / beatLenSamples) * resolution;
 

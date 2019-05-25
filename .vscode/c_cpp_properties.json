@@ -19,7 +19,8 @@
                 "IPLUG_EDITOR=1",
                 "IGRAPHICS_NANOVG",
                 "IGRAPHICS_METAL,",
-                "NOMINMAX"
+                "NOMINMAX",
+                "GB_INTERNAL"
             ],
             "macFrameworkPath": [
                 "/System/Library/Frameworks",

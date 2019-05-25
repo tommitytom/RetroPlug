@@ -61,6 +61,8 @@ RETRO_API void sameboy_reset(void* state);
 
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);
 
+RETRO_API void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames);
+
 RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);
 
 RETRO_API void sameboy_set_midi_bytes(void* state, int offset, const char* byte, size_t count);
@@ -70,6 +72,8 @@ RETRO_API void sameboy_set_button(void* state, int buttonId, bool down);
 RETRO_API void sameboy_save_battery(void* state, const char* path);
 
 RETRO_API void sameboy_load_battery(void* state, const char* path);
+
+RETRO_API void sameboy_set_link_target(void* state, void* linkTarget);
 
 RETRO_API size_t sameboy_save_state_size(void* state);
 
