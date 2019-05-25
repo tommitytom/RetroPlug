@@ -109,7 +109,8 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int startPos)
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {
-	if (transportChanged) {
+	Lsdj& lsdj = _plug.lsdj();
+	if (transportChanged && _plug.midiSync() && !lsdj.found) {
 		if (mTimeInfo.mTransportIsRunning) {
 			plug->sendMidiByte(0, 0xFA);
 		} else {
@@ -118,7 +119,6 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 	}
 	
 	if (mTimeInfo.mTransportIsRunning) {
-		Lsdj& lsdj = _plug.lsdj();
 		if (lsdj.found) {
 			switch (lsdj.syncMode) {
 			case LsdjSyncModes::Midi:
