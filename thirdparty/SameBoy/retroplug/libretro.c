@@ -123,7 +123,9 @@ void sameboy_load_battery(void* state, const char* source, size_t size) {
 void sameboy_save_state(void* state, char* target, size_t size) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     size_t state_size = GB_get_save_state_size(&s->gb);
-    GB_save_state_to_buffer(&s->gb, target);
+    if (size >= state_size) {
+        GB_save_state_to_buffer(&s->gb, target);
+    }
 }
 
 void sameboy_load_state(void* state, const char* source, size_t size) {
