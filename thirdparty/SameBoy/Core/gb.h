@@ -311,7 +311,7 @@ struct GB_gameboy_internal_s {
                            l, h;
 #endif
                };
-               
+
            };
         uint8_t ime;
         uint8_t interrupt_enable;
@@ -350,7 +350,7 @@ struct GB_gameboy_internal_s {
         uint8_t last_opcode_read; /* Required to emulte HDMA reads from Exxx */
         bool hdma_starting;
     );
-    
+
     /* MBC */
     GB_SECTION(mbc,
         uint16_t mbc_rom_bank;
@@ -379,7 +379,7 @@ struct GB_gameboy_internal_s {
                 uint8_t rom_bank_high:1;
                 uint8_t ram_bank:4;
             } mbc5;
-            
+
             struct {
                 uint8_t bank_low:6;
                 uint8_t bank_high:3;
@@ -493,7 +493,7 @@ struct GB_gameboy_internal_s {
         } mbc1_wiring;
 
         unsigned pending_cycles;
-               
+
         /* Various RAMs */
         uint8_t *ram;
         uint8_t *vram;
@@ -505,7 +505,7 @@ struct GB_gameboy_internal_s {
         uint32_t sprite_palettes_rgb[0x20];
         GB_color_correction_mode_t color_correction_mode;
         bool keys[4][GB_KEY_MAX];
-               
+
         /* Timing */
         uint64_t last_sync;
         uint64_t cycles_since_last_sync; // In 8MHz units
@@ -526,7 +526,7 @@ struct GB_gameboy_internal_s {
         GB_rumble_callback_t rumble_callback;
         GB_serial_transfer_bit_start_callback_t serial_transfer_bit_start_callback;
         GB_serial_transfer_bit_end_callback_t serial_transfer_bit_end_callback;
-               
+
         /* IR */
         long cycles_since_ir_change; // In 8MHz units
         long cycles_since_input_ir_change; // In 8MHz units
@@ -568,7 +568,7 @@ struct GB_gameboy_internal_s {
 
         /* Ticks command */
         unsigned long debugger_ticks;
-               
+
         /* Rewind */
 #define GB_REWIND_FRAMES_PER_KEY 255
         size_t rewind_buffer_length;
@@ -578,10 +578,10 @@ struct GB_gameboy_internal_s {
             unsigned pos;
         } *rewind_sequences; // lasts about 4 seconds
         size_t rewind_pos;
-               
+
         /* SGB - saved and allocated optionally */
         GB_sgb_t *sgb;
-        
+
         double sgb_intro_jingle_phases[7];
         double sgb_intro_sweep_phase;
         double sgb_intro_sweep_previous_sample;
@@ -597,7 +597,7 @@ struct GB_gameboy_internal_s {
         double clock_multiplier;
    );
 };
-    
+
 #ifndef GB_INTERNAL
 struct GB_gameboy_s {
     char __internal[sizeof(struct GB_gameboy_internal_s)];
@@ -651,13 +651,16 @@ void GB_set_user_data(GB_gameboy_t *gb, void *data);
 int GB_load_boot_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size);
 int GB_load_rom(GB_gameboy_t *gb, const char *path);
-    
+
+size_t GB_battery_size(GB_gameboy_t *gb);
+int GB_save_battery_to_buffer(GB_gameboy_t *gb, char *buffer, size_t size);
+void GB_load_battery_from_buffer(GB_gameboy_t *gb, const char *buffer, size_t size);
 int GB_save_battery(GB_gameboy_t *gb, const char *path);
 void GB_load_battery(GB_gameboy_t *gb, const char *path);
 
 void GB_set_turbo_mode(GB_gameboy_t *gb, bool on, bool no_frame_skip);
 void GB_set_rendering_disabled(GB_gameboy_t *gb, bool disabled);
-    
+
 void GB_log(GB_gameboy_t *gb, const char *fmt, ...) __printflike(2, 3);
 void GB_attributed_log(GB_gameboy_t *gb, GB_log_attributes attributes, const char *fmt, ...) __printflike(3, 4);
 
@@ -665,7 +668,7 @@ void GB_set_pixels_output(GB_gameboy_t *gb, uint32_t *output);
 
 void GB_set_infrared_input(GB_gameboy_t *gb, bool state);
 void GB_queue_infrared_input(GB_gameboy_t *gb, bool state, long cycles_after_previous_change); /* In 8MHz units*/
-    
+
 void GB_set_vblank_callback(GB_gameboy_t *gb, GB_vblank_callback_t callback);
 void GB_set_log_callback(GB_gameboy_t *gb, GB_log_callback_t callback);
 void GB_set_input_callback(GB_gameboy_t *gb, GB_input_callback_t callback);
@@ -681,7 +684,7 @@ void GB_set_serial_transfer_bit_end_callback(GB_gameboy_t *gb, GB_serial_transfe
 /* These APIs are used when using external clock */
 bool GB_serial_get_data_bit(GB_gameboy_t *gb);
 void GB_serial_set_data_bit(GB_gameboy_t *gb, bool data);
-    
+
 void GB_disconnect_serial(GB_gameboy_t *gb);
 
 #ifdef GB_INTERNAL
