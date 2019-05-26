@@ -279,7 +279,7 @@ void EmulatorView::OpenLoadSramDialog() {
 	std::wstring path = BasicFileOpen(types);
 	if (path.size() > 0) {
 		std::string p = ws2s(path);
-		_plug->loadBattery(p);
+		_plug->loadBattery(p, true);
 	}
 }
 
