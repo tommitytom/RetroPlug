@@ -113,7 +113,7 @@ void GB_init(GB_gameboy_t *gb, GB_model_t model)
 #endif
     gb->cartridge_type = &GB_cart_defs[0]; // Default cartridge type
     gb->clock_multiplier = 1.0;
-    
+
     GB_reset(gb);
 }
 
@@ -235,20 +235,26 @@ typedef union {
     } vba64;
 } GB_rtc_save_t;
 
-int GB_save_battery(GB_gameboy_t *gb, const char *path)
+size_t GB_battery_size(GB_gameboy_t *gb)
 {
     if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
     if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        GB_log(gb, "Could not open battery save: %s.\n", strerror(errno));
-        return errno;
+    if (gb->cartridge_type->has_rtc) {
+        GB_rtc_save_t rtc_save;
+        return gb->mbc_ram_size + sizeof(rtc_save.vba64);
     }
 
-    if (fwrite(gb->mbc_ram, 1, gb->mbc_ram_size, f) != gb->mbc_ram_size) {
-        fclose(f);
-        return EIO;
-    }
+    return gb->mbc_ram_size;
+}
+
+int GB_save_battery_to_buffer(GB_gameboy_t *gb, char *buffer, size_t size)
+{
+    if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
+    if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
+    if (size < GB_battery_size(gb)) return 0; // Buffer provided not large enough
+
+    memcpy(buffer, gb->mbc_ram, gb->mbc_ram_size);
+
     if (gb->cartridge_type->has_rtc) {
         GB_rtc_save_t rtc_save = {{{{0,}},},};
         rtc_save.vba64.rtc_real.seconds = gb->rtc_real.seconds;
@@ -266,38 +272,36 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
 #else
         rtc_save.vba64.last_rtc_second = gb->last_rtc_second;
 #endif
-        if (fwrite(&rtc_save.vba64, 1, sizeof(rtc_save.vba64), f) != sizeof(rtc_save.vba64)) {
-            fclose(f);
-            return EIO;
-        }
 
+        memcpy(buffer + gb->mbc_ram_size, &rtc_save.vba64, sizeof(rtc_save.vba64));
     }
 
-    errno = 0;
-    fclose(f);
-    return errno;
+    return 0;
 }
 
 /* Loading will silently stop if the format is incomplete */
-void GB_load_battery(GB_gameboy_t *gb, const char *path)
-{
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        return;
+void GB_load_battery_from_buffer(GB_gameboy_t *gb, const char *buffer, size_t size) {
+    if (size < gb->mbc_ram_size) {
+        goto reset_rtc; // Buffer provided not large enough
     }
 
-    if (fread(gb->mbc_ram, 1, gb->mbc_ram_size, f) != gb->mbc_ram_size) {
-        goto reset_rtc;
-    }
+    memcpy(gb->mbc_ram, buffer, gb->mbc_ram_size);
 
     GB_rtc_save_t rtc_save;
-    switch (fread(&rtc_save, 1, sizeof(rtc_save), f)) {
+    int rtc_size = size - gb->mbc_ram_size;
+    if (rtc_size > sizeof(rtc_save)) {
+        goto reset_rtc; // Buffer too large
+    }
+
+    memcpy(&rtc_save, buffer + gb->mbc_ram_size, rtc_size);
+
+    switch (rtc_size) {
         case sizeof(rtc_save.sameboy_legacy):
             memcpy(&gb->rtc_real, &rtc_save.sameboy_legacy.rtc_real, sizeof(gb->rtc_real));
             memcpy(&gb->rtc_latched, &rtc_save.sameboy_legacy.rtc_real, sizeof(gb->rtc_real));
             gb->last_rtc_second = rtc_save.sameboy_legacy.last_rtc_second;
             break;
-            
+
         case sizeof(rtc_save.vba32):
             gb->rtc_real.seconds = rtc_save.vba32.rtc_real.seconds;
             gb->rtc_real.minutes = rtc_save.vba32.rtc_real.minutes;
@@ -315,7 +319,7 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
             gb->last_rtc_second = rtc_save.vba32.last_rtc_second;
 #endif
             break;
-            
+
         case sizeof(rtc_save.vba64):
             gb->rtc_real.seconds = rtc_save.vba64.rtc_real.seconds;
             gb->rtc_real.minutes = rtc_save.vba64.rtc_real.minutes;
@@ -333,7 +337,7 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
             gb->last_rtc_second = rtc_save.vba64.last_rtc_second;
 #endif
             break;
-            
+
         default:
             goto reset_rtc;
     }
@@ -352,8 +356,69 @@ reset_rtc:
     gb->last_rtc_second = time(NULL);
     gb->rtc_real.high |= 0x80; /* This gives the game a hint that the clock should be reset. */
 exit:
-    fclose(f);
+
     return;
+}
+
+int GB_save_battery(GB_gameboy_t *gb, const char *path)
+{
+    size_t size = GB_battery_size(gb);
+
+    if (size == 0) return 0;
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        GB_log(gb, "Could not open battery save: %s.\n", strerror(errno));
+        return errno;
+    }
+
+    char* buffer = malloc(size);
+    int err = GB_save_battery_to_buffer(gb, buffer, size);
+    if (err) {
+        free(buffer);
+        return err;
+    }
+
+    if (fwrite(buffer, 1, size, f) != size) {
+        free(buffer);
+        fclose(f);
+        return EIO;
+    }
+
+    free(buffer);
+
+    errno = 0;
+    fclose(f);
+    return errno;
+}
+
+/* Loading will silently stop if the format is incomplete */
+void GB_load_battery(GB_gameboy_t *gb, const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return;
+    }
+
+    fseek(f, 0, SEEK_END);
+    int size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (!size) {
+        fclose(f);
+        return;
+    }
+
+    char* buffer = malloc(size);
+    if (fread(buffer, 1, size, f) != size) {
+        free(buffer);
+        fclose(f);
+    }
+
+    GB_load_battery_from_buffer(gb, buffer, size);
+
+    free(buffer);
+    fclose(f);
 }
 
 uint8_t GB_run(GB_gameboy_t *gb)
@@ -371,7 +436,7 @@ uint8_t GB_run(GB_gameboy_t *gb)
         gb->cycles_since_last_sync += 228;
         return 228;
     }
-    
+
     GB_debugger_run(gb);
     gb->cycles_since_run = 0;
     GB_cpu_run(gb);
@@ -391,7 +456,7 @@ uint64_t GB_run_frame(GB_gameboy_t *gb)
     bool old_dont_skip = gb->turbo_dont_skip;
     gb->turbo = true;
     gb->turbo_dont_skip = true;
-    
+
     gb->cycles_since_last_sync = 0;
     while (true) {
         GB_run(gb);
@@ -451,7 +516,7 @@ void GB_set_rgb_encode_callback(GB_gameboy_t *gb, GB_rgb_encode_callback_t callb
     }
 
     gb->rgb_encode_callback = callback;
-    
+
     for (unsigned i = 0; i < 32; i++) {
         GB_palette_changed(gb, true, i * 2);
         GB_palette_changed(gb, false, i * 2);
@@ -523,7 +588,7 @@ void GB_disconnect_serial(GB_gameboy_t *gb)
 {
     gb->serial_transfer_bit_start_callback = NULL;
     gb->serial_transfer_bit_end_callback = NULL;
-    
+
     /* Reset any internally-emulated device. Currently, only the printer. */
     memset(&gb->printer, 0, sizeof(gb->printer));
 }
@@ -573,7 +638,7 @@ static void reset_ram(GB_gameboy_t *gb)
                 gb->ram[i] = (random() & 0xFF);
             }
             break;
-            
+
         case GB_MODEL_DMG_B:
         case GB_MODEL_SGB_NTSC: /* Unverified*/
         case GB_MODEL_SGB_PAL: /* Unverified */
@@ -587,14 +652,14 @@ static void reset_ram(GB_gameboy_t *gb)
                 }
             }
             break;
-            
+
         case GB_MODEL_SGB2:
             for (unsigned i = 0; i < gb->ram_size; i++) {
                 gb->ram[i] = 0x55;
                 gb->ram[i] ^= random() & random() & random();
             }
             break;
-        
+
         case GB_MODEL_CGB_C:
             for (unsigned i = 0; i < gb->ram_size; i++) {
                 if ((i & 0x808) == 0x800 || (i & 0x808) == 0x008) {
@@ -606,11 +671,11 @@ static void reset_ram(GB_gameboy_t *gb)
             }
             break;
     }
-    
+
     for (unsigned i = 0; i < sizeof(gb->extra_oam); i++) {
         gb->extra_oam[i] = (random() & 0xFF);
     }
-    
+
     if (GB_is_cgb(gb)) {
         for (unsigned i = 0; i < 64; i++) {
             gb->background_palettes_data[i] = random() & 0xFF; /* Doesn't really matter as the boot ROM overrides it anyway*/
@@ -630,7 +695,7 @@ void GB_reset(GB_gameboy_t *gb)
     memset(gb, 0, (size_t)GB_GET_SECTION((GB_gameboy_t *) 0, unsaved));
     gb->model = model;
     gb->version = GB_STRUCT_VERSION;
-    
+
     gb->mbc_rom_bank = 1;
     gb->last_rtc_second = time(NULL);
     gb->cgb_ram_bank = 1;
@@ -646,7 +711,7 @@ void GB_reset(GB_gameboy_t *gb)
         gb->ram_size = 0x2000;
         gb->vram_size = 0x2000;
         memset(gb->vram, 0, gb->vram_size);
-        
+
         if (gb->rgb_encode_callback) {
             gb->sprite_palettes_rgb[4] = gb->sprite_palettes_rgb[0] = gb->background_palettes_rgb[0] =
                 gb->rgb_encode_callback(gb, 0xFF, 0xFF, 0xFF);
@@ -659,17 +724,17 @@ void GB_reset(GB_gameboy_t *gb)
         }
     }
     reset_ram(gb);
-    
+
     /* The serial interrupt always occur on the 0xF7th cycle of every 0x100 cycle since boot. */
     gb->serial_cycles = 0x100-0xF7;
     gb->io_registers[GB_IO_SC] = 0x7E;
-    
+
     /* These are not deterministic, but 00 (CGB) and FF (DMG) are the most common initial values by far */
     gb->io_registers[GB_IO_DMA] = gb->io_registers[GB_IO_OBP0] = gb->io_registers[GB_IO_OBP1] = GB_is_cgb(gb)? 0x00 : 0xFF;
-    
+
     gb->accessed_oam_row = -1;
-    
-    
+
+
     if (GB_is_sgb(gb)) {
         if (!gb->sgb) {
             gb->sgb = malloc(sizeof(*gb->sgb));
@@ -679,7 +744,7 @@ void GB_reset(GB_gameboy_t *gb)
         gb->sgb_intro_sweep_phase = 0;
         gb->sgb_intro_sweep_previous_sample = 0;
         gb->sgb->intro_animation = -10;
-        
+
         gb->sgb->player_count = 1;
         GB_sgb_load_default_data(gb);
 
@@ -690,17 +755,17 @@ void GB_reset(GB_gameboy_t *gb)
             gb->sgb = NULL;
         }
     }
-    
+
     /* Todo: Ugly, fixme, see comment in the timer state machine */
     gb->div_state = 3;
 
     GB_apu_update_cycles_per_sample(gb);
-    
+
     if (gb->nontrivial_jump_state) {
         free(gb->nontrivial_jump_state);
         gb->nontrivial_jump_state = NULL;
     }
-    
+
     gb->magic = (uintptr_t)'SAME';
 }
 
@@ -727,12 +792,12 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
     if (!size) {
         size = &dummy_size;
     }
-    
+
     if (!bank) {
         bank = &dummy_bank;
     }
-    
-    
+
+
     switch (access) {
         case GB_DIRECT_ACCESS_ROM:
             *size = gb->rom_size;

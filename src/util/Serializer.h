@@ -105,6 +105,6 @@ static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
 	} else {
 		DeserializeInstance(root, plug);
 	}
-	
+
 	return pos;
 }

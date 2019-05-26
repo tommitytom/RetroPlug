@@ -56,38 +56,30 @@ extern "C" {
 #endif
 
 RETRO_API void* sameboy_init(void* user_data, const char* path);
-
+RETRO_API void sameboy_free(void* state);
 RETRO_API void sameboy_reset(void* state);
-
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);
+RETRO_API void sameboy_set_setting(void* state, const char* name, int value);
 
 RETRO_API void sameboy_set_midi_bytes(void* state, int offset, const char* byte, size_t count);
-
 RETRO_API void sameboy_set_button(void* state, int buttonId, bool down);
 
-RETRO_API void sameboy_save_battery(void* state, const char* path);
-
-RETRO_API void sameboy_load_battery(void* state, const char* path);
+RETRO_API size_t sameboy_battery_size(void* state);
+RETRO_API size_t sameboy_save_battery(void* state, const char* target, size_t size);
+RETRO_API void sameboy_load_battery(void* state, const char* source, size_t size);
 
 RETRO_API void sameboy_set_link_target(void* state, void* linkTarget);
 
 RETRO_API size_t sameboy_save_state_size(void* state);
-
 RETRO_API void sameboy_save_state(void* state, char* target, size_t size);
-
 RETRO_API void sameboy_load_state(void* state, const char* source, size_t size);
 
 RETRO_API size_t sameboy_fetch_audio(void* state, int16_t* audio);
-
 RETRO_API size_t sameboy_fetch_video(void* state, uint32_t* video);
-
-RETRO_API void sameboy_set_setting(void* state, const char* name, int value);
-
-RETRO_API void sameboy_free(void* state);
 
 RETRO_API const char* sameboy_get_rom_name(void* state);
 

@@ -9,23 +9,30 @@
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
+	void(*sameboy_free)(void* state);
 	void(*sameboy_reset)(void* state);
+
 	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
 	void(*sameboy_update_multiple)(void** states, size_t stateCount, size_t requiredAudioFrames);
-	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
-	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
+
 	void(*sameboy_set_sample_rate)(void* state, double sample_rate);
-	void(*sameboy_free)(void* state);
+	void(*sameboy_set_setting)(void* state, const char* name, int value);
+
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
 	void(*sameboy_set_button)(void* state, int buttonId, bool down);
-	size_t(*sameboy_save_state_size)(void* state);
-	void(*sameboy_save_state)(void* state, char* target, size_t size);
-	void(*sameboy_load_state)(void* state, const char* source, size_t size);
-	void(*sameboy_load_battery)(void* state, const char* path);
-	void(*sameboy_save_battery)(void* state, const char* path);
-	void(*sameboy_set_setting)(void* state, const char* name, int value);
 	void(*sameboy_set_link_target)(void* state, void* linkTarget);
-	
+
+	size_t(*sameboy_battery_size)(void* state);
+	void(*sameboy_load_battery)(void* state, const char* source, size_t size);
+	size_t(*sameboy_save_battery)(void* state, const char* target, size_t size);
+
+	size_t(*sameboy_save_state_size)(void* state);
+	void(*sameboy_load_state)(void* state, const char* source, size_t size);
+	void(*sameboy_save_state)(void* state, char* target, size_t size);
+
+	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
+	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
+
 	const char*(*sameboy_get_rom_name)(void* state);
 };
 
@@ -80,7 +87,7 @@ public:
 
 	void saveBattery(const std::string& path);
 
-	void loadBattery(const std::string& path);
+	void loadBattery(const std::string& path, bool reset);
 
 	void saveState(char* target, size_t size);
 

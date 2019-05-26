@@ -289,6 +289,7 @@
     <ClInclude Include="..\src\ui\EmulatorView.h" />
     <ClInclude Include="..\src\ui\RetroPlugRoot.h" />
     <ClInclude Include="..\src\util\base64.h" />
+    <ClInclude Include="..\src\util\File.h" />
     <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\String.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.h" />
@@ -448,6 +449,7 @@
     <ClCompile Include="..\src\ui\EmulatorView.cpp" />
     <ClCompile Include="..\src\ui\RetroPlugRoot.cpp" />
     <ClCompile Include="..\src\util\base64.cpp" />
+    <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiolist.cpp" />

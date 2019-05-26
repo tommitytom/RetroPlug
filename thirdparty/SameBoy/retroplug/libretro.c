@@ -136,20 +136,27 @@ size_t sameboy_save_state_size(void* state) {
     return GB_get_save_state_size(&s->gb);
 }
 
-void sameboy_save_battery(void* state, const char* path) {
+size_t sameboy_battery_size(void* state) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    GB_save_battery(&s->gb, path);
+    return GB_battery_size(&s->gb);
 }
 
-void sameboy_load_battery(void* state, const char* path) {
+size_t sameboy_save_battery(void* state, const char* target, size_t size) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    GB_load_battery(&s->gb, path);
+    return GB_save_battery_to_buffer(&s->gb, target, size);
+}
+
+void sameboy_load_battery(void* state, const char* source, size_t size) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+    GB_load_battery_from_buffer(&s->gb, source, size);
 }
 
 void sameboy_save_state(void* state, char* target, size_t size) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     size_t state_size = GB_get_save_state_size(&s->gb);
-    GB_save_state_to_buffer(&s->gb, target);
+    if (size >= state_size) {
+        GB_save_state_to_buffer(&s->gb, target);
+    }
 }
 
 void sameboy_load_state(void* state, const char* source, size_t size) {

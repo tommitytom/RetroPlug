@@ -119,7 +119,8 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int startPos)
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {
-	if (transportChanged) {
+	Lsdj& lsdj = plug->lsdj();
+	if (transportChanged && plug->midiSync() && !lsdj.found) {
 		if (mTimeInfo.mTransportIsRunning) {
 			plug->sendMidiByte(0, 0xFA);
 		} else {
@@ -128,7 +129,6 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 	}
 
 	if (mTimeInfo.mTransportIsRunning) {
-		Lsdj& lsdj = plug->lsdj();
 		if (lsdj.found) {
 			switch (lsdj.syncMode) {
 			case LsdjSyncModes::Midi:
@@ -248,7 +248,6 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 		}
 	} else {
 		// Presume mGB
-		int status = msg.StatusMsg();
 		char midiData[3];
 		midiData[0] = msg.mStatus;
 		midiData[1] = msg.mData1;
