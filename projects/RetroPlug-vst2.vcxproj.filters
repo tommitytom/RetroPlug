@@ -79,6 +79,9 @@
     <ClCompile Include="..\src\util\base64.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\util\File.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -320,6 +323,9 @@
     </ClInclude>
     <ClInclude Include="..\src\Buttons.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\File.h">
+      <Filter>src\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

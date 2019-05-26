@@ -238,7 +238,6 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 		}
 	} else {
 		// Presume mGB
-		int status = msg.StatusMsg();
 		char midiData[3];
 		midiData[0] = msg.mStatus;
 		midiData[1] = msg.mData1;

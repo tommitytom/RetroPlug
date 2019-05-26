@@ -7,6 +7,7 @@
 #include "src/audio/miniaudio.h"
 
 #include "resource.h"
+#include "util/File.h"
 
 const int FRAME_SIZE = 160 * 144 * 4;
 
@@ -30,6 +31,7 @@ void SameBoyPlug::init(const std::string & gamePath) {
 	_library.get("sameboy_save_state_size", _symbols.sameboy_save_state_size);
 	_library.get("sameboy_save_state", _symbols.sameboy_save_state);
 	_library.get("sameboy_load_state", _symbols.sameboy_load_state);
+	_library.get("sameboy_battery_size", _symbols.sameboy_battery_size);
 	_library.get("sameboy_save_battery", _symbols.sameboy_save_battery);
 	_library.get("sameboy_load_battery", _symbols.sameboy_load_battery);
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
@@ -69,12 +71,26 @@ size_t SameBoyPlug::saveStateSize() {
 }
 
 void SameBoyPlug::saveBattery(const std::string& path) {
-	_symbols.sameboy_save_battery(_instance, path.c_str());
+	size_t size = _symbols.sameboy_battery_size(_instance);
+	if (size) {
+		std::vector<char> target(size);
+		_symbols.sameboy_save_battery(_instance, target.data(), target.size());
+		writeFile(path, target);
+	}
 }
 
-void SameBoyPlug::loadBattery(const std::string& path) {
-	_symbols.sameboy_load_battery(_instance, path.c_str());
-	_symbols.sameboy_reset(_instance);
+void SameBoyPlug::loadBattery(const std::string& path, bool reset) {
+	std::vector<char> data;
+	if (!readFile(path, data)) {
+		// Faillll
+		return;
+	}
+
+	_symbols.sameboy_load_battery(_instance, data.data(), data.size());
+
+	if (reset) {
+		_symbols.sameboy_reset(_instance);
+	}
 }
 
 void SameBoyPlug::saveState(char* target, size_t size) {

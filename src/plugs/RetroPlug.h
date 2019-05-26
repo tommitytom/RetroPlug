@@ -41,7 +41,7 @@ public:
 
 		_savePath = changeExt(romPath, ".sav");
 		if (std::filesystem::exists(_savePath)) {
-			plug->loadBattery(_savePath);
+			plug->loadBattery(_savePath, false);
 		}
 
 		std::string romName = plug->romName();
@@ -105,7 +105,7 @@ public:
 
 		std::string p = ws2s(path);
 		plugPtr->lock().lock();
-		plugPtr->loadBattery(p);
+		plugPtr->loadBattery(p, true);
 		plugPtr->lock().unlock();
 	}
 
