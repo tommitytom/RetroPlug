@@ -25,14 +25,17 @@ void EmulatorView::OnInit() {
 	IRECT topRow(b.L, mid - 25, b.R, mid);
 	IRECT bottomRow(b.L, mid, b.R, mid + 25);
 
-	_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_BLACK));
-	_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_BLACK));
+	if (!_plug || !_plug->active()) {
+		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
+		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
 
-	GetUI()->AttachControl(_textIds[0]);
-	GetUI()->AttachControl(_textIds[1]);
+		GetUI()->AttachControl(_textIds[0]);
+		GetUI()->AttachControl(_textIds[1]);
+	}
 }
 
 void EmulatorView::OnDrop(const char* str) {
+	HideText();
 	_plug->init(str);
 }
 
@@ -255,8 +258,10 @@ void EmulatorView::DuplicatePlug() {
 }
 
 void EmulatorView::HideText() {
-	_textIds[0]->ClearStr();
-	_textIds[1]->ClearStr();
+	if (_textIds[0]) {
+		_textIds[0]->SetText(IText(23, COLOR_BLACK));
+		_textIds[1]->SetText(IText(23, COLOR_BLACK));
+	}
 }
 
 void EmulatorView::OpenLoadRomDialog() {
@@ -267,6 +272,7 @@ void EmulatorView::OpenLoadRomDialog() {
 	std::wstring path = BasicFileOpen(types);
 	if (path.size() > 0) {
 		std::string p = ws2s(path);
+		HideText();
 		_plug->init(p.c_str());
 	}
 }

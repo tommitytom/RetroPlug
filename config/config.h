@@ -22,7 +22,7 @@
 #define PLUG_DOES_MPE 1
 #define PLUG_DOES_STATE_CHUNKS 1
 #define PLUG_HAS_UI 1
-#define PLUG_WIDTH 320 * 2
+#define PLUG_WIDTH 320
 #define PLUG_HEIGHT 288
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0

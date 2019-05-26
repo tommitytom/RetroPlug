@@ -13,7 +13,7 @@ void RetroPlugRoot::OnInit() {
 			plug = _plug->addInstance(EmulatorType::SameBoy);
 		}
 		
-		IRECT b(_views.size() * 320, 0, _views.size() * 320, 288);
+		IRECT b(0, 0, 320, 288);
 		EmulatorView* view = new EmulatorView(b, plug);
 		AddView(view);
 	}
@@ -64,12 +64,17 @@ void RetroPlugRoot::DuplicatePlug(EmulatorView* view) {
 }
 
 void RetroPlugRoot::AddView(EmulatorView* view) {
-	auto w = (std::max((int)_views.size(), 1) + 1) * 320;
+	auto w = (_views.size() + 1) * 320;
+	IRECT b(0, 0, w, 288);
 
-	GetUI()->Resize(w, 288, 1);
-	SetRECT(IRECT(0, 0, w, 288));
+	GetUI()->SetSizeConstraints(320, b.W(), 288, 288);
+	GetUI()->Resize(b.W(), b.H(), 1);
+	GetUI()->GetControl(0)->SetRECT(b);
+	SetRECT(b);
+
+	int x = _views.size() * 320;
+	view->SetRECT(IRECT(x, 0, x + 320, 288));
 	GetUI()->AttachControl(view);
-	view->SetRECT(IRECT(_views.size() * 320, 0, _views.size() * 320 + 320, 288));
 
 	view->OnDuplicateRequest([this](EmulatorView * view) { DuplicatePlug(view); });
 	_views.push_back(view);
