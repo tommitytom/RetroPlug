@@ -85,9 +85,13 @@ public:
 
 	size_t saveStateSize();
 
-	void saveBattery(const std::string& path);
+	bool saveBattery(const std::string& path);
 
-	void loadBattery(const std::string& path, bool reset);
+	bool saveBattery(std::vector<char>& data);
+
+	bool loadBattery(const std::string& path, bool reset);
+
+	bool loadBattery(const std::vector<char>& path, bool reset);
 
 	void saveState(char* target, size_t size);
 

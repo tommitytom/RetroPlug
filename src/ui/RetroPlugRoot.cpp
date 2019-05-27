@@ -42,21 +42,25 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	}
 }
 
-void RetroPlugRoot::DuplicatePlug(EmulatorView* view) {
-	SameBoyPlugPtr source = view->Plug();
+void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
-	
-	target->init(source->romPath());
+	SameBoyPlugPtr source = view->Plug();
+	if (type != CreateInstanceType::LoadRom) {
+		target->init(source->romPath());
 
-	size_t stateSize = source->saveStateSize();
-	char* buf = new char[stateSize];
-	source->saveState(buf, stateSize);
-	target->loadState(buf, stateSize);
+		if (type == CreateInstanceType::Duplicate) {
+			size_t stateSize = source->saveStateSize();
+			char* buf = new char[stateSize];
+			source->saveState(buf, stateSize);
+			target->loadState(buf, stateSize);
+			delete[] buf;
+		}
+	}	
 
-	delete[] buf;
-
-	source->setLinkTarget(target.get());
-	target->setLinkTarget(source.get());
+	if (target->active()) {
+		source->setLinkTarget(target.get());
+		target->setLinkTarget(source.get());
+	}
 
 	IRECT b(_views.size() * 320, 0, _views.size() * 320 + 320, 288);
 	EmulatorView* targetView = new EmulatorView(b, target);
@@ -76,7 +80,7 @@ void RetroPlugRoot::AddView(EmulatorView* view) {
 	view->SetRECT(IRECT(x, 0, x + 320, 288));
 	GetUI()->AttachControl(view);
 
-	view->OnDuplicateRequest([this](EmulatorView * view) { DuplicatePlug(view); });
+	view->OnDuplicateRequest([this](EmulatorView* view, CreateInstanceType type) { CreatePlugInstance(view, type); });
 	_views.push_back(view);
 
 	SetActive(view);

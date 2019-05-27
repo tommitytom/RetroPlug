@@ -12,7 +12,7 @@ enum RootMenuItems : int {
 	LoadRom,
 	Sram,
 	Settings,
-	Duplicate,
+	AddInstance,
 
 	Sep1,
 
@@ -35,7 +35,18 @@ enum LsdjModeMenuItems : int {
 enum SramMenuItems : int {
 	Save,
 	SaveAs,
-	Load
+	Load,
+
+	Step1,
+
+	Songs,
+	Import
+};
+
+enum class CreateInstanceType : int {
+	Duplicate,
+	SameRom,
+	LoadRom
 };
 
 const int VIDEO_WIDTH = 160;
@@ -59,7 +70,7 @@ private:
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
 
 	std::map<std::string, int> _settings;
-	std::function<void(EmulatorView*)> _duplicateCb;
+	std::function<void(EmulatorView*, CreateInstanceType)> _duplicateCb;
 
 	ITextControl* _textIds[2] = { nullptr, nullptr };
 
@@ -74,7 +85,7 @@ public:
 
 	bool IsDirty() override { return true; }
 
-	void OnDuplicateRequest(std::function<void(EmulatorView*)> cb) {
+	void OnDuplicateRequest(std::function<void(EmulatorView*, CreateInstanceType)> cb) {
 		_duplicateCb = cb;
 	}
 
@@ -105,9 +116,9 @@ private:
 
 	void ToggleKeyboardMode();
 
-	void DuplicatePlug();
-
 	void HideText();
+
+	void ExportSong(int index);
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

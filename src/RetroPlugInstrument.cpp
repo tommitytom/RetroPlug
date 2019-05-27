@@ -94,11 +94,13 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 
 		memset(_sampleScratch, 0, sampleCount * sizeof(float));
 		size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
-		assert(readAmount == sampleCount);
+		//assert(readAmount == sampleCount);
 
-		for (size_t i = 0; i < frameCount; i++) {
-			outputs[0][i] += _sampleScratch[i * 2];
-			outputs[1][i] += _sampleScratch[i * 2 + 1];
+		if (readAmount == sampleCount) {
+			for (size_t i = 0; i < frameCount; i++) {
+				outputs[0][i] += _sampleScratch[i * 2];
+				outputs[1][i] += _sampleScratch[i * 2 + 1];
+			}
 		}
 
 		plug->lock().unlock();

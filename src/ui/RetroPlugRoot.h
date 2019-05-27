@@ -32,7 +32,7 @@ public:
 private:
 	void AddView(EmulatorView* view);
 
-	void DuplicatePlug(EmulatorView* view);
+	void CreatePlugInstance(EmulatorView* view, CreateInstanceType type);
 
 	void SetActive(EmulatorView* view);
 };

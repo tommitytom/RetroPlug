@@ -134,7 +134,6 @@ void EmulatorView::CreateMenu(float x, float y) {
 	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 		switch (indexInMenu) {
 		case RootMenuItems::LoadRom: OpenLoadRomDialog(); break;
-		case RootMenuItems::Duplicate: DuplicatePlug(); break;
 		case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 		case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
 		}
@@ -155,15 +154,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 	});
 
 	IPopupMenu* settingsMenu = CreateSettingsMenu();
-	/*IPopupMenu* osMenu = new IPopupMenu(0, true, { "Off", "2x", "4x" });
-	osMenu->CheckItem(0, true);
-	settingsMenu->AddItem("Oversampling", osMenu);
-	osMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-		int amount = 1 << indexInMenu;
-	});*/
-
 	settingsMenu->AddSeparator();
-	//settingsMenu->AddItem("Set as Default");
 	settingsMenu->AddItem("Open Settings Folder...");
 	_menu.AddItem("Settings", settingsMenu);
 	settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item* itemChosen) {
@@ -172,10 +163,47 @@ void EmulatorView::CreateMenu(float x, float y) {
 		}
 	});
 
-	_menu.AddItem("Duplicate", RootMenuItems::Duplicate);
+	IPopupMenu* instanceMenu = new IPopupMenu();
+	instanceMenu->AddItem("Duplicate", (int)CreateInstanceType::Duplicate);
+	instanceMenu->AddItem("Same ROM", (int)CreateInstanceType::SameRom);
+	instanceMenu->AddItem("Load ROM...", (int)CreateInstanceType::LoadRom);
+	_menu.AddItem("Add Instance", instanceMenu, RootMenuItems::AddInstance);
+	instanceMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+		if (_duplicateCb) {
+			_duplicateCb(this, (CreateInstanceType)indexInMenu);
+		}
+	});
 
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
+		std::vector<std::string> songNames;
+		lsdj.getSongNames(songNames);
+
+		if (!songNames.empty()) {
+			sramMenu->AddSeparator();
+			sramMenu->AddItem("Songs", SramMenuItems::Songs, IPopupMenu::Item::kDisabled);
+			sramMenu->AddItem("Import (and reset)...", SramMenuItems::Import);
+
+			for (size_t i = 0; i < songNames.size(); i++) {
+				IPopupMenu* songMenu = new IPopupMenu(0, true, {
+					"Export .lsdsng...",
+					"Load (and reset)",
+					"Delete (and reset)"
+				});
+
+				sramMenu->AddItem(songNames[i].c_str(), songMenu);
+
+				songMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+					if (indexInMenu == 0) {
+						// Export
+						ExportSong(indexInMenu);
+					} else {
+						// Delete and reset
+					}
+				});
+			}
+		}
+
 		_menu.AddSeparator();
 		_menu.AddItem(_plug->romName().c_str(), RootMenuItems::LsdjVersion, IPopupMenu::Item::kDisabled);
 
@@ -251,16 +279,39 @@ void EmulatorView::ToggleKeyboardMode() {
 	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
-void EmulatorView::DuplicatePlug() {
-	if (_duplicateCb) {
-		_duplicateCb(this);
-	}
-}
-
 void EmulatorView::HideText() {
 	if (_textIds[0]) {
 		_textIds[0]->SetText(IText(23, COLOR_BLACK));
 		_textIds[1]->SetText(IText(23, COLOR_BLACK));
+	}
+}
+
+#include "util/File.h"
+
+void EmulatorView::ExportSong(int index) {
+	std::vector<FileDialogFilters> types = {
+		{ L"LSDj Songs", L"*.lsdsng" }
+	};
+
+	std::wstring path = BasicFileSave(types);
+	if (path.size() == 0) {
+		return;
+	}
+
+	Lsdj& lsdj = _plug->lsdj();
+	if (lsdj.found) {
+		lsdj.saveData.clear();
+		_plug->saveBattery(lsdj.saveData);
+
+		if (lsdj.saveData.size() > 0) {
+			std::vector<char> songData;
+			lsdj.exportSong(index, songData);
+
+			if (songData.size() > 0) {
+				std::string p = ws2s(path);
+				writeFile(p, songData);
+			}
+		}
 	}
 }
 
