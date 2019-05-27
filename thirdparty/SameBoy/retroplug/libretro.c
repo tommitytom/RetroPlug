@@ -18,6 +18,8 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 
 #define LINK_TICKS_MAX 3907
 
+#define MAX_INSTANCES 4
+
 typedef struct sameboy_state_t {
     GB_gameboy_t gb;
     char frameBuffer[FRAME_BUFFER_SIZE];
@@ -27,7 +29,8 @@ typedef struct sameboy_state_t {
     bool vblankOccurred;
     int linkTicksRemain;
 
-    struct sameboy_state_t* linkTarget;
+    struct sameboy_state_t* linkTargets[MAX_INSTANCES];
+    size_t linkTargetCount;
     bool bit_to_send;
 } sameboy_state_t;
 
@@ -38,20 +41,21 @@ static void vblankHandler(GB_gameboy_t* gb) {
 
 static void serial_start(GB_gameboy_t *gb, bool bit_received) {
     sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
-    if (s->linkTarget) {
-        s->linkTarget->bit_to_send = bit_received;
+
+    for (size_t i = 0; i < s->linkTargetCount; i++) {
+        s->linkTargets[i]->bit_to_send = bit_received;
     }
 }
 
 static bool serial_end(GB_gameboy_t* gb) {
     sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
-    if (s->linkTarget) {
-        bool ret = GB_serial_get_data_bit(&s->linkTarget->gb);
-        GB_serial_set_data_bit(&s->linkTarget->gb, s->linkTarget->bit_to_send);
-        return ret;
+
+    bool ret = s->linkTargetCount > 0 ? GB_serial_get_data_bit(&s->linkTargets[0]->gb) : true;
+    for (size_t i = 0; i < s->linkTargetCount; i++) {
+        GB_serial_set_data_bit(&s->linkTargets[i]->gb, s->linkTargets[i]->bit_to_send);
     }
 
-    return false;
+    return ret;
 }
 
 void* sameboy_init(void* user_data, const char* path) {
@@ -61,7 +65,7 @@ void* sameboy_init(void* user_data, const char* path) {
     state->currentAudioFrames = 0;
     state->linkTicksRemain = 0;
     state->bit_to_send = true;
-    state->linkTarget = NULL;
+    state->linkTargetCount = 0;
 
     GB_init(&state->gb, GB_MODEL_CGB_E);
 	GB_load_boot_rom_from_buffer(&state->gb, cgb_boot, cgb_boot_length);
@@ -94,9 +98,14 @@ void sameboy_reset(void* state) {
     GB_reset(&s->gb);
 }
 
-void sameboy_set_link_target(void* state, void* linkTarget) {
+void sameboy_set_link_targets(void* state, void** linkTargets, size_t count) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    s->linkTarget = (sameboy_state_t*)linkTarget;
+
+    for (size_t i = 0; i < count; i++) {
+        s->linkTargets[i] = (sameboy_state_t*)(linkTargets[i]);
+    }
+
+    s->linkTargetCount = count;
 }
 
 void sameboy_set_setting(void* state, const char* name, int value) {
@@ -185,8 +194,6 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
 
     return 0;
 }
-
-const int MAX_INSTANCES = 4;
 
 void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames) {
     sameboy_state_t* st[MAX_INSTANCES];

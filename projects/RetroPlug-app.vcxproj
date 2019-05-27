@@ -469,6 +469,7 @@
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
+    <ClCompile Include="..\src\roms\Lsdj.cpp" />
     <ClCompile Include="..\src\ui\EmulatorView.cpp" />
     <ClCompile Include="..\src\ui\RetroPlugRoot.cpp" />
     <ClCompile Include="..\src\util\base64.cpp" />

@@ -651,10 +651,11 @@ void GB_set_user_data(GB_gameboy_t *gb, void *data);
 int GB_load_boot_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size);
 int GB_load_rom(GB_gameboy_t *gb, const char *path);
+int GB_load_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size);
 
 size_t GB_battery_size(GB_gameboy_t *gb);
-int GB_save_battery_to_buffer(GB_gameboy_t *gb, char *buffer, size_t size);
-void GB_load_battery_from_buffer(GB_gameboy_t *gb, const char *buffer, size_t size);
+int GB_save_battery_to_buffer(GB_gameboy_t *gb, unsigned char *buffer, size_t size);
+void GB_load_battery_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size);
 int GB_save_battery(GB_gameboy_t *gb, const char *path);
 void GB_load_battery(GB_gameboy_t *gb, const char *path);
 

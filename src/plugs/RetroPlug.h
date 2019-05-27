@@ -35,6 +35,35 @@ public:
 		return plug;
 	}
 
+	size_t instanceCount() const {
+		for (size_t i = 0; i < MAX_INSTANCES; i++) {
+			if (!_plugs[i]) {
+				return i;
+			}
+		}
+	}
+
+	void getLinkTargets(std::vector<SameBoyPlugPtr>& targets, SameBoyPlugPtr ignore) {
+		for (size_t i = 0; i < MAX_INSTANCES; i++) {
+			if (_plugs[i] && _plugs[i] != ignore && _plugs[i]->active() && _plugs[i]->gameLink()) {
+				targets.push_back(_plugs[i]);
+			}
+		}
+	}
+
+	void updateLinkTargets() {
+		size_t count = instanceCount();
+		std::vector<SameBoyPlugPtr> targets;
+		for (size_t i = 0; i < count; i++) {
+			auto target = _plugs[i];
+			if (target->active() && target->gameLink()) {
+				targets.clear();
+				getLinkTargets(targets, target);
+				target->setLinkTargets(targets);
+			}
+		}
+	}
+
 	void setSampleRate(double sampleRate) {
 		_sampleRate = sampleRate;
 

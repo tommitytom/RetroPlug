@@ -7,3 +7,8 @@ bool readFile(const std::string& path, std::vector<char>& target);
 bool readFile(const std::string& path, char* target, size_t size);
 bool writeFile(const std::string& path, const std::vector<char>& data);
 bool writeFile(const std::string& path, const char* data, size_t size);
+
+bool readFile(const std::wstring& path, std::vector<char>& target);
+bool readFile(const std::wstring& path, char* target, size_t size);
+bool writeFile(const std::wstring& path, const std::vector<char>& data);
+bool writeFile(const std::wstring& path, const char* data, size_t size);

@@ -72,7 +72,7 @@ RETRO_API size_t sameboy_battery_size(void* state);
 RETRO_API size_t sameboy_save_battery(void* state, const char* target, size_t size);
 RETRO_API void sameboy_load_battery(void* state, const char* source, size_t size);
 
-RETRO_API void sameboy_set_link_target(void* state, void* linkTarget);
+RETRO_API void sameboy_set_link_targets(void* state, void** linkTargets, size_t count);
 
 RETRO_API size_t sameboy_save_state_size(void* state);
 RETRO_API void sameboy_save_state(void* state, char* target, size_t size);

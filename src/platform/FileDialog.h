@@ -9,14 +9,14 @@ struct FileDialogFilters {
 	std::wstring extensions;
 };
 
-static std::wstring BasicFileOpen(const std::vector<FileDialogFilters>& filters) {
+static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect) {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
 		targetFilters[i].pszName = filters[i].name.c_str();
 		targetFilters[i].pszSpec = filters[i].extensions.c_str();
 	}
 
-	std::wstring ret;
+	std::vector<std::wstring> ret;
 	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 	if (SUCCEEDED(hr))
 	{
@@ -30,6 +30,11 @@ static std::wstring BasicFileOpen(const std::vector<FileDialogFilters>& filters)
 		{
 			DWORD dwFlags;
 			pFileOpen->GetOptions(&dwFlags);
+
+			if (multiSelect) {
+				dwFlags |= FOS_ALLOWMULTISELECT;
+			}
+			
 			pFileOpen->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
 			pFileOpen->SetFileTypes(filters.size(), targetFilters);
 			hr = pFileOpen->Show(NULL);
@@ -37,20 +42,29 @@ static std::wstring BasicFileOpen(const std::vector<FileDialogFilters>& filters)
 			// Get the file name from the dialog box.
 			if (SUCCEEDED(hr))
 			{
-				IShellItem* pItem;
-				hr = pFileOpen->GetResult(&pItem);
+				IShellItemArray* items;
+				hr = pFileOpen->GetResults(&items);
 				if (SUCCEEDED(hr))
 				{
-					PWSTR pszFilePath;
-					hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+					DWORD itemCount;
+					items->GetCount(&itemCount);
+					for (int i = 0; i < itemCount; i++) {
+						IShellItem* item;
+						hr = items->GetItemAt(i, &item);
+						if (SUCCEEDED(hr)) {
+							PWSTR pszFilePath;
+							hr = item->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
 
-					// Display the file name to the user.
-					if (SUCCEEDED(hr))
-					{
-						ret = std::wstring(pszFilePath);
-						CoTaskMemFree(pszFilePath);
+							// Display the file name to the user.
+							if (SUCCEEDED(hr))
+							{
+								ret.push_back(pszFilePath);
+								CoTaskMemFree(pszFilePath);
+							}
+						}
 					}
-					pItem->Release();
+					
+					items->Release();
 				}
 			}
 			pFileOpen->Release();

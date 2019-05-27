@@ -6,6 +6,7 @@
 #include "roms/Lsdj.h"
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path);
@@ -20,7 +21,7 @@ struct SameboyPlugSymbols {
 
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
 	void(*sameboy_set_button)(void* state, int buttonId, bool down);
-	void(*sameboy_set_link_target)(void* state, void* linkTarget);
+	void(*sameboy_set_link_targets)(void* state, void** linkTargets, size_t count);
 
 	size_t(*sameboy_battery_size)(void* state);
 	void(*sameboy_load_battery)(void* state, const char* source, size_t size);
@@ -35,6 +36,9 @@ struct SameboyPlugSymbols {
 
 	const char*(*sameboy_get_rom_name)(void* state);
 };
+
+class SameBoyPlug;
+using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 
 class SameBoyPlug {
 private:
@@ -54,6 +58,7 @@ private:
 	std::mutex _lock;
 	std::atomic<bool> _midiSync = false;
 	Lsdj _lsdj;
+	bool _gameLink = true;
 
 	double _sampleRate = 48000;
 
@@ -66,6 +71,8 @@ public:
 	bool midiSync() { return _midiSync.load(); }
 
 	void setMidiSync(bool enabled) { _midiSync = enabled; }
+
+	bool gameLink() const { return _gameLink; }
 
 	void init(const std::string& romPath);
 
@@ -99,9 +106,7 @@ public:
 
 	void setSetting(const std::string& name, int value);
 
-	void setOversample(int value);
-
-	void setLinkTarget(SameBoyPlug* linkTarget);
+	void setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets);
 
 	void setButtonState(const ButtonEvent& ev) { _bus.buttons.writeValue(ev); }
 
@@ -110,6 +115,8 @@ public:
 	void update(size_t audioFrames);
 
 	void updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames);
+
+	void reset();
 
 	void shutdown();
 
@@ -121,4 +128,4 @@ private:
 	void updateAV(int audioFrames);
 };
 
-using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
+

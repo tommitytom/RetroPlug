@@ -8,39 +8,12 @@
 #include "LsdjKeyMap.h"
 #include "nanovg.h"
 
-enum RootMenuItems : int {
-	LoadRom,
-	Sram,
-	Settings,
-	AddInstance,
-
-	Sep1,
-
-	SendClock = 5,
-
-	// LSDJ Specific
-	LsdjVersion = 5,
-	LsdjModes,
-	KeyboardMode
-};
-
 enum LsdjModeMenuItems : int {
 	Off,
 	MidiSync,
 	MidSyncArduinoboy,
 	MidiMap,
 	AutoPlay = 5
-};
-
-enum SramMenuItems : int {
-	Save,
-	SaveAs,
-	Load,
-
-	Step1,
-
-	Songs,
-	Import
 };
 
 enum class CreateInstanceType : int {
@@ -114,11 +87,19 @@ private:
 
 	void OpenSaveSramDialog();
 
+	void OpenLoadSongsDialog();
+
 	void ToggleKeyboardMode();
 
 	void HideText();
 
 	void ExportSong(int index);
+
+	void LoadSong(int index);
+
+	void DeleteSong(int index);
+
+	void ResetSystem();
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

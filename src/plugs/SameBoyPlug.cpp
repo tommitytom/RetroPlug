@@ -42,7 +42,7 @@ void SameBoyPlug::init(const std::string& romPath) {
 	_library.get("sameboy_load_battery", _symbols.sameboy_load_battery);
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
 	_library.get("sameboy_set_setting", _symbols.sameboy_set_setting);
-	_library.get("sameboy_set_link_target", _symbols.sameboy_set_link_target);
+	_library.get("sameboy_set_link_targets", _symbols.sameboy_set_link_targets);
 
 	void* instance = _symbols.sameboy_init(this, romPath.c_str());
 	const char* name = _symbols.sameboy_get_rom_name(instance);
@@ -125,6 +125,11 @@ bool SameBoyPlug::loadBattery(const std::string& path, bool reset) {
 bool SameBoyPlug::loadBattery(const std::vector<char>& data, bool reset) {
 	std::scoped_lock lock(_lock);
 	_symbols.sameboy_load_battery(_instance, data.data(), data.size());
+
+	if (reset) {
+		_symbols.sameboy_reset(_instance);
+	}
+
 	return true;
 }
 
@@ -145,14 +150,15 @@ void SameBoyPlug::setSetting(const std::string& name, int value) {
 	_lock.unlock();
 }
 
-void SameBoyPlug::setLinkTarget(SameBoyPlug* linkTarget) {
+void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
+	void* instances[MAX_INSTANCES];
+	for (size_t i = 0; i < linkTargets.size(); i++) {
+		instances[i] = linkTargets[i]->instance();
+	}
+
 	_lock.lock();
-	_symbols.sameboy_set_link_target(_instance, linkTarget->instance());
+	_symbols.sameboy_set_link_targets(_instance, instances, linkTargets.size());
 	_lock.unlock();
-}
-
-void SameBoyPlug::setOversample(int value) {
-
 }
 
 // This is called from the audio thread
@@ -179,6 +185,11 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 	for (size_t i = 0; i < plugCount; i++) {
 		plugs[i]->updateAV(audioFrames);
 	}
+}
+
+void SameBoyPlug::reset() {
+	std::scoped_lock lock(_lock);
+	_symbols.sameboy_reset(_instance);
 }
 
 void SameBoyPlug::updateButtons() {

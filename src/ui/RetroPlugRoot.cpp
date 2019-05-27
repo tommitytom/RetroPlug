@@ -1,6 +1,7 @@
 #include "RetroPlugRoot.h"
 
 #include <cmath>
+#include "platform/FileDialog.h"
 
 RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug): IControl(b), _plug(plug) {
 
@@ -43,24 +44,38 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
-	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
 	SameBoyPlugPtr source = view->Plug();
-	if (type != CreateInstanceType::LoadRom) {
-		target->init(source->romPath());
+	
+	std::string romPath;
+	if (type == CreateInstanceType::LoadRom) {
+		std::vector<FileDialogFilters> types = {
+			{ L"GameBoy Roms", L"*.gb;*.gbc" }
+		};
 
-		if (type == CreateInstanceType::Duplicate) {
-			size_t stateSize = source->saveStateSize();
-			char* buf = new char[stateSize];
-			source->saveState(buf, stateSize);
-			target->loadState(buf, stateSize);
-			delete[] buf;
+		std::vector<std::wstring> paths = BasicFileOpen(types, false);
+		if (paths.size() > 0) {
+			romPath = ws2s(paths[0]);
 		}
+	} else {
+		romPath = source->romPath();
 	}	
 
-	if (target->active()) {
-		source->setLinkTarget(target.get());
-		target->setLinkTarget(source.get());
+	if (romPath.size() == 0) {
+		return;
 	}
+
+	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
+	target->init(romPath);
+
+	if (type == CreateInstanceType::Duplicate) {
+		size_t stateSize = source->saveStateSize();
+		char* buf = new char[stateSize];
+		source->saveState(buf, stateSize);
+		target->loadState(buf, stateSize);
+		delete[] buf;
+	}
+
+	_plug->updateLinkTargets();
 
 	IRECT b(_views.size() * 320, 0, _views.size() * 320 + 320, 288);
 	EmulatorView* targetView = new EmulatorView(b, target);
