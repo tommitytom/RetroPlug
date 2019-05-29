@@ -90,16 +90,16 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		MessageBus* bus = plug->messageBus();
 
 		size_t available = bus->audio.readAvailable();
-		assert(available == sampleCount);
+		if (available == sampleCount) {
+			memset(_sampleScratch, 0, sampleCount * sizeof(float));
+			size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
+			//assert(readAmount == sampleCount);
 
-		memset(_sampleScratch, 0, sampleCount * sizeof(float));
-		size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
-		//assert(readAmount == sampleCount);
-
-		if (readAmount == sampleCount) {
-			for (size_t i = 0; i < frameCount; i++) {
-				outputs[0][i] += _sampleScratch[i * 2];
-				outputs[1][i] += _sampleScratch[i * 2 + 1];
+			if (readAmount == sampleCount) {
+				for (size_t i = 0; i < frameCount; i++) {
+					outputs[0][i] += _sampleScratch[i * 2];
+					outputs[1][i] += _sampleScratch[i * 2 + 1];
+				}
 			}
 		}
 
@@ -112,12 +112,17 @@ void RetroPlugInstrument::OnIdle() {
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
-	Serialize(chunk, _plug);
+	std::string target;
+	Serialize(target, _plug);
+	chunk.PutStr(target.c_str());
 	return true;
 }
 
-int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int startPos) {
-	return Deserialize(chunk, _plug, startPos);
+int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
+	WDL_String data;
+	pos = chunk.GetStr(data, pos);
+	Deserialize(data.Get(), _plug);
+	return pos;
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {

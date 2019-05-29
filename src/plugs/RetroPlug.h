@@ -16,10 +16,26 @@ class RetroPlug {
 private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
 	double _sampleRate = 48000;
+	std::wstring _projectPath;
 
 public:
 	RetroPlug() {}
 	~RetroPlug() {}
+
+	void clear() {
+		_projectPath.clear();
+		for (size_t i = 0; i < MAX_INSTANCES; i++) {
+			_plugs[i] = nullptr;
+		}
+	}
+
+	const std::wstring& projectPath() const {
+		return _projectPath;
+	}
+
+	void setProjectPath(const std::wstring& path) {
+		_projectPath = path;
+	}
 
 	SameBoyPlugPtr addInstance(EmulatorType emulatorType) {
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
@@ -33,6 +49,12 @@ public:
 		}
 
 		return plug;
+	}
+
+	void removeInstance(size_t idx) {
+		for (size_t i = idx; i < MAX_INSTANCES - 1; i++) {
+			_plugs[i] = _plugs[i + 1];
+		}
 	}
 
 	size_t instanceCount() const {

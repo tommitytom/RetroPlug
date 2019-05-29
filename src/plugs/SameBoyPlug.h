@@ -57,8 +57,9 @@ private:
 
 	std::mutex _lock;
 	std::atomic<bool> _midiSync = false;
+	std::atomic<bool> _gameLink = false;
+
 	Lsdj _lsdj;
-	bool _gameLink = true;
 
 	double _sampleRate = 48000;
 
@@ -72,7 +73,9 @@ public:
 
 	void setMidiSync(bool enabled) { _midiSync = enabled; }
 
-	bool gameLink() const { return _gameLink; }
+	bool gameLink() const { return _gameLink.load(); }
+
+	void setGameLink(bool enabled) { _gameLink = enabled; }
 
 	void init(const std::string& romPath);
 

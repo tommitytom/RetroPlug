@@ -16,10 +16,27 @@ enum LsdjModeMenuItems : int {
 	AutoPlay = 5
 };
 
-enum class CreateInstanceType : int {
-	Duplicate,
-	SameRom,
-	LoadRom
+enum class RootMenuItems : int {
+	RomName,
+
+	Sep1,
+
+	Project,
+	System,
+	Sram,
+	Settings,
+
+	Sep2,
+
+	GameLink,
+
+	Sep3,
+
+	SendClock = 10,
+
+	// LSDJ Specific
+	LsdjModes = 10,
+	KeyboardMode
 };
 
 const int VIDEO_WIDTH = 160;
@@ -28,7 +45,11 @@ const int VIDEO_FRAME_SIZE = VIDEO_WIDTH * VIDEO_HEIGHT * 4;
 const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
 
 class EmulatorView : public IControl {
+public:
+	std::function<void(IPopupMenu*, bool)> OnProjectMenuRequest;
+
 private:
+	RetroPlug* _manager = nullptr;
 	SameBoyPlugPtr _plug;
 	unsigned char _videoScratch[VIDEO_SCRATCH_SIZE];
 
@@ -43,12 +64,21 @@ private:
 	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
 
 	std::map<std::string, int> _settings;
-	std::function<void(EmulatorView*, CreateInstanceType)> _duplicateCb;
 
+	bool _showText = false;
 	ITextControl* _textIds[2] = { nullptr, nullptr };
 
 public:
-	EmulatorView(IRECT bounds, SameBoyPlugPtr plug);
+	EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager);
+	~EmulatorView();
+
+	void Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
+		_plug = plug;
+		_manager = manager;
+		ShowText(false);
+	}
+
+	void Clear();
 
 	SameBoyPlugPtr Plug() { return _plug; }
 
@@ -57,10 +87,6 @@ public:
 	void OnInit() override;
 
 	bool IsDirty() override { return true; }
-
-	void OnDuplicateRequest(std::function<void(EmulatorView*, CreateInstanceType)> cb) {
-		_duplicateCb = cb;
-	}
 
 	bool OnKey(const IKeyPress& key, bool down);
 
@@ -73,6 +99,10 @@ public:
 	void OnDrop(const char* str) override;
 
 	void Draw(IGraphics& g) override;
+
+	void ShowText(bool show);
+
+	void UpdateTextPosition();
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
@@ -91,8 +121,6 @@ private:
 
 	void ToggleKeyboardMode();
 
-	void HideText();
-
 	void ExportSong(int index);
 
 	void LoadSong(int index);
@@ -100,6 +128,10 @@ private:
 	void DeleteSong(int index);
 
 	void ResetSystem();
+
+	void SaveProject();
+	void SaveProjectAs();
+	void LoadProject();
 
 	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

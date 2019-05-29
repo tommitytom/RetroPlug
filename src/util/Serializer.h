@@ -8,9 +8,10 @@
 #include "base64.h"
 #include "roms/Lsdj.h"
 
-static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
+static void Serialize(std::string& target, const RetroPlug& plug) {
 	const SameBoyPlugPtr* plugs = plug.plugs();
 	tao::json::value root = {
+		{ "version", PLUG_VERSION_STR },
 		{ "instances", tao::json::value::array({}) }
 	};
 
@@ -41,7 +42,6 @@ static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
 			}
 
 			const tao::json::value instRoot = {
-				{ "version", PLUG_VERSION_STR },
 				{ "romPath", plug->romPath() },
 				{ "settings", settings },
 				{ "state", {
@@ -53,8 +53,7 @@ static void Serialize(IByteChunk& chunk, const RetroPlug& plug) {
 			root.at("instances").get_array().push_back(instRoot);
 		}
 
-		std::string data = tao::json::to_string<tao::json::events::binary_to_base64>(root);
-		chunk.PutStr(data.c_str());
+		target = tao::json::to_string<tao::json::events::binary_to_base64>(root);
 	}
 }
 
@@ -66,6 +65,7 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 
 	if (std::filesystem::exists(romPath)) {
 		SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
+		plugPtr->init(romPath);
 		plugPtr->loadState((char*)stateData.data(), stateData.size());
 
 		const tao::json::value* settings = instRoot.find("settings");
@@ -89,22 +89,23 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 	}
 }
 
-static int Deserialize(const IByteChunk& chunk, RetroPlug& plug, int pos) {
-	WDL_String data;
-	pos = chunk.GetStr(data, pos);
+static void Deserialize(const char* data, RetroPlug& plug) {
+	plug.clear();
 
-	const tao::json::value root = tao::json::from_string(data.Get());
-	const std::string& version = root.at("version").get_string();
-	if (version == "0.0.3") {
-		const tao::json::value* instances = root.find("instances");
-		if (instances) {
-			for (auto& instance : instances->get_array()) {
-				DeserializeInstance(instance, plug);
+	try {
+		const tao::json::value root = tao::json::from_string(data);
+		const std::string& version = root.at("version").get_string();
+		if (version == "0.1.0") {
+			const tao::json::value* instances = root.find("instances");
+			if (instances) {
+				for (auto& instance : instances->get_array()) {
+					DeserializeInstance(instance, plug);
+				}
 			}
+		} else {
+			DeserializeInstance(root, plug);
 		}
-	} else {
-		DeserializeInstance(root, plug);
+	} catch (...) {
+		// Fail
 	}
-
-	return pos;
 }

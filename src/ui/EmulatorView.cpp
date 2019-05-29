@@ -3,10 +3,13 @@
 #include "platform/FileDialog.h"
 #include "platform/Path.h"
 #include "util/File.h"
+#include "util/Serializer.h"
 
 #include <tao/json.hpp>
 
-EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug) : IControl(bounds), _plug(plug) {
+EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager) 
+	: IControl(bounds), _plug(plug), _manager(manager)
+{
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 
 	_settings = {
@@ -20,28 +23,32 @@ EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug) : IControl(bounds)
 	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
 }
 
-void EmulatorView::OnInit() {
-	const IRECT b = GetRECT();
-	float mid = b.H() / 2;
-	IRECT topRow(b.L, mid - 25, b.R, mid);
-	IRECT bottomRow(b.L, mid, b.R, mid + 25);
+EmulatorView::~EmulatorView() {
+	ShowText(false);
+}
 
-	if (!_plug || !_plug->active()) {
-		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
-		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
+void EmulatorView::Clear() {
+	_plug = nullptr;
+	_manager = nullptr;
+	ShowText(false);
+	memset(_videoScratch, 0, VIDEO_SCRATCH_SIZE);
 
-		GetUI()->AttachControl(_textIds[0]);
-		GetUI()->AttachControl(_textIds[1]);
+	if (_imageId != -1) {
+		//nvgUpdateImage(vg, _imageId, (const unsigned char*)_videoScratch);
 	}
 }
 
+void EmulatorView::OnInit() {
+	
+}
+
 void EmulatorView::OnDrop(const char* str) {
-	HideText();
+	ShowText(false);
 	_plug->init(str);
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
-	if (_plug->active()) {
+	if (_plug && _plug->active()) {
 		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
 			return _lsdjKeyMap.onKey(key, down);
 		} else {
@@ -78,7 +85,7 @@ void EmulatorView::OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx) {
 }
 
 void EmulatorView::Draw(IGraphics& g) {
-	if (_plug->active()) {
+	if (_plug && _plug->active()) {
 		MessageBus* bus = _plug->messageBus();
 
 		// FIXME: This constant is the delta time between frames.
@@ -119,7 +126,7 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 
 	nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, 0, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
+	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, mRECT.T, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
 	nvgRect(vg, mRECT.L, mRECT.T, mRECT.W(), mRECT.H());
 	nvgFillPaint(vg, imgPaint);
 	nvgFill(vg);
@@ -162,20 +169,6 @@ IPopupMenu* createModelMenu(bool addElipses) {
 	return menu;
 }
 
-enum class ProjectMenuItems : int {
-	Save,
-	SaveAs,
-	Load
-};
-
-IPopupMenu* createProjectMenu() {
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save", (int)ProjectMenuItems::Save);
-	menu->AddItem("Save As...", (int)ProjectMenuItems::SaveAs);
-	menu->AddItem("Load...", (int)ProjectMenuItems::Load);
-	return menu;
-}
-
 enum class SramMenuItems : int {
 	Save,
 	SaveAs,
@@ -189,9 +182,9 @@ enum class SramMenuItems : int {
 
 IPopupMenu* createSramMenu() {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save", (int)SramMenuItems::Save);
-	menu->AddItem("Save As...", (int)SramMenuItems::SaveAs);
-	menu->AddItem("Load (and reset)...", (int)SramMenuItems::Load);
+	menu->AddItem("Save .sav", (int)SramMenuItems::Save);
+	menu->AddItem("Save .sav As...", (int)SramMenuItems::SaveAs);
+	menu->AddItem("Load .sav (and reset)...", (int)SramMenuItems::Load);
 	return menu;
 }
 
@@ -202,41 +195,15 @@ enum class SystemMenuItems : int {
 	ResetAs
 };
 
-IPopupMenu* createSystemMenu() {
+IPopupMenu* createSystemMenu(bool loaded) {
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("Load ROM...", (int)SystemMenuItems::LoadRom);
 	menu->AddItem("Load ROM As", createModelMenu(true), (int)SystemMenuItems::LoadRomAs);
-	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
-	menu->AddItem("Reset As", createModelMenu(false), (int)SystemMenuItems::ResetAs);
-	return menu;
-}
-
-enum class RootMenuItems : int {
-	RomName,
-
-	Sep1,
-
-	System,
-	Project,
-	Sram,
-	Settings,
-	AddInstance,
-
-	Sep2,
-
-	GameLink,
-	SendClock = 9,
-
-	// LSDJ Specific
-	LsdjModes = 9,
-	KeyboardMode
-};
-
-IPopupMenu* createInstanceMenu() {
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Duplicate", (int)CreateInstanceType::Duplicate);
-	menu->AddItem("Same ROM", (int)CreateInstanceType::SameRom);
-	menu->AddItem("Load ROM...", (int)CreateInstanceType::LoadRom);
+	menu->AddItem("Reset", (int)SystemMenuItems::Reset, loaded ? 0 : IPopupMenu::Item::kDisabled);
+	if (loaded) {
+		menu->AddItem("Reset As", createModelMenu(false), (int)SystemMenuItems::ResetAs);
+	}
+	
 	return menu;
 }
 
@@ -259,24 +226,21 @@ void EmulatorView::CreateMenu(float x, float y) {
 		return;
 	}
 
+	std::string romName = _plug->romName();
+	bool loaded = !romName.empty();
+	if (!loaded) {
+		romName = "No ROM Loaded";
+	}
+
 	_menu = IPopupMenu();
 
-	IPopupMenu* sramMenu = createSramMenu();
-	IPopupMenu* systemMenu = createSystemMenu();
-	IPopupMenu* projectMenu = createProjectMenu();
-	IPopupMenu* instanceMenu = createInstanceMenu();
-	IPopupMenu* settingsMenu = CreateSettingsMenu();
-
-	_menu.AddItem(_plug->romName().c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kDisabled);
+	IPopupMenu* systemMenu = createSystemMenu(loaded);
+	
+	_menu.AddItem(romName.c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kTitle);
 	_menu.AddSeparator((int)RootMenuItems::Sep1);
 
+	OnProjectMenuRequest(&_menu, loaded);
 	_menu.AddItem("System", systemMenu, (int)RootMenuItems::System);
-	_menu.AddItem("Project", projectMenu, (int)RootMenuItems::Project);
-	_menu.AddItem("SRAM", sramMenu, (int)RootMenuItems::Sram);
-	_menu.AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
-	_menu.AddItem("Add Instance", instanceMenu, (int)RootMenuItems::AddInstance);
-	_menu.AddSeparator((int)RootMenuItems::Sep2);
-	_menu.AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
 
 	systemMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
 		switch ((SystemMenuItems)indexInMenu) {
@@ -284,85 +248,90 @@ void EmulatorView::CreateMenu(float x, float y) {
 		case SystemMenuItems::Reset: ResetSystem(); break;
 		}
 	});
-	
-	_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-		switch ((RootMenuItems)indexInMenu) {
-		case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
-		case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
-		}
-	});
 
-	sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-		switch ((SramMenuItems)indexInMenu) {
-		case SramMenuItems::Save: _plug->saveBattery(""); break;
-		case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
-		case SramMenuItems::Load: OpenLoadSramDialog(); break;
-		case SramMenuItems::Import: OpenLoadSongsDialog(); break;
-		}
-	});
+	if (loaded) {
+		IPopupMenu* sramMenu = createSramMenu();
+		IPopupMenu* settingsMenu = CreateSettingsMenu();
 
-	settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item* itemChosen) {
-		if (indexInMenu == settingsMenu->NItems() - 1) {
-			ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
-		}
-	});
+		_menu.AddItem("SRAM", sramMenu, (int)RootMenuItems::Sram);
+		_menu.AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
+		_menu.AddSeparator((int)RootMenuItems::Sep2);
+		_menu.AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
+		_menu.AddSeparator((int)RootMenuItems::Sep3);
 
-	instanceMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
-		if (_duplicateCb) {
-			_duplicateCb(this, (CreateInstanceType)indexInMenu);
-		}
-	});
+		_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+			switch ((RootMenuItems)indexInMenu) {
+			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
+			case RootMenuItems::GameLink: _plug->setGameLink(!_plug->gameLink()); break;
+			case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
+			}
+			});
 
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		std::vector<std::string> songNames;
-		lsdj.getSongNames(songNames);
+		sramMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+			switch ((SramMenuItems)indexInMenu) {
+			case SramMenuItems::Save: _plug->saveBattery(""); break;
+			case SramMenuItems::SaveAs: OpenSaveSramDialog(); break;
+			case SramMenuItems::Load: OpenLoadSramDialog(); break;
+			case SramMenuItems::Import: OpenLoadSongsDialog(); break;
+			}
+			});
 
-		if (!songNames.empty()) {
-			sramMenu->AddSeparator((int)SramMenuItems::Sep1);
-			sramMenu->AddItem("Songs", (int)SramMenuItems::Songs, IPopupMenu::Item::kDisabled);
-			sramMenu->AddItem("Import (and reset)...", (int)SramMenuItems::Import);
+		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
+			if (indexInMenu == settingsMenu->NItems() - 1) {
+				ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+			}
+			});
 
-			for (size_t i = 0; i < songNames.size(); i++) {
-				IPopupMenu* songMenu = createSongMenu();
-				sramMenu->AddItem(songNames[i].c_str(), songMenu);
+		Lsdj& lsdj = _plug->lsdj();
+		if (lsdj.found) {
+			std::vector<std::string> songNames;
+			lsdj.getSongNames(songNames);
 
-				songMenu->SetFunction([this, i](int indexInMenu, IPopupMenu::Item * itemChosen) {
-					switch ((SongMenuItems)indexInMenu) {
-					case SongMenuItems::Export: ExportSong(i); break;
-					case SongMenuItems::Load: LoadSong(i);  break;
-					case SongMenuItems::Delete: DeleteSong(i);  break;
-					}
+			if (!songNames.empty()) {
+				sramMenu->AddSeparator((int)SramMenuItems::Sep1);
+				sramMenu->AddItem("Songs", (int)SramMenuItems::Songs, IPopupMenu::Item::kDisabled);
+				sramMenu->AddItem("Import (and reset)...", (int)SramMenuItems::Import);
+
+				for (size_t i = 0; i < songNames.size(); i++) {
+					IPopupMenu* songMenu = createSongMenu();
+					sramMenu->AddItem(songNames[i].c_str(), songMenu);
+
+					songMenu->SetFunction([this, i](int indexInMenu, IPopupMenu::Item * itemChosen) {
+						switch ((SongMenuItems)indexInMenu) {
+						case SongMenuItems::Export: ExportSong(i); break;
+						case SongMenuItems::Load: LoadSong(i);  break;
+						case SongMenuItems::Delete: DeleteSong(i);  break;
+						}
+						});
+				}
+			}
+
+			IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
+				"Off",
+				"MIDI Sync",
+				"MIDI Sync (Arduinoboy Mode)",
+				"MIDI Map",
 				});
-			}
+
+			arduboyMenu->AddSeparator();
+			arduboyMenu->AddItem("Auto Play", LsdjModeMenuItems::AutoPlay, lsdj.autoPlay ? IPopupMenu::Item::kChecked : 0);
+
+			_menu.AddItem("LSDj Sync", arduboyMenu, (int)RootMenuItems::LsdjModes);
+			_menu.AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
+
+			int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
+			arduboyMenu->CheckItem(selectedMode, true);
+			arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+				LsdjModeMenuItems menuItem = (LsdjModeMenuItems)indexInMenu;
+				if (menuItem <= LsdjModeMenuItems::MidiMap) {
+					_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
+				} else {
+					_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
+				}
+				});
+		} else {
+			_menu.AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
 		}
-
-		IPopupMenu* arduboyMenu = new IPopupMenu(0, true, {
-			"Off",
-			"MIDI Sync",
-			"MIDI Sync (Arduinoboy Mode)",
-			"MIDI Map",
-		});
-
-		arduboyMenu->AddSeparator();
-		arduboyMenu->AddItem("Auto Play", LsdjModeMenuItems::AutoPlay, lsdj.autoPlay ? IPopupMenu::Item::kChecked : 0);
-
-		_menu.AddItem("LSDj Sync", arduboyMenu, (int)RootMenuItems::LsdjModes);
-		_menu.AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
-
-		int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
-		arduboyMenu->CheckItem(selectedMode, true);
-		arduboyMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-			LsdjModeMenuItems menuItem = (LsdjModeMenuItems)indexInMenu;
-			if (menuItem <= LsdjModeMenuItems::MidiMap) {
-				_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
-			} else {
-				_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
-			}
-		});
-	} else {
-		_menu.AddSeparator();
-		_menu.AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
 	}
 
 	GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
@@ -412,10 +381,43 @@ void EmulatorView::ToggleKeyboardMode() {
 	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
-void EmulatorView::HideText() {
-	if (_textIds[0]) {
-		_textIds[0]->SetText(IText(23, COLOR_BLACK));
-		_textIds[1]->SetText(IText(23, COLOR_BLACK));
+void EmulatorView::ShowText(bool show) {
+	if (_showText == show) {
+		return;
+	}
+
+	const IRECT b = GetRECT();
+	float mid = b.H() / 2;
+	IRECT topRow(b.L, mid - 25, b.R, mid);
+	IRECT bottomRow(b.L, mid, b.R, mid + 25);
+
+	if (show) {
+		assert(!_textIds[0]);
+		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
+		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
+
+		GetUI()->AttachControl(_textIds[0]);
+		GetUI()->AttachControl(_textIds[1]);
+	} else {
+		assert(_textIds[0]);
+		GetUI()->RemoveControl(_textIds[0]);
+		GetUI()->RemoveControl(_textIds[1]);
+	}
+
+	_showText = show;
+}
+
+void EmulatorView::UpdateTextPosition() {
+	if (_showText) {
+		assert(_textIds[0]);
+
+		const IRECT b = GetRECT();
+		float mid = b.H() / 2;
+		IRECT topRow(b.L, mid - 25, b.R, mid);
+		IRECT bottomRow(b.L, mid, b.R, mid + 25);
+
+		_textIds[0]->SetTargetAndDrawRECTs(topRow);
+		_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
 	}
 }
 
@@ -483,7 +485,7 @@ void EmulatorView::OpenLoadRomDialog() {
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		std::string p = ws2s(paths[0]);
-		HideText();
+		ShowText(false);
 		_plug->init(p.c_str());
 	}
 }

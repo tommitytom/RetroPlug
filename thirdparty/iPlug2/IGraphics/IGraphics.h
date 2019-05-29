@@ -1193,6 +1193,39 @@ public:
   
   /** Removes all regular IControls from the control list, as well as special controls (frees memory). */
   void RemoveAllControls();
+
+  void RemoveControl(IControl* pControl)
+  {
+    if (pControl) {
+      if (pControl == mMouseCapture)
+      {
+        mMouseCapture = nullptr;
+      }
+      if (pControl == mMouseOver)
+      {
+        mMouseOver = nullptr;
+        mMouseOverIdx = -1;
+      }
+      if (pControl == mInTextEntry)
+      {
+        mInTextEntry = nullptr;
+      }
+      if (pControl == mInPopupMenu)
+      {
+        mInPopupMenu = nullptr;
+      }
+
+      mControls.DeletePtr(pControl, true);
+
+      SetAllControlsDirty();
+    }
+  }
+
+  void RemoveControl(int fromIdx)
+  {
+    IControl* pControl = GetControl(fromIdx);
+    RemoveControl(pControl);
+  }
   
   /** Hide controls linked to a specific parameter
    * @param paramIdx The parameter index
@@ -1209,6 +1242,14 @@ public:
   
   /** Calls SetClean() on every control */
   void SetAllControlsClean();
+
+  void BringToFront(IControl* control) {
+    int idx = mControls.Find(control);
+    if (idx != -1) {
+      mControls.Delete(idx, false);
+      mControls.Add(control);
+    }
+  }
 
 private:
   /** /todo
