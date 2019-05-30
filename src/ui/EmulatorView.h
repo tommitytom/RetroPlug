@@ -72,13 +72,7 @@ public:
 	EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager);
 	~EmulatorView();
 
-	void Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
-		_plug = plug;
-		_manager = manager;
-		ShowText(false);
-	}
-
-	void Clear();
+	void Setup(SameBoyPlugPtr plug, RetroPlug* manager);
 
 	SameBoyPlugPtr Plug() { return _plug; }
 

@@ -25,17 +25,17 @@ EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager
 
 EmulatorView::~EmulatorView() {
 	ShowText(false);
+
+	if (_imageId != -1 && GetUI()) {
+		NVGcontext* ctx = (NVGcontext*)GetUI()->GetDrawContext();
+		nvgDeleteImage(ctx, _imageId);
+	}
 }
 
-void EmulatorView::Clear() {
-	_plug = nullptr;
-	_manager = nullptr;
+void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug * manager) {
+	_plug = plug;
+	_manager = manager;
 	ShowText(false);
-	memset(_videoScratch, 0, VIDEO_SCRATCH_SIZE);
-
-	if (_imageId != -1) {
-		//nvgUpdateImage(vg, _imageId, (const unsigned char*)_videoScratch);
-	}
 }
 
 void EmulatorView::OnInit() {
@@ -44,7 +44,7 @@ void EmulatorView::OnInit() {
 
 void EmulatorView::OnDrop(const char* str) {
 	ShowText(false);
-	_plug->init(str);
+	_plug->init(str, GameboyModel::Auto);
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
@@ -132,40 +132,18 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 	nvgFill(vg);
 }
 
-enum class GameboyModelMenuItems {
-	DmgB,
-	//Sgb,
-	//SgbNtsc,
-	//SgbPal,
-	//Sgb2,
-	CgbC,
-	CgbE,
-	Agb
-};
-
-enum class GameboyModel {
-	GB_MODEL_DMG_B = 0x002,
-	GB_MODEL_SGB = 0x004,
-	GB_MODEL_SGB_NTSC = GB_MODEL_SGB,
-	GB_MODEL_SGB_PAL = 0x1004,
-	GB_MODEL_SGB2 = 0x101,
-	GB_MODEL_CGB_C = 0x203,
-	GB_MODEL_CGB_E = 0x205,
-	GB_MODEL_AGB = 0x206,
-};
-
 IPopupMenu* createModelMenu(bool addElipses) {
 	std::string elipses = addElipses ? "..." : "";
 
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem(("DMG B" + elipses).c_str(), (int)GameboyModelMenuItems::DmgB);
-	menu->AddItem(("CGB C" + elipses).c_str(), (int)GameboyModelMenuItems::CgbC);
-	menu->AddItem(("CGB E" + elipses).c_str(), (int)GameboyModelMenuItems::CgbE);
+	menu->AddItem(("DMG B" + elipses).c_str(), (int)GameboyModel::DmgB);
+	menu->AddItem(("CGB C" + elipses).c_str(), (int)GameboyModel::CgbC);
+	menu->AddItem(("CGB E" + elipses).c_str(), (int)GameboyModel::CgbE);
 	/*menu->AddItem(("SGB" + elipses).c_str(), (int)GameboyModelMenuItems::Sgb);
 	menu->AddItem(("SGB NTSC" + elipses).c_str(), (int)GameboyModelMenuItems::SgbNtsc);
 	menu->AddItem(("SGB PAL" + elipses).c_str(), (int)GameboyModelMenuItems::SgbPal);
 	menu->AddItem(("SGB2" + elipses).c_str(), (int)GameboyModelMenuItems::Sgb2);*/
-	menu->AddItem(("AGB" + elipses).c_str(), (int)GameboyModelMenuItems::Agb);
+	menu->AddItem(("AGB" + elipses).c_str(), (int)GameboyModel::Agb);
 	return menu;
 }
 
@@ -486,7 +464,7 @@ void EmulatorView::OpenLoadRomDialog() {
 	if (paths.size() > 0) {
 		std::string p = ws2s(paths[0]);
 		ShowText(false);
-		_plug->init(p.c_str());
+		_plug->init(p.c_str(), GameboyModel::Auto);
 	}
 }
 
