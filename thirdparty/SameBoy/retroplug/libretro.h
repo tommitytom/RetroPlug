@@ -55,7 +55,7 @@ extern "C" {
 #  endif
 #endif
 
-RETRO_API void* sameboy_init(void* user_data, const char* path);
+RETRO_API void* sameboy_init(void* user_data, const char* path, int model);
 RETRO_API void sameboy_free(void* state);
 RETRO_API void sameboy_reset(void* state);
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);

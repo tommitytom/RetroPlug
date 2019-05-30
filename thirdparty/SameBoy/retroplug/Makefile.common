@@ -14,6 +14,7 @@ SOURCES_C   := $(CORE_DIR)/Core/gb.c \
                $(CORE_DIR)/Core/save_state.c \
                $(CORE_DIR)/retroplug/agb_boot.c \
                $(CORE_DIR)/retroplug/cgb_boot.c \
+               $(CORE_DIR)/retroplug/cgb_fast_boot.c \
                $(CORE_DIR)/retroplug/dmg_boot.c \
                $(CORE_DIR)/retroplug/sgb_boot.c \
                $(CORE_DIR)/retroplug/sgb2_boot.c \

@@ -14,7 +14,17 @@
 
 const int FRAME_SIZE = 160 * 144 * 4;
 
-void SameBoyPlug::init(const std::string& romPath) {
+int getGameboyModel(GameboyModel model) {
+	switch (model) {
+	case GameboyModel::Auto: return 0x205;
+	case GameboyModel::DmgB: return 0x002;
+	case GameboyModel::CgbC: return 0x203;
+	case GameboyModel::CgbE: return 0x205;
+	case GameboyModel::Agb: return 0x206;
+	}
+}
+
+void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
 	_romPath = romPath;
 
 	// FIXME: Choose some better sizes here...
@@ -44,7 +54,7 @@ void SameBoyPlug::init(const std::string& romPath) {
 	_library.get("sameboy_set_setting", _symbols.sameboy_set_setting);
 	_library.get("sameboy_set_link_targets", _symbols.sameboy_set_link_targets);
 
-	void* instance = _symbols.sameboy_init(this, romPath.c_str());
+	void* instance = _symbols.sameboy_init(this, romPath.c_str(), getGameboyModel(model));
 	const char* name = _symbols.sameboy_get_rom_name(instance);
 	for (int i = 0; i < 16; i++) {
 		if (name[i] == 0) {

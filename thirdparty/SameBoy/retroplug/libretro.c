@@ -4,8 +4,8 @@
 #include <Core/gb.h>
 #include <windows.h>
 
-extern const unsigned char dmg_boot[], cgb_boot[], agb_boot[], sgb_boot[], sgb2_boot[];
-extern const unsigned dmg_boot_length, cgb_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;
+extern const unsigned char dmg_boot[], cgb_boot[], cgb_fast_boot[], agb_boot[], sgb_boot[], sgb2_boot[];
+extern const unsigned dmg_boot_length, cgb_boot_length, cgb_fast_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;
 
 static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
   return r << 16 | g << 8 | b;
@@ -58,7 +58,7 @@ static bool serial_end(GB_gameboy_t* gb) {
     return ret;
 }
 
-void* sameboy_init(void* user_data, const char* path) {
+void* sameboy_init(void* user_data, const char* path, int model) {
     sameboy_state_t* state = malloc(sizeof(sameboy_state_t));
 
     state->vblankOccurred = false;
@@ -67,8 +67,8 @@ void* sameboy_init(void* user_data, const char* path) {
     state->bit_to_send = true;
     state->linkTargetCount = 0;
 
-    GB_init(&state->gb, GB_MODEL_CGB_E);
-	GB_load_boot_rom_from_buffer(&state->gb, cgb_boot, cgb_boot_length);
+    GB_init(&state->gb, model);
+	GB_load_boot_rom_from_buffer(&state->gb, cgb_fast_boot, cgb_fast_boot_length);
 
     GB_set_pixels_output(&state->gb, state->frameBuffer);
     GB_set_sample_rate(&state->gb, 48000);

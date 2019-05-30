@@ -60,7 +60,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	}
 
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
-	target->init(romPath);
+	target->init(romPath, GameboyModel::DmgB);
 
 	if (type == CreateInstanceType::Duplicate) {
 		size_t stateSize = source->saveStateSize();

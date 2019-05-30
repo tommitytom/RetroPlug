@@ -8,8 +8,20 @@
 #include <atomic>
 #include <vector>
 
+enum class GameboyModel {
+	Auto,
+	DmgB,
+	//Sgb,
+	//SgbNtsc,
+	//SgbPal,
+	//Sgb2,
+	CgbC,
+	CgbE,
+	Agb
+};
+
 struct SameboyPlugSymbols {
-	void*(*sameboy_init)(void* user_data, const char* path);
+	void*(*sameboy_init)(void* user_data, const char* path, int model);
 	void(*sameboy_free)(void* state);
 	void(*sameboy_reset)(void* state);
 
@@ -77,7 +89,7 @@ public:
 
 	void setGameLink(bool enabled) { _gameLink = enabled; }
 
-	void init(const std::string& romPath);
+	void init(const std::string& romPath, GameboyModel model);
 
 	bool active() const { return _instance != nullptr; }
 
