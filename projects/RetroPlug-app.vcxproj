@@ -170,7 +170,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
     </Link>
     <ResourceCompile />
     <ResourceCompile>

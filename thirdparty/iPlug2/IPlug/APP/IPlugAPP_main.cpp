@@ -28,6 +28,10 @@ HWND gHWND;
 extern HINSTANCE gHINSTANCE;
 UINT gScrollMessage;
 
+int main() {
+  return WinMain(GetModuleHandle(0), NULL, NULL, 0);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nShowCmd)
 {
   try
