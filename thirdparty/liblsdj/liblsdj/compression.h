@@ -43,6 +43,9 @@ extern "C" {
 #include "error.h"
 #include "vio.h"
 
+#define BLOCK_SIZE (0x200)
+#define BLOCK_COUNT (191)
+
 // Decompress blocks to a song buffer
 void lsdj_decompress(lsdj_vio_t* rvio, lsdj_vio_t* wvio, long* firstBlockOffset, size_t blockSize, lsdj_error_t** error);
 void lsdj_decompress_from_file(const char* path, lsdj_vio_t* wvio, long* firstBlockOffset, size_t blockSize, lsdj_error_t** error);
