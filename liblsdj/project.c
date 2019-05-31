@@ -33,15 +33,13 @@
  
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "compression.h"
 #include "project.h"
-
-#define BLOCK_SIZE 0x200
-#define BLOCK_COUNT 191
 
 struct lsdj_project_t
 {
@@ -181,42 +179,66 @@ lsdj_project_t* lsdj_project_read_lsdsng_from_memory(const unsigned char* data, 
     return lsdj_project_read_lsdsng(&vio, error);
 }
 
-void lsdj_project_write_lsdsng(const lsdj_project_t* project, lsdj_vio_t* vio, lsdj_error_t** error)
+size_t lsdj_project_write_lsdsng(const lsdj_project_t* project, lsdj_vio_t* vio, lsdj_error_t** error)
 {
+    size_t write_size = 0;
+
     if (project->song == NULL)
-        return lsdj_error_new(error, "project does not contain a song");
+    {
+        lsdj_error_new(error, "project does not contain a song");
+        return write_size;
+    }
     
-    if (vio->write(project->name, LSDJ_PROJECT_NAME_LENGTH, vio->user_data) != LSDJ_PROJECT_NAME_LENGTH)
-        return lsdj_error_new(error, "could not write project name for lsdsng");
+    write_size += vio->write(project->name, LSDJ_PROJECT_NAME_LENGTH, vio->user_data);
+    if (write_size != LSDJ_PROJECT_NAME_LENGTH)
+    {
+        lsdj_error_new(error, "could not write project name for lsdsng");
+        return write_size;
+    }
     
     if (vio->write(&project->version, 1, vio->user_data) != 1)
-        return lsdj_error_new(error, "could not write project version for lsdsng");
+    {
+        lsdj_error_new(error, "could not write project version for lsdsng");
+        return write_size;
+    }
+    write_size += 1;
     
     // Write the song to memory
     unsigned char decompressed[LSDJ_SONG_DECOMPRESSED_SIZE];
     memset(decompressed, 0x34, LSDJ_SONG_DECOMPRESSED_SIZE);
     lsdj_song_write_to_memory(project->song, decompressed, LSDJ_SONG_DECOMPRESSED_SIZE, error);
     if (error && *error)
-        return;
+        return write_size;
     
     // Compress the song
-    lsdj_compress(decompressed, BLOCK_SIZE, 1, BLOCK_COUNT, vio, error);
+    const size_t block_count = lsdj_compress(decompressed, BLOCK_SIZE, 1, BLOCK_COUNT, vio, error);
+    write_size += block_count * BLOCK_SIZE;
+
+    assert(write_size <= LSDSNG_MAX_SIZE);
+    return write_size;
 }
 
-void lsdj_project_write_lsdsng_to_file(const lsdj_project_t* project, const char* path, lsdj_error_t** error)
+size_t lsdj_project_write_lsdsng_to_file(const lsdj_project_t* project, const char* path, lsdj_error_t** error)
 {
     if (path == NULL)
-        return lsdj_error_new(error, "path is NULL");
+    {
+        lsdj_error_new(error, "path is NULL");
+        return 0;
+    }
     
     if (project == NULL)
-        return lsdj_error_new(error, "project is NULL");
+    {
+        lsdj_error_new(error, "project is NULL");
+        return 0;
+    }
     
     FILE* file = fopen(path, "wb");
     if (file == NULL)
     {
         char message[512];
         snprintf(message, 512, "could not open %s for writing", path);
-        return lsdj_error_new(error, message);
+        lsdj_error_new(error, message);
+        return 0;
     }
     
     lsdj_vio_t vio;
@@ -225,18 +247,26 @@ void lsdj_project_write_lsdsng_to_file(const lsdj_project_t* project, const char
     vio.seek = lsdj_fseek;
     vio.user_data = file;
     
-    lsdj_project_write_lsdsng(project, &vio, error);
+    const size_t write_size = lsdj_project_write_lsdsng(project, &vio, error);
     
     fclose(file);
+
+    return write_size;
 }
 
-void lsdj_project_write_lsdsng_to_memory(const lsdj_project_t* project, unsigned char* data, size_t size, lsdj_error_t** error)
+size_t lsdj_project_write_lsdsng_to_memory(const lsdj_project_t* project, unsigned char* data, size_t size, lsdj_error_t** error)
 {
     if (project == NULL)
-        return lsdj_error_new(error, "project is NULL");
+    {
+        lsdj_error_new(error, "project is NULL");
+        return 0;
+    }
     
     if (data == NULL)
-        return lsdj_error_new(error, "data is NULL");
+    {
+        lsdj_error_new(error, "data is NULL");
+        return 0;
+    }
     
     lsdj_memory_data_t mem;
     mem.begin = data;
@@ -249,7 +279,7 @@ void lsdj_project_write_lsdsng_to_memory(const lsdj_project_t* project, unsigned
     vio.seek = lsdj_mseek;
     vio.user_data = &mem;
     
-    lsdj_project_write_lsdsng(project, &vio, error);
+    return lsdj_project_write_lsdsng(project, &vio, error);
 }
 
 void lsdj_clear_project(lsdj_project_t* project)
