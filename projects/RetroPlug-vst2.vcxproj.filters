@@ -133,6 +133,12 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\instrument.c">
       <Filter>liblsdj</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\roms\Lsdj.cpp">
+      <Filter>src\roms</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ui\ContextMenu.cpp">
+      <Filter>src\ui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -452,6 +458,9 @@
     </ClInclude>
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\word.h">
       <Filter>liblsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ui\ContextMenu.h">
+      <Filter>src\ui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

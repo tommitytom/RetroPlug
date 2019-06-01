@@ -286,6 +286,7 @@
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
     <ClInclude Include="..\src\roms\Lsdj.h" />
+    <ClInclude Include="..\src\ui\ContextMenu.h" />
     <ClInclude Include="..\src\ui\EmulatorView.h" />
     <ClInclude Include="..\src\ui\RetroPlugRoot.h" />
     <ClInclude Include="..\src\util\base64.h" />
@@ -470,6 +471,7 @@
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
     <ClCompile Include="..\src\roms\Lsdj.cpp" />
+    <ClCompile Include="..\src\ui\ContextMenu.cpp" />
     <ClCompile Include="..\src\ui\EmulatorView.cpp" />
     <ClCompile Include="..\src\ui\RetroPlugRoot.cpp" />
     <ClCompile Include="..\src\util\base64.cpp" />
