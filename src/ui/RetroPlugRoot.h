@@ -24,7 +24,7 @@ private:
 
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug);
-	~RetroPlugRoot() {}
+	~RetroPlugRoot();
 
 	void OnInit() override;
 

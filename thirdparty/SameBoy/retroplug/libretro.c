@@ -34,12 +34,15 @@ boot_rom_t find_boot_rom(int model) {
 
     switch (model) {
         case GB_MODEL_DMG_B:    boot_rom.data = dmg_boot; boot_rom.size = dmg_boot_length; break;
-        case GB_MODEL_CGB_E:    boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length; break;
-        case GB_MODEL_CGB_C:    boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length; break;
         case GB_MODEL_AGB:      boot_rom.data = agb_boot; boot_rom.size = agb_boot_length; break;
         case GB_MODEL_SGB_NTSC: boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
         case GB_MODEL_SGB_PAL:  boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
         case GB_MODEL_SGB2:     boot_rom.data = sgb2_boot; boot_rom.size = sgb2_boot_length; break;
+        case GB_MODEL_CGB_E:
+        case GB_MODEL_CGB_C:
+            boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length;
+            boot_rom.fast_data = cgb_fast_boot; boot_rom.fast_size = cgb_fast_boot_length;
+            break;
     }
 
     if (boot_rom.fast_data == NULL) {
@@ -88,7 +91,7 @@ static bool serial_end(GB_gameboy_t* gb) {
     return ret;
 }
 
-void* sameboy_init(void* user_data, const char* path, int model) {
+void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot) {
     sameboy_state_t* state = malloc(sizeof(sameboy_state_t));
 
     state->vblankOccurred = false;
@@ -97,10 +100,14 @@ void* sameboy_init(void* user_data, const char* path, int model) {
     state->bit_to_send = true;
     state->linkTargetCount = 0;
 
-    boot_rom_t boot_rom = find_boot_rom(model);
-
     GB_init(&state->gb, model);
-	GB_load_boot_rom_from_buffer(&state->gb, boot_rom.data, boot_rom.size);
+
+    boot_rom_t boot_rom = find_boot_rom(model);
+    if (!fast_boot) {
+        GB_load_boot_rom_from_buffer(&state->gb, boot_rom.data, boot_rom.size);
+    } else {
+        GB_load_boot_rom_from_buffer(&state->gb, boot_rom.fast_data, boot_rom.fast_size);
+    }
 
     GB_set_pixels_output(&state->gb, state->frameBuffer);
     GB_set_sample_rate(&state->gb, 48000);
@@ -115,6 +122,8 @@ void* sameboy_init(void* user_data, const char* path, int model) {
     GB_set_serial_transfer_bit_start_callback(&state->gb, serial_start);
     GB_set_serial_transfer_bit_end_callback(&state->gb, serial_end);
 
+    GB_set_rendering_disabled(&state->gb, true);
+
     if (GB_load_rom(&state->gb, path)) {
         free(state);
         return NULL;
@@ -125,9 +134,22 @@ void* sameboy_init(void* user_data, const char* path, int model) {
     return state;
 }
 
-void sameboy_reset(void* state) {
+void sameboy_disable_rendering(void* state, bool disabled) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    GB_reset(&s->gb);
+    GB_set_rendering_disabled(&s->gb, disabled);
+}
+
+void sameboy_reset(void* state, int model, bool fast_boot) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+
+    boot_rom_t boot_rom = find_boot_rom(model);
+    if (!fast_boot) {
+        GB_load_boot_rom_from_buffer(&s->gb, boot_rom.data, boot_rom.size);
+    } else {
+        GB_load_boot_rom_from_buffer(&s->gb, boot_rom.fast_data, boot_rom.fast_size);
+    }
+
+    GB_switch_model_and_reset(&s->gb, model);
 }
 
 void sameboy_set_link_targets(void* state, void** linkTargets, size_t count) {

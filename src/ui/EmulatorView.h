@@ -56,10 +56,6 @@ public:
 
 	void OnMouseDblClick(float x, float y, const IMouseMod& mod);
 
-	void OnMouseDown(float x, float y, const IMouseMod& mod);
-
-	void OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int valIdx);
-
 	void OnDrop(const char* str);
 
 	void Draw(IGraphics& g);
@@ -68,12 +64,14 @@ public:
 
 	void OpenLoadRomDialog(GameboyModel model);
 
+	void DisableRendering(bool disable);
+
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
 
 	IPopupMenu* CreateSettingsMenu();
 
-	IPopupMenu* CreateSystemMenu(bool loaded);
+	IPopupMenu* CreateSystemMenu();
 
 	void OpenLoadSramDialog();
 
@@ -89,7 +87,7 @@ private:
 
 	void DeleteSong(int index);
 
-	void ResetSystem();
+	void ResetSystem(bool fast);
 
 	inline LsdjSyncModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

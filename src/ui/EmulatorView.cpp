@@ -36,7 +36,8 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug * manager) {
 }
 
 void EmulatorView::OnDrop(const char* str) {
-	_plug->init(str, GameboyModel::Auto);
+	_plug->init(str, GameboyModel::Auto, false);
+	_plug->disableRendering(false);
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
@@ -135,7 +136,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		romName = "No ROM Loaded";
 	}
 
-	IPopupMenu* systemMenu = CreateSystemMenu(loaded);
+	IPopupMenu* systemMenu = CreateSystemMenu();
 	
 	root->AddItem(romName.c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kTitle);
 	root->AddSeparator((int)RootMenuItems::Sep1);
@@ -146,7 +147,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 	systemMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
 		switch ((SystemMenuItems)indexInMenu) {
 		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
-		case SystemMenuItems::Reset: ResetSystem(); break;
+		case SystemMenuItems::Reset: ResetSystem(true); break;
 		case SystemMenuItems::NewSram: break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
 		case SystemMenuItems::SaveSram: _plug->saveBattery(""); break;
@@ -264,33 +265,30 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 	return settingsMenu;
 }
 
-IPopupMenu* EmulatorView::CreateSystemMenu(bool loaded) {
+IPopupMenu* EmulatorView::CreateSystemMenu() {
 	IPopupMenu* loadAsModel = createModelMenu(true);
+	IPopupMenu* resetAsModel = createModelMenu(false);
 
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("Load ROM...", (int)SystemMenuItems::LoadRom);
 	menu->AddItem("Load ROM As", loadAsModel, (int)SystemMenuItems::LoadRomAs);
-	if (loaded) {
-		IPopupMenu* resetAsModel = createModelMenu(false);
-		menu->AddItem("Reset", (int)SystemMenuItems::Reset);
-		menu->AddItem("Reset As", createModelMenu(false), (int)SystemMenuItems::ResetAs);
-		menu->AddSeparator();
+	
+	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
+	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
+	menu->AddSeparator();
 
-		menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
-		menu->AddItem("Load .sav (and reset)...", (int)SystemMenuItems::LoadSram);
-		menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
-		menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
+	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
+	menu->AddItem("Load .sav (and reset)...", (int)SystemMenuItems::LoadSram);
+	menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
+	menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
 
-		/*resetAsModel->SetFunction([](int idx, IPopupMenu::Item*) {
-			switch ((GameboyModel)idx) {
-				
-			}
-		});*/
-	}
+	resetAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
+		_plug->reset((GameboyModel)(idx + 1), true);
+	});
 
-	/*loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
+	loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
 		OpenLoadRomDialog((GameboyModel)(idx + 1));
-	});*/
+	});
 
 	return menu;
 }
@@ -341,8 +339,8 @@ void EmulatorView::DeleteSong(int index) {
 	}
 }
 
-void EmulatorView::ResetSystem() {
-	_plug->reset();
+void EmulatorView::ResetSystem(bool fast) {
+	_plug->reset(_plug->model(), fast);
 }
 
 void EmulatorView::OpenLoadSongsDialog() {
@@ -367,7 +365,14 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	if (paths.size() > 0) {
 		std::string p = ws2s(paths[0]);
 		//ShowText(false);
-		_plug->init(p.c_str(), model);
+		_plug->init(p.c_str(), model, false);
+		_plug->disableRendering(false);
+	}
+}
+
+void EmulatorView::DisableRendering(bool disable) {
+	if (_plug->active()) {
+		_plug->disableRendering(disable);
 	}
 }
 

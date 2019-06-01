@@ -65,7 +65,7 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 
 	if (std::filesystem::exists(romPath)) {
 		SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
-		plugPtr->init(romPath, GameboyModel::Auto);
+		plugPtr->init(romPath, GameboyModel::Auto, false);
 		plugPtr->loadState((char*)stateData.data(), stateData.size());
 
 		const tao::json::value* settings = instRoot.find("settings");

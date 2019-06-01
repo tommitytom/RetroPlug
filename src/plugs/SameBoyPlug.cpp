@@ -3,9 +3,6 @@
 #include "Constants.h"
 #include <filesystem>
 
-#define RESAMPLER_IMPLEMENTATION
-#include "src/audio/resampler.h"
-
 #define MINIAUDIO_IMPLEMENTATION
 #include "src/audio/miniaudio.h"
 
@@ -24,10 +21,7 @@ int getGameboyModel(GameboyModel model) {
 	}
 }
 
-void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
-	_romPath = romPath;
-	_model = model;
-
+SameBoyPlug::SameBoyPlug() {
 	// FIXME: Choose some better sizes here...
 	_bus.audio.init(1024 * 1024);
 	_bus.video.init(1024 * 1024);
@@ -43,6 +37,7 @@ void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
 	_library.get("sameboy_fetch_video", _symbols.sameboy_fetch_video);
 	_library.get("sameboy_set_sample_rate", _symbols.sameboy_set_sample_rate);
 	_library.get("sameboy_set_midi_bytes", _symbols.sameboy_set_midi_bytes);
+	_library.get("sameboy_disable_rendering", _symbols.sameboy_disable_rendering);
 	_library.get("sameboy_free", _symbols.sameboy_free);
 	_library.get("sameboy_set_button", _symbols.sameboy_set_button);
 	_library.get("sameboy_save_state_size", _symbols.sameboy_save_state_size);
@@ -54,8 +49,13 @@ void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
 	_library.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
 	_library.get("sameboy_set_setting", _symbols.sameboy_set_setting);
 	_library.get("sameboy_set_link_targets", _symbols.sameboy_set_link_targets);
+}
 
-	void* instance = _symbols.sameboy_init(this, romPath.c_str(), getGameboyModel(model));
+void SameBoyPlug::init(const std::string& romPath, GameboyModel model, bool fastBoot) {
+	_romPath = romPath;
+	_model = model;
+
+	void* instance = _symbols.sameboy_init(this, romPath.c_str(), getGameboyModel(model), fastBoot);
 	const char* name = _symbols.sameboy_get_rom_name(instance);
 	for (int i = 0; i < 16; i++) {
 		if (name[i] == 0) {
@@ -86,8 +86,12 @@ void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
 
 	_symbols.sameboy_set_sample_rate(instance, _sampleRate);
 
-	_resampler = resampler_sinc_init();
 	_instance = instance;
+}
+
+void SameBoyPlug::reset(GameboyModel model, bool fast) {
+	std::scoped_lock lock(_lock);
+	_symbols.sameboy_reset(_instance, getGameboyModel(model), fast);
 }
 
 void SameBoyPlug::setSampleRate(double sampleRate) {
@@ -138,7 +142,7 @@ bool SameBoyPlug::loadBattery(const std::vector<char>& data, bool reset) {
 	_symbols.sameboy_load_battery(_instance, data.data(), data.size());
 
 	if (reset) {
-		_symbols.sameboy_reset(_instance);
+		_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
 	}
 
 	return true;
@@ -198,9 +202,9 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 	}
 }
 
-void SameBoyPlug::reset() {
+void SameBoyPlug::disableRendering(bool disable) {
 	std::scoped_lock lock(_lock);
-	_symbols.sameboy_reset(_instance);
+	_symbols.sameboy_disable_rendering(_instance, disable);
 }
 
 void SameBoyPlug::updateButtons() {
@@ -225,25 +229,10 @@ void SameBoyPlug::updateAV(int audioFrames) {
 
 	// Convert to float
 	float inputFloat[1024 * 4]; // FIXME: Choose a realistic size for this...
-	//float outputFloat[1024 * 32];
 	ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
 
-	float* outBuf = inputFloat;
-	int outSize = sampleCount;
-	/*struct resampler_data srcData = { 0 };
-	if (_targetSampleRate != _timing.sampleRate) {
-		srcData.input_frames = inFrames;
-		srcData.ratio = _targetSampleRate / _timing.sampleRate;
-		srcData.data_in = _inputFloat;
-		srcData.data_out = _outputFloat;
-		resampler_sinc_process(_resampler, &srcData);
-
-		outBuf = _outputFloat;
-		outSize = srcData.output_frames * 2;
-	}*/
-
-	if (_bus.audio.writeAvailable() >= outSize) {
-		_bus.audio.write(outBuf, outSize);
+	if (_bus.audio.writeAvailable() >= sampleCount) {
+		_bus.audio.write(inputFloat, sampleCount);
 	}
 }
 
@@ -251,6 +240,5 @@ void SameBoyPlug::shutdown() {
 	if (_instance) {
 		_symbols.sameboy_free(_instance);
 		_instance = nullptr;
-		free(_resampler);
 	}
 }

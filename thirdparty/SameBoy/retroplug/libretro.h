@@ -55,15 +55,16 @@ extern "C" {
 #  endif
 #endif
 
-RETRO_API void* sameboy_init(void* user_data, const char* path, int model);
+RETRO_API void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot);
 RETRO_API void sameboy_free(void* state);
-RETRO_API void sameboy_reset(void* state);
+RETRO_API void sameboy_reset(void* state, int model, bool fast_boot);
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames);
 
 RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);
 RETRO_API void sameboy_set_setting(void* state, const char* name, int value);
+RETRO_API void sameboy_disable_rendering(void* state, bool disabled);
 
 RETRO_API void sameboy_set_midi_bytes(void* state, int offset, const char* byte, size_t count);
 RETRO_API void sameboy_set_button(void* state, int buttonId, bool down);

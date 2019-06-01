@@ -20,15 +20,16 @@ enum class GameboyModel {
 };
 
 struct SameboyPlugSymbols {
-	void*(*sameboy_init)(void* user_data, const char* path, int model);
+	void*(*sameboy_init)(void* user_data, const char* path, int model, bool fast_boot);
 	void(*sameboy_free)(void* state);
-	void(*sameboy_reset)(void* state);
+	void(*sameboy_reset)(void* state, int model, bool fast_boot);
 
 	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
 	void(*sameboy_update_multiple)(void** states, size_t stateCount, size_t requiredAudioFrames);
 
 	void(*sameboy_set_sample_rate)(void* state, double sample_rate);
 	void(*sameboy_set_setting)(void* state, const char* name, int value);
+	void(*sameboy_disable_rendering)(void* state, bool disabled);
 
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
 	void(*sameboy_set_button)(void* state, int buttonId, bool down);
@@ -58,7 +59,6 @@ private:
 	SameboyPlugSymbols _symbols = { nullptr };
 
 	void* _instance = nullptr;
-	void* _resampler = nullptr;
 
 	std::string _romPath;
 	std::string _savePath;
@@ -76,7 +76,7 @@ private:
 	double _sampleRate = 48000;
 
 public:
-	SameBoyPlug() {}
+	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
 
 	Lsdj& lsdj() { return _lsdj; }
@@ -91,7 +91,9 @@ public:
 
 	void setGameLink(bool enabled) { _gameLink = enabled; }
 
-	void init(const std::string& romPath, GameboyModel model);
+	void init(const std::string& romPath, GameboyModel model, bool fastBoot);
+
+	void reset(GameboyModel model, bool fast);
 
 	bool active() const { return _instance != nullptr; }
 
@@ -133,11 +135,11 @@ public:
 
 	void updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames);
 
-	void reset();
-
 	void shutdown();
 
 	void* instance() { return _instance; }
+
+	void disableRendering(bool disable);
 
 private:
 	void updateButtons();

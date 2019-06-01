@@ -9,9 +9,26 @@ RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug): IControl(b), _plug(plug)
 	
 }
 
+RetroPlugRoot::~RetroPlugRoot() {
+	for (size_t i = 0; i < MAX_INSTANCES; i++) {
+		auto plug = _plug->getPlug(i);
+		if (plug && plug->active()) {
+			plug->disableRendering(true);
+		}
+	}
+}
+
 void RetroPlugRoot::OnInit() {
-	if (_views.empty()) {
+	size_t plugCount = _plug->instanceCount();
+	if (plugCount == 0) {
 		NewProject();
+	} else {
+		for (size_t i = 0; i < MAX_INSTANCES; i++) {
+			auto plug = _plug->getPlug(i);
+			if (plug) {
+				AddView(plug);
+			}
+		}
 	}
 }
 
@@ -77,6 +94,10 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 }
 
 void RetroPlugRoot::Draw(IGraphics & g) {
+	if (IsActive() && _showText) {
+		ShowText(false);
+	}
+
 	for (auto view : _views) {
 		view->Draw(g);
 	}
@@ -104,7 +125,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	}
 
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
-	target->init(romPath, source->model());
+	target->init(romPath, source->model(), false);
 
 	if (type == CreateInstanceType::Duplicate) {
 		size_t stateSize = source->saveStateSize();
@@ -212,18 +233,21 @@ void RetroPlugRoot::ShowText(bool show) {
 	IRECT bottomRow(b.L, mid, b.R, mid + 25);
 
 	if (show) {
-		assert(!_textIds[0]);
-		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
-		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
+		if (!_textIds[0]) {
+			_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
+			_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
 
-		GetUI()->AttachControl(_textIds[0]);
-		GetUI()->AttachControl(_textIds[1]);
+			GetUI()->AttachControl(_textIds[0]);
+			GetUI()->AttachControl(_textIds[1]);
+		} else {
+			_textIds[0]->SetTargetAndDrawRECTs(topRow);
+			_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
+		}
 	} else {
-		assert(_textIds[0]);
-		//GetUI()->DetachControl(_textIds[0], true);
-		//GetUI()->DetachControl(_textIds[1], true);
-		_textIds[0] = nullptr;
-		_textIds[1] = nullptr;
+		if (_textIds[0]) {
+			_textIds[0]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+			_textIds[1]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+		}
 	}
 
 	_showText = show;
@@ -250,6 +274,8 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 
 	_active = view;
 	_active->SetAlpha(1.0f);
+
+	view->DisableRendering(false);
 }
 
 IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
