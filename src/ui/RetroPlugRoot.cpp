@@ -279,7 +279,7 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 }
 
 IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
-	IPopupMenu* instanceMenu = createInstanceMenu(loaded);
+	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(_layout);
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_saveMode);
 
@@ -371,6 +371,7 @@ void RetroPlugRoot::LoadProject() {
 		if (readFile(paths[0], data)) {
 			CloseProject();
 			Deserialize(data.c_str(), *_plug);
+			_plug->setProjectPath(paths[0]);
 
 			if (_plug->instanceCount() > 0) {
 				for (size_t i = 0; i < MAX_INSTANCES; i++) {

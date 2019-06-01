@@ -108,10 +108,17 @@ size_t SameBoyPlug::saveStateSize() {
 	return _symbols.sameboy_save_state_size(_instance);
 }
 
-bool SameBoyPlug::saveBattery(const std::string& path) {
+bool SameBoyPlug::saveBattery(std::string path) {
 	std::vector<char> target;
 	if (saveBattery(target)) {
-		return writeFile(path, target);
+		if (path.empty()) {
+			path = _savePath;
+		}
+
+		if (writeFile(path, target)) {
+			_savePath = path;
+			return true;
+		}
 	}
 
 	return false;

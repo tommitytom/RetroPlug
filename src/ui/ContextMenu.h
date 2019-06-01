@@ -90,11 +90,11 @@ static void createBasicMenu(IPopupMenu* target, IPopupMenu* modelMenu) {
 	target->AddItem("Load ROM As", modelMenu, (int)BasicMenuItems::LoadRomAs);
 }
 
-static IPopupMenu* createInstanceMenu(bool loaded) {
+static IPopupMenu* createInstanceMenu(bool loaded, bool enabled) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Load ROM...", (int)CreateInstanceType::LoadRom);
-	menu->AddItem("Same ROM", (int)CreateInstanceType::SameRom, loaded ? 0 : IPopupMenu::Item::kDisabled);
-	menu->AddItem("Duplicate", (int)CreateInstanceType::Duplicate, loaded ? 0 : IPopupMenu::Item::kDisabled);
+	menu->AddItem("Load ROM...", (int)CreateInstanceType::LoadRom, enabled ? 0 : IPopupMenu::Item::kDisabled);
+	menu->AddItem("Same ROM", (int)CreateInstanceType::SameRom, enabled && loaded ? 0 : IPopupMenu::Item::kDisabled);
+	menu->AddItem("Duplicate", (int)CreateInstanceType::Duplicate, enabled && loaded ? 0 : IPopupMenu::Item::kDisabled);
 	return menu;
 }
 

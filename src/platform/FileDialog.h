@@ -99,7 +99,7 @@ static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters)
 			pFileSave->GetOptions(&dwFlags);
 			pFileSave->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
 			pFileSave->SetFileTypes(filters.size(), targetFilters);
-			//hr = pFileSave->SetDefaultExtension(L"sav");
+			hr = pFileSave->SetDefaultExtension(filters[0].extensions.c_str());
 			hr = pFileSave->Show(NULL);
 
 			// Get the file name from the dialog box.
