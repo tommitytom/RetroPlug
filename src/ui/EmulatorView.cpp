@@ -364,7 +364,6 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		std::string p = ws2s(paths[0]);
-		//ShowText(false);
 		_plug->init(p.c_str(), model, false);
 		_plug->disableRendering(false);
 	}

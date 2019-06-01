@@ -1,10 +1,19 @@
 #include "File.h"
 
 #include <fstream>
+#include <sstream>
+
+size_t getFileSize(std::ifstream& stream) {
+	stream.seekg(0, std::ios::end);
+	size_t size = stream.tellg();
+	stream.seekg(0, std::ios::beg);
+	return size;
+}
 
 bool readFile(const std::string& path, std::vector<char>& target) {
 	std::ifstream f(path, std::ios::binary);
-	target = std::vector<char>(std::istreambuf_iterator<char>(f), {});
+	target.resize(getFileSize(f));
+	f.read(target.data(), target.size());
 	return true;
 }
 
@@ -16,7 +25,9 @@ bool readFile(const std::string& path, char* target, size_t size, bool binary) {
 
 bool readFile(const std::string& path, std::string& target) {
 	std::ifstream f(path);
-	target = std::string(std::istreambuf_iterator<char>(f), {});
+	std::stringstream ss;
+	ss << f.rdbuf();
+	target = ss.str();
 	return true;
 }
 
@@ -36,7 +47,8 @@ bool writeFile(const std::string& path, const char* data, size_t size, bool bina
 
 bool readFile(const std::wstring& path, std::vector<char>& target) {
 	std::ifstream f(path, std::ios::binary);
-	target = std::vector<char>(std::istreambuf_iterator<char>(f), {});
+	target.resize(getFileSize(f));
+	f.read(target.data(), target.size());
 	return true;
 }
 
@@ -48,7 +60,9 @@ bool readFile(const std::wstring& path, char* target, size_t size) {
 
 bool readFile(const std::wstring& path, std::string& target) {
 	std::ifstream f(path);
-	target = std::string(std::istreambuf_iterator<char>(f), {});
+	std::stringstream ss;
+	ss << f.rdbuf();
+	target = ss.str();
 	return true;
 }
 
