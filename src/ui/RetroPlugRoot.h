@@ -14,7 +14,6 @@ private:
 	std::vector<EmulatorView*> _views;
 	EmulatorView* _active = nullptr;
 	size_t _activeIdx = 0;
-	RetroPlugLayout _layout = RetroPlugLayout::Auto;
 	SaveModes _saveMode = SaveModes::SaveSram;
 
 	IPopupMenu _menu;

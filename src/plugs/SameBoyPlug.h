@@ -60,8 +60,8 @@ private:
 
 	void* _instance = nullptr;
 
-	std::string _romPath;
-	std::string _savePath;
+	std::wstring _romPath;
+	std::wstring _savePath;
 	std::string _romName;
 
 	MessageBus _bus;
@@ -69,6 +69,7 @@ private:
 	std::mutex _lock;
 	std::atomic<bool> _midiSync = false;
 	std::atomic<bool> _gameLink = false;
+	std::atomic<int> _resetSamples = 0;
 
 	Lsdj _lsdj;
 	GameboyModel _model = GameboyModel::Auto;
@@ -91,7 +92,7 @@ public:
 
 	void setGameLink(bool enabled) { _gameLink = enabled; }
 
-	void init(const std::string& romPath, GameboyModel model, bool fastBoot);
+	void init(const std::wstring& romPath, GameboyModel model, bool fastBoot);
 
 	void reset(GameboyModel model, bool fast);
 
@@ -99,7 +100,7 @@ public:
 
 	const std::string& romName() const { return _romName; }
 
-	const std::string& romPath() const { return _romPath; }
+	const std::wstring& romPath() const { return _romPath; }
 
 	std::mutex& lock() { return _lock; }
 
@@ -111,11 +112,11 @@ public:
 
 	size_t saveStateSize();
 
-	bool saveBattery(std::string path);
+	bool saveBattery(std::wstring path);
 
 	bool saveBattery(std::vector<char>& data);
 
-	bool loadBattery(const std::string& path, bool reset);
+	bool loadBattery(const std::wstring& path, bool reset);
 
 	bool loadBattery(const std::vector<char>& path, bool reset);
 
@@ -140,6 +141,10 @@ public:
 	void* instance() { return _instance; }
 
 	void disableRendering(bool disable);
+
+	void setSavePath(const std::wstring& path) { _savePath = path; }
+
+	const std::wstring& savePath() const { return _savePath; }
 
 private:
 	void updateButtons();

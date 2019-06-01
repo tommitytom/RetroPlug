@@ -8,6 +8,13 @@
 #include "util/String.h"
 #include "Constants.h"
 
+enum class InstanceLayout {
+	Auto,
+	Row,
+	Column,
+	Grid
+};
+
 enum class EmulatorType {
 	SameBoy
 };
@@ -17,10 +24,19 @@ private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
 	double _sampleRate = 48000;
 	std::wstring _projectPath;
+	InstanceLayout _layout = InstanceLayout::Auto;
 
 public:
 	RetroPlug() {}
 	~RetroPlug() {}
+
+	InstanceLayout layout() const {
+		return _layout;
+	}
+
+	void setLayout(InstanceLayout layout) {
+		_layout = layout;
+	}
 
 	void clear() {
 		_projectPath.clear();

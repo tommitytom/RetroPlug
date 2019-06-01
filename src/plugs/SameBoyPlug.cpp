@@ -51,11 +51,11 @@ SameBoyPlug::SameBoyPlug() {
 	_library.get("sameboy_set_link_targets", _symbols.sameboy_set_link_targets);
 }
 
-void SameBoyPlug::init(const std::string& romPath, GameboyModel model, bool fastBoot) {
+void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fastBoot) {
 	_romPath = romPath;
 	_model = model;
 
-	void* instance = _symbols.sameboy_init(this, romPath.c_str(), getGameboyModel(model), fastBoot);
+	void* instance = _symbols.sameboy_init(this, ws2s(romPath).c_str(), getGameboyModel(model), fastBoot);
 	const char* name = _symbols.sameboy_get_rom_name(instance);
 	for (int i = 0; i < 16; i++) {
 		if (name[i] == 0) {
@@ -70,7 +70,7 @@ void SameBoyPlug::init(const std::string& romPath, GameboyModel model, bool fast
 	size_t stateSize = _symbols.sameboy_save_state_size(instance);
 
 	std::vector<char> saveData;
-	_savePath = changeExt(romPath, ".sav");
+	_savePath = changeExt(romPath, L".sav");
 	if (std::filesystem::exists(_savePath)) {
 		readFile(_savePath, saveData);
 		_symbols.sameboy_load_battery(instance, saveData.data(), saveData.size());
@@ -90,6 +90,7 @@ void SameBoyPlug::init(const std::string& romPath, GameboyModel model, bool fast
 }
 
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
+	_resetSamples = _sampleRate / 2;
 	std::scoped_lock lock(_lock);
 	_symbols.sameboy_reset(_instance, getGameboyModel(model), fast);
 }
@@ -108,7 +109,7 @@ size_t SameBoyPlug::saveStateSize() {
 	return _symbols.sameboy_save_state_size(_instance);
 }
 
-bool SameBoyPlug::saveBattery(std::string path) {
+bool SameBoyPlug::saveBattery(std::wstring path) {
 	std::vector<char> target;
 	if (saveBattery(target)) {
 		if (path.empty()) {
@@ -135,12 +136,13 @@ bool SameBoyPlug::saveBattery(std::vector<char>& data) {
 	return false;
 }
 
-bool SameBoyPlug::loadBattery(const std::string& path, bool reset) {
+bool SameBoyPlug::loadBattery(const std::wstring& path, bool reset) {
 	std::vector<char> data;
 	if (!readFile(path, data)) {
 		return false;
 	}
 
+	_savePath = path;
 	return loadBattery(data, reset);
 }
 
@@ -149,6 +151,7 @@ bool SameBoyPlug::loadBattery(const std::vector<char>& data, bool reset) {
 	_symbols.sameboy_load_battery(_instance, data.data(), data.size());
 
 	if (reset) {
+		_resetSamples = _sampleRate / 2;
 		_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
 	}
 
@@ -234,12 +237,16 @@ void SameBoyPlug::updateAV(int audioFrames) {
 		_bus.video.write(video, FRAME_SIZE);
 	}
 
-	// Convert to float
-	float inputFloat[1024 * 4]; // FIXME: Choose a realistic size for this...
-	ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
+	if (_resetSamples <= 0) {
+		// Convert to float
+		float inputFloat[1024 * 4]; // FIXME: Choose a realistic size for this...
+		ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
 
-	if (_bus.audio.writeAvailable() >= sampleCount) {
-		_bus.audio.write(inputFloat, sampleCount);
+		if (_bus.audio.writeAvailable() >= sampleCount) {
+			_bus.audio.write(inputFloat, sampleCount);
+		}
+	} else {
+		_resetSamples -= audioFrames;
 	}
 }
 

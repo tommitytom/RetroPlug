@@ -106,7 +106,7 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
 	SameBoyPlugPtr source = view->Plug();
 	
-	std::string romPath;
+	std::wstring romPath;
 	if (type == CreateInstanceType::LoadRom) {
 		std::vector<FileDialogFilters> types = {
 			{ L"GameBoy Roms", L"*.gb;*.gbc" }
@@ -114,7 +114,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 
 		std::vector<std::wstring> paths = BasicFileOpen(types, false);
 		if (paths.size() > 0) {
-			romPath = ws2s(paths[0]);
+			romPath = paths[0];
 		}
 	} else {
 		romPath = source->romPath();
@@ -166,23 +166,23 @@ void RetroPlugRoot::UpdateLayout() {
 	size_t count = _views.size();
 	assert(count > 0);
 
-	RetroPlugLayout layout = _layout;
-	if (layout == RetroPlugLayout::Auto) {
+	InstanceLayout layout = _plug->layout();
+	if (layout == InstanceLayout::Auto) {
 		if (count < 4) {
-			layout = RetroPlugLayout::Row;
+			layout = InstanceLayout::Row;
 		} else {
-			layout = RetroPlugLayout::Grid;
+			layout = InstanceLayout::Grid;
 		}
 	}
 
 	int windowW = 320;
 	int windowH = 288;
 
-	if (layout == RetroPlugLayout::Row) {
+	if (layout == InstanceLayout::Row) {
 		windowW = count * 320;
-	} else if (layout == RetroPlugLayout::Column) {
+	} else if (layout == InstanceLayout::Column) {
 		windowH = count * 288;
-	} else if (layout == RetroPlugLayout::Grid) {
+	} else if (layout == InstanceLayout::Grid) {
 		if (count > 2) {
 			windowW = 2 * 320;
 			windowH = 2 * 288;
@@ -200,9 +200,9 @@ void RetroPlugRoot::UpdateLayout() {
 		int gridX = 0;
 		int gridY = 0;
 
-		if (layout == RetroPlugLayout::Row) {
+		if (layout == InstanceLayout::Row) {
 			gridX = i;
-		} else if (layout == RetroPlugLayout::Column) {
+		} else if (layout == InstanceLayout::Column) {
 			gridY = i;
 		} else {
 			if (i < 2) {
@@ -280,7 +280,7 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 
 IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
-	IPopupMenu* layoutMenu = createLayoutMenu(_layout);
+	IPopupMenu* layoutMenu = createLayoutMenu(_plug->layout());
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_saveMode);
 
 	IPopupMenu* menu = new IPopupMenu();
@@ -300,7 +300,7 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	});
 
 	layoutMenu->SetFunction([this](int idx, IPopupMenu::Item * itemChosen) {
-		_layout = (RetroPlugLayout)idx;
+		_plug->setLayout((InstanceLayout)idx);
 		UpdateLayout();
 	});
 

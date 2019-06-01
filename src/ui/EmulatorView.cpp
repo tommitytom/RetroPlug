@@ -36,7 +36,7 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug * manager) {
 }
 
 void EmulatorView::OnDrop(const char* str) {
-	_plug->init(str, GameboyModel::Auto, false);
+	_plug->init(s2ws(str), GameboyModel::Auto, false);
 	_plug->disableRendering(false);
 }
 
@@ -150,7 +150,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::Reset: ResetSystem(true); break;
 		case SystemMenuItems::NewSram: break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
-		case SystemMenuItems::SaveSram: _plug->saveBattery(""); break;
+		case SystemMenuItems::SaveSram: _plug->saveBattery(L""); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
 		}
 	});
@@ -363,8 +363,7 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
-		std::string p = ws2s(paths[0]);
-		_plug->init(p.c_str(), model, false);
+		_plug->init(paths[0], model, false);
 		_plug->disableRendering(false);
 	}
 }
@@ -382,8 +381,7 @@ void EmulatorView::OpenLoadSramDialog() {
 
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
-		std::string p = ws2s(paths[0]);
-		_plug->loadBattery(p, true);
+		_plug->loadBattery(paths[0], true);
 	}
 }
 
@@ -394,7 +392,6 @@ void EmulatorView::OpenSaveSramDialog() {
 
 	std::wstring path = BasicFileSave(types);
 	if (path.size() > 0) {
-		std::string p = ws2s(path);
-		_plug->saveBattery(p);
+		_plug->saveBattery(path);
 	}
 }

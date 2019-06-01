@@ -1,14 +1,7 @@
 #pragma once
 
 #include "IGraphics.h"
-#include "plugs/SameBoyPlug.h"
-
-enum class RetroPlugLayout {
-	Auto,
-	Row,
-	Column,
-	Grid
-};
+#include "plugs/RetroPlug.h"
 
 enum class CreateInstanceType : int {
 	LoadRom,
@@ -98,12 +91,12 @@ static IPopupMenu* createInstanceMenu(bool loaded, bool enabled) {
 	return menu;
 }
 
-static IPopupMenu* createLayoutMenu(RetroPlugLayout checked) {
+static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Auto", (int)RetroPlugLayout::Auto);
-	menu->AddItem("Column", (int)RetroPlugLayout::Column);
-	menu->AddItem("Row", (int)RetroPlugLayout::Row);
-	menu->AddItem("Grid", (int)RetroPlugLayout::Grid);
+	menu->AddItem("Auto", (int)InstanceLayout::Auto);
+	menu->AddItem("Column", (int)InstanceLayout::Column);
+	menu->AddItem("Row", (int)InstanceLayout::Row);
+	menu->AddItem("Grid", (int)InstanceLayout::Grid);
 	menu->CheckItemAlone((int)checked);
 	return menu;
 }
