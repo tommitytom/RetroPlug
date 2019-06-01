@@ -11,7 +11,6 @@
 enum class GameboyModel {
 	Auto,
 	DmgB,
-	//Sgb,
 	//SgbNtsc,
 	//SgbPal,
 	//Sgb2,
@@ -72,6 +71,7 @@ private:
 	std::atomic<bool> _gameLink = false;
 
 	Lsdj _lsdj;
+	GameboyModel _model = GameboyModel::Auto;
 
 	double _sampleRate = 48000;
 
@@ -80,6 +80,8 @@ public:
 	~SameBoyPlug() { shutdown(); }
 
 	Lsdj& lsdj() { return _lsdj; }
+
+	GameboyModel model() const { return _model; }
 
 	bool midiSync() { return _midiSync.load(); }
 

@@ -26,6 +26,7 @@ int getGameboyModel(GameboyModel model) {
 
 void SameBoyPlug::init(const std::string& romPath, GameboyModel model) {
 	_romPath = romPath;
+	_model = model;
 
 	// FIXME: Choose some better sizes here...
 	_bus.audio.init(1024 * 1024);

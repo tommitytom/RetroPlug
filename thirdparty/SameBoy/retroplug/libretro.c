@@ -20,6 +20,36 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 
 #define MAX_INSTANCES 4
 
+typedef struct boot_rom_t {
+    const unsigned char* data;
+    size_t size;
+
+    const unsigned char* fast_data;
+    size_t fast_size;
+} boot_rom_t;
+
+boot_rom_t find_boot_rom(int model) {
+    boot_rom_t boot_rom;
+    memset(&boot_rom, 0, sizeof(boot_rom_t));
+
+    switch (model) {
+        case GB_MODEL_DMG_B:    boot_rom.data = dmg_boot; boot_rom.size = dmg_boot_length; break;
+        case GB_MODEL_CGB_E:    boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length; break;
+        case GB_MODEL_CGB_C:    boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length; break;
+        case GB_MODEL_AGB:      boot_rom.data = agb_boot; boot_rom.size = agb_boot_length; break;
+        case GB_MODEL_SGB_NTSC: boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
+        case GB_MODEL_SGB_PAL:  boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
+        case GB_MODEL_SGB2:     boot_rom.data = sgb2_boot; boot_rom.size = sgb2_boot_length; break;
+    }
+
+    if (boot_rom.fast_data == NULL) {
+        boot_rom.fast_data = boot_rom.data;
+        boot_rom.fast_size = boot_rom.size;
+    }
+
+    return boot_rom;
+}
+
 typedef struct sameboy_state_t {
     GB_gameboy_t gb;
     char frameBuffer[FRAME_BUFFER_SIZE];
@@ -67,8 +97,10 @@ void* sameboy_init(void* user_data, const char* path, int model) {
     state->bit_to_send = true;
     state->linkTargetCount = 0;
 
+    boot_rom_t boot_rom = find_boot_rom(model);
+
     GB_init(&state->gb, model);
-	GB_load_boot_rom_from_buffer(&state->gb, cgb_fast_boot, cgb_fast_boot_length);
+	GB_load_boot_rom_from_buffer(&state->gb, boot_rom.data, boot_rom.size);
 
     GB_set_pixels_output(&state->gb, state->frameBuffer);
     GB_set_sample_rate(&state->gb, 48000);
@@ -152,7 +184,7 @@ size_t sameboy_battery_size(void* state) {
 
 size_t sameboy_save_battery(void* state, const char* target, size_t size) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    return GB_save_battery_to_buffer(&s->gb, target, size);
+    return GB_save_battery_to_buffer(&s->gb, target, size) == 0;
 }
 
 void sameboy_load_battery(void* state, const char* source, size_t size) {

@@ -8,12 +8,15 @@
 #include "LsdjKeyMap.h"
 #include "nanovg.h"
 
-enum LsdjModeMenuItems : int {
+enum LsdjSyncModeMenuItems : int {
 	Off,
 	MidiSync,
 	MidSyncArduinoboy,
 	MidiMap,
-	AutoPlay = 5
+
+	Sep1, 
+
+	AutoPlay
 };
 
 enum class RootMenuItems : int {
@@ -23,7 +26,6 @@ enum class RootMenuItems : int {
 
 	Project,
 	System,
-	Sram,
 	Settings,
 
 	Sep2,
@@ -36,6 +38,7 @@ enum class RootMenuItems : int {
 
 	// LSDJ Specific
 	LsdjModes = 10,
+	LsdjSongs,
 	KeyboardMode
 };
 
@@ -61,7 +64,7 @@ private:
 	LsdjKeyMap _lsdjKeyMap;
 
 	IPopupMenu _menu;
-	LsdjModeMenuItems _lsdjMode = LsdjModeMenuItems::Off;
+	LsdjSyncModeMenuItems _lsdjMode = LsdjSyncModeMenuItems::Off;
 
 	std::map<std::string, int> _settings;
 
@@ -105,7 +108,9 @@ private:
 
 	IPopupMenu* CreateSettingsMenu();
 
-	void OpenLoadRomDialog();
+	IPopupMenu* CreateSystemMenu(bool loaded);
+
+	void OpenLoadRomDialog(GameboyModel model);
 
 	void OpenLoadSramDialog();
 
@@ -127,20 +132,20 @@ private:
 	void SaveProjectAs();
 	void LoadProject();
 
-	inline LsdjModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
+	inline LsdjSyncModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {
-		case LsdjSyncModes::Midi: return LsdjModeMenuItems::MidiSync;
-		case LsdjSyncModes::MidiArduinoboy: return LsdjModeMenuItems::MidSyncArduinoboy;
-		case LsdjSyncModes::MidiMap: return LsdjModeMenuItems::MidiMap;
-		default: return LsdjModeMenuItems::Off;
+		case LsdjSyncModes::Midi: return LsdjSyncModeMenuItems::MidiSync;
+		case LsdjSyncModes::MidiArduinoboy: return LsdjSyncModeMenuItems::MidSyncArduinoboy;
+		case LsdjSyncModes::MidiMap: return LsdjSyncModeMenuItems::MidiMap;
+		default: return LsdjSyncModeMenuItems::Off;
 		}
 	}
 
-	inline LsdjSyncModes GetLsdjModeFromMenu(LsdjModeMenuItems item) {
+	inline LsdjSyncModes GetLsdjModeFromMenu(LsdjSyncModeMenuItems item) {
 		switch (item) {
-		case LsdjModeMenuItems::MidiSync: return LsdjSyncModes::Midi;
-		case LsdjModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::MidiArduinoboy;
-		case LsdjModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
+		case LsdjSyncModeMenuItems::MidiSync: return LsdjSyncModes::Midi;
+		case LsdjSyncModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::MidiArduinoboy;
+		case LsdjSyncModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
 		default: return LsdjSyncModes::Off;
 		}
 	}

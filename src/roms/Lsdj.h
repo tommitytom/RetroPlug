@@ -51,6 +51,11 @@ static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
 	return LsdjSyncModes::Off;
 }
 
+struct LsdjSongName {
+	int projectId;
+	std::string name;
+};
+
 class Lsdj {
 public:
 	bool found = false;
@@ -67,11 +72,11 @@ public:
 
 	void importSongs(const std::vector<std::wstring>& paths);
 
-	void removeSong(int idx);
-
 	void loadSong(int idx);
 
-	void exportSong(int idx, const std::string& target);
+	void exportSong(int idx, std::vector<char>& target);
 
-	void getSongNames(std::vector<std::string>& names);
+	void deleteSong(int idx);
+
+	void getSongNames(std::vector<LsdjSongName>& names);
 };
