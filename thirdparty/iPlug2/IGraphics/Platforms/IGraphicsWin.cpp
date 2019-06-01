@@ -693,7 +693,7 @@ void IGraphicsWin::PlatformResize()
     SetWindowPos(mPlugWnd, 0, 0, 0, dlgW + dw, dlgH + dh, SETPOS_FLAGS);
 
     // don't want to touch the host window in VST3
-#ifndef VST3_API
+#if !defined(VST3_API) && !defined(VST2_API)
     if(pParent)
     {
       SetWindowPos(pParent, 0, 0, 0, parentW + dw, parentH + dh, SETPOS_FLAGS);
