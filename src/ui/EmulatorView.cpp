@@ -7,8 +7,8 @@
 
 #include <tao/json.hpp>
 
-EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager) 
-	: IControl(bounds), _plug(plug), _manager(manager)
+EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager) 
+	: _plug(plug), _manager(manager)
 {
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 
@@ -23,11 +23,9 @@ EmulatorView::EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager
 	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
 }
 
-EmulatorView::~EmulatorView() {
-	ShowText(false);
-
-	if (_imageId != -1 && GetUI()) {
-		NVGcontext* ctx = (NVGcontext*)GetUI()->GetDrawContext();
+void EmulatorView::Clear(IGraphics* graphics) {
+	if (_imageId != -1 && graphics) {
+		NVGcontext* ctx = (NVGcontext*)graphics->GetDrawContext();
 		nvgDeleteImage(ctx, _imageId);
 	}
 }
@@ -35,15 +33,9 @@ EmulatorView::~EmulatorView() {
 void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug * manager) {
 	_plug = plug;
 	_manager = manager;
-	ShowText(false);
-}
-
-void EmulatorView::OnInit() {
-	
 }
 
 void EmulatorView::OnDrop(const char* str) {
-	ShowText(false);
 	_plug->init(str, GameboyModel::Auto);
 }
 
@@ -68,20 +60,6 @@ bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 
 void EmulatorView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	OpenLoadRomDialog(GameboyModel::Auto);
-}
-
-void EmulatorView::OnMouseDown(float x, float y, const IMouseMod& mod) {
-	if (mod.R) {
-		CreateMenu(x, y);
-	}
-}
-
-void EmulatorView::OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx) {
-	if (selectedMenu) {
-		if (selectedMenu->GetFunction()) {
-			selectedMenu->ExecFunction();
-		}
-	}
 }
 
 void EmulatorView::Draw(IGraphics& g) {
@@ -126,24 +104,10 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 
 	nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, mRECT.L, mRECT.T, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
-	nvgRect(vg, mRECT.L, mRECT.T, mRECT.W(), mRECT.H());
+	NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
+	nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
 	nvgFillPaint(vg, imgPaint);
 	nvgFill(vg);
-}
-
-IPopupMenu* createModelMenu(bool addElipses) {
-	std::string elipses = addElipses ? "..." : "";
-
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem(("DMG B" + elipses).c_str(), (int)GameboyModel::DmgB);
-	menu->AddItem(("CGB C" + elipses).c_str(), (int)GameboyModel::CgbC);
-	menu->AddItem(("CGB E (default)" + elipses).c_str(), (int)GameboyModel::CgbE);
-	/*menu->AddItem(("SGB NTSC" + elipses).c_str(), (int)GameboyModelMenuItems::SgbNtsc);
-	menu->AddItem(("SGB PAL" + elipses).c_str(), (int)GameboyModelMenuItems::SgbPal);
-	menu->AddItem(("SGB2" + elipses).c_str(), (int)GameboyModelMenuItems::Sgb2);*/
-	menu->AddItem(("AGB" + elipses).c_str(), (int)GameboyModel::Agb);
-	return menu;
 }
 
 enum class SystemMenuItems : int {
@@ -160,33 +124,7 @@ enum class SystemMenuItems : int {
 	SaveSramAs,
 };
 
-enum class SongMenuItems {
-	Export,
-	Load,
-	Delete
-};
-
-IPopupMenu* createSongMenu(bool working) {
-	IPopupMenu* menu = new IPopupMenu(0, true);
-	menu->AddItem("Export .lsdsng...", (int)SongMenuItems::Export);
-	menu->AddItem("Load (and reset)", (int)SongMenuItems::Load, working ? IPopupMenu::Item::kDisabled : 0);
-	menu->AddItem("Delete (and reset)", (int)SongMenuItems::Delete, working ? IPopupMenu::Item::kDisabled : 0);
-	return menu;
-}
-
-IPopupMenu* createSyncMenu(bool disableSync, bool autoPlay) {
-	int flag = disableSync ? IPopupMenu::Item::kDisabled : 0;
-	IPopupMenu* syncMenu = new IPopupMenu();
-	syncMenu->AddItem("Off", LsdjSyncModeMenuItems::Off, flag);
-	syncMenu->AddItem("MIDI Sync", LsdjSyncModeMenuItems::MidiSync, flag);
-	syncMenu->AddItem("MIDI Sync (Arduinoboy Mode)", LsdjSyncModeMenuItems::MidSyncArduinoboy, flag);
-	syncMenu->AddItem("MIDI Map", LsdjSyncModeMenuItems::MidiMap, flag);
-	syncMenu->AddSeparator(LsdjSyncModeMenuItems::Sep1);
-	syncMenu->AddItem("Auto Play", LsdjSyncModeMenuItems::AutoPlay, autoPlay ? IPopupMenu::Item::kChecked : 0);
-	return syncMenu;
-}
-
-void EmulatorView::CreateMenu(float x, float y) {
+void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 	if (!_plug) {
 		return;
 	}
@@ -197,15 +135,13 @@ void EmulatorView::CreateMenu(float x, float y) {
 		romName = "No ROM Loaded";
 	}
 
-	_menu = IPopupMenu();
-
 	IPopupMenu* systemMenu = CreateSystemMenu(loaded);
 	
-	_menu.AddItem(romName.c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kTitle);
-	_menu.AddSeparator((int)RootMenuItems::Sep1);
+	root->AddItem(romName.c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kTitle);
+	root->AddSeparator((int)RootMenuItems::Sep1);
 
-	OnProjectMenuRequest(&_menu, loaded);
-	_menu.AddItem("System", systemMenu, (int)RootMenuItems::System);
+	root->AddItem("Project", projectMenu, (int)RootMenuItems::Project);
+	root->AddItem("System", systemMenu, (int)RootMenuItems::System);
 
 	systemMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
 		switch ((SystemMenuItems)indexInMenu) {
@@ -221,12 +157,12 @@ void EmulatorView::CreateMenu(float x, float y) {
 	if (loaded) {
 		IPopupMenu* settingsMenu = CreateSettingsMenu();
 
-		_menu.AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
-		_menu.AddSeparator((int)RootMenuItems::Sep2);
-		_menu.AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
-		_menu.AddSeparator((int)RootMenuItems::Sep3);
+		root->AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
+		root->AddSeparator((int)RootMenuItems::Sep2);
+		root->AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
+		root->AddSeparator((int)RootMenuItems::Sep3);
 
-		_menu.SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+		root->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
 			switch ((RootMenuItems)indexInMenu) {
 			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 			case RootMenuItems::GameLink: _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
@@ -243,7 +179,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
 			IPopupMenu* syncMenu = createSyncMenu(_plug->gameLink(), lsdj.autoPlay);
-			_menu.AddItem("LSDj Sync", syncMenu, (int)RootMenuItems::LsdjModes);
+			root->AddItem("LSDj Sync", syncMenu, (int)RootMenuItems::LsdjModes);
 
 			std::vector<LsdjSongName> songNames;
 			lsdj.getSongNames(songNames);
@@ -253,7 +189,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 				songMenu->AddItem("Import (and reset)...");
 				songMenu->AddSeparator();
 
-				_menu.AddItem("LSDj Songs", songMenu, (int)RootMenuItems::LsdjSongs);
+				root->AddItem("LSDj Songs", songMenu, (int)RootMenuItems::LsdjSongs);
 
 				for (size_t i = 0; i < songNames.size(); i++) {
 					IPopupMenu* songItemMenu = createSongMenu(songNames[i].projectId == -1);
@@ -270,7 +206,7 @@ void EmulatorView::CreateMenu(float x, float y) {
 				}
 			}
 			
-			_menu.AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
+			root->AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
 
 			int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
 			syncMenu->CheckItem(selectedMode, true);
@@ -283,11 +219,9 @@ void EmulatorView::CreateMenu(float x, float y) {
 				}
 			});
 		} else {
-			_menu.AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
+			root->AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
 		}
 	}
-
-	GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
 }
 
 IPopupMenu* EmulatorView::CreateSettingsMenu() {
@@ -347,64 +281,22 @@ IPopupMenu* EmulatorView::CreateSystemMenu(bool loaded) {
 		menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
 		menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
 
-		resetAsModel->SetFunction([](int idx, IPopupMenu::Item*) {
+		/*resetAsModel->SetFunction([](int idx, IPopupMenu::Item*) {
 			switch ((GameboyModel)idx) {
 				
 			}
-		});
+		});*/
 	}
 
-	loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
+	/*loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
 		OpenLoadRomDialog((GameboyModel)(idx + 1));
-	});
+	});*/
 
 	return menu;
 }
 
 void EmulatorView::ToggleKeyboardMode() {
 	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
-}
-
-void EmulatorView::ShowText(bool show) {
-	if (_showText == show) {
-		return;
-	}
-
-	const IRECT b = GetRECT();
-	float mid = b.H() / 2;
-	IRECT topRow(b.L, mid - 25, b.R, mid);
-	IRECT bottomRow(b.L, mid, b.R, mid + 25);
-
-	if (show) {
-		assert(!_textIds[0]);
-		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
-		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
-
-		GetUI()->AttachControl(_textIds[0]);
-		GetUI()->AttachControl(_textIds[1]);
-	} else {
-		assert(_textIds[0]);
-		GetUI()->DetachControl(_textIds[0], true);
-		GetUI()->DetachControl(_textIds[1], true);
-		_textIds[0] = nullptr;
-		_textIds[1] = nullptr;
-	}
-
-	_showText = show;
-}
-
-void EmulatorView::UpdateTextPosition() {
-	if (_showText) {
-		assert(_textIds[0]);
-
-		const IRECT b = GetRECT();
-		float mid = b.H() / 2;
-		IRECT topRow(b.L, mid - 25, b.R, mid);
-		IRECT bottomRow(b.L, mid, b.R, mid + 25);
-
-		_textIds[0]->SetTargetAndDrawRECTs(topRow);
-		_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
-	}
 }
 
 void EmulatorView::ExportSong(int index) {
@@ -474,7 +366,7 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		std::string p = ws2s(paths[0]);
-		ShowText(false);
+		//ShowText(false);
 		_plug->init(p.c_str(), model);
 	}
 }

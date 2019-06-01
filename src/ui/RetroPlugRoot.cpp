@@ -31,12 +31,54 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 
 void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	for (auto view : _views) {
-		if (view->GetRECT().Contains(x, y)) {
+		if (view->GetArea().Contains(x, y)) {
 			_activeIdx = GetViewIndex(view);
 			SetActive(_views[_activeIdx]);
-			view->OnMouseDown(x, y, mod);
 			break;
 		}
+	}
+
+	if (mod.R) {
+		if (_active) {
+			_menu = IPopupMenu();
+
+			if (IsActive()) {
+				IPopupMenu* projectMenu = CreateProjectMenu(true);
+				_active->CreateMenu(&_menu, projectMenu);
+
+				projectMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
+					switch ((ProjectMenuItems)idx) {
+					case ProjectMenuItems::New: NewProject(); break;
+					case ProjectMenuItems::Save: SaveProject(); break;
+					case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
+					case ProjectMenuItems::Load: LoadProject(); break;
+					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
+					}
+				});
+			} else {
+				IPopupMenu* modelMenu = createModelMenu(true);
+				createBasicMenu(&_menu, modelMenu);
+
+				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
+					switch ((BasicMenuItems)idx) {
+					case BasicMenuItems::LoadProject: LoadProject(); break;
+					case BasicMenuItems::LoadRom: _active->OpenLoadRomDialog(GameboyModel::Auto); break;
+					}
+				});
+
+				modelMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+					_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
+				});
+			}
+
+			GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
+		}
+	}
+}
+
+void RetroPlugRoot::Draw(IGraphics & g) {
+	for (auto view : _views) {
+		view->Draw(g);
 	}
 }
 
@@ -78,14 +120,8 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 }
 
 EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
-	IRECT b(0, 0, 0, 0);
-	EmulatorView* view = new EmulatorView(b, plug, _plug);
+	EmulatorView* view = new EmulatorView(plug, _plug);
 	_views.push_back(view);
-
-	view->OnProjectMenuRequest = [this](IPopupMenu * target, bool loaded) { return CreateProjectMenu(target, loaded); };
-
-	GetUI()->AttachControl(view);
-	GetUI()->BringToFront(this);
 
 	SetActive(view);
 	_activeIdx = _views.size() - 1;
@@ -160,8 +196,50 @@ void RetroPlugRoot::UpdateLayout() {
 		int y = gridY * 288;
 
 		IRECT b(x, y, x + 320, y + 288);
-		_views[i]->SetTargetAndDrawRECTs(b);
-		_views[i]->UpdateTextPosition();
+		_views[i]->SetArea(b);
+		UpdateTextPosition();
+	}
+}
+
+void RetroPlugRoot::ShowText(bool show) {
+	if (_showText == show) {
+		return;
+	}
+
+	const IRECT b = GetRECT();
+	float mid = b.H() / 2;
+	IRECT topRow(b.L, mid - 25, b.R, mid);
+	IRECT bottomRow(b.L, mid, b.R, mid + 25);
+
+	if (show) {
+		assert(!_textIds[0]);
+		_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
+		_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
+
+		GetUI()->AttachControl(_textIds[0]);
+		GetUI()->AttachControl(_textIds[1]);
+	} else {
+		assert(_textIds[0]);
+		//GetUI()->DetachControl(_textIds[0], true);
+		//GetUI()->DetachControl(_textIds[1], true);
+		_textIds[0] = nullptr;
+		_textIds[1] = nullptr;
+	}
+
+	_showText = show;
+}
+
+void RetroPlugRoot::UpdateTextPosition() {
+	if (_showText) {
+		assert(_textIds[0]);
+
+		const IRECT b = GetRECT();
+		float mid = b.H() / 2;
+		IRECT topRow(b.L, mid - 25, b.R, mid);
+		IRECT bottomRow(b.L, mid, b.R, mid + 25);
+
+		_textIds[0]->SetTargetAndDrawRECTs(topRow);
+		_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
 	}
 }
 
@@ -174,65 +252,22 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 	_active->SetAlpha(1.0f);
 }
 
-IPopupMenu* createInstanceMenu(bool loaded) {
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Load ROM...", (int)CreateInstanceType::LoadRom);
-	menu->AddItem("Same ROM", (int)CreateInstanceType::SameRom, loaded ? 0 : IPopupMenu::Item::kDisabled);
-	menu->AddItem("Duplicate", (int)CreateInstanceType::Duplicate, loaded ? 0 : IPopupMenu::Item::kDisabled);
-	return menu;
-}
-
-IPopupMenu* createLayoutMenu(RetroPlugLayout checked) {
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Auto", (int)RetroPlugLayout::Auto);
-	menu->AddItem("Column", (int)RetroPlugLayout::Column);
-	menu->AddItem("Row", (int)RetroPlugLayout::Row);
-	menu->AddItem("Grid", (int)RetroPlugLayout::Grid);
-	menu->CheckItemAlone((int)checked);
-	return menu;
-}
-
-IPopupMenu* createSaveOptionsMenu(SaveModes checked) {
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save SRAM", (int)SaveModes::SaveSram);
-	menu->AddItem("Save State", (int)SaveModes::SaveState);
-	menu->CheckItemAlone((int)checked);
-	return menu;
-}
-
-void RetroPlugRoot::CreateProjectMenu(IPopupMenu* target, bool loaded) {
+IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded);
 	IPopupMenu* layoutMenu = createLayoutMenu(_layout);
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_saveMode);
 
-	bool savable = (_views.empty() || (_views.size() == 1 && _views[0]->Plug() && _views[0]->Plug()->active()));
-
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("New", (int)ProjectMenuItems::New);
 	menu->AddItem("Load...", (int)ProjectMenuItems::Load);
-	menu->AddItem("Save", (int)ProjectMenuItems::Save, !savable ? IPopupMenu::Item::kDisabled : 0);
-	menu->AddItem("Save As...", (int)ProjectMenuItems::SaveAs, !savable ? IPopupMenu::Item::kDisabled : 0);
+	menu->AddItem("Save", (int)ProjectMenuItems::Save);
+	menu->AddItem("Save As...", (int)ProjectMenuItems::SaveAs);
 	menu->AddSeparator((int)ProjectMenuItems::Sep1);
 	menu->AddItem("Save Options", saveOptionsMenu, (int)ProjectMenuItems::SaveOptions);
 	menu->AddSeparator((int)ProjectMenuItems::Sep2);
-
-	if (savable) {
-		menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
-		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
-		menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
-	}
-
-	target->AddItem("Project", menu, (int)RootMenuItems::Project);
-
-	menu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-		switch ((ProjectMenuItems)idx) {
-		case ProjectMenuItems::New: NewProject(); break;
-		case ProjectMenuItems::Save: SaveProject(); break;
-		case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
-		case ProjectMenuItems::Load: LoadProject(); break;
-		case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
-		}
-	});
+	menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
+	menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
+	menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
 
 	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 		CreatePlugInstance(_active, (CreateInstanceType)idx);
@@ -242,6 +277,16 @@ void RetroPlugRoot::CreateProjectMenu(IPopupMenu* target, bool loaded) {
 		_layout = (RetroPlugLayout)idx;
 		UpdateLayout();
 	});
+
+	return menu;
+}
+
+void RetroPlugRoot::OnPopupMenuSelection(IPopupMenu * selectedMenu, int valIdx) {
+	if (selectedMenu) {
+		if (selectedMenu->GetFunction()) {
+			selectedMenu->ExecFunction();
+		}
+	}
 }
 
 void RetroPlugRoot::CloseProject() {
@@ -250,7 +295,8 @@ void RetroPlugRoot::CloseProject() {
 
 	if (g) {
 		for (auto view : _views) {
-			GetUI()->DetachControl(view, true);
+			view->Clear(GetUI());
+			delete view;
 		}
 	}
 
@@ -262,7 +308,7 @@ void RetroPlugRoot::NewProject() {
 
 	SameBoyPlugPtr plug = _plug->addInstance(EmulatorType::SameBoy);
 	EmulatorView* view = AddView(plug);
-	view->ShowText(true);
+	ShowText(true);
 	UpdateLayout();
 }
 
@@ -319,7 +365,9 @@ void RetroPlugRoot::LoadProject() {
 
 void RetroPlugRoot::RemoveActive() {
 	_plug->removeInstance(_activeIdx);
-	GetUI()->DetachControl(_active, true);
+	_active->Clear(GetUI());
+	delete _active;
+	_active = nullptr;
 	
 	_views.erase(_views.begin() + _activeIdx);
 

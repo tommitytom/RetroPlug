@@ -6,41 +6,7 @@
 #include "IControl.h"
 #include "plugs/RetroPlug.h"
 #include "EmulatorView.h"
-
-enum class RetroPlugLayout {
-	Auto,
-	Row,
-	Column,
-	Grid
-};
-
-enum class CreateInstanceType : int {
-	LoadRom,
-	SameRom,
-	Duplicate
-};
-
-enum class ProjectMenuItems : int {
-	New,
-	Load,
-	Save,
-	SaveAs,
-
-	Sep1,
-
-	SaveOptions,
-
-	Sep2,
-
-	AddInstance,
-	RemoveInstance,
-	Layout
-};
-
-enum class SaveModes {
-	SaveSram,
-	SaveState
-};
+#include "ContextMenu.h"
 
 class RetroPlugRoot : public IControl {
 private:
@@ -51,23 +17,36 @@ private:
 	RetroPlugLayout _layout = RetroPlugLayout::Auto;
 	SaveModes _saveMode = SaveModes::SaveSram;
 
+	IPopupMenu _menu;
+
+	bool _showText = false;
+	ITextControl* _textIds[2] = { nullptr, nullptr };
+
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug);
 	~RetroPlugRoot() {}
 
 	void OnInit() override;
 
+	bool IsDirty() override { return true; }
+
 	bool OnKey(const IKeyPress& key, bool down);
 
 	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override {
-		_active->OnMouseDblClick(x, y, mod);
+		if (_active) {
+			_active->OpenLoadRomDialog(GameboyModel::Auto);
+		}
 	}
 
 	void OnMouseDown(float x, float y, const IMouseMod& mod);
 
-	void Draw(IGraphics& g) override {}
+	void Draw(IGraphics& g) override;
 
 private:
+	bool IsActive() {
+		return _views.size() > 0 && _views[0]->Plug() && _views[0]->Plug()->active();
+	}
+
 	void UpdateLayout();
 
 	void CreatePlugInstance(EmulatorView* view, CreateInstanceType type);
@@ -76,7 +55,9 @@ private:
 
 	void SetActive(EmulatorView* view);
 
-	void CreateProjectMenu(IPopupMenu* target, bool loaded);
+	IPopupMenu* CreateProjectMenu(bool loaded);
+
+	void OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx);
 
 	void NewProject();
 
@@ -89,6 +70,10 @@ private:
 	void LoadProject();
 	
 	void RemoveActive();
+
+	void ShowText(bool show);
+
+	void UpdateTextPosition();
 
 	int GetViewIndex(EmulatorView* view) {
 		for (int i = 0; i < _views.size(); i++) {

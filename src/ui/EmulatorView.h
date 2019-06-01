@@ -7,50 +7,14 @@
 #include "KeyMap.h"
 #include "LsdjKeyMap.h"
 #include "nanovg.h"
-
-enum LsdjSyncModeMenuItems : int {
-	Off,
-	MidiSync,
-	MidSyncArduinoboy,
-	MidiMap,
-
-	Sep1, 
-
-	AutoPlay
-};
-
-enum class RootMenuItems : int {
-	RomName,
-
-	Sep1,
-
-	Project,
-	System,
-	Settings,
-
-	Sep2,
-
-	GameLink,
-
-	Sep3,
-
-	SendClock = 10,
-
-	// LSDJ Specific
-	LsdjModes = 10,
-	LsdjSongs,
-	KeyboardMode
-};
+#include "ContextMenu.h"
 
 const int VIDEO_WIDTH = 160;
 const int VIDEO_HEIGHT = 144;
 const int VIDEO_FRAME_SIZE = VIDEO_WIDTH * VIDEO_HEIGHT * 4;
 const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
 
-class EmulatorView : public IControl {
-public:
-	std::function<void(IPopupMenu*, bool)> OnProjectMenuRequest;
-
+class EmulatorView {
 private:
 	RetroPlug* _manager = nullptr;
 	SameBoyPlugPtr _plug;
@@ -68,12 +32,19 @@ private:
 
 	std::map<std::string, int> _settings;
 
-	bool _showText = false;
-	ITextControl* _textIds[2] = { nullptr, nullptr };
+	IRECT _area;
 
 public:
-	EmulatorView(IRECT bounds, SameBoyPlugPtr plug, RetroPlug* manager);
-	~EmulatorView();
+	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager);
+	~EmulatorView() {}
+
+	void SetArea(const IRECT& area) {
+		_area = area;
+	}
+
+	const IRECT& GetArea() const { return _area; }
+	
+	void Clear(IGraphics* graphics);
 
 	void Setup(SameBoyPlugPtr plug, RetroPlug* manager);
 
@@ -81,36 +52,28 @@ public:
 
 	void SetAlpha(float alpha) { _alpha = alpha; }
 
-	void OnInit() override;
-
-	bool IsDirty() override { return true; }
-
 	bool OnKey(const IKeyPress& key, bool down);
 
-	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
+	void OnMouseDblClick(float x, float y, const IMouseMod& mod);
 
-	void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+	void OnMouseDown(float x, float y, const IMouseMod& mod);
 
-	void OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int valIdx) override;
+	void OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int valIdx);
 
-	void OnDrop(const char* str) override;
+	void OnDrop(const char* str);
 
-	void Draw(IGraphics& g) override;
+	void Draw(IGraphics& g);
 
-	void ShowText(bool show);
+	void CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu);
 
-	void UpdateTextPosition();
+	void OpenLoadRomDialog(GameboyModel model);
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
 
-	void CreateMenu(float x, float y);
-
 	IPopupMenu* CreateSettingsMenu();
 
 	IPopupMenu* CreateSystemMenu(bool loaded);
-
-	void OpenLoadRomDialog(GameboyModel model);
 
 	void OpenLoadSramDialog();
 
@@ -127,10 +90,6 @@ private:
 	void DeleteSong(int index);
 
 	void ResetSystem();
-
-	void SaveProject();
-	void SaveProjectAs();
-	void LoadProject();
 
 	inline LsdjSyncModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {
