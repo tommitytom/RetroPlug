@@ -81,7 +81,7 @@ private:
 
 	void ToggleKeyboardMode();
 
-	void ExportSong(int index);
+	void ExportSong(const LsdjSongName& songName);
 
 	void LoadSong(int index);
 

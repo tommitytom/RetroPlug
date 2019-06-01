@@ -178,7 +178,7 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 	lsdj_project_t* current = lsdj_project_new_from_working_memory_song(sav, &error);
 	if (!error) {
 		lsdj_project_get_name(current, name, sizeof(name));
-		names.push_back({ -1, std::string(name) + " (working)" });
+		names.push_back({ -1, std::string(name) + " (working)", lsdj_project_get_version(current) });
 	}
 
 	size_t count = lsdj_sav_get_project_count(sav);
@@ -187,7 +187,7 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 		if (lsdj_project_get_song(project) != NULL) {
 			std::fill_n(name, 9, '\0');
 			lsdj_project_get_name(project, name, sizeof(name));
-			names.push_back({ (int)i, name });
+			names.push_back({ (int)i, name, lsdj_project_get_version(project) });
 		}
 	}
 

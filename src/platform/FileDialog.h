@@ -76,7 +76,7 @@ static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilte
 	return ret;
 }
 
-static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters) {
+static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters, const std::wstring& fileName = L"") {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
 		targetFilters[i].pszName = filters[i].name.c_str();
@@ -99,6 +99,7 @@ static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters)
 			pFileSave->GetOptions(&dwFlags);
 			pFileSave->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
 			pFileSave->SetFileTypes(filters.size(), targetFilters);
+			pFileSave->SetFileName(fileName.c_str());
 			hr = pFileSave->SetDefaultExtension(filters[0].extensions.c_str());
 			hr = pFileSave->Show(NULL);
 

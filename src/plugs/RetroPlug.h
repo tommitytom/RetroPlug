@@ -71,6 +71,8 @@ public:
 		for (size_t i = idx; i < MAX_INSTANCES - 1; i++) {
 			_plugs[i] = _plugs[i + 1];
 		}
+
+		_plugs[MAX_INSTANCES - 1] = nullptr;
 	}
 
 	size_t instanceCount() const {

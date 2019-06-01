@@ -54,6 +54,7 @@ static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
 struct LsdjSongName {
 	int projectId;
 	std::string name;
+	unsigned char version;
 };
 
 class Lsdj {

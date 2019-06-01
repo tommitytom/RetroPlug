@@ -196,15 +196,21 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 					IPopupMenu* songItemMenu = createSongMenu(songNames[i].projectId == -1);
 					songMenu->AddItem(songNames[i].name.c_str(), songItemMenu);
 
-					songItemMenu->SetFunction([=](int indexInMenu, IPopupMenu::Item * itemChosen) {
+					songItemMenu->SetFunction([=](int indexInMenu, IPopupMenu::Item* itemChosen) {
 						int id = songNames[i].projectId;
 						switch ((SongMenuItems)indexInMenu) {
-						case SongMenuItems::Export: ExportSong(id); break;
+						case SongMenuItems::Export: ExportSong(songNames[i]); break;
 						case SongMenuItems::Load: LoadSong(id); break;
 						case SongMenuItems::Delete: DeleteSong(id); break;
 						}
 					});
 				}
+
+				songMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+					if (idx == 0) {
+						OpenLoadSongsDialog();
+					}
+				});
 			}
 			
 			root->AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
@@ -297,12 +303,12 @@ void EmulatorView::ToggleKeyboardMode() {
 	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
-void EmulatorView::ExportSong(int index) {
+void EmulatorView::ExportSong(const LsdjSongName& songName) {
 	std::vector<FileDialogFilters> types = {
 		{ L"LSDj Songs", L"*.lsdsng" }
 	};
 
-	std::wstring path = BasicFileSave(types);
+	std::wstring path = BasicFileSave(types, s2ws(songName.name + "." + std::to_string(songName.version)));
 	if (path.size() == 0) {
 		return;
 	}
@@ -314,7 +320,7 @@ void EmulatorView::ExportSong(int index) {
 
 		if (lsdj.saveData.size() > 0) {
 			std::vector<char> songData;
-			lsdj.exportSong(index, songData);
+			lsdj.exportSong(songName.projectId, songData);
 
 			if (songData.size() > 0) {
 				writeFile(path, songData);
