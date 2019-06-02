@@ -74,10 +74,7 @@ static void vblankHandler(GB_gameboy_t* gb) {
 
 static void serial_start(GB_gameboy_t *gb, bool bit_received) {
     sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
-
-    for (size_t i = 0; i < s->linkTargetCount; i++) {
-        s->linkTargets[i]->bit_to_send = bit_received;
-    }
+    s->bit_to_send = bit_received;
 }
 
 static bool serial_end(GB_gameboy_t* gb) {
@@ -85,7 +82,7 @@ static bool serial_end(GB_gameboy_t* gb) {
 
     bool ret = s->linkTargetCount > 0 ? GB_serial_get_data_bit(&s->linkTargets[0]->gb) : true;
     for (size_t i = 0; i < s->linkTargetCount; i++) {
-        GB_serial_set_data_bit(&s->linkTargets[i]->gb, s->linkTargets[i]->bit_to_send);
+        GB_serial_set_data_bit(&s->linkTargets[i]->gb, s->bit_to_send);
     }
 
     return ret;

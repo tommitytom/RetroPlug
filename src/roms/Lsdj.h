@@ -69,13 +69,15 @@ public:
 	std::atomic<bool> autoPlay = false;
 	std::atomic<bool> keyboardShortcuts = true;
 
-	std::vector<char> saveData;
+	std::vector<std::byte> saveData;
 
 	void importSongs(const std::vector<std::wstring>& paths);
 
 	void loadSong(int idx);
 
-	void exportSong(int idx, std::vector<char>& target);
+	void exportSong(int idx, std::vector<std::byte>& target);
+
+	void exportSongs(const std::vector<LsdjSongName>& names, std::vector<std::vector<std::byte>>& target);
 
 	void deleteSong(int idx);
 

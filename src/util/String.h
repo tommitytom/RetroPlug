@@ -28,3 +28,12 @@ static std::string changeExt(const std::string& path, const std::string& ext) {
 	size_t dotIdx = path.find_last_of('.');
 	return path.substr(0, dotIdx) + ext;
 }
+
+static std::wstring getExt(const std::wstring& path) {
+	size_t dotIdx = path.find_last_of('.');
+	if (dotIdx != -1) {
+		return path.substr(0, dotIdx + 1);
+	}
+
+	return L"";
+}

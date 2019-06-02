@@ -25,6 +25,7 @@ private:
 	double _sampleRate = 48000;
 	std::wstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
+	SaveStateType _saveType = SaveStateType::State;
 
 public:
 	RetroPlug() {}
@@ -37,6 +38,10 @@ public:
 	void setLayout(InstanceLayout layout) {
 		_layout = layout;
 	}
+
+	SaveStateType saveType() const { return _saveType; }
+
+	void setSaveType(SaveStateType type) { _saveType = type; }
 
 	void clear() {
 		_projectPath.clear();

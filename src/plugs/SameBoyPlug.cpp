@@ -69,11 +69,11 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 
 	size_t stateSize = _symbols.sameboy_save_state_size(instance);
 
-	std::vector<char> saveData;
+	std::vector<std::byte> saveData;
 	_savePath = changeExt(romPath, L".sav");
 	if (std::filesystem::exists(_savePath)) {
 		readFile(_savePath, saveData);
-		_symbols.sameboy_load_battery(instance, saveData.data(), saveData.size());
+		_symbols.sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
 	}
 
 	std::string romName = _romName;
@@ -90,6 +90,7 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 }
 
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
+	_model = model;
 	_resetSamples = _sampleRate / 2;
 	std::scoped_lock lock(_lock);
 	_symbols.sameboy_reset(_instance, getGameboyModel(model), fast);
@@ -99,9 +100,8 @@ void SameBoyPlug::setSampleRate(double sampleRate) {
 	_sampleRate = sampleRate;
 
 	if (_instance) {
-		_lock.lock();
+		std::scoped_lock lock(_lock);
 		_symbols.sameboy_set_sample_rate(_instance, sampleRate);
-		_lock.unlock();
 	}
 }
 
@@ -109,8 +109,12 @@ size_t SameBoyPlug::saveStateSize() {
 	return _symbols.sameboy_save_state_size(_instance);
 }
 
+size_t SameBoyPlug::batterySize() {
+	return _symbols.sameboy_battery_size(_instance);
+}
+
 bool SameBoyPlug::saveBattery(std::wstring path) {
-	std::vector<char> target;
+	std::vector<std::byte> target;
 	if (saveBattery(target)) {
 		if (path.empty()) {
 			path = _savePath;
@@ -125,19 +129,21 @@ bool SameBoyPlug::saveBattery(std::wstring path) {
 	return false;
 }
 
-bool SameBoyPlug::saveBattery(std::vector<char>& data) {
+bool SameBoyPlug::saveBattery(std::vector<std::byte>& data) {
 	size_t size = _symbols.sameboy_battery_size(_instance);
 	if (size) {
 		data.resize(size);
-		std::scoped_lock lock(_lock);
-		return _symbols.sameboy_save_battery(_instance, data.data(), data.size());
+		return saveBattery((std::byte*)data.data(), data.size());
 	}
+}
 
-	return false;
+bool SameBoyPlug::saveBattery(std::byte* data, size_t size) {
+	std::scoped_lock lock(_lock);
+	return _symbols.sameboy_save_battery(_instance, (char*)data, size);
 }
 
 bool SameBoyPlug::loadBattery(const std::wstring& path, bool reset) {
-	std::vector<char> data;
+	std::vector<std::byte> data;
 	if (!readFile(path, data)) {
 		return false;
 	}
@@ -146,9 +152,13 @@ bool SameBoyPlug::loadBattery(const std::wstring& path, bool reset) {
 	return loadBattery(data, reset);
 }
 
-bool SameBoyPlug::loadBattery(const std::vector<char>& data, bool reset) {
+bool SameBoyPlug::loadBattery(const std::vector<std::byte>& data, bool reset) {
+	return loadBattery(data.data(), data.size(), reset);
+}
+
+bool SameBoyPlug::loadBattery(const std::byte* data, size_t size, bool reset) {
 	std::scoped_lock lock(_lock);
-	_symbols.sameboy_load_battery(_instance, data.data(), data.size());
+	_symbols.sameboy_load_battery(_instance, (char*)data, size);
 
 	if (reset) {
 		_resetSamples = _sampleRate / 2;
@@ -158,21 +168,48 @@ bool SameBoyPlug::loadBattery(const std::vector<char>& data, bool reset) {
 	return true;
 }
 
-void SameBoyPlug::saveState(char* target, size_t size) {
+bool SameBoyPlug::clearBattery(bool reset) {
 	std::scoped_lock lock(_lock);
-	_symbols.sameboy_save_state(_instance, target, size);
+	size_t size = _symbols.sameboy_battery_size(_instance);
+	std::vector<std::byte> d(size);
+	memset(d.data(), 0, size);
+	_symbols.sameboy_load_battery(_instance, (char*)d.data(), d.size());
+
+	_savePath = L"";
+
+	if (reset) {
+		_resetSamples = _sampleRate / 2;
+		_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
+	}
+
+	return true;
 }
 
-void SameBoyPlug::loadState(const char* source, size_t size) {
-	_lock.lock();
-	_symbols.sameboy_load_state(_instance, source, size);
-	_lock.unlock();
+void SameBoyPlug::saveState(std::vector<std::byte>& data) {
+	size_t size = _symbols.sameboy_save_state_size(_instance);
+	if (size) {
+		data.resize(size);
+		return saveState((std::byte*)data.data(), data.size());
+	}
+}
+
+void SameBoyPlug::saveState(std::byte* target, size_t size) {
+	std::scoped_lock lock(_lock);
+	_symbols.sameboy_save_state(_instance, (char*)target, size);
+}
+
+void SameBoyPlug::loadState(const std::vector<std::byte>& data) {
+	loadState(data.data(), data.size());
+}
+
+void SameBoyPlug::loadState(const std::byte* source, size_t size) {
+	std::scoped_lock lock(_lock);
+	_symbols.sameboy_load_state(_instance, (char*)source, size);
 }
 
 void SameBoyPlug::setSetting(const std::string& name, int value) {
-	_lock.lock();
+	std::scoped_lock lock(_lock);
 	_symbols.sameboy_set_setting(_instance, name.c_str(), value);
-	_lock.unlock();
 }
 
 void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
@@ -181,9 +218,8 @@ void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
 		instances[i] = linkTargets[i]->instance();
 	}
 
-	_lock.lock();
+	std::scoped_lock lock(_lock);
 	_symbols.sameboy_set_link_targets(_instance, instances, linkTargets.size());
-	_lock.unlock();
 }
 
 // This is called from the audio thread

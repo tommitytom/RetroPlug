@@ -19,6 +19,11 @@ enum class GameboyModel {
 	Agb
 };
 
+enum class SaveStateType {
+	State,
+	Sram
+};
+
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* path, int model, bool fast_boot);
 	void(*sameboy_free)(void* state);
@@ -37,7 +42,7 @@ struct SameboyPlugSymbols {
 
 	size_t(*sameboy_battery_size)(void* state);
 	void(*sameboy_load_battery)(void* state, const char* source, size_t size);
-	size_t(*sameboy_save_battery)(void* state, const char* target, size_t size);
+	size_t(*sameboy_save_battery)(void* state, char* target, size_t size);
 
 	size_t(*sameboy_save_state_size)(void* state);
 	void(*sameboy_load_state)(void* state, const char* source, size_t size);
@@ -112,17 +117,29 @@ public:
 
 	size_t saveStateSize();
 
+	size_t batterySize();
+
 	bool saveBattery(std::wstring path);
 
-	bool saveBattery(std::vector<char>& data);
+	bool saveBattery(std::vector<std::byte>& data);
+
+	bool saveBattery(std::byte* data, size_t size);
 
 	bool loadBattery(const std::wstring& path, bool reset);
 
-	bool loadBattery(const std::vector<char>& path, bool reset);
+	bool loadBattery(const std::vector<std::byte>& data, bool reset);
 
-	void saveState(char* target, size_t size);
+	bool loadBattery(const std::byte* data, size_t size, bool reset);
 
-	void loadState(const char* source, size_t size);
+	bool clearBattery(bool reset);
+
+	void saveState(std::vector<std::byte>& data);
+
+	void saveState(std::byte* target, size_t size);
+
+	void loadState(const std::vector<std::byte>& data);
+
+	void loadState(const std::byte* source, size_t size);
 
 	void setSetting(const std::string& name, int value);
 

@@ -54,8 +54,6 @@ public:
 
 	bool OnKey(const IKeyPress& key, bool down);
 
-	void OnMouseDblClick(float x, float y, const IMouseMod& mod);
-
 	void OnDrop(const char* str);
 
 	void Draw(IGraphics& g);
@@ -65,6 +63,8 @@ public:
 	void OpenLoadRomDialog(GameboyModel model);
 
 	void DisableRendering(bool disable);
+
+	void LoadRom(const std::wstring& path);
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
@@ -79,9 +79,13 @@ private:
 
 	void OpenLoadSongsDialog();
 
+	void OpenLoadDialog();
+
 	void ToggleKeyboardMode();
 
 	void ExportSong(const LsdjSongName& songName);
+
+	void ExportSongs(const std::vector<LsdjSongName>& songNames);
 
 	void LoadSong(int index);
 

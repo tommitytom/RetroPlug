@@ -25,7 +25,7 @@ void Lsdj::importSongs(const std::vector<std::wstring>& paths) {
 		}
 	}
 
-	std::vector<char> fileData;
+	std::vector<std::byte> fileData;
 	for (auto& path : paths) {
 		fileData.clear();
 		readFile(path, fileData);
@@ -83,7 +83,7 @@ void Lsdj::loadSong(int idx) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::exportSong(int idx, std::vector<char>& target) {
+void Lsdj::exportSong(int idx, std::vector<std::byte>& target) {
 	if (saveData.size() == 0) {
 		return;
 	}
@@ -121,6 +121,10 @@ void Lsdj::exportSong(int idx, std::vector<char>& target) {
 	}
 
 	lsdj_sav_free(sav);
+}
+
+void Lsdj::exportSongs(const std::vector<LsdjSongName>& names, std::vector<std::vector<std::byte>>& target) {
+	
 }
 
 void Lsdj::deleteSong(int idx) {

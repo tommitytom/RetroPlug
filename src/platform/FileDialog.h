@@ -9,7 +9,7 @@ struct FileDialogFilters {
 	std::wstring extensions;
 };
 
-static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect) {
+static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
 		targetFilters[i].pszName = filters[i].name.c_str();
@@ -33,6 +33,10 @@ static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilte
 
 			if (multiSelect) {
 				dwFlags |= FOS_ALLOWMULTISELECT;
+			}
+
+			if (foldersOnly) {
+				dwFlags |= FOS_PICKFOLDERS;
 			}
 			
 			pFileOpen->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);

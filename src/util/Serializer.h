@@ -27,28 +27,59 @@ static InstanceLayout layoutFromString(const std::string& layout) {
 	return InstanceLayout::Auto;
 }
 
-static void Serialize(std::string& target, const RetroPlug& plug) {
-	const SameBoyPlugPtr* plugs = plug.plugs();
+static std::string modelToString(GameboyModel model) {
+	switch (model) {
+	case GameboyModel::DmgB: return "DMG_B";
+	case GameboyModel::CgbC: return "CGB_C";
+	case GameboyModel::CgbE: return "CGB_E";
+	case GameboyModel::Agb: return "AGB";
+	}
+
+	return "CGB_E";
+}
+
+static GameboyModel stringToModel(const std::string& model) {
+	if (model == "DMG_B") return GameboyModel::DmgB;
+	if (model == "CGB_C") return GameboyModel::CgbC;
+	if (model == "CGB_E") return GameboyModel::CgbE;
+	if (model == "AGB") return GameboyModel::Agb;
+	return GameboyModel::Auto;
+}
+
+static std::string saveTypeToString(SaveStateType type) {
+	switch (type) {
+	case SaveStateType::State: return "state";
+	case SaveStateType::Sram: return "sram";
+	}
+
+	return "state";
+}
+
+static SaveStateType stringToSaveType(const std::string& model) {
+	if (model == "state") return SaveStateType::State;
+	if (model == "sram") return SaveStateType::Sram;
+	return SaveStateType::State;
+}
+
+static void Serialize(std::string& target, const RetroPlug& manager) {
+	const SameBoyPlugPtr* plugs = manager.plugs();
 	tao::json::value root = {
 		{ "version", PLUG_VERSION_STR },
-		{ "layout", layoutToString(plug.layout()) },
+		{ "layout", layoutToString(manager.layout()) },
+		{ "saveType", saveTypeToString(manager.saveType()) },
 		{ "instances", tao::json::value::array({}) }
 	};
 
-	if (!plug.projectPath().empty()) {
-		root.emplace("lastProjectPath", ws2s(plug.projectPath()));
+	if (!manager.projectPath().empty()) {
+		root.emplace("lastProjectPath", ws2s(manager.projectPath()));
 	}
 
 	for (size_t i = 0; i < MAX_INSTANCES; i++) {
 		const SameBoyPlugPtr plug = plugs[i];
 		if (plug) {
-			size_t stateSize = plug->saveStateSize();
-			tao::binary d;
-			d.resize(stateSize);
-			plug->saveState((char*)d.data(), stateSize);
-
 			tao::json::value settings = {
 				{ "gameBoy", {
+					{ "model", modelToString(plug->model()) },
 					{ "gameLink", plug->gameLink() }
 				} },
 				{ "sameBoy", {
@@ -68,12 +99,18 @@ static void Serialize(std::string& target, const RetroPlug& plug) {
 				settings.emplace("lsdj", lsdjSettings);
 			}
 
+			tao::binary saveState;
+			if (manager.saveType() == SaveStateType::State) {
+				plug->saveState(saveState);
+			} else {
+				plug->saveBattery(saveState);
+			}
+
 			tao::json::value instRoot = {
 				{ "romPath", ws2s(plug->romPath()) },
 				{ "settings", settings },
 				{ "state", {
-					{ "type", "state" },
-					{ "data", d }
+					{ "data", saveState }
 				} }
 			};
 
@@ -88,23 +125,40 @@ static void Serialize(std::string& target, const RetroPlug& plug) {
 	}
 }
 
-static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plug) {
+static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plug, SaveStateType saveType) {
 	const std::string& romPath = instRoot.at("romPath").get_string();
 	const auto& state = instRoot.at("state").get_object();
 	const std::string& stateDataStr = state.at("data").get_string();
 	std::string stateData = base64_decode(stateDataStr);
 
 	if (std::filesystem::exists(romPath)) {
+		GameboyModel model = GameboyModel::Auto;
+		const tao::json::value* settings = instRoot.find("settings");
+		if (settings) {
+			const tao::json::value* gameboySettings = settings->find("gameBoy");
+			if (gameboySettings) {
+				const tao::json::value* modelName = gameboySettings->find("model");
+				
+				if (modelName) {
+					model = stringToModel(modelName->get_string());
+				}
+			}
+		}
+
 		SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
-		plugPtr->init(s2ws(romPath), GameboyModel::Auto, false);
-		plugPtr->loadState((char*)stateData.data(), stateData.size());
+		plugPtr->init(s2ws(romPath), model, true);
+
+		plug.setSaveType(saveType);
+		switch (saveType) {
+		case SaveStateType::State: plugPtr->loadState((std::byte*)stateData.data(), stateData.size()); break;
+		case SaveStateType::Sram: plugPtr->loadBattery((std::byte*)stateData.data(), stateData.size(), true); break;
+		}
 
 		const tao::json::value* savePath = instRoot.find("lastSramPath");
 		if (savePath) {
 			plugPtr->setSavePath(s2ws(savePath->get_string()));
 		}
 
-		const tao::json::value* settings = instRoot.find("settings");
 		if (settings) {
 			const tao::json::value* gameboySettings = settings->find("gameBoy");
 			if (gameboySettings) {
@@ -140,10 +194,18 @@ static void Deserialize(const char* data, RetroPlug& plug) {
 		const tao::json::value root = tao::json::from_string(data);
 		const std::string& version = root.at("version").get_string();
 		if (version == "0.1.0") {
+			SaveStateType saveType = SaveStateType::State;
+			const tao::json::value* saveTypeStr = root.find("saveType");
+			if (saveTypeStr) {
+				saveType = stringToSaveType(saveTypeStr->get_string());
+			}
+
+			plug.setSaveType(saveType);
+
 			const tao::json::value* instances = root.find("instances");
 			if (instances) {
 				for (auto& instance : instances->get_array()) {
-					DeserializeInstance(instance, plug);
+					DeserializeInstance(instance, plug, saveType);
 				}
 			}
 
@@ -158,7 +220,7 @@ static void Deserialize(const char* data, RetroPlug& plug) {
 				plug.setLayout(layoutType);
 			}
 		} else {
-			DeserializeInstance(root, plug);
+			DeserializeInstance(root, plug, SaveStateType::State);
 		}
 	} catch (...) {
 		// Fail

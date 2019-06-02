@@ -68,7 +68,7 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					case ProjectMenuItems::New: NewProject(); break;
 					case ProjectMenuItems::Save: SaveProject(); break;
 					case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
-					case ProjectMenuItems::Load: LoadProject(); break;
+					case ProjectMenuItems::Load: OpenLoadProjectDialog(); break;
 					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
 					}
 				});
@@ -78,7 +78,7 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
 					switch ((BasicMenuItems)idx) {
-					case BasicMenuItems::LoadProject: LoadProject(); break;
+					case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
 					case BasicMenuItems::LoadRom: _active->OpenLoadRomDialog(GameboyModel::Auto); break;
 					}
 				});
@@ -129,7 +129,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 
 	if (type == CreateInstanceType::Duplicate) {
 		size_t stateSize = source->saveStateSize();
-		char* buf = new char[stateSize];
+		std::byte* buf = new std::byte[stateSize];
 		source->saveState(buf, stateSize);
 		target->loadState(buf, stateSize);
 		delete[] buf;
@@ -281,7 +281,7 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(_plug->layout());
-	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_saveMode);
+	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_plug->saveType());
 
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("New", (int)ProjectMenuItems::New);
@@ -302,6 +302,10 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	layoutMenu->SetFunction([this](int idx, IPopupMenu::Item * itemChosen) {
 		_plug->setLayout((InstanceLayout)idx);
 		UpdateLayout();
+	});
+
+	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+		_plug->setSaveType((SaveStateType)idx);
 	});
 
 	return menu;
@@ -360,7 +364,25 @@ void RetroPlugRoot::SaveProjectAs() {
 	}
 }
 
-void RetroPlugRoot::LoadProject() {
+void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ L"All Supported Types", L"*.gb;*.gbc;*.retroplug" },
+		{ L"GameBoy Roms", L"*.gb;*.gbc" },
+		{ L"RetroPlug Project", L"*.retroplug" },
+	};
+
+	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	if (paths.size() > 0) {
+		std::wstring ext = getExt(paths[0]);
+		if (ext == L".retroplug") {
+
+		} else if (ext == L".gb" || ext == L".gbc") {
+			_active->LoadRom(paths[0]);
+		}
+	}
+}
+
+void RetroPlugRoot::OpenLoadProjectDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ L"RetroPlug Projects", L"*.retroplug" }
 	};

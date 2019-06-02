@@ -26,11 +26,6 @@ enum class ProjectMenuItems : int {
 	Layout
 };
 
-enum class SaveModes {
-	SaveSram,
-	SaveState
-};
-
 enum class BasicMenuItems {
 	LoadProject,
 	LoadRom,
@@ -101,10 +96,10 @@ static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
 	return menu;
 }
 
-static IPopupMenu* createSaveOptionsMenu(SaveModes checked) {
+static IPopupMenu* createSaveOptionsMenu(SaveStateType checked) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save SRAM", (int)SaveModes::SaveSram);
-	menu->AddItem("Save State", (int)SaveModes::SaveState);
+	menu->AddItem("Save State", (int)SaveStateType::State);
+	menu->AddItem("Save SRAM", (int)SaveStateType::Sram);
 	menu->CheckItemAlone((int)checked);
 	return menu;
 }

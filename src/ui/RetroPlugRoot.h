@@ -14,7 +14,6 @@ private:
 	std::vector<EmulatorView*> _views;
 	EmulatorView* _active = nullptr;
 	size_t _activeIdx = 0;
-	SaveModes _saveMode = SaveModes::SaveSram;
 
 	IPopupMenu _menu;
 
@@ -66,7 +65,9 @@ private:
 
 	void SaveProjectAs();
 
-	void LoadProject();
+	void OpenLoadProjectDialog();
+
+	void OpenLoadProjectOrRomDialog();
 	
 	void RemoveActive();
 

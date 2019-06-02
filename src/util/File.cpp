@@ -10,16 +10,16 @@ size_t getFileSize(std::ifstream& stream) {
 	return size;
 }
 
-bool readFile(const std::string& path, std::vector<char>& target) {
+bool readFile(const std::string& path, std::vector<std::byte>& target) {
 	std::ifstream f(path, std::ios::binary);
 	target.resize(getFileSize(f));
-	f.read(target.data(), target.size());
+	f.read((char*)target.data(), target.size());
 	return true;
 }
 
-bool readFile(const std::string& path, char* target, size_t size, bool binary) {
+bool readFile(const std::string& path, std::byte* target, size_t size, bool binary) {
 	std::ifstream f(path, binary ? std::ios::binary : 0);
-	f.read(target, size);
+	f.read((char*)target, size);
 	return true;
 }
 
@@ -31,30 +31,30 @@ bool readFile(const std::string& path, std::string& target) {
 	return true;
 }
 
-bool writeFile(const std::string& path, const std::vector<char>& data) {
-	return writeFile(path, data.data(), data.size());
+bool writeFile(const std::string& path, const std::vector<std::byte>& data) {
+	return writeFile(path, (std::byte*)data.data(), data.size());
 }
 
 bool writeFile(const std::string& path, const std::string& data) {
-	return writeFile(path, data.data(), data.size());
+	return writeFile(path, (std::byte*)data.data(), data.size());
 }
 
-bool writeFile(const std::string& path, const char* data, size_t size, bool binary) {
+bool writeFile(const std::string& path, const std::byte* data, size_t size, bool binary) {
 	std::ofstream f(path, binary ? std::ios::binary : 0);
-	f.write(data, size);
+	f.write((char*)data, size);
 	return true;
 }
 
-bool readFile(const std::wstring& path, std::vector<char>& target) {
+bool readFile(const std::wstring& path, std::vector<std::byte>& target) {
 	std::ifstream f(path, std::ios::binary);
 	target.resize(getFileSize(f));
-	f.read(target.data(), target.size());
+	f.read((char*)target.data(), target.size());
 	return true;
 }
 
-bool readFile(const std::wstring& path, char* target, size_t size) {
-	std::ifstream f(path, std::ios::binary);
-	f.read(target, size);
+bool readFile(const std::wstring& path, std::byte* target, size_t size, bool binary) {
+	std::ifstream f(path, binary ? std::ios::binary : 0);
+	f.read((char*)target, size);
 	return true;
 }
 
@@ -66,16 +66,16 @@ bool readFile(const std::wstring& path, std::string& target) {
 	return true;
 }
 
-bool writeFile(const std::wstring& path, const std::vector<char>& data) {
-	return writeFile(path, data.data(), data.size(), true);
+bool writeFile(const std::wstring& path, const std::vector<std::byte>& data) {
+	return writeFile(path, (std::byte*)data.data(), data.size(), true);
 }
 
 bool writeFile(const std::wstring& path, const std::string& data) {
-	return writeFile(path, data.data(), data.size(), false);
+	return writeFile(path, (std::byte*)data.data(), data.size(), false);
 }
 
-bool writeFile(const std::wstring& path, const char* data, size_t size, bool binary) {
+bool writeFile(const std::wstring& path, const std::byte* data, size_t size, bool binary) {
 	std::ofstream f(path, binary ? std::ios::binary : 0);
-	f.write(data, size);
+	f.write((char*)data, size);
 	return true;
 }

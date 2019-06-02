@@ -59,10 +59,6 @@ bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 	return false;
 }
 
-void EmulatorView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	OpenLoadRomDialog(GameboyModel::Auto);
-}
-
 void EmulatorView::Draw(IGraphics& g) {
 	if (_plug && _plug->active()) {
 		MessageBus* bus = _plug->messageBus();
@@ -148,7 +144,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		switch ((SystemMenuItems)indexInMenu) {
 		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
 		case SystemMenuItems::Reset: ResetSystem(true); break;
-		case SystemMenuItems::NewSram: break;
+		case SystemMenuItems::NewSram: _plug->clearBattery(true); break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
 		case SystemMenuItems::SaveSram: _plug->saveBattery(L""); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
@@ -163,7 +159,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		root->AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
 		root->AddSeparator((int)RootMenuItems::Sep3);
 
-		root->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
+		root->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			switch ((RootMenuItems)indexInMenu) {
 			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 			case RootMenuItems::GameLink: _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
@@ -183,11 +179,13 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			root->AddItem("LSDj Sync", syncMenu, (int)RootMenuItems::LsdjModes);
 
 			std::vector<LsdjSongName> songNames;
+			_plug->saveBattery(lsdj.saveData);
 			lsdj.getSongNames(songNames);
 
 			if (!songNames.empty()) {
 				IPopupMenu* songMenu = new IPopupMenu();
 				songMenu->AddItem("Import (and reset)...");
+				songMenu->AddItem("Export All...");
 				songMenu->AddSeparator();
 
 				root->AddItem("LSDj Songs", songMenu, (int)RootMenuItems::LsdjSongs);
@@ -207,8 +205,9 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 				}
 
 				songMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-					if (idx == 0) {
-						OpenLoadSongsDialog();
+					switch (idx) {
+					case 0: OpenLoadSongsDialog(); break;
+					case 1: ExportSongs(songNames); break;
 					}
 				});
 			}
@@ -319,11 +318,31 @@ void EmulatorView::ExportSong(const LsdjSongName& songName) {
 		_plug->saveBattery(lsdj.saveData);
 
 		if (lsdj.saveData.size() > 0) {
-			std::vector<char> songData;
+			std::vector<std::byte> songData;
 			lsdj.exportSong(songName.projectId, songData);
 
 			if (songData.size() > 0) {
 				writeFile(path, songData);
+			}
+		}
+	}
+}
+
+void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
+	std::vector<std::wstring> paths = BasicFileOpen({}, false, true);
+	if (paths.size() > 0) {
+		Lsdj& lsdj = _plug->lsdj();
+		if (lsdj.found) {
+			lsdj.saveData.clear();
+			_plug->saveBattery(lsdj.saveData);
+			
+			if (lsdj.saveData.size() > 0) {
+				std::vector<std::vector<std::byte>> songData;
+				lsdj.exportSongs(songNames, songData);
+
+				if (songData.size() > 0) {
+					//writeFile(path, songData);
+				}
 			}
 		}
 	}
@@ -341,7 +360,7 @@ void EmulatorView::DeleteSong(int index) {
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		lsdj.deleteSong(index);
-		_plug->loadBattery(lsdj.saveData, true);
+		_plug->loadBattery(lsdj.saveData, false);
 	}
 }
 
@@ -358,7 +377,7 @@ void EmulatorView::OpenLoadSongsDialog() {
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		lsdj.importSongs(paths);
-		_plug->loadBattery(lsdj.saveData, true);
+		_plug->loadBattery(lsdj.saveData, false);
 	}
 }
 
@@ -378,6 +397,11 @@ void EmulatorView::DisableRendering(bool disable) {
 	if (_plug->active()) {
 		_plug->disableRendering(disable);
 	}
+}
+
+void EmulatorView::LoadRom(const std::wstring & path) {
+	_plug->init(path, GameboyModel::Auto, false);
+	_plug->disableRendering(false);
 }
 
 void EmulatorView::OpenLoadSramDialog() {
