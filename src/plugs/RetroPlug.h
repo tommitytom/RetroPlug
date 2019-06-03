@@ -86,6 +86,8 @@ public:
 				return i;
 			}
 		}
+
+		return 0;
 	}
 
 	void getLinkTargets(std::vector<SameBoyPlugPtr>& targets, SameBoyPlugPtr ignore) {

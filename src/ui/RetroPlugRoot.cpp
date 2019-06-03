@@ -88,7 +88,14 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 				});
 			} else if (!plug->romPath().empty()) {
 				_menu.AddItem("Find ROM...");
-				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {	OpenFindRomDialog(); });
+				_menu.AddItem("Load Project...");
+				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {	
+					if (idx == 0) {
+						OpenFindRomDialog();
+					} else {
+						OpenLoadProjectDialog();
+					}
+				});
 			} else {
 				IPopupMenu* modelMenu = createModelMenu(true);
 				createBasicMenu(&_menu, modelMenu);

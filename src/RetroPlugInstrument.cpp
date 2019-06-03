@@ -37,9 +37,10 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
-	for (size_t i = 0; i < frameCount; i++) {
-		outputs[0][i] = 0;
-		outputs[1][i] = 0;
+	for (size_t j = 0; j < MaxNChannels(kOutput); j++) {
+		for (size_t i = 0; i < frameCount; i++) {
+			outputs[j][i] = 0;
+		}
 	}
 
 	if (frameCount == 0 || !_plug.getPlug(0) || !_plug.getPlug(0)->active()) {
@@ -59,7 +60,7 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 
 	SameBoyPlug* plugs[MAX_INSTANCES] = { nullptr };
 	SameBoyPlug* linkedPlugs[MAX_INSTANCES] = { nullptr };
-	
+
 	size_t totalPlugCount = 0;
 	size_t plugCount = 0;
 	size_t linkedPlugCount = 0;
@@ -113,9 +114,9 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 			memset(_sampleScratch, 0, sampleCount * sizeof(float));
 			size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
 			if (readAmount == sampleCount) {
-				for (size_t i = 0; i < frameCount; i++) {
-					outputs[0][i] += _sampleScratch[i * 2];
-					outputs[1][i] += _sampleScratch[i * 2 + 1];
+				for (size_t j = 0; j < frameCount; j++) {
+					outputs[i * 2][j] += _sampleScratch[j * 2];
+					outputs[i * 2 + 1][j] += _sampleScratch[j * 2 + 1];
 				}
 			}
 		}

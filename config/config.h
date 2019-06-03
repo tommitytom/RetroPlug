@@ -13,7 +13,11 @@
 #define BUNDLE_MFR "tommitytom"
 #define BUNDLE_DOMAIN "com"
 
+#ifdef APP_API
 #define PLUG_CHANNEL_IO "0-2"
+#else
+#define PLUG_CHANNEL_IO "0-8"
+#endif
 
 #define PLUG_LATENCY 0
 #define PLUG_TYPE 1

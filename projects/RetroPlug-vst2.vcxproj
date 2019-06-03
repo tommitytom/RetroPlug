@@ -583,6 +583,7 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\word.c" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\config\common-win.props" />
     <None Include="..\config\RetroPlug-ios.xcconfig" />
     <None Include="..\config\RetroPlug-mac.xcconfig" />
     <None Include="..\config\RetroPlug-web.mk" />
