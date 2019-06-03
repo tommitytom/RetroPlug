@@ -281,6 +281,20 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
 
     size_t complete = 0;
     while (complete != stateCount) {
+        complete = 0;
+        for (size_t i = 0; i < stateCount; i++) {
+            sameboy_state_t* s = st[i];
+            if (s->currentAudioFrames < requiredAudioFrames) {
+                GB_run(&s->gb);
+                s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
+            } else {
+                complete++;
+            }
+        }
+    }
+
+    /*size_t complete = 0;
+    while (complete != stateCount) {
         complete = update_first_instance(st[0], requiredAudioFrames);
         for (size_t i = 1; i < stateCount; i++) {
             sameboy_state_t* s = st[i];
@@ -297,7 +311,7 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
 
     for (size_t i = 0; i < stateCount; i++) {
         st[i]->processTicks -= highestTick;
-    }
+    }*/
 }
 
 void sameboy_update(void* state, size_t requiredAudioFrames) {
