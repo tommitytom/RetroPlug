@@ -62,6 +62,8 @@ typedef struct sameboy_state_t {
     bool vblankOccurred;
     int linkTicksRemain;
 
+    int processTicks;
+
     struct sameboy_state_t* linkTargets[MAX_INSTANCES];
     size_t linkTargetCount;
     bool bit_to_send;
@@ -96,6 +98,7 @@ void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot)
     state->linkTicksRemain = 0;
     state->bit_to_send = true;
     state->linkTargetCount = 0;
+    state->processTicks = 0;
 
     GB_init(&state->gb, model);
 
@@ -246,6 +249,29 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
     return 0;
 }
 
+int update_first_instance(sameboy_state_t* s, int targetAudioFrames) {
+    if (s->currentAudioFrames < targetAudioFrames) {
+        s->processTicks += GB_run(&s->gb);
+        s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
+        return 0;
+    }
+
+    return 1;
+}
+
+int update_instance(sameboy_state_t* s, int targetAudioFrames, int targetTicks) {
+    if (s->currentAudioFrames < targetAudioFrames) {
+        while (s->currentAudioFrames < targetAudioFrames && s->processTicks < targetTicks) {
+            s->processTicks += GB_run(&s->gb);
+            s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
+        }
+
+        return 0;
+    }
+
+    return 1;
+}
+
 void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames) {
     sameboy_state_t* st[MAX_INSTANCES];
     for (size_t i = 0; i < stateCount; i++) {
@@ -255,17 +281,22 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
 
     size_t complete = 0;
     while (complete != stateCount) {
-        for (size_t i = 0; i < stateCount; i++) {
+        complete = update_first_instance(st[0], requiredAudioFrames);
+        for (size_t i = 1; i < stateCount; i++) {
             sameboy_state_t* s = st[i];
-            if (s->currentAudioFrames < requiredAudioFrames) {
-                GB_run(&s->gb);
-
-                s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
-                if (s->currentAudioFrames >= requiredAudioFrames) {
-                    complete++;
-                }
-            }
+            complete += update_instance(st[i], requiredAudioFrames, st[0]->processTicks);
         }
+    }
+
+    int highestTick = 0;
+    for (size_t i = 0; i < stateCount; i++) {
+        if (st[i]->processTicks > highestTick) {
+            highestTick = st[i]->processTicks;
+        }
+    }
+
+    for (size_t i = 0; i < stateCount; i++) {
+        st[i]->processTicks -= highestTick;
     }
 }
 
