@@ -26,10 +26,6 @@ EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* g
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
 		graphics->AttachControl(_textIds[i]);
 	}
-
-	if (!plug || !plug->active()) {
-		ShowText("Double click to", "load a rom...");
-	}
 }
 
 EmulatorView::~EmulatorView() {
@@ -41,15 +37,39 @@ EmulatorView::~EmulatorView() {
 	}
 }
 
+void EmulatorView::ShowText(const std::string & row1, const std::string & row2) {
+	_showText = true;
+	_textIds[0]->SetStr(row1.c_str());
+	_textIds[1]->SetStr(row2.c_str());
+	UpdateTextPosition();
+}
+
+void EmulatorView::HideText() {
+	_showText = false;
+	UpdateTextPosition();
+}
+
+void EmulatorView::UpdateTextPosition() {
+	if (_showText) {
+		float mid = _area.H() / 2;
+		IRECT topRow(_area.L, mid - 25, _area.R, mid);
+		IRECT bottomRow(_area.L, mid, _area.R, mid + 25);
+		_textIds[0]->SetTargetAndDrawRECTs(topRow);
+		_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
+	} else {
+		_textIds[0]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+		_textIds[1]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+	}
+}
+
+void EmulatorView::SetArea(const IRECT & area) {
+	_area = area;
+	UpdateTextPosition();
+}
+
 void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 	_plug = plug;
 	_manager = manager;
-	HideText();
-}
-
-void EmulatorView::OnDrop(const char* str) {
-	_plug->init(s2ws(str), GameboyModel::Auto, false);
-	_plug->disableRendering(false);
 	HideText();
 }
 

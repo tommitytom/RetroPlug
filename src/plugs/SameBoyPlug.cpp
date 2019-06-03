@@ -67,13 +67,25 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 		_romName = std::string(name, 16);
 	}
 
-	size_t stateSize = _symbols.sameboy_save_state_size(instance);
-
 	std::vector<std::byte> saveData;
-	_savePath = changeExt(romPath, L".sav");
-	if (std::filesystem::exists(_savePath)) {
-		readFile(_savePath, saveData);
-		_symbols.sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
+	if (_saveData.empty()) {
+		_savePath = changeExt(romPath, L".sav");
+		if (std::filesystem::exists(_savePath)) {
+			readFile(_savePath, saveData);
+			_symbols.sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
+		}
+	} else {
+		switch (_saveType) {
+		case SaveStateType::State: 
+			_symbols.sameboy_load_state(instance, (const char*)_saveData.data(), _saveData.size());
+			break;
+		case SaveStateType::Sram:
+			_symbols.sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
+			break;
+		}
+
+		saveData = _saveData;
+		_saveData.clear();
 	}
 
 	std::string romName = _romName;
@@ -157,12 +169,18 @@ bool SameBoyPlug::loadBattery(const std::vector<std::byte>& data, bool reset) {
 }
 
 bool SameBoyPlug::loadBattery(const std::byte* data, size_t size, bool reset) {
-	std::scoped_lock lock(_lock);
-	_symbols.sameboy_load_battery(_instance, (char*)data, size);
+	if (_instance) {
+		std::scoped_lock lock(_lock);
+		_symbols.sameboy_load_battery(_instance, (char*)data, size);
 
-	if (reset) {
-		_resetSamples = _sampleRate / 2;
-		_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
+		if (reset) {
+			_resetSamples = _sampleRate / 2;
+			_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
+		}
+	} else {
+		_saveData.resize(size);
+		_saveType = SaveStateType::Sram;
+		memcpy(_saveData.data(), data, size);
 	}
 
 	return true;
@@ -203,8 +221,14 @@ void SameBoyPlug::loadState(const std::vector<std::byte>& data) {
 }
 
 void SameBoyPlug::loadState(const std::byte* source, size_t size) {
-	std::scoped_lock lock(_lock);
-	_symbols.sameboy_load_state(_instance, (char*)source, size);
+	if (_instance) {
+		std::scoped_lock lock(_lock);
+		_symbols.sameboy_load_state(_instance, (char*)source, size);
+	} else {
+		_saveData.resize(size);
+		_saveType = SaveStateType::State;
+		memcpy(_saveData.data(), source, size);
+	}
 }
 
 void SameBoyPlug::setSetting(const std::string& name, int value) {

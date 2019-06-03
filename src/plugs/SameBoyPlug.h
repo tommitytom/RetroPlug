@@ -81,11 +81,18 @@ private:
 
 	double _sampleRate = 48000;
 
+	std::vector<std::byte> _saveData;
+	SaveStateType _saveType;
+
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
 
 	Lsdj& lsdj() { return _lsdj; }
+
+	void setRomPath(const std::wstring& path) { _romPath = path; }
+
+	void setModel(GameboyModel model) { _model = model; }
 
 	GameboyModel model() const { return _model; }
 

@@ -46,6 +46,19 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 	return false;
 }
 
+void RetroPlugRoot::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
+	if (_active) {
+		auto plug = _active->Plug();
+		if (!plug->active()) {
+			if (plug->romPath().empty()) {
+				OpenLoadProjectOrRomDialog();
+			} else {
+				OpenFindRomDialog();
+			}
+		}
+	}
+}
+
 void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	for (auto view : _views) {
 		if (view->GetArea().Contains(x, y)) {
@@ -57,13 +70,14 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 	if (mod.R) {
 		if (_active) {
+			auto plug = _active->Plug();
 			_menu = IPopupMenu();
 
-			if (IsActive()) {
+			if (plug->active()) {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);
 				_active->CreateMenu(&_menu, projectMenu);
 
-				projectMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
+				projectMenu->SetFunction([this](int idx, IPopupMenu::Item * itemChosen) {
 					switch ((ProjectMenuItems)idx) {
 					case ProjectMenuItems::New: NewProject(); break;
 					case ProjectMenuItems::Save: SaveProject(); break;
@@ -72,6 +86,9 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
 					}
 				});
+			} else if (!plug->romPath().empty()) {
+				_menu.AddItem("Find ROM...");
+				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {	OpenFindRomDialog(); });
 			} else {
 				IPopupMenu* modelMenu = createModelMenu(true);
 				createBasicMenu(&_menu, modelMenu);
@@ -97,6 +114,10 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 	for (auto view : _views) {
 		view->Draw(g);
 	}
+}
+
+void RetroPlugRoot::OnDrop(const char* str) {
+	LoadProjectOrRom(s2ws(str));
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
@@ -152,6 +173,10 @@ EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
 			auto plug = _plug->plugs()[0];
 			plug->setGameLink(true);
 		}
+	}
+
+	if (!plug->active() && !plug->romPath().empty()) {
+		view->ShowText("Unable to find", std::filesystem::path(plug->romPath()).filename().string());
 	}
 
 	return view;
@@ -286,6 +311,7 @@ void RetroPlugRoot::NewProject() {
 
 	SameBoyPlugPtr plug = _plug->addInstance(EmulatorType::SameBoy);
 	EmulatorView* view = AddView(plug);
+	view->ShowText("Double click to", "load a rom...");
 	UpdateLayout();
 }
 
@@ -311,6 +337,25 @@ void RetroPlugRoot::SaveProjectAs() {
 	}
 }
 
+void RetroPlugRoot::OpenFindRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ L"GameBoy Roms", L"*.gb;*.gbc" }
+	};
+
+	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	if (paths.size() > 0) {
+		std::wstring originalPath = _active->Plug()->romPath();
+		for (size_t i = 0; i < _views.size(); i++) {
+			auto plug = _views[i]->Plug();
+			if (plug->romPath() == originalPath) {
+				plug->init(paths[0], plug->model(), true);
+				plug->disableRendering(false);
+				_views[i]->HideText();
+			}
+		}
+	}
+}
+
 void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ L"All Supported Types", L"*.gb;*.gbc;*.retroplug" },
@@ -320,11 +365,38 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
-		std::wstring ext = getExt(paths[0]);
-		if (ext == L".retroplug") {
+		LoadProjectOrRom(paths[0]);
+	}
+}
 
-		} else if (ext == L".gb" || ext == L".gbc") {
-			_active->LoadRom(paths[0]);
+void RetroPlugRoot::LoadProjectOrRom(const std::wstring& path) {
+	std::wstring ext = std::filesystem::path(path).extension().wstring();
+	if (ext == L".retroplug") {
+		LoadProject(path);
+	} else if (ext == L".gb" || ext == L".gbc") {
+		_active->LoadRom(path);
+	}
+}
+
+void RetroPlugRoot::LoadProject(const std::wstring& path) {
+	std::string data;
+	if (readFile(path, data)) {
+		CloseProject();
+		Deserialize(data.c_str(), *_plug);
+		_plug->setProjectPath(path);
+
+		if (_plug->instanceCount() > 0) {
+			for (size_t i = 0; i < MAX_INSTANCES; i++) {
+				auto plug = _plug->plugs()[i];
+				if (plug) {
+					AddView(plug);
+				}
+
+				_activeIdx = 0;
+				SetActive(_views[_activeIdx]);
+			}
+		} else {
+			NewProject();
 		}
 	}
 }
@@ -336,26 +408,7 @@ void RetroPlugRoot::OpenLoadProjectDialog() {
 
 	std::vector<std::wstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
-		std::string data;
-		if (readFile(paths[0], data)) {
-			CloseProject();
-			Deserialize(data.c_str(), *_plug);
-			_plug->setProjectPath(paths[0]);
-
-			if (_plug->instanceCount() > 0) {
-				for (size_t i = 0; i < MAX_INSTANCES; i++) {
-					auto plug = _plug->plugs()[i];
-					if (plug) {
-						AddView(plug);
-					}
-
-					_activeIdx = 0;
-					SetActive(_views[_activeIdx]);
-				}
-			} else {
-				NewProject();
-			}
-		}
+		LoadProject(paths[0]);
 	}
 }
 

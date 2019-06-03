@@ -27,15 +27,17 @@ public:
 
 	bool OnKey(const IKeyPress& key, bool down);
 
-	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override {
-		if (_active) {
-			_active->OpenLoadRomDialog(GameboyModel::Auto);
-		}
-	}
+	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
 
 	void OnMouseDown(float x, float y, const IMouseMod& mod);
 
 	void Draw(IGraphics& g) override;
+
+	void OnDrop(const char* str);
+
+	void LoadProject(const std::wstring& path);
+
+	void LoadProjectOrRom(const std::wstring& path);
 
 private:
 	bool IsActive() {
@@ -61,6 +63,8 @@ private:
 	void SaveProject();
 
 	void SaveProjectAs();
+
+	void OpenFindRomDialog();
 
 	void OpenLoadProjectDialog();
 

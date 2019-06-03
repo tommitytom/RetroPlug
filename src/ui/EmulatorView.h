@@ -42,39 +42,15 @@ public:
 	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics);
 	~EmulatorView();
 
-	void ShowText(const std::string& row1, const std::string& row2) {
-		_showText = true;
-		_textIds[0]->SetStr(row1.c_str());
-		_textIds[1]->SetStr(row2.c_str());
-		UpdateTextPosition();
-	}
+	void ShowText(const std::string& row1, const std::string& row2);
 
-	void HideText() {
-		_showText = false;
-		UpdateTextPosition();
-	}
+	void HideText();
 
-	void UpdateTextPosition() {
-		if (_showText) {
-			float mid = _area.H() / 2;
-			IRECT topRow(_area.L, mid - 25, _area.R, mid);
-			IRECT bottomRow(_area.L, mid, _area.R, mid + 25);
-			_textIds[0]->SetTargetAndDrawRECTs(topRow);
-			_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
-		} else {
-			_textIds[0]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
-			_textIds[1]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
-		}	
-	}
+	void UpdateTextPosition();
 
-	void SetArea(const IRECT& area) {
-		_area = area;
-		UpdateTextPosition();
-	}
+	void SetArea(const IRECT& area);
 
 	const IRECT& GetArea() const { return _area; }
-	
-	//void Clear(IGraphics* graphics);
 
 	void Setup(SameBoyPlugPtr plug, RetroPlug* manager);
 
@@ -83,8 +59,6 @@ public:
 	void SetAlpha(float alpha) { _alpha = alpha; }
 
 	bool OnKey(const IKeyPress& key, bool down);
-
-	void OnDrop(const char* str);
 
 	void Draw(IGraphics& g);
 

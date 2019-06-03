@@ -131,57 +131,61 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 	const std::string& stateDataStr = state.at("data").get_string();
 	std::string stateData = base64_decode(stateDataStr);
 
-	if (std::filesystem::exists(romPath)) {
-		GameboyModel model = GameboyModel::Auto;
-		const tao::json::value* settings = instRoot.find("settings");
-		if (settings) {
-			const tao::json::value* gameboySettings = settings->find("gameBoy");
-			if (gameboySettings) {
-				const tao::json::value* modelName = gameboySettings->find("model");
+	GameboyModel model = GameboyModel::Auto;
+	const tao::json::value* settings = instRoot.find("settings");
+	if (settings) {
+		const tao::json::value* gameboySettings = settings->find("gameBoy");
+		if (gameboySettings) {
+			const tao::json::value* modelName = gameboySettings->find("model");
 				
-				if (modelName) {
-					model = stringToModel(modelName->get_string());
-				}
+			if (modelName) {
+				model = stringToModel(modelName->get_string());
 			}
 		}
+	}
 
-		SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
+	SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
+	plugPtr->setModel(model);
+
+	if (std::filesystem::exists(romPath)) {
 		plugPtr->init(s2ws(romPath), model, true);
+	} else {
+		plugPtr->setRomPath(s2ws(romPath));
+	}
 
-		plug.setSaveType(saveType);
-		switch (saveType) {
-		case SaveStateType::State: plugPtr->loadState((std::byte*)stateData.data(), stateData.size()); break;
-		case SaveStateType::Sram: plugPtr->loadBattery((std::byte*)stateData.data(), stateData.size(), true); break;
+	plug.setSaveType(saveType);
+	switch (saveType) {
+	case SaveStateType::State: plugPtr->loadState((std::byte*)stateData.data(), stateData.size()); break;
+	case SaveStateType::Sram: plugPtr->loadBattery((std::byte*)stateData.data(), stateData.size(), true); break;
+	}
+
+	const tao::json::value* savePath = instRoot.find("lastSramPath");
+	if (savePath) {
+		plugPtr->setSavePath(s2ws(savePath->get_string()));
+	}
+
+	if (settings) {
+		const tao::json::value* gameboySettings = settings->find("gameBoy");
+		if (gameboySettings) {
+			const tao::json::value* gameLink = gameboySettings->find("gameLink");
+			if (gameLink) {
+				plugPtr->setGameLink(gameLink->get_boolean());
+			}
 		}
 
-		const tao::json::value* savePath = instRoot.find("lastSramPath");
-		if (savePath) {
-			plugPtr->setSavePath(s2ws(savePath->get_string()));
-		}
+		const tao::json::value* lsdjSettings = settings->find("lsdj");
+		if (lsdjSettings) {
+			const std::string& syncMode = lsdjSettings->at("syncMode").get_string();
+			plugPtr->lsdj().syncMode = syncModeFromString(syncMode);
 
-		if (settings) {
-			const tao::json::value* gameboySettings = settings->find("gameBoy");
-			if (gameboySettings) {
-				const tao::json::value* gameLink = gameboySettings->find("gameLink");
-				if (gameLink) {
-					plugPtr->setGameLink(gameLink->get_boolean());
-				}
+			const tao::json::value* autoPlay = lsdjSettings->find("autoPlay");
+			if (autoPlay) {
+				plugPtr->lsdj().autoPlay = autoPlay->get_boolean();
 			}
 
-			const tao::json::value* lsdjSettings = settings->find("lsdj");
-			if (lsdjSettings) {
-				const std::string& syncMode = lsdjSettings->at("syncMode").get_string();
-				plugPtr->lsdj().syncMode = syncModeFromString(syncMode);
-
-				const tao::json::value* autoPlay = lsdjSettings->find("autoPlay");
-				if (autoPlay) {
-					plugPtr->lsdj().autoPlay = autoPlay->get_boolean();
-				}
-
-				const tao::json::value* keyboardShortcuts = lsdjSettings->find("keyboardShortcuts");
-				if (keyboardShortcuts) {
-					plugPtr->lsdj().keyboardShortcuts = keyboardShortcuts->get_boolean();
-				}
+			const tao::json::value* keyboardShortcuts = lsdjSettings->find("keyboardShortcuts");
+			if (keyboardShortcuts) {
+				plugPtr->lsdj().keyboardShortcuts = keyboardShortcuts->get_boolean();
 			}
 		}
 	}
