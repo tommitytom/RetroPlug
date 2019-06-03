@@ -7,8 +7,8 @@
 
 #include <tao/json.hpp>
 
-EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager) 
-	: _plug(plug), _manager(manager)
+EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
+	: _plug(plug), _manager(manager), _graphics(graphics)
 {
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 
@@ -21,23 +21,36 @@ EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager)
 	loadButtonConfig(config);
 	_keyMap.load(config.at("gameboy"));
 	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
+
+	for (size_t i = 0; i < 2; i++) {
+		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
+		graphics->AttachControl(_textIds[i]);
+	}
+
+	if (!plug || !plug->active()) {
+		ShowText("Double click to", "load a rom...");
+	}
 }
 
-void EmulatorView::Clear(IGraphics* graphics) {
-	if (_imageId != -1 && graphics) {
-		NVGcontext* ctx = (NVGcontext*)graphics->GetDrawContext();
+EmulatorView::~EmulatorView() {
+	HideText();
+
+	if (_imageId != -1) {
+		NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
 		nvgDeleteImage(ctx, _imageId);
 	}
 }
 
-void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug * manager) {
+void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 	_plug = plug;
 	_manager = manager;
+	HideText();
 }
 
 void EmulatorView::OnDrop(const char* str) {
 	_plug->init(s2ws(str), GameboyModel::Auto, false);
 	_plug->disableRendering(false);
+	HideText();
 }
 
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
@@ -277,13 +290,11 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("Load ROM...", (int)SystemMenuItems::LoadRom);
 	menu->AddItem("Load ROM As", loadAsModel, (int)SystemMenuItems::LoadRomAs);
-	
 	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
 	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
-	menu->AddSeparator();
-
+	menu->AddSeparator((int)SystemMenuItems::Sep1);
 	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
-	menu->AddItem("Load .sav (and reset)...", (int)SystemMenuItems::LoadSram);
+	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
 	menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
 	menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
 
@@ -337,11 +348,14 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 			_plug->saveBattery(lsdj.saveData);
 			
 			if (lsdj.saveData.size() > 0) {
-				std::vector<std::vector<std::byte>> songData;
-				lsdj.exportSongs(songNames, songData);
+				std::vector<LsdjSongData> songData;
+				lsdj.exportSongs(songData);
 
-				if (songData.size() > 0) {
-					//writeFile(path, songData);
+				for (auto& song : songData) {
+					std::filesystem::path p(paths[0]);
+					p /= song.name;
+					p += ".lsdsng";
+					writeFile(p.wstring(), song.data);
 				}
 			}
 		}
@@ -376,8 +390,12 @@ void EmulatorView::OpenLoadSongsDialog() {
 	std::vector<std::wstring> paths = BasicFileOpen(types, true);
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
-		lsdj.importSongs(paths);
-		_plug->loadBattery(lsdj.saveData, false);
+		std::string error;
+		if (lsdj.importSongs(paths, error)) {
+			_plug->loadBattery(lsdj.saveData, false);
+		} else {
+			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
+		}
 	}
 }
 
@@ -390,6 +408,7 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	if (paths.size() > 0) {
 		_plug->init(paths[0], model, false);
 		_plug->disableRendering(false);
+		HideText();
 	}
 }
 
@@ -402,6 +421,7 @@ void EmulatorView::DisableRendering(bool disable) {
 void EmulatorView::LoadRom(const std::wstring & path) {
 	_plug->init(path, GameboyModel::Auto, false);
 	_plug->disableRendering(false);
+	HideText();
 }
 
 void EmulatorView::OpenLoadSramDialog() {

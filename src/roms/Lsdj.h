@@ -57,6 +57,11 @@ struct LsdjSongName {
 	unsigned char version;
 };
 
+struct LsdjSongData {
+	std::string name;
+	std::vector<std::byte> data;
+};
+
 class Lsdj {
 public:
 	bool found = false;
@@ -71,13 +76,13 @@ public:
 
 	std::vector<std::byte> saveData;
 
-	void importSongs(const std::vector<std::wstring>& paths);
+	bool importSongs(const std::vector<std::wstring>& paths, std::string& error);
 
 	void loadSong(int idx);
 
 	void exportSong(int idx, std::vector<std::byte>& target);
 
-	void exportSongs(const std::vector<LsdjSongName>& names, std::vector<std::vector<std::byte>>& target);
+	void exportSongs(std::vector<LsdjSongData>& target);
 
 	void deleteSong(int idx);
 

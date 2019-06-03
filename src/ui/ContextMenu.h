@@ -108,7 +108,7 @@ static IPopupMenu* createSongMenu(bool working) {
 	IPopupMenu* menu = new IPopupMenu(0, true);
 	menu->AddItem("Export .lsdsng...", (int)SongMenuItems::Export);
 	menu->AddItem("Load (and reset)", (int)SongMenuItems::Load, working ? IPopupMenu::Item::kDisabled : 0);
-	menu->AddItem("Delete (and reset)", (int)SongMenuItems::Delete, working ? IPopupMenu::Item::kDisabled : 0);
+	menu->AddItem("Delete", (int)SongMenuItems::Delete, working ? IPopupMenu::Item::kDisabled : 0);
 	return menu;
 }
 

@@ -94,10 +94,6 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 }
 
 void RetroPlugRoot::Draw(IGraphics & g) {
-	if (IsActive() && _showText) {
-		ShowText(false);
-	}
-
 	for (auto view : _views) {
 		view->Draw(g);
 	}
@@ -141,7 +137,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 }
 
 EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
-	EmulatorView* view = new EmulatorView(plug, _plug);
+	EmulatorView* view = new EmulatorView(plug, _plug, GetUI());
 	_views.push_back(view);
 
 	SetActive(view);
@@ -151,11 +147,10 @@ EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
 
 	if (_views.size() > 1) {
 		plug->setGameLink(true);
-		for (size_t i = 0; i < MAX_INSTANCES; i++) {
-			auto plug = _plug->plugs()[i];
-			if (plug) {
-				plug->setGameLink(true);
-			}
+
+		if (_views.size() == 2) {
+			auto plug = _plug->plugs()[0];
+			plug->setGameLink(true);
 		}
 	}
 
@@ -218,52 +213,6 @@ void RetroPlugRoot::UpdateLayout() {
 
 		IRECT b(x, y, x + 320, y + 288);
 		_views[i]->SetArea(b);
-		UpdateTextPosition();
-	}
-}
-
-void RetroPlugRoot::ShowText(bool show) {
-	if (_showText == show) {
-		return;
-	}
-
-	const IRECT b = GetRECT();
-	float mid = b.H() / 2;
-	IRECT topRow(b.L, mid - 25, b.R, mid);
-	IRECT bottomRow(b.L, mid, b.R, mid + 25);
-
-	if (show) {
-		if (!_textIds[0]) {
-			_textIds[0] = new ITextControl(topRow, "Double click to", IText(23, COLOR_WHITE));
-			_textIds[1] = new ITextControl(bottomRow, "load a ROM...", IText(23, COLOR_WHITE));
-
-			GetUI()->AttachControl(_textIds[0]);
-			GetUI()->AttachControl(_textIds[1]);
-		} else {
-			_textIds[0]->SetTargetAndDrawRECTs(topRow);
-			_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
-		}
-	} else {
-		if (_textIds[0]) {
-			_textIds[0]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
-			_textIds[1]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
-		}
-	}
-
-	_showText = show;
-}
-
-void RetroPlugRoot::UpdateTextPosition() {
-	if (_showText) {
-		assert(_textIds[0]);
-
-		const IRECT b = GetRECT();
-		float mid = b.H() / 2;
-		IRECT topRow(b.L, mid - 25, b.R, mid);
-		IRECT bottomRow(b.L, mid, b.R, mid + 25);
-
-		_textIds[0]->SetTargetAndDrawRECTs(topRow);
-		_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
 	}
 }
 
@@ -325,7 +274,6 @@ void RetroPlugRoot::CloseProject() {
 
 	if (g) {
 		for (auto view : _views) {
-			view->Clear(GetUI());
 			delete view;
 		}
 	}
@@ -338,7 +286,6 @@ void RetroPlugRoot::NewProject() {
 
 	SameBoyPlugPtr plug = _plug->addInstance(EmulatorType::SameBoy);
 	EmulatorView* view = AddView(plug);
-	ShowText(true);
 	UpdateLayout();
 }
 
@@ -414,7 +361,6 @@ void RetroPlugRoot::OpenLoadProjectDialog() {
 
 void RetroPlugRoot::RemoveActive() {
 	_plug->removeInstance(_activeIdx);
-	_active->Clear(GetUI());
 	delete _active;
 	_active = nullptr;
 	

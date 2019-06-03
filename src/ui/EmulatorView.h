@@ -33,18 +33,48 @@ private:
 	std::map<std::string, int> _settings;
 
 	IRECT _area;
+	IGraphics* _graphics;
+
+	bool _showText = false;
+	ITextControl* _textIds[2] = { nullptr };
 
 public:
-	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager);
-	~EmulatorView() {}
+	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics);
+	~EmulatorView();
+
+	void ShowText(const std::string& row1, const std::string& row2) {
+		_showText = true;
+		_textIds[0]->SetStr(row1.c_str());
+		_textIds[1]->SetStr(row2.c_str());
+		UpdateTextPosition();
+	}
+
+	void HideText() {
+		_showText = false;
+		UpdateTextPosition();
+	}
+
+	void UpdateTextPosition() {
+		if (_showText) {
+			float mid = _area.H() / 2;
+			IRECT topRow(_area.L, mid - 25, _area.R, mid);
+			IRECT bottomRow(_area.L, mid, _area.R, mid + 25);
+			_textIds[0]->SetTargetAndDrawRECTs(topRow);
+			_textIds[1]->SetTargetAndDrawRECTs(bottomRow);
+		} else {
+			_textIds[0]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+			_textIds[1]->SetTargetAndDrawRECTs(IRECT(0, -100, 0, 0));
+		}	
+	}
 
 	void SetArea(const IRECT& area) {
 		_area = area;
+		UpdateTextPosition();
 	}
 
 	const IRECT& GetArea() const { return _area; }
 	
-	void Clear(IGraphics* graphics);
+	//void Clear(IGraphics* graphics);
 
 	void Setup(SameBoyPlugPtr plug, RetroPlug* manager);
 

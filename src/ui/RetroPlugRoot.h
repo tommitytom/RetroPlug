@@ -17,9 +17,6 @@ private:
 
 	IPopupMenu _menu;
 
-	bool _showText = false;
-	ITextControl* _textIds[2] = { nullptr, nullptr };
-
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug);
 	~RetroPlugRoot();
@@ -70,10 +67,6 @@ private:
 	void OpenLoadProjectOrRomDialog();
 	
 	void RemoveActive();
-
-	void ShowText(bool show);
-
-	void UpdateTextPosition();
 
 	int GetViewIndex(EmulatorView* view) {
 		for (int i = 0; i < _views.size(); i++) {
