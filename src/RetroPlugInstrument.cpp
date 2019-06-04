@@ -105,6 +105,11 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		linkedPlugs[0]->updateMultiple(linkedPlugs, linkedPlugCount, frameCount);
 	}
 
+	int chanMultipler = 0;
+	if (NOutChansConnected() > 2 && _plug.multiChannelMode() != MultiChannelMode::Off) {
+		chanMultipler = 2;
+	}
+
 	for (size_t i = 0; i < totalPlugCount; i++) {
 		SameBoyPlug* plug = plugPtrs[i].get();
 		MessageBus* bus = plug->messageBus();
@@ -115,8 +120,8 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 			size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
 			if (readAmount == sampleCount) {
 				for (size_t j = 0; j < frameCount; j++) {
-					outputs[i * 2][j] += _sampleScratch[j * 2];
-					outputs[i * 2 + 1][j] += _sampleScratch[j * 2 + 1];
+					outputs[i * chanMultipler][j] += _sampleScratch[j * 2];
+					outputs[i * chanMultipler + 1][j] += _sampleScratch[j * 2 + 1];
 				}
 			}
 		}

@@ -23,7 +23,8 @@ enum class ProjectMenuItems : int {
 
 	AddInstance,
 	RemoveInstance,
-	Layout
+	Layout,
+	MultiChannel
 };
 
 enum class BasicMenuItems {
@@ -64,10 +65,10 @@ enum class RootMenuItems : int {
 
 	Sep3,
 
-	SendClock = 10,
+	SendClock = 8,
 
 	// LSDJ Specific
-	LsdjModes = 10,
+	LsdjModes = 8,
 	LsdjSongs,
 	KeyboardMode
 };

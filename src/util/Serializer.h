@@ -61,12 +61,28 @@ static SaveStateType stringToSaveType(const std::string& model) {
 	return SaveStateType::State;
 }
 
+static std::string mutliChannelModeToString(MultiChannelMode type) {
+	switch (type) {
+	case MultiChannelMode::Channel: return "channel";
+	case MultiChannelMode::Instance: return "instance";
+	}
+
+	return "off";
+}
+
+static MultiChannelMode stringToMutliChannelMode(const std::string& model) {
+	if (model == "channel") return MultiChannelMode::Channel;
+	if (model == "instance") return MultiChannelMode::Instance;
+	return MultiChannelMode::Off;
+}
+
 static void Serialize(std::string& target, const RetroPlug& manager) {
 	const SameBoyPlugPtr* plugs = manager.plugs();
 	tao::json::value root = {
 		{ "version", PLUG_VERSION_STR },
 		{ "layout", layoutToString(manager.layout()) },
 		{ "saveType", saveTypeToString(manager.saveType()) },
+		{ "multiChannel", mutliChannelModeToString(manager.multiChannelMode()) },
 		{ "instances", tao::json::value::array({}) }
 	};
 
@@ -222,6 +238,12 @@ static void Deserialize(const char* data, RetroPlug& plug) {
 			if (layout) {
 				InstanceLayout layoutType = layoutFromString(layout->get_string());
 				plug.setLayout(layoutType);
+			}
+
+			const tao::json::value* mutliChannel = root.find("multiChannel");
+			if (mutliChannel) {
+				MultiChannelMode mode = stringToMutliChannelMode(mutliChannel->get_string());
+				plug.setMultiChannelMode(mode);
 			}
 		} else {
 			DeserializeInstance(root, plug, SaveStateType::State);

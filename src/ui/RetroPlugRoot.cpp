@@ -84,6 +84,7 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
 					case ProjectMenuItems::Load: OpenLoadProjectDialog(); break;
 					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
+					case ProjectMenuItems::MultiChannel: ToggleMultichannel(); break;
 					}
 				});
 			} else if (!plug->romPath().empty()) {
@@ -263,6 +264,7 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(_plug->layout());
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_plug->saveType());
+	bool multiChannel = _plug->multiChannelMode() != MultiChannelMode::Off;
 
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("New", (int)ProjectMenuItems::New);
@@ -275,6 +277,7 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
 	menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
 	menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
+	menu->AddItem("Multi Channel", (int)ProjectMenuItems::MultiChannel, multiChannel ? IPopupMenu::Item::kChecked : 0);
 
 	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 		CreatePlugInstance(_active, (CreateInstanceType)idx);
@@ -432,4 +435,9 @@ void RetroPlugRoot::RemoveActive() {
 
 	SetActive(_views[_activeIdx]);
 	UpdateLayout();
+}
+
+void RetroPlugRoot::ToggleMultichannel() {
+	MultiChannelMode mode = _plug->multiChannelMode() == MultiChannelMode::Off ? MultiChannelMode::Instance : MultiChannelMode::Off;
+	_plug->setMultiChannelMode(mode);
 }

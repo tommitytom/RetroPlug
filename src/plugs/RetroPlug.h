@@ -19,6 +19,12 @@ enum class EmulatorType {
 	SameBoy
 };
 
+enum class MultiChannelMode {
+	Off,
+	Instance,
+	Channel
+};
+
 class RetroPlug {
 private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
@@ -26,6 +32,7 @@ private:
 	std::wstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
 	SaveStateType _saveType = SaveStateType::State;
+	std::atomic<MultiChannelMode> _multiChannel = MultiChannelMode::Off;
 
 public:
 	RetroPlug() {}
@@ -38,6 +45,10 @@ public:
 	void setLayout(InstanceLayout layout) {
 		_layout = layout;
 	}
+
+	MultiChannelMode multiChannelMode() const { return _multiChannel; }
+
+	void setMultiChannelMode(MultiChannelMode mode) { _multiChannel = mode; }
 
 	SaveStateType saveType() const { return _saveType; }
 
@@ -87,7 +98,7 @@ public:
 			}
 		}
 
-		return 0;
+		return 4;
 	}
 
 	void getLinkTargets(std::vector<SameBoyPlugPtr>& targets, SameBoyPlugPtr ignore) {
