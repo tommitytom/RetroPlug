@@ -24,7 +24,11 @@ enum class ProjectMenuItems : int {
 	AddInstance,
 	RemoveInstance,
 	Layout,
-	MultiChannel
+
+	Sep3,
+
+	AudioRouting,
+	MidiRouting
 };
 
 enum class BasicMenuItems {
@@ -102,6 +106,23 @@ static IPopupMenu* createSaveOptionsMenu(SaveStateType checked) {
 	menu->AddItem("Save State", (int)SaveStateType::State);
 	menu->AddItem("Save SRAM", (int)SaveStateType::Sram);
 	menu->CheckItemAlone((int)checked);
+	return menu;
+}
+
+static IPopupMenu* createAudioRoutingMenu(AudioChannelRouting mode) {
+	IPopupMenu* menu = new IPopupMenu();
+	menu->AddItem("Stereo Mixdown", (int)AudioChannelRouting::StereoMixDown);
+	menu->AddItem("Two Channels Per Instance", (int)AudioChannelRouting::TwoChannelsPerInstance);
+	menu->CheckItemAlone((int)mode);
+	return menu;
+}
+
+static IPopupMenu* createMidiRoutingMenu(MidiChannelRouting mode) {
+	IPopupMenu* menu = new IPopupMenu();
+	menu->AddItem("Four Channels Per Instance", (int)MidiChannelRouting::FourChannelsPerInstance);
+	menu->AddItem("One Channel Per Instance", (int)MidiChannelRouting::OneChannelPerInstance);
+	menu->AddItem("Duplicate First Four Channels", (int)MidiChannelRouting::Duplicate);
+	menu->CheckItemAlone((int)mode);
 	return menu;
 }
 

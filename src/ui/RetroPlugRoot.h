@@ -40,10 +40,6 @@ public:
 	void LoadProjectOrRom(const std::wstring& path);
 
 private:
-	bool IsActive() {
-		return _views.size() > 0 && _views[0]->Plug() && _views[0]->Plug()->active();
-	}
-
 	void UpdateLayout();
 
 	void CreatePlugInstance(EmulatorView* view, CreateInstanceType type);
@@ -71,8 +67,6 @@ private:
 	void OpenLoadProjectOrRomDialog();
 	
 	void RemoveActive();
-
-	void ToggleMultichannel();
 
 	int GetViewIndex(EmulatorView* view) {
 		for (int i = 0; i < _views.size(); i++) {

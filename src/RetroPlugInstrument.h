@@ -24,6 +24,7 @@ private:
 	void GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged);
 	void HandleTransportChange(SameBoyPlug* plug, bool running);
 	void ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
+	void ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel);
 
 	inline double FramesToMs(int frameCount) const { return frameCount / (GetSampleRate() / 1000); }
 

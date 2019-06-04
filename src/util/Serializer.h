@@ -61,19 +61,35 @@ static SaveStateType stringToSaveType(const std::string& model) {
 	return SaveStateType::State;
 }
 
-static std::string mutliChannelModeToString(MultiChannelMode type) {
+static std::string audioRoutingToString(AudioChannelRouting  type) {
 	switch (type) {
-	case MultiChannelMode::Channel: return "channel";
-	case MultiChannelMode::Instance: return "instance";
+	case AudioChannelRouting::StereoMixDown: return "stereoMixDown";
+	case AudioChannelRouting::TwoChannelsPerInstance: return "twoChannelsPerInstance";
 	}
 
-	return "off";
+	return "stereoMixDown";
 }
 
-static MultiChannelMode stringToMutliChannelMode(const std::string& model) {
-	if (model == "channel") return MultiChannelMode::Channel;
-	if (model == "instance") return MultiChannelMode::Instance;
-	return MultiChannelMode::Off;
+static AudioChannelRouting stringToAudioRouting(const std::string& model) {
+	if (model == "stereoMixDown") return AudioChannelRouting::StereoMixDown;
+	if (model == "twoChannelsPerInstance") return AudioChannelRouting::TwoChannelsPerInstance;
+	return AudioChannelRouting::StereoMixDown;
+}
+
+static std::string midiRoutingToString(MidiChannelRouting  type) {
+	switch (type) {
+	case MidiChannelRouting::OneChannelPerInstance: return "oneChannelPerInstance";
+	case MidiChannelRouting::Duplicate: return "duplicate";
+	case MidiChannelRouting::FourChannelsPerInstance:
+	default: return "fourChannelsPerInstance";
+	}
+}
+
+static MidiChannelRouting stringToMidiRouting(const std::string& model) {
+	if (model == "fourChannelsPerInstance") return MidiChannelRouting::FourChannelsPerInstance;
+	if (model == "oneChannelPerInstance") return MidiChannelRouting::OneChannelPerInstance;
+	if (model == "duplicate") return MidiChannelRouting::Duplicate;
+	return MidiChannelRouting::FourChannelsPerInstance;
 }
 
 static void Serialize(std::string& target, const RetroPlug& manager) {
@@ -82,7 +98,8 @@ static void Serialize(std::string& target, const RetroPlug& manager) {
 		{ "version", PLUG_VERSION_STR },
 		{ "layout", layoutToString(manager.layout()) },
 		{ "saveType", saveTypeToString(manager.saveType()) },
-		{ "multiChannel", mutliChannelModeToString(manager.multiChannelMode()) },
+		{ "audioRouting", audioRoutingToString(manager.audioRouting()) },
+		{ "midiRouting", midiRoutingToString(manager.midiRouting()) },
 		{ "instances", tao::json::value::array({}) }
 	};
 
@@ -116,10 +133,12 @@ static void Serialize(std::string& target, const RetroPlug& manager) {
 			}
 
 			tao::binary saveState;
-			if (manager.saveType() == SaveStateType::State) {
-				plug->saveState(saveState);
-			} else {
-				plug->saveBattery(saveState);
+			if (plug->active()) {
+				if (manager.saveType() == SaveStateType::State) {
+					plug->saveState(saveState);
+				} else {
+					plug->saveBattery(saveState);
+				}
 			}
 
 			tao::json::value instRoot = {
@@ -240,10 +259,16 @@ static void Deserialize(const char* data, RetroPlug& plug) {
 				plug.setLayout(layoutType);
 			}
 
-			const tao::json::value* mutliChannel = root.find("multiChannel");
-			if (mutliChannel) {
-				MultiChannelMode mode = stringToMutliChannelMode(mutliChannel->get_string());
-				plug.setMultiChannelMode(mode);
+			const tao::json::value* audioRouting = root.find("audioRouting");
+			if (audioRouting) {
+				AudioChannelRouting mode = stringToAudioRouting(audioRouting->get_string());
+				plug.setAudioRouting(mode);
+			}
+
+			const tao::json::value* midiRouting = root.find("midiRouting");
+			if (midiRouting) {
+				MidiChannelRouting mode = stringToMidiRouting(midiRouting->get_string());
+				plug.setMidiRouting(mode);
 			}
 		} else {
 			DeserializeInstance(root, plug, SaveStateType::State);

@@ -106,7 +106,7 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 	}
 
 	int chanMultipler = 0;
-	if (NOutChansConnected() > 2 && _plug.multiChannelMode() != MultiChannelMode::Off) {
+	if (NOutChansConnected() == 8 && _plug.audioRouting() != AudioChannelRouting::StereoMixDown) {
 		chanMultipler = 2;
 	}
 
@@ -221,69 +221,111 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 	}
 }
 
-void RetroPlugInstrument::OnReset() {
-	_plug.setSampleRate(GetSampleRate());
-}
-
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
 
-	SameBoyPlugPtr plug = _plug.plugs()[0];
-	if (!plug) {
-		return;
+	auto plugs = _plug.plugs();
+	size_t count = _plug.instanceCount();
+
+	switch (_plug.midiRouting()) {
+	case MidiChannelRouting::Duplicate: {
+		for (size_t i = 0; i < count; i++) {
+			SameBoyPlugPtr plug = plugs[i];
+			if (plug) {
+				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel());
+			}
+		}
+
+		break;
+	}
+	case MidiChannelRouting::OneChannelPerInstance: {
+		if (msg.Channel() < count) {
+			SameBoyPlugPtr plug = plugs[msg.Channel()];
+			if (plug) {
+				ProcessInstanceMidiMessage(plug.get(), msg, 0);
+			}
+		}
+
+		break;
+	}
+	case MidiChannelRouting::FourChannelsPerInstance: {
+		if (msg.Channel() < count * 4) {
+			SameBoyPlugPtr plug = plugs[msg.Channel() / 4];
+			if (plug) {
+				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel() % 4);
+			}
+		}
+
+		break;
+	}
 	}
 
+	for (size_t i = 0; i < MAX_INSTANCES; i++) {
+		SameBoyPlugPtr plug = _plug.plugs()[i];
+		if (!plug) {
+			return;
+		}
+
+
+	}
+}
+
+void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel) {
 	Lsdj& lsdj = plug->lsdj();
 	if (lsdj.found) {
 		switch (lsdj.syncMode) {
-			case LsdjSyncModes::MidiArduinoboy:
-				if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
-					switch (msg.NoteNumber()) {
-						case 24: lsdj.arduinoboyPlaying = true; break;
-						case 25: lsdj.arduinoboyPlaying = false; break;
-						case 26: lsdj.tempoDivisor = 1; break;
-						case 27: lsdj.tempoDivisor = 2; break;
-						case 28: lsdj.tempoDivisor = 4; break;
-						case 29: lsdj.tempoDivisor = 8; break;
-						default:
-							if (msg.NoteNumber() >= 30) {
-								plug->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
-							}
+		case LsdjSyncModes::MidiArduinoboy:
+			if (msg.StatusMsg() == IMidiMsg::kNoteOn) {
+				switch (msg.NoteNumber()) {
+				case 24: lsdj.arduinoboyPlaying = true; break;
+				case 25: lsdj.arduinoboyPlaying = false; break;
+				case 26: lsdj.tempoDivisor = 1; break;
+				case 27: lsdj.tempoDivisor = 2; break;
+				case 28: lsdj.tempoDivisor = 4; break;
+				case 29: lsdj.tempoDivisor = 8; break;
+				default:
+					if (msg.NoteNumber() >= 30) {
+						plug->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
 					}
+				}
+			}
+
+			break;
+		case LsdjSyncModes::MidiMap:
+			switch (msg.StatusMsg()) {
+			case IMidiMsg::kNoteOn: {
+				int rowIdx = midiMapRowNumber(channel, msg.NoteNumber());
+				if (rowIdx != -1) {
+					plug->sendMidiByte(msg.mOffset, rowIdx);
+					lsdj.lastRow = rowIdx;
 				}
 
 				break;
-			case LsdjSyncModes::MidiMap:
-				switch (msg.StatusMsg()) {
-				case IMidiMsg::kNoteOn: {
-					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
-					if (rowIdx != -1) {
-						plug->sendMidiByte(msg.mOffset, rowIdx);
-						lsdj.lastRow = rowIdx;
-					}
-
-					break;
-				}
-				case IMidiMsg::kNoteOff:
-					int rowIdx = midiMapRowNumber(msg.Channel(), msg.NoteNumber());
-					if (rowIdx == lsdj.lastRow) {
-						plug->sendMidiByte(msg.mOffset, 0xFE);
-						lsdj.lastRow = -1;
-					}
-
-					break;
+			}
+			case IMidiMsg::kNoteOff:
+				int rowIdx = midiMapRowNumber(channel, msg.NoteNumber());
+				if (rowIdx == lsdj.lastRow) {
+					plug->sendMidiByte(msg.mOffset, 0xFE);
+					lsdj.lastRow = -1;
 				}
 
 				break;
+			}
+
+			break;
 		}
 	} else {
 		// Presume mGB
 		char midiData[3];
-		midiData[0] = msg.mStatus;
+		midiData[0] = channel | (msg.StatusMsg() << 4);
 		midiData[1] = msg.mData1;
 		midiData[2] = msg.mData2;
 
 		plug->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
 	}
+}
+
+void RetroPlugInstrument::OnReset() {
+	_plug.setSampleRate(GetSampleRate());
 }
 #endif

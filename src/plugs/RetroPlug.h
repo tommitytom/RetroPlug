@@ -19,36 +19,44 @@ enum class EmulatorType {
 	SameBoy
 };
 
-enum class MultiChannelMode {
-	Off,
-	Instance,
-	Channel
+enum class AudioChannelRouting {
+	StereoMixDown,
+	TwoChannelsPerInstance,
+	TwoChannelsPerChannel
+};
+
+enum class MidiChannelRouting {
+	FourChannelsPerInstance,
+	OneChannelPerInstance,
+	Duplicate
 };
 
 class RetroPlug {
 private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
-	double _sampleRate = 48000;
 	std::wstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
 	SaveStateType _saveType = SaveStateType::State;
-	std::atomic<MultiChannelMode> _multiChannel = MultiChannelMode::Off;
 
+	std::atomic<AudioChannelRouting> _audioRouting = AudioChannelRouting::StereoMixDown;
+	std::atomic<MidiChannelRouting> _midiRouting = MidiChannelRouting::FourChannelsPerInstance;
+
+	double _sampleRate = 48000;
 public:
 	RetroPlug() {}
 	~RetroPlug() {}
 
-	InstanceLayout layout() const {
-		return _layout;
-	}
+	InstanceLayout layout() const { return _layout; }
 
-	void setLayout(InstanceLayout layout) {
-		_layout = layout;
-	}
+	void setLayout(InstanceLayout layout) { _layout = layout; }
 
-	MultiChannelMode multiChannelMode() const { return _multiChannel; }
+	AudioChannelRouting audioRouting() const { return _audioRouting; }
 
-	void setMultiChannelMode(MultiChannelMode mode) { _multiChannel = mode; }
+	void setAudioRouting(AudioChannelRouting mode) { _audioRouting = mode; }
+
+	MidiChannelRouting midiRouting() const { return _midiRouting; }
+
+	void setMidiRouting(MidiChannelRouting mode) { _midiRouting = mode; }
 
 	SaveStateType saveType() const { return _saveType; }
 
