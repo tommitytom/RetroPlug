@@ -78,17 +78,18 @@ static AudioChannelRouting stringToAudioRouting(const std::string& model) {
 
 static std::string midiRoutingToString(MidiChannelRouting  type) {
 	switch (type) {
+	
 	case MidiChannelRouting::OneChannelPerInstance: return "oneChannelPerInstance";
-	case MidiChannelRouting::Duplicate: return "duplicate";
-	case MidiChannelRouting::FourChannelsPerInstance:
-	default: return "fourChannelsPerInstance";
+	case MidiChannelRouting::FourChannelsPerInstance: return "fourChannelsPerInstance";
+	case MidiChannelRouting::SendToAll: 
+	default: return "sendToall";
 	}
 }
 
 static MidiChannelRouting stringToMidiRouting(const std::string& model) {
 	if (model == "fourChannelsPerInstance") return MidiChannelRouting::FourChannelsPerInstance;
 	if (model == "oneChannelPerInstance") return MidiChannelRouting::OneChannelPerInstance;
-	if (model == "duplicate") return MidiChannelRouting::Duplicate;
+	if (model == "sendToall") return MidiChannelRouting::SendToAll;
 	return MidiChannelRouting::FourChannelsPerInstance;
 }
 

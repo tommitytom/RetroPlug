@@ -26,9 +26,9 @@ enum class AudioChannelRouting {
 };
 
 enum class MidiChannelRouting {
+	SendToAll,
 	FourChannelsPerInstance,
-	OneChannelPerInstance,
-	Duplicate
+	OneChannelPerInstance
 };
 
 class RetroPlug {
@@ -39,7 +39,7 @@ private:
 	SaveStateType _saveType = SaveStateType::State;
 
 	std::atomic<AudioChannelRouting> _audioRouting = AudioChannelRouting::StereoMixDown;
-	std::atomic<MidiChannelRouting> _midiRouting = MidiChannelRouting::FourChannelsPerInstance;
+	std::atomic<MidiChannelRouting> _midiRouting = MidiChannelRouting::SendToAll;
 
 	double _sampleRate = 48000;
 public:

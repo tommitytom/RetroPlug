@@ -228,10 +228,10 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	size_t count = _plug.instanceCount();
 
 	switch (_plug.midiRouting()) {
-	case MidiChannelRouting::Duplicate: {
+	case MidiChannelRouting::SendToAll: {
 		for (size_t i = 0; i < count; i++) {
 			SameBoyPlugPtr plug = plugs[i];
-			if (plug) {
+			if (plug && plug->active()) {
 				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel());
 			}
 		}
@@ -241,7 +241,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	case MidiChannelRouting::OneChannelPerInstance: {
 		if (msg.Channel() < count) {
 			SameBoyPlugPtr plug = plugs[msg.Channel()];
-			if (plug) {
+			if (plug && plug->active()) {
 				ProcessInstanceMidiMessage(plug.get(), msg, 0);
 			}
 		}
@@ -251,22 +251,13 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	case MidiChannelRouting::FourChannelsPerInstance: {
 		if (msg.Channel() < count * 4) {
 			SameBoyPlugPtr plug = plugs[msg.Channel() / 4];
-			if (plug) {
+			if (plug && plug->active()) {
 				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel() % 4);
 			}
 		}
 
 		break;
 	}
-	}
-
-	for (size_t i = 0; i < MAX_INSTANCES; i++) {
-		SameBoyPlugPtr plug = _plug.plugs()[i];
-		if (!plug) {
-			return;
-		}
-
-
 	}
 }
 

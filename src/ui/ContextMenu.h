@@ -119,9 +119,9 @@ static IPopupMenu* createAudioRoutingMenu(AudioChannelRouting mode) {
 
 static IPopupMenu* createMidiRoutingMenu(MidiChannelRouting mode) {
 	IPopupMenu* menu = new IPopupMenu();
+	menu->AddItem("All Channels to All Instances", (int)MidiChannelRouting::SendToAll);
 	menu->AddItem("Four Channels Per Instance", (int)MidiChannelRouting::FourChannelsPerInstance);
 	menu->AddItem("One Channel Per Instance", (int)MidiChannelRouting::OneChannelPerInstance);
-	menu->AddItem("Duplicate First Four Channels", (int)MidiChannelRouting::Duplicate);
 	menu->CheckItemAlone((int)mode);
 	return menu;
 }
