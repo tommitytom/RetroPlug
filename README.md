@@ -7,7 +7,7 @@ A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
 
-## Current limitations (subject to change)
+## Current Limitations (subject to change)
 - VST2 only
 - Windows only
 - 64bit only
@@ -21,11 +21,11 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 - A .sav with the same name as your rom will be loaded if it is present
 - Right click to bring up a menu with various options
 - The emulator state is saved in to the project file in your DAW when you hit save, which will persist your changes.  **YOUR .sav IS NOT AUTO SAVED**.  If you want to save out the .sav then do so from the SRAM context menu.
-- To edit button mapping, go to Settings -> Open Settings Folder... and edit `buttons.json` (full list of button names below)
+- To edit button mapping, go to `Settings -> Open Settings Folder...` and edit `buttons.json` (full list of button names below)
 - For mGB, the usual Arduinoboy rules apply: https://github.com/trash80/mGB - no additional config needed, just throw notes at it!
 - For LSDj, an additional menu will appear in the settings menu, allowing you to set sync modes (Arduinoboy emulation)
 
-## Button mapping
+## Button Mapping
 Keyboard button mapping is currently only configurable with JSON configuration files.  On first run a config file is written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug` containing the following default button map:
 
 |Button|Default key|
@@ -39,7 +39,7 @@ Keyboard button mapping is currently only configurable with JSON configuration f
 |Select|Ctrl|
 |Start|Enter|
 
-### Supported keys for buttons.json:
+### Supported Keys for buttons.json:
 Keys `0 - 9` and `A - Z` can be used for alpha numeric keys, as well as the following keys:
 
 ```
@@ -47,8 +47,42 @@ Backspace, Tab, Clear, Enter, Shift, Ctrl, Alt, Pause, Caps, Esc, Space, PageUp,
 ```
 All key names are CASE SENSITIVE!
 
-## LSDj specific settings
-### Sync modes
+## Multiple Instances
+You can load multiple instances of the emulator in a single window, and link them with virtual link cables.  The goal of this feature is to offer a streamlined way of working with multiple instances of LSDj.  You can create an additional emulator instance using the `Project -> Add Instance` submenu.  Choose one of the following options:
+- **Load ROM...** - Loads a ROM from disk in to the new instance.
+- **Same ROM** - Loads the ROM of the currently active instance in to the new instance.  The created instance will load the .sav file accompanying the ROM.
+- **Duplicate** - Creates an exact copy of the currently active instance by coying its state.
+
+Additional information:
+- You can create up to 4 instances.
+- Instances are linked when the `Game Link` option is enabled.  This has to be done on every instance that is to be linked.
+- You can move between instances with the `Tab` key.
+
+### Audio Routing
+By default, the output of all instances will be summed together in to a single stereo output.  The `Project -> Audio Routing` menu contains additional options for audio routing:
+
+- **Stereo Mixdown** - The default option.  Mixes the audio of all instances in to two stereo channels.
+- **Two Channels Per Instance** - Each instance will output on its own 2 channels.  Instance 1 will output on channels 1-2, instance 2 will output on channels 3-4, etc.  This may require additional configuration in your DAW.  _This feature is not available in the standalone version._
+
+### MIDI Routing
+By default, each instance receives all MIDI messages received on all channels.  The `Project -> MIDI Routing` menu contains additional options for MIDI routing:
+
+- **All Channels to All Instances** - The default option.  Sends all messages received to all instances.
+    - A usage example for this mode could be using LSDj in the Arduinoboy MIDI sync mode, where you want multiple instances to sync to a single `C-2` note on.
+- **Four Channels Per Instance** - Evenly maps MIDI channels across up to four instances.
+    - The first instance will receive channels 1-4, the second will receive channels 5-8, etc.
+    - This is handy for mGB, since it allows you to evenly split all 16 MIDI channels across 4 mGB instances.
+    - Also useful for LSDj in MIDI Map mode, since the mode makes use of 2 channels per instance.
+- **One Channel Per Instance** - Similar to the mode above but for more simplistic uses.
+    - The first instance will receive MIDI from channel 1, the second will receive MIDI from channel 2, etc.
+    - A more obvious choice if you want control over individual instances when using the Arduinoboy MIDI sync mode (LSDj).
+
+### Multi LSDj Setup
+For LSDj versions lower than v6.1.0, one instance of LSDj needs to be set to `MASTER` and the others need to be set to `SLAVE`.  Versions v6.1.0 and above no longer have these modes, but have a singular `LSDJ` mode, where the instance that initiates playing automatically becomes the master.  It appears there may be additional overhead to this new mode that may make things go slightly out of sync - so it is recommended that if you want perfect sync between more than one instance of LSDj that you use one of the MIDI sync modes.  This will sync both instances to your DAW, rather than to each other.
+
+## LSDj Integration
+When LSDj is detected, additional options are added to the context menus.
+### Sync Modes
 - **Off**: No sync with your DAW at all.  If you hit play in LSDj it will play regardless of what else is happening.
 
 - **MIDI Sync**:
@@ -71,7 +105,10 @@ All key names are CASE SENSITIVE!
   * Works in combination with the other sync modes.
   * This option is pretty dumb (it doesnt know if LSDj is playing or not), so it's possible to make it think it is in the wrong state if you manually press `Start`.  If this happens just press `Start` again.
 
-### Additional options
+### .sav Manipulation
+Thanks to the liblsdj library you are able to list, export, import, load, and delete tracks contained in your LSDj save.  The `LSDj Songs` context menu contains these features.
+
+### Additional Options
 - **Keyboard Shortcuts**: Enables a set of common shortcuts that allows you to use LSDj with a keyboard in a more intuitive manner.  This works by sending combinations of button presses to LSDj, so support for these may not always be perfect!  Many of the hotkeys for these settings can be modified in the button config file (see [Button mapping](#button-mapping)), although a few can't:
 
 | Action | Default key(s) | Configurable|
@@ -89,9 +126,20 @@ All key names are CASE SENSITIVE!
 |CutSelection|Ctrl + X|No|
 |PasteSelection|Ctrl + V|No|
 
+## Roadmap
+- v1.0.0
+    - 32bit builds
+    - Mac builds
+    - Outputs from individual audio channels
+    - Lua scripting
+    - LSDj sample patching
+- v2.0.0
+    - Additional emulators.  Support for GBA and Megadrive/Genesis is being explored.
+
 ## Dependencies
 - [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
 - [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin framework
+- [libsdj](https://github.com/stijnfrishert/liblsdj) - Adds the functionality to manipulate LSDj save files
 - [tao json](https://github.com/taocpp/json) - JSON library used for dealing with configs and save states
 
 ## Building
@@ -104,12 +152,6 @@ RetroPlug is developed in Visual Studio 2019, however SameBoy has to be built us
 
 ### Mac
 Coming soon!
-
-## What to expect in the future
-- 32bit builds
-- Mac builds
-- Support for multiple emulator instances in the same window, for optimum 2x LSDj composing
-- LSDj keyboard mode, if anyone has a use for it (convince me!)
 
 ## Troubleshooting
 Please refrain from asking usage questions in GitHub issues, and use them purely for bugs and feature requests.  If you need help, the official support chat for this plugin is on the PSG Cabal discord channel: https://discord.gg/9MdBJST
