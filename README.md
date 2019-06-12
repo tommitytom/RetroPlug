@@ -134,7 +134,7 @@ Thanks to the liblsdj library you are able to list, export, import, load, and de
     - Lua scripting
     - LSDj sample patching
 - v2.0.0
-    - Additional emulators.  Support for GBA and Megadrive/Genesis is being explored.
+    - Additional emulators.  Support for GBA and Megadrive/Genesis/C64 is being explored.
 
 ## Dependencies
 - [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
