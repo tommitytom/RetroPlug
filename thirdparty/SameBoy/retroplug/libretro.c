@@ -176,16 +176,21 @@ void sameboy_set_sample_rate(void* state, double sample_rate) {
     GB_set_sample_rate(&s->gb, (uint32_t)sample_rate);
 }
 
-void sameboy_set_midi_bytes(void* state, int offset, const char* bytes, size_t count) {
+void sameboy_send_serial_byte(void* state, int offset, char byte, size_t bitCount) {
     sameboy_state_t* s = (sameboy_state_t*)state;
 
+    if (length(&s->midiQueue) < MAX_QUEUE_SIZE) {
+        offset_byte_t ob;
+        ob.offset = offset;
+        ob.byte = byte;
+        ob.bitCount = bitCount;
+        enqueue(&s->midiQueue, ob);
+    }
+}
+
+void sameboy_set_midi_bytes(void* state, int offset, const char* bytes, size_t count) {
     for (size_t i = 0; i < count; i++) {
-        if (length(&s->midiQueue) < MAX_QUEUE_SIZE) {
-            offset_byte_t ob;
-            ob.offset = offset;
-            ob.byte = bytes[i];
-            enqueue(&s->midiQueue, ob);
-        }
+        sameboy_send_serial_byte(state, offset, bytes[i], 8);
     }
 }
 
@@ -324,7 +329,7 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
         if (s->linkTicksRemain <= 0) {
             if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
                 offset_byte_t b = dequeue(&s->midiQueue);
-                for (int i = 7; i >= 0; i--) {
+                for (int i = b.bitCount - 1; i >= 0; i--) {
                     bool bit = (bool)((b.byte & (1 << i)) >> i);
                     GB_serial_set_data_bit(&s->gb, bit);
                 }

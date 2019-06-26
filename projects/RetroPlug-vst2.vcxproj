@@ -276,6 +276,9 @@
     <ClInclude Include="..\src\libretroplug\PaMemoryBarrier.h" />
     <ClInclude Include="..\src\libretroplug\PaRingBuffer.h" />
     <ClInclude Include="..\src\libretroplug\RingBuffer.h" />
+    <ClInclude Include="..\src\lsdj\kit.h" />
+    <ClInclude Include="..\src\lsdj\rom.h" />
+    <ClInclude Include="..\src\lsdj\sample.h" />
     <ClInclude Include="..\src\platform\DynamicLibrary.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
@@ -487,6 +490,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\libretroplug\PaRingBuffer.c" />
+    <ClCompile Include="..\src\lsdj\kit.c" />
+    <ClCompile Include="..\src\lsdj\rom.c" />
+    <ClCompile Include="..\src\lsdj\sample.c" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />

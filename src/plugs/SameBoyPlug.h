@@ -36,6 +36,7 @@ struct SameboyPlugSymbols {
 	void(*sameboy_set_setting)(void* state, const char* name, int value);
 	void(*sameboy_disable_rendering)(void* state, bool disabled);
 
+	void(*sameboy_send_serial_byte)(void* state, int offset, char byte, size_t bitCount);
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
 	void(*sameboy_set_button)(void* state, int buttonId, bool down);
 	void(*sameboy_set_link_targets)(void* state, void** linkTargets, size_t count);
@@ -118,7 +119,9 @@ public:
 
 	void setSampleRate(double sampleRate);
 
-	void sendMidiByte(int offset, char byte) { sendMidiBytes(offset, &byte, 1); }
+	void sendKeyboardByte(int offset, char byte);
+
+	void sendSerialByte(int offset, char byte, size_t bitCount = 8);
 
 	void sendMidiBytes(int offset, const char* bytes, size_t count);
 
@@ -175,5 +178,3 @@ private:
 
 	void updateAV(int audioFrames);
 };
-
-

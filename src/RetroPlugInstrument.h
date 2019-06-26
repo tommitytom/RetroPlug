@@ -26,6 +26,9 @@ private:
 	void ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value);
 	void ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel);
 
+	void ChangeLsdjKeyboardOctave(SameBoyPlug* plug, int octave, int offset);
+	void ChangeLsdjInstrument(SameBoyPlug* plug, int instrument, int offset);
+
 	inline double FramesToMs(int frameCount) const { return frameCount / (GetSampleRate() / 1000); }
 
 	RetroPlug _plug;

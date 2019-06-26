@@ -1,6 +1,7 @@
 #include "SameBoyPlug.h"
 #include "util/String.h"
 #include "Constants.h"
+#include <fstream>
 #include <filesystem>
 
 #define MINIAUDIO_IMPLEMENTATION
@@ -8,6 +9,9 @@
 
 #include "resource.h"
 #include "util/File.h"
+#include "lsdj/rom.h"
+#include "lsdj/kit.h"
+#include "lsdj/sample.h"
 
 const int FRAME_SIZE = 160 * 144 * 4;
 
@@ -36,6 +40,7 @@ SameBoyPlug::SameBoyPlug() {
 	_library.get("sameboy_fetch_audio", _symbols.sameboy_fetch_audio);
 	_library.get("sameboy_fetch_video", _symbols.sameboy_fetch_video);
 	_library.get("sameboy_set_sample_rate", _symbols.sameboy_set_sample_rate);
+	_library.get("sameboy_send_serial_byte", _symbols.sameboy_send_serial_byte);
 	_library.get("sameboy_set_midi_bytes", _symbols.sameboy_set_midi_bytes);
 	_library.get("sameboy_disable_rendering", _symbols.sameboy_disable_rendering);
 	_library.get("sameboy_free", _symbols.sameboy_free);
@@ -76,7 +81,7 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 		}
 	} else {
 		switch (_saveType) {
-		case SaveStateType::State: 
+		case SaveStateType::State:
 			_symbols.sameboy_load_state(instance, (const char*)_saveData.data(), _saveData.size());
 			break;
 		case SaveStateType::Sram:
@@ -94,6 +99,25 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 	if (_lsdj.found) {
 		_lsdj.version = _romName.substr(5, 6);
 		_lsdj.saveData = saveData;
+
+		/*lsdj_error_t* error = nullptr;
+		lsdj_rom_t* rom = lsdj_rom_read_from_file(ws2s(romPath).c_str(), &error);
+		for (size_t i = 0; i < KIT_COUNT; i++) {
+			lsdj_kit_t* kit = lsdj_rom_get_kit(rom, i);
+			if (kit) {
+				std::cout << "Kit: " << i << " - " << lsdj_kit_get_name(kit) << std::endl;
+				for (size_t j = 0; j < KIT_SAMPLE_COUNT; j++) {
+					lsdj_sample_t* sample = lsdj_kit_get_sample(kit, j);
+					if (sample) {
+						std::cout << "\tSample: " << j << " - " << sample->name << std::endl;
+					}
+				}
+			} else {
+				std::cout << "Kit: " << i << std::endl;
+			}
+		}
+
+		lsdj_rom_free(rom);*/
 	}
 
 	_symbols.sameboy_set_sample_rate(instance, _sampleRate);
@@ -244,6 +268,16 @@ void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
 
 	std::scoped_lock lock(_lock);
 	_symbols.sameboy_set_link_targets(_instance, instances, linkTargets.size());
+}
+
+void SameBoyPlug::sendKeyboardByte(int offset, char byte) {
+	_symbols.sameboy_send_serial_byte(_instance, offset, 0, 1);
+	_symbols.sameboy_send_serial_byte(_instance, offset, byte, 8);
+	_symbols.sameboy_send_serial_byte(_instance, offset, 0x01, 2);
+}
+
+void SameBoyPlug::sendSerialByte(int offset, char byte, size_t bitCount) {
+	_symbols.sameboy_send_serial_byte(_instance, offset, byte, bitCount);
 }
 
 // This is called from the audio thread

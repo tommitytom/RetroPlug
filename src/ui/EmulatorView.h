@@ -102,6 +102,7 @@ private:
 		case LsdjSyncModes::Midi: return LsdjSyncModeMenuItems::MidiSync;
 		case LsdjSyncModes::MidiArduinoboy: return LsdjSyncModeMenuItems::MidSyncArduinoboy;
 		case LsdjSyncModes::MidiMap: return LsdjSyncModeMenuItems::MidiMap;
+		case LsdjSyncModes::KeyboardArduinoboy: return LsdjSyncModeMenuItems::KeyboardModeArduinoboy;
 		default: return LsdjSyncModeMenuItems::Off;
 		}
 	}
@@ -111,6 +112,7 @@ private:
 		case LsdjSyncModeMenuItems::MidiSync: return LsdjSyncModes::Midi;
 		case LsdjSyncModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::MidiArduinoboy;
 		case LsdjSyncModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
+		case LsdjSyncModeMenuItems::KeyboardModeArduinoboy: return LsdjSyncModes::KeyboardArduinoboy;
 		default: return LsdjSyncModes::Off;
 		}
 	}

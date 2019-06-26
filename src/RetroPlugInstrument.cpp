@@ -152,9 +152,9 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 	Lsdj& lsdj = plug->lsdj();
 	if (transportChanged && plug->midiSync() && !lsdj.found) {
 		if (mTimeInfo.mTransportIsRunning) {
-			plug->sendMidiByte(0, 0xFA);
+			plug->sendSerialByte(0, 0xFA);
 		} else {
-			plug->sendMidiByte(0, 0xFC);
+			plug->sendSerialByte(0, 0xFC);
 		}
 	}
 
@@ -186,7 +186,7 @@ void RetroPlugInstrument::HandleTransportChange(SameBoyPlug* plug, bool running)
 	}
 
 	if (!_transportRunning && plug->lsdj().found && plug->lsdj().lastRow != -1) {
-		plug->sendMidiByte(0, 0xFE);
+		plug->sendSerialByte(0, 0xFE);
 	}
 }
 
@@ -217,7 +217,7 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 	}
 
 	if (sync) {
-		plug->sendMidiByte(offset, value);
+		plug->sendSerialByte(offset, value);
 	}
 }
 
@@ -261,6 +261,13 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	}
 }
 
+unsigned char reverse(unsigned char b) {
+	b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+	b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+	b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+	return b;
+}
+
 void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel) {
 	Lsdj& lsdj = plug->lsdj();
 	if (lsdj.found) {
@@ -276,7 +283,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 				case 29: lsdj.tempoDivisor = 8; break;
 				default:
 					if (msg.NoteNumber() >= 30) {
-						plug->sendMidiByte(msg.mOffset, msg.NoteNumber() - 30);
+						plug->sendSerialByte(msg.mOffset, msg.NoteNumber() - 30);
 					}
 				}
 			}
@@ -287,7 +294,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 			case IMidiMsg::kNoteOn: {
 				int rowIdx = midiMapRowNumber(channel, msg.NoteNumber());
 				if (rowIdx != -1) {
-					plug->sendMidiByte(msg.mOffset, rowIdx);
+					plug->sendSerialByte(msg.mOffset, rowIdx);
 					lsdj.lastRow = rowIdx;
 				}
 
@@ -296,13 +303,60 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 			case IMidiMsg::kNoteOff:
 				int rowIdx = midiMapRowNumber(channel, msg.NoteNumber());
 				if (rowIdx == lsdj.lastRow) {
-					plug->sendMidiByte(msg.mOffset, 0xFE);
+					plug->sendSerialByte(msg.mOffset, 0xFE);
 					lsdj.lastRow = -1;
 				}
 
 				break;
 			}
 
+			break;
+		case LsdjSyncModes::KeyboardArduinoboy:
+			if (plug->lsdj().currentInstrument == -1) {
+				for (int i = 0; i < 8; i++) {
+					plug->sendSerialByte(msg.mOffset, (reverse((unsigned char)LsdjKeyboard::InsDn) >> 1));
+				}
+
+				plug->lsdj().currentInstrument = 0;
+			}
+
+			switch (msg.StatusMsg()) {
+			case IMidiMsg::kNoteOn: {
+				int note = msg.NoteNumber();
+
+				if (note >= LsdjKeyboardNoteStart) {
+					note -= LsdjKeyboardNoteStart;
+
+					ChangeLsdjKeyboardOctave(plug, msg.NoteNumber() / 12, 0);
+
+					if (note >= 0x3C) {
+						// Use second row of keyboard keys
+						note = (note % 12) + 0x0C;
+					} else {
+						note = (note % 12);
+					}
+
+					plug->sendSerialByte(255, reverse(LsdjKeyboardNoteMap[note]) >> 1);
+				} else if (note >= LsdjKeyboardStartOctave) {
+					note -= LsdjKeyboardStartOctave;
+					uint8_t command = LsdjKeyboardLowOctaveMap[note];
+					if (command == 0x68 || command == 0x72 || command == 0x74 || command == 0x75) {
+						//cursor values need an "extended" pc keyboard mode message
+						plug->sendSerialByte(msg.mOffset, reverse(0xE0) >> 1);
+					}
+
+					plug->sendSerialByte(msg.mOffset, reverse(command) >> 1);
+				}
+				
+				break;
+			}
+			case IMidiMsg::kProgramChange: {
+				ChangeLsdjInstrument(plug, msg.Program(), msg.mOffset);
+				break;
+			}
+			case IMidiMsg::kNoteOff:
+				break;
+			}
 			break;
 		}
 	} else {
@@ -313,6 +367,44 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 		midiData[2] = msg.mData2;
 
 		plug->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
+	}
+}
+
+void RetroPlugInstrument::ChangeLsdjKeyboardOctave(SameBoyPlug* plug, int octave, int offset) {
+	int current = plug->lsdj().currentOctave;
+	if (octave != current) {
+		LsdjKeyboard key = LsdjKeyboard::OctDn;
+		if (octave > current) {
+			key = LsdjKeyboard::OctUp;
+		}
+
+		key = (LsdjKeyboard)(reverse((unsigned char)key) >> 1);
+
+		int diff = abs(octave - current);
+		while (diff--) {
+			plug->sendSerialByte(offset, (char)key);
+		}
+
+		plug->lsdj().currentOctave = octave;
+	}
+}
+
+void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrument, int offset) {
+	int current = plug->lsdj().currentInstrument;
+	if (current != instrument) {
+		LsdjKeyboard key = LsdjKeyboard::InsDn;
+		if (instrument > current) {
+			key = LsdjKeyboard::InsUp;
+		}
+
+		key = (LsdjKeyboard)(reverse((unsigned char)key) >> 1);
+
+		int diff = abs(current - instrument);
+		while (diff--) {
+			plug->sendSerialByte(offset, (char)key);
+		}
+
+		plug->lsdj().currentInstrument = instrument;
 	}
 }
 

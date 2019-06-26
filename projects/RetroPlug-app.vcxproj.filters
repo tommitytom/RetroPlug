@@ -166,6 +166,15 @@
     <ClCompile Include="..\src\ui\ContextMenu.cpp">
       <Filter>src\ui</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\lsdj\kit.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lsdj\rom.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lsdj\sample.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -504,6 +513,15 @@
     <ClInclude Include="..\src\ui\ContextMenu.h">
       <Filter>src\ui</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\lsdj\kit.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\lsdj\rom.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\lsdj\sample.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -562,6 +580,9 @@
     </Filter>
     <Filter Include="liblsdj">
       <UniqueIdentifier>{956c1077-6223-453b-b07b-5e6b12ec2527}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\lsdj">
+      <UniqueIdentifier>{0c6327e2-1b45-4ad4-a471-7d26e5eed43e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

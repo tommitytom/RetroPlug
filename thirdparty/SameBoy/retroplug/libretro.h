@@ -66,6 +66,7 @@ RETRO_API void sameboy_set_sample_rate(void* state, double sample_rate);
 RETRO_API void sameboy_set_setting(void* state, const char* name, int value);
 RETRO_API void sameboy_disable_rendering(void* state, bool disabled);
 
+RETRO_API void sameboy_send_serial_byte(void* state, int offset, char byte, size_t bitCount);
 RETRO_API void sameboy_set_midi_bytes(void* state, int offset, const char* byte, size_t count);
 RETRO_API void sameboy_set_button(void* state, int buttonId, bool down);
 

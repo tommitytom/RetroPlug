@@ -139,6 +139,15 @@
     <ClCompile Include="..\src\ui\ContextMenu.cpp">
       <Filter>src\ui</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\lsdj\rom.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lsdj\sample.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lsdj\kit.c">
+      <Filter>src\lsdj</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -462,6 +471,15 @@
     <ClInclude Include="..\src\ui\ContextMenu.h">
       <Filter>src\ui</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\lsdj\kit.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\lsdj\rom.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\lsdj\sample.h">
+      <Filter>src\lsdj</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">
@@ -514,6 +532,9 @@
     </Filter>
     <Filter Include="liblsdj">
       <UniqueIdentifier>{f0d9f763-1881-4289-9bef-9d41367e1ee6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\lsdj">
+      <UniqueIdentifier>{7e2d065f-cad5-41fa-b2e3-480d3f0a2a88}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

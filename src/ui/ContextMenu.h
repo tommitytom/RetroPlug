@@ -48,6 +48,7 @@ enum LsdjSyncModeMenuItems : int {
 	MidiSync,
 	MidSyncArduinoboy,
 	MidiMap,
+	KeyboardModeArduinoboy,
 
 	Sep1,
 
@@ -139,8 +140,9 @@ static IPopupMenu* createSyncMenu(bool disableSync, bool autoPlay) {
 	IPopupMenu* syncMenu = new IPopupMenu();
 	syncMenu->AddItem("Off", LsdjSyncModeMenuItems::Off, flag);
 	syncMenu->AddItem("MIDI Sync", LsdjSyncModeMenuItems::MidiSync, flag);
-	syncMenu->AddItem("MIDI Sync (Arduinoboy Mode)", LsdjSyncModeMenuItems::MidSyncArduinoboy, flag);
+	syncMenu->AddItem("MIDI Sync (Arduinoboy Variation)", LsdjSyncModeMenuItems::MidSyncArduinoboy, flag);
 	syncMenu->AddItem("MIDI Map", LsdjSyncModeMenuItems::MidiMap, flag);
+	syncMenu->AddItem("Keyboard Mode (Arduinoboy Variation)", LsdjSyncModeMenuItems::KeyboardModeArduinoboy, flag);
 	syncMenu->AddSeparator(LsdjSyncModeMenuItems::Sep1);
 	syncMenu->AddItem("Auto Play", LsdjSyncModeMenuItems::AutoPlay, autoPlay ? IPopupMenu::Item::kChecked : 0);
 	return syncMenu;

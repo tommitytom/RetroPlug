@@ -10,6 +10,7 @@
 struct offset_byte_t {
     int offset;
     char byte;
+    int bitCount;
 };
 typedef struct offset_byte_t offset_byte_t;
 

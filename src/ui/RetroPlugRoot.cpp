@@ -270,8 +270,6 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* audioRouting = createAudioRoutingMenu(_plug->audioRouting());
 	IPopupMenu* midiRouting = createMidiRoutingMenu(_plug->midiRouting());
 
-	//bool multiChannel = _plug->multiChannelMode() != MultiChannelMode::Off;
-
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("New", (int)ProjectMenuItems::New);
 	menu->AddItem("Load...", (int)ProjectMenuItems::Load);
