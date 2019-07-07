@@ -119,7 +119,7 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
 	_model = model;
-	_resetSamples = _sampleRate / 2;
+	_resetSamples = (int)(_sampleRate / 2);
 	std::scoped_lock lock(_lock);
 	_symbols.sameboy_reset(_instance, getGameboyModel(model), fast);
 }
@@ -192,7 +192,7 @@ bool SameBoyPlug::loadBattery(const std::byte* data, size_t size, bool reset) {
 		_symbols.sameboy_load_battery(_instance, (char*)data, size);
 
 		if (reset) {
-			_resetSamples = _sampleRate / 2;
+			_resetSamples = (int)(_sampleRate / 2);
 			_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
 		}
 	} else {
@@ -214,7 +214,7 @@ bool SameBoyPlug::clearBattery(bool reset) {
 	_savePath = L"";
 
 	if (reset) {
-		_resetSamples = _sampleRate / 2;
+		_resetSamples = (int)(_sampleRate / 2);
 		_symbols.sameboy_reset(_instance, getGameboyModel(_model), true);
 	}
 
