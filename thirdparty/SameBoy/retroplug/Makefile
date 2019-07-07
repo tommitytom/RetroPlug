@@ -1,4 +1,4 @@
-STATIC_LINKING := 0
+STATIC_LINKING := 1
 AR             := ar
 
 GIT_VERSION ?= " $(shell git rev-parse --short HEAD || echo unknown)"
@@ -232,7 +232,7 @@ else ifneq (,$(findstring windows_msvc2017,$(platform)))
 	ifneq (,$(findstring uwp,$(PlatformSuffix)))
 		LIB := $(LIB);$(shell IFS=$$'\n'; cygpath -w "$(LIB)/store")
 	endif
-    
+
 	export INCLUDE := $(INCLUDE);$(WindowsSDKSharedIncludeDir);$(WindowsSDKUCRTIncludeDir);$(WindowsSDKUMIncludeDir)
 	export LIB := $(LIB);$(WindowsSDKUCRTLibDir);$(WindowsSDKUMLibDir)
 	TARGET := $(TARGET_NAME)_retroplug.dll
@@ -241,7 +241,7 @@ else ifneq (,$(findstring windows_msvc2017,$(platform)))
 
 else
    CC = gcc
-   TARGET := $(TARGET_NAME)_retroplug.dll
+   TARGET := $(TARGET_NAME)_retroplug.a
    SHARED := -shared -static-libgcc -static-libstdc++ -s -Wl,--version-script=$(CORE_DIR)/retroplug/link.T -Wl,--no-undefined
 endif
 
@@ -255,7 +255,7 @@ LDFLAGS += $(LIBM)
 ifeq ($(DEBUG), 1)
    CFLAGS += -O0 -g
 else
-   CFLAGS += -O2 -DNDEBUG
+   CFLAGS += -O2 -DNDEBUG -mno-stack-arg-probe
 endif
 
 include Makefile.common
@@ -263,7 +263,7 @@ include Makefile.common
 OBJECTS := $(patsubst %.c,$(CORE_DIR)/build/obj/%_retroplug.c.o,$(SOURCES_C))
 
 OBJOUT   = -o
-LINKOUT  = -o 
+LINKOUT  = -o
 
 ifneq (,$(findstring msvc,$(platform)))
 	OBJOUT = -Fo

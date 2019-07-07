@@ -24,7 +24,7 @@ enum class SaveStateType {
 	Sram
 };
 
-struct SameboyPlugSymbols {
+/*struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* romData, size_t romSize, int model, bool fast_boot);
 	void(*sameboy_update_rom)(void* state, const char* rom_data, size_t rom_size);
 	void(*sameboy_free)(void* state);
@@ -54,16 +54,16 @@ struct SameboyPlugSymbols {
 	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
 
 	const char*(*sameboy_get_rom_name)(void* state);
-};
+};*/
 
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 
 class SameBoyPlug {
 private:
-	DynamicLibraryMemory _library;
+	//DynamicLibraryMemory _library;
 	//DynamicLibrary _library;
-	SameboyPlugSymbols _symbols = { nullptr };
+	//SameboyPlugSymbols _symbols = { nullptr };
 
 	void* _instance = nullptr;
 
