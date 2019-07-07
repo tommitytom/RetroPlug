@@ -25,29 +25,36 @@
 #define FONT_NAME_SIZE (4)
 #define ALTERNATE_FONT_OFFSET (0x4D2)
 
-// Representation of an entire LSDJ rom file
-struct lsdj_rom_t
-{
-	lsdj_kit_t* kits[KIT_COUNT];
-
-	//lsdj_palette_t* palettes[PALETTE_COUNT];
-
-	//lsdj_font_t* fonts[FONT_COUNT];
-};
-
 lsdj_rom_t* lsdj_rom_read(lsdj_vio_t* vio, lsdj_error_t** error)
 {
 	lsdj_rom_t* rom = malloc(sizeof(lsdj_rom_t));
 	memset(rom, 0, sizeof(lsdj_rom_t));
 
 
-	for (size_t i = 0; i < KIT_COUNT; ++i) {
-		size_t offset = i * KIT_BANK_SIZE;
+	for (size_t i = 0; i < BANK_COUNT; ++i) {
+		size_t offset = i * BANK_SIZE;
 		vio->seek(offset, SEEK_SET, vio->user_data);
-		rom->kits[i] = lsdj_kit_read(vio, error);
+		lsdj_kit_t* kit = lsdj_kit_read(vio, error);
+		if (kit) {
+			rom->kits[rom->kit_count++] = kit;
+		}
 	}
 
 	return rom;
+}
+
+void lsdj_rom_patch(const lsdj_rom_t* rom, lsdj_vio_t* vio, lsdj_error_t** error) 
+{
+	for (size_t i = 0; i < BANK_COUNT; ++i) {
+		size_t offset = i * BANK_SIZE;
+		vio->seek(offset, SEEK_SET, vio->user_data);
+		if (rom->kits[i]) {
+			lsdj_kit_write(rom->kits[i], vio, error);
+		} else {
+			char empty[BANK_SIZE] = { 0 };
+			vio->write(empty, BANK_SIZE, vio->user_data);
+		}
+	}
 }
 
 lsdj_rom_t* lsdj_rom_read_from_memory(const unsigned char* data, size_t size, lsdj_error_t** error)
@@ -101,17 +108,13 @@ lsdj_rom_t* lsdj_rom_read_from_file(const char* path, lsdj_error_t** error)
 	return rom;
 }
 
-void lsdj_rom_write(const lsdj_rom_t* rom, lsdj_vio_t* vio, lsdj_error_t** error) {
-
-}
-
 lsdj_kit_t* lsdj_rom_get_kit(lsdj_rom_t* rom, size_t idx) {
 	return rom->kits[idx];
 }
 
 void lsdj_rom_free(lsdj_rom_t* rom) {
 	if (rom) {
-		for (size_t i = 0; i < KIT_COUNT; ++i) {
+		for (size_t i = 0; i < BANK_COUNT; ++i) {
 			if (rom->kits[i]) {
 				lsdj_kit_free(rom->kits[i]);
 			}

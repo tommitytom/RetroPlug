@@ -8,7 +8,7 @@ extern "C" {
 #include "liblsdj/error.h"
 #include "liblsdj/vio.h"
 
-#define KIT_BANK_SIZE (0x4000)
+#define BANK_SIZE (0x4000)
 #define SAMPLE_NAME_SIZE (3)
 
 typedef struct {
@@ -23,6 +23,9 @@ typedef struct
 } lsdj_sample_t;
 
 lsdj_sample_t* lsdj_sample_read(lsdj_vio_t* vio, lsdj_resource_offset_t offset, size_t idx, lsdj_error_t** error);
+
+void lsdj_sample_write(const lsdj_sample_t* sample, lsdj_vio_t* vio, lsdj_resource_offset_t offset, size_t idx, lsdj_error_t** error);
+
 void lsdj_sample_free(lsdj_sample_t* sample);
 
 #ifdef __cplusplus

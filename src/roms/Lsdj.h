@@ -106,7 +106,7 @@ struct LsdjSongName {
 	unsigned char version;
 };
 
-struct LsdjSongData {
+struct NamedData {
 	std::string name;
 	std::vector<std::byte> data;
 };
@@ -125,7 +125,7 @@ public:
 
 	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
 	std::atomic<bool> autoPlay = false;
-	std::atomic<bool> keyboardShortcuts = true;
+	std::atomic<bool> keyboardShortcuts = false;
 
 	std::vector<std::byte> saveData;
 
@@ -135,9 +135,21 @@ public:
 
 	void exportSong(int idx, std::vector<std::byte>& target);
 
-	void exportSongs(std::vector<LsdjSongData>& target);
+	void exportSongs(std::vector<NamedData>& target);
 
 	void deleteSong(int idx);
 
 	void getSongNames(std::vector<LsdjSongName>& names);
+
+	void getKitNames(std::vector<std::string>& names, const std::vector<std::byte>& romData);
+
+	void patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index);
+
+	bool importKits(std::vector<std::byte>& romData, const std::vector<std::wstring>& paths, std::string& error);
+
+	void exportKit(const std::vector<std::byte>& romData, int idx, std::vector<std::byte>& target);
+
+	void exportKits(const std::vector<std::byte>& romData, std::vector<NamedData>& target);
+
+	void deleteKit(std::vector<std::byte>& romData, int index);
 };

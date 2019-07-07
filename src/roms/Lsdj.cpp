@@ -1,7 +1,10 @@
 #include "Lsdj.h"
 
 #include <iostream>
+#include <sstream>
 #include "util/File.h"
+#include "lsdj/rom.h"
+#include "lsdj/kit.h"
 
 const int LSDJ_SAV_SIZE = 131072; // FIXME: This is probably in liblsdj somewhere
 
@@ -146,7 +149,7 @@ void Lsdj::exportSong(int idx, std::vector<std::byte>& target) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::exportSongs(std::vector<LsdjSongData>& target) {
+void Lsdj::exportSongs(std::vector<NamedData>& target) {
 	if (saveData.size() == 0) {
 		return;
 	}
@@ -173,7 +176,7 @@ void Lsdj::exportSongs(std::vector<LsdjSongData>& target) {
 	lsdj_project_get_name(project, name, sizeof(name));
 	unsigned char version = lsdj_project_get_version(project);
 
-	target.push_back(LsdjSongData());
+	target.push_back(NamedData());
 	target.back().name = std::string(name) + ".WM." + std::to_string(version);
 	serializeSong(project, target.back().data);
 
@@ -186,7 +189,7 @@ void Lsdj::exportSongs(std::vector<LsdjSongData>& target) {
 			lsdj_project_get_name(project, name, sizeof(name));
 			version = lsdj_project_get_version(project);
 
-			target.push_back(LsdjSongData());
+			target.push_back(NamedData());
 			target.back().name = std::string(name) + "." + std::to_string(version);
 			serializeSong(project, target.back().data);
 		}
@@ -264,4 +267,109 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 	}
 
 	lsdj_sav_free(sav);
+}
+
+void Lsdj::getKitNames(std::vector<std::string>& names, const std::vector<std::byte>& romData) {
+	lsdj_error_t* error = nullptr;
+	lsdj_rom_t* rom = lsdj_rom_read_from_memory((const unsigned char*)romData.data(), romData.size(), &error);
+	for (size_t i = 0; i < rom->kit_count; i++) {
+		lsdj_kit_t* kit = rom->kits[i];
+		const char* name = lsdj_kit_get_name(kit);
+		if (name[0] != '\0') {
+			names.push_back(name);
+		} else {
+			names.push_back("Empty");
+		}
+	}
+
+	lsdj_rom_free(rom);
+}
+
+void Lsdj::patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index) {
+	int kitCount = 0;
+
+	const char* data = (const char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (index == kitCount || (index == -1 && bank_is_empty_kit(data + offset))) {
+				memcpy((void*)(data + offset), kitData.data(), kitData.size());
+				break;
+			}
+
+			kitCount++;
+		}
+	}
+}
+
+bool Lsdj::importKits(std::vector<std::byte>& romData, const std::vector<std::wstring>& paths, std::string& error) {
+	for (auto& path : paths) {
+		std::vector<std::byte> f;
+		if (readFile(path, f)) {
+			patchKit(romData, f, -1);
+		}
+	}
+
+	return true;
+}
+
+void Lsdj::exportKit(const std::vector<std::byte>& romData, int index, std::vector<std::byte>& target) {
+	int kitCount = 0;
+
+	const char* data = (const char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (index == kitCount) {
+				target.resize(BANK_SIZE);
+				memcpy(target.data(), data + offset, BANK_SIZE);
+				break;
+			}
+
+			kitCount++;
+		}
+	}
+}
+
+void Lsdj::exportKits(const std::vector<std::byte>& romData, std::vector<NamedData>& target) {
+	int kitCount = 0;
+
+	const char* data = (const char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (bank_is_kit(data + offset)) {
+				char name[KIT_NAME_SIZE + 1];
+				memset(name, '\0', KIT_NAME_SIZE + 1);
+				memcpy(name, data + offset + KIT_NAME_OFFSET, KIT_NAME_SIZE);
+
+				target.push_back(NamedData());
+				NamedData& d = target.back();
+				d.name = std::string(name);
+				d.data.resize(BANK_SIZE);
+				memcpy(d.data.data(), data + offset, BANK_SIZE);
+			}
+
+			kitCount++;
+		}
+	}
+}
+
+void Lsdj::deleteKit(std::vector<std::byte>& romData, int index) {
+	int kitCount = 0;
+
+	char* data = (char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (index == kitCount && bank_is_kit(data + offset)) {
+				memset((void*)(data + offset), 0, BANK_SIZE);
+				data[offset + 0] = -1;
+				data[offset + 1] = -1;
+				break;
+			}
+
+			kitCount++;
+		}
+	}
 }

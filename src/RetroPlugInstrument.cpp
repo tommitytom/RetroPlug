@@ -327,7 +327,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 				if (note >= LsdjKeyboardNoteStart) {
 					note -= LsdjKeyboardNoteStart;
 
-					ChangeLsdjKeyboardOctave(plug, msg.NoteNumber() / 12, 0);
+					//ChangeLsdjKeyboardOctave(plug, msg.NoteNumber() / 12, 0);
 
 					if (note >= 0x3C) {
 						// Use second row of keyboard keys
@@ -336,7 +336,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 						note = (note % 12);
 					}
 
-					plug->sendSerialByte(255, reverse(LsdjKeyboardNoteMap[note]) >> 1);
+					plug->sendSerialByte(msg.mOffset, reverse(LsdjKeyboardNoteMap[note]) >> 1);
 				} else if (note >= LsdjKeyboardStartOctave) {
 					note -= LsdjKeyboardStartOctave;
 					uint8_t command = LsdjKeyboardLowOctaveMap[note];

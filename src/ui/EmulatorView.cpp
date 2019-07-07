@@ -213,6 +213,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 			std::vector<LsdjSongName> songNames;
 			_plug->saveBattery(lsdj.saveData);
+			
 			lsdj.getSongNames(songNames);
 
 			if (!songNames.empty()) {
@@ -244,6 +245,39 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 					}
 				});
 			}
+
+			std::vector<std::string> kitNames;
+			lsdj.getKitNames(kitNames, _plug->romData());
+
+			IPopupMenu* kitMenu = new IPopupMenu();
+			kitMenu->AddItem("Import...");
+			kitMenu->AddItem("Export All...");
+			kitMenu->AddSeparator();
+
+			for (size_t i = 0; i < kitNames.size(); i++) {
+				IPopupMenu* kitItemMenu = createKitMenu(kitNames[i] == "Empty");
+
+				std::stringstream ss;
+				ss << std::hex << i + 1 << ": " << kitNames[i];
+				kitMenu->AddItem(ss.str().c_str(), kitItemMenu);
+
+				kitItemMenu->SetFunction([=](int indexInMenu, IPopupMenu::Item* itemChosen) {
+					switch ((KitMenuItems)indexInMenu) {
+					case KitMenuItems::Load: LoadKit(i); break;
+					case KitMenuItems::Export: ExportKit(i); break;
+					case KitMenuItems::Delete: DeleteKit(i); break;
+					}
+				});
+			}
+
+			root->AddItem("LSDj Kits", kitMenu, (int)RootMenuItems::LsdjKits);
+
+			kitMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+				switch (idx) {
+				case 0: OpenLoadKitsDialog(); break;
+				case 1: ExportKits(); break;
+				}
+			});
 			
 			root->AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
 
@@ -368,7 +402,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 			_plug->saveBattery(lsdj.saveData);
 			
 			if (lsdj.saveData.size() > 0) {
-				std::vector<LsdjSongData> songData;
+				std::vector<NamedData> songData;
 				lsdj.exportSongs(songData);
 
 				for (auto& song : songData) {
@@ -397,6 +431,71 @@ void EmulatorView::DeleteSong(int index) {
 	}
 }
 
+void EmulatorView::LoadKit(int index) {
+	std::vector<FileDialogFilters> types = {
+		{ L"LSDj Kits", L"*.kit" }
+	};
+
+	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	if (paths.size() > 0) {
+		Lsdj& lsdj = _plug->lsdj();
+
+		std::vector<std::byte> kitData;
+		readFile(paths[0], kitData);
+		lsdj.patchKit(_plug->romData(), kitData, index);
+		_plug->updateRom();
+	}
+}
+
+void EmulatorView::DeleteKit(int index) {
+	Lsdj& lsdj = _plug->lsdj();
+	lsdj.deleteKit(_plug->romData(), index);
+	_plug->updateRom();
+}
+
+void EmulatorView::ExportKit(int index) {
+	std::vector<FileDialogFilters> types = {
+		{ L"LSDj Kit", L"*.kit" }
+	};
+
+	std::vector<std::string> kitNames;
+	_plug->lsdj().getKitNames(kitNames, _plug->romData());
+
+	std::wstring path = BasicFileSave(types, s2ws(kitNames[index]));
+	if (path.size() == 0) {
+		return;
+	}
+
+	Lsdj& lsdj = _plug->lsdj();
+	if (lsdj.found) {
+		std::vector<std::byte> kitData;
+		lsdj.exportKit(_plug->romData(), index, kitData);
+
+		if (kitData.size() > 0) {
+			writeFile(path, kitData);
+		}
+	}
+}
+
+void EmulatorView::ExportKits() {
+	std::vector<std::wstring> paths = BasicFileOpen({}, false, true);
+	if (paths.size() > 0) {
+		Lsdj& lsdj = _plug->lsdj();
+		if (lsdj.found) {
+			if (lsdj.saveData.size() > 0) {
+				std::vector<NamedData> kitData;
+				lsdj.exportKits(_plug->romData(), kitData);
+
+				for (auto& kit : kitData) {
+					std::filesystem::path p(paths[0]);
+					p /= kit.name + ".kit";
+					writeFile(p.wstring(), kit.data);
+				}
+			}
+		}
+	}
+}
+
 void EmulatorView::ResetSystem(bool fast) {
 	_plug->reset(_plug->model(), fast);
 }
@@ -412,6 +511,23 @@ void EmulatorView::OpenLoadSongsDialog() {
 		std::string error;
 		if (lsdj.importSongs(paths, error)) {
 			_plug->loadBattery(lsdj.saveData, false);
+		} else {
+			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
+		}
+	}
+}
+
+void EmulatorView::OpenLoadKitsDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ L"LSDj Kits", L"*.kit" }
+	};
+
+	std::vector<std::wstring> paths = BasicFileOpen(types, true);
+	Lsdj& lsdj = _plug->lsdj();
+	if (lsdj.found) {
+		std::string error;
+		if (lsdj.importKits(_plug->romData(), paths, error)) {
+			_plug->updateRom();
 		} else {
 			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
 		}

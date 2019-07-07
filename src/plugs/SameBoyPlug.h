@@ -25,7 +25,8 @@ enum class SaveStateType {
 };
 
 struct SameboyPlugSymbols {
-	void*(*sameboy_init)(void* user_data, const char* path, int model, bool fast_boot);
+	void*(*sameboy_init)(void* user_data, const char* romData, size_t romSize, int model, bool fast_boot);
+	void(*sameboy_update_rom)(void* state, const char* rom_data, size_t rom_size);
 	void(*sameboy_free)(void* state);
 	void(*sameboy_reset)(void* state, int model, bool fast_boot);
 
@@ -82,6 +83,7 @@ private:
 
 	double _sampleRate = 48000;
 
+	std::vector<std::byte> _romData;
 	std::vector<std::byte> _saveData;
 	SaveStateType _saveType;
 
@@ -90,6 +92,8 @@ public:
 	~SameBoyPlug() { shutdown(); }
 
 	Lsdj& lsdj() { return _lsdj; }
+
+	std::vector<std::byte>& romData() { return _romData; }
 
 	void setRomPath(const std::wstring& path) { _romPath = path; }
 
@@ -172,6 +176,8 @@ public:
 	void setSavePath(const std::wstring& path) { _savePath = path; }
 
 	const std::wstring& savePath() const { return _savePath; }
+
+	void updateRom();
 
 private:
 	void updateButtons();

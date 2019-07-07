@@ -90,7 +90,7 @@ static bool serial_end(GB_gameboy_t* gb) {
     return ret;
 }
 
-void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot) {
+void* sameboy_init(void* user_data, const char* rom_data, size_t rom_size, int model, bool fast_boot) {
     sameboy_state_t* state = malloc(sizeof(sameboy_state_t));
 
     state->vblankOccurred = false;
@@ -124,7 +124,7 @@ void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot)
 
     GB_set_rendering_disabled(&state->gb, true);
 
-    if (GB_load_rom(&state->gb, path)) {
+    if (GB_load_rom_from_buffer(&state->gb, rom_data, rom_size)) {
         free(state);
         return NULL;
     }
@@ -132,6 +132,18 @@ void* sameboy_init(void* user_data, const char* path, int model, bool fast_boot)
     queue_init(&state->midiQueue);
 
     return state;
+}
+
+void sameboy_update_rom(void* state, const char* rom_data, size_t rom_size) {
+    sameboy_state_t* s = (sameboy_state_t*)state;
+
+    size_t size;
+    uint16_t bank;
+    void* rom = GB_get_direct_access(&s->gb, GB_DIRECT_ACCESS_ROM, &size, &bank);
+
+    if (size <= rom_size) {
+        memcpy(rom, rom_data, rom_size);
+    }
 }
 
 void sameboy_disable_rendering(void* state, bool disabled) {

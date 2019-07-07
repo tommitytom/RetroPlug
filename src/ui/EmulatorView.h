@@ -83,7 +83,7 @@ private:
 
 	void OpenLoadSongsDialog();
 
-	void OpenLoadDialog();
+	void OpenLoadKitsDialog();
 
 	void ToggleKeyboardMode();
 
@@ -94,6 +94,14 @@ private:
 	void LoadSong(int index);
 
 	void DeleteSong(int index);
+
+	void LoadKit(int index);
+
+	void DeleteKit(int index);
+
+	void ExportKit(int index);
+
+	void ExportKits();
 
 	void ResetSystem(bool fast);
 
