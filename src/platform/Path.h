@@ -1,5 +1,9 @@
 #pragma once
 
+static std::string getContentPath(std::string file = "") {
+    return "";
+}
+/*
 #include <Shlobj.h>
 
 static std::string getContentPath(std::string file = "") {
@@ -15,3 +19,4 @@ static std::string getContentPath(std::string file = "") {
 
 	return "";
 }
+*/

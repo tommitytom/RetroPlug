@@ -1,5 +1,5 @@
 #pragma once
-
+/*
 #include <windows.h>
 #include <strsafe.h>
 
@@ -33,3 +33,4 @@ static void ErrorExit(LPTSTR lpszFunction) {
 	LocalFree(lpDisplayBuf);
 	ExitProcess(dw);
 }
+*/

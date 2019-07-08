@@ -8,6 +8,8 @@
 #include "base64.h"
 #include "roms/Lsdj.h"
 
+namespace fs = boost::filesystem;
+
 static std::string layoutToString(InstanceLayout layout) {
 	switch (layout) {
 	case InstanceLayout::Auto: return "auto";
@@ -183,7 +185,7 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 	SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
 	plugPtr->setModel(model);
 
-	if (std::filesystem::exists(romPath)) {
+	if (fs::exists(romPath)) {
 		plugPtr->init(s2ws(romPath), model, true);
 	} else {
 		plugPtr->setRomPath(s2ws(romPath));

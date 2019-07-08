@@ -6,7 +6,7 @@
 #include "Keys.h"
 #include "Buttons.h"
 #include "ConfigLoader.h"
-#include "util/String.h"
+#include "util/xstring.h"
 #include "platform/Logger.h"
 #include "platform/Path.h"
 

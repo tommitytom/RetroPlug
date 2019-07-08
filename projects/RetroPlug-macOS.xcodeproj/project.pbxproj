@@ -124,56 +124,48 @@
 		536150D322D2F6A9007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150D422D2F6A9007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150D522D2F6A9007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150D622D2F6A9007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150D722D2F6A9007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150D822D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150D922D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150DA22D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150DB22D2F6AA007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150DC22D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150DD22D2F6AA007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150DE22D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150DF22D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150E022D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150E122D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150E222D2F6AA007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150E322D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150E422D2F6AA007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150E522D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150E622D2F6AB007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150E722D2F6AB007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150E822D2F6AB007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150E922D2F6AB007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150EA22D2F6AB007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150EB22D2F6AB007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150EC22D2F6AB007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150ED22D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150EE22D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150EF22D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150F022D2F6AD007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150F122D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150F222D2F6AD007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150F322D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150F422D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150F522D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150F622D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150F722D2F6AD007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150F822D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		536150F922D2F6AD007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		536150FA22D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150FB22D2F6AE007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150FC22D2F6AE007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		536150FD22D2F6AE007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150FE22D2F6AE007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150FF22D2F6AE007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		5361510022D2F6AE007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		5361510122D2F6AE007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		5361510222D2F6AF007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		5361510322D2F6AF007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
 		5361510422D2F6AF007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		5361510522D2F6AF007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		5361510622D2F6AF007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
-		5361510722D2F6AF007F65A5 /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438F22D2E8DD00CB3F77 /* IPlugProcessor.cpp */; };
 		5361510822D2F6AF007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		5361510922D2F6B9007F65A5 /* APP in Resources */ = {isa = PBXBuildFile; fileRef = 530A437722D2E8DA00CB3F77 /* APP */; };
 		5361510A22D2F6BD007F65A5 /* AAX in Resources */ = {isa = PBXBuildFile; fileRef = 530A437122D2E8DA00CB3F77 /* AAX */; };
@@ -191,6 +183,7 @@
 		5361511622D2F6F0007F65A5 /* swell-wnd.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A422D2E9AA00CB3F77 /* swell-wnd.mm */; };
 		5361511722D2F6F0007F65A5 /* swell.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A922D2E9AA00CB3F77 /* swell.cpp */; };
 		5361511822D2F6F0007F65A5 /* swellappmain.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A122D2E9AA00CB3F77 /* swellappmain.mm */; };
+		5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */ = {isa = PBXBuildFile; fileRef = 530A438922D2E8DC00CB3F77 /* IPlugProcessor.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -746,6 +739,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4F6FD2B022675B6300FC59E6 /* (null) in Headers */,
+				5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1232,7 +1226,6 @@
 				5361507722D2F61A007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150DE22D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150D822D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150DD22D2F6AA007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150DB22D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BC22D2F693007F65A5 /* IControl.cpp in Sources */,
 				536150DC22D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1250,7 +1243,6 @@
 				5361507E22D2F61F007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				5361510122D2F6AE007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150FB22D2F6AE007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				5361510022D2F6AE007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150FE22D2F6AE007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CB22D2F696007F65A5 /* IControl.cpp in Sources */,
 				536150FF22D2F6AE007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1268,7 +1260,6 @@
 				5361507922D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150EC22D2F6AB007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150E622D2F6AB007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150EB22D2F6AB007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150E922D2F6AB007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C222D2F694007F65A5 /* IControl.cpp in Sources */,
 				536150EA22D2F6AB007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1286,7 +1277,6 @@
 				5361507822D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150E522D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150DF22D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150E422D2F6AA007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150E222D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BF22D2F694007F65A5 /* IControl.cpp in Sources */,
 				536150E322D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1304,7 +1294,6 @@
 				5361507A22D2F61C007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150F322D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150ED22D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150F222D2F6AD007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150F022D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C522D2F695007F65A5 /* IControl.cpp in Sources */,
 				536150F122D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1324,7 +1313,6 @@
 				536150D022D2F697007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				5361510522D2F6AF007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CE22D2F697007F65A5 /* IControl.cpp in Sources */,
-				5361510722D2F6AF007F65A5 /* IPlugProcessor.cpp in Sources */,
 				4F6FD2B722675B6300FC59E6 /* (null) in Sources */,
 				5361508022D2F622007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 			);
@@ -1348,7 +1336,6 @@
 				536150D722D2F6A9007F65A5 /* IPlugTimer.cpp in Sources */,
 				5361511022D2F6F0007F65A5 /* swell-gdi.mm in Sources */,
 				536150D122D2F6A9007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150D622D2F6A9007F65A5 /* IPlugProcessor.cpp in Sources */,
 				5361511322D2F6F0007F65A5 /* swell-menu.mm in Sources */,
 				5361511122D2F6F0007F65A5 /* swell-ini.cpp in Sources */,
 				536150D422D2F6A9007F65A5 /* IPlugPaths.mm in Sources */,
@@ -1370,7 +1357,6 @@
 				5361507B22D2F61D007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150FA22D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
 				536150F422D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
-				536150F922D2F6AD007F65A5 /* IPlugProcessor.cpp in Sources */,
 				536150F722D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C822D2F696007F65A5 /* IControl.cpp in Sources */,
 				536150F822D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -2206,6 +2192,7 @@
 		4FD16A0C13B63082001D0217 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_ENTITLEMENTS = "RetroPlug-macOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 686EDA2T8T;
@@ -2215,7 +2202,15 @@
 					"$(APP_DEFS)",
 					"$(inherited)",
 				);
-				HEADER_SEARCH_PATHS = "$(inherited)";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					../config,
+					../thirdparty/iPlug2/IPlug/APP,
+					../thirdparty/liblsdj,
+					/usr/local/include,
+					"../src/**",
+					../thirdparty/taojson/include,
+				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
@@ -2233,6 +2228,7 @@
 		4FD16A0D13B63082001D0217 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_ENTITLEMENTS = "RetroPlug-macOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 686EDA2T8T;
@@ -2242,7 +2238,15 @@
 					"$(APP_DEFS)",
 					"$(inherited)",
 				);
-				HEADER_SEARCH_PATHS = "$(inherited)";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					../config,
+					../thirdparty/iPlug2/IPlug/APP,
+					../thirdparty/liblsdj,
+					/usr/local/include,
+					"../src/**",
+					../thirdparty/taojson/include,
+				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
@@ -2260,6 +2264,7 @@
 		4FD16A0E13B63082001D0217 /* Tracer */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_ENTITLEMENTS = "RetroPlug-macOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 686EDA2T8T;
@@ -2269,7 +2274,15 @@
 					"$(APP_DEFS)",
 					"$(inherited)",
 				);
-				HEADER_SEARCH_PATHS = "$(inherited)";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					../config,
+					../thirdparty/iPlug2/IPlug/APP,
+					../thirdparty/liblsdj,
+					/usr/local/include,
+					"../src/**",
+					../thirdparty/taojson/include,
+				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;

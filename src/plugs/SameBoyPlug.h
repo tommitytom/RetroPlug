@@ -1,7 +1,7 @@
 #pragma once
 
-#include "platform/DynamicLibrary.h"
-#include "platform/DynamicLibraryMemory.h"
+//#include "platform/DynamicLibrary.h"
+//#include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
 #include "roms/Lsdj.h"
 #include <mutex>

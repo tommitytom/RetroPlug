@@ -10,6 +10,10 @@ struct FileDialogFilters {
 };
 
 static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
+    return std::vector<std::wstring>();
+}
+
+/*static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
 		targetFilters[i].pszName = filters[i].name.c_str();
@@ -78,8 +82,13 @@ static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilte
 
 	delete[] targetFilters;
 	return ret;
+}*/
+
+static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters, const std::wstring& fileName = L"") {
+    return L"";
 }
 
+/*
 static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters, const std::wstring& fileName = L"") {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
@@ -134,3 +143,4 @@ static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters,
 	delete[] targetFilters;
 	return ret;
 }
+*/
