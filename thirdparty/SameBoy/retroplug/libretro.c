@@ -11,6 +11,20 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
   return r << 16 | g << 8 | b;
 }
 
+int vasprintf(char **str, const char *fmt, va_list args)
+{
+	/* size_t size = _vscprintf(fmt, args) + 1;
+	*str = (char*)malloc(size);
+	int ret = vsprintf(*str, fmt, args);
+	if (ret != size - 1) {
+		free(*str);
+		*str = NULL;
+		return -1;
+	}
+	return ret;*/
+    return 0;
+}
+
 #define PIXEL_WIDTH 160
 #define PIXEL_HEIGHT 144
 #define PIXEL_COUNT (PIXEL_WIDTH * PIXEL_HEIGHT)

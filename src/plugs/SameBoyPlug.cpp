@@ -22,7 +22,7 @@ int getGameboyModel(GameboyModel model) {
 	case GameboyModel::CgbC: return 0x203;
 	case GameboyModel::CgbE: return 0x205;
 	case GameboyModel::Agb: return 0x206;
-	case GameboyModel::Auto: 
+	case GameboyModel::Auto:
 	default: return 0x205;
 	}
 }
