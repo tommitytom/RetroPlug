@@ -10,27 +10,27 @@
 			<key>factoryFunction</key>
 			<string>RetroPlug_Factory</string>
 			<key>manufacturer</key>
-			<string>Acme</string>
+			<string>tmtt</string>
 			<key>name</key>
 			<string>tommitytom: RetroPlug</string>
 			<key>sandboxSafe</key>
 			<true/>
 			<key>subtype</key>
-			<string>PmBl</string>
+			<string>2wvF</string>
 			<key>type</key>
 			<string>aumu</string>
 			<key>version</key>
-			<integer>65536</integer>
+			<integer>4096</integer>
 		</dict>
 	</array>
 	<key>AudioUnit Version</key>
-	<string>0x00010000</string>
+	<string>0x00001000</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
 	<string>RetroPlug</string>
 	<key>CFBundleGetInfoString</key>
-	<string>RetroPlug v1.0.0 Copyright 2019 Acme Inc</string>
+	<string>RetroPlug v0.16.0 Copyright 2019 Tom Yaxley</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.tommitytom.audiounit.RetroPlug</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -40,11 +40,11 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>0.16.0</string>
 	<key>CFBundleSignature</key>
-	<string>PmBl</string>
+	<string>2wvF</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>0.16.0</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

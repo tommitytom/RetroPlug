@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>RetroPlug</string>
 	<key>CFBundleGetInfoString</key>
-	<string>RetroPlug v1.0.0 Copyright 2019 Acme Inc</string>
+	<string>RetroPlug v0.16.0 Copyright 2019 Tom Yaxley</string>
 	<key>CFBundleIconFile</key>
 	<string>RetroPlug.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -19,11 +19,11 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>0.16.0</string>
 	<key>CFBundleSignature</key>
-	<string>PmBl</string>
+	<string>2wvF</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>0.16.0</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>

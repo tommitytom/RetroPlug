@@ -14,13 +14,13 @@ import plistlib, os, datetime, fileinput, glob, sys, string, shutil
 scriptpath = os.path.dirname(os.path.realpath(__file__))
 projectpath = os.path.abspath(os.path.join(scriptpath, os.pardir))
 
-sys.path.insert(0, projectpath + '/../../scripts/')
+sys.path.insert(0, projectpath + '/thirdparty/iPlug2/scripts/')
 
 from parse_config import parse_config, parse_xcconfig
 
 def main():
   config = parse_config(projectpath)
-  xcconfig = parse_xcconfig(projectpath + '/../../common-mac.xcconfig')
+  xcconfig = parse_xcconfig(projectpath + '/thirdparty/iPlug2/common-mac.xcconfig')
 
   CFBundleGetInfoString = config['BUNDLE_NAME'] + " v" + config['FULL_VER_STR'] + " " + config['PLUG_COPYRIGHT_STR']
   CFBundleVersion = config['FULL_VER_STR']
@@ -69,6 +69,8 @@ def main():
 
   plistlib.writePlist(vst3, plistpath)
 
+  print "VST3 Done!"
+
 # VST2
 
   plistpath = projectpath + "/resources/" + config['BUNDLE_NAME'] + "-VST2-Info.plist"
@@ -85,6 +87,8 @@ def main():
   vst2['CSResourcesFileMapped'] = CSResourcesFileMapped
 
   plistlib.writePlist(vst2, plistpath)
+
+  print "VST2 Done!"
 
 # AUDIOUNIT v2
 
@@ -123,6 +127,8 @@ def main():
   auv2['AudioComponents'][0]['sandboxSafe'] = True
 
   plistlib.writePlist(auv2, plistpath)
+
+  print "AU2 Done!"
 
 # AUDIOUNIT v3
 
@@ -166,6 +172,8 @@ def main():
 
   plistlib.writePlist(auv3, plistpath)
 
+  print "AU3 Done!"
+
 # AAX
 
   plistpath = projectpath + "/resources/" + config['BUNDLE_NAME'] + "-AAX-Info.plist"
@@ -180,6 +188,8 @@ def main():
   aax['CSResourcesFileMapped'] = CSResourcesFileMapped
 
   plistlib.writePlist(aax, plistpath)
+
+  print "AAX Done!"
 
 # APP
 
@@ -202,6 +212,8 @@ def main():
 #  macOSapp['NSMicrophoneUsageDescription'] = 	"This app needs mic access to process audio."
 
   plistlib.writePlist(macOSapp, plistpath)
+
+  print "APP Done!"
 
 if __name__ == '__main__':
   main()

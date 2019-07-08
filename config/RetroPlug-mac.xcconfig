@@ -1,4 +1,4 @@
-#include "../../../common-mac.xcconfig"
+#include "../thirdparty/iPlug2/common-mac.xcconfig"
 
 //------------------------------
 // Global build settings
