@@ -1,6 +1,6 @@
 #pragma once
 
-#include <windows.h>
+//#include <windows.h>
 #include <map>
 #include "IGraphicsStructs.h"
 
@@ -42,11 +42,11 @@ class LsdjKeyMap {
 private:
 	State _state = State::None;
 	ButtonQueue _presses;
-	KeyMap* _gbKeyMap;
+	//KeyMap* _gbKeyMap;
 	std::map<VirtualKey, LsdjActionType> _actionMap;
 
 public:
-	void load(KeyMap& keyMap, const tao::json::value& config) {
+	/*void load(KeyMap& keyMap, const tao::json::value& config) {
 		_gbKeyMap = &keyMap;
 
 		for (const auto& action : config.get_object()) {
@@ -62,7 +62,7 @@ public:
 				}
 			}
 		}
-	}
+	}*/
 
 	void clear() {
 		_presses.clear();

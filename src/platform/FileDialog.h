@@ -1,16 +1,16 @@
 #pragma once
 
-#include <ShObjIdl.h>
+//#include <ShObjIdl.h>
 #include <vector>
 #include <string>
 
 struct FileDialogFilters {
-	std::wstring name;
-	std::wstring extensions;
+	tstring name;
+	tstring extensions;
 };
 
-static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
-    return std::vector<std::wstring>();
+static std::vector<tstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
+    return std::vector<tstring>();
 }
 
 /*static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false) {
@@ -84,8 +84,8 @@ static std::vector<std::wstring> BasicFileOpen(const std::vector<FileDialogFilte
 	return ret;
 }*/
 
-static std::wstring BasicFileSave(const std::vector<FileDialogFilters>& filters, const std::wstring& fileName = L"") {
-    return L"";
+static tstring BasicFileSave(const std::vector<FileDialogFilters>& filters, const tstring& fileName = T("")) {
+    return T("");
 }
 
 /*

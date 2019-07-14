@@ -4,8 +4,11 @@
 #include "platform/Path.h"
 #include "util/File.h"
 #include "util/Serializer.h"
+#include "Buttons.h"
 
-#include <tao/json.hpp>
+#include <sstream>
+
+//#include <tao/json.hpp>
 
 EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
 	: _plug(plug), _manager(manager), _graphics(graphics)
@@ -17,10 +20,10 @@ EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* g
 		{ "High-pass Filter", 1 }
 	};
 
-	tao::json::value config;
-	loadButtonConfig(config);
-	_keyMap.load(config.at("gameboy"));
-	_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
+	//tao::json::value config;
+	//loadButtonConfig(config);
+	//_keyMap.load(config.at("gameboy"));
+	//_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
 
 	for (size_t i = 0; i < 2; i++) {
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
@@ -76,10 +79,10 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 	if (_plug && _plug->active()) {
 		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
-			return _lsdjKeyMap.onKey(key, down);
+			//return _lsdjKeyMap.onKey(key, down);
 		} else {
 			ButtonEvent ev;
-			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
+			//ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
 			ev.down = down;
 
 			if (ev.id != ButtonTypes::MAX) {
@@ -99,7 +102,7 @@ void EmulatorView::Draw(IGraphics& g) {
 		// FIXME: This constant is the delta time between frames.
 		// It is set to this because on windows iPlug doesn't go higher
 		// than 30fps!  Should probably add some proper time calculation here.
-		_lsdjKeyMap.update(bus, 33.3333333);
+		//_lsdjKeyMap.update(bus, 33.3333333);
 
 		size_t available = bus->video.readAvailable();
 		if (available > 0) {
@@ -179,7 +182,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::Reset: ResetSystem(true); break;
 		case SystemMenuItems::NewSram: _plug->clearBattery(true); break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
-		case SystemMenuItems::SaveSram: _plug->saveBattery(L""); break;
+		case SystemMenuItems::SaveSram: _plug->saveBattery(T("")); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
 		}
 	});
@@ -202,7 +205,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
 			if (indexInMenu == settingsMenu->NItems() - 1) {
-				ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+				//ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 			}
 		});
 
@@ -369,10 +372,10 @@ void EmulatorView::ToggleKeyboardMode() {
 
 void EmulatorView::ExportSong(const LsdjSongName& songName) {
 	std::vector<FileDialogFilters> types = {
-		{ L"LSDj Songs", L"*.lsdsng" }
+		{ T("LSDj Songs"), T("*.lsdsng") }
 	};
 
-	std::wstring path = BasicFileSave(types, s2ws(songName.name + "." + std::to_string(songName.version)));
+	tstring path = BasicFileSave(types, songName.name + "." + std::to_string(songName.version));
 	if (path.size() == 0) {
 		return;
 	}
@@ -394,7 +397,7 @@ void EmulatorView::ExportSong(const LsdjSongName& songName) {
 }
 
 void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
-	std::vector<std::wstring> paths = BasicFileOpen({}, false, true);
+	std::vector<tstring> paths = BasicFileOpen({}, false, true);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
@@ -406,9 +409,9 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				lsdj.exportSongs(songData);
 
 				for (auto& song : songData) {
-					std::filesystem::path p(paths[0]);
+					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					writeFile(p.wstring(), song.data);
+					writeFile(p.string(), song.data);
 				}
 			}
 		}
@@ -433,10 +436,10 @@ void EmulatorView::DeleteSong(int index) {
 
 void EmulatorView::LoadKit(int index) {
 	std::vector<FileDialogFilters> types = {
-		{ L"LSDj Kits", L"*.kit" }
+		{ T("LSDj Kits"), T("*.kit") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 
@@ -455,13 +458,13 @@ void EmulatorView::DeleteKit(int index) {
 
 void EmulatorView::ExportKit(int index) {
 	std::vector<FileDialogFilters> types = {
-		{ L"LSDj Kit", L"*.kit" }
+		{ T("LSDj Kit"), T("*.kit") }
 	};
 
 	std::vector<std::string> kitNames;
 	_plug->lsdj().getKitNames(kitNames, _plug->romData());
 
-	std::wstring path = BasicFileSave(types, s2ws(kitNames[index]));
+	tstring path = BasicFileSave(types, (kitNames[index]));
 	if (path.size() == 0) {
 		return;
 	}
@@ -478,7 +481,7 @@ void EmulatorView::ExportKit(int index) {
 }
 
 void EmulatorView::ExportKits() {
-	std::vector<std::wstring> paths = BasicFileOpen({}, false, true);
+	std::vector<tstring> paths = BasicFileOpen({}, false, true);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
@@ -487,9 +490,9 @@ void EmulatorView::ExportKits() {
 				lsdj.exportKits(_plug->romData(), kitData);
 
 				for (auto& kit : kitData) {
-					std::filesystem::path p(paths[0]);
+					fs::path p(paths[0]);
 					p /= kit.name + ".kit";
-					writeFile(p.wstring(), kit.data);
+					writeFile(p.string(), kit.data);
 				}
 			}
 		}
@@ -502,10 +505,10 @@ void EmulatorView::ResetSystem(bool fast) {
 
 void EmulatorView::OpenLoadSongsDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"LSDj Songs", L"*.lsdsng" }
+        { T("LSDj Songs"), T("*.lsdsng") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, true);
+	std::vector<tstring> paths = BasicFileOpen(types, true);
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
@@ -519,10 +522,10 @@ void EmulatorView::OpenLoadSongsDialog() {
 
 void EmulatorView::OpenLoadKitsDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"LSDj Kits", L"*.kit" }
+		{ T("LSDj Kits"), T("*.kit") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, true);
+	std::vector<tstring> paths = BasicFileOpen(types, true);
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
@@ -536,10 +539,10 @@ void EmulatorView::OpenLoadKitsDialog() {
 
 void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	std::vector<FileDialogFilters> types = {
-		{ L"GameBoy Roms", L"*.gb;*.gbc" }
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		_plug->init(paths[0], model, false);
 		_plug->disableRendering(false);
@@ -553,7 +556,7 @@ void EmulatorView::DisableRendering(bool disable) {
 	}
 }
 
-void EmulatorView::LoadRom(const std::wstring & path) {
+void EmulatorView::LoadRom(const tstring & path) {
 	_plug->init(path, GameboyModel::Auto, false);
 	_plug->disableRendering(false);
 	HideText();
@@ -561,10 +564,10 @@ void EmulatorView::LoadRom(const std::wstring & path) {
 
 void EmulatorView::OpenLoadSramDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"GameBoy Saves", L"*.sav" }
+		{ T("GameBoy Saves"), T("*.sav") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		_plug->loadBattery(paths[0], true);
 	}
@@ -572,10 +575,10 @@ void EmulatorView::OpenLoadSramDialog() {
 
 void EmulatorView::OpenSaveSramDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"GameBoy Saves", L"*.sav" }
+		{ T("GameBoy Saves"), T("*.sav") }
 	};
 
-	std::wstring path = BasicFileSave(types);
+	tstring path = BasicFileSave(types);
 	if (path.size() > 0) {
 		_plug->saveBattery(path);
 	}

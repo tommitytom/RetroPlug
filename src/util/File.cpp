@@ -10,20 +10,20 @@ size_t getFileSize(std::ifstream& stream) {
 	return size;
 }
 
-bool readFile(const std::string& path, std::vector<std::byte>& target) {
+bool readFile(const tstring& path, std::vector<std::byte>& target) {
 	std::ifstream f(path, std::ios::binary);
 	target.resize(getFileSize(f));
 	f.read((char*)target.data(), target.size());
 	return true;
 }
 
-bool readFile(const std::string& path, std::byte* target, size_t size, bool binary) {
+bool readFile(const tstring& path, std::byte* target, size_t size, bool binary) {
 	std::ifstream f(path, binary ? std::ios::binary : 0);
 	f.read((char*)target, size);
 	return true;
 }
 
-bool readFile(const std::string& path, std::string& target) {
+bool readFile(const tstring& path, std::string& target) {
 	std::ifstream f(path);
 	std::stringstream ss;
 	ss << f.rdbuf();
@@ -31,50 +31,15 @@ bool readFile(const std::string& path, std::string& target) {
 	return true;
 }
 
-bool writeFile(const std::string& path, const std::vector<std::byte>& data) {
+bool writeFile(const tstring& path, const std::vector<std::byte>& data) {
 	return writeFile(path, (std::byte*)data.data(), data.size());
 }
 
-bool writeFile(const std::string& path, const std::string& data) {
+bool writeFile(const tstring& path, const std::string& data) {
 	return writeFile(path, (std::byte*)data.data(), data.size());
 }
 
-bool writeFile(const std::string& path, const std::byte* data, size_t size, bool binary) {
-	std::ofstream f(path, binary ? std::ios::binary : 0);
-	f.write((char*)data, size);
-	return true;
-}
-
-bool readFile(const std::wstring& path, std::vector<std::byte>& target) {
-	std::ifstream f(path, std::ios::binary);
-	target.resize(getFileSize(f));
-	f.read((char*)target.data(), target.size());
-	return true;
-}
-
-bool readFile(const std::wstring& path, std::byte* target, size_t size, bool binary) {
-	std::ifstream f(path, binary ? std::ios::binary : 0);
-	f.read((char*)target, size);
-	return true;
-}
-
-bool readFile(const std::wstring& path, std::string& target) {
-	std::ifstream f(path);
-	std::stringstream ss;
-	ss << f.rdbuf();
-	target = ss.str();
-	return true;
-}
-
-bool writeFile(const std::wstring& path, const std::vector<std::byte>& data) {
-	return writeFile(path, (std::byte*)data.data(), data.size(), true);
-}
-
-bool writeFile(const std::wstring& path, const std::string& data) {
-	return writeFile(path, (std::byte*)data.data(), data.size(), false);
-}
-
-bool writeFile(const std::wstring& path, const std::byte* data, size_t size, bool binary) {
+bool writeFile(const tstring& path, const std::byte* data, size_t size, bool binary) {
 	std::ofstream f(path, binary ? std::ios::binary : 0);
 	f.write((char*)data, size);
 	return true;

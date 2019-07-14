@@ -35,9 +35,9 @@ public:
 
 	void OnDrop(const char* str);
 
-	void LoadProject(const std::wstring& path);
+	void LoadProject(const tstring& path);
 
-	void LoadProjectOrRom(const std::wstring& path);
+	void LoadProjectOrRom(const tstring& path);
 
 private:
 	void UpdateLayout();

@@ -1,8 +1,8 @@
 #include "SameBoyPlug.h"
-#include "util/String.h"
+#include "util/xstring.h"
+#include "util/fs.h"
 #include "Constants.h"
 #include <fstream>
-#include <filesystem>
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "src/audio/miniaudio.h"
@@ -59,7 +59,7 @@ SameBoyPlug::SameBoyPlug() {
 	_library.get("sameboy_update_rom", sameboy_update_rom);*/
 }
 
-void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fastBoot) {
+void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot) {
 	_romPath = romPath;
 	_model = model;
 
@@ -86,8 +86,8 @@ void SameBoyPlug::init(const std::wstring& romPath, GameboyModel model, bool fas
 
 	std::vector<std::byte> saveData;
 	if (_saveData.empty()) {
-		_savePath = changeExt(romPath, L".sav");
-		if (std::filesystem::exists(_savePath)) {
+		_savePath = changeExt(romPath, T(".sav"));
+		if (fs::exists(_savePath)) {
 			readFile(_savePath, saveData);
 			sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
 		}
@@ -142,7 +142,7 @@ size_t SameBoyPlug::batterySize() {
 	return sameboy_battery_size(_instance);
 }
 
-bool SameBoyPlug::saveBattery(std::wstring path) {
+bool SameBoyPlug::saveBattery(tstring path) {
 	std::vector<std::byte> target;
 	if (saveBattery(target)) {
 		if (path.empty()) {
@@ -173,7 +173,7 @@ bool SameBoyPlug::saveBattery(std::byte* data, size_t size) {
 	return sameboy_save_battery(_instance, (char*)data, size);
 }
 
-bool SameBoyPlug::loadBattery(const std::wstring& path, bool reset) {
+bool SameBoyPlug::loadBattery(const tstring& path, bool reset) {
 	std::vector<std::byte> data;
 	if (!readFile(path, data)) {
 		return false;
@@ -212,7 +212,7 @@ bool SameBoyPlug::clearBattery(bool reset) {
 	memset(d.data(), 0, size);
 	sameboy_load_battery(_instance, (char*)d.data(), d.size());
 
-	_savePath = L"";
+	_savePath = T("");
 
 	if (reset) {
 		_resetSamples = (int)(_sampleRate / 2);

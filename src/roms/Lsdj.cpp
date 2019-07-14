@@ -27,7 +27,7 @@ int nextProjectIndex(lsdj_sav_t* sav, int startIdx) {
 	return -1;
 }
 
-bool Lsdj::importSongs(const std::vector<std::wstring>& paths, std::string& errorStr) {
+bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
 	lsdj_error_t* error = nullptr;
 	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
 	if (sav == nullptr) {
@@ -302,7 +302,7 @@ void Lsdj::patchKit(std::vector<std::byte>& romData, const std::vector<std::byte
 	}
 }
 
-bool Lsdj::importKits(std::vector<std::byte>& romData, const std::vector<std::wstring>& paths, std::string& error) {
+bool Lsdj::importKits(std::vector<std::byte>& romData, const std::vector<tstring>& paths, std::string& error) {
 	for (auto& path : paths) {
 		std::vector<std::byte> f;
 		if (readFile(path, f)) {

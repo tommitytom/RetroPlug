@@ -34,7 +34,7 @@ enum class MidiChannelRouting {
 class RetroPlug {
 private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
-	std::wstring _projectPath;
+	tstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
 	SaveStateType _saveType = SaveStateType::State;
 
@@ -69,11 +69,11 @@ public:
 		}
 	}
 
-	const std::wstring& projectPath() const {
+	const tstring& projectPath() const {
 		return _projectPath;
 	}
 
-	void setProjectPath(const std::wstring& path) {
+	void setProjectPath(const tstring& path) {
 		_projectPath = path;
 	}
 

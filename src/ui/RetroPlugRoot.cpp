@@ -3,7 +3,9 @@
 #include <cmath>
 #include "platform/FileDialog.h"
 #include "util/File.h"
+#include "util/fs.h"
 #include "util/Serializer.h"
+#include "Keys.h"
 
 RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug): IControl(b), _plug(plug) {
 	
@@ -124,19 +126,19 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 }
 
 void RetroPlugRoot::OnDrop(const char* str) {
-	LoadProjectOrRom(s2ws(str));
+	LoadProjectOrRom((str));
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
 	SameBoyPlugPtr source = view->Plug();
 	
-	std::wstring romPath;
+	tstring romPath;
 	if (type == CreateInstanceType::LoadRom) {
 		std::vector<FileDialogFilters> types = {
-			{ L"GameBoy Roms", L"*.gb;*.gbc" }
+			{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 		};
 
-		std::vector<std::wstring> paths = BasicFileOpen(types, false);
+		std::vector<tstring> paths = BasicFileOpen(types, false);
 		if (paths.size() > 0) {
 			romPath = paths[0];
 		}
@@ -187,7 +189,7 @@ EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
 	}
 
 	if (!plug->active() && !plug->romPath().empty()) {
-		view->ShowText("Unable to find", std::filesystem::path(plug->romPath()).filename().string());
+		view->ShowText("Unable to find", fs::path(plug->romPath()).filename().string());
 	}
 
 	return view;
@@ -351,10 +353,10 @@ void RetroPlugRoot::SaveProject() {
 
 void RetroPlugRoot::SaveProjectAs() {
 	std::vector<FileDialogFilters> types = {
-		{ L"RetroPlug Projects", L"*.retroplug" }
+		{ T("RetroPlug Projects"), T("*.retroplug") }
 	};
 
-	std::wstring path = BasicFileSave(types);
+	tstring path = BasicFileSave(types);
 	if (path.size() > 0) {
 		_plug->setProjectPath(path);
 		SaveProject();
@@ -363,12 +365,12 @@ void RetroPlugRoot::SaveProjectAs() {
 
 void RetroPlugRoot::OpenFindRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"GameBoy Roms", L"*.gb;*.gbc" }
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
-		std::wstring originalPath = _active->Plug()->romPath();
+		tstring originalPath = _active->Plug()->romPath();
 		for (size_t i = 0; i < _views.size(); i++) {
 			auto plug = _views[i]->Plug();
 			if (plug->romPath() == originalPath) {
@@ -382,27 +384,27 @@ void RetroPlugRoot::OpenFindRomDialog() {
 
 void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"All Supported Types", L"*.gb;*.gbc;*.retroplug" },
-		{ L"GameBoy Roms", L"*.gb;*.gbc" },
-		{ L"RetroPlug Project", L"*.retroplug" },
+		{ T("All Supported Types"), T("*.gb;*.gbc;*.retroplug") },
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
+		{ T("RetroPlug Project"), T("*.retroplug") },
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		LoadProjectOrRom(paths[0]);
 	}
 }
 
-void RetroPlugRoot::LoadProjectOrRom(const std::wstring& path) {
-	std::wstring ext = std::filesystem::path(path).extension().wstring();
-	if (ext == L".retroplug") {
+void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
+	tstring ext = fs::path(path).extension().string();
+	if (ext == T(".retroplug")) {
 		LoadProject(path);
-	} else if (ext == L".gb" || ext == L".gbc") {
+	} else if (ext == T(".gb") || ext == T(".gbc")) {
 		_active->LoadRom(path);
 	}
 }
 
-void RetroPlugRoot::LoadProject(const std::wstring& path) {
+void RetroPlugRoot::LoadProject(const tstring& path) {
 	std::string data;
 	if (readFile(path, data)) {
 		CloseProject();
@@ -427,10 +429,10 @@ void RetroPlugRoot::LoadProject(const std::wstring& path) {
 
 void RetroPlugRoot::OpenLoadProjectDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ L"RetroPlug Projects", L"*.retroplug" }
+		{ T("RetroPlug Projects"), T("*.retroplug") }
 	};
 
-	std::vector<std::wstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		LoadProject(paths[0]);
 	}

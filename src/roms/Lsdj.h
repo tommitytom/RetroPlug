@@ -9,6 +9,7 @@
 #include "liblsdj/sav.h"
 
 #include "platform/Logger.h"
+#include "util/xstring.h"
 
 enum class LsdjSyncModes {
 	Off,
@@ -129,7 +130,7 @@ public:
 
 	std::vector<std::byte> saveData;
 
-	bool importSongs(const std::vector<std::wstring>& paths, std::string& error);
+	bool importSongs(const std::vector<tstring>& paths, std::string& error);
 
 	void loadSong(int idx);
 
@@ -145,7 +146,7 @@ public:
 
 	void patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index);
 
-	bool importKits(std::vector<std::byte>& romData, const std::vector<std::wstring>& paths, std::string& error);
+	bool importKits(std::vector<std::byte>& romData, const std::vector<tstring>& paths, std::string& error);
 
 	void exportKit(const std::vector<std::byte>& romData, int idx, std::vector<std::byte>& target);
 

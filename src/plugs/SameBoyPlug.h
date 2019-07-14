@@ -4,6 +4,7 @@
 //#include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
 #include "roms/Lsdj.h"
+#include "util/xstring.h"
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -67,8 +68,8 @@ private:
 
 	void* _instance = nullptr;
 
-	std::wstring _romPath;
-	std::wstring _savePath;
+	tstring _romPath;
+	tstring _savePath;
 	std::string _romName;
 
 	MessageBus _bus;
@@ -95,7 +96,7 @@ public:
 
 	std::vector<std::byte>& romData() { return _romData; }
 
-	void setRomPath(const std::wstring& path) { _romPath = path; }
+	void setRomPath(const tstring& path) { _romPath = path; }
 
 	void setModel(GameboyModel model) { _model = model; }
 
@@ -109,7 +110,7 @@ public:
 
 	void setGameLink(bool enabled) { _gameLink = enabled; }
 
-	void init(const std::wstring& romPath, GameboyModel model, bool fastBoot);
+	void init(const tstring& romPath, GameboyModel model, bool fastBoot);
 
 	void reset(GameboyModel model, bool fast);
 
@@ -117,7 +118,7 @@ public:
 
 	const std::string& romName() const { return _romName; }
 
-	const std::wstring& romPath() const { return _romPath; }
+	const tstring& romPath() const { return _romPath; }
 
 	std::mutex& lock() { return _lock; }
 
@@ -133,13 +134,13 @@ public:
 
 	size_t batterySize();
 
-	bool saveBattery(std::wstring path);
+	bool saveBattery(tstring path);
 
 	bool saveBattery(std::vector<std::byte>& data);
 
 	bool saveBattery(std::byte* data, size_t size);
 
-	bool loadBattery(const std::wstring& path, bool reset);
+	bool loadBattery(const tstring& path, bool reset);
 
 	bool loadBattery(const std::vector<std::byte>& data, bool reset);
 
@@ -173,9 +174,9 @@ public:
 
 	void disableRendering(bool disable);
 
-	void setSavePath(const std::wstring& path) { _savePath = path; }
+	void setSavePath(const tstring& path) { _savePath = path; }
 
-	const std::wstring& savePath() const { return _savePath; }
+	const tstring& savePath() const { return _savePath; }
 
 	void updateRom();
 

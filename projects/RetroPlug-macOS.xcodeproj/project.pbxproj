@@ -31,70 +31,6 @@
 		4F78D88613B6382B0032E0F3 /* RetroPlug.icns in Resources */ = {isa = PBXBuildFile; fileRef = 4FD290A8137C34D700CEBE7E /* RetroPlug.icns */; };
 		4F98C32D20A7678800F120A9 /* IPlugViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 4F98C32C20A7678800F120A9 /* IPlugViewController.xib */; };
 		4FC3EFD42086C49D00BD11FA /* RetroPlugVST3Controller.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4FC3EFC42086C0A600BD11FA /* RetroPlugVST3Controller.a */; };
-		5361507622D2F619007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507722D2F61A007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507822D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507922D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507A22D2F61C007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507B22D2F61D007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361507E22D2F61F007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361508022D2F622007F65A5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */; };
-		5361508122D2F659007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508222D2F659007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508322D2F65A007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508422D2F65A007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508522D2F65B007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508622D2F65B007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508722D2F65C007F65A5 /* libretroplug in Resources */ = {isa = PBXBuildFile; fileRef = 530A431122D2E63A00CB3F77 /* libretroplug */; };
-		5361508822D2F66D007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		5361508922D2F66D007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		5361508A22D2F66D007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		5361508B22D2F66D007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		5361508C22D2F66D007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		5361508D22D2F66D007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		5361508E22D2F66D007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		5361508F22D2F66E007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		5361509022D2F66E007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		5361509122D2F66E007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		5361509222D2F66E007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		5361509322D2F66E007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		5361509422D2F66E007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		5361509522D2F66E007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		5361509622D2F66E007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		5361509722D2F66E007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		5361509822D2F66E007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		5361509922D2F66E007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		5361509A22D2F66E007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		5361509B22D2F66E007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		5361509C22D2F66E007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		5361509D22D2F66F007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		5361509E22D2F66F007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		5361509F22D2F66F007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		536150A022D2F66F007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		536150A122D2F66F007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		536150A222D2F66F007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		536150A322D2F66F007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		536150A422D2F66F007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		536150A522D2F66F007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		536150A622D2F66F007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		536150A722D2F66F007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		536150A822D2F66F007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		536150A922D2F66F007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		536150AA22D2F66F007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		536150AB22D2F670007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		536150AC22D2F670007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		536150AD22D2F670007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		536150AE22D2F670007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		536150AF22D2F670007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		536150B022D2F670007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		536150B122D2F670007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
-		536150B222D2F670007F65A5 /* lsdj in Resources */ = {isa = PBXBuildFile; fileRef = 530A431822D2E63C00CB3F77 /* lsdj */; };
-		536150B322D2F670007F65A5 /* platform in Resources */ = {isa = PBXBuildFile; fileRef = 530A431622D2E63B00CB3F77 /* platform */; };
-		536150B422D2F670007F65A5 /* plugs in Resources */ = {isa = PBXBuildFile; fileRef = 530A431222D2E63A00CB3F77 /* plugs */; };
-		536150B522D2F670007F65A5 /* roms in Resources */ = {isa = PBXBuildFile; fileRef = 530A431022D2E63A00CB3F77 /* roms */; };
-		536150B622D2F670007F65A5 /* scripts in Resources */ = {isa = PBXBuildFile; fileRef = 530A430E22D2E63900CB3F77 /* scripts */; };
-		536150B722D2F670007F65A5 /* ui in Resources */ = {isa = PBXBuildFile; fileRef = 530A431A22D2E63C00CB3F77 /* ui */; };
-		536150B822D2F670007F65A5 /* util in Resources */ = {isa = PBXBuildFile; fileRef = 530A431B22D2E63C00CB3F77 /* util */; };
 		536150B922D2F692007F65A5 /* IControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435E22D2E82A00CB3F77 /* IControl.cpp */; };
 		536150BA22D2F692007F65A5 /* IGraphics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435522D2E82900CB3F77 /* IGraphics.cpp */; };
 		536150BB22D2F692007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435622D2E82900CB3F77 /* IGraphicsEditorDelegate.cpp */; };
@@ -184,6 +120,104 @@
 		5361511722D2F6F0007F65A5 /* swell.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A922D2E9AA00CB3F77 /* swell.cpp */; };
 		5361511822D2F6F0007F65A5 /* swellappmain.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A122D2E9AA00CB3F77 /* swellappmain.mm */; };
 		5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */ = {isa = PBXBuildFile; fileRef = 530A438922D2E8DC00CB3F77 /* IPlugProcessor.h */; };
+		53FFE72022DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72222DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72322DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72422DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72522DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72622DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72722DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
+		53FFE72B22DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE72C22DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE72D22DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE72E22DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE72F22DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE73022DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE73122DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE73222DB525900B7C5B5 /* rom.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72822DB525900B7C5B5 /* rom.c */; };
+		53FFE73322DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73422DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73522DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73622DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73722DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73822DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73922DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73A22DB525900B7C5B5 /* sample.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72922DB525900B7C5B5 /* sample.c */; };
+		53FFE73B22DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE73C22DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE73D22DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE73E22DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE73F22DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE74022DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE74122DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE74222DB525900B7C5B5 /* kit.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE72A22DB525900B7C5B5 /* kit.c */; };
+		53FFE74422DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74522DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74622DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74722DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74822DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74922DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74A22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74B22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */; };
+		53FFE74D22DB528000B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE74E22DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE74F22DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75022DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75122DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75222DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75322DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75422DB528100B7C5B5 /* Lsdj.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */; };
+		53FFE75622DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75722DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75822DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75922DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75A22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75B22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75C22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE75D22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */; };
+		53FFE76122DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76222DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76322DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76422DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76522DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76622DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76722DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76822DB529B00B7C5B5 /* ContextMenu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */; };
+		53FFE76922DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76A22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76B22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76C22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76D22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76E22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE76F22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE77022DB529B00B7C5B5 /* EmulatorView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */; };
+		53FFE77122DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77222DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77322DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77422DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77522DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77622DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77722DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77822DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */; };
+		53FFE77B22DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE77C22DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE77D22DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE77E22DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE77F22DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE78022DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE78122DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE78222DB52A700B7C5B5 /* base64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77922DB52A700B7C5B5 /* base64.cpp */; };
+		53FFE78322DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78422DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78522DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78622DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78722DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78822DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78922DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78A22DB52A700B7C5B5 /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE77A22DB52A700B7C5B5 /* File.cpp */; };
+		53FFE78C22DB5AD900B7C5B5 /* SameBoyPlug.h in Headers */ = {isa = PBXBuildFile; fileRef = 53FFE78B22DB5AD900B7C5B5 /* SameBoyPlug.h */; };
+		53FFE78E22DB613200B7C5B5 /* Lsdj.h in Headers */ = {isa = PBXBuildFile; fileRef = 53FFE78D22DB613100B7C5B5 /* Lsdj.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -258,25 +292,6 @@
 		4FDA600620B586AC00C49ABA /* RetroPlug-mac.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "RetroPlug-mac.xcconfig"; path = "../config/RetroPlug-mac.xcconfig"; sourceTree = "<group>"; };
 		4FFBB93B20863B0E00DDD0E7 /* RetroPlug.vst3 */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RetroPlug.vst3; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FFF72B8214BB71400839091 /* main.rc */ = {isa = PBXFileReference; lastKnownFileType = text; name = main.rc; path = ../resources/main.rc; sourceTree = "<group>"; };
-		530A430A22D2E63900CB3F77 /* Buttons.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Buttons.h; path = ../src/Buttons.h; sourceTree = "<group>"; };
-		530A430B22D2E63900CB3F77 /* Constants.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Constants.h; path = ../src/Constants.h; sourceTree = "<group>"; };
-		530A430C22D2E63900CB3F77 /* ButtonQueue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ButtonQueue.h; path = ../src/ButtonQueue.h; sourceTree = "<group>"; };
-		530A430D22D2E63900CB3F77 /* RetroPlugInstrument.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RetroPlugInstrument.h; path = ../src/RetroPlugInstrument.h; sourceTree = "<group>"; };
-		530A430E22D2E63900CB3F77 /* scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = scripts; path = ../src/scripts; sourceTree = "<group>"; };
-		530A430F22D2E63A00CB3F77 /* Types.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Types.h; path = ../src/Types.h; sourceTree = "<group>"; };
-		530A431022D2E63A00CB3F77 /* roms */ = {isa = PBXFileReference; lastKnownFileType = folder; name = roms; path = ../src/roms; sourceTree = "<group>"; };
-		530A431122D2E63A00CB3F77 /* libretroplug */ = {isa = PBXFileReference; lastKnownFileType = folder; name = libretroplug; path = ../src/libretroplug; sourceTree = "<group>"; };
-		530A431222D2E63A00CB3F77 /* plugs */ = {isa = PBXFileReference; lastKnownFileType = folder; name = plugs; path = ../src/plugs; sourceTree = "<group>"; };
-		530A431322D2E63A00CB3F77 /* Keys.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Keys.h; path = ../src/Keys.h; sourceTree = "<group>"; };
-		530A431422D2E63B00CB3F77 /* LsdjKeyMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = LsdjKeyMap.h; path = ../src/LsdjKeyMap.h; sourceTree = "<group>"; };
-		530A431522D2E63B00CB3F77 /* audio */ = {isa = PBXFileReference; lastKnownFileType = folder; name = audio; path = ../src/audio; sourceTree = "<group>"; };
-		530A431622D2E63B00CB3F77 /* platform */ = {isa = PBXFileReference; lastKnownFileType = folder; name = platform; path = ../src/platform; sourceTree = "<group>"; };
-		530A431722D2E63B00CB3F77 /* KeyMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = KeyMap.h; path = ../src/KeyMap.h; sourceTree = "<group>"; };
-		530A431822D2E63C00CB3F77 /* lsdj */ = {isa = PBXFileReference; lastKnownFileType = folder; name = lsdj; path = ../src/lsdj; sourceTree = "<group>"; };
-		530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RetroPlugInstrument.cpp; path = ../src/RetroPlugInstrument.cpp; sourceTree = "<group>"; };
-		530A431A22D2E63C00CB3F77 /* ui */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ui; path = ../src/ui; sourceTree = "<group>"; };
-		530A431B22D2E63C00CB3F77 /* util */ = {isa = PBXFileReference; lastKnownFileType = folder; name = util; path = ../src/util; sourceTree = "<group>"; };
-		530A431C22D2E63D00CB3F77 /* ConfigLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ConfigLoader.h; path = ../src/ConfigLoader.h; sourceTree = "<group>"; };
 		530A431D22D2E6D500CB3F77 /* common-mac.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = "common-mac.xcconfig"; path = "../../iPlug2/common-mac.xcconfig"; sourceTree = "<group>"; };
 		530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsMac.mm; path = ../../iPlug2/IGraphics/Platforms/IGraphicsMac.mm; sourceTree = "<group>"; };
 		530A431F22D2E76900CB3F77 /* IGraphicsIOS.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsIOS.mm; path = ../../iPlug2/IGraphics/Platforms/IGraphicsIOS.mm; sourceTree = "<group>"; };
@@ -398,6 +413,20 @@
 		530A43A722D2E9AA00CB3F77 /* swell-gdi.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "swell-gdi.mm"; path = "../../iPlug2/WDL/swell/swell-gdi.mm"; sourceTree = "<group>"; };
 		530A43A822D2E9AA00CB3F77 /* swell-internal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "swell-internal.h"; path = "../../iPlug2/WDL/swell/swell-internal.h"; sourceTree = "<group>"; };
 		530A43A922D2E9AA00CB3F77 /* swell.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = swell.cpp; path = ../../iPlug2/WDL/swell/swell.cpp; sourceTree = "<group>"; };
+		53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PaRingBuffer.c; path = ../src/libretroplug/PaRingBuffer.c; sourceTree = "<group>"; };
+		53FFE72822DB525900B7C5B5 /* rom.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = rom.c; path = ../src/lsdj/rom.c; sourceTree = "<group>"; };
+		53FFE72922DB525900B7C5B5 /* sample.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sample.c; path = ../src/lsdj/sample.c; sourceTree = "<group>"; };
+		53FFE72A22DB525900B7C5B5 /* kit.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = kit.c; path = ../src/lsdj/kit.c; sourceTree = "<group>"; };
+		53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SameBoyPlug.cpp; path = ../src/plugs/SameBoyPlug.cpp; sourceTree = "<group>"; };
+		53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Lsdj.cpp; path = ../src/roms/Lsdj.cpp; sourceTree = "<group>"; };
+		53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RetroPlugInstrument.cpp; path = ../src/RetroPlugInstrument.cpp; sourceTree = "<group>"; };
+		53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ContextMenu.cpp; path = ../src/ui/ContextMenu.cpp; sourceTree = "<group>"; };
+		53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = EmulatorView.cpp; path = ../src/ui/EmulatorView.cpp; sourceTree = "<group>"; };
+		53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RetroPlugRoot.cpp; path = ../src/ui/RetroPlugRoot.cpp; sourceTree = "<group>"; };
+		53FFE77922DB52A700B7C5B5 /* base64.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = base64.cpp; path = ../src/util/base64.cpp; sourceTree = "<group>"; };
+		53FFE77A22DB52A700B7C5B5 /* File.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = File.cpp; path = ../src/util/File.cpp; sourceTree = "<group>"; };
+		53FFE78B22DB5AD900B7C5B5 /* SameBoyPlug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SameBoyPlug.h; path = ../src/plugs/SameBoyPlug.h; sourceTree = "<group>"; };
+		53FFE78D22DB613100B7C5B5 /* Lsdj.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Lsdj.h; path = ../src/roms/Lsdj.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -464,7 +493,7 @@
 		089C166AFE841209C02AAC07 /* IPlugExample */ = {
 			isa = PBXGroup;
 			children = (
-				530A430922D2E61A00CB3F77 /* Source */,
+				53FFE71422DB51E500B7C5B5 /* Source */,
 				089C167CFE841241C02AAC07 /* Resources */,
 				32C88E010371C26100C91783 /* Other Sources */,
 				089C1671FE841209C02AAC07 /* Frameworks */,
@@ -683,32 +712,6 @@
 			name = WDL;
 			sourceTree = "<group>";
 		};
-		530A430922D2E61A00CB3F77 /* Source */ = {
-			isa = PBXGroup;
-			children = (
-				530A431522D2E63B00CB3F77 /* audio */,
-				530A430C22D2E63900CB3F77 /* ButtonQueue.h */,
-				530A430A22D2E63900CB3F77 /* Buttons.h */,
-				530A431C22D2E63D00CB3F77 /* ConfigLoader.h */,
-				530A430B22D2E63900CB3F77 /* Constants.h */,
-				530A431722D2E63B00CB3F77 /* KeyMap.h */,
-				530A431322D2E63A00CB3F77 /* Keys.h */,
-				530A431122D2E63A00CB3F77 /* libretroplug */,
-				530A431822D2E63C00CB3F77 /* lsdj */,
-				530A431422D2E63B00CB3F77 /* LsdjKeyMap.h */,
-				530A431622D2E63B00CB3F77 /* platform */,
-				530A431222D2E63A00CB3F77 /* plugs */,
-				530A431922D2E63C00CB3F77 /* RetroPlugInstrument.cpp */,
-				530A430D22D2E63900CB3F77 /* RetroPlugInstrument.h */,
-				530A431022D2E63A00CB3F77 /* roms */,
-				530A430E22D2E63900CB3F77 /* scripts */,
-				530A430F22D2E63A00CB3F77 /* Types.h */,
-				530A431A22D2E63C00CB3F77 /* ui */,
-				530A431B22D2E63C00CB3F77 /* util */,
-			);
-			name = Source;
-			sourceTree = "<group>";
-		};
 		530A433022D2E7CC00CB3F77 /* Controls */ = {
 			isa = PBXGroup;
 			children = (
@@ -731,6 +734,27 @@
 			path = Controls;
 			sourceTree = "<group>";
 		};
+		53FFE71422DB51E500B7C5B5 /* Source */ = {
+			isa = PBXGroup;
+			children = (
+				53FFE78B22DB5AD900B7C5B5 /* SameBoyPlug.h */,
+				53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */,
+				53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */,
+				53FFE78D22DB613100B7C5B5 /* Lsdj.h */,
+				53FFE74C22DB528000B7C5B5 /* Lsdj.cpp */,
+				53FFE72A22DB525900B7C5B5 /* kit.c */,
+				53FFE72822DB525900B7C5B5 /* rom.c */,
+				53FFE72922DB525900B7C5B5 /* sample.c */,
+				53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */,
+				53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */,
+				53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */,
+				53FFE77922DB52A700B7C5B5 /* base64.cpp */,
+				53FFE77A22DB52A700B7C5B5 /* File.cpp */,
+				53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */,
+			);
+			name = Source;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -738,6 +762,8 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE78C22DB5AD900B7C5B5 /* SameBoyPlug.h in Headers */,
+				53FFE78E22DB613200B7C5B5 /* Lsdj.h in Headers */,
 				4F6FD2B022675B6300FC59E6 /* (null) in Headers */,
 				5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */,
 			);
@@ -986,15 +1012,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361509122D2F66E007F65A5 /* plugs in Resources */,
-				5361509022D2F66E007F65A5 /* platform in Resources */,
-				5361509522D2F66E007F65A5 /* util in Resources */,
-				5361508222D2F659007F65A5 /* libretroplug in Resources */,
-				5361509322D2F66E007F65A5 /* scripts in Resources */,
-				5361509422D2F66E007F65A5 /* ui in Resources */,
-				5361509222D2F66E007F65A5 /* roms in Resources */,
 				5361510C22D2F6D9007F65A5 /* VST2 in Resources */,
-				5361508F22D2F66E007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1003,14 +1021,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				5361510B22D2F6C1007F65A5 /* AUv2 in Resources */,
-				5361509F22D2F66F007F65A5 /* plugs in Resources */,
-				5361509E22D2F66F007F65A5 /* platform in Resources */,
-				536150A322D2F66F007F65A5 /* util in Resources */,
-				5361508422D2F65A007F65A5 /* libretroplug in Resources */,
-				536150A122D2F66F007F65A5 /* scripts in Resources */,
-				536150A222D2F66F007F65A5 /* ui in Resources */,
-				536150A022D2F66F007F65A5 /* roms in Resources */,
-				5361509D22D2F66F007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1018,15 +1028,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				536150B722D2F670007F65A5 /* ui in Resources */,
-				536150B422D2F670007F65A5 /* plugs in Resources */,
-				536150B622D2F670007F65A5 /* scripts in Resources */,
 				4F98C32D20A7678800F120A9 /* IPlugViewController.xib in Resources */,
-				536150B822D2F670007F65A5 /* util in Resources */,
-				536150B322D2F670007F65A5 /* platform in Resources */,
-				536150B522D2F670007F65A5 /* roms in Resources */,
-				5361508722D2F65C007F65A5 /* libretroplug in Resources */,
-				536150B222D2F670007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1034,15 +1036,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361509822D2F66E007F65A5 /* plugs in Resources */,
-				5361509722D2F66E007F65A5 /* platform in Resources */,
-				5361509C22D2F66E007F65A5 /* util in Resources */,
-				5361508322D2F65A007F65A5 /* libretroplug in Resources */,
-				5361509A22D2F66E007F65A5 /* scripts in Resources */,
-				5361509B22D2F66E007F65A5 /* ui in Resources */,
 				5361510D22D2F6DC007F65A5 /* VST3 in Resources */,
-				5361509922D2F66E007F65A5 /* roms in Resources */,
-				5361509622D2F66E007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1051,14 +1045,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				5361510A22D2F6BD007F65A5 /* AAX in Resources */,
-				536150A622D2F66F007F65A5 /* plugs in Resources */,
-				536150A522D2F66F007F65A5 /* platform in Resources */,
-				536150AA22D2F66F007F65A5 /* util in Resources */,
-				5361508522D2F65B007F65A5 /* libretroplug in Resources */,
-				536150A822D2F66F007F65A5 /* scripts in Resources */,
-				536150A922D2F66F007F65A5 /* ui in Resources */,
-				536150A722D2F66F007F65A5 /* roms in Resources */,
-				536150A422D2F66F007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1066,17 +1052,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361508A22D2F66D007F65A5 /* plugs in Resources */,
-				5361508D22D2F66D007F65A5 /* ui in Resources */,
 				4F78D88613B6382B0032E0F3 /* RetroPlug.icns in Resources */,
 				5361510922D2F6B9007F65A5 /* APP in Resources */,
-				5361508822D2F66D007F65A5 /* lsdj in Resources */,
-				5361508922D2F66D007F65A5 /* platform in Resources */,
 				4F1B4AE42014D33600BC64D4 /* RetroPlug-macOS-MainMenu.xib in Resources */,
-				5361508E22D2F66D007F65A5 /* util in Resources */,
-				5361508122D2F659007F65A5 /* libretroplug in Resources */,
-				5361508B22D2F66D007F65A5 /* roms in Resources */,
-				5361508C22D2F66D007F65A5 /* scripts in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1084,14 +1062,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				536150AD22D2F670007F65A5 /* plugs in Resources */,
-				536150AC22D2F670007F65A5 /* platform in Resources */,
-				536150B122D2F670007F65A5 /* util in Resources */,
-				5361508622D2F65B007F65A5 /* libretroplug in Resources */,
-				536150AF22D2F670007F65A5 /* scripts in Resources */,
-				536150B022D2F670007F65A5 /* ui in Resources */,
-				536150AE22D2F670007F65A5 /* roms in Resources */,
-				536150AB22D2F670007F65A5 /* lsdj in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1219,16 +1189,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74522DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76A22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE72C22DB525900B7C5B5 /* rom.c in Sources */,
 				536150BE22D2F693007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150D922D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73422DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78422DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75722DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE77C22DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150BD22D2F693007F65A5 /* IGraphics.cpp in Sources */,
 				536150DA22D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507722D2F61A007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150DE22D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77222DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE74E22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150D822D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150DB22D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BC22D2F693007F65A5 /* IControl.cpp in Sources */,
 				536150DC22D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76222DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE73C22DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1236,16 +1217,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74A22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76F22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE73122DB525900B7C5B5 /* rom.c in Sources */,
 				536150CD22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150FC22D2F6AE007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73922DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78922DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75C22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72622DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE78122DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150CC22D2F696007F65A5 /* IGraphics.cpp in Sources */,
 				536150FD22D2F6AE007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507E22D2F61F007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				5361510122D2F6AE007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77722DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE75322DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150FB22D2F6AE007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150FE22D2F6AE007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CB22D2F696007F65A5 /* IControl.cpp in Sources */,
 				536150FF22D2F6AE007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76722DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE74122DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1253,16 +1245,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74722DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76C22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE72E22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C422D2F694007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150E722D2F6AB007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73622DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78622DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75922DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72322DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE77E22DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150C322D2F694007F65A5 /* IGraphics.cpp in Sources */,
 				536150E822D2F6AB007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507922D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150EC22D2F6AB007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77422DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE75022DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150E622D2F6AB007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150E922D2F6AB007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C222D2F694007F65A5 /* IControl.cpp in Sources */,
 				536150EA22D2F6AB007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76422DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE73E22DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1270,16 +1273,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74622DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76B22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE72D22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C122D2F694007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150E022D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73522DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78522DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75822DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72222DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE77D22DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150C022D2F694007F65A5 /* IGraphics.cpp in Sources */,
 				536150E122D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507822D2F61B007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150E522D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77322DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE74F22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150DF22D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150E222D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BF22D2F694007F65A5 /* IControl.cpp in Sources */,
 				536150E322D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76322DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE73D22DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1287,16 +1301,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74822DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76D22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE72F22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C722D2F695007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150EE22D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73722DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78722DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75A22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72422DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE77F22DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150C622D2F695007F65A5 /* IGraphics.cpp in Sources */,
 				536150EF22D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507A22D2F61C007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150F322D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77522DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE75122DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150ED22D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150F022D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C522D2F695007F65A5 /* IControl.cpp in Sources */,
 				536150F122D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76522DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE73F22DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1304,17 +1329,28 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE76822DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE73222DB525900B7C5B5 /* rom.c in Sources */,
+				53FFE73A22DB525900B7C5B5 /* sample.c in Sources */,
 				5361510422D2F6AF007F65A5 /* IPlugPaths.cpp in Sources */,
 				5361510822D2F6AF007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE74222DB525900B7C5B5 /* kit.c in Sources */,
 				536150CF22D2F697007F65A5 /* IGraphics.cpp in Sources */,
+				53FFE75422DB528100B7C5B5 /* Lsdj.cpp in Sources */,
+				53FFE78222DB52A700B7C5B5 /* base64.cpp in Sources */,
+				53FFE78A22DB52A700B7C5B5 /* File.cpp in Sources */,
 				5361510322D2F6AF007F65A5 /* IPlugParameter.cpp in Sources */,
 				5361510622D2F6AF007F65A5 /* IPlugPluginBase.cpp in Sources */,
 				5361510222D2F6AF007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				53FFE75D22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE77022DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				536150D022D2F697007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
+				53FFE72722DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
 				5361510522D2F6AF007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CE22D2F697007F65A5 /* IControl.cpp in Sources */,
 				4F6FD2B722675B6300FC59E6 /* (null) in Sources */,
-				5361508022D2F622007F65A5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE77822DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE74B22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1322,22 +1358,33 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE72B22DB525900B7C5B5 /* rom.c in Sources */,
 				536150BB22D2F692007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				5361510F22D2F6F0007F65A5 /* swell-dlg.mm in Sources */,
 				536150D222D2F6A9007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE74422DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE72022DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE77B22DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150BA22D2F692007F65A5 /* IGraphics.cpp in Sources */,
+				53FFE73B22DB525900B7C5B5 /* kit.c in Sources */,
 				5361511722D2F6F0007F65A5 /* swell.cpp in Sources */,
 				5361511522D2F6F0007F65A5 /* swell-miscdlg.mm in Sources */,
 				5361511222D2F6F0007F65A5 /* swell-kb.mm in Sources */,
 				5361510E22D2F6F0007F65A5 /* swell-appstub.mm in Sources */,
 				536150D322D2F6A9007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507622D2F619007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				5361511622D2F6F0007F65A5 /* swell-wnd.mm in Sources */,
 				536150D722D2F6A9007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE76922DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE73322DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE74D22DB528000B7C5B5 /* Lsdj.cpp in Sources */,
+				53FFE77122DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE75622DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				5361511022D2F6F0007F65A5 /* swell-gdi.mm in Sources */,
 				536150D122D2F6A9007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				5361511322D2F6F0007F65A5 /* swell-menu.mm in Sources */,
 				5361511122D2F6F0007F65A5 /* swell-ini.cpp in Sources */,
+				53FFE78322DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE76122DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				536150D422D2F6A9007F65A5 /* IPlugPaths.mm in Sources */,
 				536150B922D2F692007F65A5 /* IControl.cpp in Sources */,
 				536150D522D2F6A9007F65A5 /* IPlugPluginBase.cpp in Sources */,
@@ -1350,16 +1397,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53FFE74922DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FFE76E22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FFE73022DB525900B7C5B5 /* rom.c in Sources */,
 				536150CA22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150F522D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */,
+				53FFE73822DB525900B7C5B5 /* sample.c in Sources */,
+				53FFE78822DB52A700B7C5B5 /* File.cpp in Sources */,
+				53FFE75B22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FFE72522DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FFE78022DB52A700B7C5B5 /* base64.cpp in Sources */,
 				536150C922D2F696007F65A5 /* IGraphics.cpp in Sources */,
 				536150F622D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */,
-				5361507B22D2F61D007F65A5 /* RetroPlugInstrument.cpp in Sources */,
 				536150FA22D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
+				53FFE77622DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FFE75222DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150F422D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				536150F722D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C822D2F696007F65A5 /* IControl.cpp in Sources */,
 				536150F822D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				53FFE76622DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53FFE74022DB525900B7C5B5 /* kit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2214,6 +2272,10 @@
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(GCC_CFLAGS)",
+				);
 				OTHER_LDFLAGS = (
 					"$(APP_FRAMEWORKS)",
 					"$(inherited)",
@@ -2250,6 +2312,10 @@
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(GCC_CFLAGS)",
+				);
 				OTHER_LDFLAGS = (
 					"$(APP_FRAMEWORKS)",
 					"$(inherited)",
@@ -2286,6 +2352,10 @@
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"$(GCC_CFLAGS)",
+				);
 				OTHER_LDFLAGS = (
 					"$(APP_FRAMEWORKS)",
 					"$(inherited)",

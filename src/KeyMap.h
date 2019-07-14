@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <tao/json.hpp>
+//#include <tao/json.hpp>
 #include "Types.h"
 #include "Keys.h"
 #include "Buttons.h"
@@ -11,7 +11,7 @@
 #include "platform/Path.h"
 
 //#define LOG_KEYBOARD_INPUT
-
+/* 
 class KeyMap {
 private:
 	std::map<VirtualKey, ButtonType> _keyMap;
@@ -50,4 +50,4 @@ public:
 
 		return ButtonType::MAX;
 	}
-};
+};*/

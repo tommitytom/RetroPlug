@@ -4,8 +4,8 @@
 
 #include "IControl.h"
 #include "plugs/RetroPlug.h"
-#include "KeyMap.h"
-#include "LsdjKeyMap.h"
+//#include "KeyMap.h"
+//#include "LsdjKeyMap.h"
 #include "nanovg.h"
 #include "ContextMenu.h"
 
@@ -24,8 +24,8 @@ private:
 	NVGpaint _imgPaint;
 	float _alpha = 1.0f;
 
-	KeyMap _keyMap;
-	LsdjKeyMap _lsdjKeyMap;
+	//KeyMap _keyMap;
+	//LsdjKeyMap _lsdjKeyMap;
 
 	IPopupMenu _menu;
 	LsdjSyncModeMenuItems _lsdjMode = LsdjSyncModeMenuItems::Off;
@@ -68,7 +68,7 @@ public:
 
 	void DisableRendering(bool disable);
 
-	void LoadRom(const std::wstring& path);
+	void LoadRom(const tstring& path);
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);

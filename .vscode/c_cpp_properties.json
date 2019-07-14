@@ -4,6 +4,7 @@
             "name": "Mac",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/src/**",
                 "${workspaceFolder}/thirdparty/iPlug2/WDL/**",
                 "${workspaceFolder}/thirdparty/iPlug2/IPlug/**",
                 "${workspaceFolder}/thirdparty/iPlug2/IGraphics/**",

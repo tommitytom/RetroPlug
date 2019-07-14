@@ -1,14 +1,13 @@
 #pragma once
 
-#include "tao/json.hpp"
+//#include "tao/json.hpp"
 #include "plugs/RetroPlug.h"
 #include "config.h"
 #include "plugs/SameBoyPlug.h"
 #include <string>
 #include "base64.h"
 #include "roms/Lsdj.h"
-
-namespace fs = boost::filesystem;
+#include "fs.h"
 
 static std::string layoutToString(InstanceLayout layout) {
 	switch (layout) {
@@ -97,7 +96,7 @@ static MidiChannelRouting stringToMidiRouting(const std::string& model) {
 
 static void Serialize(std::string& target, const RetroPlug& manager) {
 	const SameBoyPlugPtr* plugs = manager.plugs();
-	tao::json::value root = {
+	/*tao::json::value root = {
 		{ "version", PLUG_VERSION_STR },
 		{ "layout", layoutToString(manager.layout()) },
 		{ "saveType", saveTypeToString(manager.saveType()) },
@@ -160,10 +159,10 @@ static void Serialize(std::string& target, const RetroPlug& manager) {
 		}
 
 		target = tao::json::to_string<tao::json::events::binary_to_base64>(root);
-	}
+	}*/
 }
 
-static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plug, SaveStateType saveType) {
+/* static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plug, SaveStateType saveType) {
 	const std::string& romPath = instRoot.at("romPath").get_string();
 	const auto& state = instRoot.at("state").get_object();
 	const std::string& stateDataStr = state.at("data").get_string();
@@ -186,9 +185,9 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 	plugPtr->setModel(model);
 
 	if (fs::exists(romPath)) {
-		plugPtr->init(s2ws(romPath), model, true);
+		plugPtr->init(romPath, model, true);
 	} else {
-		plugPtr->setRomPath(s2ws(romPath));
+		plugPtr->setRomPath(romPath);
 	}
 
 	plug.setSaveType(saveType);
@@ -199,7 +198,7 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 
 	const tao::json::value* savePath = instRoot.find("lastSramPath");
 	if (savePath) {
-		plugPtr->setSavePath(s2ws(savePath->get_string()));
+		plugPtr->setSavePath((savePath->get_string()));
 	}
 
 	if (settings) {
@@ -227,12 +226,12 @@ static void DeserializeInstance(const tao::json::value& instRoot, RetroPlug& plu
 			}
 		}
 	}
-}
+}*/
 
 static void Deserialize(const char* data, RetroPlug& plug) {
 	plug.clear();
 
-	try {
+	/*try {
 		const tao::json::value root = tao::json::from_string(data);
 		const std::string& version = root.at("version").get_string();
 		if (version == "0.1.0") {
@@ -278,5 +277,5 @@ static void Deserialize(const char* data, RetroPlug& plug) {
 		}
 	} catch (...) {
 		// Fail
-	}
+	}*/
 }
