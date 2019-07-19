@@ -388,11 +388,19 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
 		{ T("RetroPlug Project"), T("*.retroplug") },
 	};
+    
+	WDL_String fileName;
+	WDL_String path("~/Desktop");
+    GetUI()->PromptForFile(fileName, path, EFileAction::Open);
+    
+	if (path.GetLength() > 0) {
+		LoadProjectOrRom(fileName.Get());
+	}
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	/*std::vector<tstring> paths = BasicFileOpen(types, false);
 	if (paths.size() > 0) {
 		LoadProjectOrRom(paths[0]);
-	}
+	}*/
 }
 
 void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
