@@ -31,6 +31,218 @@
 		4F78D88613B6382B0032E0F3 /* RetroPlug.icns in Resources */ = {isa = PBXBuildFile; fileRef = 4FD290A8137C34D700CEBE7E /* RetroPlug.icns */; };
 		4F98C32D20A7678800F120A9 /* IPlugViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 4F98C32C20A7678800F120A9 /* IPlugViewController.xib */; };
 		4FC3EFD42086C49D00BD11FA /* RetroPlugVST3Controller.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4FC3EFC42086C0A600BD11FA /* RetroPlugVST3Controller.a */; };
+		535F957422E1B5A70054DAAE /* song.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F954D22E1B5A30054DAAE /* song.h */; };
+		535F957522E1B5A70054DAAE /* instrument_constants.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F954E22E1B5A40054DAAE /* instrument_constants.h */; };
+		535F957622E1B5A70054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957722E1B5A70054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957822E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957922E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957A22E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957B22E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957C22E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957D22E1B5A80054DAAE /* song.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F954F22E1B5A40054DAAE /* song.c */; };
+		535F957E22E1B5A80054DAAE /* instrument_kit.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955022E1B5A40054DAAE /* instrument_kit.h */; };
+		535F957F22E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958022E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958122E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958222E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958322E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958422E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958522E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958622E1B5A80054DAAE /* error.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955122E1B5A40054DAAE /* error.c */; };
+		535F958722E1B5A80054DAAE /* panning.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955222E1B5A40054DAAE /* panning.h */; };
+		535F958822E1B5A80054DAAE /* project.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955322E1B5A40054DAAE /* project.h */; };
+		535F958922E1B5A80054DAAE /* instrument_wave.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955422E1B5A40054DAAE /* instrument_wave.h */; };
+		535F958A22E1B5A80054DAAE /* phrase.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955522E1B5A40054DAAE /* phrase.h */; };
+		535F958B22E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F958C22E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F958D22E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F958E22E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F958F22E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F959022E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F959122E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F959222E1B5A80054DAAE /* project.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955622E1B5A40054DAAE /* project.c */; };
+		535F959322E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959422E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959522E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959622E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959722E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959822E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959922E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959A22E1B5A80054DAAE /* compression.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955722E1B5A40054DAAE /* compression.c */; };
+		535F959B22E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F959C22E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F959D22E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F959E22E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F959F22E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F95A022E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F95A122E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F95A222E1B5A80054DAAE /* synth.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955822E1B5A40054DAAE /* synth.c */; };
+		535F95A322E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A422E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A522E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A622E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A722E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A822E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95A922E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95AA22E1B5A80054DAAE /* instrument.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955922E1B5A40054DAAE /* instrument.c */; };
+		535F95AB22E1B5A80054DAAE /* channel.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955A22E1B5A50054DAAE /* channel.h */; };
+		535F95AC22E1B5A80054DAAE /* compression.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955B22E1B5A50054DAAE /* compression.h */; };
+		535F95AD22E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95AE22E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95AF22E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B022E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B122E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B222E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B322E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B422E1B5A80054DAAE /* sav.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955C22E1B5A50054DAAE /* sav.c */; };
+		535F95B522E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95B622E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95B722E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95B822E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95B922E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95BA22E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95BB22E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95BC22E1B5A80054DAAE /* row.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955D22E1B5A50054DAAE /* row.c */; };
+		535F95BD22E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95BE22E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95BF22E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C022E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C122E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C222E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C322E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C422E1B5A80054DAAE /* groove.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F955E22E1B5A50054DAAE /* groove.c */; };
+		535F95C522E1B5A80054DAAE /* instrument_noise.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F955F22E1B5A50054DAAE /* instrument_noise.h */; };
+		535F95C622E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95C722E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95C822E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95C922E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95CA22E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95CB22E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95CC22E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95CD22E1B5A80054DAAE /* phrase.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956022E1B5A50054DAAE /* phrase.c */; };
+		535F95CE22E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95CF22E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D022E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D122E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D222E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D322E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D422E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D522E1B5A80054DAAE /* command.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956122E1B5A50054DAAE /* command.c */; };
+		535F95D622E1B5A80054DAAE /* command.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956222E1B5A50054DAAE /* command.h */; };
+		535F95D722E1B5A80054DAAE /* table.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956322E1B5A50054DAAE /* table.h */; };
+		535F95D822E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95D922E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DA22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DB22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DC22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DD22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DE22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95DF22E1B5A80054DAAE /* wave.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956422E1B5A60054DAAE /* wave.c */; };
+		535F95E022E1B5A80054DAAE /* synth.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956522E1B5A60054DAAE /* synth.h */; };
+		535F95E122E1B5A80054DAAE /* instrument.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956622E1B5A60054DAAE /* instrument.h */; };
+		535F95E222E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E322E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E422E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E522E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E622E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E722E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E822E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95E922E1B5A80054DAAE /* word.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956722E1B5A60054DAAE /* word.c */; };
+		535F95EA22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95EB22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95EC22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95ED22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95EE22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95EF22E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95F022E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95F122E1B5A80054DAAE /* chain.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F956822E1B5A60054DAAE /* chain.c */; };
+		535F95F222E1B5A80054DAAE /* row.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956922E1B5A60054DAAE /* row.h */; };
+		535F95F322E1B5A80054DAAE /* sav.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956A22E1B5A60054DAAE /* sav.h */; };
+		535F95F422E1B5A80054DAAE /* word.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956B22E1B5A60054DAAE /* word.h */; };
+		535F95F522E1B5A80054DAAE /* wave.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956C22E1B5A70054DAAE /* wave.h */; };
+		535F95F622E1B5A80054DAAE /* groove.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956D22E1B5A70054DAAE /* groove.h */; };
+		535F95F722E1B5A80054DAAE /* vio.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956E22E1B5A70054DAAE /* vio.h */; };
+		535F95F822E1B5A80054DAAE /* instrument_pulse.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F956F22E1B5A70054DAAE /* instrument_pulse.h */; };
+		535F95F922E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FA22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FB22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FC22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FD22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FE22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F95FF22E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F960022E1B5A80054DAAE /* vio.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957022E1B5A70054DAAE /* vio.c */; };
+		535F960122E1B5A80054DAAE /* error.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F957122E1B5A70054DAAE /* error.h */; };
+		535F960222E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960322E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960422E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960522E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960622E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960722E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960822E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960922E1B5A80054DAAE /* table.c in Sources */ = {isa = PBXBuildFile; fileRef = 535F957222E1B5A70054DAAE /* table.c */; };
+		535F960A22E1B5A80054DAAE /* chain.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F957322E1B5A70054DAAE /* chain.h */; };
+		535F960C22E1B8DB0054DAAE /* sameboy_retroplug.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 535F960B22E1B8DB0054DAAE /* sameboy_retroplug.a */; };
+		535F961F22E1B9750054DAAE /* IGraphicsAGG.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F960E22E1B9730054DAAE /* IGraphicsAGG.h */; };
+		535F962922E1B9750054DAAE /* IGraphicsNanoVG.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F961122E1B9730054DAAE /* IGraphicsNanoVG.h */; };
+		535F965222E1B9750054DAAE /* IGraphicsLice_src.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F961722E1B9740054DAAE /* IGraphicsLice_src.h */; };
+		535F966422E1B9750054DAAE /* IGraphicsAGG_src.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F961B22E1B9740054DAAE /* IGraphicsAGG_src.h */; };
+		535F966522E1B9750054DAAE /* IGraphicsLice.h in Headers */ = {isa = PBXBuildFile; fileRef = 535F961C22E1B9750054DAAE /* IGraphicsLice.h */; };
+		535F967E22E1BE740054DAAE /* IPlugAPP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F967A22E1BE730054DAAE /* IPlugAPP.cpp */; };
+		535F967F22E1BE740054DAAE /* IPlugAPP_dialog.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F967B22E1BE730054DAAE /* IPlugAPP_dialog.cpp */; };
+		535F968022E1BE740054DAAE /* IPlugAPP_host.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F967C22E1BE740054DAAE /* IPlugAPP_host.cpp */; };
+		535F968122E1BE740054DAAE /* IPlugAPP_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F967D22E1BE740054DAAE /* IPlugAPP_main.cpp */; };
+		535F968522E1BF180054DAAE /* RtAudio.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F968322E1BF180054DAAE /* RtAudio.cpp */; };
+		535F968822E1BF240054DAAE /* RtMidi.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 535F968622E1BF240054DAAE /* RtMidi.cpp */; };
+		535F968922E1C2180054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F968A22E1C2180054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F968B22E1C2180054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F968C22E1C2190054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F968D22E1C2190054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F968E22E1C2190054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F968F22E1C21A0054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F969022E1C21A0054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F969122E1C21A0054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F969222E1C21A0054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F969322E1C21A0054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F969422E1C21A0054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F969522E1C21B0054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F969622E1C21B0054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F969722E1C21B0054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F969822E1C21C0054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F969922E1C21C0054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F969A22E1C21C0054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F969B22E1C21D0054DAAE /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432B22D2E76A00CB3F77 /* IGraphicsCoreText.mm */; };
+		535F969C22E1C21D0054DAAE /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A432722D2E76A00CB3F77 /* IGraphicsMac_view.mm */; };
+		535F969D22E1C21D0054DAAE /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A431E22D2E76900CB3F77 /* IGraphicsMac.mm */; };
+		535F969E22E1C2470054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F969F22E1C2470054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A022E1C2480054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A122E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A222E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A322E1C24A0054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A422E1C24A0054DAAE /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */; };
+		535F96A522E1E1650054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96A622E1E1650054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96A722E1E1650054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96A822E1E1660054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96A922E1E1660054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96AA22E1E1660054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96AB22E1E1660054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96AC22E1E1660054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96AD22E1E1660054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96AE22E1E1670054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96AF22E1E1670054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96B022E1E1670054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96B122E1E1670054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96B222E1E1670054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96B322E1E1670054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96B422E1E1680054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96B522E1E1680054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96B622E1E1680054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
+		535F96B722E1E1690054DAAE /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433722D2E7DE00CB3F77 /* IControls.cpp */; };
+		535F96B822E1E1690054DAAE /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433B22D2E7DF00CB3F77 /* IPopupMenuControl.cpp */; };
+		535F96B922E1E1690054DAAE /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A433122D2E7DE00CB3F77 /* ITextEntryControl.cpp */; };
 		536150B922D2F692007F65A5 /* IControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435E22D2E82A00CB3F77 /* IControl.cpp */; };
 		536150BA22D2F692007F65A5 /* IGraphics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435522D2E82900CB3F77 /* IGraphics.cpp */; };
 		536150BB22D2F692007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435622D2E82900CB3F77 /* IGraphicsEditorDelegate.cpp */; };
@@ -57,57 +269,44 @@
 		536150D022D2F697007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A435622D2E82900CB3F77 /* IGraphicsEditorDelegate.cpp */; };
 		536150D122D2F6A9007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150D222D2F6A9007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150D322D2F6A9007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150D422D2F6A9007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150D522D2F6A9007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150D722D2F6A9007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150D822D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150D922D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150DA22D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150DB22D2F6AA007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150DC22D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150DE22D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150DF22D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150E022D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150E122D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150E222D2F6AA007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150E322D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150E522D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150E622D2F6AB007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150E722D2F6AB007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150E822D2F6AB007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150E922D2F6AB007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150EA22D2F6AB007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150EC22D2F6AB007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150ED22D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150EE22D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150EF22D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150F022D2F6AD007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150F122D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150F322D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150F422D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150F522D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150F622D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150F722D2F6AD007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150F822D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		536150FA22D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		536150FB22D2F6AE007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		536150FC22D2F6AE007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		536150FD22D2F6AE007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		536150FE22D2F6AE007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		536150FF22D2F6AE007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		5361510122D2F6AE007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
 		5361510222D2F6AF007F65A5 /* IPlugAPIBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */; };
 		5361510322D2F6AF007F65A5 /* IPlugParameter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */; };
-		5361510422D2F6AF007F65A5 /* IPlugPaths.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */; };
 		5361510522D2F6AF007F65A5 /* IPlugPaths.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */; };
 		5361510622D2F6AF007F65A5 /* IPlugPluginBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */; };
 		5361510822D2F6AF007F65A5 /* IPlugTimer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */; };
-		5361510922D2F6B9007F65A5 /* APP in Resources */ = {isa = PBXBuildFile; fileRef = 530A437722D2E8DA00CB3F77 /* APP */; };
-		5361510A22D2F6BD007F65A5 /* AAX in Resources */ = {isa = PBXBuildFile; fileRef = 530A437122D2E8DA00CB3F77 /* AAX */; };
-		5361510B22D2F6C1007F65A5 /* AUv2 in Resources */ = {isa = PBXBuildFile; fileRef = 530A438022D2E8DB00CB3F77 /* AUv2 */; };
-		5361510C22D2F6D9007F65A5 /* VST2 in Resources */ = {isa = PBXBuildFile; fileRef = 530A437522D2E8DA00CB3F77 /* VST2 */; };
-		5361510D22D2F6DC007F65A5 /* VST3 in Resources */ = {isa = PBXBuildFile; fileRef = 530A438722D2E8DC00CB3F77 /* VST3 */; };
 		5361510E22D2F6F0007F65A5 /* swell-appstub.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A522D2E9AA00CB3F77 /* swell-appstub.mm */; };
 		5361510F22D2F6F0007F65A5 /* swell-dlg.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A439E22D2E9A900CB3F77 /* swell-dlg.mm */; };
 		5361511022D2F6F0007F65A5 /* swell-gdi.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A722D2E9AA00CB3F77 /* swell-gdi.mm */; };
@@ -339,46 +538,19 @@
 		530A435D22D2E82A00CB3F77 /* IGraphics_include_in_plug_hdr.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphics_include_in_plug_hdr.h; path = ../../iPlug2/IGraphics/IGraphics_include_in_plug_hdr.h; sourceTree = "<group>"; };
 		530A435E22D2E82A00CB3F77 /* IControl.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IControl.cpp; path = ../../iPlug2/IGraphics/IControl.cpp; sourceTree = "<group>"; };
 		530A435F22D2E82A00CB3F77 /* IGraphicsPathBase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsPathBase.h; path = ../../iPlug2/IGraphics/IGraphicsPathBase.h; sourceTree = "<group>"; };
-		530A436022D2E84700CB3F77 /* IGraphicsAGG.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsAGG.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsAGG.h; sourceTree = "<group>"; };
-		530A436122D2E84700CB3F77 /* IGraphicsAGG_src.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsAGG_src.mm; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.mm; sourceTree = "<group>"; };
-		530A436222D2E84700CB3F77 /* IGraphicsLice_src.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsLice_src.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsLice_src.h; sourceTree = "<group>"; };
-		530A436322D2E84700CB3F77 /* IGraphicsCanvas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsCanvas.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsCanvas.h; sourceTree = "<group>"; };
-		530A436422D2E84800CB3F77 /* IGraphicsLice.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsLice.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsLice.cpp; sourceTree = "<group>"; };
-		530A436522D2E84800CB3F77 /* IGraphicsAGG.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsAGG.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsAGG.cpp; sourceTree = "<group>"; };
-		530A436622D2E84800CB3F77 /* IGraphicsLice_src.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsLice_src.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsLice_src.cpp; sourceTree = "<group>"; };
-		530A436722D2E84800CB3F77 /* IGraphicsAGG_src.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsAGG_src.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.cpp; sourceTree = "<group>"; };
-		530A436822D2E84800CB3F77 /* IGraphicsLice_src.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsLice_src.mm; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsLice_src.mm; sourceTree = "<group>"; };
-		530A436922D2E84800CB3F77 /* IGraphicsCairo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsCairo.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsCairo.cpp; sourceTree = "<group>"; };
-		530A436A22D2E84800CB3F77 /* IGraphicsCairo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsCairo.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsCairo.h; sourceTree = "<group>"; };
-		530A436B22D2E84800CB3F77 /* IGraphicsLice.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsLice.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsLice.h; sourceTree = "<group>"; };
-		530A436C22D2E84800CB3F77 /* IGraphicsNanoVG_src.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = IGraphicsNanoVG_src.m; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsNanoVG_src.m; sourceTree = "<group>"; };
-		530A436D22D2E84800CB3F77 /* IGraphicsCanvas.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsCanvas.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsCanvas.cpp; sourceTree = "<group>"; };
-		530A436E22D2E84900CB3F77 /* IGraphicsNanoVG.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsNanoVG.cpp; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsNanoVG.cpp; sourceTree = "<group>"; };
-		530A436F22D2E84900CB3F77 /* IGraphicsAGG_src.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsAGG_src.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.h; sourceTree = "<group>"; };
-		530A437022D2E84900CB3F77 /* IGraphicsNanoVG.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsNanoVG.h; path = ../../code/iPlug2/IGraphics/Drawing/IGraphicsNanoVG.h; sourceTree = "<group>"; };
-		530A437122D2E8DA00CB3F77 /* AAX */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AAX; path = ../../iPlug2/IPlug/AAX; sourceTree = "<group>"; };
 		530A437222D2E8DA00CB3F77 /* IPlugMidi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugMidi.h; path = ../../iPlug2/IPlug/IPlugMidi.h; sourceTree = "<group>"; };
 		530A437322D2E8DA00CB3F77 /* IPlug_include_in_plug_src.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlug_include_in_plug_src.h; path = ../../iPlug2/IPlug/IPlug_include_in_plug_src.h; sourceTree = "<group>"; };
-		530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugPaths.cpp; path = ../../iPlug2/IPlug/IPlugPaths.cpp; sourceTree = "<group>"; };
-		530A437522D2E8DA00CB3F77 /* VST2 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VST2; path = ../../iPlug2/IPlug/VST2; sourceTree = "<group>"; };
-		530A437622D2E8DA00CB3F77 /* Extras */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Extras; path = ../../iPlug2/IPlug/Extras; sourceTree = "<group>"; };
-		530A437722D2E8DA00CB3F77 /* APP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = APP; path = ../../iPlug2/IPlug/APP; sourceTree = "<group>"; };
 		530A437822D2E8DB00CB3F77 /* IPlugPaths.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugPaths.h; path = ../../iPlug2/IPlug/IPlugPaths.h; sourceTree = "<group>"; };
 		530A437922D2E8DB00CB3F77 /* IPlug_include_in_plug_hdr.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlug_include_in_plug_hdr.h; path = ../../iPlug2/IPlug/IPlug_include_in_plug_hdr.h; sourceTree = "<group>"; };
-		530A437A22D2E8DB00CB3F77 /* ReaperExt */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ReaperExt; path = ../../iPlug2/IPlug/ReaperExt; sourceTree = "<group>"; };
 		530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugParameter.cpp; path = ../../iPlug2/IPlug/IPlugParameter.cpp; sourceTree = "<group>"; };
 		530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugAPIBase.cpp; path = ../../iPlug2/IPlug/IPlugAPIBase.cpp; sourceTree = "<group>"; };
 		530A437D22D2E8DB00CB3F77 /* IPlugLogger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugLogger.h; path = ../../iPlug2/IPlug/IPlugLogger.h; sourceTree = "<group>"; };
 		530A437E22D2E8DB00CB3F77 /* IPlugStructs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugStructs.h; path = ../../iPlug2/IPlug/IPlugStructs.h; sourceTree = "<group>"; };
 		530A437F22D2E8DB00CB3F77 /* IPlugAPIBase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugAPIBase.h; path = ../../iPlug2/IPlug/IPlugAPIBase.h; sourceTree = "<group>"; };
-		530A438022D2E8DB00CB3F77 /* AUv2 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AUv2; path = ../../iPlug2/IPlug/AUv2; sourceTree = "<group>"; };
-		530A438122D2E8DB00CB3F77 /* WEB */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WEB; path = ../../iPlug2/IPlug/WEB; sourceTree = "<group>"; };
 		530A438222D2E8DB00CB3F77 /* IPlugUtilities.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugUtilities.h; path = ../../iPlug2/IPlug/IPlugUtilities.h; sourceTree = "<group>"; };
-		530A438322D2E8DC00CB3F77 /* IPlugOBJCPrefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugOBJCPrefix.pch; path = ../../iPlug2/IPlug/IPlugOBJCPrefix.pch; sourceTree = "<group>"; };
 		530A438422D2E8DC00CB3F77 /* IPlugDelegate_select.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugDelegate_select.h; path = ../../iPlug2/IPlug/IPlugDelegate_select.h; sourceTree = "<group>"; };
 		530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugTimer.cpp; path = ../../iPlug2/IPlug/IPlugTimer.cpp; sourceTree = "<group>"; };
 		530A438622D2E8DC00CB3F77 /* IPlugPlatform.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugPlatform.h; path = ../../iPlug2/IPlug/IPlugPlatform.h; sourceTree = "<group>"; };
-		530A438722D2E8DC00CB3F77 /* VST3 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VST3; path = ../../iPlug2/IPlug/VST3; sourceTree = "<group>"; };
 		530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IPlugPaths.mm; path = ../../iPlug2/IPlug/IPlugPaths.mm; sourceTree = "<group>"; };
 		530A438922D2E8DC00CB3F77 /* IPlugProcessor.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugProcessor.h; path = ../../iPlug2/IPlug/IPlugProcessor.h; sourceTree = "<group>"; };
 		530A438A22D2E8DC00CB3F77 /* IPlugPluginBase.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugPluginBase.cpp; path = ../../iPlug2/IPlug/IPlugPluginBase.cpp; sourceTree = "<group>"; };
@@ -413,6 +585,69 @@
 		530A43A722D2E9AA00CB3F77 /* swell-gdi.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "swell-gdi.mm"; path = "../../iPlug2/WDL/swell/swell-gdi.mm"; sourceTree = "<group>"; };
 		530A43A822D2E9AA00CB3F77 /* swell-internal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "swell-internal.h"; path = "../../iPlug2/WDL/swell/swell-internal.h"; sourceTree = "<group>"; };
 		530A43A922D2E9AA00CB3F77 /* swell.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = swell.cpp; path = ../../iPlug2/WDL/swell/swell.cpp; sourceTree = "<group>"; };
+		535F954D22E1B5A30054DAAE /* song.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = song.h; path = ../thirdparty/liblsdj/liblsdj/song.h; sourceTree = "<group>"; };
+		535F954E22E1B5A40054DAAE /* instrument_constants.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument_constants.h; path = ../thirdparty/liblsdj/liblsdj/instrument_constants.h; sourceTree = "<group>"; };
+		535F954F22E1B5A40054DAAE /* song.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = song.c; path = ../thirdparty/liblsdj/liblsdj/song.c; sourceTree = "<group>"; };
+		535F955022E1B5A40054DAAE /* instrument_kit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument_kit.h; path = ../thirdparty/liblsdj/liblsdj/instrument_kit.h; sourceTree = "<group>"; };
+		535F955122E1B5A40054DAAE /* error.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = error.c; path = ../thirdparty/liblsdj/liblsdj/error.c; sourceTree = "<group>"; };
+		535F955222E1B5A40054DAAE /* panning.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = panning.h; path = ../thirdparty/liblsdj/liblsdj/panning.h; sourceTree = "<group>"; };
+		535F955322E1B5A40054DAAE /* project.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = project.h; path = ../thirdparty/liblsdj/liblsdj/project.h; sourceTree = "<group>"; };
+		535F955422E1B5A40054DAAE /* instrument_wave.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument_wave.h; path = ../thirdparty/liblsdj/liblsdj/instrument_wave.h; sourceTree = "<group>"; };
+		535F955522E1B5A40054DAAE /* phrase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = phrase.h; path = ../thirdparty/liblsdj/liblsdj/phrase.h; sourceTree = "<group>"; };
+		535F955622E1B5A40054DAAE /* project.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = project.c; path = ../thirdparty/liblsdj/liblsdj/project.c; sourceTree = "<group>"; };
+		535F955722E1B5A40054DAAE /* compression.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = compression.c; path = ../thirdparty/liblsdj/liblsdj/compression.c; sourceTree = "<group>"; };
+		535F955822E1B5A40054DAAE /* synth.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = synth.c; path = ../thirdparty/liblsdj/liblsdj/synth.c; sourceTree = "<group>"; };
+		535F955922E1B5A40054DAAE /* instrument.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = instrument.c; path = ../thirdparty/liblsdj/liblsdj/instrument.c; sourceTree = "<group>"; };
+		535F955A22E1B5A50054DAAE /* channel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = channel.h; path = ../thirdparty/liblsdj/liblsdj/channel.h; sourceTree = "<group>"; };
+		535F955B22E1B5A50054DAAE /* compression.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = compression.h; path = ../thirdparty/liblsdj/liblsdj/compression.h; sourceTree = "<group>"; };
+		535F955C22E1B5A50054DAAE /* sav.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sav.c; path = ../thirdparty/liblsdj/liblsdj/sav.c; sourceTree = "<group>"; };
+		535F955D22E1B5A50054DAAE /* row.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = row.c; path = ../thirdparty/liblsdj/liblsdj/row.c; sourceTree = "<group>"; };
+		535F955E22E1B5A50054DAAE /* groove.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = groove.c; path = ../thirdparty/liblsdj/liblsdj/groove.c; sourceTree = "<group>"; };
+		535F955F22E1B5A50054DAAE /* instrument_noise.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument_noise.h; path = ../thirdparty/liblsdj/liblsdj/instrument_noise.h; sourceTree = "<group>"; };
+		535F956022E1B5A50054DAAE /* phrase.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = phrase.c; path = ../thirdparty/liblsdj/liblsdj/phrase.c; sourceTree = "<group>"; };
+		535F956122E1B5A50054DAAE /* command.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = command.c; path = ../thirdparty/liblsdj/liblsdj/command.c; sourceTree = "<group>"; };
+		535F956222E1B5A50054DAAE /* command.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = command.h; path = ../thirdparty/liblsdj/liblsdj/command.h; sourceTree = "<group>"; };
+		535F956322E1B5A50054DAAE /* table.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = table.h; path = ../thirdparty/liblsdj/liblsdj/table.h; sourceTree = "<group>"; };
+		535F956422E1B5A60054DAAE /* wave.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = wave.c; path = ../thirdparty/liblsdj/liblsdj/wave.c; sourceTree = "<group>"; };
+		535F956522E1B5A60054DAAE /* synth.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = synth.h; path = ../thirdparty/liblsdj/liblsdj/synth.h; sourceTree = "<group>"; };
+		535F956622E1B5A60054DAAE /* instrument.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument.h; path = ../thirdparty/liblsdj/liblsdj/instrument.h; sourceTree = "<group>"; };
+		535F956722E1B5A60054DAAE /* word.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = word.c; path = ../thirdparty/liblsdj/liblsdj/word.c; sourceTree = "<group>"; };
+		535F956822E1B5A60054DAAE /* chain.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = chain.c; path = ../thirdparty/liblsdj/liblsdj/chain.c; sourceTree = "<group>"; };
+		535F956922E1B5A60054DAAE /* row.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = row.h; path = ../thirdparty/liblsdj/liblsdj/row.h; sourceTree = "<group>"; };
+		535F956A22E1B5A60054DAAE /* sav.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = sav.h; path = ../thirdparty/liblsdj/liblsdj/sav.h; sourceTree = "<group>"; };
+		535F956B22E1B5A60054DAAE /* word.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = word.h; path = ../thirdparty/liblsdj/liblsdj/word.h; sourceTree = "<group>"; };
+		535F956C22E1B5A70054DAAE /* wave.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = wave.h; path = ../thirdparty/liblsdj/liblsdj/wave.h; sourceTree = "<group>"; };
+		535F956D22E1B5A70054DAAE /* groove.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = groove.h; path = ../thirdparty/liblsdj/liblsdj/groove.h; sourceTree = "<group>"; };
+		535F956E22E1B5A70054DAAE /* vio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = vio.h; path = ../thirdparty/liblsdj/liblsdj/vio.h; sourceTree = "<group>"; };
+		535F956F22E1B5A70054DAAE /* instrument_pulse.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = instrument_pulse.h; path = ../thirdparty/liblsdj/liblsdj/instrument_pulse.h; sourceTree = "<group>"; };
+		535F957022E1B5A70054DAAE /* vio.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = vio.c; path = ../thirdparty/liblsdj/liblsdj/vio.c; sourceTree = "<group>"; };
+		535F957122E1B5A70054DAAE /* error.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = error.h; path = ../thirdparty/liblsdj/liblsdj/error.h; sourceTree = "<group>"; };
+		535F957222E1B5A70054DAAE /* table.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = table.c; path = ../thirdparty/liblsdj/liblsdj/table.c; sourceTree = "<group>"; };
+		535F957322E1B5A70054DAAE /* chain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = chain.h; path = ../thirdparty/liblsdj/liblsdj/chain.h; sourceTree = "<group>"; };
+		535F960B22E1B8DB0054DAAE /* sameboy_retroplug.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = sameboy_retroplug.a; path = ../thirdparty/SameBoy/build/bin/sameboy_retroplug.a; sourceTree = "<group>"; };
+		535F960E22E1B9730054DAAE /* IGraphicsAGG.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsAGG.h; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsAGG.h; sourceTree = "<group>"; };
+		535F960F22E1B9730054DAAE /* IGraphicsNanoVG.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsNanoVG.cpp; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsNanoVG.cpp; sourceTree = "<group>"; };
+		535F961122E1B9730054DAAE /* IGraphicsNanoVG.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsNanoVG.h; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsNanoVG.h; sourceTree = "<group>"; };
+		535F961222E1B9740054DAAE /* IGraphicsAGG_src.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsAGG_src.cpp; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.cpp; sourceTree = "<group>"; };
+		535F961322E1B9740054DAAE /* IGraphicsAGG.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsAGG.cpp; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsAGG.cpp; sourceTree = "<group>"; };
+		535F961422E1B9740054DAAE /* IGraphicsLice_src.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsLice_src.mm; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsLice_src.mm; sourceTree = "<group>"; };
+		535F961622E1B9740054DAAE /* IGraphicsLice.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsLice.cpp; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsLice.cpp; sourceTree = "<group>"; };
+		535F961722E1B9740054DAAE /* IGraphicsLice_src.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsLice_src.h; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsLice_src.h; sourceTree = "<group>"; };
+		535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = IGraphicsNanoVG_src.m; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsNanoVG_src.m; sourceTree = "<group>"; };
+		535F961A22E1B9740054DAAE /* IGraphicsAGG_src.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = IGraphicsAGG_src.mm; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.mm; sourceTree = "<group>"; };
+		535F961B22E1B9740054DAAE /* IGraphicsAGG_src.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsAGG_src.h; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsAGG_src.h; sourceTree = "<group>"; };
+		535F961C22E1B9750054DAAE /* IGraphicsLice.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IGraphicsLice.h; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsLice.h; sourceTree = "<group>"; };
+		535F961D22E1B9750054DAAE /* IGraphicsLice_src.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IGraphicsLice_src.cpp; path = ../thirdparty/iPlug2/IGraphics/Drawing/IGraphicsLice_src.cpp; sourceTree = "<group>"; };
+		535F967822E1BE730054DAAE /* IPlugAPP_host.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugAPP_host.h; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP_host.h; sourceTree = "<group>"; };
+		535F967922E1BE730054DAAE /* IPlugAPP.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = IPlugAPP.h; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP.h; sourceTree = "<group>"; };
+		535F967A22E1BE730054DAAE /* IPlugAPP.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugAPP.cpp; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP.cpp; sourceTree = "<group>"; };
+		535F967B22E1BE730054DAAE /* IPlugAPP_dialog.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugAPP_dialog.cpp; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP_dialog.cpp; sourceTree = "<group>"; };
+		535F967C22E1BE740054DAAE /* IPlugAPP_host.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugAPP_host.cpp; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP_host.cpp; sourceTree = "<group>"; };
+		535F967D22E1BE740054DAAE /* IPlugAPP_main.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = IPlugAPP_main.cpp; path = ../thirdparty/iPlug2/IPlug/APP/IPlugAPP_main.cpp; sourceTree = "<group>"; };
+		535F968322E1BF180054DAAE /* RtAudio.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RtAudio.cpp; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTAudio/RtAudio.cpp; sourceTree = "<group>"; };
+		535F968422E1BF180054DAAE /* RtAudio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtAudio.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTAudio/RtAudio.h; sourceTree = "<group>"; };
+		535F968622E1BF240054DAAE /* RtMidi.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RtMidi.cpp; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.cpp; sourceTree = "<group>"; };
+		535F968722E1BF240054DAAE /* RtMidi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtMidi.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.h; sourceTree = "<group>"; };
 		53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PaRingBuffer.c; path = ../src/libretroplug/PaRingBuffer.c; sourceTree = "<group>"; };
 		53FFE72822DB525900B7C5B5 /* rom.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = rom.c; path = ../src/lsdj/rom.c; sourceTree = "<group>"; };
 		53FFE72922DB525900B7C5B5 /* sample.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sample.c; path = ../src/lsdj/sample.c; sourceTree = "<group>"; };
@@ -476,6 +711,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F960C22E1B8DB0054DAAE /* sameboy_retroplug.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -493,6 +729,7 @@
 		089C166AFE841209C02AAC07 /* IPlugExample */ = {
 			isa = PBXGroup;
 			children = (
+				535F954A22E1B5450054DAAE /* Dependencies */,
 				53FFE71422DB51E500B7C5B5 /* Source */,
 				089C167CFE841241C02AAC07 /* Resources */,
 				32C88E010371C26100C91783 /* Other Sources */,
@@ -505,6 +742,7 @@
 		089C1671FE841209C02AAC07 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				535F960B22E1B8DB0054DAAE /* sameboy_retroplug.a */,
 				4F03A54820A461FD00EBDFFB /* IGraphics */,
 				4F78D8D013B63B390032E0F3 /* IPlug */,
 				4FF01613134E0BCD001447BA /* WDL */,
@@ -563,6 +801,9 @@
 		4F03A54820A461FD00EBDFFB /* IGraphics */ = {
 			isa = PBXGroup;
 			children = (
+				4FB1F57A20E4AFDA004157C8 /* Platforms */,
+				530A433022D2E7CC00CB3F77 /* Controls */,
+				535F960D22E1B9600054DAAE /* Drawing */,
 				530A435E22D2E82A00CB3F77 /* IControl.cpp */,
 				530A435322D2E82900CB3F77 /* IControl.h */,
 				530A435D22D2E82A00CB3F77 /* IGraphics_include_in_plug_hdr.h */,
@@ -578,45 +819,14 @@
 				530A435822D2E82A00CB3F77 /* IGraphicsPopupMenu.h */,
 				530A435A22D2E82A00CB3F77 /* IGraphicsStructs.h */,
 				530A435222D2E82900CB3F77 /* IGraphicsUtilities.h */,
-				530A433022D2E7CC00CB3F77 /* Controls */,
-				4FB1F57A20E4AFDA004157C8 /* Platforms */,
-				4F03A54920A4621000EBDFFB /* Drawing */,
 			);
 			name = IGraphics;
-			sourceTree = "<group>";
-		};
-		4F03A54920A4621000EBDFFB /* Drawing */ = {
-			isa = PBXGroup;
-			children = (
-				530A436722D2E84800CB3F77 /* IGraphicsAGG_src.cpp */,
-				530A436F22D2E84900CB3F77 /* IGraphicsAGG_src.h */,
-				530A436122D2E84700CB3F77 /* IGraphicsAGG_src.mm */,
-				530A436522D2E84800CB3F77 /* IGraphicsAGG.cpp */,
-				530A436022D2E84700CB3F77 /* IGraphicsAGG.h */,
-				530A436922D2E84800CB3F77 /* IGraphicsCairo.cpp */,
-				530A436A22D2E84800CB3F77 /* IGraphicsCairo.h */,
-				530A436D22D2E84800CB3F77 /* IGraphicsCanvas.cpp */,
-				530A436322D2E84700CB3F77 /* IGraphicsCanvas.h */,
-				530A436622D2E84800CB3F77 /* IGraphicsLice_src.cpp */,
-				530A436222D2E84700CB3F77 /* IGraphicsLice_src.h */,
-				530A436822D2E84800CB3F77 /* IGraphicsLice_src.mm */,
-				530A436422D2E84800CB3F77 /* IGraphicsLice.cpp */,
-				530A436B22D2E84800CB3F77 /* IGraphicsLice.h */,
-				530A436C22D2E84800CB3F77 /* IGraphicsNanoVG_src.m */,
-				530A436E22D2E84900CB3F77 /* IGraphicsNanoVG.cpp */,
-				530A437022D2E84900CB3F77 /* IGraphicsNanoVG.h */,
-			);
-			name = Drawing;
-			path = ../../../IGraphics/Drawing;
 			sourceTree = "<group>";
 		};
 		4F78D8D013B63B390032E0F3 /* IPlug */ = {
 			isa = PBXGroup;
 			children = (
-				530A437122D2E8DA00CB3F77 /* AAX */,
-				530A437722D2E8DA00CB3F77 /* APP */,
-				530A438022D2E8DB00CB3F77 /* AUv2 */,
-				530A437622D2E8DA00CB3F77 /* Extras */,
+				535F967722E1BE560054DAAE /* APP */,
 				530A437922D2E8DB00CB3F77 /* IPlug_include_in_plug_hdr.h */,
 				530A437322D2E8DA00CB3F77 /* IPlug_include_in_plug_src.h */,
 				530A437C22D2E8DB00CB3F77 /* IPlugAPIBase.cpp */,
@@ -626,10 +836,8 @@
 				530A438C22D2E8DD00CB3F77 /* IPlugEditorDelegate.h */,
 				530A437D22D2E8DB00CB3F77 /* IPlugLogger.h */,
 				530A437222D2E8DA00CB3F77 /* IPlugMidi.h */,
-				530A438322D2E8DC00CB3F77 /* IPlugOBJCPrefix.pch */,
 				530A437B22D2E8DB00CB3F77 /* IPlugParameter.cpp */,
 				530A438B22D2E8DC00CB3F77 /* IPlugParameter.h */,
-				530A437422D2E8DA00CB3F77 /* IPlugPaths.cpp */,
 				530A437822D2E8DB00CB3F77 /* IPlugPaths.h */,
 				530A438822D2E8DC00CB3F77 /* IPlugPaths.mm */,
 				530A438622D2E8DC00CB3F77 /* IPlugPlatform.h */,
@@ -642,10 +850,6 @@
 				530A438522D2E8DC00CB3F77 /* IPlugTimer.cpp */,
 				530A438E22D2E8DD00CB3F77 /* IPlugTimer.h */,
 				530A438222D2E8DB00CB3F77 /* IPlugUtilities.h */,
-				530A437A22D2E8DB00CB3F77 /* ReaperExt */,
-				530A437522D2E8DA00CB3F77 /* VST2 */,
-				530A438722D2E8DC00CB3F77 /* VST3 */,
-				530A438122D2E8DB00CB3F77 /* WEB */,
 			);
 			name = IPlug;
 			sourceTree = "<group>";
@@ -734,6 +938,105 @@
 			path = Controls;
 			sourceTree = "<group>";
 		};
+		535F954A22E1B5450054DAAE /* Dependencies */ = {
+			isa = PBXGroup;
+			children = (
+				535F954C22E1B5700054DAAE /* liblsdj */,
+			);
+			name = Dependencies;
+			sourceTree = "<group>";
+		};
+		535F954C22E1B5700054DAAE /* liblsdj */ = {
+			isa = PBXGroup;
+			children = (
+				535F956822E1B5A60054DAAE /* chain.c */,
+				535F957322E1B5A70054DAAE /* chain.h */,
+				535F955A22E1B5A50054DAAE /* channel.h */,
+				535F956122E1B5A50054DAAE /* command.c */,
+				535F956222E1B5A50054DAAE /* command.h */,
+				535F955722E1B5A40054DAAE /* compression.c */,
+				535F955B22E1B5A50054DAAE /* compression.h */,
+				535F955122E1B5A40054DAAE /* error.c */,
+				535F957122E1B5A70054DAAE /* error.h */,
+				535F955E22E1B5A50054DAAE /* groove.c */,
+				535F956D22E1B5A70054DAAE /* groove.h */,
+				535F954E22E1B5A40054DAAE /* instrument_constants.h */,
+				535F955022E1B5A40054DAAE /* instrument_kit.h */,
+				535F955F22E1B5A50054DAAE /* instrument_noise.h */,
+				535F956F22E1B5A70054DAAE /* instrument_pulse.h */,
+				535F955422E1B5A40054DAAE /* instrument_wave.h */,
+				535F955922E1B5A40054DAAE /* instrument.c */,
+				535F956622E1B5A60054DAAE /* instrument.h */,
+				535F955222E1B5A40054DAAE /* panning.h */,
+				535F956022E1B5A50054DAAE /* phrase.c */,
+				535F955522E1B5A40054DAAE /* phrase.h */,
+				535F955622E1B5A40054DAAE /* project.c */,
+				535F955322E1B5A40054DAAE /* project.h */,
+				535F955D22E1B5A50054DAAE /* row.c */,
+				535F956922E1B5A60054DAAE /* row.h */,
+				535F955C22E1B5A50054DAAE /* sav.c */,
+				535F956A22E1B5A60054DAAE /* sav.h */,
+				535F954F22E1B5A40054DAAE /* song.c */,
+				535F954D22E1B5A30054DAAE /* song.h */,
+				535F955822E1B5A40054DAAE /* synth.c */,
+				535F956522E1B5A60054DAAE /* synth.h */,
+				535F957222E1B5A70054DAAE /* table.c */,
+				535F956322E1B5A50054DAAE /* table.h */,
+				535F957022E1B5A70054DAAE /* vio.c */,
+				535F956E22E1B5A70054DAAE /* vio.h */,
+				535F956422E1B5A60054DAAE /* wave.c */,
+				535F956C22E1B5A70054DAAE /* wave.h */,
+				535F956722E1B5A60054DAAE /* word.c */,
+				535F956B22E1B5A60054DAAE /* word.h */,
+			);
+			name = liblsdj;
+			sourceTree = "<group>";
+		};
+		535F960D22E1B9600054DAAE /* Drawing */ = {
+			isa = PBXGroup;
+			children = (
+				535F961222E1B9740054DAAE /* IGraphicsAGG_src.cpp */,
+				535F961B22E1B9740054DAAE /* IGraphicsAGG_src.h */,
+				535F961A22E1B9740054DAAE /* IGraphicsAGG_src.mm */,
+				535F961322E1B9740054DAAE /* IGraphicsAGG.cpp */,
+				535F960E22E1B9730054DAAE /* IGraphicsAGG.h */,
+				535F961D22E1B9750054DAAE /* IGraphicsLice_src.cpp */,
+				535F961722E1B9740054DAAE /* IGraphicsLice_src.h */,
+				535F961422E1B9740054DAAE /* IGraphicsLice_src.mm */,
+				535F961622E1B9740054DAAE /* IGraphicsLice.cpp */,
+				535F961C22E1B9750054DAAE /* IGraphicsLice.h */,
+				535F961922E1B9740054DAAE /* IGraphicsNanoVG_src.m */,
+				535F960F22E1B9730054DAAE /* IGraphicsNanoVG.cpp */,
+				535F961122E1B9730054DAAE /* IGraphicsNanoVG.h */,
+			);
+			name = Drawing;
+			sourceTree = "<group>";
+		};
+		535F967722E1BE560054DAAE /* APP */ = {
+			isa = PBXGroup;
+			children = (
+				535F968222E1BEDA0054DAAE /* RtAudioMidi */,
+				535F967B22E1BE730054DAAE /* IPlugAPP_dialog.cpp */,
+				535F967C22E1BE740054DAAE /* IPlugAPP_host.cpp */,
+				535F967822E1BE730054DAAE /* IPlugAPP_host.h */,
+				535F967D22E1BE740054DAAE /* IPlugAPP_main.cpp */,
+				535F967A22E1BE730054DAAE /* IPlugAPP.cpp */,
+				535F967922E1BE730054DAAE /* IPlugAPP.h */,
+			);
+			name = APP;
+			sourceTree = "<group>";
+		};
+		535F968222E1BEDA0054DAAE /* RtAudioMidi */ = {
+			isa = PBXGroup;
+			children = (
+				535F968622E1BF240054DAAE /* RtMidi.cpp */,
+				535F968722E1BF240054DAAE /* RtMidi.h */,
+				535F968322E1BF180054DAAE /* RtAudio.cpp */,
+				535F968422E1BF180054DAAE /* RtAudio.h */,
+			);
+			name = RtAudioMidi;
+			sourceTree = "<group>";
+		};
 		53FFE71422DB51E500B7C5B5 /* Source */ = {
 			isa = PBXGroup;
 			children = (
@@ -762,9 +1065,37 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95AB22E1B5A80054DAAE /* channel.h in Headers */,
+				535F961F22E1B9750054DAAE /* IGraphicsAGG.h in Headers */,
+				535F958A22E1B5A80054DAAE /* phrase.h in Headers */,
+				535F957422E1B5A70054DAAE /* song.h in Headers */,
+				535F962922E1B9750054DAAE /* IGraphicsNanoVG.h in Headers */,
+				535F95F622E1B5A80054DAAE /* groove.h in Headers */,
+				535F95E122E1B5A80054DAAE /* instrument.h in Headers */,
+				535F966422E1B9750054DAAE /* IGraphicsAGG_src.h in Headers */,
 				53FFE78C22DB5AD900B7C5B5 /* SameBoyPlug.h in Headers */,
+				535F958722E1B5A80054DAAE /* panning.h in Headers */,
+				535F95F422E1B5A80054DAAE /* word.h in Headers */,
+				535F965222E1B9750054DAAE /* IGraphicsLice_src.h in Headers */,
+				535F95D722E1B5A80054DAAE /* table.h in Headers */,
+				535F95F722E1B5A80054DAAE /* vio.h in Headers */,
+				535F95E022E1B5A80054DAAE /* synth.h in Headers */,
+				535F960122E1B5A80054DAAE /* error.h in Headers */,
+				535F95F822E1B5A80054DAAE /* instrument_pulse.h in Headers */,
+				535F95F522E1B5A80054DAAE /* wave.h in Headers */,
 				53FFE78E22DB613200B7C5B5 /* Lsdj.h in Headers */,
+				535F960A22E1B5A80054DAAE /* chain.h in Headers */,
+				535F95F222E1B5A80054DAAE /* row.h in Headers */,
+				535F966522E1B9750054DAAE /* IGraphicsLice.h in Headers */,
+				535F957522E1B5A70054DAAE /* instrument_constants.h in Headers */,
+				535F958822E1B5A80054DAAE /* project.h in Headers */,
+				535F95C522E1B5A80054DAAE /* instrument_noise.h in Headers */,
+				535F95AC22E1B5A80054DAAE /* compression.h in Headers */,
+				535F958922E1B5A80054DAAE /* instrument_wave.h in Headers */,
 				4F6FD2B022675B6300FC59E6 /* (null) in Headers */,
+				535F95D622E1B5A80054DAAE /* command.h in Headers */,
+				535F95F322E1B5A80054DAAE /* sav.h in Headers */,
+				535F957E22E1B5A80054DAAE /* instrument_kit.h in Headers */,
 				5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1012,7 +1343,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361510C22D2F6D9007F65A5 /* VST2 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1020,7 +1350,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361510B22D2F6C1007F65A5 /* AUv2 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1036,7 +1365,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361510D22D2F6DC007F65A5 /* VST3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1044,7 +1372,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5361510A22D2F6BD007F65A5 /* AAX in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1053,7 +1380,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				4F78D88613B6382B0032E0F3 /* RetroPlug.icns in Resources */,
-				5361510922D2F6B9007F65A5 /* APP in Resources */,
 				4F1B4AE42014D33600BC64D4 /* RetroPlug-macOS-MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1189,25 +1515,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FA22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74522DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F969F22E1C2470054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F95BE22E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76A22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F968E22E1C2190054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE72C22DB525900B7C5B5 /* rom.c in Sources */,
 				536150BE22D2F693007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150D922D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F96AA22E1E1660054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F96A822E1E1660054DAAE /* IControls.cpp in Sources */,
 				53FFE73422DB525900B7C5B5 /* sample.c in Sources */,
+				535F958022E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78422DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95C722E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75722DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95B622E1B5A80054DAAE /* row.c in Sources */,
+				535F95EB22E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE77C22DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A422E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959422E1B5A80054DAAE /* compression.c in Sources */,
+				535F96A922E1E1660054DAAE /* IPopupMenuControl.cpp in Sources */,
+				535F968C22E1C2190054DAAE /* IGraphicsCoreText.mm in Sources */,
+				535F968D22E1C2190054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150BD22D2F693007F65A5 /* IGraphics.cpp in Sources */,
-				536150DA22D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */,
 				536150DE22D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
 				53FFE77222DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F959C22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE74E22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150D822D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F958C22E1B5A80054DAAE /* project.c in Sources */,
+				535F957722E1B5A70054DAAE /* song.c in Sources */,
+				535F95D922E1B5A80054DAAE /* wave.c in Sources */,
+				535F95CF22E1B5A80054DAAE /* command.c in Sources */,
 				536150DB22D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BC22D2F693007F65A5 /* IControl.cpp in Sources */,
+				535F95AE22E1B5A80054DAAE /* sav.c in Sources */,
+				535F960322E1B5A80054DAAE /* table.c in Sources */,
 				536150DC22D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E322E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76222DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE73C22DB525900B7C5B5 /* kit.c in Sources */,
 			);
@@ -1217,25 +1565,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FF22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74A22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F96A322E1C24A0054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F95C322E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76F22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F969A22E1C21C0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE73122DB525900B7C5B5 /* rom.c in Sources */,
 				536150CD22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150FC22D2F6AE007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F96B922E1E1690054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F96B722E1E1690054DAAE /* IControls.cpp in Sources */,
 				53FFE73922DB525900B7C5B5 /* sample.c in Sources */,
+				535F958522E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78922DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95CC22E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75C22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72622DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95BB22E1B5A80054DAAE /* row.c in Sources */,
+				535F95F022E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE78122DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A922E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959922E1B5A80054DAAE /* compression.c in Sources */,
+				535F96B822E1E1690054DAAE /* IPopupMenuControl.cpp in Sources */,
+				535F969822E1C21C0054DAAE /* IGraphicsCoreText.mm in Sources */,
+				535F969922E1C21C0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150CC22D2F696007F65A5 /* IGraphics.cpp in Sources */,
-				536150FD22D2F6AE007F65A5 /* IPlugPaths.cpp in Sources */,
 				5361510122D2F6AE007F65A5 /* IPlugTimer.cpp in Sources */,
 				53FFE77722DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F95A122E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75322DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150FB22D2F6AE007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F959122E1B5A80054DAAE /* project.c in Sources */,
+				535F957C22E1B5A80054DAAE /* song.c in Sources */,
+				535F95DE22E1B5A80054DAAE /* wave.c in Sources */,
+				535F95D422E1B5A80054DAAE /* command.c in Sources */,
 				536150FE22D2F6AE007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CB22D2F696007F65A5 /* IControl.cpp in Sources */,
+				535F95B322E1B5A80054DAAE /* sav.c in Sources */,
+				535F960822E1B5A80054DAAE /* table.c in Sources */,
 				536150FF22D2F6AE007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E822E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76722DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE74122DB525900B7C5B5 /* kit.c in Sources */,
 			);
@@ -1245,25 +1615,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FC22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74722DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F96A122E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F95C022E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76C22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F969422E1C21A0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE72E22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C422D2F694007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150E722D2F6AB007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F96B022E1E1670054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F96AE22E1E1670054DAAE /* IControls.cpp in Sources */,
 				53FFE73622DB525900B7C5B5 /* sample.c in Sources */,
+				535F958222E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78622DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95C922E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75922DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72322DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95B822E1B5A80054DAAE /* row.c in Sources */,
+				535F95ED22E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE77E22DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A622E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959622E1B5A80054DAAE /* compression.c in Sources */,
+				535F96AF22E1E1670054DAAE /* IPopupMenuControl.cpp in Sources */,
+				535F969222E1C21A0054DAAE /* IGraphicsCoreText.mm in Sources */,
+				535F969322E1C21A0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150C322D2F694007F65A5 /* IGraphics.cpp in Sources */,
-				536150E822D2F6AB007F65A5 /* IPlugPaths.cpp in Sources */,
 				536150EC22D2F6AB007F65A5 /* IPlugTimer.cpp in Sources */,
 				53FFE77422DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F959E22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75022DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150E622D2F6AB007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F958E22E1B5A80054DAAE /* project.c in Sources */,
+				535F957922E1B5A80054DAAE /* song.c in Sources */,
+				535F95DB22E1B5A80054DAAE /* wave.c in Sources */,
+				535F95D122E1B5A80054DAAE /* command.c in Sources */,
 				536150E922D2F6AB007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C222D2F694007F65A5 /* IControl.cpp in Sources */,
+				535F95B022E1B5A80054DAAE /* sav.c in Sources */,
+				535F960522E1B5A80054DAAE /* table.c in Sources */,
 				536150EA22D2F6AB007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E522E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76422DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE73E22DB525900B7C5B5 /* kit.c in Sources */,
 			);
@@ -1273,25 +1665,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FB22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74622DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F96A022E1C2480054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F95BF22E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76B22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F969122E1C21A0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE72D22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C122D2F694007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150E022D2F6AA007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F96AD22E1E1660054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F96AB22E1E1660054DAAE /* IControls.cpp in Sources */,
 				53FFE73522DB525900B7C5B5 /* sample.c in Sources */,
+				535F958122E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78522DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95C822E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75822DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72222DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95B722E1B5A80054DAAE /* row.c in Sources */,
+				535F95EC22E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE77D22DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A522E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959522E1B5A80054DAAE /* compression.c in Sources */,
+				535F96AC22E1E1660054DAAE /* IPopupMenuControl.cpp in Sources */,
+				535F968F22E1C21A0054DAAE /* IGraphicsCoreText.mm in Sources */,
+				535F969022E1C21A0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150C022D2F694007F65A5 /* IGraphics.cpp in Sources */,
-				536150E122D2F6AA007F65A5 /* IPlugPaths.cpp in Sources */,
 				536150E522D2F6AA007F65A5 /* IPlugTimer.cpp in Sources */,
 				53FFE77322DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F959D22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE74F22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150DF22D2F6AA007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F958D22E1B5A80054DAAE /* project.c in Sources */,
+				535F957822E1B5A80054DAAE /* song.c in Sources */,
+				535F95DA22E1B5A80054DAAE /* wave.c in Sources */,
+				535F95D022E1B5A80054DAAE /* command.c in Sources */,
 				536150E222D2F6AA007F65A5 /* IPlugPaths.mm in Sources */,
 				536150BF22D2F694007F65A5 /* IControl.cpp in Sources */,
+				535F95AF22E1B5A80054DAAE /* sav.c in Sources */,
+				535F960422E1B5A80054DAAE /* table.c in Sources */,
 				536150E322D2F6AA007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E422E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76322DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE73D22DB525900B7C5B5 /* kit.c in Sources */,
 			);
@@ -1301,25 +1715,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FD22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74822DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F96A222E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F95C122E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76D22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F969722E1C21B0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE72F22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C722D2F695007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150EE22D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F96B322E1E1670054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F96B122E1E1670054DAAE /* IControls.cpp in Sources */,
 				53FFE73722DB525900B7C5B5 /* sample.c in Sources */,
+				535F958322E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78722DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95CA22E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75A22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72422DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95B922E1B5A80054DAAE /* row.c in Sources */,
+				535F95EE22E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE77F22DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A722E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959722E1B5A80054DAAE /* compression.c in Sources */,
+				535F96B222E1E1670054DAAE /* IPopupMenuControl.cpp in Sources */,
+				535F969522E1C21B0054DAAE /* IGraphicsCoreText.mm in Sources */,
+				535F969622E1C21B0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150C622D2F695007F65A5 /* IGraphics.cpp in Sources */,
-				536150EF22D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */,
 				536150F322D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
 				53FFE77522DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F959F22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75122DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150ED22D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F958F22E1B5A80054DAAE /* project.c in Sources */,
+				535F957A22E1B5A80054DAAE /* song.c in Sources */,
+				535F95DC22E1B5A80054DAAE /* wave.c in Sources */,
+				535F95D222E1B5A80054DAAE /* command.c in Sources */,
 				536150F022D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C522D2F695007F65A5 /* IControl.cpp in Sources */,
+				535F95B122E1B5A80054DAAE /* sav.c in Sources */,
+				535F960622E1B5A80054DAAE /* table.c in Sources */,
 				536150F122D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E622E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76522DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE73F22DB525900B7C5B5 /* kit.c in Sources */,
 			);
@@ -1329,26 +1765,45 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95DF22E1B5A80054DAAE /* wave.c in Sources */,
 				53FFE76822DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				535F969D22E1C21D0054DAAE /* IGraphicsMac.mm in Sources */,
+				535F95B422E1B5A80054DAAE /* sav.c in Sources */,
 				53FFE73222DB525900B7C5B5 /* rom.c in Sources */,
 				53FFE73A22DB525900B7C5B5 /* sample.c in Sources */,
-				5361510422D2F6AF007F65A5 /* IPlugPaths.cpp in Sources */,
+				535F957D22E1B5A80054DAAE /* song.c in Sources */,
 				5361510822D2F6AF007F65A5 /* IPlugTimer.cpp in Sources */,
+				535F959A22E1B5A80054DAAE /* compression.c in Sources */,
 				53FFE74222DB525900B7C5B5 /* kit.c in Sources */,
+				535F95E922E1B5A80054DAAE /* word.c in Sources */,
 				536150CF22D2F697007F65A5 /* IGraphics.cpp in Sources */,
 				53FFE75422DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				53FFE78222DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95BC22E1B5A80054DAAE /* row.c in Sources */,
+				535F969B22E1C21D0054DAAE /* IGraphicsCoreText.mm in Sources */,
 				53FFE78A22DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F959222E1B5A80054DAAE /* project.c in Sources */,
 				5361510322D2F6AF007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F95C422E1B5A80054DAAE /* groove.c in Sources */,
+				535F95AA22E1B5A80054DAAE /* instrument.c in Sources */,
 				5361510622D2F6AF007F65A5 /* IPlugPluginBase.cpp in Sources */,
 				5361510222D2F6AF007F65A5 /* IPlugAPIBase.cpp in Sources */,
 				53FFE75D22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE77022DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				535F969C22E1C21D0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150D022D2F697007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
+				535F960022E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE72722DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95D522E1B5A80054DAAE /* command.c in Sources */,
+				535F960922E1B5A80054DAAE /* table.c in Sources */,
+				535F95F122E1B5A80054DAAE /* chain.c in Sources */,
+				535F958622E1B5A80054DAAE /* error.c in Sources */,
+				535F95A222E1B5A80054DAAE /* synth.c in Sources */,
 				5361510522D2F6AF007F65A5 /* IPlugPaths.mm in Sources */,
 				536150CE22D2F697007F65A5 /* IControl.cpp in Sources */,
+				535F95CD22E1B5A80054DAAE /* phrase.c in Sources */,
 				4F6FD2B722675B6300FC59E6 /* (null) in Sources */,
+				535F96A422E1C24A0054DAAE /* IGraphicsNanoVG_src.m in Sources */,
 				53FFE77822DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
 				53FFE74B22DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
 			);
@@ -1358,35 +1813,63 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F960222E1B5A80054DAAE /* table.c in Sources */,
 				53FFE72B22DB525900B7C5B5 /* rom.c in Sources */,
+				535F95EA22E1B5A80054DAAE /* chain.c in Sources */,
 				536150BB22D2F692007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				5361510F22D2F6F0007F65A5 /* swell-dlg.mm in Sources */,
 				536150D222D2F6A9007F65A5 /* IPlugParameter.cpp in Sources */,
+				535F95C622E1B5A80054DAAE /* phrase.c in Sources */,
+				535F957F22E1B5A80054DAAE /* error.c in Sources */,
+				535F968A22E1C2180054DAAE /* IGraphicsMac_view.mm in Sources */,
 				53FFE74422DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F95A322E1B5A80054DAAE /* instrument.c in Sources */,
+				535F96A722E1E1650054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F95BD22E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE72022DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
 				53FFE77B22DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F959B22E1B5A80054DAAE /* synth.c in Sources */,
 				536150BA22D2F692007F65A5 /* IGraphics.cpp in Sources */,
 				53FFE73B22DB525900B7C5B5 /* kit.c in Sources */,
+				535F95D822E1B5A80054DAAE /* wave.c in Sources */,
 				5361511722D2F6F0007F65A5 /* swell.cpp in Sources */,
+				535F968022E1BE740054DAAE /* IPlugAPP_host.cpp in Sources */,
+				535F969E22E1C2470054DAAE /* IGraphicsNanoVG_src.m in Sources */,
+				535F96A622E1E1650054DAAE /* IPopupMenuControl.cpp in Sources */,
 				5361511522D2F6F0007F65A5 /* swell-miscdlg.mm in Sources */,
 				5361511222D2F6F0007F65A5 /* swell-kb.mm in Sources */,
 				5361510E22D2F6F0007F65A5 /* swell-appstub.mm in Sources */,
-				536150D322D2F6A9007F65A5 /* IPlugPaths.cpp in Sources */,
+				535F967E22E1BE740054DAAE /* IPlugAPP.cpp in Sources */,
+				535F95CE22E1B5A80054DAAE /* command.c in Sources */,
 				5361511622D2F6F0007F65A5 /* swell-wnd.mm in Sources */,
+				535F959322E1B5A80054DAAE /* compression.c in Sources */,
 				536150D722D2F6A9007F65A5 /* IPlugTimer.cpp in Sources */,
+				535F96A522E1E1650054DAAE /* IControls.cpp in Sources */,
 				53FFE76922DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53FFE73322DB525900B7C5B5 /* sample.c in Sources */,
+				535F95B522E1B5A80054DAAE /* row.c in Sources */,
 				53FFE74D22DB528000B7C5B5 /* Lsdj.cpp in Sources */,
+				535F968122E1BE740054DAAE /* IPlugAPP_main.cpp in Sources */,
 				53FFE77122DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F95AD22E1B5A80054DAAE /* sav.c in Sources */,
 				53FFE75622DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				5361511022D2F6F0007F65A5 /* swell-gdi.mm in Sources */,
 				536150D122D2F6A9007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F968822E1BF240054DAAE /* RtMidi.cpp in Sources */,
 				5361511322D2F6F0007F65A5 /* swell-menu.mm in Sources */,
+				535F967F22E1BE740054DAAE /* IPlugAPP_dialog.cpp in Sources */,
+				535F968922E1C2180054DAAE /* IGraphicsCoreText.mm in Sources */,
 				5361511122D2F6F0007F65A5 /* swell-ini.cpp in Sources */,
+				535F95E222E1B5A80054DAAE /* word.c in Sources */,
 				53FFE78322DB52A700B7C5B5 /* File.cpp in Sources */,
 				53FFE76122DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				535F968522E1BF180054DAAE /* RtAudio.cpp in Sources */,
+				535F95F922E1B5A80054DAAE /* vio.c in Sources */,
+				535F957622E1B5A70054DAAE /* song.c in Sources */,
 				536150D422D2F6A9007F65A5 /* IPlugPaths.mm in Sources */,
+				535F968B22E1C2180054DAAE /* IGraphicsMac.mm in Sources */,
 				536150B922D2F692007F65A5 /* IControl.cpp in Sources */,
+				535F958B22E1B5A80054DAAE /* project.c in Sources */,
 				536150D522D2F6A9007F65A5 /* IPlugPluginBase.cpp in Sources */,
 				5361511822D2F6F0007F65A5 /* swellappmain.mm in Sources */,
 				5361511422D2F6F0007F65A5 /* swell-misc.mm in Sources */,
@@ -1397,27 +1880,45 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				535F95FE22E1B5A80054DAAE /* vio.c in Sources */,
 				53FFE74922DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				535F96B622E1E1680054DAAE /* ITextEntryControl.cpp in Sources */,
+				535F95C222E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76E22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53FFE73022DB525900B7C5B5 /* rom.c in Sources */,
 				536150CA22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				536150F522D2F6AD007F65A5 /* IPlugParameter.cpp in Sources */,
 				53FFE73822DB525900B7C5B5 /* sample.c in Sources */,
+				535F958422E1B5A80054DAAE /* error.c in Sources */,
 				53FFE78822DB52A700B7C5B5 /* File.cpp in Sources */,
+				535F95CB22E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75B22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72522DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				535F95BA22E1B5A80054DAAE /* row.c in Sources */,
+				535F95EF22E1B5A80054DAAE /* chain.c in Sources */,
 				53FFE78022DB52A700B7C5B5 /* base64.cpp in Sources */,
+				535F95A822E1B5A80054DAAE /* instrument.c in Sources */,
+				535F959822E1B5A80054DAAE /* compression.c in Sources */,
 				536150C922D2F696007F65A5 /* IGraphics.cpp in Sources */,
-				536150F622D2F6AD007F65A5 /* IPlugPaths.cpp in Sources */,
 				536150FA22D2F6AD007F65A5 /* IPlugTimer.cpp in Sources */,
+				535F96B422E1E1680054DAAE /* IControls.cpp in Sources */,
 				53FFE77622DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				535F95A022E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75222DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				536150F422D2F6AD007F65A5 /* IPlugAPIBase.cpp in Sources */,
+				535F959022E1B5A80054DAAE /* project.c in Sources */,
+				535F957B22E1B5A80054DAAE /* song.c in Sources */,
+				535F95DD22E1B5A80054DAAE /* wave.c in Sources */,
+				535F95D322E1B5A80054DAAE /* command.c in Sources */,
 				536150F722D2F6AD007F65A5 /* IPlugPaths.mm in Sources */,
 				536150C822D2F696007F65A5 /* IControl.cpp in Sources */,
+				535F95B222E1B5A80054DAAE /* sav.c in Sources */,
+				535F960722E1B5A80054DAAE /* table.c in Sources */,
 				536150F822D2F6AD007F65A5 /* IPlugPluginBase.cpp in Sources */,
+				535F95E722E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76622DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE74022DB525900B7C5B5 /* kit.c in Sources */,
+				535F96B522E1E1680054DAAE /* IPopupMenuControl.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

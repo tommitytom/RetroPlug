@@ -2,7 +2,7 @@
 #include "queue.h"
 
 #include <Core/gb.h>
-#include <windows.h>
+//#include <windows.h>
 
 extern const unsigned char dmg_boot[], cgb_boot[], cgb_fast_boot[], agb_boot[], sgb_boot[], sgb2_boot[];
 extern const unsigned dmg_boot_length, cgb_boot_length, cgb_fast_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;

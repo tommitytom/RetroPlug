@@ -1,3 +1,4 @@
+IPLUG2_ROOT = ../thirdparty/iPlug2
 #include "../thirdparty/iPlug2/common-mac.xcconfig"
 
 //------------------------------
@@ -17,7 +18,7 @@ EXTRA_LNK_FLAGS = //$(IGRAPHICS_LNK_FLAGS)
 
 //------------------------------
 // PREPROCESSOR MACROS
-EXTRA_ALL_DEFS = OBJC_PREFIX=vRetroPlug SWELL_APP_PREFIX=Swell_vRetroPlug IGRAPHICS_NANOVG IGRAPHICS_METAL
+EXTRA_ALL_DEFS = OBJC_PREFIX=vRetroPlug SWELL_APP_PREFIX=Swell_vRetroPlug IGRAPHICS_NANOVG IGRAPHICS_GL2
 //EXTRA_DEBUG_DEFS =
 //EXTRA_RELEASE_DEFS =
 //EXTRA_TRACER_DEFS =

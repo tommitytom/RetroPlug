@@ -104,9 +104,9 @@ else ifeq ($(platform), wiiu)
    CFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
    STATIC_LINKING = 1
 else ifneq (,$(findstring osx,$(platform)))
-   TARGET := $(TARGET_NAME)_retroplug.dylib
+   TARGET := $(TARGET_NAME)_retroplug.a
    fpic := -fPIC
-   SHARED := -dynamiclib
+   STATIC_LINKING = 1
 else ifneq (,$(findstring ios,$(platform)))
    TARGET := $(TARGET_NAME)_retroplug_ios.dylib
 	fpic := -fPIC
