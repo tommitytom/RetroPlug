@@ -4,10 +4,12 @@
 
 #include "IControl.h"
 #include "plugs/RetroPlug.h"
-//#include "KeyMap.h"
-//#include "LsdjKeyMap.h"
+#include "KeyMap.h"
+#include "LsdjKeyMap.h"
 #include "nanovg.h"
 #include "ContextMenu.h"
+
+#include <map>
 
 const int VIDEO_WIDTH = 160;
 const int VIDEO_HEIGHT = 144;
@@ -24,8 +26,8 @@ private:
 	NVGpaint _imgPaint;
 	float _alpha = 1.0f;
 
-	//KeyMap _keyMap;
-	//LsdjKeyMap _lsdjKeyMap;
+	KeyMap _keyMap;
+	LsdjKeyMap _lsdjKeyMap;
 
 	IPopupMenu _menu;
 	LsdjSyncModeMenuItems _lsdjMode = LsdjSyncModeMenuItems::Off;

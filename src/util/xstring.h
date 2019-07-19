@@ -30,6 +30,27 @@ static std::string ws2s(const std::string& str) {
 	return str;
 }
 
+#if WIN32
+static tstring tstr(const std::string& str) {
+	return s2ws(str);
+}
+
+static const tstring& tstr(const std::wstring& str) {
+	return str;
+}
+#else
+static const tstring& totstring(const std::string& str) {
+	return str;
+}
+
+static tstring totstring(const std::wstring& str) {
+	return ws2s(str);
+}
+}
+#endif
+
+
+
 // NOTE: ext must include "."!
 static tstring changeExt(const tstring& path, const tstring& ext) {
 	size_t dotIdx = path.find_last_of('.');

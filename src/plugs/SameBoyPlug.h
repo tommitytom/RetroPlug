@@ -1,7 +1,5 @@
 #pragma once
 
-//#include "platform/DynamicLibrary.h"
-//#include "platform/DynamicLibraryMemory.h"
 #include "libretroplug/MessageBus.h"
 #include "roms/Lsdj.h"
 #include "util/xstring.h"
@@ -25,47 +23,11 @@ enum class SaveStateType {
 	Sram
 };
 
-/*struct SameboyPlugSymbols {
-	void*(*sameboy_init)(void* user_data, const char* romData, size_t romSize, int model, bool fast_boot);
-	void(*sameboy_update_rom)(void* state, const char* rom_data, size_t rom_size);
-	void(*sameboy_free)(void* state);
-	void(*sameboy_reset)(void* state, int model, bool fast_boot);
-
-	void(*sameboy_update)(void* state, size_t requiredAudioFrames);
-	void(*sameboy_update_multiple)(void** states, size_t stateCount, size_t requiredAudioFrames);
-
-	void(*sameboy_set_sample_rate)(void* state, double sample_rate);
-	void(*sameboy_set_setting)(void* state, const char* name, int value);
-	void(*sameboy_disable_rendering)(void* state, bool disabled);
-
-	void(*sameboy_send_serial_byte)(void* state, int offset, char byte, size_t bitCount);
-	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
-	void(*sameboy_set_button)(void* state, int buttonId, bool down);
-	void(*sameboy_set_link_targets)(void* state, void** linkTargets, size_t count);
-
-	size_t(*sameboy_battery_size)(void* state);
-	void(*sameboy_load_battery)(void* state, const char* source, size_t size);
-	size_t(*sameboy_save_battery)(void* state, char* target, size_t size);
-
-	size_t(*sameboy_save_state_size)(void* state);
-	void(*sameboy_load_state)(void* state, const char* source, size_t size);
-	void(*sameboy_save_state)(void* state, char* target, size_t size);
-
-	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
-	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
-
-	const char*(*sameboy_get_rom_name)(void* state);
-};*/
-
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 
 class SameBoyPlug {
 private:
-	//DynamicLibraryMemory _library;
-	//DynamicLibrary _library;
-	//SameboyPlugSymbols _symbols = { nullptr };
-
 	void* _instance = nullptr;
 
 	tstring _romPath;

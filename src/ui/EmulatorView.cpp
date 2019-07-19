@@ -8,7 +8,8 @@
 
 #include <sstream>
 
-//#include <tao/json.hpp>
+#include "ConfigLoader.h"
+#include "rapidjson/document.h"
 
 EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
 	: _plug(plug), _manager(manager), _graphics(graphics)
@@ -20,10 +21,10 @@ EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* g
 		{ "High-pass Filter", 1 }
 	};
 
-	//tao::json::value config;
-	//loadButtonConfig(config);
-	//_keyMap.load(config.at("gameboy"));
-	//_lsdjKeyMap.load(_keyMap, config.at("lsdj"));
+	rapidjson::Document config;
+	loadButtonConfig(config);
+	_keyMap.load(config["gameboy"]);
+	_lsdjKeyMap.load(_keyMap, config["lsdj"]);
 
 	for (size_t i = 0; i < 2; i++) {
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
@@ -79,10 +80,10 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 	if (_plug && _plug->active()) {
 		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
-			//return _lsdjKeyMap.onKey(key, down);
+			return _lsdjKeyMap.onKey(key, down);
 		} else {
 			ButtonEvent ev;
-			//ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
+			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
 			ev.down = down;
 
 			if (ev.id != ButtonTypes::MAX) {
@@ -375,7 +376,7 @@ void EmulatorView::ExportSong(const LsdjSongName& songName) {
 		{ T("LSDj Songs"), T("*.lsdsng") }
 	};
 
-	tstring path = BasicFileSave(types, songName.name + "." + std::to_string(songName.version));
+	tstring path = BasicFileSave(types, tstr(songName.name + "." + std::to_string(songName.version)));
 	if (path.size() == 0) {
 		return;
 	}
@@ -411,7 +412,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				for (auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					writeFile(p.string(), song.data);
+					//writeFile(p.string(), song.data);
 				}
 			}
 		}
@@ -464,7 +465,7 @@ void EmulatorView::ExportKit(int index) {
 	std::vector<std::string> kitNames;
 	_plug->lsdj().getKitNames(kitNames, _plug->romData());
 
-	tstring path = BasicFileSave(types, (kitNames[index]));
+	tstring path = BasicFileSave(types, tstr(kitNames[index]));
 	if (path.size() == 0) {
 		return;
 	}
@@ -492,7 +493,7 @@ void EmulatorView::ExportKits() {
 				for (auto& kit : kitData) {
 					fs::path p(paths[0]);
 					p /= kit.name + ".kit";
-					writeFile(p.string(), kit.data);
+					//writeFile(p.string(), kit.data);
 				}
 			}
 		}

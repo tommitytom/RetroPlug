@@ -126,7 +126,7 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 }
 
 void RetroPlugRoot::OnDrop(const char* str) {
-	LoadProjectOrRom((str));
+	LoadProjectOrRom(tstr(str));
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
@@ -394,7 +394,7 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
     GetUI()->PromptForFile(fileName, path, EFileAction::Open);
     
 	if (path.GetLength() > 0) {
-		LoadProjectOrRom(fileName.Get());
+		LoadProjectOrRom(tstr(fileName.Get()));
 	}
 
 	/*std::vector<tstring> paths = BasicFileOpen(types, false);
@@ -404,7 +404,7 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 }
 
 void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
-	tstring ext = fs::path(path).extension().string();
+	tstring ext = tstr(fs::path(path).extension().string());
 	if (ext == T(".retroplug")) {
 		LoadProject(path);
 	} else if (ext == T(".gb") || ext == T(".gbc")) {

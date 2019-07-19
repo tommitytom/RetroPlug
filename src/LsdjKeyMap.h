@@ -1,6 +1,5 @@
 #pragma once
 
-//#include <windows.h>
 #include <map>
 #include "IGraphicsStructs.h"
 
@@ -10,6 +9,8 @@
 #include "ButtonQueue.h"
 #include "KeyMap.h"
 #include "libretroplug/MessageBus.h"
+
+#include "rapidjson/document.h"
 
 enum State {
 	None,
@@ -42,27 +43,27 @@ class LsdjKeyMap {
 private:
 	State _state = State::None;
 	ButtonQueue _presses;
-	//KeyMap* _gbKeyMap;
+	KeyMap* _gbKeyMap;
 	std::map<VirtualKey, LsdjActionType> _actionMap;
 
 public:
-	/*void load(KeyMap& keyMap, const tao::json::value& config) {
+	void load(KeyMap& keyMap, const rapidjson::Value& config) {
 		_gbKeyMap = &keyMap;
 
-		for (const auto& action : config.get_object()) {
-			auto actionFound = ActionLookup.find(action.first);
+		for (const auto& action : config.GetObjectA()) {
+			auto actionFound = ActionLookup.find(action.name.GetString());
 			if (actionFound == ActionLookup.end()) {
-				std::cout << "Action type '" << action.first << "' unknown" << std::endl;
+				std::cout << "Action type '" << action.name.GetString() << "' unknown" << std::endl;
 			} else {
-				auto keyFound = VirtualKeys::fromString(action.second.get_string());
+				auto keyFound = VirtualKeys::fromString(action.value.GetString());
 				if (keyFound == VirtualKeys::Unknown) {
-					std::cout << "Key type '" << action.second.get_string() << "' unknown" << std::endl;
+					std::cout << "Key type '" << action.value.GetString() << "' unknown" << std::endl;
 				} else {
 					_actionMap[keyFound] = actionFound->second;
 				}
 			}
 		}
-	}*/
+	}
 
 	void clear() {
 		_presses.clear();

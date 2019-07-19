@@ -1,3 +1,5 @@
+#include <windows.h>
+
 #include "SameBoyPlug.h"
 #include "util/xstring.h"
 #include "util/fs.h"
@@ -33,30 +35,6 @@ SameBoyPlug::SameBoyPlug() {
 	_bus.video.init(1024 * 1024);
 	_bus.buttons.init(64);
 	_bus.link.init(64);
-
-	/*_library.load(IDR_RCDATA1);
-	_library.get("sameboy_init", sameboy_init);
-	_library.get("sameboy_reset", sameboy_reset);
-	_library.get("sameboy_update", sameboy_update);
-	_library.get("sameboy_update_multiple", sameboy_update_multiple);
-	_library.get("sameboy_fetch_audio", sameboy_fetch_audio);
-	_library.get("sameboy_fetch_video", sameboy_fetch_video);
-	_library.get("sameboy_set_sample_rate", sameboy_set_sample_rate);
-	_library.get("sameboy_send_serial_byte", sameboy_send_serial_byte);
-	_library.get("sameboy_set_midi_bytes", sameboy_set_midi_bytes);
-	_library.get("sameboy_disable_rendering", sameboy_disable_rendering);
-	_library.get("sameboy_free", sameboy_free);
-	_library.get("sameboy_set_button", sameboy_set_button);
-	_library.get("sameboy_save_state_size", sameboy_save_state_size);
-	_library.get("sameboy_save_state", sameboy_save_state);
-	_library.get("sameboy_load_state", sameboy_load_state);
-	_library.get("sameboy_battery_size", sameboy_battery_size);
-	_library.get("sameboy_save_battery", sameboy_save_battery);
-	_library.get("sameboy_load_battery", sameboy_load_battery);
-	_library.get("sameboy_get_rom_name", sameboy_get_rom_name);
-	_library.get("sameboy_set_setting", sameboy_set_setting);
-	_library.get("sameboy_set_link_targets", sameboy_set_link_targets);
-	_library.get("sameboy_update_rom", sameboy_update_rom);*/
 }
 
 void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot) {

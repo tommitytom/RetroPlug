@@ -1,11 +1,11 @@
 #pragma once
 
-#include <boost/filesystem.hpp>
 #include <string>
 #include <algorithm>
 
 #include "plugs/SameBoyPlug.h"
 #include "util/xstring.h"
+#include "util/fs.h"
 #include "Constants.h"
 
 enum class InstanceLayout {

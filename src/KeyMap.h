@@ -1,7 +1,6 @@
 #pragma once
 
 #include <map>
-//#include <tao/json.hpp>
 #include "Types.h"
 #include "Keys.h"
 #include "Buttons.h"
@@ -10,25 +9,27 @@
 #include "platform/Logger.h"
 #include "platform/Path.h"
 
+#include "rapidjson/document.h"
+
 //#define LOG_KEYBOARD_INPUT
-/* 
+
 class KeyMap {
 private:
 	std::map<VirtualKey, ButtonType> _keyMap;
 
 public:
-	void load(const tao::json::value& config) {
-		for (const auto& button : config.get_object()) {
-			auto buttonFound = ButtonTypes::fromString(button.first);
+	void load(const rapidjson::Value& config) {
+		for (const auto& button : config.GetObjectA()) {
+			auto buttonFound = ButtonTypes::fromString(button.name.GetString());
 			if (buttonFound != ButtonTypes::MAX) {
-				auto keyFound = VirtualKeys::fromString(button.second.get_string());
+				auto keyFound = VirtualKeys::fromString(button.value.GetString());
 				if (keyFound != VirtualKeys::Unknown) {
 					_keyMap[keyFound] = buttonFound;
 				} else {
-					std::cout << "Key type '" << button.second.get_string() << "' unknown" << std::endl;
+					std::cout << "Key type '" << button.value.GetString() << "' unknown" << std::endl;
 				}
 			} else {
-				std::cout << "Button type '" << button.first << "' unknown" << std::endl;
+				std::cout << "Button type '" << button.name.GetString() << "' unknown" << std::endl;
 			}
 		}	
 	}
@@ -50,4 +51,4 @@ public:
 
 		return ButtonType::MAX;
 	}
-};*/
+};

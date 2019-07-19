@@ -1,46 +1,57 @@
 #pragma once
 
 #include <string>
-#include <boost/filesystem.hpp>
 #include <fstream>
-#include <tao/json.hpp>
 #include "util/xstring.h"
+#include "util/fs.h"
+#include "util/File.h"
 #include "platform/Path.h"
 
-namespace fs = boost::filesystem;
+#include "rapidjson/document.h"
+#include "rapidjson/prettywriter.h"
 
 const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
 
-static void saveButtonConfig(const std::string& path, const tao::json::value& source) {
+static void saveButtonConfig(const std::string& path, const rapidjson::Document& source) {
+	rapidjson::StringBuffer sb;
+	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+	source.Accept(writer);
 	std::ofstream configOut(path);
-	tao::json::to_stream(configOut, source, 2);
+	configOut.write(sb.GetString(), sb.GetSize());
 }
 
-static void loadButtonConfig(tao::json::value& target) {
+static void loadButtonConfig(rapidjson::Document& target) {
+	rapidjson::Document::AllocatorType& a = target.GetAllocator();
+
 	std::string contentPath = getContentPath();
 	if (!fs::exists(contentPath)) {
 		fs::create_directory(contentPath);
 	}
 
-	tao::json::value defaultConfig = tao::json::from_string(DEFAULT_BUTTON_CONFIG);
+	rapidjson::Document defaultConfig(&a);
+	defaultConfig.Parse(DEFAULT_BUTTON_CONFIG.c_str());
 
 	std::string buttonPath = getContentPath("buttons.json");
 	if (fs::exists(buttonPath)) {
-		tao::json::value fileData = tao::json::parse_file(buttonPath);
+		std::string buttonDataStr;
+		if (readFile(tstr(buttonPath), buttonDataStr)) {
+			target.Parse(buttonDataStr.c_str());
 
-		bool obj = fileData.is_object();
+			bool obj = target.IsObject();
 
-		auto gameboyConfig = fileData.find("gameboy");
-		auto lsdjConfig = fileData.find("lsdj");
+			auto gameboyConfig = target.FindMember("gameboy");
+			auto lsdjConfig = target.FindMember("lsdj");
 
-		if (!gameboyConfig && !lsdjConfig) {
-			defaultConfig.at("gameboy").swap(fileData);
-			target = defaultConfig;
-		} else {
-			target = fileData;
+			if (gameboyConfig == target.MemberEnd() && lsdjConfig == target.MemberEnd()) {
+				for (auto& v : target.GetObjectA()) {
+					defaultConfig[v.name] = v.value;
+				}
+
+				target.CopyFrom(defaultConfig, a);
+			}
 		}
 	} else {
-		target = defaultConfig;
+		target.CopyFrom(defaultConfig, a);
 	}
 
 	saveButtonConfig(buttonPath, target);

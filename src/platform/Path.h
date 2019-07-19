@@ -1,9 +1,6 @@
 #pragma once
 
-static std::string getContentPath(std::string file = "") {
-    return "";
-}
-/*
+#ifdef WIN32
 #include <Shlobj.h>
 
 static std::string getContentPath(std::string file = "") {
@@ -19,4 +16,8 @@ static std::string getContentPath(std::string file = "") {
 
 	return "";
 }
-*/
+#else
+static std::string getContentPath(std::string file = "") {
+	return "";
+}
+#endif

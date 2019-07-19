@@ -91,9 +91,6 @@
     <ClCompile Include="..\src\libretroplug\PaRingBuffer.c">
       <Filter>src\libretroplug</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\platform\MemoryModule.c">
-      <Filter>src\platform</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp">
       <Filter>src\plugs</Filter>
     </ClCompile>
@@ -384,9 +381,6 @@
     <ClInclude Include="..\src\libretroplug\RingBuffer.h">
       <Filter>src\libretroplug</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\platform\Error.h">
       <Filter>src\platform</Filter>
     </ClInclude>
@@ -396,13 +390,7 @@
     <ClInclude Include="..\src\platform\Logger.h">
       <Filter>src\platform</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\platform\MemoryModule.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\platform\Path.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\platform\DynamicLibrary.h">
       <Filter>src\platform</Filter>
     </ClInclude>
     <ClInclude Include="..\src\plugs\RetroPlug.h">
@@ -416,9 +404,6 @@
     </ClInclude>
     <ClInclude Include="..\src\ui\EmulatorView.h">
       <Filter>src\ui</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\util\String.h">
-      <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="..\src\KeyMap.h">
       <Filter>src</Filter>
@@ -521,6 +506,9 @@
     </ClInclude>
     <ClInclude Include="..\src\lsdj\sample.h">
       <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\xstring.h">
+      <Filter>src\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
