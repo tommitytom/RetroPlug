@@ -18,6 +18,10 @@ static std::string getContentPath(std::string file = "") {
 }
 #else
 static std::string getContentPath(std::string file = "") {
-	return "";
+    if (file.size() > 0) {
+        file = "/" + file;
+    }
+    
+	return "~/Library/Application Support/RetroPlug" + file;
 }
 #endif

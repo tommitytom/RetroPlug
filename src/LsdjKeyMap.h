@@ -50,7 +50,7 @@ public:
 	void load(KeyMap& keyMap, const rapidjson::Value& config) {
 		_gbKeyMap = &keyMap;
 
-		for (const auto& action : config.GetObjectA()) {
+		for (const auto& action : config.GetObject()) {
 			auto actionFound = ActionLookup.find(action.name.GetString());
 			if (actionFound == ActionLookup.end()) {
 				std::cout << "Action type '" << action.name.GetString() << "' unknown" << std::endl;

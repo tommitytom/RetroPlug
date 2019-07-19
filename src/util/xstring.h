@@ -39,13 +39,12 @@ static const tstring& tstr(const std::wstring& str) {
 	return str;
 }
 #else
-static const tstring& totstring(const std::string& str) {
+static const tstring& tstr(const std::string& str) {
 	return str;
 }
 
-static tstring totstring(const std::wstring& str) {
+static tstring tstr(const std::wstring& str) {
 	return ws2s(str);
-}
 }
 #endif
 

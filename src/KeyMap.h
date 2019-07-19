@@ -19,7 +19,7 @@ private:
 
 public:
 	void load(const rapidjson::Value& config) {
-		for (const auto& button : config.GetObjectA()) {
+		for (const auto& button : config.GetObject()) {
 			auto buttonFound = ButtonTypes::fromString(button.name.GetString());
 			if (buttonFound != ButtonTypes::MAX) {
 				auto keyFound = VirtualKeys::fromString(button.value.GetString());

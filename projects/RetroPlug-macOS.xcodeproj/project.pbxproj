@@ -319,6 +319,14 @@
 		5361511722D2F6F0007F65A5 /* swell.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A922D2E9AA00CB3F77 /* swell.cpp */; };
 		5361511822D2F6F0007F65A5 /* swellappmain.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A122D2E9AA00CB3F77 /* swellappmain.mm */; };
 		5361511A22D2F7F1007F65A5 /* IPlugProcessor.h in Headers */ = {isa = PBXBuildFile; fileRef = 530A438922D2E8DC00CB3F77 /* IPlugProcessor.h */; };
+		53F832D122E2073400D2E2A2 /* RetroPlugRoot.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832CE22E2073300D2E2A2 /* RetroPlugRoot.h */; };
+		53F832D222E2073400D2E2A2 /* EmulatorView.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832CF22E2073300D2E2A2 /* EmulatorView.h */; };
+		53F832D322E2073400D2E2A2 /* ContextMenu.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D022E2073400D2E2A2 /* ContextMenu.h */; };
+		53F832DA22E2078E00D2E2A2 /* Error.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D622E2078E00D2E2A2 /* Error.h */; };
+		53F832DB22E2078E00D2E2A2 /* FileDialog.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D722E2078E00D2E2A2 /* FileDialog.h */; };
+		53F832DC22E2078E00D2E2A2 /* Path.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D822E2078E00D2E2A2 /* Path.h */; };
+		53F832DD22E2078E00D2E2A2 /* Logger.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D922E2078E00D2E2A2 /* Logger.h */; };
+		53F832DF22E209BB00D2E2A2 /* ConfigLoader.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */; };
 		53FFE72022DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
 		53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
 		53FFE72222DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
@@ -648,6 +656,14 @@
 		535F968422E1BF180054DAAE /* RtAudio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtAudio.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTAudio/RtAudio.h; sourceTree = "<group>"; };
 		535F968622E1BF240054DAAE /* RtMidi.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RtMidi.cpp; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.cpp; sourceTree = "<group>"; };
 		535F968722E1BF240054DAAE /* RtMidi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtMidi.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.h; sourceTree = "<group>"; };
+		53F832CE22E2073300D2E2A2 /* RetroPlugRoot.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RetroPlugRoot.h; path = ../src/ui/RetroPlugRoot.h; sourceTree = "<group>"; };
+		53F832CF22E2073300D2E2A2 /* EmulatorView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EmulatorView.h; path = ../src/ui/EmulatorView.h; sourceTree = "<group>"; };
+		53F832D022E2073400D2E2A2 /* ContextMenu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ContextMenu.h; path = ../src/ui/ContextMenu.h; sourceTree = "<group>"; };
+		53F832D622E2078E00D2E2A2 /* Error.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Error.h; path = ../src/platform/Error.h; sourceTree = "<group>"; };
+		53F832D722E2078E00D2E2A2 /* FileDialog.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = FileDialog.h; path = ../src/platform/FileDialog.h; sourceTree = "<group>"; };
+		53F832D822E2078E00D2E2A2 /* Path.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Path.h; path = ../src/platform/Path.h; sourceTree = "<group>"; };
+		53F832D922E2078E00D2E2A2 /* Logger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Logger.h; path = ../src/platform/Logger.h; sourceTree = "<group>"; };
+		53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ConfigLoader.h; path = ../src/ConfigLoader.h; sourceTree = "<group>"; };
 		53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PaRingBuffer.c; path = ../src/libretroplug/PaRingBuffer.c; sourceTree = "<group>"; };
 		53FFE72822DB525900B7C5B5 /* rom.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = rom.c; path = ../src/lsdj/rom.c; sourceTree = "<group>"; };
 		53FFE72922DB525900B7C5B5 /* sample.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sample.c; path = ../src/lsdj/sample.c; sourceTree = "<group>"; };
@@ -1037,9 +1053,36 @@
 			name = RtAudioMidi;
 			sourceTree = "<group>";
 		};
+		53F832D422E2073C00D2E2A2 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */,
+				53F832D022E2073400D2E2A2 /* ContextMenu.h */,
+				53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */,
+				53F832CF22E2073300D2E2A2 /* EmulatorView.h */,
+				53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */,
+				53F832CE22E2073300D2E2A2 /* RetroPlugRoot.h */,
+			);
+			name = UI;
+			sourceTree = "<group>";
+		};
+		53F832D522E2078000D2E2A2 /* Platform */ = {
+			isa = PBXGroup;
+			children = (
+				53F832D622E2078E00D2E2A2 /* Error.h */,
+				53F832D722E2078E00D2E2A2 /* FileDialog.h */,
+				53F832D922E2078E00D2E2A2 /* Logger.h */,
+				53F832D822E2078E00D2E2A2 /* Path.h */,
+			);
+			name = Platform;
+			sourceTree = "<group>";
+		};
 		53FFE71422DB51E500B7C5B5 /* Source */ = {
 			isa = PBXGroup;
 			children = (
+				53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */,
+				53F832D522E2078000D2E2A2 /* Platform */,
+				53F832D422E2073C00D2E2A2 /* UI */,
 				53FFE78B22DB5AD900B7C5B5 /* SameBoyPlug.h */,
 				53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */,
 				53FFE75522DB528800B7C5B5 /* RetroPlugInstrument.cpp */,
@@ -1049,11 +1092,8 @@
 				53FFE72822DB525900B7C5B5 /* rom.c */,
 				53FFE72922DB525900B7C5B5 /* sample.c */,
 				53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */,
-				53FFE75E22DB529B00B7C5B5 /* ContextMenu.cpp */,
-				53FFE75F22DB529B00B7C5B5 /* EmulatorView.cpp */,
 				53FFE77922DB52A700B7C5B5 /* base64.cpp */,
 				53FFE77A22DB52A700B7C5B5 /* File.cpp */,
-				53FFE76022DB529B00B7C5B5 /* RetroPlugRoot.cpp */,
 			);
 			name = Source;
 			sourceTree = "<group>";
@@ -1068,9 +1108,13 @@
 				535F95AB22E1B5A80054DAAE /* channel.h in Headers */,
 				535F961F22E1B9750054DAAE /* IGraphicsAGG.h in Headers */,
 				535F958A22E1B5A80054DAAE /* phrase.h in Headers */,
+				53F832DA22E2078E00D2E2A2 /* Error.h in Headers */,
 				535F957422E1B5A70054DAAE /* song.h in Headers */,
 				535F962922E1B9750054DAAE /* IGraphicsNanoVG.h in Headers */,
+				53F832DD22E2078E00D2E2A2 /* Logger.h in Headers */,
 				535F95F622E1B5A80054DAAE /* groove.h in Headers */,
+				53F832D122E2073400D2E2A2 /* RetroPlugRoot.h in Headers */,
+				53F832DF22E209BB00D2E2A2 /* ConfigLoader.h in Headers */,
 				535F95E122E1B5A80054DAAE /* instrument.h in Headers */,
 				535F966422E1B9750054DAAE /* IGraphicsAGG_src.h in Headers */,
 				53FFE78C22DB5AD900B7C5B5 /* SameBoyPlug.h in Headers */,
@@ -1079,9 +1123,11 @@
 				535F965222E1B9750054DAAE /* IGraphicsLice_src.h in Headers */,
 				535F95D722E1B5A80054DAAE /* table.h in Headers */,
 				535F95F722E1B5A80054DAAE /* vio.h in Headers */,
+				53F832DB22E2078E00D2E2A2 /* FileDialog.h in Headers */,
 				535F95E022E1B5A80054DAAE /* synth.h in Headers */,
 				535F960122E1B5A80054DAAE /* error.h in Headers */,
 				535F95F822E1B5A80054DAAE /* instrument_pulse.h in Headers */,
+				53F832D222E2073400D2E2A2 /* EmulatorView.h in Headers */,
 				535F95F522E1B5A80054DAAE /* wave.h in Headers */,
 				53FFE78E22DB613200B7C5B5 /* Lsdj.h in Headers */,
 				535F960A22E1B5A80054DAAE /* chain.h in Headers */,
@@ -1090,7 +1136,9 @@
 				535F957522E1B5A70054DAAE /* instrument_constants.h in Headers */,
 				535F958822E1B5A80054DAAE /* project.h in Headers */,
 				535F95C522E1B5A80054DAAE /* instrument_noise.h in Headers */,
+				53F832D322E2073400D2E2A2 /* ContextMenu.h in Headers */,
 				535F95AC22E1B5A80054DAAE /* compression.h in Headers */,
+				53F832DC22E2078E00D2E2A2 /* Path.h in Headers */,
 				535F958922E1B5A80054DAAE /* instrument_wave.h in Headers */,
 				4F6FD2B022675B6300FC59E6 /* (null) in Headers */,
 				535F95D622E1B5A80054DAAE /* command.h in Headers */,
@@ -2768,7 +2816,7 @@
 					../thirdparty/liblsdj,
 					/usr/local/include,
 					"../src/**",
-					../thirdparty/taojson/include,
+					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
@@ -2808,7 +2856,7 @@
 					../thirdparty/liblsdj,
 					/usr/local/include,
 					"../src/**",
-					../thirdparty/taojson/include,
+					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
@@ -2848,7 +2896,7 @@
 					../thirdparty/liblsdj,
 					/usr/local/include,
 					"../src/**",
-					../thirdparty/taojson/include,
+					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
