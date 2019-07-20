@@ -322,10 +322,6 @@
 		53F832D122E2073400D2E2A2 /* RetroPlugRoot.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832CE22E2073300D2E2A2 /* RetroPlugRoot.h */; };
 		53F832D222E2073400D2E2A2 /* EmulatorView.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832CF22E2073300D2E2A2 /* EmulatorView.h */; };
 		53F832D322E2073400D2E2A2 /* ContextMenu.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D022E2073400D2E2A2 /* ContextMenu.h */; };
-		53F832DA22E2078E00D2E2A2 /* Error.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D622E2078E00D2E2A2 /* Error.h */; };
-		53F832DB22E2078E00D2E2A2 /* FileDialog.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D722E2078E00D2E2A2 /* FileDialog.h */; };
-		53F832DC22E2078E00D2E2A2 /* Path.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D822E2078E00D2E2A2 /* Path.h */; };
-		53F832DD22E2078E00D2E2A2 /* Logger.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832D922E2078E00D2E2A2 /* Logger.h */; };
 		53F832DF22E209BB00D2E2A2 /* ConfigLoader.h in Headers */ = {isa = PBXBuildFile; fileRef = 53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */; };
 		53F832E822E293EA00D2E2A2 /* IPlugAU.r in Rez */ = {isa = PBXBuildFile; fileRef = 53F832E122E293E900D2E2A2 /* IPlugAU.r */; };
 		53F832E922E293EA00D2E2A2 /* IPlugAU.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53F832E222E293EA00D2E2A2 /* IPlugAU.cpp */; };
@@ -711,10 +707,6 @@
 		53F832CE22E2073300D2E2A2 /* RetroPlugRoot.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RetroPlugRoot.h; path = ../src/ui/RetroPlugRoot.h; sourceTree = "<group>"; };
 		53F832CF22E2073300D2E2A2 /* EmulatorView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EmulatorView.h; path = ../src/ui/EmulatorView.h; sourceTree = "<group>"; };
 		53F832D022E2073400D2E2A2 /* ContextMenu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ContextMenu.h; path = ../src/ui/ContextMenu.h; sourceTree = "<group>"; };
-		53F832D622E2078E00D2E2A2 /* Error.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Error.h; path = ../src/platform/Error.h; sourceTree = "<group>"; };
-		53F832D722E2078E00D2E2A2 /* FileDialog.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = FileDialog.h; path = ../src/platform/FileDialog.h; sourceTree = "<group>"; };
-		53F832D822E2078E00D2E2A2 /* Path.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Path.h; path = ../src/platform/Path.h; sourceTree = "<group>"; };
-		53F832D922E2078E00D2E2A2 /* Logger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Logger.h; path = ../src/platform/Logger.h; sourceTree = "<group>"; };
 		53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ConfigLoader.h; path = ../src/ConfigLoader.h; sourceTree = "<group>"; };
 		53F832E122E293E900D2E2A2 /* IPlugAU.r */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.rez; name = IPlugAU.r; path = ../thirdparty/iPlug2/IPlug/AUv2/IPlugAU.r; sourceTree = "<group>"; };
 		53F832E222E293EA00D2E2A2 /* IPlugAU.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = IPlugAU.cpp; path = ../thirdparty/iPlug2/IPlug/AUv2/IPlugAU.cpp; sourceTree = "<group>"; };
@@ -1199,17 +1191,6 @@
 			name = UI;
 			sourceTree = "<group>";
 		};
-		53F832D522E2078000D2E2A2 /* Platform */ = {
-			isa = PBXGroup;
-			children = (
-				53F832D622E2078E00D2E2A2 /* Error.h */,
-				53F832D722E2078E00D2E2A2 /* FileDialog.h */,
-				53F832D922E2078E00D2E2A2 /* Logger.h */,
-				53F832D822E2078E00D2E2A2 /* Path.h */,
-			);
-			name = Platform;
-			sourceTree = "<group>";
-		};
 		53F832E022E293BF00D2E2A2 /* AU */ = {
 			isa = PBXGroup;
 			children = (
@@ -1259,7 +1240,6 @@
 				53EC2E0122E2D63F00889BFC /* Platform */,
 				53EC2E0022E2D63300889BFC /* Util */,
 				53F832DE22E209BB00D2E2A2 /* ConfigLoader.h */,
-				53F832D522E2078000D2E2A2 /* Platform */,
 				53F832D422E2073C00D2E2A2 /* UI */,
 				53FFE78B22DB5AD900B7C5B5 /* SameBoyPlug.h */,
 				53FFE74322DB526C00B7C5B5 /* SameBoyPlug.cpp */,
@@ -1284,13 +1264,11 @@
 				535F95AB22E1B5A80054DAAE /* channel.h in Headers */,
 				535F961F22E1B9750054DAAE /* IGraphicsAGG.h in Headers */,
 				535F958A22E1B5A80054DAAE /* phrase.h in Headers */,
-				53F832DA22E2078E00D2E2A2 /* Error.h in Headers */,
 				53F8333B22E29BD000D2E2A2 /* IPlugConstants.h in Headers */,
 				53F8331B22E29BD000D2E2A2 /* IPlugLogger.h in Headers */,
 				535F957422E1B5A70054DAAE /* song.h in Headers */,
 				535F962922E1B9750054DAAE /* IGraphicsNanoVG.h in Headers */,
 				53F8331122E29BD000D2E2A2 /* IPlugPaths.h in Headers */,
-				53F832DD22E2078E00D2E2A2 /* Logger.h in Headers */,
 				53F8331222E29BD000D2E2A2 /* IPlugQueue.h in Headers */,
 				535F95F622E1B5A80054DAAE /* groove.h in Headers */,
 				53F8332F22E29BD000D2E2A2 /* IPlugDelegate_select.h in Headers */,
@@ -1315,7 +1293,6 @@
 				53F8333C22E29BD000D2E2A2 /* IPlug_include_in_plug_hdr.h in Headers */,
 				53F8333922E29BD000D2E2A2 /* IPlug_include_in_plug_src.h in Headers */,
 				535F95F722E1B5A80054DAAE /* vio.h in Headers */,
-				53F832DB22E2078E00D2E2A2 /* FileDialog.h in Headers */,
 				535F95E022E1B5A80054DAAE /* synth.h in Headers */,
 				53F8331022E29BD000D2E2A2 /* IPlugProcessor.h in Headers */,
 				535F960122E1B5A80054DAAE /* error.h in Headers */,
@@ -1336,7 +1313,6 @@
 				535F95AC22E1B5A80054DAAE /* compression.h in Headers */,
 				53EC2E0A22E2D66100889BFC /* xstring.h in Headers */,
 				53F8333A22E29BD000D2E2A2 /* IPlugPluginBase.h in Headers */,
-				53F832DC22E2078E00D2E2A2 /* Path.h in Headers */,
 				535F958922E1B5A80054DAAE /* instrument_wave.h in Headers */,
 				53F8334522E29BD000D2E2A2 /* IPlugAPIBase.h in Headers */,
 				4F6FD2B022675B6300FC59E6 /* (null) in Headers */,

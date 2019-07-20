@@ -27,7 +27,7 @@ static void loadButtonConfig(rapidjson::Document& target) {
 
 	std::string contentPath = getContentPath();
 	if (!fs::exists(contentPath)) {
-		//fs::create_directory(contentPath);
+		fs::create_directory(contentPath);
 	}
 
 	rapidjson::Document defaultConfig(&a);

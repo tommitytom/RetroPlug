@@ -25,6 +25,7 @@ static std::string getContentPath(std::string file = "") {
     AppSupportPath(path);
 
 	std::string strPath(path.Get());
+    strPath += "/RetroPlug";
     
     if (file.size() > 0) {
         file = "/" + file;
