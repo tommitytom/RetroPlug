@@ -18,8 +18,7 @@ build-*
 .vscode/ipch/*
 gui/*
 .vs/*
+*xcuserdata*
 
 Icon?
 .DS_Stor*
-sameboy_retroplug-x86.dll
-sameboy_retroplug-x64.dll
