@@ -50,8 +50,6 @@ private:
 
 	IPopupMenu* CreateProjectMenu(bool loaded);
 
-	void OnPopupMenuSelection(IPopupMenu* selectedMenu, int valIdx);
-
 	void NewProject();
 
 	void CloseProject();
