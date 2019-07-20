@@ -145,6 +145,12 @@
     <ClCompile Include="..\src\lsdj\kit.c">
       <Filter>src\lsdj</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\util\Serializer.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\platform\FileDialog.cpp">
+      <Filter>src\platform</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -318,9 +324,6 @@
     <ClInclude Include="..\src\audio\resampler.h">
       <Filter>src\audio</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\util\String.h">
-      <Filter>src\util</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\roms\Lsdj.h">
       <Filter>src\roms</Filter>
     </ClInclude>
@@ -467,6 +470,9 @@
     </ClInclude>
     <ClInclude Include="..\src\lsdj\sample.h">
       <Filter>src\lsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\xstring.h">
+      <Filter>src\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
