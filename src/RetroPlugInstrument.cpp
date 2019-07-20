@@ -37,7 +37,7 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
-	for (size_t j = 0; j < MaxNChannels(kOutput); j++) {
+    for (size_t j = 0; j < MaxNChannels(ERoute::kOutput); j++) {
 		for (size_t i = 0; i < frameCount; i++) {
 			outputs[j][i] = 0;
 		}

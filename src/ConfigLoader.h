@@ -17,6 +17,8 @@ static void saveButtonConfig(const std::string& path, const rapidjson::Document&
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
 	source.Accept(writer);
 	std::ofstream configOut(path);
+    assert(configOut.is_open());
+	assert(configOut.good());
 	configOut.write(sb.GetString(), sb.GetSize());
 }
 
