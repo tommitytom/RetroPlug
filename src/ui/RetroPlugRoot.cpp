@@ -291,7 +291,7 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 		CreatePlugInstance(_active, (CreateInstanceType)idx);
 	});
 
-	layoutMenu->SetFunction([this](int idx, IPopupMenu::Item * itemChosen) {
+	layoutMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 		_plug->setLayout((InstanceLayout)idx);
 		UpdateLayout();
 	});
@@ -309,14 +309,6 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	});
 
 	return menu;
-}
-
-void RetroPlugRoot::OnPopupMenuSelection(IPopupMenu * selectedMenu, int valIdx) {
-	if (selectedMenu) {
-		if (selectedMenu->GetFunction()) {
-			selectedMenu->ExecFunction();
-		}
-	}
 }
 
 void RetroPlugRoot::CloseProject() {

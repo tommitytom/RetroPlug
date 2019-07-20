@@ -172,6 +172,7 @@
       <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
       <AdditionalLibraryDirectories>C:\code\retroplug\thirdparty\SameBoy\build\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
     </Link>
     <ResourceCompile />
     <ResourceCompile>
