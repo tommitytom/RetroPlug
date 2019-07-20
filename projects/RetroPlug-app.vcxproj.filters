@@ -172,6 +172,12 @@
     <ClCompile Include="..\src\lsdj\sample.c">
       <Filter>src\lsdj</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\platform\FileDialog.cpp">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\util\Serializer.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">

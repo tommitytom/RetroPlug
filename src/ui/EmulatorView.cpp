@@ -376,7 +376,7 @@ void EmulatorView::ExportSong(const LsdjSongName& songName) {
 		{ T("LSDj Songs"), T("*.lsdsng") }
 	};
 
-	tstring path = BasicFileSave(types, tstr(songName.name + "." + std::to_string(songName.version)));
+	tstring path = BasicFileSave(_graphics, types, tstr(songName.name + "." + std::to_string(songName.version)));
 	if (path.size() == 0) {
 		return;
 	}
@@ -398,7 +398,7 @@ void EmulatorView::ExportSong(const LsdjSongName& songName) {
 }
 
 void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
-	std::vector<tstring> paths = BasicFileOpen({}, false, true);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, {}, false, true);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
@@ -440,7 +440,7 @@ void EmulatorView::LoadKit(int index) {
 		{ T("LSDj Kits"), T("*.kit") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 
@@ -465,7 +465,7 @@ void EmulatorView::ExportKit(int index) {
 	std::vector<std::string> kitNames;
 	_plug->lsdj().getKitNames(kitNames, _plug->romData());
 
-	tstring path = BasicFileSave(types, tstr(kitNames[index]));
+	tstring path = BasicFileSave(_graphics, types, tstr(kitNames[index]));
 	if (path.size() == 0) {
 		return;
 	}
@@ -482,7 +482,7 @@ void EmulatorView::ExportKit(int index) {
 }
 
 void EmulatorView::ExportKits() {
-	std::vector<tstring> paths = BasicFileOpen({}, false, true);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, {}, false, true);
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
@@ -509,7 +509,7 @@ void EmulatorView::OpenLoadSongsDialog() {
         { T("LSDj Songs"), T("*.lsdsng") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, true);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
@@ -526,7 +526,7 @@ void EmulatorView::OpenLoadKitsDialog() {
 		{ T("LSDj Kits"), T("*.kit") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, true);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
@@ -543,7 +543,7 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
 		_plug->init(paths[0], model, false);
 		_plug->disableRendering(false);
@@ -568,7 +568,7 @@ void EmulatorView::OpenLoadSramDialog() {
 		{ T("GameBoy Saves"), T("*.sav") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
 		_plug->loadBattery(paths[0], true);
 	}
@@ -579,7 +579,7 @@ void EmulatorView::OpenSaveSramDialog() {
 		{ T("GameBoy Saves"), T("*.sav") }
 	};
 
-	tstring path = BasicFileSave(types);
+	tstring path = BasicFileSave(_graphics, types);
 	if (path.size() > 0) {
 		_plug->saveBattery(path);
 	}

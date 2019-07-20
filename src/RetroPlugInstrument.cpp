@@ -136,7 +136,7 @@ void RetroPlugInstrument::OnIdle() {
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
 	std::string target;
-	Serialize(target, _plug);
+	serialize(target, _plug);
 	chunk.PutStr(target.c_str());
 	return true;
 }
@@ -144,7 +144,7 @@ bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
 int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 	WDL_String data;
 	pos = chunk.GetStr(data, pos);
-	Deserialize(data.Get(), _plug);
+	deserialize(data.Get(), _plug);
 	return pos;
 }
 

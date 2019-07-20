@@ -138,7 +138,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 			{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 		};
 
-		std::vector<tstring> paths = BasicFileOpen(types, false);
+		std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 		if (paths.size() > 0) {
 			romPath = paths[0];
 		}
@@ -347,7 +347,7 @@ void RetroPlugRoot::SaveProject() {
 	}
 
 	std::string data;
-	Serialize(data, *_plug);
+	serialize(data, *_plug);
 	writeFile(_plug->projectPath(), data);
 }
 
@@ -356,7 +356,7 @@ void RetroPlugRoot::SaveProjectAs() {
 		{ T("RetroPlug Projects"), T("*.retroplug") }
 	};
 
-	tstring path = BasicFileSave(types);
+	tstring path = BasicFileSave(GetUI(), types);
 	if (path.size() > 0) {
 		_plug->setProjectPath(path);
 		SaveProject();
@@ -368,7 +368,7 @@ void RetroPlugRoot::OpenFindRomDialog() {
 		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 	if (paths.size() > 0) {
 		tstring originalPath = _active->Plug()->romPath();
 		for (size_t i = 0; i < _views.size(); i++) {
@@ -388,19 +388,11 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
 		{ T("RetroPlug Project"), T("*.retroplug") },
 	};
-    
-	WDL_String fileName;
-	WDL_String path("~/Desktop");
-    GetUI()->PromptForFile(fileName, path, EFileAction::Open);
-    
-	if (path.GetLength() > 0) {
-		LoadProjectOrRom(tstr(fileName.Get()));
-	}
 
-	/*std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 	if (paths.size() > 0) {
 		LoadProjectOrRom(paths[0]);
-	}*/
+	}
 }
 
 void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
@@ -416,7 +408,7 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 	std::string data;
 	if (readFile(path, data)) {
 		CloseProject();
-		Deserialize(data.c_str(), *_plug);
+		deserialize(data.c_str(), *_plug);
 		_plug->setProjectPath(path);
 
 		if (_plug->instanceCount() > 0) {
@@ -440,7 +432,7 @@ void RetroPlugRoot::OpenLoadProjectDialog() {
 		{ T("RetroPlug Projects"), T("*.retroplug") }
 	};
 
-	std::vector<tstring> paths = BasicFileOpen(types, false);
+	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 	if (paths.size() > 0) {
 		LoadProject(paths[0]);
 	}

@@ -1,4 +1,6 @@
-//#include <windows.h>
+#ifdef WIN32
+#include <windows.h>
+#endif
 
 #include "SameBoyPlug.h"
 #include "util/xstring.h"
