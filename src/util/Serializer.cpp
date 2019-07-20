@@ -251,38 +251,38 @@ void deserialize(const char * data, RetroPlug & plug) {
 		const std::string& version = root["version"].GetString();
 		if (version == "0.1.0") {
 			SaveStateType saveType = SaveStateType::State;
-			auto& saveTypeStr = root.FindMember("saveType");
+			const auto& saveTypeStr = root.FindMember("saveType");
 			if (saveTypeStr != root.MemberEnd()) {
 				saveType = stringToSaveType(saveTypeStr->value.GetString());
 			}
 
 			plug.setSaveType(saveType);
 
-			auto& instances = root.FindMember("instances");
+			const auto& instances = root.FindMember("instances");
 			if (instances != root.MemberEnd()) {
 				for (auto& instance : instances->value.GetArray()) {
 					deserializeInstance(instance, plug, saveType);
 				}
 			}
 
-			auto& projPath = root.FindMember("lastProjectPath");
+			const auto& projPath = root.FindMember("lastProjectPath");
 			if (projPath != root.MemberEnd()) {
-				plug.setProjectPath(s2ws(projPath->value.GetString()));
+				plug.setProjectPath(tstr(projPath->value.GetString()));
 			}
 
-			auto& layout = root.FindMember("layout");
+			const auto& layout = root.FindMember("layout");
 			if (layout != root.MemberEnd()) {
 				InstanceLayout layoutType = layoutFromString(layout->value.GetString());
 				plug.setLayout(layoutType);
 			}
 
-			auto& audioRouting = root.FindMember("audioRouting");
+			const auto& audioRouting = root.FindMember("audioRouting");
 			if (audioRouting != root.MemberEnd()) {
 				AudioChannelRouting mode = stringToAudioRouting(audioRouting->value.GetString());
 				plug.setAudioRouting(mode);
 			}
 
-			auto& midiRouting = root.FindMember("midiRouting");
+			const auto& midiRouting = root.FindMember("midiRouting");
 			if (midiRouting != root.MemberEnd()) {
 				MidiChannelRouting mode = stringToMidiRouting(midiRouting->value.GetString());
 				plug.setMidiRouting(mode);

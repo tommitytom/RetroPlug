@@ -141,7 +141,7 @@ std::vector<tstring> BasicFileOpen(IGraphics* ui, const std::vector<FileDialogFi
 	ui->PromptForFile(fileName, path, EFileAction::Open);
 
 	std::vector<tstring> ret;
-	if (path.GetLength() > 0) {
+	if (path.GetLength() > 0 && fileName.GetLength() > 0) {
 		ret.push_back(tstr(fileName.Get()));
 	}
 
