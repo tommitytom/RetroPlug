@@ -67,9 +67,6 @@
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp">
       <Filter>src\plugs</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\platform\MemoryModule.c">
-      <Filter>src\platform</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\RetroPlugInstrument.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -333,9 +330,6 @@
     <ClInclude Include="..\src\plugs\SameBoyPlug.h">
       <Filter>src\plugs</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\platform\Error.h">
       <Filter>src\platform</Filter>
     </ClInclude>
@@ -345,13 +339,7 @@
     <ClInclude Include="..\src\platform\Logger.h">
       <Filter>src\platform</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\platform\MemoryModule.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\platform\Path.h">
-      <Filter>src\platform</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\platform\DynamicLibrary.h">
       <Filter>src\platform</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ui\EmulatorView.h">

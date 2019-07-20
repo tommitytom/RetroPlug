@@ -153,7 +153,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -168,7 +168,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -190,7 +190,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -210,7 +210,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -232,7 +232,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -251,7 +251,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty\taojson\include;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -285,12 +285,9 @@
     <ClInclude Include="..\src\lsdj\kit.h" />
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
-    <ClInclude Include="..\src\platform\DynamicLibrary.h" />
-    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
     <ClInclude Include="..\src\platform\Logger.h" />
-    <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\plugs\RetroPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
@@ -499,7 +496,6 @@
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
-    <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
     <ClCompile Include="..\src\roms\Lsdj.cpp" />
