@@ -17,7 +17,19 @@ static std::string getContentPath(std::string file = "") {
 	return "";
 }
 #else
+
+#include "IPlugPaths.h"
+
 static std::string getContentPath(std::string file = "") {
-	return "";
+	WDL_String path;
+    AppSupportPath(path);
+
+	std::string strPath(path.Get());
+    
+    if (file.size() > 0) {
+        file = "/" + file;
+    }
+    
+	return strPath + file;
 }
 #endif

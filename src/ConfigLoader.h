@@ -10,13 +10,15 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
+const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
 
 static void saveButtonConfig(const std::string& path, const rapidjson::Document& source) {
 	rapidjson::StringBuffer sb;
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
 	source.Accept(writer);
 	std::ofstream configOut(path);
+    assert(configOut.is_open());
+	assert(configOut.good());
 	configOut.write(sb.GetString(), sb.GetSize());
 }
 
@@ -25,7 +27,7 @@ static void loadButtonConfig(rapidjson::Document& target) {
 
 	std::string contentPath = getContentPath();
 	if (!fs::exists(contentPath)) {
-		fs::create_directory(contentPath);
+		//fs::create_directory(contentPath);
 	}
 
 	rapidjson::Document defaultConfig(&a);
@@ -43,7 +45,7 @@ static void loadButtonConfig(rapidjson::Document& target) {
 			auto lsdjConfig = target.FindMember("lsdj");
 
 			if (gameboyConfig == target.MemberEnd() && lsdjConfig == target.MemberEnd()) {
-				for (auto& v : target.GetObjectA()) {
+				for (auto& v : target.GetObject()) {
 					defaultConfig[v.name] = v.value;
 				}
 
