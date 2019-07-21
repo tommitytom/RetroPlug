@@ -25,7 +25,6 @@
 #include "IPlugParameter.h"
 #include "IPlugQueue.h"
 #include "IPlugTimer.h"
-#include "IGraphicsStructs.h"
 
 /**
  * @file
