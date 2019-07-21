@@ -6,4 +6,4 @@
 
 #include "util/xstring.h"
 
-tstring getContentPath(tstring file = T(""));
+void openFolder(const tstring& path);

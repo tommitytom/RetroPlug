@@ -19,7 +19,8 @@ RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
 		//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 		pGraphics->AttachPanelBackground(COLOR_BLACK);
 		pGraphics->HandleMouseOver(true);
-		pGraphics->LoadFont("Roboto-Regular", ROBOTTO_FN);
+		pGraphics->LoadFont("Roboto-Regular", GAMEBOY_FN);
+		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
 		RetroPlugRoot* root = new RetroPlugRoot(pGraphics->GetBounds(), &_plug);
 		pGraphics->AttachControl(root);

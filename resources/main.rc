@@ -202,8 +202,8 @@ BEGIN
     BEGIN
         BLOCK "040004e4"
         BEGIN
-            VALUE "FileVersion", "0.0.1"
-            VALUE "ProductVersion", "0.0.1"
+            VALUE "FileVersion", "0.2.0"
+            VALUE "ProductVersion", "0.2.0"
             VALUE "FileDescription", "RetroPlug"
             VALUE "InternalName", "RetroPlug"
             VALUE "ProductName", "RetroPlug"
@@ -249,6 +249,7 @@ IDR_TTF2                TTF                     "fonts\\Early-GameBoy.ttf"
 //
 #include "..\config\config.h"
 ROBOTTO_FN TTF ROBOTTO_FN
+GAMEBOY_FN TTf GAMEBOY_FN
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
 

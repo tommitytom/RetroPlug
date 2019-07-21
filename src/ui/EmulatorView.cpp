@@ -2,6 +2,7 @@
 
 #include "platform/FileDialog.h"
 #include "platform/Path.h"
+#include "platform/Shell.h"
 #include "util/File.h"
 #include "util/Serializer.h"
 #include "Buttons.h"
@@ -178,12 +179,6 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 	root->AddItem("System", systemMenu, (int)RootMenuItems::System);
 
 	systemMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
-		static int count = 0;
-		if (count == 1) {
-			std::cout << "systemMenu->SetFunction" << std::endl;
-		}
-		count++;
-		
 		switch ((SystemMenuItems)indexInMenu) {
 		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
 		case SystemMenuItems::Reset: ResetSystem(true); break;
@@ -212,7 +207,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
 			if (indexInMenu == settingsMenu->NItems() - 1) {
-				//ShellExecute(NULL, NULL, getContentPath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+				openFolder(getContentPath());
 			}
 		});
 
