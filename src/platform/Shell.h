@@ -6,4 +6,4 @@
 
 #include "util/xstring.h"
 
-void openFolder(const tstring& path);
+void openShellFolder(const tstring& path);

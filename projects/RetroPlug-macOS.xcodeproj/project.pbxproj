@@ -278,6 +278,23 @@
 		5361511622D2F6F0007F65A5 /* swell-wnd.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A422D2E9AA00CB3F77 /* swell-wnd.mm */; };
 		5361511722D2F6F0007F65A5 /* swell.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A922D2E9AA00CB3F77 /* swell.cpp */; };
 		5361511822D2F6F0007F65A5 /* swellappmain.mm in Sources */ = {isa = PBXBuildFile; fileRef = 530A43A122D2E9AA00CB3F77 /* swellappmain.mm */; };
+		53CA6C6322E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6422E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6522E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6622E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6722E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6822E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6922E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6A22E4449D00C061B3 /* Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6022E4449D00C061B3 /* Shell.mm */; };
+		53CA6C6B22E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C6C22E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C6D22E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C6E22E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C6F22E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C7022E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C7122E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C7222E4449D00C061B3 /* Path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53CA6C6122E4449D00C061B3 /* Path.cpp */; };
+		53CA6C7322E4449D00C061B3 /* Shell.h in Headers */ = {isa = PBXBuildFile; fileRef = 53CA6C6222E4449D00C061B3 /* Shell.h */; };
 		53EC2E0A22E2D66100889BFC /* xstring.h in Headers */ = {isa = PBXBuildFile; fileRef = 53EC2E0222E2D66000889BFC /* xstring.h */; };
 		53EC2E0B22E2D66100889BFC /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53EC2E0322E2D66000889BFC /* File.cpp */; };
 		53EC2E0C22E2D66100889BFC /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53EC2E0322E2D66000889BFC /* File.cpp */; };
@@ -691,6 +708,9 @@
 		535F968422E1BF180054DAAE /* RtAudio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtAudio.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTAudio/RtAudio.h; sourceTree = "<group>"; };
 		535F968622E1BF240054DAAE /* RtMidi.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RtMidi.cpp; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.cpp; sourceTree = "<group>"; };
 		535F968722E1BF240054DAAE /* RtMidi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RtMidi.h; path = ../thirdparty/iPlug2/Dependencies/IPlug/RTMidi/RtMidi.h; sourceTree = "<group>"; };
+		53CA6C6022E4449D00C061B3 /* Shell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = Shell.mm; path = ../src/platform/Shell.mm; sourceTree = "<group>"; };
+		53CA6C6122E4449D00C061B3 /* Path.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Path.cpp; path = ../src/platform/Path.cpp; sourceTree = "<group>"; };
+		53CA6C6222E4449D00C061B3 /* Shell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Shell.h; path = ../src/platform/Shell.h; sourceTree = "<group>"; };
 		53EC2E0222E2D66000889BFC /* xstring.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = xstring.h; path = ../src/util/xstring.h; sourceTree = "<group>"; };
 		53EC2E0322E2D66000889BFC /* File.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = File.cpp; path = ../src/util/File.cpp; sourceTree = "<group>"; };
 		53EC2E0422E2D66000889BFC /* File.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = File.h; path = ../src/util/File.h; sourceTree = "<group>"; };
@@ -1169,6 +1189,9 @@
 		53EC2E0122E2D63F00889BFC /* Platform */ = {
 			isa = PBXGroup;
 			children = (
+				53CA6C6122E4449D00C061B3 /* Path.cpp */,
+				53CA6C6222E4449D00C061B3 /* Shell.h */,
+				53CA6C6022E4449D00C061B3 /* Shell.mm */,
 				53EC2E2722E2D69300889BFC /* Error.h */,
 				53EC2E2B22E2D69400889BFC /* FileDialog.cpp */,
 				53EC2E2922E2D69300889BFC /* FileDialog.h */,
@@ -1288,6 +1311,7 @@
 				535F95D722E1B5A80054DAAE /* table.h in Headers */,
 				53EC2E1322E2D66100889BFC /* File.h in Headers */,
 				53F8335722E29BD000D2E2A2 /* IPlugStructs.h in Headers */,
+				53CA6C7322E4449D00C061B3 /* Shell.h in Headers */,
 				53EC2E1522E2D66100889BFC /* base64.h in Headers */,
 				53EC2E1622E2D66100889BFC /* Serializer.h in Headers */,
 				53F8333C22E29BD000D2E2A2 /* IPlug_include_in_plug_hdr.h in Headers */,
@@ -1773,6 +1797,7 @@
 				53EC2E3122E2D69400889BFC /* FileDialog.cpp in Sources */,
 				53F8332522E29BD000D2E2A2 /* IPlugAPIBase.cpp in Sources */,
 				53FFE77222DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53CA6C6C22E4449D00C061B3 /* Path.cpp in Sources */,
 				53EC2E2022E2D66100889BFC /* base64.cpp in Sources */,
 				535F959C22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE74E22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
@@ -1782,6 +1807,7 @@
 				535F95D922E1B5A80054DAAE /* wave.c in Sources */,
 				53F832F422E295CD00D2E2A2 /* IPlugVST2.cpp in Sources */,
 				53F8331D22E29BD000D2E2A2 /* IPlugPaths.cpp in Sources */,
+				53CA6C6422E4449D00C061B3 /* Shell.mm in Sources */,
 				535F95CF22E1B5A80054DAAE /* command.c in Sources */,
 				536150BC22D2F693007F65A5 /* IControl.cpp in Sources */,
 				535F95AE22E1B5A80054DAAE /* sav.c in Sources */,
@@ -1802,6 +1828,7 @@
 				535F96A322E1C24A0054DAAE /* IGraphicsNanoVG_src.m in Sources */,
 				535F95C322E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76F22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53CA6C7122E4449D00C061B3 /* Path.cpp in Sources */,
 				535F969A22E1C21C0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE73122DB525900B7C5B5 /* rom.c in Sources */,
 				536150CD22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
@@ -1820,6 +1847,7 @@
 				535F95A922E1B5A80054DAAE /* instrument.c in Sources */,
 				535F959922E1B5A80054DAAE /* compression.c in Sources */,
 				535F96B822E1E1690054DAAE /* IPopupMenuControl.cpp in Sources */,
+				53CA6C6922E4449D00C061B3 /* Shell.mm in Sources */,
 				535F969822E1C21C0054DAAE /* IGraphicsCoreText.mm in Sources */,
 				535F969922E1C21C0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150CC22D2F696007F65A5 /* IGraphics.cpp in Sources */,
@@ -1852,6 +1880,7 @@
 				535F95FC22E1B5A80054DAAE /* vio.c in Sources */,
 				53F8331622E29BD000D2E2A2 /* IPlugParameter.cpp in Sources */,
 				53FFE74722DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53CA6C6E22E4449D00C061B3 /* Path.cpp in Sources */,
 				53F8331F22E29BD000D2E2A2 /* IPlugPaths.cpp in Sources */,
 				535F96A122E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */,
 				535F95C022E1B5A80054DAAE /* groove.c in Sources */,
@@ -1873,6 +1902,7 @@
 				535F95B822E1B5A80054DAAE /* row.c in Sources */,
 				535F95ED22E1B5A80054DAAE /* chain.c in Sources */,
 				53F8334A22E29BD000D2E2A2 /* IPlugPluginBase.cpp in Sources */,
+				53CA6C6622E4449D00C061B3 /* Shell.mm in Sources */,
 				53F8333322E29BD000D2E2A2 /* IPlugPaths.mm in Sources */,
 				535F95A622E1B5A80054DAAE /* instrument.c in Sources */,
 				53EC2E1A22E2D66100889BFC /* Serializer.cpp in Sources */,
@@ -1916,6 +1946,7 @@
 				536150C122D2F694007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				535F96AD22E1E1660054DAAE /* ITextEntryControl.cpp in Sources */,
 				535F96AB22E1E1660054DAAE /* IControls.cpp in Sources */,
+				53CA6C6522E4449D00C061B3 /* Shell.mm in Sources */,
 				53FFE73522DB525900B7C5B5 /* sample.c in Sources */,
 				535F958122E1B5A80054DAAE /* error.c in Sources */,
 				535F95C822E1B5A80054DAAE /* phrase.c in Sources */,
@@ -1928,6 +1959,7 @@
 				535F959522E1B5A80054DAAE /* compression.c in Sources */,
 				535F96AC22E1E1660054DAAE /* IPopupMenuControl.cpp in Sources */,
 				53EC2E0D22E2D66100889BFC /* File.cpp in Sources */,
+				53CA6C6D22E4449D00C061B3 /* Path.cpp in Sources */,
 				53EC2E1922E2D66100889BFC /* Serializer.cpp in Sources */,
 				535F968F22E1C21A0054DAAE /* IGraphicsCoreText.mm in Sources */,
 				535F969022E1C21A0054DAAE /* IGraphicsMac_view.mm in Sources */,
@@ -1966,6 +1998,7 @@
 				535F96A222E1C2490054DAAE /* IGraphicsNanoVG_src.m in Sources */,
 				535F95C122E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76D22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53CA6C6F22E4449D00C061B3 /* Path.cpp in Sources */,
 				535F969722E1C21B0054DAAE /* IGraphicsMac.mm in Sources */,
 				53FFE72F22DB525900B7C5B5 /* rom.c in Sources */,
 				536150C722D2F695007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
@@ -1984,6 +2017,7 @@
 				535F95A722E1B5A80054DAAE /* instrument.c in Sources */,
 				535F959722E1B5A80054DAAE /* compression.c in Sources */,
 				535F96B222E1E1670054DAAE /* IPopupMenuControl.cpp in Sources */,
+				53CA6C6722E4449D00C061B3 /* Shell.mm in Sources */,
 				535F969522E1C21B0054DAAE /* IGraphicsCoreText.mm in Sources */,
 				535F969622E1C21B0054DAAE /* IGraphicsMac_view.mm in Sources */,
 				536150C622D2F695007F65A5 /* IGraphics.cpp in Sources */,
@@ -2029,12 +2063,14 @@
 				535F95E922E1B5A80054DAAE /* word.c in Sources */,
 				53F8336A22E29DA900D2E2A2 /* IPlugVST3_Controller.cpp in Sources */,
 				536150CF22D2F697007F65A5 /* IGraphics.cpp in Sources */,
+				53CA6C7222E4449D00C061B3 /* Path.cpp in Sources */,
 				53FFE75422DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				535F95BC22E1B5A80054DAAE /* row.c in Sources */,
 				535F969B22E1C21D0054DAAE /* IGraphicsCoreText.mm in Sources */,
 				535F959222E1B5A80054DAAE /* project.c in Sources */,
 				535F95C422E1B5A80054DAAE /* groove.c in Sources */,
 				535F95AA22E1B5A80054DAAE /* instrument.c in Sources */,
+				53CA6C6A22E4449D00C061B3 /* Shell.mm in Sources */,
 				53FFE75D22DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE77022DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53EC2E1E22E2D66100889BFC /* Serializer.cpp in Sources */,
@@ -2073,6 +2109,7 @@
 				536150BB22D2F692007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
 				5361510F22D2F6F0007F65A5 /* swell-dlg.mm in Sources */,
 				535F95C622E1B5A80054DAAE /* phrase.c in Sources */,
+				53CA6C6322E4449D00C061B3 /* Shell.mm in Sources */,
 				535F957F22E1B5A80054DAAE /* error.c in Sources */,
 				535F968A22E1C2180054DAAE /* IGraphicsMac_view.mm in Sources */,
 				53FFE74422DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
@@ -2118,6 +2155,7 @@
 				5361511122D2F6F0007F65A5 /* swell-ini.cpp in Sources */,
 				535F95E222E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76122DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
+				53CA6C6B22E4449D00C061B3 /* Path.cpp in Sources */,
 				535F968522E1BF180054DAAE /* RtAudio.cpp in Sources */,
 				535F95F922E1B5A80054DAAE /* vio.c in Sources */,
 				535F957622E1B5A70054DAAE /* song.c in Sources */,
@@ -2139,6 +2177,7 @@
 				53FFE74922DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
 				535F96B622E1E1680054DAAE /* ITextEntryControl.cpp in Sources */,
 				535F95C222E1B5A80054DAAE /* groove.c in Sources */,
+				53CA6C6822E4449D00C061B3 /* Shell.mm in Sources */,
 				53FFE76E22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53FFE73022DB525900B7C5B5 /* rom.c in Sources */,
 				536150CA22D2F696007F65A5 /* IGraphicsEditorDelegate.cpp in Sources */,
@@ -2160,6 +2199,7 @@
 				53F8334C22E29BD000D2E2A2 /* IPlugPluginBase.cpp in Sources */,
 				535F95A022E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75222DB528100B7C5B5 /* Lsdj.cpp in Sources */,
+				53CA6C7022E4449D00C061B3 /* Path.cpp in Sources */,
 				535F959022E1B5A80054DAAE /* project.c in Sources */,
 				535F957B22E1B5A80054DAAE /* song.c in Sources */,
 				535F95DD22E1B5A80054DAAE /* wave.c in Sources */,
