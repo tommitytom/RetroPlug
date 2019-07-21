@@ -151,6 +151,12 @@
     <ClCompile Include="..\src\platform\FileDialog.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\platform\Path.cpp">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\platform\Shell.cpp">
+      <Filter>src\platform</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -473,6 +479,9 @@
     </ClInclude>
     <ClInclude Include="..\src\util\xstring.h">
       <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\Shell.h">
+      <Filter>src\platform</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

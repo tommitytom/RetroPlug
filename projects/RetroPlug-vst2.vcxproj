@@ -289,6 +289,7 @@
     <ClInclude Include="..\src\platform\FileDialog.h" />
     <ClInclude Include="..\src\platform\Logger.h" />
     <ClInclude Include="..\src\platform\Path.h" />
+    <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\RetroPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
@@ -497,6 +498,8 @@
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
+    <ClCompile Include="..\src\platform\Path.cpp" />
+    <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
     <ClCompile Include="..\src\roms\Lsdj.cpp" />
