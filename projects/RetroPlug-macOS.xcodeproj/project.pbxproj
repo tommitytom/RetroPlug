@@ -2395,6 +2395,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
+				INSTALL_OWNER = "";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.tommitytom.vst.${BINARY_NAME}";
 				SKIP_INSTALL = NO;
 				WARNING_CFLAGS = "-Wno-main";
@@ -2424,6 +2425,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
+				INSTALL_OWNER = "";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.tommitytom.vst.${BINARY_NAME}";
 				SKIP_INSTALL = NO;
 				WARNING_CFLAGS = "-Wno-main";
@@ -2453,6 +2455,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
+				INSTALL_OWNER = "";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.tommitytom.vst.${BINARY_NAME}";
 				SKIP_INSTALL = NO;
 				WARNING_CFLAGS = "-Wno-main";
@@ -2619,6 +2622,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
+				INSTALL_OWNER = "";
 				OTHER_LDFLAGS = (
 					"$(AU_FRAMEWORKS)",
 					"$(inherited)",
@@ -2656,6 +2660,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
+				INSTALL_OWNER = "";
 				OTHER_LDFLAGS = (
 					"$(AU_FRAMEWORKS)",
 					"$(inherited)",
@@ -2693,6 +2698,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
+				INSTALL_OWNER = "";
 				OTHER_LDFLAGS = (
 					"$(AU_FRAMEWORKS)",
 					"$(inherited)",
@@ -3137,6 +3143,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
+				INSTALL_OWNER = "";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
 				OTHER_CPLUSPLUSFLAGS = (
@@ -3178,6 +3185,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
+				INSTALL_OWNER = "";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
 				OTHER_CPLUSPLUSFLAGS = (
@@ -3219,6 +3227,7 @@
 					../thirdparty,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-macOS-Info.plist";
+				INSTALL_OWNER = "";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.9;
 				OTHER_CPLUSPLUSFLAGS = (
