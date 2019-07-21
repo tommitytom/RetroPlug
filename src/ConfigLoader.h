@@ -12,20 +12,20 @@
 
 const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
 
-static void saveButtonConfig(const std::string& path, const rapidjson::Document& source) {
+static void saveButtonConfig(const tstring& path, const rapidjson::Document& source) {
 	rapidjson::StringBuffer sb;
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
 	source.Accept(writer);
 	std::ofstream configOut(path);
-    assert(configOut.is_open());
-	assert(configOut.good());
-	configOut.write(sb.GetString(), sb.GetSize());
+	if (configOut.is_open() && configOut.good()) {
+		configOut.write(sb.GetString(), sb.GetSize());
+	}
 }
 
 static void loadButtonConfig(rapidjson::Document& target) {
 	rapidjson::Document::AllocatorType& a = target.GetAllocator();
 
-	std::string contentPath = getContentPath();
+	tstring contentPath = getContentPath();
 	if (!fs::exists(contentPath)) {
 		fs::create_directory(contentPath);
 	}
@@ -33,7 +33,7 @@ static void loadButtonConfig(rapidjson::Document& target) {
 	rapidjson::Document defaultConfig(&a);
 	defaultConfig.Parse(DEFAULT_BUTTON_CONFIG.c_str());
 
-	std::string buttonPath = getContentPath("buttons.json");
+	tstring buttonPath = getContentPath(T("buttons.json"));
 	if (fs::exists(buttonPath)) {
 		std::string buttonDataStr;
 		if (readFile(tstr(buttonPath), buttonDataStr)) {

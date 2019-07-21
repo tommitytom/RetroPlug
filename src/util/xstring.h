@@ -4,7 +4,7 @@
 #include <codecvt>
 #include <locale>
 
-#if WIN32
+#ifdef WIN32
 using tstring = std::wstring;
 #define T(str) L##str
 #else
