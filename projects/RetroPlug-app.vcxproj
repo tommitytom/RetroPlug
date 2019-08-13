@@ -169,7 +169,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
       <AdditionalLibraryDirectories>C:\code\retroplug\thirdparty\SameBoy\build\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
@@ -280,13 +280,16 @@
     <ClInclude Include="..\src\lsdj\kit.h" />
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
+    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
     <ClInclude Include="..\src\platform\Logger.h" />
+    <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\RetroPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
+    <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
     <ClInclude Include="..\src\roms\Lsdj.h" />
     <ClInclude Include="..\src\ui\ContextMenu.h" />
@@ -474,6 +477,7 @@
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
+    <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />

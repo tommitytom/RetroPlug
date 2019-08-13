@@ -184,6 +184,9 @@
     <ClCompile Include="..\src\platform\Path.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\platform\MemoryModule.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -523,6 +526,15 @@
       <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="..\src\platform\Shell.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\plugs\SameBoyWrapper.h">
+      <Filter>src\plugs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\MemoryModule.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
       <Filter>src\platform</Filter>
     </ClInclude>
   </ItemGroup>
