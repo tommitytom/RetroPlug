@@ -417,6 +417,8 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 			NewProject();
 		}
 	}
+
+	_plug->updateLinkTargets();
 }
 
 void RetroPlugRoot::OpenLoadProjectDialog() {
