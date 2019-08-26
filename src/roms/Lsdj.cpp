@@ -358,10 +358,11 @@ void Lsdj::patchKits(std::vector<std::byte>& romData) {
 	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
 		size_t offset = bankIdx * BANK_SIZE;
 		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			std::cout << kitIdx << std::endl;
 			auto kit = kitData[kitIdx];
 			if (kit) {
+				std::cout << "patching " << kit->name << std::endl;
 				memcpy((void*)(data + offset), (void*)kit->data.data(), kit->data.size());
-				break;
 			} else {
 				// Clear kit!
 				memset((void*)(data + offset), 0, BANK_SIZE);

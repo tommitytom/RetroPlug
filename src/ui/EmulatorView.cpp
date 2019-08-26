@@ -150,6 +150,8 @@ enum class SystemMenuItems : int {
 	LoadRomAs,
 	Reset,
 	ResetAs,
+	ReplaceRom,
+	SaveRom,
 
 	Sep1,
 
@@ -186,6 +188,8 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
 		case SystemMenuItems::SaveSram: _plug->saveBattery(T("")); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
+		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
+		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
 		}
 	});
 
@@ -351,6 +355,8 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Load ROM As", loadAsModel, (int)SystemMenuItems::LoadRomAs);
 	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
 	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
+	menu->AddItem("Replace ROM...", (int)SystemMenuItems::ReplaceRom);
+	menu->AddItem("Save ROM...", (int)SystemMenuItems::SaveRom);
 	menu->AddSeparator((int)SystemMenuItems::Sep1);
 	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
 	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
@@ -552,6 +558,49 @@ void EmulatorView::OpenLoadKitsDialog() {
 
 		lsdj.patchKits(_plug->romData());
 		_plug->updateRom();
+	}
+}
+
+void EmulatorView::OpenReplaceRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+	};
+
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
+	if (paths.size() > 0) {
+		std::vector<NamedDataPtr> kits;
+		if (_plug->lsdj().found) {
+			kits = _plug->lsdj().kitData;
+		}
+
+		std::vector<std::byte> saveData;
+		_plug->saveBattery(saveData);
+
+		_plug->init(paths[0], _plug->model(), false);
+		_plug->loadBattery(saveData, false);
+		
+		if (_plug->lsdj().found) {
+			_plug->lsdj().kitData = kits;
+			_plug->lsdj().patchKits(_plug->romData());
+			_plug->updateRom();
+		}
+
+		_plug->disableRendering(false);
+		HideText();
+	}
+}
+
+void EmulatorView::OpenSaveRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+	};
+
+	tstring romName = tstr(_plug->romName() + ".gb");
+	tstring path = BasicFileSave(_graphics, types, romName);
+	if (path.size() > 0) {
+		if (!writeFile(path, _plug->romData())) {
+			// Fail
+		}
 	}
 }
 

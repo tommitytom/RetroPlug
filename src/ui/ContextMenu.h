@@ -144,7 +144,7 @@ static IPopupMenu* createSongMenu(bool working) {
 
 static IPopupMenu* createKitMenu(bool empty) {
 	IPopupMenu* menu = new IPopupMenu(0, true);
-	menu->AddItem(!empty ? "Replace..." : "Load...", (int)KitMenuItems::Load);
+	menu->AddItem(!empty ? "Replace..." : "Load (and reset)...", (int)KitMenuItems::Load);
 	menu->AddItem("Export .kit...", (int)KitMenuItems::Export, empty ? IPopupMenu::Item::kDisabled : 0);
 	menu->AddItem("Delete", (int)KitMenuItems::Delete, empty ? IPopupMenu::Item::kDisabled : 0);
 	return menu;
