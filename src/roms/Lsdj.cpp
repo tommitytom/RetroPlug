@@ -2,9 +2,11 @@
 
 #include <iostream>
 #include <sstream>
+#include <set>
 #include "util/File.h"
 #include "lsdj/rom.h"
 #include "lsdj/kit.h"
+#include "util/crc32.h"
 
 const int LSDJ_SAV_SIZE = 131072; // FIXME: This is probably in liblsdj somewhere
 
@@ -41,7 +43,10 @@ void Lsdj::clearKits() {
 
 void Lsdj::loadRom(const std::vector<std::byte>& romData) {
 	clearKits();
-	loadRomKits(romData);
+	std::string error;
+	if (!loadRomKits(romData, true, error)) {
+
+	}
 }
 
 bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
@@ -288,15 +293,36 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 
 // Kit specific
 
-bool Lsdj::loadRomKits(const std::vector<std::byte>& romData) {
+bool Lsdj::loadRomKits(const std::vector<std::byte>& romData, bool absolute, std::string& error) {
 	int kitIdx = 0;
+
+	std::set<uint32_t> hashes;
+	for (size_t i = 0; i < kitData.size(); ++i) {
+		if (kitData[i]) {
+			hashes.insert(kitData[i]->hash);
+		}
+	}
 
 	const char* data = (const char*)romData.data();
 	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
 		size_t offset = bankIdx * BANK_SIZE;
 		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
 			if (bank_is_kit(data + offset)) {
-				loadKitAt(data + offset, BANK_SIZE, kitIdx);
+				int targetIdx = absolute ? kitIdx : findEmptyKit();
+				if (targetIdx != -1) {
+					if (!absolute) {
+						// Filter out duplicate kits
+						uint32_t hash = crc32::update(data + offset, BANK_SIZE);
+						if (hashes.find(hash) != hashes.end()) {
+							continue;
+						}
+					}
+					
+					loadKitAt(data + offset, BANK_SIZE, targetIdx);
+				} else {
+					error = "Unable to import kit - not enough kit banks available";
+					return false;
+				}
 			}
 
 			kitIdx++;
@@ -358,10 +384,8 @@ void Lsdj::patchKits(std::vector<std::byte>& romData) {
 	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
 		size_t offset = bankIdx * BANK_SIZE;
 		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
-			std::cout << kitIdx << std::endl;
 			auto kit = kitData[kitIdx];
 			if (kit) {
-				std::cout << "patching " << kit->name << std::endl;
 				memcpy((void*)(data + offset), (void*)kit->data.data(), kit->data.size());
 			} else {
 				// Clear kit!
@@ -380,11 +404,18 @@ void Lsdj::loadKitAt(const char* data, size_t size, int idx) {
 	memset(name, '\0', KIT_NAME_SIZE + 1);
 	memcpy(name, data + KIT_NAME_OFFSET, KIT_NAME_SIZE);
 
-	auto kit = std::make_shared<NamedData>(NamedData{ std::string(name), std::vector<std::byte>() });
+	auto kit = std::make_shared<NamedHashedData>(NamedHashedData { 
+		std::string(name),
+		std::vector<std::byte>(),
+		0
+	});
+
 	rtrim(kit->name);
 
 	kit->data.resize(size);
 	memcpy(kit->data.data(), data, size);
+
+	kit->hash = crc32::update(kit->data);
 
 	kitData[idx] = kit;
 }

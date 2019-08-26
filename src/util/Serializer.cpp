@@ -147,7 +147,7 @@ void serialize(std::string & target, const RetroPlug & manager) {
 
 						rapidjson::Value kitData(rapidjson::kObjectType);
 						kitData.AddMember("name", kit->name, a);
-						kitData.AddMember("checksum", crc32::update((void*)kit->data.data(), kit->data.size()), a);
+						kitData.AddMember("checksum", kit->hash, a);
 
 						std::string kitDataStr = base64_encode((const unsigned char*)kit->data.data(), kit->data.size());
 						kitData.AddMember("data", kitDataStr, a);
@@ -274,10 +274,13 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 					
 					const auto& kitName = it->value.FindMember("name");
 					const auto& kitData = it->value.FindMember("data");
+					auto kitDecoded = base64_decode(kitData->value.GetString());
+
 					if (kitName != it->value.MemberEnd() && kitData != it->value.MemberEnd()) {
-						kitsData[idx] = std::make_shared<NamedData>(NamedData {
+						kitsData[idx] = std::make_shared<NamedHashedData>(NamedHashedData {
 							kitName->value.GetString(),
-							base64_decode(kitData->value.GetString())
+							kitDecoded,
+							crc32::update(kitDecoded)
 						});
 					}
 				}

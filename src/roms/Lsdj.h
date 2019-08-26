@@ -72,6 +72,21 @@ const uint8_t LsdjKeyboardLowOctaveMap[12] = {
 	0x29  //Table Cue
 };
 
+const uint32_t LsdjKitHashes[22] = {	3734161118, 3816718742, 3788323431, 2132077591, 341848934, 4094864613, 
+										1619355490, 1432911456, 2269540319, 3452550342, 2014800155, 3671301996, 
+										2468775071, 1244551999, 1123275968, 2188962532, 2840583983, 1977389053,
+										176697863, 3590495210, 2373983532, 3719557227	};
+
+static bool isBuiltInKit(uint32_t hash) {
+	for (int i = 0; i < 22; i++) {
+		if (LsdjKitHashes[i] == hash) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int midiMapRowNumber(int channel, int noteNumber) {
 	if (channel == 0) {
 		return noteNumber;
@@ -112,7 +127,14 @@ struct NamedData {
 	std::vector<std::byte> data;
 };
 
+struct NamedHashedData {
+	std::string name;
+	std::vector<std::byte> data;
+	uint32_t hash;
+};
+
 using NamedDataPtr = std::shared_ptr<NamedData>;
+using NamedHashedDataPtr = std::shared_ptr<NamedHashedData>;
 
 class Lsdj {
 public:
@@ -131,7 +153,7 @@ public:
 	std::atomic<bool> keyboardShortcuts = false;
 
 	std::vector<std::byte> saveData;
-	std::vector<NamedDataPtr> kitData;
+	std::vector<NamedHashedDataPtr> kitData;
 
 	Lsdj();
 
@@ -153,7 +175,7 @@ public:
 
 	// Kit specific
 
-	bool loadRomKits(const std::vector<std::byte>& romData);
+	bool loadRomKits(const std::vector<std::byte>& romData, bool absolute, std::string& error);
 
 	bool loadKit(const tstring& path, int idx, std::string& error);
 	

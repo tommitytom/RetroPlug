@@ -187,6 +187,9 @@
     <ClCompile Include="..\src\platform\MemoryModule.c">
       <Filter>src\platform</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\util\crc32.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">

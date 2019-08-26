@@ -454,6 +454,8 @@ void EmulatorView::LoadKit(int index) {
 		if (lsdj.loadKit(paths[0], index, error)) {
 			lsdj.patchKits(_plug->romData());
 			_plug->updateRom();
+		} else {
+			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
 		}
 	}
 }
@@ -541,13 +543,11 @@ void EmulatorView::OpenLoadKitsDialog() {
 			if (p.extension() == "kit") {
 				if (lsdj.loadKit(path, -1, error)) {
 					continue;
-				} else {
-
 				}
 			} else {
 				std::vector<std::byte> f;
 				if (readFile(path, f)) {
-					if (lsdj.loadRomKits(f)) {
+					if (lsdj.loadRomKits(f, false, error)) {
 						continue;
 					}
 				}
@@ -568,7 +568,8 @@ void EmulatorView::OpenReplaceRomDialog() {
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
-		std::vector<NamedDataPtr> kits;
+		std::vector<NamedHashedDataPtr> kits;
+
 		if (_plug->lsdj().found) {
 			kits = _plug->lsdj().kitData;
 		}
