@@ -27,6 +27,23 @@ int nextProjectIndex(lsdj_sav_t* sav, int startIdx) {
 	return -1;
 }
 
+Lsdj::Lsdj() {
+	for (int i = 0; i < 0x33; ++i) {
+		kitData.push_back(nullptr);
+	}
+}
+
+void Lsdj::clearKits() {
+	for (int i = 0; i < kitData.size(); ++i) {
+		kitData[i] = nullptr;
+	}
+}
+
+void Lsdj::loadRom(const std::vector<std::byte>& romData) {
+	clearKits();
+	loadRomKits(romData);
+}
+
 bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
 	lsdj_error_t* error = nullptr;
 	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
@@ -269,20 +286,34 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::getKitNames(std::vector<std::string>& names, const std::vector<std::byte>& romData) {
-	lsdj_error_t* error = nullptr;
-	lsdj_rom_t* rom = lsdj_rom_read_from_memory((const unsigned char*)romData.data(), romData.size(), &error);
-	for (size_t i = 0; i < rom->kit_count; i++) {
-		lsdj_kit_t* kit = rom->kits[i];
-		const char* name = lsdj_kit_get_name(kit);
-		if (name[0] != '\0') {
-			names.push_back(name);
+// Kit specific
+
+bool Lsdj::loadRomKits(const std::vector<std::byte>& romData) {
+	int kitIdx = 0;
+
+	const char* data = (const char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (bank_is_kit(data + offset)) {
+				loadKitAt(data + offset, BANK_SIZE, kitIdx);
+			}
+
+			kitIdx++;
+		}
+	}
+
+	return true;
+}
+
+void Lsdj::getKitNames(std::vector<std::string>& names) {
+	for (size_t i = 0; i < kitData.size(); ++i) {
+		if (kitData[i]) {
+			names.push_back(kitData[i]->name);
 		} else {
 			names.push_back("Empty");
 		}
 	}
-
-	lsdj_rom_free(rom);
 }
 
 void Lsdj::patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index) {
@@ -297,17 +328,82 @@ void Lsdj::patchKit(std::vector<std::byte>& romData, const std::vector<std::byte
 				break;
 			}
 
+			kitCount++; 
+		}
+	}
+}
+
+void Lsdj::readKit(const std::vector<std::byte>& romData, std::vector<std::byte>& target, int index) {
+	int kitCount = 0;
+	
+	const char* data = (const char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			if (index == kitCount || (index == -1 && bank_is_empty_kit(data + offset))) {
+				target.resize(BANK_SIZE);
+				memcpy((void*)target.data(), (void*)(data + offset), BANK_SIZE);
+				break;
+			}
+
 			kitCount++;
 		}
 	}
 }
 
-bool Lsdj::importKits(std::vector<std::byte>& romData, const std::vector<tstring>& paths, std::string& error) {
-	for (auto& path : paths) {
+void Lsdj::patchKits(std::vector<std::byte>& romData) {
+	int kitIdx = 0;
+
+	char* data = (char*)romData.data();
+	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
+		size_t offset = bankIdx * BANK_SIZE;
+		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
+			auto kit = kitData[kitIdx];
+			if (kit) {
+				memcpy((void*)(data + offset), (void*)kit->data.data(), kit->data.size());
+				break;
+			} else {
+				// Clear kit!
+				memset((void*)(data + offset), 0, BANK_SIZE);
+				data[offset + 0] = -1;
+				data[offset + 1] = -1;
+			}
+
+			kitIdx++;
+		}
+	}
+}
+
+void Lsdj::loadKitAt(const char* data, size_t size, int idx) {
+	char name[KIT_NAME_SIZE + 1];
+	memset(name, '\0', KIT_NAME_SIZE + 1);
+	memcpy(name, data + KIT_NAME_OFFSET, KIT_NAME_SIZE);
+
+	auto kit = std::make_shared<NamedData>(NamedData{ std::string(name), std::vector<std::byte>() });
+	rtrim(kit->name);
+
+	kit->data.resize(size);
+	memcpy(kit->data.data(), data, size);
+
+	kitData[idx] = kit;
+}
+
+bool Lsdj::loadKit(const tstring& path, int idx, std::string& error) {
+	if (idx == -1) {
+		idx = findEmptyKit();
+	}
+
+	if (idx != -1) {
 		std::vector<std::byte> f;
 		if (readFile(path, f)) {
-			patchKit(romData, f, -1);
+			loadKitAt((const char*)f.data(), f.size(), idx);
+		} else {
+			error = "Failed to load kit from file";
+			return false;
 		}
+	} else {
+		error = "Unable to import kit - not enough kit banks available";
+		return false;
 	}
 
 	return true;
@@ -331,45 +427,10 @@ void Lsdj::exportKit(const std::vector<std::byte>& romData, int index, std::vect
 	}
 }
 
-void Lsdj::exportKits(const std::vector<std::byte>& romData, std::vector<NamedData>& target) {
-	int kitCount = 0;
-
-	const char* data = (const char*)romData.data();
-	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
-		size_t offset = bankIdx * BANK_SIZE;
-		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
-			if (bank_is_kit(data + offset)) {
-				char name[KIT_NAME_SIZE + 1];
-				memset(name, '\0', KIT_NAME_SIZE + 1);
-				memcpy(name, data + offset + KIT_NAME_OFFSET, KIT_NAME_SIZE);
-
-				target.push_back(NamedData());
-				NamedData& d = target.back();
-				d.name = std::string(name);
-				d.data.resize(BANK_SIZE);
-				memcpy(d.data.data(), data + offset, BANK_SIZE);
-			}
-
-			kitCount++;
-		}
-	}
-}
-
 void Lsdj::deleteKit(std::vector<std::byte>& romData, int index) {
-	int kitCount = 0;
-
-	char* data = (char*)romData.data();
-	for (size_t bankIdx = 0; bankIdx < BANK_COUNT; ++bankIdx) {
-		size_t offset = bankIdx * BANK_SIZE;
-		if (bank_is_kit(data + offset) || bank_is_empty_kit(data + offset)) {
-			if (index == kitCount && bank_is_kit(data + offset)) {
-				memset((void*)(data + offset), 0, BANK_SIZE);
-				data[offset + 0] = -1;
-				data[offset + 1] = -1;
-				break;
-			}
-
-			kitCount++;
-		}
+	if (kitData[index]) {
+		kitData[index] = nullptr;
+		patchKits(romData);
 	}
 }
+

@@ -252,7 +252,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			}
 
 			std::vector<std::string> kitNames;
-			lsdj.getKitNames(kitNames, _plug->romData());
+			lsdj.getKitNames(kitNames);
 
 			IPopupMenu* kitMenu = new IPopupMenu();
 			kitMenu->AddItem("Import...");
@@ -413,7 +413,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				for (auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					//writeFile(p.string(), song.data);
+					writeFile(p.wstring(), song.data);
 				}
 			}
 		}
@@ -443,12 +443,12 @@ void EmulatorView::LoadKit(int index) {
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
+		std::string error;
 		Lsdj& lsdj = _plug->lsdj();
-
-		std::vector<std::byte> kitData;
-		readFile(paths[0], kitData);
-		lsdj.patchKit(_plug->romData(), kitData, index);
-		_plug->updateRom();
+		if (lsdj.loadKit(paths[0], index, error)) {
+			lsdj.patchKits(_plug->romData());
+			_plug->updateRom();
+		}
 	}
 }
 
@@ -464,7 +464,7 @@ void EmulatorView::ExportKit(int index) {
 	};
 
 	std::vector<std::string> kitNames;
-	_plug->lsdj().getKitNames(kitNames, _plug->romData());
+	_plug->lsdj().getKitNames(kitNames);
 
 	tstring path = BasicFileSave(_graphics, types, tstr(kitNames[index]));
 	if (path.size() == 0) {
@@ -487,14 +487,11 @@ void EmulatorView::ExportKits() {
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
-			if (lsdj.saveData.size() > 0) {
-				std::vector<NamedData> kitData;
-				lsdj.exportKits(_plug->romData(), kitData);
-
-				for (auto& kit : kitData) {
+			for (auto kit : lsdj.kitData) {
+				if (kit) {
 					fs::path p(paths[0]);
-					p /= kit.name + ".kit";
-					//writeFile(p.string(), kit.data);
+					p /= kit->name + ".kit";
+					writeFile(p.wstring(), kit->data);
 				}
 			}
 		}
@@ -524,6 +521,7 @@ void EmulatorView::OpenLoadSongsDialog() {
 
 void EmulatorView::OpenLoadKitsDialog() {
 	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
 		{ T("LSDj Kits"), T("*.kit") }
 	};
 
@@ -531,11 +529,29 @@ void EmulatorView::OpenLoadKitsDialog() {
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
-		if (lsdj.importKits(_plug->romData(), paths, error)) {
-			_plug->updateRom();
-		} else {
+
+		for (auto& path : paths) {
+			fs::path p = path;
+			if (p.extension() == "kit") {
+				if (lsdj.loadKit(path, -1, error)) {
+					continue;
+				} else {
+
+				}
+			} else {
+				std::vector<std::byte> f;
+				if (readFile(path, f)) {
+					if (lsdj.loadRomKits(f)) {
+						continue;
+					}
+				}
+			}
+
 			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
 		}
+
+		lsdj.patchKits(_plug->romData());
+		_plug->updateRom();
 	}
 }
 

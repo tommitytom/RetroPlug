@@ -537,6 +537,9 @@
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
       <Filter>src\platform</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\util\crc32.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

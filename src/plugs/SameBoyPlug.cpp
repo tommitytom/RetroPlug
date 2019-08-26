@@ -97,6 +97,7 @@ void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot
 	if (_lsdj.found) {
 		_lsdj.version = _romName.substr(5, 6);
 		_lsdj.saveData = saveData;
+		_lsdj.loadRom(_romData);
 	}
 
 	SAMEBOY_SYMBOLS.sameboy_set_sample_rate(instance, _sampleRate);

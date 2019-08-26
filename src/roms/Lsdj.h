@@ -112,6 +112,8 @@ struct NamedData {
 	std::vector<std::byte> data;
 };
 
+using NamedDataPtr = std::shared_ptr<NamedData>;
+
 class Lsdj {
 public:
 	bool found = false;
@@ -129,6 +131,13 @@ public:
 	std::atomic<bool> keyboardShortcuts = false;
 
 	std::vector<std::byte> saveData;
+	std::vector<NamedDataPtr> kitData;
+
+	Lsdj();
+
+	void loadRom(const std::vector<std::byte>& romData);
+
+	// Song specific
 
 	bool importSongs(const std::vector<tstring>& paths, std::string& error);
 
@@ -142,15 +151,36 @@ public:
 
 	void getSongNames(std::vector<LsdjSongName>& names);
 
-	void getKitNames(std::vector<std::string>& names, const std::vector<std::byte>& romData);
+	// Kit specific
+
+	bool loadRomKits(const std::vector<std::byte>& romData);
+
+	bool loadKit(const tstring& path, int idx, std::string& error);
+	
+	void getKitNames(std::vector<std::string>& names);
 
 	void patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index);
 
-	bool importKits(std::vector<std::byte>& romData, const std::vector<tstring>& paths, std::string& error);
-
 	void exportKit(const std::vector<std::byte>& romData, int idx, std::vector<std::byte>& target);
 
-	void exportKits(const std::vector<std::byte>& romData, std::vector<NamedData>& target);
-
 	void deleteKit(std::vector<std::byte>& romData, int index);
+
+	int findEmptyKit() {
+		for (size_t i = 0; i < kitData.size(); ++i) {
+			if (kitData[i] == nullptr) {
+				return i;
+			}
+		}
+
+		return -1;
+	}
+
+	void clearKits();
+
+	void readKit(const std::vector<std::byte>& romData, std::vector<std::byte>& target, int index);
+
+	void patchKits(std::vector<std::byte>& romData);
+
+private:
+	void loadKitAt(const char* data, size_t size, int idx);
 };

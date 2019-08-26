@@ -6,9 +6,12 @@
 #include "base64.h"
 #include "roms/Lsdj.h"
 #include "fs.h"
+#include "util/crc32.h"
 
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
+
+#define VERSION(v1, v2, v3) ((int)((v1 << 16) | (v2 << 8) | (v3 & 0xFF)))
 
 std::string layoutToString(InstanceLayout layout) {
 	switch (layout) {
@@ -134,6 +137,27 @@ void serialize(std::string & target, const RetroPlug & manager) {
 				l.AddMember("syncMode", syncModeToString(lsdj.syncMode), a);
 				l.AddMember("autoPlay", lsdj.autoPlay.load(), a);
 				l.AddMember("keyboardShortcuts", lsdj.keyboardShortcuts.load(), a);
+
+				rapidjson::Value kits(rapidjson::kObjectType);
+				for (size_t i = 0; i < lsdj.kitData.size(); ++i) {
+					auto kit = lsdj.kitData[i];
+					if (kit) {
+						rapidjson::Value id;
+						id.SetString(std::to_string(i), a);
+
+						rapidjson::Value kitData(rapidjson::kObjectType);
+						kitData.AddMember("name", kit->name, a);
+						kitData.AddMember("checksum", crc32::update((void*)kit->data.data(), kit->data.size()), a);
+
+						std::string kitDataStr = base64_encode((const unsigned char*)kit->data.data(), kit->data.size());
+						kitData.AddMember("data", kitDataStr, a);
+
+						kits.AddMember(id, kitData, a);
+					}
+				}
+
+				l.AddMember("kits", kits, a);
+
 				settings.AddMember("lsdj", l, a);
 			}
 
@@ -177,7 +201,7 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 	const std::string& romPath = instRoot["romPath"].GetString();
 	const auto& state = instRoot["state"].GetObject();
 	const std::string& stateDataStr = state["data"].GetString();
-	std::string stateData = base64_decode(stateDataStr);
+	std::vector<std::byte> stateData = base64_decode(stateDataStr);
 
 	GameboyModel model = GameboyModel::Auto;
 	const auto& settings = instRoot.FindMember("settings");
@@ -194,6 +218,10 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 
 	SameBoyPlugPtr plugPtr = plug.addInstance(EmulatorType::SameBoy);
 	plugPtr->setModel(model);
+
+	// TODO: Load and patch rom before loading in SameBoy! Patching also needs to be accounted
+	// for when the rom is not found and is loaded later.  This would probably be implemented
+	// when replacing and patching a rom
 
 	if (fs::exists(romPath)) {
 		plugPtr->init(tstr(romPath), model, true);
@@ -223,6 +251,8 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 
 		const auto& lsdjSettings = settings->value.FindMember("lsdj");
 		if (lsdjSettings != settings->value.MemberEnd()) {
+			plugPtr->lsdj().clearKits();
+
 			const std::string& syncMode = lsdjSettings->value["syncMode"].GetString();
 			plugPtr->lsdj().syncMode = syncModeFromString(syncMode);
 
@@ -235,11 +265,50 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 			if (keyboardShortcuts != lsdjSettings->value.MemberEnd()) {
 				plugPtr->lsdj().keyboardShortcuts = keyboardShortcuts->value.GetBool();
 			}
+
+			const auto& kits = lsdjSettings->value.FindMember("kits"); 
+			if (kits != lsdjSettings->value.MemberEnd()) {
+				auto& kitsData = plugPtr->lsdj().kitData;
+				for (auto it = kits->value.MemberBegin(); it != kits->value.MemberEnd(); ++it) {
+					int idx = std::stoi(it->name.GetString());
+					
+					const auto& kitName = it->value.FindMember("name");
+					const auto& kitData = it->value.FindMember("data");
+					if (kitName != it->value.MemberEnd() && kitData != it->value.MemberEnd()) {
+						kitsData[idx] = std::make_shared<NamedData>(NamedData {
+							kitName->value.GetString(),
+							base64_decode(kitData->value.GetString())
+						});
+					}
+				}
+			}
+
+			plugPtr->lsdj().patchKits(plugPtr->romData());
+			plugPtr->updateRom();
 		}
 	}
 }
 
-void deserialize(const char * data, RetroPlug & plug) {
+int versionToInt(const std::string& v) {
+	auto items = split(v, ".");
+	if (items.size() != 3) {
+		return 0;
+	}
+
+	int version = 0;
+	for (int i = 0; i < 3; i++) {
+		int vi = std::stoi(items[i]);
+		if (vi > 255) {
+			return 0;
+		}
+
+		version |= vi << ((2 - i) * 8);
+	}
+
+	return version;
+}
+
+void deserialize(const char * data, RetroPlug& plug) {
 	plug.clear();
 
 	try {
@@ -248,8 +317,9 @@ void deserialize(const char * data, RetroPlug & plug) {
 			return;
 		}
 
-		const std::string& version = root["version"].GetString();
-		if (version == "0.1.0") {
+		const std::string& versionStr = root["version"].GetString();
+		int version = versionToInt(versionStr);
+		if (version >= VERSION(0, 1, 0)) {
 			SaveStateType saveType = SaveStateType::State;
 			const auto& saveTypeStr = root.FindMember("saveType");
 			if (saveTypeStr != root.MemberEnd()) {

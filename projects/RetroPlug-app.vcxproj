@@ -151,7 +151,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile />
@@ -195,7 +195,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile>
@@ -296,6 +296,7 @@
     <ClInclude Include="..\src\ui\EmulatorView.h" />
     <ClInclude Include="..\src\ui\RetroPlugRoot.h" />
     <ClInclude Include="..\src\util\base64.h" />
+    <ClInclude Include="..\src\util\crc32.h" />
     <ClInclude Include="..\src\util\File.h" />
     <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\xstring.h" />

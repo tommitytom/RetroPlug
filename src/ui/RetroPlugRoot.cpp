@@ -153,6 +153,12 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
 	target->init(romPath, source->model(), false);
 
+	if (source->lsdj().found) {
+		target->lsdj().kitData = source->lsdj().kitData;
+		target->lsdj().patchKits(target->romData());
+		target->updateRom();
+	}
+
 	if (type == CreateInstanceType::Duplicate) {
 		size_t stateSize = source->saveStateSize();
 		std::byte* buf = new std::byte[stateSize];
@@ -322,6 +328,8 @@ void RetroPlugRoot::CloseProject() {
 	}
 
 	_views.clear();
+	_active = nullptr;
+	_activeIdx = -1;
 }
 
 void RetroPlugRoot::NewProject() {
