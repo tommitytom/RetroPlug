@@ -161,7 +161,7 @@ public:
 
 	// Song specific
 
-	bool importSongs(const std::vector<tstring>& paths, std::string& error);
+	std::vector<int> importSongs(const std::vector<tstring>& paths, std::string& error);
 
 	void loadSong(int idx);
 

@@ -72,6 +72,8 @@ public:
 
 	void LoadRom(const tstring& path);
 
+	void LoadSong(int index);
+
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
 
@@ -96,8 +98,6 @@ private:
 	void ExportSong(const LsdjSongName& songName);
 
 	void ExportSongs(const std::vector<LsdjSongName>& songNames);
-
-	void LoadSong(int index);
 
 	void DeleteSong(int index);
 

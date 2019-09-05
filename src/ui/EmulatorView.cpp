@@ -519,9 +519,12 @@ void EmulatorView::OpenLoadSongsDialog() {
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
-		if (lsdj.importSongs(paths, error)) {
+		std::vector<int> ids = lsdj.importSongs(paths, error);
+		if (ids.size() > 0) {
 			_plug->loadBattery(lsdj.saveData, false);
-		} else {
+		}
+
+		if (error.size() > 0) {
 			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
 		}
 	}

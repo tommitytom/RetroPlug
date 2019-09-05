@@ -49,7 +49,7 @@ void Lsdj::loadRom(const std::vector<std::byte>& romData) {
 	}
 }
 
-bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
+std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
 	lsdj_error_t* error = nullptr;
 	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
 	if (sav == nullptr) {
@@ -58,10 +58,12 @@ bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr)
 			consoleLogLine(errorStr);
 		}
 
-		return false;
+		return {};
 	}
 
 	int index = nextProjectIndex(sav, 0);
+
+	std::vector<int> ids;
 
 	std::vector<std::byte> fileData;
 	for (auto& path : paths) {
@@ -69,18 +71,21 @@ bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr)
 		if (readFile(path, fileData)) {
 			lsdj_project_t* project = lsdj_project_read_lsdsng_from_memory((const unsigned char*)fileData.data(), fileData.size(), &error);
 			if (error != nullptr) {
+				ids.push_back(-1);
 				consoleLogLine(lsdj_error_get_c_str(error));
 				continue;
 			}
 
 			lsdj_sav_set_project(sav, index, project, &error);
-			index = nextProjectIndex(sav, index);
-
 			if (error != nullptr) {
 				consoleLogLine("Project " + projectName(project) + ": " + std::string(lsdj_error_get_c_str(error)));
 				lsdj_project_free(project);
+				ids.push_back(-1);
 				continue;
 			}
+
+			ids.push_back(index);
+			index = nextProjectIndex(sav, index);
 		}
 	}
 
@@ -89,11 +94,11 @@ bool Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr)
 		errorStr = lsdj_error_get_c_str(error);
 		consoleLogLine(errorStr);
 		lsdj_sav_free(sav);
-		return false;
+		return {};
 	}
 
 	lsdj_sav_free(sav);
-	return true;
+	return ids;
 }
 
 void Lsdj::loadSong(int idx) {

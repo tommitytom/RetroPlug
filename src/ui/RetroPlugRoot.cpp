@@ -126,7 +126,48 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 }
 
 void RetroPlugRoot::OnDrop(const char* str) {
-	LoadProjectOrRom(tstr(str));
+	auto plug = _active->Plug();
+	
+	tstring path = tstr(str);
+	tstring ext = tstr(fs::path(path).extension().wstring());
+
+	Lsdj& lsdj = plug->lsdj();
+	if (lsdj.found) {
+		std::string error;
+		
+		if (ext == T(".kit")) {
+			int idx = lsdj.findEmptyKit();
+			if (idx != -1) {
+				if (lsdj.loadKit(path, idx, error)) {
+					lsdj.patchKits(plug->romData());
+					plug->updateRom();
+				} else {
+					// log err
+				}
+			}
+
+			return;
+		} else if (ext == T(".lsdsng")) {
+			// Load lsdj song
+			plug->saveBattery(lsdj.saveData);
+			std::vector<int> ids = lsdj.importSongs({ path }, error);
+			if (ids.size() > 0 && ids[0] != -1) {
+				_active->LoadSong(ids[0]);
+			} else {
+				// log err
+			}
+
+			return;
+		}
+	}
+
+	if (ext == T(".retroplug")) {
+		LoadProject(path);
+	} else if (ext == T(".gb") || ext == T(".gbc")) {
+		_active->LoadRom(path);
+	} else if (ext == T(".sav")) {
+		plug->loadBattery({ path }, true);
+	}
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
