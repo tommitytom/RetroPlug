@@ -27,6 +27,10 @@ lsdj_kit_t* lsdj_kit_read(lsdj_vio_t* vio, lsdj_error_t** error) {
 	}
 
 	lsdj_kit_t* kit = malloc(sizeof(lsdj_kit_t));
+	if (kit == NULL) {
+		return NULL;
+	}
+
 	memset((void*)kit, 0, sizeof(lsdj_kit_t));
 
 	if (bank_is_empty_kit(bank_id)) {

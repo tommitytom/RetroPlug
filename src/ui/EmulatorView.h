@@ -87,6 +87,10 @@ private:
 
 	void OpenLoadKitsDialog();
 
+	void OpenReplaceRomDialog();
+	
+	void OpenSaveRomDialog();
+
 	void ToggleKeyboardMode();
 
 	void ExportSong(const LsdjSongName& songName);

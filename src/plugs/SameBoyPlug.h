@@ -48,7 +48,7 @@ private:
 
 	std::vector<std::byte> _romData;
 	std::vector<std::byte> _saveData;
-	SaveStateType _saveType;
+	SaveStateType _saveType = SaveStateType::State;
 
 public:
 	SameBoyPlug();

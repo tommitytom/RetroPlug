@@ -150,6 +150,8 @@ enum class SystemMenuItems : int {
 	LoadRomAs,
 	Reset,
 	ResetAs,
+	ReplaceRom,
+	SaveRom,
 
 	Sep1,
 
@@ -186,6 +188,8 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
 		case SystemMenuItems::SaveSram: _plug->saveBattery(T("")); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
+		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
+		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
 		}
 	});
 
@@ -252,7 +256,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			}
 
 			std::vector<std::string> kitNames;
-			lsdj.getKitNames(kitNames, _plug->romData());
+			lsdj.getKitNames(kitNames);
 
 			IPopupMenu* kitMenu = new IPopupMenu();
 			kitMenu->AddItem("Import...");
@@ -351,6 +355,8 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Load ROM As", loadAsModel, (int)SystemMenuItems::LoadRomAs);
 	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
 	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
+	menu->AddItem("Replace ROM...", (int)SystemMenuItems::ReplaceRom);
+	menu->AddItem("Save ROM...", (int)SystemMenuItems::SaveRom);
 	menu->AddSeparator((int)SystemMenuItems::Sep1);
 	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
 	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
@@ -413,7 +419,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				for (auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					//writeFile(p.string(), song.data);
+					writeFile(p.wstring(), song.data);
 				}
 			}
 		}
@@ -443,12 +449,14 @@ void EmulatorView::LoadKit(int index) {
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
+		std::string error;
 		Lsdj& lsdj = _plug->lsdj();
-
-		std::vector<std::byte> kitData;
-		readFile(paths[0], kitData);
-		lsdj.patchKit(_plug->romData(), kitData, index);
-		_plug->updateRom();
+		if (lsdj.loadKit(paths[0], index, error)) {
+			lsdj.patchKits(_plug->romData());
+			_plug->updateRom();
+		} else {
+			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
+		}
 	}
 }
 
@@ -464,7 +472,7 @@ void EmulatorView::ExportKit(int index) {
 	};
 
 	std::vector<std::string> kitNames;
-	_plug->lsdj().getKitNames(kitNames, _plug->romData());
+	_plug->lsdj().getKitNames(kitNames);
 
 	tstring path = BasicFileSave(_graphics, types, tstr(kitNames[index]));
 	if (path.size() == 0) {
@@ -487,14 +495,11 @@ void EmulatorView::ExportKits() {
 	if (paths.size() > 0) {
 		Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
-			if (lsdj.saveData.size() > 0) {
-				std::vector<NamedData> kitData;
-				lsdj.exportKits(_plug->romData(), kitData);
-
-				for (auto& kit : kitData) {
+			for (auto kit : lsdj.kitData) {
+				if (kit) {
 					fs::path p(paths[0]);
-					p /= kit.name + ".kit";
-					//writeFile(p.string(), kit.data);
+					p /= kit->name + ".kit";
+					writeFile(p.wstring(), kit->data);
 				}
 			}
 		}
@@ -524,6 +529,7 @@ void EmulatorView::OpenLoadSongsDialog() {
 
 void EmulatorView::OpenLoadKitsDialog() {
 	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
 		{ T("LSDj Kits"), T("*.kit") }
 	};
 
@@ -531,10 +537,70 @@ void EmulatorView::OpenLoadKitsDialog() {
 	Lsdj& lsdj = _plug->lsdj();
 	if (lsdj.found) {
 		std::string error;
-		if (lsdj.importKits(_plug->romData(), paths, error)) {
-			_plug->updateRom();
-		} else {
+
+		for (auto& path : paths) {
+			fs::path p = path;
+			if (p.extension() == "kit") {
+				if (lsdj.loadKit(path, -1, error)) {
+					continue;
+				}
+			} else {
+				std::vector<std::byte> f;
+				if (readFile(path, f)) {
+					if (lsdj.loadRomKits(f, false, error)) {
+						continue;
+					}
+				}
+			}
+
 			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
+		}
+
+		lsdj.patchKits(_plug->romData());
+		_plug->updateRom();
+	}
+}
+
+void EmulatorView::OpenReplaceRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+	};
+
+	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
+	if (paths.size() > 0) {
+		std::vector<NamedHashedDataPtr> kits;
+
+		if (_plug->lsdj().found) {
+			kits = _plug->lsdj().kitData;
+		}
+
+		std::vector<std::byte> saveData;
+		_plug->saveBattery(saveData);
+
+		_plug->init(paths[0], _plug->model(), false);
+		_plug->loadBattery(saveData, false);
+		
+		if (_plug->lsdj().found) {
+			_plug->lsdj().kitData = kits;
+			_plug->lsdj().patchKits(_plug->romData());
+			_plug->updateRom();
+		}
+
+		_plug->disableRendering(false);
+		HideText();
+	}
+}
+
+void EmulatorView::OpenSaveRomDialog() {
+	std::vector<FileDialogFilters> types = {
+		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+	};
+
+	tstring romName = tstr(_plug->romName() + ".gb");
+	tstring path = BasicFileSave(_graphics, types, romName);
+	if (path.size() > 0) {
+		if (!writeFile(path, _plug->romData())) {
+			// Fail
 		}
 	}
 }
