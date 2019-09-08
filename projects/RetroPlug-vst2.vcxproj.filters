@@ -157,6 +157,12 @@
     <ClCompile Include="..\src\platform\Shell.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\platform\MemoryModule.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\util\crc32.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -481,6 +487,12 @@
       <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="..\src\platform\Shell.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\MemoryModule.h">
       <Filter>src\platform</Filter>
     </ClInclude>
   </ItemGroup>

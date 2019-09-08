@@ -285,9 +285,11 @@
     <ClInclude Include="..\src\lsdj\kit.h" />
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
+    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
     <ClInclude Include="..\src\platform\Logger.h" />
+    <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\RetroPlug.h" />
@@ -498,6 +500,7 @@
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
+    <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
@@ -507,6 +510,7 @@
     <ClCompile Include="..\src\ui\EmulatorView.cpp" />
     <ClCompile Include="..\src\ui\RetroPlugRoot.cpp" />
     <ClCompile Include="..\src\util\base64.cpp" />
+    <ClCompile Include="..\src\util\crc32.cpp" />
     <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\src\util\Serializer.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.cpp" />

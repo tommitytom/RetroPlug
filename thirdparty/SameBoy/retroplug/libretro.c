@@ -286,7 +286,6 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
 int update_first_instance(sameboy_state_t* s, int targetAudioFrames) {
     if (s->currentAudioFrames < targetAudioFrames) {
         s->processTicks += GB_run(&s->gb);
-        //s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
         return 0;
     }
 
@@ -297,7 +296,6 @@ int update_instance(sameboy_state_t* s, int targetAudioFrames, int targetTicks) 
     if (s->currentAudioFrames < targetAudioFrames) {
         while (s->currentAudioFrames < targetAudioFrames && s->processTicks < targetTicks) {
             s->processTicks += GB_run(&s->gb);
-            //s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
         }
 
         return 0;
@@ -320,32 +318,11 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
             sameboy_state_t* s = st[i];
             if (s->currentAudioFrames < requiredAudioFrames) {
                 GB_run(&s->gb);
-                //s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
             } else {
                 complete++;
             }
         }
     }
-
-    /*size_t complete = 0;
-    while (complete != stateCount) {
-        complete = update_first_instance(st[0], requiredAudioFrames);
-        for (size_t i = 1; i < stateCount; i++) {
-            sameboy_state_t* s = st[i];
-            complete += update_instance(st[i], requiredAudioFrames, st[0]->processTicks);
-        }
-    }
-
-    int highestTick = 0;
-    for (size_t i = 0; i < stateCount; i++) {
-        if (st[i]->processTicks > highestTick) {
-            highestTick = st[i]->processTicks;
-        }
-    }
-
-    for (size_t i = 0; i < stateCount; i++) {
-        st[i]->processTicks -= highestTick;
-    }*/
 }
 
 void sameboy_update(void* state, size_t requiredAudioFrames) {
@@ -370,8 +347,6 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
         int ticks = GB_run(&s->gb);
         delta += ticks;
         s->linkTicksRemain -= ticks;
-
-        //s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
     }
 
     // If there are any midi events that still haven't been processed, set their
