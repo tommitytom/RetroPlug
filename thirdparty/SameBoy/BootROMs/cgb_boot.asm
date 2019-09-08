@@ -1,25 +1,30 @@
-; Sameboy CGB bootstrap ROM
+; SameBoy CGB bootstrap ROM
 ; Todo: use friendly names for HW registers instead of magic numbers
 SECTION "BootCode", ROM0[$0]
 Start:
 ; Init stack pointer
     ld sp, $fffe
 
+; Clear memory VRAM
+    ld hl, $8000
+    call ClearMemoryPage
+    ld a, 2
+    ld c, $70
+    ld [c], a
+; Clear RAM Bank 2 (Like the original boot ROM
+    ld h, $D0
     xor a
+    call ClearMemoryPage
+    ld [c], a
+
 ; Clear chosen input palette
     ldh [InputPalette], a
 ; Clear title checksum
     ldh [TitleChecksum], a
-; Clear memory VRAM
-    ld hl, $8000
-    call ClearMemoryPage
-    ld h, $d0
-    call ClearMemoryPage
-
+    
 ; Clear OAM
-    ld hl, $fe00
+    ld h, $fe
     ld c, $a0
-    xor a
 .clearOAMLoop
     ldi [hl], a
     dec c
@@ -52,11 +57,10 @@ Start:
 .loadLogoLoop
     ld a, [de] ; Read 2 rows
     ld b, a
-    call DoubleBitsAndWriteRow
-    call DoubleBitsAndWriteRow
+    call DoubleBitsAndWriteRowTwice
     inc de
     ld a, e
-    xor $34 ; End of logo
+    cp $34 ; End of logo
     jr nz, .loadLogoLoop
     call ReadTrademarkSymbol
 
@@ -66,79 +70,54 @@ Start:
     xor a
     ld hl, $8000
     call ClearMemoryPage
+    call LoadTileset
 
-; Copy Sameboy Logo
-    ld de, SameboyLogo
-    ld hl, $8080
-    ld c, (SameboyLogoEnd - SameboyLogo) / 2
-.sameboyLogoLoop
-    ld a, [de]
-    ldi [hl], a
-    inc hl
-    inc de
-    ld a, [de]
-    ldi [hl], a
-    inc hl
-    inc de
-    dec c
-    jr nz, .sameboyLogoLoop
-
-; Copy (unresized) ROM logo
-    ld de, $104
-    ld c, 6
-.CGBROMLogoLoop
-    push bc
-    call ReadCGBLogoTile
-    pop bc
-    dec c
-    jr nz, .CGBROMLogoLoop
-    inc hl
-    call ReadTrademarkSymbol
-
-; Load Tilemap
-    ld hl, $98C2
     ld b, 3
-    ld a, 8
 IF DEF(FAST)
     xor a
     ldh [$4F], a
-ENDC
+ELSE
+; Load Tilemap
+    ld hl, $98C2
+    ld d, 3
+    ld a, 8
 
 .tilemapLoop
     ld c, $10
 
 .tilemapRowLoop
 
-    ld [hl], a
     push af
-IF !DEF(FAST)
     ; Switch to second VRAM Bank
     ld a, 1
     ldh [$4F], a
-    ld a, 8
-    ld [hl], a
+    ld [hl], 8
     ; Switch to back first VRAM Bank
     xor a
     ldh [$4F], a
-ENDC
     pop af
     ldi [hl], a
-    inc a
+    add d
     dec c
     jr nz, .tilemapRowLoop
+    sub 47
+    push de
     ld de, $10
     add hl, de
+    pop de
     dec b
     jr nz, .tilemapLoop
 
-    cp $38
-    jr nz, .doneTilemap
+    dec d
+    jr z, .endTilemap
+    dec d
 
-    ld hl, $99a7
-    ld b, 1
-    ld c, 7
+    ld a, $38
+    ld l, $a7
+    ld bc, $0107
     jr .tilemapRowLoop
-.doneTilemap
+.endTilemap
+ENDC
 
     ; Expand Palettes
     ld de, AnimationColors
@@ -182,9 +161,7 @@ ENDC
     jr nz, .expandPalettesLoop
 
     ld hl, BgPalettes
-    ld d, 64 ; Length of write
-    ld e, 0 ; Index of write
-    call LoadBGPalettes
+    call LoadBGPalettes64
 
     ; Turn on LCD
     ld a, $91
@@ -491,7 +468,7 @@ ENDM
     palette_comb 4, 3, 28
     palette_comb 28, 3, 6
     palette_comb 4, 28, 29
-    ; Sameboy "Exclusives"
+    ; SameBoy "Exclusives"
     palette_comb 30, 30, 30 ; CGA
     palette_comb 31, 31, 31 ; DMG LCD
     palette_comb 28, 4, 1
@@ -528,7 +505,7 @@ Palettes:
     dw $0000, $4200, $037F, $7FFF
     dw $7FFF, $7E8C, $7C00, $0000
     dw $7FFF, $1BEF, $6180, $0000
-    ; Sameboy "Exclusives"
+    ; SameBoy "Exclusives"
     dw $7FFF, $7FEA, $7D5F, $0000 ; CGA 1
     dw $4778, $3290, $1D87, $0861 ; DMG LCD
 
@@ -545,7 +522,7 @@ KeyCombinationPalettes
     db 7 ; Left + B
     db 28 ; Up + B
     db 49 ; Down + B
-    ; Sameboy "Exclusives"
+    ; SameBoy "Exclusives"
     db 51 ; Right + A + B
     db 52 ; Left + A + B
     db 53 ; Up + A + B
@@ -554,9 +531,8 @@ KeyCombinationPalettes
 TrademarkSymbol:
     db $3c,$42,$b9,$a5,$b9,$a5,$42,$3c
 
-SameboyLogo:
-    incbin "SameboyLogo.1bpp"
-SameboyLogoEnd:
+SameBoyLogo:
+    incbin "SameBoyLogo.pb8"
 
 AnimationColors:
     dw $7FFF ; White
@@ -573,7 +549,9 @@ DMGPalettes:
     dw $7FFF, $32BF, $00D0, $0000
 
 ; Helper Functions
-DoubleBitsAndWriteRow:
+DoubleBitsAndWriteRowTwice:
+    call .twice
+.twice
 ; Double the most significant 4 bits, b is shifted by 4
     ld a, 4
     ld c, 0
@@ -623,6 +601,8 @@ ClearMemoryPage:
     jr z, ClearMemoryPage
     ret
 
+ReadTwoTileLines:
+    call ReadTileLine
 ; c = $f0 for even lines, $f for odd lines.
 ReadTileLine:
     ld a, [de]
@@ -642,34 +622,83 @@ ReadTileLine:
 .dontSwap
     inc hl
     ldi [hl], a
+    swap c
     ret
 
 
 ReadCGBLogoHalfTile:
-    ld c, $f0
-    call ReadTileLine
-    ld c, $f
-    call ReadTileLine
+    call .do_twice
+.do_twice
+    call ReadTwoTileLines
     inc e
-    ld c, $f0
-    call ReadTileLine
-    ld c, $f
-    call ReadTileLine
-    inc e
+    ld a, e
     ret
 
-ReadCGBLogoTile:
+; LoadTileset using PB8 codec, 2019 Damian Yerrick
+;
+; The logo is compressed using PB8, a form of RLE with unary-coded
+; run lengths.  Each block representing 8 bytes consists of a control
+; byte, where each bit (MSB to LSB) is 0 for literal or 1 for repeat
+; previous, followed by the literals in that block.
+
+SameBoyLogo_dst = $8080
+SameBoyLogo_length = (128 * 24) / 64
+
+LoadTileset:
+    ld hl, SameBoyLogo
+    ld de, SameBoyLogo_dst
+    ld c, SameBoyLogo_length
+.pb8BlockLoop:
+    ; Register map for PB8 decompression
+    ; HL: source address in boot ROM
+    ; DE: destination address in VRAM
+    ; A: Current literal value
+    ; B: Repeat bits, terminated by 1000...
+    ; C: Number of 8-byte blocks left in this block
+    ; Source address in HL lets the repeat bits go straight to B,
+    ; bypassing A and avoiding spilling registers to the stack.
+    ld b, [hl]
+    inc hl
+
+    ; Shift a 1 into lower bit of shift value.  Once this bit
+    ; reaches the carry, B becomes 0 and the byte is over
+    scf
+    rl b
+
+.pb8BitLoop:
+    ; If not a repeat, load a literal byte
+    jr c,.pb8Repeat
+    ld a, [hli]
+.pb8Repeat:
+    ; Decompressed data uses colors 0 and 1, so write once, inc twice
+    ld [de], a
+    inc de
+    inc de
+    sla b
+    jr nz, .pb8BitLoop
+
+    dec c
+    jr nz, .pb8BlockLoop
+
+; End PB8 decoding.  The rest uses HL as the destination
+    ld h, d
+    ld l, e
+
+.sameboyLogoEnd
+; Copy (unresized) ROM logo
+    ld de, $104
+.CGBROMLogoLoop
+    ld c, $f0
     call ReadCGBLogoHalfTile
-    ld a, e
     add a, 22
     ld e, a
     call ReadCGBLogoHalfTile
-    ld a, e
     sub a, 22
     ld e, a
-    ret
-
-
+    cp $1c
+    jr nz, .CGBROMLogoLoop
+    inc hl
+    ; fallthrough
 ReadTrademarkSymbol:
     ld de, TrademarkSymbol
     ld c,$08
@@ -686,7 +715,11 @@ LoadObjPalettes:
     ld c, $6A
     jr LoadPalettes
 
+LoadBGPalettes64:
+    ld d, 64
+
 LoadBGPalettes:
+    ld e, 0
     ld c, $68
 
 LoadPalettes:
@@ -701,19 +734,23 @@ LoadPalettes:
     jr nz, .loop
     ret
 
-
-AdvanceIntroAnimation:
+DoIntroAnimation:
+    ; Animate the intro
+    ld a, 1
+    ldh [$4F], a
+    ld d, 26
+.animationLoop
+    ld b, 2
+    call WaitBFrames
     ld hl, $98C0
     ld c, 3 ; Row count
 .loop
     ld a, [hl]
     cp $F ; Already blue
     jr z, .nextTile
-    inc a
-    ld [hl], a
+    inc [hl]
     and $7
-    cp $1 ; Changed a white tile, go to next line
-    jr z, .nextLine
+    jr z, .nextLine ; Changed a white tile, go to next line
 .nextTile
     inc hl
     jr .loop
@@ -723,25 +760,30 @@ AdvanceIntroAnimation:
     ld l, a
     inc hl
     dec c
-    ret z
-    jr .loop
-
-DoIntroAnimation:
-    ; Animate the intro
-    ld a, 1
-    ldh [$4F], a
-    ld d, 26
-.animationLoop
-    ld b, 2
-    call WaitBFrames
-    call AdvanceIntroAnimation
+    jr nz, .loop
     dec d
     jr nz, .animationLoop
     ret
 
 Preboot:
 IF !DEF(FAST)
-    call FadeOut
+    ld b, 32 ; 32 times to fade
+.fadeLoop
+    ld c, 32 ; 32 colors to fade
+    ld hl, BgPalettes
+.frameLoop
+    push bc
+    call BrightenColor
+    pop bc
+    dec c
+    jr nz, .frameLoop
+
+    call WaitFrame
+    call WaitFrame
+    ld hl, BgPalettes
+    call LoadBGPalettes64
+    dec b
+    jr nz, .fadeLoop
 ENDC
     call ClearVRAMViaHDMA
     ; Select the first bank
@@ -758,13 +800,17 @@ ENDC
     ld a, [$143]
     bit 7, a
     call z, EmulateDMG
+    bit 7, a
+    
     ldh [$4C], a
     ldh a, [TitleChecksum]
     ld b, a
     
+    jr z, .skipDMGForCGBCheck
     ldh a, [InputPalette]
     and a
     jr nz, .emulateDMGForCGBGame
+.skipDMGForCGBCheck
 IF DEF(AGB)
     ; Set registers to match the original AGB-CGB boot
     ; AF = $1100, C = 0
@@ -787,7 +833,7 @@ ENDC
 .emulateDMGForCGBGame
     call EmulateDMG
     ldh [$4C], a
-    ld a, $1;
+    ld a, $1
     ret
 
 EmulateDMG:
@@ -824,7 +870,7 @@ GetPaletteIndex:
     ld a, [hl] ; Old Licensee
     cp $33
     jr z, .newLicensee
-    cp 1 ; Nintendo
+    dec a ; 1 = Nintendo
     jr nz, .notNintendo
     jr .doChecksum
 .newLicensee
@@ -839,22 +885,22 @@ GetPaletteIndex:
 .doChecksum
     ld l, $34
     ld c, $10
-    ld b, 0
+    xor a
 
 .checksumLoop
-    ld a, [hli]
-    add b
-    ld b, a
+    add [hl]
+    inc l
     dec c
     jr nz, .checksumLoop
+    ld b, a
 
     ; c = 0
     ld hl, TitleChecksums
 
 .searchLoop
     ld a, l
-    cp ChecksumsEnd & $FF
-    jr z, .notNintendo
+    sub LOW(ChecksumsEnd) ; use sub to zero out a
+    ret z
     ld a, [hli]
     cp b
     jr nz, .searchLoop
@@ -923,9 +969,7 @@ LoadPalettesFromIndex: ; a = index of combination
     ld c, a
     add hl, bc
     ld d, 8
-    ld e, 0
-    call LoadBGPalettes
-    ret
+    jp LoadBGPalettes
 
 BrightenColor:
     ld a, [hli]
@@ -978,33 +1022,11 @@ BrightenColor:
     ld [hli], a
     ret
 
-FadeOut:
-    ld b, 32 ; 32 times to fade
-.fadeLoop
-    ld c, 32 ; 32 colors to fade
-    ld hl, BgPalettes
-.frameLoop
-    push bc
-    call BrightenColor
-    pop bc
-    dec c
-    jr nz, .frameLoop
-
-    call WaitFrame
-    call WaitFrame
-    ld hl, BgPalettes
-    ld d, 64 ; Length of write
-    ld e, 0 ; Index of write
-    call LoadBGPalettes
-    dec b
-    ret z
-    jr .fadeLoop
-
 ClearVRAMViaHDMA:
     ld hl, $FF51
 
     ; Src
-    ld a, $D0
+    ld a, $88
     ld [hli], a
     xor a
     ld [hli], a
@@ -1016,8 +1038,7 @@ ClearVRAMViaHDMA:
     ld [hli], a
 
     ; Do it
-    ld a, $12
-    ld [hli], a
+    ld [hl], $12
     ret
 
 GetInputPaletteIndex:
@@ -1115,9 +1136,7 @@ ChangeAnimationPalette:
 
     call WaitFrame
     ld hl, BgPalettes
-    ld d, 64 ; Length of write
-    ld e, 0 ; Index of write
-    call LoadBGPalettes
+    call LoadBGPalettes64
     ; Delay the wait loop while the user is selecting a palette
     ld a, 30
     ldh [WaitLoopCounter], a
