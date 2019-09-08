@@ -14,7 +14,7 @@
 #ifdef WIN32
 #include "SameBoyWrapper.h"
 #else
-#define SAMEBOY_SYMBOLS.SAMEBOY_SYMBOLS
+#define SAMEBOY_SYMBOLS 
 #include "thirdparty/SameBoy/retroplug/libretro.h"
 #endif
 

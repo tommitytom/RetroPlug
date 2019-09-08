@@ -104,7 +104,7 @@ void EmulatorView::Draw(IGraphics& g) {
 		// FIXME: This constant is the delta time between frames.
 		// It is set to this because on windows iPlug doesn't go higher
 		// than 30fps!  Should probably add some proper time calculation here.
-		//_lsdjKeyMap.update(bus, 33.3333333);
+		_lsdjKeyMap.update(bus, 33.3333333);
 
 		size_t available = bus->video.readAvailable();
 		if (available > 0) {
