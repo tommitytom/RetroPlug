@@ -141,6 +141,7 @@ void RetroPlugRoot::OnDrop(const char* str) {
 				if (lsdj.loadKit(path, idx, error)) {
 					lsdj.patchKits(plug->romData());
 					plug->updateRom();
+					plug->reset(plug->model(), true);
 				} else {
 					// log err
 				}
