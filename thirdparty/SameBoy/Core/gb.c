@@ -177,27 +177,6 @@ void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer,
     memcpy(gb->boot_rom, buffer, size);
 }
 
-int GB_load_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size) {
-    gb->rom_size = (size + 0x3FFF) & ~0x3FFF; /* Round to bank */
-    /* And then round to a power of two */
-    while (gb->rom_size & (gb->rom_size - 1)) {
-        /* I promise this works. */
-        gb->rom_size |= gb->rom_size >> 1;
-        gb->rom_size++;
-    }
-
-    if (gb->rom) {
-        free(gb->rom);
-    }
-
-    gb->rom = malloc(gb->rom_size);
-    memset(gb->rom, 0xFF, gb->rom_size); /* Pad with 0xFFs */
-    memcpy(gb->rom, buffer, size);
-    GB_configure_cart(gb);
-
-    return 0;
-}
-
 int GB_load_rom(GB_gameboy_t *gb, const char *path)
 {
     FILE *f = fopen(path, "rb");
