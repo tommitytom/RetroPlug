@@ -15,7 +15,12 @@ endif
 
 ifeq ($(PLATFORM),windows32)
 _ := $(shell chcp 65001)
+EXESUFFIX:=.exe
+else
+EXESUFFIX:=
 endif
+
+PB8_COMPRESS := build/pb8$(EXESUFFIX)
 
 ifeq ($(PLATFORM),Darwin)
 DEFAULT := cocoa
@@ -29,7 +34,7 @@ ifeq ($(MAKECMDGOALS),)
 MAKECMDGOALS := $(DEFAULT)
 endif
 
-VERSION := 0.11.1
+VERSION := 0.12.1
 export VERSION
 CONF ?= debug
 
@@ -65,14 +70,25 @@ endif
 
 # Set compilation and linkage flags based on target, platform and configuration
 
-CFLAGS += -Werror -Wall -Wno-strict-aliasing -Wno-unknown-warning -Wno-unknown-warning-option -Wno-multichar -Wno-int-in-bool-context -std=gnu11 -D_GNU_SOURCE -DVERSION="$(VERSION)" -I. -D_USE_MATH_DEFINES
+OPEN_DIALOG = OpenDialog/gtk.c
+
+ifeq ($(PLATFORM),windows32)
+OPEN_DIALOG = OpenDialog/windows.c
+endif
+
+ifeq ($(PLATFORM),Darwin)
+OPEN_DIALOG = OpenDialog/cocoa.m
+endif
+
+
+CFLAGS += -Werror -Wall -Wno-unused-result -Wno-strict-aliasing -Wno-unknown-warning -Wno-unknown-warning-option -Wno-multichar -Wno-int-in-bool-context -std=gnu11 -D_GNU_SOURCE -DVERSION="$(VERSION)" -I. -D_USE_MATH_DEFINES
 SDL_LDFLAGS := -lSDL2 -lGL
 ifeq ($(PLATFORM),windows32)
-CFLAGS += -IWindows
-LDFLAGS += -lmsvcrt -lSDL2main -Wl,/MANIFESTFILE:NUL
+CFLAGS += -IWindows -Drandom=rand
+LDFLAGS += -lmsvcrt -lcomdlg32 -lSDL2main -Wl,/MANIFESTFILE:NUL
 SDL_LDFLAGS := -lSDL2 -lopengl32
 else
-LDFLAGS += -lc -lm
+LDFLAGS += -lc -lm -ldl
 endif
 
 ifeq ($(PLATFORM),Darwin)
@@ -120,7 +136,7 @@ all: cocoa sdl tester libretro
 # Get a list of our source files and their respective object file targets
 
 CORE_SOURCES := $(shell ls Core/*.c)
-SDL_SOURCES := $(shell ls SDL/*.c)
+SDL_SOURCES := $(shell ls SDL/*.c) $(OPEN_DIALOG)
 TESTER_SOURCES := $(shell ls Tester/*.c)
 
 ifeq ($(PLATFORM),Darwin)
@@ -288,11 +304,11 @@ $(BIN)/tester/sameboy_tester.exe: $(CORE_OBJECTS) $(SDL_OBJECTS)
 $(BIN)/SDL/%.bin $(BIN)/tester/%.bin: $(BOOTROMS_DIR)/%.bin
 	-@$(MKDIR) -p $(dir $@)
 	cp -f $^ $@
-	
+
 $(BIN)/SameBoy.app/Contents/Resources/%.bin: $(BOOTROMS_DIR)/%.bin
 	-@$(MKDIR) -p $(dir $@)
 	cp -f $^ $@
-	
+
 $(BIN)/SDL/LICENSE: LICENSE
 	-@$(MKDIR) -p $(dir $@)
 	cp -f $^ $@
@@ -300,7 +316,7 @@ $(BIN)/SDL/LICENSE: LICENSE
 $(BIN)/SDL/registers.sym: Misc/registers.sym
 	-@$(MKDIR) -p $(dir $@)
 	cp -f $^ $@
-	
+
 $(BIN)/SDL/background.bmp: SDL/background.bmp
 	-@$(MKDIR) -p $(dir $@)
 	cp -f $^ $@
@@ -311,9 +327,23 @@ $(BIN)/SDL/Shaders: Shaders
 
 # Boot ROMs
 
-$(BIN)/BootROMs/%.bin: BootROMs/%.asm
+$(OBJ)/%.1bpp: %.png
 	-@$(MKDIR) -p $(dir $@)
-	cd BootROMs && rgbasm -o ../$@.tmp ../$<
+	rgbgfx -d 1 -h -o $@ $<
+
+$(OBJ)/BootROMs/SameBoyLogo.pb8: $(OBJ)/BootROMs/SameBoyLogo.1bpp $(PB8_COMPRESS)
+	$(realpath $(PB8_COMPRESS)) -l 384 $< $@
+
+$(PB8_COMPRESS): BootROMs/pb8.c
+	$(CC) $< -o $@
+
+$(BIN)/BootROMs/agb_boot.bin: BootROMs/cgb_boot.asm
+$(BIN)/BootROMs/cgb_boot_fast.bin: BootROMs/cgb_boot.asm
+$(BIN)/BootROMs/sgb2_boot: BootROMs/sgb_boot.asm
+
+$(BIN)/BootROMs/%.bin: BootROMs/%.asm $(OBJ)/BootROMs/SameBoyLogo.pb8
+	-@$(MKDIR) -p $(dir $@)
+	rgbasm -i $(OBJ)/BootROMs/ -i BootROMs/ -o $@.tmp $<
 	rgblink -o $@.tmp2 $@.tmp
 	dd if=$@.tmp2 of=$@ count=1 bs=$(if $(findstring dmg,$@)$(findstring sgb,$@),256,2304)
 	@rm $@.tmp $@.tmp2
@@ -321,7 +351,7 @@ $(BIN)/BootROMs/%.bin: BootROMs/%.asm
 # Libretro Core (uses its own build system)
 libretro:
 	$(MAKE) -C libretro
-	
+
 # Clean
 clean:
 	rm -rf build

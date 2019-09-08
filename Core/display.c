@@ -112,7 +112,7 @@ typedef struct __attribute__((packed)) {
 static bool window_enabled(GB_gameboy_t *gb)
 {
     if ((gb->io_registers[GB_IO_LCDC] & 0x1) == 0) {
-        if (!gb->cgb_mode && GB_is_cgb(gb)) {
+        if (!gb->cgb_mode) {
             return false;
         }
     }
@@ -123,8 +123,8 @@ static void display_vblank(GB_gameboy_t *gb)
 {  
     gb->vblank_just_occured = true;
     
-    /* TODO: Slow in trubo mode! */
-    if (GB_is_sgb(gb)) {
+    /* TODO: Slow in turbo mode! */
+    if (GB_is_hle_sgb(gb)) {
         GB_sgb_render(gb);
     }
     
@@ -137,13 +137,12 @@ static void display_vblank(GB_gameboy_t *gb)
     if (!gb->disable_rendering && ((!(gb->io_registers[GB_IO_LCDC] & 0x80) || gb->stopped) || gb->frame_skip_state == GB_FRAMESKIP_LCD_TURNED_ON)) {
         /* LCD is off, set screen to white or black (if LCD is on in stop mode) */
         if (gb->sgb) {
-            uint8_t color = (gb->io_registers[GB_IO_LCDC] & 0x80)  && gb->stopped ? 0x3 : 0x0;
             for (unsigned i = 0; i < WIDTH * LINES; i++) {
-                gb->sgb->screen_buffer[i] = color;
+                gb->sgb->screen_buffer[i] = 0x0;
             }
         }
         else {
-            uint32_t color = (gb->io_registers[GB_IO_LCDC] & 0x80)  && gb->stopped ?
+            uint32_t color = (gb->io_registers[GB_IO_LCDC] & 0x80) && gb->stopped && GB_is_cgb(gb) ?
                                 gb->rgb_encode_callback(gb, 0, 0, 0) :
                                 gb->rgb_encode_callback(gb, 0xFF, 0xFF, 0xFF);
             for (unsigned i = 0; i < WIDTH * LINES; i++) {
@@ -376,10 +375,8 @@ static void render_pixel_if_possible(GB_gameboy_t *gb)
             bg_enabled = false;
         }
     }
-    if (!GB_is_cgb(gb) && gb->in_window) {
-        bg_enabled = true;
-    }
-    
+
+    uint8_t icd_pixel = 0;
     {
         uint8_t pixel = bg_enabled? fifo_item->pixel : 0;
         if (pixel && bg_priority) {
@@ -390,7 +387,12 @@ static void render_pixel_if_possible(GB_gameboy_t *gb)
         }
         if (gb->sgb) {
             if (gb->current_lcd_line < LINES) {
-                gb->sgb->screen_buffer[gb->position_in_line + gb->current_lcd_line * WIDTH] = pixel;
+                gb->sgb->screen_buffer[gb->position_in_line + gb->current_lcd_line * WIDTH] = gb->stopped? 0 : pixel;
+            }
+        }
+        else if (gb->model & GB_MODEL_NO_SFC_BIT) {
+            if (gb->icd_pixel_callback) {
+                icd_pixel = pixel;
             }
         }
         else {
@@ -406,11 +408,23 @@ static void render_pixel_if_possible(GB_gameboy_t *gb)
         }
         if (gb->sgb) {
             if (gb->current_lcd_line < LINES) {
-                gb->sgb->screen_buffer[gb->position_in_line + gb->current_lcd_line * WIDTH] = pixel;
+                gb->sgb->screen_buffer[gb->position_in_line + gb->current_lcd_line * WIDTH] = gb->stopped? 0 : pixel;
+            }
+        }
+        else if (gb->model & GB_MODEL_NO_SFC_BIT) {
+            if (gb->icd_pixel_callback) {
+                icd_pixel = pixel;
+              //gb->icd_pixel_callback(gb, pixel);
             }
         }
         else {
             gb->screen[gb->position_in_line + gb->current_line * WIDTH] = gb->sprite_palettes_rgb[oam_fifo_item->palette * 4 + pixel];
+        }
+    }
+	
+    if (gb->model & GB_MODEL_NO_SFC_BIT) {
+        if (gb->icd_pixel_callback) {
+            gb->icd_pixel_callback(gb, icd_pixel);
         }
     }
     
@@ -555,6 +569,15 @@ static void advance_fetcher_state_machine(GB_gameboy_t *gb)
  */
 void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
 {
+    /* The PPU does not advance while in STOP mode on the DMG */
+    if (gb->stopped && !GB_is_cgb(gb)) {
+        gb->cycles_in_stop_mode += cycles;
+        if (gb->cycles_in_stop_mode >= LCDC_PERIOD) {
+            gb->cycles_in_stop_mode -= LCDC_PERIOD;
+            display_vblank(gb);
+        }
+        return;
+    }
     GB_object_t *objects = (GB_object_t *) &gb->oam;
     
     GB_STATE_MACHINE(gb, display, cycles, 2) {
@@ -696,7 +719,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
             for (gb->oam_search_index = 0; gb->oam_search_index < 40; gb->oam_search_index++) {
                 if (GB_is_cgb(gb)) {
                     add_object_from_index(gb, gb->oam_search_index);
-                    /* The CGB does not care about the accessed OAM row as there's no OAM bug*/
+                    /* The CGB does not care about the accessed OAM row as there's no OAM bug */
                 }
                 GB_SLEEP(gb, display, 8, 2);
                 if (!GB_is_cgb(gb)) {
@@ -744,10 +767,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
             fifo_push_bg_row(&gb->bg_fifo, 0, 0, 0, false, false);
             /* Todo: find out actual access time of SCX */
             gb->position_in_line = - (gb->io_registers[GB_IO_SCX] & 7) - 8;
-            gb->current_lcd_line++; // Todo: unverified timing
-            if (gb->current_lcd_line == LINES) {
-                display_vblank(gb);
-            }
+          
             gb->fetcher_x = ((gb->io_registers[GB_IO_SCX]) / 8) & 0x1f;
             gb->extra_penalty_for_sprite_at_0 = (gb->io_registers[GB_IO_SCX] & 7);
 
@@ -884,6 +904,16 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
             }
             GB_SLEEP(gb, display, 11, LINE_LENGTH - gb->cycles_for_line);
             gb->mode_for_interrupt = 2;
+          
+            // Todo: unverified timing
+            gb->current_lcd_line++;
+            if (gb->current_lcd_line == LINES && GB_is_sgb(gb)) {
+                display_vblank(gb);
+            }
+            
+            if (gb->icd_hreset_callback) {
+                gb->icd_hreset_callback(gb);
+            }
         }
         
         /* Lines 144 - 152 */
@@ -909,12 +939,16 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
                 GB_STAT_update(gb);
                 
                 if (gb->frame_skip_state == GB_FRAMESKIP_LCD_TURNED_ON) {
-                    display_vblank(gb);
+                    if (!GB_is_sgb(gb) || gb->current_lcd_line < LINES) {
+                        display_vblank(gb);
+                    }
                     gb->frame_skip_state = GB_FRAMESKIP_SECOND_FRAME_RENDERED;
                 }
                 else {
                     gb->frame_skip_state = GB_FRAMESKIP_SECOND_FRAME_RENDERED;
-                    display_vblank(gb);
+                    if (!GB_is_sgb(gb) || gb->current_lcd_line < LINES) {
+                        display_vblank(gb);
+                    }
                 }
             }
             
@@ -951,7 +985,11 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
         gb->wy_diff = 0;
         gb->window_disabled_while_active = false;
         gb->current_line = 0;
-        gb->current_lcd_line = -1; // TODO: not the correct timing
+        // TODO: not the correct timing
+        gb->current_lcd_line = 0;
+        if (gb->icd_vreset_callback) {
+            gb->icd_vreset_callback(gb);
+        }
     }
 }
 

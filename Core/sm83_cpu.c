@@ -33,6 +33,7 @@ static const GB_conflict_t cgb_conflict_map[0x80] = {
     /* Todo: most values not verified, and probably differ between revisions */
 };
 
+/* Todo: verify on an MGB */
 static const GB_conflict_t dmg_conflict_map[0x80] = {
     [GB_IO_IF] = GB_CONFLICT_WRITE_CPU,
     [GB_IO_LYC] = GB_CONFLICT_READ_OLD,
@@ -40,10 +41,27 @@ static const GB_conflict_t dmg_conflict_map[0x80] = {
     [GB_IO_SCY] = GB_CONFLICT_READ_NEW,
     [GB_IO_STAT] = GB_CONFLICT_STAT_DMG,
  
-    /* Todo: these are GB_CONFLICT_READ_NEW on MGB/SGB2 */
     [GB_IO_BGP] = GB_CONFLICT_PALETTE_DMG,
     [GB_IO_OBP0] = GB_CONFLICT_PALETTE_DMG,
     [GB_IO_OBP1] = GB_CONFLICT_PALETTE_DMG,
+    
+    /* Todo: these were not verified at all */
+    [GB_IO_WY] = GB_CONFLICT_READ_NEW,
+    [GB_IO_WX] = GB_CONFLICT_READ_NEW,
+    [GB_IO_SCX] = GB_CONFLICT_READ_NEW,
+};
+
+/* Todo: Verify on an SGB1 */
+static const GB_conflict_t sgb_conflict_map[0x80] = {
+    [GB_IO_IF] = GB_CONFLICT_WRITE_CPU,
+    [GB_IO_LYC] = GB_CONFLICT_READ_OLD,
+    [GB_IO_LCDC] = GB_CONFLICT_READ_NEW,
+    [GB_IO_SCY] = GB_CONFLICT_READ_NEW,
+    [GB_IO_STAT] = GB_CONFLICT_STAT_DMG,
+    
+    [GB_IO_BGP] = GB_CONFLICT_READ_NEW,
+    [GB_IO_OBP0] = GB_CONFLICT_READ_NEW,
+    [GB_IO_OBP1] = GB_CONFLICT_READ_NEW,
     
     /* Todo: these were not verified at all */
     [GB_IO_WY] = GB_CONFLICT_READ_NEW,
@@ -92,7 +110,17 @@ static void cycle_write(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
     assert(gb->pending_cycles);
     GB_conflict_t conflict = GB_CONFLICT_READ_OLD;
     if ((addr & 0xFF80) == 0xFF00) {
-        conflict = (GB_is_cgb(gb)? cgb_conflict_map : dmg_conflict_map)[addr & 0x7F];
+        const GB_conflict_t *map = NULL;
+        if (GB_is_cgb(gb)) {
+            map = cgb_conflict_map;
+        }
+        else if (GB_is_sgb(gb)) {
+            map = sgb_conflict_map;
+        }
+        else {
+            map = dmg_conflict_map;
+        }
+        conflict = map[addr & 0x7F];
     }
     switch (conflict) {
         case GB_CONFLICT_READ_OLD:
@@ -234,7 +262,16 @@ static void stop(GB_gameboy_t *gb, uint8_t opcode)
         
     }
     else {
-        gb->stopped = true;
+        GB_timing_sync(gb);
+        if ((gb->io_registers[GB_IO_JOYP] & 0xF) != 0xF) {
+            /* HW Bug? When STOP is executed while a button is down, the CPU halts forever
+               yet the other hardware keeps running. */
+            gb->interrupt_enable = 0;
+            gb->halted = true;
+        }
+        else {
+            gb->stopped = true;
+        }
     }
     
     /* Todo: is PC being actually read? */
@@ -606,7 +643,7 @@ static void ld_dhl_d8(GB_gameboy_t *gb, uint8_t opcode)
     cycle_write(gb, gb->registers[GB_REGISTER_HL], data);
 }
 
-uint8_t get_src_value(GB_gameboy_t *gb, uint8_t opcode)
+static uint8_t get_src_value(GB_gameboy_t *gb, uint8_t opcode)
 {
     uint8_t src_register_id;
     uint8_t src_low;
@@ -1389,8 +1426,21 @@ void GB_cpu_run(GB_gameboy_t *gb)
         return;
     }
     if (gb->stopped) {
-        GB_advance_cycles(gb, 64);
+        GB_timing_sync(gb);
+        GB_advance_cycles(gb, 4);
+        if ((gb->io_registers[GB_IO_JOYP] & 0xF) != 0xF) {
+            gb->stopped = false;
+            /* The CPU takes more time to wake up then the other components */
+            for (unsigned i = 0x800; i--;) {
+                GB_advance_cycles(gb, 0x40);
+            }
+            GB_advance_cycles(gb, 8);
+        }
         return;
+    }
+    
+    if ((gb->interrupt_enable & 0x10) && (gb->ime || gb->halted)) {
+        GB_timing_sync(gb);
     }
     
     if (gb->halted && !GB_is_cgb(gb) && !gb->just_halted) {

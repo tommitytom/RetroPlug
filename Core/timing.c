@@ -8,7 +8,7 @@
 #include <sys/time.h>
 #endif
 
-static const unsigned int GB_TAC_TRIGGER_BITS[] = {512, 8, 32, 128};
+static const unsigned GB_TAC_TRIGGER_BITS[] = {512, 8, 32, 128};
 
 #ifndef DISABLE_TIMEKEEPING
 static int64_t get_nanoseconds(void)
@@ -59,7 +59,7 @@ void GB_timing_sync(GB_gameboy_t *gb)
         return;
     }
     /* Prevent syncing if not enough time has passed.*/
-    if (gb->cycles_since_last_sync < LCDC_PERIOD / 4) return;
+    if (gb->cycles_since_last_sync < LCDC_PERIOD / 3) return;
 
     uint64_t target_nanoseconds = gb->cycles_since_last_sync * 1000000000LL / 2 / GB_get_clock_rate(gb); /* / 2 because we use 8MHz units */
     int64_t nanoseconds = get_nanoseconds();
@@ -73,6 +73,9 @@ void GB_timing_sync(GB_gameboy_t *gb)
     }
 
     gb->cycles_since_last_sync = 0;
+    if (gb->update_input_hint_callback) {
+        gb->update_input_hint_callback(gb);
+    }
 }
 #else
 
@@ -210,8 +213,10 @@ void GB_advance_cycles(GB_gameboy_t *gb, uint8_t cycles)
     // Affected by speed boost
     gb->dma_cycles += cycles;
 
-    GB_timers_run(gb, cycles);
-    advance_serial(gb, cycles);
+    if (!gb->stopped) {
+        GB_timers_run(gb, cycles);
+        advance_serial(gb, cycles); // TODO: Verify what happens in STOP mode
+    }
 
     gb->debugger_ticks += cycles;
 
@@ -227,8 +232,10 @@ void GB_advance_cycles(GB_gameboy_t *gb, uint8_t cycles)
     gb->cycles_since_input_ir_change += cycles;
     gb->cycles_since_last_sync += cycles;
     gb->cycles_since_run += cycles;
-    GB_dma_run(gb);
-    GB_hdma_run(gb);
+    if (!gb->stopped) { // TODO: Verify what happens in STOP mode
+        GB_dma_run(gb);
+        GB_hdma_run(gb);
+    }
     GB_apu_run(gb);
     GB_display_run(gb, cycles);
     GB_ir_run(gb);
@@ -244,8 +251,8 @@ void GB_emulate_timer_glitch(GB_gameboy_t *gb, uint8_t old_tac, uint8_t new_tac)
     /* Glitch only happens when old_tac is enabled. */
     if (!(old_tac & 4)) return;
 
-    unsigned int old_clocks = GB_TAC_TRIGGER_BITS[old_tac & 3];
-    unsigned int new_clocks = GB_TAC_TRIGGER_BITS[new_tac & 3];
+    unsigned old_clocks = GB_TAC_TRIGGER_BITS[old_tac & 3];
+    unsigned new_clocks = GB_TAC_TRIGGER_BITS[new_tac & 3];
 
     /* The bit used for overflow testing must have been 1 */
     if (gb->div_counter & old_clocks) {

@@ -3,6 +3,8 @@
 
 void GB_update_joyp(GB_gameboy_t *gb)
 {
+    if (gb->model & GB_MODEL_NO_SFC_BIT) return;
+    
     uint8_t key_selection = 0;
     uint8_t previous_state = 0;
 
@@ -53,19 +55,32 @@ void GB_update_joyp(GB_gameboy_t *gb)
             break;
     }
     
+    /* Todo: This assumes the keys *always* bounce, which is incorrect when emulating an SGB */
     if (previous_state != (gb->io_registers[GB_IO_JOYP] & 0xF)) {
-        /* The joypad interrupt DOES occur on CGB (Tested on CGB-CPU-06), unlike what some documents say. */
+        /* The joypad interrupt DOES occur on CGB (Tested on CGB-E), unlike what some documents say. */
         gb->io_registers[GB_IO_IF] |= 0x10;
-        gb->stopped = false;
     }
     
     gb->io_registers[GB_IO_JOYP] |= 0xC0;
+}
+
+void GB_icd_set_joyp(GB_gameboy_t *gb, uint8_t value)
+{
+    uint8_t previous_state = gb->io_registers[GB_IO_JOYP] & 0xF;
+    gb->io_registers[GB_IO_JOYP] &= 0xF0;
+    gb->io_registers[GB_IO_JOYP] |= value & 0xF;
+    
+    if (previous_state & ~(gb->io_registers[GB_IO_JOYP] & 0xF)) {
+        gb->io_registers[GB_IO_IF] |= 0x10;
+    }
+
 }
 
 void GB_set_key_state(GB_gameboy_t *gb, GB_key_t index, bool pressed)
 {
     assert(index >= 0 && index < GB_KEY_MAX);
     gb->keys[0][index] = pressed;
+    GB_update_joyp(gb);
 }
 
 void GB_set_key_state_for_player(GB_gameboy_t *gb, GB_key_t index, unsigned player, bool pressed)
@@ -73,4 +88,5 @@ void GB_set_key_state_for_player(GB_gameboy_t *gb, GB_key_t index, unsigned play
     assert(index >= 0 && index < GB_KEY_MAX);
     assert(player < 4);
     gb->keys[player][index] = pressed;
+    GB_update_joyp(gb);
 }
