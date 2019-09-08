@@ -49,6 +49,39 @@ void Lsdj::loadRom(const std::vector<std::byte>& romData) {
 	}
 }
 
+bool importSong(lsdj_sav_t* sav, int idx, std::vector<std::byte>& source, std::string& errorStr) {
+	lsdj_error_t* error = nullptr;
+	lsdj_project_t* project = lsdj_project_read_lsdsng_from_memory((const unsigned char*)source.data(), source.size(), &error);
+	if (error != nullptr) {
+		errorStr = lsdj_error_get_c_str(error);
+		consoleLogLine(errorStr);
+		return false;
+	}
+
+	lsdj_sav_set_project(sav, idx, project, &error);
+	if (error != nullptr) {
+		errorStr = lsdj_error_get_c_str(error);
+		consoleLogLine("Project " + projectName(project) + ": " + errorStr);
+		lsdj_project_free(project);
+		return false;
+	}
+
+	return true;
+}
+
+void serializeSong(const lsdj_project_t* project, std::vector<std::byte>& target) {
+	target.resize(LSDSNG_MAX_SIZE);
+
+	lsdj_error_t* error = nullptr;
+	size_t size = lsdj_project_write_lsdsng_to_memory(project, (unsigned char*)target.data(), target.size(), &error);
+	if (error) {
+		consoleLogLine(lsdj_error_get_c_str(error));
+		target.resize(0);
+	} else {
+		target.resize(size);
+	}
+}
+
 std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::string& errorStr) {
 	lsdj_error_t* error = nullptr;
 	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
@@ -61,37 +94,53 @@ std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::strin
 		return {};
 	}
 
-	int index = nextProjectIndex(sav, 0);
-
 	std::vector<int> ids;
+	int index = nextProjectIndex(sav, 0);
 
 	std::vector<std::byte> fileData;
 	for (auto& path : paths) {
 		fileData.clear();
+
 		if (readFile(path, fileData)) {
-			lsdj_project_t* project = lsdj_project_read_lsdsng_from_memory((const unsigned char*)fileData.data(), fileData.size(), &error);
-			if (error != nullptr) {
-				ids.push_back(-1);
-				consoleLogLine(lsdj_error_get_c_str(error));
-				continue;
-			}
+			tstring ext = getExt(path);
+			if (ext == T(".lsdsng")) {
+				if (importSong(sav, index, fileData, errorStr)) {
+					ids.push_back(index);
+					index = nextProjectIndex(sav, index);
+				}
+			} else {
+				lsdj_sav_t* other = lsdj_sav_read_from_memory((const unsigned char*)fileData.data(), fileData.size(), &error);
+				if (other == nullptr) {
+					if (error) {
+						errorStr += std::string(lsdj_error_get_c_str(error)) + "\n";
+						consoleLogLine(errorStr);
+					}
 
-			lsdj_sav_set_project(sav, index, project, &error);
-			if (error != nullptr) {
-				consoleLogLine("Project " + projectName(project) + ": " + std::string(lsdj_error_get_c_str(error)));
-				lsdj_project_free(project);
-				ids.push_back(-1);
-				continue;
-			}
+					continue;
+				}
 
-			ids.push_back(index);
-			index = nextProjectIndex(sav, index);
+				std::vector<std::byte> songData;
+				size_t count = lsdj_sav_get_project_count(other);
+				for (size_t i = 0; i < count; ++i) {
+					lsdj_project_t* project = lsdj_sav_get_project(other, i);
+					lsdj_song_t* song = lsdj_project_get_song(project);
+					if (song) {
+						serializeSong(project, songData);
+						if (importSong(sav, index, songData, errorStr)) {
+							ids.push_back(index);
+							index = nextProjectIndex(sav, index);
+						}
+					}
+				}
+
+				lsdj_sav_free(other);
+			}
 		}
 	}
 
 	lsdj_sav_write_to_memory(sav, (unsigned char*)saveData.data(), saveData.size(), &error);
 	if (error != nullptr) {
-		errorStr = lsdj_error_get_c_str(error);
+		errorStr += std::string(lsdj_error_get_c_str(error)) + "\n";
 		consoleLogLine(errorStr);
 		lsdj_sav_free(sav);
 		return {};
@@ -130,19 +179,6 @@ void Lsdj::loadSong(int idx) {
 	}
 
 	lsdj_sav_free(sav);
-}
-
-void serializeSong(const lsdj_project_t* project, std::vector<std::byte>& target) {
-	target.resize(LSDSNG_MAX_SIZE);
-
-	lsdj_error_t* error = nullptr;
-	size_t size = lsdj_project_write_lsdsng_to_memory(project, (unsigned char*)target.data(), target.size(), &error);
-	if (error) {
-		consoleLogLine(lsdj_error_get_c_str(error));
-		target.resize(0);
-	} else {
-		target.resize(size);
-	}
 }
 
 void Lsdj::exportSong(int idx, std::vector<std::byte>& target) {

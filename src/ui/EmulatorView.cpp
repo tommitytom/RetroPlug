@@ -512,7 +512,9 @@ void EmulatorView::ResetSystem(bool fast) {
 
 void EmulatorView::OpenLoadSongsDialog() {
 	std::vector<FileDialogFilters> types = {
-        { T("LSDj Songs"), T("*.lsdsng") }
+		{ T("All Supported Types"), T("*.lsdsng;*.sav") },
+        { T("LSDj Songs"), T("*.lsdsng") },
+		{ T("LSDj .sav"), T("*.sav") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
@@ -532,8 +534,9 @@ void EmulatorView::OpenLoadSongsDialog() {
 
 void EmulatorView::OpenLoadKitsDialog() {
 	std::vector<FileDialogFilters> types = {
+		{ T("All Supported Types"), T("*.gb;*.gbc;*.kit") },
+		{ T("LSDj Kits"), T("*.kit") },
 		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
-		{ T("LSDj Kits"), T("*.kit") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
@@ -543,7 +546,7 @@ void EmulatorView::OpenLoadKitsDialog() {
 
 		for (auto& path : paths) {
 			fs::path p = path;
-			if (p.extension() == "kit") {
+			if (p.extension() == ".kit") {
 				if (lsdj.loadKit(path, -1, error)) {
 					continue;
 				}
