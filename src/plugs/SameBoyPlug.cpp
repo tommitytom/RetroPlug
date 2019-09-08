@@ -73,6 +73,28 @@ void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot
 	std::vector<std::byte> saveData;
 	if (_saveData.empty()) {
 		_savePath = changeExt(romPath, T(".sav"));
+
+		if (!fs::exists(_savePath)) {
+			// If a .sav file with the same name as the rom does not exist, check to see if there is a 
+			// single .sav in the same directory as the rom and load it.  If there are multiple .sav files
+			// in the same directory, don't load any of them (as this could get confusing!).
+			fs::path found;
+			for (const auto& entry : fs::directory_iterator(fs::path(romPath).parent_path())) {
+				if (entry.path().extension() == ".sav") {
+					if (found.empty()) {
+						found = entry.path();
+					} else {
+						found.clear();
+						break;
+					}
+				}
+			}
+
+			if (!found.empty()) {
+				_savePath = tstr(found.wstring());
+			}
+		}
+
 		if (fs::exists(_savePath)) {
 			readFile(_savePath, saveData);
 			SAMEBOY_SYMBOLS.sameboy_load_battery(instance, (const char*)saveData.data(), saveData.size());
