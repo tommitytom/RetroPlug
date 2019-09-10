@@ -8,8 +8,10 @@
 #include "LsdjKeyMap.h"
 #include "nanovg.h"
 #include "ContextMenu.h"
+#include "util/RomWatcher.h"
 
 #include <map>
+#include <set>
 
 const int VIDEO_WIDTH = 160;
 const int VIDEO_HEIGHT = 144;
@@ -39,6 +41,10 @@ private:
 
 	bool _showText = false;
 	ITextControl* _textIds[2] = { nullptr };
+
+	FW::FileWatcher _fileWatcher;
+	FW::WatchID _watchId = 0;
+	std::unique_ptr<RomUpdateListener> _romListener;
 
 public:
 	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics);
@@ -110,6 +116,8 @@ private:
 	void ExportKits();
 
 	void ResetSystem(bool fast);
+
+	void ToggleWatchRom();
 
 	inline LsdjSyncModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
 		switch (mode) {

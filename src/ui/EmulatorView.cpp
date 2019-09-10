@@ -128,6 +128,8 @@ void EmulatorView::Draw(IGraphics& g) {
 
 		DrawPixelBuffer((NVGcontext*)g.GetDrawContext());
 	}
+
+	_fileWatcher.update();
 }
 
 void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
@@ -152,6 +154,7 @@ enum class SystemMenuItems : int {
 	ResetAs,
 	ReplaceRom,
 	SaveRom,
+	WatchRom,
 
 	Sep1,
 
@@ -190,6 +193,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
 		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
 		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
+		case SystemMenuItems::WatchRom: ToggleWatchRom(); break;
 		}
 	});
 
@@ -357,6 +361,7 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
 	menu->AddItem("Replace ROM...", (int)SystemMenuItems::ReplaceRom);
 	menu->AddItem("Save ROM...", (int)SystemMenuItems::SaveRom);
+	menu->AddItem("Reset on ROM changes", (int)SystemMenuItems::WatchRom, _watchId != 0 ? IPopupMenu::Item::kChecked : 0);
 	menu->AddSeparator((int)SystemMenuItems::Sep1);
 	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
 	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
@@ -416,7 +421,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				std::vector<NamedData> songData;
 				lsdj.exportSongs(songData);
 
-				for (auto& song : songData) {
+				for (const auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
 					writeFile(p.wstring(), song.data);
@@ -508,6 +513,20 @@ void EmulatorView::ExportKits() {
 
 void EmulatorView::ResetSystem(bool fast) {
 	_plug->reset(_plug->model(), fast);
+}
+
+void EmulatorView::ToggleWatchRom() {
+	if (_romListener == nullptr) {
+		_romListener = std::make_unique<RomUpdateListener>(_plug);
+		std::string path = fs::path(_plug->romPath()).parent_path().string();
+		_watchId = _fileWatcher.addWatch(path.c_str(), _romListener.get());
+		_plug->setWatchRom(true);
+	} else {
+		_fileWatcher.removeWatch(_watchId);
+		_watchId = 0;
+		_romListener = nullptr;
+		_plug->setWatchRom(false);
+	}	
 }
 
 void EmulatorView::OpenLoadSongsDialog() {

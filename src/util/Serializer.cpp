@@ -127,9 +127,13 @@ void serialize(std::string & target, const RetroPlug & manager) {
 			sb.AddMember("colorCorrection", "emulateHardware", a);
 			sb.AddMember("highpassFilter", "accurate", a);
 
+			rapidjson::Value rp(rapidjson::kObjectType);
+			sb.AddMember("watchRom", plug->watchRom(), a);
+
 			rapidjson::Value settings(rapidjson::kObjectType);
 			settings.AddMember("gameBoy", gb, a);
 			settings.AddMember("sameBoy", sb, a);
+			settings.AddMember("retroPlug", rp, a);
 
 			const Lsdj& lsdj = plug->lsdj();
 			if (lsdj.found) {
@@ -246,6 +250,14 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 			const auto& gameLink = gameboySettings->value.FindMember("gameLink");
 			if (gameLink != gameboySettings->value.MemberEnd()) {
 				plugPtr->setGameLink(gameLink->value.GetBool());
+			}
+		}
+
+		const auto& rpSettings = settings->value.FindMember("retroPlug");
+		if (rpSettings != settings->value.MemberEnd()) {
+			const auto& watchRom = rpSettings->value.FindMember("watchRom");
+			if (watchRom != rpSettings->value.MemberEnd()) {
+				plugPtr->setWatchRom(watchRom->value.GetBool());
 			}
 		}
 

@@ -361,7 +361,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 			break;
 		}
 	} else {
-		// Presume mGB
+		// Presume mGB or any other MIDI enabled rom
 		char midiData[3];
 		midiData[0] = channel | (msg.StatusMsg() << 4);
 		midiData[1] = msg.mData1;

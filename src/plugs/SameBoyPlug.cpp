@@ -54,6 +54,10 @@ void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot
 		return;
 	}
 
+	if (fastBoot) {
+		_resetSamples = (int)(_sampleRate / 2);
+	}
+
 	void* instance = SAMEBOY_SYMBOLS.sameboy_init(this, (const char*)_romData.data(), _romData.size(), getGameboyModel(model), fastBoot);
 	if (!instance) {
 		return;
