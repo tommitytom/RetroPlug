@@ -1,7 +1,7 @@
 #define PLUG_NAME "RetroPlug"
 #define PLUG_MFR "tommitytom"
-#define PLUG_VERSION_HEX 0x00001000
-#define PLUG_VERSION_STR "0.1.0"
+#define PLUG_VERSION_HEX 0x00002000
+#define PLUG_VERSION_STR "0.2.0"
 #define PLUG_UNIQUE_ID '2wvF'
 #define PLUG_MFR_ID 'tmtt'
 #define PLUG_URL_STR "https://tommitytom.co.uk"

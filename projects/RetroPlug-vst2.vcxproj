@@ -153,7 +153,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -168,7 +168,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -190,7 +190,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -210,7 +210,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -232,7 +232,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -251,7 +251,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -598,6 +598,8 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\vio.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\wave.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\word.c" />
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp" />
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\config\common-win.props" />

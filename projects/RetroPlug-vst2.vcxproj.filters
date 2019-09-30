@@ -163,6 +163,12 @@
     <ClCompile Include="..\src\util\crc32.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp">
+      <Filter>filewatcher</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp">
+      <Filter>filewatcher</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -550,6 +556,9 @@
     </Filter>
     <Filter Include="src\lsdj">
       <UniqueIdentifier>{7e2d065f-cad5-41fa-b2e3-480d3f0a2a88}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="filewatcher">
+      <UniqueIdentifier>{85a77b35-570e-459a-aeae-9d1c027a92f0}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
