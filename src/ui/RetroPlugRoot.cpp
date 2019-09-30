@@ -73,7 +73,7 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	if (mod.R) {
 		if (_active) {
 			auto plug = _active->Plug();
-			_menu = IPopupMenu();
+			_menu.Clear();
 
 			if (plug->active()) {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);

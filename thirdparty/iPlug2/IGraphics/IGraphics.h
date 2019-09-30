@@ -1096,11 +1096,7 @@ private:
    * @param isContext Determines if the menu is a contextual menu or not
    * @param valIdx The value index for the control value that the prompt relates to */
   void DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT& bounds, int valIdx, bool isContext);
-<<<<<<< HEAD
 
-=======
-
->>>>>>> 6360a201c1f239c2c7bf3ae5ec11084ce54fc28b
 protected: // TODO: correct?
   /** /todo */
   void StartResizeGesture() { mResizingInProcess = true; };

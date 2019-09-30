@@ -4,9 +4,12 @@
 #include "plugs/RetroPlug.h"
 #include "ButtonQueue.h"
 
-class RetroPlugInstrument : public IPlug {
+using namespace iplug;
+using namespace igraphics;
+
+class RetroPlugInstrument : public Plugin {
 public:
-	RetroPlugInstrument(IPlugInstanceInfo instanceInfo);
+	RetroPlugInstrument(const InstanceInfo& info);
 	~RetroPlugInstrument();
 
 #if IPLUG_DSP

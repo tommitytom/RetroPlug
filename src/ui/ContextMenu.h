@@ -3,6 +3,9 @@
 #include "IGraphics.h"
 #include "plugs/RetroPlug.h"
 
+using namespace iplug;
+using namespace igraphics;
+
 enum class CreateInstanceType : int {
 	LoadRom,
 	SameRom,

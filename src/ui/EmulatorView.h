@@ -18,6 +18,9 @@ const int VIDEO_HEIGHT = 144;
 const int VIDEO_FRAME_SIZE = VIDEO_WIDTH * VIDEO_HEIGHT * 4;
 const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
 
+using namespace iplug;
+using namespace igraphics;
+
 class EmulatorView {
 private:
 	RetroPlug* _manager = nullptr;
