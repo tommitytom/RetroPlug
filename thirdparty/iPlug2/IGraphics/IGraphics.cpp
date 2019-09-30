@@ -16,12 +16,12 @@
 #if defined VST3_API
 #include "pluginterfaces/base/ustring.h"
 #include "IPlugVST3.h"
-using VST3_API_BASE = IPlugVST3;
+using VST3_API_BASE = iplug::IPlugVST3;
 #elif defined VST3C_API
 #include "pluginterfaces/base/ustring.h"
 #include "IPlugVST3_Controller.h"
 #include "IPlugVST3_View.h"
-using VST3_API_BASE = IPlugVST3Controller;
+using VST3_API_BASE = iplug::IPlugVST3Controller;
 #endif
 
 #include "IPlugParameter.h"
@@ -35,23 +35,8 @@ using VST3_API_BASE = IPlugVST3Controller;
 #include "IPopupMenuControl.h"
 #include "ITextEntryControl.h"
 
-struct SVGHolder
-{
-  NSVGimage* mImage = nullptr;
-
-  SVGHolder(NSVGimage* pImage)
-  : mImage(pImage)
-  {
-  }
-
-  ~SVGHolder()
-  {
-    if(mImage)
-      nsvgDelete(mImage);
-
-    mImage = nullptr;
-  }
-};
+using namespace iplug;
+using namespace igraphics;
 
 static StaticStorage<APIBitmap> sBitmapCache;
 static StaticStorage<SVGHolder> sSVGCache;
@@ -93,6 +78,7 @@ IGraphics::~IGraphics()
 void IGraphics::SetScreenScale(int scale)
 {
   mScreenScale = scale;
+  PlatformResize(GetDelegate()->EditorResize());
   ForAllControls(&IControl::OnRescale);
   SetAllControlsDirty();
   DrawResize();
@@ -196,7 +182,7 @@ void IGraphics::SetControlValueAfterPopupMenu(IPopupMenu* pMenu)
 {
   if (!mInPopupMenu)
     return;
-    
+  
   if (mIsContextMenu)
     mInPopupMenu->OnContextSelection(pMenu ? pMenu->GetChosenItemIdx() : -1);
   else
@@ -445,6 +431,8 @@ void IGraphics::PromptUserInput(IControl& control, const IRECT& bounds, int valI
           mPromptPopupMenu.AddItem( new IPopupMenu::Item(str, IPopupMenu::Item::kChecked), -1 );
         else // not equal
           mPromptPopupMenu.AddItem( new IPopupMenu::Item(str), -1 );
+        
+        mPromptPopupMenu.SetRootTitle(pParam->GetNameForHost());
       }
 
       CreatePopupMenu(control, mPromptPopupMenu, bounds, valIdx);
@@ -793,17 +781,34 @@ void IGraphics::OnMouseDown(float x, float y, const IMouseMod& mod)
     #ifdef AAX_API
     if (mAAXViewContainer && paramIdx > kNoParameter)
     {
-      uint32_t mods = GetAAXModifiersFromIMouseMod(mod);
+      auto GetAAXModifiersFromIMouseMod = [](const IMouseMod& mod) {
+        uint32_t modifiers = 0;
+      
+        if (mod.A) modifiers |= AAX_eModifiers_Option; // ALT Key on Windows, ALT/Option key on mac
+      
+      #ifdef OS_WIN
+        if (mod.C) modifiers |= AAX_eModifiers_Command;
+      #else
+        if (mod.C) modifiers |= AAX_eModifiers_Control;
+        if (mod.R) modifiers |= AAX_eModifiers_Command;
+      #endif
+        if (mod.S) modifiers |= AAX_eModifiers_Shift;
+        if (mod.R) modifiers |= AAX_eModifiers_SecondaryButton;
+      
+        return modifiers;
+      };
+      
+      uint32_t aaxModifiersForPT = GetAAXModifiersFromIMouseMod(mod);
       #ifdef OS_WIN
       // required to get start/windows and alt keys
-      uint32_t aaxViewMods = 0;
-      mAAXViewContainer->GetModifiers(&aaxViewMods);
-      mods |= aaxViewMods;
+      uint32_t aaxModifiersFromPT = 0;
+      mAAXViewContainer->GetModifiers(&aaxModifiersFromPT);
+      aaxModifiersForPT |= aaxModifiersFromPT;
       #endif
       WDL_String paramID;
       paramID.SetFormatted(32, "%i", paramIdx+1);
 
-      if (mAAXViewContainer->HandleParameterMouseDown(paramID.Get(), mods) == AAX_SUCCESS)
+      if (mAAXViewContainer->HandleParameterMouseDown(paramID.Get(), aaxModifiersForPT) == AAX_SUCCESS)
       {
         return; // event handled by PT
       }
@@ -836,14 +841,18 @@ void IGraphics::OnMouseUp(float x, float y, const IMouseMod& mod)
   
   if (mMouseCapture)
   {
-    int nVals = mMouseCapture->NVals();
-    mMouseCapture->OnMouseUp(x, y, mod);
+    IControl* pCapturedControl = mMouseCapture; // OnMouseUp could clear mMouseCapture, so stash here
     
+    pCapturedControl->OnMouseUp(x, y, mod);
+    
+    int nVals = pCapturedControl->NVals();
+
     for (int v = 0; v < nVals; v++)
     {
-      if (mMouseCapture->GetParamIdx(v) > kNoParameter)
-        GetDelegate()->EndInformHostOfParamChangeFromUI(mMouseCapture->GetParamIdx(v));
+      if (pCapturedControl->GetParamIdx(v) > kNoParameter)
+        GetDelegate()->EndInformHostOfParamChangeFromUI(pCapturedControl->GetParamIdx(v));
     }
+    
     ReleaseMouseCapture();
   }
 
@@ -1262,7 +1271,7 @@ ISVG IGraphics::LoadSVG(const char* fileName, const char* units, float dpi)
   if(!pHolder)
   {
     WDL_String path;
-    EResourceLocation resourceFound = LocateResource(fileName, "svg", path, GetBundleID(), GetWinModuleHandle());
+    EResourceLocation resourceFound = LocateResource(fileName, "svg", path, GetBundleID(), GetWinModuleHandle(), GetSharedResourcesSubPath());
 
     if (resourceFound == EResourceLocation::kNotFound)
       return ISVG(nullptr); // return invalid SVG
@@ -1385,7 +1394,7 @@ IBitmap IGraphics::ScaleBitmap(const IBitmap& inBitmap, const char* name, int sc
   mDrawScale = inBitmap.GetDrawScale();
 
   IRECT bounds = IRECT(0, 0, inBitmap.W() / inBitmap.GetDrawScale(), inBitmap.H() / inBitmap.GetDrawScale());
-  StartLayer(bounds);
+  StartLayer(nullptr, bounds);
   DrawBitmap(inBitmap, bounds, 0, 0, nullptr);
   ILayerPtr layer = EndLayer();
   IBitmap bitmap = IBitmap(layer->mBitmap.release(), inBitmap.N(), inBitmap.GetFramesAreHorizontal(), name);
@@ -1422,7 +1431,7 @@ EResourceLocation IGraphics::SearchImageResource(const char* name, const char* t
       fullName.SetFormatted((int) (strlen(name) + strlen("@2x")), "%s@%dx%s", baseName.Get(), sourceScale, ext.Get());
     }
 
-    EResourceLocation found = LocateResource(fullName.Get(), type, result, GetBundleID(), GetWinModuleHandle());
+    EResourceLocation found = LocateResource(fullName.Get(), type, result, GetBundleID(), GetWinModuleHandle(), GetSharedResourcesSubPath());
 
     if (found > EResourceLocation::kNotFound)
       return found;
@@ -1492,13 +1501,13 @@ void IGraphics::CreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT
   DoCreatePopupMenu(control, menu, bounds, valIdx, false);
 }
 
-void IGraphics::StartLayer(const IRECT& r)
+void IGraphics::StartLayer(IControl* pControl, const IRECT& r)
 {
   IRECT alignedBounds = r.GetPixelAligned(GetBackingPixelScale());
   const int w = static_cast<int>(std::ceil(GetBackingPixelScale() * std::ceil(alignedBounds.W())));
   const int h = static_cast<int>(std::ceil(GetBackingPixelScale() * std::ceil(alignedBounds.H())));
 
-  PushLayer(new ILayer(CreateAPIBitmap(w, h, GetScreenScale(), GetDrawScale()), alignedBounds));
+  PushLayer(new ILayer(CreateAPIBitmap(w, h, GetScreenScale(), GetDrawScale()), alignedBounds, pControl, pControl ? pControl->GetRECT() : IRECT()));
 }
 
 void IGraphics::ResumeLayer(ILayerPtr& layer)
@@ -1549,6 +1558,13 @@ ILayer* IGraphics::PopLayer()
 bool IGraphics::CheckLayer(const ILayerPtr& layer)
 {
   const APIBitmap* pBitmap = layer ? layer->GetAPIBitmap() : nullptr;
+    
+  if (pBitmap && layer->mControl && layer->mControlRECT != layer->mControl->GetRECT())
+  {
+    layer->mControlRECT = layer->mControl->GetRECT();
+    layer->Invalidate();
+  }
+
   return pBitmap && !layer->mInvalid && pBitmap->GetDrawScale() == GetDrawScale() && pBitmap->GetScale() == GetScreenScale();
 }
 
@@ -1743,6 +1759,74 @@ void IGraphics::CalulateTextRotation(const IText& text, const IRECT& bounds, IRE
     case EVAlign::Middle:   ty = bounds.MH() - rect.MH();  break;
     case EVAlign::Bottom:   ty = bounds.B - rect.B;        break;
   }
+}
+
+void IGraphics::SetQwertyMidiKeyHandlerFunc(std::function<void(const IMidiMsg& msg)> func)
+{
+  SetKeyHandlerFunc([&, func](const IKeyPress& key, bool isUp) {
+    IMidiMsg msg;
+    
+    int note = 0;
+    static int base = 48;
+    static bool keysDown[128] = {};
+    
+    auto onOctSwitch = [&]() {
+      base = Clip(base, 24, 96);
+      
+      for(auto i=0;i<128;i++) {
+        if(keysDown[i]) {
+          msg.MakeNoteOffMsg(i, 0);
+          GetDelegate()->SendMidiMsgFromUI(msg);
+          if(func)
+            func(msg);
+        }
+      }
+    };
+    
+    switch (key.VK) {
+      case kVK_A: note = 0; break;
+      case kVK_W: note = 1; break;
+      case kVK_S: note = 2; break;
+      case kVK_E: note = 3; break;
+      case kVK_D: note = 4; break;
+      case kVK_F: note = 5; break;
+      case kVK_T: note = 6; break;
+      case kVK_G: note = 7; break;
+      case kVK_Y: note = 8; break;
+      case kVK_H: note = 9; break;
+      case kVK_U: note = 10; break;
+      case kVK_J: note = 11; break;
+      case kVK_K: note = 12; break;
+      case kVK_O: note = 13; break;
+      case kVK_L: note = 14; break;
+      case kVK_Z: base -= 12; onOctSwitch(); return true;
+      case kVK_X: base += 12; onOctSwitch(); return true;
+      default: return true; // don't beep, but don't do anything
+    }
+    
+    int pitch = base + note;
+    
+    if(!isUp) {
+      if(keysDown[pitch] == false) {
+        msg.MakeNoteOnMsg(pitch, 127, 0);
+        keysDown[pitch] = true;
+        GetDelegate()->SendMidiMsgFromUI(msg);
+        if(func)
+          func(msg);
+      }
+    }
+    else {
+      if(keysDown[pitch] == true) {
+        msg.MakeNoteOffMsg(pitch, 127, 0);
+        keysDown[pitch] = false;
+        GetDelegate()->SendMidiMsgFromUI(msg);
+        if(func)
+          func(msg);
+      }
+    }
+    
+    return true;
+  });
 }
 
 #ifdef IGRAPHICS_IMGUI
