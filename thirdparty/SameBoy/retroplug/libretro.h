@@ -55,8 +55,8 @@ extern "C" {
 #  endif
 #endif
 
-#undef RETRO_API
-#define RETRO_API
+//#undef RETRO_API
+//#define RETRO_API
 
 RETRO_API void* sameboy_init(void* user_data, const char* rom_data, size_t rom_size, int model, bool fast_boot);
 RETRO_API void sameboy_update_rom(void* state, const char* rom_data, size_t rom_size);

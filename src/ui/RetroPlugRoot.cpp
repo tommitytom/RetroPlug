@@ -85,7 +85,7 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	if (mod.R) {
 		if (_active) {
 			auto plug = _active->Plug();
-			_menu = IPopupMenu();
+			_menu.Clear();
 
 			if (plug->active()) {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);
@@ -138,7 +138,49 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 }
 
 void RetroPlugRoot::OnDrop(const char* str) {
-	LoadProjectOrRom(tstr(str));
+	auto plug = _active->Plug();
+	
+	tstring path = tstr(str);
+	tstring ext = tstr(fs::path(path).extension().wstring());
+
+	Lsdj& lsdj = plug->lsdj();
+	if (lsdj.found) {
+		std::string error;
+		
+		if (ext == T(".kit")) {
+			int idx = lsdj.findEmptyKit();
+			if (idx != -1) {
+				if (lsdj.loadKit(path, idx, error)) {
+					lsdj.patchKits(plug->romData());
+					plug->updateRom();
+					plug->reset(plug->model(), true);
+				} else {
+					// log err
+				}
+			}
+
+			return;
+		} else if (ext == T(".lsdsng")) {
+			// Load lsdj song
+			plug->saveBattery(lsdj.saveData);
+			std::vector<int> ids = lsdj.importSongs({ path }, error);
+			if (ids.size() > 0 && ids[0] != -1) {
+				_active->LoadSong(ids[0]);
+			} else {
+				// log err
+			}
+
+			return;
+		}
+	}
+
+	if (ext == T(".retroplug")) {
+		LoadProject(path);
+	} else if (ext == T(".gb") || ext == T(".gbc")) {
+		_active->LoadRom(path);
+	} else if (ext == T(".sav")) {
+		plug->loadBattery({ path }, true);
+	}
 }
 
 void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
@@ -164,6 +206,12 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
 	target->init(romPath, source->model(), false);
+
+	if (source->lsdj().found) {
+		target->lsdj().kitData = source->lsdj().kitData;
+		target->lsdj().patchKits(target->romData());
+		target->updateRom();
+	}
 
 	if (type == CreateInstanceType::Duplicate) {
 		size_t stateSize = source->saveStateSize();
@@ -334,6 +382,8 @@ void RetroPlugRoot::CloseProject() {
 	}
 
 	_views.clear();
+	_active = nullptr;
+	_activeIdx = -1;
 }
 
 void RetroPlugRoot::NewProject() {
@@ -429,6 +479,8 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 			NewProject();
 		}
 	}
+
+	_plug->updateLinkTargets();
 }
 
 void RetroPlugRoot::OpenLoadProjectDialog() {

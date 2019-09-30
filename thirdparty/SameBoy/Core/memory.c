@@ -126,13 +126,13 @@ static uint8_t read_rom(GB_gameboy_t *gb, uint16_t addr)
     if (!gb->rom_size) {
         return 0xFF;
     }
-    unsigned int effective_address = (addr & 0x3FFF) + gb->mbc_rom0_bank * 0x4000;
+    unsigned effective_address = (addr & 0x3FFF) + gb->mbc_rom0_bank * 0x4000;
     return gb->rom[effective_address & (gb->rom_size - 1)];
 }
 
 static uint8_t read_mbc_rom(GB_gameboy_t *gb, uint16_t addr)
 {
-    unsigned int effective_address = (addr & 0x3FFF) + gb->mbc_rom_bank * 0x4000;
+    unsigned effective_address = (addr & 0x3FFF) + gb->mbc_rom_bank * 0x4000;
     return gb->rom[effective_address & (gb->rom_size - 1)];
 }
 
@@ -273,7 +273,9 @@ static uint8_t read_high_memory(GB_gameboy_t *gb, uint16_t addr)
             case GB_MODEL_DMG_B:
             case GB_MODEL_SGB_NTSC:
             case GB_MODEL_SGB_PAL:
+            case GB_MODEL_SGB_NO_SFC:
             case GB_MODEL_SGB2:
+            case GB_MODEL_SGB2_NO_SFC:
                 ;
         }
     }
@@ -307,6 +309,7 @@ static uint8_t read_high_memory(GB_gameboy_t *gb, uint16_t addr)
                 return (gb->apu.is_active[GB_NOISE] ? (gb->apu.samples[GB_NOISE] << 4) : 0) |
                        (gb->apu.is_active[GB_WAVE] ? (gb->apu.samples[GB_WAVE]) : 0);
             case GB_IO_JOYP:
+                GB_timing_sync(gb);
             case GB_IO_TMA:
             case GB_IO_LCDC:
             case GB_IO_SCY:
@@ -583,7 +586,9 @@ static void write_high_memory(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 case GB_MODEL_DMG_B:
                 case GB_MODEL_SGB_NTSC:
                 case GB_MODEL_SGB_PAL:
+                case GB_MODEL_SGB_NO_SFC:
                 case GB_MODEL_SGB2:
+                case GB_MODEL_SGB2_NO_SFC:
                 case GB_MODEL_CGB_E:
                 case GB_MODEL_AGB:
                     break;
@@ -662,7 +667,7 @@ static void write_high_memory(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 /* These are the states when LY changes, let the display routine call GB_STAT_update for use
                    so it correctly handles T-cycle accurate LYC writes */
                 if (!GB_is_cgb(gb)  || (
-                    gb->display_state != 6 &&
+                    gb->display_state != 35 &&
                     gb->display_state != 26 &&
                     gb->display_state != 15 &&
                     gb->display_state != 16)) {
@@ -736,8 +741,8 @@ static void write_high_memory(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 return;
 
             case GB_IO_JOYP:
-                GB_sgb_write(gb, value);
                 gb->io_registers[GB_IO_JOYP] = value & 0xF0;
+                GB_sgb_write(gb, value);
                 GB_update_joyp(gb);
                 return;
 

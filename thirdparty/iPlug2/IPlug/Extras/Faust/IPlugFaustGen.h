@@ -16,7 +16,7 @@
 #define FAUST_BLOCK(class, member, file, nvoices, rate) Faust_##class member {#class, file, nvoices, rate}
 // if this file is not found, you need to run the code without FAUST_COMPILED defined and make sure to call CompileCPP();
 #include "FaustCode.hpp"
-using FaustGen = IPlugFaust; // not used, except for CompileCPP();
+using FaustGen = iplug::IPlugFaust; // not used, except for CompileCPP();
 #endif
 
 #ifndef FAUST_COMPILED
@@ -62,7 +62,7 @@ static inline bool Equal(StatTime a, StatTime b) { return a == b; }
 static inline StatTime TimeZero() { return (StatTime) 0; }
 #endif
 
-#define FAUSTFLOAT sample
+#define FAUSTFLOAT iplug::sample
 
 #include "faust/dsp/llvm-dsp.h"
 #include "IPlugFaust.h"
@@ -101,6 +101,8 @@ static inline StatTime TimeZero() { return (StatTime) 0; }
   #endif
 #endif
 
+BEGIN_IPLUG_NAMESPACE
+
 class FaustGen : public IPlugFaust
 {
   class Factory
@@ -133,6 +135,9 @@ class FaustGen : public IPlugFaust
     Factory(const char* name, const char* libPath, const char* drawPath, const char* inputDSP);
     ~Factory();
 
+    Factory(const Factory&) = delete;
+    Factory& operator=(const Factory&) = delete;
+      
     llvm_dsp_factory* CreateFactoryFromBitCode();
     llvm_dsp_factory* CreateFactoryFromSourceCode();
     
@@ -220,6 +225,9 @@ public:
 
   ~FaustGen();
 
+  FaustGen(const FaustGen&) = delete;
+  FaustGen& operator=(const FaustGen&) = delete;
+    
   /** Call this method after constructing the class to inform FaustGen what the maximum I/O count is
    * @param maxNInputs Specify a number here to tell FaustGen the maximum number of inputs the hosting code can accommodate
    * @param maxNOutputs Specify a number here to tell FaustGen the maximum number of outputs the hosting code can accommodate */
@@ -263,5 +271,7 @@ private:
   
   WDL_Mutex mMutex;
 };
+
+END_IPLUG_NAMESPACE
 
 #endif // #ifndef FAUST_COMPILED

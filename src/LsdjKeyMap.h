@@ -12,6 +12,9 @@
 
 #include "rapidjson/document.h"
 
+using namespace iplug;
+using namespace igraphics;
+
 enum State {
 	None,
 	Selecting

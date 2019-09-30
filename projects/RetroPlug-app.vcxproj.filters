@@ -184,6 +184,18 @@
     <ClCompile Include="..\src\platform\Path.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\platform\MemoryModule.c">
+      <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\util\crc32.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp">
+      <Filter>filewatcher</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp">
+      <Filter>filewatcher</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -525,6 +537,21 @@
     <ClInclude Include="..\src\platform\Shell.h">
       <Filter>src\platform</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\plugs\SameBoyWrapper.h">
+      <Filter>src\plugs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\MemoryModule.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\DynamicLibraryMemory.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\crc32.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\RomWatcher.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -586,6 +613,9 @@
     </Filter>
     <Filter Include="src\lsdj">
       <UniqueIdentifier>{0c6327e2-1b45-4ad4-a471-7d26e5eed43e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="filewatcher">
+      <UniqueIdentifier>{ca4eae4d-03e0-43e7-a497-d110cf5699b1}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

@@ -14,6 +14,7 @@
 #define BUNDLE_DOMAIN "com"
 
 #define PLUG_CHANNEL_IO "0-2"
+#define SHARED_RESOURCES_SUBPATH "IPlugControls"
 
 #define PLUG_LATENCY 0
 #define PLUG_TYPE 1
@@ -52,8 +53,9 @@
 #define ROBOTO_FN "Roboto-Regular.ttf"
 #define FORK_AWESOME_FN "forkawesome-webfont.ttf"
 #define PNGKNOB_FN "knob.png"
+#define PNGKNOB_2X_FN "knob@2x.png"
 #define PNGKNOBROTATE_FN "knob-rotate.png"
+#define PNGKNOBROTATE_2X_FN "knob-rotate@2x.png"
 #define PNGSWITCH_FN "switch.png"
 #define PNGBUTTON_FN "button.png"
-
 #define SVGKNOBROTATE_FN "vector-knob.svg"

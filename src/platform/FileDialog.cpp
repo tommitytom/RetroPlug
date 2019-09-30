@@ -5,6 +5,9 @@
 #include <ShObjIdl.h>
 #include <windows.h>
 
+using namespace iplug;
+using namespace igraphics;
+
 std::vector<tstring> BasicFileOpen(IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect, bool foldersOnly) {
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {

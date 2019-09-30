@@ -12,6 +12,7 @@ SOURCES_C   := $(CORE_DIR)/Core/gb.c \
                $(CORE_DIR)/Core/sm83_cpu.c \
                $(CORE_DIR)/Core/joypad.c \
                $(CORE_DIR)/Core/save_state.c \
+               $(CORE_DIR)/Core/random.c \
                $(CORE_DIR)/retroplug/agb_boot.c \
                $(CORE_DIR)/retroplug/cgb_boot.c \
                $(CORE_DIR)/retroplug/cgb_fast_boot.c \
@@ -23,4 +24,4 @@ SOURCES_C   := $(CORE_DIR)/Core/gb.c \
 CFLAGS += -DDISABLE_TIMEKEEPING -DDISABLE_REWIND -DDISABLE_DEBUGGER
 
 
-SOURCES_CXX :=	
+SOURCES_CXX :=

@@ -88,7 +88,12 @@ static void vblankHandler(GB_gameboy_t* gb) {
     state->vblankOccurred = true;
 }
 
-static void serial_start(GB_gameboy_t *gb, bool bit_received) {
+static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
+    sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
+    s->audioBuffer[s->currentAudioFrames++] = *sample;
+}
+
+static void serial_start(GB_gameboy_t* gb, bool bit_received) {
     sameboy_state_t* s = (sameboy_state_t*)GB_get_user_data(gb);
     s->bit_to_send = bit_received;
 }
@@ -129,6 +134,7 @@ void* sameboy_init(void* user_data, const char* rom_data, size_t rom_size, int m
 
     GB_set_rgb_encode_callback(&state->gb, rgbEncode);
     GB_set_vblank_callback(&state->gb, vblankHandler);
+    GB_apu_set_sample_callback(&state->gb, audioHandler);
 
     GB_set_color_correction_mode(&state->gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
     GB_set_highpass_filter_mode(&state->gb, GB_HIGHPASS_ACCURATE);
@@ -138,10 +144,7 @@ void* sameboy_init(void* user_data, const char* rom_data, size_t rom_size, int m
 
     GB_set_rendering_disabled(&state->gb, true);
 
-    if (GB_load_rom_from_buffer(&state->gb, rom_data, rom_size)) {
-        free(state);
-        return NULL;
-    }
+    GB_load_rom_from_buffer(&state->gb, rom_data, rom_size);
 
     queue_init(&state->midiQueue);
 
@@ -263,7 +266,7 @@ size_t sameboy_fetch_audio(void* state, int16_t* audio) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     size_t size = s->currentAudioFrames;
     if (size > 0) {
-        GB_apu_copy_buffer(&s->gb, audio, s->currentAudioFrames);
+        memcpy(audio, s->audioBuffer, s->currentAudioFrames * sizeof(GB_sample_t));
         s->currentAudioFrames = 0;
     }
 
@@ -283,7 +286,6 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
 int update_first_instance(sameboy_state_t* s, int targetAudioFrames) {
     if (s->currentAudioFrames < targetAudioFrames) {
         s->processTicks += GB_run(&s->gb);
-        s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
         return 0;
     }
 
@@ -294,7 +296,6 @@ int update_instance(sameboy_state_t* s, int targetAudioFrames, int targetTicks) 
     if (s->currentAudioFrames < targetAudioFrames) {
         while (s->currentAudioFrames < targetAudioFrames && s->processTicks < targetTicks) {
             s->processTicks += GB_run(&s->gb);
-            s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
         }
 
         return 0;
@@ -317,32 +318,11 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
             sameboy_state_t* s = st[i];
             if (s->currentAudioFrames < requiredAudioFrames) {
                 GB_run(&s->gb);
-                s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
             } else {
                 complete++;
             }
         }
     }
-
-    /*size_t complete = 0;
-    while (complete != stateCount) {
-        complete = update_first_instance(st[0], requiredAudioFrames);
-        for (size_t i = 1; i < stateCount; i++) {
-            sameboy_state_t* s = st[i];
-            complete += update_instance(st[i], requiredAudioFrames, st[0]->processTicks);
-        }
-    }
-
-    int highestTick = 0;
-    for (size_t i = 0; i < stateCount; i++) {
-        if (st[i]->processTicks > highestTick) {
-            highestTick = st[i]->processTicks;
-        }
-    }
-
-    for (size_t i = 0; i < stateCount; i++) {
-        st[i]->processTicks -= highestTick;
-    }*/
 }
 
 void sameboy_update(void* state, size_t requiredAudioFrames) {
@@ -367,8 +347,6 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
         int ticks = GB_run(&s->gb);
         delta += ticks;
         s->linkTicksRemain -= ticks;
-
-        s->currentAudioFrames = GB_apu_get_current_buffer_length(&s->gb);
     }
 
     // If there are any midi events that still haven't been processed, set their

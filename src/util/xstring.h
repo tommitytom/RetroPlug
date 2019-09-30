@@ -1,8 +1,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <codecvt>
 #include <locale>
+
+#include <algorithm> 
+#include <cctype>
 
 #ifdef WIN32
 using tstring = std::wstring;
@@ -63,4 +67,38 @@ static tstring getExt(const tstring& path) {
 	}
 
 	return T("");
+}
+
+// trim from start (in place)
+static inline void ltrim(std::string &s) {
+	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
+		return !std::isspace(ch);
+	}));
+}
+
+// trim from end (in place)
+static inline void rtrim(std::string &s) {
+	s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
+		return !std::isspace(ch);
+	}).base(), s.end());
+}
+
+static inline std::vector<std::string> split(const std::string& i_str, const std::string& i_delim) {
+	std::vector<std::string> result;
+
+	size_t found = i_str.find(i_delim);
+	size_t startIndex = 0;
+
+	while (found != std::string::npos) {
+		std::string temp(i_str.begin() + startIndex, i_str.begin() + found);
+		result.push_back(temp);
+		startIndex = found + i_delim.size();
+		found = i_str.find(i_delim, startIndex);
+	}
+
+	if (startIndex != i_str.size()) {
+		result.push_back(std::string(i_str.begin() + startIndex, i_str.end()));
+	}
+
+	return result;
 }

@@ -72,6 +72,21 @@ const uint8_t LsdjKeyboardLowOctaveMap[12] = {
 	0x29  //Table Cue
 };
 
+const uint32_t LsdjKitHashes[22] = {	3734161118, 3816718742, 3788323431, 2132077591, 341848934, 4094864613, 
+										1619355490, 1432911456, 2269540319, 3452550342, 2014800155, 3671301996, 
+										2468775071, 1244551999, 1123275968, 2188962532, 2840583983, 1977389053,
+										176697863, 3590495210, 2373983532, 3719557227	};
+
+static bool isBuiltInKit(uint32_t hash) {
+	for (int i = 0; i < 22; i++) {
+		if (LsdjKitHashes[i] == hash) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int midiMapRowNumber(int channel, int noteNumber) {
 	if (channel == 0) {
 		return noteNumber;
@@ -112,6 +127,15 @@ struct NamedData {
 	std::vector<std::byte> data;
 };
 
+struct NamedHashedData {
+	std::string name;
+	std::vector<std::byte> data;
+	uint32_t hash;
+};
+
+using NamedDataPtr = std::shared_ptr<NamedData>;
+using NamedHashedDataPtr = std::shared_ptr<NamedHashedData>;
+
 class Lsdj {
 public:
 	bool found = false;
@@ -129,8 +153,15 @@ public:
 	std::atomic<bool> keyboardShortcuts = false;
 
 	std::vector<std::byte> saveData;
+	std::vector<NamedHashedDataPtr> kitData;
 
-	bool importSongs(const std::vector<tstring>& paths, std::string& error);
+	Lsdj();
+
+	void loadRom(const std::vector<std::byte>& romData);
+
+	// Song specific
+
+	std::vector<int> importSongs(const std::vector<tstring>& paths, std::string& error);
 
 	void loadSong(int idx);
 
@@ -142,15 +173,36 @@ public:
 
 	void getSongNames(std::vector<LsdjSongName>& names);
 
-	void getKitNames(std::vector<std::string>& names, const std::vector<std::byte>& romData);
+	// Kit specific
+
+	bool loadRomKits(const std::vector<std::byte>& romData, bool absolute, std::string& error);
+
+	bool loadKit(const tstring& path, int idx, std::string& error);
+	
+	void getKitNames(std::vector<std::string>& names);
 
 	void patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index);
 
-	bool importKits(std::vector<std::byte>& romData, const std::vector<tstring>& paths, std::string& error);
-
 	void exportKit(const std::vector<std::byte>& romData, int idx, std::vector<std::byte>& target);
 
-	void exportKits(const std::vector<std::byte>& romData, std::vector<NamedData>& target);
-
 	void deleteKit(std::vector<std::byte>& romData, int index);
+
+	int findEmptyKit() {
+		for (size_t i = 0; i < kitData.size(); ++i) {
+			if (kitData[i] == nullptr) {
+				return i;
+			}
+		}
+
+		return -1;
+	}
+
+	void clearKits();
+
+	void readKit(const std::vector<std::byte>& romData, std::vector<std::byte>& target, int index);
+
+	void patchKits(std::vector<std::byte>& romData);
+
+private:
+	void loadKitAt(const char* data, size_t size, int idx);
 };

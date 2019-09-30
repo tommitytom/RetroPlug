@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <OpenDialog/open_dialog.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -25,7 +26,8 @@ unsigned command_parameter;
 #endif
 
 shader_t shader;
-SDL_Rect rect;
+static SDL_Rect rect;
+static unsigned factor;
 
 void render_texture(void *pixels,  void *previous)
 {
@@ -96,11 +98,11 @@ configuration_t configuration =
 
 
 static const char *help[] ={
-"Drop a GB or GBC ROM\n"
-"file to play.\n"
+"Drop a ROM to play.\n"
 "\n"
 "Keyboard Shortcuts:\n"
 " Open Menu:        Escape\n"
+" Open ROM:          " MODIFIER_NAME "+O\n"
 " Reset:             " MODIFIER_NAME "+R\n"
 " Pause:             " MODIFIER_NAME "+P\n"
 " Save state:    " MODIFIER_NAME "+(0-9)\n"
@@ -118,6 +120,10 @@ void update_viewport(void)
 {
     int win_width, win_height;
     SDL_GL_GetDrawableSize(window, &win_width, &win_height);
+    int logical_width, logical_height;
+    SDL_GetWindowSize(window, &logical_width, &logical_height);
+    factor = win_width / logical_width;
+    
     double x_factor = win_width / (double) GB_get_screen_width(&gb);
     double y_factor = win_height / (double) GB_get_screen_height(&gb);
     
@@ -262,8 +268,19 @@ static void enter_controls_menu(unsigned index);
 static void enter_joypad_menu(unsigned index);
 static void enter_audio_menu(unsigned index);
 
+extern void set_filename(const char *new_filename, typeof(free) *new_free_function);
+static void open_rom(unsigned index)
+{
+    char *filename = do_open_rom_dialog();
+    if (filename) {
+        set_filename(filename, free);
+        pending_command = GB_SDL_NEW_FILE_COMMAND;
+    }
+}
+
 static const struct menu_item paused_menu[] = {
     {"Resume", NULL},
+    {"Open ROM", open_rom},
     {"Emulation Options", enter_emulation_menu},
     {"Graphic Options", enter_graphics_menu},
     {"Audio Options", enter_audio_menu},
@@ -773,7 +790,6 @@ void connect_joypad(void)
     }
 }
 
-extern void set_filename(const char *new_filename, bool new_should_free);
 void run_gui(bool is_running)
 {
     connect_joypad();
@@ -810,9 +826,64 @@ void run_gui(bool is_running)
     current_menu = root_menu = is_running? paused_menu : nonpaused_menu;
     current_selection = 0;
     do {
-        /* Convert Joypad events (We only generate down events) */
+        /* Convert Joypad and mouse events (We only generate down events) */
         if (gui_state != WAITING_FOR_KEY && gui_state != WAITING_FOR_JBUTTON) {
             switch (event.type) {
+                case SDL_WINDOWEVENT:
+                    should_render = true;
+                    break;
+                case SDL_MOUSEBUTTONDOWN:
+                    if (gui_state == SHOWING_HELP) {
+                        event.type = SDL_KEYDOWN;
+                        event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+                    }
+                    else if (gui_state == SHOWING_DROP_MESSAGE) {
+                        event.type = SDL_KEYDOWN;
+                        event.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+                    }
+                    else if (gui_state == SHOWING_MENU) {
+                        signed x = (event.button.x - rect.x / factor) * width / (rect.w / factor) - x_offset;
+                        signed y = (event.button.y - rect.y / factor) * height / (rect.h / factor) - y_offset;
+                        
+                        if (strcmp("CRT", configuration.filter) == 0) {
+                            y = y * 8 / 7;
+                            y -= 144 / 16;
+                        }
+                        
+                        if (x < 0 || x >= 160 || y < 24) {
+                            continue;
+                        }
+                        
+                        unsigned item_y = 24;
+                        unsigned index = 0;
+                        for (const struct menu_item *item = current_menu; item->string; item++, index++) {
+                            if (!item->backwards_handler) {
+                                if (y >= item_y && y < item_y + 12) {
+                                    break;
+                                }
+                                item_y += 12;
+                            }
+                            else {
+                                if (y >= item_y && y < item_y + 24) {
+                                    break;
+                                }
+                                item_y += 24;
+                            }
+                        }
+                        
+                        if (!current_menu[index].string) continue;
+                        
+                        current_selection = index;
+                        event.type = SDL_KEYDOWN;
+                        if (current_menu[index].backwards_handler) {
+                            event.key.keysym.scancode = x < 80? SDL_SCANCODE_LEFT : SDL_SCANCODE_RIGHT;
+                        }
+                        else {
+                            event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+                        }
+
+                    }
+                    break;
                 case SDL_JOYBUTTONDOWN:
                     event.type = SDL_KEYDOWN;
                     joypad_button_t button = get_joypad_button(event.jbutton.button);
@@ -843,6 +914,7 @@ void run_gui(bool is_running)
                             event.key.keysym.scancode = scancode;
                         }
                     }
+                    break;
                }
                     
                 case SDL_JOYAXISMOTION: {
@@ -901,7 +973,7 @@ void run_gui(bool is_running)
                 break;
             }
             case SDL_DROPFILE: {
-                set_filename(event.drop.file, true);
+                set_filename(event.drop.file, SDL_free);
                 pending_command = GB_SDL_NEW_FILE_COMMAND;
                 return;
             }
@@ -939,7 +1011,17 @@ void run_gui(bool is_running)
             }
 
             case SDL_KEYDOWN:
-                if (event.key.keysym.scancode == SDL_SCANCODE_RETURN && gui_state == WAITING_FOR_JBUTTON) {
+                if (event.key.keysym.scancode == SDL_SCANCODE_O) {
+                    if (event.key.keysym.mod & MODIFIER) {
+                        char *filename = do_open_rom_dialog();
+                        if (filename) {
+                            set_filename(filename, free);
+                            pending_command = GB_SDL_NEW_FILE_COMMAND;
+                            return;
+                        }
+                    }
+                }
+                else if (event.key.keysym.scancode == SDL_SCANCODE_RETURN && gui_state == WAITING_FOR_JBUTTON) {
                     should_render = true;
                     if (joypad_configuration_progress != JOYPAD_BUTTONS_MAX) {
                         configuration.joypad_configuration[joypad_configuration_progress] = -1;
@@ -1105,6 +1187,10 @@ void run_gui(bool is_running)
             }
             
             render_texture(pixels, NULL);
+#ifdef _WIN32
+            /* Required for some Windows 10 machines, god knows why */
+            render_texture(pixels, NULL);
+#endif
         }
     } while (SDL_WaitEvent(&event));
 }

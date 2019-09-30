@@ -5,8 +5,8 @@
 #include "src/ui/RetroPlugRoot.h"
 #include "util/Serializer.h"
 
-RetroPlugInstrument::RetroPlugInstrument(IPlugInstanceInfo instanceInfo)
-: IPLUG_CTOR(0, 0, instanceInfo) {
+RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
+	: Plugin(info, MakeConfig(0, 0)) {
 	// FIXME: Choose a more realistic size for this based on GetBlockSize()
 	_sampleScratch = new float[1024 * 1024];
 
@@ -361,7 +361,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 			break;
 		}
 	} else {
-		// Presume mGB
+		// Presume mGB or any other MIDI enabled rom
 		char midiData[3];
 		midiData[0] = channel | (msg.StatusMsg() << 4);
 		midiData[1] = msg.mData1;

@@ -2,10 +2,11 @@
 A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 
 ## Features
-- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.11.2
+- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.12.1
 - Full MIDI support for [mGB](https://github.com/trash80/mGB)
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
+- Realtime LSDj sample patching!
 
 ## Current Limitations (subject to change)
 - VST2 only
@@ -90,7 +91,7 @@ When LSDj is detected, additional options are added to the context menus.
   * If you hit play in LSDj, it will not play until you hit play in your DAW. LSDj should be set to "MIDI" mode on the project page.
   * In this mode LSDj knows nothing about the song position in your DAW, all it knows is that it is receiving a MIDI clock, and that it should play.
 
-- **MIDI Sync (Arduinoboy mode)**:
+- **MIDI Sync (Arduinoboy Variation)**:
   * Receives MIDI clock from your DAW, but only plays once a C-2 note is received.
   * Additional Arduinoboy options are emulated, full list can be found [here](https://github.com/trash80/Arduinoboy/#mode-1---lsdj-as-midi-slave-sync).
 
@@ -100,13 +101,29 @@ When LSDj is detected, additional options are added to the context menus.
   * Rows are stopped when note offs are received, or when you hit stop in your DAW.
   * Requires the Arduinboy build of LSDj.
 
+- **Keyboard Mode (Arduinoboy Variation)**:
+  * seijhi
+
 - **Auto Play**:
   * When this option is enabled, RetroPlug will simulate a press of the start button whenever the transport in your DAW is started or stopped.
   * Works in combination with the other sync modes.
   * This option is pretty dumb (it doesnt know if LSDj is playing or not), so it's possible to make it think it is in the wrong state if you manually press `Start`.  If this happens just press `Start` again.
 
 ### .sav Manipulation
-Thanks to the liblsdj library you are able to list, export, import, load, and delete tracks contained in your LSDj save.  The `LSDj Songs` context menu contains these features.
+Thanks to the liblsdj library you are able to list, export, import, load, and delete tracks contained in your LSDj save.  The `LSDj Songs` context menu contains these features.  Additionally, dragging a `.lsdsng` file on to the window will add the song to your `.sav` file and load it immediately (if the `.sav` has space to contain the song).
+
+### Kit Patching
+Kits can be patched, deleted, and exported using the `LSDj Kits` menu.
+* Kits can be imported from `.kit` files, or imported from a previously patched LSDj ROM.
+* To import kits to the next available slot, use the `LSDj Kits -> Import...` menu item.  If a kit is already in the ROM it will not be imported.  This allows you to import all kits from a ROM that the current ROM does not have without creating duplicates.
+* To patch a specific kit slot, or to replace an existing kit, choose the kit/slot you want to replace in the context menu, and choose `Load...` or `Replace...` respectively.
+* Importing kits to a fresh slot requires a reset (this will be done automatically, no song data will be lost).  Replacing existing kits does not require a reset, and can be done in realtime **while the kit you are patching is currently playing**!
+* Kits are saved in to your DAWs project file when you hit save, or alternatively in to a `.retroplug` file when you save the project to disk.
+
+The ROM that you loaded from disk isn't actually modified.  To save the patched ROM out to disk for use on harware or other emulators, using the `System -> Save ROM...` menu option.
+
+### Updating LSDj
+Updating to a new verison of LSDj can be quite cumbersome when your ROM is patched with custom samples, though RetroPlug tries to help make this easy by offering a way of swapping out a ROM and keeping custom samples patched.  To do this, use the `System -> Replace ROM...` menu item and select the new LSDj ROM.
 
 ### Additional Options
 - **Keyboard Shortcuts**: Enables a set of common shortcuts that allows you to use LSDj with a keyboard in a more intuitive manner.  This works by sending combinations of button presses to LSDj, so support for these may not always be perfect!  Many of the hotkeys for these settings can be modified in the button config file (see [Button mapping](#button-mapping)), although a few can't:
@@ -132,7 +149,6 @@ Thanks to the liblsdj library you are able to list, export, import, load, and de
     - Mac builds
     - Outputs from individual audio channels
     - Lua scripting
-    - LSDj sample patching
 - v2.0.0
     - Additional emulators.  Support for C64, GBA and Megadrive/Genesis is being explored.
 
@@ -140,7 +156,7 @@ Thanks to the liblsdj library you are able to list, export, import, load, and de
 - [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
 - [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin framework
 - [libsdj](https://github.com/stijnfrishert/liblsdj) - Adds the functionality to manipulate LSDj save files
-- [tao json](https://github.com/taocpp/json) - JSON library used for dealing with configs and save states
+- [rapidjson](https://github.com/Tencent/rapidjson) - JSON library used for dealing with configs and save states
 
 ## Building
 ### Windows

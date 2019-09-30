@@ -48,11 +48,17 @@ private:
 
 	std::vector<std::byte> _romData;
 	std::vector<std::byte> _saveData;
-	SaveStateType _saveType;
+	SaveStateType _saveType = SaveStateType::State;
+
+	bool _watchRom = false;
 
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
+
+	bool watchRom() const { return false; }
+
+	void setWatchRom(bool watch) { _watchRom = watch; }
 
 	Lsdj& lsdj() { return _lsdj; }
 

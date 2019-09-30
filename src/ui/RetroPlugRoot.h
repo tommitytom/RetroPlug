@@ -8,6 +8,9 @@
 #include "EmulatorView.h"
 #include "ContextMenu.h"
 
+using namespace iplug;
+using namespace igraphics;
+
 class RetroPlugRoot : public IControl {
 private:
 	RetroPlug* _plug;

@@ -14,8 +14,6 @@
 #define AUDIO_FREQUENCY 48000
 #endif
 
-#define FRAME_RATE (0x400000 / 70224.0)
-
 #ifdef _WIN32
 #include <direct.h>
 #include <windows.h>
@@ -86,7 +84,7 @@ static struct retro_log_callback logging;
 static retro_log_printf_t log_cb;
 
 static retro_video_refresh_t video_cb;
-static retro_audio_sample_batch_t audio_batch_cb;
+static retro_audio_sample_t audio_sample_cb;
 static retro_input_poll_t input_poll_cb;
 static retro_input_state_t input_state_cb;
 
@@ -150,34 +148,22 @@ static void GB_update_keys_status(GB_gameboy_t *gb, unsigned port)
 }
 
 
-static void audio_callback(void *gb)
+static void audio_callback(GB_gameboy_t *gb, GB_sample_t *sample)
 {
-    size_t length = GB_apu_get_current_buffer_length(gb);
-
-    while (length > sizeof(soundbuf) / 4)
-    {
-        GB_apu_copy_buffer(gb, (GB_sample_t *) soundbuf, 1024);
-        audio_batch_cb(soundbuf, 1024);
-        length -= 1024;
-    }
-    if (length) {
-        GB_apu_copy_buffer(gb, (GB_sample_t *) soundbuf, length);
-        audio_batch_cb(soundbuf, length);
+    if ((audio_out == GB_1 && gb == &gameboy[0]) ||
+        (audio_out == GB_2 && gb == &gameboy[1])) {
+            audio_sample_cb(sample->left, sample->right);
     }
 }
 
 static void vblank1(GB_gameboy_t *gb)
 {
     vblank1_occurred = true;
-    if (audio_out == GB_1)
-        audio_callback(gb);
 }
 
 static void vblank2(GB_gameboy_t *gb)
 {
     vblank2_occurred = true;
-    if (audio_out == GB_2)
-        audio_callback(gb);
 }
 
 static bool bit_to_send1 = true, bit_to_send2 = true;
@@ -383,6 +369,7 @@ static void init_for_current_model(unsigned id)
     GB_set_pixels_output(&gameboy[i],(unsigned int*)(frame_buf + i * ((model[i] == MODEL_SGB || model[i] == MODEL_SGB2) ? SGB_VIDEO_PIXELS : VIDEO_PIXELS)));
     GB_set_rgb_encode_callback(&gameboy[i], rgb_encode);
     GB_set_sample_rate(&gameboy[i], AUDIO_FREQUENCY);
+    GB_apu_set_sample_callback(&gameboy[i], audio_callback);
 
     /* todo: attempt to make these more generic */
     GB_set_vblank_callback(&gameboy[0], (GB_vblank_callback_t) vblank1);
@@ -393,7 +380,7 @@ static void init_for_current_model(unsigned id)
             set_link_cable_state(true);
     }
 
-    struct retro_memory_descriptor descs[10];
+    struct retro_memory_descriptor descs[11];
     size_t size;
     uint16_t bank;
 
@@ -402,47 +389,55 @@ static void init_for_current_model(unsigned id)
     i = 0;
     memset(descs, 0, sizeof(descs));
 
-    descs[0].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_IE, &size, &bank);
-    descs[0].start = 0xFFFF;
-    descs[0].len   = 1;
+    descs[0].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_IE, &size, &bank);
+    descs[0].start   = 0xFFFF;
+    descs[0].len     = 1;
 
-    descs[1].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_HRAM, &size, &bank);
-    descs[1].start = 0xFF80;
-    descs[1].len   = 0x0080;
+    descs[1].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_HRAM, &size, &bank);
+    descs[1].start   = 0xFF80;
+    descs[1].len     = 0x0080;
 
-    descs[2].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_RAM, &size, &bank);
-    descs[2].start = 0xC000;
-    descs[2].len   = 0x1000;
+    descs[2].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_RAM, &size, &bank);
+    descs[2].start   = 0xC000;
+    descs[2].len     = 0x1000;
 
-    descs[3].ptr   = descs[2].ptr + 0x1000; /* GB RAM/GBC RAM bank 1 */
-    descs[3].start = 0xD000;
-    descs[3].len   = 0x1000;
+    descs[3].ptr     = descs[2].ptr + 0x1000; /* GB RAM/GBC RAM bank 1 */
+    descs[3].start   = 0xD000;
+    descs[3].len     = 0x1000;
 
-    descs[4].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_CART_RAM, &size, &bank);
-    descs[4].start = 0xA000;
-    descs[4].len   = 0x2000;
+    descs[4].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_CART_RAM, &size, &bank);
+    descs[4].start   = 0xA000;
+    descs[4].len     = 0x2000;
 
-    descs[5].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_VRAM, &size, &bank);
-    descs[5].start = 0x8000;
-    descs[5].len   = 0x2000;
+    descs[5].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_VRAM, &size, &bank);
+    descs[5].start   = 0x8000;
+    descs[5].len     = 0x2000;
 
-    descs[6].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_ROM, &size, &bank);
-    descs[6].start = 0x0000;
-    descs[6].len   = 0x4000;
-    descs[6].flags = RETRO_MEMDESC_CONST;
+    descs[6].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_ROM, &size, &bank);
+    descs[6].start   = 0x0000;
+    descs[6].len     = 0x4000;
+    descs[6].flags   = RETRO_MEMDESC_CONST;
 
-    descs[7].ptr   = descs[6].ptr + (bank * 0x4000);
-    descs[7].start = 0x4000;
-    descs[7].len   = 0x4000;
-    descs[7].flags = RETRO_MEMDESC_CONST;
+    descs[7].ptr     = descs[6].ptr + (bank * 0x4000);
+    descs[7].start   = 0x4000;
+    descs[7].len     = 0x4000;
+    descs[7].flags   = RETRO_MEMDESC_CONST;
 
-    descs[8].ptr   = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_OAM, &size, &bank);
-    descs[8].start = 0xFE00;
-    descs[8].len   = 0x00A0;
+    descs[8].ptr     = GB_get_direct_access(&gameboy[i], GB_DIRECT_ACCESS_OAM, &size, &bank);
+    descs[8].start   = 0xFE00;
+    descs[8].select  = 0xFFFFFF00;
+    descs[8].len     = 0x00A0;
 
-    descs[9].ptr   = descs[2].ptr + 0x2000; /* GBC RAM bank 2 */
-    descs[9].start = 0x10000;
-    descs[9].len   = GB_is_cgb(&gameboy[i]) ? 0x6000 : 0; /* 0x1000 per bank (2-7), unmapped on GB */
+    descs[9].ptr     = descs[2].ptr + 0x2000; /* GBC RAM bank 2 */
+    descs[9].start   = 0x10000;
+    descs[9].select  = 0xFFFF0000;
+    descs[9].len     = GB_is_cgb(&gameboy[i]) ? 0x6000 : 0; /* 0x1000 per bank (2-7), unmapped on GB */
+
+    descs[10].ptr    = descs[8].ptr;
+    descs[10].offset = 0x100;
+    descs[10].start  = 0xFF00;
+    descs[10].select = 0xFFFFFF00;
+    descs[10].len    = 0x0080;
 
     struct retro_memory_map mmaps;
     mmaps.descriptors = descs;
@@ -738,7 +733,7 @@ void retro_get_system_info(struct retro_system_info *info)
 void retro_get_system_av_info(struct retro_system_av_info *info)
 {
     struct retro_game_geometry geom;
-    struct retro_system_timing timing = { FRAME_RATE, AUDIO_FREQUENCY };
+    struct retro_system_timing timing = { GB_get_usual_frame_rate(&gameboy[0]), AUDIO_FREQUENCY };
 
     if (emulated_devices == 2)
     {
@@ -785,11 +780,11 @@ void retro_set_environment(retro_environment_t cb)
 
 void retro_set_audio_sample(retro_audio_sample_t cb)
 {
+    audio_sample_cb = cb;
 }
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb)
 {
-    audio_batch_cb = cb;
 }
 
 void retro_set_input_poll(retro_input_poll_t cb)
@@ -863,8 +858,7 @@ void retro_run(void)
     }
     else
     {
-        int x = GB_run_frame(&gameboy[0]);
-        log_cb(RETRO_LOG_DEBUG, "%d\n", x);
+        GB_run_frame(&gameboy[0]);
     }
 
     if (emulated_devices == 2)
@@ -958,11 +952,11 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info *info, 
     environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void *)vars_dual);
     check_variables();
 
-    frame_buf = (uint32_t*)malloc(emulated_devices * VIDEO_PIXELS * sizeof(uint32_t));
-    frame_buf_copy = (uint32_t*)malloc(emulated_devices * VIDEO_PIXELS * sizeof(uint32_t));
+    frame_buf = (uint32_t*)malloc(emulated_devices * SGB_VIDEO_PIXELS * sizeof(uint32_t));
+    frame_buf_copy = (uint32_t*)malloc(emulated_devices * SGB_VIDEO_PIXELS * sizeof(uint32_t));
 
-    memset(frame_buf, 0, emulated_devices * VIDEO_PIXELS * sizeof(uint32_t));
-    memset(frame_buf_copy, 0, emulated_devices * VIDEO_PIXELS * sizeof(uint32_t));
+    memset(frame_buf, 0, emulated_devices * SGB_VIDEO_PIXELS * sizeof(uint32_t));
+    memset(frame_buf_copy, 0, emulated_devices * SGB_VIDEO_PIXELS * sizeof(uint32_t));
 
     enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
     if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
@@ -998,54 +992,65 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info *info, 
 
 size_t retro_serialize_size(void)
 {
-    if (emulated_devices == 2)
-        return GB_get_save_state_size(&gameboy[0]) + GB_get_save_state_size(&gameboy[1]);
-    else
-        return GB_get_save_state_size(&gameboy[0]);
+    static size_t maximum_save_size = 0;
+    if (maximum_save_size) {
+        return maximum_save_size * 2;
+    }
+    
+    GB_gameboy_t temp;
+    
+    GB_init(&temp, GB_MODEL_DMG_B);
+    maximum_save_size = GB_get_save_state_size(&temp);
+    GB_free(&temp);
+    
+    GB_init(&temp, GB_MODEL_CGB_E);
+    maximum_save_size = MAX(maximum_save_size, GB_get_save_state_size(&temp));
+    GB_free(&temp);
+    
+    GB_init(&temp, GB_MODEL_SGB2);
+    maximum_save_size = MAX(maximum_save_size, GB_get_save_state_size(&temp));
+    GB_free(&temp);
+    
+    return maximum_save_size * 2;
 }
 
 bool retro_serialize(void *data, size_t size)
 {
 
-    if (!initialized)
+    if (!initialized || !data)
         return false;
 
-    void* save_data[2];
-    size_t state_size[2];
     size_t offset = 0;
 
-    for (int i = 0; i < emulated_devices; i++)
-    {
-        state_size[i] = GB_get_save_state_size(&gameboy[i]);
-        save_data[i] = (uint8_t*)malloc(state_size[i]);
-        GB_save_state_to_buffer(&gameboy[i], (uint8_t*) save_data[i]);
-        memcpy(data + offset, save_data[i], state_size[i]);
-        offset += state_size[i];
-        free(save_data[i]);
+    for (int i = 0; i < emulated_devices; i++)  {
+        size_t state_size = GB_get_save_state_size(&gameboy[i]);
+        if (state_size > size) {
+            return false;
+        }
+        
+        GB_save_state_to_buffer(&gameboy[i], ((uint8_t *) data) + offset);
+        offset += state_size;
+        size -= state_size;
     }
 
-    if (data)
-        return true;
-    else
-        return false;
+    return true;
 }
 
 bool retro_unserialize(const void *data, size_t size)
 {
-    void* save_data[2];
-    size_t state_size[2];
-    int ret;
-
     for (int i = 0; i < emulated_devices; i++)
     {
-        state_size[i] = GB_get_save_state_size(&gameboy[i]);
-        save_data[i] = (uint8_t*)malloc(state_size[i]);
-        memcpy (save_data[i], data + (state_size[i] * i), state_size[i]);
-        ret = GB_load_state_from_buffer(&gameboy[i], save_data[i], state_size[i]);
-        free(save_data[i]);
-
-        if (ret != 0)
+        size_t state_size = GB_get_save_state_size(&gameboy[i]);
+        if (state_size > size) {
             return false;
+        }
+
+        if (GB_load_state_from_buffer(&gameboy[i], data, state_size)) {
+            return false;
+        }
+        
+        size -= state_size;
+        data = ((uint8_t *)data) + state_size;
     }
 
     return true;

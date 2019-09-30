@@ -1,4 +1,4 @@
-STATIC_LINKING := 1
+STATIC_LINKING := 0
 AR             := ar
 
 GIT_VERSION ?= " $(shell git rev-parse --short HEAD || echo unknown)"
@@ -241,7 +241,7 @@ else ifneq (,$(findstring windows_msvc2017,$(platform)))
 
 else
    CC = gcc
-   TARGET := $(TARGET_NAME)_retroplug.a
+   TARGET := $(TARGET_NAME)_retroplug.dll
    SHARED := -shared -static-libgcc -static-libstdc++ -s -Wl,--version-script=$(CORE_DIR)/retroplug/link.T -Wl,--no-undefined
 endif
 
