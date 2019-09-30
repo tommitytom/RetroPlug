@@ -36,6 +36,18 @@ void RetroPlugRoot::OnInit() {
 
 bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 	if (_active) {
+        /*if (key.VK == VirtualKeys::E) {
+            static bool alt = true;
+            int windowW = alt ? 320 : 480;
+            int windowH = alt ? 288 : 320;
+            alt = !alt;
+            GetUI()->SetSizeConstraints(320, windowW, 288, windowH);
+            GetUI()->Resize(windowW, windowH, 1);
+            SetTargetAndDrawRECTs(IRECT(0, 0, windowW, windowH));
+            GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
+            return true;
+        }*/
+        
 		if (key.VK == VirtualKeys::Tab && down) {
 			_activeIdx = (_activeIdx + 1) % _views.size();
 			SetActive(_views[_activeIdx]);

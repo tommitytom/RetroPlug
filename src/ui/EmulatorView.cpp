@@ -207,7 +207,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
 			if (indexInMenu == settingsMenu->NItems() - 1) {
-				openFolder(getContentPath());
+				openShellFolder(getContentPath());
 			}
 		});
 
