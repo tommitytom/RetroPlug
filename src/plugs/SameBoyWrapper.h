@@ -2,7 +2,7 @@
 
 #include "platform/DynamicLibraryMemory.h"
 
-#define SAMEBOY_SYMBOLS getSymbols()
+#define SAMEBOY_SYMBOLS(symb) getSymbols().symb
 
 struct SameboyPlugSymbols {
 	void*(*sameboy_init)(void* user_data, const char* romData, size_t romSize, int model, bool fast_boot);
