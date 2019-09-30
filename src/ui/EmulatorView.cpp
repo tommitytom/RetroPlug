@@ -424,7 +424,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				for (const auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					writeFile(p.wstring(), song.data);
+					writeFile(tstr(p.wstring()), song.data);
 				}
 			}
 		}
@@ -504,7 +504,7 @@ void EmulatorView::ExportKits() {
 				if (kit) {
 					fs::path p(paths[0]);
 					p /= kit->name + ".kit";
-					writeFile(p.wstring(), kit->data);
+					writeFile(tstr(p.wstring()), kit->data);
 				}
 			}
 		}

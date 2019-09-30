@@ -22,7 +22,7 @@ tstring getContentPath(tstring file) {
 
 tstring getContentPath(tstring file) {
 	WDL_String path;
-    AppSupportPath(path);
+    iplug::AppSupportPath(path);
 
 	tstring strPath = tstr(path.Get());
     strPath += T("/RetroPlug");

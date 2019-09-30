@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>RetroPlug</string>
 	<key>CFBundleGetInfoString</key>
-	<string>RetroPlug v0.16.0 Copyright 2019 Tom Yaxley</string>
+	<string>RetroPlug v0.32.0 Copyright 2019 Tom Yaxley</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.tommitytom.app.RetroPlug.AUv3</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.16.0</string>
+	<string>0.32.0</string>
 	<key>CFBundleVersion</key>
-	<string>0.16.0</string>
+	<string>0.32.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.12.0</string>
 	<key>NSExtension</key>
@@ -46,7 +46,7 @@
 					<key>type</key>
 					<string>aumu</string>
 					<key>version</key>
-					<integer>4096</integer>
+					<integer>8192</integer>
 				</dict>
 			</array>
 		</dict>
