@@ -18,7 +18,15 @@
 #include <string>
 #include <map>
 
+#if defined OS_IOS
+#import <Foundation/Foundation.h>
+#endif
+
+#ifdef IGRAPHICS_METAL
 extern std::map<std::string, void*> gTextureMap;
+#endif
+
+BEGIN_IPLUG_NAMESPACE
 
 #ifdef OS_MAC
 void HostPath(WDL_String& path, const char* bundleID)
@@ -112,7 +120,7 @@ void AppSupportPath(WDL_String& path, bool isSystem)
   path.Set([pApplicationSupportDirectory UTF8String]);
 }
 
-void SandboxSafeAppSupportPath(WDL_String& path)
+void SandboxSafeAppSupportPath(WDL_String& path, const char* appGroupID)
 {
   NSArray* pPaths = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES);
   NSString* pUserMusicDirectory = [pPaths objectAtIndex:0];
@@ -194,7 +202,7 @@ bool GetResourcePathFromSharedLocation(const char* fileName, const char* searchE
   }
 }
 
-EResourceLocation LocateResource(const char* name, const char* type, WDL_String& result, const char* bundleID, void*)
+EResourceLocation LocateResource(const char* name, const char* type, WDL_String& result, const char* bundleID, void*, const char* sharedResourcesSubPath)
 {
   if(CStringHasContents(name))
   {
@@ -203,7 +211,7 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
       return EResourceLocation::kAbsolutePath;
     
     // then check ~/Music/PLUG_NAME, which is a shared folder that can be accessed from app sandbox
-    if(GetResourcePathFromSharedLocation(name, type, result, "VirtualCZ")) //TODO: Hardcoded! This will change
+    if(GetResourcePathFromSharedLocation(name, type, result, sharedResourcesSubPath))
       return EResourceLocation::kAbsolutePath;
     
     // finally check name, which might be a full path - if the plug-in is trying to load a resource at runtime (e.g. skin-able UI)
@@ -220,8 +228,6 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
 
 #elif defined OS_IOS
 #pragma mark - IOS
-#import <Foundation/Foundation.h>
-
 
 void HostPath(WDL_String& path, const char* bundleID)
 {
@@ -233,14 +239,23 @@ void PluginPath(WDL_String& path, PluginIDType bundleID)
 
 void BundleResourcePath(WDL_String& path, PluginIDType bundleID)
 {
+  NSBundle* pBundle = [NSBundle mainBundle];
+  
+  if([[pBundle bundleIdentifier] containsString:@"AUv3"])
+    pBundle = [NSBundle bundleWithIdentifier:[NSString stringWithCString:bundleID encoding:NSUTF8StringEncoding]];
+  
+  path.Set([[pBundle resourcePath] UTF8String]);
 }
 
 void AppSupportPath(WDL_String& path, bool isSystem)
 {
 }
 
-void SandboxSafeAppSupportPath(WDL_String& path)
+void SandboxSafeAppSupportPath(WDL_String& path, const char* appGroupID)
 {
+  NSFileManager* mgr = [NSFileManager defaultManager];
+  NSURL* url = [mgr containerURLForSecurityApplicationGroupIdentifier:[NSString stringWithUTF8String:appGroupID]];
+  path.Set([[url path] UTF8String]);
 }
 
 void DesktopPath(WDL_String& path)
@@ -255,6 +270,11 @@ void VST3PresetsPath(WDL_String& path, const char* mfrName, const char* pluginNa
 void INIPath(WDL_String& path, const char* pluginName)
 {
   path.Set("");
+}
+
+bool IsAuv3AppExtension()
+{
+  return ([[[NSBundle mainBundle] bundleIdentifier] containsString:@"AUv3"]);
 }
 
 bool GetResourcePathFromBundle(const char* fileName, const char* searchExt, WDL_String& fullPath, const char* bundleID)
@@ -277,7 +297,7 @@ bool GetResourcePathFromBundle(const char* fileName, const char* searchExt, WDL_
     if(isAppExtension)
       pBundle = [NSBundle bundleWithIdentifier:[NSString stringWithCString:bundleID encoding:NSUTF8StringEncoding]];
     
-    NSString* pFile = [[[NSString stringWithCString:fileName encoding:NSUTF8StringEncoding] lastPathComponent] stringByDeletingPathExtension];
+    NSString* pFile = [[NSString stringWithCString:fileName encoding:NSUTF8StringEncoding] stringByDeletingPathExtension];
     NSString* pExt = [NSString stringWithCString:searchExt encoding:NSUTF8StringEncoding];
     
     if (isCorrectType && pBundle && pFile)
@@ -303,10 +323,11 @@ bool GetResourcePathFromBundle(const char* fileName, const char* searchExt, WDL_
   }
 }
 
-EResourceLocation LocateResource(const char* name, const char* type, WDL_String& result, const char* bundleID, void*)
+EResourceLocation LocateResource(const char* name, const char* type, WDL_String& result, const char* bundleID, void*, const char*)
 {
   if(CStringHasContents(name))
   {
+#ifdef IGRAPHICS_METAL
     auto itr = gTextureMap.find(name);
     
     if (itr != gTextureMap.end())
@@ -314,6 +335,7 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
       result.Set(name);
       return EResourceLocation::kPreloadedTexture;
     }
+#endif
     
     if(GetResourcePathFromBundle(name, type, result, bundleID))
       return EResourceLocation::kAbsolutePath;
@@ -323,3 +345,5 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
 }
 
 #endif
+
+END_IPLUG_NAMESPACE

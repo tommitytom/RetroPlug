@@ -17,6 +17,8 @@
 
 #include "IPlugUtilities.h"
 
+BEGIN_IPLUG_NAMESPACE
+
 #if defined OS_MAC || defined OS_IOS
 using PluginIDType = const char *;
 #elif defined OS_WIN
@@ -54,7 +56,7 @@ extern void UserHomePath(WDL_String& path);
 extern void AppSupportPath(WDL_String& path, bool isSystem = false);
 
 /** @param path WDL_String reference where the path will be put on success or empty string on failure */
-extern void SandboxSafeAppSupportPath(WDL_String& path);
+extern void SandboxSafeAppSupportPath(WDL_String& path, const char* appGroupID = "");
 
 /** @param path WDL_String reference where the path will be put on success or empty string on failure
  * @param mfrName CString to specify the manufacturer name, which will be the top level folder for .vstpreset files for this manufacturer's product
@@ -80,9 +82,16 @@ extern void INIPath(WDL_String& path, const char * pluginName);
  * @param type The resource type (file extension) in lower or upper case, e.g. ttf or TTF for a truetype font
  * @param result WDL_String which will either contain the full path to the resource on disk, or the ful Windows resourceID on success
  * @return \c true on success */
-extern EResourceLocation LocateResource(const char* fileNameOrResID, const char* type, WDL_String& result, const char* bundleID, void* pHInstance);
+extern EResourceLocation LocateResource(const char* fileNameOrResID, const char* type, WDL_String& result, const char* bundleID, void* pHInstance, const char* sharedResourcesSubPath);
 
 /** Load a resource from the binary (windows only).
  * @param type The resource type in lower or upper case, e.g. ttf or TTF for a truetype font
  * @return const void pointer to the data if successfull on windows. Returns nullptr if unsuccessfull or on platforms other than windows */
 extern const void* LoadWinResource(const char* resID, const char* type, int& sizeInBytes, void* pHInstance);
+
+#ifdef OS_IOS
+extern bool IsAuv3AppExtension();
+#endif
+  
+END_IPLUG_NAMESPACE
+

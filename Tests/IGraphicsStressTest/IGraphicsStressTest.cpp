@@ -3,8 +3,8 @@
 
 #include "IControls.h"
 
-IGraphicsStressTest::IGraphicsStressTest(IPlugInstanceInfo instanceInfo)
-: IPLUG_CTOR(kNumParams, 1, instanceInfo)
+IGraphicsStressTest::IGraphicsStressTest(const InstanceInfo& info)
+: Plugin(info, MakeConfig(kNumParams, 1))
 {
   GetParam(0)->InitGain("Dummy");
   
@@ -132,7 +132,7 @@ void IGraphicsStressTest::LayoutUI(IGraphics* pGraphics)
       switch (button) {
         case 0:
         {
-          static IPopupMenu menu {{"DrawRect", "FillRect", "DrawRoundRect", "FillRoundRect", "DrawEllipse", "FillEllipse", "DrawArc", "FillArc", "DrawLine", "DrawDottedLine", "DrawFittedBitmap", "DrawSVG"},
+          static IPopupMenu menu {"Test", {"DrawRect", "FillRect", "DrawRoundRect", "FillRoundRect", "DrawEllipse", "FillEllipse", "DrawArc", "FillArc", "DrawLine", "DrawDottedLine", "DrawFittedBitmap", "DrawSVG"},
             [DoFunc](int indexInMenu, IPopupMenu::Item* itemChosen) {
               DoFunc(EFunc::Set, indexInMenu);
             }};

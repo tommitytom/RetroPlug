@@ -20,6 +20,9 @@
 #include "nanovg.h"
 #endif
 
+using namespace iplug;
+using namespace igraphics;
+
 IPopupMenuControl::IPopupMenuControl(int paramIdx, IText text, IRECT collapsedBounds, IRECT expandedBounds)
 : IControl(collapsedBounds, paramIdx)
 , mSpecifiedCollapsedBounds(collapsedBounds)
@@ -305,7 +308,7 @@ void IPopupMenuControl::DrawPanelShadow(IGraphics& g, MenuPanel* panel)
 #else
   if (!g.CheckLayer(panel->mShadowLayer))
   {
-    g.StartLayer(panel->mRECT);
+    g.StartLayer(this, panel->mRECT);
     g.FillRoundRect(COLOR_BLACK, inner, mRoundness);
     panel->mShadowLayer = g.EndLayer();
     g.ApplyLayerDropShadow(panel->mShadowLayer, IShadow(COLOR_BLACK_DROP_SHADOW, 20.0, 0.0, yDrop, 1.0, true));

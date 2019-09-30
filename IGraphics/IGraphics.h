@@ -31,7 +31,7 @@
  */
 
 #ifndef NO_IGRAPHICS
-#if defined(IGRAPHICS_AGG) + defined(IGRAPHICS_CAIRO) + defined(IGRAPHICS_NANOVG) + defined(IGRAPHICS_LICE) + defined(IGRAPHICS_CANVAS) != 1
+#if defined(IGRAPHICS_AGG) + defined(IGRAPHICS_CAIRO) + defined(IGRAPHICS_NANOVG) + defined(IGRAPHICS_LICE) + defined(IGRAPHICS_CANVAS) + defined(IGRAPHICS_SKIA) != 1
 #error Either NO_IGRAPHICS or one and only one choice of graphics library must be defined!
 #endif
 #endif
@@ -46,7 +46,6 @@
 
 #include "IGraphicsConstants.h"
 #include "IGraphicsStructs.h"
-#include "IGraphicsUtilities.h"
 #include "IGraphicsPopupMenu.h"
 #include "IGraphicsEditorDelegate.h"
 
@@ -65,12 +64,15 @@
 #undef DrawText
 #endif
 
+BEGIN_IPLUG_NAMESPACE
+class IParam;
+BEGIN_IGRAPHICS_NAMESPACE
 class IControl;
 class IPopupMenuControl;
 class ITextEntryControl;
 class ICornerResizerControl;
 class IFPSDisplayControl;
-class IParam;
+
 
 /**  The lowest level base class of an IGraphics context */
 class IGraphics
@@ -202,11 +204,11 @@ public:
    * @param cx The X coordinate in the graphics context of the centre of the circle on which the arc lies
    * @param cy The Y coordinate in the graphics context of the centre of the circle on which the arc lies
    * @param r The radius of the circle on which the arc lies
-   * @param aMin the start angle  of the arc at in degrees clockwise where 0 is up
-   * @param aMax the end angle  of the arc at in degrees clockwise where 0 is up
+   * @param a1 the start angle of the arc at in degrees clockwise where 0 is up
+   * @param a2 the end angle of the arc at in degrees clockwise where 0 is up
    * @param pBlend Optional blend method, see IBlend documentation
    * @param thickness Optional line thickness */
-  virtual void DrawArc(const IColor& color, float cx, float cy, float r, float aMin, float aMax, const IBlend* pBlend = 0, float thickness = 1.f) = 0;
+  virtual void DrawArc(const IColor& color, float cx, float cy, float r, float a1, float a2, const IBlend* pBlend = 0, float thickness = 1.f) = 0;
 
   /** Draw a circle to the graphics context
    * @param color The color to draw the shape with
@@ -314,10 +316,10 @@ public:
    * @param cx The X coordinate in the graphics context of the centre of the circle on which the arc lies
    * @param cy The Y coordinate in the graphics context of the centre of the circle on which the arc lies
    * @param r The radius of the circle on which the arc lies
-   * @param aMin the start angle  of the arc at in degrees clockwise where 0 is up
-   * @param aMax the end angle  of the arc at in degrees clockwise where 0 is up
+   * @param a1 the start angle  of the arc at in degrees clockwise where 0 is up
+   * @param a2 the end angle  of the arc at in degrees clockwise where 0 is up
    * @param pBlend Optional blend method, see IBlend documentation */
-  virtual void FillArc(const IColor& color, float cx, float cy, float r, float aMin, float aMax, const IBlend* pBlend = 0) = 0;
+  virtual void FillArc(const IColor& color, float cx, float cy, float r, float a1, float a2, const IBlend* pBlend = 0) = 0;
 
   /** Fill a convex polygon in the graphics context with a color
    * @param color The color to fill the shape with
@@ -484,7 +486,7 @@ public:
   
   /** /todo 
    * @param r /todo*/
-  void StartLayer(const IRECT& r);
+  void StartLayer(IControl *owner, const IRECT& r);
   
   /** /todo
    * @param layer /todo*/
@@ -602,9 +604,9 @@ public:
    * @param cx /todo
    * @param cy /todo
    * @param r /todo
-   * @param aMin /todo
-   * @param aMax /todo */
-  virtual void PathArc(float cx, float cy, float r, float aMin, float aMax, EWinding winding = EWinding::CW) {}
+   * @param a1 /todo
+   * @param a2 /todo */
+  virtual void PathArc(float cx, float cy, float r, float a1, float a2, EWinding winding = EWinding::CW) {}
 
   /** /todo 
    * @param cx /todo
@@ -854,7 +856,7 @@ public:
 
   /** Get the bundle ID on macOS and iOS, returns emtpy string on other OSs */
   virtual const char* GetBundleID() { return ""; }
-  
+
 protected:
   /** /todo
    * @param control /todo
@@ -875,11 +877,16 @@ public:
   IGraphics(IGEditorDelegate& dlg, int w, int h, int fps = 0, float scale = 1.);
 
   virtual ~IGraphics();
-
-  /** Called by the platform IGraphics class XXXXX /todo and when moving to a new screen with different DPI
+    
+  IGraphics(const IGraphics&) = delete;
+  IGraphics& operator=(const IGraphics&) = delete;
+    
+  /** Called by the platform IGraphics class when moving to a new screen to set DPI
    * @param scale The scale of the display, typically 2 on a macOS retina screen */
   void SetScreenScale(int scale);
-    
+  
+  void SetTranslation(float x, float y) { mXTranslation = x; mYTranslation = y; }
+  
   /** Called repeatedly at frame rate by the platform class to check what the graphics context says is dirty.
    * @param rects The rectangular regions which will be added to to mark what is dirty in the context
    * @return /c true if a control is dirty */
@@ -1005,6 +1012,9 @@ public:
   /** @return True if text entry in progress */
   bool IsInTextEntry() { return mInTextEntry != nullptr; }
   
+  /** @return Ptr to the control that launched the text entry */
+  IControl* GetControlInTextEntry() { return mInTextEntry; }
+  
   /** @return \c true if tool tips are enabled */
   inline bool TooltipsEnabled() const { return mEnableTooltips; }
   
@@ -1047,9 +1057,17 @@ public:
    * @param keyHandlerFunc /todo */
   void SetKeyHandlerFunc(IKeyHandlerFunc func) { mKeyHandlerFunc = func; }
 
+  /** A helper to set the IGraphics KeyHandlerFunc in order to make an instrument playable via QWERTY keys
+   * @param func A function to do something when a MIDI message is triggered */
+  void SetQwertyMidiKeyHandlerFunc(std::function<void(const IMidiMsg& msg)> func = nullptr);
+  
   /** /todo */
   void AttachImGui(std::function<void(IGraphics*)> drawFunc, std::function<void()> setupFunc = nullptr);
-  
+
+  /** Returns a scaling factor for resizing parent windows via the host/plugin API
+   * @return A scaling factor for resizing parent windows */
+  virtual int GetPlatformWindowScale() const { return 1; }
+
 private:
   /* /todo */
   virtual void CreatePlatformImGui() {}
@@ -1078,7 +1096,7 @@ private:
    * @param isContext Determines if the menu is a contextual menu or not
    * @param valIdx The value index for the control value that the prompt relates to */
   void DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT& bounds, int valIdx, bool isContext);
-    
+  
 protected: // TODO: correct?
   /** /todo */
   void StartResizeGesture() { mResizingInProcess = true; };
@@ -1352,7 +1370,13 @@ public:
   void PopupHostContextMenuForParam(IControl* pControl, int paramIdx, float x, float y);
   
 #pragma mark - Resource/File Loading
-    
+  
+  /** Gets the name of the shared resources subpath. */
+  const char* GetSharedResourcesSubPath() const { return mSharedResourcesSubPath.Get(); }
+  
+  /** Sets the name of the shared resources subpath. */
+  void SetSharedResourcesSubPath(const char* sharedResourcesSubPath) { mSharedResourcesSubPath.Set(sharedResourcesSubPath); }
+  
   /** Load a bitmap image from disk or from windows resource
    * @param fileNameOrResID CString file name or resource ID
    * @param nStates The number of states/frames in a multi-frame stacked bitmap
@@ -1389,6 +1413,9 @@ protected:
    * @return bool* /todo */
   virtual bool LoadAPIFont(const char* fontID, const PlatformFontPtr& font) = 0;
 
+  /** /todo */
+  virtual bool AssetsLoaded() { return true; }
+    
   /** /todo */
   virtual int AlphaChannel() const = 0;
 
@@ -1468,12 +1495,15 @@ private:
   
   IPopupMenu mPromptPopupMenu;
   
+  WDL_String mSharedResourcesSubPath;
+  
   ECursor mCursorType = ECursor::ARROW;
   int mWidth;
   int mHeight;
   int mFPS;
   int mScreenScale = 1; // the scaling of the display that the UI is currently on e.g. 2 for retina
   float mDrawScale = 1.f; // scale deviation from  default width and height i.e stretching the UI by dragging bottom right hand corner
+
   int mIdleTicks = 0;
   IControl* mMouseCapture = nullptr;
   IControl* mMouseOver = nullptr;
@@ -1510,11 +1540,13 @@ protected:
   bool mTabletInput = false;
   float mCursorX = -1.f;
   float mCursorY = -1.f;
-
+  float mXTranslation = 0.f;
+  float mYTranslation = 0.f;
+  
   friend class IGraphicsLiveEdit;
   friend class ICornerResizerControl;
   friend class ITextEntryControl;
-  
+
   std::stack<ILayer*> mLayers;
   
 #ifdef IGRAPHICS_IMGUI
@@ -1522,3 +1554,6 @@ public:
   std::unique_ptr<ImGuiRenderer> mImGuiRenderer;
 #endif
 };
+
+END_IGRAPHICS_NAMESPACE
+END_IPLUG_NAMESPACE

@@ -33,6 +33,9 @@
 
 #include "IGraphics.h"
 
+BEGIN_IPLUG_NAMESPACE
+BEGIN_IGRAPHICS_NAMESPACE
+
 /** The lowest level base class of an IGraphics control. A control is anything on the GUI 
 *  @ingroup BaseControls */
 class IControl
@@ -67,7 +70,10 @@ public:
    * @param bounds The rectangular area that the control occupies
    * @param actionFunc pass in a lambda function to provide custom functionality when the control "action" happens (usually mouse down). */
   IControl(const IRECT& bounds, IActionFunction actionFunc);
-
+  
+  IControl(const IControl&) = delete;
+  void operator=(const IControl&) = delete;
+  
   /** Destructor. Clean up any resources that your control owns. */
   virtual ~IControl() {}
 
@@ -216,7 +222,7 @@ public:
   
   /** Get a const pointer to the IParam object (owned by the editor delegate class), associated with this control
    * @return const pointer to an IParam or nullptr if the control is not associated with a parameter */ 
-  const IParam* GetParam(int valIdx = 0);
+  const IParam* GetParam(int valIdx = 0) const;
   
   /** Set the control's value from the delegate
    * This method is called from the class implementing the IEditorDelegate interface in order to update a control's value members and set it to be marked dirty for redraw.
@@ -534,6 +540,11 @@ public:
   
   virtual ~IBitmapBase() {}
   
+  void AttachIControl(IControl* pControl)
+  {
+    mControl = pControl;
+  }
+  
   void GrayOut(bool gray)
   {
     mBlend.mWeight = (gray ? GRAYED_ALPHA : 1.0f);
@@ -543,10 +554,23 @@ public:
   {
     mBlend = blend;
   }
+  
+  void DrawBitmap(IGraphics& g)
+  {
+    int i = 1;
+    if (mBitmap.N() > 1)
+    {
+      i = 1 + int(0.5 + mControl->GetValue() * (double) (mBitmap.N() - 1));
+      i = Clip(i, 1, mBitmap.N());
+    }
+    
+    g.DrawBitmap(mBitmap, mControl->GetRECT(), i, &mBlend);
+  }
 
 protected:
   IBitmap mBitmap;
   IBlend mBlend;
+  IControl* mControl;
 };
 
 /** A base interface to be combined with IControl for vectorial controls "IVControls", in order for them to share a common style
@@ -668,7 +692,8 @@ public:
   void SetShadowOffset(float offset) { mStyle.shadowOffset = offset; mControl->SetDirty(false); }
   void SetFrameThickness(float thickness) { mStyle.frameThickness = thickness; mControl->SetDirty(false); }
   void SetSplashRadius(float radius) { mSplashRadius = radius * mMaxSplashRadius; }
-
+  void SetSplashPoint(float x, float y) { mSplashX = x; mSplashY = y; }
+  
   void SetStyle(const IVStyle& style)
   {
     mStyle = style;
@@ -697,9 +722,7 @@ public:
   
   void DrawSplash(IGraphics& g)
   {
-    float mouseDownX, mouseDownY;
-    g.GetMouseDownPoint(mouseDownX, mouseDownY);
-    g.FillCircle(GetColor(kHL), mouseDownX, mouseDownY, mSplashRadius);
+    g.FillCircle(GetColor(kHL), mSplashX, mSplashY, mSplashRadius);
   }
   
   virtual void DrawBackGround(IGraphics& g, const IRECT& rect)
@@ -950,6 +973,8 @@ protected:
   bool mLabelInWidget = false;
   bool mValueInWidget = false;
   float mSplashRadius = 0.f;
+  float mSplashX = 0.f;
+  float mSplashY = 0.f;
   float mMaxSplashRadius = 50.f;
   IRECT mWidgetBounds; // The knob/slider/button
   IRECT mLabelBounds; // A piece of text above the control
@@ -1328,26 +1353,25 @@ public:
   IBitmapControl(float x, float y, const IBitmap& bitmap, int paramIdx = kNoParameter, EBlend blend = EBlend::Default)
   : IControl(IRECT(x, y, bitmap), paramIdx)
   , IBitmapBase(bitmap, blend)
-  {}
+  {
+    AttachIControl(this);
+  }
   
   IBitmapControl(const IRECT& bounds, const IBitmap& bitmap, int paramIdx = kNoParameter, EBlend blend = EBlend::Default)
   : IControl(bounds, paramIdx)
   , IBitmapBase(bitmap, blend)
-  {}
+  {
+    AttachIControl(this);
+  }
   
   virtual ~IBitmapControl() {}
 
-  void Draw(IGraphics& g) override;
+  void Draw(IGraphics& g) override { DrawBitmap(g); }
 
   /** Implement to do something when graphics is scaled globally (e.g. moves to high DPI screen),
    *  if you override this make sure you call the parent method in order to rescale mBitmap */
-  void OnRescale() override;
-  
-  void GrayOut(bool gray) override
-  {
-    IBitmapBase::GrayOut(gray);
-    IControl::GrayOut(gray);
-  }
+  void OnRescale() override { mBitmap = GetUI()->GetScaledBitmap(mBitmap); }
+  void GrayOut(bool gray) override { IBitmapBase::GrayOut(gray); IControl::GrayOut(gray); }
 };
 
 /** A basic control to draw an SVG image to the screen. Optionally, cache SVG to an ILayer. */
@@ -1368,7 +1392,7 @@ public:
     {
       if (!g.CheckLayer(mLayer))
       {
-        g.StartLayer(mRECT);
+        g.StartLayer(this, mRECT);
         g.DrawSVG(mSVG, mRECT);
         mLayer = g.EndLayer();
       }
@@ -1394,19 +1418,38 @@ private:
 class ITextControl : public IControl
 {
 public:
-  ITextControl(const IRECT& bounds, const char* str = "", const IText& text = DEFAULT_TEXT, const IColor& BGColor = DEFAULT_BGCOLOR);
+  ITextControl(const IRECT& bounds, const char* str = "", const IText& text = DEFAULT_TEXT, const IColor& BGColor = DEFAULT_BGCOLOR, bool setBoundsBasedOnStr = false);
 
   void Draw(IGraphics& g) override;
-
+  void OnInit() override;
+  
   virtual void SetStr(const char* str);
   virtual void SetStrFmt(int maxlen, const char* fmt, ...);
   virtual void ClearStr() { SetStr(""); }
   
-  void SetBoundsBasedOnTextDimensions();
+  void SetBoundsBasedOnStr();
   
 protected:
   WDL_String mStr;
   IColor mBGColor;
+  bool mSetBoundsBasedOnStr = false;
+};
+
+class IURLControl : public ITextControl
+{
+public:
+  IURLControl(const IRECT& bounds, const char* str, const char* url, const IText& text = DEFAULT_TEXT, const IColor& BGColor = DEFAULT_BGCOLOR, const IColor& MOColor = COLOR_WHITE, const IColor& CLColor = COLOR_BLUE);
+  
+  void Draw(IGraphics& g) override;
+  
+  void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+  void OnMouseOver(float x, float y, const IMouseMod& mod) override { GetUI()->SetMouseCursor(ECursor::HAND); IControl::OnMouseOver(x, y, mod); };
+  void OnMouseOut() override { GetUI()->SetMouseCursor(); IControl::OnMouseOut(); }
+
+protected:
+  WDL_String mURLStr;
+  IColor mOriginalColor, mMOColor, mCLColor;
+  bool mClicked = false;
 };
 
 class ITextToggleControl : public ITextControl
@@ -1435,5 +1478,30 @@ protected:
   bool mShowParamLabel;
   IRECT mTri;
 };
+
+/** A control to use as a placeholder during development */
+class PlaceHolder : public ITextControl
+{
+public:
+  PlaceHolder(const IRECT& bounds, const char* str = "Place Holder");
+  
+  void Draw(IGraphics& g) override;
+  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override { GetUI()->CreateTextEntry(*this, mText, mRECT, mStr.Get()); }
+  void OnTextEntryCompletion(const char* str, int valIdx) override { SetStr(str); }
+  void OnResize() override;
+
+protected:
+  IRECT mCentreLabelBounds;
+  WDL_String mTLHCStr;
+  WDL_String mWidthStr;
+  WDL_String mHeightStr;
+  IText mTLGCText = DEFAULT_TEXT.WithAlign(EAlign::Near);
+  IText mWidthText = DEFAULT_TEXT;
+  IText mHeightText = DEFAULT_TEXT.WithAngle(270.f);
+  static constexpr float mInset = 10.f;
+};
+
+END_IGRAPHICS_NAMESPACE
+END_IPLUG_NAMESPACE
 
 /**@}*/
