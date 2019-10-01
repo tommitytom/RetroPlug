@@ -11,7 +11,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 
-#define VERSION(v1, v2, v3) ((int)((v1 << 16) | (v2 << 8) | (v3 & 0xFF)))
+#include "config/version.h"
 
 std::string layoutToString(InstanceLayout layout) {
 	switch (layout) {
@@ -335,7 +335,7 @@ void deserialize(const char * data, RetroPlug& plug) {
 
 		const std::string& versionStr = root["version"].GetString();
 		int version = versionToInt(versionStr);
-		if (version >= VERSION(0, 1, 0)) {
+		if (version >= VERSION_INT(0, 1, 0)) {
 			SaveStateType saveType = SaveStateType::State;
 			const auto& saveTypeStr = root.FindMember("saveType");
 			if (saveTypeStr != root.MemberEnd()) {
