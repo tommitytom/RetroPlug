@@ -36,7 +36,7 @@ public:
 
 	void Draw(IGraphics& g) override;
 
-	void OnDrop(const char* str);
+	void OnDrop(float x, float y, const char* str) override;
 
 	void LoadProject(const tstring& path);
 

@@ -125,7 +125,15 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 	}
 }
 
-void RetroPlugRoot::OnDrop(const char* str) {
+void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
+	for (auto view : _views) {
+		if (view->GetArea().Contains(x, y)) {
+			_activeIdx = GetViewIndex(view);
+			SetActive(_views[_activeIdx]);
+			break;
+		}
+	}
+
 	auto plug = _active->Plug();
 	
 	tstring path = tstr(str);
