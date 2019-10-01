@@ -78,6 +78,7 @@ std::string audioRoutingToString(AudioChannelRouting  type) {
 AudioChannelRouting stringToAudioRouting(const std::string & model) {
 	if (model == "stereoMixDown") return AudioChannelRouting::StereoMixDown;
 	if (model == "twoChannelsPerInstance") return AudioChannelRouting::TwoChannelsPerInstance;
+	if (model == "twoChannelsPerChannel") return AudioChannelRouting::TwoChannelsPerChannel;
 	return AudioChannelRouting::StereoMixDown;
 }
 
