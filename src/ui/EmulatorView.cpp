@@ -215,7 +215,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
 			if (indexInMenu == settingsMenu->NItems() - 1) {
-				openFolder(getContentPath());
+				openShellFolder(getContentPath());
 			}
 		});
 
@@ -298,7 +298,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			syncMenu->CheckItem(selectedMode, true);
 			syncMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 				LsdjSyncModeMenuItems menuItem = (LsdjSyncModeMenuItems)indexInMenu;
-				if (menuItem <= LsdjSyncModeMenuItems::KeyboardModeArduinoboy) {
+				if (menuItem <= LsdjSyncModeMenuItems::MidiMap) {
 					_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
 				} else {
 					_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
@@ -424,7 +424,7 @@ void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
 				for (const auto& song : songData) {
 					fs::path p(paths[0]);
 					p /= song.name + ".lsdsng";
-					writeFile(p.wstring(), song.data);
+					writeFile(tstr(p.wstring()), song.data);
 				}
 			}
 		}
@@ -504,7 +504,7 @@ void EmulatorView::ExportKits() {
 				if (kit) {
 					fs::path p(paths[0]);
 					p /= kit->name + ".kit";
-					writeFile(p.wstring(), kit->data);
+					writeFile(tstr(p.wstring()), kit->data);
 				}
 			}
 		}

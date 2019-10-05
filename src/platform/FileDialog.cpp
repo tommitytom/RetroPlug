@@ -138,6 +138,9 @@ tstring BasicFileSave(IGraphics* ui, const std::vector<FileDialogFilters>& filte
 #undef T
 #include "IGraphics.h"
 
+using namespace iplug;
+using namespace igraphics;
+
 std::vector<tstring> BasicFileOpen(IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect, bool foldersOnly) {
 	WDL_String fileName;
 	WDL_String path;
