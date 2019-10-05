@@ -36,7 +36,7 @@ private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
 	tstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
-	SaveStateType _saveType = SaveStateType::State;
+	SaveStateType _saveType = SaveStateType::Sram;
 
 	std::atomic<AudioChannelRouting> _audioRouting = AudioChannelRouting::StereoMixDown;
 	std::atomic<MidiChannelRouting> _midiRouting = MidiChannelRouting::SendToAll;

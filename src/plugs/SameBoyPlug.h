@@ -19,8 +19,8 @@ enum class GameboyModel {
 };
 
 enum class SaveStateType {
-	State,
-	Sram
+	Sram,
+	State	
 };
 
 class SameBoyPlug;
@@ -48,7 +48,7 @@ private:
 
 	std::vector<std::byte> _romData;
 	std::vector<std::byte> _saveData;
-	SaveStateType _saveType = SaveStateType::State;
+	SaveStateType _saveType = SaveStateType::Sram;
 
 	bool _watchRom = false;
 

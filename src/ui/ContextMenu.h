@@ -114,8 +114,8 @@ static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
 
 static IPopupMenu* createSaveOptionsMenu(SaveStateType checked) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save State", (int)SaveStateType::State);
 	menu->AddItem("Save SRAM", (int)SaveStateType::Sram);
+	menu->AddItem("Save State", (int)SaveStateType::State);
 	menu->CheckItemAlone((int)checked);
 	return menu;
 }
