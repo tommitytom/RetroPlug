@@ -456,9 +456,14 @@ void EmulatorView::LoadKit(int index) {
 	if (paths.size() > 0) {
 		std::string error;
 		Lsdj& lsdj = _plug->lsdj();
+		bool exists = lsdj.kitData[index] != nullptr;
 		if (lsdj.loadKit(paths[0], index, error)) {
 			lsdj.patchKits(_plug->romData());
 			_plug->updateRom();
+			
+			if (!exists) {
+				_plug->reset(_plug->model(), true);
+			}
 		} else {
 			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
 		}
