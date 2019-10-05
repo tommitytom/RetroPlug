@@ -298,7 +298,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			syncMenu->CheckItem(selectedMode, true);
 			syncMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 				LsdjSyncModeMenuItems menuItem = (LsdjSyncModeMenuItems)indexInMenu;
-				if (menuItem <= LsdjSyncModeMenuItems::KeyboardModeArduinoboy) {
+				if (menuItem <= LsdjSyncModeMenuItems::MidiMap) {
 					_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
 				} else {
 					_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
