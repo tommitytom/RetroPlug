@@ -203,7 +203,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
 	target->init(romPath, source->model(), false);
 
-	if (source->lsdj().found) {
+	if (source->lsdj().found && target->lsdj().found) {
 		target->lsdj().kitData = source->lsdj().kitData;
 		target->lsdj().patchKits(target->romData());
 		target->updateRom();
