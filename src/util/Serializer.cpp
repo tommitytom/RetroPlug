@@ -38,9 +38,8 @@ std::string modelToString(GameboyModel model) {
 	case GameboyModel::CgbC: return "CGB_C";
 	case GameboyModel::CgbE: return "CGB_E";
 	case GameboyModel::Agb: return "AGB";
+	default: return "CGB_E";
 	}
-
-	return "CGB_E";
 }
 
 GameboyModel stringToModel(const std::string & model) {
@@ -70,6 +69,7 @@ std::string audioRoutingToString(AudioChannelRouting  type) {
 	switch (type) {
 	case AudioChannelRouting::StereoMixDown: return "stereoMixDown";
 	case AudioChannelRouting::TwoChannelsPerInstance: return "twoChannelsPerInstance";
+	case AudioChannelRouting::TwoChannelsPerChannel: return "twoChannelsPerChannel";
 	}
 
 	return "stereoMixDown";
