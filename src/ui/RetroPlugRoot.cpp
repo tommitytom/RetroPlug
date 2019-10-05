@@ -7,7 +7,7 @@
 #include "util/Serializer.h"
 #include "Keys.h"
 
-RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug): IControl(b), _plug(plug) {
+RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host) {
 	
 }
 
@@ -74,13 +74,7 @@ void RetroPlugRoot::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 }
 
 void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
-	for (auto view : _views) {
-		if (view->GetArea().Contains(x, y)) {
-			_activeIdx = GetViewIndex(view);
-			SetActive(_views[_activeIdx]);
-			break;
-		}
-	}
+	SelectActiveAtPoint(x, y);
 
 	if (mod.R) {
 		if (_active) {
@@ -137,7 +131,9 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 	}
 }
 
-void RetroPlugRoot::OnDrop(const char* str) {
+void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
+	SelectActiveAtPoint(x, y);
+
 	auto plug = _active->Plug();
 	
 	tstring path = tstr(str);
@@ -332,6 +328,13 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	IPopupMenu* audioRouting = createAudioRoutingMenu(_plug->audioRouting());
 	IPopupMenu* midiRouting = createMidiRoutingMenu(_plug->midiRouting());
 
+	// Temporarily disable multiple instances in Ableton on Mac due to a bug
+	#ifdef WIN32
+	bool multiInstance = true;
+	#else
+	bool multiInstance = _host != EHost::kHostAbletonLive;
+	#endif
+
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("New", (int)ProjectMenuItems::New);
 	menu->AddItem("Load...", (int)ProjectMenuItems::Load);
@@ -340,12 +343,22 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	menu->AddSeparator((int)ProjectMenuItems::Sep1);
 	menu->AddItem("Save Options", saveOptionsMenu, (int)ProjectMenuItems::SaveOptions);
 	menu->AddSeparator((int)ProjectMenuItems::Sep2);
-	menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
-	menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
-	menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
-	menu->AddSeparator((int)ProjectMenuItems::Sep3);
-	menu->AddItem("Audio Routing", audioRouting, (int)ProjectMenuItems::AudioRouting);
-	menu->AddItem("MIDI Routing", midiRouting, (int)ProjectMenuItems::MidiRouting);
+
+	if (multiInstance) {
+		menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
+		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
+		menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
+		menu->AddSeparator((int)ProjectMenuItems::Sep3);
+		menu->AddItem("Audio Routing", audioRouting, (int)ProjectMenuItems::AudioRouting);
+		menu->AddItem("MIDI Routing", midiRouting, (int)ProjectMenuItems::MidiRouting);
+	} else {
+		menu->AddItem("Add Instance", (int)ProjectMenuItems::AddInstance, IPopupMenu::Item::kDisabled);
+		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, IPopupMenu::Item::kDisabled);
+		menu->AddItem("Layout", (int)ProjectMenuItems::Layout, IPopupMenu::Item::kDisabled);
+		menu->AddSeparator((int)ProjectMenuItems::Sep3);
+		menu->AddItem("Audio Routing", (int)ProjectMenuItems::AudioRouting, IPopupMenu::Item::kDisabled);
+		menu->AddItem("MIDI Routing", (int)ProjectMenuItems::MidiRouting, IPopupMenu::Item::kDisabled);
+	}
 
 	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 		CreatePlugInstance(_active, (CreateInstanceType)idx);

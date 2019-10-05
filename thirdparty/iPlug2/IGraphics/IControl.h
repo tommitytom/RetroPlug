@@ -132,7 +132,7 @@ public:
   virtual void OnMouseOut();
 
   /** Implement to do something when something was drag 'n dropped onto this control */
-  virtual void OnDrop(const char* str) {};
+  virtual void OnDrop(float x, float y, const char* str) {};
 
   /** Implement to do something when graphics is scaled globally (e.g. moves to high DPI screen) */
   virtual void OnRescale() {}

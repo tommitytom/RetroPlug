@@ -22,7 +22,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 		pGraphics->LoadFont("Roboto-Regular", GAMEBOY_FN);
 		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
-		RetroPlugRoot* root = new RetroPlugRoot(pGraphics->GetBounds(), &_plug);
+		RetroPlugRoot* root = new RetroPlugRoot(pGraphics->GetBounds(), &_plug, GetHost());
 		pGraphics->AttachControl(root);
 
 		pGraphics->SetKeyHandlerFunc([root](const IKeyPress& key, bool isUp) {

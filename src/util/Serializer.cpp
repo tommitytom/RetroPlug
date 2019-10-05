@@ -11,7 +11,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 
-#define VERSION(v1, v2, v3) ((int)((v1 << 16) | (v2 << 8) | (v3 & 0xFF)))
+#include "config/version.h"
 
 std::string layoutToString(InstanceLayout layout) {
 	switch (layout) {
@@ -78,6 +78,7 @@ std::string audioRoutingToString(AudioChannelRouting  type) {
 AudioChannelRouting stringToAudioRouting(const std::string & model) {
 	if (model == "stereoMixDown") return AudioChannelRouting::StereoMixDown;
 	if (model == "twoChannelsPerInstance") return AudioChannelRouting::TwoChannelsPerInstance;
+	if (model == "twoChannelsPerChannel") return AudioChannelRouting::TwoChannelsPerChannel;
 	return AudioChannelRouting::StereoMixDown;
 }
 
@@ -334,7 +335,7 @@ void deserialize(const char * data, RetroPlug& plug) {
 
 		const std::string& versionStr = root["version"].GetString();
 		int version = versionToInt(versionStr);
-		if (version >= VERSION(0, 1, 0)) {
+		if (version >= VERSION_INT(0, 1, 0)) {
 			SaveStateType saveType = SaveStateType::State;
 			const auto& saveTypeStr = root.FindMember("saveType");
 			if (saveTypeStr != root.MemberEnd()) {

@@ -63,7 +63,7 @@ static tstring changeExt(const tstring& path, const tstring& ext) {
 static tstring getExt(const tstring& path) {
 	size_t dotIdx = path.find_last_of('.');
 	if (dotIdx != -1) {
-		return path.substr(0, dotIdx + 1);
+		return path.substr(dotIdx, path.length() - dotIdx);
 	}
 
 	return T("");
