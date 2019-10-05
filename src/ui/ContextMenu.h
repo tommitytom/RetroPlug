@@ -138,7 +138,7 @@ static IPopupMenu* createMidiRoutingMenu(MidiChannelRouting mode) {
 }
 
 static IPopupMenu* createSongMenu(bool working) {
-	IPopupMenu* menu = new IPopupMenu(0, true);
+	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("Load (and reset)", (int)SongMenuItems::Load, working ? IPopupMenu::Item::kDisabled : 0);
 	menu->AddItem("Export .lsdsng...", (int)SongMenuItems::Export);
 	menu->AddItem("Delete", (int)SongMenuItems::Delete, working ? IPopupMenu::Item::kDisabled : 0);
@@ -146,7 +146,7 @@ static IPopupMenu* createSongMenu(bool working) {
 }
 
 static IPopupMenu* createKitMenu(bool empty) {
-	IPopupMenu* menu = new IPopupMenu(0, true);
+	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem(!empty ? "Replace..." : "Load (and reset)...", (int)KitMenuItems::Load);
 	menu->AddItem("Export .kit...", (int)KitMenuItems::Export, empty ? IPopupMenu::Item::kDisabled : 0);
 	menu->AddItem("Delete", (int)KitMenuItems::Delete, empty ? IPopupMenu::Item::kDisabled : 0);
