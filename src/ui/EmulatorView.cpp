@@ -330,7 +330,7 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 
 	for (auto& setting : settings) {
 		const std::string& name = setting.first;
-		IPopupMenu* settingMenu = new IPopupMenu(0, true);
+		IPopupMenu* settingMenu = new IPopupMenu();
 		for (size_t i = 0; i < setting.second.size(); i++) {
 			auto& option = setting.second[i];
 			settingMenu->AddItem(option.c_str(), i);
