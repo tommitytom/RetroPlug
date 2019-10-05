@@ -19,9 +19,10 @@ private:
 	size_t _activeIdx = 0;
 
 	IPopupMenu _menu;
+	EHost _host;
 
 public:
-	RetroPlugRoot(IRECT b, RetroPlug* plug);
+	RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host);
 	~RetroPlugRoot();
 
 	void OnInit() override;
@@ -77,5 +78,15 @@ private:
 		}
 
 		return -1;
+	}
+
+	void SelectActiveAtPoint(float x, float y) {
+		for (auto view : _views) {
+			if (view->GetArea().Contains(x, y)) {
+				_activeIdx = GetViewIndex(view);
+				SetActive(_views[_activeIdx]);
+				break;
+			}
+		}
 	}
 };
