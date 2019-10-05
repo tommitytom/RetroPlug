@@ -1335,6 +1335,36 @@
 		53FAC56B234222F000B61FFB /* FileWatcherOSX.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC569234222F000B61FFB /* FileWatcherOSX.cpp */; };
 		53FAC56C234222F000B61FFB /* FileWatcher.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC56A234222F000B61FFB /* FileWatcher.cpp */; };
 		53FAC5722342235100B61FFB /* crc32.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC5702342235000B61FFB /* crc32.cpp */; };
+		53FAC5732342351300B61FFB /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC51823421A1E00B61FFB /* IGraphicsCoreText.mm */; };
+		53FAC5742342382100B61FFB /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC54223421A4D00B61FFB /* IGraphicsNanoVG_src.m */; };
+		53FAC57723482E4700B61FFB /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC54223421A4D00B61FFB /* IGraphicsNanoVG_src.m */; };
+		53FAC57823482E4900B61FFB /* IGraphicsNanoVG_src.m in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC54223421A4D00B61FFB /* IGraphicsNanoVG_src.m */; };
+		53FAC57923482F0100B61FFB /* FileWatcher.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC56A234222F000B61FFB /* FileWatcher.cpp */; };
+		53FAC57A23482F0100B61FFB /* FileWatcherOSX.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC569234222F000B61FFB /* FileWatcherOSX.cpp */; };
+		53FAC57B23482F0200B61FFB /* FileWatcher.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC56A234222F000B61FFB /* FileWatcher.cpp */; };
+		53FAC57C23482F0200B61FFB /* FileWatcherOSX.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC569234222F000B61FFB /* FileWatcherOSX.cpp */; };
+		53FAC57D23482F1C00B61FFB /* crc32.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC5702342235000B61FFB /* crc32.cpp */; };
+		53FAC57E23482F1D00B61FFB /* crc32.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC5702342235000B61FFB /* crc32.cpp */; };
+		53FAC57F23482F2E00B61FFB /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53F8330C22E29BCF00D2E2A2 /* IPlugProcessor.cpp */; };
+		53FAC58023482F2E00B61FFB /* IPlugProcessor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53F8330C22E29BCF00D2E2A2 /* IPlugProcessor.cpp */; };
+		53FAC58123482F4A00B61FFB /* IGraphics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC55723421A5D00B61FFB /* IGraphics.cpp */; };
+		53FAC58223482F4B00B61FFB /* IGraphics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC55723421A5D00B61FFB /* IGraphics.cpp */; };
+		53FAC58323482F5500B61FFB /* IControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC55623421A5D00B61FFB /* IControl.cpp */; };
+		53FAC58423482F5500B61FFB /* IGraphicsEditorDelegate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC56123421A5F00B61FFB /* IGraphicsEditorDelegate.cpp */; };
+		53FAC58523482F5600B61FFB /* IControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC55623421A5D00B61FFB /* IControl.cpp */; };
+		53FAC58623482F5600B61FFB /* IGraphicsEditorDelegate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC56123421A5F00B61FFB /* IGraphicsEditorDelegate.cpp */; };
+		53FAC58723482F8600B61FFB /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC50E23421A1C00B61FFB /* IGraphicsMac_view.mm */; };
+		53FAC58823482F8600B61FFB /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC50B23421A1B00B61FFB /* IGraphicsMac.mm */; };
+		53FAC58923482F8700B61FFB /* IGraphicsMac_view.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC50E23421A1C00B61FFB /* IGraphicsMac_view.mm */; };
+		53FAC58A23482F8700B61FFB /* IGraphicsMac.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC50B23421A1B00B61FFB /* IGraphicsMac.mm */; };
+		53FAC58B23482FA500B61FFB /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52823421A3100B61FFB /* IControls.cpp */; };
+		53FAC58C23482FA500B61FFB /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52423421A3100B61FFB /* IPopupMenuControl.cpp */; };
+		53FAC58D23482FA500B61FFB /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52E23421A3300B61FFB /* ITextEntryControl.cpp */; };
+		53FAC58E23482FA600B61FFB /* IControls.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52823421A3100B61FFB /* IControls.cpp */; };
+		53FAC58F23482FA600B61FFB /* IPopupMenuControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52423421A3100B61FFB /* IPopupMenuControl.cpp */; };
+		53FAC59023482FA600B61FFB /* ITextEntryControl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC52E23421A3300B61FFB /* ITextEntryControl.cpp */; };
+		53FAC59123482FC800B61FFB /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC51823421A1E00B61FFB /* IGraphicsCoreText.mm */; };
+		53FAC59223482FC900B61FFB /* IGraphicsCoreText.mm in Sources */ = {isa = PBXBuildFile; fileRef = 53FAC51823421A1E00B61FFB /* IGraphicsCoreText.mm */; };
 		53FFE72022DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
 		53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
 		53FFE72222DB524800B7C5B5 /* PaRingBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 53FFE71F22DB524800B7C5B5 /* PaRingBuffer.c */; };
@@ -5544,31 +5574,44 @@
 			buildActionMask = 2147483647;
 			files = (
 				535F95FA22E1B5A80054DAAE /* vio.c in Sources */,
+				53FAC57A23482F0100B61FFB /* FileWatcherOSX.cpp in Sources */,
 				53FFE74522DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
+				53FAC57723482E4700B61FFB /* IGraphicsNanoVG_src.m in Sources */,
 				53EC2E1822E2D66100889BFC /* Serializer.cpp in Sources */,
+				53FAC58B23482FA500B61FFB /* IControls.cpp in Sources */,
+				53FAC57D23482F1C00B61FFB /* crc32.cpp in Sources */,
 				535F95BE22E1B5A80054DAAE /* groove.c in Sources */,
 				53FFE76A22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
+				53FAC57F23482F2E00B61FFB /* IPlugProcessor.cpp in Sources */,
 				53F8333E22E29BD000D2E2A2 /* IPlugTimer.cpp in Sources */,
 				53EC2E0C22E2D66100889BFC /* File.cpp in Sources */,
 				53FFE72C22DB525900B7C5B5 /* rom.c in Sources */,
 				53F8334822E29BD000D2E2A2 /* IPlugPluginBase.cpp in Sources */,
 				53FFE73422DB525900B7C5B5 /* sample.c in Sources */,
+				53FAC58D23482FA500B61FFB /* ITextEntryControl.cpp in Sources */,
 				53F8333122E29BD000D2E2A2 /* IPlugPaths.mm in Sources */,
 				535F958022E1B5A80054DAAE /* error.c in Sources */,
 				535F95C722E1B5A80054DAAE /* phrase.c in Sources */,
 				53FFE75722DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
+				53FAC58123482F4A00B61FFB /* IGraphics.cpp in Sources */,
 				53FFE72122DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
 				535F95B622E1B5A80054DAAE /* row.c in Sources */,
+				53FAC58323482F5500B61FFB /* IControl.cpp in Sources */,
+				53FAC58823482F8600B61FFB /* IGraphicsMac.mm in Sources */,
+				53FAC58C23482FA500B61FFB /* IPopupMenuControl.cpp in Sources */,
 				535F95EB22E1B5A80054DAAE /* chain.c in Sources */,
 				535F95A422E1B5A80054DAAE /* instrument.c in Sources */,
 				535F959422E1B5A80054DAAE /* compression.c in Sources */,
 				53EC2E3122E2D69400889BFC /* FileDialog.cpp in Sources */,
 				53F8332522E29BD000D2E2A2 /* IPlugAPIBase.cpp in Sources */,
 				53FFE77222DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FAC59123482FC800B61FFB /* IGraphicsCoreText.mm in Sources */,
 				53CA6C6C22E4449D00C061B3 /* Path.cpp in Sources */,
 				53EC2E2022E2D66100889BFC /* base64.cpp in Sources */,
 				535F959C22E1B5A80054DAAE /* synth.c in Sources */,
+				53FAC57923482F0100B61FFB /* FileWatcher.cpp in Sources */,
 				53FFE74E22DB528100B7C5B5 /* Lsdj.cpp in Sources */,
+				53FAC58723482F8600B61FFB /* IGraphicsMac_view.mm in Sources */,
 				535F958C22E1B5A80054DAAE /* project.c in Sources */,
 				53F8331422E29BD000D2E2A2 /* IPlugParameter.cpp in Sources */,
 				535F957722E1B5A70054DAAE /* song.c in Sources */,
@@ -5577,6 +5620,7 @@
 				53F8331D22E29BD000D2E2A2 /* IPlugPaths.cpp in Sources */,
 				53CA6C6422E4449D00C061B3 /* Shell.mm in Sources */,
 				535F95CF22E1B5A80054DAAE /* command.c in Sources */,
+				53FAC58423482F5500B61FFB /* IGraphicsEditorDelegate.cpp in Sources */,
 				535F95AE22E1B5A80054DAAE /* sav.c in Sources */,
 				535F960322E1B5A80054DAAE /* table.c in Sources */,
 				535F95E322E1B5A80054DAAE /* word.c in Sources */,
@@ -5635,7 +5679,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				535F95FC22E1B5A80054DAAE /* vio.c in Sources */,
+				53FAC58F23482FA600B61FFB /* IPopupMenuControl.cpp in Sources */,
 				53F8331622E29BD000D2E2A2 /* IPlugParameter.cpp in Sources */,
+				53FAC57B23482F0200B61FFB /* FileWatcher.cpp in Sources */,
+				53FAC57823482E4900B61FFB /* IGraphicsNanoVG_src.m in Sources */,
 				53FFE74722DB526C00B7C5B5 /* SameBoyPlug.cpp in Sources */,
 				53CA6C6E22E4449D00C061B3 /* Path.cpp in Sources */,
 				53F8331F22E29BD000D2E2A2 /* IPlugPaths.cpp in Sources */,
@@ -5643,38 +5690,49 @@
 				53FFE76C22DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53F8332722E29BD000D2E2A2 /* IPlugAPIBase.cpp in Sources */,
 				53EC2E0E22E2D66100889BFC /* File.cpp in Sources */,
+				53FAC58E23482FA600B61FFB /* IControls.cpp in Sources */,
 				53FFE72E22DB525900B7C5B5 /* rom.c in Sources */,
 				53FFE73622DB525900B7C5B5 /* sample.c in Sources */,
 				535F958222E1B5A80054DAAE /* error.c in Sources */,
 				535F95C922E1B5A80054DAAE /* phrase.c in Sources */,
 				53F832E922E293EA00D2E2A2 /* IPlugAU.cpp in Sources */,
+				53FAC59223482FC900B61FFB /* IGraphicsCoreText.mm in Sources */,
 				53FFE75922DB528900B7C5B5 /* RetroPlugInstrument.cpp in Sources */,
 				53FFE72322DB524800B7C5B5 /* PaRingBuffer.c in Sources */,
+				53FAC57E23482F1D00B61FFB /* crc32.cpp in Sources */,
 				53EC2E3322E2D69400889BFC /* FileDialog.cpp in Sources */,
 				535F95B822E1B5A80054DAAE /* row.c in Sources */,
 				535F95ED22E1B5A80054DAAE /* chain.c in Sources */,
 				53F8334A22E29BD000D2E2A2 /* IPlugPluginBase.cpp in Sources */,
 				53CA6C6622E4449D00C061B3 /* Shell.mm in Sources */,
+				53FAC58023482F2E00B61FFB /* IPlugProcessor.cpp in Sources */,
+				53FAC58A23482F8700B61FFB /* IGraphicsMac.mm in Sources */,
 				53F8333322E29BD000D2E2A2 /* IPlugPaths.mm in Sources */,
 				535F95A622E1B5A80054DAAE /* instrument.c in Sources */,
 				53EC2E1A22E2D66100889BFC /* Serializer.cpp in Sources */,
 				53EC2E2222E2D66100889BFC /* base64.cpp in Sources */,
+				53FAC58223482F4B00B61FFB /* IGraphics.cpp in Sources */,
 				535F959622E1B5A80054DAAE /* compression.c in Sources */,
 				53F832EB22E293EA00D2E2A2 /* dfx-au-utilities.c in Sources */,
 				53F8334022E29BD000D2E2A2 /* IPlugTimer.cpp in Sources */,
 				53FFE77422DB529B00B7C5B5 /* RetroPlugRoot.cpp in Sources */,
+				53FAC57C23482F0200B61FFB /* FileWatcherOSX.cpp in Sources */,
 				535F959E22E1B5A80054DAAE /* synth.c in Sources */,
 				53FFE75022DB528100B7C5B5 /* Lsdj.cpp in Sources */,
 				535F958E22E1B5A80054DAAE /* project.c in Sources */,
 				53F832EA22E293EA00D2E2A2 /* IPlugAU_view_factory.mm in Sources */,
+				53FAC58523482F5600B61FFB /* IControl.cpp in Sources */,
 				535F957922E1B5A80054DAAE /* song.c in Sources */,
 				535F95DB22E1B5A80054DAAE /* wave.c in Sources */,
 				535F95D122E1B5A80054DAAE /* command.c in Sources */,
+				53FAC58923482F8700B61FFB /* IGraphicsMac_view.mm in Sources */,
+				53FAC59023482FA600B61FFB /* ITextEntryControl.cpp in Sources */,
 				535F95B022E1B5A80054DAAE /* sav.c in Sources */,
 				535F960522E1B5A80054DAAE /* table.c in Sources */,
 				535F95E522E1B5A80054DAAE /* word.c in Sources */,
 				53FFE76422DB529B00B7C5B5 /* ContextMenu.cpp in Sources */,
 				53FFE73E22DB525900B7C5B5 /* kit.c in Sources */,
+				53FAC58623482F5600B61FFB /* IGraphicsEditorDelegate.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -6365,6 +6423,7 @@
 				5361511722D2F6F0007F65A5 /* swell.cpp in Sources */,
 				53EC2E3022E2D69400889BFC /* FileDialog.cpp in Sources */,
 				535F968022E1BE740054DAAE /* IPlugAPP_host.cpp in Sources */,
+				53FAC5742342382100B61FFB /* IGraphicsNanoVG_src.m in Sources */,
 				5361511522D2F6F0007F65A5 /* swell-miscdlg.mm in Sources */,
 				53FAC56423421A5F00B61FFB /* IGraphics.cpp in Sources */,
 				53F8332422E29BD000D2E2A2 /* IPlugAPIBase.cpp in Sources */,
@@ -6381,6 +6440,7 @@
 				53EC2E1722E2D66100889BFC /* Serializer.cpp in Sources */,
 				53FFE76922DB529B00B7C5B5 /* EmulatorView.cpp in Sources */,
 				53FFE73322DB525900B7C5B5 /* sample.c in Sources */,
+				53FAC5732342351300B61FFB /* IGraphicsCoreText.mm in Sources */,
 				535F95B522E1B5A80054DAAE /* row.c in Sources */,
 				53FAC567234222B600B61FFB /* IPlugProcessor.cpp in Sources */,
 				53FAC56B234222F000B61FFB /* FileWatcherOSX.cpp in Sources */,
@@ -6732,6 +6792,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
 				INSTALL_OWNER = "";
@@ -6762,6 +6823,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
 				INSTALL_OWNER = "";
@@ -6792,6 +6854,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-VST2-Info.plist";
 				INSTALL_OWNER = "";
@@ -6958,6 +7021,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
 				INSTALL_OWNER = "";
@@ -6995,6 +7059,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
 				INSTALL_OWNER = "";
@@ -7032,6 +7097,7 @@
 					/usr/local/include,
 					../src,
 					../thirdparty,
+					../thirdparty/simplefilewatcher/include,
 				);
 				INFOPLIST_FILE = "../resources/RetroPlug-AU-Info.plist";
 				INSTALL_OWNER = "";
@@ -7471,6 +7537,7 @@
 					"$(APP_DEFS)",
 					"$(inherited)",
 					"RAPIDJSON_HAS_STDSTRING=1",
+					IGRAPHICS_GL2,
 				);
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
