@@ -164,14 +164,14 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);gainputstatic-d.lib;xinput.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
-      <AdditionalLibraryDirectories>C:\code\retroplug\thirdparty\SameBoy\build\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
     </Link>
     <ResourceCompile />

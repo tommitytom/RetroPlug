@@ -7,8 +7,20 @@
 #include "util/Serializer.h"
 #include "Keys.h"
 
+enum Button
+{
+	ButtonConfirm
+};
+
 RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host) {
-	
+	_padManager = new gainput::InputManager();
+	_padMap = new gainput::InputMap(*_padManager);
+
+	const gainput::DeviceId padId = _padManager->CreateDevice<gainput::InputDevicePad>();
+	//_padMap->MapBool(ButtonConfirm, padId, gainput::PadButtonA);
+
+	gainput::InputMap map(*_padManager);
+	map.MapBool(ButtonConfirm, padId, gainput::PadButtonA);
 }
 
 RetroPlugRoot::~RetroPlugRoot() {
@@ -129,6 +141,12 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 	for (auto view : _views) {
 		view->Draw(g);
 	}
+
+	_padManager->Update();
+
+	//if (_padMap->GetBoolWasDown(ButtonConfirm)) {
+	//	std::cout << "Down" << std::endl;
+	//}
 }
 
 void RetroPlugRoot::OnDrop(float x, float y, const char* str) {

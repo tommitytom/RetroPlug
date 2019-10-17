@@ -8,6 +8,8 @@
 #include "EmulatorView.h"
 #include "ContextMenu.h"
 
+#include <gainput/gainput.h>
+
 using namespace iplug;
 using namespace igraphics;
 
@@ -20,6 +22,9 @@ private:
 
 	IPopupMenu _menu;
 	EHost _host;
+
+	gainput::InputManager* _padManager;
+	gainput::InputMap* _padMap;
 
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host);
