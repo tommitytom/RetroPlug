@@ -76,7 +76,7 @@ void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot
 
 	std::vector<std::byte> saveData;
 	if (_saveData.empty()) {
-		_savePath = changeExt(romPath, T(".sav"));
+		_savePath = changeExt(romPath, TSTR(".sav"));
 
 		if (!fs::exists(_savePath)) {
 			// If a .sav file with the same name as the rom does not exist, check to see if there is a
@@ -225,7 +225,7 @@ bool SameBoyPlug::clearBattery(bool reset) {
 	memset(d.data(), 0, size);
 	SAMEBOY_SYMBOLS(sameboy_load_battery)(_instance, (char*)d.data(), d.size());
 
-	_savePath = T("");
+	_savePath = TSTR("");
 
 	if (reset) {
 		_resetSamples = (int)(_sampleRate / 2);

@@ -46,11 +46,11 @@ class LsdjKeyMap {
 private:
 	State _state = State::None;
 	ButtonQueue _presses;
-	KeyMap* _gbKeyMap;
+	KeyMap<VirtualKey>* _gbKeyMap;
 	std::map<VirtualKey, LsdjActionType> _actionMap;
 
 public:
-	void load(KeyMap& keyMap, const rapidjson::Value& config) {
+	void load(KeyMap<VirtualKey>& keyMap, const rapidjson::Value& config) {
 		_gbKeyMap = &keyMap;
 
 		for (const auto& action : config.GetObject()) {

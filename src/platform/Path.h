@@ -6,4 +6,4 @@
 
 #include "util/xstring.h"
 
-tstring getContentPath(tstring file = T(""));
+tstring getContentPath(tstring file = TSTR(""));

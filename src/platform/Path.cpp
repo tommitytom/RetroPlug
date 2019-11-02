@@ -6,15 +6,15 @@
 tstring getContentPath(tstring file) {
 	TCHAR szPath[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, szPath))) {
-		tstring out = tstr(szPath) + T("\\RetroPlug");
+		tstring out = tstr(szPath) + TSTR("\\RetroPlug");
 		if (file.size() > 0) {
-			out += T("\\") + file;
+			out += TSTR("\\") + file;
 		}
 
 		return out;
 	}
 
-	return T("");
+	return TSTR("");
 }
 #else
 
@@ -25,10 +25,10 @@ tstring getContentPath(tstring file) {
     iplug::AppSupportPath(path);
 
 	tstring strPath = tstr(path.Get());
-    strPath += T("/RetroPlug");
+    strPath += TSTR("/RetroPlug");
 
     if (file.size() > 0) {
-        file = T("/") + file;
+        file = TSTR("/") + file;
     }
 
 	return strPath + file;

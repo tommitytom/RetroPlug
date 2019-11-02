@@ -10,10 +10,10 @@
 
 #ifdef WIN32
 using tstring = std::wstring;
-#define T(str) L##str
+#define TSTR(str) L##str
 #else
 using tstring = std::string;
-#define T(str) str
+#define TSTR(str) str
 #endif
 
 static std::wstring s2ws(const std::string& str) {
@@ -66,7 +66,7 @@ static tstring getExt(const tstring& path) {
 		return path.substr(dotIdx, path.length() - dotIdx);
 	}
 
-	return T("");
+	return TSTR("");
 }
 
 // trim from start (in place)

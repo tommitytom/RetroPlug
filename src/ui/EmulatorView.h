@@ -31,7 +31,8 @@ private:
 	NVGpaint _imgPaint;
 	float _alpha = 1.0f;
 
-	KeyMap _keyMap;
+	KeyMap<VirtualKey> _keyMap;
+	KeyMap<int> _padMap;
 	LsdjKeyMap _lsdjKeyMap;
 
 	IPopupMenu _menu;
@@ -70,6 +71,8 @@ public:
 	void SetAlpha(float alpha) { _alpha = alpha; }
 
 	bool OnKey(const IKeyPress& key, bool down);
+
+	bool OnGamepad(int button, bool down);
 
 	void Draw(IGraphics& g);
 

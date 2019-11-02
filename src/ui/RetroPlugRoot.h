@@ -1,5 +1,7 @@
 #pragma once
 
+#include <gainput/gainput.h>
+
 #include <string>
 #include <vector>
 #include <stack>
@@ -7,8 +9,6 @@
 #include "plugs/RetroPlug.h"
 #include "EmulatorView.h"
 #include "ContextMenu.h"
-
-#include <gainput/gainput.h>
 
 using namespace iplug;
 using namespace igraphics;
@@ -24,7 +24,9 @@ private:
 	EHost _host;
 
 	gainput::InputManager* _padManager;
-	gainput::InputMap* _padMap;
+	gainput::DeviceId _padId;
+	bool _padButtons[gainput::PadButtonCount_];
+	//gainput::InputMap* _padMap;
 
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host);

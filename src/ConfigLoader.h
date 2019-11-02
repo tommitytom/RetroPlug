@@ -10,8 +10,6 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
-
 static void saveButtonConfig(const tstring& path, const rapidjson::Document& source) {
 	rapidjson::StringBuffer sb;
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
@@ -22,7 +20,7 @@ static void saveButtonConfig(const tstring& path, const rapidjson::Document& sou
 	}
 }
 
-static void loadButtonConfig(rapidjson::Document& target) {
+static void loadButtonConfig(rapidjson::Document& target, const tstring& file, const std::string& defaultConfigStr) {
 	rapidjson::Document::AllocatorType& a = target.GetAllocator();
 
 	tstring contentPath = getContentPath();
@@ -31,9 +29,9 @@ static void loadButtonConfig(rapidjson::Document& target) {
 	}
 
 	rapidjson::Document defaultConfig(&a);
-	defaultConfig.Parse(DEFAULT_BUTTON_CONFIG.c_str());
+	defaultConfig.Parse(defaultConfigStr.c_str());
 
-	tstring buttonPath = getContentPath(T("buttons.json"));
+	tstring buttonPath = getContentPath(file);
 	if (fs::exists(buttonPath)) {
 		std::string buttonDataStr;
 		if (readFile(tstr(buttonPath), buttonDataStr)) {

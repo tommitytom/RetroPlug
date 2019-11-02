@@ -103,7 +103,7 @@ std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::strin
 
 		if (readFile(path, fileData)) {
 			tstring ext = getExt(path);
-			if (ext == T(".lsdsng")) {
+			if (ext == TSTR(".lsdsng")) {
 				if (importSong(sav, index, fileData, errorStr)) {
 					ids.push_back(index);
 					index = nextProjectIndex(sav, index);

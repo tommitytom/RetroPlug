@@ -7,20 +7,14 @@
 #include "util/Serializer.h"
 #include "Keys.h"
 
-enum Button
-{
-	ButtonConfirm
-};
 
 RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host) {
 	_padManager = new gainput::InputManager();
-	_padMap = new gainput::InputMap(*_padManager);
+	//_padMap = new gainput::InputMap(*_padManager);
 
-	const gainput::DeviceId padId = _padManager->CreateDevice<gainput::InputDevicePad>();
-	//_padMap->MapBool(ButtonConfirm, padId, gainput::PadButtonA);
+	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
 
-	gainput::InputMap map(*_padManager);
-	map.MapBool(ButtonConfirm, padId, gainput::PadButtonA);
+	memset(_padButtons, 0, sizeof(_padButtons));
 }
 
 RetroPlugRoot::~RetroPlugRoot() {
@@ -143,10 +137,16 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 	}
 
 	_padManager->Update();
-
-	//if (_padMap->GetBoolWasDown(ButtonConfirm)) {
-	//	std::cout << "Down" << std::endl;
-	//}
+	
+	for (int i = 0; i < gainput::PadButtonCount_; ++i) {
+		bool down = _padManager->GetDevice(_padId)->GetBool(gainput::PadButtonStart + i);
+		if (_padButtons[i] != down) {
+			_padButtons[i] = down;
+			if (_active) {
+				_active->OnGamepad(i + gainput::PadButtonStart, down);
+			}
+		}
+	}
 }
 
 void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
@@ -161,7 +161,7 @@ void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
 	if (lsdj.found) {
 		std::string error;
 		
-		if (ext == T(".kit")) {
+		if (ext == TSTR(".kit")) {
 			int idx = lsdj.findEmptyKit();
 			if (idx != -1) {
 				if (lsdj.loadKit(path, idx, error)) {
@@ -174,7 +174,7 @@ void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
 			}
 
 			return;
-		} else if (ext == T(".lsdsng")) {
+		} else if (ext == TSTR(".lsdsng")) {
 			// Load lsdj song
 			plug->saveBattery(lsdj.saveData);
 			std::vector<int> ids = lsdj.importSongs({ path }, error);
@@ -188,11 +188,11 @@ void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
 		}
 	}
 
-	if (ext == T(".retroplug")) {
+	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
-	} else if (ext == T(".gb") || ext == T(".gbc")) {
+	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
 		_active->LoadRom(path);
-	} else if (ext == T(".sav")) {
+	} else if (ext == TSTR(".sav")) {
 		plug->loadBattery({ path }, true);
 	}
 }
@@ -203,7 +203,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	tstring romPath;
 	if (type == CreateInstanceType::LoadRom) {
 		std::vector<FileDialogFilters> types = {
-			{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+			{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 		};
 
 		std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
@@ -438,7 +438,7 @@ void RetroPlugRoot::SaveProject() {
 
 void RetroPlugRoot::SaveProjectAs() {
 	std::vector<FileDialogFilters> types = {
-		{ T("RetroPlug Projects"), T("*.retroplug") }
+		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
 	};
 
 	tstring path = BasicFileSave(GetUI(), types);
@@ -450,7 +450,7 @@ void RetroPlugRoot::SaveProjectAs() {
 
 void RetroPlugRoot::OpenFindRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
@@ -469,9 +469,9 @@ void RetroPlugRoot::OpenFindRomDialog() {
 
 void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("All Supported Types"), T("*.gb;*.gbc;*.retroplug") },
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
-		{ T("RetroPlug Project"), T("*.retroplug") },
+		{ TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.retroplug") },
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") },
+		{ TSTR("RetroPlug Project"), TSTR("*.retroplug") },
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
@@ -482,9 +482,9 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 
 void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
 	tstring ext = tstr(fs::path(path).extension().string());
-	if (ext == T(".retroplug")) {
+	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
-	} else if (ext == T(".gb") || ext == T(".gbc")) {
+	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
 		_active->LoadRom(path);
 	}
 }
@@ -516,7 +516,7 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 
 void RetroPlugRoot::OpenLoadProjectDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("RetroPlug Projects"), T("*.retroplug") }
+		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);

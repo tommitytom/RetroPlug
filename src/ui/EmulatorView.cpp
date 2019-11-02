@@ -12,6 +12,9 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
+const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\",\"Delete\":\"Delete\"}}";
+const std::string DEFAULT_PAD_CONFIG = "{}";
+
 EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
 	: _plug(plug), _manager(manager), _graphics(graphics)
 {
@@ -22,10 +25,14 @@ EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* g
 		{ "High-pass Filter", 1 }
 	};
 
-	rapidjson::Document config;
-	loadButtonConfig(config);
-	_keyMap.load(config["gameboy"]);
-	_lsdjKeyMap.load(_keyMap, config["lsdj"]);
+	rapidjson::Document keyConfig;
+	loadButtonConfig(keyConfig, TSTR("buttons.json"), DEFAULT_BUTTON_CONFIG);
+	_keyMap.loadKeys(keyConfig["gameboy"]);
+	_lsdjKeyMap.load(_keyMap, keyConfig["lsdj"]);
+
+	rapidjson::Document padConfig;
+	loadButtonConfig(padConfig, TSTR("gamepad.json"), DEFAULT_PAD_CONFIG);
+	_padMap.loadPad(padConfig["gameboy"]);
 
 	for (size_t i = 0; i < 2; i++) {
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
@@ -91,6 +98,21 @@ bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 				_plug->setButtonState(ev);
 				return true;
 			}
+		}
+	}
+
+	return false;
+}
+
+bool EmulatorView::OnGamepad(int button, bool down) {
+	if (_plug && _plug->active()) {
+		ButtonEvent ev;
+		ev.id = _padMap.getControllerButton(button);
+		ev.down = down;
+
+		if (ev.id != ButtonTypes::MAX) {
+			_plug->setButtonState(ev);
+			return true;
 		}
 	}
 
@@ -189,7 +211,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		case SystemMenuItems::Reset: ResetSystem(true); break;
 		case SystemMenuItems::NewSram: _plug->clearBattery(true); break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
-		case SystemMenuItems::SaveSram: _plug->saveBattery(T("")); break;
+		case SystemMenuItems::SaveSram: _plug->saveBattery(TSTR("")); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
 		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
 		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
@@ -385,7 +407,7 @@ void EmulatorView::ToggleKeyboardMode() {
 
 void EmulatorView::ExportSong(const LsdjSongName& songName) {
 	std::vector<FileDialogFilters> types = {
-		{ T("LSDj Songs"), T("*.lsdsng") }
+		{ TSTR("LSDj Songs"), TSTR("*.lsdsng") }
 	};
 
 	tstring path = BasicFileSave(_graphics, types, tstr(songName.name + "." + std::to_string(songName.version)));
@@ -449,7 +471,7 @@ void EmulatorView::DeleteSong(int index) {
 
 void EmulatorView::LoadKit(int index) {
 	std::vector<FileDialogFilters> types = {
-		{ T("LSDj Kits"), T("*.kit") }
+		{ TSTR("LSDj Kits"), TSTR("*.kit") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
@@ -473,7 +495,7 @@ void EmulatorView::DeleteKit(int index) {
 
 void EmulatorView::ExportKit(int index) {
 	std::vector<FileDialogFilters> types = {
-		{ T("LSDj Kit"), T("*.kit") }
+		{ TSTR("LSDj Kit"), TSTR("*.kit") }
 	};
 
 	std::vector<std::string> kitNames;
@@ -531,9 +553,9 @@ void EmulatorView::ToggleWatchRom() {
 
 void EmulatorView::OpenLoadSongsDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("All Supported Types"), T("*.lsdsng;*.sav") },
-        { T("LSDj Songs"), T("*.lsdsng") },
-		{ T("LSDj .sav"), T("*.sav") }
+		{ TSTR("All Supported Types"), TSTR("*.lsdsng;*.sav") },
+        { TSTR("LSDj Songs"), TSTR("*.lsdsng") },
+		{ TSTR("LSDj .sav"), TSTR("*.sav") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
@@ -553,9 +575,9 @@ void EmulatorView::OpenLoadSongsDialog() {
 
 void EmulatorView::OpenLoadKitsDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("All Supported Types"), T("*.gb;*.gbc;*.kit") },
-		{ T("LSDj Kits"), T("*.kit") },
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") },
+		{ TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.kit") },
+		{ TSTR("LSDj Kits"), TSTR("*.kit") },
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") },
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
@@ -588,7 +610,7 @@ void EmulatorView::OpenLoadKitsDialog() {
 
 void EmulatorView::OpenReplaceRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
@@ -618,7 +640,7 @@ void EmulatorView::OpenReplaceRomDialog() {
 
 void EmulatorView::OpenSaveRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
 	tstring romName = tstr(_plug->romName() + ".gb");
@@ -632,7 +654,7 @@ void EmulatorView::OpenSaveRomDialog() {
 
 void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Roms"), T("*.gb;*.gbc") }
+		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
@@ -657,7 +679,7 @@ void EmulatorView::LoadRom(const tstring & path) {
 
 void EmulatorView::OpenLoadSramDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Saves"), T("*.sav") }
+		{ TSTR("GameBoy Saves"), TSTR("*.sav") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
@@ -668,7 +690,7 @@ void EmulatorView::OpenLoadSramDialog() {
 
 void EmulatorView::OpenSaveSramDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ T("GameBoy Saves"), T("*.sav") }
+		{ TSTR("GameBoy Saves"), TSTR("*.sav") }
 	};
 
 	tstring path = BasicFileSave(_graphics, types);

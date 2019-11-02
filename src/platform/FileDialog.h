@@ -22,4 +22,4 @@ struct FileDialogFilters {
 };
 
 std::vector<tstring> BasicFileOpen(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false);
-tstring BasicFileSave(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, const tstring& fileName = T(""));
+tstring BasicFileSave(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, const tstring& fileName = TSTR(""));
