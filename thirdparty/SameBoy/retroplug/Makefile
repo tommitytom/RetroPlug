@@ -255,7 +255,7 @@ LDFLAGS += $(LIBM)
 ifeq ($(DEBUG), 1)
    CFLAGS += -O0 -g
 else
-   CFLAGS += -O2 -DNDEBUG -mno-stack-arg-probe
+   CFLAGS += -O2 -DNDEBUG
 endif
 
 include Makefile.common
