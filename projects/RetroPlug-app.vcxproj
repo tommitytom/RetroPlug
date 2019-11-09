@@ -209,7 +209,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
