@@ -1,4 +1,5 @@
 *.exe
+*.dll
 *.sdf
 *.opensdf
 *.zip
