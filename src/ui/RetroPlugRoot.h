@@ -6,7 +6,7 @@
 #include <vector>
 #include <stack>
 #include "IControl.h"
-#include "plugs/RetroPlug.h"
+#include "RetroPlug.h"
 #include "EmulatorView.h"
 #include "ContextMenu.h"
 
@@ -26,7 +26,6 @@ private:
 	gainput::InputManager* _padManager;
 	gainput::DeviceId _padId;
 	bool _padButtons[gainput::PadButtonCount_];
-	//gainput::InputMap* _padMap;
 
 public:
 	RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host);

@@ -146,7 +146,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -164,7 +164,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -187,7 +187,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -209,7 +209,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -232,7 +232,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -253,7 +253,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;RETRO_IMPORT_SYMBOLS;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -288,9 +288,9 @@
     <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\platform\Shell.h" />
-    <ClInclude Include="..\src\plugs\RetroPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
+    <ClInclude Include="..\src\RetroPlug.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
     <ClInclude Include="..\src\roms\Lsdj.h" />
     <ClInclude Include="..\src\ui\ContextMenu.h" />
@@ -473,6 +473,32 @@
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\vio.h" />
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\wave.h" />
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\word.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lapi.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lauxlib.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lcode.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lctype.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldebug.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldo.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lfunc.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lgc.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llex.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llimits.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lmem.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lobject.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lopcodes.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lparser.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lprefix.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstate.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstring.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltable.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltm.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.hpp" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\luaconf.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lualib.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lundump.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lvm.h" />
+    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lzio.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\libretroplug\PaRingBuffer.c" />
@@ -484,6 +510,7 @@
     <ClCompile Include="..\src\platform\Path.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
+    <ClCompile Include="..\src\RetroPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
     <ClCompile Include="..\src\roms\Lsdj.cpp" />
     <ClCompile Include="..\src\ui\ContextMenu.cpp" />
@@ -587,6 +614,39 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\vio.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\wave.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\word.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lapi.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lauxlib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbaselib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbitlib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcode.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcorolib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lctype.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldblib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldebug.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldo.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldump.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lfunc.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lgc.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\linit.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\liolib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\llex.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmathlib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmem.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loadlib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lobject.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lopcodes.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loslib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lparser.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstate.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstring.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstrlib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltable.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltablib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltm.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lundump.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lutf8lib.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lvm.c" />
+    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lzio.c" />
     <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp" />
     <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp" />
   </ItemGroup>

@@ -12,8 +12,8 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\",\"Delete\":\"Delete\"}}";
-const std::string DEFAULT_PAD_CONFIG = "{}";
+const std::string DEFAULT_BUTTON_CONFIG = R"({"gameboy":{"A":"S","B":"A","Up":"UpArrow","Down":"DownArrow","Left":"LeftArrow","Right":"RightArrow","Select":"Ctrl","Start":"Enter"},"lsdj":{"ScreenUp":"NumPad8","ScreenDown":"NumPad2","ScreenLeft":"NumPad4","ScreenRight":"NumPad6","UpTenRows":"PageUp","DownTenRows":"PageDown","CancelSelection":"Esc","Delete":"Delete"}})";
+const std::string DEFAULT_PAD_CONFIG = R"({"gameboy":{"A":"B","B":"A","Down":"Down","Left":"Left","Right":"Right","Up":"Up","Select":"Select","Start":"Start"}})";
 
 EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
 	: _plug(plug), _manager(manager), _graphics(graphics)

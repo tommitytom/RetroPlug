@@ -53,6 +53,8 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
             GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
             return true;
         }*/
+
+		_plug->onKey(key, down);
         
 		if (key.VK == VirtualKeys::Tab && down) {
 			_activeIdx = (_activeIdx + 1) % _views.size();
@@ -60,7 +62,7 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 			return true;
 		}
 
-		return _active->OnKey(key, down);
+		//return _active->OnKey(key, down);
 	}
 
 	return false;
@@ -335,6 +337,8 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 
 	_active = view;
 	_active->SetAlpha(1.0f);
+
+	_plug->setActive(view->Plug());
 
 	view->DisableRendering(false);
 }

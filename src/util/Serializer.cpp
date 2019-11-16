@@ -1,6 +1,6 @@
 #include "Serializer.h"
 
-#include "plugs/RetroPlug.h"
+#include "RetroPlug.h"
 #include "config.h"
 #include "plugs/SameBoyPlug.h"
 #include "base64.h"

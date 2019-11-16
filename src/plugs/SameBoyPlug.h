@@ -91,7 +91,7 @@ public:
 	std::mutex& lock() { return _lock; }
 
 	void setSampleRate(double sampleRate);
-
+	 
 	void sendKeyboardByte(int offset, char byte);
 
 	void sendSerialByte(int offset, char byte, size_t bitCount = 8);
@@ -129,6 +129,8 @@ public:
 	void setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets);
 
 	void setButtonState(const ButtonEvent& ev) { _bus.buttons.writeValue(ev); }
+
+	void setButtonStateT(size_t buttonId, bool down) { _bus.buttons.writeValue(ButtonEvent{ buttonId, down }); }
 
 	MessageBus* messageBus() { return &_bus; }
 
