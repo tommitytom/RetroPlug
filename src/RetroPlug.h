@@ -60,6 +60,8 @@ public:
 
 	void onKey(const iplug::igraphics::IKeyPress& key, bool down);
 
+	void onPad(int button, bool down);
+
 	InstanceLayout layout() const { return _layout; }
 
 	void setLayout(InstanceLayout layout) { _layout = layout; }

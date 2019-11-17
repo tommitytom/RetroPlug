@@ -7,6 +7,10 @@
 #include <atomic>
 #include <vector>
 
+namespace sol {
+	class state;
+};
+
 enum class GameboyModel {
 	Auto,
 	DmgB,

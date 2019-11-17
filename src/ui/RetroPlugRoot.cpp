@@ -144,8 +144,9 @@ void RetroPlugRoot::Draw(IGraphics & g) {
 		bool down = _padManager->GetDevice(_padId)->GetBool(gainput::PadButtonStart + i);
 		if (_padButtons[i] != down) {
 			_padButtons[i] = down;
+			_plug->onPad(i + gainput::PadButtonStart, down);
 			if (_active) {
-				_active->OnGamepad(i + gainput::PadButtonStart, down);
+				//_active->OnGamepad(i + gainput::PadButtonStart, down);
 			}
 		}
 	}

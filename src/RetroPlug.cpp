@@ -6,20 +6,20 @@
 
 RetroPlug::RetroPlug() { 
 	_lua = new sol::state();
-	_lua->open_libraries(sol::lib::base, sol::lib::package);
+	_lua->open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
 
 	std::string packagePath = (*_lua)["package"]["path"];
 	(*_lua)["package"]["path"] = (packagePath + ";../src/scripts/?.lua").c_str();
 
-	sol::load_result rootFile = _lua->load_file("../src/scripts/plug.lua");
-	if (!rootFile.valid()) {
-		sol::error err = rootFile;
+	sol::protected_function_result rootRes = _lua->do_file("../src/scripts/plug.lua");
+	if (!rootRes.valid()) {
+		sol::error err = rootRes;
 		std::string what = err.what();
 		std::cout << "call failed, sol::error::what() is " << what << std::endl;
 		return;
 	}
 
-	sol::protected_function_result rootRes = rootFile();
+	rootRes = _lua->do_file("../src/scripts/config.lua");
 	if (!rootRes.valid()) {
 		sol::error err = rootRes;
 		std::string what = err.what();
@@ -47,11 +47,15 @@ RetroPlug::~RetroPlug() {
 
 void RetroPlug::setActive(SameBoyPlugPtr active) { 
 	_active = active; 
-	_lua->set("active", active);
+	_lua->set("Active", active);
 }
 
 void RetroPlug::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
-	(*_lua)["onKey"](key, down);
+	(*_lua)["_onKey"](key, down);
+}
+
+void RetroPlug::onPad(int button, bool down) {
+	(*_lua)["_onPad"](button, down);
 }
 
 void RetroPlug::clear() {
