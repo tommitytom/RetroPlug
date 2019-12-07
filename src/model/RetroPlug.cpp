@@ -1,61 +1,20 @@
-#include "RetroPlug.h"
-
-#include <sol/sol.hpp>
+#include "model/RetroPlug.h"
 
 #include <iostream>
 
 RetroPlug::RetroPlug() { 
-	_lua = new sol::state();
-	_lua->open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
-
-	std::string packagePath = (*_lua)["package"]["path"];
-	(*_lua)["package"]["path"] = (packagePath + ";../src/scripts/?.lua").c_str();
-
-	sol::protected_function_result rootRes = _lua->do_file("../src/scripts/plug.lua");
-	if (!rootRes.valid()) {
-		sol::error err = rootRes;
-		std::string what = err.what();
-		std::cout << "call failed, sol::error::what() is " << what << std::endl;
-		return;
-	}
-
-	rootRes = _lua->do_file("../src/scripts/config.lua");
-	if (!rootRes.valid()) {
-		sol::error err = rootRes;
-		std::string what = err.what();
-		std::cout << "call failed, sol::error::what() is " << what << std::endl;
-		return;
-	}
-
-	_lua->new_usertype<SameBoyPlug>("SameBoyPlug", 
-		"setButtonState", &SameBoyPlug::setButtonStateT
-	);
-
-	_lua->new_usertype<iplug::igraphics::IKeyPress>("IKeyPress", 
-		"vk", &iplug::igraphics::IKeyPress::VK,
-		"shift", &iplug::igraphics::IKeyPress::S,
-		"ctrl", &iplug::igraphics::IKeyPress::C,
-		"alt", &iplug::igraphics::IKeyPress::A
-	);
-
-	std::cout << std::filesystem::current_path().string() << std::endl;
+	
 }
 
 RetroPlug::~RetroPlug() {
-	delete _lua;
 }
 
-void RetroPlug::setActive(SameBoyPlugPtr active) { 
-	_active = active; 
-	_lua->set("Active", active);
-}
-
-void RetroPlug::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
-	(*_lua)["_onKey"](key, down);
-}
-
-void RetroPlug::onPad(int button, bool down) {
-	(*_lua)["_onPad"](button, down);
+void RetroPlug::setActive(InstanceIndex idx) {
+	if (idx != _activeIdx) {
+		_activeIdx = idx;
+		_active = _plugs[idx];
+		_dirtyUi = true;
+	}
 }
 
 void RetroPlug::clear() {
@@ -74,6 +33,10 @@ SameBoyPlugPtr RetroPlug::addInstance(EmulatorType emulatorType) {
 			_plugs[i] = plug;
 			break;
 		}
+	}
+
+	if (!_active) {
+		_active = plug;
 	}
 
 	return plug;

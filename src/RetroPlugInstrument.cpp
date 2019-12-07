@@ -1,8 +1,8 @@
 #include "RetroPlugInstrument.h"
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
-#include "src/ui/EmulatorView.h"
-#include "src/ui/RetroPlugRoot.h"
+#include "view/EmulatorView.h"
+#include "view/RetroPlugRoot.h"
 #include "util/Serializer.h"
 
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
@@ -22,7 +22,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 		pGraphics->LoadFont("Roboto-Regular", GAMEBOY_FN);
 		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
-		RetroPlugRoot* root = new RetroPlugRoot(pGraphics->GetBounds(), &_plug, GetHost());
+		RetroPlugView* root = new RetroPlugView(pGraphics->GetBounds(), &_plug, GetHost());
 		pGraphics->AttachControl(root);
 
 		pGraphics->SetKeyHandlerFunc([root](const IKeyPress& key, bool isUp) {

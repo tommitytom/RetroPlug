@@ -6,15 +6,17 @@
 #include <vector>
 #include <stack>
 #include "IControl.h"
-#include "RetroPlug.h"
+#include "model/RetroPlug.h"
 #include "EmulatorView.h"
 #include "ContextMenu.h"
+#include "controller/RetroPlugController.h"
 
 using namespace iplug;
 using namespace igraphics;
 
-class RetroPlugRoot : public IControl {
+class RetroPlugView : public IControl {
 private:
+	RetroPlugBinder _binder;
 	RetroPlug* _plug;
 	std::vector<EmulatorView*> _views;
 	EmulatorView* _active = nullptr;
@@ -23,13 +25,9 @@ private:
 	IPopupMenu _menu;
 	EHost _host;
 
-	gainput::InputManager* _padManager;
-	gainput::DeviceId _padId;
-	bool _padButtons[gainput::PadButtonCount_];
-
 public:
-	RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host);
-	~RetroPlugRoot();
+	RetroPlugView(IRECT b, RetroPlug* plug, EHost host);
+	~RetroPlugView();
 
 	void OnInit() override;
 
@@ -56,7 +54,7 @@ private:
 
 	EmulatorView* AddView(SameBoyPlugPtr plug);
 
-	void SetActive(EmulatorView* view);
+	void SetActive(size_t index);
 
 	IPopupMenu* CreateProjectMenu(bool loaded);
 
@@ -90,7 +88,7 @@ private:
 		for (auto view : _views) {
 			if (view->GetArea().Contains(x, y)) {
 				_activeIdx = GetViewIndex(view);
-				SetActive(_views[_activeIdx]);
+				SetActive(_activeIdx);
 				break;
 			}
 		}

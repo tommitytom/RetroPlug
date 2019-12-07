@@ -10,10 +10,6 @@
 
 #include "IGraphicsStructs.h"
 
-namespace sol {
-	class state;
-};
-
 enum class InstanceLayout {
 	Auto,
 	Row,
@@ -37,10 +33,13 @@ enum class MidiChannelRouting {
 	OneChannelPerInstance
 };
 
+using InstanceIndex = size_t;
+
 class RetroPlug {
 private:
 	SameBoyPlugPtr _plugs[MAX_INSTANCES];
 	SameBoyPlugPtr _active;
+	InstanceIndex _activeIdx;
 	tstring _projectPath;
 	InstanceLayout _layout = InstanceLayout::Auto;
 	SaveStateType _saveType = SaveStateType::State;
@@ -50,17 +49,29 @@ private:
 
 	double _sampleRate = 48000;
 
-	sol::state* _lua;
+	bool _dirtyUi = true;
 
 public:
 	RetroPlug();
 	~RetroPlug();
 
-	void setActive(SameBoyPlugPtr active);
+	bool dirtyUi() {
+		bool v = _dirtyUi;
+		_dirtyUi = false;
+		return v;
+	}
+
+	void setActive(InstanceIndex index);
+
+	SameBoyPlugPtr active() { return _active; }
+
+	InstanceIndex activeInstanceIdx() const { return _activeIdx; }
 
 	void onKey(const iplug::igraphics::IKeyPress& key, bool down);
 
 	void onPad(int button, bool down);
+
+	void loadRom(InstanceIndex idx, const std::string& path) {}
 
 	InstanceLayout layout() const { return _layout; }
 

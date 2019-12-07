@@ -213,11 +213,12 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);gainputstatic.lib;xinput.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\gainput\build\lib\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
@@ -273,14 +274,14 @@
     <ClInclude Include="..\src\audio\audio_renderer.h" />
     <ClInclude Include="..\src\audio\miniaudio.h" />
     <ClInclude Include="..\src\audio\resampler.h" />
+    <ClInclude Include="..\src\controller\RetroPlugController.h" />
     <ClInclude Include="..\src\KeyMap.h" />
-    <ClInclude Include="..\src\libretroplug\MessageBus.h" />
-    <ClInclude Include="..\src\libretroplug\PaMemoryBarrier.h" />
-    <ClInclude Include="..\src\libretroplug\PaRingBuffer.h" />
-    <ClInclude Include="..\src\libretroplug\RingBuffer.h" />
     <ClInclude Include="..\src\lsdj\kit.h" />
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
+    <ClInclude Include="..\src\model\EmulatorInstance.h" />
+    <ClInclude Include="..\src\model\LuaContext.h" />
+    <ClInclude Include="..\src\model\RetroPlug.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
@@ -290,18 +291,21 @@
     <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
-    <ClInclude Include="..\src\RetroPlug.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
     <ClInclude Include="..\src\roms\Lsdj.h" />
-    <ClInclude Include="..\src\ui\ContextMenu.h" />
-    <ClInclude Include="..\src\ui\EmulatorView.h" />
-    <ClInclude Include="..\src\ui\RetroPlugRoot.h" />
     <ClInclude Include="..\src\util\base64.h" />
     <ClInclude Include="..\src\util\crc32.h" />
     <ClInclude Include="..\src\util\File.h" />
+    <ClInclude Include="..\src\util\MessageBus.h" />
+    <ClInclude Include="..\src\util\PaMemoryBarrier.h" />
+    <ClInclude Include="..\src\util\PaRingBuffer.h" />
+    <ClInclude Include="..\src\util\RingBuffer.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
     <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\xstring.h" />
+    <ClInclude Include="..\src\view\ContextMenu.h" />
+    <ClInclude Include="..\src\view\EmulatorView.h" />
+    <ClInclude Include="..\src\view\RetroPlugRoot.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrvr.h" />
@@ -501,25 +505,28 @@
     <ClInclude Include="..\thirdparty\lua-5.3.5\src\lzio.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\libretroplug\PaRingBuffer.c" />
+    <ClCompile Include="..\src\controller\RetroPlugController.cpp" />
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
+    <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
+    <ClCompile Include="..\src\model\LuaContext.cpp" />
+    <ClCompile Include="..\src\model\RetroPlug.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
-    <ClCompile Include="..\src\RetroPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
     <ClCompile Include="..\src\roms\Lsdj.cpp" />
-    <ClCompile Include="..\src\ui\ContextMenu.cpp" />
-    <ClCompile Include="..\src\ui\EmulatorView.cpp" />
-    <ClCompile Include="..\src\ui\RetroPlugRoot.cpp" />
     <ClCompile Include="..\src\util\base64.cpp" />
     <ClCompile Include="..\src\util\crc32.cpp" />
     <ClCompile Include="..\src\util\File.cpp" />
+    <ClCompile Include="..\src\util\PaRingBuffer.c" />
     <ClCompile Include="..\src\util\Serializer.cpp" />
+    <ClCompile Include="..\src\view\ContextMenu.cpp" />
+    <ClCompile Include="..\src\view\EmulatorView.cpp" />
+    <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiolist.cpp" />

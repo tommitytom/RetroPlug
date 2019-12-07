@@ -8,16 +8,11 @@
 #include "Keys.h"
 
 
-RetroPlugRoot::RetroPlugRoot(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host) {
-	_padManager = new gainput::InputManager();
-	//_padMap = new gainput::InputMap(*_padManager);
-
-	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
-
-	memset(_padButtons, 0, sizeof(_padButtons));
+RetroPlugView::RetroPlugView(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host), _binder(plug) {
+	
 }
 
-RetroPlugRoot::~RetroPlugRoot() {
+RetroPlugView::~RetroPlugView() {
 	for (size_t i = 0; i < MAX_INSTANCES; i++) {
 		auto plug = _plug->getPlug(i);
 		if (plug && plug->active()) {
@@ -26,7 +21,7 @@ RetroPlugRoot::~RetroPlugRoot() {
 	}
 }
 
-void RetroPlugRoot::OnInit() {
+void RetroPlugView::OnInit() {
 	size_t plugCount = _plug->instanceCount();
 	if (plugCount == 0) {
 		NewProject();
@@ -40,7 +35,7 @@ void RetroPlugRoot::OnInit() {
 	}
 }
 
-bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
+bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 	if (_active) {
         /*if (key.VK == VirtualKeys::E) {
             static bool alt = true;
@@ -54,13 +49,13 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
             return true;
         }*/
 
-		_plug->onKey(key, down);
+		return _binder.onKey(key, down);
         
-		if (key.VK == VirtualKeys::Tab && down) {
+		/*if (key.VK == VirtualKeys::Tab && down) {
 			_activeIdx = (_activeIdx + 1) % _views.size();
-			SetActive(_views[_activeIdx]);
+			SetActive(_activeIdx);
 			return true;
-		}
+		}*/
 
 		//return _active->OnKey(key, down);
 	}
@@ -68,7 +63,7 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 	return false;
 }
 
-void RetroPlugRoot::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
+void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	if (_active) {
 		auto plug = _active->Plug();
 		if (!plug->active()) {
@@ -81,7 +76,7 @@ void RetroPlugRoot::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	}
 }
 
-void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
+void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	SelectActiveAtPoint(x, y);
 
 	if (mod.R) {
@@ -133,26 +128,22 @@ void RetroPlugRoot::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	}
 }
 
-void RetroPlugRoot::Draw(IGraphics & g) {
+void RetroPlugView::Draw(IGraphics & g) {
+	if (_plug->dirtyUi()) {
+		_activeIdx = _plug->activeInstanceIdx();
+		SetActive(_activeIdx);
+	}
+
+	float delta = 33.3333f; // TODO: Do a proper delta time calculation here
+	_binder.update(delta);
+	_binder.lua().update(delta);
+
 	for (auto view : _views) {
 		view->Draw(g);
 	}
-
-	_padManager->Update();
-	
-	for (int i = 0; i < gainput::PadButtonCount_; ++i) {
-		bool down = _padManager->GetDevice(_padId)->GetBool(gainput::PadButtonStart + i);
-		if (_padButtons[i] != down) {
-			_padButtons[i] = down;
-			_plug->onPad(i + gainput::PadButtonStart, down);
-			if (_active) {
-				//_active->OnGamepad(i + gainput::PadButtonStart, down);
-			}
-		}
-	}
 }
 
-void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
+void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	SelectActiveAtPoint(x, y);
 
 	auto plug = _active->Plug();
@@ -200,7 +191,7 @@ void RetroPlugRoot::OnDrop(float x, float y, const char* str) {
 	}
 }
 
-void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
+void RetroPlugView::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
 	SameBoyPlugPtr source = view->Plug();
 	
 	tstring romPath;
@@ -221,7 +212,7 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 		return;
 	}
 
-	SameBoyPlugPtr target = _plug->addInstance(EmulatorType::SameBoy);
+	SameBoyPlugPtr target = _binder.lua().addInstance(EmulatorType::SameBoy);
 	target->init(romPath, source->model(), false);
 
 	if (source->lsdj().found) {
@@ -243,12 +234,12 @@ void RetroPlugRoot::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 	_plug->updateLinkTargets();
 }
 
-EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
+EmulatorView* RetroPlugView::AddView(SameBoyPlugPtr plug) {
 	EmulatorView* view = new EmulatorView(plug, _plug, GetUI());
 	_views.push_back(view);
 
-	SetActive(view);
 	_activeIdx = _views.size() - 1;
+	SetActive(_activeIdx);
 
 	UpdateLayout();
 
@@ -272,7 +263,7 @@ EmulatorView* RetroPlugRoot::AddView(SameBoyPlugPtr plug) {
 	return view;
 }
 
-void RetroPlugRoot::UpdateLayout() {
+void RetroPlugView::UpdateLayout() {
 	size_t count = _views.size();
 	assert(count > 0);
 
@@ -331,7 +322,9 @@ void RetroPlugRoot::UpdateLayout() {
 	}
 }
 
-void RetroPlugRoot::SetActive(EmulatorView* view) {
+void RetroPlugView::SetActive(size_t index) {
+	EmulatorView* view = _views[_activeIdx];
+
 	if (_active) {
 		_active->SetAlpha(0.75f);
 	}
@@ -339,12 +332,13 @@ void RetroPlugRoot::SetActive(EmulatorView* view) {
 	_active = view;
 	_active->SetAlpha(1.0f);
 
-	_plug->setActive(view->Plug());
+	_binder.lua().setActive(index);
+	//_plug->setActive(view->Plug());
 
 	view->DisableRendering(false);
 }
 
-IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
+IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(_plug->layout());
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_plug->saveType());
@@ -407,7 +401,7 @@ IPopupMenu* RetroPlugRoot::CreateProjectMenu(bool loaded) {
 	return menu;
 }
 
-void RetroPlugRoot::CloseProject() {
+void RetroPlugView::CloseProject() {
 	_plug->clear();
 	IGraphics* g = GetUI();
 
@@ -422,16 +416,16 @@ void RetroPlugRoot::CloseProject() {
 	_activeIdx = -1;
 }
 
-void RetroPlugRoot::NewProject() {
+void RetroPlugView::NewProject() {
 	CloseProject();
 
-	SameBoyPlugPtr plug = _plug->addInstance(EmulatorType::SameBoy);
+	SameBoyPlugPtr plug = _binder.lua().addInstance(EmulatorType::SameBoy);
 	EmulatorView* view = AddView(plug);
 	view->ShowText("Double click to", "load a rom...");
 	UpdateLayout();
 }
 
-void RetroPlugRoot::SaveProject() {
+void RetroPlugView::SaveProject() {
 	if (_plug->projectPath().empty()) {
 		SaveProjectAs();
 	}
@@ -441,7 +435,7 @@ void RetroPlugRoot::SaveProject() {
 	writeFile(_plug->projectPath(), data);
 }
 
-void RetroPlugRoot::SaveProjectAs() {
+void RetroPlugView::SaveProjectAs() {
 	std::vector<FileDialogFilters> types = {
 		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
 	};
@@ -453,7 +447,7 @@ void RetroPlugRoot::SaveProjectAs() {
 	}
 }
 
-void RetroPlugRoot::OpenFindRomDialog() {
+void RetroPlugView::OpenFindRomDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
@@ -472,7 +466,7 @@ void RetroPlugRoot::OpenFindRomDialog() {
 	}
 }
 
-void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
+void RetroPlugView::OpenLoadProjectOrRomDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.retroplug") },
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") },
@@ -485,7 +479,7 @@ void RetroPlugRoot::OpenLoadProjectOrRomDialog() {
 	}
 }
 
-void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
+void RetroPlugView::LoadProjectOrRom(const tstring& path) {
 	tstring ext = tstr(fs::path(path).extension().string());
 	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
@@ -494,7 +488,7 @@ void RetroPlugRoot::LoadProjectOrRom(const tstring& path) {
 	}
 }
 
-void RetroPlugRoot::LoadProject(const tstring& path) {
+void RetroPlugView::LoadProject(const tstring& path) {
 	std::string data;
 	if (readFile(path, data)) {
 		CloseProject();
@@ -509,7 +503,7 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 				}
 
 				_activeIdx = 0;
-				SetActive(_views[_activeIdx]);
+				SetActive(_activeIdx);
 			}
 		} else {
 			NewProject();
@@ -519,7 +513,7 @@ void RetroPlugRoot::LoadProject(const tstring& path) {
 	_plug->updateLinkTargets();
 }
 
-void RetroPlugRoot::OpenLoadProjectDialog() {
+void RetroPlugView::OpenLoadProjectDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
 	};
@@ -530,8 +524,8 @@ void RetroPlugRoot::OpenLoadProjectDialog() {
 	}
 }
 
-void RetroPlugRoot::RemoveActive() {
-	_plug->removeInstance(_activeIdx);
+void RetroPlugView::RemoveActive() {
+	_binder.lua().removeInstance(_activeIdx);
 	delete _active;
 	_active = nullptr;
 	
@@ -541,6 +535,6 @@ void RetroPlugRoot::RemoveActive() {
 		_activeIdx = _views.size() - 1;
 	}
 
-	SetActive(_views[_activeIdx]);
+	SetActive(_activeIdx);
 	UpdateLayout();
 }

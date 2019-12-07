@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IGraphics.h"
-#include "RetroPlug.h"
+#include "model/RetroPlug.h"
 
 using namespace iplug;
 using namespace igraphics;

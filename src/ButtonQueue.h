@@ -3,7 +3,7 @@
 #include <queue>
 #include "Types.h"
 #include "Buttons.h"
-#include "libretroplug/MessageBus.h"
+#include "util/MessageBus.h"
 #include "platform/Logger.h"
 
 const double CONSECUTIVE_PRESS_DELAY = 50;

@@ -8,7 +8,7 @@
 #include "Buttons.h"
 #include "ButtonQueue.h"
 #include "KeyMap.h"
-#include "libretroplug/MessageBus.h"
+#include "util/MessageBus.h"
 
 #include "rapidjson/document.h"
 

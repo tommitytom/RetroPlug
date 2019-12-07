@@ -332,6 +332,7 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
 
     int delta = 0;
     while (s->currentAudioFrames < requiredAudioFrames) {
+        // Send bytes to the link port if required
         if (s->linkTicksRemain <= 0) {
             if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
                 offset_byte_t b = dequeue(&s->midiQueue);
@@ -343,6 +344,9 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
 
             s->linkTicksRemain += LINK_TICKS_MAX;
         }
+
+        // Send button presses if required
+
 
         int ticks = GB_run(&s->gb);
         delta += ticks;

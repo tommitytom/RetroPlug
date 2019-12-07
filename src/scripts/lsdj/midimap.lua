@@ -4,7 +4,7 @@ local function midiMapRowNumber(channel, note)
 	if channel == 0 then
 		return note
 	elseif channel == 1 then
-		return node + 128
+		return note + 128
 	end
 
 	return -1;
@@ -29,7 +29,7 @@ function MidiMap:onMidi(system, msg)
 		end
 	elseif msg.type == "stop" then
 		system:sendSerialByte(0xFE)
-	end	
+	end
 end
 
 return MidiMap

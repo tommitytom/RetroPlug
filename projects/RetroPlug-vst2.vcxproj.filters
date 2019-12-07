@@ -61,23 +61,14 @@
     <ClCompile Include="..\thirdparty\iPlug2\IPlug\VST2\IPlugVST2.cpp">
       <Filter>IPlug\VST2</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\libretroplug\PaRingBuffer.c">
-      <Filter>src\libretroplug</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp">
       <Filter>src\plugs</Filter>
     </ClCompile>
     <ClCompile Include="..\src\RetroPlugInstrument.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\ui\EmulatorView.cpp">
-      <Filter>src\ui</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\util\base64.cpp">
       <Filter>src\util</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\ui\RetroPlugRoot.cpp">
-      <Filter>src\ui</Filter>
     </ClCompile>
     <ClCompile Include="..\src\util\File.cpp">
       <Filter>src\util</Filter>
@@ -133,9 +124,6 @@
     <ClCompile Include="..\src\roms\Lsdj.cpp">
       <Filter>src\roms</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\ui\ContextMenu.cpp">
-      <Filter>src\ui</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\lsdj\rom.c">
       <Filter>src\lsdj</Filter>
     </ClCompile>
@@ -168,9 +156,6 @@
     </ClCompile>
     <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp">
       <Filter>filewatcher</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\RetroPlug.cpp">
-      <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltablib.c">
       <Filter>lua</Filter>
@@ -270,6 +255,30 @@
     </ClCompile>
     <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltable.c">
       <Filter>lua</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\ContextMenu.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\EmulatorView.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\RetroPlugRoot.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\controller\RetroPlugController.cpp">
+      <Filter>src\controller</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\util\PaRingBuffer.c">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\EmulatorInstance.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\LuaContext.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\RetroPlug.cpp">
+      <Filter>src\model</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -423,18 +432,6 @@
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\VST2_SDK\aeffectx.h">
       <Filter>IPlug\VST2</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\libretroplug\MessageBus.h">
-      <Filter>src\libretroplug</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\libretroplug\PaMemoryBarrier.h">
-      <Filter>src\libretroplug</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\libretroplug\PaRingBuffer.h">
-      <Filter>src\libretroplug</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\libretroplug\RingBuffer.h">
-      <Filter>src\libretroplug</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\audio\audio_renderer.h">
       <Filter>src\audio</Filter>
     </ClInclude>
@@ -462,9 +459,6 @@
     <ClInclude Include="..\src\platform\Path.h">
       <Filter>src\platform</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\ui\EmulatorView.h">
-      <Filter>src\ui</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\KeyMap.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -479,30 +473,6 @@
     </ClInclude>
     <ClInclude Include="..\src\util\base64.h">
       <Filter>src\util</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\ButtonQueue.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\Types.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\LsdjKeyMap.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\ConfigLoader.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\Keys.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\Buttons.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\ui\RetroPlugRoot.h">
-      <Filter>src\ui</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\Constants.h">
-      <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\util\File.h">
       <Filter>src\util</Filter>
@@ -576,9 +546,6 @@
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\word.h">
       <Filter>liblsdj</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\ui\ContextMenu.h">
-      <Filter>src\ui</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\lsdj\kit.h">
       <Filter>src\lsdj</Filter>
     </ClInclude>
@@ -599,9 +566,6 @@
     </ClInclude>
     <ClInclude Include="..\src\platform\MemoryModule.h">
       <Filter>src\platform</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\RetroPlug.h">
-      <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h">
       <Filter>src\plugs</Filter>
@@ -684,6 +648,45 @@
     <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstring.h">
       <Filter>lua</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\view\ContextMenu.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\EmulatorView.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\RetroPlugRoot.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\controller\RetroPlugController.h">
+      <Filter>src\controller</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\MessageBus.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\PaMemoryBarrier.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\PaRingBuffer.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\RingBuffer.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\RomWatcher.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\fs.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\EmulatorInstance.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\LuaContext.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\RetroPlug.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">
@@ -713,9 +716,6 @@
     <Filter Include="src">
       <UniqueIdentifier>{2b1178a5-956e-4866-8578-6e3ae95cbba8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\libretroplug">
-      <UniqueIdentifier>{36e736df-8426-4ece-9ccf-366e66f89178}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\audio">
       <UniqueIdentifier>{4b43773e-4add-4895-93a0-07ffdf3646e9}</UniqueIdentifier>
     </Filter>
@@ -731,9 +731,6 @@
     <Filter Include="src\platform">
       <UniqueIdentifier>{ecefbda1-34bc-426e-9010-938e4ca85615}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\ui">
-      <UniqueIdentifier>{895c4808-5e39-41da-aed8-886c99444964}</UniqueIdentifier>
-    </Filter>
     <Filter Include="liblsdj">
       <UniqueIdentifier>{f0d9f763-1881-4289-9bef-9d41367e1ee6}</UniqueIdentifier>
     </Filter>
@@ -745,6 +742,15 @@
     </Filter>
     <Filter Include="lua">
       <UniqueIdentifier>{281147aa-0cfb-458a-a76c-4b65b5613273}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\view">
+      <UniqueIdentifier>{895c4808-5e39-41da-aed8-886c99444964}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\controller">
+      <UniqueIdentifier>{17518761-4858-43be-90a5-5f801fa2927f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\model">
+      <UniqueIdentifier>{a5c652b8-4898-47db-a985-68daee19f51a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

@@ -3,7 +3,7 @@
 #include <string>
 
 #include "IControl.h"
-#include "RetroPlug.h"
+#include "model/RetroPlug.h"
 #include "KeyMap.h"
 #include "LsdjKeyMap.h"
 #include "nanovg.h"

@@ -1,19 +1,11 @@
-Action = {
-	Lsdj = {
-		Copy = function() print("Lsdj.Copy") end,
-		Paste = function() print("Lsdj.Paste") end,
-		DownTenRows = function() print("Lsdj.DownTenRows") end,
-		UpTenRows = function() print("Lsdj.UpTenRows") end,
-	},
-	RetroPlug = {
-		NextInstance = function() print("RetroPlug.NextInstance") end
-	}
-}
-
 MidiNote = {
 	C2 = 0,
 	CSharp2 = 1
 }
+
+globalKeyMap({
+	[Key.Tab] = Action.RetroPlug.NextInstance
+})
 
 keyMap({
 	[Key.S] = Button.A,
@@ -23,11 +15,10 @@ keyMap({
 	[Key.UpArrow] = Button.Up,
 	[Key.DownArrow] = Button.Down,
 	[Key.Ctrl] = Button.Select,
-	[Key.Enter] = Button.Start,
-	[Key.Tab] = Action.RetroPlug.NextInstance
+	[Key.Enter] = Button.Start
 })
 
-keyMap({ system = "gameboy", romName = "lsdj*" }, {
+keyMap({ system = "gameboy", romName = "LSDj*" }, {
 	[{ Key.Ctrl, Key.C }] = Action.Lsdj.Copy,
 	[{ Key.Ctrl, Key.V }] = Action.Lsdj.Paste,
 	[Key.PageDown] = Action.Lsdj.DownTenRows,
@@ -45,23 +36,21 @@ padMap({ system = "gameboy" }, {
 	[Pad.Start] = Button.Start
 })
 
-padMap({ system = "gameboy", romName = "lsdj*" }, {
+padMap({ system = "gameboy", romName = "LSDj*" }, {
 	[Pad.L1] = Action.Lsdj.UpTenRows,
 	[Pad.R1] = Action.Lsdj.DownTenRows,
 	[Pad.R2] = Button.Select
 })
 
-midiMap({ system = "gameboy", romName = "lsdj*" }, {
+midiMap({ system = "gameboy", romName = "LSDj*" }, {
 	[MidiNote.C2] = Button.A,
 	[MidiNote.CSharp2] = Button.B
 })
 
-_setup("gameboy", "lsdj")
-
-_onKey({ vk = Key.Ctrl }, true)
+--[[_onKey({ vk = Key.Ctrl }, true)
 _onKey({ vk = Key.C }, true)
 _onKey({ vk = Key.Ctrl }, false)
 _onKey({ vk = Key.C }, false)
 
 _onPad(Pad.L1, true)
-_onPad(Pad.L1, false)
+_onPad(Pad.L1, false)]]

@@ -1,161 +1,196 @@
+require("component")
 require("constants")
-local inspect = require 'inspect'
+require("components.ButtonHandler")
+require("components.GlobalButtonHandler")
+local inspect = require("inspect")
+
+local MAX_INSTANCES = 4
 
 Active = nil
+local _activeIdx = 0
+local _instances = {}
 
-local _config = { system = "gameboy" }
-local _maps = {
-	key = { all = {}, valid = {}, combo = {}, comboActive = false },
-	pad = { all = {}, valid = {}, combo = {}, comboActive = false },
-	midi = { all = {}, valid = {}, combo = {}, comboActive = false }
+Action = {
+	Lsdj = {
+		Copy = function() print("Lsdj.Copy") end,
+		Paste = function() print("Lsdj.Paste") end,
+		DownTenRows = function() print("Lsdj.DownTenRows") end,
+		UpTenRows = function() print("Lsdj.UpTenRows") end,
+	},
+
 }
 
-local function tableConcat(t1, t2)
-	for k,v in pairs(t2) do
-		t1[k] = v
-	end
+local _globalComponents = {}
 
-    return t1
-end
+local _componentFactory = {
+	instance = {},
+	global = {}
+}
 
-local function findConfigMap(root, config)
-	for i,v in ipairs(root) do
-		if v.system == config.system then
-			if v.romName == nil then
-				return v.map
-			end
-
-			if v.romName == config.romName then
-				return v.map
-			elseif config.romName ~= nil and v.romName:find(config.romName) ~= nil then
-				return v.map
-			end
-		end
-	end
-end
-
-local function findOrCreateConfig(root, config)
-	local found
-	for _, v in ipairs(root) do
-		if v.system == config.system and v.romName == config.romName then
-			found = v
-			break
-		end
-	end
-
-	if found == nil then
-		found = { system = config.system, romName = config.romName, map = {} }
-		table.insert(root, found)
-	end
-
-	return found
-end
-
-local function mapSetup(root, config, map)
-	if map == nil then
-		map = config
-		config = { system = "gameboy" }
-	end
-
-	local found = findOrCreateConfig(root.all, config)
-	tableConcat(found.map, map)
-end
-
-local function matchCombo(root, combo)
-	if #combo == 1 then
-		return root[combo[1]]
-	end
-
-	for k, v in pairs(root) do
-		if type(k) == "table" and #k == #combo then
-			-- Make sure the combo matches in the correct order
-			local match = true
-			for i = 1, #combo, 1 do
-				if k[i] ~= combo[i] then
-					match = false
-					break
-				end
-			end
-
-			if match == true then
-				return v
-			end
-		end
-	end
-end
-
-local function tablefind(tab, el)
-    for index, value in pairs(tab) do
-        if value == el then
-            return index
-        end
-    end
-end
-
-local function onInput(root, element, down)
-	if down == true then
-		if #root.combo == 0 then
-			root.comboActive = true
-		end
-
-		if root.comboActive == true then
-			table.insert(root.combo, element)
-		end
-
-		local found = matchCombo(root.valid, root.combo)
-		print(found)
-		if found ~= nil then
-			if type(found) == "number" then
-				print"button"
-				Active:setButtonState(found, true)
-			elseif type(found) == "function" then
-				found(element, down)
-			end
+function _loadComponent(name)
+	local component = require("components/" .. name)
+	if component ~= nil then
+		print("Registered component: " .. component.__desc.name)
+		if component.__desc.global == true then
+			table.insert(_componentFactory.global, component)
+		else
+			table.insert(_componentFactory.instance, component)
 		end
 	else
-		local found = root.valid[element]
-		if found ~= nil and type(found) == "number" then
-			Active:setButtonState(found, false)
-		end
-
-		local idx = tablefind(root.combo, element)
-		if idx ~= nil then table.remove(root.combo, idx) end
-
-		root.comboActive = false
+		print("Failed to load " .. name .. ": Script does not return a component")
 	end
 end
 
-function _onKey(key, down)
-	onInput(_maps.key, key.vk, down)
+local function componentInputRoute(target, key, down)
+	for _, v in ipairs(_globalComponents) do
+		local found = v[target]
+		if found ~= nil then
+			found(v, key, down)
+		end
+	end
+
+	if Active ~= nil then
+		for _, v in ipairs(Active.components) do
+			local found = v[target]
+			if found ~= nil then
+				found(v, key, down)
+			end
+		end
+	end
 end
 
-function _onPad(button, down)
-	onInput(_maps.pad, button, down)
+local _keyState = {}
+
+function _onKey(key, down)
+	local vk = key.vk
+	if down == true then
+		if _keyState[vk] ~= nil then return end
+		_keyState[vk] = true
+	else
+		_keyState[vk] = nil
+	end
+
+	componentInputRoute("onKey", vk, down)
+end
+
+function _onPadButton(button, down)
+	componentInputRoute("onPadButton", button, down)
 end
 
 function _onMidi(note, down)
-	onInput(_maps.midi, note, down)
+	--pluginInputRoute("onMidi", note, down)
 end
 
-function _setup(systemType, romName)
-	_config = { system = systemType, romName = romName }
-	for _, v in pairs(_maps) do
-		v.valid = {}
-		local found = findConfigMap(v.all, _config)
-		if found ~= nil then
-			tableConcat(v.valid, found)
+local function findInstancePlugins(model)
+	local romName = model:getRomName()
+	local components = {}
+	for _, v in ipairs(_componentFactory.instance) do
+		local d = v.__desc
+		if d.romName == nil or romName:find(d.romName) ~= nil then
+			print("Attaching component " .. d.name)
+			table.insert(components, v.new(model))
 		end
+	end
+
+	return components
+end
+
+local function initComponents(instance)
+	local romName = instance.model:getRomName()
+	for _, component in ipairs(instance.components) do
+		if component.onRomLoaded ~= nil then component:onRomLoaded(romName) end
 	end
 end
 
-function keyMap(config, map)
-	mapSetup(_maps.key, config, map)
+function _addInstance(emulatorType)
+	if #_instances < MAX_INSTANCES then
+		local n = _model:addInstance(emulatorType)
+		local components = findInstancePlugins(n)
+		table.insert(_instances, {
+			model = n,
+			components = components
+		})
+
+		initComponents(components)
+
+		if #_instances == 1 then
+			Active = _instances[1]
+		end
+
+		return n
+	end
 end
 
-function padMap(config, map)
-	mapSetup(_maps.pad, config, map)
+function _init()
+	for _, v in ipairs(_componentFactory.global) do
+		table.insert(_globalComponents, v.new())
+	end
+
+	for i = 1, MAX_INSTANCES, 1 do
+		local plug = _model:getPlug(i - 1)
+		if plug ~= nil then
+			table.insert(_instances, {
+				model = plug,
+				components = findInstancePlugins(plug)
+			})
+
+			if i == _model:activeInstanceIdx() + 1 then
+				_activeIdx = i
+				Active = _instances[i]
+			end
+		end
+	end
+
+	for _, instance in ipairs(_instances) do
+		initComponents(instance)
+	end
 end
 
-function midiMap(config, map)
-	mapSetup(_maps.midi, config, map)
+function _setActive(idx)
+	print(idx)
+	_activeIdx = idx + 1
+	Active = _instances[_activeIdx]
+	_model:setActiveInstance(idx)
 end
+
+function _loadRom(idx, path)
+	local instance = _instances[idx]
+	if instance == nil then
+		return
+	end
+
+	instance.components = {}
+	if instance.model:loadRom(path) == false then
+		return
+	end
+
+	instance.components = findInstancePlugins(instance.model)
+	initComponents(instance)
+end
+
+function _removeInstance(index)
+	if index + 1 == _activeIdx then
+		_activeIdx = 0
+		Active = nil
+	end
+
+	table.remove(_instances, index + 1)
+	_model:removeInstance(index)
+end
+
+function _frame(delta)
+
+end
+
+Action.RetroPlug = {
+	NextInstance = function(down)
+		if down == true then
+			local nextIdx = _activeIdx
+			if nextIdx == #_instances then
+				nextIdx = 0
+			end
+
+			_setActive(nextIdx)
+		end
+	end
+}

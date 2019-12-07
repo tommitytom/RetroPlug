@@ -1,6 +1,6 @@
 #pragma once
 
-#include "libretroplug/MessageBus.h"
+#include "util/MessageBus.h"
 #include "roms/Lsdj.h"
 #include "util/xstring.h"
 #include <mutex>
