@@ -21,12 +21,12 @@ function GlobalButtonHandler:onPadButton(button, down)
 	util.handleInput(_buttonMaps.pad, button, down, self.padButtonsPressed)
 end
 
-function globalKeyMap(config, map)
+function GlobalKeyMap(config, map)
 	if map == nil then map = config end
 	_buttonMaps.key = util.inputMap(config, map)
 end
 
-function globalPadMap(config, map)
+function GlobalPadMap(config, map)
 	if map == nil then map = config end
 	_buttonMaps.pad = util.inputMap(config, map)
 end

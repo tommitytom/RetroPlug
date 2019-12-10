@@ -22,15 +22,15 @@ local function mergeInputMaps(source, target, romName)
 	end
 end
 
-function keyMap(config, map)
+function KeyMap(config, map)
 	table.insert(_maps.key, util.inputMap(config, map))
 end
 
-function padMap(config, map)
+function PadMap(config, map)
 	table.insert(_maps.pad, util.inputMap(config, map))
 end
 
-function midiMap(config, map)
+function MidiMap(config, map)
 	--util.inputMap(_maps.midi, config, map)
 end
 

@@ -1,3 +1,16 @@
+-- Represents the buttons on the gameboy system
+Button = {
+	Right = 0,
+	Left = 1,
+	Up = 2,
+	Down = 3,
+	A = 4,
+	B = 5,
+	Select = 6,
+	Start = 7
+}
+
+-- Virtual keycodes for keyboard input
 Key = {
 	Unknown = 0x00,
 	Backspace = 0x08,
@@ -115,18 +128,19 @@ Key = {
 	RightMenu = 0xA5
 }
 
-Button = {
-	Right = 0,
-	Left = 1,
-	Up = 2,
-	Down = 3,
-	A = 4,
-	B = 5,
-	Select = 6,
-	Start = 7
-}
-
+-- Represents buttons on a game pad
 Pad = {
+	-- Axis converted to button presses
+	LeftStickLeft = 0,
+	LeftStickRight = 1,
+	LeftStickDown = 2,
+	LeftStickUp = 3,
+	RightStickLeft = 4,
+	RightStickRight = 5,
+	RightStickDown = 6,
+	RightStickUp = 7,
+
+	-- Actual button presses
 	Start = 44,
 	Select = 45,
 	Left = 46,
@@ -159,4 +173,9 @@ Pad = {
 	Button29 = 73,
 	Button30 = 74,
 	Button31 = 75
+}
+
+MidiNote = {
+	C2 = 0,
+	CSharp2 = 1
 }

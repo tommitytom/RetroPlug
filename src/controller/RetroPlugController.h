@@ -35,7 +35,7 @@ private:
 
 	gainput::InputManager* _padManager;
 	gainput::DeviceId _padId;
-	bool _padButtons[gainput::PadButtonCount_];
+	bool _padButtons[gainput::PadButtonAxisCount_ + gainput::PadButtonCount_];
 
 	InstanceIndex _selected;
 
