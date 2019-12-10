@@ -85,48 +85,10 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 	HideText();
 }
 
-bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
-	if (_plug && _plug->active()) {
-		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
-			return _lsdjKeyMap.onKey(key, down);
-		} else {
-			ButtonEvent ev;
-			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
-			ev.down = down;
-
-			if (ev.id != ButtonTypes::MAX) {
-				_plug->setButtonState(ev);
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-bool EmulatorView::OnGamepad(int button, bool down) {
-	if (_plug && _plug->active()) {
-		ButtonEvent ev;
-		ev.id = _padMap.getControllerButton(button);
-		ev.down = down;
-
-		if (ev.id != ButtonTypes::MAX) {
-			_plug->setButtonState(ev);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-void EmulatorView::Draw(IGraphics& g) {
+void EmulatorView::Draw(IGraphics& g, double delta) {
 	if (_plug && _plug->active()) {
 		MessageBus* bus = _plug->messageBus();
-
-		// FIXME: This constant is the delta time between frames.
-		// It is set to this because on windows iPlug doesn't go higher
-		// than 30fps!  Should probably add some proper time calculation here.
-		_lsdjKeyMap.update(bus, 33.3333333);
+		_lsdjKeyMap.update(bus, delta);
 
 		size_t available = bus->video.readAvailable();
 		if (available > 0) {
@@ -671,11 +633,11 @@ void EmulatorView::DisableRendering(bool disable) {
 	}
 }
 
-void EmulatorView::LoadRom(const tstring & path) {
+/*void EmulatorView::LoadRom(const tstring & path) {
 	_plug->init(path, GameboyModel::Auto, false);
 	_plug->disableRendering(false);
 	HideText();
-}
+}*/
 
 void EmulatorView::OpenLoadSramDialog() {
 	std::vector<FileDialogFilters> types = {

@@ -19,7 +19,7 @@ function component(desc)
 	c.new = function(system)
 		local obj = {}
 		setmetatable(obj, c)
-		c.system = system
+		obj.system = system
 		if c.init then c.init(obj)	end
 		return obj
 	end

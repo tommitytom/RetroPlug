@@ -71,7 +71,7 @@ public:
 
 	void onPad(int button, bool down);
 
-	void loadRom(InstanceIndex idx, const std::string& path) {}
+	void loadRom(InstanceIndex idx, const std::string& path);
 
 	InstanceLayout layout() const { return _layout; }
 

@@ -134,12 +134,12 @@ void RetroPlugView::Draw(IGraphics & g) {
 		SetActive(_activeIdx);
 	}
 
-	float delta = 33.3333f; // TODO: Do a proper delta time calculation here
+	double delta = 33.3333; // TODO: Do a proper delta time calculation here
 	_binder.update(delta);
 	_binder.lua().update(delta);
 
 	for (auto view : _views) {
-		view->Draw(g);
+		view->Draw(g, delta);
 	}
 }
 
@@ -185,7 +185,7 @@ void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
 	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		_active->LoadRom(path);
+		_binder.lua().loadRom(_activeIdx, ws2s(path));
 	} else if (ext == TSTR(".sav")) {
 		plug->loadBattery({ path }, true);
 	}
@@ -484,7 +484,8 @@ void RetroPlugView::LoadProjectOrRom(const tstring& path) {
 	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
 	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		_active->LoadRom(path);
+		//_active->LoadRom(path);
+		_binder.lua().loadRom(_activeIdx, ws2s(path));
 	}
 }
 

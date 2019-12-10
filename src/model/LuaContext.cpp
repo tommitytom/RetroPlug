@@ -57,6 +57,12 @@ void LuaContext::update(float delta) {
 	}
 }
 
+void LuaContext::loadRom(InstanceIndex idx, const std::string& path) {
+	sol::protected_function f = (*_state)["_loadRom"];
+	sol::protected_function_result result = f(idx, path);
+	validateResult(result, "Failed to load rom: ");
+}
+
 bool LuaContext::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
 	sol::protected_function f = (*_state)["_onKey"];
 	sol::protected_function_result result = f(key, down);

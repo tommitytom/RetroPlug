@@ -7,6 +7,10 @@ globalKeyMap({
 	[Key.Tab] = Action.RetroPlug.NextInstance
 })
 
+globalPadMap({
+	[Pad.Y] = Action.RetroPlug.NextInstance
+})
+
 keyMap({
 	[Key.S] = Button.A,
 	[Key.A] = Button.B,

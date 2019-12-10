@@ -70,11 +70,7 @@ public:
 
 	void SetAlpha(float alpha) { _alpha = alpha; }
 
-	bool OnKey(const IKeyPress& key, bool down);
-
-	bool OnGamepad(int button, bool down);
-
-	void Draw(IGraphics& g);
+	void Draw(IGraphics& g, double delta);
 
 	void CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu);
 
@@ -82,7 +78,7 @@ public:
 
 	void DisableRendering(bool disable);
 
-	void LoadRom(const tstring& path);
+	//void LoadRom(const tstring& path);
 
 	void LoadSong(int index);
 

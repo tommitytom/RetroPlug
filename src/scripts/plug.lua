@@ -103,15 +103,17 @@ local function initComponents(instance)
 end
 
 function _addInstance(emulatorType)
+	print"addinginstance"
 	if #_instances < MAX_INSTANCES then
 		local n = _model:addInstance(emulatorType)
-		local components = findInstancePlugins(n)
-		table.insert(_instances, {
+		local instance = {
 			model = n,
-			components = components
-		})
+			components = findInstancePlugins(n)
+		}
 
-		initComponents(components)
+		table.insert(_instances, instance)
+
+		initComponents(instance)
 
 		if #_instances == 1 then
 			Active = _instances[1]
@@ -147,23 +149,26 @@ function _init()
 end
 
 function _setActive(idx)
-	print(idx)
 	_activeIdx = idx + 1
 	Active = _instances[_activeIdx]
 	_model:setActiveInstance(idx)
 end
 
 function _loadRom(idx, path)
-	local instance = _instances[idx]
+	print("loading rom")
+	local instance = _instances[idx + 1]
 	if instance == nil then
 		return
 	end
 
 	instance.components = {}
-	if instance.model:loadRom(path) == false then
+	print("loading")
+	if _model:loadRom(idx, path) == false then
+		print("loading failed")
 		return
 	end
 
+	print("finding comps")
 	instance.components = findInstancePlugins(instance.model)
 	initComponents(instance)
 end

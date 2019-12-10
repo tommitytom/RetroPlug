@@ -17,6 +17,14 @@ void RetroPlug::setActive(InstanceIndex idx) {
 	}
 }
 
+void RetroPlug::loadRom(InstanceIndex idx, const std::string& path) {
+	SameBoyPlugPtr plug = _plugs[idx];
+	if (plug) {
+		plug->init(tstr(path), GameboyModel::Auto, false);
+		plug->disableRendering(false);
+	}
+}
+
 void RetroPlug::clear() {
 	_projectPath.clear();
 	for (size_t i = 0; i < MAX_INSTANCES; i++) {
