@@ -9,6 +9,7 @@ local MAX_INSTANCES = 4
 Active = nil
 local _activeIdx = 0
 local _instances = {}
+local _keyState = {}
 
 Action = {
 	Lsdj = {
@@ -42,10 +43,12 @@ function _loadComponent(name)
 end
 
 local function componentInputRoute(target, key, down)
+	local handled = false
 	for _, v in ipairs(_globalComponents) do
 		local found = v[target]
 		if found ~= nil then
 			found(v, key, down)
+			handled = true
 		end
 	end
 
@@ -54,31 +57,12 @@ local function componentInputRoute(target, key, down)
 			local found = v[target]
 			if found ~= nil then
 				found(v, key, down)
+				handled = true
 			end
 		end
 	end
-end
 
-local _keyState = {}
-
-function _onKey(key, down)
-	local vk = key.vk
-	if down == true then
-		if _keyState[vk] ~= nil then return end
-		_keyState[vk] = true
-	else
-		_keyState[vk] = nil
-	end
-
-	componentInputRoute("onKey", vk, down)
-end
-
-function _onPadButton(button, down)
-	componentInputRoute("onPadButton", button, down)
-end
-
-function _onMidi(note, down)
-	--pluginInputRoute("onMidi", note, down)
+	return handled
 end
 
 local function findInstancePlugins(model)
@@ -155,20 +139,17 @@ function _setActive(idx)
 end
 
 function _loadRom(idx, path)
-	print("loading rom")
 	local instance = _instances[idx + 1]
 	if instance == nil then
+		print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
 		return
 	end
 
 	instance.components = {}
-	print("loading")
 	if _model:loadRom(idx, path) == false then
-		print("loading failed")
 		return
 	end
 
-	print("finding comps")
 	instance.components = findInstancePlugins(instance.model)
 	initComponents(instance)
 end
@@ -185,6 +166,26 @@ end
 
 function _frame(delta)
 
+end
+
+function _onKey(key, down)
+	local vk = key.vk
+	if down == true then
+		if _keyState[vk] ~= nil then return end
+		_keyState[vk] = true
+	else
+		_keyState[vk] = nil
+	end
+
+	return componentInputRoute("onKey", vk, down)
+end
+
+function _onPadButton(button, down)
+	componentInputRoute("onPadButton", button, down)
+end
+
+function _onMidi(note, down)
+	--pluginInputRoute("onMidi", note, down)
 end
 
 Action.RetroPlug = {

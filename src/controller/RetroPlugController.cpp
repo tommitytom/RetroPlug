@@ -87,6 +87,5 @@ bool RetroPlugBinder::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
 }
 
 void RetroPlugBinder::onPadButton(int button, bool down) {
-	std::cout << button << "        " << down << std::endl;
 	_lua.onPadButton(button, down);
 }
