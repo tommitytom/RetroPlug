@@ -280,6 +280,7 @@
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
     <ClInclude Include="..\src\model\EmulatorInstance.h" />
+    <ClInclude Include="..\src\model\FileManager.h" />
     <ClInclude Include="..\src\model\LuaContext.h" />
     <ClInclude Include="..\src\model\RetroPlug.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
@@ -295,6 +296,7 @@
     <ClInclude Include="..\src\roms\Lsdj.h" />
     <ClInclude Include="..\src\util\base64.h" />
     <ClInclude Include="..\src\util\crc32.h" />
+    <ClInclude Include="..\src\util\DataBuffer.h" />
     <ClInclude Include="..\src\util\File.h" />
     <ClInclude Include="..\src\util\MessageBus.h" />
     <ClInclude Include="..\src\util\PaMemoryBarrier.h" />
@@ -510,6 +512,7 @@
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
+    <ClCompile Include="..\src\model\FileManager.cpp" />
     <ClCompile Include="..\src\model\LuaContext.cpp" />
     <ClCompile Include="..\src\model\RetroPlug.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />

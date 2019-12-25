@@ -283,7 +283,7 @@ size_t sameboy_fetch_video(void* state, uint32_t* video) {
     return 0;
 }
 
-int update_first_instance(sameboy_state_t* s, int targetAudioFrames) {
+/*int update_first_instance(sameboy_state_t* s, int targetAudioFrames) {
     if (s->currentAudioFrames < targetAudioFrames) {
         s->processTicks += GB_run(&s->gb);
         return 0;
@@ -302,7 +302,7 @@ int update_instance(sameboy_state_t* s, int targetAudioFrames, int targetTicks) 
     }
 
     return 1;
-}
+}*/
 
 void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAudioFrames) {
     sameboy_state_t* st[MAX_INSTANCES];

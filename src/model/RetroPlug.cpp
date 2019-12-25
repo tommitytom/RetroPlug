@@ -50,6 +50,10 @@ SameBoyPlugPtr RetroPlug::addInstance(EmulatorType emulatorType) {
 	return plug;
 }
 
+SameBoyPlugPtr RetroPlug::duplicateInstance(size_t idx) {
+	return nullptr;
+}
+
 void RetroPlug::removeInstance(size_t idx) {
 	for (size_t i = idx; i < MAX_INSTANCES - 1; i++) {
 		_plugs[i] = _plugs[i + 1];

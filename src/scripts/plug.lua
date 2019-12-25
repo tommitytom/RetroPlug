@@ -28,20 +28,6 @@ local _componentFactory = {
 	global = {}
 }
 
-function _loadComponent(name)
-	local component = require("components/" .. name)
-	if component ~= nil then
-		print("Registered component: " .. component.__desc.name)
-		if component.__desc.global == true then
-			table.insert(_componentFactory.global, component)
-		else
-			table.insert(_componentFactory.instance, component)
-		end
-	else
-		print("Failed to load " .. name .. ": Script does not return a component")
-	end
-end
-
 local function componentInputRoute(target, key, down)
 	local handled = false
 	for _, v in ipairs(_globalComponents) do
@@ -65,14 +51,13 @@ local function componentInputRoute(target, key, down)
 	return handled
 end
 
-local function findInstancePlugins(model)
-	local romName = model:getRomName()
+local function findInstancePlugins(rom)
 	local components = {}
 	for _, v in ipairs(_componentFactory.instance) do
 		local d = v.__desc
-		if d.romName == nil or romName:find(d.romName) ~= nil then
+		if d.romName == nil or rom.name:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			table.insert(components, v.new(model))
+			table.insert(components, v.new())
 		end
 	end
 
@@ -86,24 +71,17 @@ local function initComponents(instance)
 	end
 end
 
-function _addInstance(emulatorType)
-	print"addinginstance"
-	if #_instances < MAX_INSTANCES then
-		local n = _model:addInstance(emulatorType)
-		local instance = {
-			model = n,
-			components = findInstancePlugins(n)
-		}
-
-		table.insert(_instances, instance)
-
-		initComponents(instance)
-
-		if #_instances == 1 then
-			Active = _instances[1]
+function _loadComponent(name)
+	local component = require("components/" .. name)
+	if component ~= nil then
+		print("Registered component: " .. component.__desc.name)
+		if component.__desc.global == true then
+			table.insert(_componentFactory.global, component)
+		else
+			table.insert(_componentFactory.instance, component)
 		end
-
-		return n
+	else
+		print("Failed to load " .. name .. ": Script does not return a component")
 	end
 end
 
@@ -132,26 +110,28 @@ function _init()
 	end
 end
 
-function _setActive(idx)
-	_activeIdx = idx + 1
-	Active = _instances[_activeIdx]
-	_model:setActiveInstance(idx)
+local function addInstance(emulatorType)
+	if #_instances < MAX_INSTANCES then
+		local instance = {
+			model = _model:addInstance(emulatorType),
+			components = {}
+		}
+
+		table.insert(_instances, instance)
+
+		if #_instances == 1 then
+			Active = _instances[1]
+		end
+
+		return instance
+	end
 end
 
-function _loadRom(idx, path)
-	local instance = _instances[idx + 1]
-	if instance == nil then
-		print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
-		return
+function _addInstance(emulatorType)
+	local instance = addInstance(emulatorType)
+	if instance ~= nil then
+		return instance.model
 	end
-
-	instance.components = {}
-	if _model:loadRom(idx, path) == false then
-		return
-	end
-
-	instance.components = findInstancePlugins(instance.model)
-	initComponents(instance)
 end
 
 function _removeInstance(index)
@@ -162,6 +142,57 @@ function _removeInstance(index)
 
 	table.remove(_instances, index + 1)
 	_model:removeInstance(index)
+end
+
+function _duplicateInstance(idx)
+	if #_instances < MAX_INSTANCES then
+		local source = _instances[idx + 1]
+
+		local instance = {
+			model = _model:duplicateInstance(idx),
+			components = {}  -- TODO: Duplicate components
+		}
+
+		return instance.model
+	end
+end
+
+function _loadRom(idx, path)
+	local file = _model:fileManager():loadFile(path)
+	if file == nil then
+		return
+	end
+
+	local romData = {
+		name = file.data:slice(0x0134, 15):toString(),
+		path = path
+	}
+
+	local instance = _instances[idx + 1]
+	if instance == nil then
+		print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
+		return
+	end
+
+	instance.components = findInstancePlugins(romData)
+
+	for _, v in ipairs(instance.components) do
+		if v.onBeforeRomLoad ~= nil then
+			v.onBeforeRomLoad(romData)
+		end
+	end
+
+	if _model:loadRom(idx, path) == false then
+		return
+	end
+
+	initComponents(instance)
+end
+
+function _setActive(idx)
+	_activeIdx = idx + 1
+	Active = _instances[_activeIdx]
+	_model:setActiveInstance(idx)
 end
 
 function _frame(delta)

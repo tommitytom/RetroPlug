@@ -3,6 +3,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "DataBuffer.h"
+
 size_t getFileSize(std::ifstream& stream) {
 	stream.seekg(0, std::ios::end);
 	size_t size = stream.tellg();
@@ -14,6 +16,13 @@ bool readFile(const tstring& path, std::vector<std::byte>& target) {
 	std::ifstream f(path, std::ios::binary);
 	target.resize(getFileSize(f));
 	f.read((char*)target.data(), target.size());
+	return true;
+}
+
+bool readFile(const tstring& path, DataBuffer* target) {
+	std::ifstream f(path, std::ios::binary);
+	target->resize(getFileSize(f));
+	f.read((char*)target->data(), target->size());
 	return true;
 }
 

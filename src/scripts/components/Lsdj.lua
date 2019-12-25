@@ -1,6 +1,22 @@
 local Lsdj = component({ name = "Lsdj", romName = "LSDj*" })
 
-function Lsdj:init(system)
+function Lsdj:init()
+	self._valid = false
+	self._kits = {}
+	self._songs = {}
+end
+
+function Lsdj:onBeforeRomLoad(romData)
+	-- Patch the rom
+	--liblsdj.parseRom(romData)
+end
+
+function Lsdj:onBeforeSavLoad(savData)
+	-- Patch the sav
+	--liblsdj.parseSav(savData)
+end
+
+function Lsdj:onRomLoaded(system)
 	--[[self.registerActions({
 		DownTenRows = function()
 			system.buttons:hold(Button.B):delay():hold(Button.Down):releaseAll()

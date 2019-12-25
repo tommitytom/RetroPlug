@@ -4,16 +4,43 @@
 
 #include <sol/sol.hpp>
 #include "util/fs.h"
+#include "util/DataBuffer.h"
+#include "util/File.h"
+#include "model/FileManager.h"
 
-bool validateResult(const sol::protected_function_result& result, const char* error) {
+bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name = "") {
 	if (!result.valid()) {
 		sol::error err = result;
 		std::string what = err.what();
-		std::cout << error << what << std::endl;
+		std::cout << prefix;
+		if (!name.empty()) {
+			std::cout << " " << name;
+		}
+		
+		std::cout << ": " << what << std::endl;
 		return false;
 	}
 
 	return true;
+}
+
+template <typename ...Args>
+bool callFunc(sol::state* state, const char* name, Args&&... args) {
+	sol::protected_function f = (*state)[name];
+	sol::protected_function_result result = f(args...);
+	return validateResult(result, "Failed to call", name);
+}
+
+template <typename ReturnType, typename ...Args>
+bool callFuncRet(sol::state* state, const char* name, ReturnType& ret, Args&&... args) {
+	sol::protected_function f = (*state)[name];
+	sol::protected_function_result result = f(args...);
+	if (validateResult(result, "Failed to call", name)) {
+		ret = result.get<ReturnType>();
+		return true;
+	}
+
+	return false;
 }
 
 void LuaContext::init(RetroPlug* plug, const std::string& path) {
@@ -23,25 +50,17 @@ void LuaContext::init(RetroPlug* plug, const std::string& path) {
 }
 
 SameBoyPlugPtr LuaContext::addInstance(EmulatorType type) {
-	sol::protected_function f = (*_state)["_addInstance"];
-	sol::protected_function_result result = f(type);
-	if (validateResult(result, "Failed to add instance: ")) {
-		return result.get<SameBoyPlugPtr>();
-	}
-
-	return nullptr;
+	SameBoyPlugPtr res;
+	callFuncRet(_state, "_addInstance", res, type);
+	return res;
 }
 
 void LuaContext::removeInstance(size_t index) {
-	sol::protected_function f = (*_state)["_removeInstance"];
-	sol::protected_function_result result = f(index);
-	validateResult(result, "Failed to remove instance: ");
+	callFunc(_state, "_removeInstance", index);
 }
 
 void LuaContext::setActive(size_t idx) {
-	sol::protected_function f = (*_state)["_setActive"];
-	sol::protected_function_result result = f(idx);
-	validateResult(result, "Failed to set active instance: ");
+	callFunc(_state, "_setActive", idx);
 }
 
 void LuaContext::update(float delta) {
@@ -51,32 +70,22 @@ void LuaContext::update(float delta) {
 	}
 
 	if (!_haltFrameProcessing) {
-		sol::protected_function f = (*_state)["_frame"];
-		sol::protected_function_result result = f(delta);
-		_haltFrameProcessing = !validateResult(result, "Failed to process frame: ");
+		_haltFrameProcessing = !callFunc(_state, "_frame", delta);
 	}
 }
 
 void LuaContext::loadRom(InstanceIndex idx, const std::string& path) {
-	sol::protected_function f = (*_state)["_loadRom"];
-	sol::protected_function_result result = f(idx, path);
-	validateResult(result, "Failed to load rom: ");
+	callFunc(_state, "_loadRom", idx, path);
 }
 
 bool LuaContext::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
-	sol::protected_function f = (*_state)["_onKey"];
-	sol::protected_function_result result = f(key, down);
-	if (validateResult(result, "Failed to process key press: ")) {
-		return result.get<bool>(); 
-	}
-	
-	return false;
+	bool res = false;
+	callFuncRet(_state, "_onKey", res, key, down);
+	return res;
 }
 
 void LuaContext::onPadButton(int button, bool down) {
-	sol::protected_function f = (*_state)["_onPadButton"];
-	sol::protected_function_result result = f(button, down);
-	validateResult(result, "Failed to process button press: ");
+	callFunc(_state, "_onPadButton", button, down);
 }
 
 void LuaContext::reload() {
@@ -92,38 +101,63 @@ void LuaContext::shutdown() {
 	}
 }
 
+static void loadRom(const std::string& path) {
+
+}
+
+
 void LuaContext::setup() {
 	std::cout << "------------------------------------------" << std::endl;
 
 	_state = new sol::state();
-	_state->open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+	sol::state& s = *_state;
 
-	std::string packagePath = (*_state)["package"]["path"];
-	(*_state)["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
+	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
 
-	_state->new_usertype<SameBoyPlug>("SameBoyPlug",
+	std::string packagePath = s["package"]["path"];
+	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
+
+	s.new_usertype<DataBuffer>("DataBuffer",
+		"get", &DataBuffer::get,
+		"set", &DataBuffer::set,
+		"slice", &DataBuffer::slice,
+		"toString", &DataBuffer::toString,
+		"hash", &DataBuffer::hash
+	);
+
+	s.new_usertype<FileManager>("FileManager",
+		"loadFile", &FileManager::loadFile
+	);
+
+	s.new_usertype<File>("File",
+		"data", sol::readonly(&File::data),
+		"checksum", sol::readonly(&File::checksum)
+	);
+
+	s.new_usertype<SameBoyPlug>("SameBoyPlug",
 		"setButtonState", &SameBoyPlug::setButtonStateT,
 		"getRomName", &SameBoyPlug::romName,
 		"isActive", &SameBoyPlug::active
 	);
 
-	_state->new_usertype<RetroPlug>("RetroPlug",
+	s.new_usertype<RetroPlug>("RetroPlug",
 		"addInstance", &RetroPlug::addInstance,
 		"removeInstance", &RetroPlug::removeInstance,
 		"setActiveInstance", &RetroPlug::setActive,
 		"activeInstanceIdx", &RetroPlug::activeInstanceIdx,
 		"getPlug", &RetroPlug::getPlug,
-		"loadRom", &RetroPlug::loadRom
+		"loadRom", &RetroPlug::loadRom,
+		"fileManager", &RetroPlug::fileManager
 	);
 
-	_state->new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",
+	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",
 		"vk", &iplug::igraphics::IKeyPress::VK,
 		"shift", &iplug::igraphics::IKeyPress::S,
 		"ctrl", &iplug::igraphics::IKeyPress::C,
 		"alt", &iplug::igraphics::IKeyPress::A
 	);
 
-	(*_state)["_model"].set(_plug);
+	s["_model"].set(_plug);
 
 	if (!runFile(_path + "/plug.lua")) {
 		return;
@@ -145,14 +179,18 @@ void LuaContext::setup() {
 
 bool LuaContext::runFile(const std::string& path) {
 	sol::protected_function_result res = _state->do_file(path);
-	return validateResult(res, ("Failed to load " + path).c_str());
+	return validateResult(res, "Failed to load", path);
 }
 
-bool LuaContext::runScript(const std::string& script) {
+bool LuaContext::runScript(const std::string& script, const char* error) {
 	sol::protected_function_result res = _state->do_string(script);
-	return validateResult(res, "Failed to run script: ");
+	if (error != nullptr) {
+		return validateResult(res, error);
+	} else {
+		return validateResult(res, "Failed to run script", script);
+	}
 }
 
 bool LuaContext::requireComponent(const std::string& path) {
-	return runScript("_loadComponent(\"" + path + "\")");
+	return runScript("_loadComponent(\"" + path + "\")", "Failed to load component");
 }

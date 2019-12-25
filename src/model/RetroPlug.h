@@ -6,6 +6,7 @@
 #include "plugs/SameBoyPlug.h"
 #include "util/xstring.h"
 #include "util/fs.h"
+#include "model/FileManager.h"
 #include "Constants.h"
 
 #include "IGraphicsStructs.h"
@@ -47,6 +48,8 @@ private:
 	std::atomic<AudioChannelRouting> _audioRouting = AudioChannelRouting::StereoMixDown;
 	std::atomic<MidiChannelRouting> _midiRouting = MidiChannelRouting::SendToAll;
 
+	FileManager _fileManager;
+
 	double _sampleRate = 48000;
 
 	bool _dirtyUi = true;
@@ -54,6 +57,8 @@ private:
 public:
 	RetroPlug();
 	~RetroPlug();
+
+	FileManager* fileManager() { return &_fileManager; }
 
 	bool dirtyUi() {
 		bool v = _dirtyUi;
@@ -96,6 +101,8 @@ public:
 	void setProjectPath(const tstring& path) { _projectPath = path; }
 
 	SameBoyPlugPtr addInstance(EmulatorType emulatorType);
+
+	SameBoyPlugPtr duplicateInstance(size_t idx);
 
 	void removeInstance(size_t idx);
 

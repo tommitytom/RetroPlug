@@ -55,7 +55,7 @@ private:
 
 	bool runFile(const std::string& path);
 
-	bool runScript(const std::string& script);
+	bool runScript(const std::string& script, const char* error = nullptr);
 
 	bool requireComponent(const std::string& path);
 };
