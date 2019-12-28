@@ -51,23 +51,27 @@ local function componentInputRoute(target, key, down)
 	return handled
 end
 
-local function findInstancePlugins(rom)
+local function findInstanceComponents(rom, system)
 	local components = {}
 	for _, v in ipairs(_componentFactory.instance) do
 		local d = v.__desc
 		if d.romName == nil or rom.name:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			table.insert(components, v.new())
+			table.insert(components, v.new(system))
 		end
 	end
 
 	return components
 end
 
-local function initComponents(instance)
+local function initComponents(instance, reloaded)
 	local romName = instance.model:getRomName()
 	for _, component in ipairs(instance.components) do
-		if component.onRomLoaded ~= nil then component:onRomLoaded(romName) end
+		if reloaded == true then
+			if component.onReload ~= nil then component:onReload() end
+		else
+			if component.onRomLoaded ~= nil then component:onRomLoaded(romName) end
+		end
 	end
 end
 
@@ -93,9 +97,14 @@ function _init()
 	for i = 1, MAX_INSTANCES, 1 do
 		local plug = _model:getPlug(i - 1)
 		if plug ~= nil then
+			local romData = {
+				name = plug:getRomName(),
+				path = plug:getRomPath()
+			}
+
 			table.insert(_instances, {
 				model = plug,
-				components = findInstancePlugins(plug)
+				components = findInstanceComponents(romData, plug)
 			})
 
 			if i == _model:activeInstanceIdx() + 1 then
@@ -158,7 +167,7 @@ function _duplicateInstance(idx)
 end
 
 function _loadRom(idx, path)
-	local file = _model:fileManager():loadFile(path)
+	local file = _model:fileManager():loadFile(path, false)
 	if file == nil then
 		return
 	end
@@ -174,7 +183,7 @@ function _loadRom(idx, path)
 		return
 	end
 
-	instance.components = findInstancePlugins(romData)
+	instance.components = findInstanceComponents(romData, instance.model)
 
 	for _, v in ipairs(instance.components) do
 		if v.onBeforeRomLoad ~= nil then

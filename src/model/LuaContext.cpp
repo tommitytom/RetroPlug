@@ -137,6 +137,7 @@ void LuaContext::setup() {
 	s.new_usertype<SameBoyPlug>("SameBoyPlug",
 		"setButtonState", &SameBoyPlug::setButtonStateT,
 		"getRomName", &SameBoyPlug::romName,
+		"getRomPath", &SameBoyPlug::romPath,
 		"isActive", &SameBoyPlug::active
 	);
 
