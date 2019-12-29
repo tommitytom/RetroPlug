@@ -5,7 +5,6 @@
 
 #include "readerwriterqueue.h"
 #include "allocator/allocator.h"
-#include "message.h"
 #include "request.h"
 #include "envelope.h"
 
@@ -107,10 +106,10 @@ namespace micromsg {
 			assert(!_active);
 
 			size_t typeId = _handlers->typeIds[TypeId<T>::get()];
-			assert(typeId != 0);
+			mm_assert_m(typeId != 0, "Call type not found.  Did you remember to register your call?");
 
 			std::stringstream ss;
-			ss << magic_enum::enum_name(_type) << " added (" << (func != nullptr) << ") for " << typeId;
+			ss << magic_enum::enum_name(_type) << " added handler for " << typeId;
 			std::cout << ss.str() << std::endl;
 
 			_callbacks[typeId] = _funcFactory.alloc(func);
@@ -125,6 +124,11 @@ namespace micromsg {
 					push<RequestT>((NodeType)i, message);
 				}
 			}
+		}
+
+		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
+		bool canPush() {
+			return _alloc->canAlloc<TypedEnvelope<RequestT::Arg>>();
 		}
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>

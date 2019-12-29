@@ -1,8 +1,9 @@
 #pragma once
 
 #include "mpmcqueue.h"
+#include "concurrentqueue.h"
 
 namespace micromsg {
 	struct ControlBlock;
-	using DataQueue = rigtorp::MPMCQueue<ControlBlock*>;
+	using DataQueue = moodycamel::ConcurrentQueue<ControlBlock*>;
 }

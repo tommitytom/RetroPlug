@@ -43,6 +43,15 @@ SameBoyPlug::SameBoyPlug() {
 	_bus.video.init(1024 * 1024);
 	_bus.buttons.init(64);
 	_bus.link.init(64);
+
+	_dimensions.w = 160;
+	_dimensions.h = 144;
+}
+
+void SameBoyPlug::loadRom(const char* data, size_t size) {
+	GameboyModel model = GameboyModel::Auto;
+	bool fastBoot = false;
+	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModel(model), fastBoot);
 }
 
 void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot) {
@@ -333,25 +342,18 @@ void SameBoyPlug::updateButtons() {
 
 void SameBoyPlug::updateAV(int audioFrames) {
 	int16_t audio[1024 * 4]; // FIXME: Choose a realistic size for this...
-	char video[FRAME_SIZE];
 
 	int sampleCount = audioFrames * 2;
 
 	SAMEBOY_SYMBOLS(sameboy_fetch_audio)(_instance, audio);
-	size_t videoAvailable = SAMEBOY_SYMBOLS(sameboy_fetch_video)(_instance, (uint32_t*)video);
 
-	if (videoAvailable > 0 && _bus.video.writeAvailable() >= FRAME_SIZE) {
-		_bus.video.write(video, FRAME_SIZE);
+	if (_videoBuffer->data.get()) {
+		size_t videoAvailable = SAMEBOY_SYMBOLS(sameboy_fetch_video)(_instance, (uint32_t*)_videoBuffer->data.get());
 	}
 
 	if (_resetSamples <= 0) {
 		// Convert to float
-		float inputFloat[1024 * 4]; // FIXME: Choose a realistic size for this...
-		ma_pcm_s16_to_f32(inputFloat, audio, sampleCount, ma_dither_mode_triangle);
-
-		if (_bus.audio.writeAvailable() >= sampleCount) {
-			_bus.audio.write(inputFloat, sampleCount);
-		}
+		ma_pcm_s16_to_f32(_audioBuffer->data->data(), audio, sampleCount, ma_dither_mode_triangle);
 	} else {
 		_resetSamples -= audioFrames;
 	}

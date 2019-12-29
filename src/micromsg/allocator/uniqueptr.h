@@ -3,13 +3,14 @@
 namespace micromsg {
 	template <typename T>
 	class UniquePtr {
-	private:
+	protected:
 		ControlBlock* _controlBlock;
 
+	private:
 		UniquePtr(ControlBlock* controlBlock) : _controlBlock(controlBlock) {}
 
 	public:
-		UniquePtr() {}
+		UniquePtr(): _controlBlock(nullptr) {}
 		UniquePtr(UniquePtr& other) { *this = other; }
 		~UniquePtr() { destroy(); }
 
@@ -19,17 +20,26 @@ namespace micromsg {
 			return *this;
 		}
 
-		T* get() const { return reinterpret_cast<T*>(_controlBlock + 1); }
+		T* get() const { 
+			if (_controlBlock) {
+				return reinterpret_cast<T*>(_controlBlock + 1);
+			}
+			
+			return nullptr;
+		}
 
 		T* operator->() const { return get(); }
+
+		size_t count() const { return _controlBlock->elementCount; }
 
 	private:
 		void destroy() {
 			if (_controlBlock) {
-				_controlBlock->destructor(get());
+				_controlBlock->destructor(get(), _controlBlock->elementCount);
 				_controlBlock->destructor = nullptr;
-				bool success = _controlBlock->queue->try_push(_controlBlock);
+				bool success = _controlBlock->queue->enqueue(_controlBlock);
 				assert(success);
+				_controlBlock = nullptr;
 			}
 		}
 

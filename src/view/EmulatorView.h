@@ -10,6 +10,9 @@
 #include "ContextMenu.h"
 #include "util/RomWatcher.h"
 
+#include "model/LuaContext.h"
+#include "model/RetroPlugProxy.h"
+
 #include <map>
 #include <set>
 
@@ -23,22 +26,24 @@ using namespace igraphics;
 
 class EmulatorView {
 private:
-	RetroPlug* _manager = nullptr;
-	SameBoyPlugPtr _plug;
 	unsigned char _videoScratch[VIDEO_SCRATCH_SIZE];
 
 	int _imageId = -1;
 	NVGpaint _imgPaint;
 	float _alpha = 1.0f;
 
-	KeyMap<VirtualKey> _keyMap;
-	KeyMap<int> _padMap;
-	LsdjKeyMap _lsdjKeyMap;
-
 	IPopupMenu _menu;
-	LsdjSyncModeMenuItems _lsdjMode = LsdjSyncModeMenuItems::Off;
 
-	std::map<std::string, int> _settings;
+	//std::map<std::string, int> _settings;
+
+	Dimension2 _dimensions;
+	char* _frameBuffer = nullptr;
+	size_t _frameBufferSize = 0;
+	bool _frameDirty = false;
+
+	InstanceIndex _index = NO_ACTIVE_INSTANCE;
+	LuaContext* _lua;
+	RetroPlugProxy* _proxy;
 
 	IRECT _area;
 	IGraphics* _graphics;
@@ -46,13 +51,11 @@ private:
 	bool _showText = false;
 	ITextControl* _textIds[2] = { nullptr };
 
-	FW::FileWatcher _fileWatcher;
-	FW::WatchID _watchId = 0;
-	std::unique_ptr<RomUpdateListener> _romListener;
-
 public:
-	EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics);
+	EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics);
 	~EmulatorView();
+
+	void WriteFrame(const VideoBuffer& buffer);
 
 	void ShowText(const std::string& row1, const std::string& row2);
 
@@ -64,10 +67,6 @@ public:
 
 	const IRECT& GetArea() const { return _area; }
 
-	void Setup(SameBoyPlugPtr plug, RetroPlug* manager);
-
-	SameBoyPlugPtr Plug() { return _plug; }
-
 	void SetAlpha(float alpha) { _alpha = alpha; }
 
 	void Draw(IGraphics& g, double delta);
@@ -78,12 +77,10 @@ public:
 
 	void DisableRendering(bool disable);
 
-	//void LoadRom(const tstring& path);
-
-	void LoadSong(int index);
+	InstanceIndex getIndex() const { return _index; }
 
 private:
-	void DrawPixelBuffer(NVGcontext* vg);
+	void DrawPixelBuffer(NVGcontext* vg, char* data);
 
 	IPopupMenu* CreateSettingsMenu();
 
@@ -93,51 +90,11 @@ private:
 
 	void OpenSaveSramDialog();
 
-	void OpenLoadSongsDialog();
-
-	void OpenLoadKitsDialog();
-
 	void OpenReplaceRomDialog();
 	
 	void OpenSaveRomDialog();
 
 	void ToggleKeyboardMode();
 
-	void ExportSong(const LsdjSongName& songName);
-
-	void ExportSongs(const std::vector<LsdjSongName>& songNames);
-
-	void DeleteSong(int index);
-
-	void LoadKit(int index);
-
-	void DeleteKit(int index);
-
-	void ExportKit(int index);
-
-	void ExportKits();
-
 	void ResetSystem(bool fast);
-
-	void ToggleWatchRom();
-
-	inline LsdjSyncModeMenuItems GetLsdjModeMenuItem(LsdjSyncModes mode) {
-		switch (mode) {
-		case LsdjSyncModes::Midi: return LsdjSyncModeMenuItems::MidiSync;
-		case LsdjSyncModes::MidiArduinoboy: return LsdjSyncModeMenuItems::MidSyncArduinoboy;
-		case LsdjSyncModes::MidiMap: return LsdjSyncModeMenuItems::MidiMap;
-		//case LsdjSyncModes::KeyboardArduinoboy: return LsdjSyncModeMenuItems::KeyboardModeArduinoboy;
-		default: return LsdjSyncModeMenuItems::Off;
-		}
-	}
-
-	inline LsdjSyncModes GetLsdjModeFromMenu(LsdjSyncModeMenuItems item) {
-		switch (item) {
-		case LsdjSyncModeMenuItems::MidiSync: return LsdjSyncModes::Midi;
-		case LsdjSyncModeMenuItems::MidSyncArduinoboy: return LsdjSyncModes::MidiArduinoboy;
-		case LsdjSyncModeMenuItems::MidiMap: return LsdjSyncModes::MidiMap;
-		//case LsdjSyncModeMenuItems::KeyboardModeArduinoboy: return LsdjSyncModes::KeyboardArduinoboy;
-		default: return LsdjSyncModes::Off;
-		}
-	}
 };

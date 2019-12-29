@@ -10,7 +10,7 @@
 #define mm_assert_m(Expr, Msg);
 #endif
 
-void __mm_assert(const char* expr_str, bool expr, const char* file, int line, const char* msg) {
+static void __mm_assert(const char* expr_str, bool expr, const char* file, int line, const char* msg) {
     if (!expr)
     {
         std::cerr << "Assertion failed:\t" << (msg ? msg : "") << std::endl

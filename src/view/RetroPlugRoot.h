@@ -10,14 +10,16 @@
 #include "EmulatorView.h"
 #include "ContextMenu.h"
 #include "controller/RetroPlugController.h"
+#include "util/cxxtimer.hpp"
 
 using namespace iplug;
 using namespace igraphics;
 
+using EmulatorViewPtr = std::unique_ptr<EmulatorView>;
+
 class RetroPlugView : public IControl {
 private:
-	RetroPlugBinder _binder;
-	RetroPlug* _plug;
+	RetroPlugProxy* _proxy;
 	std::vector<EmulatorView*> _views;
 	EmulatorView* _active = nullptr;
 	size_t _activeIdx = 0;
@@ -25,8 +27,12 @@ private:
 	IPopupMenu _menu;
 	EHost _host;
 
+	LuaContext* _lua;
+
+	cxxtimer::Timer _frameTimer;
+
 public:
-	RetroPlugView(IRECT b, RetroPlug* plug, EHost host);
+	RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* plug);
 	~RetroPlugView();
 
 	void OnInit() override;
@@ -52,8 +58,6 @@ private:
 
 	void CreatePlugInstance(EmulatorView* view, CreateInstanceType type);
 
-	EmulatorView* AddView(SameBoyPlugPtr plug);
-
 	void SetActive(size_t index);
 
 	IPopupMenu* CreateProjectMenu(bool loaded);
@@ -74,7 +78,7 @@ private:
 	
 	void RemoveActive();
 
-	int GetViewIndex(EmulatorView* view) {
+	/*int GetViewIndex(EmulatorView* view) {
 		for (int i = 0; i < _views.size(); i++) {
 			if (_views[i] == view) {
 				return i;
@@ -82,15 +86,16 @@ private:
 		}
 
 		return -1;
-	}
+	}*/
 
 	void SelectActiveAtPoint(float x, float y) {
-		for (auto view : _views) {
+		for (auto& view : _views) {
 			if (view->GetArea().Contains(x, y)) {
-				_activeIdx = GetViewIndex(view);
-				SetActive(_activeIdx);
+				SetActive(view->getIndex());
 				break;
 			}
 		}
 	}
+
+	void UpdateActive();
 };

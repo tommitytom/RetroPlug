@@ -7,6 +7,7 @@
 #include "util/DataBuffer.h"
 #include "util/File.h"
 #include "model/FileManager.h"
+#include "model/RetroPlugProxy.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name = "") {
 	if (!result.valid()) {
@@ -27,7 +28,7 @@ bool validateResult(const sol::protected_function_result& result, const std::str
 template <typename ...Args>
 bool callFunc(sol::state* state, const char* name, Args&&... args) {
 	sol::protected_function f = (*state)[name];
-	sol::protected_function_result result = f(args...);
+	sol::protected_function_result result = f(args...); // Use std::forward?
 	return validateResult(result, "Failed to call", name);
 }
 
@@ -43,16 +44,18 @@ bool callFuncRet(sol::state* state, const char* name, ReturnType& ret, Args&&...
 	return false;
 }
 
-void LuaContext::init(RetroPlug* plug, const std::string& path) {
+void LuaContext::init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string& path) {
 	_path = path;
 	_plug = plug;
+	_proxy = proxy;
 	setup();
 }
 
 SameBoyPlugPtr LuaContext::addInstance(EmulatorType type) {
-	SameBoyPlugPtr res;
+	/*SameBoyPlugPtr res;
 	callFuncRet(_state, "_addInstance", res, type);
-	return res;
+	return res;*/
+	return nullptr;
 }
 
 void LuaContext::removeInstance(size_t index) {
@@ -88,6 +91,11 @@ void LuaContext::onPadButton(int button, bool down) {
 	callFunc(_state, "_onPadButton", button, down);
 }
 
+void LuaContext::onDrop(const char* str) {
+	std::vector<std::string> paths = { str };
+	callFunc(_state, "_onDrop", paths);
+} 
+
 void LuaContext::reload() {
 	shutdown();
 	setup();
@@ -117,12 +125,12 @@ void LuaContext::setup() {
 	std::string packagePath = s["package"]["path"];
 	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
 
-	s.new_usertype<DataBuffer>("DataBuffer",
-		"get", &DataBuffer::get,
-		"set", &DataBuffer::set,
-		"slice", &DataBuffer::slice,
-		"toString", &DataBuffer::toString,
-		"hash", &DataBuffer::hash
+	s.new_usertype<DataBuffer<char>>("DataBuffer",
+		"get", &DataBuffer<char>::get,
+		"set", &DataBuffer<char>::set,
+		"slice", &DataBuffer<char>::slice,
+		"toString", &DataBuffer<char>::toString,
+		"hash", &DataBuffer<char>::hash
 	);
 
 	s.new_usertype<FileManager>("FileManager",
@@ -151,6 +159,39 @@ void LuaContext::setup() {
 		"fileManager", &RetroPlug::fileManager
 	);
 
+	s.new_enum("EmulatorInstanceState",
+		"Uninitialized", EmulatorInstanceState::Uninitialized,
+		"Initialized", EmulatorInstanceState::Initialized,
+		"RomMissing", EmulatorInstanceState::RomMissing,
+		"Running", EmulatorInstanceState::Running
+	);
+
+	s.new_enum("EmulatorType",
+		"Unknown", EmulatorType::Unknown,
+		"Placeholder", EmulatorType::Placeholder,
+		"SameBoy", EmulatorType::SameBoy
+	);
+
+	s.new_usertype<EmulatorInstanceDesc>("EmulatorInstanceDesc",
+		"idx", &EmulatorInstanceDesc::idx,
+		"type", &EmulatorInstanceDesc::type,
+		"state", &EmulatorInstanceDesc::state,
+		"romName", &EmulatorInstanceDesc::romName,
+		"romPath", &EmulatorInstanceDesc::romPath,
+		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
+		"patchedRomData", &EmulatorInstanceDesc::patchedRomData
+	);
+
+	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
+		"setInstance", &RetroPlugProxy::setInstance,
+		"removeInstance", &RetroPlugProxy::removeInstance,
+		"getInstance", &RetroPlugProxy::getInstance,
+		"getInstances", &RetroPlugProxy::instances,
+		"setActiveInstance", &RetroPlugProxy::setActive,
+		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
+		"fileManager", &RetroPlugProxy::fileManager
+	);
+
 	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",
 		"vk", &iplug::igraphics::IKeyPress::VK,
 		"shift", &iplug::igraphics::IKeyPress::S,
@@ -159,6 +200,7 @@ void LuaContext::setup() {
 	);
 
 	s["_model"].set(_plug);
+	s["_proxy"].set(_proxy);
 
 	if (!runFile(_path + "/plug.lua")) {
 		return;

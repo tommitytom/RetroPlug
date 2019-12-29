@@ -9,7 +9,7 @@
 #include <util/crc32.h>
 
 const int MAX_ROM_SIZE = 1024 * 1024; // 1 mb
-using RomBuffer = FixedDataBuffer<MAX_ROM_SIZE>;
+using RomBuffer = FixedDataBuffer<char, MAX_ROM_SIZE>;
 
 struct RomData {
 	char name[12];
@@ -52,7 +52,7 @@ public:
 			file = addFile(path);
 		}
 
-		DataBufferPtr data = std::make_shared<DataBuffer>();
+		DataBufferPtr data = std::make_shared<DataBuffer<char>>();
 		if (readFile(tstr(path), data.get())) {
 			file->data = data;
 		}

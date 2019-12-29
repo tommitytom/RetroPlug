@@ -5,73 +5,41 @@
 #include "util/File.h"
 #include "util/fs.h"
 #include "util/Serializer.h"
+#include "util/cxxtimer.hpp"
 #include "Keys.h"
 
-
-RetroPlugView::RetroPlugView(IRECT b, RetroPlug* plug, EHost host): IControl(b), _plug(plug), _host(host), _binder(plug) {
-	
+RetroPlugView::RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
+	proxy->videoCallback = [&](const VideoStream& video) {
+		if (_views.size() == MAX_INSTANCES) {
+			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+				const VideoBuffer& buffer = video.buffers[i];
+				if (buffer.data.get()) {
+					_views[i]->WriteFrame(buffer);
+				}
+			}
+		}
+	};
 }
 
 RetroPlugView::~RetroPlugView() {
-	for (size_t i = 0; i < MAX_INSTANCES; i++) {
-		auto plug = _plug->getPlug(i);
-		if (plug && plug->active()) {
-			plug->disableRendering(true);
-		}
-	}
+
 }
 
 void RetroPlugView::OnInit() {
-	size_t plugCount = _plug->instanceCount();
-	if (plugCount == 0) {
-		NewProject();
-	} else {
-		for (size_t i = 0; i < MAX_INSTANCES; i++) {
-			auto plug = _plug->getPlug(i);
-			if (plug) {
-				AddView(plug);
-			}
-		}
-	}
+	UpdateLayout();
 }
 
 bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
-	if (_active) {
-        /*if (key.VK == VirtualKeys::E) {
-            static bool alt = true;
-            int windowW = alt ? 320 : 480;
-            int windowH = alt ? 288 : 320;
-            alt = !alt;
-            GetUI()->SetSizeConstraints(320, windowW, 288, windowH);
-            GetUI()->Resize(windowW, windowH, 1);
-            SetTargetAndDrawRECTs(IRECT(0, 0, windowW, windowH));
-            GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
-            return true;
-        }*/
-
-		return _binder.onKey(key, down);
-        
-		/*if (key.VK == VirtualKeys::Tab && down) {
-			_activeIdx = (_activeIdx + 1) % _views.size();
-			SetActive(_activeIdx);
-			return true;
-		}*/
-
-		//return _active->OnKey(key, down);
-	}
-
-	return false;
+	return _lua->onKey(key, down);
 }
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	if (_active) {
-		auto plug = _active->Plug();
-		if (!plug->active()) {
-			if (plug->romPath().empty()) {
-				OpenLoadProjectOrRomDialog();
-			} else {
-				OpenFindRomDialog();
-			}
+	EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+	if (!active) {
+		OpenLoadProjectOrRomDialog();
+	} else {
+		if (active->state == EmulatorInstanceState::RomMissing) {
+			OpenFindRomDialog();
 		}
 	}
 }
@@ -80,15 +48,15 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	SelectActiveAtPoint(x, y);
 
 	if (mod.R) {
-		if (_active) {
-			auto plug = _active->Plug();
-			_menu.Clear();
-
-			if (plug->active()) {
+		_menu.Clear();
+		EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+		if (active) {
+			switch (active->state) {
+				case EmulatorInstanceState::Running: {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);
 				_active->CreateMenu(&_menu, projectMenu);
 
-				projectMenu->SetFunction([this](int idx, IPopupMenu::Item * itemChosen) {
+				projectMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 					switch ((ProjectMenuItems)idx) {
 					case ProjectMenuItems::New: NewProject(); break;
 					case ProjectMenuItems::Save: SaveProject(); break;
@@ -97,102 +65,62 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
 					}
 				});
-			} else if (!plug->romPath().empty()) {
+				break;
+			}
+			case EmulatorInstanceState::RomMissing:
 				_menu.AddItem("Find ROM...");
 				_menu.AddItem("Load Project...");
-				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {	
+				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
 					if (idx == 0) {
 						OpenFindRomDialog();
-					} else {
+					}
+					else {
 						OpenLoadProjectDialog();
 					}
 				});
-			} else {
-				IPopupMenu* modelMenu = createModelMenu(true);
-				createBasicMenu(&_menu, modelMenu);
-
-				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
-					switch ((BasicMenuItems)idx) {
-					case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
-					case BasicMenuItems::LoadRom: _active->OpenLoadRomDialog(GameboyModel::Auto); break;
-					}
-				});
-
-				modelMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-					_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
-				});
+				break;
 			}
+		} else {
+			IPopupMenu* modelMenu = createModelMenu(true);
+			createBasicMenu(&_menu, modelMenu);
 
-			GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
+			_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
+				switch ((BasicMenuItems)idx) {
+				case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
+				case BasicMenuItems::LoadRom: _active->OpenLoadRomDialog(GameboyModel::Auto); break;
+				}
+			});
+
+			modelMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+				_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
+			});
 		}
+
+		GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
 	}
 }
 
-void RetroPlugView::Draw(IGraphics & g) {
-	if (_plug->dirtyUi()) {
-		_activeIdx = _plug->activeInstanceIdx();
-		SetActive(_activeIdx);
-	}
-
-	double delta = 33.3333; // TODO: Do a proper delta time calculation here
-	_binder.update(delta);
-	_binder.lua().update(delta);
+void RetroPlugView::Draw(IGraphics& g) {
+	_frameTimer.stop();
+	double delta = _frameTimer.count();
+	//_lua->update(delta);
+	_proxy->update(delta);
 
 	for (auto view : _views) {
 		view->Draw(g, delta);
 	}
+	
+	_frameTimer.start();
 }
 
 void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	SelectActiveAtPoint(x, y);
-
-	auto plug = _active->Plug();
-	
-	tstring path = tstr(str);
-	tstring ext = tstr(fs::path(path).extension().wstring());
-
-	Lsdj& lsdj = plug->lsdj();
-	if (lsdj.found) {
-		std::string error;
-		
-		if (ext == TSTR(".kit")) {
-			int idx = lsdj.findEmptyKit();
-			if (idx != -1) {
-				if (lsdj.loadKit(path, idx, error)) {
-					lsdj.patchKits(plug->romData());
-					plug->updateRom();
-					plug->reset(plug->model(), true);
-				} else {
-					// log err
-				}
-			}
-
-			return;
-		} else if (ext == TSTR(".lsdsng")) {
-			// Load lsdj song
-			plug->saveBattery(lsdj.saveData);
-			std::vector<int> ids = lsdj.importSongs({ path }, error);
-			if (ids.size() > 0 && ids[0] != -1) {
-				_active->LoadSong(ids[0]);
-			} else {
-				// log err
-			}
-
-			return;
-		}
-	}
-
-	if (ext == TSTR(".retroplug")) {
-		LoadProject(path);
-	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		_binder.lua().loadRom(_activeIdx, ws2s(path));
-	} else if (ext == TSTR(".sav")) {
-		plug->loadBattery({ path }, true);
-	}
+	_lua->onDrop(str);
+	UpdateLayout();
 }
 
 void RetroPlugView::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
-	SameBoyPlugPtr source = view->Plug();
+	/*SameBoyPlugPtr source = view->Plug();
 	
 	tstring romPath;
 	if (type == CreateInstanceType::LoadRom) {
@@ -212,7 +140,7 @@ void RetroPlugView::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 		return;
 	}
 
-	SameBoyPlugPtr target = _binder.lua().addInstance(EmulatorType::SameBoy);
+	SameBoyPlugPtr target = _lua->addInstance(EmulatorType::SameBoy);
 	target->init(romPath, source->model(), false);
 
 	if (source->lsdj().found) {
@@ -231,43 +159,23 @@ void RetroPlugView::CreatePlugInstance(EmulatorView* view, CreateInstanceType ty
 
 	AddView(target);
 
-	_plug->updateLinkTargets();
-}
-
-EmulatorView* RetroPlugView::AddView(SameBoyPlugPtr plug) {
-	EmulatorView* view = new EmulatorView(plug, _plug, GetUI());
-	_views.push_back(view);
-
-	_activeIdx = _views.size() - 1;
-	SetActive(_activeIdx);
-
-	UpdateLayout();
-
-	if (_views.size() > 1) {
-		if (plug->lsdj().found) {
-			plug->setGameLink(true);
-		}
-
-		if (_views.size() == 2) {
-			auto otherPlug = _plug->plugs()[0];
-			if (otherPlug->lsdj().found) {
-				otherPlug->setGameLink(true);
-			}
-		}
-	}
-
-	if (!plug->active() && !plug->romPath().empty()) {
-		view->ShowText("Unable to find", fs::path(plug->romPath()).filename().string());
-	}
-
-	return view;
+	_plug->updateLinkTargets();*/
 }
 
 void RetroPlugView::UpdateLayout() {
-	size_t count = _views.size();
-	assert(count > 0);
+	if (_views.empty()) {
+		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			_views.push_back(new EmulatorView(i, _lua, _proxy, GetUI()));
+		}
+	}
 
-	InstanceLayout layout = _plug->layout();
+	size_t count = _proxy->getInstanceCount();
+	if (count == 0) {
+		count = 1;
+		_views[0]->ShowText("Double click to", "load a rom...");
+	}
+
+	InstanceLayout layout = _proxy->getProject()->settings.layout;
 	if (layout == InstanceLayout::Auto) {
 		if (count < 4) {
 			layout = InstanceLayout::Row;
@@ -297,7 +205,7 @@ void RetroPlugView::UpdateLayout() {
 	SetTargetAndDrawRECTs(IRECT(0, 0, windowW, windowH));
 	GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
 
-	for (size_t i = 0; i < _views.size(); i++) {
+	for (size_t i = 0; i < count; i++) {
 		int gridX = 0;
 		int gridY = 0;
 
@@ -320,30 +228,41 @@ void RetroPlugView::UpdateLayout() {
 		IRECT b(x, y, x + 320, y + 288);
 		_views[i]->SetArea(b);
 	}
+
+	for (size_t i = count; i < _views.size(); ++i) {
+		_views[i]->HideText();
+	}
+}
+
+void RetroPlugView::UpdateActive() {
+	InstanceIndex idx = _proxy->activeIdx();
+
+	if (_activeIdx != idx) {
+		if (_activeIdx != NO_ACTIVE_INSTANCE) {
+			_views[_activeIdx]->SetAlpha(0.75f);
+		}
+	}
+
+	if (idx != NO_ACTIVE_INSTANCE) {
+		_views[_activeIdx]->SetAlpha(1.0f);
+	}
+
+	_activeIdx = idx;
 }
 
 void RetroPlugView::SetActive(size_t index) {
-	EmulatorView* view = _views[_activeIdx];
-
-	if (_active) {
-		_active->SetAlpha(0.75f);
-	}
-
-	_active = view;
-	_active->SetAlpha(1.0f);
-
-	_binder.lua().setActive(index);
-	//_plug->setActive(view->Plug());
-
-	view->DisableRendering(false);
+	_lua->setActive(index);
+	UpdateActive();
 }
 
 IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
+	Project* project = _proxy->getProject();
+
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
-	IPopupMenu* layoutMenu = createLayoutMenu(_plug->layout());
-	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(_plug->saveType());
-	IPopupMenu* audioRouting = createAudioRoutingMenu(_plug->audioRouting());
-	IPopupMenu* midiRouting = createMidiRoutingMenu(_plug->midiRouting());
+	IPopupMenu* layoutMenu = createLayoutMenu(project->settings.layout);
+	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(project->settings.saveType);
+	IPopupMenu* audioRouting = createAudioRoutingMenu(project->settings.audioRouting);
+	IPopupMenu* midiRouting = createMidiRoutingMenu(project->settings.midiRouting);
 
 	// Temporarily disable multiple instances in Ableton on Mac due to a bug
 	#ifdef WIN32
@@ -381,58 +300,57 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		CreatePlugInstance(_active, (CreateInstanceType)idx);
 	});
 
-	layoutMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-		_plug->setLayout((InstanceLayout)idx);
+	layoutMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
+		project->settings.layout = (InstanceLayout)idx;
+		_proxy->updateSettings();
 		UpdateLayout();
 	});
 
 	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-		_plug->setSaveType((SaveStateType)idx);
+		project->settings.saveType = (SaveStateType)idx;
 	});
 
 	audioRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
-		_plug->setAudioRouting((AudioChannelRouting)idx);
+		project->settings.audioRouting = (AudioChannelRouting)idx;
+		_proxy->updateSettings();
 	});
 
 	midiRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
-		_plug->setMidiRouting((MidiChannelRouting)idx);
+		project->settings.midiRouting = (MidiChannelRouting)idx;
+		_proxy->updateSettings();
 	});
 
 	return menu;
 }
 
 void RetroPlugView::CloseProject() {
-	_plug->clear();
-	IGraphics* g = GetUI();
+	//_lua->closeProject();
+	UpdateLayout();
+	UpdateActive();
+
+	/*IGraphics* g = GetUI();
 
 	if (g) {
 		for (auto view : _views) {
 			delete view;
 		}
-	}
-
-	_views.clear();
-	_active = nullptr;
-	_activeIdx = -1;
+	}*/	
 }
 
 void RetroPlugView::NewProject() {
 	CloseProject();
-
-	SameBoyPlugPtr plug = _binder.lua().addInstance(EmulatorType::SameBoy);
-	EmulatorView* view = AddView(plug);
-	view->ShowText("Double click to", "load a rom...");
-	UpdateLayout();
 }
 
 void RetroPlugView::SaveProject() {
-	if (_plug->projectPath().empty()) {
+	if (_proxy->getProject()->path.empty()) {
 		SaveProjectAs();
 	}
 
-	std::string data;
+	//_lua.saveProject(_proxy->getProject()->path);
+
+	/*std::string data;
 	serialize(data, *_plug);
-	writeFile(_plug->projectPath(), data);
+	writeFile(_plug->projectPath(), data);*/
 }
 
 void RetroPlugView::SaveProjectAs() {
@@ -442,8 +360,7 @@ void RetroPlugView::SaveProjectAs() {
 
 	tstring path = BasicFileSave(GetUI(), types);
 	if (path.size() > 0) {
-		_plug->setProjectPath(path);
-		SaveProject();
+		//_lua.saveProject(path);
 	}
 }
 
@@ -454,15 +371,7 @@ void RetroPlugView::OpenFindRomDialog() {
 
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 	if (paths.size() > 0) {
-		tstring originalPath = _active->Plug()->romPath();
-		for (size_t i = 0; i < _views.size(); i++) {
-			auto plug = _views[i]->Plug();
-			if (plug->romPath() == originalPath) {
-				plug->init(paths[0], plug->model(), true);
-				plug->disableRendering(false);
-				_views[i]->HideText();
-			}
-		}
+		//_lua->findRom(_proxy->activeIdx(), paths[0]);
 	}
 }
 
@@ -485,12 +394,14 @@ void RetroPlugView::LoadProjectOrRom(const tstring& path) {
 		LoadProject(path);
 	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
 		//_active->LoadRom(path);
-		_binder.lua().loadRom(_activeIdx, ws2s(path));
+		_lua->loadRom(_activeIdx, ws2s(path));
 	}
 }
 
 void RetroPlugView::LoadProject(const tstring& path) {
-	std::string data;
+	//_lua->loadProject(path);
+	UpdateLayout();
+	/*std::string data;
 	if (readFile(path, data)) {
 		CloseProject();
 		deserialize(data.c_str(), *_plug);
@@ -511,7 +422,7 @@ void RetroPlugView::LoadProject(const tstring& path) {
 		}
 	}
 
-	_plug->updateLinkTargets();
+	_plug->updateLinkTargets();*/
 }
 
 void RetroPlugView::OpenLoadProjectDialog() {
@@ -526,16 +437,6 @@ void RetroPlugView::OpenLoadProjectDialog() {
 }
 
 void RetroPlugView::RemoveActive() {
-	_binder.lua().removeInstance(_activeIdx);
-	delete _active;
-	_active = nullptr;
-	
-	_views.erase(_views.begin() + _activeIdx);
-
-	if (_activeIdx >= _views.size()) {
-		_activeIdx = _views.size() - 1;
-	}
-
-	SetActive(_activeIdx);
+	_lua->removeInstance(_activeIdx);
 	UpdateLayout();
 }

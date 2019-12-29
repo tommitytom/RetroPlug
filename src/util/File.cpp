@@ -19,7 +19,7 @@ bool readFile(const tstring& path, std::vector<std::byte>& target) {
 	return true;
 }
 
-bool readFile(const tstring& path, DataBuffer* target) {
+bool readFile(const tstring& path, DataBuffer<char>* target) {
 	std::ifstream f(path, std::ios::binary);
 	target->resize(getFileSize(f));
 	f.read((char*)target->data(), target->size());

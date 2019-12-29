@@ -3,6 +3,12 @@
 #include <gainput/gainput.h>
 #include "model/RetroPlug.h"
 #include "model/LuaContext.h"
+#include "micromsg/nodemanager.h"
+#include "view/RetroPlugRoot.h"
+#include "messaging.h"
+#include "model/RetroPlugProxy.h"
+#include "Types.h"
+#include "model/ProcessingContext.h"
 
 #include "IGraphicsStructs.h"
 
@@ -23,11 +29,14 @@ public:
 	}
 };
 
-using InstanceIndex = size_t;
+class RetroPlugView;
 
-class RetroPlugBinder {
+class RetroPlugController {
 private:
-	RetroPlug* _model;
+	RetroPlug _model;
+	RetroPlugProxy _proxy;	
+	ProcessingContext _processingContext;
+	RetroPlugView* _view;
 
 	LuaContext _lua;
 	FW::FileWatcher _scriptWatcher;
@@ -39,17 +48,20 @@ private:
 
 	InstanceIndex _selected;
 
+	micromsg::NodeManager<NodeTypes> _bus;
+
 public:
-	RetroPlugBinder(RetroPlug* model);
-	~RetroPlugBinder();
+	RetroPlugController();
+	~RetroPlugController();
 
-	void update(float delta);
+	void update(float delta) {
+		processPad();
+	}
 
-	LuaContext& lua() { return _lua; }
+	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 
-	bool onKey(const iplug::igraphics::IKeyPress& key, bool down);
+	ProcessingContext* processingContext() { return &_processingContext; }
 
-	void onPadButton(int button, bool down);
-
-	void generateMenu() {}
+private:
+	void processPad();
 };

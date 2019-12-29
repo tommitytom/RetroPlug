@@ -17,8 +17,7 @@ Action = {
 		Paste = function() print("Lsdj.Paste") end,
 		DownTenRows = function() print("Lsdj.DownTenRows") end,
 		UpTenRows = function() print("Lsdj.UpTenRows") end,
-	},
-
+	}
 }
 
 local _globalComponents = {}
@@ -28,12 +27,12 @@ local _componentFactory = {
 	global = {}
 }
 
-local function componentInputRoute(target, key, down)
+local function componentInputRoute(target, ...)
 	local handled = false
 	for _, v in ipairs(_globalComponents) do
 		local found = v[target]
 		if found ~= nil then
-			found(v, key, down)
+			found(v, ...)
 			handled = true
 		end
 	end
@@ -42,7 +41,7 @@ local function componentInputRoute(target, key, down)
 		for _, v in ipairs(Active.components) do
 			local found = v[target]
 			if found ~= nil then
-				found(v, key, down)
+				found(v, ...)
 				handled = true
 			end
 		end
@@ -51,27 +50,23 @@ local function componentInputRoute(target, key, down)
 	return handled
 end
 
-local function findInstanceComponents(rom, system)
+local function findInstanceComponents(emulatorDesc)
 	local components = {}
 	for _, v in ipairs(_componentFactory.instance) do
 		local d = v.__desc
-		if d.romName == nil or rom.name:find(d.romName) ~= nil then
+		if d.romName == nil or emulatorDesc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			table.insert(components, v.new(system))
+			table.insert(components, v.new())
 		end
 	end
 
 	return components
 end
 
-local function initComponents(instance, reloaded)
-	local romName = instance.model:getRomName()
-	for _, component in ipairs(instance.components) do
-		if reloaded == true then
-			if component.onReload ~= nil then component:onReload() end
-		else
-			if component.onRomLoaded ~= nil then component:onRomLoaded(romName) end
-		end
+local function runComponentHandler(components, handlerName, ...)
+	for _, component in ipairs(components) do
+		local found = component[handlerName]
+		if found ~= nil then found(...) end
 	end
 end
 
@@ -95,19 +90,14 @@ function _init()
 	end
 
 	for i = 1, MAX_INSTANCES, 1 do
-		local plug = _model:getPlug(i - 1)
-		if plug ~= nil then
-			local romData = {
-				name = plug:getRomName(),
-				path = plug:getRomPath()
-			}
-
+		local desc = _proxy:getInstance(i - 1)
+		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			table.insert(_instances, {
-				model = plug,
-				components = findInstanceComponents(romData, plug)
+				desc = desc,
+				components = findInstanceComponents(desc)
 			})
 
-			if i == _model:activeInstanceIdx() + 1 then
+			if i == _proxy:activeInstanceIdx() + 1 then
 				_activeIdx = i
 				Active = _instances[i]
 			end
@@ -115,14 +105,16 @@ function _init()
 	end
 
 	for _, instance in ipairs(_instances) do
-		initComponents(instance)
+		runComponentHandler(instance.components, "onReload", instance.desc)
 	end
 end
 
-local function addInstance(emulatorType)
+local function addInstance(desc)
 	if #_instances < MAX_INSTANCES then
+		desc.idx = #_instances
+
 		local instance = {
-			model = _model:addInstance(emulatorType),
+			desc = desc,
 			components = {}
 		}
 
@@ -133,13 +125,6 @@ local function addInstance(emulatorType)
 		end
 
 		return instance
-	end
-end
-
-function _addInstance(emulatorType)
-	local instance = addInstance(emulatorType)
-	if instance ~= nil then
-		return instance.model
 	end
 end
 
@@ -167,35 +152,47 @@ function _duplicateInstance(idx)
 end
 
 function _loadRom(idx, path)
-	local file = _model:fileManager():loadFile(path, false)
+	local file = _proxy:fileManager():loadFile(path, false)
 	if file == nil then
 		return
 	end
 
-	local romData = {
-		name = file.data:slice(0x0134, 15):toString(),
-		path = path
-	}
+	local d = EmulatorInstanceDesc.new()
+	d.idx = idx
+	d.type = EmulatorType.SameBoy
+	d.romPath = path
+	d.romName = file.data:slice(0x0134, 15):toString()
+	d.sourceRomData = file.data
 
-	local instance = _instances[idx + 1]
-	if instance == nil then
-		print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
-		return
-	end
-
-	instance.components = findInstanceComponents(romData, instance.model)
-
-	for _, v in ipairs(instance.components) do
-		if v.onBeforeRomLoad ~= nil then
-			v.onBeforeRomLoad(romData)
+	local instance
+	if idx == -1 then
+		instance = addInstance(d)
+	else
+		instance = _instances[idx + 1]
+		if instance == nil then
+			print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
+			return
 		end
 	end
 
-	if _model:loadRom(idx, path) == false then
-		return
-	end
+	instance.components = findInstanceComponents(d)
 
-	initComponents(instance)
+	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
+	_proxy:setInstance(d)
+	runComponentHandler(instance.components, "onRomLoad", instance.desc)
+end
+
+function _findRom(idx, path)
+	--[[std::string originalPath = _proxy->getActiveInstance()->romPath;
+	_proxy->instances()
+	for (size_t i = 0; i < _views.size(); i++) {
+		auto plug = _views[i]->Plug();
+		if (plug->romPath() == originalPath) {
+			plug->init(paths[0], plug->model(), true);
+			plug->disableRendering(false);
+			_views[i]->HideText();
+		}
+	}]]
 end
 
 function _setActive(idx)
@@ -221,11 +218,15 @@ function _onKey(key, down)
 end
 
 function _onPadButton(button, down)
-	componentInputRoute("onPadButton", button, down)
+	return componentInputRoute("onPadButton", button, down)
 end
 
 function _onMidi(note, down)
 	--pluginInputRoute("onMidi", note, down)
+end
+
+function _onDrop(str)
+	return componentInputRoute("onDrop", str)
 end
 
 Action.RetroPlug = {

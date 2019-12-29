@@ -7,14 +7,20 @@
 #include "allocator/types.h"
 #include "allocator/uniqueptr.h"
 #include "allocator/sharedptr.h"
+#include "platform.h"
 
 namespace micromsg {
 	const size_t MAX_BIN_COUNT = 128;
 
 	template <typename T>
-	void destruct(void* ptr) {
-		reinterpret_cast<T*>(ptr)->~T();
+	void destruct(void* ptr, size_t count) {
+		T* p = reinterpret_cast<T*>(ptr);
+		for (size_t i = 0; i < count; ++i) {
+			(p + i)->~T();
+		}
 	}
+
+	static void destruct_nop(void*, size_t) {}
 
 	struct BinDesc {
 		size_t count = 0;
@@ -37,20 +43,20 @@ namespace micromsg {
 
 		template <typename T, typename ...Args>
 		UniquePtr<T> allocUnique(Args&& ...args) {
-			return allocBlock<T>();
+			return allocBlockConstructed<T>();
 			//return allocBlock<T>(std::forward<Args>(args)...);
 		}
 
 		template <typename T, typename ...Args>
 		SharedPtr<T> allocShared(Args&& ...args) {
-			return allocBlock<T>();
+			return allocBlockConstructed<T>();
 			//return allocBlock<T>(std::forward<Args>(args)...);
 		}
 
 		template <typename T, typename ...Args>
 		T* alloc(Args&& ...args) {
 			//ControlBlock* block = allocBlock<T>(std::forward<Args>(args)...);
-			ControlBlock* block = allocBlock<T>();
+			ControlBlock* block = allocBlockConstructed<T>();
 			if (block) {
 				return reinterpret_cast<T*>(block + 1);
 			}
@@ -59,11 +65,35 @@ namespace micromsg {
 		}
 
 		template <typename T>
+		T* allocArray(size_t size) {
+			ControlBlock* block = allocArrayBlockConstructed<T>(size);
+			if (block) {
+				return reinterpret_cast<T*>(block + 1);
+			}
+		}
+
+		template <typename T>
+		UniquePtr<T> allocArrayUnique(size_t size) {
+			return allocArrayBlockConstructed<T>(size);
+		}
+
+		template <typename T>
+		SharedPtr<T> allocArrayShared(size_t size) {
+			return allocArrayBlockConstructed<T>(size);
+		}
+
+		template <typename T>
+		bool canAlloc(size_t elementCount = 1) {
+			DataQueue* bin = getBin(sizeof(ControlBlock) + sizeof(T) * elementCount);
+			return bin && bin->size_approx() > 0;
+		}
+
+		template <typename T>
 		void free(T* ptr) {
 			ControlBlock* block = reinterpret_cast<ControlBlock*>(ptr) - 1;
-			block->destructor(ptr);
+			block->destructor(ptr, block->elementCount);
 			block->destructor = nullptr;
-			bool success = block->queue->try_push(block);
+			bool success = block->queue->enqueue(block);
 			mm_assert(success);
 		}
 
@@ -100,7 +130,10 @@ namespace micromsg {
 				for (size_t i = 0; i < d.count; ++i) {
 					ControlBlock* block = reinterpret_cast<ControlBlock*>(ptr);
 					block->queue = queue;
-					bool success = queue->try_push(block);
+					block->destructor = nullptr;
+					block->elementCount = 0;
+
+					bool success = queue->try_enqueue(block);
 					assert(success);
 					ptr += blockSize;
 				}
@@ -116,32 +149,84 @@ namespace micromsg {
 
 	private:
 		template <typename T>
-		ControlBlock* allocBlock() {
-			mm_assert(_active);
+		ControlBlock* allocBlockConstructed() {
+			const char* name = nullptr;
+#ifdef RTTI_ENABLED
+			name = typeid(T).name();
+#endif
+			ControlBlock* block = allocBlock(sizeof(T), name);
+			if (block) {
+				if constexpr (std::is_class<T>::value&& std::is_default_constructible<T>::value) {
+					new (block + 1) T();
+				}
 
-			constexpr int totalSize = sizeof(ControlBlock) + sizeof(T);
+				if constexpr (std::is_destructible<T>::value) {
+					block->destructor = destruct<T>;
+				}
+			}
 
+			return block;
+		}
+
+		template <typename T>
+		ControlBlock* allocArrayBlockConstructed(size_t size) {
+			const char* name = nullptr;
+#ifdef RTTI_ENABLED
+			name = typeid(T).name();
+#endif
+			ControlBlock* block = allocBlock(sizeof(T) * size, name);
+			if (block) {
+				block->elementCount = size;
+
+				T* ptr = reinterpret_cast<T*>(block + 1);
+				if constexpr (std::is_class<T>::value&& std::is_default_constructible<T>::value) {
+					for (size_t i = 0; i < size; ++i) {
+						new (ptr + i) T();
+					}
+				}
+
+				if constexpr (std::is_destructible<T>::value) {
+					block->destructor = destruct<T>;
+				}
+			}
+
+			return block;
+		}
+
+		DataQueue* getBin(size_t size) {
 			DataQueue* bin = nullptr;
-			if constexpr (totalSize < MAX_BIN_COUNT) {
-				bin = _binLookup[totalSize];
+			if (size < MAX_BIN_COUNT) {
+				bin = _binLookup[size];
 				mm_assert(bin != nullptr);
 			} else {
-				auto& found = _bins.find(totalSize);
+				auto& found = _bins.find(size);
 				mm_assert(found != _bins.end());
 				if (found != _bins.end()) {
 					bin = found->second.queue;
 				}
 			}
 
+			return bin;
+		}
+
+		ControlBlock* allocBlock(size_t size, const char* name) {
+			mm_assert(_active);
+
+			int totalSize = sizeof(ControlBlock) + size;
+
+			DataQueue* bin = getBin(totalSize);
 			if (bin) {
 				ControlBlock* block = nullptr;
-				if (bin->try_pop(block)) {
-					new (block + 1) T();
-					block->destructor = destruct<T>;
+				if (bin->try_dequeue(block)) {
+					block->destructor = destruct_nop;
+					block->elementCount = 1;
 					return block;
 				}
 
-				std::cout << "Ran out of blocks of size " << totalSize << std::endl;
+				std::cout << "Ran out of blocks of size " << totalSize;
+				if (name) std::cout << " allocating " << name;				
+				std::cout << std::endl;
+
 				mm_assert_m(false, "Ran out of blocks");
 			}
 			

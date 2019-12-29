@@ -3,6 +3,7 @@
 #include "util/MessageBus.h"
 #include "roms/Lsdj.h"
 #include "util/xstring.h"
+#include "controller/messaging.h"
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -20,11 +21,6 @@ enum class GameboyModel {
 	CgbC,
 	CgbE,
 	Agb
-};
-
-enum class SaveStateType {
-	State,
-	Sram
 };
 
 class SameBoyPlug;
@@ -56,11 +52,25 @@ private:
 
 	bool _watchRom = false;
 
+	Dimension2 _dimensions;
+
+	VideoBuffer* _videoBuffer;
+	AudioBuffer* _audioBuffer;
+
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
 
+	void loadRom(const char* data, size_t size);
+
 	bool watchRom() const { return false; }
+
+	Dimension2 getDimensions() const { return _dimensions; }
+
+	void setBuffers(VideoBuffer* video, AudioBuffer* audio) {
+		_videoBuffer = video;
+		_audioBuffer = audio;
+	}
 
 	void setWatchRom(bool watch) { _watchRom = watch; }
 

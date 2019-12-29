@@ -1,0 +1,35 @@
+#pragma once
+
+#include "Types.h"
+#include "util/DataBuffer.h"
+#include <string>
+#include <vector>
+
+struct EmulatorInstanceDesc {
+	InstanceIndex idx = NO_ACTIVE_INSTANCE;
+	EmulatorType type = EmulatorType::Unknown;
+	EmulatorInstanceState state = EmulatorInstanceState::Uninitialized;
+	std::string romName;
+	std::string romPath;
+
+	DataBufferPtr sourceRomData;
+	DataBufferPtr patchedRomData;
+
+	DataBufferPtr sourceStateData;
+
+	DataBufferPtr sourceSavData;
+	DataBufferPtr patchedSavData;
+};
+
+struct Project {
+	struct Settings {
+		AudioChannelRouting audioRouting = AudioChannelRouting::StereoMixDown;
+		MidiChannelRouting midiRouting = MidiChannelRouting::SendToAll;
+		InstanceLayout layout = InstanceLayout::Auto;
+		SaveStateType saveType;
+		int zoom = 1;
+	} settings;
+
+	std::string path;
+	std::vector<EmulatorInstanceDesc> instances;
+};

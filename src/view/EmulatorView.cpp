@@ -12,27 +12,15 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = R"({"gameboy":{"A":"S","B":"A","Up":"UpArrow","Down":"DownArrow","Left":"LeftArrow","Right":"RightArrow","Select":"Ctrl","Start":"Enter"},"lsdj":{"ScreenUp":"NumPad8","ScreenDown":"NumPad2","ScreenLeft":"NumPad4","ScreenRight":"NumPad6","UpTenRows":"PageUp","DownTenRows":"PageDown","CancelSelection":"Esc","Delete":"Delete"}})";
-const std::string DEFAULT_PAD_CONFIG = R"({"gameboy":{"A":"B","B":"A","Down":"Down","Left":"Left","Right":"Right","Up":"Up","Select":"Select","Start":"Start"}})";
-
-EmulatorView::EmulatorView(SameBoyPlugPtr plug, RetroPlug* manager, IGraphics* graphics)
-	: _plug(plug), _manager(manager), _graphics(graphics)
+EmulatorView::EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics)
+	: _index(idx), _graphics(graphics), _lua(lua), _proxy(proxy)
 {
 	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
 
-	_settings = {
+	/*_settings = {
 		{ "Color Correction", 2 },
 		{ "High-pass Filter", 1 }
-	};
-
-	rapidjson::Document keyConfig;
-	loadButtonConfig(keyConfig, TSTR("buttons.json"), DEFAULT_BUTTON_CONFIG);
-	_keyMap.loadKeys(keyConfig["gameboy"]);
-	_lsdjKeyMap.load(_keyMap, keyConfig["lsdj"]);
-
-	rapidjson::Document padConfig;
-	loadButtonConfig(padConfig, TSTR("gamepad.json"), DEFAULT_PAD_CONFIG);
-	_padMap.loadPad(padConfig["gameboy"]);
+	};*/
 
 	for (size_t i = 0; i < 2; i++) {
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
@@ -47,6 +35,32 @@ EmulatorView::~EmulatorView() {
 		NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
 		nvgDeleteImage(ctx, _imageId);
 	}
+
+	if (_frameBuffer) {
+		delete[] _frameBuffer;
+	}
+}
+
+void EmulatorView::WriteFrame(const VideoBuffer& buffer) {
+	if (buffer.data.count() > _frameBufferSize) {
+		if (_frameBuffer) {
+			delete[] _frameBuffer;
+		}
+
+		_dimensions = buffer.dimensions;
+
+		_frameBufferSize = buffer.data.count();
+		_frameBuffer = new char[_frameBufferSize];
+
+		if (_imageId != -1) {
+			NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
+			nvgDeleteImage(ctx, _imageId);
+			_imageId = -1;
+		}
+	}
+
+	memcpy(_frameBuffer, buffer.data.get(), _frameBufferSize);
+	_frameDirty = true;
 }
 
 void EmulatorView::ShowText(const std::string & row1, const std::string & row2) {
@@ -79,53 +93,38 @@ void EmulatorView::SetArea(const IRECT & area) {
 	UpdateTextPosition();
 }
 
-void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
-	_plug = plug;
-	_manager = manager;
-	HideText();
-}
-
 void EmulatorView::Draw(IGraphics& g, double delta) {
-	if (_plug && _plug->active()) {
-		MessageBus* bus = _plug->messageBus();
-		_lsdjKeyMap.update(bus, delta);
+	if (_index == NO_ACTIVE_INSTANCE || !_frameDirty) {
+		return;
+	}
 
-		size_t available = bus->video.readAvailable();
-		if (available > 0) {
-			// If we have multiple frames, skip to the latest
-			if (available > VIDEO_FRAME_SIZE) {
-				bus->video.advanceRead(available - VIDEO_FRAME_SIZE);
-			}
-
-			bus->video.read((char*)_videoScratch, VIDEO_FRAME_SIZE);
-
-			// TODO: This is all a bit unecessary and should be handled in the SameBoy wrapper
-			unsigned char* px = _videoScratch;
-			for (int i = 0; i < VIDEO_WIDTH; i++) {
-				for (int j = 0; j < VIDEO_HEIGHT; j++) {
-					std::swap(px[0], px[2]);
-					px[3] = 255;
-					px += 4;
-				}
+	if (_frameBuffer) {	
+		// TODO: This is all a bit unecessary and should be handled in the SameBoy wrapper
+		char* px = _frameBuffer;
+		for (int i = 0; i < VIDEO_WIDTH; i++) {
+			for (int j = 0; j < VIDEO_HEIGHT; j++) {
+				std::swap(px[0], px[2]);
+				px[3] = 255;
+				px += 4;
 			}
 		}
 
-		DrawPixelBuffer((NVGcontext*)g.GetDrawContext());
-	}
+		DrawPixelBuffer((NVGcontext*)g.GetDrawContext(), _frameBuffer);
 
-	_fileWatcher.update();
+		_frameDirty = false;
+	}
 }
 
-void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
+void EmulatorView::DrawPixelBuffer(NVGcontext* vg, char* data) {
 	if (_imageId == -1) {
-		_imageId = nvgCreateImageRGBA(vg, VIDEO_WIDTH, VIDEO_HEIGHT, NVG_IMAGE_NEAREST, (const unsigned char*)_videoScratch);
+		_imageId = nvgCreateImageRGBA(vg, _dimensions.w, _dimensions.h, NVG_IMAGE_NEAREST, (const unsigned char*)data);
 	} else {
-		nvgUpdateImage(vg, _imageId, (const unsigned char*)_videoScratch);
+		nvgUpdateImage(vg, _imageId, (const unsigned char*)data);
 	}
 
 	nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, VIDEO_WIDTH * 2, VIDEO_HEIGHT * 2, 0, _imageId, _alpha);
+	NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * 2, _dimensions.h * 2, 0, _imageId, _alpha);
 	nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
 	nvgFillPaint(vg, imgPaint);
 	nvgFill(vg);
@@ -138,7 +137,6 @@ enum class SystemMenuItems : int {
 	ResetAs,
 	ReplaceRom,
 	SaveRom,
-	WatchRom,
 
 	Sep1,
 
@@ -149,11 +147,10 @@ enum class SystemMenuItems : int {
 };
 
 void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
-	if (!_plug) {
-		return;
-	}
+	assert(_index = NO_ACTIVE_INSTANCE);
+	const EmulatorInstanceDesc* desc = _proxy->getInstance(_index);
 
-	std::string romName = _plug->romName();
+	std::string romName = desc->romName;
 	bool loaded = !romName.empty();
 	if (!loaded) {
 		romName = "No ROM Loaded";
@@ -171,13 +168,12 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		switch ((SystemMenuItems)indexInMenu) {
 		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
 		case SystemMenuItems::Reset: ResetSystem(true); break;
-		case SystemMenuItems::NewSram: _plug->clearBattery(true); break;
+		case SystemMenuItems::NewSram: break;// _plug->clearBattery(true); break;
 		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
-		case SystemMenuItems::SaveSram: _plug->saveBattery(TSTR("")); break;
+		case SystemMenuItems::SaveSram: break;// _plug->saveBattery(TSTR("")); break;
 		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
 		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
 		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
-		case SystemMenuItems::WatchRom: ToggleWatchRom(); break;
 		}
 	});
 
@@ -186,14 +182,15 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 
 		root->AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
 		root->AddSeparator((int)RootMenuItems::Sep2);
-		root->AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
+		//root->AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
+		root->AddItem("Game Link", (int)RootMenuItems::GameLink, 0);
 		root->AddSeparator((int)RootMenuItems::Sep3);
 
 		root->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 			switch ((RootMenuItems)indexInMenu) {
 			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
-			case RootMenuItems::GameLink: _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
-			case RootMenuItems::SendClock: _plug->setMidiSync(!_plug->midiSync()); break;
+			case RootMenuItems::GameLink: break;// _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
+			case RootMenuItems::SendClock: break;// _plug->setMidiSync(!_plug->midiSync()); break;
 			}
 		});
 
@@ -203,7 +200,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			}
 		});
 
-		Lsdj& lsdj = _plug->lsdj();
+		/*Lsdj& lsdj = _plug->lsdj();
 		if (lsdj.found) {
 			IPopupMenu* syncMenu = createSyncMenu(_plug->gameLink(), lsdj.autoPlay);
 			root->AddItem("LSDj Sync", syncMenu, (int)RootMenuItems::LsdjModes);
@@ -290,7 +287,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			});
 		} else {
 			root->AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
-		}
+		}*/
 	}
 }
 
@@ -298,7 +295,7 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 	IPopupMenu* settingsMenu = new IPopupMenu();
 
 	// TODO: These should be moved in to the SameBoy wrapper
-	std::map<std::string, std::vector<std::string>> settings;
+	/*std::map<std::string, std::vector<std::string>> settings;
 	settings["Color Correction"] = {
 		"Off",
 		"Correct Curves",
@@ -330,7 +327,7 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 
 	settingsMenu->AddSeparator();
 	settingsMenu->AddItem("Open Settings Folder...");
-
+	*/
 	return settingsMenu;
 }
 
@@ -345,7 +342,6 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
 	menu->AddItem("Replace ROM...", (int)SystemMenuItems::ReplaceRom);
 	menu->AddItem("Save ROM...", (int)SystemMenuItems::SaveRom);
-	menu->AddItem("Reset on ROM changes", (int)SystemMenuItems::WatchRom, _watchId != 0 ? IPopupMenu::Item::kChecked : 0);
 	menu->AddSeparator((int)SystemMenuItems::Sep1);
 	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
 	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
@@ -353,7 +349,7 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
 
 	resetAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
-		_plug->reset((GameboyModel)(idx + 1), true);
+		//_plug->reset((GameboyModel)(idx + 1), true);
 	});
 
 	loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
@@ -364,240 +360,29 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 }
 
 void EmulatorView::ToggleKeyboardMode() {
-	_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
-}
-
-void EmulatorView::ExportSong(const LsdjSongName& songName) {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("LSDj Songs"), TSTR("*.lsdsng") }
-	};
-
-	tstring path = BasicFileSave(_graphics, types, tstr(songName.name + "." + std::to_string(songName.version)));
-	if (path.size() == 0) {
-		return;
-	}
-
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		lsdj.saveData.clear();
-		_plug->saveBattery(lsdj.saveData);
-
-		if (lsdj.saveData.size() > 0) {
-			std::vector<std::byte> songData;
-			lsdj.exportSong(songName.projectId, songData);
-
-			if (songData.size() > 0) {
-				writeFile(path, songData);
-			}
-		}
-	}
-}
-
-void EmulatorView::ExportSongs(const std::vector<LsdjSongName>& songNames) {
-	std::vector<tstring> paths = BasicFileOpen(_graphics, {}, false, true);
-	if (paths.size() > 0) {
-		Lsdj& lsdj = _plug->lsdj();
-		if (lsdj.found) {
-			lsdj.saveData.clear();
-			_plug->saveBattery(lsdj.saveData);
-			
-			if (lsdj.saveData.size() > 0) {
-				std::vector<NamedData> songData;
-				lsdj.exportSongs(songData);
-
-				for (const auto& song : songData) {
-					fs::path p(paths[0]);
-					p /= song.name + ".lsdsng";
-					writeFile(tstr(p.wstring()), song.data);
-				}
-			}
-		}
-	}
-}
-
-void EmulatorView::LoadSong(int index) {
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		lsdj.loadSong(index);
-		_plug->loadBattery(lsdj.saveData, true);
-	}
-}
-
-void EmulatorView::DeleteSong(int index) {
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		lsdj.deleteSong(index);
-		_plug->loadBattery(lsdj.saveData, false);
-	}
-}
-
-void EmulatorView::LoadKit(int index) {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("LSDj Kits"), TSTR("*.kit") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
-	if (paths.size() > 0) {
-		std::string error;
-		Lsdj& lsdj = _plug->lsdj();
-		if (lsdj.loadKit(paths[0], index, error)) {
-			lsdj.patchKits(_plug->romData());
-			_plug->updateRom();
-		} else {
-			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
-		}
-	}
-}
-
-void EmulatorView::DeleteKit(int index) {
-	Lsdj& lsdj = _plug->lsdj();
-	lsdj.deleteKit(_plug->romData(), index);
-	_plug->updateRom();
-}
-
-void EmulatorView::ExportKit(int index) {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("LSDj Kit"), TSTR("*.kit") }
-	};
-
-	std::vector<std::string> kitNames;
-	_plug->lsdj().getKitNames(kitNames);
-
-	tstring path = BasicFileSave(_graphics, types, tstr(kitNames[index]));
-	if (path.size() == 0) {
-		return;
-	}
-
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		std::vector<std::byte> kitData;
-		lsdj.exportKit(_plug->romData(), index, kitData);
-
-		if (kitData.size() > 0) {
-			writeFile(path, kitData);
-		}
-	}
-}
-
-void EmulatorView::ExportKits() {
-	std::vector<tstring> paths = BasicFileOpen(_graphics, {}, false, true);
-	if (paths.size() > 0) {
-		Lsdj& lsdj = _plug->lsdj();
-		if (lsdj.found) {
-			for (auto kit : lsdj.kitData) {
-				if (kit) {
-					fs::path p(paths[0]);
-					p /= kit->name + ".kit";
-					writeFile(tstr(p.wstring()), kit->data);
-				}
-			}
-		}
-	}
+	//_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
 }
 
 void EmulatorView::ResetSystem(bool fast) {
-	_plug->reset(_plug->model(), fast);
-}
-
-void EmulatorView::ToggleWatchRom() {
-	if (_romListener == nullptr) {
-		_romListener = std::make_unique<RomUpdateListener>(_plug);
-		std::string path = fs::path(_plug->romPath()).parent_path().string();
-		_watchId = _fileWatcher.addWatch(path.c_str(), _romListener.get());
-		_plug->setWatchRom(true);
-	} else {
-		_fileWatcher.removeWatch(_watchId);
-		_watchId = 0;
-		_romListener = nullptr;
-		_plug->setWatchRom(false);
-	}	
-}
-
-void EmulatorView::OpenLoadSongsDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("All Supported Types"), TSTR("*.lsdsng;*.sav") },
-        { TSTR("LSDj Songs"), TSTR("*.lsdsng") },
-		{ TSTR("LSDj .sav"), TSTR("*.sav") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		std::string error;
-		std::vector<int> ids = lsdj.importSongs(paths, error);
-		if (ids.size() > 0) {
-			_plug->loadBattery(lsdj.saveData, false);
-		}
-
-		if (error.size() > 0) {
-			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
-		}
-	}
-}
-
-void EmulatorView::OpenLoadKitsDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.kit") },
-		{ TSTR("LSDj Kits"), TSTR("*.kit") },
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") },
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, true);
-	Lsdj& lsdj = _plug->lsdj();
-	if (lsdj.found) {
-		std::string error;
-
-		for (auto& path : paths) {
-			fs::path p = path;
-			if (p.extension() == ".kit") {
-				if (lsdj.loadKit(path, -1, error)) {
-					continue;
-				}
-			} else {
-				std::vector<std::byte> f;
-				if (readFile(path, f)) {
-					if (lsdj.loadRomKits(f, false, error)) {
-						continue;
-					}
-				}
-			}
-
-			_graphics->ShowMessageBox(error.c_str(), "Import Failed", kMB_OK);
-		}
-
-		lsdj.patchKits(_plug->romData());
-		_plug->updateRom();
-	}
+	//_plug->reset(_plug->model(), fast);
 }
 
 void EmulatorView::OpenReplaceRomDialog() {
-	std::vector<FileDialogFilters> types = {
+	/*std::vector<FileDialogFilters> types = {
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
-		std::vector<NamedHashedDataPtr> kits;
-
-		if (_plug->lsdj().found) {
-			kits = _plug->lsdj().kitData;
-		}
-
 		std::vector<std::byte> saveData;
 		_plug->saveBattery(saveData);
 
 		_plug->init(paths[0], _plug->model(), false);
 		_plug->loadBattery(saveData, false);
-		
-		if (_plug->lsdj().found) {
-			_plug->lsdj().kitData = kits;
-			_plug->lsdj().patchKits(_plug->romData());
-			_plug->updateRom();
-		}
 
 		_plug->disableRendering(false);
 		HideText();
-	}
+	}*/
 }
 
 void EmulatorView::OpenSaveRomDialog() {
@@ -605,12 +390,13 @@ void EmulatorView::OpenSaveRomDialog() {
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
-	tstring romName = tstr(_plug->romName() + ".gb");
+	
+	tstring romName = tstr(_proxy->getInstance(_index)->romName + ".gb");
 	tstring path = BasicFileSave(_graphics, types, romName);
 	if (path.size() > 0) {
-		if (!writeFile(path, _plug->romData())) {
+		/*if (!writeFile(path, _plug->romData())) {
 			// Fail
-		}
+		}*/
 	}
 }
 
@@ -621,16 +407,14 @@ void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
-		_plug->init(paths[0], model, false);
-		_plug->disableRendering(false);
-		HideText();
+		_lua->loadRom(_index, ws2s(paths[0]));
 	}
 }
 
 void EmulatorView::DisableRendering(bool disable) {
-	if (_plug->active()) {
+	/*if (_plug->active()) {
 		_plug->disableRendering(disable);
-	}
+	}*/
 }
 
 /*void EmulatorView::LoadRom(const tstring & path) {
@@ -646,7 +430,7 @@ void EmulatorView::OpenLoadSramDialog() {
 
 	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
 	if (paths.size() > 0) {
-		_plug->loadBattery(paths[0], true);
+		//_plug->loadBattery(paths[0], true);
 	}
 }
 
@@ -657,6 +441,6 @@ void EmulatorView::OpenSaveSramDialog() {
 
 	tstring path = BasicFileSave(_graphics, types);
 	if (path.size() > 0) {
-		_plug->saveBattery(path);
+		//_plug->saveBattery(path);
 	}
 }

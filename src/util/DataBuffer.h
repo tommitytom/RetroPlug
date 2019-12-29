@@ -5,29 +5,21 @@
 #include <string_view>
 #include "crc32.h"
 
-template <const size_t Length>
-class FixedDataBuffer {
-private:
-	char _data[Length];
-
-public:
-	FixedDataBuffer() : DataBuffer(_data, Length) {}
-};
-
+template <typename T = char>
 class DataBuffer {
 private:
-	char* _dataPtr = nullptr;
+	T* _dataPtr = nullptr;
 	size_t _dataSize = 0;
 	bool _ownsData = false;
 
 public:
 	DataBuffer() {}
 	DataBuffer(size_t size) { resize(size); }
-	DataBuffer(char* data, size_t size) : _dataPtr(data), _dataSize(size), _ownsData(false) {}
+	DataBuffer(T* data, size_t size) : _dataPtr(data), _dataSize(size), _ownsData(false) {}
 	~DataBuffer() { destroy(); }
 
-	char get(size_t idx) { assert(idx < _dataSize); return _dataPtr[idx]; }
-	void set(size_t idx, char v) { assert(idx < _dataSize); _dataPtr[idx] = v; }
+	T get(size_t idx) { assert(idx < _dataSize); return _dataPtr[idx]; }
+	void set(size_t idx, T v) { assert(idx < _dataSize); _dataPtr[idx] = v; }
 	int find() {}
 	
 	std::string_view toString() {
@@ -36,21 +28,21 @@ public:
 	}
 
 	size_t hash(size_t initial = 0) {
-		return crc32::update(_dataPtr, _dataSize, initial);
+		return crc32::update((const void*)_dataPtr, _dataSize * sizeof(T), initial);
 	}
 
-	char* data() { return _dataPtr; }
-	const char* data() const { return _dataPtr; }
+	T* data() { return _dataPtr; }
+	const T* data() const { return _dataPtr; }
 	size_t size() const { return _dataSize; }
 
-	DataBuffer slice(size_t pos, size_t size) {
+	DataBuffer<T> slice(size_t pos, size_t size) {
 		assert(pos + size <= _dataSize);
-		return DataBuffer(_dataPtr + pos, size);
+		return DataBuffer<T>(_dataPtr + pos, size);
 	}
 
 	void resize(size_t size) {
 		destroy();
-		_dataPtr = new char[size];
+		_dataPtr = new T[size];
 		_dataSize = size;
 		_ownsData = true;
 	}
@@ -65,4 +57,14 @@ public:
 	}
 };
 
-using DataBufferPtr = std::shared_ptr<DataBuffer>;
+template <typename T, const size_t Length>
+class FixedDataBuffer : public DataBuffer<T> {
+private:
+	T _data[Length];
+
+public:
+	FixedDataBuffer() : DataBuffer(_data, Length) {}
+};
+
+using DataBufferPtr = std::shared_ptr<DataBuffer<char>>;
+using FloatDataBufferPtr = std::shared_ptr<DataBuffer<float>>;

@@ -8,33 +8,9 @@
 #include "util/fs.h"
 #include "model/FileManager.h"
 #include "Constants.h"
+#include "Types.h"
 
 #include "IGraphicsStructs.h"
-
-enum class InstanceLayout {
-	Auto,
-	Row,
-	Column,
-	Grid
-};
-
-enum class EmulatorType {
-	SameBoy
-};
-
-enum class AudioChannelRouting {
-	StereoMixDown,
-	TwoChannelsPerInstance,
-	TwoChannelsPerChannel
-};
-
-enum class MidiChannelRouting {
-	SendToAll,
-	FourChannelsPerInstance,
-	OneChannelPerInstance
-};
-
-using InstanceIndex = size_t;
 
 class RetroPlug {
 private:

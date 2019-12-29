@@ -16,18 +16,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	};
 
 	mLayoutFunc = [&](IGraphics* pGraphics) {
-		//pGraphics->AttachCornerResizer(kUIResizerScale, false);
-		pGraphics->AttachPanelBackground(COLOR_BLACK);
-		pGraphics->HandleMouseOver(true);
-		pGraphics->LoadFont("Roboto-Regular", GAMEBOY_FN);
-		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
-
-		RetroPlugView* root = new RetroPlugView(pGraphics->GetBounds(), &_plug, GetHost());
-		pGraphics->AttachControl(root);
-
-		pGraphics->SetKeyHandlerFunc([root](const IKeyPress& key, bool isUp) {
-			return root->OnKey(key, !isUp);
-		});
+		_controller.init(pGraphics, GetHost());
 	};
 #endif
 }
@@ -44,10 +33,6 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		}
 	}
 
-	if (frameCount == 0 || !_plug.getPlug(0) || !_plug.getPlug(0)->active()) {
-		return;
-	}
-
 	bool transportChanged = false;
 	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
 		_transportRunning = mTimeInfo.mTransportIsRunning;
@@ -55,80 +40,8 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 	}
 
-	// Keeping the shared pointer here makes sure that the reference count
-	// is at least 1 while we work with it
-	SameBoyPlugPtr plugPtrs[MAX_INSTANCES];
-
-	SameBoyPlug* plugs[MAX_INSTANCES] = { nullptr };
-	SameBoyPlug* linkedPlugs[MAX_INSTANCES] = { nullptr };
-
-	size_t totalPlugCount = 0;
-	size_t plugCount = 0;
-	size_t linkedPlugCount = 0;
-
-	int sampleCount = frameCount * 2;
-
-	for (size_t i = 0; i < MAX_INSTANCES; i++) {
-		SameBoyPlugPtr plugPtr = _plug.plugs()[i];
-		if (plugPtr && plugPtr->active()) {
-			SameBoyPlug* plug = plugPtr.get();
-			plugPtrs[i] = plugPtr;
-			plugs[i] = plug;
-
-			if (!plug->gameLink()) {
-				plugs[plugCount++] = plug;
-			} else {
-				linkedPlugs[linkedPlugCount++] = plug;
-			}
-
-			totalPlugCount++;
-
-			if (transportChanged) {
-				HandleTransportChange(plug, _transportRunning);
-			}
-
-			// I know it's bad to use a mutex here, but its only used when making settings changes
-			// or saving SRAM data to disk.  Should still probably swap this out for a different
-			// method at some point, but it works for now.
-			plug->lock().lock();
-
-			MessageBus* bus = plug->messageBus();
-			_buttonQueue.update(bus, FramesToMs(frameCount));
-			GenerateMidiClock(plug, frameCount, transportChanged);
-		}
-	}
-
-	for (size_t i = 0; i < plugCount; i++) {
-		plugs[i]->update(frameCount);
-	}
-
-	if (linkedPlugCount > 0) {
-		linkedPlugs[0]->updateMultiple(linkedPlugs, linkedPlugCount, frameCount);
-	}
-
-	int chanMultipler = 0;
-	if (NOutChansConnected() == 8 && _plug.audioRouting() != AudioChannelRouting::StereoMixDown) {
-		chanMultipler = 2;
-	}
-
-	for (size_t i = 0; i < totalPlugCount; i++) {
-		SameBoyPlug* plug = plugPtrs[i].get();
-		MessageBus* bus = plug->messageBus();
-
-		size_t available = bus->audio.readAvailable();
-		if (available == sampleCount) {
-			memset(_sampleScratch, 0, sampleCount * sizeof(float));
-			size_t readAmount = bus->audio.read(_sampleScratch, sampleCount);
-			if (readAmount == sampleCount) {
-				for (size_t j = 0; j < frameCount; j++) {
-					outputs[i * chanMultipler][j] += _sampleScratch[j * 2];
-					outputs[i * chanMultipler + 1][j] += _sampleScratch[j * 2 + 1];
-				}
-			}
-		}
-
-		plug->lock().unlock();
-	}
+	ProcessingContext* context = _controller.processingContext();
+	context->process(outputs);
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -136,16 +49,16 @@ void RetroPlugInstrument::OnIdle() {
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
-	std::string target;
+	/*std::string target;
 	serialize(target, _plug);
-	chunk.PutStr(target.c_str());
+	chunk.PutStr(target.c_str());*/
 	return true;
 }
 
 int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
-	WDL_String data;
+	/*WDL_String data;
 	pos = chunk.GetStr(data, pos);
-	deserialize(data.Get(), _plug);
+	deserialize(data.Get(), _plug);*/
 	return pos;
 }
 
@@ -225,7 +138,7 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
 
-	auto plugs = _plug.plugs();
+	/*auto plugs = _plug.plugs();
 	size_t count = _plug.instanceCount();
 
 	switch (_plug.midiRouting()) {
@@ -259,7 +172,7 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 
 		break;
 	}
-	}
+	}*/
 }
 
 unsigned char reverse(unsigned char b) {
@@ -410,6 +323,7 @@ void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrumen
 }
 
 void RetroPlugInstrument::OnReset() {
-	_plug.setSampleRate(GetSampleRate());
+	AudioSettings settings = { NOutChansConnected(), GetBlockSize(), GetSampleRate() };
+	_controller.processingContext()->setAudioSettings(settings);
 }
 #endif

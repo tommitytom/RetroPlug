@@ -310,6 +310,9 @@
     <ClCompile Include="..\src\model\FileManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -759,6 +762,99 @@
     <ClInclude Include="..\src\util\DataBuffer.h">
       <Filter>src\util</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\micromsg\caller.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\concurrentqueue.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\envelope.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\error.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\fixedstack.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\fixedstring.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\lookups.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\magic_enum.hpp">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\mmassert.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\node.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\nodemanager.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\platform.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\readerwriterqueue.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\request.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\types.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\variant_function.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\variantfunctionfactory.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\allocator.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\atomicrefcount.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\controlblock.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\mpmcqueue.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\sharedptr.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\types.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\uniqueptr.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\atomicops.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\RetroPlugProxy.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\controller\messaging.h">
+      <Filter>src\controller</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\ProcessingContext.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Types.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\Constants.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\Project.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -829,6 +925,9 @@
     </Filter>
     <Filter Include="src\view">
       <UniqueIdentifier>{44155baf-f1a4-49d0-8b48-cad5ca016930}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="micromsg">
+      <UniqueIdentifier>{0251c065-bc06-4a5e-9f93-a6fb8a54677a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

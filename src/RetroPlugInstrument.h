@@ -3,6 +3,7 @@
 #include "IPlug_include_in_plug_hdr.h"
 #include "model/RetroPlug.h"
 #include "ButtonQueue.h"
+#include "controller/RetroPlugController.h"
 
 using namespace iplug;
 using namespace igraphics;
@@ -34,10 +35,11 @@ private:
 
 	inline double FramesToMs(int frameCount) const { return frameCount / (GetSampleRate() / 1000); }
 
-	RetroPlug _plug;
 	float* _sampleScratch;
 	bool _transportRunning = false;
 
 	ButtonQueue _buttonQueue;
+
+	RetroPlugController _controller;
 #endif
 };

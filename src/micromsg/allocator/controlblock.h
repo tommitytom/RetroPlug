@@ -7,6 +7,7 @@ namespace micromsg {
 	struct ControlBlock {
 		AtomicRefCount refCount;
 		DataQueue* queue;
-		void (*destructor)(void*);
+		size_t elementCount;
+		void (*destructor)(void*, size_t);
 	};
 }

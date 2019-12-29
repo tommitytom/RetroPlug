@@ -5,6 +5,7 @@
 
 #include "IGraphicsStructs.h"
 #include "model/RetroPlug.h"
+#include "model/RetroPlugProxy.h"
 
 #include <iostream>
 
@@ -20,6 +21,7 @@ private:
 	std::string _path;
 
 	RetroPlug* _plug;
+	RetroPlugProxy* _proxy;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
@@ -28,7 +30,7 @@ public:
 	LuaContext(): _plug(nullptr), _state(nullptr) {}
 	~LuaContext() { shutdown(); }
 
-	void init(RetroPlug* plug, const std::string& path);
+	void init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string& path);
 
 	SameBoyPlugPtr addInstance(EmulatorType type);
 
@@ -43,6 +45,8 @@ public:
 	bool onKey(const iplug::igraphics::IKeyPress& key, bool down);
 
 	void onPadButton(int button, bool down);
+
+	void onDrop(const char* str);
 
 	void reload();
 
