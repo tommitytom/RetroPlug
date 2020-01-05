@@ -13,9 +13,9 @@ public:
 	~RomUpdateListener() {}
 
 	void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
-		if (fs::path(_plug->romPath()).filename().string() == filename && action != FW::Actions::Delete) {
+		/*if (fs::path(_plug->romPath()).filename().string() == filename && action != FW::Actions::Delete) {
 			_plug->init(_plug->romPath(), _plug->model(), true);
 			_plug->disableRendering(false);
-		}
+		}*/
 	}
 };

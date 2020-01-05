@@ -38,6 +38,7 @@ KeyMap({ romName = "LSDj*" }, {
 	[{ Key.Ctrl, Key.V }] = Action.Lsdj.Paste,
 	[Key.PageDown] = Action.Lsdj.DownTenRows,
 	[Key.PageUp] = Action.Lsdj.UpTenRows,
+	[Key.Shift] = Action.Lsdj.BeginSelection
 })
 
 -- Gamepad button pressed specific to LSDj

@@ -12,11 +12,16 @@ namespace micromsg {
 	public:
 		UniquePtr(): _controlBlock(nullptr) {}
 		UniquePtr(UniquePtr& other) { *this = other; }
-		~UniquePtr() { destroy(); }
+		~UniquePtr() { release(); }
 
 		UniquePtr& operator=(UniquePtr& other) {
 			_controlBlock = other._controlBlock;
 			other._controlBlock = nullptr;
+			return *this;
+		}
+
+		UniquePtr& operator=(std::nullptr_t) {
+			release();
 			return *this;
 		}
 
@@ -32,8 +37,7 @@ namespace micromsg {
 
 		size_t count() const { return _controlBlock->elementCount; }
 
-	private:
-		void destroy() {
+		void release() {
 			if (_controlBlock) {
 				_controlBlock->destructor(get(), _controlBlock->elementCount);
 				_controlBlock->destructor = nullptr;

@@ -54,9 +54,7 @@ public:
 	RetroPlugController();
 	~RetroPlugController();
 
-	void update(float delta) {
-		processPad();
-	}
+	void update(float delta);
 
 	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 

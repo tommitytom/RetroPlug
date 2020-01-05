@@ -94,40 +94,30 @@ void EmulatorView::SetArea(const IRECT & area) {
 }
 
 void EmulatorView::Draw(IGraphics& g, double delta) {
-	if (_index == NO_ACTIVE_INSTANCE || !_frameDirty) {
-		return;
-	}
-
-	if (_frameBuffer) {	
-		// TODO: This is all a bit unecessary and should be handled in the SameBoy wrapper
-		char* px = _frameBuffer;
-		for (int i = 0; i < VIDEO_WIDTH; i++) {
-			for (int j = 0; j < VIDEO_HEIGHT; j++) {
-				std::swap(px[0], px[2]);
-				px[3] = 255;
-				px += 4;
-			}
-		}
-
-		DrawPixelBuffer((NVGcontext*)g.GetDrawContext(), _frameBuffer);
-
-		_frameDirty = false;
+	if (_index != NO_ACTIVE_INSTANCE) {
+		DrawPixelBuffer((NVGcontext*)g.GetDrawContext());
 	}
 }
 
-void EmulatorView::DrawPixelBuffer(NVGcontext* vg, char* data) {
-	if (_imageId == -1) {
-		_imageId = nvgCreateImageRGBA(vg, _dimensions.w, _dimensions.h, NVG_IMAGE_NEAREST, (const unsigned char*)data);
-	} else {
-		nvgUpdateImage(vg, _imageId, (const unsigned char*)data);
+void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
+	if (_frameDirty && _frameBuffer) {
+		if (_imageId == -1) {
+			_imageId = nvgCreateImageRGBA(vg, _dimensions.w, _dimensions.h, NVG_IMAGE_NEAREST, (const unsigned char*)_frameBuffer);
+		} else {
+			nvgUpdateImage(vg, _imageId, (const unsigned char*)_frameBuffer);
+		}
+
+		_frameDirty = false;
 	}
 
-	nvgBeginPath(vg);
+	if (_imageId != -1) {
+		nvgBeginPath(vg);
 
-	NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * 2, _dimensions.h * 2, 0, _imageId, _alpha);
-	nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
-	nvgFillPaint(vg, imgPaint);
-	nvgFill(vg);
+		NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * 2, _dimensions.h * 2, 0, _imageId, _alpha);
+		nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
+		nvgFillPaint(vg, imgPaint);
+		nvgFill(vg);
+	}
 }
 
 enum class SystemMenuItems : int {
@@ -147,6 +137,7 @@ enum class SystemMenuItems : int {
 };
 
 void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
+	return;
 	assert(_index = NO_ACTIVE_INSTANCE);
 	const EmulatorInstanceDesc* desc = _proxy->getInstance(_index);
 

@@ -156,11 +156,11 @@ namespace micromsg {
 #endif
 			ControlBlock* block = allocBlock(sizeof(T), name);
 			if (block) {
-				if constexpr (std::is_class<T>::value&& std::is_default_constructible<T>::value) {
+				if constexpr (std::is_class<T>::value && std::is_default_constructible<T>::value) {
 					new (block + 1) T();
 				}
 
-				if constexpr (std::is_destructible<T>::value) {
+				if constexpr (std::is_class<T>::value && std::is_destructible<T>::value) {
 					block->destructor = destruct<T>;
 				}
 			}
@@ -179,13 +179,13 @@ namespace micromsg {
 				block->elementCount = size;
 
 				T* ptr = reinterpret_cast<T*>(block + 1);
-				if constexpr (std::is_class<T>::value&& std::is_default_constructible<T>::value) {
+				if constexpr (std::is_class<T>::value && std::is_default_constructible<T>::value) {
 					for (size_t i = 0; i < size; ++i) {
 						new (ptr + i) T();
 					}
 				}
 
-				if constexpr (std::is_destructible<T>::value) {
+				if constexpr (std::is_class<T>::value && std::is_destructible<T>::value) {
 					block->destructor = destruct<T>;
 				}
 			}

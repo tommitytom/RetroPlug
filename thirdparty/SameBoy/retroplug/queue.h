@@ -5,78 +5,92 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_QUEUE_SIZE 100
-
-struct offset_byte_t {
-    int offset;
-    char byte;
-    int bitCount;
-};
-typedef struct offset_byte_t offset_byte_t;
-
 struct Queue {
-  offset_byte_t data[MAX_QUEUE_SIZE];
+  char* data;
   int first;
   int last;
   int size;
+  int maxSize;
+  int elemSize;
 };
 
 typedef struct Queue Queue;
 
-static offset_byte_t queue_empty = { -1, -1 };
+void queue_init(Queue* queue, char* data, size_t elemSize, size_t elemCount);
+void queue_enqueue(Queue* queue, void* item);
+void* queue_dequeue(Queue* queue);
+int queue_length(Queue* queue);
+int queue_empty(Queue* queue);
+int queue_full(Queue* queue);
+int queue_maxLength(Queue* queue);
 
-
-void queue_init(Queue *);
-void enqueue(Queue *, offset_byte_t item);
-offset_byte_t  dequeue(Queue *);
-int  length(Queue *);
-int  empty(Queue *);
-
-
-void queue_init(Queue *data) {
-  data->first = 0;
-  data->last  = MAX_QUEUE_SIZE-1;
-  data->size  = 0;
+void queue_init(Queue* queue, char* data, size_t elemSize, size_t elemCount) {
+  queue->elemSize = elemSize;
+  queue->maxSize = elemCount;
+  queue->data = data;
+  queue->first = 0;
+  queue->last = elemCount - 1;
+  queue->size = 0;
 }
 
-
-int empty(Queue *data) {
-  return data->size == 0;
+int queue_empty(Queue* queue) {
+  return queue->size == 0;
 }
 
-
-int length(Queue *data) {
-  return data->size;
+int queue_maxLength(Queue* queue) {
+  return queue->maxSize;
 }
 
+int queue_full(Queue* queue) {
+  return queue->size == queue->maxSize;
+}
 
-void enqueue(Queue *data, offset_byte_t item) {
-  if(data->size < MAX_QUEUE_SIZE) {
-    data->last = (data->last + 1) % MAX_QUEUE_SIZE;
-    data->data[data->last] = item;
-    data->size++;
+int queue_length(Queue* queue) {
+  return queue->size;
+}
+
+void queue_enqueue(Queue* queue, void* item) {
+  if (queue->size < queue->maxSize) {
+    queue->last = (queue->last + 1) % queue->maxSize;
+    memcpy(queue->data + (queue->last * queue->elemSize), item, queue->elemSize);
+    queue->size++;
   }
 }
 
-offset_byte_t peek(Queue *data) {
-  if (!empty(data)) {
-    return data->data[data->first];
+void* queue_front(Queue* queue) {
+  if (!queue_empty(queue)) {
+    return queue->data + (queue->first * queue->elemSize);
   }
 
-  return queue_empty;
+  return NULL;
 }
 
-offset_byte_t dequeue(Queue *data) {
-  if(!empty(data)) {
-    offset_byte_t last = data->data[data->first];
+void* queue_back(Queue* queue) {
+  if (!queue_empty(queue)) {
+    return queue->data + (queue->last * queue->elemSize);
+  }
 
-    data->first = (data->first + 1) % MAX_QUEUE_SIZE;
-    data->size--;
+  return NULL;
+}
 
+void* queue_get(Queue* queue, int idx) {
+  if (idx < queue->size) {
+    int elemIdx = (queue->first + idx) % queue->maxSize;
+    return queue->data + (elemIdx * queue->elemSize);
+  }
+
+  return NULL;
+}
+
+void* queue_dequeue(Queue* queue) {
+  if(!queue_empty(queue)) {
+    void* last = queue->data + (queue->first * queue->elemSize);
+    queue->first = (queue->first + 1) % queue->maxSize;
+    queue->size--;
     return last;
   }
 
-  return queue_empty;
+  return NULL;
 }
 
 #endif

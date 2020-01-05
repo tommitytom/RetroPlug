@@ -1,4 +1,5 @@
 local util = require("../util")
+local inspect = require("../inspect")
 
 local _maps = {
 	key = {},
@@ -6,7 +7,27 @@ local _maps = {
 	midi = {}
 }
 
-local function mergeInputMaps(source, target, romName)
+local function concatTarget(target, map, actions)
+	for k, v in pairs(map) do
+		if type(v) == "number" then
+			target[k] = v
+		elseif type(v) == "table" then
+			local c = actions[v.component]
+			if c ~= nil then
+				local f = c[v.action]
+				if f ~= nil then
+					target[k] = f
+				else
+					print("Failed to find Action." .. v.component .. "." .. v.action)
+				end
+			else
+				print("Failed to find Action." .. v.component .. "." .. v.action)
+			end
+		end
+	end
+end
+
+local function mergeInputMaps(source, target, actions, romName)
 	for _, map in ipairs(source) do
 		local merge = false
 		if map.config.romName == nil then
@@ -16,8 +37,8 @@ local function mergeInputMaps(source, target, romName)
 		end
 
 		if merge == true then
-			util.tableConcat(target.lookup, map.lookup)
-			util.tableConcat(target.combos, map.combos)
+			concatTarget(target.lookup, map.lookup, actions)
+			concatTarget(target.combos, map.combos, actions)
 		end
 	end
 end
@@ -40,21 +61,38 @@ function ButtonHandler:init()
 	self._padbuttonsPressed = {}
 	self._keyMap = { lookup = {}, combos = {} }
 	self._padMap = { lookup = {}, combos = {} }
+	self._actions = {}
 end
 
-function ButtonHandler:onRomLoaded(romName, romPath)
+function ButtonHandler:onRomLoad(desc)
+	self:_updateMaps(desc)
+end
+
+function ButtonHandler:onReload(desc)
+	self:_updateMaps(desc)
+end
+
+function ButtonHandler:_updateMaps(desc)
 	self._keyMap = { lookup = {}, combos = {} }
 	self._padMap = { lookup = {}, combos = {} }
-	mergeInputMaps(_maps.key, self._keyMap, romName)
-	mergeInputMaps(_maps.pad, self._padMap, romName)
+	mergeInputMaps(_maps.key, self._keyMap, self._actions, desc.romName)
+	mergeInputMaps(_maps.pad, self._padMap, self._actions, desc.romName)
+end
+
+function ButtonHandler:onComponentsInitialized(components)
+	for _, v in ipairs(components) do
+		self._actions[v.__desc.name] = v.__actions
+	end
+
+	self:_updateMaps(self.system)
 end
 
 function ButtonHandler:onKey(key, down)
-	util.handleInput(self._keyMap, key, down, self._keysPressed, self.system)
+	util.handleInput(self._keyMap, key, down, self._keysPressed, self.buttons)
 end
 
 function ButtonHandler:onPadButton(button, down)
-	util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self.system)
+	util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self.buttons)
 end
 
 return ButtonHandler

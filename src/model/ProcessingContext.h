@@ -51,10 +51,11 @@ public:
 		node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, SameBoyPlugPtr& other) {
 			other = _instances[d.idx];
 			_instances[d.idx] = d.instance;
+			_instances[d.idx]->setSampleRate(_audioSettings.sampleRate);
 
 			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
 			_audioBuffers[d.idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
+			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;			
 		});
 
 		node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
@@ -69,6 +70,15 @@ public:
 		node->on<calls::UpdateSettings>([&](const Project::Settings& settings) {
 			_settings = settings;
 		});
+
+		node->on<calls::PressButtons>([&](const ButtonStream<32>& presses) {
+			for (size_t i = 0; i < presses.pressCount; ++i) {
+				
+				std::cout << ButtonTypes::toString((ButtonType)presses.presses[i].button) << "\t" << presses.presses[i].down << "\t" << presses.presses[i].duration << std::endl;
+			}
+
+			_instances[presses.idx]->pressButtons(presses.presses.data(), presses.pressCount);
+		});
 	}
 
 	void process(float** outputs) {
@@ -80,8 +90,6 @@ public:
 		size_t totalPlugCount = 0;
 		size_t plugCount = 0;
 		size_t linkedPlugCount = 0;
-
-		int sampleCount = _audioSettings.frameCount * 2;
 
 		VideoStream video;
 

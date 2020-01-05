@@ -24,7 +24,7 @@
 #include "lsdj/kit.h"
 #include "lsdj/sample.h"
 
-const int FRAME_SIZE = 160 * 144 * 4;
+//const int FRAME_SIZE = 160 * 144 * 4;
 
 int getGameboyModel(GameboyModel model) {
 	switch (model) {
@@ -38,24 +38,27 @@ int getGameboyModel(GameboyModel model) {
 }
 
 SameBoyPlug::SameBoyPlug() {
-	// FIXME: Choose some better sizes here...
-	_bus.audio.init(1024 * 1024);
-	_bus.video.init(1024 * 1024);
-	_bus.buttons.init(64);
-	_bus.link.init(64);
-
 	_dimensions.w = 160;
 	_dimensions.h = 144;
+}
+
+void SameBoyPlug::pressButtons(const StreamButtonPress* presses, size_t pressCount) {
+	double samplesPerMs = _sampleRate / 1000.0;
+	for (size_t i = 0; i < pressCount; ++i) {
+		int duration = (int)(samplesPerMs * presses[i].duration);
+		SAMEBOY_SYMBOLS(sameboy_set_button)(_instance, duration, presses[i].button, presses[i].down);
+	}
 }
 
 void SameBoyPlug::loadRom(const char* data, size_t size) {
 	GameboyModel model = GameboyModel::Auto;
 	bool fastBoot = false;
 	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModel(model), fastBoot);
+	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, false);
 }
 
 void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot) {
-	_romPath = romPath;
+	/*_romPath = romPath;
 	_model = model;
 
 	_romData.clear();
@@ -137,13 +140,12 @@ void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot
 
 	SAMEBOY_SYMBOLS(sameboy_set_sample_rate)(instance, _sampleRate);
 
-	_instance = instance;
+	_instance = instance;*/
 }
 
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
 	_model = model;
 	_resetSamples = (int)(_sampleRate / 2);
-	std::scoped_lock lock(_lock);
 	SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModel(model), fast);
 }
 
@@ -151,7 +153,6 @@ void SameBoyPlug::setSampleRate(double sampleRate) {
 	_sampleRate = sampleRate;
 
 	if (_instance) {
-		std::scoped_lock lock(_lock);
 		SAMEBOY_SYMBOLS(sameboy_set_sample_rate)(_instance, sampleRate);
 	}
 }
@@ -167,12 +168,7 @@ size_t SameBoyPlug::batterySize() {
 bool SameBoyPlug::saveBattery(tstring path) {
 	std::vector<std::byte> target;
 	if (saveBattery(target)) {
-		if (path.empty()) {
-			path = _savePath;
-		}
-
 		if (writeFile(path, target)) {
-			_savePath = path;
 			return true;
 		}
 	}
@@ -191,7 +187,6 @@ bool SameBoyPlug::saveBattery(std::vector<std::byte>& data) {
 }
 
 bool SameBoyPlug::saveBattery(std::byte* data, size_t size) {
-	std::scoped_lock lock(_lock);
 	return SAMEBOY_SYMBOLS(sameboy_save_battery)(_instance, (char*)data, size);
 }
 
@@ -201,7 +196,6 @@ bool SameBoyPlug::loadBattery(const tstring& path, bool reset) {
 		return false;
 	}
 
-	_savePath = path;
 	return loadBattery(data, reset);
 }
 
@@ -211,30 +205,22 @@ bool SameBoyPlug::loadBattery(const std::vector<std::byte>& data, bool reset) {
 
 bool SameBoyPlug::loadBattery(const std::byte* data, size_t size, bool reset) {
 	if (_instance) {
-		std::scoped_lock lock(_lock);
 		SAMEBOY_SYMBOLS(sameboy_load_battery)(_instance, (char*)data, size);
 
 		if (reset) {
 			_resetSamples = (int)(_sampleRate / 2);
 			SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModel(_model), true);
 		}
-	} else {
-		_saveData.resize(size);
-		_saveType = SaveStateType::Sram;
-		memcpy(_saveData.data(), data, size);
 	}
 
 	return true;
 }
 
 bool SameBoyPlug::clearBattery(bool reset) {
-	std::scoped_lock lock(_lock);
 	size_t size = SAMEBOY_SYMBOLS(sameboy_battery_size)(_instance);
 	std::vector<std::byte> d(size);
 	memset(d.data(), 0, size);
 	SAMEBOY_SYMBOLS(sameboy_load_battery)(_instance, (char*)d.data(), d.size());
-
-	_savePath = TSTR("");
 
 	if (reset) {
 		_resetSamples = (int)(_sampleRate / 2);
@@ -253,7 +239,6 @@ void SameBoyPlug::saveState(std::vector<std::byte>& data) {
 }
 
 void SameBoyPlug::saveState(std::byte* target, size_t size) {
-	std::scoped_lock lock(_lock);
 	SAMEBOY_SYMBOLS(sameboy_save_state)(_instance, (char*)target, size);
 }
 
@@ -263,17 +248,11 @@ void SameBoyPlug::loadState(const std::vector<std::byte>& data) {
 
 void SameBoyPlug::loadState(const std::byte* source, size_t size) {
 	if (_instance) {
-		std::scoped_lock lock(_lock);
 		SAMEBOY_SYMBOLS(sameboy_load_state)(_instance, (char*)source, size);
-	} else {
-		_saveData.resize(size);
-		_saveType = SaveStateType::State;
-		memcpy(_saveData.data(), source, size);
 	}
 }
 
 void SameBoyPlug::setSetting(const std::string& name, int value) {
-	std::scoped_lock lock(_lock);
 	SAMEBOY_SYMBOLS(sameboy_set_setting)(_instance, name.c_str(), value);
 }
 
@@ -283,7 +262,6 @@ void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
 		instances[i] = linkTargets[i]->instance();
 	}
 
-	std::scoped_lock lock(_lock);
 	SAMEBOY_SYMBOLS(sameboy_set_link_targets)(_instance, instances, linkTargets.size());
 }
 
@@ -324,38 +302,39 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 }
 
 void SameBoyPlug::disableRendering(bool disable) {
-	std::scoped_lock lock(_lock);
 	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, disable);
 }
 
 void SameBoyPlug::updateRom() {
-	std::scoped_lock lock(_lock);
-	SAMEBOY_SYMBOLS(sameboy_update_rom)(_instance, (const char*)_romData.data(), _romData.size());
+	//SAMEBOY_SYMBOLS(sameboy_update_rom)(_instance, (const char*)_romData.data(), _romData.size());
 }
 
 void SameBoyPlug::updateButtons() {
-	while (_bus.buttons.readAvailable()) {
+	/*while (_bus.buttons.readAvailable()) {
 		auto ev = _bus.buttons.readValue();
 		SAMEBOY_SYMBOLS(sameboy_set_button)(_instance, ev.id, ev.down);
-	}
+	}*/
 }
 
 void SameBoyPlug::updateAV(int audioFrames) {
 	int16_t audio[1024 * 4]; // FIXME: Choose a realistic size for this...
-
-	int sampleCount = audioFrames * 2;
-
 	SAMEBOY_SYMBOLS(sameboy_fetch_audio)(_instance, audio);
 
-	if (_videoBuffer->data.get()) {
-		size_t videoAvailable = SAMEBOY_SYMBOLS(sameboy_fetch_video)(_instance, (uint32_t*)_videoBuffer->data.get());
-	}
-
 	if (_resetSamples <= 0) {
-		// Convert to float
+		int sampleCount = audioFrames * 2;
 		ma_pcm_s16_to_f32(_audioBuffer->data->data(), audio, sampleCount, ma_dither_mode_triangle);
 	} else {
 		_resetSamples -= audioFrames;
+	}
+
+	if (_videoBuffer->data.get()) {
+		//memset(_videoBuffer->data.get(), 255, _videoBuffer->data.count());
+		size_t videoAvailable = SAMEBOY_SYMBOLS(sameboy_fetch_video)(_instance, (uint32_t*)_videoBuffer->data.get());
+		if (videoAvailable == 0) {
+			_videoBuffer->data = nullptr;
+		} else {
+			assert(videoAvailable == _videoBuffer->data.count());
+		}
 	}
 }
 

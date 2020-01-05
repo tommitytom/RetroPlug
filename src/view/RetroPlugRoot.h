@@ -32,6 +32,9 @@ private:
 	cxxtimer::Timer _frameTimer;
 
 public:
+	std::function<void(double)> onFrame;
+
+public:
 	RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* plug);
 	~RetroPlugView();
 

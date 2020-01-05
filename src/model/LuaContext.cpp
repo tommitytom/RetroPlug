@@ -142,23 +142,6 @@ void LuaContext::setup() {
 		"checksum", sol::readonly(&File::checksum)
 	);
 
-	s.new_usertype<SameBoyPlug>("SameBoyPlug",
-		"setButtonState", &SameBoyPlug::setButtonStateT,
-		"getRomName", &SameBoyPlug::romName,
-		"getRomPath", &SameBoyPlug::romPath,
-		"isActive", &SameBoyPlug::active
-	);
-
-	s.new_usertype<RetroPlug>("RetroPlug",
-		"addInstance", &RetroPlug::addInstance,
-		"removeInstance", &RetroPlug::removeInstance,
-		"setActiveInstance", &RetroPlug::setActive,
-		"activeInstanceIdx", &RetroPlug::activeInstanceIdx,
-		"getPlug", &RetroPlug::getPlug,
-		"loadRom", &RetroPlug::loadRom,
-		"fileManager", &RetroPlug::fileManager
-	);
-
 	s.new_enum("EmulatorInstanceState",
 		"Uninitialized", EmulatorInstanceState::Uninitialized,
 		"Initialized", EmulatorInstanceState::Initialized,
@@ -182,6 +165,17 @@ void LuaContext::setup() {
 		"patchedRomData", &EmulatorInstanceDesc::patchedRomData
 	);
 
+	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
+		"hold", &GameboyButtonStream::hold,
+		"release", &GameboyButtonStream::release,
+		"releaseAll", &GameboyButtonStream::releaseAll,
+		"delay", &GameboyButtonStream::delay,
+
+		"holdDuration", &GameboyButtonStream::holdDuration,
+		"releaseDuration", &GameboyButtonStream::releaseDuration,
+		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
+	);
+
 	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
 		"setInstance", &RetroPlugProxy::setInstance,
 		"removeInstance", &RetroPlugProxy::removeInstance,
@@ -189,7 +183,8 @@ void LuaContext::setup() {
 		"getInstances", &RetroPlugProxy::instances,
 		"setActiveInstance", &RetroPlugProxy::setActive,
 		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
-		"fileManager", &RetroPlugProxy::fileManager
+		"fileManager", &RetroPlugProxy::fileManager,
+		"buttons", &RetroPlugProxy::getButtonPresses
 	);
 
 	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",

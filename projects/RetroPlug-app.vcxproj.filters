@@ -855,6 +855,9 @@
     <ClInclude Include="..\src\model\Project.h">
       <Filter>src\model</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\model\ButtonStream.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

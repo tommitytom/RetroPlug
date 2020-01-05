@@ -19,11 +19,12 @@ using AxisButtons::AxisButton;
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
 RetroPlugController::RetroPlugController(): _listener(&_lua) {
-	_bus.addCall<calls::LoadRom>();
-	_bus.addCall<calls::SwapInstance>();
-	_bus.addCall<calls::TakeInstance>();
+	_bus.addCall<calls::LoadRom>(4);
+	_bus.addCall<calls::SwapInstance>(4);
+	_bus.addCall<calls::TakeInstance>(4);
 	_bus.addCall<calls::TransmitVideo>();
-	_bus.addCall<calls::UpdateSettings>();
+	_bus.addCall<calls::UpdateSettings>(4);
+	_bus.addCall<calls::PressButtons>(32);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_processingContext.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));
@@ -43,6 +44,11 @@ RetroPlugController::~RetroPlugController() {
 	delete _padManager;
 }
 
+void RetroPlugController::update(float delta) {
+	processPad();
+	_scriptWatcher.update();
+}
+
 void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host) {
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
@@ -56,6 +62,10 @@ void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHo
 
 	_view = new RetroPlugView(graphics->GetBounds(), &_lua, &_proxy);
 	graphics->AttachControl(_view);
+
+	_view->onFrame = [&](double delta) {
+		update(delta);
+	};
 }
 
 void RetroPlugController::processPad() {

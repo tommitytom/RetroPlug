@@ -103,6 +103,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.stop();
 	double delta = _frameTimer.count();
+	onFrame(delta);
 	//_lua->update(delta);
 	_proxy->update(delta);
 

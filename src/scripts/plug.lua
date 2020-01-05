@@ -4,6 +4,23 @@ require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
 local inspect = require("inspect")
 
+Action = {}
+setmetatable(Action, {
+	__index = function(table, componentName)
+		local actionNameTable = {}
+		setmetatable(actionNameTable, {
+			__index = function(table, actionName)
+				return {
+					component = componentName,
+					action = actionName
+				}
+			end
+		})
+
+		return actionNameTable
+	end
+})
+
 local MAX_INSTANCES = 4
 
 Active = nil
@@ -11,14 +28,7 @@ local _activeIdx = 0
 local _instances = {}
 local _keyState = {}
 
-Action = {
-	Lsdj = {
-		Copy = function() print("Lsdj.Copy") end,
-		Paste = function() print("Lsdj.Paste") end,
-		DownTenRows = function() print("Lsdj.DownTenRows") end,
-		UpTenRows = function() print("Lsdj.UpTenRows") end,
-	}
-}
+local _actions = {}
 
 local _globalComponents = {}
 
@@ -50,13 +60,13 @@ local function componentInputRoute(target, ...)
 	return handled
 end
 
-local function findInstanceComponents(emulatorDesc)
+local function findInstanceComponents(emulatorDesc, buttons)
 	local components = {}
 	for _, v in ipairs(_componentFactory.instance) do
 		local d = v.__desc
 		if d.romName == nil or emulatorDesc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			table.insert(components, v.new())
+			table.insert(components, v.new(emulatorDesc, buttons))
 		end
 	end
 
@@ -66,7 +76,7 @@ end
 local function runComponentHandler(components, handlerName, ...)
 	for _, component in ipairs(components) do
 		local found = component[handlerName]
-		if found ~= nil then found(...) end
+		if found ~= nil then found(component, ...) end
 	end
 end
 
@@ -84,6 +94,17 @@ function _loadComponent(name)
 	end
 end
 
+local function extractActions(components)
+	local actions = {}
+	for _, v in ipairs(components) do
+		if #v.__actions > 0 then
+			actions[v.__desc.name] = v.__actions
+		end
+	end
+
+	return actions
+end
+
 function _init()
 	for _, v in ipairs(_componentFactory.global) do
 		table.insert(_globalComponents, v.new())
@@ -92,19 +113,26 @@ function _init()
 	for i = 1, MAX_INSTANCES, 1 do
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			table.insert(_instances, {
+			local buttons = _proxy:buttons(i - 1)
+			local instance = {
 				desc = desc,
-				components = findInstanceComponents(desc)
-			})
+				components = findInstanceComponents(desc, buttons),
+				buttons = buttons
+			}
+
+			table.insert(_instances, instance)
 
 			if i == _proxy:activeInstanceIdx() + 1 then
 				_activeIdx = i
 				Active = _instances[i]
 			end
+
+			_actions[i] = extractActions(instance.components)
 		end
 	end
 
 	for _, instance in ipairs(_instances) do
+		runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
 		runComponentHandler(instance.components, "onReload", instance.desc)
 	end
 end
@@ -115,7 +143,8 @@ local function addInstance(desc)
 
 		local instance = {
 			desc = desc,
-			components = {}
+			components = {},
+			buttons = _proxy:buttons(desc.idx)
 		}
 
 		table.insert(_instances, instance)
@@ -135,7 +164,7 @@ function _removeInstance(index)
 	end
 
 	table.remove(_instances, index + 1)
-	_model:removeInstance(index)
+	_proxy:removeInstance(index)
 end
 
 function _duplicateInstance(idx)
@@ -143,8 +172,9 @@ function _duplicateInstance(idx)
 		local source = _instances[idx + 1]
 
 		local instance = {
-			model = _model:duplicateInstance(idx),
-			components = {}  -- TODO: Duplicate components
+			model = _proxy:duplicateInstance(idx),
+			components = {},  -- TODO: Duplicate components
+			buttons = _proxy:buttons(idx)
 		}
 
 		return instance.model
@@ -175,8 +205,10 @@ function _loadRom(idx, path)
 		end
 	end
 
-	instance.components = findInstanceComponents(d)
+	instance.components = findInstanceComponents(d, instance.buttons)
+	_actions[idx + 1] = extractActions(instance.components)
 
+	runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
 	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
 	_proxy:setInstance(d)
 	runComponentHandler(instance.components, "onRomLoad", instance.desc)
@@ -198,7 +230,7 @@ end
 function _setActive(idx)
 	_activeIdx = idx + 1
 	Active = _instances[_activeIdx]
-	_model:setActiveInstance(idx)
+	_proxy:setActiveInstance(idx)
 end
 
 function _frame(delta)

@@ -80,7 +80,7 @@ public:
 	InstanceIndex getIndex() const { return _index; }
 
 private:
-	void DrawPixelBuffer(NVGcontext* vg, char* data);
+	void DrawPixelBuffer(NVGcontext* vg);
 
 	IPopupMenu* CreateSettingsMenu();
 

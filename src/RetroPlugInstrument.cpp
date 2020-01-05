@@ -17,6 +17,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 
 	mLayoutFunc = [&](IGraphics* pGraphics) {
 		_controller.init(pGraphics, GetHost());
+		OnReset();
 	};
 #endif
 }
@@ -63,7 +64,7 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {
-	Lsdj& lsdj = plug->lsdj();
+	/*Lsdj& lsdj = plug->lsdj();
 	if (transportChanged && plug->midiSync() && !lsdj.found) {
 		if (mTimeInfo.mTransportIsRunning) {
 			plug->sendSerialByte(0, 0xFA);
@@ -90,18 +91,18 @@ void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, b
 		} else if (plug->midiSync()) {
 			ProcessSync(plug, frameCount, 1, 0xF8);
 		}
-	}
+	}*/
 }
 
 void RetroPlugInstrument::HandleTransportChange(SameBoyPlug* plug, bool running) {
-	if (plug->lsdj().autoPlay) {
+	/*if (plug->lsdj().autoPlay) {
 		_buttonQueue.press(ButtonTypes::Start);
 		consoleLogLine("Pressing start");
 	}
 
 	if (!_transportRunning && plug->lsdj().found && plug->lsdj().lastRow != -1) {
 		plug->sendSerialByte(0, 0xFE);
-	}
+	}*/
 }
 
 void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
@@ -183,7 +184,7 @@ unsigned char reverse(unsigned char b) {
 }
 
 void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel) {
-	Lsdj& lsdj = plug->lsdj();
+	/*Lsdj& lsdj = plug->lsdj();
 	if (lsdj.found) {
 		switch (lsdj.syncMode) {
 		case LsdjSyncModes::MidiArduinoboy:
@@ -281,11 +282,11 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 		midiData[2] = msg.mData2;
 
 		plug->sendMidiBytes(msg.mOffset, (const char*)midiData, 3);
-	}
+	}*/
 }
 
 void RetroPlugInstrument::ChangeLsdjKeyboardOctave(SameBoyPlug* plug, int octave, int offset) {
-	int current = plug->lsdj().currentOctave;
+	/*int current = plug->lsdj().currentOctave;
 	if (octave != current) {
 		LsdjKeyboard key = LsdjKeyboard::OctDn;
 		if (octave > current) {
@@ -300,11 +301,11 @@ void RetroPlugInstrument::ChangeLsdjKeyboardOctave(SameBoyPlug* plug, int octave
 		}
 
 		plug->lsdj().currentOctave = octave;
-	}
+	}*/
 }
 
 void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrument, int offset) {
-	int current = plug->lsdj().currentInstrument;
+	/*int current = plug->lsdj().currentInstrument;
 	if (current != instrument) {
 		LsdjKeyboard key = LsdjKeyboard::InsDn;
 		if (instrument > current) {
@@ -319,7 +320,7 @@ void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrumen
 		}
 
 		plug->lsdj().currentInstrument = instrument;
-	}
+	}*/
 }
 
 void RetroPlugInstrument::OnReset() {

@@ -100,7 +100,7 @@ MidiChannelRouting stringToMidiRouting(const std::string & model) {
 }
 
 void serialize(std::string & target, const RetroPlug & manager) {
-	const SameBoyPlugPtr* plugs = manager.plugs();
+	/*const SameBoyPlugPtr* plugs = manager.plugs();
 
 	rapidjson::Document root(rapidjson::kObjectType);
 	auto& a = root.GetAllocator();
@@ -199,11 +199,11 @@ void serialize(std::string & target, const RetroPlug & manager) {
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
 	root.Accept(writer);
 
-	target = sb.GetString();
+	target = sb.GetString();*/
 }
 
 void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, SaveStateType saveType) {
-	const std::string& romPath = instRoot["romPath"].GetString();
+	/*const std::string& romPath = instRoot["romPath"].GetString();
 	const auto& state = instRoot["state"].GetObject();
 	const std::string& stateDataStr = state["data"].GetString();
 	std::vector<std::byte> stateData = base64_decode(stateDataStr);
@@ -302,7 +302,7 @@ void deserializeInstance(const rapidjson::Value& instRoot, RetroPlug& plug, Save
 			plugPtr->lsdj().patchKits(plugPtr->romData());
 			plugPtr->updateRom();
 		}
-	}
+	}*/
 }
 
 int versionToInt(const std::string& v) {

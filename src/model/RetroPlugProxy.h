@@ -8,6 +8,7 @@
 #include "Constants.h"
 #include "Types.h"
 #include "model/Project.h"
+#include "model/ButtonStream.h"
 
 class RetroPlugProxy {
 private:
@@ -18,6 +19,8 @@ private:
 
 	FileManager _fileManager;
 
+	GameboyButtonStream _buttonPresses[MAX_INSTANCES];
+
 public:
 	std::function<void(const VideoStream&)> videoCallback;
 
@@ -25,6 +28,7 @@ public:
 	RetroPlugProxy() {
 		for (size_t i = 0; i < MAX_INSTANCES; i++) {
 			_project.instances.push_back(EmulatorInstanceDesc());
+			_buttonPresses[i].setIndex(i);
 		}
 
 		_project.instances[0].type = EmulatorType::Placeholder;
@@ -42,6 +46,10 @@ public:
 		});
 	}
 
+	GameboyButtonStream* getButtonPresses(InstanceIndex idx) {
+		return &_buttonPresses[idx];
+	}
+
 	FileManager* fileManager() { return &_fileManager; }
 
 	int activeIdx() const { return _activeIdx; }
@@ -50,6 +58,13 @@ public:
 
 	void update(double delta) {
 		_node->pull();
+
+		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			if (_buttonPresses[i].getCount() > 0) {
+				_node->push<calls::PressButtons>(NodeTypes::Audio, _buttonPresses[i].data());
+				_buttonPresses[i].clear();
+			}
+		}
 	}
 
 	size_t getInstanceCount() const {
@@ -67,6 +82,8 @@ public:
 		if (_activeIdx != NO_ACTIVE_INSTANCE) {
 			return &_project.instances[_activeIdx];
 		}
+		
+		return nullptr;
 	}
 
 	void setActive(int idx) {

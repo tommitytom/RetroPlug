@@ -8,7 +8,7 @@ extern const unsigned char dmg_boot[], cgb_boot[], cgb_fast_boot[], agb_boot[], 
 extern const unsigned dmg_boot_length, cgb_boot_length, cgb_fast_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;
 
 static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
-  return r << 16 | g << 8 | b;
+  return 255 << 24 | b << 16 | g << 8 | r;
 }
 
 int vasprintf(char **str, const char *fmt, va_list args)
@@ -33,6 +33,9 @@ int vasprintf(char **str, const char *fmt, va_list args)
 #define LINK_TICKS_MAX 3907
 
 #define MAX_INSTANCES 4
+
+#define MAX_SERIAL_ITEMS 128
+#define MAX_BUTTON_ITEMS 64
 
 typedef struct boot_rom_t {
     const unsigned char* data;
@@ -72,7 +75,10 @@ typedef struct sameboy_state_t {
     char frameBuffer[FRAME_BUFFER_SIZE];
     GB_sample_t audioBuffer[1024 * 8];
     size_t currentAudioFrames;
-    Queue midiQueue;
+    Queue serialQueue;
+    char serialQueueData[sizeof(offset_byte_t) * MAX_SERIAL_ITEMS];
+    Queue buttonQueue;
+    char buttonQueueData[sizeof(offset_button_t) * MAX_BUTTON_ITEMS];
     bool vblankOccurred;
     int linkTicksRemain;
 
@@ -146,7 +152,8 @@ void* sameboy_init(void* user_data, const char* rom_data, size_t rom_size, int m
 
     GB_load_rom_from_buffer(&state->gb, rom_data, rom_size);
 
-    queue_init(&state->midiQueue);
+    queue_init(&state->serialQueue, state->serialQueueData, sizeof(offset_byte_t), MAX_SERIAL_ITEMS);
+    queue_init(&state->buttonQueue, state->buttonQueueData, sizeof(offset_button_t), MAX_BUTTON_ITEMS);
 
     return state;
 }
@@ -208,12 +215,12 @@ void sameboy_set_sample_rate(void* state, double sample_rate) {
 void sameboy_send_serial_byte(void* state, int offset, char byte, size_t bitCount) {
     sameboy_state_t* s = (sameboy_state_t*)state;
 
-    if (length(&s->midiQueue) < MAX_QUEUE_SIZE) {
+    if (!queue_full(&s->serialQueue)) {
         offset_byte_t ob;
         ob.offset = offset;
         ob.byte = byte;
         ob.bitCount = bitCount;
-        enqueue(&s->midiQueue, ob);
+        queue_enqueue(&s->serialQueue, &ob);
     }
 }
 
@@ -223,9 +230,23 @@ void sameboy_set_midi_bytes(void* state, int offset, const char* bytes, size_t c
     }
 }
 
-void sameboy_set_button(void* state, int buttonId, bool down) {
+void sameboy_set_button(void* state, int duration, int buttonId, bool down) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    GB_set_key_state_for_player(&s->gb, buttonId,  0, down);
+
+    if (!queue_full(&s->buttonQueue)) {
+        offset_button_t ob;
+        ob.offset = 0;
+        ob.duration = duration;
+        ob.button = buttonId;
+        ob.down = down;
+
+        offset_button_t* b = (offset_button_t*)queue_back(&s->buttonQueue);
+        if (b) {
+            ob.offset = b->offset + b->duration;
+        }
+
+        queue_enqueue(&s->buttonQueue, &ob);
+    }
 }
 
 size_t sameboy_save_state_size(void* state) {
@@ -334,10 +355,12 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
     while (s->currentAudioFrames < requiredAudioFrames) {
         // Send bytes to the link port if required
         if (s->linkTicksRemain <= 0) {
-            if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
-                offset_byte_t b = dequeue(&s->midiQueue);
-                for (int i = b.bitCount - 1; i >= 0; i--) {
-                    bool bit = (bool)((b.byte & (1 << i)) >> i);
+            offset_byte_t* b = (offset_byte_t*)queue_front(&s->serialQueue);
+            if (b && b->offset <= s->currentAudioFrames) {
+                queue_dequeue(&s->serialQueue);
+
+                for (int i = b->bitCount - 1; i >= 0; i--) {
+                    bool bit = (bool)((b->byte & (1 << i)) >> i);
                     GB_serial_set_data_bit(&s->gb, bit);
                 }
             }
@@ -346,25 +369,31 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
         }
 
         // Send button presses if required
-
+        offset_button_t* b = (offset_button_t*)queue_front(&s->buttonQueue);
+        while (b && b->offset <= s->currentAudioFrames) {
+            queue_dequeue(&s->buttonQueue);
+            GB_set_key_state(&s->gb, b->button, b->down);
+            b = (offset_button_t*)queue_front(&s->buttonQueue);
+        }
 
         int ticks = GB_run(&s->gb);
         delta += ticks;
         s->linkTicksRemain -= ticks;
     }
 
+    int buttonRemain = queue_length(&s->buttonQueue);
+    for (int i = 0; i < buttonRemain; i++) {
+        offset_button_t* b = (offset_button_t*)queue_get(&s->buttonQueue, i);
+        b->offset -= s->currentAudioFrames;
+    }
+
     // If there are any midi events that still haven't been processed, set their
     // offsets to 0 so they get processed immediately at the start of the next frame.
-    if (length(&s->midiQueue)) {
-        for (int i = 0; i < MAX_QUEUE_SIZE; i++) {
-            s->midiQueue.data[i].offset = 0;
-        }
+    int serialRemain = queue_length(&s->serialQueue);
+    for (int i = 0; i < serialRemain; i++) {
+        offset_byte_t* b = (offset_byte_t*)queue_get(&s->serialQueue, i);
+        b->offset = 0;
     }
-}
-
-const char* sameboy_get_rom_name(void* state) {
-    sameboy_state_t* s = (sameboy_state_t*)state;
-    return (const char*)(s->gb.rom + 0x134);
 }
 
 void sameboy_free(void* state) {

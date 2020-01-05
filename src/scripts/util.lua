@@ -42,7 +42,7 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-local function handleInput(map, key, down, pressed, system)
+local function handleInput(map, key, down, pressed, buttonStream)
 	local handled = false
 
 	-- Do a basic map from key to button
@@ -50,8 +50,12 @@ local function handleInput(map, key, down, pressed, system)
 	if found ~= nil then
 		if type(found) == "function" then
 			handled = found(down)
-		elseif system ~= nil then
-			system:setButtonState(found, down)
+		elseif buttonStream ~= nil then
+			if down == true then
+				buttonStream:holdDuration(found, 0)
+			else
+				buttonStream:releaseDuration(found, 0)
+			end
 		end
 	end
 

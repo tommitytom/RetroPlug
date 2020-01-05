@@ -4,6 +4,7 @@
 #include "roms/Lsdj.h"
 #include "util/xstring.h"
 #include "controller/messaging.h"
+#include "model/ButtonStream.h"
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -30,36 +31,23 @@ class SameBoyPlug {
 private:
 	void* _instance = nullptr;
 
-	tstring _romPath;
-	tstring _savePath;
-	std::string _romName;
+	bool _midiSync = false;
+	bool _gameLink = false;
+	int _resetSamples = 0;
 
-	MessageBus _bus;
-
-	std::mutex _lock;
-	std::atomic<bool> _midiSync = false;
-	std::atomic<bool> _gameLink = false;
-	std::atomic<int> _resetSamples = 0;
-
-	Lsdj _lsdj;
 	GameboyModel _model = GameboyModel::Auto;
 
 	double _sampleRate = 48000;
 
-	std::vector<std::byte> _romData;
-	std::vector<std::byte> _saveData;
-	SaveStateType _saveType = SaveStateType::State;
-
-	bool _watchRom = false;
-
 	Dimension2 _dimensions;
-
 	VideoBuffer* _videoBuffer;
 	AudioBuffer* _audioBuffer;
 
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
+
+	void pressButtons(const StreamButtonPress* presses, size_t pressCount);
 
 	void loadRom(const char* data, size_t size);
 
@@ -72,23 +60,15 @@ public:
 		_audioBuffer = audio;
 	}
 
-	void setWatchRom(bool watch) { _watchRom = watch; }
-
-	Lsdj& lsdj() { return _lsdj; }
-
-	std::vector<std::byte>& romData() { return _romData; }
-
-	void setRomPath(const tstring& path) { _romPath = path; }
-
 	void setModel(GameboyModel model) { _model = model; }
 
 	GameboyModel model() const { return _model; }
 
-	bool midiSync() { return _midiSync.load(); }
+	bool midiSync() { return _midiSync; }
 
 	void setMidiSync(bool enabled) { _midiSync = enabled; }
 
-	bool gameLink() const { return _gameLink.load(); }
+	bool gameLink() const { return _gameLink; }
 
 	void setGameLink(bool enabled) { _gameLink = enabled; }
 
@@ -97,12 +77,6 @@ public:
 	void reset(GameboyModel model, bool fast);
 
 	bool active() const { return _instance != nullptr; }
-
-	const std::string& romName() const { return _romName; }
-
-	const tstring& romPath() const { return _romPath; }
-
-	std::mutex& lock() { return _lock; }
 
 	void setSampleRate(double sampleRate);
 	 
@@ -142,12 +116,6 @@ public:
 
 	void setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets);
 
-	void setButtonState(const ButtonEvent& ev) { _bus.buttons.writeValue(ev); }
-
-	void setButtonStateT(size_t buttonId, bool down) { _bus.buttons.writeValue(ButtonEvent{ buttonId, down }); }
-
-	MessageBus* messageBus() { return &_bus; }
-
 	void update(size_t audioFrames);
 
 	void updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames);
@@ -157,10 +125,6 @@ public:
 	void* instance() { return _instance; }
 
 	void disableRendering(bool disable);
-
-	void setSavePath(const tstring& path) { _savePath = path; }
-
-	const tstring& savePath() const { return _savePath; }
 
 	void updateRom();
 

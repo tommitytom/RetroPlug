@@ -3,6 +3,7 @@
 #include "micromsg/request.h"
 #include "micromsg/node.h"
 #include "model/Project.h"
+#include "model/ButtonStream.h"
 
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
@@ -43,6 +44,7 @@ namespace calls {
 	using LoadRom = micromsg::Push<LoadRomDesc>;
 	using TransmitVideo = micromsg::Push<VideoStream>;
 	using UpdateSettings = micromsg::Push<Project::Settings>;
+	using PressButtons = micromsg::Push<ButtonStream<32>>;
 
 	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
 	using TakeInstance = micromsg::Request<InstanceIndex, SameBoyPlugPtr>;

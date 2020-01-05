@@ -16,11 +16,13 @@ function component(desc)
 	local c = {}
 	c.__index = c
 	c.__desc = desc
-	c.new = function(system)
-		local obj = {}
+	c.registerActions = function(obj, actions) obj.__actions = actions end
+	c.new = function(system, buttons)
+		local obj = { __actions = {} }
 		setmetatable(obj, c)
 		obj.system = system
-		if c.init then c.init(obj, system)	end
+		obj.buttons = buttons
+		if c.init then c.init(obj)	end
 		return obj
 	end
 

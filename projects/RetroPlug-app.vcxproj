@@ -306,6 +306,7 @@
     <ClInclude Include="..\src\micromsg\types.h" />
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h" />
     <ClInclude Include="..\src\micromsg\variant_function.h" />
+    <ClInclude Include="..\src\model\ButtonStream.h" />
     <ClInclude Include="..\src\model\EmulatorInstance.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
     <ClInclude Include="..\src\model\LuaContext.h" />

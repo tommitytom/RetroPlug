@@ -19,7 +19,7 @@ struct SameboyPlugSymbols {
 
 	void(*sameboy_send_serial_byte)(void* state, int offset, char byte, size_t bitCount);
 	void(*sameboy_set_midi_bytes)(void* state, int offset, const char* bytes, size_t count);
-	void(*sameboy_set_button)(void* state, int buttonId, bool down);
+	void(*sameboy_set_button)(void* state, int offset, int buttonId, bool down);
 	void(*sameboy_set_link_targets)(void* state, void** linkTargets, size_t count);
 
 	size_t(*sameboy_battery_size)(void* state);
@@ -32,8 +32,6 @@ struct SameboyPlugSymbols {
 
 	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
 	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);
-
-	const char*(*sameboy_get_rom_name)(void* state);
 };
 
 static SameboyPlugSymbols& getSymbols() {
@@ -63,7 +61,6 @@ static SameboyPlugSymbols& getSymbols() {
 	instance.get("sameboy_battery_size", _symbols.sameboy_battery_size);
 	instance.get("sameboy_save_battery", _symbols.sameboy_save_battery);
 	instance.get("sameboy_load_battery", _symbols.sameboy_load_battery);
-	instance.get("sameboy_get_rom_name", _symbols.sameboy_get_rom_name);
 	instance.get("sameboy_set_setting", _symbols.sameboy_set_setting);
 	instance.get("sameboy_set_link_targets", _symbols.sameboy_set_link_targets);
 	instance.get("sameboy_update_rom", _symbols.sameboy_update_rom);
