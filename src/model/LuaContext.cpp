@@ -51,6 +51,10 @@ void LuaContext::init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string&
 	setup();
 }
 
+void LuaContext::closeProject() {
+	callFunc(_state, "_closeProject");
+}
+
 SameBoyPlugPtr LuaContext::addInstance(EmulatorType type) {
 	/*SameBoyPlugPtr res;
 	callFuncRet(_state, "_addInstance", res, type);
@@ -170,6 +174,7 @@ void LuaContext::setup() {
 		"release", &GameboyButtonStream::release,
 		"releaseAll", &GameboyButtonStream::releaseAll,
 		"delay", &GameboyButtonStream::delay,
+		"press", &GameboyButtonStream::press,
 
 		"holdDuration", &GameboyButtonStream::holdDuration,
 		"releaseDuration", &GameboyButtonStream::releaseDuration,
@@ -184,7 +189,8 @@ void LuaContext::setup() {
 		"setActiveInstance", &RetroPlugProxy::setActive,
 		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
 		"fileManager", &RetroPlugProxy::fileManager,
-		"buttons", &RetroPlugProxy::getButtonPresses
+		"buttons", &RetroPlugProxy::getButtonPresses,
+		"closeProject", &RetroPlugProxy::closeProject
 	);
 
 	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",

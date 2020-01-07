@@ -21,8 +21,8 @@ class RetroPlugView : public IControl {
 private:
 	RetroPlugProxy* _proxy;
 	std::vector<EmulatorView*> _views;
-	EmulatorView* _active = nullptr;
-	size_t _activeIdx = 0;
+	//EmulatorView* _active = nullptr;
+	InstanceIndex _activeIdx = NO_ACTIVE_INSTANCE;
 
 	IPopupMenu _menu;
 	EHost _host;
@@ -37,6 +37,15 @@ public:
 public:
 	RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* plug);
 	~RetroPlugView();
+
+	EmulatorView* GetActiveView() {
+		InstanceIndex idx = _proxy->activeIdx();
+		if (idx != NO_ACTIVE_INSTANCE) {
+			return _views[idx];
+		}
+		
+		return nullptr;
+	}
 
 	void OnInit() override;
 

@@ -42,7 +42,7 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-local function handleInput(map, key, down, pressed, buttonStream)
+local function handleInput(map, key, down, pressed, hooks, buttonStream)
 	local handled = false
 
 	-- Do a basic map from key to button
@@ -51,10 +51,20 @@ local function handleInput(map, key, down, pressed, buttonStream)
 		if type(found) == "function" then
 			handled = found(down)
 		elseif buttonStream ~= nil then
-			if down == true then
-				buttonStream:holdDuration(found, 0)
-			else
-				buttonStream:releaseDuration(found, 0)
+			local skip = false
+			for _, v in ipairs(hooks) do
+				skip = v.fn(v.obj, found, down) == false
+				if skip == true then
+					break
+				end
+			end
+
+			if skip == false then
+				if down == true then
+					buttonStream:holdDuration(found, 0)
+				else
+					buttonStream:releaseDuration(found, 0)
+				end
 			end
 		end
 	end

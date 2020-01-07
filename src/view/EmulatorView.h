@@ -16,18 +16,11 @@
 #include <map>
 #include <set>
 
-const int VIDEO_WIDTH = 160;
-const int VIDEO_HEIGHT = 144;
-const int VIDEO_FRAME_SIZE = VIDEO_WIDTH * VIDEO_HEIGHT * 4;
-const int VIDEO_SCRATCH_SIZE = VIDEO_FRAME_SIZE;
-
 using namespace iplug;
 using namespace igraphics;
 
 class EmulatorView {
 private:
-	unsigned char _videoScratch[VIDEO_SCRATCH_SIZE];
-
 	int _imageId = -1;
 	NVGpaint _imgPaint;
 	float _alpha = 1.0f;
@@ -41,7 +34,7 @@ private:
 	size_t _frameBufferSize = 0;
 	bool _frameDirty = false;
 
-	InstanceIndex _index = NO_ACTIVE_INSTANCE;
+	InstanceIndex _index;
 	LuaContext* _lua;
 	RetroPlugProxy* _proxy;
 
@@ -78,6 +71,8 @@ public:
 	void DisableRendering(bool disable);
 
 	InstanceIndex getIndex() const { return _index; }
+
+	void DeleteFrame();
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);

@@ -28,8 +28,6 @@ local _activeIdx = 0
 local _instances = {}
 local _keyState = {}
 
-local _actions = {}
-
 local _globalComponents = {}
 
 local _componentFactory = {
@@ -94,17 +92,6 @@ function _loadComponent(name)
 	end
 end
 
-local function extractActions(components)
-	local actions = {}
-	for _, v in ipairs(components) do
-		if #v.__actions > 0 then
-			actions[v.__desc.name] = v.__actions
-		end
-	end
-
-	return actions
-end
-
 function _init()
 	for _, v in ipairs(_componentFactory.global) do
 		table.insert(_globalComponents, v.new())
@@ -126,8 +113,6 @@ function _init()
 				_activeIdx = i
 				Active = _instances[i]
 			end
-
-			_actions[i] = extractActions(instance.components)
 		end
 	end
 
@@ -206,12 +191,17 @@ function _loadRom(idx, path)
 	end
 
 	instance.components = findInstanceComponents(d, instance.buttons)
-	_actions[idx + 1] = extractActions(instance.components)
 
 	runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
 	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
 	_proxy:setInstance(d)
 	runComponentHandler(instance.components, "onRomLoad", instance.desc)
+end
+
+function _closeProject()
+	_instances = {}
+	_activeIdx = 0
+	_proxy:closeProject()
 end
 
 function _findRom(idx, path)

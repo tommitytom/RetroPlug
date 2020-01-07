@@ -26,17 +26,21 @@ public:
 
 public:
 	RetroPlugProxy() {
+		initProject();
+		updateIndices();
+	}
+
+	~RetroPlugProxy() {}
+
+	void initProject() {
+		_project = Project();
 		for (size_t i = 0; i < MAX_INSTANCES; i++) {
 			_project.instances.push_back(EmulatorInstanceDesc());
 			_buttonPresses[i].setIndex(i);
 		}
 
 		_project.instances[0].type = EmulatorType::Placeholder;
-
-		updateIndices();
 	}
-
-	~RetroPlugProxy() {}
 
 	void setNode(Node* node) { 
 		_node = node; 
@@ -128,6 +132,15 @@ public:
 		updateIndices();
 
 		_node->request<calls::TakeInstance>(NodeTypes::Audio, idx, [&](const SameBoyPlugPtr& d) {});
+	}
+
+	void closeProject() {
+		while (_project.instances[0].state != EmulatorInstanceState::Uninitialized) {
+			removeInstance(0);
+		}
+
+		initProject();
+		_activeIdx = NO_ACTIVE_INSTANCE;
 	}
 
 	const EmulatorInstanceDesc* getInstance(InstanceIndex idx) const {

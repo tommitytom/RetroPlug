@@ -32,6 +32,8 @@ public:
 
 	void init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string& path);
 
+	void closeProject();
+
 	SameBoyPlugPtr addInstance(EmulatorType type);
 
 	void removeInstance(size_t index);

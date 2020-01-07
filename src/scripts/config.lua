@@ -34,14 +34,17 @@ GlobalPadMap({
 
 -- Keys and shortcuts specific to LSDj
 KeyMap({ romName = "LSDj*" }, {
+	[{ Key.Ctrl, Key.X }] = Action.Lsdj.Cut,
 	[{ Key.Ctrl, Key.C }] = Action.Lsdj.Copy,
 	[{ Key.Ctrl, Key.V }] = Action.Lsdj.Paste,
+	[Key.Delete] = Action.Lsdj.Delete,
 	[Key.PageDown] = Action.Lsdj.DownTenRows,
 	[Key.PageUp] = Action.Lsdj.UpTenRows,
-	[Key.Shift] = Action.Lsdj.BeginSelection
+	[Key.Shift] = Action.Lsdj.BeginSelection,
+	[Key.Esc] = Action.Lsdj.CancelSelection,
 })
 
--- Gamepad button pressed specific to LSDj
+-- Gamepad button presses specific to LSDj
 PadMap({ romName = "LSDj*" }, {
 	[Pad.L1] = Action.Lsdj.UpTenRows,
 	[Pad.R1] = Action.Lsdj.DownTenRows,

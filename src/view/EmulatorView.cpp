@@ -15,8 +15,6 @@
 EmulatorView::EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics)
 	: _index(idx), _graphics(graphics), _lua(lua), _proxy(proxy)
 {
-	memset(_videoScratch, 255, VIDEO_SCRATCH_SIZE);
-
 	/*_settings = {
 		{ "Color Correction", 2 },
 		{ "High-pass Filter", 1 }
@@ -30,14 +28,26 @@ EmulatorView::EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* p
 
 EmulatorView::~EmulatorView() {
 	HideText();
+	DeleteFrame();
+}
 
+void EmulatorView::DeleteFrame() {
 	if (_imageId != -1) {
 		NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
 		nvgDeleteImage(ctx, _imageId);
+		nvgBeginPath(ctx);
+		nvgRect(ctx, _area.L, _area.T, _area.W(), _area.H());
+		NVGcolor black = { 0, 0, 0, 1 };
+		nvgFillColor(ctx, black);
+		nvgFill(ctx);
+
+		_imageId = -1;
 	}
 
 	if (_frameBuffer) {
 		delete[] _frameBuffer;
+		_frameBuffer = nullptr;
+		_frameBufferSize = 0;
 	}
 }
 
@@ -94,8 +104,9 @@ void EmulatorView::SetArea(const IRECT & area) {
 }
 
 void EmulatorView::Draw(IGraphics& g, double delta) {
+	NVGcontext* vg = (NVGcontext*)g.GetDrawContext();
 	if (_index != NO_ACTIVE_INSTANCE) {
-		DrawPixelBuffer((NVGcontext*)g.GetDrawContext());
+		DrawPixelBuffer(vg);
 	}
 }
 
@@ -137,8 +148,7 @@ enum class SystemMenuItems : int {
 };
 
 void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
-	return;
-	assert(_index = NO_ACTIVE_INSTANCE);
+	assert(_index != NO_ACTIVE_INSTANCE);
 	const EmulatorInstanceDesc* desc = _proxy->getInstance(_index);
 
 	std::string romName = desc->romName;

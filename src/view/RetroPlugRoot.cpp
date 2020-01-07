@@ -11,10 +11,12 @@
 RetroPlugView::RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
-			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-				const VideoBuffer& buffer = video.buffers[i];
-				if (buffer.data.get()) {
-					_views[i]->WriteFrame(buffer);
+			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
+				if (_proxy->getInstance(i)->state == EmulatorInstanceState::Running) {
+					const VideoBuffer& buffer = video.buffers[i];
+					if (buffer.data.get()) {
+						_views[i]->WriteFrame(buffer);
+					}
 				}
 			}
 		}
@@ -54,7 +56,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 			switch (active->state) {
 				case EmulatorInstanceState::Running: {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);
-				_active->CreateMenu(&_menu, projectMenu);
+				GetActiveView()->CreateMenu(&_menu, projectMenu);
 
 				projectMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
 					switch ((ProjectMenuItems)idx) {
@@ -87,12 +89,12 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 			_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
 				switch ((BasicMenuItems)idx) {
 				case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
-				case BasicMenuItems::LoadRom: _active->OpenLoadRomDialog(GameboyModel::Auto); break;
+				case BasicMenuItems::LoadRom: break;// _active->OpenLoadRomDialog(GameboyModel::Auto); break;
 				}
 			});
 
 			modelMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-				_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
+				//_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
 			});
 		}
 
@@ -174,6 +176,7 @@ void RetroPlugView::UpdateLayout() {
 	if (count == 0) {
 		count = 1;
 		_views[0]->ShowText("Double click to", "load a rom...");
+		_views[0]->DeleteFrame();
 	}
 
 	InstanceLayout layout = _proxy->getProject()->settings.layout;
@@ -232,20 +235,21 @@ void RetroPlugView::UpdateLayout() {
 
 	for (size_t i = count; i < _views.size(); ++i) {
 		_views[i]->HideText();
+		_views[i]->DeleteFrame();
 	}
 }
 
 void RetroPlugView::UpdateActive() {
 	InstanceIndex idx = _proxy->activeIdx();
 
-	if (_activeIdx != idx) {
-		if (_activeIdx != NO_ACTIVE_INSTANCE) {
-			_views[_activeIdx]->SetAlpha(0.75f);
-		}
+	std::cout << "active: " << idx << std::endl;
+
+	if (_activeIdx != NO_ACTIVE_INSTANCE && idx != _activeIdx) {
+		_views[_activeIdx]->SetAlpha(0.75f);
 	}
 
 	if (idx != NO_ACTIVE_INSTANCE) {
-		_views[_activeIdx]->SetAlpha(1.0f);
+		_views[idx]->SetAlpha(1.0f);
 	}
 
 	_activeIdx = idx;
@@ -298,7 +302,7 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 	}
 
 	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-		CreatePlugInstance(_active, (CreateInstanceType)idx);
+		CreatePlugInstance(GetActiveView(), (CreateInstanceType)idx);
 	});
 
 	layoutMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
@@ -325,7 +329,7 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 }
 
 void RetroPlugView::CloseProject() {
-	//_lua->closeProject();
+	_lua->closeProject();
 	UpdateLayout();
 	UpdateActive();
 
@@ -440,4 +444,5 @@ void RetroPlugView::OpenLoadProjectDialog() {
 void RetroPlugView::RemoveActive() {
 	_lua->removeInstance(_activeIdx);
 	UpdateLayout();
+	UpdateActive();
 }

@@ -24,6 +24,12 @@ private:
 	double _defaultDelay = 50.0;
 
 public:
+	ButtonStreamWriter& press(int button) {
+		hold(button);
+		release(button);
+		return *this;
+	}
+
 	ButtonStreamWriter& hold(int button) { return holdDuration(button, -1); }
 
 	ButtonStreamWriter& holdDuration(int button, double postDelay) {
