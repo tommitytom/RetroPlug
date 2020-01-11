@@ -52,25 +52,27 @@ void EmulatorView::DeleteFrame() {
 }
 
 void EmulatorView::WriteFrame(const VideoBuffer& buffer) {
-	if (buffer.data.count() > _frameBufferSize) {
-		if (_frameBuffer) {
-			delete[] _frameBuffer;
+	if (buffer.data.get()) {
+		if (buffer.data.count() > _frameBufferSize) {
+			if (_frameBuffer) {
+				delete[] _frameBuffer;
+			}
+
+			_dimensions = buffer.dimensions;
+
+			_frameBufferSize = buffer.data.count();
+			_frameBuffer = new char[_frameBufferSize];
+
+			if (_imageId != -1) {
+				NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
+				nvgDeleteImage(ctx, _imageId);
+				_imageId = -1;
+			}
 		}
 
-		_dimensions = buffer.dimensions;
-
-		_frameBufferSize = buffer.data.count();
-		_frameBuffer = new char[_frameBufferSize];
-
-		if (_imageId != -1) {
-			NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
-			nvgDeleteImage(ctx, _imageId);
-			_imageId = -1;
-		}
+		memcpy(_frameBuffer, buffer.data.get(), _frameBufferSize);
+		_frameDirty = true;
 	}
-
-	memcpy(_frameBuffer, buffer.data.get(), _frameBufferSize);
-	_frameDirty = true;
 }
 
 void EmulatorView::ShowText(const std::string & row1, const std::string & row2) {

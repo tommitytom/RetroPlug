@@ -13,10 +13,7 @@ RetroPlugView::RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* proxy): I
 		if (_views.size() == MAX_INSTANCES) {
 			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
 				if (_proxy->getInstance(i)->state == EmulatorInstanceState::Running) {
-					const VideoBuffer& buffer = video.buffers[i];
-					if (buffer.data.get()) {
-						_views[i]->WriteFrame(buffer);
-					}
+					_views[i]->WriteFrame(video.buffers[i]);
 				}
 			}
 		}
@@ -122,47 +119,37 @@ void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	UpdateLayout();
 }
 
-void RetroPlugView::CreatePlugInstance(EmulatorView* view, CreateInstanceType type) {
-	/*SameBoyPlugPtr source = view->Plug();
-	
-	tstring romPath;
-	if (type == CreateInstanceType::LoadRom) {
+void RetroPlugView::CreatePlugInstance(CreateInstanceType type) {
+	switch (type) {
+	case CreateInstanceType::LoadRom: {
 		std::vector<FileDialogFilters> types = {
 			{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 		};
 
 		std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
 		if (paths.size() > 0) {
-			romPath = paths[0];
+			_lua->loadRom(NO_ACTIVE_INSTANCE, ws2s(paths[0]));
 		}
-	} else {
-		romPath = source->romPath();
-	}	
-
-	if (romPath.size() == 0) {
-		return;
+		break;
+	}
+	case CreateInstanceType::SameRom: {
+		const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+		if (active) {
+			_lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath);
+		}
+		break;
+	}
+	case CreateInstanceType::Duplicate: {
+		/*const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+		if (active) {
+			_lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath);
+		}*/
+		break;
+	}
 	}
 
-	SameBoyPlugPtr target = _lua->addInstance(EmulatorType::SameBoy);
-	target->init(romPath, source->model(), false);
-
-	if (source->lsdj().found) {
-		target->lsdj().kitData = source->lsdj().kitData;
-		target->lsdj().patchKits(target->romData());
-		target->updateRom();
-	}
-
-	if (type == CreateInstanceType::Duplicate) {
-		size_t stateSize = source->saveStateSize();
-		std::byte* buf = new std::byte[stateSize];
-		source->saveState(buf, stateSize);
-		target->loadState(buf, stateSize);
-		delete[] buf;
-	}
-
-	AddView(target);
-
-	_plug->updateLinkTargets();*/
+	UpdateLayout();
+	UpdateActive();
 }
 
 void RetroPlugView::UpdateLayout() {
@@ -262,8 +249,8 @@ void RetroPlugView::SetActive(size_t index) {
 
 IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 	Project* project = _proxy->getProject();
-
-	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _views.size() < 4);
+	
+	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _proxy->getInstanceCount() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(project->settings.layout);
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(project->settings.saveType);
 	IPopupMenu* audioRouting = createAudioRoutingMenu(project->settings.audioRouting);
@@ -302,25 +289,29 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 	}
 
 	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-		CreatePlugInstance(GetActiveView(), (CreateInstanceType)idx);
+		CreatePlugInstance((CreateInstanceType)idx);
 	});
 
 	layoutMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
+		Project* project = _proxy->getProject();
 		project->settings.layout = (InstanceLayout)idx;
 		_proxy->updateSettings();
 		UpdateLayout();
 	});
 
 	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+		Project* project = _proxy->getProject();
 		project->settings.saveType = (SaveStateType)idx;
 	});
 
 	audioRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
+		Project* project = _proxy->getProject();
 		project->settings.audioRouting = (AudioChannelRouting)idx;
 		_proxy->updateSettings();
 	});
 
 	midiRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
+		Project* project = _proxy->getProject();
 		project->settings.midiRouting = (MidiChannelRouting)idx;
 		_proxy->updateSettings();
 	});

@@ -68,7 +68,7 @@ public:
 private:
 	void UpdateLayout();
 
-	void CreatePlugInstance(EmulatorView* view, CreateInstanceType type);
+	void CreatePlugInstance(CreateInstanceType type);
 
 	void SetActive(size_t index);
 
