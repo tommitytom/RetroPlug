@@ -10,7 +10,7 @@ const double CONSECUTIVE_PRESS_DELAY = 50;
 const double MODIFIER_PRESS_DELAY = 100;
 const double DEFAULT_PRESS_DURATION = 50;
 
-enum ButtonPressType {
+enum class ButtonPressType {
 	Press,
 	Hold,
 	Release

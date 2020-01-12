@@ -6,7 +6,8 @@
 
 #include "util/File.h"
 #include "util/DataBuffer.h"
-#include <util/crc32.h>
+#include "util/crc32.h"
+#include "util/fs.h"
 
 const int MAX_ROM_SIZE = 1024 * 1024; // 1 mb
 using RomBuffer = FixedDataBuffer<char, MAX_ROM_SIZE>;
@@ -58,6 +59,10 @@ public:
 		}
 
 		return file;
+	}
+
+	bool exists(const std::string& path) {
+		return fs::exists(path);
 	}
 
 	void watchFolder(const std::string& path, bool recusrive = true) {

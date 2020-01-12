@@ -117,7 +117,9 @@ public:
 		}
 
 		if (t.patchedSavData) {
-			//plug->loadBattery(t.patchedSavData->data(), t.patchedSavData->size());
+			plug->loadBattery(t.patchedSavData->data(), t.patchedSavData->size(), false);
+		} else if (t.sourceSavData) {
+			plug->loadBattery(t.sourceSavData->data(), t.sourceSavData->size(), false);
 		}
 
 		InstanceSwapDesc swap = { t.idx, plug };

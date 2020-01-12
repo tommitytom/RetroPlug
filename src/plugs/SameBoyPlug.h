@@ -96,11 +96,7 @@ public:
 
 	bool saveBattery(std::byte* data, size_t size);
 
-	bool loadBattery(const tstring& path, bool reset);
-
-	bool loadBattery(const std::vector<std::byte>& data, bool reset);
-
-	bool loadBattery(const std::byte* data, size_t size, bool reset);
+	bool loadBattery(const char* data, size_t size, bool reset);
 
 	bool clearBattery(bool reset);
 

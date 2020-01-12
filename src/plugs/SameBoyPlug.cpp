@@ -190,20 +190,7 @@ bool SameBoyPlug::saveBattery(std::byte* data, size_t size) {
 	return SAMEBOY_SYMBOLS(sameboy_save_battery)(_instance, (char*)data, size);
 }
 
-bool SameBoyPlug::loadBattery(const tstring& path, bool reset) {
-	std::vector<std::byte> data;
-	if (!readFile(path, data)) {
-		return false;
-	}
-
-	return loadBattery(data, reset);
-}
-
-bool SameBoyPlug::loadBattery(const std::vector<std::byte>& data, bool reset) {
-	return loadBattery(data.data(), data.size(), reset);
-}
-
-bool SameBoyPlug::loadBattery(const std::byte* data, size_t size, bool reset) {
+bool SameBoyPlug::loadBattery(const char* data, size_t size, bool reset) {
 	if (_instance) {
 		SAMEBOY_SYMBOLS(sameboy_load_battery)(_instance, (char*)data, size);
 

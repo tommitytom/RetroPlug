@@ -3,6 +3,7 @@ require("constants")
 require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
 local inspect = require("inspect")
+local pathutil = require("pathutil")
 
 Action = {}
 setmetatable(Action, {
@@ -167,8 +168,9 @@ function _duplicateInstance(idx)
 end
 
 function _loadRom(idx, path)
-	local file = _proxy:fileManager():loadFile(path, false)
-	if file == nil then
+	local fm = _proxy:fileManager()
+	local romFile = fm:loadFile(path, false)
+	if romFile == nil then
 		return
 	end
 
@@ -176,8 +178,16 @@ function _loadRom(idx, path)
 	d.idx = idx
 	d.type = EmulatorType.SameBoy
 	d.romPath = path
-	d.romName = file.data:slice(0x0134, 15):toString()
-	d.sourceRomData = file.data
+	d.romName = romFile.data:slice(0x0134, 15):toString()
+	d.sourceRomData = romFile.data
+
+	local savPath = pathutil.changeExt(path, "sav")
+	if fm:exists(savPath) == true then
+		local savFile = fm:loadFile(savPath, false)
+		if savFile ~= nil then
+			d.sourceSavData = savFile.data
+		end
+	end
 
 	local instance
 	if idx == -1 then

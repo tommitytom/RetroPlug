@@ -138,7 +138,8 @@ void LuaContext::setup() {
 	);
 
 	s.new_usertype<FileManager>("FileManager",
-		"loadFile", &FileManager::loadFile
+		"loadFile", &FileManager::loadFile,
+		"exists", &FileManager::exists
 	);
 
 	s.new_usertype<File>("File",
@@ -166,7 +167,9 @@ void LuaContext::setup() {
 		"romName", &EmulatorInstanceDesc::romName,
 		"romPath", &EmulatorInstanceDesc::romPath,
 		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
-		"patchedRomData", &EmulatorInstanceDesc::patchedRomData
+		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
+		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
+		"patchedSavData", &EmulatorInstanceDesc::patchedSavData
 	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
