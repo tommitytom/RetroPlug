@@ -159,6 +159,13 @@ void RetroPlugView::UpdateLayout() {
 		}
 	}
 
+	Project::Settings& settings = _proxy->getProject()->settings;
+	int frameW = FRAME_WIDTH * settings.zoom;
+	int frameH = FRAME_HEIGHT * settings.zoom;
+
+	int windowW = frameW;
+	int windowH = frameH;
+
 	size_t count = _proxy->getInstanceCount();
 	if (count == 0) {
 		count = 1;
@@ -166,7 +173,7 @@ void RetroPlugView::UpdateLayout() {
 		_views[0]->DeleteFrame();
 	}
 
-	InstanceLayout layout = _proxy->getProject()->settings.layout;
+	InstanceLayout layout = settings.layout;
 	if (layout == InstanceLayout::Auto) {
 		if (count < 4) {
 			layout = InstanceLayout::Row;
@@ -175,23 +182,20 @@ void RetroPlugView::UpdateLayout() {
 		}
 	}
 
-	int windowW = 320;
-	int windowH = 288;
-
 	if (layout == InstanceLayout::Row) {
-		windowW = count * 320;
+		windowW = count * frameW;
 	} else if (layout == InstanceLayout::Column) {
-		windowH = count * 288;
+		windowH = count * frameH;
 	} else if (layout == InstanceLayout::Grid) {
 		if (count > 2) {
-			windowW = 2 * 320;
-			windowH = 2 * 288;
+			windowW = 2 * frameW;
+			windowH = 2 * frameH;
 		} else {
-			windowW = count * 320;
+			windowW = count * frameW;
 		}
 	}
 
-	GetUI()->SetSizeConstraints(320, windowW, 288, windowH);
+	GetUI()->SetSizeConstraints(frameW, windowW, frameH, windowH);
 	GetUI()->Resize(windowW, windowH, 1);
 	SetTargetAndDrawRECTs(IRECT(0, 0, windowW, windowH));
 	GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
@@ -213,10 +217,10 @@ void RetroPlugView::UpdateLayout() {
 			}
 		}
 
-		int x = gridX * 320;
-		int y = gridY * 288;
+		int x = gridX * frameW;
+		int y = gridY * frameH;
 
-		IRECT b(x, y, x + 320, y + 288);
+		IRECT b(x, y, x + frameW, y + frameH);
 		_views[i]->SetArea(b);
 	}
 
@@ -252,6 +256,7 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 	
 	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _proxy->getInstanceCount() < 4);
 	IPopupMenu* layoutMenu = createLayoutMenu(project->settings.layout);
+	IPopupMenu* zoomMenu = createZoomMenu(project->settings.zoom);
 	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(project->settings.saveType);
 	IPopupMenu* audioRouting = createAudioRoutingMenu(project->settings.audioRouting);
 	IPopupMenu* midiRouting = createMidiRoutingMenu(project->settings.midiRouting);
@@ -276,6 +281,7 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
 		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
 		menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
+		menu->AddItem("Zoom", zoomMenu, (int)ProjectMenuItems::Zoom);
 		menu->AddSeparator((int)ProjectMenuItems::Sep3);
 		menu->AddItem("Audio Routing", audioRouting, (int)ProjectMenuItems::AudioRouting);
 		menu->AddItem("MIDI Routing", midiRouting, (int)ProjectMenuItems::MidiRouting);
@@ -299,10 +305,20 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		UpdateLayout();
 	});
 
-	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+	zoomMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
 		Project* project = _proxy->getProject();
-		project->settings.saveType = (SaveStateType)idx;
+		project->settings.zoom = idx + 1;
+		for (size_t i = 0; i < _views.size(); ++i) {
+			_views[i]->SetZoom(project->settings.zoom);
+		}
+
+		UpdateLayout();
 	});
+
+	/*saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+		Project* project = _proxy->getProject();
+		//project->settings.saveType = (SaveStateType)idx;
+	});*/
 
 	audioRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
 		Project* project = _proxy->getProject();
@@ -340,6 +356,8 @@ void RetroPlugView::NewProject() {
 void RetroPlugView::SaveProject() {
 	if (_proxy->getProject()->path.empty()) {
 		SaveProjectAs();
+	} else {
+		_lua->saveProject(_proxy->getProject()->path);
 	}
 
 	//_lua.saveProject(_proxy->getProject()->path);
@@ -356,7 +374,7 @@ void RetroPlugView::SaveProjectAs() {
 
 	tstring path = BasicFileSave(GetUI(), types);
 	if (path.size() > 0) {
-		//_lua.saveProject(path);
+		_lua->saveProject(ws2s(path));
 	}
 }
 

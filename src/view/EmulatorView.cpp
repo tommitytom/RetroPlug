@@ -126,7 +126,7 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 	if (_imageId != -1) {
 		nvgBeginPath(vg);
 
-		NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * 2, _dimensions.h * 2, 0, _imageId, _alpha);
+		NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * _zoom, _dimensions.h * _zoom, 0, _imageId, _alpha);
 		nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
 		nvgFillPaint(vg, imgPaint);
 		nvgFill(vg);

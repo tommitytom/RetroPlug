@@ -35,6 +35,6 @@ enum class EmulatorInstanceState {
 };
 
 enum class SaveStateType {
-	State,
-	Sram
+	Sram,
+	State
 };

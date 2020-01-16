@@ -34,6 +34,8 @@ public:
 
 	void closeProject();
 
+	void saveProject(const std::string& path);
+
 	SameBoyPlugPtr addInstance(EmulatorType type);
 
 	void removeInstance(size_t index);

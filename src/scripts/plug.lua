@@ -4,6 +4,7 @@ require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
 local inspect = require("inspect")
 local pathutil = require("pathutil")
+local serpent = require("serpent")
 
 Action = {}
 setmetatable(Action, {
@@ -167,6 +168,50 @@ function _duplicateInstance(idx)
 	end
 end
 
+local function cloneFields(source, fields, target)
+	if target == nil then
+		target = {}
+	end
+
+	for _, v in ipairs(fields) do
+		target[v] = source[v]
+	end
+
+	return target
+end
+
+function _saveProject(path)
+	local proj = _proxy:getProject()
+	proj.path = path
+
+	local t = {
+		data = "",
+		version = "0.0.4",
+		path = path,
+		settings = cloneFields(proj.settings, { "audioRouting", "midiRouting", "layout", "zoom" }),
+		instances = {},
+		files = {}
+	}
+
+	for i = 1, MAX_INSTANCES, 1 do
+		local desc = _proxy:getInstance(i - 1)
+		if desc.state ~= EmulatorInstanceState.Uninitialized then
+			local inst = cloneFields(desc, { "type", "state", "saveType", "romName", "romPath", "savPath" })
+			inst.components = {}
+			table.insert(t.instances, inst)
+		else
+			break
+		end
+	end
+
+	local d = serpent.block(t, { comment = false, indent = '\t' })
+	print(d)
+
+	local file = io.open("C:\\temp\\test.lua", "w")
+	file:write(d)
+	file:close()
+end
+
 function _loadRom(idx, path)
 	local fm = _proxy:fileManager()
 	local romFile = fm:loadFile(path, false)
@@ -185,6 +230,7 @@ function _loadRom(idx, path)
 	if fm:exists(savPath) == true then
 		local savFile = fm:loadFile(savPath, false)
 		if savFile ~= nil then
+			d.savPath = savPath
 			d.sourceSavData = savFile.data
 		end
 	end

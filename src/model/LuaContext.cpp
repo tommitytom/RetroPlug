@@ -8,6 +8,8 @@
 #include "util/File.h"
 #include "model/FileManager.h"
 #include "model/RetroPlugProxy.h"
+#include "util/base64enc.h"
+#include "util/base64dec.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name = "") {
 	if (!result.valid()) {
@@ -53,6 +55,10 @@ void LuaContext::init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string&
 
 void LuaContext::closeProject() {
 	callFunc(_state, "_closeProject");
+}
+
+void LuaContext::saveProject(const std::string& path) {
+	callFunc(_state, "_saveProject", path);
 }
 
 SameBoyPlugPtr LuaContext::addInstance(EmulatorType type) {
@@ -124,10 +130,15 @@ void LuaContext::setup() {
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io);
 
 	std::string packagePath = s["package"]["path"];
 	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
+
+	s.create_named_table("base64",
+		"encode", base64::encode,
+		"decode", base64::decode
+	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
 		"get", &DataBuffer<char>::get,
@@ -160,16 +171,54 @@ void LuaContext::setup() {
 		"SameBoy", EmulatorType::SameBoy
 	);
 
+	s.new_enum("AudioChannelRouting",
+		"StereoMixDown", AudioChannelRouting::StereoMixDown,
+		"TwoChannelsPerChannel", AudioChannelRouting::TwoChannelsPerChannel,
+		"TwoChannelsPerInstance", AudioChannelRouting::TwoChannelsPerInstance
+	);
+
+	s.new_enum("MidiChannelRouting",
+		"FourChannelsPerInstance", MidiChannelRouting::FourChannelsPerInstance,
+		"OneChannelPerInstance", MidiChannelRouting::OneChannelPerInstance,
+		"SendToAll", MidiChannelRouting::SendToAll
+	);
+
+	s.new_enum("InstanceLayout",
+		"Auto", InstanceLayout::Auto,
+		"Column", InstanceLayout::Column,
+		"Grid", InstanceLayout::Grid,
+		"Row", InstanceLayout::Row
+	);
+
+	s.new_enum("SaveStateType",
+		"Sram", SaveStateType::Sram,
+		"State", SaveStateType::State
+	);
+
 	s.new_usertype<EmulatorInstanceDesc>("EmulatorInstanceDesc",
 		"idx", &EmulatorInstanceDesc::idx,
 		"type", &EmulatorInstanceDesc::type,
 		"state", &EmulatorInstanceDesc::state,
 		"romName", &EmulatorInstanceDesc::romName,
 		"romPath", &EmulatorInstanceDesc::romPath,
+		"savPath", &EmulatorInstanceDesc::savPath,
 		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
 		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
 		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
 		"patchedSavData", &EmulatorInstanceDesc::patchedSavData
+	);
+
+	s.new_usertype<Project>("Project",
+		"path", &Project::path,
+		"instances", &Project::instances,
+		"settings", &Project::settings
+	);
+
+	s.new_usertype<Project::Settings>("ProjectSettings",
+		"audioRouting", &Project::Settings::audioRouting,
+		"midiRouting", &Project::Settings::midiRouting,
+		"layout", &Project::Settings::layout,
+		"zoom", &Project::Settings::zoom
 	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
@@ -193,7 +242,8 @@ void LuaContext::setup() {
 		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
 		"fileManager", &RetroPlugProxy::fileManager,
 		"buttons", &RetroPlugProxy::getButtonPresses,
-		"closeProject", &RetroPlugProxy::closeProject
+		"closeProject", &RetroPlugProxy::closeProject,
+		"getProject", &RetroPlugProxy::getProject
 	);
 
 	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",

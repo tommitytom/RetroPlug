@@ -94,9 +94,6 @@
     <ClCompile Include="..\src\RetroPlugInstrument.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\util\base64.cpp">
-      <Filter>src\util</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\util\File.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
@@ -537,9 +534,6 @@
     <ClInclude Include="..\config\config.h">
       <Filter>config</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\util\base64.h">
-      <Filter>src\util</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\Serializer.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -857,6 +851,12 @@
     </ClInclude>
     <ClInclude Include="..\src\model\ButtonStream.h">
       <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\base64enc.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\util\base64dec.h">
+      <Filter>src\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

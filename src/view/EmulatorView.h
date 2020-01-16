@@ -44,9 +44,13 @@ private:
 	bool _showText = false;
 	ITextControl* _textIds[2] = { nullptr };
 
+	int _zoom = 2;
+
 public:
 	EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics);
 	~EmulatorView();
+
+	void SetZoom(int zoom) { _zoom = zoom; }
 
 	void WriteFrame(const VideoBuffer& buffer);
 

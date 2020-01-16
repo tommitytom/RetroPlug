@@ -27,6 +27,7 @@ enum class ProjectMenuItems : int {
 	AddInstance,
 	RemoveInstance,
 	Layout,
+	Zoom,
 
 	Sep3,
 
@@ -102,6 +103,16 @@ static IPopupMenu* createInstanceMenu(bool loaded, bool enabled) {
 	return menu;
 }
 
+static IPopupMenu* createZoomMenu(int checked) {
+	IPopupMenu* menu = new IPopupMenu();
+	menu->AddItem("1x", 0);
+	menu->AddItem("2x", 1);
+	menu->AddItem("3x", 2);
+	menu->AddItem("4x", 3);
+	menu->CheckItemAlone((int)checked - 1);
+	return menu;
+}
+
 static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
 	IPopupMenu* menu = new IPopupMenu();
 	menu->AddItem("Auto", (int)InstanceLayout::Auto);
@@ -114,8 +125,8 @@ static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
 
 static IPopupMenu* createSaveOptionsMenu(SaveStateType checked) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Save State", (int)SaveStateType::State);
 	menu->AddItem("Save SRAM", (int)SaveStateType::Sram);
+	menu->AddItem("Save State", (int)SaveStateType::State);
 	menu->CheckItemAlone((int)checked);
 	return menu;
 }

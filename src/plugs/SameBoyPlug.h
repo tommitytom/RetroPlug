@@ -24,6 +24,9 @@ enum class GameboyModel {
 	Agb
 };
 
+const int FRAME_WIDTH = 160;
+const int FRAME_HEIGHT = 144;
+
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 

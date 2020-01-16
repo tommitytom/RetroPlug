@@ -11,6 +11,7 @@ struct EmulatorInstanceDesc {
 	EmulatorInstanceState state = EmulatorInstanceState::Uninitialized;
 	std::string romName;
 	std::string romPath;
+	std::string savPath;
 
 	DataBufferPtr sourceRomData;
 	DataBufferPtr patchedRomData;
@@ -26,8 +27,8 @@ struct Project {
 		AudioChannelRouting audioRouting = AudioChannelRouting::StereoMixDown;
 		MidiChannelRouting midiRouting = MidiChannelRouting::SendToAll;
 		InstanceLayout layout = InstanceLayout::Auto;
-		SaveStateType saveType;
-		int zoom = 1;
+		SaveStateType saveType = SaveStateType::Sram;
+		int zoom = 2;
 	} settings;
 
 	std::string path;
