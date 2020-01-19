@@ -10,6 +10,7 @@
 #include "model/RetroPlugProxy.h"
 #include "util/base64enc.h"
 #include "util/base64dec.h"
+#include "config/config.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name = "") {
 	if (!result.valid()) {
@@ -57,15 +58,12 @@ void LuaContext::closeProject() {
 	callFunc(_state, "_closeProject");
 }
 
-void LuaContext::saveProject(const std::string& path) {
-	callFunc(_state, "_saveProject", path);
+void LuaContext::loadProject(const std::string& path) {
+	callFunc(_state, "_loadProject", path);
 }
 
-SameBoyPlugPtr LuaContext::addInstance(EmulatorType type) {
-	/*SameBoyPlugPtr res;
-	callFuncRet(_state, "_addInstance", res, type);
-	return res;*/
-	return nullptr;
+void LuaContext::saveProject(const FetchStateResponse& res) {
+	callFunc(_state, "_saveProject", res);
 }
 
 void LuaContext::removeInstance(size_t index) {
@@ -88,7 +86,7 @@ void LuaContext::update(float delta) {
 }
 
 void LuaContext::loadRom(InstanceIndex idx, const std::string& path) {
-	callFunc(_state, "_loadRom", idx, path);
+	callFunc(_state, "_loadRomAtPath", idx, path);
 }
 
 bool LuaContext::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
@@ -137,7 +135,9 @@ void LuaContext::setup() {
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
-		"decode", base64::decode
+		"encodeBuffer", base64::encodeBuffer,
+		"decode", base64::decode,
+		"decodeBuffer", base64::decodeBuffer
 	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
@@ -146,6 +146,11 @@ void LuaContext::setup() {
 		"slice", &DataBuffer<char>::slice,
 		"toString", &DataBuffer<char>::toString,
 		"hash", &DataBuffer<char>::hash
+	);
+
+	s.new_usertype<FetchStateResponse>("FetchStateResponse",
+		"buffers", &FetchStateResponse::buffers,
+		"sizes", &FetchStateResponse::sizes
 	);
 
 	s.new_usertype<FileManager>("FileManager",
@@ -197,7 +202,7 @@ void LuaContext::setup() {
 
 	s.new_usertype<EmulatorInstanceDesc>("EmulatorInstanceDesc",
 		"idx", &EmulatorInstanceDesc::idx,
-		"type", &EmulatorInstanceDesc::type,
+		"emulatorType", &EmulatorInstanceDesc::emulatorType,
 		"state", &EmulatorInstanceDesc::state,
 		"romName", &EmulatorInstanceDesc::romName,
 		"romPath", &EmulatorInstanceDesc::romPath,
@@ -205,7 +210,8 @@ void LuaContext::setup() {
 		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
 		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
 		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
-		"patchedSavData", &EmulatorInstanceDesc::patchedSavData
+		"patchedSavData", &EmulatorInstanceDesc::patchedSavData,
+		"sourceStateData", &EmulatorInstanceDesc::sourceStateData
 	);
 
 	s.new_usertype<Project>("Project",
@@ -218,7 +224,8 @@ void LuaContext::setup() {
 		"audioRouting", &Project::Settings::audioRouting,
 		"midiRouting", &Project::Settings::midiRouting,
 		"layout", &Project::Settings::layout,
-		"zoom", &Project::Settings::zoom
+		"zoom", &Project::Settings::zoom,
+		"saveType", &Project::Settings::saveType
 	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
@@ -243,7 +250,8 @@ void LuaContext::setup() {
 		"fileManager", &RetroPlugProxy::fileManager,
 		"buttons", &RetroPlugProxy::getButtonPresses,
 		"closeProject", &RetroPlugProxy::closeProject,
-		"getProject", &RetroPlugProxy::getProject
+		"getProject", &RetroPlugProxy::getProject,
+		"updateSettings", &RetroPlugProxy::updateSettings
 	);
 
 	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",
@@ -255,6 +263,7 @@ void LuaContext::setup() {
 
 	s["_model"].set(_plug);
 	s["_proxy"].set(_proxy);
+	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
 
 	if (!runFile(_path + "/plug.lua")) {
 		return;

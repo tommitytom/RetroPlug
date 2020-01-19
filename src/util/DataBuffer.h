@@ -31,6 +31,11 @@ public:
 		return crc32::update((const void*)_dataPtr, _dataSize * sizeof(T), initial);
 	}
 
+	void write(const T* source, size_t size) {
+		assert(size <= _dataSize);
+		memcpy(_dataPtr, source, size * sizeof(T));
+	}
+
 	T* data() { return _dataPtr; }
 	const T* data() const { return _dataPtr; }
 	size_t size() const { return _dataSize; }

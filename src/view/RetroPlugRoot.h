@@ -90,6 +90,8 @@ private:
 	
 	void RemoveActive();
 
+	void RequestSave();
+
 	/*int GetViewIndex(EmulatorView* view) {
 		for (int i = 0; i < _views.size(); i++) {
 			if (_views[i] == view) {

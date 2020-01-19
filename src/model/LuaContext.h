@@ -34,9 +34,9 @@ public:
 
 	void closeProject();
 
-	void saveProject(const std::string& path);
+	void loadProject(const std::string& path);
 
-	SameBoyPlugPtr addInstance(EmulatorType type);
+	void saveProject(const FetchStateResponse& res);
 
 	void removeInstance(size_t index);
 

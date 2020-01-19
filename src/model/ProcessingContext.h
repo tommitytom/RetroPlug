@@ -46,7 +46,7 @@ public:
 		_node = node;
 		_alloc = node->getAllocator();
 
-		_alloc->reserveChunks(160 * 144 * 4, 50);
+		_alloc->reserveChunks(160 * 144 * 4, 16); // Video buffers
 
 		node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, SameBoyPlugPtr& other) {
 			other = _instances[d.idx];
@@ -71,9 +71,26 @@ public:
 			_settings = settings;
 		});
 
+		node->on<calls::FetchState>([&](const FetchStateRequest& req, FetchStateResponse& state) {
+			state.type = req.type;
+
+			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+				SameBoyPlugPtr inst = _instances[i];
+				if (inst && req.buffers[i]) {
+					state.buffers[i] = req.buffers[i];
+					if (req.type == SaveStateType::Sram) {
+						state.sizes[i] = inst->batterySize();
+						inst->saveBattery(state.buffers[i]->data(), state.buffers[i]->size());
+					} else if (req.type == SaveStateType::State) {
+						state.sizes[i] = inst->saveStateSize();
+						inst->saveState(state.buffers[i]->data(), state.buffers[i]->size());
+					}
+				}
+			}
+		});
+
 		node->on<calls::PressButtons>([&](const ButtonStream<32>& presses) {
 			for (size_t i = 0; i < presses.pressCount; ++i) {
-				
 				std::cout << ButtonTypes::toString((ButtonType)presses.presses[i].button) << "\t" << presses.presses[i].down << "\t" << presses.presses[i].duration << std::endl;
 			}
 
@@ -105,6 +122,8 @@ public:
 
 				if (_alloc->canAlloc<char>(dataSize)) {
 					v->data = _alloc->allocArrayUnique<char>(dataSize);
+				} else {
+					std::cout << "Failed to alloc video buffer" << std::endl;
 				}
 
 				plug->setBuffers(v, &_audioBuffers[i]);

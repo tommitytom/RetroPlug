@@ -36,4 +36,11 @@ namespace base64 {
 
         return str;
     }
+
+    DataBufferPtr decodeBuffer(const std::string& data) {
+        std::string out = decode(data.c_str(), data.size());
+        DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(out.size());
+        buffer->write(out.c_str(), out.size());
+        return buffer;
+    }
 }

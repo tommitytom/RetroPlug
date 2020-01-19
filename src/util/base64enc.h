@@ -12,6 +12,7 @@
 // instead of a buffer allocated with malloc.
 
 #include <string>
+#include "DataBuffer.h"
 
 namespace base64 {
     static const unsigned char base64_enc_table[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -65,5 +66,13 @@ namespace base64 {
         }
 
         return outStr;
+    }
+
+    std::string encodeBuffer(const DataBuffer<char>* buffer, size_t size = 0) {
+        if (size == 0) {
+            size = buffer->size();
+        }
+
+        return encode((const unsigned char*)buffer->data(), size);
     }
 }

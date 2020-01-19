@@ -7,7 +7,7 @@
 
 struct EmulatorInstanceDesc {
 	InstanceIndex idx = NO_ACTIVE_INSTANCE;
-	EmulatorType type = EmulatorType::Unknown;
+	EmulatorType emulatorType = EmulatorType::Unknown;
 	EmulatorInstanceState state = EmulatorInstanceState::Uninitialized;
 	std::string romName;
 	std::string romPath;

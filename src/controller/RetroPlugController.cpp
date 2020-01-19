@@ -22,9 +22,10 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
-	_bus.addCall<calls::TransmitVideo>();
+	_bus.addCall<calls::TransmitVideo>(16);
 	_bus.addCall<calls::UpdateSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);
+	_bus.addCall<calls::FetchState>(1);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_processingContext.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));

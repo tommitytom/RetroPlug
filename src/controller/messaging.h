@@ -40,6 +40,17 @@ struct AudioBuffer {
 	FloatDataBufferPtr data;
 };
 
+struct FetchStateRequest {
+	SaveStateType type;
+	DataBufferPtr buffers[MAX_INSTANCES];
+};
+
+struct FetchStateResponse {
+	SaveStateType type;
+	std::array<size_t, MAX_INSTANCES> sizes = { 0 };
+	std::array<DataBufferPtr, MAX_INSTANCES> buffers;
+};
+
 namespace calls {
 	using LoadRom = micromsg::Push<LoadRomDesc>;
 	using TransmitVideo = micromsg::Push<VideoStream>;
@@ -48,6 +59,7 @@ namespace calls {
 
 	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
 	using TakeInstance = micromsg::Request<InstanceIndex, SameBoyPlugPtr>;
+	using FetchState = micromsg::Request<FetchStateRequest, FetchStateResponse>;
 }
 
 using Node = micromsg::Node<NodeTypes>;

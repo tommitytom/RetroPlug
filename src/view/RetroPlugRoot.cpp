@@ -72,8 +72,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
 					if (idx == 0) {
 						OpenFindRomDialog();
-					}
-					else {
+					} else {
 						OpenLoadProjectDialog();
 					}
 				});
@@ -315,10 +314,10 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		UpdateLayout();
 	});
 
-	/*saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
 		Project* project = _proxy->getProject();
-		//project->settings.saveType = (SaveStateType)idx;
-	});*/
+		project->settings.saveType = (SaveStateType)idx;
+	});
 
 	audioRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
 		Project* project = _proxy->getProject();
@@ -357,14 +356,8 @@ void RetroPlugView::SaveProject() {
 	if (_proxy->getProject()->path.empty()) {
 		SaveProjectAs();
 	} else {
-		_lua->saveProject(_proxy->getProject()->path);
+		RequestSave();
 	}
-
-	//_lua.saveProject(_proxy->getProject()->path);
-
-	/*std::string data;
-	serialize(data, *_plug);
-	writeFile(_plug->projectPath(), data);*/
 }
 
 void RetroPlugView::SaveProjectAs() {
@@ -374,8 +367,15 @@ void RetroPlugView::SaveProjectAs() {
 
 	tstring path = BasicFileSave(GetUI(), types);
 	if (path.size() > 0) {
-		_lua->saveProject(ws2s(path));
+		_proxy->getProject()->path = ws2s(path);
+		RequestSave();
 	}
+}
+
+void RetroPlugView::RequestSave() {
+	_proxy->requestSave([&](const FetchStateResponse& res) {
+		_lua->saveProject(res);
+	});
 }
 
 void RetroPlugView::OpenFindRomDialog() {
@@ -407,36 +407,13 @@ void RetroPlugView::LoadProjectOrRom(const tstring& path) {
 	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
 	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		//_active->LoadRom(path);
 		_lua->loadRom(_activeIdx, ws2s(path));
 	}
 }
 
 void RetroPlugView::LoadProject(const tstring& path) {
-	//_lua->loadProject(path);
+	_lua->loadProject(ws2s(path));
 	UpdateLayout();
-	/*std::string data;
-	if (readFile(path, data)) {
-		CloseProject();
-		deserialize(data.c_str(), *_plug);
-		_plug->setProjectPath(path);
-
-		if (_plug->instanceCount() > 0) {
-			for (size_t i = 0; i < MAX_INSTANCES; i++) {
-				auto plug = _plug->plugs()[i];
-				if (plug) {
-					AddView(plug);
-				}
-
-				_activeIdx = 0;
-				SetActive(_activeIdx);
-			}
-		} else {
-			NewProject();
-		}
-	}
-
-	_plug->updateLinkTargets();*/
 }
 
 void RetroPlugView::OpenLoadProjectDialog() {

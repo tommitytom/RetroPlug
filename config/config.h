@@ -3,12 +3,12 @@
 #include "version.h"
 
 #define SEMVER_MAJOR 0
-#define SEMVER_MINOR 2
+#define SEMVER_MINOR 3
 #define SEMVER_PATCH 0
 
 #define PLUG_NAME "RetroPlug"
 #define PLUG_MFR "tommitytom"
-#define PLUG_VERSION_HEX 0x00002000
+#define PLUG_VERSION_HEX 0x00003000
 #define PLUG_VERSION_STR VERSION_STRING(SEMVER_MAJOR, SEMVER_MINOR, SEMVER_PATCH)
 #define PLUG_UNIQUE_ID '2wvF'
 #define PLUG_MFR_ID 'tmtt'

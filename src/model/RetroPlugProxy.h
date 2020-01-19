@@ -39,7 +39,7 @@ public:
 			_buttonPresses[i].setIndex(i);
 		}
 
-		_project.instances[0].type = EmulatorType::Placeholder;
+		_project.instances[0].emulatorType = EmulatorType::Placeholder;
 	}
 
 	void setNode(Node* node) { 
@@ -54,11 +54,35 @@ public:
 		return &_buttonPresses[idx];
 	}
 
-	FileManager* fileManager() { return &_fileManager; }
+	FileManager* fileManager() { 
+		return &_fileManager; 
+	}
 
-	int activeIdx() const { return _activeIdx; }
+	int activeIdx() const { 
+		return _activeIdx; 
+	}
 
-	Project* getProject() { return &_project; }
+	Project* getProject() { 
+		return &_project; 
+	}
+
+	void requestSave(std::function<void(const FetchStateResponse& res)> cb) {
+		assert(!_project.path.empty());
+
+		const size_t SRAM_SIZE = 128 * 1024;
+		const size_t STATE_SIZE = 1024 * 1024;
+
+		size_t bufferSize = _project.settings.saveType == SaveStateType::Sram ? SRAM_SIZE : STATE_SIZE;
+
+		FetchStateRequest req;
+		req.type = _project.settings.saveType;
+		size_t count = getInstanceCount();
+		for (size_t i = 0; i < count; ++i) {
+			req.buffers[i] = std::make_shared<DataBuffer<char>>(bufferSize);
+		}
+
+		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+	}
 
 	void update(double delta) {
 		_node->pull();
@@ -113,7 +137,7 @@ public:
 		}
 		
 		if (t.sourceStateData) {
-			//plug->loadState(t.sourceStateData->data(), t.sourceStateData->size());
+			plug->loadState(t.sourceStateData->data(), t.sourceStateData->size());
 		}
 
 		if (t.patchedSavData) {
@@ -133,7 +157,7 @@ public:
 		_project.instances.push_back(EmulatorInstanceDesc());
 		updateIndices();
 
-		_node->request<calls::TakeInstance>(NodeTypes::Audio, idx, [&](const SameBoyPlugPtr& d) {});
+		_node->request<calls::TakeInstance>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr& d) {});
 	}
 
 	void closeProject() {

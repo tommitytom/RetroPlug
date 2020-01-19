@@ -180,15 +180,14 @@ local function cloneFields(source, fields, target)
 	return target
 end
 
-function _saveProject(path)
+function _saveProject(state)
 	local proj = _proxy:getProject()
-	proj.path = path
 
 	local t = {
 		data = "",
-		version = "0.0.4",
-		path = path,
-		settings = cloneFields(proj.settings, { "audioRouting", "midiRouting", "layout", "zoom" }),
+		version = _RETROPLUG_VERSION,
+		path = proj.path,
+		settings = cloneFields(proj.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }),
 		instances = {},
 		files = {}
 	}
@@ -196,15 +195,20 @@ function _saveProject(path)
 	for i = 1, MAX_INSTANCES, 1 do
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			local inst = cloneFields(desc, { "type", "state", "saveType", "romName", "romPath", "savPath" })
+			local inst = cloneFields(desc, { "emulatorType", "romPath", "savPath" })
 			inst.components = {}
+
+			if state.buffers[i] ~= nil then
+				inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])
+			end
+
 			table.insert(t.instances, inst)
 		else
 			break
 		end
 	end
 
-	local d = serpent.block(t, { comment = false, indent = '\t' })
+	local d = serpent.dump(t, { comment = false, indent = '\t' })
 	print(d)
 
 	local file = io.open("C:\\temp\\test.lua", "w")
@@ -212,45 +216,94 @@ function _saveProject(path)
 	file:close()
 end
 
-function _loadRom(idx, path)
+function _loadProject(path)
+	local file = io.open("C:\\temp\\test.lua", "r")
+	if file == nil then
+		error("Failed to load project")
+	end
+
+	local data = file:read("*a")
+	local ok, t = serpent.load(data)
+	if ok == false then
+		-- Check if this is a JSON project
+		error("Failed to load project")
+	end
+
+	-- Check version!
+
 	local fm = _proxy:fileManager()
-	local romFile = fm:loadFile(path, false)
+	local proj = _proxy:getProject()
+	proj.path = path
+	cloneFields(t.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }, proj.settings)
+	_proxy:updateSettings()
+
+	for _, v in ipairs(t.instances) do
+		local d = EmulatorInstanceDesc.new()
+		d.idx = -1
+		cloneFields(v, { "emulatorType", "romPath", "savPath" }, d)
+
+		local romFile = fm:loadFile(v.romPath, false)
+		if romFile ~= nil then
+			d.sourceRomData = romFile.data
+			local state = base64.decodeBuffer(v.state)
+
+			if proj.settings.saveType == SaveStateType.Sram then
+				d.sourceSavData = state
+			elseif proj.settings.saveType == SaveStateType.State then
+				d.sourceStateData = state
+			end
+
+			_loadRom(d)
+		end
+	end
+end
+
+function _loadRomAtPath(idx, romPath, savPath)
+	local fm = _proxy:fileManager()
+	local romFile = fm:loadFile(romPath, false)
 	if romFile == nil then
 		return
 	end
 
 	local d = EmulatorInstanceDesc.new()
 	d.idx = idx
-	d.type = EmulatorType.SameBoy
-	d.romPath = path
-	d.romName = romFile.data:slice(0x0134, 15):toString()
+	d.emulatorType = EmulatorType.SameBoy
+	d.romPath = romPath
 	d.sourceRomData = romFile.data
 
-	local savPath = pathutil.changeExt(path, "sav")
-	if fm:exists(savPath) == true then
-		local savFile = fm:loadFile(savPath, false)
-		if savFile ~= nil then
-			d.savPath = savPath
-			d.sourceSavData = savFile.data
+	if savPath == nil or savPath == "" then
+		savPath = pathutil.changeExt(romPath, "sav")
+		if fm:exists(savPath) == true then
+			local savFile = fm:loadFile(savPath, false)
+			if savFile ~= nil then
+				d.savPath = savPath
+				d.sourceSavData = savFile.data
+			end
 		end
 	end
 
+	_loadRom(d)
+end
+
+function _loadRom(desc)
+	desc.romName = desc.sourceRomData:slice(0x0134, 15):toString()
+
 	local instance
-	if idx == -1 then
-		instance = addInstance(d)
+	if desc.idx == -1 then
+		instance = addInstance(desc)
 	else
-		instance = _instances[idx + 1]
+		instance = _instances[desc.idx + 1]
 		if instance == nil then
-			print("Failed to load " .. path .. ": Instance " .. idx .. " does not exist")
+			print("Failed to load rom: Instance " .. desc.idx .. " does not exist")
 			return
 		end
 	end
 
-	instance.components = findInstanceComponents(d, instance.buttons)
+	instance.components = findInstanceComponents(desc, instance.buttons)
 
 	runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
 	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
-	_proxy:setInstance(d)
+	_proxy:setInstance(desc)
 	runComponentHandler(instance.components, "onRomLoad", instance.desc)
 end
 
