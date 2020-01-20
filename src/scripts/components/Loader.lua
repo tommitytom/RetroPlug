@@ -1,8 +1,8 @@
 local pathutil = require("pathutil")
 
-local DropHandler = component({ name = "Drop Handler", version = "1.0.0", global = true })
+local Loader = component({ name = "Loader", version = "1.0.0", global = true })
 
-function DropHandler:onDrop(paths)
+function Loader:onDrop(paths)
 	local projects = {}
 	local roms = {}
 	local savs = {}
@@ -29,4 +29,4 @@ function DropHandler:onDrop(paths)
 	end
 end
 
-return DropHandler
+return Loader
