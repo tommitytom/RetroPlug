@@ -37,7 +37,7 @@ bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	EmulatorInstanceDesc* active = _proxy->getActiveInstance();
-	if (!active) {
+	if (!active || active->emulatorType == EmulatorType::Placeholder) {
 		OpenLoadProjectOrRomDialog();
 	} else {
 		if (active->state == EmulatorInstanceState::RomMissing) {
