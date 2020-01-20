@@ -122,6 +122,29 @@ public:
 		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}
 
+	void duplicateInstance(size_t idx) {
+		size_t instanceCount = getInstanceCount();
+		assert(instanceCount < 4);
+		_project.instances[instanceCount] = _project.instances[idx];
+
+		EmulatorInstanceDesc& instance = _project.instances[instanceCount];
+		instance.idx = instanceCount;
+		instance.fastBoot = true;
+
+		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
+		if (instance.patchedRomData) {
+			plug->loadRom(instance.patchedRomData->data(), instance.patchedRomData->size(), instance.fastBoot);
+		} else {
+			assert(instance.sourceRomData);
+			plug->loadRom(instance.sourceRomData->data(), instance.sourceRomData->size(), instance.fastBoot);
+		}
+
+		InstanceDuplicateDesc swap = { idx, instance.idx, plug };
+		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
+			instance.state = EmulatorInstanceState::Running;
+		});
+	}
+
 	void setInstance(const EmulatorInstanceDesc& instance) {
 		assert(instance.idx < MAX_INSTANCES);
 		EmulatorInstanceDesc& t = _project.instances[instance.idx];
@@ -130,10 +153,10 @@ public:
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		if (t.patchedRomData) {
-			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), instance.fastBoot);
+			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), t.fastBoot);
 		} else {
 			assert(t.sourceRomData);
-			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), instance.fastBoot);
+			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), t.fastBoot);
 		}
 		
 		if (t.sourceStateData) {

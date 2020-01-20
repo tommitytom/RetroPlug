@@ -104,6 +104,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.stop();
 	double delta = (double)_frameTimer.count();
+	UpdateActive();
 	onFrame(delta);
 	//_lua->update(delta);
 	_proxy->update(delta);
@@ -142,10 +143,10 @@ void RetroPlugView::CreatePlugInstance(CreateInstanceType type) {
 		break;
 	}
 	case CreateInstanceType::Duplicate: {
-		/*const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+		const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
 		if (active) {
-			_lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath);
-		}*/
+			_lua->duplicateInstance(active->idx);
+		}
 		break;
 	}
 	}

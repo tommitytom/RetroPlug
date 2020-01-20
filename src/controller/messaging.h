@@ -25,6 +25,12 @@ struct InstanceSwapDesc {
 	SameBoyPlugPtr instance;
 };
 
+struct InstanceDuplicateDesc {
+	InstanceIndex sourceIdx;
+	InstanceIndex targetIdx;
+	SameBoyPlugPtr instance;
+};
+
 struct VideoBuffer {
 	Dimension2 dimensions;
 	micromsg::UniquePtr<char> data;
@@ -58,6 +64,7 @@ namespace calls {
 	using PressButtons = micromsg::Push<ButtonStream<32>>;
 
 	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
+	using DuplicateInstance = micromsg::Request<InstanceDuplicateDesc, SameBoyPlugPtr>;
 	using TakeInstance = micromsg::Request<InstanceIndex, SameBoyPlugPtr>;
 	using FetchState = micromsg::Request<FetchStateRequest, FetchStateResponse>;
 }

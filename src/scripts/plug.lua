@@ -153,15 +153,16 @@ end
 
 function _duplicateInstance(idx)
 	if #_instances < MAX_INSTANCES then
-		local source = _instances[idx + 1]
-
 		local instance = {
 			model = _proxy:duplicateInstance(idx),
 			components = {},  -- TODO: Duplicate components
 			buttons = _proxy:buttons(idx)
 		}
 
-		return instance.model
+		table.insert(_instances, instance)
+		_setActive(#_instances - 1)
+
+		runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
 	end
 end
 

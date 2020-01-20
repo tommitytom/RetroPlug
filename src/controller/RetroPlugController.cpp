@@ -22,6 +22,7 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
+	_bus.addCall<calls::DuplicateInstance>(1);
 	_bus.addCall<calls::TransmitVideo>(16);
 	_bus.addCall<calls::UpdateSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);

@@ -18,7 +18,7 @@ local function endSelect(buttons)
 end
 
 local function isDirectionButton(button)
-	return button == Button.Left or button == Button.Right or button == Button.Up or button == Button.Down;
+	return button == Button.Left or button == Button.Right or button == Button.Up or button == Button.Down
 end
 
 function Lsdj:init()

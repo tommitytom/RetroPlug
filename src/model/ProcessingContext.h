@@ -53,6 +53,22 @@ public:
 			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
 		});
 
+		node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {
+			other = _instances[d.targetIdx];
+			_instances[d.targetIdx] = d.instance;
+			_instances[d.targetIdx]->setSampleRate(_audioSettings.sampleRate);
+
+			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
+			_audioBuffers[d.targetIdx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
+			_audioBuffers[d.targetIdx].frameCount = _audioSettings.frameCount;
+
+			SameBoyPlugPtr source = _instances[d.sourceIdx];
+			char* sourceState = new char[source->saveStateSize()];
+			source->saveState(sourceState, source->saveStateSize());
+			d.instance->loadState(sourceState, source->saveStateSize());
+			delete[] sourceState;
+		});
+
 		node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
 			other = _instances[idx];
 			_instances.erase(_instances.begin() + idx);

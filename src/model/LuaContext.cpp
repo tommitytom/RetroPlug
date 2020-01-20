@@ -70,6 +70,10 @@ void LuaContext::removeInstance(size_t index) {
 	callFunc(_state, "_removeInstance", index);
 }
 
+void LuaContext::duplicateInstance(size_t index) {
+	callFunc(_state, "_duplicateInstance", index);
+}
+
 void LuaContext::setActive(size_t idx) {
 	callFunc(_state, "_setActive", idx);
 }
@@ -239,6 +243,7 @@ void LuaContext::setup() {
 	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
 		"setInstance", &RetroPlugProxy::setInstance,
 		"removeInstance", &RetroPlugProxy::removeInstance,
+		"duplicateInstance", &RetroPlugProxy::duplicateInstance,
 		"getInstance", &RetroPlugProxy::getInstance,
 		"getInstances", &RetroPlugProxy::instances,
 		"setActiveInstance", &RetroPlugProxy::setActive,

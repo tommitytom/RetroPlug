@@ -40,6 +40,8 @@ public:
 
 	void removeInstance(size_t index);
 
+	void duplicateInstance(size_t index);
+
 	void setActive(size_t idx);
 
 	void update(float delta);
