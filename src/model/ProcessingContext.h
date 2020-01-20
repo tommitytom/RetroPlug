@@ -35,11 +35,6 @@ public:
 
 	void setAudioSettings(const AudioSettings& settings) {
 		_audioSettings = settings;
-
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-			_audioBuffers[i].data = std::make_shared<DataBuffer<float>>(settings.frameCount * 2);
-			_audioBuffers[i].frameCount = settings.frameCount;
-		}
 	}
 
 	void setNode(Node* node) {
@@ -55,7 +50,7 @@ public:
 
 			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
 			_audioBuffers[d.idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;			
+			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
 		});
 
 		node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
@@ -63,8 +58,12 @@ public:
 			_instances.erase(_instances.begin() + idx);
 			_instances.push_back(nullptr);
 
-			_audioBuffers[idx].data = nullptr;
-			_audioBuffers[idx].frameCount = 0;
+			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+				if (!_instances[idx]) {
+					_audioBuffers[idx].data = nullptr;
+					_audioBuffers[idx].frameCount = 0;
+				}
+			}
 		});
 
 		node->on<calls::UpdateSettings>([&](const Project::Settings& settings) {

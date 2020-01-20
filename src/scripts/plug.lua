@@ -143,13 +143,12 @@ local function addInstance(desc)
 end
 
 function _removeInstance(index)
-	if index + 1 == _activeIdx then
-		_activeIdx = 0
-		Active = nil
-	end
-
 	table.remove(_instances, index + 1)
 	_proxy:removeInstance(index)
+
+	if _activeIdx > #_instances then
+		_setActive(#_instances - 1)
+	end
 end
 
 function _duplicateInstance(idx)

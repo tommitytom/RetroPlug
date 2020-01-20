@@ -103,7 +103,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.stop();
-	double delta = _frameTimer.count();
+	double delta = (double)_frameTimer.count();
 	onFrame(delta);
 	//_lua->update(delta);
 	_proxy->update(delta);
@@ -203,7 +203,7 @@ void RetroPlugView::UpdateLayout() {
 
 	GetUI()->SetSizeConstraints(frameW, windowW, frameH, windowH);
 	GetUI()->Resize(windowW, windowH, 1);
-	SetTargetAndDrawRECTs(IRECT(0, 0, windowW, windowH));
+	SetTargetAndDrawRECTs(IRECT(0.0f, 0.0f, (float)windowW, (float)windowH));
 	GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
 
 	for (size_t i = 0; i < count; i++) {
@@ -226,7 +226,7 @@ void RetroPlugView::UpdateLayout() {
 		int x = gridX * frameW;
 		int y = gridY * frameH;
 
-		IRECT b(x, y, x + frameW, y + frameH);
+		IRECT b((float)x, (float)y, (float)(x + frameW), (float)(y + frameH));
 		_views[i]->SetArea(b);
 	}
 
