@@ -310,6 +310,9 @@
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\model\CompiledLua.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -857,6 +860,9 @@
     </ClInclude>
     <ClInclude Include="..\src\util\base64dec.h">
       <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\CompiledLua.h">
+      <Filter>src\model</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -7,6 +7,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RetroPlug-app", "projects\R
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RetroPlug-vst2", "projects\RetroPlug-vst2.vcxproj", "{2EB4846A-93E0-43A0-821E-12237105168F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RetroPlug-scripts", "projects\RetroPlug-scripts.vcxproj", "{F5FA66D9-D122-442B-82BB-C6F66A98562A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RetroPlug-scriptc", "projects\RetroPlug-scriptc.vcxproj", "{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +45,30 @@ Global
 		{2EB4846A-93E0-43A0-821E-12237105168F}.Tracer|x64.Build.0 = Tracer|x64
 		{2EB4846A-93E0-43A0-821E-12237105168F}.Tracer|x86.ActiveCfg = Tracer|Win32
 		{2EB4846A-93E0-43A0-821E-12237105168F}.Tracer|x86.Build.0 = Tracer|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Debug|x64.ActiveCfg = Debug|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Debug|x64.Build.0 = Debug|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Debug|x86.ActiveCfg = Debug|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Debug|x86.Build.0 = Debug|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Release|x64.ActiveCfg = Release|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Release|x64.Build.0 = Release|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Release|x86.ActiveCfg = Release|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Release|x86.Build.0 = Release|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Tracer|x64.ActiveCfg = Release|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Tracer|x64.Build.0 = Release|x64
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Tracer|x86.ActiveCfg = Release|Win32
+		{F5FA66D9-D122-442B-82BB-C6F66A98562A}.Tracer|x86.Build.0 = Release|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Debug|x64.ActiveCfg = Debug|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Debug|x64.Build.0 = Debug|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Debug|x86.ActiveCfg = Debug|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Debug|x86.Build.0 = Debug|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Release|x64.ActiveCfg = Release|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Release|x64.Build.0 = Release|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Release|x86.ActiveCfg = Release|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Release|x86.Build.0 = Release|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Tracer|x64.ActiveCfg = Release|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Tracer|x64.Build.0 = Release|x64
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Tracer|x86.ActiveCfg = Release|Win32
+		{11BD6356-C69E-4FC5-A265-7BFA32C2C60F}.Tracer|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

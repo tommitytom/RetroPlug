@@ -307,6 +307,7 @@
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h" />
     <ClInclude Include="..\src\micromsg\variant_function.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
+    <ClInclude Include="..\src\model\CompiledLua.h" />
     <ClInclude Include="..\src\model\EmulatorInstance.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
     <ClInclude Include="..\src\model\LuaContext.h" />
@@ -544,6 +545,10 @@
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
+    <ClCompile Include="..\src\model\CompiledLua.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
     <ClCompile Include="..\src\model\FileManager.cpp" />
     <ClCompile Include="..\src\model\LuaContext.cpp">

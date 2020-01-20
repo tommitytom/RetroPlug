@@ -12,6 +12,10 @@
 #include "util/base64dec.h"
 #include "config/config.h"
 
+#ifndef _DEBUG
+#include "CompiledLua.h"
+#endif
+
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name = "") {
 	if (!result.valid()) {
 		sol::error err = result;
@@ -129,8 +133,14 @@ void LuaContext::setup() {
 
 	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io);
 
+#ifdef _DEBUG
 	std::string packagePath = s["package"]["path"];
 	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
+#else
+	s.add_package_loader(compiledScriptLoader);
+#endif
+
+	s.script("require('hello')()");
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
