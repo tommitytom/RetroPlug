@@ -63,7 +63,7 @@ void LuaContext::loadProject(const std::string& path) {
 }
 
 void LuaContext::saveProject(const FetchStateResponse& res) {
-	callFunc(_state, "_saveProject", res);
+	callFunc(_state, "_saveProjectToFile", res);
 }
 
 void LuaContext::removeInstance(size_t index) {
@@ -116,11 +116,6 @@ void LuaContext::shutdown() {
 		_state = nullptr;
 	}
 }
-
-static void loadRom(const std::string& path) {
-
-}
-
 
 void LuaContext::setup() {
 	std::cout << "------------------------------------------" << std::endl;
@@ -211,7 +206,8 @@ void LuaContext::setup() {
 		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
 		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
 		"patchedSavData", &EmulatorInstanceDesc::patchedSavData,
-		"sourceStateData", &EmulatorInstanceDesc::sourceStateData
+		"sourceStateData", &EmulatorInstanceDesc::sourceStateData,
+		"fastBoot", &EmulatorInstanceDesc::fastBoot
 	);
 
 	s.new_usertype<Project>("Project",

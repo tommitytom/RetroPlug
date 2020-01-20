@@ -5,6 +5,7 @@ require("components.GlobalButtonHandler")
 local inspect = require("inspect")
 local pathutil = require("pathutil")
 local serpent = require("serpent")
+local json = require("json")
 
 Action = {}
 setmetatable(Action, {
@@ -135,10 +136,7 @@ local function addInstance(desc)
 		}
 
 		table.insert(_instances, instance)
-
-		if #_instances == 1 then
-			Active = _instances[1]
-		end
+		_setActive(#_instances - 1)
 
 		return instance
 	end
@@ -180,11 +178,10 @@ local function cloneFields(source, fields, target)
 	return target
 end
 
-function _saveProject(state)
+function _saveProject(state, pretty)
 	local proj = _proxy:getProject()
 
 	local t = {
-		data = "",
 		version = _RETROPLUG_VERSION,
 		path = proj.path,
 		settings = cloneFields(proj.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }),
@@ -208,54 +205,79 @@ function _saveProject(state)
 		end
 	end
 
-	local d = serpent.dump(t, { comment = false, indent = '\t' })
-	print(d)
+	local opts = { comment = false }
+	if pretty == true then opts.indent = '\t' end
+	return serpent.dump(t, opts)
+end
 
-	local file = io.open("C:\\temp\\test.lua", "w")
-	file:write(d)
+function _saveProjectToFile(state, pretty)
+	local proj = _proxy:getProject()
+	local data = _saveProject(state, pretty)
+	local file = io.open(proj.path, "w")
+	file:write(data)
 	file:close()
 end
 
+local function loadProject010(projectData)
+end
+
+local function loadProject020(projectData)
+	local fm = _proxy:fileManager()
+	local proj = _proxy:getProject()
+	cloneFields(projectData.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }, proj.settings)
+	_proxy:updateSettings()
+
+	for _, inst in ipairs(projectData.instances) do
+		local desc = EmulatorInstanceDesc.new()
+		desc.idx = -1
+		desc.fastBoot = true
+		cloneFields(inst, { "emulatorType", "romPath", "savPath" }, desc)
+
+		local romFile = fm:loadFile(inst.romPath, false)
+		if romFile ~= nil then
+			desc.sourceRomData = romFile.data
+			local state = base64.decodeBuffer(inst.state)
+
+			if proj.settings.saveType == SaveStateType.Sram then
+				desc.sourceSavData = state
+			elseif proj.settings.saveType == SaveStateType.State then
+				desc.sourceStateData = state
+			end
+
+			_loadRom(desc)
+		end
+	end
+end
+
 function _loadProject(path)
-	local file = io.open("C:\\temp\\test.lua", "r")
+	local file = io.open(path, "r")
 	if file == nil then
-		error("Failed to load project")
+		error("Failed to load project: Unable to open file")
 	end
 
 	local data = file:read("*a")
-	local ok, t = serpent.load(data)
-	if ok == false then
-		-- Check if this is a JSON project
-		error("Failed to load project")
-	end
-
-	-- Check version!
-
-	local fm = _proxy:fileManager()
-	local proj = _proxy:getProject()
-	proj.path = path
-	cloneFields(t.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }, proj.settings)
-	_proxy:updateSettings()
-
-	for _, v in ipairs(t.instances) do
-		local d = EmulatorInstanceDesc.new()
-		d.idx = -1
-		cloneFields(v, { "emulatorType", "romPath", "savPath" }, d)
-
-		local romFile = fm:loadFile(v.romPath, false)
-		if romFile ~= nil then
-			d.sourceRomData = romFile.data
-			local state = base64.decodeBuffer(v.state)
-
-			if proj.settings.saveType == SaveStateType.Sram then
-				d.sourceSavData = state
-			elseif proj.settings.saveType == SaveStateType.State then
-				d.sourceStateData = state
-			end
-
-			_loadRom(d)
+	local ok, projectData = serpent.load(data)
+	if ok ~= true then
+		-- Old projects (<= v0.1.0) are encoded using JSON rather than lua
+		projectData = json.decode(data)
+		if projectData == nil then
+			error("Failed to load project: Unable to deserialize file")
 		end
 	end
+
+	_closeProject()
+
+	_proxy:getProject().path = path
+
+	if projectData.version == "0.1.0" then
+		loadProject010(projectData)
+	elseif projectData.version == "0.2.0" then
+		loadProject020(projectData)
+	else
+		-- Version not supported!
+	end
+
+	_setActive(0)
 end
 
 function _loadRomAtPath(idx, romPath, savPath)

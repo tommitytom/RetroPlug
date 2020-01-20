@@ -130,10 +130,10 @@ public:
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		if (t.patchedRomData) {
-			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size());
+			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), instance.fastBoot);
 		} else {
 			assert(t.sourceRomData);
-			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size());
+			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), instance.fastBoot);
 		}
 		
 		if (t.sourceStateData) {

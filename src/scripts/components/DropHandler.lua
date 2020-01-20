@@ -9,7 +9,7 @@ function DropHandler:onDrop(paths)
 
 	for _, v in ipairs(paths) do
 		local ext = pathutil.ext(v)
-		if ext == "lua" then table.insert(projects, v) end
+		if ext == "retroplug" then table.insert(projects, v) end
 		if ext == "gb" then table.insert(roms, v) end
 		if ext == "sav" then table.insert(savs, v) end
 	end

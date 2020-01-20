@@ -8,6 +8,9 @@
 #include "util/cxxtimer.hpp"
 #include "Keys.h"
 
+const float ACTIVE_ALPHA = 1.0f;
+const float INACTIVE_ALPHA = 0.75f;
+
 RetroPlugView::RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
@@ -158,6 +161,10 @@ void RetroPlugView::UpdateLayout() {
 		}
 	}
 
+	for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		_views[i]->HideText();
+	}
+
 	Project::Settings& settings = _proxy->getProject()->settings;
 	int frameW = FRAME_WIDTH * settings.zoom;
 	int frameH = FRAME_HEIGHT * settings.zoom;
@@ -232,14 +239,12 @@ void RetroPlugView::UpdateLayout() {
 void RetroPlugView::UpdateActive() {
 	InstanceIndex idx = _proxy->activeIdx();
 
-	std::cout << "active: " << idx << std::endl;
-
 	if (_activeIdx != NO_ACTIVE_INSTANCE && idx != _activeIdx) {
-		_views[_activeIdx]->SetAlpha(0.75f);
+		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);
 	}
 
 	if (idx != NO_ACTIVE_INSTANCE) {
-		_views[idx]->SetAlpha(1.0f);
+		_views[idx]->SetAlpha(ACTIVE_ALPHA);
 	}
 
 	_activeIdx = idx;

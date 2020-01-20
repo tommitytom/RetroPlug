@@ -50,9 +50,8 @@ void SameBoyPlug::pressButtons(const StreamButtonPress* presses, size_t pressCou
 	}
 }
 
-void SameBoyPlug::loadRom(const char* data, size_t size) {
+void SameBoyPlug::loadRom(const char* data, size_t size, bool fastBoot) {
 	GameboyModel model = GameboyModel::Auto;
-	bool fastBoot = false;
 	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModel(model), fastBoot);
 	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, false);
 }

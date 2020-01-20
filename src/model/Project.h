@@ -20,6 +20,8 @@ struct EmulatorInstanceDesc {
 
 	DataBufferPtr sourceSavData;
 	DataBufferPtr patchedSavData;
+
+	bool fastBoot = false;
 };
 
 struct Project {

@@ -52,7 +52,7 @@ public:
 
 	void pressButtons(const StreamButtonPress* presses, size_t pressCount);
 
-	void loadRom(const char* data, size_t size);
+	void loadRom(const char* data, size_t size, bool fastBoot);
 
 	bool watchRom() const { return false; }
 
