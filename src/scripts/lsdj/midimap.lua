@@ -21,7 +21,7 @@ function MidiMap:onMidi(system, msg)
 			system:sendSerialByte(msg.offset, rowIdx)
 			self.lastRow = rowIdx
 		end
-	else if msg.status == "noteOff" then
+	elseif msg.status == "noteOff" then
 		local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 		if rowIdx == self.lastRow then
 			system:sendSerialByte(msg.mOffset, 0xFE)

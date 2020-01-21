@@ -82,7 +82,7 @@ local function runComponentHandler(components, handlerName, ...)
 end
 
 function _loadComponent(name)
-	local component = require("components/" .. name)
+	local component = require(name)
 	if component ~= nil then
 		print("Registered component: " .. component.__desc.name)
 		if component.__desc.global == true then

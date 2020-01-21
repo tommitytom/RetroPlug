@@ -864,6 +864,9 @@
     <ClInclude Include="..\src\model\CompiledLua.h">
       <Filter>src\model</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\platform\Platform.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

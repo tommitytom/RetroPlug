@@ -1,4 +1,4 @@
-local MidiSyncArduinoboy = plugin({ name = "MIDI Sync (Arduinoboy Variation)" })
+--[[local MidiSyncArduinoboy = plugin({ name = "MIDI Sync (Arduinoboy Variation)" })
 
 function MidiSyncArduinoboy:create(system)
 	self.playing = false
@@ -21,4 +21,4 @@ function MidiSyncArduinoboy:onMidi(system, msg)
 	end
 end
 
-return MidiSyncArduinoboy
+return MidiSyncArduinoboy]]

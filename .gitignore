@@ -23,3 +23,6 @@ gui/*
 
 Icon?
 .DS_Stor*
+
+compiler/x64
+src/model/CompiledLua.cpp

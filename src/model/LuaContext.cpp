@@ -12,7 +12,9 @@
 #include "util/base64dec.h"
 #include "config/config.h"
 
-#ifndef _DEBUG
+#include "platform/Platform.h"
+
+#ifdef COMPILE_LUA_SCRIPTS
 #include "CompiledLua.h"
 #endif
 
@@ -133,11 +135,13 @@ void LuaContext::setup() {
 
 	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io);
 
-#ifdef _DEBUG
+#ifdef COMPILE_LUA_SCRIPTS
+	std::cout << "Using precompiled lua scripts" << std::endl;
+	s.add_package_loader(compiledScriptLoader);
+#else
+	std::cout << "Loading lua scripts from disk" << std::endl;
 	std::string packagePath = s["package"]["path"];
 	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
-#else
-	s.add_package_loader(compiledScriptLoader);
 #endif
 
 	s.script("require('hello')()");
@@ -281,12 +285,24 @@ void LuaContext::setup() {
 	}
 
 	std::cout << "Looking for components..." << std::endl;
+
+#ifdef COMPILE_LUA_SCRIPTS
+	const std::vector<const char*>& names = getScriptNames();
+	for (size_t i = 0; i < names.size(); ++i) {
+		std::string_view name = names[i];
+		if (name.substr(0, 10) == "components") {
+			std::cout << "Loading " << name << "... ";
+			requireComponent(std::string(name));
+		}
+	}
+#else
 	for (const auto& entry : fs::directory_iterator(_path + "/components/")) {
 		fs::path p = entry.path();
 		std::string name = p.replace_extension("").filename().string();
 		std::cout << "Loading " << name << ".lua... ";
-		requireComponent(name);
+		requireComponent("components." + name);
 	}
+#endif
 
 	std::cout << "Finished loading components" << std::endl;
 

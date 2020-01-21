@@ -1,5 +1,5 @@
-local util = require("../util")
-local inspect = require("../inspect")
+local util = require("util")
+local inspect = require("inspect")
 
 local _maps = {
 	key = {},

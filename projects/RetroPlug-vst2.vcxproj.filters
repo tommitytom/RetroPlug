@@ -280,6 +280,15 @@
     <ClCompile Include="..\src\model\RetroPlug.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\model\CompiledLua.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\FileManager.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -686,6 +695,30 @@
     </ClInclude>
     <ClInclude Include="..\src\model\RetroPlug.h">
       <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\CompiledLua.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\FileManager.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\ProcessingContext.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\Project.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\RetroPlugProxy.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\ButtonStream.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\controller\messaging.h">
+      <Filter>src\controller</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\Platform.h">
+      <Filter>src\platform</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
