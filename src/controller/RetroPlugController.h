@@ -1,7 +1,6 @@
 #pragma once
 
 #include <gainput/gainput.h>
-#include "model/RetroPlug.h"
 #include "model/LuaContext.h"
 #include "micromsg/nodemanager.h"
 #include "view/RetroPlugRoot.h"
@@ -21,10 +20,12 @@ public:
 	~ChangeListener() {}
 
 	void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
-		std::cout << "Reloading..." << std::endl;
-
-		if (_context) {
-			_context->reload();
+		fs::path p(filename);
+		if (p.extension() == "lua") {
+			std::cout << "Reloading..." << std::endl;
+			if (_context) {
+				_context->reload();
+			}
 		}
 	}
 };
@@ -33,7 +34,6 @@ class RetroPlugView;
 
 class RetroPlugController {
 private:
-	RetroPlug _model;
 	RetroPlugProxy _proxy;	
 	ProcessingContext _processingContext;
 	RetroPlugView* _view;

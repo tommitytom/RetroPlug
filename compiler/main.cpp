@@ -10,8 +10,8 @@ extern "C" {
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-namespace fs = std::filesystem;
 
+namespace fs = std::filesystem;
 using u8 = unsigned char;
 
 struct CompiledScript {
@@ -46,6 +46,7 @@ int compiledScriptLoader(lua_State* state) {
 
 	return 0;
 }
+
 )";
 
 static int writer(lua_State* L, const void* p, size_t sz, void* ud) {
@@ -59,16 +60,16 @@ static int writer(lua_State* L, const void* p, size_t sz, void* ud) {
 	return 0;
 }
 
-std::string getScriptVarName(std::string name) {
-	std::replace(name.begin(), name.end(), '.', '_');
-	return "_" + name + "_LUA_";
-}
-
 std::string getScriptName(fs::path path) {
 	std::string name = path.replace_extension().string().substr(2);
 	std::replace(name.begin(), name.end(), '\\', '.');
 	std::replace(name.begin(), name.end(), '/', '.');
 	return name;
+}
+
+std::string getScriptVarName(std::string name) {
+	std::replace(name.begin(), name.end(), '.', '_');
+	return "_" + name + "_LUA_";
 }
 
 bool parseDirectory(fs::path dirPath, std::stringstream& out, std::vector<CompiledScript>& descs) {

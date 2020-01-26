@@ -4,7 +4,6 @@
 #include "platform/Path.h"
 #include "platform/Shell.h"
 #include "util/File.h"
-#include "util/Serializer.h"
 #include "Buttons.h"
 
 #include <sstream>

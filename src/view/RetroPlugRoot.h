@@ -6,7 +6,6 @@
 #include <vector>
 #include <stack>
 #include "IControl.h"
-#include "model/RetroPlug.h"
 #include "EmulatorView.h"
 #include "ContextMenu.h"
 #include "controller/RetroPlugController.h"

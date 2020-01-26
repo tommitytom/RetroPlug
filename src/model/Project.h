@@ -4,6 +4,23 @@
 #include "util/DataBuffer.h"
 #include <string>
 #include <vector>
+#include "Constants.h"
+
+enum class GameboyModel {
+	Auto,
+	DmgB,
+	//SgbNtsc,
+	//SgbPal,
+	//Sgb2,
+	CgbC,
+	CgbE,
+	Agb
+};
+
+struct SameBoySettings {
+	GameboyModel model = GameboyModel::Auto;
+	bool gameLink = false;
+};
 
 struct EmulatorInstanceDesc {
 	InstanceIndex idx = NO_ACTIVE_INSTANCE;
@@ -12,6 +29,8 @@ struct EmulatorInstanceDesc {
 	std::string romName;
 	std::string romPath;
 	std::string savPath;
+
+	SameBoySettings sameBoySettings;
 
 	DataBufferPtr sourceRomData;
 	DataBufferPtr patchedRomData;

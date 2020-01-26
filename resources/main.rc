@@ -135,20 +135,20 @@ END
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE 
+1 TEXTINCLUDE
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE 
+2 TEXTINCLUDE
 BEGIN
     "#include ""winres.h""\r\n"
     "\0"
 END
 
-3 TEXTINCLUDE 
+3 TEXTINCLUDE
 BEGIN
-    "#include ""..\\config.h""\r\n"
+    "#include ""..\\..\\config.h""\r\n"
     "ROBOTTO_FN TTF ROBOTTO_FN\0"
 END
 
@@ -186,8 +186,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,0,1,0
- PRODUCTVERSION 0,0,1,0
+ FILEVERSION 0,0,2,0
+ PRODUCTVERSION 0,0,2,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -208,7 +208,7 @@ BEGIN
             VALUE "InternalName", "RetroPlug"
             VALUE "ProductName", "RetroPlug"
             VALUE "CompanyName", "Tom Yaxley"
-            VALUE "LegalCopyright", "Copyright 2019 Tom Yaxley"
+            VALUE "LegalCopyright", "Copyright 2020 Tom Yaxley"
             VALUE "LegalTrademarks", "VST is a trademark of Steinberg Media Technologies GmbH, Audio Unit is a trademark of Apple, Inc."
         END
     END
@@ -237,6 +237,14 @@ END
 
 IDR_TTF2                TTF                     "fonts\\Early-GameBoy.ttf"
 
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// LUA
+//
+
+IDR_DEFAULT_CONFIG    LUA                     "config.lua"
+
 #endif    // English (United Kingdom) resources
 /////////////////////////////////////////////////////////////////////////////
 
@@ -249,7 +257,7 @@ IDR_TTF2                TTF                     "fonts\\Early-GameBoy.ttf"
 //
 #include "..\config\config.h"
 ROBOTTO_FN TTF ROBOTTO_FN
-GAMEBOY_FN TTf GAMEBOY_FN
+GAMEBOY_FN TTF GAMEBOY_FN
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
 

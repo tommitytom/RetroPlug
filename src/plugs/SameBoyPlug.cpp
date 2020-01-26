@@ -26,15 +26,17 @@
 
 //const int FRAME_SIZE = 160 * 144 * 4;
 
-int getGameboyModel(GameboyModel model) {
+const int DEFAULT_GAMEBOY_MODEL = 0x205;
+
+int getGameboyModelId(GameboyModel model) {
 	switch (model) {
 	case GameboyModel::DmgB: return 0x002;
 	case GameboyModel::CgbC: return 0x203;
 	case GameboyModel::CgbE: return 0x205;
 	case GameboyModel::Agb: return 0x206;
-	case GameboyModel::Auto:
-	default: return 0x205;
 	}
+
+	return DEFAULT_GAMEBOY_MODEL;
 }
 
 SameBoyPlug::SameBoyPlug() {
@@ -52,100 +54,14 @@ void SameBoyPlug::pressButtons(const StreamButtonPress* presses, size_t pressCou
 
 void SameBoyPlug::loadRom(const char* data, size_t size, bool fastBoot) {
 	GameboyModel model = GameboyModel::Auto;
-	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModel(model), fastBoot);
+	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModelId(model), fastBoot);
 	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, false);
 }
 
-void SameBoyPlug::init(const tstring& romPath, GameboyModel model, bool fastBoot) {
-	/*_romPath = romPath;
-	_model = model;
-
-	_romData.clear();
-	if (!readFile(romPath, _romData)) {
-		return;
-	}
-
-	if (fastBoot) {
-		_resetSamples = (int)(_sampleRate / 2);
-	}
-
-	void* instance = SAMEBOY_SYMBOLS(sameboy_init)(this, (const char*)_romData.data(), _romData.size(), getGameboyModel(model), fastBoot);
-	if (!instance) {
-		return;
-	}
-
-	const char* name = SAMEBOY_SYMBOLS(sameboy_get_rom_name)(instance);
-	for (int i = 0; i < 16; i++) {
-		if (name[i] == 0) {
-			_romName = std::string(name, i);
-		}
-	}
-
-	if (_romName.size() == 0) {
-		_romName = std::string(name, 16);
-	}
-
-	std::vector<std::byte> saveData;
-	if (_saveData.empty()) {
-		_savePath = changeExt(romPath, TSTR(".sav"));
-
-		if (!fs::exists(_savePath)) {
-			// If a .sav file with the same name as the rom does not exist, check to see if there is a
-			// single .sav in the same directory as the rom and load it.  If there are multiple .sav files
-			// in the same directory, don't load any of them (as this could get confusing!).
-			fs::path found;
-			for (const auto& entry : fs::directory_iterator(fs::path(romPath).parent_path())) {
-				if (entry.path().extension() == ".sav") {
-					if (found.empty()) {
-						found = entry.path();
-					} else {
-						found.clear();
-						break;
-					}
-				}
-			}
-
-			if (!found.empty()) {
-				_savePath = tstr(found.wstring());
-			}
-		}
-
-		if (fs::exists(_savePath)) {
-			readFile(_savePath, saveData);
-			SAMEBOY_SYMBOLS(sameboy_load_battery)(instance, (const char*)saveData.data(), saveData.size());
-		}
-	} else {
-		switch (_saveType) {
-		case SaveStateType::State:
-			SAMEBOY_SYMBOLS(sameboy_load_state)(instance, (const char*)_saveData.data(), _saveData.size());
-			break;
-		case SaveStateType::Sram:
-			SAMEBOY_SYMBOLS(sameboy_load_battery)(instance, (const char*)saveData.data(), saveData.size());
-			break;
-		}
-
-		saveData = _saveData;
-		_saveData.clear();
-	}
-
-	std::string romName = _romName;
-	std::transform(romName.begin(), romName.end(), romName.begin(), ::tolower);
-	_lsdj.found = romName.find("lsdj") == 0;
-	if (_lsdj.found) {
-		_lsdj.version = _romName.substr(5, 6);
-		_lsdj.saveData = saveData;
-		_lsdj.loadRom(_romData);
-	}
-
-	SAMEBOY_SYMBOLS(sameboy_set_sample_rate)(instance, _sampleRate);
-
-	_instance = instance;*/
-}
-
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
-	_model = model;
+	_settings.model = model;
 	_resetSamples = (int)(_sampleRate / 2);
-	SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModel(model), fast);
+	SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModelId(model), fast);
 }
 
 void SameBoyPlug::setSampleRate(double sampleRate) {
@@ -174,7 +90,7 @@ bool SameBoyPlug::loadBattery(const char* data, size_t size, bool reset) {
 
 		if (reset) {
 			_resetSamples = (int)(_sampleRate / 2);
-			SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModel(_model), true);
+			SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModelId(_settings.model), true);
 		}
 	}
 
@@ -189,7 +105,7 @@ bool SameBoyPlug::clearBattery(bool reset) {
 
 	if (reset) {
 		_resetSamples = (int)(_sampleRate / 2);
-		SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModel(_model), true);
+		SAMEBOY_SYMBOLS(sameboy_reset)(_instance, getGameboyModelId(_settings.model), true);
 	}
 
 	return true;
@@ -235,7 +151,6 @@ void SameBoyPlug::sendMidiBytes(int offset, const char* bytes, size_t count) {
 
 // This is called from the audio thread
 void SameBoyPlug::update(size_t audioFrames) {
-	updateButtons();
 	SAMEBOY_SYMBOLS(sameboy_update)(_instance, audioFrames);
 	updateAV(audioFrames);
 }
@@ -244,7 +159,6 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 	void* instances[MAX_INSTANCES];
 	for (size_t i = 0; i < plugCount; i++) {
 		instances[i] = plugs[i]->instance();
-		plugs[i]->updateButtons();
 	}
 
 	SAMEBOY_SYMBOLS(sameboy_update_multiple)(instances, plugCount, audioFrames);
@@ -260,13 +174,6 @@ void SameBoyPlug::disableRendering(bool disable) {
 
 void SameBoyPlug::updateRom() {
 	//SAMEBOY_SYMBOLS(sameboy_update_rom)(_instance, (const char*)_romData.data(), _romData.size());
-}
-
-void SameBoyPlug::updateButtons() {
-	/*while (_bus.buttons.readAvailable()) {
-		auto ev = _bus.buttons.readValue();
-		SAMEBOY_SYMBOLS(sameboy_set_button)(_instance, ev.id, ev.down);
-	}*/
 }
 
 void SameBoyPlug::updateAV(int audioFrames) {

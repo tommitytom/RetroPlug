@@ -1,5 +1,8 @@
 #include "RetroPlugController.h"
 #include "config.h"
+#include "platform/Path.h"
+#include "platform/Resource.h"
+#include "resource.h"
 
 namespace AxisButtons {
 	enum AxisButton {
@@ -37,9 +40,24 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 	_padManager = new gainput::InputManager();
 	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
 
+	// Make sure the config script exists
+	fs::path contentDir = getContentPath();
+	fs::path configPath = contentDir.string() + "\\config.lua";
+	if (!fs::exists(configPath)) {
+		Resource res(IDR_DEFAULT_CONFIG, "LUA");
+		std::string_view data = res.getData();
+
+		fs::create_directories(contentDir);
+		std::ofstream s(configPath, std::ios::binary);
+		assert(s.good());
+		s.write(data.data(), data.size());
+		s.close();
+	}
+
 	const std::string path = "../src/scripts";
-	_lua.init(&_model, &_proxy, path);
+	_lua.init(&_proxy, contentDir.string(), path);
 	_scriptWatcher.addWatch(path, &_listener, true);
+	_scriptWatcher.addWatch(contentDir.string(), &_listener, true);
 }
 
 RetroPlugController::~RetroPlugController() {

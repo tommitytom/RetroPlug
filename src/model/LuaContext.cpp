@@ -53,9 +53,9 @@ bool callFuncRet(sol::state* state, const char* name, ReturnType& ret, Args&&...
 	return false;
 }
 
-void LuaContext::init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string& path) {
-	_path = path;
-	_plug = plug;
+void LuaContext::init(RetroPlugProxy* proxy, const std::string& path, const std::string& scriptPath) {
+	_configPath = path;
+	_scriptPath = scriptPath;
 	_proxy = proxy;
 	setup();
 }
@@ -69,7 +69,7 @@ void LuaContext::loadProject(const std::string& path) {
 }
 
 void LuaContext::saveProject(const FetchStateResponse& res) {
-	callFunc(_state, "_saveProjectToFile", res);
+	callFunc(_state, "_saveProjectToFile", res, true);
 }
 
 void LuaContext::removeInstance(size_t index) {
@@ -135,16 +135,18 @@ void LuaContext::setup() {
 
 	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io);
 
+	std::string packagePath = s["package"]["path"];
+	packagePath += ";" + _configPath + "/?.lua";
+
 #ifdef COMPILE_LUA_SCRIPTS
 	std::cout << "Using precompiled lua scripts" << std::endl;
 	s.add_package_loader(compiledScriptLoader);
 #else
 	std::cout << "Loading lua scripts from disk" << std::endl;
-	std::string packagePath = s["package"]["path"];
-	s["package"]["path"] = (packagePath + ";" + _path + "/?.lua").c_str();
+	packagePath += ";" + _scriptPath + "/?.lua";
 #endif
 
-	s.script("require('hello')()");
+	s["package"]["path"] = packagePath;
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
@@ -213,6 +215,19 @@ void LuaContext::setup() {
 		"State", SaveStateType::State
 	);
 
+	s.new_enum("GameboyModel",
+		"Auto", GameboyModel::Auto,
+		"Agb", GameboyModel::Agb,
+		"CgbC", GameboyModel::CgbC,
+		"CgbE", GameboyModel::CgbE,
+		"DmgB", GameboyModel::DmgB
+	);
+
+	s.new_usertype<SameBoySettings>("SameBoySettings",
+		"model", &SameBoySettings::model,
+		"gameLink", &SameBoySettings::gameLink
+	);
+
 	s.new_usertype<EmulatorInstanceDesc>("EmulatorInstanceDesc",
 		"idx", &EmulatorInstanceDesc::idx,
 		"emulatorType", &EmulatorInstanceDesc::emulatorType,
@@ -220,6 +235,7 @@ void LuaContext::setup() {
 		"romName", &EmulatorInstanceDesc::romName,
 		"romPath", &EmulatorInstanceDesc::romPath,
 		"savPath", &EmulatorInstanceDesc::savPath,
+		"sameBoySettings", &EmulatorInstanceDesc::sameBoySettings,
 		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
 		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
 		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
@@ -276,11 +292,10 @@ void LuaContext::setup() {
 		"alt", &iplug::igraphics::IKeyPress::A
 	);
 
-	s["_model"].set(_plug);
 	s["_proxy"].set(_proxy);
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
 
-	if (!runFile(_path + "/plug.lua")) {
+	if (!runScript("require('plug')")) {
 		return;
 	}
 
@@ -296,7 +311,7 @@ void LuaContext::setup() {
 		}
 	}
 #else
-	for (const auto& entry : fs::directory_iterator(_path + "/components/")) {
+	for (const auto& entry : fs::directory_iterator(_scriptPath + "/components/")) {
 		fs::path p = entry.path();
 		std::string name = p.replace_extension("").filename().string();
 		std::cout << "Loading " << name << ".lua... ";
@@ -306,7 +321,7 @@ void LuaContext::setup() {
 
 	std::cout << "Finished loading components" << std::endl;
 
-	runFile(_path + "/config.lua");
+	runFile(_configPath + "/config.lua");
 	runScript("_init()");
 }
 

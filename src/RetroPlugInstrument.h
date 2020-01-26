@@ -1,7 +1,6 @@
 #pragma once
 
 #include "IPlug_include_in_plug_hdr.h"
-#include "model/RetroPlug.h"
 #include "ButtonQueue.h"
 #include "controller/RetroPlugController.h"
 

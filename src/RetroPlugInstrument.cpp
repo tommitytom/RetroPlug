@@ -3,7 +3,6 @@
 #include "IControls.h"
 #include "view/EmulatorView.h"
 #include "view/RetroPlugRoot.h"
-#include "util/Serializer.h"
 
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	: Plugin(info, MakeConfig(0, 0)) {

@@ -143,7 +143,7 @@ public:
 
 				plug->setBuffers(v, &_audioBuffers[i]);
 
-				if (!plug->gameLink()) {
+				if (!plug->getSettings().gameLink) {
 					plugs[plugCount++] = plug;
 				} else {
 					linkedPlugs[linkedPlugCount++] = plug;

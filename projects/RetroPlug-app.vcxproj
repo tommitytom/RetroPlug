@@ -315,7 +315,6 @@
     <ClInclude Include="..\src\model\LuaContext.h" />
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
-    <ClInclude Include="..\src\model\RetroPlug.h" />
     <ClInclude Include="..\src\model\RetroPlugProxy.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
@@ -324,6 +323,7 @@
     <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\platform\Platform.h" />
+    <ClInclude Include="..\src\platform\Resource.h" />
     <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
@@ -340,7 +340,6 @@
     <ClInclude Include="..\src\util\PaRingBuffer.h" />
     <ClInclude Include="..\src\util\RingBuffer.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
-    <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\xstring.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
     <ClInclude Include="..\src\view\EmulatorView.h" />
@@ -558,11 +557,11 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlug.cpp" />
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
+    <ClCompile Include="..\src\platform\ResourceWin.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
@@ -570,7 +569,6 @@
     <ClCompile Include="..\src\util\crc32.cpp" />
     <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\src\util\PaRingBuffer.c" />
-    <ClCompile Include="..\src\util\Serializer.cpp" />
     <ClCompile Include="..\src\view\ContextMenu.cpp" />
     <ClCompile Include="..\src\view\EmulatorView.cpp" />
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
@@ -717,8 +715,8 @@
     <None Include="..\config\RetroPlug-win.props">
       <SubType>Designer</SubType>
     </None>
+    <None Include="..\resources\config.lua" />
     <None Include="..\resources\dlls\sameboy_retroplug-x64.dll" />
-    <None Include="..\resources\dlls\sameboy_retroplug-x86.dll" />
   </ItemGroup>
   <ItemGroup>
     <Font Include="..\resources\fonts\Early-GameBoy.ttf" />

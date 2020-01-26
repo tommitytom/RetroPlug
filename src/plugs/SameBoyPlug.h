@@ -13,17 +13,6 @@ namespace sol {
 	class state;
 };
 
-enum class GameboyModel {
-	Auto,
-	DmgB,
-	//SgbNtsc,
-	//SgbPal,
-	//Sgb2,
-	CgbC,
-	CgbE,
-	Agb
-};
-
 const int FRAME_WIDTH = 160;
 const int FRAME_HEIGHT = 144;
 
@@ -34,11 +23,10 @@ class SameBoyPlug {
 private:
 	void* _instance = nullptr;
 
-	bool _midiSync = false;
-	bool _gameLink = false;
-	int _resetSamples = 0;
+	SameBoySettings _settings;
 
-	GameboyModel _model = GameboyModel::Auto;
+	bool _midiSync = false;
+	int _resetSamples = 0;
 
 	double _sampleRate = 48000;
 
@@ -63,19 +51,13 @@ public:
 		_audioBuffer = audio;
 	}
 
-	void setModel(GameboyModel model) { _model = model; }
-
-	GameboyModel model() const { return _model; }
-
 	bool midiSync() { return _midiSync; }
 
 	void setMidiSync(bool enabled) { _midiSync = enabled; }
 
-	bool gameLink() const { return _gameLink; }
+	const SameBoySettings& getSettings() const { return _settings; }
 
-	void setGameLink(bool enabled) { _gameLink = enabled; }
-
-	void init(const tstring& romPath, GameboyModel model, bool fastBoot);
+	void setSettings(const SameBoySettings& settings) { _settings = settings; }
 
 	void reset(GameboyModel model, bool fast);
 
@@ -120,7 +102,5 @@ public:
 	void updateRom();
 
 private:
-	void updateButtons();
-
 	void updateAV(int audioFrames);
 };

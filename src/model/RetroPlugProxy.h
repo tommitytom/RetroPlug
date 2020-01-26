@@ -9,6 +9,8 @@
 #include "Types.h"
 #include "model/Project.h"
 #include "model/ButtonStream.h"
+#include "model/FileManager.h"
+#include "plugs/SameBoyPlug.h"
 
 class RetroPlugProxy {
 private:

@@ -4,7 +4,6 @@
 #include "util/xstring.h"
 
 #include "IGraphicsStructs.h"
-#include "model/RetroPlug.h"
 #include "model/RetroPlugProxy.h"
 
 #include <iostream>
@@ -18,19 +17,19 @@ class RetroPlug;
 class LuaContext {
 private:
 	sol::state* _state;
-	std::string _path;
+	std::string _configPath;
+	std::string _scriptPath;
 
-	RetroPlug* _plug;
 	RetroPlugProxy* _proxy;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
 
 public:
-	LuaContext(): _plug(nullptr), _state(nullptr) {}
+	LuaContext(): _state(nullptr) {}
 	~LuaContext() { shutdown(); }
 
-	void init(RetroPlug* plug, RetroPlugProxy* proxy, const std::string& path);
+	void init(RetroPlugProxy* proxy, const std::string& path, const std::string& scriptPath);
 
 	void closeProject();
 

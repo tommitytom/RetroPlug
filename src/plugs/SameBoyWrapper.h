@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/DynamicLibraryMemory.h"
+#include "resources/resource.h"
 
 #define SAMEBOY_SYMBOLS(symb) getSymbols().symb
 

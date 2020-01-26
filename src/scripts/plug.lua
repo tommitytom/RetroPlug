@@ -194,6 +194,9 @@ function _saveProject(state, pretty)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			local inst = cloneFields(desc, { "emulatorType", "romPath", "savPath" })
 			inst.components = {}
+			inst.sameBoy = {
+
+			}
 
 			if state.buffers[i] ~= nil then
 				inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])

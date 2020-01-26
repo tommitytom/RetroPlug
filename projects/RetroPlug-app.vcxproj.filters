@@ -160,9 +160,6 @@
     <ClCompile Include="..\src\platform\FileDialog.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\util\Serializer.cpp">
-      <Filter>src\util</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\platform\Shell.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
@@ -286,9 +283,6 @@
     <ClCompile Include="..\src\model\EmulatorInstance.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlug.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\util\PaRingBuffer.c">
       <Filter>src\util</Filter>
     </ClCompile>
@@ -312,6 +306,9 @@
     </ClCompile>
     <ClCompile Include="..\src\model\CompiledLua.cpp">
       <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\platform\ResourceWin.cpp">
+      <Filter>src\platform</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -537,9 +534,6 @@
     <ClInclude Include="..\config\config.h">
       <Filter>config</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\util\Serializer.h">
-      <Filter>src\util</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\File.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -726,9 +720,6 @@
     <ClInclude Include="..\src\model\EmulatorInstance.h">
       <Filter>src\model</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\RetroPlug.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\MessageBus.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -867,6 +858,9 @@
     <ClInclude Include="..\src\platform\Platform.h">
       <Filter>src\platform</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\platform\Resource.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -963,9 +957,7 @@
     <None Include="..\resources\dlls\sameboy_retroplug-x64.dll">
       <Filter>resources</Filter>
     </None>
-    <None Include="..\resources\dlls\sameboy_retroplug-x86.dll">
-      <Filter>resources</Filter>
-    </None>
+    <None Include="..\resources\config.lua" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\resources\RetroPlug.ico">

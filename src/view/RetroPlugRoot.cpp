@@ -4,7 +4,6 @@
 #include "platform/FileDialog.h"
 #include "util/File.h"
 #include "util/fs.h"
-#include "util/Serializer.h"
 #include "util/cxxtimer.hpp"
 #include "Keys.h"
 
