@@ -10,7 +10,7 @@
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 
-RetroPlugView::RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
+RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
 			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {

@@ -8,13 +8,9 @@
 
 #include <iostream>
 
-namespace sol {
-	class state;
-};
+namespace sol { class state; };
 
-class RetroPlug;
-
-class LuaContext {
+class UiLuaContext {
 private:
 	sol::state* _state;
 	std::string _configPath;
@@ -26,8 +22,8 @@ private:
 	std::atomic_bool _reload = false;
 
 public:
-	LuaContext(): _state(nullptr) {}
-	~LuaContext() { shutdown(); }
+	UiLuaContext(): _state(nullptr) {}
+	~UiLuaContext() { shutdown(); }
 
 	void init(RetroPlugProxy* proxy, const std::string& path, const std::string& scriptPath);
 
@@ -61,10 +57,4 @@ public:
 
 private:
 	void setup();
-
-	bool runFile(const std::string& path);
-
-	bool runScript(const std::string& script, const char* error = nullptr);
-
-	bool requireComponent(const std::string& path);
 };

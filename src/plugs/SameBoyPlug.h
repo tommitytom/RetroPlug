@@ -19,10 +19,15 @@ const int FRAME_HEIGHT = 144;
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 
+struct SameBoyPlugDesc {
+	std::string romName;
+};
+
 class SameBoyPlug {
 private:
 	void* _instance = nullptr;
 
+	SameBoyPlugDesc _desc;
 	SameBoySettings _settings;
 
 	bool _midiSync = false;
@@ -37,6 +42,10 @@ private:
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
+
+	const SameBoyPlugDesc& getDesc() const { return _desc; }
+
+	void setDesc(const SameBoyPlugDesc& desc) { _desc = desc; }
 
 	void pressButtons(const StreamButtonPress* presses, size_t pressCount);
 
@@ -67,7 +76,7 @@ public:
 	 
 	void sendKeyboardByte(int offset, char byte);
 
-	void sendSerialByte(int offset, char byte, size_t bitCount = 8);
+	void sendSerialByte(int offset, int byte, size_t bitCount = 8);
 
 	void sendMidiBytes(int offset, const char* bytes, size_t count);
 

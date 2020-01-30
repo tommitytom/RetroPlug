@@ -21,7 +21,7 @@ using AxisButtons::AxisButton;
 
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
-RetroPlugController::RetroPlugController(): _listener(&_lua) {
+RetroPlugController::RetroPlugController(): _listener(&_uiLua, &_audioLua) {
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
@@ -41,13 +41,13 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
 
 	// Make sure the config script exists
-	fs::path contentDir = getContentPath();
-	fs::path configPath = contentDir.string() + "\\config.lua";
+	fs::path configDir = getContentPath(tstr(PLUG_VERSION_STR));
+	fs::path configPath = configDir.string() + "\\config.lua";
 	if (!fs::exists(configPath)) {
 		Resource res(IDR_DEFAULT_CONFIG, "LUA");
 		std::string_view data = res.getData();
 
-		fs::create_directories(contentDir);
+		fs::create_directories(configDir);
 		std::ofstream s(configPath, std::ios::binary);
 		assert(s.good());
 		s.write(data.data(), data.size());
@@ -55,13 +55,14 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 	}
 
 	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path() / "scripts";
-	_lua.init(&_proxy, contentDir.string(), scriptPath.string());
+	_uiLua.init(&_proxy, configDir.string(), scriptPath.string());
+	_audioLua.init(&_processingContext, configDir.string(), scriptPath.string());
 
 	if (fs::exists(scriptPath)) {
 		_scriptWatcher.addWatch(scriptPath.string(), &_listener, true);
 	}
 
-	_scriptWatcher.addWatch(contentDir.string(), &_listener, true);
+	_scriptWatcher.addWatch(configDir.string(), &_listener, true);
 }
 
 RetroPlugController::~RetroPlugController() {
@@ -81,10 +82,10 @@ void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHo
 	graphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
 	graphics->SetKeyHandlerFunc([&](const IKeyPress& key, bool isUp) {
-		return _lua.onKey(key, !isUp);
+		return _uiLua.onKey(key, !isUp);
 	});
 
-	_view = new RetroPlugView(graphics->GetBounds(), &_lua, &_proxy);
+	_view = new RetroPlugView(graphics->GetBounds(), &_uiLua, &_proxy);
 	graphics->AttachControl(_view);
 
 	_view->onFrame = [&](double delta) {
@@ -104,31 +105,31 @@ void RetroPlugController::processPad() {
 			if (_padButtons[l] == false) {
 				if (_padButtons[r] == true) {
 					_padButtons[r] = false;
-					_lua.onPadButton(r, false);
+					_uiLua.onPadButton(r, false);
 				}
 
 				_padButtons[l] = true;
-				_lua.onPadButton(l, true);
+				_uiLua.onPadButton(l, true);
 			}
 		} else if (val > AXIS_BUTTON_THRESHOLD) {
 			if (_padButtons[r] == false) {
 				if (_padButtons[l] == true) {
 					_padButtons[l] = false;
-					_lua.onPadButton(l, false);
+					_uiLua.onPadButton(l, false);
 				}
 
 				_padButtons[r] = true;
-				_lua.onPadButton(r, true);
+				_uiLua.onPadButton(r, true);
 			}
 		} else {
 			if (_padButtons[l] == true) {
 				_padButtons[l] = false;
-				_lua.onPadButton(l, false);
+				_uiLua.onPadButton(l, false);
 			}
 
 			if (_padButtons[r] == true) {
 				_padButtons[r] = false;
-				_lua.onPadButton(r, false);
+				_uiLua.onPadButton(r, false);
 			}
 		}
 	}
@@ -138,7 +139,7 @@ void RetroPlugController::processPad() {
 		bool down = _padManager->GetDevice(_padId)->GetBool(idx);
 		if (_padButtons[idx] != down) {
 			_padButtons[idx] = down;
-			_lua.onPadButton(idx, down);
+			_uiLua.onPadButton(idx, down);
 		}
 	}
 }

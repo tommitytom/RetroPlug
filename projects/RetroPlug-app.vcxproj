@@ -308,14 +308,17 @@
     <ClInclude Include="..\src\micromsg\types.h" />
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h" />
     <ClInclude Include="..\src\micromsg\variant_function.h" />
+    <ClInclude Include="..\src\model\AudioLuaContext.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
     <ClInclude Include="..\src\model\CompiledLua.h" />
     <ClInclude Include="..\src\model\EmulatorInstance.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
-    <ClInclude Include="..\src\model\LuaContext.h" />
+    <ClInclude Include="..\src\model\LuaHelpers.h" />
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
+    <ClInclude Include="..\src\model\RetroPlug.h" />
     <ClInclude Include="..\src\model\RetroPlugProxy.h" />
+    <ClInclude Include="..\src\model\UiLuaContext.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
@@ -547,17 +550,23 @@
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
+    <ClCompile Include="..\src\model\AudioLuaContext.cpp" />
     <ClCompile Include="..\src\model\CompiledLua.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
     <ClCompile Include="..\src\model\FileManager.cpp" />
-    <ClCompile Include="..\src\model\LuaContext.cpp">
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
-    </ClCompile>
+    <ClCompile Include="..\src\model\LuaHelpers.cpp" />
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
+    <ClCompile Include="..\src\model\UiLuaContext.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />

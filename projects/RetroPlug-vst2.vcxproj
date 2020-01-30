@@ -289,11 +289,13 @@
     <ClInclude Include="..\src\lsdj\kit.h" />
     <ClInclude Include="..\src\lsdj\rom.h" />
     <ClInclude Include="..\src\lsdj\sample.h" />
+    <ClInclude Include="..\src\model\AudioLuaContext.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
     <ClInclude Include="..\src\model\CompiledLua.h" />
     <ClInclude Include="..\src\model\EmulatorInstance.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
-    <ClInclude Include="..\src\model\LuaContext.h" />
+    <ClInclude Include="..\src\model\UiLuaContext.h" />
+    <ClInclude Include="..\src\model\LuaHelpers.h" />
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
     <ClInclude Include="..\src\model\RetroPlugProxy.h" />
@@ -543,10 +545,11 @@
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />
     <ClCompile Include="..\src\lsdj\sample.c" />
+    <ClCompile Include="..\src\model\AudioLuaContext.cpp" />
     <ClCompile Include="..\src\model\CompiledLua.cpp" />
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
     <ClCompile Include="..\src\model\FileManager.cpp" />
-    <ClCompile Include="..\src\model\LuaContext.cpp">
+    <ClCompile Include="..\src\model\UiLuaContext.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -554,6 +557,7 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <ClCompile Include="..\src\model\LuaHelpers.cpp" />
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />

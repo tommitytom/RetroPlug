@@ -138,6 +138,8 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
 
+	_controller.audioLua()->onMidi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+
 	/*auto plugs = _plug.plugs();
 	size_t count = _plug.instanceCount();
 

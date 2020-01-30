@@ -26,7 +26,7 @@ private:
 	IPopupMenu _menu;
 	EHost _host;
 
-	LuaContext* _lua;
+	UiLuaContext* _lua;
 
 	cxxtimer::Timer _frameTimer;
 
@@ -34,7 +34,7 @@ public:
 	std::function<void(double)> onFrame;
 
 public:
-	RetroPlugView(IRECT b, LuaContext* lua, RetroPlugProxy* plug);
+	RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* plug);
 	~RetroPlugView();
 
 	EmulatorView* GetActiveView() {

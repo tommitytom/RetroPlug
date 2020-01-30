@@ -2,29 +2,16 @@ require("component")
 require("constants")
 require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
+require("Action")
+require("Print")
+local cm = require("ComponentManager")
+
 local inspect = require("inspect")
 local pathutil = require("pathutil")
 local serpent = require("serpent")
 local json = require("json")
 
 local _PROJECT_VERSION = "1.0.0"
-
-Action = {}
-setmetatable(Action, {
-	__index = function(table, componentName)
-		local actionNameTable = {}
-		setmetatable(actionNameTable, {
-			__index = function(table, actionName)
-				return {
-					component = componentName,
-					action = actionName
-				}
-			end
-		})
-
-		return actionNameTable
-	end
-})
 
 local MAX_INSTANCES = 4
 
@@ -35,12 +22,7 @@ local _keyState = {}
 
 local _globalComponents = {}
 
-local _componentFactory = {
-	instance = {},
-	global = {}
-}
-
-local function componentInputRoute(target, ...)
+--[[local function componentInputRoute(target, ...)
 	local handled = false
 	for _, v in ipairs(_globalComponents) do
 		local found = v[target]
@@ -61,46 +43,14 @@ local function componentInputRoute(target, ...)
 	end
 
 	return handled
-end
-
-local function findInstanceComponents(emulatorDesc, buttons)
-	local components = {}
-	for _, v in ipairs(_componentFactory.instance) do
-		local d = v.__desc
-		if d.romName == nil or emulatorDesc.romName:find(d.romName) ~= nil then
-			print("Attaching component " .. d.name)
-			table.insert(components, v.new(emulatorDesc, buttons))
-		end
-	end
-
-	return components
-end
-
-local function runComponentHandler(components, handlerName, ...)
-	for _, component in ipairs(components) do
-		local found = component[handlerName]
-		if found ~= nil then found(component, ...) end
-	end
-end
+end]]
 
 function _loadComponent(name)
-	local component = require(name)
-	if component ~= nil then
-		print("Registered component: " .. component.__desc.name)
-		if component.__desc.global == true then
-			table.insert(_componentFactory.global, component)
-		else
-			table.insert(_componentFactory.instance, component)
-		end
-	else
-		print("Failed to load " .. name .. ": Script does not return a component")
-	end
+	cm.loadComponent(name)
 end
 
 function _init()
-	for _, v in ipairs(_componentFactory.global) do
-		table.insert(_globalComponents, v.new())
-	end
+	cm.createGlobalComponents()
 
 	for i = 1, MAX_INSTANCES, 1 do
 		local desc = _proxy:getInstance(i - 1)
@@ -108,7 +58,7 @@ function _init()
 			local buttons = _proxy:buttons(i - 1)
 			local instance = {
 				desc = desc,
-				components = findInstanceComponents(desc, buttons),
+				components = cm.createComponents(desc, desc, buttons),
 				buttons = buttons
 			}
 
@@ -122,8 +72,8 @@ function _init()
 	end
 
 	for _, instance in ipairs(_instances) do
-		runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
-		runComponentHandler(instance.components, "onReload", instance.desc)
+		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
+		cm.runAllHandlers("onReload", instance.components, instance.desc)
 	end
 end
 
@@ -164,7 +114,7 @@ function _duplicateInstance(idx)
 		table.insert(_instances, instance)
 		_setActive(#_instances - 1)
 
-		runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
+		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 	end
 end
 
@@ -417,12 +367,12 @@ function _loadRom(desc)
 		end
 	end
 
-	instance.components = findInstanceComponents(desc, instance.buttons)
+	instance.components = cm.createComponents(desc, desc, instance.buttons)
 
-	runComponentHandler(instance.components, "onComponentsInitialized", instance.components)
-	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
+	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
+	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.desc)
 	_proxy:setInstance(desc)
-	runComponentHandler(instance.components, "onRomLoad", instance.desc)
+	cm.runAllHandlers("onRomLoad", instance.components, instance.desc)
 
 	if _activeIdx == 0 then
 		_setActive(0)
@@ -461,6 +411,12 @@ function _frame(delta)
 
 end
 
+local function componentInputRoute(name, ...)
+	local components
+	if Active ~= nil then components = Active.components end
+	cm.runAllHandlers(name, components, ...)
+end
+
 function _onKey(key, down)
 	local vk = key.vk
 	if down == true then
@@ -497,12 +453,3 @@ Action.RetroPlug = {
 		end
 	end
 }
-
-print = function(...)
-	for i, a in ipairs({...}) do
-		if i > 1 then _consolePrint("\t") end
-		_consolePrint(tostring(a))
-	end
-
-	_consolePrint("\r\n")
-end

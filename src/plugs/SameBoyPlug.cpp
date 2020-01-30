@@ -140,7 +140,7 @@ void SameBoyPlug::sendKeyboardByte(int offset, char byte) {
 	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0x01, 2);
 }
 
-void SameBoyPlug::sendSerialByte(int offset, char byte, size_t bitCount) {
+void SameBoyPlug::sendSerialByte(int offset, int byte, size_t bitCount) {
 	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, bitCount);
 }
 

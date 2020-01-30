@@ -171,6 +171,8 @@ public:
 			plug->loadBattery(t.sourceSavData->data(), t.sourceSavData->size(), false);
 		}
 
+		plug->setDesc({ instance.romName });
+
 		InstanceSwapDesc swap = { t.idx, plug };
 		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
 			t.state = EmulatorInstanceState::Running;

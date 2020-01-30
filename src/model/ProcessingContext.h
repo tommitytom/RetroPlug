@@ -33,6 +33,10 @@ public:
 	}
 	~ProcessingContext() {}
 
+	SameBoyPlugPtr& getInstance(InstanceIndex idx) { return _instances[idx]; }
+
+	const Project::Settings& getSettings() const { return _settings; }
+
 	void setAudioSettings(const AudioSettings& settings) {
 		for (size_t i = 0; i < _instances.size(); ++i) {
 			if (_instances[i]) {

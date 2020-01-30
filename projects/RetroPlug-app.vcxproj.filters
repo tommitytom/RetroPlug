@@ -295,9 +295,6 @@
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp">
       <Filter>src\view</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\LuaContext.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\model\FileManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
@@ -309,6 +306,15 @@
     </ClCompile>
     <ClCompile Include="..\src\platform\ResourceWin.cpp">
       <Filter>src\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\UiLuaContext.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\LuaHelpers.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\model\AudioLuaContext.cpp">
+      <Filter>src\model</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -741,9 +747,6 @@
     <ClInclude Include="..\src\view\RetroPlugRoot.h">
       <Filter>src\view</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\LuaContext.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\model\FileManager.h">
       <Filter>src\model</Filter>
     </ClInclude>
@@ -860,6 +863,18 @@
     </ClInclude>
     <ClInclude Include="..\src\platform\Resource.h">
       <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\UiLuaContext.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\LuaHelpers.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\AudioLuaContext.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\model\RetroPlug.h">
+      <Filter>src\model</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

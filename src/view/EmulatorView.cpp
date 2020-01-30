@@ -11,7 +11,7 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
-EmulatorView::EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics)
+EmulatorView::EmulatorView(InstanceIndex idx, UiLuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics)
 	: _index(idx), _graphics(graphics), _lua(lua), _proxy(proxy)
 {
 	/*_settings = {

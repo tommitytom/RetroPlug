@@ -9,7 +9,7 @@
 #include "ContextMenu.h"
 #include "util/RomWatcher.h"
 
-#include "model/LuaContext.h"
+#include "model/UiLuaContext.h"
 #include "model/RetroPlugProxy.h"
 
 #include <map>
@@ -34,7 +34,7 @@ private:
 	bool _frameDirty = false;
 
 	InstanceIndex _index;
-	LuaContext* _lua;
+	UiLuaContext* _lua;
 	RetroPlugProxy* _proxy;
 
 	IRECT _area;
@@ -46,7 +46,7 @@ private:
 	int _zoom = 2;
 
 public:
-	EmulatorView(InstanceIndex idx, LuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics);
+	EmulatorView(InstanceIndex idx, UiLuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics);
 	~EmulatorView();
 
 	void SetZoom(int zoom) { _zoom = zoom; }
