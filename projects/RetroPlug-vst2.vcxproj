@@ -151,7 +151,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -168,7 +168,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -191,7 +191,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -213,7 +213,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -238,7 +238,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -259,7 +259,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;RAPIDJSON_HAS_STDSTRING=1;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -296,7 +296,6 @@
     <ClInclude Include="..\src\model\LuaContext.h" />
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
-    <ClInclude Include="..\src\model\RetroPlug.h" />
     <ClInclude Include="..\src\model\RetroPlugProxy.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
@@ -305,6 +304,7 @@
     <ClInclude Include="..\src\platform\MemoryModule.h" />
     <ClInclude Include="..\src\platform\Path.h" />
     <ClInclude Include="..\src\platform\Platform.h" />
+    <ClInclude Include="..\src\platform\Resource.h" />
     <ClInclude Include="..\src\platform\Shell.h" />
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
@@ -318,7 +318,6 @@
     <ClInclude Include="..\src\util\PaRingBuffer.h" />
     <ClInclude Include="..\src\util\RingBuffer.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
-    <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\xstring.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
     <ClInclude Include="..\src\view\EmulatorView.h" />
@@ -555,11 +554,11 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlug.cpp" />
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
+    <ClCompile Include="..\src\platform\ResourceWin.cpp" />
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
@@ -568,7 +567,6 @@
     <ClCompile Include="..\src\util\crc32.cpp" />
     <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\src\util\PaRingBuffer.c" />
-    <ClCompile Include="..\src\util\Serializer.cpp" />
     <ClCompile Include="..\src\view\ContextMenu.cpp" />
     <ClCompile Include="..\src\view\EmulatorView.cpp" />
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />

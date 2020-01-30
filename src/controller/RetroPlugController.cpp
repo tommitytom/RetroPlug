@@ -54,9 +54,13 @@ RetroPlugController::RetroPlugController(): _listener(&_lua) {
 		s.close();
 	}
 
-	const std::string path = "../src/scripts";
-	_lua.init(&_proxy, contentDir.string(), path);
-	_scriptWatcher.addWatch(path, &_listener, true);
+	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path() / "scripts";
+	_lua.init(&_proxy, contentDir.string(), scriptPath.string());
+
+	if (fs::exists(scriptPath)) {
+		_scriptWatcher.addWatch(scriptPath.string(), &_listener, true);
+	}
+
 	_scriptWatcher.addWatch(contentDir.string(), &_listener, true);
 }
 

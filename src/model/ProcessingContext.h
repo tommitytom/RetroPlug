@@ -34,6 +34,12 @@ public:
 	~ProcessingContext() {}
 
 	void setAudioSettings(const AudioSettings& settings) {
+		for (size_t i = 0; i < _instances.size(); ++i) {
+			if (_instances[i]) {
+				_instances[i]->setSampleRate(settings.sampleRate);
+			}
+		}
+
 		_audioSettings = settings;
 	}
 
@@ -49,8 +55,10 @@ public:
 			_instances[d.idx]->setSampleRate(_audioSettings.sampleRate);
 
 			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
-			_audioBuffers[d.idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-			_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
+			if (_audioSettings.frameCount > 0) {
+				_audioBuffers[d.idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
+				_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
+			}
 		});
 
 		node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {
@@ -59,8 +67,10 @@ public:
 			_instances[d.targetIdx]->setSampleRate(_audioSettings.sampleRate);
 
 			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
-			_audioBuffers[d.targetIdx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-			_audioBuffers[d.targetIdx].frameCount = _audioSettings.frameCount;
+			if (_audioSettings.frameCount > 0) {
+				_audioBuffers[d.targetIdx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
+				_audioBuffers[d.targetIdx].frameCount = _audioSettings.frameCount;
+			}
 
 			SameBoyPlugPtr source = _instances[d.sourceIdx];
 			char* sourceState = new char[source->saveStateSize()];
@@ -75,9 +85,9 @@ public:
 			_instances.push_back(nullptr);
 
 			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-				if (!_instances[idx]) {
-					_audioBuffers[idx].data = nullptr;
-					_audioBuffers[idx].frameCount = 0;
+				if (!_instances[i]) {
+					_audioBuffers[i].data = nullptr;
+					_audioBuffers[i].frameCount = 0;
 				}
 			}
 		});
@@ -106,15 +116,25 @@ public:
 
 		node->on<calls::PressButtons>([&](const ButtonStream<32>& presses) {
 			for (size_t i = 0; i < presses.pressCount; ++i) {
-				std::cout << ButtonTypes::toString((ButtonType)presses.presses[i].button) << "\t" << presses.presses[i].down << "\t" << presses.presses[i].duration << std::endl;
+				//std::cout << ButtonTypes::toString((ButtonType)presses.presses[i].button) << "\t" << presses.presses[i].down << "\t" << presses.presses[i].duration << std::endl;
 			}
 
 			_instances[presses.idx]->pressButtons(presses.presses.data(), presses.pressCount);
 		});
 	}
 
-	void process(float** outputs) {
+	void process(float** outputs, size_t frameCount) {
 		_node->pull();
+
+		if (frameCount != _audioSettings.frameCount) {
+			_audioSettings.frameCount = frameCount;
+			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+				if (_instances[i]) {
+					_audioBuffers[i].data = std::make_shared<DataBuffer<float>>(frameCount * 2);
+					_audioBuffers[i].frameCount = frameCount;
+				}
+			}
+		}
 
 		SameBoyPlug* plugs[MAX_INSTANCES] = { nullptr };
 		SameBoyPlug* linkedPlugs[MAX_INSTANCES] = { nullptr };

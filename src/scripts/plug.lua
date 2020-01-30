@@ -7,6 +7,8 @@ local pathutil = require("pathutil")
 local serpent = require("serpent")
 local json = require("json")
 
+local _PROJECT_VERSION = "1.0.0"
+
 Action = {}
 setmetatable(Action, {
 	__index = function(table, componentName)
@@ -166,6 +168,25 @@ function _duplicateInstance(idx)
 	end
 end
 
+local ProjectSettingsFields = {
+	audioRouting = AudioChannelRouting,
+	midiRouting = MidiChannelRouting,
+	layout = InstanceLayout,
+	saveType = SaveStateType,
+	"zoom"
+}
+
+local InstanceSettingsFields = {
+	emulatorType = EmulatorType,
+	"romPath",
+	"savPath"
+}
+
+local SameBoySettingsFields = {
+	model = GameboyModel,
+	"gameLink"
+}
+
 local function cloneFields(source, fields, target)
 	if target == nil then
 		target = {}
@@ -178,13 +199,57 @@ local function cloneFields(source, fields, target)
 	return target
 end
 
+local function toEnumString(enumType, value)
+	local idx = getmetatable(enumType).__index
+	for k, v in pairs(idx) do
+		if value == v then return k end
+	end
+end
+
+local function fromEnumString(enumType, value)
+	local v = enumType[value]
+	if v ~= nil then
+		return v
+	end
+
+	local vl = value:sub(1, 1):upper() .. value:sub(2)
+	return enumType[vl]
+end
+
+local function cloneEnumFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		else
+			target[k] = toEnumString(v, obj[k])
+		end
+	end
+
+	return target
+end
+
+local function cloneStringFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		else
+			target[k] = fromEnumString(v, obj[k])
+		end
+	end
+
+	return target
+end
+
 function _saveProject(state, pretty)
 	local proj = _proxy:getProject()
 
 	local t = {
-		version = _RETROPLUG_VERSION,
+		retroPlugVersion = _RETROPLUG_VERSION,
+		projectVersion = _PROJECT_VERSION,
 		path = proj.path,
-		settings = cloneFields(proj.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }),
+		settings = cloneEnumFields(proj.settings, ProjectSettingsFields),
 		instances = {},
 		files = {}
 	}
@@ -192,11 +257,9 @@ function _saveProject(state, pretty)
 	for i = 1, MAX_INSTANCES, 1 do
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			local inst = cloneFields(desc, { "emulatorType", "romPath", "savPath" })
+			local inst = cloneEnumFields(desc, InstanceSettingsFields)
 			inst.components = {}
-			inst.sameBoy = {
-
-			}
+			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
 
 			if state.buffers[i] ~= nil then
 				inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])
@@ -221,20 +284,49 @@ function _saveProjectToFile(state, pretty)
 	file:close()
 end
 
-local function loadProject010(projectData)
-end
-
-local function loadProject020(projectData)
+local function loadProject_rp010(projectData)
 	local fm = _proxy:fileManager()
 	local proj = _proxy:getProject()
-	cloneFields(projectData.settings, { "audioRouting", "midiRouting", "layout", "zoom", "saveType" }, proj.settings)
+	cloneStringFields(projectData, ProjectSettingsFields, proj.settings)
+
 	_proxy:updateSettings()
 
 	for _, inst in ipairs(projectData.instances) do
 		local desc = EmulatorInstanceDesc.new()
 		desc.idx = -1
 		desc.fastBoot = true
-		cloneFields(inst, { "emulatorType", "romPath", "savPath" }, desc)
+		cloneStringFields(inst, InstanceSettingsFields, desc)
+		cloneStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
+		desc.savPath = inst.lastSramPath
+
+		local romFile = fm:loadFile(inst.romPath, false)
+		if romFile ~= nil then
+			desc.sourceRomData = romFile.data
+			local state = base64.decodeBuffer(inst.state.data)
+
+			if proj.settings.saveType == SaveStateType.Sram then
+				desc.sourceSavData = state
+			elseif proj.settings.saveType == SaveStateType.State then
+				desc.sourceStateData = state
+			end
+
+			_loadRom(desc)
+		end
+	end
+end
+
+local function loadProject_100(projectData)
+	local fm = _proxy:fileManager()
+	local proj = _proxy:getProject()
+	cloneStringFields(projectData.settings, ProjectSettingsFields, proj.settings)
+	_proxy:updateSettings()
+
+	for _, inst in ipairs(projectData.instances) do
+		local desc = EmulatorInstanceDesc.new()
+		desc.idx = -1
+		desc.fastBoot = true
+		cloneStringFields(inst, InstanceSettingsFields, desc)
+		cloneStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
 
 		local romFile = fm:loadFile(inst.romPath, false)
 		if romFile ~= nil then
@@ -273,9 +365,9 @@ function _loadProject(path)
 	_proxy:getProject().path = path
 
 	if projectData.version == "0.1.0" then
-		loadProject010(projectData)
-	elseif projectData.version == "0.2.0" then
-		loadProject020(projectData)
+		loadProject_rp010(projectData)
+	elseif projectData.projectVersion == "1.0.0" then
+		loadProject_100(projectData)
 	else
 		-- Version not supported!
 	end
@@ -293,6 +385,7 @@ function _loadRomAtPath(idx, romPath, savPath)
 	local d = EmulatorInstanceDesc.new()
 	d.idx = idx
 	d.emulatorType = EmulatorType.SameBoy
+	d.state = EmulatorInstanceState.Initialized
 	d.romPath = romPath
 	d.sourceRomData = romFile.data
 
@@ -330,6 +423,10 @@ function _loadRom(desc)
 	runComponentHandler(instance.components, "onBeforeRomLoad", instance.desc)
 	_proxy:setInstance(desc)
 	runComponentHandler(instance.components, "onRomLoad", instance.desc)
+
+	if _activeIdx == 0 then
+		_setActive(0)
+	end
 end
 
 function _closeProject()
@@ -352,9 +449,12 @@ function _findRom(idx, path)
 end
 
 function _setActive(idx)
-	_activeIdx = idx + 1
-	Active = _instances[_activeIdx]
-	_proxy:setActiveInstance(idx)
+	local inst = _instances[idx + 1]
+	if inst ~= nil and (inst.desc.state == EmulatorInstanceState.Initialized or inst.desc.state == EmulatorInstanceState.Running) then
+		_activeIdx = idx + 1
+		Active = _instances[_activeIdx]
+		_proxy:setActiveInstance(idx)
+	end
 end
 
 function _frame(delta)
@@ -397,3 +497,12 @@ Action.RetroPlug = {
 		end
 	end
 }
+
+print = function(...)
+	for i, a in ipairs({...}) do
+		if i > 1 then _consolePrint("\t") end
+		_consolePrint(tostring(a))
+	end
+
+	_consolePrint("\r\n")
+end

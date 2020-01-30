@@ -133,9 +133,6 @@
     <ClCompile Include="..\src\lsdj\kit.c">
       <Filter>src\lsdj</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\util\Serializer.cpp">
-      <Filter>src\util</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\platform\FileDialog.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
@@ -277,9 +274,6 @@
     <ClCompile Include="..\src\model\LuaContext.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlug.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\model\CompiledLua.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
@@ -288,6 +282,9 @@
     </ClCompile>
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
       <Filter>src\model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\platform\ResourceWin.cpp">
+      <Filter>src\platform</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -476,9 +473,6 @@
     </ClInclude>
     <ClInclude Include="..\config\config.h">
       <Filter>config</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\util\Serializer.h">
-      <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="..\src\util\base64.h">
       <Filter>src\util</Filter>
@@ -693,9 +687,6 @@
     <ClInclude Include="..\src\model\LuaContext.h">
       <Filter>src\model</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\RetroPlug.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\model\CompiledLua.h">
       <Filter>src\model</Filter>
     </ClInclude>
@@ -718,6 +709,9 @@
       <Filter>src\controller</Filter>
     </ClInclude>
     <ClInclude Include="..\src\platform\Platform.h">
+      <Filter>src\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\platform\Resource.h">
       <Filter>src\platform</Filter>
     </ClInclude>
   </ItemGroup>

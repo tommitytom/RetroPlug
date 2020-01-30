@@ -22,12 +22,12 @@ bool validateResult(const sol::protected_function_result& result, const std::str
 	if (!result.valid()) {
 		sol::error err = result;
 		std::string what = err.what();
-		std::cout << prefix;
+		consoleLog(prefix);
 		if (!name.empty()) {
-			std::cout << " " << name;
+			consoleLog(" " + name);
 		}
 		
-		std::cout << ": " << what << std::endl;
+		consoleLogLine(": " + what);
 		return false;
 	}
 
@@ -128,7 +128,7 @@ void LuaContext::shutdown() {
 }
 
 void LuaContext::setup() {
-	std::cout << "------------------------------------------" << std::endl;
+	consoleLogLine("------------------------------------------");
 
 	_state = new sol::state();
 	sol::state& s = *_state;
@@ -139,10 +139,10 @@ void LuaContext::setup() {
 	packagePath += ";" + _configPath + "/?.lua";
 
 #ifdef COMPILE_LUA_SCRIPTS
-	std::cout << "Using precompiled lua scripts" << std::endl;
+	consoleLogLine("Using precompiled lua scripts");
 	s.add_package_loader(compiledScriptLoader);
 #else
-	std::cout << "Loading lua scripts from disk" << std::endl;
+	consoleLogLine("Loading lua scripts from disk");
 	packagePath += ";" + _scriptPath + "/?.lua";
 #endif
 
@@ -294,19 +294,21 @@ void LuaContext::setup() {
 
 	s["_proxy"].set(_proxy);
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
+	s["_consolePrint"].set_function([](const std::string& s) { consoleLog(s); });
 
 	if (!runScript("require('plug')")) {
 		return;
 	}
 
-	std::cout << "Looking for components..." << std::endl;
+
+	consoleLogLine("Looking for components...");
 
 #ifdef COMPILE_LUA_SCRIPTS
 	const std::vector<const char*>& names = getScriptNames();
 	for (size_t i = 0; i < names.size(); ++i) {
 		std::string_view name = names[i];
 		if (name.substr(0, 10) == "components") {
-			std::cout << "Loading " << name << "... ";
+			consoleLog("Loading " + std::string(name) + "... ");
 			requireComponent(std::string(name));
 		}
 	}
@@ -314,12 +316,12 @@ void LuaContext::setup() {
 	for (const auto& entry : fs::directory_iterator(_scriptPath + "/components/")) {
 		fs::path p = entry.path();
 		std::string name = p.replace_extension("").filename().string();
-		std::cout << "Loading " << name << ".lua... ";
+		consoleLog("Loading " + name + ".lua... ");
 		requireComponent("components." + name);
 	}
 #endif
 
-	std::cout << "Finished loading components" << std::endl;
+	consoleLogLine("Finished loading components");
 
 	runFile(_configPath + "/config.lua");
 	runScript("_init()");

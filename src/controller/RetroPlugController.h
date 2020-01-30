@@ -21,7 +21,7 @@ public:
 
 	void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
 		fs::path p(filename);
-		if (p.extension() == "lua") {
+		if (p.extension() == ".lua") {
 			std::cout << "Reloading..." << std::endl;
 			if (_context) {
 				_context->reload();

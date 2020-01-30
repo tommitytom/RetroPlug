@@ -41,7 +41,7 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 	}
 
 	ProcessingContext* context = _controller.processingContext();
-	context->process(outputs);
+	context->process(outputs, (size_t)frameCount);
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -323,7 +323,7 @@ void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrumen
 }
 
 void RetroPlugInstrument::OnReset() {
-	AudioSettings settings = { NOutChansConnected(), GetBlockSize(), GetSampleRate() };
+	AudioSettings settings = { NOutChansConnected(), 0, GetSampleRate() };
 	_controller.processingContext()->setAudioSettings(settings);
 }
 #endif

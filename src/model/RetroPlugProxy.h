@@ -177,7 +177,8 @@ public:
 		});
 	}
 
-	void removeInstance(size_t idx) {
+	void removeInstance(InstanceIndex idx) {
+		assert(idx != NO_ACTIVE_INSTANCE);
 		_project.instances.erase(_project.instances.begin() + idx);
 		_project.instances.push_back(EmulatorInstanceDesc());
 		updateIndices();

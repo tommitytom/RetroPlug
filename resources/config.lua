@@ -13,6 +13,18 @@ GlobalKeyMap({
 	[Key.Tab] = Action.RetroPlug.NextInstance
 })
 
+-- Keys and shortcuts specific to LSDj
+KeyMap({ romName = "LSDj*" }, {
+	[{ Key.Ctrl, Key.X }] = Action.Lsdj.Cut,
+	[{ Key.Ctrl, Key.C }] = Action.Lsdj.Copy,
+	[{ Key.Ctrl, Key.V }] = Action.Lsdj.Paste,
+	[Key.Delete] = Action.Lsdj.Delete,
+	[Key.PageDown] = Action.Lsdj.DownTenRows,
+	[Key.PageUp] = Action.Lsdj.UpTenRows,
+	[Key.Shift] = Action.Lsdj.BeginSelection,
+	[Key.Esc] = Action.Lsdj.CancelSelection,
+})
+
 PadMap({
 	[Pad.A] = Button.B,
 	[Pad.B] = Button.A,
@@ -30,18 +42,6 @@ PadMap({
 
 GlobalPadMap({
 	[Pad.Y] = Action.RetroPlug.NextInstance
-})
-
--- Keys and shortcuts specific to LSDj
-KeyMap({ romName = "LSDj*" }, {
-	[{ Key.Ctrl, Key.X }] = Action.Lsdj.Cut,
-	[{ Key.Ctrl, Key.C }] = Action.Lsdj.Copy,
-	[{ Key.Ctrl, Key.V }] = Action.Lsdj.Paste,
-	[Key.Delete] = Action.Lsdj.Delete,
-	[Key.PageDown] = Action.Lsdj.DownTenRows,
-	[Key.PageUp] = Action.Lsdj.UpTenRows,
-	[Key.Shift] = Action.Lsdj.BeginSelection,
-	[Key.Esc] = Action.Lsdj.CancelSelection,
 })
 
 -- Gamepad button presses specific to LSDj
