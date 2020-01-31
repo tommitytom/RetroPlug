@@ -230,6 +230,11 @@ const void* LoadWinResource(const char* resid, const char* type, int& sizeInByte
   }
 }
 
+bool AppIsSandboxed()
+{
+  return false;
+}
+
 #elif defined OS_WEB
 #pragma mark - OS_WEB
 
@@ -238,7 +243,7 @@ void AppSupportPath(WDL_String& path, bool isSystem)
   path.Set("Settings");
 }
 
-void SandboxSafeAppSupportPath(WDL_String& path)
+void SandboxSafeAppSupportPath(WDL_String& path, const char* appGroupID)
 {
   path.Set("Settings");
 }
@@ -283,6 +288,11 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
     }
   }
   return EResourceLocation::kNotFound;
+}
+
+bool AppIsSandboxed()
+{
+  return true;
 }
 
 #endif
