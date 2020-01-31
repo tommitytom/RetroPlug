@@ -10,6 +10,7 @@
 
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/vstspeaker.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
 
 #include "IPlugVST3_ProcessorBase.h"
 
@@ -18,12 +19,12 @@ using namespace Steinberg;
 using namespace Vst;
 
 #ifndef CUSTOM_BUSTYPE_FUNC
-uint64_t iplug::GetAPIBusTypeForChannelIOConfig(int configIdx, ERoute dir, int busIdx, IOConfig* pConfig)
+uint64_t iplug::GetAPIBusTypeForChannelIOConfig(int configIdx, ERoute dir, int busIdx, const IOConfig* pConfig)
 {
   assert(pConfig != nullptr);
   assert(busIdx >= 0 && busIdx < pConfig->NBuses(dir));
   
-  int numChans = pConfig->GetBusInfo(dir, busIdx)->mNChans;
+  int numChans = pConfig->GetBusInfo(dir, busIdx)->NChans();
   
   switch (numChans)
   {
@@ -64,19 +65,17 @@ IPlugVST3ProcessorBase::IPlugVST3ProcessorBase(Config c, IPlugAPIBase& plug)
   memset(&mProcessContext, 0, sizeof(ProcessContext));
 }
 
-void IPlugVST3ProcessorBase::ProcessMidiIn(IEventList* eventList, IPlugQueue<IMidiMsg>& editorQueue, IPlugQueue<IMidiMsg>& processorQueue)
+void IPlugVST3ProcessorBase::ProcessMidiIn(IEventList* pEventList, IPlugQueue<IMidiMsg>& editorQueue, IPlugQueue<IMidiMsg>& processorQueue)
 {
   IMidiMsg msg;
-  
-  // Process events.. only midi note on and note off?
-  
-  if (eventList)
+    
+  if (pEventList)
   {
-    int32 numEvent = eventList->getEventCount();
+    int32 numEvent = pEventList->getEventCount();
     for (int32 i=0; i<numEvent; i++)
     {
       Event event;
-      if (eventList->getEvent(i, event) == kResultOk)
+      if (pEventList->getEvent(i, event) == kResultOk)
       {
         switch (event.type)
         {
@@ -106,7 +105,6 @@ void IPlugVST3ProcessorBase::ProcessMidiIn(IEventList* eventList, IPlugQueue<IMi
           {
             ISysEx syx = ISysEx(event.sampleOffset, event.data.bytes, event.data.size);
             ProcessSysEx(syx);
-            //mSysexMsgsFromProcessor.Push
             break;
           }
         }
@@ -120,10 +118,9 @@ void IPlugVST3ProcessorBase::ProcessMidiIn(IEventList* eventList, IPlugQueue<IMi
   }
 }
 
-void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, SysExData& sysExBuf, IEventList* outputEvents, int32 numSamples)
+void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, SysExData& sysExBuf, IEventList* pOutputEvents, int32 numSamples)
 {
-  // MIDI
-  if (!mMidiOutputQueue.Empty() && outputEvents)
+  if (!mMidiOutputQueue.Empty() && pOutputEvents)
   {
     Event toAdd = {0};
     IMidiMsg msg;
@@ -142,7 +139,7 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
         toAdd.noteOn.length = -1;
         toAdd.noteOn.noteId = -1; // TODO ?
         toAdd.sampleOffset = msg.mOffset;
-        outputEvents->addEvent(toAdd);
+        pOutputEvents->addEvent(toAdd);
       }
       else if (msg.StatusMsg() == IMidiMsg::kNoteOff)
       {
@@ -152,7 +149,7 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
         toAdd.noteOff.velocity = (float) msg.Velocity() * (1.f / 127.f);
         toAdd.noteOff.noteId = -1; // TODO ?
         toAdd.sampleOffset = msg.mOffset;
-        outputEvents->addEvent(toAdd);
+        pOutputEvents->addEvent(toAdd);
       }
       else if (msg.StatusMsg() == IMidiMsg::kPolyAftertouch)
       {
@@ -162,7 +159,7 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
         toAdd.polyPressure.pressure = (float) msg.PolyAfterTouch() * (1.f / 127.f);
         toAdd.polyPressure.noteId = -1; // TODO ?
         toAdd.sampleOffset = msg.mOffset;
-        outputEvents->addEvent(toAdd);
+        pOutputEvents->addEvent(toAdd);
       }
       else if (msg.StatusMsg() == IMidiMsg::kControlChange)
       {
@@ -181,7 +178,6 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
       }
       
       mMidiOutputQueue.Remove();
-      // don't add any midi messages other than noteon/noteoff
     }
   }
   
@@ -199,12 +195,12 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
       toAdd.data.type = DataEvent::kMidiSysEx;
       toAdd.data.size = sysExBuf.mSize;
       toAdd.data.bytes = (uint8*) sysExBuf.mData; // TODO!  this is a problem if more than one message in this block!
-      outputEvents->addEvent(toAdd);
+      pOutputEvents->addEvent(toAdd);
     }
   }
 }
 
-void IPlugVST3ProcessorBase::SetBusArrangments(SpeakerArrangement* pInputBusArrangements, int32 numInBuses, SpeakerArrangement* pOutputBusArrangements, int32 numOutBuses)
+void IPlugVST3ProcessorBase::SetBusArrangements(SpeakerArrangement* pInputBusArrangements, int32 numInBuses, SpeakerArrangement* pOutputBusArrangements, int32 numOutBuses)
 {
   // disconnect all io pins, they will be reconnected in process
   SetChannelConnections(ERoute::kInput, 0, MaxNChannels(ERoute::kInput), false);
@@ -268,6 +264,14 @@ bool IPlugVST3ProcessorBase::SetupProcessing(const ProcessSetup& setup, ProcessS
   IPlugProcessor::SetBlockSize(setup.maxSamplesPerBlock); // TODO: should IPlugVST3Processor call SetBlockSize in construct unlike other APIs?
   mMidiOutputQueue.Resize(setup.maxSamplesPerBlock);
   OnReset();
+  
+  return true;
+}
+
+bool IPlugVST3ProcessorBase::SetProcessing(bool state)
+{
+  if (!state)
+    OnReset();
   
   return true;
 }
@@ -349,10 +353,33 @@ void IPlugVST3ProcessorBase::ProcessParameterChanges(ProcessData& data)
             {
               if (idx >= 0 && idx < mPlug.NParams())
               {
-                ENTER_PARAMS_MUTEX;
-                mPlug.GetParam(idx)->SetNormalized((double)value); // TODO: In VST3 non distributed the same parameter value is also set via IPlugVST3Controller::setParamNormalized(ParamID tag, ParamValue value)
+#ifdef PARAMS_MUTEX
+                mPlug.mParams_mutex.Enter();
+#endif
+                mPlug.GetParam(idx)->SetNormalized(value);
+              
+                // In VST3 non distributed the same parameter value is also set via IPlugVST3Controller::setParamNormalized(ParamID tag, ParamValue value)
                 mPlug.OnParamChange(idx, kHost, offsetSamples);
-                LEAVE_PARAMS_MUTEX;
+#ifdef PARAMS_MUTEX
+                mPlug.mParams_mutex.Leave();
+#endif
+              }
+              else if (idx >= kMIDICCParamStartIdx)
+              {
+                int index = idx - kMIDICCParamStartIdx;
+                int channel = index / kCountCtrlNumber;
+                int ctrlr = index % kCountCtrlNumber;
+
+                IMidiMsg msg;
+
+                if (ctrlr == kAfterTouch)
+                  msg.MakeChannelATMsg((int) (value * 127.), offsetSamples, channel);
+                else if (ctrlr == kPitchBend)
+                  msg.MakePitchWheelMsg((value * 2.)-1., channel, offsetSamples);
+                else
+                  msg.MakeControlChangeMsg((IMidiMsg::EControlChangeMsg) ctrlr, value, channel, offsetSamples);
+
+                ProcessMidiMsg(msg);
               }
             }
               break;
@@ -419,10 +446,16 @@ void IPlugVST3ProcessorBase::ProcessAudio(ProcessData& data, ProcessSetup& setup
     }
     else
     {
+#ifdef PARAMS_MUTEX
+      mPlug.mParams_mutex.Enter();
+#endif
       if (sampleSize == kSample32)
         ProcessBuffers(0.f, data.numSamples); // single precision
       else
         ProcessBuffers(0.0, data.numSamples); // double precision
+#ifdef PARAMS_MUTEX
+      mPlug.mParams_mutex.Leave();
+#endif
     }
   }
 }

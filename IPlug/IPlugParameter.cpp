@@ -117,6 +117,19 @@ void IParam::InitEnum(const char* name, int defaultVal, int nEnums, const char* 
   }
 }
 
+void IParam::InitEnum(const char* name, int defaultVal, const std::initializer_list<const char*>& listItems, int flags, const char* group)
+{
+  if (mType == kTypeNone) mType = kTypeEnum;
+
+  InitInt(name, defaultVal, 0, static_cast<int>(listItems.size()) - 1, "", flags | kFlagStepped, group);
+
+  int idx = 0;
+  for (auto& item : listItems)
+  {
+    SetDisplayText(idx++, item);
+  }
+}
+
 void IParam::InitInt(const char* name, int defaultVal, int minVal, int maxVal, const char* label, int flags, const char* group)
 {
   if (mType == kTypeNone) mType = kTypeInt;
@@ -172,13 +185,13 @@ void IParam::InitMilliseconds(const char *name, double defaultVal, double minVal
   InitDouble(name, defaultVal, minVal, maxVal, 1, "ms", flags, group, ShapeLinear(), kUnitMilliseconds);
 }
 
-void IParam::InitPitch(const char *name, int defaultVal, int minVal, int maxVal, int flags, const char *group)
+void IParam::InitPitch(const char *name, int defaultVal, int minVal, int maxVal, int flags, const char *group, bool middleCisC)
 {
   InitEnum(name, defaultVal, (maxVal - minVal) + 1, "", flags, group);
   WDL_String displayText;
   for (auto i = minVal; i <= maxVal; i++)
   {
-    MidiNoteName(i, displayText);
+    MidiNoteName(i, displayText, /*cents*/false, middleCisC);
     SetDisplayText(i - minVal, displayText.Get());
   }
 }
