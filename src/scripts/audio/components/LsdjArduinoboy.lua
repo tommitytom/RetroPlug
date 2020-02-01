@@ -6,6 +6,26 @@ function LsdjArduinoboy:init()
 
 end
 
+local function syncHandler(idx)
+end
+
+function LsdjArduinoboy:onMenu()
+	return {
+		["LSDj"] = {
+			["Sync"] = MultiSelect {
+				items = {
+					"MIDI Sync",
+					"MIDI Sync (Arduinoboy)",
+					"MIDI Map",
+					"-",
+					"Autoplay"
+				},
+				handler = syncHandler
+			}
+		}
+	}
+end
+
 function LsdjArduinoboy:onTransportChanged(running)
 end
 
