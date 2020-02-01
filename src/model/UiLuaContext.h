@@ -43,7 +43,7 @@ public:
 
 	void loadRom(InstanceIndex idx, const std::string& path);
 
-	bool onKey(const iplug::igraphics::IKeyPress& key, bool down);
+	bool onKey(const iplug::IKeyPress& key, bool down);
 
 	void onPadButton(int button, bool down);
 

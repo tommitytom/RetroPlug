@@ -166,8 +166,8 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 	root->AddItem("Project", projectMenu, (int)RootMenuItems::Project);
 	root->AddItem("System", systemMenu, (int)RootMenuItems::System);
 
-	systemMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item * itemChosen) {
-		switch ((SystemMenuItems)indexInMenu) {
+	systemMenu->SetFunction([&](IPopupMenu* menu) {
+		switch ((SystemMenuItems)menu->GetChosenItemIdx()) {
 		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
 		case SystemMenuItems::Reset: ResetSystem(true); break;
 		case SystemMenuItems::NewSram: break;// _plug->clearBattery(true); break;
@@ -188,108 +188,19 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 		root->AddItem("Game Link", (int)RootMenuItems::GameLink, 0);
 		root->AddSeparator((int)RootMenuItems::Sep3);
 
-		root->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-			switch ((RootMenuItems)indexInMenu) {
+		root->SetFunction([&](IPopupMenu* menu) {
+			switch ((RootMenuItems)menu->GetChosenItemIdx()) {
 			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
 			case RootMenuItems::GameLink: break;// _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
 			case RootMenuItems::SendClock: break;// _plug->setMidiSync(!_plug->midiSync()); break;
 			}
 		});
 
-		settingsMenu->SetFunction([this, settingsMenu](int indexInMenu, IPopupMenu::Item * itemChosen) {
-			if (indexInMenu == settingsMenu->NItems() - 1) {
+		settingsMenu->SetFunction([&](IPopupMenu* menu) {
+			if (menu->GetChosenItemIdx() == settingsMenu->NItems() - 1) {
 				openShellFolder(getContentPath());
 			}
 		});
-
-		/*Lsdj& lsdj = _plug->lsdj();
-		if (lsdj.found) {
-			IPopupMenu* syncMenu = createSyncMenu(_plug->gameLink(), lsdj.autoPlay);
-			root->AddItem("LSDj Sync", syncMenu, (int)RootMenuItems::LsdjModes);
-
-			std::vector<LsdjSongName> songNames;
-			_plug->saveBattery(lsdj.saveData);
-			
-			lsdj.getSongNames(songNames);
-
-			if (!songNames.empty()) {
-				IPopupMenu* songMenu = new IPopupMenu();
-				songMenu->AddItem("Import (and reset)...");
-				songMenu->AddItem("Export All...");
-				songMenu->AddSeparator();
-
-				root->AddItem("LSDj Songs", songMenu, (int)RootMenuItems::LsdjSongs);
-
-				for (size_t i = 0; i < songNames.size(); i++) {
-					IPopupMenu* songItemMenu = createSongMenu(songNames[i].projectId == -1);
-					songMenu->AddItem(songNames[i].name.c_str(), songItemMenu);
-
-					songItemMenu->SetFunction([=](int indexInMenu, IPopupMenu::Item* itemChosen) {
-						int id = songNames[i].projectId;
-						switch ((SongMenuItems)indexInMenu) {
-						case SongMenuItems::Export: ExportSong(songNames[i]); break;
-						case SongMenuItems::Load: LoadSong(id); break;
-						case SongMenuItems::Delete: DeleteSong(id); break;
-						}
-					});
-				}
-
-				songMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-					switch (idx) {
-					case 0: OpenLoadSongsDialog(); break;
-					case 1: ExportSongs(songNames); break;
-					}
-				});
-			}
-
-			std::vector<std::string> kitNames;
-			lsdj.getKitNames(kitNames);
-
-			IPopupMenu* kitMenu = new IPopupMenu();
-			kitMenu->AddItem("Import...");
-			kitMenu->AddItem("Export All...");
-			kitMenu->AddSeparator();
-
-			for (size_t i = 0; i < kitNames.size(); i++) {
-				IPopupMenu* kitItemMenu = createKitMenu(kitNames[i] == "Empty");
-
-				std::stringstream ss;
-				ss << std::hex << i + 1 << ": " << kitNames[i];
-				kitMenu->AddItem(ss.str().c_str(), kitItemMenu);
-
-				kitItemMenu->SetFunction([=](int indexInMenu, IPopupMenu::Item* itemChosen) {
-					switch ((KitMenuItems)indexInMenu) {
-					case KitMenuItems::Load: LoadKit(i); break;
-					case KitMenuItems::Export: ExportKit(i); break;
-					case KitMenuItems::Delete: DeleteKit(i); break;
-					}
-				});
-			}
-
-			root->AddItem("LSDj Kits", kitMenu, (int)RootMenuItems::LsdjKits);
-
-			kitMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
-				switch (idx) {
-				case 0: OpenLoadKitsDialog(); break;
-				case 1: ExportKits(); break;
-				}
-			});
-			
-			root->AddItem("Keyboard Shortcuts", (int)RootMenuItems::KeyboardMode, lsdj.keyboardShortcuts ? IPopupMenu::Item::kChecked : 0);
-
-			int selectedMode = GetLsdjModeMenuItem(lsdj.syncMode);
-			syncMenu->CheckItem(selectedMode, true);
-			syncMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
-				LsdjSyncModeMenuItems menuItem = (LsdjSyncModeMenuItems)indexInMenu;
-				if (menuItem <= LsdjSyncModeMenuItems::MidiMap) {
-					_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
-				} else {
-					_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;
-				}
-			});
-		} else {
-			root->AddItem("Send MIDI Clock", (int)RootMenuItems::SendClock, _plug->midiSync() ? IPopupMenu::Item::kChecked : 0);
-		}*/
 	}
 }
 
@@ -350,13 +261,13 @@ IPopupMenu* EmulatorView::CreateSystemMenu() {
 	menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
 	menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
 
-	resetAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
+	/*resetAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
 		//_plug->reset((GameboyModel)(idx + 1), true);
 	});
 
 	loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
 		OpenLoadRomDialog((GameboyModel)(idx + 1));
-	});
+	});*/
 
 	return menu;
 }

@@ -50,6 +50,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 	if (mod.R) {
 		_menu.Clear();
+
 		EmulatorInstanceDesc* active = _proxy->getActiveInstance();
 		if (active) {
 			switch (active->state) {
@@ -57,8 +58,8 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 				IPopupMenu* projectMenu = CreateProjectMenu(true);
 				GetActiveView()->CreateMenu(&_menu, projectMenu);
 
-				projectMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-					switch ((ProjectMenuItems)idx) {
+				projectMenu->SetFunction([&](IPopupMenu* menu) {
+					switch ((ProjectMenuItems)menu->GetChosenItemIdx()) {
 					case ProjectMenuItems::New: NewProject(); break;
 					case ProjectMenuItems::Save: SaveProject(); break;
 					case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
@@ -71,8 +72,8 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 			case EmulatorInstanceState::RomMissing:
 				_menu.AddItem("Find ROM...");
 				_menu.AddItem("Load Project...");
-				_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
-					if (idx == 0) {
+				_menu.SetFunction([&](IPopupMenu* menu) {
+					if (menu->GetChosenItemIdx() == 0) {
 						OpenFindRomDialog();
 					} else {
 						OpenLoadProjectDialog();
@@ -84,19 +85,19 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 			IPopupMenu* modelMenu = createModelMenu(true);
 			createBasicMenu(&_menu, modelMenu);
 
-			_menu.SetFunction([=](int idx, IPopupMenu::Item*) {
-				switch ((BasicMenuItems)idx) {
+			_menu.SetFunction([&](IPopupMenu* menu) {
+				switch ((BasicMenuItems)menu->GetChosenItemIdx()) {
 				case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
 				case BasicMenuItems::LoadRom: break;// _active->OpenLoadRomDialog(GameboyModel::Auto); break;
 				}
 			});
 
-			modelMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+			modelMenu->SetFunction([&](IPopupMenu* menu) {
 				//_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
 			});
 		}
 
-		GetUI()->CreatePopupMenu(*((IControl*)this), _menu, x, y);
+		GetUI()->CreatePopupMenu(*this, _menu, x, y);
 	}
 }
 
@@ -300,20 +301,20 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		menu->AddItem("MIDI Routing", (int)ProjectMenuItems::MidiRouting, IPopupMenu::Item::kDisabled);
 	}
 
-	instanceMenu->SetFunction([this](int idx, IPopupMenu::Item* itemChosen) {
-		CreatePlugInstance((CreateInstanceType)idx);
+	instanceMenu->SetFunction([&](IPopupMenu* menu) {
+		CreatePlugInstance((CreateInstanceType)menu->GetChosenItemIdx());
 	});
 
-	layoutMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
+	layoutMenu->SetFunction([&](IPopupMenu* menu) {
 		Project* project = _proxy->getProject();
-		project->settings.layout = (InstanceLayout)idx;
+		project->settings.layout = (InstanceLayout)menu->GetChosenItemIdx();
 		_proxy->updateSettings();
 		UpdateLayout();
 	});
 
-	zoomMenu->SetFunction([&](int idx, IPopupMenu::Item* itemChosen) {
+	zoomMenu->SetFunction([&](IPopupMenu* menu) {
 		Project* project = _proxy->getProject();
-		project->settings.zoom = idx + 1;
+		project->settings.zoom = menu->GetChosenItemIdx() + 1;
 		for (size_t i = 0; i < _views.size(); ++i) {
 			_views[i]->SetZoom(project->settings.zoom);
 		}
@@ -321,20 +322,20 @@ IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
 		UpdateLayout();
 	});
 
-	saveOptionsMenu->SetFunction([=](int idx, IPopupMenu::Item*) {
+	saveOptionsMenu->SetFunction([&](IPopupMenu* menu) {
 		Project* project = _proxy->getProject();
-		project->settings.saveType = (SaveStateType)idx;
+		project->settings.saveType = (SaveStateType)menu->GetChosenItemIdx();
 	});
 
-	audioRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
+	audioRouting->SetFunction([&](IPopupMenu* menu) {
 		Project* project = _proxy->getProject();
-		project->settings.audioRouting = (AudioChannelRouting)idx;
+		project->settings.audioRouting = (AudioChannelRouting)menu->GetChosenItemIdx();
 		_proxy->updateSettings();
 	});
 
-	midiRouting->SetFunction([=](int idx, IPopupMenu::Item*) {
+	midiRouting->SetFunction([&](IPopupMenu* menu) {
 		Project* project = _proxy->getProject();
-		project->settings.midiRouting = (MidiChannelRouting)idx;
+		project->settings.midiRouting = (MidiChannelRouting)menu->GetChosenItemIdx();
 		_proxy->updateSettings();
 	});
 

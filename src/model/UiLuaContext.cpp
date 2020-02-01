@@ -65,7 +65,7 @@ void UiLuaContext::loadRom(InstanceIndex idx, const std::string& path) {
 	callFunc(_state, "_loadRomAtPath", idx, path);
 }
 
-bool UiLuaContext::onKey(const iplug::igraphics::IKeyPress& key, bool down) {
+bool UiLuaContext::onKey(const iplug::IKeyPress& key, bool down) {
 	bool res = false;
 	callFuncRet(_state, "_onKey", res, key, down);
 	return res;
@@ -190,11 +190,11 @@ void UiLuaContext::setup() {
 		"updateSettings", &RetroPlugProxy::updateSettings
 	);
 
-	s.new_usertype<iplug::igraphics::IKeyPress>("IKeyPress",
-		"vk", &iplug::igraphics::IKeyPress::VK,
-		"shift", &iplug::igraphics::IKeyPress::S,
-		"ctrl", &iplug::igraphics::IKeyPress::C,
-		"alt", &iplug::igraphics::IKeyPress::A
+	s.new_usertype<iplug::IKeyPress>("IKeyPress",
+		"vk", &iplug::IKeyPress::VK,
+		"shift", &iplug::IKeyPress::S,
+		"ctrl", &iplug::IKeyPress::C,
+		"alt", &iplug::IKeyPress::A
 	);
 
 	s["_proxy"].set(_proxy);

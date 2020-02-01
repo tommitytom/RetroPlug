@@ -37,7 +37,7 @@ public:
 
 	void update(float delta);
 
-	//bool onKey(const iplug::igraphics::IKeyPress& key, bool down);
+	//bool onKey(const iplug::IKeyPress& key, bool down);
 
 	void onPadButton(int button, bool down);
 
