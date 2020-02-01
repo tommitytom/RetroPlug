@@ -54,10 +54,10 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
 			return true;
 		}
 
-		return _active->OnKey(key, down);
+		_active->OnKey(key, down);
 	}
 
-	return false;
+	return true;
 }
 
 void RetroPlugRoot::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
