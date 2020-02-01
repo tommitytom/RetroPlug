@@ -79,6 +79,8 @@ local function handleInput(map, key, down, pressed, hooks, buttonStream)
 	else
 		tableRemoveElement(pressed, key)
 	end
+
+	return handled
 end
 
 local function inputMap(config, map)

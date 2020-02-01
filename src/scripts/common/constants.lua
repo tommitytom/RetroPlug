@@ -1,3 +1,8 @@
+Propagation = {
+	Unhandled = 0,
+	Handled = 1
+}
+
 -- Represents the buttons on the gameboy system
 Button = {
 	Right = 0,
