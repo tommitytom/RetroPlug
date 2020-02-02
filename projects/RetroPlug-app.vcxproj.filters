@@ -316,6 +316,9 @@
     <ClCompile Include="..\src\model\AudioLuaContext.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\controller\AudioController.cpp">
+      <Filter>src\controller</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -875,6 +878,9 @@
     </ClInclude>
     <ClInclude Include="..\src\model\RetroPlug.h">
       <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\controller\AudioController.h">
+      <Filter>src\controller</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

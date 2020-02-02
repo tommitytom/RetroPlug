@@ -9,6 +9,7 @@
 #include "Types.h"
 #include "model/ProcessingContext.h"
 #include "model/AudioLuaContext.h"
+#include "controller/AudioController.h"
 
 #include "IGraphicsStructs.h"
 
@@ -42,12 +43,11 @@ class RetroPlugView;
 
 class RetroPlugController {
 private:
-	RetroPlugProxy _proxy;	
-	ProcessingContext _processingContext;
-	RetroPlugView* _view;
-
 	UiLuaContext _uiLua;
-	AudioLuaContext _audioLua;
+	RetroPlugProxy _proxy;	
+	RetroPlugView* _view;
+	
+	AudioController _audioController;
 
 	FW::FileWatcher _scriptWatcher;
 	ChangeListener _listener;
@@ -68,9 +68,9 @@ public:
 
 	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 
-	ProcessingContext* processingContext() { return &_processingContext; }
+	ProcessingContext* processingContext() { return _audioController.processingContext(); }
 
-	AudioLuaContext* audioLua() { return &_audioLua; }
+	AudioLuaContext* audioLua() { return _audioController.getLuaContext(); }
 
 private:
 	void processPad();

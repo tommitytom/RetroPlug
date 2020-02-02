@@ -277,6 +277,7 @@
     <ClInclude Include="..\src\audio\miniaudio.h" />
     <ClInclude Include="..\src\audio\resampler.h" />
     <ClInclude Include="..\src\Constants.h" />
+    <ClInclude Include="..\src\controller\AudioController.h" />
     <ClInclude Include="..\src\controller\messaging.h" />
     <ClInclude Include="..\src\controller\RetroPlugController.h" />
     <ClInclude Include="..\src\KeyMap.h" />
@@ -546,6 +547,7 @@
     <ClInclude Include="..\thirdparty\lua-5.3.5\src\lzio.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\controller\AudioController.cpp" />
     <ClCompile Include="..\src\controller\RetroPlugController.cpp" />
     <ClCompile Include="..\src\lsdj\kit.c" />
     <ClCompile Include="..\src\lsdj\rom.c" />

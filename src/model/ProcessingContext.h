@@ -15,7 +15,7 @@ struct AudioSettings {
 class ProcessingContext {
 private:
 	std::vector<SameBoyPlugPtr> _instances;
-	Node* _node;
+	Node* _node = nullptr;
 
 	Project::Settings _settings;
 	AudioSettings _audioSettings;
@@ -33,9 +33,35 @@ public:
 	}
 	~ProcessingContext() {}
 
+	void setNode(Node* node) { 
+		_node = node; 
+		_alloc = node->getAllocator();
+	}
+
 	SameBoyPlugPtr& getInstance(InstanceIndex idx) { return _instances[idx]; }
 
 	const Project::Settings& getSettings() const { return _settings; }
+
+	void setSettings(const Project::Settings& settings) { _settings = settings; }
+
+	void fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
+		state.type = req.type;
+
+		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			SameBoyPlugPtr inst = _instances[i];
+			if (inst && req.buffers[i]) {
+				state.buffers[i] = req.buffers[i];
+				if (req.type == SaveStateType::Sram) {
+					state.sizes[i] = inst->batterySize();
+					inst->saveBattery(state.buffers[i]->data(), state.buffers[i]->size());
+				}
+				else if (req.type == SaveStateType::State) {
+					state.sizes[i] = inst->saveStateSize();
+					inst->saveState(state.buffers[i]->data(), state.buffers[i]->size());
+				}
+			}
+		}
+	}
 
 	void setAudioSettings(const AudioSettings& settings) {
 		for (size_t i = 0; i < _instances.size(); ++i) {
@@ -47,84 +73,45 @@ public:
 		_audioSettings = settings;
 	}
 
-	void setNode(Node* node) {
-		_node = node;
-		_alloc = node->getAllocator();
+	SameBoyPlugPtr swapInstance(InstanceIndex idx, SameBoyPlugPtr instance) {
+		SameBoyPlugPtr old = _instances[idx];
+		_instances[idx] = instance;
+		_instances[idx]->setSampleRate(_audioSettings.sampleRate);
 
-		_alloc->reserveChunks(160 * 144 * 4, 16); // Video buffers
+		// TODO: Instantiate this in the UI thread and send with the SwapInstance message
+		if (_audioSettings.frameCount > 0) {
+			_audioBuffers[idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
+			_audioBuffers[idx].frameCount = _audioSettings.frameCount;
+		}
 
-		node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, SameBoyPlugPtr& other) {
-			other = _instances[d.idx];
-			_instances[d.idx] = d.instance;
-			_instances[d.idx]->setSampleRate(_audioSettings.sampleRate);
+		return old;
+	}
 
-			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
-			if (_audioSettings.frameCount > 0) {
-				_audioBuffers[d.idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-				_audioBuffers[d.idx].frameCount = _audioSettings.frameCount;
+	SameBoyPlugPtr duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance) {
+		SameBoyPlugPtr old = swapInstance(targetIdx, instance);
+
+		SameBoyPlugPtr source = _instances[sourceIdx];
+		char* sourceState = new char[source->saveStateSize()];
+		source->saveState(sourceState, source->saveStateSize());
+		instance->loadState(sourceState, source->saveStateSize());
+		delete[] sourceState;
+
+		return old;
+	}
+
+	SameBoyPlugPtr removeInstance(InstanceIndex idx) {
+		SameBoyPlugPtr old = _instances[idx];
+		_instances.erase(_instances.begin() + idx);
+		_instances.push_back(nullptr);
+
+		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			if (!_instances[i]) {
+				_audioBuffers[i].data = nullptr;
+				_audioBuffers[i].frameCount = 0;
 			}
-		});
+		}
 
-		node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {
-			other = _instances[d.targetIdx];
-			_instances[d.targetIdx] = d.instance;
-			_instances[d.targetIdx]->setSampleRate(_audioSettings.sampleRate);
-
-			// TODO: Instantiate this in the UI thread and send with the SwapInstance message
-			if (_audioSettings.frameCount > 0) {
-				_audioBuffers[d.targetIdx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-				_audioBuffers[d.targetIdx].frameCount = _audioSettings.frameCount;
-			}
-
-			SameBoyPlugPtr source = _instances[d.sourceIdx];
-			char* sourceState = new char[source->saveStateSize()];
-			source->saveState(sourceState, source->saveStateSize());
-			d.instance->loadState(sourceState, source->saveStateSize());
-			delete[] sourceState;
-		});
-
-		node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
-			other = _instances[idx];
-			_instances.erase(_instances.begin() + idx);
-			_instances.push_back(nullptr);
-
-			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-				if (!_instances[i]) {
-					_audioBuffers[i].data = nullptr;
-					_audioBuffers[i].frameCount = 0;
-				}
-			}
-		});
-
-		node->on<calls::UpdateSettings>([&](const Project::Settings& settings) {
-			_settings = settings;
-		});
-
-		node->on<calls::FetchState>([&](const FetchStateRequest& req, FetchStateResponse& state) {
-			state.type = req.type;
-
-			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-				SameBoyPlugPtr inst = _instances[i];
-				if (inst && req.buffers[i]) {
-					state.buffers[i] = req.buffers[i];
-					if (req.type == SaveStateType::Sram) {
-						state.sizes[i] = inst->batterySize();
-						inst->saveBattery(state.buffers[i]->data(), state.buffers[i]->size());
-					} else if (req.type == SaveStateType::State) {
-						state.sizes[i] = inst->saveStateSize();
-						inst->saveState(state.buffers[i]->data(), state.buffers[i]->size());
-					}
-				}
-			}
-		});
-
-		node->on<calls::PressButtons>([&](const ButtonStream<32>& presses) {
-			for (size_t i = 0; i < presses.pressCount; ++i) {
-				//std::cout << ButtonTypes::toString((ButtonType)presses.presses[i].button) << "\t" << presses.presses[i].down << "\t" << presses.presses[i].duration << std::endl;
-			}
-
-			_instances[presses.idx]->pressButtons(presses.presses.data(), presses.pressCount);
-		});
+		return old;
 	}
 
 	void process(float** outputs, size_t frameCount) {

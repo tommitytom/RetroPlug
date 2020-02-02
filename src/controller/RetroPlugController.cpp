@@ -21,7 +21,7 @@ using AxisButtons::AxisButton;
 
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
-RetroPlugController::RetroPlugController(): _listener(&_uiLua, &_audioLua) {
+RetroPlugController::RetroPlugController(): _listener(&_uiLua, _audioController.getLuaContext()) {
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
@@ -32,7 +32,7 @@ RetroPlugController::RetroPlugController(): _listener(&_uiLua, &_audioLua) {
 	_bus.addCall<calls::FetchState>(1);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
-	_processingContext.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));
+	_audioController.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));
 
 	_bus.start();
 
@@ -56,7 +56,7 @@ RetroPlugController::RetroPlugController(): _listener(&_uiLua, &_audioLua) {
 
 	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path() / "scripts";
 	_uiLua.init(&_proxy, configDir.string(), scriptPath.string());
-	_audioLua.init(&_processingContext, configDir.string(), scriptPath.string());
+	_audioController.getLuaContext()->init(configDir.string(), scriptPath.string());
 
 	if (fs::exists(scriptPath)) {
 		_scriptWatcher.addWatch(scriptPath.string(), &_listener, true);

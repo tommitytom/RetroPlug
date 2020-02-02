@@ -20,20 +20,20 @@ private:
 	ProcessingContext* _context;
 
 public:
-	AudioLuaContext() : _context(nullptr), _state(nullptr) {}
+	AudioLuaContext(ProcessingContext* ctx) : _context(ctx), _state(nullptr) {}
 	~AudioLuaContext() { shutdown(); }
 
-	void init(ProcessingContext* ctx, const std::string& configPath, const std::string& scriptPath);
+	void init(const std::string& configPath, const std::string& scriptPath);
 
 	void closeProject();
 
 	void addInstance() {}
 
-	void removeInstance(size_t index);
+	void addInstance(InstanceIndex idx, SameBoyPlugPtr instance);
 
-	void duplicateInstance(size_t index);
+	void removeInstance(InstanceIndex index);
 
-	void setActive(size_t idx);
+	void setActive(InstanceIndex idx);
 
 	void update(float delta);
 

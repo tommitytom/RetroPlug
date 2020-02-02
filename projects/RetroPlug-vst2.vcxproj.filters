@@ -292,6 +292,9 @@
     <ClCompile Include="..\src\model\UiLuaContext.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\controller\AudioController.cpp">
+      <Filter>src\controller</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">
@@ -725,6 +728,9 @@
     </ClInclude>
     <ClInclude Include="..\src\model\UiLuaContext.h">
       <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\controller\AudioController.h">
+      <Filter>src\controller</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

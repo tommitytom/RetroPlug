@@ -8,10 +8,9 @@
 #include "ProcessingContext.h"
 #include "util/fs.h"
 
-void AudioLuaContext::init(ProcessingContext* ctx, const std::string& configPath, const std::string& scriptPath) {
+void AudioLuaContext::init(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
 	_scriptPath = scriptPath;
-	_context = ctx;
 	setup();
 }
 
@@ -39,7 +38,7 @@ void AudioLuaContext::setup() {
 
 	setupCommon(_state);
 
-	s.new_usertype<ProcessingContext>("RetroPlug",
+	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,
 		"getInstance", &ProcessingContext::getInstance
 	);
@@ -83,6 +82,18 @@ void AudioLuaContext::setup() {
 
 	runFile(_state, _configPath + "/config.lua");
 	runScript(_state, "_init()");
+}
+
+void AudioLuaContext::addInstance(InstanceIndex idx, SameBoyPlugPtr instance) {
+	callFunc(_state, "_addInstance", idx, instance);
+}
+
+void AudioLuaContext::removeInstance(InstanceIndex idx) {
+	callFunc(_state, "_removeInstance", idx);
+}
+
+void AudioLuaContext::closeProject() {
+	callFunc(_state, "_closeProject");
 }
 
 void AudioLuaContext::onMidi(int offset, int status, int data1, int data2) {

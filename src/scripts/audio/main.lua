@@ -16,26 +16,39 @@ function _loadComponent(name)
     cm.loadComponent(name)
 end
 
+local function createInstance(model)
+    return {
+        model = model,
+        components = cm.createComponents(model:getDesc(), model)
+    }
+end
+
 function _init()
     cm.createGlobalComponents()
 
-	for i = 1, MAX_INSTANCES, 1 do
-        local inst = _model:getInstance(i - 1)
-        if inst ~= nil then
-            local desc = inst:getDesc()
-			local instance = {
-				model = inst,
-				components = cm.createComponents(desc, inst)
-			}
-
-			table.insert(_instances, instance)
-		end
+    for i = 1, MAX_INSTANCES, 1 do
+        local instModel = _model:getInstance(i - 1)
+        if instModel ~= nil then
+            table.insert(_instances, createInstance(instModel))
+        end
 	end
 
 	for _, instance in ipairs(_instances) do
 		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 		cm.runAllHandlers("onReload", instance.components, instance.model)
 	end
+end
+
+function _addInstance(idx, model)
+    _instances[idx + 1] = createInstance(model)
+end
+
+function _removeInstance(idx)
+    table.remove(_instances, idx + 1)
+end
+
+function _closeProject()
+    _instances = {}
 end
 
 local function processMidiMessage(inst, msg)
