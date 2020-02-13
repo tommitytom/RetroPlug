@@ -26,6 +26,10 @@ void UiLuaContext::init(RetroPlugProxy* proxy, const std::string& path, const st
 	setup();
 }
 
+void UiLuaContext::loadRom(InstanceIndex idx, const std::string& path, GameboyModel model) {
+	callFunc(_state, "_loadRomAtPath", idx, path, "", model);
+}
+
 void UiLuaContext::closeProject() {
 	callFunc(_state, "_closeProject");
 }
@@ -38,16 +42,32 @@ void UiLuaContext::saveProject(const FetchStateResponse& res) {
 	callFunc(_state, "_saveProjectToFile", res, true);
 }
 
-void UiLuaContext::removeInstance(size_t index) {
+void UiLuaContext::removeInstance(InstanceIndex index) {
 	callFunc(_state, "_removeInstance", index);
 }
 
-void UiLuaContext::duplicateInstance(size_t index) {
+void UiLuaContext::duplicateInstance(InstanceIndex index) {
 	callFunc(_state, "_duplicateInstance", index);
 }
 
-void UiLuaContext::setActive(size_t idx) {
+void UiLuaContext::setActive(InstanceIndex idx) {
 	callFunc(_state, "_setActive", idx);
+}
+
+void UiLuaContext::resetInstance(InstanceIndex idx, GameboyModel model) {
+
+}
+
+void UiLuaContext::newSav(InstanceIndex idx) {
+
+}
+
+void UiLuaContext::saveSav(InstanceIndex idx, const std::string& path) {
+	
+}
+
+void UiLuaContext::loadSav(InstanceIndex idx, const std::string& path, bool reset) {
+	callFunc(_state, "_loadSav", idx, path, reset);
 }
 
 void UiLuaContext::update(float delta) {
@@ -59,10 +79,6 @@ void UiLuaContext::update(float delta) {
 	if (!_haltFrameProcessing) {
 		_haltFrameProcessing = !callFunc(_state, "_frame", delta);
 	}
-}
-
-void UiLuaContext::loadRom(InstanceIndex idx, const std::string& path) {
-	callFunc(_state, "_loadRomAtPath", idx, path);
 }
 
 bool UiLuaContext::onKey(const iplug::IKeyPress& key, bool down) {
@@ -78,7 +94,11 @@ void UiLuaContext::onPadButton(int button, bool down) {
 void UiLuaContext::onDrop(const char* str) {
 	std::vector<std::string> paths = { str };
 	callFunc(_state, "_onDrop", paths);
-} 
+}
+
+void UiLuaContext::onMenu(iplug::igraphics::IPopupMenu* root) {
+	callFunc(_state, "_onMenu");
+}
 
 void UiLuaContext::reload() {
 	shutdown();

@@ -51,6 +51,52 @@ function _closeProject()
     _instances = {}
 end
 
+local function mergeMenu(target, menu)
+
+end
+
+local MenuItemType = {
+    None = 0,
+    Separator = 1,
+    Single = 1,
+    MultiSelect = 3,
+    SubMenu = 4
+}
+
+local function parseMenu(menu)
+    local out = {}
+    for i, v in ipairs(menu) do
+        if type(v[1]) == "object" then
+            if v[1].type ~= nil then
+                table.insert(out, v[1])
+            else
+
+            end
+        elseif type(v[1]) == "string" then
+            if v[1] ~= "-" then
+                table.insert(out, v[1])
+            else
+                table.insert(out, { type = MenuItemType.Separator })
+            end
+
+        end
+    end
+end
+
+function _onMenu(idx)
+    local merged = {}
+    for _, inst in ipairs(_instances) do
+        for _, comp in ipairs(inst.components) do
+            if comp.onMenu ~= nil then
+                local menu = parseMenu(comp.onMenu(comp))
+                mergeMenu(merged, menu)
+            end
+        end
+    end
+
+    return merged
+end
+
 local function processMidiMessage(inst, msg)
     cm.runComponentHandlers("onMidi", inst.components, msg)
 end

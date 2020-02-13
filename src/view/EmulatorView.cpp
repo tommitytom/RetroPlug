@@ -11,8 +11,8 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
-EmulatorView::EmulatorView(InstanceIndex idx, UiLuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics)
-	: _index(idx), _graphics(graphics), _lua(lua), _proxy(proxy)
+EmulatorView::EmulatorView(InstanceIndex idx, IGraphics* graphics)
+	: _index(idx), _graphics(graphics)
 {
 	/*_settings = {
 		{ "Color Correction", 2 },
@@ -132,83 +132,11 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 	}
 }
 
-enum class SystemMenuItems : int {
-	LoadRom,
-	LoadRomAs,
-	Reset,
-	ResetAs,
-	ReplaceRom,
-	SaveRom,
-
-	Sep1,
-
-	NewSram,
-	LoadSram,
-	SaveSram,
-	SaveSramAs,
-};
-
-void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
-	assert(_index != NO_ACTIVE_INSTANCE);
-	const EmulatorInstanceDesc* desc = _proxy->getInstance(_index);
-
-	std::string romName = desc->romName;
-	bool loaded = !romName.empty();
-	if (!loaded) {
-		romName = "No ROM Loaded";
-	}
-
-	IPopupMenu* systemMenu = CreateSystemMenu();
-	
-	root->AddItem(romName.c_str(), (int)RootMenuItems::RomName, IPopupMenu::Item::kTitle);
-	root->AddSeparator((int)RootMenuItems::Sep1);
-
-	root->AddItem("Project", projectMenu, (int)RootMenuItems::Project);
-	root->AddItem("System", systemMenu, (int)RootMenuItems::System);
-
-	systemMenu->SetFunction([&](IPopupMenu* menu) {
-		switch ((SystemMenuItems)menu->GetChosenItemIdx()) {
-		case SystemMenuItems::LoadRom: OpenLoadRomDialog(GameboyModel::Auto); break;
-		case SystemMenuItems::Reset: ResetSystem(true); break;
-		case SystemMenuItems::NewSram: break;// _plug->clearBattery(true); break;
-		case SystemMenuItems::LoadSram: OpenLoadSramDialog(); break;
-		case SystemMenuItems::SaveSram: break;// _plug->saveBattery(TSTR("")); break;
-		case SystemMenuItems::SaveSramAs: OpenSaveSramDialog(); break;
-		case SystemMenuItems::ReplaceRom: OpenReplaceRomDialog(); break;
-		case SystemMenuItems::SaveRom: OpenSaveRomDialog(); break;
-		}
-	});
-
-	if (loaded) {
-		IPopupMenu* settingsMenu = CreateSettingsMenu();
-
-		root->AddItem("Settings", settingsMenu, (int)RootMenuItems::Settings);
-		root->AddSeparator((int)RootMenuItems::Sep2);
-		//root->AddItem("Game Link", (int)RootMenuItems::GameLink, _plug->gameLink() ? IPopupMenu::Item::kChecked : 0);
-		root->AddItem("Game Link", (int)RootMenuItems::GameLink, 0);
-		root->AddSeparator((int)RootMenuItems::Sep3);
-
-		root->SetFunction([&](IPopupMenu* menu) {
-			switch ((RootMenuItems)menu->GetChosenItemIdx()) {
-			case RootMenuItems::KeyboardMode: ToggleKeyboardMode(); break;
-			case RootMenuItems::GameLink: break;// _plug->setGameLink(!_plug->gameLink()); _manager->updateLinkTargets(); break;
-			case RootMenuItems::SendClock: break;// _plug->setMidiSync(!_plug->midiSync()); break;
-			}
-		});
-
-		settingsMenu->SetFunction([&](IPopupMenu* menu) {
-			if (menu->GetChosenItemIdx() == settingsMenu->NItems() - 1) {
-				openShellFolder(getContentPath());
-			}
-		});
-	}
-}
-
-IPopupMenu* EmulatorView::CreateSettingsMenu() {
+/*IPopupMenu* EmulatorView::CreateSettingsMenu() {
 	IPopupMenu* settingsMenu = new IPopupMenu();
 
 	// TODO: These should be moved in to the SameBoy wrapper
-	/*std::map<std::string, std::vector<std::string>> settings;
+	std::map<std::string, std::vector<std::string>> settings;
 	settings["Color Correction"] = {
 		"Off",
 		"Correct Curves",
@@ -240,48 +168,12 @@ IPopupMenu* EmulatorView::CreateSettingsMenu() {
 
 	settingsMenu->AddSeparator();
 	settingsMenu->AddItem("Open Settings Folder...");
-	*/
+	
 	return settingsMenu;
-}
+}*/
 
-IPopupMenu* EmulatorView::CreateSystemMenu() {
-	IPopupMenu* loadAsModel = createModelMenu(true);
-	IPopupMenu* resetAsModel = createModelMenu(false);
-
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Load ROM...", (int)SystemMenuItems::LoadRom);
-	menu->AddItem("Load ROM As", loadAsModel, (int)SystemMenuItems::LoadRomAs);
-	menu->AddItem("Reset", (int)SystemMenuItems::Reset);
-	menu->AddItem("Reset As", resetAsModel, (int)SystemMenuItems::ResetAs);
-	menu->AddItem("Replace ROM...", (int)SystemMenuItems::ReplaceRom);
-	menu->AddItem("Save ROM...", (int)SystemMenuItems::SaveRom);
-	menu->AddSeparator((int)SystemMenuItems::Sep1);
-	menu->AddItem("New .sav", (int)SystemMenuItems::NewSram);
-	menu->AddItem("Load .sav...", (int)SystemMenuItems::LoadSram);
-	menu->AddItem("Save .sav", (int)SystemMenuItems::SaveSram);
-	menu->AddItem("Save .sav As...", (int)SystemMenuItems::SaveSramAs);
-
-	/*resetAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
-		//_plug->reset((GameboyModel)(idx + 1), true);
-	});
-
-	loadAsModel->SetFunction([=](int idx, IPopupMenu::Item*) {
-		OpenLoadRomDialog((GameboyModel)(idx + 1));
-	});*/
-
-	return menu;
-}
-
-void EmulatorView::ToggleKeyboardMode() {
-	//_plug->lsdj().keyboardShortcuts = !_plug->lsdj().keyboardShortcuts;
-}
-
-void EmulatorView::ResetSystem(bool fast) {
-	//_plug->reset(_plug->model(), fast);
-}
-
-void EmulatorView::OpenReplaceRomDialog() {
-	/*std::vector<FileDialogFilters> types = {
+/*void EmulatorView::OpenReplaceRomDialog() {
+	std::vector<FileDialogFilters> types = {
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};
 
@@ -295,65 +187,5 @@ void EmulatorView::OpenReplaceRomDialog() {
 
 		_plug->disableRendering(false);
 		HideText();
-	}*/
-}
-
-void EmulatorView::OpenSaveRomDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
-	};
-
-	
-	tstring romName = tstr(_proxy->getInstance(_index)->romName + ".gb");
-	tstring path = BasicFileSave(_graphics, types, romName);
-	if (path.size() > 0) {
-		/*if (!writeFile(path, _plug->romData())) {
-			// Fail
-		}*/
 	}
-}
-
-void EmulatorView::OpenLoadRomDialog(GameboyModel model) {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
-	if (paths.size() > 0) {
-		_lua->loadRom(_index, ws2s(paths[0]));
-	}
-}
-
-void EmulatorView::DisableRendering(bool disable) {
-	/*if (_plug->active()) {
-		_plug->disableRendering(disable);
-	}*/
-}
-
-/*void EmulatorView::LoadRom(const tstring & path) {
-	_plug->init(path, GameboyModel::Auto, false);
-	_plug->disableRendering(false);
-	HideText();
 }*/
-
-void EmulatorView::OpenLoadSramDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Saves"), TSTR("*.sav") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
-	if (paths.size() > 0) {
-		//_plug->loadBattery(paths[0], true);
-	}
-}
-
-void EmulatorView::OpenSaveSramDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Saves"), TSTR("*.sav") }
-	};
-
-	tstring path = BasicFileSave(_graphics, types);
-	if (path.size() > 0) {
-		//_plug->saveBattery(path);
-	}
-}

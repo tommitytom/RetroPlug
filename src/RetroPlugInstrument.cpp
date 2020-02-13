@@ -325,7 +325,7 @@ void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrumen
 }
 
 void RetroPlugInstrument::OnReset() {
-	AudioSettings settings = { NOutChansConnected(), 0, GetSampleRate() };
+	AudioSettings settings = { (size_t)NOutChansConnected(), 0, GetSampleRate() };
 	_controller.processingContext()->setAudioSettings(settings);
 }
 #endif

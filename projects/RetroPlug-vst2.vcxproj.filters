@@ -732,6 +732,9 @@
     <ClInclude Include="..\src\controller\AudioController.h">
       <Filter>src\controller</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\view\Menu.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">

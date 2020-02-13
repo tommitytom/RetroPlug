@@ -325,7 +325,7 @@ function _loadProject(path)
 	_setActive(0)
 end
 
-function _loadRomAtPath(idx, romPath, savPath)
+function _loadRomAtPath(idx, romPath, savPath, model)
 	local fm = _proxy:fileManager()
 	local romFile = fm:loadFile(romPath, false)
 	if romFile == nil then
@@ -338,6 +338,7 @@ function _loadRomAtPath(idx, romPath, savPath)
 	d.state = EmulatorInstanceState.Initialized
 	d.romPath = romPath
 	d.sourceRomData = romFile.data
+	d.sameBoySettings.model = model
 
 	if savPath == nil or savPath == "" then
 		savPath = pathutil.changeExt(romPath, "sav")
@@ -439,6 +440,10 @@ end
 
 function _onDrop(str)
 	return componentInputRoute("onDrop", str)
+end
+
+function _onMenu()
+
 end
 
 Action.RetroPlug = {

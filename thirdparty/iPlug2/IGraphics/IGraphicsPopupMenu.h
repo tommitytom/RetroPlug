@@ -100,6 +100,11 @@ public:
       else
         mFlags &= ~kChecked;
     }
+
+    void SetTag(int tag)
+    {
+      mTag = tag;
+    }
     
   protected:
     WDL_String mText;
@@ -257,6 +262,7 @@ public:
     {
       SetPrefix(0);
       mCanMultiCheck = false;
+      mPopupFunc = nullptr;
     }
     
     mMenuItems.Empty(true);

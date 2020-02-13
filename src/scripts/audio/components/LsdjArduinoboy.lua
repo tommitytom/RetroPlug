@@ -1,29 +1,32 @@
 local util = require("util")
 local inspect = require("inspect")
+local m = require("Menu")
 
-local LsdjArduinoboy = component({ name = "LSDJ Arduinoboy", romName = "LSDj*" })
+local LsdjSyncModes = {
+	Off = 0,
+	MidiSync = 1,
+	MidiSyncArduinoboy = 2,
+	MidiMap = 3
+}
+
+local LsdjArduinoboy = component({ name = "LSDj Arduinoboy", romName = "LSDj*" })
 function LsdjArduinoboy:init()
-
+	self.syncMode = LsdjSyncModes.Off
+	self.autoPlay = false
 end
 
-local function syncHandler(idx)
-end
-
-function LsdjArduinoboy:onMenu()
-	return {
-		["LSDj"] = {
-			["Sync"] = MultiSelect {
-				items = {
+function LsdjArduinoboy:onMenu(menu)
+	return menu
+		:subMenu("LSDj")
+			:subMenu("Sync")
+				:multiSelect({
+					"Off",
 					"MIDI Sync",
 					"MIDI Sync (Arduinoboy)",
 					"MIDI Map",
-					"-",
-					"Autoplay"
-				},
-				handler = syncHandler
-			}
-		}
-	}
+				}, self.syncMode, function(idx) self.syncMode = idx end)
+				:separator()
+				:select("Autoplay", self.autoPlay, function(value) self.autoPlay = value end)
 end
 
 function LsdjArduinoboy:onTransportChanged(running)

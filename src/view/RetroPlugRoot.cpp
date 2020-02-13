@@ -2,15 +2,19 @@
 
 #include <cmath>
 #include "platform/FileDialog.h"
+#include "platform/Shell.h"
 #include "util/File.h"
 #include "util/fs.h"
 #include "util/cxxtimer.hpp"
 #include "Keys.h"
 
+#include "Menu.h"
+
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 
-RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy): IControl(b), _lua(lua), _proxy(proxy) {
+RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy)
+	: IControl(b), _lua(lua), _proxy(proxy) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
 			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
@@ -45,58 +49,242 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	}
 }
 
+using MenuCallbackMap = std::vector<std::function<void()>>;
+
+Menu* findSubMenu(Menu* source, const std::string& name) {
+	for (MenuItemBase* itemBase : source->getItems()) {
+		if (itemBase->getType() == MenuItemType::SubMenu) {
+			Menu* item = (Menu*)itemBase;
+			if (item->getName() == name) {
+				return item;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+void mergeMenu(Menu* source, Menu* target) {
+	bool separated = false;
+	for (MenuItemBase* itemBase : source->getItems()) {
+		switch (itemBase->getType()) {
+		case MenuItemType::SubMenu: {
+			Menu* item = (Menu*)itemBase;
+			Menu* targetMenu = findSubMenu(target, item->getName());
+			if (!targetMenu) {
+				if (!separated) { target->separator(); separated = true; }
+				targetMenu = &target->subMenu(item->getName());
+			}
+
+			mergeMenu(item, targetMenu);
+			break;
+		}
+		case MenuItemType::Action: {
+			if (!separated) { target->separator(); separated = true; }
+			Action* item = (Action*)itemBase;
+			target->action(item->getName(), item->getFunction());
+			break;
+		}
+		case MenuItemType::Title: {
+			if (!separated) { target->separator(); separated = true; }
+			Title* item = (Title*)itemBase;
+			target->title(item->getName());
+			break;
+		}
+		case MenuItemType::Select: {
+			if (!separated) { target->separator(); separated = true; }
+			Select* item = (Select*)itemBase;
+			target->select(item->getName(), item->getChecked(), item->getFunction());
+			break;
+		}
+		case MenuItemType::MultiSelect: {
+			if (!separated) { target->separator(); separated = true; }
+			MultiSelect* item = (MultiSelect*)itemBase;
+			target->multiSelect(item->getItems(), item->getValue(), item->getFunction());
+			break;
+		}
+		case MenuItemType::Separator: {
+			target->separator(); 
+			separated = true;
+			break;
+		}
+		}
+	}
+}
+
+void createMenu(IPopupMenu* target, Menu* source, MenuCallbackMap& callbacks) {
+	for (MenuItemBase* itemBase : source->getItems()) {
+		switch (itemBase->getType()) {
+		case MenuItemType::SubMenu: {
+			Menu* item = (Menu*)itemBase;
+			IPopupMenu* subMenu = new IPopupMenu();
+			target->AddItem(item->getName().c_str(), subMenu);
+			createMenu(subMenu, item, callbacks);
+			break;
+		}
+		case MenuItemType::Action: {
+			Action* item = (Action*)itemBase;
+			IPopupMenu::Item* popupItem = target->AddItem(item->getName().c_str());
+
+			if (item->getFunction()) {
+				popupItem->SetTag(callbacks.size());
+				callbacks.push_back([item]() { item->getFunction()(); });
+			}
+
+			break;
+		}
+		case MenuItemType::Title: {
+			Title* item = (Title*)itemBase;
+			target->AddItem(item->getName().c_str(), -1, IPopupMenu::Item::kTitle);
+			break;
+		}
+		case MenuItemType::Select: {
+			Select* item = (Select*)itemBase;
+			IPopupMenu::Item* popupItem = target->AddItem(item->getName().c_str());
+			popupItem->SetChecked(item->getChecked());
+
+			if (item->getFunction()) {
+				popupItem->SetTag(callbacks.size());
+				callbacks.push_back([popupItem, item]() { item->getFunction()(!popupItem->GetChecked()); });
+			}
+
+			break;
+		}
+		case MenuItemType::MultiSelect: {
+			MultiSelect* item = (MultiSelect*)itemBase;
+			for (size_t i = 0; i < item->getItems().size(); ++i) {
+				const std::string itemName = item->getItems()[i];
+				IPopupMenu::Item* popupItem = target->AddItem(itemName.c_str());
+				popupItem->SetChecked((int)i == item->getValue());
+
+				if (item->getFunction()) {
+					popupItem->SetTag(callbacks.size());
+					callbacks.push_back([item, i]() { item->getFunction()(i); });
+				}
+			}
+			break;
+		}
+		case MenuItemType::Separator: {
+			target->AddSeparator();
+			break;
+		}
+		}
+	}
+}
+
 void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	SelectActiveAtPoint(x, y);
 
 	if (mod.R) {
-		_menu.Clear();
+		// Temporarily disable multiple instances in Ableton on Mac due to a bug
+#ifdef WIN32
+		bool multiInstance = true;
+#else
+		bool multiInstance = _host != EHost::kHostAbletonLive;
+#endif
 
+		_menu.Clear();
+		Menu root;
+
+		Project* project = _proxy->getProject();
 		EmulatorInstanceDesc* active = _proxy->getActiveInstance();
 		if (active) {
 			switch (active->state) {
-				case EmulatorInstanceState::Running: {
-				IPopupMenu* projectMenu = CreateProjectMenu(true);
-				GetActiveView()->CreateMenu(&_menu, projectMenu);
+			case EmulatorInstanceState::Running: {
+				EmulatorView* view = GetActiveView();
 
-				projectMenu->SetFunction([&](IPopupMenu* menu) {
-					switch ((ProjectMenuItems)menu->GetChosenItemIdx()) {
-					case ProjectMenuItems::New: NewProject(); break;
-					case ProjectMenuItems::Save: SaveProject(); break;
-					case ProjectMenuItems::SaveAs: SaveProjectAs(); break;
-					case ProjectMenuItems::Load: OpenLoadProjectDialog(); break;
-					case ProjectMenuItems::RemoveInstance: RemoveActive(); break;
-					}
-				});
+				root.title(active->romName)
+					.separator()
+					.subMenu("Project")
+						.action("New", [&]() { NewProject(); })
+						.action("Load...", [&]() { OpenLoadProjectDialog(); })
+						.action("Save", [&]() { SaveProject(); })
+						.action("Save As...", [&]() { SaveProjectAs(); })
+						.separator()
+						.subMenu("Save Options")
+							.multiSelect({ "Save SRAM", "Save State" }, &project->settings.saveType)
+							.parent()
+						.separator()
+						.subMenu("Add Instance", multiInstance)
+							.action("Load ROM...", [&]() { OpenLoadRomDialog(NO_ACTIVE_INSTANCE, GameboyModel::Auto); })
+							.action("Same ROM", [&]() { _lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath, active->sameBoySettings.model); })
+							.action("Duplicate", [&]() { _lua->duplicateInstance(_activeIdx); })
+							.parent()
+						.action("Remove Instance", [&]() { RemoveActive(); }, _views.size() > 1 && multiInstance)
+						.subMenu("Layout", multiInstance)
+							.multiSelect({ "Auto", "Row", "Column", "Grid" }, &project->settings.layout)
+							.parent()
+						.subMenu("Zoom")
+							.multiSelect({ "1x", "2x", "3x", "4x" }, &project->settings.zoom)
+							.parent()
+						.separator()
+						.subMenu("Audio Routing", multiInstance)
+							.multiSelect({ "Stereo Mixdown", "Two Channels Per Instance" }, &project->settings.audioRouting)
+							.parent()
+						.subMenu("MIDI Routing", multiInstance)
+							.multiSelect({ 
+								"All Channels to All Instances", 
+								"Four Channels Per Instance",
+								"One Channel Per Instance",
+							}, &project->settings.midiRouting)
+							.parent()
+						.parent()
+					.subMenu("System")
+						.action("Load ROM...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::Auto); })
+						.subMenu("Load ROM As")
+							.action("AGB", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::Agb); })
+							.action("CGB C", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::CgbC); })
+							.action("CGB E", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::CgbE); })
+							.action("DMG B", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::DmgB); })
+							.parent()
+						.action("Reset", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::Auto); })
+						.subMenu("Reset As")
+							.action("AGB", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::Agb); })
+							.action("CGB C", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::CgbC); })
+							.action("CGB E", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::CgbE); })
+							.action("DMG B", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::DmgB); })
+							.parent()
+						.separator()
+						.action("New .sav", [&]() { _lua->newSav(_activeIdx); })
+						.action("Load .sav...", [&]() { OpenLoadSavDialog(); })
+						.action("Save .sav", [&]() { _lua->saveSav(_activeIdx, ""); })
+						.action("Save .sav As...", [&]() { OpenSaveSavDialog(); })
+						.parent()
+					.subMenu("Settings")
+						.action("Open Settings Folder...", [&]() { openShellFolder(getContentPath()); })
+						.parent()
+					.separator()
+					.select("Game Link", active->sameBoySettings.gameLink);
+
 				break;
 			}
 			case EmulatorInstanceState::RomMissing:
-				_menu.AddItem("Find ROM...");
-				_menu.AddItem("Load Project...");
-				_menu.SetFunction([&](IPopupMenu* menu) {
-					if (menu->GetChosenItemIdx() == 0) {
-						OpenFindRomDialog();
-					} else {
-						OpenLoadProjectDialog();
-					}
-				});
+				root.action("Find ROM...", [&]() { OpenFindRomDialog(); })
+					.action("Load Project...", [&]() { OpenLoadProjectDialog(); });
+
 				break;
 			}
 		} else {
-			IPopupMenu* modelMenu = createModelMenu(true);
-			createBasicMenu(&_menu, modelMenu);
-
-			_menu.SetFunction([&](IPopupMenu* menu) {
-				switch ((BasicMenuItems)menu->GetChosenItemIdx()) {
-				case BasicMenuItems::LoadProject: OpenLoadProjectDialog(); break;
-				case BasicMenuItems::LoadRom: break;// _active->OpenLoadRomDialog(GameboyModel::Auto); break;
-				}
-			});
-
-			modelMenu->SetFunction([&](IPopupMenu* menu) {
-				//_active->OpenLoadRomDialog((GameboyModel)(idx + 1));
-			});
+			root.action("Load Project...", [&]() { OpenLoadProjectDialog(); })
+				.action("Load ROM...", [&]() { OpenLoadProjectOrRomDialog(); });
 		}
 
+		MenuCallbackMap callbacks;
+		_menu.SetFunction([&](IPopupMenu* menu) {
+			IPopupMenu::Item* chosen = menu->GetChosenItem();
+			if (chosen) {
+				std::cout << "Clicked: " << chosen->GetText() << std::endl;
+				int tag = chosen->GetTag();
+				if (tag >= 0 && tag < callbacks.size()) {
+					callbacks[tag]();
+				}
+
+				UpdateLayout();
+				UpdateActive();
+			}
+		});
+
+		createMenu(&_menu, &root, callbacks);
 		GetUI()->CreatePopupMenu(*this, _menu, x, y);
 	}
 }
@@ -104,6 +292,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.stop();
 	double delta = (double)_frameTimer.count();
+	_frameTimer.start();
 
 	UpdateActive();
 
@@ -114,8 +303,6 @@ void RetroPlugView::Draw(IGraphics& g) {
 	for (auto view : _views) {
 		view->Draw(g, delta);
 	}
-	
-	_frameTimer.start();
 }
 
 void RetroPlugView::OnDrop(float x, float y, const char* str) {
@@ -124,43 +311,10 @@ void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	UpdateLayout();
 }
 
-void RetroPlugView::CreatePlugInstance(CreateInstanceType type) {
-	switch (type) {
-	case CreateInstanceType::LoadRom: {
-		std::vector<FileDialogFilters> types = {
-			{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
-		};
-
-		std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
-		if (paths.size() > 0) {
-			_lua->loadRom(NO_ACTIVE_INSTANCE, ws2s(paths[0]));
-		}
-		break;
-	}
-	case CreateInstanceType::SameRom: {
-		const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
-		if (active) {
-			_lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath);
-		}
-		break;
-	}
-	case CreateInstanceType::Duplicate: {
-		const EmulatorInstanceDesc* active = _proxy->getActiveInstance();
-		if (active) {
-			_lua->duplicateInstance(active->idx);
-		}
-		break;
-	}
-	}
-
-	UpdateLayout();
-	UpdateActive();
-}
-
 void RetroPlugView::UpdateLayout() {
 	if (_views.empty()) {
 		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-			_views.push_back(new EmulatorView(i, _lua, _proxy, GetUI()));
+			_views.push_back(new EmulatorView(i, GetUI()));
 		}
 	}
 
@@ -258,102 +412,16 @@ void RetroPlugView::SetActive(size_t index) {
 	UpdateActive();
 }
 
-IPopupMenu* RetroPlugView::CreateProjectMenu(bool loaded) {
-	Project* project = _proxy->getProject();
-	
-	IPopupMenu* instanceMenu = createInstanceMenu(loaded, _proxy->getInstanceCount() < 4);
-	IPopupMenu* layoutMenu = createLayoutMenu(project->settings.layout);
-	IPopupMenu* zoomMenu = createZoomMenu(project->settings.zoom);
-	IPopupMenu* saveOptionsMenu = createSaveOptionsMenu(project->settings.saveType);
-	IPopupMenu* audioRouting = createAudioRoutingMenu(project->settings.audioRouting);
-	IPopupMenu* midiRouting = createMidiRoutingMenu(project->settings.midiRouting);
-
-	// Temporarily disable multiple instances in Ableton on Mac due to a bug
-	#ifdef WIN32
-	bool multiInstance = true;
-	#else
-	bool multiInstance = _host != EHost::kHostAbletonLive;
-	#endif
-
-	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("New", (int)ProjectMenuItems::New);
-	menu->AddItem("Load...", (int)ProjectMenuItems::Load);
-	menu->AddItem("Save", (int)ProjectMenuItems::Save);
-	menu->AddItem("Save As...", (int)ProjectMenuItems::SaveAs);
-	menu->AddSeparator((int)ProjectMenuItems::Sep1);
-	menu->AddItem("Save Options", saveOptionsMenu, (int)ProjectMenuItems::SaveOptions);
-	menu->AddSeparator((int)ProjectMenuItems::Sep2);
-
-	if (multiInstance) {
-		menu->AddItem("Add Instance", instanceMenu, (int)ProjectMenuItems::AddInstance);
-		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, _views.size() < 2 ? IPopupMenu::Item::kDisabled : 0);
-		menu->AddItem("Layout", layoutMenu, (int)ProjectMenuItems::Layout);
-		menu->AddItem("Zoom", zoomMenu, (int)ProjectMenuItems::Zoom);
-		menu->AddSeparator((int)ProjectMenuItems::Sep3);
-		menu->AddItem("Audio Routing", audioRouting, (int)ProjectMenuItems::AudioRouting);
-		menu->AddItem("MIDI Routing", midiRouting, (int)ProjectMenuItems::MidiRouting);
-	} else {
-		menu->AddItem("Add Instance", (int)ProjectMenuItems::AddInstance, IPopupMenu::Item::kDisabled);
-		menu->AddItem("Remove Instance", (int)ProjectMenuItems::RemoveInstance, IPopupMenu::Item::kDisabled);
-		menu->AddItem("Layout", (int)ProjectMenuItems::Layout, IPopupMenu::Item::kDisabled);
-		menu->AddSeparator((int)ProjectMenuItems::Sep3);
-		menu->AddItem("Audio Routing", (int)ProjectMenuItems::AudioRouting, IPopupMenu::Item::kDisabled);
-		menu->AddItem("MIDI Routing", (int)ProjectMenuItems::MidiRouting, IPopupMenu::Item::kDisabled);
-	}
-
-	instanceMenu->SetFunction([&](IPopupMenu* menu) {
-		CreatePlugInstance((CreateInstanceType)menu->GetChosenItemIdx());
-	});
-
-	layoutMenu->SetFunction([&](IPopupMenu* menu) {
-		Project* project = _proxy->getProject();
-		project->settings.layout = (InstanceLayout)menu->GetChosenItemIdx();
-		_proxy->updateSettings();
-		UpdateLayout();
-	});
-
-	zoomMenu->SetFunction([&](IPopupMenu* menu) {
-		Project* project = _proxy->getProject();
-		project->settings.zoom = menu->GetChosenItemIdx() + 1;
-		for (size_t i = 0; i < _views.size(); ++i) {
-			_views[i]->SetZoom(project->settings.zoom);
-		}
-
-		UpdateLayout();
-	});
-
-	saveOptionsMenu->SetFunction([&](IPopupMenu* menu) {
-		Project* project = _proxy->getProject();
-		project->settings.saveType = (SaveStateType)menu->GetChosenItemIdx();
-	});
-
-	audioRouting->SetFunction([&](IPopupMenu* menu) {
-		Project* project = _proxy->getProject();
-		project->settings.audioRouting = (AudioChannelRouting)menu->GetChosenItemIdx();
-		_proxy->updateSettings();
-	});
-
-	midiRouting->SetFunction([&](IPopupMenu* menu) {
-		Project* project = _proxy->getProject();
-		project->settings.midiRouting = (MidiChannelRouting)menu->GetChosenItemIdx();
-		_proxy->updateSettings();
-	});
-
-	return menu;
+void RetroPlugView::RemoveActive() {
+	_lua->removeInstance(_activeIdx);
+	UpdateLayout();
+	UpdateActive();
 }
 
 void RetroPlugView::CloseProject() {
 	_lua->closeProject();
 	UpdateLayout();
 	UpdateActive();
-
-	/*IGraphics* g = GetUI();
-
-	if (g) {
-		for (auto view : _views) {
-			delete view;
-		}
-	}*/	
 }
 
 void RetroPlugView::NewProject() {
@@ -369,11 +437,7 @@ void RetroPlugView::SaveProject() {
 }
 
 void RetroPlugView::SaveProjectAs() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
-	};
-
-	tstring path = BasicFileSave(GetUI(), types);
+	tstring path = BasicFileSave(GetUI(), { RETROPLUG_PROJECT_FILTER });
 	if (path.size() > 0) {
 		_proxy->getProject()->path = ws2s(path);
 		RequestSave();
@@ -387,11 +451,7 @@ void RetroPlugView::RequestSave() {
 }
 
 void RetroPlugView::OpenFindRomDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
+	std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_ROM_FILTER }, false);
 	if (paths.size() > 0) {
 		//_lua->findRom(_proxy->activeIdx(), paths[0]);
 	}
@@ -399,9 +459,9 @@ void RetroPlugView::OpenFindRomDialog() {
 
 void RetroPlugView::OpenLoadProjectOrRomDialog() {
 	std::vector<FileDialogFilters> types = {
-		{ TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.retroplug") },
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") },
-		{ TSTR("RetroPlug Project"), TSTR("*.retroplug") },
+		ALL_SUPPORTED_FILTER,
+		GAMEBOY_ROM_FILTER,
+		RETROPLUG_PROJECT_FILTER
 	};
 
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
@@ -415,7 +475,7 @@ void RetroPlugView::LoadProjectOrRom(const tstring& path) {
 	if (ext == TSTR(".retroplug")) {
 		LoadProject(path);
 	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		_lua->loadRom(_activeIdx, ws2s(path));
+		_lua->loadRom(_activeIdx, ws2s(path), GameboyModel::Auto);
 	}
 }
 
@@ -433,10 +493,4 @@ void RetroPlugView::OpenLoadProjectDialog() {
 	if (paths.size() > 0) {
 		LoadProject(paths[0]);
 	}
-}
-
-void RetroPlugView::RemoveActive() {
-	_lua->removeInstance(_activeIdx);
-	UpdateLayout();
-	UpdateActive();
 }

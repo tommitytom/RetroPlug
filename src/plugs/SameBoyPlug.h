@@ -49,7 +49,7 @@ public:
 
 	void pressButtons(const StreamButtonPress* presses, size_t pressCount);
 
-	void loadRom(const char* data, size_t size, bool fastBoot);
+	void loadRom(const char* data, size_t size, GameboyModel model, bool fastBoot);
 
 	bool watchRom() const { return false; }
 

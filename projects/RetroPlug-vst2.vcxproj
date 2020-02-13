@@ -324,6 +324,7 @@
     <ClInclude Include="..\src\util\xstring.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
     <ClInclude Include="..\src\view\EmulatorView.h" />
+    <ClInclude Include="..\src\view\Menu.h" />
     <ClInclude Include="..\src\view\RetroPlugRoot.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\VST2_SDK\aeffect.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\VST2_SDK\aeffectx.h" />

@@ -135,13 +135,13 @@ public:
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		if (instance.patchedRomData) {
-			plug->loadRom(instance.patchedRomData->data(), instance.patchedRomData->size(), instance.fastBoot);
+			plug->loadRom(instance.patchedRomData->data(), instance.patchedRomData->size(), instance.sameBoySettings.model, instance.fastBoot);
 		} else {
 			assert(instance.sourceRomData);
-			plug->loadRom(instance.sourceRomData->data(), instance.sourceRomData->size(), instance.fastBoot);
+			plug->loadRom(instance.sourceRomData->data(), instance.sourceRomData->size(), instance.sameBoySettings.model, instance.fastBoot);
 		}
 
-		InstanceDuplicateDesc swap = { idx, instance.idx, plug };
+		InstanceDuplicateDesc swap = { (InstanceIndex)idx, instance.idx, plug };
 		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
 			instance.state = EmulatorInstanceState::Running;
 		});
@@ -155,10 +155,10 @@ public:
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		if (t.patchedRomData) {
-			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), t.fastBoot);
+			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), t.sameBoySettings.model, t.fastBoot);
 		} else {
 			assert(t.sourceRomData);
-			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), t.fastBoot);
+			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), t.sameBoySettings.model, t.fastBoot);
 		}
 		
 		if (t.sourceStateData) {

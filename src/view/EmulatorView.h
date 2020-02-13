@@ -34,8 +34,6 @@ private:
 	bool _frameDirty = false;
 
 	InstanceIndex _index;
-	UiLuaContext* _lua;
-	RetroPlugProxy* _proxy;
 
 	IRECT _area;
 	IGraphics* _graphics;
@@ -46,7 +44,7 @@ private:
 	int _zoom = 2;
 
 public:
-	EmulatorView(InstanceIndex idx, UiLuaContext* lua, RetroPlugProxy* proxy, IGraphics* graphics);
+	EmulatorView(InstanceIndex idx, IGraphics* graphics);
 	~EmulatorView();
 
 	void SetZoom(int zoom) { _zoom = zoom; }
@@ -67,32 +65,10 @@ public:
 
 	void Draw(IGraphics& g, double delta);
 
-	void CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu);
-
-	void OpenLoadRomDialog(GameboyModel model);
-
-	void DisableRendering(bool disable);
-
-	InstanceIndex getIndex() const { return _index; }
+	InstanceIndex GetIndex() const { return _index; }
 
 	void DeleteFrame();
 
 private:
 	void DrawPixelBuffer(NVGcontext* vg);
-
-	IPopupMenu* CreateSettingsMenu();
-
-	IPopupMenu* CreateSystemMenu();
-
-	void OpenLoadSramDialog();
-
-	void OpenSaveSramDialog();
-
-	void OpenReplaceRomDialog();
-	
-	void OpenSaveRomDialog();
-
-	void ToggleKeyboardMode();
-
-	void ResetSystem(bool fast);
 };

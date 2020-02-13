@@ -1,4 +1,4 @@
-local Lsdj = component({ name = "Lsdj", romName = "LSDj*" })
+local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
 
 local inspect = require("inspect")
 

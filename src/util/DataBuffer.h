@@ -5,7 +5,7 @@
 #include <string_view>
 #include "crc32.h"
 
-template <typename T = char>
+template <typename T>
 class DataBuffer {
 private:
 	T* _dataPtr = nullptr;

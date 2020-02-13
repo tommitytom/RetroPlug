@@ -10,17 +10,22 @@
 #include "ContextMenu.h"
 #include "controller/RetroPlugController.h"
 #include "util/cxxtimer.hpp"
+#include "platform/FileDialog.h"
 
 using namespace iplug;
 using namespace igraphics;
 
 using EmulatorViewPtr = std::unique_ptr<EmulatorView>;
 
+const FileDialogFilters GAMEBOY_ROM_FILTER = { TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") };
+const FileDialogFilters GAMEBOY_SAV_FILTER = { TSTR("GameBoy Saves"), TSTR("*.sav") };
+const FileDialogFilters RETROPLUG_PROJECT_FILTER = { TSTR("RetroPlug Projects"), TSTR("*.retroplug") };
+const FileDialogFilters ALL_SUPPORTED_FILTER = { TSTR("All Supported Types"), TSTR("*.gb;*.gbc;*.retroplug") };
+
 class RetroPlugView : public IControl {
 private:
 	RetroPlugProxy* _proxy;
 	std::vector<EmulatorView*> _views;
-	//EmulatorView* _active = nullptr;
 	InstanceIndex _activeIdx = NO_ACTIVE_INSTANCE;
 
 	IPopupMenu _menu;
@@ -29,6 +34,9 @@ private:
 	UiLuaContext* _lua;
 
 	cxxtimer::Timer _frameTimer;
+
+	int _syncMode = 1;
+	bool _autoPlay = true;
 
 public:
 	std::function<void(double)> onFrame;
@@ -67,11 +75,7 @@ public:
 private:
 	void UpdateLayout();
 
-	void CreatePlugInstance(CreateInstanceType type);
-
 	void SetActive(size_t index);
-
-	IPopupMenu* CreateProjectMenu(bool loaded);
 
 	void NewProject();
 
@@ -86,25 +90,36 @@ private:
 	void OpenLoadProjectDialog();
 
 	void OpenLoadProjectOrRomDialog();
+
+	void OpenLoadRomDialog(InstanceIndex idx, GameboyModel model) {
+		std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_ROM_FILTER }, false);
+		if (paths.size() > 0) {
+			_lua->loadRom(_activeIdx, ws2s(paths[0]), model);
+		}
+	}
+
+	void OpenLoadSavDialog() {
+		std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_SAV_FILTER }, false);
+		if (paths.size() > 0) {
+			_lua->loadSav(_activeIdx, ws2s(paths[0]), true);
+		}
+	}
+
+	void OpenSaveSavDialog() {
+		tstring path = BasicFileSave(GetUI(), { GAMEBOY_SAV_FILTER });
+		if (path.size() > 0) {
+			_lua->saveSav(_activeIdx, ws2s(path));
+		}
+	}
 	
 	void RemoveActive();
 
 	void RequestSave();
 
-	/*int GetViewIndex(EmulatorView* view) {
-		for (int i = 0; i < _views.size(); i++) {
-			if (_views[i] == view) {
-				return i;
-			}
-		}
-
-		return -1;
-	}*/
-
 	void SelectActiveAtPoint(float x, float y) {
 		for (auto& view : _views) {
 			if (view->GetArea().Contains(x, y)) {
-				SetActive(view->getIndex());
+				SetActive(view->GetIndex());
 				break;
 			}
 		}

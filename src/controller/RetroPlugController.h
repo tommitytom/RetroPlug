@@ -68,7 +68,7 @@ public:
 
 	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 
-	ProcessingContext* processingContext() { return _audioController.processingContext(); }
+	ProcessingContext* processingContext() { return _audioController.getProcessingContext(); }
 
 	AudioLuaContext* audioLua() { return _audioController.getLuaContext(); }
 
