@@ -1,44 +1,53 @@
-local MenuItemTypes = {
-    None = 0,
-    SubMenu = 1,
-    Select = 2,
-    MultiSelect = 3,
-    Separator = 4
-}
-
-local function MultiSelect(items, selected, handler)
+local function multiSelect(items, selected, handler)
     return {
-        type = MenuItemTypes.MultiSelect,
+        type = MenuItemType.MultiSelect,
         items = items,
         selected = selected,
         handler = handler
     }
 end
 
-local function Select(name, value, handler)
+local function select(name, value, handler)
     return {
-        type = MenuItemTypes.Select,
+        type = MenuItemType.Select,
         name = name,
         value = value,
         handler = handler
     }
 end
 
-local function Menu(name, items)
+local function action(name, handler)
     return {
-        type = MenuItemTypes.SubMenu,
+        type = MenuItemType.Action,
+        name = name,
+        handler = handler
+    }
+end
+
+local function title(name)
+    return {
+        type = MenuItemType.Title,
+        name = name
+    }
+end
+
+local function subMenu(name, items)
+    return {
+        type = MenuItemType.SubMenu,
         name = name,
         items = items
     }
 end
 
-local function Separator()
-    return { type = MenuItemTypes.Separator }
+local function separator()
+    return { type = MenuItemType.Separator }
 end
 
 return {
-    MultiSelect = MultiSelect,
-    Select = Select,
-    Separator = Separator,
-    Menu = Menu
+    multiSelect = multiSelect,
+    select = select,
+    separator = separator,
+    subMenu = subMenu,
+    title = title,
+    action = action
 }

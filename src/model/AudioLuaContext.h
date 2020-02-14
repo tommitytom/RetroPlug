@@ -35,7 +35,7 @@ public:
 
 	void setActive(InstanceIndex idx);
 
-	void update(float delta);
+	void update();
 
 	//bool onKey(const iplug::IKeyPress& key, bool down);
 

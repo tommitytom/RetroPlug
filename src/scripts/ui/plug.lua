@@ -442,8 +442,49 @@ function _onDrop(str)
 	return componentInputRoute("onDrop", str)
 end
 
-function _onMenu()
+local _menuLookup = nil
 
+function _onMenu()
+    for _, inst in ipairs(_instances) do
+        for _, comp in ipairs(inst.components) do
+			if comp.onMenu ~= nil then
+				local menu = Menu.new()
+				comp:onMenu(menu)
+			end
+        end
+    end
+end
+
+function _onMenuResult(idx, value)
+	if _menuLookup ~= nil then
+		local callback = _menuLookup[idx]
+		if callback ~= nil then
+			callback(value)
+		end
+
+		_menuLookup = nil
+	end
+end
+
+function _resetInstance(idx, model)
+end
+
+function _newSram(idx)
+end
+
+function _saveSram(idx, path)
+end
+
+function _loadSram(idx, path, reset)
+	local inst = _instances[idx + 1]
+	local fm = _proxy:fileManager()
+	if fm:exists(path) == true then
+		local savFile = fm:loadFile(path, false)
+		if savFile ~= nil then
+			inst.desc.savPath = path
+			inst.desc.sourceSavData = savFile.data
+		end
+	end
 end
 
 Action.RetroPlug = {

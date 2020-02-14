@@ -55,19 +55,19 @@ void UiLuaContext::setActive(InstanceIndex idx) {
 }
 
 void UiLuaContext::resetInstance(InstanceIndex idx, GameboyModel model) {
-
+	callFunc(_state, "_resetInstance", idx, model);
 }
 
-void UiLuaContext::newSav(InstanceIndex idx) {
-
+void UiLuaContext::newSram(InstanceIndex idx) {
+	callFunc(_state, "_newSram", idx);
 }
 
-void UiLuaContext::saveSav(InstanceIndex idx, const std::string& path) {
-	
+void UiLuaContext::saveSram(InstanceIndex idx, const std::string& path) {
+	callFunc(_state, "_saveSram", idx, path);
 }
 
-void UiLuaContext::loadSav(InstanceIndex idx, const std::string& path, bool reset) {
-	callFunc(_state, "_loadSav", idx, path, reset);
+void UiLuaContext::loadSram(InstanceIndex idx, const std::string& path, bool reset) {
+	callFunc(_state, "_loadSram", idx, path, reset);
 }
 
 void UiLuaContext::update(float delta) {

@@ -83,6 +83,26 @@ local function parseMenu(menu)
     end
 end
 
+function _update(menus)
+    local menusChanged = true
+    for _, inst in ipairs(_instances) do
+        for _, comp in ipairs(inst.components) do
+            if comp.__menuDirty == true then
+                if comp.onMenu ~= nil then
+                    comp.__menu = comp:onMenu()
+                    menusChanged = true
+                end
+
+                comp.__menuDirty = false
+            end
+        end
+    end
+
+    if menusChanged == true then
+
+    end
+end
+
 function _onMenu(idx)
     local merged = {}
     for _, inst in ipairs(_instances) do

@@ -101,14 +101,14 @@ private:
 	void OpenLoadSavDialog() {
 		std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_SAV_FILTER }, false);
 		if (paths.size() > 0) {
-			_lua->loadSav(_activeIdx, ws2s(paths[0]), true);
+			_lua->loadSram(_activeIdx, ws2s(paths[0]), true);
 		}
 	}
 
 	void OpenSaveSavDialog() {
 		tstring path = BasicFileSave(GetUI(), { GAMEBOY_SAV_FILTER });
 		if (path.size() > 0) {
-			_lua->saveSav(_activeIdx, ws2s(path));
+			_lua->saveSram(_activeIdx, ws2s(path));
 		}
 	}
 	

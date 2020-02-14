@@ -40,6 +40,8 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 	}
 
+	_controller.audioLua()->update();
+
 	ProcessingContext* context = _controller.processingContext();
 	context->process(outputs, (size_t)frameCount);
 }

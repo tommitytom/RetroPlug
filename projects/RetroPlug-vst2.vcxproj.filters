@@ -295,6 +295,9 @@
     <ClCompile Include="..\src\controller\AudioController.cpp">
       <Filter>src\controller</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\view\Menu.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h">

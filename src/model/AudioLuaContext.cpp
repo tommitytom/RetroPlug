@@ -92,6 +92,11 @@ void AudioLuaContext::removeInstance(InstanceIndex idx) {
 	callFunc(_state, "_removeInstance", idx);
 }
 
+void AudioLuaContext::update() {
+	//std::vector<Menu*> menus;
+	//callFunc(_state, "_update", menus);
+}
+
 void AudioLuaContext::closeProject() {
 	callFunc(_state, "_closeProject");
 }

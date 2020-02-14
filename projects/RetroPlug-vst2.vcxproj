@@ -576,6 +576,7 @@
     <ClCompile Include="..\src\util\PaRingBuffer.c" />
     <ClCompile Include="..\src\view\ContextMenu.cpp" />
     <ClCompile Include="..\src\view\EmulatorView.cpp" />
+    <ClCompile Include="..\src\view\Menu.cpp" />
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\IPopupMenuControl.cpp" />

@@ -43,11 +43,11 @@ public:
 
 	void resetInstance(InstanceIndex idx, GameboyModel model);
 
-	void newSav(InstanceIndex idx);
+	void newSram(InstanceIndex idx);
 	
-	void saveSav(InstanceIndex idx, const std::string& path);
+	void saveSram(InstanceIndex idx, const std::string& path);
 
-	void loadSav(InstanceIndex idx, const std::string& path, bool reset);
+	void loadSram(InstanceIndex idx, const std::string& path, bool reset);
 
 	void update(float delta);
 

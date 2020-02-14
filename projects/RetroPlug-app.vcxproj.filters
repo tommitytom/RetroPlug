@@ -319,6 +319,9 @@
     <ClCompile Include="..\src\controller\AudioController.cpp">
       <Filter>src\controller</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\view\Menu.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -881,6 +884,12 @@
     </ClInclude>
     <ClInclude Include="..\src\controller\AudioController.h">
       <Filter>src\controller</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\Menu.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\BlockAllocator.h">
+      <Filter>src\view</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

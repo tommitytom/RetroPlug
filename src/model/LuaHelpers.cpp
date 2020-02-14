@@ -3,6 +3,7 @@
 #include "platform/Logger.h"
 #include "model/Project.h"
 #include "config/config.h"
+#include "view/Menu.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name) {
 	if (!result.valid()) {
@@ -22,6 +23,16 @@ bool validateResult(const sol::protected_function_result& result, const std::str
 
 void setupCommon(sol::state* state) {
 	sol::state& s = *state;
+
+	s.new_enum("MenuItemType",
+		"None", MenuItemType::None,
+		"SubMenu", MenuItemType::SubMenu,
+		"Select", MenuItemType::Select,
+		"MultiSelect", MenuItemType::MultiSelect,
+		"Separator", MenuItemType::Separator,
+		"Action", MenuItemType::Action,
+		"Title", MenuItemType::Title
+	);
 
 	s.new_enum("EmulatorInstanceState",
 		"Uninitialized", EmulatorInstanceState::Uninitialized,

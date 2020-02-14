@@ -345,8 +345,10 @@
     <ClInclude Include="..\src\util\RingBuffer.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
     <ClInclude Include="..\src\util\xstring.h" />
+    <ClInclude Include="..\src\view\BlockAllocator.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
     <ClInclude Include="..\src\view\EmulatorView.h" />
+    <ClInclude Include="..\src\view\Menu.h" />
     <ClInclude Include="..\src\view\RetroPlugRoot.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.h" />
@@ -582,6 +584,7 @@
     <ClCompile Include="..\src\util\PaRingBuffer.c" />
     <ClCompile Include="..\src\view\ContextMenu.cpp" />
     <ClCompile Include="..\src\view\EmulatorView.cpp" />
+    <ClCompile Include="..\src\view\Menu.cpp" />
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.cpp" />

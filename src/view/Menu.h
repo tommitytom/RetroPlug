@@ -3,6 +3,9 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <iostream>
+#include "IGraphics.h"
+#include "BlockAllocator.h"
 
 enum class MenuItemType {
 	None,
@@ -17,6 +20,7 @@ enum class MenuItemType {
 using MultiSelectFunction = std::function<void(int)>;
 using SelectFunction = std::function<void(bool)>;
 using ActionFunction = std::function<void()>;
+using MenuCallbackMap = std::vector<std::function<void()>>;
 
 class MenuItemBase {
 private:
@@ -34,16 +38,19 @@ private:
 	std::string _name;
 	bool _checked = false;
 	SelectFunction _func;
+	bool _active;
 
 public:
-	Select(const std::string& name, bool checked, SelectFunction func = nullptr)
-		: MenuItemBase(MenuItemType::Select), _name(name), _checked(checked), _func(func) {}
+	Select(const std::string& name, bool checked, SelectFunction func, bool active)
+		: MenuItemBase(MenuItemType::Select), _name(name), _checked(checked), _func(func), _active(active) {}
 
 	const std::string& getName() { return _name; }
 
 	bool getChecked() const { return _checked; }
 
 	SelectFunction& getFunction() { return _func; }
+
+	bool isActive() const { return _active; }
 };
 
 class Action : public MenuItemBase {
@@ -70,7 +77,7 @@ private:
 	MultiSelectFunction _func;
 
 public:
-	MultiSelect(const std::vector<std::string>& items, int value, MultiSelectFunction func = nullptr)
+	MultiSelect(const std::vector<std::string>& items, int value, MultiSelectFunction func)
 		: MenuItemBase(MenuItemType::MultiSelect), _items(items), _value(value), _func(func) {}
 
 	const std::vector<std::string>& getItems() const { return _items; }
@@ -101,6 +108,7 @@ private:
 	std::string _name;
 	std::vector<MenuItemBase*> _items;
 	bool _active;
+	BlockAllocator* _allocator;
 
 public:
 	Menu(const std::string& name = "", bool active = false, Menu* parent = nullptr)
@@ -130,17 +138,17 @@ public:
 		return *this;
 	}
 
-	Menu& select(const std::string& name, bool selected, SelectFunction func = nullptr) {
-		addItem(new Select(name, selected, func));
+	Menu& select(const std::string& name, bool selected, SelectFunction func, bool active = true) {
+		addItem(new Select(name, selected, func, active));
 		return *this;
 	}
 
-	Menu& select(const std::string& name, bool* selected) {
-		addItem(new Select(name, *selected, [selected](bool v) { *selected = v; }));
+	Menu& select(const std::string& name, bool* selected, bool active = true) {
+		addItem(new Select(name, *selected, [selected](bool v) { *selected = v; }, active));
 		return *this;
 	}
 
-	Menu& multiSelect(const std::vector<std::string>& items, int selected, MultiSelectFunction func = nullptr) {
+	Menu& multiSelect(const std::vector<std::string>& items, int selected, MultiSelectFunction func) {
 		addItem(new MultiSelect(items, selected, func));
 		return *this;
 	}
@@ -174,3 +182,7 @@ public:
 		return *_parent;
 	}
 };
+
+void mergeMenu(Menu* source, Menu* target);
+
+void createMenu(iplug::igraphics::IPopupMenu* target, Menu* source, MenuCallbackMap& callbacks);
