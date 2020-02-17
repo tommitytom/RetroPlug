@@ -26,10 +26,13 @@ function LsdjArduinoboy:onMenu(menu)
 					"MIDI Map",
 				}, self.syncMode, function(idx) self.syncMode = idx end)
 				:separator()
-				:select("Autoplay", self.autoPlay, function(value) self.autoPlay = value end)
+				:select("Autoplay", self.autoPlay, function(value) print(value); self.autoPlay = value end)
 end
 
 function LsdjArduinoboy:onTransportChanged(running)
+	if self.autoPlay == true then
+		self.buttons:press(Buttons.Start)
+	end
 end
 
 function LsdjArduinoboy:onMidi(message)

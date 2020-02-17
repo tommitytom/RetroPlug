@@ -15,7 +15,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	};
 
 	mLayoutFunc = [&](IGraphics* pGraphics) {
-		_controller.init(pGraphics, GetHost());
+		_controller.init(pGraphics, GetHost(), &_menuLock);
 		OnReset();
 	};
 #endif
@@ -27,7 +27,7 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
-    for (size_t j = 0; j < MaxNChannels(ERoute::kOutput); j++) {
+	for (size_t j = 0; j < MaxNChannels(ERoute::kOutput); j++) {
 		for (size_t i = 0; i < frameCount; i++) {
 			outputs[j][i] = 0;
 		}
@@ -39,6 +39,10 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		transportChanged = true;
 		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
 	}
+
+	// TODO: This mutex is temporary until I find a good way of sending context menus
+	// across threads!
+	std::scoped_lock lock(_menuLock);
 
 	_controller.audioLua()->update();
 

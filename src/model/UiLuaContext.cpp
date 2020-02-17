@@ -15,6 +15,8 @@
 #include "platform/Platform.h"
 #include "LuaHelpers.h"
 
+#include "view/Menu.h"
+
 #ifdef COMPILE_LUA_SCRIPTS
 #include "CompiledLua.h"
 #endif
@@ -96,8 +98,12 @@ void UiLuaContext::onDrop(const char* str) {
 	callFunc(_state, "_onDrop", paths);
 }
 
-void UiLuaContext::onMenu(iplug::igraphics::IPopupMenu* root) {
-	callFunc(_state, "_onMenu");
+void UiLuaContext::onMenu(std::vector<Menu*>& menus) {
+	callFunc(_state, "_onMenu", menus);
+}
+
+void UiLuaContext::onMenuResult(int id) {
+	callFunc(_state, "_onMenuResult", id);
 }
 
 void UiLuaContext::reload() {
@@ -183,18 +189,6 @@ void UiLuaContext::setup() {
 		"fastBoot", &EmulatorInstanceDesc::fastBoot
 	);
 
-	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
-		"hold", &GameboyButtonStream::hold,
-		"release", &GameboyButtonStream::release,
-		"releaseAll", &GameboyButtonStream::releaseAll,
-		"delay", &GameboyButtonStream::delay,
-		"press", &GameboyButtonStream::press,
-
-		"holdDuration", &GameboyButtonStream::holdDuration,
-		"releaseDuration", &GameboyButtonStream::releaseDuration,
-		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
-	);
-
 	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
 		"setInstance", &RetroPlugProxy::setInstance,
 		"removeInstance", &RetroPlugProxy::removeInstance,
@@ -217,6 +211,7 @@ void UiLuaContext::setup() {
 		"alt", &iplug::IKeyPress::A
 	);
 
+	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 	s["_proxy"].set(_proxy);
 
 	if (!runScript(_state, "require('plug')")) {

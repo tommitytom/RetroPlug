@@ -7,6 +7,7 @@
 #include "plugs/SameBoyPlug.h"
 #include "ProcessingContext.h"
 #include "util/fs.h"
+#include "view/Menu.h"
 
 void AudioLuaContext::init(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
@@ -40,7 +41,8 @@ void AudioLuaContext::setup() {
 
 	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,
-		"getInstance", &ProcessingContext::getInstance
+		"getInstance", &ProcessingContext::getInstance,
+		"buttons", &ProcessingContext::getButtonPresses
 	);
 
 	s.new_usertype<SameBoyPlugDesc>("SameBoyPlug",
@@ -52,6 +54,7 @@ void AudioLuaContext::setup() {
 		"getDesc", &SameBoyPlug::getDesc
 	);
 
+	s["LUA_MENU_ID_OFFSET"] = LUA_AUDIO_MENU_ID_OFFSET;
 	s["_model"].set(_context);
 
 	if (!runScript(_state, "require('main')")) {
@@ -107,6 +110,14 @@ void AudioLuaContext::onMidi(int offset, int status, int data1, int data2) {
 
 void AudioLuaContext::onMidiClock(int button, bool down) {
 
+}
+
+void AudioLuaContext::onMenu(std::vector<Menu*>& menus) {
+	callFunc(_state, "_onMenu", menus);
+}
+
+void AudioLuaContext::onMenuResult(int id) {
+	callFunc(_state, "_onMenuResult", id);
 }
 
 void AudioLuaContext::reload() {

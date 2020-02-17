@@ -62,6 +62,7 @@ namespace calls {
 	using TransmitVideo = micromsg::Push<VideoStream>;
 	using UpdateSettings = micromsg::Push<Project::Settings>;
 	using PressButtons = micromsg::Push<ButtonStream<32>>;
+	using ContextMenuResult = micromsg::Push<int>;
 
 	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
 	using DuplicateInstance = micromsg::Request<InstanceDuplicateDesc, SameBoyPlugPtr>;

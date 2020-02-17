@@ -21,6 +21,7 @@ private:
 	AudioSettings _audioSettings;
 
 	AudioBuffer _audioBuffers[MAX_INSTANCES];
+	GameboyButtonStream _buttonPresses[MAX_INSTANCES];
 
 	micromsg::Allocator* _alloc;
 
@@ -43,6 +44,10 @@ public:
 	const Project::Settings& getSettings() const { return _settings; }
 
 	void setSettings(const Project::Settings& settings) { _settings = settings; }
+
+	GameboyButtonStream* getButtonPresses(InstanceIndex idx) {
+		return &_buttonPresses[idx];
+	}
 
 	void fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
 		state.type = req.type;
@@ -169,6 +174,10 @@ public:
 				//MessageBus* bus = plug->messageBus();
 				//_buttonQueue.update(bus, FramesToMs(frameCount));
 				//GenerateMidiClock(plug, frameCount, transportChanged);
+
+				const ButtonStream<32>& d = _buttonPresses[i].data();
+				plug->pressButtons(d.presses.data(), d.pressCount);
+				_buttonPresses[i].clear();
 			}
 		}
 

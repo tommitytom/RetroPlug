@@ -11,6 +11,7 @@
 #include "controller/RetroPlugController.h"
 #include "util/cxxtimer.hpp"
 #include "platform/FileDialog.h"
+#include "model/AudioLuaContext.h"
 
 using namespace iplug;
 using namespace igraphics;
@@ -32,6 +33,9 @@ private:
 	EHost _host;
 
 	UiLuaContext* _lua;
+	AudioLuaContext* _audioLua;
+
+	std::mutex* _audioLock;
 
 	cxxtimer::Timer _frameTimer;
 
@@ -42,7 +46,7 @@ public:
 	std::function<void(double)> onFrame;
 
 public:
-	RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* plug);
+	RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioLuaContext* audioLua, std::mutex* _audioLock);
 	~RetroPlugView();
 
 	EmulatorView* GetActiveView() {

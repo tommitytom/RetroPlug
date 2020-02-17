@@ -30,6 +30,7 @@ RetroPlugController::RetroPlugController(): _listener(&_uiLua, _audioController.
 	_bus.addCall<calls::UpdateSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);
 	_bus.addCall<calls::FetchState>(1);
+	_bus.addCall<calls::ContextMenuResult>(1);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_audioController.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));
@@ -74,7 +75,7 @@ void RetroPlugController::update(float delta) {
 	_scriptWatcher.update();
 }
 
-void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host) {
+void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, std::mutex* audioMutex) {
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
 	graphics->HandleMouseOver(true);
@@ -85,7 +86,7 @@ void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHo
 		return _uiLua.onKey(key, !isUp);
 	});
 
-	_view = new RetroPlugView(graphics->GetBounds(), &_uiLua, &_proxy);
+	_view = new RetroPlugView(graphics->GetBounds(), &_uiLua, &_proxy, _audioController.getLuaContext(), audioMutex);
 	graphics->AttachControl(_view);
 
 	_view->onFrame = [&](double delta) {

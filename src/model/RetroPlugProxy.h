@@ -120,6 +120,10 @@ public:
 		_activeIdx = idx;
 	}
 
+	void onMenuResult(int id) {
+		_node->push<calls::ContextMenuResult>(NodeTypes::Audio, id);
+	}
+
 	void updateSettings() {
 		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}

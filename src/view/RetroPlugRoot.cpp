@@ -13,8 +13,8 @@
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 
-RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy)
-	: IControl(b), _lua(lua), _proxy(proxy) {
+RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioLuaContext* audioLua, std::mutex* audioLock)
+	: IControl(b), _lua(lua), _proxy(proxy), _audioLua(audioLua), _audioLock(audioLock) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
 			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
@@ -92,7 +92,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 							.multiSelect({ "Auto", "Row", "Column", "Grid" }, &project->settings.layout)
 							.parent()
 						.subMenu("Zoom")
-							.multiSelect({ "1x", "2x", "3x", "4x" }, &project->settings.zoom)
+							.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { project->settings.zoom = value + 1; })
 							.parent()
 						.separator()
 						.subMenu("Audio Routing", multiInstance)
@@ -133,6 +133,18 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					.separator()
 					.select("Game Link", &active->sameBoySettings.gameLink);
 
+				std::vector<Menu*> menus;
+				_audioLock->lock();
+				_audioLua->onMenu(menus);
+				_audioLock->unlock();
+
+				_lua->onMenu(menus);
+
+				for (Menu* item : menus) {
+					mergeMenu(item, &root);
+					delete item;
+				}
+
 				break;
 			}
 			case EmulatorInstanceState::RomMissing:
@@ -150,10 +162,12 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		_menu.SetFunction([&](IPopupMenu* menu) {
 			IPopupMenu::Item* chosen = menu->GetChosenItem();
 			if (chosen) {
-				std::cout << "Clicked: " << chosen->GetText() << std::endl;
 				int tag = chosen->GetTag();
 				if (tag >= 0 && tag < callbacks.size()) {
 					callbacks[tag]();
+				} else if (tag >= LUA_UI_MENU_ID_OFFSET) {
+					_lua->onMenuResult(tag);
+					_proxy->onMenuResult(tag);
 				}
 
 				UpdateLayout();

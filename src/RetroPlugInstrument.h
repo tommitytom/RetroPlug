@@ -40,5 +40,7 @@ private:
 	ButtonQueue _buttonQueue;
 
 	RetroPlugController _controller;
+
+	std::mutex _menuLock;
 #endif
 };

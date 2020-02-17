@@ -4,6 +4,7 @@
 #include "model/Project.h"
 #include "config/config.h"
 #include "view/Menu.h"
+#include "model/ButtonStream.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name) {
 	if (!result.valid()) {
@@ -96,6 +97,34 @@ void setupCommon(sol::state* state) {
 		"layout", &Project::Settings::layout,
 		"zoom", &Project::Settings::zoom,
 		"saveType", &Project::Settings::saveType
+	);
+
+	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
+		"hold", &GameboyButtonStream::hold,
+		"release", &GameboyButtonStream::release,
+		"releaseAll", &GameboyButtonStream::releaseAll,
+		"delay", &GameboyButtonStream::delay,
+		"press", &GameboyButtonStream::press,
+
+		"holdDuration", &GameboyButtonStream::holdDuration,
+		"releaseDuration", &GameboyButtonStream::releaseDuration,
+		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
+	);
+
+	s.new_usertype<Select>("Select", sol::base_classes, sol::bases<MenuItemBase>());
+	s.new_usertype<Action>("Action", sol::base_classes, sol::bases<MenuItemBase>());
+	s.new_usertype<MultiSelect>("MultiSelect", sol::base_classes, sol::bases<MenuItemBase>());
+	s.new_usertype<Title>("Title", sol::base_classes, sol::bases<MenuItemBase>());
+	s.new_usertype<Separator>("Separator", sol::base_classes, sol::bases<MenuItemBase>());
+	s.new_usertype<Menu>("Menu", "addItem", &Menu::addItem, sol::base_classes, sol::bases<MenuItemBase>());
+
+	s.create_named_table("_menuAlloc",
+		"menu", [](const std::string& name, Menu* parent) { return new Menu(name, true, parent); },
+		"title", [](const std::string& name) { return new Title(name); },
+		"select", [](const std::string& name, bool checked, bool active, int id) { return new Select(name, checked, nullptr, active, id); },
+		"action", [](const std::string& name, bool active, int id) { return new Action(name, nullptr, active, id); },
+		"multiSelect", [](const sol::as_table_t<std::vector<std::string>>& items, int value, bool active, int id) { return new MultiSelect(items.value(), value, nullptr, active, id); },
+		"separator", []() { return new Separator(); }
 	);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);

@@ -144,4 +144,16 @@ function Lsdj:onRomLoad(system)
 
 end
 
+function Lsdj:onMenu(menu)
+	menu:subMenu("LSDj")
+		:subMenu("Songs")
+			:parent()
+		:subMenu("Kits")
+			:parent()
+		:subMenu("Fonts")
+			:parent()
+		:subMenu("Palettes")
+			:parent()
+end
+
 return Lsdj

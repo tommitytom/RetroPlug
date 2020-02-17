@@ -35,4 +35,8 @@ void AudioController::setNode(Node* node) {
 			instance->pressButtons(presses.presses.data(), presses.pressCount);
 		}
 	});
+
+	node->on<calls::ContextMenuResult>([&](const int& id) {
+		_lua.onMenuResult(id);
+	});
 }

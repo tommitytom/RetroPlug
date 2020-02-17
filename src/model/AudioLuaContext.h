@@ -3,6 +3,7 @@
 #include <iostream>
 #include <atomic>
 #include "ProcessingContext.h"
+#include "view/Menu.h"
 
 namespace sol {
 	class state;
@@ -44,6 +45,10 @@ public:
 	void onMidi(int offset, int status, int data1, int data2);
 
 	void onMidiClock(int button, bool down);
+
+	void onMenu(std::vector<Menu*>& menus);
+
+	void onMenuResult(int id);
 
 	void reload();
 

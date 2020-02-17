@@ -6,6 +6,8 @@
 #include "IGraphicsStructs.h"
 #include "model/RetroPlugProxy.h"
 
+#include "view/Menu.h"
+
 #include <iostream>
 
 namespace sol { class state; };
@@ -57,7 +59,9 @@ public:
 
 	void onDrop(const char* str);
 
-	void onMenu(iplug::igraphics::IPopupMenu* root);
+	void onMenu(std::vector<Menu*>& menus);
+
+	void onMenuResult(int id);
 
 	void reload();
 

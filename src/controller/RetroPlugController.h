@@ -66,7 +66,7 @@ public:
 
 	void update(float delta);
 
-	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
+	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, std::mutex* audioMutex);
 
 	ProcessingContext* processingContext() { return _audioController.getProcessingContext(); }
 

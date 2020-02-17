@@ -16,7 +16,7 @@ Menu* findSubMenu(Menu* source, const std::string& name) {
 }
 
 void mergeMenu(Menu* source, Menu* target) {
-	bool separated = false;
+	bool separated = target->getItems().empty();
 	for (MenuItemBase* itemBase : source->getItems()) {
 		switch (itemBase->getType()) {
 		case MenuItemType::SubMenu: {
@@ -33,7 +33,7 @@ void mergeMenu(Menu* source, Menu* target) {
 		case MenuItemType::Action: {
 			if (!separated) { target->separator(); separated = true; }
 			Action* item = (Action*)itemBase;
-			target->action(item->getName(), item->getFunction());
+			target->action(item->getName(), item->getFunction(), item->isActive(), item->getId());
 			break;
 		}
 		case MenuItemType::Title: {
@@ -45,13 +45,13 @@ void mergeMenu(Menu* source, Menu* target) {
 		case MenuItemType::Select: {
 			if (!separated) { target->separator(); separated = true; }
 			Select* item = (Select*)itemBase;
-			target->select(item->getName(), item->getChecked(), item->getFunction());
+			target->select(item->getName(), item->getChecked(), item->getFunction(), item->isActive(), item->getId());
 			break;
 		}
 		case MenuItemType::MultiSelect: {
 			if (!separated) { target->separator(); separated = true; }
 			MultiSelect* item = (MultiSelect*)itemBase;
-			target->multiSelect(item->getItems(), item->getValue(), item->getFunction());
+			target->multiSelect(item->getItems(), item->getValue(), item->getFunction(), item->isActive(), item->getId());
 			break;
 		}
 		case MenuItemType::Separator: {
@@ -77,9 +77,13 @@ void createMenu(iplug::igraphics::IPopupMenu* target, Menu* source, MenuCallback
 			Action* item = (Action*)itemBase;
 			IPopupMenu::Item* popupItem = target->AddItem(item->getName().c_str(), -1, item->isActive() ? 0 : IPopupMenu::Item::kDisabled);
 
-			if (item->isActive() && item->getFunction()) {
-				popupItem->SetTag(callbacks.size());
-				callbacks.push_back([item]() { item->getFunction()(); });
+			if (item->isActive()) {
+				if (item->getFunction()) {
+					popupItem->SetTag(callbacks.size());
+					callbacks.push_back([item]() { item->getFunction()(); });
+				} else {
+					popupItem->SetTag(item->getId());
+				}
 			}
 
 			break;
@@ -94,9 +98,13 @@ void createMenu(iplug::igraphics::IPopupMenu* target, Menu* source, MenuCallback
 			IPopupMenu::Item* popupItem = target->AddItem(item->getName().c_str(), -1, item->isActive() ? 0 : IPopupMenu::Item::kDisabled);
 			popupItem->SetChecked(item->getChecked());
 
-			if (item->getFunction()) {
-				popupItem->SetTag(callbacks.size());
-				callbacks.push_back([popupItem, item]() { item->getFunction()(!popupItem->GetChecked()); });
+			if (item->isActive()) {
+				if (item->getFunction()) {
+					popupItem->SetTag(callbacks.size());
+					callbacks.push_back([popupItem, item]() { item->getFunction()(!popupItem->GetChecked()); });
+				} else {
+					popupItem->SetTag(item->getId());
+				}
 			}
 
 			break;
@@ -111,6 +119,8 @@ void createMenu(iplug::igraphics::IPopupMenu* target, Menu* source, MenuCallback
 				if (item->getFunction()) {
 					popupItem->SetTag(callbacks.size());
 					callbacks.push_back([item, i]() { item->getFunction()(i); });
+				} else if (item->getId() != -1) {
+					popupItem->SetTag(item->getId() + i);
 				}
 			}
 			break;

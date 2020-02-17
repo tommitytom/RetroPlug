@@ -5,6 +5,8 @@ require("components.GlobalButtonHandler")
 require("Action")
 require("Print")
 local cm = require("ComponentManager")
+local LuaMenu = require("Menu")
+local createNativeMenu = require("MenuHelper")
 
 local inspect = require("inspect")
 local pathutil = require("pathutil")
@@ -444,22 +446,34 @@ end
 
 local _menuLookup = nil
 
-function _onMenu()
+function _onMenu(menus)
+	local menu = LuaMenu()
+	local componentsMenu = menu:subMenu("System"):subMenu("Components")
+
+	if Active ~= nil then
+		for _, comp in ipairs(Active.components) do
+			componentsMenu:title(comp.__desc.name)
+		end
+	end
+
     for _, inst in ipairs(_instances) do
         for _, comp in ipairs(inst.components) do
 			if comp.onMenu ~= nil then
-				local menu = Menu.new()
 				comp:onMenu(menu)
 			end
         end
-    end
+	end
+
+	local menuLookup = {}
+	menus:add(createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, menuLookup))
+	_menuLookup = menuLookup
 end
 
-function _onMenuResult(idx, value)
+function _onMenuResult(idx)
 	if _menuLookup ~= nil then
 		local callback = _menuLookup[idx]
 		if callback ~= nil then
-			callback(value)
+			callback()
 		end
 
 		_menuLookup = nil

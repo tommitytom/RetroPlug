@@ -3,6 +3,8 @@ require("constants")
 require("Action")
 require("Print")
 local cm = require("ComponentManager")
+local LuaMenu = require("Menu")
+local createNativeMenu = require("MenuHelper")
 
 local MAX_INSTANCES = 4
 local _instances = {}
@@ -16,10 +18,11 @@ function _loadComponent(name)
     cm.loadComponent(name)
 end
 
-local function createInstance(model)
+local function createInstance(model, buttons)
     return {
         model = model,
-        components = cm.createComponents(model:getDesc(), model)
+        components = cm.createComponents(model:getDesc(), model),
+        buttons = buttons
     }
 end
 
@@ -29,7 +32,7 @@ function _init()
     for i = 1, MAX_INSTANCES, 1 do
         local instModel = _model:getInstance(i - 1)
         if instModel ~= nil then
-            table.insert(_instances, createInstance(instModel))
+            table.insert(_instances, createInstance(instModel, _model:buttons(i - 1)))
         end
 	end
 
@@ -63,58 +66,8 @@ local MenuItemType = {
     SubMenu = 4
 }
 
-local function parseMenu(menu)
-    local out = {}
-    for i, v in ipairs(menu) do
-        if type(v[1]) == "object" then
-            if v[1].type ~= nil then
-                table.insert(out, v[1])
-            else
+function _update()
 
-            end
-        elseif type(v[1]) == "string" then
-            if v[1] ~= "-" then
-                table.insert(out, v[1])
-            else
-                table.insert(out, { type = MenuItemType.Separator })
-            end
-
-        end
-    end
-end
-
-function _update(menus)
-    local menusChanged = true
-    for _, inst in ipairs(_instances) do
-        for _, comp in ipairs(inst.components) do
-            if comp.__menuDirty == true then
-                if comp.onMenu ~= nil then
-                    comp.__menu = comp:onMenu()
-                    menusChanged = true
-                end
-
-                comp.__menuDirty = false
-            end
-        end
-    end
-
-    if menusChanged == true then
-
-    end
-end
-
-function _onMenu(idx)
-    local merged = {}
-    for _, inst in ipairs(_instances) do
-        for _, comp in ipairs(inst.components) do
-            if comp.onMenu ~= nil then
-                local menu = parseMenu(comp.onMenu(comp))
-                mergeMenu(merged, menu)
-            end
-        end
-    end
-
-    return merged
 end
 
 local function processMidiMessage(inst, msg)
@@ -144,4 +97,40 @@ function _onMidi(offset, status, data1, data2)
             processMidiMessage(target, msg)
         end
     end
+end
+
+local _menuLookup = nil
+
+function _onMenu(menus)
+	local menu = LuaMenu()
+	local componentsMenu = menu:subMenu("System"):subMenu("Components")
+
+	if Active ~= nil then
+		for _, comp in ipairs(Active.components) do
+			componentsMenu:title(comp.__desc.name)
+		end
+	end
+
+    for _, inst in ipairs(_instances) do
+        for _, comp in ipairs(inst.components) do
+			if comp.onMenu ~= nil then
+				comp:onMenu(menu)
+			end
+        end
+	end
+
+	local menuLookup = {}
+	menus:add(createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, menuLookup))
+	_menuLookup = menuLookup
+end
+
+function _onMenuResult(idx)
+	if _menuLookup ~= nil then
+		local callback = _menuLookup[idx]
+		if callback ~= nil then
+			callback()
+		end
+
+		_menuLookup = nil
+	end
 end
