@@ -101,9 +101,6 @@ When LSDj is detected, additional options are added to the context menus.
   * Rows are stopped when note offs are received, or when you hit stop in your DAW.
   * Requires the Arduinboy build of LSDj.
 
-- **Keyboard Mode (Arduinoboy Variation)**:
-  * seijhi
-
 - **Auto Play**:
   * When this option is enabled, RetroPlug will simulate a press of the start button whenever the transport in your DAW is started or stopped.
   * Works in combination with the other sync modes.
@@ -184,6 +181,10 @@ If you find you have issues with a particular DAW, please feel free to submit a 
 **Q**: OMG!  LSDj does not start when I hit play in my DAW :o
 
 **A**: Make sure you have the correct sync mode selected in both LSDj, and in the context menu!
+
+## Donations
+If you'd like to support development of RetroPlug, donations of any amount are appreciated!
+[![Donate](https://www.paypalobjects.com/en_AU/i/btn/btn_donate_SM.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=TJTBWD3P7S7PG&currency_code=AUD&source=url)
 
 ## License
 MIT
