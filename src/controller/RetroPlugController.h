@@ -31,7 +31,7 @@ public:
 			if (_uiCtx) {
 				_uiCtx->reload();
 			}
-
+			// TODO: This needs to happen elsewhere... (reload in UI thread and send to audio thread)
 			if (_audioCtx) {
 				_audioCtx->reload();
 			}
@@ -48,6 +48,7 @@ private:
 	RetroPlugView* _view;
 	
 	AudioController _audioController;
+	iplug::ITimeInfo* _timeInfo;
 
 	FW::FileWatcher _scriptWatcher;
 	ChangeListener _listener;
@@ -66,7 +67,7 @@ public:
 
 	void update(float delta);
 
-	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, std::mutex* audioMutex);
+	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, iplug::ITimeInfo* timeInfo, std::mutex* audioMutex);
 
 	ProcessingContext* processingContext() { return _audioController.getProcessingContext(); }
 

@@ -23,7 +23,7 @@ private:
 	AudioBuffer _audioBuffers[MAX_INSTANCES];
 	GameboyButtonStream _buttonPresses[MAX_INSTANCES];
 
-	micromsg::Allocator* _alloc;
+	micromsg::Allocator* _alloc = nullptr;
 
 public:
 	ProcessingContext() {
@@ -59,8 +59,7 @@ public:
 				if (req.type == SaveStateType::Sram) {
 					state.sizes[i] = inst->batterySize();
 					inst->saveBattery(state.buffers[i]->data(), state.buffers[i]->size());
-				}
-				else if (req.type == SaveStateType::State) {
+				} else if (req.type == SaveStateType::State) {
 					state.sizes[i] = inst->saveStateSize();
 					inst->saveState(state.buffers[i]->data(), state.buffers[i]->size());
 				}
@@ -167,17 +166,11 @@ public:
 
 				totalPlugCount++;
 
-				/*if (transportChanged) {
-					HandleTransportChange(plug, _transportRunning);
-				}*/
-
-				//MessageBus* bus = plug->messageBus();
-				//_buttonQueue.update(bus, FramesToMs(frameCount));
-				//GenerateMidiClock(plug, frameCount, transportChanged);
-
 				const ButtonStream<32>& d = _buttonPresses[i].data();
-				plug->pressButtons(d.presses.data(), d.pressCount);
-				_buttonPresses[i].clear();
+				if (d.pressCount > 0) {
+					plug->pressButtons(d.presses.data(), d.pressCount);
+					_buttonPresses[i].clear();
+				}
 			}
 		}
 

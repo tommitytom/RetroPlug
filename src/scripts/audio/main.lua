@@ -21,7 +21,7 @@ end
 local function createInstance(model, buttons)
     return {
         model = model,
-        components = cm.createComponents(model:getDesc(), model),
+        components = cm.createComponents(model:getDesc(), model, buttons),
         buttons = buttons
     }
 end
@@ -32,7 +32,8 @@ function _init()
     for i = 1, MAX_INSTANCES, 1 do
         local instModel = _model:getInstance(i - 1)
         if instModel ~= nil then
-            table.insert(_instances, createInstance(instModel, _model:buttons(i - 1)))
+            print("button", _model:getButtonPresses(i - 1))
+            table.insert(_instances, createInstance(instModel, _model:getButtonPresses(i - 1)))
         end
 	end
 
@@ -43,7 +44,8 @@ function _init()
 end
 
 function _addInstance(idx, model)
-    _instances[idx + 1] = createInstance(model)
+    print("button", _model:getButtonPresses(idx))
+    _instances[idx + 1] = createInstance(model, _model:getButtonPresses(idx))
 end
 
 function _removeInstance(idx)
@@ -54,20 +56,18 @@ function _closeProject()
     _instances = {}
 end
 
-local function mergeMenu(target, menu)
-
-end
-
-local MenuItemType = {
-    None = 0,
-    Separator = 1,
-    Single = 1,
-    MultiSelect = 3,
-    SubMenu = 4
-}
+local _transportRunning = false
 
 function _update()
+    if _timeInfo == nil then
+        print("time info not set")
+        return
+    end
 
+    if _timeInfo.transportIsRunning ~= _transportRunning then
+        _transportRunning = _timeInfo.transportIsRunning
+        cm.runComponentHandlers("onTransportChanged", cm.allComponents, _transportRunning)
+    end
 end
 
 local function processMidiMessage(inst, msg)

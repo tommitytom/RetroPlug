@@ -30,13 +30,14 @@ function LsdjArduinoboy:onMenu(menu)
 end
 
 function LsdjArduinoboy:onTransportChanged(running)
+	print("transport changed", running)
 	if self.autoPlay == true then
-		self.buttons:press(Buttons.Start)
+		self.buttons:press(Button.Start)
 	end
 end
 
 function LsdjArduinoboy:onMidi(message)
-	self.system:sendMidi(message)
+	--self.system:sendMidi(message)
 end
 
 return LsdjArduinoboy

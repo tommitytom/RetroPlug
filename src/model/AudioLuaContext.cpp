@@ -42,7 +42,7 @@ void AudioLuaContext::setup() {
 	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,
 		"getInstance", &ProcessingContext::getInstance,
-		"buttons", &ProcessingContext::getButtonPresses
+		"getButtonPresses", &ProcessingContext::getButtonPresses
 	);
 
 	s.new_usertype<SameBoyPlugDesc>("SameBoyPlug",
@@ -54,8 +54,28 @@ void AudioLuaContext::setup() {
 		"getDesc", &SameBoyPlug::getDesc
 	);
 
+	s.new_usertype<iplug::ITimeInfo>("TimeInfo",
+		"ppqPos", &iplug::ITimeInfo::mPPQPos,
+		"tempo", &iplug::ITimeInfo::mTempo,
+		"samplePos", &iplug::ITimeInfo::mSamplePos,
+		"ppqPos", &iplug::ITimeInfo::mPPQPos,
+		"lastBar", &iplug::ITimeInfo::mLastBar,
+		"cycleStart", &iplug::ITimeInfo::mCycleStart,
+		"cycleEnd", &iplug::ITimeInfo::mCycleEnd,
+
+		"numerator", &iplug::ITimeInfo::mNumerator,
+		"denominator", &iplug::ITimeInfo::mDenominator,
+
+		"transportIsRunning", &iplug::ITimeInfo::mTransportIsRunning,
+		"transportLoopEnabled", &iplug::ITimeInfo::mTransportLoopEnabled
+	);
+
 	s["LUA_MENU_ID_OFFSET"] = LUA_AUDIO_MENU_ID_OFFSET;
 	s["_model"].set(_context);
+
+	if (_timeInfo) {
+		s["_timeInfo"].set(_timeInfo);
+	}
 
 	if (!runScript(_state, "require('main')")) {
 		return;
@@ -95,9 +115,13 @@ void AudioLuaContext::removeInstance(InstanceIndex idx) {
 	callFunc(_state, "_removeInstance", idx);
 }
 
+void AudioLuaContext::setTimeInfo(iplug::ITimeInfo* timeInfo) {
+	_timeInfo = timeInfo;
+	(*_state)["_timeInfo"].set(timeInfo);
+}
+
 void AudioLuaContext::update() {
-	//std::vector<Menu*> menus;
-	//callFunc(_state, "_update", menus);
+	callFunc(_state, "_update");
 }
 
 void AudioLuaContext::closeProject() {

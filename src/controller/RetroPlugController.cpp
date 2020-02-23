@@ -75,7 +75,10 @@ void RetroPlugController::update(float delta) {
 	_scriptWatcher.update();
 }
 
-void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, std::mutex* audioMutex) {
+void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, iplug::ITimeInfo* timeInfo, std::mutex* audioMutex) {
+	_timeInfo = timeInfo;
+	_audioController.getLuaContext()->setTimeInfo(timeInfo);
+	
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
 	graphics->HandleMouseOver(true);

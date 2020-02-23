@@ -15,7 +15,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	};
 
 	mLayoutFunc = [&](IGraphics* pGraphics) {
-		_controller.init(pGraphics, GetHost(), &_menuLock);
+		_controller.init(pGraphics, GetHost(), &mTimeInfo, &_menuLock);
 		OnReset();
 	};
 #endif
@@ -33,18 +33,12 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		}
 	}
 
-	bool transportChanged = false;
-	if (_transportRunning != mTimeInfo.mTransportIsRunning) {
-		_transportRunning = mTimeInfo.mTransportIsRunning;
-		transportChanged = true;
-		consoleLogLine("Transport running: " + std::to_string(_transportRunning));
-	}
-
 	// TODO: This mutex is temporary until I find a good way of sending context menus
 	// across threads!
 	std::scoped_lock lock(_menuLock);
 
-	_controller.audioLua()->update();
+	AudioLuaContext* lua = _controller.audioLua();
+	lua->update();
 
 	ProcessingContext* context = _controller.processingContext();
 	context->process(outputs, (size_t)frameCount);
@@ -143,44 +137,8 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
-
+	std::scoped_lock lock(_menuLock); // Temporary
 	_controller.audioLua()->onMidi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
-
-	/*auto plugs = _plug.plugs();
-	size_t count = _plug.instanceCount();
-
-	switch (_plug.midiRouting()) {
-	case MidiChannelRouting::SendToAll: {
-		for (size_t i = 0; i < count; i++) {
-			SameBoyPlugPtr plug = plugs[i];
-			if (plug && plug->active()) {
-				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel());
-			}
-		}
-
-		break;
-	}
-	case MidiChannelRouting::OneChannelPerInstance: {
-		if (msg.Channel() < count) {
-			SameBoyPlugPtr plug = plugs[msg.Channel()];
-			if (plug && plug->active()) {
-				ProcessInstanceMidiMessage(plug.get(), msg, 0);
-			}
-		}
-
-		break;
-	}
-	case MidiChannelRouting::FourChannelsPerInstance: {
-		if (msg.Channel() < count * 4) {
-			SameBoyPlugPtr plug = plugs[msg.Channel() / 4];
-			if (plug && plug->active()) {
-				ProcessInstanceMidiMessage(plug.get(), msg, msg.Channel() % 4);
-			}
-		}
-
-		break;
-	}
-	}*/
 }
 
 unsigned char reverse(unsigned char b) {

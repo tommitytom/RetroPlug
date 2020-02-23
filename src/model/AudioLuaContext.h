@@ -19,6 +19,7 @@ private:
 	std::atomic_bool _reload = false;
 
 	ProcessingContext* _context;
+	iplug::ITimeInfo* _timeInfo = nullptr;
 
 public:
 	AudioLuaContext(ProcessingContext* ctx) : _context(ctx), _state(nullptr) {}
@@ -35,6 +36,8 @@ public:
 	void removeInstance(InstanceIndex index);
 
 	void setActive(InstanceIndex idx);
+
+	void setTimeInfo(iplug::ITimeInfo* timeInfo);
 
 	void update();
 

@@ -1,6 +1,8 @@
 local _factory = { global = {}, instance = {} }
 local _globalComponents = {}
 
+local _allComponents = {}
+
 local function loadComponent(name)
 	local component = require(name)
 	if component ~= nil then
@@ -21,7 +23,9 @@ local function createComponents(desc, ...)
 		local d = v.__desc
 		if d.romName == nil or desc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			table.insert(components, v.new(...))
+			local comp = v.new(...)
+			table.insert(components, comp)
+			table.insert(_allComponents, comp)
 		end
 	end
 
@@ -65,5 +69,6 @@ return {
     runComponentHandlers = runComponentHandlers,
     runGlobalHandlers = runGlobalHandlers,
     runAllHandlers = runAllHandlers,
-    createGlobalComponents = createGlobalComponents
+	createGlobalComponents = createGlobalComponents,
+	allComponents = _allComponents
 }

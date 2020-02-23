@@ -8,6 +8,16 @@ using namespace iplug;
 using namespace igraphics;
 
 class RetroPlugInstrument : public Plugin {
+private:
+	float* _sampleScratch;
+	bool _transportRunning = false;
+
+	ButtonQueue _buttonQueue;
+
+	RetroPlugController _controller;
+
+	std::mutex _menuLock;
+
 public:
 	RetroPlugInstrument(const InstanceInfo& info);
 	~RetroPlugInstrument();
@@ -33,14 +43,5 @@ private:
 	void ChangeLsdjInstrument(SameBoyPlug* plug, int instrument, int offset);
 
 	inline double FramesToMs(int frameCount) const { return frameCount / (GetSampleRate() / 1000); }
-
-	float* _sampleScratch;
-	bool _transportRunning = false;
-
-	ButtonQueue _buttonQueue;
-
-	RetroPlugController _controller;
-
-	std::mutex _menuLock;
 #endif
 };
