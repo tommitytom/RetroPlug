@@ -45,6 +45,10 @@ public:
 		return DataBuffer<T>(_dataPtr + pos, size);
 	}
 
+	void clear() {
+		memset(_dataPtr, 0, _dataSize * sizeof(T));
+	}
+
 	void resize(size_t size) {
 		destroy();
 		_dataPtr = new T[size];

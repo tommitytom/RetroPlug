@@ -16,8 +16,6 @@ private:
 
 	RetroPlugController _controller;
 
-	std::mutex _menuLock;
-
 public:
 	RetroPlugInstrument(const InstanceInfo& info);
 	~RetroPlugInstrument();

@@ -8,6 +8,9 @@
 class SameBoyPlug;
 using SameBoyPlugPtr = std::shared_ptr<SameBoyPlug>;
 
+class AudioLuaContext;
+using AudioLuaContextPtr = std::shared_ptr<AudioLuaContext>;
+
 enum class NodeTypes {
 	Ui,
 	Audio,
@@ -55,6 +58,7 @@ struct FetchStateResponse {
 	SaveStateType type;
 	std::array<size_t, MAX_INSTANCES> sizes = { 0 };
 	std::array<DataBufferPtr, MAX_INSTANCES> buffers;
+	std::array<std::string, MAX_INSTANCES> components;
 };
 
 namespace calls {
@@ -63,6 +67,8 @@ namespace calls {
 	using UpdateSettings = micromsg::Push<Project::Settings>;
 	using PressButtons = micromsg::Push<ButtonStream<32>>;
 	using ContextMenuResult = micromsg::Push<int>;
+
+	using SwapLuaContext = micromsg::Request<AudioLuaContextPtr, AudioLuaContextPtr>;
 
 	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
 	using DuplicateInstance = micromsg::Request<InstanceDuplicateDesc, SameBoyPlugPtr>;

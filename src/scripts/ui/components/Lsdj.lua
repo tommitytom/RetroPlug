@@ -28,7 +28,7 @@ function Lsdj:init()
 
 	self._selectState = SelectState.None
 
-	local buttons = self.buttons
+	local buttons = self:buttons()
 	self:registerActions({
 		DownTenRows = function(down)
 			if down == true then buttons:releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
@@ -113,7 +113,7 @@ function Lsdj:onBeforeButton(button, down)
 	if self._selectState == SelectState.RequestBegin then
 		if down == true then
 			if isDirectionButton(button) == true then
-				beginSelect(self.buttons):hold(button)
+				beginSelect(self:buttons()):hold(button)
 				self._selectState = SelectState.Selecting
 				return false
 			end
@@ -121,7 +121,7 @@ function Lsdj:onBeforeButton(button, down)
 	elseif self._selectState == SelectState.Selected then
 		if down == true then
 			if isDirectionButton(button) == true then
-				endSelect(self.buttons):hold(button)
+				endSelect(self:buttons()):hold(button)
 				self._selectState = SelectState.None
 				return false
 			else

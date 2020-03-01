@@ -5,7 +5,7 @@
 #include "view/RetroPlugRoot.h"
 
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
-	: Plugin(info, MakeConfig(0, 0)) {
+	: Plugin(info, MakeConfig(0, 0)), _controller(&mTimeInfo, GetSampleRate()) {
 	// FIXME: Choose a more realistic size for this based on GetBlockSize()
 	_sampleScratch = new float[1024 * 1024];
 
@@ -15,7 +15,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	};
 
 	mLayoutFunc = [&](IGraphics* pGraphics) {
-		_controller.init(pGraphics, GetHost(), &mTimeInfo, &_menuLock);
+		_controller.init(pGraphics, GetHost());
 		OnReset();
 	};
 #endif
@@ -33,15 +33,7 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 		}
 	}
 
-	// TODO: This mutex is temporary until I find a good way of sending context menus
-	// across threads!
-	std::scoped_lock lock(_menuLock);
-
-	AudioLuaContext* lua = _controller.audioLua();
-	lua->update();
-
-	ProcessingContext* context = _controller.processingContext();
-	context->process(outputs, (size_t)frameCount);
+	_controller.audioController()->process(outputs, (size_t)frameCount);
 }
 
 void RetroPlugInstrument::OnIdle() {
@@ -137,8 +129,12 @@ void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int te
 
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
-	std::scoped_lock lock(_menuLock); // Temporary
-	_controller.audioLua()->onMidi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+	_controller.getMenuLock()->lock(); // Temporary
+	if (_controller.audioLua()) {
+		_controller.audioLua()->onMidi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+	}
+	
+	_controller.getMenuLock()->unlock();
 }
 
 unsigned char reverse(unsigned char b) {
@@ -290,6 +286,6 @@ void RetroPlugInstrument::ChangeLsdjInstrument(SameBoyPlug * plug, int instrumen
 
 void RetroPlugInstrument::OnReset() {
 	AudioSettings settings = { (size_t)NOutChansConnected(), 0, GetSampleRate() };
-	_controller.processingContext()->setAudioSettings(settings);
+	_controller.audioController()->setAudioSettings(settings);
 }
 #endif

@@ -1,9 +1,13 @@
+inspect = require("inspect")
+function prinspect(...) print(inspect(...)) end
+
 require("component")
 require("constants")
 require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
 require("Action")
 require("Print")
+local serializer = require("serializer")
 local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
 local createNativeMenu = require("MenuHelper")
@@ -107,11 +111,19 @@ end
 
 function _duplicateInstance(idx)
 	if #_instances < MAX_INSTANCES then
+		local sourceInst = _instances[idx + 1]
+
+		local componentData = serializer.serializeInstanceToString(sourceInst)
+
+		local desc = _proxy:duplicateInstance(idx)
+		local buttons = _proxy:buttons(#_instances)
 		local instance = {
-			model = _proxy:duplicateInstance(idx),
-			components = {},  -- TODO: Duplicate components
-			buttons = _proxy:buttons(idx)
+			desc = desc,
+			components = cm.createComponents(desc, desc, buttons),
+			buttons = buttons
 		}
+
+		serializer.deserializeInstancesFromString(instance, componentData)
 
 		table.insert(_instances, instance)
 		_setActive(#_instances - 1)
@@ -206,12 +218,17 @@ function _saveProject(state, pretty)
 		files = {}
 	}
 
-	for i = 1, MAX_INSTANCES, 1 do
-		local desc = _proxy:getInstance(i - 1)
+	for i, instance in ipairs(_instances) do
+		local desc = instance.desc
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			local inst = cloneEnumFields(desc, InstanceSettingsFields)
-			inst.components = {}
 			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
+			inst.uiComponents = serializer.serializeInstance(instance)
+
+			local ok, audioComponents = serpent.load(state.components[i])
+			if ok == true and audioComponents ~= nil then
+				inst.audioComponents = audioComponents
+			end
 
 			if state.buffers[i] ~= nil then
 				inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])
@@ -500,6 +517,10 @@ function _loadSram(idx, path, reset)
 		end
 	end
 end
+
+function _serializeInstances() return serializer.serializeInstancesToString(_instances) end
+function _serializeInstance(idx) return serializer.serializeInstanceToString(_instances[idx + 1]) end
+function _deserializeInstances(data) serializer.deserializeInstancesFromString(_instances, data) end
 
 Action.RetroPlug = {
 	NextInstance = function(down)

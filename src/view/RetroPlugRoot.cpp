@@ -13,8 +13,8 @@
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 
-RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioLuaContext* audioLua, std::mutex* audioLock)
-	: IControl(b), _lua(lua), _proxy(proxy), _audioLua(audioLua), _audioLock(audioLock) {
+RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioController* audioController)
+	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		if (_views.size() == MAX_INSTANCES) {
 			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
@@ -134,10 +134,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					.select("Game Link", &active->sameBoySettings.gameLink);
 
 				std::vector<Menu*> menus;
-				_audioLock->lock();
-				_audioLua->onMenu(menus);
-				_audioLock->unlock();
-
+				_audioController->onMenu(menus);
 				_lua->onMenu(menus);
 
 				for (Menu* item : menus) {
@@ -159,6 +156,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		}
 
 		MenuCallbackMap callbacks;
+		callbacks.reserve(1000);
 		_menu.SetFunction([&](IPopupMenu* menu) {
 			IPopupMenu::Item* chosen = menu->GetChosenItem();
 			if (chosen) {

@@ -287,7 +287,11 @@ size_t sameboy_fetch_audio(void* state, int16_t* audio) {
     sameboy_state_t* s = (sameboy_state_t*)state;
     size_t size = s->currentAudioFrames;
     if (size > 0) {
-        memcpy(audio, s->audioBuffer, s->currentAudioFrames * sizeof(GB_sample_t));
+        if (audio) {
+            //printf("internal: %i", size * sizeof(GB_sample_t));
+            memcpy(audio, s->audioBuffer, size * sizeof(GB_sample_t));
+        }
+
         s->currentAudioFrames = 0;
     }
 
@@ -331,6 +335,8 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
         st[i] = (sameboy_state_t*)states[i];
         st[i]->vblankOccurred = false;
     }
+
+    // TODO: Send button presses?  Use sameboy_update as a reference
 
     size_t complete = 0;
     while (complete != stateCount) {

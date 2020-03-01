@@ -16,11 +16,11 @@
 class ChangeListener : public FW::FileWatchListener {
 private:
 	UiLuaContext* _uiCtx;
-	AudioLuaContext* _audioCtx;
+	RetroPlugProxy* _proxy;
 
 public:
-	ChangeListener(UiLuaContext* uiContext = nullptr, AudioLuaContext* audioContext = nullptr): 
-		_uiCtx(uiContext), _audioCtx(audioContext) {}
+	ChangeListener(UiLuaContext* uiContext = nullptr, RetroPlugProxy* proxy = nullptr):
+		_uiCtx(uiContext), _proxy(proxy) {}
 
 	~ChangeListener() {}
 
@@ -31,9 +31,9 @@ public:
 			if (_uiCtx) {
 				_uiCtx->reload();
 			}
-			// TODO: This needs to happen elsewhere... (reload in UI thread and send to audio thread)
-			if (_audioCtx) {
-				_audioCtx->reload();
+
+			if (_proxy) {
+				_proxy->reloadLuaContext();
 			}
 		}
 	}
@@ -62,16 +62,20 @@ private:
 	micromsg::NodeManager<NodeTypes> _bus;
 
 public:
-	RetroPlugController();
+	RetroPlugController(iplug::ITimeInfo* timeInfo, double sampleRate);
 	~RetroPlugController();
+
+	std::mutex* getMenuLock() { return _audioController.getLock(); }
 
 	void update(float delta);
 
-	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, iplug::ITimeInfo* timeInfo, std::mutex* audioMutex);
+	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 
-	ProcessingContext* processingContext() { return _audioController.getProcessingContext(); }
+	//ProcessingContext* processingContext() { return _audioController.getProcessingContext(); }
 
-	AudioLuaContext* audioLua() { return _audioController.getLuaContext(); }
+	AudioController* audioController() { return &_audioController; }
+
+	AudioLuaContextPtr& audioLua() { return _audioController.getLuaContext(); }
 
 private:
 	void processPad();

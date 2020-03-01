@@ -1,10 +1,15 @@
+inspect = require("inspect")
+function prinspect(...) print(inspect(...)) end
+
 require("component")
 require("constants")
 require("Action")
 require("Print")
+local serializer = require("serializer")
 local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
 local createNativeMenu = require("MenuHelper")
+local ppq = require("ppq")
 
 local MAX_INSTANCES = 4
 local _instances = {}
@@ -19,6 +24,7 @@ function _loadComponent(name)
 end
 
 local function createInstance(model, buttons)
+    print("name:", model:getDesc().state)
     return {
         model = model,
         components = cm.createComponents(model:getDesc(), model, buttons),
@@ -32,7 +38,6 @@ function _init()
     for i = 1, MAX_INSTANCES, 1 do
         local instModel = _model:getInstance(i - 1)
         if instModel ~= nil then
-            print("button", _model:getButtonPresses(i - 1))
             table.insert(_instances, createInstance(instModel, _model:getButtonPresses(i - 1)))
         end
 	end
@@ -44,8 +49,13 @@ function _init()
 end
 
 function _addInstance(idx, model)
-    print("button", _model:getButtonPresses(idx))
     _instances[idx + 1] = createInstance(model, _model:getButtonPresses(idx))
+end
+
+function _duplicateInstance(sourceIdx, targetIdx, model)
+    _instances[targetIdx + 1] = createInstance(model, _model:getButtonPresses(targetIdx))
+    local instData = serializer.serializeInstanceToString(_instances[sourceIdx + 1])
+    serializer.deserializeInstanceFromString(_instances[targetIdx + 1], instData)
 end
 
 function _removeInstance(idx)
@@ -58,7 +68,7 @@ end
 
 local _transportRunning = false
 
-function _update()
+function _update(frameCount)
     if _timeInfo == nil then
         print("time info not set")
         return
@@ -67,6 +77,13 @@ function _update()
     if _timeInfo.transportIsRunning ~= _transportRunning then
         _transportRunning = _timeInfo.transportIsRunning
         cm.runComponentHandlers("onTransportChanged", cm.allComponents, _transportRunning)
+    end
+
+    if _transportRunning == true then
+        local ppqTrigger, offset = ppq.generatePpq24(frameCount, _sampleRate, _timeInfo)
+        if ppqTrigger == true then
+            cm.runComponentHandlers("onPpq", cm.allComponents, offset)
+        end
     end
 end
 
@@ -134,3 +151,7 @@ function _onMenuResult(idx)
 		_menuLookup = nil
 	end
 end
+
+function _serializeInstances() return serializer.serializeInstancesToString(_instances) end
+function _serializeInstance(idx) return serializer.serializeInstanceToString(_instances[idx + 1]) end
+function _deserializeInstances(data) serializer.deserializeInstancesFromString(_instances, data) end

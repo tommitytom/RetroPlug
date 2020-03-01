@@ -39,6 +39,9 @@ private:
 	VideoBuffer* _videoBuffer;
 	AudioBuffer* _audioBuffer;
 
+	int16_t* _audioScratch = nullptr;
+	size_t _audioScratchSize = 0;
+
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
@@ -76,7 +79,7 @@ public:
 	 
 	void sendKeyboardByte(int offset, char byte);
 
-	void sendSerialByte(int offset, int byte, size_t bitCount = 8);
+	void sendSerialByte(int offset, int byte);
 
 	void sendMidiBytes(int offset, const char* bytes, size_t count);
 

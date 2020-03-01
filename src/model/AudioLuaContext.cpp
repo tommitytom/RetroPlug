@@ -9,10 +9,17 @@
 #include "util/fs.h"
 #include "view/Menu.h"
 
-void AudioLuaContext::init(const std::string& configPath, const std::string& scriptPath) {
+AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
 	_scriptPath = scriptPath;
 	setup();
+}
+
+void AudioLuaContext::init(ProcessingContext* ctx, iplug::ITimeInfo* timeInfo, double sampleRate) {
+	(*_state)["_model"].set(ctx);
+	(*_state)["_timeInfo"].set(timeInfo);
+	(*_state)["_sampleRate"].set(sampleRate);
+	runScript(_state, "_init()");
 }
 
 void AudioLuaContext::setup() {
@@ -71,7 +78,6 @@ void AudioLuaContext::setup() {
 	);
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_AUDIO_MENU_ID_OFFSET;
-	s["_model"].set(_context);
 
 	if (_timeInfo) {
 		s["_timeInfo"].set(_timeInfo);
@@ -104,24 +110,22 @@ void AudioLuaContext::setup() {
 	consoleLogLine("Finished loading components");
 
 	runFile(_state, _configPath + "/config.lua");
-	runScript(_state, "_init()");
 }
 
 void AudioLuaContext::addInstance(InstanceIndex idx, SameBoyPlugPtr instance) {
 	callFunc(_state, "_addInstance", idx, instance);
 }
 
+void AudioLuaContext::duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance) {
+	callFunc(_state, "_duplicateInstance", sourceIdx, targetIdx, instance);
+}
+
 void AudioLuaContext::removeInstance(InstanceIndex idx) {
 	callFunc(_state, "_removeInstance", idx);
 }
 
-void AudioLuaContext::setTimeInfo(iplug::ITimeInfo* timeInfo) {
-	_timeInfo = timeInfo;
-	(*_state)["_timeInfo"].set(timeInfo);
-}
-
-void AudioLuaContext::update() {
-	callFunc(_state, "_update");
+void AudioLuaContext::update(int frameCount) {
+	callFunc(_state, "_update", frameCount);
 }
 
 void AudioLuaContext::closeProject() {
@@ -142,6 +146,22 @@ void AudioLuaContext::onMenu(std::vector<Menu*>& menus) {
 
 void AudioLuaContext::onMenuResult(int id) {
 	callFunc(_state, "_onMenuResult", id);
+}
+
+std::string AudioLuaContext::serializeInstances() {
+	std::string target;
+	callFuncRet(_state, "_serializeInstances", target);
+	return target;
+}
+
+std::string AudioLuaContext::serializeInstance(InstanceIndex index) {
+	std::string target;
+	callFuncRet(_state, "_serializeInstance", target, index);
+	return target;
+}
+
+void AudioLuaContext::deserializeInstances(const std::string& data) {
+	callFunc(_state, "_deserializeInstances", data);
 }
 
 void AudioLuaContext::reload() {

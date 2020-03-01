@@ -160,7 +160,8 @@ void UiLuaContext::setup() {
 
 	s.new_usertype<FetchStateResponse>("FetchStateResponse",
 		"buffers", &FetchStateResponse::buffers,
-		"sizes", &FetchStateResponse::sizes
+		"sizes", &FetchStateResponse::sizes,
+		"components", &FetchStateResponse::components
 	);
 
 	s.new_usertype<FileManager>("FileManager",

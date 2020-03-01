@@ -21,7 +21,9 @@ using AxisButtons::AxisButton;
 
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
-RetroPlugController::RetroPlugController(): _listener(&_uiLua, _audioController.getLuaContext()) {
+RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double sampleRate)
+	: _listener(&_uiLua, &_proxy), _audioController(timeInfo, sampleRate) 
+{
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
@@ -31,6 +33,7 @@ RetroPlugController::RetroPlugController(): _listener(&_uiLua, _audioController.
 	_bus.addCall<calls::PressButtons>(32);
 	_bus.addCall<calls::FetchState>(1);
 	_bus.addCall<calls::ContextMenuResult>(1);
+	_bus.addCall<calls::SwapLuaContext>(4);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_audioController.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));
@@ -57,7 +60,9 @@ RetroPlugController::RetroPlugController(): _listener(&_uiLua, _audioController.
 
 	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path() / "scripts";
 	_uiLua.init(&_proxy, configDir.string(), scriptPath.string());
-	_audioController.getLuaContext()->init(configDir.string(), scriptPath.string());
+
+	_proxy.setScriptDirs(configDir.string(), scriptPath.string());
+	//_audioController.getLuaContext()->init(configDir.string(), scriptPath.string());
 
 	if (fs::exists(scriptPath)) {
 		_scriptWatcher.addWatch(scriptPath.string(), &_listener, true);
@@ -75,9 +80,7 @@ void RetroPlugController::update(float delta) {
 	_scriptWatcher.update();
 }
 
-void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host, iplug::ITimeInfo* timeInfo, std::mutex* audioMutex) {
-	_timeInfo = timeInfo;
-	_audioController.getLuaContext()->setTimeInfo(timeInfo);
+void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host) {
 	
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
@@ -89,7 +92,7 @@ void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHo
 		return _uiLua.onKey(key, !isUp);
 	});
 
-	_view = new RetroPlugView(graphics->GetBounds(), &_uiLua, &_proxy, _audioController.getLuaContext(), audioMutex);
+	_view = new RetroPlugView(graphics->GetBounds(), &_uiLua, &_proxy, &_audioController);
 	graphics->AttachControl(_view);
 
 	_view->onFrame = [&](double delta) {

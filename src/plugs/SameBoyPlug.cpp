@@ -42,6 +42,9 @@ int getGameboyModelId(GameboyModel model) {
 SameBoyPlug::SameBoyPlug() {
 	_dimensions.w = 160;
 	_dimensions.h = 144;
+
+	//_audioScratchSize = 256;
+	//_audioScratch = new int16_t[_audioScratchSize];
 }
 
 void SameBoyPlug::pressButtons(const StreamButtonPress* presses, size_t pressCount) {
@@ -139,8 +142,8 @@ void SameBoyPlug::sendKeyboardByte(int offset, char byte) {
 	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0x01, 2);
 }
 
-void SameBoyPlug::sendSerialByte(int offset, int byte, size_t bitCount) {
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, bitCount);
+void SameBoyPlug::sendSerialByte(int offset, int byte) {
+	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, 8);
 }
 
 // This is called from the audio thread
@@ -176,14 +179,29 @@ void SameBoyPlug::updateRom() {
 }
 
 void SameBoyPlug::updateAV(int audioFrames) {
-	int16_t audio[1024 * 4]; // FIXME: Choose a realistic size for this...
-	SAMEBOY_SYMBOLS(sameboy_fetch_audio)(_instance, audio);
+	int sampleCount = audioFrames * 2;
+	/*if (sampleCount > _audioScratchSize) {
+		if (_audioScratch) {
+			delete[] _audioScratch;
+		}
 
-	if (_resetSamples <= 0) {
-		int sampleCount = audioFrames * 2;
-		ma_pcm_s16_to_f32(_audioBuffer->data->data(), audio, sampleCount, ma_dither_mode_triangle);
+		std::cout << "Resizing to: " << sampleCount * 2 << std::endl;
+		_audioScratch = new int16_t[sampleCount * 2];
+		_audioScratchSize = sampleCount;
+	}*/
+
+	const int AUDIO_SCRATCH_SIZE = 1024 * 8;
+	static int16_t audio[AUDIO_SCRATCH_SIZE]; // FIXME: Choose a realistic size for this...
+	if (sampleCount <= AUDIO_SCRATCH_SIZE) {
+		SAMEBOY_SYMBOLS(sameboy_fetch_audio)(_instance, audio);
+
+		if (_resetSamples <= 0) {
+			ma_pcm_s16_to_f32(_audioBuffer->data->data(), audio, sampleCount, ma_dither_mode_triangle);
+		} else {
+			_resetSamples -= audioFrames;
+		}
 	} else {
-		_resetSamples -= audioFrames;
+		_audioBuffer->data->clear();
 	}
 
 	if (_videoBuffer->data.get()) {
@@ -201,5 +219,11 @@ void SameBoyPlug::shutdown() {
 	if (_instance) {
 		SAMEBOY_SYMBOLS(sameboy_free)(_instance);
 		_instance = nullptr;
+	}
+
+	if (_audioScratch) {
+		delete[] _audioScratch;
+		_audioScratch = nullptr;
+		_audioScratchSize = 0;
 	}
 }

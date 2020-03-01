@@ -11,35 +11,32 @@ namespace sol {
 
 class AudioLuaContext {
 private:
-	sol::state* _state;
+	sol::state* _state = nullptr;
 	std::string _configPath;
 	std::string _scriptPath;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
 
-	ProcessingContext* _context;
 	iplug::ITimeInfo* _timeInfo = nullptr;
 
 public:
-	AudioLuaContext(ProcessingContext* ctx) : _context(ctx), _state(nullptr) {}
+	AudioLuaContext(const std::string& configPath, const std::string& scriptPath);
 	~AudioLuaContext() { shutdown(); }
 
-	void init(const std::string& configPath, const std::string& scriptPath);
+	void init(ProcessingContext* ctx, iplug::ITimeInfo* timeInfo, double sampleRate);
 
 	void closeProject();
 
-	void addInstance() {}
-
 	void addInstance(InstanceIndex idx, SameBoyPlugPtr instance);
+
+	void duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance);
 
 	void removeInstance(InstanceIndex index);
 
 	void setActive(InstanceIndex idx);
 
-	void setTimeInfo(iplug::ITimeInfo* timeInfo);
-
-	void update();
+	void update(int frameCount);
 
 	//bool onKey(const iplug::IKeyPress& key, bool down);
 
@@ -58,6 +55,12 @@ public:
 	void scheduleReload() { _reload = true; }
 
 	void shutdown();
+
+	std::string serializeInstance(InstanceIndex index);
+
+	std::string serializeInstances();
+
+	void deserializeInstances(const std::string& data);
 
 private:
 	void setup();

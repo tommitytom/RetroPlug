@@ -10,6 +10,7 @@
 #include "model/Project.h"
 #include "model/ButtonStream.h"
 #include "model/FileManager.h"
+#include "model/AudioLuaContext.h"
 #include "plugs/SameBoyPlug.h"
 
 class RetroPlugProxy {
@@ -22,6 +23,9 @@ private:
 	FileManager _fileManager;
 
 	GameboyButtonStream _buttonPresses[MAX_INSTANCES];
+
+	std::string _configPath;
+	std::string _scriptPath;
 
 public:
 	std::function<void(const VideoStream&)> videoCallback;
@@ -128,7 +132,18 @@ public:
 		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}
 
-	void duplicateInstance(size_t idx) {
+	void setScriptDirs(const std::string& configPath, const std::string& scriptPath) {
+		_configPath = configPath;
+		_scriptPath = scriptPath;
+		reloadLuaContext();
+	}
+
+	void reloadLuaContext() {
+		AudioLuaContextPtr ctx = std::make_shared<AudioLuaContext>(_configPath, _scriptPath);
+		_node->request<calls::SwapLuaContext>(NodeTypes::Audio, ctx, [](const AudioLuaContextPtr& d) {});
+	}
+
+	EmulatorInstanceDesc* duplicateInstance(size_t idx) {
 		size_t instanceCount = getInstanceCount();
 		assert(instanceCount < 4);
 		_project.instances[instanceCount] = _project.instances[idx];
@@ -149,6 +164,8 @@ public:
 		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
 			instance.state = EmulatorInstanceState::Running;
 		});
+
+		return &instance;
 	}
 
 	void setInstance(const EmulatorInstanceDesc& instance) {

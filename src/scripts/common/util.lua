@@ -103,10 +103,26 @@ local function inputMap(config, map)
 	return { config = config, lookup = lookup, combos = combos }
 end
 
+local function serializeComponent(obj, target)
+	for k, v in pairs(obj) do
+		if k:sub(1, 2) ~= "__" and type(v) ~= "function" then
+			target[k] = v
+		end
+	end
+end
+
+local function deserializeComponent(obj, source)
+	for k, v in pairs(source) do
+		obj[k] = v
+	end
+end
+
 return {
 	tableFind = tableFind,
 	tableConcat = tableConcat,
 	tableRemoveElement = tableRemoveElement,
 	handleInput = handleInput,
-	inputMap = inputMap
+	inputMap = inputMap,
+	serializeComponent = serializeComponent,
+	deserializeComponent = deserializeComponent
 }

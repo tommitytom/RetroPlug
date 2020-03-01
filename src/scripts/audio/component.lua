@@ -20,8 +20,9 @@ function component(desc)
 	c.new = function(system, buttons)
 		local obj = { __actions = {} }
 		setmetatable(obj, c)
-		obj.system = system
-		obj.buttons = buttons
+		function obj:system() return system end
+		function obj:buttons() return buttons end
+
 		if c.init then c.init(obj)	end
 		return obj
 	end

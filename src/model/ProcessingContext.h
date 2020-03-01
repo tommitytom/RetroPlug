@@ -32,7 +32,16 @@ public:
 			_instances.push_back(nullptr);
 		}
 	}
-	~ProcessingContext() {}
+
+	~ProcessingContext() {
+		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			if (_instances[i]) {
+				_instances[i]->shutdown();
+			}
+		}
+
+		_instances.clear();
+	}
 
 	void setNode(Node* node) { 
 		_node = node; 
