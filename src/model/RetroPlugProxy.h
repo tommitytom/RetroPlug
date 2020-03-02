@@ -120,8 +120,9 @@ public:
 		return nullptr;
 	}
 
-	void setActive(int idx) {
+	void setActive(InstanceIndex idx) {
 		_activeIdx = idx;
+		_node->push<calls::SetActive>(NodeTypes::Audio, idx);
 	}
 
 	void onMenuResult(int id) {
@@ -159,6 +160,8 @@ public:
 			assert(instance.sourceRomData);
 			plug->loadRom(instance.sourceRomData->data(), instance.sourceRomData->size(), instance.sameBoySettings.model, instance.fastBoot);
 		}
+
+		plug->setDesc({ instance.romName });
 
 		InstanceDuplicateDesc swap = { (InstanceIndex)idx, instance.idx, plug };
 		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {

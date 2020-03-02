@@ -59,7 +59,7 @@ namespace micromsg {
 					while (source->try_dequeue(envelope)) {
 						assert(envelope->callTypeId < (int)_handlers->requests.size());
 
-						if (envelope->callTypeId != RESPONSE_ID) {	
+						if (envelope->callTypeId != RESPONSE_ID) {
 							VariantFunction& v = _callbacks[envelope->callTypeId];
 							if (v.isValid()) {
 								RequestHandlerFunc& c = _handlers->requests[envelope->callTypeId];

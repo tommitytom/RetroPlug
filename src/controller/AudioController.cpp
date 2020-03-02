@@ -28,13 +28,17 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {
-		_lua->duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
 		other = _processingContext.duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
+		_lua->duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
 	});
 
 	node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
 		_lua->removeInstance(idx);
 		other = _processingContext.removeInstance(idx);
+	});
+
+	node->on<calls::SetActive>([&](const InstanceIndex& idx) {
+		_lua->setActive(idx);
 	});
 
 	node->on<calls::UpdateSettings>([&](const Project::Settings& settings) {

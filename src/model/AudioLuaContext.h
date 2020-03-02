@@ -46,7 +46,7 @@ public:
 
 	void onMidiClock(int button, bool down);
 
-	void onMenu(std::vector<Menu*>& menus);
+	void onMenu(InstanceIndex idx, std::vector<Menu*>& menus);
 
 	void onMenuResult(int id);
 

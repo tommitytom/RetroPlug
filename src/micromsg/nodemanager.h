@@ -23,6 +23,7 @@ namespace micromsg {
 		NodeManager() {
 			_handlers.requests.push_back(&requestError);
 			_handlers.responses.push_back(&responseError);
+			_handlers.names.push_back("Error");
 		}
 
 		Allocator* allocator() { return &_alloc; }
@@ -36,6 +37,7 @@ namespace micromsg {
 				_handlers.responseCount += maxCallCount;
 			}
 
+			mm_assert(_handlers.typeIds.find(TypeId<T>::get()) == _handlers.typeIds.end());
 			_handlers.typeIds[TypeId<T>::get()] = _handlers.requests.size();
 
 			_handlers.requests.push_back(&requestHandler<T>);

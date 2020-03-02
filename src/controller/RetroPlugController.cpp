@@ -34,6 +34,7 @@ RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double samp
 	_bus.addCall<calls::FetchState>(1);
 	_bus.addCall<calls::ContextMenuResult>(1);
 	_bus.addCall<calls::SwapLuaContext>(4);
+	_bus.addCall<calls::SetActive>(4);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_audioController.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));

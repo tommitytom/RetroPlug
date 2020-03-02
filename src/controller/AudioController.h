@@ -29,13 +29,13 @@ public:
 
 	//ProcessingContext* getProcessingContext() { return &_processingContext; }
 
-	void onMenu(std::vector<Menu*>& menus) {
+	void onMenu(InstanceIndex idx, std::vector<Menu*>& menus) {
 		auto ctx = _lua;
 		if (ctx) {
 			// TODO: This mutex is temporary until I find a good way of sending context menus
 			// across threads!
 			_lock.lock();
-			ctx->onMenu(menus);
+			ctx->onMenu(idx, menus);
 			_lock.unlock();
 		}
 	}

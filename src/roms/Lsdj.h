@@ -138,23 +138,6 @@ using NamedHashedDataPtr = std::shared_ptr<NamedHashedData>;
 
 class Lsdj {
 public:
-	bool found = false;
-	std::string version;
-	bool arduinoboyPlaying = false;
-	int tempoDivisor = 1;
-	int lastRow = -1;
-
-	// Keyboard mode specific
-	int currentOctave = 0;
-	int currentInstrument = -1;
-
-	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
-	std::atomic<bool> autoPlay = false;
-	std::atomic<bool> keyboardShortcuts = false;
-
-	std::vector<std::byte> saveData;
-	std::vector<NamedHashedDataPtr> kitData;
-
 	Lsdj();
 
 	void loadRom(const std::vector<std::byte>& romData);

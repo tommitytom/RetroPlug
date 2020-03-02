@@ -124,6 +124,10 @@ void AudioLuaContext::removeInstance(InstanceIndex idx) {
 	callFunc(_state, "_removeInstance", idx);
 }
 
+void AudioLuaContext::setActive(InstanceIndex idx) {
+	callFunc(_state, "_setActive", idx);
+}
+
 void AudioLuaContext::update(int frameCount) {
 	callFunc(_state, "_update", frameCount);
 }
@@ -140,8 +144,8 @@ void AudioLuaContext::onMidiClock(int button, bool down) {
 
 }
 
-void AudioLuaContext::onMenu(std::vector<Menu*>& menus) {
-	callFunc(_state, "_onMenu", menus);
+void AudioLuaContext::onMenu(InstanceIndex idx, std::vector<Menu*>& menus) {
+	callFunc(_state, "_onMenu", idx, menus);
 }
 
 void AudioLuaContext::onMenuResult(int id) {

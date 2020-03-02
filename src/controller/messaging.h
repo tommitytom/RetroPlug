@@ -61,19 +61,22 @@ struct FetchStateResponse {
 	std::array<std::string, MAX_INSTANCES> components;
 };
 
+#define DefinePush(name, arg) class name : public micromsg::Push<arg> {};
+#define DefineRequest(name, arg, ret) class name : public micromsg::Request<arg, ret> {};
+
 namespace calls {
-	using LoadRom = micromsg::Push<LoadRomDesc>;
-	using TransmitVideo = micromsg::Push<VideoStream>;
-	using UpdateSettings = micromsg::Push<Project::Settings>;
-	using PressButtons = micromsg::Push<ButtonStream<32>>;
-	using ContextMenuResult = micromsg::Push<int>;
+	DefinePush(LoadRom, LoadRomDesc);
+	DefinePush(TransmitVideo, VideoStream);
+	DefinePush(UpdateSettings, Project::Settings);
+	DefinePush(PressButtons, ButtonStream<32>);
+	DefinePush(ContextMenuResult, int);
+	DefinePush(SetActive, InstanceIndex);
 
-	using SwapLuaContext = micromsg::Request<AudioLuaContextPtr, AudioLuaContextPtr>;
-
-	using SwapInstance = micromsg::Request<InstanceSwapDesc, SameBoyPlugPtr>;
-	using DuplicateInstance = micromsg::Request<InstanceDuplicateDesc, SameBoyPlugPtr>;
-	using TakeInstance = micromsg::Request<InstanceIndex, SameBoyPlugPtr>;
-	using FetchState = micromsg::Request<FetchStateRequest, FetchStateResponse>;
+	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
+	DefineRequest(SwapInstance, InstanceSwapDesc, SameBoyPlugPtr);
+	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);
+	DefineRequest(TakeInstance, InstanceIndex, SameBoyPlugPtr);
+	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);
 }
 
 using Node = micromsg::Node<NodeTypes>;

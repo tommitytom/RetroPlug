@@ -24,7 +24,6 @@ function _loadComponent(name)
 end
 
 local function createInstance(model, buttons)
-    print("name:", model:getDesc().state)
     return {
         model = model,
         components = cm.createComponents(model:getDesc(), model, buttons),
@@ -118,22 +117,19 @@ end
 
 local _menuLookup = nil
 
-function _onMenu(menus)
+function _onMenu(idx, menus)
 	local menu = LuaMenu()
 	local componentsMenu = menu:subMenu("System"):subMenu("Components")
 
-	if Active ~= nil then
-		for _, comp in ipairs(Active.components) do
-			componentsMenu:title(comp.__desc.name)
-		end
-	end
+    local inst = _instances[idx + 1]
+	if inst ~= nil then
+		for _, comp in ipairs(inst.components) do
+            componentsMenu:title(comp.__desc.name)
 
-    for _, inst in ipairs(_instances) do
-        for _, comp in ipairs(inst.components) do
-			if comp.onMenu ~= nil then
+            if comp.onMenu ~= nil then
 				comp:onMenu(menu)
 			end
-        end
+		end
 	end
 
 	local menuLookup = {}
@@ -150,6 +146,16 @@ function _onMenuResult(idx)
 
 		_menuLookup = nil
 	end
+end
+
+local _activeIdx = -1
+
+function _setActive(idx)
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		_activeIdx = idx + 1
+		Active = inst
+    end
 end
 
 function _serializeInstances() return serializer.serializeInstancesToString(_instances) end

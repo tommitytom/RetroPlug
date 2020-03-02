@@ -134,7 +134,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					.select("Game Link", &active->sameBoySettings.gameLink);
 
 				std::vector<Menu*> menus;
-				_audioController->onMenu(menus);
+				_audioController->onMenu(_activeIdx, menus);
 				_lua->onMenu(menus);
 
 				for (Menu* item : menus) {
