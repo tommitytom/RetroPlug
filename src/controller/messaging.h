@@ -61,6 +61,12 @@ struct FetchStateResponse {
 	std::array<std::string, MAX_INSTANCES> components;
 };
 
+
+struct FetchSramRequest {
+	InstanceIndex idx;
+	DataBufferPtr buffer;
+};
+
 #define DefinePush(name, arg) class name : public micromsg::Push<arg> {};
 #define DefineRequest(name, arg, ret) class name : public micromsg::Request<arg, ret> {};
 
@@ -77,6 +83,8 @@ namespace calls {
 	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);
 	DefineRequest(TakeInstance, InstanceIndex, SameBoyPlugPtr);
 	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);
+
+	DefineRequest(FetchSram, FetchSramRequest, DataBufferPtr);
 }
 
 using Node = micromsg::Node<NodeTypes>;

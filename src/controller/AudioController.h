@@ -29,6 +29,16 @@ public:
 
 	//ProcessingContext* getProcessingContext() { return &_processingContext; }
 
+	bool getSram(InstanceIndex idx, DataBufferPtr target) {
+		std::scoped_lock l(_lock);
+		SameBoyPlugPtr instance = _processingContext.getInstance(idx);
+		if (instance) {
+			return instance->saveBattery(target->data(), target->size());
+		}
+
+		return false;
+	}
+
 	void onMenu(InstanceIndex idx, std::vector<Menu*>& menus) {
 		auto ctx = _lua;
 		if (ctx) {

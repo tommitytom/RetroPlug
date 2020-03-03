@@ -72,8 +72,8 @@ const uint8_t LsdjKeyboardLowOctaveMap[12] = {
 	0x29  //Table Cue
 };
 
-const uint32_t LsdjKitHashes[22] = {	3734161118, 3816718742, 3788323431, 2132077591, 341848934, 4094864613, 
-										1619355490, 1432911456, 2269540319, 3452550342, 2014800155, 3671301996, 
+const uint32_t LsdjKitHashes[22] = {	3734161118, 3816718742, 3788323431, 2132077591, 341848934, 4094864613,
+										1619355490, 1432911456, 2269540319, 3452550342, 2014800155, 3671301996,
 										2468775071, 1244551999, 1123275968, 2188962532, 2840583983, 1977389053,
 										176697863, 3590495210, 2373983532, 3719557227	};
 
@@ -138,6 +138,23 @@ using NamedHashedDataPtr = std::shared_ptr<NamedHashedData>;
 
 class Lsdj {
 public:
+bool found = false;
+	std::string version;
+	bool arduinoboyPlaying = false;
+	int tempoDivisor = 1;
+	int lastRow = -1;
+
+	// Keyboard mode specific
+	int currentOctave = 0;
+	int currentInstrument = -1;
+
+	std::atomic<LsdjSyncModes> syncMode = LsdjSyncModes::Off;
+	std::atomic<bool> autoPlay = false;
+	std::atomic<bool> keyboardShortcuts = false;
+
+	std::vector<std::byte> saveData;
+	std::vector<NamedHashedDataPtr> kitData;
+
 	Lsdj();
 
 	void loadRom(const std::vector<std::byte>& romData);
@@ -161,7 +178,7 @@ public:
 	bool loadRomKits(const std::vector<std::byte>& romData, bool absolute, std::string& error);
 
 	bool loadKit(const tstring& path, int idx, std::string& error);
-	
+
 	void getKitNames(std::vector<std::string>& names);
 
 	void patchKit(std::vector<std::byte>& romData, const std::vector<std::byte>& kitData, int index);

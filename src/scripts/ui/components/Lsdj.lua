@@ -1,7 +1,5 @@
 local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
 
-local inspect = require("inspect")
-
 local SelectState = {
 	None = 0,
 	RequestBegin = 1,
@@ -25,6 +23,8 @@ function Lsdj:init()
 	self._valid = false
 	self._kits = {}
 	self._songs = {}
+	self._littleFm = false
+	self._overclock = false
 
 	self._selectState = SelectState.None
 
@@ -130,6 +130,10 @@ function Lsdj:onBeforeButton(button, down)
 	end
 end
 
+function Lsdj:onPatchRom(romData)
+
+end
+
 function Lsdj:onBeforeRomLoad(romData)
 	-- Patch the rom
 	--liblsdj.parseRom(romData)
@@ -144,16 +148,52 @@ function Lsdj:onRomLoad(system)
 
 end
 
+local function overclockPatch(data, overclock)
+	local overClockIdx = data:findSequence({ 0x3e }, 1, { 0xe0, 0x07 })
+	if overClockIdx ~= -1 then
+		local v = 0x04
+		if overclock == true then v = 0x07 end
+		data:write(overClockIdx + 1, { v })
+	end
+end
+
+function Lsdj:updateRom()
+	local d = self:system().sourceRomData
+	overclockPatch(d, self._overclock)
+end
+
+function Lsdj:createSongsMenu(menu)
+	local songlist = { "shit", "wooow" }
+
+	menu:action("Import from ROM...")
+		:action("Export all...")
+		:separator()
+
+	for i, v in ipairs(songlist) do
+		menu:subMenu(v)
+				:action("Load...", function() end)
+				:action("Replace...", function() end)
+				:action("Delete", function() end)
+	end
+end
+
 function Lsdj:onMenu(menu)
+	local root = menu:subMenu("LSDj")
+	self:createSongsMenu(root:subMenu("Songs"))
+
 	menu:subMenu("LSDj")
-		:subMenu("Songs")
-			:parent()
 		:subMenu("Kits")
 			:parent()
 		:subMenu("Fonts")
 			:parent()
 		:subMenu("Palettes")
 			:parent()
+		:separator()
+		:subMenu("Patches")
+			:select("LitteFM", self._littleFm, function(v) self._littleFm = v; self:updateRom() end)
+			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
+			:parent()
+		:action("Export ROM...", function() end)
 end
 
 return Lsdj

@@ -133,6 +133,9 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					.separator()
 					.select("Game Link", &active->sameBoySettings.gameLink);
 
+				// Update SRAM for the selected instance since it might be used to generate the menu
+				_audioController->getSram(_activeIdx, active->sourceSavData);
+
 				std::vector<Menu*> menus;
 				_audioController->onMenu(_activeIdx, menus);
 				_lua->onMenu(menus);
