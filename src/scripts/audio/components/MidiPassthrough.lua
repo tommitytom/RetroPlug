@@ -1,6 +1,3 @@
-local util = require("util")
-local inspect = require("inspect")
-
 local MidiPassthrough = component({ name = "MIDI Passthrough", romName = "MGB" })
 function MidiPassthrough:init()
 

@@ -162,27 +162,12 @@ function Lsdj:updateRom()
 	overclockPatch(d, self._overclock)
 end
 
-function Lsdj:createSongsMenu(menu)
-	local songlist = { "shit", "wooow" }
-
-	menu:action("Import from ROM...")
-		:action("Export all...")
-		:separator()
-
-	for i, v in ipairs(songlist) do
-		menu:subMenu(v)
-				:action("Load...", function() end)
-				:action("Replace...", function() end)
-				:action("Delete", function() end)
-	end
-end
-
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
+
 	self:createSongsMenu(root:subMenu("Songs"))
 
-	menu:subMenu("LSDj")
-		:subMenu("Kits")
+	root:subMenu("Kits")
 			:parent()
 		:subMenu("Fonts")
 			:parent()
@@ -194,6 +179,33 @@ function Lsdj:onMenu(menu)
 			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
 			:parent()
 		:action("Export ROM...", function() end)
+end
+
+function Lsdj:createSongsMenu(menu)
+	local system = self:system()
+	menu:action("Import (and reset)...")
+		:action("Export All...")
+		:separator()
+
+	local names = getLsdjSongNames(system.sourceSavData)
+
+	for i, v in ipairs(names) do
+		menu:subMenu(v.name)
+				:action("Load (and reset)", function()
+					loadLsdjSong(system.sourceSavData, i - 2)
+					_proxy:setSram(Active.desc.idx, system.sourceSavData, true)
+				end)
+				:action("Export .lsdsng...", function()
+					--[[dialog.saveFile({ ".lsdsng" }, function(path) {
+						local songData = saveLsdjSong(system.sourceSavData, i - 2)
+						fs.saveFile(songData, path)
+					end)]]
+				end)
+				:action("Delete", function()
+					deleteLsdjSong(system.sourceSavData, i - 1)
+					_proxy:setSram(Active.desc.idx, system.sourceSavData, false)
+				end)
+	end
 end
 
 return Lsdj

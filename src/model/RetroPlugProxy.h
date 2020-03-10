@@ -133,6 +133,16 @@ public:
 		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}
 
+	void setSram(InstanceIndex idx, DataBufferPtr data, bool reset) {
+		SetSramRequest req;
+		req.idx = idx;
+		req.buffer = std::make_shared<DataBuffer<char>>(data->size());
+		req.buffer->write(data->data(), data->size());
+		req.reset = reset;
+
+		_node->request<calls::SetSram>(NodeTypes::Audio, req, [](const DataBufferPtr&) {});
+	}
+
 	void setScriptDirs(const std::string& configPath, const std::string& scriptPath) {
 		_configPath = configPath;
 		_scriptPath = scriptPath;

@@ -55,6 +55,15 @@ void AudioController::setNode(Node* node) {
 		_processingContext.fetchState(req, state);
 	});
 
+	node->on<calls::SetSram>([&](const SetSramRequest& req, DataBufferPtr& ret) {
+		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
+		if (inst) {
+			inst->loadBattery(req.buffer->data(), req.buffer->size(), req.reset);
+		}
+	
+		ret = req.buffer;
+	});
+
 	node->on<calls::PressButtons>([&](const ButtonStream<32>& presses) {
 		SameBoyPlugPtr& instance = _processingContext.getInstance(presses.idx);
 		if (instance) {

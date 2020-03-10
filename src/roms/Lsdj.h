@@ -7,6 +7,7 @@
 #include "liblsdj/error.h"
 #include "liblsdj/project.h"
 #include "liblsdj/sav.h"
+#include "util/DataBuffer.h"
 
 #include "platform/Logger.h"
 #include "util/xstring.h"
@@ -157,21 +158,30 @@ bool found = false;
 
 	Lsdj();
 
+	static std::vector<LsdjSongName> getSongNames(DataBufferPtr data);
+
+	static void loadSong(DataBufferPtr data, int idx);
+
+	static void deleteSong(DataBufferPtr data, int idx);
+
+
+
+
 	void loadRom(const std::vector<std::byte>& romData);
 
 	// Song specific
 
 	std::vector<int> importSongs(const std::vector<tstring>& paths, std::string& error);
 
-	void loadSong(int idx);
+	
 
 	void exportSong(int idx, std::vector<std::byte>& target);
 
 	void exportSongs(std::vector<NamedData>& target);
 
-	void deleteSong(int idx);
+	
 
-	void getSongNames(std::vector<LsdjSongName>& names);
+	
 
 	// Kit specific
 

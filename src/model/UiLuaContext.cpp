@@ -202,7 +202,8 @@ void UiLuaContext::setup() {
 		"buttons", &RetroPlugProxy::getButtonPresses,
 		"closeProject", &RetroPlugProxy::closeProject,
 		"getProject", &RetroPlugProxy::getProject,
-		"updateSettings", &RetroPlugProxy::updateSettings
+		"updateSettings", &RetroPlugProxy::updateSettings,
+		"setSram", &RetroPlugProxy::setSram
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",
@@ -212,8 +213,18 @@ void UiLuaContext::setup() {
 		"alt", &iplug::IKeyPress::A
 	);
 
+	s.new_usertype<LsdjSongName>("LsdjSongName",
+		"name", &LsdjSongName::name,
+		"projectId", &LsdjSongName::projectId,
+		"version", &LsdjSongName::version
+	);
+
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 	s["_proxy"].set(_proxy);
+
+	s["getLsdjSongNames"].set_function(Lsdj::getSongNames);
+	s["loadLsdjSong"].set_function(Lsdj::loadSong);
+	s["deleteLsdjSong"].set_function(Lsdj::deleteSong);
 
 	if (!runScript(_state, "require('plug')")) {
 		return;

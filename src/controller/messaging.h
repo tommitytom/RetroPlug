@@ -67,6 +67,12 @@ struct FetchSramRequest {
 	DataBufferPtr buffer;
 };
 
+struct SetSramRequest {
+	InstanceIndex idx;
+	DataBufferPtr buffer;
+	bool reset;
+};
+
 #define DefinePush(name, arg) class name : public micromsg::Push<arg> {};
 #define DefineRequest(name, arg, ret) class name : public micromsg::Request<arg, ret> {};
 
@@ -80,6 +86,7 @@ namespace calls {
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapInstance, InstanceSwapDesc, SameBoyPlugPtr);
+	DefineRequest(SetSram, SetSramRequest, DataBufferPtr);
 	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);
 	DefineRequest(TakeInstance, InstanceIndex, SameBoyPlugPtr);
 	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);

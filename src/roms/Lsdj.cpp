@@ -150,13 +150,13 @@ std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::strin
 	return ids;
 }
 
-void Lsdj::loadSong(int idx) {
-	if (saveData.size() == 0) {
+void Lsdj::loadSong(DataBufferPtr data, int idx) {
+	if (data->size() == 0) {
 		return;
 	}
 
 	lsdj_error_t* error = nullptr;
-	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
+	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)data->data(), data->size(), &error);
 	if (sav == nullptr) {
 		if (error) {
 			consoleLogLine(lsdj_error_get_c_str(error));
@@ -172,8 +172,8 @@ void Lsdj::loadSong(int idx) {
 		return;
 	}
 
-	saveData.resize(LSDJ_SAV_SIZE);
-	lsdj_sav_write_to_memory(sav, (unsigned char*)saveData.data(), saveData.size(), &error);
+	//data->resize(LSDJ_SAV_SIZE);
+	lsdj_sav_write_to_memory(sav, (unsigned char*)data->data(), data->size(), &error);
 	if (error) {
 		consoleLogLine(lsdj_error_get_c_str(error));
 	}
@@ -261,13 +261,13 @@ void Lsdj::exportSongs(std::vector<NamedData>& target) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::deleteSong(int idx) {
-	if (saveData.size() == 0) {
+void Lsdj::deleteSong(DataBufferPtr data, int idx) {
+	if (data->size() == 0) {
 		return;
 	}
 
 	lsdj_error_t* error = nullptr;
-	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
+	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)data->data(), data->size(), &error);
 	if (sav == nullptr) {
 		if (error) {
 			consoleLogLine(lsdj_error_get_c_str(error));
@@ -289,8 +289,8 @@ void Lsdj::deleteSong(int idx) {
 		return;
 	}
 
-	saveData.resize(LSDJ_SAV_SIZE);
-	lsdj_sav_write_to_memory(sav, (unsigned char*)saveData.data(), saveData.size(), &error);
+	//data->resize(LSDJ_SAV_SIZE);
+	lsdj_sav_write_to_memory(sav, (unsigned char*)data->data(), data->size(), &error);
 	if (error) {
 		consoleLogLine(lsdj_error_get_c_str(error));
 	}
@@ -298,16 +298,18 @@ void Lsdj::deleteSong(int idx) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
-	if (saveData.size() == 0) {
-		return;
+std::vector<LsdjSongName> Lsdj::getSongNames(DataBufferPtr data) {
+	std::vector<LsdjSongName> names;
+
+	if (data->size() == 0) {
+		return names;
 	}
 
 	lsdj_error_t* error = nullptr;
-	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
+	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)data->data(), data->size(), &error);
 	if (sav == nullptr) {
 		consoleLogLine(lsdj_error_get_c_str(error));
-		return;
+		return names;
 	}
 
 	char name[9];
@@ -330,6 +332,8 @@ void Lsdj::getSongNames(std::vector<LsdjSongName>& names) {
 	}
 
 	lsdj_sav_free(sav);
+
+	return names;
 }
 
 // Kit specific
