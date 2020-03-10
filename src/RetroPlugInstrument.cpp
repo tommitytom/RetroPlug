@@ -25,8 +25,18 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 	delete[] _sampleScratch;
 }
 
+std::thread::id _procThreadId;
+std::thread::id _serializeThreadId;
+
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
+	if (_procThreadId != std::this_thread::get_id()) {
+		_procThreadId = std::this_thread::get_id();
+		std::stringstream ss;
+		ss << "Proc id: " << _procThreadId;
+		consoleLogLine(ss.str());
+	}
+
 	for (size_t j = 0; j < MaxNChannels(ERoute::kOutput); j++) {
 		for (size_t i = 0; i < frameCount; i++) {
 			outputs[j][i] = 0;
@@ -41,9 +51,19 @@ void RetroPlugInstrument::OnIdle() {
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
+	if (_serializeThreadId != std::this_thread::get_id()) {
+		_serializeThreadId = std::this_thread::get_id();
+		std::stringstream ss;
+		ss << "_serializeThreadId: " << _serializeThreadId;
+		consoleLogLine(ss.str());
+	}
+
 	/*std::string target;
 	serialize(target, _plug);
 	chunk.PutStr(target.c_str());*/
+
+	chunk.PutStr("Hello");
+
 	return true;
 }
 
@@ -51,6 +71,10 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 	/*WDL_String data;
 	pos = chunk.GetStr(data, pos);
 	deserialize(data.Get(), _plug);*/
+
+	WDL_String data;
+	chunk.GetStr(data, pos);
+	pos += data.GetLength();
 	return pos;
 }
 
