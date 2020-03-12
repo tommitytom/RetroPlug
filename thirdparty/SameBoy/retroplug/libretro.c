@@ -353,7 +353,7 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
     // offsets to 0 so they get processed immediately at the start of the next frame.
     if (length(&s->midiQueue)) {
         for (int i = 0; i < MAX_QUEUE_SIZE; i++) {
-            s->midiQueue.data[i].offset = 0;
+            s->midiQueue.data[i].offset -= s->currentAudioFrames;
         }
     }
 }

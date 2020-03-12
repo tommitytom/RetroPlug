@@ -298,6 +298,7 @@
     <ClInclude Include="..\src\util\base64.h" />
     <ClInclude Include="..\src\util\crc32.h" />
     <ClInclude Include="..\src\util\File.h" />
+    <ClInclude Include="..\src\util\math.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
     <ClInclude Include="..\src\util\Serializer.h" />
     <ClInclude Include="..\src\util\xstring.h" />

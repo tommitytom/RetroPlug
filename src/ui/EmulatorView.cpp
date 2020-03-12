@@ -5,6 +5,7 @@
 #include "platform/Shell.h"
 #include "util/File.h"
 #include "util/Serializer.h"
+#include "util/math.h"
 #include "Buttons.h"
 
 #include <sstream>
@@ -78,19 +79,255 @@ void EmulatorView::Setup(SameBoyPlugPtr plug, RetroPlug* manager) {
 	HideText();
 }
 
+int writeExtended(VirtualKey vk, uint8_t* target) {
+	switch (vk) {
+	case VirtualKeys::LeftWin: 
+	case VirtualKeys::RightCtrl: 
+	case VirtualKeys::RightWin: 
+	case VirtualKeys::Insert:
+	case VirtualKeys::Home:
+	case VirtualKeys::Delete:
+	case VirtualKeys::End:
+	case VirtualKeys::Divide:
+	case VirtualKeys::LeftArrow: 
+	case VirtualKeys::RightArrow: 
+	case VirtualKeys::UpArrow: 
+	case VirtualKeys::DownArrow: 
+	case VirtualKeys::PageUp: 
+	case VirtualKeys::PageDown: 
+	case VirtualKeys::Sleep:
+	case VirtualKeys::PrintScreen:
+		target[0] = 0xE0;
+		return 1;
+	}
+
+	// Unknown:
+	// APPS :: make: E0, 2F ------ break: E0, F0, 2F
+
+	// Don't have a VK:
+	// R ALT :: make: E0,11 --------- break: E0,F0,11
+	// KP EN :: make: E0, 5A --------- break: E0, F0, 5A
+
+	// Print screen and pause are special cases
+
+	return 0;
+}
+
+int getMakeCode(VirtualKey vk, uint8_t* target, bool includeExt) {
+	int o = 0;
+	if (includeExt) {
+		o = writeExtended(vk, target);
+	}
+
+	target[o] = 0;
+
+	switch (vk) {
+
+	case VirtualKeys::Esc: target[o] = 0x76; break;
+	case VirtualKeys::F1: target[o] = 0x05; break;
+	case VirtualKeys::F2: target[o] = 0x06; break;
+	case VirtualKeys::F3: target[o] = 0x04; break;
+	case VirtualKeys::F4: target[o] = 0x0C; break;
+	case VirtualKeys::F5: target[o] = 0x03; break;
+	case VirtualKeys::F6: target[o] = 0x0B; break;
+	case VirtualKeys::F7: target[o] = 0x83; break;
+	case VirtualKeys::F8: target[o] = 0x0A; break;
+	case VirtualKeys::F9: target[o] = 0x01; break;
+	case VirtualKeys::F10: target[o] = 0x09; break;
+	case VirtualKeys::F11: target[o] = 0x78; break;
+	case VirtualKeys::F12: target[o] = 0x07; break;
+	case VirtualKeys::Space: target[o] = 0x29; break;
+	case VirtualKeys::Enter: target[o] = 0x5A; break;
+	
+	case VirtualKeys::Oem1: target[o] = 0x4C; break; // ;
+	case VirtualKeys::Oem2: target[o] = 0x4A; break; // /
+	case VirtualKeys::Oem3: target[o] = 0x0E; break; // `
+	case VirtualKeys::Oem4: target[o] = 0x54; break; // [
+	case VirtualKeys::Oem5: target[o] = 0x5D; break; // \ (backslash)
+	case VirtualKeys::Oem6: target[o] = 0x5B; break; // ]
+	case VirtualKeys::Oem7: target[o] = 0x52; break; // '
+
+	case VirtualKeys::OemMinus: target[o] = 0x4E; break;
+	case VirtualKeys::OemPlus: target[o] = 0x55; break;
+	case VirtualKeys::OemPeriod: target[o] = 0x49; break;
+	case VirtualKeys::OemComma: target[o] = 0x41; break;
+
+	case VirtualKeys::Subtract: target[o] = 0x7B; break;
+	case VirtualKeys::Add: target[o] = 0x79; break;
+	case VirtualKeys::Divide: target[o] = 0x4A; break;
+	case VirtualKeys::Multiply: target[o] = 0x7C; break;
+	case VirtualKeys::Decimal: target[o] = 0x71; break;
+
+	case VirtualKeys::NumPad0: target[o] = 0x70; break;
+	case VirtualKeys::NumPad1: target[o] = 0x69; break;
+	case VirtualKeys::NumPad2: target[o] = 0x72; break;
+	case VirtualKeys::NumPad3: target[o] = 0x7A; break;
+	case VirtualKeys::NumPad4: target[o] = 0x6B; break;
+	case VirtualKeys::NumPad5: target[o] = 0x73; break;
+	case VirtualKeys::NumPad6: target[o] = 0x74; break;
+	case VirtualKeys::NumPad7: target[o] = 0x6C; break;
+	case VirtualKeys::NumPad8: target[o] = 0x75; break;
+	case VirtualKeys::NumPad9: target[o] = 0x7D; break;
+
+	case VirtualKeys::Backspace: target[o] = 0x66; break;
+	case VirtualKeys::Tab: target[o] = 0x0D; break;
+	case VirtualKeys::Caps: target[o] = 0x58; break;
+
+	case VirtualKeys::Ctrl: target[o] = 0x14; break;
+	case VirtualKeys::Shift: target[o] = 0x12; break;
+	case VirtualKeys::Alt: target[o] = 0x11; break;
+
+	case VirtualKeys::LeftShift: target[o] = 0x12; break;
+	case VirtualKeys::LeftCtrl: target[o] = 0x14; break;
+	case VirtualKeys::LeftWin: target[o] = 0x1F; break;
+
+	case VirtualKeys::RightShift: target[o] = 0x59; break;
+	case VirtualKeys::RightCtrl: target[o] = 0x1F; break;
+	case VirtualKeys::RightWin: target[o] = 0x1F; break;
+
+	
+	case VirtualKeys::Scroll: target[o] = 0x7E; break;
+	case VirtualKeys::Insert: target[o] = 0x70; break;
+
+	case VirtualKeys::Home: target[o] = 0x6C; break;
+	case VirtualKeys::Delete: target[o] = 0x71; break;
+	case VirtualKeys::End: target[o] = 0x69; break;
+
+	case VirtualKeys::NumLock: target[o] = 0x77; break;
+
+	case VirtualKeys::LeftArrow: target[o] = 0x6B; break;
+	case VirtualKeys::RightArrow: target[o] = 0x74; break;
+	case VirtualKeys::UpArrow: target[o] = 0x75; break;
+	case VirtualKeys::DownArrow: target[o] = 0x72; break;
+	case VirtualKeys::PageUp: target[o] = 0x7D; break;
+	case VirtualKeys::PageDown: target[o] = 0x7A; break;
+
+	case VirtualKeys::Num0: target[o] = 0x45; break;
+	case VirtualKeys::Num1: target[o] = 0x16; break;
+	case VirtualKeys::Num2: target[o] = 0x1E; break;
+	case VirtualKeys::Num3: target[o] = 0x26; break;
+	case VirtualKeys::Num4: target[o] = 0x25; break;
+	case VirtualKeys::Num5: target[o] = 0x2E; break;
+	case VirtualKeys::Num6: target[o] = 0x36; break;
+	case VirtualKeys::Num7: target[o] = 0x3D; break;
+	case VirtualKeys::Num8: target[o] = 0x3E; break;
+	case VirtualKeys::Num9: target[o] = 0x46; break;
+
+	case VirtualKeys::A: target[o] = 0x1C; break;
+	case VirtualKeys::B: target[o] = 0x32; break;
+	case VirtualKeys::C: target[o] = 0x21; break;
+	case VirtualKeys::D: target[o] = 0x23; break;
+	case VirtualKeys::E: target[o] = 0x24; break;
+	case VirtualKeys::F: target[o] = 0x2B; break;
+	case VirtualKeys::G: target[o] = 0x34; break;
+	case VirtualKeys::H: target[o] = 0x33; break;
+	case VirtualKeys::I: target[o] = 0x43; break;
+	case VirtualKeys::J: target[o] = 0x3B; break;
+	case VirtualKeys::K: target[o] = 0x42; break;
+	case VirtualKeys::L: target[o] = 0x4B; break;
+	case VirtualKeys::M: target[o] = 0x3A; break;
+	case VirtualKeys::N: target[o] = 0x31; break;
+	case VirtualKeys::O: target[o] = 0x44; break;
+	case VirtualKeys::P: target[o] = 0x4D; break;
+	case VirtualKeys::Q: target[o] = 0x15; break;
+	case VirtualKeys::R: target[o] = 0x2D; break;
+	case VirtualKeys::S: target[o] = 0x1B; break;
+	case VirtualKeys::T: target[o] = 0x2C; break;
+	case VirtualKeys::U: target[o] = 0x3C; break;
+	case VirtualKeys::V: target[o] = 0x2A; break;
+	case VirtualKeys::W: target[o] = 0x1D; break;
+	case VirtualKeys::X: target[o] = 0x22; break;
+	case VirtualKeys::Y: target[o] = 0x35; break;
+	case VirtualKeys::Z: target[o] = 0x1A; break;
+
+	case VirtualKeys::PrintScreen:
+		target[o] = 0x12;
+		target[o+1] = 0xE0;
+		target[o+2] = 0x7C;
+		return 3;
+
+	case VirtualKeys::Pause:
+		target[o] = 0xE1;
+		target[o+1] = 0x14;
+		target[o+2] = 0x77;
+		target[o+3] = 0xE1;
+		target[o+4] = 0xF0;
+		target[o+5] = 0x14;
+		target[o+6] = 0xF0;
+		target[o+7] = 0x77;
+		return 8;
+	}
+
+	if (target[o] != 0) {
+		return o + 1;
+	}
+
+	return 0;
+}
+
+int getBreakCode(VirtualKey vk, uint8_t* target) {
+	if (vk == VirtualKeys::Pause) {
+		return 0;
+	}
+
+	int o = writeExtended(vk, target);
+	int count = getMakeCode(vk, target + o + 1, false);
+	if (count > 0) {
+		target[o] = 0xF0;
+		return o + count + 1;
+	}
+
+	return 0;
+}
+
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 	if (_plug && _plug->active()) {
-		if (_plug->lsdj().found && _plug->lsdj().keyboardShortcuts) {
-			return _lsdjKeyMap.onKey(key, down);
-		} else {
-			ButtonEvent ev;
-			ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
-			ev.down = down;
+		Lsdj& lsdj = _plug->lsdj();
+		if (lsdj.found) {
+			if (lsdj.syncMode == LsdjSyncModes::Keyboard) {
+				uint8_t scancodes[8];
+				int count = 0;
+				if (down == true) {
+					count = getMakeCode((VirtualKey)key.VK, scancodes, true);
+				} else {
+					//count = getBreakCode((VirtualKey)key.VK, scancodes);
+				}
 
-			if (ev.id != ButtonTypes::MAX) {
-				_plug->setButtonState(ev);
+				if (count) {
+					int accum = (int)((_plug->sampleRate() / 1000.0) * 10.0);
+					
+					const std::string* vkname = VirtualKeys::toString((VirtualKey)key.VK);
+					std::string vkn = (vkname ? *vkname : "Unknown");
+
+					std::cout << std::hex << "Char: " << key.utf8[0] << " | VK: " << vkn << " | PS/2: [ ";
+
+					std::stringstream lsdjCodes;
+					lsdjCodes << std::hex;
+
+					int offset = 0;
+					for (int i = 0; i < count; ++i) {
+						std::cout << "0x" << (int)(uint8_t)scancodes[i] << (i < count - 1 ? ", " : " ");
+						lsdjCodes << "0x" << (int)(uint8_t)(reverse(scancodes[i]) >> 1) << (i < count - 1 ? ", " : " ");
+						_plug->sendSerialByte(offset, reverse(scancodes[i]) >> 1);
+						offset += accum;
+					}
+
+					std::cout << "] | LSDj: [ " << lsdjCodes.str() << "]" << std::endl;
+				}
+
 				return true;
+			} else if (lsdj.keyboardShortcuts) {
+				return _lsdjKeyMap.onKey(key, down);
 			}
+		}
+
+		ButtonEvent ev;
+		ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
+		ev.down = down;
+
+		if (ev.id != ButtonTypes::MAX) {
+			_plug->setButtonState(ev);
+			return true;
 		}
 	}
 
@@ -298,7 +535,7 @@ void EmulatorView::CreateMenu(IPopupMenu* root, IPopupMenu* projectMenu) {
 			syncMenu->CheckItem(selectedMode, true);
 			syncMenu->SetFunction([this](int indexInMenu, IPopupMenu::Item* itemChosen) {
 				LsdjSyncModeMenuItems menuItem = (LsdjSyncModeMenuItems)indexInMenu;
-				if (menuItem <= LsdjSyncModeMenuItems::MidiMap) {
+				if (menuItem < LsdjSyncModeMenuItems::Sep1) {
 					_plug->lsdj().syncMode = GetLsdjModeFromMenu(menuItem);
 				} else {
 					_plug->lsdj().autoPlay = !_plug->lsdj().autoPlay;

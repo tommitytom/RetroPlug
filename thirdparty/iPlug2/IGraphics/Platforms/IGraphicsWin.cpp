@@ -13,7 +13,7 @@
 #include <commctrl.h>
 
 #include "heapbuf.h"
-
+#include <iostream>
 #include "IPlugParameter.h"
 #include "IGraphicsWin.h"
 #include "IPopupMenuControl.h"
@@ -425,6 +425,8 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
       BYTE keyboardState[256] = {};
       GetKeyboardState(keyboardState);
       const int keyboardScanCode = (lParam >> 16) & 0x00ff;
+
+      //std::cout << std::hex << "scan code: " << keyboardScanCode << std::endl;
       WORD character = 0;
       const int len = ToAscii(wParam, keyboardScanCode, keyboardState, &character, 0);
       // TODO: should get unicode?

@@ -47,8 +47,10 @@ bool RetroPlugRoot::OnKey(const IKeyPress& key, bool down) {
             GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
             return true;
         }*/
+
+		auto& lsdj = _active->Plug()->lsdj();
         
-		if (key.VK == VirtualKeys::Tab && down) {
+		if (key.VK == VirtualKeys::Tab && down && !(lsdj.found && lsdj.syncMode == LsdjSyncModes::Keyboard)) {
 			_activeIdx = (_activeIdx + 1) % _views.size();
 			SetActive(_views[_activeIdx]);
 			return true;

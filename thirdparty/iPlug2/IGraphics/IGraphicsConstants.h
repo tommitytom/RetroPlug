@@ -276,6 +276,7 @@ enum EVirtualKey
   kVK_Z =           0x5A,
   
   kVK_LWIN =        0x5B,
+  kVK_RWIN =        0x5C,
   
   kVK_NUMPAD0 =     0x60,
   kVK_NUMPAD1 =     0x61,
@@ -319,7 +320,9 @@ enum EVirtualKey
   kVK_F24 =         0x87,
 
   kVK_NUMLOCK =     0x90,
-  kVK_SCROLL =      0x91
+  kVK_SCROLL =      0x91,
+
+  kVK_OEM_3 =       0xC0
 };
 
 END_IGRAPHICS_NAMESPACE

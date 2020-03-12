@@ -4,6 +4,7 @@
 #include "src/ui/EmulatorView.h"
 #include "src/ui/RetroPlugRoot.h"
 #include "util/Serializer.h"
+#include "util/math.h"
 
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	: Plugin(info, MakeConfig(0, 0)) {
@@ -262,13 +263,6 @@ void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	}
 }
 
-unsigned char reverse(unsigned char b) {
-	b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-	b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-	b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-	return b;
-}
-
 void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IMidiMsg& msg, int channel) {
 	Lsdj& lsdj = plug->lsdj();
 	if (lsdj.found) {
@@ -341,7 +335,7 @@ void RetroPlugInstrument::ProcessInstanceMidiMessage(SameBoyPlug* plug, const IM
 				} else if (note >= LsdjKeyboardStartOctave) {
 					note -= LsdjKeyboardStartOctave;
 					uint8_t command = LsdjKeyboardLowOctaveMap[note];
-					if (command == 0x68 || command == 0x72 || command == 0x74 || command == 0x75) {
+					if (command == 0x4B || command == 0x72 || command == 0x74 || command == 0x75) {
 						//cursor values need an "extended" pc keyboard mode message
 						plug->sendSerialByte(msg.mOffset, reverse(0xE0) >> 1);
 					}

@@ -102,6 +102,8 @@ public:
 
 	size_t batterySize();
 
+	double sampleRate() const { return _sampleRate; }
+
 	bool saveBattery(tstring path);
 
 	bool saveBattery(std::vector<std::byte>& data);

@@ -5,6 +5,7 @@
 #include "SameBoyPlug.h"
 #include "util/xstring.h"
 #include "util/fs.h"
+#include "util/math.h"
 #include "Constants.h"
 #include <fstream>
 
@@ -279,9 +280,12 @@ void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
 }
 
 void SameBoyPlug::sendKeyboardByte(int offset, char byte) {
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0, 1);
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, 8);
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0x01, 2);
+	if (byte == 0x6B || byte == 0x74 || byte == 0x75 || byte == 0x72 || byte == 0x7D || byte == 0x7A) {
+		// Cursor values need an "extended" pc keyboard mode message
+		SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, reverse(0xE0) >> 1, 8);
+	}
+
+	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, 300, reverse(byte) >> 1, 8);
 }
 
 void SameBoyPlug::sendSerialByte(int offset, char byte, size_t bitCount) {

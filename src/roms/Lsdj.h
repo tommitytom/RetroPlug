@@ -17,6 +17,7 @@ enum class LsdjSyncModes {
 	Master,
 	Midi,
 	Nanoloop,
+	Keyboard,
 	KeyboardArduinoboy,
 	AnalogIn,
 	AnalogOut,
@@ -103,6 +104,7 @@ static std::string syncModeToString(LsdjSyncModes syncMode) {
 	case LsdjSyncModes::MidiArduinoboy: return "midiSyncArduinoboy";
 	case LsdjSyncModes::MidiMap: return "midiMap";
 	case LsdjSyncModes::KeyboardArduinoboy: return "keyboardArduinoboy";
+	case LsdjSyncModes::Keyboard: return "keyboard";
 	}
 
 	return "off";
@@ -113,6 +115,7 @@ static LsdjSyncModes syncModeFromString(const std::string& syncMode) {
 	if (syncMode == "midiSyncArduinoboy") return LsdjSyncModes::MidiArduinoboy;
 	if (syncMode == "midiMap") return LsdjSyncModes::MidiMap;
 	if (syncMode == "keyboardArduinoboy") return LsdjSyncModes::KeyboardArduinoboy;
+	if (syncMode == "keyboard") return LsdjSyncModes::Keyboard;
 	return LsdjSyncModes::Off;
 }
 

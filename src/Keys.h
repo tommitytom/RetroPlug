@@ -118,7 +118,21 @@ namespace VirtualKeys {
 		LeftCtrl = 0xA2,
 		RightCtrl = 0xA3,
 		LeftMenu = 0xA4,
-		RightMenu = 0xA5
+		RightMenu = 0xA5,
+		
+		Oem1 = 0xBA,
+		Oem2 = 0xBF,
+		Oem3 = 0xC0,
+		Oem4 = 0xDB,
+		Oem5 = 0xDC,
+		Oem6 = 0xDD,
+		Oem7 = 0xDE,
+		Oem8 = 0xDF,
+
+		OemPlus = 0xBB,
+		OemComma = 0xBC,
+		OemMinus = 0xBD,
+		OemPeriod = 0xBE,
 	};
 
 	static const std::map<std::string, VirtualKey> Lookup = {
@@ -235,6 +249,18 @@ namespace VirtualKeys {
 		{ "RightCtrl", VirtualKeys::RightCtrl },
 		{ "LeftMenu", VirtualKeys::LeftMenu },
 		{ "RightMenu", VirtualKeys::RightMenu },
+		{ "Oem1", VirtualKeys::Oem1 },
+		{ "Oem2", VirtualKeys::Oem2 },
+		{ "Oem3", VirtualKeys::Oem3 },
+		{ "Oem4", VirtualKeys::Oem4 },
+		{ "Oem5", VirtualKeys::Oem5 },
+		{ "Oem6", VirtualKeys::Oem6 },
+		{ "Oem7", VirtualKeys::Oem7 },
+		{ "Oem8", VirtualKeys::Oem8 },
+		{ "OemPlus", VirtualKeys::OemPlus },
+		{ "OemComma", VirtualKeys::OemComma },
+		{ "OemMinus", VirtualKeys::OemMinus },
+		{ "OemPeriod", VirtualKeys::OemPeriod },
 	};
 
 	static VirtualKey fromString(const std::string& key) {
