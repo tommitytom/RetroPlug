@@ -1,1 +1,1 @@
-call C:\msys64\mingw64.exe ./build.sh
+call C:\msys64\mingw64.exe ./build.sh x64

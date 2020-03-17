@@ -10,7 +10,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 
-const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"Z\",\"B\":\"X\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Q\",\"Start\":\"Enter\",\"Delete\":\"Delete\"},\"lsdj\":{\"ScreenUp\":\"W\",\"ScreenDown\":\"S\",\"ScreenLeft\":\"A\",\"ScreenRight\":\"D\",\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\"}}";
+const std::string DEFAULT_BUTTON_CONFIG = "{\"gameboy\":{\"A\":\"S\",\"B\":\"A\",\"Up\":\"UpArrow\",\"Down\":\"DownArrow\",\"Left\":\"LeftArrow\",\"Right\":\"RightArrow\",\"Select\":\"Ctrl\",\"Start\":\"Enter\"},\"lsdj\":{\"DownTenRows\":\"PageDown\",\"UpTenRows\":\"PageUp\",\"CancelSelection\":\"Esc\",\"Delete\":\"Delete\"}}";
 
 static void saveButtonConfig(const tstring& path, const rapidjson::Document& source) {
 	rapidjson::StringBuffer sb;

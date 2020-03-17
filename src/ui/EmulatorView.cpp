@@ -290,16 +290,19 @@ bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 				if (down == true) {
 					count = getMakeCode((VirtualKey)key.VK, scancodes, true);
 				} else {
-					//count = getBreakCode((VirtualKey)key.VK, scancodes);
+					count = getBreakCode((VirtualKey)key.VK, scancodes);
 				}
 
+				const double LSDJ_PS2_BYTE_DELAY = 5.0;
+
 				if (count) {
-					int accum = (int)((_plug->sampleRate() / 1000.0) * 10.0);
+					int accum = (int)((_plug->sampleRate() / 1000.0) * LSDJ_PS2_BYTE_DELAY);
 					
 					const std::string* vkname = VirtualKeys::toString((VirtualKey)key.VK);
 					std::string vkn = (vkname ? *vkname : "Unknown");
 
-					std::cout << std::hex << "Char: " << key.utf8[0] << " | VK: " << vkn << " | PS/2: [ ";
+					std::cout << (down == true ? "KEY DOWN |" : "KEY UP   |");
+					std::cout << std::hex << " Char: " << key.utf8[0] << " | VK: " << vkn << " | PS/2: [ ";
 
 					std::stringstream lsdjCodes;
 					lsdjCodes << std::hex;

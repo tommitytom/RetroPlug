@@ -69,6 +69,7 @@ offset_byte_t peek(Queue *data) {
 offset_byte_t dequeue(Queue *data) {
   if(!empty(data)) {
     offset_byte_t last = data->data[data->first];
+    memset((void*)&data->data[data->first], 0, sizeof(offset_byte_t));
 
     data->first = (data->first + 1) % MAX_QUEUE_SIZE;
     data->size--;

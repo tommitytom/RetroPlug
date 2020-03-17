@@ -333,7 +333,7 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
     int delta = 0;
     while (s->currentAudioFrames < requiredAudioFrames) {
         if (s->linkTicksRemain <= 0) {
-            if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= s->currentAudioFrames) {
+            if (length(&s->midiQueue) && peek(&s->midiQueue).offset <= (int)s->currentAudioFrames) {
                 offset_byte_t b = dequeue(&s->midiQueue);
                 for (int i = b.bitCount - 1; i >= 0; i--) {
                     bool bit = (bool)((b.byte & (1 << i)) >> i);
@@ -351,9 +351,12 @@ void sameboy_update(void* state, size_t requiredAudioFrames) {
 
     // If there are any midi events that still haven't been processed, set their
     // offsets to 0 so they get processed immediately at the start of the next frame.
-    if (length(&s->midiQueue)) {
+    if (length(&s->midiQueue) > 0) {
         for (int i = 0; i < MAX_QUEUE_SIZE; i++) {
-            s->midiQueue.data[i].offset -= s->currentAudioFrames;
+            if (s->midiQueue.data[i].offset != 0) {
+                //printf("overflow: %i\n", s->midiQueue.data[i].offset);
+                s->midiQueue.data[i].offset -= s->currentAudioFrames;
+            }
         }
     }
 }

@@ -1,1 +1,1 @@
-call C:\msys64\mingw64.exe ./cleanbuild.sh
+call C:\msys64\mingw64.exe ./cleanbuild.sh x64
