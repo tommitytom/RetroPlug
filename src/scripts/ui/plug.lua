@@ -7,9 +7,11 @@ require("components.ButtonHandler")
 require("components.GlobalButtonHandler")
 require("Action")
 require("Print")
+
 local serializer = require("serializer")
 local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
+local System = require("System")
 local createNativeMenu = require("MenuHelper")
 
 local inspect = require("inspect")
@@ -61,11 +63,10 @@ function _init()
 	for i = 1, MAX_INSTANCES, 1 do
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			local buttons = _proxy:buttons(i - 1)
+			local system = System(desc, _proxy:buttons(i - 1))
 			local instance = {
-				desc = desc,
-				components = cm.createComponents(desc, desc, buttons),
-				buttons = buttons
+				system = system,
+				components = cm.createComponents(desc, system),
 			}
 
 			table.insert(_instances, instance)
@@ -79,7 +80,7 @@ function _init()
 
 	for _, instance in ipairs(_instances) do
 		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
-		cm.runAllHandlers("onReload", instance.components, instance.desc)
+		cm.runAllHandlers("onReload", instance.components, instance.system)
 	end
 end
 
@@ -88,9 +89,8 @@ local function addInstance(desc)
 		desc.idx = #_instances
 
 		local instance = {
-			desc = desc,
-			components = {},
-			buttons = _proxy:buttons(desc.idx)
+			system = System(desc, _proxy:buttons(desc.idx)),
+			components = {}
 		}
 
 		table.insert(_instances, instance)
@@ -116,11 +116,11 @@ function _duplicateInstance(idx)
 		local componentData = serializer.serializeInstanceToString(sourceInst)
 
 		local desc = _proxy:duplicateInstance(idx)
-		local buttons = _proxy:buttons(#_instances)
+		local system = System(desc, _proxy:buttons(#_instances))
+
 		local instance = {
-			desc = desc,
-			components = cm.createComponents(desc, desc, buttons),
-			buttons = buttons
+			system = system,
+			components = cm.createComponents(desc, system)
 		}
 
 		serializer.deserializeInstancesFromString(instance, componentData)
@@ -387,12 +387,12 @@ function _loadRom(desc)
 		end
 	end
 
-	instance.components = cm.createComponents(desc, desc, instance.buttons)
+	instance.components = cm.createComponents(desc, instance.system)
 
 	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
-	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.desc)
+	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)
 	_proxy:setInstance(desc)
-	cm.runAllHandlers("onRomLoad", instance.components, instance.desc)
+	cm.runAllHandlers("onRomLoad", instance.components, instance.system)
 
 	if _activeIdx == 0 then
 		_setActive(0)
@@ -420,7 +420,8 @@ end
 
 function _setActive(idx)
 	local inst = _instances[idx + 1]
-	if inst ~= nil and (inst.desc.state == EmulatorInstanceState.Initialized or inst.desc.state == EmulatorInstanceState.Running) then
+	local state = inst.system:desc().state
+	if inst ~= nil and (state == EmulatorInstanceState.Initialized or state == EmulatorInstanceState.Running) then
 		_activeIdx = idx + 1
 		Active = _instances[_activeIdx]
 		_proxy:setActiveInstance(idx)

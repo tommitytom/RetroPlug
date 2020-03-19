@@ -65,15 +65,17 @@ function ButtonHandler:init()
 	self._buttonHooks = {}
 end
 
-function ButtonHandler:onRomLoad(desc)
-	self:_updateMaps(desc)
+function ButtonHandler:onRomLoad(system)
+	self:_updateMaps(system:desc())
 end
 
-function ButtonHandler:onReload(desc)
-	self:_updateMaps(desc)
+function ButtonHandler:onReload(system)
+	self:_updateMaps(system:desc())
 end
 
 function ButtonHandler:_updateMaps(desc)
+	print(desc)
+	print(desc, desc.romName)
 	self._keyMap = { lookup = {}, combos = {} }
 	self._padMap = { lookup = {}, combos = {} }
 	mergeInputMaps(_maps.key, self._keyMap, self._actions, desc.romName)
@@ -93,16 +95,14 @@ function ButtonHandler:onComponentsInitialized(components)
 			})
 		end
 	end
-
-	self:_updateMaps(self:system())
 end
 
 function ButtonHandler:onKey(key, down)
-	util.handleInput(self._keyMap, key, down, self._keysPressed, self._buttonHooks, self:buttons())
+	util.handleInput(self._keyMap, key, down, self._keysPressed, self._buttonHooks, self:system():buttons())
 end
 
 function ButtonHandler:onPadButton(button, down)
-	util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:buttons())
+	util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:system():buttons())
 end
 
 return ButtonHandler

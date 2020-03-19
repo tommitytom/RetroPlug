@@ -28,7 +28,7 @@ function Lsdj:init()
 
 	self._selectState = SelectState.None
 
-	local buttons = self:buttons()
+	local buttons = self:system():buttons()
 	self:registerActions({
 		DownTenRows = function(down)
 			if down == true then buttons:releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
@@ -183,17 +183,19 @@ end
 
 function Lsdj:createSongsMenu(menu)
 	local system = self:system()
+	local desc = system:desc()
 	menu:action("Import (and reset)...")
 		:action("Export All...")
 		:separator()
 
-	local names = getLsdjSongNames(system.sourceSavData)
+	local names = getLsdjSongNames(desc.sourceSavData)
 
 	for i, v in ipairs(names) do
 		menu:subMenu(v.name)
 				:action("Load (and reset)", function()
-					loadLsdjSong(system.sourceSavData, i - 2)
-					_proxy:setSram(Active.desc.idx, system.sourceSavData, true)
+					loadLsdjSong(desc.sourceSavData, i - 2)
+					system:setSram(desc.sourceSavData, true)
+					--_proxy:setSram(Active.desc.idx, system.sourceSavData, true)
 				end)
 				:action("Export .lsdsng...", function()
 					--[[dialog.saveFile({ ".lsdsng" }, function(path) {
@@ -202,8 +204,9 @@ function Lsdj:createSongsMenu(menu)
 					end)]]
 				end)
 				:action("Delete", function()
-					deleteLsdjSong(system.sourceSavData, i - 1)
-					_proxy:setSram(Active.desc.idx, system.sourceSavData, false)
+					deleteLsdjSong(desc.sourceSavData, i - 2)
+					system:setSram(desc.sourceSavData, true)
+					--_proxy:setSram(Active.desc.idx, system.sourceSavData, false)
 				end)
 	end
 end
