@@ -74,8 +74,6 @@ function ButtonHandler:onReload(system)
 end
 
 function ButtonHandler:_updateMaps(desc)
-	print(desc)
-	print(desc, desc.romName)
 	self._keyMap = { lookup = {}, combos = {} }
 	self._padMap = { lookup = {}, combos = {} }
 	mergeInputMaps(_maps.key, self._keyMap, self._actions, desc.romName)
