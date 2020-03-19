@@ -184,8 +184,9 @@ end
 function Lsdj:createSongsMenu(menu)
 	local system = self:system()
 	local desc = system:desc()
-	menu:action("Import (and reset)...")
-		:action("Export All...")
+
+	menu:action("Import (and reset)...", function() end)
+		:action("Export All...", function() end)
 		:separator()
 
 	local names = getLsdjSongNames(desc.sourceSavData)
@@ -195,7 +196,6 @@ function Lsdj:createSongsMenu(menu)
 				:action("Load (and reset)", function()
 					loadLsdjSong(desc.sourceSavData, i - 2)
 					system:setSram(desc.sourceSavData, true)
-					--_proxy:setSram(Active.desc.idx, system.sourceSavData, true)
 				end)
 				:action("Export .lsdsng...", function()
 					--[[dialog.saveFile({ ".lsdsng" }, function(path) {
@@ -206,7 +206,6 @@ function Lsdj:createSongsMenu(menu)
 				:action("Delete", function()
 					deleteLsdjSong(desc.sourceSavData, i - 2)
 					system:setSram(desc.sourceSavData, true)
-					--_proxy:setSram(Active.desc.idx, system.sourceSavData, false)
 				end)
 	end
 end

@@ -420,11 +420,14 @@ end
 
 function _setActive(idx)
 	local inst = _instances[idx + 1]
-	local state = inst.system:desc().state
-	if inst ~= nil and (state == EmulatorInstanceState.Initialized or state == EmulatorInstanceState.Running) then
-		_activeIdx = idx + 1
-		Active = _instances[_activeIdx]
-		_proxy:setActiveInstance(idx)
+
+	if inst ~= nil then
+		local state = inst.system:desc().state
+		if state == EmulatorInstanceState.Initialized or state == EmulatorInstanceState.Running then
+			_activeIdx = idx + 1
+			Active = _instances[_activeIdx]
+			_proxy:setActiveInstance(idx)
+		end
 	end
 end
 
@@ -470,7 +473,7 @@ function _onMenu(menus)
 
 	if Active ~= nil then
 		for _, comp in ipairs(Active.components) do
-			componentsMenu:title(comp.__desc.name)
+			componentsMenu:select(comp.__desc.name, true, function() end)
 		end
 	end
 
