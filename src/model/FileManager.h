@@ -43,6 +43,10 @@ public:
 		return nullptr;
 	}
 
+	bool saveFile(const std::string& path, DataBuffer<char>* data) {
+		return writeFile(tstr(path), data);
+	}
+
 	File* loadFile(const std::string& path, bool reload = false) {
 		File* file = getFile(path);
 		if (file && reload == false) {
@@ -56,13 +60,15 @@ public:
 		DataBufferPtr data = std::make_shared<DataBuffer<char>>();
 		if (readFile(tstr(path), data.get())) {
 			file->data = data;
+		} else {
+			return nullptr;
 		}
 
 		return file;
 	}
 
 	bool exists(const std::string& path) {
-		return fs::exists(path);
+		return fs::exists(tstr(path));
 	}
 
 	void watchFolder(const std::string& path, bool recusrive = true) {

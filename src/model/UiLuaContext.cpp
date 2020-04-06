@@ -14,6 +14,9 @@
 
 #include "platform/Platform.h"
 #include "LuaHelpers.h"
+#include "platform/Logger.h"
+
+#include "sav.h"
 
 #include "view/Menu.h"
 
@@ -119,6 +122,17 @@ void UiLuaContext::shutdown() {
 	}
 }
 
+bool checkUserData(const sol::object o) {
+	if (o.get_type() == sol::type::lightuserdata) {
+		void* p = o.as<void*>();
+		if (p > 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void UiLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 
@@ -141,7 +155,10 @@ void UiLuaContext::setup() {
 
 	s["package"]["path"] = packagePath;
 
-	setupCommon(_state);
+	s["checkUserData"].set_function(checkUserData);
+
+	setupCommon(s);
+	setupLsdj(s);
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
@@ -213,18 +230,8 @@ void UiLuaContext::setup() {
 		"alt", &iplug::IKeyPress::A
 	);
 
-	s.new_usertype<LsdjSongName>("LsdjSongName",
-		"name", &LsdjSongName::name,
-		"projectId", &LsdjSongName::projectId,
-		"version", &LsdjSongName::version
-	);
-
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 	s["_proxy"].set(_proxy);
-
-	s["getLsdjSongNames"].set_function(Lsdj::getSongNames);
-	s["loadLsdjSong"].set_function(Lsdj::loadSong);
-	s["deleteLsdjSong"].set_function(Lsdj::deleteSong);
 
 	if (!runScript(_state, "require('plug')")) {
 		return;

@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -36,12 +36,12 @@
 #ifndef LSDJ_IMPORTER_HPP
 #define LSDJ_IMPORTER_HPP
 
-#include <boost/filesystem.hpp>
+#include <ghc/filesystem.hpp>
 #include <string>
 #include <vector>
 
-#include "../liblsdj/error.h"
-#include "../liblsdj/sav.h"
+#include <lsdj/error.h>
+#include <lsdj/sav.h>
 
 namespace lsdj
 {
@@ -56,12 +56,12 @@ namespace lsdj
         bool verbose = false;
         
     private:
-        void importSong(const std::string& path, lsdj_sav_t* sav, unsigned char index, unsigned char active, lsdj_error_t** error);
-        void importWorkingMemorySong(lsdj_sav_t* sav, const std::vector<boost::filesystem::path>& paths, lsdj_error_t** error);
+        lsdj_error_t importSong(const std::string& path, lsdj_sav_t* sav, uint8_t index, uint8_t active);
+        lsdj_error_t importWorkingMemorySong(lsdj_sav_t* sav, const std::vector<ghc::filesystem::path>& paths);
         
     private:
         //! The path that refers to the working memory song
-        boost::filesystem::path workingMemoryPath;
+        ghc::filesystem::path workingMemoryPath;
     };
 }
 

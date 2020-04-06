@@ -9,60 +9,84 @@ template <typename T>
 class DataBuffer {
 private:
 	T* _dataPtr = nullptr;
-	size_t _dataSize = 0;
+	size_t _reserved = 0;
+	size_t _size = 0;
 	bool _ownsData = false;
 
 public:
 	DataBuffer() {}
 	DataBuffer(size_t size) { resize(size); }
-	DataBuffer(T* data, size_t size) : _dataPtr(data), _dataSize(size), _ownsData(false) {}
+	DataBuffer(T* data, size_t size) : _dataPtr(data), _reserved(size), _ownsData(false) {}
 	~DataBuffer() { destroy(); }
 
-	T get(size_t idx) { assert(idx < _dataSize); return _dataPtr[idx]; }
-	void set(size_t idx, T v) { assert(idx < _dataSize); _dataPtr[idx] = v; }
+	T get(size_t idx) { assert(idx < _reserved); return _dataPtr[idx]; }
+	void set(size_t idx, T v) { assert(idx < _reserved); _dataPtr[idx] = v; }
 	int find() {}
 	
 	std::string_view toString() {
-		size_t len = strnlen(_dataPtr, _dataSize);
+		size_t len = strnlen(_dataPtr, _reserved);
 		return std::string_view(_dataPtr, len);
 	}
 
 	size_t hash(size_t initial = 0) {
-		return crc32::update((const void*)_dataPtr, _dataSize * sizeof(T), initial);
+		return crc32::update((const void*)_dataPtr, _reserved * sizeof(T), initial);
 	}
 
 	void write(const T* source, size_t size) {
-		assert(size <= _dataSize);
+		assert(size <= _reserved);
 		memcpy(_dataPtr, source, size * sizeof(T));
 	}
 
 	T* data() { return _dataPtr; }
 	const T* data() const { return _dataPtr; }
-	size_t size() const { return _dataSize; }
+
+	const T* getData() const { return _dataPtr; }
+
+	size_t size() const { return _reserved; }
 
 	DataBuffer<T> slice(size_t pos, size_t size) {
-		assert(pos + size <= _dataSize);
+		assert(pos + size <= _reserved);
 		return DataBuffer<T>(_dataPtr + pos, size);
 	}
 
 	void clear() {
-		memset(_dataPtr, 0, _dataSize * sizeof(T));
+		memset(_dataPtr, 0, _reserved * sizeof(T));
+	}
+
+	void reserve(size_t size) {
+		if (size > _reserved) {
+			T* data = new T[size];
+
+			if (_reserved > 0) {
+				memcpy(data, _dataPtr, size * sizeof(T));
+				destroy();
+			}
+
+			_dataPtr = data;
+			_reserved = size;
+			_ownsData = true;
+		} else if (_dataPtr) {
+			_reserved = size;
+		}
 	}
 
 	void resize(size_t size) {
-		destroy();
-		_dataPtr = new T[size];
-		_dataSize = size;
-		_ownsData = true;
+		reserve(size);
+		_size = size;
 	}
 
 	void destroy() {
 		if (_ownsData && _dataPtr) {
 			delete[] _dataPtr;
 			_dataPtr = nullptr;
-			_dataSize = 0;
+			_reserved = 0;
 			_ownsData = false;
 		}
+	}
+
+	void clone(DataBuffer* target) {
+		target->resize(_reserved);
+		target->write(_dataPtr, _reserved);
 	}
 };
 

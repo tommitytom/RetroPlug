@@ -1,11 +1,11 @@
 #include "Lsdj.h"
-
+/*
 #include <iostream>
 #include <sstream>
 #include <set>
 #include "util/File.h"
-#include "lsdj/rom.h"
-#include "lsdj/kit.h"
+#include "rom.h"
+#include "kit.h"
 #include "util/crc32.h"
 
 const int LSDJ_SAV_SIZE = 131072; // FIXME: This is probably in liblsdj somewhere
@@ -49,9 +49,9 @@ void Lsdj::loadRom(const std::vector<std::byte>& romData) {
 	}
 }
 
-bool importSong(lsdj_sav_t* sav, int idx, std::vector<std::byte>& source, std::string& errorStr) {
+bool importSong(lsdj_sav_t* sav, int idx, DataBuffer<char>* source, std::string& errorStr) {
 	lsdj_error_t* error = nullptr;
-	lsdj_project_t* project = lsdj_project_read_lsdsng_from_memory((const unsigned char*)source.data(), source.size(), &error);
+	lsdj_project_t* project = lsdj_project_read_lsdsng_from_memory((const unsigned char*)source->data(), source->size(), &error);
 	if (error != nullptr) {
 		errorStr = lsdj_error_get_c_str(error);
 		consoleLogLine(errorStr);
@@ -69,16 +69,16 @@ bool importSong(lsdj_sav_t* sav, int idx, std::vector<std::byte>& source, std::s
 	return true;
 }
 
-void serializeSong(const lsdj_project_t* project, std::vector<std::byte>& target) {
-	target.resize(LSDSNG_MAX_SIZE);
+void serializeSong(const lsdj_project_t* project, DataBuffer<char>* target) {
+	target->resize(LSDSNG_MAX_SIZE);
 
 	lsdj_error_t* error = nullptr;
-	size_t size = lsdj_project_write_lsdsng_to_memory(project, (unsigned char*)target.data(), target.size(), &error);
+	size_t size = lsdj_project_write_lsdsng_to_memory(project, (unsigned char*)target->data(), target->size(), &error);
 	if (error) {
 		consoleLogLine(lsdj_error_get_c_str(error));
-		target.resize(0);
+		//target.resize(0);
 	} else {
-		target.resize(size);
+		target->resize(size);
 	}
 }
 
@@ -97,14 +97,14 @@ std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::strin
 	std::vector<int> ids;
 	int index = nextProjectIndex(sav, 0);
 
-	std::vector<std::byte> fileData;
+	DataBuffer<char> fileData;
 	for (auto& path : paths) {
-		fileData.clear();
+		//fileData.clear();
 
-		if (readFile(path, fileData)) {
+		if (readFile(path, &fileData)) {
 			tstring ext = getExt(path);
 			if (ext == TSTR(".lsdsng")) {
-				if (importSong(sav, index, fileData, errorStr)) {
+				if (importSong(sav, index, &fileData, errorStr)) {
 					ids.push_back(index);
 					index = nextProjectIndex(sav, index);
 				}
@@ -119,14 +119,14 @@ std::vector<int> Lsdj::importSongs(const std::vector<tstring>& paths, std::strin
 					continue;
 				}
 
-				std::vector<std::byte> songData;
+				DataBuffer<char> songData(LSDSNG_MAX_SIZE);
 				size_t count = lsdj_sav_get_project_count(other);
 				for (size_t i = 0; i < count; ++i) {
 					lsdj_project_t* project = lsdj_sav_get_project(other, i);
 					lsdj_song_t* song = lsdj_project_get_song(project);
 					if (song) {
-						serializeSong(project, songData);
-						if (importSong(sav, index, songData, errorStr)) {
+						serializeSong(project, &songData);
+						if (importSong(sav, index, &songData, errorStr)) {
 							ids.push_back(index);
 							index = nextProjectIndex(sav, index);
 						}
@@ -181,13 +181,13 @@ void Lsdj::loadSong(DataBufferPtr data, int idx) {
 	lsdj_sav_free(sav);
 }
 
-void Lsdj::exportSong(int idx, std::vector<std::byte>& target) {
-	if (saveData.size() == 0) {
+void Lsdj::exportSong(DataBufferPtr data, int idx, DataBuffer<char>* target) {
+	if (data->size() == 0) {
 		return;
 	}
 
 	lsdj_error_t* error = nullptr;
-	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)saveData.data(), saveData.size(), &error);
+	lsdj_sav_t* sav = lsdj_sav_read_from_memory((const unsigned char*)data->data(), data->size(), &error);
 	if (sav == nullptr) {
 		if (error) {
 			consoleLogLine(lsdj_error_get_c_str(error));
@@ -196,7 +196,7 @@ void Lsdj::exportSong(int idx, std::vector<std::byte>& target) {
 		return;
 	}
 
-	lsdj_project_t* project;	
+	lsdj_project_t* project;
 	if (idx == -1) {
 		project = lsdj_project_new_from_working_memory_song(sav, &error);
 		if (error) {
@@ -241,7 +241,7 @@ void Lsdj::exportSongs(std::vector<NamedData>& target) {
 
 	target.push_back(NamedData());
 	target.back().name = std::string(name) + ".WM." + std::to_string(version);
-	serializeSong(project, target.back().data);
+	serializeSong(project, &target.back().data);
 
 	size_t count = lsdj_sav_get_project_count(sav);
 	for (size_t i = 0; i < count; ++i) {
@@ -254,7 +254,7 @@ void Lsdj::exportSongs(std::vector<NamedData>& target) {
 
 			target.push_back(NamedData());
 			target.back().name = std::string(name) + "." + std::to_string(version);
-			serializeSong(project, target.back().data);
+			serializeSong(project, &target.back().data);
 		}
 	}
 
@@ -297,6 +297,8 @@ void Lsdj::deleteSong(DataBufferPtr data, int idx) {
 
 	lsdj_sav_free(sav);
 }
+
+
 
 std::vector<LsdjSongName> Lsdj::getSongNames(DataBufferPtr data) {
 	std::vector<LsdjSongName> names;
@@ -451,7 +453,7 @@ void Lsdj::loadKitAt(const char* data, size_t size, int idx) {
 
 	auto kit = std::make_shared<NamedHashedData>(NamedHashedData { 
 		std::string(name),
-		std::vector<std::byte>(),
+		DataBuffer<char>(),
 		0
 	});
 
@@ -460,7 +462,7 @@ void Lsdj::loadKitAt(const char* data, size_t size, int idx) {
 	kit->data.resize(size);
 	memcpy(kit->data.data(), data, size);
 
-	kit->hash = crc32::update(kit->data);
+	kit->hash = kit->data.hash();
 
 	kitData[idx] = kit;
 }
@@ -511,3 +513,4 @@ void Lsdj::deleteKit(std::vector<std::byte>& romData, int index) {
 	}
 }
 
+*/

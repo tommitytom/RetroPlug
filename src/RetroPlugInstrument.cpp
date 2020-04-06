@@ -1,4 +1,4 @@
-#include "RetroPlugInstrument.h"
+﻿#include "RetroPlugInstrument.h"
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
 #include "view/EmulatorView.h"

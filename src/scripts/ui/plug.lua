@@ -18,6 +18,7 @@ local inspect = require("inspect")
 local pathutil = require("pathutil")
 local serpent = require("serpent")
 local json = require("json")
+local lsdj = require("liblsdj.liblsdj")
 
 local _PROJECT_VERSION = "1.0.0"
 
@@ -57,7 +58,18 @@ function _loadComponent(name)
 	cm.loadComponent(name)
 end
 
+local pathutil = require("pathutil")
+local fs = require("fs")
+
 function _init()
+	print("LOADING SAV")
+	local d = fs.load("C:/retro/savs/japan2019.sav")
+	local sav = lsdj.loadSav(d)
+	sav:loadSong(2)
+	sav:exportSong(2, "C:/retro/savs/test.lsdjsng")
+	local buf = sav:toBuffer()
+	sav:exportSongs("C:/retro/savs/songs/")
+
 	cm.createGlobalComponents()
 
 	for i = 1, MAX_INSTANCES, 1 do
@@ -345,6 +357,7 @@ function _loadProject(path)
 end
 
 function _loadRomAtPath(idx, romPath, savPath, model)
+	print(romPath)
 	local fm = _proxy:fileManager()
 	local romFile = fm:loadFile(romPath, false)
 	if romFile == nil then

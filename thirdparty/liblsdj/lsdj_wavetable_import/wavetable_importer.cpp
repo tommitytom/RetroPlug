@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -37,18 +37,19 @@
 #include <array>
 #include <iostream>
 
-#include "../liblsdj/project.h"
-#include "../liblsdj/sav.h"
+#include <lsdj/project.h>
+#include <lsdj/sav.h>
+#include <lsdj/wave.h>
 
 #include "../common/common.hpp"
 #include "wavetable_importer.hpp"
 
 namespace lsdj
 {
-    bool WavetableImporter::import(const std::string& destination, const std::string& wavetableName)
+    bool WavetableImporter::import(const std::string& input, const std::string& wavetableName)
     {
-        const auto path = boost::filesystem::absolute(destination);
-        if (!boost::filesystem::exists(path))
+        const auto path = ghc::filesystem::absolute(input);
+        if (!ghc::filesystem::exists(path))
         {
             std::cerr << path.filename().string() << " does not exist" << std::endl;
             return false;
@@ -65,13 +66,14 @@ namespace lsdj
         }
     }
     
-    bool WavetableImporter::importToSav(const boost::filesystem::path& path, const std::string& wavetableName)
+    bool WavetableImporter::importToSav(const ghc::filesystem::path& path, const std::string& wavetableName)
     {
         // Load the sav
-        lsdj_error_t* error = nullptr;
-        lsdj_sav_t* sav = lsdj_sav_read_from_file(path.string().c_str(), &error);
-        if (error != nullptr)
+        lsdj_sav_t* sav = nullptr;
+        lsdj_error_t error = lsdj_sav_read_from_file(path.string().c_str(), &sav, nullptr);
+        if (error != LSDJ_SUCCESS)
         {
+            handle_error(error);
             lsdj_sav_free(sav);
             return false;
         }
@@ -79,12 +81,8 @@ namespace lsdj
         if (verbose)
             std::cout << "Loaded sav " + path.string() << std::endl;
         
-        lsdj_song_t* song = lsdj_sav_get_working_memory_song(sav);
-        if (!song)
-        {
-            lsdj_sav_free(sav);
-            return false;
-        }
+        auto song = lsdj_sav_get_working_memory_song(sav);
+        assert(song != nullptr);
         
         // Do the actual import
         const auto result = importToSong(song, wavetableName);
@@ -96,10 +94,11 @@ namespace lsdj
         const auto frameCount = result.second;
         
         // Write the sav back to file
-        const auto outputPath = boost::filesystem::absolute(outputName);
-        lsdj_sav_write_to_file(sav, outputPath.string().c_str(), &error);
-        if (error != nullptr)
+        const auto outputPath = ghc::filesystem::absolute(outputName);
+        error = lsdj_sav_write_to_file(sav, outputPath.string().c_str(), nullptr);
+        if (error != LSDJ_SUCCESS)
         {
+            handle_error(error);
             lsdj_sav_free(sav);
             return false;
         }
@@ -109,13 +108,14 @@ namespace lsdj
         return true;
     }
     
-    bool WavetableImporter::importToLsdsng(const boost::filesystem::path& path, const std::string& wavetableName)
+    bool WavetableImporter::importToLsdsng(const ghc::filesystem::path& path, const std::string& wavetableName)
     {
         // Load the project
-        lsdj_error_t* error = nullptr;
-        lsdj_project_t* project = lsdj_project_read_lsdsng_from_file(path.string().c_str(), &error);
-        if (error != nullptr)
+        lsdj_project_t* project = nullptr;
+        lsdj_error_t error = lsdj_project_read_lsdsng_from_file(path.string().c_str(), &project, nullptr);
+        if (error != LSDJ_SUCCESS)
         {
+            handle_error(error);
             lsdj_project_free(project);
             return false;
         }
@@ -124,6 +124,7 @@ namespace lsdj
             std::cout << "Loaded project " + path.string() << std::endl;
         
         lsdj_song_t* song = lsdj_project_get_song(project);
+        assert(song != nullptr);
         
         // Do the actual import
         const auto result = importToSong(song, wavetableName);
@@ -135,9 +136,9 @@ namespace lsdj
         const auto frameCount = result.second;
         
         // Write the project back to file
-        const auto outputPath = boost::filesystem::absolute(outputName);
-        lsdj_project_write_lsdsng_to_file(project, outputPath.string().c_str(), &error);
-        if (error != nullptr)
+        const auto outputPath = ghc::filesystem::absolute(outputName);
+        error = lsdj_project_write_lsdsng_to_file(project, outputPath.string().c_str(), nullptr);
+        if (error != LSDJ_SUCCESS)
         {
             lsdj_project_free(project);
             return false;
@@ -151,15 +152,15 @@ namespace lsdj
     std::pair<bool, unsigned int> WavetableImporter::importToSong(lsdj_song_t* song, const std::string& wavetableName)
     {
         // Find the wavetable file
-        const auto wavetablePath = boost::filesystem::absolute(wavetableName);
-        if (!boost::filesystem::exists(wavetablePath))
+        const auto wavetablePath = ghc::filesystem::absolute(wavetableName);
+        if (!ghc::filesystem::exists(wavetablePath))
         {
             std::cerr << wavetablePath.filename().string() << " does not exist" << std::endl;
             return {false, 0};
         }
         
         // Make sure the wavetable is the correct size
-        const auto wavetableSize = boost::filesystem::file_size(wavetablePath);
+        const auto wavetableSize = ghc::filesystem::file_size(wavetablePath);
         if (wavetableSize % 16 != 0)
         {
             std::cerr << "The wavetable file size is not a multiple of 16 bytes" << std::endl;
@@ -192,14 +193,18 @@ namespace lsdj
         if (!force)
         {
             if (verbose)
+            {
                 std::cout << "Comparing frames to ensure no overwriting" << std::endl;
+                std::cout << "Going to write into frames 0x" << std::hex << static_cast<int>(wavetableIndex)
+                          << " to 0x" << static_cast<int>(wavetableIndex + actualFrameCount) << std::endl;
+            }
             
             for (auto frame = 0; frame < actualFrameCount; frame++)
             {
-                lsdj_wave_t* wave = lsdj_song_get_wave(song, wavetableIndex + frame);
-                if (memcmp(wave->data, LSDJ_DEFAULT_WAVE, LSDJ_WAVE_LENGTH) != 0)
+                if (!lsdj_wave_is_default(song, wavetableIndex + frame))
                 {
                     std::cout << "Some of the wavetable frames you are trying to overwrite already contain data.\nDo you want to continue? y/n\n> ";
+                    
                     char answer = 'n';
                     std::cin >> answer;
                     if (answer != 'y')
@@ -215,13 +220,13 @@ namespace lsdj
         }
         
         // Apply the wavetable
-        for (unsigned char frame = 0; frame < actualFrameCount; frame++)
+        for (uint8_t frame = 0; frame < actualFrameCount; frame++)
         {
-            lsdj_wave_t* wave = lsdj_song_get_wave(song, wavetableIndex + frame);
-            wavetableStream.read(reinterpret_cast<char*>(wave->data), sizeof(wave->data));
+            std::uint8_t* memory = lsdj_wave_get_bytes(song, wavetableIndex + frame);
+            wavetableStream.read(reinterpret_cast<char*>(memory), LSDJ_WAVE_BYTE_COUNT);
             
             if (verbose)
-                std::cout << "Wrote " << std::dec << sizeof(wave->data) << " bytes to frame 0x" << std::hex << (wavetableIndex + frame) << std::endl;
+                std::cout << "Wrote " << std::dec << LSDJ_WAVE_BYTE_COUNT << " bytes to frame 0x" << std::hex << (wavetableIndex + frame) << std::endl;
         }
         
         // Write zero wavetables
@@ -230,16 +235,15 @@ namespace lsdj
             if (verbose)
                 std::cout << "Padding empty frames" << std::endl;
             
-            std::array<char, LSDJ_WAVE_LENGTH> table;
+            std::array<std::uint8_t, LSDJ_WAVE_BYTE_COUNT> table;
             table.fill(0x88);
             
-            for (unsigned char frame = actualFrameCount; frame < 16; frame++)
+            for (uint8_t frame = actualFrameCount; frame < 16; frame++)
             {
-                lsdj_wave_t* wave = lsdj_song_get_wave(song, wavetableIndex + frame);
-                memcpy(wave->data, table.data(), sizeof(table));
+                lsdj_wave_set_silent(song, wavetableIndex + frame);
                 
                 if (verbose)
-                    std::cout << "Wrote default bytes to frame 0x" << std::hex << (wavetableIndex + frame) << std::endl;
+                    std::cout << "Wrote silence to frame 0x" << std::hex << (wavetableIndex + frame) << std::endl;
             }
         }
         

@@ -5,13 +5,62 @@ if (APPLE)
   add_definitions(-Wall -Werror -Wconversion -Wno-unused-variable)
 endif (APPLE)
 
-set(HEADERS chain.h channel.h command.h compression.h error.h groove.h instrument.h instrument_constants.h instrument_kit.h instrument_noise.h instrument_pulse.h instrument_wave.h panning.h phrase.h project.h row.h sav.h song.h synth.h table.h vio.h wave.h word.h)
-set(SOURCES chain.c command.c compression.c error.c groove.c instrument.c phrase.c project.c row.c sav.c song.c synth.c table.c vio.c wave.c word.c)
+set(PUBLIC_HEADERS
+	include/lsdj/allocator.h
+	include/lsdj/chain.h
+	include/lsdj/channel.h
+	include/lsdj/command.h
+	include/lsdj/compression.h
+	include/lsdj/error.h
+	include/lsdj/instrument.h
+	include/lsdj/panning.h
+	include/lsdj/phrase.h
+	include/lsdj/project.h
+	include/lsdj/sav.h
+	include/lsdj/song.h
+	include/lsdj/synth.h
+	include/lsdj/table.h
+	include/lsdj/version.h
+	include/lsdj/wave.h
+	include/lsdj/vio.h
+	)
+
+set(SOURCES
+	src/allocator.c
+	src/bytes.c
+	src/bytes.h
+	src/compression.c
+	src/chain.c
+	src/defaults.h
+	src/error.c
+	src/groove.c
+	src/instrument.c
+	src/instrument_kit.c
+	src/instrument_noise.c
+	src/instrument_pulse.c
+	src/instrument_wave.c
+	src/phrase.c
+	src/project.c
+	src/sav.c
+	src/song_offsets.h
+	src/song.c
+	src/speech.c
+	src/synth.c
+	src/table.c
+	src/vio.c
+	src/wave.c
+	)
 
 # Create the library target
-add_library(liblsdj STATIC ${HEADERS} ${SOURCES})
+add_library(liblsdj STATIC ${PUBLIC_HEADERS} ${SOURCES})
 set_target_properties(liblsdj PROPERTIES OUTPUT_NAME lsdj)
-source_group(\\ FILES ${HEADERS} ${SOURCES})
+source_group(\\ FILES ${PUBLIC_HEADERS} ${SOURCES})
+target_include_directories(liblsdj
+	INTERFACE "include"
+	PRIVATE "include/lsdj"
+	)
 
 install(TARGETS liblsdj DESTINATION lib)
-install(FILES chain.h channel.h command.h error.h groove.h instrument.h sav.h panning.h phrase.h project.h row.h song.h synth.h table.h wave.h word.h vio.h DESTINATION include/lsdj)
+install(FILES ${PUBLIC_HEADERS} DESTINATION include/lsdj)
+
+add_subdirectory(test)

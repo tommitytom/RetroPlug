@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -38,12 +38,12 @@
 
 #include <string>
 
-#include "../liblsdj/error.h"
-#include "../liblsdj/project.h"
+#include <lsdj/error.h>
+#include <lsdj/project.h>
 
 namespace lsdj
-{
-    int handle_error(lsdj_error_t* error);
+{   
+    int handle_error(lsdj_error_t error);
     bool compareCaseInsensitive(std::string str1, std::string str2);
     std::string constructProjectName(const lsdj_project_t* project, bool underscore);
     bool isHiddenFile(const std::string& str);

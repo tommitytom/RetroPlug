@@ -44,7 +44,7 @@ void AudioLuaContext::setup() {
 
 	s["package"]["path"] = packagePath;
 
-	setupCommon(_state);
+	setupCommon(s);
 
 	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,

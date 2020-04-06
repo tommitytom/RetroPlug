@@ -1,23 +1,9 @@
 local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
+local dialog = require("dialog")
 
-local SelectState = {
-	None = 0,
-	RequestBegin = 1,
-	Selecting = 2,
-	Selected = 3
-}
-
-local function beginSelect(buttons)
-	return buttons:hold(Button.Select):hold(Button.B):releaseAll()
-end
-
-local function endSelect(buttons)
-	return buttons:press(Button.B)
-end
-
-local function isDirectionButton(button)
-	return button == Button.Left or button == Button.Right or button == Button.Up or button == Button.Down
-end
+local fs = require("fs")
+local KeyboardActions = require("components.lsdj.actions")
+local lsdj = require("liblsdj.liblsdj")
 
 function Lsdj:init()
 	self._valid = false
@@ -26,108 +12,12 @@ function Lsdj:init()
 	self._littleFm = false
 	self._overclock = false
 
-	self._selectState = SelectState.None
-
-	local buttons = self:system():buttons()
-	self:registerActions({
-		DownTenRows = function(down)
-			if down == true then buttons:releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
-		end,
-		UpTenRows = function(down)
-			if down == true then buttons:releaseAll():hold(Button.B):hold(Button.Up):releaseAll() end
-		end,
-		ScreenUp = function(down)
-			if down == true then buttons:releaseAll():hold(Button.Select):hold(Button.Up):releaseAll() end
-		end,
-		ScreenDown = function(down)
-			if down == true then buttons:releaseAll():hold(Button.Select):hold(Button.Down):releaseAll() end
-		end,
-		ScreenLeft = function(down)
-			if down == true then buttons:releaseAll():hold(Button.Select):hold(Button.Left):releaseAll() end
-		end,
-		ScreenRight = function(down)
-			if down == true then buttons:releaseAll():hold(Button.Select):hold(Button.Right):releaseAll() end
-		end,
-		Delete = function(down)
-			if down == true then
-				if self._selectState == SelectState.None then
-					buttons:releaseAll():hold(Button.B):hold(Button.A):releaseAll()
-				elseif self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-					buttons:hold(Button.Select):hold(Button.A):releaseAll()
-					self._selectState = SelectState.None
-				end
-			end
-		end,
-		BeginSelection = function(down)
-			if down == true then
-				if self._selectState == SelectState.None then
-					self._selectState = SelectState.RequestBegin
-					buttons:hold(Button.Select)
-				elseif self._selectState == SelectState.Selected then
-					self._selectState = SelectState.Selecting
-				end
-			else
-				if self._selectState == SelectState.Selecting then
-					self._selectState = SelectState.Selected
-				elseif self._selectState == SelectState.RequestBegin then
-					self._selectState = SelectState.None
-					buttons:release(Button.Select)
-				end
-			end
-		end,
-		CancelSelection = function(down)
-			if down == true then
-				if self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-					endSelect(buttons)
-					self._selectState = SelectState.None
-				end
-			end
-		end,
-		Copy = function(down)
-			if down == true then
-				if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-					beginSelect(buttons)
-				end
-
-				buttons:releaseAll():press(Button.B)
-				self._selectState = SelectState.None
-			end
-		end,
-		Cut = function(down)
-			if down == true then
-				if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-					beginSelect(buttons)
-				end
-
-				buttons:releaseAll():hold(Button.Select):hold(Button.A):releaseAll()
-				self._selectState = SelectState.None
-			end
-		end,
-		Paste = function(down)
-			if down == true then buttons:hold(Button.Select):hold(Button.A):releaseAll() end
-		end,
-	})
+	self._keyboardActions = KeyboardActions(self:system())
+	self:registerActions(self._keyboardActions)
 end
 
 function Lsdj:onBeforeButton(button, down)
-	if self._selectState == SelectState.RequestBegin then
-		if down == true then
-			if isDirectionButton(button) == true then
-				beginSelect(self:buttons()):hold(button)
-				self._selectState = SelectState.Selecting
-				return false
-			end
-		end
-	elseif self._selectState == SelectState.Selected then
-		if down == true then
-			if isDirectionButton(button) == true then
-				endSelect(self:buttons()):hold(button)
-				self._selectState = SelectState.None
-				return false
-			else
-			end
-		end
-	end
+	self._keyboardActions:_handleButtonPress(button, down)
 end
 
 function Lsdj:onPatchRom(romData)
@@ -144,7 +34,7 @@ function Lsdj:onBeforeSavLoad(savData)
 	--liblsdj.parseSav(savData)
 end
 
-function Lsdj:onRomLoad(system)
+function Lsdj:onRomLoad(romData)
 
 end
 
@@ -164,12 +54,14 @@ end
 
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
+	local system = self:system()
+	local rom = lsdj.loadRom(system.rom)
+	local sav = lsdj.loadSav(system.sram)
 
-	self:createSongsMenu(root:subMenu("Songs"))
+	self:createSongsMenu(root:subMenu("Songs"), sav)
+	self:createKitsMenu(root:subMenu("Kits"), rom)
 
-	root:subMenu("Kits")
-			:parent()
-		:subMenu("Fonts")
+	root:subMenu("Fonts")
 			:parent()
 		:subMenu("Palettes")
 			:parent()
@@ -181,32 +73,81 @@ function Lsdj:onMenu(menu)
 		:action("Export ROM...", function() end)
 end
 
-function Lsdj:createSongsMenu(menu)
+function Lsdj:createKitsMenu(menu, rom)
+	local system = self:system()
+
+	menu:action("Import (and reset)...", function()
+		dialog.loadFile({
+			{ "Supported Files", { ".kit", ".gb" } },
+			{ "LSDj Kit Files", ".kit" },
+			{ "LSDj Rom Files", ".gb" },
+		}, function(paths)
+			if rom ~= nil then
+				local err = rom:importKits(paths)
+				if err == nil then
+					system:setRom(rom:toBuffer(), true)
+				else
+					-- Log error
+				end
+			end
+		end)
+	end)
+	:action("Export All...", function()
+		dialog.saveDirectory(function(path)
+			local rom = lsdj.loadRom(system.rom)
+			if rom ~= nil then
+				rom:exportKits(path)
+			end
+		end)
+	end)
+	:separator()
+end
+
+function Lsdj:createSongsMenu(menu, sav)
 	local system = self:system()
 	local desc = system:desc()
 
-	menu:action("Import (and reset)...", function() end)
-		:action("Export All...", function() end)
-		:separator()
-
-	local names = getLsdjSongNames(desc.sourceSavData)
+	menu:action("Import (and reset)...", function()
+		dialog.loadFile({
+			{ "Supported Files", { ".lsdsng", ".sav" } },
+			{ "LSDj Song Files", ".lsdsng" },
+			{ "LSDj Sav Files", ".sav" },
+		}, function(paths)
+			local err = sav:importSongs(paths)
+			if err == nil then
+				sav:toBuffer(system.sram)
+				system:setSram(system.sram, true)
+			else
+				print("Import failed:")
+				for _, v in ipairs(err) do
+					print(v)
+				end
+			end
+		end)
+	end)
+	:action("Export All...", function()
+		dialog.saveDirectory(function(path)
+			sav:exportSongs(path)
+		end)
+	end)
+	:separator()
 
 	for i, v in ipairs(names) do
+		local songIdx = i - 2
 		menu:subMenu(v.name)
-				:action("Load (and reset)", function()
-					loadLsdjSong(desc.sourceSavData, i - 2)
-					system:setSram(desc.sourceSavData, true)
+			:action("Load (and reset)", function()
+				sav:loadSong(songIdx)
+				system:setSram(sav:toBuffer(), true)
+			end)
+			:action("Export .lsdsng...", function()
+				dialog.saveFile({{ "LSDj Song Files", ".lsdsng" }}, function(path)
+					sav:songToFile(songIdx, path)
 				end)
-				:action("Export .lsdsng...", function()
-					--[[dialog.saveFile({ ".lsdsng" }, function(path) {
-						local songData = saveLsdjSong(system.sourceSavData, i - 2)
-						fs.saveFile(songData, path)
-					end)]]
-				end)
-				:action("Delete", function()
-					deleteLsdjSong(desc.sourceSavData, i - 2)
-					system:setSram(desc.sourceSavData, true)
-				end)
+			end)
+			:action("Delete", function()
+				deleteLsdjSong(desc.sourceSavData, songIdx)
+				system:setSram(desc.sourceSavData, true)
+			end)
 	end
 end
 

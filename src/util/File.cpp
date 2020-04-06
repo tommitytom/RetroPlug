@@ -44,6 +44,10 @@ bool writeFile(const tstring& path, const std::vector<std::byte>& data) {
 	return writeFile(path, (std::byte*)data.data(), data.size());
 }
 
+bool writeFile(const tstring& path, const DataBuffer<char>* data) {
+	return writeFile(path, (std::byte*)data->data(), data->size());
+}
+
 bool writeFile(const tstring& path, const std::string& data) {
 	return writeFile(path, (std::byte*)data.data(), data.size());
 }

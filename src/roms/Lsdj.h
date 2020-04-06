@@ -1,12 +1,12 @@
 #pragma once
-
+/*
 #include <atomic>
 #include <string>
 #include <vector>
 
-#include "liblsdj/error.h"
-#include "liblsdj/project.h"
-#include "liblsdj/sav.h"
+#include "error.h"
+#include "project.h"
+#include "sav.h"
 #include "util/DataBuffer.h"
 
 #include "platform/Logger.h"
@@ -125,12 +125,12 @@ struct LsdjSongName {
 
 struct NamedData {
 	std::string name;
-	std::vector<std::byte> data;
+	DataBuffer<char> data;
 };
 
 struct NamedHashedData {
 	std::string name;
-	std::vector<std::byte> data;
+	DataBuffer<char> data;
 	uint32_t hash;
 };
 
@@ -164,7 +164,9 @@ bool found = false;
 
 	static void deleteSong(DataBufferPtr data, int idx);
 
+	static void exportSong(DataBufferPtr data, int idx, DataBuffer<char>* target);
 
+	static void exportSongs(std::vector<NamedData>& target);
 
 
 	void loadRom(const std::vector<std::byte>& romData);
@@ -175,9 +177,7 @@ bool found = false;
 
 	
 
-	void exportSong(int idx, std::vector<std::byte>& target);
-
-	void exportSongs(std::vector<NamedData>& target);
+	
 
 	
 
@@ -216,3 +216,4 @@ bool found = false;
 private:
 	void loadKitAt(const char* data, size_t size, int idx);
 };
+*/

@@ -38,3 +38,9 @@ enum class SaveStateType {
 	Sram,
 	State
 };
+
+enum class DialogType {
+	None,
+	Save,
+	Load
+};

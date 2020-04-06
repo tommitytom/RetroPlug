@@ -20,9 +20,6 @@
 
 #include "resource.h"
 #include "util/File.h"
-#include "lsdj/rom.h"
-#include "lsdj/kit.h"
-#include "lsdj/sample.h"
 
 //const int FRAME_SIZE = 160 * 144 * 4;
 

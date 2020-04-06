@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -34,16 +34,16 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <iostream>
 
 #include "common.hpp"
 
 namespace lsdj
 {
-    int handle_error(lsdj_error_t* error)
+    int handle_error(lsdj_error_t error)
     {
-        std::cerr << "ERROR: " << lsdj_error_get_c_str(error) << std::endl;
-        lsdj_error_free(error);
+        std::cerr << "ERROR: " << lsdj_error_get_description(error) << std::endl;
         return 1;
     }
     
@@ -56,13 +56,14 @@ namespace lsdj
     
     std::string constructProjectName(const lsdj_project_t* project, bool underscore)
     {
-        char name[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-        lsdj_project_get_name(project, name, sizeof(name));
+        std::array<char, LSDJ_PROJECT_NAME_LENGTH> name;
+        name.fill('\0');
+        strncpy(name.data(), lsdj_project_get_name(project), name.size());
         
         if (underscore)
-            std::replace(name, name + 9, 'x', '_');
+            std::replace(name.begin(), name.end(), 'x', '_');
         
-        return name;
+        return {name.data(), strnlen(name.data(), name.size())};
     }
     
     bool isHiddenFile(const std::string& str)

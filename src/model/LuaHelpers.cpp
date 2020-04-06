@@ -22,9 +22,7 @@ bool validateResult(const sol::protected_function_result& result, const std::str
 	return true;
 }
 
-void setupCommon(sol::state* state) {
-	sol::state& s = *state;
-
+void setupCommon(sol::state& s) {
 	s.new_enum("MenuItemType",
 		"None", MenuItemType::None,
 		"SubMenu", MenuItemType::SubMenu,
@@ -78,6 +76,11 @@ void setupCommon(sol::state* state) {
 		"CgbC", GameboyModel::CgbC,
 		"CgbE", GameboyModel::CgbE,
 		"DmgB", GameboyModel::DmgB
+	);
+
+	s.new_enum("DialogType",
+		"Load", DialogType::Load,
+		"Save", DialogType::Save
 	);
 
 	s.new_usertype<SameBoySettings>("SameBoySettings",

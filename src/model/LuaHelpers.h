@@ -42,4 +42,4 @@ static bool callFuncRet(sol::state* state, const char* name, ReturnType& ret, Ar
 	return false;
 }
 
-void setupCommon(sol::state* state);
+void setupCommon(sol::state& s);

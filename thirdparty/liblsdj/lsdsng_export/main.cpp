@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -33,67 +33,70 @@
  
  */
 
-#include <boost/filesystem.hpp>
-#include <boost/program_options.hpp>
+#include <popl/popl.hpp>
+#include <ghc/filesystem.hpp>
 
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <vector>
 
-#include "../liblsdj/sav.h"
+#include <lsdj/sav.h>
+#include <lsdj/version.h>
+
+#include "../common/common.hpp"
 #include "exporter.hpp"
+
+void printHelp(const popl::OptionParser& options)
+{
+    std::cout << "lsdsng-export mymusic.sav|folder\n\n"
+              << "Version: " << LSDJ_VERSION_STRING << "\n\n"
+              << options << "\n";
+
+    std::cout << "LibLsdj is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
+}
 
 int main(int argc, char* argv[])
 {
-    // Setup the command-line options
-    boost::program_options::options_description hidden{"Hidden"};
-    hidden.add_options()
-        ("file", boost::program_options::value<std::string>(), "Input save file, or folder for print");
-    
-    boost::program_options::options_description cmd{"Options"};
-    cmd.add_options()
-        ("help,h", "Help screen")
-        ("noversion", "Don't add version numbers to the filename")
-        ("folder,f", "Put every lsdsng in its own folder")
-        ("print,p", "Print a list of all songs in the sav")
-        ("decimal,d", "Use decimal notation for the version number, instead of hex")
-        ("underscore,u", "Use an underscore for the special lightning bolt character, instead of x")
-        ("output,o", boost::program_options::value<std::string>()->default_value(""), "Output folder for the lsdsng's")
-        ("verbose,v", "Verbose output during export")
-        ("index,i", boost::program_options::value<std::vector<int>>(), "Single out a given project index to export, 0 or more")
-        ("name,n", boost::program_options::value<std::vector<std::string>>(), "Single out a given project by name to export")
-        ("working-memory,w", "Single out the working-memory song to export");
-    
-    boost::program_options::options_description options;
-    options.add(cmd).add(hidden);
-    
-    // Set up the input file command-line argument
-    boost::program_options::positional_options_description positionalOptions;
-    positionalOptions.add("file", 1);
-    
+    popl::OptionParser options("Options");
+    auto help = options.add<popl::Switch>("h", "help", "Show the help screen");
+    auto verbose = options.add<popl::Switch>("v", "verbose", "Verbose output during export");
+    auto noversion = options.add<popl::Switch>("", "noversion", "Don't add version numbers to the filename");
+    auto folder = options.add<popl::Switch>("f", "folder", "Put every lsdsng in its own folder");
+    auto print = options.add<popl::Switch>("p", "print", "Print a list of all songs in the sav, instead of exporting");
+    auto decimal = options.add<popl::Switch>("d", "decimal", "Use decimal notation for the version number, instead of hex");
+    auto underscore = options.add<popl::Switch>("u", "underscore", "Use an underscore for the special lightning bolt character, instead of x");
+    auto output = options.add<popl::Value<std::string>>("o", "output", "Output folder for the lsdsng's", "");
+    auto index = options.add<popl::Value<int>>("i", "index", "Single out a given project index to export, 0 or more");
+    auto name = options.add<popl::Value<std::string>>("n", "name", "Single out a given project by name to export");
+    auto wm = options.add<popl::Switch>("w", "working-memory", "Single out the working-memory song to export");
+    auto skipWorkingMemory = options.add<popl::Switch>("", "skip-working", "Do not export the song in working-memory when no other projects are given");
+
     try
     {
-        // Parse the command-line options
-        boost::program_options::variables_map vm;
-        boost::program_options::command_line_parser parser(argc, argv);
-        parser = parser.options(options);
-        parser = parser.positional(positionalOptions);
-        boost::program_options::store(parser.run(), vm);
-        boost::program_options::notify(vm);
+        options.parse(argc, argv);
+        
+        const auto inputs = options.non_option_args();
         
         // Show help if requested
-        if (vm.count("help"))
+        if (help->is_set())
         {
-            std::cout << cmd << std::endl;
+            printHelp(options);
             return 0;
         // Do we have an input file?
-        } else if (vm.count("file")) {
+        } else if (!inputs.empty()) {
             // What is the path of the input file, and does it exist on disk?
-            const auto path = boost::filesystem::absolute(vm["file"].as<std::string>());
-            if (!boost::filesystem::exists(path))
+            const auto path = ghc::filesystem::absolute(inputs.front());
+            if (!ghc::filesystem::exists(path))
             {
                 std::cerr << "Path '" << path.string() << "' does not exist" << std::endl;
+                return 1;
+            }
+
+            // Find conflicting arguments
+            if (wm->is_set() && skipWorkingMemory->is_set())
+            {
+                std::cerr << "Incompatible arguments: --working-memory and --skip-working";
                 return 1;
             }
             
@@ -101,31 +104,37 @@ int main(int argc, char* argv[])
             lsdj::Exporter exporter;
             
             // Parse some of the flags manipulating output "style"
-            exporter.versionStyle = vm.count("noversion") ? lsdj::Exporter::VersionStyle::NONE : vm.count("decimal") ? lsdj::Exporter::VersionStyle::DECIMAL : lsdj::Exporter::VersionStyle::HEX;
-            exporter.underscore = vm.count("underscore");
-            exporter.putInFolder = vm.count("folder");
-            exporter.verbose = vm.count("verbose");
-            
+            exporter.versionStyle = noversion->is_set() ? lsdj::Exporter::VersionStyle::NONE : decimal->is_set() ? lsdj::Exporter::VersionStyle::DECIMAL : lsdj::Exporter::VersionStyle::HEX;
+            exporter.underscore = underscore->is_set();
+            exporter.putInFolder = folder->is_set();
+            exporter.verbose = verbose->is_set();
+            exporter.skipWorkingMemory = skipWorkingMemory->is_set();
+
             // Has the user specified one or more specific indices to export?
-            if (vm.count("index"))
-                exporter.indices = vm["index"].as<std::vector<int>>();
-            if (vm.count("working-memory"))
+            if (index->is_set())
+            {
+                for (auto i = 0; i < index->count(); i++)
+                    exporter.indices.emplace_back(index->value(i));
+            }
+            
+            if (name->is_set())
+            {
+                for (auto i = 0; i < name->count(); i++)
+                    exporter.names.emplace_back(name->value(i));
+            }
+            
+            if (wm->is_set())
                 exporter.indices.emplace_back(-1); // -1 represents working memory, kind-of a hack, but meh :/
-            if (vm.count("name"))
-                exporter.names = vm["name"].as<std::vector<std::string>>();
 
             // Has the user requested a print, or an actual export?
-            if (vm.count("print"))
+            if (print->is_set())
                 return exporter.print(path);
             else
-                return exporter.exportProjects(path, vm["output"].as<std::string>());
+                return exporter.exportProjects(path, output->value());
         } else {
-            std::cout << cmd << std::endl;
+            printHelp(options);
             return 0;
         }
-    } catch (const boost::program_options::error& e) {
-        std::cerr << e.what() << std::endl;
-        return 1;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
     } catch (...) {

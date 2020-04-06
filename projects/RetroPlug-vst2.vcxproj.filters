@@ -73,65 +73,8 @@
     <ClCompile Include="..\src\util\File.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\phrase.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\project.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\row.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\sav.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\song.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\synth.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\table.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\vio.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\wave.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\word.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\chain.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\command.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\compression.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\error.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\groove.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\instrument.c">
-      <Filter>liblsdj</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\roms\Lsdj.cpp">
       <Filter>src\roms</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\lsdj\rom.c">
-      <Filter>src\lsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\lsdj\sample.c">
-      <Filter>src\lsdj</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\lsdj\kit.c">
-      <Filter>src\lsdj</Filter>
     </ClCompile>
     <ClCompile Include="..\src\platform\FileDialog.cpp">
       <Filter>src\platform</Filter>
@@ -297,6 +240,66 @@
     </ClCompile>
     <ClCompile Include="..\src\view\Menu.cpp">
       <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\allocator.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\bytes.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\chain.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\compression.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\error.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\groove.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\instrument.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\instrument_kit.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\instrument_noise.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\instrument_pulse.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\instrument_wave.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\phrase.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\project.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\sav.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\song.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\speech.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\synth.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\table.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\vio.c">
+      <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\wave.c">
+      <Filter>liblsdj</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -492,84 +495,6 @@
     <ClInclude Include="..\src\util\File.h">
       <Filter>src\util</Filter>
     </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\chain.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\channel.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\command.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\compression.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\error.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\groove.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument_constants.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument_kit.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument_noise.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument_pulse.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\instrument_wave.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\panning.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\phrase.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\project.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\row.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\sav.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\song.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\synth.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\table.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\vio.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\wave.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\word.h">
-      <Filter>liblsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\lsdj\kit.h">
-      <Filter>src\lsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\lsdj\rom.h">
-      <Filter>src\lsdj</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\lsdj\sample.h">
-      <Filter>src\lsdj</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\xstring.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -738,6 +663,15 @@
     <ClInclude Include="..\src\view\Menu.h">
       <Filter>src\view</Filter>
     </ClInclude>
+    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\bytes.h">
+      <Filter>liblsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\defaults.h">
+      <Filter>liblsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\song_offsets.h">
+      <Filter>liblsdj</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="IPlug">
@@ -784,9 +718,6 @@
     </Filter>
     <Filter Include="liblsdj">
       <UniqueIdentifier>{f0d9f763-1881-4289-9bef-9d41367e1ee6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\lsdj">
-      <UniqueIdentifier>{7e2d065f-cad5-41fa-b2e3-480d3f0a2a88}</UniqueIdentifier>
     </Filter>
     <Filter Include="filewatcher">
       <UniqueIdentifier>{85a77b35-570e-459a-aeae-9d1c027a92f0}</UniqueIdentifier>

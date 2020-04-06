@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -36,11 +36,11 @@
 #ifndef LSDJ_EXPORTER_HPP
 #define LSDJ_EXPORTER_HPP
 
-#include <boost/filesystem/path.hpp>
+#include <ghc/filesystem.hpp>
 
-#include "../liblsdj/error.h"
-#include "../liblsdj/project.h"
-#include "../liblsdj/sav.h"
+#include <lsdj/error.h>
+#include <lsdj/project.h>
+#include <lsdj/sav.h>
 
 namespace lsdj
 {
@@ -55,9 +55,9 @@ namespace lsdj
         };
         
     public:
-        int exportProjects(const boost::filesystem::path& path, const std::string& output);
-        void exportProject(const lsdj_project_t* project, boost::filesystem::path folder, bool workingMemory, lsdj_error_t** error);
-        int print(const boost::filesystem::path& path);
+        int exportProjects(const ghc::filesystem::path& path, const std::string& output);
+        lsdj_error_t exportProject(const lsdj_project_t* project, ghc::filesystem::path folder, bool workingMemory);
+        int print(const ghc::filesystem::path& path);
         
     public:
         // The version exporting style
@@ -66,17 +66,19 @@ namespace lsdj
         bool underscore = false;
         bool putInFolder = false;
         bool verbose = false;
+        bool skipWorkingMemory = false;
         
         std::vector<int> indices;
         std::vector<std::string> names;
         
     private:
-        int printFolder(const boost::filesystem::path& path);
-        int printSav(const boost::filesystem::path& path);
+        int printFolder(const ghc::filesystem::path& path);
+        int printSav(const ghc::filesystem::path& path);
+        bool shouldExportWorkingMemory();
         
     private:
         // Converts a project version to a string representation using the current VersionStyle
-        std::string convertVersionToString(unsigned char version, bool prefixDot) const;
+        std::string convertVersionToString(uint8_t version, bool prefixDot) const;
         
         // Print the working memory song line
         void printWorkingMemorySong(const lsdj_sav_t* sav);

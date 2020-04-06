@@ -11,7 +11,7 @@
  
  MIT License
  
- Copyright (c) 2018 - 2019 Stijn Frishert
+ Copyright (c) 2018 - 2020 Stijn Frishert
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -36,12 +36,12 @@
 #ifndef LSDJ_WAVETABLE_IMPORTER_HPP
 #define LSDJ_WAVETABLE_IMPORTER_HPP
 
-#include <boost/filesystem.hpp>
+#include <ghc/filesystem.hpp>
 #include <string>
 #include <vector>
 
-#include "../liblsdj/error.h"
-#include "../liblsdj/song.h"
+#include <lsdj/error.h>
+#include <lsdj/song.h>
 
 namespace lsdj
 {
@@ -52,15 +52,15 @@ namespace lsdj
         
     public:
         std::string outputName;
-        unsigned char wavetableIndex = 0;
+        uint8_t wavetableIndex = 0;
         
         bool zero = false;
         bool force = false;
         bool verbose = false;
         
     private:
-        bool importToSav(const boost::filesystem::path& path, const std::string& wavetableName);
-        bool importToLsdsng(const boost::filesystem::path& path, const std::string& wavetableName);
+        bool importToSav(const ghc::filesystem::path& path, const std::string& wavetableName);
+        bool importToLsdsng(const ghc::filesystem::path& path, const std::string& wavetableName);
         std::pair<bool, unsigned int> importToSong(lsdj_song_t* song, const std::string& wavetableName);
     };
 }
