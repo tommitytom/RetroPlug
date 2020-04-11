@@ -78,7 +78,7 @@ function _init()
 			local system = System(desc, _proxy:buttons(i - 1))
 			local instance = {
 				system = system,
-				components = cm.createComponents(desc, system),
+				components = cm.createComponents(system)
 			}
 
 			table.insert(_instances, instance)
@@ -132,7 +132,7 @@ function _duplicateInstance(idx)
 
 		local instance = {
 			system = system,
-			components = cm.createComponents(desc, system)
+			components = cm.createComponents(system)
 		}
 
 		serializer.deserializeInstancesFromString(instance, componentData)
@@ -400,7 +400,7 @@ function _loadRom(desc)
 		end
 	end
 
-	instance.components = cm.createComponents(desc, instance.system)
+	instance.components = cm.createComponents(instance.system)
 
 	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)

@@ -7,6 +7,7 @@
 #include "model/RetroPlugProxy.h"
 
 #include "view/Menu.h"
+#include "platform/FileDialog.h"
 
 #include <iostream>
 
@@ -22,6 +23,9 @@ private:
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
+
+	std::vector<FileDialogFilters> _dialogFilters;
+	DialogType _dialogType = DialogType::None;
 
 public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}
@@ -68,6 +72,10 @@ public:
 	void scheduleReload() { _reload = true; }
 
 	void shutdown();
+
+	DialogType getDialogFilters(std::vector<FileDialogFilters>& filters);
+
+	void handleDialogCallback(const std::vector<std::string>& paths);
 
 private:
 	void setup();

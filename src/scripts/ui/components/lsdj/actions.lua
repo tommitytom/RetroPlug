@@ -21,6 +21,7 @@ end
 
 local KeyboardActions = class()
 function KeyboardActions:init(system)
+    print("system:", system)
     self._system = system
     self._buttons = system:buttons()
     self._selectState = SelectState.None
@@ -134,3 +135,5 @@ function KeyboardActions:_handleButtonPress(button, down)
 		end
 	end
 end
+
+return KeyboardActions

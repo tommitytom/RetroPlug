@@ -882,6 +882,9 @@
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\include\lsdj\wave.h">
       <Filter>liblsdj</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\model\LibLsdjWrapper.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

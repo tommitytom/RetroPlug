@@ -16,7 +16,7 @@
 #include "LuaHelpers.h"
 #include "platform/Logger.h"
 
-#include "sav.h"
+#include "LibLsdjWrapper.h"
 
 #include "view/Menu.h"
 
@@ -122,6 +122,20 @@ void UiLuaContext::shutdown() {
 	}
 }
 
+DialogType UiLuaContext::getDialogFilters(std::vector<FileDialogFilters>& filters) {
+	for (auto f : _dialogFilters) {
+		filters.push_back(f);
+	}
+
+	return _dialogType;
+}
+
+void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
+	callFunc(_state, "_handleDialogCallback", paths);
+	_dialogType = DialogType::None;
+	_dialogFilters.clear();
+}
+
 bool checkUserData(const sol::object o) {
 	if (o.get_type() == sol::type::lightuserdata) {
 		void* p = o.as<void*>();
@@ -156,15 +170,37 @@ void UiLuaContext::setup() {
 	s["package"]["path"] = packagePath;
 
 	s["checkUserData"].set_function(checkUserData);
+	s["_requestDialog"].set_function([&](DialogType type, const std::vector<FileDialogFilters>& filters) {
+		_dialogType = type;
+		_dialogFilters = filters;
+	});
 
 	setupCommon(s);
 	setupLsdj(s);
+
+	s.new_enum("lsdj_error_t",
+		"SUCCESS", LSDJ_SUCCESS,
+		"READ_FAILED", LSDJ_READ_FAILED,
+		"WRITE_FAILED", LSDJ_WRITE_FAILED,
+		"SEEK_FAILED", LSDJ_SEEK_FAILED,
+		"TELL_FAILED", LSDJ_TELL_FAILED,
+		"ALLOCATION_FAILED", LSDJ_ALLOCATION_FAILED,
+		"NO_PROJECT_AT_INDEX", LSDJ_NO_PROJECT_AT_INDEX,
+		"DECOMPRESSION_INCORRECT_SIZE", LSDJ_DECOMPRESSION_INCORRECT_SIZE,
+		"SRAM_INITIALIZATION_CHECK_FAILED", LSDJ_SRAM_INITIALIZATION_CHECK_FAILED,
+		"FILE_OPEN_FAILED", LSDJ_FILE_OPEN_FAILED
+	);
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
 		"encodeBuffer", base64::encodeBuffer,
 		"decode", base64::decode,
 		"decodeBuffer", base64::decodeBuffer
+	);
+
+	s.new_usertype<FileDialogFilters>("FileDialogFilters",
+		"name", &FileDialogFilters::name,
+		"extensions", &FileDialogFilters::extensions
 	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
@@ -183,6 +219,7 @@ void UiLuaContext::setup() {
 
 	s.new_usertype<FileManager>("FileManager",
 		"loadFile", &FileManager::loadFile,
+		"saveFile", &FileManager::saveFile,
 		"exists", &FileManager::exists
 	);
 
@@ -250,10 +287,12 @@ void UiLuaContext::setup() {
 	}
 #else
 	for (const auto& entry : fs::directory_iterator(_scriptPath + "/ui/components/")) {
-		fs::path p = entry.path();
-		std::string name = p.replace_extension("").filename().string();
-		consoleLog("Loading " + name + ".lua... ");
-		requireComponent(_state, "components." + name);
+		if (!entry.is_directory()) {
+			fs::path p = entry.path();
+			std::string name = p.replace_extension("").filename().string();
+			consoleLog("Loading " + name + ".lua... ");
+			requireComponent(_state, "components." + name);
+		}
 	}
 #endif
 

@@ -8,18 +8,27 @@ local LSDJ_SAV_PROJECT_COUNT = 32
 local Sav = class()
 function Sav:init(savData)
 	if savData ~= nil then
+		if type(savData) == "string" then
+			local data, err = fs.load(savData)
+			if err == lsdj_error_t.SUCCESS then
+				savData = data
+			else
+				-- Failed to load file
+			end
+		end
+
 		local sav, err = liblsdj.sav_read_from_memory(savData)
 		if err == lsdj_error_t.SUCCESS then
 			self._sav = sav
 		else
-
+			-- Failed to read sav
 		end
 	else
 		local sav, err = liblsdj.sav_new()
 		if err == lsdj_error_t.SUCCESS then
 			self._sav = sav
 		else
-
+			-- Failed to create new sav
 		end
 	end
 end
@@ -36,7 +45,8 @@ function Sav:loadSong(songIdx)
 end
 
 function Sav:toBuffer()
-	local buffer, err = liblsdj.sav_write_to_memory(self._sav)
+	local buffer = DataBuffer.new()
+	local err = liblsdj.sav_write_to_memory(self._sav, buffer)
 	if err == lsdj_error_t.SUCCESS then
 		return buffer
 	end
@@ -73,6 +83,34 @@ function Sav:importSongs(items)
 	end
 end
 
+function Sav:exportSongs(path)
+	for i = 1, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
+		local project = liblsdj.sav_get_project(self._sav, i)
+		if checkUserData(project) == true then
+			local buffer = DataBuffer.new()
+			local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
+			if err == lsdj_error_t.SUCCESS then
+				local name = liblsdj.project_get_name(project)
+				local p = pathutil.join(path, name .. ".lsdsng")
+				print("Writing song to file:", p)
+				fs.save(p, buffer)
+			end
+		end
+	end
+end
+
+function Sav:exportSong(songIdx, path)
+	local project = liblsdj.sav_get_project(self._sav, songIdx)
+	if checkUserData(project) == true then
+		local buffer = DataBuffer.new()
+		local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
+		if err == lsdj_error_t.SUCCESS then
+			print("Writing song to file:", path)
+			fs.save(path, buffer)
+		end
+	end
+end
+
 function Sav:_importSongsFromSav(savData)
 	local other = Sav(savData)
 	for i = 1, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
@@ -93,29 +131,5 @@ function Sav:_importSongFromBuffer(songData, songIdx)
 		-- Fail
 	end
 end
-
-function Sav:exportSongs(path)
-	for i = 1, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
-		local project = liblsdj.sav_get_project(self._sav, i)
-		if checkUserData(project) == true then
-			local name = liblsdj.project_get_name(project)
-			local buffer = liblsdj.project_write_lsdsng_to_memory(project)
-			local p = pathutil.join(path, name .. ".lsdsng")
-			print("Writing song to file:", p)
-			fs.save(p, buffer)
-		end
-	end
-end
-
-function Sav:exportSong(songIdx, path)
-	local project = liblsdj.sav_get_project(self._sav, songIdx - 1)
-	if checkUserData(project) == true then
-		local buffer = DataBuffer.new()
-		local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
-		print("Writing song to file:", path)
-		fs.save(path, buffer)
-	end
-end
-
 
 return Sav

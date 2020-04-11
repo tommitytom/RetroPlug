@@ -17,15 +17,20 @@ local function loadComponent(name)
 	end
 end
 
-local function createComponents(desc, ...)
+local function createComponents(system)
+	local desc = system:desc()
 	local components = {}
 	for _, v in ipairs(_factory.instance) do
 		local d = v.__desc
 		if d.romName == nil or desc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			local comp = v.new(...)
-			table.insert(components, comp)
-			table.insert(_allComponents, comp)
+			local valid, ret = pcall(function() return v.new(system) end)
+			if valid then
+				table.insert(components, ret)
+				table.insert(_allComponents, ret)
+			else
+				print("Failed to load component: " .. ret)
+			end
 		end
 	end
 
