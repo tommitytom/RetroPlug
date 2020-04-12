@@ -2,7 +2,7 @@
 
 namespace crc32 {
 	struct crc32_table {
-		uint32_t table[256];
+		uint32_t table[256] = { 0 };
 
 		crc32_table() {
 			uint32_t polynomial = 0xEDB88320;

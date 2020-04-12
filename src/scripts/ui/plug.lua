@@ -522,21 +522,37 @@ end
 function _resetInstance(idx, model)
 end
 
+local DEFAULT_SRAM_SIZE = 0x20000
+
 function _newSram(idx)
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		local savData = DataBuffer.new()
+		savData:resize(DEFAULT_SRAM_SIZE)
+		savData:clear()
+		inst.system:setSram(savData, true)
+	end
 end
 
 function _saveSram(idx, path)
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		local desc = inst.system:desc()
+		fs.save(path, desc.sourceSavData)
+	end
 end
 
 function _loadSram(idx, path, reset)
 	local inst = _instances[idx + 1]
-	local fm = _proxy:fileManager()
-	if fm:exists(path) == true then
-		local savFile = fm:loadFile(path, false)
-		if savFile ~= nil then
-			local desc = inst.system:desc()
-			desc.savPath = path
-			desc.sourceSavData = savFile.data
+	if inst ~= nil then
+		if fs.exists(path) == true then
+			local savData = fs.load(path)
+			if savData ~= nil then
+				local desc = inst.system:desc()
+				desc.savPath = path
+				desc.sourceSavData = savData
+				inst.system:setSram(savData, reset)
+			end
 		end
 	end
 end

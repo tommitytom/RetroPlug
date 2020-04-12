@@ -12,6 +12,7 @@
 
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
+const size_t DEFAULT_SRAM_SIZE = 0x20000;
 
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioController* audioController)
 	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
@@ -134,7 +135,12 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					.select("Game Link", &active->sameBoySettings.gameLink);
 
 				// Update SRAM for the selected instance since it might be used to generate the menu
+				if (!active->sourceSavData) {
+					active->sourceSavData = std::make_shared<DataBuffer<char>>(DEFAULT_SRAM_SIZE);
+				}
+
 				_audioController->getSram(_activeIdx, active->sourceSavData);
+				size_t hash = active->sourceSavData->hash();
 
 				std::vector<Menu*> menus;
 				_audioController->onMenu(_activeIdx, menus);

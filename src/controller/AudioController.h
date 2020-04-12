@@ -34,6 +34,8 @@ public:
 		SameBoyPlugPtr instance = _processingContext.getInstance(idx);
 		if (instance) {
 			return instance->saveBattery(target->data(), target->size());
+		} else {
+			std::cout << "Failed to fetch SRAM from instance " << idx << ": instance does not exist" << std::endl;
 		}
 
 		return false;

@@ -136,7 +136,10 @@ void setupCommon(sol::state& s) {
 		"slice", &DataBuffer<char>::slice,
 		"toString", &DataBuffer<char>::toString,
 		"hash", &DataBuffer<char>::hash,
-		"size", &DataBuffer<char>::size
+		"size", &DataBuffer<char>::size,
+		"clear", &DataBuffer<char>::clear,
+		"resize", &DataBuffer<char>::resize,
+		"reserve", &DataBuffer<char>::reserve
 	);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);

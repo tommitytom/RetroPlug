@@ -17,8 +17,13 @@ local function saveText(path, data)
 	return _fm:saveTextFile(path, data)
 end
 
+local function exists(path)
+	return _fm:exists(path)
+end
+
 return {
 	load = load,
 	save = save,
-	saveText = saveText
+	saveText = saveText,
+	exists = exists
 }
