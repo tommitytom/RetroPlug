@@ -1,0 +1,31 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Launch",
+			"type": "lua",
+			"request": "launch",
+			"workingDirectory": "${workspaceRoot}",
+			"sourceBasePath": "${workspaceRoot}",
+			"executable": "${workspaceRoot}/lua.exe",
+			"arguments": "main.lua",
+			"listenPublicly": false,
+			"listenPort": 56789,
+			"encoding": "UTF-8",
+			"env": {}
+		},
+		{
+			"name": "Attach",
+			"type": "lua",
+			"request": "attach",
+			"workingDirectory": "${workspaceRoot}",
+			"sourceBasePath": "${workspaceRoot}",
+			"listenPublicly": false,
+			"listenPort": 56789,
+			"encoding": "UTF-8"
+		}
+	]
+}
