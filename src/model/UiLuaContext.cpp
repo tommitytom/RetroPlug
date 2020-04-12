@@ -136,8 +136,8 @@ void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 	_dialogFilters.clear();
 }
 
-bool checkUserData(const sol::object o) {
-	if (o.get_type() == sol::type::lightuserdata) {
+bool isNullPtr(const sol::object o) {
+	if (o.get_type() == sol::type::lightuserdata || o.get_type() == sol::type::userdata) {
 		void* p = o.as<void*>();
 		if (p > 0) {
 			return true;
@@ -153,7 +153,7 @@ void UiLuaContext::setup() {
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io, sol::lib::debug, sol::lib::coroutine);
+	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::debug, sol::lib::coroutine);
 
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
@@ -169,7 +169,7 @@ void UiLuaContext::setup() {
 
 	s["package"]["path"] = packagePath;
 
-	s["checkUserData"].set_function(checkUserData);
+	s["isNullPtr"].set_function(isNullPtr);
 	s["_requestDialog"].set_function([&](DialogType type, sol::as_table_t<std::vector<FileDialogFilters>> filters) {
 		_dialogType = type;
 		_dialogFilters = filters.value();
@@ -199,6 +199,7 @@ void UiLuaContext::setup() {
 	s.new_usertype<FileManager>("FileManager",
 		"loadFile", &FileManager::loadFile,
 		"saveFile", &FileManager::saveFile,
+		"saveTextFile", &FileManager::saveTextFile,
 		"exists", &FileManager::exists
 	);
 

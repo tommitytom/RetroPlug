@@ -47,6 +47,10 @@ public:
 		return writeFile(tstr(path), data);
 	}
 
+	bool saveTextFile(const std::string& path, const std::string& data) {
+		return writeFile(tstr(path), data);
+	}
+
 	File* loadFile(const std::string& path, bool reload = false) {
 		File* file = getFile(path);
 		if (file && reload == false) {

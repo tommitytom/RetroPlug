@@ -234,7 +234,7 @@ function _saveProject(state, pretty)
 	}
 
 	for i, instance in ipairs(_instances) do
-		local desc = instance.desc
+		local desc = instance.system:desc()
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			local inst = cloneEnumFields(desc, InstanceSettingsFields)
 			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
@@ -263,9 +263,7 @@ end
 function _saveProjectToFile(state, pretty)
 	local proj = _proxy:getProject()
 	local data = _saveProject(state, pretty)
-	local file = io.open(proj.path, "w")
-	file:write(data)
-	file:close()
+	fs.saveText(proj.path, data)
 end
 
 local function loadProject_rp010(projectData)
@@ -329,12 +327,12 @@ local function loadProject_100(projectData)
 end
 
 function _loadProject(path)
-	local file = io.open(path, "r")
-	if file == nil then
+	local file = fs.load(path)
+	if isNullPtr(file) == false then
 		error("Failed to load project: Unable to open file")
 	end
 
-	local data = file:read("*a")
+	local data = file:toString()
 	local ok, projectData = serpent.load(data)
 	if ok ~= true then
 		-- Old projects (<= v0.1.0) are encoded using JSON rather than lua
@@ -410,6 +408,8 @@ function _loadRom(desc)
 	_proxy:setInstance(desc)
 	cm.runAllHandlers("onRomLoad", instance.components, instance.system)
 
+	desc.state = EmulatorInstanceState.Initialized
+
 	if _activeIdx == 0 then
 		_setActive(0)
 	end
@@ -443,6 +443,8 @@ function _setActive(idx)
 			_activeIdx = idx + 1
 			Active = _instances[_activeIdx]
 			_proxy:setActiveInstance(idx)
+		else
+			print("Failed to set active.  Instance state is " .. state)
 		end
 	end
 end

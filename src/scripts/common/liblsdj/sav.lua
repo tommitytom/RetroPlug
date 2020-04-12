@@ -87,7 +87,7 @@ function Sav:getSongs()
 	local songs = {}
 	for i = 0, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
 		local project = liblsdj.sav_get_project(self._sav, i)
-		if checkUserData(project) == true then
+		if isNullPtr(project) == true then
 			local name = liblsdj.project_get_name(project)
 			table.insert(songs, { idx = i, name = name, empty = false })
 		else
@@ -101,7 +101,7 @@ end
 function Sav:exportSongs(path)
 	for i = 1, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
 		local project = liblsdj.sav_get_project(self._sav, i)
-		if checkUserData(project) == true then
+		if isNullPtr(project) == true then
 			local buffer = DataBuffer.new()
 			local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
 			if err == lsdj_error_t.SUCCESS then
@@ -116,7 +116,7 @@ end
 
 function Sav:exportSong(songIdx, path)
 	local project = liblsdj.sav_get_project(self._sav, songIdx)
-	if checkUserData(project) == true then
+	if isNullPtr(project) == true then
 		local buffer = DataBuffer.new()
 		local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
 		if err == lsdj_error_t.SUCCESS then
