@@ -100,10 +100,12 @@ void AudioLuaContext::setup() {
 	}
 #else*/
 	for (const auto& entry : fs::directory_iterator(_scriptPath + "/audio/components/")) {
-		fs::path p = entry.path();
-		std::string name = p.replace_extension("").filename().string();
-		consoleLog("Loading " + name + ".lua... ");
-		requireComponent(_state, "components." + name);
+		if (!entry.is_directory()) {
+			fs::path p = entry.path();
+			std::string name = p.replace_extension("").filename().string();
+			consoleLog("Loading " + name + ".lua... ");
+			requireComponent(_state, "components." + name);
+		}
 	}
 //#endif
 

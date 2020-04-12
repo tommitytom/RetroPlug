@@ -130,6 +130,15 @@ void setupCommon(sol::state& s) {
 		"separator", []() { return new Separator(); }
 	);
 
+	s.new_usertype<DataBuffer<char>>("DataBuffer",
+		"get", &DataBuffer<char>::get,
+		"set", &DataBuffer<char>::set,
+		"slice", &DataBuffer<char>::slice,
+		"toString", &DataBuffer<char>::toString,
+		"hash", &DataBuffer<char>::hash,
+		"size", &DataBuffer<char>::size
+	);
+
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
 	s["_consolePrint"].set_function(consoleLog);
 }

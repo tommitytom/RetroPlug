@@ -1,10 +1,18 @@
-local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
 local dialog = require("dialog")
-
-local fs = require("fs")
 local KeyboardActions = require("components.lsdj.actions")
 local lsdj = require("liblsdj.liblsdj")
 
+local ROM_FILTER = { "LSDj Rom Files", "*.gb" }
+local SAV_FILTER = { "LSDj Sav Files", "*.sav" }
+local SONG_FILTER = { "LSDj Song Files", "*.lsdsng" }
+local KIT_FILTER = { "LSDj Kit Files", "*.kit" }
+
+local function formatName(idx, name, empty)
+	if empty == true then name = "(Empty)" end
+	return string.format("%02X", idx) .. ": " .. name
+end
+
+local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
 function Lsdj:init()
 	self._valid = false
 	self._kits = {}
@@ -55,8 +63,8 @@ end
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
 	local system = self:system()
-	local rom = lsdj.loadRom(system.rom)
-	local sav = lsdj.loadSav(system.sram)
+	local rom = lsdj.loadRom(system:rom())
+	local sav = lsdj.loadSav(system:sram())
 
 	self:createSongsMenu(root:subMenu("Songs"), sav)
 	self:createKitsMenu(root:subMenu("Kits"), rom)
@@ -77,30 +85,35 @@ function Lsdj:createKitsMenu(menu, rom)
 	local system = self:system()
 
 	menu:action("Import (and reset)...", function()
-		dialog.loadFile({
-			{ "Supported Files", { ".kit", ".gb" } },
-			{ "LSDj Kit Files", ".kit" },
-			{ "LSDj Rom Files", ".gb" },
-		}, function(paths)
-			if rom ~= nil then
-				local err = rom:importKits(paths)
-				if err == nil then
-					system:setRom(rom:toBuffer(), true)
-				else
-					-- Log error
-				end
+		dialog.loadFile({ KIT_FILTER, ROM_FILTER }, function(paths)
+			local err = rom:importKits(paths)
+			if err == nil then
+				system:setRom(rom:toBuffer(), true)
+			else
+				-- Log error
 			end
 		end)
 	end)
 	:action("Export All...", function()
 		dialog.saveDirectory(function(path)
-			local rom = lsdj.loadRom(system.rom)
-			if rom ~= nil then
-				rom:exportKits(path)
-			end
+			rom:exportKits(path)
 		end)
 	end)
 	:separator()
+
+	local kits = rom:getKits()
+	for i, kit in ipairs(kits) do
+		local kitName = formatName(i - 1, kit.name, kit.data == nil)
+		local kitMenu = menu:subMenu(kitName)
+
+		if kit.data ~= nil then
+			kitMenu:action("Replace...", function() end)
+				:action("Export...", function() end)
+				:action("Delete", function() end)
+		else
+			kitMenu:action("Load (and reset)...", function() end)
+		end
+	end
 end
 
 function Lsdj:createSongsMenu(menu, sav)
@@ -108,46 +121,49 @@ function Lsdj:createSongsMenu(menu, sav)
 	local desc = system:desc()
 
 	menu:action("Import (and reset)...", function()
-		dialog.loadFile({
-			{ "Supported Files", { ".lsdsng", ".sav" } },
-			{ "LSDj Song Files", ".lsdsng" },
-			{ "LSDj Sav Files", ".sav" },
-		}, function(paths)
+		dialog.loadFile({ SONG_FILTER, SAV_FILTER }, function(paths)
 			local err = sav:importSongs(paths)
 			if err == nil then
 				sav:toBuffer(system.sram)
 				system:setSram(system.sram, true)
 			else
 				print("Import failed:")
-				for _, v in ipairs(err) do
-					print(v)
-				end
+				table.foreach(err, print)
 			end
 		end)
 	end)
 	:action("Export All...", function()
 		dialog.saveDirectory(function(path)
-			sav:exportSongs(path)
+			local err = sav:exportSongs(path)
+			if err ~= nil then
+				print("Export failed:")
+				table.foreach(err, print)
+			end
 		end)
 	end)
 	:separator()
 
-	for i, v in ipairs(names) do
-		local songIdx = i - 2
-		menu:subMenu(v.name)
-			:action("Load (and reset)", function()
-				sav:loadSong(songIdx)
-				system:setSram(sav:toBuffer(), true)
-			end)
-			:action("Export .lsdsng...", function()
-				dialog.saveFile({{ "LSDj Song Files", ".lsdsng" }}, function(path)
-					sav:songToFile(songIdx, path)
+	local songs = sav:getSongs()
+	for _, song in ipairs(songs) do
+		local songName = formatName(song.idx, song.name, song.empty)
+		local songMenu = menu:subMenu(songName)
+
+		songMenu:action("Load (and reset)", function()
+			sav:loadSong(song.idx)
+			system:setSram(sav:toBuffer(), true)
+		end)
+
+		if song.empty == false then
+			songMenu:action("Export .lsdsng...", function()
+				dialog.saveFile({ SONG_FILTER }, function(path)
+					sav:songToFile(song.idx, path)
 				end)
 			end)
 			:action("Delete", function()
-				deleteLsdjSong(desc.sourceSavData, songIdx)
+				sav:deleteSong(song.idx)
 				system:setSram(desc.sourceSavData, true)
 			end)
+		end
 	end
 end
 

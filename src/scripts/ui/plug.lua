@@ -1,3 +1,8 @@
+--[[local json = require 'dkjson'
+local debuggee = require 'vscode-debuggee'
+local startResult, breakerType = debuggee.start(json)
+print('debuggee start ->', startResult, breakerType)]]
+
 inspect = require("inspect")
 function prinspect(...) print(inspect(...)) end
 
@@ -14,8 +19,6 @@ local LuaMenu = require("Menu")
 local System = require("System")
 local createNativeMenu = require("MenuHelper")
 
-local inspect = require("inspect")
-local pathutil = require("pathutil")
 local serpent = require("serpent")
 local json = require("json")
 local lsdj = require("liblsdj.liblsdj")
@@ -529,8 +532,9 @@ function _loadSram(idx, path, reset)
 	if fm:exists(path) == true then
 		local savFile = fm:loadFile(path, false)
 		if savFile ~= nil then
-			inst.desc.savPath = path
-			inst.desc.sourceSavData = savFile.data
+			local desc = inst.system:desc()
+			desc.savPath = path
+			desc.sourceSavData = savFile.data
 		end
 	end
 end

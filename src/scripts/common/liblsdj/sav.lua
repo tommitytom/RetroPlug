@@ -13,7 +13,7 @@ function Sav:init(savData)
 			if err == lsdj_error_t.SUCCESS then
 				savData = data
 			else
-				-- Failed to load file
+				print("Failed to load LSDj sav from " .. savData)
 			end
 		end
 
@@ -21,14 +21,14 @@ function Sav:init(savData)
 		if err == lsdj_error_t.SUCCESS then
 			self._sav = sav
 		else
-			-- Failed to read sav
+			print("Failed to load LSDj sav from memory")
 		end
 	else
 		local sav, err = liblsdj.sav_new()
 		if err == lsdj_error_t.SUCCESS then
 			self._sav = sav
 		else
-			-- Failed to create new sav
+			print("Failed to create new LSDj sav")
 		end
 	end
 end
@@ -81,6 +81,21 @@ function Sav:importSongs(items)
 			self:_importSongFromBuffer(items)
 		end
 	end
+end
+
+function Sav:getSongs()
+	local songs = {}
+	for i = 0, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
+		local project = liblsdj.sav_get_project(self._sav, i)
+		if checkUserData(project) == true then
+			local name = liblsdj.project_get_name(project)
+			table.insert(songs, { idx = i, name = name, empty = false })
+		else
+			table.insert(songs, { idx = i, empty = true })
+		end
+	end
+
+	return songs
 end
 
 function Sav:exportSongs(path)

@@ -12,9 +12,9 @@ local function concatTarget(target, map, actions)
 		if type(v) == "number" then
 			target[k] = v
 		elseif type(v) == "table" then
-			local c = actions[v.component]
+			local c = actions[string.lower(v.component)]
 			if c ~= nil then
-				local f = c[v.action]
+				local f = c[string.lower(v.action)]
 				if f ~= nil then
 					target[k] = f
 				else
@@ -85,7 +85,7 @@ function ButtonHandler:onComponentsInitialized(components)
 	self._buttonHooks = {}
 
 	for _, v in ipairs(components) do
-		self._actions[v.__desc.name] = v.__actions
+		self._actions[string.lower(v.__desc.name)] = v.__actions
 		if v.onBeforeButton ~= nil then
 			table.insert(self._buttonHooks, {
 				obj = v,

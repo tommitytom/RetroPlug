@@ -153,7 +153,7 @@ void UiLuaContext::setup() {
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io);
+	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::io, sol::lib::debug, sol::lib::coroutine);
 
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
@@ -170,26 +170,13 @@ void UiLuaContext::setup() {
 	s["package"]["path"] = packagePath;
 
 	s["checkUserData"].set_function(checkUserData);
-	s["_requestDialog"].set_function([&](DialogType type, const std::vector<FileDialogFilters>& filters) {
+	s["_requestDialog"].set_function([&](DialogType type, sol::as_table_t<std::vector<FileDialogFilters>> filters) {
 		_dialogType = type;
-		_dialogFilters = filters;
+		_dialogFilters = filters.value();
 	});
 
 	setupCommon(s);
 	setupLsdj(s);
-
-	s.new_enum("lsdj_error_t",
-		"SUCCESS", LSDJ_SUCCESS,
-		"READ_FAILED", LSDJ_READ_FAILED,
-		"WRITE_FAILED", LSDJ_WRITE_FAILED,
-		"SEEK_FAILED", LSDJ_SEEK_FAILED,
-		"TELL_FAILED", LSDJ_TELL_FAILED,
-		"ALLOCATION_FAILED", LSDJ_ALLOCATION_FAILED,
-		"NO_PROJECT_AT_INDEX", LSDJ_NO_PROJECT_AT_INDEX,
-		"DECOMPRESSION_INCORRECT_SIZE", LSDJ_DECOMPRESSION_INCORRECT_SIZE,
-		"SRAM_INITIALIZATION_CHECK_FAILED", LSDJ_SRAM_INITIALIZATION_CHECK_FAILED,
-		"FILE_OPEN_FAILED", LSDJ_FILE_OPEN_FAILED
-	);
 
 	s.create_named_table("base64",
 		"encode", base64::encode,
@@ -201,14 +188,6 @@ void UiLuaContext::setup() {
 	s.new_usertype<FileDialogFilters>("FileDialogFilters",
 		"name", &FileDialogFilters::name,
 		"extensions", &FileDialogFilters::extensions
-	);
-
-	s.new_usertype<DataBuffer<char>>("DataBuffer",
-		"get", &DataBuffer<char>::get,
-		"set", &DataBuffer<char>::set,
-		"slice", &DataBuffer<char>::slice,
-		"toString", &DataBuffer<char>::toString,
-		"hash", &DataBuffer<char>::hash
 	);
 
 	s.new_usertype<FetchStateResponse>("FetchStateResponse",

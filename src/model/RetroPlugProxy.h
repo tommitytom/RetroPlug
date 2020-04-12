@@ -133,7 +133,7 @@ public:
 		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}
 
-	void setSram(InstanceIndex idx, DataBufferPtr data, bool reset) {
+	void setSram(InstanceIndex idx, DataBuffer<char>* data, bool reset) {
 		SetSramRequest req;
 		req.idx = idx;
 		req.buffer = std::make_shared<DataBuffer<char>>(data->size());

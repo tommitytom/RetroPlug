@@ -20,11 +20,11 @@ end
 local function createComponents(system)
 	local desc = system:desc()
 	local components = {}
-	for _, v in ipairs(_factory.instance) do
-		local d = v.__desc
+	for _, componentType in ipairs(_factory.instance) do
+		local d = componentType.__desc
 		if d.romName == nil or desc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
-			local valid, ret = pcall(function() return v.new(system) end)
+			local valid, ret = pcall(componentType.new, system)
 			if valid then
 				table.insert(components, ret)
 				table.insert(_allComponents, ret)

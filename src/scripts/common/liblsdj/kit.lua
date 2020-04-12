@@ -8,9 +8,9 @@ local Kit = class()
 
 function Kit:init(kitData)
     if kitData ~= nil then
-	    self.name = kitData:slice(KIT_NAME_OFFSET, KIT_NAME_SIZE):toString()
+        self.name = kitData:slice(KIT_NAME_OFFSET, KIT_NAME_SIZE):toString()
         self.data = kitData
-        self.checksum = kitData:hash()
+        self.checksum = kitData:hash(0)
     else
         self.name = ""
         self.data = nil
@@ -25,3 +25,5 @@ function Kit:toFile(filePath)
         print("Failed to save kit: Kit slot is empty")
     end
 end
+
+return Kit

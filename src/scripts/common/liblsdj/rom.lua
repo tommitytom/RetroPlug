@@ -8,11 +8,11 @@ local BANK_COUNT = 64
 local BANK_SIZE = 0x4000
 
 local function bankIsKit(bank)
-	return bank:get(0) == 0x60 and bank:get(1) == 0x40
+	return string.byte(bank:get(0)) == 0x60 and string.byte(bank:get(1)) == 0x40
 end
 
 local function bankIsEmptyKit(bank)
-	return bank:get(0) == -1 and bank:get(1) == -1
+	return string.byte(bank:get(0)) == 0xFF and string.byte(bank:get(1)) == 0xFF
 end
 
 local Rom = class()
@@ -49,6 +49,11 @@ function Rom:importKits(items)
 			self:_importKitsFromRom(items)
 		end
 	end
+end
+
+function Rom:getKits()
+	self:_parseKits()
+	return self.kits
 end
 
 function Rom:exportKits(dirPath)

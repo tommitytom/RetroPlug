@@ -8,6 +8,7 @@ require("Print")
 local serializer = require("serializer")
 local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
+local System = require("System")
 local createNativeMenu = require("MenuHelper")
 local ppq = require("ppq")
 
@@ -23,11 +24,10 @@ function _loadComponent(name)
     cm.loadComponent(name)
 end
 
-local function createInstance(model, buttons)
+local function createInstance(system)
     return {
-        model = model,
-        components = cm.createComponents(model:getDesc(), model, buttons),
-        buttons = buttons
+        system = system,
+        components = cm.createComponents(system)
     }
 end
 
@@ -37,7 +37,8 @@ function _init()
     for i = 1, MAX_INSTANCES, 1 do
         local instModel = _model:getInstance(i - 1)
         if instModel ~= nil then
-            table.insert(_instances, createInstance(instModel, _model:getButtonPresses(i - 1)))
+            local system = System(instModel, _model:getButtonPresses(i - 1))
+            table.insert(_instances, createInstance(system))
         end
 	end
 
@@ -48,11 +49,13 @@ function _init()
 end
 
 function _addInstance(idx, model)
-    _instances[idx + 1] = createInstance(model, _model:getButtonPresses(idx))
+    local system = System(model, _model:getButtonPresses(idx))
+    _instances[idx + 1] = createInstance(system)
 end
 
 function _duplicateInstance(sourceIdx, targetIdx, model)
-    _instances[targetIdx + 1] = createInstance(model, _model:getButtonPresses(targetIdx))
+    local system = System(model, _model:getButtonPresses(targetIdx))
+    _instances[targetIdx + 1] = createInstance(system)
     local instData = serializer.serializeInstanceToString(_instances[sourceIdx + 1])
     serializer.deserializeInstanceFromString(_instances[targetIdx + 1], instData)
 end
