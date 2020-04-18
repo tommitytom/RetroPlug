@@ -96,7 +96,7 @@ private:
 	void OpenLoadRomDialog(InstanceIndex idx, GameboyModel model) {
 		std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_ROM_FILTER }, false);
 		if (paths.size() > 0) {
-			_lua->loadRom(_activeIdx, ws2s(paths[0]), model);
+			_lua->loadRom(idx, ws2s(paths[0]), model);
 		}
 	}
 

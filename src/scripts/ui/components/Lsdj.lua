@@ -67,7 +67,7 @@ function Lsdj:onMenu(menu)
 	local rom = lsdj.loadRom(system:rom())
 	local sav = lsdj.loadSav(system:sram())
 
-	self:createSongsMenu(root:subMenu("Songs"), sav)
+	if sav ~= nil then self:createSongsMenu(root:subMenu("Songs"), sav) end
 	self:createKitsMenu(root:subMenu("Kits"), rom)
 
 	root:subMenu("Fonts")

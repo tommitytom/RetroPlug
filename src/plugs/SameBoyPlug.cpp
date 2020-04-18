@@ -171,8 +171,8 @@ void SameBoyPlug::disableRendering(bool disable) {
 	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, disable);
 }
 
-void SameBoyPlug::updateRom() {
-	//SAMEBOY_SYMBOLS(sameboy_update_rom)(_instance, (const char*)_romData.data(), _romData.size());
+void SameBoyPlug::setRomData(DataBuffer<char>* data) {
+	SAMEBOY_SYMBOLS(sameboy_update_rom)(_instance, (const char*)data->data(), data->size());
 }
 
 void SameBoyPlug::updateAV(int audioFrames) {

@@ -111,7 +111,7 @@ public:
 
 	void disableRendering(bool disable);
 
-	void updateRom();
+	void setRomData(DataBuffer<char>* data);
 
 private:
 	void updateAV(int audioFrames);

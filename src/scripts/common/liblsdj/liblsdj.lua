@@ -6,7 +6,8 @@ local function loadRom(romData)
 end
 
 local function loadSav(savData)
-    return Sav(savData)
+    local sav = Sav(savData)
+    if sav:isValid() then return sav end
 end
 
 return {

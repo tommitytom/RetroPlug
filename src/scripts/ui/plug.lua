@@ -21,7 +21,6 @@ local createNativeMenu = require("MenuHelper")
 
 local serpent = require("serpent")
 local json = require("json")
-local lsdj = require("liblsdj.liblsdj")
 
 local _PROJECT_VERSION = "1.0.0"
 
@@ -364,6 +363,17 @@ function _loadRom(desc)
 			print("Failed to load rom: Instance " .. desc.idx .. " does not exist")
 			return
 		end
+
+		if desc.sameBoySettings.model == GameboyModel.Auto then
+			desc.sameBoySettings.model = instance.system:desc().sameBoySettings.model
+		end
+
+		instance = {
+			system = System(desc, _proxy:buttons(desc.idx)),
+			components = {}
+		}
+
+		_instances[desc.idx + 1] = instance
 	end
 
 	instance.components = cm.createComponents(instance.system)
@@ -441,7 +451,7 @@ function _onPadButton(button, down)
 end
 
 function _onMidi(note, down)
-	--pluginInputRoute("onMidi", note, down)
+	--componentInputRoute("onMidi", note, down)
 end
 
 function _onDrop(str)
@@ -452,13 +462,19 @@ local _menuLookup = nil
 
 function _onMenu(menus)
 	local menu = LuaMenu()
-	local componentsMenu = menu:subMenu("System"):subMenu("Components")
+	local componentsMenu = menu:subMenu("System"):subMenu("UI Components")
 
 	if Active ~= nil then
-		for _, comp in ipairs(Active.components) do
-			componentsMenu:select(comp.__desc.name, true, function() end)
+		componentsMenu
+			:subMenu("Add")
+				:action("ROM File Watcher")
+				:parent()
+			:separator()
 
-			if comp.onMenu ~= nil then
+		for _, comp in ipairs(Active.components) do
+			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
+
+			if comp:enabled() == true and comp.onMenu ~= nil then
 				comp:onMenu(menu)
 			end
 		end
@@ -483,7 +499,17 @@ end
 function _resetInstance(idx, model)
 	local inst = _instances[idx + 1]
 	if inst ~= nil then
-		inst.system:desc().sameBoySettings.model = model
+		local settings = inst.system:desc().sameBoySettings
+		if model == GameboyModel.Auto then
+			model = settings.model
+		end
+
+		if model ~= settings.model then
+			settings.model = model
+			--inst.system:desc().sameBoySettings.model = model
+			print(inst.system:desc().sameBoySettings.model, model)
+		end
+
 		_proxy:resetInstance(idx, model)
 	end
 end

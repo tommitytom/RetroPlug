@@ -122,16 +122,22 @@ local _menuLookup = nil
 
 function _onMenu(idx, menus)
 	local menu = LuaMenu()
-	local componentsMenu = menu:subMenu("System"):subMenu("Components")
+	local componentsMenu = menu:subMenu("System"):subMenu("Audio Components")
 
     local inst = _instances[idx + 1]
-	if inst ~= nil then
-		for _, comp in ipairs(inst.components) do
-            componentsMenu:title(comp.__desc.name)
+    if inst ~= nil then
+        componentsMenu
+			:subMenu("Add")
+				:action("MIDI Passthrough")
+				:parent()
+			:separator()
 
-            if comp.onMenu ~= nil then
+        for _, comp in ipairs(inst.components) do
+            componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
+
+			if comp:enabled() == true and comp.onMenu ~= nil then
 				comp:onMenu(menu)
-			end
+            end
 		end
 	end
 

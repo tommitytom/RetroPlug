@@ -116,13 +116,23 @@ public:
 	}
 
 	void setSram(InstanceIndex idx, DataBuffer<char>* data, bool reset) {
-		SetSramRequest req;
+		SetDataRequest req;
 		req.idx = idx;
 		req.buffer = std::make_shared<DataBuffer<char>>(data->size());
 		req.buffer->write(data->data(), data->size());
 		req.reset = reset;
 
 		_node->request<calls::SetSram>(NodeTypes::Audio, req, [](const DataBufferPtr&) {});
+	}
+
+	void setRom(InstanceIndex idx, DataBuffer<char>* data, bool reset) {
+		SetDataRequest req;
+		req.idx = idx;
+		req.buffer = std::make_shared<DataBuffer<char>>(data->size());
+		req.buffer->write(data->data(), data->size());
+		req.reset = reset;
+
+		_node->request<calls::SetRom>(NodeTypes::Audio, req, [](const DataBufferPtr&) {});
 	}
 
 	void setScriptDirs(const std::string& configPath, const std::string& scriptPath) {

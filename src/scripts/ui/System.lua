@@ -10,6 +10,10 @@ function System:setSram(data, reset)
 	_proxy:setSram(self._desc.idx, data, reset)
 end
 
+function System:setRom(data, reset)
+	_proxy:setRom(self._desc.idx, data, reset)
+end
+
 function System:desc()
 	return self._desc
 end

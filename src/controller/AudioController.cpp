@@ -59,12 +59,24 @@ void AudioController::setNode(Node* node) {
 		_processingContext.fetchState(req, state);
 	});
 
-	node->on<calls::SetSram>([&](const SetSramRequest& req, DataBufferPtr& ret) {
+	node->on<calls::SetSram>([&](const SetDataRequest& req, DataBufferPtr& ret) {
 		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
 		if (inst) {
 			inst->loadBattery(req.buffer->data(), req.buffer->size(), req.reset);
 		}
 	
+		ret = req.buffer;
+	});
+
+	node->on<calls::SetRom>([&](const SetDataRequest& req, DataBufferPtr& ret) {
+		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
+		if (inst) {
+			inst->setRomData(req.buffer.get());
+			if (req.reset) {
+				inst->reset(inst->getSettings().model, true);
+			}
+		}
+
 		ret = req.buffer;
 	});
 

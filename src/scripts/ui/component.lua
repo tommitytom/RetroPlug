@@ -44,9 +44,11 @@ function component(desc)
 	end
 
 	c.new = function(system)
-		local obj = { __actions = {} }
+		local obj = { __actions = {}, __enabled = true }
 		setmetatable(obj, c)
 		function obj:system() return system end
+		function obj:enabled() return obj.__enabled end
+		function obj:setEnabled(enabled) obj.__enabled = enabled end
 		if c.init then c.init(obj)	end
 		return obj
 	end

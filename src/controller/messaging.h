@@ -71,7 +71,7 @@ struct FetchSramRequest {
 	DataBufferPtr buffer;
 };
 
-struct SetSramRequest {
+struct SetDataRequest {
 	InstanceIndex idx;
 	DataBufferPtr buffer;
 	bool reset;
@@ -91,7 +91,8 @@ namespace calls {
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapInstance, InstanceSwapDesc, SameBoyPlugPtr);
-	DefineRequest(SetSram, SetSramRequest, DataBufferPtr);
+	DefineRequest(SetSram, SetDataRequest, DataBufferPtr);
+	DefineRequest(SetRom, SetDataRequest, DataBufferPtr);
 	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);
 	DefineRequest(TakeInstance, InstanceIndex, SameBoyPlugPtr);
 	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);

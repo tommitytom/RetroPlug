@@ -22,7 +22,7 @@ local function createComponents(system)
 	local components = {}
 	for _, componentType in ipairs(_factory.instance) do
 		local d = componentType.__desc
-		if d.romName == nil or desc.romName:find(d.romName) ~= nil then
+		if d.romName ~= nil and desc.romName:find(d.romName) ~= nil then
 			print("Attaching component " .. d.name)
 			local valid, ret = pcall(componentType.new, system)
 			if valid then
