@@ -3,6 +3,15 @@ local _globalComponents = {}
 
 local _allComponents = {}
 
+local function getComponentNamesMap()
+	local names = {}
+	for _, componentType in ipairs(_factory.instance) do
+		names[componentType.__desc.name] = true
+	end
+
+	return names
+end
+
 local function loadComponent(name)
 	local component = require(name)
 	if component ~= nil then
@@ -14,6 +23,21 @@ local function loadComponent(name)
 		end
 	else
 		print("Failed to load " .. name .. ": Script does not return a component")
+	end
+end
+
+local function createComponent(system, name)
+	for _, componentType in ipairs(_factory.instance) do
+		local d = componentType.__desc
+		if d.name == name then
+			local valid, ret = pcall(componentType.new, system)
+			if valid then
+				table.insert(_allComponents, ret)
+				return ret
+			else
+				print("Failed to load component: " .. ret)
+			end
+		end
 	end
 end
 
@@ -69,7 +93,9 @@ local function createGlobalComponents()
 end
 
 return {
-    loadComponent = loadComponent,
+	getComponentNamesMap = getComponentNamesMap,
+	loadComponent = loadComponent,
+	createComponent = createComponent,
     createComponents = createComponents,
     runComponentHandlers = runComponentHandlers,
     runGlobalHandlers = runGlobalHandlers,

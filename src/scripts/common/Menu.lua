@@ -6,6 +6,7 @@ function Menu:init(name, parent)
     self._parent = parent
     self.items = {}
     self.type = MenuItemType.SubMenu
+    self.active = true
 end
 
 function Menu:multiSelect(items, selected, handler, active)
@@ -52,7 +53,7 @@ function Menu:title(name)
     return self
 end
 
-function Menu:subMenu(name)
+function Menu:subMenu(name, active)
     for _,v in ipairs(self.items) do
         if v.type == MenuItemType.SubMenu and v.name == name then
             return v
@@ -60,6 +61,7 @@ function Menu:subMenu(name)
     end
 
     local subMenu = Menu(name, self)
+    subMenu.active = active or true
     table.insert(self.items, subMenu)
     return subMenu
 end

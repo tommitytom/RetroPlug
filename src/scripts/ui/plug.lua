@@ -465,19 +465,33 @@ function _onMenu(menus)
 	local componentsMenu = menu:subMenu("System"):subMenu("UI Components")
 
 	if Active ~= nil then
-		componentsMenu
-			:subMenu("Add")
-				:action("ROM File Watcher")
-				:parent()
-			:separator()
+		local names = cm:getComponentNamesMap()
+		local addMenu = componentsMenu:subMenu("Add")
+		componentsMenu:separator()
 
 		for _, comp in ipairs(Active.components) do
 			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
+			names[comp.__desc.name] = nil
 
 			if comp:enabled() == true and comp.onMenu ~= nil then
 				comp:onMenu(menu)
 			end
 		end
+
+		local hasNames = false
+		for k, _ in pairs(names) do
+			hasNames = true
+			addMenu:action(k, function()
+				local component = cm:createComponent(k)
+				if component ~= nil then
+					table.insert(Active.components, component)
+					cm.runAllHandlers("onComponentsInitialized", { component }, Active.components)
+					cm.runAllHandlers("onRomLoad", { component }, Active.system)
+				end
+			end)
+		end
+
+		addMenu.active = hasNames
 	end
 
 	local menuLookup = {}
