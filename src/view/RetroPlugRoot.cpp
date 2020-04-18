@@ -17,11 +17,9 @@ const size_t DEFAULT_SRAM_SIZE = 0x20000;
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioController* audioController)
 	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
 	proxy->videoCallback = [&](const VideoStream& video) {
-		if (_views.size() == MAX_INSTANCES) {
-			for (InstanceIndex i = 0; i < MAX_INSTANCES; ++i) {
-				if (_proxy->getInstance(i)->state == EmulatorInstanceState::Running) {
-					_views[i]->WriteFrame(video.buffers[i]);
-				}
+		for (size_t i = 0; i < _proxy->getInstanceCount(); ++i) {
+			if (_proxy->getInstance((InstanceIndex)i)->state == EmulatorInstanceState::Running) {
+				_views[i]->WriteFrame(video.buffers[i]);
 			}
 		}
 	};
@@ -40,7 +38,7 @@ bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 }
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+	EmulatorInstanceDescPtr active = _proxy->getActiveInstance();
 	if (!active || active->emulatorType == EmulatorType::Placeholder) {
 		OpenLoadProjectOrRomDialog();
 	} else {
@@ -65,7 +63,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		Menu root;
 
 		Project* project = _proxy->getProject();
-		EmulatorInstanceDesc* active = _proxy->getActiveInstance();
+		EmulatorInstanceDescPtr active = _proxy->getActiveInstance();
 		if (active) {
 			switch (active->state) {
 			case EmulatorInstanceState::Running: {

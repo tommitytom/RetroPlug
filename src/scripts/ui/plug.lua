@@ -32,30 +32,24 @@ local _activeIdx = 0
 local _instances = {}
 local _keyState = {}
 
-local _globalComponents = {}
+local ProjectSettingsFields = {
+	audioRouting = AudioChannelRouting,
+	midiRouting = MidiChannelRouting,
+	layout = InstanceLayout,
+	saveType = SaveStateType,
+	"zoom"
+}
 
---[[local function componentInputRoute(target, ...)
-	local handled = false
-	for _, v in ipairs(_globalComponents) do
-		local found = v[target]
-		if found ~= nil then
-			found(v, ...)
-			handled = true
-		end
-	end
+local InstanceSettingsFields = {
+	emulatorType = EmulatorType,
+	"romPath",
+	"savPath"
+}
 
-	if Active ~= nil then
-		for _, v in ipairs(Active.components) do
-			local found = v[target]
-			if found ~= nil then
-				found(v, ...)
-				handled = true
-			end
-		end
-	end
-
-	return handled
-end]]
+local SameBoySettingsFields = {
+	model = GameboyModel,
+	"gameLink"
+}
 
 function _loadComponent(name)
 	cm.loadComponent(name)
@@ -65,17 +59,10 @@ local pathutil = require("pathutil")
 local fs = require("fs")
 
 function _init()
-	print("LOADING SAV")
-	local d = fs.load("C:/retro/savs/japan2019.sav")
-	local sav = lsdj.loadSav(d)
-	sav:loadSong(2)
-	sav:exportSong(2, "C:/retro/savs/test.lsdjsng")
-	local buf = sav:toBuffer()
-	sav:exportSongs("C:/retro/savs/songs/")
-
 	cm.createGlobalComponents()
 
-	for i = 1, MAX_INSTANCES, 1 do
+	local count = _proxy:getInstanceCount()
+	for i = 1, count, 1 do
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			local system = System(desc, _proxy:buttons(i - 1))
@@ -146,25 +133,6 @@ function _duplicateInstance(idx)
 		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 	end
 end
-
-local ProjectSettingsFields = {
-	audioRouting = AudioChannelRouting,
-	midiRouting = MidiChannelRouting,
-	layout = InstanceLayout,
-	saveType = SaveStateType,
-	"zoom"
-}
-
-local InstanceSettingsFields = {
-	emulatorType = EmulatorType,
-	"romPath",
-	"savPath"
-}
-
-local SameBoySettingsFields = {
-	model = GameboyModel,
-	"gameLink"
-}
 
 local function cloneFields(source, fields, target)
 	if target == nil then
@@ -240,6 +208,9 @@ function _saveProject(state, pretty)
 			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
 			inst.uiComponents = serializer.serializeInstance(instance)
 
+			print(desc.sameBoySettings.gameLink)
+			prinspect(inst.sameBoy)
+
 			local ok, audioComponents = serpent.load(state.components[i])
 			if ok == true and audioComponents ~= nil then
 				inst.audioComponents = audioComponents
@@ -267,21 +238,20 @@ function _saveProjectToFile(state, pretty)
 end
 
 local function loadProject_rp010(projectData)
-	local fm = _proxy:fileManager()
 	local proj = _proxy:getProject()
 	cloneStringFields(projectData, ProjectSettingsFields, proj.settings)
 
 	_proxy:updateSettings()
 
 	for _, inst in ipairs(projectData.instances) do
-		local desc = EmulatorInstanceDesc.new()
+		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
 		cloneStringFields(inst, InstanceSettingsFields, desc)
 		cloneStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
 		desc.savPath = inst.lastSramPath
 
-		local romFile = fm:loadFile(inst.romPath, false)
+		local romFile = fs.load(inst.romPath, false)
 		if romFile ~= nil then
 			desc.sourceRomData = romFile.data
 			local state = base64.decodeBuffer(inst.state.data)
@@ -298,19 +268,18 @@ local function loadProject_rp010(projectData)
 end
 
 local function loadProject_100(projectData)
-	local fm = _proxy:fileManager()
 	local proj = _proxy:getProject()
 	cloneStringFields(projectData.settings, ProjectSettingsFields, proj.settings)
 	_proxy:updateSettings()
 
-	for _, inst in ipairs(projectData.instances) do
-		local desc = EmulatorInstanceDesc.new()
+	for i, inst in ipairs(projectData.instances) do
+		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
 		cloneStringFields(inst, InstanceSettingsFields, desc)
 		cloneStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
 
-		local romFile = fm:loadFile(inst.romPath, false)
+		local romFile = fs.load(inst.romPath, false)
 		if romFile ~= nil then
 			desc.sourceRomData = romFile.data
 			local state = base64.decodeBuffer(inst.state)
@@ -358,28 +327,26 @@ function _loadProject(path)
 end
 
 function _loadRomAtPath(idx, romPath, savPath, model)
-	print(romPath)
-	local fm = _proxy:fileManager()
-	local romFile = fm:loadFile(romPath, false)
+	local romFile = fs.load(romPath, false)
 	if romFile == nil then
 		return
 	end
 
-	local d = EmulatorInstanceDesc.new()
+	local d = _proxy:createInstance()
 	d.idx = idx
 	d.emulatorType = EmulatorType.SameBoy
 	d.state = EmulatorInstanceState.Initialized
 	d.romPath = romPath
-	d.sourceRomData = romFile.data
+	d.sourceRomData = romFile
 	d.sameBoySettings.model = model
 
 	if savPath == nil or savPath == "" then
 		savPath = pathutil.changeExt(romPath, "sav")
-		if fm:exists(savPath) == true then
-			local savFile = fm:loadFile(savPath, false)
+		if fs.exists(savPath) == true then
+			local savFile = fs.load(savPath, false)
 			if savFile ~= nil then
 				d.savPath = savPath
-				d.sourceSavData = savFile.data
+				d.sourceSavData = savFile
 			end
 		end
 	end

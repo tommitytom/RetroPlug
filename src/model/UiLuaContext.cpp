@@ -229,6 +229,7 @@ void UiLuaContext::setup() {
 		"removeInstance", &RetroPlugProxy::removeInstance,
 		"duplicateInstance", &RetroPlugProxy::duplicateInstance,
 		"getInstance", &RetroPlugProxy::getInstance,
+		"getInstanceCount", &RetroPlugProxy::getInstanceCount,
 		"getInstances", &RetroPlugProxy::instances,
 		"setActiveInstance", &RetroPlugProxy::setActive,
 		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
@@ -237,7 +238,8 @@ void UiLuaContext::setup() {
 		"closeProject", &RetroPlugProxy::closeProject,
 		"getProject", &RetroPlugProxy::getProject,
 		"updateSettings", &RetroPlugProxy::updateSettings,
-		"setSram", &RetroPlugProxy::setSram
+		"setSram", &RetroPlugProxy::setSram,
+		"createInstance", &RetroPlugProxy::createInstance
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",

@@ -43,6 +43,8 @@ struct EmulatorInstanceDesc {
 	bool fastBoot = false;
 };
 
+using EmulatorInstanceDescPtr = std::shared_ptr<EmulatorInstanceDesc>;
+
 struct Project {
 	struct Settings {
 		AudioChannelRouting audioRouting = AudioChannelRouting::StereoMixDown;
@@ -53,5 +55,5 @@ struct Project {
 	} settings;
 
 	std::string path;
-	std::vector<EmulatorInstanceDesc> instances;
+	std::vector<EmulatorInstanceDescPtr> instances;
 };

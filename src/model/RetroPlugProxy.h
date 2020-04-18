@@ -40,12 +40,14 @@ public:
 
 	void initProject() {
 		_project = Project();
+		
+		EmulatorInstanceDescPtr root = std::make_shared<EmulatorInstanceDesc>();
+		//root->emulatorType = EmulatorType::Placeholder;
+		//_project.instances.push_back(root);
+
 		for (size_t i = 0; i < MAX_INSTANCES; i++) {
-			_project.instances.push_back(EmulatorInstanceDesc());
 			_buttonPresses[i].setIndex(i);
 		}
-
-		_project.instances[0].emulatorType = EmulatorType::Placeholder;
 	}
 
 	void setNode(Node* node) { 
@@ -82,8 +84,7 @@ public:
 
 		FetchStateRequest req;
 		req.type = _project.settings.saveType;
-		size_t count = getInstanceCount();
-		for (size_t i = 0; i < count; ++i) {
+		for (size_t i = 0; i < getInstanceCount(); ++i) {
 			req.buffers[i] = std::make_shared<DataBuffer<char>>(bufferSize);
 		}
 
@@ -93,31 +94,12 @@ public:
 	void update(double delta) {
 		_node->pull();
 
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		for (size_t i = 0; i < getInstanceCount(); ++i) {
 			if (_buttonPresses[i].getCount() > 0) {
 				_node->push<calls::PressButtons>(NodeTypes::Audio, _buttonPresses[i].data());
 				_buttonPresses[i].clear();
 			}
 		}
-	}
-
-	size_t getInstanceCount() const {
-		size_t count = 0;
-		for (size_t i = 0; i < _project.instances.size(); ++i) {
-			if (_project.instances[i].state != EmulatorInstanceState::Uninitialized) {
-				count++;
-			}
-		}
-
-		return count;
-	}
-
-	EmulatorInstanceDesc* getActiveInstance() {
-		if (_activeIdx != NO_ACTIVE_INSTANCE) {
-			return &_project.instances[_activeIdx];
-		}
-		
-		return nullptr;
 	}
 
 	void setActive(InstanceIndex idx) {
@@ -154,76 +136,87 @@ public:
 		_node->request<calls::SwapLuaContext>(NodeTypes::Audio, ctx, [](const AudioLuaContextPtr& d) {});
 	}
 
-	EmulatorInstanceDesc* duplicateInstance(size_t idx) {
-		size_t instanceCount = getInstanceCount();
-		assert(instanceCount < 4);
-		_project.instances[instanceCount] = _project.instances[idx];
+	EmulatorInstanceDescPtr duplicateInstance(size_t idx) {
+		assert(_project.instances.size() < MAX_INSTANCES);
 
-		EmulatorInstanceDesc& instance = _project.instances[instanceCount];
-		instance.idx = instanceCount;
-		instance.fastBoot = true;
+		EmulatorInstanceDescPtr instance = std::make_shared<EmulatorInstanceDesc>();
+		*instance = *_project.instances[idx];
+		_project.instances.push_back(instance);
+
+		instance->idx = getInstanceCount() - 1;
+		instance->fastBoot = true;
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
-		if (instance.patchedRomData) {
-			plug->loadRom(instance.patchedRomData->data(), instance.patchedRomData->size(), instance.sameBoySettings.model, instance.fastBoot);
+		if (instance->patchedRomData) {
+			plug->loadRom(instance->patchedRomData->data(), instance->patchedRomData->size(), instance->sameBoySettings.model, instance->fastBoot);
 		} else {
-			assert(instance.sourceRomData);
-			plug->loadRom(instance.sourceRomData->data(), instance.sourceRomData->size(), instance.sameBoySettings.model, instance.fastBoot);
+			assert(instance->sourceRomData);
+			plug->loadRom(instance->sourceRomData->data(), instance->sourceRomData->size(), instance->sameBoySettings.model, instance->fastBoot);
 		}
 
-		plug->setDesc({ instance.romName });
+		plug->setDesc({ instance->romName });
 
-		InstanceDuplicateDesc swap = { (InstanceIndex)idx, instance.idx, plug };
-		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
-			instance.state = EmulatorInstanceState::Running;
+		InstanceDuplicateDesc swap = { (InstanceIndex)idx, instance->idx, plug };
+		_node->request<calls::DuplicateInstance>(NodeTypes::Audio, swap, [instance](const SameBoyPlugPtr& d) {
+			instance->state = EmulatorInstanceState::Running;
 		});
 
-		return &instance;
+		return instance;
 	}
 
-	void setInstance(const EmulatorInstanceDesc& instance) {
-		assert(instance.idx < MAX_INSTANCES);
-		EmulatorInstanceDesc& t = _project.instances[instance.idx];
-		t = instance;
-		t.state = EmulatorInstanceState::Initialized;
+	EmulatorInstanceDescPtr createInstance() const {
+		return std::make_shared<EmulatorInstanceDesc>();
+	}
+
+	void setInstance(EmulatorInstanceDescPtr inst) {
+		assert(inst->idx < MAX_INSTANCES);
+		inst->state = EmulatorInstanceState::Initialized;
+
+		if (inst->idx < _project.instances.size()) {
+			_project.instances[inst->idx] = inst;
+		} else if (inst->idx == _project.instances.size()) {
+			_project.instances.push_back(inst);
+		} else {
+			assert(false);
+			return;
+		}
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
-		if (t.patchedRomData) {
-			plug->loadRom(t.patchedRomData->data(), t.patchedRomData->size(), t.sameBoySettings.model, t.fastBoot);
+		if (inst->patchedRomData) {
+			plug->loadRom(inst->patchedRomData->data(), inst->patchedRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
 		} else {
-			assert(t.sourceRomData);
-			plug->loadRom(t.sourceRomData->data(), t.sourceRomData->size(), t.sameBoySettings.model, t.fastBoot);
+			assert(inst->sourceRomData);
+			plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
 		}
 		
-		if (t.sourceStateData) {
-			plug->loadState(t.sourceStateData->data(), t.sourceStateData->size());
+		if (inst->sourceStateData) {
+			plug->loadState(inst->sourceStateData->data(), inst->sourceStateData->size());
 		}
 
-		if (t.patchedSavData) {
-			plug->loadBattery(t.patchedSavData->data(), t.patchedSavData->size(), false);
-		} else if (t.sourceSavData) {
-			plug->loadBattery(t.sourceSavData->data(), t.sourceSavData->size(), false);
+		if (inst->patchedSavData) {
+			plug->loadBattery(inst->patchedSavData->data(), inst->patchedSavData->size(), false);
+		} else if (inst->sourceSavData) {
+			plug->loadBattery(inst->sourceSavData->data(), inst->sourceSavData->size(), false);
 		}
 
-		plug->setDesc({ instance.romName });
+		plug->setDesc({ inst->romName });
 
-		InstanceSwapDesc swap = { t.idx, plug };
-		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [&](const SameBoyPlugPtr& d) {
-			t.state = EmulatorInstanceState::Running;
+		InstanceSwapDesc swap = { inst->idx, plug };
+		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [inst](const SameBoyPlugPtr& d) {
+			inst->state = EmulatorInstanceState::Running;
 		});
 	}
 
 	void removeInstance(InstanceIndex idx) {
 		assert(idx != NO_ACTIVE_INSTANCE);
 		_project.instances.erase(_project.instances.begin() + idx);
-		_project.instances.push_back(EmulatorInstanceDesc());
 		updateIndices();
 
 		_node->request<calls::TakeInstance>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr& d) {});
 	}
 
 	void closeProject() {
-		while (_project.instances[0].state != EmulatorInstanceState::Uninitialized) {
+		while (_project.instances[0]->state != EmulatorInstanceState::Uninitialized) {
 			removeInstance(0);
 		}
 
@@ -231,18 +224,30 @@ public:
 		_activeIdx = NO_ACTIVE_INSTANCE;
 	}
 
-	const EmulatorInstanceDesc* getInstance(InstanceIndex idx) const {
-		return &_project.instances[idx];
+	const EmulatorInstanceDescPtr getInstance(InstanceIndex idx) const {
+		return _project.instances[idx];
 	}
 
-	const std::vector<EmulatorInstanceDesc>& instances() const {
+	const std::vector<EmulatorInstanceDescPtr>& instances() const {
 		return _project.instances;
+	}
+
+	size_t getInstanceCount() const {
+		return _project.instances.size();
+	}
+
+	EmulatorInstanceDescPtr getActiveInstance() {
+		if (_activeIdx != NO_ACTIVE_INSTANCE) {
+			return _project.instances[_activeIdx];
+		}
+
+		return nullptr;
 	}
 
 private:
 	void updateIndices() {
-		for (size_t i = 0; i < MAX_INSTANCES; i++) {
-			_project.instances[i].idx = i;
+		for (size_t i = 0; i < _project.instances.size(); i++) {
+			_project.instances[i]->idx = i;
 		}
 	}
 };

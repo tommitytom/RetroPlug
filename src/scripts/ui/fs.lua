@@ -1,7 +1,8 @@
 local _fm = _proxy:fileManager()
 
-local function load(path)
-	local f = _fm:loadFile(path, true)
+local function load(path, force)
+	force = force or true
+	local f = _fm:loadFile(path, force)
 	if f ~= nil then
 		return f.data
 	end
