@@ -117,12 +117,12 @@ function Lsdj:createKitsMenu(menu, rom)
 	end
 end
 
-local function importSongFromFile(sav, songIdx, system)
+local function importSongFromFile(sav, songIdx, system, reload)
 	dialog.loadFile({ SONG_FILTER }, function(path)
 		local data = fs.load(path)
 		if data ~= nil then
 			sav:setSong(songIdx, data)
-			system:setSram(sav:toBuffer(), true)
+			system:setSram(sav:toBuffer(), reload)
 		end
 	end)
 end
@@ -168,13 +168,14 @@ function Lsdj:createSongsMenu(menu, sav)
 					sav:songToFile(song.idx, path)
 				end)
 			end)
-			:action("Replace...", function() importSongFromFile(sav, song.idx, system) end)
+			:action("Replace...", function() importSongFromFile(sav, song.idx, system, false) end)
 			:action("Delete", function()
 				sav:deleteSong(song.idx)
 				system:setSram(sav:toBuffer(), true)
 			end)
 		else
-			songMenu:action("Import .lsdsng...", function() importSongFromFile(sav, song.idx, system) end)
+			songMenu:action("Import...", function() importSongFromFile(sav, song.idx, system, false) end)
+			songMenu:action("Import and Load...", function() importSongFromFile(sav, song.idx, system, true) end)
 		end
 	end
 end

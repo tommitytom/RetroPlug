@@ -124,7 +124,7 @@ void setupCommon(sol::state& s) {
 	s.new_usertype<Menu>("Menu", "addItem", &Menu::addItem, sol::base_classes, sol::bases<MenuItemBase>());
 
 	s.create_named_table("_menuAlloc",
-		"menu", [](const std::string& name, Menu* parent) { return new Menu(name, true, parent); },
+		"menu", [](const std::string& name, bool active, Menu* parent) { return new Menu(name, active, parent); },
 		"title", [](const std::string& name) { return new Title(name); },
 		"select", [](const std::string& name, bool checked, bool active, int id) { return new Select(name, checked, nullptr, active, id); },
 		"action", [](const std::string& name, bool active, int id) { return new Action(name, nullptr, active, id); },

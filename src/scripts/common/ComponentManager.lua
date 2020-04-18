@@ -3,6 +3,10 @@ local _globalComponents = {}
 
 local _allComponents = {}
 
+local _systemComponents = {
+	["Button Handler"] = true
+}
+
 local function getComponentNamesMap()
 	local names = {}
 	for _, componentType in ipairs(_factory.instance) do
@@ -10,6 +14,10 @@ local function getComponentNamesMap()
 	end
 
 	return names
+end
+
+local function isSystemComponent(component)
+	return _systemComponents[component.__desc.name] or false
 end
 
 local function loadComponent(name)
@@ -46,7 +54,7 @@ local function createComponents(system)
 	local components = {}
 	for _, componentType in ipairs(_factory.instance) do
 		local d = componentType.__desc
-		if d.romName ~= nil and desc.romName:find(d.romName) ~= nil then
+		if _systemComponents[d.name] == true or (d.romName ~= nil and desc.romName:find(d.romName) ~= nil) then
 			print("Attaching component " .. d.name)
 			local valid, ret = pcall(componentType.new, system)
 			if valid then
@@ -94,6 +102,7 @@ end
 
 return {
 	getComponentNamesMap = getComponentNamesMap,
+	isSystemComponent = isSystemComponent,
 	loadComponent = loadComponent,
 	createComponent = createComponent,
     createComponents = createComponents,

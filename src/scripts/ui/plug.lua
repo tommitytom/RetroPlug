@@ -465,12 +465,14 @@ function _onMenu(menus)
 	local componentsMenu = menu:subMenu("System"):subMenu("UI Components")
 
 	if Active ~= nil then
-		local names = cm:getComponentNamesMap()
+		local names = cm.getComponentNamesMap()
 		local addMenu = componentsMenu:subMenu("Add")
 		componentsMenu:separator()
 
 		for _, comp in ipairs(Active.components) do
-			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
+			local compActive = cm.isSystemComponent(comp)
+			print(comp.__desc.name, compActive)
+			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end, compActive)
 			names[comp.__desc.name] = nil
 
 			if comp:enabled() == true and comp.onMenu ~= nil then
@@ -482,7 +484,7 @@ function _onMenu(menus)
 		for k, _ in pairs(names) do
 			hasNames = true
 			addMenu:action(k, function()
-				local component = cm:createComponent(k)
+				local component = cm.createComponent(k)
 				if component ~= nil then
 					table.insert(Active.components, component)
 					cm.runAllHandlers("onComponentsInitialized", { component }, Active.components)

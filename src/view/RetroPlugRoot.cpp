@@ -81,7 +81,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 							.multiSelect({ "Save SRAM", "Save State" }, &project->settings.saveType)
 							.parent()
 						.separator()
-						.subMenu("Add Instance", multiInstance)
+						.subMenu("Add Instance", multiInstance && project->instances.size() < MAX_INSTANCES)
 							.action("Load ROM...", [&]() { OpenLoadRomDialog(NO_ACTIVE_INSTANCE, GameboyModel::Auto); })
 							.action("Same ROM as Selected", [&]() { _lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath, active->sameBoySettings.model); })
 							.action("Duplicate Selected", [&]() { _lua->duplicateInstance(_activeIdx); })

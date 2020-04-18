@@ -1,5 +1,5 @@
 local function createNativeMenu(menu, parent, id, menuLookup)
-	local nativeMenu = _menuAlloc.menu(menu.name, parent)
+	local nativeMenu = _menuAlloc.menu(menu.name, menu.active, parent)
 
 	for _, v in ipairs(menu.items) do
 		if v.type == MenuItemType.Title then

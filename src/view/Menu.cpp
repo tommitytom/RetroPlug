@@ -68,9 +68,15 @@ void createMenu(iplug::igraphics::IPopupMenu* target, Menu* source, MenuCallback
 		switch (itemBase->getType()) {
 		case MenuItemType::SubMenu: {
 			Menu* item = (Menu*)itemBase;
-			IPopupMenu* subMenu = new IPopupMenu();
-			target->AddItem(item->getName().c_str(), subMenu);
-			createMenu(subMenu, item, callbacks);
+
+			if (item->isActive()) {
+				IPopupMenu* subMenu = new IPopupMenu();
+				target->AddItem(item->getName().c_str(), subMenu);
+				createMenu(subMenu, item, callbacks);
+			} else {
+				target->AddItem(item->getName().c_str(), -1, IPopupMenu::Item::kTitle);
+			}
+
 			break;
 		}
 		case MenuItemType::Action: {
