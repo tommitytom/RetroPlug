@@ -215,6 +215,11 @@ public:
 		_node->request<calls::TakeInstance>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr& d) {});
 	}
 
+	void resetInstance(InstanceIndex idx, GameboyModel model) {
+		ResetInstanceDesc desc = { idx, model };
+		_node->push<calls::ResetInstance>(NodeTypes::Audio, desc);
+	}
+
 	void closeProject() {
 		for (int i = _project.instances.size() - 1; i >= 0; i--) {
 			removeInstance(i);

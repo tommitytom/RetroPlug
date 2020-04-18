@@ -112,6 +112,11 @@ public:
 		return old;
 	}
 
+	void resetInstance(InstanceIndex idx, GameboyModel model) {
+		SameBoyPlugPtr inst = _instances[idx];
+		inst->reset(model, true);
+	}
+
 	SameBoyPlugPtr removeInstance(InstanceIndex idx) {
 		SameBoyPlugPtr old = _instances[idx];
 		_instances.erase(_instances.begin() + idx);

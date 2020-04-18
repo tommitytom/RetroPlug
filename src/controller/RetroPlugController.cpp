@@ -22,12 +22,13 @@ using AxisButtons::AxisButton;
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
 RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double sampleRate)
-	: _listener(&_uiLua, &_proxy), _audioController(timeInfo, sampleRate) 
+	: _listener(&_uiLua, &_proxy), _audioController(timeInfo, sampleRate)
 {
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapInstance>(4);
 	_bus.addCall<calls::TakeInstance>(4);
 	_bus.addCall<calls::DuplicateInstance>(1);
+	_bus.addCall<calls::ResetInstance>(4);
 	_bus.addCall<calls::TransmitVideo>(16);
 	_bus.addCall<calls::UpdateSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);
@@ -83,7 +84,7 @@ void RetroPlugController::update(float delta) {
 }
 
 void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host) {
-	
+
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
 	graphics->HandleMouseOver(true);

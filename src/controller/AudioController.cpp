@@ -32,6 +32,10 @@ void AudioController::setNode(Node* node) {
 		_lua->duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
 	});
 
+	node->on<calls::ResetInstance>([&](const ResetInstanceDesc& d) {
+		_processingContext.resetInstance(d.idx, d.model);
+	});
+
 	node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
 		_lua->removeInstance(idx);
 		other = _processingContext.removeInstance(idx);

@@ -481,6 +481,11 @@ function _onMenuResult(idx)
 end
 
 function _resetInstance(idx, model)
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		inst.system:desc().sameBoySettings.model = model
+		_proxy:resetInstance(idx, model)
+	end
 end
 
 local DEFAULT_SRAM_SIZE = 0x20000

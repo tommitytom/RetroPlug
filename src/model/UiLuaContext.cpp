@@ -227,6 +227,7 @@ void UiLuaContext::setup() {
 	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
 		"setInstance", &RetroPlugProxy::setInstance,
 		"removeInstance", &RetroPlugProxy::removeInstance,
+		"resetInstance", &RetroPlugProxy::resetInstance,
 		"duplicateInstance", &RetroPlugProxy::duplicateInstance,
 		"getInstance", &RetroPlugProxy::getInstance,
 		"getInstanceCount", &RetroPlugProxy::getInstanceCount,

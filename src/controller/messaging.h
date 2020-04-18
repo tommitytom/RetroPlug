@@ -61,6 +61,10 @@ struct FetchStateResponse {
 	std::array<std::string, MAX_INSTANCES> components;
 };
 
+struct ResetInstanceDesc {
+	InstanceIndex idx;
+	GameboyModel model;
+};
 
 struct FetchSramRequest {
 	InstanceIndex idx;
@@ -83,6 +87,7 @@ namespace calls {
 	DefinePush(PressButtons, ButtonStream<32>);
 	DefinePush(ContextMenuResult, int);
 	DefinePush(SetActive, InstanceIndex);
+	DefinePush(ResetInstance, ResetInstanceDesc);
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapInstance, InstanceSwapDesc, SameBoyPlugPtr);
