@@ -1,5 +1,3 @@
-local inspect = require"inspect"
-
 local function tableFind(tab, el)
     for index, value in pairs(tab) do
         if value == el then

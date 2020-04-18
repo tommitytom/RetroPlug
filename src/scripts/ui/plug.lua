@@ -118,7 +118,7 @@ function _duplicateInstance(idx)
 		local componentData = serializer.serializeInstanceToString(sourceInst)
 
 		local desc = _proxy:duplicateInstance(idx)
-		local system = System(desc, _proxy:buttons(#_instances))
+		local system = System(desc, _proxy:buttons(desc.idx))
 
 		local instance = {
 			system = system,
@@ -128,9 +128,10 @@ function _duplicateInstance(idx)
 		serializer.deserializeInstancesFromString(instance, componentData)
 
 		table.insert(_instances, instance)
-		_setActive(#_instances - 1)
+		_setActive(desc.idx)
 
 		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
+		cm.runAllHandlers("onRomLoad", instance.components, instance.system)
 	end
 end
 
@@ -208,9 +209,6 @@ function _saveProject(state, pretty)
 			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
 			inst.uiComponents = serializer.serializeInstance(instance)
 
-			print(desc.sameBoySettings.gameLink)
-			prinspect(inst.sameBoy)
-
 			local ok, audioComponents = serpent.load(state.components[i])
 			if ok == true and audioComponents ~= nil then
 				inst.audioComponents = audioComponents
@@ -281,7 +279,7 @@ local function loadProject_100(projectData)
 
 		local romFile = fs.load(inst.romPath, false)
 		if romFile ~= nil then
-			desc.sourceRomData = romFile.data
+			desc.sourceRomData = romFile
 			local state = base64.decodeBuffer(inst.state)
 
 			if proj.settings.saveType == SaveStateType.Sram then
@@ -459,15 +457,11 @@ function _onMenu(menus)
 	if Active ~= nil then
 		for _, comp in ipairs(Active.components) do
 			componentsMenu:select(comp.__desc.name, true, function() end)
-		end
-	end
 
-    for _, inst in ipairs(_instances) do
-        for _, comp in ipairs(inst.components) do
 			if comp.onMenu ~= nil then
 				comp:onMenu(menu)
 			end
-        end
+		end
 	end
 
 	local menuLookup = {}

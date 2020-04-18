@@ -24,6 +24,8 @@ private:
 	double _defaultDelay = 50.0;
 
 public:
+	InstanceIndex getStreamId() const { return _stream.idx; }
+
 	ButtonStreamWriter& press(int button) {
 		hold(button);
 		release(button);

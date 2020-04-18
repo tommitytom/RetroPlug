@@ -216,8 +216,8 @@ public:
 	}
 
 	void closeProject() {
-		while (_project.instances[0]->state != EmulatorInstanceState::Uninitialized) {
-			removeInstance(0);
+		for (int i = _project.instances.size() - 1; i >= 0; i--) {
+			removeInstance(i);
 		}
 
 		initProject();
