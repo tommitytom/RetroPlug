@@ -1,5 +1,4 @@
 local util = require("util")
-local inspect = require("inspect")
 
 local _maps = {
 	key = {},
@@ -65,12 +64,12 @@ function ButtonHandler:init()
 	self._buttonHooks = {}
 end
 
-function ButtonHandler:onRomLoad(system)
-	self:_updateMaps(system:desc())
+function ButtonHandler:onRomLoad()
+	self:_updateMaps(self:system():desc())
 end
 
-function ButtonHandler:onReload(system)
-	self:_updateMaps(system:desc())
+function ButtonHandler:onReload()
+	self:_updateMaps(self:system():desc())
 end
 
 function ButtonHandler:_updateMaps(desc)

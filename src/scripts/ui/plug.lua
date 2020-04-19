@@ -56,6 +56,7 @@ end
 
 local pathutil = require("pathutil")
 local fs = require("fs")
+local EmulatorInstance = require("EmulatorInstance")
 
 function _init()
 	cm.createGlobalComponents()
@@ -65,11 +66,7 @@ function _init()
 		local desc = _proxy:getInstance(i - 1)
 		if desc.state ~= EmulatorInstanceState.Uninitialized then
 			local system = System(desc, _proxy:buttons(i - 1))
-			local instance = {
-				system = system,
-				components = cm.createComponents(system)
-			}
-
+			local instance = EmulatorInstance(system, cm.createComponents(system))
 			table.insert(_instances, instance)
 
 			if i == _proxy:activeInstanceIdx() + 1 then
@@ -80,8 +77,8 @@ function _init()
 	end
 
 	for _, instance in ipairs(_instances) do
-		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
-		cm.runAllHandlers("onReload", instance.components, instance.system)
+		instance:triggerEvent("onComponentsInitialized", instance.components)
+		instance:triggerEvent("onReload")
 	end
 end
 
