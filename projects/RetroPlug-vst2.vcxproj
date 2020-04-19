@@ -153,7 +153,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
@@ -170,7 +170,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
@@ -194,7 +194,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
@@ -216,7 +216,7 @@
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
@@ -240,7 +240,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
@@ -261,7 +261,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(VST2_DEFS);SAMPLE_TYPE_FLOAT;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)src;$(SolutionDir)thirdparty;$(SolutionDir)config;$(VST2_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
