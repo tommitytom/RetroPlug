@@ -19,4 +19,8 @@ function System:buttons()
 	return self._buttons
 end
 
+function System:sendSerialByte(offset, byte)
+	self._model:sendSerialByte(offset, byte)
+end
+
 return System
