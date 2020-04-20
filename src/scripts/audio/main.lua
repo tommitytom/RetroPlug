@@ -21,25 +21,25 @@ function PadMap() end
 function GlobalPadMap() end
 
 function _loadComponent(name)
-    cm.loadComponent(name)
+	cm.loadComponent(name)
 end
 
 local function createInstance(system)
-    return {
-        system = system,
-        components = cm.createComponents(system)
-    }
+	return {
+		system = system,
+		components = cm.createComponents(system)
+	}
 end
 
 function _init()
-    cm.createGlobalComponents()
+	cm.createGlobalComponents()
 
-    for i = 1, MAX_INSTANCES, 1 do
-        local instModel = _model:getInstance(i - 1)
-        if instModel ~= nil then
-            local system = System(instModel, _model:getButtonPresses(i - 1))
-            table.insert(_instances, createInstance(system))
-        end
+	for i = 1, MAX_INSTANCES, 1 do
+		local instModel = _model:getInstance(i - 1)
+		if instModel ~= nil then
+			local system = System(instModel, _model:getButtonPresses(i - 1))
+			table.insert(_instances, createInstance(system))
+		end
 	end
 
 	for _, instance in ipairs(_instances) do
@@ -49,73 +49,93 @@ function _init()
 end
 
 function _addInstance(idx, model)
-    local system = System(model, _model:getButtonPresses(idx))
-    _instances[idx + 1] = createInstance(system)
+	local system = System(model, _model:getButtonPresses(idx))
+	_instances[idx + 1] = createInstance(system)
 end
 
 function _duplicateInstance(sourceIdx, targetIdx, model)
-    local system = System(model, _model:getButtonPresses(targetIdx))
-    _instances[targetIdx + 1] = createInstance(system)
-    local instData = serializer.serializeInstanceToString(_instances[sourceIdx + 1])
-    serializer.deserializeInstanceFromString(_instances[targetIdx + 1], instData)
+	local system = System(model, _model:getButtonPresses(targetIdx))
+	_instances[targetIdx + 1] = createInstance(system)
+	local instData = serializer.serializeInstanceToString(_instances[sourceIdx + 1])
+	serializer.deserializeInstanceFromString(_instances[targetIdx + 1], instData)
 end
 
 function _removeInstance(idx)
-    table.remove(_instances, idx + 1)
+	table.remove(_instances, idx + 1)
 end
 
 function _closeProject()
-    _instances = {}
+	_instances = {}
 end
 
 local _transportRunning = false
 
 function _update(frameCount)
-    if _timeInfo == nil then
-        print("time info not set")
-        return
-    end
+	if _timeInfo == nil then
+		print("time info not set")
+		return
+	end
 
-    if _timeInfo.transportIsRunning ~= _transportRunning then
-        _transportRunning = _timeInfo.transportIsRunning
-        cm.runComponentHandlers("onTransportChanged", cm.allComponents, _transportRunning)
-    end
+	if _timeInfo.transportIsRunning ~= _transportRunning then
+		_transportRunning = _timeInfo.transportIsRunning
+		cm.runComponentHandlers("onTransportChanged", cm.allComponents, _transportRunning)
+	end
 
-    if _transportRunning == true then
-        local ppqTrigger, offset = ppq.generatePpq24(frameCount, _sampleRate, _timeInfo)
-        if ppqTrigger == true then
-            cm.runComponentHandlers("onPpq", cm.allComponents, offset)
-        end
-    end
+	if _transportRunning == true then
+		local ppqTrigger, offset = ppq.generatePpq24(frameCount, _sampleRate, _timeInfo)
+		if ppqTrigger == true then
+			cm.runComponentHandlers("onPpq", cm.allComponents, offset)
+		end
+	end
 end
 
 local function processMidiMessage(inst, msg)
-    cm.runComponentHandlers("onMidi", inst.components, msg)
+	cm.runComponentHandlers("onMidi", inst.components, msg)
+end
+
+local midiMsgProperties = {
+	note = function(c) return c.data1 end,
+	status = function(c) return c.statusByte >> 4 end
+}
+
+local midiMessageMeta = {
+	__index = function(c, k)
+		local f = midiMsgProperties[k]
+		if f ~= nil then return f(c) end
+		return rawget(c, k)
+	end
+}
+
+local function MidiMessage(offset, channel, status, data1, data2)
+	local msg = { offset = offset, channel = channel, status = status, data1 = data1, data2 = data2 }
+	setmetatable(msg, midiMessageMeta)
+	return msg
 end
 
 function _onMidi(offset, status, data1, data2)
-    local channel = status & 0x0F
+	local channel = status & 0x0F
+	status = status >> 4
 
-    local r = _model:getSettings().midiRouting
-    if r == MidiChannelRouting.SendToAll then
-        local msg = { offset = offset, status = status, data1 = data1, data2 = data2 }
-        for _, v in ipairs(_instances) do
-            processMidiMessage(v, msg)
-        end
-    elseif r == MidiChannelRouting.OneChannelPerInstance then
-        local target = _instances[channel]
-        if target ~= nil then
-            local msg = { offset = offset, status = status, data1 = data1, data2 = data2 }
-            processMidiMessage(target, msg)
-        end
-    elseif r == MidiChannelRouting.FourChannelsPerInstance then
-        local targetIdx = math.floor(channel / 4)
-        local target = _instances[targetIdx + 1]
-        if target ~= nil then
-            local msg = { offset = offset, status = (channel | (status << 4)), data1 = data1, data2 = data2 }
-            processMidiMessage(target, msg)
-        end
-    end
+	local r = _model:getSettings().midiRouting
+	if r == MidiChannelRouting.SendToAll then
+		local msg = MidiMessage(offset, channel, status, data1, data2)
+		for _, v in ipairs(_instances) do
+			processMidiMessage(v, msg)
+		end
+	elseif r == MidiChannelRouting.OneChannelPerInstance then
+		local target = _instances[channel]
+		if target ~= nil then
+			local msg = MidiMessage(offset, channel, status, data1, data2)
+			processMidiMessage(target, msg)
+		end
+	elseif r == MidiChannelRouting.FourChannelsPerInstance then
+		local targetIdx = math.floor(channel / 4)
+		local target = _instances[targetIdx + 1]
+		if target ~= nil then
+			local msg = MidiMessage(offset, channel, status, data1, data2)
+			processMidiMessage(target, msg)
+		end
+	end
 end
 
 local _menuLookup = nil
@@ -124,20 +144,20 @@ function _onMenu(idx, menus)
 	local menu = LuaMenu()
 	local componentsMenu = menu:subMenu("System"):subMenu("Audio Components")
 
-    local inst = _instances[idx + 1]
-    if inst ~= nil then
-        componentsMenu
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		componentsMenu
 			:subMenu("Add")
 				:action("MIDI Passthrough")
 				:parent()
 			:separator()
 
-        for _, comp in ipairs(inst.components) do
-            componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
+		for _, comp in ipairs(inst.components) do
+			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
 
 			if comp:enabled() == true and comp.onMenu ~= nil then
 				comp:onMenu(menu)
-            end
+			end
 		end
 	end
 
@@ -164,7 +184,7 @@ function _setActive(idx)
 	if inst ~= nil then
 		_activeIdx = idx + 1
 		Active = inst
-    end
+	end
 end
 
 function _serializeInstances() return serializer.serializeInstancesToString(_instances) end

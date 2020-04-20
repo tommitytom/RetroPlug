@@ -1,4 +1,3 @@
-local inspect = require('inspect')
 local util = require("util")
 
 local LsdjSyncModes = {
@@ -48,7 +47,7 @@ end
 
 function LsdjArduinoboy:onTransportChanged(running)
 	if self.autoPlay == true then
-		self:buttons():press(Button.Start)
+		self.system():buttons():press(Button.Start)
 	end
 end
 
@@ -64,10 +63,21 @@ function LsdjArduinoboy:onPpq(offset)
 	end
 end
 
+local MidiStatus = {
+	None = 0,
+	NoteOff = 8,
+	NoteOn = 9,
+	PolyAftertouch = 10,
+	ControlChange = 11,
+	ProgramChange = 12,
+	ChannelAftertouch = 13,
+	PitchWheel = 14
+}
+
 function LsdjArduinoboy:onMidi(msg)
-	print(inspect(msg))
+	local status = msg.status
 	if self.syncMode == LsdjSyncModes.MidiSyncArduinoboy then
-		if msg.status == "noteOn" then
+		if status == MidiStatus.NoteOn then
 			if 	   msg.note == 24 then self._playing = true
 			elseif msg.note == 25 then self._playing = false
 			elseif msg.note == 26 then self._tempoDivisor = 1
@@ -79,13 +89,14 @@ function LsdjArduinoboy:onMidi(msg)
 			end
 		end
 	elseif self.syncMode == LsdjSyncModes.MidiMap then
-		if msg.status == "noteOn" then
+		-- Notes trigger row numbers
+		if status == MidiStatus.NoteOn then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx ~= -1 then
 				self:system():sendSerialByte(msg.offset, rowIdx)
 				self._lastRow = rowIdx
 			end
-		elseif msg.status == "noteOff" then
+		elseif status == MidiStatus.Noteff then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx == self._lastRow then
 				self:system():sendSerialByte(msg.offset, 0xFE)

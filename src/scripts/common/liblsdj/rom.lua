@@ -73,23 +73,36 @@ function Rom:exportKit(idx, filePath)
 	end
 end
 
+function Rom:eraseKit(idx)
+	self:_parseKits()
+	if idx > 0 and idx <= #self.kits then
+		self.kits[idx] = Kit()
+	end
+end
+
+function Rom:copyFrom(other)
+	local kits = self:getKits()
+	local newKits = other:getKits()
+	for i, kit in ipairs(kits) do newKits[i]:copyFrom(kit) end
+end
+
 function Rom:toBuffer()
 	local romData = DataBuffer.new(self.romData:size())
-	self.romData:clone(romData)
+	self.romData:copyTo(romData)
 
 	local kitIdx = 1
 	for i = 0, BANK_COUNT - 1, 1 do
 		local offset = i * BANK_SIZE
-		local bank = self.romData:slice(offset, BANK_SIZE)
+		local bank = romData:slice(offset, BANK_SIZE)
 
 		if bankIsKit(bank) == true or bankIsEmptyKit(bank) == true then
 			local kit = self.kits[kitIdx]
 			if kit.data ~= nil then
-				bank:write(kit.data)
+				bank:copyFrom(kit.data)
 			else
 				bank:clear()
-				bank:set(0, -1)
-				bank:set(1, -1)
+				bank:set(0, string.char(0xFF))
+				bank:set(1, string.char(0xFF))
 			end
 
 			kitIdx = kitIdx + 1
@@ -116,6 +129,18 @@ function Rom:nextEmptyKitIdx(startIdx)
 	return 0
 end
 
+function Rom:getKitChecksumLookup()
+	self:_parseKits()
+	local checksums = {}
+	for _, v in ipairs(self.kits) do
+		if v.data ~= nil then
+			checksums[v.data:hash(0)] = true
+		end
+	end
+
+	return checksums
+end
+
 function Rom:_parseKits(force)
 	if self.kits == nil or force == true then
 		self.kits = {}
@@ -127,7 +152,6 @@ function Rom:_parseKits(force)
 			if bankIsKit(bank) == true then
 				local kit = Kit(bank)
 				table.insert(self.kits, kit)
-				self._kitChecksums[kit.checksum] = true
 			elseif bankIsEmptyKit(bank) == true then
 				table.insert(self.kits, Kit())
 			end
@@ -138,12 +162,7 @@ end
 function Rom:_importKitFromBuffer(kitData, targetIdx)
 	targetIdx = targetIdx or self:nextEmptyKitIdx()
 	if targetIdx > 0 then
-		local kit = Kit(kitData)
-		if self._kitChecksums[kit.checksum] ~= true then
-			self.kits[targetIdx] = kit
-			self._kitChecksums[kit.checksum] = true
-		end
-
+		self.kits[targetIdx] = Kit(kitData)
 		return true
 	else
 		print("Failed to import kit: All kit slots are in use")
@@ -154,19 +173,23 @@ end
 
 function Rom:_importKitsFromRom(romData)
 	local other = Rom(romData)
-	other:_parseKits()
+
+	local checksums = self:getKitChecksumLookup()
 
 	local targetIdx = self:nextEmptyKitIdx()
-	if targetIdx > 0 then
-		for sourceIdx, kit in ipairs(other.kits) do
-			if targetIdx > 0 then
-				if kit.data ~= nil then
+	for sourceIdx, kit in ipairs(other.kits) do
+		if targetIdx > 0 then
+			if kit.data ~= nil then
+				if checksums[kit.data:hash(0)] ~= true then
 					self:_importKitFromBuffer(kit.data)
 				end
-			else
-				local amount = #other.kits - sourceIdx
-				print("Failed to import " .. amount .. " of " .. #other.kits .. " kits.  All kit slots are in use")
 			end
+
+			targetIdx = self:nextEmptyKitIdx()
+		else
+			local amount = #other.kits - sourceIdx
+			print("Failed to import " .. amount .. " of " .. #other.kits .. " kits.  All kit slots are in use")
+			break
 		end
 	end
 end

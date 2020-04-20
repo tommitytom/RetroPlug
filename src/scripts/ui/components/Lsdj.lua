@@ -61,6 +61,17 @@ function Lsdj:updateRom()
 	overclockPatch(d, self._overclock)
 end
 
+local function upgradeRom(path, system, rom)
+	local romData = fs.load(path)
+	if romData ~= nil then
+		local newRom = lsdj.loadRom(romData)
+		if newRom ~= nil then
+			newRom:copyFrom(rom)
+			system:setRom(newRom:toBuffer(), true)
+		end
+	end
+end
+
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
 	local system = self:system()
@@ -80,6 +91,9 @@ function Lsdj:onMenu(menu)
 			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
 			:parent()
 		:action("Export ROM...", function() end)
+		:action("Upgrade To...", function()
+			dialog.loadFile({ ROM_FILTER }, function(paths) upgradeRom(paths[1], system, rom) end)
+		end)
 end
 
 function Lsdj:createKitsMenu(menu, rom)
@@ -108,11 +122,28 @@ function Lsdj:createKitsMenu(menu, rom)
 		local kitMenu = menu:subMenu(kitName)
 
 		if kit.data ~= nil then
-			kitMenu:action("Replace...", function() end)
-				:action("Export...", function() end)
-				:action("Delete", function() end)
+			kitMenu:action("Replace...", function()
+				dialog.loadFile({ KIT_FILTER }, function(paths)
+					kit:init(paths[1])
+					system:setRom(rom:toBuffer())
+				end)
+			end)
+			:action("Export...", function()
+				dialog.saveFile({ KIT_FILTER }, function(path)
+					kit:toFile(path)
+				end)
+			end)
+			:action("Delete", function()
+				rom:eraseKit(i)
+				system:setRom(rom:toBuffer())
+			end)
 		else
-			kitMenu:action("Load (and reset)...", function() end)
+			kitMenu:action("Load (and reset)...", function()
+				dialog.loadFile({ KIT_FILTER }, function(paths)
+					kit:init(paths[1])
+					system:setRom(rom:toBuffer(), true)
+				end)
+			end)
 		end
 	end
 end

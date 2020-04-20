@@ -12,6 +12,7 @@ end
 
 function System:setRom(data, reset)
 	_proxy:setRom(self._desc.idx, data, reset)
+	self._desc.sourceRomData = data
 end
 
 function System:desc()

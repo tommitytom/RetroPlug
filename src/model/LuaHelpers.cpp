@@ -133,6 +133,7 @@ void setupCommon(sol::state& s) {
 	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
+		sol::constructors<DataBuffer<char>(), DataBuffer<char>(size_t)>(),
 		"get", &DataBuffer<char>::get,
 		"set", &DataBuffer<char>::set,
 		"slice", &DataBuffer<char>::slice,
@@ -141,7 +142,9 @@ void setupCommon(sol::state& s) {
 		"size", &DataBuffer<char>::size,
 		"clear", &DataBuffer<char>::clear,
 		"resize", &DataBuffer<char>::resize,
-		"reserve", &DataBuffer<char>::reserve
+		"reserve", &DataBuffer<char>::reserve,
+		"copyTo", &DataBuffer<char>::copyTo,
+		"copyFrom", &DataBuffer<char>::copyFrom
 	);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);

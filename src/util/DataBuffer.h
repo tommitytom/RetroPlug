@@ -84,7 +84,14 @@ public:
 		}
 	}
 
-	void clone(DataBuffer* target) {
+	size_t copyFrom(DataBuffer* other) {
+		size_t writeAmount = std::min(_reserved, other->size());
+		memcpy(_dataPtr, other->_dataPtr, writeAmount * sizeof(T));
+		_size = std::max(_size, writeAmount);
+		return writeAmount;
+	}
+
+	void copyTo(DataBuffer* target) const {
 		target->resize(_reserved);
 		target->write(_dataPtr, _reserved);
 	}

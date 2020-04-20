@@ -26,7 +26,7 @@ local function class(base)
 		local obj = {}
 		setmetatable(obj, c)
 		if c.init then
-			c.init(obj,...)
+			c.init(obj, ...)
 		end
 
 		return obj
@@ -35,10 +35,10 @@ local function class(base)
 	c.isA = function(self, klass)
 		local m = getmetatable(self)
 		return m == klass
-	 end
+	end
 
-	 setmetatable(c, mt)
-	 return c
+	setmetatable(c, mt)
+	return c
 end
 
 return class
