@@ -225,6 +225,7 @@ void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.start();
 
 	UpdateActive();
+	setZoom(_proxy->getProject()->settings.zoom - 1);
 
 	onFrame(delta);
 	//_lua->update(delta);
