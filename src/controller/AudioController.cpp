@@ -22,9 +22,11 @@ void AudioController::setNode(Node* node) {
 		_lua = ctx;
 	});
 
-	node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, SameBoyPlugPtr& other) {
-		_lua->addInstance(d.idx, d.instance);
-		other = _processingContext.swapInstance(d.idx, d.instance);
+	node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, InstanceSwapDesc& other) {
+		_lua->addInstance(d.idx, d.instance, *d.componentState);
+		
+		other.instance = _processingContext.swapInstance(d.idx, d.instance);
+		other.componentState = d.componentState;
 	});
 
 	node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {

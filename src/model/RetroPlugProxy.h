@@ -178,7 +178,7 @@ public:
 		return std::make_shared<EmulatorInstanceDesc>();
 	}
 
-	void setInstance(EmulatorInstanceDescPtr inst) {
+	void setInstance(EmulatorInstanceDescPtr inst, const std::string& componentState) {
 		assert(inst->idx < MAX_INSTANCES);
 		inst->state = EmulatorInstanceState::Initialized;
 
@@ -211,8 +211,8 @@ public:
 
 		plug->setDesc({ inst->romName });
 
-		InstanceSwapDesc swap = { inst->idx, plug };
-		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [inst](const SameBoyPlugPtr& d) {
+		InstanceSwapDesc swap = { inst->idx, plug, std::make_shared<std::string>(componentState) };
+		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [inst](const InstanceSwapDesc& d) {
 			inst->state = EmulatorInstanceState::Running;
 		});
 	}

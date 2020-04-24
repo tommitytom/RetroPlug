@@ -11,6 +11,7 @@ local LuaMenu = require("Menu")
 local System = require("System")
 local createNativeMenu = require("MenuHelper")
 local ppq = require("ppq")
+local midi = require("midi")
 
 local MAX_INSTANCES = 4
 local _instances = {}
@@ -48,9 +49,11 @@ function _init()
 	end
 end
 
-function _addInstance(idx, model)
+function _addInstance(idx, model, componentState)
 	local system = System(model, _model:getButtonPresses(idx))
-	_instances[idx + 1] = createInstance(system)
+	local instance = createInstance(system)
+	serializer.deserializeInstanceFromString(instance, componentState)
+	_instances[idx + 1] = instance
 end
 
 function _duplicateInstance(sourceIdx, targetIdx, model)
@@ -93,46 +96,27 @@ local function processMidiMessage(inst, msg)
 	cm.runComponentHandlers("onMidi", inst.components, msg)
 end
 
-local midiMsgProperties = {
-	note = function(c) return c.data1 end,
-	status = function(c) return c.statusByte >> 4 end
-}
-
-local midiMessageMeta = {
-	__index = function(c, k)
-		local f = midiMsgProperties[k]
-		if f ~= nil then return f(c) end
-		return rawget(c, k)
-	end
-}
-
-local function MidiMessage(offset, channel, status, data1, data2)
-	local msg = { offset = offset, channel = channel, status = status, data1 = data1, data2 = data2 }
-	setmetatable(msg, midiMessageMeta)
-	return msg
-end
-
-function _onMidi(offset, status, data1, data2)
-	local channel = status & 0x0F
-	status = status >> 4
+function _onMidi(offset, statusByte, data1, data2)
+	local channel = statusByte & 0x0F
+	local status = statusByte >> 4
 
 	local r = _model:getSettings().midiRouting
-	if r == MidiChannelRouting.SendToAll then
-		local msg = MidiMessage(offset, channel, status, data1, data2)
+	if status == midi.Status.System or r == MidiChannelRouting.SendToAll then
+		local msg = midi.Message(offset, statusByte, data1, data2)
 		for _, v in ipairs(_instances) do
 			processMidiMessage(v, msg)
 		end
 	elseif r == MidiChannelRouting.OneChannelPerInstance then
 		local target = _instances[channel]
 		if target ~= nil then
-			local msg = MidiMessage(offset, channel, status, data1, data2)
+			local msg = midi.Message(offset, statusByte, data1, data2)
 			processMidiMessage(target, msg)
 		end
 	elseif r == MidiChannelRouting.FourChannelsPerInstance then
 		local targetIdx = math.floor(channel / 4)
 		local target = _instances[targetIdx + 1]
 		if target ~= nil then
-			local msg = MidiMessage(offset, channel, status, data1, data2)
+			local msg = midi.Message(offset, (channel | (status << 4)), data1, data2)
 			processMidiMessage(target, msg)
 		end
 	end

@@ -114,8 +114,8 @@ void AudioLuaContext::setup() {
 	runFile(_state, _configPath + "/config.lua");
 }
 
-void AudioLuaContext::addInstance(InstanceIndex idx, SameBoyPlugPtr instance) {
-	callFunc(_state, "_addInstance", idx, instance);
+void AudioLuaContext::addInstance(InstanceIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
+	callFunc(_state, "_addInstance", idx, instance, componentState);
 }
 
 void AudioLuaContext::duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance) {

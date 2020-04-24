@@ -26,6 +26,7 @@ struct LoadRomDesc {
 struct InstanceSwapDesc {
 	InstanceIndex idx;
 	SameBoyPlugPtr instance;
+	std::shared_ptr<std::string> componentState;
 };
 
 struct InstanceDuplicateDesc {
@@ -90,7 +91,7 @@ namespace calls {
 	DefinePush(ResetInstance, ResetInstanceDesc);
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
-	DefineRequest(SwapInstance, InstanceSwapDesc, SameBoyPlugPtr);
+	DefineRequest(SwapInstance, InstanceSwapDesc, InstanceSwapDesc);
 	DefineRequest(SetSram, SetDataRequest, DataBufferPtr);
 	DefineRequest(SetRom, SetDataRequest, DataBufferPtr);
 	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);

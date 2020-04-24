@@ -154,22 +154,29 @@ namespace micromsg {
 			assert(isValid());
 			mm_assert_m(!_responderStack.empty(), "Maximum call count reached");
 
+			if (!_active || !isValid() || _responderStack.empty()) {
+				return false;
+			}
+
 			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
 			assert(envelope);
-			
-			envelope->sourceNodeId = (int)_type;
-			envelope->callTypeId = (int)_handlers->typeIds[TypeId<RequestT>::get()];
-			envelope->message = message; // TODO: Move semantics?
-			envelope->callId = _responderStack.back();
-			_responderStack.pop_back();
+			if (envelope) {
+				envelope->sourceNodeId = (int)_type;
+				envelope->callTypeId = (int)_handlers->typeIds[TypeId<RequestT>::get()];
+				envelope->message = message; // TODO: Move semantics?
+				envelope->callId = _responderStack.back();
+				_responderStack.pop_back();
 
-			mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
+				mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
 
-			if (send(target, envelope)) {
-				Responder& r = _responderLookup[envelope->callId];
-				r.callTypeId = envelope->callTypeId;
-				r.func = _funcFactory.alloc(cb);
-				return true;
+				if (envelope->callTypeId != 0) {
+					if (send(target, envelope)) {
+						Responder& r = _responderLookup[envelope->callId];
+						r.callTypeId = envelope->callTypeId;
+						r.func = _funcFactory.alloc(cb);
+						return true;
+					}
+				}
 			}
 
 			return false;

@@ -256,7 +256,7 @@ local function loadProject_rp010(projectData)
 				desc.sourceStateData = state
 			end
 
-			_loadRom(desc)
+			_loadRom(desc, serpent.dump(inst.audioComponents))
 		end
 	end
 end
@@ -284,7 +284,7 @@ local function loadProject_100(projectData)
 				desc.sourceStateData = state
 			end
 
-			_loadRom(desc)
+			_loadRom(desc, serpent.dump(inst.audioComponents))
 		end
 	end
 end
@@ -348,7 +348,7 @@ function _loadRomAtPath(idx, romPath, savPath, model)
 	_loadRom(d)
 end
 
-function _loadRom(desc)
+function _loadRom(desc, audiocomponentState)
 	desc.romName = desc.sourceRomData:slice(0x0134, 15):toString()
 
 	local instance
@@ -377,7 +377,7 @@ function _loadRom(desc)
 
 	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)
-	_proxy:setInstance(desc)
+	_proxy:setInstance(desc, audiocomponentState or "")
 	cm.runAllHandlers("onRomLoad", instance.components, instance.system)
 
 	desc.state = EmulatorInstanceState.Initialized
@@ -468,7 +468,6 @@ function _onMenu(menus)
 
 		for _, comp in ipairs(Active.components) do
 			local compActive = cm.isSystemComponent(comp)
-			print(comp.__desc.name, compActive)
 			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end, compActive)
 			names[comp.__desc.name] = nil
 

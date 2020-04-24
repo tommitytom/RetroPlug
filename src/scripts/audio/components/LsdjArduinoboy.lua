@@ -1,4 +1,5 @@
 local util = require("util")
+local midi = require("midi")
 
 local LsdjSyncModes = {
 	Off = 0,
@@ -63,21 +64,20 @@ function LsdjArduinoboy:onPpq(offset)
 	end
 end
 
-local MidiStatus = {
-	None = 0,
-	NoteOff = 8,
-	NoteOn = 9,
-	PolyAftertouch = 10,
-	ControlChange = 11,
-	ProgramChange = 12,
-	ChannelAftertouch = 13,
-	PitchWheel = 14
-}
+local enumtil = require("util.enum")
 
 function LsdjArduinoboy:onMidi(msg)
 	local status = msg.status
+	if status == midi.Status.System then
+		if msg.systemStatus == midi.SystemStatus.TimingClock then
+			self:onPpq(msg.offset)
+		else
+			print(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
+		end
+	end
+
 	if self.syncMode == LsdjSyncModes.MidiSyncArduinoboy then
-		if status == MidiStatus.NoteOn then
+		if status == midi.Status.NoteOn then
 			if 	   msg.note == 24 then self._playing = true
 			elseif msg.note == 25 then self._playing = false
 			elseif msg.note == 26 then self._tempoDivisor = 1
@@ -90,13 +90,13 @@ function LsdjArduinoboy:onMidi(msg)
 		end
 	elseif self.syncMode == LsdjSyncModes.MidiMap then
 		-- Notes trigger row numbers
-		if status == MidiStatus.NoteOn then
+		if status == midi.Status.NoteOn then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx ~= -1 then
 				self:system():sendSerialByte(msg.offset, rowIdx)
 				self._lastRow = rowIdx
 			end
-		elseif status == MidiStatus.Noteff then
+		elseif status == midi.Status.Noteff then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx == self._lastRow then
 				self:system():sendSerialByte(msg.offset, 0xFE)

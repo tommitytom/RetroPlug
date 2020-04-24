@@ -28,7 +28,7 @@ public:
 
 	void closeProject();
 
-	void addInstance(InstanceIndex idx, SameBoyPlugPtr instance);
+	void addInstance(InstanceIndex idx, SameBoyPlugPtr instance, const std::string& componentState);
 
 	void duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance);
 

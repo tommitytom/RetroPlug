@@ -85,7 +85,6 @@ void RetroPlugController::update(float delta) {
 }
 
 void RetroPlugController::init(iplug::igraphics::IGraphics* graphics, iplug::EHost host) {
-
 	//pGraphics->AttachCornerResizer(kUIResizerScale, false);
 	graphics->AttachPanelBackground(COLOR_BLACK);
 	graphics->HandleMouseOver(true);
