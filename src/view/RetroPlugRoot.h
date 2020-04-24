@@ -128,4 +128,6 @@ private:
 	}
 
 	void UpdateActive();
+
+	void setZoom(int zoom);
 };

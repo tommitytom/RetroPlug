@@ -48,6 +48,15 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	}
 }
 
+void RetroPlugView::setZoom(int zoom) {
+	Project* project = _proxy->getProject();
+	project->settings.zoom = zoom + 1;
+
+	for (auto& view : _views) {
+		view->SetZoom(project->settings.zoom);
+	}
+}
+
 void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	SelectActiveAtPoint(x, y);
 
@@ -91,7 +100,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 							.multiSelect({ "Auto", "Row", "Column", "Grid" }, &project->settings.layout)
 							.parent()
 						.subMenu("Zoom")
-							.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { project->settings.zoom = value + 1; })
+					.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { setZoom(value); })
 							.parent()
 						.separator()
 						.subMenu("Audio Routing", multiInstance)
