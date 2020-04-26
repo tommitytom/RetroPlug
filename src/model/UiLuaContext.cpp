@@ -126,18 +126,18 @@ void UiLuaContext::shutdown() {
 	}
 }
 
-DialogType UiLuaContext::getDialogFilters(std::vector<FileDialogFilters>& filters) {
-	for (auto f : _dialogFilters) {
-		filters.push_back(f);
+bool UiLuaContext::getDialogRequest(DialogRequest& request) {
+	if (_dialogRequest.type != DialogType::None) {
+		request = _dialogRequest;
+		return true;
 	}
 
-	return _dialogType;
+	return false;
 }
 
 void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 	callFunc(_state, "_handleDialogCallback", paths);
-	_dialogType = DialogType::None;
-	_dialogFilters.clear();
+	_dialogRequest = DialogRequest();
 }
 
 bool isNullPtr(const sol::object o) {
@@ -174,10 +174,8 @@ void UiLuaContext::setup() {
 	s["package"]["path"] = packagePath;
 
 	s["isNullPtr"].set_function(isNullPtr);
-	s["_requestDialog"].set_function([&](DialogType type, sol::as_table_t<std::vector<FileDialogFilters>> filters) {
-		_dialogType = type;
-		_dialogFilters = filters.value();
-	});
+	//s["_requestDialog"].set_function([&](DialogType type, sol::as_table_t<std::vector<FileDialogFilters>> filters) {
+	s["_requestDialog"].set_function([&](const DialogRequest& request) { _dialogRequest = request; });
 
 	setupCommon(s);
 	setupLsdj(s);
@@ -187,11 +185,6 @@ void UiLuaContext::setup() {
 		"encodeBuffer", base64::encodeBuffer,
 		"decode", base64::decode,
 		"decodeBuffer", base64::decodeBuffer
-	);
-
-	s.new_usertype<FileDialogFilters>("FileDialogFilters",
-		"name", &FileDialogFilters::name,
-		"extensions", &FileDialogFilters::extensions
 	);
 
 	s.new_usertype<FetchStateResponse>("FetchStateResponse",

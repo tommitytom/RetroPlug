@@ -119,6 +119,10 @@ local function getRomName(romData)
 	return romData:slice(0x0134, 15):toString()
 end
 
+local function trimString(s)
+	return s:match'^()%s*$' and '' or s:match'^%s*(.*%S)'
+ end
+
 return {
 	tableFind = tableFind,
 	tableConcat = tableConcat,
@@ -127,5 +131,6 @@ return {
 	inputMap = inputMap,
 	serializeComponent = serializeComponent,
 	deserializeComponent = deserializeComponent,
-	getRomName = getRomName
+	getRomName = getRomName,
+	trimString = trimString
 }

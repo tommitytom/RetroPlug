@@ -11,7 +11,7 @@ local function formatExtensions(exts)
 	return ""
 end
 
-local function prepareFilters(filters)
+local function prepareFilters(filters, target)
 	local formatted = {}
 	for _, v in ipairs(filters) do
 		table.insert(formatted, { v[1], formatExtensions(v[2]) })
@@ -32,13 +32,23 @@ local function prepareFilters(filters)
 		local f = FileDialogFilters.new()
 		f.name = v[1]
 		f.extensions = v[2]
-		table.insert(desc, f)
+		--table.insert(desc, f)
+		target:push_back(f)
 	end
 
 	return desc
 end
 
 local function loadFile(filters, cb)
+	assert(_dialogCallback == nil)
+	_dialogCallback = cb
+	_supportsMultiple = false
+
+	local desc = prepareFilters(filters)
+	_requestDialog(DialogType.Load, desc)
+end
+
+local function loadFiles(filters, cb)
 	assert(_dialogCallback == nil)
 	_dialogCallback = cb
 	_supportsMultiple = true
@@ -52,28 +62,42 @@ local function saveFile(filters, cb)
 	_dialogCallback = cb
 	_supportsMultiple = false
 
-	local desc = prepareFilters(filters)
-	_requestDialog(DialogType.Save, desc)
+	local req = DialogRequest.new()
+	req.type = DialogType.Save
+	req.multiSelect = false
+	prepareFilters(filters, req.filters)
+
+	_requestDialog(req)
 end
 
-local function saveDirectory(cb)
+local function selectDirectory(cb)
+	assert(_dialogCallback == nil)
+	_dialogCallback = cb
+	_supportsMultiple = false
 
+	local req = DialogRequest.new()
+	req.type = DialogType.Directory
+	req.multiSelect = false
+
+	_requestDialog(req)
 end
 
 function _handleDialogCallback(paths)
 	if _dialogCallback ~= nil then
-		if _supportsMultiple == true then
-			_dialogCallback(paths)
-		else
-			_dialogCallback(paths[1])
-		end
-
+		local cb = _dialogCallback
 		_dialogCallback = nil
+
+		if _supportsMultiple == true then
+			cb(paths)
+		else
+			cb(paths[1])
+		end
 	end
 end
 
 return {
 	saveFile = saveFile,
 	loadFile = loadFile,
-	saveDirectory = saveDirectory
+	loadFiles = loadFiles,
+	selectDirectory = selectDirectory
 }

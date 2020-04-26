@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include "util/xstring.h"
+#include "Constants.h"
 
 namespace iplug {
 	namespace igraphics {
@@ -19,6 +20,12 @@ namespace iplug {
 struct FileDialogFilters {
 	tstring name;
 	tstring extensions;
+};
+
+struct DialogRequest {
+	DialogType type = DialogType::None;
+	std::vector<FileDialogFilters> filters;
+	bool multiSelect;
 };
 
 std::vector<tstring> BasicFileOpen(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false);

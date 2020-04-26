@@ -555,7 +555,14 @@
     </ClCompile>
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
     <ClCompile Include="..\src\model\FileManager.cpp" />
-    <ClCompile Include="..\src\model\LuaHelpers.cpp" />
+    <ClCompile Include="..\src\model\LuaHelpers.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
     <ClCompile Include="..\src\model\UiLuaContext.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>

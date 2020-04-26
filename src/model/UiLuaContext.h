@@ -24,8 +24,9 @@ private:
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
 
-	std::vector<FileDialogFilters> _dialogFilters;
-	DialogType _dialogType = DialogType::None;
+	//std::vector<FileDialogFilters> _dialogFilters;
+	//DialogType _dialogType = DialogType::None;
+	DialogRequest _dialogRequest;
 
 public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}
@@ -75,7 +76,7 @@ public:
 
 	void shutdown();
 
-	DialogType getDialogFilters(std::vector<FileDialogFilters>& filters);
+	bool getDialogRequest(DialogRequest& request);
 
 	void handleDialogCallback(const std::vector<std::string>& paths);
 

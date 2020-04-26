@@ -60,8 +60,10 @@ function Rom:exportKits(dirPath)
 	self:_parseKits()
 
 	for _, kit in ipairs(self.kits) do
-		local path = pathutil.join(dirPath, kit.name .. ".kit")
-		kit:toFile(path)
+		if kit:isValid() then
+			local path = pathutil.join(dirPath, kit.name .. ".kit")
+			kit:toFile(path)
+		end
 	end
 end
 

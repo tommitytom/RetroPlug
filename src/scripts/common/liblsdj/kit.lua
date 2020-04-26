@@ -1,5 +1,6 @@
 local class = require("class")
 local fs = require("fs")
+local util = require("util")
 
 local KIT_NAME_OFFSET = 0x52
 local KIT_NAME_SIZE = 6
@@ -21,8 +22,12 @@ function Kit:init(kitData)
 		end
 	end
 
-	self.name = kitData:slice(KIT_NAME_OFFSET, KIT_NAME_SIZE):toString()
+	self.name = util.trimString(kitData:slice(KIT_NAME_OFFSET, KIT_NAME_SIZE):toString())
 	self.data = kitData
+end
+
+function Kit:isValid()
+	return self.data ~= nil
 end
 
 function Kit:copyFrom(other)

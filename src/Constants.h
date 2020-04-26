@@ -42,6 +42,7 @@ enum class SaveStateType {
 
 enum class DialogType {
 	None,
+	Load,
 	Save,
-	Load
+	Directory
 };

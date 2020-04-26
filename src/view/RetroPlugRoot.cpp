@@ -190,29 +190,37 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					_proxy->onMenuResult(tag);
 				}
 
-				std::vector<FileDialogFilters> filters;
-				DialogType dialog = _lua->getDialogFilters(filters);
-				switch (dialog) {
-				case DialogType::Save: {
-					std::string p = ws2s(BasicFileSave(GetUI(), filters));
-					std::vector<std::string> paths;
-					paths.push_back(p);
-					_lua->handleDialogCallback(paths);
-					break;
-				}
-				case DialogType::Load: {
-					std::vector<tstring> res = BasicFileOpen(GetUI(), filters, true, false);
-					std::vector<std::string> paths;
-					for (size_t i = 0; i < res.size(); ++i) {
-						paths.push_back(ws2s(res[i]));
+				DialogRequest dialogRequest;
+				if (_lua->getDialogRequest(dialogRequest)) {
+					switch (dialogRequest.type) {
+					case DialogType::Save: {
+						std::string p = ws2s(BasicFileSave(GetUI(), dialogRequest.filters));
+						std::vector<std::string> paths;
+						paths.push_back(p);
+						_lua->handleDialogCallback(paths);
+						break;
 					}
+					case DialogType::Directory:
+					case DialogType::Load: {
+						std::vector<tstring> res = BasicFileOpen(
+							GetUI(), 
+							dialogRequest.filters, 
+							dialogRequest.multiSelect,
+							dialogRequest.type == DialogType::Directory
+						);
 
-					_lua->handleDialogCallback(paths);
+						std::vector<std::string> paths;
+						for (size_t i = 0; i < res.size(); ++i) {
+							paths.push_back(ws2s(res[i]));
+						}
 
-					break;
+						_lua->handleDialogCallback(paths);
+
+						break;
+					}
+					}
 				}
-				}
-
+				
 				UpdateLayout();
 				UpdateActive();
 			}

@@ -5,6 +5,7 @@
 #include "config/config.h"
 #include "view/Menu.h"
 #include "model/ButtonStream.h"
+#include "platform/FileDialog.h"
 
 bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name) {
 	if (!result.valid()) {
@@ -80,7 +81,8 @@ void setupCommon(sol::state& s) {
 
 	s.new_enum("DialogType",
 		"Load", DialogType::Load,
-		"Save", DialogType::Save
+		"Save", DialogType::Save,
+		"Directory", DialogType::Directory
 	);
 
 	s.new_usertype<SameBoySettings>("SameBoySettings",
@@ -149,6 +151,17 @@ void setupCommon(sol::state& s) {
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
 		"copyFrom", &DataBuffer<char>::copyFrom
+	);
+
+	s.new_usertype<FileDialogFilters>("FileDialogFilters",
+		"name", &FileDialogFilters::name,
+		"extensions", &FileDialogFilters::extensions
+	);
+
+	s.new_usertype<DialogRequest>("DialogRequest",
+		"type", &DialogRequest::type,
+		"filters", &DialogRequest::filters,
+		"multiSelect", &DialogRequest::multiSelect
 	);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
