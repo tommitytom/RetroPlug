@@ -91,7 +91,7 @@ function Lsdj:onMenu(menu)
 			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
 			:parent()
 		:action("Export ROM...", function()
-			dialog.saveFile({ ROM_FILTER }, function(paths) rom:toFile(paths[1]) end)
+			dialog.saveFile({ ROM_FILTER }, function(path) rom:toFile(path) end)
 		end)
 		:action("Upgrade To...", function()
 			dialog.loadFile({ ROM_FILTER }, function(paths) upgradeRom(paths[1], system, rom) end)
@@ -151,10 +151,10 @@ function Lsdj:createKitsMenu(menu, rom)
 end
 
 local function importSongFromFile(sav, songIdx, system, reload)
-	dialog.loadFile({ SONG_FILTER }, function(path)
-		local data = fs.load(path)
+	dialog.loadFile({ SONG_FILTER }, function(paths)
+		local data = fs.load(paths[1])
 		if data ~= nil then
-			sav:setSong(songIdx, data)
+			sav:importSong(songIdx, data)
 			system:setSram(sav:toBuffer(), reload)
 		end
 	end)

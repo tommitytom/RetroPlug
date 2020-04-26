@@ -114,7 +114,7 @@ end
 
 function Rom:toFile(filePath)
 	local buf = self:toBuffer()
-	fs.save(buf, filePath)
+	fs.save(filePath, buf)
 end
 
 function Rom:nextEmptyKitIdx(startIdx)
