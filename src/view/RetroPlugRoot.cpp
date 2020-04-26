@@ -14,6 +14,8 @@ const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 const size_t DEFAULT_SRAM_SIZE = 0x20000;
 
+const double VIDEO_STREAM_TIMEOUT = 1000.0;
+
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioController* audioController)
 	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
 	proxy->videoCallback = [&](const VideoStream& video) {
@@ -22,6 +24,8 @@ RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, 
 				_views[i]->WriteFrame(video.buffers[i]);
 			}
 		}
+
+		_timeSinceVideo = 0;
 	};
 }
 
@@ -48,7 +52,7 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	}
 }
 
-void RetroPlugView::setZoom(int zoom) {
+void RetroPlugView::SetZoom(int zoom) {
 	Project* project = _proxy->getProject();
 	project->settings.zoom = zoom + 1;
 
@@ -100,7 +104,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 							.multiSelect({ "Auto", "Row", "Column", "Grid" }, &project->settings.layout)
 							.parent()
 						.subMenu("Zoom")
-					.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { setZoom(value); })
+					.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { SetZoom(value); })
 							.parent()
 						.separator()
 						.subMenu("Audio Routing", multiInstance)
@@ -222,17 +226,40 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.stop();
 	double delta = (double)_frameTimer.count();
+	_frameTimer.reset();
 	_frameTimer.start();
 
 	UpdateActive();
-	setZoom(_proxy->getProject()->settings.zoom - 1);
+
+	// TODO: Probably only do this after changing layout?
+	SetZoom(_proxy->getProject()->settings.zoom - 1);
 
 	onFrame(delta);
 	//_lua->update(delta);
 	_proxy->update(delta);
 
-	for (auto view : _views) {
-		view->Draw(g, delta);
+	_timeSinceVideo += delta;
+	
+	for (size_t i = 0; i < _proxy->getInstanceCount(); ++i) {
+		EmulatorView* view = _views[i];
+		const EmulatorInstanceDescPtr& instance = _proxy->getInstance(i);
+
+		if (instance->state == EmulatorInstanceState::Running) {
+			if (_timeSinceVideo < VIDEO_STREAM_TIMEOUT) {
+				view->Draw(g, delta);
+			} else {
+				instance->state = EmulatorInstanceState::VideoFeedLost;
+				view->ShowText("Audio timeout", "Check DAW settings");
+				view->DeleteFrame();
+			}
+		} else if (instance->state == EmulatorInstanceState::VideoFeedLost) {
+			//std::cout << _timeSinceVideo << std::endl;
+			if (_timeSinceVideo < VIDEO_STREAM_TIMEOUT) {
+				view->HideText();
+				view->Draw(g, delta);
+				instance->state = EmulatorInstanceState::Running;
+			}
+		}
 	}
 }
 
@@ -384,7 +411,7 @@ void RetroPlugView::RequestSave() {
 void RetroPlugView::OpenFindRomDialog() {
 	std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_ROM_FILTER }, false);
 	if (paths.size() > 0) {
-		//_lua->findRom(_proxy->activeIdx(), paths[0]);
+		_lua->findRom(_proxy->activeIdx(), ws2s(paths[0]));
 	}
 }
 

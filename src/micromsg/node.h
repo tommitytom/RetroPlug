@@ -133,17 +133,26 @@ namespace micromsg {
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
 		bool push(NodeType target, typename RequestT::Arg& message) {
-			assert(_active);
-			assert(isValid());
+			if (!_active || !isValid()) {
+				//assert(_active);
+				//assert(isValid());
+				return false;
+			}
 
 			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
-			assert(envelope);
-
+			if (!envelope) {
+				//assert(envelope);
+				return false;
+			}
+			
 			envelope->sourceNodeId = (int)_type;
 			envelope->callTypeId = (int)_handlers->typeIds[TypeId<RequestT>::get()];
 			envelope->message = message; // TODO: Move semantics?
 
-			mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
+			if (envelope->callTypeId == 0) {
+				mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
+				return false;
+			}
 
 			return send(target, envelope);
 		}

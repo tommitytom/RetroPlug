@@ -31,7 +31,8 @@ enum class EmulatorInstanceState {
 	Uninitialized,
 	Initialized,
 	RomMissing,
-	Running
+	Running,
+	VideoFeedLost
 };
 
 enum class SaveStateType {

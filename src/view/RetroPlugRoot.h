@@ -36,6 +36,7 @@ private:
 	AudioController* _audioController;
 
 	cxxtimer::Timer _frameTimer;
+	double _timeSinceVideo = 0.0;
 
 	int _syncMode = 1;
 	bool _autoPlay = true;
@@ -129,5 +130,5 @@ private:
 
 	void UpdateActive();
 
-	void setZoom(int zoom);
+	void SetZoom(int zoom);
 };

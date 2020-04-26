@@ -735,30 +735,6 @@
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h">
       <Filter>micromsg</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\allocator.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\atomicrefcount.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\controlblock.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\mpmcqueue.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\sharedptr.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\types.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\allocator\uniqueptr.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\micromsg\atomicops.h">
-      <Filter>micromsg</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\model\RetroPlugProxy.h">
       <Filter>src\model</Filter>
     </ClInclude>
@@ -885,6 +861,30 @@
     <ClInclude Include="..\src\model\LibLsdjWrapper.h">
       <Filter>src\model</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\micromsg\atomicops.h">
+      <Filter>micromsg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\allocator.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\uniqueptr.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\sharedptr.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\types.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\mpmcqueue.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\controlblock.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\micromsg\allocator\atomicrefcount.h">
+      <Filter>micromsg\allocator</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -955,6 +955,9 @@
     </Filter>
     <Filter Include="micromsg">
       <UniqueIdentifier>{0251c065-bc06-4a5e-9f93-a6fb8a54677a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="micromsg\allocator">
+      <UniqueIdentifier>{fea4aca5-be83-4063-80d6-d1898da3d7a8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

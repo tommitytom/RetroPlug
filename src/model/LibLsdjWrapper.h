@@ -35,9 +35,15 @@ void setupLsdj(sol::state& s) {
 		"sav_write_to_memory", [](const void* sav, DataBuffer<char>* target) {
 			target->reserve(LSDJ_SAV_SIZE);
 			size_t size = 0;
-			lsdj_error_t err = lsdj_sav_write_to_memory((const lsdj_sav_t*)sav, (uint8_t*)target->data(), target->size(), &size);
+			lsdj_error_t err = lsdj_sav_write_to_memory((const lsdj_sav_t*)sav, (uint8_t*)target->data(), LSDJ_SAV_SIZE, &size);
 			if (err == lsdj_error_t::LSDJ_SUCCESS) target->resize(size);
 			return err;
+		},
+		"sav_set_project_copy", [](void* sav, int index, void* project) {
+			lsdj_sav_set_project_copy((lsdj_sav_t*)sav, index, (lsdj_project_t*)project, nullptr);
+		},
+		"sav_set_project_move", [](void* sav, int index, void* project) {
+			lsdj_sav_set_project_move((lsdj_sav_t*)sav, index, (lsdj_project_t*)project);
 		},
 		"sav_get_project", [](void* sav, uint8_t index) {
 			return (void*)lsdj_sav_get_project((lsdj_sav_t*)sav, index);
@@ -54,7 +60,7 @@ void setupLsdj(sol::state& s) {
 			return std::string(name, length);
 		},
 		"project_write_lsdsng_to_memory", [](const void* project, DataBuffer<char>* target) {
-			target->reserve(LSDSNG_MAX_SIZE);
+			target->resize(LSDSNG_MAX_SIZE);
 			size_t size = 0;
 			lsdj_error_t err = lsdj_project_write_lsdsng_to_memory((const lsdj_project_t*)project, (uint8_t*)target->data(), &size);
 			if (err == lsdj_error_t::LSDJ_SUCCESS) target->resize(size);

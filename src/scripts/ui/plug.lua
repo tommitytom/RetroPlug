@@ -18,6 +18,7 @@ local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
 local System = require("System")
 local createNativeMenu = require("MenuHelper")
+local util = require("util")
 
 local serpent = require("serpent")
 local json = require("json")
@@ -321,26 +322,29 @@ function _loadProject(path)
 end
 
 function _loadRomAtPath(idx, romPath, savPath, model)
-	local romFile = fs.load(romPath, false)
-	if romFile == nil then
-		return
-	end
-
 	local d = _proxy:createInstance()
 	d.idx = idx
 	d.emulatorType = EmulatorType.SameBoy
-	d.state = EmulatorInstanceState.Initialized
 	d.romPath = romPath
-	d.sourceRomData = romFile
+	d.state = EmulatorInstanceState.RomMissing
+
 	d.sameBoySettings.model = model
+
+	if fs.exists(romPath) then
+		local romData = fs.load(romPath, false)
+		if romData ~= nil then
+			d.sourceRomData = romData
+			d.state = EmulatorInstanceState.Initialized
+		end
+	end
 
 	if savPath == nil or savPath == "" then
 		savPath = pathutil.changeExt(romPath, "sav")
 		if fs.exists(savPath) == true then
-			local savFile = fs.load(savPath, false)
-			if savFile ~= nil then
+			local savData = fs.load(savPath, false)
+			if savData ~= nil then
 				d.savPath = savPath
-				d.sourceSavData = savFile
+				d.sourceSavData = savData
 			end
 		end
 	end
@@ -348,8 +352,8 @@ function _loadRomAtPath(idx, romPath, savPath, model)
 	_loadRom(d)
 end
 
-function _loadRom(desc, audiocomponentState)
-	desc.romName = desc.sourceRomData:slice(0x0134, 15):toString()
+function _loadRom(desc, audioComponentState)
+	desc.romName = util.getRomName(desc.sourceRomData)
 
 	local instance
 	if desc.idx == -1 then
@@ -377,7 +381,7 @@ function _loadRom(desc, audiocomponentState)
 
 	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
 	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)
-	_proxy:setInstance(desc, audiocomponentState or "")
+	_proxy:setInstance(desc, audioComponentState or "")
 	cm.runAllHandlers("onRomLoad", instance.components, instance.system)
 
 	desc.state = EmulatorInstanceState.Initialized
@@ -394,16 +398,19 @@ function _closeProject()
 end
 
 function _findRom(idx, path)
-	--[[std::string originalPath = _proxy->getActiveInstance()->romPath;
-	_proxy->instances()
-	for (size_t i = 0; i < _views.size(); i++) {
-		auto plug = _views[i]->Plug();
-		if (plug->romPath() == originalPath) {
-			plug->init(paths[0], plug->model(), true);
-			plug->disableRendering(false);
-			_views[i]->HideText();
-		}
-	}]]
+	local inst = _instances[idx + 1]
+	if inst ~= nil then
+		local originalPath = inst.system:desc().romPath
+		local romData = fs.load(path)
+		if romData ~= nil then
+			-- Find all instances that are also missing the same rom
+			for _, v in ipairs(_instances) do
+				if v.system:desc().romPath == originalPath then
+					v.system:loadRom(romData)
+				end
+			end
+		end
+	end
 end
 
 function _setActive(idx)

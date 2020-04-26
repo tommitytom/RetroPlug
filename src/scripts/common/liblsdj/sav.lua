@@ -1,6 +1,7 @@
 local class = require("class")
 local fs = require("fs")
 local pathutil = require("pathutil")
+local enumutil = require("util.enum")
 
 local LSDJ_SAV_SIZE = 131072
 local LSDJ_SAV_PROJECT_COUNT = 32
@@ -51,7 +52,7 @@ function Sav:toBuffer()
 		return buffer
 	end
 
-	return "Failed to write sav to buffer"
+	return "Failed to write sav to buffer: " .. enumutil.toEnumString(lsdj_error_t, err)
 end
 
 function Sav:importSongs(items)
@@ -80,6 +81,23 @@ function Sav:importSongs(items)
 		else
 			self:_importSongFromBuffer(items)
 		end
+	end
+end
+
+function Sav:importSong(songIdx, songData)
+	local t = type(songData)
+	if t == "string" then
+		local data = fs.load(songData)
+		if data ~= nil then
+			local ext = pathutil.ext(songData)
+			if ext == ".lsdsng" then
+				self:_importSongFromBuffer(data, songIdx)
+			else
+				print("Resource has an unknown file extension " .. ext)
+			end
+		end
+	else--if t == "userdata" then
+		self:_importSongFromBuffer(songData, songIdx)
 	end
 end
 
@@ -138,7 +156,7 @@ function Sav:_importSongFromBuffer(songData, songIdx)
 	songIdx = songIdx or self:nextAvailableProject()
 	local proj, err = liblsdj.project_read_lsdsng_from_memory(songData)
 	if err == lsdj_error_t.SUCCESS then
-		err = liblsdj.sav_set_project(self._sav, proj)
+		err = liblsdj.sav_set_project_move(self._sav, songIdx, proj)
 		if err ~= lsdj_error_t.SUCCESS then
 			-- Fail
 		end

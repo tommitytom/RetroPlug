@@ -47,6 +47,10 @@ void UiLuaContext::saveProject(const FetchStateResponse& res) {
 	callFunc(_state, "_saveProjectToFile", res, true);
 }
 
+void UiLuaContext::findRom(InstanceIndex idx, const std::string& path) {
+	callFunc(_state, "_findRom", idx, path);
+}
+
 void UiLuaContext::removeInstance(InstanceIndex index) {
 	callFunc(_state, "_removeInstance", index);
 }
@@ -240,7 +244,8 @@ void UiLuaContext::setup() {
 		"getProject", &RetroPlugProxy::getProject,
 		"updateSettings", &RetroPlugProxy::updateSettings,
 		"setSram", &RetroPlugProxy::setSram,
-		"createInstance", &RetroPlugProxy::createInstance
+		"createInstance", &RetroPlugProxy::createInstance,
+		"setRom", &RetroPlugProxy::setRom
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",

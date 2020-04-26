@@ -115,6 +115,10 @@ local function deserializeComponent(obj, source)
 	end
 end
 
+local function getRomName(romData)
+	return romData:slice(0x0134, 15):toString()
+end
+
 return {
 	tableFind = tableFind,
 	tableConcat = tableConcat,
@@ -122,5 +126,6 @@ return {
 	handleInput = handleInput,
 	inputMap = inputMap,
 	serializeComponent = serializeComponent,
-	deserializeComponent = deserializeComponent
+	deserializeComponent = deserializeComponent,
+	getRomName = getRomName
 }

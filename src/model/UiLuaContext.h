@@ -55,6 +55,8 @@ public:
 
 	void loadSram(InstanceIndex idx, const std::string& path, bool reset);
 
+	void findRom(InstanceIndex idx, const std::string& path);
+
 	void update(float delta);
 
 	bool onKey(const iplug::IKeyPress& key, bool down);

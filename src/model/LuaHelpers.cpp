@@ -133,7 +133,11 @@ void setupCommon(sol::state& s) {
 	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
-		sol::constructors<DataBuffer<char>(), DataBuffer<char>(size_t)>(),
+		//sol::constructors<DataBuffer<char>(), DataBuffer<char>(size_t)>(),
+		"new", sol::factories(
+			[]() { return std::make_shared<DataBuffer<char>>(); },
+			[](size_t arg) { return std::make_shared<DataBuffer<char>>(arg); }
+		),
 		"get", &DataBuffer<char>::get,
 		"set", &DataBuffer<char>::set,
 		"slice", &DataBuffer<char>::slice,

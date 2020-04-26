@@ -41,7 +41,8 @@ public:
 	void initProject() {
 		_project = Project();
 		
-		EmulatorInstanceDescPtr root = std::make_shared<EmulatorInstanceDesc>();
+		// TODO: Can probably be removed now...
+		//EmulatorInstanceDescPtr root = std::make_shared<EmulatorInstanceDesc>();
 		//root->emulatorType = EmulatorType::Placeholder;
 		//_project.instances.push_back(root);
 
@@ -239,7 +240,7 @@ public:
 		_activeIdx = NO_ACTIVE_INSTANCE;
 	}
 
-	const EmulatorInstanceDescPtr getInstance(InstanceIndex idx) const {
+	const EmulatorInstanceDescPtr& getInstance(InstanceIndex idx) const {
 		return _project.instances[idx];
 	}
 
