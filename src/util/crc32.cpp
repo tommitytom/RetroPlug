@@ -24,10 +24,10 @@ namespace crc32 {
 	uint32_t update(const void* buf, size_t len, uint32_t initial) {
 		uint32_t c = initial ^ 0xFFFFFFFF;
 		const uint8_t* u = static_cast<const uint8_t*>(buf);
-		for (size_t i = 0; i < len; ++i)
-		{
+		for (size_t i = 0; i < len; ++i) {
 			c = CRC32_TABLE.table[(c ^ u[i]) & 0xFF] ^ (c >> 8);
 		}
+
 		return c ^ 0xFFFFFFFF;
 	}
 }

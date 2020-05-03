@@ -179,9 +179,8 @@ public:
 		return std::make_shared<EmulatorInstanceDesc>();
 	}
 
-	void setInstance(EmulatorInstanceDescPtr inst, const std::string& componentState) {
+	void setInstance(EmulatorInstanceDescPtr inst) {
 		assert(inst->idx < MAX_INSTANCES);
-		inst->state = EmulatorInstanceState::Initialized;
 
 		if (inst->idx < _project.instances.size()) {
 			_project.instances[inst->idx] = inst;
@@ -192,30 +191,45 @@ public:
 			return;
 		}
 
+		loadRom(inst);
+	}
+
+	bool loadRom(EmulatorInstanceDescPtr inst) {
+		if (!inst->sourceRomData) {
+			inst->state = EmulatorInstanceState::RomMissing;
+			return false;
+		}
+
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		if (inst->patchedRomData) {
 			plug->loadRom(inst->patchedRomData->data(), inst->patchedRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
-		} else {
+		}
+		else {
 			assert(inst->sourceRomData);
 			plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
 		}
-		
+
 		if (inst->sourceStateData) {
 			plug->loadState(inst->sourceStateData->data(), inst->sourceStateData->size());
 		}
 
 		if (inst->patchedSavData) {
 			plug->loadBattery(inst->patchedSavData->data(), inst->patchedSavData->size(), false);
-		} else if (inst->sourceSavData) {
+		}
+		else if (inst->sourceSavData) {
 			plug->loadBattery(inst->sourceSavData->data(), inst->sourceSavData->size(), false);
 		}
 
 		plug->setDesc({ inst->romName });
 
-		InstanceSwapDesc swap = { inst->idx, plug, std::make_shared<std::string>(componentState) };
+		InstanceSwapDesc swap = { inst->idx, plug, std::make_shared<std::string>(inst->audioComponentState) };
 		_node->request<calls::SwapInstance>(NodeTypes::Audio, swap, [inst](const InstanceSwapDesc& d) {
 			inst->state = EmulatorInstanceState::Running;
 		});
+
+		inst->state = EmulatorInstanceState::Initialized;
+
+		return true;
 	}
 
 	void removeInstance(InstanceIndex idx) {

@@ -1,5 +1,6 @@
-local util = require("util")
 local midi = require("midi")
+local util = require("util")
+local enumtil = require("util.enum")
 
 local LsdjSyncModes = {
 	Off = 0,
@@ -39,7 +40,7 @@ function LsdjArduinoboy:onMenu(menu)
 	return menu
 		:subMenu("LSDj")
 			:subMenu("Sync")
-				:multiSelect({ "Off", "MIDI Sync", "MIDI Sync (Arduinoboy)", "MIDI Map"}, self.syncMode, function(idx)
+				:multiSelect({ "Off", "MIDI Sync [MIDI]", "MIDI Sync (Arduinoboy) [MIDI]", "MIDI Map [MI. MAP]"}, self.syncMode, function(idx)
 					self.syncMode = idx
 				end)
 				:separator()
@@ -63,8 +64,6 @@ function LsdjArduinoboy:onPpq(offset)
 		self:system():sendSerialByte(offset, 0xFF)
 	end
 end
-
-local enumtil = require("util.enum")
 
 function LsdjArduinoboy:onMidi(msg)
 	local status = msg.status

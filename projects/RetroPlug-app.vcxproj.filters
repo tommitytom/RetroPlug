@@ -885,6 +885,9 @@
     <ClInclude Include="..\src\micromsg\allocator\atomicrefcount.h">
       <Filter>micromsg\allocator</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\model\AudioContextProxy.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

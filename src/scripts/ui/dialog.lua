@@ -32,8 +32,7 @@ local function prepareFilters(filters, target)
 		local f = FileDialogFilters.new()
 		f.name = v[1]
 		f.extensions = v[2]
-		--table.insert(desc, f)
-		target:push_back(f)
+		target:add(f)
 	end
 
 	return desc
@@ -44,8 +43,12 @@ local function loadFile(filters, cb)
 	_dialogCallback = cb
 	_supportsMultiple = false
 
-	local desc = prepareFilters(filters)
-	_requestDialog(DialogType.Load, desc)
+	local req = DialogRequest.new()
+	req.type = DialogType.Load
+	req.multiSelect = false
+	prepareFilters(filters, req.filters)
+
+	_requestDialog(req)
 end
 
 local function loadFiles(filters, cb)
@@ -53,19 +56,33 @@ local function loadFiles(filters, cb)
 	_dialogCallback = cb
 	_supportsMultiple = true
 
-	local desc = prepareFilters(filters)
-	_requestDialog(DialogType.Load, desc)
+	local req = DialogRequest.new()
+	req.type = DialogType.Load
+	req.multiSelect = true
+	prepareFilters(filters, req.filters)
+
+	_requestDialog(req)
 end
 
-local function saveFile(filters, cb)
+local function saveFile(filters, fileName, cb)
 	assert(_dialogCallback == nil)
-	_dialogCallback = cb
-	_supportsMultiple = false
 
 	local req = DialogRequest.new()
 	req.type = DialogType.Save
 	req.multiSelect = false
+
+	if type(fileName) == "string" then
+		req.fileName = fileName
+	elseif type(fileName) == "function" then
+		cb = fileName
+	else
+		return
+	end
+
 	prepareFilters(filters, req.filters)
+
+	_dialogCallback = cb
+	_supportsMultiple = false
 
 	_requestDialog(req)
 end

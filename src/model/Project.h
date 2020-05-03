@@ -40,6 +40,9 @@ struct EmulatorInstanceDesc {
 	DataBufferPtr sourceSavData;
 	DataBufferPtr patchedSavData;
 
+	std::string audioComponentState;
+	std::string uiComponentState;
+
 	bool fastBoot = false;
 };
 

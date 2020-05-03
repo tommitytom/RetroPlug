@@ -2,6 +2,7 @@ local dialog = require("dialog")
 local KeyboardActions = require("components.lsdj.actions")
 local lsdj = require("liblsdj.liblsdj")
 local fs = require("fs")
+local util = require("util")
 
 local ROM_FILTER = { "LSDj Rom Files", "*.gb" }
 local SAV_FILTER = { "LSDj Sav Files", "*.sav" }
@@ -13,20 +14,26 @@ local function formatName(idx, name, empty)
 	return string.format("%02X", idx) .. ": " .. name
 end
 
-local Lsdj = component({ name = "LSDj", romName = "LSDj*" })
+local Lsdj = component({ name = "LSDj", romName = "LSDj*", version = "1.0.0" })
 function Lsdj:init()
-	self._valid = false
-	self._kits = {}
-	self._songs = {}
 	self._littleFm = false
 	self._overclock = false
+	self._keyboardShortcuts = true
 
-	self._keyboardActions = KeyboardActions(self:system())
-	self:registerActions(self._keyboardActions)
+	self.__keyboardActions = KeyboardActions(self:system())
+	self:registerActions(self.__keyboardActions)
+end
+
+function Lsdj:onSerialize(target)
+	util.serializeComponent(self, target)
+end
+
+function Lsdj:onDeserialize(source)
+	util.deserializeComponent(self, source)
 end
 
 function Lsdj:onBeforeButton(button, down)
-	self._keyboardActions:_handleButtonPress(button, down)
+	self.__keyboardActions:_handleButtonPress(button, down)
 end
 
 function Lsdj:onPatchRom(romData)
@@ -86,12 +93,14 @@ function Lsdj:onMenu(menu)
 		:subMenu("Palettes")
 			:parent()
 		:separator()
+		:select("Keyboard Shortcuts", self._keyboardShortcuts, function(v) self._keyboardShortcuts = v end)
+		:separator()
 		:subMenu("Patches")
 			:select("LitteFM", self._littleFm, function(v) self._littleFm = v; self:updateRom() end)
 			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
 			:parent()
 		:action("Export ROM...", function()
-			dialog.saveFile({ ROM_FILTER }, function(path) rom:toFile(path) end)
+			dialog.saveFile({ ROM_FILTER }, system:desc().romName, function(path) rom:toFile(path) end)
 		end)
 		:action("Upgrade To...", function()
 			dialog.loadFile({ ROM_FILTER }, function(path) upgradeRom(path, system, rom) end)
@@ -131,7 +140,7 @@ function Lsdj:createKitsMenu(menu, rom)
 				end)
 			end)
 			:action("Export...", function()
-				dialog.saveFile({ KIT_FILTER }, function(path)
+				dialog.saveFile({ KIT_FILTER }, kit.name .. ".kit", function(path)
 					kit:toFile(path)
 				end)
 			end)
@@ -197,8 +206,8 @@ function Lsdj:createSongsMenu(menu, sav)
 				system:setSram(sav:toBuffer(), true)
 			end)
 			:action("Export .lsdsng...", function()
-				dialog.saveFile({ SONG_FILTER }, function(path)
-					sav:songToFile(song.idx, path)
+				dialog.saveFile({ SONG_FILTER }, song.name, function(path)
+					sav:exportSong(song.idx, path)
 				end)
 			end)
 			:action("Replace...", function() importSongFromFile(sav, song.idx, system, false) end)

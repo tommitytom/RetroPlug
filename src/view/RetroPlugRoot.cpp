@@ -194,7 +194,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 				if (_lua->getDialogRequest(dialogRequest)) {
 					switch (dialogRequest.type) {
 					case DialogType::Save: {
-						std::string p = ws2s(BasicFileSave(GetUI(), dialogRequest.filters));
+						std::string p = ws2s(BasicFileSave(GetUI(), dialogRequest.filters, tstr(dialogRequest.fileName)));
 						std::vector<std::string> paths;
 						paths.push_back(p);
 						_lua->handleDialogCallback(paths);

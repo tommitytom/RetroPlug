@@ -133,12 +133,6 @@ void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
 	SAMEBOY_SYMBOLS(sameboy_set_link_targets)(_instance, instances, linkTargets.size());
 }
 
-void SameBoyPlug::sendKeyboardByte(int offset, char byte) {
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0, 1);
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, 8);
-	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, 0x01, 2);
-}
-
 void SameBoyPlug::sendSerialByte(int offset, int byte) {
 	SAMEBOY_SYMBOLS(sameboy_send_serial_byte)(_instance, offset, byte, 8);
 }

@@ -151,6 +151,10 @@ bool isNullPtr(const sol::object o) {
 	return false;
 }
 
+void ltest(std::function<void()> fn) {
+	fn();
+}
+
 void UiLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 
@@ -238,7 +242,8 @@ void UiLuaContext::setup() {
 		"updateSettings", &RetroPlugProxy::updateSettings,
 		"setSram", &RetroPlugProxy::setSram,
 		"createInstance", &RetroPlugProxy::createInstance,
-		"setRom", &RetroPlugProxy::setRom
+		"setRom", &RetroPlugProxy::setRom,
+		"loadRom", &RetroPlugProxy::loadRom
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",

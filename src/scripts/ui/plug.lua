@@ -187,44 +187,7 @@ local function cloneStringFields(obj, fields, target)
 	return target
 end
 
-function _saveProject(state, pretty)
-	local proj = _proxy:getProject()
 
-	local t = {
-		retroPlugVersion = _RETROPLUG_VERSION,
-		projectVersion = _PROJECT_VERSION,
-		path = proj.path,
-		settings = cloneEnumFields(proj.settings, ProjectSettingsFields),
-		instances = {},
-		files = {}
-	}
-
-	for i, instance in ipairs(_instances) do
-		local desc = instance.system:desc()
-		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			local inst = cloneEnumFields(desc, InstanceSettingsFields)
-			inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
-			inst.uiComponents = serializer.serializeInstance(instance)
-
-			local ok, audioComponents = serpent.load(state.components[i])
-			if ok == true and audioComponents ~= nil then
-				inst.audioComponents = audioComponents
-			end
-
-			if state.buffers[i] ~= nil then
-				inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])
-			end
-
-			table.insert(t.instances, inst)
-		else
-			break
-		end
-	end
-
-	local opts = { comment = false }
-	if pretty == true then opts.indent = '\t' end
-	return serpent.dump(t, opts)
-end
 
 function _saveProjectToFile(state, pretty)
 	local proj = _proxy:getProject()
@@ -232,74 +195,21 @@ function _saveProjectToFile(state, pretty)
 	fs.saveText(proj.path, data)
 end
 
-local function loadProject_rp010(projectData)
-	local proj = _proxy:getProject()
-	cloneStringFields(projectData, ProjectSettingsFields, proj.settings)
 
-	_proxy:updateSettings()
 
-	for _, inst in ipairs(projectData.instances) do
-		local desc = _proxy:createInstance()
-		desc.idx = -1
-		desc.fastBoot = true
-		cloneStringFields(inst, InstanceSettingsFields, desc)
-		cloneStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
-		desc.savPath = inst.lastSramPath
 
-		local romFile = fs.load(inst.romPath, false)
-		if romFile ~= nil then
-			desc.sourceRomData = romFile.data
-			local state = base64.decodeBuffer(inst.state.data)
-
-			if proj.settings.saveType == SaveStateType.Sram then
-				desc.sourceSavData = state
-			elseif proj.settings.saveType == SaveStateType.State then
-				desc.sourceStateData = state
-			end
-
-			_loadRom(desc, serpent.dump(inst.audioComponents))
-		end
-	end
-end
-
-local function loadProject_100(projectData)
-	local proj = _proxy:getProject()
-	cloneStringFields(projectData.settings, ProjectSettingsFields, proj.settings)
-	_proxy:updateSettings()
-
-	for i, inst in ipairs(projectData.instances) do
-		local desc = _proxy:createInstance()
-		desc.idx = -1
-		desc.fastBoot = true
-		cloneStringFields(inst, InstanceSettingsFields, desc)
-		cloneStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
-
-		local romFile = fs.load(inst.romPath, false)
-		if romFile ~= nil then
-			desc.sourceRomData = romFile
-			local state = base64.decodeBuffer(inst.state)
-
-			if proj.settings.saveType == SaveStateType.Sram then
-				desc.sourceSavData = state
-			elseif proj.settings.saveType == SaveStateType.State then
-				desc.sourceStateData = state
-			end
-
-			_loadRom(desc, serpent.dump(inst.audioComponents))
-		end
-	end
-end
 
 function _loadProject(path)
 	local file = fs.load(path)
-	if isNullPtr(file) == false then
-		error("Failed to load project: Unable to open file")
+	if file == nil then
+		print("Failed to load project: Unable to open file at " .. path)
+		return
 	end
 
 	local data = file:toString()
 	local ok, projectData = serpent.load(data)
 	if ok ~= true then
-		-- Old projects (<= v0.1.0) are encoded using JSON rather than lua
+		-- Old projects (<= v0.2.0) are encoded using JSON rather than lua
 		projectData = json.decode(data)
 		if projectData == nil then
 			error("Failed to load project: Unable to deserialize file")
@@ -352,9 +262,7 @@ function _loadRomAtPath(idx, romPath, savPath, model)
 	_loadRom(d)
 end
 
-function _loadRom(desc, audioComponentState)
-	desc.romName = util.getRomName(desc.sourceRomData)
-
+function _loadRom(desc)
 	local instance
 	if desc.idx == -1 then
 		instance = addInstance(desc)
@@ -377,14 +285,17 @@ function _loadRom(desc, audioComponentState)
 		_instances[desc.idx + 1] = instance
 	end
 
-	instance.components = cm.createComponents(instance.system)
+	if desc.sourceRomData ~= nil then
+		desc.romName = util.getRomName(desc.sourceRomData)
+		instance.components = cm.createComponents(instance.system)
 
-	cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
-	cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)
-	_proxy:setInstance(desc, audioComponentState or "")
-	cm.runAllHandlers("onRomLoad", instance.components, instance.system)
-
-	desc.state = EmulatorInstanceState.Initialized
+		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)
+		cm.runAllHandlers("onBeforeRomLoad", instance.components, instance.system)
+		_proxy:setInstance(desc)
+		cm.runAllHandlers("onRomLoad", instance.components, instance.system)
+	else
+		_proxy:setInstance(desc)
+	end
 
 	if _activeIdx == 0 then
 		_setActive(0)
@@ -512,59 +423,6 @@ function _onMenuResult(idx)
 		end
 
 		_menuLookup = nil
-	end
-end
-
-function _resetInstance(idx, model)
-	local inst = _instances[idx + 1]
-	if inst ~= nil then
-		local settings = inst.system:desc().sameBoySettings
-		if model == GameboyModel.Auto then
-			model = settings.model
-		end
-
-		if model ~= settings.model then
-			settings.model = model
-			--inst.system:desc().sameBoySettings.model = model
-			print(inst.system:desc().sameBoySettings.model, model)
-		end
-
-		_proxy:resetInstance(idx, model)
-	end
-end
-
-local DEFAULT_SRAM_SIZE = 0x20000
-
-function _newSram(idx)
-	local inst = _instances[idx + 1]
-	if inst ~= nil then
-		local savData = DataBuffer.new()
-		savData:resize(DEFAULT_SRAM_SIZE)
-		savData:clear()
-		inst.system:setSram(savData, true)
-	end
-end
-
-function _saveSram(idx, path)
-	local inst = _instances[idx + 1]
-	if inst ~= nil then
-		local desc = inst.system:desc()
-		fs.save(path, desc.sourceSavData)
-	end
-end
-
-function _loadSram(idx, path, reset)
-	local inst = _instances[idx + 1]
-	if inst ~= nil then
-		if fs.exists(path) == true then
-			local savData = fs.load(path)
-			if savData ~= nil then
-				local desc = inst.system:desc()
-				desc.savPath = path
-				desc.sourceSavData = savData
-				inst.system:setSram(savData, reset)
-			end
-		end
 	end
 end
 

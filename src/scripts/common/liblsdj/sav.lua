@@ -101,14 +101,14 @@ function Sav:importSong(songIdx, songData)
 	end
 end
 
-function Sav:getSongs()
+function Sav:getSongs(filterEmpty)
 	local songs = {}
 	for i = 0, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
 		local project = liblsdj.sav_get_project(self._sav, i)
 		if isNullPtr(project) == true then
 			local name = liblsdj.project_get_name(project)
 			table.insert(songs, { idx = i, name = name, empty = false })
-		else
+		elseif filterEmpty ~= true then
 			table.insert(songs, { idx = i, empty = true })
 		end
 	end
@@ -117,7 +117,7 @@ function Sav:getSongs()
 end
 
 function Sav:exportSongs(path)
-	for i = 1, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
+	for i = 0, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
 		local project = liblsdj.sav_get_project(self._sav, i)
 		if isNullPtr(project) == true then
 			local buffer = DataBuffer.new()

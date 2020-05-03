@@ -76,8 +76,6 @@ public:
 	bool active() const { return _instance != nullptr; }
 
 	void setSampleRate(double sampleRate);
-	 
-	void sendKeyboardByte(int offset, char byte);
 
 	void sendSerialByte(int offset, int byte);
 

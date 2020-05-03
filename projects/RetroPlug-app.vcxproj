@@ -306,6 +306,7 @@
     <ClInclude Include="..\src\micromsg\types.h" />
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h" />
     <ClInclude Include="..\src\micromsg\variant_function.h" />
+    <ClInclude Include="..\src\model\AudioContextProxy.h" />
     <ClInclude Include="..\src\model\AudioLuaContext.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
     <ClInclude Include="..\src\model\CompiledLua.h" />

@@ -25,8 +25,10 @@ struct FileDialogFilters {
 struct DialogRequest {
 	DialogType type = DialogType::None;
 	std::vector<FileDialogFilters> filters;
+	std::string fileName;
 	bool multiSelect;
 };
 
 std::vector<tstring> BasicFileOpen(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect = false, bool foldersOnly = false);
 tstring BasicFileSave(iplug::igraphics::IGraphics* ui, const std::vector<FileDialogFilters>& filters, const tstring& fileName = TSTR(""));
+void BasicMessageBox();

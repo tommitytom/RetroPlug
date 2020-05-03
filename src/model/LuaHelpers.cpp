@@ -161,7 +161,8 @@ void setupCommon(sol::state& s) {
 	s.new_usertype<DialogRequest>("DialogRequest",
 		"type", &DialogRequest::type,
 		"filters", &DialogRequest::filters,
-		"multiSelect", &DialogRequest::multiSelect
+		"multiSelect", &DialogRequest::multiSelect,
+		"fileName", &DialogRequest::fileName
 	);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
