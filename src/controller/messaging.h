@@ -23,15 +23,15 @@ struct LoadRomDesc {
 	bool reset = true;
 };
 
-struct InstanceSwapDesc {
-	InstanceIndex idx;
+struct SystemSwapDesc {
+	SystemIndex idx;
 	SameBoyPlugPtr instance;
 	std::shared_ptr<std::string> componentState;
 };
 
-struct InstanceDuplicateDesc {
-	InstanceIndex sourceIdx;
-	InstanceIndex targetIdx;
+struct SystemDuplicateDesc {
+	SystemIndex sourceIdx;
+	SystemIndex targetIdx;
 	SameBoyPlugPtr instance;
 };
 
@@ -41,7 +41,7 @@ struct VideoBuffer {
 };
 
 struct VideoStream {
-	VideoBuffer buffers[MAX_INSTANCES];
+	VideoBuffer buffers[MAX_SYSTEMS];
 };
 
 struct AudioBuffer {
@@ -52,28 +52,28 @@ struct AudioBuffer {
 
 struct FetchStateRequest {
 	SaveStateType type;
-	DataBufferPtr buffers[MAX_INSTANCES];
+	DataBufferPtr buffers[MAX_SYSTEMS];
 };
 
 struct FetchStateResponse {
 	SaveStateType type;
-	std::array<size_t, MAX_INSTANCES> sizes = { 0 };
-	std::array<DataBufferPtr, MAX_INSTANCES> buffers;
-	std::array<std::string, MAX_INSTANCES> components;
+	std::array<size_t, MAX_SYSTEMS> sizes = { 0 };
+	std::array<DataBufferPtr, MAX_SYSTEMS> buffers;
+	std::array<std::string, MAX_SYSTEMS> components;
 };
 
-struct ResetInstanceDesc {
-	InstanceIndex idx;
+struct ResetSystemDesc {
+	SystemIndex idx;
 	GameboyModel model;
 };
 
 struct FetchSramRequest {
-	InstanceIndex idx;
+	SystemIndex idx;
 	DataBufferPtr buffer;
 };
 
 struct SetDataRequest {
-	InstanceIndex idx;
+	SystemIndex idx;
 	DataBufferPtr buffer;
 	bool reset;
 };
@@ -87,15 +87,15 @@ namespace calls {
 	DefinePush(UpdateSettings, Project::Settings);
 	DefinePush(PressButtons, ButtonStream<32>);
 	DefinePush(ContextMenuResult, int);
-	DefinePush(SetActive, InstanceIndex);
-	DefinePush(ResetInstance, ResetInstanceDesc);
+	DefinePush(SetActive, SystemIndex);
+	DefinePush(ResetSystem, ResetSystemDesc);
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
-	DefineRequest(SwapInstance, InstanceSwapDesc, InstanceSwapDesc);
+	DefineRequest(SwapSystem, SystemSwapDesc, SystemSwapDesc);
 	DefineRequest(SetSram, SetDataRequest, DataBufferPtr);
 	DefineRequest(SetRom, SetDataRequest, DataBufferPtr);
-	DefineRequest(DuplicateInstance, InstanceDuplicateDesc, SameBoyPlugPtr);
-	DefineRequest(TakeInstance, InstanceIndex, SameBoyPlugPtr);
+	DefineRequest(DuplicateSystem, SystemDuplicateDesc, SameBoyPlugPtr);
+	DefineRequest(TakeSystem, SystemIndex, SameBoyPlugPtr);
 	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);
 
 	DefineRequest(FetchSram, FetchSramRequest, DataBufferPtr);

@@ -32,56 +32,12 @@ local _activeIdx = 0
 local _instances = {}
 local _keyState = {}
 
-local ProjectSettingsFields = {
-	audioRouting = AudioChannelRouting,
-	midiRouting = MidiChannelRouting,
-	layout = InstanceLayout,
-	saveType = SaveStateType,
-	"zoom"
-}
-
-local InstanceSettingsFields = {
-	emulatorType = EmulatorType,
-	"romPath",
-	"savPath"
-}
-
-local SameBoySettingsFields = {
-	model = GameboyModel,
-	"gameLink"
-}
-
 function _loadComponent(name)
 	cm.loadComponent(name)
 end
 
 local pathutil = require("pathutil")
 local fs = require("fs")
-local EmulatorInstance = require("EmulatorInstance")
-
-function _init()
-	cm.createGlobalComponents()
-
-	local count = _proxy:getInstanceCount()
-	for i = 1, count, 1 do
-		local desc = _proxy:getInstance(i - 1)
-		if desc.state ~= EmulatorInstanceState.Uninitialized then
-			local system = System(desc, _proxy:buttons(i - 1))
-			local instance = EmulatorInstance(system, cm.createComponents(system))
-			table.insert(_instances, instance)
-
-			if i == _proxy:activeInstanceIdx() + 1 then
-				_activeIdx = i
-				Active = _instances[i]
-			end
-		end
-	end
-
-	for _, instance in ipairs(_instances) do
-		instance:triggerEvent("onComponentsInitialized", instance.components)
-		instance:triggerEvent("onReload")
-	end
-end
 
 local function addInstance(desc)
 	if #_instances < MAX_INSTANCES then
@@ -132,72 +88,11 @@ function _duplicateInstance(idx)
 	end
 end
 
-local function cloneFields(source, fields, target)
-	if target == nil then
-		target = {}
-	end
-
-	for _, v in ipairs(fields) do
-		target[v] = source[v]
-	end
-
-	return target
-end
-
-local function toEnumString(enumType, value)
-	local idx = getmetatable(enumType).__index
-	for k, v in pairs(idx) do
-		if value == v then return k end
-	end
-end
-
-local function fromEnumString(enumType, value)
-	local v = enumType[value]
-	if v ~= nil then
-		return v
-	end
-
-	local vl = value:sub(1, 1):upper() .. value:sub(2)
-	return enumType[vl]
-end
-
-local function cloneEnumFields(obj, fields, target)
-	if target == nil then target = {} end
-	for k, v in pairs(fields) do
-		if type(k) == "number" then
-			target[v] = obj[v]
-		else
-			target[k] = toEnumString(v, obj[k])
-		end
-	end
-
-	return target
-end
-
-local function cloneStringFields(obj, fields, target)
-	if target == nil then target = {} end
-	for k, v in pairs(fields) do
-		if type(k) == "number" then
-			target[v] = obj[v]
-		else
-			target[k] = fromEnumString(v, obj[k])
-		end
-	end
-
-	return target
-end
-
-
-
 function _saveProjectToFile(state, pretty)
 	local proj = _proxy:getProject()
 	local data = _saveProject(state, pretty)
 	fs.saveText(proj.path, data)
 end
-
-
-
-
 
 function _loadProject(path)
 	local file = fs.load(path)

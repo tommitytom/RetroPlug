@@ -2,6 +2,7 @@
 
 #include "Buttons.h"
 #include <assert.h>
+#include <array>
 
 struct StreamButtonPress {
 	int button;
@@ -11,7 +12,7 @@ struct StreamButtonPress {
 
 template <const int TotalPressCount>
 struct ButtonStream {
-	InstanceIndex idx;
+	SystemIndex idx;
 	std::array<StreamButtonPress, TotalPressCount> presses;
 	size_t pressCount = 0;
 };
@@ -24,7 +25,7 @@ private:
 	double _defaultDelay = 50.0;
 
 public:
-	InstanceIndex getStreamId() const { return _stream.idx; }
+	SystemIndex getStreamId() const { return _stream.idx; }
 
 	ButtonStreamWriter& press(int button) {
 		hold(button);
@@ -104,7 +105,7 @@ public:
 
 	ButtonStream<TotalPressCount>& data() { return _stream; }
 
-	void setIndex(InstanceIndex idx) {
+	void setIndex(SystemIndex idx) {
 		_stream.idx = idx;
 	}
 };

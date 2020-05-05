@@ -29,7 +29,7 @@ public:
 
 	//ProcessingContext* getProcessingContext() { return &_processingContext; }
 
-	bool getSram(InstanceIndex idx, DataBufferPtr target) {
+	bool getSram(SystemIndex idx, DataBuffer<char>* target) {
 		std::scoped_lock l(_lock);
 		SameBoyPlugPtr instance = _processingContext.getInstance(idx);
 		if (instance) {
@@ -41,7 +41,7 @@ public:
 		return false;
 	}
 
-	void onMenu(InstanceIndex idx, std::vector<Menu*>& menus) {
+	void onMenu(SystemIndex idx, std::vector<Menu*>& menus) {
 		auto ctx = _lua;
 		if (ctx) {
 			// TODO: This mutex is temporary until I find a good way of sending context menus

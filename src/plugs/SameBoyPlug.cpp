@@ -125,7 +125,7 @@ void SameBoyPlug::setSetting(const std::string& name, int value) {
 }
 
 void SameBoyPlug::setLinkTargets(std::vector<SameBoyPlugPtr> linkTargets) {
-	void* instances[MAX_INSTANCES];
+	void* instances[MAX_SYSTEMS];
 	for (size_t i = 0; i < linkTargets.size(); i++) {
 		instances[i] = linkTargets[i]->instance();
 	}
@@ -149,7 +149,7 @@ void SameBoyPlug::update(size_t audioFrames) {
 }
 
 void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames) {
-	void* instances[MAX_INSTANCES];
+	void* instances[MAX_SYSTEMS];
 	for (size_t i = 0; i < plugCount; i++) {
 		instances[i] = plugs[i]->instance();
 	}

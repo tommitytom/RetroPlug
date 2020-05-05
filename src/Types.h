@@ -17,5 +17,5 @@ struct Dimension2 {
 	int h = 0;
 };
 
-using InstanceIndex = int;
-const InstanceIndex NO_ACTIVE_INSTANCE = -1;
+using SystemIndex = int;
+const SystemIndex NO_ACTIVE_SYSTEM = -1;

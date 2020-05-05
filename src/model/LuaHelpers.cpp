@@ -34,17 +34,17 @@ void setupCommon(sol::state& s) {
 		"Title", MenuItemType::Title
 	);
 
-	s.new_enum("EmulatorInstanceState",
-		"Uninitialized", EmulatorInstanceState::Uninitialized,
-		"Initialized", EmulatorInstanceState::Initialized,
-		"RomMissing", EmulatorInstanceState::RomMissing,
-		"Running", EmulatorInstanceState::Running
+	s.new_enum("SystemState",
+		"Uninitialized", SystemState::Uninitialized,
+		"Initialized", SystemState::Initialized,
+		"RomMissing", SystemState::RomMissing,
+		"Running", SystemState::Running
 	);
 
-	s.new_enum("EmulatorType",
-		"Unknown", EmulatorType::Unknown,
-		"Placeholder", EmulatorType::Placeholder,
-		"SameBoy", EmulatorType::SameBoy
+	s.new_enum("SystemType",
+		"Unknown", SystemType::Unknown,
+		"Placeholder", SystemType::Placeholder,
+		"SameBoy", SystemType::SameBoy
 	);
 
 	s.new_enum("AudioChannelRouting",
@@ -59,11 +59,11 @@ void setupCommon(sol::state& s) {
 		"SendToAll", MidiChannelRouting::SendToAll
 	);
 
-	s.new_enum("InstanceLayout",
-		"Auto", InstanceLayout::Auto,
-		"Column", InstanceLayout::Column,
-		"Grid", InstanceLayout::Grid,
-		"Row", InstanceLayout::Row
+	s.new_enum("SystemLayout",
+		"Auto", SystemLayout::Auto,
+		"Column", SystemLayout::Column,
+		"Grid", SystemLayout::Grid,
+		"Row", SystemLayout::Row
 	);
 
 	s.new_enum("SaveStateType",
@@ -92,7 +92,7 @@ void setupCommon(sol::state& s) {
 
 	s.new_usertype<Project>("Project",
 		"path", &Project::path,
-		"instances", &Project::instances,
+		"systems", &Project::systems,
 		"settings", &Project::settings
 	);
 

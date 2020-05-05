@@ -317,7 +317,6 @@
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
     <ClInclude Include="..\src\model\RetroPlug.h" />
-    <ClInclude Include="..\src\model\RetroPlugProxy.h" />
     <ClInclude Include="..\src\model\UiLuaContext.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
@@ -564,7 +563,6 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlugProxy.cpp" />
     <ClCompile Include="..\src\model\UiLuaContext.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>

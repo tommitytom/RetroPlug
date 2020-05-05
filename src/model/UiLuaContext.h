@@ -4,7 +4,7 @@
 #include "util/xstring.h"
 
 #include "IGraphicsStructs.h"
-#include "model/RetroPlugProxy.h"
+#include "model/AudioContextProxy.h"
 
 #include "view/Menu.h"
 #include "platform/FileDialog.h"
@@ -19,7 +19,7 @@ private:
 	std::string _configPath;
 	std::string _scriptPath;
 
-	RetroPlugProxy* _proxy;
+	AudioContextProxy* _proxy;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
@@ -32,39 +32,19 @@ public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}
 	~UiLuaContext() { shutdown(); }
 
-	void init(RetroPlugProxy* proxy, const std::string& path, const std::string& scriptPath);
-
-	void loadRom(InstanceIndex idx, const std::string& path, GameboyModel model);
-	
-	void closeProject();
-
-	void loadProject(const std::string& path);
-
-	void saveProject(const FetchStateResponse& res);
-
-	void removeInstance(InstanceIndex index);
-
-	void duplicateInstance(InstanceIndex index);
-
-	void setActive(InstanceIndex idx);
-
-	void resetInstance(InstanceIndex idx, GameboyModel model);
-
-	void newSram(InstanceIndex idx);
-	
-	void saveSram(InstanceIndex idx, const std::string& path);
-
-	void loadSram(InstanceIndex idx, const std::string& path, bool reset);
-
-	void findRom(InstanceIndex idx, const std::string& path);
+	void init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath);
 
 	void update(float delta);
 
 	bool onKey(const iplug::IKeyPress& key, bool down);
 
-	void onPadButton(int button, bool down);
+	void onDoubleClick(float x, float y, const iplug::igraphics::IMouseMod& mod);
 
-	void onDrop(const char* str);
+	void onMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod);
+
+	void onDrop(float x, float y, const char* str);
+
+	void onPadButton(int button, bool down);
 
 	void onMenu(std::vector<Menu*>& menus);
 

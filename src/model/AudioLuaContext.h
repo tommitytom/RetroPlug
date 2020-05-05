@@ -28,13 +28,13 @@ public:
 
 	void closeProject();
 
-	void addInstance(InstanceIndex idx, SameBoyPlugPtr instance, const std::string& componentState);
+	void addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState);
 
-	void duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance);
+	void duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance);
 
-	void removeInstance(InstanceIndex index);
+	void removeInstance(SystemIndex index);
 
-	void setActive(InstanceIndex idx);
+	void setActive(SystemIndex idx);
 
 	void update(int frameCount);
 
@@ -46,7 +46,7 @@ public:
 
 	void onMidiClock(int button, bool down);
 
-	void onMenu(InstanceIndex idx, std::vector<Menu*>& menus);
+	void onMenu(SystemIndex idx, std::vector<Menu*>& menus);
 
 	void onMenuResult(int id);
 
@@ -56,7 +56,7 @@ public:
 
 	void shutdown();
 
-	std::string serializeInstance(InstanceIndex index);
+	std::string serializeInstance(SystemIndex index);
 
 	std::string serializeInstances();
 

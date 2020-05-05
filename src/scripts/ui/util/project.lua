@@ -3,6 +3,80 @@ local serpent = require("serpent")
 local json = require("json")
 local Error = require("Error")
 
+local ProjectSettingsFields = {
+	audioRouting = AudioChannelRouting,
+	midiRouting = MidiChannelRouting,
+	layout = InstanceLayout,
+	saveType = SaveStateType,
+	"zoom"
+}
+
+local InstanceSettingsFields = {
+	emulatorType = EmulatorType,
+	"romPath",
+	"savPath"
+}
+
+local SameBoySettingsFields = {
+	model = GameboyModel,
+	"gameLink"
+}
+
+local function cloneFields(source, fields, target)
+	if target == nil then
+		target = {}
+	end
+
+	for _, v in ipairs(fields) do
+		target[v] = source[v]
+	end
+
+	return target
+end
+
+local function toEnumString(enumType, value)
+	local idx = getmetatable(enumType).__index
+	for k, v in pairs(idx) do
+		if value == v then return k end
+	end
+end
+
+local function fromEnumString(enumType, value)
+	local v = enumType[value]
+	if v ~= nil then
+		return v
+	end
+
+	local vl = value:sub(1, 1):upper() .. value:sub(2)
+	return enumType[vl]
+end
+
+local function cloneEnumFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		else
+			target[k] = toEnumString(v, obj[k])
+		end
+	end
+
+	return target
+end
+
+local function cloneStringFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		else
+			target[k] = fromEnumString(v, obj[k])
+		end
+	end
+
+	return target
+end
+
 local function validateAndUpgradeProject(projectData)
 
 end

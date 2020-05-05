@@ -241,9 +241,6 @@
     <ClCompile Include="..\src\model\FileManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\model\CompiledLua.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
@@ -734,9 +731,6 @@
     </ClInclude>
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h">
       <Filter>micromsg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\model\RetroPlugProxy.h">
-      <Filter>src\model</Filter>
     </ClInclude>
     <ClInclude Include="..\src\controller\messaging.h">
       <Filter>src\controller</Filter>

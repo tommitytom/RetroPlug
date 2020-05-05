@@ -114,19 +114,19 @@ void AudioLuaContext::setup() {
 	runFile(_state, _configPath + "/config.lua");
 }
 
-void AudioLuaContext::addInstance(InstanceIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
+void AudioLuaContext::addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
 	callFunc(_state, "_addInstance", idx, instance, componentState);
 }
 
-void AudioLuaContext::duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance) {
+void AudioLuaContext::duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance) {
 	callFunc(_state, "_duplicateInstance", sourceIdx, targetIdx, instance);
 }
 
-void AudioLuaContext::removeInstance(InstanceIndex idx) {
+void AudioLuaContext::removeInstance(SystemIndex idx) {
 	callFunc(_state, "_removeInstance", idx);
 }
 
-void AudioLuaContext::setActive(InstanceIndex idx) {
+void AudioLuaContext::setActive(SystemIndex idx) {
 	callFunc(_state, "_setActive", idx);
 }
 
@@ -146,7 +146,7 @@ void AudioLuaContext::onMidiClock(int button, bool down) {
 
 }
 
-void AudioLuaContext::onMenu(InstanceIndex idx, std::vector<Menu*>& menus) {
+void AudioLuaContext::onMenu(SystemIndex idx, std::vector<Menu*>& menus) {
 	callFunc(_state, "_onMenu", idx, menus);
 }
 
@@ -160,7 +160,7 @@ std::string AudioLuaContext::serializeInstances() {
 	return target;
 }
 
-std::string AudioLuaContext::serializeInstance(InstanceIndex index) {
+std::string AudioLuaContext::serializeInstance(SystemIndex index) {
 	std::string target;
 	callFuncRet(_state, "_serializeInstance", target, index);
 	return target;

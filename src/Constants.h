@@ -1,14 +1,14 @@
 #pragma once
 
-const int MAX_INSTANCES = 4;
+const int MAX_SYSTEMS = 4;
 
-enum class EmulatorType {
+enum class SystemType {
 	Unknown,
 	Placeholder,
 	SameBoy
 };
 
-enum class InstanceLayout {
+enum class SystemLayout {
 	Auto,
 	Row,
 	Column,
@@ -27,7 +27,7 @@ enum class MidiChannelRouting {
 	OneChannelPerInstance
 };
 
-enum class EmulatorInstanceState {
+enum class SystemState {
 	Uninitialized,
 	Initialized,
 	RomMissing,

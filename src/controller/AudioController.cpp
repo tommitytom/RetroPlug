@@ -22,28 +22,28 @@ void AudioController::setNode(Node* node) {
 		_lua = ctx;
 	});
 
-	node->on<calls::SwapInstance>([&](const InstanceSwapDesc& d, InstanceSwapDesc& other) {
+	node->on<calls::SwapSystem>([&](const SystemSwapDesc& d, SystemSwapDesc& other) {
 		_lua->addInstance(d.idx, d.instance, *d.componentState);
 		
 		other.instance = _processingContext.swapInstance(d.idx, d.instance);
 		other.componentState = d.componentState;
 	});
 
-	node->on<calls::DuplicateInstance>([&](const InstanceDuplicateDesc& d, SameBoyPlugPtr& other) {
+	node->on<calls::DuplicateSystem>([&](const SystemDuplicateDesc& d, SameBoyPlugPtr& other) {
 		other = _processingContext.duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
 		_lua->duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
 	});
 
-	node->on<calls::ResetInstance>([&](const ResetInstanceDesc& d) {
+	node->on<calls::ResetSystem>([&](const ResetSystemDesc& d) {
 		_processingContext.resetInstance(d.idx, d.model);
 	});
 
-	node->on<calls::TakeInstance>([&](const InstanceIndex& idx, SameBoyPlugPtr& other) {
+	node->on<calls::TakeSystem>([&](const SystemIndex& idx, SameBoyPlugPtr& other) {
 		_lua->removeInstance(idx);
 		other = _processingContext.removeInstance(idx);
 	});
 
-	node->on<calls::SetActive>([&](const InstanceIndex& idx) {
+	node->on<calls::SetActive>([&](const SystemIndex& idx) {
 		_lua->setActive(idx);
 	});
 
@@ -52,7 +52,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::FetchState>([&](const FetchStateRequest& req, FetchStateResponse& state) {
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			if (_processingContext.getInstance(i)) {
 				state.components[i] = _lua->serializeInstance(i);
 			}

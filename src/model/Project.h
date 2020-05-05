@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "Constants.h"
+#include "model/ButtonStream.h"
 
 enum class GameboyModel {
 	Auto,
@@ -22,10 +23,10 @@ struct SameBoySettings {
 	bool gameLink = false;
 };
 
-struct EmulatorInstanceDesc {
-	InstanceIndex idx = NO_ACTIVE_INSTANCE;
-	EmulatorType emulatorType = EmulatorType::Unknown;
-	EmulatorInstanceState state = EmulatorInstanceState::Uninitialized;
+struct SystemDesc {
+	SystemIndex idx = NO_ACTIVE_SYSTEM;
+	SystemType emulatorType = SystemType::Unknown;
+	SystemState state = SystemState::Uninitialized;
 	std::string romName;
 	std::string romPath;
 	std::string savPath;
@@ -43,20 +44,23 @@ struct EmulatorInstanceDesc {
 	std::string audioComponentState;
 	std::string uiComponentState;
 
+	GameboyButtonStream buttons;
+
 	bool fastBoot = false;
 };
 
-using EmulatorInstanceDescPtr = std::shared_ptr<EmulatorInstanceDesc>;
+using SystemDescPtr = std::shared_ptr<SystemDesc>;
 
 struct Project {
 	struct Settings {
 		AudioChannelRouting audioRouting = AudioChannelRouting::StereoMixDown;
 		MidiChannelRouting midiRouting = MidiChannelRouting::SendToAll;
-		InstanceLayout layout = InstanceLayout::Auto;
+		SystemLayout layout = SystemLayout::Auto;
 		SaveStateType saveType = SaveStateType::Sram;
 		int zoom = 2;
 	} settings;
 
 	std::string path;
-	std::vector<EmulatorInstanceDescPtr> instances;
+	std::vector<SystemDescPtr> systems;
+	SystemIndex selectedSystem = NO_ACTIVE_SYSTEM;
 };

@@ -113,12 +113,12 @@ static IPopupMenu* createZoomMenu(int checked) {
 	return menu;
 }
 
-static IPopupMenu* createLayoutMenu(InstanceLayout checked) {
+static IPopupMenu* createLayoutMenu(SystemLayout checked) {
 	IPopupMenu* menu = new IPopupMenu();
-	menu->AddItem("Auto", (int)InstanceLayout::Auto);
-	menu->AddItem("Column", (int)InstanceLayout::Column);
-	menu->AddItem("Row", (int)InstanceLayout::Row);
-	menu->AddItem("Grid", (int)InstanceLayout::Grid);
+	menu->AddItem("Auto", (int)SystemLayout::Auto);
+	menu->AddItem("Column", (int)SystemLayout::Column);
+	menu->AddItem("Row", (int)SystemLayout::Row);
+	menu->AddItem("Grid", (int)SystemLayout::Grid);
 	menu->CheckItemAlone((int)checked);
 	return menu;
 }

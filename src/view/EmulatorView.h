@@ -10,7 +10,7 @@
 #include "util/RomWatcher.h"
 
 #include "model/UiLuaContext.h"
-#include "model/RetroPlugProxy.h"
+//#include "model/AudioContextProxy.h"
 
 #include <map>
 #include <set>
@@ -18,7 +18,7 @@
 using namespace iplug;
 using namespace igraphics;
 
-class EmulatorView {
+class SystemView {
 private:
 	int _imageId = -1;
 	NVGpaint _imgPaint;
@@ -33,7 +33,7 @@ private:
 	size_t _frameBufferSize = 0;
 	bool _frameDirty = false;
 
-	InstanceIndex _index;
+	SystemIndex _index;
 
 	IRECT _area;
 	IGraphics* _graphics;
@@ -44,8 +44,8 @@ private:
 	int _zoom = 2;
 
 public:
-	EmulatorView(InstanceIndex idx, IGraphics* graphics);
-	~EmulatorView();
+	SystemView(SystemIndex idx, IGraphics* graphics);
+	~SystemView();
 
 	void SetZoom(int zoom) { _zoom = zoom; }
 
@@ -65,7 +65,7 @@ public:
 
 	void Draw(IGraphics& g, double delta);
 
-	InstanceIndex GetIndex() const { return _index; }
+	SystemIndex GetIndex() const { return _index; }
 
 	void DeleteFrame();
 

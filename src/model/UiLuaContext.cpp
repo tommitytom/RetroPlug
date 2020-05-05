@@ -7,7 +7,7 @@
 #include "util/DataBuffer.h"
 #include "util/File.h"
 #include "model/FileManager.h"
-#include "model/RetroPlugProxy.h"
+#include "model/AudioContextProxy.h"
 #include "util/base64enc.h"
 #include "util/base64dec.h"
 #include "config/config.h"
@@ -24,59 +24,11 @@
 #include "CompiledLua.h"
 #endif
 
-void UiLuaContext::init(RetroPlugProxy* proxy, const std::string& path, const std::string& scriptPath) {
+void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath) {
 	_configPath = path;
 	_scriptPath = scriptPath;
 	_proxy = proxy;
 	setup();
-}
-
-void UiLuaContext::loadRom(InstanceIndex idx, const std::string& path, GameboyModel model) {
-	callFunc(_state, "_loadRomAtPath", idx, path, "", model);
-}
-
-void UiLuaContext::closeProject() {
-	callFunc(_state, "_closeProject");
-}
-
-void UiLuaContext::loadProject(const std::string& path) {
-	callFunc(_state, "_loadProject", path);
-}
-
-void UiLuaContext::saveProject(const FetchStateResponse& res) {
-	callFunc(_state, "_saveProjectToFile", res, true);
-}
-
-void UiLuaContext::findRom(InstanceIndex idx, const std::string& path) {
-	callFunc(_state, "_findRom", idx, path);
-}
-
-void UiLuaContext::removeInstance(InstanceIndex index) {
-	callFunc(_state, "_removeInstance", index);
-}
-
-void UiLuaContext::duplicateInstance(InstanceIndex index) {
-	callFunc(_state, "_duplicateInstance", index);
-}
-
-void UiLuaContext::setActive(InstanceIndex idx) {
-	callFunc(_state, "_setActive", idx);
-}
-
-void UiLuaContext::resetInstance(InstanceIndex idx, GameboyModel model) {
-	callFunc(_state, "_resetInstance", idx, model);
-}
-
-void UiLuaContext::newSram(InstanceIndex idx) {
-	callFunc(_state, "_newSram", idx);
-}
-
-void UiLuaContext::saveSram(InstanceIndex idx, const std::string& path) {
-	callFunc(_state, "_saveSram", idx, path);
-}
-
-void UiLuaContext::loadSram(InstanceIndex idx, const std::string& path, bool reset) {
-	callFunc(_state, "_loadSram", idx, path, reset);
 }
 
 void UiLuaContext::update(float delta) {
@@ -96,11 +48,19 @@ bool UiLuaContext::onKey(const iplug::IKeyPress& key, bool down) {
 	return res;
 }
 
+void UiLuaContext::onDoubleClick(float x, float y, const iplug::igraphics::IMouseMod& mod) {
+	callFunc(_state, "_onDoubleClick", x, y, mod);
+}
+
+void UiLuaContext::onMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) {
+	callFunc(_state, "_onMouseDown", x, y, mod);
+}
+
 void UiLuaContext::onPadButton(int button, bool down) {
 	callFunc(_state, "_onPadButton", button, down);
 }
 
-void UiLuaContext::onDrop(const char* str) {
+void UiLuaContext::onDrop(float x, float y, const char* str) {
 	std::vector<std::string> paths = { str };
 	callFunc(_state, "_onDrop", paths);
 }
@@ -151,10 +111,6 @@ bool isNullPtr(const sol::object o) {
 	return false;
 }
 
-void ltest(std::function<void()> fn) {
-	fn();
-}
-
 void UiLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 
@@ -178,7 +134,6 @@ void UiLuaContext::setup() {
 	s["package"]["path"] = packagePath;
 
 	s["isNullPtr"].set_function(isNullPtr);
-	//s["_requestDialog"].set_function([&](DialogType type, sol::as_table_t<std::vector<FileDialogFilters>> filters) {
 	s["_requestDialog"].set_function([&](const DialogRequest& request) { _dialogRequest = request; });
 
 	setupCommon(s);
@@ -209,41 +164,27 @@ void UiLuaContext::setup() {
 		"checksum", sol::readonly(&File::checksum)
 	);
 
-	s.new_usertype<EmulatorInstanceDesc>("EmulatorInstanceDesc",
-		"idx", &EmulatorInstanceDesc::idx,
-		"emulatorType", &EmulatorInstanceDesc::emulatorType,
-		"state", &EmulatorInstanceDesc::state,
-		"romName", &EmulatorInstanceDesc::romName,
-		"romPath", &EmulatorInstanceDesc::romPath,
-		"savPath", &EmulatorInstanceDesc::savPath,
-		"sameBoySettings", &EmulatorInstanceDesc::sameBoySettings,
-		"sourceRomData", &EmulatorInstanceDesc::sourceRomData,
-		"patchedRomData", &EmulatorInstanceDesc::patchedRomData,
-		"sourceSavData", &EmulatorInstanceDesc::sourceSavData,
-		"patchedSavData", &EmulatorInstanceDesc::patchedSavData,
-		"sourceStateData", &EmulatorInstanceDesc::sourceStateData,
-		"fastBoot", &EmulatorInstanceDesc::fastBoot
+	s.new_usertype<SystemDesc>("SystemDesc",
+		"idx", &SystemDesc::idx,
+		"emulatorType", &SystemDesc::emulatorType,
+		"state", &SystemDesc::state,
+		"romName", &SystemDesc::romName,
+		"romPath", &SystemDesc::romPath,
+		"savPath", &SystemDesc::savPath,
+		"sameBoySettings", &SystemDesc::sameBoySettings,
+		"sourceRomData", &SystemDesc::sourceRomData,
+		"patchedRomData", &SystemDesc::patchedRomData,
+		"sourceSavData", &SystemDesc::sourceSavData,
+		"patchedSavData", &SystemDesc::patchedSavData,
+		"sourceStateData", &SystemDesc::sourceStateData,
+		"fastBoot", &SystemDesc::fastBoot
 	);
 
-	s.new_usertype<RetroPlugProxy>("RetroPlugProxy",
-		"setInstance", &RetroPlugProxy::setInstance,
-		"removeInstance", &RetroPlugProxy::removeInstance,
-		"resetInstance", &RetroPlugProxy::resetInstance,
-		"duplicateInstance", &RetroPlugProxy::duplicateInstance,
-		"getInstance", &RetroPlugProxy::getInstance,
-		"getInstanceCount", &RetroPlugProxy::getInstanceCount,
-		"getInstances", &RetroPlugProxy::instances,
-		"setActiveInstance", &RetroPlugProxy::setActive,
-		"activeInstanceIdx", &RetroPlugProxy::activeIdx,
-		"fileManager", &RetroPlugProxy::fileManager,
-		"buttons", &RetroPlugProxy::getButtonPresses,
-		"closeProject", &RetroPlugProxy::closeProject,
-		"getProject", &RetroPlugProxy::getProject,
-		"updateSettings", &RetroPlugProxy::updateSettings,
-		"setSram", &RetroPlugProxy::setSram,
-		"createInstance", &RetroPlugProxy::createInstance,
-		"setRom", &RetroPlugProxy::setRom,
-		"loadRom", &RetroPlugProxy::loadRom
+	s.new_usertype<AudioContextProxy>("AudioContextProxy",
+		"setSystem", &AudioContextProxy::setSystem,
+		"duplicateSystem", &AudioContextProxy::duplicateSystem,
+		"getProject", &AudioContextProxy::getProject,
+		"loadRom", &AudioContextProxy::loadRom
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",
@@ -251,6 +192,14 @@ void UiLuaContext::setup() {
 		"shift", &iplug::IKeyPress::S,
 		"ctrl", &iplug::IKeyPress::C,
 		"alt", &iplug::IKeyPress::A
+	);
+
+	s.new_usertype<iplug::igraphics::IMouseMod>("IMouseMod",
+		"left", &iplug::igraphics::IMouseMod::L,
+		"right", &iplug::igraphics::IMouseMod::R,
+		"shift", &iplug::igraphics::IMouseMod::S,
+		"ctrl", &iplug::igraphics::IMouseMod::C,
+		"alt", &iplug::igraphics::IMouseMod::A
 	);
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;

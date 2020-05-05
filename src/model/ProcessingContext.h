@@ -20,21 +20,21 @@ private:
 	Project::Settings _settings;
 	AudioSettings _audioSettings;
 
-	AudioBuffer _audioBuffers[MAX_INSTANCES];
-	GameboyButtonStream _buttonPresses[MAX_INSTANCES];
+	AudioBuffer _audioBuffers[MAX_SYSTEMS];
+	GameboyButtonStream _buttonPresses[MAX_SYSTEMS];
 
 	micromsg::Allocator* _alloc = nullptr;
 
 public:
 	ProcessingContext() {
-		_instances.reserve(MAX_INSTANCES);
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		_instances.reserve(MAX_SYSTEMS);
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			_instances.push_back(nullptr);
 		}
 	}
 
 	~ProcessingContext() {
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			if (_instances[i]) {
 				_instances[i]->shutdown();
 			}
@@ -48,20 +48,20 @@ public:
 		_alloc = node->getAllocator();
 	}
 
-	SameBoyPlugPtr& getInstance(InstanceIndex idx) { return _instances[idx]; }
+	SameBoyPlugPtr& getInstance(SystemIndex idx) { return _instances[idx]; }
 
 	const Project::Settings& getSettings() const { return _settings; }
 
 	void setSettings(const Project::Settings& settings) { _settings = settings; }
 
-	GameboyButtonStream* getButtonPresses(InstanceIndex idx) {
+	GameboyButtonStream* getButtonPresses(SystemIndex idx) {
 		return &_buttonPresses[idx];
 	}
 
 	void fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
 		state.type = req.type;
 
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			SameBoyPlugPtr inst = _instances[i];
 			if (inst && req.buffers[i]) {
 				state.buffers[i] = req.buffers[i];
@@ -86,12 +86,12 @@ public:
 		_audioSettings = settings;
 	}
 
-	SameBoyPlugPtr swapInstance(InstanceIndex idx, SameBoyPlugPtr instance) {
+	SameBoyPlugPtr swapInstance(SystemIndex idx, SameBoyPlugPtr instance) {
 		SameBoyPlugPtr old = _instances[idx];
 		_instances[idx] = instance;
 		_instances[idx]->setSampleRate(_audioSettings.sampleRate);
 
-		// TODO: Instantiate this in the UI thread and send with the SwapInstance message
+		// TODO: Instantiate this in the UI thread and send with the SwapSystem message
 		if (_audioSettings.frameCount > 0) {
 			_audioBuffers[idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
 			_audioBuffers[idx].frameCount = _audioSettings.frameCount;
@@ -100,7 +100,7 @@ public:
 		return old;
 	}
 
-	SameBoyPlugPtr duplicateInstance(InstanceIndex sourceIdx, InstanceIndex targetIdx, SameBoyPlugPtr instance) {
+	SameBoyPlugPtr duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance) {
 		SameBoyPlugPtr old = swapInstance(targetIdx, instance);
 
 		SameBoyPlugPtr source = _instances[sourceIdx];
@@ -112,17 +112,17 @@ public:
 		return old;
 	}
 
-	void resetInstance(InstanceIndex idx, GameboyModel model) {
+	void resetInstance(SystemIndex idx, GameboyModel model) {
 		SameBoyPlugPtr inst = _instances[idx];
 		inst->reset(model, true);
 	}
 
-	SameBoyPlugPtr removeInstance(InstanceIndex idx) {
+	SameBoyPlugPtr removeInstance(SystemIndex idx) {
 		SameBoyPlugPtr old = _instances[idx];
 		_instances.erase(_instances.begin() + idx);
 		_instances.push_back(nullptr);
 
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			if (!_instances[i]) {
 				_audioBuffers[i].data = nullptr;
 				_audioBuffers[i].frameCount = 0;
@@ -137,7 +137,7 @@ public:
 
 		if (frameCount != _audioSettings.frameCount) {
 			_audioSettings.frameCount = frameCount;
-			for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+			for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 				if (_instances[i]) {
 					_audioBuffers[i].data = std::make_shared<DataBuffer<float>>(frameCount * 2);
 					_audioBuffers[i].frameCount = frameCount;
@@ -145,8 +145,8 @@ public:
 			}
 		}
 
-		SameBoyPlug* plugs[MAX_INSTANCES] = { nullptr };
-		SameBoyPlug* linkedPlugs[MAX_INSTANCES] = { nullptr };
+		SameBoyPlug* plugs[MAX_SYSTEMS] = { nullptr };
+		SameBoyPlug* linkedPlugs[MAX_SYSTEMS] = { nullptr };
 
 		size_t totalPlugCount = 0;
 		size_t plugCount = 0;
@@ -154,7 +154,7 @@ public:
 
 		VideoStream video;
 
-		for (size_t i = 0; i < MAX_INSTANCES; i++) {
+		for (size_t i = 0; i < MAX_SYSTEMS; i++) {
 			SameBoyPlugPtr plugPtr = _instances[i];
 			if (plugPtr) {
 				SameBoyPlug* plug = plugPtr.get();

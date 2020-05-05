@@ -16,12 +16,13 @@ const size_t DEFAULT_SRAM_SIZE = 0x20000;
 
 const double VIDEO_STREAM_TIMEOUT = 1000.0;
 
-RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, RetroPlugProxy* proxy, AudioController* audioController)
+RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, AudioContextProxy* proxy, AudioController* audioController)
 	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
 	proxy->videoCallback = [&](const VideoStream& video) {
-		for (size_t i = 0; i < _proxy->getInstanceCount(); ++i) {
-			if (_proxy->getInstance((InstanceIndex)i)->state == EmulatorInstanceState::Running) {
-				_views[i]->WriteFrame(video.buffers[i]);
+		const auto& systems = _proxy->getProject().systems;
+		for (const SystemDescPtr& system : systems) {
+			if (system->state == SystemState::Running) {
+				_views[system->idx]->WriteFrame(video.buffers[system->idx]);
 			}
 		}
 
@@ -42,27 +43,22 @@ bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 }
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	EmulatorInstanceDescPtr active = _proxy->getActiveInstance();
-	if (!active || active->emulatorType == EmulatorType::Placeholder) {
-		OpenLoadProjectOrRomDialog();
-	} else {
-		if (active->state == EmulatorInstanceState::RomMissing) {
-			OpenFindRomDialog();
-		}
-	}
+	_lua->onDoubleClick(x, y, mod);
 }
 
-void RetroPlugView::SetZoom(int zoom) {
+/*void RetroPlugView::SetZoom(int zoom) {
 	Project* project = _proxy->getProject();
 	project->settings.zoom = zoom + 1;
 
 	for (auto& view : _views) {
 		view->SetZoom(project->settings.zoom);
 	}
-}
+}*/
 
 void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
-	SelectActiveAtPoint(x, y);
+	_lua->onMouseDown(x, y, mod);
+
+	/*SelectActiveAtPoint(x, y);
 
 	if (mod.R) {
 		// Temporarily disable multiple instances in Ableton on Mac due to a bug
@@ -76,83 +72,17 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		Menu root;
 
 		Project* project = _proxy->getProject();
-		EmulatorInstanceDescPtr active = _proxy->getActiveInstance();
+		SystemDescPtr active = _proxy->getActiveInstance();
 		if (active) {
 			switch (active->state) {
-			case EmulatorInstanceState::Running: {
-				EmulatorView* view = GetActiveView();
-
-				root.title(active->romName)
-					.separator()
-					.subMenu("Project")
-						.action("New", [&]() { NewProject(); })
-						.action("Load...", [&]() { OpenLoadProjectDialog(); })
-						.action("Save", [&]() { SaveProject(); })
-						.action("Save As...", [&]() { SaveProjectAs(); })
-						.separator()
-						.subMenu("Save Options")
-							.multiSelect({ "Save SRAM", "Save State" }, &project->settings.saveType)
-							.parent()
-						.separator()
-						.subMenu("Add Instance", multiInstance && project->instances.size() < MAX_INSTANCES)
-							.action("Load ROM...", [&]() { OpenLoadRomDialog(NO_ACTIVE_INSTANCE, GameboyModel::Auto); })
-							.action("Same ROM as Selected", [&]() { _lua->loadRom(NO_ACTIVE_INSTANCE, active->romPath, active->sameBoySettings.model); })
-							.action("Duplicate Selected", [&]() { _lua->duplicateInstance(_activeIdx); })
-							.parent()
-						.action("Remove Instance", [&]() { RemoveActive(); }, _proxy->getInstanceCount() > 1 && multiInstance)
-						.subMenu("Layout", multiInstance)
-							.multiSelect({ "Auto", "Row", "Column", "Grid" }, &project->settings.layout)
-							.parent()
-						.subMenu("Zoom")
-					.multiSelect({ "1x", "2x", "3x", "4x" }, project->settings.zoom - 1, [&](int value) { SetZoom(value); })
-							.parent()
-						.separator()
-						.subMenu("Audio Routing", multiInstance)
-							.multiSelect({ "Stereo Mixdown", "Two Channels Per Instance" }, &project->settings.audioRouting)
-							.parent()
-						.subMenu("MIDI Routing", multiInstance)
-							.multiSelect({ 
-								"All Channels to All Instances", 
-								"Four Channels Per Instance",
-								"One Channel Per Instance",
-							}, &project->settings.midiRouting)
-							.parent()
-						.parent()
-					.subMenu("System")
-						.action("Load ROM...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::Auto); })
-						.subMenu("Load ROM As")
-							.action("AGB...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::Agb); })
-							.action("CGB C...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::CgbC); })
-							.action("CGB E (default)...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::CgbE); })
-							.action("DMG B...", [&]() { OpenLoadRomDialog(_activeIdx, GameboyModel::DmgB); })
-							.parent()
-						.action("Reset", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::Auto); })
-						.subMenu("Reset As")
-							.action("AGB", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::Agb); })
-							.action("CGB C", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::CgbC); })
-							.action("CGB E (default)", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::CgbE); })
-							.action("DMG B", [&]() { _lua->resetInstance(_activeIdx, GameboyModel::DmgB); })
-							.parent()
-						.separator()
-						.action("New .sav", [&]() { _lua->newSram(_activeIdx); })
-						.action("Load .sav...", [&]() { OpenLoadSavDialog(); })
-						.action("Save .sav", [&]() { _lua->saveSram(_activeIdx, ""); })
-						.action("Save .sav As...", [&]() { OpenSaveSavDialog(); })
-						.separator()
-						.subMenu("UI Components").parent()
-						.subMenu("Audio Components").parent()
-						.parent()
-					.subMenu("Settings")
-						.action("Open Settings Folder...", [&]() { openShellFolder(getContentPath()); })
-						.parent()
-					.separator()
-					.select("Game Link", &active->sameBoySettings.gameLink);
+			case SystemState::Running: {
+				SystemView* view = GetActiveView();
 
 				if (!active->sourceSavData) {
 					active->sourceSavData = std::make_shared<DataBuffer<char>>(DEFAULT_SRAM_SIZE);
 				}
 
-				// Update SRAM for the selected instance since it might be used to generate the menu
+				// Update SRAM for the selected system since it might be used to generate the menu
 				_audioController->getSram(_activeIdx, active->sourceSavData);
 
 				std::vector<Menu*> menus;
@@ -166,7 +96,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 				break;
 			}
-			case EmulatorInstanceState::RomMissing:
+			case SystemState::RomMissing:
 				root.action("Find ROM...", [&]() { OpenFindRomDialog(); })
 					.action("Load Project...", [&]() { OpenLoadProjectDialog(); });
 
@@ -222,13 +152,13 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 				}
 				
 				UpdateLayout();
-				UpdateActive();
+				UpdateSelected();
 			}
 		});
 
 		createMenu(&_menu, &root, callbacks);
 		GetUI()->CreatePopupMenu(*this, _menu, x, y);
-	}
+	}*/
 }
 
 void RetroPlugView::Draw(IGraphics& g) {
@@ -237,85 +167,83 @@ void RetroPlugView::Draw(IGraphics& g) {
 	_frameTimer.reset();
 	_frameTimer.start();
 
-	UpdateActive();
+	UpdateSelected();
 
 	// TODO: Probably only do this after changing layout?
-	SetZoom(_proxy->getProject()->settings.zoom - 1);
+	//SetZoom(_proxy->getProject()->settings.zoom - 1);
 
 	onFrame(delta);
-	//_lua->update(delta);
 	_proxy->update(delta);
+	_lua->update(delta);
 
 	_timeSinceVideo += delta;
 	
-	for (size_t i = 0; i < _proxy->getInstanceCount(); ++i) {
-		EmulatorView* view = _views[i];
-		const EmulatorInstanceDescPtr& instance = _proxy->getInstance(i);
+	const auto& systems = _proxy->getProject().systems;
+	for (size_t i = 0; i < systems.size(); ++i) {
+		SystemView* view = _views[i];
+		const SystemDescPtr& system = systems[i];
 
-		if (instance->state == EmulatorInstanceState::Running) {
+		if (system->state == SystemState::Running) {
 			if (_timeSinceVideo < VIDEO_STREAM_TIMEOUT) {
 				view->Draw(g, delta);
 			} else {
-				instance->state = EmulatorInstanceState::VideoFeedLost;
+				system->state = SystemState::VideoFeedLost;
 				view->ShowText("Audio timeout", "Check DAW settings");
 				view->DeleteFrame();
 			}
-		} else if (instance->state == EmulatorInstanceState::VideoFeedLost) {
-			//std::cout << _timeSinceVideo << std::endl;
+		} else if (system->state == SystemState::VideoFeedLost) {
 			if (_timeSinceVideo < VIDEO_STREAM_TIMEOUT) {
 				view->HideText();
 				view->Draw(g, delta);
-				instance->state = EmulatorInstanceState::Running;
+				system->state = SystemState::Running;
 			}
 		}
 	}
 }
 
 void RetroPlugView::OnDrop(float x, float y, const char* str) {
-	SelectActiveAtPoint(x, y);
-	_lua->onDrop(str);
-	UpdateLayout();
+	_lua->onDrop(x, y, str);
 }
 
 void RetroPlugView::UpdateLayout() {
 	if (_views.empty()) {
-		for (size_t i = 0; i < MAX_INSTANCES; ++i) {
-			_views.push_back(new EmulatorView(i, GetUI()));
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
+			_views.push_back(new SystemView(i, GetUI()));
 		}
 	}
 
-	for (size_t i = 0; i < MAX_INSTANCES; ++i) {
+	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 		_views[i]->HideText();
 	}
 
-	Project::Settings& settings = _proxy->getProject()->settings;
+	const Project::Settings& settings = _proxy->getProject().settings;
 	int frameW = FRAME_WIDTH * settings.zoom;
 	int frameH = FRAME_HEIGHT * settings.zoom;
 
 	int windowW = frameW;
 	int windowH = frameH;
 
-	size_t count = _proxy->getInstanceCount();
+	size_t count = _proxy->getProject().systems.size();
 	if (count == 0) {
 		count = 1;
 		_views[0]->ShowText("Double click to", "load a rom...");
 		_views[0]->DeleteFrame();
 	}
 
-	InstanceLayout layout = settings.layout;
-	if (layout == InstanceLayout::Auto) {
+	SystemLayout layout = settings.layout;
+	if (layout == SystemLayout::Auto) {
 		if (count < 4) {
-			layout = InstanceLayout::Row;
+			layout = SystemLayout::Row;
 		} else {
-			layout = InstanceLayout::Grid;
+			layout = SystemLayout::Grid;
 		}
 	}
 
-	if (layout == InstanceLayout::Row) {
+	if (layout == SystemLayout::Row) {
 		windowW = count * frameW;
-	} else if (layout == InstanceLayout::Column) {
+	} else if (layout == SystemLayout::Column) {
 		windowH = count * frameH;
-	} else if (layout == InstanceLayout::Grid) {
+	} else if (layout == SystemLayout::Grid) {
 		if (count > 2) {
 			windowW = 2 * frameW;
 			windowH = 2 * frameH;
@@ -333,9 +261,9 @@ void RetroPlugView::UpdateLayout() {
 		int gridX = 0;
 		int gridY = 0;
 
-		if (layout == InstanceLayout::Row) {
+		if (layout == SystemLayout::Row) {
 			gridX = i;
-		} else if (layout == InstanceLayout::Column) {
+		} else if (layout == SystemLayout::Column) {
 			gridY = i;
 		} else {
 			if (i < 2) {
@@ -359,104 +287,22 @@ void RetroPlugView::UpdateLayout() {
 	}
 }
 
-void RetroPlugView::UpdateActive() {
-	InstanceIndex idx = _proxy->activeIdx();
+void RetroPlugView::UpdateSelected() {
+	SystemIndex idx = _proxy->getProject().selectedSystem;
 
-	if (_activeIdx != NO_ACTIVE_INSTANCE && idx != _activeIdx) {
+	if (_activeIdx != NO_ACTIVE_SYSTEM && idx != _activeIdx) {
 		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);
 	}
 
-	if (idx != NO_ACTIVE_INSTANCE) {
+	if (idx != NO_ACTIVE_SYSTEM) {
 		_views[idx]->SetAlpha(ACTIVE_ALPHA);
 	}
 
 	_activeIdx = idx;
 }
 
-void RetroPlugView::SetActive(size_t index) {
-	_lua->setActive(index);
-	UpdateActive();
-}
-
-void RetroPlugView::RemoveActive() {
-	_lua->removeInstance(_activeIdx);
-	UpdateLayout();
-	UpdateActive();
-}
-
-void RetroPlugView::CloseProject() {
-	_lua->closeProject();
-	UpdateLayout();
-	UpdateActive();
-}
-
-void RetroPlugView::NewProject() {
-	CloseProject();
-}
-
-void RetroPlugView::SaveProject() {
-	if (_proxy->getProject()->path.empty()) {
-		SaveProjectAs();
-	} else {
-		RequestSave();
-	}
-}
-
-void RetroPlugView::SaveProjectAs() {
-	tstring path = BasicFileSave(GetUI(), { RETROPLUG_PROJECT_FILTER });
-	if (path.size() > 0) {
-		_proxy->getProject()->path = ws2s(path);
-		RequestSave();
-	}
-}
-
 void RetroPlugView::RequestSave() {
-	_proxy->requestSave([&](const FetchStateResponse& res) {
+	/*_proxy->requestSave([&](const FetchStateResponse& res) {
 		_lua->saveProject(res);
-	});
-}
-
-void RetroPlugView::OpenFindRomDialog() {
-	std::vector<tstring> paths = BasicFileOpen(GetUI(), { GAMEBOY_ROM_FILTER }, false);
-	if (paths.size() > 0) {
-		_lua->findRom(_proxy->activeIdx(), ws2s(paths[0]));
-	}
-}
-
-void RetroPlugView::OpenLoadProjectOrRomDialog() {
-	std::vector<FileDialogFilters> types = {
-		ALL_SUPPORTED_FILTER,
-		GAMEBOY_ROM_FILTER,
-		RETROPLUG_PROJECT_FILTER
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
-	if (paths.size() > 0) {
-		LoadProjectOrRom(paths[0]);
-	}
-}
-
-void RetroPlugView::LoadProjectOrRom(const tstring& path) {
-	tstring ext = tstr(fs::path(path).extension().string());
-	if (ext == TSTR(".retroplug")) {
-		LoadProject(path);
-	} else if (ext == TSTR(".gb") || ext == TSTR(".gbc")) {
-		_lua->loadRom(_activeIdx, ws2s(path), GameboyModel::Auto);
-	}
-}
-
-void RetroPlugView::LoadProject(const tstring& path) {
-	_lua->loadProject(ws2s(path));
-	UpdateLayout();
-}
-
-void RetroPlugView::OpenLoadProjectDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("RetroPlug Projects"), TSTR("*.retroplug") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(GetUI(), types, false);
-	if (paths.size() > 0) {
-		LoadProject(paths[0]);
-	}
+	});*/
 }

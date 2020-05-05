@@ -22,13 +22,13 @@ using AxisButtons::AxisButton;
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
 
 RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double sampleRate)
-	: _listener(&_uiLua, &_proxy), _audioController(timeInfo, sampleRate)
+	: _listener(&_uiLua, &_proxy), _audioController(timeInfo, sampleRate), _proxy(&_audioController)
 {
 	_bus.addCall<calls::LoadRom>(4);
-	_bus.addCall<calls::SwapInstance>(4);
-	_bus.addCall<calls::TakeInstance>(4);
-	_bus.addCall<calls::DuplicateInstance>(1);
-	_bus.addCall<calls::ResetInstance>(4);
+	_bus.addCall<calls::SwapSystem>(4);
+	_bus.addCall<calls::TakeSystem>(4);
+	_bus.addCall<calls::DuplicateSystem>(1);
+	_bus.addCall<calls::ResetSystem>(4);
 	_bus.addCall<calls::TransmitVideo>(16);
 	_bus.addCall<calls::UpdateSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);

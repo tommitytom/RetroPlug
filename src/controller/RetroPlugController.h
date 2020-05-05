@@ -5,7 +5,7 @@
 #include "micromsg/nodemanager.h"
 #include "view/RetroPlugRoot.h"
 #include "messaging.h"
-#include "model/RetroPlugProxy.h"
+#include "model/AudioContextProxy.h"
 #include "Types.h"
 #include "model/ProcessingContext.h"
 #include "model/AudioLuaContext.h"
@@ -16,10 +16,10 @@
 class ChangeListener : public FW::FileWatchListener {
 private:
 	UiLuaContext* _uiCtx;
-	RetroPlugProxy* _proxy;
+	AudioContextProxy* _proxy;
 
 public:
-	ChangeListener(UiLuaContext* uiContext = nullptr, RetroPlugProxy* proxy = nullptr):
+	ChangeListener(UiLuaContext* uiContext = nullptr, AudioContextProxy* proxy = nullptr):
 		_uiCtx(uiContext), _proxy(proxy) {}
 
 	~ChangeListener() {}
@@ -44,7 +44,7 @@ class RetroPlugView;
 class RetroPlugController {
 private:
 	UiLuaContext _uiLua;
-	RetroPlugProxy _proxy;	
+	AudioContextProxy _proxy;	
 	RetroPlugView* _view;
 	
 	AudioController _audioController;
@@ -57,7 +57,7 @@ private:
 	gainput::DeviceId _padId;
 	bool _padButtons[gainput::PadButtonAxisCount_ + gainput::PadButtonCount_];
 
-	InstanceIndex _selected;
+	SystemIndex _selected;
 
 	micromsg::NodeManager<NodeTypes> _bus;
 

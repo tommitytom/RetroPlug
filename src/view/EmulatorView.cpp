@@ -11,7 +11,7 @@
 #include "ConfigLoader.h"
 #include "rapidjson/document.h"
 
-EmulatorView::EmulatorView(InstanceIndex idx, IGraphics* graphics)
+SystemView::SystemView(SystemIndex idx, IGraphics* graphics)
 	: _index(idx), _graphics(graphics)
 {
 	/*_settings = {
@@ -25,12 +25,12 @@ EmulatorView::EmulatorView(InstanceIndex idx, IGraphics* graphics)
 	}
 }
 
-EmulatorView::~EmulatorView() {
+SystemView::~SystemView() {
 	HideText();
 	DeleteFrame();
 }
 
-void EmulatorView::DeleteFrame() {
+void SystemView::DeleteFrame() {
 	if (_imageId != -1) {
 		NVGcontext* ctx = (NVGcontext*)_graphics->GetDrawContext();
 		nvgDeleteImage(ctx, _imageId);
@@ -50,7 +50,7 @@ void EmulatorView::DeleteFrame() {
 	}
 }
 
-void EmulatorView::WriteFrame(const VideoBuffer& buffer) {
+void SystemView::WriteFrame(const VideoBuffer& buffer) {
 	if (buffer.data.get()) {
 		if (buffer.data.count() > _frameBufferSize) {
 			if (_frameBuffer) {
@@ -74,19 +74,19 @@ void EmulatorView::WriteFrame(const VideoBuffer& buffer) {
 	}
 }
 
-void EmulatorView::ShowText(const std::string & row1, const std::string & row2) {
+void SystemView::ShowText(const std::string & row1, const std::string & row2) {
 	_showText = true;
 	_textIds[0]->SetStr(row1.c_str());
 	_textIds[1]->SetStr(row2.c_str());
 	UpdateTextPosition();
 }
 
-void EmulatorView::HideText() {
+void SystemView::HideText() {
 	_showText = false;
 	UpdateTextPosition();
 }
 
-void EmulatorView::UpdateTextPosition() {
+void SystemView::UpdateTextPosition() {
 	if (_showText) {
 		float mid = _area.H() / 2;
 		IRECT topRow(_area.L, mid - 25, _area.R, mid);
@@ -99,19 +99,19 @@ void EmulatorView::UpdateTextPosition() {
 	}
 }
 
-void EmulatorView::SetArea(const IRECT & area) {
+void SystemView::SetArea(const IRECT & area) {
 	_area = area;
 	UpdateTextPosition();
 }
 
-void EmulatorView::Draw(IGraphics& g, double delta) {
+void SystemView::Draw(IGraphics& g, double delta) {
 	NVGcontext* vg = (NVGcontext*)g.GetDrawContext();
-	if (_index != NO_ACTIVE_INSTANCE) {
+	if (_index != NO_ACTIVE_SYSTEM) {
 		DrawPixelBuffer(vg);
 	}
 }
 
-void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
+void SystemView::DrawPixelBuffer(NVGcontext* vg) {
 	if (_frameDirty && _frameBuffer) {
 		if (_imageId == -1) {
 			_imageId = nvgCreateImageRGBA(vg, _dimensions.w, _dimensions.h, NVG_IMAGE_NEAREST, (const unsigned char*)_frameBuffer);
@@ -132,7 +132,7 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 	}
 }
 
-/*IPopupMenu* EmulatorView::CreateSettingsMenu() {
+/*IPopupMenu* SystemView::CreateSettingsMenu() {
 	IPopupMenu* settingsMenu = new IPopupMenu();
 
 	// TODO: These should be moved in to the SameBoy wrapper
@@ -172,7 +172,7 @@ void EmulatorView::DrawPixelBuffer(NVGcontext* vg) {
 	return settingsMenu;
 }*/
 
-/*void EmulatorView::OpenReplaceRomDialog() {
+/*void SystemView::OpenReplaceRomDialog() {
 	std::vector<FileDialogFilters> types = {
 		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
 	};

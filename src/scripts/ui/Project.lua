@@ -6,12 +6,33 @@ local projectutil = require("util.project")
 local serpent = require("serpent")
 
 local Error = require("Error")
+local System = require("System")
 
 local Project = class()
 function Project:init(audioContext)
+	-- TODO: Create project components (cm.createGlobalComponents())
+
 	self._audioContext = audioContext
 	self._project = audioContext:getProject()
 	self:clear()
+
+	local count = #self._project.systems
+	for i = 1, count, 1 do
+		local desc = self._project.systems[i - 1]
+		if desc.state ~= SystemState.Uninitialized then
+			local system = System(desc)
+			system._audioContext = self._audioContext
+			table.insert(self.systems, system)
+
+			-- TODO: Initialize components!
+			-- TODO: Set active
+		end
+	end
+
+	--[[for _, instance in ipairs(_instances) do
+		instance:triggerEvent("onComponentsInitialized", instance.components)
+		instance:triggerEvent("onReload")
+	end]]
 end
 
 function Project:clear()
@@ -56,7 +77,7 @@ function Project:save()
 
 		for i, instance in ipairs(_instances) do
 			local desc = instance.system:desc()
-			if desc.state ~= EmulatorInstanceState.Uninitialized then
+			if desc.state ~= SystemState.Uninitialized then
 				local inst = cloneEnumFields(desc, InstanceSettingsFields)
 				inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
 				inst.uiComponents = serializer.serializeInstance(instance)
@@ -99,8 +120,8 @@ function Project:addSystem(system)
 	end
 
 	system._audioContext = self._audioContext
-
 	table.insert(self.systems, system)
+
 	self._audioContext:setSystem(desc)
 end
 
@@ -109,8 +130,10 @@ function Project:duplicateSystem(idx)
 	local system = self.systems[idx]
 	local newSystem = system:clone()
 
+	system._audioContext = self._audioContext
 	table.insert(self.systems, system)
-	self._audioContext:duplicateSystem(idx, newSystem.desc)
+
+	self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
 end
 
 function Project:removeSystem(idx)
