@@ -15,3 +15,5 @@ end
 function SemVer:toString()
 	return tostring(self.major) .. "." .. tostring(self.minor) .. "." .. tostring(self.patch)
 end
+
+return SemVer

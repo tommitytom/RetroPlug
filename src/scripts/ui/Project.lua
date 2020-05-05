@@ -140,3 +140,5 @@ function Project:removeSystem(idx)
 	self._audioContext:removeSystem(idx - 1)
 	table.remove(self.systems, idx)
 end
+
+return Project

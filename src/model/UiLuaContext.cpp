@@ -2,7 +2,6 @@
 
 #include "plugs/SameBoyPlug.h"
 
-#include <sol/sol.hpp>
 #include "util/fs.h"
 #include "util/DataBuffer.h"
 #include "util/File.h"
@@ -38,39 +37,39 @@ void UiLuaContext::update(float delta) {
 	}
 
 	if (!_haltFrameProcessing) {
-		_haltFrameProcessing = !callFunc(_state, "_frame", delta);
+		//_haltFrameProcessing = !callFunc(_state, "_frame", delta);
 	}
 }
 
 bool UiLuaContext::onKey(const iplug::IKeyPress& key, bool down) {
 	bool res = false;
-	callFuncRet(_state, "_onKey", res, key, down);
+	callFuncRet(_viewRoot, "onKey", res, key, down);
 	return res;
 }
 
 void UiLuaContext::onDoubleClick(float x, float y, const iplug::igraphics::IMouseMod& mod) {
-	callFunc(_state, "_onDoubleClick", x, y, mod);
+	callFunc(_viewRoot, "onDoubleClick", x, y, mod);
 }
 
 void UiLuaContext::onMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) {
-	callFunc(_state, "_onMouseDown", x, y, mod);
+	callFunc(_viewRoot, "onMouseDown", x, y, mod);
 }
 
 void UiLuaContext::onPadButton(int button, bool down) {
-	callFunc(_state, "_onPadButton", button, down);
+	callFunc(_viewRoot, "onPadButton", button, down);
 }
 
 void UiLuaContext::onDrop(float x, float y, const char* str) {
 	std::vector<std::string> paths = { str };
-	callFunc(_state, "_onDrop", paths);
+	callFunc(_viewRoot, "onDrop", paths);
 }
 
 void UiLuaContext::onMenu(std::vector<Menu*>& menus) {
-	callFunc(_state, "_onMenu", menus);
+	callFunc(_viewRoot, "onMenu", menus);
 }
 
 void UiLuaContext::onMenuResult(int id) {
-	callFunc(_state, "_onMenuResult", id);
+	callFunc(_viewRoot, "onMenuResult", id);
 }
 
 void UiLuaContext::reload() {
@@ -81,6 +80,7 @@ void UiLuaContext::reload() {
 
 void UiLuaContext::shutdown() {
 	if (_state) {
+		_viewRoot = sol::table();
 		delete _state;
 		_state = nullptr;
 	}
@@ -184,7 +184,8 @@ void UiLuaContext::setup() {
 		"setSystem", &AudioContextProxy::setSystem,
 		"duplicateSystem", &AudioContextProxy::duplicateSystem,
 		"getProject", &AudioContextProxy::getProject,
-		"loadRom", &AudioContextProxy::loadRom
+		"loadRom", &AudioContextProxy::loadRom,
+		"getFileManager", &AudioContextProxy::getFileManager
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",
@@ -205,7 +206,11 @@ void UiLuaContext::setup() {
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 	s["_proxy"].set(_proxy);
 
-	if (!runScript(_state, "require('plug')")) {
+	if (!runScript(_state, "require('main')")) {
+		return;
+	}
+
+	if (!callFuncRet(_state, "_getView", _viewRoot)) {
 		return;
 	}
 
@@ -233,6 +238,11 @@ void UiLuaContext::setup() {
 
 	consoleLogLine("Finished loading components");
 
-	runFile(_state, _configPath + "/config.lua");
-	runScript(_state, "_init()");
+	if (!runFile(_state, _configPath + "/config.lua")) {
+		consoleLogLine("Failed to load user config");
+	}
+
+	if (!callFunc(_viewRoot, "setup", _proxy)) {
+		consoleLogLine("Failed to setup view");
+	}
 }

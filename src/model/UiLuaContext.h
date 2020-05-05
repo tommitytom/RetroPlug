@@ -11,7 +11,9 @@
 
 #include <iostream>
 
-namespace sol { class state; };
+#include <sol/sol.hpp>
+
+//namespace sol { class state; };
 
 class UiLuaContext {
 private:
@@ -27,6 +29,8 @@ private:
 	//std::vector<FileDialogFilters> _dialogFilters;
 	//DialogType _dialogType = DialogType::None;
 	DialogRequest _dialogRequest;
+
+	sol::table _viewRoot;
 
 public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}

@@ -93,7 +93,8 @@ void setupCommon(sol::state& s) {
 	s.new_usertype<Project>("Project",
 		"path", &Project::path,
 		"systems", &Project::systems,
-		"settings", &Project::settings
+		"settings", &Project::settings,
+		"clear", &Project::clear
 	);
 
 	s.new_usertype<Project::Settings>("ProjectSettings",

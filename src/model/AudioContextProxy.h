@@ -35,6 +35,10 @@ public:
 	AudioContextProxy(AudioController* audioController): _audioController(audioController) { }
 	~AudioContextProxy() {}
 
+	FileManager* getFileManager() {
+		return &_fileManager;
+	}
+
 	void updateSram(SystemIndex idx) {
 		DataBuffer<char>* buffer = _project.systems[idx]->sourceSavData.get();
 		_audioController->getSram(idx, buffer);

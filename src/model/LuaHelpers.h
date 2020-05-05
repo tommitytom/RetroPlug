@@ -42,4 +42,41 @@ static bool callFuncRet(sol::state* state, const char* name, ReturnType& ret, Ar
 	return false;
 }
 
+template <typename ...Args>
+static bool callFunc(sol::table& table, const char* name, Args&&... args) {
+	sol::protected_function f = table[name];
+	sol::protected_function_result result = f(table, args...); // Use std::forward?
+	return validateResult(result, "Failed to call", name);
+}
+
+template <typename ReturnType, typename ...Args>
+static bool callFuncRet(sol::table& table, const char* name, ReturnType& ret, Args&&... args) {
+	sol::protected_function f = table[name];
+	sol::protected_function_result result = f(table, args...);
+	if (validateResult(result, "Failed to call", name)) {
+		ret = result.get<ReturnType>();
+		return true;
+	}
+
+	return false;
+}
+
+template <typename ReturnType>
+static bool runScriptRet(sol::state* state, const std::string& script, ReturnType& ret, const char* error = nullptr) {
+	sol::protected_function_result res = state->do_string(script);
+	bool valid;
+	if (error != nullptr) {
+		valid = validateResult(res, error);
+	} else {
+		valid = validateResult(res, "Failed to run script", script);
+	}
+
+	if (valid) {
+		auto t = res.get_type();
+		ret = res.get<ReturnType>();
+	}
+	
+	return valid;
+}
+
 void setupCommon(sol::state& s);
