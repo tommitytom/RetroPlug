@@ -146,6 +146,10 @@ public:
 		return SystemState::Initialized;
 	}
 
+	void resetSystem(SystemIndex idx, GameboyModel model) {
+		_node->push<calls::ResetSystem>(NodeTypes::Audio, ResetSystemDesc { idx, model });
+	}
+
 	void removeSystem(SystemIndex idx) {
 		_node->request<calls::TakeSystem>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr&) {});
 		_project.systems.erase(_project.systems.begin() + idx);

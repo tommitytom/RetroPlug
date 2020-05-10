@@ -96,9 +96,7 @@ bool isNullPtr(const sol::object o) {
 		case sol::type::lightuserdata:
 		case sol::type::userdata: {
 			void* p = o.as<void*>();
-			if (p > 0) {
-				return true;
-			}
+			return p == nullptr;
 		}
 	}
 
@@ -187,7 +185,8 @@ void UiLuaContext::setup() {
 		"getFileManager", &AudioContextProxy::getFileManager,
 		"updateSettings", &AudioContextProxy::updateSettings,
 		"removeSystem", &AudioContextProxy::removeSystem,
-		"clearProject", &AudioContextProxy::clearProject
+		"clearProject", &AudioContextProxy::clearProject,
+		"resetSystem", &AudioContextProxy::resetSystem
 	);
 
 	s.new_usertype<ViewWrapper>("ViewWrapper",

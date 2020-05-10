@@ -3,7 +3,7 @@ local dialog = require("dialog")
 local function handleError(err, action, name)
 	if err ~= nil then
 		dialog.error(err, "Failed to " .. action .. " " .. name)
-		print(err)
+		print(err, "Failed to " .. action .. " " .. name)
 	end
 end
 
