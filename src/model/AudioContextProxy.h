@@ -63,8 +63,8 @@ public:
 		_node->request<calls::SwapLuaContext>(NodeTypes::Audio, ctx, [](const AudioLuaContextPtr& d) {});
 	}
 
-	const Project& getProject() const {
-		return _project;
+	Project* getProject() {
+		return &_project;
 	}
 
 	void update(double delta) {
@@ -147,5 +147,22 @@ public:
 		});
 
 		return instance;
+	}
+
+	void removeSystem(SystemIndex idx) {
+		_node->request<calls::TakeSystem>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr&) {});
+		_project.systems.erase(_project.systems.begin() + idx);
+	}
+
+	void clearProject() {
+		for (int i = (int)_project.systems.size() - 1; i >= 0; --i) {
+			removeSystem(i);
+		}
+
+		_project = Project();
+	}
+
+	void updateSettings() {
+		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
 	}
 };

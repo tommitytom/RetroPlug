@@ -12,6 +12,7 @@
 #include "util/cxxtimer.hpp"
 #include "platform/FileDialog.h"
 #include "controller/AudioController.h"
+#include "ViewWrapper.h"
 
 using namespace iplug;
 using namespace igraphics;
@@ -24,8 +25,8 @@ private:
 	std::vector<SystemView*> _views;
 	SystemIndex _activeIdx = NO_ACTIVE_SYSTEM;
 
-	IPopupMenu _menu;
 	EHost _host;
+	IPopupMenu _menu;
 
 	UiLuaContext* _lua;
 	AudioController* _audioController;
@@ -44,7 +45,7 @@ public:
 	~RetroPlugView();
 
 	SystemView* GetActiveView() {
-		SystemIndex idx = _proxy->getProject().selectedSystem;
+		SystemIndex idx = _proxy->getProject()->selectedSystem;
 		if (idx != NO_ACTIVE_SYSTEM) {
 			return _views[idx];
 		}
@@ -72,4 +73,6 @@ private:
 	void RequestSave();
 
 	void UpdateSelected();
+
+	void ProcessDialog();
 };

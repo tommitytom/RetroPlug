@@ -2,12 +2,12 @@ local fs = require("fs")
 local Error = require("Error")
 
 local function loadPathOrData(data)
+	print(data)
 	if type(data) == "string" then
 		-- Is a path, load the data
 		local fileData = fs.load(data)
-		if fileData == nil then
-			return nil, Error("Failed to load " .. data)
-		end
+		if fileData ~= nil then return fileData end
+		return nil, Error("Failed to load " .. data)
 	elseif type(data) == "cdata" then
 		-- Check if this is a DataBuffer
 		return data

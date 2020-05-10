@@ -8,6 +8,7 @@
 
 #include "view/Menu.h"
 #include "platform/FileDialog.h"
+#include "view/ViewWrapper.h"
 
 #include <iostream>
 
@@ -22,19 +23,20 @@ private:
 	std::string _scriptPath;
 
 	AudioContextProxy* _proxy;
+	ViewWrapper _viewWrapper;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
-
-	//std::vector<FileDialogFilters> _dialogFilters;
-	//DialogType _dialogType = DialogType::None;
-	DialogRequest _dialogRequest;
 
 	sol::table _viewRoot;
 
 public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}
 	~UiLuaContext() { shutdown(); }
+
+	ViewWrapper* getViewWrapper() {
+		return &_viewWrapper;
+	}
 
 	void init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath);
 

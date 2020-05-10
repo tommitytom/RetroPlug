@@ -86,18 +86,8 @@ void UiLuaContext::shutdown() {
 	}
 }
 
-bool UiLuaContext::getDialogRequest(DialogRequest& request) {
-	if (_dialogRequest.type != DialogType::None) {
-		request = _dialogRequest;
-		return true;
-	}
-
-	return false;
-}
-
 void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
-	callFunc(_state, "_handleDialogCallback", paths);
-	_dialogRequest = DialogRequest();
+	callFunc(_viewRoot, "onDialogResult", paths);
 }
 
 bool isNullPtr(const sol::object o) {
@@ -132,9 +122,7 @@ void UiLuaContext::setup() {
 #endif
 
 	s["package"]["path"] = packagePath;
-
 	s["isNullPtr"].set_function(isNullPtr);
-	s["_requestDialog"].set_function([&](const DialogRequest& request) { _dialogRequest = request; });
 
 	setupCommon(s);
 	setupLsdj(s);
@@ -165,6 +153,7 @@ void UiLuaContext::setup() {
 	);
 
 	s.new_usertype<SystemDesc>("SystemDesc",
+		"new", sol::factories([]() { return std::make_shared<SystemDesc>(); }),
 		"idx", &SystemDesc::idx,
 		"emulatorType", &SystemDesc::emulatorType,
 		"state", &SystemDesc::state,
@@ -177,7 +166,8 @@ void UiLuaContext::setup() {
 		"sourceSavData", &SystemDesc::sourceSavData,
 		"patchedSavData", &SystemDesc::patchedSavData,
 		"sourceStateData", &SystemDesc::sourceStateData,
-		"fastBoot", &SystemDesc::fastBoot
+		"fastBoot", &SystemDesc::fastBoot,
+		"audioComponentState", &SystemDesc::audioComponentState
 	);
 
 	s.new_usertype<AudioContextProxy>("AudioContextProxy",
@@ -185,7 +175,14 @@ void UiLuaContext::setup() {
 		"duplicateSystem", &AudioContextProxy::duplicateSystem,
 		"getProject", &AudioContextProxy::getProject,
 		"loadRom", &AudioContextProxy::loadRom,
-		"getFileManager", &AudioContextProxy::getFileManager
+		"getFileManager", &AudioContextProxy::getFileManager,
+		"updateSettings", &AudioContextProxy::updateSettings,
+		"clearProject", &AudioContextProxy::clearProject
+	);
+
+	s.new_usertype<ViewWrapper>("ViewWrapper",
+		"requestDialog", &ViewWrapper::requestDialog,
+		"requestMenu", &ViewWrapper::requestMenu
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",
@@ -204,7 +201,8 @@ void UiLuaContext::setup() {
 	);
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
-	s["_proxy"].set(_proxy);
+	//s["_proxy"].set(_proxy);
+	//s["_proxy"].set(_proxy);
 
 	if (!runScript(_state, "require('main')")) {
 		return;
@@ -242,7 +240,7 @@ void UiLuaContext::setup() {
 		consoleLogLine("Failed to load user config");
 	}
 
-	if (!callFunc(_viewRoot, "setup", _proxy)) {
+	if (!callFunc(_viewRoot, "setup", &_viewWrapper, _proxy)) {
 		consoleLogLine("Failed to setup view");
 	}
 }

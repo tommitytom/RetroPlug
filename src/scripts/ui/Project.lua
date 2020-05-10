@@ -2,7 +2,9 @@ local class = require("class")
 local const = require("const")
 local fs = require("fs")
 local fileutil = require("util.file")
+local pathutil = require("pathutil")
 local projectutil = require("util.project")
+local componentutil = require("util.component")
 local serpent = require("serpent")
 
 local Error = require("Error")
@@ -13,12 +15,13 @@ function Project:init(audioContext)
 	-- TODO: Create project components (cm.createGlobalComponents())
 
 	self._audioContext = audioContext
-	self._project = audioContext:getProject()
-	self:clear()
+	self._native = audioContext:getProject()
+	self._components = {}
+	self.systems = {}
 
-	local count = #self._project.systems
+	local count = #self._native.systems
 	for i = 1, count, 1 do
-		local desc = self._project.systems[i - 1]
+		local desc = self._native.systems[i]
 		if desc.state ~= SystemState.Uninitialized then
 			local system = System(desc)
 			system._audioContext = self._audioContext
@@ -35,31 +38,83 @@ function Project:init(audioContext)
 	end]]
 end
 
+function Project:emit(eventName, ...)
+	componentutil.emitComponentEvent(eventName, self._components, ...)
+end
+
 function Project:clear()
 	self._components = {}
 	self.systems = {}
-	self._project:clear()
+	self._audioContext:clearProject()
 end
 
-function Project:load(data)
-	local projectData = projectutil.loadProject(data)
+function Project:loadRom(data, idx, model)
 	local fileData, err = fileutil.loadPathOrData(data)
 	if err ~= nil then return err end
 
-	local stringData = fileData:toString()
-	local ok, projectData = serpent.load(stringData)
-	if ok ~= true then
-		-- Old projects (<= v0.2.0) are encoded using JSON rather than lua
-		projectData = json.decode(stringData)
-		if projectData == nil then
-			return Error("Failed to load project: Unable to deserialize file")
+	local romPath
+	if type(data) == "string" then romPath = data end
+
+	local d = SystemDesc.new()
+	if type(data) == "string" then d.romPath = data end
+	if idx ~= nil then d.idx = -1 end
+	if model ~= nil then d.sameBoySettings.model = GameboyModel.Auto end
+
+	d.emulatorType = SystemType.SameBoy
+	d.state = SystemState.Initialized
+	d.sourceRomData = fileData
+
+	if romPath ~= nil then
+		local savPath = pathutil.changeExt(romPath, "sav")
+		if fs.exists(savPath) == true then
+			local savData = fs.load(savPath, false)
+			if savData ~= nil then
+				d.savPath = savPath
+				d.sourceSavData = savData
+			end
 		end
 	end
 
-	err = validateAndUpgradeProject(projectData)
-	if err ~= nil then return err end
+	self:addSystem(System(d))
+end
 
-	return loadProject_100(projectData)
+function Project:setSelected(idx)
+	self._native.selectedSystem = idx
+end
+
+function Project:load(data)
+	local projectData, err = projectutil.loadProject(data)
+	if err ~= nil then return err end
+	return self:deserializeProject(projectData)
+end
+
+function Project:deserializeProject(projectData)
+	projectutil.cloneStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
+	self._audioContext:updateSettings()
+
+	for _, inst in ipairs(projectData.instances) do
+		local system = SystemDesc.new()
+		system.idx = -1
+		system.fastBoot = true
+		projectutil.cloneStringFields(inst, projectutil.InstanceSettingsFields, system)
+		projectutil.cloneStringFields(inst.sameBoy, projectutil.SameBoySettingsFields, system.sameBoySettings)
+
+		local romFile = fs.load(inst.romPath, false)
+		if romFile ~= nil then
+			system.sourceRomData = romFile
+		end
+
+		local state = base64.decodeBuffer(inst.state)
+		if self._native.settings.saveType == SaveStateType.Sram then
+			system.sourceSavData = state
+		elseif self._native.settings.saveType == SaveStateType.State then
+			system.sourceStateData = state
+		end
+
+		system.audioComponentState = serpent.dump(inst.audioComponents)
+
+		self:addSystem(System(system))
+	end
 end
 
 function Project:save()

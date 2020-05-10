@@ -117,7 +117,7 @@ private:
 	std::string _name;
 	std::vector<MenuItemBase*> _items;
 	bool _active;
-	BlockAllocator* _allocator;
+	BlockAllocator* _allocator = nullptr;
 
 public:
 	Menu(const std::string& name = "", bool active = false, Menu* parent = nullptr)

@@ -143,7 +143,7 @@ end
 
 local function loadProject(data)
 	local fileData, err = fileutil.loadPathOrData(data)
-	if err ~= nil then return err end
+	if err ~= nil then return nil, err end
 
 	local stringData = fileData:toString()
 	local ok, projectData = serpent.load(stringData)
@@ -151,16 +151,20 @@ local function loadProject(data)
 		-- Old projects (<= v0.2.0) are encoded using JSON rather than lua
 		projectData = json.decode(stringData)
 		if projectData == nil then
-			return Error("Failed to load project: Unable to deserialize file")
+			return nil, Error("Failed to load project: Unable to deserialize file")
 		end
 	end
 
 	err = validateAndUpgradeProject(projectData)
-	if err ~= nil then return err end
+	if err ~= nil then return nil, err end
 
-	return loadProject_100(projectData)
+	return projectData, nil
 end
 
 return {
-	loadProject = loadProject
+	loadProject = loadProject,
+	cloneStringFields = cloneStringFields,
+	ProjectSettingsFields = ProjectSettingsFields,
+	InstanceSettingsFields = InstanceSettingsFields,
+	SameBoySettingsFields = SameBoySettingsFields
 }

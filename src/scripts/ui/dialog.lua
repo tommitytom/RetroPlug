@@ -1,6 +1,11 @@
 local _dialogCallback
 local _supportsMultiple
 
+local _view
+local function setup(view)
+	_view = view
+end
+
 local function formatExtensions(exts)
 	if type(exts) == "string" then
 		return exts
@@ -48,7 +53,7 @@ local function loadFile(filters, cb)
 	req.multiSelect = false
 	prepareFilters(filters, req.filters)
 
-	_requestDialog(req)
+	_view:requestDialog(req)
 end
 
 local function loadFiles(filters, cb)
@@ -61,7 +66,7 @@ local function loadFiles(filters, cb)
 	req.multiSelect = true
 	prepareFilters(filters, req.filters)
 
-	_requestDialog(req)
+	_view:requestDialog(req)
 end
 
 local function saveFile(filters, fileName, cb)
@@ -84,7 +89,7 @@ local function saveFile(filters, fileName, cb)
 	_dialogCallback = cb
 	_supportsMultiple = false
 
-	_requestDialog(req)
+	_view:requestDialog(req)
 end
 
 local function selectDirectory(cb)
@@ -96,10 +101,10 @@ local function selectDirectory(cb)
 	req.type = DialogType.Directory
 	req.multiSelect = false
 
-	_requestDialog(req)
+	_view:requestDialog(req)
 end
 
-function _handleDialogCallback(paths)
+local function onResult(paths)
 	if _dialogCallback ~= nil then
 		local cb = _dialogCallback
 		_dialogCallback = nil
@@ -113,6 +118,8 @@ function _handleDialogCallback(paths)
 end
 
 return {
+	__setup = setup,
+	__onResult = onResult,
 	saveFile = saveFile,
 	loadFile = loadFile,
 	loadFiles = loadFiles,

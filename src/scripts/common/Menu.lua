@@ -1,6 +1,6 @@
 local class = require("class")
-local Menu = class()
 
+local Menu = class()
 function Menu:init(name, parent)
     self.name = name or ""
     self._parent = parent

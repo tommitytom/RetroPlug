@@ -1,5 +1,6 @@
 local dialog = require("dialog")
 local menuutil = require("util.menu")
+local pathutil = require("pathutil")
 
 local NO_ACTIVE_INSTANCE = -1
 local MAX_INSTANCES = 4
@@ -8,9 +9,15 @@ local PROJECT_FILTER = { "RetroPlug Project", "*.retroplug" }
 local ROM_FILTER = { "GameBoy ROM Files", "*.gb" }
 local SAV_FILTER = { "GameBoy SAV Files", "*.sav" }
 
-local function loadProject(project)
-	return menuutil.loadHandler({ ROM_FILTER }, "project", function(path)
-		return project:load(path)
+local function loadProjectOrRom(project)
+	return menuutil.loadHandler({ PROJECT_FILTER, ROM_FILTER }, "project", function(path)
+		local ext = pathutil.ext(path)
+		if ext == "retroplug" then
+			return project:load(path)
+		elseif ext == "gb" then
+			project:clear()
+			return project:loadRom(path)
+		end
 	end)
 end
 
@@ -42,9 +49,9 @@ end
 local function projectMenu(menu, project)
 	local settings = project.settings
 	menu:action("New", function() project:clear() end)
-		:action("Load...", function() loadProject(project) end)
-		:action("Save", function() saveProject(project, false) end)
-		:action("Save As...", function() saveProject(project, true) end)
+		:action("Load...", loadProjectOrRom(project))
+		:action("Save", saveProject(project, false))
+		:action("Save As...", saveProject(project, true))
 		:separator()
 		:subMenu("Save Options")
 			:multiSelect({ "Save SRAM", "Save State" }, settings.saveType, function(v) settings.saveType = v end)
@@ -126,12 +133,24 @@ local function generateMainMenu(menu, project)
 		:select("Game Link", selected.sameBoySettings.gameLink, function(v) selected.sameBoySettings.gameLink = v end)
 end
 
+local function generateStartMenu(menu, project)
+	menu:action("Load Project or ROM...", loadProjectOrRom(project))
+		:subMenu("Load ROM As...")
+			:action("AGB...", loadRom(project, 0, GameboyModel.Agb))
+			:action("CGB C...", loadRom(project, 0, GameboyModel.CgbC))
+			:action("CGB E (default)...", loadRom(project, 0, GameboyModel.CgbE))
+			:action("DMG B...", loadRom(project, 0, GameboyModel.DmgB))
+end
+
 local function generateMenu(menu, project)
 	if project.selected ~= nil then
 		generateMainMenu(menu, project)
+	else
+		generateStartMenu(menu, project)
 	end
 end
 
 return {
-	generateMenu = generateMenu
+	generateMenu = generateMenu,
+	loadProjectOrRom = loadProjectOrRom
 }

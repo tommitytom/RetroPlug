@@ -94,7 +94,7 @@ void setupCommon(sol::state& s) {
 		"path", &Project::path,
 		"systems", &Project::systems,
 		"settings", &Project::settings,
-		"clear", &Project::clear
+		"selectedSystem", &Project::selectedSystem
 	);
 
 	s.new_usertype<Project::Settings>("ProjectSettings",
@@ -126,7 +126,9 @@ void setupCommon(sol::state& s) {
 	s.new_usertype<Separator>("Separator", sol::base_classes, sol::bases<MenuItemBase>());
 	s.new_usertype<Menu>("Menu", "addItem", &Menu::addItem, sol::base_classes, sol::bases<MenuItemBase>());
 
-	s.create_named_table("_menuAlloc",
+	// TODO: The following should be allocated from a pool/factory
+	s.create_named_table("MenuAlloc",
+		"root", []() { return new Menu(); },
 		"menu", [](const std::string& name, bool active, Menu* parent) { return new Menu(name, active, parent); },
 		"title", [](const std::string& name) { return new Title(name); },
 		"select", [](const std::string& name, bool checked, bool active, int id) { return new Select(name, checked, nullptr, active, id); },
@@ -160,6 +162,7 @@ void setupCommon(sol::state& s) {
 	);
 
 	s.new_usertype<DialogRequest>("DialogRequest",
+		"new", sol::factories([]() { return std::make_shared<DialogRequest>(); }),
 		"type", &DialogRequest::type,
 		"filters", &DialogRequest::filters,
 		"multiSelect", &DialogRequest::multiSelect,

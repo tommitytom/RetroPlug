@@ -3,10 +3,9 @@ local Project = require("Project")
 
 local class = require("class")
 local Model = class()
-function Model:init(fileSystem, audioContext)
+function Model:init(audioContext)
 	self.audioContext = audioContext
 	self.project = Project(audioContext)
-	fs.__setup(fileSystem)
 end
 
 function Model:onKey(key, down)

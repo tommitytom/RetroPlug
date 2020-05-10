@@ -63,8 +63,4 @@ struct Project {
 	std::string path;
 	std::vector<SystemDescPtr> systems;
 	SystemIndex selectedSystem = NO_ACTIVE_SYSTEM;
-
-	void clear() {
-		*this = Project();
-	}
 };

@@ -2,6 +2,8 @@ local function clean(str)
 	return str:gsub("\\","\\\\"):gsub("\\","/")
 end
 
+-- Gets the file extension of the given path
+-- NOTE: Does not include the .
 local function ext(str)
 	return str:match("[^.]+$")
 end

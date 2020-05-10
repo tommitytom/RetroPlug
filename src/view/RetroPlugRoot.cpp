@@ -19,7 +19,7 @@ const double VIDEO_STREAM_TIMEOUT = 1000.0;
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, AudioContextProxy* proxy, AudioController* audioController)
 	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
 	proxy->videoCallback = [&](const VideoStream& video) {
-		const auto& systems = _proxy->getProject().systems;
+		const auto& systems = _proxy->getProject()->systems;
 		for (const SystemDescPtr& system : systems) {
 			if (system->state == SystemState::Running) {
 				_views[system->idx]->WriteFrame(video.buffers[system->idx]);
@@ -44,6 +44,9 @@ bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	_lua->onDoubleClick(x, y, mod);
+	ProcessDialog();
+	UpdateLayout();
+	UpdateSelected();
 }
 
 /*void RetroPlugView::SetZoom(int zoom) {
@@ -55,8 +58,75 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	}
 }*/
 
+void RetroPlugView::ProcessDialog() {
+	ViewWrapper* viewWrapper = _lua->getViewWrapper();
+	DialogRequest* dialog = viewWrapper->fetchDialogRequest();
+	if (dialog) {
+		switch (dialog->type) {
+		case DialogType::Save: {
+			std::string p = ws2s(BasicFileSave(GetUI(), dialog->filters, tstr(dialog->fileName)));
+			std::vector<std::string> paths;
+			paths.push_back(p);
+			_lua->handleDialogCallback(paths);
+			break;
+		}
+		case DialogType::Directory:
+		case DialogType::Load: {
+			std::vector<tstring> res = BasicFileOpen(
+				GetUI(),
+				dialog->filters,
+				dialog->multiSelect,
+				dialog->type == DialogType::Directory
+			);
+
+			std::vector<std::string> paths;
+			for (size_t i = 0; i < res.size(); ++i) {
+				paths.push_back(ws2s(res[i]));
+			}
+
+			_lua->handleDialogCallback(paths);
+
+			break;
+		}
+		}
+
+		//delete dialog;
+	}
+}
+
 void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	_lua->onMouseDown(x, y, mod);
+
+	ViewWrapper* viewWrapper = _lua->getViewWrapper();
+	Menu* menu = viewWrapper->fetchMenu();
+	if (menu) {
+		_menu.Clear();
+
+		// Show menu
+		MenuCallbackMap callbacks;
+		callbacks.reserve(1000);
+		_menu.SetFunction([&](IPopupMenu* menu) {
+			IPopupMenu::Item* chosen = menu->GetChosenItem();
+			if (chosen) {
+				int tag = chosen->GetTag();
+				if (tag >= 0 && tag < callbacks.size()) {
+					callbacks[tag]();
+				} else if (tag >= LUA_UI_MENU_ID_OFFSET) {
+					_lua->onMenuResult(tag);
+					//_proxy->onMenuResult(tag);
+				}
+
+				ProcessDialog();
+				UpdateLayout();
+				UpdateSelected();
+			}
+		});
+
+		createMenu(&_menu, menu, callbacks);
+		delete menu;
+		
+		GetUI()->CreatePopupMenu(*this, _menu, x, y);
+	}
 
 	/*SelectActiveAtPoint(x, y);
 
@@ -178,7 +248,7 @@ void RetroPlugView::Draw(IGraphics& g) {
 
 	_timeSinceVideo += delta;
 	
-	const auto& systems = _proxy->getProject().systems;
+	const auto& systems = _proxy->getProject()->systems;
 	for (size_t i = 0; i < systems.size(); ++i) {
 		SystemView* view = _views[i];
 		const SystemDescPtr& system = systems[i];
@@ -216,14 +286,14 @@ void RetroPlugView::UpdateLayout() {
 		_views[i]->HideText();
 	}
 
-	const Project::Settings& settings = _proxy->getProject().settings;
+	const Project::Settings& settings = _proxy->getProject()->settings;
 	int frameW = FRAME_WIDTH * settings.zoom;
 	int frameH = FRAME_HEIGHT * settings.zoom;
 
 	int windowW = frameW;
 	int windowH = frameH;
 
-	size_t count = _proxy->getProject().systems.size();
+	size_t count = _proxy->getProject()->systems.size();
 	if (count == 0) {
 		count = 1;
 		_views[0]->ShowText("Double click to", "load a rom...");
@@ -288,7 +358,7 @@ void RetroPlugView::UpdateLayout() {
 }
 
 void RetroPlugView::UpdateSelected() {
-	SystemIndex idx = _proxy->getProject().selectedSystem;
+	SystemIndex idx = _proxy->getProject()->selectedSystem;
 
 	if (_activeIdx != NO_ACTIVE_SYSTEM && idx != _activeIdx) {
 		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);

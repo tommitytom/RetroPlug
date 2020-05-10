@@ -9,7 +9,6 @@ local serializer = require("serializer")
 local cm = require("ComponentManager")
 local LuaMenu = require("Menu")
 local System = require("System")
-local createNativeMenu = require("MenuHelper")
 local ppq = require("ppq")
 local midi = require("midi")
 

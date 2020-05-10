@@ -5,9 +5,8 @@ local fs = require("fs")
 local componentutil = require("util.component")
 
 local System = class()
-function System:init(desc, buttons)
-	self._desc = desc
-	self._buttons = buttons
+function System:init(desc)
+	self.desc = desc
 	self._audioContext = nil
 	self._components = {}
 end
@@ -17,7 +16,7 @@ function System:emit(eventName, ...)
 end
 
 function System:clone()
-	return System(self._desc:clone())
+	return System(self.desc:clone())
 end
 
 function System:getComponent(idx)
@@ -26,24 +25,22 @@ end
 
 function System:setSram(data, reset)
 	self:emit("onSramSet", data)
-	self._audioContext:setSram(self._desc.idx, data, reset)
+	self._audioContext:setSram(self.desc.idx, data, reset)
 end
-
-
 
 function System:clearSram(reset)
 	local buf = DataBuffer.new(const.SRAM_SIZE)
 	buf:clear()
 
 	self:emit("onSramClear", buf)
-	self._audioContext:setSram(self._desc.idx, buf, reset)
+	self._audioContext:setSram(self.desc.idx, buf, reset)
 end
 
 function System:setRom(data, reset)
-	self._desc.sourceRomData = data
-	self._desc.romName = util.getRomName(data)
+	self.desc.sourceRomData = data
+	self.desc.romName = util.getRomName(data)
 	self:emit("onRomSet", data)
-	self._audioContext:setRom(self._desc.idx, data, reset or false)
+	self._audioContext:setRom(self.desc.idx, data, reset or false)
 end
 
 -- Loads a ROM from a path string, or data buffer.  Rebuilds the
@@ -56,16 +53,16 @@ function System:loadRom(data, path)
 	end
 
 	if path ~= nil then
-		self._desc.romPath = path
+		self.desc.romPath = path
 	end
 
-	self._desc.sourceRomData = data
-	self._desc.romName = util.getRomName(data)
+	self.desc.sourceRomData = data
+	self.desc.romName = util.getRomName(data)
 
 	-- TODO: Find components
 
 	self:emit("onRomLoad", data)
-	self._audioContext:loadRom(self._desc)
+	self._audioContext:loadRom(self.desc)
 end
 
 function System:loadSram(data, reset, path)
@@ -75,31 +72,31 @@ function System:loadSram(data, reset, path)
 	end
 
 	if path ~= nil then
-		self._desc.sramPath = path
+		self.desc.sramPath = path
 	end
 
 	self:emit("onSramLoad", data)
-	self._audioContext:setSram(self._desc.idx, data, reset)
+	self._audioContext:setSram(self.desc.idx, data, reset)
 end
 
 function System:saveSram(path)
-	return fs.save(path, self._desc.sourceSavData)
+	return fs.save(path, self.desc.sourceSavData)
 end
 
 function System:saveRom(path)
-	return fs.save(path, self._desc.sourceRomData)
+	return fs.save(path, self.desc.sourceRomData)
 end
 
 function System:desc()
-	return self._desc
+	return self.desc
 end
 
 function System:sram()
-	return self._desc.sourceSavData
+	return self.desc.sourceSavData
 end
 
 function System:rom()
-	return self._desc.sourceRomData
+	return self.desc.sourceRomData
 end
 
 function System:buttons()
@@ -108,10 +105,10 @@ end
 
 function System:reset(model)
 	if model == nil or model == GameboyModel.Auto then
-		model = self._desc.sameBoySettings.model
+		model = self.desc.sameBoySettings.model
 	end
 
-	self._audioContext:resetSystem(self._desc.idx, model)
+	self._audioContext:resetSystem(self.desc.idx, model)
 end
 
 return System

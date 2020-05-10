@@ -223,9 +223,6 @@
     <ClCompile Include="..\src\controller\RetroPlugController.cpp">
       <Filter>src\controller</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\EmulatorInstance.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\util\PaRingBuffer.c">
       <Filter>src\util</Filter>
     </ClCompile>
@@ -321,6 +318,9 @@
     </ClCompile>
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\bytes.c">
       <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\ViewWrapper.cpp">
+      <Filter>src\view</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -651,9 +651,6 @@
     <ClInclude Include="..\src\controller\RetroPlugController.h">
       <Filter>src\controller</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\EmulatorInstance.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\MessageBus.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -881,6 +878,9 @@
     </ClInclude>
     <ClInclude Include="..\src\model\AudioContextProxy.h">
       <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\ViewWrapper.h">
+      <Filter>src\view</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

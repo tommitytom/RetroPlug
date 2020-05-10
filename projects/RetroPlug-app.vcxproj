@@ -310,7 +310,6 @@
     <ClInclude Include="..\src\model\AudioLuaContext.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
     <ClInclude Include="..\src\model\CompiledLua.h" />
-    <ClInclude Include="..\src\model\EmulatorInstance.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
     <ClInclude Include="..\src\model\LibLsdjWrapper.h" />
     <ClInclude Include="..\src\model\LuaHelpers.h" />
@@ -348,6 +347,7 @@
     <ClInclude Include="..\src\view\EmulatorView.h" />
     <ClInclude Include="..\src\view\Menu.h" />
     <ClInclude Include="..\src\view\RetroPlugRoot.h" />
+    <ClInclude Include="..\src\view\ViewWrapper.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrvr.h" />
@@ -553,7 +553,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\src\model\EmulatorInstance.cpp" />
     <ClCompile Include="..\src\model\FileManager.cpp" />
     <ClCompile Include="..\src\model\LuaHelpers.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj</AdditionalOptions>
@@ -586,6 +585,7 @@
     <ClCompile Include="..\src\view\EmulatorView.cpp" />
     <ClCompile Include="..\src\view\Menu.cpp" />
     <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
+    <ClCompile Include="..\src\view\ViewWrapper.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asio.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiodrivers.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\Dependencies\IPlug\RTAudio\include\asiolist.cpp" />
