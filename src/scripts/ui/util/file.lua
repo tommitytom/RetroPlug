@@ -2,7 +2,6 @@ local fs = require("fs")
 local Error = require("Error")
 
 local function loadPathOrData(data)
-	print(data)
 	if type(data) == "string" then
 		-- Is a path, load the data
 		local fileData = fs.load(data)

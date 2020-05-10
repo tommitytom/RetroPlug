@@ -2,13 +2,26 @@ local class = require("class")
 local util = require("util")
 local const = require("const")
 local fs = require("fs")
+local pathutil = require("pathutil")
+local fileutil = require("util.file")
 local componentutil = require("util.component")
 
 local System = class()
-function System:init(desc)
-	self.desc = desc
+function System:init(desc, model)
 	self._audioContext = nil
 	self._components = {}
+
+	if type(desc) == "userdata" then
+		if desc.__type.name == "SystemDesc" then
+			self.desc = desc
+		elseif desc.__type.name == "DataBuffer" then
+			self:loadRom(desc)
+		end
+	elseif type(desc) == "string" then
+		self:loadRom(desc)
+	end
+
+	if model ~= nil then self.desc.sameBoySettings.model = model end
 end
 
 function System:emit(eventName, ...)
@@ -16,7 +29,11 @@ function System:emit(eventName, ...)
 end
 
 function System:clone()
-	return System(self.desc:clone())
+	return System(SystemDesc.new(self.desc))
+end
+
+function System:getIndex(idx)
+	return self._components[idx]
 end
 
 function System:getComponent(idx)
@@ -25,44 +42,74 @@ end
 
 function System:setSram(data, reset)
 	self:emit("onSramSet", data)
-	self._audioContext:setSram(self.desc.idx, data, reset)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:setSram(self.desc.idx, data, reset)
+	end
 end
 
 function System:clearSram(reset)
 	local buf = DataBuffer.new(const.SRAM_SIZE)
 	buf:clear()
-
 	self:emit("onSramClear", buf)
-	self._audioContext:setSram(self.desc.idx, buf, reset)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:setSram(self.desc.idx, buf, reset)
+	end
 end
 
 function System:setRom(data, reset)
 	self.desc.sourceRomData = data
 	self.desc.romName = util.getRomName(data)
 	self:emit("onRomSet", data)
-	self._audioContext:setRom(self.desc.idx, data, reset or false)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:setRom(self.desc.idx, data, reset or false)
+	end
 end
 
 -- Loads a ROM from a path string, or data buffer.  Rebuilds the
 -- component array and resets the emulator.  The second 'path' parameter
 -- allows you to pass a path for metadata purposes.
 function System:loadRom(data, path)
-	if type(data) == "string" then
-		path = data
-		data = fs.load(path)
-	end
+	local fileData, err = fileutil.loadPathOrData(data)
+	if err ~= nil then return err end
+
+	if type(data) == "string" then path = data end
+	if self.desc == nil then self.desc = SystemDesc.new() end
+
+	local d = self.desc
+	local idx = d.idx
+	d:clear()
+	d.idx = idx
 
 	if path ~= nil then
-		self.desc.romPath = path
+		d.romPath = path
 	end
 
-	self.desc.sourceRomData = data
-	self.desc.romName = util.getRomName(data)
+	d.emulatorType = SystemType.SameBoy
+	d.state = SystemState.Initialized
+	d.sourceRomData = fileData
+	d.romName = util.getRomName(fileData)
+
+	if d.romPath ~= nil then
+		local savPath = pathutil.changeExt(d.romPath, "sav")
+		if fs.exists(savPath) == true then
+			local savData = fs.load(savPath, false)
+			if savData ~= nil then
+				d.savPath = savPath
+				d.sourceSavData = savData
+			end
+		end
+	end
 
 	-- TODO: Find components
 
-	self:emit("onRomLoad", data)
-	self._audioContext:loadRom(self.desc)
+	self:emit("onRomLoad", fileData)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:loadRom(d)
+	end
 end
 
 function System:loadSram(data, reset, path)
@@ -76,7 +123,10 @@ function System:loadSram(data, reset, path)
 	end
 
 	self:emit("onSramLoad", data)
-	self._audioContext:setSram(self.desc.idx, data, reset)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:setSram(self.desc.idx, data, reset)
+	end
 end
 
 function System:saveSram(path)
@@ -85,10 +135,6 @@ end
 
 function System:saveRom(path)
 	return fs.save(path, self.desc.sourceRomData)
-end
-
-function System:desc()
-	return self.desc
 end
 
 function System:sram()
@@ -100,7 +146,7 @@ function System:rom()
 end
 
 function System:buttons()
-	return self._buttons
+	return self.desc.buttons
 end
 
 function System:reset(model)
@@ -108,7 +154,9 @@ function System:reset(model)
 		model = self.desc.sameBoySettings.model
 	end
 
-	self._audioContext:resetSystem(self.desc.idx, model)
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:resetSystem(self.desc.idx, model)
+	end
 end
 
 return System

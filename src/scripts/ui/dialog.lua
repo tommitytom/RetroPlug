@@ -44,7 +44,7 @@ local function prepareFilters(filters, target)
 end
 
 local function loadFile(filters, cb)
-	assert(_dialogCallback == nil)
+	if _dialogCallback ~= nil then print("WARNING: A previous dialog wasn't processed")	end
 	_dialogCallback = cb
 	_supportsMultiple = false
 
@@ -57,7 +57,7 @@ local function loadFile(filters, cb)
 end
 
 local function loadFiles(filters, cb)
-	assert(_dialogCallback == nil)
+	if _dialogCallback ~= nil then print("WARNING: A previous dialog wasn't processed")	end
 	_dialogCallback = cb
 	_supportsMultiple = true
 
@@ -70,7 +70,8 @@ local function loadFiles(filters, cb)
 end
 
 local function saveFile(filters, fileName, cb)
-	assert(_dialogCallback == nil)
+	if _dialogCallback ~= nil then print("WARNING: A previous dialog wasn't processed") end
+	_dialogCallback = nil
 
 	local req = DialogRequest.new()
 	req.type = DialogType.Save
@@ -93,7 +94,7 @@ local function saveFile(filters, fileName, cb)
 end
 
 local function selectDirectory(cb)
-	assert(_dialogCallback == nil)
+	if _dialogCallback ~= nil then print("WARNING: A previous dialog wasn't processed")	end
 	_dialogCallback = cb
 	_supportsMultiple = false
 
@@ -109,10 +110,12 @@ local function onResult(paths)
 		local cb = _dialogCallback
 		_dialogCallback = nil
 
-		if _supportsMultiple == true then
-			cb(paths)
-		else
-			cb(paths[1])
+		if #paths > 0 then
+			if _supportsMultiple == true then
+				cb(paths)
+			else
+				cb(paths[1])
+			end
 		end
 	end
 end

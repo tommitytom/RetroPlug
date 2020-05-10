@@ -23,6 +23,26 @@ struct SameBoySettings {
 	bool gameLink = false;
 };
 
+struct Point {
+	float x, y;
+	Point() : x(0), y(0) {}
+	Point(float _x, float _y) : x(_x), y(_y) {}
+};
+
+struct Rect {
+	float x, y, w, h;
+	Rect(): x(0), y(0), w(0), h(0) {}
+	Rect(float _x, float _y, float _w, float _h) : x(_x), y(_y), w(_w), h(_h) {}
+
+	float bottom() const { return y + h; }
+
+	float right() const { return x + w; }
+
+	bool contains(const Point& point) const {
+		return point.x >= x && point.x < right() && point.y >= y && point.y < bottom();
+	}
+};
+
 struct SystemDesc {
 	SystemIndex idx = NO_ACTIVE_SYSTEM;
 	SystemType emulatorType = SystemType::Unknown;
@@ -30,6 +50,8 @@ struct SystemDesc {
 	std::string romName;
 	std::string romPath;
 	std::string savPath;
+
+	Rect area;
 
 	SameBoySettings sameBoySettings;
 
@@ -47,6 +69,11 @@ struct SystemDesc {
 	GameboyButtonStream buttons;
 
 	bool fastBoot = false;
+
+	SystemDesc() {}
+	SystemDesc(const SystemDesc& other) { *this = other; }
+
+	void clear() { *this = SystemDesc(); }
 };
 
 using SystemDescPtr = std::shared_ptr<SystemDesc>;

@@ -90,6 +90,9 @@ void RetroPlugView::ProcessDialog() {
 		}
 		}
 
+		UpdateLayout();
+		UpdateSelected();
+
 		//delete dialog;
 	}
 }
@@ -126,6 +129,9 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		delete menu;
 		
 		GetUI()->CreatePopupMenu(*this, _menu, x, y);
+
+		UpdateLayout();
+		UpdateSelected();
 	}
 
 	/*SelectActiveAtPoint(x, y);
@@ -327,6 +333,8 @@ void RetroPlugView::UpdateLayout() {
 	SetTargetAndDrawRECTs(IRECT(0.0f, 0.0f, (float)windowW, (float)windowH));
 	GetUI()->GetControl(0)->SetTargetAndDrawRECTs(GetRECT());
 
+	auto& systems = _proxy->getProject()->systems;
+
 	for (size_t i = 0; i < count; i++) {
 		int gridX = 0;
 		int gridY = 0;
@@ -349,6 +357,10 @@ void RetroPlugView::UpdateLayout() {
 
 		IRECT b((float)x, (float)y, (float)(x + frameW), (float)(y + frameH));
 		_views[i]->SetArea(b);
+
+		if (i < systems.size()) {
+			systems[i]->area = Rect(b.L, b.T, b.W(), b.H());
+		}
 	}
 
 	for (size_t i = count; i < _views.size(); ++i) {

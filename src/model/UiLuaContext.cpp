@@ -91,10 +91,14 @@ void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 }
 
 bool isNullPtr(const sol::object o) {
-	if (o.get_type() == sol::type::lightuserdata || o.get_type() == sol::type::userdata) {
-		void* p = o.as<void*>();
-		if (p > 0) {
-			return true;
+	switch (o.get_type()) {
+		case sol::type::nil: return true;
+		case sol::type::lightuserdata:
+		case sol::type::userdata: {
+			void* p = o.as<void*>();
+			if (p > 0) {
+				return true;
+			}
 		}
 	}
 
@@ -153,7 +157,10 @@ void UiLuaContext::setup() {
 	);
 
 	s.new_usertype<SystemDesc>("SystemDesc",
-		"new", sol::factories([]() { return std::make_shared<SystemDesc>(); }),
+		"new", sol::factories(
+			[]() { return std::make_shared<SystemDesc>(); },
+			[](const SystemDesc& other) { return std::make_shared<SystemDesc>(other); }
+		),
 		"idx", &SystemDesc::idx,
 		"emulatorType", &SystemDesc::emulatorType,
 		"state", &SystemDesc::state,
@@ -167,7 +174,9 @@ void UiLuaContext::setup() {
 		"patchedSavData", &SystemDesc::patchedSavData,
 		"sourceStateData", &SystemDesc::sourceStateData,
 		"fastBoot", &SystemDesc::fastBoot,
-		"audioComponentState", &SystemDesc::audioComponentState
+		"audioComponentState", &SystemDesc::audioComponentState,
+		"area", &SystemDesc::area,
+		"clear", &SystemDesc::clear
 	);
 
 	s.new_usertype<AudioContextProxy>("AudioContextProxy",
@@ -177,12 +186,30 @@ void UiLuaContext::setup() {
 		"loadRom", &AudioContextProxy::loadRom,
 		"getFileManager", &AudioContextProxy::getFileManager,
 		"updateSettings", &AudioContextProxy::updateSettings,
+		"removeSystem", &AudioContextProxy::removeSystem,
 		"clearProject", &AudioContextProxy::clearProject
 	);
 
 	s.new_usertype<ViewWrapper>("ViewWrapper",
 		"requestDialog", &ViewWrapper::requestDialog,
 		"requestMenu", &ViewWrapper::requestMenu
+	);
+
+	s.new_usertype<Rect>("Rect",
+		sol::constructors<Rect(), Rect(float, float, float, float)>(),
+		"x", &Rect::x,
+		"y", &Rect::y,
+		"w", &Rect::w,
+		"h", &Rect::h,
+		"right", &Rect::right,
+		"bottom", &Rect::bottom,
+		"contains", &Rect::contains
+	);
+
+	s.new_usertype<Point>("Point",
+		sol::constructors<Point(), Point(float, float)>(),
+		"x", &Point::x,
+		"y", &Point::y
 	);
 
 	s.new_usertype<iplug::IKeyPress>("IKeyPress",

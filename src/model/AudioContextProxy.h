@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <algorithm>
 #include "util/DataBuffer.h"
 #include "micromsg/node.h"
 #include "controller/messaging.h"
@@ -120,38 +121,43 @@ public:
 		return SystemState::Initialized;
 	}
 
-	SystemDescPtr duplicateSystem(SystemIndex idx, SystemDescPtr& inst) {
+	SystemState duplicateSystem(SystemIndex idx, SystemDescPtr& inst) {
 		assert(_project.systems.size() < MAX_SYSTEMS);
-
-		SystemDescPtr instance = std::make_shared<SystemDesc>();
-		*instance = *_project.systems[idx];
-
-		instance->idx = _project.systems.size();
-		instance->fastBoot = true;
-
-		_project.systems.push_back(instance);
-
-		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
-		if (instance->patchedRomData) {
-			plug->loadRom(instance->patchedRomData->data(), instance->patchedRomData->size(), instance->sameBoySettings.model, instance->fastBoot);
-		} else {
-			assert(instance->sourceRomData);
-			plug->loadRom(instance->sourceRomData->data(), instance->sourceRomData->size(), instance->sameBoySettings.model, instance->fastBoot);
+		if (!inst->sourceRomData) {
+			inst->state = SystemState::RomMissing;
+			return SystemState::RomMissing;
 		}
 
-		plug->setDesc({ instance->romName });
+		inst->idx = _project.systems.size();
+		inst->fastBoot = true;
 
-		SystemDuplicateDesc swap = { (SystemIndex)idx, instance->idx, plug };
-		_node->request<calls::DuplicateSystem>(NodeTypes::Audio, swap, [instance](const SameBoyPlugPtr& d) {
-			instance->state = SystemState::Running;
+		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
+		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
+		plug->setDesc({ inst->romName });
+
+		SystemDuplicateDesc swap = { (SystemIndex)idx, inst->idx, plug };
+		_node->request<calls::DuplicateSystem>(NodeTypes::Audio, swap, [inst](const SameBoyPlugPtr& d) {
+			inst->state = SystemState::Running;
 		});
 
-		return instance;
+		_project.systems.push_back(inst);
+		inst->state = SystemState::Initialized;
+
+		return SystemState::Initialized;
 	}
 
 	void removeSystem(SystemIndex idx) {
 		_node->request<calls::TakeSystem>(NodeTypes::Audio, idx, [](const SameBoyPlugPtr&) {});
 		_project.systems.erase(_project.systems.begin() + idx);
+
+		for (SystemIndex i = idx; i < (SystemIndex)_project.systems.size(); ++i) {
+			_project.systems[i]->idx = i;
+		}
+		
+		_project.selectedSystem = NO_ACTIVE_SYSTEM;
+		if (_project.selectedSystem == idx && _project.systems.size() > 0) {
+			_project.selectedSystem = std::min(idx, (int)(_project.systems.size() - 1));
+		}
 	}
 
 	void clearProject() {

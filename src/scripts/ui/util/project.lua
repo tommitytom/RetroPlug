@@ -64,7 +64,7 @@ local function cloneEnumFields(obj, fields, target)
 	return target
 end
 
-local function cloneStringFields(obj, fields, target)
+local function copyStringFields(obj, fields, target)
 	if target == nil then target = {} end
 	for k, v in pairs(fields) do
 		if type(k) == "number" then
@@ -83,7 +83,7 @@ end
 
 local function loadProject_rp010(projectData)
 	local proj = _proxy:getProject()
-	cloneStringFields(projectData, ProjectSettingsFields, proj.settings)
+	copyStringFields(projectData, ProjectSettingsFields, proj.settings)
 
 	_proxy:updateSettings()
 
@@ -91,8 +91,8 @@ local function loadProject_rp010(projectData)
 		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
-		cloneStringFields(inst, InstanceSettingsFields, desc)
-		cloneStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
+		copyStringFields(inst, InstanceSettingsFields, desc)
+		copyStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
 		desc.savPath = inst.lastSramPath
 
 		local romFile = fs.load(inst.romPath, false)
@@ -114,15 +114,15 @@ end
 
 local function loadProject_100(projectData)
 	local proj = _proxy:getProject()
-	cloneStringFields(projectData.settings, ProjectSettingsFields, proj.settings)
+	copyStringFields(projectData.settings, ProjectSettingsFields, proj.settings)
 	_proxy:updateSettings()
 
 	for _, inst in ipairs(projectData.instances) do
 		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
-		cloneStringFields(inst, InstanceSettingsFields, desc)
-		cloneStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
+		copyStringFields(inst, InstanceSettingsFields, desc)
+		copyStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
 
 		local romFile = fs.load(inst.romPath, false)
 		if romFile ~= nil then
@@ -163,7 +163,7 @@ end
 
 return {
 	loadProject = loadProject,
-	cloneStringFields = cloneStringFields,
+	copyStringFields = copyStringFields,
 	ProjectSettingsFields = ProjectSettingsFields,
 	InstanceSettingsFields = InstanceSettingsFields,
 	SameBoySettingsFields = SameBoySettingsFields

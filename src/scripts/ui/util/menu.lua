@@ -16,12 +16,14 @@ local function loadHandler(filter, name, cb)
 end
 
 local function saveHandler(filter, name, forceDialog, cb)
-	if forceDialog == true then
-		dialog.saveFile(filter, function(path)
-			handleError(cb(path), "save", name)
-		end)
-	else
-		handleError(cb(), "save", name)
+	return function()
+		if forceDialog == true then
+			dialog.saveFile(filter, function(path)
+				handleError(cb(path), "save", name)
+			end)
+		else
+			handleError(cb(), "save", name)
+		end
 	end
 end
 

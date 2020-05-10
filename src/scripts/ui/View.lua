@@ -32,8 +32,24 @@ function View:onDoubleClick(x, y, mod)
 	end
 end
 
+function View:selectViewAtPos(x, y)
+	local idx = self:viewIndexAtPos(x, y)
+	if idx ~= nil then
+		self.model.project._native.selectedSystem = idx - 1
+	end
+end
+
+function View:viewIndexAtPos(x, y)
+	local pos = Point.new(x, y)
+	for i, system in ipairs(self.model.project.systems) do
+		if system.desc.area:contains(pos) == true then
+			return i
+		end
+	end
+end
+
 function View:onMouseDown(x, y, mod)
-	--self:selectViewAtPos(x, y)
+	self:selectViewAtPos(x, y)
 
 	if mod.right == true then
 		local menu = Menu()

@@ -2,6 +2,7 @@ local class = require("class")
 local const = require("const")
 local fs = require("fs")
 local fileutil = require("util.file")
+local util = require("util")
 local pathutil = require("pathutil")
 local projectutil = require("util.project")
 local componentutil = require("util.component")
@@ -36,6 +37,8 @@ function Project:init(audioContext)
 		instance:triggerEvent("onComponentsInitialized", instance.components)
 		instance:triggerEvent("onReload")
 	end]]
+
+	if self:getSelectedIndex() == 0 and count > 0 then self:setSelected(1) end
 end
 
 function Project:emit(eventName, ...)
@@ -49,59 +52,59 @@ function Project:clear()
 end
 
 function Project:loadRom(data, idx, model)
-	local fileData, err = fileutil.loadPathOrData(data)
-	if err ~= nil then return err end
+	local system = System(data, model)
+	if idx ~= nil then system.desc.idx = idx end
 
-	local romPath
-	if type(data) == "string" then romPath = data end
-
-	local d = SystemDesc.new()
-	if type(data) == "string" then d.romPath = data end
-	if idx ~= nil then d.idx = -1 end
-	if model ~= nil then d.sameBoySettings.model = GameboyModel.Auto end
-
-	d.emulatorType = SystemType.SameBoy
-	d.state = SystemState.Initialized
-	d.sourceRomData = fileData
-
-	if romPath ~= nil then
-		local savPath = pathutil.changeExt(romPath, "sav")
-		if fs.exists(savPath) == true then
-			local savData = fs.load(savPath, false)
-			if savData ~= nil then
-				d.savPath = savPath
-				d.sourceSavData = savData
-			end
-		end
-	end
-
-	self:addSystem(System(d))
+	idx = self:addSystem(system)
+	if idx ~= -1 then self:setSelected(idx) end
 end
 
 function Project:setSelected(idx)
-	self._native.selectedSystem = idx
+	self._native.selectedSystem = idx - 1
+end
+
+function Project:getSelectedIndex()
+	return self._native.selectedSystem + 1
+end
+
+function Project:getSelected()
+	return self.systems[self._native.selectedSystem + 1]
+end
+
+function Project:removeSystem(idx)
+	if idx ~= 0 then
+		table.remove(self.systems, idx)
+		self._audioContext:removeSystem(idx - 1)
+	else
+		print("Failed to remove system: Invalid index " .. idx)
+	end
 end
 
 function Project:load(data)
 	local projectData, err = projectutil.loadProject(data)
 	if err ~= nil then return err end
+	self:clear()
 	return self:deserializeProject(projectData)
 end
 
 function Project:deserializeProject(projectData)
-	projectutil.cloneStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
+	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
 	self._audioContext:updateSettings()
 
 	for _, inst in ipairs(projectData.instances) do
 		local system = SystemDesc.new()
 		system.idx = -1
 		system.fastBoot = true
-		projectutil.cloneStringFields(inst, projectutil.InstanceSettingsFields, system)
-		projectutil.cloneStringFields(inst.sameBoy, projectutil.SameBoySettingsFields, system.sameBoySettings)
+		projectutil.copyStringFields(inst, projectutil.InstanceSettingsFields, system)
+		projectutil.copyStringFields(inst.sameBoy, projectutil.SameBoySettingsFields, system.sameBoySettings)
 
 		local romFile = fs.load(inst.romPath, false)
 		if romFile ~= nil then
+			system.state = SystemState.Initialized
 			system.sourceRomData = romFile
+			system.romName = util.getRomName(romFile)
+		else
+			system.state = SystemState.RomMissing
 		end
 
 		local state = base64.decodeBuffer(inst.state)
@@ -178,6 +181,8 @@ function Project:addSystem(system)
 	table.insert(self.systems, system)
 
 	self._audioContext:setSystem(desc)
+
+	return desc.idx + 1
 end
 
 function Project:duplicateSystem(idx)
@@ -186,9 +191,10 @@ function Project:duplicateSystem(idx)
 	local newSystem = system:clone()
 
 	system._audioContext = self._audioContext
-	table.insert(self.systems, system)
+	table.insert(self.systems, newSystem)
 
-	self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
+	local idx = self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
+	if idx ~= -1 then self:setSelected(idx) end
 end
 
 function Project:removeSystem(idx)
