@@ -1,5 +1,5 @@
 local _factory = { global = {}, instance = {} }
-local _globalComponents = {}
+local _projectComponents = {}
 
 local _allComponents = {}
 
@@ -34,23 +34,22 @@ local function loadComponent(name)
 	end
 end
 
-local function createComponent(system, name)
+local function createComponent(target, name)
 	for _, componentType in ipairs(_factory.instance) do
 		local d = componentType.__desc
 		if d.name == name then
-			local valid, ret = pcall(componentType.new, system)
+			local valid, ret = pcall(componentType.new, target)
 			if valid then
-				table.insert(_allComponents, ret)
 				return ret
 			else
-				print("Failed to load component: " .. ret)
+				print("Failed to create component: " .. ret)
 			end
 		end
 	end
 end
 
-local function createComponents(system)
-	local desc = system:desc()
+local function createSystemComponents(system)
+	local desc = system._desc
 	local components = {}
 	for _, componentType in ipairs(_factory.instance) do
 		local d = componentType.__desc
@@ -85,7 +84,7 @@ local function runComponentHandlers(target, components, ...)
 end
 
 local function runGlobalHandlers(target, ...)
-    return runComponentHandlers(target, _globalComponents, ...)
+    return runComponentHandlers(target, _projectComponents, ...)
 end
 
 local function runAllHandlers(target, components, ...)
@@ -94,10 +93,12 @@ local function runAllHandlers(target, components, ...)
     return handled
 end
 
-local function createGlobalComponents()
+local function createProjectComponents()
     for _, v in ipairs(_factory.global) do
-		table.insert(_globalComponents, v.new())
+		table.insert(_projectComponents, v.new())
 	end
+
+	return _projectComponents
 end
 
 return {
@@ -105,10 +106,10 @@ return {
 	isSystemComponent = isSystemComponent,
 	loadComponent = loadComponent,
 	createComponent = createComponent,
-    createComponents = createComponents,
+    createSystemComponents = createSystemComponents,
     runComponentHandlers = runComponentHandlers,
     runGlobalHandlers = runGlobalHandlers,
     runAllHandlers = runAllHandlers,
-	createGlobalComponents = createGlobalComponents,
+	createProjectComponents = createProjectComponents,
 	allComponents = _allComponents
 }

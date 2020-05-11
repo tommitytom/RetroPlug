@@ -174,6 +174,7 @@ void UiLuaContext::setup() {
 		"fastBoot", &SystemDesc::fastBoot,
 		"audioComponentState", &SystemDesc::audioComponentState,
 		"area", &SystemDesc::area,
+		"buttons", &SystemDesc::buttons,
 		"clear", &SystemDesc::clear
 	);
 

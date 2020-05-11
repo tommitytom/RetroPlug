@@ -65,11 +65,11 @@ function ButtonHandler:init()
 end
 
 function ButtonHandler:onRomLoad()
-	self:_updateMaps(self:system():desc())
+	self:_updateMaps(self:system().desc)
 end
 
 function ButtonHandler:onReload()
-	self:_updateMaps(self:system():desc())
+	self:_updateMaps(self:system().desc)
 end
 
 function ButtonHandler:_updateMaps(desc)
@@ -95,11 +95,11 @@ function ButtonHandler:onComponentsInitialized(components)
 end
 
 function ButtonHandler:onKey(key, down)
-	util.handleInput(self._keyMap, key, down, self._keysPressed, self._buttonHooks, self:system():buttons())
+	return util.handleInput(self._keyMap, key, down, self._keysPressed, self._buttonHooks, self:system():buttons())
 end
 
 function ButtonHandler:onPadButton(button, down)
-	util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:system():buttons())
+	return util.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:system():buttons())
 end
 
 return ButtonHandler

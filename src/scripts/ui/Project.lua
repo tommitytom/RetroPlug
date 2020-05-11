@@ -1,23 +1,20 @@
 local class = require("class")
 local const = require("const")
 local fs = require("fs")
-local fileutil = require("util.file")
 local util = require("util")
-local pathutil = require("pathutil")
 local projectutil = require("util.project")
 local componentutil = require("util.component")
 local serpent = require("serpent")
 
 local Error = require("Error")
+local ComponentManager = require("ComponentManager")
 local System = require("System")
 
 local Project = class()
 function Project:init(audioContext)
-	-- TODO: Create project components (cm.createGlobalComponents())
-
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
-	self._components = {}
+	self._components = ComponentManager.createProjectComponents()
 	self.systems = {}
 
 	local count = #self._native.systems
@@ -26,17 +23,19 @@ function Project:init(audioContext)
 		if desc.state ~= SystemState.Uninitialized then
 			local system = System(desc)
 			system._audioContext = self._audioContext
+			system._components = ComponentManager.createSystemComponents(system)
 			table.insert(self.systems, system)
 
 			-- TODO: Initialize components!
-			-- TODO: Set active
 		end
 	end
 
-	--[[for _, instance in ipairs(_instances) do
-		instance:triggerEvent("onComponentsInitialized", instance.components)
-		instance:triggerEvent("onReload")
-	end]]
+	self:emit("onReload")
+
+	for _, system in ipairs(self.systems) do
+		system:emit("onComponentsInitialized", system._components)
+		system:emit("onReload")
+	end
 
 	if self:getSelectedIndex() == 0 and count > 0 then self:setSelected(1) end
 end
@@ -161,13 +160,22 @@ function Project:save()
 	end
 end
 
-function Project:addComponent()
+function Project:addComponent(componentType)
+	if type(componentType) == "string" then
+		local component = ComponentManager.createComponent(self, componentType)
+		if component ~= nil then
+			table.insert(self._components, component)
+		end
+	end
 end
 
-function Project:removeComponent()
+function Project:removeComponent(idx)
+	table.remove(self._components, idx)
 end
 
 function Project:setComponentEnabled(idx, enabled)
+	local component = self._components[idx]
+
 end
 
 function Project:addSystem(system)

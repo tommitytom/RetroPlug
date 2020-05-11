@@ -47,22 +47,23 @@ local function handleInput(map, key, down, pressed, hooks, buttonStream)
 	local found = map.lookup[key]
 	if found ~= nil then
 		if type(found) == "function" then
-			handled = found(down)
+			if found(down) ~= false then handled = true end
 		elseif buttonStream ~= nil then
-			local skip = false
 			for _, v in ipairs(hooks) do
-				skip = v.fn(v.obj, found, down) == false
-				if skip == true then
-					break
+				if v.fn(v.obj, found, down) ~= false then
+					handled = true
 				end
 			end
 
-			if skip == false then
+
+			if handled == false then
 				if down == true then
 					buttonStream:holdDuration(found, 0)
 				else
 					buttonStream:releaseDuration(found, 0)
 				end
+
+				handled = true
 			end
 		end
 	end
@@ -72,7 +73,9 @@ local function handleInput(map, key, down, pressed, hooks, buttonStream)
 		table.insert(pressed, key)
 		local func = matchCombo(map.combos, pressed)
 		if func ~= nil and type(func) == "function" then
-			handled = func(down)
+			if func(down) ~= false then
+				handled = true
+			end
 		end
 	else
 		tableRemoveElement(pressed, key)

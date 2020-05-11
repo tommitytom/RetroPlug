@@ -1,6 +1,6 @@
 local GlobalButtonHandler = component({ name = "Global Button Handler", global = true })
 
-local util = require "util"
+local util = require("util")
 
 local _buttonMaps = {
 	key = { lookup = {}, combos = {} },
@@ -14,11 +14,11 @@ function GlobalButtonHandler:init()
 end
 
 function GlobalButtonHandler:onKey(key, down)
-	util.handleInput(_buttonMaps.key, key, down, self.keysPressed)
+	return util.handleInput(_buttonMaps.key, key, down, self.keysPressed)
 end
 
 function GlobalButtonHandler:onPadButton(button, down)
-	util.handleInput(_buttonMaps.pad, button, down, self.padButtonsPressed)
+	return util.handleInput(_buttonMaps.pad, button, down, self.padButtonsPressed)
 end
 
 function GlobalKeyMap(config, map)

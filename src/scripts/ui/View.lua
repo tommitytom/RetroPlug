@@ -22,8 +22,20 @@ end
 
 function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
-		self.model.project:onKey(key, down)
+		local vk = key.vk
+		local p = self.model.project
+
+		if p:emit("onKey", vk, down) == true then
+			return true
+		end
+
+		local selected = p:getSelected()
+		if selected ~= nil then
+			return selected:emit("onKey", vk, down)
+		end
 	end
+
+	return false
 end
 
 function View:onDoubleClick(x, y, mod)

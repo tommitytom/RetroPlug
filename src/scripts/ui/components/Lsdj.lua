@@ -34,6 +34,7 @@ end
 
 function Lsdj:onBeforeButton(button, down)
 	self.__keyboardActions:_handleButtonPress(button, down)
+	return false
 end
 
 function Lsdj:onPatchRom(romData)

@@ -27,12 +27,12 @@ end
 local function createInstance(system)
 	return {
 		system = system,
-		components = cm.createComponents(system)
+		components = cm.createSystemComponents(system)
 	}
 end
 
 function _init()
-	cm.createGlobalComponents()
+	cm.createProjectComponents()
 
 	for i = 1, MAX_INSTANCES, 1 do
 		local instModel = _model:getInstance(i - 1)

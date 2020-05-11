@@ -4,9 +4,11 @@ local function emitComponentEvent(eventName, components, ...)
 		local ev = component[eventName]
 		if ev ~= nil then
 			local handled = ev(component, ...)
-			if handled ~= false then break end
+			if handled ~= false then return true end
 		end
 	end
+
+	return false
 end
 
 return {

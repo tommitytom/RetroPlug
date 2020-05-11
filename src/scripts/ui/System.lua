@@ -22,6 +22,7 @@ function System:init(desc, model)
 	end
 
 	if model ~= nil then self.desc.sameBoySettings.model = model end
+	self._desc = self.desc
 end
 
 function System:emit(eventName, ...)
