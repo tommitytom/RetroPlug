@@ -10,35 +10,41 @@ function Menu:init(name, parent)
 end
 
 function Menu:multiSelect(items, selected, handler, active)
+    if active == nil then active = true end
+
     table.insert(self.items, {
         type = MenuItemType.MultiSelect,
         items = items,
         selected = selected,
         handler = handler,
-        active = active or true
+        active = active
     })
 
     return self
 end
 
 function Menu:select(name, checked, handler, active)
+    if active == nil then active = true end
+
     table.insert(self.items, {
         type = MenuItemType.Select,
         name = name,
         checked = checked,
         handler = handler,
-        active = active or true
+        active = active
     })
 
     return self
 end
 
 function Menu:action(name, handler, active)
+    if active == nil then active = true end
+
     table.insert(self.items, {
         type = MenuItemType.Action,
         name = name,
         handler = handler,
-        active = active or true
+        active = active
     })
 
     return self
@@ -54,6 +60,8 @@ function Menu:title(name)
 end
 
 function Menu:subMenu(name, active)
+    if active == nil then active = true end
+
     for _,v in ipairs(self.items) do
         if v.type == MenuItemType.SubMenu and v.name == name then
             return v
@@ -61,7 +69,7 @@ function Menu:subMenu(name, active)
     end
 
     local subMenu = Menu(name, self)
-    subMenu.active = active or true
+    subMenu.active = active
     table.insert(self.items, subMenu)
     return subMenu
 end
