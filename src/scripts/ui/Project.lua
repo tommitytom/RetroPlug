@@ -197,12 +197,14 @@ function Project:duplicateSystem(idx)
 	assert(#self.systems < const.MAX_INSTANCES)
 	local system = self.systems[idx]
 	local newSystem = system:clone()
+	local newIdx = #self.systems
 
-	system._audioContext = self._audioContext
+	newSystem._audioContext = self._audioContext
+	newSystem.desc.idx = newIdx
 	table.insert(self.systems, newSystem)
 
-	local idx = self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
-	if idx ~= -1 then self:setSelected(idx) end
+	self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
+	self:setSelected(newIdx + 1)
 end
 
 function Project:removeSystem(idx)

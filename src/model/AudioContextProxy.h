@@ -158,7 +158,6 @@ public:
 			_project.systems[i]->idx = i;
 		}
 		
-		_project.selectedSystem = NO_ACTIVE_SYSTEM;
 		if (_project.selectedSystem == idx && _project.systems.size() > 0) {
 			_project.selectedSystem = std::min(idx, (int)(_project.systems.size() - 1));
 		}
