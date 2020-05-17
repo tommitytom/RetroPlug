@@ -5,6 +5,7 @@ local util = require("util")
 local projectutil = require("util.project")
 local componentutil = require("util.component")
 local serpent = require("serpent")
+local serializer = require("serializer")
 
 local Error = require("Error")
 local ComponentManager = require("ComponentManager")
@@ -14,7 +15,7 @@ local Project = class()
 function Project:init(audioContext)
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
-	self._components = ComponentManager.createProjectComponents()
+	self.components = ComponentManager.createProjectComponents()
 	self.systems = {}
 
 	local count = #self._native.systems
@@ -23,17 +24,15 @@ function Project:init(audioContext)
 		if desc.state ~= SystemState.Uninitialized then
 			local system = System(desc)
 			system._audioContext = self._audioContext
-			system._components = ComponentManager.createSystemComponents(system)
+			system.components = ComponentManager.createSystemComponents(system)
 			table.insert(self.systems, system)
-
-			-- TODO: Initialize components!
 		end
 	end
 
 	self:emit("onReload")
 
 	for _, system in ipairs(self.systems) do
-		system:emit("onComponentsInitialized", system._components)
+		system:emit("onComponentsInitialized", system.components)
 		system:emit("onReload")
 	end
 
@@ -41,11 +40,11 @@ function Project:init(audioContext)
 end
 
 function Project:emit(eventName, ...)
-	componentutil.emitComponentEvent(eventName, self._components, ...)
+	componentutil.emitComponentEvent(eventName, self.components, ...)
 end
 
 function Project:clear()
-	self._components = {}
+	self.components = {}
 	self.systems = {}
 	self._audioContext:clearProject()
 end
@@ -114,67 +113,73 @@ function Project:deserializeProject(projectData)
 		end
 
 		system.audioComponentState = serpent.dump(inst.audioComponents)
+		system.uiComponentState = serpent.dump(inst.uiComponents)
 
 		self:addSystem(System(system))
 	end
 end
 
-function Project:save()
-	function _saveProject(state, pretty)
-		local proj = _proxy:getProject()
+function Project:save(path, pretty)
+	self._audioContext:fetchSystemStates(self._native.settings.saveType, function(systemStates)
+		local data = self:serializeProject(systemStates, pretty)
+		fs.save(path, data)
+	end)
+end
 
-		local t = {
-			retroPlugVersion = _RETROPLUG_VERSION,
-			projectVersion = _PROJECT_VERSION,
-			path = proj.path,
-			settings = cloneEnumFields(proj.settings, ProjectSettingsFields),
-			instances = {},
-			files = {}
-		}
+function Project:serializeProject(audioSystemStates, pretty)
+	local proj = self._native
 
-		for i, instance in ipairs(_instances) do
-			local desc = instance.system:desc()
-			if desc.state ~= SystemState.Uninitialized then
-				local inst = cloneEnumFields(desc, InstanceSettingsFields)
-				inst.sameBoy = cloneEnumFields(desc.sameBoySettings, SameBoySettingsFields)
-				inst.uiComponents = serializer.serializeInstance(instance)
+	local t = {
+		retroPlugVersion = _RETROPLUG_VERSION,
+		projectVersion = _PROJECT_VERSION,
+		path = proj.path,
+		settings = projectutil.cloneEnumFields(proj.settings, projectutil.ProjectSettingsFields),
+		instances = {},
+		files = {}
+	}
 
-				local ok, audioComponents = serpent.load(state.components[i])
-				if ok == true and audioComponents ~= nil then
-					inst.audioComponents = audioComponents
-				end
+	for i, system in ipairs(self.systems) do
+		local desc = system.desc
+		if desc.state ~= SystemState.Uninitialized then
+			local inst = projectutil.cloneEnumFields(desc, projectutil.InstanceSettingsFields)
+			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
+			inst.uiComponents = serializer.serializeComponents(system.components)
 
-				if state.buffers[i] ~= nil then
-					inst.state = base64.encodeBuffer(state.buffers[i], state.sizes[i])
-				end
-
-				table.insert(t.instances, inst)
-			else
-				break
+			local ok, audioComponents = serpent.load(audioSystemStates.components[i])
+			if ok == true and audioComponents ~= nil then
+				inst.audioComponents = audioComponents
 			end
-		end
 
-		local opts = { comment = false }
-		if pretty == true then opts.indent = '\t' end
-		return serpent.dump(t, opts)
+			if audioSystemStates.buffers[i] ~= nil then
+				inst.state = base64.encodeBuffer(audioSystemStates.buffers[i], audioSystemStates.sizes[i])
+			end
+
+			table.insert(t.instances, inst)
+		else
+			break
+		end
 	end
+
+	local opts = { comment = false }
+	if pretty == true then opts.indent = '\t' end
+	return serpent.dump(t, opts)
 end
 
 function Project:addComponent(componentType)
 	if type(componentType) == "string" then
 		local component = ComponentManager.createComponent(self, componentType)
 		if component ~= nil then
-			table.insert(self._components, component)
+			table.insert(self.components, component)
 		end
 	end
 end
 
 function Project:removeComponent(idx)
-	table.remove(self._components, idx)
+	table.remove(self.components, idx)
 end
 
 function Project:setComponentEnabled(idx, enabled)
-	local component = self._components[idx]
+	local component = self.components[idx]
 
 end
 
@@ -211,5 +216,18 @@ function Project:removeSystem(idx)
 	self._audioContext:removeSystem(idx - 1)
 	table.remove(self.systems, idx)
 end
+
+Action.RetroPlug = {
+	NextInstance = function(down)
+		if down == true then
+			local nextIdx = _activeIdx
+			if nextIdx == #_instances then
+				nextIdx = 0
+			end
+
+			_setActive(nextIdx)
+		end
+	end
+}
 
 return Project

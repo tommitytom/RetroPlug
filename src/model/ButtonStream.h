@@ -12,7 +12,6 @@ struct StreamButtonPress {
 
 template <const int TotalPressCount>
 struct ButtonStream {
-	SystemIndex idx;
 	std::array<StreamButtonPress, TotalPressCount> presses;
 	size_t pressCount = 0;
 };
@@ -25,8 +24,6 @@ private:
 	double _defaultDelay = 50.0;
 
 public:
-	SystemIndex getStreamId() const { return _stream.idx; }
-
 	ButtonStreamWriter& press(int button) {
 		hold(button);
 		release(button);

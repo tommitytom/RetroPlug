@@ -36,7 +36,7 @@ end
 local function saveProject(project, forceDialog)
 	forceDialog = forceDialog or project.path == ""
 	return menuutil.saveHandler({ PROJECT_FILTER }, "project", forceDialog, function(path)
-		return project:save(path)
+		return project:save(path, true)
 	end)
 end
 

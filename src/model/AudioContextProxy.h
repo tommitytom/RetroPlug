@@ -15,6 +15,8 @@
 #include "model/AudioLuaContext.h"
 #include "plugs/SameBoyPlug.h"
 
+const int MAX_STATE_SIZE = 512 * 1024;
+
 class AudioContextProxy {
 private:
 	Project _project;
@@ -45,6 +47,17 @@ public:
 		_audioController->getSram(idx, buffer);
 	}
 
+	void fetchSystemStates(SaveStateType type, std::function<void(const FetchStateResponse&)> cb) {
+		FetchStateRequest req;
+		req.type = type;
+
+		for (size_t i = 0; i < _project.systems.size(); ++i) {
+			req.buffers[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+		}
+
+		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+	}
+
 	void setScriptDirs(const std::string& configPath, const std::string& scriptPath) {
 		_configPath = configPath;
 		_scriptPath = scriptPath;
@@ -73,7 +86,16 @@ public:
 
 		for (SystemDescPtr& system : _project.systems) {
 			if (system->buttons.getCount() > 0) {
-				_node->push<calls::PressButtons>(NodeTypes::Audio, system->buttons.data());
+				if (_node->canPush<calls::PressButtons>()) {
+					_node->push<calls::PressButtons>(NodeTypes::Audio, ButtonPressState{ 
+						system->idx, 
+						system->buttons.data() 
+					});
+
+					system->buttons.clear();
+				} else {
+					std::cout << "Unable to push buttons" << std::endl;
+				}
 			}
 		}
 	}
@@ -157,7 +179,7 @@ public:
 		for (SystemIndex i = idx; i < (SystemIndex)_project.systems.size(); ++i) {
 			_project.systems[i]->idx = i;
 		}
-		
+
 		if (_project.selectedSystem == idx && _project.systems.size() > 0) {
 			_project.selectedSystem = std::min(idx, (int)(_project.systems.size() - 1));
 		}

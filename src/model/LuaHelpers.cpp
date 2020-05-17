@@ -114,9 +114,7 @@ void setupCommon(sol::state& s) {
 
 		"holdDuration", &GameboyButtonStream::holdDuration,
 		"releaseDuration", &GameboyButtonStream::releaseDuration,
-		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration,
-
-		"streamId", &GameboyButtonStream::getStreamId
+		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
 	);
 
 	s.new_usertype<Select>("Select", sol::base_classes, sol::bases<MenuItemBase>());

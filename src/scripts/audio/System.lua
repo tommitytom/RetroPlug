@@ -4,6 +4,7 @@ local System = class()
 function System:init(model, buttons)
 	self._model = model
 	self._desc = model:getDesc()
+	self.desc = self._desc
 	self._buttons = buttons
 end
 

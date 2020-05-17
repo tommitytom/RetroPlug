@@ -67,6 +67,17 @@ function View:onMouseDown(x, y, mod)
 		local menu = Menu()
 		mainMenu.generateMenu(menu, self.model.project)
 
+		for _, comp in ipairs(self.model.project.components) do
+			if comp.onMenu ~= nil then comp:onMenu(menu) end
+		end
+
+		for _, system in ipairs(self.model.project.systems) do
+			for _, comp in ipairs(system.components) do
+				print(comp.__desc.name, comp.onMenu)
+				if comp.onMenu ~= nil then comp:onMenu(menu) end
+			end
+		end
+
 		-- Get component menus
 		-- Get audio context menus
 

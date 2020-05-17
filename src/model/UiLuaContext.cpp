@@ -136,12 +136,6 @@ void UiLuaContext::setup() {
 		"decodeBuffer", base64::decodeBuffer
 	);
 
-	s.new_usertype<FetchStateResponse>("FetchStateResponse",
-		"buffers", &FetchStateResponse::buffers,
-		"sizes", &FetchStateResponse::sizes,
-		"components", &FetchStateResponse::components
-	);
-
 	s.new_usertype<FileManager>("FileManager",
 		"loadFile", &FileManager::loadFile,
 		"saveFile", &FileManager::saveFile,
@@ -187,7 +181,8 @@ void UiLuaContext::setup() {
 		"updateSettings", &AudioContextProxy::updateSettings,
 		"removeSystem", &AudioContextProxy::removeSystem,
 		"clearProject", &AudioContextProxy::clearProject,
-		"resetSystem", &AudioContextProxy::resetSystem
+		"resetSystem", &AudioContextProxy::resetSystem,
+		"fetchSystemStates", &AudioContextProxy::fetchSystemStates
 	);
 
 	s.new_usertype<ViewWrapper>("ViewWrapper",
@@ -227,8 +222,14 @@ void UiLuaContext::setup() {
 		"alt", &iplug::igraphics::IMouseMod::A
 	);
 
+	s.new_usertype<FetchStateResponse>("FetchStateResponse",
+		"buffers", &FetchStateResponse::buffers,
+		"components", &FetchStateResponse::components,
+		"sizes", &FetchStateResponse::sizes,
+		"type", &FetchStateResponse::type
+	);
+
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
-	//s["_proxy"].set(_proxy);
 	//s["_proxy"].set(_proxy);
 
 	if (!runScript(_state, "require('main')")) {

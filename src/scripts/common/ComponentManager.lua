@@ -49,7 +49,7 @@ local function createComponent(target, name)
 end
 
 local function createSystemComponents(system)
-	local desc = system._desc
+	local desc = system.desc
 	local components = {}
 	for _, componentType in ipairs(_factory.instance) do
 		local d = componentType.__desc

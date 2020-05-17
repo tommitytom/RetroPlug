@@ -325,15 +325,4 @@ function _serializeInstances() return serializer.serializeInstancesToString(_ins
 function _serializeInstance(idx) return serializer.serializeInstanceToString(_instances[idx + 1]) end
 function _deserializeInstances(data) serializer.deserializeInstancesFromString(_instances, data) end
 
-Action.RetroPlug = {
-	NextInstance = function(down)
-		if down == true then
-			local nextIdx = _activeIdx
-			if nextIdx == #_instances then
-				nextIdx = 0
-			end
 
-			_setActive(nextIdx)
-		end
-	end
-}

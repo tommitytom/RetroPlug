@@ -78,6 +78,11 @@ struct SetDataRequest {
 	bool reset;
 };
 
+struct ButtonPressState {
+	SystemIndex idx;
+	ButtonStream<32> buttons;
+};
+
 #define DefinePush(name, arg) class name : public micromsg::Push<arg> {};
 #define DefineRequest(name, arg, ret) class name : public micromsg::Request<arg, ret> {};
 
@@ -85,7 +90,7 @@ namespace calls {
 	DefinePush(LoadRom, LoadRomDesc);
 	DefinePush(TransmitVideo, VideoStream);
 	DefinePush(UpdateSettings, Project::Settings);
-	DefinePush(PressButtons, ButtonStream<32>);
+	DefinePush(PressButtons, ButtonPressState);
 	DefinePush(ContextMenuResult, int);
 	DefinePush(SetActive, SystemIndex);
 	DefinePush(ResetSystem, ResetSystemDesc);

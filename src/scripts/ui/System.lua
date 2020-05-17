@@ -5,11 +5,12 @@ local fs = require("fs")
 local pathutil = require("pathutil")
 local fileutil = require("util.file")
 local componentutil = require("util.component")
+local ComponentManager = require("ComponentManager")
 
 local System = class()
 function System:init(desc, model)
 	self._audioContext = nil
-	self._components = {}
+	self.components = {}
 
 	if type(desc) == "userdata" then
 		if desc.__type.name == "SystemDesc" then
@@ -26,7 +27,7 @@ function System:init(desc, model)
 end
 
 function System:emit(eventName, ...)
-	componentutil.emitComponentEvent(eventName, self._components, ...)
+	componentutil.emitComponentEvent(eventName, self.components, ...)
 end
 
 function System:clone()
@@ -34,11 +35,11 @@ function System:clone()
 end
 
 function System:getIndex(idx)
-	return self._components[idx]
+	return self.components[idx]
 end
 
 function System:getComponent(idx)
-	return self._components[idx]
+	return self.components[idx]
 end
 
 function System:setSram(data, reset)
@@ -104,8 +105,9 @@ function System:loadRom(data, path)
 		end
 	end
 
-	-- TODO: Find components
+	self.components = ComponentManager.createSystemComponents(self)
 
+	self:emit("onComponentsInitialized", self.components)
 	self:emit("onRomLoad", fileData)
 
 	if isNullPtr(self._audioContext) == false then

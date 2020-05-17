@@ -8,21 +8,20 @@ local function findComponentByName(components, name)
 	end
 end
 
-local function serializeInstance(instance)
-	local instModel = {}
-	--print(inspect(instance))
-	for _, v in ipairs(instance.components) do
+local function serializeComponents(components)
+	local serialized = {}
+	for _, v in ipairs(components) do
 		local found = v["onSerialize"]
 		if found ~= nil then
 			-- TODO: Should maybe base the component name on the filename rather
 			-- than using the user defined name here
 			local componentData = { __componentName = v.__desc.name }
 			found(v, componentData)
-			table.insert(instModel, componentData)
+			table.insert(serialized, componentData)
 		end
 	end
 
-	return instModel
+	return serialized
 end
 
 local function serializeInstances(instances)
@@ -30,7 +29,7 @@ local function serializeInstances(instances)
 
 	for i, inst in ipairs(instances) do
 		if inst ~= nil then
-			target[i] = serializeInstance(inst)
+			target[i] = serializeComponents(inst)
 		end
 	end
 
@@ -42,7 +41,7 @@ local function serializeInstancesToString(instances)
 end
 
 local function serializeInstanceToString(instance)
-	return serpent.dump(serializeInstance(instance), { comment = false })
+	return serpent.dump(serializeComponents(instance), { comment = false })
 end
 
 local function deserializeInstance(instance, model)
@@ -86,7 +85,7 @@ local function deserializeInstancesFromString(instances, data)
 end
 
 return {
-	serializeInstance = serializeInstance,
+	serializeComponents = serializeComponents,
 	serializeInstances = serializeInstances,
 	serializeInstancesToString = serializeInstancesToString,
 	deserializeInstancesFromString = deserializeInstancesFromString,

@@ -164,6 +164,7 @@ end
 return {
 	loadProject = loadProject,
 	copyStringFields = copyStringFields,
+	cloneEnumFields = cloneEnumFields,
 	ProjectSettingsFields = ProjectSettingsFields,
 	InstanceSettingsFields = InstanceSettingsFields,
 	SameBoySettingsFields = SameBoySettingsFields
