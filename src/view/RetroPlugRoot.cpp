@@ -245,9 +245,6 @@ void RetroPlugView::Draw(IGraphics& g) {
 
 	UpdateSelected();
 
-	// TODO: Probably only do this after changing layout?
-	//SetZoom(_proxy->getProject()->settings.zoom - 1);
-
 	onFrame(delta);
 	_proxy->update(delta);
 	_lua->update(delta);
@@ -288,8 +285,10 @@ void RetroPlugView::UpdateLayout() {
 		}
 	}
 
+	int zoom = _proxy->getProject()->settings.zoom;
 	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 		_views[i]->HideText();
+		_views[i]->SetZoom(zoom);
 	}
 
 	const Project::Settings& settings = _proxy->getProject()->settings;
