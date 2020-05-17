@@ -182,7 +182,8 @@ void UiLuaContext::setup() {
 		"removeSystem", &AudioContextProxy::removeSystem,
 		"clearProject", &AudioContextProxy::clearProject,
 		"resetSystem", &AudioContextProxy::resetSystem,
-		"fetchSystemStates", &AudioContextProxy::fetchSystemStates
+		"fetchSystemStates", &AudioContextProxy::fetchSystemStates,
+		"setRom", &AudioContextProxy::setRom
 	);
 
 	s.new_usertype<ViewWrapper>("ViewWrapper",

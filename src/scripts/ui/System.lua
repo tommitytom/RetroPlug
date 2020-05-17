@@ -15,6 +15,7 @@ function System:init(desc, model)
 	if type(desc) == "userdata" then
 		if desc.__type.name == "SystemDesc" then
 			self.desc = desc
+			self.components = ComponentManager.createSystemComponents(self)
 		elseif desc.__type.name == "DataBuffer" then
 			self:loadRom(desc)
 		end
@@ -61,12 +62,13 @@ function System:clearSram(reset)
 end
 
 function System:setRom(data, reset)
+	if reset == nil then reset = false end
 	self.desc.sourceRomData = data
 	self.desc.romName = util.getRomName(data)
 	self:emit("onRomSet", data)
 
 	if isNullPtr(self._audioContext) == false then
-		self._audioContext:setRom(self.desc.idx, data, reset or false)
+		self._audioContext:setRom(self.desc.idx, data, reset)
 	end
 end
 
@@ -108,7 +110,7 @@ function System:loadRom(data, path)
 	self.components = ComponentManager.createSystemComponents(self)
 
 	self:emit("onComponentsInitialized", self.components)
-	self:emit("onRomLoad", fileData)
+	self:emit("onRomLoad")
 
 	if isNullPtr(self._audioContext) == false then
 		self._audioContext:loadRom(d)

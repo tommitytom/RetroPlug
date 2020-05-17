@@ -24,7 +24,6 @@ function Project:init(audioContext)
 		if desc.state ~= SystemState.Uninitialized then
 			local system = System(desc)
 			system._audioContext = self._audioContext
-			system.components = ComponentManager.createSystemComponents(system)
 			table.insert(self.systems, system)
 		end
 	end
