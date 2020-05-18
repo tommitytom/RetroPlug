@@ -104,6 +104,10 @@ public:
 		_node->request<calls::SetRom>(NodeTypes::Audio, SetDataRequest{ idx, romData, reset }, [](const DataBufferPtr&) {});
 	}
 
+	void setSram(SystemIndex idx, DataBufferPtr romData, bool reset) {
+		_node->request<calls::SetSram>(NodeTypes::Audio, SetDataRequest{ idx, romData, reset }, [](const DataBufferPtr&) {});
+	}
+
 	SystemState setSystem(SystemDescPtr& inst) {
 		assert(inst->idx < MAX_SYSTEMS);
 

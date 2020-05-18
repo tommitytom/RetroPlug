@@ -183,9 +183,10 @@ void UiLuaContext::setup() {
 		"clearProject", &AudioContextProxy::clearProject,
 		"resetSystem", &AudioContextProxy::resetSystem,
 		"fetchSystemStates", &AudioContextProxy::fetchSystemStates,
-		"setRom", &AudioContextProxy::setRom
+		"setRom", &AudioContextProxy::setRom,
+		"setSram", &AudioContextProxy::setSram
 	);
-
+	
 	s.new_usertype<ViewWrapper>("ViewWrapper",
 		"requestDialog", &ViewWrapper::requestDialog,
 		"requestMenu", &ViewWrapper::requestMenu
