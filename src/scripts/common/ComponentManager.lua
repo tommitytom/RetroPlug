@@ -26,7 +26,9 @@ local function loadComponent(name)
 		print("Registered component: " .. component.__desc.name)
 		if component.__desc.global == true then
 			table.insert(_factory.global, component)
-		else
+		end
+
+		if component.__desc.global ~= true or component.__desc.system == true then
 			table.insert(_factory.instance, component)
 		end
 	else
@@ -93,9 +95,9 @@ local function runAllHandlers(target, components, ...)
     return handled
 end
 
-local function createProjectComponents()
+local function createProjectComponents(project)
     for _, v in ipairs(_factory.global) do
-		table.insert(_projectComponents, v.new())
+		table.insert(_projectComponents, v.new(project, true))
 	end
 
 	return _projectComponents

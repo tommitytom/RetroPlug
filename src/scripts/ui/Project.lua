@@ -15,7 +15,7 @@ local Project = class()
 function Project:init(audioContext)
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
-	self.components = ComponentManager.createProjectComponents()
+	self.components = ComponentManager.createProjectComponents(self)
 	self.systems = {}
 
 	local count = #self._native.systems
@@ -28,6 +28,7 @@ function Project:init(audioContext)
 		end
 	end
 
+	self:emit("onComponentsInitialized", self.components)
 	self:emit("onReload")
 
 	for _, system in ipairs(self.systems) do
@@ -39,7 +40,7 @@ function Project:init(audioContext)
 end
 
 function Project:emit(eventName, ...)
-	componentutil.emitComponentEvent(eventName, self.components, ...)
+	return componentutil.emitComponentEvent(eventName, self.components, ...)
 end
 
 function Project:clear()
@@ -218,17 +219,15 @@ function Project:removeSystem(idx)
 	table.remove(self.systems, idx)
 end
 
-Action.RetroPlug = {
-	NextInstance = function(down)
-		if down == true then
-			local nextIdx = _activeIdx
-			if nextIdx == #_instances then
-				nextIdx = 0
-			end
-
-			_setActive(nextIdx)
-		end
+function Project:nextSystem()
+	local idx = self:getSelectedIndex()
+	if idx == #self.systems then
+		idx = 1
+	else
+		idx = idx + 1
 	end
-}
+
+	self:setSelected(idx)
+end
 
 return Project

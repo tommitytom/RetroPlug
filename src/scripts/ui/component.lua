@@ -43,13 +43,24 @@ function component(desc)
 		end
 	end
 
-	c.new = function(system)
+	c.new = function(system, isProjectComponent)
 		local obj = { __actions = {}, __enabled = true }
 		setmetatable(obj, c)
-		function obj:system() return system end
+
+		if isProjectComponent == true then
+			function obj:project() return system end
+			function obj:system() return nil end
+			function obj:isProject() return true end
+		else
+			function obj:project() return nil end
+			function obj:system() return system end
+			function obj:isProject() return false end
+		end
+
 		function obj:enabled() return obj.__enabled end
 		function obj:setEnabled(enabled) obj.__enabled = enabled end
-		if c.init then c.init(obj)	end
+		if c.init then c.init(obj) end
+
 		return obj
 	end
 

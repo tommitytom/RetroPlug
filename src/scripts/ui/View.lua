@@ -23,16 +23,20 @@ end
 function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
 		local vk = key.vk
-		local p = self.model.project
+		self:emitComponentEvent("onKey", vk, down)
+	end
+end
 
-		if p:emit("onKey", vk, down) == true then
-			return true
-		end
+function View:emitComponentEvent(name, ...)
+	local p = self.model.project
 
-		local selected = p:getSelected()
-		if selected ~= nil then
-			return selected:emit("onKey", vk, down)
-		end
+	if p:emit(name, ...) == true then
+		return true
+	end
+
+	local selected = p:getSelected()
+	if selected ~= nil then
+		return selected:emit(name, ...)
 	end
 
 	return false
@@ -73,7 +77,6 @@ function View:onMouseDown(x, y, mod)
 
 		for _, system in ipairs(self.model.project.systems) do
 			for _, comp in ipairs(system.components) do
-				print(comp.__desc.name, comp.onMenu)
 				if comp.onMenu ~= nil then comp:onMenu(menu) end
 			end
 		end
