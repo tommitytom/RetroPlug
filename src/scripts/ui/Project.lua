@@ -184,17 +184,19 @@ end
 
 function Project:addSystem(system)
 	local desc = system.desc
-	if desc.idx == -1 then
+	local idx = desc.idx + 1
+	if idx == 0 then
 		assert(#self.systems < const.MAX_INSTANCES)
-		desc.idx = #self.systems
+		idx = #self.systems + 1
 	end
 
 	system._audioContext = self._audioContext
-	table.insert(self.systems, system)
+	self.systems[idx] = system
 
+	desc.idx = idx - 1
 	self._audioContext:setSystem(desc)
 
-	return desc.idx + 1
+	return idx
 end
 
 function Project:duplicateSystem(idx)
