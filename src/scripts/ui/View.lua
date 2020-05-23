@@ -75,8 +75,9 @@ function View:onMouseDown(x, y, mod)
 			if comp.onMenu ~= nil then comp:onMenu(menu) end
 		end
 
-		for _, system in ipairs(self.model.project.systems) do
-			for _, comp in ipairs(system.components) do
+		local selectedSystem = self.model.project:getSelected()
+		if selectedSystem ~= nil then
+			for _, comp in ipairs(selectedSystem.components) do
 				if comp.onMenu ~= nil then comp:onMenu(menu) end
 			end
 		end
