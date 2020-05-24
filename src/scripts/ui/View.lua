@@ -68,6 +68,11 @@ function View:onMouseDown(x, y, mod)
 	self:selectViewAtPos(x, y)
 
 	if mod.right == true then
+		local selectedIdx = self.model.project:getSelectedIndex()
+		if selectedIdx > 0 then
+			self.model.audioContext:updateSram(selectedIdx - 1)
+		end
+
 		local menu = Menu()
 		mainMenu.generateMenu(menu, self.model.project)
 

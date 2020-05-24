@@ -84,6 +84,10 @@ function Sav:importSongs(items)
 	end
 end
 
+function Sav:deleteSong(songIdx)
+	liblsdj.sav_erase_project(self._sav, songIdx)
+end
+
 function Sav:importSong(songIdx, songData)
 	local t = type(songData)
 	if t == "string" then
@@ -156,12 +160,10 @@ function Sav:_importSongFromBuffer(songData, songIdx)
 	songIdx = songIdx or self:nextAvailableProject()
 	local proj, err = liblsdj.project_read_lsdsng_from_memory(songData)
 	if err == lsdj_error_t.SUCCESS then
-		err = liblsdj.sav_set_project_move(self._sav, songIdx, proj)
-		if err ~= lsdj_error_t.SUCCESS then
-			-- Fail
-		end
+		iblsdj.sav_set_project_move(self._sav, songIdx, proj)
 	else
 		-- Fail
+		print("Failed to read song")
 	end
 end
 

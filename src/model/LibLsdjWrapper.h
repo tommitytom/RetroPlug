@@ -45,6 +45,9 @@ void setupLsdj(sol::state& s) {
 		"sav_set_project_move", [](void* sav, int index, void* project) {
 			lsdj_sav_set_project_move((lsdj_sav_t*)sav, index, (lsdj_project_t*)project);
 		},
+		"sav_erase_project", [](void* sav, int index) {
+			lsdj_sav_erase_project((lsdj_sav_t*)sav, index);
+		},
 		"sav_get_project", [](void* sav, uint8_t index) {
 			return (void*)lsdj_sav_get_project((lsdj_sav_t*)sav, index);
 		},
