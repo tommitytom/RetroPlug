@@ -74,7 +74,8 @@ end
 
 -- Loads a ROM from a path string, or data buffer.  Rebuilds the
 -- component array and resets the emulator.  The second 'path' parameter
--- allows you to pass a path for metadata purposes.
+-- allows you to pass a path for metadata purposes if the value passed
+-- to 'data' is a buffer.
 function System:loadRom(data, path)
 	local fileData, err = fileutil.loadPathOrData(data)
 	if err ~= nil then return err end
@@ -101,7 +102,7 @@ function System:loadRom(data, path)
 		if fs.exists(savPath) == true then
 			local savData = fs.load(savPath, false)
 			if savData ~= nil then
-				d.savPath = savPath
+				d.sramPath = savPath
 				d.sourceSavData = savData
 			end
 		end
@@ -117,6 +118,10 @@ function System:loadRom(data, path)
 	end
 end
 
+
+-- Loads a SAV from a path string, or data buffer.
+-- The third parameter 'path' allows you to pass a path for metadata
+-- purposes if the value passed to 'data' is a buffer.
 function System:loadSram(data, reset, path)
 	if type(data) == "string" then
 		path = data

@@ -158,7 +158,7 @@ void UiLuaContext::setup() {
 		"state", &SystemDesc::state,
 		"romName", &SystemDesc::romName,
 		"romPath", &SystemDesc::romPath,
-		"savPath", &SystemDesc::savPath,
+		"sramPath", &SystemDesc::sramPath,
 		"sameBoySettings", &SystemDesc::sameBoySettings,
 		"sourceRomData", &SystemDesc::sourceRomData,
 		"patchedRomData", &SystemDesc::patchedRomData,

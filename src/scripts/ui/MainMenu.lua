@@ -27,9 +27,9 @@ local function loadRom(project, idx, model)
 	end)
 end
 
-local function loadSram(system)
+local function loadSram(system, reset)
 	return menuutil.loadHandler({ SAV_FILTER }, "SAV", function(path)
-		return system:loadSram(path)
+		return system:loadSram(path, reset)
 	end)
 end
 
@@ -100,7 +100,7 @@ local function systemMenu(menu, system, project)
 			:parent()
 		:separator()
 		:action("New .sav", function() system:clearSram(true) end)
-		:action("Load .sav...", loadSram(system))
+		:action("Load .sav...", loadSram(system, true))
 		:action("Save .sav", saveSram(system, false))
 		:action("Save .sav As...", saveSram(system, true))
 		:separator()

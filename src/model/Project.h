@@ -49,7 +49,7 @@ struct SystemDesc {
 	SystemState state = SystemState::Uninitialized;
 	std::string romName;
 	std::string romPath;
-	std::string savPath;
+	std::string sramPath;
 
 	Rect area;
 
