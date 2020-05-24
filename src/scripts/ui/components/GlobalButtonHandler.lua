@@ -17,11 +17,7 @@ function GlobalButtonHandler:init()
 	self._buttonHooks = {}
 end
 
-function GlobalButtonHandler:onRomLoad()
-
-end
-
-function GlobalButtonHandler:onReload()
+function GlobalButtonHandler:onSetup()
 	self:_updateMaps()
 end
 

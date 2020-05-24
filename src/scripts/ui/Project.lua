@@ -29,7 +29,7 @@ function Project:init(audioContext)
 	end
 
 	self:emit("onComponentsInitialized", self.components)
-	self:emit("onReload")
+	self:emit("onSetup")
 
 	for _, system in ipairs(self.systems) do
 		system:emit("onComponentsInitialized", system.components)

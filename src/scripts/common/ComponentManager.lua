@@ -51,6 +51,7 @@ local function createComponent(target, name)
 end
 
 local function createSystemComponents(system)
+	print("------- SYSTEM COMPONENTS -------")
 	local desc = system.desc
 	local components = {}
 	for _, componentType in ipairs(_factory.instance) do
@@ -96,7 +97,10 @@ local function runAllHandlers(target, components, ...)
 end
 
 local function createProjectComponents(project)
-    for _, v in ipairs(_factory.global) do
+	print("------- PROJECT COMPONENTS -------")
+	for _, v in ipairs(_factory.global) do
+		local d = v.__desc
+		print("Attaching component " .. d.name)
 		table.insert(_projectComponents, v.new(project, true))
 	end
 
