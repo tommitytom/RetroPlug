@@ -51,7 +51,7 @@ end
 
 function Project:loadRom(data, idx, model)
 	local system = System(data, model)
-	if idx ~= nil then system.desc.idx = idx end
+	if idx ~= nil then system.desc.idx = idx - 1 end
 
 	idx = self:addSystem(system)
 	if idx ~= -1 then self:setSelected(idx) end
