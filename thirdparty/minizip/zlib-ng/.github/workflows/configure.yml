@@ -1,0 +1,172 @@
+name: CI Configure
+on: [push, pull_request]
+jobs:
+  ci-configure:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [
+          Ubuntu GCC,
+          Ubuntu GCC OSB,
+          Ubuntu GCC No Opt,
+          Ubuntu GCC Compat,
+          Ubuntu GCC Compat No Opt,
+          Ubuntu GCC Compat,
+          Ubuntu GCC ARM SF,
+          Ubuntu GCC ARM SF No Opt,
+          Ubuntu GCC ARM SF Compat,
+          Ubuntu GCC ARM SF Compat No Opt,
+          Ubuntu GCC ARM HF,
+          Ubuntu GCC ARM HF No Opt,
+          Ubuntu GCC ARM HF Compat,
+          Ubuntu GCC ARM HF Compat No Opt,
+          Ubuntu GCC ARM HF Compat No Neon,
+          Ubuntu GCC AARCH64 Compat No Opt,
+          Ubuntu GCC AARCH64 Compat,
+          macOS GCC
+        ]
+        include:
+          - name: Ubuntu GCC
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn
+
+          - name: Ubuntu GCC OSB
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn
+            build-dir: ../build
+            build-src-dir: ../zlib-ng
+
+          - name: Ubuntu GCC No Opt
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn --without-optimizations --without-new-strategies
+
+          - name: Ubuntu GCC Compat
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn --zlib-compat
+
+          - name: Ubuntu GCC Compat No Opt
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn --zlib-compat --without-optimizations --without-new-strategies
+
+          - name: Ubuntu GCC Compat
+            os: ubuntu-latest
+            compiler: gcc
+            configure-args: --warn --zlib-compat
+
+          - name: Ubuntu GCC ARM SF
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabi-gcc
+            configure-args: --warn
+            chost: arm-linux-gnueabi
+            packages: qemu gcc-arm-linux-gnueabi libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM SF No Opt
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabi-gcc
+            configure-args: --warn --without-optimizations --without-new-strategies
+            chost: arm-linux-gnueabi
+            packages: qemu gcc-arm-linux-gnueabi libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM SF Compat
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabi-gcc
+            configure-args: --warn --zlib-compat
+            chost: arm-linux-gnueabi
+            packages: qemu gcc-arm-linux-gnueabi libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM SF Compat No Opt
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabi-gcc
+            configure-args: --warn --zlib-compat --without-optimizations --without-new-strategies
+            chost: arm-linux-gnueabi
+            packages: qemu gcc-arm-linux-gnueabi libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM HF
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabihf-gcc
+            configure-args: --warn
+            chost: arm-linux-gnueabihf
+            packages: qemu gcc-arm-linux-gnueabihf libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM HF No Opt
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabihf-gcc
+            configure-args: --warn --without-optimizations --without-new-strategies
+            chost: arm-linux-gnueabihf
+            packages: qemu gcc-arm-linux-gnueabihf libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM HF Compat
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabihf-gcc
+            configure-args: --warn --zlib-compat
+            chost: arm-linux-gnueabihf
+            packages: qemu gcc-arm-linux-gnueabihf libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM HF Compat No Opt
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabihf-gcc
+            configure-args: --warn --zlib-compat --without-optimizations --without-new-strategies
+            chost: arm-linux-gnueabihf
+            packages: qemu gcc-arm-linux-gnueabihf libc-dev-armel-cross
+
+          - name: Ubuntu GCC ARM HF Compat No Neon
+            os: ubuntu-latest
+            compiler: arm-linux-gnueabihf-gcc
+            configure-args: --warn --zlib-compat --without-neon
+            chost: arm-linux-gnueabihf
+            packages: qemu gcc-arm-linux-gnueabihf libc-dev-armel-cross
+
+          - name: Ubuntu GCC AARCH64 Compat
+            os: ubuntu-latest
+            compiler: aarch64-linux-gnu-gcc
+            configure-args: --warn --zlib-compat
+            chost: aarch64-linux-gnu
+            packages: qemu gcc-aarch64-linux-gnu libc-dev-arm64-cross
+
+          - name: Ubuntu GCC AARCH64 Compat No Opt
+            os: ubuntu-latest
+            compiler: aarch64-linux-gnu-gcc
+            configure-args: --warn --zlib-compat --without-optimizations --without-new-strategies
+            chost: aarch64-linux-gnu
+            packages: qemu gcc-aarch64-linux-gnu libc-dev-arm64-cross
+
+          - name: macOS GCC
+            os: macOS-latest
+            compiler: gcc
+            configure-args: --warn
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Install packages (Ubuntu)
+      if: runner.os == 'Linux' && matrix.packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ${{ matrix.packages }}
+
+    - name: Generate project files
+      run: |
+        mkdir ${{ matrix.build-dir || '.not-used' }}
+        cd ${{ matrix.build-dir || '.' }}
+        ${{ matrix.build-src-dir || '.' }}/configure ${{ matrix.configure-args }}
+      env:
+        CC: ${{ matrix.compiler }}
+        CHOST: ${{ matrix.chost }}
+        CI: true
+
+    - name: Compile source code
+      run: |
+        cd ${{ matrix.build-dir || '.' }}
+        make -j2
+
+    - name: Run test cases
+      run: |
+        cd ${{ matrix.build-dir || '.' }}
+        make test

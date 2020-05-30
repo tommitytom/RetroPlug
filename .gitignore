@@ -26,3 +26,6 @@ Icon?
 
 compiler/x64
 src/model/CompiledLua.cpp
+thirdparty/bin
+thirdparty/lib
+thirdparty/build
