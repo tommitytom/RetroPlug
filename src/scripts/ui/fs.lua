@@ -1,3 +1,5 @@
+local Error = require("Error")
+
 local _fs = nil
 
 local function setup(fileSystem)
@@ -12,10 +14,15 @@ local function load(path, force)
 end
 
 local function save(path, data)
+	local ok
 	if type(data) == "string" then
-		return _fs:saveTextFile(path, data)
+		ok = _fs:saveTextFile(path, data)
 	else
-		return _fs:saveFile(path, data)
+		ok = _fs:saveFile(path, data)
+	end
+
+	if ok == false then
+		return Error("Failed to save " .. path)
 	end
 end
 
