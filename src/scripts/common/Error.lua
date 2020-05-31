@@ -8,3 +8,5 @@ end
 function Error:toString()
 	return self.msg
 end
+
+return Error

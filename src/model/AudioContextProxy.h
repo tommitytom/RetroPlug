@@ -47,12 +47,12 @@ public:
 		_audioController->getSram(idx, buffer);
 	}
 
-	void fetchSystemStates(SaveStateType type, std::function<void(const FetchStateResponse&)> cb) {
+	void fetchSystemStates(std::function<void(const FetchStateResponse&)> cb) {
 		FetchStateRequest req;
-		req.type = type;
 
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
-			req.buffers[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+			req.srams[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+			req.states[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
 		}
 
 		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);

@@ -12,10 +12,14 @@ local function changeExt(str, ext)
 	return str:gsub("[^.]+$", ext)
 end
 
+-- Gets the name of the file at the end of a path
+-- (the portion of the string after the last /)
 local function filename(str)
 	return clean(str):match("[^/]+$")
 end
 
+-- Gets the path of the directory this filepath points to
+-- (the portion of the string before the last /)
 local function filepath(str)
 	return clean(str):match("(.*/)")
 end

@@ -79,7 +79,7 @@ size_t SameBoyPlug::batterySize() {
 	return SAMEBOY_SYMBOLS(sameboy_battery_size)(_instance);
 }
 
-bool SameBoyPlug::saveBattery(char* data, size_t size) {
+size_t SameBoyPlug::saveBattery(char* data, size_t size) {
 	return SAMEBOY_SYMBOLS(sameboy_save_battery)(_instance, (char*)data, size);
 }
 
@@ -110,8 +110,8 @@ bool SameBoyPlug::clearBattery(bool reset) {
 	return true;
 }
 
-void SameBoyPlug::saveState(char* target, size_t size) {
-	SAMEBOY_SYMBOLS(sameboy_save_state)(_instance, (char*)target, size);
+size_t SameBoyPlug::saveState(char* target, size_t size) {
+	return SAMEBOY_SYMBOLS(sameboy_save_state)(_instance, (char*)target, size);
 }
 
 void SameBoyPlug::loadState(const char* source, size_t size) {

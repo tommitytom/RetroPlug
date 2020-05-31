@@ -1,6 +1,9 @@
 local fileutil = require("util.file")
 local serpent = require("serpent")
 local json = require("json")
+local System = require("System")
+local fs = require("fs")
+local util = require("util")
 local Error = require("Error")
 
 local ProjectSettingsFields = {
@@ -14,13 +17,15 @@ local ProjectSettingsFields = {
 local InstanceSettingsFields = {
 	emulatorType = EmulatorType,
 	"romPath",
-	"savPath"
+	"sramPath"
 }
 
 local SameBoySettingsFields = {
 	model = GameboyModel,
 	"gameLink"
 }
+
+local PROJECT_LUA_FILENAME = "project.lua"
 
 local function cloneFields(source, fields, target)
 	if target == nil then
@@ -141,24 +146,122 @@ local function loadProject_100(projectData)
 	end
 end
 
-local function loadProject(data)
-	local fileData, err = fileutil.loadPathOrData(data)
-	if err ~= nil then return nil, err end
+local function zipEntryExists(entries, name)
+	for i, v in ipairs(entries) do
+		if v.name == name then return true end
+	end
 
-	local stringData = fileData:toString()
-	local ok, projectData = serpent.load(stringData)
-	if ok ~= true then
+	return false
+end
+
+local function createProjectSystems(projectData, zip)
+	local systems = {}
+	for i, inst in ipairs(projectData.instances) do
+		local system = SystemDesc.new()
+		system.idx = -1
+		system.fastBoot = true
+		copyStringFields(inst, InstanceSettingsFields, system)
+		copyStringFields(inst.sameBoy, SameBoySettingsFields, system.sameBoySettings)
+
+		local romData = zip:read(tostring(i) .. ".gb")
+		if not isNullPtr(romData) then
+			system.state = SystemState.Initialized
+			system.sourceRomData = romData
+			system.romName = util.getRomName(romData)
+		else
+			local romFile = fs.load(inst.romPath, false)
+			if romFile ~= nil then
+				system.state = SystemState.Initialized
+				system.sourceRomData = romFile
+				system.romName = util.getRomName(romFile)
+			else
+				system.state = SystemState.RomMissing
+			end
+		end
+
+		local saveType = fromEnumString(SaveStateType, projectData.settings.saveType)
+
+		if saveType == SaveStateType.State then
+			-- TODO: Check SameBoy version here and determine whether the state is still valid
+			-- If it isn't prompt the user if they want to use the SRAM data instead
+			local stateData = zip:read(tostring(i) .. ".state")
+			if not isNullPtr(stateData) then
+				system.sourceStateData = stateData
+			else
+				print("WARNING: Couldn't find state data")
+			end
+		else
+			local sramData = zip:read(tostring(i) .. ".sav")
+			if not isNullPtr(sramData) then
+				system.sourceSavData = sramData
+			else
+				print("WARNING: Couldn't find SRAM data")
+			end
+		end
+
+		system.audioComponentState = serpent.dump(inst.audioComponents)
+		system.uiComponentState = serpent.dump(inst.uiComponents)
+
+		table.insert(systems, System(system))
+	end
+
+	return systems
+end
+
+local function loadProject(data)
+	local projectData
+	local zip = ZipReader.new(data)
+	if zip:isValid() then
+		local entries = zip:entries()
+		if zipEntryExists(entries, PROJECT_LUA_FILENAME) then
+			local fileData = zip:read(PROJECT_LUA_FILENAME)
+			local ok, loadedData = serpent.load(fileData:toString())
+			if ok == false then
+				zip:close()
+				return nil, nil, Error("Failed to load project: Unable to deserialize file")
+			end
+
+			projectData = loadedData
+		else
+			return nil, nil, Error("Failed to load project: Unable to deserialize file")
+		end
+	else
+		local fileData, err = fileutil.loadPathOrData(data)
+		if err ~= nil then return nil, nil, err end
+
 		-- Old projects (<= v0.2.0) are encoded using JSON rather than lua
+		local stringData = fileData:toString()
 		projectData = json.decode(stringData)
 		if projectData == nil then
-			return nil, Error("Failed to load project: Unable to deserialize file")
+			return nil, nil, Error("Failed to load project: Unable to deserialize file")
 		end
 	end
 
-	err = validateAndUpgradeProject(projectData)
-	if err ~= nil then return nil, err end
+	local err = validateAndUpgradeProject(projectData)
+	if err ~= nil then return nil, nil, err end
 
-	return projectData, nil
+	local systems, err = createProjectSystems(projectData, zip)
+	if err ~= nil then return nil, nil, err end
+
+	zip:close()
+
+	return projectData, systems, nil
+end
+
+local function saveProject(path, projectData, systems, systemStates)
+	local zip = ZipWriter.new(path)
+	zip:add(PROJECT_LUA_FILENAME, projectData)
+
+	for i, system in ipairs(systems) do
+		if systemStates.srams[i] ~= nil then
+			zip:add(tostring(i) .. ".sav", systemStates.srams[i])
+			zip:add(tostring(i) .. ".state", systemStates.states[i])
+		end
+
+		zip:add(tostring(i) .. ".gb", system.desc.sourceRomData)
+	end
+
+	zip:close()
 end
 
 return {
@@ -167,5 +270,7 @@ return {
 	cloneEnumFields = cloneEnumFields,
 	ProjectSettingsFields = ProjectSettingsFields,
 	InstanceSettingsFields = InstanceSettingsFields,
-	SameBoySettingsFields = SameBoySettingsFields
+	SameBoySettingsFields = SameBoySettingsFields,
+	saveProject = saveProject,
+	createProjectSystems = createProjectSystems
 }

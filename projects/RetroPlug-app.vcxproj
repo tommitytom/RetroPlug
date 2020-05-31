@@ -152,7 +152,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile />
@@ -165,15 +165,15 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;WIN64;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\minizip;$(SolutionDir)thirdparty\minizip\zlib-ng;$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(APP_LIBS);gainputstatic-d.lib;xinput.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
-      <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\gainput\build\lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\lib\debug_x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
     </Link>
     <ResourceCompile />
@@ -189,7 +189,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;RETRO_IMPORT_SYMBOLS;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty\minizip\zlib-ng;$(SolutionDir)thirdparty\minizip;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -197,7 +197,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile>
@@ -211,7 +211,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;RETRO_IMPORT_SYMBOLS;WIN64;$(RELEASE_DEFS);$(EXTRA_RELEASE_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty\minizip\zlib-ng;$(SolutionDir)thirdparty\minizip;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -220,9 +220,9 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(APP_LIBS);gainputstatic.lib;xinput.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
-      <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\gainput\build\lib\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\lib\release_x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -242,7 +242,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile>
@@ -263,7 +263,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)thirdparty\SameBoy\build\bin\sameboy_retroplug.a;$(APP_LIBS);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(APP_LIBS);lua.lib;simplefilewatcher.lib;minizip.lib;gainput.lib;xinput.lib;Ws2_32.lib;crypt32.lib;shell32.lib;Advapi32.lib;Gdi32.lib;Comdlg32.lib;Wininet.lib;Shlwapi.lib;</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ResourceCompile>
@@ -342,6 +342,7 @@
     <ClInclude Include="..\src\util\RingBuffer.h" />
     <ClInclude Include="..\src\util\RomWatcher.h" />
     <ClInclude Include="..\src\util\xstring.h" />
+    <ClInclude Include="..\src\util\zipp.h" />
     <ClInclude Include="..\src\view\BlockAllocator.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
     <ClInclude Include="..\src\view\EmulatorView.h" />
@@ -518,32 +519,6 @@
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\bytes.h" />
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\defaults.h" />
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\song_offsets.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lapi.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lauxlib.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lcode.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lctype.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldebug.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldo.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lfunc.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lgc.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llex.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llimits.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lmem.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lobject.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lopcodes.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lparser.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lprefix.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstate.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstring.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltable.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltm.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.hpp" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\luaconf.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lualib.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lundump.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lvm.h" />
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lzio.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\controller\AudioController.cpp" />
@@ -684,41 +659,6 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\table.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\vio.c" />
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\wave.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lapi.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lauxlib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbaselib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbitlib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcode.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcorolib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lctype.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldblib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldebug.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldo.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldump.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lfunc.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lgc.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\linit.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\liolib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\llex.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmathlib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmem.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loadlib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lobject.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lopcodes.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loslib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lparser.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstate.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstring.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstrlib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltable.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltablib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltm.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lundump.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lutf8lib.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lvm.c" />
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lzio.c" />
-    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp" />
-    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

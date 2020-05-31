@@ -69,6 +69,8 @@ function Project:getSelected()
 	return self.systems[self._native.selectedSystem + 1]
 end
 
+local pathutil = require("pathutil")
+
 function Project:removeSystem(idx)
 	if idx ~= 0 then
 		table.remove(self.systems, idx)
@@ -79,10 +81,23 @@ function Project:removeSystem(idx)
 end
 
 function Project:load(data)
-	local projectData, err = projectutil.loadProject(data)
-	if err ~= nil then return err end
+	local projectData, systems, err = projectutil.loadProject(data)
+	if err ~= nil then prinspect(err); return err end
 	self:clear()
-	return self:deserializeProject(projectData)
+
+	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
+	self._audioContext:updateSettings()
+
+	for _, system in ipairs(systems) do
+		self:addSystem(system)
+	end
+end
+
+function Project:save(path, pretty)
+	self._audioContext:fetchSystemStates(function(systemStates)
+		local data = self:serializeProject(systemStates, pretty)
+		projectutil.saveProject(path, data, self.systems, systemStates)
+	end)
 end
 
 function Project:deserializeProject(projectData)
@@ -119,13 +134,6 @@ function Project:deserializeProject(projectData)
 	end
 end
 
-function Project:save(path, pretty)
-	self._audioContext:fetchSystemStates(self._native.settings.saveType, function(systemStates)
-		local data = self:serializeProject(systemStates, pretty)
-		fs.save(path, data)
-	end)
-end
-
 function Project:serializeProject(audioSystemStates, pretty)
 	local proj = self._native
 
@@ -148,10 +156,6 @@ function Project:serializeProject(audioSystemStates, pretty)
 			local ok, audioComponents = serpent.load(audioSystemStates.components[i])
 			if ok == true and audioComponents ~= nil then
 				inst.audioComponents = audioComponents
-			end
-
-			if audioSystemStates.buffers[i] ~= nil then
-				inst.state = base64.encodeBuffer(audioSystemStates.buffers[i], audioSystemStates.sizes[i])
 			end
 
 			table.insert(t.instances, inst)

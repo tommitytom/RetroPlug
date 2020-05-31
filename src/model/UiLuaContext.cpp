@@ -19,6 +19,8 @@
 
 #include "view/Menu.h"
 
+#include "util/zipp.h"
+
 #ifdef COMPILE_LUA_SCRIPTS
 #include "CompiledLua.h"
 #endif
@@ -167,6 +169,7 @@ void UiLuaContext::setup() {
 		"sourceStateData", &SystemDesc::sourceStateData,
 		"fastBoot", &SystemDesc::fastBoot,
 		"audioComponentState", &SystemDesc::audioComponentState,
+		"uiComponentState", &SystemDesc::uiComponentState,
 		"area", &SystemDesc::area,
 		"buttons", &SystemDesc::buttons,
 		"clear", &SystemDesc::clear
@@ -226,10 +229,82 @@ void UiLuaContext::setup() {
 	);
 
 	s.new_usertype<FetchStateResponse>("FetchStateResponse",
-		"buffers", &FetchStateResponse::buffers,
-		"components", &FetchStateResponse::components,
-		"sizes", &FetchStateResponse::sizes,
-		"type", &FetchStateResponse::type
+		"srams", &FetchStateResponse::srams,
+		"states", &FetchStateResponse::states,
+		"components", &FetchStateResponse::components
+	);
+
+	s.new_enum("ZipCompressionMethod",
+		"Store", zipp::CompressionMethod::Store,
+		"BZip2", zipp::CompressionMethod::BZip2,
+		"Deflate", zipp::CompressionMethod::Deflate,
+		"Lzma", zipp::CompressionMethod::Lzma
+	);
+
+	s.new_enum("ZipCompressionLevel",
+		"Default", zipp::CompressionLevel::Default,
+		"Fast", zipp::CompressionLevel::Fast,
+		"Normal", zipp::CompressionLevel::Normal,
+		"Best", zipp::CompressionLevel::Best
+	);
+
+	s.new_usertype<zipp::Entry>("ZipEntry",
+		"name", sol::readonly(&zipp::Entry::name),
+		"size", sol::readonly(&zipp::Entry::size)
+	);
+
+	s.new_usertype<zipp::WriterSettings>("ZipWriterSettings",
+		"method", &zipp::WriterSettings::method,
+		"size", &zipp::WriterSettings::level
+	);
+
+	s.new_usertype<zipp::Reader>("ZipReader",
+		"new", sol::factories(
+			[](std::string_view path) { return std::make_shared<zipp::Reader>(path); },
+			[](DataBuffer<char>* buffer) { return std::make_shared<zipp::Reader>(buffer->data(), buffer->size()); }
+		),
+		"read", sol::overload(
+			[](zipp::Reader& reader, std::string_view filePath) {
+				zipp::Entry entry = reader.getEntry(filePath);
+				if (entry.size > 0) {
+					DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(entry.size);
+					if (reader.read(filePath, buffer->data(), buffer->size())) {
+						return buffer;
+					}
+				}
+
+				return DataBufferPtr();
+			},
+			[](zipp::Reader& reader, std::string_view filePath, DataBuffer<char>* target) {
+				zipp::Entry entry = reader.getEntry(filePath);
+				if (entry.size == target->size()) {
+					return reader.read(filePath, target->data(), target->size());
+				}
+
+				return false;
+			}
+		),
+		"entries", sol::resolve<std::vector<zipp::Entry>()>(&zipp::Reader::entries),
+		"isValid", &zipp::Reader::isValid,
+		"close", &zipp::Reader::close
+	);
+
+	s.new_usertype<zipp::Writer>("ZipWriter",
+		"new", sol::factories(
+			[](std::string_view path) { return std::make_shared<zipp::Writer>(path); },
+			[](std::string_view path, const zipp::WriterSettings& settings) { return std::make_shared<zipp::Writer>(path, settings); }
+		),
+		"add", sol::overload(
+			[](zipp::Writer& writer, std::string_view filePath, DataBuffer<char>* buffer) {
+				if (buffer) return writer.add(filePath, buffer->data(), buffer->size());
+				return false;
+			}, 
+			[](zipp::Writer& writer, std::string_view filePath, std::string_view text) {
+				return writer.add(filePath, text.data(), text.size());
+			}
+		),
+		"close", &zipp::Writer::close,
+		"isValid", &zipp::Writer::isValid
 	);
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;

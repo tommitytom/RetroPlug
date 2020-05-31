@@ -29,7 +29,7 @@ struct SameboyPlugSymbols {
 
 	size_t(*sameboy_save_state_size)(void* state);
 	void(*sameboy_load_state)(void* state, const char* source, size_t size);
-	void(*sameboy_save_state)(void* state, char* target, size_t size);
+	size_t(*sameboy_save_state)(void* state, char* target, size_t size);
 
 	size_t(*sameboy_fetch_audio)(void* state, int16_t* audio);
 	size_t(*sameboy_fetch_video)(void* state, uint32_t* video);

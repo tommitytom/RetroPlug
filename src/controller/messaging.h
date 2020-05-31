@@ -51,14 +51,13 @@ struct AudioBuffer {
 };
 
 struct FetchStateRequest {
-	SaveStateType type;
-	DataBufferPtr buffers[MAX_SYSTEMS];
+	DataBufferPtr srams[MAX_SYSTEMS];
+	DataBufferPtr states[MAX_SYSTEMS];
 };
 
 struct FetchStateResponse {
-	SaveStateType type;
-	std::array<size_t, MAX_SYSTEMS> sizes = { 0 };
-	std::array<DataBufferPtr, MAX_SYSTEMS> buffers;
+	std::array<DataBufferPtr, MAX_SYSTEMS> srams;
+	std::array<DataBufferPtr, MAX_SYSTEMS> states;
 	std::array<std::string, MAX_SYSTEMS> components;
 };
 

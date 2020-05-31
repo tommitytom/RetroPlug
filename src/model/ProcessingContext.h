@@ -59,19 +59,18 @@ public:
 	}
 
 	void fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
-		state.type = req.type;
-
 		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			SameBoyPlugPtr inst = _instances[i];
-			if (inst && req.buffers[i]) {
-				state.buffers[i] = req.buffers[i];
-				if (req.type == SaveStateType::Sram) {
-					state.sizes[i] = inst->batterySize();
-					inst->saveBattery(state.buffers[i]->data(), state.buffers[i]->size());
-				} else if (req.type == SaveStateType::State) {
-					state.sizes[i] = inst->saveStateSize();
-					inst->saveState(state.buffers[i]->data(), state.buffers[i]->size());
-				}
+			if (inst && req.srams[i]) {
+				state.srams[i] = req.srams[i];
+				state.states[i] = req.states[i];
+
+				size_t sramSize = inst->batterySize();
+				size_t stateSize = inst->saveStateSize();
+				inst->saveBattery(state.srams[i]->data(), state.srams[i]->size());
+				inst->saveState(state.states[i]->data(), state.states[i]->size());
+				state.srams[i]->resize(sramSize);
+				state.srams[i]->resize(stateSize);
 			}
 		}
 	}

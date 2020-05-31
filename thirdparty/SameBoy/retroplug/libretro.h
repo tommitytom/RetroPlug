@@ -92,7 +92,7 @@ RETRO_API size_t sameboy_save_battery(void* state, const char* target, size_t si
 RETRO_API void sameboy_load_battery(void* state, const char* source, size_t size);
 
 RETRO_API size_t sameboy_save_state_size(void* state);
-RETRO_API void sameboy_save_state(void* state, char* target, size_t size);
+RETRO_API size_t sameboy_save_state(void* state, char* target, size_t size);
 RETRO_API void sameboy_load_state(void* state, const char* source, size_t size);
 
 RETRO_API void sameboy_update(void* state, size_t requiredAudioFrames);

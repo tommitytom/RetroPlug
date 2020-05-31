@@ -85,13 +85,13 @@ public:
 
 	size_t batterySize();
 
-	bool saveBattery(char* data, size_t size);
+	size_t saveBattery(char* data, size_t size);
 
 	bool loadBattery(const char* data, size_t size, bool reset);
 
 	bool clearBattery(bool reset);
 
-	void saveState(char* target, size_t size);
+	size_t saveState(char* target, size_t size);
 
 	void loadState(const char* source, size_t size);
 

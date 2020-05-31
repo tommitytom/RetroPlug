@@ -53,7 +53,6 @@ solution "retroplug-dep"
 
 		includedirs { "simplefilewatcher/include" }
 		files { "simplefilewatcher/include/**.h", "simplefilewatcher/source/**.cpp" }
-		excludes { "lua-5.3.5/src/lua.c", "lua-5.3.5/src/luac.c" }
 
 	project "minizip"
 		kind "StaticLib"
@@ -96,14 +95,52 @@ solution "retroplug-dep"
 			"USE_ZLIB"
 		}
 
-		includedirs { "minizip", "zipper/zlib-ng" }
+		includedirs { 
+			"minizip", 
+			"minizip/lib/bzip2", 
+			"minizip/lib/liblzma", 
+			"minizip/lib/liblzma/api", 
+			"minizip/lib/liblzma/check",
+			"minizip/lib/liblzma/common",
+			"minizip/lib/liblzma/lz",
+			"minizip/lib/liblzma/lzma",
+			"minizip/lib/liblzma/rangecoder",
+			"minizip/zlib-ng"
+		}
 
-		files { "minizip/**.h", "minizip/**.c" }
-		excludes { "minizip/minizip.c", "minizip/miniunz.c" }
+		files { 
+			"minizip/**.h", 
+			"minizip/**.c",
+			"minizip/zlib-ng/*.h", 
+			"minizip/zlib-ng/*.c",
+			"minizip/zlib-ng/arch/x86/*.h", 
+			"minizip/zlib-ng/arch/x86/*.c"
+		}
 
-		files { "minizip/zlib-ng/*.h", "minizip/zlib-ng/*.c" }
-		files { "minizip/zlib-ng/arch/x86/*.h", "minizip/zlib-ng/arch/x86/*.c" }
-		excludes { "minizip/zlib-ng/arch", "minizip/zlib-ng/build", "minizip/zlib-ng/cmake", "minizip/zlib-ng/test", "minizip/zlib-ng/tools" }
+		excludes { 
+			"minizip/minizip.c",
+			"minizip/minigzip.c",
+			"minizip/miniunz.c",
+			"minizip/mz_strm_libcomp.*",
+			"minizip/mz_crypt_*.c",
+			"minizip/mz_strm_os_*.c",
+			"minizip/mz_os_*.c",
+			"minizip/test/**",
+
+			"minizip/zlib-ng/arch/arm/**",
+			"minizip/zlib-ng/arch/s390/**",
+			"minizip/zlib-ng/build/**",
+			"minizip/zlib-ng/cmake/**",
+			"minizip/zlib-ng/test/**",
+			"minizip/zlib-ng/tools/**"
+		}
 
 		configuration { "Debug" }
 			defines { "ZLIB_DEBUG" }
+
+		configuration { "windows" }
+			files { 
+				"minizip/mz_crypt_win32.c", 
+				"minizip/mz_strm_os_win32.c", 
+				"minizip/mz_os_win32.c" 
+			}
