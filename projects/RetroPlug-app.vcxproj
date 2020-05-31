@@ -148,7 +148,7 @@
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;RETRO_IMPORT_SYMBOLS;$(DEBUG_DEFS);$(EXTRA_DEBUG_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -192,7 +192,7 @@
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty\minizip\zlib-ng;$(SolutionDir)thirdparty\minizip;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -214,7 +214,7 @@
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty\minizip\zlib-ng;$(SolutionDir)thirdparty\minizip;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);$(SolutionDir)thirdparty\gainput\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -237,7 +237,7 @@
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;RETRO_IMPORT_SYMBOLS;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -258,7 +258,7 @@
       <PreprocessorDefinitions>$(APP_DEFS);SAMPLE_TYPE_FLOAT;IGRAPHICS_VSYNC;RETRO_IMPORT_SYMBOLS;WIN64;$(TRACER_DEFS);$(EXTRA_TRACER_DEFS);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\simplefilewatcher\include;$(SolutionDir)thirdparty\liblsdj\liblsdj\include\lsdj;$(SolutionDir)thirdparty\lua-5.3.5\src;$(SolutionDir)thirdparty;$(SolutionDir)src;$(SolutionDir)config;$(APP_INC_PATHS);C:\code\iPlug2-master\Examples\RetroPlug\SameBoy;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>

@@ -79,6 +79,10 @@ bool parseDirectory(fs::path dirPath, std::stringstream& out, std::vector<Compil
 			error = parseDirectory(p, out, descs) || error;
 		} else {
 			fs::path path = p.path();
+			if (path.extension() != ".lua") {
+				continue;
+			}
+			
 			std::string name = getScriptName(path);
 
 			std::cout << name;

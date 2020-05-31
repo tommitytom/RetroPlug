@@ -14,6 +14,7 @@
 #include "model/FileManager.h"
 #include "model/AudioLuaContext.h"
 #include "plugs/SameBoyPlug.h"
+#include "sol/sol.hpp"
 
 const int MAX_STATE_SIZE = 512 * 1024;
 
@@ -82,8 +83,12 @@ public:
 	}
 
 	void update(double delta) {
-		_node->pull();
-
+		try {
+			_node->pull();
+		} catch (sol::error error) {
+			std::cout << error.what() << std::endl;
+		}
+	
 		for (SystemDescPtr& system : _project.systems) {
 			if (system->buttons.getCount() > 0) {
 				if (_node->canPush<calls::PressButtons>()) {

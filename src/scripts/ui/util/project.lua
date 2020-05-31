@@ -14,7 +14,7 @@ local ProjectSettingsFields = {
 	"zoom"
 }
 
-local InstanceSettingsFields = {
+local SystemSettingsFields = {
 	emulatorType = EmulatorType,
 	"romPath",
 	"sramPath"
@@ -96,7 +96,7 @@ local function loadProject_rp010(projectData)
 		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
-		copyStringFields(inst, InstanceSettingsFields, desc)
+		copyStringFields(inst, SystemSettingsFields, desc)
 		copyStringFields(inst.settings.gameBoy, SameBoySettingsFields, desc.sameBoySettings)
 		desc.savPath = inst.lastSramPath
 
@@ -126,7 +126,7 @@ local function loadProject_100(projectData)
 		local desc = _proxy:createInstance()
 		desc.idx = -1
 		desc.fastBoot = true
-		copyStringFields(inst, InstanceSettingsFields, desc)
+		copyStringFields(inst, SystemSettingsFields, desc)
 		copyStringFields(inst.sameBoy, SameBoySettingsFields, desc.sameBoySettings)
 
 		local romFile = fs.load(inst.romPath, false)
@@ -156,14 +156,19 @@ end
 
 local function createProjectSystems(projectData, zip)
 	local systems = {}
-	for i, inst in ipairs(projectData.instances) do
+	for i, inst in ipairs(projectData.systems) do
 		local system = SystemDesc.new()
 		system.idx = -1
 		system.fastBoot = true
-		copyStringFields(inst, InstanceSettingsFields, system)
+		copyStringFields(inst, SystemSettingsFields, system)
 		copyStringFields(inst.sameBoy, SameBoySettingsFields, system.sameBoySettings)
 
-		local romData = zip:read(tostring(i) .. ".gb")
+		local romData
+
+		if zip ~= nil then
+			romData = zip:read(tostring(i) .. ".gb")
+		end
+
 		if not isNullPtr(romData) then
 			system.state = SystemState.Initialized
 			system.sourceRomData = romData
@@ -249,16 +254,24 @@ local function loadProject(data)
 end
 
 local function saveProject(path, projectData, systems, systemStates)
+	local ok
 	local zip = ZipWriter.new(path)
-	zip:add(PROJECT_LUA_FILENAME, projectData)
+	if not zip:isValid() then return Error("Failed to open output file") end
+
+	ok = zip:add(PROJECT_LUA_FILENAME, projectData)
+	if ok == false then return Error("Failed to add project config") end
 
 	for i, system in ipairs(systems) do
 		if systemStates.srams[i] ~= nil then
-			zip:add(tostring(i) .. ".sav", systemStates.srams[i])
-			zip:add(tostring(i) .. ".state", systemStates.states[i])
+			ok = zip:add(tostring(i) .. ".sav", systemStates.srams[i])
+			if ok == false then return Error("Failed to add system SRAM") end
+
+			ok = zip:add(tostring(i) .. ".state", systemStates.states[i])
+			if ok == false then return Error("Failed to add system state") end
 		end
 
-		zip:add(tostring(i) .. ".gb", system.desc.sourceRomData)
+		ok = zip:add(tostring(i) .. ".gb", system.desc.sourceRomData)
+		if ok == false then return Error("Failed to add system ROM") end
 	end
 
 	zip:close()
@@ -269,7 +282,7 @@ return {
 	copyStringFields = copyStringFields,
 	cloneEnumFields = cloneEnumFields,
 	ProjectSettingsFields = ProjectSettingsFields,
-	InstanceSettingsFields = InstanceSettingsFields,
+	SystemSettingsFields = SystemSettingsFields,
 	SameBoySettingsFields = SameBoySettingsFields,
 	saveProject = saveProject,
 	createProjectSystems = createProjectSystems

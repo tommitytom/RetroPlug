@@ -102,7 +102,8 @@ void setupCommon(sol::state& s) {
 		"midiRouting", &Project::Settings::midiRouting,
 		"layout", &Project::Settings::layout,
 		"zoom", &Project::Settings::zoom,
-		"saveType", &Project::Settings::saveType
+		"saveType", &Project::Settings::saveType,
+		"packageRom", &Project::Settings::packageRom
 	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",

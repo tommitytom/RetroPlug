@@ -85,71 +85,55 @@ function Project:load(data)
 	if err ~= nil then prinspect(err); return err end
 	self:clear()
 
+	self._native.path = projectData.path
 	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
 	self._audioContext:updateSettings()
+
+	self.components = ComponentManager.createProjectComponents(self)
 
 	for _, system in ipairs(systems) do
 		self:addSystem(system)
 	end
+
+	self:emit("onComponentsInitialized", self.components)
+	self:emit("onSetup")
+
+	for _, system in ipairs(self.systems) do
+		system:emit("onComponentsInitialized", system.components)
+		system:emit("onReload")
+	end
+
+	if self:getSelectedIndex() == 0 and #self.systems > 0 then self:setSelected(1) end
 end
 
 function Project:save(path, pretty)
 	self._audioContext:fetchSystemStates(function(systemStates)
-		local data = self:serializeProject(systemStates, pretty)
-		projectutil.saveProject(path, data, self.systems, systemStates)
+		if path == nil then
+			path = self._native.path
+			assert(path ~= "")
+		else
+			self._native.path = path
+		end
+
+		local data = self:serializeProject(systemStates, self._native, pretty)
+		local err = projectutil.saveProject(path, data, self.systems, systemStates)
+		if err ~= nil then print(err) end
 	end)
 end
 
-function Project:deserializeProject(projectData)
-	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
-	self._audioContext:updateSettings()
-
-	for _, inst in ipairs(projectData.instances) do
-		local system = SystemDesc.new()
-		system.idx = -1
-		system.fastBoot = true
-		projectutil.copyStringFields(inst, projectutil.InstanceSettingsFields, system)
-		projectutil.copyStringFields(inst.sameBoy, projectutil.SameBoySettingsFields, system.sameBoySettings)
-
-		local romFile = fs.load(inst.romPath, false)
-		if romFile ~= nil then
-			system.state = SystemState.Initialized
-			system.sourceRomData = romFile
-			system.romName = util.getRomName(romFile)
-		else
-			system.state = SystemState.RomMissing
-		end
-
-		local state = base64.decodeBuffer(inst.state)
-		if self._native.settings.saveType == SaveStateType.Sram then
-			system.sourceSavData = state
-		elseif self._native.settings.saveType == SaveStateType.State then
-			system.sourceStateData = state
-		end
-
-		system.audioComponentState = serpent.dump(inst.audioComponents)
-		system.uiComponentState = serpent.dump(inst.uiComponents)
-
-		self:addSystem(System(system))
-	end
-end
-
-function Project:serializeProject(audioSystemStates, pretty)
-	local proj = self._native
-
+function Project:serializeProject(audioSystemStates, projectSettings, pretty)
 	local t = {
 		retroPlugVersion = _RETROPLUG_VERSION,
 		projectVersion = _PROJECT_VERSION,
-		path = proj.path,
-		settings = projectutil.cloneEnumFields(proj.settings, projectutil.ProjectSettingsFields),
-		instances = {},
-		files = {}
+		path = projectSettings.path,
+		settings = projectutil.cloneEnumFields(projectSettings.settings, projectutil.ProjectSettingsFields),
+		systems = {}
 	}
 
 	for i, system in ipairs(self.systems) do
 		local desc = system.desc
 		if desc.state ~= SystemState.Uninitialized then
-			local inst = projectutil.cloneEnumFields(desc, projectutil.InstanceSettingsFields)
+			local inst = projectutil.cloneEnumFields(desc, projectutil.SystemSettingsFields)
 			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
 			inst.uiComponents = serializer.serializeComponents(system.components)
 
@@ -158,7 +142,7 @@ function Project:serializeProject(audioSystemStates, pretty)
 				inst.audioComponents = audioComponents
 			end
 
-			table.insert(t.instances, inst)
+			table.insert(t.systems, inst)
 		else
 			break
 		end
@@ -215,6 +199,12 @@ function Project:duplicateSystem(idx)
 	table.insert(self.systems, newSystem)
 
 	self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
+
+	for _, system in ipairs(self.systems) do
+		system:emit("onComponentsInitialized", system.components)
+		system:emit("onReload")
+	end
+
 	self:setSelected(newIdx + 1)
 end
 

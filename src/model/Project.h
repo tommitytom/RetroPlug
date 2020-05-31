@@ -85,6 +85,7 @@ struct Project {
 		SystemLayout layout = SystemLayout::Auto;
 		SaveStateType saveType = SaveStateType::Sram;
 		int zoom = 2;
+		bool packageRom = true;
 	} settings;
 
 	std::string path;
