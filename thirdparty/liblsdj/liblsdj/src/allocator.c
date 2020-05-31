@@ -55,13 +55,13 @@ void* lsdj_allocate_or_malloc(const lsdj_allocator_t* allocator, size_t size)
 void lsdj_deallocate(const lsdj_allocator_t* allocator, void* data)
 {
     assert(allocator);
-    return allocator->deallocate(data, allocator->userData);
+    allocator->deallocate(data, allocator->userData);
 }
 
 void lsdj_deallocate_or_free(const lsdj_allocator_t* allocator, void* data)
 {
     if (allocator)
-        return allocator->deallocate(data, allocator->userData);
+        allocator->deallocate(data, allocator->userData);
     else
-        return free(data);
+        free(data);
 }

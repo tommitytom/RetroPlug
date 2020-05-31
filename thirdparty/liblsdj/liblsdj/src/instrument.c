@@ -43,7 +43,7 @@
 
 bool lsdj_instrument_is_allocated(const lsdj_song_t* song, uint8_t instrument)
 {
-    const size_t index = INSTRUMENT_ALLOCATION_TABLE_OFFSET + instrument;
+    const size_t index = INSTRUMENT_ALLOCATION_TABLE_OFFSET + (size_t)instrument;
     assert(index <= INSTRUMENT_ALLOCATION_TABLE_OFFSET + 64);
 
     return song->bytes[index];
@@ -51,7 +51,7 @@ bool lsdj_instrument_is_allocated(const lsdj_song_t* song, uint8_t instrument)
 
 void lsdj_instrument_set_name(lsdj_song_t* song, uint8_t instrument, const char* name)
 {
-    const size_t index = INSTRUMENT_NAMES_OFFSET + instrument * LSDJ_INSTRUMENT_NAME_LENGTH;
+    const size_t index = INSTRUMENT_NAMES_OFFSET + (size_t)instrument * LSDJ_INSTRUMENT_NAME_LENGTH;
     assert(index < INSTRUMENT_NAMES_OFFSET + 320);
 
     char* dst = (char*)(&song->bytes[index]);
@@ -61,7 +61,7 @@ void lsdj_instrument_set_name(lsdj_song_t* song, uint8_t instrument, const char*
 
 const char* lsdj_instrument_get_name(const lsdj_song_t* song, uint8_t instrument)
 {
-    const size_t index = INSTRUMENT_NAMES_OFFSET + instrument * LSDJ_INSTRUMENT_NAME_LENGTH;
+    const size_t index = INSTRUMENT_NAMES_OFFSET + (size_t)instrument * LSDJ_INSTRUMENT_NAME_LENGTH;
     assert(index < INSTRUMENT_NAMES_OFFSET + 320);
 
     return (const char*)(&song->bytes[index]);
@@ -69,7 +69,7 @@ const char* lsdj_instrument_get_name(const lsdj_song_t* song, uint8_t instrument
 
 void set_instrument_bits(lsdj_song_t* song, uint8_t instrument, uint8_t byte, uint8_t position, uint8_t count, uint8_t value)
 {
-	const size_t index = instrument * LSDJ_INSTRUMENT_BYTE_COUNT + byte;
+	const size_t index = (size_t)instrument * LSDJ_INSTRUMENT_BYTE_COUNT + byte;
 	assert(index < 1024);
 
 	copy_bits_in_place(
@@ -80,7 +80,7 @@ void set_instrument_bits(lsdj_song_t* song, uint8_t instrument, uint8_t byte, ui
 
 uint8_t get_instrument_bits(const lsdj_song_t* song, uint8_t instrument, uint8_t byte, uint8_t position, uint8_t count)
 {
-	const size_t index = instrument * LSDJ_INSTRUMENT_BYTE_COUNT + byte;
+	const size_t index = (size_t)instrument * LSDJ_INSTRUMENT_BYTE_COUNT + byte;
 	assert(index < 1024);
 
 	return (uint8_t)(get_bits(song->bytes[INSTRUMENT_PARAMS_OFFSET + index], position, count) >> position);
@@ -214,7 +214,7 @@ lsdj_vibrato_shape_t lsdj_instrument_get_vibrato_shape(const lsdj_song_t* song, 
             case 0: return LSDJ_INSTRUMENT_VIBRATO_TRIANGLE;
             case 1: return LSDJ_INSTRUMENT_VIBRATO_SAWTOOTH;
             case 2: return LSDJ_INSTRUMENT_VIBRATO_SQUARE;
-            default: assert(false);
+            default: assert(false); return LSDJ_INSTRUMENT_VIBRATO_TRIANGLE;
         }
     } else {
 		switch (get_instrument_bits(song, instrument, 5, 1, 2))
@@ -223,7 +223,7 @@ lsdj_vibrato_shape_t lsdj_instrument_get_vibrato_shape(const lsdj_song_t* song, 
             case 1: return LSDJ_INSTRUMENT_VIBRATO_SAWTOOTH;
             case 2: return LSDJ_INSTRUMENT_VIBRATO_TRIANGLE;
             case 3: return LSDJ_INSTRUMENT_VIBRATO_SQUARE;
-            default: assert(false);
+			default: assert(false); return LSDJ_INSTRUMENT_VIBRATO_TRIANGLE;
         }
 	}
 }
@@ -249,7 +249,7 @@ lsdj_plv_speed_t lsdj_instrument_get_plv_speed(const lsdj_song_t* song, uint8_t 
             case 1:
             case 2:
             case 3: return LSDJ_INSTRUMENT_PLV_TICK;
-            default: assert(false);
+			default: assert(false); return LSDJ_INSTRUMENT_PLV_FAST;
         }
 	}
 }

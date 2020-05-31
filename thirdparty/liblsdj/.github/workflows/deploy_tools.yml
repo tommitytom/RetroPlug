@@ -1,0 +1,75 @@
+name: Deploy Tools
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  Windows:
+    runs-on: windows-latest
+    env:
+        ARCHIVE: liblsdj_windows_${{ github.event.release.tag_name }}.zip
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+        submodules: recursive
+    
+    - name: Configure
+      run: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
+      
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Zip
+      run: |
+        7z a ${{ env.ARCHIVE }} -tzip .\build\lsdsng_export\Release\lsdsng-export.exe
+        7z a ${{ env.ARCHIVE }} -tzip .\build\lsdsng_import\Release\lsdsng-import.exe
+        7z a ${{ env.ARCHIVE }} -tzip .\build\lsdj_mono\Release\lsdj-mono.exe
+        7z a ${{ env.ARCHIVE }} -tzip .\build\lsdj_wavetable_import\Release\lsdj-wavetable-import.exe
+        
+    - name: Upload
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: .\${{ env.ARCHIVE }}
+        asset_name: ${{ env.ARCHIVE }}
+        asset_content_type: binary/octet-stream
+ 
+  macOS:
+    runs-on: macos-latest
+    env:
+        ARCHIVE: liblsdj_macos_${{ github.event.release.tag_name }}.zip
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+        submodules: recursive
+    
+    - name: Configure
+      run: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
+      
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Zip
+      run: |
+        zip -j ${{ env.ARCHIVE }} \
+        ./build/lsdsng_export/lsdsng-export \
+        ./build/lsdsng_import/lsdsng-import \
+        ./build/lsdj_mono/lsdj-mono \
+        ./build/lsdj_wavetable_import/lsdj-wavetable-import
+      
+    - name: Upload
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./${{ env.ARCHIVE }}
+        asset_name: ${{ env.ARCHIVE }}
+        asset_content_type: binary/octet-stream

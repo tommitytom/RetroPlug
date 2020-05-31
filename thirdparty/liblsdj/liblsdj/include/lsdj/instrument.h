@@ -420,16 +420,32 @@ void lsdj_instrument_wave_set_length(lsdj_song_t* song, uint8_t instrument, uint
 	@return The length value (0 - F) */
 uint8_t lsdj_instrument_wave_get_length(const lsdj_song_t* song, uint8_t instrument);
 
+//! Change the loop pos for a wave instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param pos The loop pos value (0 - F)
+    @note This doesn't make sense before fmt v9, in which case you should use lsdj_instrument_wave_set_repeat() */
+void lsdj_instrument_wave_set_loop_pos(lsdj_song_t* song, uint8_t instrument, uint8_t pos);
+
+//! Retrieve the loop pos value that a wave instrument uses
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @return The loop pos value (0 - F)
+    @note This doesn't make sense before fmt v9, in which case you should use lsdj_instrument_wave_get_repeat() */
+uint8_t lsdj_instrument_wave_get_loop_pos(const lsdj_song_t* song, uint8_t pos);
+
 //! Change the repeat value for a wave instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@param repeat The repeat value (0 - F) */
+	@param repeat The repeat value (0 - F)
+    @note This doesn't make sense since fmt v9, in which case you should use lsdj_instrument_wave_set_loop_pos() */
 void lsdj_instrument_wave_set_repeat(lsdj_song_t* song, uint8_t instrument, uint8_t repeat);
 
 //! Retrieve the repeat value that a wave instrument uses
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@return The repeat value (0 - F) */
+	@return The repeat value (0 - F)
+    @note This doesn't make sense since fmt v9, in which case you should use lsdj_instrument_wave_get_loop_pos() */
 uint8_t lsdj_instrument_wave_get_repeat(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the speed value for a wave instrument

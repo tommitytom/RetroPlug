@@ -1,6 +1,8 @@
 #include "file.hpp"
 
+#include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 std::vector<std::uint8_t> readFileContents(std::string_view path)

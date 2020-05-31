@@ -1,0 +1,58 @@
+name: Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  Windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+        submodules: recursive
+    
+    - name: Configure
+      run: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
+      
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Test
+      run: build\liblsdj\test\Release\test.exe
+ 
+  macOS:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+        submodules: recursive
+    
+    - name: Configure
+      run: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
+      
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Test
+      run: ./build/liblsdj/test/test
+ 
+  Ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+        submodules: recursive
+    
+    - name: Configure
+      run: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
+      
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Test
+      run: ./build/liblsdj/test/test

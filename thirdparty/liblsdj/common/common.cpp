@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <iostream>
 
 #include "common.hpp"

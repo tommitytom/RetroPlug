@@ -1,5 +1,6 @@
 #include "song_processor.hpp"
 
+#include <cassert>
 #include <ghc/filesystem.hpp>
 #include <iostream>
 

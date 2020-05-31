@@ -113,7 +113,7 @@ lsdj_command_t lsdj_table_get_command1(const lsdj_song_t* song, uint8_t table, u
         const size_t index = table * LSDJ_TABLE_LENGTH + step;
         assert(index <= TABLE_COMMAND1_OFFSET);
         
-        const uint8_t byte = song->bytes[TABLE_COMMAND2_OFFSET + index];
+        const uint8_t byte = song->bytes[TABLE_COMMAND1_OFFSET + index];
         
         if (byte > 1)
             return (lsdj_command_t)(byte - 1);

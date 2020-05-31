@@ -84,7 +84,7 @@ namespace lsdj
         void printWorkingMemorySong(const lsdj_sav_t* sav);
         
         // Print a sav project line
-        void printProject(const lsdj_sav_t* sav, std::size_t index);
+        void printProject(const lsdj_sav_t* sav, std::uint8_t index);
         
         std::string constructName(const lsdj_project_t* project);
     };

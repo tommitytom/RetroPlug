@@ -494,7 +494,7 @@ lsdj_error_t compress_projects(lsdj_project_t* const* projects, uint8_t* blocks,
     
     lsdj_vio_t wvio = lsdj_create_memory_vio(&state);
     
-    unsigned int current_block = 1;
+    unsigned int currentBlock = 1;
     for (int i = 0; i < LSDJ_SAV_PROJECT_COUNT; i++)
     {
         // See if there's a project in this slot
@@ -507,14 +507,17 @@ lsdj_error_t compress_projects(lsdj_project_t* const* projects, uint8_t* blocks,
         
         // Compress and store success + how many bytes were written
         size_t compressionSize = 0;
-        const lsdj_error_t result = lsdj_compress(song->bytes, &wvio, current_block, &compressionSize);
+        const lsdj_error_t result = lsdj_compress(song->bytes, &wvio, currentBlock, &compressionSize);
         
         // Bail out if this failed
         if (result != LSDJ_SUCCESS)
             return result;
         
         // Set the block allocation table
-        memset(blockAllocTable, i, compressionSize / LSDJ_BLOCK_SIZE);
+        const unsigned int blockCount = (unsigned int)(compressionSize / LSDJ_BLOCK_SIZE);
+        memset(blockAllocTable + currentBlock - 1, i, blockCount);
+        
+        currentBlock += blockCount;
     }
     
     return LSDJ_SUCCESS;

@@ -45,14 +45,14 @@ bool lsdj_chain_is_allocated(const lsdj_song_t* song, uint8_t chain)
 	const size_t index = chain / 8;
 	assert(index < 16);
 
-	const size_t mask = 1 << (chain - (index * 8));
+	const uint32_t mask = 1 << (chain - (index * 8));
     
 	return (song->bytes[CHAIN_ALLOCATIONS_OFFSET + index] & mask) != 0;
 }
 
 void lsdj_chain_set_phrase(lsdj_song_t* song, uint8_t chain, uint8_t step, uint8_t phrase)
 {
-	const size_t index = chain * LSDJ_CHAIN_LENGTH + step;
+	const size_t index = (size_t)chain * LSDJ_CHAIN_LENGTH + step;
 	assert(index < 2048);
 
 	song->bytes[CHAIN_PHRASES_OFFSET + index] = phrase;
@@ -60,7 +60,7 @@ void lsdj_chain_set_phrase(lsdj_song_t* song, uint8_t chain, uint8_t step, uint8
 
 uint8_t lsdj_chain_get_phrase(const lsdj_song_t* song, uint8_t chain, uint8_t step)
 {
-	const size_t index = chain * LSDJ_CHAIN_LENGTH + step;
+	const size_t index = (size_t)chain * LSDJ_CHAIN_LENGTH + step;
 	assert(index < 2048);
 
 	return song->bytes[CHAIN_PHRASES_OFFSET + index];
@@ -68,7 +68,7 @@ uint8_t lsdj_chain_get_phrase(const lsdj_song_t* song, uint8_t chain, uint8_t st
 
 void lsdj_chain_set_transposition(lsdj_song_t* song, uint8_t chain, uint8_t step, uint8_t transposition)
 {
-	const size_t index = chain * LSDJ_CHAIN_LENGTH + step;
+	const size_t index = (size_t)chain * LSDJ_CHAIN_LENGTH + step;
 	assert(index < 2048);
 
 	song->bytes[CHAIN_TRANSPOSITIONS_OFFSET + index] = transposition;
@@ -76,7 +76,7 @@ void lsdj_chain_set_transposition(lsdj_song_t* song, uint8_t chain, uint8_t step
 
 uint8_t lsdj_chain_get_transposition(const lsdj_song_t* song, uint8_t chain, uint8_t step)
 {
-	const size_t index = chain * LSDJ_CHAIN_LENGTH + step;
+	const size_t index = (size_t)chain * LSDJ_CHAIN_LENGTH + step;
 	assert(index < 2048);
 
 	return song->bytes[CHAIN_TRANSPOSITIONS_OFFSET + index];
