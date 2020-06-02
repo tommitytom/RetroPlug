@@ -105,10 +105,10 @@ local function systemMenu(menu, system, project)
 		:action("Load .sav...", loadSram(system, true))
 		:action("Save .sav", saveSram(system, false))
 		:action("Save .sav As...", saveSram(system, true))
-		:separator()
+		--[[:separator()
 		:subMenu("UI Components")
 			:parent()
-		:subMenu("Audio Components")
+		:subMenu("Audio Components")]]
 end
 
 local function findMissingRom(system)
@@ -133,7 +133,10 @@ local function generateMainMenu(menu, project)
 			:action("Open Settings Folder...", function()  end)
 			:parent()
 		:separator()
-		:select("Game Link", sameBoySettings.gameLink, function(v) sameBoySettings.gameLink = v end)
+		:select("Game Link", sameBoySettings.gameLink, function(v)
+			sameBoySettings.gameLink = v
+			selected:updateSettings()
+		end)
 end
 
 local function generateStartMenu(menu, project)

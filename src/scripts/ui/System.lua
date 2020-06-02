@@ -162,11 +162,17 @@ end
 function System:reset(model)
 	if model == nil or model == GameboyModel.Auto then
 		model = self.desc.sameBoySettings.model
+	else
+		self.desc.sameBoySettings.model = model
 	end
 
 	if isNullPtr(self._audioContext) == false then
 		self._audioContext:resetSystem(self.desc.idx, model)
 	end
+end
+
+function System:updateSettings()
+	self._audioContext:updateSystemSettings(self.desc.idx)
 end
 
 return System

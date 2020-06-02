@@ -82,13 +82,19 @@ struct ButtonPressState {
 	ButtonStream<32> buttons;
 };
 
+struct SystemSettings {
+	SystemIndex idx;
+	SameBoySettings settings;
+};
+
 #define DefinePush(name, arg) class name : public micromsg::Push<arg> {};
 #define DefineRequest(name, arg, ret) class name : public micromsg::Request<arg, ret> {};
 
 namespace calls {
 	DefinePush(LoadRom, LoadRomDesc);
 	DefinePush(TransmitVideo, VideoStream);
-	DefinePush(UpdateSettings, Project::Settings);
+	DefinePush(UpdateProjectSettings, Project::Settings);
+	DefinePush(UpdateSystemSettings, SystemSettings);
 	DefinePush(PressButtons, ButtonPressState);
 	DefinePush(ContextMenuResult, int);
 	DefinePush(SetActive, SystemIndex);

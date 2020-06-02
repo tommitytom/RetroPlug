@@ -73,6 +73,11 @@ public:
 		});
 	}
 
+	void updateSystemSettings(SystemIndex idx) {
+		SystemSettings settings = SystemSettings{ idx, _project.systems[idx]->sameBoySettings };
+		_node->push<calls::UpdateSystemSettings>(NodeTypes::Audio, settings);
+	}
+
 	void reloadLuaContext() {
 		AudioLuaContextPtr ctx = std::make_shared<AudioLuaContext>(_configPath, _scriptPath);
 		_node->request<calls::SwapLuaContext>(NodeTypes::Audio, ctx, [](const AudioLuaContextPtr& d) {});
@@ -207,6 +212,6 @@ public:
 	}
 
 	void updateSettings() {
-		_node->push<calls::UpdateSettings>(NodeTypes::Audio, _project.settings);
+		_node->push<calls::UpdateProjectSettings>(NodeTypes::Audio, _project.settings);
 	}
 };

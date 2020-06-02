@@ -347,6 +347,14 @@ void sameboy_update_multiple(void** states, size_t stateCount, size_t requiredAu
         for (size_t i = 0; i < stateCount; i++) {
             sameboy_state_t* s = st[i];
             if (s->currentAudioFrames < requiredAudioFrames) {
+                // Send button presses if required
+                offset_button_t* b = (offset_button_t*)queue_front(&s->buttonQueue);
+                while (b && b->offset <= s->currentAudioFrames) {
+                    queue_dequeue(&s->buttonQueue);
+                    GB_set_key_state(&s->gb, b->button, b->down);
+                    b = (offset_button_t*)queue_front(&s->buttonQueue);
+                }
+
                 GB_run(&s->gb);
             } else {
                 complete++;

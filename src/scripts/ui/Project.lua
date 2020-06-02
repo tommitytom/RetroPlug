@@ -59,6 +59,7 @@ end
 
 function Project:setSelected(idx)
 	self._native.selectedSystem = idx - 1
+
 end
 
 function Project:getSelectedIndex()

@@ -371,9 +371,13 @@ void RetroPlugView::UpdateLayout() {
 void RetroPlugView::UpdateSelected() {
 	SystemIndex idx = _proxy->getProject()->selectedSystem;
 
-	if (_activeIdx != NO_ACTIVE_SYSTEM && idx != _activeIdx) {
-		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);
+	for (auto view : _views) {
+		view->SetAlpha(INACTIVE_ALPHA);
 	}
+
+	/*if (_activeIdx != NO_ACTIVE_SYSTEM && idx != _activeIdx) {
+		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);
+	}*/
 
 	if (idx != NO_ACTIVE_SYSTEM) {
 		_views[idx]->SetAlpha(ACTIVE_ALPHA);

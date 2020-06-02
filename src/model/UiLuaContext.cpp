@@ -188,7 +188,8 @@ void UiLuaContext::setup() {
 		"fetchSystemStates", &AudioContextProxy::fetchSystemStates,
 		"setRom", &AudioContextProxy::setRom,
 		"setSram", &AudioContextProxy::setSram,
-		"updateSram", &AudioContextProxy::updateSram
+		"updateSram", &AudioContextProxy::updateSram,
+		"updateSystemSettings", &AudioContextProxy::updateSystemSettings
 	);
 	
 	s.new_usertype<ViewWrapper>("ViewWrapper",

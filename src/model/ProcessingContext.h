@@ -54,6 +54,11 @@ public:
 
 	void setSettings(const Project::Settings& settings) { _settings = settings; }
 
+	void setSystemSettings(SystemIndex idx, SameBoySettings settings) {
+		_instances[idx]->setSettings(settings);
+		updateLinkTargets();
+	}
+
 	GameboyButtonStream* getButtonPresses(SystemIndex idx) {
 		return &_buttonPresses[idx];
 	}
@@ -178,12 +183,6 @@ public:
 				}
 
 				totalPlugCount++;
-
-				const ButtonStream<32>& d = _buttonPresses[i].data();
-				if (d.pressCount > 0) {
-					plug->pressButtons(d.presses.data(), d.pressCount);
-					_buttonPresses[i].clear();
-				}
 			}
 		}
 
@@ -212,4 +211,27 @@ public:
 			}
 		}
 	}
+
+private:
+	void getLinkTargets(std::vector<SameBoyPlugPtr>& targets, SameBoyPlugPtr ignore) {
+		for (size_t i = 0; i < _instances.size(); i++) {
+			const auto& settings = _instances[i]->getSettings();
+			if (_instances[i] && _instances[i] != ignore && _instances[i]->active() && settings.gameLink) {
+				targets.push_back(_instances[i]);
+			}
+		}
+	}
+
+	void updateLinkTargets() {
+		std::vector<SameBoyPlugPtr> targets;
+		for (size_t i = 0; i < _instances.size(); i++) {
+			auto target = _instances[i];
+			if (target && target->active() && target->getSettings().gameLink) {
+				targets.clear();
+				getLinkTargets(targets, target);
+				target->setLinkTargets(targets);
+			}
+		}
+	}
+
 };

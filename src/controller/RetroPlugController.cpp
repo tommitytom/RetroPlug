@@ -30,7 +30,8 @@ RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double samp
 	_bus.addCall<calls::DuplicateSystem>(1);
 	_bus.addCall<calls::ResetSystem>(4);
 	_bus.addCall<calls::TransmitVideo>(16);
-	_bus.addCall<calls::UpdateSettings>(4);
+	_bus.addCall<calls::UpdateProjectSettings>(4);
+	_bus.addCall<calls::UpdateSystemSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);
 	_bus.addCall<calls::FetchState>(1);
 	_bus.addCall<calls::ContextMenuResult>(1);

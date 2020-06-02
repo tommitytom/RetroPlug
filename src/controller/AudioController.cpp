@@ -47,8 +47,12 @@ void AudioController::setNode(Node* node) {
 		_lua->setActive(idx);
 	});
 
-	node->on<calls::UpdateSettings>([&](const Project::Settings& settings) {
+	node->on<calls::UpdateProjectSettings>([&](const Project::Settings& settings) {
 		_processingContext.setSettings(settings);
+	});
+
+	node->on<calls::UpdateSystemSettings>([&](const SystemSettings& settings) {
+		_processingContext.setSystemSettings(settings.idx, settings.settings);
 	});
 
 	node->on<calls::FetchState>([&](const FetchStateRequest& req, FetchStateResponse& state) {
