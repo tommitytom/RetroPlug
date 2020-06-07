@@ -77,11 +77,13 @@ public:
     void SetText(const char* str) { mText.Set(str); }
     const char* GetText() const { return mText.Get(); }; // TODO: Text -> Str!
 
+    void SetTag(int tag) { mTag = tag; }
+    int GetTag() const { return mTag; }
+
     bool GetEnabled() const { return !(mFlags & kDisabled); }
     bool GetChecked() const { return (mFlags & kChecked) != 0; }
     bool GetIsTitle() const { return (mFlags & kTitle) != 0; }
     bool GetIsSeparator() const { return (mFlags & kSeparator) != 0; }
-    int GetTag() const { return mTag; }
     IPopupMenu* GetSubmenu() const { return mSubmenu.get(); }
     bool GetIsChoosable() const
     {
