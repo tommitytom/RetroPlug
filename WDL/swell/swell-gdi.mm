@@ -43,10 +43,6 @@
 #include <OpenGL/gl.h>
 #endif
 
-#ifndef SWELL_NO_METAL
-void SWELL_Metal_FillRect(void *_tex, int x, int y, int w, int h, int color);
-#endif
-
 // reimplement here so that swell-gdi isn't dependent on swell-misc, and vice-versa
 static int SWELL_GDI_GetOSXVersion()
 {
@@ -55,12 +51,7 @@ static int SWELL_GDI_GetOSXVersion()
   {
     if (NSAppKitVersionNumber >= 1266.0) 
     {
-      if (NSAppKitVersionNumber >= 1670.0)  // unsure if this is correct (10.14.1 is 1671.1)
-        v = 0x10d0;
-      else if (NSAppKitVersionNumber >= 1404.0)
-        v = 0x10b0;
-      else
-        v=0x10a0; // 10.10+ Gestalt(gsv) return 0x109x, so we bump this to 0x10a0
+      v=0x10a0; // 10.10+ Gestalt(gsv) return 0x109x, so we bump this to 0x10a0
     }
     else 
     {
@@ -167,11 +158,8 @@ static CGColorRef CreateColor(int col, float alpha=1.0f)
 
 #include "swell-gdi-internalpool.h"
 
-char g_swell_disable_retina;
-
 int SWELL_IsRetinaHWND(HWND hwnd)
 {
-  if (g_swell_disable_retina) return 0;
   if (!hwnd || SWELL_GDI_GetOSXVersion() < 0x1070) return 0;
 
   NSWindow *w=NULL;
@@ -191,23 +179,8 @@ int SWELL_IsRetinaHWND(HWND hwnd)
 
 int SWELL_IsRetinaDC(HDC hdc)
 {
-  if (g_swell_disable_retina) return 0;
   HDC__ *src=(HDC__*)hdc;
-  if (!src || !HDC_VALID(src)) return 0;
-  
-  if (!src->ctx) 
-  {
-#ifndef SWELL_NO_METAL
-    if (src->metal_ctx)
-    {
-      SWELL_hwndChild *ctx = (SWELL_hwndChild*)src->metal_ctx;
-      if (ctx->m_metal_dc_dirty) return ctx->m_metal_retina ? 1 : 0;
-
-      return SWELL_IsRetinaHWND((HWND)src->metal_ctx);
-    }
-#endif
-    return 0;
-  }
+  if (!src || !HDC_VALID(src) || !src->ctx) return 0;
   return CGContextConvertSizeToDeviceSpace((CGContextRef)src->ctx, CGSizeMake(1,1)).width > 1.9 ? 1 : 0;
 }
 
@@ -227,15 +200,6 @@ HDC SWELL_CreateGfxContext(void *c)
  // CGContextSelectFont(ctx->ctx,"Arial",12.0,kCGEncodingMacRoman);
   return ctx;
 }
-
-#ifndef SWELL_NO_METAL
-HDC SWELL_CreateMetalDC(SWELL_hwndChild *tex)
-{
-  HDC__ *ctx=SWELL_GDP_CTX_NEW();
-  ctx->metal_ctx = tex;
-  return ctx;
-}
-#endif
 
 #define ALIGN_EXTRA 63
 static void *ALIGN_FBUF(void *inbuf)
@@ -301,7 +265,6 @@ HPEN CreatePenAlpha(int attr, int wid, int col, float alpha)
   pen->type=TYPE_PEN;
   pen->wid=wid<0?0:wid;
   pen->color=CreateColor(col,alpha);
-  pen->color_int = col;
   return pen;
 }
 HBRUSH  CreateSolidBrushAlpha(int col, float alpha)
@@ -309,7 +272,6 @@ HBRUSH  CreateSolidBrushAlpha(int col, float alpha)
   HGDIOBJ__ *brush=GDP_OBJECT_NEW();
   brush->type=TYPE_BRUSH;
   brush->color=CreateColor(col,alpha);
-  brush->color_int = col;
   brush->wid=0; 
   return brush;
 }
@@ -394,17 +356,6 @@ void SWELL_FillRect(HDC ctx, const RECT *r, HBRUSH br)
   HGDIOBJ__ *b=(HGDIOBJ__*) br;
   if (!HDC_VALID(c) || !HGDIOBJ_VALID(b,TYPE_BRUSH) || b == (HGDIOBJ__*)TYPE_BRUSH || b->type != TYPE_BRUSH) return;
 
-#ifndef SWELL_NO_METAL
-  if (c->metal_ctx)
-  {
-    if (b->wid>=0)
-      SWELL_Metal_FillRect(c->metal_ctx, r->left, r->top, r->right-r->left,r->bottom-r->top, b->color_int);
-    return;
-  }
-#endif
-
-  if (!c->ctx) return;
-
   if (b->wid<0) return;
   
   CGRect rect=CGRectMake(r->left,r->top,r->right-r->left,r->bottom-r->top);
@@ -437,7 +388,6 @@ void Ellipse(HDC ctx, int l, int t, int r, int b)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)) return;
-  if (!c->ctx) return;
   
   CGRect rect=CGRectMake(l,t,r-l,b-t);
   
@@ -457,25 +407,6 @@ void Rectangle(HDC ctx, int l, int t, int r, int b)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)) return;
-#ifndef SWELL_NO_METAL
-  if (c->metal_ctx)
-  {
-    if (HGDIOBJ_VALID(c->curbrush,TYPE_BRUSH) && c->curbrush->wid >= 0)
-    {
-      SWELL_Metal_FillRect(c->metal_ctx, l,t,r-l,b-t, c->curbrush->color_int);
-    }
-    if (HGDIOBJ_VALID(c->curpen,TYPE_PEN) && c->curpen->wid >= 0)
-    {
-      const int wid = wdl_max(1,c->curpen->wid);
-      SWELL_Metal_FillRect(c->metal_ctx, l,t,r-l,wid, c->curpen->color_int);
-      SWELL_Metal_FillRect(c->metal_ctx, l,b-wid,r-l,wid, c->curpen->color_int);
-      SWELL_Metal_FillRect(c->metal_ctx, l,t+wid,wid,b-t-wid*2, c->curpen->color_int);
-      SWELL_Metal_FillRect(c->metal_ctx, r-wid,t+wid,wid,b-t-wid*2, c->curpen->color_int);
-    }
-    return;
-  }
-#endif
-  if (!c->ctx) return;
   
   CGRect rect=CGRectMake(l,t,r-l,b-t);
   
@@ -518,7 +449,6 @@ void Polygon(HDC ctx, POINT *pts, int npts)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)) return;
-  if (!c->ctx) return;
   if (((!HGDIOBJ_VALID(c->curbrush,TYPE_BRUSH)||c->curbrush->wid<0) && (!HGDIOBJ_VALID(c->curpen,TYPE_PEN)||c->curpen->wid<0)) || npts<2) return;
 
   CGContextBeginPath(c->ctx);
@@ -557,7 +487,6 @@ void PolyBezierTo(HDC ctx, POINT *pts, int np)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)||!HGDIOBJ_VALID(c->curpen,TYPE_PEN)||c->curpen->wid<0||np<3) return;
-  if (!c->ctx) return;
   
   CGContextSetLineWidth(c->ctx,(float)wdl_max(c->curpen->wid,1));
   CGContextSetStrokeColorWithColor(c->ctx,c->curpen->color);
@@ -583,25 +512,6 @@ void SWELL_LineTo(HDC ctx, int x, int y)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)||!HGDIOBJ_VALID(c->curpen,TYPE_PEN)||c->curpen->wid<0) return;
-#ifndef SWELL_NO_METAL
-  if (c->metal_ctx)
-  {
-    if (x == c->lastpos_x)
-    {
-      const int my=wdl_min(y,c->lastpos_y);
-      SWELL_Metal_FillRect(c->metal_ctx, x, my, 1, wdl_max(y,c->lastpos_y)-my+1, c->curpen->color_int);
-    }
-    else if (y == c->lastpos_y)
-    {
-      const int mx = wdl_min(x,c->lastpos_x);
-      SWELL_Metal_FillRect(c->metal_ctx, mx, y, wdl_max(x,c->lastpos_x)-mx+1,1, c->curpen->color_int);
-    }
-    c->lastpos_x = x;
-    c->lastpos_y = y;
-    return;
-  }
-#endif
-  if (!c->ctx) return;
 
   float w = (float)wdl_max(c->curpen->wid,1);
   CGContextSetLineWidth(c->ctx,w);
@@ -621,7 +531,6 @@ void PolyPolyline(HDC ctx, POINT *pts, DWORD *cnts, int nseg)
 {
   HDC__ *c=(HDC__ *)ctx;
   if (!HDC_VALID(c)||!HGDIOBJ_VALID(c->curpen,TYPE_PEN)||c->curpen->wid<0||nseg<1) return;
-  if (!c->ctx) return;
 
   float w = (float)wdl_max(c->curpen->wid,1);
   CGContextSetLineWidth(c->ctx,w);
@@ -658,15 +567,6 @@ void SWELL_SetPixel(HDC ctx, int x, int y, int c)
 {
   HDC__ *ct=(HDC__ *)ctx;
   if (!HDC_VALID(ct)) return;
-#ifndef SWELL_NO_METAL
-  if (ct->metal_ctx)
-  {
-    SWELL_Metal_FillRect(ct->metal_ctx, x, y, 1, 1,c);
-    return;
-  }
-#endif
-
-  if (!ct->ctx) return;
   CGContextBeginPath(ct->ctx);
   CGContextMoveToPoint(ct->ctx,(float)x-0.5,(float)y-0.5);
   CGContextAddLineToPoint(ct->ctx,(float)x+0.5,(float)y+0.5);
@@ -1025,7 +925,6 @@ int DrawText(HDC ctx, const char *buf, int buflen, RECT *r, int align)
 {
   HDC__ *ct=(HDC__ *)ctx;
   if (!HDC_VALID(ct)) return 0;
-  if (!(align & DT_CALCRECT) && !ct->ctx) return 0;
   
   bool has_ml=false;
   char tmp[4096];
@@ -1323,14 +1222,7 @@ HICON LoadNamedImage(const char *name, bool alphaFromMask)
       // on yosemite, calling [img TIFFRepresentation] seems to change img somehow for some images, ouch.
       // in this case, we should always replace img with newImage (set rcnt=1), but in general
       // maybe we shoulnt use alphaFromMask anyhow
-      NSData *data = [img TIFFRepresentation];
-      if (!data)
-      {
-        SWELL_DeleteGfxContext(hdc);
-        goto return_img;
-      }
-
-      NSImage *newImage=[[NSImage alloc] initWithData:data];
+      NSImage *newImage=[[NSImage alloc] initWithData:[img TIFFRepresentation]];
       [newImage setFlipped:YES];
 
       const int *fb = (const int *)SWELL_GetCtxFrameBuffer(hdc);
@@ -1363,7 +1255,6 @@ HICON LoadNamedImage(const char *name, bool alphaFromMask)
     }
   }
   
-return_img:
   HGDIOBJ__ *i=GDP_OBJECT_NEW();
   i->type=TYPE_BITMAP;
   i->wid=1;
@@ -1376,7 +1267,6 @@ void DrawImageInRect(HDC ctx, HICON img, const RECT *r)
   HGDIOBJ__ *i = (HGDIOBJ__ *)img;
   HDC__ *ct=(HDC__*)ctx;
   if (!HDC_VALID(ct) || !HGDIOBJ_VALID(i,TYPE_BITMAP) || !i->bitmapptr) return;
-  if (!ct->ctx) return;
   //CGContextDrawImage(ct->ctx,CGRectMake(r->left,r->top,r->right-r->left,r->bottom-r->top),(CGImage*)i->bitmapptr);
   // probably a better way since this ignores the ctx
   [NSGraphicsContext saveGraphicsState];
@@ -1469,9 +1359,12 @@ void BitBlt(HDC hdcOut, int x, int y, int w, int h, HDC hdcIn, int xin, int yin,
 
 void StretchBlt(HDC hdcOut, int x, int y, int destw, int desth, HDC hdcIn, int xin, int yin, int w, int h, int mode)
 {
+  if (!hdcOut || !hdcIn||w<1||h<1) return;
   HDC__ *src=(HDC__*)hdcIn;
   HDC__ *dest=(HDC__*)hdcOut;
-  if (w<1 || h<1 || !HDC_VALID(src) || !HDC_VALID(dest) || !src->ownedData || !src->ctx) return;
+  if (!HDC_VALID(src) || !HDC_VALID(dest) || !src->ownedData || !src->ctx || !dest->ctx) return;
+
+  if (w<1||h<1) return;
   
   const int sw = (int)CGBitmapContextGetWidth(src->ctx);
   const int sh = (int)CGBitmapContextGetHeight(src->ctx);
@@ -1503,33 +1396,13 @@ void StretchBlt(HDC hdcOut, int x, int y, int destw, int desth, HDC hdcIn, int x
   else if (h != preclip_h) desth = (h*desth)/preclip_h;
   
   const bool use_alphachannel = mode == (int)SRCCOPY_USEALPHACHAN;
-
-  unsigned char *p = (unsigned char *)ALIGN_FBUF(src->ownedData);
-  p += (xin + sw*yin)*4;
-
-#ifndef SWELL_NO_METAL
-
-  if (dest->metal_ctx)
-  {
-    void SWELL_Metal_Blit(void *tex, unsigned char *buf, int x, int y, int w, int h, int span, bool retina_hint);
-
-    if (w == destw && h == desth)
-      SWELL_Metal_Blit(hdcOut->metal_ctx,p,x,y,w,h,sw,false);
-    else if (WDL_NORMALLY(w == destw*2) && WDL_NORMALLY(h == desth*2))
-    {
-      SWELL_Metal_Blit(hdcOut->metal_ctx,p,x*2,y*2,w,h,sw,true);
-    }
-
-    return;
-  }
-
-#endif
-
-  if (!dest->ctx) return;
-
+  
   CGContextRef output = (CGContextRef)dest->ctx;
   CGRect outputr = CGRectMake(x,-desth-y,destw,desth);
   
+  unsigned char *p = (unsigned char *)ALIGN_FBUF(src->ownedData);
+  p += (xin + sw*yin)*4;
+
   
 #ifdef SWELL_SUPPORT_OPENGL_BLIT
   if (dest->GLgfxctx)
@@ -1652,16 +1525,6 @@ HDC GetDC(HWND h)
         return ps.hdc;
       }
     }
-
-#ifndef SWELL_NO_METAL
-    if ([(id)h isKindOfClass:[SWELL_hwndChild class]] && [(SWELL_hwndChild *)h swellWantsMetal])
-    {
-      SWELL_hwndChild *wnd = (SWELL_hwndChild*)h;
-
-      wnd->m_metal_dc_dirty = 2;
-      return SWELL_CreateMetalDC(wnd);
-    }
-#endif
     
     if ([(NSView*)h lockFocusIfCanDraw])
     {
@@ -1737,22 +1600,8 @@ void ReleaseDC(HWND h, HDC hdc)
   if (hdc) SWELL_DeleteGfxContext(hdc);
   if (isView && hdc)
   {
-#ifndef SWELL_NO_METAL
-    if ([(id)h isKindOfClass:[SWELL_hwndChild class]] && [(SWELL_hwndChild *)h swellWantsMetal])
-    {
-      SWELL_hwndChild *wnd = (SWELL_hwndChild*)h;
-      if (wnd->m_metal_dc_dirty == 1)
-      {
-        if (WDL_NOT_NORMALLY(wnd->m_use_metal == 1))
-        {
-          NSLog(@"swell-cocoa: metal(1) surface %p had write in GetDC()/ReleaseDC(), this is unsupported, use a metal(2) surface\n",wnd);
-        }
-        swell_addMetalDirty(wnd,NULL,true);
-      }
-    }
-    else
-#endif
-      [(NSView *)h unlockFocus];
+    [(NSView *)h unlockFocus];
+//    if ([(NSView *)h window]) [[(NSView *)h window] flushWindow];
   }
 }
 
@@ -1761,20 +1610,8 @@ void SWELL_FillDialogBackground(HDC hdc, const RECT *r, int level)
   CGContextRef ctx=(CGContextRef)SWELL_GetCtxGC(hdc);
   if (ctx)
   {
-    bool ok = false;
-    if (SWELL_GDI_GetOSXVersion()>=0x10d0)
-    {
-      NSColor *c = [NSColor windowBackgroundColor];
-      if ([c respondsToSelector:@selector(CGColor)])
-      {
-        CGContextSetFillColorWithColor(ctx, [c CGColor]);
-        ok = true;
-      }
-    }
-
-    if (!ok)
-      HIThemeSetFill(kThemeBrushDialogBackgroundActive,NULL,ctx,kHIThemeOrientationNormal);
-
+  // level 0 for now = this
+    HIThemeSetFill(kThemeBrushDialogBackgroundActive,NULL,ctx,kHIThemeOrientationNormal);
     CGRect rect=CGRectMake(r->left,r->top,r->right-r->left,r->bottom-r->top);
     CGContextFillRect(ctx,rect);	         
   }

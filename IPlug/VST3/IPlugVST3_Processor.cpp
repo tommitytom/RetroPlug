@@ -30,7 +30,7 @@ IPlugVST3Processor::~IPlugVST3Processor() {}
 
 tresult PLUGIN_API IPlugVST3Processor::initialize(FUnknown* context)
 {
-  TRACE
+  TRACE;
   
   if (AudioEffect::initialize(context) == kResultOk)
   {
@@ -50,15 +50,15 @@ tresult PLUGIN_API IPlugVST3Processor::terminate()
 
 tresult PLUGIN_API IPlugVST3Processor::setBusArrangements(SpeakerArrangement* pInputBusArrangements, int32 numInBuses, SpeakerArrangement* pOutputBusArrangements, int32 numOutBuses)
 {
-  TRACE
+  TRACE;
   
-  SetBusArrangements(pInputBusArrangements, numInBuses, pOutputBusArrangements, numOutBuses);
+  SetBusArrangments(pInputBusArrangements, numInBuses, pOutputBusArrangements, numOutBuses);
   return kResultTrue;
 }
 
 tresult PLUGIN_API IPlugVST3Processor::setActive(TBool state)
 {
-  TRACE
+  TRACE;
   
   OnActivate((bool) state);
   return AudioEffect::setActive(state);
@@ -66,21 +66,14 @@ tresult PLUGIN_API IPlugVST3Processor::setActive(TBool state)
 
 tresult PLUGIN_API IPlugVST3Processor::setupProcessing(ProcessSetup& newSetup)
 {
-  TRACE
+  TRACE;
   
   return SetupProcessing(newSetup, processSetup) ? kResultOk : kResultFalse;
 }
 
-tresult PLUGIN_API IPlugVST3Processor::setProcessing(TBool state)
-{
-  Trace(TRACELOC, " state: %i", state);
-  
-  return SetProcessing((bool) state) ? kResultOk : kResultFalse;
-}
-
 tresult PLUGIN_API IPlugVST3Processor::process(ProcessData& data)
 {
-  TRACE
+  TRACE;
   
   Process(data, processSetup, audioInputs, audioOutputs, mMidiMsgsFromEditor, mMidiMsgsFromProcessor, mSysExDataFromEditor, mSysexBuf);
   return kResultOk;
@@ -93,21 +86,21 @@ tresult PLUGIN_API IPlugVST3Processor::canProcessSampleSize(int32 symbolicSample
 
 tresult PLUGIN_API IPlugVST3Processor::setState(IBStream* pState)
 {
-  TRACE
+  TRACE;
   
   return IPlugVST3State::SetState(this, pState) ? kResultOk : kResultFalse;
 }
 
 tresult PLUGIN_API IPlugVST3Processor::getState(IBStream* pState)
 {
-  TRACE
+  TRACE;
     
   return IPlugVST3State::GetState(this, pState) ? kResultOk :kResultFalse;
 }
 
 #pragma mark IEditorDelegate overrides
 
-void IPlugVST3Processor::SendControlValueFromDelegate(int ctrlTag, double normalizedValue)
+void IPlugVST3Processor::SendControlValueFromDelegate(int controlTag, double normalizedValue)
 {
   OPtr<IMessage> message = allocateMessage();
   
@@ -115,13 +108,13 @@ void IPlugVST3Processor::SendControlValueFromDelegate(int ctrlTag, double normal
     return;
   
   message->setMessageID("SCVFD");
-  message->getAttributes()->setInt("CT", ctrlTag);
+  message->getAttributes()->setInt("CT", controlTag);
   message->getAttributes()->setFloat("NV", normalizedValue);
   
   sendMessage(message);
 }
 
-void IPlugVST3Processor::SendControlMsgFromDelegate(int ctrlTag, int msgTag, int dataSize, const void* pData)
+void IPlugVST3Processor::SendControlMsgFromDelegate(int controlTag, int messageTag, int dataSize, const void* pData)
 {
   OPtr<IMessage> message = allocateMessage();
   
@@ -129,14 +122,14 @@ void IPlugVST3Processor::SendControlMsgFromDelegate(int ctrlTag, int msgTag, int
     return;
   
   message->setMessageID("SCMFD");
-  message->getAttributes()->setInt("CT", ctrlTag);
-  message->getAttributes()->setInt("MT", msgTag);
+  message->getAttributes()->setInt("CT", controlTag);
+  message->getAttributes()->setInt("MT", messageTag);
   message->getAttributes()->setBinary("D", pData, dataSize);
   
   sendMessage(message);
 }
 
-void IPlugVST3Processor::SendArbitraryMsgFromDelegate(int msgTag, int dataSize, const void* pData)
+void IPlugVST3Processor::SendArbitraryMsgFromDelegate(int messageTag, int dataSize, const void* pData)
 {
   OPtr<IMessage> message = allocateMessage();
   
@@ -151,7 +144,7 @@ void IPlugVST3Processor::SendArbitraryMsgFromDelegate(int msgTag, int dataSize, 
   }
   
   message->setMessageID("SAMFD");
-  message->getAttributes()->setInt("MT", msgTag);
+  message->getAttributes()->setInt("MT", messageTag);
   message->getAttributes()->setBinary("D", pData, dataSize);
   sendMessage(message);
 }
@@ -183,14 +176,14 @@ tresult PLUGIN_API IPlugVST3Processor::notify(IMessage* message)
   }
   else if (!strcmp(message->getMessageID(), "SAMFUI")) // message from UI
   {
-    int64 msgTag;
-    int64 ctrlTag;
+    int64 messageTag;
+    int64 controlTag;
 
-    if (message->getAttributes()->getInt("MT", msgTag) == kResultOk && message->getAttributes()->getInt("CT", ctrlTag) == kResultOk)
+    if (message->getAttributes()->getInt("MT", messageTag) == kResultOk && message->getAttributes()->getInt("CT", controlTag) == kResultOk)
     {
       if (message->getAttributes()->getBinary("D", data, size) == kResultOk)
       {
-        if(OnMessage((int) msgTag, (int) ctrlTag, size, data))
+        if(OnMessage((int) messageTag, (int) controlTag, size, data))
         {
           return kResultOk;
         }

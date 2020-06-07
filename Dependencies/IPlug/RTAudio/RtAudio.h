@@ -7,11 +7,10 @@
     and OSS), Macintosh OS X (CoreAudio and Jack), and Windows
     (DirectSound, ASIO and WASAPI) operating systems.
 
-    RtAudio GitHub site: https://github.com/thestk/rtaudio
     RtAudio WWW site: http://www.music.mcgill.ca/~gary/rtaudio/
 
     RtAudio: realtime audio i/o C++ classes
-    Copyright (c) 2001-2019 Gary P. Scavone
+    Copyright (c) 2001-2017 Gary P. Scavone
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation files
@@ -46,14 +45,10 @@
 #ifndef __RTAUDIO_H
 #define __RTAUDIO_H
 
-#define RTAUDIO_VERSION "5.1.0"
+#define RTAUDIO_VERSION "5.0.0"
 
 #if defined _WIN32 || defined __CYGWIN__
-  #if defined(RTAUDIO_EXPORT)
-    #define RTAUDIO_DLL_PUBLIC __declspec(dllexport)
-  #else
-    #define RTAUDIO_DLL_PUBLIC
-  #endif
+  #define RTAUDIO_DLL_PUBLIC
 #else
   #if __GNUC__ >= 4
     #define RTAUDIO_DLL_PUBLIC __attribute__( (visibility( "default" )) )
@@ -117,7 +112,7 @@ static const RtAudioFormat RTAUDIO_FLOAT64 = 0x20; // Normalized between plus/mi
     Certain audio APIs offer a number of parameters that influence the
     I/O latency of a stream.  By default, RtAudio will attempt to set
     these parameters internally for robust (glitch-free) performance
-    (though some APIs, like Windows DirectSound, make this difficult).
+    (though some APIs, like Windows Direct Sound, make this difficult).
     By passing the RTAUDIO_MINIMIZE_LATENCY flag to the openStream()
     function, internal stream settings will be influenced in an attempt
     to minimize stream latency, though possibly at the expense of stream
@@ -194,7 +189,6 @@ static const RtAudioStreamStatus RTAUDIO_OUTPUT_UNDERFLOW = 0x2;  // The output 
    \param userData A pointer to optional data provided by the client
           when opening the stream (default = NULL).
 
-   \return
    To continue normal stream operation, the RtAudioCallback function
    should return a value of zero.  To stop the stream and drain the
    output buffer, the function should return a value of one.  To abort
@@ -290,9 +284,8 @@ class RTAUDIO_DLL_PUBLIC RtAudio
     MACOSX_CORE,    /*!< Macintosh OS-X Core Audio API. */
     WINDOWS_WASAPI, /*!< The Microsoft WASAPI API. */
     WINDOWS_ASIO,   /*!< The Steinberg Audio Stream I/O API. */
-    WINDOWS_DS,     /*!< The Microsoft DirectSound API. */
-    RTAUDIO_DUMMY,  /*!< A compilable but non-functional API. */
-    NUM_APIS        /*!< Number of values in this enum. */
+    WINDOWS_DS,     /*!< The Microsoft Direct Sound API. */
+    RTAUDIO_DUMMY   /*!< A compilable but non-functional API. */
   };
 
   //! The public device information structure for returning queried values.
@@ -305,7 +298,7 @@ class RTAUDIO_DLL_PUBLIC RtAudio
     bool isDefaultOutput;         /*!< true if this is the default output device. */
     bool isDefaultInput;          /*!< true if this is the default input device. */
     std::vector<unsigned int> sampleRates; /*!< Supported sample rates (queried from list of standard rates). */
-    unsigned int preferredSampleRate; /*!< Preferred sample rate, e.g. for WASAPI the system sample rate. */
+    unsigned int preferredSampleRate; /*!< Preferred sample rate, eg. for WASAPI the system sample rate. */
     RtAudioFormat nativeFormats;  /*!< Bit mask of supported data formats. */
 
     // Default constructor.
@@ -350,7 +343,7 @@ class RTAUDIO_DLL_PUBLIC RtAudio
     Certain audio APIs offer a number of parameters that influence the
     I/O latency of a stream.  By default, RtAudio will attempt to set
     these parameters internally for robust (glitch-free) performance
-    (though some APIs, like Windows DirectSound, make this difficult).
+    (though some APIs, like Windows Direct Sound, make this difficult).
     By passing the RTAUDIO_MINIMIZE_LATENCY flag to the openStream()
     function, internal stream settings will be influenced in an attempt
     to minimize stream latency, though possibly at the expense of stream
@@ -403,29 +396,6 @@ class RTAUDIO_DLL_PUBLIC RtAudio
     API compiled for certain operating systems.
   */
   static void getCompiledApi( std::vector<RtAudio::Api> &apis );
-
-  //! Return the name of a specified compiled audio API.
-  /*!
-    This obtains a short lower-case name used for identification purposes.
-    This value is guaranteed to remain identical across library versions.
-    If the API is unknown, this function will return the empty string.
-  */
-  static std::string getApiName( RtAudio::Api api );
-
-  //! Return the display name of a specified compiled audio API.
-  /*!
-    This obtains a long name used for display purposes.
-    If the API is unknown, this function will return the empty string.
-  */
-  static std::string getApiDisplayName( RtAudio::Api api );
-
-  //! Return the compiled audio API having the given name.
-  /*!
-    A case insensitive comparison will check the specified name
-    against the list of compiled APIs, and return the one which
-    matches. On failure, the function returns UNSPECIFIED.
-  */
-  static RtAudio::Api getCompiledApiByName( const std::string &name );
 
   //! The class constructor.
   /*!
@@ -623,7 +593,6 @@ class RTAUDIO_DLL_PUBLIC RtAudio
   #endif
   #include <windows.h>
   #include <process.h>
-  #include <stdint.h>
 
   typedef uintptr_t ThreadHandle;
   typedef CRITICAL_SECTION StreamMutex;
@@ -692,6 +661,7 @@ class S24 {
     return *this;
   }
 
+  S24( const S24& v ) { *this = v; }
   S24( const double& d ) { *this = (int) d; }
   S24( const float& f ) { *this = (int) f; }
   S24( const signed short& s ) { *this = (int) s; }
@@ -904,6 +874,7 @@ public:
   void startStream( void );
   void stopStream( void );
   void abortStream( void );
+  long getStreamLatency( void );
 
   // This function is intended for internal use only.  It must be
   // public because it is called by the internal callback handler,
@@ -939,6 +910,7 @@ public:
   void startStream( void );
   void stopStream( void );
   void abortStream( void );
+  long getStreamLatency( void );
 
   // This function is intended for internal use only.  It must be
   // public because it is called by the internal callback handler,
@@ -973,6 +945,7 @@ public:
   void startStream( void );
   void stopStream( void );
   void abortStream( void );
+  long getStreamLatency( void );
 
   // This function is intended for internal use only.  It must be
   // public because it is called by the internal callback handler,
@@ -1010,6 +983,7 @@ public:
   void startStream( void );
   void stopStream( void );
   void abortStream( void );
+  long getStreamLatency( void );
 
   // This function is intended for internal use only.  It must be
   // public because it is called by the internal callback handler,
@@ -1039,7 +1013,7 @@ class RtApiWasapi : public RtApi
 {
 public:
   RtApiWasapi();
-  virtual ~RtApiWasapi();
+  ~RtApiWasapi();
 
   RtAudio::Api getCurrentApi( void ) { return RtAudio::WINDOWS_WASAPI; }
   unsigned int getDeviceCount( void );

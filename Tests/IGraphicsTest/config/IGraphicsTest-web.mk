@@ -6,8 +6,6 @@ include ../../../common-web.mk
 
 SRC += $(PROJECT_ROOT)/IGraphicsTest.cpp
 
-WEB_SRC += $(IGRAPHICS_EXTRAS_PATH)/IGraphicsFlexBox.cpp
-
 # WAM_SRC +=
 
 # WAM_CFLAGS +=

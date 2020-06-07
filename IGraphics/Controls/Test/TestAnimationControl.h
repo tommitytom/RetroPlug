@@ -31,9 +31,9 @@ public:
     SetActionFunction([&](IControl* pCaller) {
 
       SetAnimation([&](IControl* pCaller) {
-        auto progress = static_cast<float>(pCaller->GetAnimationProgress());
+        auto progress = pCaller->GetAnimationProgress();
 
-        if(progress > 1.f) {
+        if(progress > 1.) {
           pCaller->OnEndAnimation();
           return;
         }

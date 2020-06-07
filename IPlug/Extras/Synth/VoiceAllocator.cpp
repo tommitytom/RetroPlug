@@ -26,7 +26,7 @@ std::ostream& operator<< (std::ostream& out, const VoiceInputEvent& r)
 VoiceAllocator::VoiceAllocator()
 {
   // setup default key->pitch fn
-  mKeyToPitchFn = [](int k){return (k - 69.f)/12.f;};
+  mKeyToPitchFn = [](int k){return (k - 69.)/12.;};
 
   mSustainedNotes.reserve(128);
   mHeldKeys.reserve(128);
@@ -286,8 +286,8 @@ void VoiceAllocator::ProcessEvents(int blockSize, int64_t sampleTime)
 
 void VoiceAllocator::CalcGlideTimesInSamples()
 {
-  mNoteGlideSamples = static_cast<int>(mNoteGlideTime * mSampleRate);
-  mControlGlideSamples = static_cast<int>(mControlGlideTime * mSampleRate);
+  mNoteGlideSamples = mNoteGlideTime*mSampleRate;
+  mControlGlideSamples = mControlGlideTime*mSampleRate;
 }
 
 int VoiceAllocator::FindFreeVoiceIndex(int startIndex) const
@@ -404,7 +404,7 @@ void VoiceAllocator::NoteOn(VoiceInputEvent e, int64_t sampleTime)
   int key = e.mAddress.mKey;
   int offset = e.mSampleOffset;
   float velocity = e.mValue;
-  float pitch = mKeyToPitchFn(key + static_cast<int>(mPitchOffset));
+  double pitch = mKeyToPitchFn(key + mPitchOffset);
 
   switch(mPolyMode)
   {
@@ -511,7 +511,7 @@ void VoiceAllocator::NoteOff(VoiceInputEvent e, int64_t sampleTime)
     {
       // trigger the queued key for all voices in the zone at the minimum held velocity.
       // alternatively the release velocity of the note off could be used here.
-      float pitch = mKeyToPitchFn(queuedKey + static_cast<int>(mPitchOffset));
+      double pitch = mKeyToPitchFn(queuedKey + mPitchOffset);
       bool retrig = false;
 
       StartVoices(VoicesMatchingAddress({e.mAddress.mZone, kAllChannels, kAllKeys, 0}), channel, queuedKey, pitch, mMinHeldVelocity, offset, sampleTime, retrig);

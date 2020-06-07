@@ -65,24 +65,20 @@ void IPlugInstrument::OnIdle()
   mMeterSender.TransmitData(*this);
 }
 
-bool IPlugInstrument::OnKeyDown(const IKeyPress& key)
-{
+bool IPlugInstrument::OnKeyDown(const IKeyPress& key) {
 #ifndef NO_IGRAPHICS
-  if (GetUI())
-    return GetUI()->OnKeyDown(0, 0, key);
-  else
+  return GetUI()->OnKeyDown(0, 0, key);
+#else
+  return false;
 #endif
-    return false;
 }
 
-bool IPlugInstrument::OnKeyUp(const IKeyPress& key)
-{
+bool IPlugInstrument::OnKeyUp(const IKeyPress& key) {
 #ifndef NO_IGRAPHICS
-  if (GetUI())
-    return GetUI()->OnKeyUp(0, 0, key);
-  else
+  return GetUI()->OnKeyUp(0, 0, key);
+#else
+  return false;
 #endif
-    return false;
 }
 
 void IPlugInstrument::OnReset()

@@ -28,16 +28,14 @@ public:
       mOutM1[i] = initalValue;
     }
     
-    SetSmoothTime(timeMs, DEFAULT_SAMPLE_RATE);
+    SetSmoothTime(2., DEFAULT_SAMPLE_RATE);
   }
 
   // only works for NC = 1
   inline T Process(T input)
   {
     mOutM1[0] = (input * mB) + (mOutM1[0] * mA);
-#ifndef OS_IOS
-    denormal_fix(&mOutM1[0]);
-#endif
+    denormalFix(&mOutM1[0]);
     return mOutM1[0];
   }
 
@@ -75,9 +73,7 @@ public:
       for (auto c = 0; c < NC; c++)
       {
         T output = (inputs[channelOffset + c] * b) + (mOutM1[c] * a);
-#ifndef OS_IOS
         denormal_fix(&output);
-#endif
         mOutM1[c] = output;
         outputs[channelOffset + c][s] = output;
       }

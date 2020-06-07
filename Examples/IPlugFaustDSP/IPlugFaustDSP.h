@@ -14,8 +14,8 @@
 
 enum EControlTags
 {
-  kCtrlTagScope = 0,
-  kNumCtrlTags
+  kControlTagScope = 0,
+  kNumControlTags
 };
 
 const int kNumParams = 4;
@@ -35,6 +35,6 @@ public:
   void OnIdle() override;
 private:
   FAUST_BLOCK(Faust1, mFaustProcessor, DSP_FILE, 1, 1);
-  IVScopeControl<2>::Sender mScopeSender { kCtrlTagScope };
+  IVScopeControl<2>::Sender mScopeSender { kControlTagScope };
 #endif
 };

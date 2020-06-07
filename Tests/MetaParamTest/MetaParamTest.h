@@ -16,7 +16,7 @@ enum EParams
   kNumParams
 };
 
-enum EControlTags
+enum ECtrlTags
 {
   kCtrlLeftXYPad = 0,
   kCtrlRightXYPad,

@@ -16,14 +16,13 @@ using namespace igraphics;
 
 IFontDataPtr CoreTextFont::GetFontData()
 {
+  char styleCString[64];
+  
   CFLocal<CFDataRef> rawData(CGDataProviderCopyData(mProvider));
   const UInt8* bytes = CFDataGetBytePtr(rawData.Get());
-  int faceIdx = 0;
-    
-  if (mStyleString.GetLength())
-      faceIdx = GetFaceIdx(bytes, static_cast<int>(CFDataGetLength(rawData.Get())), mStyleString.Get());
-    
-  IFontDataPtr fontData(new IFontData(bytes, static_cast<int>(CFDataGetLength(rawData.Get())), faceIdx));
+  CFLocal<CFStringRef> styleString((CFStringRef) CTFontDescriptorCopyAttribute(mDescriptor, kCTFontStyleNameAttribute));
+  CFStringGetCString(styleString.Get(), styleCString, 64, kCFStringEncodingUTF8);
+  IFontDataPtr fontData(new IFontData(bytes, static_cast<int>(CFDataGetLength(rawData.Get())), GetFaceIdx(bytes, static_cast<int>(CFDataGetLength(rawData.Get())), styleCString)));
   
   return fontData;
 }
@@ -57,7 +56,7 @@ PlatformFontPtr CoreTextHelpers::LoadPlatformFont(const char* fontID, const char
   if (!descriptor.Get())
     return nullptr;
   
-  return PlatformFontPtr(new CoreTextFont(descriptor.Release(), provider.Release(), "", false));
+  return PlatformFontPtr(new CoreTextFont(descriptor.Release(), provider.Release(), false));
 }
 
 PlatformFontPtr CoreTextHelpers::LoadPlatformFont(const char* fontID, const char* fontName, ETextStyle style)
@@ -76,7 +75,7 @@ PlatformFontPtr CoreTextHelpers::LoadPlatformFont(const char* fontID, const char
   if (!provider.Get())
     return nullptr;
   
-  return PlatformFontPtr(new CoreTextFont(descriptor.Release(), provider.Release(), TextStyleString(style), true));
+  return PlatformFontPtr(new CoreTextFont(descriptor.Release(), provider.Release(), true));
 }
 
 void CoreTextHelpers::CachePlatformFont(const char* fontID, const PlatformFontPtr& font, StaticStorage<CoreTextFontDescriptor>& cache)

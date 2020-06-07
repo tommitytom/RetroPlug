@@ -49,16 +49,13 @@ extern "C"
 {
   void *objc_getClass(const char *p);
   void *sel_getUid(const char *p);
-  void objc_msgSend(void);
+  void *objc_msgSend(void *, void *, ...);
 };
 
 static void WDL_STATICFUNC_UNUSED WDL_SetThreadName(const char* threadName) {
-  void *(*send_msg)(void *, void *) = (void *(*)(void *, void *))objc_msgSend;
-  void (*send_msg_cfstring)(void *, void *, CFStringRef) = (void (*)(void *, void *, CFStringRef))objc_msgSend;
-
-  void *ct=send_msg( objc_getClass("NSThread"), sel_getUid("currentThread"));
+  void *ct=objc_msgSend( objc_getClass("NSThread"), sel_getUid("currentThread"));
   CFStringRef tn=CFStringCreateWithCString(NULL,threadName,kCFStringEncodingUTF8);
-  send_msg_cfstring(ct,sel_getUid("setName:"), tn);
+  objc_msgSend(ct,sel_getUid("setName:"), tn);
   CFRelease(tn);
 #ifdef MAC_OS_X_VERSION_10_6
   pthread_setname_np(threadName);

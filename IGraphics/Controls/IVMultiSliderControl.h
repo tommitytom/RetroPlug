@@ -37,6 +37,7 @@ public:
   IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style = DEFAULT_STYLE, EDirection dir = EDirection::Vertical, float minTrackValue = 0.f, float maxTrackValue = 1.f)
   : IVTrackControlBase(bounds, label, style, MAXNC, dir, minTrackValue, maxTrackValue)
   {
+    mOuterPadding = 0.f;
     mDrawTrackFrame = false;
     mTrackPadding = 1.f;
   }
@@ -49,16 +50,10 @@ public:
    * @param direction The direction of the sliders
    * @param minTrackValue Defines the minimum value of each slider
    * @param maxTrackValue Defines the maximum value of each slider */
-  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, int loParamIdx, EDirection dir, float minTrackValue, float maxTrackValue) //FIXME: float minTrackValue, float maxTrackValue?
+  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, int loParamIdx, EDirection dir, float minTrackValue, float maxTrackValue)
   : IVTrackControlBase(bounds, label, style, loParamIdx, MAXNC, dir, minTrackValue, maxTrackValue)
   {
-    mDrawTrackFrame = false;
-    mTrackPadding = 1.f;
-  }
-  
-  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, const std::initializer_list<int>& params, EDirection dir, float minTrackValue, float maxTrackValue)//, const char* trackNames = 0, ...)
-  : IVTrackControlBase(bounds, label, style, params, dir, minTrackValue, maxTrackValue)
-  {
+    mOuterPadding = 0.f;
     mDrawTrackFrame = false;
     mTrackPadding = 1.f;
   }
@@ -98,7 +93,7 @@ public:
 
     if(direction == EDirection::Vertical)
     {
-      value = 1.f - (y-bounds.T) / bounds.H();
+      value = 1. - (y-bounds.T) / bounds.H();
       
       for(auto i = 0; i < nVals; i++)
       {
@@ -128,7 +123,7 @@ public:
     if (sliderTest > -1)
     {
       SetValue(mMinTrackValue + Clip(value, 0.f, 1.f) * (mMaxTrackValue - mMinTrackValue), sliderTest);
-      OnNewValue(sliderTest, static_cast<float>(GetValue(sliderTest)));
+      OnNewValue(sliderTest, GetValue(sliderTest));
 
       mSliderHit = sliderTest;
 
@@ -153,7 +148,7 @@ public:
           {
             float frac = (float)(i - lowBounds) / float(highBounds-lowBounds);
             SetValue(linearInterp(GetValue(lowBounds), GetValue(highBounds), frac), i);
-            OnNewValue(i, static_cast<float>(GetValue(i)));
+            OnNewValue(i, GetValue(i));
           }
         }
       }
@@ -171,15 +166,19 @@ public:
 
   void OnMouseDown(float x, float y, const IMouseMod& mod) override
   {
+    IRECT innerBounds = mRECT.GetPadded(-mOuterPadding);
+
     if (!mod.S)
       mPrevSliderHit = -1;
 
-    SnapToMouse(x, y, mDirection, mWidgetBounds);
+    SnapToMouse(x, y, mDirection, innerBounds);
   }
 
   void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) override
   {
-    SnapToMouse(x, y, mDirection, mWidgetBounds);
+    IRECT innerBounds = mRECT.GetPadded(-mOuterPadding);
+
+    SnapToMouse(x, y, mDirection, innerBounds);
   }
 
   //override to do something when an individual slider is dragged

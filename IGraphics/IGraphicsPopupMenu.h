@@ -108,6 +108,8 @@ public:
     int mTag = -1;
   };
   
+  using IPopupFunction = std::function<void(int indexInMenu, IPopupMenu::Item* itemChosen)>;
+
   #pragma mark -
   
   IPopupMenu(const char* rootTitle = "", int prefix = 0, bool multicheck = false, const std::initializer_list<const char*>& items = {})
@@ -304,7 +306,7 @@ public:
   
   void ExecFunction()
   {
-    mPopupFunc(this);
+    mPopupFunc(mChosenItemIdx, GetItem(mChosenItemIdx));
   }
   
   const char* GetRootTitle() const

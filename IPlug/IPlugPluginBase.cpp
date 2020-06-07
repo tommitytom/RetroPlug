@@ -75,9 +75,8 @@ const char* IPluginBase::GetAPIStr() const
     case kAPIVST2: return "VST2";
     case kAPIVST3: return "VST3";
     case kAPIAU: return "AU";
-    case kAPIAUv3: return "AUv3";
     case kAPIAAX: return "AAX";
-    case kAPIAPP: return "APP";
+    case kAPIAPP: return "Standalone";
     case kAPIWAM: return "WAM";
     case kAPIWEB: return "WEB";
     default: return "";
@@ -106,7 +105,7 @@ void IPluginBase::GetBuildInfoStr(WDL_String& str) const
 
 bool IPluginBase::SerializeParams(IByteChunk& chunk) const
 {
-  TRACE
+  TRACE;
   bool savedOK = true;
   int i, n = mParams.GetSize();
   for (i = 0; i < n && savedOK; ++i)
@@ -121,9 +120,9 @@ bool IPluginBase::SerializeParams(IByteChunk& chunk) const
 
 int IPluginBase::UnserializeParams(const IByteChunk& chunk, int startPos)
 {
-  TRACE
+  TRACE;
   int i, n = mParams.GetSize(), pos = startPos;
-  ENTER_PARAMS_MUTEX
+  ENTER_PARAMS_MUTEX;
   for (i = 0; i < n && pos >= 0; ++i)
   {
     IParam* pParam = mParams.Get(i);
@@ -134,8 +133,8 @@ int IPluginBase::UnserializeParams(const IByteChunk& chunk, int startPos)
   }
 
   OnParamReset(kPresetRecall);
-  LEAVE_PARAMS_MUTEX
 
+  LEAVE_PARAMS_MUTEX;
   return pos;
 }
 
@@ -253,12 +252,12 @@ void IPluginBase::RandomiseParamValues()
 
 void IPluginBase::RandomiseParamValues(int startIdx, int endIdx)
 {
-  ForParamInRange(startIdx, endIdx, [&](int paramIdx, IParam& param) { param.SetNormalized( static_cast<float>(std::rand()/(static_cast<float>(RAND_MAX)+1.f)) ); });
+  ForParamInRange(startIdx, endIdx, [&](int paramIdx, IParam& param) { param.SetNormalized( static_cast<float>(std::rand()/(RAND_MAX+1.f)) ); });
 }
 
 void IPluginBase::RandomiseParamValues(const char *paramGroup)
 {
-  ForParamInGroup(paramGroup, [&](int paramIdx, IParam& param) { param.SetNormalized( static_cast<float>(std::rand()/(static_cast<float>(RAND_MAX)+1.f)) ); });
+  ForParamInGroup(paramGroup, [&](int paramIdx, IParam& param) { param.SetNormalized( static_cast<float>(std::rand()/(RAND_MAX+1.f)) ); });
 }
 
 void IPluginBase::PrintParamValues()
@@ -321,7 +320,7 @@ void IPluginBase::MakePreset(const char* name, ...)
 
 void IPluginBase::MakePresetFromNamedParams(const char* name, int nParamsNamed, ...)
 {
-  TRACE
+  TRACE;
   IPreset* pPreset = GetNextUninitializedPreset(&mPresets);
   if (pPreset)
   {
@@ -400,13 +399,13 @@ static void MakeDefaultUserPresetName(WDL_PtrList<IPreset>* pPresets, char* str)
 
 void IPluginBase::EnsureDefaultPreset()
 {
-  TRACE
+  TRACE;
   MakeDefaultPreset("Empty", mPresets.GetSize());
 }
 
 void IPluginBase::PruneUninitializedPresets()
 {
-  TRACE
+  TRACE;
   int i = 0;
   while (i < mPresets.GetSize())
   {
@@ -424,7 +423,7 @@ void IPluginBase::PruneUninitializedPresets()
 
 bool IPluginBase::RestorePreset(int idx)
 {
-  TRACE
+  TRACE;
   bool restoredOK = false;
   if (idx >= 0 && idx < mPresets.GetSize())
   {
@@ -497,7 +496,7 @@ void IPluginBase::ModifyCurrentPreset(const char* name)
 
 bool IPluginBase::SerializePresets(IByteChunk& chunk) const
 {
-  TRACE
+  TRACE;
   bool savedOK = true;
   int n = mPresets.GetSize();
   for (int i = 0; i < n && savedOK; ++i)
@@ -518,7 +517,7 @@ bool IPluginBase::SerializePresets(IByteChunk& chunk) const
 
 int IPluginBase::UnserializePresets(IByteChunk& chunk, int startPos)
 {
-  TRACE
+  TRACE;
   WDL_String name;
   int n = mPresets.GetSize(), pos = startPos;
   for (int i = 0; i < n && pos >= 0; ++i)
@@ -894,7 +893,7 @@ bool IPluginBase::LoadProgramFromFXP(const char* file)
       }
       else if (fxpMagic == 'FxCk') // Due to the big Endian-ness of FXP/FXB format we cannot call SerialiseParams()
       {
-        ENTER_PARAMS_MUTEX
+        ENTER_PARAMS_MUTEX;
         for (int i = 0; i< NParams(); i++)
         {
           WDL_EndianFloat v32;
@@ -902,7 +901,7 @@ bool IPluginBase::LoadProgramFromFXP(const char* file)
           v32.int32 = WDL_bswap_if_le(v32.int32);
           GetParam(i)->SetNormalized((double) v32.f);
         }
-        LEAVE_PARAMS_MUTEX
+        LEAVE_PARAMS_MUTEX;
         
         ModifyCurrentPreset(prgName);
         RestorePreset(GetCurrentPresetIdx());
@@ -1028,7 +1027,7 @@ bool IPluginBase::LoadBankFromFXB(const char* file)
           
           RestorePreset(i);
           
-          ENTER_PARAMS_MUTEX
+          ENTER_PARAMS_MUTEX;
           for (int j = 0; j< NParams(); j++)
           {
             WDL_EndianFloat v32;
@@ -1036,7 +1035,7 @@ bool IPluginBase::LoadBankFromFXB(const char* file)
             v32.int32 = WDL_bswap_if_le(v32.int32);
             GetParam(j)->SetNormalized((double) v32.f);
           }
-          LEAVE_PARAMS_MUTEX
+          LEAVE_PARAMS_MUTEX;
           
           ModifyCurrentPreset(prgName);
         }
