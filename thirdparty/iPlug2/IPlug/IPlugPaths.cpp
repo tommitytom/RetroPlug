@@ -230,6 +230,11 @@ const void* LoadWinResource(const char* resid, const char* type, int& sizeInByte
   }
 }
 
+bool AppIsSandboxed()
+{
+  return false;
+}
+
 #elif defined OS_WEB
 #pragma mark - OS_WEB
 
@@ -238,7 +243,7 @@ void AppSupportPath(WDL_String& path, bool isSystem)
   path.Set("Settings");
 }
 
-void SandboxSafeAppSupportPath(WDL_String& path)
+void SandboxSafeAppSupportPath(WDL_String& path, const char* appGroupID)
 {
   path.Set("Settings");
 }
@@ -258,21 +263,23 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
   if (CStringHasContents(name))
   {
     WDL_String plusSlash;
-    
+    WDL_String path(name);
+    const char* file = path.get_filepart();
+      
     bool foundResource = false;
     
     //TODO: FindResource is not sufficient here
     
     if(strcmp(type, "png") == 0) { //TODO: lowercase/uppercase png
-      plusSlash.SetFormatted(strlen("/resources/img/") + strlen(name) + 1, "/resources/img/%s", name);
+      plusSlash.SetFormatted(strlen("/resources/img/") + strlen(file) + 1, "/resources/img/%s", file);
       foundResource = emscripten::val::global("Module")["preloadedImages"].call<bool>("hasOwnProperty", std::string(plusSlash.Get()));
     }
     else if(strcmp(type, "ttf") == 0) { //TODO: lowercase/uppercase ttf
-      plusSlash.SetFormatted(strlen("/resources/fonts/") + strlen(name) + 1, "/resources/fonts/%s", name);
+      plusSlash.SetFormatted(strlen("/resources/fonts/") + strlen(file) + 1, "/resources/fonts/%s", file);
       foundResource = true; // TODO: check ttf
     }
     else if(strcmp(type, "svg") == 0) { //TODO: lowercase/uppercase svg
-      plusSlash.SetFormatted(strlen("/resources/img/") + strlen(name) + 1, "/resources/img/%s", name);
+      plusSlash.SetFormatted(strlen("/resources/img/") + strlen(file) + 1, "/resources/img/%s", file);
       foundResource = true; // TODO: check svg
     }
     
@@ -283,6 +290,11 @@ EResourceLocation LocateResource(const char* name, const char* type, WDL_String&
     }
   }
   return EResourceLocation::kNotFound;
+}
+
+bool AppIsSandboxed()
+{
+  return true;
 }
 
 #endif

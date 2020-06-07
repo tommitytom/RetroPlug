@@ -32,26 +32,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#ifndef EEL_TARGET_PORTABLE
-
-#ifdef __APPLE__
-  #include <AvailabilityMacros.h>
-
-  #if defined(__LP64__) || defined(MAC_OS_X_VERSION_10_6) // using 10.6+ SDK, force mprotect use
-    #ifndef EEL_USE_MPROTECT
-      #define EEL_USE_MPROTECT
-    #endif
-  #endif
-#endif
-
-#if defined(__linux__) && !defined(EEL_USE_MPROTECT)
-  // always use mprotect on linux
-  #define EEL_USE_MPROTECT
-#endif
-
-#endif
-
-#ifdef EEL_USE_MPROTECT
+#if !defined(EEL_TARGET_PORTABLE) && !defined(_WIN32)
 #include <sys/mman.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -115,7 +96,12 @@ FILE *g_eel_dump_fp, *g_eel_dump_fp2;
 #ifdef EEL_TARGET_PORTABLE
 
 #define EEL_DOESNT_NEED_EXEC_PERMS
+
+#ifdef EEL_PORTABLE_TAILCALL
+#include "glue_port_new.h"
+#else
 #include "glue_port.h"
+#endif
 
 #elif defined(__ppc__)
 
@@ -840,12 +826,12 @@ static void *__newBlock(llBlock **start, int size, int wantMprotect)
     eoffs=((UINT_PTR)llb + alloc_size + 4095)&~4095;
     VirtualProtect((LPVOID)offs,eoffs-offs,PAGE_EXECUTE_READWRITE,&ov);
   //  MessageBox(NULL,"vprotecting, yay\n","a",0);
-  #elif defined(EEL_USE_MPROTECT)
+  #else
     {
       static int pagesize = 0;
       if (!pagesize)
       {
-        pagesize=sysconf(_SC_PAGESIZE);
+        pagesize=(int)sysconf(_SC_PAGESIZE);
         if (!pagesize) pagesize=4096;
       }
       uintptr_t offs,eoffs;
@@ -5615,7 +5601,7 @@ opcodeRec *nseel_translate(compileContext *ctx, const char *tmp, size_t tmplen) 
     if (tmp[1] == '~')
     {
       char *p=(char*)tmp+2;
-      unsigned int v=strtoul(tmp+2,&p,10);
+      unsigned int v=(unsigned int) strtoul(tmp+2,&p,10);
       if (v>53) v=53;
       return nseel_createCompiledValue(ctx,(EEL_F)((((WDL_INT64)1) << v) - 1));
     }

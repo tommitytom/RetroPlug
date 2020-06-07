@@ -9,6 +9,7 @@
 */
 
 #import <UIKit/UIKit.h>
+#import <MSColorPicker/MSColorPicker.h>
 #include "IGraphicsIOS.h"
 
 BEGIN_IPLUG_NAMESPACE
@@ -43,23 +44,53 @@ END_IPLUG_NAMESPACE
 using namespace iplug;
 using namespace igraphics;
 
-@interface IGraphicsIOS_View : UIScrollView <UITextFieldDelegate, UIScrollViewDelegate>
-{  
+@interface IGRAPHICS_UITABLEVC : UIViewController<UITableViewDataSource, UITableViewDelegate> // UITableViewController
+{
+  IPopupMenu* mMenu;
+  IGraphicsIOS* mGraphics;
+}
+@property (strong, nonatomic) UITableView* tableView;
+@property (strong, nonatomic) NSMutableArray* items;
+- (id) initWithIPopupMenuAndIGraphics: (IPopupMenu*) pMenu : (IGraphicsIOS*) pGraphics;
+
+@end
+
+@interface IGRAPHICS_VIEW : UIScrollView <UITextFieldDelegate, UIScrollViewDelegate, UIPopoverPresentationControllerDelegate, UIGestureRecognizerDelegate, MSColorSelectionViewControllerDelegate>
+{
 @public
   IGraphicsIOS* mGraphics;
+  IGRAPHICS_UITABLEVC* mMenuTableController;
+  UINavigationController* mMenuNavigationController;
   UITextField* mTextField;
+  CAMetalLayer* mMTLLayer;
   int mTextFieldLength;
+  IColorPickerHandlerFunc mColorPickerHandlerFunc;
+  float mPrevX, mPrevY;
 }
 - (id) initWithIGraphics: (IGraphicsIOS*) pGraphics;
 - (BOOL) isOpaque;
 - (BOOL) acceptsFirstResponder;
 - (BOOL) delaysContentTouches;
 - (void) removeFromSuperview;
-- (IPopupMenu*) createPopupMenu: (const IPopupMenu&) menu : (CGRect) bounds;
+- (IPopupMenu*) createPopupMenu: (IPopupMenu&) menu : (CGRect) bounds;
 - (void) createTextEntry: (int) paramIdx : (const IText&) text : (const char*) str : (int) length : (CGRect) areaRect;
 - (void) endUserInput;
 - (void) showMessageBox: (const char*) str : (const char*) caption : (EMsgBoxType) type : (IMsgBoxCompletionHanderFunc) completionHandler;
-- (void) getTouchXY: (CGPoint) pt x: (float*) pX y: (float*) pY;
+- (BOOL) promptForColor: (IColor&) color : (const char*) str : (IColorPickerHandlerFunc) func;
+- (void) presentationControllerDidDismiss: (UIPresentationController*) presentationController;
+- (void) colorViewController:(MSColorSelectionViewController*) colorViewController didChangeColor:(UIColor*) color;
+
+//gestures
+- (void) attachGestureRecognizer: (EGestureType) type;
+-(BOOL) gestureRecognizer:(UIGestureRecognizer*) gestureRecognizer shouldReceiveTouch:(UITouch*)touch;
+- (void) onTapGesture: (UITapGestureRecognizer*) recognizer;
+- (void) onLongPressGesture: (UILongPressGestureRecognizer*) recognizer;
+- (void) onSwipeGesture: (UISwipeGestureRecognizer*) recognizer;
+- (void) onPinchGesture: (UIPinchGestureRecognizer*) recognizer;
+- (void) onRotateGesture: (UIRotationGestureRecognizer*) recognizer;
+
+- (void) getLastTouchLocation: (float&) x : (float&) y;
+
 @property (readonly) CAMetalLayer* metalLayer;
 @property (nonatomic, strong) CADisplayLink *displayLink;
 

@@ -100,13 +100,13 @@ void IPlugWeb::SendSysexMsgFromUI(const ISysEx& msg)
 // #endif
 }
 
-void IPlugWeb::SendArbitraryMsgFromUI(int messageTag, int controlTag, int dataSize, const void* pData)
+void IPlugWeb::SendArbitraryMsgFromUI(int msgTag, int ctrlTag, int dataSize, const void* pData)
 {
   mSAMFUIBuf.Resize(kNumSAMFUIBytes + dataSize);
   int pos = kNumMsgHeaderBytes;
 
-  *((int*)(mSAMFUIBuf.GetData() + pos)) = messageTag; pos += sizeof(int);
-  *((int*)(mSAMFUIBuf.GetData() + pos)) = controlTag; pos += sizeof(int);
+  *((int*)(mSAMFUIBuf.GetData() + pos)) = msgTag; pos += sizeof(int);
+  *((int*)(mSAMFUIBuf.GetData() + pos)) = ctrlTag; pos += sizeof(int);
   *((int*)(mSAMFUIBuf.GetData() + pos)) = dataSize; pos += sizeof(int);
 
   memcpy(mSAMFUIBuf.GetData() + pos, pData, dataSize);
@@ -118,30 +118,47 @@ void IPlugWeb::SendArbitraryMsgFromUI(int messageTag, int controlTag, int dataSi
   }, (int) mSAMFUIBuf.GetData(), mSAMFUIBuf.Size());
 #else
   EM_ASM({
-    window[Module.UTF8ToString($0)].sendMessage('SAMFUI', "", Module.HEAPU8.slice($1, $1 + $2).buffer);
+    if(typeof window[Module.UTF8ToString($0)] === 'undefined' ) {
+      console.log("warning - SAMFUI called before controller exists");
+    }
+    else { 
+      window[Module.UTF8ToString($0)].sendMessage('SAMFUI', "", Module.HEAPU8.slice($1, $1 + $2).buffer);
+    }
   }, mWAMCtrlrJSObjectName.Get(), (int) mSAMFUIBuf.GetData() + kNumMsgHeaderBytes, mSAMFUIBuf.Size() - kNumMsgHeaderBytes); // Non websocket doesn't need "SAMFUI" bytes at beginning
 #endif
+}
+
+void IPlugWeb::SendDSPIdleTick()
+{
+  EM_ASM({
+    if(typeof window[Module.UTF8ToString($0)] === 'undefined' ) {
+      console.log("warning - SendDSPIdleTick called before controller exists");
+    }
+    else {
+      window[Module.UTF8ToString($0)].sendMessage("TICK", "", 0.);
+    }
+  }, mWAMCtrlrJSObjectName.Get());
 }
 
 extern std::unique_ptr<IPlugWeb> gPlug;
 
 // could probably do this without these extra functions
 // https://kripken.github.io/emscripten-site/docs/porting/connecting_cpp_and_javascript/embind.html#deriving-from-c-classes-in-javascript
-static void _SendArbitraryMsgFromDelegate(int messageTag, int dataSize, uintptr_t pData)
+static void _SendArbitraryMsgFromDelegate(int msgTag, int dataSize, uintptr_t pData)
 {
   const uint8_t* pDataPtr = reinterpret_cast<uint8_t*>(pData); // embind doesn't allow us to pass raw pointers
-  gPlug->SendArbitraryMsgFromDelegate(messageTag, dataSize, pDataPtr);
+  gPlug->SendArbitraryMsgFromDelegate(msgTag, dataSize, pDataPtr);
 }
 
-static void _SendControlMsgFromDelegate(int controlTag, int messageTag, int dataSize, uintptr_t pData)
+static void _SendControlMsgFromDelegate(int ctrlTag, int msgTag, int dataSize, uintptr_t pData)
 {
   const uint8_t* pDataPtr = reinterpret_cast<uint8_t*>(pData); // embind doesn't allow us to pass raw pointers
-  gPlug->SendControlMsgFromDelegate(controlTag, messageTag, dataSize, pDataPtr);
+  gPlug->SendControlMsgFromDelegate(ctrlTag, msgTag, dataSize, pDataPtr);
 }
 
-static void _SendControlValueFromDelegate(int controlTag, double normalizedValue)
+static void _SendControlValueFromDelegate(int ctrlTag, double normalizedValue)
 {
-  gPlug->SendControlValueFromDelegate(controlTag, normalizedValue);
+  gPlug->SendControlValueFromDelegate(ctrlTag, normalizedValue);
 }
 
 static void _SendParameterValueFromDelegate(int paramIdx, double normalizedValue)
@@ -162,6 +179,11 @@ static void _SendSysexMsgFromDelegate(int dataSize, uintptr_t pData)
   gPlug->SendSysexMsgFromDelegate(msg);
 }
 
+static void _StartIdleTimer()
+{
+  gPlug->CreateTimer();
+}
+
 EMSCRIPTEN_BINDINGS(IPlugWeb) {
   function("SPVFD", &_SendParameterValueFromDelegate);
   function("SAMFD", &_SendArbitraryMsgFromDelegate);
@@ -169,4 +191,5 @@ EMSCRIPTEN_BINDINGS(IPlugWeb) {
   function("SCVFD", &_SendControlValueFromDelegate);
   function("SMMFD", &_SendMidiMsgFromDelegate);
   function("SSMFD", &_SendSysexMsgFromDelegate);
+  function("StartIdleTimer", &_StartIdleTimer);
 }

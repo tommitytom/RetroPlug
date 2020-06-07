@@ -41,8 +41,11 @@ extern void HostPath(WDL_String& path, const char* bundleID = 0);
  *  @param pExtra This should either be a const char* to bundleID (macOS) or an HMODULE handle (windows) */
 extern void PluginPath(WDL_String& path, PluginIDType pExtra);
 
-/** @param path WDL_String reference where the path will be put on success or empty string on failure
- *  @param pExtra This should either be a const char* to bundleID (macOS) or an HMODULE handle (windows) */
+/** Get the path to the plug-in bundle resource path. On macOS and iOS if this is called in an AUv3 app extension it will return the bundle of the parent app
+ * iOS bundles are flat, so the path is just to the .app where as macOS bundles contain a resources subfolder
+ * On Windows this is only useful for VST3 plug-ins which have a "bundle" with a resource path since v3.6
+ * @param path WDL_String reference where the path will be put on success or empty string on failure
+ * @param pExtra This should either be a const char* to bundleID (macOS/iOS) or an HMODULE handle (windows) */
 extern void BundleResourcePath(WDL_String& path, PluginIDType pExtra = 0);
 
 /** @param path WDL_String reference where the path will be put on success or empty string on failure */
@@ -67,7 +70,7 @@ extern void VST3PresetsPath(WDL_String& path, const char* mfrName, const char* p
 /** Get the path to the folder where the App's settings.ini file is stored
  * @param path WDL_String reference where the path will be put on success or empty string on failure
  * @param pluginName CString to specify the plug-in name (BUNDLE_NAME from config.h can be used here) */
-extern void INIPath(WDL_String& path, const char * pluginName);
+extern void INIPath(WDL_String& path, const char* pluginName);
 
 /** Find the absolute path of a resource based on it's file name (e.g. “background.png”) and type (e.g. “png”), or in the case of windows,
  * confirm the existence of a particular resource in the binary. If it fails to find the resource with the binary it will test the fileNameOrResID argument
@@ -88,6 +91,9 @@ extern EResourceLocation LocateResource(const char* fileNameOrResID, const char*
  * @param type The resource type in lower or upper case, e.g. ttf or TTF for a truetype font
  * @return const void pointer to the data if successfull on windows. Returns nullptr if unsuccessfull or on platforms other than windows */
 extern const void* LoadWinResource(const char* resID, const char* type, int& sizeInBytes, void* pHInstance);
+
+/** @return \c true if the app is sandboxed (and therefore file access etc is restricted) */
+extern bool AppIsSandboxed();
 
 #ifdef OS_IOS
 extern bool IsAuv3AppExtension();

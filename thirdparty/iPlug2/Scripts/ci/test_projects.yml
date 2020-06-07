@@ -8,17 +8,17 @@ jobs:
     matrix:
       NANOVG:
         graphics: 'NANOVG'
-      CAIRO:
-        graphics: 'CAIRO'
-      LICE:
-        graphics: 'LICE'
-      AGG:
-        graphics: 'AGG'
+      # CAIRO:
+      #   graphics: 'CAIRO'
+      # LICE:
+      #   graphics: 'LICE'
+      # AGG:
+      #   graphics: 'AGG'
       SKIA:
         graphics: 'SKIA'
 
   pool:
-    vmImage: 'macos-10.13'
+    vmImage: 'macos-10.14'
 
   steps:
   - checkout: none
@@ -52,12 +52,12 @@ jobs:
     matrix:
       NANOVG:
         graphics: 'NANOVG'
-      CAIRO:
-        graphics: 'CAIRO'
-      LICE:
-        graphics: 'LICE'
-      AGG:
-        graphics: 'AGG'
+      # CAIRO:
+      #   graphics: 'CAIRO'
+      # LICE:
+      #   graphics: 'LICE'
+      # AGG:
+      #   graphics: 'AGG'
       SKIA:
         graphics: 'SKIA'
 

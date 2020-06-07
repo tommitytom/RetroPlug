@@ -53,8 +53,9 @@ struct ControlRamp
    * @param nFrames The number of samples to be written. */
   void Write(float* buffer, int startIdx, int nFrames)
   {
-    float val = startValue;
-    float dv = (endValue - startValue)/(transitionEnd - transitionStart);
+    float val = static_cast<float>(startValue);
+    float dv = static_cast<float>((endValue - startValue)/(transitionEnd - transitionStart));
+
     for(int i=startIdx; i<startIdx + transitionStart; ++i)
     {
       buffer[i] = val;
@@ -88,7 +89,7 @@ public:
   ControlRampProcessor(const ControlRampProcessor&) = delete;
   ControlRampProcessor& operator=(const ControlRampProcessor&) = delete;
   ControlRampProcessor(ControlRampProcessor&&) = default;
-  ControlRampProcessor& operator=(ControlRampProcessor&&) = default;
+  ControlRampProcessor& operator=(ControlRampProcessor&&) = delete;
     
   // process the glide and write changes to the output ramp.
   void Process(int blockSize)

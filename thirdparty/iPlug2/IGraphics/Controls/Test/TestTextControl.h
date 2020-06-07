@@ -33,7 +33,7 @@ public:
   {
     const char* words[] = { "there", "are many" , "possible", "ways", "to display text", "here" };
 
-    g.FillRect(COLOR_BLACK, mRECT);
+    g.FillRect(COLOR_WHITE, mRECT);
     g.DrawText(mText, words[mStringIndex], mRECT);
   }
 
@@ -51,7 +51,7 @@ public:
 
   void Randomise()
   {
-    int size = (std::rand() % 100) + 5;
+    int size = (std::rand() % 200) + 12;
     int align = (std::rand() % 3);
     int valign = (std::rand() % 3);
     int type = (std::rand() % 2);
@@ -59,7 +59,7 @@ public:
 
     const char* types[] = { "Roboto-Regular", "Montserrat-LightItalic" };
 
-    mText = IText(size, IColor::GetRandomColor(), types[type], (EAlign) align, (EVAlign) valign);
+    mText = IText(static_cast<float>(size), IColor::GetRandomColor(), types[type], (EAlign) align, (EVAlign) valign);
   }
 
 private:

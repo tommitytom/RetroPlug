@@ -43,7 +43,7 @@ public:
   void EndInformHostOfParamChange(int idx) override;
   void InformHostOfProgramChange() override;
   void HostSpecificInit() override;
-  bool EditorResizeFromDelegate(int viewWidth, int viewHeight) override;
+  bool EditorResize(int viewWidth, int viewHeight) override;
 
   //IPlugProcessor
   void SetLatency(int samples) override;
@@ -92,7 +92,9 @@ protected:
   audioMasterCallback mHostCallback;
 };
 
+#ifndef REAPER_PLUGIN
 IPlugVST2* MakePlug(const InstanceInfo& info);
+#endif
 
 END_IPLUG_NAMESPACE
 

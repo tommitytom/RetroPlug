@@ -37,7 +37,6 @@ public:
   IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style = DEFAULT_STYLE, EDirection dir = EDirection::Vertical, float minTrackValue = 0.f, float maxTrackValue = 1.f)
   : IVTrackControlBase(bounds, label, style, MAXNC, dir, minTrackValue, maxTrackValue)
   {
-    mOuterPadding = 0.f;
     mDrawTrackFrame = false;
     mTrackPadding = 1.f;
   }
@@ -50,10 +49,16 @@ public:
    * @param direction The direction of the sliders
    * @param minTrackValue Defines the minimum value of each slider
    * @param maxTrackValue Defines the maximum value of each slider */
-  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, int loParamIdx, EDirection dir, float minTrackValue, float maxTrackValue)
+  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, int loParamIdx, EDirection dir, float minTrackValue, float maxTrackValue) //FIXME: float minTrackValue, float maxTrackValue?
   : IVTrackControlBase(bounds, label, style, loParamIdx, MAXNC, dir, minTrackValue, maxTrackValue)
   {
-    mOuterPadding = 0.f;
+    mDrawTrackFrame = false;
+    mTrackPadding = 1.f;
+  }
+  
+  IVMultiSliderControl(const IRECT& bounds, const char* label, const IVStyle& style, const std::initializer_list<int>& params, EDirection dir, float minTrackValue, float maxTrackValue)//, const char* trackNames = 0, ...)
+  : IVTrackControlBase(bounds, label, style, params, dir, minTrackValue, maxTrackValue)
+  {
     mDrawTrackFrame = false;
     mTrackPadding = 1.f;
   }
@@ -65,7 +70,7 @@ public:
     DrawLabel(g);
     
     if(mStyle.drawFrame)
-      g.DrawRect(GetColor(kFR), mWidgetBounds, nullptr, mStyle.frameThickness);
+      g.DrawRect(GetColor(kFR), mWidgetBounds, &mBlend, mStyle.frameThickness);
   }
 
   int GetValIdxForPos(float x, float y) const override
@@ -83,7 +88,7 @@ public:
     return kNoValIdx;
   }
 
-  void SnapToMouse(float x, float y, EDirection direction, const IRECT& bounds, int valIdx = -1 /* TODO:: not used*/, float scalar = 1.f, double minClip = 0., double maxClip = 1.) override
+  void SnapToMouse(float x, float y, EDirection direction, const IRECT& bounds, int valIdx = -1 /* TODO:: not used*/, double minClip = 0., double maxClip = 1.) override
   {
     bounds.Constrain(x, y);
     int nVals = NVals();
@@ -93,7 +98,7 @@ public:
 
     if(direction == EDirection::Vertical)
     {
-      value = 1. - (y-bounds.T) / bounds.H();
+      value = 1.f - (y-bounds.T) / bounds.H();
       
       for(auto i = 0; i < nVals; i++)
       {
@@ -146,8 +151,8 @@ public:
 
           for (auto i = lowBounds; i < highBounds; i++)
           {
-            float frac = (float)(i - lowBounds) / float(highBounds-lowBounds);
-            SetValue(linearInterp(GetValue(lowBounds), GetValue(highBounds), frac), i);
+            double frac = (double)(i - lowBounds) / double(highBounds-lowBounds);
+            SetValue(iplug::Lerp(GetValue(lowBounds), GetValue(highBounds), frac), i);
             OnNewValue(i, GetValue(i));
           }
         }
@@ -162,36 +167,26 @@ public:
     SetDirty(true); // will send all param vals parameter value to delegate
   }
 
-  //  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
-
   void OnMouseDown(float x, float y, const IMouseMod& mod) override
   {
-    IRECT innerBounds = mRECT.GetPadded(-mOuterPadding);
-
     if (!mod.S)
       mPrevSliderHit = -1;
 
-    SnapToMouse(x, y, mDirection, innerBounds);
+    SnapToMouse(x, y, mDirection, mWidgetBounds);
   }
 
   void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) override
   {
-    IRECT innerBounds = mRECT.GetPadded(-mOuterPadding);
-
-    SnapToMouse(x, y, mDirection, innerBounds);
+    SnapToMouse(x, y, mDirection, mWidgetBounds);
   }
 
   //override to do something when an individual slider is dragged
-  virtual void OnNewValue(int trackIdx, float val) {}
+  virtual void OnNewValue(int trackIdx, double val) {}
 
 protected:
   int mPrevSliderHit = -1;
   int mSliderHit = -1;
   float mGrain = 0.001f;
-    
-private:
-    
-  inline double linearInterp(double a, double b, double f) const { return ((b - a) * f + a); }
 };
 
 END_IGRAPHICS_NAMESPACE

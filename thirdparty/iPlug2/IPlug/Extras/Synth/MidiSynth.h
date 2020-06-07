@@ -25,7 +25,6 @@
 #include "IPlugMidi.h"
 #include "IPlugLogger.h"
 
-#include "IPlugQueue.h"
 #include "SynthVoice.h"
 #include "VoiceAllocator.h"
 
@@ -40,6 +39,7 @@ class MidiSynth
 public:
   /** This defines the size in samples of a single block of processing that will be done by the synth. */
   static constexpr int kDefaultBlockSize = 32;
+  static constexpr int kDefaultPitchBendRange = 12;
 
 #pragma mark - MidiSynth class
 
@@ -64,6 +64,25 @@ public:
   {
     mVoicesAreActive = active;
   }
+  
+  void InitBasicMPE()
+  {
+    SetMPEZones(0, 16);
+  }
+  
+  /** Set the pitch bend range for non-MPE mode */
+  void SetPitchBendRange(int pitchBendRange)
+  {
+    mNonMPEPitchBendRange = pitchBendRange;
+    
+    if(!mMPEMode)
+    {
+      for(int i=0; i<16; ++i)
+      {
+        mChannelStates[i].pitchBendRange = pitchBendRange;
+      }
+    }
+  }
 
   void SetPolyMode(VoiceAllocator::EPolyMode mode)
   {
@@ -79,14 +98,14 @@ public:
    * if you need to implement a tuning table for microtonal support
    * @param fn A function taking an integer key value and returning a double-precision
    *  pitch value, where 0.5 = 220Hz, 1.0 = 440 Hz, 2.0 = 880 Hz ("1v / octave"). */
-  void SetKeyToPitchFn(const std::function<double(int)>& fn)
+  void SetKeyToPitchFn(const std::function<float(int)>& fn)
   {
     mVoiceAllocator.SetKeyToPitchFunction(fn);
   }
 
   void SetNoteOffset(double offset)
   {
-    mVoiceAllocator.SetPitchOffset(offset);
+    mVoiceAllocator.SetPitchOffset(static_cast<float>(offset));
   }
 
   void SetNoteGlideTime(double t)
@@ -153,19 +172,18 @@ private:
   // MPE helper functions
   const int kMPELowerZoneMasterChannel = 0;
   const int kMPEUpperZoneMasterChannel = 15;
-  inline bool isMasterChannel(int c) { return ((c == 0)||(c == 15)); }
-  bool isInLowerZone(int c) { return ((c > 0)&&(c < mMPELowerZoneChannels)); }
-  bool isInUpperZone(int c) { return ((c < 15)&&(c > 15 - mMPEUpperZoneChannels)); }
-  int MasterChannelFor(int memberChan) { return isInUpperZone(memberChan) ? kMPEUpperZoneMasterChannel : kMPELowerZoneMasterChannel; }
-  int MasterZoneFor(int memberChan) { return isInUpperZone(memberChan) ? 1 : 0; }
+  inline bool IsMasterChannel(int c) const { return ((c == 0)||(c == 15)); }
+  bool IsInLowerZone(int c) const { return ((c > 0)&&(c < mMPELowerZoneChannels)); }
+  bool IsInUpperZone(int c) const { return ((c < 15)&&(c > 15 - mMPEUpperZoneChannels)); }
+  int MasterChannelFor(int memberChan) const { return IsInUpperZone(memberChan) ? kMPEUpperZoneMasterChannel : kMPELowerZoneMasterChannel; }
+  int MasterZoneFor(int memberChan) const { return IsInUpperZone(memberChan) ? 1 : 0; }
 
   // handy functions for writing loops on lower and upper Zone member channels
-  int lowerZoneStart() { return 1; }
-  int lowerZoneEnd() { return mMPELowerZoneChannels - 1; }
-  int upperZoneStart() {  return 15 - mMPEUpperZoneChannels; }
-  int upperZoneEnd() { return 15; }
+  int LowerZoneStart() const { return 1; }
+  int LowerZoneEnd() const { return mMPELowerZoneChannels - 1; }
+  int UpperZoneStart() const {  return 15 - mMPEUpperZoneChannels; }
+  int UpperZoneEnd() const { return 15; }
 
-  void InitMPE();
   void SetMPEZones(int channel, int nChans);
   void SetChannelPitchBendRange(int channel, int range);
 
@@ -175,7 +193,6 @@ private:
   void HandleRPN(IMidiMsg msg);
 
   // basic MIDI data
-
   VoiceAllocator mVoiceAllocator;
   uint16_t mUnisonVoices{1};
   IMidiQueue mMidiQueue;
@@ -186,7 +203,8 @@ private:
   int64_t mSampleTime{0};
   double mSampleRate = DEFAULT_SAMPLE_RATE;
   bool mVoicesAreActive = false;
-
+  int mNonMPEPitchBendRange = kDefaultPitchBendRange;
+  
   // the synth will startup in basic MIDI mode. When an MPE Zone setup message is received, MPE mode is entered.
   // To leave MPE mode, use RPNs to set all MPE zone channel counts to 0 as per the MPE spec.
   bool mMPEMode{false};

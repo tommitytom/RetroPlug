@@ -34,7 +34,7 @@ sys.path.insert(0, scriptpath + '/../Scripts/')
 
 from parse_config import parse_config, parse_xcconfig, set_uniqueid
 
-VERSION = "0.94"
+VERSION = "0.95"
 
 # binary files that we don't want to do find and replace inside
 FILTERED_FILE_EXTENSIONS = [".ico",".icns", ".pdf", ".png", ".zip", ".exe", ".wav", ".aif"]
@@ -182,6 +182,10 @@ def main():
     print("error: input project name has spaces")
     sys.exit(1)
 
+  if inputprojectname not in os.listdir(os.curdir):
+    print("error: input project " +  inputprojectname + " doesn't exist, check spelling/case?")
+    sys.exit(1)
+
   if ' ' in outputprojectname:
     print("error: output project name has spaces")
     sys.exit(1)
@@ -239,7 +243,7 @@ def main():
   pp = pprint.PrettyPrinter(indent=4)
   pp.pprint(config)
 
-  print("\ndone - don't forget to change MFR_UID in config.h")
+  print("\ndone - don't forget to change PLUG_MFR_UID in config.h")
 
 if __name__ == '__main__':
   main()

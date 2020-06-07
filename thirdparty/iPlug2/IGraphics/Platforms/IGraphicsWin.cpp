@@ -20,6 +20,7 @@
 #include "IPlugPaths.h"
 
 #include <wininet.h>
+#include <VersionHelpers.h>
 
 using namespace iplug;
 using namespace igraphics;
@@ -34,7 +35,10 @@ static double sFPS = 0.0;
 
 #define PARAM_EDIT_ID 99
 #define IPLUG_TIMER_ID 2
-#define IPLUG_WIN_MAX_WIDE_PATH 4096
+
+#define TOOLTIPWND_MAXWIDTH 250
+
+#define WM_VBLANK (WM_USER+1)
 
 #pragma mark - Private Classes and Structs
 
@@ -48,7 +52,7 @@ public:
   {
     if (data)
     {
-      DWORD numFonts;
+      DWORD numFonts = 0;
       mFontHandle = AddFontMemResourceEx(data, resSize, NULL, &numFonts);
     }
   }
@@ -131,31 +135,16 @@ IFontDataPtr IGraphicsWin::Font::GetFontData()
 StaticStorage<IGraphicsWin::InstalledFont> IGraphicsWin::sPlatformFontCache;
 StaticStorage<IGraphicsWin::HFontHolder> IGraphicsWin::sHFontCache;
 
-#pragma mark - DPI Helper
+#pragma mark - Mouse and tablet helpers
 
-// DPI helper
-UINT(WINAPI *__GetDpiForWindow)(HWND);
-
-// Mouse and tablet helpers
-static int GetScaleForWindow(HWND hWnd)
-{
-  if (hWnd && __GetDpiForWindow)
-  {
-    int dpi = __GetDpiForWindow(hWnd);
-    if (dpi != USER_DEFAULT_SCREEN_DPI)
-      return std::round(static_cast<double>(dpi) / USER_DEFAULT_SCREEN_DPI);
-  }
-
-  return 1;
-}
-
-#pragma mark -
+extern int GetScaleForHWND(HWND hWnd);
 
 inline IMouseInfo IGraphicsWin::GetMouseInfo(LPARAM lParam, WPARAM wParam)
 {
   IMouseInfo info;
-  info.x = mCursorX = GET_X_LPARAM(lParam) / (GetDrawScale() * GetScreenScale());
-  info.y = mCursorY = GET_Y_LPARAM(lParam) / (GetDrawScale() * GetScreenScale());
+  const float scale = GetTotalScale();
+  info.x = mCursorX = GET_X_LPARAM(lParam) / scale;
+  info.y = mCursorY = GET_Y_LPARAM(lParam) / scale;
   info.ms = IMouseMod((wParam & MK_LBUTTON), (wParam & MK_RBUTTON), (wParam & MK_SHIFT), (wParam & MK_CONTROL),
 #ifdef AAX_API
     GetAsyncKeyState(VK_MENU) < 0
@@ -163,19 +152,6 @@ inline IMouseInfo IGraphicsWin::GetMouseInfo(LPARAM lParam, WPARAM wParam)
     GetKeyState(VK_MENU) < 0
 #endif
   );
-  return info;
-}
-
-inline IMouseInfo IGraphicsWin::GetMouseInfoDeltas(float& dX, float& dY, LPARAM lParam, WPARAM wParam)
-{
-  float oldX = mCursorX;
-  float oldY = mCursorY;
-
-  IMouseInfo info = GetMouseInfo(lParam, wParam);
-
-  dX = info.x - oldX;
-  dY = info.y - oldY;
-
   return info;
 }
 
@@ -208,23 +184,134 @@ void IGraphicsWin::DestroyEditWindow()
  }
 }
 
+void IGraphicsWin::OnDisplayTimer(int vBlankCount)
+{
+  // Check the message vblank with the current one to see if we are way behind. If so, then throw these away.
+  DWORD msgCount = vBlankCount;
+  DWORD curCount = mVBlankCount;
+
+  if(mVSYNCEnabled)
+  {
+    // skip until the actual vblank is at a certain number.
+    if (mVBlankSkipUntil != 0 && mVBlankSkipUntil > mVBlankCount)
+    {
+      return;
+    }
+
+    mVBlankSkipUntil = 0;
+
+    if (msgCount != curCount)
+    {
+      // we are late, just skip it until we can get a message soon after the vblank event.
+      // DBGMSG("vblank is late by %i frames.  Skipping.", (mVBlankCount - msgCount));
+      return;
+    }
+  }
+
+  if (mParamEditWnd && mParamEditMsg != kNone)
+  {
+    switch (mParamEditMsg)
+    {
+      case kCommit:
+      {
+        WCHAR wtxt[MAX_WIN32_PARAM_LEN];
+        WDL_String tempUTF8;
+        SendMessageW(mParamEditWnd, WM_GETTEXT, MAX_WIN32_PARAM_LEN, (LPARAM)wtxt);
+        UTF16ToUTF8(tempUTF8, wtxt);
+        SetControlValueAfterTextEdit(tempUTF8.Get());
+        DestroyEditWindow();
+        break;
+      }
+      case kCancel:
+        DestroyEditWindow();
+        break;
+    }
+
+    mParamEditMsg = kNone;
+
+    return; // TODO: check this!
+  }
+
+  // TODO: move this... listen to the right messages in windows for screen resolution changes, etc.
+  int scale = GetScaleForHWND(mPlugWnd);
+  if (scale != GetScreenScale())
+    SetScreenScale(scale);
+
+  // TODO: this is far too aggressive for slow drawing animations and data changing.  We need to
+  // gate the rate of updates to a certain percentage of the wall clock time.
+  IRECTList rects;
+  const float totalScale = GetTotalScale();
+  if (IsDirty(rects))
+  {
+    SetAllControlsClean();
+
+    for (int i = 0; i < rects.Size(); i++)
+    {
+      IRECT dirtyR = rects.Get(i);
+      dirtyR.Scale(totalScale);
+      dirtyR.PixelAlign();
+      RECT r = { (LONG)dirtyR.L, (LONG)dirtyR.T, (LONG)dirtyR.R, (LONG)dirtyR.B };
+      InvalidateRect(mPlugWnd, &r, FALSE);
+    }
+
+    if (mParamEditWnd)
+    {
+      IRECT notDirtyR = mEditRECT;
+      notDirtyR.Scale(totalScale);
+      notDirtyR.PixelAlign();
+      RECT r2 = { (LONG)notDirtyR.L, (LONG)notDirtyR.T, (LONG)notDirtyR.R, (LONG)notDirtyR.B };
+      ValidateRect(mPlugWnd, &r2); // make sure we dont redraw the edit box area
+      UpdateWindow(mPlugWnd);
+      mParamEditMsg = kUpdate;
+    }
+    else
+    {
+      // Force a redraw right now
+      UpdateWindow(mPlugWnd);
+
+      if(mVSYNCEnabled)
+      {
+        // Check and see if we are still in this frame.
+        curCount = mVBlankCount;
+        if (msgCount != curCount)
+        {
+          // we are late, skip the next vblank to give us a breather.
+          mVBlankSkipUntil = curCount+1;
+          DBGMSG("vblank painting was late by %i frames.", (mVBlankSkipUntil - msgCount));
+        }
+      }
+    }
+  }
+  return;
+}
+
 // static
 LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   if (msg == WM_CREATE)
   {
-    LPCREATESTRUCT lpcs = (LPCREATESTRUCT) lParam;
-    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LPARAM) (lpcs->lpCreateParams));
-    int mSec = static_cast<int>(std::round(1000.0 / (sFPS)));
-    SetTimer(hWnd, IPLUG_TIMER_ID, mSec, NULL);
+    LPCREATESTRUCT lpcs = (LPCREATESTRUCT)lParam;
+    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LPARAM)(lpcs->lpCreateParams));
+    IGraphicsWin* pGraphics = (IGraphicsWin*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+
+    if(pGraphics->mVSYNCEnabled) // use VBLANK thread
+    {
+      assert((pGraphics->FPS() == 60) && "If you want to run at frame rates other than 60FPS");
+      pGraphics->StartVBlankThread(hWnd);
+    }
+    else // use WM_TIMER -- its best to get below 16ms because the windows time quanta is slightly above 15ms.
+    {
+      int mSec = static_cast<int>(std::floorf(1000.0f / (pGraphics->FPS())));
+      if (mSec < 20) mSec = 15;
+      SetTimer(hWnd, IPLUG_TIMER_ID, mSec, NULL);
+    }
+
     SetFocus(hWnd); // gets scroll wheel working straight away
     DragAcceptFiles(hWnd, true);
     return 0;
   }
 
   IGraphicsWin* pGraphics = (IGraphicsWin*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
-  char txt[MAX_WIN32_PARAM_LEN];
-  double v;
 
   if (!pGraphics || hWnd != pGraphics->mPlugWnd)
   {
@@ -241,79 +328,37 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     return DefWindowProc(hWnd, msg, wParam, lParam);
   }
 
+  auto IsTouchEvent = []() {
+    const LONG_PTR c_SIGNATURE_MASK = 0xFFFFFF00;
+    const LONG_PTR c_MOUSEEVENTF_FROMTOUCH = 0xFF515700;
+    LONG_PTR extraInfo = GetMessageExtraInfo();
+    return ((extraInfo & c_SIGNATURE_MASK) == c_MOUSEEVENTF_FROMTOUCH);
+  };
+
   pGraphics->CheckTabletInput(msg);
-  
+
   switch (msg)
   {
-    case WM_TIMER:
-    {
-      if (wParam == IPLUG_TIMER_ID)
-      {
-        if (pGraphics->mParamEditWnd && pGraphics->mParamEditMsg != kNone)
-        {
-          switch (pGraphics->mParamEditMsg)
-          {
-            case kCommit:
-            {
-              SendMessage(pGraphics->mParamEditWnd, WM_GETTEXT, MAX_WIN32_PARAM_LEN, (LPARAM) txt);
-              pGraphics->SetControlValueAfterTextEdit(txt);
-              pGraphics->DestroyEditWindow();
-            }
-            break;
-                  
-            case kCancel:
-            {
-              pGraphics->DestroyEditWindow();
-            }
-            break;
-          }
-          pGraphics->mParamEditMsg = kNone;
-          return 0; // TODO: check this!
-        }
-
-        int scale = GetScaleForWindow(pGraphics->mPlugWnd);
-        if (scale != pGraphics->GetScreenScale())
-          pGraphics->SetScreenScale(scale);
-
-        IRECTList rects;
-         
-        if (pGraphics->IsDirty(rects))
-        {
-          pGraphics->SetAllControlsClean();
-
-          for (int i = 0; i < rects.Size(); i++)
-          {
-            IRECT dirtyR = rects.Get(i);
-            dirtyR.Scale(pGraphics->GetDrawScale() * pGraphics->GetScreenScale());
-            dirtyR.PixelAlign();
-            RECT r = { (LONG)dirtyR.L, (LONG)dirtyR.T, (LONG)dirtyR.R, (LONG)dirtyR.B };
-
-            InvalidateRect(hWnd, &r, FALSE);
-          }
-
-          if (pGraphics->mParamEditWnd)
-          {
-            IRECT notDirtyR = pGraphics->mEditRECT;
-            notDirtyR.Scale(pGraphics->GetDrawScale() * pGraphics->GetScreenScale());
-            notDirtyR.PixelAlign();
-            RECT r2 = { (LONG) notDirtyR.L, (LONG) notDirtyR.T, (LONG) notDirtyR.R, (LONG) notDirtyR.B };
-            ValidateRect(hWnd, &r2); // make sure we dont redraw the edit box area
-            UpdateWindow(hWnd);
-            pGraphics->mParamEditMsg = kUpdate;
-          }
-          else
-          {
-            UpdateWindow(hWnd);
-          }
-        }
-      }
+    case WM_VBLANK:
+      pGraphics->OnDisplayTimer(wParam);
       return 0;
-    }
+
+    case WM_TIMER:
+      if (wParam == IPLUG_TIMER_ID)
+        pGraphics->OnDisplayTimer(0);
+
+      return 0;
+
+    case WM_ERASEBKGND:
+      return 0;
 
     case WM_RBUTTONDOWN:
     case WM_LBUTTONDOWN:
     case WM_MBUTTONDOWN:
     {
+      if (IsTouchEvent())
+        return 0;
+
       pGraphics->HideTooltip();
       if (pGraphics->mParamEditWnd)
       {
@@ -323,7 +368,8 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
       SetFocus(hWnd); // Added to get keyboard focus again when user clicks in window
       SetCapture(hWnd);
       IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
-      pGraphics->OnMouseDown(info.x, info.y, info.ms);
+      std::vector<IMouseInfo> list{ info };
+      pGraphics->OnMouseDown(list);
       return 0;
     }
     case WM_SETCURSOR:
@@ -333,6 +379,9 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     }
     case WM_MOUSEMOVE:
     {
+      if (IsTouchEvent())
+        return 0;
+
       if (!(wParam & (MK_LBUTTON | MK_RBUTTON)))
       {
         IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
@@ -353,13 +402,20 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
           TrackMouseEvent(&eventTrack);
         }
       }
-      else if (GetCapture() == hWnd && !pGraphics->IsInTextEntry())
+      else if (GetCapture() == hWnd && !pGraphics->IsInPlatformTextEntry())
       {
-        float dX, dY;
-        IMouseInfo info = pGraphics->GetMouseInfoDeltas(dX, dY, lParam, wParam);
-        if (dX || dY)
+        float oldX = pGraphics->mCursorX;
+        float oldY = pGraphics->mCursorY;
+
+        IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
+
+        info.dX = info.x - oldX;
+        info.dY = info.y - oldY;
+
+        if (info.dX || info.dY)
         {
-          pGraphics->OnMouseDrag(info.x, info.y, dX, dY, info.ms);
+          std::vector<IMouseInfo> list{ info };
+          pGraphics->OnMouseDrag(list);
           if (pGraphics->MouseCursorIsLocked())
             pGraphics->MoveMouseCursor(pGraphics->mHiddenCursorX, pGraphics->mHiddenCursorY);
         }
@@ -383,11 +439,15 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     {
       ReleaseCapture();
       IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
-      pGraphics->OnMouseUp(info.x, info.y, info.ms);
+      std::vector<IMouseInfo> list{ info };
+      pGraphics->OnMouseUp(list);
       return 0;
     }
     case WM_LBUTTONDBLCLK:
     {
+      if (IsTouchEvent())
+        return 0;
+
       IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
       if (pGraphics->OnMouseDblClick(info.x, info.y, info.ms))
       {
@@ -406,12 +466,84 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
       {
         IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
         float d = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
-        float scale = pGraphics->GetDrawScale() * pGraphics->GetScreenScale();
+        const float scale = pGraphics->GetTotalScale();
         RECT r;
         GetWindowRect(hWnd, &r);
         pGraphics->OnMouseWheel(info.x - (r.left / scale), info.y - (r.top / scale), info.ms, d);
         return 0;
       }
+    }
+    case WM_TOUCH:
+    {
+      UINT nTouches = LOWORD(wParam);
+
+      if (nTouches > 0)
+      {
+        WDL_TypedBuf<TOUCHINPUT> touches;
+        touches.Resize(nTouches);
+        HTOUCHINPUT hTouchInput = (HTOUCHINPUT) lParam;
+        std::vector<IMouseInfo> downlist;
+        std::vector<IMouseInfo> uplist;
+        std::vector<IMouseInfo> movelist;
+        const float scale = pGraphics->GetTotalScale();
+
+        GetTouchInputInfo(hTouchInput, nTouches, touches.Get(), sizeof(TOUCHINPUT));
+
+        for (int i = 0; i < nTouches; i++)
+        {
+          TOUCHINPUT* pTI = touches.Get() +i;
+
+          POINT pt;
+          pt.x = TOUCH_COORD_TO_PIXEL(pTI->x);
+          pt.y = TOUCH_COORD_TO_PIXEL(pTI->y);
+          ScreenToClient(pGraphics->mPlugWnd, &pt);
+
+          IMouseInfo info;
+          info.x = static_cast<float>(pt.x) / scale;
+          info.y = static_cast<float>(pt.y) / scale;
+          info.dX = 0.f;
+          info.dY = 0.f;
+          info.ms.touchRadius = 0;
+
+          if (pTI->dwMask & TOUCHINPUTMASKF_CONTACTAREA)
+          {
+            info.ms.touchRadius = pTI->cxContact;
+          }
+
+          info.ms.touchID = static_cast<ITouchID>(pTI->dwID);
+
+          if (pTI->dwFlags & TOUCHEVENTF_DOWN)
+          {
+            downlist.push_back(info);
+            pGraphics->mDeltaCapture.insert(std::make_pair(info.ms.touchID, info));
+          }
+          else if (pTI->dwFlags & TOUCHEVENTF_UP)
+          {
+            pGraphics->mDeltaCapture.erase(info.ms.touchID);
+            uplist.push_back(info);
+          }
+          else if (pTI->dwFlags & TOUCHEVENTF_MOVE)
+          {
+            IMouseInfo previous = pGraphics->mDeltaCapture.find(info.ms.touchID)->second;
+            info.dX = info.x - previous.x;
+            info.dY = info.y - previous.y;
+            movelist.push_back(info);
+            pGraphics->mDeltaCapture[info.ms.touchID] = info;
+          }
+        }
+
+        if (downlist.size())
+          pGraphics->OnMouseDown(downlist);
+
+        if (uplist.size())
+          pGraphics->OnMouseUp(uplist);
+
+        if (movelist.size())
+          pGraphics->OnMouseDrag(movelist);
+
+        CloseTouchInputHandle(hTouchInput);
+      }
+      return 0;
     }
     case WM_GETDLGCODE:
       return DLGC_WANTALLKEYS;
@@ -442,7 +574,7 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
                             static_cast<bool>(GetKeyState(VK_CONTROL) & 0x8000),
                             static_cast<bool>(GetKeyState(VK_MENU) & 0x8000) };
 
-        double scale = pGraphics->GetDrawScale() * pGraphics->GetScreenScale();
+        const float scale = pGraphics->GetTotalScale();
 
         if(msg == WM_KEYDOWN)
           handle = pGraphics->OnKeyDown(p.x / scale, p.y / scale, keyPress);
@@ -461,9 +593,10 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     }
     case WM_PAINT:
     {
-      auto addDrawRect = [pGraphics](IRECTList& rects, RECT r) {
+      const float scale = pGraphics->GetTotalScale();
+      auto addDrawRect = [pGraphics, scale](IRECTList& rects, RECT r) {
         IRECT ir(r.left, r.top, r.right, r.bottom);
-        ir.Scale(1.f / (pGraphics->GetDrawScale() * pGraphics->GetScreenScale()));
+        ir.Scale(1.f/scale);
         ir.PixelAlign();
         rects.Add(ir);
       };
@@ -473,21 +606,15 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
 
       if ((regionType == COMPLEXREGION) || (regionType == SIMPLEREGION))
       {
-        #ifdef IGRAPHICS_GL
-        pGraphics->ActivateGLContext();
-        PAINTSTRUCT ps;
-        BeginPaint(hWnd, &ps); // TODO: BeginPaint/EndPaint and GetDC/ReleaseDC ? issues closing reaper without this
-        #endif
-
         IRECTList rects;
         const int bufferSize = sizeof(RECT) * 64;
         unsigned char stackBuffer[sizeof(RGNDATA) + bufferSize];
-        RGNDATA* regionData = (RGNDATA *) stackBuffer;
+        RGNDATA* regionData = (RGNDATA*)stackBuffer;
 
         if (regionType == COMPLEXREGION && GetRegionData(region, bufferSize, regionData))
         {
           for (int i = 0; i < regionData->rdh.nCount; i++)
-            addDrawRect(rects, *(((RECT*) regionData->Buffer) + i));
+            addDrawRect(rects, *(((RECT*)regionData->Buffer) + i));
         }
         else
         {
@@ -496,16 +623,34 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
           addDrawRect(rects, r);
         }
 
+#if defined IGRAPHICS_GL //|| IGRAPHICS_D2D
+        PAINTSTRUCT ps;
+        BeginPaint(hWnd, &ps);
+#endif
+
+#ifdef IGRAPHICS_GL
+        pGraphics->ActivateGLContext();
+#endif
+
         pGraphics->Draw(rects);
 
         #ifdef IGRAPHICS_GL
         SwapBuffers((HDC) pGraphics->mPlatformContext);
         pGraphics->DeactivateGLContext();
-        EndPaint(hWnd, &ps);
         #endif
+
+#if defined IGRAPHICS_GL || IGRAPHICS_D2D
+        EndPaint(hWnd, &ps);
+#endif
       }
 
+      // For the D2D if we don't call endpaint, then you really need to call ValidateRect otherwise
+      // we are just going to get another WM_PAINT to handle.  Bad!  It also exibits the odd property
+      // that windows will be popped under the window.
+      ValidateRect(hWnd, 0);
+
       DeleteObject(region);
+
       return 0;
     }
 
@@ -657,16 +802,14 @@ LRESULT CALLBACK IGraphicsWin::ParamEditProc(HWND hWnd, UINT msg, WPARAM wParam,
 IGraphicsWin::IGraphicsWin(IGEditorDelegate& dlg, int w, int h, int fps, float scale)
   : IGRAPHICS_DRAW_CLASS(dlg, w, h, fps, scale)
 {
-  if (!__GetDpiForWindow)
-  {
-    HINSTANCE h = LoadLibrary("user32.dll");
-    if (h) *(void **)&__GetDpiForWindow = GetProcAddress(h, "GetDpiForWindow");
-  }
-
   StaticStorage<InstalledFont>::Accessor fontStorage(sPlatformFontCache);
   StaticStorage<HFontHolder>::Accessor hfontStorage(sHFontCache);
   fontStorage.Retain();
   hfontStorage.Retain();
+
+#ifndef IGRAPHICS_DISABLE_VSYNC
+  mVSYNCEnabled = IsWindows8OrGreater();
+#endif
 }
 
 IGraphicsWin::~IGraphicsWin()
@@ -747,12 +890,6 @@ void IGraphicsWin::PlatformResize(bool parentHasResized)
     {
       SetWindowPos(pGrandparent, 0, 0, 0, grandparentW + dw, grandparentH + dh, SETPOS_FLAGS);
     }
-
-    RECT r = { 0, 0, WindowWidth() * GetScreenScale(), WindowHeight() * GetScreenScale() };
-    InvalidateRect(mPlugWnd, &r, FALSE);
-
-    // Fix white background while resizing
-    UpdateWindow(mPlugWnd);
   }
 }
 
@@ -795,18 +932,18 @@ void IGraphicsWin::MoveMouseCursor(float x, float y)
   if (mTabletInput)
     return;
 
-  float scale = GetDrawScale() * GetScreenScale();
+  const float scale = GetTotalScale();
 
   POINT p;
   p.x = std::round(x * scale);
   p.y = std::round(y * scale);
 
-  ::ClientToScreen((HWND)GetWindow(), &p);
+  ::ClientToScreen(mPlugWnd, &p);
 
   if (SetCursorPos(p.x, p.y))
   {
     GetCursorPos(&p);
-    ScreenToClient((HWND)GetWindow(), &p);
+    ScreenToClient(mPlugWnd, &p);
 
     mCursorX = p.x / scale;
     mCursorY = p.y / scale;
@@ -850,6 +987,18 @@ ECursor IGraphicsWin::SetMouseCursor(ECursor cursorType)
 bool IGraphicsWin::MouseCursorIsLocked()
 {
   return mCursorLock;
+}
+
+void IGraphicsWin::GetMouseLocation(float& x, float&y) const
+{
+  POINT p;
+  GetCursorPos(&p);
+  ScreenToClient(mPlugWnd, &p);
+
+  const float scale = GetTotalScale();
+
+  x = p.x / scale;
+  y = p.y / scale;
 }
 
 #ifdef IGRAPHICS_GL
@@ -927,7 +1076,7 @@ EMsgBoxResult IGraphicsWin::ShowMessageBox(const char* text, const char* caption
 void* IGraphicsWin::OpenWindow(void* pParent)
 {
   mParentWnd = (HWND) pParent;
-  int screenScale = GetScaleForWindow(mParentWnd);
+  int screenScale = GetScaleForHWND(mParentWnd);
   int x = 0, y = 0, w = WindowWidth() * screenScale, h = WindowHeight() * screenScale;
 
   if (mPlugWnd)
@@ -948,8 +1097,7 @@ void* IGraphicsWin::OpenWindow(void* pParent)
     RegisterClass(&wndClass);
   }
 
-  sFPS = FPS();
-  mPlugWnd = CreateWindow(wndClassName, "IPlug", WS_CHILD | WS_VISIBLE, x, y, w, h, mParentWnd, 0, mHInstance, this);
+  mPlugWnd = CreateWindow(wndClassName, "IPlug", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, x, y, w, h, mParentWnd, 0, mHInstance, this);
 
   HDC dc = GetDC(mPlugWnd);
   SetPlatformContext(dc);
@@ -964,6 +1112,11 @@ void* IGraphicsWin::OpenWindow(void* pParent)
   SetScreenScale(screenScale); // resizes draw context
 
   GetDelegate()->LayoutUI(this);
+
+  if (MultiTouchEnabled() && GetSystemMetrics(SM_DIGITIZER) & NID_MULTI_INPUT)
+  {
+    RegisterTouchWindow(mPlugWnd, 0);
+  }
 
   if (!mPlugWnd && --nWndClassReg == 0)
   {
@@ -981,7 +1134,7 @@ void* IGraphicsWin::OpenWindow(void* pParent)
 
     if (InitCommonControlsEx(&iccex))
     {
-      mTooltipWnd = CreateWindowEx(0, TOOLTIPS_CLASS, NULL, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+      mTooltipWnd = CreateWindowEx(0, TOOLTIPS_CLASS, NULL, WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TTS_NOPREFIX | TTS_ALWAYSTIP,
                                    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, mPlugWnd, NULL, mHInstance, NULL);
       if (mTooltipWnd)
       {
@@ -989,11 +1142,16 @@ void* IGraphicsWin::OpenWindow(void* pParent)
         TOOLINFO ti = { TTTOOLINFOA_V2_SIZE, TTF_IDISHWND | TTF_SUBCLASS, mPlugWnd, (UINT_PTR)mPlugWnd };
         ti.lpszText = (LPTSTR)NULL;
         SendMessage(mTooltipWnd, TTM_ADDTOOL, 0, (LPARAM)&ti);
+        SendMessage(mTooltipWnd, TTM_SETMAXTIPWIDTH, 0, TOOLTIPWND_MAXWIDTH);
         ok = true;
       }
     }
 
     if (!ok) EnableTooltips(ok);
+
+#ifdef IGRAPHICS_GL
+    wglMakeCurrent(NULL, NULL);
+#endif
   }
 
   GetDelegate()->OnUIOpen();
@@ -1073,9 +1231,19 @@ void IGraphicsWin::CloseWindow()
 {
   if (mPlugWnd)
   {
+    if(mVSYNCEnabled)
+      StopVBlankThread();
+    else
+      KillTimer(mPlugWnd, IPLUG_TIMER_ID);
+
+#ifdef IGRAPHICS_GL
+    ActivateGLContext();
+#endif
+
     OnViewDestroyed();
 
 #ifdef IGRAPHICS_GL
+    DeactivateGLContext();
     DestroyGLContext();
 #endif
 
@@ -1097,6 +1265,11 @@ void IGraphicsWin::CloseWindow()
       UnregisterClass(wndClassName, mHInstance);
     }
   }
+}
+
+bool IGraphicsWin::PlatformSupportsMultiTouch() const
+{
+  return GetSystemMetrics(SM_DIGITIZER) & NID_MULTI_INPUT;
 }
 
 IPopupMenu* IGraphicsWin::GetItemMenu(long idx, long& idxInMenu, long& offsetIdx, IPopupMenu& baseMenu)
@@ -1182,30 +1355,30 @@ HMENU IGraphicsWin::CreateMenu(IPopupMenu& menu, long* pOffsetIdx)
       }
 
       flags = MF_STRING;
-      //if (nItems < 160 && pMenu->getNbItemsPerColumn () > 0 && inc && !(inc % _menu->getNbItemsPerColumn ()))
-      //  flags |= MF_MENUBARBREAK;
+      if (nItems < 160 && menu.NItemsPerColumn() > 0 && inc && !(inc % menu.NItemsPerColumn()))
+        flags |= MF_MENUBARBREAK;
+
+      if (pMenuItem->GetEnabled())
+        flags |= MF_ENABLED;
+      else
+        flags |= MF_GRAYED;
+      if (pMenuItem->GetIsTitle())
+        flags |= MF_DISABLED;
+      if (pMenuItem->GetChecked())
+        flags |= MF_CHECKED;
+      else
+        flags |= MF_UNCHECKED;
 
       if (pMenuItem->GetSubmenu())
       {
         HMENU submenu = CreateMenu(*pMenuItem->GetSubmenu(), pOffsetIdx);
         if (submenu)
         {
-          AppendMenu(hMenu, flags|MF_POPUP|MF_ENABLED, (UINT_PTR)submenu, (const TCHAR*)entryText.Get());
+          AppendMenu(hMenu, flags|MF_POPUP, (UINT_PTR)submenu, (const TCHAR*)entryText.Get());
         }
       }
       else
       {
-        if (pMenuItem->GetEnabled())
-          flags |= MF_ENABLED;
-        else
-          flags |= MF_GRAYED;
-        if (pMenuItem->GetIsTitle())
-          flags |= MF_DISABLED;
-        if (pMenuItem->GetChecked())
-          flags |= MF_CHECKED;
-        else
-          flags |= MF_UNCHECKED;
-
         AppendMenu(hMenu, flags, offset + inc, entryText.Get());
       }
     }
@@ -1215,57 +1388,53 @@ HMENU IGraphicsWin::CreateMenu(IPopupMenu& menu, long* pOffsetIdx)
   return hMenu;
 }
 
-IPopupMenu* IGraphicsWin::CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds)
+IPopupMenu* IGraphicsWin::CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds, bool& isAsync)
 {
   long offsetIdx = 0;
   HMENU hMenu = CreateMenu(menu, &offsetIdx);
 
   if(hMenu)
   {
-   // long offsetIdx = 0;
-    //HMENU hMenu = CreateMenu(menu, &offsetIdx);
     IPopupMenu* result = nullptr;
 
-    if (hMenu)
+    POINT cPos;
+    const float scale = GetTotalScale();
+
+    cPos.x = bounds.L * scale;
+    cPos.y = bounds.B * scale;
+
+    ::ClientToScreen(mPlugWnd, &cPos);
+
+    if (TrackPopupMenu(hMenu, TPM_LEFTALIGN, cPos.x, cPos.y, 0, mPlugWnd, 0))
     {
-      POINT cPos;
-
-      cPos.x = bounds.L * (GetDrawScale() * GetScreenScale());
-      cPos.y = bounds.B * (GetDrawScale() * GetScreenScale());
-
-      ::ClientToScreen(mPlugWnd, &cPos);
-
-      if (TrackPopupMenu(hMenu, TPM_LEFTALIGN, cPos.x, cPos.y, 0, mPlugWnd, 0))
+      MSG msg;
+      if (PeekMessage(&msg, mPlugWnd, WM_COMMAND, WM_COMMAND, PM_REMOVE))
       {
-        MSG msg;
-        if (PeekMessage(&msg, mPlugWnd, WM_COMMAND, WM_COMMAND, PM_REMOVE))
+        if (HIWORD(msg.wParam) == 0)
         {
-          if (HIWORD(msg.wParam) == 0)
+          long res = LOWORD(msg.wParam);
+          if (res != -1)
           {
-            long res = LOWORD(msg.wParam);
-            if (res != -1)
+            long idx = 0;
+            offsetIdx = 0;
+            IPopupMenu* pReturnMenu = GetItemMenu(res, idx, offsetIdx, menu);
+            if (pReturnMenu)
             {
-              long idx = 0;
-              offsetIdx = 0;
-              IPopupMenu* pReturnMenu = GetItemMenu(res, idx, offsetIdx, menu);
-              if (pReturnMenu)
-              {
-                result = pReturnMenu;
-                result->SetChosenItemIdx(idx);
+              result = pReturnMenu;
+              result->SetChosenItemIdx(idx);
 
-                //synchronous
-                if(pReturnMenu && pReturnMenu->GetFunction())
-                  pReturnMenu->ExecFunction();
-              }
+              //synchronous
+              if(pReturnMenu && pReturnMenu->GetFunction())
+                pReturnMenu->ExecFunction();
             }
           }
         }
       }
-      DestroyMenu(hMenu);
-
-      RECT r = { 0, 0, WindowWidth() * GetScreenScale(), WindowHeight() * GetScreenScale() };
-      InvalidateRect(mPlugWnd, &r, FALSE);
     }
+    DestroyMenu(hMenu);
+
+    RECT r = { 0, 0, WindowWidth() * GetScreenScale(), WindowHeight() * GetScreenScale() };
+    InvalidateRect(mPlugWnd, &r, FALSE);
 
     return result;
   }
@@ -1282,16 +1451,19 @@ void IGraphicsWin::CreatePlatformTextEntry(int paramIdx, const IText& text, cons
 
   switch ( text.mAlign )
   {
-    case EAlign::Near:   editStyle = ES_LEFT;   break;
-    case EAlign::Far:    editStyle = ES_RIGHT;  break;
+    case EAlign::Near:    editStyle = ES_LEFT;   break;
+    case EAlign::Far:     editStyle = ES_RIGHT;  break;
     case EAlign::Center:
-    default:                  editStyle = ES_CENTER; break;
+    default:              editStyle = ES_CENTER; break;
   }
 
-  double scale = GetDrawScale() * GetScreenScale();
+  const float scale = GetTotalScale();
   IRECT scaledBounds = bounds.GetScaled(scale);
 
-  mParamEditWnd = CreateWindow("EDIT", str, ES_AUTOHSCROLL /*only works for left aligned text*/ | WS_CHILD | WS_VISIBLE | ES_MULTILINE | editStyle,
+  WCHAR strWide[MAX_PARAM_DISPLAY_LEN];
+  UTF8ToUTF16(strWide, str, MAX_PARAM_DISPLAY_LEN);
+
+  mParamEditWnd = CreateWindowW(L"EDIT", strWide, ES_AUTOHSCROLL /*only works for left aligned text*/ | WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VISIBLE | ES_MULTILINE | editStyle,
     scaledBounds.L, scaledBounds.T, scaledBounds.W()+1, scaledBounds.H()+1,
     mPlugWnd, (HMENU) PARAM_EDIT_ID, mHInstance, 0);
 
@@ -1312,6 +1484,14 @@ void IGraphicsWin::CreatePlatformTextEntry(int paramIdx, const IText& text, cons
   SendMessage(mParamEditWnd, EM_LIMITTEXT, (WPARAM) length, 0);
   SendMessage(mParamEditWnd, WM_SETFONT, (WPARAM)mEditFont, 0);
   SendMessage(mParamEditWnd, EM_SETSEL, 0, -1);
+
+  if (text.mVAlign == EVAlign::Middle)
+  {
+    double size = text.mSize * scale;
+    double offset = (scaledBounds.H() - size) / 2.0;
+    RECT formatRect{0, (LONG) offset, (LONG) scaledBounds.W() + 1, (LONG) scaledBounds.H() + 1};
+    SendMessage(mParamEditWnd, EM_SETRECT, 0, (LPARAM)&formatRect);
+  }
 
   SetFocus(mParamEditWnd);
 
@@ -1562,7 +1742,7 @@ bool IGraphicsWin::OpenURL(const char* url, const char* msgWindowTitle, const ch
   {
     WCHAR urlWide[IPLUG_WIN_MAX_WIDE_PATH];
     UTF8ToUTF16(urlWide, url, IPLUG_WIN_MAX_WIDE_PATH);
-    if ((int) ShellExecuteW(mPlugWnd, L"open", urlWide, 0, 0, SW_SHOWNORMAL) > MAX_INET_ERR_CODE)
+    if (ShellExecuteW(mPlugWnd, L"open", urlWide, 0, 0, SW_SHOWNORMAL) > HINSTANCE(32))
     {
       return true;
     }
@@ -1645,18 +1825,18 @@ bool IGraphicsWin::GetTextFromClipboard(WDL_String& str)
   return numChars;
 }
 
-bool IGraphicsWin::SetTextInClipboard(const WDL_String& str)
+bool IGraphicsWin::SetTextInClipboard(const char* str)
 {
   if (!OpenClipboard(mMainWnd))
     return false;
 
   EmptyClipboard();
 
-  const int len = str.GetLength();
+  const int len = strlen(str);
   if (len > 0)
   {
     // figure out how much memory we need for the wide version of this string
-    int wchar_len = MultiByteToWideChar(CP_UTF8, 0, str.Get(), -1, NULL, 0);
+    int wchar_len = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
 
     // allocate global memory object for the text
     HGLOBAL hglbCopy = GlobalAlloc(GMEM_MOVEABLE, wchar_len*sizeof(WCHAR));
@@ -1668,7 +1848,7 @@ bool IGraphicsWin::SetTextInClipboard(const WDL_String& str)
 
     // lock the handle and copy the string into the buffer
     LPWSTR lpstrCopy = (LPWSTR)GlobalLock(hglbCopy);
-    MultiByteToWideChar(CP_UTF8, 0, str.Get(), -1, lpstrCopy, wchar_len);
+    MultiByteToWideChar(CP_UTF8, 0, str, -1, lpstrCopy, wchar_len);
     GlobalUnlock(hglbCopy);
 
     // place the handle on the clipboard
@@ -1747,12 +1927,18 @@ PlatformFontPtr IGraphicsWin::LoadPlatformFont(const char* fontID, const char* f
     case kAbsolutePath:
     {
       HANDLE file = CreateFile(fullPath.Get(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-      HANDLE mapping = CreateFileMapping(file, NULL, PAGE_READONLY, 0, 0, NULL);
-      pFontMem = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
-      pFont = std::make_unique<InstalledFont>(pFontMem, resSize);
-      UnmapViewOfFile(pFontMem);
-      CloseHandle(mapping);
-      CloseHandle(file);
+      if (file)
+      {
+        HANDLE mapping = CreateFileMapping(file, NULL, PAGE_READONLY, 0, 0, NULL);
+        if (mapping)
+        {
+          pFontMem = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+          pFont = std::make_unique<InstalledFont>(pFontMem, resSize);
+          UnmapViewOfFile(pFontMem);
+          CloseHandle(mapping);
+        }
+        CloseHandle(file);
+      }
     }
     break;
     case kWinBinary:
@@ -1805,6 +1991,190 @@ void IGraphicsWin::CachePlatformFont(const char* fontID, const PlatformFontPtr& 
     hfontStorage.Add(new HFontHolder(hfont), fontID);
 }
 
+DWORD WINAPI VBlankRun(LPVOID lpParam)
+{
+  IGraphicsWin* pGraphics = (IGraphicsWin*)lpParam;
+  return pGraphics->OnVBlankRun();
+}
+
+void IGraphicsWin::StartVBlankThread(HWND hWnd)
+{
+  mVBlankWindow = hWnd;
+  mVBlankShutdown = false;
+  DWORD threadId = 0;
+  mVBlankThread = ::CreateThread(NULL, 0, VBlankRun, this, 0, &threadId);
+}
+
+void IGraphicsWin::StopVBlankThread()
+{
+  if (mVBlankThread != INVALID_HANDLE_VALUE)
+  {
+    mVBlankShutdown = true;
+    ::WaitForSingleObject(mVBlankThread, 10000);
+    mVBlankThread = INVALID_HANDLE_VALUE;
+    mVBlankWindow = 0;
+  }
+}
+
+// Nasty kernel level definitions for wait for vblank.  Including the
+// proper include file requires "d3dkmthk.h" from the driver development
+// kit.  Instead we define the minimum needed to call the three methods we need.
+// and use LoadLibrary/GetProcAddress to accomplish the same thing.
+// See https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/
+//
+// Heres another link (rant) with a lot of good information about vsync on firefox
+// https://www.vsynctester.com/firefoxisbroken.html
+// https://bugs.chromium.org/p/chromium/issues/detail?id=467617
+
+// structs to use
+typedef UINT32 D3DKMT_HANDLE;
+typedef UINT D3DDDI_VIDEO_PRESENT_SOURCE_ID;
+typedef struct _D3DKMT_OPENADAPTERFROMHDC {
+  HDC                            hDc;
+  D3DKMT_HANDLE                  hAdapter;
+  LUID                           AdapterLuid;
+  D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId;
+} D3DKMT_OPENADAPTERFROMHDC;
+typedef struct _D3DKMT_CLOSEADAPTER {
+  D3DKMT_HANDLE hAdapter;
+} D3DKMT_CLOSEADAPTER;
+typedef struct _D3DKMT_WAITFORVERTICALBLANKEVENT {
+  D3DKMT_HANDLE                  hAdapter;
+  D3DKMT_HANDLE                  hDevice;
+  D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId;
+} D3DKMT_WAITFORVERTICALBLANKEVENT;
+
+// entry points
+typedef NTSTATUS(WINAPI* D3DKMTOpenAdapterFromHdc)(D3DKMT_OPENADAPTERFROMHDC* Arg1);
+typedef NTSTATUS(WINAPI* D3DKMTCloseAdapter)(const D3DKMT_CLOSEADAPTER* Arg1);
+typedef NTSTATUS(WINAPI* D3DKMTWaitForVerticalBlankEvent)(const D3DKMT_WAITFORVERTICALBLANKEVENT* Arg1);
+
+DWORD IGraphicsWin::OnVBlankRun()
+{
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
+  // TODO: get expected vsync value.  For now we will use a fallback
+  // of 60Hz
+  float rateFallback = 60.0f;
+  int rateMS = (int)(1000.0f / rateFallback);
+
+  // We need to try to load the module and entry points to wait on v blank.
+  // if anything fails, we try to gracefully fallback to sleeping for some
+  // number of milliseconds.
+  //
+  // TODO: handle low power modes
+
+  D3DKMTOpenAdapterFromHdc pOpen = nullptr;
+  D3DKMTCloseAdapter pClose = nullptr;
+  D3DKMTWaitForVerticalBlankEvent pWait = nullptr;
+  HINSTANCE hInst = LoadLibrary("gdi32.dll");
+  if (hInst != nullptr)
+  {
+    pOpen  = (D3DKMTOpenAdapterFromHdc)GetProcAddress((HMODULE)hInst, "D3DKMTOpenAdapterFromHdc");
+    pClose = (D3DKMTCloseAdapter)GetProcAddress((HMODULE)hInst, "D3DKMTCloseAdapter");
+    pWait  = (D3DKMTWaitForVerticalBlankEvent)GetProcAddress((HMODULE)hInst, "D3DKMTWaitForVerticalBlankEvent");
+  }
+
+  // if we don't get bindings to the methods we will fallback
+  // to a crummy sleep loop for now.  This is really just a last
+  // resort and not expected on modern hardware and Windows OS
+  // installs.
+  if (!pOpen || !pClose || !pWait)
+  {
+    while (mVBlankShutdown == false)
+    {
+      Sleep(rateMS);
+      VBlankNotify();
+    }
+  }
+  else
+  {
+    // we have a good set of functions to call.  We need to keep
+    // track of the adapter and reask for it if the device is lost.
+    bool adapterIsOpen = false;
+    DWORD adapterLastFailTime = 0;
+    _D3DKMT_WAITFORVERTICALBLANKEVENT we = { 0 };
+
+    while (mVBlankShutdown == false)
+    {
+      if (!adapterIsOpen)
+      {
+        // reacquire the adapter (at most once a second).
+        if (adapterLastFailTime < ::GetTickCount() - 1000)
+        {
+          // try to get adapter
+          D3DKMT_OPENADAPTERFROMHDC openAdapterData = { 0 };
+          HDC hDC = GetDC(mVBlankWindow);
+          openAdapterData.hDc = hDC;
+          NTSTATUS status = (*pOpen)(&openAdapterData);
+          if (status == S_OK)
+          {
+            // success, setup wait request parameters.
+            adapterLastFailTime = 0;
+            adapterIsOpen = true;
+            we.hAdapter = openAdapterData.hAdapter;
+            we.hDevice = 0;
+            we.VidPnSourceId = openAdapterData.VidPnSourceId;
+          }
+          else
+          {
+            // failed
+            adapterLastFailTime = ::GetTickCount();
+          }
+          DeleteDC(hDC);
+        }
+      }
+
+      if (adapterIsOpen)
+      {
+        // Finally we can wait on VBlank
+        NTSTATUS status = (*pWait)(&we);
+        if (status != S_OK)
+        {
+          // failed, close now and try again on the next pass.
+          _D3DKMT_CLOSEADAPTER ca;
+          ca.hAdapter = we.hAdapter;
+          (*pClose)(&ca);
+          adapterIsOpen = false;
+        }
+      }
+
+      // Temporary fallback for lost adapter or failed call.
+      if (!adapterIsOpen)
+      {
+        ::Sleep(rateMS);
+      }
+
+      // notify logic
+      VBlankNotify();
+    }
+
+    // cleanup adapter before leaving
+    if (adapterIsOpen)
+    {
+      _D3DKMT_CLOSEADAPTER ca;
+      ca.hAdapter = we.hAdapter;
+      (*pClose)(&ca);
+      adapterIsOpen = false;
+    }
+  }
+
+  // release module resource
+  if (hInst != nullptr)
+  {
+    FreeLibrary((HMODULE)hInst);
+    hInst = nullptr;
+  }
+
+  return 0;
+}
+
+void IGraphicsWin::VBlankNotify()
+{
+  mVBlankCount++;
+  ::PostMessage(mVBlankWindow, WM_VBLANK, mVBlankCount, 0);
+}
+
 #ifndef NO_IGRAPHICS
 #if defined IGRAPHICS_AGG
   #include "IGraphicsAGG.cpp"
@@ -1821,9 +2191,12 @@ void IGraphicsWin::CachePlatformFont(const char* fontID, const PlatformFontPtr& 
   #include "IGraphicsNanoVG.cpp"
 #ifdef IGRAPHICS_FREETYPE
 #define FONS_USE_FREETYPE
+  #pragma comment(lib, "freetype.lib")
 #endif
   #include "nanovg.c"
   #include "glad.c"
+#elif defined IGRAPHICS_D2D
+  #include "IGraphicsD2D.cpp"
 #else
   #error
 #endif
