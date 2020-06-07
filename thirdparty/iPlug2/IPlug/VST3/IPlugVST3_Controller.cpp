@@ -24,7 +24,6 @@ using namespace Vst;
 IPlugVST3Controller::IPlugVST3Controller(const InstanceInfo& info, const Config& config)
 : IPlugAPIBase(config, kAPIVST3)
 , mPlugIsInstrument(config.plugType == kInstrument)
-, mDoesMidiIn(config.plugDoesMidiIn)
 , mProcessorGUID(info.mOtherGUID)
 {
 }
@@ -39,7 +38,8 @@ tresult PLUGIN_API IPlugVST3Controller::initialize(FUnknown* context)
 {
   if (EditControllerEx1::initialize(context) == kResultTrue)
   {
-    Initialize(this, parameters, mPlugIsInstrument, mDoesMidiIn);
+    Initialize(this, parameters, mPlugIsInstrument);
+    
     IPlugVST3GetHost(this, context);
     OnHostIdentified();
 
@@ -82,25 +82,31 @@ ParamValue PLUGIN_API IPlugVST3Controller::getParamNormalized(ParamID tag)
   if (tag >= kBypassParam)
     return EditControllerEx1::getParamNormalized(tag);
   
-  return IPlugVST3ControllerBase::GetParamNormalized(this, tag);
+  return IPlugVST3ControllerBase::getParamNormalized(this, tag);
 }
 
 tresult PLUGIN_API IPlugVST3Controller::setParamNormalized(ParamID tag, ParamValue value)
 {
-  IPlugVST3ControllerBase::SetParamNormalized(this, tag, value);
+  IPlugVST3ControllerBase::setParamNormalized(this, tag, value);
   
   return EditControllerEx1::setParamNormalized(tag, value);
 }
 
-tresult PLUGIN_API IPlugVST3Controller::getMidiControllerAssignment(int32 busIndex, int16 midiChannel, CtrlNumber midiCCNumber, ParamID& tag)
+tresult PLUGIN_API IPlugVST3Controller::getMidiControllerAssignment(int32 busIndex, int16 midiChannel, CtrlNumber midiControllerNumber, ParamID& tag)
 {
-  if (busIndex == 0)
-  {
-    tag = kMIDICCParamStartIdx + (midiChannel * kCountCtrlNumber) + midiCCNumber;
-    return kResultTrue;
-  }
+//  if (busIndex == 0)
+//  {
+//    tag = kMIDICCParamStartIdx + (midiChannel * kCountCtrlNumber) + midiControllerNumber;
+//    return kResultTrue;
+//  }
 
   return kResultFalse;
+}
+
+tresult PLUGIN_API IPlugVST3Controller::queryInterface(const char* iid, void** obj)
+{
+  QUERY_INTERFACE(iid, obj, IMidiMapping::iid, IMidiMapping)
+  return EditControllerEx1::queryInterface(iid, obj);
 }
 
 #pragma mark IUnitInfo overrides
@@ -157,35 +163,35 @@ tresult PLUGIN_API IPlugVST3Controller::notify(IMessage* message)
   
   if (!strcmp(message->getMessageID(), "SCVFD"))
   {
-    Steinberg::int64 ctrlTag = kNoTag;
+    Steinberg::int64 controlTag = kNoTag;
     double normalizedValue = 0.;
     
-    if(message->getAttributes()->getInt("CT", ctrlTag) == kResultFalse)
+    if(message->getAttributes()->getInt("CT", controlTag) == kResultFalse)
       return kResultFalse;
     
     if(message->getAttributes()->getFloat("NV", normalizedValue) == kResultFalse)
       return kResultFalse;
     
-    SendControlValueFromDelegate((int) ctrlTag, normalizedValue);
+    SendControlValueFromDelegate((int) controlTag, normalizedValue);
 
   }
   else if (!strcmp(message->getMessageID(), "SCMFD"))
   {
     const void* data;
-    Steinberg::int64 ctrlTag = kNoTag;
-    Steinberg::int64 msgTag = kNoTag;
+    Steinberg::int64 controlTag = kNoTag;
+    Steinberg::int64 messageTag = kNoTag;
 
-    if(message->getAttributes()->getInt("CT", ctrlTag) == kResultFalse)
+    if(message->getAttributes()->getInt("CT", controlTag) == kResultFalse)
       return kResultFalse;
     
-    if(message->getAttributes()->getInt("MT", msgTag) == kResultFalse)
+    if(message->getAttributes()->getInt("MT", messageTag) == kResultFalse)
       return kResultFalse;
 
     Steinberg::uint32 size;
     
     if (message->getAttributes()->getBinary("D", data, size) == kResultOk)
     {
-      SendControlMsgFromDelegate((int) ctrlTag, (int) msgTag, size, data);
+      SendControlMsgFromDelegate((int) controlTag, (int) messageTag, size, data);
       return kResultOk;
     }
   }
@@ -248,7 +254,7 @@ void IPlugVST3Controller::SendSysexMsgFromUI(const ISysEx& msg)
   sendMessage(message);
 }
 
-void IPlugVST3Controller::SendArbitraryMsgFromUI(int msgTag, int ctrlTag, int dataSize, const void* pData)
+void IPlugVST3Controller::SendArbitraryMsgFromUI(int messageTag, int controlTag, int dataSize, const void* pData)
 {
   OPtr<IMessage> message = allocateMessage();
   
@@ -263,8 +269,8 @@ void IPlugVST3Controller::SendArbitraryMsgFromUI(int msgTag, int ctrlTag, int da
   }
   
   message->setMessageID("SAMFUI");
-  message->getAttributes()->setInt("MT", msgTag);
-  message->getAttributes()->setInt("CT", ctrlTag);
+  message->getAttributes()->setInt("MT", messageTag);
+  message->getAttributes()->setInt("CT", controlTag);
   message->getAttributes()->setBinary("D", pData, dataSize);
   sendMessage(message);
 }

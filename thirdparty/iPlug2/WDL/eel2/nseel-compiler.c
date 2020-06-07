@@ -32,7 +32,26 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#if !defined(EEL_TARGET_PORTABLE) && !defined(_WIN32)
+#ifndef EEL_TARGET_PORTABLE
+
+#ifdef __APPLE__
+  #include <AvailabilityMacros.h>
+
+  #if defined(__LP64__) || defined(MAC_OS_X_VERSION_10_6) // using 10.6+ SDK, force mprotect use
+    #ifndef EEL_USE_MPROTECT
+      #define EEL_USE_MPROTECT
+    #endif
+  #endif
+#endif
+
+#if defined(__linux__) && !defined(EEL_USE_MPROTECT)
+  // always use mprotect on linux
+  #define EEL_USE_MPROTECT
+#endif
+
+#endif
+
+#ifdef EEL_USE_MPROTECT
 #include <sys/mman.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -821,7 +840,7 @@ static void *__newBlock(llBlock **start, int size, int wantMprotect)
     eoffs=((UINT_PTR)llb + alloc_size + 4095)&~4095;
     VirtualProtect((LPVOID)offs,eoffs-offs,PAGE_EXECUTE_READWRITE,&ov);
   //  MessageBox(NULL,"vprotecting, yay\n","a",0);
-  #else
+  #elif defined(EEL_USE_MPROTECT)
     {
       static int pagesize = 0;
       if (!pagesize)

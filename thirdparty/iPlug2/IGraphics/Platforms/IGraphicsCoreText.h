@@ -19,11 +19,10 @@ BEGIN_IGRAPHICS_NAMESPACE
 class CoreTextFont : public PlatformFont
 {
 public:
-  CoreTextFont(CTFontDescriptorRef descriptor, CGDataProviderRef provider, const char * styleString, bool system)
+  CoreTextFont(CTFontDescriptorRef descriptor, CGDataProviderRef provider, bool system)
   : PlatformFont(system)
   , mDescriptor(descriptor)
   , mProvider(provider)
-  , mStyleString(styleString)
   {}
   
   ~CoreTextFont();
@@ -34,7 +33,6 @@ public:
 private:
   CTFontDescriptorRef mDescriptor;
   CGDataProviderRef mProvider;
-  WDL_String mStyleString;
 };
 
 template <class T>

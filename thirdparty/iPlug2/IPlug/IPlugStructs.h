@@ -401,13 +401,16 @@ struct IChannelData
   TOUT** mData = nullptr; // If this is for an input channel, points into IPlugProcessor::mInData, if it's for an output channel points into IPlugProcessor::mOutData
   TIN* mIncomingData = nullptr;
   WDL_TypedBuf<TOUT> mScratchBuf;
-  WDL_String mLabel;
+  WDL_String mLabel = WDL_String("");
 };
 
 /** Used to manage information about a bus such as whether it's an input or output, channel count and if it has a label */
-class IBusInfo
+struct IBusInfo
 {
-public:
+  ERoute mDirection;
+  int mNChans;
+  WDL_String mLabel;
+  
   IBusInfo(ERoute direction, int nchans = 0, const char* label = "")
   : mDirection(direction)
   , mNChans(nchans)
@@ -417,19 +420,6 @@ public:
     else
       mLabel.Set(RoutingDirStrs[direction]);
   }
-
-  void SetLabel(const char* label) { mLabel.Set(label);  }
-
-  const char* GetLabel() const { return mLabel.Get(); }
-
-  int NChans() const { return mNChans; }
-
-  ERoute GetDirection() const { return mDirection; }
-
-private:
-  ERoute mDirection;
-  int mNChans;
-  WDL_String mLabel;
 };
 
 /** An IOConfig is used to store bus info for each input/output configuration defined in the channel io string */
@@ -456,7 +446,7 @@ struct IOConfig
    * @param direction /todo
    * @param index /todo
    * @return IBusInfo* /todo */
-  const IBusInfo* GetBusInfo(ERoute direction, int index) const
+  IBusInfo* GetBusInfo(ERoute direction, int index)
   {
     assert(index >= 0 && index < mBusInfo[direction].GetSize());
     return mBusInfo[direction].Get(index);
@@ -466,12 +456,12 @@ struct IOConfig
    * @param direction /todo
    * @param index /todo
    * @return int /todo */
-  int NChansOnBusSAFE(ERoute direction, int index) const
+  int NChansOnBusSAFE(ERoute direction, int index)
   {
     int NChans = 0;
     
     if(index >= 0 && index < mBusInfo[direction].GetSize())
-      NChans = mBusInfo[direction].Get(index)->NChans();
+      NChans = mBusInfo[direction].Get(index)->mNChans;
 
     return NChans;
   }
@@ -479,7 +469,7 @@ struct IOConfig
   /** /todo  
    * @param direction /todo
    * @return int /todo */
-  int NBuses(ERoute direction) const
+  int NBuses(ERoute direction)
   {
     return mBusInfo[direction].GetSize();
   }
@@ -492,7 +482,7 @@ struct IOConfig
     int total = 0;
     
     for(int i = 0; i < mBusInfo[direction].GetSize(); i++)
-      total += mBusInfo[direction].Get(i)->NChans();
+      total += mBusInfo[direction].Get(i)->mNChans;
     
     return total;
   }
@@ -501,11 +491,11 @@ struct IOConfig
    * @param direction /todo
    * @return true /todo
    * @return false /todo */
-  bool ContainsWildcard(ERoute direction) const
+  bool ContainsWildcard(ERoute direction)
   {
     for(auto i = 0; i < mBusInfo[direction].GetSize(); i++)
     {
-      if(mBusInfo[direction].Get(i)->NChans() < 0)
+      if(mBusInfo[direction].Get(i)->mNChans < 0)
         return true;
     }
 
@@ -542,29 +532,6 @@ struct IPreset
   {
     sprintf(mName, "%s", UNUSED_PRESET_NAME);
   }
-};
-
-/** Used for key press info, such as ASCII representation, virtual key (mapped to win32 codes) and modifiers */
-struct IKeyPress
-{
-  int VK; // Windows VK_XXX
-  char utf8[5] = { 0 }; // UTF8 key
-  bool S, C, A; // SHIFT / CTRL(WIN) or CMD (MAC) / ALT
-
-  /** /todo
-   * @param _utf8 /todo
-   * @param vk /todo
-   * @param s /todo
-   * @param c /todo
-   * @param a /todo */
-  IKeyPress(const char* _utf8, int vk, bool s = false, bool c = false, bool a = false)
-    : VK(vk)
-    , S(s), C(c), A(a)
-  {
-    strcpy(utf8, _utf8);
-  }
-
-  void DBGPrint() const { DBGMSG("VK: %i\n", VK); }
 };
 
 END_IPLUG_NAMESPACE

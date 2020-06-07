@@ -494,7 +494,7 @@ void IPopupMenuControl::CalculateMenuPanels(float x, float y)
   SetDirty(false);
 }
 
-void IPopupMenuControl::Expand(const IRECT& anchorArea)
+void IPopupMenuControl::Expand(const IRECT& bounds)
 {
   Hide(false);
   mState = kExpanding;
@@ -502,25 +502,25 @@ void IPopupMenuControl::Expand(const IRECT& anchorArea)
   
   mMenuPanels.Empty(true);
   
-  mAnchorArea = anchorArea;
+  mOriginalBounds = bounds;
   
-  float x = anchorArea.L;
-  float y = anchorArea.B;
+  float x = bounds.L;
+  float y = bounds.T;
   
   if(mCallOut)
   {
-    x = anchorArea.R + CALLOUT_SPACE;
-    y = anchorArea.MH() - CALLOUT_SPACE - mText.mSize;
-    mCalloutArrowBounds = IRECT(anchorArea.R, anchorArea.MH() - CALLOUT_SPACE, x, anchorArea.MH() + CALLOUT_SPACE);
+    x = bounds.R + CALLOUT_SPACE;
+    y = bounds.MH() - CALLOUT_SPACE - mText.mSize;
+    mCalloutArrowBounds = IRECT(bounds.R, bounds.MH() - CALLOUT_SPACE, x, bounds.MH() + CALLOUT_SPACE);
     mCalloutArrowDir = kEast;
     
-    if(y < (mMaxBounds.T+PAD)) // if we're going off the top of the max anchorArea
+    if(y < (mMaxBounds.T+PAD)) // if we're going off the top of the max bounds
     {
       IRECT maxCell = GetLargestCellRectForMenu(*mMenu, 0, 0);
       
-      x = anchorArea.MW() - (maxCell.W() / 2.f);
-      y = anchorArea.B + CALLOUT_SPACE;
-      mCalloutArrowBounds = IRECT(anchorArea.MW() - CALLOUT_SPACE, anchorArea.B, anchorArea.MW() + CALLOUT_SPACE, anchorArea.B + CALLOUT_SPACE);
+      x = bounds.MW() - (maxCell.W() / 2.f);
+      y = bounds.B + CALLOUT_SPACE;
+      mCalloutArrowBounds = IRECT(bounds.MW() - CALLOUT_SPACE, bounds.B, bounds.MW() + CALLOUT_SPACE, bounds.B + CALLOUT_SPACE);
       mCalloutArrowDir = kNorth;
     }
   }
@@ -604,7 +604,7 @@ void IPopupMenuControl::OnEndAnimation()
       
     mState = kIdling;
     mMouseCellBounds = nullptr;
-    mAnchorArea = IRECT();
+    mOriginalBounds = IRECT();
     
     SetDirty(true); // triggers animation again
     return; // don't cancel animation
@@ -730,7 +730,7 @@ IPopupMenuControl::MenuPanel::MenuPanel(IPopupMenuControl& control, IPopupMenu& 
   {
     if(control.mCallOut)
     {
-      const float newRight = control.mAnchorArea.L - control.CALLOUT_SPACE - control.PAD;
+      const float newRight = control.mOriginalBounds.L - control.CALLOUT_SPACE - control.PAD;
       const float shiftLeft = span.R-newRight;
 
       for(auto i = 0; i < mCellBounds.GetSize(); i++)
@@ -739,7 +739,7 @@ IPopupMenuControl::MenuPanel::MenuPanel(IPopupMenuControl& control, IPopupMenu& 
       }
       
       control.mCalloutArrowDir = kWest;
-      control.mCalloutArrowBounds = IRECT(control.mAnchorArea.L - control.CALLOUT_SPACE, control.mAnchorArea.MH() - control.CALLOUT_SPACE, control.mAnchorArea.L, control.mAnchorArea.MH() + control.CALLOUT_SPACE);
+      control.mCalloutArrowBounds = IRECT(control.mOriginalBounds.L - control.CALLOUT_SPACE, control.mOriginalBounds.MH() - control.CALLOUT_SPACE, control.mOriginalBounds.L, control.mOriginalBounds.MH() + control.CALLOUT_SPACE);
     }
     else
     {

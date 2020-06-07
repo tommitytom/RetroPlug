@@ -16,7 +16,6 @@
  */
 
 #include "IControl.h"
-#include "IPlugPaths.h"
 
 /** Control to test IDirBrowseControlBase
  *   @ingroup TestControls */
@@ -41,24 +40,18 @@ public:
   
   void Draw(IGraphics& g) override
   {
-    if(AppIsSandboxed())
-      g.DrawText(IText(14, EVAlign::Middle), "App is sandboxed... filesystem restricted", mRECT);
-    else
-    {
-      g.DrawDottedRect(COLOR_BLACK, mRECT);
-      g.FillRect(mMouseIsOver ? COLOR_TRANSLUCENT : COLOR_TRANSPARENT, mRECT);
-      g.FillRect(COLOR_WHITE, but);
-      g.DrawText(mText, mLabel.Get(), but);
-      g.FillTriangle(COLOR_GRAY, arrow.L, arrow.T, arrow.R, arrow.T, arrow.MW(), arrow.B);
-      
-      
-      g.DrawText(IText(DEFAULT_TEXT_SIZE, EAlign::Near), "Use platform menu", useplat);
-      
-      g.DrawRect(COLOR_BLACK, useplatbut);
+    g.DrawDottedRect(COLOR_BLACK, mRECT);
+    g.FillRect(mMouseIsOver ? COLOR_TRANSLUCENT : COLOR_TRANSPARENT, mRECT);
+    g.FillRect(COLOR_WHITE, but);
+    g.DrawText(mText, mLabel.Get(), but);
+    g.FillTriangle(COLOR_GRAY, arrow.L, arrow.T, arrow.R, arrow.T, arrow.MW(), arrow.B);
+    
+    g.DrawText(IText(DEFAULT_TEXT_SIZE, EAlign::Near), "Use platform menu", useplat);
+    
+    g.DrawRect(COLOR_BLACK, useplatbut);
 
-      if(mUsePlatform)
-        g.FillRect(COLOR_BLACK, useplatbut.GetPadded(-2));
-    }
+    if(mUsePlatform)
+      g.FillRect(COLOR_BLACK, useplatbut.GetPadded(-2));
   }
   
   void OnPopupMenuSelection(IPopupMenu* pMenu, int valIdx) override

@@ -191,7 +191,7 @@ public:
       
       if(pControl->IsHidden())
         g.DrawDottedRect(COLOR_RED, cr);
-      else if(pControl->IsDisabled())
+      else if(pControl->IsGrayed())
         g.DrawDottedRect(COLOR_GREEN, cr);
       else
         g.DrawDottedRect(COLOR_BLUE, cr);

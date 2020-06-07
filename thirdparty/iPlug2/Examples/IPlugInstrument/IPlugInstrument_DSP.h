@@ -56,7 +56,7 @@ public:
       double pitchBend = mInputs[kVoiceControlPitchBend].endValue;
 
       // or write the entire control ramp to a buffer, like this, to get sample-accurate ramps:
-      mInputs[kVoiceControlTimbre].Write(mTimbreBuffer.Get(), startIdx, nFrames);
+      mInputs[kVoiceControlTimbre].Write(mTimbreBuffer, startIdx, nFrames);
 
       // convert from "1v/oct" pitch space to frequency in Hertz
       double osc1Freq = 440. * pow(2., pitch + pitchBend);
@@ -64,19 +64,17 @@ public:
       // make sound output for each output channel
       for(auto i = startIdx; i < startIdx + nFrames; i++)
       {
-        float noise = mTimbreBuffer.Get()[i] * Rand();
+        float noise = mTimbreBuffer[i] * Rand();
         // an MPE synth can use pressure here in addition to gain
         outputs[0][i] += (mOSC.Process(osc1Freq) + noise) * mAMPEnv.Process(inputs[kModSustainSmoother][i]) * mGain;
         outputs[1][i] = outputs[0][i];
       }
     }
 
-    void SetSampleRateAndBlockSize(double sampleRate, int blockSize) override
+    void SetSampleRate(double sampleRate) override
     {
       mOSC.SetSampleRate(sampleRate);
       mAMPEnv.SetSampleRate(sampleRate);
-      
-      mTimbreBuffer.Resize(blockSize);
     }
 
     void SetProgramNumber(int pgm) override
@@ -95,7 +93,9 @@ public:
     ADSREnvelope<T> mAMPEnv;
 
   private:
-    WDL_TypedBuf<float> mTimbreBuffer;
+    // would be allocated dynamically in a real example
+    static constexpr int kMaxBlockSize = 1024;
+    float mTimbreBuffer[kMaxBlockSize];
 
     // noise generator for test
     uint32_t mRandSeed = 0;

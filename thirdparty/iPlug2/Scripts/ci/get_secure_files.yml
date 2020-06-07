@@ -1,4 +1,4 @@
-#Download and unzip secure files for VST2_SDK, AAX_SDK
+#Download and unzip secure files for VST2_SDK, AAX_SDK and AGG
 steps:
   - task: DownloadSecureFile@1
     inputs:

@@ -18,7 +18,7 @@ void usage( void ) {
 }
 
 // Platform-dependent sleep routines.
-#if defined(WIN32)
+#if defined(__WINDOWS_MM__)
   #include <windows.h>
   #define SLEEP( milliseconds ) Sleep( (DWORD) milliseconds ) 
 #else // Unix variants

@@ -61,6 +61,17 @@ IGraphicsMac::~IGraphicsMac()
   CloseWindow();
 }
 
+bool IGraphicsMac::IsSandboxed()
+{
+  NSString* pHomeDir = NSHomeDirectory();
+
+  if ([pHomeDir containsString:@"Library/Containers/"])
+  {
+    return true;
+  }
+  return false;
+}
+
 PlatformFontPtr IGraphicsMac::LoadPlatformFont(const char* fontID, const char* fileNameOrResID)
 {
   return CoreTextHelpers::LoadPlatformFont(fontID, fileNameOrResID, GetBundleID(), GetSharedResourcesSubPath());
@@ -99,7 +110,7 @@ void IGraphicsMac::ContextReady(void* pLayer)
 
 void* IGraphicsMac::OpenWindow(void* pParent)
 {
-  TRACE
+  TRACE;
   CloseWindow();
   mView = (IGRAPHICS_VIEW*) [[IGRAPHICS_VIEW alloc] initWithIGraphics: this];
   
@@ -131,11 +142,6 @@ void IGraphicsMac::CloseWindow()
 #endif
     
     IGRAPHICS_VIEW* pView = (IGRAPHICS_VIEW*) mView;
-      
-#ifdef IGRAPHICS_GL
-    [((IGRAPHICS_GLLAYER *)pView.layer).openGLContext makeCurrentContext];
-#endif
-      
     [pView removeAllToolTips];
     [pView killTimer];
     [pView removeFromSuperview];
@@ -514,7 +520,7 @@ bool IGraphicsMac::PromptForColor(IColor& color, const char* str, IColorPickerHa
   return false;
 }
 
-IPopupMenu* IGraphicsMac::CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds, bool& isAsync)
+IPopupMenu* IGraphicsMac::CreatePlatformPopupMenu(IPopupMenu& menu, const IRECT& bounds)
 {
   IPopupMenu* pReturnMenu = nullptr;
 

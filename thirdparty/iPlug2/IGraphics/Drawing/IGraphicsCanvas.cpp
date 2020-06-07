@@ -72,18 +72,12 @@ StaticStorage<IGraphicsCanvas::Font> IGraphicsCanvas::sFontCache;
 
 #pragma mark - Utilities
 
-BEGIN_IPLUG_NAMESPACE
-BEGIN_IGRAPHICS_NAMESPACE
-
-std::string CanvasColor(const IColor& color, float alpha)
+static std::string CanvasColor(const IColor& color, float alpha = 1.0)
 {
   WDL_String str;
   str.SetFormatted(64, "rgba(%d, %d, %d, %lf)", color.R, color.G, color.B, alpha * color.A / 255.0);
   return str.Get();
 }
-
-END_IGRAPHICS_NAMESPACE
-END_IPLUG_NAMESPACE
 
 #pragma mark -
 
@@ -250,16 +244,18 @@ void IGraphicsCanvas::SetCanvasBlendMode(val& context, const IBlend* pBlend)
   
   switch (pBlend->mMethod)
   {
-    case EBlend::SrcOver:    context.set("globalCompositeOperation", "source-over");        break;
-    case EBlend::SrcIn:      context.set("globalCompositeOperation", "source-in");          break;
-    case EBlend::SrcOut:     context.set("globalCompositeOperation", "source-out");         break;
-    case EBlend::SrcAtop:    context.set("globalCompositeOperation", "source-atop");        break;
-    case EBlend::DstOver:    context.set("globalCompositeOperation", "destination-over");   break;
-    case EBlend::DstIn:      context.set("globalCompositeOperation", "destination-in");     break;
-    case EBlend::DstOut:     context.set("globalCompositeOperation", "destination-out");    break;
-    case EBlend::DstAtop:    context.set("globalCompositeOperation", "destination-atop");   break;
-    case EBlend::Add:        context.set("globalCompositeOperation", "lighter");            break;
-    case EBlend::XOR:        context.set("globalCompositeOperation", "xor");                break;
+    case EBlend::Default:       // fall through
+    case EBlend::Clobber:       // fall through
+    case EBlend::SourceOver:    context.set("globalCompositeOperation", "source-over");        break;
+    case EBlend::SourceIn:      context.set("globalCompositeOperation", "source-in");          break;
+    case EBlend::SourceOut:     context.set("globalCompositeOperation", "source-out");         break;
+    case EBlend::SourceAtop:    context.set("globalCompositeOperation", "source-atop");        break;
+    case EBlend::DestOver:      context.set("globalCompositeOperation", "destination-over");   break;
+    case EBlend::DestIn:        context.set("globalCompositeOperation", "destination-in");     break;
+    case EBlend::DestOut:       context.set("globalCompositeOperation", "destination-out");    break;
+    case EBlend::DestAtop:      context.set("globalCompositeOperation", "destination-atop");   break;
+    case EBlend::Add:           context.set("globalCompositeOperation", "lighter");            break;
+    case EBlend::XOR:           context.set("globalCompositeOperation", "xor");                break;
   }
 }
 
@@ -419,7 +415,11 @@ bool IGraphicsCanvas::LoadAPIFont(const char* fontID, const PlatformFontPtr& fon
   StaticStorage<Font>::Accessor storage(sFontCache);
 
   if (storage.Find(fontID))
+  {
+    if (!font->IsSystem())
+      mCustomFonts.push_back(*font->GetDescriptor());
     return true;
+  }
 
   if (!font->IsSystem())
   {
@@ -427,21 +427,34 @@ bool IGraphicsCanvas::LoadAPIFont(const char* fontID, const PlatformFontPtr& fon
     
     if (data->IsValid())
     {
-      // Load the font from data
-        
-      val fontData = val(typed_memory_view(data->GetSize(), data->Get()));
-      val fontFace = val::global("FontFace").new_(std::string(fontID), fontData);
-        
+      // Embed the font data in base64 format as CSS in the head of the html
+      WDL_TypedBuf<char> base64Encoded;
+      
+      if (!base64Encoded.ResizeOK(((data->GetSize() * 4) + 3) / 3 + 1))
+        return false;
+      
+      wdl_base64encode(data->Get(), base64Encoded.Get(), data->GetSize());
+      std::string htmlText("@font-face { font-family: '");
+      htmlText.append(fontID);
+      htmlText.append("'; src: url(data:font/ttf;base64,");
+      htmlText.append(base64Encoded.Get());
+      htmlText.append(") format('truetype'); }");
+      val document = val::global("document");
+      val documentHead = document["head"];
+      val css = document.call<val>("createElement", std::string("style"));
+      css.set("type", std::string("text/css"));
+      css.set("innerHTML", htmlText);
+      document["head"].call<void>("appendChild", css);
+      
       FontDescriptor descriptor = font->GetDescriptor();
       const double ascenderRatio = data->GetAscender() / static_cast<double>(data->GetAscender() - data->GetDescender());
       const double EMRatio = data->GetHeightEMRatio();
       storage.Add(new Font({descriptor->first, descriptor->second}, ascenderRatio, EMRatio), fontID);
       
-      // Add to store and request load immediately
+      // Add to store and encourage to load by using the font immediately
       
-      fontFace.call<val>("load");
-      val::global("document")["fonts"].call<void>("add", fontFace);
-      mLoadingFonts.push_back(fontFace);
+      mCustomFonts.push_back(*descriptor);
+      CompareFontMetrics(descriptor->second.Get(), descriptor->first.Get(), "monospace");
         
       return true;
     }
@@ -467,18 +480,13 @@ bool IGraphicsCanvas::LoadAPIFont(const char* fontID, const PlatformFontPtr& fon
 
 bool IGraphicsCanvas::AssetsLoaded()
 {
-  for (auto it = mLoadingFonts.begin(); it != mLoadingFonts.end(); it++)
+  for (auto it = mCustomFonts.begin(); it != mCustomFonts.end(); it++)
   {
-    std::string status = (*it)["status"].as<std::string>();
-      
-    if (status.compare("loaded"))
-    {
-      assert(status.compare("error") && "Font didn't load");
+    if (!FontExists(it->first.Get(), it->second.Get()))
       return false;
-    }
   }
   
-  mLoadingFonts.clear();
+  mCustomFonts.clear();
     
   return true;
 }
@@ -534,7 +542,7 @@ void IGraphicsCanvas::ApplyShadowMask(ILayerPtr& layer, RawBitmapData& mask, con
       pixelData.set(i, in[i]);
     
     localContext.call<void>("putImageData", imageData, 0, 0);
-    IBlend blend(EBlend::SrcIn, shadow.mOpacity);
+    IBlend blend(EBlend::SourceIn, shadow.mOpacity);
     localContext.call<void>("rect", 0, 0, width, height);
     localContext.call<void>("scale", scale, scale);
     localContext.call<void>("translate", -(layer->Bounds().L + shadow.mXOffset), -(layer->Bounds().T + shadow.mYOffset));

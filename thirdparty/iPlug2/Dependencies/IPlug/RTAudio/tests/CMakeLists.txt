@@ -3,30 +3,23 @@ if (WIN32)
     include_directories(../include)
 endif (WIN32)
 
-list(GET LIB_TARGETS 0 LIBRTAUDIO)
-
 add_executable(audioprobe audioprobe.cpp)
-target_link_libraries(audioprobe ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(audioprobe rtaudio_static ${LINKLIBS})
 
 add_executable(playsaw playsaw.cpp)
-target_link_libraries(playsaw ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(playsaw rtaudio_static ${LINKLIBS})
 
 add_executable(playraw playraw.cpp)
-target_link_libraries(playraw ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(playraw rtaudio_static ${LINKLIBS})
 
 add_executable(record record.cpp)
-target_link_libraries(record ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(record rtaudio_static ${LINKLIBS})
 
 add_executable(duplex duplex.cpp)
-target_link_libraries(duplex ${LIBRTAUDIO} ${LINKLIBS})
-
-add_executable(apinames apinames.cpp)
-target_link_libraries(apinames ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(duplex rtaudio_static ${LINKLIBS})
 
 add_executable(testall testall.cpp)
-target_link_libraries(testall ${LIBRTAUDIO} ${LINKLIBS})
+target_link_libraries(testall rtaudio_static ${LINKLIBS})
 
 add_executable(teststops teststops.cpp)
-target_link_libraries(teststops ${LIBRTAUDIO} ${LINKLIBS})
-
-add_test(NAME apinames COMMAND apinames)
+target_link_libraries(teststops rtaudio_static ${LINKLIBS})

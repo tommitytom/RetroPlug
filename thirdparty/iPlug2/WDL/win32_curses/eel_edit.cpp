@@ -1287,16 +1287,11 @@ int EEL_Editor::onChar(int c)
     doWatchInfo(c);
   return 0;
   case 'S'-'A'+1:
-   {
-     WDL_DestroyCheck chk(&destroy_check);
      if(updateFile())
      {
-       if (chk.isOK())
-         draw_message("Error writing file, changes not saved!");
+       draw_message("Error writing file, changes not saved!");
      }
-     if (chk.isOK())
-       setCursor();
-   }
+     setCursor();
   return 0;
 
   case 'R'-'A'+1:
@@ -1379,7 +1374,6 @@ void EEL_Editor::onRightClick(HWND hwnd)
             while ((*q >= '0' && *q <= '9') || 
                    (*q >= 'a' && *q <= 'z') || 
                    (*q >= 'A' && *q <= 'Z') || 
-                   *q == ':' || // lua
                    *q == '_' || *q == '.') q++;
 
             while (*q == ' ') q++;

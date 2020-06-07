@@ -34,8 +34,8 @@ public:
   class Sender
   {
   public:
-    Sender(int ctrlTag)
-    : mCtrlTag(ctrlTag)
+    Sender(int controlTag)
+    : mControlTag(controlTag)
     {
     }
     
@@ -52,12 +52,12 @@ public:
       {
         T d;
         mQueue.Pop(d);
-        dlg.SendControlMsgFromDelegate(mCtrlTag, kUpdateMessage, sizeof(T), (void*) &d);
+        dlg.SendControlMsgFromDelegate(mControlTag, kUpdateMessage, sizeof(T), (void*) &d);
       }
     }
     
   private:
-    int mCtrlTag;
+    int mControlTag;
     IPlugQueue<T> mQueue {QUEUE_SIZE};
   };
   
@@ -67,9 +67,9 @@ public:
   {
   }
   
-  void OnMsgFromDelegate(int msgTag, int dataSize, const void* pData) override
+  void OnMsgFromDelegate(int messageTag, int dataSize, const void* pData) override
   {
-    if(msgTag == kUpdateMessage && dataSize == sizeof(T))
+    if(messageTag == kUpdateMessage && dataSize == sizeof(T))
     {
       WDL_String str;
       T* pTypedData = (T*) pData;

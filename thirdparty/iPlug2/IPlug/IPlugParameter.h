@@ -148,16 +148,7 @@ public:
    * @param listItems /todo
    * @param ... /todo */
   void InitEnum(const char* name, int defaultValue, int nEnums, const char* label = "", int flags = 0, const char* group = "", const char* listItems = 0, ...); // TODO: LABEL not used here TODO: so why have it?
-
-  /** /todo
-   * @param name /todo
-   * @param defaultValue /todo
-   * @param listItems /todo
-   * @param label /todo
-   * @param flags /todo
-   * @param group /todo*/
-  void InitEnum(const char* name, int defaultValue, const std::initializer_list<const char*>& listItems, int flags = 0, const char* group = "");
-
+  
   /** /todo 
    * @param name /todo
    * @param defaultValue /todo
@@ -218,7 +209,7 @@ public:
    * @param maxVal /todo
    * @param flags /todo
    * @param group /todo */
-  void InitPitch(const char* name, int defaultVal = 60, int minVal = 0, int maxVal = 128, int flags = 0, const char* group = "", bool middleCisC4 = false);
+  void InitPitch(const char* name, int defaultVal = 60, int minVal = 0, int maxVal = 128, int flags = 0, const char* group = "");
   
   /** /todo 
    * @param name /todo
