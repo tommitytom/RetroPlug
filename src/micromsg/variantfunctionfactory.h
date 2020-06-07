@@ -28,7 +28,7 @@ namespace micromsg {
 			FunctionWrapper<T>* d = reinterpret_cast<FunctionWrapper<T>*>(_scratch.back());
 			_scratch.pop_back();
 			d->func = f;
-			return d;
+			return VariantFunction(d);
 		}
 
 		void free(VariantFunction f) {

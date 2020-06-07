@@ -1,7 +1,5 @@
 local class = require("class")
 local const = require("const")
-local fs = require("fs")
-local util = require("util")
 local projectutil = require("util.project")
 local componentutil = require("util.component")
 local serpent = require("serpent")
@@ -44,7 +42,8 @@ function Project:emit(eventName, ...)
 end
 
 function Project:clear()
-	self.components = {}
+	-- TODO: Recreate components on clear?
+	--self.components = ComponentManager.createProjectComponents(self)
 	self.systems = {}
 	self._audioContext:clearProject()
 end
@@ -54,12 +53,11 @@ function Project:loadRom(data, idx, model)
 	if idx ~= nil then system.desc.idx = idx - 1 end
 
 	idx = self:addSystem(system)
-	if idx ~= -1 then self:setSelected(idx) end
+	if idx ~= 0 then self:setSelected(idx) end
 end
 
 function Project:setSelected(idx)
 	self._native.selectedSystem = idx - 1
-
 end
 
 function Project:getSelectedIndex()
@@ -69,8 +67,6 @@ end
 function Project:getSelected()
 	return self.systems[self._native.selectedSystem + 1]
 end
-
-local pathutil = require("pathutil")
 
 function Project:removeSystem(idx)
 	if idx ~= 0 then

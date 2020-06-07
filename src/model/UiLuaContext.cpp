@@ -63,7 +63,7 @@ void UiLuaContext::onPadButton(int button, bool down) {
 
 void UiLuaContext::onDrop(float x, float y, const char* str) {
 	std::vector<std::string> paths = { str };
-	callFunc(_viewRoot, "onDrop", paths);
+	callFunc(_viewRoot, "onDrop", x, y, paths);
 }
 
 void UiLuaContext::onMenu(std::vector<Menu*>& menus) {

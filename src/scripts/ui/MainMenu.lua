@@ -34,7 +34,7 @@ local function loadSram(system, reset)
 end
 
 local function saveProject(project, forceDialog)
-	forceDialog = forceDialog or project.path == ""
+	forceDialog = forceDialog or project._native.path == ""
 	return menuutil.saveHandler({ PROJECT_FILTER }, "project", forceDialog, function(path)
 		return project:save(path, true)
 	end)
@@ -56,7 +56,7 @@ local function projectMenu(menu, project)
 		:subMenu("Save Options")
 			:multiSelect({ "Prefer SRAM", "Prefer State" }, settings.saveType, function(v) settings.saveType = v end)
 			:separator()
-			:select("Package ROM", settings.packageRom, function(v) settings.packageRom = v end)
+			:select("Include ROM", settings.packageRom, function(v) settings.packageRom = v end)
 			:parent()
 		:separator()
 		:subMenu("Add Instance", #project.systems < MAX_INSTANCES)

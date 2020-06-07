@@ -75,7 +75,7 @@ public:
 				inst->saveBattery(state.srams[i]->data(), state.srams[i]->size());
 				inst->saveState(state.states[i]->data(), state.states[i]->size());
 				state.srams[i]->resize(sramSize);
-				state.srams[i]->resize(stateSize);
+				state.states[i]->resize(stateSize);
 			}
 		}
 	}
@@ -100,6 +100,8 @@ public:
 			_audioBuffers[idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
 			_audioBuffers[idx].frameCount = _audioSettings.frameCount;
 		}
+
+		updateLinkTargets();
 
 		return old;
 	}
@@ -132,6 +134,8 @@ public:
 				_audioBuffers[i].frameCount = 0;
 			}
 		}
+
+		updateLinkTargets();
 
 		return old;
 	}

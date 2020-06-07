@@ -97,7 +97,7 @@ local function runAllHandlers(target, components, ...)
 end
 
 local function createProjectComponents(project)
-	print("------- PROJECT COMPONENTS -------")
+	print("------- PROJECT COMPONENTS -------", #_factory.global)
 	for _, v in ipairs(_factory.global) do
 		local d = v.__desc
 		print("Attaching component " .. d.name)

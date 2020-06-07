@@ -22,45 +22,13 @@ end
 
 function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
-		local vk = key.vk
-		self:emitComponentEvent("onKey", vk, down)
+		self:emitComponentEvent("onKey", key.vk, down)
 	end
-end
-
-function View:emitComponentEvent(name, ...)
-	local p = self.model.project
-
-	if p:emit(name, ...) == true then
-		return true
-	end
-
-	local selected = p:getSelected()
-	if selected ~= nil then
-		return selected:emit(name, ...)
-	end
-
-	return false
 end
 
 function View:onDoubleClick(x, y, mod)
 	if #self.model.project.systems == 0 then
 		mainMenu.loadProjectOrRom(self.model.project)()
-	end
-end
-
-function View:selectViewAtPos(x, y)
-	local idx = self:viewIndexAtPos(x, y)
-	if idx ~= nil then
-		self.model.project._native.selectedSystem = idx - 1
-	end
-end
-
-function View:viewIndexAtPos(x, y)
-	local pos = Point.new(x, y)
-	for i, system in ipairs(self.model.project.systems) do
-		if system.desc.area:contains(pos) == true then
-			return i
-		end
 	end
 end
 
@@ -116,7 +84,47 @@ function View:onPadButton(button, down)
 end
 
 function View:onDrop(x, y, items)
-	print(x, y, items)
+	self:selectViewAtPos(x, y)
+
+	local handled = self:emitComponentEvent("onDrop", items)
+
+	if handled == false then
+		local selectedSystem = self.model.project:getSelected()
+		if selectedSystem ~= nil then
+			selectedSystem:emit("onDrop", items, x, y)
+		end
+	end
+end
+
+function View:selectViewAtPos(x, y)
+	local idx = self:viewIndexAtPos(x, y)
+	if idx ~= nil then
+		self.model.project._native.selectedSystem = idx - 1
+	end
+end
+
+function View:viewIndexAtPos(x, y)
+	local pos = Point.new(x, y)
+	for i, system in ipairs(self.model.project.systems) do
+		if system.desc.area:contains(pos) == true then
+			return i
+		end
+	end
+end
+
+function View:emitComponentEvent(name, ...)
+	local p = self.model.project
+
+	if p:emit(name, ...) == true then
+		return true
+	end
+
+	local selected = p:getSelected()
+	if selected ~= nil then
+		return selected:emit(name, ...)
+	end
+
+	return false
 end
 
 return View

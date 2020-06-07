@@ -80,6 +80,42 @@ local function upgradeRom(path, system, rom)
 	end
 end
 
+local pathutil = require("pathutil")
+
+function Lsdj:onDrop(paths)
+	local system = self:system()
+
+	local songs = {}
+	local kits = {}
+	for _, v in ipairs(paths) do
+		local ext = pathutil.ext(v)
+		if ext == "lsdsng" then table.insert(songs, v) end
+		if ext == "kit" then table.insert(kits, v) end
+	end
+
+	if #kits > 0 then
+		local rom = lsdj.loadRom(system:rom())
+		local err = rom:importKits(kits)
+		if err == nil then
+			system:setRom(rom:toBuffer(), true)
+		else
+			print("Importing kits failed:")
+			table.foreach(err, print)
+		end
+	end
+
+	if #songs > 0 then
+		local sav = lsdj.loadSav(system:sram())
+		local err = sav:importSongs(songs)
+		if err == nil then
+			system:setSram(sav:toBuffer(), true)
+		else
+			print("Importing songs failed:")
+			table.foreach(err, print)
+		end
+	end
+end
+
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
 	local system = self:system()
@@ -173,8 +209,8 @@ function Lsdj:createSongsMenu(menu, sav)
 		dialog.loadFiles({ SONG_FILTER, SAV_FILTER }, function(paths)
 			local err = sav:importSongs(paths)
 			if err == nil then
-				sav:toBuffer(system.sram)
-				system:setSram(system.sram, true)
+				sav:toBuffer(system:sram())
+				system:setSram(system:sram(), true)
 			else
 				print("Import failed:")
 				table.foreach(err, print)

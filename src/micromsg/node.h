@@ -82,16 +82,22 @@ namespace micromsg {
 
 							if (responder.callTypeId != -1) {
 								ResponseHandlerFunc& c = _handlers->responses[responder.callTypeId];
-								if (c != nullptr) {
-									c(envelope, responder.func);
-								} else {
-									callTypeError(_type, envelope->callTypeId, _handlers, "handler");
-									assert(false);
+
+								try {
+									if (c != nullptr) {
+										c(envelope, responder.func);
+									} else {
+										callTypeError(_type, envelope->callTypeId, _handlers, "handler");
+										assert(false);
+									}
+								} catch (...) {
+									std::cout << "Exception in response handler.  Cleaning up and forwarding exception..." << std::endl;
+									cleanupResponse(envelope, responder);
+									_alloc->free(envelope);
+									throw;
 								}
 								
-								_responderStack.push_back(envelope->callId);
-								responder.callTypeId = -1;
-								_funcFactory.free(responder.func);
+								cleanupResponse(envelope, responder);
 							}
 						}
 
@@ -250,6 +256,12 @@ namespace micromsg {
 			RequestQueue* targetQueue = targetNode->_sources[(int)_type];
 			assert(targetQueue);
 			return targetQueue->try_enqueue(message);
+		}
+
+		void cleanupResponse(Envelope* envelope, Responder& responder) {
+			_responderStack.push_back(envelope->callId);
+			responder.callTypeId = -1;
+			_funcFactory.free(responder.func);
 		}
 	};
 }

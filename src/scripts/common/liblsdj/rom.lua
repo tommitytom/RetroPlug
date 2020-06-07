@@ -23,6 +23,8 @@ function Rom:init(romData)
 end
 
 function Rom:importKits(items)
+	self:_parseKits()
+
 	-- Items can contain: a path, a buffer, or an array of paths and buffers
 	local t = type(items)
 	if t == "string" then
@@ -30,9 +32,9 @@ function Rom:importKits(items)
 		local data = fs.load(items)
 		if data ~= nil then
 			local ext = pathutil.ext(items)
-			if ext == ".kit" then
+			if ext == "kit" then
 				self:_importKitFromBuffer(data)
-			elseif ext == ".gb" then
+			elseif ext == "gb" then
 				self:_importKitsFromRom(data)
 			else
 				print("Resource has an unknown file extension " .. ext)
@@ -88,8 +90,8 @@ function Rom:copyFrom(other)
 	for i, kit in ipairs(kits) do newKits[i]:copyFrom(kit) end
 end
 
-function Rom:toBuffer()
-	local romData = DataBuffer.new(self.romData:size())
+function Rom:toBuffer(romData)
+	if romData == nil then romData = DataBuffer.new(self.romData:size()) end
 	self.romData:copyTo(romData)
 
 	local kitIdx = 1

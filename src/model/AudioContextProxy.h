@@ -17,6 +17,7 @@
 #include "sol/sol.hpp"
 
 const int MAX_STATE_SIZE = 512 * 1024;
+const int MAX_SRAM_SIZE = 131072;
 
 class AudioContextProxy {
 private:
@@ -52,7 +53,8 @@ public:
 		FetchStateRequest req;
 
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
-			req.srams[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+			// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
+			req.srams[i] = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
 			req.states[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
 		}
 
@@ -141,7 +143,7 @@ public:
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		plug->setDesc({ inst->romName });
-		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
+		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings, inst->fastBoot);
 
 		if (inst->sourceStateData) {
 			plug->loadState(inst->sourceStateData->data(), inst->sourceStateData->size());
@@ -149,6 +151,9 @@ public:
 
 		if (inst->sourceSavData) {
 			plug->loadBattery(inst->sourceSavData->data(), inst->sourceSavData->size(), false);
+		} else {
+			// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
+			inst->sourceSavData = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
 		}
 
 		SystemSwapDesc swap = { inst->idx, plug, std::make_shared<std::string>(inst->audioComponentState) };
@@ -172,7 +177,7 @@ public:
 		inst->fastBoot = true;
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
-		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings.model, inst->fastBoot);
+		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings, inst->fastBoot);
 		plug->setDesc({ inst->romName });
 
 		SystemDuplicateDesc swap = { (SystemIndex)idx, inst->idx, plug };

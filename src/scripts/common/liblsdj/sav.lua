@@ -63,9 +63,9 @@ function Sav:importSongs(items)
 		local data = fs.load(items)
 		if data ~= nil then
 			local ext = pathutil.ext(items)
-			if ext == ".lsdsng" then
+			if ext == "lsdsng" then
 				self:_importSongFromBuffer(data)
-			elseif ext == ".sav" then
+			elseif ext == "sav" then
 				self:_importSongsFromSav(data)
 			else
 				print("Resource has an unknown file extension " .. ext)
@@ -73,7 +73,7 @@ function Sav:importSongs(items)
 		end
 	elseif t == "table" then
 		for _, v in ipairs(items) do
-			self:importKits(v)
+			self:importSongs(v)
 		end
 	else--if t == "userdata" then
 		if items:size() == LSDJ_SAV_SIZE then
@@ -156,11 +156,27 @@ function Sav:_importSongsFromSav(savData)
 	end
 end
 
+function Sav:nextAvailableProject()
+	for i = 0, LSDJ_SAV_PROJECT_COUNT - 1, 1 do
+		local project = liblsdj.sav_get_project(self._sav, i)
+		print(project)
+		if isNullPtr(project) == true then
+			return i
+		end
+	end
+end
+
 function Sav:_importSongFromBuffer(songData, songIdx)
 	songIdx = songIdx or self:nextAvailableProject()
+	if songIdx == nil then
+		print("Failed to find available project")
+		return
+	end
+
 	local proj, err = liblsdj.project_read_lsdsng_from_memory(songData)
 	if err == lsdj_error_t.SUCCESS then
-		iblsdj.sav_set_project_move(self._sav, songIdx, proj)
+		print(self._sav, songIdx, proj, songData:size())
+		liblsdj.sav_set_project_move(self._sav, songIdx, proj)
 	else
 		-- Fail
 		print("Failed to read song")
