@@ -32,6 +32,15 @@
 BEGIN_IPLUG_NAMESPACE
 BEGIN_IGRAPHICS_NAMESPACE
 
+/** Converts IColor to a LICE color */
+LICE_pixel LiceColor(const IColor& color);
+
+/** Converts IColor to a LICE color, with blend */
+LICE_pixel LiceColor(const IColor& color, const IBlend* pBlend);
+
+/** Converts IBlend to LICE blend mode int */
+int LiceBlendMode(const IBlend* pBlend);
+
 /** IGraphics draw class using Cockos' LICE  
 *   @ingroup DrawClasses */
 class IGraphicsLice : public IGraphics
@@ -74,8 +83,7 @@ public:
   void FillCircle(const IColor& color, float cx, float cy, float r, const IBlend* pBlend) override;
     
   IColor GetPoint(int x, int y) override;
-  void* GetDrawContext() override { return mDrawBitmap->getBits(); }
-  inline LICE_SysBitmap* GetDrawBitmap() const { return mDrawBitmap.get(); }
+  void* GetDrawContext() override { return mDrawBitmap.get(); }
 
   // Not implemented
   void DrawRoundRect(const IColor& color, const IRECT& bounds, float cRTL, float cRTR, float cRBR, float cRBL, const IBlend* pBlend, float thickness) override { /* TODO - mark unsupported */ }
@@ -98,7 +106,7 @@ protected:
   void GetLayerBitmapData(const ILayerPtr& layer, RawBitmapData& data) override;
   void ApplyShadowMask(ILayerPtr& layer, RawBitmapData& mask, const IShadow& shadow) override;
 
-  void DoMeasureText(const IText& text, const char* str, IRECT& bounds) const override;
+  float DoMeasureText(const IText& text, const char* str, IRECT& bounds) const override;
   void DoDrawText(const IText& text, const char* str, const IRECT& bounds, const IBlend* pBlend) override;
 
   void EndFrame() override;

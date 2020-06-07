@@ -14,8 +14,8 @@
 
 enum EControlTags
 {
-  kControlTagScope = 0,
-  kNumControlTags
+  kCtrlTagScope = 0,
+  kNumCtrlTags
 };
 
 const int kNumParams = 4;
@@ -23,7 +23,7 @@ const int kNumParams = 4;
 using namespace iplug;
 using namespace igraphics;
 
-class IPlugFaustDSP : public Plugin
+class IPlugFaustDSP final : public Plugin
 {
 public:
   IPlugFaustDSP(const InstanceInfo& info);
@@ -35,6 +35,6 @@ public:
   void OnIdle() override;
 private:
   FAUST_BLOCK(Faust1, mFaustProcessor, DSP_FILE, 1, 1);
-  IVScopeControl<2>::Sender mScopeSender { kControlTagScope };
+  IBufferSender<2> mScopeSender;
 #endif
 };

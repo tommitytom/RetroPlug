@@ -16,7 +16,7 @@ enum EParams
   kNumParams
 };
 
-enum ECtrlTags
+enum EControlTags
 {
   kCtrlLeftXYPad = 0,
   kCtrlRightXYPad,
@@ -29,12 +29,12 @@ enum ECtrlTags
 using namespace iplug;
 using namespace igraphics;
 
-class MetaParamTest : public Plugin
+class MetaParamTest final : public Plugin
 {
 public:
   MetaParamTest(const InstanceInfo& info);
 
-#if IPLUG_DSP // All DSP methods and member variables should be within an IPLUG_DSP guard, should you want distributed UI
+#if IPLUG_DSP
   void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
 #endif
 };

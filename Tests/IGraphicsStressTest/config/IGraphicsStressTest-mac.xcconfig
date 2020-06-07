@@ -16,7 +16,7 @@ BINARY_NAME = IGraphicsStressTest
 // HEADER AND LIBRARY SEARCH PATHS
 EXTRA_INC_PATHS = $(IGRAPHICS_INC_PATHS)
 EXTRA_LIB_PATHS = $(IGRAPHICS_LIB_PATHS)
-EXTRA_LNK_FLAGS = $(IGRAPHICS_LNK_FLAGS)
+EXTRA_LNK_FLAGS = //$(IGRAPHICS_LNK_FLAGS)
 
 // EXTRA_APP_DEFS =
 // EXTRA_PLUGIN_DEFS =
@@ -57,4 +57,4 @@ GCC_CFLAGS = -Wno-write-strings -mfpmath=sse -msse -msse2 -msse3 //-mavx
 //GCC_FAST_MATH = YES
 
 // uncomment this to enable codesigning - necessary for AUv3 delivery
-//CODE_SIGN_IDENTITY=Mac Developer
+CODE_SIGN_IDENTITY=//Mac Developer

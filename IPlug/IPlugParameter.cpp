@@ -117,6 +117,19 @@ void IParam::InitEnum(const char* name, int defaultVal, int nEnums, const char* 
   }
 }
 
+void IParam::InitEnum(const char* name, int defaultVal, const std::initializer_list<const char*>& listItems, int flags, const char* group)
+{
+  if (mType == kTypeNone) mType = kTypeEnum;
+
+  InitInt(name, defaultVal, 0, static_cast<int>(listItems.size()) - 1, "", flags | kFlagStepped, group);
+
+  int idx = 0;
+  for (auto& item : listItems)
+  {
+    SetDisplayText(idx++, item);
+  }
+}
+
 void IParam::InitInt(const char* name, int defaultVal, int minVal, int maxVal, const char* label, int flags, const char* group)
 {
   if (mType == kTypeNone) mType = kTypeInt;
@@ -172,13 +185,13 @@ void IParam::InitMilliseconds(const char *name, double defaultVal, double minVal
   InitDouble(name, defaultVal, minVal, maxVal, 1, "ms", flags, group, ShapeLinear(), kUnitMilliseconds);
 }
 
-void IParam::InitPitch(const char *name, int defaultVal, int minVal, int maxVal, int flags, const char *group)
+void IParam::InitPitch(const char *name, int defaultVal, int minVal, int maxVal, int flags, const char *group, bool middleCisC)
 {
   InitEnum(name, defaultVal, (maxVal - minVal) + 1, "", flags, group);
   WDL_String displayText;
   for (auto i = minVal; i <= maxVal; i++)
   {
-    MidiNoteName(i, displayText);
+    MidiNoteName(i, displayText, /*cents*/false, middleCisC);
     SetDisplayText(i - minVal, displayText.Get());
   }
 }
@@ -241,7 +254,12 @@ void IParam::SetDisplayText(double value, const char* str)
   strcpy(pDT->mText, str);
 }
 
-void IParam::GetDisplayForHost(double value, bool normalized, WDL_String& str, bool withDisplayText) const
+void IParam::SetDisplayPrecision(int precision)
+{
+  mDisplayPrecision = precision;
+}
+
+void IParam::GetDisplay(double value, bool normalized, WDL_String& str, bool withDisplayText) const
 {
   if (normalized) value = FromNormalized(value);
 
@@ -286,17 +304,17 @@ void IParam::GetDisplayForHost(double value, bool normalized, WDL_String& str, b
   }
 }
 
-const char* IParam::GetNameForHost() const
+const char* IParam::GetName() const
 {
   return mName;
 }
 
-const char* IParam::GetLabelForHost() const
+const char* IParam::GetLabel() const
 {
   return (CStringHasContents(GetDisplayText(static_cast<int>(mValue.load())))) ? "" : mLabel;
 }
 
-const char* IParam::GetGroupForHost() const
+const char* IParam::GetGroup() const
 {
   return mParamGroup;
 }
@@ -369,7 +387,7 @@ void IParam::GetJSON(WDL_String& json, int idx) const
 {
   json.AppendFormatted(8192, "{");
   json.AppendFormatted(8192, "\"id\":%i, ", idx);
-  json.AppendFormatted(8192, "\"name\":\"%s\", ", GetNameForHost());
+  json.AppendFormatted(8192, "\"name\":\"%s\", ", GetName());
   switch (Type())
   {
     case IParam::kTypeNone:
@@ -398,5 +416,5 @@ void IParam::GetJSON(WDL_String& json, int idx) const
 
 void IParam::PrintDetails() const
 {
-  DBGMSG("%s %f", GetNameForHost(), Value());
+  DBGMSG("%s %f", GetName(), Value());
 }

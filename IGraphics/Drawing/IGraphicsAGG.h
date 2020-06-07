@@ -18,6 +18,15 @@
 BEGIN_IPLUG_NAMESPACE
 BEGIN_IGRAPHICS_NAMESPACE
 
+/** Converts IColor to agg::rgba8 */
+agg::rgba8 AGGColor(const IColor& color, float opacity);
+
+/** Converts IBlend to agg::comp_op_e */
+agg::comp_op_e AGGBlendMode(const IBlend* pBlend);
+
+/** Converts IBlend to agg::cover_type */
+agg::cover_type AGGCover(const IBlend* pBlend);
+
 /** IGraphics draw class using Antigrain Geometry
 *   @ingroup DrawClasses*/
 class IGraphicsAGG : public IGraphicsPathBase
@@ -182,7 +191,7 @@ private:
     void SetPath(VertexSourceType& path)
     {
       // Clip
-      IRECT clip = mGraphics.mClipRECT.Empty() ? mGraphics.GetBounds() : mGraphics.mClipRECT;
+      IRECT clip = mGraphics.mClipRECT;
       clip.Translate(mGraphics.XTranslate(), mGraphics.YTranslate());
       clip.Scale(mGraphics.GetBackingPixelScale());
       mRasterizer.clip_box(clip.L, clip.T, clip.R, clip.B);
@@ -267,7 +276,7 @@ protected:
   void GetLayerBitmapData(const ILayerPtr& layer, RawBitmapData& data) override;
   void ApplyShadowMask(ILayerPtr& layer, RawBitmapData& mask, const IShadow& shadow) override;
 
-  void DoMeasureText(const IText& text, const char* str, IRECT& bounds) const override;
+  float DoMeasureText(const IText& text, const char* str, IRECT& bounds) const override;
   void DoDrawText(const IText& text, const char* str, const IRECT& bounds, const IBlend* pBlend) override;
 
 private:

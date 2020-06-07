@@ -25,11 +25,11 @@
 
 #include "Oversampler.h"
 
-#ifndef DEFAULT_FAUST_LIBRARY_PATH
+#ifndef FAUST_LIBRARY_PATH
   #if defined OS_MAC || defined OS_LINUX
-    #define DEFAULT_FAUST_LIBRARY_PATH "/usr/local/share/faust/"
+    #define FAUST_LIBRARY_PATH "/usr/local/share/faust/"
   #else
-   #define DEFAULT_FAUST_LIBRARY_PATH "C:\\Program Files\\Faust\\share\\faust"
+   #define FAUST_LIBRARY_PATH "C:\\Program Files\\Faust\\share\\faust"
   #endif
 #endif
 
@@ -134,7 +134,7 @@ public:
       if(mZones.GetSize() == NParams())
         *(mZones.Get(paramIdx)) = mParams.Get(paramIdx)->Value();
       else
-        DBGMSG("IPlugFaust-%s:: Missing zone for parameter %s\n", mName.Get(), mParams.Get(paramIdx)->GetNameForHost());
+        DBGMSG("IPlugFaust-%s:: Missing zone for parameter %s\n", mName.Get(), mParams.Get(paramIdx)->GetName());
     }
   }
   
@@ -149,7 +149,7 @@ public:
     if(mZones.GetSize() == NParams())
       *(mZones.Get(paramIdx)) = nonNormalizedValue;
     else
-      DBGMSG("IPlugFaust-%s:: Missing zone for parameter %s\n", mName.Get(), mParams.Get(paramIdx)->GetNameForHost());
+      DBGMSG("IPlugFaust-%s:: Missing zone for parameter %s\n", mName.Get(), mParams.Get(paramIdx)->GetName());
     }
     else
       DBGMSG("SetParameterValue called with no FAUST params\n");
@@ -287,17 +287,17 @@ protected:
   {
     for(auto p = 0; p < NParams(); p++)
     {
-      mMap.Insert(mParams.Get(p)->GetNameForHost(), mZones.Get(p)); // insert will overwrite keys with the same name
+      mMap.Insert(mParams.Get(p)->GetName(), mZones.Get(p)); // insert will overwrite keys with the same name
     }
     
-    if(mIPlugParamStartIdx > -1 && mPlug != nullptr) // if we've allready linked parameters
+    if(mIPlugParamStartIdx > -1 && mPlug != nullptr) // if we've already linked parameters
     {
       CreateIPlugParameters(mPlug, mIPlugParamStartIdx);
     }
     
     for(auto p = 0; p < NParams(); p++)
     {
-      DBGMSG("%i %s\n", p, mParams.Get(p)->GetNameForHost());
+      DBGMSG("%i %s\n", p, mParams.Get(p)->GetName());
     }
   }
 
@@ -305,7 +305,7 @@ protected:
   {
     for(auto p = 0; p < NParams(); p++)
     {
-      if(strcmp(name, mParams.Get(p)->GetNameForHost()) == 0)
+      if(strcmp(name, mParams.Get(p)->GetName()) == 0)
       {
         return p;
       }

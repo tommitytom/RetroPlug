@@ -31,15 +31,15 @@ public:
     SetActionFunction([&](IControl* pCaller) {
 
       SetAnimation([&](IControl* pCaller) {
-        auto progress = pCaller->GetAnimationProgress();
+        auto progress = static_cast<float>(pCaller->GetAnimationProgress());
 
-        if(progress > 1.) {
+        if(progress > 1.f) {
           pCaller->OnEndAnimation();
           return;
         }
 
-        IRECT::LinearInterpolateBetween(mStartRect, mEndRect, mDrawnRect, EaseQuadraticIn(progress));
-        IColor::LinearInterpolateBetween(mStartColor, mEndColor, mDrawnColor, progress);
+        mDrawnRect = IRECT::LinearInterpolateBetween(mStartRect, mEndRect, EaseQuadraticIn(progress));
+        mDrawnColor = IColor::LinearInterpolateBetween(mStartColor, mEndColor, progress);
       },
       1000);
     });

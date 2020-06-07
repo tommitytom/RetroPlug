@@ -34,6 +34,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 {
   try
   {
+#ifndef APP_ALLOW_MULTIPLE_INSTANCES
     HANDLE hMutex = OpenMutex(MUTEX_ALL_ACCESS, 0, BUNDLE_NAME); // BUNDLE_NAME used because it won't have spaces in it
     
     if (!hMutex)
@@ -44,7 +45,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
       SetForegroundWindow(hWnd);
       return 0; // should return 1?
     }
-    
+#endif
     gHINSTANCE = hInstance;
     
     InitCommonControls();
@@ -129,7 +130,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
     if (gHWND)
       DestroyWindow(gHWND);
     
+#ifndef APP_ALLOW_MULTIPLE_INSTANCES
     ReleaseMutex(hMutex);
+#endif
   }
   catch(...)
   {
@@ -140,7 +143,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 #pragma mark - MAC
 #elif defined(OS_MAC)
 #import <Cocoa/Cocoa.h>
-#include <IPlugSWELL.h>
+#include "IPlugSWELL.h"
+#include "IPlugPaths.h"
+
 HWND gHWND;
 extern HMENU SWELL_app_stocksysmenu;
 
@@ -156,11 +161,11 @@ int main(int argc, char *argv[])
       NSLog(@"Registered audiounit app extension\n");
     else
       NSLog(@"Failed to register audiounit app extension\n");
-
-//    if(IsSandboxed())
-//      NSLog(@"SANDBOXED\n");
   }
 #endif
+  
+  if(AppIsSandboxed())
+    DBGMSG("App is sandboxed, file system access etc restricted!\n");
   
   return NSApplicationMain(argc,  (const char **) argv);
 }
@@ -266,7 +271,7 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
       MSG* pMSG = (MSG*) parm1;
       NSView* pContentView = (NSView*) pMSG->hwnd;
       NSEvent* pEvent = (NSEvent*) parm2;
-      int etype = [pEvent type];
+      int etype = (int) [pEvent type];
           
       bool textField = [pContentView isKindOfClass:[NSText class]];
           

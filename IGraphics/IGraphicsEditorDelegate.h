@@ -28,6 +28,8 @@ class IControl;
 /** An editor delegate base class for a SOMETHING that uses IGraphics for it's UI */
 class IGEditorDelegate : public IEditorDelegate
 {
+  friend class IGraphics;
+    
 public:
   IGEditorDelegate(int nParams);
   ~IGEditorDelegate();
@@ -39,23 +41,21 @@ public:
   void* OpenWindow(void* pHandle) final;
   void CloseWindow() final;
   void SetScreenScale(double scale) final;
-
+  
+  bool OnKeyDown(const IKeyPress& key) override;
+  bool OnKeyUp(const IKeyPress& key) override;
+    
+  // Default serialization implementations (which serialize the size/scale) = override for custom behaviours
+  bool SerializeEditorState(IByteChunk& chunk) const override;
+  int UnserializeEditorState(const IByteChunk& chunk, int startPos) override;
+    
   //The rest should be final, but the WebSocketEditorDelegate needs to override them
-  void SendControlValueFromDelegate(int controlTag, double normalizedValue) override;
-  void SendControlMsgFromDelegate(int controlTag, int messageTag, int dataSize = 0, const void* pData = nullptr) override;
+  void SendControlValueFromDelegate(int ctrlTag, double normalizedValue) override;
+  void SendControlMsgFromDelegate(int ctrlTag, int msgTag, int dataSize = 0, const void* pData = nullptr) override;
   void SendMidiMsgFromDelegate(const IMidiMsg& msg) override;
   void SendParameterValueFromDelegate(int paramIdx, double value, bool normalized) override;
-  int SetEditorData(const IByteChunk& data, int startPos) override;
 
-  /** If you override this method you must call the parent! */
-  void OnUIOpen() override;
-
-  //IGEditorDelegate
-  /** Attach IGraphics context - only call this method if creating/populating your UI in your plug-in constructor.
-   ** In that case do not override CreateGraphics()! */
-  void AttachGraphics(IGraphics* pGraphics);
-  
-  /** Only override this method if you want to create IGraphics on demand (when UI window opens)! Implementation should return result of MakeGraphics() */
+  /** Called to create the IGraphics instance for this editor. Default impl calls  mMakeGraphicsFunc */
   virtual IGraphics* CreateGraphics()
   {
     if(mMakeGraphicsFunc)
@@ -64,7 +64,7 @@ public:
       return nullptr;
   }
   
-  /** Only override this method if you want to create IGraphics on demand (when UI window opens), or layout controls differently for different UI sizes */
+  /** Called to layout controls when the GUI is initially opened and again if the UI size changes. On subsequent calls you can check for the existence of controls and behave accordingly. Default impl calls  mLayoutFunc */
   virtual void LayoutUI(IGraphics* pGraphics)
   {
     if(mLayoutFunc)
@@ -74,34 +74,25 @@ public:
   /** Get a pointer to the IGraphics context */
   IGraphics* GetUI() { return mGraphics.get(); };
 
-  /** Called from the UI to resize the editor via the plugin and store editor in the base.
-   & This calls through to EditorResizeFromUI after updating the data.
-   * @return \c true if the base API resized the window */
-  bool EditorResize();
-        
-  /** Should be called when editor data changes*/
-  void EditorDataModified();
-
-  /** Override this method to serialize custom editor state data.
-  * @param chunk The output bytechunk where data can be serialized
-  * @return \c true if serialization was successful*/
-  virtual bool SerializeCustomEditorData(IByteChunk& chunk) const { TRACE; return true; }
-    
-  /** Override this method to unserialize custom editor state data
-  * @param chunk The incoming chunk containing the state data.
-  * @param startPos The position in the chunk where the data starts
-  * @return The new chunk position (endPos)*/
-  virtual int UnserializeCustomEditorData(const IByteChunk& chunk, int startPos) { TRACE; return startPos; }
+  /** Serializes the size and scale of the IGraphics.
+   * @param chunk The output chunk to serialize to. Will append data if the chunk has already been started.
+   * @return \c true if the serialization was successful */
+  bool SerializeEditorSize(IByteChunk& data) const;
+  
+  /** Unserializes the size and scale of the IGraphics.
+   * @param chunk The incoming chunk where data is stored to unserialize
+   * @param startPos The start position in the chunk where parameter values are stored
+   * @return The new chunk position (endPos) */
+  int UnserializeEditorSize(const IByteChunk& chunk, int startPos);
     
 protected:
   std::function<IGraphics*()> mMakeGraphicsFunc = nullptr;
   std::function<void(IGraphics* pGraphics)> mLayoutFunc = nullptr;
 private:
-    
-  int UpdateData(const IByteChunk& data, int startPos);
-
   std::unique_ptr<IGraphics> mGraphics;
-  bool mIGraphicsTransient = false; // If creating IGraphics on demand this will be true
+  int mLastWidth = 0;
+  int mLastHeight = 0;
+  float mLastScale = 0.f;
   bool mClosing = false; // used to prevent re-entrancy on closing
 };
 

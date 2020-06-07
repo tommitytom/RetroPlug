@@ -43,10 +43,12 @@ public:
 
   void OnMouseDown(float x, float y, const IMouseMod& mod) override
   {
-    if(mod.S || mod.R)
-      GetUI()->Resize((int) mInitialGraphicsBounds.W(), (int) mInitialGraphicsBounds.H(), 1.f);
-    else
-      GetUI()->StartResizeGesture();
+    GetUI()->StartDragResize();
+  }
+    
+  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override
+  {
+    GetUI()->Resize(static_cast<int>(mInitialGraphicsBounds.W()), static_cast<int>(mInitialGraphicsBounds.H()), 1.f);
   }
 
   void OnRescale() override
@@ -71,7 +73,6 @@ public:
     mMouseOver = false;
     IControl::OnMouseOut();
   }
-
 private:
   float mSize;
   bool mMouseOver = false;
