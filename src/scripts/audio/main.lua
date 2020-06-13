@@ -11,6 +11,7 @@ local LuaMenu = require("Menu")
 local System = require("System")
 local ppq = require("ppq")
 local midi = require("midi")
+local createNativeMenu = require("MenuHelper")
 
 local MAX_INSTANCES = 4
 local _instances = {}
@@ -125,19 +126,11 @@ local _menuLookup = nil
 
 function _onMenu(idx, menus)
 	local menu = LuaMenu()
-	local componentsMenu = menu:subMenu("System"):subMenu("Audio Components")
 
 	local inst = _instances[idx + 1]
+	print("comps", #_instances, inst)
 	if inst ~= nil then
-		componentsMenu
-			:subMenu("Add")
-				:action("MIDI Passthrough")
-				:parent()
-			:separator()
-
 		for _, comp in ipairs(inst.components) do
-			componentsMenu:select(comp.__desc.name, comp:enabled(), function(enabled) comp:setEnabled(enabled) end)
-
 			if comp:enabled() == true and comp.onMenu ~= nil then
 				comp:onMenu(menu)
 			end
@@ -150,6 +143,7 @@ function _onMenu(idx, menus)
 end
 
 function _onMenuResult(idx)
+	print(idx)
 	if _menuLookup ~= nil then
 		local callback = _menuLookup[idx]
 		if callback ~= nil then

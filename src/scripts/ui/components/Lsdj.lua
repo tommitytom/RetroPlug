@@ -122,6 +122,9 @@ function Lsdj:onMenu(menu)
 	local rom = lsdj.loadRom(system:rom())
 	local sav = lsdj.loadSav(system:sram())
 
+	root:subMenu("Sync")
+	root:separator()
+
 	if sav ~= nil then self:createSongsMenu(root:subMenu("Songs"), sav) end
 	self:createKitsMenu(root:subMenu("Kits"), rom)
 

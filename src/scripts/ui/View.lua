@@ -24,6 +24,8 @@ function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
 		self:emitComponentEvent("onKey", key.vk, down)
 	end
+
+	return true
 end
 
 function View:onDoubleClick(x, y, mod)
@@ -55,11 +57,15 @@ function View:onMouseDown(x, y, mod)
 			end
 		end
 
-		-- Get component menus
-		-- Get audio context menus
-
 		self._menuLookup = {}
 		local nativeMenu = createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, self._menuLookup, true)
+		local audioMenus = self.model.audioContext:onMenu(selectedIdx - 1)
+
+		if #audioMenus > 0 then
+			--nativeutil.mergeMenu(nativeMenu, audioMenus[1])
+			nativeutil.mergeMenu(audioMenus[1], nativeMenu)
+		end
+
 		self.view:requestMenu(nativeMenu)
 	end
 end
@@ -67,10 +73,7 @@ end
 function View:onMenuResult(idx)
 	if self._menuLookup ~= nil then
 		local callback = self._menuLookup[idx]
-		if callback ~= nil then
-			callback()
-		end
-
+		if callback ~= nil then callback() end
 		self._menuLookup = nil
 	end
 end

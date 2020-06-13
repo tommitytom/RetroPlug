@@ -189,7 +189,8 @@ void UiLuaContext::setup() {
 		"setRom", &AudioContextProxy::setRom,
 		"setSram", &AudioContextProxy::setSram,
 		"updateSram", &AudioContextProxy::updateSram,
-		"updateSystemSettings", &AudioContextProxy::updateSystemSettings
+		"updateSystemSettings", &AudioContextProxy::updateSystemSettings,
+		"onMenu", &AudioContextProxy::onMenu
 	);
 	
 	s.new_usertype<ViewWrapper>("ViewWrapper",
@@ -308,8 +309,11 @@ void UiLuaContext::setup() {
 		"isValid", &zipp::Writer::isValid
 	);
 
+	s.create_named_table("nativeutil", 
+		"mergeMenu", mergeMenu
+	);
+
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
-	//s["_proxy"].set(_proxy);
 
 	if (!runScript(_state, "require('main')")) {
 		return;

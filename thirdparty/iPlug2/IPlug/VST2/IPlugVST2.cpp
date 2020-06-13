@@ -487,9 +487,23 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     }
     case effGetChunk:
     {
-      uint8_t** ppData = (uint8_t**) ptr;
+      uint8_t** ppData = (uint8_t**)ptr;
       if (ppData)
       {
+        // START HACK ----------------------
+        IByteChunk& c = _this->mState;
+        c.Clear();
+        bool ok = _this->SerializeState(c);
+
+        if (ok && c.Size())
+        {
+          *ppData = c.GetData();
+          return c.Size();
+        }
+
+        return 0;
+        // END HACK ----------------------
+
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
         IByteChunk::InitChunkWithIPlugVer(chunk);
@@ -499,8 +513,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         {
           _this->ModifyCurrentPreset();
           savedOK = static_cast<IPluginBase*>(_this)->SerializePresets(chunk);
-        }
-        else
+        } else
         {
           savedOK = _this->SerializeState(chunk);
         }
@@ -517,9 +530,18 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     {
       if (ptr)
       {
+        // START HACK ----------------------
+        _this->mState.Clear();
+        _this->mState.Resize((int)value);
+        memcpy(_this->mState.GetData(), ptr, value);
+        int p = _this->UnserializeState(_this->mState, 0);
+        _this->OnRestoreState();
+        return 1;
+        // END HACK ----------------------
+
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
-        chunk.Resize((int) value);
+        chunk.Resize((int)value);
         memcpy(chunk.GetData(), ptr, value);
         int pos = 0;
         int iplugVer = IByteChunk::GetIPlugVerFromChunk(chunk, pos);
@@ -528,8 +550,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         if (isBank)
         {
           pos = static_cast<IPluginBase*>(_this)->UnserializePresets(chunk, pos);
-        }
-        else
+        } else
         {
           pos = _this->UnserializeState(chunk, pos);
           _this->ModifyCurrentPreset();

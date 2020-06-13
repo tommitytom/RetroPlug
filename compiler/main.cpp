@@ -27,7 +27,7 @@ const char* headerCode = R"(#include "CompiledLua.h"
 #include <string>
 
 struct CompiledScript {
-	const char* data;
+	const unsigned char* data;
 	size_t size;
 };
 
@@ -40,7 +40,7 @@ int compiledScriptLoader(lua_State* state) {
 	const char* name = lua_tostring(state, -1);
 	auto found = _compiledScripts.find(name);
 	if (found != _compiledScripts.end()) {
-		luaL_loadbuffer(state, found->second.data, found->second.size, name);
+		luaL_loadbuffer(state, (const char*)found->second.data, found->second.size, name);
 		return 1;
 	}
 
@@ -69,6 +69,7 @@ std::string getScriptName(fs::path path) {
 
 std::string getScriptVarName(std::string name) {
 	std::replace(name.begin(), name.end(), '.', '_');
+	std::replace(name.begin(), name.end(), '-', '_');
 	return "_" + name + "_LUA_";
 }
 
@@ -116,7 +117,7 @@ bool parseDirectory(fs::path dirPath, std::stringstream& out, std::vector<Compil
 			CompiledScript s = { name, data.size() };
 			descs.push_back(s);
 
-			out << "const char " << getScriptVarName(s.name) << "[" << s.size << "] = { ";
+			out << "const unsigned char " << getScriptVarName(s.name) << "[] = { ";
 			for (size_t i = 0; i < data.size(); ++i) {
 				if (i != 0) out << ", ";
 				out << (unsigned int)data[i];

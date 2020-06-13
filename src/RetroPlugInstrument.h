@@ -16,6 +16,9 @@ private:
 
 	RetroPlugController _controller;
 
+	std::set<std::thread::id> _audioThreadIds;
+	std::set<std::thread::id> _uiThreadIds;
+
 public:
 	RetroPlugInstrument(const InstanceInfo& info);
 	~RetroPlugInstrument();
@@ -26,8 +29,8 @@ public:
 	void ProcessMidiMsg(const IMidiMsg& msg) override;
 	void OnReset() override;
 	void OnIdle() override;
-	bool OnKeyDown(const IKeyPress& key) { return GetUI()->OnKeyDown(0, 0, key); }
-	bool OnKeyUp(const IKeyPress& key) { return GetUI()->OnKeyUp(0, 0, key); }
+	bool OnKeyDown(const IKeyPress& key) { _uiThreadIds.insert(std::this_thread::get_id()); return GetUI()->OnKeyDown(0, 0, key); }
+	bool OnKeyUp(const IKeyPress& key) { _uiThreadIds.insert(std::this_thread::get_id()); return GetUI()->OnKeyUp(0, 0, key); }
 
 	bool SerializeState(IByteChunk& chunk) const override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;

@@ -11,6 +11,7 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 
 #if IPLUG_EDITOR
 	mMakeGraphicsFunc = [&]() {
+		_uiThreadIds.insert(std::this_thread::get_id());
 		return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, 1.);
 	};
 
@@ -25,17 +26,9 @@ RetroPlugInstrument::~RetroPlugInstrument() {
 	delete[] _sampleScratch;
 }
 
-std::thread::id _procThreadId;
-std::thread::id _serializeThreadId;
-
 #if IPLUG_DSP
 void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int frameCount) {
-	if (_procThreadId != std::this_thread::get_id()) {
-		_procThreadId = std::this_thread::get_id();
-		std::stringstream ss;
-		ss << "Proc id: " << _procThreadId;
-		consoleLogLine(ss.str());
-	}
+	_audioThreadIds.insert(std::this_thread::get_id());
 
 	for (size_t j = 0; j < MaxNChannels(ERoute::kOutput); j++) {
 		for (size_t i = 0; i < frameCount; i++) {
@@ -50,19 +43,38 @@ void RetroPlugInstrument::OnIdle() {
 
 }
 
+std::set<std::thread::id> _serializeThreadIds;
+
+#include <string>
+
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
-	if (_serializeThreadId != std::this_thread::get_id()) {
-		_serializeThreadId = std::this_thread::get_id();
-		std::stringstream ss;
-		ss << "_serializeThreadId: " << _serializeThreadId;
-		consoleLogLine(ss.str());
-	}
+	_serializeThreadIds.insert(std::this_thread::get_id());
+
+	
 
 	/*std::string target;
 	serialize(target, _plug);
 	chunk.PutStr(target.c_str());*/
 
 	chunk.PutStr("Hello");
+
+	for (auto id : _serializeThreadIds) {
+		std::stringstream ss;
+		ss << "Serialize: " << id << std::endl;
+		consoleLogLine(ss.str());
+	}
+
+	for (auto id : _audioThreadIds) {
+		std::stringstream ss;
+		ss << "Audio: " << id << std::endl;
+		consoleLogLine(ss.str());
+	}
+
+	for (auto id : _uiThreadIds) {
+		std::stringstream ss;
+		ss << "UI: " << id << std::endl;
+		consoleLogLine(ss.str());
+	}
 
 	return true;
 }

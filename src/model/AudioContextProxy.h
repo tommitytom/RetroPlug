@@ -219,4 +219,14 @@ public:
 	void updateSettings() {
 		_node->push<calls::UpdateProjectSettings>(NodeTypes::Audio, _project.settings);
 	}
+
+	std::vector<Menu*> onMenu(SystemIndex idx) {
+		std::vector<Menu*> items;
+		_audioController->onMenu(idx, items);
+		return items;
+	}
+
+	void onMenuResult(int idx) {
+		_node->push<calls::ContextMenuResult>(NodeTypes::Audio, idx);
+	}
 };

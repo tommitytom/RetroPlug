@@ -116,7 +116,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 					callbacks[tag]();
 				} else if (tag >= LUA_UI_MENU_ID_OFFSET) {
 					_lua->onMenuResult(tag);
-					//_proxy->onMenuResult(tag);
+					_proxy->onMenuResult(tag);
 				}
 
 				ProcessDialog();

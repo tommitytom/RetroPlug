@@ -73,9 +73,6 @@
     <ClCompile Include="..\src\util\File.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\roms\Lsdj.cpp">
-      <Filter>src\roms</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\platform\FileDialog.cpp">
       <Filter>src\platform</Filter>
     </ClCompile>
@@ -90,111 +87,6 @@
     </ClCompile>
     <ClCompile Include="..\src\util\crc32.cpp">
       <Filter>src\util</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcherWin32.cpp">
-      <Filter>filewatcher</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\simplefilewatcher\source\FileWatcher.cpp">
-      <Filter>filewatcher</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltablib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltm.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lundump.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lutf8lib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lvm.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lzio.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lapi.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lauxlib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbaselib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lbitlib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcode.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lcorolib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lctype.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldblib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldebug.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldo.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ldump.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lfunc.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lgc.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\linit.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\liolib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\llex.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmathlib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lmem.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loadlib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lobject.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lopcodes.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\loslib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lparser.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstate.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstring.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\lstrlib.c">
-      <Filter>lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\thirdparty\lua-5.3.5\src\ltable.c">
-      <Filter>lua</Filter>
     </ClCompile>
     <ClCompile Include="..\src\view\ContextMenu.cpp">
       <Filter>src\view</Filter>
@@ -218,9 +110,6 @@
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="..\src\model\FileManager.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\model\RetroPlugProxy.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="..\src\platform\ResourceWin.cpp">
@@ -462,9 +351,6 @@
     <ClInclude Include="..\src\audio\resampler.h">
       <Filter>src\audio</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\roms\Lsdj.h">
-      <Filter>src\roms</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\plugs\SameBoyPlug.h">
       <Filter>src\plugs</Filter>
     </ClInclude>
@@ -510,84 +396,6 @@
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h">
       <Filter>src\plugs</Filter>
     </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltable.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ltm.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lua.hpp">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\luaconf.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lualib.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lundump.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lvm.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lzio.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lapi.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lauxlib.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lcode.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lctype.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldebug.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\ldo.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lfunc.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lgc.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llex.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\llimits.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lmem.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lobject.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lopcodes.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lparser.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lprefix.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstate.h">
-      <Filter>lua</Filter>
-    </ClInclude>
-    <ClInclude Include="..\thirdparty\lua-5.3.5\src\lstring.h">
-      <Filter>lua</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\view\ContextMenu.h">
       <Filter>src\view</Filter>
     </ClInclude>
@@ -631,9 +439,6 @@
       <Filter>src\model</Filter>
     </ClInclude>
     <ClInclude Include="..\src\model\Project.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\model\RetroPlugProxy.h">
       <Filter>src\model</Filter>
     </ClInclude>
     <ClInclude Include="..\src\model\ButtonStream.h">
@@ -707,9 +512,6 @@
     <Filter Include="src\util">
       <UniqueIdentifier>{c3a57313-5270-4798-a146-5fd01716d4b3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\roms">
-      <UniqueIdentifier>{8db0a008-ed2a-4461-9cb3-ca4cbb83db34}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\plugs">
       <UniqueIdentifier>{656de9b9-28f4-40b1-a48b-be57bc35e224}</UniqueIdentifier>
     </Filter>
@@ -718,12 +520,6 @@
     </Filter>
     <Filter Include="liblsdj">
       <UniqueIdentifier>{f0d9f763-1881-4289-9bef-9d41367e1ee6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="filewatcher">
-      <UniqueIdentifier>{85a77b35-570e-459a-aeae-9d1c027a92f0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="lua">
-      <UniqueIdentifier>{281147aa-0cfb-458a-a76c-4b65b5613273}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\view">
       <UniqueIdentifier>{895c4808-5e39-41da-aed8-886c99444964}</UniqueIdentifier>
@@ -756,9 +552,6 @@
     </None>
     <None Include="..\config\common-win.props">
       <Filter>config</Filter>
-    </None>
-    <None Include="..\thirdparty\lua-5.3.5\src\Makefile">
-      <Filter>lua</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
