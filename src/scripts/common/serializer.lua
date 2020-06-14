@@ -27,7 +27,7 @@ local function serializeInstances(instances)
 
 	for i, inst in ipairs(instances) do
 		if inst ~= nil then
-			target[i] = serializeComponents(inst)
+			target[i] = serializeComponents(inst.components)
 		end
 	end
 
@@ -39,12 +39,12 @@ local function serializeInstancesToString(instances)
 end
 
 local function serializeInstanceToString(instance)
-	return serpent.dump(serializeComponents(instance), { comment = false })
+	return serpent.dump(serializeComponents(instance.components), { comment = false })
 end
 
 local function deserializeInstance(instance, model)
 	for compName, compModel in pairs(model) do
-		local component = instance.components[compName]
+		local component = findComponentByName(instance.components, compName)
 		if component ~= nil then
 			local found = component["onDeserialize"]
 			if found ~= nil then

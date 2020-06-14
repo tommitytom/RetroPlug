@@ -29,6 +29,7 @@ private:
 	std::atomic_bool _reload = false;
 
 	sol::table _viewRoot;
+	bool _valid = false;
 
 public:
 	UiLuaContext(): _state(nullptr), _proxy(nullptr) {}
@@ -67,5 +68,5 @@ public:
 	void handleDialogCallback(const std::vector<std::string>& paths);
 
 private:
-	void setup();
+	bool setup();
 };

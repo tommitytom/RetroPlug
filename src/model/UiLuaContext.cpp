@@ -75,12 +75,18 @@ void UiLuaContext::onMenuResult(int id) {
 }
 
 void UiLuaContext::reload() {
-	callFunc(_viewRoot, "onReloadBegin");
+	if (_valid) {
+		callFunc(_viewRoot, "onReloadBegin");
+	}
+	
 	shutdown();
 	setup();
-	callFunc(_viewRoot, "onReloadEnd");
 
-	_haltFrameProcessing = false;	
+	if (_valid) {
+		callFunc(_viewRoot, "onReloadEnd");
+	}
+	
+	_haltFrameProcessing = !_valid;
 }
 
 void UiLuaContext::shutdown() {
@@ -108,9 +114,10 @@ bool isNullPtr(const sol::object o) {
 	return false;
 }
 
-void UiLuaContext::setup() {
+bool UiLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 
+	_valid = false;
 	_state = new sol::state();
 	sol::state& s = *_state;
 
@@ -319,11 +326,11 @@ void UiLuaContext::setup() {
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 
 	if (!runScript(_state, "require('main')")) {
-		return;
+		return false;
 	}
 
 	if (!callFuncRet(_state, "_getView", _viewRoot)) {
-		return;
+		return false;
 	}
 
 	consoleLogLine("Looking for components...");
@@ -357,4 +364,7 @@ void UiLuaContext::setup() {
 	if (!callFunc(_viewRoot, "setup", &_viewWrapper, _proxy)) {
 		consoleLogLine("Failed to setup view");
 	}
+
+	_valid = true;
+	return true;
 }

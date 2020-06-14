@@ -44,7 +44,7 @@ function Project:emit(eventName, ...)
 end
 
 function Project:clear()
-	-- TODO: Recreate components on clear?
+	-- TODO: Recreate project components on clear?
 	--self.components = ComponentManager.createProjectComponents(self)
 	self.systems = {}
 	self._audioContext:clearProject()
