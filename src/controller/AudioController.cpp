@@ -88,7 +88,7 @@ void AudioController::setNode(Node* node) {
 
 	node->on<calls::PressButtons>([&](const ButtonPressState& presses) {
 		SameBoyPlugPtr& instance = _processingContext.getInstance(presses.idx);
-		if (instance) {
+		if (instance) { 
 			instance->pressButtons(presses.buttons.presses.data(), presses.buttons.pressCount);
 		}
 	});

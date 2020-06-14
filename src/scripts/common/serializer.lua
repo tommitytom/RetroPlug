@@ -15,9 +15,7 @@ local function serializeComponents(components)
 		if found ~= nil then
 			-- TODO: Should maybe base the component name on the filename rather
 			-- than using the user defined name here
-			local componentData = { __componentName = v.__desc.name }
-			found(v, componentData)
-			table.insert(serialized, componentData)
+			serialized[v.__desc.name] = found(v)
 		end
 	end
 
@@ -45,8 +43,8 @@ local function serializeInstanceToString(instance)
 end
 
 local function deserializeInstance(instance, model)
-	for _, compModel in ipairs(model) do
-		local component = findComponentByName(instance.components, compModel.__componentName)
+	for compName, compModel in pairs(model) do
+		local component = instance.components[compName]
 		if component ~= nil then
 			local found = component["onDeserialize"]
 			if found ~= nil then

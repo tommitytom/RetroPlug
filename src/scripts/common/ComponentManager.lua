@@ -50,7 +50,9 @@ local function createComponent(target, name)
 	end
 end
 
-local function createSystemComponents(system)
+local function createSystemComponents(system, componentData)
+	componentData = componentData or {}
+
 	print("------- SYSTEM COMPONENTS -------")
 	local desc = system.desc
 	local components = {}
@@ -60,6 +62,12 @@ local function createSystemComponents(system)
 			print("Attaching component " .. d.name)
 			local valid, ret = pcall(componentType.new, system)
 			if valid then
+				-- Deserialize the component if we have available data
+				local d = componentData[d.name]
+				if d ~= nil then
+					if ret.onDeserialize ~= nil then ret:onDeserialize(d) end
+				end
+
 				table.insert(components, ret)
 				table.insert(_allComponents, ret)
 			else

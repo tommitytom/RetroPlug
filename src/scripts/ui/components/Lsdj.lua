@@ -16,20 +16,22 @@ end
 
 local Lsdj = component({ name = "LSDj", romName = "LSDj*", version = "1.0.0" })
 function Lsdj:init()
-	self._littleFm = false
-	self._overclock = false
-	self._keyboardShortcuts = true
+	self._state = {
+		littleFm = false,
+		overclock = false,
+		keyboardShortcuts = true
+	}
 
 	self.__keyboardActions = KeyboardActions(self:system())
 	self:registerActions(self.__keyboardActions)
 end
 
-function Lsdj:onSerialize(target)
-	util.serializeComponent(self, target)
+function Lsdj:onSerialize()
+	return self._state
 end
 
 function Lsdj:onDeserialize(source)
-	util.deserializeComponent(self, source)
+	self._state = source
 end
 
 function Lsdj:onBeforeButton(button, down)
@@ -66,7 +68,7 @@ end
 
 function Lsdj:updateRom()
 	local d = self:system().sourceRomData
-	overclockPatch(d, self._overclock)
+	overclockPatch(d, self._state.overclock)
 end
 
 local function upgradeRom(path, system, rom)
@@ -129,11 +131,11 @@ function Lsdj:onMenu(menu)
 	self:createKitsMenu(root:subMenu("Kits"), rom)
 
 	root:separator()
-		:select("Keyboard Shortcuts", self._keyboardShortcuts, function(v) self._keyboardShortcuts = v end)
+		:select("Keyboard Shortcuts", self._state.keyboardShortcuts, function(v) self._state.keyboardShortcuts = v end)
 		:separator()
 		--[[:subMenu("Patches")
-			:select("LitteFM", self._littleFm, function(v) self._littleFm = v; self:updateRom() end)
-			:select("4x Overclock", self._overclock, function(v) self._overclock = v; self:updateRom() end)
+			:select("LitteFM", self._state.littleFm, function(v) self._state.littleFm = v; self:updateRom() end)
+			:select("4x Overclock", self._state.overclock, function(v) self._state.overclock = v; self:updateRom() end)
 			:parent()]]
 		:action("Export ROM...", function()
 			dialog.saveFile({ ROM_FILTER }, system.desc.romName, function(path) rom:toFile(path) end)

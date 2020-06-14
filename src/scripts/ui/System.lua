@@ -2,6 +2,7 @@ local class = require("class")
 local util = require("util")
 local const = require("const")
 local fs = require("fs")
+local serpent = require("serpent")
 local pathutil = require("pathutil")
 local fileutil = require("util.file")
 local componentutil = require("util.component")
@@ -15,7 +16,8 @@ function System:init(desc, model)
 	if type(desc) == "userdata" then
 		if desc.__type.name == "SystemDesc" then
 			self.desc = desc
-			self.components = ComponentManager.createSystemComponents(self)
+			local _, componentState = serpent.load(desc.uiComponentState)
+			self.components = ComponentManager.createSystemComponents(self, componentState)
 		elseif desc.__type.name == "DataBuffer" then
 			self:loadRom(desc)
 		end

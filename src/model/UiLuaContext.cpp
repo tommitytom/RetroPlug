@@ -75,9 +75,12 @@ void UiLuaContext::onMenuResult(int id) {
 }
 
 void UiLuaContext::reload() {
+	callFunc(_viewRoot, "onReloadBegin");
 	shutdown();
 	setup();
-	_haltFrameProcessing = false;
+	callFunc(_viewRoot, "onReloadEnd");
+
+	_haltFrameProcessing = false;	
 }
 
 void UiLuaContext::shutdown() {

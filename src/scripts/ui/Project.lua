@@ -26,6 +26,8 @@ function Project:init(audioContext)
 		end
 	end
 
+	self:deserializeComponents()
+
 	self:emit("onComponentsInitialized", self.components)
 	self:emit("onSetup")
 
@@ -87,6 +89,8 @@ function Project:load(data)
 	self._audioContext:updateSettings()
 
 	self.components = ComponentManager.createProjectComponents(self)
+
+	self:deserializeComponents()
 
 	for _, system in ipairs(systems) do
 		self:addSystem(system)
@@ -165,7 +169,45 @@ end
 
 function Project:setComponentEnabled(idx, enabled)
 	local component = self.components[idx]
+end
 
+-- Serializes all components to a single string that
+-- is stored on the native part of the system (SystemDesc).
+-- This is useful for storing state between reloads.
+function Project:serializeComponents()
+	for _, system in ipairs(self.systems) do
+		local systemComponents = {}
+		for _, comp in ipairs(system.components) do
+			local data = {}
+			if comp.onSerialize ~= nil then
+				-- TODO: Put this in a pcall?
+				data = comp.onSerialize(comp)
+			end
+
+			systemComponents[comp.__desc.name] = data
+		end
+
+		system.desc.uiComponentState = serpent.dump(systemComponents)
+	end
+end
+
+function Project:deserializeComponents()
+	for _, system in ipairs(self.systems) do
+		if #system.desc.uiComponentState > 0 then
+			local ok, systemComponents = serpent.load(system.desc.uiComponentState)
+			if ok and systemComponents then
+				for _, comp in ipairs(system.components) do
+					local compData = systemComponents[comp.__desc.name]
+					if compData and comp.onDeserialize then
+						-- TODO: Put this in a pcall?
+						comp.onDeserialize(comp, compData)
+					end
+				end
+			end
+
+			system.desc.uiComponentState = ""
+		end
+	end
 end
 
 function Project:addSystem(system)

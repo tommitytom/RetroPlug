@@ -53,7 +53,12 @@ function View:onMouseDown(x, y, mod)
 		local selectedSystem = self.model.project:getSelected()
 		if selectedSystem ~= nil then
 			for _, comp in ipairs(selectedSystem.components) do
-				if comp.onMenu ~= nil then comp:onMenu(menu) end
+				if comp.onMenu ~= nil then
+					local valid, ret = pcall(comp.onMenu, comp, menu)
+					if valid == false then
+						print("Failed to process component menu for " .. comp.__desc.name ..": " .. ret)
+					end
+				end
 			end
 		end
 
@@ -62,7 +67,6 @@ function View:onMouseDown(x, y, mod)
 		local audioMenus = self.model.audioContext:onMenu(selectedIdx - 1)
 
 		if #audioMenus > 0 then
-			--nativeutil.mergeMenu(nativeMenu, audioMenus[1])
 			nativeutil.mergeMenu(audioMenus[1], nativeMenu)
 		end
 
@@ -97,6 +101,14 @@ function View:onDrop(x, y, items)
 			selectedSystem:emit("onDrop", items, x, y)
 		end
 	end
+end
+
+function View:onReloadBegin()
+	self.model.project:serializeComponents()
+end
+
+function View:onReloadEnd()
+
 end
 
 function View:selectViewAtPos(x, y)

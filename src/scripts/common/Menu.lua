@@ -11,6 +11,7 @@ end
 
 function Menu:multiSelect(items, selected, handler, active)
     if active == nil then active = true end
+    if selected == nil then selected = 1 end
 
     table.insert(self.items, {
         type = MenuItemType.MultiSelect,
@@ -25,6 +26,7 @@ end
 
 function Menu:select(name, checked, handler, active)
     if active == nil then active = true end
+    if checked == nil then checked = false end
 
     table.insert(self.items, {
         type = MenuItemType.Select,

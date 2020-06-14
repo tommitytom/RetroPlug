@@ -128,7 +128,6 @@ function _onMenu(idx, menus)
 	local menu = LuaMenu()
 
 	local inst = _instances[idx + 1]
-	print("comps", #_instances, inst)
 	if inst ~= nil then
 		for _, comp in ipairs(inst.components) do
 			if comp:enabled() == true and comp.onMenu ~= nil then
