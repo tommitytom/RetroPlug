@@ -111,6 +111,14 @@ function View:onReloadEnd()
 
 end
 
+function View:saveState(target)
+	self.model.project:save(target, false, true)
+end
+
+function View:loadState(buffer)
+	self.model.project:load(buffer)
+end
+
 function View:selectViewAtPos(x, y)
 	local idx = self:viewIndexAtPos(x, y)
 	if idx ~= nil then

@@ -107,13 +107,18 @@ function Project:load(data)
 	if self:getSelectedIndex() == 0 and #self.systems > 0 then self:setSelected(1) end
 end
 
-function Project:save(path, pretty)
-	self._audioContext:fetchSystemStates(function(systemStates)
+function Project:save(path, pretty, immediate)
+	if pretty == nil then pretty = true end
+	if immediate == nil then immediate = false end
+
+	self._audioContext:fetchSystemStates(immediate, function(systemStates)
 		if path == nil then
 			path = self._native.path
 			assert(path ~= "")
-		else
+		elseif type(path) == "string" then
 			self._native.path = path
+		else
+			path = self._native.path
 		end
 
 		local data = self:serializeProject(systemStates, self._native, pretty)

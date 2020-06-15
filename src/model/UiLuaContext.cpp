@@ -101,6 +101,16 @@ void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 	callFunc(_viewRoot, "onDialogResult", paths);
 }
 
+DataBufferPtr UiLuaContext::saveState() {
+	DataBufferPtr buffer = std::make_shared<DataBuffer<char>>();
+	callFunc(_viewRoot, "saveState", buffer);
+	return buffer;
+}
+
+void UiLuaContext::loadState(DataBufferPtr buffer) {
+	callFunc(_viewRoot, "loadState", buffer);
+}
+
 bool isNullPtr(const sol::object o) {
 	switch (o.get_type()) {
 		case sol::type::nil: return true;
@@ -303,6 +313,8 @@ bool UiLuaContext::setup() {
 
 	s.new_usertype<zipp::Writer>("ZipWriter",
 		"new", sol::factories(
+			[]() { return std::make_shared<zipp::Writer>(); },
+			[](const zipp::WriterSettings& settings) { return std::make_shared<zipp::Writer>(settings); },
 			[](std::string_view path) { return std::make_shared<zipp::Writer>(path); },
 			[](std::string_view path, const zipp::WriterSettings& settings) { return std::make_shared<zipp::Writer>(path, settings); }
 		),
@@ -316,7 +328,8 @@ bool UiLuaContext::setup() {
 			}
 		),
 		"close", &zipp::Writer::close,
-		"isValid", &zipp::Writer::isValid
+		"isValid", &zipp::Writer::isValid,
+		"getBuffer", &zipp::Writer::getBuffer
 	);
 
 	s.create_named_table("nativeutil", 

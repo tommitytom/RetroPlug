@@ -32,7 +32,7 @@ public:
 	bool OnKeyDown(const IKeyPress& key) { _uiThreadIds.insert(std::this_thread::get_id()); return GetUI()->OnKeyDown(0, 0, key); }
 	bool OnKeyUp(const IKeyPress& key) { _uiThreadIds.insert(std::this_thread::get_id()); return GetUI()->OnKeyUp(0, 0, key); }
 
-	bool SerializeState(IByteChunk& chunk) const override;
+	bool SerializeState(IByteChunk& chunk) override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;
 private:
 	void GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged);

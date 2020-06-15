@@ -77,6 +77,10 @@ public:
 
 	AudioLuaContextPtr& audioLua() { return _audioController.getLuaContext(); }
 
+	DataBufferPtr saveState() { return _uiLua.saveState(); }
+
+	void loadState(DataBufferPtr buffer) { _uiLua.loadState(buffer); }
+
 private:
 	void processPad();
 };

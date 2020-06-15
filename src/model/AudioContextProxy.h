@@ -49,7 +49,7 @@ public:
 		_audioController->getSram(idx, buffer);
 	}
 
-	void fetchSystemStates(std::function<void(const FetchStateResponse&)> cb) {
+	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)> cb) {
 		FetchStateRequest req;
 
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
@@ -58,7 +58,15 @@ public:
 			req.states[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
 		}
 
-		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+		if (immediate) {
+			FetchStateResponse res;
+			_audioController->getLock()->lock();
+			_audioController->fetchState(req, res);
+			_audioController->getLock()->unlock();
+			cb(res);
+		} else {
+			_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+		}
 	}
 
 	void setScriptDirs(const std::string& configPath, const std::string& scriptPath) {

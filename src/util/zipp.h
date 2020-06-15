@@ -2,6 +2,8 @@
 #include "mz_os.h"
 #include "mz_strm.h"
 #include "mz_strm_buf.h"
+#include "mz_strm_os.h"
+#include "mz_strm_mem.h"
 #include "mz_strm_split.h"
 #include "mz_zip.h"
 #include "mz_zip_rw.h"
@@ -41,6 +43,7 @@ namespace zipp {
 	class Writer {
 	private:
 		void* _handle = nullptr;
+		void* _memStream = nullptr;
 		bool _valid = false;
 		WriterSettings _settings;
 
@@ -58,13 +61,35 @@ namespace zipp {
 			}
 		}
 
-		Writer(std::stringstream& target, const WriterSettings& settings = WriterSettings()) {
+		Writer(const WriterSettings& settings = WriterSettings()) : _valid(false) {
 			mz_zip_writer_create(&_handle);
-			
+
+			mz_stream_mem_create(&_memStream);
+			mz_stream_mem_set_grow_size(_memStream, 1024);
+			int32_t err = mz_stream_open(_memStream, NULL, MZ_OPEN_MODE_CREATE);
+			_valid = err == MZ_OK;
+
+			if (_valid) {
+				err = mz_zip_open(&_handle, _memStream, MZ_OPEN_MODE_WRITE);
+				_valid = err == MZ_OK;
+			}
 		}
 
 		~Writer() {
 			close();
+		}
+
+		std::string_view getBuffer() const {
+			if (_memStream) {
+				void* buffer;
+				mz_stream_mem_get_buffer(_memStream, (const void**)&buffer);
+				mz_stream_mem_seek(_memStream, 0, MZ_SEEK_END);
+				size_t bufferSize = (size_t)mz_stream_mem_tell(_memStream);
+				return std::string_view((const char*)buffer, bufferSize);
+			}
+
+			assert(_memStream);
+			return std::string_view();
 		}
 
 		bool isValid() const {
@@ -74,6 +99,12 @@ namespace zipp {
 		void close() {
 			if (_handle) {
 				mz_zip_writer_close(_handle);
+
+				if (_memStream) {
+					mz_stream_mem_delete(&_memStream);
+					_memStream = nullptr;
+				}
+				
 				mz_zip_writer_delete(&_handle);
 				_handle = nullptr;
 				_valid = false;
@@ -231,7 +262,7 @@ namespace zipp {
 			target.resize(entryInfo->uncompressed_size);
 			err = mz_zip_reader_entry_open(_handle);
 			if (err != MZ_OK) return false;
-			err = mz_zip_reader_entry_read(_handle, target.data(), entryInfo->uncompressed_size);
+			err = mz_zip_reader_entry_read(_handle, target.data(), (int32_t)entryInfo->uncompressed_size);
 			if (err != entryInfo->uncompressed_size) return false;
 			err = mz_zip_reader_entry_close(_handle);
 			if (err != MZ_OK) return false;

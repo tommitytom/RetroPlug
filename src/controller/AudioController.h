@@ -29,6 +29,8 @@ public:
 
 	//ProcessingContext* getProcessingContext() { return &_processingContext; }
 
+	void fetchState(const FetchStateRequest& req, FetchStateResponse& state);
+
 	bool getSram(SystemIndex idx, DataBuffer<char>* target) {
 		std::scoped_lock l(_lock);
 		SameBoyPlugPtr instance = _processingContext.getInstance(idx);

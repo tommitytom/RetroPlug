@@ -67,6 +67,10 @@ public:
 
 	void handleDialogCallback(const std::vector<std::string>& paths);
 
+	DataBufferPtr saveState();
+
+	void loadState(DataBufferPtr buffer);
+
 private:
 	bool setup();
 };

@@ -132,7 +132,7 @@ public:
   /** Override this method to serialize custom state data, if your plugin does state chunks.
    * @param chunk The output bytechunk where data can be serialized
    * @return \c true if serialization was successful*/
-  virtual bool SerializeState(IByteChunk& chunk) const { TRACE return SerializeParams(chunk); }
+  virtual bool SerializeState(IByteChunk& chunk) { TRACE return SerializeParams(chunk); }
   
   /** Override this method to unserialize custom state data, if your plugin does state chunks.
    * Implementations should call UnserializeParams() after custom data is unserialized
@@ -283,7 +283,7 @@ public:
   /** Save current state as a VST2 format preset
    * @param file /todo
    * @return true /todo */
-  bool SaveProgramAsFXP(const char* file) const;
+  bool SaveProgramAsFXP(const char* file);
 
   /** Save current bank as a VST2 format bank [VST2 only]
    * @param file /todo
@@ -316,7 +316,7 @@ public:
   /** /todo 
    * @param file /todo
    * @return true /todo */
-  bool SaveProgramAsVSTPreset(const char* file) const;
+  bool SaveProgramAsVSTPreset(const char* file);
 
   /** /todo 
    * @param file /todo

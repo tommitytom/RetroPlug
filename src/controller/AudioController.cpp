@@ -56,13 +56,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::FetchState>([&](const FetchStateRequest& req, FetchStateResponse& state) {
-		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
-			if (_processingContext.getInstance(i)) {
-				state.components[i] = _lua->serializeInstance(i);
-			}
-		}
-		
-		_processingContext.fetchState(req, state);
+		fetchState(req, state);
 	});
 
 	node->on<calls::SetSram>([&](const SetDataRequest& req, DataBufferPtr& ret) {
@@ -96,4 +90,14 @@ void AudioController::setNode(Node* node) {
 	node->on<calls::ContextMenuResult>([&](const int& id) {
 		_lua->onMenuResult(id);
 	});
+}
+
+void AudioController::fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
+	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
+		if (_processingContext.getInstance(i)) {
+			state.components[i] = _lua->serializeInstance(i);
+		}
+	}
+
+	_processingContext.fetchState(req, state);
 }

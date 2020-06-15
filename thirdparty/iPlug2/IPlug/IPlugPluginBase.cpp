@@ -637,7 +637,7 @@ void IPluginBase::DumpBankBlob(const char* filename) const
 // so when we use it here, since vst fxp/fxb files are big endian, we need to swap the endianess
 // regardless of the endianness of the host, and on big endian hosts it will get swapped back to
 // big endian
-bool IPluginBase::SaveProgramAsFXP(const char* file) const
+bool IPluginBase::SaveProgramAsFXP(const char* file)
 {
   if (CStringHasContents(file))
   {
@@ -1201,7 +1201,7 @@ void IPluginBase::MakeVSTPresetChunk(IByteChunk& chunk, IByteChunk& componentSta
   chunk.Put(&metaInfoSize);
 }
 
-bool IPluginBase::SaveProgramAsVSTPreset(const char* path) const
+bool IPluginBase::SaveProgramAsVSTPreset(const char* path)
 {
   if (path)
   {

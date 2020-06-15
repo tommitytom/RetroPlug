@@ -255,8 +255,14 @@ end
 
 local function saveProject(path, projectData, systems, systemStates)
 	local ok
-	local zip = ZipWriter.new(path)
-	if not zip:isValid() then return Error("Failed to open output file") end
+
+	local zip
+	if type(path) == "string" then
+		zip = ZipWriter.new(path)
+		if not zip:isValid() then return Error("Failed to open output file") end
+	else
+		zip = ZipWriter.new()
+	end
 
 	ok = zip:add(PROJECT_LUA_FILENAME, projectData)
 	if ok == false then return Error("Failed to add project config") end
@@ -275,6 +281,12 @@ local function saveProject(path, projectData, systems, systemStates)
 	end
 
 	zip:close()
+
+	if type(path) == "userdata" then
+		local buffer = zip:getBuffer()
+		path:resize(buffer:size())
+		path:write(buffer:data(), buffer:size())
+	end
 end
 
 return {

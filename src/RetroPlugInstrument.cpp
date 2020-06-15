@@ -47,47 +47,20 @@ std::set<std::thread::id> _serializeThreadIds;
 
 #include <string>
 
-bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) const {
-	_serializeThreadIds.insert(std::this_thread::get_id());
-
-	
-
-	/*std::string target;
-	serialize(target, _plug);
-	chunk.PutStr(target.c_str());*/
-
-	chunk.PutStr("Hello");
-
-	for (auto id : _serializeThreadIds) {
-		std::stringstream ss;
-		ss << "Serialize: " << id << std::endl;
-		consoleLogLine(ss.str());
-	}
-
-	for (auto id : _audioThreadIds) {
-		std::stringstream ss;
-		ss << "Audio: " << id << std::endl;
-		consoleLogLine(ss.str());
-	}
-
-	for (auto id : _uiThreadIds) {
-		std::stringstream ss;
-		ss << "UI: " << id << std::endl;
-		consoleLogLine(ss.str());
-	}
-
+bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) {
+	DataBufferPtr buffer = _controller.saveState();
+	chunk.PutBytes(buffer->data(), buffer->size());
 	return true;
 }
 
 int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
-	/*WDL_String data;
-	pos = chunk.GetStr(data, pos);
-	deserialize(data.Get(), _plug);*/
+	size_t size = chunk.Size() - pos;
+	DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(size);
+	chunk.GetBytes(buffer->data(), size, pos);
 
-	WDL_String data;
-	chunk.GetStr(data, pos);
-	pos += data.GetLength();
-	return pos;
+	_controller.loadState(buffer);
+
+	return pos + size;
 }
 
 void RetroPlugInstrument::GenerateMidiClock(SameBoyPlug* plug, int frameCount, bool transportChanged) {
