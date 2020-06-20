@@ -56,6 +56,8 @@ void SameBoyPlug::loadRom(const char* data, size_t size, const SameBoySettings& 
 	_settings = settings;
 	_instance = SAMEBOY_SYMBOLS(sameboy_init)(this, data, size, getGameboyModelId(settings.model), fastBoot);
 	SAMEBOY_SYMBOLS(sameboy_disable_rendering)(_instance, false);
+
+	_resetSamples = (int)(_sampleRate / 2);
 }
 
 void SameBoyPlug::reset(GameboyModel model, bool fast) {
@@ -190,6 +192,7 @@ void SameBoyPlug::updateAV(int audioFrames) {
 		if (_resetSamples <= 0) {
 			ma_pcm_s16_to_f32(_audioBuffer->data->data(), audio, sampleCount, ma_dither_mode_triangle);
 		} else {
+			_audioBuffer->data->clear();
 			_resetSamples -= audioFrames;
 		}
 	} else {

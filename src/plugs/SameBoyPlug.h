@@ -1,12 +1,13 @@
 #pragma once
 
+#include <mutex>
+#include <atomic>
+#include <vector>
+
 #include "util/MessageBus.h"
 #include "util/xstring.h"
 #include "controller/messaging.h"
 #include "model/ButtonStream.h"
-#include <mutex>
-#include <atomic>
-#include <vector>
 
 namespace sol {
 	class state;
