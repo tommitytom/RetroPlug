@@ -11,12 +11,12 @@
 
 bool isNullPtr(const sol::object o) {
 	switch (o.get_type()) {
-	case sol::type::nil: return true;
-	case sol::type::lightuserdata:
-	case sol::type::userdata: {
-		void* p = o.as<void*>();
-		return p == nullptr;
-	}
+		case sol::type::nil: return true;
+		case sol::type::lightuserdata:
+		case sol::type::userdata: {
+			void* p = o.as<void*>();
+			return p == nullptr;
+		}
 	}
 
 	return false;
@@ -24,6 +24,9 @@ bool isNullPtr(const sol::object o) {
 
 void luawrappers::registerCommon(sol::state& s) {
 	s["isNullPtr"].set_function(isNullPtr);
+	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
+	s["_PROJECT_VERSION"].set(PROJECT_VERSION);
+	s["_consolePrint"].set_function(consoleLog);
 
 	s.new_enum("MenuItemType",
 		"None", MenuItemType::None,
@@ -89,14 +92,14 @@ void luawrappers::registerCommon(sol::state& s) {
 	s.new_usertype<SameBoySettings>("SameBoySettings",
 		"model", &SameBoySettings::model,
 		"gameLink", &SameBoySettings::gameLink
-		);
+	);
 
 	s.new_usertype<Project>("Project",
 		"path", &Project::path,
 		"systems", &Project::systems,
 		"settings", &Project::settings,
 		"selectedSystem", &Project::selectedSystem
-		);
+	);
 
 	s.new_usertype<Project::Settings>("ProjectSettings",
 		"audioRouting", &Project::Settings::audioRouting,
@@ -105,7 +108,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		"zoom", &Project::Settings::zoom,
 		"saveType", &Project::Settings::saveType,
 		"packageRom", &Project::Settings::packageRom
-		);
+	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
 		"hold", &GameboyButtonStream::hold,
@@ -117,7 +120,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		"holdDuration", &GameboyButtonStream::holdDuration,
 		"releaseDuration", &GameboyButtonStream::releaseDuration,
 		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
-		);
+	);
 
 	s.new_usertype<Select>("Select", sol::base_classes, sol::bases<MenuItemBase>());
 	s.new_usertype<Action>("Action", sol::base_classes, sol::bases<MenuItemBase>());
@@ -154,12 +157,12 @@ void luawrappers::registerCommon(sol::state& s) {
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
 		"copyFrom", &DataBuffer<char>::copyFrom
-		);
+	);
 
 	s.new_usertype<FileDialogFilters>("FileDialogFilters",
 		"name", &FileDialogFilters::name,
 		"extensions", &FileDialogFilters::extensions
-		);
+	);
 
 	s.new_usertype<DialogRequest>("DialogRequest",
 		"new", sol::factories([]() { return std::make_shared<DialogRequest>(); }),
@@ -167,8 +170,5 @@ void luawrappers::registerCommon(sol::state& s) {
 		"filters", &DialogRequest::filters,
 		"multiSelect", &DialogRequest::multiSelect,
 		"fileName", &DialogRequest::fileName
-		);
-
-	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
-	s["_consolePrint"].set_function(consoleLog);
+	);
 }

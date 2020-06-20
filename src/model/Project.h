@@ -7,6 +7,8 @@
 #include "Constants.h"
 #include "model/ButtonStream.h"
 
+const std::string PROJECT_VERSION = "1.0.0";
+
 enum class GameboyModel {
 	Auto,
 	DmgB,
