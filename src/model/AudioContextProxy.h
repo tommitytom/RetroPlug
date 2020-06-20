@@ -49,6 +49,10 @@ public:
 		_audioController->getSram(idx, buffer);
 	}
 
+	void setRenderingEnabled(bool enabled) {
+		_node->push<calls::EnableRendering>(NodeTypes::Audio, enabled);
+	}
+
 	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)> cb) {
 		FetchStateRequest req;
 

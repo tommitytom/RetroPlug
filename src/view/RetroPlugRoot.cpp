@@ -28,10 +28,12 @@ RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, AudioContextProxy* prox
 
 		_timeSinceVideo = 0;
 	};
+
+	_proxy->setRenderingEnabled(true);
 }
 
 RetroPlugView::~RetroPlugView() {
-
+	_proxy->setRenderingEnabled(false);
 }
 
 void RetroPlugView::OnInit() {

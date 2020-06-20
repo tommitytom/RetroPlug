@@ -99,6 +99,7 @@ namespace calls {
 	DefinePush(ContextMenuResult, int);
 	DefinePush(SetActive, SystemIndex);
 	DefinePush(ResetSystem, ResetSystemDesc);
+	DefinePush(EnableRendering, bool);
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapSystem, SystemSwapDesc, SystemSwapDesc);

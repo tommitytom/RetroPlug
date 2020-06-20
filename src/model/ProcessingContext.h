@@ -59,6 +59,15 @@ public:
 		updateLinkTargets();
 	}
 
+	void setRenderingEnabled(bool enabled) {
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
+			SameBoyPlugPtr inst = _instances[i];
+			if (inst) {
+				inst->disableRendering(!enabled);
+			}
+		}
+	}
+
 	GameboyButtonStream* getButtonPresses(SystemIndex idx) {
 		return &_buttonPresses[idx];
 	}

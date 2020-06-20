@@ -51,6 +51,10 @@ void AudioController::setNode(Node* node) {
 		_processingContext.setSettings(settings);
 	});
 
+	node->on<calls::EnableRendering>([&](const bool& enabled) {
+		_processingContext.setRenderingEnabled(enabled);
+	});
+
 	node->on<calls::UpdateSystemSettings>([&](const SystemSettings& settings) {
 		_processingContext.setSystemSettings(settings.idx, settings.settings);
 	});
