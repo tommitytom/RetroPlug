@@ -79,7 +79,23 @@ end
 -- allows you to pass a path for metadata purposes if the value passed
 -- to 'data' is a buffer.
 function System:loadRom(data, path)
-	local fileData, err = fileutil.loadPathOrData(data)
+	local fileData, err
+	if type(data) == "string" and pathutil.ext(data) == "zip" then
+		local zipReader = ZipReader.new(data)
+		local entries = zipReader:entries()
+		for _, v in ipairs(entries) do
+			if pathutil.ext(v.name) == "gb" then
+				fileData = zipReader:read(v.name)
+				if isNullPtr(fileData) then
+					fileData = nil
+					err = Error("Failed to read ROM from zip file (" .. v.name .. ")")
+				end
+			end
+		end
+	else
+		fileData, err = fileutil.loadPathOrData(data)
+	end
+
 	if err ~= nil then return err end
 
 	if type(data) == "string" then path = data end

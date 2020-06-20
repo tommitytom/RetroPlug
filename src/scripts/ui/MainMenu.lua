@@ -7,14 +7,15 @@ local MAX_INSTANCES = 4
 
 local PROJECT_FILTER = { "RetroPlug Project", "*.retroplug" }
 local ROM_FILTER = { "GameBoy ROM Files", "*.gb" }
+local ZIPPED_ROM_FILTER = { "Zipped ROM Files", "*.zip" }
 local SAV_FILTER = { "GameBoy SAV Files", "*.sav" }
 
 local function loadProjectOrRom(project)
-	return menuutil.loadHandler({ PROJECT_FILTER, ROM_FILTER }, "project", function(path)
+	return menuutil.loadHandler({ PROJECT_FILTER, ROM_FILTER, ZIPPED_ROM_FILTER }, "project", function(path)
 		local ext = pathutil.ext(path)
 		if ext == "retroplug" then
 			return project:load(path)
-		elseif ext == "gb" then
+		elseif ext == "gb" or ext == "zip" then
 			project:clear()
 			return project:loadRom(path)
 		end
@@ -22,7 +23,7 @@ local function loadProjectOrRom(project)
 end
 
 local function loadRom(project, idx, model)
-	return menuutil.loadHandler({ ROM_FILTER }, "ROM", function(path)
+	return menuutil.loadHandler({ ROM_FILTER, ZIPPED_ROM_FILTER }, "ROM", function(path)
 		return project:loadRom(path, idx, model)
 	end)
 end
@@ -112,7 +113,7 @@ local function systemMenu(menu, system, project)
 end
 
 local function findMissingRom(system)
-	dialog.loadFile({ ROM_FILTER }, function(path)
+	dialog.loadFile({ ROM_FILTER, ZIPPED_ROM_FILTER }, function(path)
 
 	end)
 end
