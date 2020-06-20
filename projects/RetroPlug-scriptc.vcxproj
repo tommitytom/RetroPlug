@@ -114,13 +114,13 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\model\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
     </CustomBuildStep>
     <CustomBuildStep>
-      <Outputs>$(SolutionDir)src\model\CompiledLua.cpp</Outputs>
+      <Outputs>$(SolutionDir)src\luawrapper\CompiledLua.cpp</Outputs>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -143,13 +143,13 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\model\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
     </CustomBuildStep>
     <CustomBuildStep>
-      <Outputs>$(SolutionDir)src\model\CompiledLua.cpp</Outputs>
+      <Outputs>$(SolutionDir)src\luawrapper\CompiledLua.cpp</Outputs>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -176,13 +176,13 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\model\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
     </CustomBuildStep>
     <CustomBuildStep>
-      <Outputs>$(SolutionDir)src\model\CompiledLua.cpp</Outputs>
+      <Outputs>$(SolutionDir)src\luawrapper\CompiledLua.cpp</Outputs>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -209,13 +209,13 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\model\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
     </CustomBuildStep>
     <CustomBuildStep>
-      <Outputs>$(SolutionDir)src\model\CompiledLua.cpp</Outputs>
+      <Outputs>$(SolutionDir)src\luawrapper\CompiledLua.cpp</Outputs>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>

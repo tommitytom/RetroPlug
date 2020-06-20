@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <atomic>
-#include "ProcessingContext.h"
+#include "model/ProcessingContext.h"
 #include "view/Menu.h"
 
 namespace sol {

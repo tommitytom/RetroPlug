@@ -1,14 +1,14 @@
 #pragma once
 
 #include <gainput/gainput.h>
-#include "model/UiLuaContext.h"
+#include "luawrapper/UiLuaContext.h"
 #include "micromsg/nodemanager.h"
 #include "view/RetroPlugRoot.h"
 #include "messaging.h"
 #include "model/AudioContextProxy.h"
 #include "Types.h"
 #include "model/ProcessingContext.h"
-#include "model/AudioLuaContext.h"
+#include "luawrapper/AudioLuaContext.h"
 #include "controller/AudioController.h"
 
 #include "IGraphicsStructs.h"

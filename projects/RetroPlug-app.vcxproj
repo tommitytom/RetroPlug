@@ -281,6 +281,11 @@
     <ClInclude Include="..\src\controller\messaging.h" />
     <ClInclude Include="..\src\controller\RetroPlugController.h" />
     <ClInclude Include="..\src\KeyMap.h" />
+    <ClInclude Include="..\src\luawrapper\AudioLuaContext.h" />
+    <ClInclude Include="..\src\luawrapper\CompiledLua.h" />
+    <ClInclude Include="..\src\luawrapper\LuaHelpers.h" />
+    <ClInclude Include="..\src\luawrapper\UiLuaContext.h" />
+    <ClInclude Include="..\src\luawrapper\Wrappers.h" />
     <ClInclude Include="..\src\micromsg\allocator\allocator.h" />
     <ClInclude Include="..\src\micromsg\allocator\atomicrefcount.h" />
     <ClInclude Include="..\src\micromsg\allocator\controlblock.h" />
@@ -307,16 +312,11 @@
     <ClInclude Include="..\src\micromsg\variantfunctionfactory.h" />
     <ClInclude Include="..\src\micromsg\variant_function.h" />
     <ClInclude Include="..\src\model\AudioContextProxy.h" />
-    <ClInclude Include="..\src\model\AudioLuaContext.h" />
     <ClInclude Include="..\src\model\ButtonStream.h" />
-    <ClInclude Include="..\src\model\CompiledLua.h" />
     <ClInclude Include="..\src\model\FileManager.h" />
-    <ClInclude Include="..\src\model\LibLsdjWrapper.h" />
-    <ClInclude Include="..\src\model\LuaHelpers.h" />
     <ClInclude Include="..\src\model\ProcessingContext.h" />
     <ClInclude Include="..\src\model\Project.h" />
     <ClInclude Include="..\src\model\RetroPlug.h" />
-    <ClInclude Include="..\src\model\UiLuaContext.h" />
     <ClInclude Include="..\src\platform\DynamicLibraryMemory.h" />
     <ClInclude Include="..\src\platform\Error.h" />
     <ClInclude Include="..\src\platform\FileDialog.h" />
@@ -329,13 +329,13 @@
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
-    <ClInclude Include="..\src\roms\Lsdj.h" />
     <ClInclude Include="..\src\Types.h" />
     <ClInclude Include="..\src\util\base64dec.h" />
     <ClInclude Include="..\src\util\base64enc.h" />
     <ClInclude Include="..\src\util\crc32.h" />
     <ClInclude Include="..\src\util\DataBuffer.h" />
     <ClInclude Include="..\src\util\File.h" />
+    <ClInclude Include="..\src\util\math.h" />
     <ClInclude Include="..\src\util\MessageBus.h" />
     <ClInclude Include="..\src\util\PaMemoryBarrier.h" />
     <ClInclude Include="..\src\util\PaRingBuffer.h" />
@@ -523,21 +523,9 @@
   <ItemGroup>
     <ClCompile Include="..\src\controller\AudioController.cpp" />
     <ClCompile Include="..\src\controller\RetroPlugController.cpp" />
-    <ClCompile Include="..\src\model\AudioLuaContext.cpp" />
-    <ClCompile Include="..\src\model\CompiledLua.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\src\model\FileManager.cpp" />
-    <ClCompile Include="..\src\model\LuaHelpers.cpp">
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj</AdditionalOptions>
-    </ClCompile>
-    <ClCompile Include="..\src\model\UiLuaContext.cpp">
+    <ClCompile Include="..\src\luawrapper\AudioLuaContext.cpp" />
+    <ClCompile Include="..\src\luawrapper\Chrono.cpp" />
+    <ClCompile Include="..\src\luawrapper\Common.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -545,6 +533,21 @@
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <ClCompile Include="..\src\luawrapper\CompiledLua.cpp" />
+    <ClCompile Include="..\src\luawrapper\LibLsdj.cpp" />
+    <ClCompile Include="..\src\luawrapper\LuaHelpers.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\RetroPlug.cpp" />
+    <ClCompile Include="..\src\luawrapper\UiLuaContext.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\Zipp.cpp" />
+    <ClCompile Include="..\src\model\FileManager.cpp" />
     <ClCompile Include="..\src\platform\FileDialog.cpp" />
     <ClCompile Include="..\src\platform\MemoryModule.c" />
     <ClCompile Include="..\src\platform\Path.cpp" />
@@ -552,7 +555,6 @@
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\plugs\SameBoyPlug.cpp" />
     <ClCompile Include="..\src\RetroPlugInstrument.cpp" />
-    <ClCompile Include="..\src\roms\Lsdj.cpp" />
     <ClCompile Include="..\src\util\crc32.cpp" />
     <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\src\util\PaRingBuffer.c" />

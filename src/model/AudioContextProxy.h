@@ -12,7 +12,7 @@
 #include "model/Project.h"
 #include "model/ButtonStream.h"
 #include "model/FileManager.h"
-#include "model/AudioLuaContext.h"
+#include "luawrapper/AudioLuaContext.h"
 #include "plugs/SameBoyPlug.h"
 #include "sol/sol.hpp"
 

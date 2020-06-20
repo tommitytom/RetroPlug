@@ -1,21 +1,21 @@
-#pragma once
+#include "Wrappers.h"
 
 #include <sol/sol.hpp>
 #include "util/DataBuffer.h"
 #include "sav.h"
 
-void setupLsdj(sol::state& s) {
-	s.new_enum("lsdj_error_t",
-		"SUCCESS", LSDJ_SUCCESS,
-		"READ_FAILED", LSDJ_READ_FAILED,
-		"WRITE_FAILED", LSDJ_WRITE_FAILED,
-		"SEEK_FAILED", LSDJ_SEEK_FAILED,
-		"TELL_FAILED", LSDJ_TELL_FAILED,
-		"ALLOCATION_FAILED", LSDJ_ALLOCATION_FAILED,
-		"NO_PROJECT_AT_INDEX", LSDJ_NO_PROJECT_AT_INDEX,
-		"DECOMPRESSION_INCORRECT_SIZE", LSDJ_DECOMPRESSION_INCORRECT_SIZE,
-		"SRAM_INITIALIZATION_CHECK_FAILED", LSDJ_SRAM_INITIALIZATION_CHECK_FAILED,
-		"FILE_OPEN_FAILED", LSDJ_FILE_OPEN_FAILED
+void luawrappers::registerLsdj(sol::state& s) {
+	s.new_enum("LsdjError",
+		"Success", LSDJ_SUCCESS,
+		"ReadFailed", LSDJ_READ_FAILED,
+		"WriteFailed", LSDJ_WRITE_FAILED,
+		"SeekFailed", LSDJ_SEEK_FAILED,
+		"TellFailed", LSDJ_TELL_FAILED,
+		"AllocationFailed", LSDJ_ALLOCATION_FAILED,
+		"NoProjectAtIndex", LSDJ_NO_PROJECT_AT_INDEX,
+		"DecompressionIncorrectSize", LSDJ_DECOMPRESSION_INCORRECT_SIZE,
+		"SramInitalizationCheckFailed", LSDJ_SRAM_INITIALIZATION_CHECK_FAILED,
+		"FileOpenFailed", LSDJ_FILE_OPEN_FAILED
 	);
 
 	s.create_named_table("liblsdj",

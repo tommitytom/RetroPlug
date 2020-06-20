@@ -107,7 +107,14 @@ function Project:load(data)
 	if self:getSelectedIndex() == 0 and #self.systems > 0 then self:setSelected(1) end
 end
 
+local Timer = require("timer")
+
 function Project:save(path, pretty, immediate)
+	print("Saving")
+	local timer = Timer()
+
+	if #self.systems == 0 then return end
+
 	if pretty == nil then pretty = true end
 	if immediate == nil then immediate = false end
 
@@ -117,13 +124,17 @@ function Project:save(path, pretty, immediate)
 			assert(path ~= "")
 		elseif type(path) == "string" then
 			self._native.path = path
-		else
-			path = self._native.path
 		end
 
+		local zipSettings = ZipWriterSettings.new()
+		zipSettings.method = ZipCompressionMethod.Deflate
+		zipSettings.level = ZipCompressionLevel.Normal
+
 		local data = self:serializeProject(systemStates, self._native, pretty)
-		local err = projectutil.saveProject(path, data, self.systems, systemStates)
+		local err = projectutil.saveProject(path, data, self.systems, systemStates, zipSettings)
 		if err ~= nil then print(err) end
+
+		timer:log()
 	end)
 end
 

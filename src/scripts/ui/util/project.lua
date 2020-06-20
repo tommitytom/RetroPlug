@@ -223,12 +223,12 @@ local function loadProject(data)
 			local ok, loadedData = serpent.load(fileData:toString())
 			if ok == false then
 				zip:close()
-				return nil, nil, Error("Failed to load project: Unable to deserialize file")
+				return nil, nil, Error("Failed to load project: Unable to parse lua project")
 			end
 
 			projectData = loadedData
 		else
-			return nil, nil, Error("Failed to load project: Unable to deserialize file")
+			return nil, nil, Error("Failed to load project: Project file missing")
 		end
 	else
 		local fileData, err = fileutil.loadPathOrData(data)
@@ -253,15 +253,15 @@ local function loadProject(data)
 	return projectData, systems, nil
 end
 
-local function saveProject(path, projectData, systems, systemStates)
+local function saveProject(path, projectData, systems, systemStates, zipSettings)
 	local ok
 
 	local zip
-	if type(path) == "string" then
-		zip = ZipWriter.new(path)
+	if type(path) == "string" and path ~= "" then
+		zip = ZipWriter.new(path, zipSettings)
 		if not zip:isValid() then return Error("Failed to open output file") end
 	else
-		zip = ZipWriter.new()
+		zip = ZipWriter.new(zipSettings)
 	end
 
 	ok = zip:add(PROJECT_LUA_FILENAME, projectData)
@@ -283,10 +283,10 @@ local function saveProject(path, projectData, systems, systemStates)
 	zip:close()
 
 	if type(path) == "userdata" then
-		local buffer = zip:getBuffer()
-		path:resize(buffer:size())
-		path:write(buffer:data(), buffer:size())
+		zip:copyTo(path)
 	end
+
+	zip:free()
 end
 
 return {

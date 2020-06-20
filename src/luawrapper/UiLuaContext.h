@@ -63,8 +63,6 @@ public:
 
 	void shutdown();
 
-	bool getDialogRequest(DialogRequest& request);
-
 	void handleDialogCallback(const std::vector<std::string>& paths);
 
 	DataBufferPtr saveState();

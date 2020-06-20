@@ -54,7 +54,7 @@ namespace zipp {
 			_valid = err == MZ_OK;
 
 			if (_valid) {
-				//setup(settings);
+				setup(settings);
 			} else {
 				mz_zip_writer_delete(&_handle);
 				_handle = nullptr;
@@ -70,13 +70,22 @@ namespace zipp {
 			_valid = err == MZ_OK;
 
 			if (_valid) {
-				err = mz_zip_open(&_handle, _memStream, MZ_OPEN_MODE_WRITE);
+				err = mz_zip_writer_open(_handle, _memStream);
 				_valid = err == MZ_OK;
+
+				if (_valid) {
+					setup(settings);
+				} else {
+					free();
+				}
+			} else {
+				free();
 			}
 		}
 
 		~Writer() {
 			close();
+			free();
 		}
 
 		std::string_view getBuffer() const {
@@ -99,12 +108,16 @@ namespace zipp {
 		void close() {
 			if (_handle) {
 				mz_zip_writer_close(_handle);
+			}
+		}
 
-				if (_memStream) {
-					mz_stream_mem_delete(&_memStream);
-					_memStream = nullptr;
-				}
-				
+		void free() {
+			if (_memStream) {
+				mz_stream_mem_delete(&_memStream);
+				_memStream = nullptr;
+			}
+
+			if (_handle) {
 				mz_zip_writer_delete(&_handle);
 				_handle = nullptr;
 				_valid = false;

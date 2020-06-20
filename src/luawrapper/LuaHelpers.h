@@ -79,4 +79,4 @@ static bool runScriptRet(sol::state* state, const std::string& script, ReturnTyp
 	return valid;
 }
 
-void setupCommon(sol::state& s);
+void registerCommon(sol::state& s);

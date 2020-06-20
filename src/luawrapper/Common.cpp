@@ -1,4 +1,6 @@
-#include "LuaHelpers.h"
+#include "Wrappers.h"
+
+#include <sol/sol.hpp>
 
 #include "platform/Logger.h"
 #include "model/Project.h"
@@ -7,23 +9,22 @@
 #include "model/ButtonStream.h"
 #include "platform/FileDialog.h"
 
-bool validateResult(const sol::protected_function_result& result, const std::string& prefix, const std::string& name) {
-	if (!result.valid()) {
-		sol::error err = result;
-		std::string what = err.what();
-		consoleLog(prefix);
-		if (!name.empty()) {
-			consoleLog(" " + name);
-		}
-
-		consoleLogLine(": " + what);
-		return false;
+bool isNullPtr(const sol::object o) {
+	switch (o.get_type()) {
+	case sol::type::nil: return true;
+	case sol::type::lightuserdata:
+	case sol::type::userdata: {
+		void* p = o.as<void*>();
+		return p == nullptr;
+	}
 	}
 
-	return true;
+	return false;
 }
 
-void setupCommon(sol::state& s) {
+void luawrappers::registerCommon(sol::state& s) {
+	s["isNullPtr"].set_function(isNullPtr);
+
 	s.new_enum("MenuItemType",
 		"None", MenuItemType::None,
 		"SubMenu", MenuItemType::SubMenu,
@@ -88,14 +89,14 @@ void setupCommon(sol::state& s) {
 	s.new_usertype<SameBoySettings>("SameBoySettings",
 		"model", &SameBoySettings::model,
 		"gameLink", &SameBoySettings::gameLink
-	);
+		);
 
 	s.new_usertype<Project>("Project",
 		"path", &Project::path,
 		"systems", &Project::systems,
 		"settings", &Project::settings,
 		"selectedSystem", &Project::selectedSystem
-	);
+		);
 
 	s.new_usertype<Project::Settings>("ProjectSettings",
 		"audioRouting", &Project::Settings::audioRouting,
@@ -104,7 +105,7 @@ void setupCommon(sol::state& s) {
 		"zoom", &Project::Settings::zoom,
 		"saveType", &Project::Settings::saveType,
 		"packageRom", &Project::Settings::packageRom
-	);
+		);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
 		"hold", &GameboyButtonStream::hold,
@@ -116,7 +117,7 @@ void setupCommon(sol::state& s) {
 		"holdDuration", &GameboyButtonStream::holdDuration,
 		"releaseDuration", &GameboyButtonStream::releaseDuration,
 		"releaseAllDuration", &GameboyButtonStream::releaseAllDuration
-	);
+		);
 
 	s.new_usertype<Select>("Select", sol::base_classes, sol::bases<MenuItemBase>());
 	s.new_usertype<Action>("Action", sol::base_classes, sol::bases<MenuItemBase>());
@@ -153,12 +154,12 @@ void setupCommon(sol::state& s) {
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
 		"copyFrom", &DataBuffer<char>::copyFrom
-	);
+		);
 
 	s.new_usertype<FileDialogFilters>("FileDialogFilters",
 		"name", &FileDialogFilters::name,
 		"extensions", &FileDialogFilters::extensions
-	);
+		);
 
 	s.new_usertype<DialogRequest>("DialogRequest",
 		"new", sol::factories([]() { return std::make_shared<DialogRequest>(); }),
@@ -166,7 +167,7 @@ void setupCommon(sol::state& s) {
 		"filters", &DialogRequest::filters,
 		"multiSelect", &DialogRequest::multiSelect,
 		"fileName", &DialogRequest::fileName
-	);
+		);
 
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
 	s["_consolePrint"].set_function(consoleLog);

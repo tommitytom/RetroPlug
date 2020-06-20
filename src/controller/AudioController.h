@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/AudioLuaContext.h"
+#include "luawrapper/AudioLuaContext.h"
 #include "model/ProcessingContext.h"
 
 using AudioLuaContextPtr = std::shared_ptr<AudioLuaContext>;

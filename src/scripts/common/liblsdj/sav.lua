@@ -11,7 +11,7 @@ function Sav:init(savData)
 	if savData ~= nil then
 		if type(savData) == "string" then
 			local data, err = fs.load(savData)
-			if err == lsdj_error_t.SUCCESS then
+			if err == LsdjError.Success then
 				savData = data
 			else
 				print("Failed to load LSDj sav from " .. savData)
@@ -19,14 +19,14 @@ function Sav:init(savData)
 		end
 
 		local sav, err = liblsdj.sav_read_from_memory(savData)
-		if err == lsdj_error_t.SUCCESS then
+		if err == LsdjError.Success then
 			self._sav = sav
 		else
 			print("Failed to load LSDj sav from memory")
 		end
 	else
 		local sav, err = liblsdj.sav_new()
-		if err == lsdj_error_t.SUCCESS then
+		if err == LsdjError.Success then
 			self._sav = sav
 		else
 			print("Failed to create new LSDj sav")
@@ -40,7 +40,7 @@ end
 
 function Sav:loadSong(songIdx)
 	local err = liblsdj.sav_set_working_memory_song_from_project(self._sav, songIdx)
-	if err ~= lsdj_error_t.SUCCESS then
+	if err ~= LsdjError.Success then
 		return "Failed to load song at index " .. tostring(songIdx)
 	end
 end
@@ -48,7 +48,7 @@ end
 function Sav:toBuffer()
 	local buffer = DataBuffer.new()
 	local err = liblsdj.sav_write_to_memory(self._sav, buffer)
-	if err == lsdj_error_t.SUCCESS then
+	if err == LsdjError.Success then
 		return buffer
 	end
 
@@ -126,7 +126,7 @@ function Sav:exportSongs(path)
 		if isNullPtr(project) == false then
 			local buffer = DataBuffer.new()
 			local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
-			if err == lsdj_error_t.SUCCESS then
+			if err == LsdjError.Success then
 				local name = liblsdj.project_get_name(project)
 				local p = pathutil.join(path, name .. ".lsdsng")
 				print("Writing song to file:", p)
@@ -141,7 +141,7 @@ function Sav:exportSong(songIdx, path)
 	if isNullPtr(project) == false then
 		local buffer = DataBuffer.new()
 		local err = liblsdj.project_write_lsdsng_to_memory(project, buffer)
-		if err == lsdj_error_t.SUCCESS then
+		if err == LsdjError.Success then
 			print("Writing song to file:", path)
 			fs.save(path, buffer)
 		end
@@ -174,7 +174,7 @@ function Sav:_importSongFromBuffer(songData, songIdx)
 	end
 
 	local proj, err = liblsdj.project_read_lsdsng_from_memory(songData)
-	if err == lsdj_error_t.SUCCESS then
+	if err == LsdjError.Success then
 		print(self._sav, songIdx, proj, songData:size())
 		liblsdj.sav_set_project_move(self._sav, songIdx, proj)
 	else

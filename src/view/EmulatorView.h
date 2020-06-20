@@ -9,7 +9,7 @@
 #include "ContextMenu.h"
 #include "util/RomWatcher.h"
 
-#include "model/UiLuaContext.h"
+#include "luawrapper/UiLuaContext.h"
 //#include "model/AudioContextProxy.h"
 
 #include <map>

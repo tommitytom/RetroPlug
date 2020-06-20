@@ -5,9 +5,10 @@
 #include "LuaHelpers.h"
 #include "config/config.h"
 #include "plugs/SameBoyPlug.h"
-#include "ProcessingContext.h"
+#include "model/ProcessingContext.h"
 #include "util/fs.h"
 #include "view/Menu.h"
+#include "luawrapper/Wrappers.h"
 
 AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
@@ -44,7 +45,7 @@ void AudioLuaContext::setup() {
 
 	s["package"]["path"] = packagePath;
 
-	setupCommon(s);
+	luawrappers::registerCommon(s);
 
 	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,

@@ -33,7 +33,7 @@ public:
 	}
 
 	void write(const T* source, size_t size) {
-		assert(size <= _reserved);
+		assert(size <= _size);
 		memcpy(_dataPtr, source, size * sizeof(T));
 	}
 

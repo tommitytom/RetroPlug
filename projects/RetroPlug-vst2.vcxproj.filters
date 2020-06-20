@@ -106,23 +106,11 @@
     <ClCompile Include="..\src\model\EmulatorInstance.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\model\CompiledLua.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\model\FileManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="..\src\platform\ResourceWin.cpp">
       <Filter>src\platform</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\model\AudioLuaContext.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\model\LuaHelpers.cpp">
-      <Filter>src\model</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\model\UiLuaContext.cpp">
-      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="..\src\controller\AudioController.cpp">
       <Filter>src\controller</Filter>
@@ -189,6 +177,33 @@
     </ClCompile>
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\wave.c">
       <Filter>liblsdj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\Common.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\CompiledLua.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\LibLsdj.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\LuaHelpers.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\RetroPlug.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\UiLuaContext.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\Zipp.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\AudioLuaContext.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\luawrapper\Chrono.cpp">
+      <Filter>src\luawrapper</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -429,9 +444,6 @@
     <ClInclude Include="..\src\model\EmulatorInstance.h">
       <Filter>src\model</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\CompiledLua.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\model\FileManager.h">
       <Filter>src\model</Filter>
     </ClInclude>
@@ -453,15 +465,6 @@
     <ClInclude Include="..\src\platform\Resource.h">
       <Filter>src\platform</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\model\AudioLuaContext.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\model\LuaHelpers.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\model\UiLuaContext.h">
-      <Filter>src\model</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\controller\AudioController.h">
       <Filter>src\controller</Filter>
     </ClInclude>
@@ -476,6 +479,21 @@
     </ClInclude>
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\song_offsets.h">
       <Filter>liblsdj</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\CompiledLua.h">
+      <Filter>src\luawrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\LuaHelpers.h">
+      <Filter>src\luawrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\UiLuaContext.h">
+      <Filter>src\luawrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\Wrappers.h">
+      <Filter>src\luawrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\AudioLuaContext.h">
+      <Filter>src\luawrapper</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -529,6 +547,9 @@
     </Filter>
     <Filter Include="src\model">
       <UniqueIdentifier>{a5c652b8-4898-47db-a985-68daee19f51a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\luawrapper">
+      <UniqueIdentifier>{e1ffb09f-3c2b-4d07-92d1-22c93242ec71}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
