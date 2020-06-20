@@ -108,8 +108,6 @@ void UiLuaContext::loadState(DataBufferPtr buffer) {
 	callFunc(_viewRoot, "loadState", buffer);
 }
 
-
-
 bool UiLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 

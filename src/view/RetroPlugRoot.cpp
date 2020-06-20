@@ -62,7 +62,7 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 
 void RetroPlugView::ProcessDialog() {
 	ViewWrapper* viewWrapper = _lua->getViewWrapper();
-	DialogRequest* dialog = viewWrapper->fetchDialogRequest();
+	DialogRequestPtr dialog = viewWrapper->fetchDialogRequest();
 	if (dialog) {
 		switch (dialog->type) {
 		case DialogType::Save: {
@@ -94,8 +94,6 @@ void RetroPlugView::ProcessDialog() {
 
 		UpdateLayout();
 		UpdateSelected();
-
-		//delete dialog;
 	}
 }
 

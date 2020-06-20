@@ -7,21 +7,23 @@
 using namespace iplug;
 using namespace igraphics;
 
+using DialogRequestPtr = std::shared_ptr<DialogRequest>;
+
 class ViewWrapper {
 private:
 	Menu* _menu = nullptr;
-	DialogRequest* _dialogRequest = nullptr;
+	DialogRequestPtr _dialogRequest = nullptr;
 
 public:
 	ViewWrapper() {}
 	~ViewWrapper() {}
 
-	void requestDialog(DialogRequest* request) {
+	void requestDialog(DialogRequestPtr request) {
 		_dialogRequest = request;
 	}
 
-	DialogRequest* fetchDialogRequest() {
-		DialogRequest* req = _dialogRequest;
+	DialogRequestPtr fetchDialogRequest() {
+		DialogRequestPtr req = _dialogRequest;
 		_dialogRequest = nullptr;
 		return req;
 	}
