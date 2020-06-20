@@ -7,7 +7,7 @@
 using namespace iplug;
 using namespace igraphics;
 
-class RetroPlugInstrument : public Plugin {
+class RetroPlugInstrument final : public Plugin {
 private:
 	float* _sampleScratch;
 	bool _transportRunning = false;
@@ -26,8 +26,8 @@ public:
 	void ProcessMidiMsg(const IMidiMsg& msg) override;
 	void OnReset() override;
 	void OnIdle() override;
-	bool OnKeyDown(const IKeyPress& key) { return GetUI()->OnKeyDown(0, 0, key); }
-	bool OnKeyUp(const IKeyPress& key) { return GetUI()->OnKeyUp(0, 0, key); }
+	bool OnKeyDown(const IKeyPress& key) override { return GetUI()->OnKeyDown(0, 0, key); }
+	bool OnKeyUp(const IKeyPress& key) override { return GetUI()->OnKeyUp(0, 0, key); }
 
 	bool SerializeState(IByteChunk& chunk) override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;

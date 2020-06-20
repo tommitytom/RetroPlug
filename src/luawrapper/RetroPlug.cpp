@@ -5,8 +5,15 @@
 #include "model/Project.h"
 #include "model/AudioContextProxy.h"
 #include "view/ViewWrapper.h"
+#include "platform/Path.h"
+#include "platform/Shell.h"
 
 void luawrappers::registerRetroPlug(sol::state& s) {
+	s.create_named_table("nativeshell",
+		"getContentPath", getContentPath,
+		"openShellFolder", openShellFolder
+	);
+
 	s.new_usertype<SystemDesc>("SystemDesc",
 		"new", sol::factories(
 			[]() { return std::make_shared<SystemDesc>(); },

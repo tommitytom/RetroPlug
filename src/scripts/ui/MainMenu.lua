@@ -130,7 +130,9 @@ local function generateMainMenu(menu, project)
 
 	local sameBoySettings = selected.desc.sameBoySettings
 	menu:subMenu("Settings")
-			:action("Open Settings Folder...", function()  end)
+			:action("Open Settings Folder...", function()
+				nativeshell.openShellFolder(nativeshell.getContentPath(_RETROPLUG_VERSION))
+			end)
 			:parent()
 		:separator()
 		:select("Game Link", sameBoySettings.gameLink, function(v)

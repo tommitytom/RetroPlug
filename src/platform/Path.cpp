@@ -8,7 +8,7 @@
 tstring getContentPath(tstring file) {
 	TCHAR szPath[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, szPath))) {
-		tstring out = tstr(szPath) + tstr("\\RetroPlug\\");
+		tstring out = tstr(szPath) + TSTR("\\RetroPlug");
 		if (file.size() > 0) {
 			out += TSTR("\\") + file;
 		}

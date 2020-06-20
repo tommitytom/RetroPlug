@@ -1,5 +1,4 @@
 local midi = require("midi")
-local util = require("util")
 local enumtil = require("util.enum")
 
 local LsdjSyncModes = {
@@ -10,12 +9,8 @@ local LsdjSyncModes = {
 }
 
 local function midiMapRowNumber(channel, note)
-	if channel == 0 then
-		return note
-	elseif channel == 1 then
-		return note + 128
-	end
-
+	if channel == 0 then return note end
+	if channel == 1 then return note + 128 end
 	return -1;
 end
 
