@@ -87,7 +87,7 @@ function View:onDialogResult(paths)
 end
 
 function View:onPadButton(button, down)
-	print(button, down)
+	self:emitComponentEvent("onPadButton", button, down)
 end
 
 function View:onDrop(x, y, items)
