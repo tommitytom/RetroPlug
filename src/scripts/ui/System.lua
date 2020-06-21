@@ -1,6 +1,7 @@
 local class = require("class")
 local util = require("util")
 local const = require("const")
+local log = require("log")
 local fs = require("fs")
 local serpent = require("serpent")
 local pathutil = require("pathutil")
@@ -163,6 +164,20 @@ end
 
 function System:saveRom(path)
 	return fs.save(path, self.desc.sourceRomData)
+end
+
+function System:saveState(path)
+	local req = FetchStateRequest.new()
+	req.systems[self.desc.idx + 1] = ResourceType.State
+
+	self._audioContext:fetchResources(req, function(systemStates)
+		local data = systemStates.states[self.desc.idx + 1]
+		if not isNullPtr(data) then
+			return fs.save(path, data)
+		else
+			log.error("Failed to fetch state at index " .. self.desc.idx);
+		end
+	end)
 end
 
 function System:sram()

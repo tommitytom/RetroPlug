@@ -508,7 +508,14 @@
     <ClCompile Include="..\src\luawrapper\CompiledLua.cpp" />
     <ClCompile Include="..\src\luawrapper\LibLsdj.cpp" />
     <ClCompile Include="..\src\luawrapper\LuaHelpers.cpp" />
-    <ClCompile Include="..\src\luawrapper\RetroPlug.cpp" />
+    <ClCompile Include="..\src\luawrapper\RetroPlug.cpp">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="..\src\luawrapper\UiLuaContext.cpp" />
     <ClCompile Include="..\src\luawrapper\Zipp.cpp" />
     <ClCompile Include="..\src\model\EmulatorInstance.cpp" />

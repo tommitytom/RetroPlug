@@ -50,7 +50,20 @@ struct AudioBuffer {
 	FloatDataBufferPtr data;
 };
 
+enum class ResourceType {
+	None = 0,
+
+	Rom = 1<<0,
+	Sram = 1<<1,
+	State = 1<<2,
+	Components = 1<<3,
+
+	AllExceptRom = Sram | State | Components,
+	All = Rom | Sram | State | Components
+};
+
 struct FetchStateRequest {
+	std::array<ResourceType, MAX_SYSTEMS> systems = { ResourceType::None };
 	DataBufferPtr srams[MAX_SYSTEMS];
 	DataBufferPtr states[MAX_SYSTEMS];
 };

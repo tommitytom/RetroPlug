@@ -9,6 +9,7 @@ local PROJECT_FILTER = { "RetroPlug Project", "*.retroplug" }
 local ROM_FILTER = { "GameBoy ROM Files", "*.gb" }
 local ZIPPED_ROM_FILTER = { "Zipped ROM Files", "*.zip" }
 local SAV_FILTER = { "GameBoy SAV Files", "*.sav" }
+local STATE_FILTER = { "GameBoy State Files", "*.state" }
 
 local function loadProjectOrRom(project)
 	return menuutil.loadHandler({ PROJECT_FILTER, ROM_FILTER, ZIPPED_ROM_FILTER }, "project", function(path)
@@ -34,6 +35,12 @@ local function loadSram(system, reset)
 	end)
 end
 
+local function loadState(system, reset)
+	return menuutil.loadHandler({ STATE_FILTER }, "state", function(path)
+		return system:loadState(path, reset)
+	end)
+end
+
 local function saveProject(project, forceDialog)
 	forceDialog = forceDialog or project._native.path == ""
 	return menuutil.saveHandler({ PROJECT_FILTER }, "project", forceDialog, function(path)
@@ -46,6 +53,13 @@ local function saveSram(system, forceDialog)
 		return system:saveSram(path)
 	end)
 end
+
+local function saveState(system, forceDialog)
+	return menuutil.saveHandler({ STATE_FILTER }, "state", forceDialog, function(path)
+		return system:saveState(path)
+	end)
+end
+
 
 local function projectMenu(menu, project)
 	local settings = project._native.settings
@@ -106,6 +120,10 @@ local function systemMenu(menu, system, project)
 		:action("Load .sav...", loadSram(system, true))
 		:action("Save .sav", saveSram(system, false))
 		:action("Save .sav As...", saveSram(system, true))
+		:separator()
+		:action("Load State...", loadState(system, true))
+		:action("Save State", saveState(system, false))
+		:action("Save State As...", saveState(system, true))
 		--[[:separator()
 		:subMenu("UI Components")
 			:parent()

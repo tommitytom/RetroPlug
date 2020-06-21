@@ -50,6 +50,8 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"clearProject", &AudioContextProxy::clearProject,
 		"resetSystem", &AudioContextProxy::resetSystem,
 		"fetchSystemStates", &AudioContextProxy::fetchSystemStates,
+		"fetchResources", &AudioContextProxy::fetchResources,
+		"fetchResourcesAsync", &AudioContextProxy::fetchResourcesAsync,
 		"setRom", &AudioContextProxy::setRom,
 		"setSram", &AudioContextProxy::setSram,
 		"updateSram", &AudioContextProxy::updateSram,
@@ -92,6 +94,20 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"shift", &iplug::igraphics::IMouseMod::S,
 		"ctrl", &iplug::igraphics::IMouseMod::C,
 		"alt", &iplug::igraphics::IMouseMod::A
+	);
+
+	s.new_enum("ResourceType",
+		"None", ResourceType::None,
+		"Rom", ResourceType::Rom,
+		"Sram", ResourceType::Sram,
+		"State", ResourceType::State,
+		"Components", ResourceType::Components,
+		"AllExceptRom", ResourceType::AllExceptRom,
+		"All", ResourceType::All
+	);
+
+	s.new_usertype<FetchStateRequest>("FetchStateRequest",
+		"systems", &FetchStateRequest::systems
 	);
 
 	s.new_usertype<FetchStateResponse>("FetchStateResponse",

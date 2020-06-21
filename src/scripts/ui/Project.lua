@@ -4,6 +4,8 @@ local projectutil = require("util.project")
 local componentutil = require("util.component")
 local serpent = require("serpent")
 local serializer = require("serializer")
+local log = require("log")
+local Timer = require("timer")
 
 local Error = require("Error")
 local ComponentManager = require("ComponentManager")
@@ -107,10 +109,8 @@ function Project:load(data)
 	if self:getSelectedIndex() == 0 and #self.systems > 0 then self:setSelected(1) end
 end
 
-local Timer = require("timer")
-
 function Project:save(path, pretty, immediate)
-	print("Saving")
+	log.info("Saving project to " .. path)
 	local timer = Timer()
 
 	if #self.systems == 0 then return end
@@ -167,7 +167,7 @@ function Project:serializeProject(audioSystemStates, projectSettings, pretty)
 
 	local opts = { comment = false }
 	if pretty == true then opts.indent = '\t' end
-	return serpent.dump(t, opts)
+	return serpent.block(t, opts)
 end
 
 function Project:addComponent(componentType)

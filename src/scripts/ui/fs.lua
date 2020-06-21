@@ -31,7 +31,11 @@ local function saveText(path, data)
 end
 
 local function exists(path)
-	return _fs:exists(path)
+	if type(path) == "string" then
+		return _fs:exists(path)
+	end
+
+	return false
 end
 
 local function watch(path, cb)

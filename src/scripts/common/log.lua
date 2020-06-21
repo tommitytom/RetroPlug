@@ -56,7 +56,7 @@ function logger.info(...)
 	log(LogLevels.Info, ...)
 end
 
-function logger.warning(...)
+function logger.warn(...)
 	log(LogLevels.Warning, ...)
 end
 

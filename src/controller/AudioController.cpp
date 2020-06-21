@@ -98,8 +98,10 @@ void AudioController::setNode(Node* node) {
 
 void AudioController::fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
 	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
-		if (_processingContext.getInstance(i)) {
-			state.components[i] = _lua->serializeInstance(i);
+		if ((size_t)req.systems[i] & (size_t)ResourceType::Components) {
+			if (_processingContext.getInstance(i)) {
+				state.components[i] = _lua->serializeInstance(i);
+			}
 		}
 	}
 

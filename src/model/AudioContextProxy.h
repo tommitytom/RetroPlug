@@ -53,6 +53,35 @@ public:
 		_node->push<calls::EnableRendering>(NodeTypes::Audio, enabled);
 	}
 
+	void prepareFetch(FetchStateRequest& req) {
+		// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
+		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
+			size_t type = (size_t)req.systems[i];
+			
+			if (type & (size_t)ResourceType::Sram) {
+				req.srams[i] = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
+			}
+
+			if (type & (size_t)ResourceType::State) {
+				req.states[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+			}
+		}
+	}
+
+	void fetchResources(FetchStateRequest& req, std::function<void(const FetchStateResponse&)> cb) {
+		prepareFetch(req);
+		FetchStateResponse res;
+		_audioController->getLock()->lock();
+		_audioController->fetchState(req, res);
+		_audioController->getLock()->unlock();
+		cb(res);
+	}
+
+	void fetchResourcesAsync(FetchStateRequest& req, std::function<void(const FetchStateResponse&)> cb) {
+		prepareFetch(req);
+		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+	}
+
 	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)> cb) {
 		FetchStateRequest req;
 

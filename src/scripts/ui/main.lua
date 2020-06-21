@@ -8,6 +8,9 @@ require("components.GlobalButtonHandler")
 require("Action")
 require("Print")
 
+local log = require("log")
+log.overridePrint()
+
 local cm = require("ComponentManager")
 function _loadComponent(name) cm.loadComponent(name) end
 
