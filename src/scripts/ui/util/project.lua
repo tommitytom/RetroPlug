@@ -10,7 +10,7 @@ local Error = require("Error")
 local ProjectSettingsFields = {
 	audioRouting = AudioChannelRouting,
 	midiRouting = MidiChannelRouting,
-	layout = InstanceLayout,
+	layout = SystemLayout,
 	saveType = SaveStateType,
 	"zoom"
 }
