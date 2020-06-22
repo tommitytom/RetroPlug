@@ -54,6 +54,7 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"fetchResourcesAsync", &AudioContextProxy::fetchResourcesAsync,
 		"setRom", &AudioContextProxy::setRom,
 		"setSram", &AudioContextProxy::setSram,
+		"setState", &AudioContextProxy::setState,
 		"updateSram", &AudioContextProxy::updateSram,
 		"updateSystemSettings", &AudioContextProxy::updateSystemSettings,
 		"onMenu", &AudioContextProxy::onMenu

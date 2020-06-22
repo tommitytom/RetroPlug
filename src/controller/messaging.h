@@ -116,8 +116,9 @@ namespace calls {
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapSystem, SystemSwapDesc, SystemSwapDesc);
-	DefineRequest(SetSram, SetDataRequest, DataBufferPtr);
 	DefineRequest(SetRom, SetDataRequest, DataBufferPtr);
+	DefineRequest(SetSram, SetDataRequest, DataBufferPtr);
+	DefineRequest(SetState, SetDataRequest, DataBufferPtr);
 	DefineRequest(DuplicateSystem, SystemDuplicateDesc, SameBoyPlugPtr);
 	DefineRequest(TakeSystem, SystemIndex, SameBoyPlugPtr);
 	DefineRequest(FetchState, FetchStateRequest, FetchStateResponse);

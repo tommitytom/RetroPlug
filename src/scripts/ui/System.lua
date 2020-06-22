@@ -158,6 +158,21 @@ function System:loadSram(data, reset, path)
 	end
 end
 
+function System:loadState(data, reset)
+	if type(data) == "string" then
+		data = fs.load(data)
+		if data == nil then
+			return Error("Failed to load state: " .. data .. " not valid")
+		end
+	end
+
+	self:emit("onStateLoad", data)
+
+	if isNullPtr(self._audioContext) == false then
+		self._audioContext:setState(self.desc.idx, data, reset)
+	end
+end
+
 function System:saveSram(path)
 	return fs.save(path, self.desc.sourceSavData)
 end

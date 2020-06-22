@@ -157,8 +157,12 @@ public:
 		_node->request<calls::SetRom>(NodeTypes::Audio, SetDataRequest{ idx, romData, reset }, [](const DataBufferPtr&) {});
 	}
 
-	void setSram(SystemIndex idx, DataBufferPtr romData, bool reset) {
-		_node->request<calls::SetSram>(NodeTypes::Audio, SetDataRequest{ idx, romData, reset }, [](const DataBufferPtr&) {});
+	void setSram(SystemIndex idx, DataBufferPtr sramData, bool reset) {
+		_node->request<calls::SetSram>(NodeTypes::Audio, SetDataRequest{ idx, sramData, reset }, [](const DataBufferPtr&) {});
+	}
+
+	void setState(SystemIndex idx, DataBufferPtr stateData, bool reset) {
+		_node->request<calls::SetState>(NodeTypes::Audio, SetDataRequest{ idx, stateData, reset }, [](const DataBufferPtr&) {});
 	}
 
 	SystemState setSystem(SystemDescPtr& inst) {
