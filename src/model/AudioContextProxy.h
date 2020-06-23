@@ -45,7 +45,7 @@ public:
 	}
 
 	void updateSram(SystemIndex idx) {
-		DataBuffer<char>* buffer = _project.systems[idx]->sourceSavData.get();
+		DataBuffer<char>* buffer = _project.systems[idx]->sramData.get();
 		_audioController->getSram(idx, buffer);
 	}
 
@@ -181,24 +181,24 @@ public:
 	}
 
 	SystemState loadRom(SystemDescPtr& inst) {
-		if (!inst->sourceRomData) {
+		if (!inst->romData) {
 			inst->state = SystemState::RomMissing;
 			return SystemState::RomMissing;
 		}
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
 		plug->setDesc({ inst->romName });
-		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings, inst->fastBoot);
+		plug->loadRom(inst->romData->data(), inst->romData->size(), inst->sameBoySettings, inst->fastBoot);
 
-		if (inst->sourceStateData) {
-			plug->loadState(inst->sourceStateData->data(), inst->sourceStateData->size());
+		if (inst->stateData) {
+			plug->loadState(inst->stateData->data(), inst->stateData->size());
 		}
 
-		if (inst->sourceSavData) {
-			plug->loadBattery(inst->sourceSavData->data(), inst->sourceSavData->size(), false);
+		if (inst->sramData) {
+			plug->loadBattery(inst->sramData->data(), inst->sramData->size(), false);
 		} else {
 			// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
-			inst->sourceSavData = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
+			inst->sramData = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
 		}
 
 		SystemSwapDesc swap = { inst->idx, plug, std::make_shared<std::string>(inst->audioComponentState) };
@@ -213,7 +213,7 @@ public:
 
 	SystemState duplicateSystem(SystemIndex idx, SystemDescPtr& inst) {
 		assert(_project.systems.size() < MAX_SYSTEMS);
-		if (!inst->sourceRomData) {
+		if (!inst->romData) {
 			inst->state = SystemState::RomMissing;
 			return SystemState::RomMissing;
 		}
@@ -222,7 +222,7 @@ public:
 		inst->fastBoot = true;
 
 		SameBoyPlugPtr plug = std::make_shared<SameBoyPlug>();
-		plug->loadRom(inst->sourceRomData->data(), inst->sourceRomData->size(), inst->sameBoySettings, inst->fastBoot);
+		plug->loadRom(inst->romData->data(), inst->romData->size(), inst->sameBoySettings, inst->fastBoot);
 		plug->setDesc({ inst->romName });
 
 		SystemDuplicateDesc swap = { (SystemIndex)idx, inst->idx, plug };

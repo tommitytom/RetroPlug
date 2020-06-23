@@ -51,15 +51,6 @@ void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	UpdateSelected();
 }
 
-/*void RetroPlugView::SetZoom(int zoom) {
-	Project* project = _proxy->getProject();
-	project->settings.zoom = zoom + 1;
-
-	for (auto& view : _views) {
-		view->SetZoom(project->settings.zoom);
-	}
-}*/
-
 void RetroPlugView::ProcessDialog() {
 	ViewWrapper* viewWrapper = _lua->getViewWrapper();
 	DialogRequestPtr dialog = viewWrapper->fetchDialogRequest();
@@ -105,7 +96,6 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	if (menu) {
 		_menu.Clear();
 
-		// Show menu
 		MenuCallbackMap callbacks;
 		callbacks.reserve(1000);
 		_menu.SetFunction([&](IPopupMenu* menu) {
@@ -133,108 +123,6 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		UpdateLayout();
 		UpdateSelected();
 	}
-
-	/*SelectActiveAtPoint(x, y);
-
-	if (mod.R) {
-		// Temporarily disable multiple instances in Ableton on Mac due to a bug
-#ifdef WIN32
-		bool multiInstance = true;
-#else
-		bool multiInstance = _host != EHost::kHostAbletonLive;
-#endif
-
-		_menu.Clear();
-		Menu root;
-
-		Project* project = _proxy->getProject();
-		SystemDescPtr active = _proxy->getActiveInstance();
-		if (active) {
-			switch (active->state) {
-			case SystemState::Running: {
-				SystemView* view = GetActiveView();
-
-				if (!active->sourceSavData) {
-					active->sourceSavData = std::make_shared<DataBuffer<char>>(DEFAULT_SRAM_SIZE);
-				}
-
-				// Update SRAM for the selected system since it might be used to generate the menu
-				_audioController->getSram(_activeIdx, active->sourceSavData);
-
-				std::vector<Menu*> menus;
-				_audioController->onMenu(_activeIdx, menus);
-				_lua->onMenu(menus);
-
-				for (Menu* item : menus) {
-					mergeMenu(item, &root);
-					delete item;
-				}
-
-				break;
-			}
-			case SystemState::RomMissing:
-				root.action("Find ROM...", [&]() { OpenFindRomDialog(); })
-					.action("Load Project...", [&]() { OpenLoadProjectDialog(); });
-
-				break;
-			}
-		} else {
-			root.action("Load Project...", [&]() { OpenLoadProjectDialog(); })
-				.action("Load ROM...", [&]() { OpenLoadProjectOrRomDialog(); });
-		}
-
-		MenuCallbackMap callbacks;
-		callbacks.reserve(1000);
-		_menu.SetFunction([&](IPopupMenu* menu) {
-			IPopupMenu::Item* chosen = menu->GetChosenItem();
-			if (chosen) {
-				int tag = chosen->GetTag();
-				if (tag >= 0 && tag < callbacks.size()) {
-					callbacks[tag]();
-				} else if (tag >= LUA_UI_MENU_ID_OFFSET) {
-					_lua->onMenuResult(tag);
-					_proxy->onMenuResult(tag);
-				}
-
-				DialogRequest dialogRequest;
-				if (_lua->getDialogRequest(dialogRequest)) {
-					switch (dialogRequest.type) {
-					case DialogType::Save: {
-						std::string p = ws2s(BasicFileSave(GetUI(), dialogRequest.filters, tstr(dialogRequest.fileName)));
-						std::vector<std::string> paths;
-						paths.push_back(p);
-						_lua->handleDialogCallback(paths);
-						break;
-					}
-					case DialogType::Directory:
-					case DialogType::Load: {
-						std::vector<tstring> res = BasicFileOpen(
-							GetUI(), 
-							dialogRequest.filters, 
-							dialogRequest.multiSelect,
-							dialogRequest.type == DialogType::Directory
-						);
-
-						std::vector<std::string> paths;
-						for (size_t i = 0; i < res.size(); ++i) {
-							paths.push_back(ws2s(res[i]));
-						}
-
-						_lua->handleDialogCallback(paths);
-
-						break;
-					}
-					}
-				}
-				
-				UpdateLayout();
-				UpdateSelected();
-			}
-		});
-
-		createMenu(&_menu, &root, callbacks);
-		GetUI()->CreatePopupMenu(*this, _menu, x, y);
-	}*/
 }
 
 void RetroPlugView::Draw(IGraphics& g) {
@@ -375,19 +263,9 @@ void RetroPlugView::UpdateSelected() {
 		view->SetAlpha(INACTIVE_ALPHA);
 	}
 
-	/*if (_activeIdx != NO_ACTIVE_SYSTEM && idx != _activeIdx) {
-		_views[_activeIdx]->SetAlpha(INACTIVE_ALPHA);
-	}*/
-
 	if (idx != NO_ACTIVE_SYSTEM) {
 		_views[idx]->SetAlpha(ACTIVE_ALPHA);
 	}
 
 	_activeIdx = idx;
-}
-
-void RetroPlugView::RequestSave() {
-	/*_proxy->requestSave([&](const FetchStateResponse& res) {
-		_lua->saveProject(res);
-	});*/
 }

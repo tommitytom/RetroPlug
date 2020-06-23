@@ -98,7 +98,7 @@ local projectDefaults = {
 			uiComponents = {},
 			audioComponents = {},
 			sameBoy = {
-				model = "Auto",
+				model = "auto",
 				gameLink = false
 			}
 		},
@@ -106,10 +106,10 @@ local projectDefaults = {
 			projectVersion = "0.1.0",
 			path = "",
 			settings = {
-				saveType="Sram",
-				audioRouting="StereoMixDown",
+				saveType="sram",
+				audioRouting="stereoMixDown",
 				zoom=2,
-				midiRouting="SendToAll"
+				midiRouting="sendToAll"
 			}
 		}
 	}
@@ -128,7 +128,7 @@ local function updgrade_json_to_pv100(p)
 		local stateData
 		if v.state ~= nil and v.state.data ~= nil and type(v.state.data) == "string" then
 			stateData = base64.decodeBuffer(v.state.data)
-			log.debug(stateData:size())
+			fs.save("C:\\retro\\test2.state", stateData)
 		end
 
 		local uiComponents = {}
@@ -243,14 +243,14 @@ local function createProjectSystems(projectData, zip)
 
 		if res.rom then
 			system.state = SystemState.Initialized
-			system.sourceRomData = res.rom
+			system.romData = res.rom
 			system.romName = util.getRomName(res.rom)
 		else
 			system.state = SystemState.RomMissing
 		end
 
-		if res.state then system.sourceStateData = res.state end
-		if res.sram then system.sourceSavData = res.sram end
+		if res.state then system.stateData = res.state end
+		if res.sram then system.sramData = res.sram end
 
 		system.audioComponentState = serpent.dump(inst.audioComponents)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
@@ -335,7 +335,7 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 			if ok == false then return Error("Failed to add system state") end
 		end
 
-		ok = zip:add(idx .. ".gb", system.desc.sourceRomData)
+		ok = zip:add(idx .. ".gb", system.desc.romData)
 		if ok == false then return Error("Failed to add system ROM") end
 	end
 

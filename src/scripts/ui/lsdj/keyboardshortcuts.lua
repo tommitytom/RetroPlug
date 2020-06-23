@@ -23,6 +23,12 @@ actions({ name = "Lsdj", rom = "lsdj*" }, {
 	BeginSelection = function()
 		system.buttons:hold(Buttons.Select):hold(Buttons.B):releaseAll()
 	end,
+	BeginRowSelection = function()
+		system.buttons:hold(Buttons.Select):press(Buttons.B):hold(Buttons.B):releaseAll()
+	end,
+	SelectAll = function()
+		system.buttons:hold(Buttons.Select):press(Buttons.B):press(Buttons.B):hold(Buttons.B):releaseAll()
+	end,
 	CancelSelection = function()
 		system.buttons:press(Buttons.B)
 	end,

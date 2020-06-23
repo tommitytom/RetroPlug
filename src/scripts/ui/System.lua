@@ -66,7 +66,7 @@ end
 
 function System:setRom(data, reset)
 	if reset == nil then reset = false end
-	self.desc.sourceRomData = data
+	self.desc.romData = data
 	self.desc.romName = util.getRomName(data)
 	self:emit("onRomSet", data)
 
@@ -113,7 +113,7 @@ function System:loadRom(data, path)
 
 	d.emulatorType = SystemType.SameBoy
 	d.state = SystemState.Initialized
-	d.sourceRomData = fileData
+	d.romData = fileData
 	d.romName = util.getRomName(fileData)
 
 	if d.romPath ~= nil then
@@ -122,7 +122,7 @@ function System:loadRom(data, path)
 			local savData = fs.load(savPath, false)
 			if savData ~= nil then
 				d.sramPath = savPath
-				d.sourceSavData = savData
+				d.sramData = savData
 			end
 		end
 	end
@@ -174,11 +174,11 @@ function System:loadState(data, reset)
 end
 
 function System:saveSram(path)
-	return fs.save(path, self.desc.sourceSavData)
+	return fs.save(path, self.desc.sramData)
 end
 
 function System:saveRom(path)
-	return fs.save(path, self.desc.sourceRomData)
+	return fs.save(path, self.desc.romData)
 end
 
 function System:saveState(path)
@@ -196,11 +196,11 @@ function System:saveState(path)
 end
 
 function System:sram()
-	return self.desc.sourceSavData
+	return self.desc.sramData
 end
 
 function System:rom()
-	return self.desc.sourceRomData
+	return self.desc.romData
 end
 
 function System:buttons()

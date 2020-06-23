@@ -714,6 +714,9 @@
     <ClInclude Include="..\src\util\math.h">
       <Filter>src\util</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\SolTest.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

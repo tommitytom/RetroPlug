@@ -67,7 +67,7 @@ local function overclockPatch(data, overclock)
 end
 
 function Lsdj:updateRom()
-	local d = self:system().sourceRomData
+	local d = self:system().romData
 	overclockPatch(d, self._state.overclock)
 end
 

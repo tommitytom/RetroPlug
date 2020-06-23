@@ -70,8 +70,6 @@ public:
 private:
 	void UpdateLayout();
 
-	void RequestSave();
-
 	void UpdateSelected();
 
 	void ProcessDialog();

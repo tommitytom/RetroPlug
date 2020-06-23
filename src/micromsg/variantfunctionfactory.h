@@ -32,7 +32,9 @@ namespace micromsg {
 		}
 
 		void free(VariantFunction f) {
-			_scratch.push_back(f.take());
+			auto p = f.take();
+			p->clear();
+			_scratch.push_back(p);
 		}
 	};
 }

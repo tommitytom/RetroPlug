@@ -149,6 +149,23 @@ local function generateMainMenu(menu, project)
 
 	local sameBoySettings = selected.desc.sameBoySettings
 	menu:subMenu("Settings")
+			:subMenu("Keyboard")
+				:multiSelect({
+					"Default - (Arrows) (Ctrl/Enter) (W/D)",
+					"Aquellex - (W/A/S/D) (C/V) (G/C)",
+					"DEFENSE MECHANISM - (Arrows) (Shift/Enter) (B, A)",
+					"bryface - (E/S/D/F) (B/N) (9/0)"
+				}, 0)
+				:parent()
+			:subMenu("Joypad")
+				:action("Default")
+				:parent()
+			:subMenu("MIDI")
+				:action("Default")
+				:separator()
+				:action("peterswimm")
+				:parent()
+			:separator()
 			:action("Open Settings Folder...", function()
 				nativeshell.openShellFolder(nativeshell.getContentPath(_RETROPLUG_VERSION))
 			end)

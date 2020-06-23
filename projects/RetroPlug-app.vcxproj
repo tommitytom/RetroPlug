@@ -329,6 +329,7 @@
     <ClInclude Include="..\src\plugs\SameBoyPlug.h" />
     <ClInclude Include="..\src\plugs\SameBoyWrapper.h" />
     <ClInclude Include="..\src\RetroPlugInstrument.h" />
+    <ClInclude Include="..\src\SolTest.h" />
     <ClInclude Include="..\src\Types.h" />
     <ClInclude Include="..\src\util\base64dec.h" />
     <ClInclude Include="..\src\util\base64enc.h" />

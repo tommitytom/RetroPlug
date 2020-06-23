@@ -57,13 +57,9 @@ struct SystemDesc {
 
 	SameBoySettings sameBoySettings;
 
-	DataBufferPtr sourceRomData;
-	DataBufferPtr patchedRomData;
-
-	DataBufferPtr sourceStateData;
-
-	DataBufferPtr sourceSavData;
-	DataBufferPtr patchedSavData;
+	DataBufferPtr romData;
+	DataBufferPtr stateData;
+	DataBufferPtr sramData;
 
 	std::string audioComponentState;
 	std::string uiComponentState;

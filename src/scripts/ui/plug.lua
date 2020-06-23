@@ -138,7 +138,7 @@ function _loadRomAtPath(idx, romPath, savPath, model)
 	if fs.exists(romPath) then
 		local romData = fs.load(romPath, false)
 		if romData ~= nil then
-			d.sourceRomData = romData
+			d.romData = romData
 			d.state = EmulatorInstanceState.Initialized
 		end
 	end
@@ -149,7 +149,7 @@ function _loadRomAtPath(idx, romPath, savPath, model)
 			local savData = fs.load(savPath, false)
 			if savData ~= nil then
 				d.savPath = savPath
-				d.sourceSavData = savData
+				d.sramData = savData
 			end
 		end
 	end
@@ -180,8 +180,8 @@ function _loadRom(desc)
 		_instances[desc.idx + 1] = instance
 	end
 
-	if desc.sourceRomData ~= nil then
-		desc.romName = util.getRomName(desc.sourceRomData)
+	if desc.romData ~= nil then
+		desc.romName = util.getRomName(desc.romData)
 		instance.components = cm.createComponents(instance.system)
 
 		cm.runAllHandlers("onComponentsInitialized", instance.components, instance.components)

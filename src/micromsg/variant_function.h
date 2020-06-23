@@ -9,6 +9,7 @@ namespace micromsg {
 	class FunctionWrapperBase {
 	public:
 		virtual ~FunctionWrapperBase() {}
+		virtual void clear() = 0;
 	};
 
 	template <class T>
@@ -17,6 +18,8 @@ namespace micromsg {
 		std::function<T> func;
 		FunctionWrapper() {}
 		FunctionWrapper(std::function<T> f) : func(f) {}
+		
+		void clear() override { func = nullptr; }
 	};
 
 	class VariantFunction {
