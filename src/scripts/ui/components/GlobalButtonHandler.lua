@@ -1,6 +1,7 @@
 local GlobalButtonHandler = component({ name = "Global Button Handler", global = true })
 
 local inpututil = require("util.input")
+local log = require("log")
 
 local _maps = {
 	key = {},

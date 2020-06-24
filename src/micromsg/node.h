@@ -108,7 +108,7 @@ namespace micromsg {
 		}
 
 		template <typename T>
-		void on(std::function<typename RequestSignature<T>> func) {
+		void on(std::function<typename RequestSignature<T>>&& func) {
 			assert(!_active);
 
 			size_t typeId = _handlers->typeIds[TypeId<T>::get()];
@@ -118,7 +118,7 @@ namespace micromsg {
 			ss << magic_enum::enum_name(_type) << " added handler for " << typeId;
 			std::cout << ss.str() << std::endl;
 
-			_callbacks[typeId] = _funcFactory.alloc(func);
+			_callbacks[typeId] = _funcFactory.alloc(std::forward<std::function<typename RequestSignature<T>>>(func));
 		}
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
@@ -164,7 +164,7 @@ namespace micromsg {
 		}
 
 		template <typename RequestT, std::enable_if_t<!IsPushType<RequestT>::value, int> = 0>
-		bool request(NodeType target, const typename RequestT::Arg& message, std::function<void(const typename RequestT::Return&)> cb) {
+		bool request(NodeType target, const typename RequestT::Arg& message, std::function<void(const typename RequestT::Return&)>&& cb) {
 			assert(_active);
 			assert(isValid());
 			mm_assert_m(!_responderStack.empty(), "Maximum call count reached");
@@ -188,7 +188,7 @@ namespace micromsg {
 					if (send(target, envelope)) {
 						Responder& r = _responderLookup[envelope->callId];
 						r.callTypeId = envelope->callTypeId;
-						r.func = _funcFactory.alloc(cb);
+						r.func = _funcFactory.alloc(std::forward<std::function<void(const typename RequestT::Return&)>>(cb));
 						return true;
 					}
 				}

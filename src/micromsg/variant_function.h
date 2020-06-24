@@ -16,6 +16,7 @@ namespace micromsg {
 	class FunctionWrapper : public FunctionWrapperBase {
 	public:
 		std::function<T> func;
+
 		FunctionWrapper() {}
 		FunctionWrapper(std::function<T> f) : func(f) {}
 		
@@ -28,17 +29,14 @@ namespace micromsg {
 
 	public:
 		VariantFunction() {}
-		VariantFunction(VariantFunction& other) {
+
+		template <typename T> 
+		VariantFunction(FunctionWrapper<T>* func) : _func(func) {}
+
+		VariantFunction(VariantFunction&& other) noexcept {
 			_func = other._func;
 			other._func = nullptr;
 		}
-
-		template <typename T>
-		VariantFunction(FunctionWrapper<T>* func) {
-			set(func);
-		}
-
-		~VariantFunction() {}
 
 		bool isValid() const { return _func != nullptr; }
 
@@ -66,7 +64,7 @@ namespace micromsg {
 			return static_cast<FunctionWrapper<T>*>(_func);
 		}
 
-		VariantFunction& operator=(VariantFunction& other) {
+		VariantFunction& operator=(VariantFunction&& other) {
 			_func = other._func;
 			other._func = nullptr;
 			return *this;

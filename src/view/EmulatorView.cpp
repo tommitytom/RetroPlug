@@ -14,11 +14,6 @@
 SystemView::SystemView(SystemIndex idx, IGraphics* graphics)
 	: _index(idx), _graphics(graphics)
 {
-	/*_settings = {
-		{ "Color Correction", 2 },
-		{ "High-pass Filter", 1 }
-	};*/
-
 	for (size_t i = 0; i < 2; i++) {
 		_textIds[i] = new ITextControl(IRECT(0, -100, 0, 0), "", IText(23, COLOR_WHITE));
 		graphics->AttachControl(_textIds[i]);
@@ -125,67 +120,9 @@ void SystemView::DrawPixelBuffer(NVGcontext* vg) {
 	if (_imageId != -1) {
 		nvgBeginPath(vg);
 
-		NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, _dimensions.w * _zoom, _dimensions.h * _zoom, 0, _imageId, _alpha);
+		NVGpaint imgPaint = nvgImagePattern(vg, _area.L, _area.T, (float)(_dimensions.w * _zoom), (float)(_dimensions.h * _zoom), 0, _imageId, _alpha);
 		nvgRect(vg, _area.L, _area.T, _area.W(), _area.H());
 		nvgFillPaint(vg, imgPaint);
 		nvgFill(vg);
 	}
 }
-
-/*IPopupMenu* SystemView::CreateSettingsMenu() {
-	IPopupMenu* settingsMenu = new IPopupMenu();
-
-	// TODO: These should be moved in to the SameBoy wrapper
-	std::map<std::string, std::vector<std::string>> settings;
-	settings["Color Correction"] = {
-		"Off",
-		"Correct Curves",
-		"Emulate Hardware",
-		"Preserve Brightness"
-	};
-
-	settings["High-pass Filter"] = {
-		"Off",
-		"Accurate",
-		"Remove DC Offset"
-	};
-
-	for (auto& setting : settings) {
-		const std::string& name = setting.first;
-		IPopupMenu* settingMenu = new IPopupMenu(0, true);
-		for (size_t i = 0; i < setting.second.size(); i++) {
-			auto& option = setting.second[i];
-			settingMenu->AddItem(option.c_str(), i);
-		}
-
-		settingMenu->CheckItem(_settings[name], true);
-		settingsMenu->AddItem(name.c_str(), settingMenu);
-		settingMenu->SetFunction([this, name](int indexInMenu, IPopupMenu::Item* itemChosen) {
-			_settings[name] = indexInMenu;
-			_plug->setSetting(name, indexInMenu);
-		});
-	}
-
-	settingsMenu->AddSeparator();
-	settingsMenu->AddItem("Open Settings Folder...");
-	
-	return settingsMenu;
-}*/
-
-/*void SystemView::OpenReplaceRomDialog() {
-	std::vector<FileDialogFilters> types = {
-		{ TSTR("GameBoy Roms"), TSTR("*.gb;*.gbc") }
-	};
-
-	std::vector<tstring> paths = BasicFileOpen(_graphics, types, false);
-	if (paths.size() > 0) {
-		std::vector<std::byte> saveData;
-		_plug->saveBattery(saveData);
-
-		_plug->init(paths[0], _plug->model(), false);
-		_plug->loadBattery(saveData, false);
-
-		_plug->disableRendering(false);
-		HideText();
-	}
-}*/

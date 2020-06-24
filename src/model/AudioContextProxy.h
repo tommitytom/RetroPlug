@@ -77,12 +77,12 @@ public:
 		cb(res);
 	}
 
-	void fetchResourcesAsync(FetchStateRequest& req, std::function<void(const FetchStateResponse&)> cb) {
+	void fetchResourcesAsync(FetchStateRequest& req, std::function<void(const FetchStateResponse&)>&& cb) {
 		prepareFetch(req);
-		_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+		_node->request<calls::FetchState>(NodeTypes::Audio, req, std::forward<std::function<void(const FetchStateResponse&)>>(cb));
 	}
 
-	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)> cb) {
+	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)>&& cb) {
 		FetchStateRequest req;
 
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
@@ -98,7 +98,7 @@ public:
 			_audioController->getLock()->unlock();
 			cb(res);
 		} else {
-			_node->request<calls::FetchState>(NodeTypes::Audio, req, cb);
+			_node->request<calls::FetchState>(NodeTypes::Audio, req, std::forward<std::function<void(const FetchStateResponse&)>>(cb));
 		}
 	}
 

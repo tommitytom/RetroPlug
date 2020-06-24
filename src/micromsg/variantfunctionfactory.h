@@ -22,16 +22,16 @@ namespace micromsg {
 		}
 
 		template <typename T>
-		VariantFunction alloc(std::function<T> f) {
+		VariantFunction alloc(std::function<T>&& f) {
 			static_assert(sizeof(FunctionWrapper<T>) == sizeof(FunctionWrapper<void()>), "Function wrapper size inconsistent");
 			assert(!_scratch.empty());
 			FunctionWrapper<T>* d = reinterpret_cast<FunctionWrapper<T>*>(_scratch.back());
 			_scratch.pop_back();
-			d->func = f;
+			d->func = std::move(f);
 			return VariantFunction(d);
 		}
 
-		void free(VariantFunction f) {
+		void free(VariantFunction& f) {
 			auto p = f.take();
 			p->clear();
 			_scratch.push_back(p);
