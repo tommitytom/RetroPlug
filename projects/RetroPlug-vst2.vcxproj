@@ -319,9 +319,10 @@
     <ClInclude Include="..\src\util\RomWatcher.h" />
     <ClInclude Include="..\src\util\xstring.h" />
     <ClInclude Include="..\src\view\ContextMenu.h" />
-    <ClInclude Include="..\src\view\EmulatorView.h" />
     <ClInclude Include="..\src\view\Menu.h" />
-    <ClInclude Include="..\src\view\RetroPlugRoot.h" />
+    <ClInclude Include="..\src\view\RetroPlugView.h" />
+    <ClInclude Include="..\src\view\SystemView.h" />
+    <ClInclude Include="..\src\view\ViewWrapper.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\VST2_SDK\aeffect.h" />
     <ClInclude Include="..\thirdparty\iPlug2\Dependencies\IPlug\VST2_SDK\aeffectx.h" />
     <ClInclude Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.h" />
@@ -532,9 +533,10 @@
     <ClCompile Include="..\src\util\File.cpp" />
     <ClCompile Include="..\src\util\PaRingBuffer.c" />
     <ClCompile Include="..\src\view\ContextMenu.cpp" />
-    <ClCompile Include="..\src\view\EmulatorView.cpp" />
     <ClCompile Include="..\src\view\Menu.cpp" />
-    <ClCompile Include="..\src\view\RetroPlugRoot.cpp" />
+    <ClCompile Include="..\src\view\RetroPlugView.cpp" />
+    <ClCompile Include="..\src\view\SystemView.cpp" />
+    <ClCompile Include="..\src\view\ViewWrapper.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\IControls.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\IPopupMenuControl.cpp" />
     <ClCompile Include="..\thirdparty\iPlug2\IGraphics\Controls\ITextEntryControl.cpp" />

@@ -1,4 +1,4 @@
-#include "EmulatorView.h"
+#include "SystemView.h"
 
 #include "platform/FileDialog.h"
 #include "platform/Path.h"

@@ -6,7 +6,7 @@
 #include <vector>
 #include <stack>
 #include "IControl.h"
-#include "EmulatorView.h"
+#include "SystemView.h"
 #include "ContextMenu.h"
 #include "controller/RetroPlugController.h"
 #include "util/cxxtimer.hpp"

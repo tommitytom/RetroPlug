@@ -1,8 +1,8 @@
 ﻿#include "RetroPlugInstrument.h"
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
-#include "view/EmulatorView.h"
-#include "view/RetroPlugRoot.h"
+#include "view/SystemView.h"
+#include "view/RetroPlugView.h"
 
 #include "util/File.h"
 #include "util/zipp.h"

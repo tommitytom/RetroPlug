@@ -118,15 +118,6 @@
     <ClCompile Include="..\src\util\PaRingBuffer.c">
       <Filter>src\util</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\view\ContextMenu.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\view\EmulatorView.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\view\RetroPlugRoot.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\model\FileManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
@@ -135,9 +126,6 @@
     </ClCompile>
     <ClCompile Include="..\src\controller\AudioController.cpp">
       <Filter>src\controller</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\view\Menu.cpp">
-      <Filter>src\view</Filter>
     </ClCompile>
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\chain.c">
       <Filter>liblsdj</Filter>
@@ -199,9 +187,6 @@
     <ClCompile Include="..\thirdparty\liblsdj\liblsdj\src\bytes.c">
       <Filter>liblsdj</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\view\ViewWrapper.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\luawrapper\AudioLuaContext.cpp">
       <Filter>src\luawrapper</Filter>
     </ClCompile>
@@ -228,6 +213,21 @@
     </ClCompile>
     <ClCompile Include="..\src\luawrapper\Common.cpp">
       <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\ContextMenu.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\Menu.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\RetroPlugView.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\SystemView.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\ViewWrapper.cpp">
+      <Filter>src\view</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -489,15 +489,6 @@
     <ClInclude Include="..\src\util\RingBuffer.h">
       <Filter>src\util</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\view\ContextMenu.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\view\EmulatorView.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\view\RetroPlugRoot.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\model\FileManager.h">
       <Filter>src\model</Filter>
     </ClInclude>
@@ -590,12 +581,6 @@
     </ClInclude>
     <ClInclude Include="..\src\controller\AudioController.h">
       <Filter>src\controller</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\view\Menu.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\view\BlockAllocator.h">
-      <Filter>src\view</Filter>
     </ClInclude>
     <ClInclude Include="..\thirdparty\liblsdj\liblsdj\src\defaults.h">
       <Filter>liblsdj</Filter>
@@ -690,9 +675,6 @@
     <ClInclude Include="..\src\model\AudioContextProxy.h">
       <Filter>src\model</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\view\ViewWrapper.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\util\zipp.h">
       <Filter>src\util</Filter>
     </ClInclude>
@@ -716,6 +698,21 @@
     </ClInclude>
     <ClInclude Include="..\src\SolTest.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\ContextMenu.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\Menu.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\RetroPlugView.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\SystemView.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\ViewWrapper.h">
+      <Filter>src\view</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

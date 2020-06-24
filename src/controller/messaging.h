@@ -127,3 +127,45 @@ namespace calls {
 }
 
 using Node = micromsg::Node<NodeTypes>;
+
+/*
+enum CallTypes {
+	LoadRom,
+	TransmitVideo,
+	SwapLuaContext
+};
+
+namespace async {
+	
+	template <typename call_types, typename... Args>
+	class node {
+		template <const int call_type>
+		void on() {}
+	};
+
+	class hub {
+	public:
+		
+	};
+
+	template <const int call_type, typename arg_type>
+	class push {};
+
+	template <typename int call_type, typename arg_type, typename return_type>
+	class req {};
+}
+
+using hub = async::hub;
+using node = async::node<
+	async::push<LoadRom, LoadRomDesc>,
+	async::req<SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr>
+>;
+
+void func() {
+	async::hub hub;
+	node* node = hub.add_node<node>(NodeTypes::Audio);
+
+	node n;
+	n.on<LoadRom>([](LoadRomDesc) {});
+}
+*/

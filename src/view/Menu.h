@@ -5,7 +5,6 @@
 #include <functional>
 #include <iostream>
 #include "IGraphics.h"
-#include "BlockAllocator.h"
 
 enum class MenuItemType {
 	None,
@@ -117,7 +116,6 @@ private:
 	std::string _name;
 	std::vector<MenuItemBase*> _items;
 	bool _active;
-	BlockAllocator* _allocator = nullptr;
 
 public:
 	Menu(const std::string& name = "", bool active = false, Menu* parent = nullptr)

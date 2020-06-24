@@ -3,7 +3,7 @@
 #include <gainput/gainput.h>
 #include "luawrapper/UiLuaContext.h"
 #include "micromsg/nodemanager.h"
-#include "view/RetroPlugRoot.h"
+#include "view/RetroPlugView.h"
 #include "messaging.h"
 #include "model/AudioContextProxy.h"
 #include "Types.h"

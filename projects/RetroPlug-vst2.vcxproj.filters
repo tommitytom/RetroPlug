@@ -91,12 +91,6 @@
     <ClCompile Include="..\src\view\ContextMenu.cpp">
       <Filter>src\view</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\view\EmulatorView.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\view\RetroPlugRoot.cpp">
-      <Filter>src\view</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\controller\RetroPlugController.cpp">
       <Filter>src\controller</Filter>
     </ClCompile>
@@ -204,6 +198,15 @@
     </ClCompile>
     <ClCompile Include="..\src\luawrapper\Chrono.cpp">
       <Filter>src\luawrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\RetroPlugView.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\SystemView.cpp">
+      <Filter>src\view</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\view\ViewWrapper.cpp">
+      <Filter>src\view</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -414,12 +417,6 @@
     <ClInclude Include="..\src\view\ContextMenu.h">
       <Filter>src\view</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\view\EmulatorView.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\view\RetroPlugRoot.h">
-      <Filter>src\view</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\controller\RetroPlugController.h">
       <Filter>src\controller</Filter>
     </ClInclude>
@@ -494,6 +491,15 @@
     </ClInclude>
     <ClInclude Include="..\src\luawrapper\AudioLuaContext.h">
       <Filter>src\luawrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\RetroPlugView.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\SystemView.h">
+      <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\view\ViewWrapper.h">
+      <Filter>src\view</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

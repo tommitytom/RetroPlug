@@ -1,4 +1,4 @@
-#include "RetroPlugRoot.h"
+#include "RetroPlugView.h"
 
 #include <cmath>
 #include "platform/FileDialog.h"
