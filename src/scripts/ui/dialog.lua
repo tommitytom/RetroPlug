@@ -24,7 +24,7 @@ local function prepareFilters(filters, target)
 
 	if #filters > 1 then
 		local exts = ""
-		for _, v in ipairs(filters) do
+		for _, v in ipairs(formatted) do
 			if exts ~= "" then exts = exts .. ";" end
 			exts = exts .. v[2]
 		end
@@ -33,7 +33,7 @@ local function prepareFilters(filters, target)
 	end
 
 	local desc = {}
-	for _, v in ipairs(filters) do
+	for _, v in ipairs(formatted) do
 		local f = FileDialogFilters.new()
 		f.name = v[1]
 		f.extensions = v[2]

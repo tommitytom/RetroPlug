@@ -148,7 +148,9 @@ void luawrappers::registerCommon(sol::state& s) {
 		),
 		"get", &DataBuffer<char>::get,
 		"set", &DataBuffer<char>::set,
-		"slice", &DataBuffer<char>::slice,
+		"slice", [](DataBuffer<char>& buffer, size_t pos, size_t size) { 
+			return std::make_shared<DataBuffer<char>>(buffer.slice(pos, size));
+		},
 		"toString", &DataBuffer<char>::toString,
 		"hash", &DataBuffer<char>::hash,
 		"size", &DataBuffer<char>::size,
@@ -156,7 +158,10 @@ void luawrappers::registerCommon(sol::state& s) {
 		"resize", &DataBuffer<char>::resize,
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
-		"copyFrom", &DataBuffer<char>::copyFrom
+		"copyFrom", &DataBuffer<char>::copyFrom,
+		"clone", &DataBuffer<char>::clone,
+		"readUint32", &DataBuffer<char>::readUint32,
+		"readInt32", &DataBuffer<char>::readInt32
 	);
 
 	s.new_usertype<FileDialogFilters>("FileDialogFilters",

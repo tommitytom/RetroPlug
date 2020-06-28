@@ -29,7 +29,7 @@ void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const
 	setup();
 }
 
-void UiLuaContext::update(float delta) {
+void UiLuaContext::update(double delta) {
 	if (_reload) {
 		reload();
 		_reload = false;

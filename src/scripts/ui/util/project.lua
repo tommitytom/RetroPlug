@@ -6,6 +6,7 @@ local fs = require("fs")
 local log = require("log")
 local util = require("util")
 local Error = require("Error")
+local semver = require("util.semver")
 
 local ProjectSettingsFields = {
 	audioRouting = AudioChannelRouting,
@@ -121,14 +122,36 @@ local function firstToUpper(str)
 	end
 end
 
+local RETROPLUG_010_STATE_SIZE = 1024;
+
+local function readLegacyStateData(base64Data, saveType, version)
+	local stateData = base64.decodeBuffer(base64Data)
+
+	if version == semver(0, 1, 0) then
+		if saveType == "state" then
+			-- Since version 0.1.0 the save state format of sameboy has changed.  This means
+			-- states can not be loaded.  In some cases, however (such as lsdj), we can extract
+			-- the SRAM data from the state data.
+
+			local version = stateData:readUint32(4)
+			log.info("State version: " .. version .. " size: " .. stateData:size())
+
+			local sramOffset = 0x8425
+			local sramSize = 128 * 1024
+			return stateData:slice(sramOffset, sramSize), "sram"
+		end
+	end
+
+	return stateData, saveType
+end
+
 local function updgrade_json_to_pv100(p)
 	local syncModes = { "off", "midiSync", "midiSyncArduinoboy" }
 	local systems = {}
 	for _, v in ipairs(p.instances) do
 		local stateData
 		if v.state ~= nil and v.state.data ~= nil and type(v.state.data) == "string" then
-			stateData = base64.decodeBuffer(v.state.data)
-			fs.save("C:\\retro\\test2.state", stateData)
+			stateData, p.saveType = readLegacyStateData(v.state.data, p.saveType, semver(p.version))
 		end
 
 		local uiComponents = {}
@@ -164,18 +187,18 @@ local function updgrade_json_to_pv100(p)
 		systems = systems,
 
 		settings = {
-			saveType = firstToUpper(p.saveType),
-			audioRouting = firstToUpper(p.audioRouting),
+			saveType = p.saveType,
+			audioRouting = p.audioRouting,
 			zoom = 2, --TODO: Set to user defined defaults in config.lua!
-			midiRouting = firstToUpper(p.midiRouting),
-			layout = firstToUpper(p.layout)
+			midiRouting = p.midiRouting,
+			layout = p.layout
 		}
 	}
 end
 
-local function validateAndUpgradeProject(projectData)
+local function upgradeAndValidateProject(projectData)
 	local err
-	if projectData.instances ~= nil and projectData.version == "0.1.0" then
+	if projectData.instances ~= nil and semver(projectData.version) <= semver(0, 2, 0) then
 		projectData, err = updgrade_json_to_pv100(projectData)
 	end
 
@@ -185,7 +208,7 @@ local function validateAndUpgradeProject(projectData)
 end
 
 local function zipEntryExists(entries, name)
-	for i, v in ipairs(entries) do
+	for _, v in ipairs(entries) do
 		if v.name == name then return true end
 	end
 
@@ -223,9 +246,9 @@ local function loadSystemResources(projectData, inst, idx, zip)
 		end
 	end
 
-	if t.rom == nil or isNullPtr(t.rom) then t.rom = nil; log.warn("Couldn't find ROM") end
-	if t.state == nil or isNullPtr(t.state) then t.state = nil; log.warn("Couldn't find state data") end
-	if t.sram == nil or isNullPtr(t.sram) then t.sram = nil; log.warn("Couldn't find SRAM data") end
+	--if t.rom == nil or isNullPtr(t.rom) then t.rom = nil; log.warn("Couldn't find ROM") end
+	--if t.state == nil or isNullPtr(t.state) then t.state = nil; log.warn("Couldn't find state data") end
+	--if t.sram == nil or isNullPtr(t.sram) then t.sram = nil; log.warn("Couldn't find SRAM data") end
 
 	return t
 end
@@ -249,8 +272,23 @@ local function createProjectSystems(projectData, zip)
 			system.state = SystemState.RomMissing
 		end
 
-		if res.state then system.stateData = res.state end
-		if res.sram then system.sramData = res.sram end
+		if projectData.settings.saveType == "state" then
+			if res.state then
+				log.info("Loading from save state")
+				system.stateData = res.state
+			elseif res.sram then
+				log.info("Loading from SRAM")
+				system.sramData = res.sram
+			end
+		elseif projectData.settings.saveType == "sram" then
+			if res.sram then
+				log.info("Loading from SRAM")
+				system.sramData = res.sram
+			elseif res.state then
+				log.info("Loading from save state")
+				system.stateData = res.state
+			end
+		end
 
 		system.audioComponentState = serpent.dump(inst.audioComponents)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
@@ -283,6 +321,7 @@ local function loadProject(data)
 	else
 		zip = nil
 
+		log.info("Failed to load zip, trying to load legacy project")
 		local fileData, err = fileutil.loadPathOrData(data)
 		if err ~= nil then return nil, nil, err end
 
@@ -292,9 +331,11 @@ local function loadProject(data)
 		if projectData == nil then
 			return nil, nil, Error("Failed to load project: Unable to deserialize file")
 		end
+
+		log.info("Legacy project loaded")
 	end
 
-	projectData, err = validateAndUpgradeProject(projectData)
+	projectData, err = upgradeAndValidateProject(projectData)
 	if err ~= nil then
 		if zip then zip:close() end
 		return nil, nil, err

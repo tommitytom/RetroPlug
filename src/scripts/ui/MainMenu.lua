@@ -1,22 +1,17 @@
 local dialog = require("dialog")
 local menuutil = require("util.menu")
 local pathutil = require("pathutil")
+local filters = require("filters")
 
-local NO_ACTIVE_INSTANCE = -1
-local MAX_INSTANCES = 4
-
-local PROJECT_FILTER = { "RetroPlug Project", "*.retroplug" }
-local ROM_FILTER = { "GameBoy ROM Files", "*.gb" }
-local ZIPPED_ROM_FILTER = { "Zipped ROM Files", "*.zip" }
-local SAV_FILTER = { "GameBoy SAV Files", "*.sav" }
-local STATE_FILTER = { "GameBoy State Files", "*.state" }
+local NO_ACTIVE_SYSTEM = -1
+local MAX_SYSTEMS = 4
 
 local function loadProjectOrRom(project)
-	return menuutil.loadHandler({ PROJECT_FILTER, ROM_FILTER, ZIPPED_ROM_FILTER }, "project", function(path)
+	return menuutil.loadHandler({ filters.PROJECT_FILTER, filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "project", function(path)
 		local ext = pathutil.ext(path)
-		if ext == "retroplug" then
+		if ext == "retroplug" or ext == "rplg" then
 			return project:load(path)
-		elseif ext == "gb" or ext == "zip" then
+		elseif ext == "gb" or ext == "gbc" or ext == "zip" then
 			project:clear()
 			return project:loadRom(path)
 		end
@@ -24,42 +19,41 @@ local function loadProjectOrRom(project)
 end
 
 local function loadRom(project, idx, model)
-	return menuutil.loadHandler({ ROM_FILTER, ZIPPED_ROM_FILTER }, "ROM", function(path)
+	return menuutil.loadHandler({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "ROM", function(path)
 		return project:loadRom(path, idx, model)
 	end)
 end
 
 local function loadSram(system, reset)
-	return menuutil.loadHandler({ SAV_FILTER }, "SAV", function(path)
+	return menuutil.loadHandler({ filters.SAV_FILTER }, "SAV", function(path)
 		return system:loadSram(path, reset)
 	end)
 end
 
 local function loadState(system, reset)
-	return menuutil.loadHandler({ STATE_FILTER }, "state", function(path)
+	return menuutil.loadHandler({ filters.STATE_FILTER }, "state", function(path)
 		return system:loadState(path, reset)
 	end)
 end
 
 local function saveProject(project, forceDialog)
 	forceDialog = forceDialog or project._native.path == ""
-	return menuutil.saveHandler({ PROJECT_FILTER }, "project", forceDialog, function(path)
+	return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", forceDialog, function(path)
 		return project:save(path, true)
 	end)
 end
 
 local function saveSram(system, forceDialog)
-	return menuutil.saveHandler({ SAV_FILTER }, "SAV", forceDialog, function(path)
+	return menuutil.saveHandler({ filters.SAV_FILTER }, "SAV", forceDialog, function(path)
 		return system:saveSram(path)
 	end)
 end
 
 local function saveState(system, forceDialog)
-	return menuutil.saveHandler({ STATE_FILTER }, "state", forceDialog, function(path)
+	return menuutil.saveHandler({ filters.STATE_FILTER }, "state", forceDialog, function(path)
 		return system:saveState(path)
 	end)
 end
-
 
 local function projectMenu(menu, project)
 	local settings = project._native.settings
@@ -74,11 +68,11 @@ local function projectMenu(menu, project)
 			:select("Include ROM", settings.packageRom, function(v) settings.packageRom = v end)
 			:parent()
 		:separator()
-		:subMenu("Add Instance", #project.systems < MAX_INSTANCES)
-			:action("Load ROM...", loadRom(project, NO_ACTIVE_INSTANCE, GameboyModel.Auto))
+		:subMenu("Add System", #project.systems < MAX_SYSTEMS)
+			:action("Load ROM...", loadRom(project, NO_ACTIVE_SYSTEM, GameboyModel.Auto))
 			:action("Duplicate Selected", function() project:duplicateSystem(project:getSelectedIndex()) end)
 			:parent()
-		:action("Remove Instance", function() project:removeSystem(project:getSelectedIndex()) end, #project.systems > 1)
+		:action("Remove System", function() project:removeSystem(project:getSelectedIndex()) end, #project.systems > 1)
 		:subMenu("Layout")
 			:multiSelect({ "Auto", "Row", "Column", "Grid" }, settings.layout, function(v) settings.layout = v end)
 			:parent()
@@ -89,14 +83,14 @@ local function projectMenu(menu, project)
 		:subMenu("Audio Routing")
 			:multiSelect({
 				"Stereo Mixdown",
-				"Two Channels Per Instance"
+				"Two Channels Per System"
 			}, settings.audioRouting, function(v) settings.audioRouting = v end)
 			:parent()
 		:subMenu("MIDI Routing")
 			:multiSelect({
-				"All Channels to All Instances",
-				"Four Channels Per Instance",
-				"One Channel Per Instance",
+				"All Channels to All Systems",
+				"Four Channels Per System",
+				"One Channel Per System",
 			}, settings.midiRouting, function(v) settings.midiRouting = v end)
 end
 
@@ -131,7 +125,7 @@ local function systemMenu(menu, system, project)
 end
 
 local function findMissingRom(system)
-	dialog.loadFile({ ROM_FILTER, ZIPPED_ROM_FILTER }, function(path)
+	dialog.loadFile({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, function(path)
 
 	end)
 end

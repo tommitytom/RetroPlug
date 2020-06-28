@@ -15,6 +15,8 @@ private:
 
 public:
 	DataBuffer() {}
+	DataBuffer(const DataBuffer& other) { *this = other; }
+	DataBuffer(DataBuffer&& other) { *this = std::move(other); }
 	DataBuffer(size_t size) { resize(size); }
 	DataBuffer(T* data, size_t size) : _dataPtr(data), _reserved(size), _ownsData(false) {}
 	~DataBuffer() { destroy(); }
@@ -44,16 +46,25 @@ public:
 
 	size_t size() const { return _reserved; }
 
+	uint32_t readUint32(size_t pos) {
+		return *((uint32_t*)(_dataPtr + pos));
+	}
+
+	int32_t readInt32(size_t pos) {
+		return *((uint32_t*)(_dataPtr + pos));
+	}
+
 	DataBuffer<T> slice(size_t pos, size_t size) {
 		assert(pos + size <= _reserved);
 		return DataBuffer<T>(_dataPtr + pos, size);
 	}
 
 	void clear() {
-		memset(_dataPtr, 0, _reserved * sizeof(T));
+		memset(_dataPtr, 0, _size * sizeof(T));
 	}
 
 	void reserve(size_t size) {
+		assert(_reserved == 0 || _ownsData);
 		if (size > _reserved) {
 			T* data = new T[size];
 
@@ -94,6 +105,33 @@ public:
 	void copyTo(DataBuffer* target) const {
 		target->resize(_reserved);
 		target->write(_dataPtr, _reserved);
+	}
+
+	std::shared_ptr<DataBuffer> clone() {
+		auto ret = std::make_shared<DataBuffer>();
+		copyTo(ret.get());
+		return ret;
+	}
+
+	DataBuffer& operator=(const DataBuffer& other) {
+		if (_ownsData && _dataPtr) {
+			if (other.size() * 2 < _reserved) {
+				destroy();
+			}
+		}
+
+		other.copyTo(this);
+
+		return *this;
+	}
+
+	DataBuffer& operator=(DataBuffer&& other) noexcept {
+		destroy();
+		_dataPtr = other._dataPtr;
+		_ownsData = other._ownsData;
+		_reserved = other._reserved;
+		_size = other._size;
+		return *this;
 	}
 };
 

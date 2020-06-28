@@ -82,7 +82,7 @@ RetroPlugController::~RetroPlugController() {
 	delete _padManager;
 }
 
-void RetroPlugController::update(float delta) {
+void RetroPlugController::update(double delta) {
 	processPad();
 	_scriptWatcher.update();
 }

@@ -41,7 +41,7 @@ public:
 
 	void init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath);
 
-	void update(float delta);
+	void update(double delta);
 
 	bool onKey(const iplug::IKeyPress& key, bool down);
 

@@ -906,7 +906,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       str[0] = static_cast<char>(idx);
       str[1] = '\0';
 
-      int vk = VSTKeyCodeToVK(value, idx);
+      int vk = VSTKeyCodeToVK((int)value, idx);
       int modifiers = (int)opt;
 
       IKeyPress keyPress{ str, static_cast<int>(vk),

@@ -12,8 +12,20 @@ function SemVer:init(major, minor, patch)
 	end
 end
 
+function SemVer:toInt()
+	return (self.major << 16) | (self.minor << 8) | (self.patch & 0xFF)
+end
+
 function SemVer:toString()
 	return tostring(self.major) .. "." .. tostring(self.minor) .. "." .. tostring(self.patch)
+end
+
+function SemVer:__lt(lhs, rhs)
+	return lhs:toInt() < rhs:toInt()
+end
+
+function SemVer:__le(lhs, rhs)
+	return lhs:toInt() <= rhs:toInt()
 end
 
 return SemVer

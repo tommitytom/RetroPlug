@@ -1,4 +1,6 @@
 local pathutil = require("pathutil")
+local menuutil = require("util.menu")
+local filters = require("filters")
 
 local RetroPlug = component({ name = "RetroPlug", global = true })
 
@@ -10,6 +12,15 @@ end
 
 function RetroPlugActions:nextSystem(down)
 	if down == true then self.project:nextSystem() end
+end
+
+function RetroPlugActions:saveProject(down)
+	print("SAVEEEEE")
+	if down == true then
+		return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", false, function(path)
+			return self.project:save(path, true)
+		end)
+	end
 end
 
 function RetroPlug:init()

@@ -110,7 +110,6 @@ function Project:load(data)
 end
 
 function Project:save(path, pretty, immediate)
-	log.info("Saving project to " .. path)
 	local timer = Timer()
 
 	if #self.systems == 0 then return end
@@ -125,6 +124,8 @@ function Project:save(path, pretty, immediate)
 		elseif type(path) == "string" then
 			self._native.path = path
 		end
+
+		log.info("Saving project to " .. path)
 
 		local zipSettings = ZipWriterSettings.new()
 		zipSettings.method = ZipCompressionMethod.Deflate

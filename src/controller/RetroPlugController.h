@@ -67,7 +67,7 @@ public:
 
 	std::mutex* getMenuLock() { return _audioController.getLock(); }
 
-	void update(float delta);
+	void update(double delta);
 
 	void init(iplug::igraphics::IGraphics* graphics, iplug::EHost host);
 
