@@ -107,9 +107,9 @@ public:
 		target->write(_dataPtr, _reserved);
 	}
 
-	std::shared_ptr<DataBuffer> clone() {
-		auto ret = std::make_shared<DataBuffer>();
-		copyTo(ret.get());
+	DataBuffer clone() {
+		DataBuffer ret;
+		copyTo(&ret);
 		return ret;
 	}
 
@@ -127,10 +127,17 @@ public:
 
 	DataBuffer& operator=(DataBuffer&& other) noexcept {
 		destroy();
+
 		_dataPtr = other._dataPtr;
 		_ownsData = other._ownsData;
 		_reserved = other._reserved;
 		_size = other._size;
+		
+		other._dataPtr = nullptr;
+		other._ownsData = false;
+		other._reserved = 0;
+		other._size = 0;
+
 		return *this;
 	}
 };

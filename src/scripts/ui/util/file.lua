@@ -7,12 +7,12 @@ local function loadPathOrData(data)
 		local fileData = fs.load(data)
 		if fileData ~= nil then return fileData end
 		return nil, Error("Failed to load " .. data)
-	elseif type(data) == "cdata" then
-		-- Check if this is a DataBuffer
+	elseif type(data) == "userdata" then
+		-- TODO: Check if this is a DataBuffer
 		return data
 	end
 
-	return nil, Error("Unable to load data of type " .. type(data))
+	return nil, Error("Unable to load data of type '" .. type(data) .. "'")
 end
 
 return {

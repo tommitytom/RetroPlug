@@ -159,7 +159,9 @@ void luawrappers::registerCommon(sol::state& s) {
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
 		"copyFrom", &DataBuffer<char>::copyFrom,
-		"clone", &DataBuffer<char>::clone,
+		"clone", [](DataBuffer<char>& buffer) {
+			return std::make_shared<DataBuffer<char>>(std::move(buffer.clone()));
+		},
 		"readUint32", &DataBuffer<char>::readUint32,
 		"readInt32", &DataBuffer<char>::readInt32
 	);

@@ -116,6 +116,8 @@ function View:saveState(target)
 end
 
 function View:loadState(buffer)
+	print("loading state", buffer:size())
+	fs.save("C:\\retro\\statebug\\renoiseload.rplg", buffer)
 	self.model.project:load(buffer)
 end
 

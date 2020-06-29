@@ -5,5 +5,6 @@
 #endif
 
 #include "util/xstring.h"
+#include "util/fs.h"
 
-tstring getContentPath(tstring file = TSTR(""));
+fs::path getContentPath(tstring file = TSTR(""));

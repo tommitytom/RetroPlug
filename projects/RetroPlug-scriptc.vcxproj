@@ -114,7 +114,7 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
@@ -143,7 +143,7 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
@@ -176,7 +176,7 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>
@@ -209,7 +209,7 @@
       </Command>
     </PostBuildEvent>
     <CustomBuildStep>
-      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</Command>
+      <Command>$(SolutionDir)compiler\$(Platform)\$(Configuration)\$(ProjectName).exe $(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</Command>
     </CustomBuildStep>
     <CustomBuildStep>
       <Message>Compiling lua files...</Message>

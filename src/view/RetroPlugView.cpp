@@ -191,6 +191,14 @@ void RetroPlugView::UpdateLayout() {
 		count = 1;
 		_views[0]->ShowText("Double click to", "load a rom...");
 		_views[0]->DeleteFrame();
+	} else {
+		auto& systems = _proxy->getProject()->systems;
+		for (size_t i = 0; i < systems.size(); ++i) {
+			if (systems[i]->state == SystemState::RomMissing) {
+				_views[i]->ShowText("Rom missing", "click to find");
+				_views[i]->DeleteFrame();
+			}
+		}
 	}
 
 	SystemLayout layout = settings.layout;

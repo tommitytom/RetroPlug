@@ -5,18 +5,20 @@
 #ifdef WIN32
 #include <Shlobj.h>
 
-tstring getContentPath(tstring file) {
+fs::path getContentPath(tstring file) {
 	TCHAR szPath[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, szPath))) {
-		tstring out = tstr(szPath) + TSTR("\\RetroPlug");
+		fs::path out = szPath;
+		out /= "RetroPlug";
+
 		if (file.size() > 0) {
-			out += TSTR("\\") + file;
+			out /= file;
 		}
 
 		return out;
 	}
 
-	return TSTR("");
+	return fs::path();
 }
 #else
 

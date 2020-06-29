@@ -46,24 +46,30 @@ void RetroPlugInstrument::OnIdle() {
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) {
 	DataBufferPtr buffer = _controller.saveState();
+	int size = (int)buffer->size();
+	chunk.Put(&size);
 	chunk.PutBytes(buffer->data(), buffer->size());
 	return true;
 }
 
 int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
-	int size = chunk.Size() - pos;
-	DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(size);
-	chunk.GetBytes(buffer->data(), size, pos);
+	int size;
+	pos = chunk.Get(&size, pos);
 
-	_controller.loadState(buffer);
+	if (size > 0 && size < 10 * 1024 * 1024) {
+		DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(size);
+		chunk.GetBytes(buffer->data(), size, pos);
+		_controller.loadState(buffer);
+		return pos + size;
+	}
 
-	return pos + size;
+	return pos;
 }
 
 void RetroPlugInstrument::ProcessSync(SameBoyPlug* plug, int sampleCount, int tempoDivisor, char value) {
 	int resolution = 24 / tempoDivisor;
 	double samplesPerMs = GetSampleRate() / 1000.0;
-	double beatLenMs = (60000.0 / mTimeInfo.mTempo);
+	double beatLenMs = 60000.0 / mTimeInfo.mTempo;
 	double beatLenSamples = beatLenMs * samplesPerMs;
 	double beatLenSamples24 = beatLenSamples / resolution;
 

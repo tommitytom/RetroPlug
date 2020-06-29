@@ -1,5 +1,5 @@
 inspect = require("inspect")
-function prinspect(...) print(inspect(...)) end
+--function prinspect(...) print(inspect(...)) end
 
 require("component")
 require("constants")

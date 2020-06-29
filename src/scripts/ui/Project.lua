@@ -83,10 +83,13 @@ end
 
 function Project:load(data)
 	local projectData, systems, err = projectutil.loadProject(data)
-	if err ~= nil then prinspect(err); return err end
+	if err ~= nil then log.obj(err); return err end
 	self:clear()
 
-	self._native.path = projectData.path
+	if projectData.path then
+		self._native.path = projectData.path
+	end
+
 	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
 	self._audioContext:updateSettings()
 

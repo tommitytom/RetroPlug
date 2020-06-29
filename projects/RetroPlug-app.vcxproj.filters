@@ -229,6 +229,9 @@
     <ClCompile Include="..\src\view\ViewWrapper.cpp">
       <Filter>src\view</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\luawrapper\ConfigScripts.cpp">
+      <Filter>src\luawrapper</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resources\resource.h">
@@ -713,6 +716,9 @@
     </ClInclude>
     <ClInclude Include="..\src\view\ViewWrapper.h">
       <Filter>src\view</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\luawrapper\ConfigScripts.h">
+      <Filter>src\luawrapper</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

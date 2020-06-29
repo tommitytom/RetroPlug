@@ -3,13 +3,13 @@ local menuutil = require("util.menu")
 local pathutil = require("pathutil")
 local filters = require("filters")
 
-local NO_ACTIVE_SYSTEM = -1
+local NO_ACTIVE_SYSTEM = 0
 local MAX_SYSTEMS = 4
 
 local function loadProjectOrRom(project)
 	return menuutil.loadHandler({ filters.PROJECT_FILTER, filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "project", function(path)
 		local ext = pathutil.ext(path)
-		if ext == "retroplug" or ext == "rplg" then
+		if ext == "rplg" or ext == "retroplug" then
 			return project:load(path)
 		elseif ext == "gb" or ext == "gbc" or ext == "zip" then
 			project:clear()
@@ -70,7 +70,9 @@ local function projectMenu(menu, project)
 		:separator()
 		:subMenu("Add System", #project.systems < MAX_SYSTEMS)
 			:action("Load ROM...", loadRom(project, NO_ACTIVE_SYSTEM, GameboyModel.Auto))
-			:action("Duplicate Selected", function() project:duplicateSystem(project:getSelectedIndex()) end)
+			:action("Duplicate Selected", function()
+				project:duplicateSystem(project:getSelectedIndex())
+			end)
 			:parent()
 		:action("Remove System", function() project:removeSystem(project:getSelectedIndex()) end, #project.systems > 1)
 		:subMenu("Layout")
@@ -124,21 +126,36 @@ local function systemMenu(menu, system, project)
 		:subMenu("Audio Components")]]
 end
 
-local function findMissingRom(system)
-	dialog.loadFile({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, function(path)
+local log = require("log")
+local fs = require("fs")
 
+local function findMissingRom(project, romPath)
+	dialog.loadFile({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, function(path)
+		if path then
+			for _, system in ipairs(project.systems) do
+				if romPath == system.desc.romPath then
+					system.desc.romPath = path
+					local romData = fs.load(path)
+					if romData then system:setRom(romData, true) end
+				end
+			end
+		end
 	end)
 end
 
 local function generateMainMenu(menu, project)
 	local selected = project:getSelected()
-	menu:title(selected.desc.romName):separator()
+
+	if selected.desc.state == SystemState.Initialized or selected.desc.state == SystemState.Running then
+		menu:title(selected.desc.romName):separator()
+	end
+
 	projectMenu(menu:subMenu("Project"), project)
 
 	if selected.desc.state == SystemState.Running then
 		systemMenu(menu:subMenu("System"), selected, project)
 	elseif selected.desc.state == SystemState.RomMissing then
-		menu:action("Find Missing ROM...", function() findMissingRom(selected) end)
+		menu:action("Find Missing ROM...", function() findMissingRom(project, selected.desc.romName) end)
 	end
 
 	local sameBoySettings = selected.desc.sameBoySettings

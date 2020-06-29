@@ -10,7 +10,7 @@
 
 void luawrappers::registerRetroPlug(sol::state& s) {
 	s.create_named_table("nativeshell",
-		"getContentPath", getContentPath,
+		"getContentPath", [](const tstring& path) { return ws2s(getContentPath(path).wstring()); },
 		"openShellFolder", openShellFolder
 	);
 

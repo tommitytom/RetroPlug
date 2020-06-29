@@ -3,21 +3,21 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LocalDebuggerCommand>$(TargetPath)</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</LocalDebuggerCommandArguments>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LocalDebuggerCommand>$(TargetPath)</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</LocalDebuggerCommandArguments>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LocalDebuggerCommand>$(TargetPath)</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</LocalDebuggerCommandArguments>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LocalDebuggerCommand>$(TargetPath)</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\luawrapper\CompiledLua.cpp</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>$(SolutionDir)src\scripts $(SolutionDir)src\config\0.3.0 $(SolutionDir)src\luawrapper\CompiledLua.cpp $(SolutionDir)src\luawrapper\ConfigScripts.cpp</LocalDebuggerCommandArguments>
   </PropertyGroup>
 </Project>

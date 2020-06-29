@@ -10,6 +10,7 @@ extern "C" {
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <array>
 
 namespace fs = std::filesystem;
 using u8 = unsigned char;
@@ -19,11 +20,18 @@ struct CompiledScript {
 	size_t size;
 };
 
-const char* headerCode = R"(#include "CompiledLua.h"
+struct RawScript {
+	fs::path path;
+	std::string content;
+};
+
+const char* headerCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
+
+#include "CompiledLua.h"
 
 #ifdef COMPILE_LUA_SCRIPTS
 
-#include <map>
+#include <unordered_map>
 #include <string>
 
 struct CompiledScript {
@@ -33,8 +41,14 @@ struct CompiledScript {
 
 )";
 
+const char* rawHeaderCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
+
+#include "ConfigScripts.h"
+
+)";
+
 const char* loaderCode = R"(
-const std::vector<const char*>& getScriptNames() { return _scriptNames; }
+const std::vector<const char*>& getScriptNames() const { return _scriptNames; }
 
 int compiledScriptLoader(lua_State* state) {
 	const char* name = lua_tostring(state, -1);
@@ -71,6 +85,36 @@ std::string getScriptVarName(std::string name) {
 	std::replace(name.begin(), name.end(), '.', '_');
 	std::replace(name.begin(), name.end(), '-', '_');
 	return "_" + name + "_LUA_";
+}
+
+std::string readTextFile(const fs::path& path) {
+	std::ifstream file(path);
+	return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());;
+}
+
+bool parseConfigDirectory(fs::path dirPath, fs::path rootDirPath, std::vector<RawScript>& descs) {
+	bool error = false;
+	for (auto& p : fs::directory_iterator(dirPath)) {
+		if (p.is_directory()) {
+			error = parseConfigDirectory(p, rootDirPath, descs) || error;
+		} else {
+			fs::path path = p.path();
+			if (path.extension() != ".lua") {
+				continue;
+			}
+
+			std::string relativePath = path.string().substr(rootDirPath.string().size());
+			std::replace(relativePath.begin(), relativePath.end(), '\\', '/');
+			std::cout << relativePath << std::endl;
+
+			std::string content = readTextFile(path);
+
+			RawScript s = { relativePath, content };
+			descs.push_back(s);
+		}
+	}
+
+	return error;
 }
 
 bool parseDirectory(fs::path dirPath, std::stringstream& out, std::vector<CompiledScript>& descs) {
@@ -132,32 +176,56 @@ bool parseDirectory(fs::path dirPath, std::stringstream& out, std::vector<Compil
 }
 
 int main(int argc, char** argv) {
-	std::vector<CompiledScript> descs;
-	std::stringstream out;
-
+	bool error = false;
 	fs::current_path(argv[1]);
+
+	std::cout << "Compiling scripts in " << argv[1] << std::endl;
+	{
+		std::vector<CompiledScript> descs;
+		std::stringstream out;
 	
-	out << headerCode;
-	bool error = parseDirectory(".", out, descs);
-	out << std::endl;
+		out << headerCode;
+		error = parseDirectory(".", out, descs);
+		out << std::endl;
 
-	out << "std::map<std::string, CompiledScript> _compiledScripts = {" << std::endl;
-	for (size_t i = 0; i < descs.size(); ++i) {
-		out << "\t{ \"" << descs[i].name << "\", { " << getScriptVarName(descs[i].name) << ", " << descs[i].size << " } }," << std::endl;
+		out << "std::unordered_map<std::string_view, CompiledScript> _compiledScripts = {" << std::endl;
+		for (size_t i = 0; i < descs.size(); ++i) {
+			out << "\t{ \"" << descs[i].name << "\", { " << getScriptVarName(descs[i].name) << ", " << descs[i].size << " } }," << std::endl;
+		}
+		out << "};" << std::endl << std::endl;
+
+		out << "std::vector<const char*> _scriptNames = {" << std::endl;
+		for (size_t i = 0; i < descs.size(); ++i) {
+			out << "\t\"" << descs[i].name << "\"," << std::endl;
+		}
+		out << "};" << std::endl << std::endl;
+
+		out << loaderCode;
+		out << "#endif" << std::endl;
+
+		std::ofstream outf(argv[3]);
+		outf << out.str();
 	}
-	out << "};" << std::endl << std::endl;
 
-	out << "std::vector<const char*> _scriptNames = {" << std::endl;
-	for (size_t i = 0; i < descs.size(); ++i) {
-		out << "\t\"" << descs[i].name << "\"," << std::endl;
-	}
-	out << "};" << std::endl;
-
-	out << loaderCode;
-	out << "#endif" << std::endl;
+	fs::current_path(argv[2]);
+	std::cout << "Compiling raw scripts in " << argv[2] << std::endl;
 
 	{
-		std::ofstream outf(argv[2]);
+		std::stringstream out;
+		std::vector<RawScript> rawDescs;
+
+		out << rawHeaderCode;
+		error = parseConfigDirectory("./", "./", rawDescs) || error;
+
+		out << "std::array<RawScript, " << rawDescs.size() << "> _rawScripts = {" << std::endl;
+		for (size_t i = 0; i < rawDescs.size(); ++i) {
+			out << "\tRawScript { " << rawDescs[i].path << ", R\"(" << rawDescs[i].content << ")\" }," << std::endl;
+		}
+		out << "};" << std::endl << std::endl;
+
+		out << "const std::array<RawScript, 2>& getRawScripts() { return _rawScripts; }" << std::endl;
+
+		std::ofstream outf(argv[4]);
 		outf << out.str();
 	}
 

@@ -222,11 +222,13 @@ public:
 			_node->push<calls::TransmitVideo>(NodeTypes::Ui, video);
 		}
 
-		for (size_t i = 0; i < totalPlugCount; i++) {
-			float* audio = _audioBuffers[i].data->data();
-			for (size_t j = 0; j < _audioSettings.frameCount; j++) {
-				outputs[i * chanMultipler][j] += audio[j * 2];
-				outputs[i * chanMultipler + 1][j] += audio[j * 2 + 1];
+		for (size_t i = 0; i < MAX_SYSTEMS; i++) {
+			if (_audioBuffers[i].data) {
+				float* audio = _audioBuffers[i].data->data();
+				for (size_t j = 0; j < _audioSettings.frameCount; j++) {
+					outputs[i * chanMultipler][j] += audio[j * 2];
+					outputs[i * chanMultipler + 1][j] += audio[j * 2 + 1];
+				}
 			}
 		}
 	}

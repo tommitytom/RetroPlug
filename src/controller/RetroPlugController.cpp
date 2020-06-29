@@ -4,6 +4,9 @@
 #include "platform/Resource.h"
 #include "resource.h"
 
+#include "luawrapper/ConfigScripts.h"
+#include "luawrapper/ConfigScriptWriter.h"
+
 namespace AxisButtons {
 	enum AxisButton {
 		LeftStickLeft = 0,
@@ -52,18 +55,8 @@ RetroPlugController::RetroPlugController(iplug::ITimeInfo* timeInfo, double samp
 	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
 
 	// Make sure the config script exists
-	fs::path configDir = getContentPath(tstr(PLUG_VERSION_STR));
-	fs::path configPath = configDir.string() + "\\config.lua";
-	if (!fs::exists(configPath)) {
-		Resource res(IDR_DEFAULT_CONFIG, "LUA");
-		std::string_view data = res.getData();
-
-		fs::create_directories(configDir);
-		std::ofstream s(configPath, std::ios::binary);
-		assert(s.good());
-		s.write(data.data(), data.size());
-		s.close();
-	}
+	fs::path configDir = getContentPath(fs::path(PLUG_VERSION_STR));
+	ConfigScriptWriter::write(configDir);
 
 	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path() / "scripts";
 	_uiLua.init(&_proxy, configDir.string(), scriptPath.string());

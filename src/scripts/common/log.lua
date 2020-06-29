@@ -1,7 +1,15 @@
-local _print = print
 local pathutil = require("pathutil")
 local ansicolors = require("ansicolors")
 local inspect = require("inspect")
+
+local _print = function(...)
+	for i, a in ipairs({...}) do
+		if i > 1 then _consolePrint("\t") end
+		_consolePrint(tostring(a))
+	end
+
+	_consolePrint("\r\n")
+end
 
 local LogLevels = {
 	Debug = 0,
