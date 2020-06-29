@@ -48,7 +48,7 @@ const char* rawHeaderCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
 )";
 
 const char* loaderCode = R"(
-const std::vector<const char*>& getScriptNames() const { return _scriptNames; }
+const std::vector<const char*>& getScriptNames() { return _scriptNames; }
 
 int compiledScriptLoader(lua_State* state) {
 	const char* name = lua_tostring(state, -1);

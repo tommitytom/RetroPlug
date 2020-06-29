@@ -284,6 +284,7 @@
     <ClInclude Include="..\src\luawrapper\AudioLuaContext.h" />
     <ClInclude Include="..\src\luawrapper\CompiledLua.h" />
     <ClInclude Include="..\src\luawrapper\ConfigScripts.h" />
+    <ClInclude Include="..\src\luawrapper\ConfigScriptWriter.h" />
     <ClInclude Include="..\src\luawrapper\LuaHelpers.h" />
     <ClInclude Include="..\src\luawrapper\UiLuaContext.h" />
     <ClInclude Include="..\src\luawrapper\Wrappers.h" />

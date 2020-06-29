@@ -720,6 +720,9 @@
     <ClInclude Include="..\src\luawrapper\ConfigScripts.h">
       <Filter>src\luawrapper</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\luawrapper\ConfigScriptWriter.h">
+      <Filter>src\luawrapper</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
