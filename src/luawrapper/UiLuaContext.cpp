@@ -10,7 +10,7 @@
 #include "model/FileManager.h"
 #include "util/base64enc.h"
 #include "util/base64dec.h"
-#include "config/config.h"
+#include "config.h"
 #include "view/Menu.h"
 
 #include "platform/Platform.h"

@@ -4,7 +4,7 @@
 
 #include "platform/Logger.h"
 #include "model/Project.h"
-#include "config/config.h"
+#include "config.h"
 #include "view/Menu.h"
 #include "model/ButtonStream.h"
 #include "platform/FileDialog.h"

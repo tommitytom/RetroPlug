@@ -1,6 +1,6 @@
 #include "Path.h"
 
-#include "config/config.h"
+#include "config.h"
 
 #ifdef WIN32
 #include <Shlobj.h>

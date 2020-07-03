@@ -18,6 +18,7 @@
 build-*
 .vscode/ipch/*
 gui/*
+build/
 .vs/*
 *xcuserdata*
 

@@ -34,7 +34,7 @@ static std::string ws2s(const std::string& str) {
 	return str;
 }
 
-#if WIN32
+#ifdef WIN32
 static tstring tstr(const std::string& str) {
 	return s2ws(str);
 }

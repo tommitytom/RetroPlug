@@ -3,7 +3,7 @@
 #include <sol/sol.hpp>
 #include "platform/Logger.h"
 #include "LuaHelpers.h"
-#include "config/config.h"
+#include "config.h"
 #include "plugs/SameBoyPlug.h"
 #include "model/ProcessingContext.h"
 #include "util/fs.h"

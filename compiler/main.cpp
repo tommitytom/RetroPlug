@@ -25,6 +25,12 @@ struct RawScript {
 	std::string content;
 };
 
+const char* rawHeaderCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
+
+#include "ConfigScripts.h"
+
+)";
+
 const char* headerCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
 
 #include "CompiledLua.h"
@@ -38,12 +44,6 @@ struct CompiledScript {
 	const unsigned char* data;
 	size_t size;
 };
-
-)";
-
-const char* rawHeaderCode = R"(// GENERATED! CHANGES WILL BE OVERWRITTEN!
-
-#include "ConfigScripts.h"
 
 )";
 

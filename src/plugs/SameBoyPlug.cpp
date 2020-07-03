@@ -9,13 +9,13 @@
 #include <fstream>
 
 #define MINIAUDIO_IMPLEMENTATION
-#include "src/audio/miniaudio.h"
+#include "audio/miniaudio.h"
 
 #ifdef WIN32
 #include "SameBoyWrapper.h"
 #else
 #define SAMEBOY_SYMBOLS(symb) symb
-#include "thirdparty/SameBoy/retroplug/libretro.h"
+#include "SameBoy/retroplug/libretro.h"
 #endif
 
 #include "resource.h"
