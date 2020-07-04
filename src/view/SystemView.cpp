@@ -8,9 +8,6 @@
 
 #include <sstream>
 
-#include "ConfigLoader.h"
-#include "rapidjson/document.h"
-
 SystemView::SystemView(SystemIndex idx, IGraphics* graphics)
 	: _index(idx), _graphics(graphics)
 {

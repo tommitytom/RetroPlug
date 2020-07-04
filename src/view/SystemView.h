@@ -3,8 +3,6 @@
 #include <string>
 
 #include "IControl.h"
-#include "KeyMap.h"
-#include "LsdjKeyMap.h"
 #include "nanovg.h"
 #include "ContextMenu.h"
 #include "util/RomWatcher.h"
