@@ -14,11 +14,16 @@ iplug2.workspace "RetroPlug"
 	configuration { "Tracer" }
 		libdirs { "thirdparty/lib/release_x64" }
 
-local function retroplugProject()
+	configuration {}
+
+project "RetroPlug"
+	kind "StaticLib"
 	dependson { "ScriptCompiler" }
 
 	includedirs {
-		"src",
+		"config",
+		"resources",
+		"src/retroplug",
 		"thirdparty",
 		"thirdparty/gainput/lib/include",
 		"thirdparty/simplefilewatcher/include",
@@ -32,15 +37,51 @@ local function retroplugProject()
 		"thirdparty/liblsdj/liblsdj/include/lsdj/**.h",
 		"thirdparty/liblsdj/liblsdj/src/**.c",
 
+		"src/retroplug/**.h",
+		"src/retroplug/**.c",
+		"src/retroplug/**.cpp"
+	}
+
+	prebuildcommands {
+		"%{cfg.buildtarget.directory}/ScriptCompiler.exe"
+	}
+
+	filter { "files:src/retroplug/luawrapper/**" }
+		buildoptions { "/bigobj" }
+
+	configuration { "windows" }
+		disablewarnings { "4996", "4250", "4018", "4267", "4068", "4150" }
+		defines {
+			"NOMINMAX",
+			"WIN32",
+			"WIN64",
+			"_CRT_SECURE_NO_WARNINGS"
+		}
+
+local function retroplugProject()
+	dependson { "ScriptCompiler" }
+
+	includedirs {
+		"src/retroplug",
+		"src/plugin",
+		"thirdparty",
+		"thirdparty/gainput/lib/include",
+		"thirdparty/simplefilewatcher/include",
+		"thirdparty/lua-5.3.5/src",
+		"thirdparty/liblsdj/liblsdj/include/lsdj",
+		"thirdparty/minizip",
+		"thirdparty/sol"
+	}
+
+	files {
+		"src/plugin/**.h",
+		"src/plugin/**.cpp",
 		"resources/dlls/**",
 		"resources/fonts/**",
-
-		"src/**.h",
-		"src/**.c",
-		"src/**.cpp"
 	}
 
 	links {
+		"RetroPlug",
 		"lua",
 		"simplefilewatcher",
 		"minizip",
@@ -49,9 +90,6 @@ local function retroplugProject()
 
 	configuration { "windows" }
 		links { "xinput" }
-
-	filter { "files:src/luawrapper/**" }
-		buildoptions { "/bigobj" }
 end
 
 group "Targets"
@@ -62,6 +100,6 @@ iplug2.project.vst3(retroplugProject)
 group "Utils"
 project "ScriptCompiler"
 	kind "ConsoleApp"
-	includedirs { "thirdparty/lua-5.3.5/src" }
-	files { "compiler/main.cpp" }
+	includedirs { "thirdparty/lua-5.3.5/src", "thirdparty/sol" }
+	files { "src/compiler/main.cpp" }
 	links { "lua" }

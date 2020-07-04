@@ -5,11 +5,9 @@ local iplug2 = {
 	project = {}
 }
 
-local _config
-local _p
-local _name
-
-local BUILD_DIR = "build/" .. _ACTION
+local _config -- Config loaded from file
+local _p -- Root path of iPlug2 (for convenience)
+local _name -- The name of the plugin (for convenience)
 
 function iplug2.init(configPath)
 	local scriptPath = util.scriptPath()
@@ -18,6 +16,8 @@ function iplug2.init(configPath)
 	_name = _config.plugin.name
 	_p = scriptPath:sub(1, #scriptPath - 4)
 
+	iplug2.path = _p
+
 	--configgen.generate(_config)
 
 	return iplug2
@@ -25,7 +25,7 @@ end
 
 function iplug2.workspace(name)
 	workspace(name)
-		location (BUILD_DIR)
+		location ("build/" .. _ACTION)
 		configurations { "Debug", "Release", "Tracer" }
 		language "C++"
 		flags { "MultiProcessorCompile" }
@@ -47,10 +47,6 @@ end
 
 local function projectBase(targetName, name)
 	name = name or targetName
-
-	local config = util.flattenConfig(_config.config, targetName)
-	local g = config.graphics
-
 	project(_name .. "-" .. name)
 	targetname(util.getTargetName(_name, name))
 
@@ -90,40 +86,43 @@ local function projectBase(targetName, name)
 		_p.."IGraphics/Controls/*.cpp",
 	}
 
+	local config = util.flattenConfig(_config.config, targetName)
+
 	-- Graphics settings --
+
+	local g = config.graphics
 	local gdep = _p.."Dependencies/IGraphics/"
 
 	if g.platform == "gl2" then
-		includedirs {
-			gdep.."glad_GL2/include",
-			gdep.."glad_GL2/src"
-		}
-
+		includedirs { gdep.."glad_GL2/include", gdep.."glad_GL2/src" }
 		defines { "IGRAPHICS_GL2" }
 	end
 
 	if g.platform == "gl3" then
-		includedirs {
-			gdep.."glad_GL3/include",
-			gdep.."glad_GL3/src"
-		}
-
+		includedirs { gdep.."glad_GL3/include", gdep.."glad_GL3/src" }
 		defines { "IGRAPHICS_GL3" }
 	end
 
 	if g.backend == "nanovg" then
-		includedirs {
-			gdep.."NanoVG/src",
-			gdep.."NanoSVG/src"
-		}
-
+		includedirs { gdep.."NanoVG/src", gdep.."NanoSVG/src" }
 		defines { "IGRAPHICS_NANOVG" }
-
 		files { _p.."IGraphics/Drawing/IGraphicsNanoVG.h" }
 	end
 
 	if g.vsync == true then
 		defines { "IGRAPHICS_VSYNC" }
+	end
+
+	-- Configure post build scripts --
+
+	if config.outDir32 then
+		configuration { "x86" }
+			postbuildcommands { "{COPY} %{cfg.buildtarget.abspath} " .. config.outDir32 }
+	end
+
+	if config.outDir64 then
+		configuration { "x64" }
+			postbuildcommands { "{COPY} %{cfg.buildtarget.abspath} " .. config.outDir64 }
 	end
 
 	-- Window specific settings --
@@ -218,16 +217,6 @@ function iplug2.project.vst2(fn, name)
 		_p.."iPlug/VST2/*.h",
 		_p.."iPlug/VST2/*.cpp"
 	}
-
-	local outDir = config.outDir64
-	if outDir then
-		local fileName = util.getTargetName(_name, name or "vst2")
-		local sourceFile = "%{cfg.buildtarget.abspath}"
-		local targetFile = outDir .. "/" .. fileName
-		postbuildcommands {
-			"{COPY} %{cfg.buildtarget.abspath} " .. outDir
-		}
-	end
 
 	configuration {}
 

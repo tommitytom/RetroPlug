@@ -34,6 +34,11 @@ function util.flattenConfig(config, target)
 	util.copyFields(flattened, config.default)
 	if config[target] ~= nil then util.copyFields(flattened, config[target]) end
 
+	if flattened.outDir then
+		if flattened.outDir32 == nil then flattened.outDir32 = flattened.outDir end
+		if flattened.outDir64 == nil then flattened.outDir64 = flattened.outDir end
+	end
+
 	return flattened
 end
 
