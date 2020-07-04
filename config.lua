@@ -1,11 +1,45 @@
 return {
-	source = "thirdparty/iPlug2",
-	app = {
-		allowMultiple = true
+	plugin = {
+		version = "0.3.0",
+		name = "RetroPlug",
+		author = "tommitytom",
+		uniqueId = "2wvF",
+		authorId = "tmtt",
+		url = "tommitytom.co.uk",
+		email = "retroplug@tommitytom.co.uk",
+		copyright = "Copyright 2020 Tom Yaxley"
 	},
-	graphics = {
-		platform = "gl2",
-		backend = "nanovg",
-		vsync = true
+	config = {
+		default = {
+			type = "synth",
+			latency = 0,
+			midiIn = true,
+			midiOut = false,
+			stateChunks = true,
+			ui = true,
+			width = 320,
+			height = 288,
+			fps = 60,
+			sharedResources = false,
+			inputs = 0,
+			outputs = 8,
+
+			graphics = {
+				platform = "gl2",
+				backend = "nanovg",
+				vsync = true
+			}
+		},
+		vst2 = {
+			outDir32 = "C:/vst32",
+			outDir64 = "C:/vst64"
+		},
+		app = {
+			outputs = 2,
+
+			-- App specific
+			debugConsole = true,
+			allowMultiple = true
+		}
 	}
 }

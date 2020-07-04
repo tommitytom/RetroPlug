@@ -1,4 +1,4 @@
-local iplug2 = require("iplug2").init()
+local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 
 iplug2.workspace "RetroPlug"
 	platforms { "x64" }
@@ -15,6 +15,8 @@ iplug2.workspace "RetroPlug"
 		libdirs { "thirdparty/lib/release_x64" }
 
 local function retroplugProject()
+	dependson { "ScriptCompiler" }
+
 	includedirs {
 		"src",
 		"thirdparty",
@@ -43,21 +45,19 @@ local function retroplugProject()
 		"simplefilewatcher",
 		"minizip",
 		"gainput",
-		"xinput"
 	}
+
+	configuration { "windows" }
+		links { "xinput" }
 
 	filter { "files:src/luawrapper/**" }
 		buildoptions { "/bigobj" }
 end
 
-iplug2.project.app("App", retroplugProject)
-	configuration { "Debug" }
-		kind "ConsoleApp"
-	configuration { "Release" }
-		kind "WindowedApp"
-
-iplug2.project.vst2("VST2", retroplugProject)
-iplug2.project.vst3("VST3", retroplugProject)
+group "Targets"
+iplug2.project.app(retroplugProject)
+iplug2.project.vst2(retroplugProject)
+iplug2.project.vst3(retroplugProject)
 
 group "Utils"
 project "ScriptCompiler"
