@@ -102,5 +102,5 @@ group "Utils"
 project "ScriptCompiler"
 	kind "ConsoleApp"
 	includedirs { "src/compiler", "thirdparty/lua-5.3.5/src", "thirdparty/sol" }
-	files { "src/compiler/**.h", "src/compiler/**.cpp" }
+	files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 	links { "lua" }

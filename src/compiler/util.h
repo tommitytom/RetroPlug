@@ -65,5 +65,5 @@ static fs::path parsePath(const char* path) {
 
 static std::string readTextFile(const fs::path& path) {
 	std::ifstream file(path);
-	return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());;
+	return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }

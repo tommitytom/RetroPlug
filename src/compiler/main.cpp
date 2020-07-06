@@ -48,7 +48,7 @@ void processModule(ModuleDesc& module, CompilerState& state) {
 	for (size_t i = 0; i < module.scripts.size(); ++i) {
 		ScriptDesc* s = &module.scripts[i];
 		std::string fullPath = (module.rootPath / s->path).make_preferred().string();
-		Logger::log(module.name + "::" + s->name);
+		//Logger::log(module.name + "::" + s->name);
 		if (module.compile) {
 			compileScript(fullPath, s->data);
 		} else {
@@ -57,25 +57,42 @@ void processModule(ModuleDesc& module, CompilerState& state) {
 	}
 }
 
+#include "xxhash.h"
+
 void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	fs::path targetHeaderPath = targetDir / "CompiledScripts.h";
-	Logger::log("Writing " + targetHeaderPath.string());
 
-	std::ofstream outf(targetHeaderPath);
-	outf << HEADER_CODE_TEMPLATE;
+	std::stringstream ss;
+	ss << HEADER_CODE_TEMPLATE;
 
 	for (auto& module : state.modules) {
-		outf << "namespace " << module.name << " {";
-		outf << HEADER_FUNCS_TEMPLATE << "}" << std::endl << std::endl;
+		ss << "namespace " << module.name << " {";
+		ss << HEADER_FUNCS_TEMPLATE << "}" << std::endl << std::endl;
 	}
 
-	outf << "}" << std::endl;
+	ss << "}" << std::endl;
+
+	std::string code = ss.str();
+	std::string fileData = readTextFile(targetHeaderPath);
+
+	XXH64_hash_t codeHash = XXH64(code.data(), code.size(), 1337);
+	XXH64_hash_t fileHash = XXH64(fileData.data(), fileData.size(), 1337);
+
+	if (codeHash != fileHash) {
+		Logger::log("Writing " + targetHeaderPath.string());
+		std::ofstream outf(targetHeaderPath);
+		if (!outf.is_open()) {
+			Logger::log("Failed to open file");
+			return;
+		}
+
+		outf << code;
+	}
 }
 
 void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
 	fs::path targetFile = targetDir / "CompiledScripts_";
 	targetFile += module.name + ".cpp";
-	Logger::log("Writing " + targetFile.string());
 
 	std::stringstream vars;
 	std::stringstream lookup;
@@ -103,12 +120,24 @@ void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
 
 	lookup << "};" << std::endl;
 
-	std::ofstream outf(targetFile);
-	outf << SOURCE_HEADER_TEMPLATE;
-	outf << module.name << " {" << std::endl << std::endl;
-	outf << vars.str() << std::endl;
-	outf << lookup.str();
-	outf << SOURCE_FOOTER_TEMPLATE;
+	std::stringstream ss;
+	ss << SOURCE_HEADER_TEMPLATE;
+	ss << module.name << " {" << std::endl << std::endl;
+	ss << vars.str() << std::endl;
+	ss << lookup.str();
+	ss << SOURCE_FOOTER_TEMPLATE;
+
+	std::string code = ss.str();
+	std::string fileData = readTextFile(targetFile);
+
+	XXH64_hash_t codeHash = XXH64(code.data(), code.size(), 1337);
+	XXH64_hash_t fileHash = XXH64(fileData.data(), fileData.size(), 1337);
+
+	if (codeHash != fileHash) {
+		Logger::log("Writing " + targetFile.string());
+		std::ofstream outf(targetFile);
+		outf << code;
+	}
 }
 
 int main(int argc, char** argv) {
@@ -124,8 +153,6 @@ int main(int argc, char** argv) {
 			std::cout << "No config found at " << configPath << std::endl;
 			return 1;
 		}
-
-		std::cout << "Loading config from " << configPath << std::endl;
 
 		sol::state ctx;
 		sol::protected_function_result res = ctx.do_file(configPath.string());
@@ -180,7 +207,7 @@ int main(int argc, char** argv) {
 
 		auto endTime = std::chrono::high_resolution_clock::now();
 		auto ms = endTime - startTime;
-		std::cout << "Duration: " << std::chrono::duration_cast<std::chrono::milliseconds>(ms).count() << "ms" << std::endl;
+		std::cout << "Lua compile time: " << std::chrono::duration_cast<std::chrono::milliseconds>(ms).count() << "ms" << std::endl;
 	}
 
 	return 0;

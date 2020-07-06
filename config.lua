@@ -5,7 +5,7 @@ return {
 		author = "tommitytom",
 		uniqueId = "2wvF",
 		authorId = "tmtt",
-		url = "tommitytom.co.uk",
+		url = "https://tommitytom.co.uk",
 		email = "retroplug@tommitytom.co.uk",
 		copyright = "Copyright 2020 Tom Yaxley"
 	},
@@ -16,13 +16,15 @@ return {
 			midiIn = true,
 			midiOut = false,
 			stateChunks = true,
+			sharedResources = false,
+			inputs = 0,
+			outputs = 8,
+
+			-- Add these to graphics?
 			ui = true,
 			width = 320,
 			height = 288,
 			fps = 60,
-			sharedResources = false,
-			inputs = 0,
-			outputs = 8,
 
 			graphics = {
 				platform = "gl2",

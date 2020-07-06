@@ -81,7 +81,6 @@ public:
 	// Starts the pool with the requested number of threads/workers.
 	// If no value is supplied, the CPU's core count will be used.
 	void start(size_t workerCount = std::thread::hardware_concurrency()) {
-		std::cout << "Starting thread pool with " << workerCount << " workers" << std::endl;
 		_workers.resize(workerCount);
 		for (size_t i = 0; i < workerCount; ++i) {
 			Worker& worker = _workers[i];
