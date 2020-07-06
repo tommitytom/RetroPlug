@@ -4,7 +4,7 @@
 #include "platform/Resource.h"
 #include "resource.h"
 
-#include "luawrapper/ConfigScripts.h"
+#include "luawrapper/generated/CompiledScripts.h"
 #include "luawrapper/ConfigScriptWriter.h"
 
 namespace AxisButtons {

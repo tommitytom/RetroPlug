@@ -3,17 +3,26 @@
 #include <iostream>
 #include "util/fs.h"
 #include "util/File.h"
-#include "ConfigScripts.h"
+#include "generated/CompiledScripts.h"
 
 namespace ConfigScriptWriter {
+	static std::string getScriptPath(fs::path path) {
+		std::string name = path.string();
+		std::replace(name.begin(), name.end(), '.', '/');
+		return name + ".lua";
+	}
+
 	void write(fs::path configDir) {
 		fs::create_directories(configDir);
 
-		auto& configScripts = getRawScripts();
+		std::vector<std::string_view> names;
+		CompiledScripts::config::getScriptNames(names);
 
-		for (RawScript f : configScripts) {
-			fs::path path = (configDir / f.path).make_preferred();
-			fs::path dir = path.parent_path();
+		for (std::string_view name: names) {
+			std::string path = getScriptPath(name);
+
+			fs::path fullPath = (configDir / path).make_preferred();
+			fs::path dir = fullPath.parent_path();
 
 			if (!fs::exists(dir)) {
 				if (!fs::create_directories(dir)) {
@@ -21,9 +30,11 @@ namespace ConfigScriptWriter {
 				}
 			}
 
-			if (!fs::exists(path)) {
-				if (!writeFile(tstr(path.wstring()), f.content)) {
-					std::cout << "Failed to write file " << f.path << std::endl;
+			if (!fs::exists(fullPath)) {
+				const CompiledScripts::Script* script = CompiledScripts::config::getScript(name);
+
+				if (!writeFile(tstr(fullPath.wstring()), (std::byte*)script->data, script->size, false)) {
+					std::cout << "Failed to write file " << fullPath << std::endl;
 				}
 			}
 		}

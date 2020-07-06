@@ -1,6 +1,7 @@
 inspect = require("inspect")
 --function prinspect(...) print(inspect(...)) end
 
+
 require("component")
 require("constants")
 require("components.ButtonHandler")
@@ -16,6 +17,7 @@ function _loadComponent(name) cm.loadComponent(name) end
 
 local view = require("View")()
 function _getView() return view end
+
 
 --[[Action.RetroPlug = {
 	NextInstance = function(down)

@@ -39,11 +39,12 @@ project "RetroPlug"
 
 		"src/retroplug/**.h",
 		"src/retroplug/**.c",
-		"src/retroplug/**.cpp"
+		"src/retroplug/**.cpp",
+		"src/retroplug/**.lua"
 	}
 
 	prebuildcommands {
-		"%{cfg.buildtarget.directory}/ScriptCompiler.exe"
+		"%{cfg.buildtarget.directory}ScriptCompiler.exe ../../src/compiler.config.lua"
 	}
 
 	filter { "files:src/retroplug/luawrapper/**" }
@@ -100,6 +101,6 @@ iplug2.project.vst3(retroplugProject)
 group "Utils"
 project "ScriptCompiler"
 	kind "ConsoleApp"
-	includedirs { "thirdparty/lua-5.3.5/src", "thirdparty/sol" }
-	files { "src/compiler/main.cpp" }
+	includedirs { "src/compiler", "thirdparty/lua-5.3.5/src", "thirdparty/sol" }
+	files { "src/compiler/**.h", "src/compiler/**.cpp" }
 	links { "lua" }

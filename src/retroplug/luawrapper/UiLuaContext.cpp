@@ -19,7 +19,7 @@
 #include "Wrappers.h"
 
 #ifdef COMPILE_LUA_SCRIPTS
-#include "CompiledLua.h"
+#include "generated/CompiledScripts.h"
 #endif
 
 void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath) {
@@ -122,7 +122,8 @@ bool UiLuaContext::setup() {
 
 #ifdef COMPILE_LUA_SCRIPTS
 	consoleLogLine("Using precompiled lua scripts");
-	s.add_package_loader(compiledScriptLoader);
+	s.add_package_loader(CompiledScripts::common::loader);
+	s.add_package_loader(CompiledScripts::ui::loader);
 #else
 	consoleLogLine("Loading lua scripts from disk");
 	packagePath += ";" + _scriptPath + "/common/?.lua";
@@ -156,11 +157,13 @@ bool UiLuaContext::setup() {
 		"checksum", sol::readonly(&File::checksum)
 	);
 
+	// TODO: Fix naming of this
 	s.new_usertype<ViewWrapper>("ViewWrapper",
 		"requestDialog", &ViewWrapper::requestDialog,
 		"requestMenu", &ViewWrapper::requestMenu
 	);
 
+	// TODO: Fix naming of this too!
 	s.create_named_table("nativeutil", 
 		"mergeMenu", mergeMenu
 	);
@@ -178,7 +181,9 @@ bool UiLuaContext::setup() {
 	consoleLogLine("Looking for components...");
 
 #ifdef COMPILE_LUA_SCRIPTS
-	const std::vector<const char*>& names = getScriptNames();
+	std::vector<std::string_view> names;
+	CompiledScripts::ui::getScriptNames(names);
+
 	for (size_t i = 0; i < names.size(); ++i) {
 		std::string_view name = names[i];
 		if (name.substr(0, 10) == "components") {
