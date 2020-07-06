@@ -26,7 +26,7 @@ Icon?
 .DS_Stor*
 
 compiler/x64
-src/luawrapper/CompiledLua.cpp
+src/retroplug/luawrapper/generated
 thirdparty/bin
 thirdparty/lib
 thirdparty/build
