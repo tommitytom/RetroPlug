@@ -1,3 +1,5 @@
+#include <tuple>
+
 enum AudioCallTypes {
 	LoadRom,
 	TransmitVideo,
@@ -66,6 +68,9 @@ namespace async {
 
 }
 
+struct LoadRomDesc {};
+struct AudioLuaContextPtr {};
+
 using Hub = async::Hub;
 using AudioNode = async::Node<
 	async::Push<LoadRom, LoadRomDesc>,
@@ -102,7 +107,11 @@ void some_function(types<Params...> vals) {
 	
 }
 
-static void testFunc(int v, float t) {}
+#include <iostream>
+
+static void testFunc(int v, float t) {
+	std::cout << "ff" << std::endl;
+}
 
 template <class...Params>
 constexpr static std::tuple<Params...> call(Params... p) {
@@ -120,6 +129,12 @@ void calltest3(T&& t, F&& f)
 	f(std::forward<T>(t));
 }
 
+enum class NodeTypes {
+	Audio,
+	Ui
+};
+
+
 static void func() {
 	async::Hub hub;
 	AudioNode* node = hub.addNode<AudioNode>((int)NodeTypes::Audio);
@@ -129,6 +144,9 @@ static void func() {
 	auto t = call(20, 40.f);
 	auto args = function_args(testFunc);
 
+	std::apply(testFunc, t);
+
+
 	//Foo f;
 	//auto f2 = std::bind(&Foo::bar, f);
 	
@@ -136,7 +154,7 @@ static void func() {
 	
 	//auto args2 = calltest2<Foo, &Foo::bar>(&f);
 
-	some_function(args_t<decltype(testFunc)>{});
+	/*some_function(args_t<decltype(testFunc)>{});
 
 	using LoadRomT = AudioNode::CallT<LoadRom>;
 	//using TransmitVideoT = AudioNode::Call<TransmitVideo>;
@@ -144,5 +162,5 @@ static void func() {
 
 	node->on<LoadRom>([](const LoadRomDesc&) {
 		
-	});
+	});*/
 }
