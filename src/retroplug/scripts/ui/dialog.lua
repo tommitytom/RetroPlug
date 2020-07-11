@@ -22,14 +22,14 @@ local function prepareFilters(filters, target)
 		table.insert(formatted, { v[1], formatExtensions(v[2]) })
 	end
 
-	if #filters > 1 then
+	if #formatted > 1 then
 		local exts = ""
 		for _, v in ipairs(formatted) do
 			if exts ~= "" then exts = exts .. ";" end
 			exts = exts .. v[2]
 		end
 
-		table.insert(filters, 1, { "Supported Files", exts })
+		table.insert(formatted, 1, { "Supported Files", exts })
 	end
 
 	local desc = {}
