@@ -11,6 +11,11 @@ build_script:
   - cmd: cd thirdparty
   - cmd: build.bat
   - cmd: cd SameBoy/retroplug
+  - cmd: SET "PATH=C:\%MSYS2_DIR%\%MSYSTEM%\bin;C:\%MSYS2_DIR%\usr\bin;%PATH%"
+  - cmd: bash -lc "pacman -S --needed --noconfirm pacman-mirrors"
+  - cmd: bash -lc "pacman -S --needed --noconfirm git"
+  - cmd: bash -lc "pacman -Syu --noconfirm"
+  - cmd: bash -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain autoconf automake libtool make patch mingw-w64-x86_64-libtool"
   - cmd: build.bat
   - cmd: cd ../../..
   - cmd: premake5 vs2019
