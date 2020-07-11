@@ -6,6 +6,7 @@ install:
   - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha15/premake-5.0.0-alpha15-windows.zip
   - cmd: 7z e premake-5.0.0-alpha15-windows.zip
+  - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
   - cmd: cd thirdparty
   - cmd: build.bat
