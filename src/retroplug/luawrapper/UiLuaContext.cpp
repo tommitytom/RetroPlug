@@ -46,12 +46,12 @@ bool UiLuaContext::onKey(VirtualKey key, bool down) {
 	return res;
 }
 
-void UiLuaContext::onDoubleClick(float x, float y) {
-	callFunc(_viewRoot, "onDoubleClick", x, y);
+void UiLuaContext::onDoubleClick(float x, float y, MouseMod mod) {
+	callFunc(_viewRoot, "onDoubleClick", x, y, mod);
 }
 
-void UiLuaContext::onMouseDown(float x, float y) {
-	callFunc(_viewRoot, "onMouseDown", x, y);
+void UiLuaContext::onMouseDown(float x, float y, MouseMod mod) {
+	callFunc(_viewRoot, "onMouseDown", x, y, mod);
 }
 
 void UiLuaContext::onPadButton(int button, bool down) {
@@ -186,7 +186,7 @@ bool UiLuaContext::setup() {
 
 	for (size_t i = 0; i < names.size(); ++i) {
 		std::string_view name = names[i];
-		if (name.substr(0, 10) == "components") {
+		if (name.substr(0, 11) == "components." && name.find_first_of(".", 11) == std::string::npos) {
 			consoleLog("Loading " + std::string(name) + "... ");
 			requireComponent(_state, std::string(name));
 		}

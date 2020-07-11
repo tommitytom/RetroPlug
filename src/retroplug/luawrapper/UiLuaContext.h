@@ -39,9 +39,9 @@ public:
 
 	bool onKey(VirtualKey key, bool down);
 
-	void onDoubleClick(float x, float y);
+	void onDoubleClick(float x, float y, MouseMod mod);
 
-	void onMouseDown(float x, float y);
+	void onMouseDown(float x, float y, MouseMod mod);
 
 	void onDrop(float x, float y, const char* str);
 

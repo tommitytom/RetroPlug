@@ -178,4 +178,9 @@ void luawrappers::registerCommon(sol::state& s) {
 		"multiSelect", &DialogRequest::multiSelect,
 		"fileName", &DialogRequest::fileName
 	);
+
+	s.new_usertype<MouseMod>("MouseMod",
+		"left", &MouseMod::left,
+		"right", &MouseMod::right
+	);
 }

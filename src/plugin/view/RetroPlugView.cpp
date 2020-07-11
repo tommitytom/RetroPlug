@@ -40,56 +40,23 @@ void RetroPlugView::OnInit() {
 	UpdateLayout();
 }
 
+void RetroPlugView::OnDrop(float x, float y, const char* str) {
+	_lua->onDrop(x, y, str);
+}
+
 bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
 	return _lua->onKey((VirtualKey)key.VK, down);
 }
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	_lua->onDoubleClick(x, y);
+	_lua->onDoubleClick(x, y, MouseMod{ mod.L, mod.R });
 	ProcessDialog();
 	UpdateLayout();
 	UpdateSelected();
 }
 
-void RetroPlugView::ProcessDialog() {
-	ViewWrapper* viewWrapper = _lua->getViewWrapper();
-	DialogRequestPtr dialog = viewWrapper->fetchDialogRequest();
-	if (dialog) {
-		switch (dialog->type) {
-		case DialogType::Save: {
-			std::string p = ws2s(BasicFileSave(GetUI(), dialog->filters, tstr(dialog->fileName)));
-			std::vector<std::string> paths;
-			paths.push_back(p);
-			_lua->handleDialogCallback(paths);
-			break;
-		}
-		case DialogType::Directory:
-		case DialogType::Load: {
-			std::vector<tstring> res = BasicFileOpen(
-				GetUI(),
-				dialog->filters,
-				dialog->multiSelect,
-				dialog->type == DialogType::Directory
-			);
-
-			std::vector<std::string> paths;
-			for (size_t i = 0; i < res.size(); ++i) {
-				paths.push_back(ws2s(res[i]));
-			}
-
-			_lua->handleDialogCallback(paths);
-
-			break;
-		}
-		}
-
-		UpdateLayout();
-		UpdateSelected();
-	}
-}
-
 void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
-	_lua->onMouseDown(x, y);
+	_lua->onMouseDown(x, y, MouseMod{ mod.L, mod.R });
 
 	ViewWrapper* viewWrapper = _lua->getViewWrapper();
 	Menu* menu = viewWrapper->fetchMenu();
@@ -162,8 +129,41 @@ void RetroPlugView::Draw(IGraphics& g) {
 	}
 }
 
-void RetroPlugView::OnDrop(float x, float y, const char* str) {
-	_lua->onDrop(x, y, str);
+void RetroPlugView::ProcessDialog() {
+	ViewWrapper* viewWrapper = _lua->getViewWrapper();
+	DialogRequestPtr dialog = viewWrapper->fetchDialogRequest();
+	if (dialog) {
+		switch (dialog->type) {
+		case DialogType::Save: {
+			std::string p = ws2s(BasicFileSave(GetUI(), dialog->filters, tstr(dialog->fileName)));
+			std::vector<std::string> paths;
+			paths.push_back(p);
+			_lua->handleDialogCallback(paths);
+			break;
+		}
+		case DialogType::Directory:
+		case DialogType::Load: {
+			std::vector<tstring> res = BasicFileOpen(
+				GetUI(),
+				dialog->filters,
+				dialog->multiSelect,
+				dialog->type == DialogType::Directory
+			);
+
+			std::vector<std::string> paths;
+			for (size_t i = 0; i < res.size(); ++i) {
+				paths.push_back(ws2s(res[i]));
+			}
+
+			_lua->handleDialogCallback(paths);
+
+			break;
+		}
+		}
+
+		UpdateLayout();
+		UpdateSelected();
+	}
 }
 
 void RetroPlugView::UpdateLayout() {

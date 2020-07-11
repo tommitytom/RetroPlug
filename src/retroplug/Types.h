@@ -17,5 +17,10 @@ struct Dimension2 {
 	int h = 0;
 };
 
+struct MouseMod {
+	bool left = false;
+	bool right = false;
+};
+
 using SystemIndex = int;
 const SystemIndex NO_ACTIVE_SYSTEM = -1;

@@ -7,6 +7,8 @@
 #include "util/File.h"
 #include "util/zipp.h"
 
+#include "micromsg2/api2.h"
+
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	: Plugin(info, MakeConfig(0, 0)), _controller(GetSampleRate()) 
 {
