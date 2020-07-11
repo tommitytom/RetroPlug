@@ -7,8 +7,7 @@ install:
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha15/premake-5.0.0-alpha15-windows.zip
   - cmd: 7z e premake-5.0.0-alpha15-windows.zip
 build_script:
-- cmd: >-
-    premake5 vs2019
-    msbuild build/vs2019/ScriptCompiler.vcxproj
-    premake5 vs2019
-    msbuild build/vs2019/RetroPlug.sln
+  - cmd: premake5 vs2019
+  - cmd: msbuild build/vs2019/ScriptCompiler.vcxproj
+  - cmd: premake5 vs2019
+  - cmd: msbuild build/vs2019/RetroPlug.sln
