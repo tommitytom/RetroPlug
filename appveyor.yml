@@ -1,0 +1,14 @@
+version: 1.0.{build}
+image:
+- Visual Studio 2019
+clone_folder: c:\retroplug
+install:
+  - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
+  - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha15/premake-5.0.0-alpha15-windows.zip
+  - cmd: 7z e premake-5.0.0-alpha15-windows.zip
+build_script:
+- cmd: >-
+    premake5 vs2019
+    msbuild build/vs2019/ScriptCompiler.vcxproj
+    premake5 vs2019
+    msbuild build/vs2019/RetroPlug.sln
