@@ -7,6 +7,7 @@
 #include "platform/ViewWrapper.h"
 #include "platform/Path.h"
 #include "platform/Shell.h"
+#include "util/Paths.h"
 
 using ITouchID = uintptr_t;
 struct IMouseMod
@@ -28,8 +29,11 @@ struct IMouseMod
 	{}
 };
 
+
+
 void luawrappers::registerRetroPlug(sol::state& s) {
 	s.create_named_table("nativeshell",
+		"getConfigPath", []() { return ws2s(getConfigPath().wstring()); },
 		"getContentPath", [](const tstring& path) { return ws2s(getContentPath(path).wstring()); },
 		"openShellFolder", openShellFolder
 	);

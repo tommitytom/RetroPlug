@@ -13,7 +13,9 @@ namespace ConfigScriptWriter {
 	}
 
 	void write(fs::path configDir) {
-		fs::create_directories(configDir);
+		if (!fs::exists(configDir)) {
+			fs::create_directories(configDir);
+		}
 
 		std::vector<std::string_view> names;
 		CompiledScripts::config::getScriptNames(names);

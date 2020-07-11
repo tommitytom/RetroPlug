@@ -6,6 +6,7 @@
 
 #include "luawrapper/generated/CompiledScripts.h"
 #include "luawrapper/ConfigScriptWriter.h"
+#include "util/Paths.h"
 
 namespace AxisButtons {
 	enum AxisButton {
@@ -23,6 +24,11 @@ namespace AxisButtons {
 using AxisButtons::AxisButton;
 
 const float AXIS_BUTTON_THRESHOLD = 0.5f;
+
+// This is when debugging and not using precompiled lua scripts
+fs::path getScriptPath() {
+	return fs::path(__FILE__).parent_path().parent_path().parent_path() / "retroplug" / "scripts";
+}
 
 RetroPlugController::RetroPlugController(double sampleRate)
 	: _listener(&_uiLua, &_proxy), _audioController(&_timeInfo, sampleRate), _proxy(&_audioController)
@@ -55,10 +61,10 @@ RetroPlugController::RetroPlugController(double sampleRate)
 	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
 
 	// Make sure the config script exists
-	fs::path configDir = getContentPath(fs::path(PLUG_VERSION_STR));
+	fs::path configDir = getConfigPath();
 	ConfigScriptWriter::write(configDir);
 
-	fs::path scriptPath = fs::path(__FILE__).parent_path().parent_path().parent_path() / "retroplug" / "scripts";
+	fs::path scriptPath = getScriptPath();
 	_uiLua.init(&_proxy, configDir.string(), scriptPath.string());
 
 	_proxy.setScriptDirs(configDir.string(), scriptPath.string());

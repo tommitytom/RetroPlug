@@ -10,8 +10,10 @@ install:
 build_script:
   - cmd: cd thirdparty
   - cmd: build.bat
-  - cmd: cd ..
+  - cmd: cd SameBoy/retroplug
+  - cmd: build.bat
+  - cmd: cd ../../..
   - cmd: premake5 vs2019
   - cmd: msbuild build/vs2019/ScriptCompiler.vcxproj
   - cmd: premake5 vs2019
-  - cmd: msbuild build/vs2019/RetroPlug.sln
+  - cmd: msbuild build/vs2019/RetroPlug-app.vcxproj
