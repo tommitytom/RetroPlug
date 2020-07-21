@@ -13,6 +13,14 @@ local function load(path, force)
 	return nil
 end
 
+local function loadText(path)
+	local file = io.open(path, "rb") -- r read mode and b binary mode
+    if not file then return nil end
+    local content = file:read "*a" -- *a or *all reads the whole file
+    file:close()
+    return content
+end
+
 local function save(path, data)
 	local ok
 	if type(data) == "string" then
@@ -48,6 +56,7 @@ end
 return {
 	__setup = setup,
 	load = load,
+	loadText = loadText,
 	save = save,
 	saveText = saveText,
 	exists = exists,

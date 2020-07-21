@@ -110,7 +110,8 @@ local projectDefaults = {
 				saveType="sram",
 				audioRouting="stereoMixDown",
 				zoom=2,
-				midiRouting="sendToAll"
+				midiRouting="sendToAll",
+				layout = "auto"
 			}
 		}
 	}
@@ -121,8 +122,6 @@ local function firstToUpper(str)
 		return (str:gsub("^%l", string.upper))
 	end
 end
-
-local RETROPLUG_010_STATE_SIZE = 1024;
 
 local function readLegacyStateData(base64Data, saveType, version)
 	local stateData = base64.decodeBuffer(base64Data)
@@ -145,7 +144,7 @@ local function readLegacyStateData(base64Data, saveType, version)
 	return stateData, saveType
 end
 
-local function updgrade_json_to_pv100(p)
+local function updgrade_json_to_pv100(p, config)
 	local syncModes = { "off", "midiSync", "midiSyncArduinoboy" }
 	local systems = {}
 	for _, v in ipairs(p.instances) do
@@ -189,17 +188,17 @@ local function updgrade_json_to_pv100(p)
 		settings = {
 			saveType = p.saveType,
 			audioRouting = p.audioRouting,
-			zoom = 2, --TODO: Set to user defined defaults in config.lua!
+			zoom = config.settings.zoom, --TODO: Set to user defined defaults in config.lua!
 			midiRouting = p.midiRouting,
 			layout = p.layout
 		}
 	}
 end
 
-local function upgradeAndValidateProject(projectData)
+local function upgradeAndValidateProject(projectData, config)
 	local err
 	if projectData.instances ~= nil and semver(projectData.version) <= semver(0, 2, 0) then
-		projectData, err = updgrade_json_to_pv100(projectData)
+		projectData, err = updgrade_json_to_pv100(projectData, config)
 	end
 
 	-- TODO: Validate!
@@ -299,7 +298,7 @@ local function createProjectSystems(projectData, zip)
 	return systems
 end
 
-local function loadProject(data)
+local function loadProject(data, config)
 	local projectData
 	local err
 
@@ -335,7 +334,7 @@ local function loadProject(data)
 		log.info("Legacy project loaded")
 	end
 
-	projectData, err = upgradeAndValidateProject(projectData)
+	projectData, err = upgradeAndValidateProject(projectData, config)
 	if err ~= nil then
 		if zip then zip:close() end
 		return nil, nil, err

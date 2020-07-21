@@ -64,5 +64,5 @@ public:
 	void loadState(DataBufferPtr buffer);
 
 private:
-	bool setup();
+	bool setup(bool updateProject);
 };

@@ -2,6 +2,7 @@
 
 #include <sol/sol.hpp>
 #include "platform/Logger.h"
+#include "platform/Platform.h"
 #include "LuaHelpers.h"
 #include "config.h"
 #include "plugs/SameBoyPlug.h"
@@ -9,6 +10,7 @@
 #include "util/fs.h"
 #include "platform/Menu.h"
 #include "luawrapper/Wrappers.h"
+#include "luawrapper/generated/CompiledScripts.h"
 
 AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
@@ -20,11 +22,12 @@ void AudioLuaContext::init(ProcessingContext* ctx, TimeInfo* timeInfo, double sa
 	(*_state)["_model"].set(ctx);
 	(*_state)["_timeInfo"].set(timeInfo);
 	(*_state)["_sampleRate"].set(sampleRate);
-	runScript(_state, "_init()");
+	runScript(*_state, "_init()");
 }
 
 void AudioLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
+	consoleLogLine("Initializing audio lua context");
 
 	_state = new sol::state();
 	sol::state& s = *_state;
@@ -34,14 +37,15 @@ void AudioLuaContext::setup() {
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
 
-//#ifdef COMPILE_LUA_SCRIPTS
-	//consoleLogLine("Using precompiled lua scripts");
-	//s.add_package_loader(compiledScriptLoader);
-//#else
+#ifdef COMPILE_LUA_SCRIPTS
+	consoleLogLine("Using precompiled lua scripts");
+	s.add_package_loader(CompiledScripts::common::loader);
+	s.add_package_loader(CompiledScripts::audio::loader);
+#else
 	consoleLogLine("Loading lua scripts from disk");
 	packagePath += ";" + _scriptPath + "/common/?.lua";
 	packagePath += ";" + _scriptPath + "/audio/?.lua";
-//#endif
+#endif
 
 	s["package"]["path"] = packagePath;
 
@@ -84,63 +88,51 @@ void AudioLuaContext::setup() {
 		s["_timeInfo"].set(_timeInfo);
 	}
 
-	if (!runScript(_state, "require('main')")) {
+	if (!runScript(s, "require('main')")) {
 		return;
 	}
 
 	consoleLogLine("Looking for components...");
 
-/*#ifdef COMPILE_LUA_SCRIPTS
-	const std::vector<const char*>& names = getScriptNames();
-	for (size_t i = 0; i < names.size(); ++i) {
-		std::string_view name = names[i];
-		if (name.substr(0, 10) == "components") {
-			consoleLog("Loading " + std::string(name) + "... ");
-			requireComponent(_state, std::string(name));
-		}
-	}
-#else*/
-	for (const auto& entry : fs::directory_iterator(_scriptPath + "/audio/components/")) {
-		if (!entry.is_directory()) {
-			fs::path p = entry.path();
-			std::string name = p.replace_extension("").filename().string();
-			consoleLog("Loading " + name + ".lua... ");
-			requireComponent(_state, "components." + name);
-		}
-	}
-//#endif
+#ifdef COMPILE_LUA_SCRIPTS
+	std::vector<std::string_view> names;
+	CompiledScripts::audio::getScriptNames(names);
+	loadComponentsFromBinary(s, names);
+#else
+	loadComponentsFromFile(s, _scriptPath + "/audio/components/");
+#endif
 
 	consoleLogLine("Finished loading components");
 
-	runFile(_state, _configPath + "/config.lua");
+	runFile(s, _configPath + "/input/default.lua");
 }
 
 void AudioLuaContext::addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
-	callFunc(_state, "_addInstance", idx, instance, componentState);
+	callFunc(*_state, "_addInstance", idx, instance, componentState);
 }
 
 void AudioLuaContext::duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance) {
-	callFunc(_state, "_duplicateInstance", sourceIdx, targetIdx, instance);
+	callFunc(*_state, "_duplicateInstance", sourceIdx, targetIdx, instance);
 }
 
 void AudioLuaContext::removeInstance(SystemIndex idx) {
-	callFunc(_state, "_removeInstance", idx);
+	callFunc(*_state, "_removeInstance", idx);
 }
 
 void AudioLuaContext::setActive(SystemIndex idx) {
-	callFunc(_state, "_setActive", idx);
+	callFunc(*_state, "_setActive", idx);
 }
 
 void AudioLuaContext::update(int frameCount) {
-	callFunc(_state, "_update", frameCount);
+	callFunc(*_state, "_update", frameCount);
 }
 
 void AudioLuaContext::closeProject() {
-	callFunc(_state, "_closeProject");
+	callFunc(*_state, "_closeProject");
 }
 
 void AudioLuaContext::onMidi(int offset, int status, int data1, int data2) {
-	callFunc(_state, "_onMidi", offset, status, data1, data2);
+	callFunc(*_state, "_onMidi", offset, status, data1, data2);
 }
 
 void AudioLuaContext::onMidiClock(int button, bool down) {
@@ -148,27 +140,27 @@ void AudioLuaContext::onMidiClock(int button, bool down) {
 }
 
 void AudioLuaContext::onMenu(SystemIndex idx, std::vector<Menu*>& menus) {
-	callFunc(_state, "_onMenu", idx, menus);
+	callFunc(*_state, "_onMenu", idx, menus);
 }
 
 void AudioLuaContext::onMenuResult(int id) {
-	callFunc(_state, "_onMenuResult", id);
+	callFunc(*_state, "_onMenuResult", id);
 }
 
 std::string AudioLuaContext::serializeInstances() {
 	std::string target;
-	callFuncRet(_state, "_serializeInstances", target);
+	callFuncRet(*_state, "_serializeInstances", target);
 	return target;
 }
 
 std::string AudioLuaContext::serializeInstance(SystemIndex index) {
 	std::string target;
-	callFuncRet(_state, "_serializeInstance", target, index);
+	callFuncRet(*_state, "_serializeInstance", target, index);
 	return target;
 }
 
 void AudioLuaContext::deserializeInstances(const std::string& data) {
-	callFunc(_state, "_deserializeInstances", data);
+	callFunc(*_state, "_deserializeInstances", data);
 }
 
 void AudioLuaContext::reload() {

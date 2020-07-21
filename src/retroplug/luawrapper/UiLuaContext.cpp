@@ -26,7 +26,7 @@ void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const
 	_configPath = path;
 	_scriptPath = scriptPath;
 	_proxy = proxy;
-	setup();
+	setup(true);
 }
 
 void UiLuaContext::update(double delta) {
@@ -77,7 +77,7 @@ void UiLuaContext::reload() {
 	}
 	
 	shutdown();
-	setup();
+	setup(false);
 
 	if (_valid) {
 		callFunc(_viewRoot, "onReloadEnd");
@@ -108,14 +108,16 @@ void UiLuaContext::loadState(DataBufferPtr buffer) {
 	callFunc(_viewRoot, "loadState", buffer);
 }
 
-bool UiLuaContext::setup() {
+bool UiLuaContext::setup(bool updateProject) {
 	consoleLogLine("------------------------------------------");
+	consoleLogLine("Initializing UI lua context");
 
 	_valid = false;
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math, sol::lib::debug, sol::lib::coroutine);
+	s.open_libraries(	sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, 
+						sol::lib::math, sol::lib::debug, sol::lib::coroutine, sol::lib::io	);
 
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
@@ -170,11 +172,11 @@ bool UiLuaContext::setup() {
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_UI_MENU_ID_OFFSET;
 
-	if (!runScript(_state, "require('main')")) {
+	if (!runScript(s, "require('main')")) {
 		return false;
 	}
 
-	if (!callFuncRet(_state, "_getView", _viewRoot)) {
+	if (!callFuncRet(s, "_getView", _viewRoot)) {
 		return false;
 	}
 
@@ -183,33 +185,29 @@ bool UiLuaContext::setup() {
 #ifdef COMPILE_LUA_SCRIPTS
 	std::vector<std::string_view> names;
 	CompiledScripts::ui::getScriptNames(names);
-
-	for (size_t i = 0; i < names.size(); ++i) {
-		std::string_view name = names[i];
-		if (name.substr(0, 11) == "components." && name.find_first_of(".", 11) == std::string::npos) {
-			consoleLog("Loading " + std::string(name) + "... ");
-			requireComponent(_state, std::string(name));
-		}
-	}
+	loadComponentsFromBinary(s, names);
 #else
-	for (const auto& entry : fs::directory_iterator(_scriptPath + "/ui/components/")) {
-		if (!entry.is_directory()) {
-			fs::path p = entry.path();
-			std::string name = p.replace_extension("").filename().string();
-			consoleLog("Loading " + name + ".lua... ");
-			requireComponent(_state, "components." + name);
-		}
-	}
+	loadComponentsFromFile(s, _scriptPath + "/ui/components/");
 #endif
 
 	consoleLogLine("Finished loading components");
 
-	if (!runFile(_state, _configPath + "/config.lua")) {
-		consoleLogLine("Failed to load user config");
-	}
-
+	// Set up the lua context
 	if (!callFunc(_viewRoot, "setup", &_viewWrapper, _proxy)) {
 		consoleLogLine("Failed to setup view");
+	}
+
+	// Load the users config settings
+	std::string configPath = _configPath + "/config.lua";
+	if (!callFunc(_viewRoot, "loadConfigFromPath", configPath, updateProject)) {
+		consoleLogLine("Failed to load config from " + configPath);
+		assert(false);
+	}
+
+	// Load the users specified input config
+	// TODO: Load all user configs
+	if (!runFile(s, _configPath + "/input/default.lua")) {
+		consoleLogLine("Failed to load user config");
 	}
 
 	_valid = true;

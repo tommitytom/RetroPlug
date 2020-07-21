@@ -8,9 +8,10 @@ local pathutil = require("pathutil")
 local fileutil = require("util.file")
 local componentutil = require("util.component")
 local ComponentManager = require("ComponentManager")
+local Error = require("Error")
 
 local System = class()
-function System:init(desc, model)
+function System:init(desc, model, config)
 	self._audioContext = nil
 	self.components = {}
 
@@ -75,11 +76,21 @@ function System:setRom(data, reset)
 	end
 end
 
+local function createSystemDesc(config)
+	local desc = SystemDesc.new()
+	if config then
+		desc.sameBoySettings.model = config.SameBoy.model
+		desc.sameBoySettings.gameLink = config.SameBoy.gameLink
+	end
+
+	return desc
+end
+
 -- Loads a ROM from a path string, or data buffer.  Rebuilds the
--- component array and resets the emulator.  The second 'path' parameter
+-- component array and resets the emulator.  The 'path' parameter
 -- allows you to pass a path for metadata purposes if the value passed
 -- to 'data' is a buffer.
-function System:loadRom(data, path)
+function System:loadRom(data, config, path)
 	local fileData, err
 	if type(data) == "string" and pathutil.ext(data) == "zip" then
 		local zipReader = ZipReader.new(data)
@@ -100,7 +111,7 @@ function System:loadRom(data, path)
 	if err ~= nil then return err end
 
 	if type(data) == "string" then path = data end
-	if self.desc == nil then self.desc = SystemDesc.new() end
+	if self.desc == nil then self.desc = createSystemDesc(config) end
 
 	local d = self.desc
 	local idx = d.idx

@@ -11,6 +11,7 @@ local View = class()
 function View:init()
 	self._keyFilter = KeyFilter()
 	self._menuLookup = nil
+	self._config = nil
 end
 
 function View:setup(view, audioContext)
@@ -18,6 +19,10 @@ function View:setup(view, audioContext)
 	self.model = Model(audioContext)
 	fs.__setup(audioContext:getFileManager())
 	dialog.__setup(view)
+end
+
+function View:loadConfigFromPath(path, updateProject)
+	return self.model.project:loadConfigFromPath(path, updateProject)
 end
 
 function View:onKey(key, down)

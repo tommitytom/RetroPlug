@@ -43,12 +43,15 @@ project "RetroPlug"
 		"src/retroplug/**.lua"
 	}
 
-	prebuildcommands {
-		"%{cfg.buildtarget.directory}ScriptCompiler.exe ../../src/compiler.config.lua"
-	}
-
 	filter { "files:src/retroplug/luawrapper/**" }
 		buildoptions { "/bigobj" }
+
+	configuration { "Debug" }
+		excludes {
+			"src/retroplug/luawrapper/generated/CompiledScripts_common.cpp",
+			"src/retroplug/luawrapper/generated/CompiledScripts_audio.cpp",
+			"src/retroplug/luawrapper/generated/CompiledScripts_ui.cpp",
+		}
 
 	configuration { "windows" }
 		disablewarnings { "4996", "4250", "4018", "4267", "4068", "4150" }
@@ -57,6 +60,11 @@ project "RetroPlug"
 			"WIN32",
 			"WIN64",
 			"_CRT_SECURE_NO_WARNINGS"
+		}
+
+	configuration { "windows" }
+		prebuildcommands {
+			"%{cfg.buildtarget.directory}ScriptCompiler.exe ../../src/compiler.config.lua"
 		}
 
 local function retroplugProject()

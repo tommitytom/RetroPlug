@@ -5,6 +5,7 @@ local componentutil = require("util.component")
 local serpent = require("serpent")
 local serializer = require("serializer")
 local log = require("log")
+local fs = require("fs")
 local Timer = require("timer")
 
 local Error = require("Error")
@@ -15,6 +16,7 @@ local Project = class()
 function Project:init(audioContext)
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
+	self._config = nil
 	self.components = ComponentManager.createProjectComponents(self)
 	self.systems = {}
 
@@ -45,6 +47,49 @@ function Project:emit(eventName, ...)
 	return componentutil.emitComponentEvent(eventName, self.components, ...)
 end
 
+local s = require("schema")
+local configSchema = s.Record {
+	system = s.Record {
+		uiComponents = s.Record {},
+		audioComponents = s.Record {},
+		sameBoy = s.Record {
+			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
+			gameLink = s.Boolean
+		}
+	},
+	project = s.Record {
+		saveType = s.OneOf("sram", "state"),
+		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
+		zoom = s.Number,
+		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
+		layout = s.OneOf("auto", "column", "grid", "row")
+	}
+}
+
+function Project:loadConfigFromPath(path, updateProject)
+	local code = fs.loadText(path)
+	local ok, config = serpent.load(code, { safe = true })
+	if ok then
+		self._config = config
+
+		local valErr = s.CheckSchema(config, configSchema)
+		if valErr then
+			log.error(valErr)
+			return
+		end
+
+		log.obj(config)
+
+		if updateProject == true then
+			projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)
+		end
+
+		return true
+	end
+
+	return false
+end
+
 function Project:clear()
 	-- TODO: Recreate project components on clear?
 	--self.components = ComponentManager.createProjectComponents(self)
@@ -53,7 +98,7 @@ function Project:clear()
 end
 
 function Project:loadRom(data, idx, model)
-	local system = System(data, model)
+	local system = System(data, model, self._config.system)
 	if idx ~= nil then system.desc.idx = idx - 1 end
 
 	idx = self:addSystem(system)
@@ -82,7 +127,7 @@ function Project:removeSystem(idx)
 end
 
 function Project:load(data)
-	local projectData, systems, err = projectutil.loadProject(data)
+	local projectData, systems, err = projectutil.loadProject(data, self._config)
 	if err ~= nil then log.obj(err); return err end
 	self:clear()
 
