@@ -60,7 +60,7 @@ local configSchema = s.Record {
 	project = s.Record {
 		saveType = s.OneOf("sram", "state"),
 		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
-		zoom = s.Number,
+		zoom = s.NumberFrom(0, 4),
 		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
 		layout = s.OneOf("auto", "column", "grid", "row")
 	}
@@ -74,11 +74,9 @@ function Project:loadConfigFromPath(path, updateProject)
 
 		local valErr = s.CheckSchema(config, configSchema)
 		if valErr then
-			log.error(valErr)
-			return
+			log.error(s.FormatOutput(valErr))
+			return false
 		end
-
-		log.obj(config)
 
 		if updateProject == true then
 			projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)

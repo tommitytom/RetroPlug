@@ -87,4 +87,6 @@ void loadComponentsFromFile(sol::state& state, const std::string path);
 
 void loadComponentsFromBinary(sol::state& state, const std::vector<std::string_view>& names);
 
+void loadInputMaps(sol::state& state, const std::string path);
+
 void registerCommon(sol::state& s);

@@ -39,3 +39,21 @@ void loadComponentsFromBinary(sol::state& state, const std::vector<std::string_v
 		}
 	}
 }
+
+void loadInputMaps(sol::state& state, const std::string path) {
+	for (const auto& entry : fs::directory_iterator(path)) {
+		if (!entry.is_directory()) {
+			fs::path p = entry.path();
+			std::string name = p.filename().string();
+			consoleLog("Loading " + name + "... ");
+
+			callFunc(state, "_beginInputParser", name);
+			
+			if (!runFile(state, p.string())) {
+				consoleLogLine("Failed to load user input config");
+			}
+
+			callFunc(state, "_endInputParser");
+		}
+	}
+}

@@ -204,11 +204,7 @@ bool UiLuaContext::setup(bool updateProject) {
 		assert(false);
 	}
 
-	// Load the users specified input config
-	// TODO: Load all user configs
-	if (!runFile(s, _configPath + "/input/default.lua")) {
-		consoleLogLine("Failed to load user config");
-	}
+	loadInputMaps(s, _configPath + "/input");
 
 	_valid = true;
 	return true;

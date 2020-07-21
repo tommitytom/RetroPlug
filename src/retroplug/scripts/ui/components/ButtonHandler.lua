@@ -1,22 +1,49 @@
 --local util = require("util")
 local inpututil = require("util.input")
 
+local _mapLookup = {
+
+}
+
 local _maps = {
 	key = {},
 	pad = {},
 	midi = {}
 }
 
+local _parsing = nil
+
+function _beginInputParser(name)
+	_parsing = {
+		name = name,
+		config = {},
+		key = {},
+		pad = {},
+		midi = {}
+	}
+end
+
+function InputConfig(config)
+	_parsing.config = config
+end
+
 function KeyMap(config, map)
-	table.insert(_maps.key, inpututil.inputMap(config, map))
+	table.insert(_parsing.key, inpututil.inputMap(config, map))
 end
 
 function PadMap(config, map)
-	table.insert(_maps.pad, inpututil.inputMap(config, map))
+	table.insert(_parsing.pad, inpututil.inputMap(config, map))
 end
 
 function MidiMap(config, map)
 	--inpututil.inputMap(_maps.midi, config, map)
+end
+
+function _endInputParser()
+	assert(_parsing ~= nil)
+	_mapLookup[_parsing.name] = _parsing
+	_maps = _parsing
+	_parsing = nil
 end
 
 local ButtonHandler = component({ name = "Button Handler", system = true })
