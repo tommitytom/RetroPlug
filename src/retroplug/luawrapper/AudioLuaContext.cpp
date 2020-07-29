@@ -19,10 +19,11 @@ AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::strin
 }
 
 void AudioLuaContext::init(ProcessingContext* ctx, TimeInfo* timeInfo, double sampleRate) {
-	(*_state)["_model"].set(ctx);
-	(*_state)["_timeInfo"].set(timeInfo);
-	(*_state)["_sampleRate"].set(sampleRate);
-	runScript(*_state, "_init()");
+	sol::state& s = *_state;
+	s["_model"].set(ctx);
+	s["_timeInfo"].set(timeInfo);
+	s["_sampleRate"].set(sampleRate);
+	runScript(s, "_init()");
 }
 
 void AudioLuaContext::setup() {

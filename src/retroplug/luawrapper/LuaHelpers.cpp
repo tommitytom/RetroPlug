@@ -23,9 +23,11 @@ void loadComponentsFromFile(sol::state& state, const std::string path) {
 	for (const auto& entry : fs::directory_iterator(path)) {
 		if (!entry.is_directory()) {
 			fs::path p = entry.path();
-			std::string name = p.replace_extension("").filename().string();
-			consoleLog("Loading " + name + ".lua... ");
-			requireComponent(state, "components." + name);
+			if (p.extension() == ".lua") {
+				std::string name = p.replace_extension("").filename().string();
+				consoleLog("Loading " + name + ".lua... ");
+				requireComponent(state, "components." + name);
+			}
 		}
 	}
 }
