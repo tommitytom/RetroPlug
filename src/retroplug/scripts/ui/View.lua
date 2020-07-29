@@ -5,8 +5,8 @@ local mainMenu = require("MainMenu")
 local createNativeMenu = require("MenuHelper")
 local dialog = require("dialog")
 local fs = require("fs")
-
 local class = require("class")
+
 local View = class()
 function View:init()
 	self._keyFilter = KeyFilter()
@@ -121,8 +121,6 @@ function View:saveState(target)
 end
 
 function View:loadState(buffer)
-	print("loading state", buffer:size())
-	fs.save("C:\\retro\\statebug\\renoiseload.rplg", buffer)
 	self.model.project:load(buffer)
 end
 
