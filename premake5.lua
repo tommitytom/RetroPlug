@@ -1,3 +1,20 @@
+if os.istarget "Windows" then
+	require "vstudio"
+	local p = premake;
+	local vc = p.vstudio.vc2010;
+
+	function disableFastUpToDateCheck(prj, cfg)
+		vc.element("DisableFastUpToDateCheck", nil, "true")
+	end
+
+	p.override(vc.elements, "globalsCondition",
+			function(oldfn, prj, cfg)
+				local elements = oldfn(prj, cfg)
+				elements = table.join(elements, {disableFastUpToDateCheck})
+				return elements
+			end)
+end
+
 local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 
 iplug2.workspace "RetroPlug"
@@ -18,7 +35,6 @@ iplug2.workspace "RetroPlug"
 
 project "RetroPlug"
 	kind "StaticLib"
-	dependson { "ScriptCompiler" }
 
 	includedirs {
 		"config",
@@ -64,12 +80,10 @@ project "RetroPlug"
 
 	configuration { "windows" }
 		prebuildcommands {
-			"%{cfg.buildtarget.directory}ScriptCompiler.exe ../../src/compiler.config.lua"
+			"%{wks.location}/bin/x64/Release/ScriptCompiler.exe ../../src/compiler.config.lua"
 		}
 
 local function retroplugProject()
-	dependson { "ScriptCompiler" }
-
 	includedirs {
 		"src/retroplug",
 		"src/plugin",
