@@ -56,6 +56,7 @@ int loader(lua_State* L) {
 }
 
 void getScriptNames(std::vector<std::string_view>& names) {
+	names.reserve(names.size() + _lookup.size());
 	for (const auto& script : _lookup) {
 		names.push_back(script.first);
 	}

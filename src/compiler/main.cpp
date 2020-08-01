@@ -57,8 +57,6 @@ void processModule(ModuleDesc& module, CompilerState& state) {
 	}
 }
 
-
-
 void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	fs::path targetHeaderPath = targetDir / "CompiledScripts.h";
 
