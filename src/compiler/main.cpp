@@ -57,13 +57,17 @@ void processModule(ModuleDesc& module, CompilerState& state) {
 	}
 }
 
-#include "xxhash.h"
+
 
 void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	fs::path targetHeaderPath = targetDir / "CompiledScripts.h";
 
 	std::stringstream ss;
 	ss << HEADER_CODE_TEMPLATE;
+
+	std::sort(state.modules.begin(), state.modules.end(), [](ModuleDesc& l, ModuleDesc& r) {
+		return l.name < r.name;
+	});
 
 	for (auto& module : state.modules) {
 		ss << "namespace " << module.name << " {";
@@ -72,22 +76,7 @@ void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 
 	ss << "}" << std::endl;
 
-	std::string code = ss.str();
-	std::string fileData = readTextFile(targetHeaderPath);
-
-	XXH64_hash_t codeHash = XXH64(code.data(), code.size(), 1337);
-	XXH64_hash_t fileHash = XXH64(fileData.data(), fileData.size(), 1337);
-
-	if (codeHash != fileHash) {
-		Logger::log("Writing " + targetHeaderPath.string());
-		std::ofstream outf(targetHeaderPath);
-		if (!outf.is_open()) {
-			Logger::log("Failed to open file");
-			return;
-		}
-
-		outf << code;
-	}
+	writeIfDifferent(targetHeaderPath, ss.str());
 }
 
 void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
@@ -127,17 +116,7 @@ void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
 	ss << lookup.str();
 	ss << SOURCE_FOOTER_TEMPLATE;
 
-	std::string code = ss.str();
-	std::string fileData = readTextFile(targetFile);
-
-	XXH64_hash_t codeHash = XXH64(code.data(), code.size(), 1337);
-	XXH64_hash_t fileHash = XXH64(fileData.data(), fileData.size(), 1337);
-
-	if (codeHash != fileHash) {
-		Logger::log("Writing " + targetFile.string());
-		std::ofstream outf(targetFile);
-		outf << code;
-	}
+	writeIfDifferent(targetFile, ss.str());
 }
 
 int main(int argc, char** argv) {

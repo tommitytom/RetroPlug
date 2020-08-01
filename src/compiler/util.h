@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "logger.h"
+#include "xxhash.h"
 
 namespace fs = std::filesystem;
 
@@ -66,4 +68,17 @@ static fs::path parsePath(const char* path) {
 static std::string readTextFile(const fs::path& path) {
 	std::ifstream file(path);
 	return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+void writeIfDifferent(const fs::path& path, const std::string& data) {
+	std::string fileData = readTextFile(path);
+
+	XXH64_hash_t codeHash = XXH64(data.data(), data.size(), 1337);
+	XXH64_hash_t fileHash = XXH64(fileData.data(), fileData.size(), 1337);
+
+	if (codeHash != fileHash) {
+		Logger::log("Writing " + path.string());
+		std::ofstream outf(path);
+		outf << data;
+	}
 }
