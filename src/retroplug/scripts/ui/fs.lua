@@ -16,7 +16,7 @@ end
 local function loadText(path)
 	local file = io.open(path, "rb") -- r read mode and b binary mode
     if not file then return nil end
-    local content = file:read "*a" -- *a or *all reads the whole file
+    local content = file:read("*a") -- *a or *all reads the whole file
     file:close()
     return content
 end
@@ -47,10 +47,12 @@ local function exists(path)
 end
 
 local function watch(path, cb)
+	assert(false)
 	--_fs:watch()
 end
 
 local function removeWatch(watchId)
+	assert(false)
 end
 
 return {

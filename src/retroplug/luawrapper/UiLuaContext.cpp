@@ -198,13 +198,19 @@ bool UiLuaContext::setup(bool updateProject) {
 	}
 
 	// Load the users config settings
+	// TODO: This should probably happen outside of this class since it may be used by the 
+	// audio lua context too.
 	std::string configPath = _configPath + "/config.lua";
 	if (!callFunc(_viewRoot, "loadConfigFromPath", configPath, updateProject)) {
 		consoleLogLine("Failed to load config from " + configPath);
 		assert(false);
 	}
 
-	loadInputMaps(s, _configPath + "/input");
+	if (!callFunc(_viewRoot, "initProject", _proxy)) {
+		consoleLogLine("Failed to setup project");
+	}
+
+	loadInputMaps(_viewRoot, _configPath + "/input");
 
 	_valid = true;
 	return true;

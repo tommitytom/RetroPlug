@@ -141,10 +141,9 @@ void luawrappers::registerCommon(sol::state& s) {
 	);
 
 	s.new_usertype<DataBuffer<char>>("DataBuffer",
-		//sol::constructors<DataBuffer<char>(), DataBuffer<char>(size_t)>(),
 		"new", sol::factories(
 			[]() { return std::make_shared<DataBuffer<char>>(); },
-			[](size_t arg) { return std::make_shared<DataBuffer<char>>(arg); }
+			[](size_t size) { return std::make_shared<DataBuffer<char>>(size); }
 		),
 		"get", &DataBuffer<char>::get,
 		"set", &DataBuffer<char>::set,
@@ -159,7 +158,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		"reserve", &DataBuffer<char>::reserve,
 		"copyTo", &DataBuffer<char>::copyTo,
 		"copyFrom", &DataBuffer<char>::copyFrom,
-		"clone", [](DataBuffer<char>& buffer) {
+		"clone", [](const DataBuffer<char>& buffer) {
 			return std::make_shared<DataBuffer<char>>(std::move(buffer.clone()));
 		},
 		"readUint32", &DataBuffer<char>::readUint32,

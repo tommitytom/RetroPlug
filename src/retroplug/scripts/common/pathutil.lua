@@ -1,5 +1,5 @@
 local function clean(str)
-	return str:gsub("\\","\\\\"):gsub("\\","/")
+	return str:gsub("\\\\", "\\"):gsub("\\","/")
 end
 
 -- Gets the file extension of the given path
@@ -10,6 +10,10 @@ end
 
 local function changeExt(str, ext)
 	return str:gsub("[^.]+$", ext)
+end
+
+local function removeExt(str)
+	return str:match("(.+)%..+")
 end
 
 -- Gets the name of the file at the end of a path
@@ -36,6 +40,7 @@ return {
 	clean = clean,
 	ext = ext,
 	changeExt = changeExt,
+	removeExt = removeExt,
 	filename = filename,
 	filepath = filepath,
 	join = join

@@ -5,29 +5,43 @@ local mainMenu = require("MainMenu")
 local createNativeMenu = require("MenuHelper")
 local dialog = require("dialog")
 local fs = require("fs")
+local ConfigLoader = require("ConfigLoader")
 local class = require("class")
+local InputConfig = require("InputConfigParser")
 
 local View = class()
 function View:init()
 	self._keyFilter = KeyFilter()
 	self._menuLookup = nil
 	self._config = nil
+	self._inputConfig = InputConfig()
 end
 
 function View:setup(view, audioContext)
 	self.view = view;
-	self.model = Model(audioContext)
 	fs.__setup(audioContext:getFileManager())
 	dialog.__setup(view)
 end
 
-function View:loadConfigFromPath(path, updateProject)
-	return self.model.project:loadConfigFromPath(path, updateProject)
+function View:loadConfigFromPath(path)
+	self._config = nil
+
+	local ok, config = ConfigLoader.loadConfigFromPath(path)
+	if ok then
+		self._config = config
+		return true
+	end
+
+	return false
+end
+
+function View:initProject(audioContext)
+	self.model = Model(audioContext, self._config)
 end
 
 function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
-		self:emitComponentEvent("onKey", key, down)
+		self.model:emit("onKey", key, down)
 	end
 
 	return true
@@ -51,21 +65,7 @@ function View:onMouseDown(x, y, mod)
 		local menu = Menu()
 		mainMenu.generateMenu(menu, self.model.project)
 
-		for _, comp in ipairs(self.model.project.components) do
-			if comp.onMenu ~= nil then comp:onMenu(menu) end
-		end
-
-		local selectedSystem = self.model.project:getSelected()
-		if selectedSystem ~= nil then
-			for _, comp in ipairs(selectedSystem.components) do
-				if comp.onMenu ~= nil then
-					local valid, ret = pcall(comp.onMenu, comp, menu)
-					if valid == false then
-						print("Failed to process component menu for " .. comp.__desc.name ..": " .. ret)
-					end
-				end
-			end
-		end
+		self.model:emit("onMenu", menu)
 
 		self._menuLookup = {}
 		local nativeMenu = createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, self._menuLookup, true)
@@ -92,20 +92,12 @@ function View:onDialogResult(paths)
 end
 
 function View:onPadButton(button, down)
-	self:emitComponentEvent("onPadButton", button, down)
+	self.model:emit("onPadButton", button, down)
 end
 
 function View:onDrop(x, y, items)
 	self:selectViewAtPos(x, y)
-
-	local handled = self:emitComponentEvent("onDrop", items)
-
-	if handled == false then
-		local selectedSystem = self.model.project:getSelected()
-		if selectedSystem ~= nil then
-			selectedSystem:emit("onDrop", items, x, y)
-		end
-	end
+	self.model:emit("onDrop", items, x, y)
 end
 
 function View:onReloadBegin()
@@ -140,19 +132,8 @@ function View:viewIndexAtPos(x, y)
 	end
 end
 
-function View:emitComponentEvent(name, ...)
-	local p = self.model.project
-
-	if p:emit(name, ...) == true then
-		return true
-	end
-
-	local selected = p:getSelected()
-	if selected ~= nil then
-		return selected:emit(name, ...)
-	end
-
-	return false
+function View:loadInputConfig(path)
+	self._inputConfig:load(path)
 end
 
 return View

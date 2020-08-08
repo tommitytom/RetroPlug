@@ -1,43 +1,28 @@
-local _factory = { global = {}, instance = {} }
-local _projectComponents = {}
+local module = {}
 
-local _allComponents = {}
+local _factory = {}
 
-local _systemComponents = {
-	["Button Handler"] = true
-}
-
-local function getComponentNamesMap()
+function module.getComponentNamesMap()
 	local names = {}
-	for _, componentType in ipairs(_factory.instance) do
+	for _, componentType in ipairs(_factory) do
 		names[componentType.__desc.name] = true
 	end
 
 	return names
 end
 
-local function isSystemComponent(component)
-	return _systemComponents[component.__desc.name] or false
-end
-
-local function loadComponent(name)
+function module.loadComponent(name)
 	local component = require(name)
 	if component ~= nil then
 		print("Registered component: " .. component.__desc.name)
-		if component.__desc.global == true then
-			table.insert(_factory.global, component)
-		end
-
-		if component.__desc.global ~= true or component.__desc.system == true then
-			table.insert(_factory.instance, component)
-		end
+		table.insert(_factory, component)
 	else
 		print("Failed to load " .. name .. ": Script does not return a component")
 	end
 end
 
-local function createComponent(target, name)
-	for _, componentType in ipairs(_factory.instance) do
+function module.createComponent(target, name)
+	for _, componentType in ipairs(_factory) do
 		local d = componentType.__desc
 		if d.name == name then
 			local valid, ret = pcall(componentType.new, target)
@@ -50,80 +35,22 @@ local function createComponent(target, name)
 	end
 end
 
-local function createSystemComponents(system, componentData)
-	componentData = componentData or {}
-
-	print("------- SYSTEM COMPONENTS -------")
-	local desc = system.desc
+function module.createComponents()
+	print("------- COMPONENTS -------")
 	local components = {}
-	for _, componentType in ipairs(_factory.instance) do
+	for _, componentType in ipairs(_factory) do
 		local d = componentType.__desc
-		if _systemComponents[d.name] == true or (d.romName ~= nil and desc.romName:find(d.romName) ~= nil) then
-			print("Attaching component " .. d.name)
-			local valid, ret = pcall(componentType.new, system)
-			if valid then
-				-- Deserialize the component if we have available data
-				local d = componentData[d.name]
-				if d ~= nil then
-					if ret.onDeserialize ~= nil then ret:onDeserialize(d) end
-				end
+		print("Attaching component " .. d.name)
 
-				table.insert(components, ret)
-				table.insert(_allComponents, ret)
-			else
-				print("Failed to load component: " .. ret)
-			end
+		local valid, ret = pcall(componentType.new)
+		if valid then
+			table.insert(components, ret)
+		else
+			print("Failed to load component: " .. ret)
 		end
 	end
 
 	return components
 end
 
-local function runComponentHandlers(target, components, ...)
-	local handled = false
-	if components ~= nil then
-		for _, v in ipairs(components) do
-			local found = v[target]
-			if found ~= nil then
-				found(v, ...)
-				handled = true
-			end
-		end
-	end
-
-	return handled
-end
-
-local function runGlobalHandlers(target, ...)
-    return runComponentHandlers(target, _projectComponents, ...)
-end
-
-local function runAllHandlers(target, components, ...)
-    local handled = runGlobalHandlers(target, ...)
-    if components ~= nil then handled = runComponentHandlers(target, components, ...) end
-    return handled
-end
-
-local function createProjectComponents(project)
-	print("------- PROJECT COMPONENTS -------", #_factory.global)
-	for _, v in ipairs(_factory.global) do
-		local d = v.__desc
-		print("Attaching component " .. d.name)
-		table.insert(_projectComponents, v.new(project, true))
-	end
-
-	return _projectComponents
-end
-
-return {
-	getComponentNamesMap = getComponentNamesMap,
-	isSystemComponent = isSystemComponent,
-	loadComponent = loadComponent,
-	createComponent = createComponent,
-    createSystemComponents = createSystemComponents,
-    runComponentHandlers = runComponentHandlers,
-    runGlobalHandlers = runGlobalHandlers,
-    runAllHandlers = runAllHandlers,
-	createProjectComponents = createProjectComponents,
-	allComponents = _allComponents
-}
+return module

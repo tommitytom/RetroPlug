@@ -1,4 +1,4 @@
-Action = {}
+local Action = {}
 setmetatable(Action, {
 	__index = function(table, componentName)
 		local actionNameTable = {}
@@ -14,3 +14,5 @@ setmetatable(Action, {
 		return actionNameTable
 	end
 })
+
+return Action

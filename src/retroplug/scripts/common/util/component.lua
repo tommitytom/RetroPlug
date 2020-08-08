@@ -7,16 +7,20 @@ local eventTypes = {
 	onKey = EventType.Input,
 	onMouseDown = EventType.Input,
 	onMouseUp = EventType.Input,
-	onDoubleClick = EventType.Input
+	onDoubleClick = EventType.Input,
+	onPadButton = EventType.Input
 }
 
-local function emitComponentEvent(eventName, components, ...)
+local module = {}
+
+function module.emitComponentEvent(eventName, components, ...)
 	local evType = eventTypes[eventName] or EventType.Lifecycle
 
 	for i = #components, 1, -1 do
 		local component = components[i]
 		local ev = component[eventName]
 		if ev ~= nil then
+			-- TODO: use pcall here?
 			local handled = ev(component, ...)
 			if evType == EventType.Input then
 				if handled ~= false then return true end
@@ -27,6 +31,4 @@ local function emitComponentEvent(eventName, components, ...)
 	return false
 end
 
-return {
-	emitComponentEvent = emitComponentEvent
-}
+return module

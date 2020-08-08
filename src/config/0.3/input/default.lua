@@ -1,21 +1,44 @@
---[[InputConfig({
+InputConfig({
 	name = "Default",
 	author = "tommitytom"
-})]]
+})
 
 KeyMap({
-	[Key.S] = Button.A,
-	[Key.A] = Button.B,
-	[Key.RightArrow] = Button.Right,
-	[Key.LeftArrow] = Button.Left,
 	[Key.UpArrow] = Button.Up,
+	[Key.LeftArrow] = Button.Left,
 	[Key.DownArrow] = Button.Down,
+	[Key.RightArrow] = Button.Right,
+
 	[Key.Ctrl] = Button.Select,
-	[Key.Enter] = Button.Start
+	[Key.Enter] = Button.Start,
+
+	[Key.W] = Button.B,
+	[Key.D] = Button.A,
 })
 
 GlobalKeyMap({
 	[Key.Tab] = Action.RetroPlug.NextInstance
+})
+
+PadMap({
+	[Pad.Up] = Button.Up,
+	[Pad.Left] = Button.Left,
+	[Pad.Down] = Button.Down,
+	[Pad.Right] = Button.Right,
+	[Pad.LeftStickUp] = Button.Up,
+	[Pad.LeftStickLeft] = Button.Left,
+	[Pad.LeftStickDown] = Button.Down,
+	[Pad.LeftStickRight] = Button.Right,
+
+	[Pad.Select] = Button.Select,
+	[Pad.Start] = Button.Start,
+
+	[Pad.A] = Button.B,
+	[Pad.B] = Button.A
+})
+
+GlobalPadMap({
+	[Pad.Y] = Action.RetroPlug.NextInstance
 })
 
 -- Keys and shortcuts specific to LSDj
@@ -28,25 +51,6 @@ KeyMap({ romName = "LSDj*" }, {
 	[Key.PageUp] = Action.Lsdj.UpTenRows,
 	[Key.Shift] = Action.Lsdj.BeginSelection,
 	[Key.Esc] = Action.Lsdj.CancelSelection,
-})
-
-PadMap({
-	[Pad.A] = Button.B,
-	[Pad.B] = Button.A,
-	[Pad.LeftStickLeft] = Button.Left,
-	[Pad.LeftStickRight] = Button.Right,
-	[Pad.LeftStickUp] = Button.Up,
-	[Pad.LeftStickDown] = Button.Down,
-	[Pad.Left] = Button.Left,
-	[Pad.Right] = Button.Right,
-	[Pad.Up] = Button.Up,
-	[Pad.Down] = Button.Down,
-	[Pad.Select] = Button.Select,
-	[Pad.Start] = Button.Start
-})
-
-GlobalPadMap({
-	[Pad.Y] = Action.RetroPlug.NextInstance
 })
 
 -- Gamepad button presses specific to LSDj

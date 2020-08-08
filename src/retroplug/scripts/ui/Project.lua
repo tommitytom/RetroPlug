@@ -1,11 +1,9 @@
 local class = require("class")
 local const = require("const")
 local projectutil = require("util.project")
-local componentutil = require("util.component")
 local serpent = require("serpent")
 local serializer = require("serializer")
 local log = require("log")
-local fs = require("fs")
 local Timer = require("timer")
 
 local Error = require("Error")
@@ -13,12 +11,13 @@ local ComponentManager = require("ComponentManager")
 local System = require("System")
 
 local Project = class()
-function Project:init(audioContext)
+function Project:init(audioContext, config)
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
-	self._config = nil
-	self.components = ComponentManager.createProjectComponents(self)
+	self._config = config
 	self.systems = {}
+
+	projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)
 
 	local count = #self._native.systems
 	for i = 1, count, 1 do
@@ -30,62 +29,12 @@ function Project:init(audioContext)
 		end
 	end
 
-	self:deserializeComponents()
-
-	self:emit("onComponentsInitialized", self.components)
-	self:emit("onSetup")
-
-	for _, system in ipairs(self.systems) do
-		system:emit("onComponentsInitialized", system.components)
-		system:emit("onReload")
-	end
-
+	--self:deserializeComponents()
 	if self:getSelectedIndex() == 0 and count > 0 then self:setSelected(1) end
 end
 
-function Project:emit(eventName, ...)
-	return componentutil.emitComponentEvent(eventName, self.components, ...)
-end
-
-local s = require("schema")
-local configSchema = s.Record {
-	system = s.Record {
-		uiComponents = s.Record {},
-		audioComponents = s.Record {},
-		sameBoy = s.Record {
-			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
-			gameLink = s.Boolean
-		}
-	},
-	project = s.Record {
-		saveType = s.OneOf("sram", "state"),
-		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
-		zoom = s.NumberFrom(0, 4),
-		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
-		layout = s.OneOf("auto", "column", "grid", "row")
-	}
-}
-
 function Project:loadConfigFromPath(path, updateProject)
-	local code = fs.loadText(path)
-	local ok, config = serpent.load(code, { safe = true })
-	if ok then
-		self._config = config
-
-		local valErr = s.CheckSchema(config, configSchema)
-		if valErr then
-			log.error(s.FormatOutput(valErr))
-			return false
-		end
-
-		if updateProject == true then
-			projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)
-		end
-
-		return true
-	end
-
-	return false
+	--projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)
 end
 
 function Project:clear()
@@ -136,20 +85,10 @@ function Project:load(data)
 	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, self._native.settings)
 	self._audioContext:updateSettings()
 
-	self.components = ComponentManager.createProjectComponents(self)
-
-	self:deserializeComponents()
+	--self:deserializeComponents()
 
 	for _, system in ipairs(systems) do
 		self:addSystem(system)
-	end
-
-	self:emit("onComponentsInitialized", self.components)
-	self:emit("onSetup")
-
-	for _, system in ipairs(self.systems) do
-		system:emit("onComponentsInitialized", system.components)
-		system:emit("onReload")
 	end
 
 	if self:getSelectedIndex() == 0 and #self.systems > 0 then self:setSelected(1) end

@@ -1,8 +1,12 @@
 local pathutil = require("pathutil")
 local menuutil = require("util.menu")
+local inpututil = require("util.input")
 local filters = require("filters")
 
-local RetroPlug = component({ name = "RetroPlug", global = true })
+local RetroPlug = component({
+	name = "RetroPlug",
+	version = "1.0.0",
+})
 
 local class = require("class")
 local RetroPlugActions = class()
@@ -35,7 +39,7 @@ function RetroPlug:onDrop(paths)
 
 	for _, v in ipairs(paths) do
 		local ext = pathutil.ext(v)
-		if ext == "retroplug" then table.insert(projects, v) end
+		if ext == "retroplug" or ext == "rplg" then table.insert(projects, v) end
 		if ext == "gb" then table.insert(roms, v) end
 		if ext == "sav" then table.insert(savs, v) end
 	end
@@ -55,6 +59,27 @@ function RetroPlug:onDrop(paths)
 	end
 
 	return false
+end
+
+function RetroPlug:onKey(key, down)
+	local bm = self:project().buttonMap
+	local system = self:project().selectedSystem
+
+	assert(bm)
+	assert(system)
+	assert(self._keysPressed)
+
+	local handled = inpututil.handleInput(bm.keys.global, key, down, self._keysPressed)
+	if handled ~= true and system ~= nil then
+		assert(system.keysPressed)
+		handled = inpututil.handleInput(bm.keys.system, key, down, system.keysPressed, system:buttons())
+	end
+
+	return handled
+end
+
+function RetroPlug:onPadButton(button, down)
+	return inpututil.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:system():buttons())
 end
 
 return RetroPlug

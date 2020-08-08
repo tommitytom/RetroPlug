@@ -2,12 +2,9 @@
 
 #include <iostream>
 #include <atomic>
+#include <sol/sol.hpp>
 #include "model/ProcessingContext.h"
 #include "platform/Menu.h"
-
-namespace sol {
-	class state;
-};
 
 struct TimeInfo
 {
@@ -28,13 +25,18 @@ struct TimeInfo
 class AudioLuaContext {
 private:
 	sol::state* _state = nullptr;
+	sol::table _controller;
 	std::string _configPath;
 	std::string _scriptPath;
 
 	bool _haltFrameProcessing = false;
 	std::atomic_bool _reload = false;
 
+	ProcessingContext* _context;
 	TimeInfo* _timeInfo = nullptr;
+	double _sampleRate = 44100;
+	
+	bool _valid = false;
 
 public:
 	AudioLuaContext(const std::string& configPath, const std::string& scriptPath);
@@ -75,5 +77,5 @@ public:
 	void deserializeInstances(const std::string& data);
 
 private:
-	void setup();
+	bool setup();
 };

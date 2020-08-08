@@ -31,6 +31,7 @@ public:
 	}
 
 	size_t hash(size_t initial = 0) {
+		// TODO: Use xhash here?
 		return crc32::update((const void*)_dataPtr, _reserved * sizeof(T), initial);
 	}
 
@@ -107,7 +108,7 @@ public:
 		target->write(_dataPtr, _reserved);
 	}
 
-	DataBuffer clone() {
+	DataBuffer clone() const {
 		DataBuffer ret;
 		copyTo(&ret);
 		return ret;

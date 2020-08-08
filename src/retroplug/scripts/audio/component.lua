@@ -17,10 +17,10 @@ function component(desc)
 	c.__index = c
 	c.__desc = desc
 	c.registerActions = function(obj, actions) obj.__actions = actions end
-	c.new = function(system)
+	c.new = function(project)
 		local obj = { __actions = {}, __enabled = true }
 		setmetatable(obj, c)
-		function obj:system() return system end
+		function obj:system() return project end
 		function obj:enabled() return obj.__enabled end
 		function obj:setEnabled(enabled) obj.__enabled = enabled end
 

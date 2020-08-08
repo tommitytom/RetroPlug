@@ -15,25 +15,25 @@
 AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
 	_scriptPath = scriptPath;
-	setup();
 }
 
 void AudioLuaContext::init(ProcessingContext* ctx, TimeInfo* timeInfo, double sampleRate) {
-	sol::state& s = *_state;
-	s["_model"].set(ctx);
-	s["_timeInfo"].set(timeInfo);
-	s["_sampleRate"].set(sampleRate);
-	runScript(s, "_init()");
+	_context = ctx;
+	_timeInfo = timeInfo;
+	_sampleRate = sampleRate;
+
+	setup();
 }
 
-void AudioLuaContext::setup() {
+bool AudioLuaContext::setup() {
 	consoleLogLine("------------------------------------------");
 	consoleLogLine("Initializing audio lua context");
 
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+	s.open_libraries(	sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, 
+						sol::lib::math, sol::lib::debug, sol::lib::io	);
 
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
@@ -85,12 +85,12 @@ void AudioLuaContext::setup() {
 
 	s["LUA_MENU_ID_OFFSET"] = LUA_AUDIO_MENU_ID_OFFSET;
 
-	if (_timeInfo) {
-		s["_timeInfo"].set(_timeInfo);
+	if (!runScript(s, "require('main')")) {
+		return false;
 	}
 
-	if (!runScript(s, "require('main')")) {
-		return;
+	if (!callFuncRet(s, "_getController", _controller)) {
+		return false;
 	}
 
 	consoleLogLine("Looking for components...");
@@ -105,35 +105,56 @@ void AudioLuaContext::setup() {
 
 	consoleLogLine("Finished loading components");
 
-	runFile(s, _configPath + "/input/default.lua");
+	// Set up the lua context
+	if (!callFunc(_controller, "setup", _context, _timeInfo)) {
+		consoleLogLine("Failed to setup view");
+	}
+
+	// Load the users config settings
+	// TODO: This should probably happen outside of this class since it may be used by the 
+	// audio lua context too.
+	std::string configPath = _configPath + "/config.lua";
+	if (!callFunc(_controller, "loadConfigFromPath", configPath)) {
+		consoleLogLine("Failed to load config from " + configPath);
+		//assert(false);
+	}
+
+	if (!callFunc(_controller, "initProject")) {
+		consoleLogLine("Failed to setup project");
+	}
+
+	loadInputMaps(_controller, _configPath + "/input");
+
+	_valid = true;
+	return true;
 }
 
 void AudioLuaContext::addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
-	callFunc(*_state, "_addInstance", idx, instance, componentState);
+	callFunc(_controller, "addInstance", idx, instance, componentState);
 }
 
 void AudioLuaContext::duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance) {
-	callFunc(*_state, "_duplicateInstance", sourceIdx, targetIdx, instance);
+	callFunc(_controller, "duplicateInstance", sourceIdx, targetIdx, instance);
 }
 
 void AudioLuaContext::removeInstance(SystemIndex idx) {
-	callFunc(*_state, "_removeInstance", idx);
+	callFunc(_controller, "removeInstance", idx);
 }
 
 void AudioLuaContext::setActive(SystemIndex idx) {
-	callFunc(*_state, "_setActive", idx);
+	callFunc(_controller, "setActive", idx);
 }
 
 void AudioLuaContext::update(int frameCount) {
-	callFunc(*_state, "_update", frameCount);
+	callFunc(_controller, "update", frameCount);
 }
 
 void AudioLuaContext::closeProject() {
-	callFunc(*_state, "_closeProject");
+	callFunc(_controller, "closeProject");
 }
 
 void AudioLuaContext::onMidi(int offset, int status, int data1, int data2) {
-	callFunc(*_state, "_onMidi", offset, status, data1, data2);
+	callFunc(_controller, "onMidi", offset, status, data1, data2);
 }
 
 void AudioLuaContext::onMidiClock(int button, bool down) {
@@ -141,27 +162,27 @@ void AudioLuaContext::onMidiClock(int button, bool down) {
 }
 
 void AudioLuaContext::onMenu(SystemIndex idx, std::vector<Menu*>& menus) {
-	callFunc(*_state, "_onMenu", idx, menus);
+	callFunc(_controller, "onMenu", idx, menus);
 }
 
 void AudioLuaContext::onMenuResult(int id) {
-	callFunc(*_state, "_onMenuResult", id);
+	callFunc(_controller, "onMenuResult", id);
 }
 
 std::string AudioLuaContext::serializeInstances() {
 	std::string target;
-	callFuncRet(*_state, "_serializeInstances", target);
+	//callFuncRet(_controller, "_serializeInstances", target);
 	return target;
 }
 
 std::string AudioLuaContext::serializeInstance(SystemIndex index) {
 	std::string target;
-	callFuncRet(*_state, "_serializeInstance", target, index);
+	//callFuncRet(_controller, "_serializeInstance", target, index);
 	return target;
 }
 
 void AudioLuaContext::deserializeInstances(const std::string& data) {
-	callFunc(*_state, "_deserializeInstances", data);
+	//callFunc(_controller, "_deserializeInstances", data);
 }
 
 void AudioLuaContext::reload() {
@@ -172,6 +193,7 @@ void AudioLuaContext::reload() {
 
 void AudioLuaContext::shutdown() {
 	if (_state) {
+		_controller = sol::table();
 		delete _state;
 		_state = nullptr;
 	}

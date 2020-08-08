@@ -13,13 +13,11 @@ local Error = require("Error")
 local System = class()
 function System:init(desc, model, config)
 	self._audioContext = nil
-	self.components = {}
 
 	if type(desc) == "userdata" then
 		if desc.__type.name == "SystemDesc" then
 			self.desc = desc
-			local _, componentState = serpent.load(desc.uiComponentState)
-			self.components = ComponentManager.createSystemComponents(self, componentState)
+			--local _, componentState = serpent.load(desc.uiComponentState)
 		elseif desc.__type.name == "DataBuffer" then
 			self:loadRom(desc)
 		end
@@ -31,20 +29,12 @@ function System:init(desc, model, config)
 	self._desc = self.desc
 end
 
-function System:emit(eventName, ...)
-	componentutil.emitComponentEvent(eventName, self.components, ...)
-end
-
 function System:clone()
 	return System(SystemDesc.new(self.desc))
 end
 
-function System:getIndex(idx)
-	return self.components[idx]
-end
-
-function System:getComponent(idx)
-	return self.components[idx]
+function System:setComponentData(componentName, data)
+	self.componentData[componentName] = data
 end
 
 function System:setSram(data, reset)

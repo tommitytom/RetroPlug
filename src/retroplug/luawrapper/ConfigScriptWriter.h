@@ -5,6 +5,12 @@
 #include "util/File.h"
 #include "generated/CompiledScripts.h"
 
+#ifdef DEBUG
+const bool FORCE_CONFIG_UPDATE = true;
+#else
+const bool FORCE_CONFIG_UPDATE = false;
+#endif
+
 namespace ConfigScriptWriter {
 	static std::string getScriptPath(fs::path path) {
 		std::string name = path.string();
@@ -32,7 +38,7 @@ namespace ConfigScriptWriter {
 				}
 			}
 
-			if (!fs::exists(fullPath)) {
+			if (FORCE_CONFIG_UPDATE || !fs::exists(fullPath)) {
 				const CompiledScripts::Script* script = CompiledScripts::config::getScript(name);
 
 				if (!writeFile(tstr(fullPath.wstring()), (std::byte*)script->data, script->size, false)) {

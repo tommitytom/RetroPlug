@@ -4,7 +4,7 @@ local lsdj = require("liblsdj.liblsdj")
 local fs = require("fs")
 local util = require("util")
 
-local ROM_FILTER = { "LSDj Rom Files", "*.gb" }
+local ROM_FILTER = { "LSDj Rom Files", { "*.gb", "*.zip" } }
 local SAV_FILTER = { "LSDj Sav Files", "*.sav" }
 local SONG_FILTER = { "LSDj Song Files", "*.lsdsng" }
 local KIT_FILTER = { "LSDj Kit Files", "*.kit" }
@@ -14,28 +14,34 @@ local function formatName(idx, name, empty)
 	return string.format("%02X", idx) .. ": " .. name
 end
 
-local Lsdj = component({ name = "LSDj", romName = "LSDj*", version = "1.0.0" })
-function Lsdj:init()
-	self._state = {
+local Lsdj = component({
+	name = "LSDj",
+	version = "1.0.0",
+	requirements = { romName = "LSDj*" },
+	state = {
 		littleFm = false,
 		overclock = false,
 		keyboardShortcuts = true
 	}
+})
 
-	self.__keyboardActions = KeyboardActions(self:system())
-	self:registerActions(self.__keyboardActions)
+function Lsdj:init()
+	--self.__keyboardActions = KeyboardActions(self:system())
+	--self:registerActions(self.__keyboardActions)
 end
 
-function Lsdj:onSerialize()
-	return self._state
+function Lsdj:onDeserialize(states)
+	--[[for i, v in ipairs(states) do
+		self.systems[i]:setComponentState("LSDj", v)
+	end]]
 end
 
-function Lsdj:onDeserialize(source)
-	self._state = source
+function Lsdj:onDeserialized()
+
 end
 
 function Lsdj:onBeforeButton(button, down)
-	self.__keyboardActions:_handleButtonPress(button, down)
+	--self.__keyboardActions:_handleButtonPress(button, down)
 	return false
 end
 
@@ -120,7 +126,7 @@ end
 
 function Lsdj:onMenu(menu)
 	local root = menu:subMenu("LSDj")
-	local system = self:system()
+	local system = self:project().selectedSystem
 	local rom = lsdj.loadRom(system:rom())
 	local sav = lsdj.loadSav(system:sram())
 
