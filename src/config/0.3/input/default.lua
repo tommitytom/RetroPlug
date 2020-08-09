@@ -56,7 +56,12 @@ KeyMap({ romName = "LSDj*" }, {
 
 -- Gamepad button presses specific to LSDj
 PadMap({ romName = "LSDj*" }, {
+	[Pad.X] = Action.Lsdj.BeginSelection,
 	[Pad.L1] = Action.Lsdj.UpTenRows,
 	[Pad.R1] = Action.Lsdj.DownTenRows,
-	[Pad.R2] = Button.Select
+	[Pad.R2] = Button.Select,
+	[Pad.RightStickUp] = Action.Lsdj.ScreenUp,
+	[Pad.RightStickLeft] = Action.Lsdj.ScreenLeft,
+	[Pad.RightStickDown] = Action.Lsdj.ScreenDown,
+	[Pad.RightStickRight] = Action.Lsdj.ScreenRight
 })

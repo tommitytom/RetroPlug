@@ -34,6 +34,8 @@ function Model:setup()
 	for _, cfg in pairs(Project.inputConfigs) do
 		updateInputActions(self.components, cfg.key.global)
 		updateInputActions(self.components, cfg.key.system)
+		updateInputActions(self.components, cfg.pad.global)
+		updateInputActions(self.components, cfg.pad.system)
 	end
 
 	for _, component in ipairs(self.components) do
