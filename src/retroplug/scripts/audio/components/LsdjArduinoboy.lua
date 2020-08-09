@@ -47,33 +47,31 @@ function LsdjArduinoboy.onMenu(menu)
 end
 
 function LsdjArduinoboy.onTransportChanged(running)
-	local system = Project.system
-	local state = system.state.arduinoboy
+	local state = System.state.arduinoboy
 	if state.autoPlay == true then
-		system:buttons():press(Button.Start)
+		System:buttons():press(Button.Start)
 	end
 end
 
-local function onPpq(system, state, offset)
+local function onPpq(state, offset)
 	if state.syncMode == LsdjSyncModes.MidiSync then
-		system:sendSerialByte(offset, 0xF8)
+		System:sendSerialByte(offset, 0xF8)
 	elseif state.syncMode == LsdjSyncModes.MidiSyncArduinoboy then
 		if state.playing == true then
-			system:sendSerialByte(offset, 0xF8)
+			System:sendSerialByte(offset, 0xF8)
 		end
 	elseif state.syncMode == LsdjSyncModes.MidiSync then
-		system:sendSerialByte(offset, 0xFF)
+		System:sendSerialByte(offset, 0xFF)
 	end
 end
 
 function LsdjArduinoboy.onMidi(msg)
-	local system = Project.system
-	local state = system.state.arduinoboy
+	local state = System.state.arduinoboy
 
 	local status = msg.status
 	if status == midi.Status.System then
 		if msg.systemStatus == midi.SystemStatus.TimingClock then
-			onPpq(system, state, msg.offset)
+			onPpq(state, msg.offset)
 		else
 			print(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
 		end
@@ -88,7 +86,7 @@ function LsdjArduinoboy.onMidi(msg)
 			elseif msg.note == 28 then state.tempoDivisor = 4
 			elseif msg.note == 29 then state.tempoDivisor = 8
 			elseif msg.note >= 30 then
-				system:sendSerialByte(msg.offset, msg.note - 30)
+				System:sendSerialByte(msg.offset, msg.note - 30)
 			end
 		end
 	elseif state.syncMode == LsdjSyncModes.MidiMap then
@@ -96,17 +94,17 @@ function LsdjArduinoboy.onMidi(msg)
 		if status == midi.Status.NoteOn then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx ~= -1 then
-				system:sendSerialByte(msg.offset, rowIdx)
+				System:sendSerialByte(msg.offset, rowIdx)
 				state.lastRow = rowIdx
 			end
 		elseif status == midi.Status.Noteff then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 			if rowIdx == state.lastRow then
-				system:sendSerialByte(msg.offset, 0xFE)
+				System:sendSerialByte(msg.offset, 0xFE)
 				state.lastRow = -1
 			end
 		elseif msg.type == "stop" then
-			system:sendSerialByte(msg.offset, 0xFE)
+			System:sendSerialByte(msg.offset, 0xFE)
 		end
 	end
 end

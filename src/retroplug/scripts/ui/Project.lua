@@ -60,6 +60,7 @@ end
 function Project.clear()
 	_data.systems = {}
 	_audioContext:clearProject()
+	System = nil
 end
 
 local function addSystem(system)
@@ -92,6 +93,9 @@ function Project.setSelected(idx)
 		_native.selectedSystem = idx - 1
 		_data.system = _data.systems[idx]
 		_audioContext:updateSelected()
+		System = _data.system
+	else
+		System = nil
 	end
 end
 

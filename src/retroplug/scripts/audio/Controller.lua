@@ -162,7 +162,7 @@ function Controller:removeInstance(idx)
 end
 
 function Controller:closeProject()
-	Project.systems = {}
+	Project.clear()
 end
 
 function Controller:loadInputConfig(path)

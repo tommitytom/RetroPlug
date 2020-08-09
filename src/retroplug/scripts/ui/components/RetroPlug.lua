@@ -4,26 +4,6 @@ local inpututil = require("util.input")
 local util = require("util")
 local filters = require("filters")
 
-
-local class = require("class")
-local RetroPlugActions = class()
-function RetroPlugActions:init(project)
-	self.project = project
-end
-
-function RetroPlugActions:nextSystem(down)
-	if down == true then self.project.nextSystem() end
-end
-
-function RetroPlugActions:saveProject(down)
-	print("SAVEEEEE")
-	if down == true then
-		return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", false, function(path)
-			return self.project.save(path, true)
-		end)
-	end
-end
-
 local _keysPressed = {}
 local _buttonsPressed = {}
 
@@ -32,13 +12,17 @@ local RetroPlug = component({
 	version = "1.0.0",
 })
 
-
-function RetroPlug.init()
-	--self:registerActions(RetroPlugActions(Project))
-end
-
 function RetroPlug.actions.nextSystem(down)
 	if down == true then Project.nextSystem() end
+end
+
+function RetroPlug.actions.saveProject(down)
+	print("SAVEEEEE")
+	if down == true then
+		return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", false, function(path)
+			return Project.save(path, true)
+		end)
+	end
 end
 
 function RetroPlug.onDrop(paths)
@@ -71,18 +55,15 @@ function RetroPlug.onDrop(paths)
 end
 
 local function processInput(key, down, map, pressed)
-	local system = Project.getSelected()
-	local buttonHooks = Project.buttonHooks
-
 	if down == true then
 		table.insert(pressed, key)
 	else
 		util.tableRemoveElement(pressed, key)
 	end
 
-	local handled = inpututil.handleInput(map.global, key, down, pressed, buttonHooks)
-	if handled ~= true and system ~= nil then
-		handled = inpututil.handleInput(map.system, key, down, pressed, buttonHooks, system)
+	local handled = inpututil.handleInput(map.global, key, down, pressed, Project.buttonHooks)
+	if handled ~= true and System ~= nil then
+		handled = inpututil.handleInput(map.system, key, down, pressed, Project.buttonHooks, System)
 	end
 
 	return handled
