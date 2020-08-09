@@ -28,7 +28,9 @@ function module.handleInput(mapGroup, key, down, pressed, hooks, system)
 		if found ~= nil then
 			if type(found) == "table" then
 				if found.func ~= nil then
-					if found.func(down, system) ~= false then handled = true end
+					if found.func(down, system) ~= false then
+						handled = true
+					end
 				end
 			elseif system ~= nil then
 				for _, fn in ipairs(hooks) do
@@ -55,7 +57,9 @@ function module.handleInput(mapGroup, key, down, pressed, hooks, system)
 			local found = matchCombo(map.combos, pressed)
 			if found ~= nil and type(found) == "table" then
 				if found.func ~= nil then
-					if found.func(down, system) ~= false then handled = true end
+					if found.func(down, system) ~= false then
+						handled = true
+					end
 				end
 			end
 		else

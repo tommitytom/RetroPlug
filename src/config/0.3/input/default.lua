@@ -17,7 +17,7 @@ KeyMap({
 })
 
 GlobalKeyMap({
-	[Key.Tab] = Action.RetroPlug.NextInstance,
+	[Key.Tab] = Action.RetroPlug.NextSystem,
 	[{ Key.Ctrl, Key.S }] = Action.RetroPlug.SaveProject
 })
 
@@ -39,7 +39,7 @@ PadMap({
 })
 
 GlobalPadMap({
-	[Pad.Y] = Action.RetroPlug.NextInstance
+	[Pad.Y] = Action.RetroPlug.NextSystem
 })
 
 -- Keys and shortcuts specific to LSDj

@@ -1,14 +1,9 @@
-local class = require("class")
 local const = require("const")
 local projectutil = require("util.project")
-local serpent = require("serpent")
-local serializer = require("serializer")
+local propertyutil = require("util.property")
 local log = require("log")
 local Timer = require("timer")
-
-local Error = require("Error")
-local ComponentManager = require("ComponentManager")
-local System = require("System")
+local SystemType = require("System")
 
 local _data = {
 	config = nil,
@@ -48,7 +43,7 @@ function Project.init(audioContext, config, inputConfigs)
 	for i = 1, count, 1 do
 		local desc = _native.systems[i]
 		if desc.state ~= SystemState.Uninitialized then
-			local system = System(desc, nil)
+			local system = SystemType(desc, nil)
 			system._audioContext = audioContext
 			table.insert(_data.systems, system)
 		end
@@ -85,7 +80,7 @@ local function addSystem(system)
 end
 
 function Project.loadRom(data, idx, model)
-	local system = System(data, model, _data.config.system)
+	local system = SystemType(data, model, _data.config.system)
 	if idx ~= nil then system.desc.idx = idx - 1 end
 
 	idx = addSystem(system)
@@ -167,96 +162,6 @@ function Project.save(path, pretty, immediate)
 	end)
 end
 
-function Project.serializeProject(audioSystemStates, projectSettings, pretty)
-	local t = {
-		retroPlugVersion = _RETROPLUG_VERSION,
-		projectVersion = _PROJECT_VERSION,
-		path = projectSettings.path,
-		settings = projectutil.cloneEnumFields(projectSettings.settings, projectutil.ProjectSettingsFields),
-		systems = {}
-	}
-
-	for i, system in ipairs(_data.systems) do
-		local desc = system.desc
-		if desc.state ~= SystemState.Uninitialized then
-			local inst = projectutil.cloneEnumFields(desc, projectutil.SystemSettingsFields)
-			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
-			inst.uiComponents = serializer.serializeComponents(system.components)
-
-			local ok, audioComponents = serpent.load(audioSystemStates.components[i])
-			if ok == true and audioComponents ~= nil then
-				inst.audioComponents = audioComponents
-			end
-
-			table.insert(t.systems, inst)
-		else
-			break
-		end
-	end
-
-	local opts = { comment = false }
-	if pretty == true then opts.indent = '\t' end
-	return serpent.block(t, opts)
-end
-
-function Project.addComponent(componentType)
-	if type(componentType) == "string" then
-		local component = ComponentManager.createComponent(self, componentType)
-		if component ~= nil then
-			table.insert(self.components, component)
-		end
-	end
-end
-
-function Project.removeComponent(idx)
-	table.remove(self.components, idx)
-end
-
-function Project.setComponentEnabled(idx, enabled)
-	local component = self.components[idx]
-end
-
--- Serializes all components to a single string that
--- is stored on the native part of the system (SystemDesc).
--- This is useful for storing state between reloads.
-function Project.serializeComponents()
-	--[[for _, system in ipairs(_data.systems) do
-		local systemComponents = {}
-		for _, comp in ipairs(system.components) do
-			local data = {}
-			if comp.onSerialize ~= nil then
-				-- TODO: Put this in a pcall?
-				data = comp.onSerialize(comp)
-			end
-
-			systemComponents[comp.__desc.name] = data
-		end
-
-		system.desc.uiComponentState = serpent.dump(systemComponents)
-	end]]
-end
-
-function Project.deserializeComponents()
-	for _, system in ipairs(_data.systems) do
-		if #system.desc.uiComponentState > 0 then
-			local ok, systemComponents = serpent.load(system.desc.uiComponentState)
-			if ok and systemComponents then
-				for _, comp in ipairs(system.components) do
-					local compData = systemComponents[comp.__desc.name]
-					if compData and comp.onDeserialize then
-						-- TODO: Put this in a pcall?
-						comp.onDeserialize(comp, compData)
-					end
-				end
-			end
-
-			system.desc.uiComponentState = ""
-		end
-	end
-end
-
-
-
 function Project.duplicateSystem(idx)
 	assert(#_data.systems < const.MAX_SYSTEMS)
 	local system = _data.systems[idx]
@@ -288,37 +193,6 @@ function Project.nextSystem()
 	Project.setSelected(idx)
 end
 
-local _getters = {}
-local _setters = {}
-local util = require("util")
-
-for k, v in pairs(Project) do
-	if util.startsWith(k, "get_") then
-		_getters[k:sub(5)] = v
-	end
-
-	if util.startsWith(k, "set_") then
-		_setters[k:sub(5)] = v
-	end
-end
-
-setmetatable(Project, {
-	__index = function(obj, key)
-		local prop = _getters[key]
-		if prop ~= nil then
-			return prop()
-		else
-			return rawget(obj, key)
-		end
-	end,
-	__newindex = function(obj, key, value)
-		local prop = _setters[key]
-		if prop ~= nil then
-			return prop(value)
-		else
-			return rawset(obj, key, value)
-		end
-	end
-})
+propertyutil.setupProperties(Project)
 
 return Project

@@ -121,7 +121,6 @@ function View:selectViewAtPos(x, y)
 	local idx = self:viewIndexAtPos(x, y)
 	if idx ~= nil then
 		Project.setSelected(idx)
-		--Project.native.selectedSystem = idx - 1
 	end
 end
 

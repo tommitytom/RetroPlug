@@ -130,11 +130,6 @@ function System:loadRom(data, config, path)
 		end
 	end
 
-	self.components = ComponentManager.createSystemComponents(self)
-
-	self:emit("onComponentsInitialized", self.components)
-	self:emit("onRomLoad")
-
 	if isNullPtr(self._audioContext) == false then
 		self._audioContext:loadRom(d)
 	end
