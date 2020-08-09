@@ -20,45 +20,41 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-function module.handleInput(map, key, down, pressed, hooks, buttonStream)
+function module.handleInput(mapGroup, key, down, pressed, system)
 	local handled = false
+	for _, map in ipairs(mapGroup) do
+		-- Do a basic map from key to button
+		local found = map.lookup[key]
+		if found ~= nil then
+			if type(found) == "table" then
+				if found.func ~= nil then
+					if found.func(down, system) ~= false then handled = true end
+				end
+			elseif system ~= nil then
+				local buttons = system:buttons()
+				if buttons ~= nil then
+					if down == true then
+						buttons:holdDuration(found, 0)
+					else
+						buttons:releaseDuration(found, 0)
+					end
+				end
 
-	-- Do a basic map from key to button
-	local found = map.lookup[key]
-	if found ~= nil then
-		if type(found) == "function" then
-			if found(down) ~= false then handled = true end
-		elseif buttonStream ~= nil then
-			for _, v in ipairs(hooks) do
-				if v.fn(v.obj, found, down) ~= false then
+				handled = true
+			end
+		end
+
+		-- If the key is being pressed look for combos
+		if down == true then
+			local func = matchCombo(map.combos, pressed)
+			if func ~= nil and type(func) == "function" then
+				if func(down) ~= false then
 					handled = true
 				end
 			end
-
-
-			if handled == false then
-				if down == true then
-					buttonStream:holdDuration(found, 0)
-				else
-					buttonStream:releaseDuration(found, 0)
-				end
-
-				handled = true
-			end
+		else
+			-- TODO: Check for combos that have been released?
 		end
-	end
-
-	-- If the key is being pressed look for combos
-	if down == true then
-		table.insert(pressed, key)
-		local func = matchCombo(map.combos, pressed)
-		if func ~= nil and type(func) == "function" then
-			if func(down) ~= false then
-				handled = true
-			end
-		end
-	else
-		util.tableRemoveElement(pressed, key)
 	end
 
 	return handled

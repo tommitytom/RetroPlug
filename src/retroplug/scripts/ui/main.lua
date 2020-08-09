@@ -1,4 +1,5 @@
 inspect = require("inspect")
+log = require("log")
 
 require("component")
 require("constants")

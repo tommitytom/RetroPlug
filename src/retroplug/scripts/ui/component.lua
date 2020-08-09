@@ -26,7 +26,9 @@ function component(desc)
 	c.__desc = desc
 
 	c.registerActions = function(obj, actions)
-		for k, action in pairs(getmetatable(actions)) do
+		local root = getmetatable(actions) or actions
+
+		for k, action in pairs(root) do
 			if type(action) == "function" then
 				local ignore = false
 				for _, v in ipairs(ACTION_IGNORE) do
@@ -37,15 +39,15 @@ function component(desc)
 				end
 
 				if ignore == false then
-					obj.__actions[string.lower(k)] = function(down)
-						actions[k](actions, down)
+					obj.__actions[string.lower(k)] = function(...)
+						root[k](actions, ...)
 					end
 				end
 			end
 		end
 	end
 
-	c.new = function(project, isProjectComponent)
+	c.new = function(project)
 		local obj = { __actions = {}, __enabled = true }
 		setmetatable(obj, c)
 

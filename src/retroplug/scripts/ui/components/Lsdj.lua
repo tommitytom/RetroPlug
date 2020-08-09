@@ -26,8 +26,8 @@ local Lsdj = component({
 })
 
 function Lsdj:init()
-	--self.__keyboardActions = KeyboardActions(self:system())
-	--self:registerActions(self.__keyboardActions)
+	self.__keyboardActions = KeyboardActions(self:project())
+	self:registerActions(self.__keyboardActions)
 end
 
 function Lsdj:onDeserialize(states)
@@ -41,7 +41,8 @@ function Lsdj:onDeserialized()
 end
 
 function Lsdj:onBeforeButton(button, down)
-	--self.__keyboardActions:_handleButtonPress(button, down)
+	local system = self:project():getSelected()
+	self.__keyboardActions:_handleButtonPress(button, down, system)
 	return false
 end
 

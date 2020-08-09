@@ -1,6 +1,7 @@
 local pathutil = require("pathutil")
 local menuutil = require("util.menu")
 local inpututil = require("util.input")
+local util = require("util")
 local filters = require("filters")
 
 local RetroPlug = component({
@@ -28,6 +29,8 @@ function RetroPlugActions:saveProject(down)
 end
 
 function RetroPlug:init()
+	self._keysPressed = {}
+	self._buttonsPressed = {}
 	self:registerActions(RetroPlugActions(self:project()))
 end
 
@@ -62,24 +65,30 @@ function RetroPlug:onDrop(paths)
 end
 
 function RetroPlug:onKey(key, down)
-	local bm = self:project().buttonMap
-	local system = self:project().selectedSystem
-
-	assert(bm)
-	assert(system)
-	assert(self._keysPressed)
-
-	local handled = inpututil.handleInput(bm.keys.global, key, down, self._keysPressed)
-	if handled ~= true and system ~= nil then
-		assert(system.keysPressed)
-		handled = inpututil.handleInput(bm.keys.system, key, down, system.keysPressed, system:buttons())
-	end
-
-	return handled
+	local m = self:project().inputMap
+	return self:processInput(key, down, m.key, self._keysPressed)
 end
 
 function RetroPlug:onPadButton(button, down)
-	return inpututil.handleInput(self._padMap, button, down, self._padbuttonsPressed, self._buttonHooks, self:system():buttons())
+	local m = self:project().inputMap
+	return self:processInput(button, down, m.pad, self._buttonsPressed)
+end
+
+function RetroPlug:processInput(key, down, map, pressed)
+	local system = self:project():getSelected()
+
+	if down == true then
+		table.insert(pressed, key)
+	else
+		util.tableRemoveElement(pressed, key)
+	end
+
+	local handled = inpututil.handleInput(map.global, key, down, pressed)
+	if handled ~= true and system ~= nil then
+		handled = inpututil.handleInput(map.system, key, down, pressed, system)
+	end
+
+	return handled
 end
 
 return RetroPlug

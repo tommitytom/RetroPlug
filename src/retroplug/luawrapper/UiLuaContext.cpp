@@ -206,11 +206,11 @@ bool UiLuaContext::setup(bool updateProject) {
 		assert(false);
 	}
 
+	loadInputMaps(_viewRoot, _configPath + "/input");
+
 	if (!callFunc(_viewRoot, "initProject", _proxy)) {
 		consoleLogLine("Failed to setup project");
 	}
-
-	loadInputMaps(_viewRoot, _configPath + "/input");
 
 	_valid = true;
 	return true;

@@ -11,11 +11,14 @@ local ComponentManager = require("ComponentManager")
 local System = require("System")
 
 local Project = class()
-function Project:init(audioContext, config)
+function Project:init(audioContext, config, inputConfigs)
 	self._audioContext = audioContext
 	self._native = audioContext:getProject()
 	self._config = config
+	self._inputConfigs = inputConfigs
 	self.systems = {}
+
+	self.inputMap = inputConfigs["default.lua"]
 
 	projectutil.copyStringFields(config.project, projectutil.ProjectSettingsFields, self._native.settings)
 
@@ -53,7 +56,9 @@ function Project:loadRom(data, idx, model)
 end
 
 function Project:setSelected(idx)
-	self._native.selectedSystem = idx - 1
+	if idx <= const.MAX_SYSTEMS then
+		self._native.selectedSystem = idx - 1
+	end
 end
 
 function Project:getSelectedIndex()
@@ -216,7 +221,7 @@ function Project:addSystem(system)
 	local desc = system.desc
 	local idx = desc.idx + 1
 	if idx == 0 then
-		assert(#self.systems < const.MAX_INSTANCES)
+		assert(#self.systems < const.MAX_SYSTEMS)
 		idx = #self.systems + 1
 	end
 
@@ -230,7 +235,7 @@ function Project:addSystem(system)
 end
 
 function Project:duplicateSystem(idx)
-	assert(#self.systems < const.MAX_INSTANCES)
+	assert(#self.systems < const.MAX_SYSTEMS)
 	local system = self.systems[idx]
 	local newSystem = system:clone()
 	local newIdx = #self.systems
@@ -240,11 +245,6 @@ function Project:duplicateSystem(idx)
 	table.insert(self.systems, newSystem)
 
 	self._audioContext:duplicateSystem(idx - 1, newSystem.desc)
-
-	for _, system in ipairs(self.systems) do
-		system:emit("onComponentsInitialized", system.components)
-		system:emit("onReload")
-	end
 
 	self:setSelected(newIdx + 1)
 end

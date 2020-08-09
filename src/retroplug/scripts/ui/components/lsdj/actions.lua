@@ -20,52 +20,51 @@ local function isDirectionButton(button)
 end
 
 local KeyboardActions = class()
-function KeyboardActions:init(system)
-    self._system = system
-    self._buttons = system:buttons()
+function KeyboardActions:init(project)
+    self._project = project
     self._selectState = SelectState.None
 end
 
-function KeyboardActions:downTenRows(down)
-    if down == true then self._buttons:releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
+function KeyboardActions:downTenRows(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
 end
 
-function KeyboardActions:upTenRows(down)
-    if down == true then self._buttons:releaseAll():hold(Button.B):hold(Button.Up):releaseAll() end
+function KeyboardActions:upTenRows(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Up):releaseAll() end
 end
 
-function KeyboardActions:screenUp(down)
-    if down == true then self._buttons:releaseAll():hold(Button.Select):hold(Button.Up):releaseAll() end
+function KeyboardActions:screenUp(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Up):releaseAll() end
 end
 
-function KeyboardActions:screenDown(down)
-    if down == true then self._buttons:releaseAll():hold(Button.Select):hold(Button.Down):releaseAll() end
+function KeyboardActions:screenDown(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Down):releaseAll() end
 end
 
-function KeyboardActions:screenLeft(down)
-    if down == true then self._buttons:releaseAll():hold(Button.Select):hold(Button.Left):releaseAll() end
+function KeyboardActions:screenLeft(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Left):releaseAll() end
 end
 
-function KeyboardActions:screenRight(down)
-    if down == true then self._buttons:releaseAll():hold(Button.Select):hold(Button.Right):releaseAll() end
+function KeyboardActions:screenRight(down, system)
+    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Right):releaseAll() end
 end
 
-function KeyboardActions:delete(down)
+function KeyboardActions:delete(down, system)
     if down == true then
         if self._selectState == SelectState.None then
-            self._buttons:releaseAll():hold(Button.B):hold(Button.A):releaseAll()
+            system:buttons():releaseAll():hold(Button.B):hold(Button.A):releaseAll()
         elseif self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-            self._buttons:hold(Button.Select):hold(Button.A):releaseAll()
+            system:buttons():hold(Button.Select):hold(Button.A):releaseAll()
             self._selectState = SelectState.None
         end
     end
 end
 
-function KeyboardActions:beginSelection(down)
+function KeyboardActions:beginSelection(down, system)
     if down == true then
         if self._selectState == SelectState.None then
             self._selectState = SelectState.RequestBegin
-            self._buttons:hold(Button.Select)
+            system:buttons():hold(Button.Select)
         elseif self._selectState == SelectState.Selected then
             self._selectState = SelectState.Selecting
         end
@@ -74,51 +73,51 @@ function KeyboardActions:beginSelection(down)
             self._selectState = SelectState.Selected
         elseif self._selectState == SelectState.RequestBegin then
             self._selectState = SelectState.None
-            self._buttons:release(Button.Select)
+            system:buttons():release(Button.Select)
         end
     end
 end
 
-function KeyboardActions:cancelSelection(down)
+function KeyboardActions:cancelSelection(down, system)
     if down == true then
         if self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-            endSelect(self._buttons)
+            endSelect(system:buttons())
             self._selectState = SelectState.None
         end
     end
 end
 
-function KeyboardActions:copy(down)
+function KeyboardActions:copy(down, system)
     if down == true then
         if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-            beginSelect(self._buttons)
+            beginSelect(system:buttons())
         end
 
-        self._buttons:releaseAll():press(Button.B)
+        system:buttons():releaseAll():press(Button.B)
         self._selectState = SelectState.None
     end
 end
 
-function KeyboardActions:cut(down)
+function KeyboardActions:cut(down, system)
     if down == true then
         if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-            beginSelect(self._buttons)
+            beginSelect(system:buttons())
         end
 
-        self._buttons:releaseAll():hold(Button.Select):hold(Button.A):releaseAll()
+        system:buttons():releaseAll():hold(Button.Select):hold(Button.A):releaseAll()
         self._selectState = SelectState.None
     end
 end
 
-function KeyboardActions:paste(down)
-    if down == true then self._buttons:hold(Button.Select):hold(Button.A):releaseAll() end
+function KeyboardActions:paste(down, system)
+    if down == true then system:buttons():hold(Button.Select):hold(Button.A):releaseAll() end
 end
 
-function KeyboardActions:_handleButtonPress(button, down)
+function KeyboardActions:_handleButtonPress(button, down, system)
     if self._selectState == SelectState.RequestBegin then
 		if down == true then
 			if isDirectionButton(button) == true then
-				beginSelect(self._buttons):hold(button)
+				beginSelect(system:buttons()):hold(button)
 				self._selectState = SelectState.Selecting
 				return false
 			end
@@ -126,7 +125,7 @@ function KeyboardActions:_handleButtonPress(button, down)
 	elseif self._selectState == SelectState.Selected then
 		if down == true then
 			if isDirectionButton(button) == true then
-				endSelect(self._buttons):hold(button)
+				endSelect(system:buttons()):hold(button)
 				self._selectState = SelectState.None
 				return false
 			else

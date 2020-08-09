@@ -13,6 +13,22 @@ local eventTypes = {
 
 local module = {}
 
+function module.findByName(components, name)
+	local lowerName = string.lower(name)
+	for _, v in ipairs(components) do
+		if string.lower(v.__desc.name) == lowerName then
+			return v
+		end
+	end
+end
+
+function module.findAction(components, name, action)
+	local component = module.findByName(components, name)
+	if component ~= nil then
+		return component.__actions[string.lower(action)]
+	end
+end
+
 function module.emitComponentEvent(eventName, components, ...)
 	local evType = eventTypes[eventName] or EventType.Lifecycle
 

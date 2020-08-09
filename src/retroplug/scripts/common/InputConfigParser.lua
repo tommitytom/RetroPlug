@@ -5,19 +5,35 @@ local pathutil = require("pathutil")
 
 local InputConfig = class()
 function InputConfig:init()
-	self._configs = {}
+	self.configs = {}
 end
 
+-- Processes the data passed in by the user
 local function handleMapInput(target, config, map)
 	if map == nil then
 		map = config
 		config = {}
 	end
 
-	table.insert(target, { config = config, map = map })
+	local lookup = {}
+	local combos = {}
+
+	for k, v in pairs(map) do
+		if type(k) == "number" then
+			lookup[k] = v
+		elseif type(k) == "table" then
+			combos[k] = v
+		else
+			log.error("Failed to load input map: string fields are not supported")
+		end
+	end
+
+	table.insert(target, { config = config, lookup = lookup, combos = combos })
 end
 
 function InputConfig:load(path)
+	path = pathutil.clean(path)
+
 	local parsed = {
 		config = {},
 		key = { system = {}, global = {} },
@@ -42,9 +58,8 @@ function InputConfig:load(path)
 	if f ~= nil then
 		local ok, ret = pcall(f)
 		if ok then
-			parsed.config.path = pathutil.clean(path)
-			table.insert(self._configs, parsed)
-			--log.obj(parsed)
+			parsed.config.path = path
+			self.configs[pathutil.filename(path)] = parsed
 		else
 			print("Error in button config: ", ret)
 		end

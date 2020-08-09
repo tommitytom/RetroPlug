@@ -10,7 +10,7 @@ local componentutil = require("util.component")
 local ConfigLoader = require("ConfigLoader")
 local InputConfig = require("InputConfigParser")
 
-local MAX_SYSTEMS = 4
+local const = require("const")
 
 local Controller = class()
 function Controller:init()
@@ -42,7 +42,7 @@ function Controller:loadConfigFromPath(path)
 end
 
 function Controller:initProject()
-	for i = 1, MAX_SYSTEMS, 1 do
+	for i = 1, const.MAX_SYSTEMS, 1 do
 		local instModel = self._model:getInstance(i - 1)
 		if instModel ~= nil then
 			local system = System(instModel, self._model:getButtonPresses(i - 1))

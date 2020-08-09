@@ -35,14 +35,14 @@ function module.createComponent(target, name)
 	end
 end
 
-function module.createComponents()
+function module.createComponents(project)
 	print("------- COMPONENTS -------")
 	local components = {}
 	for _, componentType in ipairs(_factory) do
 		local d = componentType.__desc
 		print("Attaching component " .. d.name)
 
-		local valid, ret = pcall(componentType.new)
+		local valid, ret = pcall(componentType.new, project)
 		if valid then
 			table.insert(components, ret)
 		else

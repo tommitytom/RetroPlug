@@ -36,7 +36,8 @@ function View:loadConfigFromPath(path)
 end
 
 function View:initProject(audioContext)
-	self.model = Model(audioContext, self._config)
+	self.model = Model(audioContext, self._config, self._inputConfig.configs)
+	self.model:setup()
 end
 
 function View:onKey(key, down)

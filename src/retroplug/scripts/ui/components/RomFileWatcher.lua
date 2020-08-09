@@ -20,13 +20,13 @@ function RomFileWatcher:onDestroy()
 end
 
 function RomFileWatcher:_setupWatcher()
-	local desc = self:system():desc()
+	--[[local desc = self:system():desc()
 	if fs.exists(desc.romPath) == true then
 		self._watchId = fs.watch(desc.romPath, function(path, changeType)
 			local file = fs.load(path)
 			if file ~= nil then	self.system:setRom(file) end
 		end)
-	end
+	end]]
 end
 
 return RomFileWatcher
