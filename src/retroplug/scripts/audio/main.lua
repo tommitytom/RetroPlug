@@ -1,10 +1,10 @@
 inspect = require("inspect")
+log = require("log")
 
 require("component")
 require("constants")
 require("Print")
 
-local log = require("log")
 log.overridePrint()
 
 local cm = require("ComponentManager")

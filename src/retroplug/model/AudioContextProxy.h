@@ -22,7 +22,6 @@ const int MAX_SRAM_SIZE = 131072;
 class AudioContextProxy {
 private:
 	Project _project;
-	int _activeIdx = -1;
 
 	Node* _node;
 
@@ -114,6 +113,10 @@ public:
 		node->on<calls::TransmitVideo>([&](const VideoStream& buffer) {
 			videoCallback(buffer);
 		});
+	}
+
+	void updateSelected() {
+		_node->push<calls::SetActive>(NodeTypes::Audio, _project.selectedSystem);
 	}
 
 	void updateSystemSettings(SystemIndex idx) {

@@ -91,6 +91,7 @@ function Project.setSelected(idx)
 	if idx <= const.MAX_SYSTEMS then
 		_native.selectedSystem = idx - 1
 		_data.system = _data.systems[idx]
+		_audioContext:updateSelected()
 	end
 end
 

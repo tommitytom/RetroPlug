@@ -109,6 +109,10 @@
 			"bit": "cpp",
 			"random": "cpp",
 			"shared_mutex": "cpp"
-		}
+		},
+		"Lua.diagnostics.globals": [
+			"System",
+			"log"
+		]
 	}
 }

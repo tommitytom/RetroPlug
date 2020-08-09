@@ -1,7 +1,7 @@
 local class = require("class")
 local createNativeMenu = require("MenuHelper")
 local LuaMenu = require("Menu")
-local System = require("System")
+local SystemType = require("System")
 local ComponentManager = require("ComponentManager")
 local ppq = require("ppq")
 local midi = require("midi")
@@ -47,7 +47,7 @@ function Controller:initProject()
 		local instModel = self._model:getInstance(i - 1)
 		if instModel ~= nil then
 			local state = componentutil.createState(self._components)
-			local system = System(instModel, self._model:getButtonPresses(i - 1), state)
+			local system = SystemType(instModel, self._model:getButtonPresses(i - 1), state)
 			table.insert(Project.systems, system)
 		end
 	end
@@ -57,12 +57,10 @@ function Controller:initProject()
 	end
 
 	self:emit("onSetup")
-	self:emit("onComponentsInitialized", self.components)
 	self:emit("onReload")
 end
 
 function Controller:setActive(idx)
-	--local system = self._systems[idx + 1]
 	local system = Project.systems[idx + 1]
 	if system ~= nil then
 		self._selectedIdx = idx + 1
@@ -144,14 +142,16 @@ function Controller:onDialogResult(paths)
 end
 
 function Controller:addInstance(idx, model, componentState)
-	local system = System(model, self._model:getButtonPresses(idx))
+	local state = componentutil.createState(self._components)
+	local system = SystemType(model, self._model:getButtonPresses(idx), state)
 	--local instance = createInstance(system)
 	--serializer.deserializeInstanceFromString(instance, componentState)
 	Project.systems[idx + 1] = system
 end
 
 function Controller:duplicateInstance(sourceIdx, targetIdx, model)
-	local system = System(model, self._model:getButtonPresses(targetIdx))
+	local state = componentutil.createState(self._components)
+	local system = SystemType(model, self._model:getButtonPresses(targetIdx), state)
 	Project.systems[targetIdx + 1] = system
 	--local instData = serializer.serializeInstanceToString(_systems[sourceIdx + 1])
 	--serializer.deserializeInstanceFromString(_systems[targetIdx + 1], instData)

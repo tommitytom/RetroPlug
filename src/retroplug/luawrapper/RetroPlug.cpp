@@ -79,6 +79,7 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"setState", &AudioContextProxy::setState,
 		"updateSram", &AudioContextProxy::updateSram,
 		"updateSystemSettings", &AudioContextProxy::updateSystemSettings,
+		"updateSelected", &AudioContextProxy::updateSelected,
 		"onMenu", &AudioContextProxy::onMenu
 	);
 
