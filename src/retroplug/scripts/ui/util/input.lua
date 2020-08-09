@@ -20,7 +20,7 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-function module.handleInput(mapGroup, key, down, pressed, system)
+function module.handleInput(mapGroup, key, down, pressed, hooks, system)
 	local handled = false
 	for _, map in ipairs(mapGroup) do
 		-- Do a basic map from key to button
@@ -31,25 +31,31 @@ function module.handleInput(mapGroup, key, down, pressed, system)
 					if found.func(down, system) ~= false then handled = true end
 				end
 			elseif system ~= nil then
+				for _, fn in ipairs(hooks) do
+					if fn(found, down) ~= false then
+						handled = true
+					end
+				end
+
 				local buttons = system:buttons()
-				if buttons ~= nil then
+				if handled == false and buttons ~= nil then
 					if down == true then
 						buttons:holdDuration(found, 0)
 					else
 						buttons:releaseDuration(found, 0)
 					end
-				end
 
-				handled = true
+					handled = true
+				end
 			end
 		end
 
 		-- If the key is being pressed look for combos
 		if down == true then
-			local func = matchCombo(map.combos, pressed)
-			if func ~= nil and type(func) == "function" then
-				if func(down) ~= false then
-					handled = true
+			local found = matchCombo(map.combos, pressed)
+			if found ~= nil and type(found) == "table" then
+				if found.func ~= nil then
+					if found.func(down, system) ~= false then handled = true end
 				end
 			end
 		else

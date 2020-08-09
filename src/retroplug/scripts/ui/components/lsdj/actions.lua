@@ -1,5 +1,3 @@
-local class = require("class")
-
 local SelectState = {
 	None = 0,
 	RequestBegin = 1,
@@ -19,114 +17,111 @@ local function isDirectionButton(button)
 	return button == Button.Left or button == Button.Right or button == Button.Up or button == Button.Down
 end
 
-local KeyboardActions = class()
-function KeyboardActions:init(project)
-    self._project = project
-    self._selectState = SelectState.None
+local KeyboardActions = {}
+local _selectState = SelectState.None
+
+function KeyboardActions.downTenRows(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
 end
 
-function KeyboardActions:downTenRows(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Down):releaseAll() end
+function KeyboardActions.upTenRows(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Up):releaseAll() end
 end
 
-function KeyboardActions:upTenRows(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.B):hold(Button.Up):releaseAll() end
+function KeyboardActions.screenUp(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Up):releaseAll() end
 end
 
-function KeyboardActions:screenUp(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Up):releaseAll() end
+function KeyboardActions.screenDown(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Down):releaseAll() end
 end
 
-function KeyboardActions:screenDown(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Down):releaseAll() end
+function KeyboardActions.screenLeft(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Left):releaseAll() end
 end
 
-function KeyboardActions:screenLeft(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Left):releaseAll() end
+function KeyboardActions.screenRight(down, system)
+	if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Right):releaseAll() end
 end
 
-function KeyboardActions:screenRight(down, system)
-    if down == true then system:buttons():releaseAll():hold(Button.Select):hold(Button.Right):releaseAll() end
+function KeyboardActions.delete(down, system)
+	if down == true then
+		if _selectState == SelectState.None then
+			system:buttons():releaseAll():hold(Button.B):hold(Button.A):releaseAll()
+		elseif _selectState == SelectState.Selecting or _selectState == SelectState.Selected then
+			system:buttons():hold(Button.Select):hold(Button.A):releaseAll()
+			_selectState = SelectState.None
+		end
+	end
 end
 
-function KeyboardActions:delete(down, system)
-    if down == true then
-        if self._selectState == SelectState.None then
-            system:buttons():releaseAll():hold(Button.B):hold(Button.A):releaseAll()
-        elseif self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-            system:buttons():hold(Button.Select):hold(Button.A):releaseAll()
-            self._selectState = SelectState.None
-        end
-    end
+function KeyboardActions.beginSelection(down, system)
+	if down == true then
+		if _selectState == SelectState.None then
+			_selectState = SelectState.RequestBegin
+			system:buttons():hold(Button.Select)
+		elseif _selectState == SelectState.Selected then
+			_selectState = SelectState.Selecting
+		end
+	else
+		if _selectState == SelectState.Selecting then
+			_selectState = SelectState.Selected
+		elseif _selectState == SelectState.RequestBegin then
+			_selectState = SelectState.None
+			system:buttons():release(Button.Select)
+		end
+	end
 end
 
-function KeyboardActions:beginSelection(down, system)
-    if down == true then
-        if self._selectState == SelectState.None then
-            self._selectState = SelectState.RequestBegin
-            system:buttons():hold(Button.Select)
-        elseif self._selectState == SelectState.Selected then
-            self._selectState = SelectState.Selecting
-        end
-    else
-        if self._selectState == SelectState.Selecting then
-            self._selectState = SelectState.Selected
-        elseif self._selectState == SelectState.RequestBegin then
-            self._selectState = SelectState.None
-            system:buttons():release(Button.Select)
-        end
-    end
+function KeyboardActions.cancelSelection(down, system)
+	if down == true then
+		if _selectState == SelectState.Selecting or _selectState == SelectState.Selected then
+			endSelect(system:buttons())
+			_selectState = SelectState.None
+		end
+	end
 end
 
-function KeyboardActions:cancelSelection(down, system)
-    if down == true then
-        if self._selectState == SelectState.Selecting or self._selectState == SelectState.Selected then
-            endSelect(system:buttons())
-            self._selectState = SelectState.None
-        end
-    end
+function KeyboardActions.copy(down, system)
+	if down == true then
+		if _selectState == SelectState.None or _selectState == SelectState.RequestBegin then
+			beginSelect(system:buttons())
+		end
+
+		system:buttons():releaseAll():press(Button.B)
+		_selectState = SelectState.None
+	end
 end
 
-function KeyboardActions:copy(down, system)
-    if down == true then
-        if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-            beginSelect(system:buttons())
-        end
+function KeyboardActions.cut(down, system)
+	if down == true then
+		if _selectState == SelectState.None or _selectState == SelectState.RequestBegin then
+			beginSelect(system:buttons())
+		end
 
-        system:buttons():releaseAll():press(Button.B)
-        self._selectState = SelectState.None
-    end
+		system:buttons():releaseAll():hold(Button.Select):hold(Button.A):releaseAll()
+		_selectState = SelectState.None
+	end
 end
 
-function KeyboardActions:cut(down, system)
-    if down == true then
-        if self._selectState == SelectState.None or self._selectState == SelectState.RequestBegin then
-            beginSelect(system:buttons())
-        end
-
-        system:buttons():releaseAll():hold(Button.Select):hold(Button.A):releaseAll()
-        self._selectState = SelectState.None
-    end
+function KeyboardActions.paste(down, system)
+	if down == true then system:buttons():hold(Button.Select):hold(Button.A):releaseAll() end
 end
 
-function KeyboardActions:paste(down, system)
-    if down == true then system:buttons():hold(Button.Select):hold(Button.A):releaseAll() end
-end
-
-function KeyboardActions:_handleButtonPress(button, down, system)
-    if self._selectState == SelectState.RequestBegin then
+function KeyboardActions._handleButtonPress(button, down, system)
+	if _selectState == SelectState.RequestBegin then
 		if down == true then
 			if isDirectionButton(button) == true then
 				beginSelect(system:buttons()):hold(button)
-				self._selectState = SelectState.Selecting
+				_selectState = SelectState.Selecting
 				return false
 			end
 		end
-	elseif self._selectState == SelectState.Selected then
+	elseif _selectState == SelectState.Selected then
 		if down == true then
 			if isDirectionButton(button) == true then
 				endSelect(system:buttons()):hold(button)
-				self._selectState = SelectState.None
+				_selectState = SelectState.None
 				return false
 			else
 			end

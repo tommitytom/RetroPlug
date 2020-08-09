@@ -1,11 +1,12 @@
 local class = require("class")
 local System = class()
 
-function System:init(model, buttons)
+function System:init(model, buttons, state)
 	self._model = model
 	self._desc = model:getDesc()
 	self.desc = self._desc
 	self._buttons = buttons
+	self.state = state
 end
 
 function System:model()

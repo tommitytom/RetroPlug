@@ -11,7 +11,7 @@ local ComponentManager = require("ComponentManager")
 local Error = require("Error")
 
 local System = class()
-function System:init(desc, model, config)
+function System:init(desc, model, state)
 	self._audioContext = nil
 
 	if type(desc) == "userdata" then
@@ -27,6 +27,8 @@ function System:init(desc, model, config)
 
 	if model ~= nil then self.desc.sameBoySettings.model = model end
 	self._desc = self.desc
+
+	self.state = state
 end
 
 function System:clone()

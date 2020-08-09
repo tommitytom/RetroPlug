@@ -1,4 +1,4 @@
-local Project = require("Project")
+Project = require("Project")
 local componentutil = require("util.component")
 local ComponentManager = require("ComponentManager")
 --
@@ -7,8 +7,9 @@ local Model = class()
 
 function Model:init(audioContext, config, inputConfigs)
 	self.audioContext = audioContext
-	self.project = Project(audioContext, config, inputConfigs)
 	self.components = {}
+
+	Project.init(audioContext, config, inputConfigs)
 end
 
 local function updateInputActions(components, mapGroup)
@@ -28,11 +29,17 @@ local function updateInputActions(components, mapGroup)
 end
 
 function Model:setup()
-	self.components = ComponentManager.createComponents(self.project)
+	self.components = ComponentManager.createComponents(Project)
 
-	for _, cfg in pairs(self.project._inputConfigs) do
+	for _, cfg in pairs(Project.inputConfigs) do
 		updateInputActions(self.components, cfg.key.global)
 		updateInputActions(self.components, cfg.key.system)
+	end
+
+	for _, component in ipairs(self.components) do
+		if component.onBeforeButton ~= nil then
+			table.insert(Project.buttonHooks, component.onBeforeButton)
+		end
 	end
 
 	self:emit("onSetup")
@@ -41,7 +48,7 @@ function Model:setup()
 end
 
 function Model:emit(eventName, ...)
-	return componentutil.emitComponentEvent(eventName, self.components, ...)
+	return componentutil.emitComponentEvent(self.components, eventName, ...)
 end
 
 return Model

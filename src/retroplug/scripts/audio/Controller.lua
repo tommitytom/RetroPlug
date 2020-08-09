@@ -9,8 +9,9 @@ local log = require("log")
 local componentutil = require("util.component")
 local ConfigLoader = require("ConfigLoader")
 local InputConfig = require("InputConfigParser")
-
 local const = require("const")
+
+Project = require("Project")
 
 local Controller = class()
 function Controller:init()
@@ -45,9 +46,14 @@ function Controller:initProject()
 	for i = 1, const.MAX_SYSTEMS, 1 do
 		local instModel = self._model:getInstance(i - 1)
 		if instModel ~= nil then
-			local system = System(instModel, self._model:getButtonPresses(i - 1))
-			table.insert(self._systems, system)
+			local state = componentutil.createState(self._components)
+			local system = System(instModel, self._model:getButtonPresses(i - 1), state)
+			table.insert(Project.systems, system)
 		end
+	end
+
+	if #Project.systems > 0 then
+		self:setActive(0)
 	end
 
 	self:emit("onSetup")
@@ -56,16 +62,19 @@ function Controller:initProject()
 end
 
 function Controller:setActive(idx)
-	local system = self._systems[idx + 1]
+	--local system = self._systems[idx + 1]
+	local system = Project.systems[idx + 1]
 	if system ~= nil then
 		self._selectedIdx = idx + 1
+		Project.system = system
+		System = system
 	else
 		log.warn("Failed to set active system to idx " .. idx)
 	end
 end
 
 function Controller:emit(name, ...)
-	componentutil.emitComponentEvent(name, self._components, ...)
+	componentutil.emitComponentEvent(self._components, name, ...)
 end
 
 function Controller:update(frameCount)
@@ -94,18 +103,18 @@ function Controller:onMidi(offset, statusByte, data1, data2)
 	local r = self._model:getSettings().midiRouting
 	if status == midi.Status.System or r == MidiChannelRouting.SendToAll then
 		local msg = midi.Message(offset, statusByte, data1, data2)
-		for _, v in ipairs(self._systems) do
+		for _, v in ipairs(Project.systems) do
 			self:emit("onMidi", v, msg)
 		end
 	elseif r == MidiChannelRouting.OneChannelPerInstance then
-		local target = self._systems[channel]
+		local target = Project.systems[channel]
 		if target ~= nil then
 			local msg = midi.Message(offset, statusByte, data1, data2)
 			self:emit("onMidi", target, msg)
 		end
 	elseif r == MidiChannelRouting.FourChannelsPerInstance then
 		local targetIdx = math.floor(channel / 4)
-		local target = self._systems[targetIdx + 1]
+		local target = Project.systems[targetIdx + 1]
 		if target ~= nil then
 			local msg = midi.Message(offset, (channel | (status << 4)), data1, data2)
 			self:emit("onMidi", target, msg)
@@ -115,7 +124,7 @@ end
 
 function Controller:onMenu(idx, menus)
 	local menu = LuaMenu()
-	self.model:emit("onMenu", menu)
+	self:emit("onMenu", menu)
 
 	local menuLookup = {}
 	menus:add(createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, menuLookup))
@@ -138,22 +147,22 @@ function Controller:addInstance(idx, model, componentState)
 	local system = System(model, self._model:getButtonPresses(idx))
 	--local instance = createInstance(system)
 	--serializer.deserializeInstanceFromString(instance, componentState)
-	self._systems[idx + 1] = system
+	Project.systems[idx + 1] = system
 end
 
 function Controller:duplicateInstance(sourceIdx, targetIdx, model)
 	local system = System(model, self._model:getButtonPresses(targetIdx))
-	self._systems[targetIdx + 1] = system
+	Project.systems[targetIdx + 1] = system
 	--local instData = serializer.serializeInstanceToString(_systems[sourceIdx + 1])
 	--serializer.deserializeInstanceFromString(_systems[targetIdx + 1], instData)
 end
 
 function Controller:removeInstance(idx)
-	table.remove(self._systems, idx + 1)
+	table.remove(Project.systems, idx + 1)
 end
 
 function Controller:closeProject()
-	self._systems = {}
+	Project.systems = {}
 end
 
 function Controller:loadInputConfig(path)

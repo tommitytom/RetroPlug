@@ -10,17 +10,17 @@ local function loadProjectOrRom(project)
 	return menuutil.loadHandler({ filters.PROJECT_FILTER, filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "project", function(path)
 		local ext = pathutil.ext(path)
 		if ext == "rplg" or ext == "retroplug" then
-			return project:load(path)
+			return Project.load(path)
 		elseif ext == "gb" or ext == "gbc" or ext == "zip" then
-			project:clear()
-			return project:loadRom(path)
+			Project.clear()
+			return Project.loadRom(path)
 		end
 	end)
 end
 
 local function loadRom(project, idx, model)
 	return menuutil.loadHandler({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "ROM", function(path)
-		return project:loadRom(path, idx, model)
+		return Project.loadRom(path, idx, model)
 	end)
 end
 
@@ -37,9 +37,9 @@ local function loadState(system, reset)
 end
 
 local function saveProject(project, forceDialog)
-	forceDialog = forceDialog or project._native.path == ""
+	forceDialog = forceDialog or project.path == ""
 	return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", forceDialog, function(path)
-		return project:save(path, true)
+		return Project.save(path, true)
 	end)
 end
 
@@ -56,8 +56,8 @@ local function saveState(system, forceDialog)
 end
 
 local function projectMenu(menu, project)
-	local settings = project._native.settings
-	menu:action("New", function() project:clear() end)
+	local settings = project.settings
+	menu:action("New", function() Project.clear() end)
 		:action("Load...", loadProjectOrRom(project))
 		:action("Save", saveProject(project, false))
 		:action("Save As...", saveProject(project, true))
@@ -71,10 +71,10 @@ local function projectMenu(menu, project)
 		:subMenu("Add System", #project.systems < MAX_SYSTEMS)
 			:action("Load ROM...", loadRom(project, NO_ACTIVE_SYSTEM, GameboyModel.Auto))
 			:action("Duplicate Selected", function()
-				project:duplicateSystem(project:getSelectedIndex())
+				Project.duplicateSystem(Project.getSelectedIndex())
 			end)
 			:parent()
-		:action("Remove System", function() project:removeSystem(project:getSelectedIndex()) end, #project.systems > 1)
+		:action("Remove System", function() Project.removeSystem(Project.getSelectedIndex()) end, #project.systems > 1)
 		:subMenu("Layout")
 			:multiSelect({ "Auto", "Row", "Column", "Grid" }, settings.layout, function(v) settings.layout = v end)
 			:parent()
@@ -126,7 +126,6 @@ local function systemMenu(menu, system, project)
 		:subMenu("Audio Components")]]
 end
 
-local log = require("log")
 local fs = require("fs")
 
 local function findMissingRom(project, romPath)
@@ -144,7 +143,7 @@ local function findMissingRom(project, romPath)
 end
 
 local function generateMainMenu(menu, project)
-	local selected = project:getSelected()
+	local selected = Project.getSelected()
 
 	if selected.desc.state == SystemState.Initialized or selected.desc.state == SystemState.Running then
 		menu:title(selected.desc.romName):separator()
@@ -192,7 +191,7 @@ local function generateStartMenu(menu, project)
 end
 
 local function generateMenu(menu, project)
-	if project:getSelectedIndex() ~= 0 then
+	if Project.getSelectedIndex() ~= 0 then
 		generateMainMenu(menu, project)
 	else
 		generateStartMenu(menu, project)

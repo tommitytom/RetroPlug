@@ -17,7 +17,8 @@ KeyMap({
 })
 
 GlobalKeyMap({
-	[Key.Tab] = Action.RetroPlug.NextInstance
+	[Key.Tab] = Action.RetroPlug.NextInstance,
+	[{ Key.Ctrl, Key.S }] = Action.RetroPlug.SaveProject
 })
 
 PadMap({

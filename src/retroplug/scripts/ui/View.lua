@@ -49,8 +49,8 @@ function View:onKey(key, down)
 end
 
 function View:onDoubleClick(x, y, mod)
-	if #self.model.project.systems == 0 then
-		mainMenu.loadProjectOrRom(self.model.project)()
+	if #Project.systems == 0 then
+		mainMenu.loadProjectOrRom(Project)()
 	end
 end
 
@@ -58,13 +58,13 @@ function View:onMouseDown(x, y, mod)
 	self:selectViewAtPos(x, y)
 
 	if mod.right == true then
-		local selectedIdx = self.model.project:getSelectedIndex()
+		local selectedIdx = Project.getSelectedIndex()
 		if selectedIdx > 0 then
 			self.model.audioContext:updateSram(selectedIdx - 1)
 		end
 
 		local menu = Menu()
-		mainMenu.generateMenu(menu, self.model.project)
+		mainMenu.generateMenu(menu, Project)
 
 		self.model:emit("onMenu", menu)
 
@@ -102,7 +102,7 @@ function View:onDrop(x, y, items)
 end
 
 function View:onReloadBegin()
-	self.model.project:serializeComponents()
+	Project.serializeComponents()
 end
 
 function View:onReloadEnd()
@@ -110,23 +110,24 @@ function View:onReloadEnd()
 end
 
 function View:saveState(target)
-	self.model.project:save(target, false, true)
+	Project.save(target, false, true)
 end
 
 function View:loadState(buffer)
-	self.model.project:load(buffer)
+	Project.load(buffer)
 end
 
 function View:selectViewAtPos(x, y)
 	local idx = self:viewIndexAtPos(x, y)
 	if idx ~= nil then
-		self.model.project._native.selectedSystem = idx - 1
+		Project.setSelected(idx)
+		--Project.native.selectedSystem = idx - 1
 	end
 end
 
 function View:viewIndexAtPos(x, y)
 	local pos = Point.new(x, y)
-	for i, system in ipairs(self.model.project.systems) do
+	for i, system in ipairs(Project.systems) do
 		if system.desc.area:contains(pos) == true then
 			return i
 		end
