@@ -110,6 +110,7 @@ void UiLuaContext::loadState(DataBufferPtr buffer) {
 
 bool UiLuaContext::setup(bool updateProject) {
 	consoleLogLine("------------------------------------------");
+	consoleLogLine("------------------------------------------");
 	consoleLogLine("Initializing UI lua context");
 
 	_valid = false;

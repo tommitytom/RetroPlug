@@ -3,6 +3,7 @@ local menuutil = require("util.menu")
 local inpututil = require("util.input")
 local util = require("util")
 local filters = require("filters")
+local Globals = require("Globals")
 
 local _keysPressed = {}
 local _buttonsPressed = {}
@@ -70,11 +71,11 @@ local function processInput(key, down, map, pressed)
 end
 
 function RetroPlug.onKey(key, down)
-	return processInput(key, down, Project.inputMap.key, _keysPressed)
+	return processInput(key, down, Globals.inputMap.key, _keysPressed)
 end
 
 function RetroPlug.onPadButton(button, down)
-	return processInput(button, down, Project.inputMap.pad, _buttonsPressed)
+	return processInput(button, down, Globals.inputMap.pad, _buttonsPressed)
 end
 
 return RetroPlug

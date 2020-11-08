@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+
 #include "util/DataBuffer.h"
 #include "micromsg/node.h"
 #include "messaging.h"
@@ -53,7 +54,7 @@ public:
 	}
 
 	void prepareFetch(FetchStateRequest& req) {
-		// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
+		// TODO: Instead of using MAX_STATE_SIZE get the actual SRAM size from the emu
 		for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 			size_t type = (size_t)req.systems[i];
 			
@@ -84,11 +85,12 @@ public:
 	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)>&& cb) {
 		FetchStateRequest req;
 
+		ResourceType resType = (ResourceType)((size_t)ResourceType::State | (size_t)ResourceType::Components);
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
-			// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
-			req.srams[i] = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
-			req.states[i] = std::make_shared<DataBuffer<char>>(MAX_STATE_SIZE);
+			req.systems[i] = resType;
 		}
+
+		prepareFetch(req);
 
 		if (immediate) {
 			FetchStateResponse res;
@@ -168,19 +170,13 @@ public:
 		_node->request<calls::SetState>(NodeTypes::Audio, SetDataRequest{ idx, stateData, reset }, [](const DataBufferPtr&) {});
 	}
 
-	SystemState setSystem(SystemDescPtr& inst) {
-		assert(inst->idx < MAX_SYSTEMS);
+	void addSystem(SystemDescPtr& inst) {
+		assert(inst->idx == _project.systems.size());
+		_project.systems.push_back(inst);
 
-		if (inst->idx < _project.systems.size()) {
-			_project.systems[inst->idx] = inst;
-		} else if (inst->idx == _project.systems.size()) {
-			_project.systems.push_back(inst);
-		} else {
-			assert(false);
-			return SystemState::Uninitialized;
+		if (inst->romData) {
+			loadRom(inst);
 		}
-
-		return loadRom(inst);
 	}
 
 	SystemState loadRom(SystemDescPtr& inst) {
@@ -200,7 +196,7 @@ public:
 		if (inst->sramData) {
 			plug->loadBattery(inst->sramData->data(), inst->sramData->size(), false);
 		} else {
-			// TODO: Instead of using MAX_STATE_SIZE get the actual sram size from the emu
+			// TODO: Instead of using MAX_STATE_SIZE get the actual SRAM size from the emu
 			inst->sramData = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);
 		}
 
@@ -211,7 +207,7 @@ public:
 
 		inst->state = SystemState::Initialized;
 
-		return SystemState::Initialized;
+		return inst->state;
 	}
 
 	SystemState duplicateSystem(SystemIndex idx, SystemDescPtr& inst) {

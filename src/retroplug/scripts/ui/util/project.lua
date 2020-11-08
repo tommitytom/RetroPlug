@@ -17,7 +17,7 @@ local ProjectSettingsFields = {
 }
 
 local SystemSettingsFields = {
-	emulatorType = EmulatorType,
+	systemType = SystemType,
 	"romPath",
 	"sramPath"
 }
@@ -292,7 +292,7 @@ local function createProjectSystems(projectData, zip)
 		system.audioComponentState = serpent.dump(inst.audioComponents)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
 
-		table.insert(systems, System(system))
+		table.insert(systems, System.fromSystemDesc(system))
 	end
 
 	return systems

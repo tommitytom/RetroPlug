@@ -64,7 +64,7 @@ public:
 
 	void onMenuResult(int id);
 
-	void reload();
+	//void reload();
 
 	void scheduleReload() { _reload = true; }
 
@@ -75,6 +75,8 @@ public:
 	std::string serializeInstances();
 
 	void deserializeInstances(const std::string& data);
+
+	void deserializeComponents(const std::array<std::string, 4>& components);
 
 private:
 	bool setup();

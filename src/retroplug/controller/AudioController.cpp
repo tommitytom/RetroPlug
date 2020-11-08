@@ -23,6 +23,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::SwapSystem>([&](const SystemSwapDesc& d, SystemSwapDesc& other) {
+		assert(d.idx != -1);
 		_lua->addInstance(d.idx, d.instance, *d.componentState);
 		
 		other.instance = _processingContext.swapInstance(d.idx, d.instance);

@@ -107,13 +107,19 @@ public:
 
 	SameBoyPlugPtr swapInstance(SystemIndex idx, SameBoyPlugPtr instance) {
 		SameBoyPlugPtr old = _instances[idx];
-		_instances[idx] = instance;
-		_instances[idx]->setSampleRate(_audioSettings.sampleRate);
 
-		// TODO: Instantiate this in the UI thread and send with the SwapSystem message
-		if (_audioSettings.frameCount > 0) {
-			_audioBuffers[idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
-			_audioBuffers[idx].frameCount = _audioSettings.frameCount;
+		if (instance) {
+			instance->setSampleRate(_audioSettings.sampleRate);
+			_instances[idx] = instance;
+
+			// TODO: Instantiate this in the UI thread and send with the SwapSystem message
+			if (_audioSettings.frameCount > 0) {
+				_audioBuffers[idx].data = std::make_shared<DataBuffer<float>>(_audioSettings.frameCount * 2);
+				_audioBuffers[idx].frameCount = _audioSettings.frameCount;
+			}
+		} else {
+			_audioBuffers[idx].data = nullptr;
+			_audioBuffers[idx].frameCount = 0;
 		}
 
 		updateLinkTargets();
@@ -185,7 +191,7 @@ public:
 
 				VideoBuffer* v = &video.buffers[i];
 				v->dimensions = plug->getDimensions();
-				size_t dataSize = v->dimensions.w * v->dimensions.h * 4;
+				size_t dataSize = (size_t)(v->dimensions.w * v->dimensions.h * 4);
 
 				if (_alloc->canAlloc<char>(dataSize)) {
 					v->data = _alloc->allocArrayUnique<char>(dataSize);
@@ -236,9 +242,11 @@ public:
 private:
 	void getLinkTargets(std::vector<SameBoyPlugPtr>& targets, SameBoyPlugPtr ignore) {
 		for (size_t i = 0; i < _instances.size(); i++) {
-			const auto& settings = _instances[i]->getSettings();
-			if (_instances[i] && _instances[i] != ignore && _instances[i]->active() && settings.gameLink) {
-				targets.push_back(_instances[i]);
+			if (_instances[i]) {
+				const auto& settings = _instances[i]->getSettings();
+				if (_instances[i] != ignore && _instances[i]->active() && settings.gameLink) {
+					targets.push_back(_instances[i]);
+				}
 			}
 		}
 	}

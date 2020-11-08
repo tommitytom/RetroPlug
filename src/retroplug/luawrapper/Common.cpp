@@ -94,7 +94,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		"gameLink", &SameBoySettings::gameLink
 	);
 
-	s.new_usertype<Project>("Project",
+	s.new_usertype<Project>("NativeProject",
 		"path", &Project::path,
 		"systems", &Project::systems,
 		"settings", &Project::settings,

@@ -2,25 +2,28 @@ local dialog = require("dialog")
 local menuutil = require("util.menu")
 local pathutil = require("pathutil")
 local filters = require("filters")
+local fs = require("fs")
 
 local NO_ACTIVE_SYSTEM = 0
 local MAX_SYSTEMS = 4
 
-local function loadProjectOrRom(project)
+local MainMenu = {}
+
+function MainMenu.loadProjectOrRom()
 	return menuutil.loadHandler({ filters.PROJECT_FILTER, filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "project", function(path)
 		local ext = pathutil.ext(path)
 		if ext == "rplg" or ext == "retroplug" then
 			return Project.load(path)
 		elseif ext == "gb" or ext == "gbc" or ext == "zip" then
 			Project.clear()
-			return Project.loadRom(path)
+			return Project.addSystem():loadRom(path)
 		end
 	end)
 end
 
-local function loadRom(project, idx, model)
+local function loadRom(idx, model)
 	return menuutil.loadHandler({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "ROM", function(path)
-		return Project.loadRom(path, idx, model)
+		return Project.addSystem():loadRom(path, idx, model)
 	end)
 end
 
@@ -36,8 +39,8 @@ local function loadState(system, reset)
 	end)
 end
 
-local function saveProject(project, forceDialog)
-	forceDialog = forceDialog or project.path == ""
+local function saveProject(forceDialog)
+	forceDialog = forceDialog or Project.path == ""
 	return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", forceDialog, function(path)
 		return Project.save(path, true)
 	end)
@@ -55,12 +58,12 @@ local function saveState(system, forceDialog)
 	end)
 end
 
-local function projectMenu(menu, project)
-	local settings = project.settings
+local function projectMenu(menu)
+	local settings = Project.settings
 	menu:action("New", function() Project.clear() end)
-		:action("Load...", loadProjectOrRom(project))
-		:action("Save", saveProject(project, false))
-		:action("Save As...", saveProject(project, true))
+		:action("Load...", MainMenu.loadProjectOrRom())
+		:action("Save", saveProject(false))
+		:action("Save As...", saveProject(true))
 		:separator()
 		:subMenu("Save Options")
 			:multiSelect({ "Prefer SRAM", "Prefer State" }, settings.saveType, function(v) settings.saveType = v end)
@@ -68,13 +71,13 @@ local function projectMenu(menu, project)
 			:select("Include ROM", settings.packageRom, function(v) settings.packageRom = v end)
 			:parent()
 		:separator()
-		:subMenu("Add System", #project.systems < MAX_SYSTEMS)
-			:action("Load ROM...", loadRom(project, NO_ACTIVE_SYSTEM, GameboyModel.Auto))
+		:subMenu("Add System", #Project.systems < MAX_SYSTEMS)
+			:action("Load ROM...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.Auto))
 			:action("Duplicate Selected", function()
 				Project.duplicateSystem(Project.getSelectedIndex())
 			end)
 			:parent()
-		:action("Remove System", function() Project.removeSystem(Project.getSelectedIndex()) end, #project.systems > 1)
+		:action("Remove System", function() Project.removeSystem(Project.getSelectedIndex()) end, #Project.systems > 1)
 		:subMenu("Layout")
 			:multiSelect({ "Auto", "Row", "Column", "Grid" }, settings.layout, function(v) settings.layout = v end)
 			:parent()
@@ -96,13 +99,13 @@ local function projectMenu(menu, project)
 			}, settings.midiRouting, function(v) settings.midiRouting = v end)
 end
 
-local function systemMenu(menu, system, project)
-	menu:action("Load ROM...", loadRom(project, system.desc.idx + 1))
+local function systemMenu(menu, system)
+	menu:action("Load ROM...", loadRom(system.desc.idx + 1))
 		:subMenu("Load ROM As")
-			:action("AGB...", loadRom(project, system.desc.idx + 1, GameboyModel.Agb))
-			:action("CGB C...", loadRom(project, system.desc.idx + 1, GameboyModel.CgbC))
-			:action("CGB E (default)...", loadRom(project, system.desc.idx + 1, GameboyModel.CgbE))
-			:action("DMG B...", loadRom(project, system.desc.idx + 1, GameboyModel.DmgB))
+			:action("AGB...", loadRom(system.desc.idx + 1, GameboyModel.Agb))
+			:action("CGB C...", loadRom(system.desc.idx + 1, GameboyModel.CgbC))
+			:action("CGB E (default)...", loadRom(system.desc.idx + 1, GameboyModel.CgbE))
+			:action("DMG B...", loadRom(system.desc.idx + 1, GameboyModel.DmgB))
 			:parent()
 		:action("Reset", function() system:reset() end)
 		:subMenu("Reset As")
@@ -126,12 +129,10 @@ local function systemMenu(menu, system, project)
 		:subMenu("Audio Components")]]
 end
 
-local fs = require("fs")
-
-local function findMissingRom(project, romPath)
+local function findMissingRom(romPath)
 	dialog.loadFile({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, function(path)
 		if path then
-			for _, system in ipairs(project.systems) do
+			for _, system in ipairs(Project.systems) do
 				if romPath == system.desc.romPath then
 					system.desc.romPath = path
 					local romData = fs.load(path)
@@ -142,19 +143,19 @@ local function findMissingRom(project, romPath)
 	end)
 end
 
-local function generateMainMenu(menu, project)
+local function generateMainMenu(menu)
 	local selected = Project.getSelected()
 
 	if selected.desc.state == SystemState.Initialized or selected.desc.state == SystemState.Running then
 		menu:title(selected.desc.romName):separator()
 	end
 
-	projectMenu(menu:subMenu("Project"), project)
+	projectMenu(menu:subMenu("Project"))
 
 	if selected.desc.state == SystemState.Running then
-		systemMenu(menu:subMenu("System"), selected, project)
+		systemMenu(menu:subMenu("System"), selected)
 	elseif selected.desc.state == SystemState.RomMissing then
-		menu:action("Find Missing ROM...", function() findMissingRom(project, selected.desc.romName) end)
+		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romName) end)
 	end
 
 	local sameBoySettings = selected.desc.sameBoySettings
@@ -181,24 +182,21 @@ local function generateMainMenu(menu, project)
 		end)
 end
 
-local function generateStartMenu(menu, project)
-	menu:action("Load Project or ROM...", loadProjectOrRom(project))
+local function generateStartMenu(menu)
+	menu:action("Load Project or ROM...", MainMenu.loadProjectOrRom())
 		:subMenu("Load ROM As...")
-			:action("AGB...", loadRom(project, 1, GameboyModel.Agb))
-			:action("CGB C...", loadRom(project, 1, GameboyModel.CgbC))
-			:action("CGB E (default)...", loadRom(project, 1, GameboyModel.CgbE))
-			:action("DMG B...", loadRom(project, 1, GameboyModel.DmgB))
+			:action("AGB...", loadRom(1, GameboyModel.Agb))
+			:action("CGB C...", loadRom(1, GameboyModel.CgbC))
+			:action("CGB E (default)...", loadRom(1, GameboyModel.CgbE))
+			:action("DMG B...", loadRom(1, GameboyModel.DmgB))
 end
 
-local function generateMenu(menu, project)
+function MainMenu.generateMenu(menu)
 	if Project.getSelectedIndex() ~= 0 then
-		generateMainMenu(menu, project)
+		generateMainMenu(menu)
 	else
-		generateStartMenu(menu, project)
+		generateStartMenu(menu)
 	end
 end
 
-return {
-	generateMenu = generateMenu,
-	loadProjectOrRom = loadProjectOrRom
-}
+return MainMenu

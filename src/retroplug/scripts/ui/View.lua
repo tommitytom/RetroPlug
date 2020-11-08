@@ -8,6 +8,7 @@ local fs = require("fs")
 local ConfigLoader = require("ConfigLoader")
 local class = require("class")
 local InputConfig = require("InputConfigParser")
+local Globals = require("Globals")
 
 local View = class()
 function View:init()
@@ -18,25 +19,32 @@ function View:init()
 end
 
 function View:setup(view, audioContext)
-	self.view = view;
+	Globals.audioContext = audioContext
+
+	self.view = view
 	fs.__setup(audioContext:getFileManager())
 	dialog.__setup(view)
 end
 
 function View:loadConfigFromPath(path)
 	self._config = nil
+	Globals.config = nil
 
 	local ok, config = ConfigLoader.loadConfigFromPath(path)
 	if ok then
 		self._config = config
+		Globals.config = config
 		return true
 	end
 
 	return false
 end
 
-function View:initProject(audioContext)
-	self.model = Model(audioContext, self._config, self._inputConfig.configs)
+function View:initProject()
+	Globals.inputConfigs = self._inputConfig.configs
+	Globals.inputMap = Globals.inputConfigs["default.lua"]
+
+	self.model = Model()
 	self.model:setup()
 end
 
@@ -50,7 +58,7 @@ end
 
 function View:onDoubleClick(x, y, mod)
 	if #Project.systems == 0 then
-		mainMenu.loadProjectOrRom(Project)()
+		mainMenu.loadProjectOrRom()()
 	end
 end
 
@@ -60,17 +68,17 @@ function View:onMouseDown(x, y, mod)
 	if mod.right == true then
 		local selectedIdx = Project.getSelectedIndex()
 		if selectedIdx > 0 then
-			self.model.audioContext:updateSram(selectedIdx - 1)
+			Globals.audioContext:updateSram(selectedIdx - 1)
 		end
 
 		local menu = Menu()
-		mainMenu.generateMenu(menu, Project)
+		mainMenu.generateMenu(menu)
 
 		self.model:emit("onMenu", menu)
 
 		self._menuLookup = {}
 		local nativeMenu = createNativeMenu(menu, nil, LUA_MENU_ID_OFFSET, self._menuLookup, true)
-		local audioMenus = self.model.audioContext:onMenu(selectedIdx - 1)
+		local audioMenus = Globals.audioContext:onMenu(selectedIdx - 1)
 
 		if #audioMenus > 0 then
 			nativeutil.mergeMenu(audioMenus[1], nativeMenu)
@@ -102,7 +110,7 @@ function View:onDrop(x, y, items)
 end
 
 function View:onReloadBegin()
-	Project.serializeComponents()
+	--Project.serializeComponents()
 end
 
 function View:onReloadEnd()
@@ -127,7 +135,7 @@ end
 function View:viewIndexAtPos(x, y)
 	local pos = Point.new(x, y)
 	for i, system in ipairs(Project.systems) do
-		if system.desc.area:contains(pos) == true then
+		if system._desc.area:contains(pos) == true then
 			return i
 		end
 	end

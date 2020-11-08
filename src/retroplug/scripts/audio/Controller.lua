@@ -1,17 +1,15 @@
 local class = require("class")
 local createNativeMenu = require("MenuHelper")
 local LuaMenu = require("Menu")
-local SystemType = require("System")
+local GameboySystem = require("System")
 local ComponentManager = require("ComponentManager")
 local ppq = require("ppq")
 local midi = require("midi")
-local log = require("log")
 local componentutil = require("util.component")
 local ConfigLoader = require("ConfigLoader")
 local InputConfig = require("InputConfigParser")
 local const = require("const")
-
-Project = require("Project")
+local serpent = require("serpent")
 
 local Controller = class()
 function Controller:init()
@@ -28,6 +26,8 @@ function Controller:setup(model, timeInfo)
 	self._components = ComponentManager.createComponents()
 	self._model = model
 	self._timeInfo = timeInfo
+
+	Project._componentState = componentutil.createState(self._components)
 end
 
 function Controller:loadConfigFromPath(path)
@@ -47,7 +47,7 @@ function Controller:initProject()
 		local instModel = self._model:getInstance(i - 1)
 		if instModel ~= nil then
 			local state = componentutil.createState(self._components)
-			local system = SystemType(instModel, self._model:getButtonPresses(i - 1), state)
+			local system = GameboySystem(instModel, self._model:getButtonPresses(i - 1), state)
 			table.insert(Project.systems, system)
 		end
 	end
@@ -61,14 +61,11 @@ function Controller:initProject()
 end
 
 function Controller:setActive(idx)
-	local system = Project.systems[idx + 1]
-	if system ~= nil then
-		self._selectedIdx = idx + 1
-		Project.system = system
-		System = system
-	else
-		log.warn("Failed to set active system to idx " .. idx)
-	end
+	self._selectedIdx = idx + 1
+
+	local system = Project.systems[self._selectedIdx]
+	Project.system = system
+	System = system
 end
 
 function Controller:emit(name, ...)
@@ -143,23 +140,83 @@ end
 
 function Controller:addInstance(idx, model, componentState)
 	local state = componentutil.createState(self._components)
-	local system = SystemType(model, self._model:getButtonPresses(idx), state)
-	--local instance = createInstance(system)
-	--serializer.deserializeInstanceFromString(instance, componentState)
+	local system = GameboySystem(model, self._model:getButtonPresses(idx), state)
+
+	if componentState ~= nil and componentState ~= "" then
+		local ok, state = serpent.load(componentState)
+		if ok == true then system.state = state end
+	end
+
 	Project.systems[idx + 1] = system
+
+	if self._selectedIdx == idx + 1 then
+		self:setActive(idx)
+	end
 end
 
 function Controller:duplicateInstance(sourceIdx, targetIdx, model)
 	local state = componentutil.createState(self._components)
-	local system = SystemType(model, self._model:getButtonPresses(targetIdx), state)
+	local system = GameboySystem(model, self._model:getButtonPresses(targetIdx), state)
 	Project.systems[targetIdx + 1] = system
+
+	if self._selectedIdx == targetIdx + 1 then
+		self:setActive(targetIdx)
+	end
 	--local instData = serializer.serializeInstanceToString(_systems[sourceIdx + 1])
 	--serializer.deserializeInstanceFromString(_systems[targetIdx + 1], instData)
 end
 
 function Controller:removeInstance(idx)
 	table.remove(Project.systems, idx + 1)
+
+	if self._selectedIdx >= #Project.systems then
+		self._selectedIdx = #Project.systems
+	end
 end
+
+function Controller:serializeInstance(idx, pretty)
+	local opts = { comment = false }
+	if pretty == true then opts.indent = '\t' end
+	return serpent.block(Project.systems[idx + 1].state, opts)
+end
+
+function Controller:serializeInstances(pretty)
+	local opts = { comment = false }
+	if pretty == true then opts.indent = '\t' end
+
+	local instances = {}
+	for i, v in ipairs(Project.systems) do
+		table.insert(instances, v.state)
+	end
+
+	return serpent.block(instances, opts)
+end
+
+function Controller:deserializeInstances(data)
+	local ok, state = serpent.load(data)
+	if ok == true then
+		for i, v in ipairs(state) do
+			local system = Project.systems[i]
+			if system ~= nil then
+				system.state = v
+			end
+		end
+	end
+end
+
+function Controller:deserializeInstance(idx, data)
+	print(idx, data)
+	--local system = Project.systems[idx + 1]
+
+	--log.obj(system)
+
+	if data ~= nil and data ~= "" then
+		--local ok, state = serpent.load(data)
+		--if ok == true then system.state = state end
+	end
+end
+
+
 
 function Controller:closeProject()
 	Project.clear()

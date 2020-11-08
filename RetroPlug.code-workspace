@@ -112,7 +112,33 @@
 		},
 		"Lua.diagnostics.globals": [
 			"System",
-			"log"
+			"log",
+			"ZipWriterSettings",
+			"ZipCompressionMethod",
+			"ZipCompressionLevel",
+			"SystemState",
+			"SystemDesc",
+			"isNullPtr",
+			"SystemType",
+			"FetchStateRequest",
+			"ResourceType",
+			"GameboyModel",
+			"ZipReader",
+			"DataBuffer",
+			"nativeshell",
+			"MenuAlloc",
+			"MenuItemType",
+			"LUA_MENU_ID_OFFSET",
+			"nativeutil",
+			"Point",
+			"MidiChannelRouting",
+			"AudioChannelRouting",
+			"SystemLayout",
+			"SaveStateType",
+			"base64",
+			"ZipWriter",
+			"_RETROPLUG_VERSION",
+			"_PROJECT_VERSION"
 		]
 	}
 }

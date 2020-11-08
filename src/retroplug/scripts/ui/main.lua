@@ -1,9 +1,15 @@
 inspect = require("inspect")
 log = require("log")
 
+log.info("SETTING PROJECT")
+_G["Project"] = require("Project")
+log.info("SET PROJECT")
+
 require("component")
 require("constants")
 require("Print")
+
+log.overridePrint()
 
 --[[setmetatable(_G, {
 	__newindex = function (_, n)
@@ -14,11 +20,11 @@ require("Print")
 	end,
 })]]
 
-local log = require("log")
-log.overridePrint()
-
 local cm = require("ComponentManager")
-function _loadComponent(name) cm.loadComponent(name) end
+function _loadComponent(name)
+	cm.loadComponent(name)
+end
 
-local view = require("View")()
-function _getView() return view end
+function _getView()
+	return require("View")()
+end

@@ -5,6 +5,7 @@ local fs = require("fs")
 local pathutil = require("pathutil")
 
 local ROM_FILTER = { "LSDj Rom Files", { "*.gb", "*.zip" } }
+local ROM_FILTER_NO_ZIP = { "LSDj Rom Files", { "*.gb" } }
 local SAV_FILTER = { "LSDj Sav Files", "*.sav" }
 local SONG_FILTER = { "LSDj Song Files", "*.lsdsng" }
 local KIT_FILTER = { "LSDj Kit Files", "*.kit" }
@@ -116,6 +117,7 @@ function Lsdj.onDrop(paths)
 	if #kits > 0 then
 		local rom = lsdj.loadRom(system:rom())
 		local err = rom:importKits(kits)
+
 		if err == nil then
 			system:setRom(rom:toBuffer(), true)
 		else
@@ -127,6 +129,7 @@ function Lsdj.onDrop(paths)
 	if #songs > 0 then
 		local sav = lsdj.loadSav(system:sram())
 		local err = sav:importSongs(songs)
+
 		if err == nil then
 			system:setSram(sav:toBuffer(), true)
 		else
@@ -261,13 +264,13 @@ function Lsdj.onMenu(menu)
 
 	root:separator()
 		--:select("Keyboard Shortcuts", self._state.keyboardShortcuts, function(v) self._state.keyboardShortcuts = v end)
-		:separator()
+		--:separator()
 		--[[:subMenu("Patches")
 			:select("LitteFM", self._state.littleFm, function(v) self._state.littleFm = v; self:updateRom() end)
 			:select("4x Overclock", self._state.overclock, function(v) self._state.overclock = v; self:updateRom() end)
 			:parent()]]
 		:action("Export ROM...", function()
-			dialog.saveFile({ ROM_FILTER }, system.desc.romName, function(path) rom:toFile(path) end)
+			dialog.saveFile({ ROM_FILTER_NO_ZIP }, system.desc.romName, function(path) rom:toFile(path) end)
 		end)
 		:action("Upgrade To...", function()
 			dialog.loadFile({ ROM_FILTER }, function(path) upgradeRom(path, system, rom) end)

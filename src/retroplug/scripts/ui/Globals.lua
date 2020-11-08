@@ -1,0 +1,3 @@
+local globals = {}
+
+return globals

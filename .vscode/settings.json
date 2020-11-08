@@ -1,0 +1,19 @@
+{
+	"Lua.diagnostics.globals": [
+		"MidiChannelRouting",
+		"LUA_MENU_ID_OFFSET",
+		"isNullPtr",
+		"SystemDesc",
+		"SystemState",
+		"SaveStateType",
+		"ZipReader",
+		"ZipWriter",
+		"base64",
+		"AudioChannelRouting",
+		"SystemLayout",
+		"SystemType",
+		"GameboyModel",
+		"nativeutil",
+		"Point"
+	]
+}

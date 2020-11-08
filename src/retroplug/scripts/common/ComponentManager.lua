@@ -35,7 +35,7 @@ function module.createComponent(target, name)
 	end
 end
 
-function module.createComponents(project)
+function module.createComponents()
 	print("------- COMPONENTS -------")
 	local components = {}
 	for _, componentType in ipairs(_factory) do

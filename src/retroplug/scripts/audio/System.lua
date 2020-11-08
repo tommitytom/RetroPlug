@@ -1,6 +1,6 @@
 local class = require("class")
-local System = class()
 
+local System = class()
 function System:init(model, buttons, state)
 	self._model = model
 	self._desc = model:getDesc()

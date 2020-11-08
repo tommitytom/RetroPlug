@@ -28,7 +28,7 @@ void luawrappers::registerZipp(sol::state& s) {
 	s.new_usertype<zipp::WriterSettings>("ZipWriterSettings",
 		"method", &zipp::WriterSettings::method,
 		"level", &zipp::WriterSettings::level
-		);
+	);
 
 	s.new_usertype<zipp::Reader>("ZipReader",
 		"new", sol::factories(

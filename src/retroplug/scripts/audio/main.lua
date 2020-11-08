@@ -5,6 +5,8 @@ require("component")
 require("constants")
 require("Print")
 
+Project = require("Project")
+
 log.overridePrint()
 
 local cm = require("ComponentManager")

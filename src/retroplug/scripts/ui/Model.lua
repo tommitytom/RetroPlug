@@ -1,15 +1,15 @@
-Project = require("Project")
+--Project = require("Project")
 local componentutil = require("util.component")
 local ComponentManager = require("ComponentManager")
+local Globals = require("Globals")
 --
 local class = require("class")
 local Model = class()
 
-function Model:init(audioContext, config, inputConfigs)
-	self.audioContext = audioContext
+function Model:init()
 	self.components = {}
 
-	Project.init(audioContext, config, inputConfigs)
+	Project.init()
 end
 
 local function updateInputActions(components, mapGroup)
@@ -29,9 +29,11 @@ local function updateInputActions(components, mapGroup)
 end
 
 function Model:setup()
-	self.components = ComponentManager.createComponents(Project)
+	self.components = ComponentManager.createComponents()
 
-	for _, cfg in pairs(Project.inputConfigs) do
+	Project._componentState = componentutil.createState(self.components)
+
+	for _, cfg in pairs(Globals.inputConfigs) do
 		updateInputActions(self.components, cfg.key.global)
 		updateInputActions(self.components, cfg.key.system)
 		updateInputActions(self.components, cfg.pad.global)
@@ -51,6 +53,9 @@ end
 
 function Model:emit(eventName, ...)
 	return componentutil.emitComponentEvent(self.components, eventName, ...)
+end
+
+function Model:serialize()
 end
 
 return Model

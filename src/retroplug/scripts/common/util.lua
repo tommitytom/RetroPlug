@@ -79,18 +79,30 @@ function util.stringToEnum(enumType, value)
 end
 
 function util.deepcopy(orig)
-	local orig_type = type(orig)
 	local copy
-	if orig_type == 'table' then
+
+	if type(orig) == 'table' then
 		copy = {}
 		for orig_key, orig_value in next, orig, nil do
 			copy[util.deepcopy(orig_key)] = util.deepcopy(orig_value)
 		end
+
 		setmetatable(copy, util.deepcopy(getmetatable(orig)))
 	else -- number, string, boolean, etc
 		copy = orig
 	end
+
 	return copy
+end
+
+function util.mergeObjects(target, source)
+	for k, v in pairs(source) do
+		if target[k] == nil or type(v) ~= type(target[k]) then
+			target[k] = v
+		elseif type(v) == "table" then
+			util.mergeObjects(target[k], v)
+		end
+	end
 end
 
 return util

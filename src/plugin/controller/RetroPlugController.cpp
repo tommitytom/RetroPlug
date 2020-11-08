@@ -42,7 +42,7 @@ RetroPlugController::RetroPlugController(double sampleRate)
 	_bus.addCall<calls::UpdateProjectSettings>(4);
 	_bus.addCall<calls::UpdateSystemSettings>(4);
 	_bus.addCall<calls::PressButtons>(32);
-	_bus.addCall<calls::FetchState>(1);
+	_bus.addCall<calls::FetchState>(4);
 	_bus.addCall<calls::ContextMenuResult>(1);
 	_bus.addCall<calls::SwapLuaContext>(4);
 	_bus.addCall<calls::SetActive>(4);

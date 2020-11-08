@@ -47,8 +47,9 @@ struct Rect {
 
 struct SystemDesc {
 	SystemIndex idx = NO_ACTIVE_SYSTEM;
-	SystemType emulatorType = SystemType::Unknown;
+	SystemType systemType = SystemType::Unknown;
 	SystemState state = SystemState::Uninitialized;
+
 	std::string romName;
 	std::string romPath;
 	std::string sramPath;

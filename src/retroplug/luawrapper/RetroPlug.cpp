@@ -44,7 +44,7 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 			[](const SystemDesc& other) { return std::make_shared<SystemDesc>(other); }
 		),
 		"idx", &SystemDesc::idx,
-		"emulatorType", &SystemDesc::emulatorType,
+		"systemType", &SystemDesc::systemType,
 		"state", &SystemDesc::state,
 		"romName", &SystemDesc::romName,
 		"romPath", &SystemDesc::romPath,
@@ -65,7 +65,7 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"loadRom", &AudioContextProxy::loadRom,
 		"getProject", &AudioContextProxy::getProject,
 		"clearProject", &AudioContextProxy::clearProject,
-		"setSystem", &AudioContextProxy::setSystem,
+		"addSystem", &AudioContextProxy::addSystem,
 		"duplicateSystem", &AudioContextProxy::duplicateSystem,
 		"removeSystem", &AudioContextProxy::removeSystem,
 		"resetSystem", &AudioContextProxy::resetSystem,

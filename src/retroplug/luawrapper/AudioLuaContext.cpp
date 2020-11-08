@@ -26,6 +26,7 @@ void AudioLuaContext::init(ProcessingContext* ctx, TimeInfo* timeInfo, double sa
 }
 
 bool AudioLuaContext::setup() {
+	consoleLogLine("");
 	consoleLogLine("------------------------------------------");
 	consoleLogLine("Initializing audio lua context");
 
@@ -125,6 +126,9 @@ bool AudioLuaContext::setup() {
 
 	loadInputMaps(_controller, _configPath + "/input");
 
+	consoleLogLine("------------------------------------------");
+	consoleLogLine("");
+
 	_valid = true;
 	return true;
 }
@@ -169,27 +173,35 @@ void AudioLuaContext::onMenuResult(int id) {
 	callFunc(_controller, "onMenuResult", id);
 }
 
-std::string AudioLuaContext::serializeInstances() {
+std::string AudioLuaContext::serializeInstance(SystemIndex index) {
 	std::string target;
-	//callFuncRet(_controller, "_serializeInstances", target);
+	callFuncRet(_controller, "serializeInstance", target, index);
 	return target;
 }
 
-std::string AudioLuaContext::serializeInstance(SystemIndex index) {
+std::string AudioLuaContext::serializeInstances() {
 	std::string target;
-	//callFuncRet(_controller, "_serializeInstance", target, index);
+	callFuncRet(_controller, "serializeInstances", target);
 	return target;
 }
 
 void AudioLuaContext::deserializeInstances(const std::string& data) {
-	//callFunc(_controller, "_deserializeInstances", data);
+	callFunc(_controller, "deserializeInstances", data);
 }
 
-void AudioLuaContext::reload() {
+void AudioLuaContext::deserializeComponents(const std::array<std::string, 4>& components) {
+	for (size_t i = 0; i < components.size(); ++i) {
+		if (!components[i].empty()) {
+			callFunc(_controller, "deserializeInstance", i, "hello");
+		}
+	}
+}
+
+/*void AudioLuaContext::reload() {
 	shutdown();
 	setup();
 	_haltFrameProcessing = false;
-}
+}*/
 
 void AudioLuaContext::shutdown() {
 	if (_state) {
