@@ -85,7 +85,7 @@ public:
 	void fetchSystemStates(bool immediate, std::function<void(const FetchStateResponse&)>&& cb) {
 		FetchStateRequest req;
 
-		ResourceType resType = (ResourceType)((size_t)ResourceType::State | (size_t)ResourceType::Components);
+		ResourceType resType = (ResourceType)((size_t)ResourceType::State | (size_t)ResourceType::Components | (size_t)ResourceType::Sram);
 		for (size_t i = 0; i < _project.systems.size(); ++i) {
 			req.systems[i] = resType;
 		}

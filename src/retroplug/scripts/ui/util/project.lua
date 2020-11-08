@@ -370,7 +370,9 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 		if systemStates.srams[i] ~= nil then
 			ok = zip:add(idx .. ".sav", systemStates.srams[i])
 			if ok == false then return Error("Failed to add system SRAM") end
+		end
 
+		if systemStates.states[i] ~= nil then
 			ok = zip:add(idx .. ".state", systemStates.states[i])
 			if ok == false then return Error("Failed to add system state") end
 		end
