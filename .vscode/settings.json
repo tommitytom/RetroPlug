@@ -14,6 +14,11 @@
 		"SystemType",
 		"GameboyModel",
 		"nativeutil",
-		"Point"
+		"Point",
+		"ZipWriterSettings",
+		"ZipCompressionMethod",
+		"ZipCompressionLevel",
+		"_RETROPLUG_VERSION",
+		"_PROJECT_VERSION"
 	]
 }
