@@ -162,8 +162,13 @@ function Controller:duplicateInstance(sourceIdx, targetIdx, model)
 	if self._selectedIdx == targetIdx + 1 then
 		self:setActive(targetIdx)
 	end
-	--local instData = serializer.serializeInstanceToString(_systems[sourceIdx + 1])
-	--serializer.deserializeInstanceFromString(_systems[targetIdx + 1], instData)
+
+	local instData = serpent.block(Project.systems[sourceIdx + 1].state, { comment = false })
+	local ok, state = serpent.load(instData)
+	if ok == true then
+		log.obj(state)
+		Project.systems[targetIdx + 1].state = state
+	end
 end
 
 function Controller:removeInstance(idx)
@@ -205,18 +210,17 @@ function Controller:deserializeInstances(data)
 end
 
 function Controller:deserializeInstance(idx, data)
-	print(idx, data)
-	--local system = Project.systems[idx + 1]
+	local system = Project.systems[idx]
+	if system == nil then
+		log.warn("Failed to deserialize instance - instance " .. idx .. " does not exist")
+		return
+	end
 
-	--log.obj(system)
-
-	if data ~= nil and data ~= "" then
-		--local ok, state = serpent.load(data)
-		--if ok == true then system.state = state end
+	local ok, state = serpent.load(data)
+	if ok == true then
+		system.state = state
 	end
 end
-
-
 
 function Controller:closeProject()
 	Project.clear()
