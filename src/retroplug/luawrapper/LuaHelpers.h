@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <lua.hpp>
 #include <sol/sol.hpp>
 #include "util/DataBuffer.h"
 
@@ -67,7 +68,7 @@ static bool callFuncRet(sol::table& table, const char* name, ReturnType& ret, Ar
 
 template <typename ReturnType>
 static bool runScriptRet(sol::state& state, const std::string& script, ReturnType& ret, const char* error = nullptr) {
-	sol::protected_function_result res = state->do_string(script);
+	sol::protected_function_result res = state.do_string(script);
 	bool valid;
 	if (error != nullptr) {
 		valid = validateResult(res, error);

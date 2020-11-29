@@ -11,10 +11,10 @@ namespace micromsg {
 
 	public:
 		UniquePtr(): _controlBlock(nullptr) {}
-		UniquePtr(UniquePtr& other) { *this = other; }
+		UniquePtr(UniquePtr&& other) noexcept { *this = other; }
 		~UniquePtr() { release(); }
 
-		UniquePtr& operator=(UniquePtr& other) {
+		UniquePtr& operator=(UniquePtr&& other) noexcept {
 			_controlBlock = other._controlBlock;
 			other._controlBlock = nullptr;
 			return *this;

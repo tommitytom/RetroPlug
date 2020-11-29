@@ -225,7 +225,7 @@ public:
 		}
 
 		if (_node->canPush<calls::TransmitVideo>()) {
-			_node->push<calls::TransmitVideo>(NodeTypes::Ui, video);
+			_node->push<calls::TransmitVideo>(NodeTypes::Ui, std::move(video));
 		}
 
 		for (size_t i = 0; i < MAX_SYSTEMS; i++) {

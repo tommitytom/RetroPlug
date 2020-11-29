@@ -199,7 +199,7 @@ namespace micromsg {
 				bin = _binLookup[size];
 				mm_assert(bin != nullptr);
 			} else {
-				auto& found = _bins.find(size);
+				const auto& found = _bins.find(size);
 				mm_assert(found != _bins.end());
 				if (found != _bins.end()) {
 					bin = found->second.queue;

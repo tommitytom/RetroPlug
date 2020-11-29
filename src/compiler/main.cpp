@@ -44,12 +44,12 @@ void loadScript(const std::string& path, std::vector<u8>& target) {
 	memcpy(target.data(), data.data(), data.size());
 }
 
-void processModule(ModuleDesc& module, CompilerState& state) {
-	for (size_t i = 0; i < module.scripts.size(); ++i) {
-		ScriptDesc* s = &module.scripts[i];
-		std::string fullPath = (module.rootPath / s->path).make_preferred().string();
-		//Logger::log(module.name + "::" + s->name);
-		if (module.compile) {
+void processModule(ModuleDesc& mod, CompilerState& state) {
+	for (size_t i = 0; i < mod.scripts.size(); ++i) {
+		ScriptDesc* s = &mod.scripts[i];
+		std::string fullPath = (mod.rootPath / s->path).make_preferred().string();
+		//Logger::log(mod.name + "::" + s->name);
+		if (mod.compile) {
 			compileScript(fullPath, s->data);
 		} else {
 			loadScript(fullPath, s->data);
@@ -67,8 +67,8 @@ void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 		return l.name < r.name;
 	});
 
-	for (auto& module : state.modules) {
-		ss << "namespace " << module.name << " {";
+	for (auto& mod : state.modules) {
+		ss << "namespace " << mod.name << " {";
 		ss << HEADER_FUNCS_TEMPLATE << "}" << std::endl << std::endl;
 	}
 
@@ -77,16 +77,16 @@ void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	writeIfDifferent(targetHeaderPath, ss.str());
 }
 
-void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
+void writeSourceFile(const ModuleDesc& mod, const fs::path& targetDir) {
 	fs::path targetFile = targetDir / "CompiledScripts_";
-	targetFile += module.name + ".cpp";
+	targetFile += mod.name + ".cpp";
 
 	std::stringstream vars;
 	std::stringstream lookup;
 
 	lookup << "ScriptLookup _lookup = {" << std::endl;
 
-	for (const ScriptDesc& compiled : module.scripts) {
+	for (const ScriptDesc& compiled : mod.scripts) {
 		if (compiled.data.size() > 0) {
 			vars << "const std::uint8_t " << compiled.varName << "[] = { ";
 			for (size_t i = 0; i < compiled.data.size(); ++i) {
@@ -100,7 +100,7 @@ void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
 				compiled.name << "\", { " << 
 				compiled.varName << ", " << 
 				compiled.data.size() << ", " << 
-				(module.compile ? "true" : "false") << " } }," << 
+				(mod.compile ? "true" : "false") << " } }," << 
 				std::endl;
 		}
 	}
@@ -109,7 +109,7 @@ void writeSourceFile(const ModuleDesc& module, const fs::path& targetDir) {
 
 	std::stringstream ss;
 	ss << SOURCE_HEADER_TEMPLATE;
-	ss << module.name << " {" << std::endl << std::endl;
+	ss << mod.name << " {" << std::endl << std::endl;
 	ss << vars.str() << std::endl;
 	ss << lookup.str();
 	ss << SOURCE_FOOTER_TEMPLATE;
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
 
 		size_t idx = 0;
 		for (const auto& v : modules) {
-			ModuleDesc& module = state.modules[idx++];
+			ModuleDesc& mod = state.modules[idx++];
 
 			std::string name = v.first.as<std::string>();
 			sol::table settings = v.second.as<sol::table>();
@@ -162,10 +162,10 @@ int main(int argc, char** argv) {
 			fs::path path = settings["path"].get<std::string>();
 			sol::optional<bool> compileOpt = settings["compile"];
 
-			module.name = name;
-			module.compile = !compileOpt.has_value() || compileOpt.value();
-			module.rootPath = configDir / path.make_preferred();
-			parseDirectory(module.rootPath.string(), module.scripts);
+			mod.name = name;
+			mod.compile = !compileOpt.has_value() || compileOpt.value();
+			mod.rootPath = configDir / path.make_preferred();
+			parseDirectory(mod.rootPath.string(), mod.scripts);
 		}
 
 		size_t threadCount = std::min(state.modules.size(), (size_t)std::thread::hardware_concurrency());

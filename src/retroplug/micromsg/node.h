@@ -17,6 +17,7 @@
 
 #include "variantfunctionfactory.h"
 #include "error.h"
+#include "types.h"
 
 namespace micromsg {
 	const int RESPONSE_ID = 0;
@@ -118,7 +119,7 @@ namespace micromsg {
 			ss << magic_enum::enum_name(_type) << " added handler for " << typeId;
 			std::cout << ss.str() << std::endl;
 
-			_callbacks[typeId] = _funcFactory.alloc(std::forward<std::function<typename RequestSignature<T>>>(func));
+			_callbacks[typeId] = _funcFactory.alloc(std::forward<std::function<RequestSignature<T>>>(func));
 		}
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
@@ -138,7 +139,7 @@ namespace micromsg {
 		}
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
-		bool push(NodeType target, typename RequestT::Arg& message) {
+		bool push(NodeType target, typename RequestT::Arg&& message) {
 			if (!_active || !isValid()) {
 				//assert(_active);
 				//assert(isValid());
@@ -153,7 +154,33 @@ namespace micromsg {
 			
 			envelope->sourceNodeId = (int)_type;
 			envelope->callTypeId = (int)_handlers->typeIds[TypeId<RequestT>::get()];
-			envelope->message = message; // TODO: Move semantics?
+			envelope->message = std::move(message);
+
+			if (envelope->callTypeId == 0) {
+				mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
+				return false;
+			}
+
+			return send(target, envelope);
+		}
+
+		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
+		bool push(NodeType target, const typename RequestT::Arg& message) {
+			if (!_active || !isValid()) {
+				//assert(_active);
+				//assert(isValid());
+				return false;
+			}
+
+			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
+			if (!envelope) {
+				//assert(envelope);
+				return false;
+			}
+
+			envelope->sourceNodeId = (int)_type;
+			envelope->callTypeId = (int)_handlers->typeIds[TypeId<RequestT>::get()];
+			envelope->message = message;
 
 			if (envelope->callTypeId == 0) {
 				mm_assert_m(envelope->callTypeId != 0, "Call type not found.  Did you remember to register your call?");
