@@ -54,6 +54,7 @@ function LsdjArduinoboy.onTransportChanged(running)
 end
 
 local function onPpq(state, offset)
+	print("ppq")
 	if state.syncMode == LsdjSyncModes.MidiSync then
 		System:sendSerialByte(offset, 0xF8)
 	elseif state.syncMode == LsdjSyncModes.MidiSyncArduinoboy then
@@ -65,8 +66,8 @@ local function onPpq(state, offset)
 	end
 end
 
-function LsdjArduinoboy.onMidi(msg)
-	local state = System.state.arduinoboy
+function LsdjArduinoboy.onMidi(system, msg)
+	local state = system.state.arduinoboy
 
 	local status = msg.status
 	if status == midi.Status.System then
