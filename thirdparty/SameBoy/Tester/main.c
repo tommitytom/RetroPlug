@@ -31,16 +31,23 @@ static unsigned int test_length = 60 * 40;
 GB_gameboy_t gb;
 
 static unsigned int frames = 0;
-const char bmp_header[] = {
-0x42, 0x4D, 0x48, 0x68, 0x01, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x46, 0x00, 0x00, 0x00, 0x38, 0x00,
-0x00, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x70, 0xFF,
-0xFF, 0xFF, 0x01, 0x00, 0x20, 0x00, 0x03, 0x00,
-0x00, 0x00, 0x02, 0x68, 0x01, 0x00, 0x12, 0x0B,
-0x00, 0x00, 0x12, 0x0B, 0x00, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+static bool use_tga = false;
+static const uint8_t bmp_header[] = {
+    0x42, 0x4D, 0x48, 0x68, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x46, 0x00, 0x00, 0x00, 0x38, 0x00,
+    0x00, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x70, 0xFF,
+    0xFF, 0xFF, 0x01, 0x00, 0x20, 0x00, 0x03, 0x00,
+    0x00, 0x00, 0x02, 0x68, 0x01, 0x00, 0x12, 0x0B,
+    0x00, 0x00, 0x12, 0x0B, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t tga_header[] = {
+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xA0, 0x00, 0x90, 0x00,
+    0x20, 0x28,
 };
 
 uint32_t bitmap[160*144];
@@ -73,38 +80,38 @@ static void handle_buttons(GB_gameboy_t *gb)
                      frames) % combo_length + (start_is_bad? 20 : 0) ) {
                 case 0:
                     if (!limit_start || frames < 20 * 60) {
-                        gb->keys[0][push_right? 0 : 7] = true; // Start (Or right) down
+                        GB_set_key_state(gb, push_right? GB_KEY_RIGHT: GB_KEY_START, true);
                     }
                     if (pointer_control) {
-                        gb->keys[0][1] = true; // left
-                        gb->keys[0][2] = true; // up
+                        GB_set_key_state(gb, GB_KEY_LEFT, true);
+                        GB_set_key_state(gb, GB_KEY_UP, true);
                     }
                     
                     break;
                 case 10:
-                    gb->keys[0][push_right? 0 : 7] = false; // Start (Or right) up
+                    GB_set_key_state(gb, push_right? GB_KEY_RIGHT: GB_KEY_START, false);
                     if (pointer_control) {
-                        gb->keys[0][1] = false; // left
-                        gb->keys[0][2] = false; // up
+                        GB_set_key_state(gb, GB_KEY_LEFT, false);
+                        GB_set_key_state(gb, GB_KEY_UP, false);
                     }
                     break;
                 case 20:
-                    gb->keys[0][b_is_confirm? 5: 4] = true; // A down (or B)
+                    GB_set_key_state(gb, b_is_confirm? GB_KEY_B: GB_KEY_A, true);
                     break;
                 case 30:
-                    gb->keys[0][b_is_confirm? 5: 4] = false; // A up (or B)
+                    GB_set_key_state(gb, b_is_confirm? GB_KEY_B: GB_KEY_A, false);
                     break;
                 case 40:
                     if (push_a_twice) {
-                        gb->keys[0][b_is_confirm? 5: 4] = true; // A down (or B)
+                        GB_set_key_state(gb, b_is_confirm? GB_KEY_B: GB_KEY_A, true);
                     }
                     else if (gb->boot_rom_finished) {
-                        gb->keys[0][3] = true; // D-Pad Down down
+                        GB_set_key_state(gb, GB_KEY_DOWN, true);
                     }
                     break;
                 case 50:
-                    gb->keys[0][b_is_confirm? 5: 4] = false; // A down (or B)
-                    gb->keys[0][3] = false; // D-Pad Down up
+                    GB_set_key_state(gb, b_is_confirm? GB_KEY_B: GB_KEY_A, false);
+                    GB_set_key_state(gb, GB_KEY_DOWN, false);
                     break;
             }
         }
@@ -139,7 +146,12 @@ static void vblank(GB_gameboy_t *gb)
         /* Let the test run for extra four seconds if the screen is off/disabled */
         if (!is_screen_blank || frames >= test_length + 60 * 4) {
             FILE *f = fopen(bmp_filename, "wb");
-            fwrite(&bmp_header, 1, sizeof(bmp_header), f);
+            if (use_tga) {
+                fwrite(&tga_header, 1, sizeof(tga_header), f);
+            }
+            else {
+                fwrite(&bmp_header, 1, sizeof(bmp_header), f);
+            }
             fwrite(&bitmap, 1, sizeof(bitmap), f);
             fclose(f);
             if (!gb->boot_rom_finished) {
@@ -174,12 +186,12 @@ static const char *executable_folder(void)
     }
     /* Ugly unportable code! :( */
 #ifdef __APPLE__
-    unsigned int length = sizeof(path) - 1;
+    uint32_t length = sizeof(path) - 1;
     _NSGetExecutablePath(&path[0], &length);
 #else
 #ifdef __linux__
-    ssize_t length = readlink("/proc/self/exe", &path[0], sizeof(path) - 1);
-    assert (length != -1);
+    size_t __attribute__((unused)) length = readlink("/proc/self/exe", &path[0], sizeof(path) - 1);
+    assert(length != -1);
 #else
 #ifdef _WIN32
     HMODULE hModule = GetModuleHandle(NULL);
@@ -215,6 +227,9 @@ static char *executable_relative_path(const char *filename)
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
 {
+    if (use_tga) {
+        return (r << 16) | (g << 8) | (b);
+    }
     return (r << 24) | (g << 16) | (b << 8);
 }
 
@@ -268,6 +283,12 @@ int main(int argc, char **argv)
             dmg = true;
             continue;
         }
+        
+        if (strcmp(argv[i], "--tga") == 0) {
+            fprintf(stderr, "Using TGA output\n");
+            use_tga = true;
+            continue;
+        }
 
         if (strcmp(argv[i], "--start") == 0) {
             fprintf(stderr, "Pushing Start and A\n");
@@ -300,7 +321,7 @@ int main(int argc, char **argv)
         if (max_forks > 1) {
             while (current_forks >= max_forks) {
                 int wait_out;
-                while(wait(&wait_out) == -1);
+                while (wait(&wait_out) == -1);
                 current_forks--;
             }
             
@@ -312,7 +333,7 @@ int main(int argc, char **argv)
         size_t path_length = strlen(filename);
 
         char bitmap_path[path_length + 5]; /* At the worst case, size is strlen(path) + 4 bytes for .bmp + NULL */
-        replace_extension(filename, path_length, bitmap_path, ".bmp");
+        replace_extension(filename, path_length, bitmap_path, use_tga? ".tga" : ".bmp");
         bmp_filename = &bitmap_path[0];
         
         char log_path[path_length + 5];
@@ -323,15 +344,15 @@ int main(int argc, char **argv)
         
         if (dmg) {
             GB_init(&gb, GB_MODEL_DMG_B);
-            if (GB_load_boot_rom(&gb, boot_rom_path? boot_rom_path : executable_relative_path("dmg_boot.bin"))) {
-                perror("Failed to load boot ROM");
+            if (GB_load_boot_rom(&gb, boot_rom_path ?: executable_relative_path("dmg_boot.bin"))) {
+                fprintf(stderr, "Failed to load boot ROM from '%s'\n", boot_rom_path ?: executable_relative_path("dmg_boot.bin"));
                 exit(1);
             }
         }
         else {
             GB_init(&gb, GB_MODEL_CGB_E);
-            if (GB_load_boot_rom(&gb, boot_rom_path? boot_rom_path : executable_relative_path("cgb_boot.bin"))) {
-                perror("Failed to load boot ROM");
+            if (GB_load_boot_rom(&gb, boot_rom_path ?: executable_relative_path("cgb_boot.bin"))) {
+                fprintf(stderr, "Failed to load boot ROM from '%s'\n", boot_rom_path ?: executable_relative_path("cgb_boot.bin"));
                 exit(1);
             }
         }
@@ -433,7 +454,7 @@ int main(int argc, char **argv)
     }
 #ifndef _WIN32
     int wait_out;
-    while(wait(&wait_out) != -1);
+    while (wait(&wait_out) != -1);
 #endif
     return 0;
 }

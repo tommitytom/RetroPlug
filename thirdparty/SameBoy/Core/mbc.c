@@ -37,8 +37,8 @@ const GB_cartridge_t GB_cart_defs[256] = {
     [0xFC] =
     {  GB_MBC5  , GB_CAMERA      , true , true , false, false}, // FCh  POCKET CAMERA
     {  GB_NO_MBC, GB_STANDARD_MBC, false, false, false, false}, // FDh  BANDAI TAMA5 (Todo: Not supported)
-    {  GB_HUC3  , GB_STANDARD_MBC, true , true , false, false}, // FEh  HuC3 (Todo: Mapper support only)
-    {  GB_HUC1  , GB_STANDARD_MBC, true , true , false, false}, // FFh  HuC1+RAM+BATTERY (Todo: No IR bindings)
+    {  GB_HUC3  , GB_STANDARD_MBC, true , true , true,  false}, // FEh  HuC3
+    {  GB_HUC1  , GB_STANDARD_MBC, true , true , false, false}, // FFh  HuC1+RAM+BATTERY
 };
 
 void GB_update_mbc_mappings(GB_gameboy_t *gb)
@@ -86,6 +86,9 @@ void GB_update_mbc_mappings(GB_gameboy_t *gb)
         case GB_MBC3:
             gb->mbc_rom_bank = gb->mbc3.rom_bank;
             gb->mbc_ram_bank = gb->mbc3.ram_bank;
+            if (!gb->is_mbc30) {
+                gb->mbc_rom_bank &= 0x7F;
+            }
             if (gb->mbc_rom_bank == 0) {
                 gb->mbc_rom_bank = 1;
             }
@@ -128,10 +131,13 @@ void GB_configure_cart(GB_gameboy_t *gb)
             gb->mbc_ram_size = 0x200;
         }
         else {
-            static const int ram_sizes[256] = {0, 0x800, 0x2000, 0x8000, 0x20000, 0x10000};
+            static const unsigned ram_sizes[256] = {0, 0x800, 0x2000, 0x8000, 0x20000, 0x10000};
             gb->mbc_ram_size = ram_sizes[gb->rom[0x149]];
         }
-        gb->mbc_ram = malloc(gb->mbc_ram_size);
+        
+        if (gb->mbc_ram_size) {
+            gb->mbc_ram = malloc(gb->mbc_ram_size);
+        }
 
         /* Todo: Some games assume unintialized MBC RAM is 0xFF. It this true for all cartridges types? */
         memset(gb->mbc_ram, 0xFF, gb->mbc_ram_size);
@@ -144,6 +150,13 @@ void GB_configure_cart(GB_gameboy_t *gb)
     if (gb->cartridge_type->mbc_type == GB_MBC1) {
         if (gb->rom_size >= 0x44000 && memcmp(gb->rom + 0x104, gb->rom + 0x40104, 0x30) == 0) {
             gb->mbc1_wiring = GB_MBC1M_WIRING;
+        }
+    }
+    
+    /* Detect MBC30 */
+    if (gb->cartridge_type->mbc_type == GB_MBC3) {
+        if (gb->rom_size > 0x200000 || gb->mbc_ram_size > 0x8000) {
+            gb->is_mbc30 = true;
         }
     }
     

@@ -31,8 +31,8 @@ static void handle_command(GB_gameboy_t *gb)
                     image[i] = colors[(palette >> (gb->printer.image[i] * 2)) & 3];
                 }
                 
-                if (gb->printer.callback) {
-                    gb->printer.callback(gb, image, gb->printer.image_offset / 160,
+                if (gb->printer_callback) {
+                    gb->printer_callback(gb, image, gb->printer.image_offset / 160,
                                          gb->printer.command_data[1] >> 4, gb->printer.command_data[1] & 7,
                                          gb->printer.command_data[3] & 0x7F);
                 }
@@ -189,13 +189,13 @@ static void byte_reieve_completed(GB_gameboy_t *gb, uint8_t byte_received)
 
 static void serial_start(GB_gameboy_t *gb, bool bit_received)
 {
-    gb->printer.byte_being_recieved <<= 1;
-    gb->printer.byte_being_recieved |= bit_received;
-    gb->printer.bits_recieved++;
-    if (gb->printer.bits_recieved == 8) {
-        byte_reieve_completed(gb, gb->printer.byte_being_recieved);
-        gb->printer.bits_recieved = 0;
-        gb->printer.byte_being_recieved = 0;
+    gb->printer.byte_being_received <<= 1;
+    gb->printer.byte_being_received |= bit_received;
+    gb->printer.bits_received++;
+    if (gb->printer.bits_received == 8) {
+        byte_reieve_completed(gb, gb->printer.byte_being_received);
+        gb->printer.bits_received = 0;
+        gb->printer.byte_being_received = 0;
     }
 }
 
@@ -212,5 +212,5 @@ void GB_connect_printer(GB_gameboy_t *gb, GB_print_image_callback_t callback)
     memset(&gb->printer, 0, sizeof(gb->printer));
     GB_set_serial_transfer_bit_start_callback(gb, serial_start);
     GB_set_serial_transfer_bit_end_callback(gb, serial_end);
-    gb->printer.callback = callback;
+    gb->printer_callback = callback;
 }

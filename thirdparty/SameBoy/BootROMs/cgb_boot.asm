@@ -6,22 +6,15 @@ Start:
     ld sp, $fffe
 
 ; Clear memory VRAM
-    ld hl, $8000
-    call ClearMemoryPage
+    call ClearMemoryPage8000
     ld a, 2
     ld c, $70
     ld [c], a
-; Clear RAM Bank 2 (Like the original boot ROM
+; Clear RAM Bank 2 (Like the original boot ROM)
     ld h, $D0
-    xor a
     call ClearMemoryPage
     ld [c], a
 
-; Clear chosen input palette
-    ldh [InputPalette], a
-; Clear title checksum
-    ldh [TitleChecksum], a
-    
 ; Clear OAM
     ld h, $fe
     ld c, $a0
@@ -30,7 +23,19 @@ Start:
     dec c
     jr nz, .clearOAMLoop
 
-; Init Audio
+; Init waveform
+    ld c, $10
+.waveformLoop
+    ldi [hl], a
+    cpl
+    dec c
+    jr nz, .waveformLoop
+
+; Clear chosen input palette
+    ldh [InputPalette], a
+; Clear title checksum
+    ldh [TitleChecksum], a
+
     ld a, $80
     ldh [$26], a
     ldh [$11], a
@@ -39,8 +44,7 @@ Start:
     ldh [$25], a
     ld a, $77
     ldh [$24], a
-    
-    call InitWaveform
+    ld hl, $FF30
 
 ; Init BG palette
     ld a, $fc
@@ -67,9 +71,7 @@ Start:
 ; Clear the second VRAM bank
     ld a, 1
     ldh [$4F], a
-    xor a
-    ld hl, $8000
-    call ClearMemoryPage
+    call ClearMemoryPage8000
     call LoadTileset
 
     ld b, 3
@@ -87,20 +89,24 @@ ELSE
 
 .tilemapRowLoop
 
+    call .write_with_palette
+
+    ; Repeat the 3 tiles common between E and B. This saves 27 bytes after
+    ; compression, with a cost of 17 bytes of code.
     push af
-    ; Switch to second VRAM Bank
-    ld a, 1
-    ldh [$4F], a
-    ld [hl], 8
-    ; Switch to back first VRAM Bank
-    xor a
-    ldh [$4F], a
+    sub $20
+    sub $3
+    jr nc, .notspecial
+    add $20
+    call .write_with_palette
+    dec c
+.notspecial
     pop af
-    ldi [hl], a
-    add d
+
+    add d ; d = 3 for SameBoy logo, d = 1 for Nintendo logo
     dec c
     jr nz, .tilemapRowLoop
-    sub 47
+    sub 44
     push de
     ld de, $10
     add hl, de
@@ -116,6 +122,19 @@ ELSE
     ld l, $a7
     ld bc, $0107
     jr .tilemapRowLoop
+
+.write_with_palette
+    push af
+    ; Switch to second VRAM Bank
+    ld a, 1
+    ldh [$4F], a
+    ld [hl], 8
+    ; Switch to back first VRAM Bank
+    xor a
+    ldh [$4F], a
+    pop af
+    ldi [hl], a
+    ret
 .endTilemap
 ENDC
 
@@ -125,43 +144,44 @@ ENDC
     ld hl, BgPalettes
     xor a
 .expandPalettesLoop:
-IF !DEF(FAST)
     cpl
-ENDC
     ; One white
-    ldi [hl], a
-    ldi [hl], a
+    ld [hli], a
+    ld [hli], a
 
-IF DEF(FAST)
-    ; 3 more whites
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-ELSE    
-    ; The actual color
+    ; Mixed with white
     ld a, [de]
-    inc de
-    ldi [hl], a
+    inc e
+    or $20
+    ld b, a
+
     ld a, [de]
-    inc de
-    ldi [hl], a
+    dec e
+    or $84
+    rra
+    rr b
+    ld [hl], b
+    inc l
+    ld [hli], a
+
+    ; One black
+    xor a
+    ld [hli], a
+    ld [hli], a
+
+    ; One color
+    ld a, [de]
+    inc e
+    ld [hli], a
+    ld a, [de]
+    inc e
+    ld [hli], a
 
     xor a
-    ; Two blacks
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-    ldi [hl], a
-ENDC
-
     dec c
     jr nz, .expandPalettesLoop
 
-    ld hl, BgPalettes
-    call LoadBGPalettes64
+    call LoadPalettesFromHRAM
 
     ; Turn on LCD
     ld a, $91
@@ -170,8 +190,10 @@ ENDC
 IF !DEF(FAST)
     call DoIntroAnimation
 
+    ld a, 45
+    ldh [WaitLoopCounter], a
 ; Wait ~0.75 seconds
-    ld b, 45
+    ld b, a
     call WaitBFrames
 
     ; Play first sound
@@ -183,10 +205,6 @@ IF !DEF(FAST)
     ld a, $c1
     call PlaySound
 
-; Wait ~0.5 seconds
-    ld a, 30
-    ldh [WaitLoopCounter], a
-    
 .waitLoop
     call GetInputPaletteIndex
     call WaitFrame
@@ -198,6 +216,9 @@ ELSE
     call PlaySound
 ENDC
     call Preboot
+IF DEF(AGB)
+    ld b, 1
+ENDC
 
 ; Will be filled with NOPs
 
@@ -206,7 +227,6 @@ BootGame:
     ldh [$50], a
 
 SECTION "MoreStuff", ROM0[$200]
-
 ; Game Palettes Data
 TitleChecksums:
     db $00 ; Default
@@ -309,101 +329,103 @@ FirstChecksumWithDuplicate:
 ChecksumsEnd:
 
 PalettePerChecksum:
-; | $80 means game requires DMG boot tilemap
-    db 0 	; Default Palette
-    db 4 	; ALLEY WAY
-    db 5 	; YAKUMAN
-    db 35 	; BASEBALL, (Game and Watch 2)
-    db 34 	; TENNIS
-    db 3 	; TETRIS
-    db 31 	; QIX
-    db 15 	; DR.MARIO
-    db 10 	; RADARMISSION
-    db 5 	; F1RACE
-    db 19 	; YOSSY NO TAMAGO
-    db 36 	;
-    db 7 | $80 ; X
-    db 37 	; MARIOLAND2
-    db 30 	; YOSSY NO COOKIE
-    db 44 	; ZELDA
-    db 21 	;
-    db 32 	;
-    db 31 	; TETRIS FLASH
-    db 20 	; DONKEY KONG
-    db 5 	; MARIO'S PICROSS
-    db 33 	;
-    db 13 	; POKEMON RED, (GAMEBOYCAMERA G)
-    db 14 	; POKEMON GREEN
-    db 5 	; PICROSS 2
-    db 29 	; YOSSY NO PANEPON
-    db 5 	; KIRAKIRA KIDS
-    db 18 	; GAMEBOY GALLERY
-    db 9 	; POCKETCAMERA
-    db 3 	;
-    db 2 	; BALLOON KID
-    db 26 	; KINGOFTHEZOO
-    db 25 	; DMG FOOTBALL
-    db 25 	; WORLD CUP
-    db 41 	; OTHELLO
-    db 42 	; SUPER RC PRO-AM
-    db 26 	; DYNABLASTER
-    db 45 	; BOY AND BLOB GB2
-    db 42 	; MEGAMAN
-    db 45 	; STAR WARS-NOA
-    db 36 	;
-    db 38 	; WAVERACE
-    db 26 	;
-    db 42 	; LOLO2
-    db 30 	; YOSHI'S COOKIE
-    db 41 	; MYSTIC QUEST
-    db 34 	;
-    db 34 	; TOPRANKINGTENNIS
-    db 5 	; MANSELL
-    db 42 	; MEGAMAN3
-    db 6 	; SPACE INVADERS
-    db 5 	; GAME&WATCH
-    db 33 	; DONKEYKONGLAND95
-    db 25 	; ASTEROIDS/MISCMD
-    db 42 	; STREET FIGHTER 2
-    db 42 	; DEFENDER/JOUST
-    db 40 	; KILLERINSTINCT95
-    db 2 	; TETRIS BLAST
-    db 16 	; PINOCCHIO
-    db 25 	;
-    db 42 	; BA.TOSHINDEN
-    db 42 	; NETTOU KOF 95
-    db 5 	;
-    db 0 	; TETRIS PLUS
-    db 39 	; DONKEYKONGLAND 3
-    db 36 	;
-    db 22 	; SUPER MARIOLAND
-    db 25 	; GOLF
-    db 6 	; SOLARSTRIKER
-    db 32 	; GBWARS
-    db 12 	; KAERUNOTAMENI
-    db 36 	;
-    db 11 	; POKEMON BLUE
-    db 39 	; DONKEYKONGLAND
-    db 18 	; GAMEBOY GALLERY2
-    db 39 	; DONKEYKONGLAND 2
-    db 24 	; KID ICARUS
-    db 31 	; TETRIS2
-    db 50 	;
-    db 17 	; MOGURANYA
-    db 46 	;
-    db 6 	; GALAGA&GALAXIAN
-    db 27 	; BT2RAGNAROKWORLD
-    db 0 	; KEN GRIFFEY JR
-    db 47 	;
-    db 41 	; MAGNETIC SOCCER
-    db 41 	; VEGAS STAKES
-    db 0 	;
-    db 0 	; MILLI/CENTI/PEDE
-    db 19 	; MARIO & YOSHI
-    db 34 	; SOCCER
-    db 23 	; POKEBOM
-    db 18 	; G&W GALLERY
-    db 29 	; TETRIS ATTACK
+palette_index: MACRO ; palette, flags
+    db ((\1) * 3) | (\2) ; | $80 means game requires DMG boot tilemap
+ENDM
+    palette_index 0, 0  ; Default Palette
+    palette_index 4, 0  ; ALLEY WAY
+    palette_index 5, 0  ; YAKUMAN
+    palette_index 35, 0 ; BASEBALL, (Game and Watch 2)
+    palette_index 34, 0 ; TENNIS
+    palette_index 3, 0  ; TETRIS
+    palette_index 31, 0 ; QIX
+    palette_index 15, 0 ; DR.MARIO
+    palette_index 10, 0 ; RADARMISSION
+    palette_index 5, 0  ; F1RACE
+    palette_index 19, 0 ; YOSSY NO TAMAGO
+    palette_index 36, 0 ;
+    palette_index 7, $80 ; X
+    palette_index 37, 0 ; MARIOLAND2
+    palette_index 30, 0 ; YOSSY NO COOKIE
+    palette_index 44, 0 ; ZELDA
+    palette_index 21, 0 ;
+    palette_index 32, 0 ;
+    palette_index 31, 0 ; TETRIS FLASH
+    palette_index 20, 0 ; DONKEY KONG
+    palette_index 5, 0  ; MARIO'S PICROSS
+    palette_index 33, 0 ;
+    palette_index 13, 0 ; POKEMON RED, (GAMEBOYCAMERA G)
+    palette_index 14, 0 ; POKEMON GREEN
+    palette_index 5, 0  ; PICROSS 2
+    palette_index 29, 0 ; YOSSY NO PANEPON
+    palette_index 5, 0  ; KIRAKIRA KIDS
+    palette_index 18, 0 ; GAMEBOY GALLERY
+    palette_index 9, 0  ; POCKETCAMERA
+    palette_index 3, 0  ;
+    palette_index 2, 0  ; BALLOON KID
+    palette_index 26, 0 ; KINGOFTHEZOO
+    palette_index 25, 0 ; DMG FOOTBALL
+    palette_index 25, 0 ; WORLD CUP
+    palette_index 41, 0 ; OTHELLO
+    palette_index 42, 0 ; SUPER RC PRO-AM
+    palette_index 26, 0 ; DYNABLASTER
+    palette_index 45, 0 ; BOY AND BLOB GB2
+    palette_index 42, 0 ; MEGAMAN
+    palette_index 45, 0 ; STAR WARS-NOA
+    palette_index 36, 0 ;
+    palette_index 38, 0 ; WAVERACE
+    palette_index 26, 0 ;
+    palette_index 42, 0 ; LOLO2
+    palette_index 30, 0 ; YOSHI'S COOKIE
+    palette_index 41, 0 ; MYSTIC QUEST
+    palette_index 34, 0 ;
+    palette_index 34, 0 ; TOPRANKINGTENNIS
+    palette_index 5, 0  ; MANSELL
+    palette_index 42, 0 ; MEGAMAN3
+    palette_index 6, 0  ; SPACE INVADERS
+    palette_index 5, 0  ; GAME&WATCH
+    palette_index 33, 0 ; DONKEYKONGLAND95
+    palette_index 25, 0 ; ASTEROIDS/MISCMD
+    palette_index 42, 0 ; STREET FIGHTER 2
+    palette_index 42, 0 ; DEFENDER/JOUST
+    palette_index 40, 0 ; KILLERINSTINCT95
+    palette_index 2, 0  ; TETRIS BLAST
+    palette_index 16, 0 ; PINOCCHIO
+    palette_index 25, 0 ;
+    palette_index 42, 0 ; BA.TOSHINDEN
+    palette_index 42, 0 ; NETTOU KOF 95
+    palette_index 5, 0  ;
+    palette_index 0, 0  ; TETRIS PLUS
+    palette_index 39, 0 ; DONKEYKONGLAND 3
+    palette_index 36, 0 ;
+    palette_index 22, 0 ; SUPER MARIOLAND
+    palette_index 25, 0 ; GOLF
+    palette_index 6, 0  ; SOLARSTRIKER
+    palette_index 32, 0 ; GBWARS
+    palette_index 12, 0 ; KAERUNOTAMENI
+    palette_index 36, 0 ;
+    palette_index 11, 0 ; POKEMON BLUE
+    palette_index 39, 0 ; DONKEYKONGLAND
+    palette_index 18, 0 ; GAMEBOY GALLERY2
+    palette_index 39, 0 ; DONKEYKONGLAND 2
+    palette_index 24, 0 ; KID ICARUS
+    palette_index 31, 0 ; TETRIS2
+    palette_index 50, 0 ;
+    palette_index 17, 0 ; MOGURANYA
+    palette_index 46, 0 ;
+    palette_index 6, 0  ; GALAGA&GALAXIAN
+    palette_index 27, 0 ; BT2RAGNAROKWORLD
+    palette_index 0, 0  ; KEN GRIFFEY JR
+    palette_index 47, 0 ;
+    palette_index 41, 0 ; MAGNETIC SOCCER
+    palette_index 41, 0 ; VEGAS STAKES
+    palette_index 0, 0  ;
+    palette_index 0, 0  ; MILLI/CENTI/PEDE
+    palette_index 19, 0 ; MARIO & YOSHI
+    palette_index 34, 0 ; SOCCER
+    palette_index 23, 0 ; POKEBOM
+    palette_index 18, 0 ; G&W GALLERY
+    palette_index 29, 0 ; TETRIS ATTACK
 
 Dups4thLetterArray:
     db "BEFAARBEKEK R-URAR INAILICE R"
@@ -509,30 +531,31 @@ Palettes:
     dw $7FFF, $7FEA, $7D5F, $0000 ; CGA 1
     dw $4778, $3290, $1D87, $0861 ; DMG LCD
 
-KeyCombinationPalettes
-    db 1 ; Right
-    db 48 ; Left
-    db 5 ; Up
-    db 8 ; Down
-    db 0 ; Right + A
-    db 40 ; Left + A
-    db 43 ; Up + A
-    db 3 ; Down + A
-    db 6 ; Right + B
-    db 7 ; Left + B
-    db 28 ; Up + B
-    db 49 ; Down + B
+KeyCombinationPalettes:
+    db 1  * 3  ; Right
+    db 48 * 3  ; Left
+    db 5  * 3  ; Up
+    db 8  * 3  ; Down
+    db 0  * 3  ; Right + A
+    db 40 * 3  ; Left + A
+    db 43 * 3  ; Up + A
+    db 3  * 3  ; Down + A
+    db 6  * 3  ; Right + B
+    db 7  * 3  ; Left + B
+    db 28 * 3  ; Up + B
+    db 49 * 3  ; Down + B
     ; SameBoy "Exclusives"
-    db 51 ; Right + A + B
-    db 52 ; Left + A + B
-    db 53 ; Up + A + B
-    db 54 ; Down + A + B
+    db 51 * 3 ; Right + A + B
+    db 52 * 3 ; Left + A + B
+    db 53 * 3 ; Up + A + B
+    db 54 * 3 ; Down + A + B
 
 TrademarkSymbol:
     db $3c,$42,$b9,$a5,$b9,$a5,$42,$3c
 
 SameBoyLogo:
-    incbin "SameBoyLogo.pb8"
+    incbin "SameBoyLogo.pb12"
+
 
 AnimationColors:
     dw $7FFF ; White
@@ -544,9 +567,6 @@ AnimationColors:
     dw $6D38 ; Purple
     dw $7102 ; Blue
 AnimationColorsEnd:
-
-DMGPalettes:
-    dw $7FFF, $32BF, $00D0, $0000
 
 ; Helper Functions
 DoubleBitsAndWriteRowTwice:
@@ -594,8 +614,11 @@ PlaySound:
     ldh [$14], a
     ret
 
+ClearMemoryPage8000:
+    ld hl, $8000
 ; Clear from HL to HL | 0x2000
 ClearMemoryPage:
+    xor a
     ldi [hl], a
     bit 5, h
     jr z, ClearMemoryPage
@@ -634,30 +657,28 @@ ReadCGBLogoHalfTile:
     ld a, e
     ret
 
-; LoadTileset using PB8 codec, 2019 Damian Yerrick
-;
-; The logo is compressed using PB8, a form of RLE with unary-coded
-; run lengths.  Each block representing 8 bytes consists of a control
-; byte, where each bit (MSB to LSB) is 0 for literal or 1 for repeat
-; previous, followed by the literals in that block.
+; LoadTileset using PB12 codec, 2020 Jakub Kądziołka
+; (based on PB8 codec, 2019 Damian Yerrick)
 
 SameBoyLogo_dst = $8080
 SameBoyLogo_length = (128 * 24) / 64
 
 LoadTileset:
     ld hl, SameBoyLogo
-    ld de, SameBoyLogo_dst
+    ld de, SameBoyLogo_dst - 1
     ld c, SameBoyLogo_length
-.pb8BlockLoop:
-    ; Register map for PB8 decompression
+.refill
+    ; Register map for PB12 decompression
     ; HL: source address in boot ROM
     ; DE: destination address in VRAM
     ; A: Current literal value
     ; B: Repeat bits, terminated by 1000...
-    ; C: Number of 8-byte blocks left in this block
     ; Source address in HL lets the repeat bits go straight to B,
     ; bypassing A and avoiding spilling registers to the stack.
     ld b, [hl]
+    dec b
+    jr z, .sameboyLogoEnd
+    inc b
     inc hl
 
     ; Shift a 1 into lower bit of shift value.  Once this bit
@@ -665,26 +686,53 @@ LoadTileset:
     scf
     rl b
 
-.pb8BitLoop:
+.loop
     ; If not a repeat, load a literal byte
-    jr c,.pb8Repeat
-    ld a, [hli]
-.pb8Repeat:
-    ; Decompressed data uses colors 0 and 1, so write once, inc twice
-    ld [de], a
-    inc de
-    inc de
+    jr c, .simple_repeat
     sla b
-    jr nz, .pb8BitLoop
+    jr c, .shifty_repeat
+    ld a, [hli]
+    jr .got_byte
+.shifty_repeat
+    sla b
+    jr nz, .no_refill_during_shift
+    ld b, [hl] ; see above. Also, no, factoring it out into a callable
+    inc hl ; routine doesn't save bytes, even with conditional calls
+    scf
+    rl b
+.no_refill_during_shift
+    ld c, a
+    jr nc, .shift_left
+    srl a
+    db $fe ; eat the add a with cp d8
+.shift_left
+    add a
+    sla b
+    jr c, .go_and
+    or c
+    db $fe ; eat the and c with cp d8
+.go_and
+    and c
+    jr .got_byte
+.simple_repeat
+    sla b
+    jr c, .got_byte
+    ; far repeat
+    dec de
+    ld a, [de]
+    inc de
+.got_byte
+    inc de
+    ld [de], a
+    sla b
+    jr nz, .loop
+    jr .refill
 
-    dec c
-    jr nz, .pb8BlockLoop
-
-; End PB8 decoding.  The rest uses HL as the destination
-    ld h, d
-    ld l, e
-
+; End PB12 decoding.  The rest uses HL as the destination
 .sameboyLogoEnd
+    ld h, d
+    ld l, $80
+
 ; Copy (unresized) ROM logo
     ld de, $104
 .CGBROMLogoLoop
@@ -709,29 +757,6 @@ ReadTrademarkSymbol:
     inc hl
     dec c
     jr nz, .loadTrademarkSymbolLoop
-    ret
-
-LoadObjPalettes:
-    ld c, $6A
-    jr LoadPalettes
-
-LoadBGPalettes64:
-    ld d, 64
-
-LoadBGPalettes:
-    ld e, 0
-    ld c, $68
-
-LoadPalettes:
-    ld a, $80
-    or e
-    ld [c], a
-    inc c
-.loop
-    ld a, [hli]
-    ld [c], a
-    dec d
-    jr nz, .loop
     ret
 
 DoIntroAnimation:
@@ -773,39 +798,82 @@ IF !DEF(FAST)
     ld hl, BgPalettes
 .frameLoop
     push bc
-    call BrightenColor
+
+    ; Brighten Color
+    ld a, [hli]
+    ld e, a
+    ld a, [hld]
+    ld d, a
+    ; RGB(1,1,1)
+    ld bc, $421
+
+   ; Is blue maxed?
+    ld a, e
+    and $1F
+    cp $1F
+    jr nz, .blueNotMaxed
+    dec c
+.blueNotMaxed
+
+    ; Is green maxed?
+    ld a, e
+    cp $E0
+    jr c, .greenNotMaxed
+    ld a, d
+    and $3
+    cp $3
+    jr nz, .greenNotMaxed
+    res 5, c
+.greenNotMaxed
+
+    ; Is red maxed?
+    ld a, d
+    and $7C
+    cp $7C
+    jr nz, .redNotMaxed
+    res 2, b
+.redNotMaxed
+
+    ; add de, bc
+    ; ld [hli], de
+    ld a, e
+    add c
+    ld [hli], a
+    ld a, d
+    adc b
+    ld [hli], a
     pop bc
+
     dec c
     jr nz, .frameLoop
 
     call WaitFrame
+    call LoadPalettesFromHRAM
     call WaitFrame
-    ld hl, BgPalettes
-    call LoadBGPalettes64
     dec b
     jr nz, .fadeLoop
 ENDC
+    ld a, 1
     call ClearVRAMViaHDMA
-    ; Select the first bank
-    xor a
-    ldh [$4F], a
-    cpl
+    call _ClearVRAMViaHDMA
+    call ClearVRAMViaHDMA ; A = $40, so it's bank 0
+    ld a, $ff
     ldh [$00], a
-    call ClearVRAMViaHDMA
-    
+
     ; Final values for CGB mode
-    ld de, $ff56
+    ld d, a
+    ld e, c
     ld l, $0d
-    
+
     ld a, [$143]
     bit 7, a
     call z, EmulateDMG
     bit 7, a
-    
+
     ldh [$4C], a
     ldh a, [TitleChecksum]
     ld b, a
-    
+
     jr z, .skipDMGForCGBCheck
     ldh a, [InputPalette]
     and a
@@ -818,7 +886,7 @@ IF DEF(AGB)
     ld c, a
     add a, $11
     ld h, c
-    ld b, 1
+    ; B is set to 1 after ret
 ELSE
     ; Set registers to match the original CGB boot
     ; AF = $1180, C = 0
@@ -836,6 +904,14 @@ ENDC
     ld a, $1
     ret
 
+GetKeyComboPalette:
+    ld hl, KeyCombinationPalettes - 1 ; Return value is 1-based, 0 means nothing down
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl]
+    ret
+
 EmulateDMG:
     ld a, 1
     ldh [$6C], a ; DMG Emulation
@@ -847,11 +923,7 @@ EmulateDMG:
     ldh a, [InputPalette]
     and a
     jr z, .nothingDown
-    ld hl, KeyCombinationPalettes - 1 ; Return value is 1-based, 0 means nothing down
-    ld c ,a
-    ld b, 0
-    add hl, bc
-    ld a, [hl]
+    call GetKeyComboPalette
     jr .paletteFromKeys
 .nothingDown
     ld a, b
@@ -860,8 +932,7 @@ EmulateDMG:
     call LoadPalettesFromIndex
     ld a, 4
     ; Set the final values for DMG mode
-    ld d, 0
-    ld e, $8
+    ld de, 8
     ld l, $7c
     ret
 
@@ -934,16 +1005,16 @@ GetPaletteIndex:
     xor a
     ret
 
-LoadPalettesFromIndex: ; a = index of combination
-    ld b, a
-    ; Multiply by 3
-    add b
-    add b
-
+; optimizations in callers rely on this returning with b = 0
+GetPaletteCombo:
     ld hl, PaletteCombinations
     ld b, 0
     ld c, a
     add hl, bc
+    ret
+
+LoadPalettesFromIndex: ; a = index of combination
+    call GetPaletteCombo
 
     ; Obj Palettes
     ld e, 0
@@ -951,11 +1022,12 @@ LoadPalettesFromIndex: ; a = index of combination
     ld a, [hli]
     push hl
     ld hl, Palettes
-    ld b, 0
+    ; b is already 0
     ld c, a
     add hl, bc
     ld d, 8
-    call LoadObjPalettes
+    ld c, $6A
+    call LoadPalettes
     pop hl
     bit 3, e
     jr nz, .loadBGPalette
@@ -963,84 +1035,48 @@ LoadPalettesFromIndex: ; a = index of combination
     jr .loadObjPalette
 .loadBGPalette
     ;BG Palette
-    ld a, [hli]
+    ld c, [hl]
+    ; b is already 0
     ld hl, Palettes
-    ld b, 0
-    ld c, a
     add hl, bc
     ld d, 8
-    jp LoadBGPalettes
+    jr LoadBGPalettes
 
-BrightenColor:
+LoadPalettesFromHRAM:
+    ld hl, BgPalettes
+    ld d, 64
+
+LoadBGPalettes:
+    ld e, 0
+    ld c, $68
+
+LoadPalettes:
+    ld a, $80
+    or e
+    ld [c], a
+    inc c
+.loop
     ld a, [hli]
-    ld e, a
-    ld a, [hld]
-    ld d, a
-    ; RGB(1,1,1)
-    ld bc, $421
-
-    ; Is blue maxed?
-    ld a, e
-    and $1F
-    cp $1F
-    jr nz, .blueNotMaxed
-    res 0, c
-.blueNotMaxed
-
-    ; Is green maxed?
-    ld a, e
-    and $E0
-    cp $E0
-    jr nz, .greenNotMaxed
-    ld a, d
-    and $3
-    cp $3
-    jr nz, .greenNotMaxed
-    res 5, c
-.greenNotMaxed
-
-    ; Is red maxed?
-    ld a, d
-    and $7C
-    cp $7C
-    jr nz, .redNotMaxed
-    res 2, b
-.redNotMaxed
-
-    ; Add de to bc
-    push hl
-    ld h, d
-    ld l, e
-    add hl, bc
-    ld d, h
-    ld e, l
-    pop hl
-
-    ld a, e
-    ld [hli], a
-    ld a, d
-    ld [hli], a
+    ld [c], a
+    dec d
+    jr nz, .loop
     ret
 
 ClearVRAMViaHDMA:
-    ld hl, $FF51
-
-    ; Src
-    ld a, $88
-    ld [hli], a
-    xor a
-    ld [hli], a
-
-    ; Dest
-    ld a, $98
-    ld [hli], a
-    ld a, $A0
-    ld [hli], a
-
-    ; Do it
-    ld [hl], $12
+    ldh [$4F], a
+    ld hl, HDMAData
+_ClearVRAMViaHDMA:
+    ld c, $51
+    ld b, 5
+.loop
+    ld a, [hli]
+    ldh [c], a
+    inc c
+    dec b
+    jr nz, .loop
     ret
 
+; clobbers AF and HL
 GetInputPaletteIndex:
     ld a, $20 ; Select directions
     ldh [$00], a
@@ -1048,11 +1084,10 @@ GetInputPaletteIndex:
     cpl
     and $F
     ret z ; No direction keys pressed, no palette
-    push bc
-    ld c, 0
 
+    ld l, 0
 .directionLoop
-    inc c
+    inc l
     rra
     jr nc, .directionLoop
 
@@ -1065,40 +1100,24 @@ GetInputPaletteIndex:
     rla
     rla
     and $C
-    add c
-    ld b, a
+    add l
+    ld l, a
     ldh a, [InputPalette]
-    ld c, a
-    ld a, b
-    ldh [InputPalette], a
-    cp c
-    pop bc
+    cp l
     ret z ; No change, don't load
+    ld a, l
+    ldh [InputPalette], a
     ; Slide into change Animation Palette
 
 ChangeAnimationPalette:
-    push af
-    push hl
     push bc
     push de
-    ld hl, KeyCombinationPalettes - 1 ; Input palettes are 1-based, 0 means nothing down
-    ld c ,a
-    ld b, 0
-    add hl, bc
-    ld a, [hl]
-    ld b, a
-    ; Multiply by 3
-    add b
-    add b
-
-    ld hl, PaletteCombinations + 2; Background Palette
-    ld b, 0
-    ld c, a
-    add hl, bc
-    ld a, [hl]
+    call GetKeyComboPalette
+    call GetPaletteCombo
+    inc l
+    inc l
+    ld c, [hl]
     ld hl, Palettes + 1
-    ld b, 0
-    ld c, a
     add hl, bc
     ld a, [hld]
     cp $7F ; Is white color?
@@ -1108,58 +1127,83 @@ ChangeAnimationPalette:
 .isWhite
     push af
     ld a, [hli]
+
     push hl
-    ld hl, BgPalettes ; First color, all palette
+    ld hl, BgPalettes ; First color, all palettes
+    call ReplaceColorInAllPalettes
+    ld l, LOW(BgPalettes + 2)  ; Second color, all palettes
     call ReplaceColorInAllPalettes
     pop hl
-    ldh [BgPalettes + 2], a ; Second color, first palette
+    ldh [BgPalettes + 6], a ; Fourth color, first palette
 
     ld a, [hli]
     push hl
-    ld hl, BgPalettes + 1 ; First color, all palette
+    ld hl, BgPalettes + 1 ; First color, all palettes
+    call ReplaceColorInAllPalettes
+    ld l, LOW(BgPalettes + 3) ; Second color, all palettes
     call ReplaceColorInAllPalettes
     pop hl
-    ldh [BgPalettes + 3], a ; Second color, first palette
+    ldh [BgPalettes + 7], a ; Fourth color, first palette
+
     pop af
     jr z, .isNotWhite
     inc hl
     inc hl
 .isNotWhite
+    ; Mixing code by ISSOtm
+    ldh a, [BgPalettes + 7 * 8 + 2]
+    and ~$21
+    ld b, a
     ld a, [hli]
-    ldh [BgPalettes + 7 * 8 + 2], a ; Second color, 7th palette
+    and ~$21
+    add a, b
+    ld b, a
+    ld a, [BgPalettes + 7 * 8 + 3]
+    res 2, a ; and ~$04, but not touching carry
+    ld c, [hl]
+    res 2, c ; and ~$04, but not touching carry
+    adc a, c
+    rra ; Carry sort of "extends" the accumulator, we're bringing that bit back home
+    ld [BgPalettes + 7 * 8 + 3], a
+    ld a, b
+    rra
+    ld [BgPalettes + 7 * 8 + 2], a
+    dec l
+
     ld a, [hli]
-    ldh [BgPalettes + 7 * 8 + 3], a ; Second color, 7th palette
+    ldh [BgPalettes + 7 * 8 + 6], a ; Fourth color, 7th palette
+    ld a, [hli]
+    ldh [BgPalettes + 7 * 8 + 7], a ; Fourth color, 7th palette
+
     ld a, [hli]
     ldh [BgPalettes + 4], a ; Third color, first palette
-    ld a, [hl]
+    ld a, [hli]
     ldh [BgPalettes + 5], a ; Third color, first palette
 
+
     call WaitFrame
-    ld hl, BgPalettes
-    call LoadBGPalettes64
+    call LoadPalettesFromHRAM
     ; Delay the wait loop while the user is selecting a palette
-    ld a, 30
+    ld a, 45
     ldh [WaitLoopCounter], a
     pop de
     pop bc
-    pop hl
-    pop af
     ret
 
 ReplaceColorInAllPalettes:
     ld de, 8
-    ld c, 8
+    ld c, e
 .loop
     ld [hl], a
     add hl, de
     dec c
     jr nz, .loop
     ret
-    
+
 LoadDMGTilemap:
     push af
     call WaitFrame
-    ld a,$19      ; Trademark symbol
+    ld a, $19      ; Trademark symbol
     ld [$9910], a ; ... put in the superscript position
     ld hl,$992f   ; Bottom right corner of the logo
     ld c,$c       ; Tiles in a logo row
@@ -1169,27 +1213,20 @@ LoadDMGTilemap:
     ldd [hl], a
     dec c
     jr nz, .tilemapLoop
-    ld l,$0f ; Jump to top row
+    ld l, $0f ; Jump to top row
     jr .tilemapLoop
 .tilemapDone
     pop af
     ret
 
-InitWaveform:
-    ld hl, $FF30
-; Init waveform
-    xor a
-    ld c, $10
-.waveformLoop
-    ldi [hl], a
-    cpl
-    dec c
-    jr nz, .waveformLoop
-    ret
+HDMAData:
+    db $88, $00, $98, $A0, $12
+    db $88, $00, $80, $00, $40
 
-SECTION "ROMMax", ROM0[$900]
-    ; Prevent us from overflowing
-    ds 1
+BootEnd:
+IF BootEnd > $900
+    FAIL "BootROM overflowed: {BootEnd}"
+ENDC
 
 SECTION "HRAM", HRAM[$FF80]
 TitleChecksum:
