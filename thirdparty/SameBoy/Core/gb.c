@@ -670,9 +670,10 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
 {
     if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
     if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
-    if (gb->cartridge_type->has_rtc) {
-        GB_rtc_save_t rtc_save;
-        return gb->mbc_ram_size + sizeof(rtc_save.vba64);
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        GB_log(gb, "Could not open battery save: %s.\n", strerror(errno));
+        return errno;
     }
 
     if (fwrite(gb->mbc_ram, 1, gb->mbc_ram_size, f) != gb->mbc_ram_size) {
@@ -722,11 +723,16 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
 #else
         rtc_save.vba64.last_rtc_second = gb->last_rtc_second;
 #endif
+        if (fwrite(&rtc_save.vba64, 1, sizeof(rtc_save.vba64), f) != sizeof(rtc_save.vba64)) {
+            fclose(f);
+            return EIO;
+        }
 
-        memcpy(buffer + gb->mbc_ram_size, &rtc_save.vba64, sizeof(rtc_save.vba64));
     }
 
-    return 0;
+    errno = 0;
+    fclose(f);
+    return errno;
 }
 
 void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size)
@@ -834,12 +840,16 @@ exit:
 }
 
 /* Loading will silently stop if the format is incomplete */
-void GB_load_battery_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size) {
-    if (size < gb->mbc_ram_size) {
-        goto reset_rtc; // Buffer provided not large enough
+void GB_load_battery(GB_gameboy_t *gb, const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return;
     }
 
-    memcpy(gb->mbc_ram, buffer, gb->mbc_ram_size);
+    if (fread(gb->mbc_ram, 1, gb->mbc_ram_size, f) != gb->mbc_ram_size) {
+        goto reset_rtc;
+    }
 
     if (gb->cartridge_type->mbc_type == GB_HUC3) {
         GB_huc3_rtc_time_t rtc_save;
@@ -869,14 +879,7 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, 
     }
 
     GB_rtc_save_t rtc_save;
-    int rtc_size = size - gb->mbc_ram_size;
-    if (rtc_size > sizeof(rtc_save)) {
-        goto reset_rtc; // Buffer too large
-    }
-
-    memcpy(&rtc_save, buffer + gb->mbc_ram_size, rtc_size);
-
-    switch (rtc_size) {
+    switch (fread(&rtc_save, 1, sizeof(rtc_save), f)) {
         case sizeof(rtc_save.sameboy_legacy):
             memcpy(&gb->rtc_real, &rtc_save.sameboy_legacy.rtc_real, sizeof(gb->rtc_real));
             memcpy(&gb->rtc_latched, &rtc_save.sameboy_legacy.rtc_real, sizeof(gb->rtc_real));
@@ -940,69 +943,8 @@ reset_rtc:
     gb->huc3_minutes = 0xFFF;
     gb->huc3_alarm_enabled = false;
 exit:
-
+    fclose(f);
     return;
-}
-
-int GB_save_battery(GB_gameboy_t *gb, const char *path)
-{
-    size_t size = GB_battery_size(gb);
-
-    if (size == 0) return 0;
-
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        GB_log(gb, "Could not open battery save: %s.\n", strerror(errno));
-        return errno;
-    }
-
-    char* buffer = malloc(size);
-    int err = GB_save_battery_to_buffer(gb, buffer, size);
-    if (err) {
-        free(buffer);
-        return err;
-    }
-
-    if (fwrite(buffer, 1, size, f) != size) {
-        free(buffer);
-        fclose(f);
-        return EIO;
-    }
-
-    free(buffer);
-
-    errno = 0;
-    fclose(f);
-    return errno;
-}
-
-/* Loading will silently stop if the format is incomplete */
-void GB_load_battery(GB_gameboy_t *gb, const char *path)
-{
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    int size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (!size) {
-        fclose(f);
-        return;
-    }
-
-    char* buffer = malloc(size);
-    if (fread(buffer, 1, size, f) != size) {
-        free(buffer);
-        fclose(f);
-    }
-
-    GB_load_battery_from_buffer(gb, buffer, size);
-
-    free(buffer);
-    fclose(f);
 }
 
 uint8_t GB_run(GB_gameboy_t *gb)
