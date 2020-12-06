@@ -2,15 +2,15 @@
 #define opengl_compat_h
 
 #define GL_GLEXT_PROTOTYPES
-#include <SDL2/SDL_opengl.h>
-#include <SDL2/SDL_video.h>
+#include <SDL_opengl.h>
+#include <SDL_video.h>
 
 #ifndef __APPLE__
 #define GL_COMPAT_NAME(func) gl_compat_##func
 
 #define GL_COMPAT_WRAPPER(func) \
 ({  extern typeof(func) *GL_COMPAT_NAME(func); \
-if(!GL_COMPAT_NAME(func)) GL_COMPAT_NAME(func) = SDL_GL_GetProcAddress(#func); \
+if (!GL_COMPAT_NAME(func)) GL_COMPAT_NAME(func) = SDL_GL_GetProcAddress(#func); \
     GL_COMPAT_NAME(func); \
 })
 

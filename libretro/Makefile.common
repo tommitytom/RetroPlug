@@ -1,3 +1,5 @@
+include $(CORE_DIR)/version.mk
+
 INCFLAGS    := -I$(CORE_DIR)
 
 SOURCES_C   := $(CORE_DIR)/Core/gb.c \
@@ -13,6 +15,7 @@ SOURCES_C   := $(CORE_DIR)/Core/gb.c \
                $(CORE_DIR)/Core/joypad.c \
                $(CORE_DIR)/Core/save_state.c \
                $(CORE_DIR)/Core/random.c \
+               $(CORE_DIR)/Core/rumble.c \
                $(CORE_DIR)/libretro/agb_boot.c \
                $(CORE_DIR)/libretro/cgb_boot.c \
                $(CORE_DIR)/libretro/dmg_boot.c \
@@ -20,7 +23,7 @@ SOURCES_C   := $(CORE_DIR)/Core/gb.c \
                $(CORE_DIR)/libretro/sgb2_boot.c \
                $(CORE_DIR)/libretro/libretro.c
 
-CFLAGS += -DDISABLE_TIMEKEEPING -DDISABLE_REWIND -DDISABLE_DEBUGGER
+CFLAGS += -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_REWIND -DGB_DISABLE_DEBUGGER -DGB_DISABLE_CHEATS
 
 
 SOURCES_CXX :=	

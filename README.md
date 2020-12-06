@@ -33,21 +33,24 @@ Features currently supported only with the Cocoa version:
 ## Compatibility
 SameBoy passes all of [blargg's test ROMs](http://gbdev.gg8.se/wiki/articles/Test_ROMs#Blargg.27s_tests), all of [mooneye-gb's](https://github.com/Gekkio/mooneye-gb) tests (Some tests require the original boot ROMs), and all of [Wilbert Pol's tests](https://github.com/wilbertpol/mooneye-gb/tree/master/tests/acceptance). SameBoy should work with most games and demos, please [report](https://github.com/LIJI32/SameBoy/issues/new) any broken ROM. The latest results for SameBoy's automatic tester are available [here](https://sameboy.github.io/automation/).
 
+## Contributing
+SameBoy is an open-source project licensed under the MIT license, and you're welcome to contribute by creating issues, implementing new features, improving emulation accuracy and fixing existing open issues. You can read the [contribution guidelines](CONTRIBUTING.md) to make sure your contributions are as effective as possible.
+
 ## Compilation
 SameBoy requires the following tools and libraries to build:
- * clang
+ * clang (Recommended; required for macOS) or GCC
  * make
- * Cocoa port: OS X SDK and Xcode command line tools
- * SDL port: SDL2.framework (OS X) or libsdl2 (Other platforms)
- * [rgbds](https://github.com/bentley/rgbds/releases/), for boot ROM compilation
+ * macOS Cocoa port: macOS SDK and Xcode (For command line tools and ibtool)
+ * SDL port: libsdl2
+ * [rgbds](https://github.com/gbdev/rgbds/releases/), for boot ROM compilation
 
 On Windows, SameBoy also requires:
  * Visual Studio (For headers, etc.)
  * [GnuWin](http://gnuwin32.sourceforge.net/)
- * Running vcvars32 before running make. Make sure all required tools and libraries are in %PATH% and %lib%, respectively.
+ * Running vcvars32 before running make. Make sure all required tools and libraries are in %PATH% and %lib%, respectively. (see [Build FAQ](https://github.com/LIJI32/SameBoy/blob/master/build-faq.md) for more details on Windows compilation)
 
-To compile, simply run `make`. The targets are `cocoa` (Default for macOS), `sdl` (Default for everything else), `libretro`, `bootroms` and `tester`. You may also specify `CONF=debug` (default), `CONF=release` or `CONF=native_release` to control optimization and symbols. `native_release` is faster than `release`, but is optimized to the host's CPU and therefore is not portable. You may set `BOOTROMS_DIR=...` to a directory containing precompiled `dmg_boot.bin` and `cgb_boot.bin` files, otherwise the build system will compile and use SameBoy's own boot ROMs.
+To compile, simply run `make`. The targets are `cocoa` (Default for macOS), `sdl` (Default for everything else), `libretro`, `bootroms` and `tester`. You may also specify `CONF=debug` (default), `CONF=release`, `CONF=native_release` or `CONF=fat_release`  to control optimization, symbols and multi-architectures. `native_release` is faster than `release`, but is optimized to the host's CPU and therefore is not portable. `fat_release` is exclusive to macOS and builds x86-64 and ARM64 fat binaries; this requires using a recent enough `clang` and macOS SDK using `xcode-select`, or setting them explicitly with `CC=` and `SYSROOT=`, respectively. All other configurations will build to your host architecture. You may set `BOOTROMS_DIR=...` to a directory containing precompiled boot ROM files, otherwise the build system will compile and use SameBoy's own boot ROMs.
 
 By default, the SDL port will look for resource files with a path relative to executable. If you are packaging SameBoy, you may wish to override this by setting the `DATA_DIR` variable during compilation to the target path of the directory containing all files (apart from the executable, that's not necessary) from the `build/bin/SDL` directory in the source tree. Make sure the variable ends with a `/` character.
 
-SameBoy was compiled and tested on macOS, Ubuntu and 32-bit Windows 7.
+SameBoy is compiled and tested on macOS and Ubuntu.

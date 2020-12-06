@@ -1,7 +1,9 @@
 #import "AppDelegate.h"
 #include "GBButtons.h"
+#include "GBView.h"
 #include <Core/gb.h>
 #import <Carbon/Carbon.h>
+#import <JoyKit/JoyKit.h>
 
 @implementation AppDelegate
 {
@@ -36,11 +38,22 @@
                                                               @"GBColorCorrection": @(GB_COLOR_CORRECTION_EMULATE_HARDWARE),
                                                               @"GBHighpassFilter": @(GB_HIGHPASS_REMOVE_DC_OFFSET),
                                                               @"GBRewindLength": @(10),
+                                                              @"GBFrameBlendingMode": @([defaults boolForKey:@"DisableFrameBlending"]? GB_FRAME_BLENDING_MODE_DISABLED : GB_FRAME_BLENDING_MODE_ACCURATE),
                                                               
                                                               @"GBDMGModel": @(GB_MODEL_DMG_B),
                                                               @"GBCGBModel": @(GB_MODEL_CGB_E),
                                                               @"GBSGBModel": @(GB_MODEL_SGB2),
+                                                              @"GBRumbleMode": @(GB_RUMBLE_CARTRIDGE_ONLY),
                                                               }];
+    
+    [JOYController startOnRunLoop:[NSRunLoop currentRunLoop] withOptions:@{
+        JOYAxes2DEmulateButtonsKey: @YES,
+        JOYHatsEmulateButtonsKey: @YES,
+    }];
+    
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBNotificationsUsed"]) {
+        [NSUserNotificationCenter defaultUserNotificationCenter].delegate = self;
+    }
 }
 
 - (IBAction)toggleDeveloperMode:(id)sender
@@ -68,8 +81,27 @@
     if ([anItem action] == @selector(toggleDeveloperMode:)) {
         [(NSMenuItem *)anItem setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"DeveloperMode"]];
     }
-
+    
+    if (anItem == self.linkCableMenuItem) {
+        return [[NSDocumentController sharedDocumentController] documents].count > 1;
+    }
     return true;
+}
+
+- (void)menuNeedsUpdate:(NSMenu *)menu
+{
+    NSMutableArray *items = [NSMutableArray array];
+    NSDocument *currentDocument = [[NSDocumentController sharedDocumentController] currentDocument];
+    
+    for (NSDocument *document in [[NSDocumentController sharedDocumentController] documents]) {
+        if (document == currentDocument) continue;
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:document.displayName action:@selector(connectLinkCable:) keyEquivalent:@""];
+        item.representedObject = document;
+        item.image = [[NSWorkspace sharedWorkspace] iconForFile:document.fileURL.path];
+        [item.image setSize:NSMakeSize(16, 16)];
+        [items addObject:item];
+    }
+    menu.itemArray = items;
 }
 
 - (IBAction) showPreferences: (id) sender
@@ -92,4 +124,12 @@
     return YES;
 }
 
+- (void)userNotificationCenter:(NSUserNotificationCenter *)center didActivateNotification:(NSUserNotification *)notification
+{
+    [[NSDocumentController sharedDocumentController] openDocumentWithContentsOfFile:notification.identifier display:YES];
+}
+
+- (IBAction)nop:(id)sender
+{
+}
 @end

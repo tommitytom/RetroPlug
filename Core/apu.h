@@ -64,10 +64,10 @@ typedef struct
 
     uint8_t square_sweep_countdown; // In 128Hz
     uint8_t square_sweep_calculate_countdown; // In 2 MHz
-    uint16_t new_sweep_sample_legnth;
-    uint16_t shadow_sweep_sample_legnth;
-    bool sweep_enabled;
-    bool sweep_decreasing;
+    uint16_t sweep_length_addend;
+    uint16_t shadow_sweep_sample_length;
+    GB_PADDING(bool, sweep_enabled);
+    GB_PADDING(bool, sweep_decreasing);
 
     struct {
         uint16_t pulse_length; // Reloaded from NRX1 (xorred), in 256Hz DIV ticks
@@ -114,8 +114,13 @@ typedef struct
 
     } noise_channel;
 
-    bool skip_div_event;
+#define GB_SKIP_DIV_EVENT_INACTIVE 0
+#define GB_SKIP_DIV_EVENT_SKIPPED 1
+#define GB_SKIP_DIV_EVENT_SKIP 2
+    uint8_t skip_div_event;
     bool current_lfsr_sample;
+    uint8_t pcm_mask[2]; // For CGB-0 to CGB-C PCM read glitch
+    uint8_t channel_1_restart_hold;
 } GB_apu_t;
 
 typedef enum {
@@ -143,9 +148,12 @@ typedef struct {
     GB_double_sample_t highpass_diff;
     
     GB_sample_callback_t sample_callback;
+    
+    bool rate_set_in_clocks;
 } GB_apu_output_t;
 
 void GB_set_sample_rate(GB_gameboy_t *gb, unsigned sample_rate);
+void GB_set_sample_rate_by_clocks(GB_gameboy_t *gb, double cycles_per_sample); /* Cycles are in 8MHz units */
 void GB_set_highpass_filter_mode(GB_gameboy_t *gb, GB_highpass_mode_t mode);
 void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback);
 #ifdef GB_INTERNAL
@@ -156,6 +164,7 @@ void GB_apu_div_event(GB_gameboy_t *gb);
 void GB_apu_init(GB_gameboy_t *gb);
 void GB_apu_run(GB_gameboy_t *gb);
 void GB_apu_update_cycles_per_sample(GB_gameboy_t *gb);
+void GB_borrow_sgb_border(GB_gameboy_t *gb);
 #endif
 
 #endif /* apu_h */

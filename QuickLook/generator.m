@@ -61,9 +61,9 @@ static OSStatus render(CGContextRef cgContext, CFURLRef url, bool showBorder)
     }
     
     if (showBorder) {
-        /* Use the CGB flag to determine the cartrdige "look":
+        /* Use the CGB flag to determine the cartridge "look":
          - DMG cartridges are grey
-         - CGB cartrdiges are transparent
+         - CGB cartridges are transparent
          - CGB cartridges that support DMG systems are black
          */
         NSImage *effectiveTemplate = nil;
@@ -79,7 +79,7 @@ static OSStatus render(CGContextRef cgContext, CFURLRef url, bool showBorder)
         }
         
         /* Mask it with the template (The middle part of the template image is transparent) */
-        [effectiveTemplate drawInRect:(NSRect){{0,0},template.size}];
+        [effectiveTemplate drawInRect:(NSRect){{0, 0}, template.size}];
     }
     
     CGColorSpaceRelease(colorSpaceRef);
@@ -105,8 +105,9 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
 
 OSStatus GenerateThumbnailForURL(void *thisInterface, QLThumbnailRequestRef thumbnail, CFURLRef url, CFStringRef contentTypeUTI, CFDictionaryRef options, CGSize maxSize)
 {
+    extern NSString *kQLThumbnailPropertyIconFlavorKey;
     @autoreleasepool {
-        CGContextRef cgContext = QLThumbnailRequestCreateContext(thumbnail, ((NSSize){1024, 1024}), true, (__bridge CFDictionaryRef)(@{@"IconFlavor" : @(0)}));
+        CGContextRef cgContext = QLThumbnailRequestCreateContext(thumbnail, ((NSSize){1024, 1024}), true, (__bridge CFDictionaryRef)(@{kQLThumbnailPropertyIconFlavorKey : @(0)}));
         if (render(cgContext, url, true) == noErr) {
             QLThumbnailRequestFlushContext(thumbnail, cgContext);
             CGContextRelease(cgContext);

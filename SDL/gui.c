@@ -1,5 +1,5 @@
-#include <SDL2/SDL.h>
 #include <OpenDialog/open_dialog.h>
+#include <SDL.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -33,7 +33,7 @@ void render_texture(void *pixels,  void *previous)
 {
     if (renderer) {
         if (pixels) {
-            SDL_UpdateTexture(texture, NULL, pixels, 160 * sizeof (uint32_t));
+            SDL_UpdateTexture(texture, NULL, pixels, GB_get_screen_width(&gb) * sizeof (uint32_t));
         }
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
@@ -46,9 +46,22 @@ void render_texture(void *pixels,  void *previous)
         }
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
+        GB_frame_blending_mode_t mode = configuration.blending_mode;
+        if (!previous) {
+            mode = GB_FRAME_BLENDING_MODE_DISABLED;
+        }
+        else if (mode == GB_FRAME_BLENDING_MODE_ACCURATE) {
+            if (GB_is_sgb(&gb)) {
+                mode = GB_FRAME_BLENDING_MODE_SIMPLE;
+            }
+            else {
+                mode = GB_is_odd_frame(&gb)? GB_FRAME_BLENDING_MODE_ACCURATE_ODD : GB_FRAME_BLENDING_MODE_ACCURATE_EVEN;
+            }
+        }
         render_bitmap_with_shader(&shader, _pixels, previous,
                                   GB_get_screen_width(&gb), GB_get_screen_height(&gb),
-                                  rect.x, rect.y, rect.w, rect.h);
+                                  rect.x, rect.y, rect.w, rect.h,
+                                  mode);
         SDL_GL_SwapWindow(window);
     }
 }
@@ -91,13 +104,16 @@ configuration_t configuration =
     .color_correction_mode = GB_COLOR_CORRECTION_EMULATE_HARDWARE,
     .highpass_mode = GB_HIGHPASS_ACCURATE,
     .scaling_mode = GB_SDL_SCALING_INTEGER_FACTOR,
-    .blend_frames = true,
+    .blending_mode = GB_FRAME_BLENDING_MODE_ACCURATE,
     .rewind_length = 60 * 2,
-    .model = MODEL_CGB
+    .model = MODEL_CGB,
+    .volume = 100,
+    .rumble_mode = GB_RUMBLE_ALL_GAMES,
+    .default_scale = 2,
 };
 
 
-static const char *help[] ={
+static const char *help[] = {
 "Drop a ROM to play.\n"
 "\n"
 "Keyboard Shortcuts:\n"
@@ -128,8 +144,8 @@ void update_viewport(void)
     double y_factor = win_height / (double) GB_get_screen_height(&gb);
     
     if (configuration.scaling_mode == GB_SDL_SCALING_INTEGER_FACTOR) {
-        x_factor = (int)(x_factor);
-        y_factor = (int)(y_factor);
+        x_factor = (unsigned)(x_factor);
+        y_factor = (unsigned)(y_factor);
     }
     
     if (configuration.scaling_mode != GB_SDL_SCALING_ENTIRE_WINDOW) {
@@ -155,6 +171,11 @@ void update_viewport(void)
     }
 }
 
+static void rescale_window(void)
+{
+    SDL_SetWindowSize(window, GB_get_screen_width(&gb) * configuration.default_scale, GB_get_screen_height(&gb) * configuration.default_scale);
+}
+
 /* Does NOT check for bounds! */
 static void draw_char(uint32_t *buffer, unsigned width, unsigned height, unsigned char ch, uint32_t color)
 {
@@ -175,9 +196,12 @@ static void draw_char(uint32_t *buffer, unsigned width, unsigned height, unsigne
     }
 }
 
+static unsigned scroll = 0;
 static void draw_unbordered_text(uint32_t *buffer, unsigned width, unsigned height, unsigned x, unsigned y, const char *string, uint32_t color)
 {
+    y -= scroll;
     unsigned orig_x = x;
+    unsigned y_offset = (GB_get_screen_height(&gb) - 144) / 2;
     while (*string) {
         if (*string == '\n') {
             x = orig_x;
@@ -186,7 +210,7 @@ static void draw_unbordered_text(uint32_t *buffer, unsigned width, unsigned heig
             continue;
         }
         
-        if (x > width - GLYPH_WIDTH || y == 0 || y > height - GLYPH_HEIGHT) {
+        if (x > width - GLYPH_WIDTH || y == 0 || y - y_offset > 144 - GLYPH_HEIGHT) {
             break;
         }
         
@@ -297,6 +321,7 @@ static void return_to_root_menu(unsigned index)
 {
     current_menu = root_menu;
     current_selection = 0;
+    scroll = 0;
 }
 
 static void cycle_model(unsigned index)
@@ -320,7 +345,7 @@ static void cycle_model_backwards(unsigned index)
 
 const char *current_model_string(unsigned index)
 {
-    return (const char *[]){"Game Boy", "Game Boy Color", "Game Boy Advance" , "Super Game Boy"}
+    return (const char *[]){"Game Boy", "Game Boy Color", "Game Boy Advance", "Super Game Boy"}
         [configuration.model];
 }
 
@@ -407,6 +432,7 @@ static void enter_emulation_menu(unsigned index)
 {
     current_menu = emulation_menu;
     current_selection = 0;
+    scroll = 0;
 }
 
 const char *current_scaling_mode(unsigned index)
@@ -415,10 +441,28 @@ const char *current_scaling_mode(unsigned index)
         [configuration.scaling_mode];
 }
 
+const char *current_default_scale(unsigned index)
+{
+    return (const char *[]){"1x", "2x", "3x", "4x", "5x", "6x", "7x", "8x"}
+        [configuration.default_scale - 1];
+}
+
 const char *current_color_correction_mode(unsigned index)
 {
-    return (const char *[]){"Disabled", "Correct Color Curves", "Emulate Hardware", "Preserve Brightness"}
+    return (const char *[]){"Disabled", "Correct Color Curves", "Emulate Hardware", "Preserve Brightness", "Reduce Contrast"}
         [configuration.color_correction_mode];
+}
+
+const char *current_palette(unsigned index)
+{
+    return (const char *[]){"Greyscale", "Lime (Game Boy)", "Olive (Pocket)", "Teal (Light)"}
+        [configuration.dmg_palette];
+}
+
+const char *current_border_mode(unsigned index)
+{
+    return (const char *[]){"SGB Only", "Never", "Always"}
+        [configuration.border_mode];
 }
 
 void cycle_scaling(unsigned index)
@@ -443,9 +487,35 @@ void cycle_scaling_backwards(unsigned index)
     render_texture(NULL, NULL);
 }
 
+void cycle_default_scale(unsigned index)
+{
+    if (configuration.default_scale == GB_SDL_DEFAULT_SCALE_MAX) {
+        configuration.default_scale = 1;
+    }
+    else {
+        configuration.default_scale++;
+    }
+
+    rescale_window();
+    update_viewport();
+}
+
+void cycle_default_scale_backwards(unsigned index)
+{
+    if (configuration.default_scale == 1) {
+        configuration.default_scale = GB_SDL_DEFAULT_SCALE_MAX;
+    }
+    else {
+        configuration.default_scale--;
+    }
+
+    rescale_window();
+    update_viewport();
+}
+
 static void cycle_color_correction(unsigned index)
 {
-    if (configuration.color_correction_mode == GB_COLOR_CORRECTION_PRESERVE_BRIGHTNESS) {
+    if (configuration.color_correction_mode == GB_COLOR_CORRECTION_REDUCE_CONTRAST) {
         configuration.color_correction_mode = GB_COLOR_CORRECTION_DISABLED;
     }
     else {
@@ -456,10 +526,50 @@ static void cycle_color_correction(unsigned index)
 static void cycle_color_correction_backwards(unsigned index)
 {
     if (configuration.color_correction_mode == GB_COLOR_CORRECTION_DISABLED) {
-        configuration.color_correction_mode = GB_COLOR_CORRECTION_PRESERVE_BRIGHTNESS;
+        configuration.color_correction_mode = GB_COLOR_CORRECTION_REDUCE_CONTRAST;
     }
     else {
         configuration.color_correction_mode--;
+    }
+}
+
+static void cycle_palette(unsigned index)
+{
+    if (configuration.dmg_palette == 3) {
+        configuration.dmg_palette = 0;
+    }
+    else {
+        configuration.dmg_palette++;
+    }
+}
+
+static void cycle_palette_backwards(unsigned index)
+{
+    if (configuration.dmg_palette == 0) {
+        configuration.dmg_palette = 3;
+    }
+    else {
+        configuration.dmg_palette--;
+    }
+}
+
+static void cycle_border_mode(unsigned index)
+{
+    if (configuration.border_mode == GB_BORDER_ALWAYS) {
+        configuration.border_mode = GB_BORDER_SGB;
+    }
+    else {
+        configuration.border_mode++;
+    }
+}
+
+static void cycle_border_mode_backwards(unsigned index)
+{
+    if (configuration.border_mode == GB_BORDER_SGB) {
+        configuration.border_mode = GB_BORDER_ALWAYS;
+    }
+    else {
+        configuration.border_mode--;
     }
 }
 
@@ -471,6 +581,7 @@ struct shader_name {
     {"NearestNeighbor", "Nearest Neighbor"},
     {"Bilinear", "Bilinear"},
     {"SmoothBilinear", "Smooth Bilinear"},
+    {"MonoLCD", "Monochrome LCD"},
     {"LCD", "LCD Display"},
     {"CRT", "CRT Display"},
     {"Scale2x", "Scale2x"},
@@ -542,21 +653,40 @@ const char *current_filter_name(unsigned index)
     return shaders[i].display_name;
 }
 
-static void toggle_blend_frames(unsigned index)
+static void cycle_blending_mode(unsigned index)
 {
-    configuration.blend_frames ^= true;
+    if (configuration.blending_mode == GB_FRAME_BLENDING_MODE_ACCURATE) {
+        configuration.blending_mode = GB_FRAME_BLENDING_MODE_DISABLED;
+    }
+    else {
+        configuration.blending_mode++;
+    }
 }
 
-const char *blend_frames_string(unsigned index)
+static void cycle_blending_mode_backwards(unsigned index)
 {
-    return configuration.blend_frames? "Enabled" : "Disabled";
+    if (configuration.blending_mode == GB_FRAME_BLENDING_MODE_DISABLED) {
+        configuration.blending_mode = GB_FRAME_BLENDING_MODE_ACCURATE;
+    }
+    else {
+        configuration.blending_mode--;
+    }
+}
+
+const char *blending_mode_string(unsigned index)
+{
+    return (const char *[]){"Disabled", "Simple", "Accurate"}
+    [configuration.blending_mode];
 }
 
 static const struct menu_item graphics_menu[] = {
     {"Scaling Mode:", cycle_scaling, current_scaling_mode, cycle_scaling_backwards},
+    {"Default Window Scale:", cycle_default_scale, current_default_scale, cycle_default_scale_backwards},
     {"Scaling Filter:", cycle_filter, current_filter_name, cycle_filter_backwards},
     {"Color Correction:", cycle_color_correction, current_color_correction_mode, cycle_color_correction_backwards},
-    {"Blend Frames:", toggle_blend_frames, blend_frames_string, toggle_blend_frames},
+    {"Frame Blending:", cycle_blending_mode, blending_mode_string, cycle_blending_mode_backwards},
+    {"Mono Palette:", cycle_palette, current_palette, cycle_palette_backwards},
+    {"Display Border:", cycle_border_mode, current_border_mode, cycle_border_mode_backwards},
     {"Back", return_to_root_menu},
     {NULL,}
 };
@@ -565,6 +695,7 @@ static void enter_graphics_menu(unsigned index)
 {
     current_menu = graphics_menu;
     current_selection = 0;
+    scroll = 0;
 }
 
 const char *highpass_filter_string(unsigned index)
@@ -591,8 +722,32 @@ void cycle_highpass_filter_backwards(unsigned index)
     }
 }
 
+const char *volume_string(unsigned index)
+{
+    static char ret[5];
+    sprintf(ret, "%d%%", configuration.volume);
+    return ret;
+}
+
+void increase_volume(unsigned index)
+{
+    configuration.volume += 5;
+    if (configuration.volume > 100) {
+        configuration.volume = 100;
+    }
+}
+
+void decrease_volume(unsigned index)
+{
+    configuration.volume -= 5;
+    if (configuration.volume > 100) {
+        configuration.volume = 0;
+    }
+}
+
 static const struct menu_item audio_menu[] = {
     {"Highpass Filter:", cycle_highpass_filter, highpass_filter_string, cycle_highpass_filter_backwards},
+    {"Volume:", increase_volume, volume_string, decrease_volume},
     {"Back", return_to_root_menu},
     {NULL,}
 };
@@ -601,6 +756,7 @@ static void enter_audio_menu(unsigned index)
 {
     current_menu = audio_menu;
     current_selection = 0;
+    scroll = 0;
 }
 
 static void modify_key(unsigned index)
@@ -608,7 +764,6 @@ static void modify_key(unsigned index)
     gui_state = WAITING_FOR_KEY;
 }
 
-static void enter_controls_menu_2(unsigned index);
 static const char *key_name(unsigned index);
 
 static const struct menu_item controls_menu[] = {
@@ -620,12 +775,6 @@ static const struct menu_item controls_menu[] = {
     {"B:", modify_key, key_name,},
     {"Select:", modify_key, key_name,},
     {"Start:", modify_key, key_name,},
-    {"Next Page", enter_controls_menu_2},
-    {"Back", return_to_root_menu},
-    {NULL,}
-};
-
-static const struct menu_item controls_menu_2[] = {
     {"Turbo:", modify_key, key_name,},
     {"Rewind:", modify_key, key_name,},
     {"Slow-Motion:", modify_key, key_name,},
@@ -635,11 +784,11 @@ static const struct menu_item controls_menu_2[] = {
 
 static const char *key_name(unsigned index)
 {
-    if (current_menu == controls_menu_2) {
-        if (index == 0) {
+    if (index >= 8) {
+        if (index == 8) {
             return SDL_GetScancodeName(configuration.keys[8]);
         }
-        return SDL_GetScancodeName(configuration.keys_2[index - 1]);
+        return SDL_GetScancodeName(configuration.keys_2[index - 9]);
     }
     return SDL_GetScancodeName(configuration.keys[index]);
 }
@@ -648,17 +797,13 @@ static void enter_controls_menu(unsigned index)
 {
     current_menu = controls_menu;
     current_selection = 0;
-}
-
-static void enter_controls_menu_2(unsigned index)
-{
-    current_menu = controls_menu_2;
-    current_selection = 0;
+    scroll = 0;
 }
 
 static unsigned joypad_index = 0;
 static SDL_Joystick *joystick = NULL;
 static SDL_GameController *controller = NULL;
+SDL_Haptic *haptic = NULL;
 
 const char *current_joypad_name(unsigned index)
 {
@@ -688,6 +833,12 @@ static void cycle_joypads(unsigned index)
     if (joypad_index >= SDL_NumJoysticks()) {
         joypad_index = 0;
     }
+    
+    if (haptic) {
+        SDL_HapticClose(haptic);
+        haptic = NULL;
+    }
+    
     if (controller) {
         SDL_GameControllerClose(controller);
         controller = NULL;
@@ -696,20 +847,28 @@ static void cycle_joypads(unsigned index)
         SDL_JoystickClose(joystick);
         joystick = NULL;
     }
-    if ((controller = SDL_GameControllerOpen(joypad_index))){
+    if ((controller = SDL_GameControllerOpen(joypad_index))) {
         joystick = SDL_GameControllerGetJoystick(controller);
     }
     else {
         joystick = SDL_JoystickOpen(joypad_index);
     }
-}
+    if (joystick) {
+        haptic = SDL_HapticOpenFromJoystick(joystick);
+    }}
 
 static void cycle_joypads_backwards(unsigned index)
 {
-    joypad_index++;
+    joypad_index--;
     if (joypad_index >= SDL_NumJoysticks()) {
         joypad_index = SDL_NumJoysticks() - 1;
     }
+    
+    if (haptic) {
+        SDL_HapticClose(haptic);
+        haptic = NULL;
+    }
+    
     if (controller) {
         SDL_GameControllerClose(controller);
         controller = NULL;
@@ -718,13 +877,15 @@ static void cycle_joypads_backwards(unsigned index)
         SDL_JoystickClose(joystick);
         joystick = NULL;
     }
-    if ((controller = SDL_GameControllerOpen(joypad_index))){
+    if ((controller = SDL_GameControllerOpen(joypad_index))) {
         joystick = SDL_GameControllerGetJoystick(controller);
     }
     else {
         joystick = SDL_JoystickOpen(joypad_index);
     }
-}
+    if (joystick) {
+        haptic = SDL_HapticOpenFromJoystick(joystick);
+    }}
 
 static void detect_joypad_layout(unsigned index)
 {
@@ -733,9 +894,36 @@ static void detect_joypad_layout(unsigned index)
     joypad_axis_temp = -1;
 }
 
+static void cycle_rumble_mode(unsigned index)
+{
+    if (configuration.rumble_mode == GB_RUMBLE_ALL_GAMES) {
+        configuration.rumble_mode = GB_RUMBLE_DISABLED;
+    }
+    else {
+        configuration.rumble_mode++;
+    }
+}
+
+static void cycle_rumble_mode_backwards(unsigned index)
+{
+    if (configuration.rumble_mode == GB_RUMBLE_DISABLED) {
+        configuration.rumble_mode = GB_RUMBLE_ALL_GAMES;
+    }
+    else {
+        configuration.rumble_mode--;
+    }
+}
+
+const char *current_rumble_mode(unsigned index)
+{
+    return (const char *[]){"Disabled", "Rumble Game Paks Only", "All Games"}
+    [configuration.rumble_mode];
+}
+
 static const struct menu_item joypad_menu[] = {
     {"Joypad:", cycle_joypads, current_joypad_name, cycle_joypads_backwards},
     {"Configure layout", detect_joypad_layout},
+    {"Rumble Mode:", cycle_rumble_mode, current_rumble_mode, cycle_rumble_mode_backwards},
     {"Back", return_to_root_menu},
     {NULL,}
 };
@@ -744,6 +932,7 @@ static void enter_joypad_menu(unsigned index)
 {
     current_menu = joypad_menu;
     current_selection = 0;
+    scroll = 0;
 }
 
 joypad_button_t get_joypad_button(uint8_t physical_button)
@@ -781,17 +970,21 @@ void connect_joypad(void)
         }
     }
     else if (!joystick && SDL_NumJoysticks()) {
-        if ((controller = SDL_GameControllerOpen(0))){
+        if ((controller = SDL_GameControllerOpen(0))) {
             joystick = SDL_GameControllerGetJoystick(controller);
         }
         else {
             joystick = SDL_JoystickOpen(0);
         }
     }
+    if (joystick) {
+        haptic = SDL_HapticOpenFromJoystick(joystick);
+    }
 }
 
 void run_gui(bool is_running)
 {
+    SDL_ShowCursor(SDL_ENABLE);
     connect_joypad();
     
     /* Draw the background screen */
@@ -825,6 +1018,7 @@ void run_gui(bool is_running)
     bool should_render = true;
     current_menu = root_menu = is_running? paused_menu : nonpaused_menu;
     current_selection = 0;
+    scroll = 0;
     do {
         /* Convert Joypad and mouse events (We only generate down events) */
         if (gui_state != WAITING_FOR_KEY && gui_state != WAITING_FOR_JBUTTON) {
@@ -849,6 +1043,7 @@ void run_gui(bool is_running)
                             y = y * 8 / 7;
                             y -= 144 / 16;
                         }
+                        y += scroll;
                         
                         if (x < 0 || x >= 160 || y < 24) {
                             continue;
@@ -1011,6 +1206,15 @@ void run_gui(bool is_running)
             }
 
             case SDL_KEYDOWN:
+                if (event.key.keysym.scancode == SDL_SCANCODE_F && event.key.keysym.mod & MODIFIER) {
+                    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == false) {
+                        SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    }
+                    else {
+                        SDL_SetWindowFullscreen(window, 0);
+                    }
+                    update_viewport();
+                }
                 if (event.key.keysym.scancode == SDL_SCANCODE_O) {
                     if (event.key.keysym.mod & MODIFIER) {
                         char *filename = do_open_rom_dialog();
@@ -1048,6 +1252,7 @@ void run_gui(bool is_running)
                             gui_state = SHOWING_DROP_MESSAGE;
                         }
                         current_selection = 0;
+                        scroll = 0;
                         current_menu = root_menu;
                         should_render = true;
                     }
@@ -1096,12 +1301,12 @@ void run_gui(bool is_running)
                     should_render = true;
                 }
                 else if (gui_state == WAITING_FOR_KEY) {
-                    if (current_menu == controls_menu_2) {
-                        if (current_selection == 0) {
+                    if (current_selection >= 8) {
+                        if (current_selection == 8) {
                             configuration.keys[8] = event.key.keysym.scancode;
                         }
                         else {
-                            configuration.keys_2[current_selection - 1] = event.key.keysym.scancode;
+                            configuration.keys_2[current_selection - 9] = event.key.keysym.scancode;
                         }
                     }
                     else {
@@ -1115,6 +1320,7 @@ void run_gui(bool is_running)
         
         if (should_render) {
             should_render = false;
+            rerender:
             if (width == 160 && height == 144) {
                 memcpy(pixels, converted_background->pixels, sizeof(pixels));
             }
@@ -1134,9 +1340,19 @@ void run_gui(bool is_running)
                     draw_text_centered(pixels, width, height, 8 + y_offset, "SameBoy", gui_palette_native[3], gui_palette_native[0], false);
                     unsigned i = 0, y = 24;
                     for (const struct menu_item *item = current_menu; item->string; item++, i++) {
+                        if (i == current_selection) {
+                            if (y < scroll) {
+                                scroll = y - 4;
+                                goto rerender;
+                            }
+                        }
+                        if (i == current_selection && i == 0 && scroll != 0) {
+                            scroll = 0;
+                            goto rerender;
+                        }
                         if (item->value_getter && !item->backwards_handler) {
                             char line[25];
-                            snprintf(line, sizeof(line), "%s%*s", item->string, 24 - (int)strlen(item->string), item->value_getter(i));
+                            snprintf(line, sizeof(line), "%s%*s", item->string, 24 - (unsigned)strlen(item->string), item->value_getter(i));
                             draw_text_centered(pixels, width, height, y + y_offset, line, gui_palette_native[3], gui_palette_native[0],
                                                i == current_selection ? DECORATION_SELECTION : DECORATION_NONE);
                             y += 12;
@@ -1152,6 +1368,13 @@ void run_gui(bool is_running)
                                 y += 12;
                             }
                         }
+                        if (i == current_selection) {
+                            if (y > scroll + 144) {
+                                scroll = y - 144;
+                                goto rerender;
+                            }
+                        }
+
                     }
                     break;
                 case SHOWING_HELP:
