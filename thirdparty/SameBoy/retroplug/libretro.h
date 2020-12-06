@@ -4,59 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <limits.h>
+#include <stdbool.h>
+
+#define RETRO_API
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifndef __cplusplus
-#if defined(_MSC_VER) && !defined(SN_TARGET_PS3)
-/* Hack applied for MSVC when compiling in C89 mode
- * as it isn't C99-compliant. */
-#define bool unsigned char
-#define true 1
-#define false 0
-#else
-#include <stdbool.h>
-#endif
-#endif
-
-#ifndef RETRO_CALLCONV
-#  if defined(__GNUC__) && defined(__i386__) && !defined(__x86_64__)
-#    define RETRO_CALLCONV __attribute__((cdecl))
-#  elif defined(_MSC_VER) && defined(_M_X86) && !defined(_M_X64)
-#    define RETRO_CALLCONV __cdecl
-#  else
-#    define RETRO_CALLCONV /* all other platforms only have one calling convention each */
-#  endif
-#endif
-
-#ifndef RETRO_API
-#  if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
-#    ifdef RETRO_IMPORT_SYMBOLS
-#      ifdef __GNUC__
-#        define RETRO_API RETRO_CALLCONV __attribute__((__dllimport__))
-#      else
-#        define RETRO_API RETRO_CALLCONV __declspec(dllimport)
-#      endif
-#    else
-#      ifdef __GNUC__
-#        define RETRO_API RETRO_CALLCONV __attribute__((__dllexport__))
-#      else
-#        define RETRO_API RETRO_CALLCONV __declspec(dllexport)
-#      endif
-#    endif
-#  else
-#      if defined(__GNUC__) && __GNUC__ >= 4 && !defined(__CELLOS_LV2__)
-#        define RETRO_API RETRO_CALLCONV __attribute__((__visibility__("default")))
-#      else
-#        define RETRO_API RETRO_CALLCONV
-#      endif
-#  endif
-#endif
-
-//#undef RETRO_API
-//#define RETRO_API
 
 struct offset_byte_t {
     int offset;

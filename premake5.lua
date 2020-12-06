@@ -35,6 +35,7 @@ iplug2.workspace "RetroPlug"
 
 project "RetroPlug"
 	kind "StaticLib"
+	dependson "SameBoy"
 
 	includedirs {
 		"config",
@@ -143,9 +144,7 @@ project "pb12"
 	toolset "clang"
 
 	defines { "_CRT_SECURE_NO_WARNINGS" }
-
 	includedirs { SAMEBOY_DIR .. "Windows" }
-
 	files { SAMEBOY_DIR .. "BootROMs/pb12.c" }
 
 project "SameBoyBootRoms"

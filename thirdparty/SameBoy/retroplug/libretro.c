@@ -1,19 +1,23 @@
 #include "libretro.h"
 #include "queue.h"
+#include <gb.h>
 
-#include <Core/gb.h>
+#include "dmg_boot.h"
+#include "cgb_boot.h"
+#include "cgb_fast_boot.h"
+#include "agb_boot.h"
+#include "sgb_boot.h"
+#include "sgb2_boot.h"
+
 //#include <windows.h>
-
-extern const unsigned char dmg_boot[], cgb_boot[], cgb_fast_boot[], agb_boot[], sgb_boot[], sgb2_boot[];
-extern const unsigned dmg_boot_length, cgb_boot_length, cgb_fast_boot_length, agb_boot_length, sgb_boot_length, sgb2_boot_length;
 
 static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
   return 255 << 24 | b << 16 | g << 8 | r;
 }
 
-int vasprintf(char **str, const char *fmt, va_list args)
+/*int vasprintf(char **str, const char *fmt, va_list args)
 {
-	/* size_t size = _vscprintf(fmt, args) + 1;
+	 size_t size = _vscprintf(fmt, args) + 1;
 	*str = (char*)malloc(size);
 	int ret = vsprintf(*str, fmt, args);
 	if (ret != size - 1) {
@@ -21,9 +25,9 @@ int vasprintf(char **str, const char *fmt, va_list args)
 		*str = NULL;
 		return -1;
 	}
-	return ret;*/
+	return ret;
     return 0;
-}
+}*/
 
 #define PIXEL_WIDTH 160
 #define PIXEL_HEIGHT 144
@@ -50,15 +54,15 @@ boot_rom_t find_boot_rom(int model) {
     memset(&boot_rom, 0, sizeof(boot_rom_t));
 
     switch (model) {
-        case GB_MODEL_DMG_B:    boot_rom.data = dmg_boot; boot_rom.size = dmg_boot_length; break;
-        case GB_MODEL_AGB:      boot_rom.data = agb_boot; boot_rom.size = agb_boot_length; break;
-        case GB_MODEL_SGB_NTSC: boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
-        case GB_MODEL_SGB_PAL:  boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_length; break;
-        case GB_MODEL_SGB2:     boot_rom.data = sgb2_boot; boot_rom.size = sgb2_boot_length; break;
+        case GB_MODEL_DMG_B:    boot_rom.data = dmg_boot; boot_rom.size = dmg_boot_len; break;
+        case GB_MODEL_AGB:      boot_rom.data = agb_boot; boot_rom.size = agb_boot_len; break;
+        case GB_MODEL_SGB_NTSC: boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_len; break;
+        case GB_MODEL_SGB_PAL:  boot_rom.data = sgb_boot; boot_rom.size = sgb_boot_len; break;
+        case GB_MODEL_SGB2:     boot_rom.data = sgb2_boot; boot_rom.size = sgb2_boot_len; break;
         case GB_MODEL_CGB_E:
         case GB_MODEL_CGB_C:
-            boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_length;
-            boot_rom.fast_data = cgb_fast_boot; boot_rom.fast_size = cgb_fast_boot_length;
+            boot_rom.data = cgb_boot; boot_rom.size = cgb_boot_len;
+            boot_rom.fast_data = cgb_fast_boot; boot_rom.fast_size = cgb_fast_boot_len;
             break;
     }
 
@@ -256,7 +260,7 @@ size_t sameboy_save_state_size(void* state) {
 
 size_t sameboy_battery_size(void* state) {
     sameboy_state_t* s = (sameboy_state_t*)state;
-    return GB_battery_size(&s->gb);
+    return GB_save_battery_size(&s->gb);
 }
 
 size_t sameboy_save_battery(void* state, const char* target, size_t size) {
