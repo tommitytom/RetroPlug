@@ -26,6 +26,7 @@ Icon?
 .DS_Stor*
 
 compiler/x64
+src/generated
 src/retroplug/luawrapper/generated
 thirdparty/bin
 thirdparty/lib
