@@ -4,7 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <array>
-#include <sol.hpp>
+#include <sol/sol.hpp>
 
 #include "threadpool.h"
 #include "util.h"
@@ -27,7 +27,7 @@ void compileScript(const std::string& path, std::vector<u8>& data) {
 	sol::state ctx;
 	sol::load_result lr = ctx.load_file(path);
 	if (lr.valid()) {
-		sol::protected_function target = lr;
+		sol::protected_function target = lr.get<sol::protected_function>();
 		sol::bytecode byteCode = target.dump();
 		std::string_view view = byteCode.as_string_view();
 
