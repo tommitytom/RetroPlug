@@ -46,9 +46,8 @@ namespace ButtonTypes {
 		case ButtonType::B: return "B";
 		case ButtonType::Start: return "Start";
 		case ButtonType::Select: return "Select";
+		default: return "";
 		}
-
-		return "";
 	}
 }
 

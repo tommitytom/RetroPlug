@@ -11,18 +11,27 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "audio/miniaudio.h"
 
-#ifdef WIN32
+/*#ifdef WIN32
 #include "SameBoyWrapper.h"
-#else
+#else*/
 #define SAMEBOY_SYMBOLS(symb) symb
 #include "SameBoy/retroplug/libretro.h"
-#endif
+//#endif
 
 #include "resource.h"
 #include "util/File.h"
 
-//const int FRAME_SIZE = 160 * 144 * 4;
+const int PIXEL_WIDTH = 160;
+const int PIXEL_HEIGHT = 144;
+const int PIXEL_COUNT = (PIXEL_WIDTH * PIXEL_HEIGHT);
+const int FRAME_BUFFER_SIZE = (PIXEL_COUNT * 4);
 
+const int LINK_TICKS_MAX = 3907;
+
+const int MAX_INSTANCES = 4;
+
+const int MAX_SERIAL_ITEMS = 128;
+const int MAX_BUTTON_ITEMS = 64;
 const int DEFAULT_GAMEBOY_MODEL = 0x205;
 
 int getGameboyModelId(GameboyModel model) {
@@ -45,10 +54,23 @@ SameBoyPlug::SameBoyPlug() {
 }
 
 void SameBoyPlug::pressButtons(const StreamButtonPress* presses, size_t pressCount) {
-	double samplesPerMs = _sampleRate / 1000.0;
+	const double samplesPerMs = _sampleRate / 1000.0;
+
 	for (size_t i = 0; i < pressCount; ++i) {
 		int duration = (int)(samplesPerMs * presses[i].duration);
 		SAMEBOY_SYMBOLS(sameboy_set_button)(_instance, duration, presses[i].button, presses[i].down);
+
+		int offset = 0;
+		if (_buttonQueue.size() > 0) {
+			offset = _buttonQueue.back().offset + _buttonQueue.back().duration;
+		}
+
+		_buttonQueue.push(OffsetButton {
+			.offset = offset,
+			.duration = (int)(samplesPerMs * presses[i].duration),
+			.button = presses[i].button,
+			.down = presses[i].down
+		});
 	}
 }
 

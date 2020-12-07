@@ -1,5 +1,7 @@
 #pragma once
 
+#include "controlblock.h"
+
 namespace micromsg {
 	template <typename T>
 	class UniquePtr {

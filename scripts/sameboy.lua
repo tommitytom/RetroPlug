@@ -54,6 +54,7 @@ project "SameBoy"
 	includedirs {
 		SAMEBOY_DIR .. "Core",
 		SAMEBOY_DIR .. "Windows",
+		"../src",
 		"../src/generated/bootroms"
 	}
 
@@ -61,5 +62,7 @@ project "SameBoy"
 		SAMEBOY_DIR .. "Core/**.h",
 		SAMEBOY_DIR .. "Core/**.c",
 		SAMEBOY_DIR .. "retroplug/**.h",
-		SAMEBOY_DIR .. "retroplug/**.c"
+		SAMEBOY_DIR .. "retroplug/**.c",
+		"../src/plugs/SameBoyPlug.h",
+		"../src/plugs/SameBoyPlug.cpp",
 	}
