@@ -1,9 +1,13 @@
 #include "SameBoyPlug.h"
 
 #include <fstream>
-#include <gb.h>
+
+extern "C" {
+	#include <gb.h>
+}
 
 #include "retroplug/Constants.h"
+#include "retroplug/util/SampleConverter.h"
 #include "generated/bootroms/agb_boot.h"
 #include "generated/bootroms/cgb_boot.h"
 #include "generated/bootroms/cgb_fast_boot.h"
@@ -46,8 +50,8 @@ std::string_view findBootRom(GameboyModel model, bool fastBoot) {
 }
 
 SameBoyPlug::SameBoyPlug() {
-	_dimensions.w = 160;
-	_dimensions.h = 144;
+	_dimensions.w = PIXEL_WIDTH;
+	_dimensions.h = PIXEL_HEIGHT;
 
 	//_audioScratchSize = 256;
 	//_audioScratch = new int16_t[_audioScratchSize];
@@ -82,8 +86,9 @@ static void vblankHandler(GB_gameboy_t* gb) {
 
 static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 	SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
-	s->audioBuffer[s->currentAudioFrames++].left = sample->left;
-	s->audioBuffer[s->currentAudioFrames++].right = sample->right;
+	s->audioBuffer[s->currentAudioFrames].left = sample->left;
+	s->audioBuffer[s->currentAudioFrames].right = sample->right;
+	s->currentAudioFrames++;
 }
 
 static void serialStart(GB_gameboy_t* gb, bool bit_received) {
@@ -103,6 +108,12 @@ static bool serialEnd(GB_gameboy_t* gb) {
 	return ret;
 }
 
+static void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t type) {
+	SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
+	//std::string_view bootRom = findBootRom(s->model, s->fastBoot);
+	GB_load_boot_rom_from_buffer(gb, cgb_boot, cgb_boot_len);
+}
+
 void SameBoyPlug::init(GameboyModel model, bool fastBoot) {
 	assert(_state.gb == nullptr);
 
@@ -110,13 +121,11 @@ void SameBoyPlug::init(GameboyModel model, bool fastBoot) {
 
 	GB_init(_state.gb, getGameboyModelId(model));
 
-	std::string_view bootRom = findBootRom(model, fastBoot);
-	GB_load_boot_rom_from_buffer(_state.gb, (const unsigned char*)bootRom.data(), bootRom.size());
-
 	GB_set_pixels_output(_state.gb, (uint32_t*)_state.frameBuffer);
-	GB_set_sample_rate(_state.gb, 48000);
+	GB_set_sample_rate(_state.gb, 44100);
 	GB_set_user_data(_state.gb, &_state);
 
+	GB_set_boot_rom_load_callback(_state.gb, loadBootRomHandler);
 	GB_set_rgb_encode_callback(_state.gb, rgbEncode);
 	GB_set_vblank_callback(_state.gb, vblankHandler);
 	GB_apu_set_sample_callback(_state.gb, audioHandler);
@@ -142,9 +151,10 @@ void SameBoyPlug::loadRom(const char* data, size_t size, const SameBoySettings& 
 
 void SameBoyPlug::reset(GameboyModel model, bool fastBoot) {
 	_settings.model = model;
+	_settings.fastBoot = fastBoot;
 
 	std::string_view bootRom = findBootRom(model, fastBoot);
-	GB_load_boot_rom_from_buffer(_state.gb, (const unsigned char*)bootRom.data(), bootRom.size());
+	//GB_load_boot_rom_from_buffer(_state.gb, (const unsigned char*)bootRom.data(), bootRom.size());
 	GB_switch_model_and_reset(_state.gb, getGameboyModelId(model));
 
 	_resetSamples = (int)(_sampleRate / 2);
@@ -322,7 +332,7 @@ void SameBoyPlug::updateAV(int audioFrames) {
 
 	if (sampleCount <= AUDIO_SCRATCH_SIZE) {
 		if (_resetSamples <= 0) {
-			//ma_pcm_s16_to_f32(_audioBuffer->data->data(), _state.audioBuffer, sampleCount, ma_dither_mode_triangle);
+			SampleConverter::s16_to_f32(_audioBuffer->data->data(), (int16_t*)_state.audioBuffer, sampleCount);
 		} else {
 			_audioBuffer->data->clear();
 			_resetSamples -= audioFrames;
@@ -336,6 +346,7 @@ void SameBoyPlug::updateAV(int audioFrames) {
 	if (_videoBuffer->data.get()) {
 		if (_state.vblankOccurred) {
 			memcpy(_videoBuffer->data.get(), _state.frameBuffer, FRAME_BUFFER_SIZE);
+			_videoBuffer->hasData = true;
 		}
 	}
 }
@@ -343,6 +354,7 @@ void SameBoyPlug::updateAV(int audioFrames) {
 void SameBoyPlug::shutdown() {
 	if (_state.gb) {
 		GB_free(_state.gb);
+		delete _state.gb;
 		_state.gb = nullptr;
 	}
 

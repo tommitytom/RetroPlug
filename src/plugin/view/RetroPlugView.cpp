@@ -1,6 +1,7 @@
 #include "RetroPlugView.h"
 
 #include <cmath>
+
 #include "platform/FileDialog.h"
 #include "platform/Shell.h"
 #include "util/File.h"
@@ -10,6 +11,8 @@
 
 #include "Menu.h"
 
+const int FRAME_WIDTH = 160;
+const int FRAME_HEIGHT = 144;
 const float ACTIVE_ALPHA = 1.0f;
 const float INACTIVE_ALPHA = 0.75f;
 const size_t DEFAULT_SRAM_SIZE = 0x20000;
@@ -17,12 +20,18 @@ const size_t DEFAULT_SRAM_SIZE = 0x20000;
 const double VIDEO_STREAM_TIMEOUT = 1000.0;
 
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, AudioContextProxy* proxy, AudioController* audioController)
-	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) {
+	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) 
+{
 	proxy->videoCallback = [&](const VideoStream& video) {
 		const auto& systems = _proxy->getProject()->systems;
+
 		for (const SystemDescPtr& system : systems) {
 			if (system->state == SystemState::Running) {
-				_views[system->idx]->WriteFrame(video.buffers[system->idx]);
+				const VideoBuffer& videoBuffer = video.buffers[system->idx];
+
+				if (videoBuffer.hasData) {
+					_views[system->idx]->WriteFrame(videoBuffer);
+				}
 			}
 		}
 
@@ -65,6 +74,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 		MenuCallbackMap callbacks;
 		callbacks.reserve(1000);
+
 		_menu.SetFunction([&](IPopupMenu* menu) {
 			IPopupMenu::Item* chosen = menu->GetChosenItem();
 			if (chosen) {

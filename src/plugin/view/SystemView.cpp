@@ -1,12 +1,12 @@
 #include "SystemView.h"
 
+#include <sstream>
+
 #include "platform/FileDialog.h"
 #include "platform/Path.h"
 #include "platform/Shell.h"
 #include "util/File.h"
 #include "Buttons.h"
-
-#include <sstream>
 
 SystemView::SystemView(SystemIndex idx, IGraphics* graphics)
 	: _index(idx), _graphics(graphics)
@@ -43,7 +43,8 @@ void SystemView::DeleteFrame() {
 }
 
 void SystemView::WriteFrame(const VideoBuffer& buffer) {
-	if (buffer.data.get()) {
+	const char* frameData = buffer.data.get();
+	if (frameData) {
 		if (buffer.data.count() > _frameBufferSize) {
 			if (_frameBuffer) {
 				delete[] _frameBuffer;
@@ -61,7 +62,7 @@ void SystemView::WriteFrame(const VideoBuffer& buffer) {
 			}
 		}
 
-		memcpy(_frameBuffer, buffer.data.get(), _frameBufferSize);
+		memcpy(_frameBuffer, frameData, _frameBufferSize);
 		_frameDirty = true;
 	}
 }

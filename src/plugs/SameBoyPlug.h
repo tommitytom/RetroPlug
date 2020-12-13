@@ -73,8 +73,6 @@ private:
 	int16_t* _audioScratch = nullptr;
 	size_t _audioScratchSize = 0;
 
-	
-
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }

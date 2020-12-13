@@ -37,6 +37,7 @@ struct SystemDuplicateDesc {
 struct VideoBuffer {
 	Dimension2 dimensions;
 	micromsg::UniquePtr<char> data;
+	bool hasData = false;
 };
 
 struct VideoStream {

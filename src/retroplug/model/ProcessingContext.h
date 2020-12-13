@@ -43,8 +43,8 @@ public:
 		_instances.clear();
 	}
 
-	void setNode(Node* node) { 
-		_node = node; 
+	void setNode(Node* node) {
+		_node = node;
 		_alloc = node->getAllocator();
 	}
 
@@ -166,6 +166,7 @@ public:
 
 		if (frameCount != _audioSettings.frameCount) {
 			_audioSettings.frameCount = frameCount;
+
 			for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 				if (_instances[i]) {
 					_audioBuffers[i].data = std::make_shared<DataBuffer<float>>(frameCount * 2);
@@ -185,6 +186,7 @@ public:
 
 		for (size_t i = 0; i < MAX_SYSTEMS; i++) {
 			SameBoyPlugPtr plugPtr = _instances[i];
+
 			if (plugPtr) {
 				SameBoyPlug* plug = plugPtr.get();
 				plugs[i] = plug;
@@ -224,7 +226,15 @@ public:
 			chanMultipler = 2;
 		}
 
-		if (_node->canPush<calls::TransmitVideo>()) {
+		bool hasVideo = false;
+		for (const VideoBuffer& b : video.buffers) {
+			if (b.hasData) {
+				hasVideo = true;
+				break;
+			}
+		}
+
+		if (hasVideo && _node->canPush<calls::TransmitVideo>()) {
 			_node->push<calls::TransmitVideo>(NodeTypes::Ui, std::move(video));
 		}
 
@@ -244,6 +254,7 @@ private:
 		for (size_t i = 0; i < _instances.size(); i++) {
 			if (_instances[i]) {
 				const auto& settings = _instances[i]->getSettings();
+
 				if (_instances[i] != ignore && _instances[i]->active() && settings.gameLink) {
 					targets.push_back(_instances[i]);
 				}
@@ -253,8 +264,10 @@ private:
 
 	void updateLinkTargets() {
 		std::vector<SameBoyPlugPtr> targets;
+
 		for (size_t i = 0; i < _instances.size(); i++) {
 			auto target = _instances[i];
+
 			if (target && target->active() && target->getSettings().gameLink) {
 				targets.clear();
 				getLinkTargets(targets, target);
@@ -262,5 +275,4 @@ private:
 			}
 		}
 	}
-
 };

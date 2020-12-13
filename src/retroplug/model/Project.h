@@ -23,6 +23,7 @@ enum class GameboyModel {
 struct SameBoySettings {
 	GameboyModel model = GameboyModel::Auto;
 	bool gameLink = false;
+	bool fastBoot = false;
 };
 
 struct Point {
