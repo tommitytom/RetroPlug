@@ -1,21 +1,7 @@
-if os.istarget "Windows" then
-	require "vstudio"
-	local p = premake;
-	local vc = p.vstudio.vc2010;
-
-	function disableFastUpToDateCheck(prj, cfg)
-		vc.element("DisableFastUpToDateCheck", nil, "true")
-	end
-
-	p.override(vc.elements, "globalsCondition",
-			function(oldfn, prj, cfg)
-				local elements = oldfn(prj, cfg)
-				elements = table.join(elements, {disableFastUpToDateCheck})
-				return elements
-			end)
-end
-
+local util = dofile("scripts/util.lua")
 local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
+
+util.disableFastUpToDateCheck({ "RetroPlug" })
 
 iplug2.workspace "RetroPlug"
 	platforms { "x64" }
@@ -40,6 +26,7 @@ project "RetroPlug"
 	includedirs {
 		"config",
 		"resources",
+		"src",
 		"src/retroplug",
 		"thirdparty",
 		"thirdparty/gainput/lib/include",
@@ -47,7 +34,8 @@ project "RetroPlug"
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
 		"thirdparty/minizip",
-		"thirdparty/sol"
+		"thirdparty/sol",
+		"thirdparty/SameBoy/Core"
 	}
 
 	files {
@@ -85,7 +73,10 @@ project "RetroPlug"
 		}
 
 local function retroplugProject()
+	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
+
 	includedirs {
+		"src",
 		"src/retroplug",
 		"src/plugin",
 		"thirdparty",
@@ -94,7 +85,8 @@ local function retroplugProject()
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
 		"thirdparty/minizip",
-		"thirdparty/sol"
+		"thirdparty/sol",
+		"thirdparty/SameBoy/Core"
 	}
 
 	files {
@@ -113,11 +105,11 @@ local function retroplugProject()
 		"SameBoy"
 	}
 
-	configuration { "windows" }
-		links { "xinput" }
-
 	configuration { "Debug" }
 		symbols "Full"
+
+	configuration { "windows" }
+		links { "xinput" }
 end
 
 group "Targets"
@@ -133,5 +125,4 @@ project "ScriptCompiler"
 	links { "lua" }
 
 group "Dependencies"
-
-dofile "scripts/sameboy.lua"
+	dofile("scripts/sameboy.lua")

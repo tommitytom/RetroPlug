@@ -49,7 +49,7 @@ project "SameBoy"
 	toolset "clang"
 	dependson "SameBoyBootRoms"
 
-	defines { "GB_INTERNAL", "_CRT_SECURE_NO_WARNINGS" }
+	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
 
 	includedirs {
 		SAMEBOY_DIR .. "Core",
@@ -61,8 +61,9 @@ project "SameBoy"
 	files {
 		SAMEBOY_DIR .. "Core/**.h",
 		SAMEBOY_DIR .. "Core/**.c",
-		SAMEBOY_DIR .. "retroplug/**.h",
-		SAMEBOY_DIR .. "retroplug/**.c",
 		"../src/plugs/SameBoyPlug.h",
 		"../src/plugs/SameBoyPlug.cpp",
 	}
+
+	configuration { "windows" }
+		defines { "_CRT_SECURE_NO_WARNINGS" }
