@@ -83,7 +83,6 @@ local function retroplugProject()
 	files {
 		"src/plugin/**.h",
 		"src/plugin/**.cpp",
-		"resources/dlls/**",
 		"resources/fonts/**",
 	}
 

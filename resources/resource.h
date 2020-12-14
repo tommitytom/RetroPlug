@@ -3,7 +3,6 @@
 // Used by main.rc
 //
 #define IDR_ACCELERATOR2                105
-#define IDR_RCDATA1                     108
 #define IDR_DEFAULT_CONFIG              116
 #define IDR_ACCELERATOR1                40000
 #define IDD_DIALOG_MAIN                 40001
