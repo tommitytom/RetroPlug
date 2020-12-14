@@ -78,9 +78,9 @@ public:
 			if (inst) {
 				if (req.srams[i]) {
 					auto& buf = req.srams[i];
-					size_t sramSize = inst->batterySize();
+					size_t sramSize = inst->sramSize();
 					buf->resize(sramSize);
-					inst->saveBattery(buf->data(), buf->size());
+					inst->saveSram(buf->data(), buf->size());
 					state.srams[i] = buf;
 				}
 

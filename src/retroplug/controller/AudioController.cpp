@@ -79,7 +79,7 @@ void AudioController::setNode(Node* node) {
 	node->on<calls::SetSram>([&](const SetDataRequest& req, DataBufferPtr& ret) {
 		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
 		if (inst) {
-			inst->loadBattery(req.buffer->data(), req.buffer->size(), req.reset);
+			inst->loadSram(req.buffer->data(), req.buffer->size(), req.reset);
 		}
 	
 		ret = req.buffer;
@@ -127,7 +127,7 @@ bool AudioController::getSram(SystemIndex idx, DataBuffer<char>* target) {
 	std::scoped_lock l(_lock);
 	SameBoyPlugPtr instance = _processingContext.getInstance(idx);
 	if (instance) {
-		return instance->saveBattery(target->data(), target->size());
+		return instance->saveSram(target->data(), target->size());
 	} else {
 		std::cout << "Failed to fetch SRAM from instance " << idx << ": instance does not exist" << std::endl;
 	}

@@ -172,15 +172,15 @@ size_t SameBoyPlug::saveStateSize() {
 	return (size_t)GB_get_save_state_size(_state.gb);
 }
 
-size_t SameBoyPlug::batterySize() {
+size_t SameBoyPlug::sramSize() {
 	return (size_t)GB_save_battery_size(_state.gb);
 }
 
-size_t SameBoyPlug::saveBattery(char* data, size_t size) {
+size_t SameBoyPlug::saveSram(char* data, size_t size) {
 	return (size_t)GB_save_battery_to_buffer(_state.gb, (uint8_t*)data, size);
 }
 
-bool SameBoyPlug::loadBattery(const char* data, size_t size, bool reset) {
+bool SameBoyPlug::loadSram(const char* data, size_t size, bool reset) {
 	GB_load_battery_from_buffer(_state.gb, (const uint8_t*)data, size);
 
 	if (reset) {
@@ -191,11 +191,11 @@ bool SameBoyPlug::loadBattery(const char* data, size_t size, bool reset) {
 }
 
 bool SameBoyPlug::clearBattery(bool reset) {
-	size_t size = batterySize();
+	size_t size = sramSize();
 	std::vector<char> d(size);
 	memset(d.data(), 0, size);
 
-	loadBattery(d.data(), size, reset);
+	loadSram(d.data(), size, reset);
 
 	return true;
 }

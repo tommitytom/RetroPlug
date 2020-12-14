@@ -194,7 +194,7 @@ public:
 		}
 
 		if (inst->sramData) {
-			plug->loadBattery(inst->sramData->data(), inst->sramData->size(), false);
+			plug->loadSram(inst->sramData->data(), inst->sramData->size(), false);
 		} else {
 			// TODO: Instead of using MAX_STATE_SIZE get the actual SRAM size from the emu
 			inst->sramData = std::make_shared<DataBuffer<char>>(MAX_SRAM_SIZE);

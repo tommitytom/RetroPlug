@@ -112,11 +112,11 @@ public:
 
 	size_t saveStateSize();
 
-	size_t batterySize();
+	size_t sramSize();
 
-	size_t saveBattery(char* data, size_t size);
+	size_t saveSram(char* data, size_t size);
 
-	bool loadBattery(const char* data, size_t size, bool reset);
+	bool loadSram(const char* data, size_t size, bool reset);
 
 	bool clearBattery(bool reset);
 
