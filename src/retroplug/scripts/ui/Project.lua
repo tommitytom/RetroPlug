@@ -160,7 +160,7 @@ function Project.save(path, pretty, immediate)
 			_native.path = path
 		end
 
-		log.info("Saving project to " .. path)
+		--log.info("Saving project to " .. path)
 
 		local zipSettings = ZipWriterSettings.new()
 		zipSettings.method = ZipCompressionMethod.Deflate
