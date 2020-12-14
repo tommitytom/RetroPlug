@@ -47,6 +47,9 @@ struct SameBoyPlugState {
 	bool vblankOccurred = false;
 	int linkTicksRemain = 0;
 
+	GameboyModel model = GameboyModel::Auto;
+	bool fastBoot = false;
+
 	int processTicks = 0;
 
 	std::vector<SameBoyPlugState*> linkTargets;
@@ -61,7 +64,6 @@ private:
 	SameBoyPlugDesc _desc;
 	SameBoySettings _settings;
 
-	bool _midiSync = false;
 	int _resetSamples = 0;
 
 	double _sampleRate = 48000;
@@ -96,10 +98,6 @@ public:
 		_audioBuffer = audio;
 	}
 
-	bool midiSync() { return _midiSync; }
-
-	void setMidiSync(bool enabled) { _midiSync = enabled; }
-
 	const SameBoySettings& getSettings() const { return _settings; }
 
 	void setSettings(const SameBoySettings& settings) { _settings = settings; }
@@ -111,8 +109,6 @@ public:
 	void setSampleRate(double sampleRate);
 
 	void sendSerialByte(int offset, int byte);
-
-	void sendMidiBytes(int offset, const char* bytes, size_t count);
 
 	size_t saveStateSize();
 
@@ -145,5 +141,5 @@ public:
 private:
 	void updateAV(int audioFrames);
 
-	void init(GameboyModel model, bool fastBoot);
+	void init(GameboyModel model);
 };

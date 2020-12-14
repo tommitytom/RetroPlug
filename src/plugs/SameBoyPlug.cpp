@@ -110,11 +110,11 @@ static bool serialEnd(GB_gameboy_t* gb) {
 
 static void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t type) {
 	SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
-	//std::string_view bootRom = findBootRom(s->model, s->fastBoot);
+	std::string_view bootRom = findBootRom(s->model, s->fastBoot);
 	GB_load_boot_rom_from_buffer(gb, cgb_boot, cgb_boot_len);
 }
 
-void SameBoyPlug::init(GameboyModel model, bool fastBoot) {
+void SameBoyPlug::init(GameboyModel model) {
 	assert(_state.gb == nullptr);
 
 	_state.gb = new GB_gameboy_t();
@@ -141,7 +141,10 @@ void SameBoyPlug::init(GameboyModel model, bool fastBoot) {
 void SameBoyPlug::loadRom(const char* data, size_t size, const SameBoySettings& settings, bool fastBoot) {
 	_settings = settings;
 
-	init(settings.model, fastBoot);
+	_state.model = settings.model;
+	_state.fastBoot = fastBoot;
+
+	init(settings.model);
 
 	GB_load_rom_from_buffer(_state.gb, (const uint8_t*)data, size);
 	GB_set_rendering_disabled(_state.gb, false);
@@ -151,10 +154,10 @@ void SameBoyPlug::loadRom(const char* data, size_t size, const SameBoySettings& 
 
 void SameBoyPlug::reset(GameboyModel model, bool fastBoot) {
 	_settings.model = model;
-	_settings.fastBoot = fastBoot;
 
-	std::string_view bootRom = findBootRom(model, fastBoot);
-	//GB_load_boot_rom_from_buffer(_state.gb, (const unsigned char*)bootRom.data(), bootRom.size());
+	_state.model = model;
+	_state.fastBoot = fastBoot;
+
 	GB_switch_model_and_reset(_state.gb, getGameboyModelId(model));
 
 	_resetSamples = (int)(_sampleRate / 2);
@@ -249,6 +252,7 @@ void SameBoyPlug::update(size_t audioFrames) {
 				_state.serialQueue.pop();
 
 				for (int i = b.bitCount - 1; i >= 0; i--) {
+				//for (int i = 0; i < b.bitCount; i++) {
 					bool bit = (bool)((b.byte & (1 << i)) >> i);
 					GB_serial_set_data_bit(_state.gb, bit);
 				}
