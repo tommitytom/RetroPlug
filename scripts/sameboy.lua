@@ -10,9 +10,11 @@ project "pb12"
 	language "C"
 	toolset "clang"
 
-	defines { "_CRT_SECURE_NO_WARNINGS" }
-	includedirs { SAMEBOY_DIR .. "Windows" }
 	files { SAMEBOY_DIR .. "BootROMs/pb12.c" }
+
+	configuration { "windows" }
+		defines { "_CRT_SECURE_NO_WARNINGS" }
+		includedirs { SAMEBOY_DIR .. "Windows" }
 
 project "bin2h"
 	kind "ConsoleApp"
@@ -53,7 +55,6 @@ project "SameBoy"
 
 	includedirs {
 		SAMEBOY_DIR .. "Core",
-		SAMEBOY_DIR .. "Windows",
 		"../src",
 		"../src/generated/bootroms"
 	}
@@ -66,4 +67,5 @@ project "SameBoy"
 	}
 
 	configuration { "windows" }
+		includedirs { SAMEBOY_DIR .. "Windows" }
 		defines { "_CRT_SECURE_NO_WARNINGS" }

@@ -8,14 +8,8 @@ iplug2.workspace "RetroPlug"
 	characterset "MBCS"
 	cppdialect "C++latest"
 
-	configuration { "Debug" }
-		libdirs { "thirdparty/lib/debug_x64" }
-
-	configuration { "Release" }
-		libdirs { "thirdparty/lib/release_x64" }
-
-	configuration { "Tracer" }
-		libdirs { "thirdparty/lib/release_x64" }
+	configuration { "windows" }
+		defines { "_CRT_SECURE_NO_WARNINGS" }
 
 	configuration {}
 
@@ -39,9 +33,6 @@ project "RetroPlug"
 	}
 
 	files {
-		"thirdparty/liblsdj/liblsdj/include/lsdj/**.h",
-		"thirdparty/liblsdj/liblsdj/src/**.c",
-
 		"src/retroplug/**.h",
 		"src/retroplug/**.c",
 		"src/retroplug/**.cpp",
@@ -102,7 +93,8 @@ local function retroplugProject()
 		"simplefilewatcher",
 		"minizip",
 		"gainput",
-		"SameBoy"
+		"SameBoy",
+		"liblsdj"
 	}
 
 	configuration { "Debug" }
@@ -120,9 +112,14 @@ iplug2.project.vst3(retroplugProject)
 group "Utils"
 project "ScriptCompiler"
 	kind "ConsoleApp"
-	includedirs { "src/compiler", "thirdparty/lua-5.3.5/src", "thirdparty" }
+	includedirs { "src/compiler", "thirdparty", "thirdparty/lua-5.3.5/src" }
 	files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 	links { "lua" }
 
 group "Dependencies"
 	dofile("scripts/sameboy.lua")
+	dofile("scripts/lua.lua")
+	dofile("scripts/gainput.lua")
+	dofile("scripts/minizip.lua")
+	dofile("scripts/simplefilewatcher.lua")
+	dofile("scripts/liblsdj.lua")
