@@ -50,7 +50,7 @@ end
 
 function Controller:initProject()
 	for i = 1, const.MAX_SYSTEMS, 1 do
-		local instModel = self._model:getInstance(i - 1)
+		local instModel = self._model:getSystem(i - 1)
 		if instModel ~= nil then
 			local state = componentutil.createState(self._components)
 			local system = GameboySystem(instModel, self._model:getButtonPresses(i - 1), state)
@@ -84,7 +84,6 @@ function Controller:update(frameCount)
 		return
 	end
 
-	print(self._timeInfo.transportIsRunning)
 	if self._timeInfo.transportIsRunning ~= self._transportRunning then
 		self._transportRunning = self._timeInfo.transportIsRunning
 		self:emit("onTransportChanged", self._transportRunning)
@@ -145,7 +144,7 @@ function Controller:onDialogResult(paths)
 	--dialog.__onResult(paths)
 end
 
-function Controller:addInstance(idx, model, componentState)
+function Controller:addSystem(idx, model, componentState)
 	local state = componentutil.createState(self._components)
 	local system = GameboySystem(model, self._model:getButtonPresses(idx), state)
 
@@ -161,7 +160,7 @@ function Controller:addInstance(idx, model, componentState)
 	end
 end
 
-function Controller:duplicateInstance(sourceIdx, targetIdx, model)
+function Controller:duplicateSystem(sourceIdx, targetIdx, model)
 	local state = componentutil.createState(self._components)
 	local system = GameboySystem(model, self._model:getButtonPresses(targetIdx), state)
 	Project.systems[targetIdx + 1] = system
@@ -178,7 +177,7 @@ function Controller:duplicateInstance(sourceIdx, targetIdx, model)
 	end
 end
 
-function Controller:removeInstance(idx)
+function Controller:removeSystem(idx)
 	table.remove(Project.systems, idx + 1)
 
 	if self._selectedIdx >= #Project.systems then
@@ -186,13 +185,13 @@ function Controller:removeInstance(idx)
 	end
 end
 
-function Controller:serializeInstance(idx, pretty)
+function Controller:serializeSystem(idx, pretty)
 	local opts = { comment = false }
 	if pretty == true then opts.indent = '\t' end
 	return serpent.block(Project.systems[idx + 1].state, opts)
 end
 
-function Controller:serializeInstances(pretty)
+function Controller:serializeSystems(pretty)
 	local opts = { comment = false }
 	if pretty == true then opts.indent = '\t' end
 
@@ -204,7 +203,7 @@ function Controller:serializeInstances(pretty)
 	return serpent.block(instances, opts)
 end
 
-function Controller:deserializeInstances(data)
+function Controller:deserializeSystems(data)
 	local ok, state = serpent.load(data)
 	if ok == true then
 		for i, v in ipairs(state) do
@@ -216,7 +215,7 @@ function Controller:deserializeInstances(data)
 	end
 end
 
-function Controller:deserializeInstance(idx, data)
+function Controller:deserializeSystem(idx, data)
 	local system = Project.systems[idx]
 	if system == nil then
 		log.warn("Failed to deserialize instance - instance " .. idx .. " does not exist")
