@@ -1,7 +1,7 @@
 local module = {}
 
-function module.generatePpq(sampleCount, samepleRate, timeInfo, resolution)
-	local samplesPerMs = samepleRate / 1000.0
+function module.generatePpq(sampleCount, sampleRate, timeInfo, resolution)
+	local samplesPerMs = sampleRate / 1000.0
 	local beatLenMs = 60000.0 / timeInfo.tempo
 	local beatLenSamples = beatLenMs * samplesPerMs
 	local beatLenSamples24 = beatLenSamples / resolution
@@ -28,8 +28,8 @@ function module.generatePpq(sampleCount, samepleRate, timeInfo, resolution)
 	return sync, offset
 end
 
-function module.generatePpq24(sampleCount, samepleRate, timeInfo)
-	module.generatePpq(sampleCount, samepleRate, timeInfo, 24)
+function module.generatePpq24(sampleCount, sampleRate, timeInfo)
+	module.generatePpq(sampleCount, sampleRate, timeInfo, 24)
 end
 
 return module

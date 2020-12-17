@@ -46,13 +46,15 @@ public:
 
 	void closeProject();
 
-	void addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState);
+	void addSystem(SystemIndex idx, SameBoyPlugPtr system, const std::string& componentState);
 
-	void duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance);
+	void duplicateSystem(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr system);
 
-	void removeInstance(SystemIndex index);
+	void removeSystem(SystemIndex index);
 
 	void setActive(SystemIndex idx);
+
+	void setSampleRate(double sampleRate);
 
 	void update(int frameCount);
 
@@ -70,11 +72,11 @@ public:
 
 	void shutdown();
 
-	std::string serializeInstance(SystemIndex index);
+	std::string serializeSystem(SystemIndex index);
 
-	std::string serializeInstances();
+	std::string serializeSystems();
 
-	void deserializeInstances(const std::string& data);
+	void deserializeSystems(const std::string& data);
 
 	void deserializeComponents(const std::array<std::string, 4>& components);
 

@@ -53,7 +53,7 @@ function LsdjArduinoboy.onTransportChanged(running)
 	end
 end
 
-local function onPpq(state, offset)
+function LsdjArduinoboy.onPpq(state, offset)
 	print("ppq")
 	if state.syncMode == LsdjSyncModes.MidiSync then
 		System:sendSerialByte(offset, 0xF8)
@@ -72,7 +72,7 @@ function LsdjArduinoboy.onMidi(system, msg)
 	local status = msg.status
 	if status == midi.Status.System then
 		if msg.systemStatus == midi.SystemStatus.TimingClock then
-			onPpq(state, msg.offset)
+			LsdjArduinoboy.onPpq(state, msg.offset)
 		else
 			print(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
 		end

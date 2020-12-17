@@ -20,14 +20,20 @@ function Controller:init()
 	self._transportRunning = false
 	self._timeInfo = nil
 	self._inputConfig = InputConfig()
+	self._sampleRate = 44100
 end
 
-function Controller:setup(model, timeInfo)
+function Controller:setup(model, timeInfo, sampleRate)
 	self._components = ComponentManager.createComponents()
 	self._model = model
 	self._timeInfo = timeInfo
+	self._sampleRate = sampleRate
 
 	Project._componentState = componentutil.createState(self._components)
+end
+
+function Controller:setSampleRate(sampleRate)
+	self._sampleRate = sampleRate
 end
 
 function Controller:loadConfigFromPath(path)
@@ -78,6 +84,7 @@ function Controller:update(frameCount)
 		return
 	end
 
+	print(self._timeInfo.transportIsRunning)
 	if self._timeInfo.transportIsRunning ~= self._transportRunning then
 		self._transportRunning = self._timeInfo.transportIsRunning
 		self:emit("onTransportChanged", self._transportRunning)

@@ -27,6 +27,17 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
 		pGraphics->SetKeyHandlerFunc([&](const IKeyPress& key, bool isUp) {
+			if ((VirtualKey)key.VK == VirtualKey::T) {
+				IMidiMsg msg;
+				if (isUp) {
+					msg.MakeNoteOffMsg(60, 0);
+				} else {
+					msg.MakeNoteOnMsg(60, 127, 0);
+				}
+				
+				ProcessMidiMsg(msg);
+			}
+
 			return _controller.onKey((VirtualKey)key.VK, !isUp);
 		});
 
@@ -49,6 +60,10 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 			outputs[j][i] = 0;
 		}
 	}
+
+	TimeInfo& timeInfo = _controller.getTimeInfo();
+	static_assert(sizeof(TimeInfo) == sizeof(iplug::ITimeInfo), "Time info size is incorrect");
+	memcpy(&timeInfo, &mTimeInfo, sizeof(TimeInfo));
 
 	_controller.audioController()->process(outputs, (size_t)frameCount);
 }

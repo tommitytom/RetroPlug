@@ -55,7 +55,7 @@ bool AudioLuaContext::setup() {
 
 	s.new_usertype<ProcessingContext>("ProcessingContext",
 		"getSettings", &ProcessingContext::getSettings,
-		"getInstance", &ProcessingContext::getInstance,
+		"getSystem", &ProcessingContext::getSystem,
 		"getButtonPresses", &ProcessingContext::getButtonPresses
 	);
 
@@ -107,7 +107,7 @@ bool AudioLuaContext::setup() {
 	consoleLogLine("Finished loading components");
 
 	// Set up the lua context
-	if (!callFunc(_controller, "setup", _context, _timeInfo)) {
+	if (!callFunc(_controller, "setup", _context, _timeInfo, _sampleRate)) {
 		consoleLogLine("Failed to setup view");
 	}
 
@@ -133,20 +133,24 @@ bool AudioLuaContext::setup() {
 	return true;
 }
 
-void AudioLuaContext::addInstance(SystemIndex idx, SameBoyPlugPtr instance, const std::string& componentState) {
-	callFunc(_controller, "addInstance", idx, instance, componentState);
+void AudioLuaContext::addSystem(SystemIndex idx, SameBoyPlugPtr system, const std::string& componentState) {
+	callFunc(_controller, "addSystem", idx, system, componentState);
 }
 
-void AudioLuaContext::duplicateInstance(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr instance) {
-	callFunc(_controller, "duplicateInstance", sourceIdx, targetIdx, instance);
+void AudioLuaContext::duplicateSystem(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr system) {
+	callFunc(_controller, "duplicateSystem", sourceIdx, targetIdx, system);
 }
 
-void AudioLuaContext::removeInstance(SystemIndex idx) {
-	callFunc(_controller, "removeInstance", idx);
+void AudioLuaContext::removeSystem(SystemIndex idx) {
+	callFunc(_controller, "removeSystem", idx);
 }
 
 void AudioLuaContext::setActive(SystemIndex idx) {
 	callFunc(_controller, "setActive", idx);
+}
+
+void AudioLuaContext::setSampleRate(double sampleRate) {
+	callFunc(_controller, "setSampleRate", sampleRate);
 }
 
 void AudioLuaContext::update(int frameCount) {
@@ -173,26 +177,26 @@ void AudioLuaContext::onMenuResult(int id) {
 	callFunc(_controller, "onMenuResult", id);
 }
 
-std::string AudioLuaContext::serializeInstance(SystemIndex index) {
+std::string AudioLuaContext::serializeSystem(SystemIndex index) {
 	std::string target;
-	callFuncRet(_controller, "serializeInstance", target, index);
+	callFuncRet(_controller, "serializeSystem", target, index);
 	return target;
 }
 
-std::string AudioLuaContext::serializeInstances() {
+std::string AudioLuaContext::serializeSystems() {
 	std::string target;
-	callFuncRet(_controller, "serializeInstances", target);
+	callFuncRet(_controller, "serializeSystems", target);
 	return target;
 }
 
-void AudioLuaContext::deserializeInstances(const std::string& data) {
-	callFunc(_controller, "deserializeInstances", data);
+void AudioLuaContext::deserializeSystems(const std::string& data) {
+	callFunc(_controller, "deserializeSystems", data);
 }
 
 void AudioLuaContext::deserializeComponents(const std::array<std::string, 4>& components) {
 	for (size_t i = 0; i < components.size(); ++i) {
 		if (!components[i].empty()) {
-			callFunc(_controller, "deserializeInstance", i, "hello");
+			callFunc(_controller, "deserializeSystem", i, "hello");
 		}
 	}
 }

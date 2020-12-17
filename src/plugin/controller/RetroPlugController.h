@@ -38,6 +38,10 @@ public:
 	RetroPlugController(double sampleRate);
 	~RetroPlugController();
 
+	TimeInfo& getTimeInfo() {
+		return _timeInfo;
+	}
+
 	std::mutex* getMenuLock() { return _audioController.getLock(); }
 
 	void update(double delta);

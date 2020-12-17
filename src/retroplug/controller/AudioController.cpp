@@ -9,14 +9,15 @@ void AudioController::setNode(Node* node) {
 	node->on<calls::SwapLuaContext>([&](const AudioLuaContextPtr& ctx, AudioLuaContextPtr& other) {
 		std::string componentData;
 		if (_lua) {
-			componentData = _lua->serializeInstances();
+			componentData = _lua->serializeSystems();
 		}
 		
 		other = _lua;
 		ctx->init(&_processingContext, _timeInfo, _sampleRate);
+		ctx->setSampleRate(_sampleRate);
 
 		if (!componentData.empty()) {
-			ctx->deserializeInstances(componentData);
+			ctx->deserializeSystems(componentData);
 		}
 		
 		_lua = ctx;
@@ -24,24 +25,24 @@ void AudioController::setNode(Node* node) {
 
 	node->on<calls::SwapSystem>([&](const SystemSwapDesc& d, SystemSwapDesc& other) {
 		assert(d.idx != -1);
-		_lua->addInstance(d.idx, d.instance, *d.componentState);
+		_lua->addSystem(d.idx, d.instance, *d.componentState);
 		
-		other.instance = _processingContext.swapInstance(d.idx, d.instance);
+		other.instance = _processingContext.swapSystem(d.idx, d.instance);
 		other.componentState = d.componentState;
 	});
 
 	node->on<calls::DuplicateSystem>([&](const SystemDuplicateDesc& d, SameBoyPlugPtr& other) {
-		other = _processingContext.duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
-		_lua->duplicateInstance(d.sourceIdx, d.targetIdx, d.instance);
+		other = _processingContext.duplicateSystem(d.sourceIdx, d.targetIdx, d.instance);
+		_lua->duplicateSystem(d.sourceIdx, d.targetIdx, d.instance);
 	});
 
 	node->on<calls::ResetSystem>([&](const ResetSystemDesc& d) {
-		_processingContext.resetInstance(d.idx, d.model);
+		_processingContext.resetSystem(d.idx, d.model);
 	});
 
 	node->on<calls::TakeSystem>([&](const SystemIndex& idx, SameBoyPlugPtr& other) {
-		_lua->removeInstance(idx);
-		other = _processingContext.removeInstance(idx);
+		_lua->removeSystem(idx);
+		other = _processingContext.removeSystem(idx);
 	});
 
 	node->on<calls::SetActive>([&](const SystemIndex& idx) {
@@ -65,7 +66,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::SetRom>([&](const SetDataRequest& req, DataBufferPtr& ret) {
-		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
+		SameBoyPlugPtr inst = _processingContext.getSystem(req.idx);
 		if (inst) {
 			inst->setRomData(req.buffer.get());
 			if (req.reset) {
@@ -77,7 +78,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::SetSram>([&](const SetDataRequest& req, DataBufferPtr& ret) {
-		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
+		SameBoyPlugPtr inst = _processingContext.getSystem(req.idx);
 		if (inst) {
 			inst->loadSram(req.buffer->data(), req.buffer->size(), req.reset);
 		}
@@ -86,7 +87,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::SetState>([&](const SetDataRequest& req, DataBufferPtr& ret) {
-		SameBoyPlugPtr inst = _processingContext.getInstance(req.idx);
+		SameBoyPlugPtr inst = _processingContext.getSystem(req.idx);
 		if (inst) {
 			inst->loadState(req.buffer->data(), req.buffer->size());
 		}
@@ -95,7 +96,7 @@ void AudioController::setNode(Node* node) {
 	});
 
 	node->on<calls::PressButtons>([&](const ButtonPressState& presses) {
-		SameBoyPlugPtr& instance = _processingContext.getInstance(presses.idx);
+		SameBoyPlugPtr& instance = _processingContext.getSystem(presses.idx);
 		if (instance) { 
 			instance->pressButtons(presses.buttons.presses.data(), presses.buttons.pressCount);
 		}
@@ -109,13 +110,17 @@ void AudioController::setNode(Node* node) {
 void AudioController::setAudioSettings(const AudioSettings& settings) {
 	_processingContext.setAudioSettings(settings);
 	_sampleRate = settings.sampleRate;
+
+	if (_lua) {
+		_lua->setSampleRate(settings.sampleRate);
+	}
 }
 
 void AudioController::fetchState(const FetchStateRequest& req, FetchStateResponse& state) {
 	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
 		if ((size_t)req.systems[i] & (size_t)ResourceType::Components) {
-			if (_processingContext.getInstance(i)) {
-				state.components[i] = _lua->serializeInstance(i);
+			if (_processingContext.getSystem(i)) {
+				state.components[i] = _lua->serializeSystem(i);
 			}
 		}
 	}
@@ -125,7 +130,7 @@ void AudioController::fetchState(const FetchStateRequest& req, FetchStateRespons
 
 bool AudioController::getSram(SystemIndex idx, DataBuffer<char>* target) {
 	std::scoped_lock l(_lock);
-	SameBoyPlugPtr instance = _processingContext.getInstance(idx);
+	SameBoyPlugPtr instance = _processingContext.getSystem(idx);
 	if (instance) {
 		return instance->saveSram(target->data(), target->size());
 	} else {
