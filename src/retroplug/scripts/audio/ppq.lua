@@ -29,7 +29,7 @@ function module.generatePpq(sampleCount, sampleRate, timeInfo, resolution)
 end
 
 function module.generatePpq24(sampleCount, sampleRate, timeInfo)
-	module.generatePpq(sampleCount, sampleRate, timeInfo, 24)
+	return module.generatePpq(sampleCount, sampleRate, timeInfo, 24)
 end
 
 return module

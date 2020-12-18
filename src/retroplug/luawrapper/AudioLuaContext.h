@@ -6,8 +6,7 @@
 #include "model/ProcessingContext.h"
 #include "platform/Menu.h"
 
-struct TimeInfo
-{
+struct TimeInfo {
 	double mTempo = 120.0;
 	double mSamplePos = -1.0;
 	double mPPQPos = -1.0;
@@ -65,8 +64,6 @@ public:
 	void onMenu(SystemIndex idx, std::vector<Menu*>& menus);
 
 	void onMenuResult(int id);
-
-	//void reload();
 
 	void scheduleReload() { _reload = true; }
 
