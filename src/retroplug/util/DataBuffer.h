@@ -18,7 +18,7 @@ public:
 	DataBuffer(const DataBuffer& other) { *this = other; }
 	DataBuffer(DataBuffer&& other) { *this = std::move(other); }
 	DataBuffer(size_t size) { resize(size); }
-	DataBuffer(T* data, size_t size) : _dataPtr(data), _reserved(size), _ownsData(false) {}
+	DataBuffer(T* data, size_t size, bool ownsData = false) : _dataPtr(data), _reserved(size), _ownsData(ownsData) {}
 	~DataBuffer() { destroy(); }
 
 	T get(size_t idx) { assert(idx < _reserved); return _dataPtr[idx]; }

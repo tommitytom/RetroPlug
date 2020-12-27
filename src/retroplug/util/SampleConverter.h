@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace SampleConverter {
 	void s16_to_f32(float* target, int16_t* source, size_t count) {
 		for (size_t i = 0; i < count; ++i) {
