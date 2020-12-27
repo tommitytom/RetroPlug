@@ -37,6 +37,22 @@ struct GameboySample {
 	int16_t right;
 };
 
+struct DirectAccessType {
+	enum Enum {
+		Rom,
+		Ram,
+		CartRam,
+		Vram,
+		Hram,
+		Io,
+		BootRom,
+		Oam,
+		Bgp,
+		Obp,
+		Ie
+	};
+};
+
 struct SameBoyPlugState {
 	GB_gameboy_t* gb = nullptr;
 	char frameBuffer[FRAME_BUFFER_SIZE];
@@ -137,6 +153,8 @@ public:
 	void disableRendering(bool disable);
 
 	void setRomData(DataBuffer<char>* data);
+
+	void patchMemory(DirectAccessType::Enum memoryType, DataBuffer<char>* data, size_t offset = 0);
 
 private:
 	void updateAV(int audioFrames);

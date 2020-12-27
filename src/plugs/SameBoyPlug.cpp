@@ -322,6 +322,16 @@ void SameBoyPlug::setRomData(DataBuffer<char>* data) {
 	}
 }
 
+void SameBoyPlug::patchMemory(DirectAccessType::Enum memoryType, DataBuffer<char>* data, size_t offset) {
+	size_t size;
+	uint16_t bank;
+	char* target = (char*)GB_get_direct_access(_state.gb, (GB_direct_access_t)memoryType, &size, &bank);
+
+	if (offset + data->size() <= size) {
+		memcpy(target + offset, data->data(), data->size());
+	}
+}
+
 void SameBoyPlug::updateAV(int audioFrames) {
 	int sampleCount = audioFrames * 2;
 	/*if (sampleCount > _audioScratchSize) {
