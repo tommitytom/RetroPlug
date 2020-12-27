@@ -4,7 +4,7 @@ local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 util.disableFastUpToDateCheck({ "RetroPlug" })
 
 iplug2.workspace "RetroPlug"
-	platforms { "x64" }
+	platforms { "x86", "x64" }
 	characterset "MBCS"
 	cppdialect "C++latest"
 
