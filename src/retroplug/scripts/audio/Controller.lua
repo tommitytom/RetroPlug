@@ -4,6 +4,7 @@ local LuaMenu = require("Menu")
 local GameboySystem = require("System")
 local ComponentManager = require("ComponentManager")
 local ppq = require("ppq")
+local PpqGenerator = require("PpqGenerator")
 local midi = require("midi")
 local componentutil = require("util.component")
 local ConfigLoader = require("ConfigLoader")
@@ -21,6 +22,10 @@ function Controller:init()
 	self._timeInfo = nil
 	self._inputConfig = InputConfig()
 	self._sampleRate = 44100
+
+	self._ppqGen = PpqGenerator(24, function(ppq, offset)
+		self:emit("onPpq", ppq, offset)
+	end)
 end
 
 function Controller:setup(model, timeInfo, sampleRate)
@@ -28,12 +33,14 @@ function Controller:setup(model, timeInfo, sampleRate)
 	self._model = model
 	self._timeInfo = timeInfo
 	self._sampleRate = sampleRate
+	self._ppqGen:setSampleRate(sampleRate)
 
 	Project._componentState = componentutil.createState(self._components)
 end
 
 function Controller:setSampleRate(sampleRate)
 	self._sampleRate = sampleRate
+	self._ppqGen:setSampleRate(sampleRate)
 end
 
 function Controller:loadConfigFromPath(path)
@@ -79,22 +86,47 @@ function Controller:emit(name, ...)
 end
 
 function Controller:update(frameCount)
-	if self._timeInfo == nil then
+	local ti = self._timeInfo
+	if ti == nil then
 		print("Time info not set")
 		return
 	end
 
+	local trans = Project.transport
+	trans.changed = false
+	trans.started = false
+	trans.stopped = false
+	trans.paused = false
+
 	if self._timeInfo.transportIsRunning ~= self._transportRunning then
+		trans.changed = true
+
+		if self._timeInfo.transportIsRunning == true then
+			trans.state = TransportState.Playing
+			trans.started = true
+		else
+			trans.state = TransportState.Stopped
+			trans.stopped = true
+			self._ppqGen:reset()
+		end
+
 		self._transportRunning = self._timeInfo.transportIsRunning
 		self:emit("onTransportChanged", self._transportRunning)
 	end
 
 	if self._transportRunning == true then
+		self._ppqGen:setTempo(ti.tempo)
+		self._ppqGen:update(ti.ppqPos, frameCount)
+	end
+
+	self:emit("onUpdate", frameCount)
+
+	--[[if self._transportRunning == true then
 		local ppqTrigger, offset = ppq.generatePpq24(frameCount, self._sampleRate, self._timeInfo)
 		if ppqTrigger == true then
 			self:emit("onPpq", offset)
 		end
-	end
+	end]]
 end
 
 function Controller:onMidi(offset, statusByte, data1, data2)

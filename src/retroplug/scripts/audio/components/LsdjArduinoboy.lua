@@ -53,7 +53,11 @@ function LsdjArduinoboy.onTransportChanged(running)
 	end
 end
 
-function LsdjArduinoboy.onPpq(offset)
+function LsdjArduinoboy.onUpdate(frameCount)
+
+end
+
+function LsdjArduinoboy.onPpq(ppq, offset)
 	local state = System.state.arduinoboy
 
 	if state.syncMode == LsdjSyncModes.MidiSync then
