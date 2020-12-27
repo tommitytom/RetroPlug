@@ -14,7 +14,7 @@ void AudioController::setNode(Node* node) {
 		
 		other = _lua;
 		ctx->init(&_processingContext, _timeInfo, _sampleRate);
-		ctx->setSampleRate(_sampleRate);
+		//ctx->setSampleRate(_sampleRate);
 
 		if (!componentData.empty()) {
 			ctx->deserializeSystems(componentData);
@@ -156,10 +156,11 @@ void AudioController::process(float** outputs, size_t frameCount) {
 	// TODO: This mutex is temporary until I find a good way of sending context menus
 	// across threads!
 	_lock.lock();
-	if (ctx) {
+	if (ctx && ctx->isValid()) {
 		ctx->update(frameCount);
 	}
 
 	_processingContext.process(outputs, (size_t)frameCount);
+	
 	_lock.unlock();
 }

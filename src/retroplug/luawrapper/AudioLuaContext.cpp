@@ -1,16 +1,17 @@
 #include "AudioLuaContext.h"
 
 #include <sol/sol.hpp>
+
 #include "platform/Logger.h"
 #include "platform/Platform.h"
-#include "LuaHelpers.h"
-#include "config.h"
-#include "plugs/SameBoyPlug.h"
-#include "model/ProcessingContext.h"
-#include "util/fs.h"
 #include "platform/Menu.h"
+#include "util/fs.h"
+#include "model/ProcessingContext.h"
+#include "plugs/SameBoyPlug.h"
 #include "luawrapper/Wrappers.h"
 #include "luawrapper/generated/CompiledScripts.h"
+#include "LuaHelpers.h"
+#include "config.h"
 
 AudioLuaContext::AudioLuaContext(const std::string& configPath, const std::string& scriptPath) {
 	_configPath = configPath;
@@ -109,6 +110,7 @@ bool AudioLuaContext::setup() {
 	// Set up the lua context
 	if (!callFunc(_controller, "setup", _context, _timeInfo, _sampleRate)) {
 		consoleLogLine("Failed to setup view");
+		return false;
 	}
 
 	// Load the users config settings
@@ -117,11 +119,13 @@ bool AudioLuaContext::setup() {
 	std::string configPath = _configPath + "/config.lua";
 	if (!callFunc(_controller, "loadConfigFromPath", configPath)) {
 		consoleLogLine("Failed to load config from " + configPath);
+		return false;
 		//assert(false);
 	}
 
 	if (!callFunc(_controller, "initProject")) {
 		consoleLogLine("Failed to setup project");
+		return false;
 	}
 
 	loadInputMaps(_controller, _configPath + "/input");
@@ -134,35 +138,51 @@ bool AudioLuaContext::setup() {
 }
 
 void AudioLuaContext::addSystem(SystemIndex idx, SameBoyPlugPtr system, const std::string& componentState) {
-	callFunc(_controller, "addSystem", idx, system, componentState);
+	if (_valid) {
+		callFunc(_controller, "addSystem", idx, system, componentState);
+	}
 }
 
 void AudioLuaContext::duplicateSystem(SystemIndex sourceIdx, SystemIndex targetIdx, SameBoyPlugPtr system) {
-	callFunc(_controller, "duplicateSystem", sourceIdx, targetIdx, system);
+	if (_valid) {
+		callFunc(_controller, "duplicateSystem", sourceIdx, targetIdx, system);
+	}
 }
 
 void AudioLuaContext::removeSystem(SystemIndex idx) {
-	callFunc(_controller, "removeSystem", idx);
+	if (_valid) {
+		callFunc(_controller, "removeSystem", idx);
+	}
 }
 
 void AudioLuaContext::setActive(SystemIndex idx) {
-	callFunc(_controller, "setActive", idx);
+	if (_valid) {
+		callFunc(_controller, "setActive", idx);
+	}
 }
 
 void AudioLuaContext::setSampleRate(double sampleRate) {
-	callFunc(_controller, "setSampleRate", sampleRate);
+	if (_valid) {
+		callFunc(_controller, "setSampleRate", sampleRate);
+	}
 }
 
 void AudioLuaContext::update(int frameCount) {
-	callFunc(_controller, "update", frameCount);
+	if (_valid) {
+		callFunc(_controller, "update", frameCount);
+	}
 }
 
 void AudioLuaContext::closeProject() {
-	callFunc(_controller, "closeProject");
+	if (_valid) {
+		callFunc(_controller, "closeProject");
+	}
 }
 
 void AudioLuaContext::onMidi(int offset, int status, int data1, int data2) {
-	callFunc(_controller, "onMidi", offset, status, data1, data2);
+	if (_valid) {
+		callFunc(_controller, "onMidi", offset, status, data1, data2);
+	}
 }
 
 void AudioLuaContext::onMidiClock(int button, bool down) {
@@ -170,33 +190,47 @@ void AudioLuaContext::onMidiClock(int button, bool down) {
 }
 
 void AudioLuaContext::onMenu(SystemIndex idx, std::vector<Menu*>& menus) {
-	callFunc(_controller, "onMenu", idx, menus);
+	if (_valid) {
+		callFunc(_controller, "onMenu", idx, menus);
+	}
 }
 
 void AudioLuaContext::onMenuResult(int id) {
-	callFunc(_controller, "onMenuResult", id);
+	if (_valid) {
+		callFunc(_controller, "onMenuResult", id);
+	}
 }
 
 std::string AudioLuaContext::serializeSystem(SystemIndex index) {
 	std::string target;
-	callFuncRet(_controller, "serializeSystem", target, index);
+	if (_valid) {
+		callFuncRet(_controller, "serializeSystem", target, index);
+	}
+
 	return target;
 }
 
 std::string AudioLuaContext::serializeSystems() {
 	std::string target;
-	callFuncRet(_controller, "serializeSystems", target);
+	if (_valid) {
+		callFuncRet(_controller, "serializeSystems", target);
+	}
+
 	return target;
 }
 
 void AudioLuaContext::deserializeSystems(const std::string& data) {
-	callFunc(_controller, "deserializeSystems", data);
+	if (_valid) {
+		callFunc(_controller, "deserializeSystems", data);
+	}
 }
 
 void AudioLuaContext::deserializeComponents(const std::array<std::string, 4>& components) {
-	for (size_t i = 0; i < components.size(); ++i) {
-		if (!components[i].empty()) {
-			callFunc(_controller, "deserializeSystem", i, "hello");
+	if (_valid) {
+		for (size_t i = 0; i < components.size(); ++i) {
+			if (!components[i].empty()) {
+				callFunc(_controller, "deserializeSystem", i, "hello");
+			}
 		}
 	}
 }

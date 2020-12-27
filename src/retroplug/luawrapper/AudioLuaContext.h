@@ -41,6 +41,10 @@ public:
 	AudioLuaContext(const std::string& configPath, const std::string& scriptPath);
 	~AudioLuaContext() { shutdown(); }
 
+	bool isValid() const {
+		return _valid;
+	}
+
 	void init(ProcessingContext* ctx, TimeInfo* timeInfo, double sampleRate);
 
 	void closeProject();
