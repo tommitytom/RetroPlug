@@ -28,6 +28,7 @@ project "RetroPlug"
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
 		"thirdparty/minizip",
+		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core"
 	}
@@ -76,6 +77,7 @@ local function retroplugProject()
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
 		"thirdparty/minizip",
+		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core"
 	}

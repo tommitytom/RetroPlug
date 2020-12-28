@@ -7,12 +7,7 @@ bool validateResult(const sol::protected_function_result& result, const std::str
 	if (!result.valid()) {
 		sol::error err = result;
 		std::string what = err.what();
-		consoleLog(prefix);
-		if (!name.empty()) {
-			consoleLog(" " + name);
-		}
-
-		consoleLogLine(": " + what);
+		spdlog::error("{}{}: {}", prefix, name.empty() ? "" : (" " + name), what);
 		return false;
 	}
 
@@ -25,7 +20,7 @@ void loadComponentsFromFile(sol::state& state, const std::string path) {
 			fs::path p = entry.path();
 			if (p.extension() == ".lua") {
 				std::string name = p.replace_extension("").filename().string();
-				consoleLog("Loading " + name + ".lua... ");
+				spdlog::info("Loading {}.lua", name);
 				requireComponent(state, "components." + name);
 			}
 		}
@@ -36,7 +31,7 @@ void loadComponentsFromBinary(sol::state& state, const std::vector<std::string_v
 	for (size_t i = 0; i < names.size(); ++i) {
 		std::string_view name = names[i];
 		if (name.substr(0, 11) == LUA_COMPONENT_PREFIX && name.find_first_of(".", LUA_COMPONENT_PREFIX.size()) == std::string::npos) {
-			consoleLog("Loading " + std::string(name) + "... ");
+			spdlog::info("Loading {}...", name);
 			requireComponent(state, std::string(name));
 		}
 	}
@@ -47,10 +42,10 @@ void loadInputMaps(sol::table& table, const std::string path) {
 		if (!entry.is_directory()) {
 			fs::path p = entry.path();
 			std::string name = p.filename().string();
-			consoleLog("Loading " + name + "... ");
+			spdlog::info("Loading {}...", name);
 
 			if (!callFunc(table, "loadInputConfig", p.string())) {
-				consoleLogLine("Failed to load user input config");
+				spdlog::error("Failed to load user input config {}", name);
 			}
 		}
 	}

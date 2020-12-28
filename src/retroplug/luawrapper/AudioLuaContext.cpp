@@ -27,9 +27,9 @@ void AudioLuaContext::init(ProcessingContext* ctx, TimeInfo* timeInfo, double sa
 }
 
 bool AudioLuaContext::setup() {
-	consoleLogLine("");
-	consoleLogLine("------------------------------------------");
-	consoleLogLine("Initializing audio lua context");
+	spdlog::info("");
+	spdlog::info("------------------------------------------");
+	spdlog::info("Initializing audio lua context");
 
 	_state = new sol::state();
 	sol::state& s = *_state;
@@ -41,11 +41,11 @@ bool AudioLuaContext::setup() {
 	packagePath += ";" + _configPath + "/?.lua";
 
 #ifdef COMPILE_LUA_SCRIPTS
-	consoleLogLine("Using precompiled lua scripts");
+	spdlog::info("Using precompiled lua scripts");
 	s.add_package_loader(CompiledScripts::common::loader);
 	s.add_package_loader(CompiledScripts::audio::loader);
 #else
-	consoleLogLine("Loading lua scripts from disk");
+	spdlog::info("Loading lua scripts from disk");
 	packagePath += ";" + _scriptPath + "/common/?.lua";
 	packagePath += ";" + _scriptPath + "/audio/?.lua";
 #endif
@@ -95,7 +95,7 @@ bool AudioLuaContext::setup() {
 		return false;
 	}
 
-	consoleLogLine("Looking for components...");
+	spdlog::info("Looking for components...");
 
 #ifdef COMPILE_LUA_SCRIPTS
 	std::vector<std::string_view> names;
@@ -105,11 +105,11 @@ bool AudioLuaContext::setup() {
 	loadComponentsFromFile(s, _scriptPath + "/audio/components/");
 #endif
 
-	consoleLogLine("Finished loading components");
+	spdlog::info("Finished loading components");
 
 	// Set up the lua context
 	if (!callFunc(_controller, "setup", _context, _timeInfo, _sampleRate)) {
-		consoleLogLine("Failed to setup view");
+		spdlog::info("Failed to setup view");
 		return false;
 	}
 
@@ -118,20 +118,20 @@ bool AudioLuaContext::setup() {
 	// audio lua context too.
 	std::string configPath = _configPath + "/config.lua";
 	if (!callFunc(_controller, "loadConfigFromPath", configPath)) {
-		consoleLogLine("Failed to load config from " + configPath);
+		spdlog::info("Failed to load config from " + configPath);
 		return false;
 		//assert(false);
 	}
 
 	if (!callFunc(_controller, "initProject")) {
-		consoleLogLine("Failed to setup project");
+		spdlog::info("Failed to setup project");
 		return false;
 	}
 
 	loadInputMaps(_controller, _configPath + "/input");
 
-	consoleLogLine("------------------------------------------");
-	consoleLogLine("");
+	spdlog::info("------------------------------------------");
+	spdlog::info("");
 
 	_valid = true;
 	return true;

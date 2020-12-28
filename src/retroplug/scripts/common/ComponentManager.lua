@@ -14,10 +14,10 @@ end
 function module.loadComponent(name)
 	local component = require(name)
 	if component ~= nil then
-		print("Registered component: " .. component.getDesc().name)
+		log.info("Registered component: " .. component.getDesc().name)
 		table.insert(_factory, component)
 	else
-		print("Failed to load " .. name .. ": Script does not return a component")
+		log.error("Failed to load " .. name .. ": Script does not return a component")
 	end
 end
 
@@ -29,18 +29,18 @@ function module.createComponent(target, name)
 			if valid then
 				return ret
 			else
-				print("Failed to create component: " .. ret)
+				log.info("Failed to create component: " .. ret)
 			end
 		end
 	end
 end
 
 function module.createComponents()
-	print("------- COMPONENTS -------")
+	log.info("------- COMPONENTS -------")
 	local components = {}
 	for _, componentType in ipairs(_factory) do
 		local d = componentType.getDesc()
-		print("Attaching component " .. d.name)
+		log.info("Attaching component " .. d.name)
 		table.insert(components, componentType)
 	end
 

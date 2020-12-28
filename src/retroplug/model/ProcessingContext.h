@@ -27,7 +27,6 @@ private:
 
 public:
 	ProcessingContext();
-
 	~ProcessingContext();
 
 	void setNode(Node* node) {

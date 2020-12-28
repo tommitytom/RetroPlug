@@ -1,4 +1,7 @@
 #include "RetroPlugController.h"
+
+#include <spdlog/spdlog.h>
+
 #include "config.h"
 #include "platform/Path.h"
 #include "platform/Resource.h"
@@ -33,6 +36,8 @@ fs::path getScriptPath() {
 RetroPlugController::RetroPlugController(double sampleRate)
 	: _listener(&_uiLua, &_proxy), _audioController(&_timeInfo, sampleRate), _proxy(&_audioController)
 {
+	spdlog::set_level(spdlog::level::debug);
+
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapSystem>(4);
 	_bus.addCall<calls::TakeSystem>(4);

@@ -111,9 +111,9 @@ void UiLuaContext::loadState(DataBufferPtr buffer) {
 }
 
 bool UiLuaContext::setup(bool updateProject) {
-	consoleLogLine("------------------------------------------");
-	consoleLogLine("------------------------------------------");
-	consoleLogLine("Initializing UI lua context");
+	spdlog::info("------------------------------------------");
+	spdlog::info("------------------------------------------");
+	spdlog::info("Initializing UI lua context");
 
 	_valid = false;
 	_state = new sol::state();
@@ -126,11 +126,11 @@ bool UiLuaContext::setup(bool updateProject) {
 	packagePath += ";" + _configPath + "/?.lua";
 
 #ifdef COMPILE_LUA_SCRIPTS
-	consoleLogLine("Using precompiled lua scripts");
+	spdlog::info("Using precompiled lua scripts");
 	s.add_package_loader(CompiledScripts::common::loader);
 	s.add_package_loader(CompiledScripts::ui::loader);
 #else
-	consoleLogLine("Loading lua scripts from disk");
+	spdlog::info("Loading lua scripts from disk");
 	packagePath += ";" + _scriptPath + "/common/?.lua";
 	packagePath += ";" + _scriptPath + "/ui/?.lua";
 #endif
@@ -183,7 +183,7 @@ bool UiLuaContext::setup(bool updateProject) {
 		return false;
 	}
 
-	consoleLogLine("Looking for components...");
+	spdlog::info("Looking for components...");
 
 #ifdef COMPILE_LUA_SCRIPTS
 	std::vector<std::string_view> names;
@@ -193,11 +193,11 @@ bool UiLuaContext::setup(bool updateProject) {
 	loadComponentsFromFile(s, _scriptPath + "/ui/components/");
 #endif
 
-	consoleLogLine("Finished loading components");
+	spdlog::info("Finished loading components");
 
 	// Set up the lua context
 	if (!callFunc(_viewRoot, "setup", &_viewWrapper, _proxy)) {
-		consoleLogLine("Failed to setup view");
+		spdlog::info("Failed to setup view");
 	}
 
 	// Load the users config settings
@@ -207,7 +207,7 @@ bool UiLuaContext::setup(bool updateProject) {
 	bool configValid = false;
 	bool configCallValid = callFuncRet(_viewRoot, "loadConfigFromPath", configValid, configPath, updateProject);
 	if (!configCallValid || !configValid) {
-		consoleLogLine("Failed to load config from " + configPath);
+		spdlog::info("Failed to load config from " + configPath + ".  Loading default config...");
 
 		std::vector<std::string_view> names;
 		auto* configScript = CompiledScripts::config::getScript("config");
@@ -215,7 +215,7 @@ bool UiLuaContext::setup(bool updateProject) {
 
 		assert(configValid && configCallValid);
 		if (!configCallValid|| !configValid) {
-			consoleLogLine("Failed to load default config!");
+			spdlog::info("Failed to load default config!");
 			return false;
 		}
 	}
@@ -223,7 +223,7 @@ bool UiLuaContext::setup(bool updateProject) {
 	loadInputMaps(_viewRoot, _configPath + "/input");
 
 	if (!callFunc(_viewRoot, "initProject", _proxy)) {
-		consoleLogLine("Failed to setup project");
+		spdlog::info("Failed to setup project");
 	}
 
 	_valid = true;

@@ -1,9 +1,7 @@
 inspect = require("inspect")
 log = require("log")
 
-log.info("SETTING PROJECT")
 _G["Project"] = require("Project")
-log.info("SET PROJECT")
 
 require("component")
 require("constants")

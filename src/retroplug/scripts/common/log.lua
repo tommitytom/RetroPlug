@@ -2,15 +2,6 @@ local pathutil = require("pathutil")
 local ansicolors = require("ansicolors")
 local inspect = require("inspect")
 
-local _print = function(...)
-	for i, a in ipairs({...}) do
-		if i > 1 then _consolePrint("\t") end
-		_consolePrint(tostring(a))
-	end
-
-	_consolePrint("\r\n")
-end
-
 local LogLevels = {
 	Debug = 0,
 	Info = 1,
@@ -18,6 +9,20 @@ local LogLevels = {
 	Error = 3,
 	Print = 4
 }
+
+local function combineItems(...)
+	local str = ""
+	for i, a in ipairs({...}) do
+		if i > 1 then str = str .. "\t" end
+		str = str .. tostring(a)
+	end
+
+	return str
+end
+
+local _print = function(...)
+	_consolePrint(LogLevels.Debug, combineItems(...))
+end
 
 local _logColor = {
 	[LogLevels.Debug] = ansicolors.white,
@@ -45,7 +50,7 @@ local function log(level, ...)
 			colEnd = ""
 		end
 
-		_print("[" .. colStart .. filename .. ":" .. info.currentline .. colEnd .. "]", ...)
+		_consolePrint(level, combineItems("[" .. colStart .. filename .. ":" .. info.currentline .. colEnd .. "]", ...))
 	end
 end
 
