@@ -40,13 +40,15 @@ std::string_view findBootRom(GameboyModel model, bool fastBoot) {
 		//case GameboyModel::Sgb2: return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
 		case GameboyModel::CgbE:
 		case GameboyModel::CgbC:
+		default:
 			if (fastBoot) {
 				return std::string_view((const char*)cgb_fast_boot, cgb_fast_boot_len);
 			} else {
 				return std::string_view((const char*)cgb_boot, cgb_boot_len);
 			}
-		default: return std::string_view();
 	}
+
+	return std::string_view((const char*)cgb_boot, cgb_boot_len);
 }
 
 SameBoyPlug::SameBoyPlug() {
@@ -296,16 +298,39 @@ void SameBoyPlug::update(size_t audioFrames) {
 }
 
 void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames) {
-	/*void* instances[MAX_SYSTEMS];
-	for (size_t i = 0; i < plugCount; i++) {
-		instances[i] = plugs[i]->instance();
-	}
+	SameBoyPlugState* st[MAX_SYSTEMS];
+    for (size_t i = 0; i < plugCount; i++) {
+		st[i] = plugs[i]->getState();
+        st[i]->vblankOccurred = false;
+    }
 
-	SAMEBOY_SYMBOLS(sameboy_update_multiple)(instances, plugCount, audioFrames);
+    // TODO: Send button presses?  Use sameboy_update as a reference
+
+    size_t complete = 0;
+    while (complete != plugCount) {
+        complete = 0;
+        for (size_t i = 0; i < plugCount; i++) {
+			SameBoyPlugState* s = st[i];
+
+            if (s->currentAudioFrames < audioFrames) {
+				// Send button presses if required
+				while (!s->buttonQueue.empty() && s->buttonQueue.front().offset <= s->currentAudioFrames) {
+					OffsetButton b = s->buttonQueue.front();
+					s->buttonQueue.pop();
+
+					GB_set_key_state(s->gb, (GB_key_t)b.button, b.down);
+				}
+
+                GB_run(s->gb);
+            } else {
+                complete++;
+            }
+        }
+    }
 
 	for (size_t i = 0; i < plugCount; i++) {
 		plugs[i]->updateAV(audioFrames);
-	}*/
+	}
 }
 
 void SameBoyPlug::disableRendering(bool disable) {
