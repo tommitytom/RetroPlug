@@ -12,6 +12,7 @@
 		audioRouting="stereoMixDown",
 		zoom=2,
 		midiRouting="sendToAll",
-		layout = "auto"
+		layout = "auto",
+		input = "default.lua"
 	}
 }

@@ -3,7 +3,6 @@ local createNativeMenu = require("MenuHelper")
 local LuaMenu = require("Menu")
 local GameboySystem = require("System")
 local ComponentManager = require("ComponentManager")
-local ppq = require("ppq")
 local PpqGenerator = require("PpqGenerator")
 local midi = require("midi")
 local componentutil = require("util.component")
@@ -116,6 +115,7 @@ function Controller:update(frameCount)
 
 	if self._transportRunning == true then
 		self._ppqGen:setTempo(ti.tempo)
+		self._ppqGen:setCycleRange(ti.cycleStart, ti.cycleEnd)
 		self._ppqGen:update(ti.ppqPos, frameCount)
 	end
 

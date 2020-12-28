@@ -3,6 +3,7 @@ local menuutil = require("util.menu")
 local pathutil = require("pathutil")
 local filters = require("filters")
 local fs = require("fs")
+local Globals = require("Globals")
 
 local NO_ACTIVE_SYSTEM = 0
 local MAX_SYSTEMS = 4
@@ -143,6 +144,32 @@ local function findMissingRom(romPath)
 	end)
 end
 
+local function getKeyIndex(table, key)
+	local i = 0
+	for k, v in pairs(table) do
+		if k == key then return i end
+		i = i + 1
+	end
+end
+
+local function getKeyAt(table, idx)
+	local i = 0
+	for k, v in pairs(table) do
+		if i == idx then return k end
+		i = i + 1
+	end
+end
+
+local function getInputConfigName(key, config)
+	if config ~= nil then
+		if config.name ~= nil then
+			return config.name
+		end
+	end
+
+	return key
+end
+
 local function generateMainMenu(menu)
 	local selected = Project.getSelected()
 
@@ -159,22 +186,27 @@ local function generateMainMenu(menu)
 	end
 
 	local sameBoySettings = selected.desc.sameBoySettings
-	menu:subMenu("Settings")
-			:subMenu("Keyboard")
-				:parent()
-			:subMenu("Joypad")
-				:action("Default")
-				:parent()
-			:subMenu("MIDI")
-				:action("Default")
-				:separator()
-				:action("peterswimm")
-				:parent()
-			:separator()
-			:action("Open Settings Folder...", function()
-				nativeshell.openShellFolder(nativeshell.getConfigPath())
-			end)
-			:parent()
+	local settingsMenu = menu:subMenu("Settings")
+	local inputMenu = settingsMenu:subMenu("Input")
+
+	local inputNames = {}
+	for k,v in pairs(Globals.inputConfigs) do
+		local name = getInputConfigName(k, v)
+		table.insert(inputNames, name)
+	end
+
+	local current = pathutil.filename(Globals.inputMap.config.path)
+
+	inputMenu:multiSelect(inputNames, getKeyIndex(Globals.inputConfigs, current), function(v)
+		local key = getKeyAt(Globals.inputConfigs, v)
+		Globals.inputMap = Globals.inputConfigs[key]
+	end)
+
+	settingsMenu:separator()
+		:action("Open Settings Folder...", function()
+			nativeshell.openShellFolder(nativeshell.getConfigPath())
+		end)
+		:parent()
 		:separator()
 		:select("Game Link", sameBoySettings.gameLink, function(v)
 			sameBoySettings.gameLink = v

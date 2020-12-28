@@ -26,12 +26,12 @@ local configSchema = s.Record {
 		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
 		zoom = s.NumberFrom(0, 4),
 		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
-		layout = s.OneOf("auto", "column", "grid", "row")
+		layout = s.OneOf("auto", "column", "grid", "row"),
+		input = s.String
 	}
 }
 
-function module.loadConfigFromPath(path)
-	local code = loadText(path)
+function module.loadConfigFromString(code)
 	local ok, config = serpent.load(code, { safe = true })
 	if ok then
 		local valErr = s.CheckSchema(config, configSchema)
@@ -44,6 +44,11 @@ function module.loadConfigFromPath(path)
 	end
 
 	return false
+end
+
+function module.loadConfigFromPath(path)
+	local code = loadText(path)
+	return module.loadConfigFromString(code)
 end
 
 return module

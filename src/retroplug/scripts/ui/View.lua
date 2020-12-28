@@ -27,11 +27,19 @@ function View:setup(view, audioContext)
 end
 
 function View:loadConfigFromPath(path)
-	self._config = nil
-	Globals.config = nil
-
 	local ok, config = ConfigLoader.loadConfigFromPath(path)
-	if ok then
+	if ok == true then
+		self._config = config
+		Globals.config = config
+		return true
+	end
+
+	return false
+end
+
+function View:loadConfigFromString(str)
+	local ok, config = ConfigLoader.loadConfigFromString(str)
+	if ok == true then
 		self._config = config
 		Globals.config = config
 		return true
@@ -41,6 +49,7 @@ function View:loadConfigFromPath(path)
 end
 
 function View:initProject()
+	log.obj(Globals)
 	Globals.inputConfigs = self._inputConfig.configs
 	Globals.inputMap = Globals.inputConfigs["default.lua"]
 

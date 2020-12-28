@@ -94,6 +94,8 @@ void UiLuaContext::shutdown() {
 	}
 }
 
+#include "generated/CompiledScripts.h"
+
 void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 	callFunc(_viewRoot, "onDialogResult", paths);
 }
@@ -202,9 +204,20 @@ bool UiLuaContext::setup(bool updateProject) {
 	// TODO: This should probably happen outside of this class since it may be used by the 
 	// audio lua context too.
 	std::string configPath = _configPath + "/config.lua";
-	if (!callFunc(_viewRoot, "loadConfigFromPath", configPath, updateProject)) {
+	bool configValid = false;
+	bool configCallValid = callFuncRet(_viewRoot, "loadConfigFromPath", configValid, configPath, updateProject);
+	if (!configCallValid || !configValid) {
 		consoleLogLine("Failed to load config from " + configPath);
-		assert(false);
+
+		std::vector<std::string_view> names;
+		auto* configScript = CompiledScripts::config::getScript("config");
+		configCallValid = callFuncRet(_viewRoot, "loadConfigFromString", configValid, (const char*)configScript->data, updateProject);
+
+		assert(configValid && configCallValid);
+		if (!configCallValid|| !configValid) {
+			consoleLogLine("Failed to load default config!");
+			return false;
+		}
 	}
 
 	loadInputMaps(_viewRoot, _configPath + "/input");

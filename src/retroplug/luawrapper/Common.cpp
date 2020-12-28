@@ -1,6 +1,7 @@
 #include "Wrappers.h"
 
 #include <sol/sol.hpp>
+#include <iPlug2/IPlug/IPlugConstants.h>
 
 #include "platform/Logger.h"
 #include "model/Project.h"
@@ -87,6 +88,56 @@ void luawrappers::registerCommon(sol::state& s) {
 		"Load", DialogType::Load,
 		"Save", DialogType::Save,
 		"Directory", DialogType::Directory
+	);
+
+	s.new_enum("HostType",
+		"Reaper", iplug::kHostReaper,
+		"ProTools", iplug::kHostProTools,
+		"Cubase", iplug::kHostCubase,
+		"Nuendo", iplug::kHostNuendo,
+		"Sonar", iplug::kHostSonar,
+		"Vegas", iplug::kHostVegas,
+		"FL", iplug::kHostFL,
+		"Samplitude", iplug::kHostSamplitude,
+		"AbletonLive", iplug::kHostAbletonLive,
+		"Tracktion", iplug::kHostTracktion,
+		"NTracks", iplug::kHostNTracks,
+		"MelodyneStudio", iplug::kHostMelodyneStudio,
+		"VSTScanner", iplug::kHostVSTScanner,
+		"AULab", iplug::kHostAULab,
+		"Forte", iplug::kHostForte,
+		"Chainer", iplug::kHostChainer,
+		"Audition", iplug::kHostAudition,
+		"Orion", iplug::kHostOrion,
+		"Bias", iplug::kHostBias,
+		"SAWStudio", iplug::kHostSAWStudio,
+		"Logic", iplug::kHostLogic,
+		"GarageBand", iplug::kHostGarageBand,
+		"DigitalPerformer", iplug::kHostDigitalPerformer,
+		"AudioMulch", iplug::kHostAudioMulch,
+		"StudioOne", iplug::kHostStudioOne,
+		"VST3TestHost", iplug::kHostVST3TestHost,
+		"Ardour", iplug::kHostArdour,
+		"Renoise", iplug::kHostRenoise,
+		"OpenMPT", iplug::kHostOpenMPT,
+		"WaveLabElements", iplug::kHostWaveLabElements,
+		"WaveLab", iplug::kHostWaveLab,
+		"TwistedWave", iplug::kHostTwistedWave,
+		"Bitwig", iplug::kHostBitwig,
+		"Reason", iplug::kHostReason,
+		"GoldWave5x", iplug::kHostGoldWave5x,
+		"Waveform", iplug::kHostWaveform,
+		"Audacity", iplug::kHostAudacity,
+		"Acoustica", iplug::kHostAcoustica,
+		"PluginDoctor", iplug::kHostPluginDoctor,
+		"iZotopeRX", iplug::kHostiZotopeRX,
+		"SAVIHost", iplug::kHostSAVIHost,
+		"BlueCat", iplug::kHostBlueCat,
+
+		"Standalone", iplug::kHostStandalone,
+		"WWW", iplug::kHostWWW,
+
+		"Unknown", iplug::kHostUnknown
 	);
 
 	s.new_usertype<SameBoySettings>("SameBoySettings",

@@ -3,11 +3,6 @@ local Action = require("Action")
 local log = require("log")
 local pathutil = require("pathutil")
 
-local InputConfig = class()
-function InputConfig:init()
-	self.configs = {}
-end
-
 -- Processes the data passed in by the user
 local function handleMapInput(target, config, map)
 	if map == nil then
@@ -31,6 +26,11 @@ local function handleMapInput(target, config, map)
 	table.insert(target, { config = config, lookup = lookup, combos = combos })
 end
 
+local InputConfig = class()
+function InputConfig:init()
+	self.configs = {}
+end
+
 function InputConfig:load(path)
 	path = pathutil.clean(path)
 
@@ -46,6 +46,7 @@ function InputConfig:load(path)
 		Button = Button,
 		Key = Key,
 		Pad = Pad,
+		HostType = HostType,
 
 		InputConfig = function(config) parsed.config = config or {} end,
 		KeyMap = function(config, map) handleMapInput(parsed.key.system, config, map) end,
