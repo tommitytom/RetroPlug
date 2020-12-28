@@ -19,6 +19,9 @@
 		"ZipCompressionMethod",
 		"ZipCompressionLevel",
 		"_RETROPLUG_VERSION",
-		"_PROJECT_VERSION"
+		"_PROJECT_VERSION",
+		"platforms",
+		"HostType",
+		"Globals"
 	]
 }
