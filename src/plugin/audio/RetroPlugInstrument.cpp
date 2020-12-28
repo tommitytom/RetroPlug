@@ -27,17 +27,6 @@ RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 		pGraphics->LoadFont("Early-Gameboy", GAMEBOY_FN);
 
 		pGraphics->SetKeyHandlerFunc([&](const IKeyPress& key, bool isUp) {
-			if ((VirtualKey)key.VK == VirtualKey::T) {
-				IMidiMsg msg;
-				if (isUp) {
-					msg.MakeNoteOffMsg(60, 0);
-				} else {
-					msg.MakeNoteOnMsg(60, 127, 0);
-				}
-				
-				ProcessMidiMsg(msg);
-			}
-
 			return _controller.onKey((VirtualKey)key.VK, !isUp);
 		});
 

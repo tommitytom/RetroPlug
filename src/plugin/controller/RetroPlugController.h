@@ -12,8 +12,6 @@
 #include "controller/AudioController.h"
 #include "luawrapper/ChangeListener.h"
 
-class RetroPlugView;
-
 class RetroPlugController {
 private:
 	UiLuaContext _uiLua;
@@ -48,7 +46,9 @@ public:
 
 	void init(iplug::igraphics::IRECT bounds);
 
-	bool onKey(VirtualKey key, bool down) { return _uiLua.onKey(key, down); }
+	bool onKey(VirtualKey key, bool down) { 
+		return _view->OnKey(key, down);
+	}
 
 	AudioController* audioController() { return &_audioController; }
 

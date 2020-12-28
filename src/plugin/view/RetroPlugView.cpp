@@ -54,7 +54,13 @@ void RetroPlugView::OnDrop(float x, float y, const char* str) {
 }
 
 bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
-	return _lua->onKey((VirtualKey)key.VK, down);
+	return OnKey((VirtualKey)key.VK, down);
+}
+
+bool RetroPlugView::OnKey(VirtualKey key, bool down) {
+	bool handled = _lua->onKey(key, down);
+	ProcessDialog();
+	return handled;
 }
 
 void RetroPlugView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {

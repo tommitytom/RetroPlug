@@ -17,12 +17,24 @@ function RetroPlug.actions.nextSystem(down)
 	if down == true then Project.nextSystem() end
 end
 
+local dialog = require("dialog")
+
 function RetroPlug.actions.saveProject(down)
-	print("SAVEEEEE")
 	if down == true then
-		return menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", false, function(path)
+		local forceDialog = Project.path == ""
+		menuutil.saveHandler({ filters.PROJECT_FILTER }, "project", forceDialog, function(path)
+			if path == nil or path == "" then
+				if Project.path ~= nil and Project.path ~= "" then
+					path = Project.path
+				else
+					log.error("Failed to save project: Invalid path")
+					return
+				end
+			end
+
+			log.info("Saving project to " .. path)
 			return Project.save(path, true)
-		end)
+		end)()
 	end
 end
 

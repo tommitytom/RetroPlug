@@ -7,7 +7,7 @@
 #include <stack>
 #include "IControl.h"
 #include "SystemView.h"
-#include "controller/RetroPlugController.h"
+//#include "controller/RetroPlugController.h"
 #include "util/cxxtimer.hpp"
 #include "platform/FileDialog.h"
 #include "controller/AudioController.h"
@@ -57,6 +57,8 @@ public:
 	bool IsDirty() override { return true; }
 
 	bool OnKey(const IKeyPress& key, bool down);
+
+	bool OnKey(VirtualKey key, bool down);
 
 	void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
 

@@ -1,10 +1,11 @@
 local dialog = require("dialog")
+local log = require("log")
 
 local function handleError(err, action, name)
 	if err ~= nil then
 		--dialog.error(err, "Failed to " .. action .. " " .. name)
-		print(err, "Failed to " .. action .. " " .. name)
-		print(debug.traceback())
+		log.error(err, "Failed to " .. action .. " " .. name)
+		log.error(debug.traceback())
 	end
 end
 
@@ -30,5 +31,6 @@ end
 
 return {
 	loadHandler = loadHandler,
-	saveHandler = saveHandler
+	saveHandler = saveHandler,
+	handleError = handleError
 }

@@ -191,7 +191,7 @@ local function generateMainMenu(menu)
 
 	local inputNames = {}
 	for k,v in pairs(Globals.inputConfigs) do
-		local name = getInputConfigName(k, v)
+		local name = getInputConfigName(k, v.config)
 		table.insert(inputNames, name)
 	end
 
