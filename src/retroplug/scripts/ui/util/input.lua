@@ -137,7 +137,6 @@ local function findInputConfig(configs, filename)
 end
 
 function module.getInputMap(inputConfigs, input)
-	print(input.key, input.pad)
 	local keyMap = findInputConfig(inputConfigs, input.key)
 	local padMap = findInputConfig(inputConfigs, input.pad)
 

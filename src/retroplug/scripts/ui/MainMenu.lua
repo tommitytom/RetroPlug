@@ -173,6 +173,32 @@ local function getInputConfigName(config)
 	return nil
 end
 
+local function generateInputMenu(selected, menu, inputType)
+	local inputNames = {}
+
+	local current = selected.inputMap[inputType].filename
+	local currentIdx = -1
+
+	for i, v in pairs(Globals.inputConfigs) do
+		local map = v[inputType]
+		if map ~= nil then
+			if map.filename == current then
+				currentIdx = i - 1
+			end
+
+			local name = getInputConfigName(v.config)
+			table.insert(inputNames, name)
+		end
+	end
+
+	menu:multiSelect(inputNames, currentIdx, function(v)
+		local map = Globals.inputConfigs[v + 1]
+		local target = selected.inputMap
+		target[inputType] = map[inputType]
+		selected:setInputMap(target)
+	end)
+end
+
 local function generateMainMenu(menu)
 	local selected = Project.getSelected()
 
@@ -186,31 +212,6 @@ local function generateMainMenu(menu)
 		systemMenu(menu:subMenu("System"), selected)
 	elseif selected.desc.state == SystemState.RomMissing then
 		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romName) end)
-	end
-
-	local function generateInputMenu(selected, menu, inputType)
-		local inputNames = {}
-
-		local current = selected.inputMap[inputType].filename
-		local currentIdx = -1
-
-		for i, v in pairs(Globals.inputConfigs) do
-			local map = v[inputType]
-			if map ~= nil then
-				if map.filename == current then
-					currentIdx = i - 1
-				end
-
-				local name = getInputConfigName(v.config)
-				table.insert(inputNames, name)
-			end
-		end
-
-		menu:multiSelect(inputNames, currentIdx, function(v)
-			local map = Globals.inputConfigs[v + 1]
-			log.obj(map[inputType])
-			selected.inputMap[inputType] = map[inputType]
-		end)
 	end
 
 	local sameBoySettings = selected.desc.sameBoySettings

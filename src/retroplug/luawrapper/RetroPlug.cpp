@@ -54,6 +54,8 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"sramData", &SystemDesc::sramData,
 		"stateData", &SystemDesc::stateData,
 		"fastBoot", &SystemDesc::fastBoot,
+		"keyInputConfig", &SystemDesc::keyInputConfig,
+		"padInputConfig", &SystemDesc::padInputConfig,
 		"audioComponentState", &SystemDesc::audioComponentState,
 		"uiComponentState", &SystemDesc::uiComponentState,
 		"area", &SystemDesc::area,

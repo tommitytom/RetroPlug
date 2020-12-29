@@ -39,6 +39,12 @@ function System:init(desc, model, state)
 	self.inputMap = nil
 end
 
+function System:setInputMap(inputMap)
+	self.inputMap = inputMap
+	self._desc.keyInputConfig = inputMap.key.filename
+	self._desc.padInputConfig = inputMap.pad.filename
+end
+
 function System:clone()
 	return System.fromSystemDesc(SystemDesc.new(self._desc))
 end

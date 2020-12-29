@@ -22,6 +22,14 @@
 		"_PROJECT_VERSION",
 		"platforms",
 		"HostType",
-		"Globals"
+		"Globals",
+		"_consolePrint",
+		"DataBuffer",
+		"FetchStateRequest",
+		"ResourceType",
+		"InputConfig",
+		"KeyMap",
+		"GlobalKeyMap",
+		"Action"
 	]
 }

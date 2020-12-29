@@ -62,6 +62,8 @@ struct SystemDesc {
 	DataBufferPtr stateData;
 	DataBufferPtr sramData;
 
+	std::string keyInputConfig;
+	std::string padInputConfig;
 	std::string audioComponentState;
 	std::string uiComponentState;
 

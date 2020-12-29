@@ -40,7 +40,11 @@ function Project.init()
 		local desc = _native.systems[i]
 		if desc.state ~= SystemState.Uninitialized then
 			local system = GameboySystem.fromSystemDesc(desc)
-			system.inputMap = inpututil.getInputMap(Globals.inputConfigs, Globals.config.system.input)
+			system:setInputMap(inpututil.getInputMap(Globals.inputConfigs, {
+				key = desc.keyInputConfig,
+				pad = desc.padInputConfig
+			}))
+
 			table.insert(_data.systems, system)
 		end
 	end
@@ -87,7 +91,7 @@ function Project.addSystem(systemType)
 	_data.systems[desc.idx + 1] = system
 
 	system.state = util.deepcopy(Project._componentState)
-	system.inputMap = inpututil.getInputMap(Globals.inputConfigs, Globals.config.system.input)
+	system:setInputMap(inpututil.getInputMap(Globals.inputConfigs, Globals.config.system.input))
 
 	_ctx:addSystem(desc)
 

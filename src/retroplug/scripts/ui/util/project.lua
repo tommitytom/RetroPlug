@@ -295,7 +295,7 @@ local function createProjectSystems(projectData, zip)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
 
 		local system = System.fromSystemDesc(system)
-		system.inputMap = inpututil.getInputMap(Globals.inputConfigs, inst.input)
+		system:setInputMap(inpututil.getInputMap(Globals.inputConfigs, inst.input))
 
 		table.insert(systems, system)
 	end

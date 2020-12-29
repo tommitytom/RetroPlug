@@ -123,7 +123,7 @@ function View:onDrop(x, y, items)
 end
 
 function View:onReloadBegin()
-	--Project.serializeComponents()
+
 end
 
 function View:onReloadEnd()
