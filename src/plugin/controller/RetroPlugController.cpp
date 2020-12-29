@@ -88,6 +88,7 @@ RetroPlugController::~RetroPlugController() {
 void RetroPlugController::update(double delta) {
 	processPad();
 	_scriptWatcher.update();
+	_listener.processChanges();
 }
 
 void RetroPlugController::init(iplug::igraphics::IRECT bounds) {
