@@ -1,4 +1,5 @@
 local fileutil = require("util.file")
+local inpututil = require("util.input")
 local serpent = require("serpent")
 local json = require("json")
 local System = require("System")
@@ -7,6 +8,7 @@ local log = require("log")
 local util = require("util")
 local Error = require("Error")
 local semver = require("util.semver")
+local Globals = require("Globals")
 
 local ProjectSettingsFields = {
 	audioRouting = AudioChannelRouting,
@@ -292,7 +294,10 @@ local function createProjectSystems(projectData, zip)
 		system.audioComponentState = serpent.dump(inst.audioComponents)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
 
-		table.insert(systems, System.fromSystemDesc(system))
+		local system = System.fromSystemDesc(system)
+		system.inputMap = inpututil.getInputMap(Globals.inputConfigs, inst.input)
+
+		table.insert(systems, system)
 	end
 
 	return systems

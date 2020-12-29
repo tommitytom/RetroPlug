@@ -126,4 +126,35 @@ function module.mergeInputMaps(source, target, actions, romName)
 	end
 end
 
+local function findInputConfig(configs, filename)
+	for i, v in ipairs(configs) do
+		if v.config.filename == filename then
+			return v
+		end
+	end
+
+	return nil
+end
+
+function module.getInputMap(inputConfigs, input)
+	print(input.key, input.pad)
+	local keyMap = findInputConfig(inputConfigs, input.key)
+	local padMap = findInputConfig(inputConfigs, input.pad)
+
+	if keyMap == nil then
+		keyMap = findInputConfig(inputConfigs, "default.lua")
+		assert(keyMap)
+	end
+
+	if padMap == nil then
+		padMap = findInputConfig(inputConfigs, "default.lua")
+		assert(padMap)
+	end
+
+	return {
+		key = keyMap.key,
+		pad = padMap.pad
+	}
+end
+
 return module

@@ -1,5 +1,6 @@
 local dialog = require("dialog")
 local menuutil = require("util.menu")
+local inpututil = require("util.input")
 local pathutil = require("pathutil")
 local filters = require("filters")
 local fs = require("fs")
@@ -160,14 +161,16 @@ local function getKeyAt(table, idx)
 	end
 end
 
-local function getInputConfigName(key, config)
+local function getInputConfigName(config)
 	if config ~= nil then
 		if config.name ~= nil then
 			return config.name
 		end
+
+		return config.filename
 	end
 
-	return key
+	return nil
 end
 
 local function generateMainMenu(menu)
@@ -185,22 +188,36 @@ local function generateMainMenu(menu)
 		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romName) end)
 	end
 
-	local sameBoySettings = selected.desc.sameBoySettings
-	local settingsMenu = menu:subMenu("Settings")
-	local inputMenu = settingsMenu:subMenu("Input")
+	local function generateInputMenu(selected, menu, inputType)
+		local inputNames = {}
 
-	local inputNames = {}
-	for k,v in pairs(Globals.inputConfigs) do
-		local name = getInputConfigName(k, v.config)
-		table.insert(inputNames, name)
+		local current = selected.inputMap[inputType].filename
+		local currentIdx = -1
+
+		for i, v in pairs(Globals.inputConfigs) do
+			local map = v[inputType]
+			if map ~= nil then
+				if map.filename == current then
+					currentIdx = i - 1
+				end
+
+				local name = getInputConfigName(v.config)
+				table.insert(inputNames, name)
+			end
+		end
+
+		menu:multiSelect(inputNames, currentIdx, function(v)
+			local map = Globals.inputConfigs[v + 1]
+			log.obj(map[inputType])
+			selected.inputMap[inputType] = map[inputType]
+		end)
 	end
 
-	local current = pathutil.filename(Globals.inputMap.config.path)
+	local sameBoySettings = selected.desc.sameBoySettings
+	local settingsMenu = menu:subMenu("Settings")
 
-	inputMenu:multiSelect(inputNames, getKeyIndex(Globals.inputConfigs, current), function(v)
-		local key = getKeyAt(Globals.inputConfigs, v)
-		Globals.inputMap = Globals.inputConfigs[key]
-	end)
+	generateInputMenu(selected, settingsMenu:subMenu("Keyboard"), "key")
+	generateInputMenu(selected, settingsMenu:subMenu("Pad"), "pad")
 
 	settingsMenu:separator()
 		:action("Open Settings Folder...", function()

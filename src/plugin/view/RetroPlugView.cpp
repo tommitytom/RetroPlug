@@ -153,7 +153,10 @@ void RetroPlugView::ProcessDialog() {
 		case DialogType::Save: {
 			std::string p = ws2s(BasicFileSave(GetUI(), dialog->filters, tstr(dialog->fileName)));
 			std::vector<std::string> paths;
-			paths.push_back(p);
+			if (!p.empty()) {
+				paths.push_back(p);
+			}
+			
 			_lua->handleDialogCallback(paths);
 			break;
 		}

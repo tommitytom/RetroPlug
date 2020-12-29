@@ -17,8 +17,6 @@ function RetroPlug.actions.nextSystem(down)
 	if down == true then Project.nextSystem() end
 end
 
-local dialog = require("dialog")
-
 function RetroPlug.actions.saveProject(down)
 	if down == true then
 		local forceDialog = Project.path == ""
@@ -75,6 +73,7 @@ local function processInput(key, down, map, pressed)
 	end
 
 	local handled = inpututil.handleInput(map.global, key, down, pressed, Project.buttonHooks)
+
 	if handled ~= true and System ~= nil then
 		handled = inpututil.handleInput(map.system, key, down, pressed, Project.buttonHooks, System)
 	end
@@ -83,11 +82,19 @@ local function processInput(key, down, map, pressed)
 end
 
 function RetroPlug.onKey(key, down)
-	return processInput(key, down, Globals.inputMap.key, _keysPressed)
+	if System and System.inputMap.key then
+		return processInput(key, down, System.inputMap.key, _keysPressed)
+	end
+
+	return false
 end
 
 function RetroPlug.onPadButton(button, down)
-	return processInput(button, down, Globals.inputMap.pad, _buttonsPressed)
+	if System and System.inputMap.pad then
+		return processInput(button, down, System.inputMap.pad, _buttonsPressed)
+	end
+
+	return false
 end
 
 return RetroPlug

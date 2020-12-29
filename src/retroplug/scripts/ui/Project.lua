@@ -1,6 +1,7 @@
 local const = require("const")
 local projectutil = require("util.project")
 local propertyutil = require("util.property")
+local inpututil = require("util.input")
 local log = require("log")
 local util = require("util")
 local Timer = require("timer")
@@ -39,6 +40,7 @@ function Project.init()
 		local desc = _native.systems[i]
 		if desc.state ~= SystemState.Uninitialized then
 			local system = GameboySystem.fromSystemDesc(desc)
+			system.inputMap = inpututil.getInputMap(Globals.inputConfigs, Globals.config.system.input)
 			table.insert(_data.systems, system)
 		end
 	end
@@ -85,6 +87,7 @@ function Project.addSystem(systemType)
 	_data.systems[desc.idx + 1] = system
 
 	system.state = util.deepcopy(Project._componentState)
+	system.inputMap = inpututil.getInputMap(Globals.inputConfigs, Globals.config.system.input)
 
 	_ctx:addSystem(desc)
 
@@ -182,6 +185,7 @@ function Project.duplicateSystem(idx)
 
 	newSystem._ctx = _ctx
 	newSystem.desc.idx = newIdx
+	newSystem.inputMap = { key = system.inputMap.key, pad = system.inputMap.pad }
 	table.insert(_data.systems, newSystem)
 
 	_ctx:duplicateSystem(idx - 1, newSystem.desc)

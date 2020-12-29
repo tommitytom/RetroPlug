@@ -31,6 +31,30 @@ function InputConfig:init()
 	self.configs = {}
 end
 
+local function tableEmpty(tab)
+	for k, v in pairs(tab) do
+		return false
+	end
+
+	return true
+end
+
+local function cleanData(data)
+	if data.config.name == nil then data.config.name = data.config.filename end
+
+	if tableEmpty(data.key.system) and tableEmpty(data.key.global) then
+		data.key = nil
+	else
+		data.key.filename = data.config.filename
+	end
+
+	if tableEmpty(data.pad.system) and tableEmpty(data.pad.global) then
+		data.pad = nil
+	else
+		data.pad.filename = data.config.filename
+	end
+end
+
 function InputConfig:load(path)
 	path = pathutil.clean(path)
 
@@ -58,9 +82,13 @@ function InputConfig:load(path)
 	local f = loadfile(path, "t", env)
 	if f ~= nil then
 		local ok, ret = pcall(f)
+
 		if ok then
 			parsed.config.path = path
-			self.configs[pathutil.filename(path)] = parsed
+			parsed.config.filename = pathutil.filename(path)
+
+			cleanData(parsed)
+			table.insert(self.configs, parsed)
 		else
 			print("Error in button config: ", ret)
 		end

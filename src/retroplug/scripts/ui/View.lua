@@ -49,17 +49,13 @@ function View:loadConfigFromString(str)
 end
 
 function View:initProject()
-	log.obj(self._config.project)
+	table.sort(self._inputConfig.configs, function(a, b)
+		if a.config.name == "Default" then return true end
+		if b.config.name == "Default" then return false end
+		return string.lower(a.config.name) < string.lower(b.config.name)
+	end)
 
 	Globals.inputConfigs = self._inputConfig.configs
-
-	local inputMap = Globals.inputConfigs[self._config.project.input]
-	if inputMap == nil then
-		inputMap = Globals.inputConfigs["default.lua"]
-		assert(inputMap ~= nil)
-	end
-
-	Globals.inputMap = inputMap
 
 	self.model = Model()
 	self.model:setup()

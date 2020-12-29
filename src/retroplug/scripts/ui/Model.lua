@@ -34,10 +34,15 @@ function Model:setup()
 	Project._componentState = componentutil.createState(self.components)
 
 	for _, cfg in pairs(Globals.inputConfigs) do
-		updateInputActions(self.components, cfg.key.global)
-		updateInputActions(self.components, cfg.key.system)
-		updateInputActions(self.components, cfg.pad.global)
-		updateInputActions(self.components, cfg.pad.system)
+		if cfg.key then
+			updateInputActions(self.components, cfg.key.global)
+			updateInputActions(self.components, cfg.key.system)
+		end
+
+		if cfg.pad then
+			updateInputActions(self.components, cfg.pad.global)
+			updateInputActions(self.components, cfg.pad.system)
+		end
 	end
 
 	for _, component in ipairs(self.components) do

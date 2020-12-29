@@ -5,6 +5,10 @@
 		sameBoy = {
 			model = "auto",
 			gameLink = false
+		},
+		input = {
+			keyboard = "default.lua",
+			pad = "default.lua"
 		}
 	},
 	project = {
@@ -12,7 +16,6 @@
 		audioRouting="stereoMixDown",
 		zoom=2,
 		midiRouting="sendToAll",
-		layout = "auto",
-		input = "default.lua"
+		layout = "auto"
 	}
 }

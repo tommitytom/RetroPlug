@@ -19,6 +19,11 @@ function Serializer.serializeProject(systems, audioSystemStates, projectSettings
 			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
 			inst.uiComponents = system.state
 
+			inst.input = {
+				key = system.inputMap.key.filename,
+				pad = system.inputMap.pad.filename
+			}
+
 			local ok, audioComponents = serpent.load(audioSystemStates.components[i])
 			if ok == true and audioComponents ~= nil then
 				inst.audioComponents = audioComponents

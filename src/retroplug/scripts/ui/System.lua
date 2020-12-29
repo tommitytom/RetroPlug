@@ -36,6 +36,7 @@ function System:init(desc, model, state)
 	self._desc = nil
 
 	self.state = {}
+	self.inputMap = nil
 end
 
 function System:clone()

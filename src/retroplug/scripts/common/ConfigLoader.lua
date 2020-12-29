@@ -19,6 +19,10 @@ local configSchema = s.Record {
 		sameBoy = s.Record {
 			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
 			gameLink = s.Boolean
+		},
+		input = s.Record {
+			keyboard = s.String,
+			pad = s.String,
 		}
 	},
 	project = s.Record {
@@ -26,8 +30,7 @@ local configSchema = s.Record {
 		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
 		zoom = s.NumberFrom(0, 4),
 		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
-		layout = s.OneOf("auto", "column", "grid", "row"),
-		input = s.String
+		layout = s.OneOf("auto", "column", "grid", "row")
 	}
 }
 
