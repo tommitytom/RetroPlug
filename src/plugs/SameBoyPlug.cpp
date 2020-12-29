@@ -113,7 +113,7 @@ static bool serialEnd(GB_gameboy_t* gb) {
 static void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t type) {
 	SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
 	std::string_view bootRom = findBootRom(s->model, s->fastBoot);
-	GB_load_boot_rom_from_buffer(gb, cgb_boot, cgb_boot_len);
+	GB_load_boot_rom_from_buffer(gb, (const unsigned char*)bootRom.data(), bootRom.size());
 }
 
 void SameBoyPlug::init(GameboyModel model) {
