@@ -31,7 +31,8 @@ project "SameBoyBootRoms"
 
 	configuration { "windows" }
 		prebuildcommands {
-			'"%{cfg.buildtarget.directory}/pb12.exe" < "' .. BOOTROM_DIR .. '/SameBoyLogo.png" > "%{cfg.objdir}/SameBoyLogo.pb12"'
+			'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
+			'"%{cfg.buildtarget.directory}/pb12.exe" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
 		}
 
 	filter ('files:' .. SAMEBOY_DIR .. 'BootROMs/**.asm')
