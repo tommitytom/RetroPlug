@@ -23,6 +23,7 @@ enum class GameboyModel {
 struct SameBoySettings {
 	GameboyModel model = GameboyModel::Auto;
 	bool gameLink = false;
+	bool skipBootRom = false;
 };
 
 struct Point {
@@ -70,6 +71,7 @@ struct SystemDesc {
 	GameboyButtonStream buttons;
 
 	bool fastBoot = false;
+	bool includeRom = true;
 
 	SystemDesc() {}
 	SystemDesc(const SystemDesc& other) { *this = other; }

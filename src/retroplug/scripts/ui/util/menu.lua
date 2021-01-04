@@ -4,7 +4,7 @@ local log = require("log")
 local function handleError(err, action, name)
 	if err ~= nil then
 		--dialog.error(err, "Failed to " .. action .. " " .. name)
-		log.error(err, "Failed to " .. action .. " " .. name)
+		log.error("Failed to " .. action .. " " .. name .. ":", err)
 		log.error(debug.traceback())
 	end
 end

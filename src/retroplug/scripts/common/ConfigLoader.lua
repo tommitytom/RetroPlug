@@ -18,12 +18,14 @@ local configSchema = s.Record {
 		audioComponents = s.Record {},
 		sameBoy = s.Record {
 			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
-			gameLink = s.Boolean
+			gameLink = s.Boolean,
+			skipBootRom = s.Boolean
 		},
 		input = s.Record {
-			keyboard = s.String,
+			key = s.String,
 			pad = s.String,
-		}
+		},
+		includeRom = s.Boolean
 	},
 	project = s.Record {
 		saveType = s.OneOf("sram", "state"),

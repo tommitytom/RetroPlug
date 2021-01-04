@@ -60,7 +60,8 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"uiComponentState", &SystemDesc::uiComponentState,
 		"area", &SystemDesc::area,
 		"buttons", &SystemDesc::buttons,
-		"clear", &SystemDesc::clear
+		"clear", &SystemDesc::clear,
+		"includeRom", &SystemDesc::includeRom
 	);
 
 	s.new_usertype<AudioContextProxy>("AudioContextProxy",

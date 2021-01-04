@@ -7,6 +7,7 @@ local util = require("util")
 local Timer = require("timer")
 local GameboySystem = require("System")
 local Globals = require("Globals")
+local Serializer = require('project.serialize')
 
 local _data = {
 	--state = {},
@@ -38,8 +39,10 @@ function Project.init()
 	local count = #_native.systems
 	for i = 1, count, 1 do
 		local desc = _native.systems[i]
+
 		if desc.state ~= SystemState.Uninitialized then
 			local system = GameboySystem.fromSystemDesc(desc)
+
 			system:setInputMap(inpututil.getInputMap(Globals.inputConfigs, {
 				key = desc.keyInputConfig,
 				pad = desc.padInputConfig
@@ -124,13 +127,13 @@ function Project.removeSystem(idx)
 		table.remove(_data.systems, idx)
 		_ctx:removeSystem(idx - 1)
 	else
-		print("Failed to remove system: Invalid index " .. idx)
+		log.error("Failed to remove system: Invalid index " .. idx)
 	end
 end
 
 function Project.load(data)
 	local projectData, systems, err = projectutil.loadProject(data, Globals.config)
-	if err ~= nil then log.obj(err); return err end
+	if err ~= nil then log.error(err.msg); return err end
 	Project.clear()
 
 	if projectData.path then
@@ -140,16 +143,18 @@ function Project.load(data)
 	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, _native.settings)
 	_ctx:updateSettings()
 
-	--Project.deserializeComponents()
-
 	for _, system in ipairs(systems) do
+		for k, v in pairs(Project._componentState) do
+			if system.state[k] == nil then
+				system.state[k] = util.deepcopy(v)
+			end
+		end
+
 		setSystem(system)
 	end
 
 	if Project.getSelectedIndex() == 0 and #_data.systems > 0 then Project.setSelected(1) end
 end
-
-local Serializer = require('project.serialize')
 
 function Project.save(path, pretty, immediate)
 	local timer = Timer()
@@ -167,7 +172,7 @@ function Project.save(path, pretty, immediate)
 			_native.path = path
 		end
 
-		--log.info("Saving project to " .. path)
+		log.info("Saving project to " .. path)
 
 		local zipSettings = ZipWriterSettings.new()
 		zipSettings.method = ZipCompressionMethod.Deflate
@@ -175,7 +180,7 @@ function Project.save(path, pretty, immediate)
 
 		local data = Serializer.serializeProject(_data.systems, audioSystemStates, _native, pretty)
 		local err = projectutil.saveProject(path, data, _data.systems, audioSystemStates, zipSettings)
-		if err ~= nil then print(err) end
+		if err ~= nil then log.error(err) end
 
 		timer:log()
 	end)

@@ -299,20 +299,20 @@ void SameBoyPlug::update(size_t audioFrames) {
 
 void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t audioFrames) {
 	SameBoyPlugState* st[MAX_SYSTEMS];
-    for (size_t i = 0; i < plugCount; i++) {
+	for (size_t i = 0; i < plugCount; i++) {
 		st[i] = plugs[i]->getState();
-        st[i]->vblankOccurred = false;
-    }
+		st[i]->vblankOccurred = false;
+	}
 
-    // TODO: Send button presses?  Use sameboy_update as a reference
+	// TODO: Send button presses?  Use sameboy_update as a reference
 
-    size_t complete = 0;
-    while (complete != plugCount) {
-        complete = 0;
-        for (size_t i = 0; i < plugCount; i++) {
+	size_t complete = 0;
+	while (complete != plugCount) {
+		complete = 0;
+		for (size_t i = 0; i < plugCount; i++) {
 			SameBoyPlugState* s = st[i];
 
-            if (s->currentAudioFrames < audioFrames) {
+			if (s->currentAudioFrames < audioFrames) {
 				// Send button presses if required
 				while (!s->buttonQueue.empty() && s->buttonQueue.front().offset <= s->currentAudioFrames) {
 					OffsetButton b = s->buttonQueue.front();
@@ -321,12 +321,12 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 					GB_set_key_state(s->gb, (GB_key_t)b.button, b.down);
 				}
 
-                GB_run(s->gb);
-            } else {
-                complete++;
-            }
-        }
-    }
+				GB_run(s->gb);
+			} else {
+				complete++;
+			}
+		}
+	}
 
 	for (size_t i = 0; i < plugCount; i++) {
 		plugs[i]->updateAV(audioFrames);

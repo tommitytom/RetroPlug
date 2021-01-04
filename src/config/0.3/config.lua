@@ -4,12 +4,14 @@
 		audioComponents = {},
 		sameBoy = {
 			model = "auto",
-			gameLink = false
+			gameLink = false,
+			skipBootRom = true
 		},
 		input = {
-			keyboard = "default.lua",
+			key = "default.lua",
 			pad = "default.lua"
-		}
+		},
+		includeRom = true
 	},
 	project = {
 		saveType="sram",

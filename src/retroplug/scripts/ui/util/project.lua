@@ -9,6 +9,8 @@ local util = require("util")
 local Error = require("Error")
 local semver = require("util.semver")
 local Globals = require("Globals")
+local s = require("schema")
+local schema = require("project.projectschema")
 
 local ProjectSettingsFields = {
 	audioRouting = AudioChannelRouting,
@@ -21,12 +23,14 @@ local ProjectSettingsFields = {
 local SystemSettingsFields = {
 	systemType = SystemType,
 	"romPath",
-	"sramPath"
+	"sramPath",
+	"includeRom"
 }
 
 local SameBoySettingsFields = {
 	model = GameboyModel,
-	"gameLink"
+	"gameLink",
+	"skipBootRom"
 }
 
 local PROJECT_LUA_FILENAME = "project.lua"
@@ -147,7 +151,7 @@ local function readLegacyStateData(base64Data, saveType, version)
 end
 
 local function updgrade_json_to_pv100(p, config)
-	local syncModes = { "off", "midiSync", "midiSyncArduinoboy" }
+	--local syncModes = { "off", "midiSync", "midiSyncArduinoboy" }
 	local systems = {}
 	for _, v in ipairs(p.instances) do
 		local stateData
@@ -155,34 +159,43 @@ local function updgrade_json_to_pv100(p, config)
 			stateData, p.saveType = readLegacyStateData(v.state.data, p.saveType, semver(p.version))
 		end
 
-		local uiComponents = {}
+		--local uiComponents = {}
 		local audioComponents = {}
 		if v.settings.lsdj then
 			local lsdj = v.settings.lsdj
-			uiComponents["LSDj"] = {
-				keyboardShortcuts = lsdj.keyboardShortcuts
-			}
 
-			audioComponents["LSDj Arduinoboy"] = {
+			audioComponents["Arduinoboy"] = {
 				autoPlay = lsdj.autoPlay,
-				syncMode = "off"
+				syncMode = lsdj.syncMode
 			}
 		end
 
 		table.insert(systems, {
+			systemType = "sameBoy",
 			romPath = v.romPath,
 			sramPath = v.lastSramPath,
+			includeRom = config.system.includeRom,
 			sameBoy = {
-				model = firstToUpper(v.settings.gameBoy.model),
-				gameLink = v.settings.gameBoy.gameLink
+				model = string.gsub(string.lower(v.settings.gameBoy.model), "_", ""),
+				gameLink = v.settings.gameBoy.gameLink,
+				skipBootRom = config.system.sameBoy.skipBootRom
+			},
+			input = {
+				key = config.system.input.key,
+				pad = config.system.input.pad
 			},
 			uiComponents = {},
-			audioComponents = {},
+			audioComponents = audioComponents,
 			_stateData = stateData
 		})
+
+		v.state = nil
 	end
 
+	if p.midiRouting == "sendToall" then p.midiRouting = "sendToAll" end
+
 	return {
+		retroPlugVersion = _RETROPLUG_VERSION,
 		projectVersion = "1.0.0",
 		path = p.lastProjectPath,
 		systems = systems,
@@ -190,7 +203,7 @@ local function updgrade_json_to_pv100(p, config)
 		settings = {
 			saveType = p.saveType,
 			audioRouting = p.audioRouting,
-			zoom = config.settings.zoom, --TODO: Set to user defined defaults in config.lua!
+			zoom = config.project.zoom,
 			midiRouting = p.midiRouting,
 			layout = p.layout
 		}
@@ -203,7 +216,12 @@ local function upgradeAndValidateProject(projectData, config)
 		projectData, err = updgrade_json_to_pv100(projectData, config)
 	end
 
-	-- TODO: Validate!
+	local projectSchema = schema["1.0.0"]
+	local valErr = s.CheckSchema(projectData, projectSchema)
+	if valErr then
+		local err = tostring(valErr)
+		return nil, err
+	end
 
 	return projectData, err
 end
@@ -310,9 +328,11 @@ local function loadProject(data, config)
 	local zip = ZipReader.new(data)
 	if zip:isValid() then
 		local entries = zip:entries()
+
 		if zipEntryExists(entries, PROJECT_LUA_FILENAME) then
 			local fileData = zip:read(PROJECT_LUA_FILENAME)
 			local ok, loadedData = serpent.load(fileData:toString(), { safe = true })
+
 			if ok == false then
 				zip:close()
 				return nil, nil, Error("Failed to load project: Unable to parse lua project")
@@ -342,7 +362,7 @@ local function loadProject(data, config)
 	projectData, err = upgradeAndValidateProject(projectData, config)
 	if err ~= nil then
 		if zip then zip:close() end
-		return nil, nil, err
+		return nil, nil, Error(err)
 	end
 
 	local systems, err = createProjectSystems(projectData, zip)

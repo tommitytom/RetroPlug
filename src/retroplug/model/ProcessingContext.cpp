@@ -1,5 +1,7 @@
 #include "ProcessingContext.h"
 
+#include <spdlog/spdlog.h>
+
 ProcessingContext::ProcessingContext() {
 	_systems.reserve(MAX_SYSTEMS);
 	for (size_t i = 0; i < MAX_SYSTEMS; ++i) {
@@ -157,7 +159,7 @@ void ProcessingContext::process(float** outputs, size_t frameCount) {
 			if (_alloc->canAlloc<char>(dataSize)) {
 				v->data = _alloc->allocArrayUnique<char>(dataSize);
 			} else {
-				std::cout << "Failed to alloc video buffer" << std::endl;
+				//spdlog::debug("Failed to alloc video buffer");
 			}
 
 			plug->setBuffers(v, &_audioBuffers[i]);

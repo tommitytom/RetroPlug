@@ -2,8 +2,10 @@
 
 #include <string>
 #include <vector>
+
 #include <lua.hpp>
 #include <sol/sol.hpp>
+
 #include "util/DataBuffer.h"
 
 const std::string_view LUA_COMPONENT_PREFIX = "components.";
@@ -50,14 +52,14 @@ static bool callFuncRet(sol::state& state, const char* name, ReturnType& ret, Ar
 template <typename ...Args>
 static bool callFunc(sol::table& table, const char* name, Args&&... args) {
 	sol::protected_function f = table[name];
-	sol::protected_function_result result = f(table, args...); // Use std::forward?
+	sol::protected_function_result result = f(table, std::forward<Args>(args)...); // Use std::forward?
 	return validateResult(result, "Failed to call", name);
 }
 
 template <typename ReturnType, typename ...Args>
 static bool callFuncRet(sol::table& table, const char* name, ReturnType& ret, Args&&... args) {
 	sol::protected_function f = table[name];
-	sol::protected_function_result result = f(table, args...);
+	sol::protected_function_result result = f(table, std::forward<Args>(args)...);
 	if (validateResult(result, "Failed to call", name)) {
 		ret = result.get<ReturnType>();
 		return true;

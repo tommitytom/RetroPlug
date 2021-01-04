@@ -182,7 +182,11 @@ function Controller:addSystem(idx, model, componentState)
 
 	if componentState ~= nil and componentState ~= "" then
 		local ok, state = serpent.load(componentState)
-		if ok == true then system.state = state end
+		if ok == true then
+			for k, v in pairs(state) do
+				system.state[k] = v
+			end
+		end
 	end
 
 	Project.systems[idx + 1] = system

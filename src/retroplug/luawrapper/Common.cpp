@@ -142,7 +142,8 @@ void luawrappers::registerCommon(sol::state& s) {
 
 	s.new_usertype<SameBoySettings>("SameBoySettings",
 		"model", &SameBoySettings::model,
-		"gameLink", &SameBoySettings::gameLink
+		"gameLink", &SameBoySettings::gameLink,
+		"skipBootRom", &SameBoySettings::skipBootRom
 	);
 
 	s.new_usertype<Project>("NativeProject",
