@@ -87,7 +87,7 @@ end
 function Controller:update(frameCount)
 	local ti = self._timeInfo
 	if ti == nil then
-		print("Time info not set")
+		log.error("Time info not set")
 		return
 	end
 

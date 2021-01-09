@@ -151,7 +151,6 @@ local function readLegacyStateData(base64Data, saveType, version)
 end
 
 local function updgrade_json_to_pv100(p, config)
-	--local syncModes = { "off", "midiSync", "midiSyncArduinoboy" }
 	local systems = {}
 	for _, v in ipairs(p.instances) do
 		local stateData
@@ -163,12 +162,32 @@ local function updgrade_json_to_pv100(p, config)
 		local audioComponents = {}
 		if v.settings.lsdj then
 			local lsdj = v.settings.lsdj
+			local syncModes = {
+				off = 0,
+				midiSync = 1,
+				midiSyncArduinoboy = 2,
+				midiMap = 3
+			}
 
-			audioComponents["Arduinoboy"] = {
+			local syncMode = syncModes[lsdj.syncMode]
+			if syncMode == nil then syncMode = 0 end
+
+			audioComponents["arduinoboy"] = {
 				autoPlay = lsdj.autoPlay,
-				syncMode = lsdj.syncMode
+				syncMode = syncMode,
+				lastRow = -1,
+				playing = false,
+				tempoDivisor = 1
 			}
 		end
+
+		local modelConvert = {
+			auto = "auto",
+			AGB = "agb",
+			DMG_B = "dmgB",
+			CGB_C = "cgbC",
+			CGB_E = "cgbE"
+		}
 
 		table.insert(systems, {
 			systemType = "sameBoy",
@@ -176,7 +195,7 @@ local function updgrade_json_to_pv100(p, config)
 			sramPath = v.lastSramPath,
 			includeRom = config.system.includeRom,
 			sameBoy = {
-				model = string.gsub(string.lower(v.settings.gameBoy.model), "_", ""),
+				model = modelConvert[v.settings.gameBoy.model] or "auto",
 				gameLink = v.settings.gameBoy.gameLink,
 				skipBootRom = config.system.sameBoy.skipBootRom
 			},
@@ -214,11 +233,13 @@ local function upgradeAndValidateProject(projectData, config)
 	local err
 	if projectData.instances ~= nil and semver(projectData.version) <= semver(0, 2, 0) then
 		projectData, err = updgrade_json_to_pv100(projectData, config)
+		--log.obj(projectData)
 	end
 
 	local projectSchema = schema["1.0.0"]
 	local valErr = s.CheckSchema(projectData, projectSchema)
 	if valErr then
+		log.obj(projectData)
 		local err = tostring(valErr)
 		return nil, err
 	end

@@ -21,8 +21,7 @@ local Lsdj = component({
 	requirements = { romName = "LSDj*" },
 	systemState = {
 		littleFm = false,
-		overclock = false,
-		keyboardShortcuts = true
+		overclock = false
 	}
 })
 
@@ -263,8 +262,6 @@ function Lsdj.onMenu(menu)
 	createKitsMenu(system, root:subMenu("Kits"), rom)
 
 	root:separator()
-		--:select("Keyboard Shortcuts", self._state.keyboardShortcuts, function(v) self._state.keyboardShortcuts = v end)
-		--:separator()
 		--[[:subMenu("Patches")
 			:select("LitteFM", self._state.littleFm, function(v) self._state.littleFm = v; self:updateRom() end)
 			:select("4x Overclock", self._state.overclock, function(v) self._state.overclock = v; self:updateRom() end)

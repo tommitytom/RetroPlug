@@ -17,7 +17,7 @@ local configSchema = s.Record {
 		uiComponents = s.Record {},
 		audioComponents = s.Record {},
 		sameBoy = s.Record {
-			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
+			model = s.OneOf("auto", "agb", "cgbC", "cgbE", "dmgB"),
 			gameLink = s.Boolean,
 			skipBootRom = s.Boolean
 		},

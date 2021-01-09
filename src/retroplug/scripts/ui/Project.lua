@@ -172,7 +172,9 @@ function Project.save(path, pretty, immediate)
 			_native.path = path
 		end
 
-		log.info("Saving project to " .. path)
+		if type(path) == "string" then
+			log.info("Saving project to " .. path)
+		end
 
 		local zipSettings = ZipWriterSettings.new()
 		zipSettings.method = ZipCompressionMethod.Deflate
@@ -180,7 +182,7 @@ function Project.save(path, pretty, immediate)
 
 		local data = Serializer.serializeProject(_data.systems, audioSystemStates, _native, pretty)
 		local err = projectutil.saveProject(path, data, _data.systems, audioSystemStates, zipSettings)
-		if err ~= nil then log.error(err) end
+		if err ~= nil then log.obj(err) end
 
 		timer:log()
 	end)

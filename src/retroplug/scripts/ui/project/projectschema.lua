@@ -3,7 +3,7 @@ local s = require("schema")
 local schema = {}
 
 schema["1.0.0"] = s.Record {
-	path = s.String,
+	path = s.Optional(s.String),
 	projectVersion = s.OneOf("1.0.0"),
 	retroPlugVersion = s.String,
 	systems = s.Collection(s.Record {
@@ -11,7 +11,7 @@ schema["1.0.0"] = s.Record {
 		romPath = s.String,
 		sramPath = s.String,
 		sameBoy = s.Record {
-			model = s.OneOf("auto", "agb", "cgbc", "cgbe", "dmgb"),
+			model = s.OneOf("auto", "agb", "cgbC", "cgbE", "dmgB"),
 			gameLink = s.Boolean,
 			skipBootRom = s.Boolean
 		},
