@@ -152,10 +152,12 @@ end
 
 local function updgrade_json_to_pv100(p, config)
 	local systems = {}
+	local saveType
+
 	for _, v in ipairs(p.instances) do
 		local stateData
 		if v.state ~= nil and v.state.data ~= nil and type(v.state.data) == "string" then
-			stateData, p.saveType = readLegacyStateData(v.state.data, p.saveType, semver(p.version))
+			stateData, saveType = readLegacyStateData(v.state.data, p.saveType, semver(p.version))
 		end
 
 		--local uiComponents = {}
@@ -220,7 +222,7 @@ local function updgrade_json_to_pv100(p, config)
 		systems = systems,
 
 		settings = {
-			saveType = p.saveType,
+			saveType = saveType,
 			audioRouting = p.audioRouting,
 			zoom = config.project.zoom,
 			midiRouting = p.midiRouting,
@@ -317,7 +319,7 @@ local function createProjectSystems(projectData, zip)
 				log.info("Loading from save state")
 				system.stateData = res.state
 			elseif res.sram then
-				log.info("Loading from SRAM")
+				log.info("Loading from SRAM (specified state")
 				system.sramData = res.sram
 			end
 		elseif projectData.settings.saveType == "sram" then
@@ -325,7 +327,7 @@ local function createProjectSystems(projectData, zip)
 				log.info("Loading from SRAM")
 				system.sramData = res.sram
 			elseif res.state then
-				log.info("Loading from save state")
+				log.info("Loading from save state (specified SRAM)")
 				system.stateData = res.state
 			end
 		end
