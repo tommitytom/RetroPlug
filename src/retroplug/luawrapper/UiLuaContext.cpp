@@ -18,9 +18,9 @@
 #include "platform/Logger.h"
 #include "Wrappers.h"
 
-#ifdef COMPILE_LUA_SCRIPTS
+//#ifdef COMPILE_LUA_SCRIPTS
 #include "generated/CompiledScripts.h"
-#endif
+//#endif
 
 void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath) {
 	_configPath = path;
@@ -93,8 +93,6 @@ void UiLuaContext::shutdown() {
 		_state = nullptr;
 	}
 }
-
-#include "generated/CompiledScripts.h"
 
 void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
 	callFunc(_viewRoot, "onDialogResult", paths);

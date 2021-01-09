@@ -288,7 +288,7 @@ local function loadSystemResources(projectData, inst, idx, zip)
 		end
 	end
 
-	--if t.rom == nil or isNullPtr(t.rom) then t.rom = nil; log.warn("Couldn't find ROM") end
+	if t.rom == nil or isNullPtr(t.rom) then t.rom = nil; log.warn("Couldn't find ROM") end
 	--if t.state == nil or isNullPtr(t.state) then t.state = nil; log.warn("Couldn't find state data") end
 	--if t.sram == nil or isNullPtr(t.sram) then t.sram = nil; log.warn("Couldn't find SRAM data") end
 
@@ -425,8 +425,10 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 			if ok == false then return Error("Failed to add system state") end
 		end
 
-		ok = zip:add(idx .. ".gb", system.desc.romData)
-		if ok == false then return Error("Failed to add system ROM") end
+		if system.includeRom == true then
+			ok = zip:add(idx .. ".gb", system.desc.romData)
+			if ok == false then return Error("Failed to add system ROM") end
+		end
 	end
 
 	zip:close()

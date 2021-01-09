@@ -30,6 +30,7 @@
 		"InputConfig",
 		"KeyMap",
 		"GlobalKeyMap",
-		"Action"
+		"Action",
+		"nativeshell"
 	]
 }

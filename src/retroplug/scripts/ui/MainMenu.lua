@@ -211,7 +211,7 @@ local function generateMainMenu(menu)
 	if selected.desc.state == SystemState.Running then
 		systemMenu(menu:subMenu("System"), selected)
 	elseif selected.desc.state == SystemState.RomMissing then
-		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romName) end)
+		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romPath) end)
 	end
 
 	local sameBoySettings = selected.desc.sameBoySettings
