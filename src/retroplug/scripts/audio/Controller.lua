@@ -222,9 +222,14 @@ function Controller:removeSystem(idx)
 end
 
 function Controller:serializeSystem(idx, pretty)
-	local opts = { comment = false }
-	if pretty == true then opts.indent = '\t' end
-	return serpent.block(Project.systems[idx + 1].state, opts)
+	local system = Project.systems[idx + 1]
+	if system ~= nil then
+		local opts = { comment = false }
+		if pretty == true then opts.indent = '\t' end
+		return serpent.block(Project.systems[idx + 1].state, opts)
+	end
+
+	return ""
 end
 
 function Controller:serializeSystems(pretty)

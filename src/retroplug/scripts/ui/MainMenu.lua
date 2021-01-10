@@ -90,7 +90,7 @@ local function projectMenu(menu)
 		:subMenu("Save Options")
 			:multiSelect({ "Prefer SRAM", "Prefer State" }, settings.saveType, function(v) settings.saveType = v end)
 			:separator()
-			:select("Include ROM", settings.packageRom, function(v) settings.packageRom = v end)
+			:select("Include ROM", settings.includeRom, function(v) settings.includeRom = v end)
 			:parent()
 		:separator()
 		:subMenu("Add System", #Project.systems < MAX_SYSTEMS)
@@ -151,7 +151,7 @@ local function systemMenu(menu, system)
 		:subMenu("Audio Components")]]
 end
 
-local function findMissingRom(romPath)
+function MainMenu.findMissingRom(romPath)
 	dialog.loadFile({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, function(path)
 		if path then
 			for _, system in ipairs(Project.systems) do
@@ -248,7 +248,7 @@ local function generateMainMenu(menu)
 				selected:updateSettings()
 			end)
 	elseif selected.desc.state == SystemState.RomMissing then
-		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romPath) end)
+		menu:action("Find Missing ROM...", function() MainMenu.findMissingRom(selected.desc.romPath) end)
 	end
 end
 

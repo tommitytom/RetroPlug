@@ -78,6 +78,8 @@ end
 function View:onMouseDown(x, y, mod)
 	self:selectViewAtPos(x, y)
 
+	self.model:emit("onMouseDown", x, y, mod)
+
 	if mod.right == true then
 		local selectedIdx = Project.getSelectedIndex()
 		if selectedIdx > 0 then

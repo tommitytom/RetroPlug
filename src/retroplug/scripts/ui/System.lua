@@ -19,14 +19,6 @@ function System.fromSystemDesc(desc)
 	return system
 end
 
--- Loads a rom from a buffer or a path
---[[function System.fromRom(buffer, model)
-	local system = System()
-	system:loadRom(buffer)
-	if model ~= nil then system.desc.sameBoySettings.model = model end
-	return system
-end]]
-
 function System:init(desc, model, state)
 	_ctx = Globals.audioContext
 
@@ -70,16 +62,6 @@ function System:setRom(data, reset)
 	--self:emit("onRomSet", data)
 
 	_ctx:setRom(self._desc.idx, data, reset)
-end
-
-local function createSystemDesc(config)
-	local desc = SystemDesc.new()
-	if config then
-		desc.sameBoySettings.model = Globals.config.SameBoy.model
-		desc.sameBoySettings.gameLink = Globals.config.SameBoy.gameLink
-	end
-
-	return desc
 end
 
 -- Loads a ROM from a path string, or data buffer.  Rebuilds the

@@ -71,7 +71,6 @@ struct SystemDesc {
 	GameboyButtonStream buttons;
 
 	bool fastBoot = false;
-	bool includeRom = true;
 
 	SystemDesc() {}
 	SystemDesc(const SystemDesc& other) { *this = other; }
@@ -88,7 +87,7 @@ struct Project {
 		SystemLayout layout = SystemLayout::Auto;
 		SaveStateType saveType = SaveStateType::Sram;
 		int zoom = 2;
-		bool packageRom = true;
+		bool includeRom = true;
 	} settings;
 
 	std::string path;

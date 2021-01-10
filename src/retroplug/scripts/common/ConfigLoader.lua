@@ -24,15 +24,15 @@ local configSchema = s.Record {
 		input = s.Record {
 			key = s.String,
 			pad = s.String,
-		},
-		includeRom = s.Boolean
+		}
 	},
 	project = s.Record {
 		saveType = s.OneOf("sram", "state"),
 		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
 		zoom = s.NumberFrom(0, 4),
 		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
-		layout = s.OneOf("auto", "column", "grid", "row")
+		layout = s.OneOf("auto", "column", "grid", "row"),
+		includeRom = s.Boolean
 	}
 }
 

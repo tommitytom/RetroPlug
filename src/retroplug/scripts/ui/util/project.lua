@@ -17,14 +17,14 @@ local ProjectSettingsFields = {
 	midiRouting = MidiChannelRouting,
 	layout = SystemLayout,
 	saveType = SaveStateType,
-	"zoom"
+	"zoom",
+	"includeRom"
 }
 
 local SystemSettingsFields = {
 	systemType = SystemType,
 	"romPath",
-	"sramPath",
-	"includeRom"
+	"sramPath"
 }
 
 local SameBoySettingsFields = {
@@ -195,7 +195,6 @@ local function updgrade_json_to_pv100(p, config)
 			systemType = "sameBoy",
 			romPath = v.romPath,
 			sramPath = v.lastSramPath,
-			includeRom = config.system.includeRom,
 			sameBoy = {
 				model = modelConvert[v.settings.gameBoy.model] or "auto",
 				gameLink = v.settings.gameBoy.gameLink,
@@ -226,7 +225,8 @@ local function updgrade_json_to_pv100(p, config)
 			audioRouting = p.audioRouting,
 			zoom = config.project.zoom,
 			midiRouting = p.midiRouting,
-			layout = p.layout
+			layout = p.layout,
+			includeRom = config.project.includeRom
 		}
 	}
 end
@@ -399,7 +399,7 @@ local function loadProject(data, config)
 	return projectData, systems, nil
 end
 
-local function saveProject(path, projectData, systems, systemStates, zipSettings)
+local function saveProject(path, projectData, systems, systemStates, zipSettings, includeRom)
 	local ok
 
 	local zip
@@ -415,6 +415,7 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 
 	for i, system in ipairs(systems) do
 		local idx = tostring(i)
+
 		if systemStates.srams[i] ~= nil then
 			ok = zip:add(idx .. ".sav", systemStates.srams[i])
 			if ok == false then return Error("Failed to add system SRAM") end
@@ -425,7 +426,7 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 			if ok == false then return Error("Failed to add system state") end
 		end
 
-		if system.desc.includeRom == true then
+		if includeRom == true and not isNullPtr(system.desc.romData) then
 			ok = zip:add(idx .. ".gb", system.desc.romData)
 			if ok == false then return Error("Failed to add system ROM") end
 		end

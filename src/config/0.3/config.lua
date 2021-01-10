@@ -10,14 +10,14 @@
 		input = {
 			key = "default.lua",
 			pad = "default.lua"
-		},
-		includeRom = true
+		}
 	},
 	project = {
-		saveType="sram",
-		audioRouting="stereoMixDown",
-		zoom=2,
-		midiRouting="sendToAll",
-		layout = "auto"
+		saveType = "sram",
+		audioRouting = "stereoMixDown",
+		zoom = 2,
+		midiRouting = "sendToAll",
+		layout = "auto",
+		includeRom = true
 	}
 }

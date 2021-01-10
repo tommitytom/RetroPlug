@@ -159,7 +159,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		"layout", &Project::Settings::layout,
 		"zoom", &Project::Settings::zoom,
 		"saveType", &Project::Settings::saveType,
-		"packageRom", &Project::Settings::packageRom
+		"includeRom", &Project::Settings::includeRom
 	);
 
 	s.new_usertype<GameboyButtonStream>("GameboyButtonStream",
@@ -199,7 +199,7 @@ void luawrappers::registerCommon(sol::state& s) {
 		),
 		"get", &DataBuffer<char>::get,
 		"set", &DataBuffer<char>::set,
-		"slice", [](DataBuffer<char>& buffer, size_t pos, size_t size) { 
+		"slice", [](DataBuffer<char>& buffer, size_t pos, size_t size) {
 			return std::make_shared<DataBuffer<char>>(buffer.slice(pos, size));
 		},
 		"toString", &DataBuffer<char>::toString,

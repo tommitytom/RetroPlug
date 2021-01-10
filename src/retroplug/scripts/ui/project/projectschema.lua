@@ -21,7 +21,6 @@ schema["1.0.0"] = s.Record {
 		},
 		uiComponents = s.Map(s.String, s.Any),
 		audioComponents = s.Map(s.String, s.Any),
-		includeRom = s.Boolean,
 		_stateData = s.Optional(s.Any)
 	}),
 	settings = s.Record {
@@ -29,7 +28,8 @@ schema["1.0.0"] = s.Record {
 		audioRouting = s.OneOf("stereoMixDown", "twoChannelsPerChannel", "twoChannelsPerInstance"),
 		zoom = s.NumberFrom(0, 4),
 		midiRouting = s.OneOf("oneChannelPerInstance", "fourChannelsPerInstance", "sendToAll"),
-		layout = s.OneOf("auto", "column", "grid", "row")
+		layout = s.OneOf("auto", "column", "grid", "row"),
+		includeRom = s.Boolean
 	}
 }
 

@@ -4,6 +4,7 @@ local inpututil = require("util.input")
 local util = require("util")
 local filters = require("filters")
 local Globals = require("Globals")
+local MainMenu = require("MainMenu")
 
 local _keysPressed = {}
 local _buttonsPressed = {}
@@ -84,6 +85,15 @@ local function processInput(key, down, map, pressed)
 	end
 
 	return handled
+end
+
+function RetroPlug.onMouseDown(x, y, mod)
+	local selected = Project.getSelected()
+	if selected ~= nil then
+		if selected.desc.state == SystemState.RomMissing then
+			MainMenu.findMissingRom(selected.desc.romPath)
+		end
+	end
 end
 
 function RetroPlug.onKey(key, down)

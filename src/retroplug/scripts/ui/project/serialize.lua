@@ -18,6 +18,7 @@ function Serializer.serializeProject(systems, audioSystemStates, projectSettings
 			local inst = projectutil.cloneEnumFields(desc, projectutil.SystemSettingsFields)
 			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
 			inst.uiComponents = system.state
+			inst.audioComponents = {}
 
 			inst.input = {
 				key = system.inputMap.key.filename,

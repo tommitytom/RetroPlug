@@ -106,6 +106,8 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 		UpdateLayout();
 		UpdateSelected();
 	}
+
+	ProcessDialog();
 }
 
 void RetroPlugView::Draw(IGraphics& g) {

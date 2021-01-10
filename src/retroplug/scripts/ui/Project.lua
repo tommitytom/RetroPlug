@@ -181,7 +181,7 @@ function Project.save(path, pretty, immediate)
 		zipSettings.level = ZipCompressionLevel.Normal
 
 		local data = Serializer.serializeProject(_data.systems, audioSystemStates, _native, pretty)
-		local err = projectutil.saveProject(path, data, _data.systems, audioSystemStates, zipSettings)
+		local err = projectutil.saveProject(path, data, _data.systems, audioSystemStates, zipSettings, Project.settings.includeRom)
 		if err ~= nil then log.obj(err) end
 
 		timer:log()
