@@ -57,17 +57,25 @@ function LsdjArduinoboy.onUpdate(frameCount)
 
 end
 
-function LsdjArduinoboy.onPpq(ppq, offset)
-	local state = System.state.arduinoboy
+local function processSync(system, offset)
+	local state = system.state.arduinoboy
 
 	if state.syncMode == LsdjSyncModes.MidiSync then
-		System:sendSerialByte(offset, 0xF8)
+		system:sendSerialByte(offset, 0xF8)
 	elseif state.syncMode == LsdjSyncModes.MidiSyncArduinoboy then
 		if state.playing == true then
-			System:sendSerialByte(offset, 0xF8)
+			system:sendSerialByte(offset, 0xF8)
 		end
 	elseif state.syncMode == LsdjSyncModes.MidiSync then
-		System:sendSerialByte(offset, 0xFF)
+		system:sendSerialByte(offset, 0xFF)
+	end
+end
+
+function LsdjArduinoboy.onPpq(ppq, offset)
+	for _, system in ipairs(Project.systems) do
+		if system.state.arduinoboy ~= nil then
+			processSync(system, offset)
+		end
 	end
 end
 
@@ -77,7 +85,7 @@ function LsdjArduinoboy.onMidi(system, msg)
 	local status = msg.status
 	if status == midi.Status.System then
 		if msg.systemStatus == midi.SystemStatus.TimingClock then
-			LsdjArduinoboy.onPpq(state, msg.offset)
+			processSync(system, msg.offset)
 		else
 			print(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
 		end
