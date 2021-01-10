@@ -425,7 +425,7 @@ local function saveProject(path, projectData, systems, systemStates, zipSettings
 			if ok == false then return Error("Failed to add system state") end
 		end
 
-		if system.includeRom == true then
+		if system.desc.includeRom == true then
 			ok = zip:add(idx .. ".gb", system.desc.romData)
 			if ok == false then return Error("Failed to add system ROM") end
 		end

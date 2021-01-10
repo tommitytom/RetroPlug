@@ -62,6 +62,13 @@ end
 
 local function projectMenu(menu)
 	local settings = Project.settings
+	local selected = Project.getSelected()
+	local canDuplicate = true
+
+	if selected ~= nil and selected.desc.state == SystemState.RomMissing then
+		canDuplicate = false
+	end
+
 	menu:action("New", function() Project.clear() end)
 		:action("Load...", MainMenu.loadProjectOrRom())
 		:action("Save", saveProject(false))
@@ -77,7 +84,7 @@ local function projectMenu(menu)
 			:action("Load ROM...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.Auto))
 			:action("Duplicate Selected", function()
 				Project.duplicateSystem(Project.getSelectedIndex())
-			end)
+			end, canDuplicate)
 			:parent()
 		:action("Remove System", function() Project.removeSystem(Project.getSelectedIndex()) end, #Project.systems > 1)
 		:subMenu("Layout")
@@ -138,7 +145,7 @@ local function findMissingRom(romPath)
 				if romPath == system.desc.romPath then
 					system.desc.romPath = path
 					local romData = fs.load(path)
-					if romData then system:setRom(romData, true) end
+					if romData then system:loadRom(romData) end
 				end
 			end
 		end
@@ -210,26 +217,26 @@ local function generateMainMenu(menu)
 
 	if selected.desc.state == SystemState.Running then
 		systemMenu(menu:subMenu("System"), selected)
+
+		local sameBoySettings = selected.desc.sameBoySettings
+		local settingsMenu = menu:subMenu("Settings")
+
+		generateInputMenu(selected, settingsMenu:subMenu("Keyboard"), "key")
+		generateInputMenu(selected, settingsMenu:subMenu("Pad"), "pad")
+
+		settingsMenu:separator()
+			:action("Open Settings Folder...", function()
+				nativeshell.openShellFolder(nativeshell.getConfigPath())
+			end)
+			:parent()
+			:separator()
+			:select("Game Link", sameBoySettings.gameLink, function(v)
+				sameBoySettings.gameLink = v
+				selected:updateSettings()
+			end)
 	elseif selected.desc.state == SystemState.RomMissing then
 		menu:action("Find Missing ROM...", function() findMissingRom(selected.desc.romPath) end)
 	end
-
-	local sameBoySettings = selected.desc.sameBoySettings
-	local settingsMenu = menu:subMenu("Settings")
-
-	generateInputMenu(selected, settingsMenu:subMenu("Keyboard"), "key")
-	generateInputMenu(selected, settingsMenu:subMenu("Pad"), "pad")
-
-	settingsMenu:separator()
-		:action("Open Settings Folder...", function()
-			nativeshell.openShellFolder(nativeshell.getConfigPath())
-		end)
-		:parent()
-		:separator()
-		:select("Game Link", sameBoySettings.gameLink, function(v)
-			sameBoySettings.gameLink = v
-			selected:updateSettings()
-		end)
 end
 
 local function generateStartMenu(menu)

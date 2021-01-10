@@ -81,7 +81,10 @@ function View:onMouseDown(x, y, mod)
 	if mod.right == true then
 		local selectedIdx = Project.getSelectedIndex()
 		if selectedIdx > 0 then
-			Globals.audioContext:updateSram(selectedIdx - 1)
+			local selected = Project.getSelected()
+			if selected.desc.state ~= SystemState.RomMissing then
+				Globals.audioContext:updateSram(selectedIdx - 1)
+			end
 		end
 
 		local menu = Menu()
