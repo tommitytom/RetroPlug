@@ -34,6 +34,8 @@
 		"nativeshell",
 		"MenuItemType",
 		"PadMap",
-		"GlobalPadMap"
+		"GlobalPadMap",
+		"liblsdj",
+		"LsdjError"
 	]
 }

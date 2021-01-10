@@ -39,7 +39,12 @@ function LsdjArduinoboy.onMenu(menu)
 	return menu
 		:subMenu("LSDj")
 			:subMenu("Sync")
-				:multiSelect({ "Off", "MIDI Sync [MIDI]", "MIDI Sync (Arduinoboy) [MIDI]", "MIDI Map [MI. MAP]"}, state.syncMode, function(idx)
+				:multiSelect({
+					"Off",
+					"MIDI Sync [MIDI]",
+					"MIDI Sync (Arduinoboy) [MIDI]",
+					"MIDI Map [MI. MAP]"
+				}, state.syncMode, function(idx)
 					state.syncMode = idx
 				end)
 				:separator()

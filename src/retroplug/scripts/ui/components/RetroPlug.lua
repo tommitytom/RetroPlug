@@ -48,13 +48,18 @@ function RetroPlug.onDrop(paths)
 		if ext == "sav" then table.insert(savs, v) end
 	end
 
-	local selected = Project.getSelectedIndex()
 	if #projects > 0 then
 		Project.load(projects[1])
 		return true
 	elseif #roms > 0 then
-		if #Project.systems == 1 then Project.clear() end
-		Project.loadRom(roms[1], selected)
+		local system = Project.getSelected()
+
+		if system ~= nil then
+			system:loadRom(roms[1])
+		else
+			Project.addSystem():loadRom(roms[1])
+		end
+
 		return true
 	elseif #savs > 0 then
 		local system = Project.getSelected()

@@ -25,7 +25,20 @@ end
 
 local function loadRom(idx, model)
 	return menuutil.loadHandler({ filters.ROM_FILTER, filters.ZIPPED_ROM_FILTER }, "ROM", function(path)
-		return Project.addSystem():loadRom(path, idx, model)
+		local system
+
+		if idx == NO_ACTIVE_SYSTEM then
+			system = Project.addSystem()
+		else
+			system = Project.systems[idx]
+		end
+
+		if system ~= nil then
+			system._desc.sameBoySettings.model = model
+			system:loadRom(path)
+		else
+			log.error("Failed to load ROM, system index does not exist:", idx)
+		end
 	end)
 end
 
@@ -109,7 +122,7 @@ local function projectMenu(menu)
 end
 
 local function systemMenu(menu, system)
-	menu:action("Load ROM...", loadRom(system.desc.idx + 1))
+	menu:action("Load ROM...", loadRom(system.desc.idx + 1, GameboyModel.Auto))
 		:subMenu("Load ROM As")
 			:action("AGB...", loadRom(system.desc.idx + 1, GameboyModel.Agb))
 			:action("CGB C...", loadRom(system.desc.idx + 1, GameboyModel.CgbC))

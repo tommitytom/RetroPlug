@@ -101,6 +101,8 @@ function System:loadRom(data, path)
 				if isNullPtr(fileData) then
 					fileData = nil
 					err = Error("Failed to read ROM from zip file (" .. v.name .. ")")
+				else
+					break
 				end
 			end
 		end
