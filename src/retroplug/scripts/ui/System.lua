@@ -147,7 +147,7 @@ function System:loadSram(data, reset, path)
 		self._desc.sramPath = path
 	end
 
-	self:emit("onSramLoad", data)
+	--self:emit("onSramLoad", data)
 
 	_ctx:setSram(self._desc.idx, data, reset)
 end
@@ -160,7 +160,7 @@ function System:loadState(data, reset)
 		end
 	end
 
-	self:emit("onStateLoad", data)
+	--self:emit("onStateLoad", data)
 
 	_ctx:setState(self._desc.idx, data, reset)
 end
