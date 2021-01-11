@@ -35,100 +35,6 @@ local SameBoySettingsFields = {
 
 local PROJECT_LUA_FILENAME = "project.lua"
 
-local function cloneFields(source, fields, target)
-	if target == nil then
-		target = {}
-	end
-
-	for _, v in ipairs(fields) do
-		target[v] = source[v]
-	end
-
-	return target
-end
-
-local function toEnumString(enumType, value)
-	local idx = getmetatable(enumType).__index
-	for k, v in pairs(idx) do
-		if value == v then
-			return k:sub(1, 1):lower() .. k:sub(2)
-		end
-	end
-
-	return ""
-end
-
-local function fromEnumString(enumType, value)
-	local v = enumType[value]
-	if v ~= nil then return v end
-
-	local vl = value:sub(1, 1):upper() .. value:sub(2)
-	v = enumType[vl]
-	if v ~= nil then return v end
-
-	return 0
-end
-
-local function cloneEnumFields(obj, fields, target)
-	if target == nil then target = {} end
-	for k, v in pairs(fields) do
-		if type(k) == "number" then
-			target[v] = obj[v]
-		else
-			target[k] = toEnumString(v, obj[k])
-		end
-	end
-
-	return target
-end
-
-local function copyStringFields(obj, fields, target)
-	if target == nil then target = {} end
-	for k, v in pairs(fields) do
-		if type(k) == "number" then
-			target[v] = obj[v]
-		elseif type(k) == "string" then
-			target[k] = fromEnumString(v, obj[k])
-		else
-			log.warn("Failed to merge string field " .. k)
-		end
-	end
-
-	return target
-end
-
-local projectDefaults = {
-	["1.0.0"] = {
-		system = {
-			romPath = "",
-			sramPath = "",
-			uiComponents = {},
-			audioComponents = {},
-			sameBoy = {
-				model = "auto",
-				gameLink = false
-			}
-		},
-		project = {
-			projectVersion = "0.1.0",
-			path = "",
-			settings = {
-				saveType="sram",
-				audioRouting="stereoMixDown",
-				zoom=2,
-				midiRouting="sendToAll",
-				layout = "auto"
-			}
-		}
-	}
-}
-
-local function firstToUpper(str)
-	if str ~= nil and type(str) == "string" and str ~= "" then
-		return (str:gsub("^%l", string.upper))
-	end
-end
-
 local function readLegacyStateData(base64Data, saveType, version)
 	local stateData = base64.decodeBuffer(base64Data)
 
@@ -260,7 +166,7 @@ end
 local function loadSystemResources(projectData, inst, idx, zip)
 	local t = {}
 	local idxStr = tostring(idx)
-	local st = fromEnumString(SaveStateType, projectData.settings.saveType)
+	local st = util.fromEnumString(SaveStateType, projectData.settings.saveType)
 
 	if zip ~= nil then
 		t.rom = zip:read(idxStr .. ".gb")
@@ -303,8 +209,8 @@ local function createProjectSystems(projectData, zip)
 		local system = SystemDesc.new()
 		system.idx = -1
 		system.fastBoot = true
-		copyStringFields(inst, SystemSettingsFields, system)
-		copyStringFields(inst.sameBoy, SameBoySettingsFields, system.sameBoySettings)
+		util.copyStringFields(inst, SystemSettingsFields, system)
+		util.copyStringFields(inst.sameBoy, SameBoySettingsFields, system.sameBoySettings)
 
 		if res.rom then
 			system.state = SystemState.Initialized
@@ -335,10 +241,10 @@ local function createProjectSystems(projectData, zip)
 		system.audioComponentState = serpent.dump(inst.audioComponents)
 		system.uiComponentState = serpent.dump(inst.uiComponents)
 
-		local system = System.fromSystemDesc(system)
-		system:setInputMap(inpututil.getInputMap(Globals.inputConfigs, inst.input))
+		local sys = System.fromSystemDesc(system)
+		sys:setInputMap(inpututil.getInputMap(Globals.inputConfigs, inst.input))
 
-		table.insert(systems, system)
+		table.insert(systems, sys)
 	end
 
 	return systems
@@ -443,8 +349,6 @@ end
 
 return {
 	loadProject = loadProject,
-	copyStringFields = copyStringFields,
-	cloneEnumFields = cloneEnumFields,
 	ProjectSettingsFields = ProjectSettingsFields,
 	SystemSettingsFields = SystemSettingsFields,
 	SameBoySettingsFields = SameBoySettingsFields,

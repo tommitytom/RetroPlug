@@ -1,6 +1,7 @@
 local s = require("schema")
 local serpent = require("serpent")
 local log = require("log")
+local util = require("util")
 
 local function loadText(path)
 	local file = io.open(path, "rb") -- r read mode and b binary mode
@@ -44,6 +45,8 @@ function module.loadConfigFromString(code)
 			log.error(s.FormatOutput(valErr))
 			return false
 		end
+
+		config.system.sameBoy.model = util.fromEnumString(GameboyModel, config.system.sameBoy.model)
 
 		return true, config
 	end

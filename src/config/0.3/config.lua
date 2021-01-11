@@ -1,17 +1,19 @@
 {
+	-- Default system settings
 	system = {
 		uiComponents = {},
 		audioComponents = {},
 		sameBoy = {
 			model = "auto",
 			gameLink = false,
-			skipBootRom = true
+			skipBootRom = false
 		},
 		input = {
 			key = "default.lua",
 			pad = "default.lua"
 		}
 	},
+	-- Default project settings
 	project = {
 		saveType = "sram",
 		audioRouting = "stereoMixDown",

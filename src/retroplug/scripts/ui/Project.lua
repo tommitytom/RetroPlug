@@ -34,7 +34,7 @@ function Project.init()
 	_ctx = Globals.audioContext
 	_native = _ctx:getProject()
 
-	projectutil.copyStringFields(Globals.config.project, projectutil.ProjectSettingsFields, _native.settings)
+	util.copyStringFields(Globals.config.project, projectutil.ProjectSettingsFields, _native.settings)
 
 	local count = #_native.systems
 	for i = 1, count, 1 do
@@ -89,6 +89,9 @@ function Project.addSystem(systemType)
 	local desc = SystemDesc.new()
 	desc.idx = #_data.systems
 	desc.systemType = systemType or SystemType.SameBoy
+	desc.sameBoySettings.model = Globals.config.system.sameBoy.model
+	desc.sameBoySettings.gameLink = Globals.config.system.sameBoy.gameLink
+	desc.sameBoySettings.skipBootRom = Globals.config.system.sameBoy.skipBootRom
 
 	local system = GameboySystem.fromSystemDesc(desc)
 	_data.systems[desc.idx + 1] = system
@@ -140,7 +143,7 @@ function Project.load(data)
 		_native.path = projectData.path
 	end
 
-	projectutil.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, _native.settings)
+	util.copyStringFields(projectData.settings, projectutil.ProjectSettingsFields, _native.settings)
 	_ctx:updateSettings()
 
 	for _, system in ipairs(systems) do

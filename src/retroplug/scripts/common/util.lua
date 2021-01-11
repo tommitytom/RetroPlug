@@ -105,4 +105,54 @@ function util.mergeObjects(target, source)
 	end
 end
 
+function util.toEnumString(enumType, value)
+	local idx = getmetatable(enumType).__index
+	for k, v in pairs(idx) do
+		if value == v then
+			return k:sub(1, 1):lower() .. k:sub(2)
+		end
+	end
+
+	return ""
+end
+
+function util.fromEnumString(enumType, value)
+	local v = enumType[value]
+	if v ~= nil then return v end
+
+	local vl = value:sub(1, 1):upper() .. value:sub(2)
+	v = enumType[vl]
+	if v ~= nil then return v end
+
+	return 0
+end
+
+function util.cloneEnumFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		else
+			target[k] = util.toEnumString(v, obj[k])
+		end
+	end
+
+	return target
+end
+
+function util.copyStringFields(obj, fields, target)
+	if target == nil then target = {} end
+	for k, v in pairs(fields) do
+		if type(k) == "number" then
+			target[v] = obj[v]
+		elseif type(k) == "string" then
+			target[k] = util.fromEnumString(v, obj[k])
+		else
+			log.warn("Failed to merge string field " .. k)
+		end
+	end
+
+	return target
+end
+
 return util

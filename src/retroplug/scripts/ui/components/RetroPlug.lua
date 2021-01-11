@@ -87,7 +87,7 @@ local function processInput(key, down, map, pressed)
 	return handled
 end
 
-function RetroPlug.onMouseDown(x, y, mod)
+function RetroPlug.onDoubleClick(x, y, mod)
 	local selected = Project.getSelected()
 	if selected ~= nil then
 		if selected.desc.state == SystemState.RomMissing then

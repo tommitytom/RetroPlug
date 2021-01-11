@@ -174,6 +174,10 @@ public:
 		assert(inst->idx == _project.systems.size());
 		_project.systems.push_back(inst);
 
+		if (inst->sameBoySettings.skipBootRom) {
+			inst->fastBoot = true;
+		}
+
 		if (inst->romData) {
 			loadRom(inst);
 		}

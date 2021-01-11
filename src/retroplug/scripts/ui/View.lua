@@ -72,6 +72,8 @@ end
 function View:onDoubleClick(x, y, mod)
 	if #Project.systems == 0 then
 		mainMenu.loadProjectOrRom()()
+	else
+		self.model:emit("onDoubleClick", x, y, mod)
 	end
 end
 
