@@ -29,11 +29,10 @@ project "SameBoyBootRoms"
 
 	files { SAMEBOY_DIR .. "BootROMs/**.asm" }
 
-	configuration { "windows" }
-		prebuildcommands {
-			'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
-			'"%{cfg.buildtarget.directory}/pb12.exe" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
-		}
+	prebuildcommands {
+		'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
+		'"%{cfg.buildtarget.directory}/pb12" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
+	}
 
 	filter ('files:' .. SAMEBOY_DIR .. 'BootROMs/**.asm')
 		buildmessage '%{file.basename}.asm'
