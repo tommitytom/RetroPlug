@@ -92,3 +92,16 @@ project "minizip"
 			MINIZIP_DIR .. "/mz_strm_os_win32.c",
 			MINIZIP_DIR .. "/mz_os_win32.c"
 		}
+
+	filter "system:macosx"
+		files {
+			MINIZIP_DIR .. "/mz_crypt_apple.c",
+			MINIZIP_DIR .. "/mz_strm_os_posix.c",
+			MINIZIP_DIR .. "/mz_os_posix.c"
+		}
+
+	filter "system:linux"
+		files {
+			MINIZIP_DIR .. "/mz_strm_os_posix.c",
+			MINIZIP_DIR .. "/mz_os_posix.c"
+		}
