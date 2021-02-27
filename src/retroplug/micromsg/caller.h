@@ -9,7 +9,7 @@
 namespace micromsg {
 	template <typename T>
 	static inline Envelope* requestHandler(Envelope* env, VariantFunction& handler, Allocator& alloc) {
-		TypedEnvelope<T::Arg>* w = static_cast<TypedEnvelope<T::Arg>*>(env);
+		TypedEnvelope<typename T::Arg>* w = static_cast<TypedEnvelope<typename T::Arg>*>(env);
 		auto* f = handler.get<RequestSignature<T>>();
 		assert(f);
 
@@ -17,7 +17,7 @@ namespace micromsg {
 			f->func(w->message);
 			return nullptr;
 		} else {
-			TypedEnvelope<T::Return>* outEnv = alloc.alloc<TypedEnvelope<T::Return>>();
+			TypedEnvelope<typename T::Return>* outEnv = alloc.alloc<TypedEnvelope<typename T::Return>>();
 			outEnv->callTypeId = 0;
 			outEnv->callId = env->callId;
 			f->func(w->message, outEnv->message);
@@ -27,7 +27,7 @@ namespace micromsg {
 
 	template <typename T>
 	static inline void responseHandler(Envelope* env, VariantFunction& handler) {
-		TypedEnvelope<T::Return>* w = static_cast<TypedEnvelope<T::Return>*>(env);
+		TypedEnvelope<typename T::Return>* w = static_cast<TypedEnvelope<typename T::Return>*>(env);
 		auto* f = handler.get<ResponseSignature<T>>();
 		assert(f);
 		f->func(w->message);

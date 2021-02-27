@@ -26,6 +26,7 @@ struct SameBoySettings {
 	bool skipBootRom = false;
 };
 
+namespace math {
 struct Point {
 	float x, y;
 	Point() : x(0), y(0) {}
@@ -45,6 +46,7 @@ struct Rect {
 		return point.x >= x && point.x < right() && point.y >= y && point.y < bottom();
 	}
 };
+}
 
 struct SystemDesc {
 	SystemIndex idx = NO_ACTIVE_SYSTEM;
@@ -55,7 +57,7 @@ struct SystemDesc {
 	std::string romPath;
 	std::string sramPath;
 
-	Rect area;
+	math::Rect area;
 
 	SameBoySettings sameBoySettings;
 

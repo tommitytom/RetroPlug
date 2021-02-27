@@ -30,10 +30,10 @@ namespace micromsg {
 
 		template <typename T>
 		void addCall(size_t maxCallCount = DEFAULT_SEND_QUEUE_CAPACITY) {
-			_alloc.reserveChunks(sizeof(TypedEnvelope<T::Arg>), maxCallCount);
+			_alloc.reserveChunks(sizeof(TypedEnvelope<typename T::Arg>), maxCallCount);
 
 			if constexpr (!IsPushType<T>::value) {
-				_alloc.reserveChunks(sizeof(TypedEnvelope<T::Return>), maxCallCount);
+				_alloc.reserveChunks(sizeof(TypedEnvelope<typename T::Return>), maxCallCount);
 				_handlers.responseCount += maxCallCount;
 			}
 

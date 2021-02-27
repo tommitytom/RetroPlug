@@ -275,7 +275,7 @@ void RetroPlugView::UpdateLayout() {
 		_views[i]->SetArea(b);
 
 		if (i < systems.size()) {
-			systems[i]->area = Rect(b.L, b.T, b.W(), b.H());
+			systems[i]->area = math::Rect(b.L, b.T, b.W(), b.H());
 		}
 	}
 

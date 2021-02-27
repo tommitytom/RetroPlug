@@ -8,7 +8,13 @@ local BOOTROM_RES_DIR = "%{wks.location}/obj/%{cfg.platform}/%{cfg.buildcfg}/Sam
 project "pb12"
 	kind "ConsoleApp"
 	language "C"
-	toolset "clang"
+	--toolset "clang"
+
+	--[[xcodebuildsettings {
+		["MACOSX_DEPLOYMENT_TARGET"] = "10.14"
+	}]]
+
+	systemversion "10.14"
 
 	files { SAMEBOY_DIR .. "BootROMs/pb12.c" }
 
@@ -29,11 +35,10 @@ project "SameBoyBootRoms"
 
 	files { SAMEBOY_DIR .. "BootROMs/**.asm" }
 
-	configuration { "windows" }
-		prebuildcommands {
-			'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
-			'"%{cfg.buildtarget.directory}/pb12.exe" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
-		}
+	prebuildcommands {
+		'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
+		'"%{cfg.buildtarget.directory}/pb12" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
+	}
 
 	filter ('files:' .. SAMEBOY_DIR .. 'BootROMs/**.asm')
 		buildmessage '%{file.basename}.asm'
@@ -41,7 +46,7 @@ project "SameBoyBootRoms"
 		buildcommands {
 			'rgbasm -i "' .. BOOTROM_RES_DIR .. '" -i "' .. BOOTROM_DIR .. '" -o "' .. BOOTROM_OBJ .. '" "%{file.relpath}"',
 			'rgblink -o "' .. BOOTROM_BIN .. '" "' .. BOOTROM_OBJ .. '"',
-			'"%{cfg.buildtarget.directory}/bin2h.exe" "' .. BOOTROM_BIN .. '" "' .. BOOTROM_HEADER .. '" -id=%{file.basename}'
+			'"%{cfg.buildtarget.directory}/bin2h" "' .. BOOTROM_BIN .. '" "' .. BOOTROM_HEADER .. '" -id=%{file.basename}'
 		}
 
 		buildoutputs { BOOTROM_OBJ, BOOTROM_BIN, BOOTROM_HEADER }
@@ -49,14 +54,19 @@ project "SameBoyBootRoms"
 project "SameBoy"
 	kind "StaticLib"
 	language "C"
-	toolset "clang"
+	--toolset "clang"
 	dependson "SameBoyBootRoms"
 
 	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
 
+	sysincludedirs {
+		SAMEBOY_DIR .. "Core",
+	}
+
 	includedirs {
 		SAMEBOY_DIR .. "Core",
 		"../src",
+		"../src/retroplug",
 		"../src/generated/bootroms"
 	}
 

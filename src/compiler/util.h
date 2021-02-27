@@ -1,13 +1,11 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include "logger.h"
 #include "xxhash.h"
-
-namespace fs = std::filesystem;
+#include "fs.h"
 
 using u8 = unsigned char;
 using u32 = unsigned int;
