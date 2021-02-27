@@ -14,8 +14,7 @@ iplug2.workspace "RetroPlug"
 		toolset "clang"
 		buildoptions { "-msse -msse2 -msse3 -mavx -mavx2" }
 		xcodebuildsettings {
-			["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
-			["ALWAYS_SEARCH_USER_PATHS"] = "YES", -- This is the minimum version of macos we'll be able to run on
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.9"
 		};
 
 	configuration { "windows" }
