@@ -8,19 +8,20 @@ local BOOTROM_RES_DIR = "%{wks.location}/obj/%{cfg.platform}/%{cfg.buildcfg}/Sam
 project "pb12"
 	kind "ConsoleApp"
 	language "C"
-	--toolset "clang"
-
-	--[[xcodebuildsettings {
-		["MACOSX_DEPLOYMENT_TARGET"] = "10.14"
-	}]]
-
-	systemversion "10.14"
+	toolset "clang"
 
 	files { SAMEBOY_DIR .. "BootROMs/pb12.c" }
 
 	configuration { "windows" }
 		defines { "_CRT_SECURE_NO_WARNINGS" }
 		includedirs { SAMEBOY_DIR .. "Windows" }
+
+	configuration { "macosx" }
+		--[[xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.14"
+		}]]
+
+		systemversion "10.14"
 
 project "bin2h"
 	kind "ConsoleApp"
@@ -54,7 +55,7 @@ project "SameBoyBootRoms"
 project "SameBoy"
 	kind "StaticLib"
 	language "C"
-	--toolset "clang"
+	toolset "clang"
 	dependson "SameBoyBootRoms"
 
 	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }

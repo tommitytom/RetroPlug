@@ -74,8 +74,7 @@ local function projectBase(targetName, name)
 		_p.."IGraphics/Platforms",
 		_p.."IGraphics/Extras",
 		_p.."Dependencies/IGraphics/STB",
-		_p.."WDL",
-		_p.."WDL/swell"
+		_p.."WDL"
 	}
 
 	files {
@@ -154,9 +153,13 @@ local function projectBase(targetName, name)
 	configuration { "windows", "x64" }
 		defines { "WIN64" }
 
-	-- Mac specific settings -- 
-		
+	-- Mac specific settings --
+
 	configuration { "macosx" }
+		includedirs {
+			_p.."WDL/swell"
+		}
+
 		files {
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
 		}
@@ -225,8 +228,8 @@ function iplug2.project.app(fn, name)
 		}
 
 		links {
-			"AppKit.framework", 
-			"CoreMIDI.framework", 
+			"AppKit.framework",
+			"CoreMIDI.framework",
 			"CoreAudio.framework"
 		}
 
