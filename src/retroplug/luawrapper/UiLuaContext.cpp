@@ -41,34 +41,50 @@ void UiLuaContext::update(double delta) {
 }
 
 bool UiLuaContext::onKey(VirtualKey key, bool down) {
-	bool res = false;
-	callFuncRet(_viewRoot, "onKey", res, key, down);
-	return res;
+	if (_valid) {
+		bool res = false;
+		callFuncRet(_viewRoot, "onKey", res, key, down);
+		return res;
+	}
+
+	return false;	
 }
 
 void UiLuaContext::onDoubleClick(float x, float y, MouseMod mod) {
-	callFunc(_viewRoot, "onDoubleClick", x, y, mod);
+	if (_valid) {
+		callFunc(_viewRoot, "onDoubleClick", x, y, mod);
+	}
 }
 
 void UiLuaContext::onMouseDown(float x, float y, MouseMod mod) {
-	callFunc(_viewRoot, "onMouseDown", x, y, mod);
+	if (_valid) {
+		callFunc(_viewRoot, "onMouseDown", x, y, mod);
+	}
 }
 
 void UiLuaContext::onPadButton(int button, bool down) {
-	callFunc(_viewRoot, "onPadButton", button, down);
+	if (_valid) {
+		callFunc(_viewRoot, "onPadButton", button, down);
+	}
 }
 
 void UiLuaContext::onDrop(float x, float y, const char* str) {
-	std::vector<std::string> paths = { str };
-	callFunc(_viewRoot, "onDrop", x, y, paths);
+	if (_valid) {
+		std::vector<std::string> paths = { str };
+		callFunc(_viewRoot, "onDrop", x, y, paths);
+	}
 }
 
 void UiLuaContext::onMenu(std::vector<Menu*>& menus) {
-	callFunc(_viewRoot, "onMenu", menus);
+	if (_valid) {
+		callFunc(_viewRoot, "onMenu", menus);
+	}
 }
 
 void UiLuaContext::onMenuResult(int id) {
-	callFunc(_viewRoot, "onMenuResult", id);
+	if (_valid) {
+		callFunc(_viewRoot, "onMenuResult", id);
+	}
 }
 
 void UiLuaContext::reload() {
@@ -95,17 +111,25 @@ void UiLuaContext::shutdown() {
 }
 
 void UiLuaContext::handleDialogCallback(const std::vector<std::string>& paths) {
-	callFunc(_viewRoot, "onDialogResult", paths);
+	if (_valid) {
+		callFunc(_viewRoot, "onDialogResult", paths);
+	}
 }
 
 DataBufferPtr UiLuaContext::saveState() {
 	DataBufferPtr buffer = std::make_shared<DataBuffer<char>>();
-	callFunc(_viewRoot, "saveState", buffer);
+
+	if (_valid) {
+		callFunc(_viewRoot, "saveState", buffer);
+	}
+
 	return buffer;
 }
 
 void UiLuaContext::loadState(DataBufferPtr buffer) {
-	callFunc(_viewRoot, "loadState", buffer);
+	if (_valid) {
+		callFunc(_viewRoot, "loadState", buffer);
+	}
 }
 
 bool UiLuaContext::setup(bool updateProject) {
