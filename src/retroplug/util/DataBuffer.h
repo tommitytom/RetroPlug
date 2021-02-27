@@ -149,7 +149,7 @@ private:
 	T _data[Length];
 
 public:
-	FixedDataBuffer() : DataBuffer(_data, Length) {}
+    FixedDataBuffer() {}// : DataBuffer((T*)_data, Length, false) {}
 };
 
 using DataBufferPtr = std::shared_ptr<DataBuffer<char>>;

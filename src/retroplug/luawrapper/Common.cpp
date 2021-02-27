@@ -12,7 +12,7 @@
 
 bool isNullPtr(const sol::object o) {
 	switch (o.get_type()) {
-		case sol::type::nil: return true;
+		case sol::type::lua_nil: return true;
 		case sol::type::lightuserdata:
 		case sol::type::userdata: {
 			void* p = o.as<void*>();

@@ -1,4 +1,4 @@
-﻿#include "RetroPlugInstrument.h"
+#include "RetroPlugInstrument.h"
 #include "IPlug_include_in_plug_src.h"
 #include "IControls.h"
 #include "view/SystemView.h"
@@ -7,7 +7,7 @@
 #include "util/File.h"
 #include "util/zipp.h"
 
-#include "micromsg2/api2.h"
+//#include "micromsg2/api2.h"
 
 RetroPlugInstrument::RetroPlugInstrument(const InstanceInfo& info)
 	: Plugin(info, MakeConfig(0, 0)), _controller(GetSampleRate()) 

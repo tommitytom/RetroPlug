@@ -4,11 +4,22 @@ local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 util.disableFastUpToDateCheck({ "RetroPlug" })
 
 iplug2.workspace "RetroPlug"
-	platforms { "x86", "x64" }
+	platforms { "x64" }
 	characterset "MBCS"
-	cppdialect "C++latest"
+	cppdialect "C++17"
+
+	defines { "NOMINMAX" }
+
+	filter "system:macosx"
+		toolset "clang"
+		buildoptions { "-msse -msse2 -msse3 -mavx -mavx2" }
+		xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
+			["ALWAYS_SEARCH_USER_PATHS"] = "YES", -- This is the minimum version of macos we'll be able to run on
+		};
 
 	configuration { "windows" }
+		cppdialect "C++latest"
 		defines { "_CRT_SECURE_NO_WARNINGS" }
 
 	configuration {}
@@ -21,7 +32,10 @@ project "RetroPlug"
 		"config",
 		"resources",
 		"src",
-		"src/retroplug",
+		"src/retroplug"
+	}
+
+	sysincludedirs {
 		"thirdparty",
 		"thirdparty/gainput/lib/include",
 		"thirdparty/simplefilewatcher/include",
@@ -34,10 +48,15 @@ project "RetroPlug"
 	}
 
 	files {
+		"src/retroplug/microsmsg/**.h",
 		"src/retroplug/**.h",
 		"src/retroplug/**.c",
 		"src/retroplug/**.cpp",
 		"src/retroplug/**.lua"
+	}
+
+	prebuildcommands {
+		"%{wks.location}/bin/x64/Debug/ScriptCompiler ../../src/compiler.config.lua"
 	}
 
 	filter { "files:src/retroplug/luawrapper/**" }
@@ -59,18 +78,10 @@ project "RetroPlug"
 			"_CRT_SECURE_NO_WARNINGS"
 		}
 
-	configuration { "windows" }
-		prebuildcommands {
-			"%{wks.location}/bin/x64/Release/ScriptCompiler.exe ../../src/compiler.config.lua"
-		}
-
 local function retroplugProject()
 	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
 
-	includedirs {
-		"src",
-		"src/retroplug",
-		"src/plugin",
+	sysincludedirs {
 		"thirdparty",
 		"thirdparty/gainput/lib/include",
 		"thirdparty/simplefilewatcher/include",
@@ -80,6 +91,12 @@ local function retroplugProject()
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core"
+	}
+
+	includedirs {
+		"src",
+		"src/retroplug",
+		"src/plugin"
 	}
 
 	files {
@@ -113,7 +130,8 @@ iplug2.project.vst3(retroplugProject)
 group "Utils"
 project "ScriptCompiler"
 	kind "ConsoleApp"
-	includedirs { "src/compiler", "thirdparty", "thirdparty/lua-5.3.5/src" }
+	sysincludedirs { "thirdparty", "thirdparty/lua-5.3.5/src" }
+	includedirs { "src/compiler" }
 	files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 	links { "lua" }
 

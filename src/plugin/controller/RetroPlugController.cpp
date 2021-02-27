@@ -4,12 +4,12 @@
 
 #include "config.h"
 #include "platform/Path.h"
-#include "platform/Resource.h"
 #include "resource.h"
 
 #include "luawrapper/generated/CompiledScripts.h"
 #include "luawrapper/ConfigScriptWriter.h"
 #include "util/Paths.h"
+#include "util/fs.h"
 
 namespace AxisButtons {
 	enum AxisButton {
