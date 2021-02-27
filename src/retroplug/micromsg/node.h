@@ -109,7 +109,7 @@ namespace micromsg {
 		}
 
 		template <typename T>
-		void on(std::function<typename RequestSignature<T>>&& func) {
+		void on(std::function<RequestSignature<T>>&& func) {
 			assert(!_active);
 
 			size_t typeId = _handlers->typeIds[TypeId<T>::get()];
@@ -135,7 +135,7 @@ namespace micromsg {
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
 		bool canPush() {
-			return _alloc->canAlloc<TypedEnvelope<RequestT::Arg>>();
+			return _alloc->canAlloc<TypedEnvelope<typename RequestT::Arg>>();
 		}
 
 		template <typename RequestT, std::enable_if_t<IsPushType<RequestT>::value, int> = 0>
@@ -146,7 +146,7 @@ namespace micromsg {
 				return false;
 			}
 
-			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
+			TypedEnvelope<typename RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<typename RequestT::Arg>>();
 			if (!envelope) {
 				//assert(envelope);
 				return false;
@@ -172,7 +172,7 @@ namespace micromsg {
 				return false;
 			}
 
-			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
+			TypedEnvelope<typename RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<typename RequestT::Arg>>();
 			if (!envelope) {
 				//assert(envelope);
 				return false;
@@ -200,7 +200,7 @@ namespace micromsg {
 				return false;
 			}
 
-			TypedEnvelope<RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<RequestT::Arg>>();
+			TypedEnvelope<typename RequestT::Arg>* envelope = _alloc->alloc<TypedEnvelope<typename RequestT::Arg>>();
 			assert(envelope);
 			if (envelope) {
 				envelope->sourceNodeId = (int)_type;

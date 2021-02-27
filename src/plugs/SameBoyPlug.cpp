@@ -21,6 +21,7 @@ const size_t MAX_SERIAL_ITEMS = 128;
 const size_t MAX_BUTTON_ITEMS = 64;
 const GB_model_t DEFAULT_GAMEBOY_MODEL = GB_model_t::GB_MODEL_CGB_C;
 
+
 GB_model_t getGameboyModelId(GameboyModel model) {
 	switch (model) {
 		case GameboyModel::DmgB: return GB_model_t::GB_MODEL_DMG_B;

@@ -59,6 +59,10 @@ local function projectBase(targetName, name)
 		"_CONSOLE"
 	}
 
+	sysincludedirs {
+		_p.."iPlug"
+	}
+
 	includedirs {
 		"config",
 		"resources",
@@ -149,6 +153,23 @@ local function projectBase(targetName, name)
 	configuration { "windows", "x64" }
 		defines { "WIN64" }
 
+	-- Mac specific settings --
+
+	configuration { "macosx" }
+		includedirs {
+			_p.."WDL/swell"
+		}
+
+		files {
+			_p.."IGraphics/Platforms/IGraphicsMac.mm",
+		}
+
+	configuration { "Debug" }
+		defines { "DEVELOPMENT=1" }
+
+	configuration { "Release" }
+		defines { "RELEASE=1" }
+
 	configuration {}
 
 	return config
@@ -175,8 +196,6 @@ function iplug2.project.app(fn, name)
 		_p.."iPlug/APP/*.h",
 		_p.."iPlug/APP/*.cpp",
 		_p.."Dependencies/IPlug/RTAudio/RtAudio.cpp",
-		_p.."Dependencies/IPlug/RTAudio/include/*.h",
-		_p.."Dependencies/IPlug/RTAudio/include/*.cpp",
 		_p.."Dependencies/IPlug/RtMidi/RtMidi.cpp"
 	}
 
@@ -192,7 +211,27 @@ function iplug2.project.app(fn, name)
 			"__WINDOWS_ASIO__"
 		}
 
+		files {
+			_p.."Dependencies/IPlug/RTAudio/include/*.h",
+			_p.."Dependencies/IPlug/RTAudio/include/*.cpp",
+		}
+
 		links { "dsound" }
+
+	configuration { "macosx" }
+		defines {
+			"__MACOSX_CORE__",
+			"SWELL_COMPILED",
+			"SWELL_CLEANUP_ON_UNLOAD",
+			"OBJC_PREFIX=v" .. _name,
+			"SWELL_APP_PREFIX=Swell_v" .. _name
+		}
+
+		links {
+			"AppKit.framework",
+			"CoreMIDI.framework",
+			"CoreAudio.framework"
+		}
 
 	configuration {}
 
@@ -241,6 +280,38 @@ function iplug2.project.vst3(fn, name)
 		_p.."iPlug/VST3/*.h",
 		_p.."iPlug/VST3/*.cpp"
 	}
+
+	configuration {}
+
+	if fn then fn() end
+end
+
+function iplug2.project.au3(fn, name)
+	projectBase("vst3", name)
+	kind "SharedLib"
+
+	defines {
+		"VST3_API",
+		"VST_FORCE_DEPRECATED"
+	}
+
+	includedirs {
+		_p.."iPlug/VST3",
+		_p.."Dependencies/IPlug/VST3_SDK"
+	}
+
+	files {
+		_p.."iPlug/VST3/*.h",
+		_p.."iPlug/VST3/*.cpp"
+	}
+
+	configuration { "macosx" }
+		links {
+			"AudioToolbox.framework",
+			"AVFoundation.framework",
+			"CoreAudio.framework",
+			"CoreAudioKit.framework"
+		}
 
 	configuration {}
 

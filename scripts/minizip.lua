@@ -5,12 +5,9 @@ project "minizip"
 	language "C"
 
 	defines {
-		"WIN32",
-		"_WINDOWS",
 		"HAVE_STDINT_H",
 		"HAVE_INTTYPES_H",
 		"NO_FSEEKO",
-		"_CRT_SECURE_NO_DEPRECATE",
 		"MZ_ZIP_SIGNING",
 		"HAVE_PKCRYPT",
 		"HAVE_WZAES",
@@ -28,8 +25,6 @@ project "minizip"
 		"ZLIB_COMPAT",
 		"WITH_GZFILEOP",
 		"UNALIGNED_OK",
-		"_CRT_NONSTDC_NO_DEPRECATE",
-		"_CRT_SECURE_NO_WARNINGS",
 		"X86_CPUID",
 		"X86_AVX2",
 		"X86_SSE42_CRC_HASH",
@@ -84,11 +79,29 @@ project "minizip"
 	configuration { "Debug" }
 		defines { "ZLIB_DEBUG" }
 
-	configuration { "windows" }
+	filter "system:windows"
 		disablewarnings { "4267", "4244", "4311" }
+
+		defines {
+			"WIN32",
+			"_WINDOWS",
+		}
 
 		files {
 			MINIZIP_DIR .. "/mz_crypt_win32.c",
 			MINIZIP_DIR .. "/mz_strm_os_win32.c",
 			MINIZIP_DIR .. "/mz_os_win32.c"
+		}
+
+	filter "system:macosx"
+		files {
+			MINIZIP_DIR .. "/mz_crypt_apple.c",
+			MINIZIP_DIR .. "/mz_strm_os_posix.c",
+			MINIZIP_DIR .. "/mz_os_posix.c"
+		}
+
+	filter "system:linux"
+		files {
+			MINIZIP_DIR .. "/mz_strm_os_posix.c",
+			MINIZIP_DIR .. "/mz_os_posix.c"
 		}

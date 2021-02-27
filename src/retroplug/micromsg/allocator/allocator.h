@@ -3,11 +3,11 @@
 #include <map>
 #include <string>
 #include <utility>
-#include "mmassert.h"
-#include "allocator/types.h"
-#include "allocator/uniqueptr.h"
-#include "allocator/sharedptr.h"
-#include "platform.h"
+#include "../mmassert.h"
+#include "types.h"
+#include "uniqueptr.h"
+#include "sharedptr.h"
+#include "../platform.h"
 
 namespace micromsg {
 	const size_t MAX_BIN_COUNT = 128;

@@ -16,6 +16,13 @@ project "pb12"
 		defines { "_CRT_SECURE_NO_WARNINGS" }
 		includedirs { SAMEBOY_DIR .. "Windows" }
 
+	configuration { "macosx" }
+		--[[xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.14"
+		}]]
+
+		systemversion "10.14"
+
 project "bin2h"
 	kind "ConsoleApp"
 	language "C++"
@@ -40,7 +47,7 @@ project "SameBoyBootRoms"
 		buildcommands {
 			'rgbasm -i "' .. BOOTROM_RES_DIR .. '" -i "' .. BOOTROM_DIR .. '" -o "' .. BOOTROM_OBJ .. '" "%{file.relpath}"',
 			'rgblink -o "' .. BOOTROM_BIN .. '" "' .. BOOTROM_OBJ .. '"',
-			'"%{cfg.buildtarget.directory}/bin2h.exe" "' .. BOOTROM_BIN .. '" "' .. BOOTROM_HEADER .. '" -id=%{file.basename}'
+			'"%{cfg.buildtarget.directory}/bin2h" "' .. BOOTROM_BIN .. '" "' .. BOOTROM_HEADER .. '" -id=%{file.basename}'
 		}
 
 		buildoutputs { BOOTROM_OBJ, BOOTROM_BIN, BOOTROM_HEADER }
@@ -53,9 +60,14 @@ project "SameBoy"
 
 	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
 
+	sysincludedirs {
+		SAMEBOY_DIR .. "Core",
+	}
+
 	includedirs {
 		SAMEBOY_DIR .. "Core",
 		"../src",
+		"../src/retroplug",
 		"../src/generated/bootroms"
 	}
 

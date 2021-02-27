@@ -28,18 +28,18 @@ namespace micromsg {
 			}
 		}
 
-		const T* get() const { return static_cast<const T*>(_controlBlock + 1); }
+		//const T* get() const { return static_cast<const T*>(_controlBlock + 1); }
 		T* get() const { return static_cast<T*>(_controlBlock + 1); }
 
 		T* operator->() { return get(); }
-		const T* operator->() const { return get(); }
+		//const T* operator->() const { return get(); }
 
 		void release() { tryDestroy(); }
 
 	private:
 		void tryDestroy() {
 			if (_controlBlock && !_controlBlock->refCount.decrement()) {
-				_controlBlock->queue->enqueue(static_cast<char*>(_controlBlock));
+				_controlBlock->queue->enqueue(_controlBlock);
 			}
 
 			_controlBlock = nullptr;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "mpmcqueue.h"
 #include "../concurrentqueue.h"
 
 namespace micromsg {

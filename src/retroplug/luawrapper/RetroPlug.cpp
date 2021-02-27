@@ -90,21 +90,21 @@ void luawrappers::registerRetroPlug(sol::state& s) {
 		"requestMenu", &ViewWrapper::requestMenu
 	);
 
-	s.new_usertype<Rect>("Rect",
-		sol::constructors<Rect(), Rect(float, float, float, float)>(),
-		"x", &Rect::x,
-		"y", &Rect::y,
-		"w", &Rect::w,
-		"h", &Rect::h,
-		"right", &Rect::right,
-		"bottom", &Rect::bottom,
-		"contains", &Rect::contains
+	s.new_usertype<math::Rect>("Rect",
+		sol::constructors<math::Rect(), math::Rect(float, float, float, float)>(),
+		"x", &math::Rect::x,
+		"y", &math::Rect::y,
+		"w", &math::Rect::w,
+		"h", &math::Rect::h,
+		"right", &math::Rect::right,
+		"bottom", &math::Rect::bottom,
+		"contains", &math::Rect::contains
 	);
 
-	s.new_usertype<Point>("Point",
-		sol::constructors<Point(), Point(float, float)>(),
-		"x", &Point::x,
-		"y", &Point::y
+	s.new_usertype<math::Point>("Point",
+		sol::constructors<math::Point(), math::Point(float, float)>(),
+		"x", &math::Point::x,
+		"y", &math::Point::y
 	);
 
 	s.new_usertype<IMouseMod>("IMouseMod",
