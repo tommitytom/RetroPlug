@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 #include "gb.h"
 
 /* FIFO functions */
@@ -27,8 +28,7 @@ static GB_fifo_item_t *fifo_pop(GB_fifo_t *fifo)
 static void fifo_push_bg_row(GB_fifo_t *fifo, uint8_t lower, uint8_t upper, uint8_t palette, bool bg_priority, bool flip_x)
 {
     if (!flip_x) {
-        UNROLL
-        for (unsigned i = 8; i--;) {
+        unrolled for (unsigned i = 8; i--;) {
             fifo->fifo[fifo->write_end] = (GB_fifo_item_t) {
                 (lower >> 7) | ((upper >> 7) << 1),
                 palette,
@@ -43,8 +43,7 @@ static void fifo_push_bg_row(GB_fifo_t *fifo, uint8_t lower, uint8_t upper, uint
         }
     }
     else {
-        UNROLL
-        for (unsigned i = 8; i--;) {
+        unrolled for (unsigned i = 8; i--;) {
             fifo->fifo[fifo->write_end] = (GB_fifo_item_t) {
                 (lower & 1) | ((upper & 1) << 1),
                 palette,
@@ -70,8 +69,7 @@ static void fifo_overlay_object_row(GB_fifo_t *fifo, uint8_t lower, uint8_t uppe
     
     uint8_t flip_xor = flip_x? 0: 0x7;
     
-    UNROLL
-    for (unsigned i = 8; i--;) {
+    unrolled for (unsigned i = 8; i--;) {
         uint8_t pixel = (lower >> 7) | ((upper >> 7) << 1);
         GB_fifo_item_t *target = &fifo->fifo[(fifo->read_end + (i ^ flip_xor)) & (GB_FIFO_LENGTH - 1)];
         if (pixel != 0 && (target->pixel == 0 || target->priority > priority)) {
@@ -208,6 +206,26 @@ static void display_vblank(GB_gameboy_t *gb)
     GB_timing_sync(gb);
 }
 
+static inline void temperature_tint(double temperature, double *r, double *g, double *b)
+{
+    if (temperature >= 0) {
+        *r = 1;
+        *g = pow(1 - temperature, 0.375);
+        if (temperature >= 0.75) {
+            *b = 0;
+        }
+        else {
+            *b = sqrt(0.75 - temperature);
+        }
+    }
+    else {
+        *b = 1;
+        double squared = pow(temperature, 2);
+        *g = 0.125 * squared + 0.3 * temperature + 1.0;
+        *r = 0.21875 * squared + 0.5 * temperature + 1.0;
+    }
+}
+
 static inline uint8_t scale_channel(uint8_t x)
 {
     return (x << 3) | (x >> 2);
@@ -215,12 +233,12 @@ static inline uint8_t scale_channel(uint8_t x)
 
 static inline uint8_t scale_channel_with_curve(uint8_t x)
 {
-    return (uint8_t[]){0,5,8,11,16,22,28,36,43,51,59,67,77,87,97,107,119,130,141,153,166,177,188,200,209,221,230,238,245,249,252,255}[x];
+    return (uint8_t[]){0,6,12,20,28,36,45,56,66,76,88,100,113,125,137,149,161,172,182,192,202,210,218,225,232,238,243,247,250,252,254,255}[x];
 }
 
 static inline uint8_t scale_channel_with_curve_agb(uint8_t x)
 {
-    return (uint8_t[]){0,2,5,10,15,20,26,32,38,45,52,60,68,76,84,92,101,110,119,128,138,148,158,168,178,189,199,210,221,232,244,255}[x];
+    return (uint8_t[]){0,3,8,14,20,26,33,40,47,54,62,70,78,86,94,103,112,120,129,138,147,157,166,176,185,195,205,215,225,235,245,255}[x];
 }
 
 static inline uint8_t scale_channel_with_curve_sgb(uint8_t x)
@@ -240,13 +258,12 @@ uint32_t GB_convert_rgb15(GB_gameboy_t *gb, uint16_t color, bool for_border)
         g = scale_channel(g);
         b = scale_channel(b);
     }
+    else if (GB_is_sgb(gb) || for_border) {
+        r = scale_channel_with_curve_sgb(r);
+        g = scale_channel_with_curve_sgb(g);
+        b = scale_channel_with_curve_sgb(b);
+    }
     else {
-        if (GB_is_sgb(gb) || for_border) {
-            return gb->rgb_encode_callback(gb,
-                                           scale_channel_with_curve_sgb(r),
-                                           scale_channel_with_curve_sgb(g),
-                                           scale_channel_with_curve_sgb(b));
-        }
         bool agb = gb->model == GB_MODEL_AGB;
         r = agb? scale_channel_with_curve_agb(r) : scale_channel_with_curve(r);
         g = agb? scale_channel_with_curve_agb(g) : scale_channel_with_curve(g);
@@ -301,6 +318,14 @@ uint32_t GB_convert_rgb15(GB_gameboy_t *gb, uint16_t color, bool for_border)
         }
     }
     
+    if (gb->light_temperature) {
+        double light_r, light_g, light_b;
+        temperature_tint(gb->light_temperature, &light_r, &light_g, &light_b);
+        r = round(light_r * r);
+        g = round(light_g * g);
+        b = round(light_b * b);
+    }
+    
     return gb->rgb_encode_callback(gb, r, g, b);
 }
 
@@ -316,6 +341,17 @@ void GB_palette_changed(GB_gameboy_t *gb, bool background_palette, uint8_t index
 void GB_set_color_correction_mode(GB_gameboy_t *gb, GB_color_correction_mode_t mode)
 {
     gb->color_correction_mode = mode;
+    if (GB_is_cgb(gb)) {
+        for (unsigned i = 0; i < 32; i++) {
+            GB_palette_changed(gb, false, i * 2);
+            GB_palette_changed(gb, true, i * 2);
+        }
+    }
+}
+
+void GB_set_light_temperature(GB_gameboy_t *gb, double temperature)
+{
+    gb->light_temperature = temperature;
     if (GB_is_cgb(gb)) {
         for (unsigned i = 0; i < 32; i++) {
             GB_palette_changed(gb, false, i * 2);
@@ -821,7 +857,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
         GB_STATE(gb, display, 28);
         GB_STATE(gb, display, 29);
         GB_STATE(gb, display, 30);
-        // GB_STATE(gb, display, 31);
+        GB_STATE(gb, display, 31);
         GB_STATE(gb, display, 32);
         GB_STATE(gb, display, 33);
         GB_STATE(gb, display, 34);
@@ -853,13 +889,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
     /* Handle mode 2 on the very first line 0 */
     gb->current_line = 0;
     gb->window_y = -1;
-    /* Todo: verify timings */
-    if (gb->io_registers[GB_IO_WY] == 0) {
-        gb->wy_triggered = true;
-    }
-    else {
-        gb->wy_triggered = false;
-    }
+    gb->wy_triggered = false;
     
     gb->ly_for_comparison = 0;
     gb->io_registers[GB_IO_STAT] &= ~3;
@@ -910,11 +940,6 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
         /* Lines 0 - 143 */
         gb->window_y = -1;
         for (; gb->current_line < LINES; gb->current_line++) {
-            /* Todo: verify timings */
-            if ((gb->io_registers[GB_IO_WY] == gb->current_line ||
-                (gb->current_line != 0 && gb->io_registers[GB_IO_WY] == gb->current_line - 1))) {
-                gb->wy_triggered = true;
-            }
             
             gb->oam_write_blocked = GB_is_cgb(gb) && !gb->cgb_double_speed;
             gb->accessed_oam_row = 0;
@@ -994,6 +1019,11 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
             gb->cycles_for_line += 2;
             GB_SLEEP(gb, display, 32, 2);
         mode_3_start:
+            /* TODO: Timing seems incorrect, might need an access conflict handling. */
+            if ((gb->io_registers[GB_IO_LCDC] & 0x20) &&
+                gb->io_registers[GB_IO_WY] == gb->current_line) {
+                gb->wy_triggered = true;
+            }
 
             fifo_clear(&gb->bg_fifo);
             fifo_clear(&gb->oam_fifo);
@@ -1021,7 +1051,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
                     bool should_activate_window = false;
                     if (gb->io_registers[GB_IO_WX] == 0) {
                         static const uint8_t scx_to_wx0_comparisons[] = {-7, -9, -10, -11, -12, -13, -14, -14};
-                        if (gb->position_in_line == scx_to_wx0_comparisons[gb->io_registers[GB_IO_SCX] & 7] && !GB_is_cgb(gb)) {
+                        if (gb->position_in_line == scx_to_wx0_comparisons[gb->io_registers[GB_IO_SCX] & 7]) {
                             should_activate_window = true;
                         }
                     }
@@ -1243,7 +1273,16 @@ abort_fetching_object:
             if (gb->hdma_on_hblank) {
                 gb->hdma_starting = true;
             }
-            GB_SLEEP(gb, display, 11, LINE_LENGTH - gb->cycles_for_line);
+            GB_SLEEP(gb, display, 11, LINE_LENGTH - gb->cycles_for_line - 2);
+            /*
+             TODO: Verify double speed timing
+             TODO: Timing differs on a DMG
+            */
+            if ((gb->io_registers[GB_IO_LCDC] & 0x20) &&
+                (gb->io_registers[GB_IO_WY] == gb->current_line)) {
+                gb->wy_triggered = true;
+            }
+            GB_SLEEP(gb, display, 31, 2);
             gb->mode_for_interrupt = 2;
           
             // Todo: unverified timing
@@ -1337,14 +1376,7 @@ abort_fetching_object:
         
         
         gb->current_line = 0;
-        /* Todo: verify timings */
-        if ((gb->io_registers[GB_IO_LCDC] & 0x20) &&
-            (gb->io_registers[GB_IO_WY] == 0)) {
-            gb->wy_triggered = true;
-        }
-        else {
-            gb->wy_triggered = false;
-        }
+        gb->wy_triggered = false;
         
         // TODO: not the correct timing
         gb->current_lcd_line = 0;
@@ -1516,8 +1548,7 @@ uint8_t GB_get_oam_info(GB_gameboy_t *gb, GB_oam_info_t *dest, uint8_t *sprite_h
         }
 
         for (unsigned y = 0; y < *sprite_height; y++) {
-            UNROLL
-            for (unsigned x = 0; x < 8; x++) {
+            unrolled for (unsigned x = 0; x < 8; x++) {
                 uint8_t color = (((gb->vram[vram_address    ] >> ((~x)&7)) & 1 ) |
                                  ((gb->vram[vram_address + 1] >> ((~x)&7)) & 1) << 1 );
                 

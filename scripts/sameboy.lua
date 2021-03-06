@@ -78,6 +78,8 @@ project "SameBoy"
 		"../src/plugs/SameBoyPlug.cpp",
 	}
 
+	disablewarnings { "int-in-bool-context", "unused-function", "unused-const-variable" }
+
 	configuration { "windows" }
 		includedirs { SAMEBOY_DIR .. "Windows" }
 		defines { "_CRT_SECURE_NO_WARNINGS" }

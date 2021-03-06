@@ -10,7 +10,7 @@ extern "C" {
 #include "retroplug/util/SampleConverter.h"
 #include "generated/bootroms/agb_boot.h"
 #include "generated/bootroms/cgb_boot.h"
-#include "generated/bootroms/cgb_fast_boot.h"
+#include "generated/bootroms/cgb_boot_fast.h"
 #include "generated/bootroms/dmg_boot.h"
 #include "generated/bootroms/sgb_boot.h"
 #include "generated/bootroms/sgb2_boot.h"
@@ -43,7 +43,7 @@ std::string_view findBootRom(GameboyModel model, bool fastBoot) {
 		case GameboyModel::CgbC:
 		default:
 			if (fastBoot) {
-				return std::string_view((const char*)cgb_fast_boot, cgb_fast_boot_len);
+				return std::string_view((const char*)cgb_boot_fast, cgb_boot_fast_len);
 			} else {
 				return std::string_view((const char*)cgb_boot, cgb_boot_len);
 			}

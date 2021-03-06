@@ -31,16 +31,19 @@
 #define GB_MODEL_DMG_FAMILY 0x000
 #define GB_MODEL_MGB_FAMILY 0x100
 #define GB_MODEL_CGB_FAMILY 0x200
-#define GB_MODEL_PAL_BIT 0x1000
-#define GB_MODEL_NO_SFC_BIT 0x2000
+#define GB_MODEL_PAL_BIT 0x40
+#define GB_MODEL_NO_SFC_BIT 0x80
+
+#define GB_MODEL_PAL_BIT_OLD 0x1000
+#define GB_MODEL_NO_SFC_BIT_OLD 0x2000
 
 #ifdef GB_INTERNAL
 #if __clang__
-#define UNROLL _Pragma("unroll")
+#define unrolled _Pragma("unroll")
 #elif __GNUC__ >= 8
-#define UNROLL _Pragma("GCC unroll 8")
+#define unrolled _Pragma("GCC unroll 8")
 #else
-#define UNROLL
+#define unrolled
 #endif
 
 #endif
@@ -249,6 +252,11 @@ typedef enum {
     GB_BOOT_ROM_AGB,
 } GB_boot_rom_t;
 
+typedef enum {
+    GB_RTC_MODE_SYNC_TO_HOST,
+    GB_RTC_MODE_ACCURATE,
+} GB_rtc_mode_t;
+
 #ifdef GB_INTERNAL
 #define LCDC_PERIOD 70224
 #define CPU_FREQUENCY 0x400000
@@ -288,7 +296,7 @@ typedef struct {
     uint8_t pixel; // Color, 0-3
     uint8_t palette; // Palette, 0 - 7 (CGB); 0-1 in DMG (or just 0 for BG)
     uint8_t priority; // Sprite priority – 0 in DMG, OAM index in CGB
-    bool bg_priority; // For sprite FIFO – the BG priority bit. For the BG FIFO – the CGB attributes priority bit
+    bool bg_priority; // For sprite FIFO – the BG priority bit. For the BG FIFO – the CGB attributes priority bit
 } GB_fifo_item_t;
 
 #define GB_FIFO_LENGTH 16
@@ -344,7 +352,7 @@ struct GB_gameboy_internal_s {
                            l, h;
 #endif
                };
-
+               
            };
         uint8_t ime;
         uint8_t interrupt_enable;
@@ -367,7 +375,7 @@ struct GB_gameboy_internal_s {
         uint8_t extra_oam[0xff00 - 0xfea0];
         uint32_t ram_size; // Different between CGB and DMG
         GB_workboy_t workboy;
-
+               
        int32_t ir_sensor;
        bool effective_ir_input;
     );
@@ -388,7 +396,7 @@ struct GB_gameboy_internal_s {
         uint8_t last_opcode_read; /* Required to emulte HDMA reads from Exxx */
         bool hdma_starting;
     );
-
+    
     /* MBC */
     GB_SECTION(mbc,
         uint16_t mbc_rom_bank;
@@ -416,7 +424,7 @@ struct GB_gameboy_internal_s {
                 uint8_t rom_bank_high:1;
                 uint8_t ram_bank:4;
             } mbc5;
-
+            
             struct {
                 uint8_t bank_low:6;
                 uint8_t bank_high:3;
@@ -435,7 +443,7 @@ struct GB_gameboy_internal_s {
         uint8_t camera_registers[0x36];
         bool rumble_state;
         bool cart_ir;
-
+        
         // TODO: move to huc3/mbc3 struct when breaking save compat
         uint8_t huc3_mode;
         uint8_t huc3_access_index;
@@ -476,6 +484,7 @@ struct GB_gameboy_internal_s {
         GB_rtc_time_t rtc_real, rtc_latched;
         uint64_t last_rtc_second;
         bool rtc_latch;
+        uint32_t rtc_cycles;
     );
 
     /* Video Display */
@@ -492,7 +501,7 @@ struct GB_gameboy_internal_s {
         /* The LCDC will skip the first frame it renders after turning it on.
            On the CGB, a frame is not skipped if the previous frame was skipped as well.
            See https://www.reddit.com/r/EmuDev/comments/6exyxu/ */
-
+               
         /* TODO: Drop this and properly emulate the dropped vreset signal*/
         enum {
             GB_FRAMESKIP_LCD_TURNED_ON, // On a DMG, the LCD renders a blank screen during this state,
@@ -561,7 +570,7 @@ struct GB_gameboy_internal_s {
         bool is_mbc30;
 
         unsigned pending_cycles;
-
+               
         /* Various RAMs */
         uint8_t *ram;
         uint8_t *vram;
@@ -573,15 +582,17 @@ struct GB_gameboy_internal_s {
         uint32_t sprite_palettes_rgb[0x20];
         const GB_palette_t *dmg_palette;
         GB_color_correction_mode_t color_correction_mode;
+        double light_temperature;
         bool keys[4][GB_KEY_MAX];
         GB_border_mode_t border_mode;
         GB_sgb_border_t borrowed_border;
         bool tried_loading_sgb_border;
         bool has_sgb_border;
-
+               
         /* Timing */
         uint64_t last_sync;
         uint64_t cycles_since_last_sync; // In 8MHz units
+        GB_rtc_mode_t rtc_mode;
 
         /* Audio */
         GB_apu_output_t apu_output;
@@ -645,7 +656,7 @@ struct GB_gameboy_internal_s {
 
         /* Ticks command */
         uint64_t debugger_ticks;
-
+               
         /* Undo */
         uint8_t *undo_state;
         const char *undo_label;
@@ -659,14 +670,14 @@ struct GB_gameboy_internal_s {
             unsigned pos;
         } *rewind_sequences; // lasts about 4 seconds
         size_t rewind_pos;
-
+               
         /* SGB - saved and allocated optionally */
         GB_sgb_t *sgb;
-
+        
         double sgb_intro_jingle_phases[7];
         double sgb_intro_sweep_phase;
         double sgb_intro_sweep_previous_sample;
-
+               
         /* Cheats */
         bool cheat_enabled;
         size_t cheat_count;
@@ -684,13 +695,13 @@ struct GB_gameboy_internal_s {
         GB_rumble_mode_t rumble_mode;
         uint32_t rumble_on_cycles;
         uint32_t rumble_off_cycles;
-
+               
         /* Temporary state */
         bool wx_just_changed;
         bool tile_sel_glitch;
    );
 };
-
+    
 #ifndef GB_INTERNAL
 struct GB_gameboy_s {
     char __internal[sizeof(struct GB_gameboy_internal_s)];
@@ -747,7 +758,7 @@ void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer,
 int GB_load_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_rom_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size);
 int GB_load_isx(GB_gameboy_t *gb, const char *path);
-
+    
 int GB_save_battery_size(GB_gameboy_t *gb);
 int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size);
 int GB_save_battery(GB_gameboy_t *gb, const char *path);
@@ -757,15 +768,15 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path);
 
 void GB_set_turbo_mode(GB_gameboy_t *gb, bool on, bool no_frame_skip);
 void GB_set_rendering_disabled(GB_gameboy_t *gb, bool disabled);
-
+    
 void GB_log(GB_gameboy_t *gb, const char *fmt, ...) __printflike(2, 3);
 void GB_attributed_log(GB_gameboy_t *gb, GB_log_attributes attributes, const char *fmt, ...) __printflike(3, 4);
 
 void GB_set_pixels_output(GB_gameboy_t *gb, uint32_t *output);
 void GB_set_border_mode(GB_gameboy_t *gb, GB_border_mode_t border_mode);
-
+    
 void GB_set_infrared_input(GB_gameboy_t *gb, bool state);
-
+    
 void GB_set_vblank_callback(GB_gameboy_t *gb, GB_vblank_callback_t callback);
 void GB_set_log_callback(GB_gameboy_t *gb, GB_log_callback_t callback);
 void GB_set_input_callback(GB_gameboy_t *gb, GB_input_callback_t callback);
@@ -776,7 +787,7 @@ void GB_set_rumble_callback(GB_gameboy_t *gb, GB_rumble_callback_t callback);
 void GB_set_update_input_hint_callback(GB_gameboy_t *gb, GB_update_input_hint_callback_t callback);
 /* Called when a new boot ROM is needed. The callback should call GB_load_boot_rom or GB_load_boot_rom_from_buffer */
 void GB_set_boot_rom_load_callback(GB_gameboy_t *gb, GB_boot_rom_load_callback_t callback);
-
+    
 void GB_set_palette(GB_gameboy_t *gb, const GB_palette_t *palette);
 
 /* These APIs are used when using internal clock */
@@ -786,19 +797,23 @@ void GB_set_serial_transfer_bit_end_callback(GB_gameboy_t *gb, GB_serial_transfe
 /* These APIs are used when using external clock */
 bool GB_serial_get_data_bit(GB_gameboy_t *gb);
 void GB_serial_set_data_bit(GB_gameboy_t *gb, bool data);
-
+    
 void GB_disconnect_serial(GB_gameboy_t *gb);
-
+    
 /* For cartridges with an alarm clock */
 unsigned GB_time_to_alarm(GB_gameboy_t *gb); // 0 if no alarm
-
+    
+/* RTC emulation mode */
+void GB_set_rtc_mode(GB_gameboy_t *gb, GB_rtc_mode_t mode);
+    
 /* For integration with SFC/SNES emulators */
 void GB_set_joyp_write_callback(GB_gameboy_t *gb, GB_joyp_write_callback_t callback);
 void GB_set_icd_pixel_callback(GB_gameboy_t *gb, GB_icd_pixel_callback_t callback);
 void GB_set_icd_hreset_callback(GB_gameboy_t *gb, GB_icd_hreset_callback_t callback);
 void GB_set_icd_vreset_callback(GB_gameboy_t *gb, GB_icd_vreset_callback_t callback);
-
+    
 uint32_t GB_get_clock_rate(GB_gameboy_t *gb);
+uint32_t GB_get_unmultiplied_clock_rate(GB_gameboy_t *gb);
 void GB_set_clock_multiplier(GB_gameboy_t *gb, double multiplier);
 
 unsigned GB_get_screen_width(GB_gameboy_t *gb);

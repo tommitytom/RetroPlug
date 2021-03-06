@@ -19,6 +19,7 @@
     NSPopUpButton *_colorPalettePopupButton;
     NSPopUpButton *_displayBorderPopupButton;
     NSPopUpButton *_rewindPopupButton;
+    NSPopUpButton *_rtcPopupButton;
     NSButton *_aspectRatioCheckbox;
     NSButton *_analogControlsCheckbox;
     NSEventModifierFlags previousModifiers;
@@ -26,6 +27,8 @@
     NSPopUpButton *_dmgPopupButton, *_sgbPopupButton, *_cgbPopupButton;
     NSPopUpButton *_preferredJoypadButton;
     NSPopUpButton *_rumbleModePopupButton;
+    NSSlider *_temperatureSlider;
+    NSSlider *_interferenceSlider;
 }
 
 + (NSArray *)filterList
@@ -91,9 +94,32 @@
     [_colorCorrectionPopupButton selectItemAtIndex:mode];
 }
 
+
 - (NSPopUpButton *)colorCorrectionPopupButton
 {
     return _colorCorrectionPopupButton;
+}
+
+- (void)setTemperatureSlider:(NSSlider *)temperatureSlider
+{
+    _temperatureSlider = temperatureSlider;
+    [temperatureSlider setDoubleValue:[[NSUserDefaults standardUserDefaults] doubleForKey:@"GBLightTemperature"] * 256];
+}
+
+- (NSSlider *)temperatureSlider
+{
+    return _temperatureSlider;
+}
+
+- (void)setInterferenceSlider:(NSSlider *)interferenceSlider
+{
+    _interferenceSlider = interferenceSlider;
+    [interferenceSlider setDoubleValue:[[NSUserDefaults standardUserDefaults] doubleForKey:@"GBInterferenceVolume"] * 256];
+}
+
+- (NSSlider *)interferenceSlider
+{
+    return _interferenceSlider;
 }
 
 - (void)setFrameBlendingModePopupButton:(NSPopUpButton *)frameBlendingModePopupButton
@@ -154,6 +180,18 @@
 - (NSPopUpButton *)rewindPopupButton
 {
     return _rewindPopupButton;
+}
+
+- (NSPopUpButton *)rtcPopupButton
+{
+    return _rtcPopupButton;
+}
+
+- (void)setRtcPopupButton:(NSPopUpButton *)rtcPopupButton
+{
+    _rtcPopupButton = rtcPopupButton;
+    NSInteger mode = [[NSUserDefaults standardUserDefaults] integerForKey:@"GBRTCMode"];
+    [_rtcPopupButton selectItemAtIndex:mode];
 }
 
 - (void)setHighpassFilterPopupButton:(NSPopUpButton *)highpassFilterPopupButton
@@ -284,6 +322,21 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBColorCorrectionChanged" object:nil];
 }
 
+- (IBAction)lightTemperatureChanged:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:@([sender doubleValue] / 256.0)
+                                              forKey:@"GBLightTemperature"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"GBLightTemperatureChanged" object:nil];
+}
+
+- (IBAction)volumeTemperatureChanged:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:@([sender doubleValue] / 256.0)
+                                              forKey:@"GBInterferenceVolume"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"GBInterferenceVolumeChanged" object:nil];
+
+}
+
 - (IBAction)franeBlendingModeChanged:(id)sender
 {
     [[NSUserDefaults standardUserDefaults] setObject:@([sender indexOfSelectedItem])
@@ -318,6 +371,14 @@
     [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedTag])
                                               forKey:@"GBRewindLength"];
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBRewindLengthChanged" object:nil];
+}
+
+- (IBAction)rtcModeChanged:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:@([sender indexOfSelectedItem])
+                                              forKey:@"GBRTCMode"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"GBRTCModeChanged" object:nil];
+
 }
 
 - (IBAction) configureJoypad:(id)sender

@@ -237,8 +237,13 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
         case MODEL_CGB:
             return (GB_model_t)[[NSUserDefaults standardUserDefaults] integerForKey:@"GBCGBModel"];
             
-        case MODEL_SGB:
-            return (GB_model_t)[[NSUserDefaults standardUserDefaults] integerForKey:@"GBSGBModel"];
+        case MODEL_SGB: {
+            GB_model_t model = (GB_model_t)[[NSUserDefaults standardUserDefaults] integerForKey:@"GBSGBModel"];
+            if (model == (GB_MODEL_SGB | GB_MODEL_PAL_BIT_OLD)) {
+                model = GB_MODEL_SGB_PAL;
+            }
+            return model;
+        }
         
         case MODEL_AGB:
             return GB_MODEL_AGB;
@@ -286,6 +291,8 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     GB_set_input_callback(&gb, (GB_input_callback_t) consoleInput);
     GB_set_async_input_callback(&gb, (GB_input_callback_t) asyncConsoleInput);
     GB_set_color_correction_mode(&gb, (GB_color_correction_mode_t) [[NSUserDefaults standardUserDefaults] integerForKey:@"GBColorCorrection"]);
+    GB_set_light_temperature(&gb, [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBLightTemperature"]);
+    GB_set_interference_volume(&gb, [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBInterferenceVolume"]);
     GB_set_border_mode(&gb, (GB_border_mode_t) [[NSUserDefaults standardUserDefaults] integerForKey:@"GBBorderMode"]);
     [self updatePalette];
     GB_set_rgb_encode_callback(&gb, rgbEncode);
@@ -293,6 +300,7 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     GB_set_camera_update_request_callback(&gb, cameraRequestUpdate);
     GB_set_highpass_filter_mode(&gb, (GB_highpass_mode_t) [[NSUserDefaults standardUserDefaults] integerForKey:@"GBHighpassFilter"]);
     GB_set_rewind_length(&gb, [[NSUserDefaults standardUserDefaults] integerForKey:@"GBRewindLength"]);
+    GB_set_rtc_mode(&gb, [[NSUserDefaults standardUserDefaults] integerForKey:@"GBRTCMode"]);
     GB_apu_set_sample_callback(&gb, audioCallback);
     GB_set_rumble_callback(&gb, rumbleCallback);
     GB_set_infrared_callback(&gb, infraredStateChanged);
@@ -325,7 +333,7 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     GB_set_pixels_output(&gb, self.view.pixels);
     if (self.vramWindow.isVisible) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.view.mouseHidingEnabled = (self.mainWindow.styleMask & NSFullScreenWindowMask) != 0;
+            self.view.mouseHidingEnabled = (self.mainWindow.styleMask & NSWindowStyleMaskFullScreen) != 0;
             [self reloadVRAMData: nil];
         });
     }
@@ -379,7 +387,7 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
             [audioLock wait];
         }
         
-        if (stopping) {
+        if (stopping || GB_debugger_is_stopped(&gb)) {
             memset(buffer, 0, nFrames * sizeof(*buffer));
             [audioLock unlock];
             return;
@@ -406,14 +414,14 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBNotificationsUsed"]) {
         NSUserNotificationCenter *center = [NSUserNotificationCenter defaultUserNotificationCenter];
         for (NSUserNotification *notification in [center scheduledNotifications]) {
-            if ([notification.identifier isEqualToString:self.fileName]) {
+            if ([notification.identifier isEqualToString:self.fileURL.path]) {
                 [center removeScheduledNotification:notification];
                 break;
             }
         }
         
         for (NSUserNotification *notification in [center deliveredNotifications]) {
-            if ([notification.identifier isEqualToString:self.fileName]) {
+            if ([notification.identifier isEqualToString:self.fileURL.path]) {
                 [center removeDeliveredNotification:notification];
                 break;
             }
@@ -480,21 +488,21 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [self.audioClient stop];
     self.audioClient = nil;
     self.view.mouseHidingEnabled = NO;
-    GB_save_battery(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"sav"] UTF8String]);
-    GB_save_cheats(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"cht"] UTF8String]);
+    GB_save_battery(&gb, [[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sav"].path UTF8String]);
+    GB_save_cheats(&gb, [[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"cht"].path UTF8String]);
     unsigned time_to_alarm = GB_time_to_alarm(&gb);
     
     if (time_to_alarm) {
         [NSUserNotificationCenter defaultUserNotificationCenter].delegate = (id)[NSApp delegate];
         NSUserNotification *notification = [[NSUserNotification alloc] init];
-        NSString *friendlyName = [[self.fileName lastPathComponent] stringByDeletingPathExtension];
+        NSString *friendlyName = [[self.fileURL lastPathComponent] stringByDeletingPathExtension];
         NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"\\([^)]+\\)|\\[[^\\]]+\\]" options:0 error:nil];
         friendlyName = [regex stringByReplacingMatchesInString:friendlyName options:0 range:NSMakeRange(0, [friendlyName length]) withTemplate:@""];
         friendlyName = [friendlyName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         
         notification.title = [NSString stringWithFormat:@"%@ Played an Alarm", friendlyName];
         notification.informativeText = [NSString stringWithFormat:@"%@ requested your attention by playing a scheduled alarm", friendlyName];
-        notification.identifier = self.fileName;
+        notification.identifier = self.fileURL.path;
         notification.deliveryDate = [NSDate dateWithTimeIntervalSinceNow:time_to_alarm];
         notification.soundName = NSUserNotificationDefaultSoundName;
         [[NSUserNotificationCenter defaultUserNotificationCenter] scheduleNotification:notification];
@@ -505,7 +513,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 - (void) start
 {
-    self.view.mouseHidingEnabled = (self.mainWindow.styleMask & NSFullScreenWindowMask) != 0;
+    self.view.mouseHidingEnabled = (self.mainWindow.styleMask & NSWindowStyleMaskFullScreen) != 0;
     if (master) {
         [master start];
         return;
@@ -665,7 +673,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     
     
     
-    self.consoleWindow.title = [NSString stringWithFormat:@"Debug Console – %@", [[self.fileURL path] lastPathComponent]];
+    self.consoleWindow.title = [NSString stringWithFormat:@"Debug Console – %@", [self.fileURL.path lastPathComponent]];
     self.debuggerSplitView.dividerColor = [NSColor clearColor];
     if (@available(macOS 11.0, *)) {
         self.memoryWindow.toolbarStyle = NSWindowToolbarStyleExpanded;
@@ -687,6 +695,16 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateColorCorrectionMode)
                                                  name:@"GBColorCorrectionChanged"
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateLightTemperature)
+                                                 name:@"GBLightTemperatureChanged"
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateInterferenceVolume)
+                                                 name:@"GBInterferenceVolumeChanged"
                                                object:nil];
     
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -713,6 +731,12 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
                                              selector:@selector(updateRewindLength)
                                                  name:@"GBRewindLengthChanged"
                                                object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateRTCMode)
+                                                 name:@"GBRTCModeChanged"
+                                               object:nil];
+
     
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(dmgModelChanged)
@@ -815,18 +839,18 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     NSString *rom_warnings = [self captureOutputForBlock:^{
         GB_debugger_clear_symbols(&gb);
         if ([[self.fileType pathExtension] isEqualToString:@"isx"]) {
-            GB_load_isx(&gb, [self.fileName UTF8String]);
-            GB_load_battery(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"ram"] UTF8String]);
+            GB_load_isx(&gb, self.fileURL.path.UTF8String);
+            GB_load_battery(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"ram"].path.UTF8String);
 
         }
         else {
-            GB_load_rom(&gb, [self.fileName UTF8String]);
+            GB_load_rom(&gb, [self.fileURL.path UTF8String]);
         }
-        GB_load_battery(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"sav"] UTF8String]);
-        GB_load_cheats(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"cht"] UTF8String]);
+        GB_load_battery(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sav"].path.UTF8String);
+        GB_load_cheats(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"cht"].path.UTF8String);
         [self.cheatWindowController cheatsUpdated];
         GB_debugger_load_symbol_file(&gb, [[[NSBundle mainBundle] pathForResource:@"registers" ofType:@"sym"] UTF8String]);
-        GB_debugger_load_symbol_file(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:@"sym"] UTF8String]);
+        GB_debugger_load_symbol_file(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sym"].path.UTF8String);
     }];
     if (rom_warnings && !rom_warning_issued) {
         rom_warning_issued = true;
@@ -841,6 +865,10 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [[NSUserDefaults standardUserDefaults] setInteger:self.mainWindow.frame.size.height forKey:@"LastWindowHeight"];
     [self stop];
     [self.consoleWindow close];
+    [self.memoryWindow close];
+    [self.vramWindow close];
+    [self.printerFeedWindow close];
+    [self.cheatsWindow close];
     [super close];
 }
 
@@ -1093,6 +1121,9 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 - (char *) getDebuggerInput
 {
+    [audioLock lock];
+    [audioLock signal];
+    [audioLock unlock];
     [self updateSideView];
     [self log:">"];
     in_sync_input = true;
@@ -1132,7 +1163,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 {
     bool __block success = false;
     [self performAtomicBlock:^{
-        success = GB_save_state(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag] ]] UTF8String]) == 0;
+        success = GB_save_state(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag] ]].path.UTF8String) == 0;
     }];
     
     if (!success) {
@@ -1146,7 +1177,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     bool __block success = false;
     NSString *error =
     [self captureOutputForBlock:^{
-        success = GB_load_state(&gb, [[[self.fileName stringByDeletingPathExtension] stringByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag] ]] UTF8String]) == 0;
+        success = GB_load_state(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag] ]].path.UTF8String) == 0;
     }];
     
     if (!success) {
@@ -1680,7 +1711,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         switch (columnIndex) {
             case 0:
                 return [Document imageFromData:[NSData dataWithBytesNoCopy:oamInfo[row].image
-                                                                    length:64 * 4
+                                                                    length:64 * 4 * 2
                                                              freeWhenDone:NO]
                                          width:8
                                         height:oamHeight
@@ -1777,14 +1808,14 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     NSSavePanel * savePanel = [NSSavePanel savePanel];
     [savePanel setAllowedFileTypes:@[@"png"]];
     [savePanel beginSheetModalForWindow:self.printerFeedWindow completionHandler:^(NSInteger result) {
-        if (result == NSFileHandlingPanelOKButton) {
+        if (result == NSModalResponseOK) {
             [savePanel orderOut:self];
             CGImageRef cgRef = [self.feedImageView.image CGImageForProposedRect:NULL
                                                                         context:nil
                                                                           hints:nil];
             NSBitmapImageRep *imageRep = [[NSBitmapImageRep alloc] initWithCGImage:cgRef];
             [imageRep setSize:(NSSize){160, self.feedImageView.image.size.height / 2}];
-            NSData *data = [imageRep representationUsingType:NSPNGFileType properties:@{}];
+            NSData *data = [imageRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
             [data writeToURL:savePanel.URL atomically:NO];
             [self.printerFeedWindow setIsVisible:NO];
         }
@@ -1835,6 +1866,20 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
 }
 
+- (void) updateLightTemperature
+{
+    if (GB_is_inited(&gb)) {
+        GB_set_light_temperature(&gb, [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBLightTemperature"]);
+    }
+}
+
+- (void) updateInterferenceVolume
+{
+    if (GB_is_inited(&gb)) {
+        GB_set_interference_volume(&gb, [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBInterferenceVolume"]);
+    }
+}
+
 - (void) updateFrameBlendingMode
 {
     self.view.frameBlendingMode = (GB_frame_blending_mode_t) [[NSUserDefaults standardUserDefaults] integerForKey:@"GBFrameBlendingMode"];
@@ -1847,6 +1892,13 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
             GB_set_rewind_length(&gb, [[NSUserDefaults standardUserDefaults] integerForKey:@"GBRewindLength"]);
         }
     }];
+}
+
+- (void) updateRTCMode
+{
+    if (GB_is_inited(&gb)) {
+        GB_set_rtc_mode(&gb, [[NSUserDefaults standardUserDefaults] integerForKey:@"GBRTCMode"]);
+    }
 }
 
 - (void)dmgModelChanged

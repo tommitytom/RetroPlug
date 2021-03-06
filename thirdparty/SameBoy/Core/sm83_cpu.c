@@ -22,6 +22,7 @@ typedef enum {
     GB_CONFLICT_SGB_LCDC,
     GB_CONFLICT_WX,
     GB_CONFLICT_CGB_LCDC,
+    GB_CONFLICT_NR10,
 } GB_conflict_t;
 
 /* Todo: How does double speed mode affect these? */
@@ -33,6 +34,7 @@ static const GB_conflict_t cgb_conflict_map[0x80] = {
     [GB_IO_BGP] = GB_CONFLICT_PALETTE_CGB,
     [GB_IO_OBP0] = GB_CONFLICT_PALETTE_CGB,
     [GB_IO_OBP1] = GB_CONFLICT_PALETTE_CGB,
+    [GB_IO_NR10] = GB_CONFLICT_NR10,
     
     /* Todo: most values not verified, and probably differ between revisions */
 };
@@ -50,7 +52,8 @@ static const GB_conflict_t dmg_conflict_map[0x80] = {
     [GB_IO_OBP1] = GB_CONFLICT_PALETTE_DMG,
     [GB_IO_WY] = GB_CONFLICT_READ_OLD,
     [GB_IO_WX] = GB_CONFLICT_WX,
-
+    [GB_IO_NR10] = GB_CONFLICT_NR10,
+    
     /* Todo: these were not verified at all */
     [GB_IO_SCX] = GB_CONFLICT_READ_NEW,
 };
@@ -68,7 +71,8 @@ static const GB_conflict_t sgb_conflict_map[0x80] = {
     [GB_IO_OBP1] = GB_CONFLICT_READ_NEW,
     [GB_IO_WY] = GB_CONFLICT_READ_OLD,
     [GB_IO_WX] = GB_CONFLICT_WX,
-
+    [GB_IO_NR10] = GB_CONFLICT_NR10,
+    
     /* Todo: these were not verified at all */
     [GB_IO_SCX] = GB_CONFLICT_READ_NEW,
 };
@@ -249,6 +253,7 @@ static void cycle_write(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 // Todo: This is difference is because my timing is off in one of the models
                 if (gb->model > GB_MODEL_CGB_C) {
                     GB_advance_cycles(gb, gb->pending_cycles);
+                    GB_write_memory(gb, addr, value ^ 0x10); // Write with the old TILE_SET first
                     gb->tile_sel_glitch = true;
                     GB_advance_cycles(gb, 1);
                     gb->tile_sel_glitch = false;
@@ -257,6 +262,7 @@ static void cycle_write(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 }
                 else {
                     GB_advance_cycles(gb, gb->pending_cycles - 1);
+                    GB_write_memory(gb, addr, value ^ 0x10); // Write with the old TILE_SET first
                     gb->tile_sel_glitch = true;
                     GB_advance_cycles(gb, 1);
                     gb->tile_sel_glitch = false;
@@ -269,6 +275,23 @@ static void cycle_write(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 GB_write_memory(gb, addr, value);
                 gb->pending_cycles = 4;
             }
+            return;
+        
+        case GB_CONFLICT_NR10:
+            /* Hack: Due to the coupling between DIV and the APU, GB_apu_run only runs at M-cycle
+                     resolutions, but this quirk requires 2MHz even in single speed mode. To work
+                     around this, we specifically just step the calculate countdown if needed. */
+            GB_advance_cycles(gb, gb->pending_cycles);
+            if (gb->model <= GB_MODEL_CGB_C) {
+                // TODO: Double speed mode? This logic is also a bit weird, it needs more tests
+                if (gb->apu.square_sweep_calculate_countdown > 3 && gb->apu.enable_zombie_calculate_stepping) {
+                    gb->apu.square_sweep_calculate_countdown -= 2;
+                }
+                gb->apu.enable_zombie_calculate_stepping = true;
+                GB_write_memory(gb, addr, 0xFF);
+            }
+            GB_write_memory(gb, addr, value);
+            gb->pending_cycles = 4;
             return;
 
     }
@@ -330,6 +353,7 @@ static void nop(GB_gameboy_t *gb, uint8_t opcode)
 
 static void enter_stop_mode(GB_gameboy_t *gb)
 {
+    GB_write_memory(gb, 0xFF00 + GB_IO_DIV, 0);
     gb->stopped = true;
     gb->oam_ppu_blocked = !gb->oam_read_blocked;
     gb->vram_ppu_blocked = !gb->vram_read_blocked;
@@ -338,14 +362,16 @@ static void enter_stop_mode(GB_gameboy_t *gb)
 
 static void leave_stop_mode(GB_gameboy_t *gb)
 {
-    /* The CPU takes more time to wake up then the other components */
-    for (unsigned i = 0x200; i--;) {
-        GB_advance_cycles(gb, 0x10);
-    }
     gb->stopped = false;
     gb->oam_ppu_blocked = false;
     gb->vram_ppu_blocked = false;
     gb->cgb_palettes_ppu_blocked = false;
+    /* The CPU takes more time to wake up then the other components */
+    for (unsigned i = 0x1FFF; i--;) {
+        GB_advance_cycles(gb, 0x10);
+    }
+    GB_advance_cycles(gb, gb->cgb_double_speed? 0x10 : 0xF);
+    GB_write_memory(gb, 0xFF00 + GB_IO_DIV, 0);
 }
 
 static void stop(GB_gameboy_t *gb, uint8_t opcode)
@@ -356,9 +382,11 @@ static void stop(GB_gameboy_t *gb, uint8_t opcode)
         
         GB_advance_cycles(gb, 0x4);
         /* Make sure we keep the CPU ticks aligned correctly when returning from double speed mode */
+        
         if (gb->double_speed_alignment & 7) {
             GB_advance_cycles(gb, 0x4);
             needs_alignment = true;
+            GB_log(gb, "ROM triggered PPU odd mode, which is currently not supported. Reverting to even-mode.\n");
         }
 
         gb->cgb_double_speed ^= true;
@@ -375,16 +403,14 @@ static void stop(GB_gameboy_t *gb, uint8_t opcode)
     else {
         GB_timing_sync(gb);
         if ((gb->io_registers[GB_IO_JOYP] & 0xF) != 0xF) {
-            /* HW Bug? When STOP is executed while a button is down, the CPU halts forever
-               yet the other hardware keeps running. */
-            gb->interrupt_enable = 0;
+            /* TODO: HW Bug? When STOP is executed while a button is down, the CPU enters halt
+               mode instead. Fine details not confirmed yet. */
             gb->halted = true;
         }
         else {
             enter_stop_mode(gb);
         }
     }
-    
     /* Todo: is PC being actually read? */
     gb->pc++;
 }

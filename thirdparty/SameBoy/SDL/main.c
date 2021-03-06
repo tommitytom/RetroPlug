@@ -120,9 +120,13 @@ static void open_menu(void)
         GB_audio_set_paused(false);
     }
     GB_set_color_correction_mode(&gb, configuration.color_correction_mode);
+    GB_set_light_temperature(&gb, (configuration.color_temperature - 10.0) / 10.0);
+    GB_set_interference_volume(&gb, configuration.interference_volume / 100.0);
     GB_set_border_mode(&gb, configuration.border_mode);
     update_palette();
     GB_set_highpass_filter_mode(&gb, configuration.highpass_mode);
+    GB_set_rewind_length(&gb, configuration.rewind_length);
+    GB_set_rtc_mode(&gb, configuration.rtc_mode);
     if (previous_width != GB_get_screen_width(&gb)) {
         screen_size_changed();
     }
@@ -233,7 +237,7 @@ static void handle_events(GB_gameboy_t *gb)
            };
                 
             case SDL_KEYDOWN:
-                switch (event.key.keysym.scancode) {
+                switch (event_hotkey_code(&event)) {
                     case SDL_SCANCODE_ESCAPE: {
                         open_menu();
                         break;
@@ -241,7 +245,6 @@ static void handle_events(GB_gameboy_t *gb)
                     case SDL_SCANCODE_C:
                         if (event.type == SDL_KEYDOWN && (event.key.keysym.mod & KMOD_CTRL)) {
                             GB_debugger_break(gb);
-                            
                         }
                         break;
                         
@@ -448,8 +451,6 @@ static bool handle_pending_command(void)
 
 static void load_boot_rom(GB_gameboy_t *gb, GB_boot_rom_t type)
 {
-    bool error = false;
-    start_capturing_logs();
     static const char *const names[] = {
         [GB_BOOT_ROM_DMG0] = "dmg0_boot.bin",
         [GB_BOOT_ROM_DMG] = "dmg_boot.bin",
@@ -460,8 +461,17 @@ static void load_boot_rom(GB_gameboy_t *gb, GB_boot_rom_t type)
         [GB_BOOT_ROM_CGB] = "cgb_boot.bin",
         [GB_BOOT_ROM_AGB] = "agb_boot.bin",
     };
-    GB_load_boot_rom(gb, resource_path(names[type]));
-    end_capturing_logs(true, error);
+    bool use_built_in = true;
+    if (configuration.bootrom_path[0]) {
+        static char path[4096];
+        snprintf(path, sizeof(path), "%s/%s", configuration.bootrom_path, names[type]);
+        use_built_in = GB_load_boot_rom(gb, path);
+    }
+    if (use_built_in) {
+        start_capturing_logs();
+        GB_load_boot_rom(gb, resource_path(names[type]));
+        end_capturing_logs(true, false);
+    }
 }
 
 static void run(void)
@@ -497,12 +507,15 @@ restart:
         GB_set_rumble_mode(&gb, configuration.rumble_mode);
         GB_set_sample_rate(&gb, GB_audio_get_frequency());
         GB_set_color_correction_mode(&gb, configuration.color_correction_mode);
+        GB_set_light_temperature(&gb, (configuration.color_temperature - 10.0) / 10.0);
+        GB_set_interference_volume(&gb, configuration.interference_volume / 100.0);
         update_palette();
         if ((unsigned)configuration.border_mode <= GB_BORDER_ALWAYS) {
             GB_set_border_mode(&gb, configuration.border_mode);
         }
         GB_set_highpass_filter_mode(&gb, configuration.highpass_mode);
         GB_set_rewind_length(&gb, configuration.rewind_length);
+        GB_set_rtc_mode(&gb, configuration.rtc_mode);
         GB_set_update_input_hint_callback(&gb, handle_events);
         GB_apu_set_sample_callback(&gb, gb_audio_callback);
     }
@@ -514,9 +527,9 @@ restart:
     char extension[4] = {0,};
     if (path_length > 4) {
         if (filename[path_length - 4] == '.') {
-            extension[0] = tolower(filename[path_length - 3]);
-            extension[1] = tolower(filename[path_length - 2]);
-            extension[2] = tolower(filename[path_length - 1]);
+            extension[0] = tolower((unsigned char)filename[path_length - 3]);
+            extension[1] = tolower((unsigned char)filename[path_length - 2]);
+            extension[2] = tolower((unsigned char)filename[path_length - 1]);
         }
     }
     if (strcmp(extension, "isx") == 0) {
@@ -647,6 +660,8 @@ int main(int argc, char **argv)
         configuration.dmg_palette %= 3;
         configuration.border_mode %= GB_BORDER_ALWAYS + 1;
         configuration.rumble_mode %= GB_RUMBLE_ALL_GAMES + 1;
+        configuration.color_temperature %= 21;
+        configuration.bootrom_path[sizeof(configuration.bootrom_path) - 1] = 0;
     }
     
     if (configuration.model >= MODEL_MAX) {
@@ -665,6 +680,10 @@ int main(int argc, char **argv)
 
     window = SDL_CreateWindow("SameBoy v" xstr(VERSION), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                               160 * configuration.default_scale, 144 * configuration.default_scale, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    if (window == NULL) {
+        fputs(SDL_GetError(), stderr);
+        exit(1);
+    }
     SDL_SetWindowMinimumSize(window, 160, 144);
     
     if (fullscreen) {
