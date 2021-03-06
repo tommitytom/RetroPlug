@@ -111,14 +111,20 @@ local function projectMenu(menu)
 			:multiSelect({
 				"Stereo Mixdown",
 				"Two Channels Per System"
-			}, settings.audioRouting, function(v) settings.audioRouting = v end)
+			}, settings.audioRouting, function(v)
+				settings.audioRouting = v
+				Project.updateSettings()
+			end)
 			:parent()
 		:subMenu("MIDI Routing")
 			:multiSelect({
 				"All Channels to All Systems",
 				"Four Channels Per System",
 				"One Channel Per System",
-			}, settings.midiRouting, function(v) settings.midiRouting = v end)
+			}, settings.midiRouting, function(v)
+				settings.midiRouting = v
+				Project.updateSettings()
+			end)
 end
 
 local function systemMenu(menu, system)

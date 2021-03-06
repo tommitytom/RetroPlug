@@ -159,6 +159,10 @@ function Project.load(data)
 	if Project.getSelectedIndex() == 0 and #_data.systems > 0 then Project.setSelected(1) end
 end
 
+function Project.updateSettings()
+	_ctx:updateSettings()
+end
+
 function Project.save(path, pretty, immediate)
 	local timer = Timer()
 

@@ -121,6 +121,10 @@ public:
 		_node->push<calls::SetActive>(NodeTypes::Audio, _project.selectedSystem);
 	}
 
+	void updateSettings() {
+		_node->push<calls::UpdateProjectSettings>(NodeTypes::Audio, _project.settings);
+	}
+
 	void updateSystemSettings(SystemIndex idx) {
 		SystemSettings settings = SystemSettings{ idx, _project.systems[idx]->sameBoySettings };
 		_node->push<calls::UpdateSystemSettings>(NodeTypes::Audio, settings);
@@ -262,10 +266,6 @@ public:
 		}
 
 		_project = Project();
-	}
-
-	void updateSettings() {
-		_node->push<calls::UpdateProjectSettings>(NodeTypes::Audio, _project.settings);
 	}
 
 	std::vector<Menu*> onMenu(SystemIndex idx) {
