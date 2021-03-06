@@ -50,12 +50,12 @@ project "minizip"
 	}
 
 	files {
-		MINIZIP_DIR .. "/**.h",
-		MINIZIP_DIR .. "/**.c",
+		MINIZIP_DIR .. "/*.h",
+		MINIZIP_DIR .. "/*.c",
+		MINIZIP_DIR .. "/lib/**.h",
+		MINIZIP_DIR .. "/lib/**.c",
 		MINIZIP_DIR .. "/zlib-ng/*.h",
-		MINIZIP_DIR .. "/zlib-ng/*.c",
-		MINIZIP_DIR .. "/zlib-ng/arch/x86/*.h",
-		MINIZIP_DIR .. "/zlib-ng/arch/x86/*.c"
+		MINIZIP_DIR .. "/zlib-ng/*.c"
 	}
 
 	excludes {
@@ -65,16 +65,14 @@ project "minizip"
 		MINIZIP_DIR .. "/mz_strm_libcomp.*",
 		MINIZIP_DIR .. "/mz_crypt_*.c",
 		MINIZIP_DIR .. "/mz_strm_os_*.c",
-		MINIZIP_DIR .. "/mz_os_*.c",
-		MINIZIP_DIR .. "/test/**",
-
-		MINIZIP_DIR .. "/zlib-ng/arch/arm/**",
-		MINIZIP_DIR .. "/zlib-ng/arch/s390/**",
-		MINIZIP_DIR .. "/zlib-ng/build/**",
-		MINIZIP_DIR .. "/zlib-ng/cmake/**",
-		MINIZIP_DIR .. "/zlib-ng/test/**",
-		MINIZIP_DIR .. "/zlib-ng/tools/**"
+		MINIZIP_DIR .. "/mz_os_*.c"
 	}
+
+	configuration { "not emscripten" }
+		files {
+			MINIZIP_DIR .. "/zlib-ng/arch/x86/*.h",
+			MINIZIP_DIR .. "/zlib-ng/arch/x86/*.c"
+		}
 
 	configuration { "Debug" }
 		defines { "ZLIB_DEBUG" }
@@ -105,3 +103,5 @@ project "minizip"
 			MINIZIP_DIR .. "/mz_strm_os_posix.c",
 			MINIZIP_DIR .. "/mz_os_posix.c"
 		}
+
+		buildoptions { "-msimd128", "-msse2" }

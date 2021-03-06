@@ -42,6 +42,9 @@ function iplug2.workspace(name)
 		defines { "NDEBUG", "TRACER_BUILD" }
 		optimize "On"
 
+	--configuration { "emscripten" }
+		--defines {}
+
 	configuration {}
 end
 
@@ -98,8 +101,12 @@ local function projectBase(targetName, name)
 	local gdep = _p.."Dependencies/IGraphics/"
 
 	if g.platform == "gl2" then
-		includedirs { gdep.."glad_GL2/include", gdep.."glad_GL2/src" }
-		defines { "IGRAPHICS_GL2" }
+		configuration { "not emscripten" }
+			includedirs { gdep.."glad_GL2/include", gdep.."glad_GL2/src" }
+			defines { "IGRAPHICS_GL2" }
+		configuration { "emscripten" }
+			--includedirs { gdep.."glad_GL2/include", gdep.."glad_GL2/src" }
+			defines { "IGRAPHICS_GLES2" }
 	end
 
 	if g.platform == "gl3" then
@@ -164,6 +171,11 @@ local function projectBase(targetName, name)
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
 		}
 
+	configuration { "emscripten" }
+		files {
+			_p.."IGraphics/Platforms/IGraphicsWeb.cpp",
+		}
+
 	configuration { "Debug" }
 		defines { "DEVELOPMENT=1" }
 
@@ -176,6 +188,8 @@ local function projectBase(targetName, name)
 end
 
 function iplug2.project.app(fn, name)
+	if _OPTIONS["emscripten"] ~= nil then return end
+
 	local config = projectBase("app", name)
 	kind "WindowedApp"
 
@@ -239,6 +253,8 @@ function iplug2.project.app(fn, name)
 end
 
 function iplug2.project.vst2(fn, name)
+	if _OPTIONS["emscripten"] ~= nil then return end
+
 	local config = projectBase("vst2", name)
 	kind "SharedLib"
 
@@ -263,6 +279,8 @@ function iplug2.project.vst2(fn, name)
 end
 
 function iplug2.project.vst3(fn, name)
+	if _OPTIONS["emscripten"] ~= nil then return end
+
 	projectBase("vst3", name)
 	kind "SharedLib"
 
@@ -286,7 +304,9 @@ function iplug2.project.vst3(fn, name)
 	if fn then fn() end
 end
 
-function iplug2.project.au3(fn, name)
+function iplug2.project.auv3(fn, name)
+	if _OPTIONS["emscripten"] ~= nil then return end
+
 	projectBase("vst3", name)
 	kind "SharedLib"
 
@@ -312,6 +332,32 @@ function iplug2.project.au3(fn, name)
 			"CoreAudio.framework",
 			"CoreAudioKit.framework"
 		}
+
+	configuration {}
+
+	if fn then fn() end
+end
+
+function iplug2.project.wam(fn, name)
+	if _OPTIONS["emscripten"] == nil then return end
+
+	local config = projectBase("wam", name)
+	kind "SharedLib"
+
+	defines {
+		--"VST2_API",
+		--"VST_FORCE_DEPRECATED"
+	}
+
+	includedirs {
+		_p.."iPlug/WEB",
+		--_p.."Dependencies/IPlug/VST2_SDK"
+	}
+
+	files {
+		_p.."iPlug/WEB/*.h",
+		_p.."iPlug/WEB/*.cpp"
+	}
 
 	configuration {}
 

@@ -61,9 +61,11 @@ RetroPlugController::RetroPlugController(double sampleRate)
 
 	_bus.start();
 
+#ifndef __EMSCRIPTEN__
 	memset(_padButtons, 0, sizeof(_padButtons));
 	_padManager = new gainput::InputManager();
 	_padId = _padManager->CreateDevice<gainput::InputDevicePad>();
+#endif
 
 	// Make sure the config script exists
 	fs::path configDir = getConfigPath();
@@ -100,6 +102,7 @@ void RetroPlugController::init(iplug::igraphics::IRECT bounds) {
 }
 
 void RetroPlugController::processPad() {
+#ifndef __EMSCRIPTEN__
 	_padManager->Update();
 
 	for (int i = 0; i < AxisButtons::COUNT / 2; ++i) {
@@ -148,4 +151,5 @@ void RetroPlugController::processPad() {
 			_uiLua.onPadButton(idx, down);
 		}
 	}
+#endif
 }

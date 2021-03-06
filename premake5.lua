@@ -1,10 +1,15 @@
+newoption {
+	trigger = "emscripten",
+	description = "Build with emscripten"
+}
+
 local util = dofile("scripts/util.lua")
 local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 
-util.disableFastUpToDateCheck({ "RetroPlug" })
+util.disableFastUpToDateCheck({ "RetroPlug", "configure" })
 
 iplug2.workspace "RetroPlug"
-	platforms { "x64" }
+	platforms { "x86", "x64" }
 	characterset "MBCS"
 	cppdialect "C++17"
 
@@ -54,11 +59,12 @@ project "RetroPlug"
 		"src/retroplug/**.lua"
 	}
 
-	prebuildcommands {
-		"%{wks.location}/bin/x64/Debug/ScriptCompiler ../../src/compiler.config.lua"
-	}
+	configuration { "not emscripten" }
+		prebuildcommands {
+			"%{wks.location}/bin/x64/Debug/ScriptCompiler ../../src/compiler.config.lua"
+		}
 
-	filter { "files:src/retroplug/luawrapper/**" }
+	filter { "system:windows", "files:src/retroplug/luawrapper/**" }
 		buildoptions { "/bigobj" }
 
 	configuration { "Debug" }
@@ -121,23 +127,31 @@ local function retroplugProject()
 		links { "xinput" }
 end
 
-group "Targets"
-iplug2.project.app(retroplugProject)
-iplug2.project.vst2(retroplugProject)
-iplug2.project.vst3(retroplugProject)
+dofile("scripts/configure.lua")
 
-group "Utils"
-project "ScriptCompiler"
-	kind "ConsoleApp"
-	sysincludedirs { "thirdparty", "thirdparty/lua-5.3.5/src" }
-	includedirs { "src/compiler" }
-	files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
-	links { "lua" }
+group "Targets"
+	iplug2.project.app(retroplugProject)
+	iplug2.project.vst2(retroplugProject)
+	iplug2.project.vst3(retroplugProject)
+	iplug2.project.wam(retroplugProject)
+
+if _OPTIONS["emscripten"] == nil then
+	group "Utils"
+		project "ScriptCompiler"
+			kind "ConsoleApp"
+			sysincludedirs { "thirdparty", "thirdparty/lua-5.3.5/src" }
+			includedirs { "src/compiler" }
+			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
+			links { "lua" }
+end
 
 group "Dependencies"
 	dofile("scripts/sameboy.lua")
 	dofile("scripts/lua.lua")
-	dofile("scripts/gainput.lua")
 	dofile("scripts/minizip.lua")
-	dofile("scripts/simplefilewatcher.lua")
 	dofile("scripts/liblsdj.lua")
+
+	if _OPTIONS["emscripten"] == nil then
+		dofile("scripts/gainput.lua")
+		dofile("scripts/simplefilewatcher.lua")
+	end

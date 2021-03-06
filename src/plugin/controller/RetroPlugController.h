@@ -1,6 +1,9 @@
 #pragma once
 
+#ifndef __EMSCRIPTEN__
 #include <gainput/gainput.h>
+#endif
+
 #include "luawrapper/UiLuaContext.h"
 #include "micromsg/nodemanager.h"
 #include "view/RetroPlugView.h"
@@ -24,9 +27,11 @@ private:
 	FW::FileWatcher _scriptWatcher;
 	ChangeListener _listener;
 
+#ifndef __EMSCRIPTEN__
 	gainput::InputManager* _padManager;
 	gainput::DeviceId _padId;
 	bool _padButtons[gainput::PadButtonAxisCount_ + gainput::PadButtonCount_];
+#endif
 
 	SystemIndex _selected;
 

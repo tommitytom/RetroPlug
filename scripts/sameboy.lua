@@ -5,6 +5,8 @@ local BOOTROM_BIN = "%{cfg.objdir}/%{file.basename}.bin"
 local BOOTROM_HEADER = "%{wks.location}/../../src/generated/bootroms/%{file.basename}.h"
 local BOOTROM_RES_DIR = "%{wks.location}/obj/%{cfg.platform}/%{cfg.buildcfg}/SameBoyBootRoms"
 
+if _OPTIONS["emscripten"] == nil then
+
 project "pb12"
 	kind "ConsoleApp"
 	language "C"
@@ -51,6 +53,8 @@ project "SameBoyBootRoms"
 		}
 
 		buildoutputs { BOOTROM_OBJ, BOOTROM_BIN, BOOTROM_HEADER }
+
+end
 
 project "SameBoy"
 	kind "StaticLib"
