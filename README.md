@@ -7,6 +7,7 @@ A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
 - Realtime LSDj sample patching!
+- Lua scripting
 
 ## Current Limitations (subject to change)
 - VST2 only
@@ -27,12 +28,12 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 - For LSDj, an additional menu will appear in the settings menu, allowing you to set sync modes (Arduinoboy emulation)
 
 ## Button Mapping
-Keyboard button mapping is currently only configurable with JSON configuration files.  On first run a config file is written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug` containing the following default button map:
+Input button mapping is currently only configurable with Lua configuration files.  Both keyboard and joypad buttons can be mapped in the same file.  On first run a config file is written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug\input\default.lua` containing the following default button map:
 
 |Button|Default key|
 |------|-----------|
-|A|Z|
-|B|X|
+|A|W|
+|B|D|
 |Up|UpArrow|
 |Down|DownArrow|
 |Left|LeftArrow|
@@ -40,7 +41,20 @@ Keyboard button mapping is currently only configurable with JSON configuration f
 |Select|Ctrl|
 |Start|Enter|
 
-### Supported Keys for buttons.json:
+There are also LSDj specific key bindings:
+
+| Action | Default key |
+|--------|-------------|
+|DownTenRows|PageDown|
+|UpTenRows|PageUp|
+|CancelSelection|Esc|
+|Delete|Delete|
+|StartSelection|Shift (Hold)|
+|CopySelection|Ctrl + C|
+|CutSelection|Ctrl + X|
+|PasteSelection|Ctrl + V|
+
+### Supported Keys:
 Keys `0 - 9` and `A - Z` can be used for alpha numeric keys, as well as the following keys:
 
 ```
@@ -51,13 +65,12 @@ All key names are CASE SENSITIVE!
 ## Multiple Instances
 You can load multiple instances of the emulator in a single window, and link them with virtual link cables.  The goal of this feature is to offer a streamlined way of working with multiple instances of LSDj.  You can create an additional emulator instance using the `Project -> Add Instance` submenu.  Choose one of the following options:
 - **Load ROM...** - Loads a ROM from disk in to the new instance.
-- **Same ROM** - Loads the ROM of the currently active instance in to the new instance.  The created instance will load the .sav file accompanying the ROM.
 - **Duplicate** - Creates an exact copy of the currently active instance by coying its state.
 
 Additional information:
 - You can create up to 4 instances.
 - Instances are linked when the `Game Link` option is enabled.  This has to be done on every instance that is to be linked.
-- You can move between instances with the `Tab` key.
+- Using the default keyboard layout, you can move between instances with the `Tab` key.
 
 ### Audio Routing
 By default, the output of all instances will be summed together in to a single stereo output.  The `Project -> Audio Routing` menu contains additional options for audio routing:
@@ -101,54 +114,32 @@ When LSDj is detected, additional options are added to the context menus.
   * Rows are stopped when note offs are received, or when you hit stop in your DAW.
   * Requires the Arduinboy build of LSDj.
 
-- **Keyboard Mode (Arduinoboy Variation)**:
-  * seijhi
-
 - **Auto Play**:
   * When this option is enabled, RetroPlug will simulate a press of the start button whenever the transport in your DAW is started or stopped.
   * Works in combination with the other sync modes.
   * This option is pretty dumb (it doesnt know if LSDj is playing or not), so it's possible to make it think it is in the wrong state if you manually press `Start`.  If this happens just press `Start` again.
 
 ### .sav Manipulation
-Thanks to the liblsdj library you are able to list, export, import, load, and delete tracks contained in your LSDj save.  The `LSDj Songs` context menu contains these features.  Additionally, dragging a `.lsdsng` file on to the window will add the song to your `.sav` file and load it immediately (if the `.sav` has space to contain the song).
+Thanks to the liblsdj library you are able to list, export, import, load, and delete tracks contained in your LSDj save.  The `LSDj -> Songs` context menu contains these features.  Additionally, dragging a `.lsdsng` file on to the window will add the song to your `.sav` file and load it immediately (if the `.sav` has space to contain the song).
 
 ### Kit Patching
-Kits can be patched, deleted, and exported using the `LSDj Kits` menu.
+Kits can be patched, deleted, and exported using the `LSDj -> Kits` menu.
 * Kits can be imported from `.kit` files, or imported from a previously patched LSDj ROM.
-* To import kits to the next available slot, use the `LSDj Kits -> Import...` menu item.  If a kit is already in the ROM it will not be imported.  This allows you to import all kits from a ROM that the current ROM does not have without creating duplicates.
+* To import kits to the next available slot, use the `LSDj -> Kits -> Import...` menu item.  If a kit is already in the ROM it will not be imported.  This allows you to import all kits from a ROM that the current ROM does not have without creating duplicates.
 * To patch a specific kit slot, or to replace an existing kit, choose the kit/slot you want to replace in the context menu, and choose `Load...` or `Replace...` respectively.
 * Importing kits to a fresh slot requires a reset (this will be done automatically, no song data will be lost).  Replacing existing kits does not require a reset, and can be done in realtime **while the kit you are patching is currently playing**!
-* Kits are saved in to your DAWs project file when you hit save, or alternatively in to a `.retroplug` file when you save the project to disk.
+* The patched rom is saved in to your DAWs project file when you hit save, or alternatively in to a `.rplg` file when you save the project to disk.
 
-The ROM that you loaded from disk isn't actually modified.  To save the patched ROM out to disk for use on harware or other emulators, using the `System -> Save ROM...` menu option.
+The ROM that you loaded from disk isn't actually modified.  To save the patched ROM out to disk for use on harware or other emulators, using the `LSDj -> Export ROM...` menu option.
 
 ### Updating LSDj
-Updating to a new verison of LSDj can be quite cumbersome when your ROM is patched with custom samples, though RetroPlug tries to help make this easy by offering a way of swapping out a ROM and keeping custom samples patched.  To do this, use the `System -> Replace ROM...` menu item and select the new LSDj ROM.
-
-### Additional Options
-- **Keyboard Shortcuts**: Enables a set of common shortcuts that allows you to use LSDj with a keyboard in a more intuitive manner.  This works by sending combinations of button presses to LSDj, so support for these may not always be perfect!  Many of the hotkeys for these settings can be modified in the button config file (see [Button mapping](#button-mapping)), although a few can't:
-
-| Action | Default key(s) | Configurable|
-|--------|----------------|-------------|
-|ScreenUp|W|Yes|
-|ScreenLeft|A|Yes|
-|ScreenDown|S|Yes|
-|ScreenRight|D|Yes|
-|DownTenRows|PageDown|Yes|
-|UpTenRows|PageUp|Yes|
-|CancelSelection|Esc|Yes|
-|Delete|Delete|Yes|
-|StartSelection|Shift (Hold)|No|
-|CopySelection|Ctrl + C|No|
-|CutSelection|Ctrl + X|No|
-|PasteSelection|Ctrl + V|No|
+Updating to a new verison of LSDj can be quite cumbersome when your ROM is patched with custom samples, though RetroPlug tries to help make this easy by offering a way of swapping out a ROM and keeping custom samples patched.  To do this, use the `LSDj -> Upgrade To...` menu item and select the new LSDj ROM.  Please note that this doesn't upgrade the sav data for your songs, so you will still need to be aware that different LSDj versions may make your songs sound completely different!
 
 ## Roadmap
 - v1.0.0
     - 32bit builds
     - Mac builds
     - Outputs from individual audio channels
-    - Lua scripting
 - v2.0.0
     - Additional emulators.  Support for C64, GBA and Megadrive/Genesis is being explored.
 
@@ -156,15 +147,21 @@ Updating to a new verison of LSDj can be quite cumbersome when your ROM is patch
 - [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
 - [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin framework
 - [libsdj](https://github.com/stijnfrishert/liblsdj) - Adds the functionality to manipulate LSDj save files
-- [rapidjson](https://github.com/Tencent/rapidjson) - JSON library used for dealing with configs and save states
+- [gainput](https://github.com/jkuhlmann/gainput) - Gamepad input
+- [minizip](https://github.com/zlib-ng/minizip-ng) - Zip compression for project files (containing roms, savs, states, etc)
+- [lua 5.3](http://www.lua.org/) - Lua scripting language
+- [sol](https://github.com/ThePhD/sol2) - C++ Lua API wrapper
+- [spdlog](https://github.com/gabime/spdlog) - C++ logging library
 
 ## Building
 ### Windows
-RetroPlug is developed in Visual Studio 2019, however SameBoy has to be built using msys2 (mingw) on Windows.  Since we can't statically link libraries produced by mingw in VS, the DLL output from the build process is compiled as a resource in to the final VST DLL, which is then loaded from memory at runtime.  This allows us to ship the VST as a single DLL.
-- Install [msys2](https://www.msys2.org/) to the default location
-- Make sure [rgbds](https://github.com/rednex/rgbds) is accessible from your command line (via the PATH variable or some other method)
-- Run `thirdparty/SameBoy/retroplug/build.bat`
-- Open `RetroPlug.sln` in Visual Studio 2019 and build.
+Prerequisites
+- Visual Studio 2019
+- Clang compiler for Visual Studio (clang-cl).  This can be installed with the Visual Studio Installer.
+- [Rednex Game Boy Development System](https://github.com/gbdev/rgbds).  Must be available via your systems PATH variable.
+- [Premake 5](https://premake.github.io/).  Must be available via your systems PATH variable.
+
+All other dependencies are included in the repository.  Run `configure.bat`, this will write a project to `build/vs2019/RetroPlug.sln`.  Open and build.
 
 ### Mac
 Coming soon!
@@ -176,7 +173,7 @@ Please refrain from asking usage questions in GitHub issues, and use them purely
 
 **Q**: HALP! The keyboard does not work ;(
 
-**A**: All hosts are different, and some have restrictions on routing keyboard input in to VST instruments.  First, click the center of the window to try and force the host to give focus to the correct control.  If that doesn't work, make sure your host is allowing the plugin to receive keyboard input (Renoise has an "Enable keyboard" option, etc).  If it still doesn't work, try editing default keyboard mapping in `buttons.json` (written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug` on first run).  There are some quirks with certain DAWs...
+**A**: All hosts are different, and some have restrictions on routing keyboard input in to VST instruments.  First, click the center of the window to try and force the host to give focus to the correct control.  If that doesn't work, make sure your host is allowing the plugin to receive keyboard input (Renoise has an "Enable keyboard" option, etc).  If it still doesn't work, try editing default keyboard mapping in `default.lua` (written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug\input` on first run).  There are some quirks with certain DAWs...
 - **Reaper** does not send the ctrl key to VST's, so you'll need to remap that to something different.
 
 If you find you have issues with a particular DAW, please feel free to submit a bug report.
