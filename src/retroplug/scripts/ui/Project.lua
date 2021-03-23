@@ -181,6 +181,8 @@ function Project.save(path, pretty, immediate)
 
 		if type(path) == "string" then
 			log.info("Saving project to " .. path)
+		else
+			log.info("Saving project to memory")
 		end
 
 		local zipSettings = ZipWriterSettings.new()

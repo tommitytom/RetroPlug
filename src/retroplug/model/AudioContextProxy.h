@@ -4,12 +4,12 @@
 #include <string>
 #include <algorithm>
 
+#include "Constants.h"
+#include "Types.h"
 #include "util/DataBuffer.h"
 #include "micromsg/node.h"
 #include "messaging.h"
-#include "controller/AudioController.h"
-#include "Constants.h"
-#include "Types.h"
+#include "audio/AudioController.h"
 #include "model/Project.h"
 #include "model/ButtonStream.h"
 #include "model/FileManager.h"

@@ -12,7 +12,7 @@
 #include "Types.h"
 #include "model/ProcessingContext.h"
 #include "luawrapper/AudioLuaContext.h"
-#include "controller/AudioController.h"
+#include "audio/AudioController.h"
 #include "luawrapper/ChangeListener.h"
 
 class RetroPlugController {

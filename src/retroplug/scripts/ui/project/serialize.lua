@@ -1,4 +1,5 @@
 local projectutil = require("util.project")
+local util = require("util")
 local serpent = require("serpent")
 
 local Serializer = {}
@@ -8,15 +9,15 @@ function Serializer.serializeProject(systems, audioSystemStates, projectSettings
 		retroPlugVersion = _RETROPLUG_VERSION,
 		projectVersion = _PROJECT_VERSION,
 		path = projectSettings.path,
-		settings = projectutil.cloneEnumFields(projectSettings.settings, projectutil.ProjectSettingsFields),
+		settings = util.cloneEnumFields(projectSettings.settings, projectutil.ProjectSettingsFields),
 		systems = {}
 	}
 
 	for i, system in ipairs(systems) do
 		local desc = system.desc
 		if desc.state ~= SystemState.Uninitialized then
-			local inst = projectutil.cloneEnumFields(desc, projectutil.SystemSettingsFields)
-			inst.sameBoy = projectutil.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
+			local inst = util.cloneEnumFields(desc, projectutil.SystemSettingsFields)
+			inst.sameBoy = util.cloneEnumFields(desc.sameBoySettings, projectutil.SameBoySettingsFields)
 			inst.uiComponents = system.state
 			inst.audioComponents = {}
 

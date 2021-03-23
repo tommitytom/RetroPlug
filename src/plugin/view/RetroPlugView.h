@@ -10,7 +10,7 @@
 //#include "controller/RetroPlugController.h"
 #include "util/cxxtimer.hpp"
 #include "platform/FileDialog.h"
-#include "controller/AudioController.h"
+#include "audio/AudioController.h"
 #include "platform/ViewWrapper.h"
 
 using namespace iplug;

@@ -1,10 +1,11 @@
 #pragma once
 
-#include "Types.h"
-#include "util/DataBuffer.h"
 #include <string>
 #include <vector>
+
+#include "Types.h"
 #include "Constants.h"
+#include "util/DataBuffer.h"
 #include "model/ButtonStream.h"
 
 const std::string PROJECT_VERSION = "1.0.0";

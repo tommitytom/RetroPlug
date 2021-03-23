@@ -107,6 +107,7 @@ local function projectBase(targetName, name)
 		configuration { "emscripten" }
 			--includedirs { gdep.."glad_GL2/include", gdep.."glad_GL2/src" }
 			defines { "IGRAPHICS_GLES2" }
+		configuration {}
 	end
 
 	if g.platform == "gl3" then
