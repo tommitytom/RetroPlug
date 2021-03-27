@@ -170,6 +170,8 @@ local function projectBase(targetName, name)
 
 		files {
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
+			_p.."IGraphics/Platforms/IGraphicsMac_view.mm",
+			_p.."IGraphics/Platforms/IGraphicsCoreText.mm",
 		}
 
 	configuration { "emscripten" }
@@ -215,8 +217,8 @@ function iplug2.project.app(fn, name)
 	}
 
 	if config.debugConsole == true then
-		configuration { "Debug" }
-			kind "ConsoleApp"
+		--configuration { "Debug" }
+			--kind "ConsoleApp"
 	end
 
 	configuration { "windows" }
@@ -242,11 +244,32 @@ function iplug2.project.app(fn, name)
 			"SWELL_APP_PREFIX=Swell_v" .. _name
 		}
 
+		files {
+			_p.."WDL/swell/*.h",
+			_p.."WDL/swell/*.mm",
+			_p.."WDL/swell/swell-ini.cpp",
+			_p.."WDL/swell/swell.cpp",
+		}
+		excludes {
+			_p.."WDL/swell/swell-modstub.mm",
+		}
+
 		links {
 			"AppKit.framework",
 			"CoreMIDI.framework",
-			"CoreAudio.framework"
-		}
+			"CoreAudio.framework",
+			"Cocoa.framework",
+			"Carbon.framework",
+			"CoreFoundation.framework",
+			"CoreData.framework",
+			"Foundation.framework",
+			"CoreServices.framework",
+			"Metal.framework",
+			"MetalKit.framework",
+			"QuartzCore.framework",
+			"OpenGL.framework",
+			"IOKit.framework",
+		}		
 
 	configuration {}
 

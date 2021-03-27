@@ -9,7 +9,7 @@ local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 util.disableFastUpToDateCheck({ "RetroPlug", "configure" })
 
 iplug2.workspace "RetroPlug"
-	platforms { "x86", "x64" }
+	platforms { "x64" }
 	characterset "MBCS"
 	cppdialect "C++17"
 
@@ -99,6 +99,7 @@ local function retroplugProject()
 	}
 
 	includedirs {
+		".",
 		"src",
 		"src/retroplug",
 		"src/plugin"
@@ -148,7 +149,7 @@ end
 group "Dependencies"
 	dofile("scripts/sameboy.lua")
 	dofile("scripts/lua.lua")
-	dofile("scripts/minizip.lua")
+	--dofile("scripts/minizip.lua")
 	dofile("scripts/liblsdj.lua")
 
 	if _OPTIONS["emscripten"] == nil then
