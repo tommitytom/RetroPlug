@@ -119,12 +119,12 @@ local function projectBase(targetName, name)
 		includedirs { gdep.."NanoVG/src", gdep.."NanoSVG/src" }
 		defines { "IGRAPHICS_NANOVG" }
 		files { 
-			_p.."IGraphics/Drawing/IGraphicsNanoVG.h" ,
+			_p.."IGraphics/Drawing/IGraphicsNanoVG.h",
 			--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
 			_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m" 
 		}
 
-		filter(_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m")
+		filter("files:".._p.."IGraphics/Drawing/IGraphicsNanoVG_src.m")
     		buildoptions { "-fobjc-arc" }
 		filter {}
 	end
@@ -278,6 +278,7 @@ function iplug2.project.app(fn, name)
 			"QuartzCore.framework",
 			"OpenGL.framework",
 			"IOKit.framework",
+			"Security.framework"
 		}		
 
 	configuration {}
