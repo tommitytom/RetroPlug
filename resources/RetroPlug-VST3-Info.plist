@@ -24,6 +24,8 @@
 	<string>0.32.0</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.11.0</string>
 </dict>
