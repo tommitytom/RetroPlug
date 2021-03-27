@@ -34,8 +34,10 @@ struct IMouseMod
 void luawrappers::registerRetroPlug(sol::state& s) {
 	s.create_named_table("nativeshell",
 		"getConfigPath", []() { return ws2s(getConfigPath().wstring()); },
-		"getContentPath", [](const tstring& path) { return ws2s(getContentPath(path).wstring()); },
-		"openShellFolder", openShellFolder
+		"getContentPath", [](const tstring& path) { return ws2s(getContentPath(path).wstring()); }
+		#ifdef WIN32
+		,"openShellFolder", openShellFolder
+		#endif
 	);
 
 	s.new_usertype<SystemDesc>("SystemDesc",

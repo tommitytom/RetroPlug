@@ -118,7 +118,15 @@ local function projectBase(targetName, name)
 	if g.backend == "nanovg" then
 		includedirs { gdep.."NanoVG/src", gdep.."NanoSVG/src" }
 		defines { "IGRAPHICS_NANOVG" }
-		files { _p.."IGraphics/Drawing/IGraphicsNanoVG.h" }
+		files { 
+			_p.."IGraphics/Drawing/IGraphicsNanoVG.h" ,
+			--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
+			_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m" 
+		}
+
+		filter(_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m")
+    		buildoptions { "-fobjc-arc" }
+		filter {}
 	end
 
 	if g.vsync == true then
@@ -169,6 +177,7 @@ local function projectBase(targetName, name)
 		}
 
 		files {
+			_p.."iPlug/*.mm",
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
 			_p.."IGraphics/Platforms/IGraphicsMac_view.mm",
 			_p.."IGraphics/Platforms/IGraphicsCoreText.mm",
