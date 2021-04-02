@@ -206,7 +206,7 @@ local function createKitsMenu(system, menu, rom)
 			if err == nil then
 				system:setRom(rom:toBuffer(), true)
 			else
-				-- Log error
+				log.error(err)
 			end
 		end)
 	end)
