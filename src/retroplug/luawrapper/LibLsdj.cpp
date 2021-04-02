@@ -1,6 +1,8 @@
 #include "Wrappers.h"
 
 #include <sol/sol.hpp>
+#include <spdlog/spdlog.h>
+
 #include "util/DataBuffer.h"
 #include "sav.h"
 
@@ -65,6 +67,7 @@ void luawrappers::registerLsdj(sol::state& s) {
 		"project_write_lsdsng_to_memory", [](const void* project, DataBuffer<char>* target) {
 			target->resize(LSDSNG_MAX_SIZE);
 			size_t size = 0;
+			spdlog::debug("Writing lsdsong to memory {}", target->size());
 			lsdj_error_t err = lsdj_project_write_lsdsng_to_memory((const lsdj_project_t*)project, (uint8_t*)target->data(), &size);
 			if (err == lsdj_error_t::LSDJ_SUCCESS) target->resize(size);
 			return err;
