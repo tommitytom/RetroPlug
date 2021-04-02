@@ -204,7 +204,7 @@ TEST_CASE( "Format version changes", "[sav]" )
         REQUIRE( lsdj_instrument_wave_get_play_mode(song, 0x0B) == LSDJ_INSTRUMENT_WAVE_PLAY_MANUAL );
         
         REQUIRE( lsdj_instrument_get_envelope(song, 0) == 0x88 );
-        REQUIRE( lsdj_instrument_get_envelope(song, 1) == LSDJ_INSTRUMENT_WAVE_VOLUME_3 );
+        REQUIRE( lsdj_instrument_wave_get_volume(song, 1) == LSDJ_INSTRUMENT_WAVE_VOLUME_3 );
         REQUIRE( lsdj_instrument_get_envelope(song, 6) == 0x42 );
     }
     
@@ -223,5 +223,34 @@ TEST_CASE( "Format version changes", "[sav]" )
         REQUIRE( lsdj_song_get_format_version(song) == 11 );
         
         // Check for new ADSR values
+        
+        REQUIRE( lsdj_instrument_adsr_get_initial_level(song, 0) == 0x8 );
+        REQUIRE( lsdj_instrument_adsr_get_attack_speed(song, 0) == 0x0 );
+
+        REQUIRE( lsdj_instrument_adsr_get_initial_level(song, 6) == 0x4 );
+        REQUIRE( lsdj_instrument_adsr_get_attack_speed(song, 6) == 0x2 );
+        REQUIRE( lsdj_instrument_adsr_get_attack_level(song, 6) == 0x0 );
+
+        REQUIRE( lsdj_instrument_adsr_get_attack_speed(song, 7) == 0x3 );
+    }
+    
+    SECTION( "8.8.8" )
+    {
+        lsdj_sav_t* sav = nullptr;
+        REQUIRE( lsdj_sav_read_from_file(RESOURCES_FOLDER "sav/lsdj888.sav", &sav, nullptr) == LSDJ_SUCCESS);
+        REQUIRE( sav != nullptr );
+        
+        lsdj_project_t* project = lsdj_sav_get_project(sav, 0);
+        REQUIRE( project != nullptr );
+        
+        lsdj_song_t* song = lsdj_project_get_song(project);
+        assert(song != nullptr);
+         
+        REQUIRE( lsdj_song_get_format_version(song) == 16 );
+        
+        // Check for new ADSR values
+        
+        REQUIRE( lsdj_instrument_wave_get_wave(song, 0x0B) == 0 );
+        REQUIRE( lsdj_instrument_wave_get_wave(song, 0x0F) == 0x10 );
     }
 }

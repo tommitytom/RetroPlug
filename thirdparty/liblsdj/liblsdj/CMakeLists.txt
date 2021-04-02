@@ -42,6 +42,7 @@ set(SOURCES
 	src/phrase.c
 	src/project.c
 	src/sav.c
+	src/song_empty.c
 	src/song_offsets.h
 	src/song.c
 	src/speech.c

@@ -77,10 +77,7 @@ SCENARIO( "Project creation and querying", "[project]" )
 
 			THEN( "It should be an zeroed out song buffer" )
 			{
-				std::array<uint8_t, LSDJ_SONG_BYTE_COUNT> zeroes;
-				zeroes.fill(0);
-
-				REQUIRE(memcmp(buffer->bytes, zeroes.data(), LSDJ_SONG_BYTE_COUNT) == 0);
+				REQUIRE(memcmp(buffer->bytes, LSDJ_SONG_NEW_BYTES, LSDJ_SONG_BYTE_COUNT) == 0);
 			}
 		}
 

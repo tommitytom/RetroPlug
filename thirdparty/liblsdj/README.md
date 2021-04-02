@@ -20,71 +20,62 @@ The library and tools are open source and freely available to anyone. If you'd l
 
 *lsdsng-export* is a command-line tool for exporting songs from a .sav to .lsdsng, and querying sav formats about their song content.
 
-	lsdsng-export mymusic.sav
-	
-	Options:
-	  -h [ --help ]            Help screen
-	  --file arg               Input save file, can be a nameless option
-	  --noversion              Don't add version numbers to the filename
-	  -f [ --folder ]          Put every lsdsng in its own folder
-	  -p [ --print ]           Print a list of all songs in the sav
-	  -d [ --decimal ]         Use decimal notation for the version number, instead
-	                           of hex
-	  -u [ --underscore ]      Use an underscore for the special lightning bolt 
-	                           character, instead of x
-	  -o [ --output ] arg      Output folder for the lsdsng's
-	  -v [ --verbose ]         Verbose output during export
-	  -i [ --index ] arg       Single out a given project index to export, 0 or 
-	                           more
-	  -n [ --name ] arg        Single out a given project by name to export
-	  -w [ --working-memory ]  Single out the working-memory song to export
-	  --skip-working           Do not export the song in working memory when no other projects are given
+    lsdsng-export mymusic.sav|folder
+
+    Options:
+      -h, --help            Show the help screen
+      -v, --verbose         Verbose output during export
+      --noversion           Don't add version numbers to the filename
+      -f, --folder          Put every lsdsng in its own folder
+      -p, --print           Print a list of all songs in the sav, instead of exporting
+      -d, --decimal         Use decimal notation for the version number, instead of hex
+      -u, --underscore      Use an underscore for the special lightning bolt character, instead of x
+      -o, --output arg      Output folder for the lsdsng's
+      -i, --index arg       Single out a given project index to export, 0 or more
+      -n, --name arg        Single out a given project by name to export
+      -w, --working-memory  Single out the working-memory song to export
+      --skip-working        Do not export the song in working-memory when no other projects are given
 
 ## lsdsng-import
 
 *lsdsng-import* is a command-line tool for importing one or more songs from .lsdsng into a .sav file.
 
-	lsdsng-import -o output.sav song1.lsgsng song2.lsdsng...
-	
-	Options:
-	  -h [ --help ]         Help screen
-	  --file arg            .lsdsng file(s), 0 or more
-	  -o [ --output ] arg   The output file (.sav)
-	  -s [ --sav ] arg      A sav file to append all .lsdsng's to
-	  -v [ --verbose ]      Verbose output during import
+    lsdsng-import -o output.sav song1.lsgsng song2.lsdsng songs.sav...
+
+    Options:
+      -h, --help                Show the help screen
+      -v, --verbose             Verbose output during import
+      -o, --output arg          The output file (.sav)
+      -w, --working-memory arg  The song to put in the working memory
 
 ## lsdj-mono
 
 *lsdj-mono* is a command-line tool that transforms any .sav, .lsdsngs or folder containing such files to mono. In essence, it changes all `OL_` and `O_R` commands to `OLR` (leaving `O__` untouched), and sets all instruments to play `LR` as well.
 
-	lsdsng-mono mymusic.sav|mymusic.lsdsng
-	
-	Options:
-	  -h [ --help ]         Help screen
-	  --file arg            .sav or .lsdng file(s), 0 or more
-	  -v [ --verbose ]      Verbose output during import
-	  -i [ --instrument ]   Only adjust instruments
-	  -t [ --table ]        Only adjust tables
-	  -p [ --phrase ]       Only adjust phrases
+    lsdj-mono mymusic.sav|mymusic.lsdsng ...
+
+    Options:
+      -h, --help        Show the help screen
+      -v, --verbose     Verbose output during import
+      -i, --instrument  Only adjust instruments
+      -t, --table       Only adjust tables
+      -p, --phrase      Only adjust phrases
 
 ## lsdj-wavetable-import
 
 *lsdj-wavetable-import* is a command-line tool that imports *.snt* files (directly containing bytes that represent wavetable data) into your *.lsdsng* files. A repository of *.snt* files can be found over at [https://github.com/psgcabal/lsdjsynths](https://github.com/psgcabal/lsdjsynths).
 
-	lsdj-wavetable-import source.lsdsng wavetables.snt --[synth 0-F | index 00-FF]
-		
-	Options:
-	  -h [ --help ]         Help screen
-	  -i [ --index ] arg    The wavetable index 00-FF where the wavetable data 
-	                        should be written
-	  -s [ --synth ] arg    The synth number 0-F where the wavetable data should be
-	                        written
-	  -0 [ --zero ]         Pad the synth with empty wavetables if the .snt file < 
-	                        256 bytes
-	  -f [ --force ]        Force writing the wavetables, even though non-default 
-	                        data may be in them
-	  -o [ --output ] arg   The output .lsdsng to write to
-	  -v [ --verbose ]      Verbose output
+    lsdj-wavetable-import source.lsdsng wavetables.snt -[s 0-F | i 0-FF]
+
+    Options:
+      -h, --help        Show the help screen
+      -v, --verbose     Verbose output during import
+      -i, --index arg   The wavetable index 00-FF where the wavetable data should be written
+      -s, --synth arg   The synth number 0-F where the wavetable data should be written
+      -0, --zero        Pad the synth with empty wavetables if the .snt file < 256 bytes
+      -f, --force       Force writing the wavetables, even though non-default data may be in them
+      -o, --output arg  The output .lsdsng to write to
+      -d, --decimal     Is the number for --index or --synth a decimal (instead of hex)?
 
 # System Requirements
 
@@ -113,4 +104,4 @@ Developers that would like to help out are warmly invited to do so. This project
 
 ---
 
-Special thanks for Defense Mechanism (urbster1) and .exe (rbong) for thinking along and helping out where needed.
+Special thanks for Defense Mechanism (urbster1), .exe (rbong) and Johan Kotlinski (@jkotlinski) for thinking along and helping out where needed.

@@ -110,6 +110,9 @@ void lsdj_sav_set_working_memory_song(lsdj_sav_t* sav, const lsdj_song_t* song);
 /*! This effectively loads a project, and sets the current index to reflect that
 	@return false if the index is out of bounds, or the slot is empty */
 lsdj_error_t lsdj_sav_set_working_memory_song_from_project(lsdj_sav_t* sav, uint8_t index);
+
+//! Change the working memory song buffer to the default song
+lsdj_error_t lsdj_sav_reset_working_memory_song(lsdj_sav_t* sav);
     
 //! Retrieve the working memory song buffer from a sav
 /*! This funtion returns a mutable song. See lsdj_sav_get_working_memory_song_const() for immutable song retrieval */

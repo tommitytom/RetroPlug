@@ -156,7 +156,6 @@ TEST_CASE( "Song", "[song]" )
 				REQUIRE( lsdj_instrument_get_type(song0, 3) == LSDJ_INSTRUMENT_TYPE_WAVE );
 				REQUIRE( lsdj_instrument_get_envelope(song0, 0) == 0xA6 );
 				REQUIRE( lsdj_instrument_get_envelope(song0, 2) == 0x93 );
-				REQUIRE( lsdj_instrument_get_envelope(song0, 3) == LSDJ_INSTRUMENT_WAVE_VOLUME_3 );
 				REQUIRE( lsdj_instrument_get_transpose(song0, 0) == true );
 
 				REQUIRE( lsdj_instrument_is_table_enabled(song0, 0) == false );
@@ -184,6 +183,7 @@ TEST_CASE( "Song", "[song]" )
 
 			SECTION( "Wave" )
 			{
+                REQUIRE( lsdj_instrument_wave_get_volume(song0, 3) == LSDJ_INSTRUMENT_WAVE_VOLUME_3 );
 				REQUIRE( lsdj_instrument_wave_get_synth(song0, 3) == 0x0 );
 				REQUIRE( lsdj_instrument_wave_get_synth(song0, 6) == 0x1 );
 				REQUIRE( lsdj_instrument_wave_get_play_mode(song0, 3) == LSDJ_INSTRUMENT_WAVE_PLAY_MANUAL );
@@ -195,6 +195,7 @@ TEST_CASE( "Song", "[song]" )
             
             SECTION( "Kit" )
             {
+                REQUIRE( lsdj_instrument_kit_get_volume(song0, 3) == LSDJ_INSTRUMENT_WAVE_VOLUME_3 );
                 REQUIRE( lsdj_instrument_kit_get_pitch(song1, 0x0A) == 0x00 );
                 REQUIRE( lsdj_instrument_kit_get_half_speed(song1, 0x0A) == false );
                 REQUIRE( lsdj_instrument_kit_get_distortion_mode(song1, 0x0A) == LSDJ_INSTRUMENT_KIT_DISTORTION_CLIP );

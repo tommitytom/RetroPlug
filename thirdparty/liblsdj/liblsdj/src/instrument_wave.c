@@ -1,13 +1,39 @@
 #include "instrument.h"
 
+void lsdj_instrument_wave_set_volume(lsdj_song_t* song, uint8_t instrument, uint8_t volume)
+{
+    set_instrument_bits(song, instrument, 1, 0, 8, volume);
+}
+
+uint8_t lsdj_instrument_wave_get_volume(const lsdj_song_t* song, uint8_t instrument)
+{
+    return get_instrument_bits(song, instrument, 1, 0, 8);
+}
+
 void lsdj_instrument_wave_set_synth(lsdj_song_t* song, uint8_t instrument, uint8_t synth)
 {
-	set_instrument_bits(song, instrument, 2, 4, 4, synth);
+    if (lsdj_song_get_format_version(song) >= 16)
+        set_instrument_bits(song, instrument, 3, 0, 8, (uint8_t)(synth << 4));
+    else
+        set_instrument_bits(song, instrument, 2, 4, 4, synth);
 }
 
 uint8_t lsdj_instrument_wave_get_synth(const lsdj_song_t* song, uint8_t instrument)
 {
-	return get_instrument_bits(song, instrument, 2, 4, 4);
+    if (lsdj_song_get_format_version(song) >= 16)
+        return get_instrument_bits(song, instrument, 3, 4, 4);
+    else
+        return get_instrument_bits(song, instrument, 2, 4, 4);
+}
+
+void lsdj_instrument_wave_set_wave(lsdj_song_t* song, uint8_t instrument, uint8_t wave)
+{
+    set_instrument_bits(song, instrument, 3, 0, 8, wave);
+}
+
+uint8_t lsdj_instrument_wave_get_wave(const lsdj_song_t* song, uint8_t instrument)
+{
+    return get_instrument_bits(song, instrument, 3, 0, 8);
 }
 
 void lsdj_instrument_wave_set_play_mode(lsdj_song_t* song, uint8_t instrument, lsdj_wave_play_mode_t mode)

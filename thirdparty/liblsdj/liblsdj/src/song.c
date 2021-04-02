@@ -299,3 +299,4 @@ bool lsdj_song_is_row_bookmarked(const lsdj_song_t* song, uint8_t row, lsdj_chan
 
 	return false;
 }
+

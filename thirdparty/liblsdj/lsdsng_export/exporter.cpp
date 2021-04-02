@@ -47,7 +47,31 @@
 
 namespace lsdj
 {
-    int Exporter::exportProjects(const ghc::filesystem::path& path, const std::string& output)
+    int Exporter::export_(const ghc::filesystem::path& path)
+    {
+        if (ghc::filesystem::is_directory(path))
+            return exportFolder(path);
+        else
+            return exportSav(path);
+    }
+
+    int Exporter::exportFolder(const ghc::filesystem::path& path)
+    {
+        for (auto it = ghc::filesystem::directory_iterator(path); it != ghc::filesystem::directory_iterator(); ++it)
+        {
+            const auto path = it->path();
+            if (isHiddenFile(path.filename().string()) || path.extension() != ".sav")
+                continue;
+            
+            std::cout << "Found " << path.filename().string() << std::endl;
+            if (exportSav(path) != 0)
+                return 1;
+        }
+        
+        return 0;
+    }
+
+    int Exporter::exportSav(const ghc::filesystem::path& path)
     {
         // Load in the save file
         lsdj_sav_t* sav = nullptr;
@@ -129,7 +153,7 @@ namespace lsdj
         ghc::filesystem::create_directories(folder);
         
         std::stringstream stream;
-        stream << name << convertVersionToString(lsdj_project_get_version(project), true);
+        stream << name << convertVersionToString(lsdj_project_get_version(project), true, false);
         
         if (workingMemory)
             stream << ".WM";
@@ -167,7 +191,7 @@ namespace lsdj
             if (isHiddenFile(path.filename().string()) || path.extension() != ".sav")
                 continue;
             
-            std::cout << path.filename().string() << std::endl;
+            std::cout << "Found " << path.filename().string() << std::endl;
             if (printSav(path) != 0)
                 return 1;
         }
@@ -217,7 +241,7 @@ namespace lsdj
         return 0;
     }
     
-    std::string Exporter::convertVersionToString(uint8_t version, bool prefixDot) const
+    std::string Exporter::convertVersionToString(uint8_t version, bool prefixDot, bool prefixWhitespace) const
     {
         std::ostringstream stream;
         
@@ -228,12 +252,18 @@ namespace lsdj
             case VersionStyle::HEX:
                 if (prefixDot)
                     stream << '.';
-                stream << std::uppercase << std::setfill(' ') << std::setw(2) << std::hex << static_cast<unsigned int>(version);
+                
+                if (prefixWhitespace)
+                    stream << std::setfill(' ') << std::setw(2);
+                stream << std::uppercase << std::hex << static_cast<unsigned int>(version);
                 break;
             case VersionStyle::DECIMAL:
                 if (prefixDot)
                     stream << '.';
-                stream << std::setfill('0') << std::setw(3) << static_cast<unsigned int>(version);
+                
+                if (prefixWhitespace)
+                    stream << std::setfill('0') << std::setw(3);
+                stream << static_cast<unsigned int>(version);
                 break;
         }
         
@@ -328,7 +358,7 @@ namespace lsdj
             std::cout << ' ';
         
         // Display the version number of the project
-        const auto songVersionString = convertVersionToString(lsdj_project_get_version(project), false);
+        const auto songVersionString = convertVersionToString(lsdj_project_get_version(project), false, true);
         std::cout << songVersionString;
         for (auto i = songVersionString.size(); i < 5; i += 1)
             std::cout << ' ';

@@ -53,7 +53,7 @@ void printHelp(const popl::OptionParser& options)
               << "Version: " << LSDJ_VERSION_STRING << "\n\n"
               << options << "\n";
 
-    std::cout << "LibLsdj is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
+    std::cout << "LibLSDJ is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
 }
 
 int main(int argc, char* argv[])
@@ -127,10 +127,12 @@ int main(int argc, char* argv[])
                 exporter.indices.emplace_back(-1); // -1 represents working memory, kind-of a hack, but meh :/
 
             // Has the user requested a print, or an actual export?
-            if (print->is_set())
+            if (print->is_set()) {
                 return exporter.print(path);
-            else
-                return exporter.exportProjects(path, output->value());
+            } else {
+                exporter.output = output->value();
+                return exporter.export_(path);
+            }
         } else {
             printHelp(options);
             return 0;

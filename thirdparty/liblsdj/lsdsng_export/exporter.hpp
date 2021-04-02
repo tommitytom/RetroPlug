@@ -55,8 +55,7 @@ namespace lsdj
         };
         
     public:
-        int exportProjects(const ghc::filesystem::path& path, const std::string& output);
-        lsdj_error_t exportProject(const lsdj_project_t* project, ghc::filesystem::path folder, bool workingMemory);
+        int export_(const ghc::filesystem::path& path);
         int print(const ghc::filesystem::path& path);
         
     public:
@@ -70,15 +69,20 @@ namespace lsdj
         
         std::vector<int> indices;
         std::vector<std::string> names;
+        std::string output;
         
     private:
+        int exportFolder(const ghc::filesystem::path& path);
+        int exportSav(const ghc::filesystem::path& path);
         int printFolder(const ghc::filesystem::path& path);
         int printSav(const ghc::filesystem::path& path);
         bool shouldExportWorkingMemory();
         
-    private:
+        // Export an actual project
+        lsdj_error_t exportProject(const lsdj_project_t* project, ghc::filesystem::path folder, bool workingMemory);
+        
         // Converts a project version to a string representation using the current VersionStyle
-        std::string convertVersionToString(uint8_t version, bool prefixDot) const;
+        std::string convertVersionToString(uint8_t version, bool prefixDot, bool prefixWhitespace) const;
         
         // Print the working memory song line
         void printWorkingMemorySong(const lsdj_sav_t* sav);

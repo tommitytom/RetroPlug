@@ -184,17 +184,115 @@ lsdj_instrument_type_t lsdj_instrument_get_type(const lsdj_song_t* song, uint8_t
 
 //! Change the envelope of an instrument
 /*! @param song The song that contains the instrument
-	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@param envelope The envelope value to set
-	@note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param envelope The envelope value to set
+    @note Envelope is only supported on pulse and noise channels
+    @note From 8.1.0+ (v11) envelope isn't used anymore. Undefined behaviour otherwise */
 void lsdj_instrument_set_envelope(lsdj_song_t* song, uint8_t instrument, uint8_t envelope);
 
 //! Retrieve the envelope of an instrument
 /*! @param song The song that contains the instrument
-	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@return The envelope of the instrument
-	@note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @return The envelope of the instrument
+    @note Envelope is only supported on pulse and noise channels
+    @note From 8.1.0+ (v11) envelope isn't used anymore. Undefined behaviour otherwise */
 uint8_t lsdj_instrument_get_envelope(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's initial level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param level The initial level of the instrument (0 - F)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_initial_level(lsdj_song_t* song, uint8_t instrument, uint8_t level);
+
+//! Retrieve the ADSR's initial level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The initial level of the instrument (0 - F) */
+uint8_t lsdj_instrument_adsr_get_initial_level(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's attack speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param speed The attack speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_attack_speed(lsdj_song_t* song, uint8_t instrument, uint8_t speed);
+
+//! Retrieve the ADSR's attack speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The attack speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold) */
+uint8_t lsdj_instrument_adsr_get_attack_speed(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's attack level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param level The attack level of the instrument (0 - F)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_attack_level(lsdj_song_t* song, uint8_t instrument, uint8_t level);
+
+//! Retrieve the ADSR's attack level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The attack level of the instrument (0 - F) */
+uint8_t lsdj_instrument_adsr_get_attack_level(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's decay speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param speed The decay speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_decay_speed(lsdj_song_t* song, uint8_t instrument, uint8_t speed);
+
+//! Retrieve the ADSR's decay speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The decay speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold) */
+uint8_t lsdj_instrument_adsr_get_decay_speed(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's sustain level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param level The sustain level of the instrument (0 - F)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_sustain_level(lsdj_song_t* song, uint8_t instrument, uint8_t level);
+
+//! Retrieve the ADSR's sustain level of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The sustain level of the instrument (0 - F) */
+uint8_t lsdj_instrument_adsr_get_sustain_level(const lsdj_song_t* song, uint8_t instrument);
+
+//! Set the ADSR's release speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param speed The release speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise */
+void lsdj_instrument_adsr_set_release_speed(lsdj_song_t* song, uint8_t instrument, uint8_t speed);
+
+//! Retrieve the ADSR's release speed of an instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @note ADSR is only supported on pulse and noise channels
+    @note ADSR is only supported on 8.1.0 (v11) and higher. Undefined behaviour otherwise
+    @return The release speed of the instrument (0 - 7 for 8.1.0+; 0 - F for 8.8.0+, 0 = hold) */
+uint8_t lsdj_instrument_adsr_get_release_speed(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the panning of an instrument
 /*! @param song The song that contains the instrument
@@ -336,13 +434,15 @@ lsdj_instrument_pulse_width_t lsdj_instrument_pulse_get_pulse_width(const lsdj_s
 //! Change the length of a pulse instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@param length The length value to set */
+	@param length The length value to set
+    @note Length is available up to v8.8.0 (v13), otherwise undefined behaviour */
 void lsdj_instrument_pulse_set_length(lsdj_song_t* song, uint8_t instrument, uint8_t length);
 
 //! Retrieve the length of a pulse instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@return The length of the instrument */
+	@return The length of the instrument
+    @note Length is available up to v8.8.0 (v13), otherwise undefined behaviour */
 uint8_t lsdj_instrument_pulse_get_length(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the sweep of a pulse instrument
@@ -384,6 +484,20 @@ uint8_t lsdj_instrument_pulse_get_finetune(const lsdj_song_t* song, uint8_t inst
 
 // --- Wave --- //
 
+//! Change the volume of a wave instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param volume The envelope value to set
+    @note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+void lsdj_instrument_wave_set_volume(lsdj_song_t* song, uint8_t instrument, uint8_t volume);
+
+//! Retrieve the volume of a wave instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @return The volume of the instrument
+    @note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+uint8_t lsdj_instrument_wave_get_volume(const lsdj_song_t* song, uint8_t instrument);
+
 //! Change the synth index that a wave instrument uses
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
@@ -395,6 +509,20 @@ void lsdj_instrument_wave_set_synth(lsdj_song_t* song, uint8_t instrument, uint8
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
 	@return The synth the instrument uses (0 - F) */
 uint8_t lsdj_instrument_wave_get_synth(const lsdj_song_t* song, uint8_t instrument);
+
+//! Change the wave index that a wave instrument starts from
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param wave The start wavetable the instrument uses (0 - FF)
+    @note This setting only makes sense when the instrument is set to manual */
+void lsdj_instrument_wave_set_wave(lsdj_song_t* song, uint8_t instrument, uint8_t wave);
+
+//! Retrieve the wave index that a wave instrument starts from
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @return The wave the instrument uses (0 - FF)
+    @note This setting only makes sense when the instrument is set to manual */
+uint8_t lsdj_instrument_wave_get_wave(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the play mode for a wave instrument
 /*! @param song The song that contains the instrument
@@ -452,7 +580,7 @@ uint8_t lsdj_instrument_wave_get_repeat(const lsdj_song_t* song, uint8_t instrum
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
 	@param speed The speed value (1 - FF for fmt 6+, 1-F below fmt6)
-	Note: < fmt6 speed could only go up to F, in 6 and higher the max is FF
+	@note < fmt6 speed could only go up to F, in fmt6 and higher the max is FF
 	@return false If the format version does not support that speed value*/
 bool lsdj_instrument_wave_set_speed(lsdj_song_t* song, uint8_t instrument, uint8_t speed);
 
@@ -464,6 +592,20 @@ uint8_t lsdj_instrument_wave_get_speed(const lsdj_song_t* song, uint8_t instrume
 
 
 // --- Kit --- //
+
+//! Change the volume of a kit instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @param volume The envelope value to set
+    @note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+void lsdj_instrument_kit_set_volume(lsdj_song_t* song, uint8_t instrument, uint8_t volume);
+
+//! Retrieve the volume of a kit instrument
+/*! @param song The song that contains the instrument
+    @param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
+    @return The volume of the instrument
+    @note Wave and kit instruments only supports 3 volume levels, which are defined in lsdj_instrument_wave_volume_t */
+uint8_t lsdj_instrument_kit_get_volume(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the pitch for a kit instrument
 /*! @param song The song that contains the instrument
@@ -603,25 +745,29 @@ lsdj_kit_loop_mode_t lsdj_instrument_kit_get_loop2(const lsdj_song_t* song, uint
 //! Change the length of a noise instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@param length The length value to set */
+	@param length The length value to set
+    @note Length is available up to v8.8.0 (v13), otherwise undefined behaviour */
 void lsdj_instrument_noise_set_length(lsdj_song_t* song, uint8_t instrument, uint8_t length);
 
 //! Retrieve the length of a noise instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@return The length of the instrument */
+	@return The length of the instrument
+    @note Length is available up to v8.8.0 (v13), otherwise undefined behaviour */
 uint8_t lsdj_instrument_noise_get_length(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the shape for a noise instrument
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@param shape The shape */
+	@param shape The shape
+    @note shape is available up to v8.6.0 (v12), otherwise undefined behaviour */
 void lsdj_instrument_noise_set_shape(lsdj_song_t* song, uint8_t instrument, uint8_t shape);
 
 //! Retrieve the shape that a noise instrument uses
 /*! @param song The song that contains the instrument
 	@param instrument The index of the instrument (< LSDJ_INSTRUMENT_COUNT)
-	@return The shape */
+	@return The shape
+    @note shape is available up to v8.6.0 (v12), otherwise undefined behaviour */
 uint8_t lsdj_instrument_noise_get_shape(const lsdj_song_t* song, uint8_t instrument);
 
 //! Change the stability for a noise instrument

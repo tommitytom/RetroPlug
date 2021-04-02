@@ -38,7 +38,7 @@
 
 #include "song.h"
 
-	//! The number of bytes the default wave array takes up
+//! The number of bytes the default wave array takes up
 #define LSDJ_DEFAULT_WAVE_LENGTH (16)
 
 //! The default wave array

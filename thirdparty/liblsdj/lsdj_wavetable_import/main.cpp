@@ -45,21 +45,21 @@
 
 void printHelp(const popl::OptionParser& options)
 {
-    std::cout << "lsdj-wavetable-import source.lsdsng wavetables.snt --[synth 0-F | index 00-FF]\n\n"
+    std::cout << "lsdj-wavetable-import source.lsdsng wavetables.snt -[s 0-F | i 0-FF]\n\n"
               << "Version: " << LSDJ_VERSION_STRING << "\n\n"
               << options << "\n";
 
-    std::cout << "LibLsdj is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
+    std::cout << "LibLSDJ is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
 }
 
-uint8_t parseSynthIndex(const std::string& str)
+uint8_t parseSynthIndex(const std::string& str, bool decimal)
 {
-    return static_cast<uint8_t>(std::stoul(str, nullptr, 16)) * 16;
+    return static_cast<uint8_t>(std::stoul(str, nullptr, decimal ? 10 : 16)) * 16;
 }
 
-uint8_t parseIndex(const std::string& str)
+uint8_t parseIndex(const std::string& str, bool decimal)
 {
-    return static_cast<uint8_t>(std::stoul(str, nullptr, 16));
+    return static_cast<uint8_t>(std::stoul(str, nullptr, decimal ? 10 : 16));
 }
 
 int main(int argc, char* argv[])
@@ -72,6 +72,7 @@ int main(int argc, char* argv[])
     auto zero = options.add<popl::Switch>("0", "zero", "Pad the synth with empty wavetables if the .snt file < 256 bytes");
     auto force = options.add<popl::Switch>("f", "force", "Force writing the wavetables, even though non-default data may be in them");
     auto output = options.add<popl::Value<std::string>>("o", "output", "The output .lsdsng to write to");
+    auto decimal = options.add<popl::Switch>("d", "decimal", "Is the number for --index or --synth a decimal (instead of hex)?");
     
     try
     {
@@ -110,10 +111,13 @@ int main(int argc, char* argv[])
             }
             
             importer.outputName = output->is_set() ? output->value() : source;
-            importer.wavetableIndex = synth->is_set() ? parseSynthIndex(synth->value()) : parseIndex(index->value());
             importer.zero = zero->is_set();
             importer.force = force->is_set();
             importer.verbose = verbose->is_set();
+            
+            importer.wavetableIndex = synth->is_set() ?
+                                        parseSynthIndex(synth->value(), decimal->is_set()) :
+                                        parseIndex(index->value(), decimal->is_set());
             
             return importer.import(source, wavetable) ? 0 : 1;
         } else {

@@ -48,20 +48,22 @@ namespace lsdj
     class Importer
     {
     public:
-        int importSongs(const char* savName);
+        int import();
         
     public:
         std::vector<std::string> inputs;
+        std::string workingMemoryInput; // Empty = no input
         std::string outputFile;
         bool verbose = false;
         
     private:
-        lsdj_error_t importSong(const std::string& path, lsdj_sav_t* sav, uint8_t index, uint8_t active);
-        lsdj_error_t importWorkingMemorySong(lsdj_sav_t* sav, const std::vector<ghc::filesystem::path>& paths);
+        void scanPath(const ghc::filesystem::path& path, std::vector<ghc::filesystem::path>& paths);
         
-    private:
-        //! The path that refers to the working memory song
-        ghc::filesystem::path workingMemoryPath;
+        lsdj_error_t import(const ghc::filesystem::path& path, lsdj_sav_t* sav, uint8_t& index);
+        lsdj_error_t importSav(const std::string& path, lsdj_sav_t* sav, uint8_t& index);
+        lsdj_error_t importSong(const std::string& path, lsdj_sav_t* sav, uint8_t& index);
+        lsdj_error_t importProject(const lsdj_project_t* project, lsdj_sav_t* sav, uint8_t& index);
+        lsdj_error_t importWorkingMemorySong(lsdj_sav_t* sav, const std::vector<ghc::filesystem::path>& paths);
     };
 }
 

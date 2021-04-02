@@ -102,8 +102,8 @@ lsdj_error_t lsdj_sav_new(lsdj_sav_t** psav, const lsdj_allocator_t* allocator)
     
     lsdj_sav_t* sav = *psav;
 
-    // Clear the working memory song buffer
-    memset(&sav->workingMemorysong, 0, sizeof(sav->workingMemorysong));
+    // Set the new song to default
+    memcpy(&sav->workingMemorysong, LSDJ_SONG_NEW_BYTES, LSDJ_SONG_BYTE_COUNT);
     
     // Clear the projects
     for (int i = 0; i < LSDJ_SAV_PROJECT_COUNT; i++)
@@ -197,6 +197,19 @@ lsdj_error_t lsdj_sav_set_working_memory_song_from_project(lsdj_sav_t* sav, uint
     lsdj_sav_set_working_memory_song(sav, song);
     lsdj_sav_set_active_project_index(sav, index);
 
+    return LSDJ_SUCCESS;
+}
+
+lsdj_error_t lsdj_sav_reset_working_memory_song(lsdj_sav_t* sav)
+{
+    lsdj_project_t* project = NULL;
+    lsdj_error_t result = lsdj_project_new(&project, sav->allocator);
+    if (result != LSDJ_SUCCESS)
+        return result;
+    
+    lsdj_sav_set_working_memory_song(sav, lsdj_project_get_song(project));
+    lsdj_project_free(project);
+    
     return LSDJ_SUCCESS;
 }
 

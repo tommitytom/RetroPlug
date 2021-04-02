@@ -41,7 +41,7 @@ SCENARIO( "Saves", "[sav]" )
 
 			THEN( "It should be a zeroed out array of bytes" )
 			{
-				REQUIRE( memcmp(song->bytes, zeroBuffer.data(), LSDJ_SONG_BYTE_COUNT) == 0 );
+                REQUIRE( memcmp(song->bytes, LSDJ_SONG_NEW_BYTES, LSDJ_SONG_BYTE_COUNT) == 0 );
 			}
 		}
 

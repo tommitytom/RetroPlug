@@ -87,6 +87,8 @@ typedef enum
    LSDJ_SYNC_ANALOG_OUT = 5,
 } lsdj_sync_mode_t;
 
+extern const uint8_t LSDJ_SONG_NEW_BYTES[LSDJ_SONG_BYTE_COUNT];
+
 
 // --- General --- //
 

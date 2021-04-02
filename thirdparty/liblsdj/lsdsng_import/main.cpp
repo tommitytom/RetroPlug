@@ -43,11 +43,11 @@
 
 void printHelp(const popl::OptionParser& options)
 {
-    std::cout << "lsdsng-import -o output.sav song1.lsgsng song2.lsdsng...\n\n"
+    std::cout << "lsdsng-import -o output.sav song1.lsgsng song2.lsdsng songs.sav...\n\n"
               << "Version: " << LSDJ_VERSION_STRING << "\n\n"
               << options << "\n";
 
-    std::cout << "LibLsdj is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
+    std::cout << "LibLSDJ is open source and freely available to anyone.\nIf you'd like to show your appreciation, please consider\n  - buying one of my albums (https://4ntler.bandcamp.com)\n  - donating money through PayPal (https://paypal.me/4ntler).\n";
 }
 
 std::string generateOutputFilename(const std::vector<std::string>& inputs)
@@ -69,32 +69,31 @@ int main(int argc, char* argv[])
     auto help = options.add<popl::Switch>("h", "help", "Show the help screen");
     auto verbose = options.add<popl::Switch>("v", "verbose", "Verbose output during import");
     auto output = options.add<popl::Value<std::string>>("o", "output", "The output file (.sav)");
-    auto sav = options.add<popl::Value<std::string>>("s", "sav", "A sav file to append all .lsdsng's to");
+    auto wm = options.add<popl::Value<std::string>>("w", "working-memory", "The song to put in the working memory");
     
     try
     {
         options.parse(argc, argv);
         
-        const auto lsdsngs = options.non_option_args();
+        const auto imports = options.non_option_args();
         
         if (help->is_set())
         {
             printHelp(options);
             return 0;
-        } else if (!lsdsngs.empty()) {
+        } else if (!imports.empty()) {
             lsdj::Importer importer;
             
-            importer.inputs = lsdsngs;
+            importer.inputs = imports;
+            if (wm->is_set())
+                importer.workingMemoryInput = wm->value();
+            
             importer.verbose = verbose->is_set();
+            importer.outputFile = output->is_set() ?
+                output->value() :
+                generateOutputFilename(importer.inputs);
             
-            if (output->is_set())
-                importer.outputFile = output->value();
-            else if (sav->is_set())
-                importer.outputFile = ghc::filesystem::absolute(sav->value()).stem().filename().string() + ".sav";
-            else
-                importer.outputFile = generateOutputFilename(importer.inputs);
-            
-            return importer.importSongs(sav->is_set() ? sav->value().c_str() : nullptr);
+            return importer.import();
         } else {
             printHelp(options);
             return 0;

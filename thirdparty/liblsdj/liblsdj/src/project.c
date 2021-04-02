@@ -86,7 +86,7 @@ lsdj_error_t lsdj_project_new(lsdj_project_t** pproject, const lsdj_allocator_t*
         
     memset(project->name, '\0', LSDJ_PROJECT_NAME_LENGTH);
     project->version = 0;
-    memset(&project->song, 0, sizeof(lsdj_song_t));
+    memcpy(&project->song, LSDJ_SONG_NEW_BYTES, LSDJ_SONG_BYTE_COUNT);
     
     return LSDJ_SUCCESS;
 }
