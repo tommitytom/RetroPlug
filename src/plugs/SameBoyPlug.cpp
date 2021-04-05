@@ -255,7 +255,6 @@ void SameBoyPlug::update(size_t audioFrames) {
 				_state.serialQueue.pop();
 
 				for (int i = b.bitCount - 1; i >= 0; i--) {
-				//for (int i = 0; i < b.bitCount; i++) {
 					bool bit = (bool)((b.byte & (1 << i)) >> i);
 					GB_serial_set_data_bit(_state.gb, bit);
 				}
@@ -304,8 +303,6 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 		st[i] = plugs[i]->getState();
 		st[i]->vblankOccurred = false;
 	}
-
-	// TODO: Send button presses?  Use sameboy_update as a reference
 
 	size_t complete = 0;
 	while (complete != plugCount) {

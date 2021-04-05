@@ -116,14 +116,23 @@ local function projectBase(targetName, name)
 	if g.backend == "nanovg" then
 		includedirs { gdep.."NanoVG/src", gdep.."NanoSVG/src" }
 		defines { "IGRAPHICS_NANOVG" }
-		files { 
+		files {
 			_p.."IGraphics/Drawing/IGraphicsNanoVG.h",
-			--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
-			_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m" 
 		}
 
-		filter("files:".._p.."IGraphics/Drawing/IGraphicsNanoVG_src.m")
-    		buildoptions { "-fobjc-arc" }
+		configuration { "windows" }
+			files {
+				--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
+			}
+
+		configuration { "macosx" }
+			files {
+				_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m"
+			}
+
+		filter { "system:macosx", "files:**/IGraphicsNanoVG_src.m" }
+			buildoptions { "-fobjc-arc" }
+
 		filter {}
 	end
 
@@ -279,7 +288,7 @@ function iplug2.project.app(fn, name)
 			"-framework OpenGL",
 			"-framework IOKit",
 			"-framework Security"
-		}		
+		}
 
 	configuration {}
 

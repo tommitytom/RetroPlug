@@ -1,84 +1,19 @@
-local MINIZIP_DIR = "../thirdparty/minizip"
+local MINIZIP_DIR = "../thirdparty/minizip-ng"
 local LZMA_DIR = MINIZIP_DIR .. "/lib/liblzma/src/"
 
 project "minizip"
 	kind "StaticLib"
 	language "C"
 
-	--[[defines {
-		"ASSUME_RAM=128",
-		"HAVE_CHECK_CRC32",
-		"HAVE_CHECK_CRC64",
-		"HAVE_CHECK_SHA256",
-		"HAVE_CLOCK_GETTIME",
-		"HAVE_DECL_CLOCK_MONOTONIC=1",
-		"HAVE_DECODERS",
-		"HAVE_DECODER_ARM",
-		"HAVE_DECODER_ARMTHUMB",
-		"HAVE_DECODER_DELTA",
-		"HAVE_DECODER_IA64",
-		"HAVE_DECODER_LZMA1",
-		"HAVE_DECODER_LZMA2",
-		"HAVE_DECODER_POWERPC",
-		"HAVE_DECODER_SPARC",
-		"HAVE_DECODER_X86",
-		"HAVE_ENCODERS",
-		"HAVE_ENCODER_ARM",
-		"HAVE_ENCODER_ARMTHUMB",
-		"HAVE_ENCODER_DELTA",
-		"HAVE_ENCODER_IA64",
-		"HAVE_ENCODER_LZMA1",
-		"HAVE_ENCODER_LZMA2",
-		"HAVE_ENCODER_POWERPC",
-		"HAVE_ENCODER_SPARC",
-		"HAVE_ENCODER_X86",
-		"HAVE_IMMINTRIN_H",
-		"HAVE_INTTYPES_H",
-		"HAVE_MF_BT2",
-		"HAVE_MF_BT3",
-		"HAVE_MF_BT4",
-		"HAVE_MF_HC3",
-		"HAVE_MF_HC4",
-		"HAVE_PARAM_H",
-		"HAVE_STDBOOL_H",
-		"HAVE_STDINT_H",
-		"HAVE_VISIBILITY=0",
-		"HAVE__BOOL",
-		"HAVE__MM_MOVEMASK_EPI8",
-		"HAVE___BUILTIN_ASSUME_ALIGNED",
-		"HAVE___BUILTIN_BSWAPXX",
-		"MYTHREAD_POSIX",
-		"TUKLIB_CPUCORES_SYSCTL",
-		"TUKLIB_FAST_UNALIGNED_ACCESS",
-		"TUKLIB_PHYSMEM_SYSCONF",
-		"TUKLIB_SYMBOL_PREFIX=lzma_",
-		"_GNU_SOURCE",
-		"PACKAGE_BUGREPORT=\"lasse.collin@tukaani.org\"",
-		"PACKAGE_NAME=\"XZ Utils\"",
-		"PACKAGE_URL=\"https://tukaani.org/xz/\""
-	}]]
-
 	defines {
-		-- Minizip defines
-		"HAVE_BZIP2",
-		"HAVE_ICONV",
-		"HAVE_INTTYPES_H",
-		"HAVE_LIBCOMP",
-		"HAVE_LZMA",
-		"HAVE_PKCRYPT",
-		"HAVE_STDINT_H",
-		"HAVE_WZAES",
-		"HAVE_ZSTD",
-		"LZMA_API_STATIC",
-		"MZ_ZIP_SIGNING",
-		"_POSIX_C_SOURCE=200112L",
+		-- bzip2
+		"BZ_NO_STDIO",
 
-		-- liblzma defines
+		-- liblzma
+		"HAVE_VISIBILITY=0",
 		"HAVE_CHECK_CRC32",
 		"HAVE_CHECK_CRC64",
 		"HAVE_CHECK_SHA256",
-		"HAVE_CLOCK_GETTIME",
-		"HAVE_DECL_CLOCK_MONOTONIC=1",
 		"HAVE_DECODERS",
 		"HAVE_DECODER_ARM",
 		"HAVE_DECODER_ARMTHUMB",
@@ -99,36 +34,51 @@ project "minizip"
 		"HAVE_ENCODER_POWERPC",
 		"HAVE_ENCODER_SPARC",
 		"HAVE_ENCODER_X86",
-		"HAVE_IMMINTRIN_H",
+
+		"HAVE_STDBOOL_H",
+		"HAVE__BOOL",
+		"HAVE_STDINT_H",
 		"HAVE_INTTYPES_H",
+		"HAVE___BUILTIN_ASSUME_ALIGNED",
+
+		"HAVE_IMMINTRIN_H",
+		"HAVE__MM_MOVEMASK_EPI8",
 		"HAVE_MF_BT2",
 		"HAVE_MF_BT3",
 		"HAVE_MF_BT4",
 		"HAVE_MF_HC3",
 		"HAVE_MF_HC4",
-		"HAVE_PARAM_H",
-		"HAVE_STDBOOL_H",
-		"HAVE_STDINT_H",
-		"HAVE_VISIBILITY=0",
-		"HAVE__BOOL",
-		"HAVE__MM_MOVEMASK_EPI8",
-		"HAVE___BUILTIN_ASSUME_ALIGNED",
-		"HAVE___BUILTIN_BSWAPXX",
-		"MYTHREAD_POSIX",
-		"TUKLIB_CPUCORES_SYSCTL",
+
 		"TUKLIB_FAST_UNALIGNED_ACCESS",
-		"TUKLIB_PHYSMEM_SYSCONF",
 		"TUKLIB_SYMBOL_PREFIX=lzma_",
-		"_GNU_SOURCE",
+
 		"PACKAGE_BUGREPORT=\"lasse.collin@tukaani.org\"",
 		"PACKAGE_NAME=\"XZ Utils\"",
-		"PACKAGE_URL=\"https://tukaani.org/xz/\""
+		"PACKAGE_URL=\"https://tukaani.org/xz/\"",
 
+		-- zstd
+		"ZSTD_MULTITHREAD",
+		"ZSTD_HEAPMODE=0",
+		"ZSTD_LEGACY_SUPPORT=0",
+		"XXH_NAMESPACE=ZSTD_",
+
+		-- zlib
+		"NO_FSEEKO",
+
+		-- minizip
+		"HAVE_ZLIB",
+		"HAVE_BZIP2",
+		"HAVE_LZMA",
+		"LZMA_API_STATIC",
+		"HAVE_ZSTD",
+		--"MZ_ZIP_SIGNING",
+		--"HAVE_PKCRYPT",
+		--"HAVE_WZAES",
 	}
 
 	includedirs {
-		--MINIZIP_DIR,
-		--MINIZIP_DIR .. "/lib/bzip2",
+		MINIZIP_DIR,
+		MINIZIP_DIR .. "/lib/bzip2",
 		LZMA_DIR,
 		LZMA_DIR .. "common",
 		LZMA_DIR .. "liblzma/common",
@@ -139,18 +89,33 @@ project "minizip"
 		LZMA_DIR .. "liblzma/delta",
 		LZMA_DIR .. "liblzma/rangecoder",
 		LZMA_DIR .. "liblzma/simple",
-		--MINIZIP_DIR .. "/zlib-ng"
-	}
-
-	sysincludedirs {
-		--MINIZIP_DIR .. "/lib/liblzma"
+		MINIZIP_DIR .. "/lib/zlib",
+		MINIZIP_DIR .. "/lib/zstd/lib"
 	}
 
 	files {
 		MINIZIP_DIR .. "/*.h",
 		MINIZIP_DIR .. "/*.c",
-		--MINIZIP_DIR .. "/lib/bzip2/**.h",
-		--MINIZIP_DIR .. "/lib/bzip2/**.c",
+
+		MINIZIP_DIR .. "/lib/bzip2/*.h",
+		MINIZIP_DIR .. "/lib/bzip2/blocksort.c",
+		MINIZIP_DIR .. "/lib/bzip2/bzlib.c",
+		MINIZIP_DIR .. "/lib/bzip2/compress.c",
+		MINIZIP_DIR .. "/lib/bzip2/crctable.c",
+		MINIZIP_DIR .. "/lib/bzip2/decompress.c",
+		MINIZIP_DIR .. "/lib/bzip2/huffman.c",
+		MINIZIP_DIR .. "/lib/bzip2/randtable.c",
+
+		MINIZIP_DIR .. "/lib/zlib/*.h",
+		MINIZIP_DIR .. "/lib/zlib/*.c",
+
+		MINIZIP_DIR .. "/lib/zstd/lib/common/*.h",
+		MINIZIP_DIR .. "/lib/zstd/lib/common/*.c",
+		MINIZIP_DIR .. "/lib/zstd/lib/compress/*.h",
+		MINIZIP_DIR .. "/lib/zstd/lib/compress/*.c",
+		MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.h",
+		MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.c",
+
 		--MINIZIP_DIR .. "/zlib-ng/*.h",
 		--MINIZIP_DIR .. "/zlib-ng/*.c"
 	}
@@ -324,6 +289,10 @@ project "minizip"
 		defines {
 			"WIN32",
 			"_WINDOWS",
+			"_CRT_SECURE_NO_WARNINGS",
+
+			-- liblzma
+			"MYTHREAD_VISTA",
 		}
 
 		files {
@@ -333,6 +302,11 @@ project "minizip"
 		}
 
 	filter "system:macosx"
+		defines {
+			"_POSIX_C_SOURCE=200112L",
+			"_GNU_SOURCE"
+		}
+
 		files {
 			MINIZIP_DIR .. "/mz_crypt_apple.c",
 			MINIZIP_DIR .. "/mz_strm_os_posix.c",

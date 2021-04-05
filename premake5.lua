@@ -1,3 +1,4 @@
+local config = require "config"
 newoption {
 	trigger = "emscripten",
 	description = "Build with emscripten"
@@ -13,33 +14,33 @@ iplug2.workspace "RetroPlug"
 	characterset "MBCS"
 	cppdialect "C++17"
 
-	defines { 
-		"NOMINMAX",
-		"MACOSX_DEPLOYMENT_TARGET=10.9",
-		"MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET=10.9"
-	}
-
-	xcodebuildsettings {
-		["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
-		["CODE_SIGN_IDENTITY"] = "",
-		["PROVISIONING_PROFILE_SPECIFIER"] = "",
-		["PRODUCT_BUNDLE_IDENTIFIER"] = "com.tommitytom.app.RetroPlug"
-	};
-
-	buildoptions {
-		"-mmacosx-version-min=10.9"
-	}
-
-	linkoptions {
-		"-mmacosx-version-min=10.9"
+	defines {
+		"NOMINMAX"
 	}
 
 	filter "system:macosx"
 		toolset "clang"
 		buildoptions { "-msse -msse2 -msse3 -mavx -mavx2" }
+
+		defines {
+			"MACOSX_DEPLOYMENT_TARGET=10.9",
+			"MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET=10.9"
+		}
+
 		xcodebuildsettings {
-			["MACOSX_DEPLOYMENT_TARGET"] = "10.9"
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
+			["CODE_SIGN_IDENTITY"] = "",
+			["PROVISIONING_PROFILE_SPECIFIER"] = "",
+			["PRODUCT_BUNDLE_IDENTIFIER"] = "com.tommitytom.app.RetroPlug"
 		};
+
+		buildoptions {
+			"-mmacosx-version-min=10.9"
+		}
+
+		linkoptions {
+			"-mmacosx-version-min=10.9"
+		}
 
 	configuration { "windows" }
 		cppdialect "C++latest"
@@ -72,12 +73,7 @@ project "RetroPlug"
 		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
-		"thirdparty/SameBoy/Core",
-
-		"thirdparty/iPlug2/IGraphics",
-		"thirdparty/iPlug2/IPlug",
-		"thirdparty/iPlug2/WDL",
-		"thirdparty/iPlug2/Dependencies/IGraphics/NanoSVG/src",
+		"thirdparty/SameBoy/Core"
 	}
 
 	files {
@@ -85,8 +81,6 @@ project "RetroPlug"
 		"src/retroplug/**.h",
 		"src/retroplug/**.c",
 		"src/retroplug/**.cpp",
-		"src/retroplug/**.m",
-		"src/retroplug/**.mm",
 		"src/retroplug/**.lua"
 	}
 
@@ -103,6 +97,20 @@ project "RetroPlug"
 			"src/retroplug/luawrapper/generated/CompiledScripts_common.cpp",
 			"src/retroplug/luawrapper/generated/CompiledScripts_audio.cpp",
 			"src/retroplug/luawrapper/generated/CompiledScripts_ui.cpp",
+		}
+
+	configuration { "macosx" }
+		files {
+			"src/retroplug/**.m",
+			"src/retroplug/**.mm"
+		}
+
+		-- TODO: These are temporary and used for dialog creation
+		sysincludedirs {
+			"thirdparty/iPlug2/IGraphics",
+			"thirdparty/iPlug2/IPlug",
+			"thirdparty/iPlug2/WDL",
+			"thirdparty/iPlug2/Dependencies/IGraphics/NanoSVG/src"
 		}
 
 	configuration { "windows" }
@@ -127,7 +135,7 @@ local function retroplugProject()
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core",
-		"thirdparty/iPlug2/IGraphics"
+		--"thirdparty/iPlug2/IGraphics"
 	}
 
 	includedirs {
@@ -139,10 +147,7 @@ local function retroplugProject()
 
 	files {
 		"src/plugin/**.h",
-		"src/plugin/**.cpp",
-		"resources/fonts/**",
-		"resources/RetroPlug-macOS-MainMenu.xib",
-		"resources/RetroPlug-macOS-Info.plist"
+		"src/plugin/**.cpp"
 	}
 
 	links {
@@ -161,7 +166,14 @@ local function retroplugProject()
 	configuration { "windows" }
 		links { "xinput" }
 
-	filter "files:resources/fonts/**"
+	configuration { "macosx" }
+		files {
+			"resources/fonts/**",
+			"resources/RetroPlug-macOS-MainMenu.xib",
+			"resources/RetroPlug-macOS-Info.plist"
+		}
+
+	filter { "system:macosx", "files:resources/fonts/**" }
 		buildaction "Embed"
 end
 
@@ -187,7 +199,7 @@ if _ACTION ~= "xcode4" then
 	group "Dependencies"
 		dofile("scripts/sameboy.lua")
 		dofile("scripts/lua.lua")
-		--dofile("scripts/minizip.lua")
+		dofile("scripts/minizip.lua")
 		dofile("scripts/liblsdj.lua")
 
 		if _OPTIONS["emscripten"] == nil then
