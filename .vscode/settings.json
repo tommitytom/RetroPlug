@@ -36,6 +36,7 @@
 		"PadMap",
 		"GlobalPadMap",
 		"liblsdj",
-		"LsdjError"
+		"LsdjError",
+		"lsdj_error_t"
 	]
 }

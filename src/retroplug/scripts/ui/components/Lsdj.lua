@@ -151,10 +151,9 @@ end
 local function createSongsMenu(system, menu, sav)
 	menu:action("Import (and reset)...", function()
 		dialog.loadFiles({ SONG_FILTER, SAV_FILTER }, function(paths)
-			local err = sav:importSongs(paths)
+			local err = sav:importSongs(paths[1])
 			if err == nil then
-				sav:toBuffer(system:sram())
-				system:setSram(system:sram(), true)
+				system:setSram(sav:toBuffer(), true)
 			else
 				print("Import failed:")
 				table.foreach(err, print)
@@ -206,7 +205,7 @@ local function createKitsMenu(system, menu, rom)
 			if err == nil then
 				system:setRom(rom:toBuffer(), true)
 			else
-				-- Log error
+				log.error(err)
 			end
 		end)
 	end)

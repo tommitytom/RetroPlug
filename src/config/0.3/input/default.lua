@@ -3,6 +3,7 @@ InputConfig({
 	author = "tommitytom"
 })
 
+-- Keyboard keys mapped to gameboy buttons
 KeyMap({
 	[Key.UpArrow] = Button.Up,
 	[Key.LeftArrow] = Button.Left,
@@ -16,11 +17,13 @@ KeyMap({
 	[Key.D] = Button.A,
 })
 
+-- Keyboard keys mapped to global events, regardless of what gameboy is selected
 GlobalKeyMap({
 	[Key.Tab] = Action.RetroPlug.NextSystem,
 	[{ Key.Ctrl, Key.S }] = Action.RetroPlug.SaveProject
 })
 
+-- Gamepad buttons mapped to gameboy buttons
 PadMap({
 	[Pad.Up] = Button.Up,
 	[Pad.Left] = Button.Left,
@@ -38,6 +41,7 @@ PadMap({
 	[Pad.B] = Button.A
 })
 
+-- Gamepad buttons mapped to global events, regardless of what gameboy is selected
 GlobalPadMap({
 	[Pad.Y] = Action.RetroPlug.NextSystem
 })
@@ -54,9 +58,12 @@ KeyMap({ romName = "LSDj*" }, {
 	[Key.Esc] = Action.Lsdj.CancelSelection,
 })
 
+--[[
+-- TODO: Implement host specialization (reaper eats ctrl)
 KeyMap({ romName = "LSDj*", host = HostType.Reaper }, {
 	[Key.Shift] = Button.Select
 })
+]]
 
 -- Gamepad button presses specific to LSDj
 PadMap({ romName = "LSDj*" }, {

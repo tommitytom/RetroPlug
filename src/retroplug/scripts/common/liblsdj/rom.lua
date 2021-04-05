@@ -6,6 +6,7 @@ local Kit = require("liblsdj.kit")
 
 local BANK_COUNT = 64
 local BANK_SIZE = 0x4000
+local ROM_SIZE = 1048576
 
 local function bankIsKit(bank)
 	return string.byte(bank:get(0)) == 0x60 and string.byte(bank:get(1)) == 0x40
@@ -44,11 +45,15 @@ function Rom:importKits(items)
 		for _, v in ipairs(items) do
 			self:importKits(v)
 		end
-	else--if t == "userdata" then
+	elseif t == "userdata" then
 		if items:size() == BANK_SIZE then
 			self:_importKitFromBuffer(items)
-		else
+		elseif items:size() == ROM_SIZE then
 			self:_importKitsFromRom(items)
+		else
+			for _, v in ipairs(items) do
+				self:importKits(v)
+			end
 		end
 	end
 end
@@ -165,11 +170,15 @@ end
 
 function Rom:_importKitFromBuffer(kitData, targetIdx)
 	targetIdx = targetIdx or self:nextEmptyKitIdx()
-	if targetIdx > 0 then
-		self.kits[targetIdx] = Kit(kitData)
-		return true
-	else
-		print("Failed to import kit: All kit slots are in use")
+
+	local checksums = self:getKitChecksumLookup()
+	if checksums[kitData:hash(0)] ~= true then
+		if targetIdx > 0 then
+			self.kits[targetIdx] = Kit(kitData)
+			return true
+		else
+			print("Failed to import kit: All kit slots are in use")
+		end
 	end
 
 	return false
