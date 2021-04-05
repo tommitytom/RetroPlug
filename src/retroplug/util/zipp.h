@@ -40,6 +40,38 @@ namespace zipp {
 		CompressionLevel level = CompressionLevel::Best;
 	};
 
+    static const char* getErrorMessage(int err) {
+        switch (err) {
+            case MZ_OK: return "MZ_OK: OK error (zlib)";
+            case MZ_STREAM_ERROR: return "MZ_STREAM_ERROR: Stream error (zlib)";
+            case MZ_DATA_ERROR: return "MZ_DATA_ERROR: Data error (zlib)";
+            case MZ_MEM_ERROR: return "MZ_MEM_ERROR: Memory allocation error (zlib)";
+            case MZ_BUF_ERROR: return "MZ_BUF_ERROR: Buffer error (zlib)";
+            case MZ_VERSION_ERROR: return "MZ_VERSION_ERROR: Version error (zlib)";
+            case MZ_END_OF_LIST: return "MZ_END_OF_LIST: End of list error";
+            case MZ_END_OF_STREAM: return "MZ_END_OF_STREAM: End of stream error";
+            case MZ_PARAM_ERROR: return "MZ_PARAM_ERROR: Invalid parameter error";
+            case MZ_FORMAT_ERROR: return "MZ_FORMAT_ERROR: File format error";
+            case MZ_INTERNAL_ERROR: return "MZ_INTERNAL_ERROR: Library internal error";
+            case MZ_CRC_ERROR: return "MZ_CRC_ERROR: CRC error";
+            case MZ_CRYPT_ERROR: return "MZ_CRYPT_ERROR: Cryptography error";
+            case MZ_EXIST_ERROR: return "MZ_EXIST_ERROR: Does not exist error";
+            case MZ_PASSWORD_ERROR: return "MZ_PASSWORD_ERROR: Invalid password error";
+            case MZ_SUPPORT_ERROR: return "MZ_SUPPORT_ERROR: Library support error";
+            case MZ_HASH_ERROR: return "MZ_HASH_ERROR: Hash error";
+            case MZ_OPEN_ERROR: return "MZ_OPEN_ERROR: Stream open error";
+            case MZ_CLOSE_ERROR: return "MZ_CLOSE_ERROR: Stream close error";
+            case MZ_SEEK_ERROR: return "MZ_SEEK_ERROR: Stream seek error";
+            case MZ_TELL_ERROR: return "MZ_TELL_ERROR: Stream tell error";
+            case MZ_READ_ERROR: return "MZ_READ_ERROR: Stream read error";
+            case MZ_WRITE_ERROR: return "MZ_WRITE_ERROR: Stream write error";
+            case MZ_SIGN_ERROR: return "MZ_SIGN_ERROR: Signing error";
+            case MZ_SYMLINK_ERROR: return "MZ_SYMLINK_ERROR: Symbolic link error";
+        }
+        
+        return "Unknown error";
+    }
+
 	class Writer {
 	private:
 		void* _handle = nullptr;
@@ -70,7 +102,7 @@ namespace zipp {
 			_valid = err == MZ_OK;
 
 			if (_valid) {
-				err = mz_zip_writer_open(_handle, _memStream);
+				err = mz_zip_writer_open(_handle, _memStream, 0);
 				_valid = err == MZ_OK;
 
 				if (_valid) {
@@ -132,7 +164,11 @@ namespace zipp {
 			mz_zip_file entry = {};
 			entry.filename = fileName.data();
 			entry.filename_size = fileName.size();
+            entry.modified_date = time(NULL);
+            entry.version_madeby = MZ_VERSION_MADEBY;
 			entry.compression_method = (uint16_t)_settings.method;
+            entry.flag = MZ_ZIP_FLAG_UTF8;
+            
 			int32_t err = mz_zip_writer_add_buffer(_handle, (void*)data, size, &entry);
 			return err == MZ_OK;
 		}
@@ -254,6 +290,8 @@ namespace zipp {
 			if (err != MZ_OK) return false;
 			assert(size <= entryInfo->uncompressed_size);
 			if (entryInfo->uncompressed_size > size) return false;
+            err = mz_zip_reader_is_open(_handle);
+            if (err != MZ_OK) return false;
 			err = mz_zip_reader_entry_open(_handle);
 			if (err != MZ_OK) return false;
 			err = mz_zip_reader_entry_read(_handle, target, (int32_t)size);

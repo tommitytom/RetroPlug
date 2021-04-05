@@ -69,7 +69,7 @@ project "RetroPlug"
 		"thirdparty/simplefilewatcher/include",
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
-		"thirdparty/minizip",
+		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core",
@@ -123,7 +123,7 @@ local function retroplugProject()
 		"thirdparty/simplefilewatcher/include",
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
-		"thirdparty/minizip",
+		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core",
@@ -184,16 +184,14 @@ if _OPTIONS["emscripten"] == nil then
 end
 
 if _ACTION ~= "xcode4" then
+	group "Dependencies"
+		dofile("scripts/sameboy.lua")
+		dofile("scripts/lua.lua")
+		--dofile("scripts/minizip.lua")
+		dofile("scripts/liblsdj.lua")
 
-group "Dependencies"
-	dofile("scripts/sameboy.lua")
-	dofile("scripts/lua.lua")
-	dofile("scripts/minizip.lua")
-	dofile("scripts/liblsdj.lua")
-
-	if _OPTIONS["emscripten"] == nil then
-		dofile("scripts/gainput.lua")
-		dofile("scripts/simplefilewatcher.lua")
-	end
-
+		if _OPTIONS["emscripten"] == nil then
+			dofile("scripts/gainput.lua")
+			dofile("scripts/simplefilewatcher.lua")
+		end
 end
