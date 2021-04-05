@@ -20,23 +20,4 @@ fs::path getContentPath(tstring file) {
 
 	return fs::path();
 }
-#else
-
-// TODO: Should not be used from within the RetroPlug library
-//#include "IPlugPaths.h"
-
-fs::path getContentPath(tstring file) {
-    return "";
-/*	WDL_String path;
-    iplug::AppSupportPath(path);
-
-	tstring strPath = tstr(path.Get());
-    strPath += tstr("/RetroPlug/") + tstr(PLUG_VERSION_STR);
-
-    if (file.size() > 0) {
-        file = TSTR("/") + file;
-    }
-
-	return strPath + file;*/
-}
 #endif

@@ -1,5 +1,8 @@
 #include "Shell.h"
 
+#import <Foundation/Foundation.h>
+#import <AppKit/NSWorkspace.h>
+
 void openShellFolder(const tstring& path) {
     NSString* ret = (NSString*)CFStringCreateWithCString(NULL,path.c_str(),kCFStringEncodingUTF8);
     NSURL *url = [NSURL fileURLWithPath:ret isDirectory:false];

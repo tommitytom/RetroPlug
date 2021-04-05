@@ -55,8 +55,12 @@ function module.loadConfigFromString(code)
 end
 
 function module.loadConfigFromPath(path)
+	log.info("Loading config from " .. path)
+	
 	local code = loadText(path)
-	return module.loadConfigFromString(code)
+	if code then
+		return module.loadConfigFromString(code)
+	end
 end
 
 return module

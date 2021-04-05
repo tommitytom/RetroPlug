@@ -81,8 +81,6 @@ local function projectBase(targetName, name)
 	}
 
 	files {
-		"resources/resource.h",
-		"resources/main.rc",
 		"config/config.h",
 
 		_p.."iPlug/*.h",
@@ -158,6 +156,8 @@ local function projectBase(targetName, name)
 		}
 
 		files {
+			"resources/resource.h",
+			"resources/main.rc",
 			_p.."IGraphics/Platforms/IGraphicsWin.cpp",
 		}
 
@@ -263,22 +263,22 @@ function iplug2.project.app(fn, name)
 			_p.."WDL/swell/swell-modstub.mm",
 		}
 
-		links {
-			"AppKit.framework",
-			"CoreMIDI.framework",
-			"CoreAudio.framework",
-			"Cocoa.framework",
-			"Carbon.framework",
-			"CoreFoundation.framework",
-			"CoreData.framework",
-			"Foundation.framework",
-			"CoreServices.framework",
-			"Metal.framework",
-			"MetalKit.framework",
-			"QuartzCore.framework",
-			"OpenGL.framework",
-			"IOKit.framework",
-			"Security.framework"
+		linkoptions {
+			"-framework AppKit",
+			"-framework CoreMIDI",
+			"-framework CoreAudio",
+			"-framework Cocoa",
+			"-framework Carbon",
+			"-framework CoreFoundation",
+			"-framework CoreData",
+			"-framework Foundation",
+			"-framework CoreServices",
+			"-framework Metal",
+			"-framework MetalKit",
+			"-framework QuartzCore",
+			"-framework OpenGL",
+			"-framework IOKit",
+			"-framework Security"
 		}		
 
 	configuration {}
