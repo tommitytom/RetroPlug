@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>RetroPlug</string>
 	<key>CFBundleGetInfoString</key>
-	<string>RetroPlug v0.32.0 Copyright 2019 Tom Yaxley</string>
+	<string>RetroPlug v0.3.0 Copyright 2021 Tom Yaxley</string>
 	<key>CFBundleIconFile</key>
 	<string>RetroPlug.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -19,17 +19,17 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.32.0</string>
+	<string>0.3.0</string>
 	<key>CFBundleSignature</key>
 	<string>2wvF</string>
 	<key>CFBundleVersion</key>
-	<string>0.32.0</string>
+	<string>0.3.0</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>10.11.0</string>
+	<string>10.9.0</string>
 	<key>NSMainNibFile</key>
 	<string>RetroPlug-macOS-MainMenu</string>
 	<key>NSPrincipalClass</key>

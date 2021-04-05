@@ -7,4 +7,4 @@
 #include "util/xstring.h"
 #include "util/fs.h"
 
-fs::path getContentPath(tstring file = TSTR(""));
+fs::path getContentPath(tstring file = TSTR(""), bool isSystem = false);

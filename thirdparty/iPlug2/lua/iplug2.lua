@@ -81,8 +81,6 @@ local function projectBase(targetName, name)
 	}
 
 	files {
-		"resources/resource.h",
-		"resources/main.rc",
 		"config/config.h",
 
 		_p.."iPlug/*.h",
@@ -118,7 +116,15 @@ local function projectBase(targetName, name)
 	if g.backend == "nanovg" then
 		includedirs { gdep.."NanoVG/src", gdep.."NanoSVG/src" }
 		defines { "IGRAPHICS_NANOVG" }
-		files { _p.."IGraphics/Drawing/IGraphicsNanoVG.h" }
+		files { 
+			_p.."IGraphics/Drawing/IGraphicsNanoVG.h",
+			--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
+			_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m" 
+		}
+
+		filter("files:".._p.."IGraphics/Drawing/IGraphicsNanoVG_src.m")
+    		buildoptions { "-fobjc-arc" }
+		filter {}
 	end
 
 	if g.vsync == true then
@@ -150,6 +156,8 @@ local function projectBase(targetName, name)
 		}
 
 		files {
+			"resources/resource.h",
+			"resources/main.rc",
 			_p.."IGraphics/Platforms/IGraphicsWin.cpp",
 		}
 
@@ -169,7 +177,10 @@ local function projectBase(targetName, name)
 		}
 
 		files {
+			_p.."iPlug/*.mm",
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
+			_p.."IGraphics/Platforms/IGraphicsMac_view.mm",
+			_p.."IGraphics/Platforms/IGraphicsCoreText.mm",
 		}
 
 	configuration { "emscripten" }
@@ -215,8 +226,8 @@ function iplug2.project.app(fn, name)
 	}
 
 	if config.debugConsole == true then
-		configuration { "Debug" }
-			kind "ConsoleApp"
+		--configuration { "Debug" }
+			--kind "ConsoleApp"
 	end
 
 	configuration { "windows" }
@@ -242,11 +253,33 @@ function iplug2.project.app(fn, name)
 			"SWELL_APP_PREFIX=Swell_v" .. _name
 		}
 
-		links {
-			"AppKit.framework",
-			"CoreMIDI.framework",
-			"CoreAudio.framework"
+		files {
+			_p.."WDL/swell/*.h",
+			_p.."WDL/swell/*.mm",
+			_p.."WDL/swell/swell-ini.cpp",
+			_p.."WDL/swell/swell.cpp",
 		}
+		excludes {
+			_p.."WDL/swell/swell-modstub.mm",
+		}
+
+		linkoptions {
+			"-framework AppKit",
+			"-framework CoreMIDI",
+			"-framework CoreAudio",
+			"-framework Cocoa",
+			"-framework Carbon",
+			"-framework CoreFoundation",
+			"-framework CoreData",
+			"-framework Foundation",
+			"-framework CoreServices",
+			"-framework Metal",
+			"-framework MetalKit",
+			"-framework QuartzCore",
+			"-framework OpenGL",
+			"-framework IOKit",
+			"-framework Security"
+		}		
 
 	configuration {}
 

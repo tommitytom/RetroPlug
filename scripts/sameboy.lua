@@ -60,7 +60,6 @@ project "SameBoy"
 	kind "StaticLib"
 	language "C"
 	toolset "clang"
-	dependson "SameBoyBootRoms"
 
 	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
 
@@ -85,5 +84,6 @@ project "SameBoy"
 	disablewarnings { "int-in-bool-context", "unused-function", "unused-const-variable" }
 
 	configuration { "windows" }
+		dependson "SameBoyBootRoms"
 		includedirs { SAMEBOY_DIR .. "Windows" }
 		defines { "_CRT_SECURE_NO_WARNINGS" }

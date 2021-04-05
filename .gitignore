@@ -31,3 +31,4 @@ src/retroplug/luawrapper/generated
 thirdparty/bin
 thirdparty/lib
 thirdparty/build
+DerivedData

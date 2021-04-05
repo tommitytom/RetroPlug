@@ -9,11 +9,30 @@ local iplug2 = require("thirdparty/iPlug2/lua/iplug2").init()
 util.disableFastUpToDateCheck({ "RetroPlug", "configure" })
 
 iplug2.workspace "RetroPlug"
-	platforms { "x86", "x64" }
+	platforms { "x64" }
 	characterset "MBCS"
 	cppdialect "C++17"
 
-	defines { "NOMINMAX" }
+	defines { 
+		"NOMINMAX",
+		"MACOSX_DEPLOYMENT_TARGET=10.9",
+		"MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET=10.9"
+	}
+
+	xcodebuildsettings {
+		["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
+		["CODE_SIGN_IDENTITY"] = "",
+		["PROVISIONING_PROFILE_SPECIFIER"] = "",
+		["PRODUCT_BUNDLE_IDENTIFIER"] = "com.tommitytom.app.RetroPlug"
+	};
+
+	buildoptions {
+		"-mmacosx-version-min=10.9"
+	}
+
+	linkoptions {
+		"-mmacosx-version-min=10.9"
+	}
 
 	filter "system:macosx"
 		toolset "clang"
@@ -39,16 +58,26 @@ project "RetroPlug"
 		"src/retroplug"
 	}
 
+	defines {
+		"IGRAPHICS_GL2",
+		"IGRAPHICS_NANOVG"
+	}
+
 	sysincludedirs {
 		"thirdparty",
 		"thirdparty/gainput/lib/include",
 		"thirdparty/simplefilewatcher/include",
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
-		"thirdparty/minizip",
+		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
-		"thirdparty/SameBoy/Core"
+		"thirdparty/SameBoy/Core",
+
+		"thirdparty/iPlug2/IGraphics",
+		"thirdparty/iPlug2/IPlug",
+		"thirdparty/iPlug2/WDL",
+		"thirdparty/iPlug2/Dependencies/IGraphics/NanoSVG/src",
 	}
 
 	files {
@@ -56,6 +85,8 @@ project "RetroPlug"
 		"src/retroplug/**.h",
 		"src/retroplug/**.c",
 		"src/retroplug/**.cpp",
+		"src/retroplug/**.m",
+		"src/retroplug/**.mm",
 		"src/retroplug/**.lua"
 	}
 
@@ -92,13 +123,15 @@ local function retroplugProject()
 		"thirdparty/simplefilewatcher/include",
 		"thirdparty/lua-5.3.5/src",
 		"thirdparty/liblsdj/liblsdj/include/lsdj",
-		"thirdparty/minizip",
+		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
-		"thirdparty/SameBoy/Core"
+		"thirdparty/SameBoy/Core",
+		"thirdparty/iPlug2/IGraphics"
 	}
 
 	includedirs {
+		".",
 		"src",
 		"src/retroplug",
 		"src/plugin"
@@ -108,6 +141,8 @@ local function retroplugProject()
 		"src/plugin/**.h",
 		"src/plugin/**.cpp",
 		"resources/fonts/**",
+		"resources/RetroPlug-macOS-MainMenu.xib",
+		"resources/RetroPlug-macOS-Info.plist"
 	}
 
 	links {
@@ -125,6 +160,9 @@ local function retroplugProject()
 
 	configuration { "windows" }
 		links { "xinput" }
+
+	filter "files:resources/fonts/**"
+		buildaction "Embed"
 end
 
 dofile("scripts/configure.lua")
@@ -145,13 +183,15 @@ if _OPTIONS["emscripten"] == nil then
 			links { "lua" }
 end
 
-group "Dependencies"
-	dofile("scripts/sameboy.lua")
-	dofile("scripts/lua.lua")
-	dofile("scripts/minizip.lua")
-	dofile("scripts/liblsdj.lua")
+if _ACTION ~= "xcode4" then
+	group "Dependencies"
+		dofile("scripts/sameboy.lua")
+		dofile("scripts/lua.lua")
+		--dofile("scripts/minizip.lua")
+		dofile("scripts/liblsdj.lua")
 
-	if _OPTIONS["emscripten"] == nil then
-		dofile("scripts/gainput.lua")
-		dofile("scripts/simplefilewatcher.lua")
-	end
+		if _OPTIONS["emscripten"] == nil then
+			dofile("scripts/gainput.lua")
+			dofile("scripts/simplefilewatcher.lua")
+		end
+end

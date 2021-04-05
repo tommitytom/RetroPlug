@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Menu.h"
-#include "platform/FileDialog.h"
+#include "FileDialog.h"
 
 using DialogRequestPtr = std::shared_ptr<DialogRequest>;
 

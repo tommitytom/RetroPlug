@@ -133,7 +133,7 @@ tstring BasicFileSave(void* ui, const std::vector<FileDialogFilters>& filters, c
 #else
 
 #undef T
-//#include "IGraphics.h"
+#include "IGraphics.h"
 
 using namespace iplug;
 using namespace igraphics;
@@ -143,25 +143,24 @@ struct IGraphics;
 }
 
 std::vector<tstring> BasicFileOpen(IGraphics* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect, bool foldersOnly) {
-	/*WDL_String fileName;
+	WDL_String fileName;
 	WDL_String path;
-	ui->PromptForFile(fileName, path, EFileAction::Open);*/
+	ui->PromptForFile(fileName, path, EFileAction::Open);
 
 	std::vector<tstring> ret;
-	/*if (path.GetLength() > 0 && fileName.GetLength() > 0) {
+	if (path.GetLength() > 0 && fileName.GetLength() > 0) {
 		ret.push_back(tstr(fileName.Get()));
-	}*/
+	}
 
 	return ret;
 }
 
 tstring BasicFileSave(IGraphics* ui, const std::vector<FileDialogFilters>& filters, const tstring& fileName) {
-/*	WDL_String f(ws2s(fileName).c_str());
+	WDL_String f(ws2s(fileName).c_str());
 	WDL_String path;
 	ui->PromptForFile(f, path, EFileAction::Save);
 
-	return tstr(f.Get());*/
-    return "";
+	return tstr(f.Get());
 }
 
 
