@@ -20,7 +20,6 @@ iplug2.workspace "RetroPlug"
 
 	filter "system:macosx"
 		toolset "clang"
-		buildoptions { "-msse -msse2 -msse3 -mavx -mavx2" }
 
 		defines {
 			"MACOSX_DEPLOYMENT_TARGET=10.9",
@@ -40,6 +39,10 @@ iplug2.workspace "RetroPlug"
 
 		linkoptions {
 			"-mmacosx-version-min=10.9"
+		}
+
+		links {
+			"z"
 		}
 
 	configuration { "windows" }

@@ -65,6 +65,30 @@ project "minizip"
 		-- zlib
 		"NO_FSEEKO",
 
+		-- zlib-ng
+		--[["ZLIBNG_VERNUM=0x2020",
+		"HAVE_BUILTIN_CTZ",
+		"HAVE_BUILTIN_CTZLL",
+		"HAVE_SYS_SDT_H",
+		"HAVE_VISIBILITY_HIDDEN",
+		"HAVE_VISIBILITY_INTERNAL",
+		"UNALIGNED64_OK",
+		"UNALIGNED_OK",
+		"WITH_GZFILEOP",
+		"X86_AVX2",
+		"X86_AVX2_ADLER32",
+		"X86_AVX_CHUNKSET",
+		"X86_FEATURES",
+		"X86_PCLMULQDQ_CRC",
+		"X86_SSE2",
+		"X86_SSE2_CHUNKSET",
+		"X86_SSE2_SLIDEHASH",
+		"X86_SSE42_CMP_STR",
+		"X86_SSE42_CRC_HASH",
+		"X86_SSE42_CRC_INTRIN",
+		"X86_SSSE3",
+		"X86_SSSE3_ADLER32",]]
+		
 		-- minizip
 		"HAVE_ZLIB",
 		"HAVE_BZIP2",
@@ -89,7 +113,8 @@ project "minizip"
 		LZMA_DIR .. "liblzma/delta",
 		LZMA_DIR .. "liblzma/rangecoder",
 		LZMA_DIR .. "liblzma/simple",
-		MINIZIP_DIR .. "/lib/zlib",
+		--MINIZIP_DIR .. "/lib/zlib-ng",
+		--MINIZIP_DIR .. "/lib/zlib",
 		MINIZIP_DIR .. "/lib/zstd/lib"
 	}
 
@@ -106,8 +131,13 @@ project "minizip"
 		MINIZIP_DIR .. "/lib/bzip2/huffman.c",
 		MINIZIP_DIR .. "/lib/bzip2/randtable.c",
 
-		MINIZIP_DIR .. "/lib/zlib/*.h",
-		MINIZIP_DIR .. "/lib/zlib/*.c",
+		--MINIZIP_DIR .. "/lib/zlib/*.h",
+		--MINIZIP_DIR .. "/lib/zlib/*.c",
+
+		--MINIZIP_DIR .. "/lib/zlib-ng/*.h",
+		--MINIZIP_DIR .. "/lib/zlib-ng/*.c",
+		--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.h",
+		--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.c",
 
 		MINIZIP_DIR .. "/lib/zstd/lib/common/*.h",
 		MINIZIP_DIR .. "/lib/zstd/lib/common/*.c",
@@ -115,9 +145,6 @@ project "minizip"
 		MINIZIP_DIR .. "/lib/zstd/lib/compress/*.c",
 		MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.h",
 		MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.c",
-
-		--MINIZIP_DIR .. "/zlib-ng/*.h",
-		--MINIZIP_DIR .. "/zlib-ng/*.c"
 	}
 
 	files {
@@ -304,7 +331,10 @@ project "minizip"
 	filter "system:macosx"
 		defines {
 			"_POSIX_C_SOURCE=200112L",
-			"_GNU_SOURCE"
+			"_GNU_SOURCE",
+
+			-- liblzma
+			"MYTHREAD_POSIX"
 		}
 
 		files {
@@ -313,7 +343,17 @@ project "minizip"
 			MINIZIP_DIR .. "/mz_os_posix.c"
 		}
 
-		buildoptions { "-msse2" }
+		--[[filter { "system:macosx", "files:**/crc_folding.c" }
+			buildoptions { "-mssse3", "-msse4", "-mpclmul" }
+
+		filter { "system:macosx", "files:**/*_avx.c" }
+			buildoptions { "-mavx2" }
+
+		filter { "system:macosx", "files:**/*_sse.c" }
+			buildoptions { "-msse4" }
+
+		filter { "system:macosx", "files:**/*_sse3.c" }
+			buildoptions { "-msse3" }]]
 
 	filter "system:linux"
 		files {
