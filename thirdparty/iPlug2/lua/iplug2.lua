@@ -216,6 +216,8 @@ function iplug2.project.app(fn, name)
 	filter { "system:windows", "configurations:Debug" }
 		kind "ConsoleApp"
 
+	filter {}
+
 	defines { "APP_API" }
 
 	if config.allowMultiple == true then
@@ -371,11 +373,11 @@ function iplug2.project.auv3(fn, name)
 	}
 
 	configuration { "macosx" }
-		links {
-			"AudioToolbox.framework",
-			"AVFoundation.framework",
-			"CoreAudio.framework",
-			"CoreAudioKit.framework"
+		linksoptions {
+			"-framework AudioToolbox",
+			"-framework AVFoundation",
+			"-framework CoreAudio",
+			"-framework CoreAudioKit"
 		}
 
 	configuration {}
