@@ -62,6 +62,8 @@ function View:initProject()
 end
 
 function View:onKey(key, down)
+	print(key, down)
+
 	if self._keyFilter:onKey(key, down) == true then
 		self.model:emit("onKey", key, down)
 	end

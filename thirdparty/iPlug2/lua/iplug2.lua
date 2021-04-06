@@ -187,8 +187,11 @@ local function projectBase(targetName, name)
 
 		files {
 			_p.."iPlug/*.mm",
+			_p.."IGraphics/Platforms/IGraphicsMac.h",
 			_p.."IGraphics/Platforms/IGraphicsMac.mm",
+			_p.."IGraphics/Platforms/IGraphicsMac_view.h",
 			_p.."IGraphics/Platforms/IGraphicsMac_view.mm",
+			_p.."IGraphics/Platforms/IGraphicsCoreText.h",
 			_p.."IGraphics/Platforms/IGraphicsCoreText.mm",
 		}
 

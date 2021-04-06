@@ -156,6 +156,7 @@ using namespace igraphics;
 - (void) scrollWheel: (NSEvent*) pEvent;
 - (void) keyDown: (NSEvent*) pEvent;
 - (void) keyUp: (NSEvent*) pEvent;
+- (void) flagsChanged:(NSEvent *) pEvent;
 //text entry
 - (void) removeFromSuperview;
 - (void) controlTextDidEndEditing: (NSNotification*) pNotification;

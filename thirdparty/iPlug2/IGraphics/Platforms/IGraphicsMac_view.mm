@@ -35,6 +35,10 @@ static int MacKeyCodeToVK(int code)
   switch (code)
   {
     case 51: return kVK_BACK;
+    case 55: return kVK_CONTROL;
+    case 56: return kVK_SHIFT;
+    case 58: return kVK_MENU;
+    case 59: return kVK_LWIN;
     case 65: return kVK_DECIMAL;
     case 67: return kVK_MULTIPLY;
     case 69: return kVK_ADD;
@@ -891,6 +895,37 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   {
     [[self nextResponder] keyUp:pEvent];
   }
+}
+
+- (void) flagsChanged:(NSEvent *) pEvent
+{
+    int rawcode = [pEvent keyCode];
+
+    int code = MacKeyCodeToVK(rawcode);
+    if (code == 0) {
+        return;
+    }
+    
+    char utf8[5] = { '\n' };
+    IKeyPress keyPress {utf8, code, static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagShift),
+                                    static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagCommand),
+                                    static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagOption)};
+    bool down = false;
+    if (code == kVK_CONTROL) {
+        down = keyPress.C;
+    } else if (code == kVK_SHIFT) {
+        down = keyPress.S;
+    } else if (code == kVK_MENU) {
+        down = keyPress.A;
+    } else if (code == kVK_LWIN) {
+        down = [pEvent modifierFlags] & NSEventModifierFlagControl;
+    }
+    
+    if (down) {
+        mGraphics->OnKeyDown(mPrevX, mPrevY, keyPress);
+    } else {
+        mGraphics->OnKeyUp(mPrevX, mPrevY, keyPress);
+    }
 }
 
 - (void) scrollWheel: (NSEvent*) pEvent
