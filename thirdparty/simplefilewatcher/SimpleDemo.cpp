@@ -28,7 +28,6 @@
 
 #include <FileWatcher/FileWatcher.h>
 #include <iostream>
-#include <stdio.h>
 
 /// Processes a file action
 class UpdateListener : public FW::FileWatchListener
@@ -38,8 +37,7 @@ public:
 	void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename,
 		FW::Action action)
 	{
-		std::cout << filename << std::endl;
-		std::cout << L"DIR (" << dir << L") FILE (" << filename << L") has event " << action << std::endl;
+		std::cout << "DIR (" << dir + ") FILE (" + filename + ") has event " << action << std::endl;
 	}
 };
 
@@ -48,16 +46,11 @@ int main(int argc, char **argv)
 {
 	try 
 	{
-		// create the listener (before the file watcher - so it gets destroyed after the file watcher)
-		UpdateListener listener;
-		
 		// create the file watcher object
 		FW::FileWatcher fileWatcher;
 
 		// add a watch to the system
-		// the file watcher doesn't manage the pointer to the listener - so make sure you don't just
-		// allocate a listener here and expect the file watcher to manage it - there will be a leak!
-		FW::WatchID watchID = fileWatcher.addWatch(L"./test", &listener, true); 
+		FW::WatchID watchID = fileWatcher.addWatch("./test", new UpdateListener(), true);
 		
 		std::cout << "Press ^C to exit demo" << std::endl;
 

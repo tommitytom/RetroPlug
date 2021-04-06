@@ -51,4 +51,4 @@ Written by James Wynn
 Contact: james@jameswynn.com
 
 The most recent version can be located at:
-http://simplefilewatcher.googlecode.com
+https://github.com/jameswynn/simplefilewatcher

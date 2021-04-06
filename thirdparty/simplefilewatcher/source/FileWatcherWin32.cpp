@@ -49,8 +49,7 @@ namespace FW
 		bool mStopNow;
 		FileWatcherImpl* mFileWatcher;
 		FileWatchListener* mFileWatchListener;
-		TCHAR* mDirName;
-
+		char* mDirName;
 		WatchID mWatchid;
 		bool mIsRecursive;
 	};
@@ -129,7 +128,7 @@ namespace FW
 
 			CloseHandle(pWatch->mOverlapped.hEvent);
 			CloseHandle(pWatch->mDirHandle);
-			delete [] pWatch->mDirName;
+			delete pWatch->mDirName;
 			HeapFree(GetProcessHeap(), 0, pWatch);
 		}
 	}
@@ -192,7 +191,7 @@ namespace FW
 		WatchID watchid = ++mLastWatchID;
 
 		WatchStruct* watch = CreateWatch(directory.c_str(), recursive,
-			FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
+			FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_FILE_NAME);
 
 		if(!watch)
 			throw FileNotFoundException(directory);
@@ -200,8 +199,8 @@ namespace FW
 		watch->mWatchid = watchid;
 		watch->mFileWatcher = this;
 		watch->mFileWatchListener = watcher;
-		watch->mDirName = new TCHAR[directory.length()+1];
-		std::memcpy(watch->mDirName, directory.c_str(), (directory.length() + 1) * sizeof(TCHAR));
+		watch->mDirName = new char[directory.length()+1];
+		strcpy(watch->mDirName, directory.c_str());
 
 		mWatches.insert(std::make_pair(watchid, watch));
 

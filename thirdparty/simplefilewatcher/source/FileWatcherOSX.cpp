@@ -1,16 +1,13 @@
 /**
 	Copyright (c) 2009 James Wynn (james@jameswynn.com)
-
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
 	in the Software without restriction, including without limitation the rights
 	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 	copies of the Software, and to permit persons to whom the Software is
 	furnished to do so, subject to the following conditions:
-
 	The above copyright notice and this permission notice shall be included in
 	all copies or substantial portions of the Software.
-
 	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -18,7 +15,6 @@
 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 	THE SOFTWARE.
-
 	James Wynn james@jameswynn.com
 */
 
@@ -35,6 +31,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <string.h>
+#include <stack>
 
 
 namespace FW
@@ -360,7 +357,7 @@ namespace FW
 	}
 
 	//--------
-	WatchID FileWatcherOSX::addWatch(const String& directory, FileWatchListener* watcher, bool recursive)
+	WatchID FileWatcherOSX::addWatch(const String& startDirectory, FileWatchListener* watcher, bool recursive)
 	{
 /*		int fd = open(directory.c_str(), O_RDONLY);
 		if(fd == -1)
@@ -372,8 +369,48 @@ namespace FW
 			   0, (void*)"testing");
 */
 		
-		WatchStruct* watch = new WatchStruct(++mLastWatchID, directory, watcher);
+		WatchStruct* watch = new WatchStruct(++mLastWatchID, startDirectory, watcher);
 		mWatches.insert(std::make_pair(mLastWatchID, watch));
+
+		if (recursive)
+        {
+            std::stack<std::string> directoryStack;
+            directoryStack.push(startDirectory);
+            while(!directoryStack.empty())
+            {
+                String currentDirectory = directoryStack.top();
+                directoryStack.pop();
+                
+                // scan directory and call addFile(name, false) on each file
+                DIR* dir = opendir(currentDirectory.c_str());
+                if(!dir)
+                    throw FileNotFoundException(currentDirectory);
+                
+                if (currentDirectory != startDirectory)
+                {
+                    WatchStruct* watch = new WatchStruct(++mLastWatchID, currentDirectory, watcher);
+                    mWatches.insert(std::make_pair(mLastWatchID, watch));
+                }
+                
+                struct dirent* entry;
+                struct stat attrib;
+                while((entry = readdir(dir)) != NULL)
+                {
+                    String filename = String(entry->d_name);
+                    String fullFilepath = (currentDirectory + "/" + String(entry->d_name));
+                    stat(fullFilepath.c_str(), &attrib);
+                    if(S_ISDIR(attrib.st_mode))
+                    {
+                        if ((filename != ".") && (filename != "..") && (filename != ".svn") && (filename != ".git"))
+                            directoryStack.push(fullFilepath);
+                    }
+                }
+                
+                closedir(dir);
+            }
+        }
+
+
 		return mLastWatchID;
 	}
 
