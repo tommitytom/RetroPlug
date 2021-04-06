@@ -9,6 +9,7 @@
 #include "platform/Menu.h"
 #include "model/ButtonStream.h"
 #include "platform/FileDialog.h"
+#include "platform/Os.h"
 
 bool isNullPtr(const sol::object o) {
 	switch (o.get_type()) {
@@ -28,6 +29,16 @@ void luawrappers::registerCommon(sol::state& s) {
 	s["_RETROPLUG_VERSION"].set(PLUG_VERSION_STR);
 	s["_PROJECT_VERSION"].set(PROJECT_VERSION);
 	s["_consolePrint"].set_function(consoleLog);
+
+	s.new_enum("OperatingSystemType",
+		"Unknown", os::OperatingSystemType::Unknown,
+		"Windows", os::OperatingSystemType::Windows,
+		"MacOs", os::OperatingSystemType::MacOs,
+		"Linux", os::OperatingSystemType::Linux,
+		"Web", os::OperatingSystemType::Web
+	);
+	
+	s["_OPERATING_SYSTEM"].set(os::CURRENT);
 
 	s.new_enum("MenuItemType",
 		"None", MenuItemType::None,

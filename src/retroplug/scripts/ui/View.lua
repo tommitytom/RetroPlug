@@ -62,8 +62,6 @@ function View:initProject()
 end
 
 function View:onKey(key, down)
-	print(key, down)
-
 	if self._keyFilter:onKey(key, down) == true then
 		self.model:emit("onKey", key, down)
 	end
@@ -137,6 +135,17 @@ end
 
 function View:onReloadEnd()
 
+end
+
+function View:onFrame(delta)
+	local releases = self._keyFilter:getKeyReleases(delta)
+
+	if releases then
+		for _, v in ipairs(releases) do
+			self.model:emit("onKey", v, false)
+			print("releasing " .. v)
+		end
+	end
 end
 
 function View:saveState(target)

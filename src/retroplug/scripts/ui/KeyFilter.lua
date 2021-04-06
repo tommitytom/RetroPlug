@@ -23,28 +23,37 @@ function KeyFilter:onKey(key, down)
 	return true
 end
 
-function KeyFilter:update(delta)
+function KeyFilter:getKeyReleases(delta)
+	if _OPERATING_SYSTEM ~= OperatingSystemType.MacOs then
+		return
+	end
+
 	-- This is a bit gross.  On MacOs you don't receive key up events when
 	-- the command key is being held (referred to here as control).
 	-- To get around this, while the command key is held, all button presses that
-	-- are not modifier keys will be automatically released after an arbitrary 
+	-- are not modifier keys will be automatically released after an arbitrary
 	-- time period (currently 50ms).
 
-	if self._ctrlHeld then
+	if self._ctrlHeld == true then
 		local removals = {}
-		for k, v in pairs(self._keyState) do
-			local remaining = v - delta
 
-			if remaining <= 0 then
-				table.insert(removals, k)
-			else
-				self._keyState[k] = remaining
+		for k, v in pairs(self._keyState) do
+			if k ~= Key.Ctrl then
+				local remaining = v - delta
+
+				if remaining <= 0 then
+					table.insert(removals, k)
+				else
+					self._keyState[k] = remaining
+				end
 			end
 		end
 
 		for _, v in ipairs(removals) do
 			self._keyState[v] = nil
 		end
+
+		return removals
 	end
 end
 

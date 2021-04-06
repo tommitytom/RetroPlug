@@ -35,8 +35,8 @@ void UiLuaContext::update(double delta) {
 		_reload = false;
 	}
 
-	if (!_haltFrameProcessing) {
-		//_haltFrameProcessing = !callFunc(_state, "_frame", delta);
+	if (_valid && !_haltFrameProcessing) {
+		_haltFrameProcessing = !callFunc(_viewRoot, "onFrame", delta);
 	}
 }
 
