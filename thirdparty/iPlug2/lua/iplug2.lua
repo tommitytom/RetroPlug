@@ -120,11 +120,6 @@ local function projectBase(targetName, name)
 			_p.."IGraphics/Drawing/IGraphicsNanoVG.h",
 		}
 
-		configuration { "windows" }
-			files {
-				--_p.."IGraphics/Drawing/IGraphicsNanoVG.cpp",
-			}
-
 		configuration { "macosx" }
 			files {
 				_p.."IGraphics/Drawing/IGraphicsNanoVG_src.m"
@@ -215,7 +210,11 @@ function iplug2.project.app(fn, name)
 	if _OPTIONS["emscripten"] ~= nil then return end
 
 	local config = projectBase("app", name)
+
 	kind "WindowedApp"
+
+	filter { "system:windows", "configurations:Debug" }
+		kind "ConsoleApp"
 
 	defines { "APP_API" }
 

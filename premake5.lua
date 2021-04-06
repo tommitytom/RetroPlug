@@ -102,7 +102,12 @@ project "RetroPlug"
 			"src/retroplug/luawrapper/generated/CompiledScripts_ui.cpp",
 		}
 
+	configuration { "linux" }
+		defines { "RP_LINUX", "RP_POSIX" }
+
 	configuration { "macosx" }
+		defines { "RP_MACOS", "RP_POSIX" }
+
 		files {
 			"src/retroplug/**.m",
 			"src/retroplug/**.mm"
@@ -119,6 +124,7 @@ project "RetroPlug"
 	configuration { "windows" }
 		disablewarnings { "4996", "4250", "4018", "4267", "4068", "4150" }
 		defines {
+			"RP_WINDOWS",
 			"NOMINMAX",
 			"WIN32",
 			"WIN64",
@@ -167,14 +173,19 @@ local function retroplugProject()
 		symbols "Full"
 
 	configuration { "windows" }
+		defines { "RP_WINDOWS" }
 		links { "xinput" }
 
 	configuration { "macosx" }
+		defines { "RP_MACOS", "RP_POSIX" }
 		files {
 			"resources/fonts/**",
 			"resources/RetroPlug-macOS-MainMenu.xib",
 			"resources/RetroPlug-macOS-Info.plist"
 		}
+
+	configuration { "linux" }
+		defines { "RP_LINUX", "RP_POSIX" }
 
 	filter { "system:macosx", "files:resources/fonts/**" }
 		buildaction "Embed"

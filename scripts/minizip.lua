@@ -88,7 +88,7 @@ project "minizip"
 		"X86_SSE42_CRC_INTRIN",
 		"X86_SSSE3",
 		"X86_SSSE3_ADLER32",]]
-		
+
 		-- minizip
 		"HAVE_ZLIB",
 		"HAVE_BZIP2",
@@ -113,8 +113,6 @@ project "minizip"
 		LZMA_DIR .. "liblzma/delta",
 		LZMA_DIR .. "liblzma/rangecoder",
 		LZMA_DIR .. "liblzma/simple",
-		--MINIZIP_DIR .. "/lib/zlib-ng",
-		--MINIZIP_DIR .. "/lib/zlib",
 		MINIZIP_DIR .. "/lib/zstd/lib"
 	}
 
@@ -130,14 +128,6 @@ project "minizip"
 		MINIZIP_DIR .. "/lib/bzip2/decompress.c",
 		MINIZIP_DIR .. "/lib/bzip2/huffman.c",
 		MINIZIP_DIR .. "/lib/bzip2/randtable.c",
-
-		--MINIZIP_DIR .. "/lib/zlib/*.h",
-		--MINIZIP_DIR .. "/lib/zlib/*.c",
-
-		--MINIZIP_DIR .. "/lib/zlib-ng/*.h",
-		--MINIZIP_DIR .. "/lib/zlib-ng/*.c",
-		--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.h",
-		--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.c",
 
 		MINIZIP_DIR .. "/lib/zstd/lib/common/*.h",
 		MINIZIP_DIR .. "/lib/zstd/lib/common/*.c",
@@ -322,10 +312,23 @@ project "minizip"
 			"MYTHREAD_VISTA",
 		}
 
+		includedirs {
+			--MINIZIP_DIR .. "/lib/zlib-ng",
+			MINIZIP_DIR .. "/lib/zlib",
+		}
+
 		files {
 			MINIZIP_DIR .. "/mz_crypt_win32.c",
 			MINIZIP_DIR .. "/mz_strm_os_win32.c",
-			MINIZIP_DIR .. "/mz_os_win32.c"
+			MINIZIP_DIR .. "/mz_os_win32.c",
+
+			MINIZIP_DIR .. "/lib/zlib/*.h",
+			MINIZIP_DIR .. "/lib/zlib/*.c",
+
+			--MINIZIP_DIR .. "/lib/zlib-ng/*.h",
+			--MINIZIP_DIR .. "/lib/zlib-ng/*.c",
+			--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.h",
+			--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.c",
 		}
 
 	filter "system:macosx"
