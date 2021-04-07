@@ -327,6 +327,18 @@ void SameBoyPlug::updateMultiple(SameBoyPlug** plugs, size_t plugCount, size_t a
 	}
 
 	for (size_t i = 0; i < plugCount; i++) {
+		SameBoyPlugState* s = st[i];
+		size_t buttonRemain = s->buttonQueue.size();
+
+		for (size_t i = 0; i < buttonRemain; i++) {
+			OffsetButton button = s->buttonQueue.front();
+			button.offset -= s->currentAudioFrames;
+			s->buttonQueue.push(button);
+			s->buttonQueue.pop();
+		}
+	}	
+
+	for (size_t i = 0; i < plugCount; i++) {
 		plugs[i]->updateAV(audioFrames);
 	}
 }

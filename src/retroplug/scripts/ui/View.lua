@@ -143,7 +143,6 @@ function View:onFrame(delta)
 	if releases then
 		for _, v in ipairs(releases) do
 			self.model:emit("onKey", v, false)
-			print("releasing " .. v)
 		end
 	end
 end

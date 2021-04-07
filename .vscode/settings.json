@@ -37,6 +37,8 @@
 		"GlobalPadMap",
 		"liblsdj",
 		"LsdjError",
-		"lsdj_error_t"
+		"lsdj_error_t",
+		"_OPERATING_SYSTEM",
+		"OperatingSystemType"
 	]
 }

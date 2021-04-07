@@ -7,7 +7,7 @@ namespace os {
 		Windows,
 		MacOs,
 		Linux,
-		Web,
+		Web
 	};
 
 #ifdef RP_WINDOWS
@@ -21,4 +21,6 @@ namespace os {
 #else
 	constexpr OperatingSystemType CURRENT = OperatingSystemType::Unknown;
 #endif
+
+	static_assert(CURRENT != OperatingSystemType::Unknown, "An operating system define needs to be specified!");
 }
