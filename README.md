@@ -1,35 +1,51 @@
 # RetroPlug
-A VST wrapper around the SameBoy GameBoy emulator, with Arduinoboy support
+A frontend for the SameBoy GameBoy emulator, with a focus on music creation.  It is cross platform (Windows, MacOS) and can be used as an audio plugin (VST, AU) in your favourite DAW!
 
 ## Features
-- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.12.1
+- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.14.2
 - Full MIDI support for [mGB](https://github.com/trash80/mGB)
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes
-- Realtime LSDj sample patching!
+- LSDj tooling - Realtime sample patching, .sav manipulation
 - Lua scripting
-
-## Current Limitations (subject to change)
-- VST2 only
-- Windows only
-- 64bit only
 
 ## Download
 Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to download the latest version.
 
+## Installation
+- Standalone:
+  - Currently the standalone build is provided as a single executable file that can be placed anywhere you'd like.
+- VST (Windows and MacOS):
+  - Place the plugin in your VST search path.  These paths can generally be configured in your DAW, though the following tend to be the recommended defaults:
+    - VST2 (Windows): `C:\Program Files\Common Files\VST2`
+    - VST3 (Windows): `C:\Program Files\Common Files\VST3`
+    - VST2 (MacOS): `/Library/Audio/Plug-ins/VST`
+    - VST3 (MacOS): `/Library/Audio/Plug-ins/VST3`
+
+- AU (MacOS):
+  - All AU plugins go in the following folder: `/Library/Audio/Plug-Ins/Components`
+
 ## Usage
-- Load it as you would any normal VST
+
 - Double click to open file browser, or drag a rom on to the UI to load
 - A .sav with the same name as your rom will be loaded if it is present
 - Right click to bring up a menu with various options
 - The emulator state is saved in to the project file in your DAW when you hit save, which will persist your changes.  **YOUR .sav IS NOT AUTO SAVED**.  If you want to save out the .sav then do so from the SRAM context menu.
-- To edit button mapping, go to `Settings -> Open Settings Folder...` and edit `buttons.json` (full list of button names below)
 - For mGB, the usual Arduinoboy rules apply: https://github.com/trash80/mGB - no additional config needed, just throw notes at it!
 - For LSDj, an additional menu will appear in the settings menu, allowing you to set sync modes (Arduinoboy emulation)
 
-## Button Mapping
-Input button mapping is currently only configurable with Lua configuration files.  Both keyboard and joypad buttons can be mapped in the same file.  On first run a config file is written to `C:\Users\USERNAME\AppData\Roaming\RetroPlug\input\default.lua` containing the following default button map:
+## Configuration
+RetroPlug is configurable with Lua configuration files.  The configuration files are written on first load if they do not exist, and will be written to the following locations:
+- Windows: `C:\Users\USERNAME\AppData\Roaming\RetroPlug`
+- MacOS: `/Library/Application Support/RetroPlug`
 
+You can get to this folder quickly by using the `Settings -> Open Settings Folder...` option in the context menu.
+
+- `config.lua` - contains default options for projects and systems
+- `input/*.lua` - contains various input configurations
+
+## Button Mapping
+The following are defined as the default keyboard and joypad mappings:
 |Button|Default key|
 |------|-----------|
 |A|W|
@@ -41,7 +57,7 @@ Input button mapping is currently only configurable with Lua configuration files
 |Select|Ctrl|
 |Start|Enter|
 
-There are also LSDj specific key bindings:
+There are also LSDj specific key bindings to actions:
 
 | Action | Default key |
 |--------|-------------|
@@ -53,6 +69,12 @@ There are also LSDj specific key bindings:
 |CopySelection|Ctrl + C|
 |CutSelection|Ctrl + X|
 |PasteSelection|Ctrl + V|
+
+### Modifying Button Maps
+
+Input maps have their own specific configuration format.  Both keyboard and pad inputs can be assigned directly to Gameboy buttons, or they can be assigned to actions which are defined in Lua scripts.  Both keyboard and pad inputs can be defined in a single file, but can be chosen independently of each other in a project.
+
+To modify the button mapping, you can either edit one of the currently existing button maps, or create your own.  It is recommended that you make a copy of `input/default.lua` and modify it to suit your needs.  Your button map can then be selected in the context menu via the `Settings -> Keyboard` and `Settings -> Pad` menu options.
 
 ### Supported Keys:
 Keys `0 - 9` and `A - Z` can be used for alpha numeric keys, as well as the following keys:
@@ -138,8 +160,9 @@ Updating to a new verison of LSDj can be quite cumbersome when your ROM is patch
 ## Roadmap
 - v1.0.0
     - 32bit builds
-    - Mac builds
     - Outputs from individual audio channels
+    - Move the emulator instance to a different thread (currently runs in the audio thread)
+    - Web build
 - v2.0.0
     - Additional emulators.  Support for C64, GBA and Megadrive/Genesis is being explored.
 
