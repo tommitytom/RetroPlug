@@ -40,29 +40,35 @@ You can get to this folder quickly by using the `Settings -> Open Settings Folde
 
 ## Button Mapping
 The following are defined as the default keyboard and joypad mappings:
-|Button|Default key|
-|------|-----------|
-|A|W|
-|B|D|
-|Up|UpArrow|
-|Down|DownArrow|
-|Left|LeftArrow|
-|Right|RightArrow|
-|Select|Ctrl|
-|Start|Enter|
+|Button|Default key|Default pad button|
+|------|-----------|------------------|
+|A|W|B|
+|B|D|A|
+|Up|UpArrow|Up, Left Analog Up|
+|Down|DownArrow|Down, Left Analog Down|
+|Left|LeftArrow|Left, Left Analog Left|
+|Right|RightArrow|Right, Left Analog Right|
+|Select|Ctrl|Select (+ R2 for LSDj)|
+|Start|Enter|Start|
 
 There are also LSDj specific key bindings to actions:
 
-| Action | Default key |
-|--------|-------------|
-|DownTenRows|PageDown|
-|UpTenRows|PageUp|
-|CancelSelection|Esc|
-|Delete|Delete|
-|StartSelection|Shift (Hold)|
-|CopySelection|Ctrl + C|
-|CutSelection|Ctrl + X|
-|PasteSelection|Ctrl + V|
+| Action | Default key | Default pad button |
+|--------|-------------|--------------------|
+|DownTenRows|PageDown|R1|
+|UpTenRows|PageUp|L1|
+|CancelSelection|Esc|N/A|
+|Delete|Delete|N/A|
+|StartSelection|Shift (Hold)|X|
+|CopySelection|Ctrl + C|N/A|
+|CutSelection|Ctrl + X|N/A|
+|PasteSelection|Ctrl + V|N/A|
+|ScreenUp|N/A|Right Analog Up|
+|ScreenDown|N/A|Right Analog Down|
+|ScreenLeft|N/A|Right Analog Left|
+|ScreenRight|N/A|Right Analog Right|
+
+Additionally, `Tab` / `Pad Y` can be used to move between instances when multiple systems are loaded, and `Ctrl + S` can be used to save your project.
 
 ### Modifying Button Maps
 
