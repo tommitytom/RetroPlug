@@ -88,8 +88,6 @@ It is also possible to bind the analog sticks to events:
 LeftStickLeft, LeftStickRight, LeftStickDown, LeftStickUp, RightStickLeft, RightStickRight, RightStickDown, RightStickUp
 ```
 
-
-
 All key/button names are CASE SENSITIVE!
 
 ## Multiple Instances
@@ -192,6 +190,7 @@ Prerequisites
 - Clang compiler for Visual Studio (clang-cl).  This can be installed with the Visual Studio Installer.
 - [Rednex Game Boy Development System](https://github.com/gbdev/rgbds).  Must be available via your systems PATH variable.
 - [Premake 5](https://premake.github.io/).  Must be available via your systems PATH variable.
+- To build the VST2 target, you need to acquire the VST2 SDK.  `aeffect.h` and `affectx.h` need to be copied in to `thirdparty/iPlug2/Dependencies/IPlug/VST2_SDK/`
 
 All other dependencies are included in the repository.  Run `configure.bat`, this will write a project to `build/vs2019/RetroPlug.sln`.  Open and build.
 
