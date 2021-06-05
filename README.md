@@ -1,5 +1,5 @@
 # RetroPlug
-A frontend for the SameBoy GameBoy emulator, with a focus on music creation.  It is cross platform (Windows, MacOS) and can be used as an audio plugin (VST, AU) in your favourite DAW!
+A frontend for the SameBoy GameBoy emulator, with a focus on music creation.  It runs standalone and can be used as an audio plugin (VST) in your favourite DAW!
 
 ## Features
 - Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.14.2
@@ -15,15 +15,10 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 ## Installation
 - Standalone:
   - Currently the standalone build is provided as a single executable file that can be placed anywhere you'd like.
-- VST (Windows and MacOS):
+- VST (Windows):
   - Place the plugin in your VST search path.  These paths can generally be configured in your DAW, though the following tend to be the recommended defaults:
     - VST2 (Windows): `C:\Program Files\Common Files\VST2`
     - VST3 (Windows): `C:\Program Files\Common Files\VST3`
-    - VST2 (MacOS): `/Library/Audio/Plug-ins/VST`
-    - VST3 (MacOS): `/Library/Audio/Plug-ins/VST3`
-
-- AU (MacOS):
-  - All AU plugins go in the following folder: `/Library/Audio/Plug-Ins/Components`
 
 ## Usage
 
@@ -37,7 +32,6 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 ## Configuration
 RetroPlug is configurable with Lua configuration files.  The configuration files are written on first load if they do not exist, and will be written to the following locations:
 - Windows: `C:\Users\USERNAME\AppData\Roaming\RetroPlug`
-- MacOS: `/Library/Application Support/RetroPlug`
 
 You can get to this folder quickly by using the `Settings -> Open Settings Folder...` option in the context menu.
 
@@ -82,7 +76,21 @@ Keys `0 - 9` and `A - Z` can be used for alpha numeric keys, as well as the foll
 ```
 Backspace, Tab, Clear, Enter, Shift, Ctrl, Alt, Pause, Caps, Esc, Space, PageUp, PageDown, End, Home, LeftArrow, UpArrow, RightArrow, DownArrow, Select, Print, Execute, PrintScreen, Insert, Delete, Help, LeftWin, RightWin, Sleep, NumPad0, NumPad1, NumPad2, NumPad3, NumPad4, NumPad5, NumPad6, NumPad7, NumPad8, NumPad9, Multiply, Add, Separator, Subtract, Decimal, Divide, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24, NumLock, Scroll
 ```
-All key names are CASE SENSITIVE!
+
+### Supported Pad Buttons:
+The following buttons can be referenced in the input config:
+```
+Start, Select, Left, Right, Up, Down, A, B, X, Y, L1, R1, L2, R2, L3, R3, Home, Button17, Button18, Button19, Button20, Button21, Button22, Button23, Button24, Button25, Button26, Button27, Button28, Button29, Button30, Button31
+```
+
+It is also possible to bind the analog sticks to events:
+```
+LeftStickLeft, LeftStickRight, LeftStickDown, LeftStickUp, RightStickLeft, RightStickRight, RightStickDown, RightStickUp
+```
+
+
+
+All key/button names are CASE SENSITIVE!
 
 ## Multiple Instances
 You can load multiple instances of the emulator in a single window, and link them with virtual link cables.  The goal of this feature is to offer a streamlined way of working with multiple instances of LSDj.  You can create an additional emulator instance using the `Project -> Add Instance` submenu.  Choose one of the following options:
@@ -159,6 +167,7 @@ Updating to a new verison of LSDj can be quite cumbersome when your ROM is patch
 
 ## Roadmap
 - v1.0.0
+    - Mac build
     - 32bit builds
     - Outputs from individual audio channels
     - Move the emulator instance to a different thread (currently runs in the audio thread)
