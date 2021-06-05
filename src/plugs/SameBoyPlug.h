@@ -69,7 +69,7 @@ struct SameBoyPlugState {
 	int processTicks = 0;
 
 	std::vector<SameBoyPlugState*> linkTargets;
-	
+
 	bool bitToSend;
 };
 
