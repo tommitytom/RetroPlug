@@ -1,6 +1,8 @@
 #include "RetroPlugController.h"
 
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include "config.h"
 #include "platform/Path.h"
@@ -36,7 +38,19 @@ fs::path getScriptPath() {
 RetroPlugController::RetroPlugController(double sampleRate)
 	: _listener(&_uiLua, &_proxy), _audioController(&_timeInfo, sampleRate), _proxy(&_audioController)
 {
-	spdlog::set_level(spdlog::level::debug);
+	fs::path configPath = getConfigPath();
+
+	auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+	console_sink->set_level(spdlog::level::debug);
+
+	auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((configPath / "log.txt").string(), true);
+	file_sink->set_level(spdlog::level::info);
+
+	auto logger = std::make_shared<spdlog::logger>("", spdlog::sinks_init_list { console_sink, file_sink });
+	logger->flush_on(spdlog::level::err);
+
+	spdlog::set_default_logger(logger);
+	spdlog::flush_every(std::chrono::seconds(5));
 
 	_bus.addCall<calls::LoadRom>(4);
 	_bus.addCall<calls::SwapSystem>(4);

@@ -228,6 +228,7 @@ bool UiLuaContext::setup(bool updateProject) {
 	std::string configPath = _configPath + "/config.lua";
 	bool configValid = false;
 	bool configCallValid = callFuncRet(_viewRoot, "loadConfigFromPath", configValid, configPath, updateProject);
+
 	if (!configCallValid || !configValid) {
 		spdlog::info("Failed to load config from " + configPath + ".  Loading default config...");
 

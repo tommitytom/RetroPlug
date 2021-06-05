@@ -277,4 +277,8 @@ function Controller:loadInputConfig(path)
 	self._inputConfig:load(path)
 end
 
+function Controller:loadInputConfigFromString(name, code)
+	self._inputConfig:loadFromString(name, code)
+end
+
 return Controller

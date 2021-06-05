@@ -175,4 +175,8 @@ function View:loadInputConfig(path)
 	self._inputConfig:load(path)
 end
 
+function View:loadInputConfigFromString(name, code)
+	self._inputConfig:loadFromString(name, code)
+end
+
 return View

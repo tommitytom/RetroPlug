@@ -127,7 +127,7 @@ function module.mergeInputMaps(source, target, actions, romName)
 end
 
 local function findInputConfig(configs, filename)
-	for i, v in ipairs(configs) do
+	for _, v in ipairs(configs) do
 		if v.config.filename == filename then
 			return v
 		end

@@ -1,6 +1,6 @@
 #include "FileDialog.h"
 
-#ifdef WIN32
+#ifdef RP_WINDOWS
 
 #include <ShObjIdl.h>
 #include <windows.h>
@@ -130,7 +130,8 @@ tstring BasicFileSave(void* ui, const std::vector<FileDialogFilters>& filters, c
 	delete[] targetFilters;
 	return ret;
 }
-#else
+
+#elif RP_MACOS
 
 #undef T
 #include "IGraphics.h"
@@ -163,5 +164,14 @@ tstring BasicFileSave(IGraphics* ui, const std::vector<FileDialogFilters>& filte
 	return tstr(f.Get());
 }
 
+#else
+
+std::vector<tstring> BasicFileOpen(void* ui, const std::vector<FileDialogFilters>& filters, bool multiSelect, bool foldersOnly) {
+	return std::vector<tstring>();
+}
+
+tstring BasicFileSave(void* ui, const std::vector<FileDialogFilters>& filters, const tstring& fileName) {
+	return tstring();
+}
 
 #endif

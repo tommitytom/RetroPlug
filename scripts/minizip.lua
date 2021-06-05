@@ -300,6 +300,12 @@ project "minizip"
 	configuration { "Debug" }
 		defines { "ZLIB_DEBUG" }
 
+	configuration { "not macosx" }
+		includedirs {
+			--MINIZIP_DIR .. "/lib/zlib-ng",
+			MINIZIP_DIR .. "/lib/zlib",
+		}
+
 	filter "system:windows"
 		disablewarnings { "4267", "4244", "4311" }
 
@@ -310,11 +316,6 @@ project "minizip"
 
 			-- liblzma
 			"MYTHREAD_VISTA",
-		}
-
-		includedirs {
-			--MINIZIP_DIR .. "/lib/zlib-ng",
-			MINIZIP_DIR .. "/lib/zlib",
 		}
 
 		files {
@@ -359,9 +360,10 @@ project "minizip"
 			buildoptions { "-msse3" }]]
 
 	filter "system:linux"
+		defines {
+			"MYTHREAD_POSIX"
+		}
 		files {
 			MINIZIP_DIR .. "/mz_strm_os_posix.c",
 			MINIZIP_DIR .. "/mz_os_posix.c"
 		}
-
-		buildoptions { "-msimd128", "-msse2" }

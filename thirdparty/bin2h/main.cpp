@@ -7,17 +7,17 @@ Redistribution and use in source and binary forms, with or without modification,
 
 Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
 
-Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer 
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer
 in the documentation and/or other materials provided with the distribution.
 
-Neither the name of the author nor the names of its contributors may be used to endorse or promote products 
+Neither the name of the author nor the names of its contributors may be used to endorse or promote products
 derived from this software without specific prior written permission.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, 
-INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, 
-OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) 
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
@@ -38,7 +38,7 @@ void Help()
 
 	std::cout << "Interprets any file as plain binary data and dumps to a raw C/C++ array.\n";
 	std::cout << "usage: bin2h <in-file> <out-file> <opt-args>\n\n";
-	
+
 	std::cout << "Valid optional arguments:\n";
 	std::cout << "-id=<name> the C array is identified as \"name\". identifier is \"data\" if this argument is not present. bin2h does not check the identifier is valid in C/C++.\n";
 	std::cout << "-ns=<namespace> causes the data to be wrapped in a namespace. no namespace is inserted if this argument is not used.\n";
@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
 			in.close();
 			return 0;
 		}
-	}	
+	}
 
 	//stream to the output file, or std out if no file was provided
 	std::ostream& out = outfile.is_open() ? outfile : std::cout;
@@ -129,9 +129,9 @@ int main(int argc, char* argv[])
 	in.seekg(0, std::ios_base::beg);
 
 	//array size, for use in code
-	out << "size_t " << A.id << "_len = " << filesize << ";\n";
+	out << "static size_t " << A.id << "_len = " << filesize << ";\n";
 	//and now, the array
-	out << "unsigned char " << A.id << "[" << filesize << "]=\n{\n\t";
+	out << "static unsigned char " << A.id << "[" << filesize << "]=\n{\n\t";
 
 	//stream the data through
 	int restart = 0;
@@ -159,7 +159,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		i += chunk;		
+		i += chunk;
 	}
 
 	//post-amble - close array, then namespace
@@ -190,14 +190,14 @@ int mainCRTStartup(int argc, wchar_t* argv[])
 	{
 		//measure, allocate, convert
 		int n = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, NULL, NULL);
-		argv8[i] = new char[n]; //-1 parameter to WideCharToMulteByte yields size in bytes including 0 terminator 
+		argv8[i] = new char[n]; //-1 parameter to WideCharToMulteByte yields size in bytes including 0 terminator
 		if( 0 == WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, argv8[i], n, NULL, NULL))
 		{
 			std::wcerr << L"failed to convert argument " << argv[i] << L"to utf-8, gle=" << GetLastError() <<std::endl;
 			return -1;
 		}
 	}
-	
+
 	//can now call with UTF-8 arguments
 	int r = main(argc, argv8);
 

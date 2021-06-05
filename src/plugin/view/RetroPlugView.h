@@ -1,7 +1,5 @@
 #pragma once
 
-#include <gainput/gainput.h>
-
 #include <string>
 #include <vector>
 #include <stack>
@@ -48,7 +46,7 @@ public:
 		if (idx != NO_ACTIVE_SYSTEM) {
 			return _views[idx];
 		}
-		
+
 		return nullptr;
 	}
 

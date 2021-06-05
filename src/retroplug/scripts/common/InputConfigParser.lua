@@ -32,7 +32,7 @@ function InputConfig:init()
 end
 
 local function tableEmpty(tab)
-	for k, v in pairs(tab) do
+	for _, _ in pairs(tab) do
 		return false
 	end
 
@@ -55,9 +55,7 @@ local function cleanData(data)
 	end
 end
 
-function InputConfig:load(path)
-	path = pathutil.clean(path)
-
+local function createEnv()
 	local parsed = {
 		config = {},
 		key = { system = {}, global = {} },
@@ -79,21 +77,45 @@ function InputConfig:load(path)
 		GlobalPadMap = function(config, map) handleMapInput(parsed.pad.global, config, map) end
 	}
 
-	local f = loadfile(path, "t", env)
+	return {
+		parsed = parsed,
+		env = env
+	}
+end
+
+function InputConfig:loadFromString(name, code)
+	local env = createEnv()
+	local f, err = load(code, name, "t", env.env)
+
+	self:parseConfig(f, err, env.parsed, name, name)
+end
+
+function InputConfig:load(path)
+	path = pathutil.clean(path)
+
+	local filename = pathutil.filename(path)
+	local env = createEnv()
+	local f, err = loadfile(path, "t", env.env)
+
+	self:parseConfig(f, err, env.parsed, filename, path)
+end
+
+function InputConfig:parseConfig(f, err, parsed, filename, path)
 	if f ~= nil then
 		local ok, ret = pcall(f)
 
 		if ok then
 			parsed.config.path = path
-			parsed.config.filename = pathutil.filename(path)
+			parsed.config.filename = filename
 
 			cleanData(parsed)
 			table.insert(self.configs, parsed)
 		else
-			print("Error in button config: ", ret)
+			error("Error in button config: ", ret)
 		end
 	else
-		print("Failed to load", path)
+		log.error(err)
+		error("Failed to load " .. filename)
 	end
 end
 

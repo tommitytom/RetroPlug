@@ -58,13 +58,6 @@ KeyMap({ romName = "LSDj*" }, {
 	[Key.Esc] = Action.Lsdj.CancelSelection,
 })
 
---[[
--- TODO: Implement host specialization (reaper eats ctrl)
-KeyMap({ romName = "LSDj*", host = HostType.Reaper }, {
-	[Key.Shift] = Button.Select
-})
-]]
-
 -- Gamepad button presses specific to LSDj
 PadMap({ romName = "LSDj*" }, {
 	[Pad.X] = Action.Lsdj.BeginSelection,
@@ -76,3 +69,10 @@ PadMap({ romName = "LSDj*" }, {
 	[Pad.RightStickDown] = Action.Lsdj.ScreenDown,
 	[Pad.RightStickRight] = Action.Lsdj.ScreenRight
 })
+
+--[[
+-- TODO: Implement host specialization (reaper eats ctrl)
+KeyMap({ romName = "LSDj*", host = HostType.Reaper }, {
+	[Key.Shift] = Button.Select
+})
+]]

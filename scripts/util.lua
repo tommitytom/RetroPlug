@@ -20,4 +20,15 @@ function util.disableFastUpToDateCheck(projectNames)
 	end)
 end
 
+function util.joinFlags(...)
+	local t = ""
+	for _, g in ipairs({...}) do
+		for _, v in ipairs(g) do
+			t = t .. v .. " "
+		end
+	end
+
+	return t
+end
+
 return util
