@@ -56,6 +56,25 @@
 #error Unable to detect endianess
 #endif
 
+#ifdef GB_INTERNAL
+/* Todo: similar macros are everywhere, clean this up and remove direct calls to bswap */
+#ifdef GB_BIG_ENDIAN
+#define LE16(x) __builtin_bswap16(x)
+#define LE32(x) __builtin_bswap32(x)
+#define LE64(x) __builtin_bswap64(x)
+#define BE16(x) (x)
+#define BE32(x) (x)
+#define BE64(x) (x)
+#else
+#define LE16(x) (x)
+#define LE32(x) (x)
+#define LE64(x) (x)
+#define BE16(x) __builtin_bswap16(x)
+#define BE32(x) __builtin_bswap32(x)
+#define BE64(x) __builtin_bswap64(x)
+#endif
+#endif
+
 #if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 8)
 #define __builtin_bswap16(x) ({ typeof(x) _x = (x); _x >> 8 | _x << 8; })
 #endif
@@ -79,8 +98,23 @@ typedef union {
         uint8_t days;
         uint8_t high;
     };
+    struct {
+        uint8_t seconds;
+        uint8_t minutes;
+        uint8_t hours:5;
+        uint8_t weekday:3;
+        uint8_t weeks;
+    } tpp1;
     uint8_t data[5];
 } GB_rtc_time_t;
+
+typedef struct __attribute__((packed)) {
+    uint64_t last_rtc_second;
+    uint16_t minutes;
+    uint16_t days;
+    uint16_t alarm_minutes, alarm_days;
+    uint8_t alarm_enabled;
+} GB_huc3_rtc_time_t;
 
 typedef enum {
     // GB_MODEL_DMG_0 = 0x000,
@@ -306,6 +340,29 @@ typedef struct {
     uint8_t write_end;
 } GB_fifo_t;
 
+typedef struct {
+    uint32_t magic;
+    uint8_t track_count;
+    uint8_t first_track;
+    uint16_t load_address;
+    uint16_t init_address;
+    uint16_t play_address;
+    uint16_t sp;
+    uint8_t TMA;
+    uint8_t TAC;
+    char title[32];
+    char author[32];
+    char copyright[32];
+} GB_gbs_header_t;
+
+typedef struct {
+    uint8_t track_count;
+    uint8_t first_track;
+    char title[33];
+    char author[33];
+    char copyright[33];
+} GB_gbs_info_t;
+
 /* When state saving, each section is dumped independently of other sections.
    This allows adding data to the end of the section without worrying about future compatibility.
    Some other changes might be "safe" as well.
@@ -441,10 +498,10 @@ struct GB_gameboy_internal_s {
         uint16_t mbc_rom0_bank; /* For some MBC1 wirings. */
         bool camera_registers_mapped;
         uint8_t camera_registers[0x36];
-        bool rumble_state;
+        uint8_t rumble_strength;
         bool cart_ir;
         
-        // TODO: move to huc3/mbc3 struct when breaking save compat
+        // TODO: move to huc3/mbc3/tpp1 struct when breaking save compat
         uint8_t huc3_mode;
         uint8_t huc3_access_index;
         uint16_t huc3_minutes, huc3_days;
@@ -453,6 +510,9 @@ struct GB_gameboy_internal_s {
         uint8_t huc3_read;
         uint8_t huc3_access_flags;
         bool mbc3_rtc_mapped;
+        uint16_t tpp1_rom_bank;
+        uint8_t tpp1_ram_bank;
+        uint8_t tpp1_mode;
     );
 
 
@@ -485,6 +545,7 @@ struct GB_gameboy_internal_s {
         uint64_t last_rtc_second;
         bool rtc_latch;
         uint32_t rtc_cycles;
+        uint8_t tpp1_mr4;
     );
 
     /* Video Display */
@@ -699,6 +760,8 @@ struct GB_gameboy_internal_s {
         /* Temporary state */
         bool wx_just_changed;
         bool tile_sel_glitch;
+               
+        GB_gbs_header_t gbs_header;
    );
 };
     
@@ -751,14 +814,14 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
 void *GB_get_user_data(GB_gameboy_t *gb);
 void GB_set_user_data(GB_gameboy_t *gb, void *data);
 
-
-
 int GB_load_boot_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer, size_t size);
 int GB_load_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_rom_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size);
 int GB_load_isx(GB_gameboy_t *gb, const char *path);
-    
+int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info);
+void GB_gbs_switch_track(GB_gameboy_t *gb, uint8_t track);
+
 int GB_save_battery_size(GB_gameboy_t *gb);
 int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size);
 int GB_save_battery(GB_gameboy_t *gb, const char *path);
@@ -820,5 +883,5 @@ unsigned GB_get_screen_width(GB_gameboy_t *gb);
 unsigned GB_get_screen_height(GB_gameboy_t *gb);
 double GB_get_usual_frame_rate(GB_gameboy_t *gb);
 unsigned GB_get_player_count(GB_gameboy_t *gb);
-
+    
 #endif /* GB_h */

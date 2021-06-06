@@ -126,7 +126,7 @@ static void display_vblank(GB_gameboy_t *gb)
     
     bool is_ppu_stopped = !GB_is_cgb(gb) && gb->stopped && gb->io_registers[GB_IO_LCDC] & 0x80;
     
-    if (!gb->disable_rendering  && ((!(gb->io_registers[GB_IO_LCDC] & 0x80) || is_ppu_stopped) || gb->cgb_repeated_a_frame)) {
+    if (!gb->disable_rendering && ((!(gb->io_registers[GB_IO_LCDC] & 0x80) || is_ppu_stopped) || gb->cgb_repeated_a_frame)) {
         /* LCD is off, set screen to white or black (if LCD is on in stop mode) */
         if (!GB_is_sgb(gb)) {
             uint32_t color = 0;
@@ -153,25 +153,25 @@ static void display_vblank(GB_gameboy_t *gb)
         }
     }
     
-    if (gb->border_mode == GB_BORDER_ALWAYS && !GB_is_sgb(gb)) {
+    if (!gb->disable_rendering && gb->border_mode == GB_BORDER_ALWAYS && !GB_is_sgb(gb)) {
         GB_borrow_sgb_border(gb);
         uint32_t border_colors[16 * 4];
         
         if (!gb->has_sgb_border && GB_is_cgb(gb) && gb->model != GB_MODEL_AGB) {
-            static uint16_t colors[] = {
+            uint16_t colors[] = {
                 0x2095, 0x5129, 0x1EAF, 0x1EBA, 0x4648,
                 0x30DA, 0x69AD, 0x2B57, 0x2B5D, 0x632C,
                 0x1050, 0x3C84, 0x0E07, 0x0E18, 0x2964,
             };
             unsigned index = gb->rom? gb->rom[0x14e] % 5 : 0;
-            gb->borrowed_border.palette[0] = colors[index];
-            gb->borrowed_border.palette[10] = colors[5 + index];
-            gb->borrowed_border.palette[14] = colors[10 + index];
+            gb->borrowed_border.palette[0] = LE16(colors[index]);
+            gb->borrowed_border.palette[10] = LE16(colors[5 + index]);
+            gb->borrowed_border.palette[14] = LE16(colors[10 + index]);
 
         }
         
         for (unsigned i = 0; i < 16 * 4; i++) {
-            border_colors[i] = GB_convert_rgb15(gb, gb->borrowed_border.palette[i], true);
+            border_colors[i] = GB_convert_rgb15(gb, LE16(gb->borrowed_border.palette[i]), true);
         }
         
         for (unsigned tile_y = 0; tile_y < 28; tile_y++) {
@@ -179,13 +179,18 @@ static void display_vblank(GB_gameboy_t *gb)
                 if (tile_x >= 6 && tile_x < 26 && tile_y >= 5 && tile_y < 23) {
                     continue;
                 }
-                uint16_t tile = gb->borrowed_border.map[tile_x + tile_y * 32];
-                uint8_t flip_x = (tile & 0x4000)? 0x7 : 0;
-                uint8_t flip_y = (tile & 0x8000)? 0x7 : 0;
+                uint16_t tile = LE16(gb->borrowed_border.map[tile_x + tile_y * 32]);
+                uint8_t flip_x = (tile & 0x4000)? 0:7;
+                uint8_t flip_y = (tile & 0x8000)? 7:0;
                 uint8_t palette = (tile >> 10) & 3;
                 for (unsigned y = 0; y < 8; y++) {
+                    unsigned base = (tile & 0xFF) * 32 + (y ^ flip_y) * 2;
                     for (unsigned x = 0; x < 8; x++) {
-                        uint8_t color = gb->borrowed_border.tiles[(tile & 0xFF) * 64 + (x ^ flip_x) + (y ^ flip_y) * 8] & 0xF;
+                        uint8_t bit = 1 << (x ^ flip_x);
+                        uint8_t color = ((gb->borrowed_border.tiles[base] & bit)      ? 1 : 0) |
+                                        ((gb->borrowed_border.tiles[base + 1] & bit)  ? 2 : 0) |
+                                        ((gb->borrowed_border.tiles[base + 16] & bit) ? 4 : 0) |
+                                        ((gb->borrowed_border.tiles[base + 17] & bit) ? 8 : 0);
                         uint32_t *output = gb->screen + tile_x * 8 + x + (tile_y * 8 + y) * 256;
                         if (color == 0) {
                             *output = border_colors[0];
@@ -574,7 +579,6 @@ static void render_pixel_if_possible(GB_gameboy_t *gb)
         else if (gb->model & GB_MODEL_NO_SFC_BIT) {
             if (gb->icd_pixel_callback) {
                 icd_pixel = pixel;
-              //gb->icd_pixel_callback(gb, pixel);
             }
         }
         else if (gb->cgb_palettes_ppu_blocked) {

@@ -2,7 +2,7 @@
 A frontend for the SameBoy GameBoy emulator, with a focus on music creation.  It runs standalone and can be used as an audio plugin (VST) in your favourite DAW!
 
 ## Features
-- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.14.2
+- Wraps [SameBoy](https://github.com/LIJI32/SameBoy) v0.14.3
 - Full MIDI support for [mGB](https://github.com/trash80/mGB)
 - Syncs [LSDj](https://www.littlesounddj.com) to your DAW
 - Emulates various [Arduinoboy](https://github.com/trash80/Arduinoboy) modes

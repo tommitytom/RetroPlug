@@ -2,6 +2,7 @@
 #include "GBView.h"
 #include "GBImageView.h"
 #include "GBSplitView.h"
+#include "GBVisualizerView.h"
 
 @class GBCheatWindowController;
 
@@ -39,10 +40,20 @@
 @property (nonatomic, strong) IBOutlet GBCheatWindowController *cheatWindowController;
 @property (nonatomic, readonly) Document *partner;
 @property (nonatomic, readonly) bool isSlave;
+@property (strong) IBOutlet NSView *gbsPlayerView;
+@property (strong) IBOutlet NSTextField *gbsTitle;
+@property (strong) IBOutlet NSTextField *gbsAuthor;
+@property (strong) IBOutlet NSTextField *gbsCopyright;
+@property (strong) IBOutlet NSPopUpButton *gbsTracks;
+@property (strong) IBOutlet NSButton *gbsPlayPauseButton;
+@property (strong) IBOutlet NSButton *gbsRewindButton;
+@property (strong) IBOutlet NSSegmentedControl *gbsNextPrevButton;
+@property (strong) IBOutlet GBVisualizerView *gbsVisualizer;
 
 -(uint8_t) readMemory:(uint16_t) addr;
 -(void) writeMemory:(uint16_t) addr value:(uint8_t)value;
 -(void) performAtomicBlock: (void (^)())block;
 -(void) connectLinkCable:(NSMenuItem *)sender;
+- (bool)loadStateFile:(const char *)path;
 @end
 

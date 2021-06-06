@@ -178,7 +178,25 @@ static uint8_t read_mbc_ram(GB_gameboy_t *gb, uint16_t addr)
         }
     }
     
-    if ((!gb->mbc_ram_enable) &&
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        switch (gb->tpp1_mode) {
+            case 0:
+                switch (addr & 3) {
+                    case 0: return gb->tpp1_rom_bank;
+                    case 1: return gb->tpp1_rom_bank >> 8;
+                    case 2: return gb->tpp1_ram_bank;
+                    case 3: return gb->rumble_strength | gb->tpp1_mr4;
+                }
+            case 2:
+            case 3:
+                break; // Read RAM
+            case 5:
+                return gb->rtc_latched.data[(addr & 3) ^ 3];
+            default:
+                return 0xFF;
+        }
+    }
+    else if ((!gb->mbc_ram_enable) &&
         gb->cartridge_type->mbc_subtype != GB_CAMERA &&
         gb->cartridge_type->mbc_type != GB_HUC1 &&
         gb->cartridge_type->mbc_type != GB_HUC3) {
@@ -335,9 +353,7 @@ static uint8_t read_high_memory(GB_gameboy_t *gb, uint16_t addr)
     }
 
     if (addr < 0xFF00) {
-  
         return 0;
-
     }
 
     if (addr < 0xFF80) {
@@ -539,8 +555,8 @@ static void write_mbc(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                 case 0x3000:              gb->mbc5.rom_bank_high  = value; break;
                 case 0x4000: case 0x5000:
                     if (gb->cartridge_type->has_rumble) {
-                        if (!!(value & 8) != gb->rumble_state) {
-                            gb->rumble_state = !gb->rumble_state;
+                        if (!!(value & 8) != !!gb->rumble_strength) {
+                            gb->rumble_strength = gb->rumble_strength? 0 : 3;
                         }
                         value &= 7;
                     }
@@ -565,6 +581,53 @@ static void write_mbc(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                     break;
                 case 0x2000: case 0x3000: gb->huc3.rom_bank  = value; break;
                 case 0x4000: case 0x5000: gb->huc3.ram_bank  = value; break;
+            }
+            break;
+        case GB_TPP1:
+            switch (addr & 3) {
+                case 0:
+                    gb->tpp1_rom_bank &= 0xFF00;
+                    gb->tpp1_rom_bank |= value;
+                    break;
+                case 1:
+                    gb->tpp1_rom_bank &= 0xFF;
+                    gb->tpp1_rom_bank |= value << 8;
+                    break;
+                case 2:
+                    gb->tpp1_ram_bank = value;
+                    break;
+                case 3:
+                    switch (value) {
+                        case 0:
+                        case 2:
+                        case 3:
+                        case 5:
+                            gb->tpp1_mode = value;
+                            break;
+                        case 0x10:
+                            memcpy(&gb->rtc_latched, &gb->rtc_real, sizeof(gb->rtc_real));
+                            break;
+                        case 0x11: {
+                            memcpy(&gb->rtc_real, &gb->rtc_latched, sizeof(gb->rtc_real));
+                            break;
+                        }
+                        case 0x14:
+                            gb->tpp1_mr4 &= ~0x8;
+                            break;
+                        case 0x18:
+                            gb->tpp1_mr4 &= ~0x4;
+                            break;
+                        case 0x19:
+                            gb->tpp1_mr4 |= 0x4;
+                            break;
+                            
+                        case 0x20:
+                        case 0x21:
+                        case 0x22:
+                        case 0x23:
+                            gb->rumble_strength = value & 3;
+                            break;
+                    }
             }
             break;
     }
@@ -686,6 +749,18 @@ static void write_mbc_ram(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
     if (gb->camera_registers_mapped) {
         GB_camera_write_register(gb, addr, value);
         return;
+    }
+    
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        switch (gb->tpp1_mode) {
+            case 3:
+                break;
+            case 5:
+                gb->rtc_latched.data[(addr & 3) ^ 3] = value;
+                return;
+            default:
+                return;
+        }
     }
     
     if ((!gb->mbc_ram_enable)
@@ -919,6 +994,7 @@ static void write_high_memory(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
                     else if (gb->frame_skip_state == GB_FRAMESKIP_SECOND_FRAME_RENDERED) {
                         gb->frame_skip_state = GB_FRAMESKIP_LCD_TURNED_ON;
                     }
+                    GB_timing_sync(gb);
                 }
                 else if (!(value & 0x80) && (gb->io_registers[GB_IO_LCDC] & 0x80)) {
                     /* Sync after turning off LCD */

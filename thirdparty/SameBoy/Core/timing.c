@@ -64,11 +64,16 @@ void GB_timing_sync(GB_gameboy_t *gb)
     uint64_t target_nanoseconds = gb->cycles_since_last_sync * 1000000000LL / 2 / GB_get_clock_rate(gb); /* / 2 because we use 8MHz units */
     int64_t nanoseconds = get_nanoseconds();
     int64_t time_to_sleep = target_nanoseconds + gb->last_sync - nanoseconds;
-    if (time_to_sleep > 0 && time_to_sleep < LCDC_PERIOD * 1000000000LL / GB_get_clock_rate(gb)) {
+    if (time_to_sleep > 0 && time_to_sleep < LCDC_PERIOD * 1200000000LL / GB_get_clock_rate(gb)) { // +20% to be more forgiving
         nsleep(time_to_sleep);
         gb->last_sync += target_nanoseconds;
     }
     else {
+        if (time_to_sleep < 0 && -time_to_sleep < LCDC_PERIOD * 1200000000LL / GB_get_clock_rate(gb)) {
+            // We're running a bit too slow, but the difference is small enough,
+            // just skip this sync and let it even out
+            return;
+        }
         gb->last_sync = nanoseconds;
     }
 
@@ -278,14 +283,30 @@ static void GB_rtc_run(GB_gameboy_t *gb, uint8_t cycles)
         }
         return;
     }
+    bool running = false;
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        running = gb->tpp1_mr4 & 0x4;
+    }
+    else {
+        running = (gb->rtc_real.high & 0x40) == 0;
+    }
     
-    if ((gb->rtc_real.high & 0x40) == 0) { /* is timer running? */
+    if (running) { /* is timer running? */
         while (gb->last_rtc_second + 60 * 60 * 24 < current_time) {
             gb->last_rtc_second += 60 * 60 * 24;
-            if (++gb->rtc_real.days == 0) {
+            if (gb->cartridge_type->mbc_type == GB_TPP1) {
+                if (++gb->rtc_real.tpp1.weekday == 7) {
+                    gb->rtc_real.tpp1.weekday = 0;
+                    if (++gb->rtc_real.tpp1.weeks == 0) {
+                        gb->tpp1_mr4 |= 8; /* Overflow bit */
+                    }
+                }
+            }
+            else if (++gb->rtc_real.days == 0) {
                 if (gb->rtc_real.high & 1) { /* Bit 8 of days*/
                     gb->rtc_real.high |= 0x80; /* Overflow bit */
                 }
+                
                 gb->rtc_real.high ^= 1;
             }
         }
@@ -298,16 +319,27 @@ static void GB_rtc_run(GB_gameboy_t *gb, uint8_t cycles)
             if (++gb->rtc_real.minutes != 60) continue;
             gb->rtc_real.minutes = 0;
             
-            if (++gb->rtc_real.hours != 24) continue;
-            gb->rtc_real.hours = 0;
-            
-            if (++gb->rtc_real.days != 0) continue;
-            
-            if (gb->rtc_real.high & 1) { /* Bit 8 of days*/
-                gb->rtc_real.high |= 0x80; /* Overflow bit */
+            if (gb->cartridge_type->mbc_type == GB_TPP1) {
+                if (++gb->rtc_real.tpp1.hours != 24) continue;
+                gb->rtc_real.tpp1.hours = 0;
+                if (++gb->rtc_real.tpp1.weekday != 7) continue;
+                gb->rtc_real.tpp1.weekday = 0;
+                if (++gb->rtc_real.tpp1.weeks == 0) {
+                    gb->tpp1_mr4 |= 8; /* Overflow bit */
+                }
             }
-            
-            gb->rtc_real.high ^= 1;
+            else {
+                if (++gb->rtc_real.hours != 24) continue;
+                gb->rtc_real.hours = 0;
+                
+                if (++gb->rtc_real.days != 0) continue;
+                
+                if (gb->rtc_real.high & 1) { /* Bit 8 of days*/
+                    gb->rtc_real.high |= 0x80; /* Overflow bit */
+                }
+                
+                gb->rtc_real.high ^= 1;
+            }
         }
     }
 }
@@ -339,13 +371,9 @@ void GB_advance_cycles(GB_gameboy_t *gb, uint8_t cycles)
     gb->cycles_since_last_sync += cycles;
     gb->cycles_since_run += cycles;
     
-    if (gb->rumble_state) {
-        gb->rumble_on_cycles++;
-    }
-    else {
-        gb->rumble_off_cycles++;
-    }
-    
+    gb->rumble_on_cycles += gb->rumble_strength & 3;
+    gb->rumble_off_cycles += (gb->rumble_strength & 3) ^ 3;
+        
     if (!gb->stopped) { // TODO: Verify what happens in STOP mode
         GB_dma_run(gb);
         GB_hdma_run(gb);

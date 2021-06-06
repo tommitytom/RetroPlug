@@ -19,12 +19,6 @@
 #endif
 
 
-static inline uint32_t state_magic(void)
-{
-    if (sizeof(bool) == 1) return 'SAME';
-    return 'S4ME';
-}
-
 void GB_attributed_logv(GB_gameboy_t *gb, GB_log_attributes attributes, const char *fmt, va_list args)
 {
     char *string = NULL;
@@ -115,20 +109,17 @@ static void load_default_border(GB_gameboy_t *gb)
     #define LOAD_BORDER() do { \
         memcpy(gb->borrowed_border.map, tilemap, sizeof(tilemap));\
         memcpy(gb->borrowed_border.palette, palette, sizeof(palette));\
-        \
-        /* Expand tileset */\
-        for (unsigned tile = 0; tile < sizeof(tiles) / 32; tile++) {\
-            for (unsigned y = 0; y < 8; y++) {\
-                for (unsigned x = 0; x < 8; x++) {\
-                    gb->borrowed_border.tiles[tile * 8 * 8 + y * 8 + x] =\
-                    (tiles[tile * 32 + y * 2 +  0] & (1 << (7 ^ x)) ? 1 : 0) |\
-                    (tiles[tile * 32 + y * 2 +  1] & (1 << (7 ^ x)) ? 2 : 0) |\
-                    (tiles[tile * 32 + y * 2 + 16] & (1 << (7 ^ x)) ? 4 : 0) |\
-                    (tiles[tile * 32 + y * 2 + 17] & (1 << (7 ^ x)) ? 8 : 0);\
-                }\
-            }\
-        }\
+        memcpy(gb->borrowed_border.tiles, tiles, sizeof(tiles));\
     } while (false);
+    
+#ifdef GB_BIG_ENDIAN
+    for (unsigned i = 0; i < sizeof(gb->borrowed_border.map) / 2; i++) {
+        gb->borrowed_border.map[i] = LE16(gb->borrowed_border.map[i]);
+    }
+    for (unsigned i = 0; i < sizeof(gb->borrowed_border.palette) / 2; i++) {
+        gb->borrowed_border.palette[i] = LE16(gb->borrowed_border.palette[i]);
+    }
+#endif
     
     if (gb->model == GB_MODEL_AGB) {
         #include "graphics/agb_border.inc"
@@ -306,6 +297,129 @@ int GB_load_rom(GB_gameboy_t *gb, const char *path)
     fclose(f);
     GB_configure_cart(gb);
     gb->tried_loading_sgb_border = false;
+    gb->has_sgb_border = false;
+    load_default_border(gb);
+    return 0;
+}
+
+void GB_gbs_switch_track(GB_gameboy_t *gb, uint8_t track)
+{
+    GB_reset(gb);
+    GB_write_memory(gb, 0xFF00 + GB_IO_LCDC, 0x80);
+    GB_write_memory(gb, 0xFF00 + GB_IO_TAC, gb->gbs_header.TAC);
+    GB_write_memory(gb, 0xFF00 + GB_IO_TMA, gb->gbs_header.TMA);
+    GB_write_memory(gb, 0xFF00 + GB_IO_NR52, 0x80);
+    GB_write_memory(gb, 0xFF00 + GB_IO_NR51, 0xFF);
+    GB_write_memory(gb, 0xFF00 + GB_IO_NR50, 0x77);
+    memset(gb->ram, 0, gb->ram_size);
+    memset(gb->hram, 0, sizeof(gb->hram));
+    memset(gb->oam, 0, sizeof(gb->oam));
+    if (gb->gbs_header.TAC || gb->gbs_header.TMA) {
+        GB_write_memory(gb, 0xFFFF, 0x04);
+    }
+    else {
+        GB_write_memory(gb, 0xFFFF, 0x01);
+    }
+    if (gb->gbs_header.TAC & 0x80) {
+        gb->cgb_double_speed = true; // Might mean double speed mode on a DMG
+    }
+    gb->sp = LE16(gb->gbs_header.sp);
+    gb->pc = 0x100;
+    gb->boot_rom_finished = true;
+    gb->a = track;
+    if (gb->sgb) {
+        gb->sgb->intro_animation = GB_SGB_INTRO_ANIMATION_LENGTH;
+        gb->sgb->disable_commands = true;
+    }
+}
+
+int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        GB_log(gb, "Could not open GBS: %s.\n", strerror(errno));
+        return errno;
+    }
+    fread(&gb->gbs_header, sizeof(gb->gbs_header), 1, f);
+    if (gb->gbs_header.magic != BE32('GBS\x01') ||
+        LE16(gb->gbs_header.load_address) < 0x400 ||
+        LE16(gb->gbs_header.load_address) >= 0x8000) {
+        GB_log(gb, "Not a valid GBS file: %s.\n", strerror(errno));
+        fclose(f);
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    size_t data_size = ftell(f) - sizeof(gb->gbs_header);
+    gb->rom_size = (data_size + LE16(gb->gbs_header.load_address) + 0x3FFF) & ~0x3FFF; /* Round to bank */
+    /* And then round to a power of two */
+    while (gb->rom_size & (gb->rom_size - 1)) {
+        /* I promise this works. */
+        gb->rom_size |= gb->rom_size >> 1;
+        gb->rom_size++;
+    }
+    
+    if (gb->rom_size == 0) {
+        gb->rom_size = 0x8000;
+    }
+    fseek(f, sizeof(gb->gbs_header), SEEK_SET);
+    if (gb->rom) {
+        free(gb->rom);
+    }
+    gb->rom = malloc(gb->rom_size);
+    memset(gb->rom, 0xFF, gb->rom_size); /* Pad with 0xFFs */
+    fread(gb->rom + LE16(gb->gbs_header.load_address), 1, data_size, f);
+    fclose(f);
+    
+    gb->cartridge_type = &GB_cart_defs[0x11];
+    if (gb->mbc_ram) {
+        free(gb->mbc_ram);
+        gb->mbc_ram = NULL;
+    }
+    
+    if (gb->cartridge_type->has_ram) {
+        gb->mbc_ram_size = 0x2000;
+        gb->mbc_ram = malloc(gb->mbc_ram_size);
+        memset(gb->mbc_ram, 0xFF, gb->mbc_ram_size);
+    }
+    
+    // Generate interrupt handlers
+    for (unsigned i = 0; i <= 0x38; i += 8) {
+        gb->rom[i] = 0xc3; // jp $XXXX
+        gb->rom[i + 1] = (LE16(gb->gbs_header.load_address) + i);
+        gb->rom[i + 2] = (LE16(gb->gbs_header.load_address) + i) >> 8;
+    }
+    for (unsigned i = 0x40; i <= 0x60; i += 8) {
+        gb->rom[i] = 0xc9; // ret
+    }
+    
+    // Generate entry
+    memcpy(gb->rom + 0x100, (uint8_t[]) {
+        0xCD, // Call $XXXX
+        LE16(gb->gbs_header.init_address),
+        LE16(gb->gbs_header.init_address) >> 8,
+        0x76, // HALT
+        0x00, // NOP
+        0xAF, // XOR a
+        0xE0, // LDH [$FFXX], a
+        GB_IO_IF,
+        0xCD, // Call $XXXX
+        LE16(gb->gbs_header.play_address),
+        LE16(gb->gbs_header.play_address) >> 8,
+        0x18, // JR pc ± $XX
+        -10   // To HALT
+    }, 13);
+    
+    GB_gbs_switch_track(gb, gb->gbs_header.first_track - 1);
+    if (info) {
+        memset(info, 0, sizeof(*info));
+        info->first_track = gb->gbs_header.first_track - 1;
+        info->track_count = gb->gbs_header.track_count;
+        memcpy(info->title, gb->gbs_header.title, sizeof(gb->gbs_header.title));
+        memcpy(info->author, gb->gbs_header.author, sizeof(gb->gbs_header.author));
+        memcpy(info->copyright, gb->gbs_header.copyright, sizeof(gb->gbs_header.copyright));
+    }
+    
+    gb->tried_loading_sgb_border = true; // Don't even attempt on GBS files
     gb->has_sgb_border = false;
     load_default_border(gb);
     return 0;
@@ -582,12 +696,13 @@ typedef struct {
 } GB_vba_rtc_time_t;
 
 typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t version;
+    uint8_t mr4;
+    uint8_t reserved;
     uint64_t last_rtc_second;
-    uint16_t minutes;
-    uint16_t days;
-    uint16_t alarm_minutes, alarm_days;
-    uint8_t alarm_enabled;
-} GB_huc3_rtc_time_t;
+    uint8_t rtc_data[4];
+} GB_tpp1_rtc_save_t;
 
 typedef union {
     struct __attribute__((packed)) {
@@ -606,14 +721,33 @@ typedef union {
     } vba64;
 } GB_rtc_save_t;
 
+static void GB_fill_tpp1_save_data(GB_gameboy_t *gb, GB_tpp1_rtc_save_t *data)
+{
+    data->magic = BE32('TPP1');
+    data->version = BE16(0x100);
+    data->mr4 = gb->tpp1_mr4;
+    data->reserved = 0;
+    data->last_rtc_second = LE64(time(NULL));
+    unrolled for (unsigned i = 4; i--;) {
+        data->rtc_data[i] = gb->rtc_real.data[i ^ 3];
+    }
+}
+
 int GB_save_battery_size(GB_gameboy_t *gb)
 {
     if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
+    if (gb->cartridge_type->mbc_type == GB_TPP1 && !(gb->rom[0x153] & 8)) return 0; // Nothing to save.
+
     if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
 
     if (gb->cartridge_type->mbc_type == GB_HUC3) {
-        return  gb->mbc_ram_size + sizeof(GB_huc3_rtc_time_t);
+        return gb->mbc_ram_size + sizeof(GB_huc3_rtc_time_t);
     }
+    
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        return gb->mbc_ram_size + sizeof(GB_tpp1_rtc_save_t);
+    }
+    
     GB_rtc_save_t rtc_save_size;
     return gb->mbc_ram_size + (gb->cartridge_type->has_rtc ? sizeof(rtc_save_size.vba64) : 0);
 }
@@ -621,13 +755,20 @@ int GB_save_battery_size(GB_gameboy_t *gb)
 int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size)
 {
     if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
+    if (gb->cartridge_type->mbc_type == GB_TPP1 && !(gb->rom[0x153] & 8)) return 0; // Nothing to save.
     if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
 
     if (size < GB_save_battery_size(gb)) return EIO;
 
     memcpy(buffer, gb->mbc_ram, gb->mbc_ram_size);
 
-    if (gb->cartridge_type->mbc_type == GB_HUC3) {
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        buffer += gb->mbc_ram_size;
+        GB_tpp1_rtc_save_t rtc_save;
+        GB_fill_tpp1_save_data(gb, &rtc_save);
+        memcpy(buffer, &rtc_save, sizeof(rtc_save));
+    }
+    else if (gb->cartridge_type->mbc_type == GB_HUC3) {
         buffer += gb->mbc_ram_size;
 
 #ifdef GB_BIG_ENDIAN
@@ -678,6 +819,7 @@ int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size)
 int GB_save_battery(GB_gameboy_t *gb, const char *path)
 {
     if (!gb->cartridge_type->has_battery) return 0; // Nothing to save.
+    if (gb->cartridge_type->mbc_type == GB_TPP1 && !(gb->rom[0x153] & 8)) return 0; // Nothing to save.
     if (gb->mbc_ram_size == 0 && !gb->cartridge_type->has_rtc) return 0; /* Claims to have battery, but has no RAM or RTC */
     FILE *f = fopen(path, "wb");
     if (!f) {
@@ -689,7 +831,16 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
         fclose(f);
         return EIO;
     }
-    if (gb->cartridge_type->mbc_type == GB_HUC3) {
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        GB_tpp1_rtc_save_t rtc_save;
+        GB_fill_tpp1_save_data(gb, &rtc_save);
+        
+        if (fwrite(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
+            fclose(f);
+            return EIO;
+        }
+    }
+    else if (gb->cartridge_type->mbc_type == GB_HUC3) {
 #ifdef GB_BIG_ENDIAN
         GB_huc3_rtc_time_t rtc_save = {
             __builtin_bswap64(gb->last_rtc_second),
@@ -744,11 +895,35 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
     return errno;
 }
 
+static void GB_load_tpp1_save_data(GB_gameboy_t *gb, const GB_tpp1_rtc_save_t *data)
+{
+    gb->last_rtc_second = LE64(data->last_rtc_second);
+    unrolled for (unsigned i = 4; i--;) {
+        gb->rtc_real.data[i ^ 3] = data->rtc_data[i];
+    }
+}
+
 void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size)
 {
     memcpy(gb->mbc_ram, buffer, MIN(gb->mbc_ram_size, size));
     if (size <= gb->mbc_ram_size) {
         goto reset_rtc;
+    }
+    
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        GB_tpp1_rtc_save_t rtc_save;
+        if (size - gb->mbc_ram_size < sizeof(rtc_save)) {
+            goto reset_rtc;
+        }
+        memcpy(&rtc_save, buffer + gb->mbc_ram_size, sizeof(rtc_save));
+        
+        GB_load_tpp1_save_data(gb, &rtc_save);
+        
+        if (gb->last_rtc_second > time(NULL)) {
+            /* We must reset RTC here, or it will not advance. */
+            goto reset_rtc;
+        }
+        return;
     }
     
     if (gb->cartridge_type->mbc_type == GB_HUC3) {
@@ -858,6 +1033,21 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
 
     if (fread(gb->mbc_ram, 1, gb->mbc_ram_size, f) != gb->mbc_ram_size) {
         goto reset_rtc;
+    }
+    
+    if (gb->cartridge_type->mbc_type == GB_TPP1) {
+        GB_tpp1_rtc_save_t rtc_save;
+        if (fread(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
+            goto reset_rtc;
+        }
+        
+        GB_load_tpp1_save_data(gb, &rtc_save);
+        
+        if (gb->last_rtc_second > time(NULL)) {
+            /* We must reset RTC here, or it will not advance. */
+            goto reset_rtc;
+        }
+        return;
     }
     
     if (gb->cartridge_type->mbc_type == GB_HUC3) {
