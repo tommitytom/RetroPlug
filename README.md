@@ -18,7 +18,6 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 - VST (Windows):
   - Place the plugin in your VST search path.  These paths can generally be configured in your DAW, though the following tend to be the recommended defaults:
     - VST2 (Windows): `C:\Program Files\Common Files\VST2`
-    - VST3 (Windows): `C:\Program Files\Common Files\VST3`
 
 ## Usage
 
