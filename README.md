@@ -16,8 +16,10 @@ Visit the [releases](https://github.com/tommitytom/RetroPlug/releases) page to d
 - Standalone:
   - Currently the standalone build is provided as a single executable file that can be placed anywhere you'd like.
 - VST (Windows):
-  - Place the plugin in your VST search path.  These paths can generally be configured in your DAW, though the following tend to be the recommended defaults:
+  - Place the plugin .dll in your VST search path.  These paths can generally be configured in your DAW, though the following tend to be the recommended defaults:
     - VST2 (Windows): `C:\Program Files\Common Files\VST2`
+
+NOTE: Depending on your system configuration, you may need to install the [latest Visual C++ redistributable](https://aka.ms/vs/16/release/vc_redist.x64.exe) from Microsoft.  If the plugin crashes when you try to load it, this is most likely the cause.
 
 ## Usage
 
