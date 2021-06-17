@@ -205,7 +205,7 @@ All other dependencies are included in the repository.  Run `configure.bat`, thi
 Coming soon!
 
 ## Troubleshooting
-Please refrain from asking usage questions in GitHub issues, and use them purely for bugs and feature requests.  If you need help, the official support chat for this plugin is on the PSG Cabal discord channel: https://discord.gg/9MdBJST
+Please refrain from asking usage questions in GitHub issues, and use them purely for bugs and feature requests.  If you need help, the official support chat for this plugin is on the PSG Cabal discord channel: https://discord.gg/V3GyA5dtqB
 
 ### FAQ
 
