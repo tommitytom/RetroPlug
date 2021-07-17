@@ -150,6 +150,16 @@ function System:loadState(data, reset)
 end
 
 function System:saveSram(path)
+	if path == nil then
+		path = self._desc.sramPath
+	end
+
+	if path == nil then
+		path = pathutil.changeExt(self._desc.romPath, "sav")
+	end
+
+	self._desc.sramPath = path
+
 	return fs.save(path, self._desc.sramData)
 end
 
@@ -158,6 +168,10 @@ function System:saveRom(path)
 end
 
 function System:saveState(path)
+	if path == nil then
+		path = pathutil.changeExt(self._desc.romPath, "state")
+	end
+
 	local req = FetchStateRequest.new()
 	req.systems[self._desc.idx + 1] = ResourceType.State
 
