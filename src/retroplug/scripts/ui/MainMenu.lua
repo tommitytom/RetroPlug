@@ -261,10 +261,10 @@ end
 local function generateStartMenu(menu)
 	menu:action("Load Project or ROM...", MainMenu.loadProjectOrRom())
 		:subMenu("Load ROM As...")
-			:action("AGB...", loadRom(1, GameboyModel.Agb))
-			:action("CGB C...", loadRom(1, GameboyModel.CgbC))
-			:action("CGB E (default)...", loadRom(1, GameboyModel.CgbE))
-			:action("DMG B...", loadRom(1, GameboyModel.DmgB))
+			:action("AGB...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.Agb))
+			:action("CGB C...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.CgbC))
+			:action("CGB E (default)...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.CgbE))
+			:action("DMG B...", loadRom(NO_ACTIVE_SYSTEM, GameboyModel.DmgB))
 end
 
 function MainMenu.generateMenu(menu)
