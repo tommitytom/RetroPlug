@@ -20,7 +20,7 @@ const size_t DEFAULT_SRAM_SIZE = 0x20000;
 const double VIDEO_STREAM_TIMEOUT = 1000.0;
 
 RetroPlugView::RetroPlugView(IRECT b, UiLuaContext* lua, AudioContextProxy* proxy, AudioController* audioController)
-	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController) 
+	: IControl(b), _lua(lua), _proxy(proxy), _audioController(audioController)
 {
 	proxy->videoCallback = [&](const VideoStream& video) {
 		const auto& systems = _proxy->getProject()->systems;
@@ -51,6 +51,7 @@ void RetroPlugView::OnInit() {
 
 void RetroPlugView::OnDrop(float x, float y, const char* str) {
 	_lua->onDrop(x, y, str);
+	UpdateLayout();
 }
 
 bool RetroPlugView::OnKey(const IKeyPress& key, bool down) {
@@ -100,7 +101,7 @@ void RetroPlugView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 
 		MenuTool::createMenu(&_menu, menu, callbacks);
 		delete menu;
-		
+
 		GetUI()->CreatePopupMenu(*this, _menu, x, y);
 
 		UpdateLayout();
@@ -123,7 +124,7 @@ void RetroPlugView::Draw(IGraphics& g) {
 	_lua->update(delta);
 
 	_timeSinceVideo += delta;
-	
+
 	const auto& systems = _proxy->getProject()->systems;
 	for (size_t i = 0; i < systems.size(); ++i) {
 		SystemView* view = _views[i];
@@ -158,7 +159,7 @@ void RetroPlugView::ProcessDialog() {
 			if (!p.empty()) {
 				paths.push_back(p);
 			}
-			
+
 			_lua->handleDialogCallback(paths);
 			break;
 		}
