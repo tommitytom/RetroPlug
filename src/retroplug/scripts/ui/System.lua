@@ -158,6 +158,8 @@ function System:saveSram(path)
 		path = pathutil.changeExt(self._desc.romPath, "sav")
 	end
 
+	log.info("Saving SRAM to " .. path)
+
 	self._desc.sramPath = path
 
 	return fs.save(path, self._desc.sramData)
@@ -171,6 +173,8 @@ function System:saveState(path)
 	if path == nil then
 		path = pathutil.changeExt(self._desc.romPath, "state")
 	end
+
+	log.info("Saving state to " .. path)
 
 	local req = FetchStateRequest.new()
 	req.systems[self._desc.idx + 1] = ResourceType.State
