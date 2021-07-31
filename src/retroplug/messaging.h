@@ -17,6 +17,7 @@ namespace calls {
 	DefinePush(SetActive, SystemIndex);
 	DefinePush(ResetSystem, ResetSystemDesc);
 	DefinePush(EnableRendering, bool);
+	DefinePush(SramChanged, SetDataRequest);
 
 	DefineRequest(SwapLuaContext, AudioLuaContextPtr, AudioLuaContextPtr);
 	DefineRequest(SwapSystem, SystemSwapDesc, SystemSwapDesc);

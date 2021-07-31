@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <spdlog/spdlog.h>
+#include <sol/sol.hpp>
 
 #include "Constants.h"
 #include "Types.h"
@@ -15,7 +17,6 @@
 #include "model/FileManager.h"
 #include "luawrapper/AudioLuaContext.h"
 #include "plugs/SameBoyPlug.h"
-#include "sol/sol.hpp"
 
 const int MAX_STATE_SIZE = 512 * 1024;
 const int MAX_SRAM_SIZE = 131072;
@@ -114,6 +115,11 @@ public:
 
 		node->on<calls::TransmitVideo>([&](const VideoStream& buffer) {
 			videoCallback(buffer);
+		});
+
+		node->on<calls::SramChanged>([&](const SetDataRequest& req) {
+			_project.systems[req.idx]->sramData = req.buffer;
+			spdlog::info("SRAM changed for instance {}", req.idx);
 		});
 	}
 

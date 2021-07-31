@@ -11,7 +11,7 @@ void AudioController::setNode(Node* node) {
 		if (_lua) {
 			componentData = _lua->serializeSystems();
 		}
-		
+
 		other = _lua;
 		ctx->init(&_processingContext, _timeInfo, _sampleRate);
 		//ctx->setSampleRate(_sampleRate);
@@ -19,14 +19,14 @@ void AudioController::setNode(Node* node) {
 		if (!componentData.empty()) {
 			ctx->deserializeSystems(componentData);
 		}
-		
+
 		_lua = ctx;
 	});
 
 	node->on<calls::SwapSystem>([&](const SystemSwapDesc& d, SystemSwapDesc& other) {
 		assert(d.idx != -1);
 		_lua->addSystem(d.idx, d.instance, *d.componentState);
-		
+
 		other.instance = _processingContext.swapSystem(d.idx, d.instance);
 		other.componentState = d.componentState;
 	});
@@ -82,7 +82,7 @@ void AudioController::setNode(Node* node) {
 		if (inst) {
 			inst->loadSram(req.buffer->data(), req.buffer->size(), req.reset);
 		}
-	
+
 		ret = req.buffer;
 	});
 
@@ -97,7 +97,7 @@ void AudioController::setNode(Node* node) {
 
 	node->on<calls::PressButtons>([&](const ButtonPressState& presses) {
 		SameBoyPlugPtr& instance = _processingContext.getSystem(presses.idx);
-		if (instance) { 
+		if (instance) {
 			instance->pressButtons(presses.buttons.presses.data(), presses.buttons.pressCount);
 		}
 	});
@@ -161,6 +161,24 @@ void AudioController::process(float** outputs, size_t frameCount) {
 	}
 
 	_processingContext.process(outputs, (size_t)frameCount);
-	
+
+	/*for (SystemIndex i = 0; i < MAX_SYSTEMS; ++i) {
+		SameBoyPlugPtr& system = _processingContext.getSystem(i);
+
+		if (system && _node->canPush<calls::SramChanged>()) {
+			// TODO: It appears that doing the hash check is actually slower than just saving the SRAM out and sending it
+			// to the UI thread!  Should probably just send the buffer every time and do the hash check in the UI thread
+			if (system->sramHasChanged()) {
+				DataBufferPtr sramData = std::make_shared<DataBuffer<char>>(system->sramSize());
+
+				system->saveSram(sramData->data(), sramData->size());
+				_node->push<calls::SramChanged>(NodeTypes::Ui, SetDataRequest {
+					.idx = i,
+					.buffer = sramData
+				});
+			}
+		}
+	}*/
+
 	_lock.unlock();
 }

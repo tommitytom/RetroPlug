@@ -80,7 +80,8 @@ project "RetroPlug"
 		"thirdparty/minizip-ng",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
-		"thirdparty/SameBoy/Core"
+		"thirdparty/SameBoy/Core",
+		"thirdparty/xxhash"
 	}
 
 	files {
@@ -143,6 +144,7 @@ local function retroplugProject()
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 		"thirdparty/SameBoy/Core",
+		"thirdparty/xxhash"
 		--"thirdparty/iPlug2/IGraphics"
 	}
 

@@ -1,6 +1,7 @@
 #include "SameBoyPlug.h"
 
 #include <fstream>
+#include <xxhash.h>
 
 extern "C" {
 	#include <gb.h>
@@ -181,6 +182,29 @@ size_t SameBoyPlug::sramSize() {
 
 size_t SameBoyPlug::saveSram(char* data, size_t size) {
 	return (size_t)GB_save_battery_to_buffer(_state.gb, (uint8_t*)data, size);
+}
+
+DataBuffer<char> SameBoyPlug::getSramData() {
+	size_t size;
+	uint16_t bank;
+	void* data = GB_get_direct_access(_state.gb, GB_DIRECT_ACCESS_CART_RAM, &size, &bank);
+	return DataBuffer<char>((char*)data, size, false);
+}
+
+uint64_t SameBoyPlug::hashSram(size_t start, size_t size) {
+	size_t dataSize;
+	uint16_t bank;
+	char* data = (char*)GB_get_direct_access(_state.gb, GB_DIRECT_ACCESS_CART_RAM, &dataSize, &bank);
+
+	if (start >= dataSize) {
+		return 0;
+	}
+	
+	if (size == 0) {
+		size = dataSize - start;
+	}
+
+	return XXH3_64bits(data + start, size);
 }
 
 bool SameBoyPlug::loadSram(const char* data, size_t size, bool reset) {

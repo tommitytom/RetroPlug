@@ -1,4 +1,5 @@
 local SAMEBOY_DIR = "../thirdparty/SameBoy/"
+local XXHASH_DIR = "../thirdparty/xxhash/"
 local BOOTROM_DIR = "%{wks.location}/../../thirdparty/SameBoy/BootROMs"
 local BOOTROM_OBJ = "%{cfg.objdir}/%{file.basename}.a"
 local BOOTROM_BIN = "%{cfg.objdir}/%{file.basename}.bin"
@@ -65,6 +66,7 @@ project "SameBoy"
 
 	sysincludedirs {
 		SAMEBOY_DIR .. "Core",
+		XXHASH_DIR
 	}
 
 	includedirs {
@@ -77,6 +79,8 @@ project "SameBoy"
 	files {
 		SAMEBOY_DIR .. "Core/**.h",
 		SAMEBOY_DIR .. "Core/**.c",
+		XXHASH_DIR .. "*.h",
+		XXHASH_DIR .. "*.c",
 		"../src/plugs/SameBoyPlug.h",
 		"../src/plugs/SameBoyPlug.cpp",
 	}

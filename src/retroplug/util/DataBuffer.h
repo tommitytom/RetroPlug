@@ -3,7 +3,8 @@
 #include <assert.h>
 #include <memory>
 #include <string_view>
-#include "crc32.h"
+
+#include <xxhash.h>
 
 template <typename T>
 class DataBuffer {
@@ -30,9 +31,8 @@ public:
 		return std::string_view(_dataPtr, len);
 	}
 
-	size_t hash(size_t initial = 0) {
-		// TODO: Use xhash here?
-		return crc32::update((const void*)_dataPtr, _reserved * sizeof(T), initial);
+	uint64_t hash() {
+		return XXH3_64bits((const void*)_dataPtr, _reserved * sizeof(T));
 	}
 
 	void write(const T* source, size_t size) {

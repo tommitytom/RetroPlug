@@ -91,9 +91,21 @@ private:
 	int16_t* _audioScratch = nullptr;
 	size_t _audioScratchSize = 0;
 
+	uint64_t _sramHash = 0;
+
 public:
 	SameBoyPlug();
 	~SameBoyPlug() { shutdown(); }
+
+	bool sramHasChanged() {
+		uint64_t hash = hashSram();
+		if (hash != _sramHash) {
+			_sramHash = hash;
+			return true;
+		}
+
+		return false;
+	}
 
 	const SameBoyPlugDesc& getDesc() const { return _desc; }
 
@@ -131,6 +143,10 @@ public:
 	size_t sramSize();
 
 	size_t saveSram(char* data, size_t size);
+
+	DataBuffer<char> getSramData();
+
+	uint64_t hashSram(size_t start = 0, size_t size = 0);
 
 	bool loadSram(const char* data, size_t size, bool reset);
 

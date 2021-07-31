@@ -69,6 +69,7 @@ RetroPlugController::RetroPlugController(double sampleRate)
 	_bus.addCall<calls::SetSram>(4);
 	_bus.addCall<calls::SetState>(4);
 	_bus.addCall<calls::EnableRendering>(1);
+	_bus.addCall<calls::SramChanged>(4);
 
 	_proxy.setNode(_bus.createNode(NodeTypes::Ui, { NodeTypes::Audio }));
 	_audioController.setNode(_bus.createNode(NodeTypes::Audio, { NodeTypes::Ui }));

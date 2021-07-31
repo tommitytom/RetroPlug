@@ -60,13 +60,17 @@ bool AudioLuaContext::setup() {
 		"getButtonPresses", &ProcessingContext::getButtonPresses
 	);
 
-	s.new_usertype<SameBoyPlugDesc>("SameBoyPlug",
+	s.new_usertype<SameBoyPlugDesc>("SameBoyPlugDesc",
 		"romName", &SameBoyPlugDesc::romName
 	);
 
 	s.new_usertype<SameBoyPlug>("SameBoyPlug",
 		"sendSerialByte", &SameBoyPlug::sendSerialByte,
-		"getDesc", &SameBoyPlug::getDesc
+		"getDesc", &SameBoyPlug::getDesc,
+		"getSramData", &SameBoyPlug::getSramData,
+		"hashSram", [](SameBoyPlug& plug, size_t start, size_t size) {
+			return (uint32_t)plug.hashSram(start, size);
+		}
 	);
 
 	s.new_usertype<TimeInfo>("TimeInfo",

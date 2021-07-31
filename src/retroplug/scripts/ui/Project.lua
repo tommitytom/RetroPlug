@@ -213,11 +213,6 @@ function Project.duplicateSystem(idx)
 	Project.setSelected(newIdx + 1)
 end
 
-function Project.removeSystem(idx)
-	_ctx:removeSystem(idx - 1)
-	table.remove(_data.systems, idx)
-end
-
 function Project.nextSystem()
 	local idx = Project.getSelectedIndex()
 	if idx == #_data.systems then
