@@ -52,14 +52,27 @@ function LsdjArduinoboy.onMenu(menu)
 end
 
 function LsdjArduinoboy.onTransportChanged(running)
-	local state = System.state.arduinoboy
-	if state.autoPlay == true then
-		System:buttons():press(Button.Start)
+	for _, system in ipairs(Project.systems) do
+		local state = system.state.arduinoboy
+
+		if state ~= nil then
+			if state.syncMode == LsdjSyncModes.MidiMap then
+				state.playing = running
+			end
+
+			if state.autoPlay == true then
+				system:buttons():press(Button.Start)
+			end
+
+			if running == false and state.lastRow ~= -1 then
+				system:sendSerialByte(0, 0xFE)
+			end
+		end
 	end
 end
 
 function LsdjArduinoboy.onUpdate(frameCount)
-
+	--print("---")
 end
 
 local function processSync(system, offset)
@@ -71,7 +84,7 @@ local function processSync(system, offset)
 		if state.playing == true then
 			system:sendSerialByte(offset, 0xF8)
 		end
-	elseif state.syncMode == LsdjSyncModes.MidiSync then
+	elseif state.syncMode == LsdjSyncModes.MidiMap then
 		system:sendSerialByte(offset, 0xFF)
 	end
 end
@@ -105,25 +118,29 @@ function LsdjArduinoboy.onMidi(system, msg)
 			elseif msg.note == 28 then state.tempoDivisor = 4
 			elseif msg.note == 29 then state.tempoDivisor = 8
 			elseif msg.note >= 30 then
-				System:sendSerialByte(msg.offset, msg.note - 30)
+				system:sendSerialByte(msg.offset, msg.note - 30)
 			end
 		end
 	elseif state.syncMode == LsdjSyncModes.MidiMap then
 		-- Notes trigger row numbers
+
 		if status == midi.Status.NoteOn then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
+
 			if rowIdx ~= -1 then
-				System:sendSerialByte(msg.offset, rowIdx)
+				system:sendSerialByte(msg.offset, rowIdx)
 				state.lastRow = rowIdx
 			end
-		elseif status == midi.Status.Noteff then
+		elseif status == midi.Status.NoteOff then
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
+
 			if rowIdx == state.lastRow then
-				System:sendSerialByte(msg.offset, 0xFE)
+				system:sendSerialByte(msg.offset, 0xFE)
 				state.lastRow = -1
 			end
+		-- Pseudocode... not sure what to handle here! FL studio does nothing useful when stop is clicked
 		elseif msg.type == "stop" then
-			System:sendSerialByte(msg.offset, 0xFE)
+			system:sendSerialByte(msg.offset, 0xFE)
 		end
 	end
 end

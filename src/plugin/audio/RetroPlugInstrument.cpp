@@ -85,6 +85,7 @@ int RetroPlugInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 
 void RetroPlugInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	TRACE;
+
 	_controller.getMenuLock()->lock(); // Temporary
 	if (_controller.audioLua()) {
 		_controller.audioLua()->onMidi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);

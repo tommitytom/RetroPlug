@@ -100,6 +100,9 @@ function Controller:update(frameCount)
 	if self._timeInfo.transportIsRunning ~= self._transportRunning then
 		trans.changed = true
 
+		self._transportRunning = self._timeInfo.transportIsRunning
+		self:emit("onTransportChanged", self._transportRunning)
+
 		if self._timeInfo.transportIsRunning == true then
 			trans.state = TransportState.Playing
 			trans.started = true
@@ -108,9 +111,6 @@ function Controller:update(frameCount)
 			trans.stopped = true
 			self._ppqGen:reset()
 		end
-
-		self._transportRunning = self._timeInfo.transportIsRunning
-		self:emit("onTransportChanged", self._transportRunning)
 	end
 
 	if self._transportRunning == true then
@@ -132,15 +132,17 @@ end
 function Controller:onMidi(offset, statusByte, data1, data2)
 	local channel = statusByte & 0x0F
 	local status = statusByte >> 4
-
 	local r = self._model:getSettings().midiRouting
+
 	if status == midi.Status.System or r == MidiChannelRouting.SendToAll then
 		local msg = midi.Message(offset, statusByte, data1, data2)
+
 		for _, v in ipairs(Project.systems) do
 			self:emit("onMidi", v, msg)
 		end
 	elseif r == MidiChannelRouting.OneChannelPerInstance then
 		local target = Project.systems[channel]
+
 		if target ~= nil then
 			local msg = midi.Message(offset, statusByte, data1, data2)
 			self:emit("onMidi", target, msg)
@@ -148,6 +150,7 @@ function Controller:onMidi(offset, statusByte, data1, data2)
 	elseif r == MidiChannelRouting.FourChannelsPerInstance then
 		local targetIdx = math.floor(channel / 4)
 		local target = Project.systems[targetIdx + 1]
+
 		if target ~= nil then
 			local msg = midi.Message(offset, (channel | (status << 4)), data1, data2)
 			self:emit("onMidi", target, msg)
