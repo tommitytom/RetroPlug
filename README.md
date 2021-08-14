@@ -145,7 +145,7 @@ When LSDj is detected, additional options are added to the context menus.
 
 - **MIDI Map**:
   * Receives MIDI clock from your DAW, and plays the row number relative to MIDI notes that you send it.  C-0 is row 0, C#-0 is row 1, etc.
-  * Notes sent on channel 2 map to rows 128 and above.  Ohter channels are ignored.
+  * Notes sent on channel 2 map to rows 128 and above.  Other channels are ignored.
   * Rows are stopped when note offs are received, or when you hit stop in your DAW.
   * Requires the Arduinboy build of LSDj.
 
