@@ -22,4 +22,4 @@ build_script:
   - cmd: msbuild build/vs2019/ScriptCompiler.vcxproj /property:Configuration=Release /property:Platform=x64 /m
   - cmd: c:\retroplug\build\vs2019\bin\x64\Release\ScriptCompiler.exe c:\retroplug\src\compiler.config.lua
   - cmd: premake5 vs2019
-  - cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64 /m
+  - cmd: msbuild build/vs2019/RetroPlug.sln /t:RetroPlug-app /property:Configuration=Release /property:Platform=x64 /m
