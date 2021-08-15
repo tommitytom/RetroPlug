@@ -4,6 +4,7 @@ image:
 environment:
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
   APPVEYOR_CACHE_SKIP_RESTORE: true
+  VcpkgAutoLink: false
 init:
   # Do a clean build if we are on the master branch (usually only for releases)
   - ps: IF ($env:APPVEYOR_REPO_BRANCH -eq "master") {$env:APPVEYOR_CACHE_SKIP_RESTORE = "true"}
