@@ -17,7 +17,7 @@ install:
   - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
   - cmd: premake5 vs2019
-  - cmd: msbuild build/vs2019/RetroPlug.sln /t:SameBoyBootRoms /property:Configuration=Release /property:Platform=x64
+  - cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64
   #- cmd: msbuild build/vs2019/bin2h.vcxproj /property:Configuration=Release /property:Platform=x64
   #- cmd: msbuild build/vs2019/SameBoyBootRoms.vcxproj /property:Configuration=Release /property:Platform=x64
   #- cmd: msbuild build/vs2019/ScriptCompiler.vcxproj /property:Configuration=Release /property:Platform=x64
