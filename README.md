@@ -1,4 +1,4 @@
-# RetroPlug [![Build status](https://ci.appveyor.com/api/projects/status/kkuxbv60f1kue9vw/branch/master?svg=true)](https://ci.appveyor.com/project/tommitytom/retroplug/branch/master)
+# RetroPlug
 A frontend for the SameBoy GameBoy emulator, with a focus on music creation.  It runs standalone and can be used as an audio plugin (VST) in your favourite DAW!
 
 ## Features
