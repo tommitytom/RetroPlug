@@ -223,6 +223,10 @@ If you find you have issues with a particular DAW, please feel free to submit a 
 ## Donations
 If you'd like to support development of RetroPlug, donations of any amount are appreciated!
 [![Donate](https://www.paypalobjects.com/en_AU/i/btn/btn_donate_SM.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=TJTBWD3P7S7PG&currency_code=AUD&source=url)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftommitytom%2FRetroPlug.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Ftommitytom%2FRetroPlug?ref=badge_shield)
 
 ## License
 MIT
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftommitytom%2FRetroPlug.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Ftommitytom%2FRetroPlug?ref=badge_large)
