@@ -31,6 +31,7 @@ jobs:
 
     - name: Extract deps
       run: |
+        cd ${{ github.workspace }}
         7z e premake-5.0.0-alpha16-windows.zip
         7z e rgbds-0.5.1-win64.zip
 
