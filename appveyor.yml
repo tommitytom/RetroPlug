@@ -2,6 +2,7 @@ version: 0.3.2-{build}
 image:
 - Visual Studio 2019
 environment:
+  CI_BUILD: true
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
   APPVEYOR_CACHE_SKIP_RESTORE: true
   VcpkgAutoLink: false
