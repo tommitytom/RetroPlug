@@ -4,7 +4,7 @@ image:
 environment:
   CI_BUILD: true
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
-  APPVEYOR_CACHE_SKIP_RESTORE: true
+  #APPVEYOR_CACHE_SKIP_RESTORE: true
   VcpkgAutoLink: false
   dep_secret:
     secure: Go1kB2XlFAIQvngM+YPkhD7p+Cmfzo1rcNWCiA8E6Lo=
@@ -35,3 +35,8 @@ build_script:
   - cmd: c:\retroplug\build\vs2019\bin\x64\Release\ScriptCompiler.exe c:\retroplug\src\compiler.config.lua
   - cmd: premake5 vs2019
   - cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64 /m
+artifacts:
+    - path: build\vs2019\bin\x64\Release\RetroPlug_app_x64.exe
+      name: 'RetroPlug Standalone'
+    - path: build\vs2019\bin\x64\Release\RetroPlug_vst2_x64.dll
+      name: 'RetroPlug VST2'
