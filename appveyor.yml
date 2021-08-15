@@ -3,12 +3,16 @@ image:
 - Visual Studio 2019
 environment:
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
+  APPVEYOR_CACHE_SKIP_RESTORE: true
 init:
   # Do a clean build if we are on the master branch (usually only for releases)
   - ps: IF ($env:APPVEYOR_REPO_BRANCH -eq "master") {$env:APPVEYOR_CACHE_SKIP_RESTORE = "true"}
 clone_folder: c:\retroplug
 cache: c:\retroplug\build
 install:
+  - cmd: cd C:\Tools\vcpkg
+  - cmd: git pull
+  - cmd: cd %APPVEYOR_BUILD_FOLDER%
   - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha16/premake-5.0.0-alpha16-windows.zip
   - cmd: appveyor DownloadFile https://github.com/gbdev/rgbds/releases/download/v0.5.1/rgbds-0.5.1-win64.zip
