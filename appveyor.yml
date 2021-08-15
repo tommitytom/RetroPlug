@@ -11,9 +11,6 @@ init:
 clone_folder: c:\retroplug
 cache: c:\retroplug\build
 install:
-  - cmd: cd C:\Tools\vcpkg
-  - cmd: git pull
-  - cmd: cd %APPVEYOR_BUILD_FOLDER%
   - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha16/premake-5.0.0-alpha16-windows.zip
   - cmd: appveyor DownloadFile https://github.com/gbdev/rgbds/releases/download/v0.5.1/rgbds-0.5.1-win64.zip
@@ -23,9 +20,9 @@ install:
 build_script:
   - cmd: premake5 vs2019
   #- cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64
-  - cmd: msbuild build/vs2019/pb12.vcxproj /property:Configuration=Release /property:Platform=x64
+  #- cmd: msbuild build/vs2019/pb12.vcxproj /property:Configuration=Release /property:Platform=x64
   #- cmd: msbuild build/vs2019/bin2h.vcxproj /property:Configuration=Release /property:Platform=x64
-  #- cmd: msbuild build/vs2019/SameBoyBootRoms.vcxproj /property:Configuration=Release /property:Platform=x64
+  - cmd: msbuild build/vs2019/SameBoyBootRoms.vcxproj /property:Configuration=Release /property:Platform=x64
   #- cmd: msbuild build/vs2019/ScriptCompiler.vcxproj /property:Configuration=Release /property:Platform=x64
   #- cmd: c:\retroplug\build\vs2019\bin\x64\Release\ScriptCompiler.exe c:\retroplug\src\compiler.config.lua
   #- cmd: premake5 vs2019
