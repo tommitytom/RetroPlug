@@ -84,13 +84,6 @@ BEGIN
         MENUITEM "&Preferences...\tCtrl+,",     ID_PREFERENCES
         MENUITEM "&Quit",                       ID_QUIT
     END
-    POPUP "&Debug"
-    BEGIN
-        MENUITEM "&Live Edit Mode\tCtrl+E",     ID_LIVE_EDIT
-        MENUITEM "&Show Control Bounds\tCtrl+B", ID_SHOW_BOUNDS
-        MENUITEM "&Show Drawn Area\tCtrl+D",    ID_SHOW_DRAWN
-        MENUITEM "&Show FPS\tCtrl+F",           ID_SHOW_FPS
-    END
     POPUP "&Help"
     BEGIN
         MENUITEM "&About",                      ID_ABOUT
@@ -170,14 +163,6 @@ IDI_ICON1               ICON                    "RetroPlug.ico"
 // Accelerator
 //
 
-IDR_ACCELERATOR1 ACCELERATORS
-BEGIN
-    VK_OEM_COMMA,   ID_PREFERENCES,         VIRTKEY, CONTROL, NOINVERT
-    "B",            ID_SHOW_BOUNDS,         VIRTKEY, CONTROL, NOINVERT
-    "D",            ID_SHOW_DRAWN,          VIRTKEY, CONTROL, NOINVERT
-    "F",            ID_SHOW_FPS,            VIRTKEY, CONTROL, NOINVERT
-    "E",            ID_LIVE_EDIT,           VIRTKEY, CONTROL, NOINVERT
-END
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -202,13 +187,13 @@ BEGIN
     BEGIN
         BLOCK "040004e4"
         BEGIN
-            VALUE "FileVersion", "0.2.0"
-            VALUE "ProductVersion", "0.2.0"
+            VALUE "FileVersion", "0.3.2"
+            VALUE "ProductVersion", "0.3.2"
             VALUE "FileDescription", "RetroPlug"
             VALUE "InternalName", "RetroPlug"
             VALUE "ProductName", "RetroPlug"
             VALUE "CompanyName", "Tom Yaxley"
-            VALUE "LegalCopyright", "Copyright 2020 Tom Yaxley"
+            VALUE "LegalCopyright", "Copyright 2021 Tom Yaxley"
             VALUE "LegalTrademarks", "VST is a trademark of Steinberg Media Technologies GmbH, Audio Unit is a trademark of Apple, Inc."
         END
     END
