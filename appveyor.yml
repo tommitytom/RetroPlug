@@ -2,20 +2,32 @@ version: 0.3.2-{build}
 image:
 - Visual Studio 2019
 environment:
+  CI_BUILD: true
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
-  APPVEYOR_CACHE_SKIP_RESTORE: true
+  #APPVEYOR_CACHE_SKIP_RESTORE: true
   VcpkgAutoLink: false
+  dep_secret:
+    secure: Go1kB2XlFAIQvngM+YPkhD7p+Cmfzo1rcNWCiA8E6Lo=
+  dep_salt:
+    secure: 39s+KlQG6Hg9XF4FP6/KW+KrDYYdxj1ZoS4zoiX2LuS62MczMH5hoq2ZOmjyx6wD6qip9xBcltozTX6hn8fK3g==
 init:
   # Do a clean build if we are on the main branch (usually only for releases)
   - ps: IF ($env:APPVEYOR_REPO_BRANCH -eq "main") {$env:APPVEYOR_CACHE_SKIP_RESTORE = "true"}
 clone_folder: c:\retroplug
 cache: c:\retroplug\build
 install:
+  - ps: iex ((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/appveyor/secure-file/master/install.ps1'))
+  - cmd: appveyor-tools\secure-file -decrypt ci/dep.7z.enc -secret %dep_secret% -salt %dep_salt%
+  - sh: ./appveyor-tools/secure-file -decrypt ci/dep.7z.enc -secret $dep_secret -salt $dep_salt
+
   - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha16/premake-5.0.0-alpha16-windows.zip
   - cmd: appveyor DownloadFile https://github.com/gbdev/rgbds/releases/download/v0.5.1/rgbds-0.5.1-win64.zip
+
   - cmd: 7z e premake-5.0.0-alpha16-windows.zip
   - cmd: 7z e rgbds-0.5.1-win64.zip
+  - cmd: 7z e ci/dep.7z
+
   - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
   - cmd: premake5 vs2019
@@ -23,3 +35,8 @@ build_script:
   - cmd: c:\retroplug\build\vs2019\bin\x64\Release\ScriptCompiler.exe c:\retroplug\src\compiler.config.lua
   - cmd: premake5 vs2019
   - cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64 /m
+artifacts:
+    - path: build\vs2019\bin\x64\Release\RetroPlug_app_x64.exe
+      name: 'RetroPlug Standalone'
+    - path: build\vs2019\bin\x64\Release\RetroPlug_vst2_x64.dll
+      name: 'RetroPlug VST2'

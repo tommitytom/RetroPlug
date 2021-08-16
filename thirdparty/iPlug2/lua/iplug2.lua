@@ -137,12 +137,12 @@ local function projectBase(targetName, name)
 
 	-- Configure post build scripts --
 
-	if config.outDir32 then
+	if os.getenv("CI_BUILD") == nil and config.outDir32 then
 		configuration { "x86" }
 			postbuildcommands { "{COPY} %{cfg.buildtarget.abspath} " .. config.outDir32 }
 	end
 
-	if config.outDir64 then
+	if os.getenv("CI_BUILD") == nil and config.outDir64 then
 		configuration { "x64" }
 			postbuildcommands { "{COPY} %{cfg.buildtarget.abspath} " .. config.outDir64 }
 	end
