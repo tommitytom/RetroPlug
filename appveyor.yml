@@ -39,7 +39,7 @@ install:
 
   - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
-  - cmd: build.bat
+  - cmd: deploy.bat
 artifacts:
     - path: build\deploy\RetroPlug_standalone*.zip
       name: 'RetroPlug Standalone Win64'
