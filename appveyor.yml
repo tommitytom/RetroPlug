@@ -1,10 +1,9 @@
-version: 0.3.3-{build}
 image:
 - Visual Studio 2019
 environment:
   CI_BUILD: true
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
-  #APPVEYOR_CACHE_SKIP_RESTORE: true
+  APPVEYOR_CACHE_SKIP_RESTORE: true
   VcpkgAutoLink: false
   dep_secret:
     secure: Go1kB2XlFAIQvngM+YPkhD7p+Cmfzo1rcNWCiA8E6Lo=
@@ -12,7 +11,17 @@ environment:
     secure: 39s+KlQG6Hg9XF4FP6/KW+KrDYYdxj1ZoS4zoiX2LuS62MczMH5hoq2ZOmjyx6wD6qip9xBcltozTX6hn8fK3g==
 init:
   # Do a clean build if we are on the main branch (usually only for releases)
-  - ps: IF ($env:APPVEYOR_REPO_BRANCH -eq "main") {$env:APPVEYOR_CACHE_SKIP_RESTORE = "true"}
+  #- ps: IF ($env:APPVEYOR_REPO_BRANCH -eq "main") {$env:APPVEYOR_CACHE_SKIP_RESTORE = "true"}
+  - ps: >-
+      if ($env:APPVEYOR_REPO_TAG -eq "true")
+      {
+          $env:RETROPLUG_VERSION = "$env:APPVEYOR_REPO_TAG_NAME"
+      }
+      else
+      {
+          $env:RETROPLUG_VERSION = "dev-$($env:APPVEYOR_REPO_COMMIT.Substring(0, 7))"
+      }
+      Update-AppveyorBuild -Version "$env:RETROPLUG_VERSION"
 clone_folder: c:\retroplug
 cache: c:\retroplug\build
 install:
@@ -30,13 +39,22 @@ install:
 
   - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
-  - cmd: premake5 vs2019
-  - cmd: msbuild build/vs2019/ScriptCompiler.vcxproj /property:Configuration=Release /property:Platform=x64 /m
-  - cmd: c:\retroplug\build\vs2019\bin\x64\Release\ScriptCompiler.exe c:\retroplug\src\compiler.config.lua
-  - cmd: premake5 vs2019
-  - cmd: msbuild build/vs2019/RetroPlug.sln /property:Configuration=Release /property:Platform=x64 /m
+  - cmd: build.bat
 artifacts:
-    - path: build\vs2019\bin\x64\Release\RetroPlug_app_x64.exe
-      name: 'RetroPlug Standalone'
-    - path: build\vs2019\bin\x64\Release\RetroPlug_vst2_x64.dll
-      name: 'RetroPlug VST2'
+    - path: build\deploy\RetroPlug_standalone*.zip
+      name: 'RetroPlug Standalone Win64'
+    - path: build\deploy\RetroPlug_vst2*.zip
+      name: 'RetroPlug VST2 Win64'
+deploy:
+  deploy:
+  release: RetroPlug $(APPVEYOR_BUILD_VERSION)
+  description: 'Release description'
+  provider: GitHub
+  auth_token:
+    secure: /qpQ094QMnI1maDmM/leovgbLDBFluaEi22tjmdjRTXaDHER2apNW5M9qEvyb8p5 # your encrypted token from GitHub
+  artifact: /.*\.zip/            # upload all NuGet packages to release assets
+  draft: true
+  prerelease: false
+  on:
+    branch: main                 # release from master branch only
+    APPVEYOR_REPO_TAG: true        # deploy on tag push only
