@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
+//#include <spdlog/sinks/msvc_sink.h>
 
 #include "config.h"
 #include "platform/Path.h"
@@ -45,6 +46,9 @@ RetroPlugController::RetroPlugController(double sampleRate)
 
 	auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((configPath / "log.txt").string(), true);
 	file_sink->set_level(spdlog::level::info);
+
+	//auto msvc_sink = std::make_shared<spdlog::sinks::msvc_sink_st>();
+	//msvc_sink->set_level(spdlog::level::debug);
 
 	auto logger = std::make_shared<spdlog::logger>("", spdlog::sinks_init_list { console_sink, file_sink });
 	logger->flush_on(spdlog::level::err);
