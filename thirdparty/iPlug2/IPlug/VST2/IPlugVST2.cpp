@@ -1,10 +1,10 @@
 /*
  ==============================================================================
- 
- This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers. 
- 
+
+ This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers.
+
  See LICENSE.txt for  more info.
- 
+
  ==============================================================================
 */
 
@@ -27,8 +27,13 @@ static int VSTSpkrArrType(int nchan)
 static int AsciiToVK(int ascii)
 {
 #ifdef OS_WIN
-  HKL layout = GetKeyboardLayout(0);
-  return VkKeyScanExA((CHAR)ascii, layout);
+  if (ascii != 0) {
+    HKL layout = GetKeyboardLayout(0);
+    return VkKeyScanExA((CHAR)ascii, layout);
+  } else {
+    return 0;
+  }
+
 #else
   // Numbers and uppercase alpha chars map directly to VK
   if ((ascii >= 0x30 && ascii <= 0x39) || (ascii >= 0x41 && ascii <= 0x5A))
@@ -174,7 +179,7 @@ IPlugVST2::IPlugVST2(const InstanceInfo& info, const Config& config)
     mEditRect.right = config.plugWidth;
     mEditRect.bottom = config.plugHeight;
   }
-  
+
   CreateTimer();
 }
 
@@ -209,10 +214,10 @@ bool IPlugVST2::EditorResize(int viewWidth, int viewHeight)
       mEditRect.left = mEditRect.top = 0;
       mEditRect.right = viewWidth;
       mEditRect.bottom = viewHeight;
-    
+
       resized = mHostCallback(&mAEffect, audioMasterSizeWindow, viewWidth, viewHeight, 0, 0.f);
     }
-    
+
     SetEditorSize(viewWidth, viewHeight);
   }
 
@@ -318,7 +323,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         productStr[0] = '\0';
         int version = 0;
         _this->mHostCallback(&_this->mAEffect, audioMasterGetProductString, 0, 0, productStr, 0.0f);
-        
+
         if (CStringHasContents(productStr))
         {
           int decVer = (int) _this->mHostCallback(&_this->mAEffect, audioMasterGetVendorVersion, 0, 0, 0, 0.0f);
@@ -327,7 +332,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
           int rmin = (decVer - 10000 * ver - 100 * rmaj);
           version = (ver << 16) + (rmaj << 8) + rmin;
         }
-        
+
         _this->SetHost(productStr, version);
       }
       _this->OnParamReset(kReset);
@@ -766,7 +771,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         {
           return 1;
         }
-        
+
         return _this->VSTCanDo((char *) ptr);
       }
       return 0;

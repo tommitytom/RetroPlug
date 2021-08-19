@@ -58,7 +58,30 @@ void RetroPlugInstrument::ProcessBlock(sample** inputs, sample** outputs, int fr
 }
 
 void RetroPlugInstrument::OnIdle() {
+	
+}
 
+bool RetroPlugInstrument::OnKeyDown(const IKeyPress& key) {
+	// Ascii keys do not receive a correct key up event in ableton.  This is to
+	// workaround that.
+	if (mHost == EHost::kHostAbletonLive && key.utf8[0] != 0) {
+		_heldKeys.push_back(key.VK);
+	}
+
+	return GetUI()->OnKeyDown(0, 0, key); 
+}
+
+bool RetroPlugInstrument::OnKeyUp(const IKeyPress& key) {
+	IKeyPress keyCopy = key;
+	
+	if (mHost == EHost::kHostAbletonLive && key.VK == 0) {
+		if (_heldKeys.size()) {
+			keyCopy.VK = _heldKeys.back();
+			_heldKeys.pop_back();
+		}
+	}
+
+	return GetUI()->OnKeyUp(0, 0, keyCopy); 
 }
 
 bool RetroPlugInstrument::SerializeState(IByteChunk& chunk) {
