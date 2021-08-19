@@ -15,7 +15,7 @@ copy build\vs2019\bin\x64\Release\RetroPlug_app_x64.exe build\deploy\RetroPlug-%
 copy build\vs2019\bin\x64\Release\RetroPlug_vst2_x64.dll "build\deploy\RetroPlug %RETROPLUG_VERSION% (64bit).dll"
 
 cd build\deploy
-7za a RetroPlug_standalone-win64-%RETROPLUG_VERSION%.zip RetroPlug-%RETROPLUG_VERSION%.exe
-7za a RetroPlug_vst2-win64-%RETROPLUG_VERSION%.zip "RetroPlug %RETROPLUG_VERSION% (64bit).dll"
+7z a RetroPlug_standalone-win64-%RETROPLUG_VERSION%.zip RetroPlug-%RETROPLUG_VERSION%.exe
+7z a RetroPlug_vst2-win64-%RETROPLUG_VERSION%.zip "RetroPlug %RETROPLUG_VERSION% (64bit).dll"
 
 cd ..\..
