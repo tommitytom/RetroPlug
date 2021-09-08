@@ -187,8 +187,8 @@ BEGIN
     BEGIN
         BLOCK "040004e4"
         BEGIN
-            VALUE "FileVersion", "0.3.3"
-            VALUE "ProductVersion", "0.3.3"
+            VALUE "FileVersion", "0.3.4"
+            VALUE "ProductVersion", "0.3.4"
             VALUE "FileDescription", "RetroPlug"
             VALUE "InternalName", "RetroPlug"
             VALUE "ProductName", "RetroPlug"

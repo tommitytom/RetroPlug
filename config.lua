@@ -1,6 +1,6 @@
 return {
 	plugin = {
-		version = "0.3.3",
+		version = "0.3.4",
 		name = "RetroPlug",
 		author = "tommitytom",
 		uniqueId = "2wvF",
