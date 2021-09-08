@@ -48,13 +48,12 @@ artifacts:
 deploy:
   deploy:
   release: RetroPlug $(APPVEYOR_BUILD_VERSION)
-  description: 'Release description'
+  description: 'RetroPlug $(APPVEYOR_BUILD_VERSION)'
   provider: GitHub
   auth_token:
-    secure: /qpQ094QMnI1maDmM/leovgbLDBFluaEi22tjmdjRTXaDHER2apNW5M9qEvyb8p5 # your encrypted token from GitHub
-  artifact: /.*\.zip/            # upload all NuGet packages to release assets
+    secure: /qpQ094QMnI1maDmM/leovgbLDBFluaEi22tjmdjRTXaDHER2apNW5M9qEvyb8p5
+  artifact: /.*\.zip/
   draft: true
   prerelease: false
   on:
-    branch: main                 # release from master branch only
-    APPVEYOR_REPO_TAG: true        # deploy on tag push only
+    APPVEYOR_REPO_TAG: true
