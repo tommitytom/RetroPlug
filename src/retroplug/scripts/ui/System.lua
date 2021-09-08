@@ -70,6 +70,11 @@ end
 -- to 'data' is a buffer.
 function System:loadRom(data, path)
 	local d = self._desc
+	d.sramPath = ""
+
+	if d.sramData ~= nil then
+		d.sramData:clear()
+	end
 
 	local fileData, err
 	if type(data) == "string" and pathutil.ext(data) == "zip" then
@@ -154,8 +159,13 @@ function System:saveSram(path)
 		path = self._desc.sramPath
 	end
 
-	if path == nil then
+	if path == nil or path == "" then
 		path = pathutil.changeExt(self._desc.romPath, "sav")
+	end
+
+	if path == nil or path == "" then
+		log.error("Failed to write .sav - Failed to get a path to save to!")
+		return
 	end
 
 	log.info("Saving SRAM to " .. path)
