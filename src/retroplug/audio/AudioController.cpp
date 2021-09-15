@@ -20,7 +20,7 @@ void AudioController::setNode(Node* node) {
 			ctx->deserializeSystems(componentData);
 		}
 
-		_lua = ctx;
+	_lua = ctx;
 	});
 
 	node->on<calls::SwapSystem>([&](const SystemSwapDesc& d, SystemSwapDesc& other) {

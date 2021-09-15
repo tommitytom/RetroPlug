@@ -46,8 +46,8 @@ artifacts:
     - path: build\deploy\RetroPlug_vst2*.zip
       name: 'RetroPlug VST2 Win64'
 deploy:
-  deploy:
-  release: RetroPlug $(APPVEYOR_BUILD_VERSION)
+  tag: $(APPVEYOR_REPO_TAG_NAME)
+  release: 'RetroPlug $(APPVEYOR_BUILD_VERSION)'
   description: 'RetroPlug $(APPVEYOR_BUILD_VERSION)'
   provider: GitHub
   auth_token:
