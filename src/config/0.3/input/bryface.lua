@@ -1,7 +1,7 @@
 InputConfig({ name = "bryface" })
 
 KeyMap({
-	[Key.3] = Button.Up,
+	[Key.Num3] = Button.Up,
 	[Key.W] = Button.Left,
 	[Key.E] = Button.Down,
 	[Key.R] = Button.Right,
