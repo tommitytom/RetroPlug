@@ -292,11 +292,23 @@ uint32_t GB_convert_rgb15(GB_gameboy_t *gb, uint16_t color, bool for_border)
                 new_r = new_r * 7 / 8 + (    g + b) / 16;
                 new_g = new_g * 7 / 8 + (r   +   b) / 16;
                 new_b = new_b * 7 / 8 + (r + g    ) / 16;
-
                 
                 new_r = new_r * (224 - 32) / 255 + 32;
                 new_g = new_g * (220 - 36) / 255 + 36;
                 new_b = new_b * (216 - 40) / 255 + 40;
+            }
+            else if (gb->color_correction_mode == GB_COLOR_CORRECTION_LOW_CONTRAST) {
+                r = new_r;
+                g = new_r;
+                b = new_r;
+                
+                new_r = new_r * 7 / 8 + (    g + b) / 16;
+                new_g = new_g * 7 / 8 + (r   +   b) / 16;
+                new_b = new_b * 7 / 8 + (r + g    ) / 16;
+                
+                new_r = new_r * (162 - 67) / 255 + 67;
+                new_g = new_g * (167 - 62) / 255 + 62;
+                new_b = new_b * (157 - 58) / 255 + 58;
             }
             else if (gb->color_correction_mode == GB_COLOR_CORRECTION_PRESERVE_BRIGHTNESS) {
                 uint8_t old_max = MAX(r, MAX(g, b));
@@ -620,7 +632,7 @@ static void advance_fetcher_state_machine(GB_gameboy_t *gb)
         GB_FETCHER_SLEEP,
     } fetcher_step_t;
     
-    fetcher_step_t fetcher_state_machine [8] = {
+    static const fetcher_step_t fetcher_state_machine [8] = {
         GB_FETCHER_SLEEP,
         GB_FETCHER_GET_TILE,
         GB_FETCHER_SLEEP,
@@ -654,7 +666,10 @@ static void advance_fetcher_state_machine(GB_gameboy_t *gb)
                 x = gb->window_tile_x;
             }
             else {
-                x = ((gb->io_registers[GB_IO_SCX] / 8) + gb->fetcher_x) & 0x1F;
+                /* TODO: There is some CGB timing error around here.
+                   Adjusting SCX by 7 or less shouldn't have an effect on a CGB,
+                   but SameBoy is affected by a change of both 7 and 6 (but not less). */
+                x = ((gb->io_registers[GB_IO_SCX] + gb->position_in_line + 8) / 8) & 0x1F;
             }
             if (gb->model > GB_MODEL_CGB_C) {
                 /* This value is cached on the CGB-D and newer, so it cannot be used to mix tiles together */
@@ -765,12 +780,6 @@ static void advance_fetcher_state_machine(GB_gameboy_t *gb)
             
         // fallthrough
         case GB_FETCHER_PUSH: {
-            if (gb->fetcher_state == 6) {
-                /* The background map index increase at this specific point. If this state is not reached,
-                   it will simply not increase. */
-                gb->fetcher_x++;
-                gb->fetcher_x &= 0x1f;
-            }
             if (gb->fetcher_state < 7) {
                 gb->fetcher_state++;
             }
@@ -854,7 +863,7 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
         GB_STATE(gb, display, 21);
         GB_STATE(gb, display, 22);
         GB_STATE(gb, display, 23);
-        // GB_STATE(gb, display, 24);
+        GB_STATE(gb, display, 24);
         GB_STATE(gb, display, 25);
         GB_STATE(gb, display, 26);
         GB_STATE(gb, display, 27);
@@ -1037,7 +1046,6 @@ void GB_display_run(GB_gameboy_t *gb, uint8_t cycles)
             gb->position_in_line = - (gb->io_registers[GB_IO_SCX] & 7) - 8;
             gb->lcd_x = 0;
           
-            gb->fetcher_x = 0;
             gb->extra_penalty_for_sprite_at_0 = (gb->io_registers[GB_IO_SCX] & 7);
 
             
@@ -1287,7 +1295,9 @@ abort_fetching_object:
                 gb->wy_triggered = true;
             }
             GB_SLEEP(gb, display, 31, 2);
-            gb->mode_for_interrupt = 2;
+            if (gb->current_line != LINES - 1) {
+                gb->mode_for_interrupt = 2;
+            }
           
             // Todo: unverified timing
             gb->current_lcd_line++;
@@ -1305,20 +1315,22 @@ abort_fetching_object:
             gb->io_registers[GB_IO_LY] = gb->current_line;
             gb->ly_for_comparison = -1;
             GB_SLEEP(gb, display, 26, 2);
-            if (gb->current_line == LINES) {
-                gb->mode_for_interrupt = 2;
+            if (gb->current_line == LINES && !gb->stat_interrupt_line && (gb->io_registers[GB_IO_STAT] & 0x20)) {
+                gb->io_registers[GB_IO_IF] |= 2;
             }
-            GB_STAT_update(gb);
             GB_SLEEP(gb, display, 12, 2);
             gb->ly_for_comparison = gb->current_line;
-            
+            GB_STAT_update(gb);
+            GB_SLEEP(gb, display, 24, 1);
+
             if (gb->current_line == LINES) {
                 /* Entering VBlank state triggers the OAM interrupt */
                 gb->io_registers[GB_IO_STAT] &= ~3;
                 gb->io_registers[GB_IO_STAT] |= 1;
                 gb->io_registers[GB_IO_IF] |= 1;
-                gb->mode_for_interrupt = 2;
-                GB_STAT_update(gb);
+                if (!gb->stat_interrupt_line && (gb->io_registers[GB_IO_STAT] & 0x20)) {
+                    gb->io_registers[GB_IO_IF] |= 2;
+                }
                 gb->mode_for_interrupt = 1;
                 GB_STAT_update(gb);
                 
@@ -1350,8 +1362,7 @@ abort_fetching_object:
                 }
             }
             
-            GB_STAT_update(gb);
-            GB_SLEEP(gb, display, 13, LINE_LENGTH - 4);
+            GB_SLEEP(gb, display, 13, LINE_LENGTH - 5);
         }
         
         /* TODO: Verified on SGB2 and CGB-E. Actual interrupt timings not tested. */
@@ -1515,7 +1526,7 @@ uint8_t GB_get_oam_info(GB_gameboy_t *gb, GB_oam_info_t *dest, uint8_t *sprite_h
     uint8_t count = 0;
     *sprite_height = (gb->io_registers[GB_IO_LCDC] & 4) ? 16:8;
     uint8_t oam_to_dest_index[40] = {0,};
-    for (unsigned y = 0; y < LINES; y++) {
+    for (signed y = 0; y < LINES; y++) {
         GB_object_t *sprite = (GB_object_t *) &gb->oam;
         uint8_t sprites_in_line = 0;
         for (uint8_t i = 0; i < 40; i++, sprite++) {

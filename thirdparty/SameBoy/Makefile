@@ -121,14 +121,17 @@ endif
 
 CFLAGS += $(WARNINGS)
 
-CFLAGS += -std=gnu11 -D_GNU_SOURCE -DVERSION="$(VERSION)" -I. -D_USE_MATH_DEFINES
+CFLAGS += -std=gnu11 -D_GNU_SOURCE -DGB_VERSION='"$(VERSION)"' -I. -D_USE_MATH_DEFINES
+ifneq (,$(UPDATE_SUPPORT))
+CFLAGS += -DUPDATE_SUPPORT
+endif
 
 ifeq (,$(PKG_CONFIG))
 SDL_CFLAGS := $(shell sdl2-config --cflags)
-SDL_LDFLAGS := $(shell sdl2-config --libs)
+SDL_LDFLAGS := $(shell sdl2-config --libs) -lpthread
 else
 SDL_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2)
-SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2)
+SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lpthread
 endif
 ifeq (,$(PKG_CONFIG))
 GL_LDFLAGS := -lGL

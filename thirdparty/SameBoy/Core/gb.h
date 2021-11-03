@@ -24,6 +24,7 @@
 #include "cheats.h"
 #include "rumble.h"
 #include "workboy.h"
+#include "random.h"
 
 #define GB_STRUCT_VERSION 13
 
@@ -297,7 +298,6 @@ typedef enum {
 #define SGB_NTSC_FREQUENCY (21477272 / 5)
 #define SGB_PAL_FREQUENCY (21281370 / 5)
 #define DIV_CYCLES (0x100)
-#define INTERNAL_DIV_CYCLES (0x40000)
 
 #if !defined(MIN)
 #define MIN(A, B)    ({ __typeof__(A) __a = (A); __typeof__(B) __b = (B); __a < __b ? __a : __b; })
@@ -435,6 +435,7 @@ struct GB_gameboy_internal_s {
                
        int32_t ir_sensor;
        bool effective_ir_input;
+       uint16_t address_bus;
     );
 
     /* DMA and HDMA */
@@ -532,6 +533,9 @@ struct GB_gameboy_internal_s {
         uint16_t serial_length;
         uint8_t double_speed_alignment;
         uint8_t serial_count;
+        int32_t speed_switch_halt_countdown;
+        uint8_t speed_switch_countdown; // To compensate for the lack of pipeline emulation
+        uint8_t speed_switch_freeze; // Solely for realigning the PPU, should be removed when the odd modes are implemented
     );
 
     /* APU */
@@ -543,7 +547,7 @@ struct GB_gameboy_internal_s {
     GB_SECTION(rtc,
         GB_rtc_time_t rtc_real, rtc_latched;
         uint64_t last_rtc_second;
-        bool rtc_latch;
+        GB_PADDING(bool, rtc_latch);
         uint32_t rtc_cycles;
         uint8_t tpp1_mr4;
     );
@@ -551,7 +555,7 @@ struct GB_gameboy_internal_s {
     /* Video Display */
     GB_SECTION(video,
         uint32_t vram_size; // Different between CGB and DMG
-        uint8_t cgb_vram_bank;
+        bool cgb_vram_bank;
         uint8_t oam[0xA0];
         uint8_t background_palettes_data[0x40];
         uint8_t sprite_palettes_data[0x40];
@@ -579,7 +583,7 @@ struct GB_gameboy_internal_s {
         uint8_t current_line;
         uint16_t ly_for_comparison;
         GB_fifo_t bg_fifo, oam_fifo;
-        uint8_t fetcher_x;
+        GB_PADDING(uint8_t, fetcher_x);
         uint8_t fetcher_y;
         uint16_t cycles_for_line;
         uint8_t current_tile;
@@ -717,6 +721,7 @@ struct GB_gameboy_internal_s {
 
         /* Ticks command */
         uint64_t debugger_ticks;
+        uint64_t absolute_debugger_ticks;
                
         /* Undo */
         uint8_t *undo_state;
@@ -819,6 +824,7 @@ void GB_load_boot_rom_from_buffer(GB_gameboy_t *gb, const unsigned char *buffer,
 int GB_load_rom(GB_gameboy_t *gb, const char *path);
 void GB_load_rom_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size);
 int GB_load_isx(GB_gameboy_t *gb, const char *path);
+int GB_load_gbs_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size, GB_gbs_info_t *info);
 int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info);
 void GB_gbs_switch_track(GB_gameboy_t *gb, uint8_t track);
 
@@ -883,5 +889,14 @@ unsigned GB_get_screen_width(GB_gameboy_t *gb);
 unsigned GB_get_screen_height(GB_gameboy_t *gb);
 double GB_get_usual_frame_rate(GB_gameboy_t *gb);
 unsigned GB_get_player_count(GB_gameboy_t *gb);
+
+/* Handy ROM info APIs */
+// `title` must be at least 17 bytes in size
+void GB_get_rom_title(GB_gameboy_t *gb, char *title);
+uint32_t GB_get_rom_crc32(GB_gameboy_t *gb);
+
+#ifdef GB_INTERNAL
+void GB_borrow_sgb_border(GB_gameboy_t *gb);
+#endif
     
 #endif /* GB_h */

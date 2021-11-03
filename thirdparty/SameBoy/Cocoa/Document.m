@@ -314,13 +314,14 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
         self.mainWindow.contentView.bounds.size.width < GB_get_screen_height(&gb)) {
         [self.mainWindow zoom:nil];
     }
+    self.osdView.usesSGBScale = GB_get_screen_width(&gb) == 256;
 }
 
 - (void) vblank
 {
     if (_gbsVisualizer) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_gbsVisualizer setNeedsDisplay:YES];
+            [_gbsVisualizer setNeedsDisplay:true];
         });
     }
     [self.view flip];
@@ -344,6 +345,7 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     }
     if (self.view.isRewinding) {
         rewind = true;
+        [self.osdView displayText:@"Rewinding..."];
     }
 }
 
@@ -368,6 +370,11 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
                 audioBufferSize += audioBufferSize >> 2;
             }
             audioBuffer = realloc(audioBuffer, sizeof(*sample) * audioBufferSize);
+        }
+        double volume = [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBVolume"];
+        if (volume != 1) {
+            sample->left *= volume;
+            sample->right *= volume;
         }
         audioBuffer[audioBufferPosition++] = *sample;
     }
@@ -415,7 +422,7 @@ static void infraredStateChanged(GB_gameboy_t *gb, bool on)
     if (![[NSUserDefaults standardUserDefaults] boolForKey:@"Mute"]) {
         [self.audioClient start];
     }
-    hex_timer = [NSTimer timerWithTimeInterval:0.25 target:self selector:@selector(reloadMemoryView) userInfo:nil repeats:YES];
+    hex_timer = [NSTimer timerWithTimeInterval:0.25 target:self selector:@selector(reloadMemoryView) userInfo:nil repeats:true];
     [[NSRunLoop mainRunLoop] addTimer:hex_timer forMode:NSDefaultRunLoopMode];
     
     /* Clear pending alarms, don't play alarms while playing */
@@ -495,7 +502,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [audioLock unlock];
     [self.audioClient stop];
     self.audioClient = nil;
-    self.view.mouseHidingEnabled = NO;
+    self.view.mouseHidingEnabled = false;
     GB_save_battery(&gb, [[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sav"].path UTF8String]);
     GB_save_cheats(&gb, [[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"cht"].path UTF8String]);
     unsigned time_to_alarm = GB_time_to_alarm(&gb);
@@ -586,12 +593,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         current_model = (enum model)[sender tag];
     }
     
-    if (!modelsChanging && [sender tag] == MODEL_NONE) {
-        GB_reset(&gb);
-    }
-    else {
-        GB_switch_model_and_reset(&gb, [self internalModel]);
-    }
+    GB_switch_model_and_reset(&gb, [self internalModel]);
     
     if (old_width != GB_get_screen_width(&gb)) {
         [self.view screenSizeChanged];
@@ -616,6 +618,10 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         [(GBMemoryByteArray *)(hex_controller.byteArray) setSelectedBank:0];
         [self hexUpdateBank:self.memoryBankInput ignoreErrors:true];
     }
+    
+    char title[17];
+    GB_get_rom_title(&gb, title);
+    [self.osdView displayText:[NSString stringWithFormat:@"SameBoy v" GB_VERSION "\n%s\n%08X", title, GB_get_rom_crc32(&gb)]];
 }
 
 - (IBAction)togglePause:(id)sender
@@ -678,9 +684,13 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
                                   window_frame.size.width);
     window_frame.size.height = MAX([[NSUserDefaults standardUserDefaults] integerForKey:@"LastWindowHeight"],
                                    window_frame.size.height);
-    [self.mainWindow setFrame:window_frame display:YES];
+    [self.mainWindow setFrame:window_frame display:true];
     self.vramStatusLabel.cell.backgroundStyle = NSBackgroundStyleRaised;
-    
+        
+    NSUInteger height_diff = self.vramWindow.frame.size.height - self.vramWindow.contentView.frame.size.height;
+    CGRect vram_window_rect = self.vramWindow.frame;
+    vram_window_rect.size.height = 384 + height_diff + 48;
+    [self.vramWindow setFrame:vram_window_rect display:true animate:false];
     
     
     self.consoleWindow.title = [NSString stringWithFormat:@"Debug Console – %@", [self.fileURL.path lastPathComponent]];
@@ -775,9 +785,17 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     
     [self initCommon];
     self.view.gb = &gb;
+    self.view.osdView = _osdView;
     [self.view screenSizeChanged];
-    [self loadROM];
-    [self reset:nil];
+    if ([self loadROM]) {
+        _mainWindow.alphaValue = 0; // Hack hack ugly hack
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self close];
+        });
+    }
+    else {
+        [self reset:nil];
+    }
 }
 
 - (void) initMemoryView
@@ -828,7 +846,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 + (BOOL)autosavesInPlace 
 {
-    return YES;
+    return true;
 }
 
 - (NSString *)windowNibName 
@@ -840,7 +858,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 - (BOOL)readFromFile:(NSString *)fileName ofType:(NSString *)type
 {
-    return YES;
+    return true;
 }
 
 - (IBAction)changeGBSTrack:(id)sender
@@ -879,7 +897,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 {
     GB_set_rendering_disabled(&gb, true);
     _view = nil;
-    for (NSView *view in _mainWindow.contentView.subviews) {
+    for (NSView *view in [_mainWindow.contentView.subviews copy]) {
         [view removeFromSuperview];
     }
     [[NSBundle mainBundle] loadNibNamed:@"GBS" owner:self topLevelObjects:nil];
@@ -919,21 +937,22 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
 }
 
-- (void) loadROM
+- (int) loadROM
 {
+    __block int ret = 0;
     NSString *rom_warnings = [self captureOutputForBlock:^{
         GB_debugger_clear_symbols(&gb);
         if ([[[self.fileType pathExtension] lowercaseString] isEqualToString:@"isx"]) {
-            GB_load_isx(&gb, self.fileURL.path.UTF8String);
+            ret = GB_load_isx(&gb, self.fileURL.path.UTF8String);
             GB_load_battery(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"ram"].path.UTF8String);
         }
         else if ([[[self.fileType pathExtension] lowercaseString] isEqualToString:@"gbs"]) {
             __block GB_gbs_info_t info;
-            GB_load_gbs(&gb, self.fileURL.path.UTF8String, &info);
+            ret = GB_load_gbs(&gb, self.fileURL.path.UTF8String, &info);
             [self prepareGBSInterface:&info];
         }
         else {
-            GB_load_rom(&gb, [self.fileURL.path UTF8String]);
+            ret = GB_load_rom(&gb, [self.fileURL.path UTF8String]);
         }
         GB_load_battery(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sav"].path.UTF8String);
         GB_load_cheats(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"cht"].path.UTF8String);
@@ -941,10 +960,17 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         GB_debugger_load_symbol_file(&gb, [[[NSBundle mainBundle] pathForResource:@"registers" ofType:@"sym"] UTF8String]);
         GB_debugger_load_symbol_file(&gb, [[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sym"].path.UTF8String);
     }];
-    if (rom_warnings && !rom_warning_issued) {
+    if (ret) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:rom_warnings?: @"Could not load ROM"];
+        [alert setAlertStyle:NSAlertStyleCritical];
+        [alert runModal];
+    }
+    else if (rom_warnings && !rom_warning_issued) {
         rom_warning_issued = true;
         [GBWarningPopover popoverWithContents:rom_warnings onWindow:self.mainWindow];
     }
+    return ret;
 }
 
 - (void)close
@@ -979,6 +1005,9 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
     else {
         [self.audioClient start];
+        if ([[NSUserDefaults standardUserDefaults] doubleForKey:@"GBVolume"] == 0) {
+            [GBWarningPopover popoverWithContents:@"Warning: Volume is set to to zero in the preferences panel" onWindow:self.mainWindow];
+        }
     }
     [[NSUserDefaults standardUserDefaults] setBool:!self.audioClient.isPlaying forKey:@"Mute"];
 }
@@ -1032,7 +1061,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 - (void) windowWillExitFullScreen:(NSNotification *)notification
 {
     fullScreen = false;
-    self.view.mouseHidingEnabled = NO;
+    self.view.mouseHidingEnabled = false;
 }
 
 - (NSRect)windowWillUseStandardFrame:(NSWindow *)window defaultFrame:(NSRect)newFrame
@@ -1127,14 +1156,14 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
     
     if (![console_output_timer isValid]) {
-        console_output_timer = [NSTimer timerWithTimeInterval:(NSTimeInterval)0.05 target:self selector:@selector(appendPendingOutput) userInfo:nil repeats:NO];
+        console_output_timer = [NSTimer timerWithTimeInterval:(NSTimeInterval)0.05 target:self selector:@selector(appendPendingOutput) userInfo:nil repeats:false];
         [[NSRunLoop mainRunLoop] addTimer:console_output_timer forMode:NSDefaultRunLoopMode];
     }
     
     [console_output_lock unlock];
 
     /* Make sure mouse is not hidden while debugging */
-    self.view.mouseHidingEnabled = NO;
+    self.view.mouseHidingEnabled = false;
 }
 
 - (IBAction)showConsoleWindow:(id)sender
@@ -1261,28 +1290,41 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         [GBWarningPopover popoverWithContents:@"Failed to write save state." onWindow:self.mainWindow];
         NSBeep();
     }
+    else {
+        [self.osdView displayText:@"State saved"];
+    }
 }
 
-- (bool)loadStateFile:(const char *)path
+- (int)loadStateFile:(const char *)path noErrorOnNotFound:(bool)noErrorOnFileNotFound;
 {
-    bool __block success = false;
+    int __block result = false;
     NSString *error =
     [self captureOutputForBlock:^{
-        success = GB_load_state(&gb, path) == 0;
+        result = GB_load_state(&gb, path);
     }];
     
-    if (!success) {
+    if (result == ENOENT && noErrorOnFileNotFound) {
+        return ENOENT;
+    }
+    
+    if (result) {
         NSBeep();
+    }
+    else {
+        [self.osdView displayText:@"State loaded"];
     }
     if (error) {
         [GBWarningPopover popoverWithContents:error onWindow:self.mainWindow];
     }
-    return success;
+    return result;
 }
 
 - (IBAction)loadState:(id)sender
 {
-    [self loadStateFile:[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag] ]].path.UTF8String];
+    int ret = [self loadStateFile:[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"s%ld", (long)[sender tag]]].path.UTF8String noErrorOnNotFound:true];
+    if (ret == ENOENT) {
+        [self loadStateFile:[[self.fileURL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"sn%ld", (long)[sender tag]]].path.UTF8String noErrorOnNotFound:false];
+    }
 }
 
 - (IBAction)clearConsole:(id)sender
@@ -1348,7 +1390,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
                                     bitmapInfo,
                                     provider,
                                     NULL,
-                                    YES,
+                                    true,
                                     renderingIntent);
     CGDataProviderRelease(provider);
     CGColorSpaceRelease(colorSpaceRef);
@@ -1556,7 +1598,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
     [self.memoryBankInput setStringValue:[NSString stringWithFormat:@"$%x", byteArray.selectedBank]];
     [hex_controller reloadData];
-    [self.memoryView setNeedsDisplay:YES];
+    [self.memoryView setNeedsDisplay:true];
 }
 
 - (GB_gameboy_t *) gameboy
@@ -1566,12 +1608,12 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 + (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName
 {
-    return YES;
+    return true;
 }
 
 - (void)cameraRequestUpdate
 {
-    dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             if (!cameraSession) {
                 if (@available(macOS 10.14, *)) {
@@ -1707,14 +1749,14 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
             window_rect.size.height = 512 + height_diff + 48;
             break;
         case 3:
-            window_rect.size.height = 20 * 16 + height_diff + 24;
+            window_rect.size.height = 20 * 16 + height_diff + 34;
             break;
             
         default:
             break;
     }
     window_rect.origin.y -= window_rect.size.height;
-    [self.vramWindow setFrame:window_rect display:YES animate:YES];
+    [self.vramWindow setFrame:window_rect display:true animate:true];
 }
 
 - (void)mouseDidLeaveImageView:(GBImageView *)view
@@ -1809,7 +1851,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
             case 0:
                 return [Document imageFromData:[NSData dataWithBytesNoCopy:oamInfo[row].image
                                                                     length:64 * 4 * 2
-                                                             freeWhenDone:NO]
+                                                             freeWhenDone:false]
                                          width:8
                                         height:oamHeight
                                          scale:16.0/oamHeight];
@@ -1852,7 +1894,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 
 - (BOOL)tableView:(NSTableView *)tableView shouldEditTableColumn:(nullable NSTableColumn *)tableColumn row:(NSInteger)row
 {
-    return NO;
+    return false;
 }
 
 - (IBAction)showVRAMViewer:(id)sender
@@ -1882,7 +1924,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
         frame.size = self.feedImageView.image.size;
         [self.printerFeedWindow setContentMaxSize:frame.size];
         frame.size.height += self.printerFeedWindow.frame.size.height - self.printerFeedWindow.contentView.frame.size.height;
-        [self.printerFeedWindow setFrame:frame display:NO animate: self.printerFeedWindow.isVisible];
+        [self.printerFeedWindow setFrame:frame display:false animate: self.printerFeedWindow.isVisible];
         [self.printerFeedWindow orderFront:NULL];
     });
     
@@ -1913,8 +1955,8 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
             NSBitmapImageRep *imageRep = [[NSBitmapImageRep alloc] initWithCGImage:cgRef];
             [imageRep setSize:(NSSize){160, self.feedImageView.image.size.height / 2}];
             NSData *data = [imageRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-            [data writeToURL:savePanel.URL atomically:NO];
-            [self.printerFeedWindow setIsVisible:NO];
+            [data writeToURL:savePanel.URL atomically:false];
+            [self.printerFeedWindow setIsVisible:false];
         }
         if (shouldResume) {
             [self start];
@@ -2035,9 +2077,9 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 - (BOOL)splitView:(GBSplitView *)splitView canCollapseSubview:(NSView *)subview;
 {
     if ([[splitView arrangedSubviews] lastObject] == subview) {
-        return YES;
+        return true;
     }
-    return NO;
+    return false;
 }
 
 - (CGFloat)splitView:(GBSplitView *)splitView constrainMinCoordinate:(CGFloat)proposedMinimumPosition ofSubviewAt:(NSInteger)dividerIndex
@@ -2053,9 +2095,9 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 - (BOOL)splitView:(GBSplitView *)splitView shouldAdjustSizeOfSubview:(NSView *)view 
 {
     if ([[splitView arrangedSubviews] lastObject] == view) {
-        return NO;
+        return false;
     }
-    return YES;
+    return true;
 }
 
 - (void)splitViewDidResizeSubviews:(NSNotification *)notification
@@ -2159,4 +2201,115 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
 {
     return &gb;
 }
+
+- (NSImage *)takeScreenshot
+{
+    NSImage *ret = nil;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBFilterScreenshots"]) {
+        ret = [_view renderToImage];
+    }
+    if (!ret) {
+        ret = [Document imageFromData:[NSData dataWithBytesNoCopy:_view.currentBuffer
+                                                           length:GB_get_screen_width(&gb) * GB_get_screen_height(&gb) * 4
+                                                     freeWhenDone:false]
+                                width:GB_get_screen_width(&gb)
+                               height:GB_get_screen_height(&gb)
+                                scale:1.0];
+    }
+    [ret lockFocus];
+    NSBitmapImageRep *bitmapRep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect(0, 0,
+                                                                                               ret.size.width, ret.size.height)];
+    [ret unlockFocus];
+    ret = [[NSImage alloc] initWithSize:ret.size];
+    [ret addRepresentation:bitmapRep];
+    return ret;
+}
+
+- (NSString *)screenshotFilename
+{
+    NSDate *date = [NSDate date];
+    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.dateStyle = NSDateFormatterLongStyle;
+    dateFormatter.timeStyle = NSDateFormatterMediumStyle;
+    return [[NSString stringWithFormat:@"%@ – %@.png",
+             self.fileURL.lastPathComponent.stringByDeletingPathExtension,
+             [dateFormatter stringFromDate:date]] stringByReplacingOccurrencesOfString:@":" withString:@"."]; // Gotta love Mac OS Classic
+
+}
+
+- (IBAction)saveScreenshot:(id)sender
+{
+    NSString *folder = [[NSUserDefaults standardUserDefaults] stringForKey:@"GBScreenshotFolder"];
+    BOOL isDirectory = false;
+    if (folder) {
+        [[NSFileManager defaultManager] fileExistsAtPath:folder isDirectory:&isDirectory];
+    }
+    if (!folder) {
+        bool shouldResume = running;
+        [self stop];
+        NSOpenPanel *openPanel = [NSOpenPanel openPanel];
+        openPanel.canChooseFiles = false;
+        openPanel.canChooseDirectories = true;
+        openPanel.message = @"Choose a folder for screenshots";
+        [openPanel beginSheetModalForWindow:self.mainWindow completionHandler:^(NSInteger result) {
+            if (result == NSModalResponseOK) {
+                [[NSUserDefaults standardUserDefaults] setObject:openPanel.URL.path
+                                                          forKey:@"GBScreenshotFolder"];
+                [self saveScreenshot:sender];
+            }
+            if (shouldResume) {
+                [self start];
+            }
+            
+        }];
+        return;
+    }
+    NSImage *image = [self takeScreenshot];
+    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.dateStyle = NSDateFormatterLongStyle;
+    dateFormatter.timeStyle = NSDateFormatterMediumStyle;
+    NSString *filename = [self screenshotFilename];
+    filename = [folder stringByAppendingPathComponent:filename];
+    unsigned i = 2;
+    while ([[NSFileManager defaultManager] fileExistsAtPath:filename]) {
+        filename = [[filename stringByDeletingPathExtension] stringByAppendingFormat:@" %d.png", i++];
+    }
+    
+    NSBitmapImageRep *imageRep = (NSBitmapImageRep *)image.representations.firstObject;
+    NSData *data = [imageRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    [data writeToFile:filename atomically:false];
+    [self.osdView displayText:@"Screenshot saved"];
+}
+
+- (IBAction)saveScreenshotAs:(id)sender
+{
+    bool shouldResume = running;
+    [self stop];
+    NSImage *image = [self takeScreenshot];
+    NSSavePanel *savePanel = [NSSavePanel savePanel];
+    [savePanel setNameFieldStringValue:[self screenshotFilename]];
+    [savePanel beginSheetModalForWindow:self.mainWindow completionHandler:^(NSInteger result) {
+        if (result == NSModalResponseOK) {
+            [savePanel orderOut:self];
+            NSBitmapImageRep *imageRep = (NSBitmapImageRep *)image.representations.firstObject;
+            NSData *data = [imageRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            [data writeToURL:savePanel.URL atomically:false];
+            [[NSUserDefaults standardUserDefaults] setObject:savePanel.URL.path.stringByDeletingLastPathComponent
+                                                      forKey:@"GBScreenshotFolder"];
+        }
+        if (shouldResume) {
+            [self start];
+        }
+    }];
+    [self.osdView displayText:@"Screenshot saved"];
+}
+
+- (IBAction)copyScreenshot:(id)sender
+{
+    NSImage *image = [self takeScreenshot];
+    [[NSPasteboard generalPasteboard] clearContents];
+    [[NSPasteboard generalPasteboard] writeObjects:@[image]];
+    [self.osdView displayText:@"Screenshot copied"];
+}
+
 @end

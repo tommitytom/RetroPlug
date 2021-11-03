@@ -198,11 +198,13 @@ static void draw_char(uint32_t *buffer, unsigned width, unsigned height, unsigne
 }
 
 static signed scroll = 0;
-static void draw_unbordered_text(uint32_t *buffer, unsigned width, unsigned height, unsigned x, signed y, const char *string, uint32_t color)
+static void draw_unbordered_text(uint32_t *buffer, unsigned width, unsigned height, unsigned x, signed y, const char *string, uint32_t color, bool is_osd)
 {
-    y -= scroll;
+    if (!is_osd) {
+        y -= scroll;
+    }
     unsigned orig_x = x;
-    unsigned y_offset = (GB_get_screen_height(&gb) - 144) / 2;
+    unsigned y_offset = is_osd? 0 : (GB_get_screen_height(&gb) - 144) / 2;
     while (*string) {
         if (*string == '\n') {
             x = orig_x;
@@ -215,20 +217,38 @@ static void draw_unbordered_text(uint32_t *buffer, unsigned width, unsigned heig
             break;
         }
         
-        draw_char(&buffer[(signed)(x + width * y)], width, height, *string, color, &buffer[width * y_offset], &buffer[width * (y_offset + 144)]);
+        draw_char(&buffer[(signed)(x + width * y)], width, height, *string, color, &buffer[width * y_offset], &buffer[width * (is_osd? GB_get_screen_height(&gb) : y_offset + 144)]);
         x += GLYPH_WIDTH;
         string++;
     }
 }
 
-static void draw_text(uint32_t *buffer, unsigned width, unsigned height, unsigned x, signed y, const char *string, uint32_t color, uint32_t border)
+void draw_text(uint32_t *buffer, unsigned width, unsigned height, unsigned x, signed y, const char *string, uint32_t color, uint32_t border, bool is_osd)
 {
-    draw_unbordered_text(buffer, width, height, x - 1, y, string, border);
-    draw_unbordered_text(buffer, width, height, x + 1, y, string, border);
-    draw_unbordered_text(buffer, width, height, x, y - 1, string, border);
-    draw_unbordered_text(buffer, width, height, x, y + 1, string, border);
-    draw_unbordered_text(buffer, width, height, x, y, string, color);
+    draw_unbordered_text(buffer, width, height, x - 1, y, string, border, is_osd);
+    draw_unbordered_text(buffer, width, height, x + 1, y, string, border, is_osd);
+    draw_unbordered_text(buffer, width, height, x, y - 1, string, border, is_osd);
+    draw_unbordered_text(buffer, width, height, x, y + 1, string, border, is_osd);
+    draw_unbordered_text(buffer, width, height, x, y, string, color, is_osd);
 }
+
+const char *osd_text = NULL;
+unsigned osd_countdown = 0;
+unsigned osd_text_lines = 1;
+
+void show_osd_text(const char *text)
+{
+    osd_text_lines = 1;
+    osd_text = text;
+    osd_countdown = 30;
+    while (*text++) {
+        if (*text == '\n') {
+            osd_text_lines++;
+            osd_countdown += 30;
+        }
+    }
+}
+
 
 enum decoration {
     DECORATION_NONE,
@@ -239,14 +259,14 @@ enum decoration {
 static void draw_text_centered(uint32_t *buffer, unsigned width, unsigned height, unsigned y, const char *string, uint32_t color, uint32_t border, enum decoration decoration)
 {
     unsigned x = width / 2 - (unsigned) strlen(string) * GLYPH_WIDTH / 2;
-    draw_text(buffer, width, height, x, y, string, color, border);
+    draw_text(buffer, width, height, x, y, string, color, border, false);
     switch (decoration) {
         case DECORATION_SELECTION:
-            draw_text(buffer, width, height, x - GLYPH_WIDTH, y, SELECTION_STRING, color, border);
+            draw_text(buffer, width, height, x - GLYPH_WIDTH, y, SELECTION_STRING, color, border, false);
             break;
         case DECORATION_ARROWS:
-            draw_text(buffer, width, height, x - GLYPH_WIDTH, y, LEFT_ARROW_STRING, color, border);
-            draw_text(buffer, width, height, width - x, y, RIGHT_ARROW_STRING, color, border);
+            draw_text(buffer, width, height, x - GLYPH_WIDTH, y, LEFT_ARROW_STRING, color, border, false);
+            draw_text(buffer, width, height, width - x, y, RIGHT_ARROW_STRING, color, border, false);
             break;
             
         case DECORATION_NONE:
@@ -529,7 +549,7 @@ const char *current_default_scale(unsigned index)
 
 const char *current_color_correction_mode(unsigned index)
 {
-    return (const char *[]){"Disabled", "Correct Color Curves", "Emulate Hardware", "Preserve Brightness", "Reduce Contrast"}
+    return (const char *[]){"Disabled", "Correct Color Curves", "Emulate Hardware", "Preserve Brightness", "Reduce Contrast", "Harsh Reality"}
         [configuration.color_correction_mode];
 }
 
@@ -604,7 +624,7 @@ void cycle_default_scale_backwards(unsigned index)
 
 static void cycle_color_correction(unsigned index)
 {
-    if (configuration.color_correction_mode == GB_COLOR_CORRECTION_REDUCE_CONTRAST) {
+    if (configuration.color_correction_mode == GB_COLOR_CORRECTION_LOW_CONTRAST) {
         configuration.color_correction_mode = GB_COLOR_CORRECTION_DISABLED;
     }
     else {
@@ -615,7 +635,7 @@ static void cycle_color_correction(unsigned index)
 static void cycle_color_correction_backwards(unsigned index)
 {
     if (configuration.color_correction_mode == GB_COLOR_CORRECTION_DISABLED) {
-        configuration.color_correction_mode = GB_COLOR_CORRECTION_REDUCE_CONTRAST;
+        configuration.color_correction_mode = GB_COLOR_CORRECTION_LOW_CONTRAST;
     }
     else {
         configuration.color_correction_mode--;
@@ -676,6 +696,7 @@ static void cycle_border_mode_backwards(unsigned index)
     }
 }
 
+extern bool uses_gl(void);
 struct shader_name {
     const char *file_name;
     const char *display_name;
@@ -699,6 +720,7 @@ struct shader_name {
 
 static void cycle_filter(unsigned index)
 {
+    if (!uses_gl()) return;
     unsigned i = 0;
     for (; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
         if (strcmp(shaders[i].file_name, configuration.filter) == 0) {
@@ -721,6 +743,7 @@ static void cycle_filter(unsigned index)
 
 static void cycle_filter_backwards(unsigned index)
 {
+    if (!uses_gl()) return;
     unsigned i = 0;
     for (; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
         if (strcmp(shaders[i].file_name, configuration.filter) == 0) {
@@ -740,8 +763,9 @@ static void cycle_filter_backwards(unsigned index)
     }
 
 }
-const char *current_filter_name(unsigned index)
+static const char *current_filter_name(unsigned index)
 {
+    if (!uses_gl()) return "Requires OpenGL 3.2+";
     unsigned i = 0;
     for (; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
         if (strcmp(shaders[i].file_name, configuration.filter) == 0) {
@@ -758,6 +782,7 @@ const char *current_filter_name(unsigned index)
 
 static void cycle_blending_mode(unsigned index)
 {
+        if (!uses_gl()) return;
     if (configuration.blending_mode == GB_FRAME_BLENDING_MODE_ACCURATE) {
         configuration.blending_mode = GB_FRAME_BLENDING_MODE_DISABLED;
     }
@@ -768,6 +793,7 @@ static void cycle_blending_mode(unsigned index)
 
 static void cycle_blending_mode_backwards(unsigned index)
 {
+    if (!uses_gl()) return;
     if (configuration.blending_mode == GB_FRAME_BLENDING_MODE_DISABLED) {
         configuration.blending_mode = GB_FRAME_BLENDING_MODE_ACCURATE;
     }
@@ -776,10 +802,22 @@ static void cycle_blending_mode_backwards(unsigned index)
     }
 }
 
-const char *blending_mode_string(unsigned index)
+static const char *blending_mode_string(unsigned index)
 {
+    if (!uses_gl()) return "Requires OpenGL 3.2+";
     return (const char *[]){"Disabled", "Simple", "Accurate"}
     [configuration.blending_mode];
+}
+
+static void toggle_osd(unsigned index)
+{
+    osd_countdown = 0;
+    configuration.osd = !configuration.osd;
+}
+
+static const char *current_osd_mode(unsigned index)
+{
+    return configuration.osd? "Enabled" : "Disabled";
 }
 
 static const struct menu_item graphics_menu[] = {
@@ -791,6 +829,8 @@ static const struct menu_item graphics_menu[] = {
     {"Frame Blending:", cycle_blending_mode, blending_mode_string, cycle_blending_mode_backwards},
     {"Mono Palette:", cycle_palette, current_palette, cycle_palette_backwards},
     {"Display Border:", cycle_border_mode, current_border_mode, cycle_border_mode_backwards},
+    {"On-Screen Display:", toggle_osd, current_osd_mode, toggle_osd},
+
     {"Back", return_to_root_menu},
     {NULL,}
 };
@@ -914,10 +954,7 @@ static const struct menu_item controls_menu[] = {
 
 static const char *key_name(unsigned index)
 {
-    if (index >= 8) {
-        if (index == 8) {
-            return SDL_GetScancodeName(configuration.keys[8]);
-        }
+    if (index > 8) {
         return SDL_GetScancodeName(configuration.keys_2[index - 9]);
     }
     return SDL_GetScancodeName(configuration.keys[index]);
@@ -1123,6 +1160,12 @@ void run_gui(bool is_running)
     static SDL_Surface *converted_background = NULL;
     if (!converted_background) {
         SDL_Surface *background = SDL_LoadBMP(resource_path("background.bmp"));
+        
+        /* Create a blank background if background.bmp could not be loaded */
+        if (!background) {
+            background = SDL_CreateRGBSurface(0, 160, 144, 8, 0, 0, 0, 0);
+        }
+        
         SDL_SetPaletteColors(background->format->palette, gui_palette, 0, 4);
         converted_background = SDL_ConvertSurface(background, pixel_format, 0);
         SDL_LockSurface(converted_background);
@@ -1301,7 +1344,7 @@ void run_gui(bool is_running)
                 break;
             }
             case SDL_DROPFILE: {
-                if (GB_is_stave_state(event.drop.file)) {
+                if (GB_is_save_state(event.drop.file)) {
                     if (GB_is_inited(&gb)) {
                         dropped_state_file = event.drop.file;
                         pending_command = GB_SDL_LOAD_STATE_FROM_FILE_COMMAND;
@@ -1368,7 +1411,17 @@ void run_gui(bool is_running)
                 
 
             case SDL_KEYDOWN:
-                if (event_hotkey_code(&event) == SDL_SCANCODE_F && event.key.keysym.mod & MODIFIER) {
+                if (gui_state == WAITING_FOR_KEY) {
+                    if (current_selection > 8) {
+                        configuration.keys_2[current_selection - 9] = event.key.keysym.scancode;
+                    }
+                    else {
+                        configuration.keys[current_selection] = event.key.keysym.scancode;
+                    }
+                    gui_state = SHOWING_MENU;
+                    should_render = true;
+                }
+                else if (event_hotkey_code(&event) == SDL_SCANCODE_F && event.key.keysym.mod & MODIFIER) {
                     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == false) {
                         SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                     }
@@ -1377,7 +1430,7 @@ void run_gui(bool is_running)
                     }
                     update_viewport();
                 }
-                if (event_hotkey_code(&event) == SDL_SCANCODE_O) {
+                else if (event_hotkey_code(&event) == SDL_SCANCODE_O) {
                     if (event.key.keysym.mod & MODIFIER) {
                         char *filename = do_open_rom_dialog();
                         if (filename) {
@@ -1470,21 +1523,6 @@ void run_gui(bool is_running)
                     }
                     should_render = true;
                 }
-                else if (gui_state == WAITING_FOR_KEY) {
-                    if (current_selection >= 8) {
-                        if (current_selection == 8) {
-                            configuration.keys[8] = event.key.keysym.scancode;
-                        }
-                        else {
-                            configuration.keys_2[current_selection - 9] = event.key.keysym.scancode;
-                        }
-                    }
-                    else {
-                        configuration.keys[current_selection] = event.key.keysym.scancode;
-                    }
-                    gui_state = SHOWING_MENU;
-                    should_render = true;
-                }
                 break;
         }
         
@@ -1575,7 +1613,7 @@ void run_gui(bool is_running)
                     }
                     break;
                 case SHOWING_HELP:
-                    draw_text(pixels, width, height, 2 + x_offset, 2 + y_offset, help[current_help_page], gui_palette_native[3], gui_palette_native[0]);
+                    draw_text(pixels, width, height, 2 + x_offset, 2 + y_offset, help[current_help_page], gui_palette_native[3], gui_palette_native[0], false);
                     break;
                 case WAITING_FOR_KEY:
                     draw_text_centered(pixels, width, height, 68 + y_offset, "Press a Key", gui_palette_native[3], gui_palette_native[0], DECORATION_NONE);
