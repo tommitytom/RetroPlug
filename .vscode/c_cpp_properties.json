@@ -1,6 +1,39 @@
 {
     "configurations": [
         {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/thirdparty/**",
+                "${workspaceFolder}/generated/**",
+                "/emsdk/upstream/emscripten/system/include/**"
+            ],
+            "defines": [
+                "GB_INTERNAL",
+                "GB_DISABLE_TIMEKEEPING",
+                "GB_DISABLE_DEBUGGER",
+                "RP_WEB"
+            ],
+            "compilerPath": "/emsdk/upstream/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-clang-x64"
+        }, {
+            "name": "Windows",
+            "includePath": [
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/thirdparty/**"
+            ],
+            "defines": [
+                "GB_INTERNAL",
+                "GB_DISABLE_TIMEKEEPING",
+                "GB_DISABLE_DEBUGGER"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "windows-msvc-x64"
+        },
+        {
             "name": "Mac",
             "includePath": [
                 "${workspaceFolder}/**",

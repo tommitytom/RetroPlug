@@ -1,19 +1,39 @@
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558
-    // for the documentation about the tasks.json format
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Build SameBoy",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/thirdparty/SameBoy/retroplug"
-            },
-            "command": "build.bat",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        }
-    ]
+	// See https://go.microsoft.com/fwlink/?LinkId=733558
+	// for the documentation about the tasks.json format
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "RetroPlug Build",
+			"type": "shell",
+			"command": "./build.sh",
+			"args": [
+				"release"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"isBackground": false,
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false,
+				"group": "build"
+			},
+			"problemMatcher": [
+				"$gcc"
+			]
+		}, {
+			"label": "Temp dev server",
+			"type": "shell",
+			"command": "light-server -p 8080 -s .",
+			"options": {
+				"cwd": "${workspaceFolder}/build/gmake2/release"
+			},
+			"isBackground": true
+		}
+	]
 }
