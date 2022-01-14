@@ -24,6 +24,10 @@ build/
 
 Icon?
 .DS_Stor*
+DerivedData
+
+build
+generated
 
 compiler/x64
 src/generated
@@ -31,4 +35,4 @@ src/retroplug/luawrapper/generated
 thirdparty/bin
 thirdparty/lib
 thirdparty/build
-DerivedData
+thirdparty/LivePP
