@@ -1,0 +1,171 @@
+#include "UiContext.h"
+
+#include <GLFW/glfw3.h>
+
+#include "AudioContext.h"
+#include "core/AudioStreamSystem.h"
+#include "core/Input.h"
+#include "core/Project.h"
+#include "core/ProxySystem.h"
+#include "ui/SystemView.h"
+#include "ui/StartView.h"
+#include "util/fs.h"
+#include "util/StringUtil.h"
+
+#include "core/ProjectSerializer.h"
+#include "ui/SystemOverlayManager.h"
+
+#include "sameboy/SameBoyManager.h"
+
+using namespace rp;
+
+const f32 DISABLED_ALPHA = 0.75f;
+
+UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus): 
+	_orchestrator(&_state.processor, orchestratorMessageBus), 
+	_ioMessageBus(messageBus), 
+	_orchestratorMessageBus(orchestratorMessageBus)
+{
+	_state.processor.addManager(std::make_shared<SameBoyManager>());
+	//_state.processor.addManager(std::make_shared<AudioStreamManager>());
+
+	for (size_t i = 0; i < MAX_IO_STREAMS; ++i) {
+		messageBus->allocator.enqueue(std::make_unique<SystemIo>());
+	}
+
+	_project =_state.viewManager.createShared<Project>();
+	_project->setOrchestrator(&_orchestrator);
+
+	SystemOverlayManager* overlayManager = _state.viewManager.createShared<SystemOverlayManager>();
+	overlayManager->addOverlayFactory<LsdjOverlay>([](std::string_view romName) { 
+		std::string shortName = StringUtil::toLower(romName).substr(0, 4);
+		return shortName == "lsdj";
+	});
+
+	_state.grid = _state.viewManager.addChild<GridView>("Grid");
+	_state.gridOverlay = _state.viewManager.addChild<GridOverlay>("Grid Overlay");
+	_state.gridOverlay->setGrid(_state.grid);
+}
+
+void UiContext::setNvgContext(NVGcontext* vg) {
+	_vg = vg;
+	_state.viewManager.setVg(vg);
+}
+
+void UiContext::processInput(uint32 frameCount) {
+	std::vector<SystemPtr>& systems = _state.processor.getSystems();
+
+	SystemIoPtr stream;
+	while (_ioMessageBus->audioToUi.try_dequeue(stream)) {
+		SystemPtr system = _state.processor.findSystem(stream->systemId);
+
+		if (system) {
+			if (system->getStream()) {
+				system->getStream()->merge(*stream);
+				_ioMessageBus->dealloc(std::move(stream));
+			} else {
+				system->setStream(std::move(stream));
+			}
+		} else {
+			_ioMessageBus->dealloc(std::move(stream));
+		}
+	}
+}
+
+void UiContext::processOutput() {
+	for (SystemPtr& system : _state.processor.getSystems()) {
+		SystemIoPtr& io = system->getStream();
+		if (io) {
+			io->output.reset();
+
+			// Pass IO buffers to audio thread
+			_ioMessageBus->uiToAudio.try_enqueue(std::move(io));
+		}
+
+		// Prepare the system for the next frame
+		SystemIoPtr nextIo = _ioMessageBus->alloc(system->getId());
+		if (nextIo) {
+			system->setStream(std::move(nextIo));
+		}
+	}
+}
+
+void UiContext::processDelta(f64 delta) {
+	if (!_vg) {
+		return;
+	}
+
+	f32 scale = _project->getScale();
+	_state.viewManager.setScale(scale);
+
+	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5);
+	processInput(frameCount);
+
+	_state.viewManager.onUpdate((f32)delta);
+
+	_state.processor.process(frameCount);
+
+	nvgSave(_vg);
+
+	nvgScale(_vg, scale, scale);
+
+	_state.viewManager.onRender();
+
+	nvgRestore(_vg);
+
+	processOutput();
+}
+
+bool UiContext::onKey(VirtualKey::Enum key, bool down) {
+	/*if (key == VirtualKey::Esc && down) {
+		_orchestrator.resetSystem(_orchestrator.getProcessor().getSystems()[0]);
+	}*/
+
+	if (down) {
+		if (key == VirtualKey::Space) {
+			_state.viewManager.printHierarchy();
+			return true;
+		}
+
+		if (key == VirtualKey::Q) {
+			_state.viewManager.setLayoutDirty();
+			return true;
+		}
+	}
+
+	if (key == VirtualKey::Tab) {
+		if (down) {
+			_state.viewManager.findChild<GridOverlay>()->incrementSelection();
+		}
+
+		return true;
+	}
+
+	return _state.viewManager.onKey(key, down);
+}
+
+void UiContext::onMouseMove(double x, double y) {
+	f32 scale = (f32)(_project->getState().settings.zoom + 1);
+
+	x /= scale;
+	y /= scale;
+	_state.viewManager.onMouseMove({ (uint32)x, (uint32)y });
+}
+
+void UiContext::onMouseButton(MouseButton::Enum button, bool down) {
+	_state.viewManager.onMouseButton(button, down);
+}
+
+void UiContext::onMouseScroll(double x, double y) {
+	_state.viewManager.onMouseScroll(Point<f32> { (f32)x, (f32)y });
+}
+
+void UiContext::onDrop(int count, const char** paths) {
+	std::vector<std::string> p;
+
+	for (int i = 0; i < count; ++i) {
+		p.push_back(paths[i]);
+	}
+
+	_state.viewManager.onDrop(p);
+}

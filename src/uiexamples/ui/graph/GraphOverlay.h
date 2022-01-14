@@ -1,0 +1,18 @@
+#pragma once
+
+#include "ui/View.h"
+
+namespace rp {
+	class GraphOverlay : public View {
+	public:
+		GraphOverlay() { setType<GraphOverlay>(); }
+		GraphOverlay(Dimension<uint32> dimensions) : View(dimensions) { setType<GraphOverlay>(); }
+		~GraphOverlay() { }
+
+		void onRender() override {
+
+		}
+	};
+
+	using GraphOverlayPtr = std::shared_ptr<GraphOverlay>;
+}

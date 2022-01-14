@@ -1,3 +1,0 @@
-local globals = {}
-
-return globals
