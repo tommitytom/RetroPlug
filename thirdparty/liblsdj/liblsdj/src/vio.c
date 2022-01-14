@@ -165,7 +165,7 @@ long lsdj_mtell(void* userData)
     const lsdj_memory_access_state_t* mem = (const lsdj_memory_access_state_t*)userData;
     
     long pos = mem->cur - mem->begin;
-    if (pos < 0 || pos > mem->size)
+    if (pos < 0 || pos > (long)mem->size)
         return -1L;
     
     return pos;

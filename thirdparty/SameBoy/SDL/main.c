@@ -58,7 +58,7 @@ static void start_capturing_logs(void)
     GB_set_log_callback(&gb, log_capture_callback);
 }
 
-static const char *end_capturing_logs(bool show_popup, bool should_exit, uint32_t popup_flags)
+static const char *end_capturing_logs(bool show_popup, bool should_exit)
 {
     GB_set_log_callback(&gb, NULL);
     if (captured_log[0] == 0) {
@@ -67,7 +67,7 @@ static const char *end_capturing_logs(bool show_popup, bool should_exit, uint32_
     }
     else {
         if (show_popup) {
-            SDL_ShowSimpleMessageBox(popup_flags, "Error", captured_log, window);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", captured_log, window);
         }
         if (should_exit) {
             exit(1);
@@ -142,14 +142,8 @@ static void handle_events(GB_gameboy_t *gb)
                 break;
                 
             case SDL_DROPFILE: {
-                if (GB_is_stave_state(event.drop.file)) {
-                    dropped_state_file = event.drop.file;
-                    pending_command = GB_SDL_LOAD_STATE_FROM_FILE_COMMAND;
-                }
-                else {
-                    set_filename(event.drop.file, SDL_free);
-                    pending_command = GB_SDL_NEW_FILE_COMMAND;
-                }
+                set_filename(event.drop.file, SDL_free);
+                pending_command = GB_SDL_NEW_FILE_COMMAND;
                 break;
             }
                 
@@ -430,23 +424,15 @@ static bool handle_pending_command(void)
             replace_extension(filename, strlen(filename), save_path, save_extension);
             
             start_capturing_logs();
-            bool success;
             if (pending_command == GB_SDL_LOAD_STATE_COMMAND) {
-                success = GB_load_state(&gb, save_path) == 0;
+                GB_load_state(&gb, save_path);
             }
             else {
-                success = GB_save_state(&gb, save_path) == 0;
+                GB_save_state(&gb, save_path);
             }
-            end_capturing_logs(true, false, success? SDL_MESSAGEBOX_INFORMATION : SDL_MESSAGEBOX_ERROR);
+            end_capturing_logs(true, false);
             return false;
         }
-    
-        case GB_SDL_LOAD_STATE_FROM_FILE_COMMAND:
-            start_capturing_logs();
-            bool success = GB_load_state(&gb, dropped_state_file) == 0;
-            end_capturing_logs(true, false, success? SDL_MESSAGEBOX_INFORMATION : SDL_MESSAGEBOX_ERROR);
-            SDL_free(dropped_state_file);
-            return false;
             
         case GB_SDL_NO_COMMAND:
             return false;
@@ -484,7 +470,7 @@ static void load_boot_rom(GB_gameboy_t *gb, GB_boot_rom_t type)
     if (use_built_in) {
         start_capturing_logs();
         GB_load_boot_rom(gb, resource_path(names[type]));
-        end_capturing_logs(true, false, SDL_MESSAGEBOX_ERROR);
+        end_capturing_logs(true, false);
     }
 }
 
@@ -557,7 +543,7 @@ restart:
     else {
         GB_load_rom(&gb, filename);
     }
-    end_capturing_logs(true, error, SDL_MESSAGEBOX_WARNING);
+    end_capturing_logs(true, error);
     
     
     /* Configure battery */
