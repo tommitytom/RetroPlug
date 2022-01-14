@@ -71,6 +71,11 @@ PlatformFontPtr IGraphicsMac::LoadPlatformFont(const char* fontID, const char* f
   return CoreTextHelpers::LoadPlatformFont(fontID, fontName, style);
 }
 
+PlatformFontPtr IGraphicsMac::LoadPlatformFont(const char* fontID, void* pData, int dataSize)
+{
+  return CoreTextHelpers::LoadPlatformFont(fontID, pData, dataSize);
+}
+
 void IGraphicsMac::CachePlatformFont(const char* fontID, const PlatformFontPtr& font)
 {
   CoreTextHelpers::CachePlatformFont(fontID, font, sFontDescriptorCache);
@@ -78,14 +83,7 @@ void IGraphicsMac::CachePlatformFont(const char* fontID, const PlatformFontPtr& 
 
 float IGraphicsMac::MeasureText(const IText& text, const char* str, IRECT& bounds) const
 {
-#ifdef IGRAPHICS_LICE
-  @autoreleasepool
-  {
-    return IGRAPHICS_DRAW_CLASS::MeasureText(text, str, bounds);
-  }
-#else
   return IGRAPHICS_DRAW_CLASS::MeasureText(text, str, bounds);
-#endif
 }
 
 void* IGraphicsMac::OpenWindow(void* pParent)
@@ -130,7 +128,7 @@ void IGraphicsMac::CloseWindow()
 {
   if (mView)
   {
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI
     if(mImGuiView)
     {
       IGRAPHICS_IMGUIVIEW* pImGuiView = (IGRAPHICS_IMGUIVIEW*) mImGuiView;
@@ -171,13 +169,15 @@ void IGraphicsMac::PlatformResize(bool parentHasResized)
     [[NSAnimationContext currentContext] setDuration:0.0];
     [(IGRAPHICS_VIEW*) mView setFrameSize: size ];
     
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI && !defined IGRAPHICS_SKIA && !defined IGRAPHICS_GL
     if(mImGuiView)
       [(IGRAPHICS_IMGUIVIEW*) mImGuiView setFrameSize: size ];
 #endif
     
     [NSAnimationContext endGrouping];
-  }  
+  }
+    
+  UpdateTooltips();
 }
 
 void IGraphicsMac::PointToScreen(float& x, float& y) const
@@ -210,22 +210,29 @@ void IGraphicsMac::ScreenToPoint(float& x, float& y) const
 
 void IGraphicsMac::HideMouseCursor(bool hide, bool lock)
 {
-  if (mCursorHidden == hide)
-    return;
-  
-  mCursorHidden = hide;
-  
-  if (hide)
+#if defined AU_API
+  if (!IsXPCAuHost())
+#elif defined AUv3_API
+  if (!IsOOPAuv3AppExtension())
+#endif
   {
-    StoreCursorPosition();
-    CGDisplayHideCursor(kCGDirectMainDisplay);
-    mCursorLock = lock;
-  }
-  else
-  {
-    DoCursorLock(mCursorX, mCursorY, mCursorX, mCursorY);
-    CGDisplayShowCursor(kCGDirectMainDisplay);
-    mCursorLock = false;
+    if (mCursorHidden == hide)
+      return;
+    
+    mCursorHidden = hide;
+    
+    if (hide)
+    {
+      StoreCursorPosition();
+      CGDisplayHideCursor(kCGDirectMainDisplay);
+      mCursorLock = lock;
+    }
+    else
+    {
+      DoCursorLock(mCursorX, mCursorY, mCursorX, mCursorY);
+      CGDisplayShowCursor(kCGDirectMainDisplay);
+      mCursorLock = false;
+    }
   }
 }
 
@@ -294,11 +301,11 @@ EMsgBoxResult IGraphicsMac::ShowMessageBox(const char* str, const char* caption,
   if (!str) str= "";
   if (!caption) caption= "";
   
-  NSString *msg = (NSString *) CFStringCreateWithCString(NULL,str,kCFStringEncodingUTF8);
-  NSString *cap = (NSString *) CFStringCreateWithCString(NULL,caption,kCFStringEncodingUTF8);
+  NSString* msg = (NSString*) CFStringCreateWithCString(NULL,str,kCFStringEncodingUTF8);
+  NSString* cap = (NSString*) CFStringCreateWithCString(NULL,caption,kCFStringEncodingUTF8);
  
-  msg = msg ? msg : (NSString *) CFStringCreateWithCString(NULL, str, kCFStringEncodingASCII);
-  cap = cap ? cap : (NSString *) CFStringCreateWithCString(NULL, caption, kCFStringEncodingASCII);
+  msg = msg ? msg : (NSString*) CFStringCreateWithCString(NULL, str, kCFStringEncodingASCII);
+  cap = cap ? cap : (NSString*) CFStringCreateWithCString(NULL, caption, kCFStringEncodingASCII);
   
   switch (type)
   {
@@ -355,11 +362,11 @@ void IGraphicsMac::UpdateTooltips()
     return;
   }
 
-  auto func = [this](IControl& control)
+  auto func = [this](IControl* pControl)
   {
-    if (control.GetTooltip() && !control.IsHidden())
+    if (pControl->GetTooltip() && !pControl->IsHidden())
     {
-      IRECT pR = control.GetTargetRECT();
+      IRECT pR = pControl->GetTargetRECT();
       if (!pR.Empty())
       {
         [(IGRAPHICS_VIEW*) mView registerToolTip: pR];
@@ -623,7 +630,16 @@ bool IGraphicsMac::SetTextInClipboard(const char* str)
 
 void IGraphicsMac::CreatePlatformImGui()
 {
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI
+  #if defined IGRAPHICS_SKIA && IGRAPHICS_CPU
+    #define USE_IGRAPHICS_IMGUIVIEW 1
+  #elif defined IGRAPHICS_NANOVG && IGRAPHICS_METAL
+    #define USE_IGRAPHICS_IMGUIVIEW 1
+#else
+  #define USE_IGRAPHICS_IMGUIVIEW 0
+#endif
+
+#if USE_IGRAPHICS_IMGUIVIEW
   if(mView)
   {
     IGRAPHICS_VIEW* pView = (IGRAPHICS_VIEW*) mView;
@@ -633,18 +649,13 @@ void IGraphicsMac::CreatePlatformImGui()
     mImGuiView = pImGuiView;
   }
 #endif
+#endif // IGRAPHICS_IMGUI
 }
 
-#ifdef IGRAPHICS_AGG
-  #include "IGraphicsAGG.cpp"
-#elif defined IGRAPHICS_CAIRO
-  #include "IGraphicsCairo.cpp"
-#elif defined IGRAPHICS_NANOVG
+#if defined IGRAPHICS_NANOVG
   #include "IGraphicsNanoVG.cpp"
 #elif defined IGRAPHICS_SKIA
   #include "IGraphicsSkia.cpp"
-#elif defined IGRAPHICS_LICE
-  #include "IGraphicsLice.cpp"
 #else
   #error Either NO_IGRAPHICS or one and only one choice of graphics library must be defined!
 #endif

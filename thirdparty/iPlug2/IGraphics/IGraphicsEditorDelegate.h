@@ -40,7 +40,7 @@ public:
   //IEditorDelegate
   void* OpenWindow(void* pHandle) final;
   void CloseWindow() final;
-  void SetScreenScale(double scale) final;
+  void SetScreenScale(float scale) final;
   
   bool OnKeyDown(const IKeyPress& key) override;
   bool OnKeyUp(const IKeyPress& key) override;
@@ -73,6 +73,9 @@ public:
   
   /** Get a pointer to the IGraphics context */
   IGraphics* GetUI() { return mGraphics.get(); };
+
+  /** Get a const pointer to the IGraphics context */
+  const IGraphics* GetUI() const { return mGraphics.get(); };
 
   /** Serializes the size and scale of the IGraphics.
    * @param chunk The output chunk to serialize to. Will append data if the chunk has already been started.

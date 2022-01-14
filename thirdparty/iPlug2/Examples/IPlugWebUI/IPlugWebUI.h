@@ -6,7 +6,7 @@
 
 using namespace iplug;
 
-const int kNumPrograms = 3;
+const int kNumPresets = 3;
 
 enum EParams
 {
@@ -19,6 +19,7 @@ enum EMsgTags
   kMsgTagButton1 = 0,
   kMsgTagButton2 = 1,
   kMsgTagButton3 = 2,
+  kMsgTagBinaryTest = 3
 };
 
 enum EControlTags

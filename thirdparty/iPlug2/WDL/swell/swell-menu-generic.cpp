@@ -66,7 +66,7 @@ void HMENU__::freeMenuItem(void *p)
 
 static MENUITEMINFO *GetMenuItemByID(HMENU menu, int id, bool searchChildren=true)
 {
-  if (!menu) return 0;
+  if (WDL_NOT_NORMALLY(!menu)) return 0;
   int x;
   for (x = 0; x < menu->items.GetSize(); x ++)
     if (menu->items.Get(x)->wID == (UINT)id) return menu->items.Get(x);
@@ -85,7 +85,7 @@ static MENUITEMINFO *GetMenuItemByID(HMENU menu, int id, bool searchChildren=tru
 
 bool SetMenuItemText(HMENU hMenu, int idx, int flag, const char *text)
 {
-  MENUITEMINFO *item = hMenu ? ((flag & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((flag & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
 
   if (MenuIsStringType(item)) free(item->dwTypeData);
@@ -97,7 +97,7 @@ bool SetMenuItemText(HMENU hMenu, int idx, int flag, const char *text)
 
 bool EnableMenuItem(HMENU hMenu, int idx, int en)
 {
-  MENUITEMINFO *item = hMenu ? ((en & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((en & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
  
   int mask = MF_ENABLED|MF_DISABLED|MF_GRAYED;
@@ -109,7 +109,7 @@ bool EnableMenuItem(HMENU hMenu, int idx, int en)
 
 bool CheckMenuItem(HMENU hMenu, int idx, int chk)
 {
-  MENUITEMINFO *item = hMenu ? ((chk & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((chk & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
   
   int mask = MF_CHECKED;
@@ -128,21 +128,26 @@ void SWELL_SetCurrentMenu(HMENU hmenu)
 
 HMENU GetSubMenu(HMENU hMenu, int pos)
 {
-  MENUITEMINFO *item = hMenu ? hMenu->items.Get(pos) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? hMenu->items.Get(pos) : NULL;
   if (item) return item->hSubMenu;
   return 0;
 }
 
 int GetMenuItemCount(HMENU hMenu)
 {
-  if (hMenu) return hMenu->items.GetSize();
+  if (WDL_NORMALLY(hMenu)) return hMenu->items.GetSize();
   return 0;
 }
 
 int GetMenuItemID(HMENU hMenu, int pos)
 {
-  MENUITEMINFO *item = hMenu ? hMenu->items.Get(pos) : NULL;
-  if (!item || item->hSubMenu) return -1;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? hMenu->items.Get(pos) : NULL;
+  if (!item)
+  {
+    WDL_ASSERT(pos==0); // do not assert if GetMenuItemID(0) is called on an empty menu
+    return -1;
+  }
+  if (item->hSubMenu) return -1;
   return item->wID;
 }
 
@@ -162,12 +167,12 @@ HMENU CreatePopupMenuEx(const char *title)
 
 void DestroyMenu(HMENU hMenu)
 {
-  if (hMenu) hMenu->Release();
+  if (WDL_NORMALLY(hMenu)) hMenu->Release();
 }
 
 int AddMenuItem(HMENU hMenu, int pos, const char *name, int tagid)
 {
-  if (!hMenu) return -1;
+  if (WDL_NOT_NORMALLY(!hMenu)) return -1;
   MENUITEMINFO *inf = (MENUITEMINFO*)calloc(1,sizeof(MENUITEMINFO));
   inf->wID = tagid;
   inf->fType = MFT_STRING;
@@ -178,7 +183,7 @@ int AddMenuItem(HMENU hMenu, int pos, const char *name, int tagid)
 
 bool DeleteMenu(HMENU hMenu, int idx, int flag)
 {
-  if (!hMenu) return false;
+  if (WDL_NOT_NORMALLY(!hMenu)) return false;
   if (flag&MF_BYPOSITION)
   {
     if (hMenu->items.Get(idx))
@@ -214,7 +219,7 @@ bool DeleteMenu(HMENU hMenu, int idx, int flag)
 
 BOOL SetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu)) return 0;
   MENUITEMINFO *item = byPos ? hMenu->items.Get(pos) : GetMenuItemByID(hMenu, pos, true);
   if (!item) return 0;
   
@@ -251,7 +256,7 @@ BOOL SetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 
 BOOL GetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu)) return 0;
   MENUITEMINFO *item = byPos ? hMenu->items.Get(pos) : GetMenuItemByID(hMenu, pos, true);
   if (!item) return 0;
   
@@ -305,7 +310,7 @@ void SWELL_InsertMenu(HMENU menu, int pos, unsigned int flag, UINT_PTR idx, cons
 
 void InsertMenuItem(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return;
+  if (WDL_NOT_NORMALLY(!hMenu)) return;
   int ni=hMenu->items.GetSize();
   
   if (!byPos) 
@@ -397,6 +402,7 @@ bool swell_isOSwindowmenu(SWELL_OSWINDOW osw)
 
 int menuBarNavigate(int dir); // -1 if no menu bar active, 0 if did nothing, 1 if navigated
 HWND GetFocusIncludeMenus(void);
+static DWORD swell_menu_ignore_mousemove_from;
 
 static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -548,7 +554,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
           {
             if (ypos >= cr.bottom)
             {
-              hwnd->m_extra[1] = 1; // allow scrolling down
+              hwnd->m_extra[1] |= 1; // allow scrolling down
               break;
             }
             MENUITEMINFO *inf = menu->items.Get(x);
@@ -696,8 +702,10 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             }
             if ((r.top+ypos)/2 > cr.bottom)
             {
-              hwnd->m_extra[1] = 1; // allow scrolling down if last item was halfway off
+              hwnd->m_extra[1] |= 1; // allow scrolling down if last item was halfway off
             }
+            if (ypos > cr.bottom && x == menu->sel_vis)
+              hwnd->m_extra[1] |= 3;
           }
           if (x <= menu->sel_vis) hwnd->m_extra[1]|=2;
 
@@ -1078,6 +1086,8 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     return 0;
     case WM_MOUSEMOVE:
       {
+        if ((GetTickCount() - swell_menu_ignore_mousemove_from)<200) return 0;
+
         if (swell_delegate_menu_message(hwnd, lParam,uMsg, false))
           return 0;
 
@@ -1124,7 +1134,7 @@ DWORD swell_ignore_focus_oswindow_until;
 
 int TrackPopupMenu(HMENU hMenu, int flags, int xpos, int ypos, int resvd, HWND hwnd, const RECT *r)
 {
-  if (!hMenu || m_trackingMenus.GetSize()) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu) || m_trackingMenus.GetSize()) return 0;
 
   ReleaseCapture();
 
@@ -1150,7 +1160,13 @@ int TrackPopupMenu(HMENU hMenu, int flags, int xpos, int ypos, int resvd, HWND h
   }
 
 
-  hMenu->sel_vis=-1;
+  if (r && r->left == (1<<30) && r->top == (1<<30) && !r->right)
+    hMenu->sel_vis = r->bottom;
+  else
+    hMenu->sel_vis=-1;
+
+  if (!resvd) swell_menu_ignore_mousemove_from = GetTickCount();
+
   HWND hh=new HWND__(NULL,0,NULL,"menu",false,submenuWndProc,NULL, hwnd);
 
   submenuWndProc(hh,WM_CREATE,0,(LPARAM)hMenu);
@@ -1229,13 +1245,13 @@ HMENU SWELL_LoadMenu(SWELL_MenuResourceIndex *head, const char *resid)
 
 HMENU SWELL_DuplicateMenu(HMENU menu)
 {
-  if (!menu) return 0;
+  if (WDL_NOT_NORMALLY(!menu)) return 0;
   return menu->Duplicate();
 }
 
 BOOL  SetMenu(HWND hwnd, HMENU menu)
 {
-  if (!hwnd) return 0;
+  if (WDL_NOT_NORMALLY(!hwnd)) return 0;
   HMENU oldmenu = hwnd->m_menu;
 
   hwnd->m_menu = menu;
@@ -1260,13 +1276,13 @@ BOOL  SetMenu(HWND hwnd, HMENU menu)
 
 HMENU GetMenu(HWND hwnd)
 {
-  if (!hwnd) return 0;
+  if (WDL_NOT_NORMALLY(!hwnd)) return 0;
   return hwnd->m_menu;
 }
 
 void DrawMenuBar(HWND hwnd)
 {
-  if (hwnd && hwnd->m_menu)
+  if (WDL_NORMALLY(hwnd) && hwnd->m_menu)
   {
     RECT r;
     GetClientRect(hwnd,&r);

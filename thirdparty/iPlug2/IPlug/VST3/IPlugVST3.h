@@ -59,13 +59,14 @@ public:
   void BeginInformHostOfParamChange(int idx) override;
   void InformHostOfParamChange(int idx, double normalizedValue) override;
   void EndInformHostOfParamChange(int idx) override;
-  void InformHostOfProgramChange() override {}
+  void InformHostOfPresetChange() override {}
   void InformHostOfParameterDetailsChange() override;
   bool EditorResize(int viewWidth, int viewHeight) override;
 
   // IEditorDelegate
   void DirtyParametersFromUI() override;
-  
+  void SendParameterValueFromUI(int paramIdx, double normalisedValue) override;
+
   // IPlugProcessor
   void SetLatency(int samples) override;
   
@@ -93,6 +94,22 @@ public:
  
   // IMidiMapping
   Steinberg::tresult PLUGIN_API getMidiControllerAssignment(Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::CtrlNumber midiCCNumber, Steinberg::Vst::ParamID& tag) override;
+  
+  // IUnitInfo
+  Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override
+  {
+    return GetProgramName(this, listId, programIndex, name);
+  }
+  
+  Steinberg::int32 PLUGIN_API getProgramListCount() override
+  {
+    return GetProgramListCount(this);
+  }
+  
+  Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info) override
+  {
+    return GetProgramListInfo(this, listIndex, info);
+  }
   
   // IInfoListener
   Steinberg::tresult PLUGIN_API setChannelContextInfos(Steinberg::Vst::IAttributeList* list) override;

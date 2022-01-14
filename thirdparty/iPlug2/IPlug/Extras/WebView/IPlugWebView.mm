@@ -160,7 +160,7 @@ void IWebView::LoadFile(const char* fileName, const char* bundleID)
   WDL_String fileNameWeb("web/");
   fileNameWeb.Append(fileName);
 
-  GetResourcePathFromBundle(fileNameWeb.Get(), "html", fullPath, bundleID);
+  GetResourcePathFromBundle(fileNameWeb.Get(), fileNameWeb.get_fileext() + 1 /* remove . */, fullPath, bundleID);
   
   NSString* pPath = [NSString stringWithUTF8String:fullPath.Get()];
 
@@ -176,7 +176,7 @@ void IWebView::EvaluateJavaScript(const char* scriptStr, completionHandlerFunc f
 {
   WKWebView* webView = (__bridge WKWebView*) mWKWebView;
   
-  if (![webView isLoading])
+  if (webView && ![webView isLoading])
   {
     [webView evaluateJavaScript:[NSString stringWithUTF8String:scriptStr] completionHandler:^(NSString *result, NSError *error) {
       if(error != nil)

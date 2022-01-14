@@ -12,6 +12,7 @@ See LICENSE.txt for  more info.
 #include "IPlugPaths.h"
 #include <string>
 #include <windows.h>
+#include <cassert>
 
 using namespace iplug;
 using namespace Microsoft::WRL;
@@ -42,9 +43,9 @@ void* IWebView::OpenWebView(void* pParent, float x, float y, float w, float h, f
 
   assert(mDLLPath.GetLength() > 0);
 
-  HMODULE hModule = LoadLibraryA(mDLLPath.Get());
+  mDLLHandle = LoadLibraryA(mDLLPath.Get());
 
-  TCCWebView2EnvWithOptions handle = (TCCWebView2EnvWithOptions) GetProcAddress(hModule, "CreateCoreWebView2EnvironmentWithDetails");
+  TCCWebView2EnvWithOptions handle = (TCCWebView2EnvWithOptions) GetProcAddress(mDLLHandle, "CreateCoreWebView2EnvironmentWithOptions");
 
   if (handle != NULL)
   {
@@ -114,8 +115,18 @@ void* IWebView::OpenWebView(void* pParent, float x, float y, float w, float h, f
 
 void IWebView::CloseWebView()
 {
-  mWebViewCtrlr = nullptr;
-  mWebViewWnd = nullptr;
+  if (mWebViewCtrlr.get() != nullptr)
+  {
+    mWebViewCtrlr->Close();
+    mWebViewCtrlr = nullptr;
+    mWebViewWnd = nullptr;
+  }
+
+  if (mDLLHandle)
+  {
+    FreeLibrary(mDLLHandle);
+    mDLLHandle = nullptr;
+  }
 }
 
 void IWebView::LoadHTML(const char* html)

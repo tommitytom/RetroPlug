@@ -14,10 +14,6 @@
 #include "IPlugPlatform.h"
 #include "IPlugLogger.h"
 
-#ifdef OS_IOS
-#import "GenericUI.h"
-#endif
-
 #if !__has_feature(objc_arc)
 #error This file must be compiled with Arc. Use -fobjc-arc flag
 #endif
@@ -25,92 +21,72 @@
 @interface IPlugAUViewController (AUAudioUnitFactory)
 @end
 
-#ifdef OS_IOS
-#pragma mark - iOS
 @implementation IPlugAUViewController
-
-- (id) init
-{
-  self = [super initWithNibName:@"IPlugAUViewController"
-                         bundle:[NSBundle bundleForClass:NSClassFromString(@"IPlugAUViewController")]];
-
-  return self;
-}
 
 - (AUAudioUnit*) createAudioUnitWithComponentDescription:(AudioComponentDescription) desc error:(NSError **)error
 {
   self.audioUnit = [[IPlugAUAudioUnit alloc] initWithComponentDescription:desc error:error];
 
-  return self.audioUnit;
-}
-
-- (AUAudioUnit*) getAudioUnit
-{
-  return self.audioUnit;
-}
-
-- (void) audioUnitInitialized
-{
-  //No-op
-}
-
-- (void) setAudioUnit:(IPlugAUAudioUnit*) audioUnit
-{
-  _audioUnit = audioUnit;
   [self audioUnitInitialized];
+
+  return self.audioUnit;
 }
 
-- (void) viewDidLoad
+#ifdef OS_IOS
+- (void) viewDidLayoutSubviews
 {
-  [super viewDidLoad];
-}
-
-- (void) viewWillAppear:(BOOL)animated
-{
-  [super viewWillAppear:animated];
-  
-  if(self.audioUnit)
+  if (self.audioUnit)
   {
-    UIView* view = [_audioUnit openWindow:self.view];
-
-    if(view == nil)
-      self.view = [[GenericUI alloc] initWithAUPlugin:self.audioUnit];
-      
-    int viewWidth = (int) [self.audioUnit width];
-    int viewHeight = (int) [self.audioUnit height];
-    self.preferredContentSize = CGSizeMake (viewWidth, viewHeight);
+    [self.audioUnit hostResized: self.view.frame.size];
   }
 }
 
-- (void) viewDidDisappear:(BOOL)animated
+- (void) viewWillAppear:(BOOL) animated
+{
+  [super viewWillAppear:animated];
+  
+  if (self.audioUnit)
+  {
+    [self.audioUnit openWindow:self.view];
+  }
+}
+
+- (void) viewDidDisappear:(BOOL) animated
 {
   [super viewDidDisappear:animated];
   
-  if(self.audioUnit)
+  if (self.audioUnit)
   {
     [self.audioUnit closeWindow];
   }
 }
-@end
-
-#else // macOS
-#pragma mark - macOS
-@implementation IPlugAUViewController
-
-- (id) init
+#else
+- (void) viewDidLayout
 {
-  self = [super initWithNibName:@"IPlugAUViewController"
-                         bundle:[NSBundle bundleForClass:NSClassFromString(@"IPlugAUViewController")]];
-
-  return self;
+  if (self.audioUnit)
+  {
+    [self.audioUnit hostResized: self.view.frame.size];
+  }
 }
 
-- (AUAudioUnit*) createAudioUnitWithComponentDescription:(AudioComponentDescription) desc error:(NSError **)error
+- (void) viewWillAppear
 {
-  self.audioUnit = [[IPlugAUAudioUnit alloc] initWithComponentDescription:desc error:error];
-
-  return self.audioUnit;
+  [self.audioUnit openWindow:self.view];
 }
+
+- (void) viewDidDisappear
+{
+  [self.audioUnit closeWindow];
+}
+
+- (void) loadView
+{
+  int width = (int) [self.audioUnit width];
+  int height = (int) [self.audioUnit height];
+  self.view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+}
+
+#endif
 
 - (AUAudioUnit*) getAudioUnit
 {
@@ -120,23 +96,13 @@
 - (void) audioUnitInitialized
 {
   dispatch_async(dispatch_get_main_queue(), ^{
-    int viewWidth = (int) [self.audioUnit width];
-    int viewHeight = (int) [self.audioUnit height];
-    self.preferredContentSize = CGSizeMake (viewWidth, viewHeight);
+    if (self.audioUnit)
+    {
+      int viewWidth = (int) [self.audioUnit width];
+      int viewHeight = (int) [self.audioUnit height];
+      self.preferredContentSize = CGSizeMake (viewWidth, viewHeight);
+    }
   });
 }
 
-- (void) setAudioUnit:(IPlugAUAudioUnit*) audioUnit
-{
-  _audioUnit = audioUnit;
-  [self audioUnitInitialized];
-}
-
-- (void) viewWillAppear
-{
-  [_audioUnit openWindow:self.view];
-}
 @end
-
-#endif
-

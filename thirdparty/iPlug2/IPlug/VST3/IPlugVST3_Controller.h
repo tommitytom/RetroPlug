@@ -63,8 +63,21 @@ public:
   // IMidiMapping
   Steinberg::tresult PLUGIN_API getMidiControllerAssignment(Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::CtrlNumber midiCCNumber, Steinberg::Vst::ParamID& tag) override;
 
-  // IEditControllerEx
-  Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override;
+  // IUnitInfo 
+  Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override
+  {
+    return GetProgramName(this, listId, programIndex, name);
+  }
+  
+  Steinberg::int32 PLUGIN_API getProgramListCount() override
+  {
+    return GetProgramListCount(this);
+  }
+  
+  Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info) override
+  {
+    return GetProgramListInfo(this, listIndex, info);
+  }
   
   // IInfoListener
   Steinberg::tresult PLUGIN_API setChannelContextInfos(Steinberg::Vst::IAttributeList* list) override;
@@ -96,7 +109,7 @@ public:
   void BeginInformHostOfParamChange(int idx) override { beginEdit(idx); }
   void InformHostOfParamChange(int idx, double normalizedValue) override  { performEdit(idx, normalizedValue); }
   void EndInformHostOfParamChange(int idx) override  { endEdit(idx); }
-  void InformHostOfProgramChange() override  { /* TODO: */}
+  void InformHostOfPresetChange() override  { /* TODO: */}
   bool EditorResize(int viewWidth, int viewHeight) override;
   void DirtyParametersFromUI() override;
   
@@ -104,6 +117,7 @@ public:
   void SendMidiMsgFromUI(const IMidiMsg& msg) override;
   void SendSysexMsgFromUI(const ISysEx& msg) override;
   void SendArbitraryMsgFromUI(int msgTag, int ctrlTag = kNoTag, int dataSize = 0, const void* pData = nullptr) override;
+  void SendParameterValueFromUI(int paramIdx, double normalisedValue) override;
 
   Steinberg::Vst::IComponentHandler* GetComponentHandler() const { return componentHandler; }
   ViewType* GetView() const { return mView; }

@@ -129,8 +129,8 @@ private:
 class IVDiskPresetManagerControl : public IDirBrowseControlBase
 {
 public:
-  IVDiskPresetManagerControl(const IRECT& bounds, const char* presetPath, const char* fileExtension, const IVStyle& style = DEFAULT_STYLE)
-  : IDirBrowseControlBase(bounds, fileExtension)
+  IVDiskPresetManagerControl(const IRECT& bounds, const char* presetPath, const char* fileExtension, bool showFileExtensions = true, const IVStyle& style = DEFAULT_STYLE)
+  : IDirBrowseControlBase(bounds, fileExtension, showFileExtensions)
   , mStyle(style)
   {
     mIgnoreMouse = true;
@@ -199,10 +199,10 @@ public:
     {
       IPopupMenu::Item* pItem = mItems.Get(mSelectedIndex);
 
-      //if (PLUG()->LoadProgramFromVSTPreset(mFiles.Get(pItem->GetTag())->Get()))
+      //if (PLUG()->LoadPresetFromVSTPreset(mFiles.Get(pItem->GetTag())->Get()))
       //{
       //  PLUG()->ModifyCurrentPreset(PLUG()->GetPatchName());
-      //  PLUG()->InformHostOfProgramChange();
+      //  PLUG()->InformHostOfPresetChange();
         mPresetNameButton->SetLabelStr(pItem->GetText());
       //}
     }

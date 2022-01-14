@@ -36,8 +36,7 @@ void SplashAnimationFunc(IControl* pCaller)
     return;
   }
   
-  dynamic_cast<IVectorBase*>(pCaller)->SetSplashRadius((float) progress);
-  
+  pCaller->As<IVectorBase>()->SetSplashRadius((float) progress);
   pCaller->SetDirty(false);
 };
 
@@ -49,7 +48,7 @@ void SplashClickActionFunc(IControl* pCaller)
 {
   float x, y;
   pCaller->GetUI()->GetMouseDownPoint(x, y);
-  dynamic_cast<IVectorBase*>(pCaller)->SetSplashPoint(x, y);
+  pCaller->As<IVectorBase>()->SetSplashPoint(x, y);
   pCaller->SetAnimation(SplashAnimationFunc, DEFAULT_ANIMATION_DURATION);
 }
 
@@ -60,7 +59,7 @@ void ShowBubbleHorizontalActionFunc(IControl* pCaller)
   IRECT bounds = pCaller->GetRECT();
   WDL_String display;
   pParam->GetDisplayWithLabel(display);
-  pGraphics->ShowBubbleControl(pCaller, bounds.R, bounds.MH(), display.Get(), EDirection::Horizontal, IRECT(0,0,50,30));
+  pGraphics->ShowBubbleControl(pCaller, bounds.R, bounds.MH(), display.Get(), EDirection::Horizontal, IRECT(0, 0, 50, 30));
 }
 
 void ShowBubbleVerticalActionFunc(IControl* pCaller)
@@ -70,7 +69,7 @@ void ShowBubbleVerticalActionFunc(IControl* pCaller)
   IRECT bounds = pCaller->GetRECT();
   WDL_String display;
   pParam->GetDisplayWithLabel(display);
-  pGraphics->ShowBubbleControl(pCaller, bounds.MW(), bounds.T, display.Get(), EDirection::Vertical, IRECT(0,0,50,30));
+  pGraphics->ShowBubbleControl(pCaller, bounds.MW(), bounds.T, display.Get(), EDirection::Vertical, IRECT(0, 0, 50, 30));
 }
 
 END_IGRAPHICS_NAMESPACE
@@ -115,6 +114,7 @@ void IControl::SetParamIdx(int paramIdx, int valIdx)
 {
   assert(valIdx > kNoValIdx && valIdx < NVals());
   mVals.at(valIdx).idx = paramIdx;
+  SetDirty(false);
 }
 
 const IParam* IControl::GetParam(int valIdx) const
@@ -249,20 +249,13 @@ void IControl::SetDisabled(bool disable)
 
 void IControl::OnMouseDown(float x, float y, const IMouseMod& mod)
 {
-  #ifdef PROTOOLS
-  if (mod.A)
-  {
-    SetValueToDefault(GetValIdxForPos(x, y));
-  }
-  #endif
-
   if (mod.R)
     PromptUserInput(GetValIdxForPos(x, y));
 }
 
 void IControl::OnMouseDblClick(float x, float y, const IMouseMod& mod)
 {
-  #ifdef PROTOOLS
+  #ifdef AAX_API
   PromptUserInput(GetValIdxForPos(x, y));
   #else
   SetValueToDefault(GetValIdxForPos(x, y));
@@ -449,7 +442,7 @@ ITextControl::ITextControl(const IRECT& bounds, const char* str, const IText& te
 , mSetBoundsBasedOnStr(setBoundsBasedOnStr)
 {
   mIgnoreMouse = true;
-  IControl::mText = text;
+  mText = text;
 }
 
 void ITextControl::OnInit()
@@ -477,6 +470,7 @@ void ITextControl::SetStrFmt(int maxlen, const char* fmt, ...)
   va_start(arglist, fmt);
   mStr.SetAppendFormattedArgs(false, maxlen, fmt, arglist);
   va_end(arglist);
+  
   SetDirty(false);
 }
 
@@ -498,12 +492,11 @@ void ITextControl::SetBoundsBasedOnStr()
 IURLControl::IURLControl(const IRECT& bounds, const char* str, const char* urlStr, const IText& text, const IColor& BGColor, const IColor& MOColor, const IColor& CLColor)
 : ITextControl(bounds, str, text, BGColor)
 , mURLStr(urlStr)
+, mOriginalColor(text.mFGColor)
 , mMOColor(MOColor)
 , mCLColor(CLColor)
-, mOriginalColor(text.mFGColor)
 {
   mIgnoreMouse = false;
-  IControl::mText = text;
 }
 
 void IURLControl::Draw(IGraphics& g)
@@ -559,10 +552,16 @@ void IURLControl::OnMouseDown(float x, float y, const IMouseMod& mod)
   mClicked = true;
 }
 
+void IURLControl::SetText(const IText& txt)
+{
+  mText = txt;
+  mOriginalColor = txt.mFGColor;
+}
+
 ITextToggleControl::ITextToggleControl(const IRECT& bounds, int paramIdx, const char* offText, const char* onText, const IText& text, const IColor& bgColor)
 : ITextControl(bounds, offText, text, bgColor)
-, mOnText(onText)
 , mOffText(offText)
+, mOnText(onText)
 {
   SetParamIdx(paramIdx);
   //TODO: assert boolean?
@@ -572,8 +571,8 @@ ITextToggleControl::ITextToggleControl(const IRECT& bounds, int paramIdx, const 
 
 ITextToggleControl::ITextToggleControl(const IRECT& bounds, IActionFunction aF, const char* offText, const char* onText, const IText& text, const IColor& bgColor)
 : ITextControl(bounds, offText, text, bgColor)
-, mOnText(onText)
 , mOffText(offText)
+, mOnText(onText)
 {
   SetActionFunction(aF);
   mDblAsSingleClick = true;
@@ -592,12 +591,12 @@ void ITextToggleControl::OnMouseDown(float x, float y, const IMouseMod& mod)
 
 void ITextToggleControl::SetDirty(bool push, int valIdx)
 {
-  IControl::SetDirty(push);
-  
   if(GetValue() > 0.5)
     SetStr(mOnText.Get());
   else
     SetStr(mOffText.Get());
+  
+  IControl::SetDirty(push);
 }
 
 
@@ -721,8 +720,33 @@ ISwitchControlBase::ISwitchControlBase(const IRECT& bounds, int paramIdx, IActio
 : IControl(bounds, paramIdx, aF)
 , mNumStates(numStates)
 {
-  assert(mNumStates > 1);
+  mDisabledState.Resize(numStates);
+  SetAllStatesDisabled(false);
   mDblAsSingleClick = true;
+}
+
+void ISwitchControlBase::SetAllStatesDisabled(bool disabled)
+{
+  for(int i=0; i<mNumStates; i++)
+  {
+    SetStateDisabled(i, disabled);
+  }
+  SetDirty(false);
+}
+
+void ISwitchControlBase::SetStateDisabled(int stateIdx, bool disabled)
+{
+  if(stateIdx >= 0 && stateIdx < mNumStates && mDisabledState.GetSize())
+    mDisabledState.Get()[stateIdx] = disabled;
+  
+  SetDirty(false);
+}
+
+bool ISwitchControlBase::GetStateDisabled(int stateIdx) const
+{
+  if(stateIdx >= 0 && stateIdx < mNumStates && mDisabledState.GetSize())
+    return mDisabledState.Get()[stateIdx];
+  return false;
 }
 
 void ISwitchControlBase::OnInit()
@@ -770,6 +794,26 @@ bool IKnobControlBase::IsFineControl(const IMouseMod& mod, bool wheel) const
 #endif
 }
 
+void IKnobControlBase::OnMouseDown(float x, float y, const IMouseMod& mod)
+{
+  mMouseDown = true;
+  mMouseDragValue = GetValue();
+
+  if (mHideCursorOnDrag)
+    GetUI()->HideMouseCursor(true, true);
+
+  IControl::OnMouseDown(x, y, mod);
+}
+
+void IKnobControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
+{
+  if (mHideCursorOnDrag)
+    GetUI()->HideMouseCursor(false);
+  
+  mMouseDown = false;
+  SetDirty(false);
+}
+
 void IKnobControlBase::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod)
 {
   double gearing = IsFineControl(mod, false) ? mGearing * 10.0 : mGearing;
@@ -777,20 +821,179 @@ void IKnobControlBase::OnMouseDrag(float x, float y, float dX, float dY, const I
   IRECT dragBounds = GetKnobDragBounds();
 
   if (mDirection == EDirection::Vertical)
-    SetValue(GetValue() + (double) dY / (double)(dragBounds.T - dragBounds.B) / gearing);
+    mMouseDragValue += static_cast<double>(dY / static_cast<double>(dragBounds.T - dragBounds.B) / gearing);
   else
-    SetValue(GetValue() + (double) dX / (double)(dragBounds.R - dragBounds.L) / gearing);
+    mMouseDragValue += static_cast<double>(dX / static_cast<double>(dragBounds.R - dragBounds.L) / gearing);
 
+  mMouseDragValue = Clip(mMouseDragValue, 0., 1.);
+
+  double v = mMouseDragValue;
+  const IParam* pParam = GetParam();
+  
+  if (pParam && pParam->GetStepped() && pParam->GetStep() > 0)
+    v = pParam->ConstrainNormalized(mMouseDragValue);
+
+  SetValue(v);
   SetDirty();
 }
 
 void IKnobControlBase::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
 {
-  double gearing = IsFineControl(mod, true) ? 0.001 : 0.01;
+  const double gearing = IsFineControl(mod, true) ? 0.001 : 0.01;
+  double newValue = 0.0;
+  const double oldValue = GetValue();
+  const IParam* pParam = GetParam();
 
-  SetValue(GetValue() + gearing * d);
+  if (pParam && pParam->GetStepped() && pParam->GetStep() > 0)
+  {
+    if (d != 0.f)
+    {
+      const double step = pParam->GetStep();
+      double v = pParam->FromNormalized(oldValue);
+      v += d > 0 ? step : -step;
+      newValue = pParam->ToNormalized(v);
+    }
+  }
+  else
+  {
+    newValue = oldValue + gearing * d;
+  }
+
+  SetValue(newValue);
   SetDirty();
 }
+
+ISliderControlBase::ISliderControlBase(const IRECT& bounds, int paramIdx, EDirection dir, double gearing, float handleSize)
+: IControl(bounds, paramIdx)
+, mDirection(dir)
+, mHandleSize(handleSize)
+, mGearing(gearing)
+{
+}
+
+ ISliderControlBase::ISliderControlBase(const IRECT& bounds, IActionFunction aF, EDirection dir, double gearing, float handleSize)
+: IControl(bounds, aF)
+, mDirection(dir)
+, mHandleSize(handleSize)
+, mGearing(gearing)
+{
+}
+
+void ISliderControlBase::OnResize()
+{
+  SetTargetRECT(mRECT);
+  mTrackBounds = mRECT;
+  SetDirty(false);
+}
+
+void ISliderControlBase::OnMouseDown(float x, float y, const IMouseMod& mod)
+{
+  mMouseDown = true;
+  
+  if(GetParam())
+  {
+    if(!GetParam()->GetStepped())
+      SnapToMouse(x, y, mDirection, mTrackBounds);
+  }
+  else
+    SnapToMouse(x, y, mDirection, mTrackBounds);
+
+  mMouseDragValue = GetValue();
+
+  if (mHideCursorOnDrag)
+    GetUI()->HideMouseCursor(true, true);
+
+  IControl::OnMouseDown(x, y, mod);
+}
+
+void ISliderControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
+{
+  if (mHideCursorOnDrag)
+    GetUI()->HideMouseCursor(false);
+  
+  mMouseDown = false;
+  SetDirty(false);
+}
+
+void ISliderControlBase::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod)
+{
+  const IParam* pParam = GetParam();
+
+  if(mod.touchID || !mHideCursorOnDrag)
+  {
+    if(pParam)
+    {
+      if(!pParam->GetStepped())
+      {
+        SnapToMouse(x, y, mDirection, mTrackBounds);
+        return;
+      }
+      // non-stepped parameter, fall through
+    }
+    else
+    {
+      SnapToMouse(x, y, mDirection, mTrackBounds);
+      return;
+    }
+  }
+  
+  double gearing = IsFineControl(mod, false) ? mGearing * 10.0 : mGearing;
+
+  if (mDirection == EDirection::Vertical)
+    mMouseDragValue += static_cast<double>(dY / static_cast<double>(mTrackBounds.T - mTrackBounds.B) / gearing);
+  else
+    mMouseDragValue += static_cast<double>(dX / static_cast<double>(mTrackBounds.R - mTrackBounds.L) / gearing);
+  
+  mMouseDragValue = Clip(mMouseDragValue, 0., 1.);
+
+  double v = mMouseDragValue;
+  
+  if (pParam && pParam->GetStepped() && pParam->GetStep() > 0)
+    v = pParam->ConstrainNormalized(mMouseDragValue);
+
+  SetValue(v);
+  SetDirty(true);
+}
+
+void ISliderControlBase::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
+{
+  const double gearing = IsFineControl(mod, true) ? 0.001 : 0.01;
+  double newValue = 0.0;
+  const double oldValue = GetValue();
+  const IParam* pParam = GetParam();
+
+  if (pParam && pParam->GetStepped() && pParam->GetStep() > 0)
+  {
+    if (d != 0.f)
+    {
+      const double step = pParam->GetStep();
+      double v = pParam->FromNormalized(oldValue);
+      v += d > 0 ? step : -step;
+      newValue = pParam->ToNormalized(v);
+    }
+  }
+  else
+  {
+    newValue = oldValue + gearing * d;
+  }
+
+  SetValue(newValue);
+  SetDirty();
+}
+
+bool ISliderControlBase::IsFineControl(const IMouseMod& mod, bool wheel) const
+{
+#ifdef PROTOOLS
+#ifdef OS_WIN
+  return mod.C;
+#else
+  return wheel ? mod.C : mod.R;
+#endif
+#else
+  return (mod.C || mod.S);
+#endif
+}
+
 
 IDirBrowseControlBase::~IDirBrowseControlBase()
 {
@@ -905,7 +1108,7 @@ void IDirBrowseControlBase::ScanDirectory(const char* path, IPopupMenu& menuToAd
             WDL_String menuEntry {f};
             
             if(!mShowFileExtensions)
-              menuEntry.Set(f, (int) (a - f));
+              menuEntry.Set(f, (int) (a - f) - 1);
             
             IPopupMenu::Item* pItem = new IPopupMenu::Item(menuEntry.Get(), IPopupMenu::Item::kNoFlags, mFiles.GetSize());
             menuToAddTo.AddItem(pItem, -2 /* sort alphabetically */);
@@ -920,86 +1123,4 @@ void IDirBrowseControlBase::ScanDirectory(const char* path, IPopupMenu& menuToAd
   
   if(!mShowEmptySubmenus)
     menuToAddTo.RemoveEmptySubmenus();
-}
-
-ISliderControlBase::ISliderControlBase(const IRECT& bounds, int paramIdx, EDirection dir, double gearing, float handleSize)
-: IControl(bounds, paramIdx)
-, mDirection(dir)
-, mHandleSize(handleSize)
-, mGearing(gearing)
-{
-}
-
- ISliderControlBase::ISliderControlBase(const IRECT& bounds, IActionFunction aF, EDirection dir, double gearing, float handleSize)
-: IControl(bounds, aF)
-, mDirection(dir)
-, mHandleSize(handleSize)
-, mGearing(gearing)
-{
-}
-
-void ISliderControlBase::OnResize()
-{
-  SetTargetRECT(mRECT);
-  mTrackBounds = mRECT;
-  SetDirty(false);
-}
-
-void ISliderControlBase::OnMouseDown(float x, float y, const IMouseMod& mod)
-{
-  mMouseDown = true;
-  SnapToMouse(x, y, mDirection, mTrackBounds);
-
-  if (mHideCursorOnDrag)
-    GetUI()->HideMouseCursor(true, true);
-
-  IControl::OnMouseDown(x, y, mod);
-}
-
-void ISliderControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
-{
-  mMouseDown = false;
-
-  if (mHideCursorOnDrag)
-    GetUI()->HideMouseCursor(false);
-}
-
-void ISliderControlBase::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod)
-{
-  if(mod.touchID)
-  {
-    SnapToMouse(x, y, mDirection, mTrackBounds);
-  }
-  else
-  {
-    double gearing = IsFineControl(mod, false) ? mGearing * 10.0 : mGearing;
-    
-    if (mDirection == EDirection::Vertical)
-      SetValue(GetValue() + (static_cast<double>(dY) / static_cast<double>(mTrackBounds.T - mTrackBounds.B) / gearing));
-    else
-      SetValue(GetValue() + (static_cast<double>(dX) / static_cast<double>(mTrackBounds.R - mTrackBounds.L) / gearing));
-  }
-  
-  SetDirty(true);
-}
-
-void ISliderControlBase::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
-{
-  double gearing = IsFineControl(mod, true) ? 0.001 : 0.01;
-
-  SetValue(GetValue() + gearing * d);
-  SetDirty();
-}
-
-bool ISliderControlBase::IsFineControl(const IMouseMod& mod, bool wheel) const
-{
-#ifdef PROTOOLS
-#ifdef OS_WIN
-  return mod.C;
-#else
-  return wheel ? mod.C : mod.R;
-#endif
-#else
-  return (mod.C || mod.S);
-#endif
 }

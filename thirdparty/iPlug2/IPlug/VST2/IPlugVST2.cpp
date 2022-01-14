@@ -1,10 +1,10 @@
 /*
  ==============================================================================
-
- This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers.
-
+ 
+ This file is part of the iPlug 2 library. Copyright (C) the iPlug 2 developers. 
+ 
  See LICENSE.txt for  more info.
-
+ 
  ==============================================================================
 */
 
@@ -27,13 +27,8 @@ static int VSTSpkrArrType(int nchan)
 static int AsciiToVK(int ascii)
 {
 #ifdef OS_WIN
-  if (ascii != 0) {
-    HKL layout = GetKeyboardLayout(0);
-    return VkKeyScanExA((CHAR)ascii, layout);
-  } else {
-    return 0;
-  }
-
+  HKL layout = GetKeyboardLayout(0);
+  return VkKeyScanExA((CHAR)ascii, layout);
 #else
   // Numbers and uppercase alpha chars map directly to VK
   if ((ascii >= 0x30 && ascii <= 0x39) || (ascii >= 0x41 && ascii <= 0x5A))
@@ -172,14 +167,12 @@ IPlugVST2::IPlugVST2(const InstanceInfo& info, const Config& config)
 
   SetBlockSize(DEFAULT_BLOCK_SIZE);
 
-  if(config.plugHasUI)
+  if (config.plugHasUI)
   {
     mAEffect.flags |= effFlagsHasEditor;
-    mEditRect.left = mEditRect.top = 0;
-    mEditRect.right = config.plugWidth;
-    mEditRect.bottom = config.plugHeight;
+    UpdateEditRect();
   }
-
+  
   CreateTimer();
 }
 
@@ -198,7 +191,7 @@ void IPlugVST2::EndInformHostOfParamChange(int idx)
   mHostCallback(&mAEffect, audioMasterEndEdit, idx, 0, 0, 0.0f);
 }
 
-void IPlugVST2::InformHostOfProgramChange()
+void IPlugVST2::InformHostOfPresetChange()
 {
   mHostCallback(&mAEffect, audioMasterUpdateDisplay, 0, 0, 0, 0.0f);
 }
@@ -211,23 +204,28 @@ bool IPlugVST2::EditorResize(int viewWidth, int viewHeight)
   {
     if (viewWidth != GetEditorWidth() || viewHeight != GetEditorHeight())
     {
-      mEditRect.left = mEditRect.top = 0;
-      mEditRect.right = viewWidth;
-      mEditRect.bottom = viewHeight;
-
+      SetEditorSize(viewWidth, viewHeight);
+      UpdateEditRect();
+  
       resized = mHostCallback(&mAEffect, audioMasterSizeWindow, viewWidth, viewHeight, 0, 0.f);
     }
-
-    SetEditorSize(viewWidth, viewHeight);
   }
 
   return resized;
+}
+
+void IPlugVST2::UpdateEditRect()
+{
+  mEditRect.left = mEditRect.top = 0;
+  mEditRect.right = GetEditorWidth();
+  mEditRect.bottom = GetEditorHeight();
 }
 
 void IPlugVST2::SetLatency(int samples)
 {
   mAEffect.initialDelay = samples;
   IPlugProcessor::SetLatency(samples);
+  mHostCallback(&mAEffect, audioMasterIOChanged, 0, 0, 0, 0.0f);
 }
 
 bool IPlugVST2::SendVSTEvent(VstEvent& event)
@@ -323,7 +321,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         productStr[0] = '\0';
         int version = 0;
         _this->mHostCallback(&_this->mAEffect, audioMasterGetProductString, 0, 0, productStr, 0.0f);
-
+        
         if (CStringHasContents(productStr))
         {
           int decVer = (int) _this->mHostCallback(&_this->mAEffect, audioMasterGetVendorVersion, 0, 0, 0, 0.0f);
@@ -332,7 +330,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
           int rmin = (decVer - 10000 * ver - 100 * rmaj);
           version = (ver << 16) + (rmaj << 8) + rmin;
         }
-
+        
         _this->SetHost(productStr, version);
       }
       _this->OnParamReset(kReset);
@@ -455,6 +453,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     {
       if (ptr && _this->HasUI())
       {
+        _this->UpdateEditRect();
         *(ERect**) ptr = &(_this->mEditRect);
         return 1;
       }
@@ -492,23 +491,9 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     }
     case effGetChunk:
     {
-      uint8_t** ppData = (uint8_t**)ptr;
+      uint8_t** ppData = (uint8_t**) ptr;
       if (ppData)
       {
-        // START HACK ----------------------
-        IByteChunk& c = _this->mState;
-        c.Clear();
-        bool ok = _this->SerializeState(c);
-
-        if (ok && c.Size())
-        {
-          *ppData = c.GetData();
-          return c.Size();
-        }
-
-        return 0;
-        // END HACK ----------------------
-
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
         IByteChunk::InitChunkWithIPlugVer(chunk);
@@ -518,7 +503,8 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         {
           _this->ModifyCurrentPreset();
           savedOK = static_cast<IPluginBase*>(_this)->SerializePresets(chunk);
-        } else
+        }
+        else
         {
           savedOK = _this->SerializeState(chunk);
         }
@@ -535,18 +521,9 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     {
       if (ptr)
       {
-        // START HACK ----------------------
-        _this->mState.Clear();
-        _this->mState.Resize((int)value);
-        memcpy(_this->mState.GetData(), ptr, value);
-        int p = _this->UnserializeState(_this->mState, 0);
-        _this->OnRestoreState();
-        return 1;
-        // END HACK ----------------------
-
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
-        chunk.Resize((int)value);
+        chunk.Resize((int) value);
         memcpy(chunk.GetData(), ptr, value);
         int pos = 0;
         int iplugVer = IByteChunk::GetIPlugVerFromChunk(chunk, pos);
@@ -555,7 +532,8 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
         if (isBank)
         {
           pos = static_cast<IPluginBase*>(_this)->UnserializePresets(chunk, pos);
-        } else
+        }
+        else
         {
           pos = _this->UnserializeState(chunk, pos);
           _this->ModifyCurrentPreset();
@@ -762,16 +740,23 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
           _this->mHasVSTExtensions |= VSTEXT_COCKOS;
           return 0xbeef0000;
         }
-        else if (!strcmp((char*) ptr, "hasCockosViewAsConfig"))
+
+        if (!strcmp((char*) ptr, "hasCockosViewAsConfig"))
         {
           _this->mHasVSTExtensions |= VSTEXT_COCOA;
           return 0xbeef0000;
         }
-        else if (!strcmp((char*) ptr, "wantsChannelCountNotifications"))
+
+        if (!strcmp((char*) ptr, "wantsChannelCountNotifications"))
         {
           return 1;
         }
 
+        if (!strcmp((char*)ptr, "MPE"))
+        {
+          return _this->DoesMPE() ? 1 : 0;
+        }
+        
         return _this->VSTCanDo((char *) ptr);
       }
       return 0;
@@ -911,7 +896,7 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       str[0] = static_cast<char>(idx);
       str[1] = '\0';
 
-      int vk = VSTKeyCodeToVK((int)value, idx);
+      int vk = VSTKeyCodeToVK(value, idx);
       int modifiers = (int)opt;
 
       IKeyPress keyPress{ str, static_cast<int>(vk),

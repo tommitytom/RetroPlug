@@ -168,6 +168,21 @@ public:
       SetDirty(false);
     }
   }
+    
+  void OnTouchCancelled(float x, float y, const IMouseMod& mod) override
+  {
+    if (mLastTouchedKey > -1)
+    {
+      SetKeyIsPressed(mLastTouchedKey, false);
+      TriggerMidiMsgFromKeyPress(mLastTouchedKey, 0);
+
+      mLastTouchedKey = -1;
+      mMouseOverKey = -1;
+      mLastVelocity = 0.;
+
+      SetDirty(false);
+    }
+  }
 
   void OnResize() override
   {
@@ -182,6 +197,7 @@ public:
     }
 
     mTargetRECT = mRECT;
+    RecreateKeyBounds(true);
     SetDirty(false);
   }
 
@@ -726,8 +742,8 @@ public:
    * @param cc A Midi CC to link, defaults to kNoCC which is interpreted as pitch bend */
   IWheelControl(const IRECT& bounds, IMidiMsg::EControlChangeMsg cc = IMidiMsg::EControlChangeMsg::kNoCC, int initBendRange = 12)
   : ISliderControlBase(bounds, kNoParameter, EDirection::Vertical, DEFAULT_GEARING, 40.f)
-  , mCC(cc)
   , mPitchBendRange(initBendRange)
+  , mCC(cc)
   {
     mMenu.AddItem("1 semitone");
     mMenu.AddItem("2 semitones");

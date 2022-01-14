@@ -88,7 +88,7 @@ using namespace igraphics;
 {
   IPopupMenu* mIPopupMenu;
 }
-- (id) initWithIPopupMenuAndReciever: (IPopupMenu*) pMenu : (NSView*) pView;
+- (id) initWithIPopupMenuAndReceiver: (IPopupMenu*) pMenu : (NSView*) pView;
 - (IPopupMenu*) iPopupMenu;
 @end
 
@@ -156,7 +156,6 @@ using namespace igraphics;
 - (void) scrollWheel: (NSEvent*) pEvent;
 - (void) keyDown: (NSEvent*) pEvent;
 - (void) keyUp: (NSEvent*) pEvent;
-- (void) flagsChanged:(NSEvent *) pEvent;
 //text entry
 - (void) removeFromSuperview;
 - (void) controlTextDidEndEditing: (NSNotification*) pNotification;
@@ -178,7 +177,7 @@ using namespace igraphics;
 - (void) setMouseCursor: (ECursor) cursorType;
 @end
 
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI
 #import <MetalKit/MetalKit.h>
 
 @interface IGRAPHICS_IMGUIVIEW : MTKView

@@ -125,15 +125,6 @@
     <ClCompile Include="..\..\..\Dependencies\IPlug\VST3_SDK\public.sdk\source\common\commoniids.cpp">
       <Filter>IPlug\VST3\VST3_SDK\public.sdk\common</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\IGraphics\Drawing\IGraphicsAGG.cpp">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\IGraphics\Drawing\IGraphicsCairo.cpp">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\IGraphics\Drawing\IGraphicsLice.cpp">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\IGraphics\Drawing\IGraphicsNanoVG.cpp">
       <Filter>IGraphics\Drawing</Filter>
     </ClCompile>
@@ -162,9 +153,6 @@
     <ClInclude Include="..\..\..\IGraphics\IGraphicsLiveEdit.h">
       <Filter>IGraphics</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\IGraphicsPathBase.h">
-      <Filter>IGraphics</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\IGraphics\IGraphicsPopupMenu.h">
       <Filter>IGraphics</Filter>
     </ClInclude>
@@ -185,21 +173,6 @@
     </ClInclude>
     <ClInclude Include="..\..\..\IGraphics\IGraphics_select.h">
       <Filter>IGraphics</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsAGG.h">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsAGG_src.h">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsCairo.h">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsLice.h">
-      <Filter>IGraphics\Drawing</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsLice_src.h">
-      <Filter>IGraphics\Drawing</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\IGraphics\Drawing\IGraphicsNanoVG.h">
       <Filter>IGraphics\Drawing</Filter>
@@ -390,6 +363,84 @@
     <ClInclude Include="..\..\..\IGraphics\ISender.h">
       <Filter>IGraphics</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestAnimationControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestArcControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestBezierControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestBlendControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestColorControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestControls.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestCursorControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestDirBrowseControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestDrawContextControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestDropShadowControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestFontControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestGFXLabel.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestGLControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestGradientControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestImageControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestKeyboardControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestLayerControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestMultiPathControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestMultiTouchControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestPolyControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestShadowGradientControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestSizeControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestSVGControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestTextControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestTextOrientationControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\IGraphics\Controls\Test\TestTextSizeControl.h">
+      <Filter>IGraphics\Controls\Test</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -451,6 +502,9 @@
     </Filter>
     <Filter Include="IGraphics\Extras">
       <UniqueIdentifier>{bd86a60e-67d9-4fee-9df2-832ec8246d0c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="IGraphics\Controls\Test">
+      <UniqueIdentifier>{ef4339a6-8665-4563-b921-80e21af7c33d}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

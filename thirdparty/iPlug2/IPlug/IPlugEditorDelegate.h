@@ -85,7 +85,7 @@ public:
   int NParams() const { return mParams.GetSize(); }
   
   /** If you are not using IGraphics, you can implement this method to attach to the native parent view e.g. NSView, UIView, HWND.
-   *  Defer calling OnUIOpen() if nessecary. */
+   *  Defer calling OnUIOpen() if necessary. */
   virtual void* OpenWindow(void* pParent) { OnUIOpen(); return nullptr; }
   
   /** If you are not using IGraphics you can if you need to free resources etc when the window closes. Call base implementation. */
@@ -289,12 +289,48 @@ public:
 
 #pragma mark - Editor resizing
   void SetEditorSize(int width, int height) { mEditorWidth = width; mEditorHeight = height; }
+  
+  /** \todo
+   * @param widthLo \todo
+   * @param widthHi \todo
+   * @param heightLo \todo
+   * @param heightHi \todo */
+  void SetSizeConstraints(int widthLo, int widthHi, int heightLo, int heightHi)
+  {
+    mMinWidth = std::min(widthLo, widthHi);
+    mMaxWidth = std::max(widthLo, widthHi);
+    mMinHeight = std::min(heightLo, heightHi);
+    mMaxHeight = std::max(heightLo, heightHi);
+  }
 
   /** @return The width of the plug-in editor in pixels */
   int GetEditorWidth() const { return mEditorWidth; }
   
   /** @return The height of the plug-in editor in pixels */
   int GetEditorHeight() const { return mEditorHeight; }
+  
+  int GetMinWidth() const { return mMinWidth; }
+  int GetMaxWidth() const { return mMaxWidth; }
+  int GetMinHeight() const { return mMinHeight; }
+  int GetMaxHeight() const { return mMaxHeight; }
+
+  /** Constrain the incoming editor width and height values based on the minimum and maximum
+   * @param w the incoming width value to test/set if clipping needed
+   * @param h the incoming height value to test/set if clipping needed
+   * @return \c true if the parameters fell withing the permitted range */
+  bool ConstrainEditorResize(int& w, int& h) const
+  {
+    if(w >= mMinWidth && w <= mMaxWidth && h >= mMinHeight && h <= mMaxHeight)
+    {
+      return true;
+    }
+    else
+    {
+      w = Clip(w, mMinWidth, mMaxWidth);
+      h = Clip(h, mMinHeight, mMaxHeight);
+      return false;
+    }
+  }
   
   /** Serializes the editor state (such as scale) into a binary chunk.
    * @param chunk The output chunk to serialize to. Will append data if the chunk has already been started.
@@ -308,17 +344,32 @@ public:
   virtual int UnserializeEditorState(const IByteChunk& chunk, int startPos)  { return startPos; }
   
   /** Can be used by a host API to inform the editor of screen scale changes
-   *@param scale The new screen scale*/
-  virtual void SetScreenScale(double scale) {}
+   * @param scale The new screen scale*/
+  virtual void SetScreenScale(float scale) {}
 
-protected:
+  friend class IPlugAPP;
+  friend class IPlugAAX;
+  friend class IPlugVST2;
+  friend class IPlugVST3;
+  friend class IPlugVST3Controller;
+  friend class IPlugVST3Processor;
+  friend class IPlugAU;
+  friend class IPlugAUv3;
+  friend class IPlugWEB;
+  friend class IPlugWAM;
+  friend class IPlugAPIBase;
+  friend class IPluginBase;
+
+private:
   /** A list of IParam objects. This list is populated in the delegate constructor depending on the number of parameters passed as an argument to MakeConfig() in the plug-in class implementation constructor */
   WDL_PtrList<IParam> mParams;
-private:
+
   /** The width of the plug-in editor in pixels. Can be updated by resizing, exists here for persistance, even if UI doesn't exist. */
   int mEditorWidth = 0;
   /** The height of the plug-in editor in pixels. Can be updated by resizing, exists here for persistance, even if UI doesn't exist */
   int mEditorHeight = 0;
+  /** Editor sizing constraints */
+  int mMinWidth = 10, mMaxWidth = 100000, mMinHeight = 10, mMaxHeight = 100000;
 };
 
 END_IPLUG_NAMESPACE

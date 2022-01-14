@@ -980,7 +980,7 @@ OSStatus IPlugAU::GetProperty(AudioUnitPropertyID propID, AudioUnitScope scope, 
       *pDataSize = sizeof (AudioUnitParameterNameInfo);
       if (pData && scope == kAudioUnitScope_Global)
       {
-        AudioUnitParameterNameInfo* parameterNameInfo = (AudioUnitParameterNameInfo *) pData;
+        AudioUnitParameterNameInfo* parameterNameInfo = (AudioUnitParameterNameInfo*) pData;
         int clumpId = parameterNameInfo->inID;
         
         if (clumpId < 1)
@@ -1085,7 +1085,19 @@ OSStatus IPlugAU::GetProperty(AudioUnitPropertyID propID, AudioUnitScope scope, 
     }
     NO_OP(kAudioUnitProperty_InputSamplesInOutput);       // 49,
     NO_OP(kAudioUnitProperty_ClassInfoFromDocument);      // 50
-      
+    case kAudioUnitProperty_SupportsMPE: // 58
+    {
+      if(pData == 0)
+      {
+        *pWriteable = false;
+        *pDataSize = sizeof(UInt32);
+      }
+      else
+      {
+        *((UInt32*) pData) = (DoesMPE() ? 1 : 0);
+      }
+      return noErr;
+    }
     default:
     {
       return kAudioUnitErr_InvalidProperty;
@@ -1239,7 +1251,18 @@ OSStatus IPlugAU::SetProperty(AudioUnitPropertyID propID, AudioUnitScope scope, 
       return noErr;
     }
     NO_OP(kAudioUnitProperty_FactoryPresets);            // 24,
-    NO_OP(kAudioUnitProperty_ContextName);               // 25,
+    //NO_OP(kAudioUnitProperty_ContextName);               // 25,
+    case kAudioUnitProperty_ContextName:
+    {
+      CFStringRef inStr = *(CFStringRef*) pData;
+      CFIndex bufferSize = CFStringGetLength(inStr) + 1; // The +1 is for having space for the string to be NUL terminated
+      char buffer[bufferSize];
+      if (CFStringGetCString(inStr, buffer, bufferSize, kCFStringEncodingUTF8))
+      {
+          mTrackName.Set(buffer);
+      }
+      return noErr;
+    }
     NO_OP(kAudioUnitProperty_RenderQuality);             // 26,
     case kAudioUnitProperty_HostCallbacks:              // 27,
     {
@@ -1887,7 +1910,7 @@ void IPlugAU::EndInformHostOfParamChange(int idx)
   SendAUEvent(kAudioUnitEvent_EndParameterChangeGesture, mCI, idx);
 }
 
-void IPlugAU::InformHostOfProgramChange()
+void IPlugAU::InformHostOfPresetChange()
 {
   //InformListeners(kAudioUnitProperty_CurrentPreset, kAudioUnitScope_Global);
   InformListeners(kAudioUnitProperty_PresentPreset, kAudioUnitScope_Global);
@@ -2105,7 +2128,7 @@ void IPlugAU::OutputSysexFromEditor()
 
 static IPlugAU* GetPlug(void *x)
 {
-  return (IPlugAU*) &((AudioComponentPlugInInstance *) x)->mInstanceStorage;
+  return (IPlugAU*) &((AudioComponentPlugInInstance*) x)->mInstanceStorage;
 }
 
 //static

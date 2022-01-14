@@ -30,10 +30,6 @@ HWND gHWND;
 extern HINSTANCE gHINSTANCE;
 UINT gScrollMessage;
 
-int main() {
-  return WinMain(GetModuleHandle(0), NULL, NULL, 0);
-}
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nShowCmd)
 {
   try
@@ -297,7 +293,7 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
 #define CBS_HASSTRINGS 0
 #define SWELL_DLG_SCALE_AUTOGEN 1
 #define SET_IDD_DIALOG_PREF_SCALE 1.5
-#if APP_RESIZABLE
+#if PLUG_HOST_RESIZE
 #define SWELL_DLG_FLAGS_AUTOGEN SWELL_DLG_WS_FLIPPED|SWELL_DLG_WS_RESIZABLE
 #endif
 #include "swell-dlggen.h"

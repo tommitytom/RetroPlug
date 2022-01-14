@@ -6,6 +6,13 @@
 ARCH := $(shell uname -m)
 UNAME_S := $(shell uname -s)
 
+ifeq ($(ARCH), aarch64)
+  ifeq ($(shell $(CC) -dumpmachine | cut -f 1 -d -), arm)
+    # helper for armv7l userspace on aarch64 cpu
+    ARCH := armv7l
+  endif
+endif
+
 PKG_CONFIG = pkg-config
 
 COMPILER=GCC
@@ -20,6 +27,7 @@ ifeq ($(UNAME_S),Darwin)
   COMPILER=CLANG
 else
   DLL_EXT=.so
+  CFLAGS += -D_FILE_OFFSET_BITS=64
 endif
 
 ifeq ($(COMPILER),CLANG)
@@ -42,11 +50,15 @@ ifndef DEPRECATED_WARNINGS
   CFLAGS +=  -Wno-deprecated-declarations
 endif
 
-ifneq ($(filter arm%,$(ARCH)),)
-  CFLAGS += -fsigned-char -marm
-endif
-ifeq ($(ARCH),aarch64)
+ifeq ($(ARCH),arm64)
   CFLAGS += -fsigned-char
+else
+  ifneq ($(filter arm%,$(ARCH)),)
+    CFLAGS += -fsigned-char -marm
+  endif
+  ifeq ($(ARCH),aarch64)
+    CFLAGS += -fsigned-char
+  endif
 endif
 
 

@@ -7,14 +7,13 @@
 #pragma warning( disable : 4244 )
 #include "SkDashPathEffect.h"
 #include "SkGradientShader.h"
+#include "SkMaskFilter.h"
 #include "SkFont.h"
 #include "SkFontMetrics.h"
 #include "SkTypeface.h"
+#include "SkVertices.h"
+#include "SkSwizzle.h"
 #pragma warning( pop )
-
-#include "GrContext.h"
-
-#include "IGraphicsSkia_src.cpp"
 
 #if defined OS_MAC || defined OS_IOS
   #include "SkCGUtils.h"
@@ -33,9 +32,8 @@
   #pragma comment(lib, "libpng.lib")
   #pragma comment(lib, "zlib.lib")
   #pragma comment(lib, "skia.lib")
-  #ifdef IGRAPHICS_GL
-    #pragma comment(lib, "opengl32.lib")
-  #endif
+  #pragma comment(lib, "svg.lib")
+  #pragma comment(lib, "opengl32.lib")
 #endif
 
 #if defined IGRAPHICS_GL
@@ -52,7 +50,7 @@ extern std::map<std::string, MTLTexturePtr> gTextureMap;
 class IGraphicsSkia::Bitmap : public APIBitmap
 {
 public:
-  Bitmap(sk_sp<SkSurface> surface, int width, int height, int scale, float drawScale);
+  Bitmap(sk_sp<SkSurface> surface, int width, int height, float scale, float drawScale);
   Bitmap(const char* path, double sourceScale);
   Bitmap(const void* pData, int size, double sourceScale);
   Bitmap(sk_sp<SkImage>, double sourceScale);
@@ -61,7 +59,7 @@ private:
   SkiaDrawable mDrawable;
 };
   
-IGraphicsSkia::Bitmap::Bitmap(sk_sp<SkSurface> surface, int width, int height, int scale, float drawScale)
+IGraphicsSkia::Bitmap::Bitmap(sk_sp<SkSurface> surface, int width, int height, float scale, float drawScale)
 {
   mDrawable.mSurface = surface;
   mDrawable.mIsSurface = true;
@@ -241,7 +239,7 @@ END_IPLUG_NAMESPACE
 #pragma mark -
 
 IGraphicsSkia::IGraphicsSkia(IGEditorDelegate& dlg, int w, int h, int fps, float scale)
-: IGraphicsPathBase(dlg, w, h, fps, scale)
+: IGraphics(dlg, w, h, fps, scale)
 {
   mMainPath.setIsVolatile(true);
   
@@ -300,28 +298,38 @@ APIBitmap* IGraphicsSkia::LoadAPIBitmap(const char* fileNameOrResID, int scale, 
   return new Bitmap(fileNameOrResID, scale);
 }
 
+APIBitmap* IGraphicsSkia::LoadAPIBitmap(const char* name, const void* pData, int dataSize, int scale)
+{
+  return new Bitmap(pData, dataSize, scale);
+}
+
 void IGraphicsSkia::OnViewInitialized(void* pContext)
 {
 #if defined IGRAPHICS_GL
   auto glInterface = GrGLMakeNativeInterface();
-  mGrContext = GrContext::MakeGL(glInterface);
+  mGrContext = GrDirectContext::MakeGL(glInterface);
 #elif defined IGRAPHICS_METAL
-  
   CAMetalLayer* pMTLLayer = (CAMetalLayer*) pContext;
   id<MTLDevice> device = pMTLLayer.device;
   id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-  mGrContext = GrContext::MakeMetal((void*) device, (void*) commandQueue);
+  mGrContext = GrDirectContext::MakeMetal((void*) device, (void*) commandQueue);
   mMTLDevice = (void*) device;
   mMTLCommandQueue = (void*) commandQueue;
   mMTLLayer = pContext;
 #endif
-    
+
   DrawResize();
 }
 
 void IGraphicsSkia::OnViewDestroyed()
 {
-#if defined IGRAPHICS_METAL
+  RemoveAllControls();
+
+#if defined IGRAPHICS_GL
+  mSurface = nullptr;
+  mScreenSurface = nullptr;
+  mGrContext = nullptr;
+#elif defined IGRAPHICS_METAL
   [(id<MTLCommandQueue>) mMTLCommandQueue release];
   mMTLCommandQueue = nullptr;
   mMTLLayer = nullptr;
@@ -331,8 +339,8 @@ void IGraphicsSkia::OnViewDestroyed()
 
 void IGraphicsSkia::DrawResize()
 {
-  auto w = WindowWidth() * GetScreenScale();
-  auto h = WindowHeight() * GetScreenScale();
+  auto w = static_cast<int>(std::ceil(static_cast<float>(WindowWidth()) * GetScreenScale()));
+  auto h = static_cast<int>(std::ceil(static_cast<float>(WindowHeight()) * GetScreenScale()));
   
 #if defined IGRAPHICS_GL || defined IGRAPHICS_METAL
   if (mGrContext.get())
@@ -344,7 +352,7 @@ void IGraphicsSkia::DrawResize()
   #ifdef OS_WIN
     mSurface.reset();
    
-    const size_t bmpSize = sizeof(BITMAPINFOHEADER) + (WindowWidth() * GetScreenScale()) * (WindowHeight() * GetScreenScale()) * sizeof(uint32_t);
+    const size_t bmpSize = sizeof(BITMAPINFOHEADER) + (w * h * sizeof(uint32_t));
     mSurfaceMemory.Resize(bmpSize);
     BITMAPINFO* bmpInfo = reinterpret_cast<BITMAPINFO*>(mSurfaceMemory.Get());
     ZeroMemory(bmpInfo, sizeof(BITMAPINFO));
@@ -363,7 +371,10 @@ void IGraphicsSkia::DrawResize()
   #endif
 #endif
   if (mSurface)
+  {
     mCanvas = mSurface->getCanvas();
+    mCanvas->save();
+  }
 }
 
 void IGraphicsSkia::BeginFrame()
@@ -378,7 +389,11 @@ void IGraphicsSkia::BeginFrame()
     int fbo = 0, samples = 0, stencilBits = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
     glGetIntegerv(GL_SAMPLES, &samples);
+#ifdef IGRAPHICS_GL3
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_STENCIL, GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE, &stencilBits);
+#else
     glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
+#endif
     
     GrGLFramebufferInfo fbinfo;
     fbinfo.fFBOID = fbo;
@@ -411,6 +426,74 @@ void IGraphicsSkia::BeginFrame()
   IGraphics::BeginFrame();
 }
 
+void IGraphicsSkia::DrawImGui(SkSurface* surface)
+{
+  #if defined IGRAPHICS_IMGUI
+  // This causes ImGui to rebuild vertex/index data based on all immediate-mode commands
+  // (widgets, etc...) that have been issued
+  ImGui::Render();
+
+  // Then we fetch the most recent data, and convert it so we can render with Skia
+  const ImDrawData* drawData = ImGui::GetDrawData();
+  SkTDArray<SkPoint> pos;
+  SkTDArray<SkPoint> uv;
+  SkTDArray<SkColor> color;
+
+  auto canvas = surface->getCanvas();
+
+  for (int i = 0; i < drawData->CmdListsCount; ++i) {
+    const ImDrawList* drawList = drawData->CmdLists[i];
+
+    // De-interleave all vertex data (sigh), convert to Skia types
+    pos.rewind(); uv.rewind(); color.rewind();
+    for (int j = 0; j < drawList->VtxBuffer.size(); ++j) {
+        const ImDrawVert& vert = drawList->VtxBuffer[j];
+        pos.push_back(SkPoint::Make(vert.pos.x * GetScreenScale(), vert.pos.y * GetScreenScale()));
+        uv.push_back(SkPoint::Make(vert.uv.x, vert.uv.y));
+        color.push_back(vert.col);
+    }
+    // ImGui colors are RGBA
+    SkSwapRB(color.begin(), color.begin(), color.count());
+
+    int indexOffset = 0;
+
+    // Draw everything with canvas.drawVertices...
+    for (int j = 0; j < drawList->CmdBuffer.size(); ++j)
+    {
+      const ImDrawCmd* drawCmd = &drawList->CmdBuffer[j];
+
+      SkAutoCanvasRestore acr(canvas, true);
+
+      // TODO: Find min/max index for each draw, so we know how many vertices (sigh)
+      if (drawCmd->UserCallback)
+      {
+          drawCmd->UserCallback(drawList, drawCmd);
+      }
+      else
+      {
+        SkPaint* paint = static_cast<SkPaint*>(drawCmd->TextureId);
+        SkASSERT(paint);
+
+        canvas->clipRect(SkRect::MakeLTRB(drawCmd->ClipRect.x * GetScreenScale(),
+                                          drawCmd->ClipRect.y * GetScreenScale(),
+                                          drawCmd->ClipRect.z * GetScreenScale(),
+                                          drawCmd->ClipRect.w * GetScreenScale()));
+        
+        auto vertices = SkVertices::MakeCopy(SkVertices::kTriangles_VertexMode,
+                                             drawList->VtxBuffer.size(),
+                                             pos.begin(), uv.begin(), color.begin(),
+                                             drawCmd->ElemCount,
+                                             drawList->IdxBuffer.begin() + indexOffset);
+  
+        canvas->drawVertices(vertices, SkBlendMode::kModulate, mImGuiRenderer->fFontPaint);
+
+        indexOffset += drawCmd->ElemCount;
+      }
+    }
+  }
+  #endif
+}
+
 void IGraphicsSkia::EndFrame()
 {
 #ifdef IGRAPHICS_CPU
@@ -419,7 +502,7 @@ void IGraphicsSkia::EndFrame()
     mSurface->peekPixels(&pixmap);
     SkBitmap bmp;
     bmp.installPixels(pixmap);  
-    CGContext* pCGContext = (CGContextRef) mPlatformContext;
+    CGContext* pCGContext = (CGContextRef) GetPlatformContext();
     CGContextSaveGState(pCGContext);
     CGContextScaleCTM(pCGContext, 1.0 / GetScreenScale(), 1.0 / GetScreenScale());
     SkCGDrawBitmap(pCGContext, bmp, 0, 0);
@@ -437,8 +520,17 @@ void IGraphicsSkia::EndFrame()
   #else
     #error NOT IMPLEMENTED
   #endif
-#else
+#else // GPU
   mSurface->draw(mScreenSurface->getCanvas(), 0.0, 0.0, nullptr);
+  
+  #if defined IGRAPHICS_IMGUI && !IGRAPHICS_CPU
+  if(mImGuiRenderer)
+  {
+    mImGuiRenderer->NewFrame();
+    DrawImGui(mScreenSurface.get());
+  }
+  #endif
+  
   mScreenSurface->getCanvas()->flush();
   
   #ifdef IGRAPHICS_METAL
@@ -512,7 +604,11 @@ void IGraphicsSkia::PathArc(float cx, float cy, float r, float a1, float a2, EWi
 
 IColor IGraphicsSkia::GetPoint(int x, int y)
 {
-  return COLOR_BLACK; //TODO:
+  SkBitmap bitmap;
+  bitmap.allocPixels(SkImageInfo::MakeN32Premul(1, 1));
+  mCanvas->readPixels(bitmap, x, y);
+  auto color = bitmap.getColor(0,0);
+  return IColor(SkColorGetA(color), SkColorGetR(color), SkColorGetG(color), SkColorGetB(color));
 }
 
 bool IGraphicsSkia::LoadAPIFont(const char* fontID, const PlatformFontPtr& font)
@@ -586,6 +682,7 @@ void IGraphicsSkia::PrepareAndMeasureText(const IText& text, const char* str, IR
 float IGraphicsSkia::DoMeasureText(const IText& text, const char* str, IRECT& bounds) const
 {
   SkFont font;
+  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
 
   IRECT r = bounds;
   double x, y;
@@ -599,8 +696,10 @@ void IGraphicsSkia::DoDrawText(const IText& text, const char* str, const IRECT& 
   IRECT measured = bounds;
   
   SkFont font;
+  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+
   double x, y;
-  
+
   PrepareAndMeasureText(text, str, measured, x, y, font);
   PathTransformSave();
   DoTextRotation(text, bounds, measured);
@@ -642,7 +741,7 @@ void IGraphicsSkia::PathStroke(const IPattern& pattern, float thickness, const I
       dashArray[i + 1] = options.mDash.GetArray()[(i + 1) % dashCount];
     }
     
-    paint.setPathEffect(SkDashPathEffect::Make(dashArray, dashMax, 0));
+    paint.setPathEffect(SkDashPathEffect::Make(dashArray, dashMax, options.mDash.GetOffset()));
   }
   
   paint.setStrokeWidth(thickness);
@@ -766,7 +865,6 @@ void IGraphicsSkia::RenderPath(SkPaint& paint)
 
 void IGraphicsSkia::PathTransformSetMatrix(const IMatrix& m)
 {
-  double scale = GetScreenScale() * GetDrawScale();
   double xTranslate = 0.0;
   double yTranslate = 0.0;
     
@@ -782,31 +880,45 @@ void IGraphicsSkia::PathTransformSetMatrix(const IMatrix& m)
   }
 
   mMatrix = SkMatrix::MakeAll(m.mXX, m.mXY, m.mTX, m.mYX, m.mYY, m.mTY, 0, 0, 1);
-  SkMatrix globalMatrix = SkMatrix::MakeScale(scale);
-  SkMatrix skMatrix = mMatrix;
+  auto scale = GetTotalScale();
+  SkMatrix globalMatrix = SkMatrix::Scale(scale, scale);
+  mClipMatrix = SkMatrix();
+  mFinalMatrix = mMatrix;
   globalMatrix.preTranslate(xTranslate, yTranslate);
-  skMatrix.postConcat(globalMatrix);
-  mCanvas->setMatrix(skMatrix);
+  mClipMatrix.postConcat(globalMatrix);
+  mFinalMatrix.postConcat(globalMatrix);
+  mCanvas->setMatrix(mFinalMatrix);
 }
 
 void IGraphicsSkia::SetClipRegion(const IRECT& r)
 {
-  mCanvas->restore();
+  mCanvas->restoreToCount(0);
   mCanvas->save();
+  mCanvas->setMatrix(mClipMatrix);
   mCanvas->clipRect(SkiaRect(r));
+  mCanvas->setMatrix(mFinalMatrix);
 }
 
-APIBitmap* IGraphicsSkia::CreateAPIBitmap(int width, int height, int scale, double drawScale)
+APIBitmap* IGraphicsSkia::CreateAPIBitmap(int width, int height, float scale, double drawScale, bool cacheable)
 {
   sk_sp<SkSurface> surface;
   
   #ifndef IGRAPHICS_CPU
   SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-  surface = SkSurface::MakeRenderTarget(mGrContext.get(), SkBudgeted::kYes, info);
+  if (cacheable)
+  {
+    surface = SkSurface::MakeRasterN32Premul(width, height);
+  }
+  else
+  {
+    surface = SkSurface::MakeRenderTarget(mGrContext.get(), SkBudgeted::kYes, info);
+  }
   #else
   surface = SkSurface::MakeRasterN32Premul(width, height);
   #endif
-  
+
+  surface->getCanvas()->save();
+
   return new Bitmap(std::move(surface), width, height, scale, drawScale);
 }
 
@@ -864,7 +976,7 @@ void IGraphicsSkia::ApplyShadowMask(ILayerPtr& layer, RawBitmapData& mask, const
   IBlend blend(EBlend::Default, shadow.mOpacity);
   pCanvas->setMatrix(m);
   pCanvas->drawImage(image.get(), shadow.mXOffset * scale, shadow.mYOffset * scale);
-  m = SkMatrix::MakeScale(scale);
+  m = SkMatrix::Scale(scale, scale);
   pCanvas->setMatrix(m);
   pCanvas->translate(-layer->Bounds().L, -layer->Bounds().T);
   SkPaint p = SkiaPaint(shadow.mPattern, &blend);
@@ -879,14 +991,25 @@ void IGraphicsSkia::ApplyShadowMask(ILayerPtr& layer, RawBitmapData& mask, const
   }
 }
 
+void IGraphicsSkia::DrawFastDropShadow(const IRECT& innerBounds, const IRECT& outerBounds, float xyDrop, float roundness, float blur, IBlend* pBlend)
+{
+  SkRect r = SkiaRect(innerBounds.GetTranslated(xyDrop, xyDrop));
+  
+  SkPaint paint = SkiaPaint(COLOR_BLACK_DROP_SHADOW, pBlend);
+  paint.setStyle(SkPaint::Style::kFill_Style);
+  
+  paint.setMaskFilter(SkMaskFilter::MakeBlur(kSolid_SkBlurStyle, blur * 0.5)); // 0.5 seems to match nanovg
+  mCanvas->drawRoundRect(r, roundness, roundness, paint);
+}
+
 const char* IGraphicsSkia::GetDrawingAPIStr()
 {
 #ifdef IGRAPHICS_CPU
   return "SKIA | CPU";
 #elif defined IGRAPHICS_GL2
-  return "SKIA | OpenGL2";
+  return "SKIA | GL2";
 #elif defined IGRAPHICS_GL3
-  return "SKIA | OpenGL3";
+  return "SKIA | GL3";
 #elif defined IGRAPHICS_METAL
   return "SKIA | Metal";
 #endif

@@ -1,5 +1,5 @@
 --local configgen = require("configgen")
-local util = require("util")
+local util = dofile("util.lua")
 
 local iplug2 = {
 	project = {}
@@ -12,7 +12,7 @@ local _name -- The name of the plugin (for convenience)
 function iplug2.init(configPath)
 	local scriptPath = util.scriptPath()
 
-	_config = require(configPath or "config")
+	_config = dofile(configPath or "config.lua")
 	_name = _config.plugin.name
 	_p = scriptPath:sub(1, #scriptPath - 4)
 
@@ -167,7 +167,8 @@ local function projectBase(targetName, name)
 
 		links {
 			"Wininet",
-			"Shlwapi"
+			"Shlwapi",
+			"Comctl32"
 		}
 
 	configuration { "windows", "x64" }

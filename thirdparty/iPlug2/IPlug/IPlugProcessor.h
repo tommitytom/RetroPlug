@@ -41,8 +41,8 @@ class IPlugProcessor
 {
 public:
   /** IPlugProcessor constructor
-   * @param config /todo
-   * @param plugAPI /todo */
+   * @param config \todo
+   * @param plugAPI \todo */
   IPlugProcessor(const Config& config, EAPI plugAPI);
   virtual ~IPlugProcessor();
 
@@ -100,7 +100,7 @@ public:
   /** @return Sample rate (in Hz) */
   double GetSampleRate() const { return mSampleRate; }
 
-  /** @return Current block size in samples */
+  /** @return Maximum block size in samples, actual blocksize may vary each ProcessBlock() */
   int GetBlockSize() const { return mBlockSize; }
 
   /** @return Plugin latency (in samples) */
@@ -122,6 +122,12 @@ public:
   /** @return The tempo in beats per minute */
   double GetTempo() const { return mTimeInfo.mTempo; }
 
+  /** @return The number of beats elapsed since start of project timeline. */
+  double GetPPQPos() const { return mTimeInfo.mPPQPos; }
+
+  /** @return \c true if the transport is running */
+  bool GetTransportIsRunning() const { return mTimeInfo.mTransportIsRunning; }
+  
   /** @return The number of samples in a beat */
   double GetSamplesPerBeat() const;
 
@@ -296,7 +302,7 @@ private:
   /* A list of IChannelData structures corresponding to every input/output channel */
   WDL_PtrList<IChannelData<>> mChannelData[2];
 protected: // these members are protected because they need to be access by the API classes, and don't want a setter/getter
-  /** A multichannel delay line used to delay the bypassed signal when a plug-in with latency is bypassed. */
+  /** A multi-channel delay line used to delay the bypassed signal when a plug-in with latency is bypassed. */
   std::unique_ptr<NChanDelayLine<sample>> mLatencyDelay = nullptr;
   /** Contains detailed information about the transport state */
   ITimeInfo mTimeInfo;

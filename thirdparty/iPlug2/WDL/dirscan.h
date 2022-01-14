@@ -40,6 +40,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+extern struct stat wdl_stat_chk;
+// if this fails on linux, use CFLAGS += -D_FILE_OFFSET_BITS=64
+typedef char wdl_dirscan_assert_failed_stat_not_64[sizeof(wdl_stat_chk.st_size)!=8 ? -1 : 1];
 #endif
 
 class WDL_DirScan
@@ -185,34 +188,48 @@ class WDL_DirScan
 #endif
       str->Append(GetCurrentFN()); 
     }
-    int GetCurrentIsDirectory() const
+    int GetCurrentIsDirectory() const // returns 1 if dir, 2 if symlink to dir, 4 if possibly-recursive symlink to dir
     { 
 #ifdef _WIN32
        return !!(m_fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY); 
 #else
-#ifndef __APPLE__
-       // we could enable this on OSX, need to check to make sure realpath(x,NULL) is supported on 10.5+
        char tmp[2048];
-       if (m_ent && m_ent->d_type == DT_LNK)
+       if (m_ent) switch (m_ent->d_type)
        {
-         snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),m_ent->d_name);
-         char *rp = realpath(tmp,NULL);
-         if (rp)
+         case DT_DIR: return 1;
+         case DT_LNK:
          {
-           DIR *d = opendir(rp);
-           free(rp);
+           snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),m_ent->d_name);
+           char *rp = realpath(tmp,NULL);
+           if (!rp) return 0;
 
+           struct stat sb;
+           int ret = (!stat(rp,&sb) && (sb.st_mode & S_IFMT) == S_IFDIR) ? 2 : 0;
+           if (ret)
+           {
+             // treat symlinks of /path/to/foo -> /path from being resolved (avoiding obvious feedback loops)
+             const int rpl = (int) strlen(rp);
+             if (
+#ifdef __APPLE__
+               !strnicmp(rp,m_leading_path.Get(),rpl)
+#else
+               !strncmp(rp,m_leading_path.Get(),rpl)
+#endif
+                 && (m_leading_path.Get()[rpl] == '/' || m_leading_path.Get()[rpl] == 0)
+                 ) ret = 4;
+           }
+           free(rp);
+           return ret;
+         }
+         case DT_UNKNOWN:
+         {
+           snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),m_ent->d_name);
+           DIR *d = opendir(tmp);
            if (d) { closedir(d); return 1; }
+           return 0;
          }
        }
-       else if (m_ent && m_ent->d_type == DT_UNKNOWN)
-       {
-         snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),m_ent->d_name);
-         DIR *d = opendir(tmp);
-         if (d) { closedir(d); return 1; }
-       }
-#endif
-       return m_ent && (m_ent->d_type == DT_DIR);
+       return 0;
 #endif
     }
 
@@ -229,8 +246,8 @@ class WDL_DirScan
   {
     char tmp[2048];
     snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),GetCurrentFN());
-    struct stat64 st={0,};
-    stat64(tmp,&st);
+    struct stat st={0,};
+    stat(tmp,&st);
     unsigned long long a=(unsigned long long)st.st_ctime; // seconds since january 1st, 1970
     a+=11644473600ull; // 1601->1970
     a*=10000000; // seconds to 1/10th microseconds (100 nanoseconds)
@@ -242,8 +259,8 @@ class WDL_DirScan
   { 
     char tmp[2048];
     snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),GetCurrentFN());
-    struct stat64 st={0,};
-    stat64(tmp,&st);
+    struct stat st={0,};
+    stat(tmp,&st);
     unsigned long long a=(unsigned long long)st.st_mtime; // seconds since january 1st, 1970
     a+=11644473600ull; // 1601->1970
     a*=10000000; // seconds to 1/10th microseconds (100 nanoseconds)
@@ -254,8 +271,8 @@ class WDL_DirScan
   { 
     char tmp[2048];
     snprintf(tmp,sizeof(tmp),"%s/%s",m_leading_path.Get(),GetCurrentFN());
-    struct stat64 st={0,};
-    stat64(tmp,&st);
+    struct stat st={0,};
+    stat(tmp,&st);
     
     if (HighWord) *HighWord = (DWORD)(st.st_size>>32); 
     return (DWORD)(st.st_size&0xffffffff); 

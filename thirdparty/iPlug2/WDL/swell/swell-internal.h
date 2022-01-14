@@ -89,6 +89,9 @@ struct HTREEITEM__;
 
 #ifdef __OBJC__
 
+#ifndef MAC_OS_X_VERSION_10_7
+typedef struct _NSDraggingSession NSDraggingSession;
+#endif
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_4
 typedef int NSInteger;
@@ -104,6 +107,7 @@ typedef unsigned int NSUInteger;
 
 @interface SWELL_DataHold : NSObject
 {
+  @public
   void *m_data;
 }
 -(id) initWithVal:(void *)val;
@@ -140,11 +144,15 @@ typedef struct WindowPropRec
   @public
   bool m_last_dark_mode;
   bool m_ctlcolor_set;
+  bool m_disable_menu;
 }
+- (id) init;
 - (void)setNeedsDisplay:(BOOL)flag;
 - (void)setNeedsDisplayInRect:(NSRect)rect;
 - (void)drawRect:(NSRect)rect;
 - (void)initColors:(int)darkmode; // -1 to not update darkmode but trigger update of colors
+- (void)swellDisableContextMenu:(bool)dis;
+- (NSMenu *)textView:(NSTextView *)view menu:(NSMenu *)menu forEvent:(NSEvent *)event atIndex:(NSUInteger)charIndex;
 @end
 
 @interface SWELL_TabView : NSTabView
@@ -163,12 +171,17 @@ typedef struct WindowPropRec
 @interface SWELL_ListViewCell : NSTextFieldCell
 {
 }
+-(NSColor *)highlightColorWithFrame:(NSRect)cellFrame inView:(NSView *)controlView;
+- (NSRect)drawingRectForBounds:(NSRect)rect;
 @end
 
-@interface SWELL_StatusCell : NSTextFieldCell
+@interface SWELL_StatusCell : SWELL_ListViewCell
 {
   NSImage *status;
 }
+-(id)initNewCell;
+-(void)setStatusImage:(NSImage *)img;
+- (void)drawWithFrame:(NSRect)cellFrame inView:(NSView *)controlView;
 @end
 
 @interface SWELL_TreeView : NSOutlineView
@@ -180,6 +193,47 @@ typedef struct WindowPropRec
   NSColor *m_fgColor;
   NSMutableArray *m_selColors;
 }
+-(id) init;
+-(void) dealloc;
+-(bool) findItem:(HTREEITEM)item parOut:(HTREEITEM__ **)par idxOut:(int *)idx;
+-(void)mouseDown:(NSEvent *)theEvent;
+-(void)mouseDragged:(NSEvent *)theEvent;
+-(void)mouseUp:(NSEvent *)theEvent;
+- (void)rightMouseUp:(NSEvent *)theEvent;
+- (void)highlightSelectionInClipRect:(NSRect)theClipRect;
+
+// data source
+-(NSInteger) outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item;
+- (BOOL)outlineView:(NSOutlineView *)outlineView isItemExpandable:(id)item;
+- (id)outlineView:(NSOutlineView *)outlineView
+            child:(NSInteger)index
+           ofItem:(id)item;
+- (id)outlineView:(NSOutlineView *)outlineView
+    objectValueForTableColumn:(NSTableColumn *)tableColumn
+           byItem:(id)item;
+
+
+
+- (BOOL)outlineView:(NSOutlineView *)outlineView
+         writeItems:(NSArray *)items
+       toPasteboard:(NSPasteboard *)pasteboard;
+- (BOOL)outlineView:(NSOutlineView *)outlineView
+         acceptDrop:(id<NSDraggingInfo>)info
+               item:(id)item
+         childIndex:(NSInteger)index;
+- (void)outlineView:(NSOutlineView *)outlineView
+    draggingSession:(NSDraggingSession *)session
+       endedAtPoint:(NSPoint)screenPoint
+          operation:(NSDragOperation)operation;
+- (void)outlineView:(NSOutlineView *)outlineView
+    draggingSession:(NSDraggingSession *)session
+   willBeginAtPoint:(NSPoint)screenPoint
+           forItems:(NSArray *)draggedItems;
+- (NSDragOperation)outlineView:(NSOutlineView *)outlineView
+                  validateDrop:(id<NSDraggingInfo>)info
+                  proposedItem:(id)item
+            proposedChildIndex:(NSInteger)index;
+
 @end
 
 @interface SWELL_ListView : NSTableView
@@ -213,6 +267,8 @@ typedef struct WindowPropRec
 -(NSInteger)columnAtPoint:(NSPoint)pt;
 -(int)getColumnPos:(int)idx; // get current position of column that was originally at idx
 -(int)getColumnIdx:(int)pos; // get original index of column that is currently at position
+
+-(BOOL)accessibilityPerformShowMenu;
 @end
 
 @interface SWELL_ImageButtonCell : NSButtonCell
@@ -252,17 +308,25 @@ typedef struct WindowPropRec
 @interface SWELL_TextView : NSTextView
 {
   NSInteger m_tag;
+  bool m_disable_menu;
 }
+-(id)init;
 -(NSInteger) tag;
 -(void) setTag:(NSInteger)tag;
+- (void)swellDisableContextMenu:(bool)dis;
+- (bool)swellWantsContextMenu;
 @end
 
 @interface SWELL_BoxView : NSBox
 {
   NSInteger m_tag;
+@public
+  int m_etch_mode; // if nonzero, SS_ETCHEDHORZ etc
 }
 -(NSInteger) tag;
 -(void) setTag:(NSInteger)tag;
+-(void) drawRect:(NSRect)r;
+-(int) swellIsEtchBox;
 @end
 
 @interface SWELL_FocusRectWnd : NSView
@@ -308,7 +372,7 @@ typedef struct WindowPropRec
   id m_access_cacheptrs[6];
   const char *m_classname;
 
-#ifndef SWELL_NO_METAL
+// only used if not SWELL_NO_METAL
   char m_use_metal; // 1=normal mode, 2=full pipeline (GetDC() etc support). -1 is for non-metal async layered mode. -2 for non-metal non-async layered
 
   // metal state (if used)
@@ -326,7 +390,6 @@ typedef struct WindowPropRec
   id m_metal_drawable; // id<CAMetalDrawable> -- only used in normal mode
   id m_metal_device; // id<MTLDevice> -- set to last-used-device
   DWORD m_metal_device_lastchkt;
-#endif
 
 }
 - (id)initChild:(SWELL_DialogResourceIndex *)resstate Parent:(NSView *)parent dlgProc:(DLGPROC)dlgproc Param:(LPARAM)par;
@@ -402,10 +465,8 @@ typedef struct WindowPropRec
 -(void) onSwellCommand7:(id)sender;
 #endif
 
-#ifndef SWELL_NO_METAL
 -(BOOL) swellWantsMetal;
 -(void) swellDrawMetal:(const RECT *)forRect;
-#endif
 @end
 
 @interface SWELL_ModelessWindow : NSWindow
@@ -420,13 +481,17 @@ typedef struct WindowPropRec
 }
 - (id)initModeless:(SWELL_DialogResourceIndex *)resstate Parent:(HWND)parent dlgProc:(DLGPROC)dlgproc Param:(LPARAM)par outputHwnd:(HWND *)hwndOut forceStyles:(unsigned int)smask;
 - (id)initModelessForChild:(HWND)child owner:(HWND)owner styleMask:(unsigned int)smask;
+- (void)keyDown:(NSEvent *)event;
 - (void)swellDestroyAllOwnedWindows;
 - (void)swellRemoveOwnedWindow:(NSWindow *)wnd;
+- (void)swellAddOwnedWindow:(NSWindow*)wnd;
 - (void)swellSetOwner:(id)owner;
 - (id)swellGetOwner;
 - (void **)swellGetOwnerWindowHead;
 -(void)swellDoDestroyStuff;
 -(void)swellResetOwnedWindowLevels;
+
+-(void)toggleFullScreen:(id)sender;
 @end
 
 @interface SWELL_ModalDialog : NSPanel
@@ -442,6 +507,7 @@ typedef struct WindowPropRec
 - (id)initDialogBox:(SWELL_DialogResourceIndex *)resstate Parent:(HWND)parent dlgProc:(DLGPROC)dlgproc Param:(LPARAM)par;
 - (void)swellDestroyAllOwnedWindows;
 - (void)swellRemoveOwnedWindow:(NSWindow *)wnd;
+- (void)swellAddOwnedWindow:(NSWindow*)wnd;
 - (void)swellSetOwner:(id)owner;
 - (id)swellGetOwner;
 - (void **)swellGetOwnerWindowHead;
@@ -503,11 +569,15 @@ HDC SWELL_CreateMetalDC(SWELL_hwndChild *);
 @public
   LONG m_style;
   WDL_PtrList<char> *m_ids;
+  int m_ignore_selchg; // used to track the last set selection state, to avoid getting feedback notifications
+  bool m_disable_menu;
 }
 -(id)init;
 -(void)dealloc;
 -(void)setSwellStyle:(LONG)style;
 -(LONG)getSwellStyle;
+- (void)swellDisableContextMenu:(bool)dis;
+- (NSMenu *)textView:(NSTextView *)view menu:(NSMenu *)menu forEvent:(NSEvent *)event atIndex:(NSUInteger)charIndex;
 @end
 
 
@@ -529,6 +599,11 @@ HDC SWELL_CreateMetalDC(SWELL_hwndChild *);
       #define SWELL_ATSUI_TEXT_SUPPORT
     #endif
   #endif
+#endif
+
+#ifndef MAC_OS_X_VERSION_10_11
+  // metal requires a recent SDK
+  #define SWELL_NO_METAL
 #endif
 
 struct HGDIOBJ__
@@ -560,9 +635,7 @@ struct HGDIOBJ__
 struct HDC__ {
   CGContextRef ctx; 
   void *ownedData; // always use via SWELL_GetContextFrameBuffer() (which performs necessary alignment)
-#ifndef SWELL_NO_METAL
-  void *metal_ctx; // SWELL_hwndChild
-#endif
+  void *metal_ctx; // SWELL_hwndChild, only used if not SWELL_NO_METAL
   HGDIOBJ__ *curpen;
   HGDIOBJ__ *curbrush;
   HGDIOBJ__ *curfont;
@@ -650,6 +723,42 @@ static WDL_STATICFUNC_UNUSED void NSRECT_TO_RECT(RECT *r, const NSRect &tr)
 }
 #endif
 
+
+#ifdef SWELL_IMPLEMENT_GETOSXVERSION
+
+SWELL_IMPLEMENT_GETOSXVERSION int SWELL_GetOSXVersion()
+{
+  static SInt32 v;
+  if (!v)
+  {
+    if (NSAppKitVersionNumber >= 1266.0)
+    {
+      if (NSAppKitVersionNumber >= 2022.0)
+        v = 0x1100;
+      else if (NSAppKitVersionNumber >= 1894.0)
+        v = 0x10e0;
+      else if (NSAppKitVersionNumber >= 1639.10)
+        v = 0x10d0;
+      else if (NSAppKitVersionNumber >= 1560)
+        v = 0x10c0;
+      else if (NSAppKitVersionNumber >= 1404.0)
+        v = 0x10b0;
+      else
+        v = 0x10a0; // 10.10+ Gestalt(gsv) return 0x109x, so we bump this to 0x10a0
+    }
+    else
+    {
+      SInt32 a = 0x1040;
+      Gestalt(gestaltSystemVersion,&a);
+      v=a;
+    }
+  }
+  return v;
+}
+
+#endif
+
+
 #elif defined(SWELL_TARGET_GDK)
 
 
@@ -706,7 +815,7 @@ typedef void *SWELL_OSWINDOW; // maps to the HWND__ itself on visible, non-GDK, 
 
 struct HWND__
 {
-  HWND__(HWND par, int wID=0, RECT *wndr=NULL, const char *label=NULL, bool visible=false, WNDPROC wndproc=NULL, DLGPROC dlgproc=NULL, HWND ownerWindow=NULL);
+  HWND__(HWND par, int wID=0, const RECT *wndr=NULL, const char *label=NULL, bool visible=false, WNDPROC wndproc=NULL, DLGPROC dlgproc=NULL, HWND ownerWindow=NULL);
   ~HWND__(); // DO NOT USE!!! We would make this private but it breaks PtrList using it on gcc. 
 
   // using this API prevents the HWND from being valid -- it'll still get its resources destroyed via DestroyWindow() though.
@@ -827,8 +936,6 @@ HWND GetFocusIncludeMenus();
 void SWELL_RunEvents();
 
 bool swell_isOSwindowmenu(SWELL_OSWINDOW osw);
-
-bool swell_is_virtkey_char(int c);
 
 void swell_on_toplevel_raise(SWELL_OSWINDOW wnd); // called by swell-generic-gdk when a window is focused
 
@@ -980,7 +1087,11 @@ HTREEITEM__::~HTREEITEM__()
   free(m_value);
   m_children.Empty(true);
 #ifdef SWELL_TARGET_OSX
-  [m_dh release];
+  if (m_dh)
+  {
+    m_dh->m_data = NULL;
+    [m_dh release];
+  }
 #endif
 }
 
@@ -1175,6 +1286,7 @@ void swell_scaling_init(bool no_auto_hidpi);
 extern int g_swell_ui_scale;
 extern swell_colortheme g_swell_ctheme;
 extern const char *g_swell_deffont_face;
+HFONT SWELL_GetDefaultFont(void);
 
 #endif
 

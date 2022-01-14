@@ -65,7 +65,7 @@ def extractStringElement(line, macro):
     return False
 
 def set_uniqueid(projectpath, id):
-  for line in fileinput.input(projectpath + "/config/config.h", inplace=1):
+  for line in fileinput.input(projectpath + "/config.h", inplace=1):
     found = extractStringElement(line, "PLUG_UNIQUE_ID")
     if(found):
       sys.stdout.write(line.replace(config["PLUG_UNIQUE_ID"], id))
@@ -76,7 +76,7 @@ def set_uniqueid(projectpath, id):
 
 def parse_config(projectpath):
   # extract values from config.h
-  for line in fileinput.input(projectpath + "/config/config.h", inplace=0):
+  for line in fileinput.input(projectpath + "/config.h", inplace=0):
     found = False
     while found == False:
       for stringElement in StringElements:
@@ -130,5 +130,4 @@ def parse_xcconfig(configFile):
   return xcconfig
 
 if __name__ == '__main__':
-  import sys
   parse_config(sys.argv[1])

@@ -34,7 +34,7 @@ auto ClientResize = [](HWND hWnd, int nWidth, int nHeight) {
   SetWindowPos(hWnd, 0, x, y, nWidth + ptDiff.x, nHeight + ptDiff.y, 0);
 };
 
-bool ReaperExtBase::EditorResizeFromUI(int viewWidth, int viewHeight)
+bool ReaperExtBase::EditorResizeFromUI(int viewWidth, int viewHeight, bool needsPlatformResize)
 {
   if (viewWidth != GetEditorWidth() || viewHeight != GetEditorHeight())
   {
@@ -139,13 +139,16 @@ WDL_DLGRET ReaperExtBase::MainDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 //    gPrevBounds = r;
 //  };
 
+  extern float GetScaleForHWND(HWND hWnd);
+
   switch (uMsg)
   {
     case WM_INITDIALOG:
     {
       AttachWindowTopmostButton(hwnd);
       gPlug->OpenWindow(hwnd);
-      ClientResize(hwnd, PLUG_WIDTH, PLUG_HEIGHT);
+      auto scale = GetScaleForHWND(hwnd);
+      ClientResize(hwnd, PLUG_WIDTH * scale, PLUG_HEIGHT * scale);
       ShowWindow(hwnd, SW_SHOW);
       GetWindowRect(hwnd, &gPrevBounds);
       

@@ -14,7 +14,7 @@
 #import <Metal/Metal.h>
 #endif
 
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI
 #import <Metal/Metal.h>
 #include "imgui.h"
 #import "imgui_impl_metal.h"
@@ -35,10 +35,6 @@ static int MacKeyCodeToVK(int code)
   switch (code)
   {
     case 51: return kVK_BACK;
-    case 55: return kVK_CONTROL;
-    case 56: return kVK_SHIFT;
-    case 58: return kVK_MENU;
-    case 59: return kVK_LWIN;
     case 65: return kVK_DECIMAL;
     case 67: return kVK_MULTIPLY;
     case 69: return kVK_ADD;
@@ -158,12 +154,12 @@ static int MacKeyEventToVK(NSEvent* pEvent, int& flag)
 
 @implementation IGRAPHICS_MENU
 
-- (id) initWithIPopupMenuAndReciever: (IPopupMenu*) pMenu : (NSView*) pView
+- (id) initWithIPopupMenuAndReceiver: (IPopupMenu*) pMenu : (NSView*) pView
 {
   [self initWithTitle: @""];
 
-  NSMenuItem* nsMenuItem;
-  NSMutableString* nsMenuItemTitle;
+  NSMenuItem* nsMenuItem = nil;
+  NSMutableString* nsMenuItemTitle = nil;
 
   [self setAutoenablesItems:NO];
 
@@ -197,7 +193,7 @@ static int MacKeyEventToVK(NSEvent* pEvent, int& flag)
     else if (pMenuItem->GetSubmenu())
     {
       nsMenuItem = [self addItemWithTitle:nsMenuItemTitle action:nil keyEquivalent:@""];
-      NSMenu* subMenu = [[IGRAPHICS_MENU alloc] initWithIPopupMenuAndReciever:pMenuItem->GetSubmenu() :pView];
+      NSMenu* subMenu = [[IGRAPHICS_MENU alloc] initWithIPopupMenuAndReceiver:pMenuItem->GetSubmenu() :pView];
       [self setSubmenu: subMenu forItem:nsMenuItem];
       [subMenu release];
     }
@@ -208,7 +204,7 @@ static int MacKeyEventToVK(NSEvent* pEvent, int& flag)
       [nsMenuItem setTarget:pView];
     }
     
-    if (!pMenuItem->GetIsSeparator())
+    if (nsMenuItem && !pMenuItem->GetIsSeparator())
     {
       [nsMenuItem setIndentationLevel:pMenuItem->GetIsTitle() ? 1 : 0 ];
       [nsMenuItem setEnabled:pMenuItem->GetEnabled() ? YES : NO];
@@ -492,7 +488,7 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   #ifdef IGRAPHICS_GL
   CGLContextObj cglContext = [[self openGLContext] CGLContextObj];
   CGLPixelFormatObj cglPixelFormat = [[self pixelFormat] CGLPixelFormatObj];
-  CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(displayLink, cglContext, cglPixelFormat);
+  CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(mDisplayLink, cglContext, cglPixelFormat);
   #endif
   
   CGDirectDisplayID viewDisplayID =
@@ -625,8 +621,7 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   #if !defined IGRAPHICS_GL && !defined IGRAPHICS_METAL
   if (mGraphics)
   {
-    if (!mGraphics->GetPlatformContext())
-      mGraphics->SetPlatformContext([self getCGContextRef]);
+    mGraphics->SetPlatformContext([self getCGContextRef]);
       
     if (mGraphics->GetPlatformContext())
     {
@@ -659,9 +654,9 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
       for (int i = 0; i < mDirtyRects.Size(); i++)
         [self setNeedsDisplayInRect:ToNSRect(mGraphics, mDirtyRects.Get(i))];
     #else
-    #ifdef IGRAPHICS_GL
-      [[self openGLContext] makeCurrentContext];
-    #endif
+      #ifdef IGRAPHICS_GL
+        [[self openGLContext] makeCurrentContext];
+      #endif
       // so just draw on each frame, if something is dirty
       mGraphics->Draw(mDirtyRects);
     #endif
@@ -897,37 +892,6 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   }
 }
 
-- (void) flagsChanged:(NSEvent *) pEvent
-{
-    int rawcode = [pEvent keyCode];
-
-    int code = MacKeyCodeToVK(rawcode);
-    if (code == 0) {
-        return;
-    }
-    
-    char utf8[5] = { '\n' };
-    IKeyPress keyPress {utf8, code, static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagShift),
-                                    static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagCommand),
-                                    static_cast<bool>([pEvent modifierFlags] & NSEventModifierFlagOption)};
-    bool down = false;
-    if (code == kVK_CONTROL) {
-        down = keyPress.C;
-    } else if (code == kVK_SHIFT) {
-        down = keyPress.S;
-    } else if (code == kVK_MENU) {
-        down = keyPress.A;
-    } else if (code == kVK_LWIN) {
-        down = [pEvent modifierFlags] & NSEventModifierFlagControl;
-    }
-    
-    if (down) {
-        mGraphics->OnKeyDown(mPrevX, mPrevY, keyPress);
-    } else {
-        mGraphics->OnKeyUp(mPrevX, mPrevY, keyPress);
-    }
-}
-
 - (void) scrollWheel: (NSEvent*) pEvent
 {
   if (mTextFieldView) [self endUserInput ];
@@ -1103,8 +1067,8 @@ static void MakeCursorFromName(NSCursor*& cursor, const char *name)
 - (IPopupMenu*) createPopupMenu: (IPopupMenu&) menu : (NSRect) bounds;
 {
   IGRAPHICS_MENU_RCVR* pDummyView = [[[IGRAPHICS_MENU_RCVR alloc] initWithFrame:bounds] autorelease];
-  NSMenu* pNSMenu = [[[IGRAPHICS_MENU alloc] initWithIPopupMenuAndReciever:&menu : pDummyView] autorelease];
-  NSPoint wp = {bounds.origin.x, bounds.origin.y + 4};
+  NSMenu* pNSMenu = [[[IGRAPHICS_MENU alloc] initWithIPopupMenuAndReceiver:&menu : pDummyView] autorelease];
+  NSPoint wp = {bounds.origin.x, bounds.origin.y + bounds.size.height + 4};
 
   [pNSMenu popUpMenuPositioningItem:nil atLocation:wp inView:self];
   
@@ -1289,7 +1253,7 @@ static void MakeCursorFromName(NSCursor*& cursor, const char *name)
 }
 #endif
 
-//- (void)windowResized: (NSNotification *) notification;
+//- (void) windowResized: (NSNotification*) notification;
 //{
 //  if(!mGraphics)
 //    return;
@@ -1328,7 +1292,7 @@ static void MakeCursorFromName(NSCursor*& cursor, const char *name)
 
 @end
 
-#ifdef IGRAPHICS_IMGUI
+#if defined IGRAPHICS_IMGUI
 
 @implementation IGRAPHICS_IMGUIVIEW
 {

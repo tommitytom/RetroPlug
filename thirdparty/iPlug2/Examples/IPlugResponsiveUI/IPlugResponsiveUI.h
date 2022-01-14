@@ -7,7 +7,7 @@
 #include "ISender.h"
 #endif
 
-const int kNumPrograms = 1;
+const int kNumPresets = 1;
 
 enum EParams
 {
@@ -31,6 +31,7 @@ public:
 
 #if IPLUG_EDITOR
   void OnParentWindowResize(int width, int height) override;
+  bool OnHostRequestingSupportedViewConfiguration(int width, int height) override { return true; }
 #endif
   
 #if IPLUG_DSP // http://bit.ly/2S64BDd

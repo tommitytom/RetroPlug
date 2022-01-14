@@ -33,8 +33,8 @@ class IGraphicsLiveEdit : public IControl
 public:
   IGraphicsLiveEdit(bool mouseOversEnabled)
   : IControl(IRECT())
+  , mMouseOversEnabled(mouseOversEnabled)
   , mGridSize(10)
-  , mMouseOversEnabled(mouseOversEnabled) 
   {
     mTargetRECT = mRECT;
   }
@@ -161,17 +161,15 @@ public:
         if(r.R < mMouseDownRECT.L +mGridSize) r.R = mMouseDownRECT.L+mGridSize;
         if(r.B < mMouseDownRECT.T +mGridSize) r.B = mMouseDownRECT.T+mGridSize;
           
-        pControl->SetSize(r.W(), r.H());
+        GetUI()->SetControlSize(mClickedOnControl, r.W(), r.H());
       }
       else
       {
         const float x1 = SnapToGrid(mMouseDownRECT.L + (x - mouseDownX));
         const float y1 = SnapToGrid(mMouseDownRECT.T + (y - mouseDownY));
           
-        pControl->SetPosition(x1, y1);
+        GetUI()->SetControlPosition(mClickedOnControl, x1, y1);
       }
-
-      GetUI()->SetAllControlsDirty();
     }
     else
     {
@@ -182,13 +180,13 @@ public:
       mDragRegion.T = y < mouseDownY ? y : mouseDownY;
       mDragRegion.B = y < mouseDownY ? mouseDownY : y;
       
-      GetUI()->ForStandardControlsFunc([&](IControl& c) {
-                                         if(mDragRegion.Contains(c.GetRECT())) {
-                                           if(mSelectedControls.FindR(&c) == -1)
-                                             mSelectedControls.Add(&c);
+      GetUI()->ForStandardControlsFunc([&](IControl* pControl) {
+                                         if(mDragRegion.Contains(pControl->GetRECT())) {
+                                           if(mSelectedControls.FindR(pControl) == -1)
+                                             mSelectedControls.Add(pControl);
                                          }
                                          else {
-                                           int idx = mSelectedControls.FindR(&c);
+                                           int idx = mSelectedControls.FindR(pControl);
                                            if(idx > -1)
                                              mSelectedControls.Delete(idx);
                                          }
