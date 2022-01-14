@@ -30,7 +30,7 @@ install:
   - sh: ./appveyor-tools/secure-file -decrypt ci/dep.7z.enc -secret $dep_secret -salt $dep_salt
 
   - cmd: appveyor DownloadFile https://github.com/Microsoft/vswhere/releases/download/2.3.2/vswhere.exe
-  - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-alpha16/premake-5.0.0-alpha16-windows.zip
+  - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip
   - cmd: appveyor DownloadFile https://github.com/gbdev/rgbds/releases/download/v0.5.1/rgbds-0.5.1-win64.zip
 
   - cmd: 7z e premake-5.0.0-alpha16-windows.zip
