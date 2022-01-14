@@ -43,8 +43,8 @@ build_script:
 artifacts:
     - path: build\deploy\RetroPlug_standalone*.zip
       name: 'RetroPlug Standalone Win64'
-    - path: build\deploy\RetroPlug_vst2*.zip
-      name: 'RetroPlug VST2 Win64'
+    #- path: build\deploy\RetroPlug_vst2*.zip
+      #name: 'RetroPlug VST2 Win64'
 deploy:
   deploy:
   release: RetroPlug $(APPVEYOR_BUILD_VERSION)
