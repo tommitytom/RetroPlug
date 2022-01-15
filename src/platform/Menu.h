@@ -169,7 +169,7 @@ namespace rp {
 		}
 
 		Menu& action(const std::string& name, ActionFunction&& func, bool active = true, int id = -1) {
-			addItem(new Action(name, [&](MenuContext& ctx) { func(); }, active, id));
+			addItem(new Action(name, [f = std::move(func)](MenuContext& ctx) { f(); }, active, id));
 			return *this;
 		}
 

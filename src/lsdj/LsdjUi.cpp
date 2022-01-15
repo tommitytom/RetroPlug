@@ -3,7 +3,7 @@
 #include <cctype>
 #include <stb/stb_image.h>
 
-#include "data/font.h"
+//#include "data/font.h"
 
 #include <stb/stb_image_write.h>
 

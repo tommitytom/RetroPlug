@@ -4,8 +4,8 @@
 #include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
-#include "util/SolUtil.h"
 #include "util/fs.h"
+#include "util/SolUtil.h"
 
 using namespace rp;
 
@@ -14,9 +14,7 @@ const std::string_view RP_VERSION = "0.4.0";
 
 bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, bool updatePath) {
 	sol::state s;
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
-
-	SolUtil::addIncludePath(s, "../../src/scripts");
+	SolUtil::prepareState(s);
 
 	sol::table output = s.create_table_with(
 		"path", path,
@@ -92,9 +90,7 @@ bool deserializeEnum(const sol::table& source, std::string_view name, T& target)
 
 bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state) {
 	sol::state s;
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
-
-	SolUtil::addIncludePath(s, "../../src/scripts");
+	SolUtil::prepareState(s);
 
 	std::string fileData = fsutil::readTextFile(path);
 	

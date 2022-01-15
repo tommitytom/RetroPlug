@@ -13,6 +13,11 @@ function m.source()
 		LUA_DIR .. "/src/**.h",
 		LUA_DIR .. "/src/**.c"
 	}
+
+	excludes {
+		LUA_DIR .. "/src/lua.c",
+		LUA_DIR .. "/src/luac.c"
+	}
 end
 
 function m.link()

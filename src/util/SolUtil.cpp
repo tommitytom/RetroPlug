@@ -3,10 +3,18 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "generated/lua/CompiledScripts.h"
+
 using namespace rp;
 
 void SolUtil::addIncludePath(sol::state& s, std::string_view path) {
 	s["package"]["path"] = fmt::format("{};{}/?.lua", s["package"]["path"].get<std::string>(), path);
+}
+
+void SolUtil::prepareState(sol::state& s) {
+	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+	//SolUtil::addIncludePath(s, "../../src/scripts/utils");
+	s.add_package_loader(CompiledScripts::utils::loader);	
 }
 
 bool SolUtil::serializeTable(sol::state& s, const sol::table& source, std::string& target) {
@@ -64,8 +72,8 @@ bool SolUtil::deserializeTable(sol::state& s, const std::string& data, sol::tabl
 
 		target = std::get<1>(out);
 		return true;
-	} catch (...) {
-		spdlog::error("Failed to deserialize table");
+	} catch (const std::exception& ex) {
+		spdlog::error("Failed to deserialize table: {}", ex.what());
 		return false;
 	}
 }

@@ -1,11 +1,9 @@
 return {
 	settings = {
-		outDir = "retroplug/luawrapper/generated",
+		outDir = "generated/lua",
 	},
 	modules = {
-		audio = { path = "retroplug/scripts/audio" },
-		common = { path = "retroplug/scripts/common" },
-		ui = { path = "retroplug/scripts/ui" },
-		config = { path = "config/0.3", compile = false }
+		utils = { path = "scripts/utils" },
+		config = { path = "scripts/config/0.4", compile = false }
 	}
 }

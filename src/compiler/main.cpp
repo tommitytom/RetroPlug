@@ -16,6 +16,7 @@ struct ModuleDesc {
 	fs::path rootPath;
 	std::vector<ScriptDesc> scripts;
 	bool compile;
+	bool valid = true;
 };
 
 struct CompilerState {
@@ -34,7 +35,7 @@ void compileScript(const std::string& path, std::vector<u8>& data) {
 		data.resize(view.size());
 		memcpy(data.data(), view.data(), view.size());
 	} else {
-		assert(false);
+		std::cout << "Failed to compile " << path << std::endl;
 	}
 }
 
@@ -68,8 +69,10 @@ void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	});
 
 	for (auto& mod : state.modules) {
-		ss << "namespace " << mod.name << " {";
-		ss << HEADER_FUNCS_TEMPLATE << "}" << std::endl << std::endl;
+		if (mod.valid) {
+			ss << "namespace " << mod.name << " {";
+			ss << HEADER_FUNCS_TEMPLATE << "}" << std::endl << std::endl;
+		}
 	}
 
 	ss << "}" << std::endl;
@@ -165,17 +168,26 @@ int main(int argc, char** argv) {
 			mod.name = name;
 			mod.compile = !compileOpt.has_value() || compileOpt.value();
 			mod.rootPath = configDir / path.make_preferred();
-			parseDirectory(mod.rootPath.string(), mod.scripts);
+
+			if (fs::exists(mod.rootPath)) {
+				parseDirectory(mod.rootPath.string(), mod.scripts);
+			} else {
+				std::cout << "Failed to compile module: folder does not exist.  " << mod.rootPath << std::endl;
+				mod.valid = false;
+				return 1;
+			}
 		}
 
 		size_t threadCount = std::min(state.modules.size(), (size_t)std::thread::hardware_concurrency());
 		state.pool.start(threadCount);
 
 		for (auto& ns : state.modules) {
-			state.pool.enqueue([&]() { 
-				processModule(ns, state);
-				writeSourceFile(ns, targetDir); 
-			});
+			if (ns.valid) {
+				state.pool.enqueue([&]() {
+					processModule(ns, state);
+					writeSourceFile(ns, targetDir);
+				});
+			}
 		}
 
 		writeHeaderFile(state, targetDir);

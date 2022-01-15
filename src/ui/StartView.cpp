@@ -12,22 +12,22 @@
 using namespace rp;
 
 void loadRecent(std::string_view recentPath, std::vector<std::string>& paths) {
-	sol::state s;
-	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+	if (fs::exists(recentPath)) {
+		sol::state s;
+		SolUtil::prepareState(s);
 
-	if (fs::exists("../../src/scripts")) {
-		SolUtil::addIncludePath(s, "../../src/scripts");
+		std::string data = fsutil::readTextFile(recentPath);
+
+		if (data.size()) {
+			sol::table target;
+
+			if (SolUtil::deserializeTable(s, data, target)) {
+				paths = target["recent"].get<sol::nested<std::vector<std::string>>>();
+			} else {
+				spdlog::error("Failed to load list of recent files");
+			}
+		}
 	}
-
-	std::string data = fsutil::readTextFile(recentPath);
-	sol::table target;
-
-	if (!SolUtil::deserializeTable(s, data, target)) {
-		spdlog::error("Failed to load list of recent files");
-		return;
-	}
-
-	paths = target["recent"].get<sol::nested<std::vector<std::string>>>();
 }
 
 const FileDialogFilter ROM_FILTER = FileDialogFilter{ "GameBoy ROM Files", "*.gb" };
@@ -36,14 +36,21 @@ const FileDialogFilter PROJECT_FILTER = FileDialogFilter{ "RetroPlug Project Fil
 void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 	try {
 		sol::state s;
-		s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
+		SolUtil::prepareState(s);
 
-		SolUtil::addIncludePath(s, "../../src/scripts");
-
-		std::string data = fsutil::readTextFile(recentPath);
 		sol::table target;
+		std::string data;
+		
+		bool valid = false;
+		if (fs::exists(recentPath)) {
+			data = fsutil::readTextFile(recentPath);
+			
+			if (data.size() && SolUtil::deserializeTable(s, data, target)) {
+				valid = true;
+			}
+		}
 
-		if (!SolUtil::deserializeTable(s, data, target)) {
+		if (!valid) {
 			target = s.create_table_with("recent", s.create_table());
 		}
 
@@ -95,7 +102,7 @@ void StartView::setupMenu() {
 		});
 
 	std::vector<std::string> paths;
-	//loadRecent("recent.lua", paths);
+	loadRecent("recent.lua", paths);
 
 	Menu& recent = menu.subMenu("Load Recent");
 
@@ -155,14 +162,14 @@ bool StartView::handleLoad(const std::vector<std::string>& files) {
 	if (projectPaths.size() > 0) {
 		// Load project
 		project->load(projectPaths[0]);
-		//addRecent("recent.lua", projectPaths[0]);
+		addRecent("recent.lua", projectPaths[0]);
 
 		return true;
 	} else if (romPaths.size() > 0) {
 		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
 			auto& path = romPaths[i];
 
-			//addRecent("recent.lua", path.first);
+			addRecent("recent.lua", path.first);
 
 			// Load system
 			std::string sramPath;

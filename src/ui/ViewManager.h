@@ -132,21 +132,23 @@ namespace rp {
 				View* parent = view->getParent();
 				assert(parent);
 
-				for (size_t i = 0; i < parent->_children.size(); ++i) {
-					if (view == parent->_children[i]) {
-						ViewPtr child = parent->_children[i];
+				if (parent) {
+					for (size_t i = 0; i < parent->_children.size(); ++i) {
+						if (view == parent->_children[i]) {
+							ViewPtr child = parent->_children[i];
 
-						if (_shared->focused && childHasFocus(view.get(), _shared->focused)) {
-							_shared->focused = parent;
-						}						
+							if (_shared->focused && childHasFocus(view.get(), _shared->focused)) {
+								_shared->focused = parent;
+							}
 
-						view->_parent = nullptr;
-						view->_shared = nullptr;
+							view->_parent = nullptr;
+							view->_shared = nullptr;
 
-						parent->_children.erase(parent->_children.begin() + i);
-						parent->onChildRemoved(child);
+							parent->_children.erase(parent->_children.begin() + i);
+							parent->onChildRemoved(child);
 
-						setLayoutDirty();
+							setLayoutDirty();
+						}
 					}
 				}
 			}

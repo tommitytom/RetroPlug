@@ -74,6 +74,16 @@ workspace "RetroPlugAll"
 
 util.createConfigureProject()
 
+if _OPTIONS["emscripten"] == nil then
+	group "Utils"
+		project "ScriptCompiler"
+			kind "ConsoleApp"
+			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
+			includedirs { "src/compiler" }
+			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
+			links { "lua" }
+end
+
 group "Dependencies"
 dep.allProjects()
 group ""
