@@ -3,6 +3,10 @@
 
 #ifdef RP_WEB
 #include "app/WebAudio.h"
+
+EM_ASYNC_JS(void, setupWebFs, (), {
+	await setupFs();
+});
 #endif
 
 using namespace rp;
@@ -14,6 +18,7 @@ int main() {
 		app = new RetroPlugApplication("RetroPlug 0.4.0", 320, 288);
 
 #ifdef RP_WEB
+		setupWebFs();
 		initWebAudio(&s_workletThreadId, app);
 #endif
 

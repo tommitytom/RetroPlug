@@ -2,6 +2,7 @@
 
 #include <sol/sol.hpp>
 
+#include "util/fs.h"
 #include "platform/FileDialog.h"
 #include "core/Project.h"
 #include "util/SolUtil.h"
@@ -11,7 +12,23 @@
 
 using namespace rp;
 
+class FileManager {
+private:
+	std::string _rootPath;
+	std::vector<std::string> _recent;
+
+public:
+	void addRecent() {
+	}
+
+	void importFile(std::string_view path, std::string_view target) {
+		
+	}
+};
+
 void loadRecent(std::string_view recentPath, std::vector<std::string>& paths) {
+	spdlog::debug("Loading recent file list from {}", recentPath);
+
 	if (fs::exists(recentPath)) {
 		sol::state s;
 		SolUtil::prepareState(s);
@@ -26,25 +43,41 @@ void loadRecent(std::string_view recentPath, std::vector<std::string>& paths) {
 			} else {
 				spdlog::error("Failed to load list of recent files");
 			}
+		} else {
+			spdlog::debug("Recent file list was empty, skipping");
 		}
+	} else {
+		spdlog::debug("No recent file list found, skipping");
 	}
 }
 
 const FileDialogFilter ROM_FILTER = FileDialogFilter{ "GameBoy ROM Files", "*.gb" };
 const FileDialogFilter PROJECT_FILTER = FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
 
+const std::string_view RECENT_FILES_PATH = "/retroplug/recent.lua";
+const std::string_view ROMS_PATH = "/retroplug/roms";
+
 void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
+	spdlog::debug("Adding recent path to {}", recentPath);
+
+	std::string targetPath = fmt::format("{}/{}", ROMS_PATH, fsutil::getFilename(pathToAdd));
+	if (!fs::exists(targetPath)) {
+		fsutil::copyFile(pathToAdd, targetPath);
+	}
+
+	pathToAdd = targetPath;
+
 	try {
 		sol::state s;
 		SolUtil::prepareState(s);
 
 		sol::table target;
 		std::string data;
-		
+
 		bool valid = false;
 		if (fs::exists(recentPath)) {
 			data = fsutil::readTextFile(recentPath);
-			
+
 			if (data.size() && SolUtil::deserializeTable(s, data, target)) {
 				valid = true;
 			}
@@ -72,6 +105,7 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 		}
 
 		if (SolUtil::serializeTable(s, target, data)) {
+			spdlog::info("writing: {}, {}", data.size(), data);
 			if (!fsutil::writeTextFile(recentPath, data)) {
 				spdlog::error("Failed to write recent list to {}", recentPath);
 			}
@@ -84,6 +118,8 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 }
 
 void StartView::setupMenu() {
+	spdlog::info("setting up menu");
+
 	MenuPtr menuRoot = std::make_shared<Menu>();
 	Menu& menu = *menuRoot;
 
@@ -102,7 +138,7 @@ void StartView::setupMenu() {
 		});
 
 	std::vector<std::string> paths;
-	loadRecent("recent.lua", paths);
+	loadRecent(RECENT_FILES_PATH, paths);
 
 	Menu& recent = menu.subMenu("Load Recent");
 
@@ -162,14 +198,14 @@ bool StartView::handleLoad(const std::vector<std::string>& files) {
 	if (projectPaths.size() > 0) {
 		// Load project
 		project->load(projectPaths[0]);
-		addRecent("recent.lua", projectPaths[0]);
+		addRecent(RECENT_FILES_PATH, projectPaths[0]);
 
 		return true;
 	} else if (romPaths.size() > 0) {
 		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
 			auto& path = romPaths[i];
 
-			addRecent("recent.lua", path.first);
+			addRecent(RECENT_FILES_PATH, path.first);
 
 			// Load system
 			std::string sramPath;

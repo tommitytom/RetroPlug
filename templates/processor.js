@@ -10,65 +10,100 @@
 
 // Register our audio processors if the code loads in an AudioWorkletGlobalScope
 if (typeof AudioWorkletGlobalScope === "function") {
-  // This processor node is a simple proxy to the audio generator in native code.
-  // It calls the native function then copies the samples into the output buffer
-  class NativePassthroughProcessor extends AudioWorkletProcessor {
-    constructor(options) {
-      super();
-      this.app = options.processorOptions.app;
-    }
+	// This processor node is a simple proxy to the audio generator in native code.
+	// It calls the native function then copies the samples into the output buffer
+	class NativePassthroughProcessor extends AudioWorkletProcessor {
+		constructor(options) {
+			super();
+			this.app = options.processorOptions.app;
+		}
 
-    process(inputs, outputs, parameters) {
-      const output = outputs[0];
-      const numSamples = output[0].length;
+		process(inputs, outputs, parameters) {
+			const output = outputs[0];
+			const numSamples = output[0].length;
 
-      // Run the native audio generator function
-      const mem = Module["_generateAudio"](this.app, numSamples);
+			// Run the native audio generator function
+			const mem = Module["_generateAudio"](this.app, numSamples);
 
-      // Copy the results into the output buffer, float-by-float deinterleaving the data
-      let curSrc = mem/4;
-      const chL = output[0];
-      const chR = output[1];
-      for (let s = 0; s < numSamples; ++s) {
-        chL[s] = Module.HEAPF32[curSrc++];
-        chR[s] = Module.HEAPF32[curSrc++];
-      }
+			// Copy the results into the output buffer, float-by-float deinterleaving the data
+			let curSrc = mem/4;
+			const chL = output[0];
+			const chR = output[1];
+			for (let s = 0; s < numSamples; ++s) {
+				chL[s] = Module.HEAPF32[curSrc++];
+				chR[s] = Module.HEAPF32[curSrc++];
+			}
 
-      return true;
-    }
-  }
+			return true;
+		}
+	}
 
-  // Register the processor as per the audio worklet spec
-  registerProcessor('native-passthrough-processor', NativePassthroughProcessor);
+	// Register the processor as per the audio worklet spec
+	registerProcessor('native-passthrough-processor', NativePassthroughProcessor);
+}
+
+async function syncFs() {
+	const prom = new Promise((resolve, reject) => {
+		FS.syncfs(false, function (err) {
+			if (err) {
+				console.log("Failed to sync FS: ", err);
+			} else {
+				console.log("FS Synced!");
+			}
+
+			resolve();
+		});
+	});
+
+	await prom;
+}
+
+async function setupFs() {
+	FS.mkdir('/retroplug');
+	FS.mount(IDBFS, {}, '/retroplug');
+
+	const prom = new Promise((resolve, reject) => {
+		FS.syncfs(true, function (err) {
+			if (err) {
+				console.log("Failed to sync FS: ", err);
+			} else {
+				console.log("FS Synced!");
+			}
+
+			resolve();
+		});
+	});
+
+	await prom;
 }
 
 let fileDialogOpen = false;
 
 async function openFileDialog() {
-  const input = document.createElement('input');
-  input.type = 'file';
+	const input = document.createElement('input');
+	input.type = 'file';
 
-  let changed = false;
+	let changed = false;
 
-  const prom = new Promise((resolve, reject) => {
-    input.onchange = () => {
-      changed = true;
-      let files = Array.from(input.files);
-      console.log(files);
-      resolve(files);
-    };
+	const prom = new Promise((resolve, reject) => {
+		input.onchange = () => {
+			changed = true;
+			let files = Array.from(input.files);
+			console.log(files);
+			resolve(files);
+		};
 
-    input.onblur = () => {
-      console.log("blur")
-      if (!changed) {
-        resolve(null);
-      }
+		input.onblur = () => {
+			console.log("blur")
+			if (!changed) {
+				resolve(null);
+			}
 
-      changed = false;
-    };
-  });
+			changed = false;
+		};
+	});
 
-  input.click();
+	input.click();
 
-  await prom;
+	await prom;
 }

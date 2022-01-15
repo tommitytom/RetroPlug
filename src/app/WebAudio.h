@@ -51,6 +51,7 @@ EM_JS(uint32_t, initWebAudio, (pthread_t* pthreadPtr, rp::Application* app), {
     window.addEventListener("touchstart", function() { Module.audioCtx.resume() }, opts);
     window.addEventListener("mousedown", function() { Module.audioCtx.resume() }, opts);
     window.addEventListener("keydown", function() { Module.audioCtx.resume() }, opts);
+    window.addEventListener("drop", function() { Module.audioCtx.resume() }, opts);
   }
 
   return Module.audioCtx.sampleRate;

@@ -65,7 +65,7 @@ namespace rp::fsutil {
 
 	// Removes the file extension from a path, including the dot.  If `full` is set to false, only the
 	// last part of an extension will be removed for a multi part extension.  Eg:
-	// If `full` is true "myfile.multi.ext" will be changed to "myfile", else it will be changed 
+	// If `full` is true "myfile.multi.ext" will be changed to "myfile", else it will be changed
 	// to "myfile.multi"
 	inline std::string removeFileExt(std::string_view path, bool full = true) {
 		std::string_view filename = getFilename(path);
@@ -81,7 +81,7 @@ namespace rp::fsutil {
 
 	// Replaces the file extension from a path, including the dot.  If `full` is set to false, only the
 	// last part of an extension will be replaced for a multi part extension.  Eg:
-	// If `full` is true "myfile.multi.ext" will be changed to "myfile.png", else it will be changed 
+	// If `full` is true "myfile.multi.ext" will be changed to "myfile.png", else it will be changed
 	// to "myfile.multi.png"
 	inline std::string replaceFileExt(std::string_view path, const std::string& ext, bool full = true) {
 		//es_assert_m(ext[0] == '.', "File extension must start with a '.'");
@@ -90,7 +90,7 @@ namespace rp::fsutil {
 
 	// Replaces the file extension from a path, including the dot.  If `full` is set to false, only the
 	// last part of an extension will be replaced for a multi part extension.  Eg:
-	// If `full` is true "myfile.multi.ext" will be changed to "myfile.png", else it will be changed 
+	// If `full` is true "myfile.multi.ext" will be changed to "myfile.png", else it will be changed
 	// to "myfile.multi.png"
 	inline std::string replaceFileExt(const std::string& path, const std::string& ext, bool full = true) {
 		//es_assert_m(ext[0] == '.', "File extension must start with a '.'");
@@ -126,4 +126,6 @@ namespace rp::fsutil {
 	size_t readFile(const fs::path& path, Uint8Buffer* target);
 
 	uint64 lastWriteTime(const fs::path& path);
+
+	bool copyFile(std::string_view from, std::string_view to);
 }

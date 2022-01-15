@@ -16,7 +16,7 @@ namespace rp {
 
 	public:
 		GridView() {
-			setType<GridView>(); 
+			setType<GridView>();
 			setSizingMode(SizingMode::FitToContent);
 		}
 
@@ -27,7 +27,7 @@ namespace rp {
 
 		void onChildRemoved(ViewPtr view) final override {
 			updateLayout();
-			
+
 			if (!getFocused() && getChildren().size() > 0) {
 				getChildren()[0]->focus();
 			}
@@ -57,6 +57,10 @@ namespace rp {
 
 					break;
 				}
+				case GridLayout::Column:
+				case GridLayout::Grid:
+				case GridLayout::Auto:
+					break;
 			}
 		}
 	};
