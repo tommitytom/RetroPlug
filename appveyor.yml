@@ -33,7 +33,7 @@ install:
   - cmd: appveyor DownloadFile https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip
   - cmd: appveyor DownloadFile https://github.com/gbdev/rgbds/releases/download/v0.5.1/rgbds-0.5.1-win64.zip
 
-  - cmd: 7z e premake-5.0.0-alpha16-windows.zip
+  - cmd: 7z e premake-5.0.0-beta1-windows.zip
   - cmd: 7z e rgbds-0.5.1-win64.zip
   - cmd: 7z e ci/dep.7z
 
