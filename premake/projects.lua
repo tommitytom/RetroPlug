@@ -94,8 +94,6 @@ function m.RetroPlug.project()
 	project "RetroPlug"
 	kind "StaticLib"
 
-	dependson { "ScriptCompiler" }
-
 	m.RetroPlug.include()
 
 	files {
@@ -103,8 +101,10 @@ function m.RetroPlug.project()
 		"src/RetroPlug.cpp",
 		"src/core/**.h",
 		"src/core/**.cpp",
-		"src/generated/**.h",
-		"src/generated/**.cpp",
+		--"src/generated/*.h",
+		--"src/generated/*.cpp",
+		"src/generated/lua/*_%{cfg.platform}.h",
+		"src/generated/lua/*_%{cfg.platform}.cpp",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
 		"src/node/**.h",
@@ -118,8 +118,10 @@ function m.RetroPlug.project()
 	}
 
 	filter { "options:not emscripten" }
+		dependson { "ScriptCompiler" }
+
 		prebuildcommands {
-			"%{wks.location}/bin/%{cfg.platform}/Debug/ScriptCompiler ../../src/compiler.config.lua"
+			"%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler ../../src/compiler.config.lua %{cfg.platform}"
 		}
 
 	util.liveppCompat()

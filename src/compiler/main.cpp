@@ -80,9 +80,9 @@ void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	writeIfDifferent(targetHeaderPath, ss.str());
 }
 
-void writeSourceFile(const ModuleDesc& mod, const fs::path& targetDir) {
+void writeSourceFile(const ModuleDesc& mod, const fs::path& targetDir, const std::string& postfix) {
 	fs::path targetFile = targetDir / "CompiledScripts_";
-	targetFile += mod.name + ".cpp";
+	targetFile += mod.name + postfix + ".cpp";
 
 	std::stringstream vars;
 	std::stringstream lookup;
@@ -128,6 +128,11 @@ int main(int argc, char** argv) {
 
 		fs::path configPath = parsePath(argv[1]);
 		fs::path configDir = configPath.parent_path();
+
+		std::string postfix;
+		if (argc == 3) {
+			postfix += "_" + std::string(argv[2]);
+		}
 
 		if (!fs::exists(configPath)) {
 			std::cout << "No config found at " << configPath << std::endl;
@@ -185,7 +190,7 @@ int main(int argc, char** argv) {
 			if (ns.valid) {
 				state.pool.enqueue([&]() {
 					processModule(ns, state);
-					writeSourceFile(ns, targetDir);
+					writeSourceFile(ns, targetDir, postfix);
 				});
 			}
 		}
