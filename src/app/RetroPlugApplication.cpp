@@ -13,15 +13,14 @@
 #include <spdlog/spdlog.h>
 
 #include "logo.h"
-#include "util/fs.h"
-#include "sameboy/OffsetCalculator.h"
-#include "lsdj/OffsetLookup.h"
-#include "data/font.h"
-#include "data/Early-GameBoy.h"
-#include "data/Roboto-Regular.h"
-#include "data/PlatNomor.h"
+//#include "util/fs.h"
+//#include "sameboy/OffsetCalculator.h"
+//#include "lsdj/OffsetLookup.h"
+//#include "core/ProjectSerializer.h"
 
-#include "core/ProjectSerializer.h"
+#include "fonts/Early-GameBoy.h"
+#include "fonts/Roboto-Regular.h"
+#include "fonts/PlatNomor.h"
 
 using namespace rp;
 

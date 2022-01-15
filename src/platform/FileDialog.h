@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "platform/Types.h"
+#include "util/DataBuffer.h"
 
 #ifdef RP_WINDOWS
 using UiHandle = void;
@@ -46,8 +47,8 @@ struct DialogRequest {
 class File {
 public:
 	std::string path;
-	Uint8Buffer data;
-}
+	rp::Uint8Buffer data;
+};
 
 namespace FileDialog {
 	using Callback = std::function<void(std::vector<std::string>&, bool)>;

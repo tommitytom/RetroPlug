@@ -46,7 +46,8 @@
 		"debugargs",
 		"editAndContinue",
 		"sysincludedirs",
-		"warnings"
+		"warnings",
+		"workspace"
 	],
 	"files.associations": {
 		"functional": "cpp",

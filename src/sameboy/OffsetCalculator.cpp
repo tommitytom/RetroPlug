@@ -16,8 +16,8 @@ extern "C" {
 }
 
 #include "bootroms/cgb_boot_fast.h"
-#include "data/offsetsav.h"
-#include "data/offsetsav2.h"
+#include "savs/offsetsav.h"
+#include "savs/offsetsav2.h"
 
 #include "lsdj/Sav.h"
 #include "lsdj/LsdjUtil.h"

@@ -25,6 +25,7 @@ function m.project()
 
 		includedirs {
 			"src",
+			"resources",
 			"thirdparty",
 			"thirdparty/spdlog/include"
 		}

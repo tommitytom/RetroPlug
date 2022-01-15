@@ -4,7 +4,6 @@ local m = {
 	bgfx = dofile("bgfx.lua"),
 	liblsdj = dofile("liblsdj.lua"),
 	lua = dofile("lua.lua"),
-	zlib = dofile("zlib.lua"),
 }
 
 function m.allProjects()
@@ -14,7 +13,6 @@ function m.allProjects()
 	m.bgfx.bgfxProject()
 	m.liblsdj.project()
 	m.lua.project()
-	m.zlib.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

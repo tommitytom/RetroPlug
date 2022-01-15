@@ -7,7 +7,7 @@
 #include "util/SolUtil.h"
 #include "sameboy/SameBoySystem.h"
 
-#include "data/mgb.h"
+#include "roms/mgb.h"
 
 using namespace rp;
 

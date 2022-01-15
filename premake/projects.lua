@@ -62,7 +62,6 @@ function m.RetroPlug.include()
 	dep.SameBoy.include()
 	dep.liblsdj.include()
 	dep.lua.include()
-	dep.zlib.include()
 
 	sysincludedirs {
 		"thirdparty",
@@ -72,7 +71,8 @@ function m.RetroPlug.include()
 
 	includedirs {
 		"src",
-		"generated"
+		"generated",
+		"resources"
 	}
 
 	dep.bgfx.compat()
@@ -86,7 +86,6 @@ function m.RetroPlug.link()
 	dep.bgfx.link()
 	dep.liblsdj.link()
 	dep.lua.link()
-	dep.zlib.link()
 
 	links { "RetroPlug" }
 end
