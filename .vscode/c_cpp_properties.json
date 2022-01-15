@@ -19,7 +19,7 @@
             "cppStandard": "c++20",
             "intelliSenseMode": "linux-clang-x64"
         }, {
-            "name": "Windows",
+            "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/src/**",
                 "${workspaceFolder}/thirdparty/**"

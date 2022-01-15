@@ -165,14 +165,6 @@ function m.Application.project()
 
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }
-		disablewarnings {
-			--"implicit-const-int-float-conversion",
-			"switch",
-			"unused-result",
-			"deprecated-enum-float-conversion",
-			"deprecated-volatile"
-		}
-
 
 	filter { "options:emscripten", "configurations:Debug" }
 		--buildoptions { "--bind" }
