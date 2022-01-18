@@ -32,3 +32,18 @@ bool StringUtil::endsWith(std::string_view str, std::string_view comp) {
 
 	return false;
 }
+
+std::vector<std::string_view> StringUtil::split(std::string_view str, std::string_view delim) {
+	size_t start = 0U;
+	size_t end = str.find(delim);
+	std::vector<std::string_view> target;
+
+	while (end != std::string::npos) {
+		target.push_back(str.substr(start, end - start));
+
+		start = end + delim.length();
+		end = str.find(delim, start);
+	}
+
+	return target;
+}

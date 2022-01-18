@@ -9,7 +9,7 @@
  */
 
 // Register our audio processors if the code loads in an AudioWorkletGlobalScope
-if (typeof AudioWorkletGlobalScope === "function") {
+if (typeof AudioWorkletGlobalScope === 'function') {
 	// This processor node is a simple proxy to the audio generator in native code.
 	// It calls the native function then copies the samples into the output buffer
 	class NativePassthroughProcessor extends AudioWorkletProcessor {
@@ -23,7 +23,7 @@ if (typeof AudioWorkletGlobalScope === "function") {
 			const numSamples = output[0].length;
 
 			// Run the native audio generator function
-			const mem = Module["_generateAudio"](this.app, numSamples);
+			const mem = Module['_generateAudio'](this.app, numSamples);
 
 			// Copy the results into the output buffer, float-by-float deinterleaving the data
 			let curSrc = mem/4;
@@ -46,9 +46,9 @@ async function syncFs() {
 	const prom = new Promise((resolve, reject) => {
 		FS.syncfs(false, function (err) {
 			if (err) {
-				console.log("Failed to sync FS: ", err);
+				console.log('Failed to sync FS: ', err);
 			} else {
-				console.log("FS Synced!");
+				console.log('FS Synced!');
 			}
 
 			resolve();
@@ -59,15 +59,16 @@ async function syncFs() {
 }
 
 async function setupFs() {
+	FS.mkdir('/.file-dialog');
 	FS.mkdir('/retroplug');
 	FS.mount(IDBFS, {}, '/retroplug');
 
 	const prom = new Promise((resolve, reject) => {
 		FS.syncfs(true, function (err) {
 			if (err) {
-				console.log("Failed to sync FS: ", err);
+				console.log('Failed to sync FS: ', err);
 			} else {
-				console.log("FS Synced!");
+				console.log('FS Synced!');
 			}
 
 			resolve();
@@ -82,19 +83,34 @@ let fileDialogOpen = false;
 async function openFileDialog() {
 	const input = document.createElement('input');
 	input.type = 'file';
+	input.accept = '.gb, .gbc, .sav, .rplg, .retroplug';
+	input.multiple = true;
 
 	let changed = false;
 
 	const prom = new Promise((resolve, reject) => {
-		input.onchange = () => {
+		input.onchange = async () => {
 			changed = true;
-			let files = Array.from(input.files);
-			console.log(files);
-			resolve(files);
+
+			const files = Array.from(input.files);
+			const paths = [];
+
+			for (const file of files) {
+				const fileData = await file.arrayBuffer();
+				const dataView = new Uint8Array(fileData);
+				const filePath = '/.file-dialog/' + file.name;
+
+				FS.writeFile(filePath, dataView);
+				paths.push(filePath);
+			}
+
+			const pathsConcat = paths.join(';');
+
+			resolve(pathsConcat);
 		};
 
 		input.onblur = () => {
-			console.log("blur")
+			console.log('blur')
 			if (!changed) {
 				resolve(null);
 			}
@@ -105,5 +121,5 @@ async function openFileDialog() {
 
 	input.click();
 
-	await prom;
+	return await prom;
 }

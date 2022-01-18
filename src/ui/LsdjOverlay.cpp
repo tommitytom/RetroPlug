@@ -21,7 +21,7 @@ void showSampleManager(View* parent, SystemPtr system, LsdjModel& state) {
 
 	std::shared_ptr<SamplerView> view = parent->addChild<SamplerView>("LSDJ Sample Manager");
 	view->setSystem(system);
-	
+
 	view->focus();
 }
 
@@ -114,7 +114,7 @@ void LsdjOverlay::onUpdate(f32 delta) {
 			uint64 songHash = HashUtil::hash(songBuffer);
 
 			if (songHash != _songHash && _songSwapCooldown <= 0.0f) {
-				spdlog::info("SRAM Changed!");
+				//spdlog::info("SRAM Changed!");
 
 				if (_undoQueue.size() > 0 && _undoPosition < _undoQueue.size() - 1) {
 					_undoQueue.resize(_undoPosition + 1);

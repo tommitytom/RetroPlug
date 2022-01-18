@@ -32,38 +32,6 @@
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "windows-msvc-x64"
-        },
-        {
-            "name": "Mac",
-            "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/src/**",
-                "${workspaceFolder}/thirdparty/iPlug2/WDL/**",
-                "${workspaceFolder}/thirdparty/iPlug2/IPlug/**",
-                "${workspaceFolder}/thirdparty/iPlug2/IGraphics/**",
-                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/IPlug/**",
-                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/IGraphics/**",
-                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/Extras/**",
-                "${workspaceFolder}/thirdparty/iPlug2/Dependencies/Build/mac/include/**"
-            ],
-            "defines": [
-                "OS_MAC",
-                "APP_API",
-                "IPLUG_DSP=1",
-                "IPLUG_EDITOR=1",
-                "IGRAPHICS_NANOVG",
-                "IGRAPHICS_METAL,",
-                "NOMINMAX",
-                "GB_INTERNAL"
-            ],
-            "macFrameworkPath": [
-                "/System/Library/Frameworks",
-                "/Library/Frameworks"
-            ],
-            "compilerPath": "/usr/bin/clang",
-            "cStandard": "c11",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "clang-x64"
         }
     ],
     "version": 4

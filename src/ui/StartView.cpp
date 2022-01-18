@@ -22,7 +22,7 @@ public:
 	}
 
 	void importFile(std::string_view path, std::string_view target) {
-		
+
 	}
 };
 
@@ -105,7 +105,6 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 		}
 
 		if (SolUtil::serializeTable(s, target, data)) {
-			spdlog::info("writing: {}, {}", data.size(), data);
 			if (!fsutil::writeTextFile(recentPath, data)) {
 				spdlog::error("Failed to write recent list to {}", recentPath);
 			}

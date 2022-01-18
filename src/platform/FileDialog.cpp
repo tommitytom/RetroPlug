@@ -1,5 +1,7 @@
 #include "FileDialog.h"
 
+using namespace rp;
+
 #ifdef RP_WINDOWS
 
 #include <string>
@@ -229,14 +231,41 @@ tstring FileDialog::basicFileSave(IGraphics* ui, const std::vector<FileDialogFil
 #include <emscripten.h>
 #include <spdlog/spdlog.h>
 
-EM_ASYNC_JS(void, openWebFileDialog, (), {
-	await openFileDialog();
+#include "util/StringUtil.h"
+
+EM_ASYNC_JS(char*, openWebFileDialog, (), {
+	const paths = await openFileDialog();
+
+	if (paths.length > 0) {
+		const lengthBytes = lengthBytesUTF8(paths) + 1;
+		const stringOnWasmHeap = _malloc(lengthBytes);
+		stringToUTF8(paths, stringOnWasmHeap, lengthBytes);
+		return stringOnWasmHeap;
+	}
+
+	return null;
 });
 
 bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
-	openWebFileDialog();
-	spdlog::info("dialog returned");
-	return true;
+	char* paths = openWebFileDialog();
+	std::vector<std::string> target;
+
+	if (paths) {
+		std::vector<std::string_view> splitPaths = StringUtil::split(paths, ";");
+
+		for (std::string_view s : splitPaths) {
+			target.push_back(std::string(s));
+		}
+
+		cb(target, true);
+
+		free(paths);
+
+		return true;
+	}
+
+	cb(target, false);
+	return false;
 }
 
 bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {

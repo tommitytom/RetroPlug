@@ -108,7 +108,14 @@
 			"cinttypes": "cpp",
 			"bit": "cpp",
 			"random": "cpp",
-			"shared_mutex": "cpp"
+			"shared_mutex": "cpp",
+			"charconv": "cpp",
+			"compare": "cpp",
+			"complex": "cpp",
+			"format": "cpp",
+			"future": "cpp",
+			"stop_token": "cpp",
+			"valarray": "cpp"
 		},
 		"Lua.diagnostics.globals": [
 			"System",
