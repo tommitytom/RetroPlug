@@ -38,11 +38,15 @@ std::vector<std::string_view> StringUtil::split(std::string_view str, std::strin
 	size_t end = str.find(delim);
 	std::vector<std::string_view> target;
 
-	while (end != std::string::npos) {
-		target.push_back(str.substr(start, end - start));
+	if (end == std::string::npos) {
+		target.push_back(str);
+	} else {
+		while (end != std::string::npos) {
+			target.push_back(str.substr(start, end - start));
 
-		start = end + delim.length();
-		end = str.find(delim, start);
+			start = end + delim.length();
+			end = str.find(delim, start);
+		}
 	}
 
 	return target;
