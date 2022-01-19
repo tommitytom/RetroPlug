@@ -22,7 +22,6 @@ namespace rp {
 		StartView() {
 			setType<StartView>();
 			setEscCloses(false);
-			setupMenu();
 		}
 
 		StartView(SystemOrchestrator* orchestrator) {
@@ -33,11 +32,11 @@ namespace rp {
 
 		~StartView() {}
 
-		bool onDrop(const std::vector<std::string>& paths);
+		bool onDrop(const std::vector<std::string>& paths) override;
+
+		void onInitialized() override { setupMenu(); }
 
 	private:
 		void setupMenu();
-
-		bool handleLoad(const std::vector<std::string>& files);
 	};
 }

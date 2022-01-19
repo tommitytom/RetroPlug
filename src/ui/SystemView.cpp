@@ -8,11 +8,9 @@
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
 #include "sameboy/SameBoySystem.h"
+#include "MenuBuilder.h"
 
 using namespace rp;
-
-const FileDialogFilter ROM_FILTER = FileDialogFilter { "GameBoy ROM Files", "*.gb" };
-const FileDialogFilter PROJECT_FILTER = FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
 
 SystemView::SystemView() : TextureView(), _frameBuffer(160, 144) {
 	setType<SystemView>();
@@ -75,14 +73,13 @@ void loadRomDialog(Project* project) {
 	}
 }
 
-#include "MenuBuilder.h"
-
 void SystemView::buildMenu(Menu& target) {
 	Project* project = getShared<Project>();
 	ProjectState& projectState = project->getState();
 
 	Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
 	MenuBuilder::systemLoadMenu(root, project, _system);
+	MenuBuilder::systemAddMenu(root, project, _system);
 	MenuBuilder::systemSaveMenu(root, project, _system);
 		
 	root.separator()

@@ -269,6 +269,20 @@ bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, boo
 }
 
 bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
+	char* paths = openWebFileDialog();
+
+	if (paths) {
+		std::vector<std::string_view> splitPaths = StringUtil::split(paths, ";");
+
+		for (std::string_view s : splitPaths) {
+			target.push_back(std::string(s));
+		}
+
+		free(paths);
+
+		return true;
+	}
+
 	return false;
 }
 
