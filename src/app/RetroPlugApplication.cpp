@@ -12,12 +12,6 @@
 #include <bgfx/platform.h>
 #include <spdlog/spdlog.h>
 
-#include "logo.h"
-//#include "util/fs.h"
-//#include "sameboy/OffsetCalculator.h"
-//#include "lsdj/OffsetLookup.h"
-//#include "core/ProjectSerializer.h"
-
 #include "fonts/Early-GameBoy.h"
 #include "fonts/Roboto-Regular.h"
 #include "fonts/PlatNomor.h"
@@ -28,9 +22,7 @@ const bgfx::ViewId kClearView = 0;
 const bool s_showStats = false;
 
 RetroPlugApplication::RetroPlugApplication(const char* name, int32 w, int32 h): Application(name, w, h) {
-	_ready = true;
-	const char* names[2] = { "C:\\retro\\LSDj-v5.0.3.gb", "C:\\retro\\LSDj-v5.0.3.sav" };
-	//onDrop(2, names);
+
 }
 
 void RetroPlugApplication::onInit() {
@@ -56,34 +48,9 @@ void RetroPlugApplication::onFrame(f64 delta) {
 	Dimension<uint32> res = getResolution();
 	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
 
-	if (_ready) {
-		_retroPlug.getUiContext().processDelta(delta);
-	} else {
-		nvgFontSize(vg, 50.0f);
-		nvgFontFace(vg, "Roboto-Regular");
-		nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 255));
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 0, 0, (f32)res.w, (f32)res.h);
-		nvgStroke(vg);
-
-		nvgText(vg, 20, 20, "Drag ROM here!", NULL);
-	}
+	_retroPlug.getUiContext().processDelta(delta);
 
 	nvgEndFrame(_vg);
-
-	/*bgfx::dbgTextClear();
-	bgfx::dbgTextImage(bx::max<uint16_t>(uint16_t(res.w / 2 / 8), 20) - 20, bx::max<uint16_t>(uint16_t(res.h/ 2 / 16), 6) - 6, 40, 12, s_logo, 160);
-	bgfx::dbgTextPrintf(0, 0, 0x0f, "Press F1 to toggle stats.");
-	bgfx::dbgTextPrintf(0, 1, 0x0f, "Color can be changed with ANSI \x1b[9;me\x1b[10;ms\x1b[11;mc\x1b[12;ma\x1b[13;mp\x1b[14;me\x1b[0m code too.");
-	bgfx::dbgTextPrintf(80, 1, 0x0f, "\x1b[;0m    \x1b[;1m    \x1b[; 2m    \x1b[; 3m    \x1b[; 4m    \x1b[; 5m    \x1b[; 6m    \x1b[; 7m    \x1b[0m");
-	bgfx::dbgTextPrintf(80, 2, 0x0f, "\x1b[;8m    \x1b[;9m    \x1b[;10m    \x1b[;11m    \x1b[;12m    \x1b[;13m    \x1b[;14m    \x1b[;15m    \x1b[0m");
-	const bgfx::Stats* stats = bgfx::getStats();
-	bgfx::dbgTextPrintf(0, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.", stats->width, stats->height, stats->textWidth, stats->textHeight);
-	// Enable stats or debug text.
-	bgfx::setDebug(s_showStats ? BGFX_DEBUG_STATS : BGFX_DEBUG_TEXT);*/
 
 	// Advance to next frame. Process submitted rendering primitives.
 	bgfx::frame();
@@ -254,5 +221,14 @@ void RetroPlugApplication::onMouseButton(int button, int action, int mods) {
 }
 
 void RetroPlugApplication::onMouseScroll(double x, double y) {
+	if (x > 0) {
+		x = 1.0;
+	}
+
+	if (x < 0) {
+		x = -1.0;
+	}
+
+
 	_retroPlug.getUiContext().onMouseScroll(x, y);
 }

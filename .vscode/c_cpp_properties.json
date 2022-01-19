@@ -22,6 +22,7 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/src/**",
+                "${workspaceFolder}/resources/**",
                 "${workspaceFolder}/thirdparty/**"
             ],
             "defines": [

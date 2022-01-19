@@ -8,10 +8,7 @@ namespace rp {
 	class RetroPlugApplication final : public Application {
 	private:
 		NVGcontext* _vg = nullptr;
-
 		RetroPlug _retroPlug;
-
-		bool _ready = false;
 
 	public:
 		RetroPlugApplication(const char* name, int32 w, int32 h);

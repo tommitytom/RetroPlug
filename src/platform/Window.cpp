@@ -148,7 +148,6 @@ void Window::mouseScrollCallback(GLFWwindow* window, double x, double y) {
 void Window::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleKey(key, scancode, action, mods);
-	//spdlog::info("key: {}, scancode: {}, action: {}, mods: {}", key, scancode, action, mods);
 }
 
 void Window::resizeCallback(GLFWwindow* window, int width, int height) {
@@ -157,7 +156,6 @@ void Window::resizeCallback(GLFWwindow* window, int width, int height) {
 }
 
 void Window::dropCallback(GLFWwindow* window, int count, const char** paths) {
-	spdlog::info("drop! {}", paths[0]);
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleDrop(count, paths);
 }
