@@ -130,7 +130,7 @@ namespace rp {
 		void handleRemovals() {
 			for (ViewPtr view : _shared->removals) {
 				View* parent = view->getParent();
-				assert(parent);
+				//assert(parent);
 
 				if (parent) {
 					for (size_t i = 0; i < parent->_children.size(); ++i) {

@@ -221,14 +221,8 @@ void RetroPlugApplication::onMouseButton(int button, int action, int mods) {
 }
 
 void RetroPlugApplication::onMouseScroll(double x, double y) {
-	if (x > 0) {
-		x = 1.0;
-	}
-
-	if (x < 0) {
-		x = -1.0;
-	}
-
+	x = MathUtil::clamp(x, -1.0, 1.0);
+	y = MathUtil::clamp(y, -1.0, 1.0);
 
 	_retroPlug.getUiContext().onMouseScroll(x, y);
 }

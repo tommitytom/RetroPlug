@@ -141,6 +141,11 @@ void Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int
 }
 
 void Window::mouseScrollCallback(GLFWwindow* window, double x, double y) {
+#ifdef RP_WEB
+	x = -x;
+	y = -y;
+#endif
+
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleMouseScroll(x, y);
 }

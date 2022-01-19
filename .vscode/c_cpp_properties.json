@@ -4,8 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/src/**",
+                "${workspaceFolder}/resources/**",
                 "${workspaceFolder}/thirdparty/**",
-                "${workspaceFolder}/generated/**",
                 "/emsdk/upstream/emscripten/system/include/**"
             ],
             "defines": [
