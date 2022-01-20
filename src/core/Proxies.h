@@ -1,5 +1,5 @@
 #pragma once
-
+/*
 #include "util/MethodProxy.h"
 
 namespace rp {
@@ -9,3 +9,4 @@ namespace rp {
 	using AudioContextProxy = MethodProxy::Proxy<AudioState>;
 	using UiContextProxy = MethodProxy::Proxy<UiState>;
 }
+*/

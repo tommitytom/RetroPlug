@@ -13,7 +13,7 @@ bool AudioLoaderUtil::load(std::string_view path, Float32Buffer& target) {
 		return false; // An error occurred.
 	}
 
-	uint64 sampleCount = 0;
+	ma_uint64 sampleCount = 0;
 	ma_decoder_get_available_frames(&decoder, &sampleCount);
 	target.resize((size_t)sampleCount);
 

@@ -28,7 +28,7 @@
 
 using namespace rp;
 
-Window::Window(Application* app): _app(app) {
+rp::Window::Window(Application* app): _app(app) {
 	glfwSetErrorCallback(errorCallback);
 
 	if (!glfwInit()) {
@@ -89,12 +89,12 @@ Window::Window(Application* app): _app(app) {
 	spdlog::info("BGFX initialized!");
 }
 
-Window::~Window() {
+rp::Window::~Window() {
 	bgfx::shutdown();
 	glfwTerminate();
 }
 
-void Window::run() {
+void rp::Window::run() {
 	_app->onInit();
 
 #if BX_PLATFORM_EMSCRIPTEN
@@ -106,12 +106,12 @@ void Window::run() {
 #endif
 }
 
-bool Window::runFrame() {
+bool rp::Window::runFrame() {
 	renderLoopCallback(_window);
 	return !glfwWindowShouldClose(_window);
 }
 
-void Window::renderLoopCallback(void* arg) {
+void rp::Window::renderLoopCallback(void* arg) {
 	GLFWwindow* window = static_cast<GLFWwindow*>(arg);
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 
@@ -130,17 +130,17 @@ void Window::renderLoopCallback(void* arg) {
 	}
 }
 
-void Window::mouseMoveCallback(GLFWwindow* window, double x, double y) {
+void rp::Window::mouseMoveCallback(GLFWwindow* window, double x, double y) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleMouseMove(x, y);
 }
 
-void Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+void rp::Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleMouseButton(button, action, mods);
 }
 
-void Window::mouseScrollCallback(GLFWwindow* window, double x, double y) {
+void rp::Window::mouseScrollCallback(GLFWwindow* window, double x, double y) {
 #ifdef RP_WEB
 	x = -x;
 	y = -y;
@@ -150,21 +150,21 @@ void Window::mouseScrollCallback(GLFWwindow* window, double x, double y) {
 	app->handleMouseScroll(x, y);
 }
 
-void Window::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+void rp::Window::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleKey(key, scancode, action, mods);
 }
 
-void Window::resizeCallback(GLFWwindow* window, int width, int height) {
+void rp::Window::resizeCallback(GLFWwindow* window, int width, int height) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleResize(width, height);
 }
 
-void Window::dropCallback(GLFWwindow* window, int count, const char** paths) {
+void rp::Window::dropCallback(GLFWwindow* window, int count, const char** paths) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleDrop(count, paths);
 }
 
-void Window::errorCallback(int error, const char* description) {
+void rp::Window::errorCallback(int error, const char* description) {
 	spdlog::error("GLFW error {}: {}", error, description);
 }

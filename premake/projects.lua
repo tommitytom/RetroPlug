@@ -172,6 +172,8 @@ function m.Application.project()
 
 	filter { "options:emscripten", "configurations:Release" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+
+	filter {}
 end
 
 function m.Application.projectLivepp()

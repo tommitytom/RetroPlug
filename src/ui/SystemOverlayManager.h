@@ -15,6 +15,7 @@ namespace rp {
 	private:
 		std::vector<std::pair<RomFilter, entt::meta_type>> _factories;
 
+	public:
 		template <typename T>
 		static T& constructOverlay(std::vector<ViewPtr>* target) {
 			std::shared_ptr<T> p = std::make_shared<T>();
@@ -22,7 +23,6 @@ namespace rp {
 			return *p;
 		}
 
-	public:
 		template <typename T>
 		void addOverlayFactory(RomFilter&& romFilter) {
 			entt::meta<T>()

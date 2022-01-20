@@ -64,69 +64,74 @@ end
 
 function m.link()
 	m.include()
-	links { "bx", "bimg", "bgfx" }
 
 	filter "system:windows"
 		links { "Psapi" }
 	filter "system:macosx"
 		links { "QuartzCore.framework", "Metal.framework", "Cocoa.framework", "IOKit.framework", "CoreVideo.framework" }
+	filter "system:linux"
+		links { "dl", "GL", "pthread", "X11" }
+
+	filter {}
+
+	links { "bx", "bimg", "bgfx" }
 
 	m.compat()
 end
 
 function m.bxProject()
 	project "bx"
-	kind "StaticLib"
-	cppdialect "C++14"
-	exceptionhandling "Off"
-	rtti "Off"
+		kind "StaticLib"
+		cppdialect "C++2a"
+		exceptionhandling "Off"
+		rtti "Off"
 
-	m.includeBx()
+		m.includeBx()
 
-	files {
-		BX_DIR .. "/include/bx/*.h",
-		BX_DIR .. "/include/bx/inline/*.inl",
-		BX_DIR .. "/src/*.cpp"
-	}
-	excludes {
-		BX_DIR .. "/src/amalgamated.cpp",
-		BX_DIR .. "/src/crtnone.cpp"
-	}
+		files {
+			BX_DIR .. "/include/bx/*.h",
+			BX_DIR .. "/include/bx/inline/*.inl",
+			BX_DIR .. "/src/*.cpp"
+		}
+		excludes {
+			BX_DIR .. "/src/amalgamated.cpp",
+			BX_DIR .. "/src/crtnone.cpp"
+		}
 
-	m.compat()
+		m.compat()
 end
 
 function m.bimgProject()
 	project "bimg"
-	kind "StaticLib"
-	cppdialect "C++14"
-	exceptionhandling "Off"
-	rtti "Off"
+		kind "StaticLib"
+		cppdialect "C++2a"
+		exceptionhandling "Off"
+		rtti "Off"
 
-	m.includeBx()
-	m.includeBimg()
+		m.includeBx()
+		m.includeBimg()
 
-	files {
-		BIMG_DIR .. "/include/bimg/*.h",
-		BIMG_DIR .. "/src/image.cpp",
-		BIMG_DIR .. "/src/image_gnf.cpp",
-		BIMG_DIR .. "/src/image_decode.cpp",
-		BIMG_DIR .. "/src/*.h",
-		BIMG_DIR .. "/3rdparty/astc-codec/src/decoder/*.cc"
-	}
+		files {
+			BIMG_DIR .. "/include/bimg/*.h",
+			BIMG_DIR .. "/src/image.cpp",
+			BIMG_DIR .. "/src/image_gnf.cpp",
+			BIMG_DIR .. "/src/image_decode.cpp",
+			BIMG_DIR .. "/src/*.h",
+			BIMG_DIR .. "/3rdparty/astc-codec/src/decoder/*.cc"
+		}
 
-	filter "system:linux"
-		disablewarnings { "unknown-warning-option" }
+		filter "system:linux"
+			disablewarnings { "unknown-warning-option" }
 
-	filter {}
+		filter {}
 
-	m.compat()
+		m.compat()
 end
 
 function m.bgfxProject()
 	project "bgfx"
 		kind "StaticLib"
-		cppdialect "C++14"
+		cppdialect "C++2a"
 		exceptionhandling "Off"
 		rtti "Off"
 
@@ -162,7 +167,9 @@ function m.bgfxProject()
 				BGFX_DIR .. "/src/*.mm",
 			}
 
-		filter {}
+		filter {} 
+
+		links { "bx", "bimg" }
 
 		m.compat()
 end

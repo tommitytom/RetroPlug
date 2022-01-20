@@ -18,7 +18,7 @@ workspace "RetroPlugAll"
 	location("build/" .. _ACTION)
 	platforms(PLATFORMS)
 	characterset "MBCS"
-	cppdialect "C++17"
+	cppdialect "C++2a"
 	flags { "MultiProcessorCompile" }
 
 	configurations { "Debug", "Release", "Tracer" }
@@ -73,11 +73,15 @@ workspace "RetroPlugAll"
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }
 		disablewarnings {
-			--"implicit-const-int-float-conversion",
-			"switch",
-			"unused-result",
 			"deprecated-enum-float-conversion",
 			"deprecated-volatile"
+		}
+
+	filter { "system:linux" }
+		disablewarnings {
+			"switch",
+			"unused-result",
+			"unused-function",
 		}
 
 	filter {}
@@ -91,7 +95,7 @@ if _OPTIONS["emscripten"] == nil then
 			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
 			includedirs { "src/compiler" }
 			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
-			links { "lua" }
+			links { "lua", "pthread" }
 end
 
 group "Dependencies"
