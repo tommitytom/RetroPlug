@@ -155,27 +155,38 @@ void SamplerView::onRender() {
 	_c.fill(0, 0, dimensionTiles.w, dimensionTiles.h, lsdj::ColorSets::Normal, 0);
 	_c.text(3, 0, "KIT    -", lsdj::ColorSets::Normal);
 	_c.hexNumber(7, 0, kitIdx + 1, lsdj::ColorSets::Normal);
-	_c.text(12, 0, rom.getKitName(kitIdx), lsdj::ColorSets::Normal);
+
+	if (!rom.kitIsEmpty(kitIdx)) {
+		_c.text(12, 0, rom.getKitName(kitIdx), lsdj::ColorSets::Normal);
+	} else {
+		_c.text(12, 0, "EMPTY", lsdj::ColorSets::Normal);
+	}
+	
 
 	_c.text(0, 2, " ", lsdj::ColorSets::Selection);
 
 	std::array<std::string_view, lsdj::Kit::MAX_SAMPLES + 1> sampleNames;
 	sampleNames[0] = "ALL";
 
-	size_t sampleCount = 0;
 	for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
 		_c.hexNumber(0, (uint32)i + 3, (uint8)i, lsdj::ColorSets::Selection, false);
-
-		std::string_view sampleName = rom.getKitSampleName(kitIdx, i);
-
-		if (sampleName == "N/A") {
-			sampleName = "---";
-		} else {
-			sampleCount++;
-		}
-
-		sampleNames[i + 1] = sampleName;
+		sampleNames[i + 1] = "---";
 	}
+
+	if (!rom.kitIsEmpty(kitIdx)) {
+		size_t sampleCount = 0;
+		for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
+			std::string_view sampleName = rom.getKitSampleName(kitIdx, i);
+
+			if (sampleName == "N/A") {
+				sampleName = "---";
+			} else {
+				sampleCount++;
+			}
+
+			sampleNames[i + 1] = sampleName;
+		}
+	}	
 
 	if (_ui.list(2, 2, _samplerState.selectedSample, sampleNames)) {
 		updateWaveform();
@@ -253,7 +264,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 		return;
 	}
 
-	bool newKit = false;
+	bool newKit = rom.kitIsEmpty(kitIdx);
 	if (kitIdx == -1) {
 		kitIdx = rom.nextEmptyKitIdx();
 		newKit = true;

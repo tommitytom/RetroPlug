@@ -178,6 +178,8 @@ namespace rp {
 
 		virtual std::string getRomName() { return std::string(); }
 
+		virtual bool isProxy() const { return false; }
+
 		void setStateCopyInterval(int32 interval) {
 			_stateCopyInterval = interval;
 		}

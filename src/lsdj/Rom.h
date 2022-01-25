@@ -405,7 +405,7 @@ namespace rp::lsdj {
 			return value;
 		}
 
-		bool kitNotEmpty(size_t idx) const {
+		bool kitIsEmpty(size_t idx) const {
 			const uint8* bankData = getBankData(KIT_LOOKUP[idx]);
 			return bankIsEmptyKit(bankData);
 		}

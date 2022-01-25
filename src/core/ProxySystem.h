@@ -13,6 +13,8 @@ namespace rp {
 	public:
 		ProxySystemBase(SystemId id): System<ProxySystemBase>(id) {}
 
+		bool isProxy() const override { return true; }
+
 		void setDesc(SystemType targetType) {
 			_targetType = targetType;
 		}

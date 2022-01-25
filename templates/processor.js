@@ -80,7 +80,7 @@ async function setupFs() {
 
 let fileDialogOpen = false;
 
-async function openFileDialog() {
+async function openFileDialog(extensions, multiselect) {
 	const input = document.createElement('input');
 	input.type = 'file';
 	input.accept = '.gb, .gbc, .sav, .rplg, .retroplug';
