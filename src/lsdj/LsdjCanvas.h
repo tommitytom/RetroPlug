@@ -17,7 +17,7 @@ namespace rp::lsdj {
 	const size_t ROW_COUNT = PIXEL_HEIGHT / TILE_HEIGHT;
 	const uint32 FONT_TILE_PIXEL_COUNT = Font::TILE_WIDTH * Font::TILE_HEIGHT;
 	const uint32 FONT_PIXEL_COUNT = Font::TILE_COUNT * FONT_TILE_PIXEL_COUNT;
-	const uint32 TILE_BUFFER_SIZE = FONT_PIXEL_COUNT * 5;
+	const uint32 TILE_BUFFER_SIZE = FONT_PIXEL_COUNT * 5 * 2; // Font size, 5 color sets, plus dimmed versions of those color sets
 
 	enum class FontTiles {
 		Note,
@@ -146,13 +146,13 @@ namespace rp::lsdj {
 
 		void fill(uint32 x, uint32 y, uint32 w, uint32 h, lsdj::ColorSets colorSetIdx, uint32 paletteIdx);
 
-		void drawTile(uint32 x, uint32 y, lsdj::FontTiles tileIdx, lsdj::ColorSets colorSet);
+		void drawTile(uint32 x, uint32 y, lsdj::FontTiles tileIdx, lsdj::ColorSets colorSet, bool dimmed = false);
 
-		void text(uint32 x, uint32 y, std::string_view text, lsdj::ColorSets colorSetIdx);
+		void text(uint32 x, uint32 y, std::string_view text, lsdj::ColorSets colorSetIdx, bool dimmed = false);
 
-		void hexNumber(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true);
+		void hexNumber(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true, bool dimmed = false);
 
-		void number(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true);
+		void number(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true, bool dimmed = false);
 
 		Color4 getPixelColor(lsdj::ColorSets colorSetIdx, uint32 paletteIdx, uint8 alpha = 255);
 

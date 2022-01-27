@@ -97,17 +97,23 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			menuView->setMenu(menu);
 			menuView->focus();
 		}
-	} else if (button != ButtonType::MAX) {
+	} else {
 		if (down) {
-			_ui.pressButton(button);
+			_ui.pressKey(key);
 		} else {
-			_ui.releaseButton(button);
+			_ui.releaseKey(key);
 		}
 
-		return true;
+		if (button != ButtonType::MAX) {
+			if (down) {
+				_ui.pressButton(button);
+			} else {
+				_ui.releaseButton(button);
+			}
+		}
 	}
 
-	return false;
+	return true;
 }
 
 void SamplerView::onUpdate(f32 delta) {
@@ -130,14 +136,17 @@ void SamplerView::onRender() {
 
 	auto found = model->kits.find(_samplerState.selectedKit);
 	bool isEditable = found != model->kits.end();
+	bool editingGlobal = true;
 
 	SampleSettings defaultSettings;
 	SampleSettings* settings = &defaultSettings;
 
 	if (isEditable) {
-		//settings = &found->second.settings;
 		if (_samplerState.selectedSample > 0 && _samplerState.selectedSample <= (int32)found->second.samples.size()) {
 			settings = &found->second.samples[_samplerState.selectedSample - 1].settings;
+			editingGlobal = false;
+		} else {
+			settings = &found->second.settings;
 		}
 	}
 
@@ -200,32 +209,43 @@ void SamplerView::onRender() {
 	_c.text(propertyName, 2, "NAME", lsdj::ColorSets::Normal);
 
 	if (_samplerState.selectedSample == 0) {
-		_c.text(13, 2, rom.getKitName(kitIdx), lsdj::ColorSets::Shaded);
+		std::string kitName = std::string(rom.getKitName(kitIdx));
+		if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
+			rom.setKitName(kitIdx, kitName);
+		}
 	} else if (_samplerState.selectedSample > 0) {
-		_c.text(16, 2, rom.getKitSampleName(kitIdx, _samplerState.selectedSample - 1), lsdj::ColorSets::Shaded);
+		int32 sampleIdx = _samplerState.selectedSample - 1;
+		std::string sampleName = std::string(rom.getKitSampleName(kitIdx, sampleIdx));
+
+		if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
+			rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
+		}
 	}
 
+	lsdj::SelectOptions::Enum selectOptions = isEditable ? lsdj::SelectOptions::None : lsdj::SelectOptions::Disabled;
+	lsdj::SpinOptions::Enum spinOptions = isEditable ? lsdj::SpinOptions::None : lsdj::SpinOptions::Disabled;
+
 	_c.text(propertyName, 4, "DITHER", lsdj::ColorSets::Normal);
-	_ui.select<2>(19, 4, settings->dither, { "OFF", "ON" });
+	_ui.select<2>(19, 4, settings->dither, { "OFF", "ON" }, selectOptions);
 
 	_c.text(propertyName, 5, "VOL", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 5, settings->volume)) {
+	if (_ui.hexSpin(19, 5, settings->volume, 0, 0xFF, spinOptions)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 6, "PITCH", lsdj::ColorSets::Normal);
-	_ui.hexSpin(19, 6, settings->pitch);
+	_ui.hexSpin(19, 6, settings->pitch, 0, 0xFF, spinOptions);
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
-	_ui.select<5>(19, 8, settings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" });
+	_ui.select<5>(19, 8, settings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, selectOptions);
 
 	_c.text(propertyName, 9, "CUTOFF", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 9, settings->cutoff)) {
+	if (_ui.hexSpin(19, 9, settings->cutoff, 0, 0xFF, spinOptions)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 10, "Q", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 10, settings->q)) {
+	if (_ui.hexSpin(19, 10, settings->q, 0, 0xF, spinOptions)) {
 		updateSampleBuffers();
 	}
 
@@ -292,7 +312,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 		LsdjModel* model = getModel();
 
 		model->kits[kitIdx] = kitState;
-		_samplerState.selectedKit = kitIdx;
+		_samplerState.selectedKit = (int32)kitIdx;
 		_samplerState.selectedSample = 0;
 
 		updateSampleBuffers();

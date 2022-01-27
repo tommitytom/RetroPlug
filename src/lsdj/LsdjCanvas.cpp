@@ -44,8 +44,8 @@ void Canvas::updateTileTexture() {
 
 	memset(_tileBuffer, 0, TILE_BUFFER_SIZE * sizeof(Color4));
 
-	for (uint32 colorSetIdx = 0; colorSetIdx < 5; ++colorSetIdx) {
-		const Palette::ColorSet& colorSet = _palette.sets[colorSetIdx];
+	for (uint32 colorSetIdx = 0; colorSetIdx < 10; ++colorSetIdx) {
+		const Palette::ColorSet& colorSet = _palette.sets[colorSetIdx % 5];
 		uint32 colorSetOffset = colorSetIdx * FONT_PIXEL_COUNT;
 
 		for (uint32 fontTileIdx = 0; fontTileIdx < Font::TILE_COUNT; ++fontTileIdx) {
@@ -56,8 +56,13 @@ void Canvas::updateTileTexture() {
 				for (uint32 tileX = 0; tileX < Font::TILE_WIDTH; ++tileX) {
 					uint32 pixelOffset = tileY * Font::TILE_WIDTH + tileX;
 					uint32 tileBufferOffset = colorSetOffset + fontTileOffset + tileY * Font::TILE_WIDTH + tileX;
+					uint8 paletteOffset = tile.pixels[pixelOffset];
 
-					_tileBuffer[tileBufferOffset] = getPixelColor(colorSet, tile.pixels[pixelOffset]);
+					if (colorSetIdx > 5 && paletteOffset == 2) {
+						paletteOffset = 1;
+					}
+
+					_tileBuffer[tileBufferOffset] = getPixelColor(colorSet, paletteOffset);
 				}
 			}
 		}
@@ -174,7 +179,7 @@ void Canvas::fill(uint32 x, uint32 y, uint32 w, uint32 h, ColorSets colorSetIdx,
 			}
 
 			for (uint32 tileY = 1; tileY < h; ++tileY) {
-				size_t targetOffset = tileY * _renderTarget.w();
+				uint32 targetOffset = tileY * _renderTarget.w();
 				memcpy(target + targetOffset, target, rowBytes);
 			}
 		}
@@ -205,7 +210,7 @@ Color4 Canvas::getPixelColor(ColorSets colorSetIdx, uint32 pixel, uint8 alpha) {
 	return getPixelColor(_palette.sets[(uint32)colorSetIdx], pixel, alpha);
 }
 
-void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetIdx) {
+void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetIdx, bool dimmed) {
 	x += _translation.x;
 	y += _translation.y;
 
@@ -214,6 +219,10 @@ void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetI
 
 	const uint32 w = _renderTarget.w();
 	const uint32 h = _renderTarget.h();
+
+	if (dimmed) {
+		colorSetIdx = (ColorSets)((uint32)colorSetIdx + 5);
+	}
 
 	if (x < w && y < h) {
 		Color4* source = _tileBuffer + ((uint32)colorSetIdx * FONT_PIXEL_COUNT) + ((uint32)tileIdx * FONT_TILE_PIXEL_COUNT);
@@ -225,7 +234,7 @@ void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetI
 			source += Font::TILE_WIDTH;
 		}
 	} else {
-		spdlog::warn("failed to write tile");
+		spdlog::warn("Failed to write tile, out of range - x: {}, y: {} | w: {}, h: {}", x, y, w, h);
 	}
 }
 
@@ -235,10 +244,10 @@ void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetI
 	//drawDimmedTile(x, y, tile, colorSet);
 }*/
 
-void Canvas::text(uint32 x, uint32 y, std::string_view text, ColorSets colorSetIdx) {
+void Canvas::text(uint32 x, uint32 y, std::string_view text, ColorSets colorSetIdx, bool dimmed) {
 	for (uint32 i = 0; i < (uint32)text.size(); i++) {
 		FontTiles tile = findTile(toupper(text[i]));
-		drawTile(x + i, y, tile, colorSetIdx);
+		drawTile(x + i, y, tile, colorSetIdx, dimmed);
 	}
 }
 
@@ -260,7 +269,7 @@ static const char HEX_LOOKUP_TABLE[513] =
 "E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF"
 "F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF";
 
-void Canvas::hexNumber(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, bool pad) {
+void Canvas::hexNumber(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, bool pad, bool dimmed) {
 	int pos = (value & 0xFF) * 2;
 
 	if (value >= 15 || pad) {
@@ -268,16 +277,16 @@ void Canvas::hexNumber(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, b
 		target[0] = HEX_LOOKUP_TABLE[pos];
 		target[1] = HEX_LOOKUP_TABLE[pos + 1];
 
-		text(x, y, std::string_view(target, 2), colorSetIdx);
+		text(x, y, std::string_view(target, 2), colorSetIdx, dimmed);
 	} else {
-		text(x, y, std::string_view(HEX_LOOKUP_TABLE + pos + 1, 1), colorSetIdx);
+		text(x, y, std::string_view(HEX_LOOKUP_TABLE + pos + 1, 1), colorSetIdx, dimmed);
 	}
 }
 
-void Canvas::number(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, bool pad) {
+void Canvas::number(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, bool pad, bool dimmed) {
 	if (pad) {
-		text(x, y, fmt::format("{:03}", value), colorSetIdx);
+		text(x, y, fmt::format("{:03}", value), colorSetIdx, dimmed);
 	} else {
-		text(x, y, fmt::format("{}", value), colorSetIdx);
+		text(x, y, fmt::format("{}", value), colorSetIdx, dimmed);
 	}
 }

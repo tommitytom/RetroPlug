@@ -201,7 +201,9 @@ namespace VirtualKey {
 		LeftCtrl = 0xA2,
 		RightCtrl = 0xA3,
 		LeftMenu = 0xA4,
-		RightMenu = 0xA5
+		RightMenu = 0xA5,
+
+		COUNT
 	};
 
 	static const std::unordered_map<std::string_view, VirtualKey::Enum> Lookup = {

@@ -426,16 +426,49 @@ namespace rp::lsdj {
 			return std::string_view(kitData + Kit::NAME_OFFSET, Kit::NAME_SIZE);
 		}
 
+		void setKitName(size_t idx, std::string_view name) {
+			size_t bankIdx = KIT_LOOKUP[idx];
+			const char* kitData = (const char*)getBankData(bankIdx);
+
+			std::string targetName = std::string(name);
+			if (targetName.size() > Kit::NAME_SIZE) {
+				targetName = targetName.substr(0, Kit::NAME_SIZE);
+			}
+
+			for (size_t i = targetName.size(); i < Kit::NAME_SIZE; ++i) {
+				targetName[i] = '-';
+			}
+
+			memcpy((void*)(kitData + Kit::NAME_OFFSET), name.data(), Kit::NAME_SIZE);
+		}
+
 		std::string_view getKitSampleName(size_t kitIdx, size_t sampleIdx) const {
 			size_t bankIdx = KIT_LOOKUP[kitIdx];
 			const char* kitData = (const char*)getBankData(bankIdx);
 
-			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * 3;
+			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * Kit::SAMPLE_NAME_SIZE;
 			if (kitData[nameOffset] != 0) {
-				return std::string_view(kitData + nameOffset, 3);
+				return std::string_view(kitData + nameOffset, Kit::SAMPLE_NAME_SIZE);
 			}
 
 			return std::string_view("N/A");
+		}
+
+		void setKitSampleName(size_t kitIdx, size_t sampleIdx, std::string_view name) {
+			size_t bankIdx = KIT_LOOKUP[kitIdx];
+			const char* kitData = (const char*)getBankData(bankIdx);
+			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * Kit::SAMPLE_NAME_SIZE;
+
+			std::string targetName = std::string(name);
+			if (targetName.size() > Kit::SAMPLE_NAME_SIZE) {
+				targetName = targetName.substr(0, Kit::SAMPLE_NAME_SIZE);
+			}
+
+			for (size_t i = targetName.size(); i < Kit::SAMPLE_NAME_SIZE; ++i) {
+				targetName[i] = ' ';
+			}
+
+			memcpy((void*)(kitData + nameOffset), targetName.data(), Kit::SAMPLE_NAME_SIZE);
 		}
 
 		bool kitSampleExists(size_t kitIdx, size_t sampleIdx) const {

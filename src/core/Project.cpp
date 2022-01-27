@@ -123,8 +123,7 @@ void Project::clear() {
 	}
 
 	_lua = new sol::state();
-	_lua->open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
-	SolUtil::addIncludePath(*_lua, "../../src/scripts");
+	SolUtil::prepareState(*_lua);
 
 	_version++;
 }

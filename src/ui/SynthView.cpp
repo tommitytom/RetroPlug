@@ -72,6 +72,12 @@ bool SynthView::onDrop(const std::vector<std::string>& paths) {
 bool SynthView::onKey(VirtualKey::Enum key, bool down) {
 	ButtonType::Enum button = keyToButton(key);
 
+	if (down) {
+		_ui.pressKey(key);
+	} else {
+		_ui.releaseKey(key);
+	}
+
 	if (button != ButtonType::MAX) {
 		if (down) {
 			_ui.pressButton(button);

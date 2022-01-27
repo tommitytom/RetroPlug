@@ -117,22 +117,6 @@ void UiContext::processDelta(f64 delta) {
 }
 
 bool UiContext::onKey(VirtualKey::Enum key, bool down) {
-	/*if (key == VirtualKey::Esc && down) {
-		_orchestrator.resetSystem(_orchestrator.getProcessor().getSystems()[0]);
-	}*/
-
-	if (down) {
-		if (key == VirtualKey::Space) {
-			_state.viewManager.printHierarchy();
-			return true;
-		}
-
-		if (key == VirtualKey::Q) {
-			_state.viewManager.setLayoutDirty();
-			return true;
-		}
-	}
-
 	if (key == VirtualKey::Tab) {
 		if (down) {
 			_state.viewManager.findChild<GridOverlay>()->incrementSelection();

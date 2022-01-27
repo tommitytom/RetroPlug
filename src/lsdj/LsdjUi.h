@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <stack>
 
 #include "util/DataBuffer.h"
@@ -16,12 +17,18 @@ namespace rp::lsdj {
 		std::vector<ButtonType::Enum> buttonPresses;
 		std::vector<ButtonType::Enum> buttonReleases;
 		std::array<bool, ButtonType::MAX> buttonStates = { false };
+
+		std::vector<VirtualKey::Enum> keyPresses;
+		std::vector<VirtualKey::Enum> keyReleases;
+		std::array<bool, VirtualKey::COUNT> keyStates = { false };
 	};
 
 	struct UiState {
 		std::stack<void*> stack;
 		void* current = nullptr;
 		void* focused = nullptr;
+
+		std::unordered_map<void*, std::any> elementState;
 		
 		std::stack<int32> columnStack;
 		int32 currentColumn = 0;
@@ -47,7 +54,23 @@ namespace rp::lsdj {
 		enum Enum {
 			None
 		};
-	}	
+	}
+
+	namespace SelectOptions {
+		enum Enum {
+			None = 0,
+			Disabled = 1 << 0,
+			Dimmed = 1 << 1,
+		};
+	}
+
+	namespace SpinOptions {
+		enum Enum {
+			None = 0,
+			Disabled = 1 << 0,
+			Dimmed = 1 << 1,
+		};
+	}
 
 	class Ui {
 	private:
@@ -105,6 +128,39 @@ namespace rp::lsdj {
 			//_state.currentColumn--;
 		}
 
+		template <typename T>
+		T& getElementState(void* element) {
+			return *std::any_cast<T>(&_state.elementState[element]);
+		}
+
+		template <typename T>
+		void createElementState(void* element, T&& state) {
+			_state.elementState[element] = std::move(state);
+		}
+
+		template <typename T>
+		T& getOrCreateElementState(void* element) {
+			auto found = _state.elementState.find(element);
+			if (found != _state.elementState.end()) {
+				assert(found->second.type() == typeid(T));
+				return *std::any_cast<T>(&found->second);
+			}
+
+			_state.elementState[element] = T();
+			return *std::any_cast<T>(&_state.elementState[element]);
+		}
+
+		template <typename T>
+		bool hasElementState(void* element) {
+			auto found = _state.elementState.find(element);
+			if (found != _state.elementState.end()) {
+				assert(found->second.type() == typeid(T));
+				return true;
+			}
+
+			return false;
+		}
+
 		bool hasFocus() const {
 			return _state.currentColumn == _state.focusedColumn && _state.currentRow == _state.focusedRow;
 			//return _state.current == _state.focused;
@@ -117,6 +173,8 @@ namespace rp::lsdj {
 		void endFrame() {
 			_state.input.buttonPresses.clear();
 			_state.input.buttonReleases.clear();
+			_state.input.keyPresses.clear();
+			_state.input.keyReleases.clear();
 			
 			if (!_state.foundFocusThisFrame) {
 				_state.focused = nullptr;
@@ -139,6 +197,20 @@ namespace rp::lsdj {
 			_state.colRowCounts = _state.nextColRowCounts;
 		}
 
+		void pressKey(VirtualKey::Enum key) {
+			if (key == VirtualKey::Q) {
+				spdlog::info("q3 {}", key);
+			}
+
+			_state.input.keyStates[key] = true;
+			_state.input.keyPresses.push_back(key);
+		}
+
+		void releaseKey(VirtualKey::Enum key) {
+			_state.input.keyStates[key] = false;
+			_state.input.keyReleases.push_back(key);
+		}
+
 		void pressButton(ButtonType::Enum button) {
 			_state.input.buttonStates[button] = true;
 			_state.input.buttonPresses.push_back(button);
@@ -147,6 +219,30 @@ namespace rp::lsdj {
 		void releaseButton(ButtonType::Enum button) {
 			_state.input.buttonStates[button] = false;
 			_state.input.buttonReleases.push_back(button);
+		}
+
+		bool keyPressed(VirtualKey::Enum key) {
+			for (VirtualKey::Enum k : _state.input.keyPresses) {
+				if (k == key) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		bool keyReleased(VirtualKey::Enum key) {
+			for (VirtualKey::Enum k : _state.input.keyReleases) {
+				if (k == key) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		bool keyDown(VirtualKey::Enum key) const {
+			return _state.input.keyStates[key];
 		}
 
 		bool buttonPressed(ButtonType::Enum button) {
@@ -268,18 +364,168 @@ namespace rp::lsdj {
 			return changed;
 		}
 
-		template <const int ItemCount>
-		bool select(uint32 x, uint32 y, int32& selected, const std::array<std::string_view, ItemCount>& items) {
-			return select(x, y, selected, items.data(), items.size());
+		struct TextBoxState {
+			bool editing = false;
+			uint32 cursorPos = 0;
+			std::string initialValue;
+		};
+
+		bool convertKeyPress(VirtualKey::Enum key, char& out) {
+			switch (key) {
+			case VirtualKey::A: out = 'A'; return true;
+			case VirtualKey::B: out = 'B'; return true;
+			case VirtualKey::C: out = 'C'; return true;
+			case VirtualKey::D: out = 'D'; return true;
+			case VirtualKey::E: out = 'E'; return true;
+			case VirtualKey::F: out = 'F'; return true;
+			case VirtualKey::G: out = 'G'; return true;
+			case VirtualKey::H: out = 'H'; return true;
+			case VirtualKey::I: out = 'I'; return true;
+			case VirtualKey::J: out = 'J'; return true;
+			case VirtualKey::K: out = 'K'; return true;
+			case VirtualKey::L: out = 'L'; return true;
+			case VirtualKey::M: out = 'M'; return true;
+			case VirtualKey::N: out = 'N'; return true;
+			case VirtualKey::O: out = 'O'; return true;
+			case VirtualKey::P: out = 'P'; return true;
+			case VirtualKey::Q: out = 'Q'; return true;
+			case VirtualKey::R: out = 'R'; return true;
+			case VirtualKey::S: out = 'S'; return true;
+			case VirtualKey::T: out = 'T'; return true;
+			case VirtualKey::U: out = 'U'; return true;
+			case VirtualKey::V: out = 'V'; return true;
+			case VirtualKey::W: out = 'W'; return true;
+			case VirtualKey::X: out = 'X'; return true;
+			case VirtualKey::Y: out = 'Y'; return true;
+			case VirtualKey::Z: out = 'Z'; return true;
+			case VirtualKey::Num0: out = '0'; return true;
+			case VirtualKey::Num1: out = '1'; return true;
+			case VirtualKey::Num2: out = '2'; return true;
+			case VirtualKey::Num3: out = '3'; return true;
+			case VirtualKey::Num4: out = '4'; return true;
+			case VirtualKey::Num5: out = '5'; return true;
+			case VirtualKey::Num6: out = '6'; return true;
+			case VirtualKey::Num7: out = '7'; return true;
+			case VirtualKey::Num8: out = '8'; return true;
+			case VirtualKey::Num9: out = '9'; return true;
+			case VirtualKey::NumPad0: out = '0'; return true;
+			case VirtualKey::NumPad1: out = '1'; return true;
+			case VirtualKey::NumPad2: out = '2'; return true;
+			case VirtualKey::NumPad3: out = '3'; return true;
+			case VirtualKey::NumPad4: out = '4'; return true;
+			case VirtualKey::NumPad5: out = '5'; return true;
+			case VirtualKey::NumPad6: out = '6'; return true;
+			case VirtualKey::NumPad7: out = '7'; return true;
+			case VirtualKey::NumPad8: out = '8'; return true;
+			case VirtualKey::NumPad9: out = '9'; return true;
+			}
+
+			return false;
 		}
 
-		bool select(uint32 x, uint32 y, int32& selected, const std::string_view* items, size_t itemCount) {
+		bool textBox(uint32 x, uint32 y, std::string& text, uint32 size) {
+			pushElement(text);
+
+			bool changed = false;
+			bool editable = true;
+			ColorSets colorSet = hasFocus() ? ColorSets::Selection : ColorSets::Shaded;
+
+			if (text.size() > size) {
+				text = text.substr(0, size);
+				changed = true;
+			}
+
+			TextBoxState& state = getOrCreateElementState<TextBoxState>((void*)&text);
+
+			if (hasFocus() && editable) {
+				if (state.editing) {
+					if (keyPressed(VirtualKey::Backspace)) {
+						if (state.cursorPos > 0) {
+							if (text[state.cursorPos] == ' ') {
+								state.cursorPos--;
+							}
+
+							text[state.cursorPos] = ' ';
+
+							changed = true;
+						}
+					} else {
+						for (VirtualKey::Enum key : _state.input.keyPresses) {
+							// Convert to LSDJ char
+							char ch;
+							if (convertKeyPress(key, ch)) {
+								text[state.cursorPos] = ch;
+
+								if (state.cursorPos < size - 1) {
+									state.cursorPos++;
+								}
+
+								changed = true;
+							}
+						}
+					}
+
+					if (buttonPressed(ButtonType::Start)) {
+						state.editing = false;
+						state.initialValue.clear();
+					}
+
+					if (buttonPressed(ButtonType::Down)) {
+						state.editing = false;
+						state.initialValue.clear();
+						moveFocusDown();
+					}
+				} else {
+					if (buttonDown(ButtonType::A) || buttonDown(ButtonType::Start)) {
+						state.editing = true;
+						state.initialValue = text;
+
+						size_t found = text.find_first_of('_');
+						if (found != std::string::npos) {
+							state.cursorPos = (uint32)found;
+						} else {
+							state.cursorPos = (uint32)text.size();
+						}
+
+						if (state.cursorPos == size) {
+							state.cursorPos = size - 1;
+						}
+
+						setNavigationEnabled(true, false);
+					}
+				}
+			}
+
+			_c.text(x, y, text, colorSet, false);
+
+			if (state.editing) {
+				_c.text(x + state.cursorPos, y, text.substr(state.cursorPos, 1), ColorSets::Scroll);
+			}
+
+			popElement();
+
+			return changed;
+		}
+
+		template <const int ItemCount>
+		bool select(uint32 x, uint32 y, int32& selected, const std::array<std::string_view, ItemCount>& items, SelectOptions::Enum options = SelectOptions::None) {
+			return select(x, y, selected, items.data(), items.size(), options);
+		}
+
+		bool select(uint32 x, uint32 y, int32& selected, const std::string_view* items, size_t itemCount, SelectOptions::Enum options = SelectOptions::None) {
 			pushElement(selected);
+
+			bool editable = true;
+			if (options & SelectOptions::Disabled) {
+				options = (SelectOptions::Enum)(options | SelectOptions::Dimmed);
+				editable = false;
+			}
 
 			bool changed = false;
 			ColorSets colorSet = hasFocus() ? ColorSets::Selection : ColorSets::Shaded;
+			bool dimmed = options & SelectOptions::Dimmed;
 
-			if (hasFocus()) {
+			if (hasFocus() && editable) {
 				if (buttonDown(ButtonType::A) && buttonPressed(ButtonType::Left)) {
 					if (selected > 0) {
 						selected--;
@@ -304,7 +550,7 @@ namespace rp::lsdj {
 
 			if (selected >= 0 && selected < (int32)itemCount) {
 				uint32 off = x - (uint32)items[selected].size();
-				_c.text(off, y, items[selected], colorSet);
+				_c.text(off, y, items[selected], colorSet, dimmed);
 			}
 			
 			popElement();
@@ -313,15 +559,21 @@ namespace rp::lsdj {
 		}
 
 		template <typename T>
-		bool hexSpin(uint32 x, uint32 y, T& value, uint8 min = 0, uint8 max = 0xFF) {
+		bool hexSpin(uint32 x, uint32 y, T& value, uint8 min = 0, uint8 max = 0xFF, SpinOptions::Enum options = SpinOptions::None) {
 			pushElement(value);
+
+			bool editable = true;
+			if (options & SpinOptions::Disabled) {
+				options = (SpinOptions::Enum)(options | SpinOptions::Dimmed);
+				editable = false;
+			}
 
 			if (value < (T)min) value = (T)min;
 			if (value > (T)max) value = (T)max;
 
 			int32 move = 0;
 
-			if (hasFocus()) {
+			if (hasFocus() && editable) {
 				int32 range = max - min;
 				
 				if (buttonDown(ButtonType::A)) {
@@ -357,7 +609,9 @@ namespace rp::lsdj {
 			}
 
 			ColorSets colorSet = hasFocus() ? ColorSets::Selection : ColorSets::Shaded;
-			_c.hexNumber(x - 2, y, value, colorSet);
+			bool dimmed = options & SpinOptions::Dimmed;
+
+			_c.hexNumber(x - 2, y, value, colorSet, true, dimmed);
 
 			popElement();
 

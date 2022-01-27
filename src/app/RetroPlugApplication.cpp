@@ -34,9 +34,9 @@ void RetroPlugApplication::onInit() {
 
 	_retroPlug.setNvgContext(_vg);
 
-	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, Early_GameBoy_len, 0);
-	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, Roboto_Regular_len, 0);
-	nvgCreateFontMem(_vg, "PlatNomor", PlatNomor, PlatNomor_len, 0);
+	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
+	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, (int)Roboto_Regular_len, 0);
+	nvgCreateFontMem(_vg, "PlatNomor", PlatNomor, (int)PlatNomor_len, 0);
 
 	startAudio();
 }
