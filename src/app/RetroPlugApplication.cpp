@@ -226,3 +226,20 @@ void RetroPlugApplication::onMouseScroll(double x, double y) {
 
 	_retroPlug.getUiContext().onMouseScroll(x, y);
 }
+
+void RetroPlugApplication::onTouchStart(double x, double y) {
+	_retroPlug.getUiContext().onTouchStart(x, y);
+}
+
+void RetroPlugApplication::onTouchMove(double x, double y) {
+	_retroPlug.getUiContext().onTouchMove(x, y);
+}
+
+void RetroPlugApplication::onTouchEnd(double x, double y) {
+	_retroPlug.getUiContext().onTouchEnd(x, y);
+}
+
+void RetroPlugApplication::onTouchCancel(double x, double y) {
+	_retroPlug.getUiContext().onTouchCancel(x, y);
+}
+

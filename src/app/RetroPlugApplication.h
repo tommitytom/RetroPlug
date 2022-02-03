@@ -31,5 +31,13 @@ namespace rp {
 		void onMouseButton(int button, int action, int mods) override;
 
 		void onMouseScroll(double x, double y) override;
+
+		void onTouchStart(double x, double y) override;
+
+		void onTouchMove(double x, double y) override;
+
+		void onTouchEnd(double x, double y) override;
+
+		void onTouchCancel(double x, double y) override;
 	};
 }

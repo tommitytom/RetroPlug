@@ -6,8 +6,9 @@
 #include <GLFW/glfw3.h>
 #include <bx/platform.h>
 
-#ifdef __EMSCRIPTEN__
+#ifdef RP_WEB
     #include <emscripten.h>
+	#include <emscripten/html5.h>
     static const char* s_canvas = "#canvas";
 #else
     #if BX_PLATFORM_LINUX
@@ -27,6 +28,50 @@
 #include <bgfx/platform.h>
 
 using namespace rp;
+
+
+#ifdef RP_WEB
+EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent *touchEvent, void *userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+EMSCRIPTEN_RESULT touchmove_callback(int eventType, const EmscriptenTouchEvent *touchEvent, void *userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+
+EMSCRIPTEN_RESULT touchend_callback(int eventType, const EmscriptenTouchEvent *touchEvent, void *userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+EMSCRIPTEN_RESULT touchcancel_callback(int eventType, const EmscriptenTouchEvent *touchEvent, void *userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+#endif
 
 Window::Window(Application* app): _app(app) {
 	glfwSetErrorCallback(errorCallback);
@@ -58,6 +103,13 @@ Window::Window(Application* app): _app(app) {
 	glfwSetCharCallback(window, charCallback);
 	glfwSetScrollCallback(window, mouseScrollCallback);
 	glfwSetDropCallback(window, dropCallback);
+
+#ifdef RP_WEB
+	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
+	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchmove_callback);
+	emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
+	emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
+#endif
 
 	// Call bgfx::renderFrame before bgfx::init to signal to bgfx not to create a render thread.
 	// Most graphics APIs must be used on the same thread that created the window.

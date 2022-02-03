@@ -44,6 +44,14 @@ namespace rp {
 
 		virtual void onMouseScroll(double x, double y) = 0;
 
+		virtual void onTouchStart(double x, double y) = 0;
+
+		virtual void onTouchMove(double x, double y) = 0;
+
+		virtual void onTouchEnd(double x, double y) = 0;
+
+		virtual void onTouchCancel(double x, double y) = 0;
+
 		void startAudio() { _audioManager.start(); }
 
 		void stopAudio() { _audioManager.stop(); }

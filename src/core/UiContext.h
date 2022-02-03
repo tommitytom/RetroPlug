@@ -79,6 +79,14 @@ namespace rp {
 
 		void onMouseScroll(double x, double y);
 
+		void onTouchStart(double x, double y);
+
+		void onTouchMove(double x, double y);
+
+		void onTouchEnd(double x, double y);
+
+		void onTouchCancel(double x, double y);
+
 	private:
 		void processInput(uint32 frameCount);
 

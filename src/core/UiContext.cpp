@@ -21,9 +21,9 @@ using namespace rp;
 
 const f32 DISABLED_ALPHA = 0.75f;
 
-UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus): 
-	_orchestrator(&_state.processor, orchestratorMessageBus), 
-	_ioMessageBus(messageBus), 
+UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus):
+	_orchestrator(&_state.processor, orchestratorMessageBus),
+	_ioMessageBus(messageBus),
 	_orchestratorMessageBus(orchestratorMessageBus)
 {
 	_state.processor.addManager(std::make_shared<SameBoyManager>());
@@ -37,7 +37,7 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 	_project->setOrchestrator(&_orchestrator);
 
 	SystemOverlayManager* overlayManager = _state.viewManager.createShared<SystemOverlayManager>();
-	overlayManager->addOverlayFactory<LsdjOverlay>([](std::string_view romName) { 
+	overlayManager->addOverlayFactory<LsdjOverlay>([](std::string_view romName) {
 		std::string shortName = StringUtil::toLower(romName).substr(0, 4);
 		return shortName == "lsdj";
 	});
@@ -152,4 +152,35 @@ void UiContext::onDrop(int count, const char** paths) {
 	}
 
 	_state.viewManager.onDrop(p);
+}
+
+/*#include "roms/lsdjrom.h"
+#include "roms/lsdjsav.h"
+
+#include "sameboy/SameBoySystem.h"
+
+SystemPtr sys;*/
+
+void UiContext::onTouchStart(double x, double y) {
+	/*if (!sys) {
+		Uint8Buffer romBuffer(LsdjRom, LsdjRom_len);
+		Uint8Buffer savBuffer(LsdjSav, LsdjSav_len);
+		sys = _project->addSystem<SameBoySystem>(&romBuffer, &savBuffer);
+	} else {
+		sys->setButtonState(ButtonType::Start, true);
+	}*/
+}
+
+void UiContext::onTouchMove(double x, double y) {
+
+}
+
+void UiContext::onTouchEnd(double x, double y) {
+	/*if (sys) {
+		sys->setButtonState(ButtonType::Start, false);
+	}*/
+}
+
+void UiContext::onTouchCancel(double x, double y) {
+
 }
