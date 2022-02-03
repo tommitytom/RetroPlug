@@ -305,7 +305,9 @@ void SamplerView::onRender() {
 	}
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
-	defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable);
+	if (defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable)) {
+		updateSampleBuffers();
+	}
 
 	_c.text(propertyName, 9, "CUTOFF", lsdj::ColorSets::Normal);
 	if (defaultHexSpin(_ui, 19, 9, settings->cutoff, globalSettings->cutoff, 0, 0xFF, isEditable)) {

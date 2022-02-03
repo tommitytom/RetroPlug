@@ -9,11 +9,11 @@
 
 namespace rp {
 	struct SampleSettings {
-		int32 dither = 0;
-		int32 volume = 0xF0;
-		int32 pitch = 0;
+		int32 dither = 1;
+		int32 volume = 0xFF;
+		int32 pitch = 0x7F;
 		int32 filter = 0;
-		int32 cutoff = 0;
+		int32 cutoff = 0x7F;
 		int32 q = 0;
 	};
 
