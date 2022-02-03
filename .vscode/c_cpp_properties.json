@@ -6,7 +6,8 @@
                 "${workspaceFolder}/src/**",
                 "${workspaceFolder}/resources/**",
                 "${workspaceFolder}/thirdparty/**",
-                "/emsdk/upstream/emscripten/system/include/**"
+                "/emsdk/upstream/emscripten/system/include/**",
+                "~/code/audioworklet/emsdk/upstream/emscripten/system/include/**"
             ],
             "defines": [
                 "GB_INTERNAL",
@@ -14,7 +15,7 @@
                 "GB_DISABLE_DEBUGGER",
                 "RP_WEB"
             ],
-            "compilerPath": "/emsdk/upstream/bin/clang",
+            "compilerPath": "~/code/audioworklet/emsdk/upstream/bin/clang",
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "linux-clang-x64"
