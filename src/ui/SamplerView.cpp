@@ -122,6 +122,65 @@ void SamplerView::onUpdate(f32 delta) {
 	}
 }
 
+bool defaultHexSpin(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 defaultValue, uint32 min, uint32 max, bool editable) {
+	lsdj::SpinOptions::Enum spinOptions = lsdj::SpinOptions::None;
+
+	int32 editValue = value;
+
+	if (!editable) {
+		spinOptions = (lsdj::SpinOptions::Enum)(spinOptions | lsdj::SpinOptions::Disabled);
+	}
+	
+	if (value < 0) {
+		spinOptions = (lsdj::SpinOptions::Enum)(spinOptions | lsdj::SpinOptions::Dimmed);
+		editValue = defaultValue;
+	}
+
+	if (ui.buttonDown(ButtonType::B)) {
+		if (ui.buttonPressed(ButtonType::A)) {
+			value = -1;
+			return true;
+		}
+	}
+
+	if (ui.hexSpin(x, y, editValue, min, max, spinOptions)) {
+		value = editValue;
+		return true;
+	}
+
+	return false;
+}
+
+template <const int ItemCount>
+bool defaultSelect(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 defaultValue, const std::array<std::string_view, ItemCount>& items, bool editable) {
+	lsdj::SelectOptions::Enum spinOptions = lsdj::SelectOptions::None;
+
+	int32 editValue = value;
+
+	if (!editable) {
+		spinOptions = (lsdj::SelectOptions::Enum)(spinOptions | lsdj::SelectOptions::Disabled);
+	}
+
+	if (value < 0) {
+		spinOptions = (lsdj::SelectOptions::Enum)(spinOptions | lsdj::SelectOptions::Dimmed);
+		editValue = defaultValue;
+	}
+
+	if (ui.buttonDown(ButtonType::B)) {
+		if (ui.buttonPressed(ButtonType::A)) {
+			value = -1;
+			return true;
+		}
+	}
+
+	if (ui.select<ItemCount>(x, y, editValue, items, spinOptions)) {
+		value = editValue;
+		return true;
+	}
+
+	return false;
+}
+
 void SamplerView::onRender() {
 	if (!_system) {
 		return;
@@ -139,14 +198,21 @@ void SamplerView::onRender() {
 	bool editingGlobal = true;
 
 	SampleSettings defaultSettings;
+	SampleSettings emptySettings = EMPTY_SAMPLE_SETTINGS;
 	SampleSettings* settings = &defaultSettings;
+	SampleSettings* globalSettings = &defaultSettings;
 
 	if (isEditable) {
-		if (_samplerState.selectedSample > 0 && _samplerState.selectedSample <= (int32)found->second.samples.size()) {
+		globalSettings = &found->second.settings;
+
+		if (_samplerState.selectedSample == 0) {
+			settings = globalSettings;
+		} else if (_samplerState.selectedSample > 0 && _samplerState.selectedSample <= (int32)found->second.samples.size()) {
 			settings = &found->second.samples[_samplerState.selectedSample - 1].settings;
 			editingGlobal = false;
-		} else {
-			settings = &found->second.settings;
+		} else {	
+			settings = &emptySettings;
+			isEditable = false;
 		}
 	}
 
@@ -170,7 +236,7 @@ void SamplerView::onRender() {
 	} else {
 		_c.text(12, 0, "EMPTY", lsdj::ColorSets::Normal);
 	}
-	
+
 
 	_c.text(0, 2, " ", lsdj::ColorSets::Selection);
 
@@ -226,26 +292,28 @@ void SamplerView::onRender() {
 	lsdj::SpinOptions::Enum spinOptions = isEditable ? lsdj::SpinOptions::None : lsdj::SpinOptions::Disabled;
 
 	_c.text(propertyName, 4, "DITHER", lsdj::ColorSets::Normal);
-	_ui.select<2>(19, 4, settings->dither, { "OFF", "ON" }, selectOptions);
+	defaultSelect<2>(_ui, 19, 4, settings->dither, globalSettings->dither, { "OFF", "ON" }, isEditable);
 
 	_c.text(propertyName, 5, "VOL", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 5, settings->volume, 0, 0xFF, spinOptions)) {
+	if (defaultHexSpin(_ui, 19, 5, settings->volume, globalSettings->volume, 0, 0xFF, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 6, "PITCH", lsdj::ColorSets::Normal);
-	_ui.hexSpin(19, 6, settings->pitch, 0, 0xFF, spinOptions);
+	if (defaultHexSpin(_ui, 19, 6, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
+		//updateSampleBuffers();
+	}
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
-	_ui.select<5>(19, 8, settings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, selectOptions);
+	defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable);
 
 	_c.text(propertyName, 9, "CUTOFF", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 9, settings->cutoff, 0, 0xFF, spinOptions)) {
+	if (defaultHexSpin(_ui, 19, 9, settings->cutoff, globalSettings->cutoff, 0, 0xFF, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 10, "Q", lsdj::ColorSets::Normal);
-	if (_ui.hexSpin(19, 10, settings->q, 0, 0xF, spinOptions)) {
+	if (defaultHexSpin(_ui, 19, 10, settings->q, globalSettings->q, 0, 0xF, isEditable)) {
 		updateSampleBuffers();
 	}
 
@@ -378,5 +446,3 @@ void SamplerView::updateWaveform() {
 		_waveView->clearWaveform();
 	}
 }
-
-

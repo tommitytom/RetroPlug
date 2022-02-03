@@ -17,10 +17,19 @@ namespace rp {
 		int32 q = 0;
 	};
 
+	const SampleSettings EMPTY_SAMPLE_SETTINGS = SampleSettings{
+		.dither = -1,
+		.volume = -1,
+		.pitch = -1,
+		.filter = -1,
+		.cutoff = -1,
+		.q = -1,
+	};
+
 	struct KitSample {
 		std::string name;
 		std::string path;
-		SampleSettings settings;
+		SampleSettings settings = EMPTY_SAMPLE_SETTINGS;
 	};
 
 	struct KitState {

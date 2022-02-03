@@ -97,7 +97,14 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 	for (size_t i = 0; i < samples.size(); ++i) {
 		const SampleData& sample = samples[i];
-		const SampleSettings& settings = kitState.samples[i].settings;
+		SampleSettings settings = kitState.samples[i].settings;
+
+		if (settings.cutoff == -1) settings.cutoff = kitState.settings.cutoff;
+		if (settings.dither == -1) settings.dither = kitState.settings.dither;
+		if (settings.filter == -1) settings.filter = kitState.settings.filter;
+		if (settings.pitch == -1) settings.pitch = kitState.settings.pitch;
+		if (settings.q == -1) settings.q = kitState.settings.q;
+		if (settings.volume == -1) settings.volume = kitState.settings.volume;
 
 		// Apply gain
 
