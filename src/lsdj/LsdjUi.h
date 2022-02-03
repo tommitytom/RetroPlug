@@ -437,62 +437,69 @@ namespace rp::lsdj {
 
 			TextBoxState& state = getOrCreateElementState<TextBoxState>((void*)&text);
 
-			if (hasFocus() && editable) {
-				if (state.editing) {
-					if (keyPressed(VirtualKey::Backspace)) {
-						if (state.cursorPos > 0) {
-							if (text[state.cursorPos] == ' ') {
-								state.cursorPos--;
-							}
-
-							text[state.cursorPos] = ' ';
-
-							changed = true;
-						}
-					} else {
-						for (VirtualKey::Enum key : _state.input.keyPresses) {
-							// Convert to LSDJ char
-							char ch;
-							if (convertKeyPress(key, ch)) {
-								text[state.cursorPos] = ch;
-
-								if (state.cursorPos < size - 1) {
-									state.cursorPos++;
+			if (hasFocus()) {
+				if (editable) {
+					if (state.editing) {
+						if (keyPressed(VirtualKey::Backspace)) {
+							if (state.cursorPos > 0) {
+								if (text[state.cursorPos] == ' ') {
+									state.cursorPos--;
 								}
+
+								text[state.cursorPos] = ' ';
 
 								changed = true;
 							}
-						}
-					}
-
-					if (buttonPressed(ButtonType::Start)) {
-						state.editing = false;
-						state.initialValue.clear();
-					}
-
-					if (buttonPressed(ButtonType::Down)) {
-						state.editing = false;
-						state.initialValue.clear();
-						moveFocusDown();
-					}
-				} else {
-					if (buttonDown(ButtonType::A) || buttonDown(ButtonType::Start)) {
-						state.editing = true;
-						state.initialValue = text;
-
-						size_t found = text.find_first_of('_');
-						if (found != std::string::npos) {
-							state.cursorPos = (uint32)found;
 						} else {
-							state.cursorPos = (uint32)text.size();
+							for (VirtualKey::Enum key : _state.input.keyPresses) {
+								// Convert to LSDJ char
+								char ch;
+								if (convertKeyPress(key, ch)) {
+									text[state.cursorPos] = ch;
+
+									if (state.cursorPos < size - 1) {
+										state.cursorPos++;
+									}
+
+									changed = true;
+								}
+							}
 						}
 
-						if (state.cursorPos == size) {
-							state.cursorPos = size - 1;
+						if (buttonPressed(ButtonType::Start)) {
+							state.editing = false;
+							state.initialValue.clear();
 						}
 
-						setNavigationEnabled(true, false);
+						if (buttonPressed(ButtonType::Down)) {
+							state.editing = false;
+							state.initialValue.clear();
+							moveFocusDown();
+						}
+					} else {
+						if (buttonDown(ButtonType::A) || buttonDown(ButtonType::Start)) {
+							state.editing = true;
+							state.initialValue = text;
+
+							size_t found = text.find_first_of('_');
+							if (found != std::string::npos) {
+								state.cursorPos = (uint32)found;
+							} else {
+								state.cursorPos = (uint32)text.size();
+							}
+
+							if (state.cursorPos == size) {
+								state.cursorPos = size - 1;
+							}
+
+							setNavigationEnabled(true, false);
+						}
 					}
+				}
+			} else {
+				if (state.editing) {
+					state.editing = false;
+					state.initialValue.clear();
 				}
 			}
 
@@ -562,14 +569,16 @@ namespace rp::lsdj {
 		bool hexSpin(uint32 x, uint32 y, T& value, uint8 min = 0, uint8 max = 0xFF, SpinOptions::Enum options = SpinOptions::None) {
 			pushElement(value);
 
+			T editValue = value;
+
 			bool editable = true;
 			if (options & SpinOptions::Disabled) {
 				options = (SpinOptions::Enum)(options | SpinOptions::Dimmed);
 				editable = false;
 			}
 
-			if (value < (T)min) value = (T)min;
-			if (value > (T)max) value = (T)max;
+			if (editValue < (T)min) editValue = (T)min;
+			if (editValue > (T)max) editValue = (T)max;
 
 			int32 move = 0;
 
@@ -594,7 +603,7 @@ namespace rp::lsdj {
 					}
 
 					if (move != 0) {
-						int32 shifted = ((uint8)value - min) + move;
+						int32 shifted = ((uint8)editValue - min) + move;
 						if (shifted < 0) {
 							shifted = 0;
 						}
@@ -603,13 +612,17 @@ namespace rp::lsdj {
 							shifted = range;
 						}
 
-						value = (T)((uint8)(shifted % (range + 1)) + min);
+						editValue = (T)((uint8)(shifted % (range + 1)) + min);
 					}
 				}
 			}
 
 			ColorSets colorSet = hasFocus() ? ColorSets::Selection : ColorSets::Shaded;
 			bool dimmed = options & SpinOptions::Dimmed;
+
+			if (move) {
+				value = editValue;
+			}
 
 			_c.hexNumber(x - 2, y, value, colorSet, true, dimmed);
 
