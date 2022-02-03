@@ -11,4 +11,4 @@ set -e
 ./configure.sh
 cd build/gmake2
 mkdir -p ${BUILD_CONFIG}
-make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlugApp
+emmake make config=${BUILD_CONFIG}_x86 -j$(nproc) RetroPlugApp

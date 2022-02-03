@@ -18,7 +18,7 @@ workspace "RetroPlugAll"
 	location("build/" .. _ACTION)
 	platforms(PLATFORMS)
 	characterset "MBCS"
-	cppdialect "C++2a"
+	cppdialect "C++20"
 	flags { "MultiProcessorCompile" }
 
 	configurations { "Debug", "Release", "Tracer" }
