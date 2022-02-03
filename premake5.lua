@@ -95,7 +95,11 @@ if _OPTIONS["emscripten"] == nil then
 			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
 			includedirs { "src/compiler" }
 			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
-			links { "lua", "pthread" }
+
+			links { "lua" }
+
+			filter { "system:linux" }
+				links { "pthread" }
 end
 
 group "Dependencies"
