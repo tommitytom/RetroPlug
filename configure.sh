@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./thirdparty/bin/premake5 --emscripten gmake2
+./thirdparty/bin/premake5 gmake2

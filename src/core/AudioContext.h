@@ -4,7 +4,7 @@
 
 #include "core/AudioState.h"
 #include "core/UiState.h"
-#include "core/Proxies.h"
+//#include "core/Proxies.h"
 #include "core/System.h"
 #include "core/SystemProcessor.h"
 #include "util/CircularBuffer.h"

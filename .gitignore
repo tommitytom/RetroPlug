@@ -17,6 +17,7 @@
 *.xcschememanagement.plist
 build-*
 .vscode/ipch/*
+.vscode/*.log
 gui/*
 build/
 .vs/*
