@@ -10,7 +10,7 @@ using namespace rp;
 void SystemProcessor::addSystem(SystemPtr system) {
 	_systems.push_back(system);
 
-	SystemManagerBase* manager = findManager(system->getType());
+	SystemManagerBase* manager = findManager(system->getBaseType());
 	if (manager) {
 		manager->add(system);
 	} else {

@@ -237,7 +237,6 @@ void SamplerView::onRender() {
 		_c.text(12, 0, "EMPTY", lsdj::ColorSets::Normal);
 	}
 
-
 	_c.text(0, 2, " ", lsdj::ColorSets::Selection);
 
 	std::array<std::string_view, lsdj::Kit::MAX_SAMPLES + 1> sampleNames;
@@ -276,15 +275,24 @@ void SamplerView::onRender() {
 
 	if (_samplerState.selectedSample == 0) {
 		std::string kitName = std::string(rom.getKitName(kitIdx));
-		if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
-			rom.setKitName(kitIdx, kitName);
+
+		if (isEditable) {
+			if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
+				rom.setKitName(kitIdx, kitName);
+			}
+		} else {
+			_c.text(13, 2, kitName, lsdj::ColorSets::Normal);
 		}
 	} else if (_samplerState.selectedSample > 0) {
 		int32 sampleIdx = _samplerState.selectedSample - 1;
 		std::string sampleName = std::string(rom.getKitSampleName(kitIdx, sampleIdx));
 
-		if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
-			rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
+		if (isEditable) {
+			if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
+				rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
+			}
+		} else {
+			_c.text(16, 2, sampleName, lsdj::ColorSets::Normal);
 		}
 	}
 

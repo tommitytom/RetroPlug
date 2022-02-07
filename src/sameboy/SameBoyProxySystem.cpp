@@ -1,5 +1,7 @@
 #include "SameBoyProxySystem.h"
 
+#include <iostream>
+
 using namespace rp;
 
 void SameBoyProxySystem::setup(SameBoySystem& system) {
@@ -23,6 +25,19 @@ void SameBoyProxySystem::reset() {
 
 	if (io) {
 		io->input.requestReset = true;
+	}
+}
+
+void SameBoyProxySystem::loadRom(const Uint8Buffer* romBuffer) {
+	SystemIo* io = getStream().get();
+
+	romBuffer->copyTo(&_rom);
+
+	std::cout << "Loading rom.  Found IO: " << (io != nullptr) << std::endl;
+
+	if (io) {
+		io->input.romToLoad = std::make_shared<Uint8Buffer>();
+		romBuffer->copyTo(io->input.romToLoad.get());
 	}
 }
 

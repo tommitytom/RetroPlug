@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/AudioState.h"
-//#include "core/Proxies.h"
 #include "util/DataBuffer.h"
 #include "SystemManager.h"
 
@@ -13,10 +12,16 @@ namespace rp {
 	public:
 		ProxySystemBase(SystemId id): System<ProxySystemBase>(id) {}
 
-		bool isProxy() const override { return true; }
-
 		void setDesc(SystemType targetType) {
 			_targetType = targetType;
+		}
+		
+		bool isProxy() const final override { 
+			return true; 
+		}
+
+		SystemType getType() const final override {
+			return _targetType;
 		}
 
 		virtual void handleSetup(SystemPtr& system) = 0;
@@ -45,13 +50,4 @@ namespace rp {
 	};
 
 	using ProxySystemPtr = std::shared_ptr<ProxySystemBase>;
-
-	/*class ProxyManager : public SystemManager<ProxySystemBase> {
-	public:
-		ProxyManager() {}
-
-		bool canLoadRom(std::string_view path) override { return false; }
-
-		bool canLoadSram(std::string_view path) override { return false; }
-	};*/
 }

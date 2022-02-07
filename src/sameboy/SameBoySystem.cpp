@@ -136,36 +136,36 @@ MemoryAccessor SameBoySystem::getMemory(MemoryType type, AccessType access) {
 }
 
 void SameBoySystem::loadRom(const Uint8Buffer* romBuffer) {
-	if (_state.gb) {
-		destroy();
+	if (!_state.gb) {
+		_state.gb = new GB_gameboy_t();
+
+		GB_init(_state.gb, getGameboyModelId(_state.model));
+		GB_set_user_data(_state.gb, &_state);
+
+		GB_set_sample_rate(_state.gb, _sampleRate);
+		GB_set_pixels_output(_state.gb, (uint32_t*)_state.frameBuffer);
+
+		GB_set_boot_rom_load_callback(_state.gb, loadBootRomHandler);
+		GB_set_rgb_encode_callback(_state.gb, rgbEncode);
+		GB_set_vblank_callback(_state.gb, vblankHandler);
+		GB_apu_set_sample_callback(_state.gb, audioHandler);
+		//GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
+		//GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
+
+		//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
+		GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
+		GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
+
+		//GB_set_rendering_disabled(_state.gb, true);
+
+		GB_load_rom_from_buffer(_state.gb, (const uint8_t*)romBuffer->data(), romBuffer->size());
+	} else {
+		std::cout << "Reloading" << std::endl;
+		GB_load_rom_from_buffer(_state.gb, (const uint8_t*)romBuffer->data(), romBuffer->size());
+		GB_reset(_state.gb);
 	}
-
-	_state.gb = new GB_gameboy_t();
-
-	GB_init(_state.gb, getGameboyModelId(_state.model));
-	GB_set_user_data(_state.gb, &_state);
-
-	GB_set_sample_rate(_state.gb, _sampleRate);
-	GB_set_pixels_output(_state.gb, (uint32_t*)_state.frameBuffer);
-
-	GB_set_boot_rom_load_callback(_state.gb, loadBootRomHandler);
-	GB_set_rgb_encode_callback(_state.gb, rgbEncode);
-	GB_set_vblank_callback(_state.gb, vblankHandler);
-	GB_apu_set_sample_callback(_state.gb, audioHandler);
-	//GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
-	//GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
-
-	//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
-	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
-	GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
-
-	//GB_set_rendering_disabled(_state.gb, true);
-
-	GB_load_rom_from_buffer(_state.gb, (const uint8_t*)romBuffer->data(), romBuffer->size());
+	
 	GB_set_rendering_disabled(_state.gb, false);
-
-	GB_section_offsets_t stateOffsets;
-	getSameboyStateOffsets(_state.gb, &stateOffsets);
 
 	_romName = GameboyUtil::getRomName((const char*)romBuffer->data());
 }

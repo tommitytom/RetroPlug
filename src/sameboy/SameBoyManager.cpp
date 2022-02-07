@@ -75,6 +75,10 @@ void SameBoyManager::process(uint32 frameCount) {
 			if (state->io->input.requestReset) {
 				system->reset();
 			}
+
+			if (state->io->input.romToLoad) {
+				system->loadRom(state->io->input.romToLoad.get());
+			}
 		}
 
 		while (state->audioFrameCount < frameCount) {

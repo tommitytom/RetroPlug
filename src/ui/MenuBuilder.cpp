@@ -187,6 +187,13 @@ bool saveState(Project* project, SystemPtr system) {
 
 const size_t MAX_SYSTEM_COUNT = 4;
 
+bool handleSystemLoad(std::string_view romPath, std::string_view savPath, SystemPtr system) {
+	std::vector<std::byte> fileData = fsutil::readFile(romPath);
+	Uint8Buffer romData((uint8*)fileData.data(), fileData.size());
+	system->loadRom(&romData);
+	return true;
+}
+
 bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* project) {
 	std::vector<std::string_view> projectPaths;
 	std::vector<std::pair<std::string_view, SystemType>> romPaths;
@@ -263,7 +270,11 @@ void MenuBuilder::populateRecent(Menu& root, Project* project, SystemPtr system)
 
 	for (const std::string& path : paths) {
 		root.action(fsutil::getFilename(path), [p = std::string(path), project, system]() {
-			handleLoad(std::vector<std::string> { p }, project);
+			if (system) {
+				handleSystemLoad(p, "", system);
+			} else {
+				handleLoad(std::vector<std::string> { p }, project);
+			}
 		});
 	}
 }
@@ -288,7 +299,7 @@ void MenuBuilder::systemAddMenu(Menu& root, Project* project, SystemPtr system) 
 void MenuBuilder::systemLoadMenu(Menu& root, Project* project, SystemPtr system) {
 	Menu& loadRoot = root.subMenu("Load");
 
-	populateRecent(loadRoot.subMenu("Recent"), project, nullptr);
+	populateRecent(loadRoot.subMenu("Recent"), project, system);
 
 	loadRoot
 		.action("Project...", []() {})

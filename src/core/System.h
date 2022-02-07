@@ -50,12 +50,14 @@ namespace rp {
 			std::vector<ButtonStream<8>> buttons;
 			std::vector<MemoryPatch> patches;
 			bool requestReset = false;
+			Uint8BufferPtr romToLoad;
 
 			void reset() {
 				serial.reset();
 				buttons.clear();
 				patches.clear();
 				requestReset = false;
+				romToLoad = nullptr;
 			}
 		} input;
 
@@ -76,6 +78,10 @@ namespace rp {
 		void merge(SystemIo& other) { 
 			input.requestReset |= other.input.requestReset;
 
+			if (other.input.romToLoad) {
+				input.romToLoad = std::move(other.input.romToLoad);
+			}
+			
 			while (other.input.serial.count()) {
 				input.serial.tryPush(other.input.serial.pop());
 			}
@@ -224,8 +230,12 @@ namespace rp {
 			return _id;
 		}
 
-		SystemType getType() const {
+		SystemType getBaseType() const {
 			return _type;
+		}
+
+		virtual SystemType getType() const {
+			return getBaseType();
 		}
 
 		friend class SystemOrchestrator;
