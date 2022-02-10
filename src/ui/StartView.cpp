@@ -50,8 +50,10 @@ void StartView::setupMenu() {
 	menu
 		.action("Load MGB", [this]() {
 			Project* project = getShared<Project>();
-			Uint8Buffer buf(mgb, mgb_len);
-			SystemPtr system = project->addSystem<SameBoySystem>(&buf);
+
+			SystemPtr system = project->addSystem<SameBoySystem>({ 
+				.romBuffer = std::make_shared<Uint8Buffer>(mgb, mgb_len) 
+			});
 
 			std::string systemName = fmt::format("System {}", system->getId());
 			std::shared_ptr<SystemView> view = getParent()->addChild<SystemView>(systemName);

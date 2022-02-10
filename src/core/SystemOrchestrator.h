@@ -14,7 +14,7 @@ namespace rp {
 
 		SystemPtr createUiSystem(SystemType systemType, std::string_view romPath, std::string_view sramPath);
 
-		SystemPtr createAudioSystem(SystemType systemType, const Uint8Buffer* romData, const Uint8Buffer* sramData = nullptr, const Uint8Buffer* stateData = nullptr);
+		SystemPtr createAudioSystem(SystemType systemType, LoadConfig&& loadConfig);
 
 		SystemPtr createAudioSystem(SystemType systemType, std::string_view romPath, std::string_view sramPath);
 

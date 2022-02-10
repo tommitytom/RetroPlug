@@ -1,12 +1,10 @@
 #include "SameBoyProxySystem.h"
 
-#include <iostream>
-
 using namespace rp;
 
 void SameBoyProxySystem::setup(SameBoySystem& system) {
 	_resolution = system.getResolution();
-	
+
 	system.saveState(_state);
 	system.getMemory(MemoryType::Rom).getBuffer().copyTo(&_rom);
 	getSameboyStateOffsets(system.getState().gb, &_stateOffsets);
@@ -28,17 +26,14 @@ void SameBoyProxySystem::reset() {
 	}
 }
 
-void SameBoyProxySystem::loadRom(const Uint8Buffer* romBuffer) {
+bool SameBoyProxySystem::load(LoadConfig&& loadConfig) {
 	SystemIo* io = getStream().get();
 
-	romBuffer->copyTo(&_rom);
-
-	std::cout << "Loading rom.  Found IO: " << (io != nullptr) << std::endl;
-
 	if (io) {
-		io->input.romToLoad = std::make_shared<Uint8Buffer>();
-		romBuffer->copyTo(io->input.romToLoad.get());
+		io->input.loadConfig = std::move(loadConfig);
 	}
+
+	return false; 
 }
 
 bool SameBoyProxySystem::saveSram(Uint8Buffer& target) {
@@ -67,7 +62,7 @@ MemoryAccessor SameBoyProxySystem::getMemory(MemoryType type, AccessType access)
 		if (type == MemoryType::Rom) {
 			return MemoryAccessor(type, _rom.slice(0, _rom.size()), 0, io ? &io->input.patches : nullptr);
 		}
-		
+
 		if (_state.size()) {
 			GB_section_offset_pair_t offset;
 			offset.offset = -1;

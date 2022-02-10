@@ -61,11 +61,7 @@ namespace rp {
 
 		MemoryAccessor getMemory(MemoryType type, AccessType access = AccessType::ReadWrite) override;
 
-		void loadRom(const Uint8Buffer* romBuffer) override;
-
-		void loadSram(const Uint8Buffer* sramBuffer, bool reset) override;
-
-		bool loadState(const Uint8Buffer* stateBuffer) override;
+		bool load(LoadConfig&& loadConfig) override;
 
 		void reset() override;
 

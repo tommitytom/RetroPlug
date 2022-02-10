@@ -13,4 +13,4 @@ if [ -z "$PORT" ]; then
     PORT="8080"
 fi
 
-docker run --rm -it -p ${PORT}:80 -v $(pwd)/build/gmake2/${CONFIG}/:/usr/share/nginx/html -v $(pwd)/src/:/usr/share/nginx/html/src -v ~/nginx_default.conf:/etc/nginx/conf.d/default.conf nginx:mainline-alpine
+docker run --rm -it -p ${PORT}:80 -v $(pwd)/build/emscripten/${CONFIG}/:/usr/share/nginx/html -v $(pwd)/src/:/usr/share/nginx/html/src -v ~/nginx_default.conf:/etc/nginx/conf.d/default.conf nginx:mainline-alpine

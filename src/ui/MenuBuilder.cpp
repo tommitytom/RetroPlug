@@ -1,26 +1,40 @@
 #include "MenuBuilder.h"
 
 #include <sol/sol.hpp>
+#include <spdlog/spdlog.h>
 
 #include "core/Project.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/fs.h"
 #include "util/SolUtil.h"
+#include "util/RecentUtil.h"
 
 using namespace rp;
 
+#ifdef RP_WEB
 const std::string_view RECENT_FILES_PATH = "/retroplug/recent.lua";
 const std::string_view ROMS_PATH = "/retroplug/roms";
+#else
+const std::string_view RECENT_FILES_PATH = "c:/temp/retroplug/recent.lua";
+const std::string_view ROMS_PATH = "c:/temp/retroplug/roms";
+#endif
 
-void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
-	spdlog::debug("Adding recent path to {}", recentPath);
+std::string formatRecentPath(const std::string& path) {
+	std::string targetPath = fmt::format("{}/{}", ROMS_PATH, fsutil::getFilename(path));
 
-	std::string targetPath = fmt::format("{}/{}", ROMS_PATH, fsutil::getFilename(pathToAdd));
 	if (!fs::exists(targetPath)) {
-		fsutil::copyFile(pathToAdd, targetPath);
+		fsutil::copyFile(path, targetPath);
 	}
 
-	pathToAdd = targetPath;
+	return targetPath;
+}
+
+void addRecent(std::string_view recentPath, RecentPath recent) {
+	spdlog::debug("Adding recent path to {}", recentPath);
+
+	recent.romPath = formatRecentPath(recent.romPath);
+	recent.sramPath = formatRecentPath(recent.sramPath);
+	recent.projectPath = formatRecentPath(recent.projectPath);
 
 	try {
 		sol::state s;
@@ -32,6 +46,7 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 		bool valid = false;
 		if (fs::exists(recentPath)) {
 			data = fsutil::readTextFile(recentPath);
+			spdlog::info(data);
 
 			if (data.size() && SolUtil::deserializeTable(s, data, target)) {
 				valid = true;
@@ -51,7 +66,7 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 		}
 
 		sol::protected_function f = funcRes.get<sol::protected_function>();
-		sol::protected_function_result funcRes2 = f(target, pathToAdd);
+		sol::protected_function_result funcRes2 = f(target, recent.romPath, recent.romName, recent.sramPath, recent.projectPath);
 
 		if (!funcRes2.valid()) {
 			sol::error err = funcRes2;
@@ -71,7 +86,7 @@ void addRecent(std::string_view recentPath, std::string_view pathToAdd) {
 	}
 }
 
-void loadRecent(std::string_view recentPath, std::vector<std::string>& paths) {
+void loadRecent(std::string_view recentPath, std::vector<RecentPath>& paths) {
 	spdlog::debug("Loading recent file list from {}", recentPath);
 
 	if (fs::exists(recentPath)) {
@@ -84,7 +99,18 @@ void loadRecent(std::string_view recentPath, std::vector<std::string>& paths) {
 			sol::table target;
 
 			if (SolUtil::deserializeTable(s, data, target)) {
-				paths = target["recent"].get<sol::nested<std::vector<std::string>>>();
+				auto entries = target["recent"].get<sol::nested<std::vector<sol::table>>>();
+
+				for (auto& item : entries) {
+					paths.push_back({
+						.romPath = item["romPath"].get<std::string>(),
+						.romName = item["romName"].get<std::string>(),
+						.sramPath = item["sramPath"].get<std::string>(),
+						.projectPath = item["projectPath"].get<std::string>()
+					});
+
+					spdlog::info("recent: {}", paths.back().romPath);
+				}
 			} else {
 				spdlog::error("Failed to load list of recent files");
 			}
@@ -189,8 +215,12 @@ const size_t MAX_SYSTEM_COUNT = 4;
 
 bool handleSystemLoad(std::string_view romPath, std::string_view savPath, SystemPtr system) {
 	std::vector<std::byte> fileData = fsutil::readFile(romPath);
-	Uint8Buffer romData((uint8*)fileData.data(), fileData.size());
-	system->loadRom(&romData);
+
+	system->load({
+		.romBuffer = std::make_shared<Uint8Buffer>((uint8*)fileData.data(), fileData.size()),
+		.reset = true
+	});
+
 	return true;
 }
 
@@ -203,6 +233,7 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* pro
 
 	for (const std::string& path : files) {
 		std::string_view ext = fsutil::getFileExt(path);
+
 		if (ext == ".retroplug" || ext == ".rplg") {
 			projectPaths.push_back(path);
 		} else {
@@ -221,14 +252,12 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* pro
 	if (projectPaths.size() > 0) {
 		// Load project
 		project->load(projectPaths[0]);
-		addRecent(RECENT_FILES_PATH, projectPaths[0]);
+		addRecent(RECENT_FILES_PATH, RecentPath { .projectPath = std::string(projectPaths[0]) });
 
 		return true;
 	} else if (romPaths.size() > 0) {
 		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
 			auto& path = romPaths[i];
-
-			addRecent(RECENT_FILES_PATH, path.first);
 
 			// Load system
 			std::string sramPath;
@@ -242,6 +271,13 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* pro
 			}
 
 			SystemPtr system = project->addSystem(path.second, path.first, sramPath);
+			std::string romName = system->getRomName();
+
+			addRecent(RECENT_FILES_PATH, RecentPath {
+				.romPath = std::string(path.first),
+				.romName = system->getRomName(),
+				.sramPath = sramPath
+			});
 
 			/*std::string systemName = fmt::format("System {}", system->getId());
 
@@ -265,15 +301,23 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* pro
 }
 
 void MenuBuilder::populateRecent(Menu& root, Project* project, SystemPtr system) {
-	std::vector<std::string> paths;
+	std::vector<RecentPath> paths;
 	loadRecent(RECENT_FILES_PATH, paths);
 
-	for (const std::string& path : paths) {
-		root.action(fsutil::getFilename(path), [p = std::string(path), project, system]() {
+	for (const RecentPath& path : paths) {
+		std::string name;
+
+		if (!path.sramPath.empty()) {
+			name = fmt::format("{} [{}]", fsutil::getFilename(path.sramPath), path.romName);
+		} else if (!path.romPath.empty()) {
+			name = fsutil::getFilename(path.romPath);
+		}
+
+		root.action(name, [p = path, project, system]() {
 			if (system) {
-				handleSystemLoad(p, "", system);
+				handleSystemLoad(p.romPath, p.sramPath, system);
 			} else {
-				handleLoad(std::vector<std::string> { p }, project);
+				handleLoad(std::vector<std::string> { p.romPath }, project);
 			}
 		});
 	}
@@ -284,7 +328,7 @@ void MenuBuilder::systemAddMenu(Menu& root, Project* project, SystemPtr system) 
 
 	loadRoot.action("Duplicate Current", [project, system]() { project->duplicateSystem(system->getId()); });
 
-	populateRecent(loadRoot.subMenu("Recent"), project, system);
+	populateRecent(loadRoot.subMenu("Recent"), project, nullptr);
 
 	loadRoot
 		.action("ROM...", [project]() { loadRomDialog(project, nullptr); })

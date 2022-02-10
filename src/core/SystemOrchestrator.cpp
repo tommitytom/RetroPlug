@@ -36,22 +36,16 @@ SystemPtr SystemOrchestrator::createUiSystem(SystemType systemType, std::string_
 	return nullptr;
 }
 
-SystemPtr SystemOrchestrator::createAudioSystem(SystemType systemType, const Uint8Buffer* romData, const Uint8Buffer* sramData, const Uint8Buffer* stateData) {
+SystemPtr SystemOrchestrator::createAudioSystem(SystemType systemType, LoadConfig&& loadConfig) {
+	assert(loadConfig.romBuffer);
+	
 	SystemManagerBase* manager = _processor->findManager(systemType);
 	assert(manager);
-
+	
 	SystemPtr system = manager->create(_nextId++);
 	system->setStateCopyInterval(1000);
 
-	system->loadRom(romData);
-
-	if (sramData) {
-		system->loadSram(sramData, false);
-	}
-
-	if (stateData) {
-		system->loadState(stateData);
-	}
+	system->load(std::forward<LoadConfig>(loadConfig));
 
 	ProxySystemPtr proxy = manager->createProxy(system->getId());
 	proxy->handleSetup(system);
@@ -63,20 +57,23 @@ SystemPtr SystemOrchestrator::createAudioSystem(SystemType systemType, const Uin
 }
 
 SystemPtr SystemOrchestrator::createAudioSystem(SystemType systemType, std::string_view romPath, std::string_view sramPath) {
-	Uint8Buffer romData;
-	Uint8Buffer sramData;
+	LoadConfig loadConfig = LoadConfig {
+		.romBuffer = std::make_shared<Uint8Buffer>(),
+		.sramBuffer = std::make_shared<Uint8Buffer>()
+	};
 
-	if (!fsutil::readFile(romPath, &romData)) {
+	if (!fsutil::readFile(romPath, loadConfig.romBuffer.get())) {
 		return nullptr;
 	}
 
 	if (sramPath.size()) {
-		if (!fsutil::readFile(sramPath, &sramData)) {
+		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
+		if (!fsutil::readFile(sramPath, loadConfig.sramBuffer.get())) {
 			// LOG
 		}
 	}
 
-	return createAudioSystem(systemType, &romData, sramData.size() > 0 ? &sramData : nullptr);
+	return createAudioSystem(systemType, std::move(loadConfig));
 }
 
 void SystemOrchestrator::processIncoming() {

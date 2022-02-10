@@ -154,21 +154,22 @@ void UiContext::onDrop(int count, const char** paths) {
 	_state.viewManager.onDrop(p);
 }
 
-/*#include "roms/lsdjrom.h"
+#include "roms/lsdjrom.h"
 #include "roms/lsdjsav.h"
 
 #include "sameboy/SameBoySystem.h"
 
-SystemPtr sys;*/
+SystemPtr sys;
 
 void UiContext::onTouchStart(double x, double y) {
-	/*if (!sys) {
-		Uint8Buffer romBuffer(LsdjRom, LsdjRom_len);
-		Uint8Buffer savBuffer(LsdjSav, LsdjSav_len);
-		sys = _project->addSystem<SameBoySystem>(&romBuffer, &savBuffer);
+	if (!sys) {
+		sys = _project->addSystem<SameBoySystem>({
+			.romBuffer = std::make_shared<Uint8Buffer>(LsdjRom, LsdjRom_len),
+			.sramBuffer = std::make_shared<Uint8Buffer>(LsdjSav, LsdjSav_len)
+		});
 	} else {
 		sys->setButtonState(ButtonType::Start, true);
-	}*/
+	}
 }
 
 void UiContext::onTouchMove(double x, double y) {
@@ -176,9 +177,9 @@ void UiContext::onTouchMove(double x, double y) {
 }
 
 void UiContext::onTouchEnd(double x, double y) {
-	/*if (sys) {
+	if (sys) {
 		sys->setButtonState(ButtonType::Start, false);
-	}*/
+	}
 }
 
 void UiContext::onTouchCancel(double x, double y) {

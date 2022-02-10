@@ -9,13 +9,16 @@ newoption {
 
 util.disableFastUpToDateCheck({ "configure" })
 
+local buildFolder = _ACTION
+
 local PLATFORMS = { "x86", "x64" }
 if _OPTIONS["emscripten"] ~= nil then
 	PLATFORMS = { "x86" }
+	buildFolder = "emscripten"
 end
 
 workspace "RetroPlugAll"
-	location("build/" .. _ACTION)
+	location("build/" .. buildFolder)
 	platforms(PLATFORMS)
 	characterset "MBCS"
 	cppdialect "C++20"

@@ -73,8 +73,8 @@ SystemPtr Project::addSystem(SystemType type, std::string_view romPath, std::str
 	return system;
 }
 
-SystemPtr Project::addSystem(SystemType type, Uint8Buffer* romData, Uint8Buffer* sramData) {
-	SystemPtr system = _orchestrator->createAudioSystem(type, romData, sramData);
+SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig) {
+	SystemPtr system = _orchestrator->createAudioSystem(type, std::forward<LoadConfig>(loadConfig));
 	if (system) {
 		_state.systemSettings[system->getId()] = SystemSettings();
 	}
@@ -94,13 +94,17 @@ void Project::removeSystem(SystemId systemId) {
 void Project::duplicateSystem(SystemId systemId) {
 	SystemPtr system = _orchestrator->getProcessor().findSystem(systemId);
 
-	Uint8Buffer state;
-	system->saveState(state);
+	LoadConfig loadConfig = {
+		.romBuffer = std::make_shared<Uint8Buffer>(),
+		.stateBuffer = std::make_shared<Uint8Buffer>()
+	};
+
+	system->saveState(*loadConfig.stateBuffer);
 
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
-	const Uint8Buffer& romBuffer = romData.getBuffer();
+	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	SystemPtr newSystem = _orchestrator->createAudioSystem(system->getType(), &romBuffer, nullptr, &state);
+	SystemPtr newSystem = _orchestrator->createAudioSystem(system->getType(), std::move(loadConfig));
 
 	SystemSettings newSettings = _state.systemSettings[systemId];
 	newSettings.serialized.clear();

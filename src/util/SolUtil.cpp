@@ -14,7 +14,7 @@ void SolUtil::addIncludePath(sol::state& s, std::string_view path) {
 void SolUtil::prepareState(sol::state& s) {
 	s.open_libraries(sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, sol::lib::math);
 	//SolUtil::addIncludePath(s, "../../src/scripts/utils");
-	s.add_package_loader(CompiledScripts::utils::loader);	
+	s.add_package_loader(CompiledScripts::utils::loader);
 }
 
 bool SolUtil::serializeTable(sol::state& s, const sol::table& source, std::string& target) {

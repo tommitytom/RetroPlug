@@ -42,6 +42,35 @@ namespace rp {
 		uint32 audioFrameOffset = 0;
 	};
 
+	struct LoadConfig {
+		Uint8BufferPtr romBuffer;
+		Uint8BufferPtr sramBuffer;
+		Uint8BufferPtr stateBuffer;
+		bool reset = false;
+
+		void merge(LoadConfig& other) {
+			if (other.romBuffer) {
+				romBuffer = std::move(other.romBuffer);
+			}
+
+			if (other.sramBuffer) {
+				sramBuffer = std::move(other.sramBuffer);
+			}
+
+			if (other.stateBuffer) {
+				stateBuffer = std::move(other.stateBuffer);
+			}
+
+			if (other.reset) {
+				other.reset = reset;
+			}
+		}
+
+		bool hasChanges() const {
+			return romBuffer || sramBuffer || stateBuffer || reset;
+		}
+	};
+
 	struct SystemIo {
 		SystemId systemId;
 
@@ -50,14 +79,14 @@ namespace rp {
 			std::vector<ButtonStream<8>> buttons;
 			std::vector<MemoryPatch> patches;
 			bool requestReset = false;
-			Uint8BufferPtr romToLoad;
+			LoadConfig loadConfig;
 
 			void reset() {
 				serial.reset();
 				buttons.clear();
 				patches.clear();
 				requestReset = false;
-				romToLoad = nullptr;
+				loadConfig = LoadConfig();
 			}
 		} input;
 
@@ -78,8 +107,8 @@ namespace rp {
 		void merge(SystemIo& other) { 
 			input.requestReset |= other.input.requestReset;
 
-			if (other.input.romToLoad) {
-				input.romToLoad = std::move(other.input.romToLoad);
+			if (other.input.loadConfig.romBuffer) {
+				input.loadConfig.romBuffer = std::move(other.input.loadConfig.romBuffer);
 			}
 			
 			while (other.input.serial.count()) {
@@ -166,11 +195,7 @@ namespace rp {
 
 		virtual MemoryAccessor getMemory(MemoryType type, AccessType access) { return MemoryAccessor(); }
 
-		virtual void loadRom(const Uint8Buffer* romBuffer) {}
-
-		virtual void loadSram(const Uint8Buffer* sramBuffer, bool reset) {}
-
-		virtual bool loadState(const Uint8Buffer* stateBuffer) { return false; }
+		virtual bool load(LoadConfig&& loadConfig) { return false; }
 
 		virtual void reset() {}
 

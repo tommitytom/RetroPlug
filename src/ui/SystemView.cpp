@@ -86,9 +86,6 @@ void SystemView::buildMenu(Menu& target) {
 		.action("Reset System", [this]() {
 			_system->reset();
 		})
-		.action("Duplicate System", [this, project]() {
-			project->duplicateSystem(_system->getId());
-		})
 		.action("Remove System", [this, project]() {
 			if (project->getState().systemSettings.size() > 1) {
 				project->removeSystem(_system->getId());

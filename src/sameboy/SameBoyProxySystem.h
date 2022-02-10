@@ -25,7 +25,7 @@ namespace rp {
 
 		void reset() override;
 
-		void loadRom(const Uint8Buffer* romBuffer) override;
+		bool load(LoadConfig&& loadConfig) override;
 
 		bool saveSram(Uint8Buffer& target) override;
 

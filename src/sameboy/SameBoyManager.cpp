@@ -69,15 +69,17 @@ void SameBoyManager::process(uint32 frameCount) {
 		GB_gameboy_t* gb = state->gb;
 
 		if (state->io) {
-			processButtons(state->io->input.buttons, state->buttonQueue, 48000 / 1000.0);
-			processPatches(gb, state->io->input.patches);
-			
-			if (state->io->input.requestReset) {
-				system->reset();
+			SystemIo::Input& input = state->io->input;
+
+			processButtons(input.buttons, state->buttonQueue, 48000 / 1000.0);
+			processPatches(gb, input.patches);
+
+			if (input.loadConfig.hasChanges()) {
+				system->load(std::move(input.loadConfig));
 			}
 
-			if (state->io->input.romToLoad) {
-				system->loadRom(state->io->input.romToLoad.get());
+			if (input.requestReset) {
+				system->reset();
 			}
 		}
 

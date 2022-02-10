@@ -2,6 +2,7 @@
 
 #include "platform/Menu.h"
 #include "core/Project.h"
+#include "util/RecentUtil.h"
 
 #include "platform/FileDialog.h"
 

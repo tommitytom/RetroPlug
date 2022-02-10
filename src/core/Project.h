@@ -88,11 +88,11 @@ namespace rp {
 		SystemPtr addSystem(SystemType type, std::string_view romPath, std::string_view sramPath = "");
 
 		template <typename T>
-		SystemPtr addSystem(Uint8Buffer* romData, Uint8Buffer* sramData = nullptr) {
-			return addSystem(entt::type_id<T>().seq(), romData, sramData);
+		SystemPtr addSystem(LoadConfig&& loadConfig) {
+			return addSystem(entt::type_id<T>().seq(), std::forward<LoadConfig>(loadConfig));
 		}
 
-		SystemPtr addSystem(SystemType type, Uint8Buffer* romData, Uint8Buffer* sramData = nullptr);
+		SystemPtr addSystem(SystemType type, LoadConfig&& loadConfig);
 
 		void removeSystem(SystemId systemId);
 
