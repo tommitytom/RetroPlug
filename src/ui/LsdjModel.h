@@ -4,10 +4,9 @@
 #include <vector>
 #include <unordered_map>
 
-#include "platform/Types.h"
 #include "core/SystemSettings.h"
-
 #include "lsdj/Sav.h"
+#include "platform/Types.h"
 
 namespace rp {
 	struct SampleSettings {
@@ -42,16 +41,16 @@ namespace rp {
 
 	using KitIndex = size_t;
 
-	class LsdjModel : public Model {
+	class LsdjModel final : public Model {
 	public:
 		std::unordered_map<KitIndex, KitState> kits;
 
 	public:
 		LsdjModel(): Model("lsdj") {}
 
-		void serialize(sol::state& s, sol::table target) final override;
+		void onSerialize(sol::state& s, sol::table target) final override;
 
-		void deserialize(sol::state& s, sol::table source) final override;
+		void onDeserialize(sol::state& s, sol::table source) final override;
 
 		void updateKit(KitIndex kitIdx);
 

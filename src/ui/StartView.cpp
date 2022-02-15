@@ -2,14 +2,14 @@
 
 #include <sol/sol.hpp>
 
-#include "util/fs.h"
-#include "platform/FileDialog.h"
 #include "core/Project.h"
-#include "util/SolUtil.h"
+#include "platform/FileDialog.h"
+#include "roms/mgb.h"
 #include "sameboy/SameBoySystem.h"
 #include "ui/MenuBuilder.h"
+#include "util/fs.h"
+#include "util/SolUtil.h"
 
-#include "roms/mgb.h"
 
 using namespace rp;
 

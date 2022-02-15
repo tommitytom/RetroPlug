@@ -2,8 +2,8 @@
 
 #include <sol/sol.hpp>
 
-#include "lsdj/Rom.h"
 #include "lsdj/KitUtil.h"
+#include "lsdj/Rom.h"
 
 using namespace rp;
 
@@ -52,7 +52,7 @@ SampleSettings deserializeSettings(sol::table data) {
 	return s;
 }
 
-void LsdjModel::serialize(sol::state& s, sol::table target) {
+void LsdjModel::onSerialize(sol::state& s, sol::table target) {
 	sol::table kitTable = target.create_named("kits");
 
 	for (auto& [kitIdx, kitState] : kits) {
@@ -76,7 +76,7 @@ void LsdjModel::serialize(sol::state& s, sol::table target) {
 	}
 }
 
-void LsdjModel::deserialize(sol::state& s, sol::table source) {
+void LsdjModel::onDeserialize(sol::state& s, sol::table source) {
 	kits.clear();
 
 	sol::table kitsTable = source["kits"];

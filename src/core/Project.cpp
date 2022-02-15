@@ -41,7 +41,7 @@ void Project::deserializeModel(SystemId systemId, std::shared_ptr<Model> model) 
 
 			if (m.valid()) {
 				spdlog::info("Deserializing data for {}", model->getName());
-				model->deserialize(*_lua, m);
+				model->onDeserialize(*_lua, m);
 			}
 		}
 	}
