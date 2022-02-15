@@ -7,17 +7,17 @@
 #include <spdlog/spdlog.h>
 
 #include "View.h"
-#include "core/System.h"
-#include "lsdj/Ram.h"
-#include "lsdj/OffsetLookup.h"
+#include "core/SystemWrapper.h"
 #include "lsdj/LsdjCanvas.h"
 #include "lsdj/LsdjUtil.h"
+#include "lsdj/OffsetLookup.h"
+#include "lsdj/Ram.h"
 #include "ui/LsdjCanvasView.h"
-#include "util/HashUtil.h"
-#include "ui/LsdjRefresher.h"
 #include "ui/LsdjModel.h"
-#include "util/StringUtil.h"
+#include "ui/LsdjRefresher.h"
 #include "ui/SystemOverlayManager.h"
+#include "util/HashUtil.h"
+#include "util/StringUtil.h"
 
 namespace rp {
 	const size_t MAX_UNDO_QUEUE_SIZE = 10;
@@ -27,7 +27,7 @@ namespace rp {
 
 	class LsdjOverlay final : public LsdjCanvasView {
 	private:
-		SystemPtr _system;
+		SystemWrapperPtr _system;
 		std::shared_ptr<LsdjModel> _model;
 		
 		lsdj::MemoryOffsets _ramOffsets;
@@ -51,16 +51,16 @@ namespace rp {
 
 		~LsdjOverlay() {}
 
-		void onInitialized() final override;
+		void onInitialized() override;
 
-		void onMenu(Menu& menu) final override;
+		void onMenu(Menu& menu) override;
 
-		bool onKey(VirtualKey::Enum key, bool down) final override;
+		bool onKey(VirtualKey::Enum key, bool down) override;
 
-		bool onMouseMove(Point<uint32> pos) final override;
+		bool onMouseMove(Point<uint32> pos) override;
 
-		void onUpdate(f32 delta) final override;
+		void onUpdate(f32 delta) override;
 
-		void onRender() final override;
+		void onRender() override;
 	};
 }

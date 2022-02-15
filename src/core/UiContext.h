@@ -11,7 +11,6 @@
 #include "core/SystemManager.h"
 #include "core/SystemProcessor.h"
 #include "core/SystemSettings.h"
-#include "core/SystemOrchestrator.h"
 #include "core/Proxies.h"
 #include "core/UiState.h"
 #include "ui/ViewManager.h"
@@ -28,7 +27,6 @@ namespace rp {
 	class UiContext {
 	private:
 		UiState _state;
-		SystemOrchestrator _orchestrator;
 		Project* _project;
 
 		NVGcontext* _vg = nullptr;

@@ -4,9 +4,7 @@
 
 namespace rp {
 	struct RecentPath {
-		std::string romPath;
-		std::string romName;
-		std::string sramPath;
-		std::string projectPath;
+		std::string path;
+		std::string name;
 	};
 }

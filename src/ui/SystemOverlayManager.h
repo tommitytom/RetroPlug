@@ -29,7 +29,7 @@ namespace rp {
 				.type()
 				.template ctor< &constructOverlay<T>, entt::as_ref_t >();
 
-			_factories.push_back({ romFilter, entt::resolve<T>() });
+			_factories.push_back({ std::move(romFilter), entt::resolve<T>() });
 		}
 
 		std::vector<ViewPtr> createOverlays(std::string_view romName) {

@@ -3,12 +3,14 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include <sol/forward.hpp>
 
+#include "core/ModelFactory.h"
 #include "core/ProjectState.h"
 #include "core/ResourceManager.h"
-#include "core/SystemOrchestrator.h"
 #include "core/Serializable.h"
+#include "core/SystemWrapper.h"
 
 namespace rp {
 	class Project {
@@ -16,16 +18,36 @@ namespace rp {
 		ProjectState _state;
 		ResourceManager _resourceManager;
 
-		SystemOrchestrator* _orchestrator = nullptr;
-
 		sol::state* _lua = nullptr;
 		int32 _version = 0;
+		SystemId _nextId = 1;
+
+		std::vector<SystemWrapperPtr> _systems;
+
+		SystemProcessor* _processor;
+		OrchestratorMessageBus* _messageBus;
+		ModelFactory _modelFactory;
 
 	public:
 		Project();
 		~Project();
 
-		template <typename T>
+		ModelFactory& getModelFactory() {
+			return _modelFactory;
+		}
+
+		void setup(SystemProcessor* processor, OrchestratorMessageBus* orchestratorMessageBus) {
+			_processor = processor;
+			_messageBus = orchestratorMessageBus;
+		}
+
+		SystemProcessor& getProcessor() {
+			return *_processor;
+		}
+
+		void processIncoming();
+
+		/*template <typename T>
 		std::shared_ptr<T> addModel(SystemId systemId) {
 			entt::id_type typeId = entt::type_id<T>().seq();
 			std::shared_ptr<T> v = std::make_shared<T>();
@@ -35,9 +57,10 @@ namespace rp {
 					v->setSystem(system);
 					break;
 				}				
-			}			
+			}
 
 			deserializeModel(systemId, v);
+
 			_state.systemSettings[systemId].models[typeId] = v;
 
 			return v;
@@ -64,7 +87,7 @@ namespace rp {
 			}
 
 			return addModel<T>(systemId);
-		}
+		}*/
 
 		const ProjectState& getState() const {
 			return _state;
@@ -81,22 +104,24 @@ namespace rp {
 		bool save(std::string_view path);
 
 		template <typename T>
-		SystemPtr addSystem(std::string_view romPath, std::string_view sramPath = "") {
+		SystemWrapperPtr addSystem(std::string_view romPath, std::string_view sramPath = "", SystemId systemId = INVALID_SYSTEM_ID) {
 			return addSystem(entt::type_id<T>().seq(), romPath, sramPath);
 		}
 
-		SystemPtr addSystem(SystemType type, std::string_view romPath, std::string_view sramPath = "");
+		SystemWrapperPtr addSystem(SystemType type, std::string_view romPath, std::string_view sramPath = "", SystemId systemId = INVALID_SYSTEM_ID);
 
 		template <typename T>
-		SystemPtr addSystem(LoadConfig&& loadConfig) {
+		SystemWrapperPtr addSystem(LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
 			return addSystem(entt::type_id<T>().seq(), std::forward<LoadConfig>(loadConfig));
 		}
 
-		SystemPtr addSystem(SystemType type, LoadConfig&& loadConfig);
+		SystemWrapperPtr addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
 
 		void removeSystem(SystemId systemId);
 
 		void duplicateSystem(SystemId systemId);
+
+		SystemWrapperPtr findSystem(SystemId systemId);
 
 		void clear();
 
@@ -108,14 +133,9 @@ namespace rp {
 			return (f32)_state.settings.zoom + 1.0f;
 		}
 
-		void setOrchestrator(SystemOrchestrator* orchestrator) {
-			_orchestrator = orchestrator;
+		std::vector<SystemWrapperPtr>& getSystems() {
+			return _systems;
 		}
-
-		SystemOrchestrator* getOrchestrator() {
-			return _orchestrator;
-		}
-
 
 	private:
 		void deserializeModel(SystemId systemId, std::shared_ptr<Model> model);

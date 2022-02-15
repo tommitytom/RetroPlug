@@ -1,13 +1,13 @@
 #include "LsdjOverlay.h"
 
+#include "core/Project.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
-#include "core/Project.h"
 #include "ui/SystemView.h"
 
 using namespace rp;
 
-void showSampleManager(View* parent, SystemPtr system, LsdjModel& state) {
+void showSampleManager(View* parent, SystemWrapperPtr system, LsdjModel& state) {
 	std::vector<SamplerView*> samplers;
 	parent->findChildren<SamplerView>(samplers);
 
@@ -19,7 +19,7 @@ void showSampleManager(View* parent, SystemPtr system, LsdjModel& state) {
 		}
 	}
 
-	std::shared_ptr<SamplerView> view = parent->addChild<SamplerView>("LSDJ Sample Manager");
+	std::shared_ptr<SamplerView> view = parent->addChild<SamplerView>("LSDj Sample Manager");
 	view->setSystem(system);
 
 	view->focus();
@@ -29,10 +29,11 @@ void LsdjOverlay::onInitialized() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
 
 	Project* project = getShared<Project>();
-	_model = project->getOrCreateModel<LsdjModel>(_system->getId());
+	_model = _system->getModel<LsdjModel>();
 	_system->reset();
 
-	MemoryAccessor buffer = _system->getMemory(MemoryType::Rom, AccessType::Read);
+	SystemPtr system = _system->getSystem();
+	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	if (buffer.isValid()) {
 		lsdj::Rom rom(buffer);
@@ -43,7 +44,7 @@ void LsdjOverlay::onInitialized() {
 		_offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), _ramOffsets, false);
 
 		if (_offsetsValid) {
-			_refresher.setSystem(_system, _ramOffsets);
+			_refresher.setSystem(system, _ramOffsets);
 		} else {
 			spdlog::warn("Failed to find ROM offsets");
 		}
@@ -57,6 +58,8 @@ void LsdjOverlay::onMenu(Menu& menu) {
 }
 
 bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
+	SystemPtr system = _system->getSystem();
+
 	if (down && key == VirtualKey::Z) {
 		if (_undoPosition > 1) {
 			_undoPosition--;
@@ -65,8 +68,8 @@ bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
 
 			// Copy frame buffer and display it until refresh is finished
 
-			lsdj::Ram ram(_system->getMemory(MemoryType::Ram, AccessType::Read), _ramOffsets);
-			MemoryAccessor sram = _system->getMemory(MemoryType::Sram, AccessType::Write);
+			lsdj::Ram ram(system->getMemory(MemoryType::Ram, AccessType::Read), _ramOffsets);
+			MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Write);
 
 			if (ram.isValid() && sram.isValid()) {
 				_songHash = HashUtil::hash(_undoQueue[_undoPosition]);
@@ -85,10 +88,11 @@ bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
 
 bool LsdjOverlay::onMouseMove(Point<uint32> pos) {
 	_mousePosition = pos;
+	SystemPtr system = _system->getSystem();
 
 	Point<uint8> cursorPos;
 	if (LsdjUtil::pixelToCursorPos(pos, cursorPos)) {
-		lsdj::Ram ram(_system->getMemory(MemoryType::Ram, AccessType::Read), _ramOffsets);
+		lsdj::Ram ram(system->getMemory(MemoryType::Ram, AccessType::Read), _ramOffsets);
 
 		if (ram.isValid()) {
 			//ram.setCursorPosition(cursorPos);
@@ -103,13 +107,15 @@ bool LsdjOverlay::onMouseMove(Point<uint32> pos) {
 
 void LsdjOverlay::onUpdate(f32 delta) {
 	if (_system) {
+		SystemPtr system = _system->getSystem();
+
 		if (_songSwapCooldown > 0.0f) {
 			_songSwapCooldown -= delta;
 		}
 
 		_refresher.update(delta);
 
-		MemoryAccessor buffer = _system->getMemory(MemoryType::Sram, AccessType::Read);
+		MemoryAccessor buffer = system->getMemory(MemoryType::Sram, AccessType::Read);
 		if (buffer.isValid()) {
 			Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
 			uint64 songHash = HashUtil::hash(songBuffer);

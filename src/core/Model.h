@@ -23,5 +23,11 @@ namespace rp {
 		SystemPtr getSystem() {
 			return _system;
 		}
+
+		virtual void onBeforeLoad(LoadConfig& loadConfig) {}
+
+		virtual void onAfterLoad(SystemPtr system) {}
 	};
+
+	using ModelPtr = std::shared_ptr<Model>;
 }

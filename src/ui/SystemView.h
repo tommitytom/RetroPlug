@@ -1,25 +1,25 @@
 #pragma once
 
 #include "TextureView.h"
-#include "core/System.h"
+#include "core/SystemWrapper.h"
 #include "platform/Menu.h"
 
 namespace rp {
 	class SystemView final : public TextureView {
 	private:
-		SystemPtr _system;
+		SystemWrapperPtr _system;
 		Image _frameBuffer;
 
 	public:
 		SystemView();
 		~SystemView() {}
 
-		void setSystem(SystemPtr& system) {
+		void setSystem(SystemWrapperPtr& system) {
 			_system = system;
-			setDimensions(system->getResolution());
+			setDimensions(system->getSystem()->getResolution());
 		}
 
-		SystemPtr getSystem() {
+		SystemWrapperPtr getSystem() {
 			return _system;
 		}
 

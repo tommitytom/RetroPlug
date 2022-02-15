@@ -32,8 +32,8 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 		ButtonType::Enum button = keyToButton(key);
 
 		if (button != ButtonType::MAX) {
-			SystemIoPtr& io = _system->getStream();
-			_system->setButtonState(button, down);
+			SystemIoPtr& io = _system->getSystem()->getStream();
+			_system->getSystem()->setButtonState(button, down);
 		}
 	}
 
@@ -41,7 +41,7 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 }
 
 bool SystemView::onButton(ButtonType::Enum button, bool down) {
-	SystemIoPtr& io = _system->getStream();
+	SystemIoPtr& io = _system->getSystem()->getStream();
 
 	if (io) {
 		io->input.buttons.push_back(ButtonStream<8>{
@@ -54,7 +54,7 @@ bool SystemView::onButton(ButtonType::Enum button, bool down) {
 }
 
 void SystemView::onUpdate(f32 delta) {
-	SystemIoPtr& io = _system->getStream();
+	SystemIoPtr& io = _system->getSystem()->getStream();
 	if (!io) {
 		return;
 	}
@@ -77,7 +77,7 @@ void SystemView::buildMenu(Menu& target) {
 	Project* project = getShared<Project>();
 	ProjectState& projectState = project->getState();
 
-	Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
+	Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getSystem()->getRomName()).separator();
 	MenuBuilder::systemLoadMenu(root, project, _system);
 	MenuBuilder::systemAddMenu(root, project, _system);
 	MenuBuilder::systemSaveMenu(root, project, _system);

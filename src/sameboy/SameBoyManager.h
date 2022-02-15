@@ -16,6 +16,8 @@ namespace rp {
 			return StringUtil::endsWith(path, ".sav");
 		}
 
+		std::string getRomName(const Uint8Buffer& romData) override;
+
 		void process(uint32 frameCount) override;
 	};
 }

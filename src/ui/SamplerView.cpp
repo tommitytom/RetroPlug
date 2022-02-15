@@ -28,10 +28,10 @@ SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	_waveView = addChildAt<WaveView>("SamplerWaveView", BOX_AREA);
 }
 
-void SamplerView::setSystem(SystemPtr& system) {
+void SamplerView::setSystem(SystemWrapperPtr& system) {
 	_system = system;
 
-	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
 		_canvas.setFont(rom.getFont(1));
 		_canvas.setPalette(rom.getPalette(0));
@@ -188,7 +188,7 @@ void SamplerView::onRender() {
 
 	LsdjModel* model = getModel();
 
-	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
 		return;
 	}
@@ -357,7 +357,7 @@ void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 }
 
 void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths) {
-	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
 		return;
 	}
@@ -403,7 +403,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 
 LsdjModel* SamplerView::getModel() {
 	if (_system) {
-		return getShared<Project>()->getModel<LsdjModel>(_system->getId()).get();
+		return _system->getModel<LsdjModel>().get();
 	}
 
 	return nullptr;
@@ -424,7 +424,7 @@ void SamplerView::updateSampleBuffers() {
 }
 
 void SamplerView::updateWaveform() {
-	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
 		return;
 	}

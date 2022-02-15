@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/System.h"
-#include "ui/LsdjCanvasView.h"
-#include "lsdj/LsdjUi.h"
-#include "ui/WaveView.h"
-#include "ui/MenuView.h"
-#include "ui/LsdjModel.h"
-#include "util/SampleLoaderUtil.h"
+#include "core/SystemWrapper.h"
 #include "lsdj/KitUtil.h"
+#include "lsdj/LsdjUi.h"
+#include "ui/LsdjCanvasView.h"
+#include "ui/LsdjModel.h"
+#include "ui/MenuView.h"
+#include "ui/WaveView.h"
+#include "util/SampleLoaderUtil.h"
 
 namespace rp {
 	struct SamplerViewState {
@@ -18,7 +18,7 @@ namespace rp {
 
 	class SamplerView final : public LsdjCanvasView {
 	private:
-		SystemPtr _system;
+		SystemWrapperPtr _system;
 		SamplerViewState _samplerState;
 		WaveViewPtr _waveView;
 
@@ -32,9 +32,9 @@ namespace rp {
 		SamplerView();
 		~SamplerView() {}
 
-		void setSystem(SystemPtr& system);
+		void setSystem(SystemWrapperPtr& system);
 
-		SystemPtr getSystem() { return _system; }
+		SystemWrapperPtr getSystem() { return _system; }
 
 		void onInitialized() override;
 

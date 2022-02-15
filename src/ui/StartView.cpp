@@ -13,20 +13,6 @@
 
 using namespace rp;
 
-class FileManager {
-private:
-	std::string _rootPath;
-	std::vector<std::string> _recent;
-
-public:
-	void addRecent() {
-	}
-
-	void importFile(std::string_view path, std::string_view target) {
-
-	}
-};
-
 void StartView::setupMenu() {
 	spdlog::info("setting up menu");
 
@@ -51,7 +37,7 @@ void StartView::setupMenu() {
 		.action("Load MGB", [this]() {
 			Project* project = getShared<Project>();
 
-			SystemPtr system = project->addSystem<SameBoySystem>({ 
+			SystemWrapperPtr system = project->addSystem<SameBoySystem>({ 
 				.romBuffer = std::make_shared<Uint8Buffer>(mgb, mgb_len) 
 			});
 

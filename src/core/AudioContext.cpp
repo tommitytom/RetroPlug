@@ -26,6 +26,14 @@ void AudioContext::process(f32* target, uint32 frameCount) {
 			_state.processor.removeSystem(change.remove);
 		}
 
+		if (change.replace) {
+			SystemPtr old = _state.processor.removeSystem(change.replace->getId());
+			_state.processor.addSystem(change.replace);
+			change.replace = old;
+
+			_orchestratorMessageBus->audioToUi.enqueue(change);
+		}
+
 		if (change.swap) {
 			SystemPtr old = _state.processor.removeSystem(change.swap->getId());
 			_state.processor.addSystem(change.swap);

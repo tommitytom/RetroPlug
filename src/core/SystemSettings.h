@@ -22,6 +22,6 @@ namespace rp {
 		InputSettings input;
 
 		std::string serialized;
-		std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;
+		//std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;
 	};
 }

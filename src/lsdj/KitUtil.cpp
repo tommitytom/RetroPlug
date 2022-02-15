@@ -183,7 +183,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData);
 
 		targets.push_back(sampleData);
-		totalSampleDataSize += sampleData->size();
+		totalSampleDataSize += (uint32)sampleData->size();
 	}
 
 	assert(totalSampleDataSize <= lsdj::Kit::MAX_SAMPLE_SPACE);

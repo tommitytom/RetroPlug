@@ -55,6 +55,12 @@ void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<Offse
 	}
 }
 
+#include "util/GameboyUtil.h"
+
+std::string SameBoyManager::getRomName(const Uint8Buffer& romData) {
+	return GameboyUtil::getRomName((const char*)romData.data());
+}
+
 void SameBoyManager::process(uint32 frameCount) {
 	std::vector<SystemPtr>& systems = getSystems();
 

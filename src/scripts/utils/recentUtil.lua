@@ -1,21 +1,19 @@
 local RECENT_LIST_MAX_SIZE = 30
 
-return function(tab, romPath, romName, sramPath, projectPath)
+return function(tab, path, name)
 	local recent = tab.recent or {}
 
 	-- Remove duplicates
 	for i, v in ipairs(recent) do
-		if v.romPath == romPath or v.sramPath == sramPath or v.projectPath == projectPath then
+		if v.path == path then
 			table.remove(recent, i)
 			break
 		end
 	end
 
 	table.insert(recent, 1, {
-		romPath = romPath,
-		romName = romName,
-		sramPath = sramPath,
-		projectPath = projectPath
+		path = path,
+		name = name
 	})
 
 	if #recent > RECENT_LIST_MAX_SIZE then

@@ -277,6 +277,7 @@ namespace rp {
 	struct OrchestratorChange {
 		SystemPtr add;
 		SystemPtr swap;
+		SystemPtr replace;
 		SystemId remove = INVALID_SYSTEM_ID;
 		SystemId reset = INVALID_SYSTEM_ID;
 	};

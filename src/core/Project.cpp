@@ -3,9 +3,10 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "ProjectSerializer.h"
+#include "core/ProjectSerializer.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/SolUtil.h"
+#include "util/fs.h"
 
 using namespace rp;
 
@@ -16,6 +17,16 @@ Project::Project() {
 Project::~Project() {
 	if (_lua) {
 		delete _lua;
+	}
+}
+
+void Project::processIncoming() {
+	OrchestratorChange change;
+	while (_messageBus->audioToUi.try_dequeue(change)) {
+		if (change.swap) {
+			// TODO: Remove placeholder?
+			_processor->addSystem(change.swap);
+		}
 	}
 }
 
@@ -48,7 +59,7 @@ void Project::load(std::string_view path) {
 
 	// Create systems from new state
 	for (auto& [systemId, settings] : _state.systemSettings) {
-		SystemPtr system = _orchestrator->createAudioSystem(entt::type_id<SameBoySystem>().seq(), settings.romPath, settings.sramPath);
+		SystemWrapperPtr system = addSystem<SameBoySystem>(settings.romPath, settings.sramPath);
 		systemSettings[system->getId()] = settings;
 	}
 
@@ -59,40 +70,59 @@ bool Project::save(std::string_view path) {
 	return ProjectSerializer::serialize(path, _state, true);
 }
 
-SystemPtr Project::addSystem(SystemType type, std::string_view romPath, std::string_view sramPath) {
-	SystemPtr system = _orchestrator->createAudioSystem(type, romPath, sramPath);
-	if (system) {
-		_state.systemSettings[system->getId()] = SystemSettings{
-			.romPath = std::string(romPath),
-			.sramPath = std::string(sramPath)
-		};
+SystemWrapperPtr Project::addSystem(SystemType type, std::string_view romPath, std::string_view sramPath, SystemId systemId) {
+	LoadConfig loadConfig = LoadConfig{
+		.romBuffer = std::make_shared<Uint8Buffer>(),
+		.sramBuffer = std::make_shared<Uint8Buffer>()
+	};
+
+	if (!fsutil::readFile(romPath, loadConfig.romBuffer.get())) {
+		return nullptr;
 	}
 
-	_version++;
+	if (sramPath.size()) {
+		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
+		if (!fsutil::readFile(sramPath, loadConfig.sramBuffer.get())) {
+			// LOG
+		}
+	}
 
-	return system;
+	return addSystem(type, std::move(loadConfig), systemId);
 }
 
-SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig) {
-	SystemPtr system = _orchestrator->createAudioSystem(type, std::forward<LoadConfig>(loadConfig));
-	if (system) {
-		_state.systemSettings[system->getId()] = SystemSettings();
+SystemWrapperPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId) {
+	if (systemId == INVALID_SYSTEM_ID) {
+		systemId = _nextId++;
 	}
 
+	SystemWrapperPtr system = std::make_shared<SystemWrapper>(systemId, _processor, _messageBus, &_modelFactory);
+	system->load(std::forward<LoadConfig>(loadConfig));
+
+	_state.systemSettings[systemId] = SystemSettings();
+	_systems.push_back(system);
 	_version++;
 
 	return system;
 }
 
 void Project::removeSystem(SystemId systemId) {
-	_orchestrator->removeSystem(systemId);
+	for (size_t i = 0; i < _systems.size(); ++i) {
+		SystemWrapperPtr system = _systems[i];
+
+		if (system->getId() == systemId) {
+			_systems.erase(_systems.begin() + i);
+		}
+	}
+
 	_state.systemSettings.erase(systemId);
+	_messageBus->uiToAudio.enqueue(OrchestratorChange{ .remove = systemId });
 
 	_version++;
 }
 
 void Project::duplicateSystem(SystemId systemId) {
-	SystemPtr system = _orchestrator->getProcessor().findSystem(systemId);
+	SystemWrapperPtr systemWrapper = findSystem(systemId);
+	SystemPtr system = systemWrapper->getSystem();
 
 	LoadConfig loadConfig = {
 		.romBuffer = std::make_shared<Uint8Buffer>(),
@@ -104,23 +134,28 @@ void Project::duplicateSystem(SystemId systemId) {
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	SystemPtr newSystem = _orchestrator->createAudioSystem(system->getType(), std::move(loadConfig));
+	SystemWrapperPtr newSystem = addSystem(system->getType(), std::move(loadConfig));
 
 	SystemSettings newSettings = _state.systemSettings[systemId];
 	newSettings.serialized.clear();
-	newSettings.models.clear();
 
 	_state.systemSettings[newSystem->getId()] = std::move(newSettings);
+}
 
-	_version++;
+SystemWrapperPtr Project::findSystem(SystemId systemId) {
+	for (size_t i = 0; i < _systems.size(); ++i) {
+		SystemWrapperPtr system = _systems[i];
+
+		if (system->getId() == systemId) {
+			return system;
+		}
+	}
+
+	return nullptr;
 }
 
 void Project::clear() {
 	_state = ProjectState();
-
-	if (_orchestrator) {
-		_orchestrator->clear();
-	}
 
 	if (_lua) {
 		delete _lua;

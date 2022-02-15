@@ -45,9 +45,9 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, bo
 
 		sol::table modelTable = systemTable.create_named("model");
 
-		for (auto& [modelType, model] : system.models) {
+		/*for (auto& [modelType, model] : system.models) {
 			model->serialize(s, modelTable.create_named(model->getName()));
-		}
+		}*/
 
 		systemsTable.add(systemTable);
 	}
@@ -122,7 +122,7 @@ bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state) 
 
 	sol::table systemsTable = target["systems"];
 
-	for (size_t i = 0; i < systemsTable.size(); ++i) {
+	for (SystemId i = 0; i < (SystemId)systemsTable.size(); ++i) {
 		sol::table systemTable = systemsTable[i + 1];
 		if (systemTable.valid() == false) {
 			spdlog::error("Failed to load system");

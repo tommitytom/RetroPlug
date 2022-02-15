@@ -16,11 +16,11 @@ namespace rp {
 namespace rp::MenuBuilder {
 	bool handleLoad(const std::vector<std::string>& files, Project* project);
 
-	void populateRecent(Menu& root, Project* project, SystemPtr system);
+	void populateRecent(Menu& root, Project* project, SystemWrapperPtr system);
 
-	void systemLoadMenu(Menu& root, Project* project, SystemPtr system);
+	void systemLoadMenu(Menu& root, Project* project, SystemWrapperPtr system);
 
-	void systemAddMenu(Menu& root, Project* project, SystemPtr system);
+	void systemAddMenu(Menu& root, Project* project, SystemWrapperPtr system);
 
-	void systemSaveMenu(Menu& root, Project* project, SystemPtr system);
+	void systemSaveMenu(Menu& root, Project* project, SystemWrapperPtr system);
 }

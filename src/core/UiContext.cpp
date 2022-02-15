@@ -6,23 +6,20 @@
 #include "core/AudioStreamSystem.h"
 #include "core/Input.h"
 #include "core/Project.h"
+#include "core/ProjectSerializer.h"
 #include "core/ProxySystem.h"
+#include "sameboy/SameBoyManager.h"
 #include "ui/SystemView.h"
 #include "ui/StartView.h"
+#include "ui/SystemOverlayManager.h"
 #include "util/fs.h"
 #include "util/StringUtil.h"
-
-#include "core/ProjectSerializer.h"
-#include "ui/SystemOverlayManager.h"
-
-#include "sameboy/SameBoyManager.h"
 
 using namespace rp;
 
 const f32 DISABLED_ALPHA = 0.75f;
 
 UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus):
-	_orchestrator(&_state.processor, orchestratorMessageBus),
 	_ioMessageBus(messageBus),
 	_orchestratorMessageBus(orchestratorMessageBus)
 {
@@ -34,7 +31,12 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 	}
 
 	_project =_state.viewManager.createShared<Project>();
-	_project->setOrchestrator(&_orchestrator);
+	_project->setup(&_state.processor, orchestratorMessageBus);
+
+	_project->getModelFactory().addModelFactory<LsdjModel>([](std::string_view romName) {
+		std::string shortName = StringUtil::toLower(romName).substr(0, 4);
+		return shortName == "lsdj";
+	});
 
 	SystemOverlayManager* overlayManager = _state.viewManager.createShared<SystemOverlayManager>();
 	overlayManager->addOverlayFactory<LsdjOverlay>([](std::string_view romName) {
@@ -159,7 +161,7 @@ void UiContext::onDrop(int count, const char** paths) {
 
 #include "sameboy/SameBoySystem.h"
 
-SystemPtr sys;
+SystemWrapperPtr sys;
 
 void UiContext::onTouchStart(double x, double y) {
 	if (!sys) {
@@ -168,7 +170,7 @@ void UiContext::onTouchStart(double x, double y) {
 			.sramBuffer = std::make_shared<Uint8Buffer>(LsdjSav, LsdjSav_len)
 		});
 	} else {
-		sys->setButtonState(ButtonType::Start, true);
+		sys->getSystem()->setButtonState(ButtonType::Start, true);
 	}
 }
 
@@ -178,7 +180,7 @@ void UiContext::onTouchMove(double x, double y) {
 
 void UiContext::onTouchEnd(double x, double y) {
 	if (sys) {
-		sys->setButtonState(ButtonType::Start, false);
+		sys->getSystem()->setButtonState(ButtonType::Start, false);
 	}
 }
 

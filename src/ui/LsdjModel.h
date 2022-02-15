@@ -7,6 +7,8 @@
 #include "platform/Types.h"
 #include "core/SystemSettings.h"
 
+#include "lsdj/Sav.h"
+
 namespace rp {
 	struct SampleSettings {
 		int32 dither = 1;
@@ -52,5 +54,13 @@ namespace rp {
 		void deserialize(sol::state& s, sol::table source) final override;
 
 		void updateKit(KitIndex kitIdx);
+
+		void onBeforeLoad(LoadConfig& loadConfig) override {
+			if (!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) {
+				lsdj::Sav sav;
+				loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
+				sav.save(*loadConfig.sramBuffer);
+			}
+		}
 	};
 }

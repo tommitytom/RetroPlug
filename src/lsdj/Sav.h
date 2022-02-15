@@ -188,9 +188,23 @@ namespace rp::lsdj {
 		lsdj_sav_t* _sav = nullptr;
 
 	public:
-		Sav() {}
+		Sav() {
+			lsdj_sav_new(&_sav, nullptr);
+		}
+
 		Sav(const Uint8Buffer& data) {
 			load(data);
+		}
+
+		~Sav() {
+			free();
+		}
+
+		void free() {
+			if (_sav) {
+				lsdj_sav_free(_sav);
+				_sav = nullptr;
+			}
 		}
 
 		bool isValid() const {
@@ -198,11 +212,7 @@ namespace rp::lsdj {
 		}
 
 		lsdj_error_t load(const uint8* data, size_t size) {
-			if (_sav) {
-				lsdj_sav_free(_sav);
-				_sav = nullptr;
-			}
-
+			free();
 			return lsdj_sav_read_from_memory(data, size, &_sav, nullptr);
 		}
 
@@ -210,10 +220,15 @@ namespace rp::lsdj {
 			return load(data.data(), data.size());
 		}
 
-		Uint8Buffer save() {
-			Uint8Buffer data(LSDJ_SAV_SIZE);
+		void save(Uint8Buffer& target) {
+			target.resize(LSDJ_SAV_SIZE);
 			size_t writeCount;
-			lsdj_sav_write_to_memory(_sav, data.data(), data.size(), &writeCount);
+			lsdj_sav_write_to_memory(_sav, target.data(), target.size(), &writeCount);
+		}
+		
+		Uint8Buffer save() {
+			Uint8Buffer data;
+			save(data);
 			return data;
 		}
 

@@ -9,7 +9,6 @@ local EMSDK_FLAGS = {
 	--"-s EXPORT_ES6=1",
 	--"-s MODULARIZE=1",
 	--"-s EXPORT_NAME=RetroPlugModule",
-	"--post-js ../../templates/processor.js",
 	--"-s SINGLE_FILE=1",
 	--"-s TOTAL_MEMORY=512MB",
 	"-s ENVIRONMENT=web,worker,audioworklet",
@@ -21,13 +20,16 @@ local EMSDK_FLAGS = {
 	"-s USE_GLFW=3",
 	"-s USE_WEBGL2=1",
 	"-s FORCE_FILESYSTEM=1",
-	"--shell-file ../../templates/shell_minimal.html",
 	--"-s FULL_ES3=1",
 	--"-s MIN_WEBGL_VERSION=2",
 	--"-s MAX_WEBGL_VERSION=2", -- https://emscripten.org/docs/porting/multimedia_and_graphics/OpenGL-support.html#opengl-support-webgl-subset
 	"-s NO_DISABLE_EXCEPTION_CATCHING=1",
-	"-lidbfs.js",
 	"-s ASYNCIFY",
+
+	"-lidbfs.js",
+
+	"--shell-file ../../templates/shell_minimal.html",
+	"--post-js ../../templates/processor.js",
 }
 
 local EMSDK_DEBUG_FLAGS = {

@@ -27,6 +27,8 @@ namespace rp {
 
 		virtual bool canLoadSram(std::string_view path) { return false; }
 
+		virtual std::string getRomName(const Uint8Buffer& romData) { return ""; }
+
 		void add(SystemPtr system) {
 			assert(system->getType() == _systemType);
 			_systems.push_back(system);
