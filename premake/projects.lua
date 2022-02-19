@@ -88,6 +88,7 @@ function m.RetroPlug.link()
 	dep.bgfx.link()
 	dep.liblsdj.link()
 	dep.lua.link()
+	dep.r8brain.link()
 
 	links { "RetroPlug" }
 end
