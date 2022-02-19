@@ -3,10 +3,9 @@
 #include <spdlog/spdlog.h>
 
 #include "core/AudioState.h"
-#include "core/UiState.h"
-//#include "core/Proxies.h"
 #include "core/System.h"
 #include "core/SystemProcessor.h"
+#include "core/UiState.h"
 #include "util/CircularBuffer.h"
 
 namespace rp {

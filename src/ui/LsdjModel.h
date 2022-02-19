@@ -5,12 +5,13 @@
 #include <unordered_map>
 
 #include "core/SystemSettings.h"
+#include "lsdj/OffsetLookup.h"
 #include "lsdj/Sav.h"
 #include "platform/Types.h"
 
 namespace rp {
 	struct SampleSettings {
-		int32 dither = 1;
+		int32 dither = 0xFF;
 		int32 volume = 0xFF;
 		int32 pitch = 0x7F;
 		int32 filter = 0;
@@ -42,24 +43,40 @@ namespace rp {
 	using KitIndex = size_t;
 
 	class LsdjModel final : public Model {
+	private:
+		lsdj::MemoryOffsets _ramOffsets;
+		bool _offsetsValid = false;
+		//LsdjRefresher _refresher;
+
 	public:
 		std::unordered_map<KitIndex, KitState> kits;
 
 	public:
 		LsdjModel(): Model("lsdj") {}
+		~LsdjModel() {}
 
-		void onSerialize(sol::state& s, sol::table target) final override;
+		void onSerialize(sol::state& s, sol::table target) override;
 
-		void onDeserialize(sol::state& s, sol::table source) final override;
+		void onDeserialize(sol::state& s, sol::table source) override;
+
+		void onBeforeLoad(LoadConfig& loadConfig) override;
+
+		void onAfterLoad(SystemPtr system) override;
 
 		void updateKit(KitIndex kitIdx);
 
-		void onBeforeLoad(LoadConfig& loadConfig) override {
-			if (!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) {
-				lsdj::Sav sav;
-				loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
-				sav.save(*loadConfig.sramBuffer);
-			}
+		KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);
+
+		KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, KitIndex kitIdx = -1);
+
+		lsdj::MemoryOffsets& getMemoryOffsets() {
+			return _ramOffsets;
+		}
+
+		bool getOffsetsValid() const {
+			return _offsetsValid;
 		}
 	};
+
+	using LsdjModelPtr = std::shared_ptr<LsdjModel>;
 }

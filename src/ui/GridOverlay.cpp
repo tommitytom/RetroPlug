@@ -48,9 +48,29 @@ void GridOverlay::onUpdate(f32 delta) {
 			}
 		}
 
-		// Check for systems that were added
+		for (SystemViewPtr systemView : systemViews) {
+			if (systemView->versionIsDirty()) {
+				systemView->removeChildren();
+
+				SystemWrapperPtr system = systemView->getSystem();
+
+				// TODO: Also remove any related windows (like lsdj sample manager)
+
+				std::vector<ViewPtr> overlays = getShared<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
+
+				for (ViewPtr overlay : overlays) {
+					overlay->setName(fmt::format("{} ({})", overlay->getName(), system->getSystem()->getRomName()));
+					systemView->addChild(overlay);
+				}
+
+				systemView->updateVersion();
+			}
+		}
+
 		for (SystemWrapperPtr system : systems) {
 			if (!hasSystem(systemViews, system)) {
+				// New system was added
+
 				std::string systemName = fmt::format("System {}", system->getId());
 				
 				SystemViewPtr systemView = _grid->addChild<SystemView>(systemName);

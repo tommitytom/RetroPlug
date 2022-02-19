@@ -4,29 +4,9 @@
 
 #include "lsdj/KitUtil.h"
 #include "lsdj/Rom.h"
+#include "util/StringUtil.h"
 
 using namespace rp;
-
-void LsdjModel::updateKit(KitIndex kitIdx) {
-	lsdj::Rom rom = getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
-	if (!rom.isValid()) {
-		return;
-	}
-
-	auto found = kits.find(kitIdx);
-	if (found == kits.end()) {
-		spdlog::error("Failed to update sample buffers - kit not found");
-		return;
-	}
-
-	std::vector<KitUtil::SampleData> sampleBuffers;
-	for (const KitSample& sample : found->second.samples) {
-		sampleBuffers.push_back(KitUtil::loadSample(sample.path));
-	}
-
-	lsdj::Kit kit = rom.getKit(kitIdx);
-	KitUtil::patchKit(kit, found->second, sampleBuffers);
-}
 
 sol::table serializeSettings(sol::state& s, const SampleSettings& settings) {
 	return s.create_table_with(
@@ -50,6 +30,120 @@ SampleSettings deserializeSettings(sol::table data) {
 	s.q = data["q"].get_or(s.q);
 
 	return s;
+}
+
+void LsdjModel::updateKit(KitIndex kitIdx) {
+	lsdj::Rom rom = getSystem()->getMemory(MemoryType::Rom, AccessType::Write);
+	if (!rom.isValid()) {
+		return;
+	}
+
+	auto found = kits.find(kitIdx);
+	if (found == kits.end()) {
+		spdlog::error("Failed to update sample buffers - kit not found");
+		return;
+	}
+
+	std::vector<KitUtil::SampleData> sampleBuffers;
+	for (const KitSample& sample : found->second.samples) {
+		sampleBuffers.push_back(KitUtil::loadSample(sample.path));
+	}
+
+	lsdj::Kit kit = rom.getKit(kitIdx);
+	KitUtil::patchKit(kit, found->second, sampleBuffers);
+}
+
+KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex kitIdx) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Write);
+	if (!rom.isValid()) {
+		return -1;
+	}
+
+	bool newKit = kitIdx == -1;
+	if (kitIdx == -1) {
+		kitIdx = rom.nextEmptyKitIdx();
+	} else {
+		kits.erase(kitIdx);
+		newKit = rom.kitIsEmpty(kitIdx);
+	}
+
+	std::vector<std::byte> fileData = fsutil::readFile(path);
+	rom.getKit(kitIdx).setKitData(Uint8Buffer((uint8*)fileData.data(), fileData.size()));
+
+	return kitIdx;
+}
+
+KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::string>& paths, KitIndex kitIdx) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+	if (!rom.isValid()) {
+		return -1;
+	}
+
+	bool newKit = kitIdx == -1;
+	if (kitIdx == -1) {
+		kitIdx = rom.nextEmptyKitIdx();
+	} else {
+		newKit = rom.kitIsEmpty(kitIdx);
+	}
+
+	if (kitIdx != -1) {
+		std::string kitName = fsutil::getDirectoryName(paths[0]);
+		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
+
+		KitState kitState = KitState{
+			.name = StringUtil::toUpper(kitName),
+		};
+
+		for (const std::string& path : paths) {
+			if (fsutil::getFileExt(path) == ".wav") {
+				std::string sampleName = fsutil::getFilename(path);
+				sampleName = fsutil::removeFileExt(sampleName);
+				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
+
+				kitState.samples.push_back(KitSample{
+					.name = StringUtil::toUpper(sampleName),
+					.path = path
+				});
+			}
+		}
+
+		if (kitState.samples.size() > 0) {
+			auto found = kits.find(kitIdx);
+
+			if (found != kits.end()) {
+				for (const KitSample& sample : kitState.samples) {
+					found->second.samples.push_back(sample);
+				}
+			} else {
+				kits[kitIdx] = kitState;
+			}
+			
+			updateKit(kitIdx);
+		}
+	}
+
+	return kitIdx;
+}
+
+void LsdjModel::onBeforeLoad(LoadConfig& loadConfig) {
+	if ((!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) && !loadConfig.stateBuffer) {
+		lsdj::Sav sav;
+		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
+		sav.save(*loadConfig.sramBuffer);
+	}
+}
+
+void LsdjModel::onAfterLoad(SystemPtr system) {
+	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom(buffer);
+
+	_offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), _ramOffsets, false);
+
+	if (_offsetsValid) {
+		//_refresher.setSystem(system, _ramOffsets);
+	} else {
+		spdlog::warn("Failed to find ROM offsets");
+	}
 }
 
 void LsdjModel::onSerialize(sol::state& s, sol::table target) {

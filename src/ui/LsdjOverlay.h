@@ -8,13 +8,8 @@
 
 #include "View.h"
 #include "core/SystemWrapper.h"
-#include "lsdj/LsdjCanvas.h"
-#include "lsdj/LsdjUtil.h"
-#include "lsdj/OffsetLookup.h"
-#include "lsdj/Ram.h"
 #include "ui/LsdjCanvasView.h"
 #include "ui/LsdjModel.h"
-#include "ui/LsdjRefresher.h"
 #include "ui/SystemOverlayManager.h"
 #include "util/HashUtil.h"
 #include "util/StringUtil.h"
@@ -28,10 +23,7 @@ namespace rp {
 	class LsdjOverlay final : public LsdjCanvasView {
 	private:
 		SystemWrapperPtr _system;
-		std::shared_ptr<LsdjModel> _model;
-		
-		lsdj::MemoryOffsets _ramOffsets;
-		bool _offsetsValid = false;
+		LsdjModelPtr _model;
 
 		Point<uint32> _mousePosition;
 
@@ -40,11 +32,9 @@ namespace rp {
 		std::vector<Uint8Buffer> _undoQueue;
 		size_t _undoPosition = 0;
 
-		LsdjRefresher _refresher;
-
 	public:
 		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {
-			setType<LsdjOverlay>(); 
+			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
 			setSizingMode(SizingMode::FitToParent);
 		}
@@ -57,7 +47,7 @@ namespace rp {
 
 		bool onKey(VirtualKey::Enum key, bool down) override;
 
-		bool onMouseMove(Point<uint32> pos) override;
+		bool onDrop(const std::vector<std::string>& paths) override;
 
 		void onUpdate(f32 delta) override;
 

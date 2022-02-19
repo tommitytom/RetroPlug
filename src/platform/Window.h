@@ -37,6 +37,8 @@ namespace rp {
 
 		static void dropCallback(GLFWwindow* window, int count, const char** paths);
 
+		static void windowCloseCallback(GLFWwindow* window);
+
 		static void errorCallback(int error, const char* description);
 	};
 }

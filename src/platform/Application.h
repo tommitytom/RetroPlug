@@ -12,7 +12,7 @@ namespace rp {
 		std::string _name;
 		Dimension<uint32> _resolution;
 
-		f64 _time = 0.0;
+		f64 _time {};
 		bool _closeRequested = false;
 		bool _hasResized = false;
 
@@ -24,33 +24,35 @@ namespace rp {
 				onAudio(input, output, frameCount);
 			});
 		}
-		//virtual ~Application() = 0;
+		~Application() {}
 
-		virtual void onInit() = 0;
+		virtual void onInit() {}
 
-		virtual void onFrame(f64 delta) = 0;
+		virtual void onFrame(f64 delta) {}
 
 		virtual void onAudio(const f32* input, f32* output, uint32 frameCount) {}
 
-		virtual void onResize(int32 w, int32 h) = 0;
+		virtual void onResize(int32 w, int32 h) {}
 
-		virtual void onDrop(int count, const char** paths) = 0;
+		virtual void onDrop(int count, const char** paths) {}
 
-		virtual void onKey(int key, int scancode, int action, int mods) = 0;
+		virtual void onKey(int key, int scancode, int action, int mods) {}
 
-		virtual void onMouseMove(double x, double y) = 0;
+		virtual void onMouseMove(double x, double y) {}
 
-		virtual void onMouseButton(int button, int action, int mods) = 0;
+		virtual void onMouseButton(int button, int action, int mods) {}
 
-		virtual void onMouseScroll(double x, double y) = 0;
+		virtual void onMouseScroll(double x, double y) {}
 
-		virtual void onTouchStart(double x, double y) = 0;
+		virtual void onTouchStart(double x, double y) {}
 
-		virtual void onTouchMove(double x, double y) = 0;
+		virtual void onTouchMove(double x, double y) {}
 
-		virtual void onTouchEnd(double x, double y) = 0;
+		virtual void onTouchEnd(double x, double y) {}
 
-		virtual void onTouchCancel(double x, double y) = 0;
+		virtual void onTouchCancel(double x, double y) {}
+
+		virtual void onCloseWindowRequest() {}
 
 		void startAudio() { _audioManager.start(); }
 

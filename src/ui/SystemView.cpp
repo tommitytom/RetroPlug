@@ -17,6 +17,10 @@ SystemView::SystemView() : TextureView(), _frameBuffer(160, 144) {
 	setSizingMode(SizingMode::None);
 }
 
+bool SystemView::onDrop(const std::vector<std::string>& paths) {
+	return false;
+}
+
 bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 	if (key == VirtualKey::Esc) {
 		if (down) {

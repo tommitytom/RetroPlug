@@ -20,6 +20,8 @@ SystemPtr SystemWrapper::load(LoadConfig&& loadConfig) {
 
 	system->setStateCopyInterval(1000);
 
+	ProxySystemPtr proxy = manager->createProxy(system->getId());
+
 	_modelFactory->createModels(romName, _models);
 
 	for (auto& model : _models) {
@@ -30,19 +32,22 @@ SystemPtr SystemWrapper::load(LoadConfig&& loadConfig) {
 
 	for (auto& model : _models) {
 		model.second->onAfterLoad(system);
+		model.second->setSystem(proxy);
 	}
 
-	ProxySystemPtr proxy = manager->createProxy(system->getId());
 	proxy->handleSetup(system);
-	_processor->addSystem(proxy);
 
 	if (!alreadyInitialized) {
 		_messageBus->uiToAudio.enqueue(OrchestratorChange { .add = system });
 	} else {
+		_processor->removeSystem(_systemId);
 		_messageBus->uiToAudio.enqueue(OrchestratorChange { .replace = system });
 	}
 
+	_processor->addSystem(proxy);
+
 	_system = proxy;
+	_version++;
 
 	return proxy;
 }

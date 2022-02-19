@@ -39,5 +39,7 @@ namespace rp {
 		void onTouchEnd(double x, double y) override;
 
 		void onTouchCancel(double x, double y) override;
+
+		void onCloseWindowRequest() override;
 	};
 }

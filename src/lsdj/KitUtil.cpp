@@ -88,7 +88,49 @@ enum FilterType {
 	ALLP
 };
 
+#include <r8brain/r8bbase.h>
+#include <r8brain/CDSPResampler.h>
+
+void convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const Float32Buffer& buffer, Float32Buffer& target) {
+	const size_t inBufCapacity = 1024;
+	r8b::CFixedBuffer<f64> inBuf;
+	inBuf.alloc((int)buffer.size());
+
+	r8b::CPtrKeeper<r8b::CDSPResampler24*> resampler = new r8b::CDSPResampler24(inputSampleRate, outputSampleRate, (int)buffer.size());
+	size_t minInputSize = (size_t)resampler->getInLenBeforeOutStart();
+
+	size_t targetSize = (size_t)(buffer.size() * (outputSampleRate / inputSampleRate));
+	target.resize(targetSize);
+
+	size_t sourcePos = 0;
+	size_t targetPos = 0;
+
+	while (targetPos < targetSize) {
+		memset(inBuf.getPtr(), 0, inBufCapacity * sizeof(f64));
+
+		size_t chunkSize = std::min(inBufCapacity, buffer.size() - sourcePos);
+		for (size_t i = 0; i < chunkSize; ++i) {
+			inBuf[i] = (f64)buffer[sourcePos++];
+		}
+
+		f64* targetBuffer;
+		size_t writeCount = (size_t)resampler->process(inBuf.getPtr(), (int)inBufCapacity, targetBuffer);
+
+		if (targetPos + writeCount > targetSize) {
+			writeCount = targetSize - targetPos;
+		}
+
+		for (size_t i = 0; i < writeCount; ++i) {
+			target[targetPos++] = (f32)targetBuffer[i];
+		}
+	}
+}
+
+#include <chrono>
+
 void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples) {
+	auto startTime = std::chrono::high_resolution_clock::now();
+
 	assert(kitState.samples.size() == samples.size());
 	assert(samples.size() < 16);
 
@@ -106,13 +148,24 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		if (settings.q == -1) settings.q = kitState.settings.q;
 		if (settings.volume == -1) settings.volume = kitState.settings.volume;
 
-		// Apply gain
+		// Normalize and Apply gain
 
 		Float32Buffer gainTarget(sample.buffer->size());
-		f32 gain = (f32)settings.volume / (f32)0xFF;
+
+		f32 max = 0.0f;
+		for (size_t i = 0; i < gainTarget.size(); ++i) {
+			f32 value = fabs(sample.buffer->get(i));
+			if (value > max) {
+				max = value;
+			}
+		}
+		
+		f32 normalizeGain = 1.0f / max;
+
+		f32 volumeGain = (f32)settings.volume / (f32)0xFF;
 
 		for (size_t i = 0; i < gainTarget.size(); ++i) {
-			gainTarget.set(i, sample.buffer->get(i) * gain);
+			gainTarget.set(i, sample.buffer->get(i) * volumeGain * normalizeGain);
 		}
 
 		// Apply filter
@@ -155,8 +208,10 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		}
 
 		// Resample
+		Float32Buffer resampled;
+		convertSamplerate((f64)sample.sampleRate, (f64)GAMEBOY_SAMPLE_RATE, filterTarget, resampled);
 
-		ma_resampler_config config = ma_resampler_config_init(ma_format_f32, 1, sample.sampleRate, GAMEBOY_SAMPLE_RATE, ma_resample_algorithm_linear);
+		/*ma_resampler_config config = ma_resampler_config_init(ma_format_f32, 1, sample.sampleRate, GAMEBOY_SAMPLE_RATE, ma_resample_algorithm_linear);
 		ma_resampler resampler;
 		ma_result resamplerResult = ma_resampler_init(&config, &resampler);
 		if (resamplerResult != MA_SUCCESS) {
@@ -167,20 +222,24 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		ma_uint64 frameCountIn = filterTarget.size();
 		ma_uint64 frameCountOut = ma_resampler_get_expected_output_frame_count(&resampler, frameCountIn);
 
-		Float32Buffer resampled((size_t)frameCountOut);
-
 		ma_result result = ma_resampler_process_pcm_frames(&resampler, filterTarget.data(), &frameCountIn, resampled.data(), &frameCountOut);
 		if (result != MA_SUCCESS) {
 			spdlog::error("Failed to resample");
 			continue;
 		}
 
-		ma_resampler_uninit(&resampler);
+		ma_resampler_uninit(&resampler);*/
 
 		// Convert to nibbles
 
+		const f32 maxDither = 0.125f;
+		f32 ditherLevel = 0.0f;
+		if (settings.dither > 0) {
+			ditherLevel = ((f32)settings.dither / (f32)0xFF) * maxDither;
+		}
+
 		Uint8BufferPtr sampleData = std::make_shared<Uint8Buffer>();
-		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData);
+		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData, ditherLevel);
 
 		targets.push_back(sampleData);
 		totalSampleDataSize += (uint32)sampleData->size();
@@ -218,4 +277,10 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	}
 
 	kit.kitData.write(0, kitData);
+
+	auto endTime = std::chrono::high_resolution_clock::now();
+
+	std::chrono::duration<double, std::milli> fp_ms = endTime - startTime;
+
+	//spdlog::info("sample processing time: {}", fp_ms.count());
 }

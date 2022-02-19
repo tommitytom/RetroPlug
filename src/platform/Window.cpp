@@ -103,6 +103,7 @@ rp::Window::Window(Application* app): _app(app) {
 	glfwSetCharCallback(window, charCallback);
 	glfwSetScrollCallback(window, mouseScrollCallback);
 	glfwSetDropCallback(window, dropCallback);
+	glfwSetWindowCloseCallback(window, windowCloseCallback);
 
 #ifdef RP_WEB
 	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
@@ -215,6 +216,11 @@ void rp::Window::resizeCallback(GLFWwindow* window, int width, int height) {
 void rp::Window::dropCallback(GLFWwindow* window, int count, const char** paths) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 	app->handleDrop(count, paths);
+}
+
+void rp::Window::windowCloseCallback(GLFWwindow* window) {
+	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+	app->onCloseWindowRequest();
 }
 
 void rp::Window::errorCallback(int error, const char* description) {

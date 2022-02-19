@@ -243,3 +243,6 @@ void RetroPlugApplication::onTouchCancel(double x, double y) {
 	_retroPlug.getUiContext().onTouchCancel(x, y);
 }
 
+void RetroPlugApplication::onCloseWindowRequest() {
+	
+}

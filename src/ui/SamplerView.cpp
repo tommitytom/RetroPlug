@@ -37,12 +37,20 @@ void SamplerView::setSystem(SystemWrapperPtr& system) {
 		_canvas.setPalette(rom.getPalette(0));
 
 		_samplerState.selectedKit = 0;// rom.getNextEmptyKit().getIndex();
+		_samplerState.selectedSample = 0;
 	}
 
-	updateSampleBuffers();
+	updateWaveform();
+}
+
+void SamplerView::setSampleIndex(KitIndex kitIdx, size_t sampleIdx) {
+	_samplerState.selectedKit = (int32)kitIdx;
+	_samplerState.selectedSample = (int32)sampleIdx;
+	updateWaveform();
 }
 
 void SamplerView::onInitialized() {
+	// TODO: This should happen in the LsdjModel
 	updateSampleBuffers();
 }
 
@@ -186,7 +194,7 @@ void SamplerView::onRender() {
 		return;
 	}
 
-	LsdjModel* model = getModel();
+	LsdjModelPtr model = _system->getModel<LsdjModel>();
 
 	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
@@ -210,7 +218,7 @@ void SamplerView::onRender() {
 		} else if (_samplerState.selectedSample > 0 && _samplerState.selectedSample <= (int32)found->second.samples.size()) {
 			settings = &found->second.samples[_samplerState.selectedSample - 1].settings;
 			editingGlobal = false;
-		} else {	
+		} else {
 			settings = &emptySettings;
 			isEditable = false;
 		}
@@ -260,7 +268,7 @@ void SamplerView::onRender() {
 
 			sampleNames[i + 1] = sampleName;
 		}
-	}	
+	}
 
 	if (_ui.list(2, 2, _samplerState.selectedSample, sampleNames)) {
 		updateWaveform();
@@ -300,7 +308,9 @@ void SamplerView::onRender() {
 	lsdj::SpinOptions::Enum spinOptions = isEditable ? lsdj::SpinOptions::None : lsdj::SpinOptions::Disabled;
 
 	_c.text(propertyName, 4, "DITHER", lsdj::ColorSets::Normal);
-	defaultSelect<2>(_ui, 19, 4, settings->dither, globalSettings->dither, { "OFF", "ON" }, isEditable);
+	if (defaultHexSpin(_ui, 19, 4, settings->dither, globalSettings->dither, 0, 0xFF, isEditable)) {
+		updateSampleBuffers();
+	}
 
 	_c.text(propertyName, 5, "VOL", lsdj::ColorSets::Normal);
 	if (defaultHexSpin(_ui, 19, 5, settings->volume, globalSettings->volume, 0, 0xFF, isEditable)) {
@@ -336,15 +346,41 @@ void SamplerView::onRender() {
 	LsdjCanvasView::onRender();
 }
 
+void populateEditKit(SystemPtr system, Menu& target) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+
+	for (size_t i = 0; i < lsdj::Rom::KIT_COUNT; ++i) {
+		if (rom.getKit(i).isValid()) {
+			target.action(fmt::format("{}: {}", i, rom.getKitName(i)), [system]() {
+				lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+				//rom.removeKit(i);
+			});
+		}
+	}
+}
+
+void populateRemoveKit(SystemPtr system, Menu& target) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+
+	for (size_t i = 0; i < lsdj::Rom::KIT_COUNT; ++i) {
+		if (rom.getKit(i).isValid()) {
+			target.action(fmt::format("{}: {}", i, rom.getKitName(i)), [system]() {
+				lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+				//rom.removeKit(i);
+			});
+		}
+	}
+}
+
 void SamplerView::buildMenu(Menu& target) {
 	target.title("LSDJ Sample Manager")
 		.separator()
-		.action("Add Kit...", [this]() { loadSampleDialog(-1); })
-		.subMenu("Edit Kit")
-			.parent()
-		.subMenu("Remove Kit")
-			.parent()
-		.separator()
+		.action("Add Kit...", [this]() { loadSampleDialog(-1); });
+
+	populateEditKit(_system->getSystem(), target.subMenu("Edit Kit"));
+	populateRemoveKit(_system->getSystem(), target.subMenu("Remove Kit"));
+
+	target.separator()
 		.action("Close", [this]() { this->remove(); });
 }
 
@@ -357,56 +393,38 @@ void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 }
 
 void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths) {
-	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
-	if (!rom.isValid()) {
-		return;
-	}
+	SystemPtr system = _system->getSystem();
+	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	bool newKit = rom.kitIsEmpty(kitIdx);
-	if (kitIdx == -1) {
-		kitIdx = rom.nextEmptyKitIdx();
-		newKit = true;
-	}
 
-	if (kitIdx != -1) {
-		std::string kitName = fsutil::getDirectoryName(paths[0]);
-		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
+	std::vector<std::string> kitSamples;
 
-		KitState kitState = KitState{
-			.name = StringUtil::toUpper(kitName),
-		};
-
-		for (const std::string& path : paths) {
-			std::string sampleName = fsutil::getFilename(path);
-			sampleName = fsutil::removeFileExt(sampleName);
-			sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
-
-			kitState.samples.push_back(KitSample{
-				.name = StringUtil::toUpper(sampleName),
-				.path = path
-			});
+	for (const std::string& path : paths) {
+		if (fsutil::getFileExt(path) == ".kit") {
+			model->addKit(system, path, kitIdx);
+			kitSamples.clear();
+			break;
 		}
-
-		LsdjModel* model = getModel();
-
-		model->kits[kitIdx] = kitState;
-		_samplerState.selectedKit = (int32)kitIdx;
-		_samplerState.selectedSample = 0;
-
-		updateSampleBuffers();
-
-		if (newKit) {
-			_system->reset();
+		
+		if (fsutil::getFileExt(path) == ".wav") {
+			kitSamples.push_back(path);
 		}
 	}
-}
 
-LsdjModel* SamplerView::getModel() {
-	if (_system) {
-		return _system->getModel<LsdjModel>().get();
+	if (kitSamples.size() > 0) {
+		model->addKitSamples(system, paths, kitIdx);
 	}
 
-	return nullptr;
+	_samplerState.selectedKit = (int32)kitIdx;
+	_samplerState.selectedSample = 0;
+
+	updateWaveform();
+
+	if (newKit) {
+		_system->reset();
+	}
 }
 
 void SamplerView::updateSampleBuffers() {
@@ -414,7 +432,7 @@ void SamplerView::updateSampleBuffers() {
 		return;
 	}
 
-	LsdjModel* model = getModel();
+	LsdjModelPtr model = _system->getModel<LsdjModel>();
 
 	auto found = model->kits.find(_samplerState.selectedKit);
 	if (found != model->kits.end()) {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <entt/meta/resolve.hpp>
+
 #include "core/Model.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
@@ -19,6 +21,8 @@ namespace rp {
 		OrchestratorMessageBus* _messageBus;
 		ModelFactory* _modelFactory;
 
+		uint32 _version = 0;
+
 	public:
 		SystemWrapper(SystemId systemId, SystemProcessor* processor, OrchestratorMessageBus* messageBus, ModelFactory* modelFactory): 
 			_systemId(systemId), _processor(processor), _messageBus(messageBus), _modelFactory(modelFactory) {}
@@ -26,9 +30,13 @@ namespace rp {
 
 		SystemPtr load(LoadConfig&& loadConfig);
 
+		uint32 getVersion() const {
+			return _version;
+		}
+
 		template <typename T>
 		std::shared_ptr<T> getModel() {
-			entt::id_type typeId = entt::type_id<T>().seq();
+			entt::id_type typeId = entt::resolve<T>().id();
 
 			for (auto& model : _models) {
 				if (model.first == typeId) {

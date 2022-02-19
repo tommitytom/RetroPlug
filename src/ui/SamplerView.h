@@ -32,9 +32,15 @@ namespace rp {
 		SamplerView();
 		~SamplerView() {}
 
+		/*SamplerViewState& getState() {
+			return _samplerState;
+		}*/
+
 		void setSystem(SystemWrapperPtr& system);
 
 		SystemWrapperPtr getSystem() { return _system; }
+
+		void setSampleIndex(KitIndex kitIdx, size_t sampleIdx);
 
 		void onInitialized() override;
 
@@ -56,7 +62,5 @@ namespace rp {
 		void updateWaveform();
 
 		void addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths);
-
-		LsdjModel* getModel();
 	};
 }

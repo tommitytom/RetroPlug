@@ -6,6 +6,7 @@
 
 #include "util/DataBuffer.h"
 #include "util/fs.h"
+#include "util/Random.h"
 #include "core/MemoryAccessor.h"
 
 namespace rp::lsdj {
@@ -93,11 +94,18 @@ namespace rp::lsdj {
 			}
 
 			for (size_t i = 0; i < output.size(); ++i) {
-				output[i] = (output[i] / 7.5f) - 1.0f;
+				f32 v = output[i] - 7.0f;
+				if (v < 0.0f) {
+					v /= 7.0f;
+				} else {
+					v /= 8.0f;
+				}
+
+				output[i] = v;
 			}
 		}
 
-		static void convertF32ToNibbles(const Float32Buffer& input, Uint8Buffer& output) {
+		static void convertF32ToNibbles(const Float32Buffer& input, Uint8Buffer& output, f32 dither) {
 			output.resize(input.size() / SAMPLES_PER_BYTE_4BIT);
 
 			int offset = 0;
@@ -107,9 +115,22 @@ namespace rp::lsdj {
 
 			outputBuffer[0] = 0;
 
+			f32 halfDither = dither * 0.5f;
+			Random ditherRand;
+			f32 state = ditherRand.nextFloatRange(-halfDither, halfDither);
+
 			for (size_t i = 0; i < input.size(); ++i) {
-				f32 s = (std::min(1.0f, std::max(-1.0f, input[i])) + 1.0f) * 0.5f;
-				uint8 b = 0xf - ((uint8)(s * 0xf)); // TODO: Dither here?
+				f32 oldState = state;
+				state = ditherRand.nextFloatRange(-halfDither, halfDither);
+				f32 r = oldState - state;
+
+				// Create a clipped sample value between 0 and 1
+				f32 s = (std::min(1.0f, std::max(-1.0f, input[i] + r)) + 1.0f) * 0.5f;
+
+				// Scale value from 0 to 15
+				s = floor(s * 15.0f + 0.5f);
+
+				uint8 b = 0xf - (uint8)s; 
 
 				// Starting from LSDj 9.2.0, first sample is skipped to compensate for wave refresh bug.
 				// This rotates the wave frame rightwards.
@@ -165,6 +186,10 @@ namespace rp::lsdj {
 
 		std::string_view getName() const {
 			return std::string_view((const char*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
+		}
+
+		void setKitData(const Uint8Buffer& buffer) {
+			kitData.write(0, buffer);
 		}
 
 		std::string_view getSampleName(size_t sampleIdx) const {
