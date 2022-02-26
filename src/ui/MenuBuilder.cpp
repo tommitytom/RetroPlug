@@ -67,7 +67,9 @@ std::string formatProjectName(const std::vector<SystemWrapperPtr>& systems, cons
 void addRecent(std::string_view recentPath, RecentPath recent) {
 	spdlog::debug("Adding recent path to {}", recentPath);
 
-	//recent.path = formatRecentPath(recent.path);
+#ifdef RP_WEB
+	recent.path = formatRecentPath(recent.path);
+#endif
 
 	try {
 		sol::state s;
@@ -297,9 +299,9 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, Project* pro
 		std::string path = std::string(projectPaths[0]);
 		project->load(path);
 
-		addRecent(RECENT_FILES_PATH, RecentPath { 
-			.path = path, 
-			.name = formatProjectName(project->getSystems(), path) 
+		addRecent(RECENT_FILES_PATH, RecentPath {
+			.path = path,
+			.name = formatProjectName(project->getSystems(), path)
 		});
 
 		return true;

@@ -90,15 +90,12 @@ namespace rp {
 	class Action : public MenuItemBase {
 	private:
 		ActionContextFunction _func;
-		bool _active;
 
 	public:
 		Action(const std::string& name, ActionContextFunction&& func, bool active, int id)
-			: MenuItemBase(MenuItemType::Action, name, id), _func(func), _active(active) {}
+			: MenuItemBase(MenuItemType::Action, name, active, id), _func(func) {}
 
 		ActionContextFunction& getFunction() { return _func; }
-
-		bool isActive() const { return _active; }
 	};
 
 	class MultiSelect : public MenuItemBase {

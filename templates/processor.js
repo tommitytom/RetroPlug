@@ -80,6 +80,24 @@ async function setupFs() {
 
 let fileDialogOpen = false;
 
+async function saveFileDialog(fileName) {
+	const path = UTF8ToString(fileName);
+	let content = FS.readFile(path);
+
+	const a = document.createElement("a");
+	a.style.display = 'none';
+	a.href = window.URL.createObjectURL(new Blob([content]), { type: 'application/octet-stream' });
+	a.download = path.substring(path.lastIndexOf('/') + 1);
+
+	document.body.appendChild(a);
+	a.click();
+
+	setTimeout(() => {
+		window.URL.revokeObjectURL(a.href);
+		a.remove();
+	}, 2000);
+}
+
 async function openFileDialog(extensions, multiselect) {
 	const input = document.createElement('input');
 	input.type = 'file';

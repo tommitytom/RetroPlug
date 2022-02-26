@@ -7,6 +7,7 @@ using namespace rp;
 const f32 MARGIN = 10.0f;
 
 const NVGcolor COLOR_WHITE = nvgRGBA(255, 255, 255, 255);
+const NVGcolor COLOR_GRAY = nvgRGBA(190, 190, 190, 255);
 
 MenuView::MenuView() : View({ 160, 144 }) {
 	setType<MenuView>();
@@ -330,7 +331,7 @@ void MenuView::drawMenu(Menu& menu) {
 		}
 
 		if (item.menuItem->getType() != MenuItemType::Separator) {
-			drawText(item.area.x, item.area.y, item.menuItem->getName(), COLOR_WHITE);
+			drawText(item.area.x, item.area.y, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
 		} else {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
 			nvgBeginPath(vg);

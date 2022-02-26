@@ -185,7 +185,14 @@ namespace rp::lsdj {
 		}
 
 		std::string_view getName() const {
-			return std::string_view((const char*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
+			std::string_view name((const char*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
+			size_t spaceOff = name.find_last_of(' ');
+
+			if (spaceOff == std::string_view::npos) {
+				return name;
+			}
+
+			return name.substr(0, spaceOff);
 		}
 
 		void setKitData(const Uint8Buffer& buffer) {

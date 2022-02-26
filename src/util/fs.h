@@ -117,6 +117,10 @@ namespace rp::fsutil {
 
 	bool writeFile(const fs::path& path, const char* data, size_t size);
 
+	static bool writeFile(const fs::path& path, const Uint8Buffer& data) {
+		return writeFile(path, (const char*)data.data(), data.size());
+	}
+
 	bool exists(const fs::path& path);
 
 	size_t fileSize(const fs::path& path);

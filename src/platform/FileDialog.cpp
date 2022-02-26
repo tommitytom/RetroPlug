@@ -1,5 +1,7 @@
 #include "FileDialog.h"
 
+#include "util/fs.h"
+
 using namespace rp;
 
 #ifdef RP_WINDOWS
@@ -124,6 +126,15 @@ bool FileDialog::basicFileOpen(void* ui, std::vector<std::string>& target, const
 	return target.size() > 0;
 }
 
+bool FileDialog::fileSaveData(void* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+	std::string target;
+	if (FileDialog::basicFileSave(ui, target, filters, fileName)) {
+		return fsutil::writeFile(target, data);
+	}
+
+	return false;
+}
+
 bool FileDialog::basicFileSave(void* ui, std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::vector<std::pair<tstring, tstring>> wideFilters;
 	std::wstring wideFilename = s2ws(fileName);
@@ -245,6 +256,25 @@ EM_ASYNC_JS(char*, openWebFileDialog, (), {
 
 	return null;
 });
+
+EM_ASYNC_JS(void, saveWebFileDialog, (const char* filePath), {
+	await saveFileDialog(filePath);
+});
+
+bool FileDialog::fileSaveData(UiHandle* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+	std::string filePath = "/.file-save-dialog/" + fileName;
+
+	fs::create_directories("/.file-save-dialog/");
+
+	if (!fsutil::writeFile(filePath, data)) {
+		spdlog::error("Failed to save {}", filePath);
+		return false;
+	}
+
+	saveWebFileDialog(filePath.c_str());
+
+	return true;
+}
 
 bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
 	char* paths = openWebFileDialog();

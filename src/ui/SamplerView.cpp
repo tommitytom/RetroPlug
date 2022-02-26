@@ -20,6 +20,10 @@ const std::vector<FileDialogFilter> SAMPLE_FILTER = {
 	{ "MP3 Files", "*.mp3" }
 };
 
+const std::vector<FileDialogFilter> KIT_FILTER = {
+	{ "LSDj Kit Files", "*.kit" }
+};
+
 const Rect<uint32> BOX_SIZE = Rect<uint32>(6, 12, 13, 5);
 const Rect<uint32> BOX_AREA = { BOX_SIZE.x * lsdj::TILE_WIDTH, BOX_SIZE.y * lsdj::TILE_HEIGHT, BOX_SIZE.w * lsdj::TILE_WIDTH, BOX_SIZE.h * lsdj::TILE_HEIGHT };
 
@@ -372,10 +376,34 @@ void populateRemoveKit(SystemPtr system, Menu& target) {
 	}
 }
 
+void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
+	std::string target;
+
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Kit kit = rom.getKit(kitIdx);
+
+	if (kit.isValid()) {
+		std::string filename = fmt::format("{}.kit", kit.getName());
+
+		if (FileDialog::fileSaveData(nullptr, kit.getBuffer(), KIT_FILTER, filename)) {
+			spdlog::info("Saved kit to {}", filename);
+		} else {
+			spdlog::error("Failed to write kit to {}", filename);
+		}
+	}
+}
+
 void SamplerView::buildMenu(Menu& target) {
+	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	bool kitEditable = model->kits.find(_samplerState.selectedKit) != model->kits.end();
+
 	target.title("LSDJ Sample Manager")
 		.separator()
-		.action("Add Kit...", [this]() { loadSampleDialog(-1); });
+		.action("Add Kit...", [this]() { loadSampleDialog(-1); })
+		.action("Add Samples...", [this]() { loadSampleDialog(_samplerState.selectedKit); }, kitEditable)
+		.separator()
+		.action("Export Kit...", [this]() { exportKitDialog(_system->getSystem(), _samplerState.selectedKit); })
+		.separator();
 
 	populateEditKit(_system->getSystem(), target.subMenu("Edit Kit"));
 	populateRemoveKit(_system->getSystem(), target.subMenu("Remove Kit"));
