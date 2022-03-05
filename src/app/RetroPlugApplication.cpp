@@ -33,6 +33,7 @@ void RetroPlugApplication::onInit() {
 	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
 
 	_retroPlug.setNvgContext(_vg);
+	_retroPlug.setAudioManager(getAudioManager());
 
 	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
 	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, (int)Roboto_Regular_len, 0);

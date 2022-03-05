@@ -65,6 +65,8 @@ namespace rp {
 
 		void setNvgContext(NVGcontext* vg);
 
+		void setAudioManager(AudioManager& audioManager);
+
 		void processDelta(f64 delta);
 
 		bool onKey(VirtualKey::Enum key, bool down);

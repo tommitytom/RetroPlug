@@ -13,10 +13,13 @@
 #include "core/SystemWrapper.h"
 
 namespace rp {
+	class AudioManager;
+
 	class Project {
 	private:
 		ProjectState _state;
 		ResourceManager _resourceManager;
+		AudioManager* _audioManager = nullptr;
 
 		sol::state* _lua = nullptr;
 		int32 _version = 0;
@@ -24,8 +27,8 @@ namespace rp {
 
 		std::vector<SystemWrapperPtr> _systems;
 
-		SystemProcessor* _processor;
-		OrchestratorMessageBus* _messageBus;
+		SystemProcessor* _processor = nullptr;
+		OrchestratorMessageBus* _messageBus = nullptr;
 		ModelFactory _modelFactory;
 
 	public:
@@ -39,6 +42,14 @@ namespace rp {
 		void setup(SystemProcessor* processor, OrchestratorMessageBus* orchestratorMessageBus) {
 			_processor = processor;
 			_messageBus = orchestratorMessageBus;
+		}
+
+		void setAudioManager(AudioManager& audioManager) {
+			_audioManager = &audioManager;
+		}
+
+		AudioManager& getAudioManager() {
+			return *_audioManager;
 		}
 
 		SystemProcessor& getProcessor() {

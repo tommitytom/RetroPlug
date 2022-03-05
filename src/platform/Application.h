@@ -79,6 +79,10 @@ namespace rp {
 			return _name;
 		}
 
+		AudioManager& getAudioManager() {
+			return _audioManager;
+		}
+
 	private:
 		void handleFrame(f64 time) {
 			f64 delta = _time > 0 ? time - _time : 0;

@@ -52,6 +52,10 @@ namespace rp {
 		AudioCallback& getCallback() {
 			return _cb;
 		}
+
+		bool setAudioDevice(uint32 idx);
+
+		void getDeviceNames(std::vector<std::string>& names);
 	};
 
 #endif

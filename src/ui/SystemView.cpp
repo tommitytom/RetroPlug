@@ -7,6 +7,7 @@
 #include "ui/KeyToButton.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
+#include "platform/AudioManager.h"
 #include "sameboy/SameBoySystem.h"
 #include "MenuBuilder.h"
 
@@ -85,6 +86,13 @@ void SystemView::buildMenu(Menu& target) {
 	MenuBuilder::systemLoadMenu(root, project, _system);
 	MenuBuilder::systemAddMenu(root, project, _system);
 	MenuBuilder::systemSaveMenu(root, project, _system);
+
+	int audioDevice = 0;
+
+	AudioManager& audioManager = project->getAudioManager();
+	
+	std::vector<std::string> audioDevices;
+	audioManager.getDeviceNames(audioDevices);
 		
 	root.separator()
 		.action("Reset System", [this]() {
@@ -100,6 +108,13 @@ void SystemView::buildMenu(Menu& target) {
 		.separator()
 
 		.subMenu("Settings")
+			.subMenu("Audio")
+				.multiSelect("Device", audioDevices, audioDevice, [project](int v) { 
+					if (v >= 0) {
+						project->getAudioManager().setAudioDevice((uint32)v);
+					}
+				})
+				.parent()
 			.multiSelect("Zoom", { "1x", "2x", "3x", "4x" }, &projectState.settings.zoom)
 			.subMenu("Save Options...")
 				.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)

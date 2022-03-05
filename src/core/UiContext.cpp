@@ -54,6 +54,10 @@ void UiContext::setNvgContext(NVGcontext* vg) {
 	_state.viewManager.setVg(vg);
 }
 
+void UiContext::setAudioManager(AudioManager& audioManager) {
+	_project->setAudioManager(audioManager);
+}
+
 void UiContext::processInput(uint32 frameCount) {
 	std::vector<SystemPtr>& systems = _state.processor.getSystems();
 
