@@ -166,7 +166,7 @@ function m.Application.project()
 	}
 
 	filter { "system:linux" }
-		linkoptions { "-fPIE" }
+		linkoptions { "-no-pie" }
 
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }
