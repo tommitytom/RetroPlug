@@ -325,6 +325,7 @@ namespace rp::lsdj {
 	class Rom {
 	private:
 		MemoryAccessor _romData;
+		bool _valid = false;
 
 		const uint8* _paletteNames = nullptr;
 		const uint8* _fontNames = nullptr;
@@ -360,7 +361,7 @@ namespace rp::lsdj {
 		}
 
 		bool isValid() const {
-			return _romData.isValid();
+			return _valid && _romData.isValid();
 		}
 
 		const uint8* getBankData(size_t idx) const {
@@ -396,10 +397,10 @@ namespace rp::lsdj {
 			int32 palettes = findOffset(1, PALETTE_CHECK, -((int32)PALETTE_COUNT * (int32)Palette::SIZE));
 			int32 fonts = findOffset(30, FONT_CHECK, 16);
 
-			assert(version != -1);
-			assert(names != -1);
-			assert(palettes != -1);
-			assert(fonts != -1);
+			if (version == -1 || names == -1 || palettes == -1 || fonts == -1) {
+				_valid = false;
+				return;
+			}
 
 			const uint8* d = _romData.getData();
 
