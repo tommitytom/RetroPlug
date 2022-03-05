@@ -18,8 +18,6 @@ function m.project()
 	project "SameBoy"
 		kind "StaticLib"
 		language "C"
-		toolset "clang"
-		--flags { "LinkTimeOptimization" }
 
 		m.include()
 
@@ -46,7 +44,13 @@ function m.project()
 		disablewarnings { "int-in-bool-context" }
 
 		filter { "system:windows" }
+			toolset "clang"
 			includedirs { SAMEBOY_DIR .. "/Windows" }
+
+		filter { "system:linux" }
+			buildoptions { "-Wno-implicit-function-declaration" }
+
+		filter {}
 end
 
 return m

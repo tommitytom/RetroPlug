@@ -25,7 +25,7 @@ const std::vector<FileDialogFilter> KIT_FILTER = {
 };
 
 const Rect<uint32> BOX_SIZE = Rect<uint32>(6, 12, 13, 5);
-const Rect<uint32> BOX_AREA = { BOX_SIZE.x * lsdj::TILE_WIDTH, BOX_SIZE.y * lsdj::TILE_HEIGHT, BOX_SIZE.w * lsdj::TILE_WIDTH, BOX_SIZE.h * lsdj::TILE_HEIGHT };
+const Rect<uint32> BOX_AREA = { BOX_SIZE.x * (uint32)lsdj::TILE_WIDTH, BOX_SIZE.y * (uint32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (uint32)lsdj::TILE_WIDTH, BOX_SIZE.h * (uint32)lsdj::TILE_HEIGHT };
 
 SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();

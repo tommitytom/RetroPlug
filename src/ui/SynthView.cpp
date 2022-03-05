@@ -8,7 +8,12 @@
 using namespace rp;
 
 const Rect<uint32> WAVE_VIEW_SIZE = Rect<uint32>(3, 12, 16, 5);
-const Rect<uint32> WAVE_VIEW_AREA = { WAVE_VIEW_SIZE.x * lsdj::TILE_WIDTH, WAVE_VIEW_SIZE.y * lsdj::TILE_HEIGHT, WAVE_VIEW_SIZE.w * lsdj::TILE_WIDTH, WAVE_VIEW_SIZE.h * lsdj::TILE_HEIGHT };
+const Rect<uint32> WAVE_VIEW_AREA = { 
+	WAVE_VIEW_SIZE.x * (uint32)lsdj::TILE_WIDTH, 
+	WAVE_VIEW_SIZE.y * (uint32)lsdj::TILE_HEIGHT, 
+	WAVE_VIEW_SIZE.w * (uint32)lsdj::TILE_WIDTH, 
+	WAVE_VIEW_SIZE.h * (uint32)lsdj::TILE_HEIGHT 
+};
 
 SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) { 
 	setType<SynthView>(); 
@@ -98,7 +103,7 @@ void SynthView::onUpdate(f32 delta) {
 }
 
 Point<uint32> tileToPixel(Point<uint32> tile) {
-	return { tile.x * lsdj::TILE_WIDTH, tile.y * lsdj::TILE_HEIGHT };
+	return { tile.x * (uint32)lsdj::TILE_WIDTH, tile.y * (uint32)lsdj::TILE_HEIGHT };
 }
 
 void SynthView::updateWaveform(lsdj::Song& song) {

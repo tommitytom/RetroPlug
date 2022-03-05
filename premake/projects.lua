@@ -78,19 +78,21 @@ function m.RetroPlug.include()
 	}
 
 	dep.bgfx.compat()
+
+	filter {}
 end
 
 function m.RetroPlug.link()
 	m.RetroPlug.include()
 
+	links { "RetroPlug" }
+	
 	dep.SameBoy.link()
-	dep.glfw.link()
 	dep.bgfx.link()
+	dep.glfw.link()
 	dep.liblsdj.link()
 	dep.lua.link()
 	dep.r8brain.link()
-
-	links { "RetroPlug" }
 end
 
 function m.RetroPlug.project()
@@ -163,8 +165,8 @@ function m.Application.project()
 		"src/app/OffsetCalculatorMain.cpp"
 	}
 
-	--filter { "options:not emscripten" }
-	--	excludes { "src/RetroPlugWrap.cpp" }
+	filter { "system:linux" }
+		linkoptions { "-fPIE" }
 
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }

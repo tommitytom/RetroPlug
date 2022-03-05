@@ -322,6 +322,10 @@ bool FileDialog::basicFileSave(UiHandle* ui, std::string& target, const std::vec
 
 #else
 
+bool FileDialog::fileSaveData(UiHandle* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+	return false;
+}
+
 bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
 	return false;
 }

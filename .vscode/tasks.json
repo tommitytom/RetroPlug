@@ -6,9 +6,9 @@
 		{
 			"label": "RetroPlug Build",
 			"type": "shell",
-			"command": "./build.sh",
+			"command": "./build-linux.sh",
 			"args": [
-				"release"
+				"debug"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -25,7 +25,11 @@
 			},
 			"problemMatcher": [
 				"$gcc"
-			]
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
 		}, {
 			"label": "Temp dev server",
 			"type": "shell",

@@ -122,6 +122,7 @@ rp::Window::Window(Application* app): _app(app) {
 #elif BX_PLATFORM_LINUX || BX_PLATFORM_BSD
 	init.platformData.ndt = glfwGetX11Display();
 	init.platformData.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
+	init.type = bgfx::RendererType::OpenGL;
 #elif BX_PLATFORM_OSX
 	init.platformData.nwh = glfwGetCocoaWindow(window);
 #elif BX_PLATFORM_WINDOWS

@@ -4,6 +4,11 @@ local m = {}
 
 function m.include()
 	includedirs { LUA_DIR .. "/src" }
+
+	filter { "system:linux" }
+		defines { "LUA_USE_POSIX" }
+		buildoptions { "-Wno-string-plus-int" }
+	filter {}
 end
 
 function m.source()

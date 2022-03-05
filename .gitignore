@@ -15,7 +15,6 @@
 *.LSOverride
 *.xcuserdata
 *.xcschememanagement.plist
-build-*
 .vscode/ipch/*
 .vscode/*.log
 gui/*

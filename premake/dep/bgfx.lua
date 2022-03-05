@@ -74,7 +74,8 @@ function m.link()
 
 	filter {}
 
-	links { "bx", "bimg", "bgfx" }
+	-- The order of these is important on linux!
+	links { "bgfx", "bimg", "bx" }
 
 	m.compat()
 end

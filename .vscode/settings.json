@@ -47,7 +47,8 @@
 		"editAndContinue",
 		"sysincludedirs",
 		"warnings",
-		"workspace"
+		"workspace",
+		"toolset"
 	],
 	"files.associations": {
 		"functional": "cpp",

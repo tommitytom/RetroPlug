@@ -17,9 +17,14 @@ using namespace rp;
 #ifdef RP_WEB
 const std::string_view RECENT_FILES_PATH = "/retroplug/recent.lua";
 const std::string_view ROMS_PATH = "/retroplug/roms";
-#else
+#elif RP_LINUX
+const std::string_view RECENT_FILES_PATH = "~/.retroplug/recent.lua";
+const std::string_view ROMS_PATH = "~/.retroplug/roms";
+#elif RP_WINDOWS
 const std::string_view RECENT_FILES_PATH = "c:/temp/retroplug/recent.lua";
 const std::string_view ROMS_PATH = "c:/temp/retroplug/roms";
+#else
+#error "Platform is not supported!
 #endif
 
 std::string formatRecentPath(const std::string& path) {

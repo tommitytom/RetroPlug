@@ -21,8 +21,9 @@ workspace "RetroPlugAll"
 	location("build/" .. buildFolder)
 	platforms(PLATFORMS)
 	characterset "MBCS"
-	cppdialect "C++20"
+	cppdialect "C++2a"
 	flags { "MultiProcessorCompile" }
+	toolset "clang"
 
 	configurations { "Debug", "Release", "Tracer" }
 
@@ -31,7 +32,6 @@ workspace "RetroPlugAll"
 	configuration { "Debug" }
 		defines { "RP_DEBUG", "DEBUG", "_DEBUG" }
 		symbols "Full"
-		--symbols "On"
 
 	configuration { "Release" }
 		defines { "RP_RELEASE", "NDEBUG" }
@@ -48,7 +48,7 @@ workspace "RetroPlugAll"
 
 	filter { "system:linux", "options:not emscripten" }
 		defines { "RP_LINUX", "RP_POSIX" }
-		buildoptions { "-Wunused-function" }
+		buildoptions { "-Wno-unused-function" }
 
 	filter { "system:macosx", "options:not emscripten" }
 		defines { "RP_MACOS", "RP_POSIX" }
