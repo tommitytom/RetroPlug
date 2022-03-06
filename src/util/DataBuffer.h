@@ -58,7 +58,7 @@ namespace rp {
 
 		size_t hash(size_t initial = 0) {
 			// TODO: Use xxhash here?
-			return crc32::update((const void*)_data, _size * sizeof(T), initial);
+			return crc32::update((const void*)_data, _size * sizeof(T), (uint32)initial);
 		}
 
 		T back() const {

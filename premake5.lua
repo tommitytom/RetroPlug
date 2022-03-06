@@ -23,7 +23,6 @@ workspace "RetroPlugAll"
 	characterset "MBCS"
 	cppdialect "C++2a"
 	flags { "MultiProcessorCompile" }
-	toolset "clang"
 
 	configurations { "Debug", "Release", "Tracer" }
 

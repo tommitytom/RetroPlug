@@ -41,11 +41,16 @@ function m.project()
 			SAMEBOY_DIR .. "/Core/debugger.c"
 		}
 
-		disablewarnings { "int-in-bool-context" }
-
 		filter { "system:windows" }
 			toolset "clang"
 			includedirs { SAMEBOY_DIR .. "/Windows" }
+			buildoptions {
+				"-Wno-unused-variable",
+				"-Wno-unused-function",
+				"-Wno-missing-braces",
+				"-Wno-switch",
+				"-Wno-int-in-bool-context"
+			}
 
 		filter { "system:linux" }
 			buildoptions { "-Wno-implicit-function-declaration" }

@@ -87,7 +87,7 @@ bool FileDialog::basicFileOpen(void* ui, std::vector<std::string>& target, const
 			}
 
 			pFileOpen->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
-			pFileOpen->SetFileTypes(filters.size(), targetFilters);
+			pFileOpen->SetFileTypes((UINT)filters.size(), targetFilters);
 			hr = pFileOpen->Show(NULL);
 
 			// Get the file name from the dialog box.
@@ -159,7 +159,7 @@ bool FileDialog::basicFileSave(void* ui, std::string& target, const std::vector<
 			DWORD dwFlags;
 			pFileSave->GetOptions(&dwFlags);
 			pFileSave->SetOptions(dwFlags | FOS_FORCEFILESYSTEM);
-			pFileSave->SetFileTypes(filters.size(), targetFilters);
+			pFileSave->SetFileTypes((UINT)filters.size(), targetFilters);
 			pFileSave->SetFileName(wideFilename.c_str());
 			hr = pFileSave->SetDefaultExtension(wideFilters[0].second.c_str());
 			hr = pFileSave->Show(NULL);
