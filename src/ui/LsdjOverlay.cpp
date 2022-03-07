@@ -36,13 +36,15 @@ void LsdjOverlay::onInitialized() {
 	Project* project = getShared<Project>();
 	_model = _system->getModel<LsdjModel>();
 
-	SystemPtr system = _system->getSystem();
-	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
+	if (_model->isRomValid()) {
+		SystemPtr system = _system->getSystem();
+		MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
 
-	if (buffer.isValid()) {
-		lsdj::Rom rom(buffer);
-		_canvas.setFont(rom.getFont(1));
-		_canvas.setPalette(rom.getPalette(0));
+		if (buffer.isValid()) {
+			lsdj::Rom rom(buffer);
+			_canvas.setFont(rom.getFont(1));
+			_canvas.setPalette(rom.getPalette(0));
+		}
 	}
 }
 
@@ -85,6 +87,11 @@ bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
 bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 	SystemPtr system = _system->getSystem();
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
+
+	if (!model->isRomValid()) {
+		return false;
+	}
+
 	//bool foundSamples = false;
 	size_t kitIdx = -1;
 	

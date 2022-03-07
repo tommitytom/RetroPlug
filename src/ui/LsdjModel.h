@@ -47,6 +47,7 @@ namespace rp {
 		lsdj::MemoryOffsets _ramOffsets;
 		bool _offsetsValid = false;
 		//LsdjRefresher _refresher;
+		bool _romValid = false;
 
 	public:
 		std::unordered_map<KitIndex, KitState> kits;
@@ -75,6 +76,10 @@ namespace rp {
 
 		bool getOffsetsValid() const {
 			return _offsetsValid;
+		}
+
+		bool isRomValid() const {
+			return _romValid;
 		}
 	};
 

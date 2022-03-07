@@ -137,12 +137,15 @@ void LsdjModel::onAfterLoad(SystemPtr system) {
 	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
 	lsdj::Rom rom(buffer);
 
-	_offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), _ramOffsets, false);
+	if (rom.isValid()) {
+		_romValid = true;
+		_offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), _ramOffsets, false);
 
-	if (_offsetsValid) {
-		//_refresher.setSystem(system, _ramOffsets);
-	} else {
-		spdlog::warn("Failed to find ROM offsets");
+		if (_offsetsValid) {
+			//_refresher.setSystem(system, _ramOffsets);
+		} else {
+			spdlog::warn("Failed to find ROM offsets");
+		}
 	}
 }
 
