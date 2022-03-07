@@ -35,7 +35,6 @@ void LsdjOverlay::onInitialized() {
 
 	Project* project = getShared<Project>();
 	_model = _system->getModel<LsdjModel>();
-	_system->reset();
 
 	SystemPtr system = _system->getSystem();
 	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
