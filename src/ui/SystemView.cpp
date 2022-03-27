@@ -74,18 +74,19 @@ void loadRomDialog(Project* project) {
 	std::vector<std::string> files;
 
 	if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
-		project->addSystem<SameBoySystem>(files[0]);
+		//project->addSystem<SameBoySystem>(files[0]);
 	}
 }
 
 void SystemView::buildMenu(Menu& target) {
+	FileManager* fileManager = getShared<FileManager>();
 	Project* project = getShared<Project>();
 	ProjectState& projectState = project->getState();
 
 	Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getSystem()->getRomName()).separator();
-	MenuBuilder::systemLoadMenu(root, project, _system);
-	MenuBuilder::systemAddMenu(root, project, _system);
-	MenuBuilder::systemSaveMenu(root, project, _system);
+	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
+	MenuBuilder::systemAddMenu(root, fileManager, project, _system);
+	MenuBuilder::systemSaveMenu(root, fileManager, project, _system);
 
 	int audioDevice = 0;
 
@@ -99,7 +100,7 @@ void SystemView::buildMenu(Menu& target) {
 			_system->reset();
 		})
 		.action("Remove System", [this, project]() {
-			if (project->getState().systemSettings.size() > 1) {
+			if (project->getSystems().size() > 1) {
 				project->removeSystem(_system->getId());
 				this->remove();
 			}

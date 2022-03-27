@@ -31,6 +31,9 @@ namespace rp {
 		OrchestratorMessageBus* _messageBus = nullptr;
 		ModelFactory _modelFactory;
 
+		bool _copyLocal = true;
+		bool _requiresSave = false;
+
 	public:
 		Project();
 		~Project();
@@ -100,6 +103,12 @@ namespace rp {
 			return addModel<T>(systemId);
 		}*/
 
+		void update(f32 delta) {
+			for (SystemWrapperPtr system : _systems) {
+				system->update(delta);
+			}
+		}
+
 		const ProjectState& getState() const {
 			return _state;
 		}
@@ -114,19 +123,26 @@ namespace rp {
 
 		bool save(std::string_view path);
 
-		template <typename T>
-		SystemWrapperPtr addSystem(std::string_view romPath, std::string_view sramPath = "", SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().seq(), romPath, sramPath);
+		void saveIfRequired() {
+			if (_requiresSave && !_state.path.empty()) {
+				save();
+				_requiresSave = false;
+			}
 		}
 
-		SystemWrapperPtr addSystem(SystemType type, std::string_view romPath, std::string_view sramPath = "", SystemId systemId = INVALID_SYSTEM_ID);
-
 		template <typename T>
-		SystemWrapperPtr addSystem(LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().seq(), std::forward<LoadConfig>(loadConfig));
+		SystemWrapperPtr addSystem(const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID) {
+			return addSystem(entt::type_id<T>().seq(), settings);
 		}
 
-		SystemWrapperPtr addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
+		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID);
+
+		template <typename T>
+		SystemWrapperPtr addSystem(const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
+			return addSystem(entt::type_id<T>().seq(), settings, std::forward<LoadConfig>(loadConfig));
+		}
+
+		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
 
 		void removeSystem(SystemId systemId);
 
@@ -148,7 +164,9 @@ namespace rp {
 			return _systems;
 		}
 
+		
+
 	private:
-		void deserializeModel(SystemId systemId, std::shared_ptr<Model> model);
+		void deserializeModel(SystemId systemId, SystemWrapperPtr system, std::shared_ptr<Model> model);
 	};
 }

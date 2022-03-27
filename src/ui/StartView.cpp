@@ -2,6 +2,7 @@
 
 #include <sol/sol.hpp>
 
+#include "core/FileManager.h"
 #include "core/Project.h"
 #include "platform/FileDialog.h"
 #include "roms/mgb.h"
@@ -9,7 +10,6 @@
 #include "ui/MenuBuilder.h"
 #include "util/fs.h"
 #include "util/SolUtil.h"
-
 
 using namespace rp;
 
@@ -26,18 +26,20 @@ void StartView::setupMenu() {
 
 			std::vector<std::string> files;
 			if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				MenuBuilder::handleLoad(files, getShared<Project>());
+				MenuBuilder::handleLoad(files, *getShared<FileManager>(), *getShared<Project>());
 				ctx.close();
 			}
 		});
 
-	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getShared<Project>(), nullptr);
+	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getShared<FileManager>(), getShared<Project>(), nullptr);
 
 	menu
 		.action("Load MGB", [this]() {
 			Project* project = getShared<Project>();
 
-			SystemWrapperPtr system = project->addSystem<SameBoySystem>({ 
+			SystemWrapperPtr system = project->addSystem<SameBoySystem>({
+				.romPath = "mgb.gb"
+			}, {
 				.romBuffer = std::make_shared<Uint8Buffer>(mgb, mgb_len) 
 			});
 
@@ -56,5 +58,5 @@ void StartView::setupMenu() {
 }
 
 bool StartView::onDrop(const std::vector<std::string>& paths) {
-	return MenuBuilder::handleLoad(paths, getShared<Project>());
+	return MenuBuilder::handleLoad(paths, *getShared<FileManager>(), *getShared<Project>());
 }

@@ -4,6 +4,7 @@
 
 #include "lsdj/KitUtil.h"
 #include "lsdj/Rom.h"
+#include "util/HashUtil.h"
 #include "util/StringUtil.h"
 
 using namespace rp;
@@ -125,6 +126,21 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 	return kitIdx;
 }
 
+bool LsdjModel::isSramDirty() {
+	MemoryAccessor buffer = getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
+	if (buffer.isValid()) {
+		Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
+		uint64 songHash = HashUtil::hash(songBuffer);
+
+		if (songHash != _songHash) {
+			_songHash = songHash;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void LsdjModel::onBeforeLoad(LoadConfig& loadConfig) {
 	if ((!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) && !loadConfig.stateBuffer) {
 		lsdj::Sav sav;
@@ -147,6 +163,10 @@ void LsdjModel::onAfterLoad(SystemPtr system) {
 			spdlog::warn("Failed to find ROM offsets");
 		}
 	}
+}
+
+void LsdjModel::onUpdate(f32 delta) {
+
 }
 
 void LsdjModel::onSerialize(sol::state& s, sol::table target) {

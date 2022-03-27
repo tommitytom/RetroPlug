@@ -56,8 +56,24 @@ void LsdjOverlay::onMenu(Menu& menu) {
 
 bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
 	SystemPtr system = _system->getSystem();
-
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
+
+	bool changed = false;
+	if (key == VirtualKey::W) {
+		_bHeld = down;
+		changed = true;
+	}
+
+	if (key == VirtualKey::D) {
+		_aHeld = down;
+		changed = true;
+	}
+
+	if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
+		_system->saveSram();
+	}
+
+	/*LsdjModelPtr model = _system->getModel<LsdjModel>();
 	if (model->getOffsetsValid() && down && key == VirtualKey::Z) {
 		if (_undoPosition > 1) {
 			_undoPosition--;
@@ -79,7 +95,7 @@ bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
 		}
 
 		return true;
-	}
+	}*/
 
 	return false;
 }
@@ -137,7 +153,7 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 }
 
 void LsdjOverlay::onUpdate(f32 delta) {
-	if (_system) {
+	/*if (_system) {
 		SystemPtr system = _system->getSystem();
 
 		if (_songSwapCooldown > 0.0f) {
@@ -168,7 +184,7 @@ void LsdjOverlay::onUpdate(f32 delta) {
 				_songHash = songHash;
 			}
 		}
-	}
+	}*/
 }
 
 void LsdjOverlay::onRender() {

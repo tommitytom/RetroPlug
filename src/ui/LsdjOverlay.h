@@ -32,6 +32,9 @@ namespace rp {
 		std::vector<Uint8Buffer> _undoQueue;
 		size_t _undoPosition = 0;
 
+		bool _aHeld = false;
+		bool _bHeld = false;
+
 	public:
 		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {
 			setType<LsdjOverlay>();

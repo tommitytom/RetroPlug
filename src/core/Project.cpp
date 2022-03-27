@@ -30,8 +30,8 @@ void Project::processIncoming() {
 	}
 }
 
-void Project::deserializeModel(SystemId systemId, std::shared_ptr<Model> model) {
-	const std::string& serialized = _state.systemSettings[systemId].serialized;
+void Project::deserializeModel(SystemId systemId, SystemWrapperPtr system, std::shared_ptr<Model> model) {
+	const std::string& serialized = system->getSettings().serialized;
 
 	if (serialized.size()) {
 		sol::table modelTable;
@@ -50,57 +50,64 @@ void Project::deserializeModel(SystemId systemId, std::shared_ptr<Model> model) 
 void Project::load(std::string_view path) {
 	clear();
 
-	if (!ProjectSerializer::deserialize(path, _state)) {
+	std::vector<SystemSettings> systemSettings;
+	
+	if (!ProjectSerializer::deserialize(path, _state, systemSettings)) {
 		spdlog::error("Failed to load project at {}", path);
 		return;
 	}
 
-	std::map<SystemId, SystemSettings> systemSettings;
-
 	// Create systems from new state
-	for (auto& [systemId, settings] : _state.systemSettings) {
-		SystemWrapperPtr system = addSystem<SameBoySystem>(settings.romPath, settings.sramPath);
-		systemSettings[system->getId()] = settings;
+	for (const SystemSettings& settings : systemSettings) {
+		addSystem<SameBoySystem>(settings);
 	}
 
-	_state.systemSettings = std::move(systemSettings);
+	_requiresSave = false;
 }
 
 bool Project::save(std::string_view path) {
-	return ProjectSerializer::serialize(path, _state, true);
+	std::vector<SystemSettings> settings;
+	for (SystemWrapperPtr system : _systems) {
+		settings.push_back(system->getSettings());
+	}
+
+	return ProjectSerializer::serialize(path, _state, settings, true);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, std::string_view romPath, std::string_view sramPath, SystemId systemId) {
+SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, SystemId systemId) {
 	LoadConfig loadConfig = LoadConfig{
 		.romBuffer = std::make_shared<Uint8Buffer>(),
 		.sramBuffer = std::make_shared<Uint8Buffer>()
 	};
 
-	if (!fsutil::readFile(romPath, loadConfig.romBuffer.get())) {
+	if (!fsutil::readFile(settings.romPath, loadConfig.romBuffer.get())) {
 		return nullptr;
 	}
 
-	if (sramPath.size()) {
+	if (settings.sramPath.size()) {
 		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
-		if (!fsutil::readFile(sramPath, loadConfig.sramBuffer.get())) {
+		if (!fsutil::readFile(settings.sramPath, loadConfig.sramBuffer.get())) {
 			// LOG
 		}
 	}
 
-	return addSystem(type, std::move(loadConfig), systemId);
+	return addSystem(type, settings, std::move(loadConfig), systemId);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId) {
+SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId) {
 	if (systemId == INVALID_SYSTEM_ID) {
 		systemId = _nextId++;
 	}
 
 	SystemWrapperPtr system = std::make_shared<SystemWrapper>(systemId, _processor, _messageBus, &_modelFactory);
-	system->load(std::forward<LoadConfig>(loadConfig));
+	system->load(settings, std::forward<LoadConfig>(loadConfig));
 
-	_state.systemSettings[systemId] = SystemSettings();
 	_systems.push_back(system);
 	_version++;
+
+	if (_state.settings.autoSave) {
+		_requiresSave = true;
+	}
 
 	return system;
 }
@@ -114,10 +121,13 @@ void Project::removeSystem(SystemId systemId) {
 		}
 	}
 
-	_state.systemSettings.erase(systemId);
 	_messageBus->uiToAudio.enqueue(OrchestratorChange{ .remove = systemId });
 
 	_version++;
+
+	if (_state.settings.autoSave) {
+		_requiresSave = true;
+	}
 }
 
 void Project::duplicateSystem(SystemId systemId) {
@@ -134,12 +144,7 @@ void Project::duplicateSystem(SystemId systemId) {
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	SystemWrapperPtr newSystem = addSystem(system->getType(), std::move(loadConfig));
-
-	SystemSettings newSettings = _state.systemSettings[systemId];
-	newSettings.serialized.clear();
-
-	_state.systemSettings[newSystem->getId()] = std::move(newSettings);
+	addSystem(system->getType(), systemWrapper->getSettings(), std::move(loadConfig));
 }
 
 SystemWrapperPtr Project::findSystem(SystemId systemId) {
@@ -165,4 +170,5 @@ void Project::clear() {
 	SolUtil::prepareState(*_lua);
 
 	_version++;
+	_requiresSave = false;
 }

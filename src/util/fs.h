@@ -132,4 +132,6 @@ namespace rp::fsutil {
 	uint64 lastWriteTime(const fs::path& path);
 
 	bool copyFile(std::string_view from, std::string_view to);
+
+	uint64 hashFileContent(const fs::path& path);
 }

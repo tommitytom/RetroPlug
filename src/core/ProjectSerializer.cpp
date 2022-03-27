@@ -12,7 +12,7 @@ using namespace rp;
 const std::string_view PROJECT_VERSION = "1.0.0";
 const std::string_view RP_VERSION = "0.4.0";
 
-bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, bool updatePath) {
+bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemSettings>& settings, bool updatePath) {
 	sol::state s;
 	SolUtil::prepareState(s);
 
@@ -32,14 +32,14 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, bo
 
 	sol::table systemsTable = s.create_table();
 
-	for (const auto& [id, system] : state.systemSettings) {
+	for (const SystemSettings& systemSettings : settings) {
 		sol::table systemTable = s.create_table_with(
-			"romPath", system.romPath,
-			"sramPath", system.sramPath,
-			"includeRom", system.includeRom,
+			"romPath", systemSettings.romPath,
+			"sramPath", systemSettings.sramPath,
+			"includeRom", systemSettings.includeRom,
 			"input", s.create_table_with(
-				"key", system.input.key,
-				"pad", system.input.pad
+				"key", systemSettings.input.key,
+				"pad", systemSettings.input.pad
 			)
 		);
 
@@ -88,7 +88,7 @@ bool deserializeEnum(const sol::table& source, std::string_view name, T& target)
 	return false;
 }
 
-bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state) {
+bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, std::vector<SystemSettings>& systemSettings) {
 	sol::state s;
 	SolUtil::prepareState(s);
 
@@ -136,7 +136,7 @@ bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state) 
 			return false;
 		}
 		
-		state.systemSettings[i] = SystemSettings {
+		systemSettings.push_back(SystemSettings {
 			.romPath = systemTable["romPath"],
 			.sramPath = systemTable["sramPath"],
 			.includeRom = systemTable["includeRom"],
@@ -145,7 +145,7 @@ bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state) 
 				.pad = systemTable["input"]["pad"]
 			},
 			.serialized = std::move(serializedState)
-		};
+		});
 	}	
 
 	return true;

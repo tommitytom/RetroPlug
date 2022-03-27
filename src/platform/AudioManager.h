@@ -22,6 +22,10 @@ namespace rp {
 		void stop() {}
 
 		uint32 getSampleRate() { return 48000; }
+
+		void getDeviceNames(std::vector<std::string>& names) {}
+
+		bool setAudioDevice(uint32 idx) { return true; }
 	};
 
 #else

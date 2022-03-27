@@ -27,6 +27,8 @@ namespace rp {
 		virtual void onBeforeLoad(LoadConfig& loadConfig) {}
 
 		virtual void onAfterLoad(SystemPtr system) {}
+
+		virtual void onUpdate(f32 delta) {}
 	};
 
 	using ModelPtr = std::shared_ptr<Model>;

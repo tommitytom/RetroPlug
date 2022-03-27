@@ -5,6 +5,7 @@
 #include "core/Model.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
+#include "core/SystemSettings.h"
 
 namespace rp {
 	class SystemProcessor;
@@ -21,6 +22,8 @@ namespace rp {
 		OrchestratorMessageBus* _messageBus;
 		ModelFactory* _modelFactory;
 
+		SystemSettings _settings;
+
 		uint32 _version = 0;
 
 	public:
@@ -28,11 +31,7 @@ namespace rp {
 			_systemId(systemId), _processor(processor), _messageBus(messageBus), _modelFactory(modelFactory) {}
 		~SystemWrapper() {} 
 
-		SystemPtr load(LoadConfig&& loadConfig);
-
-		uint32 getVersion() const {
-			return _version;
-		}
+		SystemPtr load(const SystemSettings& settings, LoadConfig&& loadConfig);
 
 		template <typename T>
 		std::shared_ptr<T> getModel() {
@@ -56,6 +55,24 @@ namespace rp {
 		SystemPtr getSystem() {
 			return _system;
 		}
+
+		const SystemSettings& getSettings() const {
+			return _settings;
+		}
+
+		uint32 getVersion() const {
+			return _version;
+		}
+
+		void update(f32 delta) {
+			for (auto& system : _models) {
+				system.second->onUpdate(delta);
+			}
+		}
+
+		bool saveSram() { return saveSram(_settings.sramPath); }
+
+		bool saveSram(std::string_view path);
 	};
 
 	using SystemWrapperPtr = std::shared_ptr<SystemWrapper>;

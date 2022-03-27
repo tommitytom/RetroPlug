@@ -52,9 +52,8 @@ namespace rp {
 			SaveStateType saveType = SaveStateType::Sram;
 			int zoom = 2;
 			bool includeRom = true;
+			bool autoSave = true;
 		} settings;
-
-		std::map<SystemId, SystemSettings> systemSettings;
 
 		std::string path;
 	};

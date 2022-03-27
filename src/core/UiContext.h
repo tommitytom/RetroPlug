@@ -23,11 +23,13 @@ namespace rp {
 
 	const size_t MAX_IO_STREAMS = 16;
 	class Project;
+	class FileManager;
 
 	class UiContext {
 	private:
 		UiState _state;
 		Project* _project;
+		FileManager* _fileManager;
 
 		NVGcontext* _vg = nullptr;
 

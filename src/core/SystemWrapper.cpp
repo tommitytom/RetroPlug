@@ -1,13 +1,16 @@
 #include "SystemWrapper.h"
 
+#include <spdlog/spdlog.h>
+
 #include "core/ModelFactory.h"
 #include "core/ProxySystem.h"
 #include "core/SystemProcessor.h"
 #include "sameboy/SameBoySystem.h"
+#include "util/fs.h"
 
 using namespace rp;
 
-SystemPtr SystemWrapper::load(LoadConfig&& loadConfig) {
+SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadConfig) {
 	assert(loadConfig.romBuffer);
 
 	bool alreadyInitialized = _system != nullptr;
@@ -47,6 +50,7 @@ SystemPtr SystemWrapper::load(LoadConfig&& loadConfig) {
 	_processor->addSystem(proxy);
 
 	_system = proxy;
+	_settings = settings;
 	_version++;
 
 	return proxy;
@@ -54,4 +58,27 @@ SystemPtr SystemWrapper::load(LoadConfig&& loadConfig) {
 
 void SystemWrapper::reset() {
 	_messageBus->uiToAudio.enqueue(OrchestratorChange { .reset = _systemId });
+}
+
+bool SystemWrapper::saveSram(std::string_view path) {
+	Uint8Buffer buffer;
+
+	if (_system->saveSram(buffer)) {
+		fs::path fullPath = path;
+
+		if (fullPath.has_parent_path() && !fs::exists(fullPath.parent_path())) {
+			if (!fs::create_directories(fullPath.parent_path())) {
+				spdlog::error("Failed to write SRAM to {}.  Failed to create parent directory", path);
+				return false;
+			}
+		}
+
+		if (fsutil::writeFile(path, buffer)) {
+			spdlog::info("Wrote SRAM to {}", path);
+		} else {
+			spdlog::error("Failed to write SRAM to {}", path);
+		}
+	}
+
+	return false;
 }

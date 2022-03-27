@@ -29,6 +29,10 @@ std::string fsutil::readTextFile(const fs::path& path) {
 }
 
 bool fsutil::writeTextFile(const fs::path& path, const std::string& data) {
+	if (path.has_parent_path() && !fs::exists(path.parent_path())) {
+		fs::create_directories(path.parent_path());
+	}
+
 	std::ofstream file(path);
 	if (file.is_open()) {
 		file.write(data.data(), data.size());
@@ -43,6 +47,10 @@ bool fsutil::writeTextFile(const fs::path& path, const std::string& data) {
 }
 
 bool fsutil::writeFile(const fs::path& path, const char* data, size_t size) {
+	if (path.has_parent_path() && !fs::exists(path.parent_path())) {
+		fs::create_directories(path.parent_path());
+	}
+
 	std::ofstream file(path, std::ios::binary);
 	if (file.is_open()) {
 		file.write(data, size);
@@ -126,4 +134,12 @@ bool fsutil::copyFile(std::string_view from, std::string_view to) {
 	}
 
 	return false;
+}
+
+#define XXH_INLINE_ALL
+#include "util/xxhash.h"
+
+uint64 fsutil::hashFileContent(const fs::path& path) {
+	std::vector<std::byte> fileData = fsutil::readFile(path);
+	return XXH64((const char*)fileData.data(), fileData.size(), 0);
 }

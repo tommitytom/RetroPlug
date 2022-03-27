@@ -15,7 +15,6 @@ namespace rp {
 		StartView() {
 			setType<StartView>();
 			setEscCloses(false);
-			setupMenu();
 		}
 
 		~StartView() {}

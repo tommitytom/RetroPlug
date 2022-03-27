@@ -48,6 +48,7 @@ namespace rp {
 		bool _offsetsValid = false;
 		//LsdjRefresher _refresher;
 		bool _romValid = false;
+		uint64 _songHash = 0;
 
 	public:
 		std::unordered_map<KitIndex, KitState> kits;
@@ -63,6 +64,8 @@ namespace rp {
 		void onBeforeLoad(LoadConfig& loadConfig) override;
 
 		void onAfterLoad(SystemPtr system) override;
+
+		void onUpdate(f32 delta) override;
 
 		void updateKit(KitIndex kitIdx);
 
@@ -81,6 +84,8 @@ namespace rp {
 		bool isRomValid() const {
 			return _romValid;
 		}
+
+		bool isSramDirty();
 	};
 
 	using LsdjModelPtr = std::shared_ptr<LsdjModel>;

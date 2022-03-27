@@ -4,6 +4,7 @@
 
 #include "AudioContext.h"
 #include "core/AudioStreamSystem.h"
+#include "core/FileManager.h"
 #include "core/Input.h"
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
@@ -30,7 +31,8 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 		messageBus->allocator.enqueue(std::make_unique<SystemIo>());
 	}
 
-	_project =_state.viewManager.createShared<Project>();
+	_fileManager = _state.viewManager.createShared<FileManager>();
+	_project = _state.viewManager.createShared<Project>();
 	_project->setup(&_state.processor, orchestratorMessageBus);
 
 	_project->getModelFactory().addModelFactory<LsdjModel>([](std::string_view romName) {
@@ -107,6 +109,7 @@ void UiContext::processDelta(f64 delta) {
 	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5);
 	processInput(frameCount);
 
+	_project->update((f32)delta);
 	_state.viewManager.onUpdate((f32)delta);
 
 	_state.processor.process(frameCount);
@@ -120,6 +123,8 @@ void UiContext::processDelta(f64 delta) {
 	nvgRestore(_vg);
 
 	processOutput();
+
+	_project->saveIfRequired();
 }
 
 bool UiContext::onKey(VirtualKey::Enum key, bool down) {
@@ -169,7 +174,10 @@ SystemWrapperPtr sys;
 
 void UiContext::onTouchStart(double x, double y) {
 	if (!sys) {
-		sys = _project->addSystem<SameBoySystem>({
+		sys = _project->addSystem<SameBoySystem>(SystemSettings{
+			.romPath = "lsdj-embedded.gb",
+			.sramPath = "lsdj-embedded.sav"
+		}, {
 			.romBuffer = std::make_shared<Uint8Buffer>(LsdjRom, LsdjRom_len),
 			.sramBuffer = std::make_shared<Uint8Buffer>(LsdjSav, LsdjSav_len)
 		});

@@ -1,6 +1,6 @@
 local RECENT_LIST_MAX_SIZE = 30
 
-return function(tab, path, name)
+return function(tab, type, name, path)
 	local recent = tab.recent or {}
 
 	-- Remove duplicates
@@ -12,8 +12,9 @@ return function(tab, path, name)
 	end
 
 	table.insert(recent, 1, {
+		type = type,
+		name = name,
 		path = path,
-		name = name
 	})
 
 	if #recent > RECENT_LIST_MAX_SIZE then
