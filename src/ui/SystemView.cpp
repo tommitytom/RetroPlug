@@ -28,7 +28,7 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 			// Generate menu
 			MenuPtr menu = std::make_shared<Menu>();
 			buildMenu(*menu);
-			
+
 			MenuViewPtr menuView = addChild<MenuView>("Menu");
 			menuView->setMenu(menu);
 			menuView->focus();
@@ -91,10 +91,10 @@ void SystemView::buildMenu(Menu& target) {
 	int audioDevice = 0;
 
 	AudioManager& audioManager = project->getAudioManager();
-	
+
 	std::vector<std::string> audioDevices;
 	audioManager.getDeviceNames(audioDevices);
-		
+
 	root.separator()
 		.action("Reset System", [this]() {
 			_system->reset();
@@ -106,24 +106,29 @@ void SystemView::buildMenu(Menu& target) {
 			}
 		})
 
-		.separator()
+		.separator();
 
-		.subMenu("Settings")
-			.subMenu("Audio")
-				.multiSelect("Device", audioDevices, audioDevice, [project](int v) { 
-					if (v >= 0) {
-						project->getAudioManager().setAudioDevice((uint32)v);
-					}
-				})
-				.parent()
-			.multiSelect("Zoom", { "1x", "2x", "3x", "4x" }, &projectState.settings.zoom)
-			.subMenu("Save Options...")
-				.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
-				.select("Include ROM", &projectState.settings.includeRom)
-				.parent()
+	Menu& settingsMenu = root.subMenu("Settings");
+
+	#ifndef RP_WEB
+	settingsMenu.subMenu("Audio")
+		.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
+			if (v >= 0) {
+				project->getAudioManager().setAudioDevice((uint32)v);
+			}
+		})
+		.parent();
+	#endif
+
+	settingsMenu
+		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
+		.subMenu("Save Options...")
+			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
+			.select("Include ROM", &projectState.settings.includeRom)
 			.parent()
-		.separator()
-		.action("Game Link", []() {});
+		.parent()
+	.separator()
+	.action("Game Link", []() {});
 
 	for (ViewPtr child : getChildren()) {
 		child->onMenu(target);

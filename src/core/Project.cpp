@@ -130,7 +130,7 @@ void Project::removeSystem(SystemId systemId) {
 	}
 }
 
-void Project::duplicateSystem(SystemId systemId) {
+void Project::duplicateSystem(SystemId systemId, const SystemSettings& settings) {
 	SystemWrapperPtr systemWrapper = findSystem(systemId);
 	SystemPtr system = systemWrapper->getSystem();
 
@@ -144,7 +144,7 @@ void Project::duplicateSystem(SystemId systemId) {
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	addSystem(system->getType(), systemWrapper->getSettings(), std::move(loadConfig));
+	addSystem(system->getType(), settings, std::move(loadConfig));
 }
 
 SystemWrapperPtr Project::findSystem(SystemId systemId) {

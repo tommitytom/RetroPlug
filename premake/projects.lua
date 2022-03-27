@@ -86,7 +86,7 @@ function m.RetroPlug.link()
 	m.RetroPlug.include()
 
 	links { "RetroPlug" }
-	
+
 	dep.SameBoy.link()
 	dep.bgfx.link()
 	dep.glfw.link()
@@ -166,7 +166,7 @@ function m.Application.project()
 	}
 
 	filter { "system:linux" }
-		linkoptions { "-no-pie" }
+		linkoptions { "-no-pie" } -- maybe put in premake.lua?
 
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }

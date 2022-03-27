@@ -168,7 +168,7 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 	}
 
 	if (loadConfig.stateBuffer) {
-		if (GB_load_state_from_buffer(_state.gb, loadConfig.stateBuffer->data(), loadConfig.stateBuffer->size()) != 1) {
+		if (GB_load_state_from_buffer(_state.gb, loadConfig.stateBuffer->data(), loadConfig.stateBuffer->size()) != 0) {
 			std::cerr << "Failed to load state buffer" << std::endl;
 		}
 	}

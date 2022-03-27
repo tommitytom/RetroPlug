@@ -136,6 +136,8 @@ bool LsdjModel::isSramDirty() {
 			_songHash = songHash;
 			return true;
 		}
+	} else {
+		spdlog::warn("Failed to check SRAM: Buffer is invalid");
 	}
 
 	return false;

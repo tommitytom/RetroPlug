@@ -42,6 +42,7 @@ namespace rp {
 		ViewPtr _grid;
 
 		int32 _projectVersion = -1;
+		bool _refocus = false;
 
 	public:
 		GridOverlay() {
@@ -115,40 +116,7 @@ namespace rp {
 		}
 
 	private:
-		void updateLayout() {
-			if (getArea() != _grid->getArea()) {
-				setArea(_grid->getArea());
-			}
-
-			std::vector<ViewPtr>& children = _grid->getChildren();
-
-			if (_selected == INVALID_VIEW_INDEX && children.size() > 0) {
-				_selected = 0;
-			}
-
-			if (_selected >= children.size()) {
-				if (children.size() > 0) {
-					_selected = (ViewIndex)children.size() - 1;
-				}
-			}
-
-			if (_selected != INVALID_VIEW_INDEX && !viewIsFocused(children[_selected])) {
-				focusSystem(children[_selected]);
-			}
-
-			f32 unselectedAlpha = 1.0f;
-			if (_highlightMode == HighlightMode::Alpha) {
-				unselectedAlpha = _unselectedAlpha;
-			}
-
-			for (size_t i = 0; i < children.size(); ++i) {
-				if (i == _selected) {
-					children[i]->setAlpha(1.0f);
-				} else {
-					children[i]->setAlpha(unselectedAlpha);
-				}
-			}
-		}
+		void updateLayout();
 	};
 
 	using GridOverlayPtr = std::shared_ptr<GridOverlay>;

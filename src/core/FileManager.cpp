@@ -24,9 +24,7 @@ FileManager::FileManager() {
 }
 
 void FileManager::addRecent(RecentFilePath&& recent) {
-	spdlog::debug("Adding recent path to {}", _recentPath.string());
-
-	_recent.clear();
+	spdlog::debug("Adding recent path '{}' to {}", recent.path.string(), _recentPath.string());
 
 	try {
 		sol::state s;

@@ -195,7 +195,7 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager&
 		// Load project
 		fs::path path = fs::path(projectPaths[0]);
 
-		
+
 		// Copy?
 
 		project.load(path.string());
@@ -239,6 +239,7 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager&
 
 			// Save project
 			fs::path projectPath = fileManager.getUniqueFilename("projects/project.rplg.lua");
+			spdlog::info("saving project to {}", projectPath.string());
 			project.save(projectPath.string());
 
 			fileManager.addRecent(RecentFilePath{
@@ -274,7 +275,11 @@ void MenuBuilder::populateRecent(Menu& root, FileManager* fileManager, Project* 
 void MenuBuilder::systemAddMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
 	Menu& loadRoot = root.subMenu("Add");
 
-	loadRoot.action("Duplicate Current", [project, system]() { project->duplicateSystem(system->getId()); });
+	loadRoot.action("Duplicate Current", [fileManager, project, system]() {
+		SystemSettings settings = system->getSettings();
+		settings.sramPath = fileManager->getUniqueFilename(settings.sramPath).string();
+		project->duplicateSystem(system->getId(), settings);
+	});
 
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
 

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <string>
 #include <filesystem>
+#include <vector>
 
 namespace rp {
 	struct RecentFilePath {
@@ -13,7 +15,6 @@ namespace rp {
 	private:
 		std::filesystem::path _rootPath;
 		std::filesystem::path _recentPath;
-		std::vector<RecentFilePath> _recent;
 
 	public:
 		FileManager();
