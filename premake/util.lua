@@ -55,6 +55,21 @@ function util.setupPch(name, dir)
 	filter {}
 end
 
+function util.createGeneratorProject()
+	group "Build"
+
+	project "generator"
+		kind "Utility"
+
+		dependson { "ScriptCompiler" }
+
+		prebuildcommands {
+			"%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler ../../src/compiler.config.lua %{cfg.platform}"
+		}
+
+	group ""
+end
+
 function util.createConfigureProject(includeDeps)
 	local includeDepArg = ""
 	if includeDeps == true then
@@ -65,6 +80,8 @@ function util.createConfigureProject(includeDeps)
 
 	project "configure"
 		kind "Utility"
+
+		dependson { "generator" }
 
 		files { "../premake5.lua" }
 

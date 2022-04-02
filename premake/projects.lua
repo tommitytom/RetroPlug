@@ -122,13 +122,6 @@ function m.RetroPlug.project()
 		"src/ui/**.cpp",
 	}
 
-	filter { "options:not emscripten" }
-		dependson { "ScriptCompiler" }
-
-		prebuildcommands {
-			"%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler ../../src/compiler.config.lua %{cfg.platform}"
-		}
-
 	util.liveppCompat()
 end
 

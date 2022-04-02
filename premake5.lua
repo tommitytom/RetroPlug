@@ -7,7 +7,7 @@ newoption {
 	description = "Build with emscripten"
 }
 
-util.disableFastUpToDateCheck({ "configure" })
+util.disableFastUpToDateCheck({ "generator", "configure" })
 
 local buildFolder = _ACTION
 
@@ -89,6 +89,7 @@ workspace "RetroPlugAll"
 	filter {}
 
 util.createConfigureProject()
+util.createGeneratorProject()
 
 if _OPTIONS["emscripten"] == nil then
 	group "Utils"

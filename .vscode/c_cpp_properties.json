@@ -28,7 +28,8 @@
             "defines": [
                 "GB_INTERNAL",
                 "GB_DISABLE_TIMEKEEPING",
-                "GB_DISABLE_DEBUGGER"
+                "GB_DISABLE_DEBUGGER",
+                "RP_WINDOWS"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",
