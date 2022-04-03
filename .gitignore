@@ -15,6 +15,7 @@
 *.LSOverride
 *.xcuserdata
 *.xcschememanagement.plist
+.devcontainer/nginx/logs/*.log
 .vscode/ipch/*
 .vscode/*.log
 gui/*
