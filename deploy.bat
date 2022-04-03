@@ -6,7 +6,7 @@ mkdir build\deploy
 
 premake5 vs2019
 msbuild build/vs2019/ScriptCompiler.vcxproj /property:Configuration=Release /property:Platform=x64 /m
-build\vs2019\bin\x64\Release\ScriptCompiler.exe src\compiler.config.lua
+msbuild build/vs2019/generator.vcxproj /property:Configuration=Release /property:Platform=x64 /m
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 premake5 vs2019
