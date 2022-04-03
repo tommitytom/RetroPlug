@@ -1,0 +1,39 @@
+{
+	"name": "Retro Plug",
+
+	"build": {
+		"dockerfile": "Dockerfile",
+	},
+
+	// Run command on the host machine before starting docker
+	//"initializeCommand": "mkdir -p build/emscripten/debug && mkdir -p build/emscripten/development && mkdir -p build/emscripten/release && mkdir -p build/emscripten/dist",
+
+	// Run commands after the container is created.
+	"postCreateCommand": "echo 'PATH=$PATH:/emsdk/upstream/bin' >> /home/emscripten/.bashrc && sudo nginx -c /workspaces/RetroPlugNext/.devcontainer/nginx/default.conf",
+
+	// Set *default* container specific settings.json values on container create.
+	"settings": {
+		"terminal.integrated.shell.linux": "/bin/zsh"
+	},
+
+	// Add the IDs of extensions you want installed when the container is created.
+	"extensions": [
+		"dbaeumer.vscode-eslint",
+		"ms-vscode.cpptools",
+		"dtsvet.vscode-wasm",
+		"firefox-devtools.vscode-firefox-debug",
+		"ms-edgedevtools.vscode-edge-devtools",
+		"mutantdino.resourcemonitor",
+		"sumneko.lua",
+		"eamodio.gitlens",
+		"mhutchie.git-graph"
+	],
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	"forwardPorts": [
+		1338
+	],
+
+	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "emscripten"
+}
