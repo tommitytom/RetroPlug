@@ -9,8 +9,8 @@ fi
 set -e
 
 cd build/gmake2
-#CC=clang CXX=clang++ make config=release_x86 -j$(nproc) ScriptCompiler
-#bin/x64/Release/ScriptCompiler ../../src/compiler.config.lua x86
+CC=clang CXX=clang++ make config=release_x86 -j$(nproc) ScriptCompiler
+bin/x86/Release/ScriptCompiler ../../src/compiler.config.lua x86
 cd ../..
 
 cd build/emscripten

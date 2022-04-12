@@ -4,17 +4,11 @@ local util = dofile("util.lua")
 local EMSDK_FLAGS = {
 	"-s WASM=1",
 	--"-s LLD_REPORT_UNDEFINED",
-	--[[-s EXPORTED_FUNCTIONS='["_main", "_retroplug_get"]']]
 	[[-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]']],
-	--"-s EXPORT_ES6=1",
-	--"-s MODULARIZE=1",
-	--"-s EXPORT_NAME=RetroPlugModule",
-	--"-s SINGLE_FILE=1",
 	--"-s TOTAL_MEMORY=512MB",
 	"-s ENVIRONMENT=web,worker,audioworklet",
 	"-s ALLOW_MEMORY_GROWTH=1",
 	--"-s USE_ES6_IMPORT_META=0",
-	--"--bind"
 	"-s USE_PTHREADS=1",
 	--"-s PTHREAD_POOL_SIZE=2",
 	"-s USE_GLFW=3",
@@ -43,8 +37,8 @@ local EMSDK_RELEASE_FLAGS = {
 	--"-s ELIMINATE_DUPLICATE_FUNCTIONS=1",
 	--"-s MINIMAL_RUNTIME",
 	"-g",
-	"-Oz",
-	--"-closure",
+	"-O3",
+	"-closure",
 	"-o release/index.html"
 }
 
