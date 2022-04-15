@@ -106,6 +106,37 @@ namespace rp::fsutil {
 		return path;
 	}
 
+	inline std::string_view getUniqueId(std::string_view path) {
+		size_t dashPos = path.find_first_of('-');
+		if (dashPos > 0 && dashPos != std::string::npos) {
+			std::string_view beforeDash = path.substr(0, dashPos);
+
+			try {
+				std::string::size_type sz;
+				std::stoul(std::string(beforeDash), &sz, beforeDash.size() < 8 ? 10 : 16);
+
+				if (sz == beforeDash.size()) {
+					return beforeDash;
+				}
+
+				// ID is not valid for some reason
+			} catch (...) {
+				// Failed to convert - no unique ID
+			}
+		}
+
+		return "";
+	}
+
+	inline std::string_view removeUniqueId(std::string_view filename) {
+		std::string_view id = getUniqueId(filename);
+		if (id.size() > 0) {
+			return filename.substr(id.size() + 1);
+		}
+
+		return filename;
+	}
+
 	inline std::string getDirectoryName(const std::string& path) {
 		std::string dirPath = getDirectoryPath(path);
 		return getFilename(dirPath);

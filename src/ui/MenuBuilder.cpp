@@ -213,6 +213,7 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager&
 			fs::path path = pathPair.first;
 
 			path = fileManager.addHashedFile(path, "roms");
+			fs::path projectDir = fileManager.createUniqueDirectory("projects/");
 
 			// Load system
 			std::string sramPath;
@@ -224,7 +225,7 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager&
 
 			if (fs::exists(sramPath)) {
 				// Copy .sav
-				sramPath = fileManager.addUniqueFile(sramPath, "savs").string();
+				sramPath = fileManager.addUniqueFile(sramPath, projectDir).string();
 			} else {
 				sramPath = "";
 			}
@@ -238,8 +239,8 @@ bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager&
 			}
 
 			// Save project
-			fs::path projectPath = fileManager.getUniqueFilename("projects/project.rplg.lua");
-			spdlog::info("saving project to {}", projectPath.string());
+			fs::path projectPath = projectDir / "project.rplg.lua";
+			spdlog::info("Saving project to {}", projectPath.string());
 			project.save(projectPath.string());
 
 			fileManager.addRecent(RecentFilePath{

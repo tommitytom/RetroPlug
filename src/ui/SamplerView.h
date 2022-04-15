@@ -26,6 +26,7 @@ namespace rp {
 
 		lsdj::Ui _ui;
 
+		bool _aHeld = false;
 		bool _bHeld = false;
 
 	public:

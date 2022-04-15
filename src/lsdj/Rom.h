@@ -408,6 +408,7 @@ namespace rp::lsdj {
 			_paletteData = d + palettes;
 			_fontNames = d + names - 15;
 			_fontData = d + fonts;
+			_valid = true;
 		}
 
 		Color3 unpackColor(const uint8* data) const {

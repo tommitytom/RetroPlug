@@ -32,6 +32,10 @@ namespace rp {
 
 		std::filesystem::path addUniqueFile(const std::filesystem::path& sourceFile, const std::filesystem::path& targetDir);
 
+		std::filesystem::path createUniqueDirectory(const std::string& suggested);
+
+		std::filesystem::path getUniqueDirectoryName(std::string suggested);
+
 		std::filesystem::path getUniqueFilename(const std::filesystem::path& suggested);
 	};
 }

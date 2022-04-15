@@ -8,6 +8,7 @@ namespace rp {
 	private:
 		std::string _name;
 		SystemPtr _system;
+		bool _requiresSave = false;
 
 	public:
 		Model(const std::string& name) : _name(name) {}
@@ -22,6 +23,14 @@ namespace rp {
 
 		SystemPtr getSystem() {
 			return _system;
+		}
+
+		void setRequiresSave(bool value) {
+			_requiresSave = value;
+		}
+
+		bool getRequiresSave() const {
+			return _requiresSave;
 		}
 
 		virtual void onBeforeLoad(LoadConfig& loadConfig) {}

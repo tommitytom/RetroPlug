@@ -1,5 +1,6 @@
 #include "LsdjOverlay.h"
 
+#include "core/FileManager.h"
 #include "core/Project.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
@@ -110,13 +111,13 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 
 	//bool foundSamples = false;
 	size_t kitIdx = -1;
-	
+
 	std::vector<std::string> samples;
 
 	for (const std::string& path : paths) {
 		if (fs::is_directory(path)) {
 			std::vector<std::string> dirSamples;
-			
+
 			for (const fs::directory_entry& item : fs::directory_iterator(path)) {
 				if (item.path().extension() == ".wav") {
 					dirSamples.push_back(item.path().string());
@@ -138,7 +139,15 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 	}
 
 	if (samples.size() > 0) {
-		kitIdx = model->addKitSamples(system, samples);
+		FileManager* fileManager = getShared<FileManager>();
+		std::string kitName = fsutil::getDirectoryName(samples[0]);
+
+		// Make a local copy of the sample if we don't already have it
+		for (std::string& samplePath : samples) {
+			samplePath = fileManager->addHashedFile(samplePath, "samples").string();
+		}
+
+		kitIdx = model->addKitSamples(system, samples, kitName);
 	}
 
 	if (kitIdx != -1) {

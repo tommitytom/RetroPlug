@@ -111,8 +111,20 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 		}
 	} else {
 		if (down) {
+			if (key == VirtualKey::D) {
+				_aHeld = true;
+			}
+
 			_ui.pressKey(key);
 		} else {
+			if (key == VirtualKey::D && _aHeld) {
+				_aHeld = false;
+				LsdjModelPtr model = _system->getModel<LsdjModel>();
+				if (model) {
+					model->setRequiresSave(true);
+				}
+			}
+
 			_ui.releaseKey(key);
 		}
 
@@ -142,7 +154,7 @@ bool defaultHexSpin(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 defaul
 	if (!editable) {
 		spinOptions = (lsdj::SpinOptions::Enum)(spinOptions | lsdj::SpinOptions::Disabled);
 	}
-	
+
 	if (value < 0) {
 		spinOptions = (lsdj::SpinOptions::Enum)(spinOptions | lsdj::SpinOptions::Dimmed);
 		editValue = defaultValue;
@@ -321,10 +333,17 @@ void SamplerView::onRender() {
 		updateSampleBuffers();
 	}
 
-	_c.text(propertyName, 6, "PITCH", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 6, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
+	_c.text(propertyName, 6, "GAIN", lsdj::ColorSets::Normal);
+	if (defaultHexSpin(_ui, 19, 6, settings->gain, globalSettings->gain, 0, 0xFF, isEditable)) {
+		updateSampleBuffers();
+	}
+
+	_c.text(propertyName, 7, "PITCH", lsdj::ColorSets::Normal);
+	if (defaultHexSpin(_ui, 19, 7, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
 		//updateSampleBuffers();
 	}
+
+
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
 	if (defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable)) {
@@ -435,14 +454,15 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 			kitSamples.clear();
 			break;
 		}
-		
+
 		if (fsutil::getFileExt(path) == ".wav") {
 			kitSamples.push_back(path);
 		}
 	}
 
 	if (kitSamples.size() > 0) {
-		model->addKitSamples(system, paths, kitIdx);
+		std::string kitName = fsutil::getDirectoryName(kitSamples[0]);
+		model->addKitSamples(system, paths, kitName, kitIdx);
 	}
 
 	_samplerState.selectedKit = (int32)kitIdx;

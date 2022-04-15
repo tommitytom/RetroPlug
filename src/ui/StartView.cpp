@@ -14,8 +14,6 @@
 using namespace rp;
 
 void StartView::setupMenu() {
-	spdlog::info("setting up menu");
-
 	MenuPtr menuRoot = std::make_shared<Menu>();
 	Menu& menu = *menuRoot;
 

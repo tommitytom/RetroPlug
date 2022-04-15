@@ -13,6 +13,7 @@ namespace rp {
 	struct SampleSettings {
 		int32 dither = 0xFF;
 		int32 volume = 0xFF;
+		int32 gain = 0;
 		int32 pitch = 0x7F;
 		int32 filter = 0;
 		int32 cutoff = 0x7F;
@@ -22,6 +23,7 @@ namespace rp {
 	const SampleSettings EMPTY_SAMPLE_SETTINGS = SampleSettings{
 		.dither = -1,
 		.volume = -1,
+		.gain = -1,
 		.pitch = -1,
 		.filter = -1,
 		.cutoff = -1,
@@ -71,7 +73,7 @@ namespace rp {
 
 		KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);
 
-		KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, KitIndex kitIdx = -1);
+		KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, std::string_view name = "", KitIndex kitIdx = -1);
 
 		lsdj::MemoryOffsets& getMemoryOffsets() {
 			return _ramOffsets;

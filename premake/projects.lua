@@ -47,7 +47,8 @@ local m = {
 	Application = {},
 	ExampleApplication = {},
 	OffsetCalculator = {},
-	Plugin = {}
+	Plugin = {},
+	Tests = {}
 }
 
 function m.RetroPlug.include()
@@ -100,8 +101,6 @@ function m.RetroPlug.project()
 		"src/RetroPlug.cpp",
 		"src/core/**.h",
 		"src/core/**.cpp",
-		--"src/generated/*.h",
-		--"src/generated/*.cpp",
 		"src/generated/lua/*_%{cfg.platform}.h",
 		"src/generated/lua/*_%{cfg.platform}.cpp",
 		"src/lsdj/**.h",
@@ -246,6 +245,17 @@ function m.OffsetCalculator.project()
 	}
 
 	util.liveppCompat()
+end
+
+function m.Tests.project()
+	project "Tests"
+	kind "ConsoleApp"
+
+	m.RetroPlug.link()
+
+	files {
+		"src/tests/**.cpp"
+	}
 end
 
 return m

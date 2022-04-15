@@ -6,6 +6,7 @@
 #include "util/fs.h"
 #include "util/SolUtil.h"
 #include "util/StlUtil.h"
+#include "util/StringUtil.h"
 
 using namespace rp;
 
@@ -141,7 +142,7 @@ fs::path FileManager::addHashedFile(const fs::path& sourceFile, const fs::path& 
 	return targetPath;
 }
 
-fs::path FileManager::addUniqueFile(const std::filesystem::path& sourceFile, const std::filesystem::path& targetDir) {
+fs::path FileManager::addUniqueFile(const fs::path& sourceFile, const fs::path& targetDir) {
 	fs::path fullTargetDir = _rootPath / targetDir;
 	if (!fs::exists(fullTargetDir)) {
 		fs::create_directories(fullTargetDir);
@@ -153,19 +154,90 @@ fs::path FileManager::addUniqueFile(const std::filesystem::path& sourceFile, con
 	return fullTargetPath;
 }
 
-fs::path FileManager::getUniqueFilename(const fs::path& suggested) {
-	std::string filename = fsutil::removeFileExt(suggested.filename().string());
-	std::string ext = std::string(fsutil::getFileExt(suggested.string()));
-
-	fs::path fullTargetDir = _rootPath / suggested.parent_path();
-	if (!fs::exists(fullTargetDir)) {
-		return fullTargetDir / fmt::format("{}-0{}", filename, ext);
+fs::path FileManager::createUniqueDirectory(const std::string& suggested) {
+	fs::path dirName = getUniqueDirectoryName(suggested);
+	if (dirName != "") {
+		fs::create_directories(dirName);
+		return dirName;
 	}
 
+	return "";
+}
+
+fs::path FileManager::getUniqueDirectoryName(std::string suggested) {
+	size_t countStart = 0;
 	size_t countMax = 99999;
 
-	for (size_t i = 0; i < countMax; ++i) {
-		fs::path fullTargetPath = fullTargetDir / fmt::format("{}-{}{}", filename, i, ext);
+	fs::path baseDir = _rootPath.string();
+	std::string dirName = "";
+
+	StringUtil::ltrim(suggested, "/\\");
+
+	if (suggested.size() > 0) {
+		baseDir = _rootPath / suggested;
+		baseDir.make_preferred();
+
+		if (baseDir.string().back() != fs::path::preferred_separator) {
+			dirName = baseDir.filename().string();
+			baseDir = baseDir.parent_path();
+
+			size_t dashFound = dirName.find_first_of('-');
+			if (dashFound != std::string::npos) {
+				std::string beforeDash = dirName.substr(0, dashFound);
+				try {
+					countStart = std::stoi(beforeDash);
+					countStart++;
+
+					dirName = dirName.substr(dashFound + 1);
+				} catch (...) {
+					// Text before dash is not a number, ignore it
+				}
+			}
+		}
+	} else {
+		baseDir.make_preferred();
+	}
+
+	fs::path fullTargetPath;
+
+	for (size_t i = countStart; i < countMax; ++i) {
+		if (dirName.size()) {
+			fullTargetPath = baseDir / fmt::format("{}-{}", i, dirName);
+		} else {
+			fullTargetPath = baseDir / fmt::format("{}", i);
+		}
+		
+		if (!fs::exists(fullTargetPath)) {
+			return fullTargetPath;
+		}
+	}
+
+	spdlog::error("Failed to create unique directory name!");
+	return "";
+}
+
+fs::path FileManager::getUniqueFilename(const fs::path& suggested) {
+	size_t countStart = 0;
+	size_t countMax = 99999;
+	fs::path fullTargetPath;
+	fs::path fullTargetDir = _rootPath / suggested.parent_path(); 
+	std::string filename = suggested.filename().string();
+
+	size_t dashFound = filename.find_first_of('-');
+	if (dashFound != std::string::npos) {
+		std::string beforeDash = filename.substr(0, dashFound);
+		try {
+			countStart = std::stoi(beforeDash);
+			countStart++;
+
+			filename = filename.substr(dashFound + 1);
+		} catch (...) {
+			// Text before dash is not a number, ignore it
+		}
+	}
+
+	for (size_t i = countStart; i < countMax; ++i) {
+		fullTargetPath = fullTargetDir / fmt::format("{}-{}", i, filename);
 
 		if (!fs::exists(fullTargetPath)) {
 			return fullTargetPath;

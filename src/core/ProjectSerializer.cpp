@@ -12,7 +12,7 @@ using namespace rp;
 const std::string_view PROJECT_VERSION = "1.0.0";
 const std::string_view RP_VERSION = "0.4.0";
 
-bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemSettings>& settings, bool updatePath) {
+bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath) {
 	sol::state s;
 	SolUtil::prepareState(s);
 
@@ -32,7 +32,9 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, co
 
 	sol::table systemsTable = s.create_table();
 
-	for (const SystemSettings& systemSettings : settings) {
+	for (const SystemWrapperPtr& system : systems) {
+		const SystemSettings& systemSettings = system->getSettings();
+
 		sol::table systemTable = s.create_table_with(
 			"romPath", systemSettings.romPath,
 			"sramPath", systemSettings.sramPath,
@@ -45,9 +47,9 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, co
 
 		sol::table modelTable = systemTable.create_named("model");
 
-		/*for (auto& [modelType, model] : system.models) {
-			model->serialize(s, modelTable.create_named(model->getName()));
-		}*/
+		for (auto& [modelType, model] : system->getModels()) {
+			model->onSerialize(s, modelTable.create_named(model->getName()));
+		}
 
 		systemsTable.add(systemTable);
 	}

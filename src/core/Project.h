@@ -124,10 +124,22 @@ namespace rp {
 		bool save(std::string_view path);
 
 		void saveIfRequired() {
-			if (_requiresSave && !_state.path.empty()) {
-				save();
-				_requiresSave = false;
+			if (!_state.path.empty()) {
+				for (SystemWrapperPtr& system : _systems) {
+					for (auto [type, model] : system->getModels()) {
+						if (model->getRequiresSave()) {
+							_requiresSave = true;
+							model->setRequiresSave(false);
+						}
+					}
+				}
+
+				if (_requiresSave && _state.settings.autoSave) {
+					save();
+					_requiresSave = false;
+				}
 			}
+			
 		}
 
 		template <typename T>

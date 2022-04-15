@@ -71,7 +71,7 @@ bool Project::save(std::string_view path) {
 		settings.push_back(system->getSettings());
 	}
 
-	return ProjectSerializer::serialize(path, _state, settings, true);
+	return ProjectSerializer::serialize(path, _state, _systems, true);
 }
 
 SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, SystemId systemId) {
@@ -144,7 +144,8 @@ void Project::duplicateSystem(SystemId systemId, const SystemSettings& settings)
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	addSystem(system->getType(), settings, std::move(loadConfig));
+	auto cloned = addSystem(system->getType(), settings, std::move(loadConfig));
+	cloned->saveSram();
 }
 
 SystemWrapperPtr Project::findSystem(SystemId systemId) {

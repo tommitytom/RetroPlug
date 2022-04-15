@@ -13,6 +13,7 @@ sol::table serializeSettings(sol::state& s, const SampleSettings& settings) {
 	return s.create_table_with(
 		"dither", settings.dither,
 		"volume", settings.volume,
+		"gain", settings.gain,
 		"pitch", settings.pitch,
 		"filter", settings.filter,
 		"cutoff", settings.cutoff,
@@ -25,6 +26,7 @@ SampleSettings deserializeSettings(sol::table data) {
 
 	s.dither = data["dither"].get_or(s.dither);
 	s.volume = data["volume"].get_or(s.volume);
+	s.gain = data["gain"].get_or(s.gain);
 	s.pitch = data["pitch"].get_or(s.pitch);
 	s.filter = data["filter"].get_or(s.filter);
 	s.cutoff = data["cutoff"].get_or(s.cutoff);
@@ -74,7 +76,7 @@ KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex k
 	return kitIdx;
 }
 
-KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::string>& paths, KitIndex kitIdx) {
+KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::string>& paths, std::string_view name, KitIndex kitIdx) {
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
 		return -1;
@@ -88,7 +90,7 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 	}
 
 	if (kitIdx != -1) {
-		std::string kitName = fsutil::getDirectoryName(paths[0]);
+		std::string kitName = name.empty() ? fmt::format("KIT {0:x}", kitIdx) : std::string(name);
 		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
 
 		KitState kitState = KitState{
@@ -99,6 +101,8 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 			if (fsutil::getFileExt(path) == ".wav") {
 				std::string sampleName = fsutil::getFilename(path);
 				sampleName = fsutil::removeFileExt(sampleName);
+				sampleName = std::string(fsutil::removeUniqueId(sampleName));
+
 				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
 
 				kitState.samples.push_back(KitSample{
@@ -120,6 +124,7 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 			}
 			
 			updateKit(kitIdx);
+			setRequiresSave(true);
 		}
 	}
 

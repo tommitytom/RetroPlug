@@ -60,6 +60,14 @@ namespace rp {
 			return _settings;
 		}
 
+		std::vector<std::pair<entt::id_type, ModelPtr>>& getModels() {
+			return _models;
+		}
+
+		const std::vector<std::pair<entt::id_type, ModelPtr>>& getModels() const {
+			return _models;
+		}
+
 		uint32 getVersion() const {
 			return _version;
 		}
