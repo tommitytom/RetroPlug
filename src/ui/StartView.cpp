@@ -9,6 +9,7 @@
 #include "sameboy/SameBoySystem.h"
 #include "ui/MenuBuilder.h"
 #include "util/fs.h"
+#include "util/LoaderUtil.h"
 #include "util/SolUtil.h"
 
 using namespace rp;
@@ -24,7 +25,7 @@ void StartView::setupMenu() {
 
 			std::vector<std::string> files;
 			if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				MenuBuilder::handleLoad(files, *getShared<FileManager>(), *getShared<Project>());
+				LoaderUtil::handleLoad(files, *getShared<FileManager>(), *getShared<Project>());
 				ctx.close();
 			}
 		});
@@ -56,5 +57,5 @@ void StartView::setupMenu() {
 }
 
 bool StartView::onDrop(const std::vector<std::string>& paths) {
-	return MenuBuilder::handleLoad(paths, *getShared<FileManager>(), *getShared<Project>());
+	return LoaderUtil::handleLoad(paths, *getShared<FileManager>(), *getShared<Project>());
 }

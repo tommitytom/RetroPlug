@@ -105,13 +105,13 @@ void SystemView::buildMenu(Menu& target) {
 				this->remove();
 			}
 		})
-
 		.separator();
 
 	Menu& settingsMenu = root.subMenu("Settings");
 
 	#ifndef RP_WEB
-	settingsMenu.subMenu("Audio")
+	settingsMenu
+		.subMenu("Audio")
 		.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
 			if (v >= 0) {
 				project->getAudioManager().setAudioDevice((uint32)v);

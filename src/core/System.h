@@ -19,6 +19,7 @@
 
 namespace rp {
 	using SystemType = entt::id_type;
+	const size_t MAX_SYSTEM_COUNT = 4;
 
 	struct SystemStateOffsets {
 		int32 coreState = -1;

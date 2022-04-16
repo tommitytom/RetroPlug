@@ -30,6 +30,48 @@ void Project::processIncoming() {
 	}
 }
 
+std::string rp::Project::getName() {
+	std::string name;
+	std::unordered_map<std::string, size_t> romNames;
+
+	for (SystemWrapperPtr systemWrapper : _systems) {
+		SystemPtr system = systemWrapper->getSystem();
+
+		auto found = romNames.find(system->getRomName());
+
+		if (found != romNames.end()) {
+			found->second++;
+		} else {
+			romNames[system->getRomName()] = 1;
+		}
+	}
+
+	bool first = true;
+	for (auto v : romNames) {
+		if (!first) {
+			name += " | ";
+		}
+
+		if (v.second == 1) {
+			name += v.first;
+		} else {
+			name += fmt::format("{}x {}", v.second, v.first);
+		}
+	}
+
+	for (SystemWrapperPtr system : _systems) {
+		for (auto [type, model] : system->getModels()) {
+			std::string modelName = model->getProjectName();
+
+			if (modelName.size() > 0) {
+				return fmt::format("{} [{}]", modelName, name);
+			}
+		}
+	}
+
+	return name;
+}
+
 void Project::load(std::string_view path) {
 	clear();
 
@@ -144,6 +186,16 @@ SystemWrapperPtr Project::findSystem(SystemId systemId) {
 }
 
 void Project::clear() {
+	// Remove systems
+	std::vector<SystemId> systemIds;
+	for (auto system : _systems) {
+		systemIds.push_back(system->getId());
+	}
+
+	for (SystemId systemId : systemIds) {
+		removeSystem(systemId);
+	}
+
 	_state = ProjectState();
 
 	if (_lua) {
@@ -155,4 +207,5 @@ void Project::clear() {
 
 	_version++;
 	_requiresSave = false;
+	//_copyLocal = true;
 }

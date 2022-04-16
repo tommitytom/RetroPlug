@@ -69,6 +69,8 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
+		std::string getProjectName() override;
+
 		void updateKit(KitIndex kitIdx);
 
 		KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);

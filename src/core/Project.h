@@ -61,47 +61,7 @@ namespace rp {
 
 		void processIncoming();
 
-		/*template <typename T>
-		std::shared_ptr<T> addModel(SystemId systemId) {
-			entt::id_type typeId = entt::type_id<T>().seq();
-			std::shared_ptr<T> v = std::make_shared<T>();
-
-			for (SystemPtr system : _orchestrator->getSystems()) {
-				if (system->getId() == systemId) {
-					v->setSystem(system);
-					break;
-				}				
-			}
-
-			deserializeModel(systemId, v);
-
-			_state.systemSettings[systemId].models[typeId] = v;
-
-			return v;
-		}
-
-		template <typename T>
-		std::shared_ptr<T> getModel(SystemId systemId) {
-			entt::id_type typeId = entt::type_id<T>().seq();
-			SystemSettings& systemSettings = _state.systemSettings[systemId];
-
-			auto found = systemSettings.models.find(typeId);
-			if (found != systemSettings.models.end()) {
-				return std::static_pointer_cast<T>(found->second);
-			}
-
-			return nullptr;
-		}
-
-		template <typename T>
-		std::shared_ptr<T> getOrCreateModel(SystemId systemId) {
-			std::shared_ptr<T> state = getModel<T>(systemId);
-			if (state) {
-				return state;
-			}
-
-			return addModel<T>(systemId);
-		}*/
+		std::string getName();
 
 		void update(f32 delta) {
 			for (SystemWrapperPtr system : _systems) {

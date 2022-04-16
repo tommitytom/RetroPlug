@@ -10,42 +10,11 @@
 #include "core/SystemWrapper.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/fs.h"
-#include "util/SolUtil.h"
+#include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
+#include "util/SolUtil.h"
 
 using namespace rp;
-
-std::string formatProjectName(const std::vector<SystemWrapperPtr>& systems, const std::string& path) {
-	std::string name = fsutil::getFilename(path) + " [";
-	std::unordered_map<std::string, size_t> romNames;
-
-	for (SystemWrapperPtr systemWrapper : systems) {
-		SystemPtr system = systemWrapper->getSystem();
-
-		auto found = romNames.find(system->getRomName());
-
-		if (found != romNames.end()) {
-			found->second++;
-		} else {
-			romNames[system->getRomName()] = 1;
-		}
-	}
-
-	bool first = true;
-	for (auto v : romNames) {
-		if (!first) {
-			name += " | ";
-		}
-
-		if (v.second == 1) {
-			name += v.first;
-		} else {
-			name += fmt::format("{}x {}", v.second, v.first);
-		}
-	}
-
-	return name + "]";
-}
 
 void loadRomDialog(Project* project, SystemWrapperPtr system) {
 	std::vector<std::string> files;
@@ -87,7 +56,7 @@ bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
 
 	fileManager->addRecent(RecentFilePath {
 		.type = "project",
-		.name = formatProjectName(project->getSystems(), path),
+		.name = project->getName(),
 		.path = path,
 	});
 
@@ -151,8 +120,6 @@ bool saveState(Project* project, SystemWrapperPtr system) {
 	return false;
 }
 
-const size_t MAX_SYSTEM_COUNT = 4;
-
 bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWrapperPtr system) {
 	std::vector<std::byte> fileData = fsutil::readFile(romPath);
 
@@ -166,109 +133,23 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWr
 	return true;
 }
 
-bool MenuBuilder::handleLoad(const std::vector<std::string>& files, FileManager& fileManager, Project& project) {
-	std::vector<std::string_view> projectPaths;
-	std::vector<std::pair<std::string_view, SystemType>> romPaths;
-	std::vector<std::pair<std::string_view, SystemType>> sramPaths;
-
-	SystemProcessor& processor = project.getProcessor();
-
-	for (const std::string& path : files) {
-		std::string_view ext = fsutil::getFileExt(path);
-
-		if (ext == ".retroplug" || ext == ".rplg" || ext == ".rplg.lua") {
-			projectPaths.push_back(path);
-		} else {
-			std::vector<SystemType> loaderTypes = processor.getRomLoaders(path);
-			if (loaderTypes.size()) {
-				romPaths.push_back({ path, loaderTypes[0] });
-			}
-
-			loaderTypes = processor.getSramLoaders(path);
-			if (loaderTypes.size()) {
-				sramPaths.push_back({ path, loaderTypes[0] });
-			}
-		}
-	}
-
-	if (projectPaths.size() > 0) {
-		// Load project
-		fs::path path = fs::path(projectPaths[0]);
-
-
-		// Copy?
-
-		project.load(path.string());
-
-		fileManager.addRecent(RecentFilePath{
-			.type = "project",
-			.name = formatProjectName(project.getSystems(), path.string()),
-			.path = path,
-		});
-
-		return true;
-	} else if (romPaths.size() > 0) {
-		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
-			auto& pathPair = romPaths[i];
-			fs::path path = pathPair.first;
-
-			path = fileManager.addHashedFile(path, "roms");
-			fs::path projectDir = fileManager.createUniqueDirectory("projects/");
-
-			// Load system
-			std::string sramPath;
-			if (sramPaths.size() > 0) {
-				sramPath = std::string(sramPaths[0].first);
-			} else {
-				sramPath = fsutil::replaceFileExt(path.string(), ".sav", false);
-			}
-
-			if (fs::exists(sramPath)) {
-				// Copy .sav
-				sramPath = fileManager.addUniqueFile(sramPath, projectDir).string();
-			} else {
-				sramPath = "";
-			}
-
-			SystemSettings systemSettings { .romPath = path.string(), .sramPath = sramPath };
-			SystemPtr system = project.addSystem(pathPair.second, systemSettings)->getSystem();
-			std::string romName = system->getRomName();
-
-			if (sramPath.empty()) {
-				// TODO: Save the SRAM to a new path
-			}
-
-			// Save project
-			fs::path projectPath = projectDir / "project.rplg.lua";
-			spdlog::info("Saving project to {}", projectPath.string());
-			project.save(projectPath.string());
-
-			fileManager.addRecent(RecentFilePath{
-				.type = "project",
-				.name = romName,
-				.path = projectPath,
-			});
-
-			break;
-		}
-	} else if (sramPaths.size() > 0) {
-
-	}
-
-	return false;
-}
-
 void MenuBuilder::populateRecent(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
 	std::vector<RecentFilePath> paths;
 	fileManager->loadRecent(paths);
 
 	for (const RecentFilePath& path : paths) {
 		root.action(path.name, [p = path, fileManager, project, system]() {
-			if (system) {
+			if (p.type == "project") {
+				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, * fileManager, * project);
+			} else {
+				spdlog::error("Failed to load recent file: File type {} unknown", p.type);
+			}
+
+			/*if (system) {
 				handleSystemLoad(p.path, "", system);
 			} else {
-				handleLoad(std::vector<std::string> { p.path.string() }, *fileManager, *project);
-			}
+				
+			}*/
 		});
 	}
 }

@@ -232,8 +232,32 @@ namespace rp::lsdj {
 			return data;
 		}
 
+		uint32 getProjectCount() const {
+			uint32 count = 0;
+
+			for (uint8 i = 0; i < LSDJ_SAV_PROJECT_COUNT; ++i) {
+				lsdj_project_t* proj = lsdj_sav_get_project(_sav, i);
+
+				if (proj) {
+					count++;
+				}
+				
+			}
+
+			return count;
+		}
+
 		Project getProject(uint8 idx) const {
 			return lsdj_sav_get_project(_sav, idx);
+		}
+
+		Project getWorkingProject() const {
+			uint8 idx = lsdj_sav_get_active_project_index(_sav);
+			if (idx != LSDJ_SAV_NO_ACTIVE_PROJECT_INDEX) {
+				return getProject(idx);
+			}
+			
+			return Project();
 		}
 
 		Song getWorkingSong() const {

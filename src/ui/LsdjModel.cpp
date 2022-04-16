@@ -177,6 +177,22 @@ void LsdjModel::onUpdate(f32 delta) {
 
 }
 
+std::string LsdjModel::getProjectName() { 
+	MemoryAccessor buffer = getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
+	if (!buffer.isValid()) {
+		return "";
+	}
+
+	lsdj::Sav sav(buffer.getBuffer());
+
+	std::string name = std::string(sav.getWorkingProject().getName());
+	if (sav.getProjectCount() > 0) {
+		name = fmt::format("{} (+{})", name, sav.getProjectCount());
+	}
+
+	return name;
+}
+
 void LsdjModel::onSerialize(sol::state& s, sol::table target) {
 	sol::table kitTable = target.create_named("kits");
 

@@ -160,12 +160,10 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 				max = value;
 			}
 		}
-
-		std::array<f32, 7> GAIN_MULTIPLIER_LOOKUP = { 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f };
 		
 		f32 normalizeGain = 1.0f / max;
 		f32 volumeGain = (f32)settings.volume / (f32)0xFF;
-		f32 gainMultiplier = GAIN_MULTIPLIER_LOOKUP[settings.gain >= 0 && settings.gain < GAIN_MULTIPLIER_LOOKUP.size() ? settings.gain : 0];
+		f32 gainMultiplier = (f32)settings.gain;
 
 		for (size_t i = 0; i < gainTarget.size(); ++i) {
 			gainTarget.set(i, sample.buffer->get(i) * volumeGain * normalizeGain * gainMultiplier);

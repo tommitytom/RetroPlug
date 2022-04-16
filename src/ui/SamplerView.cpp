@@ -334,9 +334,12 @@ void SamplerView::onRender() {
 	}
 
 	_c.text(propertyName, 6, "GAIN", lsdj::ColorSets::Normal);
-	if (defaultSelect<7>(_ui, 19, 6, settings->gain, globalSettings->gain, { "1x", "1.5x", "2x", "2.5x", "3x", "3.5x", "4.0x" }, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 6, settings->gain, globalSettings->gain, 0x1, 0xF, isEditable)) {
 		updateSampleBuffers();
 	}
+	/*if (defaultSelect<10>(_ui, 19, 6, settings->gain, globalSettings->gain, {"1x", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x"}, isEditable)) {
+		updateSampleBuffers();
+	}*/
 
 	_c.text(propertyName, 7, "PITCH", lsdj::ColorSets::Normal);
 	if (defaultHexSpin(_ui, 19, 7, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {

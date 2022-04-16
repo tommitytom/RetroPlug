@@ -16,8 +16,6 @@ namespace rp {
 }
 
 namespace rp::MenuBuilder {
-	bool handleLoad(const std::vector<std::string>& files, FileManager& fileManager, Project& project);
-
 	void populateRecent(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system);
 
 	void systemLoadMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system);
