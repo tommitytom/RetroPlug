@@ -38,6 +38,8 @@ namespace rp {
 		virtual void onAfterLoad(SystemPtr system) {}
 
 		virtual void onUpdate(f32 delta) {}
+
+		virtual std::string getProjectName() { return ""; }
 	};
 
 	using ModelPtr = std::shared_ptr<Model>;
