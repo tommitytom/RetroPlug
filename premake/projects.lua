@@ -24,6 +24,8 @@ local EMSDK_FLAGS = {
 
 	"--shell-file ../../templates/shell_minimal.html",
 	"--post-js ../../templates/processor.js",
+
+	"-fexceptions",
 }
 
 local EMSDK_DEBUG_FLAGS = {
@@ -154,11 +156,7 @@ function m.Application.project()
 	filter { "system:linux" }
 		linkoptions { "-no-pie" } -- maybe put in premake.lua?
 
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-
 	filter { "options:emscripten", "configurations:Debug" }
-		--buildoptions { "--bind" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
 
 	filter { "options:emscripten", "configurations:Release" }

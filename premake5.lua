@@ -28,22 +28,22 @@ workspace "RetroPlugAll"
 
 	defines { "NOMINMAX" }
 
-	configuration { "Debug" }
+	filter "configurations:Debug"
 		defines { "RP_DEBUG", "DEBUG", "_DEBUG" }
 		symbols "Full"
 
-	configuration { "Release" }
+	filter "configurations:Release"
 		defines { "RP_RELEASE", "NDEBUG" }
 		optimize "On"
 		--flags { "LinkTimeOptimization" }
 
-	configuration { "Tracer" }
+	filter "configurations:Tracer"
 		defines { "RP_TRACER", "NDEBUG", "TRACER_BUILD" }
 		optimize "On"
 
 	filter { "options:emscripten" }
 		defines { "RP_WEB" }
-		buildoptions { "-matomics", "-mbulk-memory" }
+		buildoptions { "-matomics", "-mbulk-memory", "-fexceptions" }
 
 	filter { "system:linux", "options:not emscripten" }
 		defines { "RP_LINUX", "RP_POSIX" }

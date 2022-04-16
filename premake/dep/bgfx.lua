@@ -41,10 +41,10 @@ function m.includeBgfx()
 		-- "BGFX_CONFIG_TRANSIENT_VERTEX_BUFFER_SIZE=(6<<22)" -- Causes issues with emscripten?
 	}
 
-	configuration { "web" }
-		defines { "BGFX_CONFIG_RENDERER_OPENGLES=30" }
+	--filter { "options:emscripten" }
+		--defines { "BGFX_CONFIG_RENDERER_OPENGLES=30" }
 
-	configuration { "windows" }
+	filter "system:windows"
 		defines { "BGFX_CONFIG_RENDERER_OPENGL=43" }
 
 	filter "configurations:Debug"
@@ -168,7 +168,7 @@ function m.bgfxProject()
 				BGFX_DIR .. "/src/*.mm",
 			}
 
-		filter {} 
+		filter {}
 
 		links { "bx", "bimg" }
 

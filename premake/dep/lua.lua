@@ -3,7 +3,7 @@ local LUA_DIR = "thirdparty/lua"
 local m = {}
 
 function m.include()
-	includedirs { LUA_DIR .. "/src" }
+	sysincludedirs { LUA_DIR .. "/src" }
 
 	filter { "system:linux" }
 		defines { "LUA_USE_POSIX" }
@@ -36,7 +36,7 @@ function m.project()
 
 		m.source()
 
-		--configuration { "windows" }
+		--filter "system:windows"
 			--disablewarnings { "4334", "4098", "4244" }
 end
 

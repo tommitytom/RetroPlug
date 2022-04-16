@@ -3,7 +3,7 @@ local R8BRAIN_DIR = "thirdparty/r8brain"
 local m = {}
 
 function m.include()
-	includedirs { R8BRAIN_DIR }
+	sysincludedirs { R8BRAIN_DIR }
 end
 
 function m.source()
@@ -25,9 +25,6 @@ function m.project()
 		kind "StaticLib"
 
 		m.source()
-
-		--configuration { "windows" }
-			--disablewarnings { "4334", "4098", "4244" }
 end
 
 return m

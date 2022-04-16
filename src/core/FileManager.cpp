@@ -206,7 +206,7 @@ fs::path FileManager::getUniqueDirectoryName(std::string suggested) {
 		} else {
 			fullTargetPath = baseDir / fmt::format("{}", i);
 		}
-		
+
 		if (!fs::exists(fullTargetPath)) {
 			return fullTargetPath;
 		}
@@ -220,7 +220,7 @@ fs::path FileManager::getUniqueFilename(const fs::path& suggested) {
 	size_t countStart = 0;
 	size_t countMax = 99999;
 	fs::path fullTargetPath;
-	fs::path fullTargetDir = _rootPath / suggested.parent_path(); 
+	fs::path fullTargetDir = _rootPath / suggested.parent_path();
 	std::string filename = suggested.filename().string();
 
 	size_t dashFound = filename.find_first_of('-');

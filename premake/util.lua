@@ -42,7 +42,7 @@ function util.disableFastUpToDateCheck(projectNames)
 end
 
 function util.setupPch(name, dir)
-	configuration { "windows" }
+	filter { "system:windows" }
 		includedirs { dir }
 
 		pchheader(name .. ".h")

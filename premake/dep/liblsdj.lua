@@ -3,7 +3,7 @@ local LIBLSDJ_DIR = "thirdparty/liblsdj"
 local m = {}
 
 function m.include()
-	includedirs { LIBLSDJ_DIR .. "/liblsdj/include/lsdj" }
+	sysincludedirs { LIBLSDJ_DIR .. "/liblsdj/include/lsdj" }
 end
 
 function m.source()
@@ -26,7 +26,7 @@ function m.project()
 
 		m.source()
 
-		configuration { "windows" }
+		filter "system:windows"
 			disablewarnings { "4334", "4098", "4244" }
 end
 
