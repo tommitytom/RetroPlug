@@ -175,10 +175,5 @@ namespace rp {
 		std::vector<SystemWrapperPtr>& getSystems() {
 			return _systems;
 		}
-
-		
-
-	private:
-		void deserializeModel(SystemId systemId, SystemWrapperPtr system, std::shared_ptr<Model> model);
 	};
 }

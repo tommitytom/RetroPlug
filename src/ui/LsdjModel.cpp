@@ -38,6 +38,7 @@ SampleSettings deserializeSettings(sol::table data) {
 void LsdjModel::updateKit(KitIndex kitIdx) {
 	lsdj::Rom rom = getSystem()->getMemory(MemoryType::Rom, AccessType::Write);
 	if (!rom.isValid()) {
+		spdlog::error("Failed to write kit: Rom data is not available to write");
 		return;
 	}
 

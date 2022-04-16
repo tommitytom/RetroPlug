@@ -1,5 +1,6 @@
 #include "SystemWrapper.h"
 
+#include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
 #include "core/ModelFactory.h"
@@ -7,6 +8,8 @@
 #include "core/SystemProcessor.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/fs.h"
+#include "util/MetaUtil.h"
+#include "util/SolUtil.h"
 
 using namespace rp;
 
@@ -15,6 +18,7 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 
 	bool alreadyInitialized = _system != nullptr;
 	_models.clear();
+	_settings = settings;
 
 	SystemManagerBase* manager = _processor->findManager<SameBoySystem>();
 
@@ -28,10 +32,13 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 	_modelFactory->createModels(romName, _models);
 
 	for (auto& model : _models) {
+		model.second->setSystem(system);
 		model.second->onBeforeLoad(loadConfig);
 	}
 
 	system->load(std::forward<LoadConfig>(loadConfig));
+
+	deserializeModels();
 
 	for (auto& model : _models) {
 		model.second->onAfterLoad(system);
@@ -50,10 +57,36 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 	_processor->addSystem(proxy);
 
 	_system = proxy;
-	_settings = settings;
+
 	_version++;
 
 	return proxy;
+}
+
+void SystemWrapper::deserializeModels() {
+	std::string& serialized = _settings.serialized;
+
+	if (serialized.size()) {
+		sol::state lua;
+		SolUtil::prepareState(lua);
+		sol::table modelTable;
+
+		if (SolUtil::deserializeTable(lua, serialized, modelTable)) {
+			for (auto& [type, model] : _models) {
+				std::string_view typeName = MetaUtil::getTypeName(type);
+				std::optional<sol::table> m = modelTable[typeName];
+
+				if (m.has_value() && m.value().valid()) {
+					spdlog::info("Deserializing data for {}", typeName);
+					model->onDeserialize(lua, m.value());
+				} else {
+					spdlog::warn("Tried to deserialize {} but no data was found", typeName);
+				}
+			}
+		}
+
+		serialized.clear();
+	}
 }
 
 void SystemWrapper::reset() {

@@ -56,6 +56,10 @@ namespace rp {
 			return _system;
 		}
 
+		SystemSettings& getSettings() {
+			return _settings;
+		}
+
 		const SystemSettings& getSettings() const {
 			return _settings;
 		}
@@ -81,6 +85,9 @@ namespace rp {
 		bool saveSram() { return saveSram(_settings.sramPath); }
 
 		bool saveSram(std::string_view path);
+
+	private:
+		void deserializeModels();
 	};
 
 	using SystemWrapperPtr = std::shared_ptr<SystemWrapper>;

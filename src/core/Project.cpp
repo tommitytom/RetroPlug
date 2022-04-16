@@ -30,23 +30,6 @@ void Project::processIncoming() {
 	}
 }
 
-void Project::deserializeModel(SystemId systemId, SystemWrapperPtr system, std::shared_ptr<Model> model) {
-	const std::string& serialized = system->getSettings().serialized;
-
-	if (serialized.size()) {
-		sol::table modelTable;
-
-		if (SolUtil::deserializeTable(*_lua, serialized, modelTable)) {
-			sol::table m = modelTable[model->getName()];
-
-			if (m.valid()) {
-				spdlog::info("Deserializing data for {}", model->getName());
-				model->onDeserialize(*_lua, m);
-			}
-		}
-	}
-}
-
 void Project::load(std::string_view path) {
 	clear();
 

@@ -334,7 +334,7 @@ void SamplerView::onRender() {
 	}
 
 	_c.text(propertyName, 6, "GAIN", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 6, settings->gain, globalSettings->gain, 0, 0xFF, isEditable)) {
+	if (defaultSelect<7>(_ui, 19, 6, settings->gain, globalSettings->gain, { "1x", "1.5x", "2x", "2.5x", "3x", "3.5x", "4.0x" }, isEditable)) {
 		updateSampleBuffers();
 	}
 

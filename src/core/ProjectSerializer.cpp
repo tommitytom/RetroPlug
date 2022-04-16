@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include "util/fs.h"
+#include "util/MetaUtil.h"
 #include "util/SolUtil.h"
 
 using namespace rp;
@@ -48,7 +49,8 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, co
 		sol::table modelTable = systemTable.create_named("model");
 
 		for (auto& [modelType, model] : system->getModels()) {
-			model->onSerialize(s, modelTable.create_named(model->getName()));
+			std::string_view typeName = MetaUtil::getTypeName(modelType);
+			model->onSerialize(s, modelTable.create_named(typeName));
 		}
 
 		systemsTable.add(systemTable);

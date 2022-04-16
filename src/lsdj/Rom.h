@@ -392,13 +392,18 @@ namespace rp::lsdj {
 		}
 
 		void updateOffsets() {
+			_valid = false;
+
+			if (!_romData.isValid()) {
+				return;
+			}
+
 			int32 version = findOffset(0, VERSION_CHECK, 6);
 			int32 names = findOffset(27, NAME_CHECK, 0);
 			int32 palettes = findOffset(1, PALETTE_CHECK, -((int32)PALETTE_COUNT * (int32)Palette::SIZE));
 			int32 fonts = findOffset(30, FONT_CHECK, 16);
 
-			if (version == -1 || names == -1 || palettes == -1 || fonts == -1) {
-				_valid = false;
+			if (version == -1 || names == -1 || palettes == -1 || fonts == -1) {	
 				return;
 			}
 
