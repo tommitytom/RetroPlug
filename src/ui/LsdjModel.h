@@ -13,7 +13,7 @@ namespace rp {
 	struct SampleSettings {
 		int32 dither = 0xFF;
 		int32 volume = 0xFF;
-		int32 gain = 0;
+		int32 gain = 0x1;
 		int32 pitch = 0x7F;
 		int32 filter = 0;
 		int32 cutoff = 0x7F;
