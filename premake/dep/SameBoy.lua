@@ -21,11 +21,14 @@ function m.project()
 
 		m.include()
 
-		includedirs {
-			"src",
-			"resources",
+		sysincludedirs {
 			"thirdparty",
 			"thirdparty/spdlog/include"
+		}
+
+		includedirs {
+			"src",
+			"resources"
 		}
 
 		files {

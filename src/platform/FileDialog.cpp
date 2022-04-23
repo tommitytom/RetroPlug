@@ -204,7 +204,7 @@ bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, boo
 	return false;
 }
 
-#elif RP_MACOS
+/*#elif RP_MACOS
 
 #undef T
 #include "IGraphics.h"
@@ -235,7 +235,7 @@ tstring FileDialog::basicFileSave(IGraphics* ui, const std::vector<FileDialogFil
 	ui->PromptForFile(f, path, EFileAction::Save);
 
 	return tstr(f.Get());
-}
+}*/
 
 #elif RP_WEB
 

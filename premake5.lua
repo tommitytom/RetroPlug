@@ -15,6 +15,8 @@ local PLATFORMS = { "x86", "x64" }
 if _OPTIONS["emscripten"] ~= nil then
 	PLATFORMS = { "x86" }
 	buildFolder = "emscripten"
+elseif _ACTION == "xcode4" then
+	PLATFORMS = { "x64" }
 end
 
 workspace "RetroPlugAll"
@@ -53,18 +55,18 @@ workspace "RetroPlugAll"
 		defines { "RP_MACOS", "RP_POSIX" }
 
 		xcodebuildsettings {
-			["MACOSX_DEPLOYMENT_TARGET"] = "10.9",
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
 			--["CODE_SIGN_IDENTITY"] = "",
 			--["PROVISIONING_PROFILE_SPECIFIER"] = "",
 			--["PRODUCT_BUNDLE_IDENTIFIER"] = "com.tommitytom.app.RetroPlug"
 		};
 
 		buildoptions {
-			"-mmacosx-version-min=10.9"
+			"-mmacosx-version-min=10.15"
 		}
 
 		linkoptions {
-			"-mmacosx-version-min=10.9"
+			"-mmacosx-version-min=10.15"
 		}
 
 	filter { "system:windows", "options:not emscripten" }
