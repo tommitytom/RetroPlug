@@ -17,6 +17,8 @@ FileManager::FileManager() {
 	_rootPath = "~/.retroplug";
 #elif RP_WINDOWS
 	_rootPath = "c:\\temp\\retroplug";
+#elif RP_MACOS
+    _rootPath = "~/.retroplug";
 #else
 #error "Platform is not supported!
 #endif

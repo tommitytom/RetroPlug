@@ -1,12 +1,12 @@
 #pragma once
 
-#ifdef RP_MACOS
+/*#ifdef RP_MACOS
 #include <ghc/filesystem.hpp>
 namespace fs = ghc::filesystem;
-#else
+#else*/
 #include <filesystem>
 namespace fs = std::filesystem;
-#endif
+//#endif
 
 #include <vector>
 #include <string>
