@@ -13,12 +13,12 @@ using namespace rp;
 const std::string_view PROJECT_VERSION = "1.0.0";
 const std::string_view RP_VERSION = "0.4.0";
 
-bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath) {
+std::string ProjectSerializer::serialize(const ProjectState& state, const std::vector<SystemWrapperPtr>& systems) {
 	sol::state s;
 	SolUtil::prepareState(s);
-
+	
 	sol::table output = s.create_table_with(
-		"path", path,
+		"path", state.path,
 		"projectVersion", PROJECT_VERSION,
 		"retroPlugVersion", RP_VERSION,
 		"settings", s.create_table_with(
@@ -60,22 +60,33 @@ bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, co
 
 	std::string target;
 	if (SolUtil::serializeTable(s, output, target)) {
-		if (fsutil::writeTextFile(path, target)) {
+		return target;
+	} else {
+		spdlog::error("Failed to serialize project: {}", target);
+		return "{}";
+	}
+}
+
+bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath) {
+	std::string output = serialize(state, systems);
+	if (output.size()) {
+		if (fsutil::writeTextFile(path, output)) {
 			spdlog::info("Successfully wrote project file to {}", path);
 
 			if (updatePath) {
 				state.path = std::string(path);
 			}
-			
+
 			return true;
 		} else {
 			spdlog::error("Failed to save project to file");
 			return false;
 		}
-	} else {
-		spdlog::error("Failed to serialize project: {}", target);
-		return false;
+
+		return true;
 	}
+
+	return false;
 }
 
 template <typename T>

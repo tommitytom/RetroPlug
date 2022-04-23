@@ -13,6 +13,7 @@ namespace rp {
 	const FileDialogFilter PROJECT_FILTER = FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
 	const FileDialogFilter SAV_FILTER = FileDialogFilter{ "Gameboy SAV Files", "*.sav" };
 	const FileDialogFilter STATE_FILTER = FileDialogFilter{ "Gameboy State Files", "*.state" };
+	const FileDialogFilter ZIP_FILTER = FileDialogFilter{ "ZIP Files", "*.zip" };
 }
 
 namespace rp::MenuBuilder {

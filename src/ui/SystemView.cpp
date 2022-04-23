@@ -78,6 +78,8 @@ void loadRomDialog(Project* project) {
 	}
 }
 
+#include "core/ProjectExporter.h"
+
 void SystemView::buildMenu(Menu& target) {
 	FileManager* fileManager = getShared<FileManager>();
 	Project* project = getShared<Project>();
@@ -128,7 +130,13 @@ void SystemView::buildMenu(Menu& target) {
 			.parent()
 		.parent()
 	.separator()
-	.action("Game Link", []() {});
+	.action("Game Link", []() {})
+	.action("Export project", [project]() {
+		Uint8Buffer target;
+		if (ProjectExporter::exportProject(*project, target)) {
+			FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, "project.rplg.zip");
+		}		
+	});
 
 	for (ViewPtr child : getChildren()) {
 		child->onMenu(target);

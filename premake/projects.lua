@@ -61,6 +61,7 @@ function m.RetroPlug.include()
 	dep.SameBoy.include()
 	dep.liblsdj.include()
 	dep.lua.include()
+	dep.minizip.include()
 
 	sysincludedirs {
 		"thirdparty",
@@ -90,6 +91,7 @@ function m.RetroPlug.link()
 	dep.liblsdj.link()
 	dep.lua.link()
 	dep.r8brain.link()
+	dep.minizip.link()
 end
 
 function m.RetroPlug.project()
