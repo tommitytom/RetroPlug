@@ -5,9 +5,6 @@ local m = {}
 
 function m.include()
 	defines {
-		-- bzip2
-		"BZ_NO_STDIO",
-
 		-- liblzma
 		"HAVE_VISIBILITY=0",
 		"HAVE_CHECK_CRC32",
@@ -56,9 +53,9 @@ function m.include()
 		"PACKAGE_URL=\"https://tukaani.org/xz/\"",
 
 		-- zstd
-		"ZSTD_MULTITHREAD",
-		"ZSTD_HEAPMODE=0",
-		"ZSTD_LEGACY_SUPPORT=0",
+		--"ZSTD_MULTITHREAD",
+		--"ZSTD_HEAPMODE=0",
+		--"ZSTD_LEGACY_SUPPORT=0",
 		--"XXH_NAMESPACE=ZSTD_",
 
 		-- zlib
@@ -90,10 +87,10 @@ function m.include()
 
 		-- minizip
 		"HAVE_ZLIB",
-		"HAVE_BZIP2",
+		--"HAVE_BZIP2",
 		"HAVE_LZMA",
 		"LZMA_API_STATIC",
-		"HAVE_ZSTD",
+		--"HAVE_ZSTD",
 		--"MZ_ZIP_SIGNING",
 		--"HAVE_PKCRYPT",
 		--"HAVE_WZAES",
@@ -101,7 +98,6 @@ function m.include()
 
 	sysincludedirs {
 		MINIZIP_DIR,
-		MINIZIP_DIR .. "/lib/bzip2",
 		LZMA_DIR,
 		LZMA_DIR .. "/common",
 		LZMA_DIR .. "/liblzma/common",
@@ -112,22 +108,12 @@ function m.include()
 		LZMA_DIR .. "/liblzma/delta",
 		LZMA_DIR .. "/liblzma/rangecoder",
 		LZMA_DIR .. "/liblzma/simple",
-		MINIZIP_DIR .. "/lib/zstd/lib"
-	}
-end
-
-function m.source()
-	m.include()
-
-	files {
-		LIBLSDJ_DIR .. "/liblsdj/include/lsdj/**.h",
-		LIBLSDJ_DIR .. "/liblsdj/src/**.c"
 	}
 end
 
 function m.link()
 	m.include()
-	links { "minizip" }
+	links { "zlib", "minizip" }
 end
 
 function m.project()
@@ -140,22 +126,6 @@ function m.project()
 		files {
 			MINIZIP_DIR .. "/*.h",
 			MINIZIP_DIR .. "/*.c",
-
-			MINIZIP_DIR .. "/lib/bzip2/*.h",
-			MINIZIP_DIR .. "/lib/bzip2/blocksort.c",
-			MINIZIP_DIR .. "/lib/bzip2/bzlib.c",
-			MINIZIP_DIR .. "/lib/bzip2/compress.c",
-			MINIZIP_DIR .. "/lib/bzip2/crctable.c",
-			MINIZIP_DIR .. "/lib/bzip2/decompress.c",
-			MINIZIP_DIR .. "/lib/bzip2/huffman.c",
-			MINIZIP_DIR .. "/lib/bzip2/randtable.c",
-
-			MINIZIP_DIR .. "/lib/zstd/lib/common/*.h",
-			MINIZIP_DIR .. "/lib/zstd/lib/common/*.c",
-			MINIZIP_DIR .. "/lib/zstd/lib/compress/*.h",
-			MINIZIP_DIR .. "/lib/zstd/lib/compress/*.c",
-			MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.h",
-			MINIZIP_DIR .. "/lib/zstd/lib/decompress/*.c",
 		}
 
 		files {
@@ -306,24 +276,19 @@ function m.project()
 			MINIZIP_DIR .. "/minizip.c",
 			MINIZIP_DIR .. "/minigzip.c",
 			MINIZIP_DIR .. "/miniunz.c",
+			MINIZIP_DIR .. "/mz_strm_bzip.c",
+			MINIZIP_DIR .. "/mz_strm_zstd.c",
 			MINIZIP_DIR .. "/mz_strm_libcomp.*",
 			MINIZIP_DIR .. "/mz_crypt_*.c",
 			MINIZIP_DIR .. "/mz_strm_os_*.c",
 			MINIZIP_DIR .. "/mz_os_*.c"
 		}
 
-		filter { "options:not emscripten" }
-			files {
-				--MINIZIP_DIR .. "/zlib-ng/arch/x86/*.h",
-				--MINIZIP_DIR .. "/zlib-ng/arch/x86/*.c"
-			}
-
 		configuration { "Debug" }
 			defines { "ZLIB_DEBUG" }
 
 		filter { "system:not macosx" }
 			sysincludedirs {
-				--MINIZIP_DIR .. "/lib/zlib-ng",
 				MINIZIP_DIR .. "/lib/zlib",
 			}
 
@@ -343,14 +308,6 @@ function m.project()
 				MINIZIP_DIR .. "/mz_crypt_win32.c",
 				MINIZIP_DIR .. "/mz_strm_os_win32.c",
 				MINIZIP_DIR .. "/mz_os_win32.c",
-
-				MINIZIP_DIR .. "/lib/zlib/*.h",
-				MINIZIP_DIR .. "/lib/zlib/*.c",
-
-				--MINIZIP_DIR .. "/lib/zlib-ng/*.h",
-				--MINIZIP_DIR .. "/lib/zlib-ng/*.c",
-				--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.h",
-				--MINIZIP_DIR .. "/lib/zlib-ng/arch/x86/*.c",
 			}
 
 		filter "system:macosx"
@@ -382,11 +339,12 @@ function m.project()
 
 		filter "system:linux"
 			defines {
-				"MYTHREAD_POSIX"
+				"MYTHREAD_POSIX",
+				"MZ_ZIP_NO_CRYPTO"
 			}
 			files {
 				MINIZIP_DIR .. "/mz_strm_os_posix.c",
-				MINIZIP_DIR .. "/mz_os_posix.c"
+				MINIZIP_DIR .. "/mz_os_posix.c",
 			}
 end
 

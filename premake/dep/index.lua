@@ -5,6 +5,7 @@ local m = {
 	liblsdj = dofile("liblsdj.lua"),
 	lua = dofile("lua.lua"),
 	r8brain = dofile("r8brain.lua"),
+	zlib = dofile("zlib.lua"),
 	minizip = dofile("minizip.lua"),
 }
 
@@ -16,6 +17,7 @@ function m.allProjects()
 	m.liblsdj.project()
 	m.lua.project()
 	m.r8brain.project()
+	m.zlib.project()
 	m.minizip.project()
 
 	if _OPTIONS["emscripten"] == nil then
