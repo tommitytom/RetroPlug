@@ -39,7 +39,6 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 		bool valid = false;
 		if (fs::exists(_recentPath)) {
 			data = fsutil::readTextFile(_recentPath);
-			spdlog::info(data);
 
 			if (data.size() && SolUtil::deserializeTable(s, data, target)) {
 				valid = true;
