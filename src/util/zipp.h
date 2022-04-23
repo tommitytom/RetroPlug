@@ -167,13 +167,13 @@ namespace zipp {
 		bool add(std::string_view fileName, const char* data, size_t size) {
 			mz_zip_file entry = {};
 			entry.filename = fileName.data();
-			entry.filename_size = fileName.size();
+			entry.filename_size = (uint16)fileName.size();
             entry.modified_date = time(NULL);
             entry.version_madeby = MZ_VERSION_MADEBY;
 			entry.compression_method = (uint16_t)_settings.method;
             entry.flag = MZ_ZIP_FLAG_UTF8;
             
-			int32_t err = mz_zip_writer_add_buffer(_handle, (void*)data, size, &entry);
+			int32_t err = mz_zip_writer_add_buffer(_handle, (void*)data, (int32_t)size, &entry);
 			return err == MZ_OK;
 		}
 
@@ -292,8 +292,8 @@ namespace zipp {
 			if (err != MZ_OK) return false;
 			err = mz_zip_reader_entry_get_info(_handle, &entryInfo);
 			if (err != MZ_OK) return false;
-			assert(size <= entryInfo->uncompressed_size);
-			if (entryInfo->uncompressed_size > size) return false;
+			assert((int64_t)size <= entryInfo->uncompressed_size);
+			if (entryInfo->uncompressed_size > (int64_t)size) return false;
             err = mz_zip_reader_is_open(_handle);
             if (err != MZ_OK) return false;
 			err = mz_zip_reader_entry_open(_handle);

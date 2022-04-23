@@ -78,8 +78,6 @@ void loadRomDialog(Project* project) {
 	}
 }
 
-#include "core/ProjectExporter.h"
-
 void SystemView::buildMenu(Menu& target) {
 	FileManager* fileManager = getShared<FileManager>();
 	Project* project = getShared<Project>();
@@ -122,21 +120,15 @@ void SystemView::buildMenu(Menu& target) {
 		.parent();
 	#endif
 
-	settingsMenu
-		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
-		.subMenu("Save Options...")
+		settingsMenu
+			.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
+			.subMenu("Save Options...")
 			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
 			.select("Include ROM", &projectState.settings.includeRom)
 			.parent()
-		.parent()
-	.separator()
-	.action("Game Link", []() {})
-	.action("Export project", [project]() {
-		Uint8Buffer target;
-		if (ProjectExporter::exportProject(*project, target)) {
-			FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, "project.rplg.zip");
-		}		
-	});
+			.parent()
+			.separator()
+			.action("Game Link", []() {});
 
 	for (ViewPtr child : getChildren()) {
 		child->onMenu(target);

@@ -7,6 +7,7 @@
 
 #include "core/FileManager.h"
 #include "core/Project.h"
+#include "core/ProjectExporter.h"
 #include "core/SystemWrapper.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/fs.h"
@@ -194,11 +195,16 @@ void MenuBuilder::systemLoadMenu(Menu& root, FileManager* fileManager, Project* 
 
 void MenuBuilder::systemSaveMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
 	root.subMenu("Save")
-		.action("Project", [project, fileManager]() { saveProject(project, fileManager, false); })
+		/*.action("Project", [project, fileManager]() { saveProject(project, fileManager, false); })
 		.action("Project As...", [project, fileManager]() { saveProject(project, fileManager, true); })
 		.action("SAV", [project, system]() { saveSram(project, system, false); })
 		.action("SAV As...", [project, system]() { saveSram(project, system, true); })
-		.action("State As...", [project, system]() { saveState(project, system); })
-		.action("All ROMs + SAVs", []() {})
+		.action("State As...", [project, system]() { saveState(project, system); })*/
+		.action("All ROMs + SAVs", [project]() {
+			Uint8Buffer target;
+			if (ProjectExporter::exportRomsAndSavs(*project, target)) {
+				FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
+			}
+		})
 		.parent();
 }
