@@ -118,7 +118,7 @@ namespace rp {
 
 		void removeSystem(SystemId systemId);
 
-		void duplicateSystem(SystemId systemId, const SystemSettings& settings);
+		void duplicateSystem(SystemId systemId, SystemSettings settings);
 
 		SystemWrapperPtr findSystem(SystemId systemId);
 

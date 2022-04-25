@@ -67,6 +67,25 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 	}
 }
 
+std::string ProjectSerializer::serializeModels(SystemWrapperPtr system) {
+	sol::state s;
+	SolUtil::prepareState(s);
+
+	sol::table modelTable = s.create_table();
+	for (auto& [modelType, model] : system->getModels()) {
+		std::string_view typeName = MetaUtil::getTypeName(modelType);
+		model->onSerialize(s, modelTable.create_named(typeName));
+	}
+
+	std::string target;
+	if (SolUtil::serializeTable(s, modelTable, target)) {
+		return target;
+	}
+
+	spdlog::error("Failed to serialize system models");
+	return "";
+}
+
 bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath) {
 	std::string output = serialize(state, systems);
 	if (output.size()) {

@@ -155,7 +155,7 @@ void Project::removeSystem(SystemId systemId) {
 	}
 }
 
-void Project::duplicateSystem(SystemId systemId, const SystemSettings& settings) {
+void Project::duplicateSystem(SystemId systemId, SystemSettings settings) {
 	SystemWrapperPtr systemWrapper = findSystem(systemId);
 	SystemPtr system = systemWrapper->getSystem();
 
@@ -168,6 +168,8 @@ void Project::duplicateSystem(SystemId systemId, const SystemSettings& settings)
 
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
+
+	settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
 
 	auto cloned = addSystem(system->getType(), settings, std::move(loadConfig));
 	cloned->saveSram();
