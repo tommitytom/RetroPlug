@@ -140,7 +140,11 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 
 	if (samples.size() > 0) {
 		FileManager* fileManager = getShared<FileManager>();
-		std::string kitName = fsutil::getDirectoryName(samples[0]);
+		std::string kitName;
+
+#ifndef RP_WEB
+		kitName = fsutil::getDirectoryName(samples[0]);
+#endif
 
 		// Make a local copy of the sample if we don't already have it
 		for (std::string& samplePath : samples) {
