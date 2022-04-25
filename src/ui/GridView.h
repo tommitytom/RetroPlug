@@ -4,10 +4,10 @@
 
 namespace rp {
 	enum class GridLayout {
+		Auto,
 		Row,
 		Column,
-		Grid,
-		Auto
+		Grid
 	};
 
 	class GridView final : public View {
@@ -15,54 +15,21 @@ namespace rp {
 		GridLayout _layout = GridLayout::Auto;
 
 	public:
-		GridView() {
-			setType<GridView>();
-			setSizingMode(SizingMode::FitToContent);
-		}
+		GridView();
 
-		void onChildAdded(ViewPtr view) final override {
-			updateLayout();
-			view->focus();
-		}
-
-		void onChildRemoved(ViewPtr view) final override {
-			updateLayout();
-
-			if (!getFocused() && getChildren().size() > 0) {
-				getChildren()[0]->focus();
+		void setLayoutMode(GridLayout layout) {
+			if (layout != _layout) {
+				_layout = layout;
+				updateLayout();
 			}
 		}
+
+		void onChildAdded(ViewPtr view) override;
+
+		void onChildRemoved(ViewPtr view) override;
 
 	private:
-		void updateLayout() {
-			std::vector<ViewPtr>& children = getChildren();
-
-			GridLayout layout = _layout;
-			if (layout == GridLayout::Auto) {
-				if (children.size() < 4) {
-					layout = GridLayout::Row;
-				} else {
-					layout = GridLayout::Grid;
-				}
-			}
-
-			switch (layout) {
-				case GridLayout::Row: {
-					uint32 xOffset = 0;
-
-					for (ViewPtr& view : children) {
-						view->setPosition(xOffset, 0);
-						xOffset += view->getArea().w;
-					}
-
-					break;
-				}
-				case GridLayout::Column:
-				case GridLayout::Grid:
-				case GridLayout::Auto:
-					break;
-			}
-		}
+		void updateLayout();
 	};
 
 	using GridViewPtr = std::shared_ptr<GridView>;

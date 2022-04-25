@@ -10,28 +10,6 @@ namespace rp {
 		Outline
 	};
 
-	static bool viewIsFocused(ViewPtr view) {
-		if (view->hasFocus()) {
-			return true;
-		}
-
-		for (ViewPtr child : view->getChildren()) {
-			if (viewIsFocused(child)) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	static void focusSystem(ViewPtr view) {
-		if (view->getChildren().size()) {
-			view->getChildren().back()->focus();
-		} else {
-			view->focus();
-		}
-	}
-
 	class GridOverlay final : public View {
 	private:
 		ViewIndex _selected = INVALID_VIEW_INDEX;
@@ -49,34 +27,9 @@ namespace rp {
 			setType<GridOverlay>(); 
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> pos) final override {
-			if (down) {
-				std::vector<ViewPtr>& children = _grid->getChildren();
+		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> pos) override;
 
-				for (int32 i = (int32)children.size() - 1; i >= 0; --i) {
-					if (children[i]->getArea().contains(pos)) {
-						setSelected((ViewIndex)i);
-						break;
-					}
-				}
-			}
-
-			return false;
-		}
-
-		void onLayoutChanged() final override {
-			std::vector<ViewPtr>& children = _grid->getChildren();
-
-			for (size_t i = 0; i < children.size(); ++i) {
-				ViewPtr view = children[i];
-
-				if (viewIsFocused(view)) {
-					_selected = (ViewIndex)i;
-				}
-			}
-
-			updateLayout();
-		}
+		void onLayoutChanged() override;
 
 		void setSelected(ViewIndex index) {
 			_selected = index;
@@ -91,19 +44,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender() override {
-			if (_highlightMode == HighlightMode::Outline && _selected != INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
-				NVGcontext* vg = getVg();
-				ViewPtr child = _grid->getChild(_selected);
-				auto childArea = child->getArea();
-
-				nvgBeginPath(vg);
-				nvgRect(vg, (f32)childArea.x + 0.5f, (f32)childArea.y, (f32)childArea.w - 0.5f, (f32)childArea.h - 0.5f);
-				nvgStrokeWidth(vg, 0.5f);
-				nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 220));
-				nvgStroke(vg);
-			}
-		}
+		void onRender() override;
 
 		void setUnselectedAlpha(f32 alpha) {
 			_unselectedAlpha = alpha;

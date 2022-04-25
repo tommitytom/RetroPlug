@@ -122,6 +122,10 @@ void SystemView::buildMenu(Menu& target) {
 
 		settingsMenu
 			.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
+			.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)projectState.settings.layout, [this, project](int layout) {
+				project->getState().settings.layout = (SystemLayout)layout;
+				setLayoutDirty();
+			})
 			.subMenu("Save Options...")
 				.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
 				.select("Include ROM", &projectState.settings.includeRom)

@@ -106,6 +106,8 @@ void UiContext::processDelta(f64 delta) {
 	f32 scale = _project->getScale();
 	_state.viewManager.setScale(scale);
 
+	_state.grid->setLayoutMode((GridLayout)_project->getState().settings.layout);
+
 	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5);
 	processInput(frameCount);
 

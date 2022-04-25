@@ -1,5 +1,7 @@
 #include "GridOverlay.h"
 
+#include "util/StlUtil.h"
+
 using namespace rp;
 
 bool hasSystem(const std::vector<SystemViewPtr>& views, SystemWrapperPtr system) {
@@ -12,15 +14,55 @@ bool hasSystem(const std::vector<SystemViewPtr>& views, SystemWrapperPtr system)
 	return false;
 }
 
-template <typename T>
-bool vectorContains(const std::vector<T>& items, const T& item) {
-	for (const T& t : items) {
-		if (t == item) {
+bool viewIsFocused(ViewPtr view) {
+	if (view->hasFocus()) {
+		return true;
+	}
+
+	for (ViewPtr child : view->getChildren()) {
+		if (viewIsFocused(child)) {
 			return true;
 		}
 	}
 
 	return false;
+}
+
+void focusSystem(ViewPtr view) {
+	if (view->getChildren().size()) {
+		view->getChildren().back()->focus();
+	} else {
+		view->focus();
+	}
+}
+
+bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point<uint32> pos) {
+	if (down) {
+		std::vector<ViewPtr>& children = _grid->getChildren();
+
+		for (int32 i = (int32)children.size() - 1; i >= 0; --i) {
+			if (children[i]->getArea().contains(pos)) {
+				setSelected((ViewIndex)i);
+				break;
+			}
+		}
+	}
+
+	return false;
+}
+
+void GridOverlay::onLayoutChanged() {
+	std::vector<ViewPtr>& children = _grid->getChildren();
+
+	for (size_t i = 0; i < children.size(); ++i) {
+		ViewPtr view = children[i];
+
+		if (viewIsFocused(view)) {
+			_selected = (ViewIndex)i;
+		}
+	}
+
+	updateLayout();
 }
 
 void GridOverlay::onUpdate(f32 delta) {
@@ -41,7 +83,7 @@ void GridOverlay::onUpdate(f32 delta) {
 
 		// Check for systems that were removed
 		for (SystemViewPtr systemView : systemViews) {
-			if (!vectorContains(systems, systemView->getSystem())) {
+			if (!StlUtil::vectorContains(systems, systemView->getSystem())) {
 				_grid->removeChild(systemView);
 
 				// TODO: Also remove any related windows (like lsdj sample manager)
@@ -90,6 +132,20 @@ void GridOverlay::onUpdate(f32 delta) {
 
 		_projectVersion = project->getVersion();
 		//updateLayout();
+	}
+}
+
+void GridOverlay::onRender() {
+	if (_highlightMode == HighlightMode::Outline && _selected != INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
+		NVGcontext* vg = getVg();
+		ViewPtr child = _grid->getChild(_selected);
+		auto childArea = child->getArea();
+
+		nvgBeginPath(vg);
+		nvgRect(vg, (f32)childArea.x + 0.5f, (f32)childArea.y, (f32)childArea.w - 0.5f, (f32)childArea.h - 0.5f);
+		nvgStrokeWidth(vg, 0.5f);
+		nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 220));
+		nvgStroke(vg);
 	}
 }
 
