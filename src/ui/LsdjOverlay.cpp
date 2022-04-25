@@ -24,6 +24,9 @@ std::shared_ptr<SamplerView> showSampleManager(View* parent, SystemWrapperPtr sy
 	if (!samplerView) {
 		samplerView = parent->addChild<SamplerView>("LSDj Sample Manager");
 		samplerView->setSystem(system);
+
+		// TODO: Show kit currently under cursor!
+		//samplerView->setSampleIndex()
 	}
 
 	samplerView->focus();

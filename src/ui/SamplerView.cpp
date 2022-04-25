@@ -40,7 +40,20 @@ void SamplerView::setSystem(SystemWrapperPtr& system) {
 		_canvas.setFont(rom.getFont(1));
 		_canvas.setPalette(rom.getPalette(0));
 
-		_samplerState.selectedKit = 0;// rom.getNextEmptyKit().getIndex();
+		LsdjModelPtr model = _system->getModel<LsdjModel>();
+		int32 selectedKit = 999;
+
+		for (auto& kit : model->kits) {
+			if (kit.first < selectedKit) {
+				selectedKit = kit.first;
+			}
+		}
+
+		if (selectedKit == 999) {
+			selectedKit = 0;
+		}
+
+		_samplerState.selectedKit = selectedKit;
 		_samplerState.selectedSample = 0;
 	}
 
