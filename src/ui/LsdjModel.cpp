@@ -95,7 +95,7 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 	}
 
 	if (kitIdx != -1) {
-		std::string kitName = name.empty() ? fmt::format("KIT {0:x}", kitIdx) : std::string(name);
+		std::string kitName = name.empty() ? fmt::format("KIT {0:x}", kitIdx + 1) : std::string(name);
 		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
 
 		KitState kitState = KitState{
