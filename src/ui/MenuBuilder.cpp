@@ -164,7 +164,7 @@ void MenuBuilder::systemAddMenu(Menu& root, FileManager* fileManager, Project* p
 		project->duplicateSystem(system->getId(), settings);
 	});
 
-	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
+	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
 
 	loadRoot
 		.action("ROM...", [project]() { loadRomDialog(project, nullptr); })

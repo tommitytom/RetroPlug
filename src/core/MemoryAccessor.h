@@ -80,6 +80,14 @@ namespace rp {
 			}			
 		}
 
+		void write(size_t pos, std::string_view text) {
+			write(pos, Uint8Buffer((uint8*)text.data(), text.size()));
+		}
+
+		void write(size_t pos, const std::string& text) {
+			write(pos, Uint8Buffer((uint8*)text.data(), text.size()));
+		}
+
 		void write(size_t pos, const Uint8Buffer& buffer) {
 			assert(isValid());
 			assert(pos + buffer.size() <= _data.size());

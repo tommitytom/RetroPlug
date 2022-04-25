@@ -212,7 +212,7 @@ void SamplerView::onRender() {
 
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
 
-	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::ReadWrite);
 	if (!rom.isValid()) {
 		return;
 	}

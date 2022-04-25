@@ -130,7 +130,7 @@ namespace rp::lsdj {
 				// Scale value from 0 to 15
 				s = floor(s * 15.0f + 0.5f);
 
-				uint8 b = 0xf - (uint8)s; 
+				uint8 b = 0xf - (uint8)s;
 
 				// Starting from LSDj 9.2.0, first sample is skipped to compensate for wave refresh bug.
 				// This rotates the wave frame rightwards.
@@ -403,7 +403,7 @@ namespace rp::lsdj {
 			int32 palettes = findOffset(1, PALETTE_CHECK, -((int32)PALETTE_COUNT * (int32)Palette::SIZE));
 			int32 fonts = findOffset(30, FONT_CHECK, 16);
 
-			if (version == -1 || names == -1 || palettes == -1 || fonts == -1) {	
+			if (version == -1 || names == -1 || palettes == -1 || fonts == -1) {
 				return;
 			}
 
@@ -467,7 +467,6 @@ namespace rp::lsdj {
 
 		void setKitName(size_t idx, std::string_view name) {
 			size_t bankIdx = KIT_LOOKUP[idx];
-			const char* kitData = (const char*)getBankData(bankIdx);
 
 			std::string targetName = std::string(name);
 			if (targetName.size() > Kit::NAME_SIZE) {
@@ -478,7 +477,7 @@ namespace rp::lsdj {
 				targetName[i] = '-';
 			}
 
-			memcpy((void*)(kitData + Kit::NAME_OFFSET), name.data(), Kit::NAME_SIZE);
+			_romData.write(bankIdx * BANK_SIZE + Kit::NAME_OFFSET, targetName);
 		}
 
 		std::string_view getKitSampleName(size_t kitIdx, size_t sampleIdx) const {
@@ -495,7 +494,6 @@ namespace rp::lsdj {
 
 		void setKitSampleName(size_t kitIdx, size_t sampleIdx, std::string_view name) {
 			size_t bankIdx = KIT_LOOKUP[kitIdx];
-			const char* kitData = (const char*)getBankData(bankIdx);
 			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * Kit::SAMPLE_NAME_SIZE;
 
 			std::string targetName = std::string(name);
@@ -507,7 +505,7 @@ namespace rp::lsdj {
 				targetName[i] = ' ';
 			}
 
-			memcpy((void*)(kitData + nameOffset), targetName.data(), Kit::SAMPLE_NAME_SIZE);
+			_romData.write(bankIdx * BANK_SIZE + nameOffset, targetName);
 		}
 
 		bool kitSampleExists(size_t kitIdx, size_t sampleIdx) const {
