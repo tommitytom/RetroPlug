@@ -55,6 +55,8 @@ void LsdjModel::updateKit(KitIndex kitIdx) {
 
 	lsdj::Kit kit = rom.getKit(kitIdx);
 	KitUtil::patchKit(kit, found->second, sampleBuffers);
+
+	setRequiresSave(true);
 }
 
 KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex kitIdx) {
@@ -73,6 +75,8 @@ KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex k
 
 	std::vector<std::byte> fileData = fsutil::readFile(path);
 	rom.getKit(kitIdx).setKitData(Uint8Buffer((uint8*)fileData.data(), fileData.size()));
+
+	setRequiresSave(true);
 
 	return kitIdx;
 }

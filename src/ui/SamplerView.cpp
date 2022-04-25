@@ -303,6 +303,7 @@ void SamplerView::onRender() {
 		if (isEditable) {
 			if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
 				rom.setKitName(kitIdx, kitName);
+				model->setRequiresSave(true);
 			}
 		} else {
 			_c.text(13, 2, kitName, lsdj::ColorSets::Normal);
@@ -314,6 +315,7 @@ void SamplerView::onRender() {
 		if (isEditable) {
 			if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
 				rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
+				model->setRequiresSave(true);
 			}
 		} else {
 			_c.text(16, 2, sampleName, lsdj::ColorSets::Normal);
