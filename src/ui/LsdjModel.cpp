@@ -185,11 +185,19 @@ std::string LsdjModel::getProjectName() {
 
 	lsdj::Sav sav(buffer.getBuffer());
 
-	std::string name = std::string(sav.getWorkingProject().getName());
+	lsdj::Project project = sav.getWorkingProject();
+	std::string name;
+
+	if (project.isValid()) {
+		name = std::string(sav.getWorkingProject().getName());
+	} else {
+		name = "Untitled";
+	}
+
 	if (sav.getProjectCount() > 0) {
 		name = fmt::format("{} (+{})", name, sav.getProjectCount());
 	}
-
+	
 	return name;
 }
 

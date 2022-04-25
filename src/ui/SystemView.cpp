@@ -123,9 +123,9 @@ void SystemView::buildMenu(Menu& target) {
 		settingsMenu
 			.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
 			.subMenu("Save Options...")
-			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
-			.select("Include ROM", &projectState.settings.includeRom)
-			.parent()
+				.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
+				.select("Include ROM", &projectState.settings.includeRom)
+				.parent()
 			.parent()
 			.separator()
 			.action("Game Link", []() {});
