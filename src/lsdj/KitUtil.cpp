@@ -86,10 +86,10 @@ void writeString(uint8* target, size_t targetSize, std::string_view source, char
 }
 
 enum FilterType {
-	NONE, 
-	LOWP, 
-	HIGHP, 
-	BANDP, 
+	NONE,
+	LOWP,
+	HIGHP,
+	BANDP,
 	ALLP
 };
 
@@ -160,7 +160,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 				max = value;
 			}
 		}
-		
+
 		f32 normalizeGain = 1.0f / max;
 		f32 volumeGain = (f32)settings.volume / (f32)0xFF;
 		f32 gainMultiplier = (f32)settings.gain;
@@ -184,7 +184,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 			BiquadCoeffs coeff;
 
 			switch (settings.filter) {
-			case FilterType::LOWP: 
+			case FilterType::LOWP:
 				lowPassCoeffs(cutoff, q, SAMPLE_RATE, coeff);
 				break;
 			case FilterType::HIGHP:
@@ -256,14 +256,16 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	uint8* names = kitData.data() + lsdj::Kit::SAMPLE_NAME_OFFSET;
 	uint8* sampleData = kitData.data() + lsdj::Kit::SAMPLE_DATA_OFFSET;
 	uint16 sampleDataOffset = 0x4000 + (uint16)lsdj::Kit::SAMPLE_DATA_OFFSET;
-	
+
 	uint16 offset = 0;
 	offsets[0] = sampleDataOffset;
 
 	for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
+		uint32 sampleNameOffset = lsdj::Kit::SAMPLE_NAME_SIZE * i;
+
 		if (i < targets.size()) {
 			// Write name
-			writeString(names + lsdj::Kit::SAMPLE_NAME_SIZE * i, lsdj::Kit::SAMPLE_NAME_SIZE, kitState.samples[i].name, '-');
+			writeString(names + sampleNameOffset, lsdj::Kit::SAMPLE_NAME_SIZE, kitState.samples[i].name, '-');
 
 			// Write sample
 			memcpy(sampleData + offset, targets[i]->data(), targets[i]->size());
@@ -272,9 +274,11 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 			offset += (uint16)targets[i]->size();
 			offsets[i + 1] = offset + sampleDataOffset;
 		} else {
-			memset(names + lsdj::Kit::SAMPLE_NAME_SIZE * i, '-', lsdj::Kit::SAMPLE_NAME_SIZE);
+			names[sampleNameOffset] = 0;
+			names[sampleNameOffset + 1] = '-';
+			names[sampleNameOffset + 2] = '-';
 			offsets[i + 1] = 0;
-		}		
+		}
 	}
 
 	kit.kitData.write(0, kitData);

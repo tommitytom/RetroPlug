@@ -7,6 +7,8 @@ extern "C" {
 #include <gb.h>
 }
 
+#include "util/GameboyUtil.h"
+
 using namespace rp;
 
 //const size_t CHANNEL_COUNT = 2;
@@ -54,8 +56,6 @@ void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<Offse
 		}
 	}
 }
-
-#include "util/GameboyUtil.h"
 
 std::string SameBoyManager::getRomName(const Uint8Buffer& romData) {
 	return GameboyUtil::getRomName((const char*)romData.data());
