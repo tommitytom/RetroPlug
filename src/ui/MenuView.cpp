@@ -311,6 +311,8 @@ void MenuView::drawMenu(Menu& menu) {
 	Dimension<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
 	Point<f32> drawOffset = _drawOffset + _menuArea.position;
 
+	nvgScissor(vg, 0, 0, dim.w, dim.h);
+
 	nvgBeginPath(vg);
 	nvgRect(vg, 0, 0, dim.w, dim.h);
 	nvgFillColor(vg, nvgRGBA(0, 0, 0, 210));
@@ -417,6 +419,8 @@ void MenuView::drawMenu(Menu& menu) {
 	nvgRect(vg, 0, dim.h - 10, dim.w, _menuArea.y);
 	nvgFillPaint(vg, nvgLinearGradient(vg, 0, dim.h - 5, 0, dim.h - 10, nvgRGBA(0, 0, 0, 255), nvgRGBA(0, 0, 0, 0)));
 	nvgFill(vg);
+
+	nvgResetScissor(vg);
 }
 
 void MenuView::onRender() {
