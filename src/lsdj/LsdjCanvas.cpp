@@ -117,7 +117,7 @@ FontTiles findTile(char code) {
 	return FontTiles::Space;
 }
 
-void formatNote(uint8 note, FontTiles* target) {
+void formatNote2(uint8 note, FontTiles* target) {
 	if (note == 0) {
 		target[0] = FontTiles::Dash;
 		target[1] = FontTiles::Dash;

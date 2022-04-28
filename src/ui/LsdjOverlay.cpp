@@ -2,6 +2,7 @@
 
 #include "core/FileManager.h"
 #include "core/Project.h"
+#include "ui/LsdjHdPlayer.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
 #include "ui/SystemView.h"
@@ -34,6 +35,12 @@ std::shared_ptr<SamplerView> showSampleManager(View* parent, SystemWrapperPtr sy
 	return samplerView;
 }
 
+void showHdPlayer(View* parent, SystemWrapperPtr system) {
+	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
+	player->setSystem(system);
+	player->focus();
+}
+
 void LsdjOverlay::onInitialized() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
 
@@ -55,6 +62,7 @@ void LsdjOverlay::onInitialized() {
 void LsdjOverlay::onMenu(Menu& menu) {
 	menu.subMenu("LSDJ")
 		.action("Sample Manager", [this]() { showSampleManager(getParent()->getParent(), _system); })
+		.action("HD Player", [this]() { showHdPlayer(getParent()->getParent()->getParent(), _system); })
 		.parent();
 }
 
