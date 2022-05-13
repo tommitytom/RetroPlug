@@ -7,7 +7,7 @@ ExampleApplication* app = nullptr;
 
 int main() {
 	{
-		app = new ExampleApplication("UI Test", 320, 288);
+		app = new ExampleApplication("UI Test", 800, 600);
 		Window window(app);
 		window.run();
 		delete app;

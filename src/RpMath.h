@@ -82,6 +82,8 @@ namespace rp {
 
 	template <typename T>
 	struct Dimension {
+		const static Dimension<T> zero;
+
 		T w;
 		T h;
 
@@ -120,6 +122,7 @@ namespace rp {
 		Rect(): x(0), y(0), w(0), h(0) {}
 		Rect(T _x, T _y, T _w, T _h) : x(_x), y(_y), w(_w), h(_h) {}
 		Rect(Point<T> pos, Dimension<T> dim) : position(pos), dimensions(dim) {}
+		Rect(Dimension<T> dim) : position(0, 0), dimensions(dim) {}
 		Rect(const Rect<T>& other) : x(other.x), y(other.y), w(other.w), h(other.h) {}
 
 		bool operator==(const Rect<T>& other) const {

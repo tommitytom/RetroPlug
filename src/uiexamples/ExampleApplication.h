@@ -7,6 +7,7 @@
 #include "ui/ViewManager.h"
 
 #include "ui/WaveView.h"
+#include "ui/VerticalSpliiter.h"
 #include "node/AudioGraph.h"
 #include "core/RetroPlugNodes.h"
 
@@ -21,6 +22,10 @@ namespace rp {
 
 		AudioManager _audioManager;
 		AudioGraph _audioGraph;
+
+		DockSplitterPtr _splitter;
+		DockPtr _dock;
+
 		std::shared_ptr<AudioGraphProcessor> _audioProcessor;
 
 		std::shared_ptr<SineNode> _sineNode;

@@ -93,6 +93,7 @@ namespace rp {
 			for (size_t i = 0; i < out.size(); ++i) {
 				out[i] = sin(_phase);
 				_phase = fmod(_phase + step, PI2);
+				out[i] = 0.0f;
 			}
 		}
 	};

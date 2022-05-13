@@ -39,13 +39,13 @@ namespace rp {
 			_markers = std::move(markers);
 		}
 
-		void onRender() final override;
+		void onRender() override;
 
-		void onResize() final override {
+		void onResize(uint32 w, uint32 h) override {
 			updateSlice();
 		}
 
-		bool onMouseScroll(Point<f32> delta, Point<uint32> position) final override;
+		bool onMouseScroll(Point<f32> delta, Point<uint32> position) override;
 
 		void onScaleChanged(f32 scale) override {
 			updateSlice();

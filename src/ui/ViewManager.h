@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <nanovg.h>
 #include <spdlog/spdlog.h>
 
@@ -8,8 +10,16 @@
 namespace rp {
 	class ViewManager : public View {
 	private:
-		Point<uint32> _mousePosition;		
+		struct MouseState {
+			bool buttons[MouseButton::COUNT] = { false };
+			Point<uint32> position;
+		};
+
+		MouseState _mouseState;
+
 		View::Shared _sharedData;
+
+		std::unordered_set<ViewPtr> _mouseOver;
 
 	public:
 		ViewManager() : View({ 100, 100 }) {
@@ -62,24 +72,225 @@ namespace rp {
 		}
 
 		bool onMouseScroll(Point<f32> delta) {
-			return propagateMouseScroll(delta, _mousePosition, getChildren());
+			return propagateMouseScroll(delta, _mouseState.position, getChildren());
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down) {
-			return propagateClick(button, down, _mousePosition, getChildren());
+			return onMouseButton(button, down, _mouseState.position);
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) final override {
-			return propagateClick(button, down, position, getChildren());
+			_mouseState.buttons[button] = down;
+
+			if (button == MouseButton::Left && !down) {
+				DragContext& ctx = _shared->dragContext;
+				
+				if (ctx.isDragging) {
+					if (ctx.view) {
+						if (ctx.target) {
+							spdlog::info("Finished dragging {} on to {}", ctx.view->getName(), ctx.target->getName());
+							ctx.view->onDragFinish(ctx);
+							ctx.target->onDrop(ctx, position - ctx.target->getWorldPosition());
+							propagateDragLeave(ctx.target, false);
+							ctx.target = nullptr;
+						}
+					}
+
+					ctx.isDragging = false;
+					ctx.view = nullptr;
+
+					propagateMouseEnter(position, getChildren());
+				}
+
+				return true;
+			} else {
+				return propagateClick(button, down, position, getChildren());
+			}
 		}
 
 		bool onMouseMove(Point<uint32> pos) final override {
-			_mousePosition = pos;
-			return propagateMouseMove(pos, getChildren());
+			bool handled = false;
+			DragContext& ctx = _shared->dragContext;
+
+			if (!ctx.isDragging) {
+				if (!_mouseState.buttons[MouseButton::Left]) {
+					handled = propagateMouseEnter(pos, getChildren());
+					handled |= propagateMouseMove(pos, getChildren());
+				} else {
+					// Start drag
+					ctx.isDragging = true;
+
+					if (_shared->focused) {
+						ctx.selected = _shared->focused->shared_from_this();
+
+						if (_shared->focused->isDraggable()) {
+							ctx.view = ctx.selected;
+							spdlog::info("Started dragging {}", ctx.view->getName());
+							ctx.view->onDragStart();
+						}
+					}
+				}				
+			} else {
+				if (ctx.view) {
+					processDrag(ctx, pos);
+				} else {
+					// lock focus on current view
+					auto worldArea = ctx.selected->getWorldArea();
+					bool mouseInView = worldArea.contains(pos);
+
+					if (ctx.selected->_mouseOver) {
+						if (!mouseInView) {
+							spdlog::info("Mouse leaving {}", ctx.selected->getName());
+							ctx.selected->onMouseLeave();
+							ctx.selected->_mouseOver = false;
+						} else {
+							ctx.selected->onMouseMove(pos - worldArea.position);
+						}
+					} else {
+						if (mouseInView) {
+							spdlog::info("Mouse entering {}", ctx.selected->getName());
+							ctx.selected->onMouseEnter(pos - worldArea.position);
+							ctx.selected->_mouseOver = true;
+						}
+					}
+				}				
+			}
+
+			_mouseState.position = pos;
+			return handled;
+		}
+
+		bool processDrag(DragContext& ctx, Point<uint32> pos) {
+			bool handled = false;
+
+			if (ctx.target) {
+				auto targetWorld = ctx.target->getWorldArea();
+				
+				if (targetWorld.contains(pos)) {
+					ctx.target->onDragMove(ctx, pos - targetWorld.position);
+				} else {
+					propagateDragLeave(ctx.target, false);
+					ctx.target = nullptr;
+				}
+
+				handled = true;
+			}
+
+			if (!ctx.target) {
+				handled |= propagateDragEnter(pos, getChildren(), ctx);
+			}
+
+			return handled;
+		}
+
+		bool propagateDragEnter(Point<uint32> position, std::vector<ViewPtr>& views, DragContext& ctx) {
+			bool handled = false;
+
+			for (ViewPtr& view : views) {
+				if (view->getArea().contains(position)) {
+					Point<uint32> childPosition = position - view->getArea().position;
+					bool acceptedDrag = false;
+					
+					if (view != ctx.view && !view->_dragOver) {
+						view->_dragOver = true;
+
+						spdlog::info("Drag entering {}", view->getName());
+
+						acceptedDrag = view->onDragEnter(ctx, childPosition);
+						if (acceptedDrag) {
+							ctx.target = view;
+							return true;
+						}
+					}
+
+					if (!acceptedDrag) {
+						handled |= propagateDragEnter(childPosition, view->getChildren(), ctx);
+					}					
+				} else if (view->_dragOver) {
+					propagateDragLeave(view, true);
+				}
+			}
+
+			return handled;
+		}
+
+		void propagateDragLeave(ViewPtr& view, bool runCallback) {
+			for (int32 i = (int32)view->getChildren().size() - 1; i >= 0; --i) {
+				ViewPtr child = view->getChild(i);
+
+				if (child->_dragOver) {
+					propagateDragLeave(child, runCallback);
+				}
+			}
+
+			spdlog::info("Drag leaving {}", view->getName());
+			if (runCallback) {
+				view->onDragLeave(_shared->dragContext);
+			}
+			
+			view->_dragOver = false;
+		}
+
+		bool propagateMouseEnter(Point<uint32> position, std::vector<ViewPtr>& views) {
+			bool handled = false;
+
+			for (ViewPtr& view : views) {
+				if (view->getArea().contains(position)) {
+					Point<uint32> childPosition = position - view->getArea().position;
+
+					if (!view->_mouseOver) {
+						spdlog::info("Mouse entering {}", view->getName());
+						view->onMouseEnter(childPosition);
+						view->_mouseOver = true;
+						handled = true;
+					}
+
+					handled |= propagateMouseEnter(childPosition, view->getChildren());
+				} else if (view->_mouseOver) {
+					// We have encountered a view that the mouse has left.  We need to call onMouseLeave()
+					// on all dependencies, starting from the upper most child.
+					propagateMouseLeave(view);
+					handled = true;
+				}
+			}
+
+			return handled;
+		}
+
+		void propagateMouseLeave(ViewPtr& view) {
+			for (int32 i = (int32)view->getChildren().size() - 1; i >= 0; --i) {
+				ViewPtr child = view->getChild(i);
+				
+				if (child->_mouseOver) {
+					propagateMouseLeave(child);
+				}
+			}
+
+			spdlog::info("Mouse leaving {}", view->getName());
+			view->onMouseLeave();
+			view->_mouseOver = false;
+		}
+
+		bool propagateMouseMove(Point<uint32> position, std::vector<ViewPtr>& views) {
+			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
+				ViewPtr view = views[i];
+
+				if (view->getArea().contains(position)) {
+					Point<uint32> childPosition = position - view->getArea().position;					
+
+					if (!propagateMouseMove(childPosition, view->getChildren())) {
+						if (view->onMouseMove(childPosition)) {
+							return true;
+						}
+					}
+				}
+			}
+
+			return false;
 		}
 
 		bool onDrop(const std::vector<std::string>& paths) final override { 
-			return propagateDrop(paths, _mousePosition, getChildren());
+			return propagateDrop(paths, _mouseState.position, getChildren());
 		}
 
 		void onUpdate(f32 delta) final override {
@@ -88,7 +299,7 @@ namespace rp {
 			}
 			
 			propagateUpdate(getChildren(), delta);
-			handleRemovals();
+			//handleRemovals();
 
 			if (_shared->layoutDirty) {
 				updateLayout();
@@ -127,12 +338,12 @@ namespace rp {
 			return false;
 		}
 
-		void handleRemovals() {
+		/*void handleRemovals() {
 			for (ViewPtr view : _shared->removals) {
 				View* parent = view->getParent();
 				//assert(parent);
 
-				if (parent) {
+				if (parent)
 					for (size_t i = 0; i < parent->_children.size(); ++i) {
 						if (view == parent->_children[i]) {
 							ViewPtr child = parent->_children[i];
@@ -155,7 +366,7 @@ namespace rp {
 
 			_shared->removals.clear();
 			updateLayout();
-		}
+		}*/
 
 		void updateLayout() {
 			propagateSizingUpdate(getChildren());
@@ -181,7 +392,9 @@ namespace rp {
 			for (ViewPtr& view : views) {
 				if (view->_sizingMode == SizingMode::FitToParent) {
 					assert(view->getParent());
-					Rect<uint32> area = { {0, 0}, view->getDimensions() };
+					assert(view->getParent()->getSizingMode() != SizingMode::FitToContent);
+
+					Rect<uint32> area = { {0, 0}, view->getParent()->getDimensions() };
 
 					if (view->getArea() != area) {
 						view->setArea(area);
@@ -230,17 +443,21 @@ namespace rp {
 
 		void propagateRender(std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
-				Point<f32> pos = pointToFloat(view->getPosition());
-				nvgTranslate(getVg(), pos.x, pos.y);
-				view->onRender();
-				nvgTranslate(getVg(), -pos.x, -pos.y);
+				if (view->isVisible()) {
+					Point<f32> pos = pointToFloat(view->getPosition());
+					nvgTranslate(getVg(), pos.x, pos.y);
+					view->onRender();
+					nvgTranslate(getVg(), -pos.x, -pos.y);
+				}
 			}
 
 			for (ViewPtr& view : views) {
-				Point<f32> pos = pointToFloat(view->getPosition());
-				nvgTranslate(getVg(), pos.x, pos.y);
-				propagateRender(view->getChildren());
-				nvgTranslate(getVg(), -pos.x, -pos.y);
+				if (view->isVisible()) {
+					Point<f32> pos = pointToFloat(view->getPosition());
+					nvgTranslate(getVg(), pos.x, pos.y);
+					propagateRender(view->getChildren());
+					nvgTranslate(getVg(), -pos.x, -pos.y);
+				}
 			}
 		}
 
@@ -284,15 +501,15 @@ namespace rp {
 			return false;
 		}
 
-		bool propagateMouseMove(Point<uint32> position, std::vector<ViewPtr>& views) {
+		bool propagateAction(Point<uint32> position, std::vector<ViewPtr>& views, const std::function<bool(ViewPtr&, Point<uint32>)>& f) {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
 				ViewPtr view = views[i];
 
 				if (view->getArea().contains(position)) {
 					Point<uint32> childPosition = position - view->getArea().position;
 
-					if (!propagateMouseMove(childPosition, view->getChildren())) {
-						if (view->onMouseMove(childPosition)) {
+					if (!propagateAction(childPosition, view->getChildren(), f)) {
+						if (f(view, childPosition)) {
 							return true;
 						}
 					}
@@ -301,6 +518,8 @@ namespace rp {
 
 			return false;
 		}
+
+		
 
 		bool propagateDrop(const std::vector<std::string>& paths, Point<uint32> position, std::vector<ViewPtr>& views) {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {

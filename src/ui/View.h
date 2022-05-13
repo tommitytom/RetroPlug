@@ -28,6 +28,13 @@ namespace rp {
 		FitToContent
 	};
 
+	struct DragContext {
+		bool isDragging = false;
+		ViewPtr view;
+		ViewPtr selected;
+		ViewPtr target;
+	};
+
 	class View : public std::enable_shared_from_this<View> {
 	private:
 		struct Shared {
@@ -35,6 +42,8 @@ namespace rp {
 			bool layoutDirty = true;
 			f32 scale = 1.0f;
 			std::vector<ViewPtr> removals;
+
+			DragContext dragContext;
 
 			entt::registry userData;
 		};
@@ -46,6 +55,10 @@ namespace rp {
 		Rect<uint32> _area;
 		f32 _alpha = 1.0f;
 		NVGcontext* _vg = nullptr;
+		bool _mouseOver = false;
+		bool _dragOver = false;
+		bool _draggable = false;
+		bool _initialized = false;
 
 		SizingMode _sizingMode = SizingMode::None;
 
@@ -67,6 +80,18 @@ namespace rp {
 			removeChildren(); 
 		}
 
+		bool isVisible() const {
+			return getDimensions().w > 0 && getDimensions().h > 0;
+		}
+
+		bool isDraggable() const {
+			return _draggable;
+		}
+
+		void setDraggable(bool draggable) {
+			_draggable = draggable;
+		}
+
 		virtual void onInitialized() {}
 
 		virtual void onUpdate(f32 delta) {}
@@ -79,9 +104,27 @@ namespace rp {
 
 		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) { return false; }
 
+		virtual void onMouseEnter(Point<uint32> pos) {}
+
 		virtual bool onMouseMove(Point<uint32> pos) { return false; }
 
+		virtual void onMouseLeave() {}
+
 		virtual bool onMouseScroll(Point<f32> delta, Point<uint32> position) { return false; }
+
+		// Called on a view that is being dragged
+		virtual void onDragStart() {}
+
+		// Called on a view that is being dragged
+		virtual void onDragFinish(DragContext& ctx) {}
+
+		virtual bool onDragEnter(DragContext& ctx, Point<uint32> position) { return false; }
+
+		virtual void onDragMove(DragContext& ctx, Point<uint32> position) {}
+
+		virtual void onDragLeave(DragContext& ctx) {}
+		
+		virtual bool onDrop(DragContext& ctx, Point<uint32> position) { return false; }
 
 		virtual void onChildRemoved(ViewPtr view) {}
 
@@ -89,13 +132,29 @@ namespace rp {
 
 		virtual void onLayoutChanged() {}
 
-		virtual void onResize() {}
+		virtual void onResize(uint32 w, uint32 h) {}
 
 		virtual bool onDrop(const std::vector<std::string>& paths) { return false; }
 
 		virtual void onMenu(Menu& menu) {}
 
 		virtual void onScaleChanged(f32 scale) {}
+
+		virtual void onMount() {}
+
+		virtual void onDismount() {}
+
+		Point<uint32> getWorldPosition() const {
+			if (getParent()) {
+				return getParent()->getWorldPosition() + getPosition();
+			}
+
+			return getPosition();
+		}
+
+		Rect<uint32> getWorldArea() const {
+			return { getWorldPosition(), getDimensions() };
+		}
 
 		f32 getScalingFactor() const {
 			if (_shared) {
@@ -154,6 +213,7 @@ namespace rp {
 		}
 
 		void remove() {
+			assert(getParent());
 			getParent()->removeChild(shared_from_this());
 		}
 		
@@ -173,6 +233,32 @@ namespace rp {
 
 		bool hasFocus() const {
 			return _shared && _shared->focused == this;
+		}
+
+		void bringToFront() {
+			assert(getParent());
+			std::vector<ViewPtr>& children = getParent()->getChildren();
+
+			for (size_t i = 0; i < children.size(); ++i) {
+				if (children[i].get() == this) {
+					children.erase(children.begin() + i);
+					children.push_back(this->shared_from_this());
+					break;
+				}
+			}
+		}
+
+		void pushToBack() {
+			assert(getParent());
+			std::vector<ViewPtr>& children = getParent()->getChildren();
+
+			for (size_t i = 0; i < children.size(); ++i) {
+				if (children[i].get() == this) {
+					children.erase(children.begin() + i);
+					children.insert(children.begin(), this->shared_from_this());
+					break;
+				}
+			}
 		}
 
 		template <typename T>
@@ -198,13 +284,23 @@ namespace rp {
 		}
 
 		ViewPtr addChild(ViewPtr view) {
+			if (view->_parent) {
+				view->_parent->removeChild(view);
+			}
+
 			view->_parent = this;
 			view->setShared(_shared);
 			view->setVg(_vg);
 
+			if (!view->_initialized) {
+				view->onInitialized();
+				view->_initialized = true;
+			}
+
 			_children.push_back(view);
 			onChildAdded(view);
-			view->onInitialized();
+
+			view->onMount();
 
 			setLayoutDirty();
 
@@ -230,15 +326,31 @@ namespace rp {
 		}
 
 		void removeChild(ViewPtr view) {
-			if (_shared) {
-				_shared->removals.push_back(view);
-			} else {
-				for (size_t i = 0; i < _children.size(); ++i) {
-					if (_children[i] == view) {
-						_children.erase(_children.begin() + i);
+			for (size_t i = 0; i < _children.size(); ++i) {
+				if (_children[i] == view) {
+					if (_shared && _shared->focused && childHasFocus(view.get(), _shared->focused)) {
+						_shared->focused = this;
 					}
+
+					onChildRemoved(view);
+					view->onDismount();
+
+					_children.erase(_children.begin() + i);
+
+					view->_parent = nullptr;
+					view->_shared = nullptr;
+
+					setLayoutDirty();
+
+					break;
 				}
 			}
+
+			/*if (_shared) {
+				_shared->removals.push_back(view);
+			} else {
+				
+			}*/
 		}
 
 		void removeChildren() {
@@ -338,7 +450,7 @@ namespace rp {
 			if (dimensions != _area.dimensions) {
 				_area.dimensions = dimensions;
 				setLayoutDirty();
-				onResize();
+				onResize(dimensions.w, dimensions.h);
 			}
 		}
 		
@@ -408,11 +520,37 @@ namespace rp {
 			}
 		}
 
+		Point<uint32> getReleativePosition(ViewPtr& parent, Point<uint32> position) {
+			assert(parent != shared_from_this());
+			assert(getParent() != nullptr);
+
+			View* currentParent = getParent();
+
+			while (currentParent != parent.get()) {
+				position += currentParent->getPosition();
+				currentParent = currentParent->getParent();
+
+				assert(currentParent);
+			}
+
+			return position;
+		}
+
 	protected:
 		template <typename T>
 		void setType() {
 			_type = entt::type_id<T>();
 		}
+
+		void drawRect(const Dimension<uint32>& area, const NVGcolor& color) {
+			drawRect(Rect<f32> { 0.0f, 0.0f, (f32)area.w, (f32)area.h }, color);
+		}
+
+		void drawRect(const Rect<uint32>& area, const NVGcolor& color) {
+			drawRect(Rect<f32> { (f32)area.x, (f32)area.y, (f32)area.w, (f32)area.h }, color);
+		}
+
+		void drawRect(const Rect<f32>& area, const NVGcolor& color);
 
 	private:
 		void setShared(Shared* shared) {
@@ -423,6 +561,19 @@ namespace rp {
 			}
 		}
 
+		bool childHasFocus(const View* view, const View* focused) {
+			if (view == focused) {
+				return true;
+			}
+
+			for (const ViewPtr& child : view->getChildren()) {
+				if (childHasFocus(child.get(), focused)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
 
 		friend class ViewManager;
 	};

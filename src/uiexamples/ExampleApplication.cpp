@@ -13,10 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "util/fs.h"
-#include "data/font.h"
-#include "data/Early-GameBoy.h"
-#include "data/Roboto-Regular.h"
-#include "data/PlatNomor.h"
+#include "fonts/Roboto-Regular.h"
 
 #include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
@@ -25,6 +22,7 @@
 #include "node/NodeGraph.h"
 #include "core/RetroPlugNodes.h"
 #include "node/AudioGraph.h"
+#include "ui/VerticalSpliiter.h"
 
 using namespace rp;
 
@@ -55,11 +53,102 @@ void testNodeGraph() {
 const bgfx::ViewId kClearView = 0;
 const bool s_showStats = false;
 
-ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
-	_waveView = _view.addChild<WaveView>("Wave View");
-	_waveView->setDimensions({ 800, 600 });
+class DropZone : public PanelView {
+public:
+	DropZone() {
+		setType<DropZone>();
+	}
 
-	generateWaveform();
+	bool onDragEnter(DragContext& ctx, Point<uint32> position) override { return true; }
+
+	void onDragMove(DragContext& ctx, Point<uint32> position) override {}
+
+	void onDragLeave(DragContext& ctx) override {}
+
+	bool onDrop(DragContext& ctx, Point<uint32> position) { 
+		spdlog::info("drop catch!");
+		return true;
+	}
+};
+
+const NVGcolor COLOR_BLACK = nvgRGBA(0, 0, 0, 255);
+const NVGcolor COLOR_WHITE = nvgRGBA(255, 255, 255, 255);
+const NVGcolor COLOR_LIGHT_GREY = nvgRGBA(170, 170, 170, 255);
+const NVGcolor COLOR_DARK_GREY = nvgRGBA(50, 50, 50, 255);
+const NVGcolor COLOR_RED = nvgRGBA(255, 0, 0, 255);
+const NVGcolor COLOR_GREEN = nvgRGBA(0, 255, 0, 255);
+const NVGcolor COLOR_BLUE = nvgRGBA(0, 0, 255, 255);
+
+ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
+	auto rootPanel = _view.addChild<PanelView>("Root Panel");
+	rootPanel->setDimensions({ 800, 600 });
+	rootPanel->setColor(COLOR_WHITE);
+
+	auto handle1 = rootPanel->addChild<DockWindow>("Handle 1");
+	handle1->setArea({ 100, 100, 100, 100 });
+	handle1->setDraggable(true);
+	DockPanelPtr content1 = std::make_shared<DockPanel>();
+	content1->setColor(nvgRGBA(0, 255, 0, 100));
+	handle1->setPanelContent(content1);
+
+	auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
+	handle2->setArea({ 100, 300, 100, 100 });
+	handle2->setDraggable(true);
+	DockPanelPtr content2 = std::make_shared<DockPanel>();
+	content2->setColor(COLOR_BLUE);
+	handle2->setPanelContent(content2);
+
+	auto target = rootPanel->addChild<DockWindow>("Target");
+	target->setArea({ 300, 100, 450, 300 });
+
+	/*auto dockLeft = std::make_shared<DockWindow>();
+	dockLeft->setSizingMode(SizingMode::FitToParent);
+	auto dockRight = std::make_shared<DockWindow>();
+	dockRight->setSizingMode(SizingMode::FitToParent);
+
+	target->addItem(dockLeft, 0);
+	target->addItem(dockRight, 0);*/
+
+	//_waveView = _view.addChild<WaveView>("Wave View");
+	//_waveView->setDimensions({ 800, 600 });
+
+	/*_dock = _view.addChild<Dock>("Dock Root");
+	_dock->setSizingMode(SizingMode::FitToParent);
+
+	auto dockRoot = std::make_shared<VerticalSplitter>();
+	dockRoot->setSplitDirection(SplitDirection::Vertical);
+	_dock->setRoot(dockRoot);
+
+	auto dockMiddle = std::make_shared<VerticalSplitter>();
+	dockMiddle->setSizingMode(SizingMode::FitToParent);
+	dockMiddle->setSplitDirection(SplitDirection::Horizontal);
+
+	auto dockTop = std::make_shared<DockWindow>();
+	dockTop->setSizingMode(SizingMode::FitToParent);
+	auto dockCenter = std::make_shared<DockWindow>();
+	dockCenter->setSizingMode(SizingMode::FitToParent);
+	auto dockBottom = std::make_shared<DockWindow>();
+	dockBottom->setSizingMode(SizingMode::FitToParent);
+
+	dockMiddle->addItem(dockTop, 0);
+	dockMiddle->addItem(dockCenter, 0);
+	dockMiddle->addItem(dockBottom, 0);
+
+	
+	auto dockLeft = std::make_shared<DockWindow>();
+	dockLeft->setSizingMode(SizingMode::FitToParent);
+	dockRoot->addItem(dockLeft, 0);
+
+	dockRoot->addItem(dockMiddle, 0);
+
+	auto dockRight = std::make_shared<DockWindow>();
+	dockRight->setSizingMode(SizingMode::FitToParent);
+	dockRoot->addItem(dockRight, 0);	*/
+
+	//_splitter = _view.addChild<VerticalSplitter>("Splitter");
+	//_splitter->setDimensions({ 800, 600 });
+
+	//generateWaveform();
 
 	_audioProcessor = _audioGraph.createProcessor();
 	_outputNode = _audioGraph.addNode<OutputNode>();
@@ -78,9 +167,7 @@ void ExampleApplication::onInit() {
 	_vg = nvgCreate(0, 0);
 	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
 
-	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
 	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, (int)Roboto_Regular_len, 0);
-	nvgCreateFontMem(_vg, "PlatNomor", PlatNomor, (int)PlatNomor_len, 0);
 
 	_view.setVg(_vg);
 
@@ -107,6 +194,8 @@ void ExampleApplication::onFrame(f64 delta) {
 
 	NVGcontext* vg = _vg;
 	Dimension<uint32> res = getResolution();
+	_view.setDimensions(res);
+
 	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
 
 	_view.onUpdate((f32)delta);
@@ -128,7 +217,7 @@ void ExampleApplication::onFrame(f64 delta) {
 	// Advance to next frame. Process submitted rendering primitives.
 	bgfx::frame();
 
-	setResolution(_view.getDimensions());
+	//setResolution(_view.getDimensions());
 }
 
 void ExampleApplication::onResize(int32 w, int32 h) {
@@ -143,8 +232,8 @@ void ExampleApplication::onDrop(int count, const char** paths) {
 VirtualKey::Enum convertKey(int key) {
 	switch (key) {
 	case GLFW_KEY_SPACE: return VirtualKey::Space;
-		//case GLFW_KEY_APOSTROPHE: return VirtualKey::Apo;
-		//case GLFW_KEY_COMMA: return VirtualKey::comma;
+	//case GLFW_KEY_APOSTROPHE: return VirtualKey::Apo;
+	//case GLFW_KEY_COMMA: return VirtualKey::comma;
 	case GLFW_KEY_MINUS: return VirtualKey::LeftCtrl;
 	case GLFW_KEY_PERIOD: return VirtualKey::LeftCtrl;
 	case GLFW_KEY_SLASH: return VirtualKey::LeftCtrl;
@@ -158,8 +247,8 @@ VirtualKey::Enum convertKey(int key) {
 	case GLFW_KEY_7: return VirtualKey::Num7;
 	case GLFW_KEY_8: return VirtualKey::Num8;
 	case GLFW_KEY_9: return VirtualKey::Num9;
-		//case GLFW_KEY_SEMICOLON: return VirtualKey::semi;
-		//case GLFW_KEY_EQUAL: return VirtualKey::equa;
+	//case GLFW_KEY_SEMICOLON: return VirtualKey::semi;
+	//case GLFW_KEY_EQUAL: return VirtualKey::equa;
 	case GLFW_KEY_A: return VirtualKey::A;
 	case GLFW_KEY_B: return VirtualKey::B;
 	case GLFW_KEY_C: return VirtualKey::C;
@@ -186,8 +275,8 @@ VirtualKey::Enum convertKey(int key) {
 	case GLFW_KEY_X: return VirtualKey::X;
 	case GLFW_KEY_Y: return VirtualKey::Y;
 	case GLFW_KEY_Z: return VirtualKey::Z;
-		//case GLFW_KEY_LEFT_BRACKET: return VirtualKey::leftbra;
-		//case GLFW_KEY_BACKSLASH: return VirtualKey::slas;
+	//case GLFW_KEY_LEFT_BRACKET: return VirtualKey::leftbra;
+	//case GLFW_KEY_BACKSLASH: return VirtualKey::slas;
 	case GLFW_KEY_RIGHT_BRACKET: return VirtualKey::LeftCtrl;
 	case GLFW_KEY_GRAVE_ACCENT: return VirtualKey::LeftCtrl;
 	case GLFW_KEY_WORLD_1: return VirtualKey::LeftCtrl;
@@ -235,7 +324,7 @@ VirtualKey::Enum convertKey(int key) {
 	case GLFW_KEY_F22: return VirtualKey::F22;
 	case GLFW_KEY_F23: return VirtualKey::F23;
 	case GLFW_KEY_F24: return VirtualKey::F24;
-		//case GLFW_KEY_F25: return VirtualKey::F25;
+	//case GLFW_KEY_F25: return VirtualKey::F25;
 	case GLFW_KEY_KP_0: return VirtualKey::NumPad0;
 	case GLFW_KEY_KP_1: return VirtualKey::NumPad1;
 	case GLFW_KEY_KP_2: return VirtualKey::NumPad2;
@@ -252,7 +341,7 @@ VirtualKey::Enum convertKey(int key) {
 	case GLFW_KEY_KP_SUBTRACT: return VirtualKey::Subtract;
 	case GLFW_KEY_KP_ADD: return VirtualKey::Add;
 	case GLFW_KEY_KP_ENTER: return VirtualKey::Enter;
-		//case GLFW_KEY_KP_EQUAL: return VirtualKey::equal;
+	//case GLFW_KEY_KP_EQUAL: return VirtualKey::equal;
 	case GLFW_KEY_LEFT_SHIFT: return VirtualKey::LeftShift;
 	case GLFW_KEY_LEFT_CONTROL: return VirtualKey::LeftCtrl;
 	case GLFW_KEY_LEFT_ALT: return VirtualKey::Alt;
@@ -261,7 +350,7 @@ VirtualKey::Enum convertKey(int key) {
 	case GLFW_KEY_RIGHT_CONTROL: return VirtualKey::RightCtrl;
 	case GLFW_KEY_RIGHT_ALT: return VirtualKey::Alt;
 	case GLFW_KEY_RIGHT_SUPER: return VirtualKey::RightWin;
-		//case GLFW_KEY_MENU: return VirtualKey::LeftMenu;
+	//case GLFW_KEY_MENU: return VirtualKey::LeftMenu;
 	}
 
 	return VirtualKey::Unknown;
