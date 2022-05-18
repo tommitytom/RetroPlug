@@ -59,9 +59,9 @@ public:
 		setType<DropZone>();
 	}
 
-	bool onDragEnter(DragContext& ctx, Point<uint32> position) override { return true; }
+	void onDragEnter(DragContext& ctx, Point<uint32> position) override {}
 
-	void onDragMove(DragContext& ctx, Point<uint32> position) override {}
+	bool onDragMove(DragContext& ctx, Point<uint32> position) override { return false; }
 
 	void onDragLeave(DragContext& ctx) override {}
 
@@ -88,15 +88,25 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	handle1->setArea({ 100, 100, 100, 100 });
 	handle1->setDraggable(true);
 	DockPanelPtr content1 = std::make_shared<DockPanel>();
-	content1->setColor(nvgRGBA(0, 255, 0, 100));
-	handle1->setPanelContent(content1);
+	content1->setName("Green");
+	content1->setColor(COLOR_GREEN);
+	handle1->addChild(content1);
 
 	auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
 	handle2->setArea({ 100, 300, 100, 100 });
 	handle2->setDraggable(true);
 	DockPanelPtr content2 = std::make_shared<DockPanel>();
+	content2->setName("Blue");
 	content2->setColor(COLOR_BLUE);
-	handle2->setPanelContent(content2);
+	handle2->addChild(content2);
+
+	auto handle3 = rootPanel->addChild<DockWindow>("Handle 3");
+	handle3->setArea({ 100, 500, 100, 100 });
+	handle3->setDraggable(true);
+	DockPanelPtr content3 = std::make_shared<DockPanel>();
+	content3->setName("Red");
+	content3->setColor(COLOR_RED);
+	handle3->addChild(content3);
 
 	auto target = rootPanel->addChild<DockWindow>("Target");
 	target->setArea({ 300, 100, 450, 300 });
@@ -200,6 +210,13 @@ void ExampleApplication::onFrame(f64 delta) {
 
 	_view.onUpdate((f32)delta);
 	_view.onRender();
+
+	nvgFontSize(vg, 12.0f);
+	nvgFontFace(vg, "Roboto-Regular");
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+	nvgFillColor(vg, nvgRGBA(255, 0, 0, 255));
+	nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 255));
+	nvgText(vg, 0, 0, "Hello world!", NULL);
 
 	nvgEndFrame(_vg);
 

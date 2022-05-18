@@ -32,7 +32,7 @@ namespace rp {
 		bool isDragging = false;
 		ViewPtr view;
 		ViewPtr selected;
-		ViewPtr target;
+		std::vector<ViewPtr> targets;
 	};
 
 	class View : public std::enable_shared_from_this<View> {
@@ -59,6 +59,7 @@ namespace rp {
 		bool _dragOver = false;
 		bool _draggable = false;
 		bool _initialized = false;
+		bool _visible = true;
 
 		SizingMode _sizingMode = SizingMode::None;
 
@@ -80,8 +81,9 @@ namespace rp {
 			removeChildren(); 
 		}
 
-		bool isVisible() const {
-			return getDimensions().w > 0 && getDimensions().h > 0;
+		const DragContext& getDragContext() const {
+			assert(_shared);
+			return _shared->dragContext;
 		}
 
 		bool isDraggable() const {
@@ -90,6 +92,19 @@ namespace rp {
 
 		void setDraggable(bool draggable) {
 			_draggable = draggable;
+		}
+
+		void setVisible(bool visible) {
+			_visible = visible;
+
+			if (!visible) {
+				// TODO: Remove mouse/drag state and call onMouseLeave/onDragLeave as necessary
+				unfocus();
+			}
+		}
+
+		bool isVisible() const {
+			return _visible && getDimensions().w > 0 && getDimensions().h > 0;
 		}
 
 		virtual void onInitialized() {}
@@ -118,9 +133,9 @@ namespace rp {
 		// Called on a view that is being dragged
 		virtual void onDragFinish(DragContext& ctx) {}
 
-		virtual bool onDragEnter(DragContext& ctx, Point<uint32> position) { return false; }
+		virtual void onDragEnter(DragContext& ctx, Point<uint32> position) {}
 
-		virtual void onDragMove(DragContext& ctx, Point<uint32> position) {}
+		virtual bool onDragMove(DragContext& ctx, Point<uint32> position) { return false; } 
 
 		virtual void onDragLeave(DragContext& ctx) {}
 		
@@ -359,8 +374,8 @@ namespace rp {
 			}
 		}
 
-		template <typename T>
-		void forEach(bool recurse, T&& callback) {
+		template <typename Func>
+		void forEach(bool recurse, Func&& callback) {
 			for (size_t i = 0; i < _children.size(); ++i) {
 				callback(_children[i], (ViewIndex)i);
 
@@ -392,29 +407,39 @@ namespace rp {
 		}
 
 		template <typename T>
-		void findChildren(std::vector<T*>& target, bool recursive = false) {
+		bool findChildren(std::vector<T*>& target, bool recursive = false) {
+			bool found = false;
+
 			for (ViewPtr& child : _children) {
 				if (child->isType<T>()) {
 					target.push_back(child->asRaw<T>());
+					found = true;
 				}
 
 				if (recursive) {
-					child->findChildren<T>(target, true);
+					found |= child->findChildren<T>(target, true);
 				}
 			}
+
+			return found;
 		}
 
 		template <typename T>
-		void findChildren(std::vector<std::shared_ptr<T>>& target, bool recursive = false) {
+		bool findChildren(std::vector<std::shared_ptr<T>>& target, bool recursive = false) {
+			bool found = false;
+
 			for (ViewPtr& child : _children) {
 				if (child->isType<T>()) {
 					target.push_back(child->asShared<T>());
+					found = true;
 				}
 
 				if (recursive) {
-					child->findChildren<T>(target, true);
+					found |= child->findChildren<T>(target, true);
 				}
 			}
+
+			return found;
 		}
 
 		std::vector<ViewPtr>& getChildren() {
@@ -551,6 +576,8 @@ namespace rp {
 		}
 
 		void drawRect(const Rect<f32>& area, const NVGcolor& color);
+
+		void drawText(f32 x, f32 y, std::string_view text, const NVGcolor& color);
 
 	private:
 		void setShared(Shared* shared) {
