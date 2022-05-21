@@ -15,4 +15,6 @@ namespace rp::KitUtil {
 	SampleData loadSample(std::string_view path);
 
 	void patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples);
+
+	size_t getSampleFrameCount(const SampleSettings& settings, const SampleData& sample);
 }

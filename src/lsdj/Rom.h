@@ -82,6 +82,27 @@ namespace rp::lsdj {
 	};
 
 	namespace SampleUtil {
+		class DitherGenerator {
+		private:
+			f32 _halfLevel;
+			Random _rand;
+
+			f32 _state;
+
+		public:
+			DitherGenerator(f32 level, uint32 seed = 0) : _halfLevel(level / 2.0f), _rand(seed) {
+				_state = _rand.nextFloatRange(-_halfLevel, _halfLevel);
+			}
+
+			~DitherGenerator() = default;
+
+			f32 next() {
+				f32 oldState = _state;
+				_state = _rand.nextFloatRange(-_halfLevel, _halfLevel);
+				return oldState - _state;
+			}
+		};
+
 		const size_t SAMPLES_PER_BYTE_4BIT = 2;
 
 		static void convertNibblesToF32(const Uint8Buffer& input, Float32Buffer& output) {
@@ -105,50 +126,48 @@ namespace rp::lsdj {
 			}
 		}
 
-		static void convertF32ToNibbles(const Float32Buffer& input, Uint8Buffer& output, f32 dither) {
-			output.resize(input.size() / SAMPLES_PER_BYTE_4BIT);
+		static size_t getTargetSampleCount(size_t sampleCount) {
+			// max of 32 samples per chunk in a kit sample
+			// Starting from LSDj 9.2.0, first sample is skipped to compensate for wave refresh bug.
+			// This rotates the wave frame rightwards.
+			sampleCount++;
 
-			int offset = 0;
-			size_t addedBytes = 0;
-			int outputCounter = 0;
-			uint8* outputBuffer = new uint8[32];
+			size_t remaining = sampleCount % 32;
 
-			outputBuffer[0] = 0;
+			// just remove trailing samples for now
+			return sampleCount - remaining;
 
-			f32 halfDither = dither * 0.5f;
-			Random ditherRand;
-			f32 state = ditherRand.nextFloatRange(-halfDither, halfDither);
+			/*if (remaining <= 16) {
+				return sampleCount - remaining;
+			}
 
-			for (size_t i = 0; i < input.size(); ++i) {
-				f32 oldState = state;
-				state = ditherRand.nextFloatRange(-halfDither, halfDither);
-				f32 r = oldState - state;
+			return sampleCount + (32 - remaining);*/
+		}
 
+		static void convertF32ToNibbles(const Float32Buffer& input, Uint8Buffer& output, DitherGenerator& dither) {
+			const size_t targetSampleCount = getTargetSampleCount(input.size());
+
+			output.resize(targetSampleCount / SAMPLES_PER_BYTE_4BIT);
+			output[0] = 7 * 0x10;
+
+			// Starting from LSDj 9.2.0, first sample is skipped to compensate for wave refresh bug.
+			// This rotates the wave frame rightwards.
+
+			for (size_t i = 1; i < targetSampleCount; ++i) {
 				// Create a clipped sample value between 0 and 1
-				f32 s = (std::min(1.0f, std::max(-1.0f, input[i] + r)) + 1.0f) * 0.5f;
+				f32 s = (std::min(1.0f, std::max(-1.0f, input[i - 1] + dither.next())) + 1.0f) * 0.5f;
 
 				// Scale value from 0 to 15
 				s = floor(s * 15.0f + 0.5f);
 
 				uint8 b = 0xf - (uint8)s;
 
-				// Starting from LSDj 9.2.0, first sample is skipped to compensate for wave refresh bug.
-				// This rotates the wave frame rightwards.
-				outputBuffer[(outputCounter + 1) % 32] = b;
-
-				if (outputCounter == 31) {
-					for (int j = 0; j != 32; j += 2) {
-						output[offset++] = (uint8)(outputBuffer[j] * 0x10 + outputBuffer[j + 1]);
-					}
-
-					outputCounter = -1;
-					addedBytes += 0x10;
-				}
-
-				outputCounter++;
+				if (i % SAMPLES_PER_BYTE_4BIT == 0) {
+					output[i / SAMPLES_PER_BYTE_4BIT] = b * 0x10;
+				} else {
+					output[i / SAMPLES_PER_BYTE_4BIT] += b;
+				}				
 			}
-
-			output.resize(addedBytes);
 		}
 	}
 

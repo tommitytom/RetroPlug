@@ -101,9 +101,23 @@ void Canvas::updateTileTexture() {
 
 FontTiles findTile(char code) {
 	switch (code) {
+	case '[': return FontTiles::BracketLeft;
+	case ']': return FontTiles::BracketRight;
+	case '(': return FontTiles::BracketLeft;
+	case ')': return FontTiles::BracketRight;
+	case '_': return FontTiles::Underscore;
+	case '%': return FontTiles::Percent;
 	case '.': return FontTiles::Period;
 	case '-': return FontTiles::Dash;
+	case '+': return FontTiles::Plus;
+	case '#': return FontTiles::Hash;
+	case ',': return FontTiles::Comma;
+	case ':': return FontTiles::Colon;
+	case ';': return FontTiles::Semicolon;
+	case '=': return FontTiles::Equals;
 	case '/': return FontTiles::Slash;
+	case '?': return FontTiles::QuestionMark;
+	case '!': return FontTiles::ExclamationMark;
 	}
 
 	if (code >= 48 && code <= 57) {

@@ -43,7 +43,7 @@ void SamplerView::setSystem(SystemWrapperPtr& system) {
 		LsdjModelPtr model = _system->getModel<LsdjModel>();
 		int32 selectedKit = 999;
 
-		for (auto& kit : model->kits) {
+		for (auto& kit : model->_kits) {
 			if (kit.first < selectedKit) {
 				selectedKit = kit.first;
 			}
@@ -230,8 +230,8 @@ void SamplerView::onRender() {
 		return;
 	}
 
-	auto found = model->kits.find(_samplerState.selectedKit);
-	bool isEditable = found != model->kits.end();
+	auto found = model->_kits.find(_samplerState.selectedKit);
+	bool isEditable = found != model->_kits.end();
 	bool editingGlobal = true;
 
 	SampleSettings defaultSettings;
@@ -285,14 +285,16 @@ void SamplerView::onRender() {
 	}
 
 	if (!rom.kitIsEmpty(kitIdx)) {
-		size_t sampleCount = 0;
 		for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
 			std::string_view sampleName = rom.getKitSampleName(kitIdx, i);
 
 			if (sampleName == "N/A") {
-				sampleName = "---";
-			} else {
-				sampleCount++;
+				if (i < found->second.samples.size()) {
+					sampleName = found->second.samples[i].name;
+					_c.drawTile(1, i + 3, lsdj::FontTiles::Special, lsdj::ColorSets::Shaded, true);
+				} else {
+					sampleName = "---";
+				}
 			}
 
 			sampleNames[i + 1] = sampleName;
@@ -432,7 +434,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 
 void SamplerView::buildMenu(Menu& target) {
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
-	bool kitEditable = model->kits.find(_samplerState.selectedKit) != model->kits.end();
+	bool kitEditable = model->_kits.find(_samplerState.selectedKit) != model->_kits.end();
 
 	target.title("LSDJ Sample Manager")
 		.separator()
@@ -500,8 +502,8 @@ void SamplerView::updateSampleBuffers() {
 
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
 
-	auto found = model->kits.find(_samplerState.selectedKit);
-	if (found != model->kits.end()) {
+	auto found = model->_kits.find(_samplerState.selectedKit);
+	if (found != model->_kits.end()) {
 		model->updateKit(_samplerState.selectedKit);
 		updateWaveform();
 	}

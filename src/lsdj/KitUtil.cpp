@@ -128,6 +128,12 @@ void convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const Float32B
 	}
 }
 
+size_t KitUtil::getSampleFrameCount(const SampleSettings& settings, const SampleData& sample) {
+	f64 scale = (f64)GAMEBOY_SAMPLE_RATE / (f64)sample.sampleRate;
+	size_t frameCount = (size_t)(sample.buffer->size() * scale);
+	return lsdj::SampleUtil::getTargetSampleCount(frameCount);
+}
+
 void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples) {
 	auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -139,15 +145,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 	for (size_t i = 0; i < samples.size(); ++i) {
 		const SampleData& sample = samples[i];
-		SampleSettings settings = kitState.samples[i].settings;
-
-		if (settings.cutoff == -1) settings.cutoff = kitState.settings.cutoff;
-		if (settings.dither == -1) settings.dither = kitState.settings.dither;
-		if (settings.filter == -1) settings.filter = kitState.settings.filter;
-		if (settings.pitch == -1) settings.pitch = kitState.settings.pitch;
-		if (settings.q == -1) settings.q = kitState.settings.q;
-		if (settings.volume == -1) settings.volume = kitState.settings.volume;
-		if (settings.gain == -1) settings.gain = kitState.settings.gain;
+		SampleSettings settings = kitState.getSampleSettings(i);
 
 		// Normalize and Apply gain
 
@@ -212,25 +210,6 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		Float32Buffer resampled;
 		convertSamplerate((f64)sample.sampleRate, (f64)GAMEBOY_SAMPLE_RATE, filterTarget, resampled);
 
-		/*ma_resampler_config config = ma_resampler_config_init(ma_format_f32, 1, sample.sampleRate, GAMEBOY_SAMPLE_RATE, ma_resample_algorithm_linear);
-		ma_resampler resampler;
-		ma_result resamplerResult = ma_resampler_init(&config, &resampler);
-		if (resamplerResult != MA_SUCCESS) {
-			spdlog::error("Failed to initialize resampler");
-			continue;
-		}
-
-		ma_uint64 frameCountIn = filterTarget.size();
-		ma_uint64 frameCountOut = ma_resampler_get_expected_output_frame_count(&resampler, frameCountIn);
-
-		ma_result result = ma_resampler_process_pcm_frames(&resampler, filterTarget.data(), &frameCountIn, resampled.data(), &frameCountOut);
-		if (result != MA_SUCCESS) {
-			spdlog::error("Failed to resample");
-			continue;
-		}
-
-		ma_resampler_uninit(&resampler);*/
-
 		// Convert to nibbles
 
 		const f32 maxDither = 0.125f;
@@ -240,10 +219,17 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		}
 
 		Uint8BufferPtr sampleData = std::make_shared<Uint8Buffer>();
-		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData, ditherLevel);
+		lsdj::SampleUtil::DitherGenerator dither(ditherLevel);
+		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData, dither);
+
+		uint32 nextTotalSize = totalSampleDataSize + (uint32)sampleData->size();
+		if (nextTotalSize > lsdj::Kit::MAX_SAMPLE_SPACE) {
+			spdlog::warn("Too many samples!");
+			break;
+		}
 
 		targets.push_back(sampleData);
-		totalSampleDataSize += (uint32)sampleData->size();
+		totalSampleDataSize = nextTotalSize;
 	}
 
 	assert(totalSampleDataSize <= lsdj::Kit::MAX_SAMPLE_SPACE);

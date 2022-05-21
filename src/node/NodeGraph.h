@@ -29,12 +29,6 @@ namespace rp {
 			NodePtr inputNode;
 			size_t inputIdx;
 		};
-		struct Connection {
-			NodePtr outputNode;
-			size_t outputIdx;
-			NodePtr inputNode;
-			size_t inputIdx;
-		};
 	protected:
 		std::vector<NodePtr> _nodes;
 		std::vector<Connection> _connections;
@@ -161,6 +155,7 @@ namespace rp {
 				}
 			}
 
+			// TODO: This probably needs to be sent along with 
 			this->sendMessage(SetOrderMessage {
 				.indices = _processOrder
 			});

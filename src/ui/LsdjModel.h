@@ -40,6 +40,19 @@ namespace rp {
 		std::string name;
 		std::vector<KitSample> samples;
 		SampleSettings settings;
+
+		SampleSettings getSampleSettings(size_t sampleIdx) const {
+			SampleSettings s = samples[sampleIdx].settings;
+			if (s.cutoff == -1) s.cutoff = settings.cutoff;
+			if (s.dither == -1) s.dither = settings.dither;
+			if (s.filter == -1) s.filter = settings.filter;
+			if (s.pitch == -1) s.pitch = settings.pitch;
+			if (s.q == -1) s.q = settings.q;
+			if (s.volume == -1) s.volume = settings.volume;
+			if (s.gain == -1) s.gain = settings.gain;
+
+			return s;
+		}
 	};
 
 	using KitIndex = size_t;
@@ -53,7 +66,7 @@ namespace rp {
 		uint64 _songHash = 0;
 
 	public:
-		std::unordered_map<KitIndex, KitState> kits;
+		std::unordered_map<KitIndex, KitState> _kits;
 
 	public:
 		LsdjModel(): Model("lsdj") {}

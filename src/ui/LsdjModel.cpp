@@ -42,8 +42,8 @@ void LsdjModel::updateKit(KitIndex kitIdx) {
 		return;
 	}
 
-	auto found = kits.find(kitIdx);
-	if (found == kits.end()) {
+	auto found = _kits.find(kitIdx);
+	if (found == _kits.end()) {
 		spdlog::error("Failed to update sample buffers - kit not found");
 		return;
 	}
@@ -69,7 +69,7 @@ KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex k
 	if (kitIdx == -1) {
 		kitIdx = rom.nextEmptyKitIdx();
 	} else {
-		kits.erase(kitIdx);
+		_kits.erase(kitIdx);
 		newKit = rom.kitIsEmpty(kitIdx);
 	}
 
@@ -98,36 +98,35 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 		std::string kitName = name.empty() ? fmt::format("KIT {0:x}", kitIdx + 1) : std::string(name);
 		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
 
-		KitState kitState = KitState{
-			.name = StringUtil::toUpper(kitName),
-		};
+		auto found = _kits.find(kitIdx);
+		if (found == _kits.end()) {
+			_kits[kitIdx] = KitState{
+				.name = StringUtil::toUpper(kitName),
+			};
+		}
+
+		KitState& targetKit = _kits[kitIdx];
+		size_t startSampleCount = targetKit.samples.size();
 
 		for (const std::string& path : paths) {
 			if (fsutil::getFileExt(path) == ".wav") {
-				std::string sampleName = fsutil::getFilename(path);
-				sampleName = fsutil::removeFileExt(sampleName);
-				sampleName = std::string(fsutil::removeUniqueId(sampleName));
+				if (targetKit.samples.size() < lsdj::Kit::MAX_SAMPLES) {
+					std::string sampleName = fsutil::getFilename(path);
+					sampleName = fsutil::removeFileExt(sampleName);
+					sampleName = std::string(fsutil::removeUniqueId(sampleName));
+					sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
 
-				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
-
-				kitState.samples.push_back(KitSample{
-					.name = StringUtil::toUpper(sampleName),
-					.path = path
-				});
+					targetKit.samples.push_back(KitSample{
+						.name = StringUtil::toUpper(sampleName),
+						.path = path
+					});
+				} else {
+					spdlog::warn("Failed to add sample {} to kit {}: It already has the maximum number of samples", path, targetKit.name);
+				}				
 			}
 		}
 
-		if (kitState.samples.size() > 0) {
-			auto found = kits.find(kitIdx);
-
-			if (found != kits.end()) {
-				for (const KitSample& sample : kitState.samples) {
-					found->second.samples.push_back(sample);
-				}
-			} else {
-				kits[kitIdx] = kitState;
-			}
-			
+		if (targetKit.samples.size() != startSampleCount) {
 			updateKit(kitIdx);
 			setRequiresSave(true);
 		}
@@ -208,7 +207,7 @@ std::string LsdjModel::getProjectName() {
 void LsdjModel::onSerialize(sol::state& s, sol::table target) {
 	sol::table kitTable = target.create_named("kits");
 
-	for (auto& [kitIdx, kitState] : kits) {
+	for (auto& [kitIdx, kitState] : _kits) {
 		sol::table samplesTable = s.create_table();
 
 		for (size_t i = 0; i < kitState.samples.size(); ++i) {
@@ -230,7 +229,7 @@ void LsdjModel::onSerialize(sol::state& s, sol::table target) {
 }
 
 void LsdjModel::onDeserialize(sol::state& s, sol::table source) {
-	kits.clear();
+	_kits.clear();
 
 	sol::table kitsTable = source["kits"];
 
@@ -254,7 +253,7 @@ void LsdjModel::onDeserialize(sol::state& s, sol::table source) {
 			});
 		}
 
-		kits[idx] = std::move(kitState);
+		_kits[idx] = std::move(kitState);
 
 		updateKit(idx);
 	}
