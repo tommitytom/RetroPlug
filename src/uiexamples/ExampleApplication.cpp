@@ -13,10 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "util/fs.h"
-#include "data/font.h"
-#include "data/Early-GameBoy.h"
-#include "data/Roboto-Regular.h"
-#include "data/PlatNomor.h"
+#include "fonts/Roboto-Regular.h"
 
 #include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
@@ -25,6 +22,8 @@
 #include "node/NodeGraph.h"
 #include "core/RetroPlugNodes.h"
 #include "node/AudioGraph.h"
+
+#include "Grain.h"
 
 using namespace rp;
 
@@ -55,6 +54,33 @@ void testNodeGraph() {
 const bgfx::ViewId kClearView = 0;
 const bool s_showStats = false;
 
+void setupGranular() {
+	GrainStream gs;
+	Float32BufferPtr buf = std::make_shared<Float32Buffer>(40);
+
+	for (size_t i = 0; i < buf->size() / 2; ++i) {
+		buf->set(i * 2, (f32)i);
+		buf->set(i * 2 + 1, (f32)i);
+	}
+
+	gs.addGrain(std::make_unique<Grain>(Grain {
+		.audio = AudioBufferAccessor(buf, 2, 0, 10),
+		.ampEnvelope = EnvelopeType::None
+	}));
+
+	gs.addGrain(std::make_unique<Grain>(Grain{
+		.audio = AudioBufferAccessor(buf, 2, 0, 10),
+		.ampEnvelope = EnvelopeType::None
+	}));
+
+	Float32BufferPtr target = std::make_shared<Float32Buffer>(40);
+	AudioBufferAccessor targetAccessor1(buf, 2, 0, 10);
+	AudioBufferAccessor targetAccessor2(buf, 2, 10, 20);
+
+	gs.process(targetAccessor1);
+	gs.process(targetAccessor2);
+}
+
 ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
 	_waveView = _view.addChild<WaveView>("Wave View");
 	_waveView->setDimensions({ 800, 600 });
@@ -65,6 +91,8 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	_outputNode = _audioGraph.addNode<OutputNode>();
 	_sineNode = _audioGraph.addNode<SineNode>();
 	_audioGraph.connectNodes(_sineNode, 0, _outputNode, 0);
+	
+	setupGranular();
 }
 
 bool isApproximately(f32 v, f32 target, f32 epsilon) {
@@ -78,9 +106,9 @@ void ExampleApplication::onInit() {
 	_vg = nvgCreate(0, 0);
 	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
 
-	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
+	//nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
 	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, (int)Roboto_Regular_len, 0);
-	nvgCreateFontMem(_vg, "PlatNomor", PlatNomor, (int)PlatNomor_len, 0);
+	//nvgCreateFontMem(_vg, "PlatNomor", PlatNomor, (int)PlatNomor_len, 0);
 
 	_view.setVg(_vg);
 
