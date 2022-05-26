@@ -43,11 +43,17 @@ namespace rp {
 		uint32 audioFrameOffset = 0;
 	};
 
+	enum class ProcessingThread {
+		Main,
+		Audio
+	};
+
 	struct LoadConfig {
 		Uint8BufferPtr romBuffer;
 		Uint8BufferPtr sramBuffer;
 		Uint8BufferPtr stateBuffer;
 		bool reset = false;
+		ProcessingThread thread = ProcessingThread::Main;
 
 		void merge(LoadConfig& other) {
 			if (other.romBuffer) {
@@ -72,6 +78,11 @@ namespace rp {
 		}
 	};
 
+	struct AudioChunk {
+		Float32BufferPtr buffer;
+		uint64 offset = 0;
+	};
+
 	struct SystemIo {
 		SystemId systemId;
 
@@ -79,6 +90,7 @@ namespace rp {
 			FixedQueue<TimedByte, 16> serial;
 			std::vector<ButtonStream<8>> buttons;
 			std::vector<MemoryPatch> patches;
+			std::vector<AudioChunk> audioChunks;
 			bool requestReset = false;
 			LoadConfig loadConfig;
 
@@ -86,6 +98,7 @@ namespace rp {
 				serial.reset();
 				buttons.clear();
 				patches.clear();
+				audioChunks.clear();
 				requestReset = false;
 				loadConfig = LoadConfig();
 			}
@@ -122,6 +135,10 @@ namespace rp {
 
 			for (MemoryPatch& patch : other.input.patches) {
 				input.patches.push_back(std::move(patch));
+			}
+
+			for (AudioChunk& chunk : other.input.audioChunks) {
+				input.audioChunks.push_back(std::move(chunk));
 			}
 
 			other.input.buttons.clear();
@@ -184,6 +201,7 @@ namespace rp {
 		SystemType _type;
 		int32 _nextStateCopy = 0;
 		int32 _stateCopyInterval = 0;
+		uint64 _processedAudioFrames = 0;
 
 		std::array<bool, ButtonType::MAX> _buttonState = { false };
 
@@ -260,11 +278,16 @@ namespace rp {
 			return _type;
 		}
 
+		uint64 getProcessedAudioFrames() const {
+			return _processedAudioFrames;
+		}
+
 		virtual SystemType getType() const {
 			return getBaseType();
 		}
 
 		friend class SystemOrchestrator;
+		friend class SystemProcessor;
 	};
 
 	template <typename T>

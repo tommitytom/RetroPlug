@@ -15,8 +15,8 @@ AudioContext::AudioContext(IoMessageBus* messageBus, OrchestratorMessageBus* orc
 
 void AudioContext::process(f32* target, uint32 frameCount) {
 	size_t sampleCount = (size_t)frameCount * 2;
-
 	OrchestratorChange change;
+
 	while (_orchestratorMessageBus->uiToAudio.try_dequeue(change)) {
 		if (change.add) {
 			_state.processor.addSystem(change.add);
@@ -72,7 +72,7 @@ void AudioContext::process(f32* target, uint32 frameCount) {
 			io = _ioMessageBus->alloc(system->getId());
 		}
 
-		if (io) {
+		if (io && !io->output.audio) {
 			io->output.audio = std::make_shared<Float32Buffer>(sampleCount);
 		}
 	}

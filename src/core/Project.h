@@ -63,11 +63,7 @@ namespace rp {
 
 		std::string getName();
 
-		void update(f32 delta) {
-			for (SystemWrapperPtr system : _systems) {
-				system->update(delta);
-			}
-		}
+		void update(f32 delta);
 
 		const ProjectState& getState() const {
 			return _state;

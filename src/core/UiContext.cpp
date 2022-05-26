@@ -24,8 +24,8 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 	_ioMessageBus(messageBus),
 	_orchestratorMessageBus(orchestratorMessageBus)
 {
-	_state.processor.addManager(std::make_shared<SameBoyManager>());
-	//_state.processor.addManager(std::make_shared<AudioStreamManager>());
+	_state.processor.addManager<SameBoyManager>();
+	_state.processor.addManager<SystemManager<AudioStreamSystem>>();
 
 	for (size_t i = 0; i < MAX_IO_STREAMS; ++i) {
 		messageBus->allocator.enqueue(std::make_unique<SystemIo>());
@@ -103,6 +103,10 @@ void UiContext::processDelta(f64 delta) {
 		return;
 	}
 
+	if (delta >= 0.1) {
+		delta = 0.1;
+	}
+
 	f32 scale = _project->getScale();
 	_state.viewManager.setScale(scale);
 
@@ -114,7 +118,7 @@ void UiContext::processDelta(f64 delta) {
 	_project->update((f32)delta);
 	_state.viewManager.onUpdate((f32)delta);
 
-	_state.processor.process(frameCount);
+	//_state.processor.process(frameCount);
 
 	nvgSave(_vg);
 

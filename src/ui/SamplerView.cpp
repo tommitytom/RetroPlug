@@ -289,7 +289,7 @@ void SamplerView::onRender() {
 			std::string_view sampleName = rom.getKitSampleName(kitIdx, i);
 
 			if (sampleName == "N/A") {
-				if (i < found->second.samples.size()) {
+				if (isEditable && i < found->second.samples.size()) {
 					sampleName = found->second.samples[i].name;
 					_c.drawTile(1, i + 3, lsdj::FontTiles::Special, lsdj::ColorSets::Shaded, true);
 				} else {
@@ -354,16 +354,11 @@ void SamplerView::onRender() {
 	if (defaultHexSpin(_ui, 19, 6, settings->gain, globalSettings->gain, 0x1, 0xF, isEditable)) {
 		updateSampleBuffers();
 	}
-	/*if (defaultSelect<10>(_ui, 19, 6, settings->gain, globalSettings->gain, {"1x", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x"}, isEditable)) {
-		updateSampleBuffers();
-	}*/
 
 	_c.text(propertyName, 7, "PITCH", lsdj::ColorSets::Normal);
 	if (defaultHexSpin(_ui, 19, 7, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
 		//updateSampleBuffers();
 	}
-
-
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
 	if (defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable)) {

@@ -25,10 +25,6 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 	SystemPtr system = manager->create(_systemId);
 	std::string romName = manager->getRomName(*loadConfig.romBuffer);
 
-	system->setStateCopyInterval(1000);
-
-	ProxySystemPtr proxy = manager->createProxy(system->getId());
-
 	_modelFactory->createModels(romName, _models);
 
 	for (auto& model : _models) {
@@ -42,25 +38,51 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 
 	for (auto& model : _models) {
 		model.second->onAfterLoad(system);
-		model.second->setSystem(proxy);
 	}
+	
+	if (loadConfig.thread == ProcessingThread::Audio) {
+		system->setStateCopyInterval(1000);
+		ProxySystemPtr proxy = manager->createProxy(system->getId());
 
-	proxy->handleSetup(system);
+		for (auto& model : _models) {
+			model.second->setSystem(proxy);
+		}
 
-	if (!alreadyInitialized) {
-		_messageBus->uiToAudio.enqueue(OrchestratorChange { .add = system });
+		proxy->handleSetup(system);
+
+		if (!alreadyInitialized) {
+			_messageBus->uiToAudio.enqueue(OrchestratorChange{ .add = system });
+		} else {
+			_processor->removeSystem(_systemId);
+			_messageBus->uiToAudio.enqueue(OrchestratorChange{ .replace = system });
+		}
+
+		_processor->addSystem(proxy);
+		_system = proxy;
 	} else {
-		_processor->removeSystem(_systemId);
-		_messageBus->uiToAudio.enqueue(OrchestratorChange { .replace = system });
+		SystemManagerBase* manager = _processor->findManager<AudioStreamSystem>();
+		assert(manager);
+		SystemPtr streamSystem = manager->create(system->getId());
+		assert(streamSystem);
+
+		for (auto& model : _models) {
+			model.second->setSystem(system);
+		}
+
+		if (!alreadyInitialized) {
+			_messageBus->uiToAudio.enqueue(OrchestratorChange{ .add = streamSystem });
+		} else {
+			_processor->removeSystem(_systemId);
+			_messageBus->uiToAudio.enqueue(OrchestratorChange{ .replace = streamSystem });
+		}
+
+		_processor->addSystem(system);
+		_system = system;
 	}
-
-	_processor->addSystem(proxy);
-
-	_system = proxy;
 
 	_version++;
 
-	return proxy;
+	return _system;
 }
 
 void SystemWrapper::deserializeModels() {

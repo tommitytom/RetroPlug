@@ -3,6 +3,7 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "platform/AudioManager.h"
 #include "core/ProjectSerializer.h"
 #include "sameboy/SameBoySystem.h"
 #include "util/SolUtil.h"
@@ -34,7 +35,7 @@ std::string rp::Project::getName() {
 	std::string name;
 	std::unordered_map<std::string, size_t> romNames;
 
-	for (SystemWrapperPtr systemWrapper : _systems) {
+	for (SystemWrapperPtr& systemWrapper : _systems) {
 		SystemPtr system = systemWrapper->getSystem();
 
 		auto found = romNames.find(system->getRomName());
@@ -59,7 +60,7 @@ std::string rp::Project::getName() {
 		}
 	}
 
-	for (SystemWrapperPtr system : _systems) {
+	for (SystemWrapperPtr& system : _systems) {
 		for (auto [type, model] : system->getModels()) {
 			std::string modelName = model->getProjectName();
 
@@ -70,6 +71,42 @@ std::string rp::Project::getName() {
 	}
 
 	return name;
+}
+
+void Project::update(f32 delta) {
+	f32 sr = (f32)_audioManager->getSampleRate();
+	uint32 frameCount = (uint32)(sr * delta);
+
+	std::vector<uint64> offsets;
+	
+	for (SystemWrapperPtr system : _systems) {
+		system->update(delta);
+
+		SystemIoPtr& io = system->getSystem()->getStream();
+		if (io) {
+			io->output.audio = std::make_shared<Float32Buffer>(frameCount * 2);
+			offsets.push_back(system->getSystem()->getProcessedAudioFrames());
+		}
+	}
+	
+	_processor->process(frameCount);
+
+	// Move outputs to inputs!
+	for (size_t i = 0; i < _systems.size(); ++i) {
+		SystemIoPtr& io = _systems[i]->getSystem()->getStream();
+
+		if (io) {
+			uint64 nextOffset = offsets[i] + io->output.audio->size() / 2;
+			if (nextOffset != _systems[i]->getSystem()->getProcessedAudioFrames()) {
+				spdlog::error("MISMATCH");
+			}
+
+			io->input.audioChunks.push_back(AudioChunk{
+				.buffer = std::move(io->output.audio),
+				.offset = offsets[i]
+			});
+		}
+	}
 }
 
 void Project::load(std::string_view path) {
@@ -112,7 +149,7 @@ SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& setti
 	if (settings.sramPath.size()) {
 		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
 		if (!fsutil::readFile(settings.sramPath, loadConfig.sramBuffer.get())) {
-			// LOG
+			spdlog::error("Failed to read SRAM from {}", settings.sramPath);
 		}
 	}
 

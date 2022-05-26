@@ -98,7 +98,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 			} else {
 				// Overflow!
 				//spdlog::warn("Audio buffer overflow!");
-				//std::cout << "Audio buffer overflow!" << std::endl;
+				std::cout << "Audio buffer overflow!" << std::endl;
 			}
 		}
 	}

@@ -97,10 +97,15 @@ void SystemProcessor::process(uint32 frameCount) {
 
 	for (SystemPtr& system : _ungroupedSystems) {
 		system->process(frameCount);
+		system->_processedAudioFrames += (uint64)frameCount;
 	}
 
 	for (SystemManagerPtr& manager : _managers) {
 		manager->process(frameCount);
+		
+		for (auto& system : manager->getSystems()) {
+			system->_processedAudioFrames += (uint64)frameCount;
+		}
 	}
 }
 
