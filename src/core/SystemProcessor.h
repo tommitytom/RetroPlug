@@ -17,8 +17,10 @@ namespace rp {
 
 	public:
 		template <typename T>
-		void addManager() {
-			_managers.push_back(std::make_shared<T>());
+		std::shared_ptr<T> addManager() {
+			auto instance = std::make_shared<T>();
+			_managers.push_back(instance);
+			return instance;
 		}
 
 		void addManager(SystemManagerPtr manager) {

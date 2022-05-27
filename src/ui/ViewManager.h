@@ -8,7 +8,7 @@
 namespace rp {
 	class ViewManager : public View {
 	private:
-		Point<uint32> _mousePosition;		
+		Point<uint32> _mousePosition;
 		View::Shared _sharedData;
 
 	public:
@@ -78,7 +78,7 @@ namespace rp {
 			return propagateMouseMove(pos, getChildren());
 		}
 
-		bool onDrop(const std::vector<std::string>& paths) final override { 
+		bool onDrop(const std::vector<std::string>& paths) final override {
 			return propagateDrop(paths, _mousePosition, getChildren());
 		}
 
@@ -86,7 +86,7 @@ namespace rp {
 			if (_shared->layoutDirty) {
 				updateLayout();
 			}
-			
+
 			propagateUpdate(getChildren(), delta);
 			handleRemovals();
 
@@ -160,7 +160,7 @@ namespace rp {
 		void updateLayout() {
 			propagateSizingUpdate(getChildren());
 			propagateLayoutChange(getChildren());
-			
+
 			_area = Rect<uint32>();
 			calculateTotalArea(getChildren(), { 0, 0 }, _area);
 
@@ -274,7 +274,7 @@ namespace rp {
 					Point<uint32> childPosition = position - view->getArea().position;
 
 					if (!propagateClick(button, down, childPosition, view->getChildren())) {
-						if (view->onMouseButton(button, down, childPosition)) {	
+						if (view->onMouseButton(button, down, childPosition)) {
 							return true;
 						}
 					}

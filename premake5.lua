@@ -34,18 +34,25 @@ workspace "RetroPlugAll"
 		defines { "RP_DEBUG", "DEBUG", "_DEBUG" }
 		symbols "Full"
 
-	filter "configurations:Release"
-		defines { "RP_RELEASE", "NDEBUG" }
-		optimize "On"
-		--flags { "LinkTimeOptimization" }
-
 	filter "configurations:Tracer"
 		defines { "RP_TRACER", "NDEBUG", "TRACER_BUILD" }
 		optimize "On"
 
+	filter "configurations:Release"
+		defines { "RP_RELEASE", "NDEBUG" }
+		optimize "On"
+		flags { "LinkTimeOptimization" }
+
 	filter { "options:emscripten" }
 		defines { "RP_WEB" }
-		buildoptions { "-matomics", "-mbulk-memory", "-fexceptions" }
+		buildoptions { "-matomics", "-mbulk-memory", "-fexceptions", "-msimd128" }
+		disablewarnings {
+			"deprecated-enum-float-conversion",
+			"deprecated-volatile"
+		}
+
+	--filter { "options:emscripten", "configurations:Release" }
+		--buildoptions { "-flto" }
 
 	filter { "system:linux", "options:not emscripten" }
 		defines { "RP_LINUX", "RP_POSIX" }
@@ -74,13 +81,6 @@ workspace "RetroPlugAll"
 		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING" }
 		disablewarnings { "4834" }
 
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-		disablewarnings {
-			"deprecated-enum-float-conversion",
-			"deprecated-volatile"
-		}
-
 	filter { "system:linux" }
 		disablewarnings {
 			"switch",
@@ -98,7 +98,7 @@ if _OPTIONS["emscripten"] == nil then
 		project "ScriptCompiler"
 			kind "ConsoleApp"
 			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
-			includedirs { "src/compiler" }
+			includedirs { "src/compiler", "src/core" }
 			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 
 			links { "lua" }

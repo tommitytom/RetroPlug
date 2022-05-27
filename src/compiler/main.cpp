@@ -6,7 +6,7 @@
 #include <array>
 #include <sol/sol.hpp>
 
-#include "threadpool.h"
+#include "ThreadPool.h"
 #include "util.h"
 #include "templates.h"
 #include "logger.h"
@@ -21,7 +21,7 @@ struct ModuleDesc {
 
 struct CompilerState {
 	std::vector<ModuleDesc> modules;
-	ThreadPool pool;
+	rp::ThreadPool pool;
 };
 
 void compileScript(const std::string& path, std::vector<u8>& data) {

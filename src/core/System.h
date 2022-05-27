@@ -8,14 +8,15 @@
 
 #include <entt/core/type_info.hpp>
 
+#include <moodycamel/readerwriterqueue.h>
+#include <moodycamel/concurrentqueue.h>
+
 #include "platform/Types.h"
+#include "core/ButtonStream.h"
 #include "core/FixedQueue.h"
 #include "core/MemoryAccessor.h"
 #include "util/DataBuffer.h"
 #include "util/Image.h"
-#include "util/readerwriterqueue.h"
-#include "util/concurrentqueue.h"
-#include "core/ButtonStream.h"
 
 namespace rp {
 	using SystemType = entt::id_type;
@@ -53,7 +54,7 @@ namespace rp {
 		Uint8BufferPtr sramBuffer;
 		Uint8BufferPtr stateBuffer;
 		bool reset = false;
-		ProcessingThread thread = ProcessingThread::Main;
+		ProcessingThread thread = ProcessingThread::Audio;
 
 		void merge(LoadConfig& other) {
 			if (other.romBuffer) {

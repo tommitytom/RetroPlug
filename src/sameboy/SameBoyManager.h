@@ -1,13 +1,25 @@
 #pragma once
 
-#include "core/SystemManager.h"
 #include "util/StringUtil.h"
+#include "core/SystemManager.h"
 #include "SameBoySystem.h"
 #include "SameBoyProxySystem.h"
 
 namespace rp {
+	class ThreadPool;
+
 	class SameBoyManager final : public SystemManager<SameBoySystem, SameBoyProxySystem> {
+	private:
+		std::unique_ptr<ThreadPool> _threadPool;
+
 	public:
+		SameBoyManager();
+		~SameBoyManager();
+
+		ThreadPool* getThreadPool() {
+			return _threadPool.get();
+		}
+
 		bool canLoadRom(std::string_view path) override {
 			return StringUtil::endsWith(path, ".gb");
 		}

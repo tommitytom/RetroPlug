@@ -9,12 +9,14 @@
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
 #include "core/ProxySystem.h"
+#include "core/ThreadPool.h"
 #include "sameboy/SameBoyManager.h"
 #include "ui/SystemView.h"
 #include "ui/StartView.h"
 #include "ui/SystemOverlayManager.h"
 #include "util/fs.h"
 #include "util/StringUtil.h"
+#include "util/ThreadUtil.h"
 
 using namespace rp;
 
@@ -24,8 +26,12 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 	_ioMessageBus(messageBus),
 	_orchestratorMessageBus(orchestratorMessageBus)
 {
-	_state.processor.addManager<SameBoyManager>();
+	auto sbManager = _state.processor.addManager<SameBoyManager>();
 	_state.processor.addManager<SystemManager<AudioStreamSystem>>();
+
+	for (auto& worker : sbManager->getThreadPool()->getWorkers()) {
+		ThreadUtil::setPriority(worker.thread, 0);
+	}
 
 	for (size_t i = 0; i < MAX_IO_STREAMS; ++i) {
 		messageBus->allocator.enqueue(std::make_unique<SystemIo>());

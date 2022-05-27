@@ -41,6 +41,7 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 	}
 	
 	if (loadConfig.thread == ProcessingThread::Audio) {
+		spdlog::info("Creating system in audio thread");
 		system->setStateCopyInterval(1000);
 		ProxySystemPtr proxy = manager->createProxy(system->getId());
 
@@ -60,6 +61,8 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 		_processor->addSystem(proxy);
 		_system = proxy;
 	} else {
+		spdlog::info("Creating system in UI thread");
+
 		SystemManagerBase* manager = _processor->findManager<AudioStreamSystem>();
 		assert(manager);
 		SystemPtr streamSystem = manager->create(system->getId());

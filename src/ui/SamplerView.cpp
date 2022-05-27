@@ -45,7 +45,7 @@ void SamplerView::setSystem(SystemWrapperPtr& system) {
 
 		for (auto& kit : model->_kits) {
 			if (kit.first < selectedKit) {
-				selectedKit = kit.first;
+				selectedKit = (int32)kit.first;
 			}
 		}
 
@@ -291,7 +291,7 @@ void SamplerView::onRender() {
 			if (sampleName == "N/A") {
 				if (isEditable && i < found->second.samples.size()) {
 					sampleName = found->second.samples[i].name;
-					_c.drawTile(1, i + 3, lsdj::FontTiles::Special, lsdj::ColorSets::Shaded, true);
+					_c.drawTile(1, (uint32)i + 3, lsdj::FontTiles::Special, lsdj::ColorSets::Shaded, true);
 				} else {
 					sampleName = "---";
 				}

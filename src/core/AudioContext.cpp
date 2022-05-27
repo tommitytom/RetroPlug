@@ -1,7 +1,9 @@
 #include "AudioContext.h"
 
-#include "sameboy/SameBoyManager.h"
 #include "core/AudioStreamSystem.h"
+#include "core/ThreadPool.h"
+#include "sameboy/SameBoyManager.h"
+#include "util/ThreadUtil.h"
 
 using namespace rp;
 
@@ -9,8 +11,12 @@ AudioContext::AudioContext(IoMessageBus* messageBus, OrchestratorMessageBus* orc
 	: _buffer(MAX_LATENCY + 2), _ioMessageBus(messageBus), _orchestratorMessageBus(orchestratorMessageBus) 
 {
 	_buffer.clear();
-	_state.processor.addManager<SameBoyManager>();
+	auto sbManager = _state.processor.addManager<SameBoyManager>();
 	_state.processor.addManager<SystemManager<AudioStreamSystem>>();
+
+	for (auto& worker : sbManager->getThreadPool()->getWorkers()) {
+		ThreadUtil::setPriority(worker.thread, 0);
+	}
 }
 
 void AudioContext::process(f32* target, uint32 frameCount) {
