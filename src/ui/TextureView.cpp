@@ -14,7 +14,7 @@ void TextureView::setImage(const Image& image) {
 		_textureSize = image.dimensions();
 
 		if (getSizingMode() == SizingMode::FitToContent) {
-			setDimensions(_textureSize);
+			setDimensions((Dimension)_textureSize);
 		}
 	} else {
 		nvgUpdateImage(vg, _textureHandle, (const unsigned char*)image.getData());
@@ -24,8 +24,8 @@ void TextureView::setImage(const Image& image) {
 void TextureView::onRender() {
 	if (_textureHandle != -1) {
 		NVGcontext* vg = getVg();
-		Dimension<uint32> area = getDimensions();
-		Rect<f32> areaf(0, 0, (f32)area.w, (f32)area.h);
+		RectT<f32> areaf;
+		areaf.dimensions = (DimensionF)getDimensions();
 
 		nvgBeginPath(vg);
 

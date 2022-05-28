@@ -10,7 +10,7 @@ namespace rp {
 	private:
 		GLFWwindow* _window = nullptr;
 		Application* _app;
-		Dimension<uint32> _dimensions;
+		DimensionT<uint32> _dimensions;
 
 	public:
 		Window(Application* app);

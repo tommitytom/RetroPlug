@@ -102,19 +102,19 @@ namespace rp::lsdj {
 		Color4* _tileBuffer = nullptr;
 
 		Image _renderTarget;
-		Dimension<uint32> _dimensions;
-		Point<uint32> _translation = { 0, 0 };
+		DimensionT<uint32> _dimensions;
+		PointT<uint32> _translation = { 0, 0 };
 
-		std::stack<Point<uint32>> _translationStack;
+		std::stack<PointT<uint32>> _translationStack;
 
 		int _textureHandle = -1;
 
 	public:
-		Canvas(Dimension<uint32> dimensions);
-		Canvas(Dimension<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
+		Canvas(DimensionT<uint32> dimensions);
+		Canvas(DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
 		~Canvas();
 
-		void translate(Point<uint32> translation) {
+		void translate(PointT<uint32> translation) {
 			_translationStack.push(_translation);
 			_translation += translation;
 		}
@@ -162,7 +162,7 @@ namespace rp::lsdj {
 
 		//void drawDimmedTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetIdx);
 
-		Dimension<uint32> getDimensions() const {
+		DimensionT<uint32> getDimensions() const {
 			return _dimensions;
 		}
 

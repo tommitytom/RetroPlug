@@ -146,7 +146,7 @@ void UiContext::onMouseMove(double x, double y) {
 
 	x /= scale;
 	y /= scale;
-	_state.viewManager.onMouseMove({ (uint32)x, (uint32)y });
+	_state.viewManager.onMouseMove({ (int32)x, (int32)y });
 }
 
 void UiContext::onMouseButton(MouseButton::Enum button, bool down) {
@@ -154,7 +154,7 @@ void UiContext::onMouseButton(MouseButton::Enum button, bool down) {
 }
 
 void UiContext::onMouseScroll(double x, double y) {
-	_state.viewManager.onMouseScroll(Point<f32> { (f32)x, (f32)y });
+	_state.viewManager.onMouseScroll(PointT<f32> { (f32)x, (f32)y });
 }
 
 void UiContext::onDrop(int count, const char** paths) {

@@ -5,7 +5,7 @@
 
 namespace rp {
 	struct Waveform {
-		std::vector<Point<f32>> linePoints;
+		std::vector<PointT<f32>> linePoints;
 	};
 }
 

@@ -9,11 +9,11 @@ namespace rp {
 		lsdj::Canvas _canvas;
 
 	public:
-		LsdjCanvasView(Dimension<uint32> dimensions = { 100, 100 }) : TextureView(dimensions), _canvas(dimensions) {
+		LsdjCanvasView(Dimension dimensions = { 100, 100 }) : TextureView(dimensions), _canvas((DimensionU32)dimensions) {
 			setType<LsdjCanvasView>();
 		}
 
-		LsdjCanvasView(Dimension<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette): TextureView(dimensions), _canvas(dimensions, font, palette) {
+		LsdjCanvasView(Dimension dimensions, const lsdj::Font& font, const lsdj::Palette& palette): TextureView(dimensions), _canvas((DimensionU32)dimensions, font, palette) {
 			setType<LsdjCanvasView>(); 
 		}
 

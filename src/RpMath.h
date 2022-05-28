@@ -27,85 +27,107 @@ namespace rp {
 	};
 
 	template <typename T>
-	struct Point {
+	struct PointT {
 		T x = 0;
 		T y = 0;
 
-		bool operator==(Point other) const {
+		bool operator==(const PointT& other) const {
 			return x == other.x && y == other.y;
 		}
 
-		bool operator!=(Point other) const {
+		bool operator!=(const PointT& other) const {
 			return x != other.x || y != other.y;
 		}
 
-		Point operator+(Point other) {
+		PointT operator+(const PointT& other) {
 			return { x + other.x, y + other.y };
 		}
 
-		Point operator+(T value) {
+		PointT operator+(T value) {
 			return { x + value, y + value };
 		}
 
-		Point& operator+=(Point other) {
+		PointT& operator+=(const PointT& other) {
 			x += other.x;
 			y += other.y;
 			return *this;
 		}
 
-		Point& operator+=(T value) {
+		PointT& operator+=(T value) {
 			x += value;
 			y += value;
 			return *this;
 		}
 
-		Point operator-(Point other) {
+		PointT operator-(const PointT& other) {
 			return { x - other.x, y - other.y };
 		}
 
-		Point operator-(T value) {
+		PointT operator-(T value) {
 			return { x - value, y - value };
 		}
 
-		Point& operator-=(Point other) {
+		PointT& operator-=(const PointT& other) {
 			x -= other.x;
 			y -= other.y;
 			return *this;
 		}
 
-		Point& operator-=(T value) {
+		PointT& operator-=(T value) {
 			x -= value;
 			y -= value;
 			return *this;
 		}
+
+		template <typename R>
+		explicit operator PointT<R>() const {
+			return PointT<R> { (R)x, (R)y };
+		}
 	};
+	using PointI32 = PointT<int32>;
+	using PointU32 = PointT<uint32>;
+	using PointF32 = PointT<f32>;
+	using PointF64 = PointT<f64>;
+	using Point = PointI32;
+	using PointF = PointF32;
 
 	template <typename T>
-	struct Dimension {
-		const static Dimension<T> zero;
+	struct DimensionT {
+		const static DimensionT<T> zero;
 
 		T w;
 		T h;
 
-		Dimension(): w(0), h(0) {}
-		Dimension(const Dimension& other) : w(other.w), h(other.h) {}
-		Dimension(T _w, T _h): w(_w), h(_h) {}
+		DimensionT(): w(0), h(0) {}
+		DimensionT(const DimensionT& other) : w(other.w), h(other.h) {}
+		DimensionT(T _w, T _h): w(_w), h(_h) {}
 
-		bool operator==(const Dimension& other) const {
+		bool operator==(const DimensionT& other) const {
 			return w == other.w && h == other.h;
 		}
 
-		bool operator!=(const Dimension& other) const {
+		bool operator!=(const DimensionT& other) const {
 			return w != other.w || h != other.h;
+		}
+
+		template <typename R>
+		explicit operator DimensionT<R>() const {
+			return DimensionT<R> { (R)w, (R)h };
 		}
 
 		T area() const {
 			return w * h;
 		}
 	};
+	using DimensionI32 = DimensionT<int32>;
+	using DimensionU32 = DimensionT<uint32>;
+	using DimensionF32 = DimensionT<f32>;
+	using DimensionF64 = DimensionT<f64>;
+	using Dimension = DimensionI32;
+	using DimensionF = DimensionF32;
 
 	template <typename T>
-	struct Rect {
+	struct RectT {
 		union {
 			struct {
 				T x;
@@ -114,39 +136,44 @@ namespace rp {
 				T h;
 			};
 			struct {
-				Point<T> position;
-				Dimension<T> dimensions;
+				PointT<T> position;
+				DimensionT<T> dimensions;
 			};
 		};
 
-		Rect(): x(0), y(0), w(0), h(0) {}
-		Rect(T _x, T _y, T _w, T _h) : x(_x), y(_y), w(_w), h(_h) {}
-		Rect(Point<T> pos, Dimension<T> dim) : position(pos), dimensions(dim) {}
-		Rect(Dimension<T> dim) : position(0, 0), dimensions(dim) {}
-		Rect(const Rect<T>& other) : x(other.x), y(other.y), w(other.w), h(other.h) {}
+		RectT(): x(0), y(0), w(0), h(0) {}
+		RectT(T _x, T _y, T _w, T _h) : x(_x), y(_y), w(_w), h(_h) {}
+		RectT(PointT<T> pos, DimensionT<T> dim) : position(pos), dimensions(dim) {}
+		RectT(DimensionT<T> dim) : position(0, 0), dimensions(dim) {}
+		RectT(const RectT<T>& other) : x(other.x), y(other.y), w(other.w), h(other.h) {}
 
-		bool operator==(const Rect<T>& other) const {
+		bool operator==(const RectT<T>& other) const {
 			return x == other.x && y == other.y && w == other.w && h == other.h;
 		}
 
-		bool operator!=(const Rect<T>& other) const {
+		bool operator!=(const RectT<T>& other) const {
 			return x != other.x || y != other.y || w != other.w || h != other.h;
 		}
 
-		bool contains(Point<T> point) const {
+		template <typename R>
+		explicit operator RectT<R>() const {
+			return RectT<R> { (R)x, (R)y, (R)w, (R)h };
+		}
+
+		bool contains(PointT<T> point) const {
 			return point.x >= x && point.x < right() && point.y >= y && point.y < bottom();
 		}
 
-		bool intersects(const Rect<T>& other) const {
+		bool intersects(const RectT<T>& other) const {
 			return x < other.right() && right() > other.x && y > other.bottom() && bottom() < other.y;
 		}
 
-		Rect<T> shrink(T amount) const {
-			return Rect<T>(x + amount, y + amount, w - amount * 2, h - amount * 2);
+		RectT<T> shrink(T amount) const {
+			return RectT<T>(x + amount, y + amount, w - amount * 2, h - amount * 2);
 		}
 
-		Rect<T> combine(const Rect<T>& other) const {
-			Rect<T> ret = *this;
+		RectT<T> combine(const RectT<T>& other) const {
+			RectT<T> ret = *this;
 
 			if (other.x < ret.x) ret.x = other.x;
 			if (other.y < ret.y) ret.y = other.y;
@@ -156,7 +183,7 @@ namespace rp {
 			return ret;
 		}
 
-		Point<T> getCenter() const {
+		PointT<T> getCenter() const {
 			return { x + w / 2, y + h / 2 };
 		}
 
@@ -182,16 +209,22 @@ namespace rp {
 			return w * h;
 		}
 
-		Point<T> topRight() const {
+		PointT<T> topRight() const {
 			return { right(), y };
 		}
 
-		Point<T> bottomRight() const {
+		PointT<T> bottomRight() const {
 			return { right(), bottom() };
 		}
 
-		Point<T> bottomLeft() const {
+		PointT<T> bottomLeft() const {
 			return { x, bottom() };
 		}
 	};
+	using RectI32 = RectT<int32>;
+	using RectU32 = RectT<uint32>;
+	using RectF32 = RectT<f32>;
+	using RectF64 = RectT<f64>;
+	using Rect = RectI32;
+	using RectF = RectF32;
 }

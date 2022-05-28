@@ -20,7 +20,7 @@ namespace rp {
 		void onUpdate(f32 delta) override;
 
 		// This will intercept every drop that happens within the docking area
-		bool onDrop(DragContext& ctx, Point<uint32> position) override {
+		bool onDrop(DragContext& ctx, Point position) override {
 			return false;
 		}
 

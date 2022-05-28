@@ -177,7 +177,7 @@ namespace rp {
 	class SystemBase {
 	protected:
 		SystemIoPtr _stream;
-		Dimension<uint32> _resolution;
+		DimensionT<uint32> _resolution;
 
 	private:
 		SystemId _id;
@@ -240,7 +240,7 @@ namespace rp {
 			}
 		}
 
-		Dimension<uint32> getResolution() const {
+		DimensionT<uint32> getResolution() const {
 			return _resolution;
 		}
 

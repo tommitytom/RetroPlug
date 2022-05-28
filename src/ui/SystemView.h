@@ -26,7 +26,7 @@ namespace rp {
 
 		void setSystem(SystemWrapperPtr& system) {
 			_system = system;
-			setDimensions(system->getSystem()->getResolution());
+			setDimensions((Dimension)system->getSystem()->getResolution());
 		}
 
 		SystemWrapperPtr getSystem() {

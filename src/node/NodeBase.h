@@ -24,7 +24,7 @@ namespace rp {
 		std::vector<OutputBase> _outputs;
 		NodeLifecycleState _lifecycle = NodeLifecycleState::Created;
 		bool _alwaysActive = false;
-		Point<uint32> _position;
+		Point _position;
 
 	protected:
 		entt::registry* _shared = nullptr;
@@ -34,11 +34,11 @@ namespace rp {
 
 		virtual void onInitialize() {}
 
-		Point<uint32> getPosition() const {
+		Point getPosition() const {
 			return _position;
 		}
 
-		void setPosition(Point<uint32> pos) {
+		void setPosition(Point pos) {
 			_position = pos;
 		}
 

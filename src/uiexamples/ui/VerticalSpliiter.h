@@ -13,7 +13,7 @@ namespace rp {
 		NVGcolor _color = nvgRGBA(0, 0, 0, 255);
 
 	public:
-		PanelView() { 
+		PanelView() {
 			setType<PanelView>();
 		}
 
@@ -41,16 +41,16 @@ namespace rp {
 	class DockSplitter : public View {
 	private:
 		std::vector<f32> _handleOffsets;
-		std::vector<Rect<uint32>> _handleAreas;
+		std::vector<Rect> _handleAreas;
 		std::vector<PanelViewPtr> _panels;
 
 		SplitDirection _direction = SplitDirection::Vertical;
 
-		uint32 _handleSize = 20;
+		int32 _handleSize = 20;
 
 		int32 _mouseOverIndex = -1;
 		int32 _draggingIndex = -1;
-		Point<uint32> _dragStartPos;
+		Point _dragStartPos;
 
 	public:
 		DockSplitter() {
@@ -98,7 +98,7 @@ namespace rp {
 			updateLayout();
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) override {
+		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
 			bool handled = false;
 
 			if (button == MouseButton::Left) {
@@ -125,17 +125,17 @@ namespace rp {
 			return false;
 		}
 
-		bool onMouseMove(Point<uint32> pos) override {
+		bool onMouseMove(Point pos) override {
 			bool consumed = false;
 
 			if (_draggingIndex == -1) {
 				_mouseOverIndex = handleAtPosition(pos);
 				consumed = _mouseOverIndex != -1;
 			} else {
-				Rect<uint32>& handle = _handleAreas[_draggingIndex];
+				Rect& handle = _handleAreas[_draggingIndex];
 
-				Rect<uint32> prevHandle;
-				Rect<uint32> nextHandle = { getDimensions().w, getDimensions().h, 0, 0 };
+				Rect prevHandle;
+				Rect nextHandle = { getDimensions().w, getDimensions().h, 0, 0 };
 
 				if (nextHandle.x == 0 || nextHandle.y == 0) {
 					return false;
@@ -181,11 +181,11 @@ namespace rp {
 			return consumed;
 		}
 
-		void onDragEnter(DragContext& ctx, Point<uint32> position) override {
+		void onDragEnter(DragContext& ctx, Point position) override {
 			
 		}
 
-		bool onDragMove(DragContext& ctx, Point<uint32> position) override {
+		bool onDragMove(DragContext& ctx, Point position) override {
 			// find quadrant
 			return false;
 		}
@@ -194,7 +194,7 @@ namespace rp {
 
 		}
 
-		bool onDrop(DragContext& ctx, Point<uint32> position) override {
+		bool onDrop(DragContext& ctx, Point position) override {
 			return false;
 		}
 
@@ -214,23 +214,23 @@ namespace rp {
 		}
 
 	private:
-		Rect<uint32> createHandleArea(uint32 pixelOffset) {
+		Rect createHandleArea(int32 pixelOffset) {
 			if (_direction == SplitDirection::Vertical) {
-				return Rect<uint32>{ pixelOffset - _handleSize / 2, 0, _handleSize, getDimensions().h };
+				return Rect{ pixelOffset - _handleSize / 2, 0, _handleSize, getDimensions().h };
 			} else {
-				return Rect<uint32>{ 0, pixelOffset - _handleSize / 2, getDimensions().w, _handleSize };
+				return Rect{ 0, pixelOffset - _handleSize / 2, getDimensions().w, _handleSize };
 			}
 		}
 
 		void updateLayout() {
 			if (_direction == SplitDirection::Vertical) {
 				f32 totalWidth = (f32)getDimensions().w;
-				uint32 h = getDimensions().h;
+				int32 h = getDimensions().h;
 
-				uint32 prevHandleEnd = 0;
+				int32 prevHandleEnd = 0;
 
 				for (size_t i = 0; i < _handleOffsets.size(); ++i) {
-					uint32 pixelOffset = (uint32)(_handleOffsets[i] * totalWidth);
+					int32 pixelOffset = (int32)(_handleOffsets[i] * totalWidth);
 
 					_handleAreas[i] = createHandleArea(pixelOffset);
 					_panels[i]->setArea({ prevHandleEnd, 0, _handleAreas[i].x - prevHandleEnd, h });
@@ -243,12 +243,12 @@ namespace rp {
 				}
 			} else {
 				f32 totalHeight = (f32)getDimensions().h;
-				uint32 w = getDimensions().w;
+				int32 w = getDimensions().w;
 
-				uint32 prevHandleEnd = 0;
+				int32 prevHandleEnd = 0;
 
 				for (size_t i = 0; i < _handleOffsets.size(); ++i) {
-					uint32 pixelOffset = (uint32)(_handleOffsets[i] * totalHeight);
+					int32 pixelOffset = (int32)(_handleOffsets[i] * totalHeight);
 
 					_handleAreas[i] = createHandleArea(pixelOffset);
 					_panels[i]->setArea({ 0, prevHandleEnd, w, _handleAreas[i].y - prevHandleEnd });
@@ -262,7 +262,7 @@ namespace rp {
 			}
 		}
 
-		int32 handleAtPosition(Point<uint32> position) const {
+		int32 handleAtPosition(Point position) const {
 			for (size_t i = 0; i < _handleAreas.size(); ++i) {
 				if (_handleAreas[i].contains(position)) {
 					return (int32)i;

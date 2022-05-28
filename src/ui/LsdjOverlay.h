@@ -25,7 +25,7 @@ namespace rp {
 		SystemWrapperPtr _system;
 		LsdjModelPtr _model;
 
-		Point<uint32> _mousePosition;
+		Point _mousePosition;
 
 		uint64 _songHash = 0;
 		f32 _songSwapCooldown = 0.0f;

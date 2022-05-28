@@ -11,7 +11,7 @@
 namespace rp {
 	class UiState {
 	public:
-		//Dimension<f32> scale = Dimension<f32>(2, 2);
+		//DimensionT<f32> scale = DimensionT<f32>(2, 2);
 
 		ViewManager viewManager;
 		GridViewPtr grid;

@@ -49,12 +49,12 @@ namespace rp {
 		UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus);
 		~UiContext() {}
 
-		Dimension<uint32> getDimensions() {
+		DimensionT<uint32> getDimensions() {
 			Project* proj = _state.viewManager.getShared<Project>();
 			uint32 zoom = proj->getState().settings.zoom + 1;
 			auto dimensions = _state.viewManager.getDimensions();
 
-			return Dimension<uint32> { dimensions.w * zoom, dimensions.h * zoom };
+			return DimensionT<uint32> { (uint32)dimensions.w * zoom, (uint32)dimensions.h * zoom };
 		}
 
 		UiState& getState() {

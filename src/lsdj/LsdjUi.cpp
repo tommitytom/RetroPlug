@@ -334,7 +334,7 @@ void Ui::renderMode2(const Song& song, const Ram& state) {
 	_c.setTranslation(0, 0);
 
 	uint8 num = 255;
-	Dimension<uint32> dimensionTiles(_c.getDimensions().w / TILE_WIDTH, _c.getDimensions().h / TILE_HEIGHT);
+	DimensionT<uint32> dimensionTiles(_c.getDimensions().w / TILE_WIDTH, _c.getDimensions().h / TILE_HEIGHT);
 
 	_c.fill(0, 0, dimensionTiles.w, dimensionTiles.h, ColorSets::Normal, 0);
 

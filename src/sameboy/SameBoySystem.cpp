@@ -107,7 +107,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 }
 
 SameBoySystem::SameBoySystem(SystemId id): System<SameBoySystem>(id) {
-	_resolution = Dimension<uint32>(160, 144);
+	_resolution = DimensionT<uint32>(160, 144);
 }
 
 SameBoySystem::~SameBoySystem() {

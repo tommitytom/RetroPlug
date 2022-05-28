@@ -7,11 +7,11 @@ namespace rp {
 	class Image {
 	private:
 		Color4Buffer _buffer;
-		Dimension<uint32> _dimensions;
+		DimensionT<uint32> _dimensions;
 
 	public:
 		Image() {}
-		Image(Dimension<uint32> dimensions) : _buffer((size_t)(dimensions.area())), _dimensions(dimensions) {}
+		Image(DimensionT<uint32> dimensions) : _buffer((size_t)(dimensions.area())), _dimensions(dimensions) {}
 		Image(uint32 w, uint32 h) : _buffer((size_t)(w * h)), _dimensions(w, h) {}
 
 		void clear(Color4 color) {
@@ -52,7 +52,7 @@ namespace rp {
 			_buffer.write(data, size);
 		}
 
-		/*ImageView view(Rect<uint32> area) {
+		/*ImageView view(RectT<uint32> area) {
 			area.w = area.w > 0 ? area.w : _dimensions.w - area.x;
 			area.h = area.h > 0 ? area.h : _dimensions.h - area.y;
 
@@ -80,12 +80,12 @@ namespace rp {
 			setPixel(x, y, Color4(v.r, v.g, v.b, 255));
 		}
 
-		Dimension<uint32> dimensions() const {
+		DimensionT<uint32> dimensions() const {
 			return _dimensions;
 		}
 
-		Rect<uint32> area() const {
-			return Rect<uint32>(0, 0, w(), h());
+		RectT<uint32> area() const {
+			return RectT<uint32>(0, 0, w(), h());
 		}
 
 		uint32 w() const {
@@ -102,12 +102,12 @@ namespace rp {
 	class ImageView {
 	private:
 		Image* _image = nullptr;
-		Rect<uint32> _area;
+		RectT<uint32> _area;
 
 	public:
 		ImageView() {}
 		ImageView(Image* image) : _image(image), _area(image->area()) {}
-		ImageView(Image* image, Rect<uint32> area) : _image(image), _area(area) {}
+		ImageView(Image* image, RectT<uint32> area) : _image(image), _area(area) {}
 
 		void clear(Color4 color) {
 			for (uint32 y = 0; y < _area.h; y++) {
@@ -117,7 +117,7 @@ namespace rp {
 			}
 		}
 
-		ImageView view(Rect<uint32> area = Rect<uint32>()) {
+		ImageView view(RectT<uint32> area = RectT<uint32>()) {
 			area.w = area.w > 0 ? area.w : _area.w - area.x;
 			area.h = area.h > 0 ? area.h : _area.h - area.y;
 
@@ -160,7 +160,7 @@ namespace rp {
 			_image->setPixel(x, y, v);
 		}
 
-		const Rect<uint32>& area() const {
+		const RectT<uint32>& area() const {
 			return _area;
 		}
 

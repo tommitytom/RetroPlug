@@ -52,7 +52,7 @@ namespace rp {
 
 		View* _parent = nullptr;
 		std::vector<ViewPtr> _children;
-		Rect<uint32> _area;
+		Rect _area;
 		f32 _alpha = 1.0f;
 		NVGcontext* _vg = nullptr;
 		bool _mouseOver = false;
@@ -67,11 +67,11 @@ namespace rp {
 		entt::type_info _type;
 
 	public:
-		View(Dimension<uint32> dimensions = { 100, 100 }) : _area({}, dimensions) {
+		View(DimensionT<int32> dimensions = { 100, 100 }) : _area({}, dimensions) {
 			_type = entt::type_id<View>();
 		}
 
-		View(Dimension<uint32> dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
+		View(DimensionT<int32> dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
 
 		~View() {
 			if (_shared) {
@@ -117,15 +117,15 @@ namespace rp {
 
 		virtual bool onKey(VirtualKey::Enum key, bool down) { return false; }
 
-		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) { return false; }
+		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point position) { return false; }
 
-		virtual void onMouseEnter(Point<uint32> pos) {}
+		virtual void onMouseEnter(Point pos) {}
 
-		virtual bool onMouseMove(Point<uint32> pos) { return false; }
+		virtual bool onMouseMove(Point pos) { return false; }
 
 		virtual void onMouseLeave() {}
 
-		virtual bool onMouseScroll(Point<f32> delta, Point<uint32> position) { return false; }
+		virtual bool onMouseScroll(PointF delta, Point position) { return false; }
 
 		// Called on a view that is being dragged
 		virtual void onDragStart() {}
@@ -133,13 +133,13 @@ namespace rp {
 		// Called on a view that is being dragged
 		virtual void onDragFinish(DragContext& ctx) {}
 
-		virtual void onDragEnter(DragContext& ctx, Point<uint32> position) {}
+		virtual void onDragEnter(DragContext& ctx, Point position) {}
 
-		virtual bool onDragMove(DragContext& ctx, Point<uint32> position) { return false; } 
+		virtual bool onDragMove(DragContext& ctx, Point position) { return false; } 
 
 		virtual void onDragLeave(DragContext& ctx) {}
 		
-		virtual bool onDrop(DragContext& ctx, Point<uint32> position) { return false; }
+		virtual bool onDrop(DragContext& ctx, Point position) { return false; }
 
 		virtual void onChildRemoved(ViewPtr view) {}
 
@@ -159,7 +159,7 @@ namespace rp {
 
 		virtual void onDismount() {}
 
-		Point<uint32> getWorldPosition() const {
+		Point getWorldPosition() const {
 			if (getParent()) {
 				return getParent()->getWorldPosition() + getPosition();
 			}
@@ -167,7 +167,7 @@ namespace rp {
 			return getPosition();
 		}
 
-		Rect<uint32> getWorldArea() const {
+		Rect getWorldArea() const {
 			return { getWorldPosition(), getDimensions() };
 		}
 
@@ -277,14 +277,14 @@ namespace rp {
 		}
 
 		template <typename T>
-		std::shared_ptr<T> addChildAt(std::string_view name, const Rect<uint32>& area) {
+		std::shared_ptr<T> addChildAt(std::string_view name, const Rect& area) {
 			std::shared_ptr<T> child = addChild<T>(name);
 			child->setArea(area);
 			return std::move(child);
 		}
 
 		template <typename T>
-		std::shared_ptr<T> addChildAt(std::string_view name, const Point<uint32>& position) {
+		std::shared_ptr<T> addChildAt(std::string_view name, const Point& position) {
 			std::shared_ptr<T> child = addChild<T>(name);
 			child->setPosition(position);
 			return std::move(child);
@@ -456,22 +456,23 @@ namespace rp {
 			}
 		}
 
-		void setPosition(uint32 x, uint32 y) {
+		void setPosition(int32 x, int32 y) {
 			setPosition({ x, y });
 		}
 
-		void setPosition(Point<uint32> pos) {
+		void setPosition(Point pos) {
 			if (pos != _area.position) {
 				_area.position = pos;
 				setLayoutDirty();
 			}
 		}
 
-		Point<uint32> getPosition() const {
+		Point getPosition() const {
 			return _area.position;
 		}
 		
-		void setDimensions(Dimension<uint32> dimensions) {
+		void setDimensions(Dimension dimensions) {
+			assert(dimensions.w >= 0 && dimensions.h >= 0);
 			if (dimensions != _area.dimensions) {
 				_area.dimensions = dimensions;
 				setLayoutDirty();
@@ -479,7 +480,7 @@ namespace rp {
 			}
 		}
 		
-		Dimension<uint32> getDimensions() const {
+		Dimension getDimensions() const {
 			return _area.dimensions;
 		}
 
@@ -491,11 +492,11 @@ namespace rp {
 			return _children[idx];
 		}
 
-		const Rect<uint32>& getArea() const {
+		const Rect& getArea() const {
 			return _area;
 		}
 
-		void setArea(const Rect<uint32>& area) {
+		void setArea(const Rect& area) {
 			_area = area;
 			setLayoutDirty();
 		}
@@ -545,7 +546,7 @@ namespace rp {
 			}
 		}
 
-		Point<uint32> getReleativePosition(ViewPtr& parent, Point<uint32> position) {
+		Point getReleativePosition(ViewPtr& parent, Point position) {
 			assert(parent != shared_from_this());
 			assert(getParent() != nullptr);
 
@@ -567,15 +568,16 @@ namespace rp {
 			_type = entt::type_id<T>();
 		}
 
-		void drawRect(const Dimension<uint32>& area, const NVGcolor& color) {
-			drawRect(Rect<f32> { 0.0f, 0.0f, (f32)area.w, (f32)area.h }, color);
+		template <typename T>
+		void drawRect(const DimensionT<T>& area, const NVGcolor& color) {
+			drawRect(RectT<f32> { 0.0f, 0.0f, (f32)area.w, (f32)area.h }, color);
 		}
 
-		void drawRect(const Rect<uint32>& area, const NVGcolor& color) {
-			drawRect(Rect<f32> { (f32)area.x, (f32)area.y, (f32)area.w, (f32)area.h }, color);
+		void drawRect(const Rect& area, const NVGcolor& color) {
+			drawRect(static_cast<RectT<f32>>(area), color);
 		}
 
-		void drawRect(const Rect<f32>& area, const NVGcolor& color);
+		void drawRect(const RectT<f32>& area, const NVGcolor& color);
 
 		void drawText(f32 x, f32 y, std::string_view text, const NVGcolor& color);
 

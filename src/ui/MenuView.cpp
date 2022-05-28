@@ -11,7 +11,7 @@ const NVGcolor COLOR_GRAY = nvgRGBA(190, 190, 190, 255);
 
 MenuView::MenuView() : View({ 160, 144 }) {
 	setType<MenuView>();
-	_menuArea = Rect{ MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
+	_menuArea = RectF { MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
 }
 
 void MenuView::onUpdate(f32 delta) {
@@ -66,9 +66,9 @@ void MenuView::updateScrollOffset(const PositionedMenuItem& item) {
 	}
 }
 
-void MenuView::flattenHierarchy(Menu& menu, Point<f32>& pos) {
+void MenuView::flattenHierarchy(Menu& menu, PointT<f32>& pos) {
 	for (MenuItemBase* item : menu.getItems()) {
-		_flat.push_back({ Rect<f32>(pos.x, pos.y, 160, 0), item });
+		_flat.push_back({ RectT<f32>(pos.x, pos.y, 160, 0), item });
 
 		if (item->getType() == MenuItemType::SubMenu && _openMenus.count(item) > 0) {
 			_flat.back().area.h = _itemSpacing;
@@ -165,7 +165,7 @@ void MenuView::rebuildFlat() {
 
 	_flat.clear();
 
-	Point<f32> offset = { 0, 0 };
+	PointT<f32> offset = { 0, 0 };
 	flattenHierarchy(*_root, offset);
 
 	_scrollStartOffset = 0;
@@ -266,8 +266,8 @@ enum class ArrowDirection {
 	Down
 };
 
-void drawArrow(NVGcontext* vg, const Rect<f32>& area, ArrowDirection dir) {
-	Point<f32> points[3];
+void drawArrow(NVGcontext* vg, const RectT<f32>& area, ArrowDirection dir) {
+	PointT<f32> points[3];
 
 	switch (dir) {
 	case ArrowDirection::Left:
@@ -308,8 +308,8 @@ void drawArrow(NVGcontext* vg, const Rect<f32>& area, ArrowDirection dir) {
 
 void MenuView::drawMenu(Menu& menu) {
 	NVGcontext* vg = getVg();
-	Dimension<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
-	Point<f32> drawOffset = _drawOffset + _menuArea.position;
+	DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
+	PointT<f32> drawOffset = _drawOffset + _menuArea.position;
 
 	nvgScissor(vg, 0, 0, dim.w, dim.h);
 
@@ -320,7 +320,7 @@ void MenuView::drawMenu(Menu& menu) {
 
 	for (size_t i = 0; i < _flat.size(); ++i) {
 		auto& item = _flat[i];
-		Point<f32> itemOffset = item.area.position + drawOffset;
+		PointT<f32> itemOffset = item.area.position + drawOffset;
 
 		// TODO: Only render this item if it is visible
 
@@ -328,7 +328,7 @@ void MenuView::drawMenu(Menu& menu) {
 		uint8 alpha = item.menuItem->isActive() ? 255 : 127;
 
 		if (i == _selectedIdx) {
-			Rect<f32> arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
+			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
 			drawArrow(vg, arrowArea, ArrowDirection::Right);
 		}
 
@@ -346,7 +346,7 @@ void MenuView::drawMenu(Menu& menu) {
 
 		if (item.menuItem->getType() == MenuItemType::SubMenu) {
 			const f32 ARROW_SIZE = 2.0f;
-			Rect<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
+			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
 			arrowArea.x += 50;
 			arrowArea.y += 2;
 
@@ -361,7 +361,7 @@ void MenuView::drawMenu(Menu& menu) {
 			const f32 CHECK_BOX_SIZE = _itemSpacing * 0.6f;
 			Select* select = item.menuItem->as<Select>();
 
-			Rect<f32> checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
+			RectT<f32> checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
 
 			nvgBeginPath(vg);
 			nvgRect(vg, checkboxArea.x, checkboxArea.y, checkboxArea.w, checkboxArea.h);
@@ -370,7 +370,7 @@ void MenuView::drawMenu(Menu& menu) {
 			nvgStroke(vg);
 
 			if (select->getChecked()) {
-				Rect<f32> checkArea = checkboxArea.shrink(1.5f);
+				RectT<f32> checkArea = checkboxArea.shrink(1.5f);
 
 				nvgBeginPath(vg);
 				nvgMoveTo(vg, checkArea.x, checkArea.y);
@@ -387,7 +387,7 @@ void MenuView::drawMenu(Menu& menu) {
 			MultiSelect* multiSelect = item.menuItem->as<MultiSelect>();
 
 			const f32 ARROW_SIZE = 2.0f;
-			Rect<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
+			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
 			arrowArea.x += 50;
 			arrowArea.y += 1;
 

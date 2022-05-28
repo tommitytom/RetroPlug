@@ -12,7 +12,7 @@ namespace rp {
 
 	public:
 		NodeView() { setType<NodeView>(); }
-		NodeView(Dimension<uint32> dimensions) : View(dimensions) { setType<NodeView>(); }
+		NodeView(Dimension dimensions) : View(dimensions) { setType<NodeView>(); }
 		~NodeView() { }
 
 		void setNode(NodePtr node) {

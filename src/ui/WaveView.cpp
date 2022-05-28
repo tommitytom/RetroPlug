@@ -19,7 +19,7 @@ void WaveView::updateSlice() {
 	WaveformUtil::generate(_audioData.slice(_slicePosition, _sliceSize), _waveform, sampleCount);
 }
 
-bool WaveView::onMouseScroll(Point<f32> delta, Point<uint32> position) {
+bool WaveView::onMouseScroll(PointT<f32> delta, Point position) {
 	// Get the sample under the cursor
 
 	f32 totalSize = (f32)_audioData.size();
@@ -52,7 +52,7 @@ bool WaveView::onMouseScroll(Point<f32> delta, Point<uint32> position) {
 
 void WaveView::onRender() {
 	f32 scaleFactor = getScalingFactor();
-	Rect<f32> area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
+	RectT<f32> area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
 	f32 pixelWidth = 1.0f / scaleFactor;
 	f32 yMid = area.bottom() / 2;
 	f32 yScale = yMid - pixelWidth * 2;

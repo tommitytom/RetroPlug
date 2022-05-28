@@ -170,7 +170,7 @@ void rp::Window::renderLoopCallback(void* arg) {
 	Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 
 	if (app->hasResized()) {
-		Dimension<uint32> res = app->getResolution();
+		DimensionT<uint32> res = app->getResolution();
 		glfwSetWindowSize(window, res.w, res.h);
 	}
 

@@ -10,7 +10,7 @@ namespace rp {
 	/*class Menu {
 	public:
 		struct DrawItem {
-			Point<f32> position;
+			PointT<f32> position;
 			std::string text;
 			bool selected;
 		};
@@ -18,7 +18,7 @@ namespace rp {
 	private:
 		uintptr_t _selected = 0;
 		std::vector<DrawItem> _drawList;
-		Point<f32> _offset;
+		PointT<f32> _offset;
 
 		f32 _indentSize = 10.0f;
 		f32 _itemSpacing = 20.0f;
@@ -87,7 +87,7 @@ namespace rp {
 	};*/
 
 	struct PositionedMenuItem {
-		Rect<f32> area;
+		RectT<f32> area;
 		MenuItemBase* menuItem;
 	};
 
@@ -99,10 +99,10 @@ namespace rp {
 		f32 _itemSpacing = 20.0f;
 		f32 _separatorSpacing = 20.0f;
 
-		Point<f32> _drawOffset;
+		PointT<f32> _drawOffset;
 
-		Rect<f32> _menuArea;
-		Dimension<f32> _menuBounds;
+		RectT<f32> _menuArea;
+		DimensionT<f32> _menuBounds;
 
 		f32 _scrollStartOffset = 0;
 		f32 _scrollEndOffset = 0;
@@ -129,7 +129,7 @@ namespace rp {
 
 		bool onKey(VirtualKey::Enum key, bool down) override;
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) override { return true; }
+		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override { return true; }
 
 		void setMenu(MenuPtr menu);
 
@@ -156,7 +156,7 @@ namespace rp {
 
 		void rebuildFlat();
 
-		void flattenHierarchy(Menu& menu, Point<f32>& pos);
+		void flattenHierarchy(Menu& menu, PointT<f32>& pos);
 
 		void updateScrollOffset(const PositionedMenuItem& item);
 	};

@@ -10,7 +10,7 @@ namespace rp {
 	class Application {
 	private:
 		std::string _name;
-		Dimension<uint32> _resolution;
+		DimensionT<uint32> _resolution;
 
 		f64 _time {};
 		bool _closeRequested = false;
@@ -58,7 +58,7 @@ namespace rp {
 
 		void stopAudio() { _audioManager.stop(); }
 
-		void setResolution(Dimension<uint32> res) {
+		void setResolution(DimensionT<uint32> res) {
 			if (_resolution != res) {
 				_resolution = res;
 				_hasResized = true;
@@ -71,7 +71,7 @@ namespace rp {
 			return resized;
 		}
 
-		Dimension<uint32> getResolution() const {
+		DimensionT<uint32> getResolution() const {
 			return _resolution;
 		}
 

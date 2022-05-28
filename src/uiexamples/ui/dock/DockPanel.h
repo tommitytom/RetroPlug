@@ -18,7 +18,7 @@ namespace rp {
 
 	class DockPanel;
 	using DockPanelPtr = std::shared_ptr<DockPanel>;
-	using DropTargetArray = std::array<Rect<uint32>, (size_t)DropTargetType::None>;
+	using DropTargetArray = std::array<RectT<int32>, (size_t)DropTargetType::None>;
 
 	class DockPanel : public View {
 	private:
@@ -37,17 +37,20 @@ namespace rp {
 		DropTargetArray _dropTargets;
 
 		std::vector<f32> _handleOffsets;
-		std::vector<Rect<uint32>> _handleAreas;
+		std::vector<Rect> _handleAreas;
 		std::vector<DockPanelPtr> _panels;
-		std::vector<Rect<uint32>> _tabAreas;
+		std::vector<Rect> _tabAreas;
 		int32 _panelIdx = -1;
 		int32 _mouseOverTabIdx = -1;
 
+		Rect _titleArea;
+		int32 _titleAreaHeight = 20;
 		bool _showHeader = true;
+		bool _mouseOverHeader = false;
 
 	public:
-		const uint32 DROP_TARGET_SIZE = 30;
-		const uint32 DROP_TARGET_DISTANCE = 60; // Distance from center
+		const int32 DROP_TARGET_SIZE = 30;
+		const int32 DROP_TARGET_DISTANCE = 60; // Distance from center
 
 		DockPanel() { setType<DockPanel>(); }
 
@@ -55,7 +58,7 @@ namespace rp {
 			DockPanelPtr panel = child->asShared<DockPanel>();
 
 			_panels.push_back(panel);
-			_tabAreas.push_back(Rect<uint32>());
+			_tabAreas.push_back(Rect());
 
 			if (_panelIdx == -1) {
 				_panelIdx = 0;
@@ -85,13 +88,13 @@ namespace rp {
 			return _dropTargets;
 		}
 
-		void onDragEnter(DragContext& ctx, Point<uint32> position) override;
+		void onDragEnter(DragContext& ctx, Point position) override;
 
-		bool onDragMove(DragContext& ctx, Point<uint32> position) override;
+		bool onDragMove(DragContext& ctx, Point position) override;
 
 		void onDragLeave(DragContext& ctx) override;
 
-		bool onDrop(DragContext& ctx, Point<uint32> position) override;
+		bool onDrop(DragContext& ctx, Point position) override;
 
 		void onResize(uint32 w, uint32 h) override {
 			updateLayout();
@@ -103,13 +106,64 @@ namespace rp {
 
 		void onRender() override;
 
+		bool onMouseMove(Point pos) override {
+			_mouseOverHeader = _titleArea.contains(pos);
+			_mouseOverTabIdx = -1;
+
+			for (int32 i = 0; i < (int32)_tabAreas.size(); ++i) {
+				if (_tabAreas[i].contains(pos)) {
+					_mouseOverTabIdx = i;
+				}
+			}
+
+			return _mouseOverHeader;
+		}
+
+		void setCurrentPanel(int32 panelIdx) {
+			if (_panelIdx == panelIdx) {
+				return;
+			}
+
+			if (_panelIdx != -1) {
+				_panels[_panelIdx]->setVisible(false);
+			}
+
+			_panelIdx = panelIdx;
+
+			if (_panelIdx != -1) {
+				_panels[_panelIdx]->setVisible(true);
+			}
+		}
+
+		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+			if (button == MouseButton::Left && down) {
+				for (int32 i = 0; i < (int32)_tabAreas.size(); ++i) {
+					if (_tabAreas[i].contains(position)) {
+						setCurrentPanel(i);
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		void onMouseLeave() override {
+			_mouseOverHeader = false;
+			_mouseOverTabIdx = -1;
+		}
+
+		bool mouseOverHeader() const {
+			return _mouseOverHeader;
+		}
+
 	private:
 		void updateLayout();
 
 		void arrangePanels();
 
-		DropTargetType dropTargetUnderCursor(Point<uint32> position);
+		DropTargetType dropTargetUnderCursor(Point position);
 
-		Rect<uint32> createHandleArea(uint32 pixelOffset);
+		Rect createHandleArea(int32 pixelOffset);
 	};
 }

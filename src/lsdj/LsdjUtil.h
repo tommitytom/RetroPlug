@@ -47,11 +47,11 @@ namespace rp::LsdjUtil {
 		};
 	}
 
-	static Point<uint32> pixelToTile(Point<uint32> pos) {
+	static PointT<uint32> pixelToTile(PointT<uint32> pos) {
 		return { pos.x / 8u, pos.y / 8u };
 	}
 
-	static bool tileToCursorPos(Point<uint32> tile, Point<uint8>& target) {
+	static bool tileToCursorPos(PointT<uint32> tile, PointT<uint8>& target) {
 		for (uint32 x = 0; x < 4; ++x) {
 			uint32 xOffset = (x + 1) * 3;
 			if (tile.x >= xOffset && tile.x < xOffset + 2) {
@@ -67,7 +67,7 @@ namespace rp::LsdjUtil {
 		return false;
 	}
 
-	static bool pixelToCursorPos(Point<uint32> pos, Point<uint8>& target) {
+	static bool pixelToCursorPos(PointT<uint32> pos, PointT<uint8>& target) {
 		return tileToCursorPos(pixelToTile(pos), target);
 	}
 }

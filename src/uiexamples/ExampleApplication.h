@@ -8,6 +8,7 @@
 
 #include "ui/WaveView.h"
 #include "ui/VerticalSpliiter.h"
+#include "ui/dock/Dock.h"
 #include "node/AudioGraph.h"
 #include "core/RetroPlugNodes.h"
 

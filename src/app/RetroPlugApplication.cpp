@@ -46,7 +46,7 @@ void RetroPlugApplication::onFrame(f64 delta) {
 	bgfx::touch(kClearView);
 
 	NVGcontext* vg = _vg;
-	Dimension<uint32> res = getResolution();
+	DimensionT<uint32> res = getResolution();
 	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
 
 	_retroPlug.getUiContext().processDelta(delta);

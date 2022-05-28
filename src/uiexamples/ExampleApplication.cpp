@@ -23,6 +23,7 @@
 #include "core/RetroPlugNodes.h"
 #include "node/AudioGraph.h"
 #include "ui/VerticalSpliiter.h"
+#include "ui/dock/DockWindow.h"
 
 using namespace rp;
 
@@ -59,17 +60,19 @@ public:
 		setType<DropZone>();
 	}
 
-	void onDragEnter(DragContext& ctx, Point<uint32> position) override {}
+	void onDragEnter(DragContext& ctx, Point position) override {}
 
-	bool onDragMove(DragContext& ctx, Point<uint32> position) override { return false; }
+	bool onDragMove(DragContext& ctx, Point position) override { return false; }
 
 	void onDragLeave(DragContext& ctx) override {}
 
-	bool onDrop(DragContext& ctx, Point<uint32> position) { 
+	bool onDrop(DragContext& ctx, Point position) { 
 		spdlog::info("drop catch!");
 		return true;
 	}
 };
+
+#include "ui/VerticalSpliiter.h"
 
 const NVGcolor COLOR_BLACK = nvgRGBA(0, 0, 0, 255);
 const NVGcolor COLOR_WHITE = nvgRGBA(255, 255, 255, 255);
@@ -84,20 +87,22 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	rootPanel->setDimensions({ 800, 600 });
 	rootPanel->setColor(COLOR_WHITE);
 
-	auto handle1 = rootPanel->addChild<DockWindow>("Handle 1");
+	auto handle1 = rootPanel->addChild<DockPanel>("Handle 1");
 	handle1->setArea({ 100, 100, 100, 100 });
 	handle1->setDraggable(true);
-	DockPanelPtr content1 = std::make_shared<DockPanel>();
+	PanelViewPtr content1 = std::make_shared<PanelView>();
 	content1->setName("Green");
+	content1->setSizingMode(SizingMode::FitToParent);
 	content1->setColor(COLOR_GREEN);
 	handle1->addChild(content1);
 
-	auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
+	/*auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
 	handle2->setArea({ 100, 300, 100, 100 });
 	handle2->setDraggable(true);
 	DockPanelPtr content2 = std::make_shared<DockPanel>();
 	content2->setName("Blue");
-	content2->setColor(COLOR_BLUE);
+	content2->setSizingMode(SizingMode::FitToParent);
+	//content2->setColor(COLOR_BLUE);
 	handle2->addChild(content2);
 
 	auto handle3 = rootPanel->addChild<DockWindow>("Handle 3");
@@ -105,11 +110,13 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	handle3->setDraggable(true);
 	DockPanelPtr content3 = std::make_shared<DockPanel>();
 	content3->setName("Red");
-	content3->setColor(COLOR_RED);
-	handle3->addChild(content3);
+	content3->setSizingMode(SizingMode::FitToParent);
+	//content3->setColor(COLOR_RED);
+	handle3->addChild(content3);*/
 
-	auto target = rootPanel->addChild<DockWindow>("Target");
+	auto target = rootPanel->addChild<PanelView>("Target");
 	target->setArea({ 300, 100, 450, 300 });
+	target->setColor(nvgRGBA(255, 0, 0, 255));
 
 	/*auto dockLeft = std::make_shared<DockWindow>();
 	dockLeft->setSizingMode(SizingMode::FitToParent);
@@ -203,8 +210,8 @@ void ExampleApplication::onFrame(f64 delta) {
 	bgfx::touch(kClearView);
 
 	NVGcontext* vg = _vg;
-	Dimension<uint32> res = getResolution();
-	_view.setDimensions(res);
+	DimensionT<uint32> res = getResolution();
+	_view.setDimensions((Dimension)res);
 
 	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
 
@@ -390,7 +397,7 @@ void ExampleApplication::onKey(int key, int scancode, int action, int mods) {
 }
 
 void ExampleApplication::onMouseMove(double x, double y) {
-	_view.onMouseMove(Point<uint32>((uint32)x, (uint32)y));
+	_view.onMouseMove(Point((uint32)x, (uint32)y));
 }
 
 void ExampleApplication::onMouseButton(int button, int action, int mods) {
@@ -398,7 +405,7 @@ void ExampleApplication::onMouseButton(int button, int action, int mods) {
 }
 
 void ExampleApplication::onMouseScroll(double x, double y) {
-	_view.onMouseScroll(Point<f32>((f32)x, (f32)y));
+	_view.onMouseScroll(PointT<f32>((f32)x, (f32)y));
 }
 
 void ExampleApplication::generateWaveform() {

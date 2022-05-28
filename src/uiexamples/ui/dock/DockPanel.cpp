@@ -7,14 +7,14 @@ using namespace rp;
 
 class DockWindow;
 
-void DockPanel::onDragEnter(DragContext& ctx, Point<uint32> position) {
+void DockPanel::onDragEnter(DragContext& ctx, Point position) {
 	if (!ctx.view || ctx.view->isType<DockPanel>()) {
 		_dragOver = true;
 		_dragOverIdx = dropTargetUnderCursor(position);
 	}
 }
 
-bool DockPanel::onDragMove(DragContext& ctx, Point<uint32> position) {
+bool DockPanel::onDragMove(DragContext& ctx, Point position) {
 	if (!ctx.view || ctx.view->isType<DockPanel>()) {
 		_dragOverIdx = dropTargetUnderCursor(position);
 		return true;
@@ -26,7 +26,7 @@ void DockPanel::onDragLeave(DragContext& ctx) {
 	_dragOver = false;
 }
 
-bool DockPanel::onDrop(DragContext& ctx, Point<uint32> position) {
+bool DockPanel::onDrop(DragContext& ctx, Point position) {
 	if (!ctx.view || !ctx.view->isType<DockWindow>()) {
 		return false;
 	}
@@ -46,7 +46,7 @@ bool DockPanel::onDrop(DragContext& ctx, Point<uint32> position) {
 	case DropTargetType::Left:
 		// Add splitter
 
-		if (targetWindowContent) {
+		/*if (targetWindowContent) {
 			// Target already has a panel in place
 
 			if (targetWindowContent->isType<DockSplitter>()) {
@@ -76,7 +76,7 @@ bool DockPanel::onDrop(DragContext& ctx, Point<uint32> position) {
 				targetWindow->addChild(sourceWindowContent);
 				sourceWindowContent->pushToBack();
 			}
-		}
+		}*/
 
 		sourceWindow->remove();
 
@@ -139,26 +139,40 @@ void DockPanel::updateLayout() {
 
 	arrangePanels();
 
-	Point<uint32> mid = { getArea().w / 2, getArea().h / 2 };
-	uint32 x = mid.x - DROP_TARGET_SIZE;
-	uint32 y = mid.y - DROP_TARGET_SIZE;
-	uint32 w = DROP_TARGET_SIZE;
-	uint32 h = DROP_TARGET_SIZE;
+	Point mid = { getArea().w / 2, getArea().h / 2 };
+	int32 x = mid.x - DROP_TARGET_SIZE;
+	int32 y = mid.y - DROP_TARGET_SIZE;
+	int32 w = DROP_TARGET_SIZE;
+	int32 h = DROP_TARGET_SIZE;
 
 	_dropTargets[0] = { x, y, w, h }; // Center
 	_dropTargets[1] = { x, y - DROP_TARGET_DISTANCE, w, h }; // Top
 	_dropTargets[2] = { x + DROP_TARGET_DISTANCE, y, w, h }; // Right
 	_dropTargets[3] = { x, y + DROP_TARGET_DISTANCE, w, h }; // Bottom
 	_dropTargets[4] = { x - DROP_TARGET_DISTANCE, y, w, h }; // Left
+
+	//_titleArea.dimensions = { getDimensions().w, _titleAreaHeight };
+	//_panelArea = { 0, _titleAreaHeight, getDimensions().w, getDimensions().h - _titleAreaHeight };
+
+	//_overlay->setArea(_panelArea);
+
+	const int32 TAB_WIDTH = 120;
+	int32 tabOffset = 0;
+
+	for (int32 i = 0; i < (int32)_panels.size(); ++i) {
+		_panels[i]->setVisible(i == _panelIdx);
+		_tabAreas[i] = Rect(tabOffset, 0, TAB_WIDTH, _titleAreaHeight);
+		tabOffset += TAB_WIDTH;
+	}
 }
 
 void DockPanel::arrangePanels() {
 	switch (_displayMode) {
 		case DisplayMode::Vertical: {
 			f32 totalWidth = (f32)getDimensions().w;
-			uint32 h = getDimensions().h;
+			int32 h = getDimensions().h;
 
-			uint32 prevHandleEnd = 0;
+			int32 prevHandleEnd = 0;
 
 			for (size_t i = 0; i < _handleOffsets.size(); ++i) {
 				uint32 pixelOffset = (uint32)(_handleOffsets[i] * totalWidth);
@@ -177,12 +191,12 @@ void DockPanel::arrangePanels() {
 		}
 		case DisplayMode::Horizontal: {
 			f32 totalHeight = (f32)getDimensions().h;
-			uint32 w = getDimensions().w;
+			int32 w = getDimensions().w;
 
-			uint32 prevHandleEnd = 0;
+			int32 prevHandleEnd = 0;
 
 			for (size_t i = 0; i < _handleOffsets.size(); ++i) {
-				uint32 pixelOffset = (uint32)(_handleOffsets[i] * totalHeight);
+				int32 pixelOffset = (int32)(_handleOffsets[i] * totalHeight);
 
 				_handleAreas[i] = createHandleArea(pixelOffset);
 				_panels[i]->setArea({ 0, prevHandleEnd, w, _handleAreas[i].y - prevHandleEnd });
@@ -207,7 +221,7 @@ void DockPanel::arrangePanels() {
 	}
 }
 
-DropTargetType DockPanel::dropTargetUnderCursor(Point<uint32> position) {
+DropTargetType DockPanel::dropTargetUnderCursor(Point position) {
 	for (size_t i = 0; i < _dropTargets.size(); ++i) {
 		if (_dropTargets[i].contains(position)) {
 			return (DropTargetType)i;
@@ -217,12 +231,12 @@ DropTargetType DockPanel::dropTargetUnderCursor(Point<uint32> position) {
 	return DropTargetType::None;
 }
 
-Rect<uint32> DockPanel::createHandleArea(uint32 pixelOffset) {
-	uint32 _handleSize = 20;
+Rect DockPanel::createHandleArea(int32 pixelOffset) {
+	int32 _handleSize = 20;
 
 	if (_displayMode == DisplayMode::Vertical) {
-		return Rect<uint32>{ pixelOffset - _handleSize / 2, 0, _handleSize, getDimensions().h };
+		return Rect{ pixelOffset - _handleSize / 2, 0, _handleSize, getDimensions().h };
 	} else {
-		return Rect<uint32>{ 0, pixelOffset - _handleSize / 2, getDimensions().w, _handleSize };
+		return Rect{ 0, pixelOffset - _handleSize / 2, getDimensions().w, _handleSize };
 	}
 }

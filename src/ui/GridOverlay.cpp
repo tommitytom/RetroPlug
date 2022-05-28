@@ -36,7 +36,7 @@ void focusSystem(ViewPtr view) {
 	}
 }
 
-bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point<uint32> pos) {
+bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point pos) {
 	if (down) {
 		std::vector<ViewPtr>& children = _grid->getChildren();
 

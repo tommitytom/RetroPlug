@@ -45,7 +45,7 @@ namespace rp {
 			updateSlice();
 		}
 
-		bool onMouseScroll(Point<f32> delta, Point<uint32> position) override;
+		bool onMouseScroll(PointT<f32> delta, Point position) override;
 
 		void onScaleChanged(f32 scale) override {
 			updateSlice();

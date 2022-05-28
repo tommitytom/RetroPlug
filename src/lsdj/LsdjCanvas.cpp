@@ -3,11 +3,11 @@
 using namespace rp;
 using namespace rp::lsdj;
 
-Canvas::Canvas(Dimension<uint32> dimensions) : _renderTarget(dimensions), _dimensions(dimensions) {
+Canvas::Canvas(DimensionT<uint32> dimensions) : _renderTarget(dimensions), _dimensions(dimensions) {
 	_tileBuffer = new Color4[TILE_BUFFER_SIZE];
 }
 
-Canvas::Canvas(Dimension<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette) {
+Canvas::Canvas(DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette) {
 	_tileBuffer = new Color4[TILE_BUFFER_SIZE];
 	_font = font;
 	_palette = palette;

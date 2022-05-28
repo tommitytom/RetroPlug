@@ -43,11 +43,11 @@ namespace rp {
 			return false;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point<uint32> position) final override {
+		bool onMouseButton(MouseButton::Enum button, bool down, Point position) final override {
 			return false;
 		}
 
-		bool onMouseMove(Point<uint32> pos) {
+		bool onMouseMove(Point pos) {
 			return false;
 		}
 

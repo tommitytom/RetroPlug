@@ -24,8 +24,8 @@ const std::vector<FileDialogFilter> KIT_FILTER = {
 	{ "LSDj Kit Files", "*.kit" }
 };
 
-const Rect<uint32> BOX_SIZE = Rect<uint32>(6, 12, 13, 5);
-const Rect<uint32> BOX_AREA = { BOX_SIZE.x * (uint32)lsdj::TILE_WIDTH, BOX_SIZE.y * (uint32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (uint32)lsdj::TILE_WIDTH, BOX_SIZE.h * (uint32)lsdj::TILE_HEIGHT };
+const RectT BOX_SIZE = RectT(6, 12, 13, 5);
+const RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * (int32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (int32)lsdj::TILE_WIDTH, BOX_SIZE.h * (int32)lsdj::TILE_HEIGHT };
 
 SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();
@@ -260,7 +260,7 @@ void SamplerView::onRender() {
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
-	Dimension<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
+	DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
 
 	uint8 kitIdx = _samplerState.selectedKit != -1 ? (uint8)_samplerState.selectedKit : 0;
 

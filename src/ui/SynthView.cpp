@@ -4,15 +4,16 @@
 
 #include "lsdj/OffsetLookup.h"
 #include "ui/KeyToButton.h"
+#include "util/HashUtil.h"
 
 using namespace rp;
 
-const Rect<uint32> WAVE_VIEW_SIZE = Rect<uint32>(3, 12, 16, 5);
-const Rect<uint32> WAVE_VIEW_AREA = { 
-	WAVE_VIEW_SIZE.x * (uint32)lsdj::TILE_WIDTH, 
-	WAVE_VIEW_SIZE.y * (uint32)lsdj::TILE_HEIGHT, 
-	WAVE_VIEW_SIZE.w * (uint32)lsdj::TILE_WIDTH, 
-	WAVE_VIEW_SIZE.h * (uint32)lsdj::TILE_HEIGHT 
+const Rect WAVE_VIEW_SIZE = Rect(3, 12, 16, 5);
+const Rect WAVE_VIEW_AREA = { 
+	WAVE_VIEW_SIZE.x * (int32)lsdj::TILE_WIDTH, 
+	WAVE_VIEW_SIZE.y * (int32)lsdj::TILE_HEIGHT, 
+	WAVE_VIEW_SIZE.w * (int32)lsdj::TILE_WIDTH, 
+	WAVE_VIEW_SIZE.h * (int32)lsdj::TILE_HEIGHT 
 };
 
 SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) { 
@@ -102,7 +103,7 @@ void SynthView::onUpdate(f32 delta) {
 	}
 }
 
-Point<uint32> tileToPixel(Point<uint32> tile) {
+PointT<uint32> tileToPixel(PointT<uint32> tile) {
 	return { tile.x * (uint32)lsdj::TILE_WIDTH, tile.y * (uint32)lsdj::TILE_HEIGHT };
 }
 
@@ -115,8 +116,6 @@ void SynthView::updateWaveform(lsdj::Song& song) {
 		setWaveform(samples);
 	}
 }
-
-#include "util/HashUtil.h"
 
 void SynthView::onRender() {
 	if (!_system) {
@@ -144,7 +143,7 @@ void SynthView::onRender() {
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
-	Dimension<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
+	DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
 
 	uint8 synthIdx = _samplerState.selectedSynth;
 

@@ -6,7 +6,7 @@ namespace rp {
 	class GraphOverlay : public View {
 	public:
 		GraphOverlay() { setType<GraphOverlay>(); }
-		GraphOverlay(Dimension<uint32> dimensions) : View(dimensions) { setType<GraphOverlay>(); }
+		GraphOverlay(Dimension dimensions) : View(dimensions) { setType<GraphOverlay>(); }
 		~GraphOverlay() { }
 
 		void onRender() override {

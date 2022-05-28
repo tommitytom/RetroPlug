@@ -19,14 +19,14 @@ void DockOverlay::onUpdate(f32 delta) {
 }
 
 void DockOverlay::onRender() {
-	if (!_dragOver) {
+	/*if (!_dragOver) {
 		return;
 	}
 
 	for (size_t i = 0; i < _dropTargets.size(); ++i) {
-		const Rect<uint32>& target = _dropTargets[i];
+		const RectT<uint32>& target = _dropTargets[i];
 
-		if (target != Rect<uint32>()) {
+		if (target != RectT<uint32>()) {
 			NVGcolor color = nvgRGBA(0, 255, 0, 255);
 
 			if ((DropTargetType)i == _dragOverIdx) {
@@ -41,7 +41,7 @@ void DockOverlay::onRender() {
 	uint32 highlightMargin = 5;
 
 	if (_dragOverIdx != DropTargetType::None) {
-		Rect<uint32> dim;
+		RectT<uint32> dim;
 
 		switch (_dragOverIdx) {
 		case DropTargetType::Center:
@@ -62,5 +62,5 @@ void DockOverlay::onRender() {
 		}
 
 		drawRect(dim.shrink(highlightMargin), highlightColor);
-	}
+	}*/
 }
