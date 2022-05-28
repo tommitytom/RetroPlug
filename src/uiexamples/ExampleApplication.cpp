@@ -54,24 +54,6 @@ void testNodeGraph() {
 const bgfx::ViewId kClearView = 0;
 const bool s_showStats = false;
 
-class DropZone : public PanelView {
-public:
-	DropZone() {
-		setType<DropZone>();
-	}
-
-	void onDragEnter(DragContext& ctx, Point position) override {}
-
-	bool onDragMove(DragContext& ctx, Point position) override { return false; }
-
-	void onDragLeave(DragContext& ctx) override {}
-
-	bool onDrop(DragContext& ctx, Point position) { 
-		spdlog::info("drop catch!");
-		return true;
-	}
-};
-
 #include "ui/VerticalSpliiter.h"
 
 const NVGcolor COLOR_BLACK = nvgRGBA(0, 0, 0, 255);
@@ -82,19 +64,88 @@ const NVGcolor COLOR_RED = nvgRGBA(255, 0, 0, 255);
 const NVGcolor COLOR_GREEN = nvgRGBA(0, 255, 0, 255);
 const NVGcolor COLOR_BLUE = nvgRGBA(0, 0, 255, 255);
 
+class DraggablePanel : public PanelView {
+private:
+	Point _clickPos;
+	bool _mouseDown = false;
+
+public:
+	DraggablePanel() {
+		setType<DraggablePanel>();
+	}
+
+	bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		_clickPos = position;
+		_mouseDown = down;
+		return true;
+	}
+
+	bool onMouseMove(Point position) override {
+		if (_mouseDown) {
+			int32 dist = (position - _clickPos).magnitude();
+			
+			if (dist > 10) {
+				beginDrag(nullptr);
+			}
+		}
+
+		return true;
+	}
+
+	void onDragFinish(DragContext& ctx) {
+		_mouseDown = false;
+	}
+};
+
+class DropZone : public PanelView {
+public:
+	DropZone() {
+		setType<DropZone>();
+	}
+
+	void onDragEnter(DragContext& ctx, Point position) override {}
+
+	bool onDragMove(DragContext& ctx, Point position) override { 
+		ctx.source->setPosition(position);
+		return true; 
+	}
+
+	void onDragLeave(DragContext& ctx) override {}
+
+	bool onDrop(DragContext& ctx, Point position) {
+		spdlog::info("drop catch!");
+		return true;
+	}
+};
+
 ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
 	auto rootPanel = _view.addChild<PanelView>("Root Panel");
 	rootPanel->setDimensions({ 800, 600 });
 	rootPanel->setColor(COLOR_WHITE);
 
-	auto handle1 = rootPanel->addChild<DockPanel>("Handle 1");
+	auto target = rootPanel->addChild<DropZone>("Red");
+	target->setArea({ 300, 100, 450, 300 });
+	target->setColor(nvgRGBA(255, 0, 0, 255));
+	//target->setFocusPolicy(FocusPolicy::Click);
+
+	auto target2 = target->addChild<DraggablePanel>("Green");
+	target2->setArea({ 10, 10, 200, 200 });
+	target2->setColor(nvgRGBA(0, 255, 0, 255));
+	target2->setFocusPolicy(FocusPolicy::Click);
+
+	auto target3 = target->addChild<PanelView>("Blue");
+	target3->setArea({ 40, 100, 200, 50 });
+	target3->setColor(nvgRGBA(0, 0, 255, 255));
+	//target3->setFocusPolicy(FocusPolicy::Click);
+
+	/*auto handle1 = rootPanel->addChild<DockPanel>("Handle 1");
 	handle1->setArea({ 100, 100, 100, 100 });
 	handle1->setDraggable(true);
 	PanelViewPtr content1 = std::make_shared<PanelView>();
 	content1->setName("Green");
 	content1->setSizingMode(SizingMode::FitToParent);
 	content1->setColor(COLOR_GREEN);
-	handle1->addChild(content1);
+	handle1->addChild(content1);*/
 
 	/*auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
 	handle2->setArea({ 100, 300, 100, 100 });
@@ -114,9 +165,7 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	//content3->setColor(COLOR_RED);
 	handle3->addChild(content3);*/
 
-	auto target = rootPanel->addChild<PanelView>("Target");
-	target->setArea({ 300, 100, 450, 300 });
-	target->setColor(nvgRGBA(255, 0, 0, 255));
+	
 
 	/*auto dockLeft = std::make_shared<DockWindow>();
 	dockLeft->setSizingMode(SizingMode::FitToParent);

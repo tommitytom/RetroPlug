@@ -83,6 +83,18 @@ namespace rp {
 		explicit operator PointT<R>() const {
 			return PointT<R> { (R)x, (R)y };
 		}
+
+		T magnitude() const { 
+			if (std::is_integral_v<T>) {
+				return sqrt((x * x) + (y * y));
+			} else {
+				return sqrtf((x * x) + (y * y));
+			}
+		}
+
+		T sqrMagnitude() const { 
+			return (x * x) + (y * y); 
+		}
 	};
 	using PointI32 = PointT<int32>;
 	using PointU32 = PointT<uint32>;

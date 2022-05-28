@@ -21,7 +21,8 @@ namespace rp {
 		View::Shared _sharedData;
 
 		std::vector<ViewPtr> _mouseOver;
-		//std::unordered_set<ViewPtr> _mouseOver;
+		std::vector<ViewPtr> _dragOver;
+		size_t _mouseOverClickIdx = 0;
 
 	public:
 		ViewManager() : View({ 100, 100 }) {
@@ -81,114 +82,184 @@ namespace rp {
 			return onMouseButton(button, down, _mouseState.position);
 		}
 
+		void handleDragEnd(Point position) {
+			auto& ctx = _sharedData.dragContext;			
+			assert(ctx.source);
+
+			if (ctx.source) {
+				ViewPtr target = propagateDrop(position);
+				propagateDragLeave(position);
+
+				if (target) {
+					spdlog::info("Finished dragging {} on to {}", ctx.source->getName(), target ? target->getName() : "nothing");
+				} else {
+					spdlog::info("Finished dragging {} on to nothing (there was no target)");
+				}
+
+				ctx.source->onDragFinish(ctx);
+				ctx.source = nullptr;
+			} else {
+				spdlog::info("Finished drop - there was no source");
+			}
+
+			ctx.isDragging = false;
+			ctx.attached = nullptr;
+			ctx.targets.clear();
+
+			handleMouseEnterLeave(position);
+		}
+
+		bool handleMouseEnterLeave(Point position) {
+			bool handled = false;
+			std::vector<ViewPtr> mouseOver;
+
+			handled |= propagateMouseLeave(position);
+			handled |= propagateMouseEnter(position, getChildren(), mouseOver);
+			_mouseOver = std::move(mouseOver);
+
+			return handled;
+		}
+
+		bool handleDragEnterLeave(Point position) {
+			bool handled = false;
+			std::vector<ViewPtr> dragOver;
+
+			handled |= propagateDragLeave(position);
+			handled |= propagateDragEnter(position, getChildren(), _shared->dragContext, dragOver);
+			_shared->dragContext.targets = std::move(dragOver);
+
+			return handled;
+		}
+
 		bool onMouseButton(MouseButton::Enum button, bool down, Point position) final override {
+			bool handled = false;
+			
 			_mouseState.buttons[button] = down;
 
 			if (button == MouseButton::Left && !down) {
 				DragContext& ctx = _shared->dragContext;
 				
 				if (ctx.isDragging) {
-					ctx.isDragging = false;
-
-					if (ctx.view) {
-						ViewPtr target = propagateDrop(position, getChildren());
-						if (target) {
-
-						}
-
-						spdlog::info("Finished dragging {} on to {}", ctx.view->getName(), target ? target->getName() : "nothing");
-
-						propagateDragEnter(position, getChildren(), ctx);
-
-						ctx.view->onDragFinish(ctx);
-
-						propagateMouseEnter(position, getChildren());
-
-						ctx.view = nullptr;
-					} else {
-						propagateClick(button, down, position, getChildren());
-						propagateMouseEnter(position, getChildren());
-					}
+					handleDragEnd(position);
+				} else {
+					// Focus is locked to a single element
+					// Process the mouse button release
+					handled = propagateClick(button, down, position, false);
+					handled |= handleMouseEnterLeave(position);
 				}
 
 				return true;
-			} else {
-				return propagateClick(button, down, position, getChildren());
 			}
+
+			return propagateClick(button, down, position, true);
 		}
 
 		bool onMouseMove(Point pos) final override {
 			bool handled = false;
 			DragContext& ctx = _shared->dragContext;
 
-			if (!ctx.isDragging) {
-				if (!_mouseState.buttons[MouseButton::Left]) {
-					handled = propagateMouseEnter(pos, getChildren());
-					handled |= propagateMouseMove(pos, getChildren());
-				} else {
-					// Start drag
-					ctx.isDragging = true;
-
-					if (_shared->focused) {
-						ctx.selected = _shared->focused->shared_from_this();
-
-						if (_shared->focused->isDraggable()) {
-							ctx.view = ctx.selected;
-							spdlog::info("Started dragging {}", ctx.view->getName());
-							ctx.view->onDragStart();
-						}
-					}
-				}				
-			} else {
-				if (ctx.view) {
-					handled = propagateDragEnter(pos, getChildren(), _shared->dragContext);
-					handled |= propagateDragMove(pos, getChildren());
-				} else {
+			if (_mouseState.buttons[MouseButton::Left]) {
+				if (!ctx.isDragging) {
 					// lock focus on current view
-					auto worldArea = ctx.selected->getWorldArea();
-					bool mouseInView = worldArea.contains(pos);
+					ViewPtr view = _shared->focused ? _shared->focused->shared_from_this() : nullptr;
+					if (view) {
+						Rect worldArea = view->getWorldArea();
 
-					if (ctx.selected->_mouseOver) {
-						if (!mouseInView) {
-							spdlog::info("Mouse leaving {}", ctx.selected->getName());
-							ctx.selected->onMouseLeave();
-							ctx.selected->_mouseOver = false;
+						if (vectorContains(_mouseOver, view)) {
+							if (!worldArea.contains(pos)) {
+								spdlog::info("Mouse leaving (held) {}", view->getName());
+								view->onMouseLeave();
+								_mouseOver.erase(_mouseOver.begin() + _mouseOverClickIdx);
+							}
 						} else {
-							ctx.selected->onMouseMove(pos - worldArea.position);
+							if (worldArea.contains(pos)) {
+								spdlog::info("Mouse entering (held) {}", view->getName());
+								view->onMouseEnter(pos - worldArea.position);
+								_mouseOver.insert(_mouseOver.begin() + _mouseOverClickIdx, view);
+							}
 						}
-					} else {
-						if (mouseInView) {
-							spdlog::info("Mouse entering {}", ctx.selected->getName());
-							ctx.selected->onMouseEnter(pos - worldArea.position);
-							ctx.selected->_mouseOver = true;
-						}
+
+						view->onMouseMove(pos - worldArea.position);
+
+						handled = true;
 					}
-				}				
+				} else {
+					handled = handleDragEnterLeave(pos);
+					handled |= propagateDragMove(pos, getChildren());
+				}
+			} else {
+				handled |= handleMouseEnterLeave(pos);
+				handled |= propagateMouseMove(pos);
 			}
 
 			_mouseState.position = pos;
 			return handled;
 		}
 
-		bool propagateMouseEnter(Point position, std::vector<ViewPtr>& views) {
+		bool propagateClick(MouseButton::Enum button, bool down, Point position, bool updateFocus) {
+			if (updateFocus) {
+				for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+					FocusPolicy policy = _mouseOver[i]->getFocusPolicy();
+
+					if ((uint32)policy & (uint32)FocusPolicy::Click) {
+						_shared->focused = _mouseOver[i].get();
+						_mouseOverClickIdx = i;
+						break;
+					}
+				}
+			}
+			
+			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+				Point childPosition = position - _mouseOver[i]->getWorldPosition();
+
+				if (_mouseOver[i]->onMouseButton(button, down, childPosition)) {		
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		ViewPtr propagateDrop(Point position) {
+			auto& targets = _shared->dragContext.targets;
+
+			for (int32 i = (int32)targets.size() - 1; i >= 0; --i) {
+				Point childPosition = position - targets[i]->getWorldPosition();
+
+				if (targets[i]->onDrop(_shared->dragContext, childPosition)) {
+					return targets[i];
+				}
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		bool vectorContains(const std::vector<T>& vec, const T& item) {
+			return vectorIndex(vec, item) != -1;
+		}
+
+		template <typename T>
+		int32 vectorIndex(const std::vector<T>& vec, const T& item) {
+			for (size_t i = 0; i < vec.size(); ++i) {
+				if (vec[i] == item) {
+					return (int32)i;
+				}
+			}
+
+			return -1;
+		}
+
+		bool propagateMouseLeave(Point position) {
 			bool handled = false;
 
-			for (ViewPtr& view : views) {
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
+			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+				ViewPtr& view = _mouseOver[i];
 
-					if (!view->_mouseOver) {
-						spdlog::info("Mouse entering {}", view->getName());
-						view->onMouseEnter(childPosition);
-						view->_mouseOver = true;
-						handled = true;
-					}
-
-					handled |= propagateMouseEnter(childPosition, view->getChildren());
-				} else if (view->_mouseOver) {
-					// We have encountered a view that the mouse has left.  We need to call onMouseLeave()
-					// on all dependencies, starting from the upper most child.
-					propagateMouseLeave(view);
+				if (!view->isVisible() || !view->getWorldArea().contains(position)) {
+					spdlog::info("Mouse leaving {}", view->getName());
+					view->onMouseLeave();
+					_mouseOver.erase(_mouseOver.begin() + i);
 					handled = true;
 				}
 			}
@@ -196,34 +267,76 @@ namespace rp {
 			return handled;
 		}
 
-		void propagateMouseLeave(ViewPtr& view) {
-			if (view->isVisible()) {
-				for (int32 i = (int32)view->getChildren().size() - 1; i >= 0; --i) {
-					ViewPtr child = view->getChild(i);
+		bool propagateMouseEnter(Point position, std::vector<ViewPtr>& views, std::vector<ViewPtr>& target) {
+			bool handled = false;
 
-					if (child->_mouseOver) {
-						propagateMouseLeave(child);
-					}
-				}
-
-				spdlog::info("Mouse leaving {}", view->getName());
-				view->onMouseLeave();
-				view->_mouseOver = false;
-			}
-		}
-
-		bool propagateMouseMove(Point position, std::vector<ViewPtr>& views) {
-			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
-				ViewPtr view = views[i];
-
+			for (ViewPtr& view : views) {
 				if (view->isVisible() && view->getArea().contains(position)) {
 					Point childPosition = position - view->getArea().position;
 
-					if (!propagateMouseMove(childPosition, view->getChildren())) {
-						if (view->onMouseMove(childPosition)) {
-							return true;
-						}
+					target.push_back(view);
+
+					if (!vectorContains(_mouseOver, view)) {
+						spdlog::info("Mouse entering {}", view->getName());
+						view->onMouseEnter(childPosition);
+						handled = true;
 					}
+
+					handled |= propagateMouseEnter(childPosition, view->getChildren(), target);
+				}
+			}
+
+			return handled;
+		}
+
+		bool propagateDragEnter(Point position, std::vector<ViewPtr>& views, DragContext& ctx, std::vector<ViewPtr>& target) {
+			bool handled = false;
+
+			for (ViewPtr& view : views) {
+				if (view != ctx.source && view->isVisible() && view->getArea().contains(position)) {
+					Point childPosition = position - view->getArea().position;
+
+					target.push_back(view);
+
+					if (!vectorContains(ctx.targets, view)) {
+						spdlog::info("Drag entering {}", view->getName());
+						view->onDragEnter(ctx, childPosition);
+						handled = true;
+					}
+
+					handled |= propagateDragEnter(childPosition, view->getChildren(), ctx, target);
+				}
+			}
+
+			return handled;
+		}
+
+		bool propagateDragLeave(Point position) {
+			bool handled = false;
+
+			auto& ctx = _shared->dragContext;
+			auto& dragOver = ctx.targets;
+
+			for (int32 i = (int32)dragOver.size() - 1; i >= 0; --i) {
+				ViewPtr& view = dragOver[i];
+
+				if (!view->isVisible() || !view->getWorldArea().contains(position)) {
+					spdlog::info("Drag leaving {}", view->getName());
+					view->onDragLeave(ctx);
+					dragOver.erase(dragOver.begin() + i);
+					handled = true;
+				}
+			}
+
+			return handled;
+		}
+
+		bool propagateMouseMove(Point position) {
+			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+				Point childPosition = position - _mouseOver[i]->getWorldPosition();
+
+				if (_mouseOver[i]->onMouseMove(childPosition)) {
+					return true;
 				}
 			}
 
@@ -248,53 +361,7 @@ namespace rp {
 			return false;
 		}
 
-		bool propagateDragEnter(Point position, std::vector<ViewPtr>& views, DragContext& ctx) {
-			bool handled = false;
-
-			for (ViewPtr& view : views) {
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-					
-					// TODO: Don't allow dragging a parent element on to a child element
-
-					if (ctx.isDragging && view != ctx.view && !view->_dragOver) {
-						spdlog::info("Drag entering {}", view->getName());
-
-						_sharedData.dragContext.targets.push_back(view);
-
-						view->onDragEnter(ctx, childPosition);
-						view->_dragOver = true;
-						handled = true;
-					}
-
-					handled |= propagateDragEnter(childPosition, view->getChildren(), ctx);
-				} else if (view->_dragOver) {
-					propagateDragLeave(view);
-				}
-			}
-
-			return handled;
-		}
-
-		void propagateDragLeave(ViewPtr& view) {
-			if (view->isVisible()) {
-				for (int32 i = (int32)view->getChildren().size() - 1; i >= 0; --i) {
-					ViewPtr child = view->getChild(i);
-
-					if (child->_dragOver) {
-						propagateDragLeave(child);
-					}
-				}
-
-				spdlog::info("Drag leaving {}", view->getName());
-				assert(view == _sharedData.dragContext.targets.back());
-
-				_sharedData.dragContext.targets.pop_back();
-				view->onDragLeave(_shared->dragContext);
-
-				view->_dragOver = false;
-			}
-		}
+		
 
 		bool onDrop(const std::vector<std::string>& paths) final override { 
 			return propagateDrop(paths, _mouseState.position, getChildren());
@@ -416,14 +483,10 @@ namespace rp {
 			}
 		}
 
-		PointT<f32> pointToFloat(Point point) {
-			return { (f32)point.x, (f32)point.y };
-		}
-
 		void propagateRender(std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
-					PointT<f32> pos = pointToFloat(view->getPosition());
+					PointT<f32> pos = (PointT<f32>)view->getPosition();
 					nvgTranslate(getVg(), pos.x, pos.y);
 					view->onRender();
 					nvgTranslate(getVg(), -pos.x, -pos.y);
@@ -432,7 +495,7 @@ namespace rp {
 
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
-					PointT<f32> pos = pointToFloat(view->getPosition());
+					PointT<f32> pos = (PointT<f32>)view->getPosition();
 					nvgTranslate(getVg(), pos.x, pos.y);
 					propagateRender(view->getChildren());
 					nvgTranslate(getVg(), -pos.x, -pos.y);
@@ -458,50 +521,7 @@ namespace rp {
 			return false;
 		}
 
-		bool propagateClick(MouseButton::Enum button, bool down, Point position, std::vector<ViewPtr>& views) {
-			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
-				ViewPtr& view = views[i];
-
-				if (view->isVisible() && view->getArea().contains(position)) {
-					if (down) {
-						_shared->focused = view.get();
-					}
-
-					Point childPosition = position - view->getArea().position;
-
-					if (!propagateClick(button, down, childPosition, view->getChildren())) {
-						if (view->onMouseButton(button, down, childPosition)) {	
-							return true;
-						}
-					}
-				}
-			}
-
-			return false;
-		}
-
-		ViewPtr propagateDrop(Point position, std::vector<ViewPtr>& views) {
-			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
-				ViewPtr view = views[i];
-
-				if (view->isVisible() && view->getArea().contains(position)) {
-					_shared->focused = view.get();
-
-					Point childPosition = position - view->getArea().position;
-					ViewPtr childView = propagateDrop(childPosition, view->getChildren());
-
-					if (childView) {
-						return childView;
-					}
-
-					if (view->onDrop(_shared->dragContext, childPosition)) {
-						return view;
-					}
-				}
-			}
-
-			return nullptr;
-		}
+		
 
 		bool propagateAction(Point position, std::vector<ViewPtr>& views, const std::function<bool(ViewPtr&, Point)>& f) {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {

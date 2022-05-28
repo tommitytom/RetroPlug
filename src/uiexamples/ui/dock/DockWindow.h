@@ -21,7 +21,6 @@ namespace rp {
 		DockWindow() { setType<DockWindow>(); }
 
 		void onInitialized() override {
-			setDraggable(true);
 			updateLayout();
 		}
 

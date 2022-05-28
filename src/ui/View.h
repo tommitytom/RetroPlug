@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <spdlog/spdlog.h>
 
 #include <entt/entity/entity.hpp>
 #include <entt/entity/registry.hpp>
@@ -28,10 +29,18 @@ namespace rp {
 		FitToContent
 	};
 
+	enum class FocusPolicy {
+		None = 0x0,
+		Tab = 0x1,
+		Click = 0x2,
+		Strong = Tab | Click | 0x8,
+		Wheel = Strong | 0x4
+	};
+
 	struct DragContext {
 		bool isDragging = false;
-		ViewPtr view;
-		ViewPtr selected;
+		ViewPtr source;
+		ViewPtr attached;
 		std::vector<ViewPtr> targets;
 	};
 
@@ -45,6 +54,9 @@ namespace rp {
 
 			DragContext dragContext;
 
+			std::vector<ViewPtr> mouseOver;
+			std::vector<ViewPtr> dragOver;
+
 			entt::registry userData;
 		};
 
@@ -55,13 +67,11 @@ namespace rp {
 		Rect _area;
 		f32 _alpha = 1.0f;
 		NVGcontext* _vg = nullptr;
-		bool _mouseOver = false;
-		bool _dragOver = false;
-		bool _draggable = false;
 		bool _initialized = false;
 		bool _visible = true;
 
 		SizingMode _sizingMode = SizingMode::None;
+		FocusPolicy _focusPolicy = FocusPolicy::None;
 
 		std::string _name;
 		entt::type_info _type;
@@ -81,17 +91,17 @@ namespace rp {
 			removeChildren(); 
 		}
 
+		FocusPolicy getFocusPolicy() const {
+			return _focusPolicy;
+		}
+
+		void setFocusPolicy(FocusPolicy focusPolicy) {
+			_focusPolicy = focusPolicy;
+		}
+
 		const DragContext& getDragContext() const {
 			assert(_shared);
 			return _shared->dragContext;
-		}
-
-		bool isDraggable() const {
-			return _draggable;
-		}
-
-		void setDraggable(bool draggable) {
-			_draggable = draggable;
 		}
 
 		void setVisible(bool visible) {
@@ -158,6 +168,13 @@ namespace rp {
 		virtual void onMount() {}
 
 		virtual void onDismount() {}
+
+		void beginDrag(ViewPtr placeholder) {
+			_shared->dragContext.isDragging = true;
+			_shared->dragContext.source = shared_from_this();
+			_shared->dragContext.attached = placeholder;
+			spdlog::info("Beginning drag of {}", getName());
+		}
 
 		Point getWorldPosition() const {
 			if (getParent()) {

@@ -8,17 +8,19 @@ using namespace rp;
 class DockWindow;
 
 void DockPanel::onDragEnter(DragContext& ctx, Point position) {
-	if (!ctx.view || ctx.view->isType<DockPanel>()) {
+	if (!ctx.source || ctx.source->isType<DockPanel>()) {
 		_dragOver = true;
 		_dragOverIdx = dropTargetUnderCursor(position);
 	}
 }
 
 bool DockPanel::onDragMove(DragContext& ctx, Point position) {
-	if (!ctx.view || ctx.view->isType<DockPanel>()) {
+	if (!ctx.source || ctx.source->isType<DockPanel>()) {
 		_dragOverIdx = dropTargetUnderCursor(position);
 		return true;
 	}
+
+	return false;
 }
 
 void DockPanel::onDragLeave(DragContext& ctx) {
@@ -27,12 +29,12 @@ void DockPanel::onDragLeave(DragContext& ctx) {
 }
 
 bool DockPanel::onDrop(DragContext& ctx, Point position) {
-	if (!ctx.view || !ctx.view->isType<DockWindow>()) {
+	if (!ctx.source || !ctx.source->isType<DockWindow>()) {
 		return false;
 	}
 
-	ViewPtr sourceWindow = ctx.view;
-	DockPanelPtr sourceWindowPanel = ctx.view->asShared<DockPanel>();
+	ViewPtr sourceWindow = ctx.source;
+	DockPanelPtr sourceWindowPanel = ctx.source->asShared<DockPanel>();
 	DropTargetType targetType = dropTargetUnderCursor(position);
 
 	spdlog::info("Dropped on {}", getName());
