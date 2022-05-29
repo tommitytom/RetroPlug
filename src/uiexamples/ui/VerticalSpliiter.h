@@ -46,7 +46,7 @@ namespace rp {
 
 		SplitDirection _direction = SplitDirection::Vertical;
 
-		int32 _handleSize = 20;
+		int32 _handleSize = 10;
 
 		int32 _mouseOverIndex = -1;
 		int32 _draggingIndex = -1;
@@ -55,6 +55,7 @@ namespace rp {
 	public:
 		DockSplitter() {
 			setType<DockSplitter>();
+			setFocusPolicy(FocusPolicy::Click);
 		}
 
 		~DockSplitter() = default;
@@ -118,6 +119,7 @@ namespace rp {
 			}
 
 			if (handled) {
+				_mouseOverIndex = handleAtPosition(position);
 				updateLayout();
 				return true;
 			}
@@ -182,7 +184,7 @@ namespace rp {
 		}
 
 		void onDragEnter(DragContext& ctx, Point position) override {
-			
+
 		}
 
 		bool onDragMove(DragContext& ctx, Point position) override {
@@ -273,5 +275,5 @@ namespace rp {
 		}
 	};
 
-	using DockSplitterPtr = std::shared_ptr<DockSplitter>;	
+	using DockSplitterPtr = std::shared_ptr<DockSplitter>;
 }

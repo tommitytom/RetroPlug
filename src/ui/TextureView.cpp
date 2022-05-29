@@ -13,7 +13,7 @@ void TextureView::setImage(const Image& image) {
 		_textureHandle = nvgCreateImageRGBA(vg, image.w(), image.h(), NVG_IMAGE_NEAREST, (const unsigned char*)image.getData());
 		_textureSize = image.dimensions();
 
-		if (getSizingMode() == SizingMode::FitToContent) {
+		if (getSizingPolicy() == SizingPolicy::FitToContent) {
 			setDimensions((Dimension)_textureSize);
 		}
 	} else {

@@ -22,6 +22,7 @@ namespace rp {
 
 		std::vector<ViewPtr> _mouseOver;
 		std::vector<ViewPtr> _dragOver;
+		bool _mouseOverClickedItem = false;
 		size_t _mouseOverClickIdx = 0;
 
 	public:
@@ -75,7 +76,7 @@ namespace rp {
 		}
 
 		bool onMouseScroll(PointT<f32> delta) {
-			return propagateMouseScroll(delta, _mouseState.position, getChildren());
+			return propagateMouseScroll(delta, _mouseState.position);
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down) {
@@ -165,17 +166,17 @@ namespace rp {
 					if (view) {
 						Rect worldArea = view->getWorldArea();
 
-						if (vectorContains(_mouseOver, view)) {
+						if (_mouseOverClickedItem) {
 							if (!worldArea.contains(pos)) {
 								spdlog::info("Mouse leaving (held) {}", view->getName());
 								view->onMouseLeave();
-								_mouseOver.erase(_mouseOver.begin() + _mouseOverClickIdx);
+								_mouseOverClickedItem = false;
 							}
 						} else {
 							if (worldArea.contains(pos)) {
 								spdlog::info("Mouse entering (held) {}", view->getName());
 								view->onMouseEnter(pos - worldArea.position);
-								_mouseOver.insert(_mouseOver.begin() + _mouseOverClickIdx, view);
+								_mouseOverClickedItem = true;
 							}
 						}
 
@@ -204,6 +205,7 @@ namespace rp {
 					if ((uint32)policy & (uint32)FocusPolicy::Click) {
 						_shared->focused = _mouseOver[i].get();
 						_mouseOverClickIdx = i;
+						_mouseOverClickedItem = true;
 						break;
 					}
 				}
@@ -361,8 +363,6 @@ namespace rp {
 			return false;
 		}
 
-		
-
 		bool onDrop(const std::vector<std::string>& paths) final override { 
 			return propagateDrop(paths, _mouseState.position, getChildren());
 		}
@@ -434,9 +434,9 @@ namespace rp {
 
 		void propagateSizingUpdate(std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
-				if (view->_sizingMode == SizingMode::FitToParent) {
+				if (view->_sizingMode == SizingPolicy::FitToParent) {
 					assert(view->getParent());
-					assert(view->getParent()->getSizingMode() != SizingMode::FitToContent);
+					assert(view->getParent()->getSizingPolicy() != SizingPolicy::FitToContent);
 
 					Rect area = { {0, 0}, view->getParent()->getDimensions() };
 
@@ -447,7 +447,7 @@ namespace rp {
 
 				propagateSizingUpdate(view->getChildren());
 
-				if (view->_sizingMode == SizingMode::FitToContent) {
+				if (view->_sizingMode == SizingPolicy::FitToContent) {
 					Rect targetArea;
 					calculateTotalArea(view->getChildren(), { 0, 0 }, targetArea);
 
@@ -503,25 +503,17 @@ namespace rp {
 			}
 		}
 
-		bool propagateMouseScroll(PointT<f32> delta, Point position, std::vector<ViewPtr>& views) {
-			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
-				ViewPtr& view = views[i];
+		bool propagateMouseScroll(PointT<f32> delta, Point position) {
+			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+				Point childPosition = position - _mouseOver[i]->getWorldPosition();
 
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
-					if (!propagateMouseScroll(delta, childPosition, view->getChildren())) {
-						if (view->onMouseScroll(delta, childPosition)) {
-							return true;
-						}
-					}
+				if (_mouseOver[i]->onMouseScroll(delta, childPosition)) {
+					return true;
 				}
 			}
 
 			return false;
 		}
-
-		
 
 		bool propagateAction(Point position, std::vector<ViewPtr>& views, const std::function<bool(ViewPtr&, Point)>& f) {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {

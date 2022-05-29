@@ -4,7 +4,7 @@ using namespace rp;
 
 GridView::GridView() {
 	setType<GridView>();
-	setSizingMode(SizingMode::FitToContent);
+	setSizingPolicy(SizingPolicy::FitToContent);
 }
 
 void GridView::onChildAdded(ViewPtr view) {

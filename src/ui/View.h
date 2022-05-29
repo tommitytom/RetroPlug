@@ -23,7 +23,7 @@ namespace rp {
 	using ViewIndex = uint32;
 	constexpr ViewIndex INVALID_VIEW_INDEX = -1;
 
-	enum class SizingMode {
+	enum class SizingPolicy {
 		None,
 		FitToParent,
 		FitToContent
@@ -70,7 +70,7 @@ namespace rp {
 		bool _initialized = false;
 		bool _visible = true;
 
-		SizingMode _sizingMode = SizingMode::None;
+		SizingPolicy _sizingMode = SizingPolicy::None;
 		FocusPolicy _focusPolicy = FocusPolicy::None;
 
 		std::string _name;
@@ -231,12 +231,12 @@ namespace rp {
 			return nullptr;
 		}
 
-		void setSizingMode(SizingMode mode) {
+		void setSizingPolicy(SizingPolicy mode) {
 			_sizingMode = mode;
 			setLayoutDirty();
 		}
 
-		SizingMode getSizingMode() const {
+		SizingPolicy getSizingPolicy() const {
 			return _sizingMode;
 		}
 

@@ -123,6 +123,47 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	rootPanel->setDimensions({ 800, 600 });
 	rootPanel->setColor(COLOR_WHITE);
 
+	auto dockRoot = rootPanel->addChild<DockSplitter>("Vertical Split");
+	dockRoot->setSplitDirection(SplitDirection::Vertical);
+	dockRoot->setSizingPolicy(SizingPolicy::FitToParent);
+	//dockRoot->setArea({ 100, 100, 400, 200 });
+
+	auto target2 = std::make_shared<DockSplitter>();
+	//target2->setColor(nvgRGBA(0, 255, 0, 255));
+	target2->setSplitDirection(SplitDirection::Horizontal);
+	target2->setSizingPolicy(SizingPolicy::FitToParent);
+	dockRoot->addItem(target2, 0);
+
+	auto target3 = std::make_shared<PanelView>();
+	target3->setColor(nvgRGBA(255, 0, 0, 255));
+	target3->setSizingPolicy(SizingPolicy::FitToParent);
+	dockRoot->addItem(target3, 0);
+
+	auto target4 = std::make_shared<PanelView>();
+	target4->setColor(nvgRGBA(0, 0, 255, 255));
+	target4->setSizingPolicy(SizingPolicy::FitToParent);
+	dockRoot->addItem(target4, 0);
+
+	auto target5 = std::make_shared<PanelView>();
+	target5->setColor(nvgRGBA(255, 0, 0, 255));
+	target5->setSizingPolicy(SizingPolicy::FitToParent);
+	target2->addItem(target5, 0);
+
+	auto target6 = std::make_shared<PanelView>();
+	target6->setColor(nvgRGBA(0, 255, 0, 255));
+	target6->setSizingPolicy(SizingPolicy::FitToParent);
+	target2->addItem(target6, 0);
+
+
+	auto target7 = std::make_shared<PanelView>();
+	target7->setColor(nvgRGBA(0, 0, 255, 255));
+	target7->setSizingPolicy(SizingPolicy::FitToParent);
+	target2->addItem(target7, 0);
+
+
+	//target2->setFocusPolicy(FocusPolicy::Click);
+
+	/*
 	auto target = rootPanel->addChild<DropZone>("Red");
 	target->setArea({ 300, 100, 450, 300 });
 	target->setColor(nvgRGBA(255, 0, 0, 255));
@@ -143,7 +184,7 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	handle1->setDraggable(true);
 	PanelViewPtr content1 = std::make_shared<PanelView>();
 	content1->setName("Green");
-	content1->setSizingMode(SizingMode::FitToParent);
+	content1->setSizingPolicy(SizingPolicy::FitToParent);
 	content1->setColor(COLOR_GREEN);
 	handle1->addChild(content1);*/
 
@@ -152,7 +193,7 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	handle2->setDraggable(true);
 	DockPanelPtr content2 = std::make_shared<DockPanel>();
 	content2->setName("Blue");
-	content2->setSizingMode(SizingMode::FitToParent);
+	content2->setSizingPolicy(SizingPolicy::FitToParent);
 	//content2->setColor(COLOR_BLUE);
 	handle2->addChild(content2);
 
@@ -161,16 +202,16 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	handle3->setDraggable(true);
 	DockPanelPtr content3 = std::make_shared<DockPanel>();
 	content3->setName("Red");
-	content3->setSizingMode(SizingMode::FitToParent);
+	content3->setSizingPolicy(SizingPolicy::FitToParent);
 	//content3->setColor(COLOR_RED);
 	handle3->addChild(content3);*/
 
 	
 
 	/*auto dockLeft = std::make_shared<DockWindow>();
-	dockLeft->setSizingMode(SizingMode::FitToParent);
+	dockLeft->setSizingPolicy(SizingPolicy::FitToParent);
 	auto dockRight = std::make_shared<DockWindow>();
-	dockRight->setSizingMode(SizingMode::FitToParent);
+	dockRight->setSizingPolicy(SizingPolicy::FitToParent);
 
 	target->addItem(dockLeft, 0);
 	target->addItem(dockRight, 0);*/
@@ -179,22 +220,22 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	//_waveView->setDimensions({ 800, 600 });
 
 	/*_dock = _view.addChild<Dock>("Dock Root");
-	_dock->setSizingMode(SizingMode::FitToParent);
+	_dock->setSizingPolicy(SizingPolicy::FitToParent);
 
 	auto dockRoot = std::make_shared<VerticalSplitter>();
 	dockRoot->setSplitDirection(SplitDirection::Vertical);
 	_dock->setRoot(dockRoot);
 
 	auto dockMiddle = std::make_shared<VerticalSplitter>();
-	dockMiddle->setSizingMode(SizingMode::FitToParent);
+	dockMiddle->setSizingPolicy(SizingPolicy::FitToParent);
 	dockMiddle->setSplitDirection(SplitDirection::Horizontal);
 
 	auto dockTop = std::make_shared<DockWindow>();
-	dockTop->setSizingMode(SizingMode::FitToParent);
+	dockTop->setSizingPolicy(SizingPolicy::FitToParent);
 	auto dockCenter = std::make_shared<DockWindow>();
-	dockCenter->setSizingMode(SizingMode::FitToParent);
+	dockCenter->setSizingPolicy(SizingPolicy::FitToParent);
 	auto dockBottom = std::make_shared<DockWindow>();
-	dockBottom->setSizingMode(SizingMode::FitToParent);
+	dockBottom->setSizingPolicy(SizingPolicy::FitToParent);
 
 	dockMiddle->addItem(dockTop, 0);
 	dockMiddle->addItem(dockCenter, 0);
@@ -202,13 +243,13 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 
 	
 	auto dockLeft = std::make_shared<DockWindow>();
-	dockLeft->setSizingMode(SizingMode::FitToParent);
+	dockLeft->setSizingPolicy(SizingPolicy::FitToParent);
 	dockRoot->addItem(dockLeft, 0);
 
 	dockRoot->addItem(dockMiddle, 0);
 
 	auto dockRight = std::make_shared<DockWindow>();
-	dockRight->setSizingMode(SizingMode::FitToParent);
+	dockRight->setSizingPolicy(SizingPolicy::FitToParent);
 	dockRoot->addItem(dockRight, 0);	*/
 
 	//_splitter = _view.addChild<VerticalSplitter>("Splitter");

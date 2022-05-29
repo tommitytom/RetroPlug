@@ -15,7 +15,7 @@ using namespace rp;
 
 SystemView::SystemView() : TextureView(), _frameBuffer(160, 144) {
 	setType<SystemView>();
-	setSizingMode(SizingMode::None);
+	setSizingPolicy(SizingPolicy::None);
 }
 
 bool SystemView::onDrop(const std::vector<std::string>& paths) {

@@ -39,7 +39,7 @@ namespace rp {
 		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {
 			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
-			setSizingMode(SizingMode::FitToParent);
+			setSizingPolicy(SizingPolicy::FitToParent);
 		}
 
 		~LsdjOverlay() {}
