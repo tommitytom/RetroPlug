@@ -86,9 +86,9 @@ namespace rp {
 
 		T magnitude() const { 
 			if (std::is_integral_v<T>) {
-				return sqrt((x * x) + (y * y));
+				return (T)sqrt((x * x) + (y * y));
 			} else {
-				return sqrtf((x * x) + (y * y));
+				return (T)sqrtf((f32)((x * x) + (y * y)));
 			}
 		}
 

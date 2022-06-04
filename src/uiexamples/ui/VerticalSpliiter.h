@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "ui/View.h"
+#include "ui/Colors.h"
 
 namespace rp {
 	class PanelView : public View {
@@ -69,6 +70,14 @@ namespace rp {
 			return _direction;
 		}
 
+		template <typename T>
+		std::shared_ptr<T> addItem(std::string_view name, size_t offset) {
+			auto item = std::make_shared<T>();
+			item->setName(name);
+			addItem(item, offset);
+			return item;
+		}
+
 		void addItem(ViewPtr view, size_t offset) {
 			if (_panels.size()) {
 				_handleAreas.push_back({});
@@ -101,6 +110,8 @@ namespace rp {
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
 			bool handled = false;
+
+			updateLayout();
 
 			if (button == MouseButton::Left) {
 				if (down) {
@@ -204,10 +215,10 @@ namespace rp {
 			NVGcontext* vg = getVg();
 			auto res = getDimensions();
 
-			drawRect(res, nvgRGBA(100, 100, 100, 255));
+			drawRect(res, RP_COLOR_BACKGROUND);
 
 			for (size_t i = 0; i < _handleAreas.size(); ++i) {
-				drawRect(_handleAreas[i], _mouseOverIndex != (int32)i ? nvgRGBA(255, 255, 0, 255) : nvgRGBA(0, 255, 255, 255));
+				drawRect(_handleAreas[i], _mouseOverIndex != (int32)i ? RP_COLOR_FOREGROUND : RP_COLOR_FOREGROUND2);
 			}
 		}
 

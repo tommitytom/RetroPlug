@@ -261,7 +261,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	offsets[0] = sampleDataOffset;
 
 	for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
-		uint32 sampleNameOffset = lsdj::Kit::SAMPLE_NAME_SIZE * i;
+		uint32 sampleNameOffset = (uint32)(lsdj::Kit::SAMPLE_NAME_SIZE * i);
 
 		if (i < targets.size()) {
 			// Write name

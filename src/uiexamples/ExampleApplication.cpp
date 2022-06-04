@@ -118,12 +118,49 @@ public:
 	}
 };
 
-ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
-	auto rootPanel = _view.addChild<PanelView>("Root Panel");
-	rootPanel->setDimensions({ 800, 600 });
-	rootPanel->setColor(COLOR_WHITE);
+#include "ui/TabView.h"
+#include "ui/Colors.h"
 
-	auto dockRoot = rootPanel->addChild<DockSplitter>("Vertical Split");
+#include "ui/dock/DockTabView.h"
+
+ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
+	auto rootPanel = _view.addChild<Dock>("Root Panel");
+	//rootPanel->setDimensions({ 800, 600 });
+	rootPanel->setSizingPolicy(SizingPolicy::FitToParent);
+	//rootPanel->setColor(COLOR_WHITE);
+
+	
+
+	auto dockRoot = std::make_shared<DockSplitter>();
+	dockRoot->setName("Vertical Split");
+	dockRoot->setSplitDirection(SplitDirection::Vertical);
+	dockRoot->setSizingPolicy(SizingPolicy::FitToParent);
+	//dockRoot->setArea({ 100, 100, 400, 200 });
+
+	rootPanel->setRoot(dockRoot);
+
+	auto left = dockRoot->addItem<PanelView>("LeftPanel", 0);
+	left->setColor(RP_COLOR_BACKGROUND);
+	left->setSizingPolicy(SizingPolicy::FitToParent);
+
+	auto tabArea = dockRoot->addItem<DockTabView>("Tab Area", 1);
+	tabArea->setSizingPolicy(SizingPolicy::FitToParent);
+
+	auto right = dockRoot->addItem<PanelView>("RightPanel", 2);
+	right->setColor(RP_COLOR_BACKGROUND);
+	right->setSizingPolicy(SizingPolicy::FitToParent);
+
+	rootPanel->setLayoutDirty();
+
+	auto tab1 = tabArea->addChild<PanelView>("Red");
+	tab1->setColor(nvgRGBA(255, 0, 0, 255));
+	tab1->setSizingPolicy(SizingPolicy::FitToParent);
+
+	auto tab2 = tabArea->addChild<PanelView>("Green");
+	tab2->setColor(nvgRGBA(0, 255, 0, 255));
+	tab2->setSizingPolicy(SizingPolicy::FitToParent);
+
+	/*auto dockRoot = rootPanel->addChild<DockSplitter>("Vertical Split");
 	dockRoot->setSplitDirection(SplitDirection::Vertical);
 	dockRoot->setSizingPolicy(SizingPolicy::FitToParent);
 	//dockRoot->setArea({ 100, 100, 400, 200 });
@@ -154,106 +191,10 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	target6->setSizingPolicy(SizingPolicy::FitToParent);
 	target2->addItem(target6, 0);
 
-
 	auto target7 = std::make_shared<PanelView>();
 	target7->setColor(nvgRGBA(0, 0, 255, 255));
 	target7->setSizingPolicy(SizingPolicy::FitToParent);
-	target2->addItem(target7, 0);
-
-
-	//target2->setFocusPolicy(FocusPolicy::Click);
-
-	/*
-	auto target = rootPanel->addChild<DropZone>("Red");
-	target->setArea({ 300, 100, 450, 300 });
-	target->setColor(nvgRGBA(255, 0, 0, 255));
-	//target->setFocusPolicy(FocusPolicy::Click);
-
-	auto target2 = target->addChild<DraggablePanel>("Green");
-	target2->setArea({ 10, 10, 200, 200 });
-	target2->setColor(nvgRGBA(0, 255, 0, 255));
-	target2->setFocusPolicy(FocusPolicy::Click);
-
-	auto target3 = target->addChild<PanelView>("Blue");
-	target3->setArea({ 40, 100, 200, 50 });
-	target3->setColor(nvgRGBA(0, 0, 255, 255));
-	//target3->setFocusPolicy(FocusPolicy::Click);
-
-	/*auto handle1 = rootPanel->addChild<DockPanel>("Handle 1");
-	handle1->setArea({ 100, 100, 100, 100 });
-	handle1->setDraggable(true);
-	PanelViewPtr content1 = std::make_shared<PanelView>();
-	content1->setName("Green");
-	content1->setSizingPolicy(SizingPolicy::FitToParent);
-	content1->setColor(COLOR_GREEN);
-	handle1->addChild(content1);*/
-
-	/*auto handle2 = rootPanel->addChild<DockWindow>("Handle 2");
-	handle2->setArea({ 100, 300, 100, 100 });
-	handle2->setDraggable(true);
-	DockPanelPtr content2 = std::make_shared<DockPanel>();
-	content2->setName("Blue");
-	content2->setSizingPolicy(SizingPolicy::FitToParent);
-	//content2->setColor(COLOR_BLUE);
-	handle2->addChild(content2);
-
-	auto handle3 = rootPanel->addChild<DockWindow>("Handle 3");
-	handle3->setArea({ 100, 500, 100, 100 });
-	handle3->setDraggable(true);
-	DockPanelPtr content3 = std::make_shared<DockPanel>();
-	content3->setName("Red");
-	content3->setSizingPolicy(SizingPolicy::FitToParent);
-	//content3->setColor(COLOR_RED);
-	handle3->addChild(content3);*/
-
-	
-
-	/*auto dockLeft = std::make_shared<DockWindow>();
-	dockLeft->setSizingPolicy(SizingPolicy::FitToParent);
-	auto dockRight = std::make_shared<DockWindow>();
-	dockRight->setSizingPolicy(SizingPolicy::FitToParent);
-
-	target->addItem(dockLeft, 0);
-	target->addItem(dockRight, 0);*/
-
-	//_waveView = _view.addChild<WaveView>("Wave View");
-	//_waveView->setDimensions({ 800, 600 });
-
-	/*_dock = _view.addChild<Dock>("Dock Root");
-	_dock->setSizingPolicy(SizingPolicy::FitToParent);
-
-	auto dockRoot = std::make_shared<VerticalSplitter>();
-	dockRoot->setSplitDirection(SplitDirection::Vertical);
-	_dock->setRoot(dockRoot);
-
-	auto dockMiddle = std::make_shared<VerticalSplitter>();
-	dockMiddle->setSizingPolicy(SizingPolicy::FitToParent);
-	dockMiddle->setSplitDirection(SplitDirection::Horizontal);
-
-	auto dockTop = std::make_shared<DockWindow>();
-	dockTop->setSizingPolicy(SizingPolicy::FitToParent);
-	auto dockCenter = std::make_shared<DockWindow>();
-	dockCenter->setSizingPolicy(SizingPolicy::FitToParent);
-	auto dockBottom = std::make_shared<DockWindow>();
-	dockBottom->setSizingPolicy(SizingPolicy::FitToParent);
-
-	dockMiddle->addItem(dockTop, 0);
-	dockMiddle->addItem(dockCenter, 0);
-	dockMiddle->addItem(dockBottom, 0);
-
-	
-	auto dockLeft = std::make_shared<DockWindow>();
-	dockLeft->setSizingPolicy(SizingPolicy::FitToParent);
-	dockRoot->addItem(dockLeft, 0);
-
-	dockRoot->addItem(dockMiddle, 0);
-
-	auto dockRight = std::make_shared<DockWindow>();
-	dockRight->setSizingPolicy(SizingPolicy::FitToParent);
-	dockRoot->addItem(dockRight, 0);	*/
-
-	//_splitter = _view.addChild<VerticalSplitter>("Splitter");
-	//_splitter->setDimensions({ 800, 600 });
+	target2->addItem(target7, 0);*/
 
 	//generateWaveform();
 
@@ -308,12 +249,12 @@ void ExampleApplication::onFrame(f64 delta) {
 	_view.onUpdate((f32)delta);
 	_view.onRender();
 
-	nvgFontSize(vg, 12.0f);
+	/*nvgFontSize(vg, 12.0f);
 	nvgFontFace(vg, "Roboto-Regular");
 	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
 	nvgFillColor(vg, nvgRGBA(255, 0, 0, 255));
 	nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 255));
-	nvgText(vg, 0, 0, "Hello world!", NULL);
+	nvgText(vg, 0, 0, "Hello world!", NULL);*/
 
 	nvgEndFrame(_vg);
 

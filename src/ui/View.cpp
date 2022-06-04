@@ -5,11 +5,13 @@
 using namespace rp;
 
 void View::drawRect(const RectT<f32>& area, const NVGcolor& color) {
-	NVGcontext* vg = getVg();
-	nvgBeginPath(vg);
-	nvgRect(vg, area.x, area.y, area.w, area.h);
-	nvgFillColor(vg, color);
-	nvgFill(vg);
+	if (area.w > 0 && area.h > 0) {
+		NVGcontext* vg = getVg();
+		nvgBeginPath(vg);
+		nvgRect(vg, area.x, area.y, area.w, area.h);
+		nvgFillColor(vg, color);
+		nvgFill(vg);
+	}
 }
 
 void View::drawText(f32 x, f32 y, std::string_view text, const NVGcolor& color) {

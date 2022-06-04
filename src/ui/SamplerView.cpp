@@ -45,7 +45,7 @@ void SamplerView::setSystem(SystemWrapperPtr& system) {
 
 		for (auto& kit : model->kits) {
 			if (kit.first < selectedKit) {
-				selectedKit = kit.first;
+				selectedKit = (int32)kit.first;
 			}
 		}
 

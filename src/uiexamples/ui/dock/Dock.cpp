@@ -21,6 +21,7 @@ void Dock::setRoot(ViewPtr root) {
 
 	addChild(root);
 	_dockedRoot = root;
+	root->pushToBack();
 
 	root->setSizingPolicy(SizingPolicy::FitToParent);
 	root->setDimensions(getDimensions());
