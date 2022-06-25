@@ -211,7 +211,7 @@ void LsdjOverlay::onUpdate(f32 delta) {
 	}*/
 }
 
-void LsdjOverlay::onRender() {
+void LsdjOverlay::onRender(Canvas& canvas) {
 	_canvas.clear();
 	//_canvas.text(0, 0, "SHIT", lsdj::ColorSets::Normal);
 
@@ -220,5 +220,5 @@ void LsdjOverlay::onRender() {
 		_refresher.getOverlay()->getBuffer().copyTo(&target.getBuffer());
 	}*/
 
-	LsdjCanvasView::onRender();
+	LsdjCanvasView::onRender(canvas);
 }

@@ -2,6 +2,7 @@
 
 #include <nanovg.h>
 
+#include "ui/Canvas.h"
 #include "ui/View.h"
 
 #include "DockPanel.h"
@@ -40,8 +41,8 @@ namespace rp {
 			updateLayout();
 		}
 
-		void onRender() override {
-			drawRect(getDimensions(), nvgRGBA(100, 100, 100, 255));
+		void onRender(Canvas& canvas) override {
+			canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 		}
 
 		void onDragStart() override {

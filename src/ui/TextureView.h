@@ -17,7 +17,7 @@ namespace rp {
 
 		void setImage(const Image& image);
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 
 		void destroyTexture();
 	};

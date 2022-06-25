@@ -2,6 +2,7 @@
 
 #include <nanovg.h>
 
+#include "ui/Canvas.h"
 #include "ui/Colors.h"
 
 using namespace rp;
@@ -85,11 +86,11 @@ bool TabView::onMouseButton(MouseButton::Enum button, bool down, Point position)
 	return false;
 }
 
-void TabView::onRender() {
-	drawRect(getDimensions(), RP_COLOR_BACKGROUND);
+void TabView::onRender(Canvas& canvas) {
+	canvas.fillRect(getDimensions(), RP_COLOR_BACKGROUND);
 
 	if (_showHeader) {
-		drawRect(_titleArea, RP_COLOR_FOREGROUND);
+		canvas.fillRect(_titleArea, RP_COLOR_FOREGROUND);
 	}
 
 	if (_panels.size() < 2) {
@@ -103,7 +104,7 @@ void TabView::onRender() {
 			}
 		}
 
-		drawText(0, 0, contentName, nvgRGBA(255, 255, 255, 255));
+		canvas.text(0, 0, contentName, RP_COLOR_WHITE);
 	} else {
 		const f32 tabWidth = 120;
 		f32 tabOffset = 0;
@@ -118,12 +119,13 @@ void TabView::onRender() {
 			}
 
 			if (_panelIdx == i) {
-				drawRect(_tabAreas[i], RP_COLOR_HIGHLIGHT);
-			} else if (_mouseOverTabIdx == i) {
-				drawRect(_tabAreas[i], RP_COLOR_HIGHLIGHT2);
+				canvas.fillRect(_tabAreas[i], RP_COLOR_HIGHLIGHT);
+			}
+			else if (_mouseOverTabIdx == i) {
+				canvas.fillRect(_tabAreas[i], RP_COLOR_HIGHLIGHT2);
 			}
 
-			drawText(tabOffset, 0, tabName, nvgRGBA(255, 255, 255, 255));
+			canvas.text(tabOffset, 0, tabName, RP_COLOR_WHITE);
 			tabOffset += tabWidth;
 		}
 	}

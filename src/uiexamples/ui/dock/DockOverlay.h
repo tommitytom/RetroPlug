@@ -40,7 +40,7 @@ namespace rp {
 			return false;
 		}
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 	};
 
 	using DockOverlayPtr = std::shared_ptr<DockOverlay>;

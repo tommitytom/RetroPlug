@@ -13,7 +13,6 @@
 #include <spdlog/spdlog.h>
 
 #include "util/fs.h"
-#include "fonts/Roboto-Regular.h"
 
 #include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
@@ -123,6 +122,8 @@ public:
 
 #include "ui/dock/DockTabView.h"
 
+#include "uiexamples/Scene.h"
+
 ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : Application(name, w, h) {
 	auto rootPanel = _view.addChild<Dock>("Root Panel");
 	//rootPanel->setDimensions({ 800, 600 });
@@ -153,11 +154,11 @@ ExampleApplication::ExampleApplication(const char* name, int32 w, int32 h) : App
 	rootPanel->setLayoutDirty();
 
 	auto tab1 = tabArea->addChild<PanelView>("Red");
-	tab1->setColor(nvgRGBA(255, 0, 0, 255));
+	tab1->setColor(Color4(255, 0, 0, 255));
 	tab1->setSizingPolicy(SizingPolicy::FitToParent);
 
 	auto tab2 = tabArea->addChild<PanelView>("Green");
-	tab2->setColor(nvgRGBA(0, 255, 0, 255));
+	tab2->setColor(Color4(0, 255, 0, 255));
 	tab2->setSizingPolicy(SizingPolicy::FitToParent);
 
 	/*auto dockRoot = rootPanel->addChild<DockSplitter>("Vertical Split");
@@ -210,14 +211,11 @@ bool isApproximately(f32 v, f32 target, f32 epsilon) {
 
 void ExampleApplication::onInit() {
 	bgfx::setViewClear(kClearView, BGFX_CLEAR_COLOR);
-	bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
+	//bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
 
-	_vg = nvgCreate(0, 0);
-	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
+	bgfx::setViewRect(kClearView, 0, 0, 800, 600);
 
-	nvgCreateFontMem(_vg, "Roboto-Regular", Roboto_Regular, (int)Roboto_Regular_len, 0);
-
-	_view.setVg(_vg);
+	_canvas.init();
 
 	_audioManager.setCallback([&](f32* output, const f32* input, uint32 frameCount) {
 		_audioProcessor->process(output, input, frameCount);
@@ -235,19 +233,25 @@ void ExampleApplication::onInit() {
 	});
 
 	_audioManager.start();
+
+	_scene.init();
 }
 
 void ExampleApplication::onFrame(f64 delta) {
 	bgfx::touch(kClearView);
 
-	NVGcontext* vg = _vg;
 	DimensionT<uint32> res = getResolution();
-	_view.setDimensions((Dimension)res);
 
-	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
+	bgfx::setViewRect(kClearView, 0, 0, res.w, res.h);
+
+	/*_view.setDimensions((Dimension)res);
+	* 
+	* 
+
+	_canvas.beginRender((Dimension)res, 1.0f);
 
 	_view.onUpdate((f32)delta);
-	_view.onRender();
+	_view.onRender(_canvas);*/
 
 	/*nvgFontSize(vg, 12.0f);
 	nvgFontFace(vg, "Roboto-Regular");
@@ -256,10 +260,10 @@ void ExampleApplication::onFrame(f64 delta) {
 	nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 255));
 	nvgText(vg, 0, 0, "Hello world!", NULL);*/
 
-	nvgEndFrame(_vg);
+	//_canvas.endRender();
 
-	/*bgfx::dbgTextClear();
-	bgfx::dbgTextImage(bx::max<uint16_t>(uint16_t(res.w / 2 / 8), 20) - 20, bx::max<uint16_t>(uint16_t(res.h/ 2 / 16), 6) - 6, 40, 12, s_logo, 160);
+	bgfx::dbgTextClear();
+	//bgfx::dbgTextImage(bx::max<uint16_t>(uint16_t(res.w / 2 / 8), 20) - 20, bx::max<uint16_t>(uint16_t(res.h/ 2 / 16), 6) - 6, 40, 12, s_logo, 160);
 	bgfx::dbgTextPrintf(0, 0, 0x0f, "Press F1 to toggle stats.");
 	bgfx::dbgTextPrintf(0, 1, 0x0f, "Color can be changed with ANSI \x1b[9;me\x1b[10;ms\x1b[11;mc\x1b[12;ma\x1b[13;mp\x1b[14;me\x1b[0m code too.");
 	bgfx::dbgTextPrintf(80, 1, 0x0f, "\x1b[;0m    \x1b[;1m    \x1b[; 2m    \x1b[; 3m    \x1b[; 4m    \x1b[; 5m    \x1b[; 6m    \x1b[; 7m    \x1b[0m");
@@ -267,10 +271,12 @@ void ExampleApplication::onFrame(f64 delta) {
 	const bgfx::Stats* stats = bgfx::getStats();
 	bgfx::dbgTextPrintf(0, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.", stats->width, stats->height, stats->textWidth, stats->textHeight);
 	// Enable stats or debug text.
-	bgfx::setDebug(s_showStats ? BGFX_DEBUG_STATS : BGFX_DEBUG_TEXT);*/
+	bgfx::setDebug(s_showStats ? BGFX_DEBUG_STATS : BGFX_DEBUG_TEXT);
+
+	_scene.render();
 
 	// Advance to next frame. Process submitted rendering primitives.
-	bgfx::frame();
+	//bgfx::frame();
 
 	//setResolution(_view.getDimensions());
 }

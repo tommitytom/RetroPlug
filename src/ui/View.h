@@ -16,6 +16,7 @@ struct NVGcontext;
 struct NVGcolor;
 
 namespace rp {
+	class Canvas;
 	class Menu;
 	class View;
 	using ViewPtr = std::shared_ptr<View>;
@@ -66,7 +67,6 @@ namespace rp {
 		std::vector<ViewPtr> _children;
 		Rect _area;
 		f32 _alpha = 1.0f;
-		NVGcontext* _vg = nullptr;
 		bool _initialized = false;
 		bool _visible = true;
 
@@ -121,7 +121,7 @@ namespace rp {
 
 		virtual void onUpdate(f32 delta) {}
 
-		virtual void onRender() {}
+		virtual void onRender(Canvas& canvas) {}
 
 		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
 
@@ -322,7 +322,6 @@ namespace rp {
 
 			view->_parent = this;
 			view->setShared(_shared);
-			view->setVg(_vg);
 
 			if (!view->_initialized) {
 				view->onInitialized();
@@ -526,10 +525,6 @@ namespace rp {
 			return _alpha;
 		}
 
-		NVGcontext* getVg() {
-			return _vg;
-		}
-
 		template <typename T>
 		bool isType() const {
 			return _type == entt::type_id<T>();
@@ -555,14 +550,6 @@ namespace rp {
 			return _name;
 		}
 
-		void setVg(NVGcontext* vg) {
-			_vg = vg;
-
-			for (ViewPtr& view : _children) {
-				view->setVg(vg);
-			}
-		}
-
 		Point getReleativePosition(ViewPtr& parent, Point position) {
 			assert(parent != shared_from_this());
 			assert(getParent() != nullptr);
@@ -584,19 +571,6 @@ namespace rp {
 		void setType() {
 			_type = entt::type_id<T>();
 		}
-
-		template <typename T>
-		void drawRect(const DimensionT<T>& area, const NVGcolor& color) {
-			drawRect(RectT<f32> { 0.0f, 0.0f, (f32)area.w, (f32)area.h }, color);
-		}
-
-		void drawRect(const Rect& area, const NVGcolor& color) {
-			drawRect(static_cast<RectT<f32>>(area), color);
-		}
-
-		void drawRect(const RectT<f32>& area, const NVGcolor& color);
-
-		void drawText(f32 x, f32 y, std::string_view text, const NVGcolor& color);
 
 	private:
 		void setShared(Shared* shared) {

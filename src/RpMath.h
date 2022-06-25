@@ -16,7 +16,7 @@ namespace rp {
 		uint8 b = 0;
 		uint8 a = 0;
 
-		Color4() {}
+		Color4() = default;
 		Color4(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255): r(_r), g(_g), b(_b), a(_a) {}
 		Color4(const Color3& other) : r(other.r), g(other.g), b(other.b), a(255) {}
 		Color4(const Color4& other): r(other.r), g(other.g), b(other.b), a(other.a) {}
@@ -25,6 +25,26 @@ namespace rp {
 			return r == color.r && g == color.g && b == color.b && a == color.a;
 		}
 	};
+
+	struct Color4F {
+		f32 r = 0;
+		f32 g = 0;
+		f32 b = 0;
+		f32 a = 0;
+
+		Color4F() = default;
+		Color4F(f32 _r, f32 _g, f32 _b, f32 _a = 1) : r(_r), g(_g), b(_b), a(_a) {}
+		Color4F(const Color3& other) : r(other.r / 255.0f), g(other.g / 255.0f), b(other.b / 255.0f), a(1) {}
+		Color4F(const Color4& other) : r(other.r / 255.0f), g(other.g / 255.0f), b(other.b / 255.0f), a(other.a / 255.0f) {}
+
+		bool operator==(Color4F color) const {
+			return r == color.r && g == color.g && b == color.b && a == color.a;
+		}
+	};
+
+	const static Color4F COLOR_RED = Color4F(1.0f, 0.0f, 0.0f, 1.0f);
+	const static Color4F COLOR_GREEN = Color4F(0.0f, 1.0f, 0.0f, 1.0f);
+	const static Color4F COLOR_BLUE = Color4F(0.0f, 0.0f, 1.0f, 1.0f);
 
 	template <typename T>
 	struct PointT {
@@ -57,6 +77,10 @@ namespace rp {
 			x += value;
 			y += value;
 			return *this;
+		}
+
+		PointT operator-() {
+			return { -x, -y };
 		}
 
 		PointT operator-(const PointT& other) {

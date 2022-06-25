@@ -44,7 +44,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 
 		void setUnselectedAlpha(f32 alpha) {
 			_unselectedAlpha = alpha;

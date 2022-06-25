@@ -19,9 +19,9 @@ namespace rp {
 
 		~LsdjCanvasView() {}
 
-		virtual void onRender() override {
+		virtual void onRender(Canvas& canvas) override {
 			setImage(_canvas.getRenderTarget());			
-			TextureView::onRender();
+			TextureView::onRender(canvas);
 		}
 	};
 }

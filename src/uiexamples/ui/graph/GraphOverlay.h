@@ -9,7 +9,7 @@ namespace rp {
 		GraphOverlay(Dimension dimensions) : View(dimensions) { setType<GraphOverlay>(); }
 		~GraphOverlay() { }
 
-		void onRender() override {
+		void onRender(Canvas& canvas) override {
 
 		}
 	};

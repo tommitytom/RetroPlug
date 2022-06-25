@@ -1,5 +1,6 @@
 #include "GridOverlay.h"
 
+#include "ui/Canvas.h"
 #include "util/StlUtil.h"
 
 using namespace rp;
@@ -135,17 +136,12 @@ void GridOverlay::onUpdate(f32 delta) {
 	}
 }
 
-void GridOverlay::onRender() {
+void GridOverlay::onRender(Canvas& canvas) {
 	if (_highlightMode == HighlightMode::Outline && _selected != INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
-		NVGcontext* vg = getVg();
 		ViewPtr child = _grid->getChild(_selected);
 		auto childArea = child->getArea();
 
-		nvgBeginPath(vg);
-		nvgRect(vg, (f32)childArea.x + 0.5f, (f32)childArea.y, (f32)childArea.w - 0.5f, (f32)childArea.h - 0.5f);
-		nvgStrokeWidth(vg, 0.5f);
-		nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 220));
-		nvgStroke(vg);
+		canvas.strokeRect(childArea, COLOR_RED);
 	}
 }
 

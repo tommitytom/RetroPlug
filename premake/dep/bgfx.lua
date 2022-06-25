@@ -7,12 +7,27 @@ local BIMG_DIR = "thirdparty/bimg";
 local BGFX_DIR = "thirdparty/bgfx";
 
 function m.includeBx()
-	defines { "__STDC_FORMAT_MACROS", "BX_CONFIG_CRT_DIRECTORY_READER=0" }
+	defines {
+		"__STDC_FORMAT_MACROS",
+		"BX_CONFIG_CRT_DIRECTORY_READER=0"
+	}
 
 	sysincludedirs {
 		BX_DIR .. "/3rdparty",
-		BX_DIR .. "/include"
+		BX_DIR .. "/include",
+		BX_DIR .. "/include/compat/msvc"
 	}
+
+	filter "configurations:Debug"
+		defines { "BX_CONFIG_DEBUG=1" }
+
+	filter "configurations:Development"
+		defines { "BX_CONFIG_DEBUG=1" }
+
+	filter "configurations:Release"
+		defines { "BX_CONFIG_DEBUG=0" }
+
+	filter {}
 end
 
 function m.includeBimg()
@@ -20,7 +35,8 @@ function m.includeBimg()
 		BIMG_DIR .. "/include",
 		BIMG_DIR .. "/3rdparty",
 		BIMG_DIR .. "/3rdparty/astc-codec",
-		BIMG_DIR .. "/3rdparty/astc-codec/include"
+		BIMG_DIR .. "/3rdparty/astc-codec/include",
+		BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz"
 	}
 end
 
@@ -83,7 +99,7 @@ end
 function m.bxProject()
 	project "bx"
 		kind "StaticLib"
-		cppdialect "C++2a"
+		cppdialect "C++14"
 		exceptionhandling "Off"
 		rtti "Off"
 
@@ -105,7 +121,7 @@ end
 function m.bimgProject()
 	project "bimg"
 		kind "StaticLib"
-		cppdialect "C++2a"
+		cppdialect "C++14"
 		exceptionhandling "Off"
 		rtti "Off"
 
@@ -132,7 +148,7 @@ end
 function m.bgfxProject()
 	project "bgfx"
 		kind "StaticLib"
-		cppdialect "C++2a"
+		cppdialect "C++14"
 		exceptionhandling "Off"
 		rtti "Off"
 

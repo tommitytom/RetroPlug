@@ -104,7 +104,7 @@ namespace rp {
 			updateLayout();
 		}
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 
 		bool onMouseMove(Point pos) override {
 			_mouseOverHeader = _titleArea.contains(pos);

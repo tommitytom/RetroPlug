@@ -50,8 +50,8 @@ bool WaveView::onMouseScroll(PointT<f32> delta, Point position) {
 	return true;
 }
 
-void WaveView::onRender() {
-	f32 scaleFactor = getScalingFactor();
+void WaveView::onRender(Canvas& canvas) {
+	/*f32 scaleFactor = getScalingFactor();
 	RectT<f32> area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
 	f32 pixelWidth = 1.0f / scaleFactor;
 	f32 yMid = area.bottom() / 2;
@@ -119,5 +119,5 @@ void WaveView::onRender() {
 				}
 			}
 		}
-	}
+	}*/
 }

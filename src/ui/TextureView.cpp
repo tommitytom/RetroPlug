@@ -6,9 +6,7 @@
 using namespace rp;
 
 void TextureView::setImage(const Image& image) {
-	NVGcontext* vg = getVg();
-
-	if (_textureHandle == -1 || _textureSize != image.dimensions()) {
+	/*if (_textureHandle == -1 || _textureSize != image.dimensions()) {
 		destroyTexture();
 		_textureHandle = nvgCreateImageRGBA(vg, image.w(), image.h(), NVG_IMAGE_NEAREST, (const unsigned char*)image.getData());
 		_textureSize = image.dimensions();
@@ -18,11 +16,11 @@ void TextureView::setImage(const Image& image) {
 		}
 	} else {
 		nvgUpdateImage(vg, _textureHandle, (const unsigned char*)image.getData());
-	}
+	}*/
 }
 
-void TextureView::onRender() {
-	if (_textureHandle != -1) {
+void TextureView::onRender(Canvas& canvas) {
+	/*if (_textureHandle != -1) {
 		NVGcontext* vg = getVg();
 		RectT<f32> areaf;
 		areaf.dimensions = (DimensionF)getDimensions();
@@ -33,12 +31,12 @@ void TextureView::onRender() {
 		nvgRect(vg, areaf.x, areaf.y, areaf.w, areaf.h);
 		nvgFillPaint(vg, imgPaint);
 		nvgFill(vg);
-	}
+	}*/
 }
 
 void TextureView::destroyTexture() {
 	if (_textureHandle != -1) {
-		nvgDeleteImage(getVg(), _textureHandle);
+		//nvgDeleteImage(getVg(), _textureHandle);
 		_textureHandle = -1;
 	}
 }

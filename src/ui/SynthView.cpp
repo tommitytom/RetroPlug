@@ -117,7 +117,7 @@ void SynthView::updateWaveform(lsdj::Song& song) {
 	}
 }
 
-void SynthView::onRender() {
+void SynthView::onRender(Canvas& canvas) {
 	if (!_system) {
 		return;
 	}
@@ -125,7 +125,6 @@ void SynthView::onRender() {
 	MemoryAccessor savData = _system->getMemory(MemoryType::Sram, AccessType::ReadWrite);
 	if (!savData.isValid()) {
 		return;
-		
 	}
 
 	lsdj::Song song((uint8*)savData.getData());
@@ -193,11 +192,11 @@ void SynthView::onRender() {
 	_ui.popColumn();
 	_ui.endFrame();
 
-	LsdjCanvasView::onRender();
+	LsdjCanvasView::onRender(canvas);
 }
 
 void SynthView::setWaveform(Float32Buffer& samples) {
 	/*WaveformBuffer waveform(_waveView->getExpectedSampleCount());
 	WaveformUtil::generate(samples, waveform);
-_waveView->setWaveform(std::move(waveform));*/
+	_waveView->setWaveform(std::move(waveform));*/
 }

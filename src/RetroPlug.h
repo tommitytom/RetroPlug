@@ -42,11 +42,6 @@ namespace rp {
 			return _uiContext;
 		}
 
-		void setNvgContext(NVGcontext* context) {
-			_context = context;
-			_uiContext.setNvgContext(context);
-		}
-
 		void setAudioManager(AudioManager& audioManager) {
 			_uiContext.setAudioManager(audioManager);
 		}

@@ -18,7 +18,7 @@ void DockOverlay::onUpdate(f32 delta) {
 	// Check if any of them are in drag/drop mode
 }
 
-void DockOverlay::onRender() {
+void DockOverlay::onRender(Canvas& canvas) {
 	/*if (!_dragOver) {
 		return;
 	}

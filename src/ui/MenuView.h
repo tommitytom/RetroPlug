@@ -125,7 +125,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 
 		bool onKey(VirtualKey::Enum key, bool down) override;
 

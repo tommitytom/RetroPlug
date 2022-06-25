@@ -39,7 +39,7 @@ namespace rp {
 			_markers = std::move(markers);
 		}
 
-		void onRender() override;
+		void onRender(Canvas& canvas) override;
 
 		void onResize(uint32 w, uint32 h) override {
 			updateSlice();

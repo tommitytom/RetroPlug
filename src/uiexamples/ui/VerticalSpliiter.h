@@ -11,19 +11,19 @@
 namespace rp {
 	class PanelView : public View {
 	private:
-		NVGcolor _color = nvgRGBA(0, 0, 0, 255);
+		Color4F _color = RP_COLOR_BLACK;
 
 	public:
 		PanelView() {
 			setType<PanelView>();
 		}
 
-		void setColor(NVGcolor color) {
+		void setColor(Color4F color) {
 			_color = color;
 		}
 
-		void onRender() override {
-			drawRect(getDimensions(), _color);
+		void onRender(Canvas& canvas) override {
+			canvas.fillRect(getDimensions(), _color);
 		}
 	};
 
@@ -92,7 +92,7 @@ namespace rp {
 			}
 
 			PanelViewPtr panel = addChild<PanelView>(fmt::format("Panel [{}]", view->getName()));
-			panel->setColor(nvgRGBA(40, 40, 40, 255));
+			panel->setColor(Color4(40, 40, 40, 255));
 			panel->addChild(view);
 
 			_panels.push_back(panel);
@@ -211,14 +211,13 @@ namespace rp {
 			return false;
 		}
 
-		void onRender() override {
-			NVGcontext* vg = getVg();
+		void onRender(Canvas& canvas) override {
 			auto res = getDimensions();
 
-			drawRect(res, RP_COLOR_BACKGROUND);
+			canvas.fillRect(res, RP_COLOR_BACKGROUND);
 
 			for (size_t i = 0; i < _handleAreas.size(); ++i) {
-				drawRect(_handleAreas[i], _mouseOverIndex != (int32)i ? RP_COLOR_FOREGROUND : RP_COLOR_FOREGROUND2);
+				canvas.fillRect(_handleAreas[i], _mouseOverIndex != (int32)i ? RP_COLOR_FOREGROUND : RP_COLOR_FOREGROUND2);
 			}
 		}
 

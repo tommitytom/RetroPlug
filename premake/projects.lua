@@ -50,7 +50,8 @@ local m = {
 	ExampleApplication = {},
 	OffsetCalculator = {},
 	Plugin = {},
-	Tests = {}
+	Tests = {},
+	BgfxBasic = {}
 }
 
 function m.RetroPlug.include()
@@ -191,6 +192,7 @@ function m.ExampleApplication.project()
 	kind "ConsoleApp"
 
 	m.RetroPlug.link()
+	dep.box2d.link()
 
 	files {
 		"src/uiexamples/**.h",
@@ -227,6 +229,42 @@ function m.ExampleApplication.projectLivepp()
 	}
 
 	util.liveppCompat()
+end
+
+function m.BgfxBasic.project()
+	project "BgfxBasic"
+	kind "ConsoleApp"
+
+	dep.glfw.link()
+	dep.bgfx.link()
+	dep.box2d.link()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/bgfxbasic/**.h",
+		"src/bgfxbasic/**.cpp"
+	}
+
+	filter { "options:emscripten" }
+		buildoptions { "-matomics", "-mbulk-memory" }
+
+	filter { "options:emscripten", "configurations:Debug" }
+		--buildoptions { "--bind" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+	filter { "options:emscripten", "configurations:Release" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
 end
 
 function m.OffsetCalculator.project()

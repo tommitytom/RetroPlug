@@ -50,7 +50,7 @@ namespace rp {
 			return _dragStartPosition;
 		}
 
-		void onRender();
+		void onRender(Canvas& canvas);
 
 		void onResize(uint32 w, uint32 h) override {
 			updateLayout();

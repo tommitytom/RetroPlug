@@ -1,10 +1,9 @@
 #pragma once
 
 #include <unordered_set>
-
-#include <nanovg.h>
 #include <spdlog/spdlog.h>
 
+#include "ui/Canvas.h"
 #include "ui/View.h"
 
 namespace rp {
@@ -380,10 +379,8 @@ namespace rp {
 			}
 		}
 
-		void onRender() final override {
-			if (getVg()) {
-				propagateRender(getChildren());
-			}
+		void onRender(Canvas& canvas) final override {
+			propagateRender(canvas, getChildren());
 		}
 
 		void printHierarchy() {
@@ -483,22 +480,22 @@ namespace rp {
 			}
 		}
 
-		void propagateRender(std::vector<ViewPtr>& views) {
+		void propagateRender(Canvas& canvas, std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
 					PointT<f32> pos = (PointT<f32>)view->getPosition();
-					nvgTranslate(getVg(), pos.x, pos.y);
-					view->onRender();
-					nvgTranslate(getVg(), -pos.x, -pos.y);
+					canvas.translate(pos);
+					view->onRender(canvas);
+					canvas.translate(-pos);
 				}
 			}
 
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
 					PointT<f32> pos = (PointT<f32>)view->getPosition();
-					nvgTranslate(getVg(), pos.x, pos.y);
-					propagateRender(view->getChildren());
-					nvgTranslate(getVg(), -pos.x, -pos.y);
+					canvas.translate(pos);
+					propagateRender(canvas, view->getChildren());
+					canvas.translate(-pos);
 				}
 			}
 		}

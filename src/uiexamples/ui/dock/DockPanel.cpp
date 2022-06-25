@@ -1,7 +1,8 @@
 #include "DockPanel.h"
 
-#include <nanovg.h>
 #include <spdlog/spdlog.h>
+
+#include "ui/Canvas.h"
 
 using namespace rp;
 
@@ -92,11 +93,11 @@ bool DockPanel::onDrop(DragContext& ctx, Point position) {
 	return true;
 }
 
-void DockPanel::onRender() {
-	drawRect(getDimensions(), nvgRGBA(100, 100, 100, 255));
+void DockPanel::onRender(Canvas& canvas) {
+	canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 
 	if (_showHeader) {
-		drawRect(_titleArea, (_mouseOverHeader) ? nvgRGBA(190, 190, 190, 255) : nvgRGBA(150, 150, 150, 255));
+		canvas.fillRect(_titleArea, (_mouseOverHeader) ? Color4(190, 190, 190, 255) : Color4(150, 150, 150, 255));
 	}
 
 	if (_panels.size() < 2) {
@@ -110,7 +111,7 @@ void DockPanel::onRender() {
 			}
 		}
 
-		drawText(0, 0, contentName, nvgRGBA(255, 255, 255, 255));
+		canvas.text(0, 0, contentName, Color4(255, 255, 255, 255));
 	} else {
 		const f32 tabWidth = 120;
 		f32 tabOffset = 0;
@@ -125,10 +126,10 @@ void DockPanel::onRender() {
 			}
 
 			if (_mouseOverTabIdx == i) {
-				drawRect(_tabAreas[i], nvgRGBA(190, 190, 190, 255));
+				canvas.fillRect(_tabAreas[i], Color4(190, 190, 190, 255));
 			}
 
-			drawText(tabOffset, 0, tabName, nvgRGBA(255, 255, 255, 255));
+			canvas.text(tabOffset, 0, tabName, Color4(255, 255, 255, 255));
 			tabOffset += tabWidth;
 		}
 	}

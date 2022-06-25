@@ -250,13 +250,12 @@ void MenuView::drawText(f32 x, f32 y, std::string_view text, NVGcolor color) {
 	x += _menuArea.x + _drawOffset.x;
 	y += _menuArea.y + _drawOffset.y;
 
-	NVGcontext* vg = getVg();
-	nvgFontSize(vg, _fontSize);
+	/*nvgFontSize(vg, _fontSize);
 	nvgFontFace(vg, "PlatNomor");
 	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
 	nvgFillColor(vg, color);
 	nvgStrokeColor(vg, color);
-	nvgText(vg, x, y, text.data(), NULL);
+	nvgText(vg, x, y, text.data(), NULL);*/
 }
 
 enum class ArrowDirection {
@@ -307,7 +306,7 @@ void drawArrow(NVGcontext* vg, const RectT<f32>& area, ArrowDirection dir) {
 }
 
 void MenuView::drawMenu(Menu& menu) {
-	NVGcontext* vg = getVg();
+	/*NVGcontext* vg = getVg();
 	DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
 	PointT<f32> drawOffset = _drawOffset + _menuArea.position;
 
@@ -420,10 +419,10 @@ void MenuView::drawMenu(Menu& menu) {
 	nvgFillPaint(vg, nvgLinearGradient(vg, 0, dim.h - 5, 0, dim.h - 10, nvgRGBA(0, 0, 0, 255), nvgRGBA(0, 0, 0, 0)));
 	nvgFill(vg);
 
-	nvgResetScissor(vg);
+	nvgResetScissor(vg);*/
 }
 
-void MenuView::onRender() {
+void MenuView::onRender(Canvas& canvas) {
 	_fontSize = 9.0f;
 	_itemSpacing = 12.0f;
 	_separatorSpacing = 7.0f;

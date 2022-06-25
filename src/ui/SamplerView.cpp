@@ -218,7 +218,7 @@ bool defaultSelect(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 default
 	return false;
 }
 
-void SamplerView::onRender() {
+void SamplerView::onRender(Canvas& canvas) {
 	if (!_system) {
 		return;
 	}
@@ -384,7 +384,7 @@ void SamplerView::onRender() {
 
 	_ui.endFrame();
 
-	LsdjCanvasView::onRender();
+	LsdjCanvasView::onRender(canvas);
 }
 
 void populateEditKit(SystemPtr system, Menu& target) {

@@ -51,11 +51,6 @@ UiContext::UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestra
 	_state.gridOverlay->setGrid(_state.grid);
 }
 
-void UiContext::setNvgContext(NVGcontext* vg) {
-	_vg = vg;
-	_state.viewManager.setVg(vg);
-}
-
 void UiContext::setAudioManager(AudioManager& audioManager) {
 	_project->setAudioManager(audioManager);
 }
@@ -99,10 +94,6 @@ void UiContext::processOutput() {
 }
 
 void UiContext::processDelta(f64 delta) {
-	if (!_vg) {
-		return;
-	}
-
 	f32 scale = _project->getScale();
 	_state.viewManager.setScale(scale);
 
@@ -116,13 +107,10 @@ void UiContext::processDelta(f64 delta) {
 
 	_state.processor.process(frameCount);
 
-	nvgSave(_vg);
+	_canvas.setScale(scale, scale);
+	_canvas.beginRender(getDimensions(), 1.0f);
 
-	nvgScale(_vg, scale, scale);
-
-	_state.viewManager.onRender();
-
-	nvgRestore(_vg);
+	_state.viewManager.onRender(_canvas);
 
 	processOutput();
 

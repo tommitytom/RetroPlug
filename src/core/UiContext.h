@@ -13,6 +13,7 @@
 #include "core/SystemSettings.h"
 #include "core/Proxies.h"
 #include "core/UiState.h"
+#include "ui/Canvas.h"
 #include "ui/ViewManager.h"
 
 namespace rp {
@@ -31,7 +32,7 @@ namespace rp {
 		Project* _project;
 		FileManager* _fileManager;
 
-		NVGcontext* _vg = nullptr;
+		Canvas _canvas;
 
 		//SystemIndex _selected = INVALID_SYSTEM_IDX;
 
@@ -48,13 +49,17 @@ namespace rp {
 	public:
 		UiContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus);
 		~UiContext() {}
+		
+		void initCanvas() {
+			_canvas.init();
+		}
 
-		DimensionT<uint32> getDimensions() {
+		Dimension getDimensions() {
 			Project* proj = _state.viewManager.getShared<Project>();
 			uint32 zoom = proj->getState().settings.zoom + 1;
 			auto dimensions = _state.viewManager.getDimensions();
 
-			return DimensionT<uint32> { (uint32)dimensions.w * zoom, (uint32)dimensions.h * zoom };
+			return Dimension { (int32)(dimensions.w * zoom), (int32)(dimensions.h * zoom) };
 		}
 
 		UiState& getState() {
@@ -64,8 +69,6 @@ namespace rp {
 		void setSampleRate(uint32 sampleRate) {
 			_sampleRate = sampleRate;
 		}
-
-		void setNvgContext(NVGcontext* vg);
 
 		void setAudioManager(AudioManager& audioManager);
 

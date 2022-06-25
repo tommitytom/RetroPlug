@@ -20,15 +20,15 @@ namespace rp {
 			setPosition(node->getPosition());
 		}
 
-		void onRender() override {
-			NVGcontext* vg = getVg();
+		void onRender(Canvas& canvas) override {
+			/*NVGcontext* vg = getVg();
 			auto area = getArea();
 
 			nvgBeginPath(vg);
 			nvgRect(vg, (f32)area.x + 0.5f, (f32)area.y, (f32)area.w - 0.5f, (f32)area.h - 0.5f);
 			nvgStrokeWidth(vg, 0.5f);
 			nvgStrokeColor(vg, nvgRGBA(255, 0, 0, 220));
-			nvgStroke(vg);
+			nvgStroke(vg);*/
 		}
 	};
 

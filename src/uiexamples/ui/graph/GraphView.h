@@ -51,12 +51,12 @@ namespace rp {
 			return false;
 		}
 
-		void onRender() override {
+		void onRender(Canvas& canvas) override {
 			if (!_graph) {
 				return;
 			}
 
-			NVGcontext* vg = getVg();
+			//NVGcontext* vg = getVg();
 
 			for (NodeGraphBase::Connection& conn : _graph->getConnections()) {
 			}

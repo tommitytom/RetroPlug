@@ -4,6 +4,7 @@
 
 #include "platform/Application.h"
 #include "platform/AudioManager.h"
+#include "ui/Canvas.h"
 #include "ui/ViewManager.h"
 
 #include "ui/WaveView.h"
@@ -11,11 +12,12 @@
 #include "ui/dock/Dock.h"
 #include "node/AudioGraph.h"
 #include "core/RetroPlugNodes.h"
+#include "uiexamples/Scene.h"
 
 namespace rp {
 	class ExampleApplication final : public Application {
 	private:
-		NVGcontext* _vg = nullptr;
+		Canvas _canvas;
 		bool _ready = false;
 
 		ViewManager _view;
@@ -31,6 +33,8 @@ namespace rp {
 
 		std::shared_ptr<SineNode> _sineNode;
 		std::shared_ptr<OutputNode> _outputNode;
+
+		Scene _scene;
 
 	public:
 		ExampleApplication(const char* name, int32 w, int32 h);
