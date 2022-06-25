@@ -1,5 +1,5 @@
 --
--- Copyright 2010-2021 Branimir Karadzic. All rights reserved.
+-- Copyright 2010-2022 Branimir Karadzic. All rights reserved.
 -- License: https://github.com/bkaradzic/bx#license-bsd-2-clause
 --
 
@@ -7,10 +7,10 @@ project "bimg"
 	kind "StaticLib"
 
 	includedirs {
-		path.join(BX_DIR, "include"),
 		path.join(BIMG_DIR, "include"),
 		path.join(BIMG_DIR, "3rdparty/astc-codec"),
 		path.join(BIMG_DIR, "3rdparty/astc-codec/include"),
+		path.join(BIMG_DIR, "3rdparty/tinyexr/deps/miniz"),
 	}
 
 	local ASTC_CODEC_DIR = path.join(BIMG_DIR, "3rdparty/astc-codec")
@@ -31,7 +31,11 @@ project "bimg"
 		path.join(ASTC_CODEC_DIR, "src/decoder/physical_astc_block.*"),
 		path.join(ASTC_CODEC_DIR, "src/decoder/quantization.*"),
 		path.join(ASTC_CODEC_DIR, "src/decoder/weight_infill.*"),
+
+		path.join(BIMG_DIR, "3rdparty/tinyexr/deps/miniz/miniz.*"),
 	}
+
+	using_bx()
 
 	configuration { "linux-*" }
 		buildoptions {

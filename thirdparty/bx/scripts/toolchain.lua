@@ -1,6 +1,6 @@
 --
--- Copyright 2010-2021 Branimir Karadzic. All rights reserved.
--- License: https://github.com/bkaradzic/bx#license-bsd-2-clause
+-- Copyright 2010-2022 Branimir Karadzic. All rights reserved.
+-- License: https://github.com/bkaradzic/bx/blob/master/LICENSE
 --
 
 local bxDir = path.getabsolute("..")
@@ -407,6 +407,7 @@ function toolchain(_buildDir, _libDir)
 		or _ACTION == "vs2015"
 		or _ACTION == "vs2017"
 		or _ACTION == "vs2019"
+		or _ACTION == "vs2022"
 		then
 
 		local action = premake.action.current()
@@ -559,6 +560,7 @@ function toolchain(_buildDir, _libDir)
 			"/wd4201", -- warning C4201: nonstandard extension used: nameless struct/union
 			"/wd4324", -- warning C4324: '': structure was padded due to alignment specifier
 			"/Ob2",    -- The Inline Function Expansion
+			"/Zc:__cplusplus", -- Enable updated __cplusplus macro
 		}
 		linkoptions {
 			"/ignore:4221", -- LNK4221: This object file does not define any previously undefined public symbols, so it will not be used by any link operation that consumes this library

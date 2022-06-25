@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2021 Branimir Karadzic. All rights reserved.
- * License: https://github.com/bkaradzic/bimg#license-bsd-2-clause
+ * Copyright 2011-2022 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bimg/blob/master/LICENSE
  */
 
 #include "bimg_p.h"
@@ -849,8 +849,8 @@ namespace bimg
 		const float kGoldenSection = 0.61803398875f;
 		float offset = kGoldenSection;
 
-		bx::Vec3 tangentX;
-		bx::Vec3 tangentY;
+		bx::Vec3 tangentX(bx::init::None);
+		bx::Vec3 tangentY(bx::init::None);
 		bx::calcTangentFrame(tangentX, tangentY, _dir);
 
 		for (uint32_t ii = 0; ii < kNumSamples; ++ii)
@@ -896,7 +896,7 @@ namespace bimg
 
 		if (0.0f < totalWeight)
 		{
-			// Optimized Reversible Tonemapper for Resovle
+			// Optimized Reversible Tonemapper for Resolve
 			// https://web.archive.org/web/20180717182019/https://gpuopen.com/optimized-reversible-tonemapper-for-resolve/
 			// Average, then reverse the tonemapper
 			//

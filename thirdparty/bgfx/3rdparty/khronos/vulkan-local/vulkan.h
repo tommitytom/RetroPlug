@@ -2,7 +2,7 @@
 #define VULKAN_H_ 1
 
 /*
-** Copyright 2015-2021 The Khronos Group Inc.
+** Copyright 2015-2022 The Khronos Group Inc.
 **
 ** SPDX-License-Identifier: Apache-2.0
 */
@@ -84,7 +84,6 @@
 #include <screen/screen.h>
 #include "vulkan_screen.h"
 #endif
-
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #include "vulkan_beta.h"

@@ -1,10 +1,10 @@
 /*
- * Copyright 2010-2021 Branimir Karadzic. All rights reserved.
- * License: https://github.com/bkaradzic/bx#license-bsd-2-clause
+ * Copyright 2010-2022 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bx/blob/master/LICENSE
  */
 
-#ifndef __TEST_H__
-#define __TEST_H__
+#ifndef BX_TEST_H_HEADER_GUARD
+#define BX_TEST_H_HEADER_GUARD
 
 #include <bx/bx.h>
 
@@ -18,4 +18,4 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include "dbg.h"
 
-#endif // __TEST_H__
+#endif // BX_TEST_H_HEADER_GUARD

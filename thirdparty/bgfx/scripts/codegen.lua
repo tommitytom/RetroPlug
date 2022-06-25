@@ -449,7 +449,7 @@ local function codetemp(func)
 
 	if func.class then
 		-- It's a member function
-		cargs[1] = func.this  .. " _this"
+		cargs[1] = func.this .. " _this"
 		conversion[1] = func.this_conversion
 		cppfunc = "This->" .. func.name
 		callargs[1] = "_this"
@@ -624,13 +624,13 @@ function codegen.doxygen_type(doxygen, func, cname)
 	if cname then
 		result[#result+1] = "///"
 		if type(cname) == "string" then
-			result[#result+1] = string.format("/// @attention C99 equivalent is `%s`.", cname)
+			result[#result+1] = string.format("/// @attention C99's equivalent binding is `%s`.", cname)
 		else
 			local names = {}
 			for _, v in ipairs(cname) do
 				names[#names+1] = "`" .. v .. "`"
 			end
-			result[#result+1] = string.format("/// @attention C99 equivalent are %s.", table.concat(names, ","))
+			result[#result+1] = string.format("/// @attention C99's equivalent bindings are %s.", table.concat(names, ","))
 		end
 	end
 	result[#result+1] = "///"

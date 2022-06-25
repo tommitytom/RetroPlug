@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2021 Branimir Karadzic. All rights reserved.
- * License: https://github.com/bkaradzic/bimg#license-bsd-2-clause
+ * Copyright 2011-2022 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bimg/blob/master/LICENSE
  */
 
 #ifndef BIMG_IMAGE_H_HEADER_GUARD
@@ -195,6 +195,7 @@ namespace bimg
 		bool     m_cubeMap;
 		bool     m_ktx;
 		bool     m_ktxLE;
+		bool     m_pvr3;
 		bool     m_srgb;
 	};
 
