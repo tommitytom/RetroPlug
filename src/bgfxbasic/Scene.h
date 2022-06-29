@@ -25,6 +25,8 @@ namespace rp {
 		entt::entity _ground;
 		entt::entity _ball;
 
+		bool _physicsDebug = false;
+
 	public:
 		Scene() = default;
 		~Scene() = default;

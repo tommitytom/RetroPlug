@@ -109,7 +109,9 @@ namespace rp::engine {
 
 		void text(f32 x, f32 y, std::string_view text, const Color4F& color) override;
 
-		void circle(const PointF& pos, f32 radius, uint32 segments = 32);
+		void circle(const PointF& pos, f32 radius, uint32 segments = 32, const Color4F& color = Color4F(1,1,1,1));
+
+		void line(const PointF& from, const PointF& to, const Color4F& color);
 
 	private:
 		void checkSurface(RenderPrimitive primitive, CanvasTextureHandle texture);

@@ -15,6 +15,8 @@ using namespace rp;
 using namespace rp::engine;
 namespace fs = std::filesystem;
 
+const f32 PI = 3.14159265359f;
+const f32 PI2 = PI * 2.0f;
 constexpr PointF FIXED_VERTEX_OFFSET = PointF(0.00125f / 2.0f, 0);
 
 uint32 toUint32Abgr(const Color4F& color) {
@@ -169,22 +171,41 @@ void BgfxCanvas::endRender() {
 			_ind = bgfx::createDynamicIndexBuffer(inds, BGFX_BUFFER_INDEX32 | BGFX_BUFFER_ALLOW_RESIZE);
 		}
 
-		bgfx::setVertexBuffer(0, _vert);
+		
 
 		f32 scale[4] = { 2.0f / _res.w, 2.0f / _res.h, 0.0f, 0.0f };
+		
 
 		for (const CanvasSurface& surface : _surfaces) {
-			bgfx::setState(0
+			uint32 state = 0
 				| BGFX_STATE_WRITE_RGB
 				| BGFX_STATE_WRITE_A
 				//| BGFX_STATE_WRITE_Z
 				//| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
 				//| BGFX_STATE_MSAA
-			);
+				;
+
+			switch (surface.primitive) {
+			case RenderPrimitive::LineList:
+				state |= BGFX_STATE_PT_LINES | BGFX_STATE_LINEAA;
+				break;
+			case RenderPrimitive::LineStrip:
+				state |= BGFX_STATE_PT_LINESTRIP;
+				break;
+			case RenderPrimitive::Points:
+				state |= BGFX_STATE_PT_POINTS;
+				break;
+			case RenderPrimitive::TriangleStrip:
+				state |= BGFX_STATE_PT_TRISTRIP;
+				break;
+			}
+
+			bgfx::setState(state);
 
 			bgfx::setUniform(_scaleUniform, scale);
 			bgfx::setTexture(0, _textureUniform, _textureLookup[surface.texture.handle]);
+			bgfx::setVertexBuffer(0, _vert);
 			bgfx::setIndexBuffer(_ind, surface.indexOffset, surface.indexCount);
 			bgfx::submit(_viewId, _prog);
 		}
@@ -217,19 +238,32 @@ void BgfxCanvas::polygon(const PointF* points, uint32 count) {
 	_surfaces.back().indexCount += 6;
 }
 
-const f32 PI = 3.14159265359f;
-const f32 PI2 = PI * 2.0f;
+void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color) {
+	checkSurface(RenderPrimitive::LineList, CanvasTextureHandle());
 
-void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments) {
+	uint32 v = (uint32)_vertices.size();
+	uint32 agbr = toUint32Abgr(color);
+
+	_vertices.insert(_vertices.end(), {
+		CanvasVertex{ _transform * from, agbr, 0, 0 },
+		CanvasVertex{ _transform * to, agbr, 0, 0 }
+	});
+
+	_indices.insert(_indices.end(), { v + 0, v + 1 });
+
+	_surfaces.back().indexCount += 2;
+}
+
+void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle());
 
 	f32 step = PI2 / (f32)segments;
-	uint32 centerIdx = writeVertex(pos, Color4F(1, 1, 1, 1));
+	uint32 centerIdx = writeVertex(pos, color);
 
 	for (uint32 i = 0; i < segments; ++i) {
 		f32 rad = (f32)i * step;
 		PointF p = PointF(cos(rad), sin(rad)) * radius;
-		uint32 v = writeVertex(p + pos, Color4F(1, 1, 1, 1));
+		uint32 v = writeVertex(p + pos, color);
 
 		if (i < segments - 1) {
 			writeTriangleIndices(centerIdx, v, v + 1);
