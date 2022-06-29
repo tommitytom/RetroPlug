@@ -134,7 +134,11 @@ function m.bimgProject()
 			BIMG_DIR .. "/src/image_gnf.cpp",
 			BIMG_DIR .. "/src/image_decode.cpp",
 			BIMG_DIR .. "/src/*.h",
-			BIMG_DIR .. "/3rdparty/astc-codec/src/decoder/*.cc"
+			BIMG_DIR .. "/3rdparty/astc-codec/src/decoder/*.cc",
+			BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.h",
+			BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.c",
+			BIMG_DIR .. "/3rdparty/lodepng/*.h",
+			BIMG_DIR .. "/3rdparty/lodepng/*.cpp"
 		}
 
 		filter "system:linux"

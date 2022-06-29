@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <assert.h>
 #include "platform/Types.h"
 
@@ -59,11 +60,12 @@ namespace rp {
 			return x != other.x || y != other.y;
 		}
 
-		PointT operator+(const PointT& other) {
+
+		PointT operator+(const PointT& other) const {
 			return { x + other.x, y + other.y };
 		}
 
-		PointT operator+(T value) {
+		PointT operator+(T value) const {
 			return { x + value, y + value };
 		}
 
@@ -79,15 +81,16 @@ namespace rp {
 			return *this;
 		}
 
-		PointT operator-() {
+
+		PointT operator-() const {
 			return { -x, -y };
 		}
 
-		PointT operator-(const PointT& other) {
+		PointT operator-(const PointT& other) const {
 			return { x - other.x, y - other.y };
 		}
 
-		PointT operator-(T value) {
+		PointT operator-(T value) const {
 			return { x - value, y - value };
 		}
 
@@ -102,6 +105,49 @@ namespace rp {
 			y -= value;
 			return *this;
 		}
+
+
+		PointT operator*(const PointT& other) const {
+			return { x * other.x, y * other.y };
+		}
+
+		PointT operator*(T value) const {
+			return { x * value, y * value };
+		}
+
+		PointT& operator*=(const PointT& other) {
+			x *= other.x;
+			y *= other.y;
+			return *this;
+		}
+
+		PointT& operator*=(T value) {
+			x *= value;
+			y *= value;
+			return *this;
+		}
+
+
+		PointT operator/(const PointT& other) const {
+			return { x / other.x, y / other.y };
+		}
+
+		PointT operator/(T value) const {
+			return { x / value, y / value };
+		}
+
+		PointT& operator/=(const PointT& other) {
+			x /= other.x;
+			y /= other.y;
+			return *this;
+		}
+
+		PointT& operator/=(T value) {
+			x /= value;
+			y /= value;
+			return *this;
+		}
+
 
 		template <typename R>
 		explicit operator PointT<R>() const {
@@ -200,6 +246,10 @@ namespace rp {
 			return point.x >= x && point.x < right() && point.y >= y && point.y < bottom();
 		}
 
+		/*bool contains(const Rect<T>& other) const {
+			return other.x > x && other.y < y && other.right() < right() && other.bottom() < bottom();
+		}*/
+
 		bool intersects(const RectT<T>& other) const {
 			return x < other.right() && right() > other.x && y > other.bottom() && bottom() < other.y;
 		}
@@ -263,4 +313,80 @@ namespace rp {
 	using RectF64 = RectT<f64>;
 	using Rect = RectI32;
 	using RectF = RectF32;
+
+	struct Mat3x3 {
+		static Mat3x3 translation(const PointF& position) {
+			return Mat3x3(
+				1, 0, position.x,
+				0, 1, position.y,
+				0, 0, 1
+			);
+		}
+
+		static Mat3x3 scale(const PointF& size) {
+			return Mat3x3(
+				size.x, 0, 0,
+				0, size.y, 0,
+				0, 0, 1
+			);
+		}
+
+		static Mat3x3 rotation(f32 angle) {
+			return Mat3x3(
+				cosf(angle), -sinf(angle), 0,
+				sinf(angle), cosf(angle), 0,
+				0, 0, 1
+			);
+		}
+
+		static Mat3x3 trs(const PointF& translation, f32 rotation, const PointF& scale) {
+			return Mat3x3::scale(scale) * Mat3x3::rotation(rotation) * Mat3x3::translation(translation);
+		}
+
+		union {
+			f32 m[3][3];
+			f32 ma[9];
+			struct {
+				f32 m11;
+				f32 m12;
+				f32 m13;
+				f32 m21;
+				f32 m22;
+				f32 m23;
+				f32 m31;
+				f32 m32;
+				f32 m33;
+			};
+		};
+
+		constexpr Mat3x3(f32 v = 1.0f) : Mat3x3(v, 0.0f, 0.0f, 0.0f, v, 0.0f, 0.0f, 0.0f, v) {}
+
+		constexpr Mat3x3(f32 _m11, f32 _m12, f32 _m13, f32 _m21, f32 _m22, f32 _m23, f32 _m31, f32 _m32, f32 _m33)
+			: m11(_m11), m12(_m12), m13(_m13), m21(_m21), m22(_m22), m23(_m23), m31(_m31), m32(_m32), m33(_m33) { }
+
+		Mat3x3 operator*(const Mat3x3& other) const {
+			Mat3x3 result;
+
+			result.m11 = m11 * other.m11 + m21 * other.m12 + m31 * other.m13;
+			result.m12 = m12 * other.m11 + m22 * other.m12 + m32 * other.m13;
+			result.m13 = m13 * other.m11 + m23 * other.m12 + m33 * other.m13;
+
+			result.m21 = m11 * other.m21 + m21 * other.m22 + m31 * other.m23;
+			result.m22 = m12 * other.m21 + m22 * other.m22 + m32 * other.m23;
+			result.m23 = m13 * other.m21 + m23 * other.m22 + m33 * other.m23;
+
+			result.m31 = m11 * other.m31 + m21 * other.m32 + m31 * other.m33;
+			result.m32 = m12 * other.m31 + m22 * other.m32 + m32 * other.m33;
+			result.m33 = m13 * other.m31 + m23 * other.m32 + m33 * other.m33;
+
+			return result;
+		}
+
+		PointF operator*(const PointF& other) const {
+			return PointF(
+				(m11 * other.x) + (m12 * other.y) + m13,
+				(m21 * other.x) + (m22 * other.y) + m23
+			);
+		}
+	};
 }

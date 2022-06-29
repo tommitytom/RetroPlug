@@ -3,6 +3,14 @@
 #include "RpMath.h"
 
 namespace rp::engine {
+	struct CanvasTextureHandle {
+		uint32 handle = 0;
+
+		bool operator==(CanvasTextureHandle other) const {
+			return handle == other.handle;
+		}
+	};
+
 	class BaseCanvas {
 	public:
 		BaseCanvas() = default;
