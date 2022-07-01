@@ -1,0 +1,88 @@
+# Freetype GL - A C OpenGL Freetype engine
+#
+# Distributed under the OSI-approved BSD 2-Clause License.  See accompanying
+# file `LICENSE` for more details.
+version: ci-{build}
+cache: 
+  - c:/tools/vcpkg/installed/
+environment:
+  matrix:
+
+  # Windows CMake + MSVC
+  - job_name: CMake
+
+  # Windows MSVS + MSVC
+  - job_name: MSVS_Debug_x64
+    job_group: MSVS
+    appveyor_build_worker_image: Visual Studio 2019
+    configuration: Debug
+    platform: x64
+
+  - job_name: MSVS_Debug_x86
+    job_group: MSVS
+    appveyor_build_worker_image: Visual Studio 2019
+    configuration: Debug
+    platform: x86
+
+  - job_name: MSVS_Release_x64
+    job_group: MSVS
+    appveyor_build_worker_image: Visual Studio 2019
+    configuration: Release
+    platform: x64
+
+  - job_name: MSVS_Release_x86
+    job_group: MSVS
+    appveyor_build_worker_image: Visual Studio 2019
+    configuration: Release
+    platform: x86
+
+matrix:
+  fast_finish: true
+
+init:
+  - git config --global core.eol native
+  - git config --global core.autocrlf true
+
+for:
+  - matrix:
+      only:
+        - job_name: Cmake
+    install:
+      - '"C:\Program Files (X86)\Microsoft Visual Studio 12.0\VC\vcvarsall.bat"'
+      # Remove the VS Xamarin targets to reduce AppVeyor specific noise in build
+      # logs.  See also http://help.appveyor.com/discussions/problems/4569
+      - del "C:\Program Files (x86)\MSBuild\12.0\Microsoft.Common.targets\ImportAfter\Xamarin.Common.targets"
+      - cd C:\Tools\vcpkg
+      - git pull --quiet
+      - .\bootstrap-vcpkg.bat
+      - vcpkg install glfw3:x86-windows
+      - vcpkg install glfw3:x64-windows
+      - vcpkg install glew:x86-windows
+      - vcpkg install glew:x64-windows
+      - vcpkg install freetype:x86-windows
+      - vcpkg install freetype:x64-windows
+      - cd %APPVEYOR_BUILD_FOLDER%
+    build_script:
+      - cmake -DCMAKE_TOOLCHAIN_FILE=c:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake -G "Visual Studio 12" -Dfreetype-gl_BUILD_APIDOC=OFF -Dfreetype-gl_BUILD_TESTS=OFF ..
+      - cmake --build . --config RelWithDebInfo -- /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll" /verbosity:minimal
+    before_build:
+      - if not exist build\NUL mkdir build
+      - cd build
+ 
+  - matrix:
+      only:
+        - job_group: MSVS
+    install:
+      - cd C:\Tools\vcpkg
+      - git pull --quiet
+      - .\bootstrap-vcpkg.bat
+      - vcpkg integrate install
+      - vcpkg install glfw3:x86-windows
+      - vcpkg install glfw3:x64-windows
+      - vcpkg install glew:x86-windows
+      - vcpkg install glew:x64-windows
+      - vcpkg install freetype:x86-windows
+      - vcpkg install freetype:x64-windows
+      - cd %APPVEYOR_BUILD_FOLDER%
+    build_script:
+    - msbuild VisualC\freetype-gl.sln

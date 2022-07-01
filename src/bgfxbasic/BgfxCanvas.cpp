@@ -8,6 +8,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <freetype-gl/texture-atlas.h>
+#include <freetype-gl/texture-font.h>
+
 #include "shaders/fs_tex.h"
 #include "shaders/vs_tex.h"
 
@@ -76,9 +79,29 @@ BgfxCanvas::BgfxCanvas(bgfx::ViewId viewId): _viewId(viewId) {
 	_scaleUniform = bgfx::createUniform("scale", bgfx::UniformType::Vec4);
 
 	_textureLookup.push_back(_whiteTexture);
+
+	Dimension atlasSize = { 512, 512 };
+
+	_atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 3);
+	_font = ftgl::texture_font_new_from_file(_atlas, 32, "Roboto-Regular.ttf");
+	size_t missed = ftgl::texture_font_load_glyphs(_font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+");
+
+	if (missed > 0) {
+		spdlog::error("Missed {} glyphs", missed);
+	}
+
+	const size_t size = atlasSize.w * atlasSize.h * 3;
+	const bgfx::Memory* data = bgfx::alloc(size);
+	memcpy(data->data, _atlas->data, size);
+	auto atlasTex = bgfx::createTexture2D(atlasSize.w, atlasSize.h, false, 1, bgfx::TextureFormat::RGB8, 0, data);
+
+	_textureLookup.push_back(atlasTex);
 }
 
 BgfxCanvas::~BgfxCanvas() {
+	ftgl::texture_font_delete(_font);
+	ftgl::texture_atlas_delete(_atlas);
+	
 	bgfx::destroy(_textureUniform);
 	bgfx::destroy(_whiteTexture);
 	bgfx::destroy(_prog);
@@ -171,10 +194,7 @@ void BgfxCanvas::endRender() {
 			_ind = bgfx::createDynamicIndexBuffer(inds, BGFX_BUFFER_INDEX32 | BGFX_BUFFER_ALLOW_RESIZE);
 		}
 
-		
-
 		f32 scale[4] = { 2.0f / _res.w, 2.0f / _res.h, 0.0f, 0.0f };
-		
 
 		for (const CanvasSurface& surface : _surfaces) {
 			uint32 state = 0
@@ -191,7 +211,7 @@ void BgfxCanvas::endRender() {
 				state |= BGFX_STATE_PT_LINES | BGFX_STATE_LINEAA;
 				break;
 			case RenderPrimitive::LineStrip:
-				state |= BGFX_STATE_PT_LINESTRIP;
+				state |= BGFX_STATE_PT_LINESTRIP | BGFX_STATE_LINEAA;
 				break;
 			case RenderPrimitive::Points:
 				state |= BGFX_STATE_PT_POINTS;
@@ -223,8 +243,8 @@ void BgfxCanvas::translate(PointF amount) {
 void BgfxCanvas::polygon(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle());
 
-	uint32 v = (uint32)_vertices.size();
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
+	uint32 v = (uint32)_vertices.size();
 
 	for (uint32 i = 0; i < count; ++i) {
 		_vertices.push_back(CanvasVertex{ _transform * points[i], agbr, 0, 0 });
@@ -241,8 +261,8 @@ void BgfxCanvas::polygon(const PointF* points, uint32 count) {
 void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color) {
 	checkSurface(RenderPrimitive::LineList, CanvasTextureHandle());
 
-	uint32 v = (uint32)_vertices.size();
 	uint32 agbr = toUint32Abgr(color);
+	uint32 v = (uint32)_vertices.size();
 
 	_vertices.insert(_vertices.end(), {
 		CanvasVertex{ _transform * from, agbr, 0, 0 },
@@ -257,13 +277,15 @@ void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color
 void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle());
 
+	uint32 agbr = toUint32Abgr(color);
+	
 	f32 step = PI2 / (f32)segments;
-	uint32 centerIdx = writeVertex(pos, color);
+	uint32 centerIdx = writeVertex(pos, agbr);
 
 	for (uint32 i = 0; i < segments; ++i) {
 		f32 rad = (f32)i * step;
 		PointF p = PointF(cos(rad), sin(rad)) * radius;
-		uint32 v = writeVertex(p + pos, color);
+		uint32 v = writeVertex(p + pos, agbr);
 
 		if (i < segments - 1) {
 			writeTriangleIndices(centerIdx, v, v + 1);
@@ -273,11 +295,6 @@ void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments, const Co
 	}
 }
 
-uint32 BgfxCanvas::writeVertex(PointF pos, const Color4F& color) {
-	_vertices.push_back(CanvasVertex { _transform * pos, toUint32Abgr(color), 0, 0 });
-	return (uint32)_vertices.size() - 1;
-}
-
 void BgfxCanvas::setScale(f32 scaleX, f32 scaleY) {
 
 }
@@ -285,9 +302,8 @@ void BgfxCanvas::setScale(f32 scaleX, f32 scaleY) {
 void BgfxCanvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle());
 
-	uint32 v = (uint32)_vertices.size();
-
 	uint32 agbr = toUint32Abgr(color);
+	uint32 v = (uint32)_vertices.size();
 
 	_vertices.insert(_vertices.end(), {
 		CanvasVertex{ _transform * area.position, agbr, 0, 0 },
@@ -307,9 +323,8 @@ void BgfxCanvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 void BgfxCanvas::texture(CanvasTextureHandle textureHandle, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, textureHandle);
 
-	uint32 v = (uint32)_vertices.size();
-
 	uint32 agbr = toUint32Abgr(color);
+	uint32 v = (uint32)_vertices.size();
 
 	_vertices.insert(_vertices.end(), {
 		CanvasVertex{ area.position, agbr, 0, 0 },
@@ -331,5 +346,48 @@ void BgfxCanvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
 }
 
 void BgfxCanvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
+	checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle(1));
 
+	uint32 agbr = toUint32Abgr(color);
+
+	for (size_t i = 0; i < text.size(); ++i) {
+		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(_font, text.data() + i);
+
+		if (glyph) {
+			f32 kerning = 0.0f;
+
+			if (i > 0) {
+				kerning = texture_glyph_get_kerning(glyph, text.data() + i - 1);
+			}
+
+			x += kerning;
+
+			f32 x0 = floor(x + glyph->offset_x);
+			f32 y0 = floor(y - glyph->offset_y);
+			f32 x1 = floor(x0 + glyph->width);
+			f32 y1 = floor(y0 + glyph->height);
+			f32 s0 = glyph->s0;
+			f32 t0 = glyph->t0;
+			f32 s1 = glyph->s1;
+			f32 t1 = glyph->t1;
+
+			uint32 v = (uint32)_vertices.size();
+
+			_vertices.insert(_vertices.end(), {
+				CanvasVertex{ { x0, y0 }, agbr, s0,t0 },
+				CanvasVertex{ { x1, y0 }, agbr, s1,t0 },
+				CanvasVertex{ { x1, y1 }, agbr, s1,t1 },
+				CanvasVertex{ { x0, y1 }, agbr, s0,t1 }
+			});
+
+			_indices.insert(_indices.end(), {
+				v + 0, v + 3, v + 2,
+				v + 2, v + 1, v + 0
+			});
+
+			_surfaces.back().indexCount += 6;
+
+			x += glyph->advance_x;
+		}
+	}
 }

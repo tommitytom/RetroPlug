@@ -9,6 +9,11 @@
 #include "RpMath.h"
 #include "BaseCanvas.h"
 
+namespace ftgl {
+	typedef struct texture_atlas_t;
+	typedef struct texture_font_t;
+}
+
 namespace rp::engine {
 	struct CanvasVertex {
 		PointF pos;
@@ -63,6 +68,9 @@ namespace rp::engine {
 		f32 _rotation = 0.0f;
 		Mat3x3 _transform;
 
+		ftgl::texture_atlas_t* _atlas = nullptr;
+		ftgl::texture_font_t* _font = nullptr;
+
 	public:
 		BgfxCanvas(bgfx::ViewId viewId = 0);
 		~BgfxCanvas();
@@ -97,7 +105,7 @@ namespace rp::engine {
 
 		void translate(PointF amount) override;
 
-		void polygon(const PointF* points, uint32 count);
+		void polygon(const PointF* points, uint32 count) override;
 
 		void setScale(f32 scaleX, f32 scaleY) override;
 
@@ -116,9 +124,12 @@ namespace rp::engine {
 	private:
 		void checkSurface(RenderPrimitive primitive, CanvasTextureHandle texture);
 
-		uint32 writeVertex(PointF pos, const Color4F& color);
+		inline uint32 writeVertex(const PointF& pos, uint32 color) {
+			_vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
+			return (uint32)_vertices.size() - 1;
+		}
 
-		void writeTriangleIndices(uint32 v1, uint32 v2, uint32 v3) {
+		inline void writeTriangleIndices(uint32 v1, uint32 v2, uint32 v3) {
 			_indices.insert(_indices.end(), { v1, v2, v3 });
 			_surfaces.back().indexCount += 3;
 		}

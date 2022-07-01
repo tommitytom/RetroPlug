@@ -8,6 +8,7 @@ local m = {
 	zlib = dofile("zlib.lua"),
 	minizip = dofile("minizip.lua"),
 	box2d = dofile("box2d.lua"),
+	freetype = dofile("freetype.lua"),
 }
 
 function m.allProjects()
@@ -21,6 +22,7 @@ function m.allProjects()
 	m.zlib.project()
 	m.minizip.project()
 	m.box2d.project()
+	m.freetype.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

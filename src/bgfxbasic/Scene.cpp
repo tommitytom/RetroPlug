@@ -89,12 +89,16 @@ void Scene::render(Dimension res) {
 	//_canvas.fillRect({ -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
 	//_canvas.fillRect({ 10, 10, 100, 100 }, { 1, 0, 0, 1 });
 
-	_canvas.line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
+	//_canvas.line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
 
 	//_canvas.circle({ 300, 50 }, 20, 32);
 
 	//_canvas.fillRect({ 100, 100, 100, 100 }, { 0, 1, 0, 1 });
 	//_canvas.texture(_upTex, { -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
+
+	//_canvas.texture(engine::CanvasTextureHandle(1), { 0, 0, 512, 512 }, Color4F(1, 1, 1, 1));
+
+	_canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 	
 	_canvas.endRender();
 }

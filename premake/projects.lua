@@ -238,6 +238,7 @@ function m.BgfxBasic.project()
 	dep.glfw.link()
 	dep.bgfx.link()
 	dep.box2d.link()
+	dep.freetype.link()
 
 	sysincludedirs {
 		"thirdparty",

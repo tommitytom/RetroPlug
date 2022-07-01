@@ -24,6 +24,17 @@ namespace rp::engine {
 
 		virtual void setScale(f32 scaleX, f32 scaleY) = 0;
 
+		virtual void polygon(const PointF* points, uint32 count) = 0;
+
+		inline void polygon(const std::vector<PointF>& points) {
+			polygon(points.data(), points.size());
+		}
+
+		template <const size_t PointCount>
+		inline void polygon(const std::array<PointF, PointCount>& points) {
+			polygon(points.data(), points.size());
+		}
+
 		template <typename T>
 		void fillRect(const DimensionT<T>& area, const Color4F& color) {
 			fillRect(RectT<f32> { 0.0f, 0.0f, (f32)area.w, (f32)area.h }, color);

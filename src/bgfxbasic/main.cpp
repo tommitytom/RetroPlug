@@ -40,7 +40,7 @@ int main(void) {
 
 		glfwPollEvents();
 		
-		bgfx::setViewClear(0, BGFX_CLEAR_COLOR, 0x000000FF, 1.0f, 0);
+		bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
 		bgfx::setViewRect(0, 0, 0, windowSize.w, windowSize.h);
 
 		scene.update(1.0f / 60.0f);
