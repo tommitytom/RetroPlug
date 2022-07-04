@@ -14,16 +14,23 @@ void Scene::init() {
 
 	_ground = _registry.create();
 	_ball = _registry.create();
+	entt::entity ball2 = _registry.create();
 
 	Box2dUtil::addBox(_registry, _ground, RectF(50, 768 - 150, 1024 - 100, 50));
-	Box2dUtil::addCircle(_registry, _ball, PointF(300, 300), 50, 10.0f);
+	Box2dUtil::addCircle(_registry, _ball, PointF(300, 0), 50, 10.0f);
+	Box2dUtil::addCircle(_registry, ball2, PointF(310, 50), 50, 10.0f);
 
 	f32 xoff = 0.0f;
-	for (size_t i = 0; i < 30; ++i) {
-		entt::entity e = _registry.create();
-		Box2dUtil::addBox(_registry, e, RectF(200 + xoff, i * 30.0f, 20, 20), 10.0f);
-		xoff += 2.0f;
+	for (size_t j = 0; j < 4; ++j) {
+		for (size_t i = 0; i < 20; ++i) {
+			entt::entity e = _registry.create();
+			Box2dUtil::addBox(_registry, e, RectF(200 + xoff, i * 30.0f, 20, 20), 10.0f);
+			xoff += 2.0f;
+		}
+
+		xoff += 50;
 	}
+	
 
 	//Box2dUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
 	//_canvas.fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
@@ -42,6 +49,8 @@ void Scene::render(Dimension res) {
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx<PhysicsWorldSingleton>();
 
 	if (_physicsDebug) {
+		f32 scale = physicsWorld.meterSize;
+
 		for (auto [e, comp] : _registry.view<PhysicsComponent>().each()) {
 			const b2Shape* shape = comp.fixture->GetShape();
 
@@ -55,7 +64,7 @@ void Scene::render(Dimension res) {
 				for (int32 i = 0; i < polygon->m_count; ++i) {
 					points[i] =
 						Box2dUtil::convert(comp.body->GetWorldPoint(polygon->m_vertices[i])) *
-						physicsWorld.meterSize;
+						scale;
 				}
 
 				if (polygon->m_count == 4) {
@@ -67,13 +76,13 @@ void Scene::render(Dimension res) {
 			case b2Shape::Type::e_circle:
 			{
 				const b2CircleShape* circle = static_cast<const b2CircleShape*>(shape);
-				PointF point = Box2dUtil::convert(comp.body->GetWorldPoint(circle->m_p));
-				_canvas.circle(point * physicsWorld.meterSize, circle->m_radius * physicsWorld.meterSize, 32, Color4F(1, 0, 0, 1));
-
+				PointF point = Box2dUtil::convert(comp.body->GetWorldPoint(circle->m_p)) * scale;
+				f32 radius = circle->m_radius * scale;
 				f32 angle = comp.body->GetAngle();
-				PointF angleLine = PointF(cos(angle), sin(angle)) * circle->m_radius * physicsWorld.meterSize;
+				PointF angleLine = PointF(cos(angle), sin(angle)) * radius;
 
-				_canvas.line(point * physicsWorld.meterSize, angleLine, Color4F(1, 1, 1, 1));
+				_canvas.circle(point, radius, 32, Color4F(1, 0, 0, 1));
+				_canvas.line(point, point + angleLine, Color4F(1, 1, 1, 1));
 
 				break;
 			}
@@ -81,22 +90,24 @@ void Scene::render(Dimension res) {
 		}
 	}
 
-	//RectF r = { 10, 10, 100, 100 };
-	//PointF points[4] = { r.position, r.topRight(), r.bottomRight(), r.bottomLeft() };
+	RectF r = { 10, 10, 100, 100 };
+	PointF points[4] = { r.position, r.topRight(), r.bottomRight(), r.bottomLeft() };
+
+	//_canvas.points(points, 4);
 
 	//_canvas.polygon(points, 4);
 
 	//_canvas.fillRect({ -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
 	//_canvas.fillRect({ 10, 10, 100, 100 }, { 1, 0, 0, 1 });
 
-	//_canvas.line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
+	_canvas.line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
 
 	//_canvas.circle({ 300, 50 }, 20, 32);
 
 	//_canvas.fillRect({ 100, 100, 100, 100 }, { 0, 1, 0, 1 });
 	//_canvas.texture(_upTex, { -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
 
-	//_canvas.texture(engine::CanvasTextureHandle(1), { 0, 0, 512, 512 }, Color4F(1, 1, 1, 1));
+	//_canvas.texture(engine::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
 
 	_canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 	

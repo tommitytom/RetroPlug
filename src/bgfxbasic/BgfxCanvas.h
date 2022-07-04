@@ -17,19 +17,19 @@ namespace ftgl {
 namespace rp::engine {
 	struct CanvasVertex {
 		PointF pos;
-		uint32_t abgr;
+		uint32 abgr;
 		f32 u;
 		f32 v;
 	};
 
 	enum class RenderPrimitive {
-		Points = 0x0000,
-		LineList = 0x0001,
-		LineLoop = 0x0002,
-		LineStrip = 0x0003,
-		Triangles = 0x0004,
-		TriangleStrip = 0x0005,
-		TriangleFan = 0x0006,
+		Points,
+		LineList,
+		LineLoop,
+		LineStrip,
+		Triangles,
+		TriangleStrip,
+		TriangleFan,
 	};
 
 	struct CanvasSurface {
@@ -71,6 +71,8 @@ namespace rp::engine {
 		ftgl::texture_atlas_t* _atlas = nullptr;
 		ftgl::texture_font_t* _font = nullptr;
 
+		bool _lineAA = false;
+
 	public:
 		BgfxCanvas(bgfx::ViewId viewId = 0);
 		~BgfxCanvas();
@@ -106,6 +108,8 @@ namespace rp::engine {
 		void translate(PointF amount) override;
 
 		void polygon(const PointF* points, uint32 count) override;
+
+		void points(const PointF* points, uint32 count);
 
 		void setScale(f32 scaleX, f32 scaleY) override;
 

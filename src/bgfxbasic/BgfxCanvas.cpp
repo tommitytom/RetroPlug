@@ -83,8 +83,9 @@ BgfxCanvas::BgfxCanvas(bgfx::ViewId viewId): _viewId(viewId) {
 	Dimension atlasSize = { 512, 512 };
 
 	_atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 3);
-	_font = ftgl::texture_font_new_from_file(_atlas, 32, "Roboto-Regular.ttf");
-	size_t missed = ftgl::texture_font_load_glyphs(_font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+");
+	_font = ftgl::texture_font_new_from_file(_atlas, 12, "SEGOEUI.TTF");
+	size_t missed = ftgl::texture_font_load_glyphs(_font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+ø");
+	//size_t missed = ftgl::texture_font_load_glyphs(_font, "ø");
 
 	if (missed > 0) {
 		spdlog::error("Missed {} glyphs", missed);
@@ -102,11 +103,11 @@ BgfxCanvas::~BgfxCanvas() {
 	ftgl::texture_font_delete(_font);
 	ftgl::texture_atlas_delete(_atlas);
 	
-	bgfx::destroy(_textureUniform);
-	bgfx::destroy(_whiteTexture);
-	bgfx::destroy(_prog);
-	bgfx::destroy(_vert);
-	bgfx::destroy(_ind);
+	//bgfx::destroy(_textureUniform);
+	//bgfx::destroy(_whiteTexture);
+	//bgfx::destroy(_prog);
+	//bgfx::destroy(_vert);
+	//bgfx::destroy(_ind);
 }
 
 CanvasTextureHandle BgfxCanvas::loadTexture(const std::filesystem::path& filePath) {
@@ -200,18 +201,20 @@ void BgfxCanvas::endRender() {
 			uint32 state = 0
 				| BGFX_STATE_WRITE_RGB
 				| BGFX_STATE_WRITE_A
-				//| BGFX_STATE_WRITE_Z
-				//| BGFX_STATE_DEPTH_TEST_LESS
+				| BGFX_STATE_WRITE_Z
+				| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
 				//| BGFX_STATE_MSAA
 				;
 
 			switch (surface.primitive) {
 			case RenderPrimitive::LineList:
-				state |= BGFX_STATE_PT_LINES | BGFX_STATE_LINEAA;
+				state |= BGFX_STATE_PT_LINES;
+				if (_lineAA) state |= BGFX_STATE_LINEAA;
 				break;
 			case RenderPrimitive::LineStrip:
-				state |= BGFX_STATE_PT_LINESTRIP | BGFX_STATE_LINEAA;
+				state |= BGFX_STATE_PT_LINESTRIP;
+				if (_lineAA) state |= BGFX_STATE_LINEAA;
 				break;
 			case RenderPrimitive::Points:
 				state |= BGFX_STATE_PT_POINTS;
@@ -238,6 +241,20 @@ void BgfxCanvas::endRender() {
 
 void BgfxCanvas::translate(PointF amount) {
 
+}
+
+void BgfxCanvas::points(const PointF* points, uint32 count) {
+	checkSurface(RenderPrimitive::Points, CanvasTextureHandle());
+
+	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
+	uint32 v = (uint32)_vertices.size();
+
+	for (uint32 i = 0; i < count; ++i) {
+		_vertices.push_back(CanvasVertex{ _transform * points[i], agbr, 0, 0 });
+		_indices.push_back(v + i);
+	}
+
+	_surfaces.back().indexCount += count;
 }
 
 void BgfxCanvas::polygon(const PointF* points, uint32 count) {
@@ -269,7 +286,7 @@ void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color
 		CanvasVertex{ _transform * to, agbr, 0, 0 }
 	});
 
-	_indices.insert(_indices.end(), { v + 0, v + 1 });
+	_indices.insert(_indices.end(), { v + 1, v + 0 });
 
 	_surfaces.back().indexCount += 2;
 }
