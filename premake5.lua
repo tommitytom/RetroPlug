@@ -111,10 +111,12 @@ group "Dependencies"
 dep.allProjects()
 group ""
 
+projects.Graphics.project()
 projects.RetroPlug.project()
 projects.Application.project()
 projects.Application.projectLivepp()
 projects.ExampleApplication.project()
 projects.ExampleApplication.projectLivepp()
 projects.BgfxBasic.project()
+projects.Solitaire.project()
 projects.Tests.project()

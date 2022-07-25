@@ -45,20 +45,71 @@ local EMSDK_RELEASE_FLAGS = {
 }
 
 local m = {
+	Graphics = {},
 	RetroPlug = {},
 	Application = {},
 	ExampleApplication = {},
 	OffsetCalculator = {},
 	Plugin = {},
 	Tests = {},
-	BgfxBasic = {}
+	BgfxBasic = {},
+	Solitaire = {}
 }
 
-function m.RetroPlug.include()
+
+function m.Graphics.include()
 	dependson { "configure" }
 
 	dep.bgfx.include()
 	dep.glfw.include()
+	dep.freetype.include()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include"
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	dep.bgfx.compat()
+
+	filter {}
+end
+
+function m.Graphics.link()
+	m.Graphics.include()
+
+	links { "Graphics" }
+
+	dep.bgfx.link()
+	dep.glfw.link()
+	dep.freetype.link()
+end
+
+function m.Graphics.project()
+	project "Graphics"
+	kind "StaticLib"
+
+	m.Graphics.include()
+
+	files {
+		"src/graphics/**.h",
+		"src/graphics/**.cpp"
+	}
+
+	util.liveppCompat()
+end
+
+
+
+function m.RetroPlug.include()
+	dependson { "configure" }
+
+	m.Graphics.include()
 	dep.SameBoy.include()
 	dep.liblsdj.include()
 	dep.lua.include()
@@ -86,6 +137,7 @@ function m.RetroPlug.link()
 
 	links { "RetroPlug" }
 
+	m.Graphics.link()
 	dep.SameBoy.link()
 	dep.bgfx.link()
 	dep.glfw.link()
@@ -93,6 +145,7 @@ function m.RetroPlug.link()
 	dep.lua.link()
 	dep.r8brain.link()
 	dep.minizip.link()
+	dep.freetype.link()
 end
 
 function m.RetroPlug.project()
@@ -235,10 +288,8 @@ function m.BgfxBasic.project()
 	project "BgfxBasic"
 	kind "ConsoleApp"
 
-	dep.glfw.link()
-	dep.bgfx.link()
+	m.Graphics.link()
 	dep.box2d.link()
-	dep.freetype.link()
 
 	sysincludedirs {
 		"thirdparty",
@@ -255,6 +306,40 @@ function m.BgfxBasic.project()
 	files {
 		"src/bgfxbasic/**.h",
 		"src/bgfxbasic/**.cpp"
+	}
+
+	filter { "options:emscripten" }
+		buildoptions { "-matomics", "-mbulk-memory" }
+
+	filter { "options:emscripten", "configurations:Debug" }
+		--buildoptions { "--bind" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+	filter { "options:emscripten", "configurations:Release" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+end
+
+function m.Solitaire.project()
+	project "Solitaire"
+	kind "ConsoleApp"
+
+	m.Graphics.link()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/solitaire/**.h",
+		"src/solitaire/**.cpp"
 	}
 
 	filter { "options:emscripten" }

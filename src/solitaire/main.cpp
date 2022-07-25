@@ -10,19 +10,19 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
-#include "Scene.h"
+#include "Game.h"
 
 const int WINDOW_WIDTH = 1024;
 const int WINDOW_HEIGHT = 768;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-	rp::Scene* scene = (rp::Scene*)glfwGetWindowUserPointer(window);
-	scene->onMouseButton(button, action, mods);
+	rp::Game* game = (rp::Game*)glfwGetWindowUserPointer(window);
+	game->onMouseButton(button, action, mods);
 }
 
 void mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
-	rp::Scene* scene = (rp::Scene*)glfwGetWindowUserPointer(window);
-	scene->onMouseMove(x, y);
+	rp::Game* game = (rp::Game*)glfwGetWindowUserPointer(window);
+	game->onMouseMove(x, y);
 }
 
 int main(void) {
@@ -41,10 +41,10 @@ int main(void) {
 	bgfxInit.platformData.nwh = glfwGetWin32Window(window);
 	bgfx::init(bgfxInit);
 
-	rp::Scene scene;
-	scene.init();
+	rp::Game game;
+	game.init();
 
-	glfwSetWindowUserPointer(window, &scene);
+	glfwSetWindowUserPointer(window, &game);
 	glfwSetCursorPosCallback(window, mouseMoveCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
@@ -53,12 +53,12 @@ int main(void) {
 		glfwGetWindowSize(window, &windowSize.w, &windowSize.h);
 
 		glfwPollEvents();
-		
+
 		bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
 		bgfx::setViewRect(0, 0, 0, windowSize.w, windowSize.h);
 
-		scene.update(1.0f / 60.0f);
-		scene.render(windowSize);
+		game.update(1.0f / 60.0f);
+		game.render(windowSize);
 
 		bgfx::frame();
 	}

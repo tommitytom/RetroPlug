@@ -7,7 +7,7 @@
 #include <bx/allocator.h>
 
 #include "RpMath.h"
-#include "BaseCanvas.h"
+#include "graphics/BaseCanvas.h"
 
 namespace ftgl {
 	typedef struct texture_atlas_t;

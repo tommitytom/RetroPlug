@@ -191,7 +191,7 @@ void BgfxCanvas::endRender() {
 				.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float, true)
 				.end();
 
-			_vert = bgfx::createDynamicVertexBuffer(verts, uivDecl);
+			_vert = bgfx::createDynamicVertexBuffer(verts, uivDecl, BGFX_BUFFER_ALLOW_RESIZE);
 			_ind = bgfx::createDynamicIndexBuffer(inds, BGFX_BUFFER_INDEX32 | BGFX_BUFFER_ALLOW_RESIZE);
 		}
 
@@ -201,8 +201,9 @@ void BgfxCanvas::endRender() {
 			uint32 state = 0
 				| BGFX_STATE_WRITE_RGB
 				| BGFX_STATE_WRITE_A
-				| BGFX_STATE_WRITE_Z
-				| BGFX_STATE_DEPTH_TEST_LESS
+				| BGFX_STATE_BLEND_ALPHA
+				//| BGFX_STATE_WRITE_Z
+				//| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
 				//| BGFX_STATE_MSAA
 				;
