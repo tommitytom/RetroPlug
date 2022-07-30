@@ -123,8 +123,9 @@ namespace rp::engine {
 			_transform = Mat3x3::translation(position);
 		}
 
-		void setTransform(const Mat3x3& transform) {
+		Canvas& setTransform(const Mat3x3& transform) {
 			_transform = transform;
+			return *this;
 		}
 
 		void clearTransform() {

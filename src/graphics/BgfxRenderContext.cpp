@@ -6,8 +6,14 @@
 #include <bgfx/platform.h>
 #include <bx/math.h>
 
-#include "shaders/fs_tex.h"
-#include "shaders/vs_tex.h"
+#include "shaders/fs_tex_gl.h"
+#include "shaders/vs_tex_gl.h"
+#include "shaders/fs_tex_d3d9.h"
+#include "shaders/vs_tex_d3d9.h"
+#include "shaders/fs_tex_d3d11.h"
+#include "shaders/vs_tex_d3d11.h"
+#include "shaders/fs_tex_spirv.h"
+#include "shaders/vs_tex_spirv.h"
 
 using namespace rp;
 namespace fs = std::filesystem;
@@ -25,6 +31,45 @@ bgfx::ShaderHandle loadShader(const uint8_t* data, size_t size, const char* name
 	return handle;
 }
 
+struct ShaderProgram {
+	bgfx::ShaderHandle vert;
+	bgfx::ShaderHandle frag;
+};
+
+ShaderProgram loadShaders() {
+	const uint8* vert = nullptr; size_t vertSize = 0;
+	const uint8* frag = nullptr; size_t fragSize = 0;
+
+	switch (bgfx::getRendererType()) {
+	case bgfx::RendererType::Direct3D9:
+		vert = vs_tex_d3d9; vertSize = sizeof(vs_tex_d3d9);
+		frag = fs_tex_d3d9; fragSize = sizeof(fs_tex_d3d9);
+		break;
+	case bgfx::RendererType::Direct3D11:
+	case bgfx::RendererType::Direct3D12:
+		vert = vs_tex_d3d11; vertSize = sizeof(vs_tex_d3d11);
+		frag = fs_tex_d3d11; fragSize = sizeof(fs_tex_d3d11);
+		break;
+	case bgfx::RendererType::OpenGL:
+	case bgfx::RendererType::OpenGLES:
+		vert = vs_tex_gl; vertSize = sizeof(vs_tex_gl);
+		frag = fs_tex_gl; fragSize = sizeof(fs_tex_gl);
+		break;
+	case bgfx::RendererType::Vulkan:
+		vert = vs_tex_spirv; vertSize = sizeof(vs_tex_spirv);
+		frag = fs_tex_spirv; fragSize = sizeof(fs_tex_spirv);
+		break;
+	}
+
+	assert(vert && vertSize);
+	assert(frag && fragSize);
+
+	return ShaderProgram{
+		loadShader(vert, vertSize, "Canvas Vertex Shader"),
+		loadShader(frag, fragSize, "Canvas Pixel Shader")
+	};
+}
+
 BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res) {
 	bgfx::PlatformData pd;
 	pd.nwh = nativeWindowHandle;
@@ -39,10 +84,8 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res) {
 
 	bgfx::init(bgfxInit);
 
-	bgfx::ShaderHandle vsh = loadShader(vs_tex, sizeof(vs_tex), "Canvas Vertex Shader");
-	bgfx::ShaderHandle fsh = loadShader(fs_tex, sizeof(fs_tex), "Canvas Pixel Shader");
-
-	_prog = bgfx::createProgram(vsh, fsh, true);
+	ShaderProgram prog = loadShaders();
+	_prog = bgfx::createProgram(prog.vert, prog.frag, true);
 
 	_textureUniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 	_scaleUniform = bgfx::createUniform("scale", bgfx::UniformType::Vec4);
@@ -84,7 +127,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 
 		f32 _pixelRatio = 1.0f;
 
-		f32 scale[4] = { (2.0f / canvas.getDimensions().w) * _pixelRatio, (2.0f / canvas.getDimensions().h) * _pixelRatio, 0.0f, 0.0f };
+		f32 scale[4] = { (2.0f / canvas.getDimensions().w) * _pixelRatio, (2.0f / canvas.getDimensions().h) * _pixelRatio, 1.0f, 0.0f };
 
 		for (const engine::CanvasSurface& surface : geom.surfaces) {
 			uint32 state = 0
@@ -95,6 +138,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 				//| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
 				//| BGFX_STATE_MSAA
+				| BGFX_STATE_PT_LINESTRIP
 				;
 
 			switch (surface.primitive) {
@@ -116,6 +160,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 
 			bgfx::touch(surface.viewId);
 
+			state |= BGFX_STATE_PT_LINESTRIP;
 			bgfx::setState(state);
 
 			bgfx::setViewClear(surface.viewId, BGFX_CLEAR_COLOR, 0x000000FF);
@@ -127,6 +172,9 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 			bgfx::setTexture(0, _textureUniform, surface.texture->handle);
 			bgfx::setVertexBuffer(0, _vert);
 			bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
+
+			state |= BGFX_STATE_PT_LINESTRIP;
+			bgfx::setState(state);
 
 			bgfx::submit(surface.viewId, _prog);
 		}

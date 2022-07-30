@@ -7,9 +7,6 @@
 #include <freetype-gl/texture-atlas.h>
 #include <freetype-gl/texture-font.h>
 
-#include "shaders/fs_tex.h"
-#include "shaders/vs_tex.h"
-
 using namespace rp;
 using namespace rp::engine;
 namespace fs = std::filesystem;
@@ -188,7 +185,7 @@ void Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
 		CanvasVertex{ _transform * to, agbr, 0, 0 }
 	});
 
-	_geom.indices.insert(_geom.indices.end(), { v + 1, v + 0 });
+	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });
 
 	_geom.surfaces.back().indexCount += 2;
 }

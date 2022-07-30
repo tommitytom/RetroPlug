@@ -73,6 +73,7 @@ workspace "RetroPlugAll"
 		cppdialect "C++latest"
 		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING" }
 		disablewarnings { "4834" }
+		buildoptions { "/Zc:__cplusplus" }
 
 	filter { "options:emscripten" }
 		buildoptions { "-matomics", "-mbulk-memory" }
