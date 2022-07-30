@@ -5,7 +5,7 @@
 #include "platform/Types.h"
 #include "RpMath.h"
 
-#include "graphics/BgfxCanvas.h"
+#include "graphics/Canvas.h"
 
 namespace rp {
 	class Scene {
@@ -14,7 +14,7 @@ namespace rp {
 		DimensionF _windowSize;
 		RectF _viewPort;
 
-		rp::engine::BgfxCanvas _canvas;
+		rp::engine::Canvas _canvas;
 
 		rp::engine::CanvasTextureHandle _upTex;
 

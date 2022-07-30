@@ -1,9 +1,9 @@
 #pragma once
 
 #include "NanovgCanvas.h"
-#include "graphics/BgfxCanvas.h"
+#include "graphics/Canvas.h"
 
 namespace rp {
 	//class Canvas : public NanovgCanvas {};
-	class Canvas : public rp::engine::BgfxCanvas {};
+	class Canvas : public rp::engine::Canvas {};
 }

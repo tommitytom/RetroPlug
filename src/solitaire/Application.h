@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "BgfxRenderContext.h"
+#include "graphics/BgfxRenderContext.h"
 #include "Window.h"
 #include "WindowManager.h"
 

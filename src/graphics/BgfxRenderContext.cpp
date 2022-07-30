@@ -60,7 +60,7 @@ void BgfxRenderContext::beginFrame() {
 	
 }
 
-void BgfxRenderContext::renderCanvas(engine::BgfxCanvas& canvas) {
+void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 	const engine::CanvasGeometry& geom = canvas.getGeometry();
 	
 	if (geom.vertices.size()) {

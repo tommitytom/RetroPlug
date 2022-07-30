@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "BgfxRenderContext.h"
+#include "graphics/BgfxRenderContext.h"
 
 #include "platform/Types.h"
 #include "RpMath.h"
@@ -25,13 +25,13 @@ namespace rp::app {
 
 		uint32 _id = std::numeric_limits<uint32>::max();
 
-		engine::BgfxCanvas _canvas;
+		engine::Canvas _canvas;
 
 	public:
 		Window(std::string_view name, Dimension res);
 		~Window();
 
-		engine::BgfxCanvas& getCanvas() {
+		engine::Canvas& getCanvas() {
 			return _canvas;
 		}
 

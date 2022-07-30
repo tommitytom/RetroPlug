@@ -9,7 +9,6 @@
 #include <entt/resource/resource.hpp>
 
 #include "RpMath.h"
-#include "graphics/BaseCanvas.h"
 #include "graphics/BgfxTexture.h"
 
 using namespace entt::literals;
@@ -65,7 +64,7 @@ namespace rp::engine {
 		std::vector<CanvasSurface> surfaces;
 	};
 
-	class BgfxCanvas : public BaseCanvas {
+	class Canvas {
 	private:
 		CanvasGeometry _geom;
 
@@ -95,8 +94,8 @@ namespace rp::engine {
 		std::unordered_set<entt::id_type> _invalidUris;
 
 	public:
-		BgfxCanvas(uint32 viewId = 0);
-		~BgfxCanvas();
+		Canvas(uint32 viewId = 0);
+		~Canvas();
 
 		void clear() {
 			_geom.indices.clear();
@@ -151,19 +150,19 @@ namespace rp::engine {
 
 		//CanvasTextureHandle loadTexture(const std::filesystem::path& filePath);
 
-		void beginRender(Dimension res, f32 pixelRatio) override;
+		void beginRender(Dimension res, f32 pixelRatio);
 
-		void endRender() override;
+		void endRender();
 
-		void translate(PointF amount) override;
+		void translate(PointF amount);
 
-		void polygon(const PointF* points, uint32 count) override;
+		void polygon(const PointF* points, uint32 count);
 
 		void points(const PointF* points, uint32 count);
 
-		void setScale(f32 scaleX, f32 scaleY) override;
+		void setScale(f32 scaleX, f32 scaleY);
 
-		void fillRect(const RectT<f32>& area, const Color4F& color) override;
+		void fillRect(const RectT<f32>& area, const Color4F& color);
 
 		void fillRect(const Rect& area, const Color4F& color) { fillRect((RectF)area, color); }
 
@@ -180,9 +179,9 @@ namespace rp::engine {
 
 		void texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
 
-		void strokeRect(const RectT<f32>& area, const Color4F& color) override;
+		void strokeRect(const RectT<f32>& area, const Color4F& color);
 
-		void text(f32 x, f32 y, std::string_view text, const Color4F& color) override;
+		void text(f32 x, f32 y, std::string_view text, const Color4F& color);
 
 		void circle(const PointF& pos, f32 radius, uint32 segments = 32, const Color4F& color = Color4F(1,1,1,1));
 

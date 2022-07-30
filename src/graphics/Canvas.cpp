@@ -1,4 +1,4 @@
-#include "BgfxCanvas.h"
+#include "Canvas.h"
 
 #include <fstream>
 
@@ -26,7 +26,7 @@ uint32 toUint32Abgr(const Color4F& color) {
 		(static_cast<uint32>(color.r * 255.f) << 0);
 }
 
-BgfxCanvas::BgfxCanvas(uint32 viewId): _viewId(viewId) {
+Canvas::Canvas(uint32 viewId): _viewId(viewId) {
 	//_textureLookup.push_back(_whiteTexture);
 
 	Dimension atlasSize = { 512, 512 };
@@ -48,7 +48,7 @@ BgfxCanvas::BgfxCanvas(uint32 viewId): _viewId(viewId) {
 	//_textureLookup.push_back(atlasTex);
 }
 
-BgfxCanvas::~BgfxCanvas() {
+Canvas::~Canvas() {
 	//ftgl::texture_font_delete(_font);
 	//ftgl::texture_atlas_delete(_atlas);
 	
@@ -68,7 +68,7 @@ entt::id_type getPathUriHash(const std::filesystem::path& filePath) {
 	return getUriHash(uri);
 }
 
-entt::resource<TextureAtlas> BgfxCanvas::createTextureAtlas(std::string_view uri, const entt::resource<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles) {
+entt::resource<TextureAtlas> Canvas::createTextureAtlas(std::string_view uri, const entt::resource<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles) {
 	auto atlas = _textureAtlasCache.load(getUriHash(uri), texture, tiles);
 	const DimensionF dim = (DimensionF)texture->dimensions;
 
@@ -84,7 +84,7 @@ entt::resource<TextureAtlas> BgfxCanvas::createTextureAtlas(std::string_view uri
 	return atlas.first->second;
 }
 
-entt::resource<Texture> BgfxCanvas::loadTexture(const std::filesystem::path& filePath) {
+entt::resource<Texture> Canvas::loadTexture(const std::filesystem::path& filePath) {
 	entt::id_type uriHash = getPathUriHash(filePath);
 	
 	auto ret = _textureCache.load(uriHash, filePath);
@@ -101,7 +101,7 @@ entt::resource<Texture> BgfxCanvas::loadTexture(const std::filesystem::path& fil
 	return res;
 }
 
-void BgfxCanvas::beginRender(Dimension res, f32 pixelRatio) {
+void Canvas::beginRender(Dimension res, f32 pixelRatio) {
 	if (!_whiteTexture) {
 		_whiteTexture = createWhiteTexture(8, 8);
 	}
@@ -120,7 +120,7 @@ void BgfxCanvas::beginRender(Dimension res, f32 pixelRatio) {
 	});
 }
 
-void BgfxCanvas::checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture) {
+void Canvas::checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture) {
 	CanvasSurface& backSurf = _geom.surfaces.back();
 
 	if (backSurf.indexCount == 0) {
@@ -137,15 +137,15 @@ void BgfxCanvas::checkSurface(RenderPrimitive primitive, const entt::resource<Te
 	}
 }
 
-void BgfxCanvas::endRender() {
+void Canvas::endRender() {
 
 }
 
-void BgfxCanvas::translate(PointF amount) {
+void Canvas::translate(PointF amount) {
 
 }
 
-void BgfxCanvas::points(const PointF* points, uint32 count) {
+void Canvas::points(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Points, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
@@ -159,7 +159,7 @@ void BgfxCanvas::points(const PointF* points, uint32 count) {
 	_geom.surfaces.back().indexCount += count;
 }
 
-void BgfxCanvas::polygon(const PointF* points, uint32 count) {
+void Canvas::polygon(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
@@ -177,7 +177,7 @@ void BgfxCanvas::polygon(const PointF* points, uint32 count) {
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color) {
+void Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
 	checkSurface(RenderPrimitive::LineList, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -193,7 +193,7 @@ void BgfxCanvas::line(const PointF& from, const PointF& to, const Color4F& color
 	_geom.surfaces.back().indexCount += 2;
 }
 
-void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
+void Canvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -214,11 +214,11 @@ void BgfxCanvas::circle(const PointF& pos, f32 radius, uint32 segments, const Co
 	}
 }
 
-void BgfxCanvas::setScale(f32 scaleX, f32 scaleY) {
+void Canvas::setScale(f32 scaleX, f32 scaleY) {
 
 }
 
-void BgfxCanvas::fillRect(const RectT<f32>& area, const Color4F& color) {
+void Canvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -239,7 +239,7 @@ void BgfxCanvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::texture(const TextureRenderDesc& desc) {
+void Canvas::texture(const TextureRenderDesc& desc) {
 	checkSurface(RenderPrimitive::Triangles, desc.textureHandle);
 
 	uint32 agbr = toUint32Abgr(desc.color);
@@ -260,7 +260,7 @@ void BgfxCanvas::texture(const TextureRenderDesc& desc) {
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color) {
+void Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color) {
 	const auto foundTile = _tileLookup.find(uriHash);
 
 	if (foundTile == _tileLookup.end()) {
@@ -295,7 +295,7 @@ void BgfxCanvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Co
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
+void Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -316,7 +316,7 @@ void BgfxCanvas::texture(const entt::resource<Texture>& texture, const RectT<f32
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
+void Canvas::texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -341,11 +341,11 @@ void BgfxCanvas::texture(const entt::resource<Texture>& texture, const Rect& tex
 	_geom.surfaces.back().indexCount += 6;
 }
 
-void BgfxCanvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
+void Canvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
 
 }
 
-void BgfxCanvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
+void Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
 	//checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle(1));
 
 	uint32 agbr = toUint32Abgr(color);

@@ -88,7 +88,7 @@ function util.createConfigureProject(includeDeps)
 		filter { "system:windows" }
 			prebuildcommands {
 				"cd ../..",
-				"premake5" .. includeDepArg .. " vs2019"
+				"premake5" .. includeDepArg .. " " .. _ACTION
 			}
 
 		filter {}

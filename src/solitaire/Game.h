@@ -8,7 +8,7 @@
 #include "platform/Types.h"
 #include "RpMath.h"
 
-#include "graphics/BgfxCanvas.h"
+#include "graphics/Canvas.h"
 #include "graphics/BgfxTexture.h"
 #include "Window.h"
 

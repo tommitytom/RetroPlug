@@ -1,7 +1,7 @@
 #pragma once
 
 #include "RpMath.h"
-#include "graphics/BgfxCanvas.h"
+#include "graphics/Canvas.h"
 
 #include <bgfx/bgfx.h>
 
@@ -60,7 +60,7 @@ namespace rp {
 
 		void beginFrame();
 
-		void renderCanvas(engine::BgfxCanvas& canvas);
+		void renderCanvas(engine::Canvas& canvas);
 
 		void endFrame();
 	};

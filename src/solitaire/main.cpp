@@ -33,5 +33,5 @@ public:
 
 int main(void) {
 	rp::app::Application app;
-	return app.run<BasicWindow>();
+	return app.run<rp::Game>();
 }

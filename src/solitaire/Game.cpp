@@ -249,7 +249,7 @@ void Game::onFrame(f32 delta) {
 	SceneGraphUtil::updateWorldTransforms(_registry, _rootEntity);
 
 	//Render
-	engine::BgfxCanvas& canvas = getCanvas();
+	engine::Canvas& canvas = getCanvas();
 
 	SceneGraphUtil::eachRecursive(_registry, _rootEntity, [&](entt::entity e) {
 		const SpriteRenderComponent* sprite = _registry.try_get<SpriteRenderComponent>(e);
