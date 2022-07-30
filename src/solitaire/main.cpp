@@ -1,72 +1,37 @@
-#include <string>
-#include <filesystem>
-
-#include <stdio.h>
-
-#include <bgfx/bgfx.h>
-#include <bgfx/platform.h>
-#include <bx/math.h>
-#include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-
+#include "Application.h"
 #include "Game.h"
 
-const int WINDOW_WIDTH = 1024;
-const int WINDOW_HEIGHT = 768;
+#include <spdlog/spdlog.h>
 
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-	rp::Game* game = (rp::Game*)glfwGetWindowUserPointer(window);
-	game->onMouseButton(button, action, mods);
-}
+using namespace rp;
 
-void mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
-	rp::Game* game = (rp::Game*)glfwGetWindowUserPointer(window);
-	game->onMouseMove(x, y);
-}
+static uint32 count = 0;
 
-int main(void) {
-	glfwInit();
-	GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Hello, bgfx!", NULL, NULL);
+class BasicWindow : public rp::app::Window {
+private:
+	entt::resource<engine::Texture> _tex;
 
-	bgfx::PlatformData pd;
-	pd.nwh = glfwGetWin32Window(window);
-	bgfx::setPlatformData(pd);
+public:
+	BasicWindow() : rp::app::Window(fmt::format("Basic window {}", count++), { 300, 300 }) {}
+	~BasicWindow() = default;
 
-	bgfx::Init bgfxInit;
-	bgfxInit.type = bgfx::RendererType::OpenGL;
-	bgfxInit.resolution.width = WINDOW_WIDTH;
-	bgfxInit.resolution.height = WINDOW_HEIGHT;
-	bgfxInit.resolution.reset = BGFX_RESET_VSYNC;
-	bgfxInit.platformData.nwh = glfwGetWin32Window(window);
-	bgfx::init(bgfxInit);
-
-	rp::Game game;
-	game.init();
-
-	glfwSetWindowUserPointer(window, &game);
-	glfwSetCursorPosCallback(window, mouseMoveCallback);
-	glfwSetMouseButtonCallback(window, mouseButtonCallback);
-
-	while (!glfwWindowShouldClose(window)) {
-		rp::Dimension windowSize;
-		glfwGetWindowSize(window, &windowSize.w, &windowSize.h);
-
-		glfwPollEvents();
-
-		bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
-		bgfx::setViewRect(0, 0, 0, windowSize.w, windowSize.h);
-
-		game.update(1.0f / 60.0f);
-		game.render(windowSize);
-
-		bgfx::frame();
+	void onInitialize() override {
+		_tex = getCanvas().loadTexture("cardback.png");
 	}
 
-	bgfx::shutdown();
+	void onFrame(f32 delta) override {
+		getCanvas().fillRect(Rect{ 0, 0, 100, 100 }, Color4F(0, 0, 1, 1));
+		//getCanvas().texture(_tex, RectF(0, 0, 100, 100), Color4F(0, 0, 1, 1));
+	}
 
-	glfwDestroyWindow(window);
-	glfwTerminate();
+	void onKey(VirtualKey::Enum key, bool down) override {
+		if (key == VirtualKey::Space && down) {
+			getWindowManager().createWindow<BasicWindow>();
+		}
+	}
+};
 
-	return 0;
+int main(void) {
+	rp::app::Application app;
+	return app.run<BasicWindow>();
 }

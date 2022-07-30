@@ -3,13 +3,13 @@
 #include "RpMath.h"
 
 namespace rp::engine {
-	struct CanvasTextureHandle {
+	/*struct CanvasTextureHandle {
 		uint32 handle = 0;
 
 		bool operator==(CanvasTextureHandle other) const {
 			return handle == other.handle;
 		}
-	};
+	};*/
 
 	class BaseCanvas {
 	public:
@@ -27,7 +27,7 @@ namespace rp::engine {
 		virtual void polygon(const PointF* points, uint32 count) = 0;
 
 		inline void polygon(const std::vector<PointF>& points) {
-			polygon(points.data(), points.size());
+			polygon(points.data(), (uint32)points.size());
 		}
 
 		template <const size_t PointCount>

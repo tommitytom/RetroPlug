@@ -32,7 +32,6 @@ void RetroPlugApplication::onInit() {
 	_vg = nvgCreate(0, 0);
 	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
 
-	_retroPlug.setNvgContext(_vg);
 	_retroPlug.setAudioManager(getAudioManager());
 
 	nvgCreateFontMem(_vg, "Early-GameBoy", Early_GameBoy, (int)Early_GameBoy_len, 0);
@@ -46,7 +45,7 @@ void RetroPlugApplication::onFrame(f64 delta) {
 	bgfx::touch(kClearView);
 
 	NVGcontext* vg = _vg;
-	DimensionT<uint32> res = getResolution();
+	Dimension res = (Dimension)getResolution();
 	nvgBeginFrame(_vg, (f32)res.w, (f32)res.h, 1.0f);
 
 	_retroPlug.getUiContext().processDelta(delta);
@@ -58,7 +57,7 @@ void RetroPlugApplication::onFrame(f64 delta) {
 
 	res = _retroPlug.getUiContext().getDimensions();
 	UiState& uiState = _retroPlug.getUiContext().getState();
-	setResolution(res);
+	setResolution((DimensionU32)res);
 }
 
 void RetroPlugApplication::onAudio(const f32* input, f32* output, uint32 frameCount) {

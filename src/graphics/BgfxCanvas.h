@@ -1,25 +1,29 @@
 #pragma once
 
 #include <filesystem>
+#include <unordered_set>
 #include <vector>
 
-#include <bgfx/bgfx.h>
-#include <bx/allocator.h>
+#include <entt/core/hashed_string.hpp>
+#include <entt/resource/cache.hpp>
+#include <entt/resource/resource.hpp>
 
 #include "RpMath.h"
 #include "graphics/BaseCanvas.h"
+#include "graphics/BgfxTexture.h"
+
+using namespace entt::literals;
 
 namespace ftgl {
-	typedef struct texture_atlas_t;
-	typedef struct texture_font_t;
+	struct texture_atlas_t;
+	struct texture_font_t;
 }
 
 namespace rp::engine {
 	struct CanvasVertex {
 		PointF pos;
 		uint32 abgr;
-		f32 u;
-		f32 v;
+		PointF uv;
 	};
 
 	enum class RenderPrimitive {
@@ -32,36 +36,51 @@ namespace rp::engine {
 		TriangleFan,
 	};
 
+	struct Tile {
+		f32 top;
+		f32 left;
+		f32 bottom;
+		f32 right;
+	};
+
 	struct CanvasSurface {
 		RenderPrimitive primitive = RenderPrimitive::Triangles;
-		CanvasTextureHandle texture;
+		entt::resource<Texture> texture;
 		size_t indexOffset = 0;
 		size_t indexCount = 0;
+		uint32 viewId = 0;
+		Rect viewArea;
+	};
+
+	struct TextureRenderDesc {
+		entt::resource<Texture> textureHandle;
+		RectT<f32> textureUv;
+		RectT<f32> area;
+		Color4F color;
+	};
+
+	struct CanvasGeometry {
+		std::vector<CanvasVertex> vertices;
+		std::vector<uint32> indices;
+		std::vector<CanvasSurface> surfaces;
 	};
 
 	class BgfxCanvas : public BaseCanvas {
 	private:
-		std::vector<CanvasVertex> _vertices;
-		std::vector<uint32> _indices;
-		std::vector<CanvasSurface> _surfaces;
+		CanvasGeometry _geom;
 
 		Rect _viewPort;
 		Rect _res;
 		f32 _pixelRatio = 1.0f;
 
-		bgfx::DynamicVertexBufferHandle _vert = BGFX_INVALID_HANDLE;
-		bgfx::DynamicIndexBufferHandle _ind = BGFX_INVALID_HANDLE;
-		bgfx::ProgramHandle _prog;
+		uint32 _viewId;
 
-		bgfx::TextureHandle _whiteTexture;
-		bgfx::UniformHandle _textureUniform;
-		bgfx::UniformHandle _scaleUniform;
+		entt::resource<Texture> _whiteTexture;
 
-		bgfx::ViewId _viewId;
+		entt::resource_cache<Texture, TextureLoader> _textureCache;
+		entt::resource_cache<TextureAtlas, TextureAtlasLoader> _textureAtlasCache;
 
-		std::vector<bgfx::TextureHandle> _textureLookup;
-
-		bx::DefaultAllocator _alloc;
+		std::unordered_map<entt::id_type, std::pair<entt::resource<Texture>, Tile>> _tileLookup;
 
 		PointF _offset = { 0, 0 };
 		PointF _scale = { 1, 1 };
@@ -73,11 +92,28 @@ namespace rp::engine {
 
 		bool _lineAA = false;
 
+		std::unordered_set<entt::id_type> _invalidUris;
+
 	public:
-		BgfxCanvas(bgfx::ViewId viewId = 0);
+		BgfxCanvas(uint32 viewId = 0);
 		~BgfxCanvas();
 
-		void setViewId(bgfx::ViewId viewId) {
+		void clear() {
+			_geom.indices.clear();
+			_geom.vertices.clear();
+			_geom.surfaces.clear();
+			clearTransform();
+		}
+
+		Dimension getDimensions() const {
+			return _res.dimensions;
+		}
+
+		const CanvasGeometry& getGeometry() const {
+			return _geom;
+		}
+
+		void setViewId(uint32 viewId) {
 			_viewId = viewId;
 		}
 
@@ -99,7 +135,21 @@ namespace rp::engine {
 			_transform = Mat3x3();
 		}
 
-		CanvasTextureHandle loadTexture(const std::filesystem::path& filePath);
+		entt::resource<Texture> loadTexture(const std::filesystem::path& filePath);
+
+		entt::resource<TextureAtlas> createTextureAtlas(std::string_view uri, const entt::resource<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles);
+
+		std::optional<std::pair<entt::resource<Texture>, Tile>> getTile(entt::id_type uriHash) const {
+			auto found = _tileLookup.find(uriHash);
+
+			if (found != _tileLookup.end()) {
+				return found->second;
+			}
+
+			return std::nullopt;
+		}
+
+		//CanvasTextureHandle loadTexture(const std::filesystem::path& filePath);
 
 		void beginRender(Dimension res, f32 pixelRatio) override;
 
@@ -115,7 +165,20 @@ namespace rp::engine {
 
 		void fillRect(const RectT<f32>& area, const Color4F& color) override;
 
-		void texture(CanvasTextureHandle textureHandle, const RectT<f32>& area, const Color4F& color);
+		void fillRect(const Rect& area, const Color4F& color) { fillRect((RectF)area, color); }
+
+		void texture(const TextureRenderDesc& desc);
+
+		void texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color);
+
+		void texture(std::string_view uri, const RectT<f32>& area, const Color4F& color) {
+			entt::id_type uriHash = entt::hashed_string(uri.data(), uri.size());
+			texture(uriHash, area, color);
+		}
+
+		void texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color);
+
+		void texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
 
 		void strokeRect(const RectT<f32>& area, const Color4F& color) override;
 
@@ -126,16 +189,24 @@ namespace rp::engine {
 		void line(const PointF& from, const PointF& to, const Color4F& color);
 
 	private:
-		void checkSurface(RenderPrimitive primitive, CanvasTextureHandle texture);
+		void checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture);
 
 		inline uint32 writeVertex(const PointF& pos, uint32 color) {
-			_vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
-			return (uint32)_vertices.size() - 1;
+			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
+			return (uint32)_geom.vertices.size() - 1;
 		}
 
 		inline void writeTriangleIndices(uint32 v1, uint32 v2, uint32 v3) {
-			_indices.insert(_indices.end(), { v1, v2, v3 });
-			_surfaces.back().indexCount += 3;
+			_geom.indices.insert(_geom.indices.end(), { v1, v2, v3 });
+			_geom.surfaces.back().indexCount += 3;
+		}
+
+		entt::resource<Texture> createWhiteTexture(uint32 w, uint32 h) {
+			const uint32 size = w * h * 4;
+			std::vector<char> data(size);
+			
+			memset(data.data(), 0xFF, size);
+			return _textureCache.load("white"_hs, w, h, 4, data.data()).first->second;
 		}
 	};
 }

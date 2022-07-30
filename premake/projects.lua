@@ -353,6 +353,32 @@ function m.Solitaire.project()
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
 end
 
+function m.Solitaire.projectLivepp()
+	project "Solitaire-live++"
+	kind "ConsoleApp"
+
+	m.Graphics.link()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/solitaire/**.h",
+		"src/solitaire/**.cpp"
+	}
+
+	util.liveppCompat()
+end
+
 function m.OffsetCalculator.project()
 	project "LsdjOffsetCalculator"
 	kind "ConsoleApp"

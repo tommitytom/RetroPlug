@@ -104,14 +104,14 @@ namespace rp {
 
 		template <typename T>
 		SystemWrapperPtr addSystem(const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().seq(), settings);
+			return addSystem(entt::type_id<T>().index(), settings);
 		}
 
 		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID);
 
 		template <typename T>
 		SystemWrapperPtr addSystem(const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().seq(), settings, std::forward<LoadConfig>(loadConfig));
+			return addSystem(entt::type_id<T>().index(), settings, std::forward<LoadConfig>(loadConfig));
 		}
 
 		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);

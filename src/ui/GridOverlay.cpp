@@ -141,7 +141,7 @@ void GridOverlay::onRender(Canvas& canvas) {
 		ViewPtr child = _grid->getChild(_selected);
 		auto childArea = child->getArea();
 
-		canvas.strokeRect(childArea, COLOR_RED);
+		//canvas.strokeRect(childArea, COLOR_RED);
 	}
 }
 

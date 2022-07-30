@@ -77,10 +77,7 @@ namespace rp {
 		entt::type_info _type;
 
 	public:
-		View(DimensionT<int32> dimensions = { 100, 100 }) : _area({}, dimensions) {
-			_type = entt::type_id<View>();
-		}
-
+		View(DimensionT<int32> dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
 		View(DimensionT<int32> dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
 
 		~View() {
@@ -199,7 +196,7 @@ namespace rp {
 		template <typename T>
 		T* createShared(T&& item) {
 			if (_shared && !getShared<T>()) {
-				return &_shared->userData.set<T>(std::forward(item));
+				return &_shared->userData.ctx().emplace<T>(std::forward(item));
 			}
 
 			return nullptr;
@@ -208,7 +205,7 @@ namespace rp {
 		template <typename T>
 		T* createShared() {
 			if (_shared && !getShared<T>()) {
-				return &_shared->userData.set<T>();
+				return &_shared->userData.ctx().emplace<T>();
 			}
 
 			return nullptr;
@@ -217,7 +214,7 @@ namespace rp {
 		template <typename T>
 		T* getShared() {
 			if (_shared) {
-				return _shared->userData.try_ctx<T>();
+				return _shared->userData.ctx().find<T>();
 			}
 
 			return nullptr;

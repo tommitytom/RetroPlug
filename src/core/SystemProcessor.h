@@ -48,7 +48,7 @@ namespace rp {
 
 		template <typename T>
 		std::vector<SystemPtr>& getSystems() {
-			return getSystems(entt::type_id<T>().seq());
+			return getSystems(entt::type_id<T>().index());
 		}
 
 		std::vector<SystemType> getRomLoaders(std::string_view path);
@@ -59,7 +59,7 @@ namespace rp {
 		
 		template <typename T>
 		SystemManagerBase* findManager() {
-			return findManager(entt::type_id<T>().seq());
+			return findManager(entt::type_id<T>().index());
 		}
 	};
 }

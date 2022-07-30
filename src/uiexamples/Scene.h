@@ -36,7 +36,7 @@ namespace rp {
 
 	namespace Box2dUtil {
 		static PhysicsComponent& addRigidBody(entt::registry& reg, entt::entity e, const b2BodyDef& bodyDef, const b2Shape& shape, f32 density) {
-			b2World& world = reg.ctx<PhysicsWorldSingleton>().world;
+			b2World& world = reg.ctx().at<PhysicsWorldSingleton>().world;
 
 			PhysicsComponent& comp = reg.emplace<PhysicsComponent>(e, PhysicsComponent {
 				.body = world.CreateBody(&bodyDef)

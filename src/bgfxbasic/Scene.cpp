@@ -38,9 +38,16 @@ void Scene::init() {
 	_upTex = _canvas.loadTexture("taco.png");
 }
 
+const f32 PHYSICS_DELTA_SECS = 1.0f / 60.0f;
+
 void Scene::update(f32 delta) {
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx<PhysicsWorldSingleton>();
-	physicsWorld.world->Step(1.0f / 60.0f, 6, 2);
+	physicsWorld.delta += delta;
+
+	if (physicsWorld.delta > PHYSICS_DELTA_SECS) {
+		physicsWorld.delta = fmod(physicsWorld.delta, PHYSICS_DELTA_SECS);
+		physicsWorld.world->Step(PHYSICS_DELTA_SECS, 6, 2);
+	}
 }
 
 void Scene::render(Dimension res) {

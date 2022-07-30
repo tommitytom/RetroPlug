@@ -24,7 +24,7 @@ namespace rp {
 
 		template <typename T>
 		T& addState(T&& value = T()) {
-			return _sharedState.set<T>(std::forward<T>(value));
+			return _sharedState.ctx().emplace<T>(std::forward<T>(value));
 		}
 
 		std::vector<NodeProcessorPtr>& getNodes() {

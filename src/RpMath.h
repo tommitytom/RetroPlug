@@ -60,6 +60,9 @@ namespace rp {
 			return x != other.x || y != other.y;
 		}
 
+		PointT operator+() const {
+			return { +x, +y };
+		}
 
 		PointT operator+(const PointT& other) const {
 			return { x + other.x, y + other.y };
@@ -191,6 +194,99 @@ namespace rp {
 		bool operator!=(const DimensionT& other) const {
 			return w != other.w || h != other.h;
 		}
+
+
+		DimensionT operator+() const {
+			return { +w, +h };
+		}
+
+		DimensionT operator+(const DimensionT& other) const {
+			return { w + other.w, h + other.h };
+		}
+
+		DimensionT operator+(T value) const {
+			return { w + value, h + value };
+		}
+
+		DimensionT& operator+=(const DimensionT& other) {
+			w += other.w;
+			h += other.h;
+			return *this;
+		}
+
+		DimensionT& operator+=(T value) {
+			w += value;
+			h += value;
+			return *this;
+		}
+
+
+		DimensionT operator-() const {
+			return { -w, -h };
+		}
+
+		DimensionT operator-(const DimensionT& other) const {
+			return { w - other.w, h - other.h };
+		}
+
+		DimensionT operator-(T value) const {
+			return { w - value, h - value };
+		}
+
+		DimensionT& operator-=(const DimensionT& other) {
+			w -= other.w;
+			h -= other.h;
+			return *this;
+		}
+
+		DimensionT& operator-=(T value) {
+			w -= value;
+			h -= value;
+			return *this;
+		}
+
+
+		DimensionT operator*(const DimensionT& other) const {
+			return { w * other.w, h * other.h };
+		}
+
+		DimensionT operator*(T value) const {
+			return { w * value, h * value };
+		}
+
+		DimensionT& operator*=(const DimensionT& other) {
+			w *= other.w;
+			h *= other.h;
+			return *this;
+		}
+
+		DimensionT& operator*=(T value) {
+			w *= value;
+			h *= value;
+			return *this;
+		}
+
+
+		DimensionT operator/(const DimensionT& other) const {
+			return { w / other.w, h / other.h };
+		}
+
+		DimensionT operator/(T value) const {
+			return { w / value, h / value };
+		}
+
+		DimensionT& operator/=(const DimensionT& other) {
+			w /= other.w;
+			h /= other.h;
+			return *this;
+		}
+
+		DimensionT& operator/=(T value) {
+			w /= value;
+			h /= value;
+			return *this;
+		}
+
 
 		template <typename R>
 		explicit operator DimensionT<R>() const {
@@ -383,10 +479,18 @@ namespace rp {
 		}
 
 		PointF operator*(const PointF& other) const {
-			return PointF(
-				(m11 * other.x) + (m12 * other.y) + m13,
-				(m21 * other.x) + (m22 * other.y) + m23
-			);
+			return PointF{
+				.x = (m11 * other.x) + (m12 * other.y) + m13,
+				.y = (m21 * other.x) + (m22 * other.y) + m23
+			};
+		}
+
+		PointF getTranslation() const {
+			return PointF{ m13, m23 };
+		}
+
+		PointF getScale() const {
+			return PointF{ m11, m22 };
 		}
 	};
 }

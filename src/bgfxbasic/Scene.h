@@ -8,10 +8,6 @@
 #include "graphics/BgfxCanvas.h"
 
 namespace rp {
-	struct SpriteComponent {
-
-	};
-
 	class Scene {
 	private:
 		entt::registry _registry;

@@ -45,13 +45,13 @@ namespace rp {
 		template <typename T>
 		T& getState() {
 			assert(_shared);
-			return _shared->ctx<T>();
+			return _shared->ctx().at<T>();
 		}
 
 		template <typename T>
 		const T& getState() const {
 			assert(_shared);
-			return _shared->ctx<const T>();
+			return _shared->ctx().at<const T>();
 		}
 
 		void setAlwaysActive(bool alwaysActive) {

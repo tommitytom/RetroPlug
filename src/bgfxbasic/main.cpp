@@ -48,16 +48,22 @@ int main(void) {
 	glfwSetCursorPosCallback(window, mouseMoveCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
+	f64 lastTime = 0.0;
+
 	while (!glfwWindowShouldClose(window)) {
 		rp::Dimension windowSize;
 		glfwGetWindowSize(window, &windowSize.w, &windowSize.h);
 
 		glfwPollEvents();
 		
+		f64 time = glfwGetTime();
+		f32 delta = lastTime > 0 ? (f32)(time - lastTime) : 0.0f;
+		lastTime = time;
+		
 		bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000FF, 1.0f, 0);
 		bgfx::setViewRect(0, 0, 0, windowSize.w, windowSize.h);
 
-		scene.update(1.0f / 60.0f);
+		scene.update(delta);
 		scene.render(windowSize);
 
 		bgfx::frame();

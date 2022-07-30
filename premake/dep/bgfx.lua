@@ -31,7 +31,10 @@ function m.includeBx()
 end
 
 function m.includeBimg()
+	defines { "TINYEXR_USE_MINIZ=0" }
+
 	sysincludedirs {
+		"thirdparty/minizip-ng/lib/zlib",
 		BIMG_DIR .. "/include",
 		BIMG_DIR .. "/3rdparty",
 		BIMG_DIR .. "/3rdparty/astc-codec",
@@ -60,14 +63,14 @@ function m.includeBgfx()
 	--filter { "options:emscripten" }
 		--defines { "BGFX_CONFIG_RENDERER_OPENGLES=30" }
 
-	filter "system:windows"
+	--[[filter "system:windows"
 		defines { "BGFX_CONFIG_RENDERER_OPENGL=43" }
 
 	filter "configurations:Debug"
 		defines { "BGFX_CONFIG_DEBUG=1" }
 
 	filter "configurations:Development"
-		defines { "BGFX_CONFIG_DEBUG=1" }
+		defines { "BGFX_CONFIG_DEBUG=1" }]]
 
 	filter {}
 end
@@ -91,7 +94,7 @@ function m.link()
 	filter {}
 
 	-- The order of these is important on linux!
-	links { "bgfx", "bimg", "bx" }
+	links { "bgfx", "bimg", "bx", "zlib" }
 
 	m.compat()
 end
@@ -135,10 +138,10 @@ function m.bimgProject()
 			BIMG_DIR .. "/src/image_decode.cpp",
 			BIMG_DIR .. "/src/*.h",
 			BIMG_DIR .. "/3rdparty/astc-codec/src/decoder/*.cc",
-			BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.h",
-			BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.c",
-			BIMG_DIR .. "/3rdparty/lodepng/*.h",
-			BIMG_DIR .. "/3rdparty/lodepng/*.cpp"
+			--BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.h",
+			--BIMG_DIR .. "/3rdparty/tinyexr/deps/miniz/*.c",
+			--BIMG_DIR .. "/3rdparty/lodepng/*.h",
+			--BIMG_DIR .. "/3rdparty/lodepng/*.cpp"
 		}
 
 		filter "system:linux"

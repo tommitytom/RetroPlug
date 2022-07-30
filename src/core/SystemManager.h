@@ -77,7 +77,7 @@ namespace rp {
 	template <typename SystemType, typename ProxyType = void>
 	class SystemManager : public SystemManagerBase {
 	public:
-		SystemManager() : SystemManagerBase(entt::type_id<SystemType>().seq()) {}
+		SystemManager() : SystemManagerBase(entt::type_id<SystemType>().index()) {}
 
 		SystemPtr create(SystemId id) final override {
 			return std::make_shared<SystemType>(id);

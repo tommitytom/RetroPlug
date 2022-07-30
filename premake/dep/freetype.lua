@@ -5,12 +5,13 @@ local m = {}
 
 function m.include()
 	sysincludedirs {
+		"thirdparty/minizip-ng/lib/zlib",
 		FREETYPE_DIR .. "/include",
 		FREETYPEGL_DIR,
 	}
 
 	defines {
-		"FT2_BUILD_LIBRARY",
+		"FT2_BUILD_LIBRARY", "FT_CONFIG_OPTION_SYSTEM_ZLIB",
 	}
 end
 

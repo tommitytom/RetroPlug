@@ -270,7 +270,7 @@ namespace rp {
 	template <typename T>
 	class System : public SystemBase {
 	public:
-		System(SystemId id): SystemBase(id, entt::type_id<T>().seq()) {}
+		System(SystemId id): SystemBase(id, entt::type_id<T>().index()) {}
 	};
 
 	using SystemPtr = std::shared_ptr<SystemBase>;

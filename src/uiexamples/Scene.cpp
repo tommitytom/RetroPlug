@@ -85,13 +85,13 @@ void Scene::render() {
 	bx::mtxProj(proj, 60.0f, float(WNDW_WIDTH) / float(WNDW_HEIGHT), 0.1f, 100.0f, bgfx::getCaps()->homogeneousDepth);
 	bgfx::setViewTransform(0, view, proj);
 
-	float mtx[16];
+	/*float mtx[16];
 	bx::mtxRotateXY(mtx, counter * 0.01f, counter * 0.01f);
 	bgfx::setTransform(mtx);
 
 	bgfx::setVertexBuffer(0, vbh);
 	bgfx::setIndexBuffer(ibh);
 
-	bgfx::submit(0, program);
+	bgfx::submit(0, program);*/
 	bgfx::frame();
 }

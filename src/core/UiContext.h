@@ -51,7 +51,7 @@ namespace rp {
 		~UiContext() {}
 		
 		void initCanvas() {
-			_canvas.init();
+			//_canvas.init();
 		}
 
 		Dimension getDimensions() {

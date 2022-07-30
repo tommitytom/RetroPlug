@@ -10,6 +10,7 @@ namespace rp {
 	struct PhysicsWorldSingleton {
 		std::unique_ptr<b2World> world;
 		f32 meterSize = 64.0f;
+		f32 delta = 0.0f;
 	};
 
 	struct PhysicsComponent {
