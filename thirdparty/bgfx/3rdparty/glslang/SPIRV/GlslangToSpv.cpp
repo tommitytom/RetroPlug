@@ -260,6 +260,7 @@ protected:
     std::unordered_map<std::string, spv::Id> extBuiltinMap;
 
     std::unordered_map<long long, spv::Id> symbolValues;
+    std::unordered_map<uint32_t, spv::Id> builtInVariableIds;
     std::unordered_set<long long> rValueParameters;  // set of formal function parameters passed as rValues,
                                                // rather than a pointer
     std::unordered_map<std::string, spv::Function*> functionMap;
@@ -1050,6 +1051,15 @@ spv::BuiltIn TGlslangToSpvTraverser::TranslateBuiltInDecoration(glslang::TBuiltI
         builder.addCapability(spv::CapabilityFragmentBarycentricNV);
         return spv::BuiltInBaryCoordNoPerspNV;
 
+    case glslang::EbvBaryCoordEXT:
+        builder.addExtension(spv::E_SPV_KHR_fragment_shader_barycentric);
+        builder.addCapability(spv::CapabilityFragmentBarycentricKHR);
+        return spv::BuiltInBaryCoordKHR;
+    case glslang::EbvBaryCoordNoPerspEXT:
+        builder.addExtension(spv::E_SPV_KHR_fragment_shader_barycentric);
+        builder.addCapability(spv::CapabilityFragmentBarycentricKHR);
+        return spv::BuiltInBaryCoordNoPerspKHR;
+
     // mesh shaders
     case glslang::EbvTaskCountNV:
         return spv::BuiltInTaskCountNV;
@@ -1613,6 +1623,12 @@ TGlslangToSpvTraverser::TGlslangToSpvTraverser(unsigned int spvVersion,
         if (glslangIntermediate->getEarlyFragmentTests())
             builder.addExecutionMode(shaderEntry, spv::ExecutionModeEarlyFragmentTests);
 
+        if (glslangIntermediate->getEarlyAndLateFragmentTestsAMD())
+        {
+            builder.addExecutionMode(shaderEntry, spv::ExecutionModeEarlyAndLateFragmentTestsAMD);
+            builder.addExtension(spv::E_SPV_AMD_shader_early_and_late_fragment_tests);
+        }
+
         if (glslangIntermediate->getPostDepthCoverage()) {
             builder.addCapability(spv::CapabilitySampleMaskPostDepthCoverage);
             builder.addExecutionMode(shaderEntry, spv::ExecutionModePostDepthCoverage);
@@ -1622,6 +1638,9 @@ TGlslangToSpvTraverser::TGlslangToSpvTraverser(unsigned int spvVersion,
         if (glslangIntermediate->isDepthReplacing())
             builder.addExecutionMode(shaderEntry, spv::ExecutionModeDepthReplacing);
 
+        if (glslangIntermediate->isStencilReplacing())
+            builder.addExecutionMode(shaderEntry, spv::ExecutionModeStencilRefReplacingEXT);
+
 #ifndef GLSLANG_WEB
 
         switch(glslangIntermediate->getDepth()) {
@@ -1630,6 +1649,20 @@ TGlslangToSpvTraverser::TGlslangToSpvTraverser(unsigned int spvVersion,
         case glslang::EldUnchanged: mode = spv::ExecutionModeDepthUnchanged; break;
         default:                    mode = spv::ExecutionModeMax;            break;
         }
+
+        if (mode != spv::ExecutionModeMax)
+            builder.addExecutionMode(shaderEntry, (spv::ExecutionMode)mode);
+
+        switch (glslangIntermediate->getStencil()) {
+        case glslang::ElsRefUnchangedFrontAMD:  mode = spv::ExecutionModeStencilRefUnchangedFrontAMD; break;
+        case glslang::ElsRefGreaterFrontAMD:    mode = spv::ExecutionModeStencilRefGreaterFrontAMD;   break;
+        case glslang::ElsRefLessFrontAMD:       mode = spv::ExecutionModeStencilRefLessFrontAMD;      break;
+        case glslang::ElsRefUnchangedBackAMD:   mode = spv::ExecutionModeStencilRefUnchangedBackAMD;  break;
+        case glslang::ElsRefGreaterBackAMD:     mode = spv::ExecutionModeStencilRefGreaterBackAMD;    break;
+        case glslang::ElsRefLessBackAMD:        mode = spv::ExecutionModeStencilRefLessBackAMD;       break;
+        default:                       mode = spv::ExecutionModeMax;                         break;
+        }
+
         if (mode != spv::ExecutionModeMax)
             builder.addExecutionMode(shaderEntry, (spv::ExecutionMode)mode);
         switch (glslangIntermediate->getInterlockOrdering()) {
@@ -2783,6 +2816,10 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
             } else {
                 handleFunctionEntry(node);
             }
+            if (options.generateDebugInfo) {
+                const auto& loc = node->getLoc();
+                currentFunction->setDebugLineInfo(builder.getSourceFile(), loc.line, loc.column);
+            }
         } else {
             if (inEntryPoint)
                 entryPointTerminated = true;
@@ -2922,9 +2959,17 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
         std::vector<spv::Id> arguments;
         translateArguments(*node, arguments, lvalueCoherentFlags);
         spv::Id constructed;
-        if (node->getOp() == glslang::EOpConstructTextureSampler)
-            constructed = builder.createOp(spv::OpSampledImage, resultType(), arguments);
-        else if (node->getOp() == glslang::EOpConstructStruct ||
+        if (node->getOp() == glslang::EOpConstructTextureSampler) {
+            const glslang::TType& texType = node->getSequence()[0]->getAsTyped()->getType();
+            if (glslangIntermediate->getSpv().spv >= glslang::EShTargetSpv_1_6 &&
+                texType.getSampler().isBuffer()) {
+                // SamplerBuffer is not supported in spirv1.6 so
+                // `samplerBuffer(textureBuffer, sampler)` is a no-op
+                // and textureBuffer is the result going forward
+                constructed = arguments[0];
+            } else
+                constructed = builder.createOp(spv::OpSampledImage, resultType(), arguments);
+        } else if (node->getOp() == glslang::EOpConstructStruct ||
                  node->getOp() == glslang::EOpConstructCooperativeMatrix ||
                  node->getType().isArray()) {
             std::vector<spv::Id> constituents;
@@ -4159,8 +4204,10 @@ spv::Id TGlslangToSpvTraverser::convertGlslangToSpvType(const glslang::TType& ty
                 spvType = builder.makeImageType(getSampledType(sampler), TranslateDimensionality(sampler),
                                                 sampler.isShadow(), sampler.isArrayed(), sampler.isMultiSample(),
                                                 sampler.isImageClass() ? 2 : 1, TranslateImageFormat(type));
-                if (sampler.isCombined()) {
-                    // already has both image and sampler, make the combined type
+                if (sampler.isCombined() && 
+                    (!sampler.isBuffer() || glslangIntermediate->getSpv().spv < glslang::EShTargetSpv_1_6)) {
+                    // Already has both image and sampler, make the combined type. Only combine sampler to
+                    // buffer if before SPIR-V 1.6.
                     spvType = builder.makeSampledImageType(spvType);
                 }
             }
@@ -5557,10 +5604,12 @@ spv::Id TGlslangToSpvTraverser::createImageTextureFunctionCall(glslang::TIntermO
             operands.push_back(sample);
 
             spv::Id resultTypeId;
+            glslang::TBasicType typeProxy = node->getBasicType();
             // imageAtomicStore has a void return type so base the pointer type on
             // the type of the value operand.
             if (node->getOp() == glslang::EOpImageAtomicStore) {
                 resultTypeId = builder.makePointer(spv::StorageClassImage, builder.getTypeId(*opIt));
+                typeProxy = node->getAsAggregate()->getSequence()[0]->getAsTyped()->getType().getSampler().type;
             } else {
                 resultTypeId = builder.makePointer(spv::StorageClassImage, resultType());
             }
@@ -5574,7 +5623,7 @@ spv::Id TGlslangToSpvTraverser::createImageTextureFunctionCall(glslang::TIntermO
             for (; opIt != arguments.end(); ++opIt)
                 operands.push_back(*opIt);
 
-            return createAtomicOperation(node->getOp(), precision, resultType(), operands, node->getBasicType(),
+            return createAtomicOperation(node->getOp(), precision, resultType(), operands, typeProxy,
                 lvalueCoherentFlags);
         }
     }
@@ -8737,7 +8786,32 @@ spv::Id TGlslangToSpvTraverser::getSymbolId(const glslang::TIntermSymbol* symbol
     // it was not found, create it
     spv::BuiltIn builtIn = TranslateBuiltInDecoration(symbol->getQualifier().builtIn, false);
     auto forcedType = getForcedType(symbol->getQualifier().builtIn, symbol->getType());
+
+    // There are pairs of symbols that map to the same SPIR-V built-in:
+    // gl_ObjectToWorldEXT and gl_ObjectToWorld3x4EXT, and gl_WorldToObjectEXT
+    // and gl_WorldToObject3x4EXT. SPIR-V forbids having two OpVariables
+    // with the same BuiltIn in the same storage class, so we must re-use one.
+    const bool mayNeedToReuseBuiltIn =
+        builtIn == spv::BuiltInObjectToWorldKHR ||
+        builtIn == spv::BuiltInWorldToObjectKHR;
+
+    if (mayNeedToReuseBuiltIn) {
+        auto iter = builtInVariableIds.find(uint32_t(builtIn));
+        if (builtInVariableIds.end() != iter) {
+            id = iter->second;
+            symbolValues[symbol->getId()] = id;
+            if (forcedType.second != spv::NoType)
+                forceType[id] = forcedType.second;
+            return id;
+        }
+    }
+
     id = createSpvVariable(symbol, forcedType.first);
+
+    if (mayNeedToReuseBuiltIn) {
+        builtInVariableIds.insert({uint32_t(builtIn), id});
+    }
+
     symbolValues[symbol->getId()] = id;
     if (forcedType.second != spv::NoType)
         forceType[id] = forcedType.second;
@@ -8864,6 +8938,12 @@ spv::Id TGlslangToSpvTraverser::getSymbolId(const glslang::TIntermSymbol* symbol
         builder.addDecoration(id, spv::DecorationPerVertexNV);
         builder.addCapability(spv::CapabilityFragmentBarycentricNV);
         builder.addExtension(spv::E_SPV_NV_fragment_shader_barycentric);
+    }
+
+    if (symbol->getQualifier().pervertexEXT) {
+        builder.addDecoration(id, spv::DecorationPerVertexKHR);
+        builder.addCapability(spv::CapabilityFragmentBarycentricKHR);
+        builder.addExtension(spv::E_SPV_KHR_fragment_shader_barycentric);
     }
 
     if (glslangIntermediate->getHlslFunctionality1() && symbol->getType().getQualifier().semanticName != nullptr) {

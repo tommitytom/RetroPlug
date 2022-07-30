@@ -443,6 +443,18 @@ enum TLayoutDepth {
     EldCount
 };
 
+enum TLayoutStencil {
+    ElsNone,
+    ElsRefUnchangedFrontAMD,
+    ElsRefGreaterFrontAMD,
+    ElsRefLessFrontAMD,
+    ElsRefUnchangedBackAMD,
+    ElsRefGreaterBackAMD,
+    ElsRefLessBackAMD,
+
+    ElsCount
+};
+
 enum TBlendEquationShift {
     // No 'EBlendNone':
     // These are used as bit-shift amounts.  A mask of such shifts will have type 'int',
@@ -552,6 +564,7 @@ public:
         perViewNV = false;
         perTaskNV = false;
 #endif
+        pervertexEXT = false;
     }
 
     void clearMemory()
@@ -604,7 +617,8 @@ public:
     bool isNoContraction() const { return false; }
     void setNoContraction() { }
     bool isPervertexNV() const { return false; }
-    void setNullInit() { }
+    bool isPervertexEXT() const { return pervertexEXT; }
+    void setNullInit() {}
     bool isNullInit() const { return false; }
     void setSpirvByReference() { }
     bool isSpirvByReference() { return false; }
@@ -615,6 +629,7 @@ public:
     bool nopersp      : 1;
     bool explicitInterp : 1;
     bool pervertexNV  : 1;
+    bool pervertexEXT : 1;
     bool perPrimitiveNV : 1;
     bool perViewNV : 1;
     bool perTaskNV : 1;
@@ -663,12 +678,13 @@ public:
     }
     bool isAuxiliary() const
     {
-        return centroid || patch || sample || pervertexNV;
+        return centroid || patch || sample || pervertexNV || pervertexEXT;
     }
     bool isPatch() const { return patch; }
     bool isNoContraction() const { return noContraction; }
     void setNoContraction() { noContraction = true; }
     bool isPervertexNV() const { return pervertexNV; }
+    bool isPervertexEXT() const { return pervertexEXT; }
     void setNullInit() { nullInit = true; }
     bool isNullInit() const { return nullInit; }
     void setSpirvByReference() { spirvByReference = true; }
@@ -701,6 +717,7 @@ public:
         case EvqVaryingOut:
         case EvqFragColor:
         case EvqFragDepth:
+        case EvqFragStencil:
             return true;
         default:
             return false;
@@ -768,6 +785,7 @@ public:
         case EvqVaryingOut:
         case EvqFragColor:
         case EvqFragDepth:
+        case EvqFragStencil:
             return true;
         default:
             return false;
@@ -856,7 +874,7 @@ public:
         case EShLangTessEvaluation:
             return ! patch && isPipeInput();
         case EShLangFragment:
-            return pervertexNV && isPipeInput();
+            return (pervertexNV || pervertexEXT) && isPipeInput();
         case EShLangMeshNV:
             return ! perTaskNV && isPipeOutput();
 
@@ -1235,6 +1253,18 @@ public:
         default:           return "none";
         }
     }
+    static const char* getLayoutStencilString(TLayoutStencil s)
+    {
+        switch (s) {
+        case ElsRefUnchangedFrontAMD: return "stencil_ref_unchanged_front_amd";
+        case ElsRefGreaterFrontAMD:   return "stencil_ref_greater_front_amd";
+        case ElsRefLessFrontAMD:      return "stencil_ref_less_front_amd";
+        case ElsRefUnchangedBackAMD:  return "stencil_ref_unchanged_back_amd";
+        case ElsRefGreaterBackAMD:    return "stencil_ref_greater_back_amd";
+        case ElsRefLessBackAMD:       return "stencil_ref_less_back_amd";
+        default:                      return "none";
+        }
+    }
     static const char* getBlendEquationString(TBlendEquationShift e)
     {
         switch (e) {
@@ -1332,7 +1362,9 @@ struct TShaderQualifiers {
 #ifndef GLSLANG_WEB
     bool earlyFragmentTests;  // fragment input
     bool postDepthCoverage;   // fragment input
+    bool earlyAndLateFragmentTestsAMD; //fragment input
     TLayoutDepth layoutDepth;
+    TLayoutStencil layoutStencil;
     bool blendEquation;       // true if any blend equation was specified
     int numViews;             // multiview extenstions
     TInterlockOrdering interlockOrdering;
@@ -1342,6 +1374,7 @@ struct TShaderQualifiers {
     int primitives;                     // mesh shader "max_primitives"DerivativeGroupLinear;   // true if layout derivative_group_linearNV set
     bool layoutPrimitiveCulling;        // true if layout primitive_culling set
     TLayoutDepth getDepth() const { return layoutDepth; }
+    TLayoutStencil getStencil() const { return layoutStencil; }
 #else
     TLayoutDepth getDepth() const { return EldNone; }
 #endif
@@ -1367,8 +1400,10 @@ struct TShaderQualifiers {
         localSizeSpecId[2] = TQualifier::layoutNotSet;
 #ifndef GLSLANG_WEB
         earlyFragmentTests = false;
+        earlyAndLateFragmentTestsAMD = false;
         postDepthCoverage = false;
         layoutDepth = EldNone;
+        layoutStencil = ElsNone;
         blendEquation = false;
         numViews = TQualifier::layoutNotSet;
         layoutOverrideCoverage      = false;
@@ -1420,10 +1455,14 @@ struct TShaderQualifiers {
 #ifndef GLSLANG_WEB
         if (src.earlyFragmentTests)
             earlyFragmentTests = true;
+        if (src.earlyAndLateFragmentTestsAMD)
+            earlyAndLateFragmentTestsAMD = true;
         if (src.postDepthCoverage)
             postDepthCoverage = true;
         if (src.layoutDepth)
             layoutDepth = src.layoutDepth;
+        if (src.layoutStencil)
+            layoutStencil = src.layoutStencil;
         if (src.blendEquation)
             blendEquation = src.blendEquation;
         if (src.numViews != TQualifier::layoutNotSet)
@@ -2266,6 +2305,8 @@ public:
             appendStr(" __explicitInterpAMD");
           if (qualifier.pervertexNV)
             appendStr(" pervertexNV");
+          if (qualifier.pervertexEXT)
+              appendStr(" pervertexEXT");
           if (qualifier.perPrimitiveNV)
             appendStr(" perprimitiveNV");
           if (qualifier.perViewNV)

@@ -908,7 +908,7 @@ static void print_help_common()
 	// clang-format off
 	fprintf(stderr, "\nCommon options:\n"
 	                "\t[--entry name]:\n\t\tUse a specific entry point. By default, the first entry point in the module is used.\n"
-	                "\t[--stage <stage (vert, frag, geom, tesc, tese comp)>]:\n\t\tForces use of a certain shader stage.\n"
+	                "\t[--stage <stage (vert, frag, geom, tesc, tese, comp)>]:\n\t\tForces use of a certain shader stage.\n"
 	                "\t\tCan disambiguate the entry point if more than one entry point exists with same name, but different stage.\n"
 	                "\t[--emit-line-directives]:\n\t\tIf SPIR-V has OpLine directives, aim to emit those accurately in output code as well.\n"
 	                "\t[--rename-entry-point <old> <new> <stage>]:\n\t\tRenames an entry point from what is declared in SPIR-V to code output.\n"
@@ -1347,6 +1347,10 @@ static string compile_iteration(const CLIArguments &args, std::vector<uint32_t> 
 			combined_image_samplers = true;
 			build_dummy_sampler = true;
 		}
+
+		// If we're explicitly renaming, we probably want that name to be output.
+		if (!args.entry_point_rename.empty())
+			hlsl_opts.use_entry_point_name = true;
 
 		hlsl_opts.support_nonzero_base_vertex_base_instance = args.hlsl_support_nonzero_base;
 		hlsl_opts.force_storage_buffer_as_uav = args.hlsl_force_storage_buffer_as_uav;
