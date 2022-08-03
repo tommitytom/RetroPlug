@@ -1,4 +1,4 @@
-#include "Application.h"
+#include "application/Application.h"
 #include "Game.h"
 
 #include <spdlog/spdlog.h>
@@ -21,8 +21,8 @@ public:
 
 	void onFrame(f32 delta) override {
 		//getCanvas().setTransform(Mat3x3::rotation(1.5f)).fillRect(Rect{ 0, 0, 100, 100 }, Color4F(0.5, 0, 0, 1));
-		getCanvas().fillRect(Rect{ 0, 0, 100, 100 }, Color4F(1, 1, 1, 1));
-		//getCanvas().texture(_tex, RectF(0, 0, 100, 100), Color4F(0, 0, 1, 1));
+		//getCanvas().fillRect(Rect{ 10, 10, 100, 100 }, Color4F(1, 1, 1, 1));
+		getCanvas().texture(_tex, RectF(0, 0, 100, 100), Color4F(0, 0, 1, 1));
 	}
 
 	void onKey(VirtualKey::Enum key, bool down) override {
@@ -34,6 +34,6 @@ public:
 
 int main(void) {
 	rp::app::Application app;
-	return app.run<BasicWindow>();
-	//return app.run<rp::Game>();
+	//return app.run<BasicWindow>();
+	return app.run<rp::Game>();
 }

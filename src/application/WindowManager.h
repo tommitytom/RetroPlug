@@ -26,7 +26,7 @@ namespace rp::app {
 		}
 
 		void update() {
-			for (int32 i = _windows.size() - 1; i >= 0; --i) {
+			for (int32 i = (int32)_windows.size() - 1; i >= 0; --i) {
 				if (_windows[i]->isClosing()) {
 					_availableIds.push(_windows[i]->_id);
 					_windows.erase(_windows.begin() + i);

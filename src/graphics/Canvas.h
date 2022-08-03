@@ -49,6 +49,7 @@ namespace rp::engine {
 		size_t indexCount = 0;
 		uint32 viewId = 0;
 		Rect viewArea;
+		f32 zoom = 1.0f;
 	};
 
 	struct TextureRenderDesc {
@@ -155,38 +156,38 @@ namespace rp::engine {
 
 		void endRender();
 
-		void translate(PointF amount);
+		Canvas& translate(PointF amount);
 
-		void polygon(const PointF* points, uint32 count);
+		Canvas& polygon(const PointF* points, uint32 count);
 
-		void points(const PointF* points, uint32 count);
+		Canvas& points(const PointF* points, uint32 count);
 
-		void setScale(f32 scaleX, f32 scaleY);
+		Canvas& setScale(f32 scaleX, f32 scaleY);
 
-		void fillRect(const RectT<f32>& area, const Color4F& color);
+		Canvas& fillRect(const RectT<f32>& area, const Color4F& color);
 
-		void fillRect(const Rect& area, const Color4F& color) { fillRect((RectF)area, color); }
+		Canvas& fillRect(const Rect& area, const Color4F& color) { fillRect((RectF)area, color); }
 
-		void texture(const TextureRenderDesc& desc);
+		Canvas& texture(const TextureRenderDesc& desc);
 
-		void texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color);
 
-		void texture(std::string_view uri, const RectT<f32>& area, const Color4F& color) {
+		Canvas& texture(std::string_view uri, const RectT<f32>& area, const Color4F& color) {
 			entt::id_type uriHash = entt::hashed_string(uri.data(), uri.size());
-			texture(uriHash, area, color);
+			return texture(uriHash, area, color);
 		}
 
-		void texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color);
 
-		void texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
 
-		void strokeRect(const RectT<f32>& area, const Color4F& color);
+		Canvas& strokeRect(const RectT<f32>& area, const Color4F& color);
 
-		void text(f32 x, f32 y, std::string_view text, const Color4F& color);
+		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color);
 
-		void circle(const PointF& pos, f32 radius, uint32 segments = 32, const Color4F& color = Color4F(1,1,1,1));
+		Canvas& circle(const PointF& pos, f32 radius, uint32 segments = 32, const Color4F& color = Color4F(1,1,1,1));
 
-		void line(const PointF& from, const PointF& to, const Color4F& color);
+		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
 	private:
 		void checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture);

@@ -8,14 +8,14 @@
 #include "graphics/Canvas.h"
 #include "graphics/BgfxTexture.h"
 
+#include "application/Window.h"
+
 namespace rp {
-	class Scene {
+	class Scene : public rp::app::Window {
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
 		RectF _viewPort;
-
-		rp::engine::Canvas _canvas;
 
 		entt::resource<engine::Texture> _upTex;
 
@@ -27,17 +27,17 @@ namespace rp {
 		PointF _lastMousePos;
 
 	public:
-		Scene() = default;
+		Scene() : Window("Physics Test", { 1366, 768 }) {}
 		~Scene() = default;
 
-		void init();
+		void onInitialize() override;
 
-		void update(f32 delta);
+		void onFrame(f32 delta) override;
 
 		void render(Dimension res);
 
-		void onMouseMove(f32 x, f32 y);
+		void onMouseButton(MouseButton::Enum button, bool down) override;
 
-		void onMouseButton(int button, int action, int mods);
+		void onMouseMove(rp::PointF position) override;
 	};
 }

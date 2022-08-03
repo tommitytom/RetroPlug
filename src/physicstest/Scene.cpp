@@ -5,7 +5,7 @@
 
 using namespace rp;
 
-void Scene::init() {
+void Scene::onInitialize() {
 	b2Vec2 gravity(0.0f, 10.0f);
 
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().emplace<PhysicsWorldSingleton>(PhysicsWorldSingleton{
@@ -33,14 +33,14 @@ void Scene::init() {
 	
 
 	//Box2dUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
-	//_canvas.fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
+	//getCanvas().fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
 
-	_upTex = _canvas.loadTexture("taco.png");
+	_upTex = getCanvas().loadTexture("taco.png");
 }
 
 const f32 PHYSICS_DELTA_SECS = 1.0f / 60.0f;
 
-void Scene::update(f32 delta) {
+void Scene::onFrame(f32 delta) {
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
 	physicsWorld.delta += delta;
 
@@ -48,11 +48,11 @@ void Scene::update(f32 delta) {
 		physicsWorld.delta = fmod(physicsWorld.delta, PHYSICS_DELTA_SECS);
 		physicsWorld.world->Step(PHYSICS_DELTA_SECS, 6, 2);
 	}
+
+	render(getDimensions());
 }
 
 void Scene::render(Dimension res) {
-	_canvas.beginRender(res, 1.0f);
-
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
 
 	if (_physicsDebug) {
@@ -75,7 +75,7 @@ void Scene::render(Dimension res) {
 				}
 
 				if (polygon->m_count == 4) {
-					_canvas.polygon(points, polygon->m_count);
+					getCanvas().polygon(points, polygon->m_count);
 				}
 
 				break;
@@ -88,8 +88,9 @@ void Scene::render(Dimension res) {
 				f32 angle = comp.body->GetAngle();
 				PointF angleLine = PointF(cos(angle), sin(angle)) * radius;
 
-				_canvas.circle(point, radius, 32, Color4F(1, 0, 0, 1));
-				_canvas.line(point, point + angleLine, Color4F(1, 1, 1, 1));
+				getCanvas()
+					.circle(point, radius, 32, Color4F(1, 0, 0, 1))
+					.line(point, point + angleLine, Color4F(1, 1, 1, 1));
 
 				break;
 			}
@@ -100,33 +101,36 @@ void Scene::render(Dimension res) {
 	RectF r = { 10, 10, 100, 100 };
 	PointF points[4] = { r.position, r.topRight(), r.bottomRight(), r.bottomLeft() };
 
-	//_canvas.points(points, 4);
+	//getCanvas().points(points, 4);
 
-	//_canvas.polygon(points, 4);
+	//getCanvas().polygon(points, 4);
 
-	//_canvas.fillRect({ -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
-	//_canvas.fillRect({ 10, 10, 100, 100 }, { 0, 1, 0, 1.f });
-	//_canvas.fillRect({ 60, 60, 100, 100 }, { 1, 0, 0, 1.f });
+	//getCanvas().fillRect({ -0.5f, 0.5f, 1.0f, 1.0f }, { 1, 1, 1, 1 });
+	//getCanvas().fillRect({ 10, 10, 100, 100 }, { 0, 1, 0, 1.f });
+	//getCanvas().fillRect({ 60, 60, 100, 100 }, { 1, 0, 0, 1.f });
 
-	//_canvas.line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
+	//getCanvas().line({ 300, 300 }, { 400, 400 }, { 1, 1, 1, 1 });
 
-	//_canvas.circle({ 300, 50 }, 20, 32);
+	//getCanvas().circle({ 300, 50 }, 20, 32);
 
-	//_canvas.fillRect({ 100, 100, 100, 100 }, { 0, 1, 0, 1 });
-	//_canvas.texture(_upTex, { 100, 100, 100, 100 }, { 1, 1, 1, 1 });
+	//getCanvas().fillRect({ 100, 100, 100, 100 }, { 0, 1, 0, 1 });
+	//getCanvas().texture(_upTex, { 100, 100, 100, 100 }, { 1, 1, 1, 1 });
 
-	//_canvas.texture(engine::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
+	//getCanvas().texture(engine::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
 
-	//_canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
-	
-	_canvas.endRender();
+	//getCanvas().text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 }
 
-void Scene::onMouseMove(f32 x, f32 y) {
-	_lastMousePos = { x, y };
+void Scene::onMouseMove(rp::PointF position) {
+	_lastMousePos = position;
 }
 
-void Scene::onMouseButton(int button, int action, int mods) {
+void Scene::onMouseButton(MouseButton::Enum button, bool down) {
 	entt::entity e = _registry.create();
-	Box2dUtil::addBox(_registry, e, RectF(_lastMousePos.x, _lastMousePos.y, 20, 20), 10.0f);
+
+	if (button == MouseButton::Left) {
+		Box2dUtil::addBox(_registry, e, RectF(_lastMousePos.x, _lastMousePos.y, 20, 20), 10.0f);
+	} else {
+		Box2dUtil::addCircle(_registry, e, _lastMousePos, 50, 10.0f);
+	}
 }

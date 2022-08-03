@@ -31,12 +31,7 @@ bgfx::ShaderHandle loadShader(const uint8_t* data, size_t size, const char* name
 	return handle;
 }
 
-struct ShaderProgram {
-	bgfx::ShaderHandle vert;
-	bgfx::ShaderHandle frag;
-};
-
-ShaderProgram loadShaders() {
+ShaderProgram rp::loadShaders() {
 	const uint8* vert = nullptr; size_t vertSize = 0;
 	const uint8* frag = nullptr; size_t fragSize = 0;
 
@@ -127,10 +122,14 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 
 		f32 _pixelRatio = 1.0f;
 
-		f32 scale[4] = { (2.0f / canvas.getDimensions().w) * _pixelRatio, (2.0f / canvas.getDimensions().h) * _pixelRatio, 1.0f, 0.0f };
+		float viewMtx[16];
+		bx::mtxIdentity(viewMtx);
+
+		float projMtx[16];
+		bx::mtxOrtho(projMtx, 0, canvas.getDimensions().w, canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 
 		for (const engine::CanvasSurface& surface : geom.surfaces) {
-			uint32 state = 0
+			uint64 state = 0
 				| BGFX_STATE_WRITE_RGB
 				| BGFX_STATE_WRITE_A
 				| BGFX_STATE_BLEND_ALPHA
@@ -138,17 +137,16 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 				//| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
 				//| BGFX_STATE_MSAA
-				| BGFX_STATE_PT_LINESTRIP
 				;
 
 			switch (surface.primitive) {
 			case engine::RenderPrimitive::LineList:
 				state |= BGFX_STATE_PT_LINES;
-				//if (_lineAA) state |= BGFX_STATE_LINEAA;
+				if (_lineAA) state |= BGFX_STATE_LINEAA;
 				break;
 			case engine::RenderPrimitive::LineStrip:
 				state |= BGFX_STATE_PT_LINESTRIP;
-				//if (_lineAA) state |= BGFX_STATE_LINEAA;
+				if (_lineAA) state |= BGFX_STATE_LINEAA;
 				break;
 			case engine::RenderPrimitive::Points:
 				state |= BGFX_STATE_PT_POINTS;
@@ -158,24 +156,18 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 				break;
 			}
 
-			bgfx::touch(surface.viewId);
-
-			state |= BGFX_STATE_PT_LINESTRIP;
-			bgfx::setState(state);
-
 			bgfx::setViewClear(surface.viewId, BGFX_CLEAR_COLOR, 0x000000FF);
 			bgfx::setViewRect(surface.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
-			//bgfx::setViewRect(surface.viewId, surface.viewArea.x, surface.viewArea.y, surface.viewArea.w, surface.viewArea.h);
 			bgfx::setViewMode(surface.viewId, bgfx::ViewMode::Sequential);
+			bgfx::setViewTransform(surface.viewId, viewMtx, projMtx);
 
-			bgfx::setUniform(_scaleUniform, scale);
+			//bgfx::setUniform(_scaleUniform, scale);
 			bgfx::setTexture(0, _textureUniform, surface.texture->handle);
+	
 			bgfx::setVertexBuffer(0, _vert);
 			bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
 
-			state |= BGFX_STATE_PT_LINESTRIP;
 			bgfx::setState(state);
-
 			bgfx::submit(surface.viewId, _prog);
 		}
 	}

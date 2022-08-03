@@ -46,14 +46,16 @@ local EMSDK_RELEASE_FLAGS = {
 
 local m = {
 	Graphics = {},
-	RetroPlug = {},
 	Application = {},
+	RetroPlug = {},
+	RetroPlugApp = {},
 	ExampleApplication = {},
 	OffsetCalculator = {},
 	Plugin = {},
 	Tests = {},
 	BgfxBasic = {},
-	Solitaire = {}
+	Solitaire = {},
+	PhysicsTest = {}
 }
 
 
@@ -86,7 +88,6 @@ function m.Graphics.link()
 	links { "Graphics" }
 
 	dep.bgfx.link()
-	dep.glfw.link()
 	dep.freetype.link()
 end
 
@@ -105,11 +106,58 @@ function m.Graphics.project()
 end
 
 
+function m.Application.include()
+	dependson { "configure" }
+
+	m.Graphics.include()
+	dep.glfw.include()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include"
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	dep.bgfx.compat()
+
+	filter {}
+end
+
+function m.Application.link()
+	m.Application.include()
+
+	links { "Application" }
+
+	m.Graphics.link()
+	dep.glfw.link()
+end
+
+function m.Application.project()
+	project "Application"
+	kind "StaticLib"
+
+	m.Application.include()
+
+	files {
+		"src/application/**.h",
+		"src/application/**.cpp"
+	}
+
+	util.liveppCompat()
+end
+
+
 
 function m.RetroPlug.include()
 	dependson { "configure" }
 
 	m.Graphics.include()
+	m.Application.include()
 	dep.SameBoy.include()
 	dep.liblsdj.include()
 	dep.lua.include()
@@ -138,6 +186,7 @@ function m.RetroPlug.link()
 	links { "RetroPlug" }
 
 	m.Graphics.link()
+	m.Application.link()
 	dep.SameBoy.link()
 	dep.bgfx.link()
 	dep.glfw.link()
@@ -193,7 +242,7 @@ function m.Plugin.project()
 	}
 end
 
-function m.Application.project()
+function m.RetroPlugApp.project()
 	project "RetroPlugApp"
 	kind "ConsoleApp"
 
@@ -221,7 +270,7 @@ function m.Application.project()
 	filter {}
 end
 
-function m.Application.projectLivepp()
+function m.RetroPlugApp.projectLivepp()
 	project "RetroPlugApp-live++"
 	kind "ConsoleApp"
 
@@ -289,6 +338,7 @@ function m.BgfxBasic.project()
 	kind "ConsoleApp"
 
 	m.Graphics.link()
+	m.Application.link()
 	dep.box2d.link()
 
 	sysincludedirs {
@@ -324,6 +374,7 @@ function m.Solitaire.project()
 	kind "ConsoleApp"
 
 	m.Graphics.link()
+	m.Application.link()
 
 	sysincludedirs {
 		"thirdparty",
@@ -353,11 +404,48 @@ function m.Solitaire.project()
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
 end
 
+function m.PhysicsTest.project()
+	project "PhysicsTest"
+	kind "ConsoleApp"
+
+	m.Graphics.link()
+	m.Application.link()
+	dep.box2d.link()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/physicstest/**.h",
+		"src/physicstest/**.cpp"
+	}
+
+	filter { "options:emscripten" }
+		buildoptions { "-matomics", "-mbulk-memory" }
+
+	filter { "options:emscripten", "configurations:Debug" }
+		--buildoptions { "--bind" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+	filter { "options:emscripten", "configurations:Release" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+end
+
 function m.Solitaire.projectLivepp()
 	project "Solitaire-live++"
 	kind "ConsoleApp"
 
 	m.Graphics.link()
+	m.Application.link()
 
 	sysincludedirs {
 		"thirdparty",

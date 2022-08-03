@@ -6,7 +6,7 @@
 #include "RelationshipComponent.h"
 #include "TransformComponent.h"
 #include "SceneGraphUtil.h"
-#include "WindowManager.h"
+#include "application/WindowManager.h"
 
 using namespace rp;
 
@@ -245,6 +245,20 @@ void Game::startGame() {
 }
 
 void Game::onFrame(f32 delta) {
+	_registry.sort<DropTargetTag>([&](const entt::entity lhs, const entt::entity rhs) {
+		const auto& clhs = _registry.get<RelationshipComponent>(lhs);
+		const auto& crhs = _registry.get<RelationshipComponent>(rhs);
+		return crhs.parent == lhs || clhs.next == rhs
+			|| (!(clhs.parent == rhs || crhs.next == lhs) && (clhs.parent < crhs.parent || (clhs.parent == crhs.parent && &clhs < &crhs)));
+	});
+
+	_registry.sort<FrontFacingTag>([&](const entt::entity lhs, const entt::entity rhs) {
+		const auto& clhs = _registry.get<RelationshipComponent>(lhs);
+		const auto& crhs = _registry.get<RelationshipComponent>(rhs);
+		return crhs.parent == lhs || clhs.next == rhs
+			|| (!(clhs.parent == rhs || crhs.next == lhs) && (clhs.parent < crhs.parent || (clhs.parent == crhs.parent && &clhs < &crhs)));
+	});
+
 	// Update
 	SceneGraphUtil::updateWorldTransforms(_registry, _rootEntity);
 

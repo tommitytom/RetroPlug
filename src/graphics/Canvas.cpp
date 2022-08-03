@@ -138,11 +138,11 @@ void Canvas::endRender() {
 
 }
 
-void Canvas::translate(PointF amount) {
-
+Canvas& Canvas::translate(PointF amount) {
+	return *this;
 }
 
-void Canvas::points(const PointF* points, uint32 count) {
+Canvas& Canvas::points(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Points, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
@@ -154,9 +154,11 @@ void Canvas::points(const PointF* points, uint32 count) {
 	}
 
 	_geom.surfaces.back().indexCount += count;
+
+	return *this;
 }
 
-void Canvas::polygon(const PointF* points, uint32 count) {
+Canvas& Canvas::polygon(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
@@ -172,9 +174,11 @@ void Canvas::polygon(const PointF* points, uint32 count) {
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
+Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
 	checkSurface(RenderPrimitive::LineList, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -188,9 +192,11 @@ void Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
 	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });
 
 	_geom.surfaces.back().indexCount += 2;
+
+	return *this;
 }
 
-void Canvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
+Canvas& Canvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -209,13 +215,15 @@ void Canvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4
 			writeTriangleIndices(centerIdx, v, centerIdx + 1);
 		}
 	}
+
+	return *this;
 }
 
-void Canvas::setScale(f32 scaleX, f32 scaleY) {
-
+Canvas& Canvas::setScale(f32 scaleX, f32 scaleY) {
+	return *this;
 }
 
-void Canvas::fillRect(const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -234,9 +242,11 @@ void Canvas::fillRect(const RectT<f32>& area, const Color4F& color) {
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::texture(const TextureRenderDesc& desc) {
+Canvas& Canvas::texture(const TextureRenderDesc& desc) {
 	checkSurface(RenderPrimitive::Triangles, desc.textureHandle);
 
 	uint32 agbr = toUint32Abgr(desc.color);
@@ -255,9 +265,11 @@ void Canvas::texture(const TextureRenderDesc& desc) {
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color) {
 	const auto foundTile = _tileLookup.find(uriHash);
 
 	if (foundTile == _tileLookup.end()) {
@@ -266,7 +278,7 @@ void Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4
 			_invalidUris.insert(uriHash);
 		}
 
-		return;
+		return *this;
 	}
 
 	const auto texPair = foundTile->second;
@@ -290,9 +302,11 @@ void Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Color4
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -311,9 +325,11 @@ void Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& a
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -336,14 +352,16 @@ void Canvas::texture(const entt::resource<Texture>& texture, const Rect& texture
 	});
 
 	_geom.surfaces.back().indexCount += 6;
+
+	return *this;
 }
 
-void Canvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
-
+Canvas& Canvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
+	return *this;
 }
 
-void Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
-	//checkSurface(RenderPrimitive::Triangles, CanvasTextureHandle(1));
+Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
+	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 
@@ -387,4 +405,6 @@ void Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
 			x += glyph->advance_x;
 		}
 	}
+
+	return *this;
 }

@@ -110,14 +110,26 @@ end
 
 group "Dependencies"
 dep.allProjects()
+
+group "Framework"
+projects.Graphics.project()
+projects.Application.project()
+
+group "RetroPlug"
+projects.RetroPlug.project()
+projects.RetroPlugApp.project()
+projects.RetroPlugApp.projectLivepp()
 group ""
 
-projects.Graphics.project()
-projects.RetroPlug.project()
-projects.Application.project()
-projects.Application.projectLivepp()
+
+
 projects.ExampleApplication.project()
 projects.ExampleApplication.projectLivepp()
 projects.BgfxBasic.project()
+--projects.BgfxBasic.projectLivepp()
 projects.Solitaire.project()
+projects.Solitaire.projectLivepp()
+
+projects.PhysicsTest.project()
+
 projects.Tests.project()

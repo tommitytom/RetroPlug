@@ -10,7 +10,7 @@
 
 #include "graphics/Canvas.h"
 #include "graphics/BgfxTexture.h"
-#include "Window.h"
+#include "application/Window.h"
 
 namespace rp {
 	enum class CardFace {

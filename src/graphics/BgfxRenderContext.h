@@ -8,6 +8,13 @@
 namespace rp {
 	using UriHash = entt::id_type;
 
+	struct ShaderProgram {
+		bgfx::ShaderHandle vert;
+		bgfx::ShaderHandle frag;
+	};
+
+	ShaderProgram loadShaders();
+
 	class ResourceManager {
 	private:
 		//std::unordered_map<UriHash, Resource>
@@ -53,6 +60,8 @@ namespace rp {
 
 		bgfx::UniformHandle _textureUniform;
 		bgfx::UniformHandle _scaleUniform;
+
+		bool _lineAA = true;
 
 	public:
 		BgfxRenderContext(void* nativeWindowHandle, Dimension res);
