@@ -19,6 +19,9 @@ static const char* s_canvas = "#canvas";
 #include <GLFW/glfw3native.h>
 #endif
 
+#include "graphics/Canvas.h"
+#include "GlfwNativeWindow.h"
+
 using namespace rp;
 using namespace rp::app;
 
@@ -43,20 +46,7 @@ Application::~Application() {
 }
 
 void Application::createRenderContext(WindowPtr window) {
-	void* windowHandle = nullptr;
-
-#if RP_WEB
-	windowHandle = (void*)s_canvas;
-#elif RP_LINUX
-	init.platformData.ndt = glfwGetX11Display();
-	windowHandle = (void*)(uintptr_t)glfwGetX11Window(window);
-#elif RP_MACOS
-	windowHandle = glfwGetCocoaWindow(window);
-#elif RP_WINDOWS
-	windowHandle = glfwGetWin32Window(window->getNativeWindow());
-#endif
-
-	_renderContext = std::make_unique<BgfxRenderContext>(windowHandle, window->getDimensions());
+	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getView().getDimensions());
 }
 
 int Application::doLoop() {
@@ -65,7 +55,13 @@ int Application::doLoop() {
 	std::vector<WindowPtr>& windows = _windowManager.getWindows();
 	assert(windows.size());
 
-	while (windows.size() && !windows[0]->isClosing()) {
+	rp::engine::Canvas canvas;
+
+	while (windows.size() && !windows[0]->shouldClose()) {
+		f64 time = glfwGetTime();
+		f32 delta = _lastTime > 0 ? (f32)(time - _lastTime) : 0.0f;
+		_lastTime = time;
+
 		glfwPollEvents();
 		
 		_windowManager.update();
@@ -75,9 +71,15 @@ int Application::doLoop() {
 		for (auto it = windows.begin(); it != windows.end(); ++it) {
 			WindowPtr w = *it;
 
-			if (!w->isClosing()) {
-				w->doFrame();
-				_renderContext->renderCanvas(w->getCanvas());
+			if (!w->shouldClose()) {
+				w->onUpdate(delta);
+				
+				canvas.setViewId(w->getId());
+				canvas.beginRender(w->getView().getDimensions(), 1.0f);
+				w->onRender(canvas);
+				canvas.endRender();
+
+				_renderContext->renderCanvas(canvas);
 			}
 		}
 

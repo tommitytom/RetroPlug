@@ -2,7 +2,6 @@
 
 #include <nanovg.h>
 
-#include "ui/Canvas.h"
 #include "ui/Colors.h"
 
 using namespace rp;

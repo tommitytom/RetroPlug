@@ -11,7 +11,7 @@
 #include "application/Window.h"
 
 namespace rp {
-	class Scene : public rp::app::Window {
+	class Scene : public View {
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
@@ -27,17 +27,20 @@ namespace rp {
 		PointF _lastMousePos;
 
 	public:
-		Scene() : Window("Physics Test", { 1366, 768 }) {}
+		Scene() : View({ 1366, 768 }) {
+			setType<Scene>();
+			setName("Physics Test");
+		}
 		~Scene() = default;
 
 		void onInitialize() override;
 
-		void onFrame(f32 delta) override;
+		void onUpdate(f32 delta) override;
 
-		void render(Dimension res);
+		void onRender(engine::Canvas& canvas) override;
 
-		void onMouseButton(MouseButton::Enum button, bool down) override;
+		bool onMouseButton(MouseButton::Enum button, bool down, rp::Point position) override;
 
-		void onMouseMove(rp::PointF position) override;
+		bool onMouseMove(rp::Point position) override;
 	};
 }

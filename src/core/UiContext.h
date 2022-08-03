@@ -13,7 +13,6 @@
 #include "core/SystemSettings.h"
 #include "core/Proxies.h"
 #include "core/UiState.h"
-#include "ui/Canvas.h"
 #include "ui/ViewManager.h"
 
 namespace rp {

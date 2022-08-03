@@ -1,6 +1,5 @@
 #include "GridOverlay.h"
 
-#include "ui/Canvas.h"
 #include "util/StlUtil.h"
 
 using namespace rp;

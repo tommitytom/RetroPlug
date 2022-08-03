@@ -3,7 +3,7 @@
 #include <unordered_set>
 #include <spdlog/spdlog.h>
 
-#include "ui/Canvas.h"
+#include "graphics/Canvas.h"
 #include "ui/View.h"
 
 namespace rp {

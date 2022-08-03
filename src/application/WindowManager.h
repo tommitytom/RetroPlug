@@ -6,6 +6,7 @@
 #include "Window.h"
 
 namespace rp::app {
+	template <typename WindowT>
 	class WindowManager {
 	private:
 		std::vector<WindowPtr> _windows;
@@ -16,8 +17,12 @@ namespace rp::app {
 	public:
 		template <typename T>
 		WindowPtr createWindow() {
-			WindowPtr window = std::make_shared<T>();
+			ViewPtr view = std::make_shared<T>();
+			WindowPtr window = std::make_shared<WindowT>(view, std::numeric_limits<uint32>::max());
+
+			window->onCreate();
 			_created.push_back(window);
+
 			return window;
 		}
 
@@ -27,8 +32,8 @@ namespace rp::app {
 
 		void update() {
 			for (int32 i = (int32)_windows.size() - 1; i >= 0; --i) {
-				if (_windows[i]->isClosing()) {
-					_availableIds.push(_windows[i]->_id);
+				if (_windows[i]->shouldClose()) {
+					_availableIds.push(_windows[i]->getId());
 					_windows.erase(_windows.begin() + i);
 				}
 			}
@@ -42,7 +47,7 @@ namespace rp::app {
 					id = _nextViewId++;
 				}
 
-				w->setup(id, this);
+				w->_id = id;
 				w->onInitialize();
 
 				_windows.push_back(w);

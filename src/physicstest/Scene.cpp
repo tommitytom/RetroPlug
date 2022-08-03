@@ -34,13 +34,11 @@ void Scene::onInitialize() {
 
 	//Box2dUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
 	//getCanvas().fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
-
-	_upTex = getCanvas().loadTexture("taco.png");
 }
 
 const f32 PHYSICS_DELTA_SECS = 1.0f / 60.0f;
 
-void Scene::onFrame(f32 delta) {
+void Scene::onUpdate(f32 delta) {
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
 	physicsWorld.delta += delta;
 
@@ -48,11 +46,13 @@ void Scene::onFrame(f32 delta) {
 		physicsWorld.delta = fmod(physicsWorld.delta, PHYSICS_DELTA_SECS);
 		physicsWorld.world->Step(PHYSICS_DELTA_SECS, 6, 2);
 	}
-
-	render(getDimensions());
 }
 
-void Scene::render(Dimension res) {
+void Scene::onRender(engine::Canvas& canvas) {
+	if (!_upTex) {
+		_upTex = canvas.loadTexture("taco.png");
+	}
+
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
 
 	if (_physicsDebug) {
@@ -75,7 +75,7 @@ void Scene::render(Dimension res) {
 				}
 
 				if (polygon->m_count == 4) {
-					getCanvas().polygon(points, polygon->m_count);
+					canvas.polygon(points, polygon->m_count);
 				}
 
 				break;
@@ -88,7 +88,7 @@ void Scene::render(Dimension res) {
 				f32 angle = comp.body->GetAngle();
 				PointF angleLine = PointF(cos(angle), sin(angle)) * radius;
 
-				getCanvas()
+				canvas
 					.circle(point, radius, 32, Color4F(1, 0, 0, 1))
 					.line(point, point + angleLine, Color4F(1, 1, 1, 1));
 
@@ -121,11 +121,12 @@ void Scene::render(Dimension res) {
 	//getCanvas().text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 }
 
-void Scene::onMouseMove(rp::PointF position) {
-	_lastMousePos = position;
+bool Scene::onMouseMove(rp::Point position) {
+	_lastMousePos = (PointF)position;
+	return true;
 }
 
-void Scene::onMouseButton(MouseButton::Enum button, bool down) {
+bool Scene::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 	entt::entity e = _registry.create();
 
 	if (button == MouseButton::Left) {
@@ -133,4 +134,6 @@ void Scene::onMouseButton(MouseButton::Enum button, bool down) {
 	} else {
 		Box2dUtil::addCircle(_registry, e, _lastMousePos, 50, 10.0f);
 	}
+
+	return true;
 }

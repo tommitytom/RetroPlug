@@ -3,17 +3,54 @@
 #include <memory>
 
 #include "graphics/BgfxRenderContext.h"
+#include "ui/View.h"
 
 #include "platform/Types.h"
 #include "RpMath.h"
 #include "core/Input.h"
 
-struct GLFWwindow;
-
 namespace rp::app {
+	template <typename T>
 	class WindowManager;
 
 	class Window {
+	private:
+		ViewPtr _view;
+		uint32 _id;
+
+	public:
+		Window(ViewPtr view, uint32 id) : _view(view), _id(id) {}
+		~Window() = default;
+
+		virtual void onCreate() {}
+
+		virtual void onInitialize() {
+			_view->onInitialize();
+		}
+
+		virtual void onUpdate(f32 delta) {}
+
+		virtual void onRender(engine::Canvas& canvas) {
+			_view->onRender(canvas);
+		}
+
+		virtual bool shouldClose() = 0;
+
+		virtual void* getNativeHandle() = 0;
+
+		uint32 getId() const {
+			return _id;
+		}
+
+		View& getView() {
+			return *_view;
+		}
+
+		template <typename T>
+		friend class WindowManager;
+	};
+
+	/*class Window {
 	private:
 		GLFWwindow* _window = nullptr;
 		Dimension _dimensions;
@@ -43,10 +80,6 @@ namespace rp::app {
 			_id = id;
 			_windowManager = wm;
 		}
-
-		/*void setWindowManager(WindowManager* wm) {
-			_windowManager = wm;
-		}*/
 
 		WindowManager& getWindowManager() {
 			return *_windowManager;
@@ -112,7 +145,7 @@ namespace rp::app {
 		static void errorCallback(int error, const char* description);
 
 		friend class WindowManager;
-	};
+	};*/
 
 	using WindowPtr = std::shared_ptr<Window>;
 }

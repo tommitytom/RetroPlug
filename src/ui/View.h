@@ -10,13 +10,17 @@
 #include <entt/core/any.hpp>
 
 #include "core/Input.h"
+#include "graphics/Canvas.h"
 #include "RpMath.h"
 
 struct NVGcontext;
 struct NVGcolor;
 
 namespace rp {
-	class Canvas;
+	namespace engine {
+		class Canvas;
+	}
+
 	class Menu;
 	class View;
 	using ViewPtr = std::shared_ptr<View>;
@@ -114,11 +118,11 @@ namespace rp {
 			return _visible && getDimensions().w > 0 && getDimensions().h > 0;
 		}
 
-		virtual void onInitialized() {}
+		virtual void onInitialize() {}
 
 		virtual void onUpdate(f32 delta) {}
 
-		virtual void onRender(Canvas& canvas) {}
+		virtual void onRender(engine::Canvas& canvas) {}
 
 		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
 
@@ -321,7 +325,7 @@ namespace rp {
 			view->setShared(_shared);
 
 			if (!view->_initialized) {
-				view->onInitialized();
+				view->onInitialize();
 				view->_initialized = true;
 			}
 

@@ -67,7 +67,7 @@ namespace rp {
 
 	struct VisibleTag {};
 
-	class Game : public rp::app::Window {
+	class Game : public View {
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
@@ -95,31 +95,38 @@ namespace rp {
 
 		f32 _zoom = 1.0f;
 
+		std::unordered_map<entt::id_type, Rect> _tiles;
+
 	public:
-		Game() : Window("Solitaire", { 1366, 768 }) {}
+		Game() : View({ 1366, 768 }) {
+			setType<Game>();
+			setName("Solitaire");
+		}
 		~Game() = default;
 
 		void onInitialize() override;
 
-		void onFrame(f32 delta) override;
+		void onUpdate(f32 delta) override;
 
-		void onMouseButton(MouseButton::Enum button, bool down) override;
+		void onRender(engine::Canvas& canvas) override;
 
-		void onMouseMove(rp::PointF position) override;
+		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override;
 
-		void onMouseWheel(rp::PointF delta) override;
+		bool onMouseMove(rp::Point position) override;
 
-		void onKey(VirtualKey::Enum key, bool down) override;
+		bool onMouseScroll(rp::PointF delta, Point position) override;
+
+		bool onKey(VirtualKey::Enum key, bool down) override;
 
 	private:
 		void startGame();
-
-		void render(Dimension res);
 
 		RectF calculateSpriteWorldRect(entt::registry& reg, entt::entity e);
 
 		bool spriteContainsPoint(entt::registry& reg, entt::entity e, PointF point);
 
 		void nextStock();
+
+		void prepareResources(engine::Canvas& canvas);
 	};
 }

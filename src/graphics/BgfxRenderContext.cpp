@@ -125,10 +125,12 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		float viewMtx[16];
 		bx::mtxIdentity(viewMtx);
 
-		float projMtx[16];
-		bx::mtxOrtho(projMtx, 0, canvas.getDimensions().w, canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
-
 		for (const engine::CanvasSurface& surface : geom.surfaces) {
+
+
+			float projMtx[16];
+			bx::mtxOrtho(projMtx, 0, (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
+
 			uint64 state = 0
 				| BGFX_STATE_WRITE_RGB
 				| BGFX_STATE_WRITE_A
@@ -161,7 +163,6 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 			bgfx::setViewMode(surface.viewId, bgfx::ViewMode::Sequential);
 			bgfx::setViewTransform(surface.viewId, viewMtx, projMtx);
 
-			//bgfx::setUniform(_scaleUniform, scale);
 			bgfx::setTexture(0, _textureUniform, surface.texture->handle);
 	
 			bgfx::setVertexBuffer(0, _vert);

@@ -43,7 +43,7 @@ namespace rp {
 
 		void setSampleIndex(KitIndex kitIdx, size_t sampleIdx);
 
-		void onInitialized() override;
+		void onInitialize() override;
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 

@@ -44,7 +44,7 @@ namespace rp {
 
 		~LsdjOverlay() {}
 
-		void onInitialized() override;
+		void onInitialize() override;
 
 		void onMenu(Menu& menu) override;
 

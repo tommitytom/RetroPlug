@@ -21,7 +21,7 @@ namespace rp {
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		void onInitialized() override { setupMenu(); }
+		void onInitialize() override { setupMenu(); }
 
 	private:
 		void setupMenu();

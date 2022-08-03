@@ -166,7 +166,7 @@ namespace rp::engine {
 
 		Canvas& fillRect(const RectT<f32>& area, const Color4F& color);
 
-		Canvas& fillRect(const Rect& area, const Color4F& color) { fillRect((RectF)area, color); }
+		Canvas& fillRect(const Rect& area, const Color4F& color) { return fillRect((RectF)area, color); }
 
 		Canvas& texture(const TextureRenderDesc& desc);
 
@@ -211,3 +211,5 @@ namespace rp::engine {
 		}
 	};
 }
+
+using namespace rp::engine;

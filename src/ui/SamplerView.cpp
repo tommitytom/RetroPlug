@@ -66,7 +66,7 @@ void SamplerView::setSampleIndex(KitIndex kitIdx, size_t sampleIdx) {
 	updateWaveform();
 }
 
-void SamplerView::onInitialized() {
+void SamplerView::onInitialize() {
 	// TODO: This should happen in the LsdjModel
 	updateSampleBuffers();
 }

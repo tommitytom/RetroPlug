@@ -44,7 +44,7 @@ namespace rp {
 
 		SystemWrapperPtr getSystem() { return _system; }
 
-		void onInitialized() override {}
+		void onInitialize() override {}
 
 		bool onKey(VirtualKey::Enum key, bool down) override {
 			if (key == VirtualKey::Esc && down) {

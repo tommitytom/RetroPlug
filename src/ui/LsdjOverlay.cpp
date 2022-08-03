@@ -41,7 +41,7 @@ void showHdPlayer(View* parent, SystemWrapperPtr system) {
 	player->focus();
 }
 
-void LsdjOverlay::onInitialized() {
+void LsdjOverlay::onInitialize() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
 
 	Project* project = getShared<Project>();

@@ -107,17 +107,11 @@ void setCardHighlight(entt::registry& reg, entt::entity e, const Color4F& color)
 }
 
 void Game::onInitialize() {
-	_cardsTex = getCanvas().loadTexture("cards.png");
-	_cardBackTex = getCanvas().loadTexture("cardback.png");
-	_upTex = getCanvas().loadTexture("up.png");
-
 	_registry.ctx().emplace<MouseState>();
 
 	_rootEntity = createEntity(_registry, { .scale = { 0.5f, 0.5f } });
 
 	RectF cardPivotArea = RectF((f32)CARD_DIMENSIONS.w * -0.5, (f32)CARD_DIMENSIONS.h * -0.5, (f32)CARD_DIMENSIONS.w, (f32)CARD_DIMENSIONS.h);
-
-	std::unordered_map<entt::id_type, Rect> tiles;
 
 	// Generate card entities.  These will only be generated once for all games.
 
@@ -141,16 +135,14 @@ void Game::onInitialize() {
 			});
 			
 			if (cardIdx == CARDS_PER_FACE - 1) {
-				tiles[tileUriHash] = Rect(0, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
+				_tiles[tileUriHash] = Rect(0, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
 			} else {
-				tiles[tileUriHash] = Rect((cardIdx + 1) * CARD_DIMENSIONS.w, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
+				_tiles[tileUriHash] = Rect((cardIdx + 1) * CARD_DIMENSIONS.w, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
 			}			
 
 			_cards[cardFaceIdx * CARDS_PER_FACE + cardIdx] = card;
 		}
 	}
-
-	getCanvas().createTextureAtlas("cards/atlas", _cardsTex, tiles);
 
 	PointF offset(TABLEAU_SPACING, TABLEAU_SPACING);
 
@@ -244,7 +236,16 @@ void Game::startGame() {
 	}
 }
 
-void Game::onFrame(f32 delta) {
+void Game::prepareResources(engine::Canvas& canvas) {
+	_cardsTex = canvas.loadTexture("cards.png");
+	_cardBackTex = canvas.loadTexture("cardback.png");
+	_upTex = canvas.loadTexture("up.png");
+
+	canvas.createTextureAtlas("cards/atlas", _cardsTex, _tiles);
+	_tiles.clear();
+}
+
+void Game::onUpdate(f32 delta) {
 	_registry.sort<DropTargetTag>([&](const entt::entity lhs, const entt::entity rhs) {
 		const auto& clhs = _registry.get<RelationshipComponent>(lhs);
 		const auto& crhs = _registry.get<RelationshipComponent>(rhs);
@@ -261,9 +262,12 @@ void Game::onFrame(f32 delta) {
 
 	// Update
 	SceneGraphUtil::updateWorldTransforms(_registry, _rootEntity);
+}
 
-	//Render
-	engine::Canvas& canvas = getCanvas();
+void Game::onRender(engine::Canvas& canvas) {
+	if (!_cardsTex) {
+		prepareResources(canvas);
+	}
 
 	SceneGraphUtil::eachRecursive(_registry, _rootEntity, [&](entt::entity e) {
 		const SpriteRenderComponent* sprite = _registry.try_get<SpriteRenderComponent>(e);
@@ -274,10 +278,6 @@ void Game::onFrame(f32 delta) {
 			canvas.texture(sprite->textureUriHash, sprite->renderArea, sprite->color);
 		}
 	});
-}
-
-void Game::render(Dimension res) {
-	
 }
 
 bool isDragValid(entt::registry& reg, entt::entity source, entt::entity target) {
@@ -310,8 +310,8 @@ bool isDragValid(entt::registry& reg, entt::entity source, entt::entity target) 
 	return sourceComp.value == targetComp.value - 1;
 }
 
-void Game::onMouseMove(rp::PointF position) {
-	_lastMousePos = position;
+bool Game::onMouseMove(rp::Point position) {
+	_lastMousePos = (PointF)position;
 
 	entt::registry& reg = _registry;
 	MouseState& mouseState = reg.ctx().at<MouseState>();
@@ -341,11 +341,11 @@ void Game::onMouseMove(rp::PointF position) {
 			reg.get<TransformComponent>(mouseState.dragging).position = dist;
 
 			for (const auto& [e] : reg.view<DropTargetTag>().each()) {
-				if (e == _foundation[0] && spriteContainsPoint(reg, e, position)) {
+				if (e == _foundation[0] && spriteContainsPoint(reg, e, _lastMousePos)) {
 					spdlog::info("");
 				}
 
-				if (spriteContainsPoint(reg, e, position) && isDragValid(reg, mouseState.dragging, e)) {
+				if (spriteContainsPoint(reg, e, _lastMousePos) && isDragValid(reg, mouseState.dragging, e)) {
 					setCardHighlight(reg, e, COLOR_DRAG_OVER);
 					mouseState.mouseOver = e;
 				}
@@ -353,12 +353,14 @@ void Game::onMouseMove(rp::PointF position) {
 		}
 	} else {
 		for (const auto& [e] : reg.view<FrontFacingTag>().each()) {
-			if (spriteContainsPoint(reg, e, position)) {
+			if (spriteContainsPoint(reg, e, _lastMousePos)) {
 				setCardHighlight(reg, e, COLOR_MOUSE_OVER);
 				mouseState.mouseOver = e;
 			}
 		}
 	}
+
+	return true;
 }
 
 void Game::nextStock() {
@@ -372,7 +374,7 @@ void Game::nextStock() {
 	}
 }
 
-void Game::onMouseButton(MouseButton::Enum button, bool down) {
+bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 	entt::registry& reg = _registry;
 	MouseState& mouseState = reg.ctx().at<MouseState>();
 
@@ -384,7 +386,7 @@ void Game::onMouseButton(MouseButton::Enum button, bool down) {
 		if (down) {
 			if (spriteContainsPoint(reg, _stock, _lastMousePos)) {
 				nextStock();
-				return;
+				return true;
 			}
 
 			if (mouseState.mouseOver != entt::null) {
@@ -457,18 +459,22 @@ void Game::onMouseButton(MouseButton::Enum button, bool down) {
 			mouseState.mouseDown = false;
 		}
 	}
+
+	return true;
 }
 
-void Game::onMouseWheel(PointF delta) {
+bool Game::onMouseScroll(PointF delta, Point position) {
 	if (delta.y > 0) {
 		_zoom += 0.1f;
 	} else {
 		_zoom -= 0.1f;
 	}
+
+	return true;
 }
 
-void Game::onKey(VirtualKey::Enum key, bool down) {
-
+bool Game::onKey(VirtualKey::Enum key, bool down) {
+	return true;
 }
 
 RectF Game::calculateSpriteWorldRect(entt::registry& reg, entt::entity e) {
