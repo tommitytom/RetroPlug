@@ -11,7 +11,7 @@
 #include "application/Window.h"
 
 namespace rp {
-	class Scene : public View {
+	class PhysicsTest : public View {
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
@@ -27,11 +27,11 @@ namespace rp {
 		PointF _lastMousePos;
 
 	public:
-		Scene() : View({ 1366, 768 }) {
-			setType<Scene>();
+		PhysicsTest() : View({ 1366, 768 }) {
+			setType<PhysicsTest>();
 			setName("Physics Test");
 		}
-		~Scene() = default;
+		~PhysicsTest() = default;
 
 		void onInitialize() override;
 

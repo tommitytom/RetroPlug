@@ -1,7 +1,5 @@
 #include "application/Application.h"
-#include "Game.h"
-
-#include <spdlog/spdlog.h>
+#include "Solitaire.h"
 
 using namespace rp;
 
@@ -37,7 +35,5 @@ public:
 };
 
 int main(void) {
-	rp::app::Application app;
-	//return app.run<BasicWindow>();
-	return app.run<rp::Game>();
+	return rp::app::Application::run<rp::Solitaire>();
 }

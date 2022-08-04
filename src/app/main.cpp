@@ -1,5 +1,5 @@
-#include "platform/Window.h"
-#include "app/RetroPlugApplication.h"
+#include "application/Application.h"
+#include "RetroPlug.h"
 
 #ifdef RP_WEB
 #include "app/WebAudio.h"
@@ -9,12 +9,10 @@ EM_ASYNC_JS(void, setupWebFs, (), {
 });
 #endif
 
-using namespace rp;
-
-RetroPlugApplication* app = nullptr;
-
 int main() {
-	{
+	return rp::app::Application::run<rp::RetroPlug>();
+
+	/*{
 		app = new RetroPlugApplication("RetroPlug 0.4.0", 320, 288);
 
 #ifdef RP_WEB
@@ -27,5 +25,5 @@ int main() {
 		delete app;
 	}
 
-	return 0;
+	return 0;*/
 }

@@ -1,13 +1,11 @@
 #include "MenuView.h"
 
-#include <nanovg.h>
-
 using namespace rp;
 
 const f32 MARGIN = 10.0f;
 
-const NVGcolor COLOR_WHITE = nvgRGBA(255, 255, 255, 255);
-const NVGcolor COLOR_GRAY = nvgRGBA(190, 190, 190, 255);
+const Color4 COLOR_WHITE = Color4(255, 255, 255, 255);
+const Color4 COLOR_GRAY = Color4(190, 190, 190, 255);
 
 MenuView::MenuView() : View({ 160, 144 }) {
 	setType<MenuView>();
@@ -246,7 +244,7 @@ MenuItemBase* MenuView::getHighlighted() {
 	return nullptr;
 }
 
-void MenuView::drawText(f32 x, f32 y, std::string_view text, NVGcolor color) {
+void MenuView::drawText(f32 x, f32 y, std::string_view text, Color4 color) {
 	x += _menuArea.x + _drawOffset.x;
 	y += _menuArea.y + _drawOffset.y;
 
@@ -296,13 +294,13 @@ void drawArrow(NVGcontext* vg, const RectT<f32>& area, ArrowDirection dir) {
 	nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
 	nvgFill(vg);*/
 
-	nvgBeginPath(vg);
+	/*nvgBeginPath(vg);
 	nvgMoveTo(vg, points[0].x, points[0].y);
 	nvgLineTo(vg, points[1].x, points[1].y);
 	nvgLineTo(vg, points[2].x, points[2].y);
 	nvgStrokeWidth(vg, 1.0f);
 	nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 255));
-	nvgStroke(vg);
+	nvgStroke(vg);*/
 }
 
 void MenuView::drawMenu(Menu& menu) {

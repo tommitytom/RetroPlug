@@ -1,7 +1,5 @@
 #include "SamplerView.h"
 
-#include <nanovg.h>
-
 #include "core/Project.h"
 #include "lsdj/Rom.h"
 #include "lsdj/KitUtil.h"

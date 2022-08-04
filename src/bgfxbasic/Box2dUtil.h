@@ -5,7 +5,7 @@
 #include "RpMath.h"
 #include "PhysicsComponents.h"
 
-namespace rp::Box2dUtil {
+namespace rp::PhysicsUtil {
 	static PointF convert(b2Vec2 v) {
 		return PointF(v.x, v.y);
 	}

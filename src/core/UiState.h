@@ -13,7 +13,6 @@ namespace rp {
 	public:
 		//DimensionT<f32> scale = DimensionT<f32>(2, 2);
 
-		ViewManager viewManager;
 		GridViewPtr grid;
 		//ViewPtr overlayRoot;
 		GridOverlayPtr gridOverlay;

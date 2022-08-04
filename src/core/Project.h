@@ -8,7 +8,7 @@
 
 #include "core/ModelFactory.h"
 #include "core/ProjectState.h"
-#include "core/ResourceManager.h"
+//#include "core/ResourceManager.h"
 #include "core/Serializable.h"
 #include "core/SystemWrapper.h"
 
@@ -18,7 +18,7 @@ namespace rp {
 	class Project {
 	private:
 		ProjectState _state;
-		ResourceManager _resourceManager;
+		//ResourceManager _resourceManager;
 		AudioManager* _audioManager = nullptr;
 
 		sol::state* _lua = nullptr;

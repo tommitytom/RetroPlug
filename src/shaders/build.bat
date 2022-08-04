@@ -9,3 +9,6 @@ shaderc -f vs_tex.sc -o vs_tex_d3d11.h --bin2c vs_tex_d3d11 --platform windows -
 
 shaderc -f fs_tex.sc -o fs_tex_spirv.h --bin2c fs_tex_spirv --platform linux --varyingdef varying2d.def.sc --type fragment -p spirv
 shaderc -f vs_tex.sc -o vs_tex_spirv.h --bin2c vs_tex_spirv --platform linux --varyingdef varying2d.def.sc --type vertex -p spirv
+
+shaderc -f fs_tex.sc -o fs_tex_metal.h --bin2c fs_tex_metal --platform osx --varyingdef varying2d.def.sc --type fragment -p metal
+shaderc -f vs_tex.sc -o vs_tex_metal.h --bin2c vs_tex_metal --platform osx --varyingdef varying2d.def.sc --type vertex -p metal

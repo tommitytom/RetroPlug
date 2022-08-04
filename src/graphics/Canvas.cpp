@@ -105,7 +105,7 @@ void Canvas::beginRender(Dimension res, f32 pixelRatio) {
 
 	clear();
 
-	_res = res;
+	_res.dimensions = res;
 	_viewPort = Rect(0, 0, res.w, res.h);
 	_pixelRatio = pixelRatio;
 
@@ -361,6 +361,7 @@ Canvas& Canvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
 }
 
 Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
+	return *this;
 	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
 
 	uint32 agbr = toUint32Abgr(color);

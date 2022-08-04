@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "ui/Canvas.h"
+#include "graphics/Canvas.h"
 
 using namespace rp;
 

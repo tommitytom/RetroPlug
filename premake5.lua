@@ -114,6 +114,7 @@ dep.allProjects()
 group "Framework"
 projects.Graphics.project()
 projects.Application.project()
+projects.Engine.project()
 
 group "RetroPlug"
 projects.RetroPlug.project()

@@ -1,11 +1,11 @@
-#include "Game.h"
+#include "Solitaire.h"
 
 #include <random>
 #include <spdlog/spdlog.h>
 
-#include "RelationshipComponent.h"
-#include "TransformComponent.h"
-#include "SceneGraphUtil.h"
+#include "engine/RelationshipComponent.h"
+#include "engine/TransformComponent.h"
+#include "engine/SceneGraphUtil.h"
 #include "application/WindowManager.h"
 
 using namespace rp;
@@ -106,7 +106,7 @@ void setCardHighlight(entt::registry& reg, entt::entity e, const Color4F& color)
 	reg.get<SpriteRenderComponent>(e).color = color;
 }
 
-void Game::onInitialize() {
+void Solitaire::onInitialize() {
 	_registry.ctx().emplace<MouseState>();
 
 	_rootEntity = createEntity(_registry, { .scale = { 0.5f, 0.5f } });
@@ -128,17 +128,17 @@ void Game::onInitialize() {
 			});
 
 			entt::id_type tileUriHash = getCardTileUri(cardComp);
-			
+
 			_registry.emplace<SpriteRenderComponent>(card, SpriteRenderComponent{
 				.textureUriHash = tileUriHash,
 				.renderArea = cardPivotArea
 			});
-			
+
 			if (cardIdx == CARDS_PER_FACE - 1) {
 				_tiles[tileUriHash] = Rect(0, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
 			} else {
 				_tiles[tileUriHash] = Rect((cardIdx + 1) * CARD_DIMENSIONS.w, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
-			}			
+			}
 
 			_cards[cardFaceIdx * CARDS_PER_FACE + cardIdx] = card;
 		}
@@ -150,16 +150,16 @@ void Game::onInitialize() {
 	_stock = createEntity(_registry, _rootEntity, { .position = offset });
 	_waste = createEntity(_registry, _rootEntity, { .position = offset + PointF((f32)TABLEAU_SPACING, 0) });
 
-	_registry.emplace<SpriteRenderComponent>(_stock, SpriteRenderComponent {
+	_registry.emplace<SpriteRenderComponent>(_stock, SpriteRenderComponent{
 		.textureUriHash = "cardback"_hs,
 		.renderArea = cardPivotArea,
 		.color = { 1, 1, 1, 0.5f }
 	});
-	
+
 	// Foundation
 	for (uint32 i = 0; i < CARD_FACE_COUNT; ++i) {
 		_foundation[i] = createEntity(_registry, _rootEntity, { .position = offset + PointF((f32)((i + 3) * TABLEAU_SPACING), 0) });
-		
+
 		const CardComponent& cardComp = _registry.emplace<CardComponent>(_foundation[i], CardComponent{
 			.face = (CardFace)i,
 			.value = CARDS_PER_FACE
@@ -179,7 +179,7 @@ void Game::onInitialize() {
 	startGame();
 }
 
-void Game::startGame() {
+void Solitaire::startGame() {
 	// Clear previous state
 
 	for (size_t i = 0; i < _cards.size(); ++i) {
@@ -236,7 +236,7 @@ void Game::startGame() {
 	}
 }
 
-void Game::prepareResources(engine::Canvas& canvas) {
+void Solitaire::prepareResources(engine::Canvas& canvas) {
 	_cardsTex = canvas.loadTexture("cards.png");
 	_cardBackTex = canvas.loadTexture("cardback.png");
 	_upTex = canvas.loadTexture("up.png");
@@ -245,7 +245,7 @@ void Game::prepareResources(engine::Canvas& canvas) {
 	_tiles.clear();
 }
 
-void Game::onUpdate(f32 delta) {
+void Solitaire::onUpdate(f32 delta) {
 	_registry.sort<DropTargetTag>([&](const entt::entity lhs, const entt::entity rhs) {
 		const auto& clhs = _registry.get<RelationshipComponent>(lhs);
 		const auto& crhs = _registry.get<RelationshipComponent>(rhs);
@@ -264,7 +264,7 @@ void Game::onUpdate(f32 delta) {
 	SceneGraphUtil::updateWorldTransforms(_registry, _rootEntity);
 }
 
-void Game::onRender(engine::Canvas& canvas) {
+void Solitaire::onRender(engine::Canvas& canvas) {
 	if (!_cardsTex) {
 		prepareResources(canvas);
 	}
@@ -310,7 +310,7 @@ bool isDragValid(entt::registry& reg, entt::entity source, entt::entity target) 
 	return sourceComp.value == targetComp.value - 1;
 }
 
-bool Game::onMouseMove(rp::Point position) {
+bool Solitaire::onMouseMove(rp::Point position) {
 	_lastMousePos = (PointF)position;
 
 	entt::registry& reg = _registry;
@@ -334,7 +334,7 @@ bool Game::onMouseMove(rp::Point position) {
 			PointF scale = reg.get<TransformComponent>(_rootEntity).scale;
 			scale.x = 1.0f / scale.x;
 			scale.y = 1.0f / scale.y;
-			
+
 			// Mouse click pos relative to the transform
 			PointF dist = (_lastMousePos - parentPos) * scale;
 
@@ -363,7 +363,7 @@ bool Game::onMouseMove(rp::Point position) {
 	return true;
 }
 
-void Game::nextStock() {
+void Solitaire::nextStock() {
 	entt::entity last = SceneGraphUtil::back(_registry, _stock);
 
 	if (last != entt::null) {
@@ -374,7 +374,7 @@ void Game::nextStock() {
 	}
 }
 
-bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
+bool Solitaire::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 	entt::registry& reg = _registry;
 	MouseState& mouseState = reg.ctx().at<MouseState>();
 
@@ -398,7 +398,7 @@ bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 				mouseState.dragParentOffset = reg.get<TransformComponent>(mouseState.mouseOver).position;
 
 				SceneGraphUtil::changeParent(reg, mouseState.mouseOver, _rootEntity);
-				
+
 				// Make sure we can't drag a card over itself or any of its children
 				SceneGraphUtil::eachRecursive(reg, mouseState.mouseOver, [&](entt::entity e) {
 					reg.remove<DropTargetTag>(e);
@@ -415,7 +415,7 @@ bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 
 					if (reg.all_of<FoundationTag>(mouseState.mouseOver)) {
 						CardFace face = reg.get<CardComponent>(mouseState.dragging).face;
-						
+
 						reg.remove<DropTargetTag>(mouseState.dragging);
 						reg.emplace_or_replace<FoundationTag>(mouseState.dragging);
 
@@ -432,7 +432,7 @@ bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 
 						// I think this is already handled below...
 						//reg.emplace_or_replace<DropTargetTag>(mouseState.dragging);
-						
+
 						SceneGraphUtil::remove(reg, mouseState.dragging);
 						SceneGraphUtil::pushBack(reg, mouseState.dragging, mouseState.mouseOver);
 
@@ -463,7 +463,7 @@ bool Game::onMouseButton(MouseButton::Enum button, bool down, Point position) {
 	return true;
 }
 
-bool Game::onMouseScroll(PointF delta, Point position) {
+bool Solitaire::onMouseScroll(PointF delta, Point position) {
 	if (delta.y > 0) {
 		_zoom += 0.1f;
 	} else {
@@ -473,22 +473,22 @@ bool Game::onMouseScroll(PointF delta, Point position) {
 	return true;
 }
 
-bool Game::onKey(VirtualKey::Enum key, bool down) {
+bool Solitaire::onKey(VirtualKey::Enum key, bool down) {
 	return true;
 }
 
-RectF Game::calculateSpriteWorldRect(entt::registry& reg, entt::entity e) {
+RectF Solitaire::calculateSpriteWorldRect(entt::registry& reg, entt::entity e) {
 	assert(reg.all_of<SpriteRenderComponent>(e));
 
 	const SpriteRenderComponent& sprite = reg.get<SpriteRenderComponent>(e);
 	const Mat3x3& transform = reg.get<WorldTransformComponent>(e).transform;
-	
+
 	PointF topLeft = transform * sprite.renderArea.position;
 	PointF bottomRight = transform * sprite.renderArea.bottomRight();
 
 	return RectF(topLeft, { bottomRight.x - topLeft.x, bottomRight.y - topLeft.y });
 }
 
-bool Game::spriteContainsPoint(entt::registry& reg, entt::entity e, PointF point) {
+bool Solitaire::spriteContainsPoint(entt::registry& reg, entt::entity e, PointF point) {
 	return calculateSpriteWorldRect(reg, e).contains(point);
 }

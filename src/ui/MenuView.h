@@ -144,7 +144,7 @@ namespace rp {
 	private:
 		void drawMenu(Menu& menu);
 
-		void drawText(f32 x, f32 y, std::string_view text, NVGcolor color);
+		void drawText(f32 x, f32 y, std::string_view text, Color4 color);
 
 		bool moveCursorDown();
 

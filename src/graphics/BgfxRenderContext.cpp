@@ -14,6 +14,8 @@
 #include "shaders/vs_tex_d3d11.h"
 #include "shaders/fs_tex_spirv.h"
 #include "shaders/vs_tex_spirv.h"
+#include "shaders/fs_tex_metal.h"
+#include "shaders/vs_tex_metal.h"
 
 using namespace rp;
 namespace fs = std::filesystem;
@@ -51,8 +53,13 @@ ShaderProgram rp::loadShaders() {
 		frag = fs_tex_gl; fragSize = sizeof(fs_tex_gl);
 		break;
 	case bgfx::RendererType::Vulkan:
+	case bgfx::RendererType::WebGPU:
 		vert = vs_tex_spirv; vertSize = sizeof(vs_tex_spirv);
 		frag = fs_tex_spirv; fragSize = sizeof(fs_tex_spirv);
+		break;
+	case bgfx::RendererType::Metal:
+		vert = vs_tex_metal; vertSize = sizeof(vs_tex_metal);
+		frag = fs_tex_metal; fragSize = sizeof(fs_tex_metal);
 		break;
 	}
 
@@ -126,8 +133,6 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		bx::mtxIdentity(viewMtx);
 
 		for (const engine::CanvasSurface& surface : geom.surfaces) {
-
-
 			float projMtx[16];
 			bx::mtxOrtho(projMtx, 0, (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 

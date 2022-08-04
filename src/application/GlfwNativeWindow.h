@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string_view>
-
-#include "graphics/BgfxRenderContext.h"
-#include "ui/View.h"
-
-#include "platform/Types.h"
-#include "RpMath.h"
-#include "core/Input.h"
-
 #include "Window.h"
 
 struct GLFWwindow;
@@ -27,8 +18,6 @@ namespace rp::app {
 		void onCreate() override;
 
 		void onUpdate(f32 delta) override;
-
-		void onRender(engine::Canvas& canvas) override;
 		
 		bool shouldClose() override;
 

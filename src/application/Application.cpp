@@ -46,45 +46,58 @@ Application::~Application() {
 }
 
 void Application::createRenderContext(WindowPtr window) {
-	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getView().getDimensions());
+	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions());
 }
 
-int Application::doLoop() {
-	_windowManager.update();
-
+void Application::runFrame() {
 	std::vector<WindowPtr>& windows = _windowManager.getWindows();
 	assert(windows.size());
 
-	rp::engine::Canvas canvas;
+	f64 time = glfwGetTime();
+	f32 delta = _lastTime > 0 ? (f32)(time - _lastTime) : 0.0f;
+	_lastTime = time;
 
-	while (windows.size() && !windows[0]->shouldClose()) {
-		f64 time = glfwGetTime();
-		f32 delta = _lastTime > 0 ? (f32)(time - _lastTime) : 0.0f;
-		_lastTime = time;
+	// NOTE: On web this doesn't actually poll input - all input events are received BEFORE we enter runFrame
+	glfwPollEvents();
 
-		glfwPollEvents();
-		
-		_windowManager.update();
+	_windowManager.update();
 
-		_renderContext->beginFrame();
+	_renderContext->beginFrame();
 
-		for (auto it = windows.begin(); it != windows.end(); ++it) {
-			WindowPtr w = *it;
+	for (auto it = windows.begin(); it != windows.end(); ++it) {
+		WindowPtr w = *it;
 
-			if (!w->shouldClose()) {
-				w->onUpdate(delta);
-				
-				canvas.setViewId(w->getId());
-				canvas.beginRender(w->getView().getDimensions(), 1.0f);
-				w->onRender(canvas);
-				canvas.endRender();
+		if (!w->shouldClose()) {
+			w->onUpdate(delta);
 
-				_renderContext->renderCanvas(canvas);
-			}
+			_canvas.setViewId(w->getId());
+			_canvas.beginRender(w->getViewManager().getDimensions(), 1.0f);
+			w->onRender(_canvas);
+			_canvas.endRender();
+
+			_renderContext->renderCanvas(_canvas);
 		}
-
-		_renderContext->endFrame();
 	}
 
+	_renderContext->endFrame();
+}
+
+int Application::doLoop() {
+	std::vector<WindowPtr>& windows = _windowManager.getWindows();
+	assert(windows.size());
+
+#if RP_WEB
+	emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
+#else
+	while (windows.size() && !windows[0]->shouldClose()) {
+		runFrame();
+	}
+#endif
+
 	return 0;
+}
+
+void Application::webFrameCallback(void* arg) {
+	Application* app = (Application*)arg;
+	app->runFrame();
 }

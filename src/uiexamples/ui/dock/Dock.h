@@ -15,7 +15,7 @@ namespace rp {
 		Dock() { setType<Dock>(); }
 		~Dock() = default;
 
-		void onInitialized() override;
+		void onInitialize() override;
 
 		void setRoot(ViewPtr root);
 	};

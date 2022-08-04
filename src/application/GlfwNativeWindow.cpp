@@ -41,29 +41,28 @@ void* GlfwNativeWindow::getNativeHandle() {
 
 void GlfwNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getView().onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
+	w->getViewManager().onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->_lastMousePosition = rp::Point((int32)x, (int32)y);
-	w->getView().onMouseMove(w->_lastMousePosition);
+	w->getViewManager().onMouseMove(w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getView().onMouseScroll(rp::PointF((f32)x, (f32)y), w->_lastMousePosition);
+	w->getViewManager().onMouseScroll(rp::PointF((f32)x, (f32)y), w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getView().onResize((uint32)x, (uint32)y);
-	//w->getView().onResize(rp::Dimension{ x, y });
+	w->getViewManager().onResize(rp::Dimension{ x, y });
 }
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getView().onKey(convertKey(key), action == 1);
+	w->getViewManager().onKey(convertKey(key), action == 1);
 }
 
 void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {
@@ -77,6 +76,54 @@ void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** 
 	//w->getView().onDrop(p);
 }
 
+void GlfwNativeWindow::windowCloseCallback(GLFWwindow* window) {
+	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
+	//w->getViewManager().onCloseWindowRequest();
+}
+
+#ifdef RP_WEB
+EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+EMSCRIPTEN_RESULT touchmove_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+
+EMSCRIPTEN_RESULT touchend_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+
+EMSCRIPTEN_RESULT touchcancel_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+	Application* app = static_cast<Application*>(userData);
+
+	for (int i = 0; i < touchEvent->numTouches; ++i) {
+		app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+	}
+
+	return 0;
+}
+#endif
+
 GlfwNativeWindow::~GlfwNativeWindow() {
 	if (_window) {
 		glfwDestroyWindow(_window);
@@ -86,18 +133,28 @@ GlfwNativeWindow::~GlfwNativeWindow() {
 void GlfwNativeWindow::onCreate() {
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	Dimension dimensions = getView().getDimensions();
-	_window = glfwCreateWindow(dimensions.w, dimensions.h, getView().getName().data(), NULL, NULL);
+	Dimension dimensions = getViewManager().getDimensions();
+	_window = glfwCreateWindow(dimensions.w, dimensions.h, getViewManager().getName().data(), NULL, NULL);
 
 	glfwSetWindowUserPointer(_window, this);
 
 	glfwSetKeyCallback(_window, keyCallback);
-	//glfwSetCharCallback(_window, charCb);
 	glfwSetScrollCallback(_window, mouseScrollCallback);
 	glfwSetCursorPosCallback(_window, mouseMoveCallback);
 	glfwSetMouseButtonCallback(_window, mouseButtonCallback);
 	glfwSetWindowSizeCallback(_window, resizeCallback);
 	glfwSetDropCallback(_window, dropCallback);
+	glfwSetWindowCloseCallback(_window, windowCloseCallback);
+
+#ifdef RP_WEB
+	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
+	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchmove_callback);
+	emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
+	emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
+#endif
+
+	//glfwSetCharCallback(_window, charCb);
+	//glfwSetFramebufferSizeCallback(window, resizeCallback);
 }
 
 void GlfwNativeWindow::onUpdate(f32 delta) {
@@ -109,9 +166,17 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 	// NOTE: An ID of 0 is always given to the main window.  It does not need a new frame buffer.
 	bool resizeFrameBuffer = getId() > 0 && !_frameBuffer;
 
-	if (windowSize.w != getView().getDimensions().w || windowSize.h != getView().getDimensions().h) {
-		getView().setDimensions(windowSize);
-		resizeFrameBuffer = getId() > 0;
+	if (windowSize.w != getViewManager().getDimensions().w || windowSize.h != getViewManager().getDimensions().h) {
+		getViewManager().setDimensions(windowSize);
+		getViewManager().getChild(0)->setDimensions(windowSize);
+
+		if (getId() == 0) {
+			bgfx::reset((uint32_t)getViewManager().getDimensions().w, (uint32_t)getViewManager().getDimensions().h, BGFX_RESET_VSYNC);
+		} else {
+			resizeFrameBuffer = true;
+		}
+		
+		bgfx::setViewRect(getId(), 0, 0, bgfx::BackbufferRatio::Equal);
 	}
 
 	if (resizeFrameBuffer) {
@@ -120,11 +185,7 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		_frameBuffer->setViewFrameBuffer(getId());
 	}
 
-	getView().onUpdate(delta);
-}
-
-void GlfwNativeWindow::onRender(engine::Canvas& canvas) {
-	getView().onRender(canvas);
+	getViewManager().onUpdate(delta);
 }
 
 bool GlfwNativeWindow::shouldClose() {

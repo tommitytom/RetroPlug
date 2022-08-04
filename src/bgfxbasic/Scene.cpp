@@ -1,7 +1,7 @@
 #include "Scene.h"
 
 #include "PhysicsComponents.h"
-#include "Box2dUtil.h"
+#include "PhysicsUtil.h"
 
 using namespace rp;
 
@@ -16,15 +16,15 @@ void Scene::init() {
 	_ball = _registry.create();
 	entt::entity ball2 = _registry.create();
 
-	Box2dUtil::addBox(_registry, _ground, RectF(50, 768 - 150, 1024 - 100, 50));
-	Box2dUtil::addCircle(_registry, _ball, PointF(300, 0), 50, 10.0f);
-	Box2dUtil::addCircle(_registry, ball2, PointF(310, 50), 50, 10.0f);
+	PhysicsUtil::addBox(_registry, _ground, RectF(50, 768 - 150, 1024 - 100, 50));
+	PhysicsUtil::addCircle(_registry, _ball, PointF(300, 0), 50, 10.0f);
+	PhysicsUtil::addCircle(_registry, ball2, PointF(310, 50), 50, 10.0f);
 
 	f32 xoff = 0.0f;
 	for (size_t j = 0; j < 4; ++j) {
 		for (size_t i = 0; i < 20; ++i) {
 			entt::entity e = _registry.create();
-			Box2dUtil::addBox(_registry, e, RectF(200 + xoff, i * 30.0f, 20, 20), 10.0f);
+			PhysicsUtil::addBox(_registry, e, RectF(200 + xoff, i * 30.0f, 20, 20), 10.0f);
 			xoff += 2.0f;
 		}
 
@@ -32,7 +32,7 @@ void Scene::init() {
 	}
 	
 
-	//Box2dUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
+	//PhysicsUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
 	//_canvas.fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
 
 	_upTex = _canvas.loadTexture("taco.png");
@@ -70,7 +70,7 @@ void Scene::render(Dimension res) {
 
 				for (int32 i = 0; i < polygon->m_count; ++i) {
 					points[i] =
-						Box2dUtil::convert(comp.body->GetWorldPoint(polygon->m_vertices[i])) *
+						PhysicsUtil::convert(comp.body->GetWorldPoint(polygon->m_vertices[i])) *
 						scale;
 				}
 
@@ -83,7 +83,7 @@ void Scene::render(Dimension res) {
 			case b2Shape::Type::e_circle:
 			{
 				const b2CircleShape* circle = static_cast<const b2CircleShape*>(shape);
-				PointF point = Box2dUtil::convert(comp.body->GetWorldPoint(circle->m_p)) * scale;
+				PointF point = PhysicsUtil::convert(comp.body->GetWorldPoint(circle->m_p)) * scale;
 				f32 radius = circle->m_radius * scale;
 				f32 angle = comp.body->GetAngle();
 				PointF angleLine = PointF(cos(angle), sin(angle)) * radius;
@@ -128,5 +128,5 @@ void Scene::onMouseMove(f32 x, f32 y) {
 
 void Scene::onMouseButton(int button, int action, int mods) {
 	entt::entity e = _registry.create();
-	Box2dUtil::addBox(_registry, e, RectF(_lastMousePos.x, _lastMousePos.y, 20, 20), 10.0f);
+	PhysicsUtil::addBox(_registry, e, RectF(_lastMousePos.x, _lastMousePos.y, 20, 20), 10.0f);
 }

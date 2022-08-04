@@ -4,7 +4,6 @@
 
 #include "platform/Application.h"
 #include "platform/AudioManager.h"
-#include "ui/Canvas.h"
 #include "ui/ViewManager.h"
 
 #include "ui/WaveView.h"
@@ -12,49 +11,36 @@
 #include "ui/dock/Dock.h"
 #include "node/AudioGraph.h"
 #include "core/RetroPlugNodes.h"
-#include "uiexamples/Scene.h"
 
 namespace rp {
-	class ExampleApplication final : public Application {
+	class ExampleApplication final : public View {
 	private:
-		Canvas _canvas;
 		bool _ready = false;
 
-		ViewManager _view;
 		WaveViewPtr _waveView;
 
-		AudioManager _audioManager;
-		AudioGraph _audioGraph;
+		//AudioManager _audioManager;
+		//AudioGraph _audioGraph;
 
 		DockSplitterPtr _splitter;
 		DockPtr _dock;
 
-		std::shared_ptr<AudioGraphProcessor> _audioProcessor;
+		//std::shared_ptr<AudioGraphProcessor> _audioProcessor;
 
-		std::shared_ptr<SineNode> _sineNode;
-		std::shared_ptr<OutputNode> _outputNode;
-
-		Scene _scene;
+		//std::shared_ptr<SineNode> _sineNode;
+		//std::shared_ptr<OutputNode> _outputNode;
 
 	public:
-		ExampleApplication(const char* name, int32 w, int32 h);
+		ExampleApplication();
 		~ExampleApplication() {}
 
-		void onInit() override;
+		void onResize(Dimension dimensions) override;
 
-		void onFrame(f64 delta) override;
+		//void onDrop(int count, const char** paths) override;
 
-		void onResize(int32 w, int32 h) override;
+		void onInitialize() override;
 
-		void onDrop(int count, const char** paths) override;
-
-		void onKey(int key, int scancode, int action, int mods) override;
-
-		void onMouseMove(double x, double y) override;
-
-		void onMouseButton(int button, int action, int mods) override;
-
-		void onMouseScroll(double x, double y) override;
+		bool onKey(VirtualKey::Enum key, bool down) override;
 
 	private:
 		void generateWaveform();

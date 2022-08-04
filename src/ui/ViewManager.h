@@ -74,12 +74,8 @@ namespace rp {
 			return false;
 		}
 
-		bool onMouseScroll(PointT<f32> delta) {
-			return propagateMouseScroll(delta, _mouseState.position);
-		}
-
-		bool onMouseButton(MouseButton::Enum button, bool down) {
-			return onMouseButton(button, down, _mouseState.position);
+		bool onMouseScroll(PointF delta, Point position) override {
+			return propagateMouseScroll(delta, position);
 		}
 
 		void handleDragEnd(Point position) {

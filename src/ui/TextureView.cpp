@@ -1,6 +1,5 @@
 #include "TextureView.h"
 
-#include <nanovg.h>
 #include "util/Image.h"
 
 using namespace rp;

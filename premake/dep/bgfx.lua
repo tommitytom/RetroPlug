@@ -51,8 +51,7 @@ function m.includeBgfx()
 		BGFX_DIR .. "/3rdparty",
 		BGFX_DIR .. "/3rdparty/dxsdk/include",
 		BGFX_DIR .. "/3rdparty/khronos",
-		BGFX_DIR .. "/tools",
-		BGFX_DIR .. "/examples/common/nanovg",
+		BGFX_DIR .. "/tools"
 	}
 
 	defines {
@@ -167,9 +166,6 @@ function m.bgfxProject()
 			BGFX_DIR .. "/include/bgfx/**.h",
 			BGFX_DIR .. "/src/*.cpp",
 			BGFX_DIR .. "/src/*.h",
-			BGFX_DIR .. "/examples/common/nanovg/**.h",
-			BGFX_DIR .. "/examples/common/nanovg/**.cpp",
-			BGFX_DIR .. "/examples/common/nanovg/**.sc",
 			BGFX_DIR .. "/3rdparty/stb/**.h",
 		}
 		excludes {

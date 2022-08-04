@@ -81,8 +81,8 @@ namespace rp {
 		entt::type_info _type;
 
 	public:
-		View(DimensionT<int32> dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
-		View(DimensionT<int32> dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
+		View(Dimension dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
+		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
 
 		~View() {
 			if (_shared) {
@@ -158,7 +158,7 @@ namespace rp {
 
 		virtual void onLayoutChanged() {}
 
-		virtual void onResize(uint32 w, uint32 h) {}
+		virtual void onResize(Dimension dimensions) {}
 
 		virtual bool onDrop(const std::vector<std::string>& paths) { return false; }
 
@@ -493,7 +493,7 @@ namespace rp {
 			if (dimensions != _area.dimensions) {
 				_area.dimensions = dimensions;
 				setLayoutDirty();
-				onResize(dimensions.w, dimensions.h);
+				onResize(dimensions);
 			}
 		}
 		

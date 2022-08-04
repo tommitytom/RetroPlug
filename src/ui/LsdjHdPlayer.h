@@ -2,7 +2,6 @@
 
 #include <vector>
 
-#include <nanovg.h>
 #include <entt/entity/handle.hpp>
 #include <spdlog/spdlog.h>
 

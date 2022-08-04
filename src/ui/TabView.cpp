@@ -1,7 +1,5 @@
 #include "TabView.h"
 
-#include <nanovg.h>
-
 #include "ui/Colors.h"
 
 using namespace rp;

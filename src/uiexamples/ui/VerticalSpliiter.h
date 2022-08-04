@@ -100,7 +100,7 @@ namespace rp {
 			updateLayout();
 		}
 
-		void onResize(uint32 w, uint32 h) override {
+		void onResize(Dimension dimensions) override {
 			updateLayout();
 		}
 
@@ -221,7 +221,7 @@ namespace rp {
 			}
 		}
 
-		void onInitialized() override {
+		void onInitialize() override {
 			updateLayout();
 		}
 

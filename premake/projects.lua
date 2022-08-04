@@ -55,7 +55,8 @@ local m = {
 	Tests = {},
 	BgfxBasic = {},
 	Solitaire = {},
-	PhysicsTest = {}
+	PhysicsTest = {},
+	Engine = {}
 }
 
 
@@ -151,6 +152,49 @@ function m.Application.project()
 	util.liveppCompat()
 end
 
+
+function m.Engine.include()
+	dependson { "configure" }
+
+	m.Graphics.include()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include"
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	dep.bgfx.compat()
+
+	filter {}
+end
+
+function m.Engine.link()
+	m.Engine.include()
+
+	links { "engine" }
+
+	m.Graphics.link()
+end
+
+function m.Engine.project()
+	project "Engine"
+	kind "StaticLib"
+
+	m.Engine.include()
+
+	files {
+		"src/engine/**.h",
+		"src/engine/**.cpp"
+	}
+
+	util.liveppCompat()
+end
 
 
 function m.RetroPlug.include()
@@ -374,6 +418,7 @@ function m.Solitaire.project()
 	kind "ConsoleApp"
 
 	m.Graphics.link()
+	m.Engine.link()
 	m.Application.link()
 
 	sysincludedirs {
@@ -446,6 +491,7 @@ function m.Solitaire.projectLivepp()
 
 	m.Graphics.link()
 	m.Application.link()
+	m.Engine.link()
 
 	sysincludedirs {
 		"thirdparty",

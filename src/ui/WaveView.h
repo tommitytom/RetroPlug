@@ -41,7 +41,7 @@ namespace rp {
 
 		void onRender(Canvas& canvas) override;
 
-		void onResize(uint32 w, uint32 h) override {
+		void onResize(Dimension dimensions) override {
 			updateSlice();
 		}
 

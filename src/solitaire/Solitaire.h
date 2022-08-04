@@ -67,7 +67,16 @@ namespace rp {
 
 	struct VisibleTag {};
 
-	class Game : public View {
+	struct CameraComponent {
+		f32 view[16];
+		f32 proj[16];
+	};
+
+	struct OrthographicCameraComponent {
+		
+	};
+
+	class Solitaire : public View {
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
@@ -98,11 +107,11 @@ namespace rp {
 		std::unordered_map<entt::id_type, Rect> _tiles;
 
 	public:
-		Game() : View({ 1366, 768 }) {
-			setType<Game>();
+		Solitaire() : View({ 1366, 768 }) {
+			setType<Solitaire>();
 			setName("Solitaire");
 		}
-		~Game() = default;
+		~Solitaire() = default;
 
 		void onInitialize() override;
 

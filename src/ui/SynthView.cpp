@@ -1,7 +1,5 @@
 #include "SynthView.h"
 
-#include <nanovg.h>
-
 #include "lsdj/OffsetLookup.h"
 #include "ui/KeyToButton.h"
 #include "util/HashUtil.h"

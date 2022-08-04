@@ -2,7 +2,7 @@
 
 using namespace rp;
 
-void Dock::onInitialized() {
+void Dock::onInitialize() {
 	_dockedRoot = addChild<View>("Docked Windows");
 	_dockedRoot->setSizingPolicy(SizingPolicy::FitToParent);
 

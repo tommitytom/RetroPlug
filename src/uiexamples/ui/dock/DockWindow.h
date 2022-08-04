@@ -2,7 +2,6 @@
 
 #include <nanovg.h>
 
-#include "ui/Canvas.h"
 #include "ui/View.h"
 
 #include "DockPanel.h"
@@ -21,7 +20,7 @@ namespace rp {
 	public:
 		DockWindow() { setType<DockWindow>(); }
 
-		void onInitialized() override {
+		void onInitialize() override {
 			updateLayout();
 		}
 
@@ -33,7 +32,7 @@ namespace rp {
 
 		}*/
 
-		void onResize(uint32 w, uint32 h) override {
+		void onResize(Dimension dimensions) override {
 			updateLayout();
 		}
 

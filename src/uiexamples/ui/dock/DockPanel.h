@@ -96,7 +96,7 @@ namespace rp {
 
 		bool onDrop(DragContext& ctx, Point position) override;
 
-		void onResize(uint32 w, uint32 h) override {
+		void onResize(Dimension dimensions) override {
 			updateLayout();
 		}
 

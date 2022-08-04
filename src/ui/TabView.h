@@ -52,7 +52,7 @@ namespace rp {
 
 		void onRender(Canvas& canvas);
 
-		void onResize(uint32 w, uint32 h) override {
+		void onResize(Dimension dimensions) override {
 			updateLayout();
 		}
 

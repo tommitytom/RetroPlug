@@ -1,6 +1,5 @@
 #include "WaveView.h"
 
-#include <nanovg.h>
 #include <spdlog/spdlog.h>
 
 #include "WaveformUtil.h"

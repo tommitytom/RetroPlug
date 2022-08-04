@@ -1,7 +1,6 @@
 #include "application/Application.h"
-#include "Scene.h"
+#include "PhysicsTest.h"
 
 int main(void) {
-	rp::app::Application app;
-	return app.run<rp::Scene>();
+	return rp::app::Application::run<rp::PhysicsTest>();
 }

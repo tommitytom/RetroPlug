@@ -3,18 +3,22 @@
 #include <string>
 
 #include "platform/AudioManager.h"
-#include "platform/Application.h"
 #include "core/AudioContext.h"
-#include "core/UiContext.h"
 #include "util/DataBuffer.h"
-
-struct NVGcontext;
+#include "ui/View.h"
 
 namespace rp {
-	class RetroPlug {
-	private:
-		NVGcontext* _context = nullptr;
+	enum class ThreadTarget {
+		Ui,
+		Audio
+	};
 
+	const size_t MAX_IO_STREAMS = 16;
+	class Project;
+	class FileManager;
+
+	class RetroPlug final : public View {
+	private:
 		f64 _nextFrame = 0;
 
 		Uint8Buffer _romBuffer;
@@ -28,26 +32,44 @@ namespace rp {
 		IoMessageBus _ioMessageBus;
 		OrchestratorMessageBus _orchestratorMessageBus;
 
-		UiContext _uiContext;
 		AudioContext _audioContext;
+
+		UiState _state;
+		Project* _project;
+		FileManager* _fileManager;
+
+		//SystemIndex _selected = INVALID_SYSTEM_IDX;
+
+		uint32 _sampleRate = 48000;
+
+		ThreadTarget _defaultTarget = ThreadTarget::Audio;
+
+		//std::vector<SystemIoPtr> _ioCollection;
+		size_t _totalIoAllocated = 0;
 
 	public:
 		RetroPlug();
+		~RetroPlug() = default;
 
 		AudioContext& getAudioContext() {
 			return _audioContext;
 		}
 
-		UiContext& getUiContext() {
-			return _uiContext;
-		}
-
 		void setAudioManager(AudioManager& audioManager) {
-			_uiContext.setAudioManager(audioManager);
+			_project->setAudioManager(audioManager);
 		}
 
-		void init() {
+		void onInitialize() override;
 
-		}
+		void onUpdate(f32 delta) override;
+
+		void onRender(Canvas& canvas) override;
+
+		bool onKey(VirtualKey::Enum key, bool down) override;
+
+	private:
+		void processInput(uint32 frameCount);
+
+		void processOutput();
 	};
 }
