@@ -49,7 +49,7 @@ void Application::createRenderContext(WindowPtr window) {
 	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions());
 }
 
-void Application::runFrame() {
+bool Application::runFrame() {
 	std::vector<WindowPtr>& windows = _windowManager.getWindows();
 	assert(windows.size());
 
@@ -80,6 +80,8 @@ void Application::runFrame() {
 	}
 
 	_renderContext->endFrame();
+
+	return windows.size() && !windows[0]->shouldClose();
 }
 
 int Application::doLoop() {
@@ -89,9 +91,7 @@ int Application::doLoop() {
 #if RP_WEB
 	emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
 #else
-	while (windows.size() && !windows[0]->shouldClose()) {
-		runFrame();
-	}
+	while (runFrame()) {}
 #endif
 
 	return 0;

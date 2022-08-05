@@ -1,22 +1,17 @@
-#include "platform/Window.h"
-#include "app/RetroPlugApplication.h"
+#include "application/Application.h"
+#include "RetroPlug.h"
 
-using namespace rp;
-
-static RetroPlugApplication* app;
-static Window* window;
+static rp::app::Application* app;
 
 void initMain(int argc, char** argv) {
-	app = new RetroPlugApplication("RetroPlug 0.4.0", 320, 288);
-	window = new Window(app);
-	app->onInit();
+	app = new rp::app::Application();
+	app->setup<rp::RetroPlug>();
 }
 
 bool mainLoop() {
-	return window->runFrame();
+	return app->runFrame();
 }
 
 void destroyMain() {
-	delete window;
 	delete app;
 }

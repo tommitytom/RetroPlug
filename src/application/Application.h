@@ -35,7 +35,7 @@ namespace rp::app {
 			_windowManager.update();
 		}
 
-		void runFrame();
+		bool runFrame();
 
 	private:
 		void createRenderContext(WindowPtr window);
