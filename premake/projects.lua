@@ -45,6 +45,7 @@ local EMSDK_RELEASE_FLAGS = {
 }
 
 local m = {
+	Foundation = {},
 	Graphics = {},
 	Application = {},
 	RetroPlug = {},
@@ -58,6 +59,46 @@ local m = {
 	PhysicsTest = {},
 	Engine = {}
 }
+
+
+function m.Foundation.include()
+	dependson { "configure" }
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include"
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	dep.bgfx.compat()
+
+	filter {}
+end
+
+function m.Foundation.link()
+	m.Foundation.include()
+
+	links { "Foundation" }
+end
+
+function m.Foundation.project()
+	project "Foundation"
+	kind "StaticLib"
+
+	m.Foundation.include()
+
+	files {
+		"src/foundation/**.h",
+		"src/foundation/**.cpp"
+	}
+
+	util.liveppCompat()
+end
 
 
 function m.Graphics.include()
@@ -200,6 +241,7 @@ end
 function m.RetroPlug.include()
 	dependson { "configure" }
 
+	m.Foundation.include()
 	m.Graphics.include()
 	m.Application.include()
 	dep.SameBoy.include()
@@ -229,6 +271,7 @@ function m.RetroPlug.link()
 
 	links { "RetroPlug" }
 
+	m.Foundation.link()
 	m.Graphics.link()
 	m.Application.link()
 	dep.SameBoy.link()

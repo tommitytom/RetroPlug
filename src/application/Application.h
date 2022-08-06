@@ -8,6 +8,8 @@
 #include "Window.h"
 #include "WindowManager.h"
 
+#include "foundation/ResourceManager.h"
+
 namespace rp::app {
 	class Application {
 	private:
@@ -15,6 +17,8 @@ namespace rp::app {
 		std::unique_ptr<BgfxRenderContext> _renderContext;
 		f64 _lastTime = 0.0;
 		engine::Canvas _canvas;
+
+		ResourceManager _resourceManager;
 
 	public:
 		Application();

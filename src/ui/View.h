@@ -21,6 +21,7 @@ namespace rp {
 		class Canvas;
 	}
 
+	class ResourceManager;
 	class Menu;
 	class View;
 	using ViewPtr = std::shared_ptr<View>;
@@ -63,6 +64,8 @@ namespace rp {
 			std::vector<ViewPtr> dragOver;
 
 			entt::registry userData;
+
+			ResourceManager* resourceManager = nullptr;
 		};
 
 		Shared* _shared = nullptr;
@@ -90,6 +93,14 @@ namespace rp {
 			}
 			
 			removeChildren(); 
+		}
+
+		ResourceManager& getResourceManager() {
+			return *_shared->resourceManager;
+		}
+
+		const ResourceManager& getResourceManager() const {
+			return *_shared->resourceManager;
 		}
 
 		FocusPolicy getFocusPolicy() const {

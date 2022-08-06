@@ -35,6 +35,10 @@ namespace rp {
 			_shared = &_sharedData;
 		}
 
+		void setResourceManager(ResourceManager* resourceManager) {
+			_shared->resourceManager = resourceManager;
+		}
+
 		void setScale(f32 scale) {
 			if (scale != _sharedData.scale) {
 				_sharedData.scale = scale;

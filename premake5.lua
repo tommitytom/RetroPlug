@@ -112,6 +112,7 @@ group "Dependencies"
 dep.allProjects()
 
 group "Framework"
+projects.Foundation.project()
 projects.Graphics.project()
 projects.Application.project()
 projects.Engine.project()
@@ -121,8 +122,6 @@ projects.RetroPlug.project()
 projects.RetroPlugApp.project()
 projects.RetroPlugApp.projectLivepp()
 group ""
-
-
 
 projects.ExampleApplication.project()
 projects.ExampleApplication.projectLivepp()

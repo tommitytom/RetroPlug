@@ -44,7 +44,7 @@ namespace rp::engine {
 
 	struct CanvasSurface {
 		RenderPrimitive primitive = RenderPrimitive::Triangles;
-		entt::resource<Texture> texture;
+		TypedResourceHandle<Texture> texture;
 		size_t indexOffset = 0;
 		size_t indexCount = 0;
 		uint32 viewId = 0;
@@ -53,7 +53,7 @@ namespace rp::engine {
 	};
 
 	struct TextureRenderDesc {
-		entt::resource<Texture> textureHandle;
+		TypedResourceHandle<Texture> textureHandle;
 		RectT<f32> textureUv;
 		RectT<f32> area;
 		Color4F color;
@@ -75,12 +75,12 @@ namespace rp::engine {
 
 		uint32 _viewId;
 
-		entt::resource<Texture> _whiteTexture;
+		TypedResourceHandle<Texture> _defaultTexture;
 
-		entt::resource_cache<Texture, TextureLoader> _textureCache;
-		entt::resource_cache<TextureAtlas, TextureAtlasLoader> _textureAtlasCache;
+		//TypedResourceHandle_cache<Texture, TextureLoader> _textureCache;
+		//TypedResourceHandle_cache<TextureAtlas, TextureAtlasLoader> _textureAtlasCache;
 
-		std::unordered_map<entt::id_type, std::pair<entt::resource<Texture>, Tile>> _tileLookup;
+		std::unordered_map<entt::id_type, std::pair<TypedResourceHandle<Texture>, Tile>> _tileLookup;
 
 		PointF _offset = { 0, 0 };
 		PointF _scale = { 1, 1 };
@@ -103,6 +103,10 @@ namespace rp::engine {
 			_geom.vertices.clear();
 			_geom.surfaces.clear();
 			clearTransform();
+		}
+
+		void setDefaultTexture(TypedResourceHandle<Texture> texture) {
+			_defaultTexture = texture;
 		}
 
 		Dimension getDimensions() const {
@@ -136,11 +140,11 @@ namespace rp::engine {
 			_transform = Mat3x3();
 		}
 
-		entt::resource<Texture> loadTexture(const std::filesystem::path& filePath);
+		//TypedResourceHandle<Texture> loadTexture(const std::filesystem::path& filePath);
 
-		entt::resource<TextureAtlas> createTextureAtlas(std::string_view uri, const entt::resource<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles);
+		//TypedResourceHandle<TextureAtlas> createTextureAtlas(std::string_view uri, const TypedResourceHandle<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles);
 
-		std::optional<std::pair<entt::resource<Texture>, Tile>> getTile(entt::id_type uriHash) const {
+		std::optional<std::pair<TypedResourceHandle<Texture>, Tile>> getTile(entt::id_type uriHash) const {
 			auto found = _tileLookup.find(uriHash);
 
 			if (found != _tileLookup.end()) {
@@ -177,9 +181,9 @@ namespace rp::engine {
 			return texture(uriHash, area, color);
 		}
 
-		Canvas& texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TypedResourceHandle<Texture>& texture, const RectT<f32>& area, const Color4F& color);
 
-		Canvas& texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TypedResourceHandle<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
 
 		Canvas& strokeRect(const RectT<f32>& area, const Color4F& color);
 
@@ -190,7 +194,7 @@ namespace rp::engine {
 		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
 	private:
-		void checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture);
+		void checkSurface(RenderPrimitive primitive, const TypedResourceHandle<Texture>& texture);
 
 		inline uint32 writeVertex(const PointF& pos, uint32 color) {
 			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
@@ -202,13 +206,13 @@ namespace rp::engine {
 			_geom.surfaces.back().indexCount += 3;
 		}
 
-		entt::resource<Texture> createWhiteTexture(uint32 w, uint32 h) {
+		/*TypedResourceHandle<Texture> createWhiteTexture(uint32 w, uint32 h) {
 			const uint32 size = w * h * 4;
 			std::vector<char> data(size);
 			
 			memset(data.data(), 0xFF, size);
 			return _textureCache.load("white"_hs, w, h, 4, data.data()).first->second;
-		}
+		}*/
 	};
 }
 

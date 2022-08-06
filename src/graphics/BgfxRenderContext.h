@@ -15,11 +15,6 @@ namespace rp {
 
 	ShaderProgram loadShaders();
 
-	class ResourceManager {
-	private:
-		//std::unordered_map<UriHash, Resource>
-	};
-
 	class FrameBuffer {
 	private:
 		bgfx::FrameBufferHandle _handle = { bgfx::kInvalidHandle };

@@ -17,7 +17,7 @@ namespace rp {
 		DimensionF _windowSize;
 		RectF _viewPort;
 
-		entt::resource<engine::Texture> _upTex;
+		TypedResourceHandle<engine::Texture> _upTex;
 
 		entt::entity _ground;
 		entt::entity _ball;

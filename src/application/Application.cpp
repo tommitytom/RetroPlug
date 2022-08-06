@@ -25,8 +25,6 @@ static const char* s_canvas = "#canvas";
 using namespace rp;
 using namespace rp::app;
 
-const char* s_canvas = "canvas";
-
 void errorCallback(int error, const char* description) {
 	spdlog::error("GLFW error {}: {}", error, description);
 }
@@ -38,6 +36,8 @@ Application::Application() {
 		spdlog::critical("Failed to initialize GLFW!");
 		throw std::runtime_error("Failed to initialize GLFW!");
 	}
+
+	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
 }
 
 Application::~Application() {
@@ -47,6 +47,12 @@ Application::~Application() {
 
 void Application::createRenderContext(WindowPtr window) {
 	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions());
+	auto whiteTexture = _resourceManager.create<Texture>("white", TextureDesc{
+		.dimensions = { 8, 8 },
+		.depth = 4
+	});
+	
+	_canvas.setDefaultTexture(whiteTexture);
 }
 
 bool Application::runFrame() {
@@ -68,6 +74,8 @@ bool Application::runFrame() {
 		WindowPtr w = *it;
 
 		if (!w->shouldClose()) {
+			w->getViewManager().setResourceManager(&_resourceManager);
+
 			w->onUpdate(delta);
 
 			_canvas.setViewId(w->getId());

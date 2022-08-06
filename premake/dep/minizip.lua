@@ -284,7 +284,7 @@ function m.project()
 			MINIZIP_DIR .. "/mz_os_*.c"
 		}
 
-		configuration { "Debug" }
+		filter { "configurations:Debug" }
 			defines { "ZLIB_DEBUG" }
 
 		filter { "system:not macosx" }

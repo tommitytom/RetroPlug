@@ -24,7 +24,7 @@ uint32 toUint32Abgr(const Color4F& color) {
 }
 
 Canvas::Canvas(uint32 viewId): _viewId(viewId) {
-	//_textureLookup.push_back(_whiteTexture);
+	//_textureLookup.push_back(_defaultTexture);
 
 	Dimension atlasSize = { 512, 512 };
 
@@ -50,7 +50,7 @@ Canvas::~Canvas() {
 	//ftgl::texture_atlas_delete(_atlas);
 	
 	//bgfx::destroy(_textureUniform);
-	//bgfx::destroy(_whiteTexture);
+	//bgfx::destroy(_defaultTexture);
 	//bgfx::destroy(_prog);
 	//bgfx::destroy(_vert);
 	//bgfx::destroy(_ind);
@@ -65,7 +65,7 @@ entt::id_type getPathUriHash(const std::filesystem::path& filePath) {
 	return getUriHash(uri);
 }
 
-entt::resource<TextureAtlas> Canvas::createTextureAtlas(std::string_view uri, const entt::resource<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles) {
+/*TypedResourceHandle<TextureAtlas> Canvas::createTextureAtlas(std::string_view uri, const TypedResourceHandle<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles) {
 	auto atlas = _textureAtlasCache.load(getUriHash(uri), texture, tiles);
 	const DimensionF dim = (DimensionF)texture->dimensions;
 
@@ -81,11 +81,11 @@ entt::resource<TextureAtlas> Canvas::createTextureAtlas(std::string_view uri, co
 	return atlas.first->second;
 }
 
-entt::resource<Texture> Canvas::loadTexture(const std::filesystem::path& filePath) {
+TypedResourceHandle<Texture> Canvas::loadTexture(const std::filesystem::path& filePath) {
 	entt::id_type uriHash = getPathUriHash(filePath);
 	
 	auto ret = _textureCache.load(uriHash, filePath);
-	entt::resource<Texture> res = ret.first->second;
+	TypedResourceHandle<Texture> res = ret.first->second;
 
 	if (res) {
 		_tileLookup[uriHash] = { res, Tile { 0, 0, 1, 1 } };
@@ -96,13 +96,9 @@ entt::resource<Texture> Canvas::loadTexture(const std::filesystem::path& filePat
 	// Resource was not loaded!
 
 	return res;
-}
+}*/
 
 void Canvas::beginRender(Dimension res, f32 pixelRatio) {
-	if (!_whiteTexture) {
-		_whiteTexture = createWhiteTexture(8, 8);
-	}
-
 	clear();
 
 	_res.dimensions = res;
@@ -111,13 +107,13 @@ void Canvas::beginRender(Dimension res, f32 pixelRatio) {
 
 	_geom.surfaces.push_back(CanvasSurface{
 		.primitive = RenderPrimitive::Triangles,
-		.texture = _whiteTexture,
+		.texture = _defaultTexture,
 		.viewId = _viewId,
 		.viewArea = _viewPort
 	});
 }
 
-void Canvas::checkSurface(RenderPrimitive primitive, const entt::resource<Texture>& texture) {
+void Canvas::checkSurface(RenderPrimitive primitive, const TypedResourceHandle<Texture>& texture) {
 	CanvasSurface& backSurf = _geom.surfaces.back();
 
 	if (backSurf.indexCount == 0) {
@@ -143,7 +139,7 @@ Canvas& Canvas::translate(PointF amount) {
 }
 
 Canvas& Canvas::points(const PointF* points, uint32 count) {
-	checkSurface(RenderPrimitive::Points, _whiteTexture);
+	checkSurface(RenderPrimitive::Points, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
 	uint32 v = (uint32)_geom.vertices.size();
@@ -159,7 +155,7 @@ Canvas& Canvas::points(const PointF* points, uint32 count) {
 }
 
 Canvas& Canvas::polygon(const PointF* points, uint32 count) {
-	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
 	uint32 v = (uint32)_geom.vertices.size();
@@ -179,7 +175,7 @@ Canvas& Canvas::polygon(const PointF* points, uint32 count) {
 }
 
 Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
-	checkSurface(RenderPrimitive::LineList, _whiteTexture);
+	checkSurface(RenderPrimitive::LineList, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -197,7 +193,7 @@ Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color)
 }
 
 Canvas& Canvas::circle(const PointF& pos, f32 radius, uint32 segments, const Color4F& color) {
-	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 
@@ -224,7 +220,7 @@ Canvas& Canvas::setScale(f32 scaleX, f32 scaleY) {
 }
 
 Canvas& Canvas::fillRect(const RectT<f32>& area, const Color4F& color) {
-	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -306,7 +302,7 @@ Canvas& Canvas::texture(entt::id_type uriHash, const RectT<f32>& area, const Col
 	return *this;
 }
 
-Canvas& Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::texture(const TypedResourceHandle<Texture>& texture, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
@@ -329,13 +325,13 @@ Canvas& Canvas::texture(const entt::resource<Texture>& texture, const RectT<f32>
 	return *this;
 }
 
-Canvas& Canvas::texture(const entt::resource<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
+Canvas& Canvas::texture(const TypedResourceHandle<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
 
-	auto dim = (DimensionF)texture->dimensions;
+	auto dim = (DimensionF)texture.getResource().getDesc().dimensions;
 
 	RectF textureUv(textureArea.x / dim.w, textureArea.y / dim.h, textureArea.w / dim.w, textureArea.h / dim.h);
 
@@ -362,7 +358,7 @@ Canvas& Canvas::strokeRect(const RectT<f32>& area, const Color4F& color) {
 
 Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
 	return *this;
-	checkSurface(RenderPrimitive::Triangles, _whiteTexture);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 

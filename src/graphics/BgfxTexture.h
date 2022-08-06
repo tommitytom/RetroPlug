@@ -11,14 +11,53 @@
 
 #include <filesystem>
 
+#include "foundation/ResourceHandle.h"
+#include "foundation/ResourceProvider.h"
+
 namespace rp::engine {
-	struct Texture {
-		bgfx::TextureHandle handle;
+	struct TextureDesc {
 		Dimension dimensions;
 		uint32 depth;
 	};
 
-	struct TextureAtlas {
+	class Texture : public Resource {
+	private:
+		TextureDesc _desc;
+
+	public:
+		using DescT = TextureDesc;
+
+		Texture(const TextureDesc& desc): Resource(entt::type_id<Texture>()), _desc(desc) {}
+
+		const TextureDesc& getDesc() const {
+			return _desc;
+		}
+	};
+
+	class BgfxTexture : public Texture {
+	private:
+		bgfx::TextureHandle _handle;
+
+	public:
+		BgfxTexture(const TextureDesc& desc, bgfx::TextureHandle handle): Texture(desc), _handle(handle) {}
+		~BgfxTexture() { bgfx::destroy(_handle); }
+
+		bgfx::TextureHandle getBgfxHandle() const {
+			return _handle;
+		}
+	};
+
+	class BgfxTextureProvider : public TypedResourceProvider<Texture> {
+	private:
+		bx::DefaultAllocator _alloc;
+
+	public:
+		std::unique_ptr<Resource> load(std::string_view uri) override;
+
+		std::unique_ptr<Resource> create(std::string_view uri, const TextureDesc& desc) override;
+	};
+
+	/*struct TextureAtlas {
 		entt::resource<Texture> texture;
 		std::unordered_map<entt::id_type, Rect> tiles;
 
@@ -55,5 +94,5 @@ namespace rp::engine {
 				.tiles = tiles
 			});
 		}
-	};
+	};*/
 }

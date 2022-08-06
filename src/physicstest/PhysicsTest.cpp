@@ -2,6 +2,7 @@
 
 #include "engine/PhysicsComponents.h"
 #include "engine/PhysicsUtil.h"
+#include "foundation/ResourceManager.h"
 
 using namespace rp;
 
@@ -49,8 +50,8 @@ void PhysicsTest::onUpdate(f32 delta) {
 }
 
 void PhysicsTest::onRender(engine::Canvas& canvas) {
-	if (!_upTex) {
-		_upTex = canvas.loadTexture("taco.png");
+	if (!_upTex.isValid()) {
+		_upTex  = getResourceManager().load<engine::Texture>("taco.png");
 	}
 
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
