@@ -1,7 +1,5 @@
 #pragma once 
 
-#include <nanovg.h>
-
 #include "ui/View.h"
 
 #include "DockPanel.h"

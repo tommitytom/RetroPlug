@@ -1,9 +1,6 @@
 #pragma once
 
-#include <nanovg.h>
-
-#include "platform/Application.h"
-#include "platform/AudioManager.h"
+#include "audio/AudioManager.h"
 #include "ui/ViewManager.h"
 
 #include "ui/WaveView.h"

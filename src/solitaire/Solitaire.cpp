@@ -3,6 +3,7 @@
 #include <random>
 #include <spdlog/spdlog.h>
 
+#include "foundation/ResourceManager.h"
 #include "engine/RelationshipComponent.h"
 #include "engine/TransformComponent.h"
 #include "engine/SceneGraphUtil.h"
@@ -87,19 +88,13 @@ entt::entity createEntity(entt::registry& reg, const TransformComponent& trans =
 	return createEntity(reg, entt::null, trans);
 }
 
-entt::id_type getCardTileUri(const CardComponent& card) {
+entt::id_type getCardTileUriHash(const CardComponent& card) {
 	std::string tileUri = fmt::format("cards/{}/{}", getFaceName((CardFace)card.face), getCardNumberName(card.value));
 	return entt::hashed_string(tileUri.c_str(), tileUri.size());
 }
 
-void flipCard(entt::registry& reg, entt::entity e) {
-	if (reg.all_of<FrontFacingTag>(e)) {
-		reg.remove<FrontFacingTag>(e);
-		reg.get<SpriteRenderComponent>(e).textureUriHash = "cardback"_hs;
-	} else {
-		reg.emplace<FrontFacingTag>(e);
-		reg.get<SpriteRenderComponent>(e).textureUriHash = getCardTileUri(reg.get<CardComponent>(e));
-	}
+std::string getCardTileUri(const CardComponent& card) {
+	return fmt::format("cards/{}/{}", getFaceName((CardFace)card.face), getCardNumberName(card.value));
 }
 
 void setCardHighlight(entt::registry& reg, entt::entity e, const Color4F& color) {
@@ -107,11 +102,18 @@ void setCardHighlight(entt::registry& reg, entt::entity e, const Color4F& color)
 }
 
 void Solitaire::onInitialize() {
+	ResourceManager& rm = getResourceManager();
+	//RectF cardPivotArea = RectF((f32)CARD_DIMENSIONS.w * -0.5, (f32)CARD_DIMENSIONS.h * -0.5, (f32)CARD_DIMENSIONS.w, (f32)CARD_DIMENSIONS.h);
+
+	_cardsTex = rm.load<Texture>("cards.png");
+	_cardBackTex = rm.load<Texture>("cardback.png");
+	_upTex = rm.load<Texture>("up.png");
+
+	TextureAtlasDesc atlasDesc = { .texture = _cardsTex };
+
 	_registry.ctx().emplace<MouseState>();
 
 	_rootEntity = createEntity(_registry, { .scale = { 0.5f, 0.5f } });
-
-	RectF cardPivotArea = RectF((f32)CARD_DIMENSIONS.w * -0.5, (f32)CARD_DIMENSIONS.h * -0.5, (f32)CARD_DIMENSIONS.w, (f32)CARD_DIMENSIONS.h);
 
 	// Generate card entities.  These will only be generated once for all games.
 
@@ -122,27 +124,31 @@ void Solitaire::onInitialize() {
 		for (uint32 cardIdx = 0; cardIdx < CARDS_PER_FACE; ++cardIdx) {
 			entt::entity card = createEntity(_registry);
 
+
 			const CardComponent& cardComp = _registry.emplace<CardComponent>(card, CardComponent{
 				.face = face,
 				.value = (int32)cardIdx
 			});
 
-			entt::id_type tileUriHash = getCardTileUri(cardComp);
-
-			_registry.emplace<SpriteRenderComponent>(card, SpriteRenderComponent{
-				.textureUriHash = tileUriHash,
-				.renderArea = cardPivotArea
-			});
+			std::string tileUri = getCardTileUri(cardComp);
+			UriHash tileUriHash = ResourceUtil::hashUri(tileUri);
+			Rect area;
 
 			if (cardIdx == CARDS_PER_FACE - 1) {
-				_tiles[tileUriHash] = Rect(0, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
+				area = Rect(0, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
 			} else {
-				_tiles[tileUriHash] = Rect((cardIdx + 1) * CARD_DIMENSIONS.w, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
+				area = Rect((cardIdx + 1) * CARD_DIMENSIONS.w, tileY, CARD_DIMENSIONS.w, CARD_DIMENSIONS.h);
 			}
+
+			atlasDesc.tiles.push_back({ tileUri, area });
+
+			addSprite(card, tileUri);
 
 			_cards[cardFaceIdx * CARDS_PER_FACE + cardIdx] = card;
 		}
 	}
+
+	_cardAtlas = rm.create<TextureAtlas>("cards/atlas", atlasDesc);
 
 	PointF offset(TABLEAU_SPACING, TABLEAU_SPACING);
 
@@ -150,11 +156,13 @@ void Solitaire::onInitialize() {
 	_stock = createEntity(_registry, _rootEntity, { .position = offset });
 	_waste = createEntity(_registry, _rootEntity, { .position = offset + PointF((f32)TABLEAU_SPACING, 0) });
 
-	_registry.emplace<SpriteRenderComponent>(_stock, SpriteRenderComponent{
-		.textureUriHash = "cardback"_hs,
+	addSprite(_stock, _cardBackTex);
+
+	/*_registry.emplace<SpriteRenderComponent>(_stock, SpriteRenderComponent{
+		.texture = _cardBackTex,
 		.renderArea = cardPivotArea,
 		.color = { 1, 1, 1, 0.5f }
-	});
+	});*/
 
 	// Foundation
 	for (uint32 i = 0; i < CARD_FACE_COUNT; ++i) {
@@ -165,10 +173,12 @@ void Solitaire::onInitialize() {
 			.value = CARDS_PER_FACE
 		});
 
-		_registry.emplace<SpriteRenderComponent>(_foundation[i], SpriteRenderComponent{
-			.textureUriHash = "cardback"_hs,
+		addSprite(_foundation[i], _cardBackTex);
+
+		/*_registry.emplace<SpriteRenderComponent>(_foundation[i], SpriteRenderComponent{
+			.texture = _cardBackTex,
 			.renderArea = cardPivotArea
-		});
+		});*/
 	}
 
 	// Tableau
@@ -216,11 +226,11 @@ void Solitaire::startGame() {
 			transform.position = PointF(0, CARD_SPACING);
 
 			if (j == i) {
-				sprite.textureUriHash = getCardTileUri(card);
+				updateSprite(e, getCardTileUri(card));
 				_registry.emplace<FrontFacingTag>(e);
 				_registry.emplace<DropTargetTag>(e);
 			} else {
-				sprite.textureUriHash = "cardback"_hs;
+				updateSprite(e, _cardBackTex);
 			}
 
 			lastEntity = e;
@@ -232,17 +242,8 @@ void Solitaire::startGame() {
 
 		SceneGraphUtil::pushBack(_registry, e, _stock);
 		_registry.get<TransformComponent>(e).position = { 0, 0 };
-		_registry.get<SpriteRenderComponent>(e).textureUriHash = "cardback"_hs;
+		updateSprite(e, _cardBackTex);
 	}
-}
-
-void Solitaire::prepareResources(engine::Canvas& canvas) {
-	_cardsTex = canvas.loadTexture("cards.png");
-	_cardBackTex = canvas.loadTexture("cardback.png");
-	_upTex = canvas.loadTexture("up.png");
-
-	canvas.createTextureAtlas("cards/atlas", _cardsTex, _tiles);
-	_tiles.clear();
 }
 
 void Solitaire::onUpdate(f32 delta) {
@@ -265,17 +266,13 @@ void Solitaire::onUpdate(f32 delta) {
 }
 
 void Solitaire::onRender(engine::Canvas& canvas) {
-	if (!_cardsTex) {
-		prepareResources(canvas);
-	}
-
 	SceneGraphUtil::eachRecursive(_registry, _rootEntity, [&](entt::entity e) {
 		const SpriteRenderComponent* sprite = _registry.try_get<SpriteRenderComponent>(e);
 
 		if (sprite) {
 			const WorldTransformComponent& trans = _registry.get<WorldTransformComponent>(e);
-			canvas.setTransform(trans.transform);
-			canvas.texture(sprite->textureUriHash, sprite->renderArea, sprite->color);
+			canvas.setTransform(trans.transform);			
+			canvas.texture(sprite->tile.handle, sprite->renderArea, sprite->tile.uvArea, sprite->color);
 		}
 	});
 }
@@ -371,6 +368,78 @@ void Solitaire::nextStock() {
 		SceneGraphUtil::pushBack(_registry, last, _waste);
 
 		flipCard(_registry, last);
+	}
+}
+
+void Solitaire::flipCard(entt::registry& reg, entt::entity e) {
+	if (reg.all_of<FrontFacingTag>(e)) {
+		reg.remove<FrontFacingTag>(e);
+		updateSprite(e, _cardBackTex);
+	} else {
+		reg.emplace<FrontFacingTag>(e);
+		updateSprite(e, getCardTileUri(reg.get<CardComponent>(e)));
+	}
+}
+
+void Solitaire::addSprite(entt::entity e, const TextureHandle& texture) {
+	DimensionF dimensions = (DimensionF)texture.getDesc().dimensions;
+
+	_registry.emplace_or_replace<SpriteComponent>(e, SpriteComponent{ .uri = texture.getUri() });
+
+	_registry.emplace_or_replace<SpriteRenderComponent>(e, SpriteRenderComponent{
+		.tile = {
+			.handle = texture,
+			.dimensions = dimensions,
+			.name = texture.getUri()
+		},
+		.renderArea = dimensions
+	});
+}
+
+void Solitaire::addSprite(entt::entity e, const std::string& uri) {
+	UriHash tileHash = ResourceUtil::hashUri(uri);
+
+	TextureAtlas& atlas = _cardAtlas.getResource();
+	const TextureAtlasTile* tile = atlas.findTile(tileHash);
+
+	if (tile) {
+		_registry.emplace<SpriteComponent>(e, SpriteComponent{ .uri = uri });
+
+		_registry.emplace<SpriteRenderComponent>(e, SpriteRenderComponent{
+			.tile = *tile,
+			.renderArea = tile->dimensions
+		});
+	}
+}
+
+void Solitaire::updateSprite(entt::entity e, const TextureHandle& texture) {
+	DimensionF dimensions = (DimensionF)texture.getDesc().dimensions;
+
+	_registry.emplace_or_replace<SpriteComponent>(e, SpriteComponent{ .uri = texture.getUri() });
+
+	_registry.emplace_or_replace<SpriteRenderComponent>(e, SpriteRenderComponent{
+		.tile = {
+			.handle = texture,
+			.dimensions = dimensions,
+			.name = texture.getUri()
+		},
+		.renderArea = dimensions
+	});
+}
+
+void Solitaire::updateSprite(entt::entity e, const std::string& uri) {
+	UriHash tileHash = ResourceUtil::hashUri(uri);
+
+	TextureAtlas& atlas = _cardAtlas.getResource();
+	const TextureAtlasTile* tile = atlas.findTile(tileHash);
+
+	if (tile) {
+		_registry.emplace_or_replace<SpriteComponent>(e, SpriteComponent{ .uri = uri });
+
+		_registry.emplace_or_replace<SpriteRenderComponent>(e, SpriteRenderComponent{
+			.tile = *tile,
+			.renderArea = tile->dimensions
+		});
 	}
 }
 

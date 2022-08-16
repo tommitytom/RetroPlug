@@ -9,7 +9,11 @@
 #include <entt/resource/resource.hpp>
 
 #include "RpMath.h"
-#include "graphics/BgfxTexture.h"
+#include "foundation/ResourceHandle.h"
+#include "graphics/Font.h"
+#include "graphics/ShaderProgram.h"
+#include "graphics/Texture.h"
+#include "graphics/TextureAtlas.h"
 
 using namespace entt::literals;
 
@@ -35,16 +39,10 @@ namespace rp::engine {
 		TriangleFan,
 	};
 
-	struct Tile {
-		f32 top;
-		f32 left;
-		f32 bottom;
-		f32 right;
-	};
-
 	struct CanvasSurface {
 		RenderPrimitive primitive = RenderPrimitive::Triangles;
-		TypedResourceHandle<Texture> texture;
+		TextureHandle texture;
+		ShaderProgramHandle program;
 		size_t indexOffset = 0;
 		size_t indexCount = 0;
 		uint32 viewId = 0;
@@ -53,7 +51,7 @@ namespace rp::engine {
 	};
 
 	struct TextureRenderDesc {
-		TypedResourceHandle<Texture> textureHandle;
+		TextureHandle textureHandle;
 		RectT<f32> textureUv;
 		RectT<f32> area;
 		Color4F color;
@@ -75,20 +73,17 @@ namespace rp::engine {
 
 		uint32 _viewId;
 
-		TypedResourceHandle<Texture> _defaultTexture;
+		TextureHandle _defaultTexture;
+		ShaderProgramHandle _defaultProgram;
+		FontHandle _defaultFont;
 
-		//TypedResourceHandle_cache<Texture, TextureLoader> _textureCache;
-		//TypedResourceHandle_cache<TextureAtlas, TextureAtlasLoader> _textureAtlasCache;
-
-		std::unordered_map<entt::id_type, std::pair<TypedResourceHandle<Texture>, Tile>> _tileLookup;
+		FontHandle _font;
 
 		PointF _offset = { 0, 0 };
 		PointF _scale = { 1, 1 };
 		f32 _rotation = 0.0f;
 		Mat3x3 _transform;
-
-		ftgl::texture_atlas_t* _atlas = nullptr;
-		ftgl::texture_font_t* _font = nullptr;
+		Color4F _color;
 
 		bool _lineAA = false;
 
@@ -98,6 +93,10 @@ namespace rp::engine {
 		Canvas(uint32 viewId = 0);
 		~Canvas();
 
+		void setFont(FontHandle font) {
+			_font = font;
+		}
+
 		void clear() {
 			_geom.indices.clear();
 			_geom.vertices.clear();
@@ -105,8 +104,10 @@ namespace rp::engine {
 			clearTransform();
 		}
 
-		void setDefaultTexture(TypedResourceHandle<Texture> texture) {
+		void setDefaults(TextureHandle texture, ShaderProgramHandle program, FontHandle font) {
 			_defaultTexture = texture;
+			_defaultProgram = program;
+			_defaultFont = font;
 		}
 
 		Dimension getDimensions() const {
@@ -140,25 +141,18 @@ namespace rp::engine {
 			_transform = Mat3x3();
 		}
 
-		//TypedResourceHandle<Texture> loadTexture(const std::filesystem::path& filePath);
-
-		//TypedResourceHandle<TextureAtlas> createTextureAtlas(std::string_view uri, const TypedResourceHandle<Texture>& texture, const std::unordered_map<entt::id_type, Rect>& tiles);
-
-		std::optional<std::pair<TypedResourceHandle<Texture>, Tile>> getTile(entt::id_type uriHash) const {
-			auto found = _tileLookup.find(uriHash);
-
-			if (found != _tileLookup.end()) {
-				return found->second;
-			}
-
-			return std::nullopt;
+		Canvas& setColor(const Color4F& color) {
+			_color = color;
+			return *this;
 		}
-
-		//CanvasTextureHandle loadTexture(const std::filesystem::path& filePath);
 
 		void beginRender(Dimension res, f32 pixelRatio);
 
 		void endRender();
+
+		Canvas& setProgram(ShaderProgramHandle program);
+
+		Canvas& clearProgram();
 
 		Canvas& translate(PointF amount);
 
@@ -166,35 +160,45 @@ namespace rp::engine {
 
 		Canvas& points(const PointF* points, uint32 count);
 
+		template <const size_t PointCount>
+		Canvas& points(const std::array<PointF, PointCount>& points) { return this->points(points.data(), points.size()); }
+
 		Canvas& setScale(f32 scaleX, f32 scaleY);
 
 		Canvas& fillRect(const RectT<f32>& area, const Color4F& color);
 
-		Canvas& fillRect(const Rect& area, const Color4F& color) { return fillRect((RectF)area, color); }
+		Canvas& fillRect(const RectT<f32>& area) { return this->fillRect(area, _color); }
+
+		Canvas& fillRect(const Rect& area, const Color4F& color) { return this->fillRect((RectF)area, color); }
+
+		Canvas& fillRect(const Rect& area) { return this->fillRect((RectF)area, _color); }
 
 		Canvas& texture(const TextureRenderDesc& desc);
 
-		Canvas& texture(entt::id_type uriHash, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const Color4F& color);
 
-		Canvas& texture(std::string_view uri, const RectT<f32>& area, const Color4F& color) {
-			entt::id_type uriHash = entt::hashed_string(uri.data(), uri.size());
-			return texture(uriHash, area, color);
-		}
+		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area) { return this->texture(texture, area, _color); }
 
-		Canvas& texture(const TypedResourceHandle<Texture>& texture, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const TileArea& uvArea, const Color4F& color);
 
-		Canvas& texture(const TypedResourceHandle<Texture>& texture, const Rect& textureArea, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const TileArea& uvArea) { return this->texture(texture, area, uvArea, _color); }
 
-		Canvas& strokeRect(const RectT<f32>& area, const Color4F& color);
+		Canvas& strokeRect(const RectT<f32>& area);
+
+		Canvas& text(f32 x, f32 y, std::string_view text) { return this->text(x, y, text, _color); }
 
 		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color);
 
-		Canvas& circle(const PointF& pos, f32 radius, uint32 segments = 32, const Color4F& color = Color4F(1,1,1,1));
+		Canvas& circle(const PointF& pos, f32 radius) { return this->circle(pos, radius, _color); }
+
+		Canvas& circle(const PointF& pos, f32 radius, const Color4F& color);
 
 		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
+		Canvas& line(const PointF& from, const PointF& to) { return line(from, to, _color); }
+
 	private:
-		void checkSurface(RenderPrimitive primitive, const TypedResourceHandle<Texture>& texture);
+		void checkSurface(RenderPrimitive primitive, const TextureHandle& texture, const ShaderProgramHandle& program);
 
 		inline uint32 writeVertex(const PointF& pos, uint32 color) {
 			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
@@ -205,14 +209,6 @@ namespace rp::engine {
 			_geom.indices.insert(_geom.indices.end(), { v1, v2, v3 });
 			_geom.surfaces.back().indexCount += 3;
 		}
-
-		/*TypedResourceHandle<Texture> createWhiteTexture(uint32 w, uint32 h) {
-			const uint32 size = w * h * 4;
-			std::vector<char> data(size);
-			
-			memset(data.data(), 0xFF, size);
-			return _textureCache.load("white"_hs, w, h, 4, data.data()).first->second;
-		}*/
 	};
 }
 

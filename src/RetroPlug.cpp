@@ -25,15 +25,20 @@
 #include "ui/StartView.h"
 #include "ui/SystemOverlayManager.h"
 #include "util/fs.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
+#include "core/AudioContext.h"
 
 using namespace rp;
 
-RetroPlug::RetroPlug() : _audioContext(&_ioMessageBus, &_orchestratorMessageBus) {
-	
+RetroPlug::RetroPlug() : View({ 480, 432 }) {
+	setType<RetroPlug>();
 }
 
 void RetroPlug::onInitialize() {
+	std::shared_ptr<AudioManager>& audioManager = *getShared<std::shared_ptr<AudioManager>>();
+	_audioContext = std::make_shared<AudioContext>(&_ioMessageBus, &_orchestratorMessageBus);
+	audioManager->setProcessor(_audioContext);
+
 	_state.processor.addManager(std::make_shared<SameBoyManager>());
 	//_state.processor.addManager(std::make_shared<AudioStreamManager>());
 
@@ -99,8 +104,6 @@ void RetroPlug::processOutput() {
 	}
 }
 
-
-
 void RetroPlug::onUpdate(f32 delta) {
 	//f32 scale = _project->getScale();
 	//_state.viewManager.setScale(scale);
@@ -121,6 +124,7 @@ void RetroPlug::onUpdate(f32 delta) {
 
 void RetroPlug::onRender(Canvas& canvas) {
 	// Scale?
+	canvas.fillRect(getDimensions(), Color4F(1, 0, 0, 1));
 }
 
 bool RetroPlug::onKey(VirtualKey::Enum key, bool down) {

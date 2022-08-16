@@ -2,13 +2,14 @@
 
 #include <memory>
 
-#include "graphics/BgfxRenderContext.h"
+#include "graphics/bgfx/BgfxRenderContext.h"
 
 #include "GlfwNativeWindow.h"
 #include "Window.h"
 #include "WindowManager.h"
 
 #include "foundation/ResourceManager.h"
+#include "audio/AudioManager.h"
 
 namespace rp::app {
 	class Application {
@@ -19,6 +20,14 @@ namespace rp::app {
 		engine::Canvas _canvas;
 
 		ResourceManager _resourceManager;
+
+		FontHandle _defaultHandle;
+		TextureHandle _defaultTexture;
+		ShaderProgramHandle _defaultProgram;
+
+		std::shared_ptr<AudioManager> _audioManager;
+
+		WindowPtr _mainWindow;
 
 	public:
 		Application();
@@ -34,9 +43,9 @@ namespace rp::app {
 		template <typename ViewT>
 		void setup() {
 			WindowPtr window = _windowManager.createWindow<ViewT>();
-			window->onInitialize();
 			createRenderContext(window);
-			_windowManager.update();
+
+			window->getViewManager().setResourceManager(&_resourceManager);
 		}
 
 		bool runFrame();

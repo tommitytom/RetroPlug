@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Window.h"
+#include "foundation/ResourceProvider.h"
+#include "graphics/FrameBuffer.h"
 
 struct GLFWwindow;
 
@@ -9,21 +11,30 @@ namespace rp::app {
 	private:
 		GLFWwindow* _window = nullptr;
 		Point _lastMousePosition;
-		std::unique_ptr<FrameBuffer> _frameBuffer;
+		FrameBufferProvider* _frameBufferProvider = nullptr;
+		std::shared_ptr<FrameBuffer> _frameBuffer;
 
 	public:
-		GlfwNativeWindow(ViewPtr view, uint32 id) : Window(view, id) {}
+		GlfwNativeWindow(ResourceManager* resourceManager, ViewPtr view, uint32 id) : Window(resourceManager, view, id) {}
 		~GlfwNativeWindow();
 
 		void onCreate() override;
 
 		void onUpdate(f32 delta) override;
+
+		void onCleanup() override;
 		
 		bool shouldClose() override;
 
 		void* getNativeHandle() override;
 
+		void setFrameBufferProvider(FrameBufferProvider* provider) {
+			_frameBufferProvider = provider;
+		}
+
 	private:
+		static void mouseEnterCallback(GLFWwindow* window, int entered);
+
 		static void mouseMoveCallback(GLFWwindow* window, double x, double y);
 
 		static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);

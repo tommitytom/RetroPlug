@@ -91,8 +91,8 @@ namespace rp {
 			if (_shared) {
 				unfocus();
 			}
-			
-			removeChildren(); 
+
+			removeChildren();
 		}
 
 		ResourceManager& getResourceManager() {
@@ -157,10 +157,10 @@ namespace rp {
 
 		virtual void onDragEnter(DragContext& ctx, Point position) {}
 
-		virtual bool onDragMove(DragContext& ctx, Point position) { return false; } 
+		virtual bool onDragMove(DragContext& ctx, Point position) { return false; }
 
 		virtual void onDragLeave(DragContext& ctx) {}
-		
+
 		virtual bool onDrop(DragContext& ctx, Point position) { return false; }
 
 		virtual void onChildRemoved(ViewPtr view) {}
@@ -204,7 +204,7 @@ namespace rp {
 			if (_shared) {
 				return _shared->scale;
 			}
-			
+
 			return 1.0f;
 		}
 
@@ -212,6 +212,15 @@ namespace rp {
 		T* createShared(T&& item) {
 			if (_shared && !getShared<T>()) {
 				return &_shared->userData.ctx().emplace<T>(std::forward(item));
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		T* createShared(const T& item) {
+			if (_shared && !getShared<T>()) {
+				return &_shared->userData.ctx().emplace<T>(item);
 			}
 
 			return nullptr;
@@ -260,7 +269,7 @@ namespace rp {
 			assert(getParent());
 			getParent()->removeChild(shared_from_this());
 		}
-		
+
 		void focus() {
 			assert(_shared);
 			if (_shared) {
@@ -392,7 +401,7 @@ namespace rp {
 			/*if (_shared) {
 				_shared->removals.push_back(view);
 			} else {
-				
+
 			}*/
 		}
 
@@ -498,7 +507,7 @@ namespace rp {
 		Point getPosition() const {
 			return _area.position;
 		}
-		
+
 		void setDimensions(Dimension dimensions) {
 			assert(dimensions.w >= 0 && dimensions.h >= 0);
 			if (dimensions != _area.dimensions) {
@@ -507,7 +516,7 @@ namespace rp {
 				onResize(dimensions);
 			}
 		}
-		
+
 		Dimension getDimensions() const {
 			return _area.dimensions;
 		}
@@ -582,6 +591,10 @@ namespace rp {
 		template <typename T>
 		void setType() {
 			_type = entt::type_id<T>();
+
+			if (_name.empty()) {
+				_name = _type.name();
+			}
 		}
 
 	private:

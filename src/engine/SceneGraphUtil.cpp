@@ -4,8 +4,6 @@
 
 #include "RelationshipComponent.h"
 #include "TransformComponent.h"
-//#include "Tags.h"
-//#include "base/core/World.h"
 
 using namespace rp;
 

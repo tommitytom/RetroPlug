@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <nanovg.h>
 #include <spdlog/spdlog.h>
 
 #include "ui/View.h"

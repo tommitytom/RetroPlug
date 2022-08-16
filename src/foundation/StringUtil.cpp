@@ -2,8 +2,24 @@
 
 #include <algorithm>
 #include <cctype>
+#include <codecvt>
+#include <locale>
 
 using namespace rp;
+
+//_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+
+std::wstring StringUtil::toWString(const std::string& str) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+	return converterX.from_bytes(str);
+}
+
+std::string StringUtil::toString(const std::wstring& wstr) {
+	using convert_typeX = std::codecvt_utf8<wchar_t>;
+	std::wstring_convert<convert_typeX, wchar_t> converterX;
+	return converterX.to_bytes(wstr);
+}
 
 std::string StringUtil::toLower(std::string_view s) {
 	std::string t = std::string(s);

@@ -39,6 +39,16 @@ void* GlfwNativeWindow::getNativeHandle() {
 #endif
 }
 
+void GlfwNativeWindow::mouseEnterCallback(GLFWwindow* window, int entered) {
+	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
+
+	if (entered > 0) {
+		w->getViewManager().onMouseEnter(w->_lastMousePosition);
+	} else {
+		w->getViewManager().onMouseLeave();
+	}
+}
+
 void GlfwNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->getViewManager().onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
@@ -130,6 +140,11 @@ GlfwNativeWindow::~GlfwNativeWindow() {
 	}
 }
 
+void GlfwNativeWindow::onCleanup() {
+	Window::onCleanup();
+	_frameBuffer = nullptr;
+}
+
 void GlfwNativeWindow::onCreate() {
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
@@ -141,6 +156,7 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetKeyCallback(_window, keyCallback);
 	glfwSetScrollCallback(_window, mouseScrollCallback);
 	glfwSetCursorPosCallback(_window, mouseMoveCallback);
+	glfwSetCursorEnterCallback(_window, mouseEnterCallback);
 	glfwSetMouseButtonCallback(_window, mouseButtonCallback);
 	glfwSetWindowSizeCallback(_window, resizeCallback);
 	glfwSetDropCallback(_window, dropCallback);
@@ -179,9 +195,12 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		bgfx::setViewRect(getId(), 0, 0, bgfx::BackbufferRatio::Equal);
 	}
 
-	if (resizeFrameBuffer) {
-		void* nwh = getNativeHandle();
-		_frameBuffer = std::make_unique<FrameBuffer>(nwh, windowSize);
+	if (resizeFrameBuffer && _frameBufferProvider) {
+		_frameBuffer = _frameBufferProvider->createTyped(FrameBufferDesc{
+			.dimensions = windowSize,
+			.nwh = getNativeHandle(),
+		});
+
 		_frameBuffer->setViewFrameBuffer(getId());
 	}
 

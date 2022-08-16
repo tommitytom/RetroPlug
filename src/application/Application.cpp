@@ -20,16 +20,24 @@ static const char* s_canvas = "#canvas";
 #endif
 
 #include "graphics/Canvas.h"
+#include "graphics/TextureAtlas.h"
+#include "graphics/bgfx/BgfxFrameBuffer.h"
+#include "graphics/bgfx/BgfxShader.h"
+#include "graphics/bgfx/BgfxShaderProgram.h"
+#include "graphics/bgfx/BgfxTexture.h"
+#include "graphics/ftgl/FtglFont.h"
+
 #include "GlfwNativeWindow.h"
 
 using namespace rp;
+using namespace rp::engine;
 using namespace rp::app;
 
 void errorCallback(int error, const char* description) {
 	spdlog::error("GLFW error {}: {}", error, description);
 }
 
-Application::Application() {
+Application::Application() : _windowManager(_resourceManager) {
 	glfwSetErrorCallback(errorCallback);
 	
 	if (!glfwInit()) {
@@ -37,28 +45,44 @@ Application::Application() {
 		throw std::runtime_error("Failed to initialize GLFW!");
 	}
 
-	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
+	_audioManager = std::make_shared<AudioManager>();
+	
+	_audioManager->setCallback([](f32* output, const f32* input, uint32 frameCount) {
+		spdlog::info("audio");
+	});
+
+	_audioManager->start();
 }
 
 Application::~Application() {
 	_windowManager.closeAll();
+
+	_renderContext->cleanup();
+	_mainWindow->onCleanup();
+
+	_canvas = Canvas();
+	_resourceManager = ResourceManager();
+
+	_audioManager = nullptr;
+
+	_renderContext = nullptr;
+	_mainWindow = nullptr;
+
 	glfwTerminate();
 }
 
 void Application::createRenderContext(WindowPtr window) {
-	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions());
-	auto whiteTexture = _resourceManager.create<Texture>("white", TextureDesc{
-		.dimensions = { 8, 8 },
-		.depth = 4
-	});
-	
-	_canvas.setDefaultTexture(whiteTexture);
+	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions(), _resourceManager);
+
+	_resourceManager.addProvider<TextureAtlas, TextureAtlasProvider>();
+	_resourceManager.addProvider<Font>(std::make_unique<FtglFontProvider>(_resourceManager));
+
+	FontHandle font = _resourceManager.load<Font>("Roboto-Regular.ttf");
+
+	_canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), font);
 }
 
 bool Application::runFrame() {
-	std::vector<WindowPtr>& windows = _windowManager.getWindows();
-	assert(windows.size());
-
 	f64 time = glfwGetTime();
 	f32 delta = _lastTime > 0 ? (f32)(time - _lastTime) : 0.0f;
 	_lastTime = time;
@@ -66,36 +90,49 @@ bool Application::runFrame() {
 	// NOTE: On web this doesn't actually poll input - all input events are received BEFORE we enter runFrame
 	glfwPollEvents();
 
-	_windowManager.update();
+	std::vector<WindowPtr> created;
+	_windowManager.update(created);
 
-	_renderContext->beginFrame();
-
-	for (auto it = windows.begin(); it != windows.end(); ++it) {
-		WindowPtr w = *it;
-
-		if (!w->shouldClose()) {
-			w->getViewManager().setResourceManager(&_resourceManager);
-
-			w->onUpdate(delta);
-
-			_canvas.setViewId(w->getId());
-			_canvas.beginRender(w->getViewManager().getDimensions(), 1.0f);
-			w->onRender(_canvas);
-			_canvas.endRender();
-
-			_renderContext->renderCanvas(_canvas);
+	for (WindowPtr w : created) {
+		if (!_mainWindow) {
+			_mainWindow = w;
 		}
+
+		w->getViewManager().createShared(_audioManager);
+		w->onInitialize();
 	}
 
-	_renderContext->endFrame();
+	std::vector<WindowPtr>& windows = _windowManager.getWindows();
 
-	return windows.size() && !windows[0]->shouldClose();
+	if (windows.size()) {
+		_renderContext->beginFrame(delta);
+
+		for (auto it = windows.begin(); it != windows.end(); ++it) {
+			WindowPtr w = *it;
+
+			if (!w->shouldClose()) {
+				w->getViewManager().setResourceManager(&_resourceManager);
+
+				w->onUpdate(delta);
+
+				_canvas.setViewId(w->getId());
+				_canvas.beginRender(w->getViewManager().getDimensions(), 1.0f);
+				w->onRender(_canvas);
+				_canvas.endRender();
+
+				_renderContext->renderCanvas(_canvas);
+			}
+		}
+
+		_renderContext->endFrame();
+
+		return !_mainWindow->shouldClose();
+	}
+
+	return false;
 }
 
 int Application::doLoop() {
-	std::vector<WindowPtr>& windows = _windowManager.getWindows();
-	assert(windows.size());
-
 #if RP_WEB
 	emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
 #else

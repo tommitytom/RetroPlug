@@ -94,6 +94,7 @@ namespace rp {
 	class MenuView : public View {
 	private:
 		f32 _fontSize = 12.0f;
+		FontHandle _font;
 
 		f32 _indentSize = 10.0f;
 		f32 _itemSpacing = 20.0f;
@@ -123,6 +124,8 @@ namespace rp {
 	public:
 		MenuView();
 
+		void onInitialize();
+
 		void onUpdate(f32 delta) override;
 
 		void onRender(Canvas& canvas) override;
@@ -142,9 +145,9 @@ namespace rp {
 		}
 
 	private:
-		void drawMenu(Menu& menu);
+		void drawMenu(Canvas& canvas, Menu& menu);
 
-		void drawText(f32 x, f32 y, std::string_view text, Color4 color);
+		void drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, Color4 color);
 
 		bool moveCursorDown();
 

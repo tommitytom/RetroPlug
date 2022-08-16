@@ -114,10 +114,12 @@ dep.allProjects()
 group "Framework"
 projects.Foundation.project()
 projects.Graphics.project()
+projects.Audio.project()
 projects.Application.project()
 projects.Engine.project()
 
 group "RetroPlug"
+projects.SameBoy.project()
 projects.RetroPlug.project()
 projects.RetroPlugApp.project()
 projects.RetroPlugApp.projectLivepp()
@@ -129,6 +131,7 @@ projects.BgfxBasic.project()
 --projects.BgfxBasic.projectLivepp()
 projects.Solitaire.project()
 projects.Solitaire.projectLivepp()
+projects.ShaderReload.project()
 
 projects.PhysicsTest.project()
 

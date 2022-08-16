@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "graphics/BgfxRenderContext.h"
+#include "graphics/bgfx/BgfxRenderContext.h"
 #include "ui/View.h"
 #include "ui/ViewManager.h"
 
@@ -18,12 +18,13 @@ namespace rp::app {
 	private:
 		ViewManager _viewManager;
 		uint32 _id;
+		ViewPtr _view;
 
 	public:
-		Window(ViewPtr view, uint32 id): _id(id) {
+		Window(ResourceManager* resourceManager, ViewPtr view, uint32 id): _id(id), _view(view) {
+			_viewManager.setResourceManager(resourceManager);
 			_viewManager.setSizingPolicy(SizingPolicy::FitToContent);
 			_viewManager.setDimensions(view->getDimensions());
-			_viewManager.addChild(view);
 			_viewManager.setName(view->getName());
 		}
 		~Window() = default;
@@ -31,6 +32,7 @@ namespace rp::app {
 		virtual void onCreate() {}
 
 		virtual void onInitialize() {
+			_viewManager.addChild(_view);
 			_viewManager.onInitialize();
 		}
 
@@ -40,6 +42,11 @@ namespace rp::app {
 
 		virtual void onRender(engine::Canvas& canvas) {
 			_viewManager.onRender(canvas);
+		}
+
+		virtual void onCleanup() {
+			_view = nullptr;
+			_viewManager = ViewManager();
 		}
 
 		virtual bool shouldClose() = 0;

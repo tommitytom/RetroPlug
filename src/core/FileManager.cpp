@@ -6,7 +6,7 @@
 #include "util/fs.h"
 #include "util/SolUtil.h"
 #include "util/StlUtil.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 
 using namespace rp;
 

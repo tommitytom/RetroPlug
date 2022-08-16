@@ -7,7 +7,7 @@
 #include "ui/KeyToButton.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
-#include "platform/AudioManager.h"
+#include "audio/AudioManager.h"
 #include "sameboy/SameBoySystem.h"
 #include "MenuBuilder.h"
 

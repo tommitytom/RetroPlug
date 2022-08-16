@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/ProjectState.h"
-#include "core/ResourceManager.h"
 #include "core/SystemWrapper.h"
 
 namespace rp::ProjectSerializer {

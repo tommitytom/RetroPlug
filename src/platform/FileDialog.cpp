@@ -242,7 +242,7 @@ tstring FileDialog::basicFileSave(IGraphics* ui, const std::vector<FileDialogFil
 #include <emscripten.h>
 #include <spdlog/spdlog.h>
 
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 
 EM_ASYNC_JS(char*, openWebFileDialog, (), {
 	const paths = await openFileDialog();

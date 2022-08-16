@@ -3,7 +3,7 @@
 using namespace rp;
 using namespace rp::lsdj;
 
-Canvas::Canvas(DimensionT<uint32> dimensions) : _renderTarget(dimensions), _dimensions(dimensions) {
+Canvas::Canvas(DimensionT<uint32> dimensions) : _renderTarget((Dimension)dimensions), _dimensions(dimensions) {
 	_tileBuffer = new Color4[TILE_BUFFER_SIZE];
 }
 

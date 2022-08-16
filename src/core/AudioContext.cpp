@@ -13,7 +13,7 @@ AudioContext::AudioContext(IoMessageBus* messageBus, OrchestratorMessageBus* orc
 	_state.processor.addManager<SystemManager<AudioStreamSystem>>();
 }
 
-void AudioContext::process(f32* target, uint32 frameCount) {
+void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 	size_t sampleCount = (size_t)frameCount * 2;
 
 	OrchestratorChange change;
@@ -57,10 +57,12 @@ void AudioContext::process(f32* target, uint32 frameCount) {
 			if (system->getStream()) {
 				system->getStream()->merge(*stream);
 				_ioMessageBus->dealloc(std::move(stream));
-			} else {
+			}
+			else {
 				system->setStream(std::move(stream));
 			}
-		} else {
+		}
+		else {
 			_ioMessageBus->dealloc(std::move(stream));
 		}
 	}
@@ -76,8 +78,8 @@ void AudioContext::process(f32* target, uint32 frameCount) {
 			io->output.audio = std::make_shared<Float32Buffer>(sampleCount);
 		}
 	}
-	
-	Float32Buffer buffer(target, sampleCount);
+
+	Float32Buffer buffer(output, sampleCount);
 	buffer.clear();
 
 	_state.processor.process(frameCount);

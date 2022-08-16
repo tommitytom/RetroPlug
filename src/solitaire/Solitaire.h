@@ -9,7 +9,8 @@
 #include "RpMath.h"
 
 #include "graphics/Canvas.h"
-#include "graphics/BgfxTexture.h"
+#include "graphics/Texture.h"
+#include "graphics/TextureAtlas.h"
 #include "application/Window.h"
 
 namespace rp {
@@ -49,13 +50,12 @@ namespace rp {
 	};
 
 	struct SpriteComponent {
-		entt::id_type uriHash;
+		std::string uri;
 		PointF pivot;
 	};
 
 	struct SpriteRenderComponent {
-		entt::id_type textureUriHash;
-		rp::engine::Tile tile;
+		TextureAtlasTile tile;
 		RectF renderArea;
 		PointF pivot;
 		Color4F color = Color4F(1, 1, 1, 1);
@@ -84,9 +84,11 @@ namespace rp {
 
 		entt::entity _rootEntity = entt::null;
 
-		entt::resource<rp::engine::Texture> _cardsTex;
-		entt::resource<rp::engine::Texture> _cardBackTex;
-		entt::resource<rp::engine::Texture> _upTex;
+		TextureHandle _cardsTex;
+		TextureHandle _cardBackTex;
+		TextureHandle _upTex;
+
+		TextureAtlasHandle _cardAtlas;
 
 		bool _physicsDebug = true;
 
@@ -103,8 +105,6 @@ namespace rp {
 		f64 _startTime = 0.0;
 
 		f32 _zoom = 1.0f;
-
-		std::unordered_map<entt::id_type, Rect> _tiles;
 
 	public:
 		Solitaire() : View({ 1366, 768 }) {
@@ -136,6 +136,14 @@ namespace rp {
 
 		void nextStock();
 
-		void prepareResources(engine::Canvas& canvas);
+		void flipCard(entt::registry& reg, entt::entity e);
+
+		void addSprite(entt::entity e, const std::string& uri);
+
+		void addSprite(entt::entity e, const TextureHandle& texture);
+
+		void updateSprite(entt::entity e, const std::string& uri);
+
+		void updateSprite(entt::entity e, const TextureHandle& texture);
 	};
 }

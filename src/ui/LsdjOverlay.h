@@ -11,7 +11,7 @@
 #include "ui/LsdjModel.h"
 #include "ui/SystemOverlayManager.h"
 #include "util/HashUtil.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 
 namespace rp {
 	const size_t MAX_UNDO_QUEUE_SIZE = 10;

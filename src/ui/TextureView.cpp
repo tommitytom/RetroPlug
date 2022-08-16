@@ -1,41 +1,40 @@
 #include "TextureView.h"
 
 #include "util/Image.h"
+#include "foundation/ResourceManager.h"
 
 using namespace rp;
 
 void TextureView::setImage(const Image& image) {
-	/*if (_textureHandle == -1 || _textureSize != image.dimensions()) {
-		destroyTexture();
-		_textureHandle = nvgCreateImageRGBA(vg, image.w(), image.h(), NVG_IMAGE_NEAREST, (const unsigned char*)image.getData());
-		_textureSize = image.dimensions();
+	size_t dataSize = image.getBuffer().size() * 4;
+	std::vector<uint8> data(dataSize);
+	memcpy(data.data(), image.getData(), dataSize);
+
+	if (!_texture.isValid() || (Dimension)_textureArea.dimensions != image.dimensions()) {
+		_texture = getResourceManager().create<Texture>(TextureDesc {
+			.dimensions = (Dimension)image.dimensions(),
+			.depth = 4,
+			.data = std::move(data)
+		});
+
+		_textureArea = { 0.0f, 0.0f, (f32)image.dimensions().w, (f32)image.dimensions().h };
 
 		if (getSizingPolicy() == SizingPolicy::FitToContent) {
-			setDimensions((Dimension)_textureSize);
+			setDimensions((Dimension)image.dimensions());
 		}
 	} else {
-		nvgUpdateImage(vg, _textureHandle, (const unsigned char*)image.getData());
-	}*/
+		getResourceManager().update(_texture, TextureDesc {
+			.dimensions = (Dimension)image.dimensions(),
+			.depth = 4,
+			.data = std::move(data)
+		});
+	}
 }
 
 void TextureView::onRender(Canvas& canvas) {
-	/*if (_textureHandle != -1) {
-		NVGcontext* vg = getVg();
-		RectT<f32> areaf;
-		areaf.dimensions = (DimensionF)getDimensions();
-
-		nvgBeginPath(vg);
-
-		NVGpaint imgPaint = nvgImagePattern(vg, areaf.x, areaf.y, areaf.w, areaf.h, 0, _textureHandle, getAlpha());
-		nvgRect(vg, areaf.x, areaf.y, areaf.w, areaf.h);
-		nvgFillPaint(vg, imgPaint);
-		nvgFill(vg);
-	}*/
-}
-
-void TextureView::destroyTexture() {
-	if (_textureHandle != -1) {
-		//nvgDeleteImage(getVg(), _textureHandle);
-		_textureHandle = -1;
+	if (_texture.isValid()) {
+		canvas.texture(_texture, _textureArea, Color4F(1, 1, 1, 1));
+	} else {
+		canvas.fillRect(_textureArea, Color4F(1, 1, 1, 1));
 	}
 }

@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "platform/AudioManager.h"
+#include "audio/AudioManager.h"
 #include "core/AudioContext.h"
 #include "util/DataBuffer.h"
 #include "ui/View.h"
@@ -32,7 +32,7 @@ namespace rp {
 		IoMessageBus _ioMessageBus;
 		OrchestratorMessageBus _orchestratorMessageBus;
 
-		AudioContext _audioContext;
+		std::shared_ptr<AudioContext> _audioContext;
 
 		UiState _state;
 		Project* _project;
@@ -50,14 +50,6 @@ namespace rp {
 	public:
 		RetroPlug();
 		~RetroPlug() = default;
-
-		AudioContext& getAudioContext() {
-			return _audioContext;
-		}
-
-		void setAudioManager(AudioManager& audioManager) {
-			_project->setAudioManager(audioManager);
-		}
 
 		void onInitialize() override;
 

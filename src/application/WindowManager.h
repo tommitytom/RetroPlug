@@ -14,11 +14,16 @@ namespace rp::app {
 		uint32 _nextViewId = 0;
 		std::stack<uint32> _availableIds;
 
+		ResourceManager& _resourceManager;
+
 	public:
+		WindowManager(ResourceManager& resourceManager): _resourceManager(resourceManager) {}
+		~WindowManager() {}
+
 		template <typename T>
 		WindowPtr createWindow() {
 			ViewPtr view = std::make_shared<T>();
-			WindowPtr window = std::make_shared<WindowT>(view, std::numeric_limits<uint32>::max());
+			WindowPtr window = std::make_shared<WindowT>(&_resourceManager, view, std::numeric_limits<uint32>::max());
 
 			window->onCreate();
 			_created.push_back(window);
@@ -30,7 +35,7 @@ namespace rp::app {
 			return _windows;
 		}
 
-		void update() {
+		void update(std::vector<WindowPtr>& created) {
 			for (int32 i = (int32)_windows.size() - 1; i >= 0; --i) {
 				if (_windows[i]->shouldClose()) {
 					_availableIds.push(_windows[i]->getId());
@@ -48,9 +53,9 @@ namespace rp::app {
 				}
 
 				w->_id = id;
-				w->onInitialize();
 
 				_windows.push_back(w);
+				created.push_back(w);
 			}
 
 			_created.clear();

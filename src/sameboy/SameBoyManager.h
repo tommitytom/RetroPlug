@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/SystemManager.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 #include "SameBoySystem.h"
 #include "SameBoyProxySystem.h"
 

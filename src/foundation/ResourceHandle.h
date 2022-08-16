@@ -1,19 +1,27 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
+#include <entt/core/any.hpp>
 #include <entt/core/type_info.hpp>
 
 #include "Resource.h"
 
 namespace rp {
 	struct ResourceHandleState {
-		std::unique_ptr<Resource> resource;
-		std::string uri; // Store here as well as Resource, since the resource above might be a placeholder with a different URI
-		std::atomic<bool> loaded = false;
+		std::shared_ptr<Resource> resource;
+		std::string uri;
+		std::vector<std::string> deps;
+		entt::any desc;
+		bool loaded = false;
+		bool fromDisk;
 	};
+
+	template <typename T>
+	class TypedResourceHandle;
 
 	class ResourceHandle {
 	protected:
@@ -25,6 +33,11 @@ namespace rp {
 		ResourceHandle(const ResourceHandle& other): _state(other._state) {}
 		~ResourceHandle() = default;
 
+		ResourceHandle& operator=(std::nullptr_t) {
+			_state.reset();
+			return *this;
+		}
+
 		bool operator==(const ResourceHandle& other) const {
 			return other._state == _state;
 		}
@@ -33,9 +46,9 @@ namespace rp {
 			return other._state != _state;
 		}
 
-		bool operator==(std::nullptr_t) const {
+		/*bool operator==(std::nullptr_t) const {
 			return _state == nullptr;
-		}
+		}*/
 
 		bool isValid() const {
 			return _state != nullptr;
@@ -66,6 +79,18 @@ namespace rp {
 			return *_state->resource;
 		}
 
+		template <typename T>
+		const T& getResourceAs() const {
+			assert(isValid());
+			return (const T&)(*_state->resource);
+		}
+
+		template <typename T>
+		T& getResourceAs() {
+			assert(isValid());
+			return (T&)(*_state->resource);
+		}
+
 		ResourceHandleState& getState() {
 			assert(isValid());
 			return *_state;
@@ -80,6 +105,21 @@ namespace rp {
 			assert(isValid());
 			return _state->loaded;
 		}
+
+		const std::vector<std::string> getDependencies() const {
+			assert(isValid());
+			return _state->deps;
+		}
+
+		template <typename T>
+		TypedResourceHandle<T>& getResourceHandleAs() {
+			return *((TypedResourceHandle<T>*)this);
+		}
+
+		template <typename T>
+		const TypedResourceHandle<T>& getResourceHandleAs() const {
+			return *((const TypedResourceHandle<T>*)this);
+		}
 	};
 
 	template <typename T>
@@ -88,6 +128,16 @@ namespace rp {
 		TypedResourceHandle() = default;
 		TypedResourceHandle(const ResourceHandle& other): ResourceHandle(other) {}
 		~TypedResourceHandle() = default;
+
+		ResourceHandle& operator=(std::nullptr_t) {
+			_state.reset();
+			return *this;
+		}
+
+		const typename T::DescT& getDesc() const {
+			assert(isValid());
+			return entt::any_cast<const T::DescT&>(_state->desc);
+		}
 
 		T& operator->() {
 			return getResource();
@@ -107,4 +157,6 @@ namespace rp {
 			return *((T*)_state->resource.get());
 		}
 	};
+
+	using ResourceHandleLookup = std::unordered_map<UriHash, ResourceHandle>;
 }

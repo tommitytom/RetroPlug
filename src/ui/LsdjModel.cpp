@@ -5,7 +5,7 @@
 #include "lsdj/KitUtil.h"
 #include "lsdj/Rom.h"
 #include "util/HashUtil.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 
 using namespace rp;
 

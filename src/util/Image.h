@@ -7,12 +7,12 @@ namespace rp {
 	class Image {
 	private:
 		Color4Buffer _buffer;
-		DimensionT<uint32> _dimensions;
+		Dimension _dimensions;
 
 	public:
 		Image() {}
-		Image(DimensionT<uint32> dimensions) : _buffer((size_t)(dimensions.area())), _dimensions(dimensions) {}
-		Image(uint32 w, uint32 h) : _buffer((size_t)(w * h)), _dimensions(w, h) {}
+		Image(Dimension dimensions) : _buffer((size_t)(dimensions.area())), _dimensions(dimensions) {}
+		Image(int32 w, int32 h) : _buffer((size_t)(w * h)), _dimensions(w, h) {}
 
 		void clear(Color4 color) {
 			for (size_t i = 0; i < _dimensions.area(); ++i) {
@@ -36,7 +36,7 @@ namespace rp {
 			return _buffer;
 		}
 
-		Color4Buffer getRow(uint32 rowIdx) {
+		Color4Buffer getRow(int32 rowIdx) {
 			return _buffer.slice(rowIdx * _dimensions.w, _dimensions.w);
 		}
 
@@ -52,7 +52,7 @@ namespace rp {
 			_buffer.write(data, size);
 		}
 
-		/*ImageView view(RectT<uint32> area) {
+		/*ImageView view(Rect area) {
 			area.w = area.w > 0 ? area.w : _dimensions.w - area.x;
 			area.h = area.h > 0 ? area.h : _dimensions.h - area.y;
 
@@ -64,35 +64,35 @@ namespace rp {
 			return ImageView(&_buffer, area);
 		}*/
 
-		Color4 getPixel(uint32 x, uint32 y) {
+		Color4 getPixel(int32 x, int32 y) {
 			assert(x < _dimensions.w);
 			assert(y < _dimensions.h);
 			return _buffer.get(y * _dimensions.w + x);
 		}
 
-		void setPixel(uint32 x, uint32 y, Color4 v) {
+		void setPixel(int32 x, int32 y, Color4 v) {
 			assert(x < _dimensions.w);
 			assert(y < _dimensions.h);
 			_buffer.set(y * _dimensions.w + x, v);
 		}
 
-		void setPixel(uint32 x, uint32 y, Color3 v) {
+		void setPixel(int32 x, int32 y, Color3 v) {
 			setPixel(x, y, Color4(v.r, v.g, v.b, 255));
 		}
 
-		DimensionT<uint32> dimensions() const {
+		Dimension dimensions() const {
 			return _dimensions;
 		}
 
-		RectT<uint32> area() const {
-			return RectT<uint32>(0, 0, w(), h());
+		Rect area() const {
+			return Rect(0, 0, w(), h());
 		}
 
-		uint32 w() const {
+		int32 w() const {
 			return _dimensions.w;
 		}
 
-		uint32 h() const {
+		int32 h() const {
 			return _dimensions.h;
 		}
 	};
@@ -102,22 +102,22 @@ namespace rp {
 	class ImageView {
 	private:
 		Image* _image = nullptr;
-		RectT<uint32> _area;
+		Rect _area;
 
 	public:
 		ImageView() {}
 		ImageView(Image* image) : _image(image), _area(image->area()) {}
-		ImageView(Image* image, RectT<uint32> area) : _image(image), _area(area) {}
+		ImageView(Image* image, Rect area) : _image(image), _area(area) {}
 
 		void clear(Color4 color) {
-			for (uint32 y = 0; y < _area.h; y++) {
-				for (uint32 x = 0; x < _area.w; x++) {
+			for (int32 y = 0; y < _area.h; y++) {
+				for (int32 x = 0; x < _area.w; x++) {
 					setPixel(x, y, color);
 				}
 			}
 		}
 
-		ImageView view(RectT<uint32> area = RectT<uint32>()) {
+		ImageView view(Rect area = Rect()) {
 			area.w = area.w > 0 ? area.w : _area.w - area.x;
 			area.h = area.h > 0 ? area.h : _area.h - area.y;
 
@@ -130,7 +130,7 @@ namespace rp {
 			return ImageView(_image, area);
 		}
 
-		Color4 getPixel(uint32 x, uint32 y) {
+		Color4 getPixel(int32 x, int32 y) {
 			assert(x < _area.w);
 			assert(y < _area.h);
 
@@ -140,7 +140,7 @@ namespace rp {
 			return _image->getPixel(x, y);
 		}
 
-		void setPixel(uint32 x, uint32 y, Color4 v) {
+		void setPixel(int32 x, int32 y, Color4 v) {
 			assert(x < _area.w);
 			assert(y < _area.h);
 
@@ -150,7 +150,7 @@ namespace rp {
 			_image->setPixel(x, y, v);
 		}
 
-		void setPixel(uint32 x, uint32 y, Color3 v) {
+		void setPixel(int32 x, int32 y, Color3 v) {
 			assert(x < _area.w);
 			assert(y < _area.h);
 
@@ -160,17 +160,16 @@ namespace rp {
 			_image->setPixel(x, y, v);
 		}
 
-		const RectT<uint32>& area() const {
+		const Rect& area() const {
 			return _area;
 		}
 
-		uint32 w() const {
+		int32 w() const {
 			return _area.w;
 		}
 
-		uint32 h() const {
+		int32 h() const {
 			return _area.h;
 		}
 	};
 }
-

@@ -55,13 +55,13 @@ const bool s_showStats = false;
 
 #include "ui/VerticalSpliiter.h"
 
-const NVGcolor COLOR_BLACK = nvgRGBA(0, 0, 0, 255);
-const NVGcolor COLOR_WHITE = nvgRGBA(255, 255, 255, 255);
-const NVGcolor COLOR_LIGHT_GREY = nvgRGBA(170, 170, 170, 255);
-const NVGcolor COLOR_DARK_GREY = nvgRGBA(50, 50, 50, 255);
-const NVGcolor COLOR_RED = nvgRGBA(255, 0, 0, 255);
-const NVGcolor COLOR_GREEN = nvgRGBA(0, 255, 0, 255);
-const NVGcolor COLOR_BLUE = nvgRGBA(0, 0, 255, 255);
+const Color4 COLOR_BLACK = Color4(0, 0, 0, 255);
+const Color4 COLOR_WHITE = Color4(255, 255, 255, 255);
+const Color4 COLOR_LIGHT_GREY = Color4(170, 170, 170, 255);
+const Color4 COLOR_DARK_GREY = Color4(50, 50, 50, 255);
+const Color4 COLOR_RED = Color4(255, 0, 0, 255);
+const Color4 COLOR_GREEN = Color4(0, 255, 0, 255);
+const Color4 COLOR_BLUE = Color4(0, 0, 255, 255);
 
 class DraggablePanel : public PanelView {
 private:

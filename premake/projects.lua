@@ -47,7 +47,10 @@ local EMSDK_RELEASE_FLAGS = {
 local m = {
 	Foundation = {},
 	Graphics = {},
+	Audio = {},
+	Engine = {},
 	Application = {},
+	SameBoy = {},
 	RetroPlug = {},
 	RetroPlugApp = {},
 	ExampleApplication = {},
@@ -57,9 +60,8 @@ local m = {
 	BgfxBasic = {},
 	Solitaire = {},
 	PhysicsTest = {},
-	Engine = {}
+	ShaderReload = {}
 }
-
 
 function m.Foundation.include()
 	dependson { "configure" }
@@ -104,6 +106,7 @@ end
 function m.Graphics.include()
 	dependson { "configure" }
 
+	m.Foundation.include()
 	dep.bgfx.include()
 	dep.glfw.include()
 	dep.freetype.include()
@@ -129,6 +132,7 @@ function m.Graphics.link()
 
 	links { "Graphics" }
 
+	m.Foundation.link()
 	dep.bgfx.link()
 	dep.freetype.link()
 end
@@ -148,10 +152,57 @@ function m.Graphics.project()
 end
 
 
+
+function m.Audio.include()
+	dependson { "configure" }
+
+	m.Foundation.include()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include"
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	dep.bgfx.compat()
+
+	filter {}
+end
+
+function m.Audio.link()
+	m.Audio.include()
+
+	links { "Audio" }
+
+	m.Foundation.link()
+end
+
+function m.Audio.project()
+	project "Audio"
+		kind "StaticLib"
+
+		m.Audio.include()
+
+		files {
+			"src/audio/**.h",
+			"src/audio/**.cpp"
+		}
+
+		util.liveppCompat()
+end
+
+
+
 function m.Application.include()
 	dependson { "configure" }
 
 	m.Graphics.include()
+	m.Audio.include()
 	dep.glfw.include()
 
 	sysincludedirs {
@@ -176,21 +227,22 @@ function m.Application.link()
 	links { "Application" }
 
 	m.Graphics.link()
+	m.Audio.link()
 	dep.glfw.link()
 end
 
 function m.Application.project()
 	project "Application"
-	kind "StaticLib"
+		kind "StaticLib"
 
-	m.Application.include()
+		m.Application.include()
 
-	files {
-		"src/application/**.h",
-		"src/application/**.cpp"
-	}
+		files {
+			"src/application/**.h",
+			"src/application/**.cpp"
+		}
 
-	util.liveppCompat()
+		util.liveppCompat()
 end
 
 
@@ -237,6 +289,72 @@ function m.Engine.project()
 	util.liveppCompat()
 end
 
+local SAMEBOY_DIR = "thirdparty/SameBoy"
+
+function m.SameBoy.include()
+	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING", "GB_DISABLE_DEBUGGER"  }
+	sysincludedirs { SAMEBOY_DIR .. "/Core" }
+
+	m.Foundation.include()
+
+	filter {}
+end
+
+function m.SameBoy.link()
+	m.SameBoy.include()
+
+	m.Foundation.link()
+
+	links { "SameBoy" }
+end
+
+function m.SameBoy.project()
+	project "SameBoy"
+		kind "StaticLib"
+		language "C"
+
+		m.SameBoy.include()
+
+		sysincludedirs {
+			"thirdparty",
+			"thirdparty/spdlog/include"
+		}
+
+		includedirs {
+			"src",
+			"resources"
+		}
+
+		files {
+			SAMEBOY_DIR .. "/Core/**.h",
+			SAMEBOY_DIR .. "/Core/**.c",
+			"src/sameboy/**.h",
+			"src/sameboy/**.hpp",
+			"src/sameboy/**.cpp",
+			"src/sameboy/**.c",
+		}
+		excludes {
+			SAMEBOY_DIR .. "/Core/sm83_disassembler.c",
+			SAMEBOY_DIR .. "/Core/debugger.c"
+		}
+
+		filter { "system:windows" }
+			toolset "clang"
+			includedirs { SAMEBOY_DIR .. "/Windows" }
+			buildoptions {
+				"-Wno-unused-variable",
+				"-Wno-unused-function",
+				"-Wno-missing-braces",
+				"-Wno-switch",
+				"-Wno-int-in-bool-context"
+			}
+
+		filter { "system:linux" }
+			buildoptions { "-Wno-implicit-function-declaration" }
+
+		filter {}
+end
+
 
 function m.RetroPlug.include()
 	dependson { "configure" }
@@ -244,7 +362,7 @@ function m.RetroPlug.include()
 	m.Foundation.include()
 	m.Graphics.include()
 	m.Application.include()
-	dep.SameBoy.include()
+	m.SameBoy.include()
 	dep.liblsdj.include()
 	dep.lua.include()
 	dep.minizip.include()
@@ -274,7 +392,7 @@ function m.RetroPlug.link()
 	m.Foundation.link()
 	m.Graphics.link()
 	m.Application.link()
-	dep.SameBoy.link()
+	m.SameBoy.link()
 	dep.bgfx.link()
 	dep.glfw.link()
 	dep.liblsdj.link()
@@ -286,30 +404,30 @@ end
 
 function m.RetroPlug.project()
 	project "RetroPlug"
-	kind "StaticLib"
+		kind "StaticLib"
 
-	m.RetroPlug.include()
+		m.RetroPlug.include()
 
-	files {
-		"src/*.h",
-		"src/RetroPlug.cpp",
-		"src/core/**.h",
-		"src/core/**.cpp",
-		"src/generated/lua/*_%{cfg.platform}.h",
-		"src/generated/lua/*_%{cfg.platform}.cpp",
-		"src/lsdj/**.h",
-		"src/lsdj/**.cpp",
-		"src/node/**.h",
-		"src/node/**.cpp",
-		"src/platform/**.h",
-		"src/platform/**.cpp",
-		"src/util/**.h",
-		"src/util/**.cpp",
-		"src/ui/**.h",
-		"src/ui/**.cpp",
-	}
+		files {
+			"src/*.h",
+			"src/RetroPlug.cpp",
+			"src/core/**.h",
+			"src/core/**.cpp",
+			"src/generated/lua/*_%{cfg.platform}.h",
+			"src/generated/lua/*_%{cfg.platform}.cpp",
+			"src/lsdj/**.h",
+			"src/lsdj/**.cpp",
+			"src/node/**.h",
+			"src/node/**.cpp",
+			"src/platform/**.h",
+			"src/platform/**.cpp",
+			"src/util/**.h",
+			"src/util/**.cpp",
+			"src/ui/**.h",
+			"src/ui/**.cpp",
+		}
 
-	util.liveppCompat()
+		util.liveppCompat()
 end
 
 function m.Plugin.include()
@@ -490,6 +608,33 @@ function m.Solitaire.project()
 
 	filter { "options:emscripten", "configurations:Release" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+end
+
+function m.ShaderReload.project()
+	project "ShaderReload"
+	kind "ConsoleApp"
+
+	m.Graphics.link()
+	m.Engine.link()
+	m.Application.link()
+	dep.simplefilewatcher.link()
+
+	sysincludedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/shaderreload/**.h",
+		"src/shaderreload/**.cpp"
+	}
 end
 
 function m.PhysicsTest.project()

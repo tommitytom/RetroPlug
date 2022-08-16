@@ -1,24 +1,25 @@
 #pragma once
 
 #include "View.h"
+#include "graphics/Texture.h"
 
 namespace rp {
 	class Image;
 
 	class TextureView : public View {
 	private:
-		int _textureHandle = -1;
-		DimensionT<uint32> _textureSize;
+		TextureHandle _texture;
+		RectF _textureArea;
 
 	public:
 		TextureView() { setType<TextureView>(); }
 		TextureView(Dimension dimensions) : View(dimensions) { setType<TextureView>(); }
-		~TextureView() { destroyTexture(); }
+		~TextureView() = default;
 
 		void setImage(const Image& image);
 
-		void onRender(Canvas& canvas) override;
+		void clear() { _texture = TextureHandle(); }
 
-		void destroyTexture();
+		void onRender(Canvas& canvas) override;
 	};
 }

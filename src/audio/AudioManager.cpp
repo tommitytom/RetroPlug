@@ -13,8 +13,8 @@ using namespace rp;
 static void callback(ma_device* pDevice, void* pOutput, const void* pInput, uint32 frameCount) {
 	AudioManager* m = (AudioManager*)pDevice->pUserData;
 
-	if (m->getCallback()) {
-		m->getCallback()((f32*)pOutput, (const f32*)pInput, frameCount);
+	if (m->getProcessor()) {
+		m->getProcessor()->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
 	}
 }
 

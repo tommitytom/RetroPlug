@@ -6,7 +6,8 @@
 #include "RpMath.h"
 
 #include "graphics/Canvas.h"
-#include "graphics/BgfxTexture.h"
+#include "graphics/Texture.h"
+#include "graphics/Font.h"
 
 #include "application/Window.h"
 
@@ -17,7 +18,8 @@ namespace rp {
 		DimensionF _windowSize;
 		RectF _viewPort;
 
-		TypedResourceHandle<engine::Texture> _upTex;
+		TextureHandle _upTex;
+		FontHandle _font;
 
 		entt::entity _ground;
 		entt::entity _ball;
@@ -29,7 +31,6 @@ namespace rp {
 	public:
 		PhysicsTest() : View({ 1366, 768 }) {
 			setType<PhysicsTest>();
-			setName("Physics Test");
 		}
 		~PhysicsTest() = default;
 

@@ -5,7 +5,7 @@
 #include "lsdj/KitUtil.h"
 #include "lsdj/OffsetLookup.h"
 #include "platform/FileDialog.h"
-#include "util/StringUtil.h"
+#include "foundation/StringUtil.h"
 #include "util/DataBuffer.h"
 #include "ui/KeyToButton.h"
 #include "ui/LsdjModel.h"

@@ -7,6 +7,10 @@
 namespace rp::StringUtil {
 	inline const char* WHITESPACE_CHARS = " \t\n\r\f\v";
 
+	std::string toString(const std::wstring& str);
+
+	std::wstring toWString(const std::string& str);
+
 	std::string toLower(std::string_view s);
 
 	std::string toUpper(std::string_view s);

@@ -6,91 +6,65 @@
 #include <bgfx/platform.h>
 #include <bx/math.h>
 
-#include "shaders/fs_tex_gl.h"
-#include "shaders/vs_tex_gl.h"
-#include "shaders/fs_tex_d3d9.h"
-#include "shaders/vs_tex_d3d9.h"
-#include "shaders/fs_tex_d3d11.h"
-#include "shaders/vs_tex_d3d11.h"
-#include "shaders/fs_tex_spirv.h"
-#include "shaders/vs_tex_spirv.h"
-#include "shaders/fs_tex_metal.h"
-#include "shaders/vs_tex_metal.h"
+#include "foundation/ResourceManager.h"
+
+#include "graphics/bgfx/BgfxDefaultShaders.h"
+#include "graphics/bgfx/BgfxFrameBuffer.h"
+#include "graphics/bgfx/BgfxShader.h"
+#include "graphics/bgfx/BgfxShaderProgram.h"
+#include "graphics/bgfx/BgfxTexture.h"
 
 using namespace rp;
 namespace fs = std::filesystem;
 
 const bgfx::ViewId kClearView = 0;
 
-bgfx::ShaderHandle loadShader(const uint8_t* data, size_t size, const char* name = nullptr) {
-	const bgfx::Memory* mem = bgfx::makeRef(data, (uint32)size);
-	bgfx::ShaderHandle handle = bgfx::createShader(mem);
+BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, ResourceManager& resourceManager)
+	: _nativeWindowHandle(nativeWindowHandle), _resolution(res), _resourceManager(resourceManager) {
 
-	if (name) {
-		bgfx::setName(handle, name);
-	}
-
-	return handle;
-}
-
-ShaderProgram rp::loadShaders() {
-	const uint8* vert = nullptr; size_t vertSize = 0;
-	const uint8* frag = nullptr; size_t fragSize = 0;
-
-	switch (bgfx::getRendererType()) {
-	case bgfx::RendererType::Direct3D9:
-		vert = vs_tex_d3d9; vertSize = sizeof(vs_tex_d3d9);
-		frag = fs_tex_d3d9; fragSize = sizeof(fs_tex_d3d9);
-		break;
-	case bgfx::RendererType::Direct3D11:
-	case bgfx::RendererType::Direct3D12:
-		vert = vs_tex_d3d11; vertSize = sizeof(vs_tex_d3d11);
-		frag = fs_tex_d3d11; fragSize = sizeof(fs_tex_d3d11);
-		break;
-	case bgfx::RendererType::OpenGL:
-	case bgfx::RendererType::OpenGLES:
-		vert = vs_tex_gl; vertSize = sizeof(vs_tex_gl);
-		frag = fs_tex_gl; fragSize = sizeof(fs_tex_gl);
-		break;
-	case bgfx::RendererType::Vulkan:
-	case bgfx::RendererType::WebGPU:
-		vert = vs_tex_spirv; vertSize = sizeof(vs_tex_spirv);
-		frag = fs_tex_spirv; fragSize = sizeof(fs_tex_spirv);
-		break;
-	case bgfx::RendererType::Metal:
-		vert = vs_tex_metal; vertSize = sizeof(vs_tex_metal);
-		frag = fs_tex_metal; fragSize = sizeof(fs_tex_metal);
-		break;
-	}
-
-	assert(vert && vertSize);
-	assert(frag && fragSize);
-
-	return ShaderProgram{
-		loadShader(vert, vertSize, "Canvas Vertex Shader"),
-		loadShader(frag, fragSize, "Canvas Pixel Shader")
-	};
-}
-
-BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res) {
 	bgfx::PlatformData pd;
-	pd.nwh = nativeWindowHandle;
+	pd.nwh = _nativeWindowHandle;
 	bgfx::setPlatformData(pd);
 
 	bgfx::Init bgfxInit;
 	bgfxInit.type = bgfx::RendererType::OpenGL;
-	bgfxInit.resolution.width = res.w;
-	bgfxInit.resolution.height = res.h;
+	bgfxInit.resolution.width = _resolution.w;
+	bgfxInit.resolution.height = _resolution.h;
 	bgfxInit.resolution.reset = BGFX_RESET_VSYNC;
-	bgfxInit.platformData.nwh = nativeWindowHandle;
+	bgfxInit.platformData.nwh = _nativeWindowHandle;
 
 	bgfx::init(bgfxInit);
 
-	ShaderProgram prog = loadShaders();
-	_prog = bgfx::createProgram(prog.vert, prog.frag, true);
+	_resourceManager.addProvider<FrameBuffer, BgfxFrameBufferProvider>();
+	_resourceManager.addProvider<Shader, BgfxShaderProvider>();
+	_resourceManager.addProvider<ShaderProgram, BgfxShaderProgramProvider>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
+	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
+
+	
+	TextureDesc whiteTextureDesc = TextureDesc{
+		.dimensions = { 8, 8 },
+		.depth = 4
+	};
+	
+	const uint32 size = whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth;
+	whiteTextureDesc.data.resize(size);
+	memset(whiteTextureDesc.data.data(), 0xFF, whiteTextureDesc.data.size());
+
+	_defaultTexture = _resourceManager.create<Texture>("textures/white", whiteTextureDesc);
+
+	auto shaderDescs = getDefaultShaders();
+
+	_resourceManager.create<Shader>("shaders/CanvasVertex", shaderDescs.first);
+	_resourceManager.create<Shader>("shaders/CanvasFragment", shaderDescs.second);
+
+	_defaultProgram = _resourceManager.create<ShaderProgram>("shaders/CanvasDefault", {
+		"shaders/CanvasVertex",
+		"shaders/CanvasFragment"
+	});
 
 	_textureUniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 	_scaleUniform = bgfx::createUniform("scale", bgfx::UniformType::Vec4);
+	_resolutionUniform = bgfx::createUniform("u_resolution", bgfx::UniformType::Vec4);
 
 	bgfx::setViewClear(0, BGFX_CLEAR_COLOR, 0x000000FF, 0.0f);
 	bgfx::setViewRect(0, 0, 0, bgfx::BackbufferRatio::Equal);
@@ -101,8 +75,19 @@ BgfxRenderContext::~BgfxRenderContext() {
 	bgfx::shutdown();
 }
 
-void BgfxRenderContext::beginFrame() {
-	
+void BgfxRenderContext::cleanup() {
+	bgfx::destroy(_textureUniform);
+	bgfx::destroy(_scaleUniform);
+	bgfx::destroy(_resolutionUniform);
+	bgfx::destroy(_vert);
+	bgfx::destroy(_ind);
+	_defaultProgram = nullptr;
+	_defaultTexture = nullptr;
+}
+
+void BgfxRenderContext::beginFrame(f32 delta) {
+	_lastDelta = delta;
+	_totalTime += (f64)delta;
 }
 
 void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
@@ -113,6 +98,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		const bgfx::Memory* inds = bgfx::copy(geom.indices.data(), (uint32)geom.indices.size() * sizeof(uint32));
 
 		if (bgfx::isValid(_vert)) {
+			[[likely]]
 			bgfx::update(_vert, 0, verts);
 			bgfx::update(_ind, 0, inds);
 		} else {
@@ -132,8 +118,16 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		float viewMtx[16];
 		bx::mtxIdentity(viewMtx);
 
+		f32 dim[4] = { (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, (f32)_totalTime, _lastDelta };
+
 		for (const engine::CanvasSurface& surface : geom.surfaces) {
-			const BgfxTexture& texture = (const BgfxTexture&)surface.texture.getResource();
+			const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
+			const TextureHandle textureHandle = surface.texture.isValid() ? surface.texture : _defaultTexture;
+
+			const BgfxShaderProgram& program = programHandle.getResourceAs<BgfxShaderProgram>();
+			const BgfxTexture& texture = textureHandle.getResourceAs<BgfxTexture>();
+
+			bgfx::setUniform(_resolutionUniform, dim);
 
 			float projMtx[16];
 			bx::mtxOrtho(projMtx, 0, (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
@@ -176,11 +170,15 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 			bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
 
 			bgfx::setState(state);
-			bgfx::submit(surface.viewId, _prog);
+			bgfx::submit(surface.viewId, program.getBgfxHandle());
 		}
 	}
 }
 
 void BgfxRenderContext::endFrame() {
 	bgfx::frame();
+}
+
+ShaderProgramHandle BgfxRenderContext::getDefaultProgram() const {
+	return _defaultProgram;
 }

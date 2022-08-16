@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "platform/Types.h"
+#include "AudioProcessor.h"
 
 namespace rp {
 	using AudioCallback = std::function<void(f32* output, const f32* input, uint32 frameCount)>;
@@ -36,10 +37,19 @@ namespace rp {
 
 		State* _state = nullptr;
 		AudioCallback _cb;
+		std::shared_ptr<AudioProcessor> _processor;
 
 	public:
 		AudioManager();
 		~AudioManager();
+
+		void setProcessor(std::shared_ptr<AudioProcessor> processor) {
+			_processor = processor;
+		}
+
+		std::shared_ptr<AudioProcessor> getProcessor() {
+			return _processor;
+		}
 
 		bool loadFile(std::string_view path, std::vector<f32>& target);
 
