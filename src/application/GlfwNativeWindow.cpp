@@ -146,10 +146,14 @@ void GlfwNativeWindow::onCleanup() {
 }
 
 void GlfwNativeWindow::onCreate() {
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	ViewManager& vm = getViewManager();
 
-	Dimension dimensions = getViewManager().getDimensions();
-	_window = glfwCreateWindow(dimensions.w, dimensions.h, getViewManager().getName().data(), NULL, NULL);
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_RESIZABLE, vm.getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
+	//glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+
+	Dimension dimensions = vm.getDimensions();
+	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm.getName().data(), NULL, NULL);
 
 	glfwSetWindowUserPointer(_window, this);
 
@@ -176,18 +180,28 @@ void GlfwNativeWindow::onCreate() {
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	//glfwWaitEventsTimeout(0.016);
 
+	ViewManager& vm = getViewManager();
+
 	rp::Dimension windowSize;
 	glfwGetWindowSize(_window, &windowSize.w, &windowSize.h);
+
+	rp::Dimension viewSize = vm.getDimensions();
 
 	// NOTE: An ID of 0 is always given to the main window.  It does not need a new frame buffer.
 	bool resizeFrameBuffer = getId() > 0 && !_frameBuffer;
 
-	if (windowSize.w != getViewManager().getDimensions().w || windowSize.h != getViewManager().getDimensions().h) {
-		getViewManager().setDimensions(windowSize);
-		getViewManager().getChild(0)->setDimensions(windowSize);
+	if (windowSize.w != viewSize.w || windowSize.h != viewSize.h) {
+		if (vm.getSizingPolicy() == SizingPolicy::FitToContent) {
+			// Resize window to fit content
+			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
+		} else {
+			// Resize content to fit window
+			vm.setDimensions(windowSize);
+			viewSize = windowSize;
+		}
 
 		if (getId() == 0) {
-			bgfx::reset((uint32_t)getViewManager().getDimensions().w, (uint32_t)getViewManager().getDimensions().h, BGFX_RESET_VSYNC);
+			bgfx::reset((uint32_t)viewSize.w, (uint32_t)viewSize.h, BGFX_RESET_VSYNC);
 		} else {
 			resizeFrameBuffer = true;
 		}
@@ -204,7 +218,7 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		_frameBuffer->setViewFrameBuffer(getId());
 	}
 
-	getViewManager().onUpdate(delta);
+	vm.onUpdate(delta);
 }
 
 bool GlfwNativeWindow::shouldClose() {

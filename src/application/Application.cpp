@@ -37,7 +37,7 @@ void errorCallback(int error, const char* description) {
 	spdlog::error("GLFW error {}: {}", error, description);
 }
 
-Application::Application() : _windowManager(_resourceManager) {
+Application::Application() : _fontManager(_resourceManager), _windowManager(_resourceManager, _fontManager), _canvas(_resourceManager, _fontManager) {
 	glfwSetErrorCallback(errorCallback);
 	
 	if (!glfwInit()) {
@@ -60,8 +60,8 @@ Application::~Application() {
 	_renderContext->cleanup();
 	_mainWindow->onCleanup();
 
-	_canvas = Canvas();
 	_resourceManager = ResourceManager();
+	_canvas.destroy();
 
 	_audioManager = nullptr;
 
@@ -77,7 +77,7 @@ void Application::createRenderContext(WindowPtr window) {
 	_resourceManager.addProvider<TextureAtlas, TextureAtlasProvider>();
 	_resourceManager.addProvider<Font>(std::make_unique<FtglFontProvider>(_resourceManager));
 
-	FontHandle font = _resourceManager.load<Font>("Roboto-Regular.ttf");
+	FontHandle font = _resourceManager.load<Font>("Roboto-Regular.ttf/16");
 
 	_canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), font);
 }
@@ -111,7 +111,7 @@ bool Application::runFrame() {
 			WindowPtr w = *it;
 
 			if (!w->shouldClose()) {
-				w->getViewManager().setResourceManager(&_resourceManager);
+				w->getViewManager().setResourceManager(&_resourceManager, &_fontManager);
 
 				w->onUpdate(delta);
 

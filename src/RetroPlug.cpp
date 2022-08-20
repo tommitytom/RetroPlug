@@ -32,6 +32,7 @@ using namespace rp;
 
 RetroPlug::RetroPlug() : View({ 480, 432 }) {
 	setType<RetroPlug>();
+	setSizingPolicy(SizingPolicy::FitToContent);
 }
 
 void RetroPlug::onInitialize() {
@@ -105,8 +106,8 @@ void RetroPlug::processOutput() {
 }
 
 void RetroPlug::onUpdate(f32 delta) {
-	//f32 scale = _project->getScale();
-	//_state.viewManager.setScale(scale);
+	f32 scale = _project->getScale();
+	setScale(scale);
 
 	_state.grid->setLayoutMode((GridLayout)_project->getState().settings.layout);
 
@@ -124,7 +125,7 @@ void RetroPlug::onUpdate(f32 delta) {
 
 void RetroPlug::onRender(Canvas& canvas) {
 	// Scale?
-	canvas.fillRect(getDimensions(), Color4F(1, 0, 0, 1));
+	canvas.fillRect(getDimensions(), Color4F(0, 0, 0, 1));
 }
 
 bool RetroPlug::onKey(VirtualKey::Enum key, bool down) {

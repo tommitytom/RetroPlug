@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "graphics/bgfx/BgfxRenderContext.h"
+#include "graphics/FontManager.h"
 
 #include "GlfwNativeWindow.h"
 #include "Window.h"
@@ -20,6 +21,7 @@ namespace rp::app {
 		engine::Canvas _canvas;
 
 		ResourceManager _resourceManager;
+		engine::FontManager _fontManager;
 
 		FontHandle _defaultHandle;
 		TextureHandle _defaultTexture;
@@ -45,7 +47,7 @@ namespace rp::app {
 			WindowPtr window = _windowManager.createWindow<ViewT>();
 			createRenderContext(window);
 
-			window->getViewManager().setResourceManager(&_resourceManager);
+			window->getViewManager().setResourceManager(&_resourceManager, &_fontManager);
 		}
 
 		bool runFrame();

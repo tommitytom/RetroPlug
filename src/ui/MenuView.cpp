@@ -1,5 +1,7 @@
 #include "MenuView.h"
 
+#include "foundation/ResourceManager.h"
+
 using namespace rp;
 
 const f32 MARGIN = 10.0f;
@@ -18,10 +20,8 @@ void MenuView::onUpdate(f32 delta) {
 	}
 }
 
-#include "foundation/ResourceManager.h"
-
 void MenuView::onInitialize() {
-	_font = getResourceManager().load<Font>("PlatNomor.ttf");
+	//_font = getResourceManager().load<Font>("PlatNomor.ttf/16");
 }
 
 bool isHighlightable(MenuItemType type) {
@@ -272,7 +272,7 @@ enum class ArrowDirection {
 };
 
 void drawArrow(Canvas& canvas, const RectT<f32>& area, ArrowDirection dir) {
-	PointT<f32> points[3];
+	std::array<PointF, 3> points;
 
 	switch (dir) {
 	case ArrowDirection::Left:
@@ -301,6 +301,8 @@ void drawArrow(Canvas& canvas, const RectT<f32>& area, ArrowDirection dir) {
 	nvgRect(vg, area.x, area.y, area.w, area.h);
 	nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
 	nvgFill(vg);*/
+
+	canvas.lines(points, Color4F(1, 1, 1, 1));
 
 	/*nvgBeginPath(vg);
 	nvgMoveTo(vg, points[0].x, points[0].y);
@@ -427,11 +429,8 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 }
 
 void MenuView::onRender(Canvas& canvas) {
-	if (!_font.isValid()) {
-		onInitialize();
-	}
-
-	canvas.setFont(_font);
+	canvas.setFont("PlatNomor.ttf", 9.0f);
+	canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
 
 	_fontSize = 9.0f;
 	_itemSpacing = 12.0f;

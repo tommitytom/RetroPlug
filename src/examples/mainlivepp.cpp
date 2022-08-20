@@ -1,17 +1,16 @@
+#include <filesystem>
+#include <assert.h>
 #include <Windows.h>
 #include <LivePP/API/LPP_API.h>
-#include <assert.h>
-
-#include "util/fs.h"
 
 extern void initMain(int argc, char** argv);
 extern bool mainLoop(void);
 extern void destroyMain(void);
 
 int main(int argc, char** argv) {
-	fs::path currentDir(__FILE__);
+	std::filesystem::path currentDir(__FILE__);
 
-	fs::path p = currentDir.parent_path().parent_path().parent_path() / "thirdparty" / "LivePP";
+	std::filesystem::path p = currentDir.parent_path().parent_path().parent_path() / "thirdparty" / "LivePP";
 	HMODULE livePP = lpp::lppLoadAndRegister(p.wstring().c_str(), "RP");
 	assert(livePP);
 

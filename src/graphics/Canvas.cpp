@@ -12,8 +12,6 @@ using namespace rp;
 using namespace rp::engine;
 namespace fs = std::filesystem;
 
-const f32 PI = 3.14159265359f;
-const f32 PI2 = PI * 2.0f;
 constexpr PointF FIXED_VERTEX_OFFSET = PointF(0.00125f / 2.0f, 0);
 
 uint32 toUint32Abgr(const Color4F& color) {
@@ -24,16 +22,8 @@ uint32 toUint32Abgr(const Color4F& color) {
 		(static_cast<uint32>(color.r * 255.f) << 0);
 }
 
-Canvas::Canvas(uint32 viewId): _viewId(viewId) {
+Canvas::Canvas(ResourceManager& resourceManager, FontManager& fontManager, uint32 viewId): _resourceManager(resourceManager), _fontManager(fontManager), _viewId(viewId) {
 
-}
-
-Canvas::~Canvas() {
-	//bgfx::destroy(_textureUniform);
-	//bgfx::destroy(_defaultTexture);
-	//bgfx::destroy(_prog);
-	//bgfx::destroy(_vert);
-	//bgfx::destroy(_ind);
 }
 
 entt::id_type getUriHash(std::string_view uri) {
@@ -95,6 +85,40 @@ void Canvas::endRender() {
 }
 
 Canvas& Canvas::translate(PointF amount) {
+	_translation += amount;
+	updateTransform();
+	return *this;
+}
+
+Canvas& Canvas::scale(PointF amount) {
+	_scale *= amount;
+	updateTransform();
+	updateFont();
+	return *this;
+}
+
+Canvas& Canvas::rotate(f32 amount) {
+	_rotation += amount;
+	updateTransform();
+	return *this;
+}
+
+Canvas& Canvas::setTranslation(PointF translation) {
+	_translation = translation;
+	updateTransform();
+	return *this;
+}
+
+Canvas& Canvas::setScale(PointF scale) {
+	_scale = scale;
+	updateTransform();
+	updateFont();
+	return *this;
+}
+
+Canvas& Canvas::setRotation(f32 rotation) {
+	_rotation = rotation;
+	updateTransform();
 	return *this;
 }
 
@@ -141,13 +165,31 @@ Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color)
 	uint32 v = (uint32)_geom.vertices.size();
 
 	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * from, agbr, 0, 0 },
-		CanvasVertex{ _transform * to, agbr, 0, 0 }
+		CanvasVertex{ _transform * from, agbr, { 0, 0 } },
+		CanvasVertex{ _transform * to, agbr, { 0, 0 } }
 	});
 
 	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });
 
 	_geom.surfaces.back().indexCount += 2;
+
+	return *this;
+}
+
+Canvas& Canvas::lines(std::span<PointF> points, const Color4F& color) {
+	checkSurface(RenderPrimitive::LineStrip, _defaultTexture, _defaultProgram);
+
+	uint32 agbr = toUint32Abgr(color);
+	uint32 v = (uint32)_geom.vertices.size();
+	uint32 i = 0;
+	
+	for (const PointF& point : points) {
+		_geom.vertices.push_back(CanvasVertex{ _transform * point, agbr, { 0, 0 } });
+		_geom.indices.push_back(v + i);
+		i++;
+	}
+
+	_geom.surfaces.back().indexCount += (uint32)points.size();
 
 	return *this;
 }
@@ -176,10 +218,6 @@ Canvas& Canvas::circle(const PointF& pos, f32 radius, const Color4F& color) {
 	return *this;
 }
 
-Canvas& Canvas::setScale(f32 scaleX, f32 scaleY) {
-	return *this;
-}
-
 Canvas& Canvas::fillRect(const RectF& area, const Color4F& color) {
 	checkSurface(RenderPrimitive::Triangles, _defaultTexture, _geom.surfaces.back().program);
 
@@ -187,10 +225,10 @@ Canvas& Canvas::fillRect(const RectF& area, const Color4F& color) {
 	uint32 v = (uint32)_geom.vertices.size();
 
 	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * area.position, agbr, 0, 0 },
-		CanvasVertex{ _transform * area.topRight(), agbr, 0, 0 },
-		CanvasVertex{ _transform * area.bottomRight(), agbr, 0, 0 },
-		CanvasVertex{ _transform * area.bottomLeft(), agbr, 0, 0 },
+		CanvasVertex{ _transform * area.position, agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.topRight(), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.bottomRight(), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.bottomLeft(), agbr, { 0, 0 } },
 	});
 
 	_geom.indices.insert(_geom.indices.end(), {
@@ -272,11 +310,49 @@ Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const T
 	return *this;
 }
 
-Canvas& Canvas::strokeRect(const RectF& area) {
+Canvas& Canvas::strokeRect(const RectF& area, const Color4F& color) {
+	checkSurface(RenderPrimitive::LineStrip, _defaultTexture, _geom.surfaces.back().program);
+
+	uint32 agbr = toUint32Abgr(color);
+	uint32 v = (uint32)_geom.vertices.size();
+
+	_geom.vertices.insert(_geom.vertices.end(), {
+		CanvasVertex{ _transform * area.position, agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.topRight(), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.bottomRight(), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * area.bottomLeft(), agbr, { 0, 0 } },
+	});
+
+	_geom.indices.insert(_geom.indices.end(), {
+		v + 0, v + 1, v + 2, v + 3, v + 0
+	});
+
+	_geom.surfaces.back().indexCount += 5;
+
 	return *this;
 }
 
-Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) {
+DimensionF Canvas::measureText(std::string_view text, std::string_view fontName, f32 fontSize) {
+	FontHandle handle = loadFont(fontName, fontSize);
+	FtglFont& font = handle.getResourceAs<FtglFont>();
+	ftgl::texture_font_t* textureFont = font.getTextureFont();
+
+	DimensionF ret(0, textureFont->height);
+
+	for (size_t i = 0; i < text.size(); ++i) {
+		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
+
+		if (i > 0) {
+			ret.w += ftgl::texture_glyph_get_kerning(glyph, text.data() + i - 1);
+		}
+
+		ret.w += glyph->advance_x;
+	}
+
+	return ret;
+}
+
+Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& color) {
 	assert(_font.isValid());
 
 	FtglFont& font = _font.getResourceAs<FtglFont>();
@@ -285,6 +361,11 @@ Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) 
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
 	uint32 agbr = toUint32Abgr(color);
+	PointF vpos = _transform * pos;
+
+	if (_textAlign & TextAlignFlags::Top) {
+		vpos.y += textureFont->height;
+	}
 
 	for (size_t i = 0; i < text.size(); ++i) {
 		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
@@ -296,10 +377,10 @@ Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) 
 				kerning = texture_glyph_get_kerning(glyph, text.data() + i - 1);
 			}
 
-			x += kerning;
+			vpos.x += kerning;
 
-			f32 x0 = floor(x + glyph->offset_x);
-			f32 y0 = floor(y - glyph->offset_y);
+			f32 x0 = floor(vpos.x + glyph->offset_x);
+			f32 y0 = floor(vpos.y - glyph->offset_y);
 			f32 x1 = floor(x0 + glyph->width);
 			f32 y1 = floor(y0 + glyph->height);
 			f32 s0 = glyph->s0;
@@ -310,10 +391,10 @@ Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) 
 			uint32 v = (uint32)_geom.vertices.size();
 
 			_geom.vertices.insert(_geom.vertices.end(), {
-				CanvasVertex{ _transform * PointF{ x0, y0 }, agbr, s0,t0 },
-				CanvasVertex{ _transform * PointF{ x1, y0 }, agbr, s1,t0 },
-				CanvasVertex{ _transform * PointF{ x1, y1 }, agbr, s1,t1 },
-				CanvasVertex{ _transform * PointF{ x0, y1 }, agbr, s0,t1 }
+				CanvasVertex{ { x0, y0 }, agbr, { s0, t0 } },
+				CanvasVertex{ { x1, y0 }, agbr, { s1, t0 } },
+				CanvasVertex{ { x1, y1 }, agbr, { s1, t1 } },
+				CanvasVertex{ { x0, y1 }, agbr, { s0, t1 } }
 			});
 
 			_geom.indices.insert(_geom.indices.end(), {
@@ -323,7 +404,7 @@ Canvas& Canvas::text(f32 x, f32 y, std::string_view text, const Color4F& color) 
 
 			_geom.surfaces.back().indexCount += 6;
 
-			x += glyph->advance_x;
+			vpos.x += glyph->advance_x;
 		}
 	}
 

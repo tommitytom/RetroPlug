@@ -21,17 +21,17 @@ namespace rp {
 		}
 	}
 
-	class ShaderReloadWindow : public View {
+	class ShaderReload : public View {
 	private:
 		AssetWatcher _watcher;
 		ShaderProgramHandle _program;
 
 	public:
-		ShaderReloadWindow(): View({ 1024, 768 }) {
-			setType<ShaderReloadWindow>();
+		ShaderReload(): View({ 1024, 768 }) {
+			setType<ShaderReload>();
 		}
 
-		~ShaderReloadWindow() = default;
+		~ShaderReload() = default;
 
 		void onInitialize() override {
 			_watcher.setResourceManager(getResourceManager());
@@ -60,7 +60,7 @@ namespace rp {
 
 		bool onKey(VirtualKey::Enum key, bool down) override {
 			if (key == VirtualKey::Space && down) {
-				//getWindowManager().createWindow<ShaderReloadWindow>();
+				//getWindowManager().createWindow<ShaderReload>();
 			}
 
 			return true;

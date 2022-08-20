@@ -9,16 +9,15 @@
 #include <entt/core/type_info.hpp>
 #include <entt/core/any.hpp>
 
-#include "core/Input.h"
-#include "graphics/Canvas.h"
 #include "RpMath.h"
-
-struct NVGcontext;
-struct NVGcolor;
+#include "foundation/StringUtil.h"
+#include "graphics/Canvas.h"
+#include "core/Input.h"
 
 namespace rp {
 	namespace engine {
 		class Canvas;
+		class FontManager;
 	}
 
 	class ResourceManager;
@@ -55,7 +54,7 @@ namespace rp {
 		struct Shared {
 			View* focused = nullptr;
 			bool layoutDirty = true;
-			f32 scale = 1.0f;
+			f32 pixelDensity = 1.0f;
 			std::vector<ViewPtr> removals;
 
 			DragContext dragContext;
@@ -65,6 +64,7 @@ namespace rp {
 
 			entt::registry userData;
 
+			FontManager* fontManager = nullptr;
 			ResourceManager* resourceManager = nullptr;
 		};
 
@@ -73,6 +73,7 @@ namespace rp {
 		View* _parent = nullptr;
 		std::vector<ViewPtr> _children;
 		Rect _area;
+		f32 _scale = 1.0f;
 		f32 _alpha = 1.0f;
 		bool _initialized = false;
 		bool _visible = true;
@@ -101,6 +102,14 @@ namespace rp {
 
 		const ResourceManager& getResourceManager() const {
 			return *_shared->resourceManager;
+		}
+
+		engine::FontManager& getFontManager() {
+			return *_shared->fontManager;
+		}
+
+		const engine::FontManager& getFontManager() const {
+			return *_shared->fontManager;
 		}
 
 		FocusPolicy getFocusPolicy() const {
@@ -189,23 +198,25 @@ namespace rp {
 		}
 
 		Point getWorldPosition() const {
-			if (getParent()) {
-				return getParent()->getWorldPosition() + getPosition();
+			View* parent = getParent();
+			if (parent) {
+				return parent->getWorldPosition() + (Point)((PointF)getPosition() * parent->getWorldScale());
 			}
 
 			return getPosition();
 		}
 
-		Rect getWorldArea() const {
-			return { getWorldPosition(), getDimensions() };
-		}
-
-		f32 getScalingFactor() const {
-			if (_shared) {
-				return _shared->scale;
+		f32 getWorldScale() const {
+			View* parent = getParent();
+			if (parent) {
+				return parent->getWorldScale() * getScale();
 			}
 
-			return 1.0f;
+			return getScale();
+		}
+
+		Rect getWorldArea() const {
+			return { getWorldPosition(), (Dimension)((DimensionF)getDimensions() * getWorldScale()) };
 		}
 
 		template <typename T>
@@ -504,8 +515,22 @@ namespace rp {
 			}
 		}
 
+		void setScale(f32 scale) {
+			_scale = scale;
+
+			for (ViewPtr& view : getChildren()) {
+				view->onScaleChanged(scale);
+			}
+
+			setLayoutDirty();
+		}
+
 		Point getPosition() const {
 			return _area.position;
+		}
+
+		f32 getScale() const {
+			return _scale;
 		}
 
 		void setDimensions(Dimension dimensions) {
@@ -593,7 +618,7 @@ namespace rp {
 			_type = entt::type_id<T>();
 
 			if (_name.empty()) {
-				_name = _type.name();
+				_name = StringUtil::formatClassName(_type.name());
 			}
 		}
 

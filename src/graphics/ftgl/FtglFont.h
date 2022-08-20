@@ -37,9 +37,10 @@ namespace rp::engine {
 	class FtglFontProvider : public TypedResourceProvider<Font> {
 	private:
 		ResourceManager& _resourceManager;
+		std::shared_ptr<Font> _default;
 
 	public:
-		FtglFontProvider(ResourceManager& resourceManager): _resourceManager(resourceManager) {}
+		FtglFontProvider(ResourceManager& resourceManager);
 		~FtglFontProvider() = default;
 
 		std::shared_ptr<Resource> load(std::string_view uri) override;

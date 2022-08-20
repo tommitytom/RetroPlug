@@ -15,15 +15,16 @@ namespace rp::app {
 		std::stack<uint32> _availableIds;
 
 		ResourceManager& _resourceManager;
+		engine::FontManager& _fontManager;
 
 	public:
-		WindowManager(ResourceManager& resourceManager): _resourceManager(resourceManager) {}
+		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		~WindowManager() {}
 
 		template <typename T>
 		WindowPtr createWindow() {
 			ViewPtr view = std::make_shared<T>();
-			WindowPtr window = std::make_shared<WindowT>(&_resourceManager, view, std::numeric_limits<uint32>::max());
+			WindowPtr window = std::make_shared<WindowT>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 
 			window->onCreate();
 			_created.push_back(window);

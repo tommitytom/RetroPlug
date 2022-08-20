@@ -142,13 +142,17 @@ void Solitaire::onInitialize() {
 
 			atlasDesc.tiles.push_back({ tileUri, area });
 
-			addSprite(card, tileUri);
-
 			_cards[cardFaceIdx * CARDS_PER_FACE + cardIdx] = card;
 		}
 	}
 
 	_cardAtlas = rm.create<TextureAtlas>("cards/atlas", atlasDesc);
+
+	for (size_t i = 0; i < _cards.size(); ++i) {
+		const CardComponent& card = _registry.get<CardComponent>(_cards[i]);
+		std::string tileUri = getCardTileUri(card);
+		addSprite(_cards[i], tileUri);
+	}
 
 	PointF offset(TABLEAU_SPACING, TABLEAU_SPACING);
 

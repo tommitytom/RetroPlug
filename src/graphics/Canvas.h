@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <span>
 #include <unordered_set>
 #include <vector>
 
@@ -10,7 +11,9 @@
 
 #include "RpMath.h"
 #include "foundation/ResourceHandle.h"
+#include "foundation/ResourceManager.h"
 #include "graphics/Font.h"
+#include "graphics/FontManager.h"
 #include "graphics/ShaderProgram.h"
 #include "graphics/Texture.h"
 #include "graphics/TextureAtlas.h"
@@ -23,6 +26,16 @@ namespace ftgl {
 }
 
 namespace rp::engine {
+	enum TextAlignFlags {
+		Left = 1 << 0,
+		Center = 1 << 1,
+		Right = 1 << 2,
+		Top = 1 << 3,
+		Middle = 1 << 4,
+		Bottom = 1 << 5,
+		Baseline = 1 << 6
+	};
+
 	struct CanvasVertex {
 		PointF pos;
 		uint32 abgr;
@@ -52,8 +65,8 @@ namespace rp::engine {
 
 	struct TextureRenderDesc {
 		TextureHandle textureHandle;
-		RectT<f32> textureUv;
-		RectT<f32> area;
+		RectF textureUv;
+		RectF area;
 		Color4F color;
 	};
 
@@ -77,9 +90,11 @@ namespace rp::engine {
 		ShaderProgramHandle _defaultProgram;
 		FontHandle _defaultFont;
 
+		std::string _fontName = "Karla-Regular";
+		f32 _fontSize = 16.0f;
 		FontHandle _font;
 
-		PointF _offset = { 0, 0 };
+		PointF _translation = { 0, 0 };
 		PointF _scale = { 1, 1 };
 		f32 _rotation = 0.0f;
 		Mat3x3 _transform;
@@ -89,12 +104,43 @@ namespace rp::engine {
 
 		std::unordered_set<entt::id_type> _invalidUris;
 
-	public:
-		Canvas(uint32 viewId = 0);
-		~Canvas();
+		ResourceManager& _resourceManager;
+		FontManager& _fontManager;
 
-		void setFont(FontHandle font) {
-			_font = font;
+		uint32 _textAlign = TextAlignFlags::Left | TextAlignFlags::Baseline;
+
+	public:
+		Canvas(ResourceManager& resourceManager, FontManager& fontManager, uint32 viewId = 0);
+		~Canvas() = default;
+
+		void destroy() {
+			_defaultTexture = nullptr;
+			_defaultProgram = nullptr;
+			_defaultFont = nullptr;
+			_font = nullptr;
+			_invalidUris.clear();
+			_geom = CanvasGeometry();
+		}
+
+		void setFont(std::string_view font, f32 size) {
+			_fontName = std::string(font);
+			_fontSize = size;
+			updateFont();
+		}
+
+		Canvas& setTextAlign(uint32 align) {
+			_textAlign = align;
+			return *this;
+		}
+
+		void updateFont() {
+			assert(_fontName.size());
+			PointF scale = _transform.getScale();
+			_font = loadFont(_fontName, _fontSize * std::max(scale.x, scale.y));
+		}
+
+		FontHandle loadFont(std::string_view name, f32 size) {
+			return _resourceManager.load<Font>(fmt::format("{}/{}", name, size));
 		}
 
 		void clear() {
@@ -122,23 +168,31 @@ namespace rp::engine {
 			_viewId = viewId;
 		}
 
-		void setTransform(PointF position, PointF scale = { 1, 1 }, f32 rotation = 0.0f) {
-			_offset = position;
+		Canvas& setTransform(PointF position, PointF scale = { 1, 1 }, f32 rotation = 0.0f) {
+			_translation = position;
 			_scale = scale;
 			_rotation = rotation;
-			_transform = Mat3x3::translation(position);
+			updateTransform();
+			updateFont();
+			return *this;
+		}
+
+		void updateTransform() {
+			_transform = Mat3x3::trs(_translation, _rotation, _scale);
 		}
 
 		Canvas& setTransform(const Mat3x3& transform) {
 			_transform = transform;
+			updateFont();
 			return *this;
 		}
 
 		void clearTransform() {
-			_offset = { 0, 0 };
+			_translation = { 0, 0 };
 			_scale = { 1, 1 };
 			_rotation = 0.0f;
 			_transform = Mat3x3();
+			updateFont();
 		}
 
 		Canvas& setColor(const Color4F& color) {
@@ -150,11 +204,25 @@ namespace rp::engine {
 
 		void endRender();
 
+		DimensionF measureText(std::string_view text) { return this->measureText(text, _fontName, _fontSize); }
+
+		DimensionF measureText(std::string_view text, std::string_view font, f32 size);
+
 		Canvas& setProgram(ShaderProgramHandle program);
 
 		Canvas& clearProgram();
 
 		Canvas& translate(PointF amount);
+
+		Canvas& scale(PointF amount);
+
+		Canvas& rotate(f32 amount);
+
+		Canvas& setTranslation(PointF translation);
+
+		Canvas& setScale(PointF scale);
+
+		Canvas& setRotation(f32 rotation);
 
 		Canvas& polygon(const PointF* points, uint32 count);
 
@@ -163,31 +231,31 @@ namespace rp::engine {
 		template <const size_t PointCount>
 		Canvas& points(const std::array<PointF, PointCount>& points) { return this->points(points.data(), points.size()); }
 
-		Canvas& setScale(f32 scaleX, f32 scaleY);
+		Canvas& fillRect(const RectF& area, const Color4F& color);
 
-		Canvas& fillRect(const RectT<f32>& area, const Color4F& color);
-
-		Canvas& fillRect(const RectT<f32>& area) { return this->fillRect(area, _color); }
+		Canvas& fillRect(const RectF& area) { return this->fillRect(area, _color); }
 
 		Canvas& fillRect(const Rect& area, const Color4F& color) { return this->fillRect((RectF)area, color); }
 
 		Canvas& fillRect(const Rect& area) { return this->fillRect((RectF)area, _color); }
 
+		Canvas& strokeRect(const RectF& area, const Color4F& color);
+
 		Canvas& texture(const TextureRenderDesc& desc);
 
-		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const Color4F& color);
+		Canvas& texture(const TextureHandle& texture, const RectF& area, const Color4F& color);
 
-		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area) { return this->texture(texture, area, _color); }
+		Canvas& texture(const TextureHandle& texture, const RectF& area) { return this->texture(texture, area, _color); }
 
-		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const TileArea& uvArea, const Color4F& color);
+		Canvas& texture(const TextureHandle& texture, const RectF& area, const TileArea& uvArea, const Color4F& color);
 
-		Canvas& texture(const TextureHandle& texture, const RectT<f32>& area, const TileArea& uvArea) { return this->texture(texture, area, uvArea, _color); }
+		Canvas& texture(const TextureHandle& texture, const RectF& area, const TileArea& uvArea) { return this->texture(texture, area, uvArea, _color); }
 
-		Canvas& strokeRect(const RectT<f32>& area);
+		Canvas& text(const PointF& pos, std::string_view text, const Color4F& color);
 
-		Canvas& text(f32 x, f32 y, std::string_view text) { return this->text(x, y, text, _color); }
+		Canvas& text(f32 x, f32 y, std::string_view text) { return this->text({ x, y }, text, _color); }
 
-		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color);
+		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color) { return this->text({ x, y }, text, color); }
 
 		Canvas& circle(const PointF& pos, f32 radius) { return this->circle(pos, radius, _color); }
 
@@ -196,6 +264,8 @@ namespace rp::engine {
 		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
 		Canvas& line(const PointF& from, const PointF& to) { return line(from, to, _color); }
+
+		Canvas& lines(std::span<PointF> points, const Color4F& color);
 
 	private:
 		void checkSurface(RenderPrimitive primitive, const TextureHandle& texture, const ShaderProgramHandle& program);

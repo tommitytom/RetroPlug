@@ -56,11 +56,7 @@ local m = {
 	ExampleApplication = {},
 	OffsetCalculator = {},
 	Plugin = {},
-	Tests = {},
-	BgfxBasic = {},
-	Solitaire = {},
-	PhysicsTest = {},
-	ShaderReload = {}
+	Tests = {}
 }
 
 function m.Foundation.include()
@@ -250,6 +246,7 @@ function m.Engine.include()
 	dependson { "configure" }
 
 	m.Graphics.include()
+	dep.box2d.include()
 
 	sysincludedirs {
 		"thirdparty",
@@ -273,6 +270,7 @@ function m.Engine.link()
 	links { "engine" }
 
 	m.Graphics.link()
+	dep.box2d.link()
 end
 
 function m.Engine.project()
@@ -494,123 +492,59 @@ function m.RetroPlugApp.projectLivepp()
 end
 
 
-function m.ExampleApplication.project()
-	project "ExampleApplication"
-	kind "ConsoleApp"
+function m.ExampleApplication.project(name)
+	project (name)
+		kind "ConsoleApp"
 
-	m.RetroPlug.link()
-	dep.box2d.link()
+		m.Application.link()
+		m.Engine.link()
 
-	files {
-		"src/uiexamples/**.h",
-		"src/uiexamples/**.cpp"
-	}
-	excludes {
-		"src/uiexamples/mainloop.cpp",
-		"src/uiexamples/mainlivepp.cpp"
-	}
+		defines {
+			"EXAMPLE_IMPL=" .. name
+		}
 
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
+		includedirs {
+			"src/examples"
+		}
 
-	filter { "options:emscripten", "configurations:Debug" }
-		--buildoptions { "--bind" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+		files {
+			"src/examples/" .. name .. ".*",
+			"src/examples/main.cpp"
+		}
 
-	filter { "options:emscripten", "configurations:Release" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+		filter { "options:emscripten" }
+			buildoptions { "-matomics", "-mbulk-memory" }
+
+		filter { "options:emscripten", "configurations:Debug" }
+			linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+		filter { "options:emscripten", "configurations:Release" }
+			linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+
+	project (name .. "-live++")
+		kind "ConsoleApp"
+
+		m.Application.link()
+		m.Engine.link()
+
+		defines {
+			"EXAMPLE_IMPL=" .. name
+		}
+
+		includedirs {
+			"src/examples"
+		}
+
+		files {
+			"src/examples/" .. name .. ".*",
+			"src/examples/mainlivepp.cpp",
+			"src/examples/mainloop.cpp"
+		}
+
+		util.liveppCompat()
 end
 
-function m.ExampleApplication.projectLivepp()
-	project "ExampleApplication-live++"
-	kind "ConsoleApp"
-
-	m.RetroPlug.link()
-
-	files {
-		"src/uiexamples/**.h",
-		"src/uiexamples/**.cpp"
-	}
-	excludes {
-		"src/uiexamples/main.cpp",
-	}
-
-	util.liveppCompat()
-end
-
-function m.BgfxBasic.project()
-	project "BgfxBasic"
-	kind "ConsoleApp"
-
-	m.Graphics.link()
-	m.Application.link()
-	dep.box2d.link()
-
-	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include",
-		"thirdparty/sol",
-	}
-
-	includedirs {
-		"src",
-		"generated",
-		"resources"
-	}
-
-	files {
-		"src/bgfxbasic/**.h",
-		"src/bgfxbasic/**.cpp"
-	}
-
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-
-	filter { "options:emscripten", "configurations:Debug" }
-		--buildoptions { "--bind" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
-
-	filter { "options:emscripten", "configurations:Release" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
-end
-
-function m.Solitaire.project()
-	project "Solitaire"
-	kind "ConsoleApp"
-
-	m.Graphics.link()
-	m.Engine.link()
-	m.Application.link()
-
-	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include",
-		"thirdparty/sol",
-	}
-
-	includedirs {
-		"src",
-		"generated",
-		"resources"
-	}
-
-	files {
-		"src/solitaire/**.h",
-		"src/solitaire/**.cpp"
-	}
-
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-
-	filter { "options:emscripten", "configurations:Debug" }
-		--buildoptions { "--bind" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
-
-	filter { "options:emscripten", "configurations:Release" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
-end
-
-function m.ShaderReload.project()
+--[[function m.ShaderReload.project()
 	project "ShaderReload"
 	kind "ConsoleApp"
 
@@ -635,71 +569,7 @@ function m.ShaderReload.project()
 		"src/shaderreload/**.h",
 		"src/shaderreload/**.cpp"
 	}
-end
-
-function m.PhysicsTest.project()
-	project "PhysicsTest"
-	kind "ConsoleApp"
-
-	m.Graphics.link()
-	m.Application.link()
-	dep.box2d.link()
-
-	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include",
-		"thirdparty/sol",
-	}
-
-	includedirs {
-		"src",
-		"generated",
-		"resources"
-	}
-
-	files {
-		"src/physicstest/**.h",
-		"src/physicstest/**.cpp"
-	}
-
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-
-	filter { "options:emscripten", "configurations:Debug" }
-		--buildoptions { "--bind" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
-
-	filter { "options:emscripten", "configurations:Release" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
-end
-
-function m.Solitaire.projectLivepp()
-	project "Solitaire-live++"
-	kind "ConsoleApp"
-
-	m.Graphics.link()
-	m.Application.link()
-	m.Engine.link()
-
-	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include",
-		"thirdparty/sol",
-	}
-
-	includedirs {
-		"src",
-		"generated",
-		"resources"
-	}
-
-	files {
-		"src/solitaire/**.h",
-		"src/solitaire/**.cpp"
-	}
-
-	util.liveppCompat()
-end
+end]]
 
 function m.OffsetCalculator.project()
 	project "LsdjOffsetCalculator"

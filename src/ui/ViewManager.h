@@ -35,19 +35,20 @@ namespace rp {
 			_shared = &_sharedData;
 		}
 
-		void setResourceManager(ResourceManager* resourceManager) {
+		void setResourceManager(ResourceManager* resourceManager, FontManager* fontManager) {
 			_shared->resourceManager = resourceManager;
+			_shared->fontManager = fontManager;
 		}
 
-		void setScale(f32 scale) {
-			if (scale != _sharedData.scale) {
-				_sharedData.scale = scale;
-				propagateScaleChange(getChildren(), scale);
+		void setPixelDensity(f32 pixelDensity) {
+			if (pixelDensity != _sharedData.pixelDensity) {
+				_sharedData.pixelDensity = pixelDensity;
+				propagateScaleChange(getChildren(), pixelDensity);
 			}
 		}
 
-		f32 getScale() const {
-			return _sharedData.scale;
+		f32 getPixelDensity() const {
+			return _sharedData.pixelDensity;
 		}
 
 		bool onKey(VirtualKey::Enum key, bool down) final override {
@@ -272,18 +273,16 @@ namespace rp {
 			bool handled = false;
 
 			for (ViewPtr& view : views) {
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
+				if (view->isVisible() && view->getWorldArea().contains(position)) {
 					target.push_back(view);
 
 					if (!vectorContains(_mouseOver, view)) {
 						spdlog::info("Mouse entering {}", view->getName());
-						view->onMouseEnter(childPosition);
+						view->onMouseEnter(position - view->getWorldPosition());
 						handled = true;
 					}
 
-					handled |= propagateMouseEnter(childPosition, view->getChildren(), target);
+					handled |= propagateMouseEnter(position, view->getChildren(), target);
 				}
 			}
 
@@ -294,18 +293,16 @@ namespace rp {
 			bool handled = false;
 
 			for (ViewPtr& view : views) {
-				if (view != ctx.source && view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
+				if (view != ctx.source && view->isVisible() && view->getWorldArea().contains(position)) {
 					target.push_back(view);
 
 					if (!vectorContains(ctx.targets, view)) {
 						spdlog::info("Drag entering {}", view->getName());
-						view->onDragEnter(ctx, childPosition);
+						view->onDragEnter(ctx, position - view->getWorldPosition());
 						handled = true;
 					}
 
-					handled |= propagateDragEnter(childPosition, view->getChildren(), ctx, target);
+					handled |= propagateDragEnter(position, view->getChildren(), ctx, target);
 				}
 			}
 
@@ -348,11 +345,9 @@ namespace rp {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
 				ViewPtr view = views[i];
 
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
-					if (!propagateDragMove(childPosition, view->getChildren())) {
-						if (view->onDragMove(_shared->dragContext, childPosition)) {
+				if (view->isVisible() && view->getWorldArea().contains(position)) {
+					if (!propagateDragMove(position, view->getChildren())) {
+						if (view->onDragMove(_shared->dragContext, position - view->getWorldPosition())) {
 							return true;
 						}
 					}
@@ -458,7 +453,7 @@ namespace rp {
 		void calculateTotalArea(std::vector<ViewPtr>& views, Point offset, Rect& totalArea) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
-					Rect viewWorldArea(offset + view->getPosition(), view->getDimensions());
+					Rect viewWorldArea(offset + view->getPosition(), (Dimension)((DimensionF)view->getDimensions() * view->getScale()));
 					totalArea = totalArea.combine(viewWorldArea);
 
 					calculateTotalArea(view->getChildren(), viewWorldArea.position, totalArea);
@@ -483,19 +478,17 @@ namespace rp {
 		void propagateRender(Canvas& canvas, std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
-					PointT<f32> pos = (PointT<f32>)view->getPosition();
-					canvas.translate(pos);
+					canvas.setTranslation((PointF)view->getWorldPosition());
+					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
 					view->onRender(canvas);
-					canvas.translate(-pos);
 				}
 			}
 
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
-					PointT<f32> pos = (PointT<f32>)view->getPosition();
-					canvas.translate(pos);
+					canvas.setTranslation((PointF)view->getWorldPosition());
+					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
 					propagateRender(canvas, view->getChildren());
-					canvas.translate(-pos);
 				}
 			}
 		}

@@ -55,8 +55,6 @@ struct BiquadCoeffs {
 	f32 a2;
 };
 
-const f32 PI = 3.14159265359f;
-
 void lowPassCoeffs(f32 cutoff, f32 q, f32 sampleRate, BiquadCoeffs& target) {
 	f32 omega = 2.0f * PI * cutoff / sampleRate;
 	f32 s = sin(omega);

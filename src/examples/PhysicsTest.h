@@ -21,8 +21,8 @@ namespace rp {
 		TextureHandle _upTex;
 		FontHandle _font;
 
-		entt::entity _ground;
-		entt::entity _ball;
+		entt::entity _ground = entt::null;
+		entt::entity _ball = entt::null;
 
 		bool _physicsDebug = true;
 

@@ -21,9 +21,9 @@ namespace rp::app {
 		ViewPtr _view;
 
 	public:
-		Window(ResourceManager* resourceManager, ViewPtr view, uint32 id): _id(id), _view(view) {
-			_viewManager.setResourceManager(resourceManager);
-			_viewManager.setSizingPolicy(SizingPolicy::FitToContent);
+		Window(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id): _id(id), _view(view) {
+			_viewManager.setResourceManager(resourceManager, fontManager);
+			_viewManager.setSizingPolicy(view->getSizingPolicy());
 			_viewManager.setDimensions(view->getDimensions());
 			_viewManager.setName(view->getName());
 		}

@@ -14,7 +14,7 @@ void WaveView::updateSlice() {
 		return;
 	}
 
-	size_t sampleCount = (size_t)(getDimensions().w * getScalingFactor()) - 2;
+	size_t sampleCount = (size_t)(getDimensions().w * getWorldScale()) - 2;
 	WaveformUtil::generate(_audioData.slice(_slicePosition, _sliceSize), _waveform, sampleCount);
 }
 

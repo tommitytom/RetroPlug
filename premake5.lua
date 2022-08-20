@@ -71,7 +71,7 @@ workspace "RetroPlugAll"
 
 	filter { "system:windows", "options:not emscripten" }
 		cppdialect "C++latest"
-		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING" }
+		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING", "_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING" }
 		disablewarnings { "4834" }
 		buildoptions { "/Zc:__cplusplus" }
 
@@ -108,31 +108,30 @@ if _OPTIONS["emscripten"] == nil then
 				links { "pthread" }
 end
 
-group "Dependencies"
+group "1 - Dependencies"
 dep.allProjects()
 
-group "Framework"
+group "2 - Framework"
 projects.Foundation.project()
 projects.Graphics.project()
 projects.Audio.project()
 projects.Application.project()
 projects.Engine.project()
 
-group "RetroPlug"
+group "3 - RetroPlug"
 projects.SameBoy.project()
 projects.RetroPlug.project()
 projects.RetroPlugApp.project()
 projects.RetroPlugApp.projectLivepp()
 group ""
 
-projects.ExampleApplication.project()
-projects.ExampleApplication.projectLivepp()
-projects.BgfxBasic.project()
---projects.BgfxBasic.projectLivepp()
-projects.Solitaire.project()
-projects.Solitaire.projectLivepp()
-projects.ShaderReload.project()
+group "4 - Examples"
 
-projects.PhysicsTest.project()
+projects.ExampleApplication.project("CanvasTest")
+projects.ExampleApplication.project("PhysicsTest")
+projects.ExampleApplication.project("ShaderReload")
+projects.ExampleApplication.project("Solitaire")
+projects.ExampleApplication.project("UiScaling")
+group ""
 
 projects.Tests.project()

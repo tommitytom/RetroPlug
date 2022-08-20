@@ -32,7 +32,7 @@ void PhysicsTest::onInitialize() {
 		xoff += 50;
 	}
 
-	_font = getResourceManager().load<Font>("segoeui.ttf");
+	//_font = getResourceManager().load<Font>("segoeui.ttf");
 
 	//PhysicsUtil::addBox(_registry, _ground, RectF(110, 110, 100, 100));
 	//getCanvas().fillRect({ 110, 110, 100, 100 }, { 0, 1, 0, 1 });
@@ -120,7 +120,7 @@ void PhysicsTest::onRender(engine::Canvas& canvas) {
 
 	//getCanvas().texture(engine::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
 
-	canvas.setFont(_font);
+	//canvas.setFont(_font);
 	canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 	//canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));
 }

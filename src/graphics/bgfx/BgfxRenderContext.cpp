@@ -30,16 +30,15 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, Re
 	bgfxInit.type = bgfx::RendererType::OpenGL;
 	bgfxInit.resolution.width = _resolution.w;
 	bgfxInit.resolution.height = _resolution.h;
-	bgfxInit.resolution.reset = BGFX_RESET_VSYNC;
+	bgfxInit.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MSAA_X2;
 	bgfxInit.platformData.nwh = _nativeWindowHandle;
 
 	bgfx::init(bgfxInit);
 
 	_resourceManager.addProvider<FrameBuffer, BgfxFrameBufferProvider>();
 	_resourceManager.addProvider<Shader, BgfxShaderProvider>();
-	_resourceManager.addProvider<ShaderProgram, BgfxShaderProgramProvider>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
+	_resourceManager.addProvider<ShaderProgram>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
 	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
-
 	
 	TextureDesc whiteTextureDesc = TextureDesc{
 		.dimensions = { 8, 8 },
@@ -139,7 +138,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 				//| BGFX_STATE_WRITE_Z
 				//| BGFX_STATE_DEPTH_TEST_LESS
 				//| BGFX_STATE_CULL_CW
-				//| BGFX_STATE_MSAA
+				| BGFX_STATE_MSAA
 				;
 
 			switch (surface.primitive) {

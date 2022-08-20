@@ -48,22 +48,28 @@ namespace rp {
 		}
 
 		ResourceHandle load(std::string_view uri, entt::id_type resourceType) {
-			auto found = _providers.find(resourceType);
+			UriHash uriHash = entt::hashed_string(uri.data());
 
-			if (found != _providers.end()) {
-				std::shared_ptr<Resource> res = found->second->load(uri);
+			auto foundResource = _resources.find(uriHash);
+			if (foundResource != _resources.end()) {
+				return foundResource->second;
+			}
 
-				if (res) {
-					std::shared_ptr<ResourceHandleState> state = std::make_shared<ResourceHandleState>();
-					state->resource = std::move(res);
-					state->uri = std::string(uri);
-					state->loaded = true;
-					state->fromDisk = true;
+			auto foundProvider = _providers.find(resourceType);
 
-					_resources[entt::hashed_string(uri.data())] = ResourceHandle(state);
+			if (foundProvider != _providers.end()) {
+				std::shared_ptr<Resource> res = foundProvider->second->load(uri);
+				assert(res);
 
-					return ResourceHandle(state);
-				}
+				std::shared_ptr<ResourceHandleState> state = std::make_shared<ResourceHandleState>();
+				state->resource = std::move(res);
+				state->uri = std::string(uri);
+				state->loaded = true;
+				state->fromDisk = true;
+
+				_resources[uriHash] = ResourceHandle(state);
+
+				return ResourceHandle(state);
 			} else {
 				spdlog::error("Failed to load resource {}. A resource provider for type {} could not be found", resourceType);
 			}

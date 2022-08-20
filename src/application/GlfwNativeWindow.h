@@ -15,7 +15,7 @@ namespace rp::app {
 		std::shared_ptr<FrameBuffer> _frameBuffer;
 
 	public:
-		GlfwNativeWindow(ResourceManager* resourceManager, ViewPtr view, uint32 id) : Window(resourceManager, view, id) {}
+		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id) : Window(resourceManager, fontManager, view, id) {}
 		~GlfwNativeWindow();
 
 		void onCreate() override;

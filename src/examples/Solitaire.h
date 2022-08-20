@@ -107,10 +107,7 @@ namespace rp {
 		f32 _zoom = 1.0f;
 
 	public:
-		Solitaire() : View({ 1366, 768 }) {
-			setType<Solitaire>();
-			setName("Solitaire");
-		}
+		Solitaire() : View({ 1366, 768 }) { setType<Solitaire>(); }
 		~Solitaire() = default;
 
 		void onInitialize() override;

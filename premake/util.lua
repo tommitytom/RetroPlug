@@ -56,7 +56,7 @@ function util.setupPch(name, dir)
 end
 
 function util.createGeneratorProject()
-	group "Build"
+	group "0 - Build"
 
 	project "generator"
 		kind "Utility"
@@ -76,7 +76,7 @@ function util.createConfigureProject(includeDeps)
 		includeDepArg = " --include-deps"
 	end
 
-	group "Build"
+	group "0 - Build"
 
 	project "configure"
 		kind "Utility"

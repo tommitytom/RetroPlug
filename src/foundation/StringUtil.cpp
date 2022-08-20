@@ -15,6 +15,30 @@ std::wstring StringUtil::toWString(const std::string& str) {
 	return converterX.from_bytes(str);
 }
 
+std::string StringUtil::formatClassName(std::string_view className) {
+	std::string name;
+	size_t offset = className.find_last_of(" :");
+
+	if (offset != std::string::npos) {
+		bool lastLower = false;
+		offset += 1;
+
+		for (size_t i = offset; i < className.size(); ++i) {
+			if (lastLower && std::isupper(className[i])) {
+				name.push_back(' ');
+				name.push_back(className[i]);
+			} else {
+				name.push_back(className[i]);
+				lastLower = true;
+			}
+		}
+
+		return name;
+	}
+
+	return std::string(className);
+}
+
 std::string StringUtil::toString(const std::wstring& wstr) {
 	using convert_typeX = std::codecvt_utf8<wchar_t>;
 	std::wstring_convert<convert_typeX, wchar_t> converterX;
