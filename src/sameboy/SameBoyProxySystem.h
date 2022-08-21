@@ -13,6 +13,7 @@ namespace rp {
 		Uint8Buffer _rom;
 		Uint8Buffer _state;
 		GB_section_offsets_t _stateOffsets;
+		ImagePtr _video;
 
 	public:
 		SameBoyProxySystem(SystemId id): ProxySystem<SameBoySystem>(id) {}

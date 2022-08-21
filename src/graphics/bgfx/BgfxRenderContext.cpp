@@ -30,7 +30,7 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, Re
 	bgfxInit.type = bgfx::RendererType::OpenGL;
 	bgfxInit.resolution.width = _resolution.w;
 	bgfxInit.resolution.height = _resolution.h;
-	bgfxInit.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MSAA_X2;
+	bgfxInit.resolution.reset = BGFX_RESET_VSYNC;// | BGFX_RESET_MSAA_X2;
 	bgfxInit.platformData.nwh = _nativeWindowHandle;
 
 	bgfx::init(bgfxInit);
@@ -114,62 +114,64 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 
 		f32 _pixelRatio = 1.0f;
 
-		float viewMtx[16];
+		f32 viewMtx[16];
 		bx::mtxIdentity(viewMtx);
 
 		f32 dim[4] = { (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, (f32)_totalTime, _lastDelta };
+		
+		for (const engine::CanvasBatch& batch : geom.batches) {
+			f32 projMtx[16];
+			bx::mtxOrtho(projMtx, 0, dim[0], dim[1], 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 
-		for (const engine::CanvasSurface& surface : geom.surfaces) {
-			const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
-			const TextureHandle textureHandle = surface.texture.isValid() ? surface.texture : _defaultTexture;
+			//bgfx::setViewClear(viewId, BGFX_CLEAR_COLOR, 0x000000FF);
+			bgfx::setViewRect(batch.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
+			bgfx::setViewMode(batch.viewId, bgfx::ViewMode::Sequential);
+			bgfx::setViewTransform(batch.viewId, viewMtx, projMtx);
+			bgfx::setViewScissor(batch.viewId, (uint16)batch.scissor.x, (uint16)batch.scissor.y, (uint16)batch.scissor.w, (uint16)batch.scissor.h);
 
-			const BgfxShaderProgram& program = programHandle.getResourceAs<BgfxShaderProgram>();
-			const BgfxTexture& texture = textureHandle.getResourceAs<BgfxTexture>();
+			for (const engine::CanvasSurface& surface : batch.surfaces) {
+				const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
+				const TextureHandle textureHandle = surface.texture.isValid() ? surface.texture : _defaultTexture;
 
-			bgfx::setUniform(_resolutionUniform, dim);
+				const BgfxShaderProgram& program = programHandle.getResourceAs<BgfxShaderProgram>();
+				const BgfxTexture& texture = textureHandle.getResourceAs<BgfxTexture>();
 
-			float projMtx[16];
-			bx::mtxOrtho(projMtx, 0, (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
+				uint64 state = 0
+					| BGFX_STATE_WRITE_RGB
+					| BGFX_STATE_WRITE_A
+					| BGFX_STATE_BLEND_ALPHA
+					//| BGFX_STATE_WRITE_Z
+					//| BGFX_STATE_DEPTH_TEST_LESS
+					//| BGFX_STATE_CULL_CW
+					//| BGFX_STATE_MSAA
+					;
 
-			uint64 state = 0
-				| BGFX_STATE_WRITE_RGB
-				| BGFX_STATE_WRITE_A
-				| BGFX_STATE_BLEND_ALPHA
-				//| BGFX_STATE_WRITE_Z
-				//| BGFX_STATE_DEPTH_TEST_LESS
-				//| BGFX_STATE_CULL_CW
-				| BGFX_STATE_MSAA
-				;
+				switch (surface.primitive) {
+				case engine::RenderPrimitive::LineList:
+					state |= BGFX_STATE_PT_LINES;
+					if (_lineAA) state |= BGFX_STATE_LINEAA;
+					break;
+				case engine::RenderPrimitive::LineStrip:
+					state |= BGFX_STATE_PT_LINESTRIP;
+					if (_lineAA) state |= BGFX_STATE_LINEAA;
+					break;
+				case engine::RenderPrimitive::Points:
+					state |= BGFX_STATE_PT_POINTS;
+					break;
+				case engine::RenderPrimitive::TriangleStrip:
+					state |= BGFX_STATE_PT_TRISTRIP;
+					break;
+				}
 
-			switch (surface.primitive) {
-			case engine::RenderPrimitive::LineList:
-				state |= BGFX_STATE_PT_LINES;
-				if (_lineAA) state |= BGFX_STATE_LINEAA;
-				break;
-			case engine::RenderPrimitive::LineStrip:
-				state |= BGFX_STATE_PT_LINESTRIP;
-				if (_lineAA) state |= BGFX_STATE_LINEAA;
-				break;
-			case engine::RenderPrimitive::Points:
-				state |= BGFX_STATE_PT_POINTS;
-				break;
-			case engine::RenderPrimitive::TriangleStrip:
-				state |= BGFX_STATE_PT_TRISTRIP;
-				break;
+				bgfx::setUniform(_resolutionUniform, dim);
+				bgfx::setTexture(0, _textureUniform, texture.getBgfxHandle());
+
+				bgfx::setVertexBuffer(0, _vert);
+				bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
+
+				bgfx::setState(state);
+				bgfx::submit(batch.viewId, program.getBgfxHandle());
 			}
-
-			bgfx::setViewClear(surface.viewId, BGFX_CLEAR_COLOR, 0x000000FF);
-			bgfx::setViewRect(surface.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
-			bgfx::setViewMode(surface.viewId, bgfx::ViewMode::Sequential);
-			bgfx::setViewTransform(surface.viewId, viewMtx, projMtx);
-
-			bgfx::setTexture(0, _textureUniform, texture.getBgfxHandle());
-	
-			bgfx::setVertexBuffer(0, _vert);
-			bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
-
-			bgfx::setState(state);
-			bgfx::submit(surface.viewId, program.getBgfxHandle());
 		}
 	}
 }

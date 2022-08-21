@@ -64,8 +64,7 @@ void PhysicsTest::onRender(engine::Canvas& canvas) {
 			const b2Shape* shape = comp.fixture->GetShape();
 
 			switch (shape->GetType()) {
-			case b2Shape::Type::e_polygon:
-			{
+			case b2Shape::Type::e_polygon: {
 				const b2PolygonShape* polygon = static_cast<const b2PolygonShape*>(shape);
 
 				PointF points[8];
@@ -82,8 +81,7 @@ void PhysicsTest::onRender(engine::Canvas& canvas) {
 
 				break;
 			}
-			case b2Shape::Type::e_circle:
-			{
+			case b2Shape::Type::e_circle: {
 				const b2CircleShape* circle = static_cast<const b2CircleShape*>(shape);
 				PointF point = PhysicsUtil::convert(comp.body->GetWorldPoint(circle->m_p)) * scale;
 				f32 radius = circle->m_radius * scale;
@@ -91,7 +89,7 @@ void PhysicsTest::onRender(engine::Canvas& canvas) {
 				PointF angleLine = PointF(cos(angle), sin(angle)) * radius;
 
 				canvas
-					.circle(point, radius, Color4F(1, 0, 0, 1))
+					.fillCircle(point, radius, Color4F(1, 0, 0, 1))
 					.line(point, point + angleLine, Color4F(1, 1, 1, 1));
 
 				break;

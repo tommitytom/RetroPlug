@@ -12,8 +12,14 @@ namespace rp::engine {
 	class BgfxTextureProvider : public TypedResourceProvider<Texture> {
 	private:
 		bx::DefaultAllocator _alloc;
+		std::shared_ptr<Texture> _default;
 
 	public:
+		BgfxTextureProvider();
+		~BgfxTextureProvider() = default;
+
+		std::shared_ptr<Resource> getDefault() { return _default; }
+
 		std::shared_ptr<Resource> load(std::string_view uri) override;
 
 		std::shared_ptr<Resource> create(const TextureDesc& desc, std::vector<std::string>& deps) override;

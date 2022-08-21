@@ -13,8 +13,12 @@ void SameBoyProxySystem::setup(SameBoySystem& system) {
 void SameBoyProxySystem::process(uint32 frameCount) {
 	SystemIo* io = getStream().get();
 
-	if (io && io->output.state) {
-		io->output.state->copyTo(&_state);
+	if (io) {
+		if (io->output.state) {
+			io->output.state->copyTo(&_state);
+		}
+
+		_video = io->output.video;
 	}
 }
 

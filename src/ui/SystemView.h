@@ -41,6 +41,10 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
+		void onRender(Canvas& canvas) override {
+ 			TextureView::onRender(canvas);
+		}
+
 		const Image& getFrameBuffer() const {
 			return _frameBuffer;
 		}

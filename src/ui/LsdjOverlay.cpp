@@ -67,6 +67,11 @@ void LsdjOverlay::onMenu(Menu& menu) {
 }
 
 bool LsdjOverlay::onKey(VirtualKey::Enum key, bool down) {
+	if (key == VirtualKey::Tab) {
+		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
+		return false;
+	}
+
 	SystemPtr system = _system->getSystem();
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
 

@@ -16,11 +16,11 @@ FtglFont::~FtglFont() {
 }
 
 std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const char* fontData, size_t fontDataSize, f32 fontSize, std::string_view name) {
-	Dimension atlasSize(512, 512);
+	Dimension atlasSize(1024, 1024);
 
 	ftgl::texture_atlas_t* atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 3);
 	ftgl::texture_font_t* font = ftgl::texture_font_new_from_memory(atlas, fontSize, fontData, fontDataSize);
-	size_t missed = ftgl::texture_font_load_glyphs(font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+. ");
+	size_t missed = ftgl::texture_font_load_glyphs(font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ");
 
 	if (missed > 0) {
 		spdlog::error("Missed {} glyphs when loading {}", missed, name);

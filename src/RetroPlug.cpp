@@ -118,20 +118,19 @@ void RetroPlug::onUpdate(f32 delta) {
 
 	_state.processor.process(frameCount);
 
-	processOutput();
-
 	_project->saveIfRequired();
 }
 
 void RetroPlug::onRender(Canvas& canvas) {
 	// Scale?
 	canvas.fillRect(getDimensions(), Color4F(0, 0, 0, 1));
+	processOutput();
 }
 
 bool RetroPlug::onKey(VirtualKey::Enum key, bool down) {
 	if (key == VirtualKey::Tab) {
 		if (down) {
-			//_state.viewManager.findChild<GridOverlay>()->incrementSelection();
+			_state.gridOverlay->incrementSelection();
 		}
 
 		return true;

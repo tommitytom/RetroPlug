@@ -198,10 +198,6 @@ namespace rp::lsdj {
 		}
 
 		void pressKey(VirtualKey::Enum key) {
-			if (key == VirtualKey::Q) {
-				spdlog::info("q3 {}", key);
-			}
-
 			_state.input.keyStates[key] = true;
 			_state.input.keyPresses.push_back(key);
 		}

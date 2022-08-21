@@ -50,56 +50,48 @@ bool WaveView::onMouseScroll(PointT<f32> delta, Point position) {
 }
 
 void WaveView::onRender(Canvas& canvas) {
-	/*f32 scaleFactor = getScalingFactor();
-	RectT<f32> area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
+	f32 scaleFactor = getWorldScale();
+	RectF area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
 	f32 pixelWidth = 1.0f / scaleFactor;
 	f32 yMid = area.bottom() / 2;
 	f32 yScale = yMid - pixelWidth * 2;
-	NVGcontext* vg = getVg();
 
-	NVGcolor background = nvgRGBA(_theme.background.r, _theme.background.g, _theme.background.b, (uint8)(_theme.background.a * getAlpha()));
-	NVGcolor foreground = nvgRGBA(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha()));
-	NVGcolor midLine = nvgRGBA(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha() * 0.65f));
+	Color4F background = Color4(_theme.background.r, _theme.background.g, _theme.background.b, (uint8)(_theme.background.a * getAlpha()));
+	Color4F foreground = Color4(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha()));
+	Color4F midLine = Color4(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha() * 0.65f));
 
-	nvgStrokeWidth(vg, pixelWidth);
+	//nvgStrokeWidth(vg, pixelWidth);
 
 	// Draw background
-	nvgBeginPath(vg);
-	nvgRect(vg, area.x, area.y, area.w, area.h);
-	nvgFillColor(vg, background);
-	nvgFill(vg);
+	canvas.fillRect((Dimension)getDimensions(), background);
 
 	// Draw outline
-	nvgBeginPath(vg);
-	nvgRect(vg, area.x, area.y, area.w, area.h);
-	nvgStrokeColor(vg, foreground);
-	nvgStroke(vg);
+	canvas.strokeRect((DimensionF)getDimensions(), foreground);
 
 	// Draw mid line
-	nvgBeginPath(vg);
-	nvgMoveTo(vg, 0, yMid);
-	nvgLineTo(vg, area.w, yMid);
-	nvgStrokeColor(vg, midLine);
-	nvgStroke(vg);
+	canvas.line({ 0, yMid }, { area.w, yMid }, midLine);
 
-	auto& points = _waveform.linePoints;
+	std::vector<PointF> points = _waveform.linePoints;
 
-	if (points.size()) {
+	if (points.size() > 2) {
  		// Draw waveform lines
 
-		nvgBeginPath(vg);
-		nvgMoveTo(vg, pixelWidth, points[0].y * yScale + yMid);
+		//nvgBeginPath(vg);
+		//nvgMoveTo(vg, pixelWidth, points[0].y * yScale + yMid);
 
-		if (points.size() > 0) {
-			for (size_t i = 0; i < points.size(); ++i) {
-				nvgLineTo(vg, (points[i].x + 1.0f) / scaleFactor, points[i].y * yScale + yMid);
-			}
+		for (size_t i = 0; i < points.size(); ++i) {
+			points[i].x = (points[i].x + 1.0f) / scaleFactor;
+			points[i].y = (points[i].y * yScale) + yMid;
+
+			//nvgLineTo(vg, (points[i].x + 1.0f) / scaleFactor, points[i].y * yScale + yMid);
 		}
 
-		nvgStrokeColor(vg, foreground);
-		nvgStroke(vg);
+		canvas.lines(points, foreground);
 
-		if (_markers.size()) {
+		//nvgStrokeColor(vg, foreground);
+		//nvgStroke(vg);
+
+		/*if (_markers.size()) {
 			// Draw markers
 			f32 endOffset = _startOffset + (f32)_sliceSize;
 			f32 markerScale = ((f32)getDimensions().w / (f32)_sliceSize);
@@ -117,6 +109,6 @@ void WaveView::onRender(Canvas& canvas) {
 					nvgStroke(vg);
 				}
 			}
-		}
-	}*/
+		}*/
+	}
 }

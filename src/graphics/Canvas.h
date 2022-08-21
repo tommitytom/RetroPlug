@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <span>
+#include <stack>
 #include <unordered_set>
 #include <vector>
 
@@ -58,9 +59,13 @@ namespace rp::engine {
 		ShaderProgramHandle program;
 		size_t indexOffset = 0;
 		size_t indexCount = 0;
-		uint32 viewId = 0;
+	};
+
+	struct CanvasBatch {
+		uint32 viewId;
 		Rect viewArea;
-		f32 zoom = 1.0f;
+		Rect scissor;
+		std::vector<CanvasSurface> surfaces;
 	};
 
 	struct TextureRenderDesc {
@@ -73,7 +78,7 @@ namespace rp::engine {
 	struct CanvasGeometry {
 		std::vector<CanvasVertex> vertices;
 		std::vector<uint32> indices;
-		std::vector<CanvasSurface> surfaces;
+		std::vector<CanvasBatch> batches;
 	};
 
 	class Canvas {
@@ -83,12 +88,15 @@ namespace rp::engine {
 		Rect _viewPort;
 		Rect _res;
 		f32 _pixelRatio = 1.0f;
+		std::vector<Rect> _scissorStack;
 
 		uint32 _viewId;
 
 		TextureHandle _defaultTexture;
 		ShaderProgramHandle _defaultProgram;
 		FontHandle _defaultFont;
+
+		ShaderProgramHandle _program;
 
 		std::string _fontName = "Karla-Regular";
 		f32 _fontSize = 16.0f;
@@ -144,9 +152,11 @@ namespace rp::engine {
 		}
 
 		void clear() {
+			_program = _defaultProgram;
+
 			_geom.indices.clear();
 			_geom.vertices.clear();
-			_geom.surfaces.clear();
+			_geom.batches.clear();
 			clearTransform();
 		}
 
@@ -166,6 +176,16 @@ namespace rp::engine {
 
 		void setViewId(uint32 viewId) {
 			_viewId = viewId;
+		}
+
+		Canvas& pushScissor(const Rect& area) {
+			_scissorStack.push_back(area);
+			return *this;
+		}
+
+		Canvas& popScissor() {
+			_scissorStack.pop_back();
+			return *this;
 		}
 
 		Canvas& setTransform(PointF position, PointF scale = { 1, 1 }, f32 rotation = 0.0f) {
@@ -228,8 +248,7 @@ namespace rp::engine {
 
 		Canvas& points(const PointF* points, uint32 count);
 
-		template <const size_t PointCount>
-		Canvas& points(const std::array<PointF, PointCount>& points) { return this->points(points.data(), points.size()); }
+		Canvas& points(std::span<PointF> points) { return this->points(points.data(), (uint32)points.size()); }
 
 		Canvas& fillRect(const RectF& area, const Color4F& color);
 
@@ -257,9 +276,9 @@ namespace rp::engine {
 
 		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color) { return this->text({ x, y }, text, color); }
 
-		Canvas& circle(const PointF& pos, f32 radius) { return this->circle(pos, radius, _color); }
+		Canvas& fillCircle(const PointF& pos, f32 radius) { return this->fillCircle(pos, radius, _color); }
 
-		Canvas& circle(const PointF& pos, f32 radius, const Color4F& color);
+		Canvas& fillCircle(const PointF& pos, f32 radius, const Color4F& color);
 
 		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
@@ -268,7 +287,11 @@ namespace rp::engine {
 		Canvas& lines(std::span<PointF> points, const Color4F& color);
 
 	private:
-		void checkSurface(RenderPrimitive primitive, const TextureHandle& texture, const ShaderProgramHandle& program);
+		void checkSurface(RenderPrimitive primitive, const TextureHandle& texture);
+
+		inline CanvasSurface& getTopSurface() {
+			return _geom.batches.back().surfaces.back();
+		}
 
 		inline uint32 writeVertex(const PointF& pos, uint32 color) {
 			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
@@ -277,7 +300,7 @@ namespace rp::engine {
 
 		inline void writeTriangleIndices(uint32 v1, uint32 v2, uint32 v3) {
 			_geom.indices.insert(_geom.indices.end(), { v1, v2, v3 });
-			_geom.surfaces.back().indexCount += 3;
+			getTopSurface().indexCount += 3;
 		}
 	};
 }

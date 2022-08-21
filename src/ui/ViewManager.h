@@ -155,7 +155,28 @@ namespace rp {
 			return propagateClick(button, down, position, true);
 		}
 
+		void onMouseLeave() final override {
+			bool buttonHeld = false;
+
+			for (size_t i = 0; i < MouseButton::COUNT; ++i) {
+				buttonHeld |= _mouseState.buttons[i];
+			}
+
+			if (!buttonHeld) {
+				for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
+					ViewPtr& view = _mouseOver[i];
+
+					spdlog::info("Mouse leaving {}", view->getName());
+					view->onMouseLeave();
+				}
+
+				_mouseOver.clear();
+			}
+		}
+
 		bool onMouseMove(Point pos) final override {
+			spdlog::info("{}, {}", pos.x, pos.y);
+
 			bool handled = false;
 			DragContext& ctx = _shared->dragContext;
 
@@ -367,7 +388,8 @@ namespace rp {
 			}
 			
 			propagateUpdate(getChildren(), delta);
-			//handleRemovals();
+
+			_shared->removals.clear();
 
 			if (_shared->layoutDirty) {
 				updateLayout();
@@ -480,7 +502,17 @@ namespace rp {
 				if (view->isVisible()) {
 					canvas.setTranslation((PointF)view->getWorldPosition());
 					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
+
+					bool clip = view->getClip();
+					if (clip) {
+						canvas.pushScissor((Rect)view->getWorldArea());
+					}
+
 					view->onRender(canvas);
+
+					if (clip) {
+						canvas.popScissor();
+					}
 				}
 			}
 
@@ -488,7 +520,17 @@ namespace rp {
 				if (view->isVisible()) {
 					canvas.setTranslation((PointF)view->getWorldPosition());
 					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
+
+					bool clip = view->getClip();
+					if (clip) {
+						canvas.pushScissor((Rect)view->getWorldArea());
+					}
+
 					propagateRender(canvas, view->getChildren());
+
+					if (clip) {
+						canvas.popScissor();
+					}
 				}
 			}
 		}
@@ -509,11 +551,9 @@ namespace rp {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
 				ViewPtr view = views[i];
 
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
-					if (!propagateAction(childPosition, view->getChildren(), f)) {
-						if (f(view, childPosition)) {
+				if (view->isVisible() && view->getWorldArea().contains(position)) {
+					if (!propagateAction(position, view->getChildren(), f)) {
+						if (f(view, position - view->getWorldPosition())) {
 							return true;
 						}
 					}
@@ -528,10 +568,8 @@ namespace rp {
 			for (int32 i = (int32)views.size() - 1; i >= 0; --i) {
 				ViewPtr view = views[i];
 
-				if (view->isVisible() && view->getArea().contains(position)) {
-					Point childPosition = position - view->getArea().position;
-
-					if (!propagateDrop(paths, childPosition, view->getChildren())) {
+				if (view->isVisible() && view->getWorldArea().contains(position)) {
+					if (!propagateDrop(paths, position, view->getChildren())) {
 						if (view->onDrop(paths)) {
 							return true;
 						}

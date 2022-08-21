@@ -80,6 +80,11 @@ bool SamplerView::onDrop(const std::vector<std::string>& paths) {
 }
 
 bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
+	if (key == VirtualKey::Tab) {
+		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
+		return false;
+	}
+
 	ButtonType::Enum button = keyToButton(key);
 
 	if (key == VirtualKey::W) {
@@ -95,8 +100,6 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			}
 
 			updateWaveform();
-
-			return true;
 		} else if (key == VirtualKey::RightArrow) {
 			_samplerState.selectedKit++;
 
@@ -105,9 +108,9 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			}
 
 			updateWaveform();
-
-			return false;
 		}
+
+		return true;
 	}
 
 	if (key == VirtualKey::Esc) {
@@ -120,33 +123,35 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			menuView->setMenu(menu);
 			menuView->focus();
 		}
-	} else {
-		if (down) {
-			if (key == VirtualKey::D) {
-				_aHeld = true;
-			}
 
-			_ui.pressKey(key);
-		} else {
-			if (key == VirtualKey::D && _aHeld) {
-				_aHeld = false;
-				LsdjModelPtr model = _system->getModel<LsdjModel>();
-				if (model) {
-					model->setRequiresSave(true);
-				}
-			}
-
-			_ui.releaseKey(key);
-		}
-
-		if (button != ButtonType::MAX) {
-			if (down) {
-				_ui.pressButton(button);
-			} else {
-				_ui.releaseButton(button);
-			}
-		}
+		return true;
 	}
+
+	if (down) {
+		if (key == VirtualKey::D) {
+			_aHeld = true;
+		}
+
+		_ui.pressKey(key);
+	} else {
+		if (key == VirtualKey::D && _aHeld) {
+			_aHeld = false;
+			LsdjModelPtr model = _system->getModel<LsdjModel>();
+			if (model) {
+				model->setRequiresSave(true);
+			}
+		}
+
+		_ui.releaseKey(key);
+	}
+
+	if (button != ButtonType::MAX) {
+		if (down) {
+			_ui.pressButton(button);
+		} else {
+			_ui.releaseButton(button);
+		}
+	}	
 
 	return true;
 }

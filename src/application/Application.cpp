@@ -55,6 +55,8 @@ Application::Application() : _fontManager(_resourceManager), _windowManager(_res
 }
 
 Application::~Application() {
+	_audioManager = nullptr;
+
 	_windowManager.closeAll();
 
 	_renderContext->cleanup();
@@ -62,8 +64,6 @@ Application::~Application() {
 
 	_resourceManager = ResourceManager();
 	_canvas.destroy();
-
-	_audioManager = nullptr;
 
 	_renderContext = nullptr;
 	_mainWindow = nullptr;

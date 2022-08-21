@@ -10,6 +10,22 @@
 using namespace rp;
 using namespace rp::engine;
 
+BgfxTextureProvider::BgfxTextureProvider() {
+	TextureDesc desc = {
+		.dimensions = { 2, 2 },
+		.depth = 4,
+		.data = { 
+			0xFF, 0xFF, 0xFF, 0xFF, 
+			0xFF, 0xFF, 0xFF, 0xFF, 
+			0xFF, 0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF, 0xFF
+		}
+	};
+
+	std::vector<std::string> deps;
+	_default = std::static_pointer_cast<Texture>(create(desc, deps));
+}
+
 std::shared_ptr<Resource> BgfxTextureProvider::load(std::string_view uri) {
 	if (fs::exists(uri)) {
 		uintmax_t fileSize = fs::file_size(uri);
@@ -50,10 +66,14 @@ std::shared_ptr<Resource> BgfxTextureProvider::load(std::string_view uri) {
 			} else {
 				spdlog::error("Failed to load texture at {}: {}", uri, err.getMessage().getPtr());
 			}
+		} else {
+			spdlog::error("Failed to load texture at {}: The file is empty", uri);
 		}
+	} else {
+		spdlog::error("Failed to load texture at {}: The file does not exist", uri);
 	}
 
-	return nullptr;
+	return _default;
 }
 
 std::shared_ptr<Resource> BgfxTextureProvider::create(const TextureDesc& desc, std::vector<std::string>& deps) {
@@ -65,7 +85,7 @@ std::shared_ptr<Resource> BgfxTextureProvider::create(const TextureDesc& desc, s
 		mem = bgfx::copy(desc.data.data(), desc.data.size());
 	}
 
-	bgfx::TextureHandle handle = bgfx::createTexture2D(desc.dimensions.w, desc.dimensions.h, false, 1, format, 0);
+	bgfx::TextureHandle handle = bgfx::createTexture2D(desc.dimensions.w, desc.dimensions.h, false, 1, format, BGFX_SAMPLER_MIN_POINT|BGFX_SAMPLER_MAG_POINT);
 
 	if (mem) {
 		bgfx::updateTexture2D(handle, 0, 0, 0, 0, desc.dimensions.w, desc.dimensions.h, mem);

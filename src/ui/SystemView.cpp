@@ -23,6 +23,11 @@ bool SystemView::onDrop(const std::vector<std::string>& paths) {
 }
 
 bool SystemView::onKey(VirtualKey::Enum key, bool down) {
+	if (key == VirtualKey::Tab) {
+		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
+		return false;
+	}
+
 	if (key == VirtualKey::Esc) {
 		if (down) {
 			// Generate menu
@@ -93,7 +98,7 @@ void SystemView::buildMenu(Menu& target) {
 	AudioManager& audioManager = project->getAudioManager();
 
 	std::vector<std::string> audioDevices;
-	audioManager.getDeviceNames(audioDevices);
+	//audioManager.getDeviceNames(audioDevices);
 
 	root.separator()
 		.action("Reset System", [this]() {

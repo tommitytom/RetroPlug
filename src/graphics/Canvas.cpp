@@ -36,7 +36,8 @@ entt::id_type getPathUriHash(const std::filesystem::path& filePath) {
 }
 
 Canvas& Canvas::setProgram(ShaderProgramHandle program) {
-	checkSurface(_geom.surfaces.back().primitive, _geom.surfaces.back().texture, program);
+	TextureHandle tex = getTopSurface().texture;
+	checkSurface(getTopSurface().primitive, tex);
 	return *this;
 }
 
@@ -52,36 +53,66 @@ void Canvas::beginRender(Dimension res, f32 pixelRatio) {
 	_pixelRatio = pixelRatio;
 	_font = _defaultFont;
 
-	_geom.surfaces.push_back(CanvasSurface{
-		.primitive = RenderPrimitive::Triangles,
-		.texture = _defaultTexture,
-		.program = _defaultProgram,
+	_geom.batches.push_back(CanvasBatch {
 		.viewId = _viewId,
-		.viewArea = _viewPort
+		.viewArea = _viewPort,
+		.surfaces = {
+			CanvasSurface{
+				.primitive = RenderPrimitive::Triangles,
+				.texture = _defaultTexture,
+				.program = _defaultProgram,
+			}
+		}
 	});
 }
 
-void Canvas::checkSurface(RenderPrimitive primitive, const TextureHandle& texture, const ShaderProgramHandle& program) {
-	CanvasSurface& backSurf = _geom.surfaces.back();
+void Canvas::checkSurface(RenderPrimitive primitive, const TextureHandle& texture) {
+	Rect scissor = _scissorStack.empty() ? Rect() : _scissorStack.back();
+	CanvasSurface* topSurf = &getTopSurface();
+	CanvasBatch& topBatch = _geom.batches.back();
 
-	if (backSurf.indexCount == 0) {
-		backSurf.primitive = primitive;
-		backSurf.texture = texture;
-		backSurf.program = program;
-	} else if (backSurf.primitive != primitive || backSurf.texture != texture || backSurf.program != program) {
-		_geom.surfaces.push_back(CanvasSurface{
+	if (topBatch.scissor != scissor) {
+		if (topBatch.surfaces.size() == 1 && topSurf->indexCount == 0) {
+			topBatch.scissor = scissor;
+		} else {
+			_geom.batches.push_back(CanvasBatch{
+				.viewId = _viewId + (uint32)_geom.batches.size(),
+				.viewArea = _viewPort,
+				.scissor = scissor,
+				.surfaces = {
+					CanvasSurface{
+						.primitive = RenderPrimitive::Triangles,
+						.texture = _defaultTexture,
+						.program = _defaultProgram,
+						.indexOffset = topSurf->indexOffset + topSurf->indexCount
+					}
+				}
+			});
+		}
+
+		topSurf = &getTopSurface();
+	}
+
+	if (topSurf->indexCount == 0) {
+		topSurf->primitive = primitive;
+		topSurf->texture = texture;
+		topSurf->program = _program;
+	} else if (
+		topSurf->primitive != primitive ||
+		topSurf->texture != texture ||
+		topSurf->program != _program
+	) {
+		_geom.batches.back().surfaces.push_back(CanvasSurface{
 			.primitive = primitive,
 			.texture = texture,
-			.program = program,
-			.indexOffset = backSurf.indexOffset + backSurf.indexCount,
-			.viewId = _viewId,
-			.viewArea = _viewPort
+			.program = _program,
+			.indexOffset = topSurf->indexOffset + topSurf->indexCount
 		});
 	}
 }
 
 void Canvas::endRender() {
-
+	assert(_scissorStack.empty());
 }
 
 Canvas& Canvas::translate(PointF amount) {
@@ -123,7 +154,7 @@ Canvas& Canvas::setRotation(f32 rotation) {
 }
 
 Canvas& Canvas::points(const PointF* points, uint32 count) {
-	checkSurface(RenderPrimitive::Points, _defaultTexture, _defaultProgram);
+	checkSurface(RenderPrimitive::Points, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
 	uint32 v = (uint32)_geom.vertices.size();
@@ -133,13 +164,13 @@ Canvas& Canvas::points(const PointF* points, uint32 count) {
 		_geom.indices.push_back(v + i);
 	}
 
-	_geom.surfaces.back().indexCount += count;
+	getTopSurface().indexCount += count;
 
 	return *this;
 }
 
 Canvas& Canvas::polygon(const PointF* points, uint32 count) {
-	checkSurface(RenderPrimitive::Triangles, _defaultTexture, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
 	uint32 v = (uint32)_geom.vertices.size();
@@ -153,13 +184,13 @@ Canvas& Canvas::polygon(const PointF* points, uint32 count) {
 		v + 2, v + 1, v + 0
 	});
 
-	_geom.surfaces.back().indexCount += 6;
+	getTopSurface().indexCount += 6;
 
 	return *this;
 }
 
 Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color) {
-	checkSurface(RenderPrimitive::LineList, _defaultTexture, _defaultProgram);
+	checkSurface(RenderPrimitive::LineList, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -171,32 +202,38 @@ Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color)
 
 	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });
 
-	_geom.surfaces.back().indexCount += 2;
+	getTopSurface().indexCount += 2;
 
 	return *this;
 }
 
 Canvas& Canvas::lines(std::span<PointF> points, const Color4F& color) {
-	checkSurface(RenderPrimitive::LineStrip, _defaultTexture, _defaultProgram);
+	assert(points.size() >= 2);
+
+	checkSurface(RenderPrimitive::LineList, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
-	uint32 i = 0;
-	
-	for (const PointF& point : points) {
-		_geom.vertices.push_back(CanvasVertex{ _transform * point, agbr, { 0, 0 } });
-		_geom.indices.push_back(v + i);
-		i++;
+
+	const PointF* data = points.data();
+
+	for (uint32 i = 0; i < (uint32)points.size(); ++i) {
+		_geom.vertices.push_back(CanvasVertex{ _transform * data[i], agbr, { 0, 0 } });
+
+		if (i > 0) {
+			_geom.indices.push_back(v + (i - 1));
+			_geom.indices.push_back(v + i);
+		}
 	}
 
-	_geom.surfaces.back().indexCount += (uint32)points.size();
+	getTopSurface().indexCount += (uint32)points.size() * 2 - 2;
 
 	return *this;
 }
 
-Canvas& Canvas::circle(const PointF& pos, f32 radius, const Color4F& color) {
+Canvas& Canvas::fillCircle(const PointF& pos, f32 radius, const Color4F& color) {
 	const uint32 cirleSegments = 32;
-	checkSurface(RenderPrimitive::Triangles, _defaultTexture, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 
@@ -219,7 +256,7 @@ Canvas& Canvas::circle(const PointF& pos, f32 radius, const Color4F& color) {
 }
 
 Canvas& Canvas::fillRect(const RectF& area, const Color4F& color) {
-	checkSurface(RenderPrimitive::Triangles, _defaultTexture, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -236,13 +273,13 @@ Canvas& Canvas::fillRect(const RectF& area, const Color4F& color) {
 		v + 2, v + 1, v + 0
 	});
 
-	_geom.surfaces.back().indexCount += 6;
+	getTopSurface().indexCount += 6;
 
 	return *this;
 }
 
 Canvas& Canvas::texture(const TextureRenderDesc& desc) {
-	checkSurface(RenderPrimitive::Triangles, desc.textureHandle, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, desc.textureHandle);
 
 	uint32 agbr = toUint32Abgr(desc.color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -259,13 +296,13 @@ Canvas& Canvas::texture(const TextureRenderDesc& desc) {
 		v + 2, v + 1, v + 0
 	});
 
-	_geom.surfaces.back().indexCount += 6;
+	getTopSurface().indexCount += 6;
 
 	return *this;
 }
 
 Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const Color4F& color) {
-	checkSurface(RenderPrimitive::Triangles, texture, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -282,13 +319,13 @@ Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const C
 		v + 2, v + 1, v + 0
 	});
 
-	_geom.surfaces.back().indexCount += 6;
+	getTopSurface().indexCount += 6;
 
 	return *this;
 }
 
 Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const TileArea& uvArea, const Color4F& color) {
-	checkSurface(RenderPrimitive::Triangles, texture, _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, texture);
 
 	uint32 agbr = toUint32Abgr(color);
 	uint32 v = (uint32)_geom.vertices.size();
@@ -305,31 +342,20 @@ Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const T
 		v + 2, v + 1, v + 0
 	});
 
-	_geom.surfaces.back().indexCount += 6;
+	getTopSurface().indexCount += 6;
 
 	return *this;
 }
 
 Canvas& Canvas::strokeRect(const RectF& area, const Color4F& color) {
-	checkSurface(RenderPrimitive::LineStrip, _defaultTexture, _geom.surfaces.back().program);
+	std::array<PointF, 4> points = {
+		area.position,
+		area.topRight(),
+		area.bottomRight(),
+		area.bottomLeft()
+	};
 
-	uint32 agbr = toUint32Abgr(color);
-	uint32 v = (uint32)_geom.vertices.size();
-
-	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * area.position, agbr, { 0, 0 } },
-		CanvasVertex{ _transform * area.topRight(), agbr, { 0, 0 } },
-		CanvasVertex{ _transform * area.bottomRight(), agbr, { 0, 0 } },
-		CanvasVertex{ _transform * area.bottomLeft(), agbr, { 0, 0 } },
-	});
-
-	_geom.indices.insert(_geom.indices.end(), {
-		v + 0, v + 1, v + 2, v + 3, v + 0
-	});
-
-	_geom.surfaces.back().indexCount += 5;
-
-	return *this;
+	return lines(points, color);
 }
 
 DimensionF Canvas::measureText(std::string_view text, std::string_view fontName, f32 fontSize) {
@@ -356,7 +382,7 @@ Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& co
 	assert(_font.isValid());
 
 	FtglFont& font = _font.getResourceAs<FtglFont>();
-	checkSurface(RenderPrimitive::Triangles, font.getTexture(), _geom.surfaces.back().program);
+	checkSurface(RenderPrimitive::Triangles, font.getTexture());
 
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
@@ -364,20 +390,16 @@ Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& co
 	PointF vpos = _transform * pos;
 
 	if (_textAlign & TextAlignFlags::Top) {
-		vpos.y += textureFont->height;
+		vpos.y += textureFont->ascender;
 	}
 
 	for (size_t i = 0; i < text.size(); ++i) {
 		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
 
 		if (glyph) {
-			f32 kerning = 0.0f;
-
 			if (i > 0) {
-				kerning = texture_glyph_get_kerning(glyph, text.data() + i - 1);
+				vpos.x += ftgl::texture_glyph_get_kerning(glyph, text.data() + i - 1);
 			}
-
-			vpos.x += kerning;
 
 			f32 x0 = floor(vpos.x + glyph->offset_x);
 			f32 y0 = floor(vpos.y - glyph->offset_y);
@@ -402,7 +424,7 @@ Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& co
 				v + 2, v + 1, v + 0
 			});
 
-			_geom.surfaces.back().indexCount += 6;
+			getTopSurface().indexCount += 6;
 
 			vpos.x += glyph->advance_x;
 		}

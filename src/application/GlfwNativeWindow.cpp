@@ -72,18 +72,18 @@ void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager().onKey(convertKey(key), action == 1);
+	w->getViewManager().onKey(convertKey(key), action > 0);
 }
 
 void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	std::vector<std::string_view> p(count);
+	std::vector<std::string> p(count);
 
 	for (int i = 0; i < count; ++i) {
 		p[i] = paths[i];
 	}
 
-	//w->getView().onDrop(p);
+	w->getViewManager().onDrop(p);
 }
 
 void GlfwNativeWindow::windowCloseCallback(GLFWwindow* window) {

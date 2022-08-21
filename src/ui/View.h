@@ -77,6 +77,7 @@ namespace rp {
 		f32 _alpha = 1.0f;
 		bool _initialized = false;
 		bool _visible = true;
+		bool _clip = false;
 
 		SizingPolicy _sizingMode = SizingPolicy::None;
 		FocusPolicy _focusPolicy = FocusPolicy::None;
@@ -94,6 +95,14 @@ namespace rp {
 			}
 
 			removeChildren();
+		}
+
+		void setClip(bool clip) {
+			_clip = clip;
+		}
+
+		bool getClip() const {
+			return _clip;
 		}
 
 		ResourceManager& getResourceManager() {
@@ -277,8 +286,9 @@ namespace rp {
 		}
 
 		void remove() {
-			assert(getParent());
-			getParent()->removeChild(shared_from_this());
+			if (getParent()) {
+				getParent()->removeChild(shared_from_this());
+			}
 		}
 
 		void focus() {
@@ -388,6 +398,10 @@ namespace rp {
 			}
 		}
 
+		void removeChild(View* view) {
+			
+		}
+
 		void removeChild(ViewPtr view) {
 			for (size_t i = 0; i < _children.size(); ++i) {
 				if (_children[i] == view) {
@@ -409,11 +423,9 @@ namespace rp {
 				}
 			}
 
-			/*if (_shared) {
+			if (_shared) {
 				_shared->removals.push_back(view);
-			} else {
-
-			}*/
+			}
 		}
 
 		void removeChildren() {

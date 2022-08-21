@@ -70,9 +70,9 @@ void MenuView::updateScrollOffset(const PositionedMenuItem& item) {
 	}
 }
 
-void MenuView::flattenHierarchy(Menu& menu, PointT<f32>& pos) {
+void MenuView::flattenHierarchy(Menu& menu, PointF& pos) {
 	for (MenuItemBase* item : menu.getItems()) {
-		_flat.push_back({ RectT<f32>(pos.x, pos.y, 160, 0), item });
+		_flat.push_back({ RectF(pos.x, pos.y, 160, 0), item });
 
 		if (item->getType() == MenuItemType::SubMenu && _openMenus.count(item) > 0) {
 			_flat.back().area.h = _itemSpacing;
@@ -169,7 +169,7 @@ void MenuView::rebuildFlat() {
 
 	_flat.clear();
 
-	PointT<f32> offset = { 0, 0 };
+	PointF offset = { 0, 0 };
 	flattenHierarchy(*_root, offset);
 
 	_scrollStartOffset = 0;
@@ -271,7 +271,7 @@ enum class ArrowDirection {
 	Down
 };
 
-void drawArrow(Canvas& canvas, const RectT<f32>& area, ArrowDirection dir) {
+void drawArrow(Canvas& canvas, const RectF& area, ArrowDirection dir) {
 	std::array<PointF, 3> points;
 
 	switch (dir) {
@@ -297,25 +297,12 @@ void drawArrow(Canvas& canvas, const RectT<f32>& area, ArrowDirection dir) {
 		break;
 	}
 
-	/*nvgBeginPath(vg);
-	nvgRect(vg, area.x, area.y, area.w, area.h);
-	nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-	nvgFill(vg);*/
-
 	canvas.lines(points, Color4F(1, 1, 1, 1));
-
-	/*nvgBeginPath(vg);
-	nvgMoveTo(vg, points[0].x, points[0].y);
-	nvgLineTo(vg, points[1].x, points[1].y);
-	nvgLineTo(vg, points[2].x, points[2].y);
-	nvgStrokeWidth(vg, 1.0f);
-	nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 255));
-	nvgStroke(vg);*/
 }
 
 void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 	DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
-	PointT<f32> drawOffset = _drawOffset + _menuArea.position;
+	PointF drawOffset = _drawOffset + _menuArea.position;
 
 	//nvgScissor(vg, 0, 0, dim.w, dim.h);
 
@@ -323,7 +310,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 
 	for (size_t i = 0; i < _flat.size(); ++i) {
 		auto& item = _flat[i];
-		PointT<f32> itemOffset = item.area.position + drawOffset;
+		PointF itemOffset = item.area.position + drawOffset;
 
 		// TODO: Only render this item if it is visible
 
@@ -331,7 +318,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 		uint8 alpha = item.menuItem->isActive() ? 255 : 127;
 
 		if (i == _selectedIdx) {
-			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
+			RectF arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
 			drawArrow(canvas, arrowArea, ArrowDirection::Right);
 		}
 
@@ -349,13 +336,12 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 
 		if (item.menuItem->getType() == MenuItemType::SubMenu) {
 			const f32 ARROW_SIZE = 2.0f;
-			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
+			RectF arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
 			arrowArea.x += 50;
 			arrowArea.y += 2;
-
-			f32 bounds[4];
-			//f32 adv = nvgTextBounds(vg, item.area.x, item.area.y, item.menuItem->getName().c_str(), nullptr, bounds);
-			arrowArea.x = bounds[2] + drawOffset.x + 5.0f;
+			
+			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), "PlatNomor.ttf", _fontSize);
+			arrowArea.x = drawOffset.x + 5.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Down);
 		}
@@ -364,7 +350,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			const f32 CHECK_BOX_SIZE = _itemSpacing * 0.6f;
 			Select* select = item.menuItem->as<Select>();
 
-			RectT<f32> checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
+			RectF checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
 
 			/*nvgBeginPath(vg);
 			nvgRect(vg, checkboxArea.x, checkboxArea.y, checkboxArea.w, checkboxArea.h);
@@ -373,7 +359,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			nvgStroke(vg);
 
 			if (select->getChecked()) {
-				RectT<f32> checkArea = checkboxArea.shrink(1.5f);
+				RectF checkArea = checkboxArea.shrink(1.5f);
 
 				nvgBeginPath(vg);
 				nvgMoveTo(vg, checkArea.x, checkArea.y);
@@ -390,20 +376,19 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			MultiSelect* multiSelect = item.menuItem->as<MultiSelect>();
 
 			const f32 ARROW_SIZE = 2.0f;
-			RectT<f32> arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
+			RectF arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
 			arrowArea.x += 50;
 			arrowArea.y += 1;
 
-			f32 bounds[4];
-			//f32 adv = nvgTextBounds(vg, item.area.x, item.area.y, item.menuItem->getName().c_str(), nullptr, bounds);
-			arrowArea.x = bounds[2] + drawOffset.x + 50.0f;
+			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), "PlatNomor.ttf", _fontSize);
+			arrowArea.x = drawOffset.x + 50.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Left);
 
 			auto& selectItems = multiSelect->getItems();
 			const std::string& selected = selectItems[multiSelect->getValue()];
 
-			f32 selectedBounds[4];
+			//f32 selectedBounds[4];
 			//f32 selectedWidth = nvgTextBounds(vg, 0, 0, selected.c_str(), nullptr, selectedBounds);
 
 			drawText(canvas, item.area.x + 80.0f, item.area.y, selected, COLOR_WHITE);
@@ -429,12 +414,13 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 }
 
 void MenuView::onRender(Canvas& canvas) {
-	canvas.setFont("PlatNomor.ttf", 9.0f);
-	canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
-
+	setClip(true);
 	_fontSize = 9.0f;
 	_itemSpacing = 12.0f;
 	_separatorSpacing = 7.0f;
+	
+	canvas.setFont("PlatNomor.ttf", _fontSize);
+	canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
 
 	if (_root) {
 		rebuildFlat();

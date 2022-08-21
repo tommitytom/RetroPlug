@@ -41,7 +41,7 @@ bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point pos) 
 		std::vector<ViewPtr>& children = _grid->getChildren();
 
 		for (int32 i = (int32)children.size() - 1; i >= 0; --i) {
-			if (children[i]->getArea().contains(pos)) {
+			if (children[i]->getWorldArea().contains(pos)) {
 				setSelected((ViewIndex)i);
 				break;
 			}
