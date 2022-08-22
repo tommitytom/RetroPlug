@@ -6,11 +6,6 @@
 #include "node/AudioGraph.h"
 
 namespace rp {
-	constexpr f32 PI = 3.14159265359f;
-	constexpr f32 PI2 = PI * 2;
-
-	
-
 	struct SwapSystemMessage {
 		SystemPtr system;
 	};

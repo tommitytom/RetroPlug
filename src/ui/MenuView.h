@@ -93,8 +93,8 @@ namespace rp {
 
 	class MenuView : public View {
 	private:
-		f32 _fontSize = 12.0f;
-		FontHandle _font;
+		std::string _fontName = "PlatNomor.ttf";
+		f32 _fontSize = 9.0f;
 
 		f32 _indentSize = 10.0f;
 		f32 _itemSpacing = 20.0f;

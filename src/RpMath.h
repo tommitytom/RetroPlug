@@ -30,7 +30,25 @@ namespace rp {
 		bool operator==(Color4 color) const {
 			return r == color.r && g == color.g && b == color.b && a == color.a;
 		}
+
+		static const Color4 clear;
+		static const Color4 white;
+		static const Color4 black;
+		static const Color4 red;
+		static const Color4 blue;
+		static const Color4 green;
+		static const Color4 lightGrey;
+		static const Color4 darkGrey;
 	};
+
+	inline const Color4 Color4::clear = Color4(0, 0, 0, 0);
+	inline const Color4 Color4::white = Color4(255, 255, 255, 255);
+	inline const Color4 Color4::black = Color4(0, 0, 0, 255);
+	inline const Color4 Color4::red = Color4(255, 0, 0, 255);
+	inline const Color4 Color4::blue = Color4(0, 0, 255, 255);
+	inline const Color4 Color4::green = Color4(0, 255, 0, 255);
+	inline const Color4 Color4::lightGrey = Color4(170, 170, 170, 255);
+	inline const Color4 Color4::darkGrey = Color4(50, 50, 50, 255);
 
 	struct Color4F {
 		f32 r = 0;
@@ -46,11 +64,25 @@ namespace rp {
 		bool operator==(Color4F color) const {
 			return r == color.r && g == color.g && b == color.b && a == color.a;
 		}
+
+		static const Color4F clear;
+		static const Color4F white;
+		static const Color4F black;
+		static const Color4F red;
+		static const Color4F blue;
+		static const Color4F green;
+		static const Color4F lightGrey;
+		static const Color4F darkGrey;
 	};
 
-	const static Color4F COLOR_RED = Color4F(1.0f, 0.0f, 0.0f, 1.0f);
-	const static Color4F COLOR_GREEN = Color4F(0.0f, 1.0f, 0.0f, 1.0f);
-	const static Color4F COLOR_BLUE = Color4F(0.0f, 0.0f, 1.0f, 1.0f);
+	inline const Color4F Color4F::clear = Color4F(0.0f, 0.0f, 0.0f, 0.0f);
+	inline const Color4F Color4F::white = Color4F(1.0f, 1.0f, 1.0f, 1.0f);
+	inline const Color4F Color4F::black = Color4F(0.0f, 0.0f, 0.0f, 1.0f);
+	inline const Color4F Color4F::red = Color4F(1.0f, 0.0f, 0.0f, 1.0f);
+	inline const Color4F Color4F::blue = Color4F(0.0f, 0.0f, 1.0f, 1.0f);
+	inline const Color4F Color4F::green = Color4F(0.0f, 1.0f, 0.0f, 1.0f);
+	inline const Color4F Color4F::lightGrey = Color4F(0.66f, 0.66f, 0.66f, 1.0f);
+	inline const Color4F Color4F::darkGrey = Color4F(0.2f, 0.2f, 0.2f, 1.0f);
 
 	template <typename T>
 	struct PointT {

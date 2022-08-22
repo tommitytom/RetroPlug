@@ -131,6 +131,7 @@ projects.ExampleApplication.project("CanvasTest")
 projects.ExampleApplication.project("PhysicsTest")
 projects.ExampleApplication.project("ShaderReload")
 projects.ExampleApplication.project("Solitaire")
+projects.ExampleApplication.project("UiDocking")
 projects.ExampleApplication.project("UiScaling")
 group ""
 

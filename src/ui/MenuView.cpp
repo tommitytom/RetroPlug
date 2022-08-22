@@ -255,13 +255,6 @@ void MenuView::drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, Col
 	y += _menuArea.y + _drawOffset.y;
 
 	canvas.text(x, y, text, color);
-
-	/*nvgFontSize(vg, _fontSize);
-	nvgFontFace(vg, "PlatNomor");
-	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-	nvgFillColor(vg, color);
-	nvgStrokeColor(vg, color);
-	nvgText(vg, x, y, text.data(), NULL);*/
 }
 
 enum class ArrowDirection {
@@ -304,8 +297,6 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 	DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
 	PointF drawOffset = _drawOffset + _menuArea.position;
 
-	//nvgScissor(vg, 0, 0, dim.w, dim.h);
-
 	canvas.fillRect(getDimensions(), Color4F(0, 0, 0, 0.8f));
 
 	for (size_t i = 0; i < _flat.size(); ++i) {
@@ -324,6 +315,9 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 
 		if (item.menuItem->getType() != MenuItemType::Separator) {
 			drawText(canvas, item.area.x, item.area.y, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
+
+			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
+			
 		} else {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
 
@@ -336,11 +330,14 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 
 		if (item.menuItem->getType() == MenuItemType::SubMenu) {
 			const f32 ARROW_SIZE = 2.0f;
-			RectF arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
+
+			RectF arrowArea(itemOffset.x, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
 			arrowArea.x += 50;
 			arrowArea.y += 2;
+
+			//_menuArea.x + _drawOffset.x
 			
-			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), "PlatNomor.ttf", _fontSize);
+			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
 			arrowArea.x = drawOffset.x + 5.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Down);
@@ -380,7 +377,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			arrowArea.x += 50;
 			arrowArea.y += 1;
 
-			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), "PlatNomor.ttf", _fontSize);
+			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
 			arrowArea.x = drawOffset.x + 50.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Left);
@@ -397,20 +394,6 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			drawArrow(canvas, arrowArea, ArrowDirection::Right);
 		}
 	}
-
-	// Top gradient
-	/*nvgBeginPath(vg);
-	nvgRect(vg, 0, 0, dim.w, _menuArea.y);
-	nvgFillPaint(vg, nvgLinearGradient(vg, 0, 5, 0, 10, nvgRGBA(0, 0, 0, 255), nvgRGBA(0, 0, 0, 0)));
-	nvgFill(vg);
-
-	// Bottom gradient
-	nvgBeginPath(vg);
-	nvgRect(vg, 0, dim.h - 10, dim.w, _menuArea.y);
-	nvgFillPaint(vg, nvgLinearGradient(vg, 0, dim.h - 5, 0, dim.h - 10, nvgRGBA(0, 0, 0, 255), nvgRGBA(0, 0, 0, 0)));
-	nvgFill(vg);*/
-
-	//nvgResetScissor(vg);
 }
 
 void MenuView::onRender(Canvas& canvas) {
@@ -418,8 +401,8 @@ void MenuView::onRender(Canvas& canvas) {
 	_fontSize = 9.0f;
 	_itemSpacing = 12.0f;
 	_separatorSpacing = 7.0f;
-	
-	canvas.setFont("PlatNomor.ttf", _fontSize);
+
+	canvas.setFont(_fontName, _fontSize);
 	canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
 
 	if (_root) {

@@ -1,28 +1,23 @@
-#include "ExampleApplication.h"
+#include "UiDocking.h"
 
 #include <future>
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include <stb/stb_truetype.h>
-
-#include <GLFW/glfw3.h>
-
-#include <bx/bx.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/platform.h>
 #include <spdlog/spdlog.h>
 
-#include "util/fs.h"
-
+#include "ui/DockWindow.h"
+#include "ui/TabView.h"
+#include "ui/Colors.h"
+#include "ui/DockTabView.h"
 #include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
+
+#include "util/fs.h"
 #include "util/AudioLoaderUtil.h"
 
-#include "node/NodeGraph.h"
 #include "core/RetroPlugNodes.h"
+
+#include "node/NodeGraph.h"
 #include "node/AudioGraph.h"
-#include "ui/VerticalSpliiter.h"
-#include "ui/dock/DockWindow.h"
 
 using namespace rp;
 
@@ -50,19 +45,6 @@ void testNodeGraph() {
 	nodeGraph.onProcess();
 }
 
-const bgfx::ViewId kClearView = 0;
-const bool s_showStats = false;
-
-#include "ui/VerticalSpliiter.h"
-
-const Color4 COLOR_BLACK = Color4(0, 0, 0, 255);
-const Color4 COLOR_WHITE = Color4(255, 255, 255, 255);
-const Color4 COLOR_LIGHT_GREY = Color4(170, 170, 170, 255);
-const Color4 COLOR_DARK_GREY = Color4(50, 50, 50, 255);
-const Color4 COLOR_RED = Color4(255, 0, 0, 255);
-const Color4 COLOR_GREEN = Color4(0, 255, 0, 255);
-const Color4 COLOR_BLUE = Color4(0, 0, 255, 255);
-
 class DraggablePanel : public PanelView {
 private:
 	Point _clickPos;
@@ -82,7 +64,7 @@ public:
 	bool onMouseMove(Point position) override {
 		if (_mouseDown) {
 			int32 dist = (position - _clickPos).magnitude();
-			
+
 			if (dist > 10) {
 				beginDrag(nullptr);
 			}
@@ -104,9 +86,9 @@ public:
 
 	void onDragEnter(DragContext& ctx, Point position) override {}
 
-	bool onDragMove(DragContext& ctx, Point position) override { 
+	bool onDragMove(DragContext& ctx, Point position) override {
 		ctx.source->setPosition(position);
-		return true; 
+		return true;
 	}
 
 	void onDragLeave(DragContext& ctx) override {}
@@ -117,13 +99,8 @@ public:
 	}
 };
 
-#include "ui/TabView.h"
-#include "ui/Colors.h"
-
-#include "ui/dock/DockTabView.h"
-
-ExampleApplication::ExampleApplication() : View({ 1024, 768 }) {
-	setType<ExampleApplication>();
+UiDocking::UiDocking() : View({ 1024, 768 }) {
+	setType<UiDocking>();
 	setName("Example Application");
 }
 
@@ -131,7 +108,7 @@ bool isApproximately(f32 v, f32 target, f32 epsilon) {
 	return v >= target - epsilon && v <= target + epsilon;
 }
 
-void ExampleApplication::onInitialize() {
+void UiDocking::onInitialize() {
 	auto rootPanel = addChild<Dock>("Root Panel");
 	//rootPanel->setDimensions({ 800, 600 });
 	rootPanel->setSizingPolicy(SizingPolicy::FitToParent);
@@ -211,13 +188,13 @@ void ExampleApplication::onInitialize() {
 
 	/*_audioManager.setCallback([&](f32* output, const f32* input, uint32 frameCount) {
 		_audioProcessor->process(output, input, frameCount);
-		
+
 		auto outputNode = std::static_pointer_cast<OutputProcessor>(_audioProcessor->getNodes()[0]);
 		AudioBuffer buffer = outputNode->getAudioInput(0);
 		assert(buffer.size() == frameCount);
 
 		memset(output, 0, frameCount * sizeof(f32) * 2);
-		
+
 		for (size_t i = 0; i < frameCount; ++i) {
 			output[i * 2] = buffer.getBuffer().get(i) * 0.1f;
 			output[i * 2 + 1] = output[i];
@@ -227,16 +204,16 @@ void ExampleApplication::onInitialize() {
 	_audioManager.start();*/
 }
 
-void ExampleApplication::onResize(Dimension dimensions) {
+void UiDocking::onResize(Dimension dimensions) {
 	//bgfx::reset((uint32_t)w, (uint32_t)h, BGFX_RESET_VSYNC);
 	//bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
 }
 
-/*void ExampleApplication::onDrop(int count, const char** paths) {
-	
+/*void UiDocking::onDrop(int count, const char** paths) {
+
 }*/
 
-bool ExampleApplication::onKey(VirtualKey::Enum key, bool down) {
+bool UiDocking::onKey(VirtualKey::Enum key, bool down) {
 	if (key == VirtualKey::Space && down) {
 		generateWaveform();
 		return true;
@@ -245,7 +222,7 @@ bool ExampleApplication::onKey(VirtualKey::Enum key, bool down) {
 	return false;
 }
 
-void ExampleApplication::generateWaveform() {
+void UiDocking::generateWaveform() {
 	Float32Buffer samples;
 	AudioLoaderUtil::load("c:\\temp\\telewizor.wav", samples);
 	size_t sampleCount = samples.size();

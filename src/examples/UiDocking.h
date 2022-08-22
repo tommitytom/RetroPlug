@@ -4,13 +4,13 @@
 #include "ui/ViewManager.h"
 
 #include "ui/WaveView.h"
-#include "ui/VerticalSpliiter.h"
-#include "ui/dock/Dock.h"
+#include "ui/VerticalSplitter.h"
+#include "ui/Dock.h"
 #include "node/AudioGraph.h"
 #include "core/RetroPlugNodes.h"
 
 namespace rp {
-	class ExampleApplication final : public View {
+	class UiDocking final : public View {
 	private:
 		bool _ready = false;
 
@@ -28,8 +28,8 @@ namespace rp {
 		//std::shared_ptr<OutputNode> _outputNode;
 
 	public:
-		ExampleApplication();
-		~ExampleApplication() {}
+		UiDocking();
+		~UiDocking() {}
 
 		void onResize(Dimension dimensions) override;
 

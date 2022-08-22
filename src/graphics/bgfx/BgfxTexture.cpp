@@ -82,7 +82,7 @@ std::shared_ptr<Resource> BgfxTextureProvider::create(const TextureDesc& desc, s
 
 	if (desc.data.size()) {
 		assert(desc.data.size() == desc.dimensions.w * desc.dimensions.h * desc.depth);
-		mem = bgfx::copy(desc.data.data(), desc.data.size());
+		mem = bgfx::copy(desc.data.data(), (uint32)desc.data.size());
 	}
 
 	bgfx::TextureHandle handle = bgfx::createTexture2D(desc.dimensions.w, desc.dimensions.h, false, 1, format, BGFX_SAMPLER_MIN_POINT|BGFX_SAMPLER_MAG_POINT);
