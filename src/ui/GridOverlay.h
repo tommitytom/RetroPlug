@@ -4,7 +4,7 @@
 #include "SystemView.h"
 #include "core/Project.h"
 
-namespace rp {
+namespace fw {
 	enum class HighlightMode {
 		Alpha,
 		Outline

@@ -5,7 +5,7 @@
 #include "core/SystemProcessor.h"
 #include "util/fs.h"
 
-using namespace rp;
+using namespace fw;
 
 bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& fileManager, Project& project) {
 	std::vector<std::string_view> projectPaths;
