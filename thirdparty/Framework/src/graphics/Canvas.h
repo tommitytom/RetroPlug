@@ -125,6 +125,7 @@ namespace fw::engine {
 			_defaultTexture = nullptr;
 			_defaultProgram = nullptr;
 			_defaultFont = nullptr;
+			_program = nullptr;
 			_font = nullptr;
 			_invalidUris.clear();
 			_geom = CanvasGeometry();

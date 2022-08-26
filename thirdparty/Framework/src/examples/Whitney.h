@@ -24,11 +24,11 @@ namespace fw {
 			setSizingPolicy(SizingPolicy::FitToParent);
 		}
 		~Whitney() = default;
-
+		 
 		void onInitialize() override {
 			_circle = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\circle-512.png");
 
-			for (size_t i = 0; i < 20000; ++i) {
+			for (size_t i = 0; i < 2000; ++i) {
 				_dots.push_back(Dot{
 					.color = Color4F::white
 				});

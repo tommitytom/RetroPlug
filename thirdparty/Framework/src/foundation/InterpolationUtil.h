@@ -1,6 +1,6 @@
 #pragma once
 
-#include <math.h>
+#include <cmath>
 
 #include "foundation/DataBuffer.h"
 #include "foundation/MathUtil.h"

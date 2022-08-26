@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Input.h"
+#include "foundation/Input.h"
 
 namespace fw {
 	static ButtonType::Enum keyToButton(VirtualKey::Enum key) {
