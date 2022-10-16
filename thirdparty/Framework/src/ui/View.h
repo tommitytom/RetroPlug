@@ -72,6 +72,11 @@ namespace fw {
 		bool down;
 	};
 
+	struct MouseScrollEvent {
+		PointT<f32> delta;
+		Point position;
+	};
+
 	class View : public std::enable_shared_from_this<View> {
 	private:
 		struct Shared {
@@ -137,6 +142,8 @@ namespace fw {
 		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
 
+			assert(!source->hasSubscription<T>(shared_from_this()));
+
 			source->_subscriptions[eventType].push_back(Subscription{
 				.target = std::weak_ptr<View>(shared_from_this()),
 				.handler = [func = std::move(func)](const entt::any& v) { func(); }
@@ -148,6 +155,8 @@ namespace fw {
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
+
+			assert(!source->hasSubscription<T>(shared_from_this()));
 
 			source->_subscriptions[eventType].push_back(Subscription{
 				.target = std::weak_ptr<View>(shared_from_this()),

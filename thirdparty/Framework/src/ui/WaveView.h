@@ -7,6 +7,10 @@
 namespace fw {
 	const f32 WAVEFORM_SCALE = 1.0f;
 
+	struct ZoomChangedEvent {
+		f32 zoom = 1.0f;
+	};
+
 	class WaveView final : public View {
 	public:
 		struct Theme {

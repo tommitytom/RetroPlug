@@ -161,9 +161,11 @@ namespace fw {
 		bool _loop = true;
 		bool _finishing = false;
 
+		f32 _sampleRate = 0;
+
 	public:
-		GranularTimeStretch() {}
-		GranularTimeStretch(StereoAudioBuffer&& input) : _input(std::move(input)) {}
+		GranularTimeStretch(f32 sampleRate = 48000.0f): _sampleRate(sampleRate) {}
+		GranularTimeStretch(StereoAudioBuffer&& input, f32 sampleRate) : _input(std::move(input)), _sampleRate(sampleRate) {}
 		~GranularTimeStretch() = default;
 
 		void updateCoeffs() {
@@ -193,12 +195,13 @@ namespace fw {
 			}
 		}
 
-		void setGrainSize(uint32 grainSize) {
-			_grainSize = grainSize;
+		void setGrainSize(f32 grainSize) {
+			_grainSize = (uint32)(grainSize * (_sampleRate / 1000.0f));
 			updateCoeffs();
 		}
 
 		void setStretch(f32 stretch) {
+			assert(stretch >= 1.0f);
 			_stretch = stretch;
 		}
 

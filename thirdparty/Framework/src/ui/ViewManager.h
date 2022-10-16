@@ -547,6 +547,7 @@ namespace fw {
 				Point childPosition = position - _mouseOver[i]->getWorldPosition();
 
 				if (_mouseOver[i]->onMouseScroll(delta, childPosition)) {
+					_mouseOver[i]->emit(MouseScrollEvent{ .delta = delta, .position = position });
 					return true;
 				}
 			}

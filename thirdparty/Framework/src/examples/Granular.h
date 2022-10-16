@@ -53,10 +53,27 @@ namespace fw {
 		StereoAudioBuffer buffer;
 	};
 
+	struct NoteParameters {
+		union {
+			struct {
+				f32 amp;
+				f32 pitch;
+				f32 stretch;
+				f32 overlap;
+				f32 grainSize;
+			};
+			f32 values[5] = { 0.0f };
+		};
+	};
+
+	struct Parameters {
+		NoteParameters noteParameters;
+	};
+
 	struct Note {
 		StereoAudioBuffer buffer;
 		uint64 offset = 0;
-		// TODO: Include settings
+		NoteParameters parameters;
 
 		bool contains(uint64 pos) {
 			if (!buffer.isEmpty()) {
@@ -177,10 +194,17 @@ namespace fw {
 	private:
 		GranularTimeStretch _timeStretch;
 		f32 _amp = 1.0f;
+		f32 _sampleRate;
 
 	public:
-		GrainSamplerVoice(StereoAudioBuffer&& buffer) {
+		GrainSamplerVoice(StereoAudioBuffer&& buffer, const NoteParameters& params, f32 sampleRate): _sampleRate(sampleRate), _timeStretch(sampleRate) {
 			_timeStretch.setInput(std::move(buffer));
+
+			setAmp(params.amp);
+			getTimeStretch().setPitch(params.pitch);
+			getTimeStretch().setStretch(params.stretch);
+			getTimeStretch().setOverlap(params.overlap);
+			getTimeStretch().setGrainSize(params.grainSize);
 		}
 
 		void setAmp(f32 amp) {
@@ -213,6 +237,8 @@ namespace fw {
 		std::array<Note, 128> _notes;
 		f32 _amp = 0.0f;
 
+		Parameters _parameters;
+
 	public:
 		MyAudioProceessor(EventNode&& eventNode, const NoteArray& notes): _eventNode(std::move(eventNode)), _notes(notes) {
 			_eventNode.subscribe<ParameterChangeEvent>([&](const ParameterChangeEvent& ev) {
@@ -222,15 +248,17 @@ namespace fw {
 			});
 
 			_eventNode.subscribe<NoteParameterChangeEvent>([&](const NoteParameterChangeEvent& ev) {
+				_notes[ev.note].parameters.values[(uint32)ev.type - 1] = ev.value;
+				
 				GrainSamplerVoice* voice = (GrainSamplerVoice*)_voiceManager.getVoiceForNote(ev.note);
 				
 				if (voice) {
 					switch (ev.type) {
-					case ParameterType::Amp: voice->setAmp(ev.value); break;
-					case ParameterType::Pitch: voice->getTimeStretch().setPitch(ev.value); break;
-					case ParameterType::Stretch: voice->getTimeStretch().setStretch(ev.value); break;
-					case ParameterType::Overlap: voice->getTimeStretch().setOverlap(ev.value); break;
-					case ParameterType::GrainSize: voice->getTimeStretch().setGrainSize((uint32)(ev.value * (getSampleRate() / 1000.0f))); break;
+						case ParameterType::Amp: voice->setAmp(ev.value); break;
+						case ParameterType::Pitch: voice->getTimeStretch().setPitch(ev.value); break;
+						case ParameterType::Stretch: voice->getTimeStretch().setStretch(ev.value); break;
+						case ParameterType::Overlap: voice->getTimeStretch().setOverlap(ev.value); break;
+						case ParameterType::GrainSize: voice->getTimeStretch().setGrainSize(ev.value); break;
 					}
 				}
 			});
@@ -243,24 +271,33 @@ namespace fw {
 				_notes = ev.notes;
 			});			
 
-			_eventNode.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
-				Note& noteData = _notes[ev.note];
+			_eventNode.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) { playNote(ev.note); });
 
-				if (noteData.buffer.getFrameCount()) {
-					_voiceManager.addVoice(ev.note, std::make_unique<GrainSamplerVoice>(noteData.buffer.ref()));
-				}
-			});
+			_eventNode.subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) { stopNote(ev.note); });
 
-			_eventNode.subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) {
-				_voiceManager.stopVoice(ev.note);
-			});
-
-			_eventNode.subscribe<StopAllNotesEvent>([&]() {
-				_voiceManager.stopAll();
-			});
+			_eventNode.subscribe<StopAllNotesEvent>([&]() { stopAllNotes(); });
 		}
 
 		~MyAudioProceessor() = default;
+
+		void playNote(NoteIndex note) {
+			Note& noteData = _notes[note];
+
+			if (noteData.buffer.getFrameCount()) {
+				_voiceManager.addVoice(note, std::make_unique<GrainSamplerVoice>(noteData.buffer.ref(), noteData.parameters, getSampleRate()));
+				_eventNode.broadcast(PlayNoteEvent{ note });
+			}
+		}
+
+		void stopNote(NoteIndex note) {
+			_voiceManager.stopVoice(note);
+			_eventNode.broadcast(StopNoteEvent{ note });
+		}
+
+		void stopAllNotes() {
+			_voiceManager.stopAll();
+			_eventNode.broadcast<StopAllNotesEvent>();
+		}
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override {
 			_eventNode.update();
@@ -293,12 +330,18 @@ namespace fw {
 	private:
 		NoteArray& _notes;
 
-		Rect _highlightArea;
-		bool _highlight = false;
+		std::unordered_map<uint32, Rect> _highlights;
+		uint32 _lastClicked = 0;
 
 	public:
 		SamplePlayerOverlay(NoteArray& notes): _notes(notes) {
 			setType<SamplePlayerOverlay>();
+		}
+
+		void onInitialize() override {
+			subscribe<ZoomChangedEvent>(getSuper()->shared_from_this(), [this](const ZoomChangedEvent& ev) {
+				updateHighlights();
+			});
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
@@ -308,26 +351,70 @@ namespace fw {
 
 					for (size_t i = 0; i < _notes.size(); ++i) {
 						if (sampleOffset > _notes[i].offset && sampleOffset < _notes[i].offset + _notes[i].buffer.getFrameCount()) {
-							//_highlightArea
-							_highlight = true;
-
-							emit(SampleClickEvent{ (uint32)i, true });
-
+							_lastClicked = (uint32)i;
+							emit(SampleClickEvent{ _lastClicked, true });
 							break;
 						}
 					}
 				} else {
-					_highlight = false;
-					emit(SampleClickEvent{ 0, false });
+					emit(SampleClickEvent{ _lastClicked, false });
 				}
 			}			
 
 			return true;
 		}
 
+		void onResize(Dimension dimensions) {
+			updateHighlights();
+		}
+
+		void setHighlight(uint32 index, bool highlight) {
+			if (highlight) {
+				_highlights[index] = getDimensions();
+				updateHighlights();
+			} else {
+				_highlights.erase(index);
+			}
+		}
+
+		void removeHighlights() {
+			_highlights.clear();
+		}
+
 		void onRender(Canvas& canvas) override {
-			if (_highlight) {
-				canvas.fillRect(getDimensions(), Color4F(1, 1, 1, 0.5f));
+			for (auto& hl : _highlights) {
+				if (hl.second.w > 0) {
+					canvas.fillRect(hl.second, Color4F(1, 1, 1, 0.5f));
+				}
+			}
+		}
+
+		void updateHighlights() {
+			WaveView* parent = getSuper();
+			f32 w = getDimensionsF().w;
+
+			for (auto& hl : _highlights) {
+				const Note& note = _notes[hl.first];
+
+				f32 startPixel;
+				f32 endPixel;
+				
+				bool startVisible = parent->sampleToPixel((size_t)note.offset, startPixel);
+				bool endVisible = parent->sampleToPixel((size_t)note.getEnd(), endPixel);
+
+				if (startPixel > w || endPixel < 0) {
+					hl.second = Rect();
+				} else {
+					if (!startVisible) {
+						startPixel = 0.0f;
+					}
+
+					if (!endPixel) {
+						endPixel = w;
+					}
+
+					hl.second = (Rect)RectF(startPixel, 0, endPixel - startPixel, getDimensionsF().h);
+				}
 			}
 		}
 	};
@@ -340,10 +427,13 @@ namespace fw {
 		WaveViewPtr _waveView;
 		WaveMarkerOverlayPtr _markerOverlay;
 		SamplePlayerOverlayPtr _playerOverlay;
-		bool _playing = true;
 
 		StereoAudioBuffer _sampleData;
 		NoteArray _notes;
+
+		NoteParameters _defaultParameters;
+
+		std::unordered_set<VirtualKey::Enum> _keysDown;
 
 	public:
 		Granular() : View({ 1024, 768 }), _waveformBuffer(48000 * 5) {
@@ -355,6 +445,16 @@ namespace fw {
 
 		void onInitialize() override {
 			EventNode* eventNode = createState<EventNode>({ "Main" });
+
+			_defaultParameters.amp = 1.0f;
+			_defaultParameters.grainSize = 25.0f;
+			_defaultParameters.overlap = 0.0f;
+			_defaultParameters.pitch = 0.0f;
+			_defaultParameters.stretch = 1.0f;
+
+			for (Note& note : _notes) {
+				note.parameters = _defaultParameters;
+			}
 
 			SampleLoaderUtil::loadSample("C:\\temp\\amen.wav", _sampleData);
 
@@ -377,7 +477,7 @@ namespace fw {
 
 			_markerOverlay = _waveView->addChild<WaveMarkerOverlay>("Marker Overlay");
 
-			subscribe<MarkerAddedEvent>(_markerOverlay, [this, eventNode](const MarkerAddedEvent& ev) {
+			subscribe<MarkerAddedEvent>(_markerOverlay, [eventNode, this](const MarkerAddedEvent& ev) {
 				Note& note = _notes[ev.idx];
 				assert(note.contains(ev.marker));
 
@@ -401,13 +501,16 @@ namespace fw {
 
 				_notes[ev.idx + 1] = Note{
 					.buffer = _sampleData.slice((uint32)ev.marker, (uint32)newSize),
-					.offset = ev.marker
+					.offset = ev.marker,
+					.parameters = _defaultParameters
 				};
 
 				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+
+				_playerOverlay->updateHighlights();
 			});
 
-			subscribe<MarkerRemovedEvent>(_markerOverlay, [this, eventNode](const MarkerRemovedEvent& ev) {
+			subscribe<MarkerRemovedEvent>(_markerOverlay, [eventNode, this](const MarkerRemovedEvent& ev) {
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 
@@ -426,9 +529,11 @@ namespace fw {
 				_notes.back() = Note();
 
 				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+
+				_playerOverlay->updateHighlights();
 			});
 
-			subscribe<MarkerChangedEvent>(_markerOverlay, [this, eventNode](const MarkerChangedEvent& ev) {
+			subscribe<MarkerChangedEvent>(_markerOverlay, [eventNode, this](const MarkerChangedEvent& ev) {
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 
@@ -438,6 +543,8 @@ namespace fw {
 				next.offset = ev.marker;
 
 				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+
+				_playerOverlay->updateHighlights();
 			});
 
 			auto audioManager = getState<std::shared_ptr<AudioManager>>();
@@ -468,6 +575,18 @@ namespace fw {
 			slider5->setArea({ 10, 200, 500, 30 });
 			slider5->setRange(2.0f, 50.0f);
 			slider5->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
+
+			eventNode->subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
+				_playerOverlay->setHighlight(ev.note, true);
+			});
+
+			eventNode->subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) {
+				_playerOverlay->setHighlight(ev.note, false);
+			});
+
+			eventNode->subscribe<StopAllNotesEvent>([&]() {
+				_playerOverlay->removeHighlights();
+			});
 
 			/*auto plot = addChild<PlotView>("Plot");
 			plot->setArea({ 10, 140, 400, 400 });
@@ -521,10 +640,14 @@ namespace fw {
 
 			if (noteIdx != -1) {
 				if (down) {
-					getState<EventNode>()->broadcast(PlayNoteEvent{ .note = (NoteIndex)noteIdx });
+					if (!_keysDown.contains(key)) {
+						_keysDown.insert(key);
+						getState<EventNode>()->broadcast(PlayNoteEvent{ .note = (NoteIndex)noteIdx });
+					}
 				} else {
+					_keysDown.erase(key);
 					getState<EventNode>()->broadcast(StopNoteEvent{ .note = (NoteIndex)noteIdx });
-				}				
+				}
 			}
 
 			return true;

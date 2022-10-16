@@ -61,11 +61,13 @@ bool WaveView::onMouseScroll(PointF delta, Point position) {
 
 	updateSlice();
 
+	emit(ZoomChangedEvent{ _zoom });
+
 	return true;
 }
 
 bool WaveView::sampleToPixel(uint64 sample, f32& pixel) {
-	uint64 ranged = sample - _slicePosition;
+	int64 ranged = (int64)sample - (int64)_slicePosition;
 	f32 frac = (f32)ranged / (f32)_sliceSize;
 	pixel = frac * getDimensionsF().w;
 	return sample >= _slicePosition && sample < _slicePosition + _sliceSize;
