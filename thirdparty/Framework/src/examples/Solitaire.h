@@ -67,15 +67,6 @@ namespace fw {
 
 	struct VisibleTag {};
 
-	struct CameraComponent {
-		f32 view[16];
-		f32 proj[16];
-	};
-
-	struct OrthographicCameraComponent {
-		
-	};
-
 	class Solitaire : public View {
 	private:
 		entt::registry _registry;

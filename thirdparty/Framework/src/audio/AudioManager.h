@@ -36,7 +36,6 @@ namespace fw {
 		struct State;
 
 		State* _state = nullptr;
-		AudioCallback _cb;
 		std::shared_ptr<AudioProcessor> _processor;
 
 	public:
@@ -47,7 +46,7 @@ namespace fw {
 			_processor = processor;
 		}
 
-		std::shared_ptr<AudioProcessor> getProcessor() {
+		const std::shared_ptr<AudioProcessor>& getProcessor() const {
 			return _processor;
 		}
 
@@ -55,17 +54,9 @@ namespace fw {
 
 		bool start();
 
-		void setCallback(AudioCallback&& cb) {
-			_cb = std::move(cb);
-		}
-
 		void stop();
 
 		uint32 getSampleRate();
-
-		AudioCallback& getCallback() {
-			return _cb;
-		}
 
 		bool setAudioDevice(uint32 idx);
 

@@ -2,28 +2,110 @@
 
 #include "ui/View.h"
 
+#include "engine/EngineUtil.h"
+#include "engine/RelationshipComponent.h"
+#include "engine/SceneGraphUtil.h"
+#include "engine/SceneView.h"
+#include "engine/SpriteComponent.h"
+#include "engine/TransformComponent.h"
+#include "engine/SelectionUtil.h"
+
 namespace fw {
-	class SceneEditorView : public View {
+	class SceneEditorView : public SceneView {
 	private:
-		f32 _gridSize = 100.0f;
+		entt::entity _sprite = entt::null;
+		entt::entity _camera = entt::null;
+		PointF _velocity;
+
+		bool _draggingGrid = false;
+		Point _dragClickPos;
+		PointF _dragCameraStart;
 
 	public:
-		SceneEditorView() {}
+		SceneEditorView() {
+			setType<SceneEditorView>();
+			setFocusPolicy(FocusPolicy::Click);
+		}
+
+		void onInitialize() override {
+			SceneView::onInitialize();
+
+			createState<SelectionSingleton>();
+
+			entt::registry& reg = getRegistry();
+
+			_camera = EngineUtil::createOrthographicCamera(reg);
+			_sprite = EngineUtil::createSprite(reg, "textures/circle-512.png");
+
+			entt::entity grid = WorldUtil::createEntity(reg);
+			reg.emplace<GridComponent>(grid);
+
+			SelectionUtil::setup(reg);
+		}
+
+		void onUpdate(f32 delta) override {
+			TransformComponent& cameraTrans = getRegistry().get<TransformComponent>(_camera);
+			cameraTrans.position += _velocity * delta;
+
+			getRegistry().view<SelectionEvent>().each([&](const SelectionEvent& ev) {
+				//ev.selected
+			});
+
+			SceneView::onUpdate(delta);
+		}
+
+		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+			if (button == MouseButton::Left) {
+				_draggingGrid = down;
+
+				if (down) {
+					const TransformComponent& cameraTrans = getRegistry().get<TransformComponent>(_camera);
+					_dragClickPos = pos;
+					_dragCameraStart = cameraTrans.position;
+				}
+			}
+
+			if (button == MouseButton::Right && down) {
+				std::pair<entt::registry*, entt::entity> selectedEntity;
+				//SelectionUtil::setSelection(getRegistry(), selectedEntity, true);
+
+				SpriteComponent& sprite = getRegistry().get<SpriteComponent>(_sprite);
+
+				getState<SelectionSingleton>()->selected.clear();
+				getState<SelectionSingleton>()->selected.push_back(entt::meta_handle(sprite)->as_ref());
+			}
+
+			return true;
+		}
+
+		bool onMouseMove(Point pos) override {
+			if (_draggingGrid) {
+				TransformComponent& cameraTrans = getRegistry().get<TransformComponent>(_camera);
+				cameraTrans.position = _dragCameraStart + (PointF)(_dragClickPos - pos);
+			}
+
+			return true;
+		}
 
 		void onRender(Canvas& canvas) override {
-			DimensionF dimensions = (DimensionF)getDimensions();
-			
-			canvas.fillRect(dimensions, Color4F::darkGrey);
+			entt::registry& reg = getRegistry();
 
-			f32 pxoff = 2.0f / dimensions.w;
+			beginSceneRender(reg, canvas);
+			GridRenderSystem::update(reg, canvas);
+			SpriteRenderSystem::update(reg, canvas);
+			endSceneRender(canvas);
+		}
 
-			for (f32 x = 0; x < dimensions.w; x += _gridSize) {
-				canvas.line({ x + pxoff, 0 }, { x + pxoff, dimensions.h }, Color4F::lightGrey);
+		bool onKey(VirtualKey::Enum key, bool down) override {
+			f32 _cameraMoveSpeed = 300;
+			switch (key) {
+			case VirtualKey::LeftArrow: _velocity.x = down ? -_cameraMoveSpeed : 0.0f; break;
+			case VirtualKey::RightArrow: _velocity.x = down ? _cameraMoveSpeed : 0.0f; break;
+			case VirtualKey::UpArrow: _velocity.y = down ? -_cameraMoveSpeed : 0.0f; break;
+			case VirtualKey::DownArrow: _velocity.y = down ? _cameraMoveSpeed : 0.0f; break;
 			}
 
-			for (f32 y = 0; y < dimensions.h; y += _gridSize) {
-				canvas.line({ 0, y }, { dimensions.w, y }, Color4F::lightGrey);
-			}
+			return true;
 		}
 	};
 }

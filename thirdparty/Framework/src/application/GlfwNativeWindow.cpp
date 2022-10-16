@@ -219,6 +219,29 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 	}
 
 	vm.onUpdate(delta);
+	auto& shared = vm.getShared();
+
+	if (shared.cursorChanged) {
+		if (_cursor) {
+			glfwDestroyCursor(_cursor);
+			_cursor = nullptr;
+		}
+
+		switch (shared.cursor) {
+		case CursorType::Arrow: _cursor = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); break;
+		case CursorType::ResizeH: _cursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR); break;
+		case CursorType::ResizeV: _cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR); break;
+		case CursorType::Hand: _cursor = glfwCreateStandardCursor(GLFW_HAND_CURSOR); break;
+		case CursorType::IBeam: _cursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR); break;
+		case CursorType::Crosshair: _cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR); break;
+		}
+
+		if (_cursor) {
+			glfwSetCursor(_window, _cursor);
+		}
+
+		shared.cursorChanged = false;
+	}
 }
 
 bool GlfwNativeWindow::shouldClose() {

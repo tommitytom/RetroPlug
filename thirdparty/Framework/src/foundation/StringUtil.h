@@ -9,6 +9,8 @@ namespace fw::StringUtil {
 
 	std::string formatClassName(std::string_view className);
 
+	std::string formatMemberName(std::string_view memberName);
+
 	std::string toString(const std::wstring& str);
 
 	std::wstring toWString(const std::string& str);

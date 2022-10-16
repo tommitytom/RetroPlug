@@ -5,8 +5,8 @@
 
 #include <entt/entity/entity.hpp>
 #include <entt/entity/registry.hpp>
-#include <entt/core/type_info.hpp>
 #include <entt/core/any.hpp>
+#include <entt/core/type_info.hpp>
 #include <spdlog/spdlog.h>
 
 #include "foundation/Input.h"
@@ -14,6 +14,7 @@
 #include "foundation/StringUtil.h"
 
 #include "graphics/Canvas.h"
+#include "ui/TypeDataLookup.h"
 
 namespace fw {
 	namespace engine {
@@ -50,6 +51,27 @@ namespace fw {
 		std::vector<ViewPtr> targets;
 	};
 
+	enum class CursorType {
+		Arrow,
+		Hand,
+		IBeam,
+		Crosshair,
+		ResizeEW,
+		ResizeNS,
+		ResizeNWSE,
+		REsizeNESW,
+		ResizeH = ResizeEW,
+		ResizeV = ResizeNS,
+		NotAllowed
+	};
+
+	using EventType = entt::id_type;
+
+	struct KeyEvent {
+		VirtualKey::Enum key;
+		bool down;
+	};
+
 	class View : public std::enable_shared_from_this<View> {
 	private:
 		struct Shared {
@@ -63,10 +85,21 @@ namespace fw {
 			std::vector<ViewPtr> mouseOver;
 			std::vector<ViewPtr> dragOver;
 
-			entt::registry userData;
+			TypeDataLookup state;
+			TypeDataLookup themeLookup;
 
 			FontManager* fontManager = nullptr;
 			ResourceManager* resourceManager = nullptr;
+
+			CursorType cursor = CursorType::Arrow;
+			bool cursorChanged = true;
+		};
+
+		using SubscriptionHandler = std::function<void(const entt::any&)>;
+
+		struct Subscription {
+			std::weak_ptr<View> target;
+			SubscriptionHandler handler;
 		};
 
 		Shared* _shared = nullptr;
@@ -86,6 +119,8 @@ namespace fw {
 		std::string _name;
 		entt::type_info _type;
 
+		std::unordered_map<EventType, std::vector<Subscription>> _subscriptions;
+
 	public:
 		View(Dimension dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
 		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
@@ -96,6 +131,97 @@ namespace fw {
 			}
 
 			removeChildren();
+		}
+
+		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
+		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+
+			source->_subscriptions[eventType].push_back(Subscription{
+				.target = std::weak_ptr<View>(shared_from_this()),
+				.handler = [func = std::move(func)](const entt::any& v) { func(); }
+			});
+
+			return eventType;
+		}
+
+		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
+		EventType subscribe(ViewPtr source, std::function<void(const T&)>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+
+			source->_subscriptions[eventType].push_back(Subscription{
+				.target = std::weak_ptr<View>(shared_from_this()),
+				.handler = [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); }
+			});
+
+			return eventType;
+		}
+
+		bool hasSubscription(EventType eventType, ViewPtr target) const {
+			auto found = _subscriptions.find(eventType);
+
+			if (found != _subscriptions.end()) {
+				for (const Subscription& sub : found->second) {
+					if (!sub.target.expired() && sub.target.lock() == target) {
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		template <typename T>
+		bool hasSubscription(ViewPtr target) const {
+			EventType eventType = entt::type_id<T>().index();
+			return hasSubscription(eventType, target);
+		}
+
+		template <typename T>
+		bool unsubscribe(ViewPtr source) {
+			EventType eventType = entt::type_id<T>().index();
+			return unsubscribe(eventType, source);
+		}
+
+		bool unsubscribe(EventType eventType, ViewPtr source) {
+			auto found = source->_subscriptions.find(eventType);
+
+			if (found != source->_subscriptions.end()) {
+				for (size_t i = 0; i < found->second.size(); ++i) {
+					Subscription& sub = found->second[i];
+
+					if (!sub.target.expired() && sub.target.lock() == shared_from_this()) {
+						found->second.erase(found->second.begin() + i);
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		template <typename T>
+		void emit(T&& ev) {
+			EventType eventType = entt::type_id<T>().index();
+			auto found = _subscriptions.find(eventType);
+
+			if (found != _subscriptions.end() && found->second.size()) {
+				entt::any v = ev;
+
+				for (auto it = found->second.begin(); it != found->second.end();) {
+					if (!it->target.expired()) {
+						it->handler(v);
+						++it;
+					} else {
+						it = found->second.erase(it);
+					}
+				}
+			}
+		}
+
+		void setCursor(CursorType cursor) {
+			_shared->cursor = cursor;
+			_shared->cursorChanged = true;
 		}
 
 		void setClip(bool clip) {
@@ -210,7 +336,7 @@ namespace fw {
 		Point getWorldPosition() const {
 			View* parent = getParent();
 			if (parent) {
-				return parent->getWorldPosition() + (Point)((PointF)getPosition() * parent->getWorldScale());
+				return parent->getWorldPosition() + (Point)(getPositionF() * parent->getWorldScale());
 			}
 
 			return getPosition();
@@ -226,43 +352,53 @@ namespace fw {
 		}
 
 		Rect getWorldArea() const {
-			return { getWorldPosition(), (Dimension)((DimensionF)getDimensions() * getWorldScale()) };
+			return { getWorldPosition(), (Dimension)(getDimensionsF() * getWorldScale()) };
 		}
 
 		template <typename T>
-		T* createShared(T&& item) {
-			if (_shared && !getShared<T>()) {
-				return &_shared->userData.ctx().emplace<T>(std::forward(item));
+		T* createState(T&& item) {
+			if (_shared && !getState<T>()) {
+				return &_shared->state.emplace<T>(std::forward<T>(item));
 			}
 
 			return nullptr;
 		}
 
 		template <typename T>
-		T* createShared(const T& item) {
-			if (_shared && !getShared<T>()) {
-				return &_shared->userData.ctx().emplace<T>(item);
+		T* createState(const T& item) {
+			if (_shared && !getState<T>()) {
+				return &_shared->state.emplace<T>(item);
 			}
 
 			return nullptr;
 		}
 
 		template <typename T>
-		T* createShared() {
-			if (_shared && !getShared<T>()) {
-				return &_shared->userData.ctx().emplace<T>();
+		T* createState() {
+			if (_shared && !getState<T>()) {
+				return &_shared->state.emplace<T>();
 			}
 
 			return nullptr;
 		}
 
 		template <typename T>
-		T* getShared() {
-			if (_shared) {
-				return _shared->userData.ctx().find<T>();
-			}
+		T* getState() {
+			return _shared->state.tryGet<T>();
+		}
 
-			return nullptr;
+		TypeDataLookup& getState() {
+			return _shared->state;
+		}
+
+		const TypeDataLookup& getState() const {
+			return _shared->state;
+		}
+
+		template <typename ThemeT>
+		const ThemeT& getTheme() {
+			assert(_shared);
+			return _shared->themeLookup.getOrEmplace<ThemeT>();
 		}
 
 		View* getFocused() const {
@@ -358,6 +494,12 @@ namespace fw {
 			return view;
 		}
 
+		template <typename T>
+		std::shared_ptr<T> addChild(std::shared_ptr<T> view) {
+			addChild(std::static_pointer_cast<View>(view));
+			return view;
+		}
+
 		ViewPtr addChild(ViewPtr view) {
 			if (view->_parent) {
 				view->_parent->removeChild(view);
@@ -379,6 +521,14 @@ namespace fw {
 			setLayoutDirty();
 
 			return view;
+		}
+
+		bool isInitialized() const {
+			return _initialized;
+		}
+
+		bool isMounted() const {
+			return _parent != nullptr;
 		}
 
 		size_t getChildIndex(ViewPtr view) const {
@@ -542,6 +692,10 @@ namespace fw {
 			return _area.position;
 		}
 
+		PointF getPositionF() const {
+			return (PointF)_area.position;
+		}
+
 		f32 getScale() const {
 			return _scale;
 		}
@@ -549,14 +703,18 @@ namespace fw {
 		void setDimensions(Dimension dimensions) {
 			assert(dimensions.w >= 0 && dimensions.h >= 0);
 			if (dimensions != _area.dimensions) {
+				onResize(dimensions);
 				_area.dimensions = dimensions;
 				setLayoutDirty();
-				onResize(dimensions);
 			}
 		}
 
 		Dimension getDimensions() const {
 			return _area.dimensions;
+		}
+
+		DimensionF getDimensionsF() const {
+			return (DimensionF)_area.dimensions;
 		}
 
 		View* getParent() const {
@@ -572,8 +730,13 @@ namespace fw {
 		}
 
 		void setArea(const Rect& area) {
-			_area = area;
-			setLayoutDirty();
+			assert(area.w >= 0 && area.h >= 0);
+
+			if (area != _area) {
+				onResize(area.dimensions);
+				_area = area;
+				setLayoutDirty();
+			}
 		}
 
 		void setAlpha(f32 alpha) {

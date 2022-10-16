@@ -65,6 +65,7 @@ namespace fw::engine {
 		uint32 viewId;
 		Rect viewArea;
 		Rect scissor;
+		RectF projection;
 		std::vector<CanvasSurface> surfaces;
 	};
 
@@ -86,6 +87,7 @@ namespace fw::engine {
 		CanvasGeometry _geom;
 
 		Rect _viewPort;
+		RectF _projection;
 		Rect _res;
 		f32 _pixelRatio = 1.0f;
 		std::vector<Rect> _scissorStack;
@@ -223,6 +225,18 @@ namespace fw::engine {
 
 		void beginRender(Dimension res, f32 pixelRatio);
 
+		Canvas& setViewProjection(const Rect& viewPort, const RectF& proj) {
+			_viewPort = viewPort;
+			_projection = proj;
+			return *this;
+		}
+
+		Canvas& resetViewProjection() { 
+			_viewPort = Rect(0, 0, _res.w, _res.h);
+			_projection = (RectF)_viewPort;
+			return *this;
+		}
+
 		void endRender();
 
 		DimensionF measureText(std::string_view text) { return this->measureText(text, _fontName, _fontSize); }
@@ -284,6 +298,18 @@ namespace fw::engine {
 		Canvas& line(const PointF& from, const PointF& to, const Color4F& color);
 
 		Canvas& line(const PointF& from, const PointF& to) { return line(from, to, _color); }
+
+		Canvas& line(const Point& from, const Point& to, const Color4F& color) { return line((PointF)from, (PointF)to, color); }
+
+		Canvas& line(const Point& from, const Point& to) { return line(from, to, _color); }
+
+		Canvas& line(f32 fromX, f32 fromY, f32 toX, f32 toY, const Color4F& color) { return line(PointF(fromX, fromY), PointF(toX, toY), color); }
+
+		Canvas& line(f32 fromX, f32 fromY, f32 toX, f32 toY) { return line(fromX, fromY, toX, toY, _color); }
+
+		Canvas& line(int32 fromX, int32 fromY, int32 toX, int32 toY, const Color4F& color) { return line(Point(fromX, fromY), Point(toX, toY), color); }
+
+		Canvas& line(int32 fromX, int32 fromY, int32 toX, int32 toY) { return line(fromX, fromY, toX, toY, _color); }
 
 		Canvas& lines(std::span<PointF> points, const Color4F& color);
 

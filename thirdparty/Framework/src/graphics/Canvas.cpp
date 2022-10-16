@@ -50,12 +50,14 @@ void Canvas::beginRender(Dimension res, f32 pixelRatio) {
 
 	_res.dimensions = res;
 	_viewPort = Rect(0, 0, res.w, res.h);
+	_projection = (RectF)_viewPort;
 	_pixelRatio = pixelRatio;
 	_font = _defaultFont;
 
 	_geom.batches.push_back(CanvasBatch {
 		.viewId = _viewId,
 		.viewArea = _viewPort,
+		.projection = _projection,
 		.surfaces = {
 			CanvasSurface{
 				.primitive = RenderPrimitive::Triangles,
@@ -71,14 +73,16 @@ void Canvas::checkSurface(RenderPrimitive primitive, const TextureHandle& textur
 	CanvasSurface* topSurf = &getTopSurface();
 	CanvasBatch& topBatch = _geom.batches.back();
 
-	if (topBatch.scissor != scissor) {
+	if (topBatch.scissor != scissor || topBatch.projection != _projection) {
 		if (topBatch.surfaces.size() == 1 && topSurf->indexCount == 0) {
 			topBatch.scissor = scissor;
+			topBatch.projection = _projection;
 		} else {
 			_geom.batches.push_back(CanvasBatch{
 				.viewId = _viewId + (uint32)_geom.batches.size(),
 				.viewArea = _viewPort,
 				.scissor = scissor,
+				.projection = _projection,
 				.surfaces = {
 					CanvasSurface{
 						.primitive = RenderPrimitive::Triangles,
@@ -196,8 +200,8 @@ Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color)
 	uint32 v = (uint32)_geom.vertices.size();
 
 	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * from, agbr, { 0, 0 } },
-		CanvasVertex{ _transform * to, agbr, { 0, 0 } }
+		CanvasVertex{ _transform * (from + 0.5f), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * (to + 0.5f), agbr, { 0, 0 } }
 	});
 
 	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });

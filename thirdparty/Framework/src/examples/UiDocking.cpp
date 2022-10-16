@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "foundation/FsUtil.h"
+
 #include "ui/DockWindow.h"
 #include "ui/TabView.h"
 #include "ui/Colors.h"
@@ -11,10 +13,13 @@
 #include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
 
+#include "engine/EngineModule.h"
 #include "engine/SceneEditorView.h"
+#include "ui/ObjectInspectorView.h"
 
-#include "foundation/FsUtil.h"
 #include "audio/AudioLoaderUtil.h"
+
+#include "examples/Whitney.h"
 
 //#include "core/RetroPlugNodes.h"
 
@@ -101,13 +106,46 @@ public:
 	}
 };
 
-UiDocking::UiDocking() : View({ 1024, 768 }) {
+#include "foundation/Event.h"
+
+UiDocking::UiDocking() : View({ 1500, 1000 }) {
+	EngineModule::setup();
+	
 	setType<UiDocking>();
 	setName("Example Application");
+	setSizingPolicy(SizingPolicy::FitToParent);
 }
 
 bool isApproximately(f32 v, f32 target, f32 epsilon) {
 	return v >= target - epsilon && v <= target + epsilon;
+}
+
+using EntityReference = std::pair<entt::registry*, entt::entity>;
+
+void UiDocking::onUpdate(f32 delta) {
+	if (!_propGrid->getChildren().size()) {
+		SelectionSingleton& state = *getState<SelectionSingleton>();
+
+		if (state.selected.size()) {
+			entt::meta_type type = state.selected[0].type();
+
+			if (type == entt::resolve<EntityReference>()) {
+				EntityReference ref = state.selected[0].cast<EntityReference>();
+
+				EngineUtil::visitComponents(*ref.first, ref.second, [&](const entt::type_info info) {
+					entt::meta_type type = entt::resolve(info);
+					
+					if (type) {
+
+					} else {
+						// Just print the name
+					}
+				});
+			} else {
+				_propGrid->addObject("Test", state.selected[0].as_ref());
+			}
+		}
+	}
 }
 
 void UiDocking::onInitialize() {
@@ -131,9 +169,8 @@ void UiDocking::onInitialize() {
 	auto tabArea = dockRoot->addItem<DockTabView>("Tab Area", 1);
 	tabArea->setSizingPolicy(SizingPolicy::FitToParent);
 
-	auto right = dockRoot->addItem<PanelView>("RightPanel", 2);
-	right->setColor(RP_COLOR_BACKGROUND);
-	right->setSizingPolicy(SizingPolicy::FitToParent);
+	_propGrid = dockRoot->addItem<ObjectInspectorView>("RightPanel", 2);
+	_propGrid->setSizingPolicy(SizingPolicy::FitToParent);
 
 	rootPanel->setLayoutDirty();
 
@@ -143,6 +180,13 @@ void UiDocking::onInitialize() {
 	auto tab2 = tabArea->addChild<PanelView>("Green");
 	tab2->setColor(Color4(0, 255, 0, 255));
 	tab2->setSizingPolicy(SizingPolicy::FitToParent);
+
+	/*_waveView = tabArea->addChild<WaveView>("Wave");
+	_waveView->setSizingPolicy(SizingPolicy::FitToParent);
+	generateWaveform();*/
+
+	auto whitney = tabArea->addChild<Whitney>("Whitney");
+	whitney->setSizingPolicy(SizingPolicy::FitToParent);
 
 	/*auto dockRoot = rootPanel->addChild<DockSplitter>("Vertical Split");
 	dockRoot->setSplitDirection(SplitDirection::Vertical);
@@ -228,12 +272,12 @@ void UiDocking::generateWaveform() {
 	AudioLoaderUtil::load("c:\\temp\\telewizor.wav", samples);
 	size_t sampleCount = samples.size();
 
-	_waveView->setAudioData(std::move(samples));
+	//_waveView->setAudioData(std::move(samples));
 
 	size_t offset = 0;
 	size_t markerStep = 44100;
 	while (offset < sampleCount) {
-		_waveView->addMarker((f32)offset);
+		//_waveView->addMarker((f32)offset);
 		offset += markerStep;
 	}
 }

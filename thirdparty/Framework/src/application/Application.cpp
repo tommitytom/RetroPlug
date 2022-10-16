@@ -19,6 +19,8 @@ static const char* s_canvas = "#canvas";
 #include <GLFW/glfw3native.h>
 #endif
 
+#include "foundation/FoundationModule.h"
+
 #include "graphics/Canvas.h"
 #include "graphics/TextureAtlas.h"
 #include "graphics/bgfx/BgfxFrameBuffer.h"
@@ -38,6 +40,8 @@ void errorCallback(int error, const char* description) {
 }
 
 Application::Application() : _fontManager(_resourceManager), _windowManager(_resourceManager, _fontManager), _canvas(_resourceManager, _fontManager) {
+	FoundationModule::setup();
+
 	glfwSetErrorCallback(errorCallback);
 	
 	if (!glfwInit()) {
@@ -46,11 +50,6 @@ Application::Application() : _fontManager(_resourceManager), _windowManager(_res
 	}
 
 	_audioManager = std::make_shared<AudioManager>();
-	
-	_audioManager->setCallback([](f32* output, const f32* input, uint32 frameCount) {
-		spdlog::info("audio");
-	});
-
 	_audioManager->start();
 }
 
@@ -98,7 +97,7 @@ bool Application::runFrame() {
 			_mainWindow = w;
 		}
 
-		w->getViewManager().createShared(_audioManager);
+		w->getViewManager().getState().emplace(_audioManager);
 		w->onInitialize();
 	}
 

@@ -13,6 +13,7 @@ void TabView::onChildAdded(ViewPtr child) {
 	}
 
 	child->setSizingPolicy(SizingPolicy::None);
+	child->setClip(true);
 
 	updateLayout();
 }
@@ -101,6 +102,7 @@ void TabView::onRender(Canvas& canvas) {
 			}
 		}
 
+		canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
 		canvas.text(0, 0, contentName, RP_COLOR_WHITE);
 	} else {
 		const f32 tabWidth = 120;
@@ -122,6 +124,7 @@ void TabView::onRender(Canvas& canvas) {
 				canvas.fillRect(_tabAreas[i], RP_COLOR_HIGHLIGHT2);
 			}
 
+			canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
 			canvas.text(tabOffset, 0, tabName, RP_COLOR_WHITE);
 			tabOffset += tabWidth;
 		}

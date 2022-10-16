@@ -5,7 +5,7 @@
 
 using namespace fw;
 
-SampleLoaderUtil::SampleData SampleLoaderUtil::loadSample(std::string_view path) {
+/*SampleLoaderUtil::SampleData SampleLoaderUtil::loadSample(std::string_view path) {
 	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
 
 	ma_decoder decoder;
@@ -35,3 +35,4 @@ SampleLoaderUtil::SampleData SampleLoaderUtil::loadSample(std::string_view path)
 
 	return sample;
 }
+*/

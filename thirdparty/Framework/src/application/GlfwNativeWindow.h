@@ -5,6 +5,7 @@
 #include "graphics/FrameBuffer.h"
 
 struct GLFWwindow;
+struct GLFWcursor;
 
 namespace fw::app {
 	class GlfwNativeWindow : public Window {
@@ -13,6 +14,8 @@ namespace fw::app {
 		Point _lastMousePosition;
 		FrameBufferProvider* _frameBufferProvider = nullptr;
 		std::shared_ptr<FrameBuffer> _frameBuffer;
+
+		GLFWcursor* _cursor = nullptr;
 
 	public:
 		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id) : Window(resourceManager, fontManager, view, id) {}

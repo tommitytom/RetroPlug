@@ -19,4 +19,8 @@ namespace fw::MathUtil {
 	static f32 round(f32 value) {
 		return floor(value + 0.5f);
 	}
+
+	static f64 round(f64 value) {
+		return floor(value + 0.5);
+	}
 }

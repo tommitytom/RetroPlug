@@ -307,6 +307,9 @@ function m.ExampleApplication.project(name)
 			"src/examples/main.cpp"
 		}
 
+		filter { "action:vs*" }
+			files { "thirdparty/entt/natvis/entt/*.natvis" }
+
 		--[[filter { "options:emscripten" }
 			buildoptions { "-matomics", "-mbulk-memory" }
 
@@ -336,6 +339,9 @@ function m.ExampleApplication.project(name)
 			"src/examples/mainlivepp.cpp",
 			"src/examples/mainloop.cpp"
 		}
+
+		filter { "action:vs*" }
+			files { "thirdparty/entt/natvis/entt/*.natvis" }
 
 		util.liveppCompat()
 end

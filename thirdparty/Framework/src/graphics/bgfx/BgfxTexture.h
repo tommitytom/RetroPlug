@@ -1,13 +1,30 @@
 #pragma once
 
 #include <bx/allocator.h>
+#include <bgfx/bgfx.h>
 
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
-#include "graphics/bgfx/BgfxResource.h"
 
 namespace fw::engine {
-	using BgfxTexture = BgfxResource<Texture, bgfx::TextureHandle>;
+	class BgfxTexture : public Texture {
+	private:
+		bgfx::TextureHandle _handle = { bgfx::kInvalidHandle };
+
+	public:
+		BgfxTexture(bgfx::TextureHandle handle, const TextureDesc& desc): Texture(desc), _handle(handle) {}
+		~BgfxTexture() {
+			if (bgfx::isValid(_handle)) {
+				bgfx::destroy(_handle);
+			}
+		}
+
+		bgfx::TextureHandle getBgfxHandle() const {
+			return _handle;
+		}
+
+		friend class BgfxTextureProvider;
+	};
 
 	class BgfxTextureProvider : public TypedResourceProvider<Texture> {
 	private:

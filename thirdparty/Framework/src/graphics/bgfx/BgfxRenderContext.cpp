@@ -121,10 +121,12 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		
 		for (const engine::CanvasBatch& batch : geom.batches) {
 			f32 projMtx[16];
-			bx::mtxOrtho(projMtx, 0, dim[0], dim[1], 0, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
+			bx::mtxOrtho(projMtx, batch.projection.x, batch.projection.right(), batch.projection.bottom(), batch.projection.y, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 
 			//bgfx::setViewClear(viewId, BGFX_CLEAR_COLOR, 0x000000FF);
-			bgfx::setViewRect(batch.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
+			//bgfx::setViewRect(batch.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
+			//bgfx::setViewRect(batch.viewId, 0, 0, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
+			bgfx::setViewRect(batch.viewId, (uint16)batch.viewArea.x, (uint16)batch.viewArea.y, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
 			bgfx::setViewMode(batch.viewId, bgfx::ViewMode::Sequential);
 			bgfx::setViewTransform(batch.viewId, viewMtx, projMtx);
 			bgfx::setViewScissor(batch.viewId, (uint16)batch.scissor.x, (uint16)batch.scissor.y, (uint16)batch.scissor.w, (uint16)batch.scissor.h);

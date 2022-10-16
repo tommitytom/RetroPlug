@@ -15,7 +15,6 @@ namespace fw {
 	class DataBuffer {
 	private:
 		T* _data = nullptr;
-		//size_t _size = 0;
 		size_t _size = 0;
 		bool _ownsData = false;
 
@@ -95,14 +94,32 @@ namespace fw {
 			return *((int32_t*)(_data + pos));
 		}
 
-		DataBuffer<T> slice(size_t pos, size_t size) {
+		DataBuffer<T> slice(size_t pos, size_t size = 0) {
 			assert(pos + size <= _size);
+			
+			if (size == 0) {
+				size = _size - pos;
+			}
+			
 			return DataBuffer<T>(_data + pos, size);
 		}
 
-		const DataBuffer<T> slice(size_t pos, size_t size) const {
+		const DataBuffer<T> slice(size_t pos, size_t size = 0) const {
 			assert(pos + size <= _size);
+			
+			if (size == 0) {
+				size = _size - pos;
+			}
+			
 			return DataBuffer<T>(_data + pos, size);
+		}
+
+		DataBuffer<T> ref() {
+			return DataBuffer<T>(_data, _size);
+		}
+
+		const DataBuffer<T> ref() const {
+			return DataBuffer<T>(_data, _size);
 		}
 
 		void clear() {
@@ -189,7 +206,7 @@ namespace fw {
 
 		DataBuffer& operator=(const DataBuffer& other) {
 			if (_ownsData && _data) {
-				if (other.size() * 2 < _size) {
+				if (other._ownsData || other.size() * 2 < _size) {
 					destroy();
 				}
 			}

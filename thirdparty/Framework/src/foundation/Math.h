@@ -2,14 +2,11 @@
 
 #include <cmath>
 #include <assert.h>
+
+#include "foundation/Constants.h"
 #include "foundation/Types.h"
 
 namespace fw {
-	constexpr f32 PI = 3.14159265358979323846264338327950288F;
-	constexpr f32 PI2 = PI * 2.0f;
-	constexpr f32 HALF_PI = PI * 0.5f;
-	constexpr f32 QUARTER_PI = PI * 0.25f;
-
 	struct Color3 {
 		uint8 r = 0;
 		uint8 g = 0;
@@ -524,6 +521,11 @@ namespace fw {
 
 		PointF getTranslation() const {
 			return PointF{ m13, m23 };
+		}
+
+		void setTranslation(PointF value) {
+			m13 = value.x;
+			m23 = value.y;
 		}
 
 		PointF getScale() const {

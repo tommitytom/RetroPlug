@@ -20,7 +20,10 @@ namespace fw {
 		bool _mouseOverHeader = false;
 
 	public:
-		TabView() { setType<TabView>(); setFocusPolicy(FocusPolicy::Click); }
+		TabView() { 
+			setType<TabView>(); 
+			setFocusPolicy(FocusPolicy::Click);
+		}
 		~TabView() = default;
 
 		void setCurrentPanel(int32 panelIdx);

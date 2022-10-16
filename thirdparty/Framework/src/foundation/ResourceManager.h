@@ -21,7 +21,29 @@ namespace fw {
 		~ResourceManager() = default;
 
 		void setRootPath(const std::filesystem::path& path) {
-			_rootPath = (std::filesystem::current_path() / path).make_preferred().lexically_normal();
+			if (path.is_relative()) {
+				_rootPath = (std::filesystem::current_path() / path).make_preferred().lexically_normal();
+			} else {
+				_rootPath = path.lexically_normal().make_preferred();
+			}			
+		}
+
+		std::vector<std::string> getUris(const std::vector<entt::type_info>& types) {
+			std::vector<std::string> uris;
+
+			for (auto& r : _resources) {
+				if (types.size()) {
+					for (const auto& t : types) {
+						if (t == r.second.getType()) {
+							uris.push_back(r.second.getUri());
+						}
+					}
+				} else {
+					uris.push_back(r.second.getUri());
+				}				
+			}
+
+			return uris;
 		}
 
 		const std::filesystem::path& getRootPath() const {
@@ -58,7 +80,8 @@ namespace fw {
 			auto foundProvider = _providers.find(resourceType);
 
 			if (foundProvider != _providers.end()) {
-				std::shared_ptr<Resource> res = foundProvider->second->load(uri);
+				std::filesystem::path fullPath = (_rootPath / uri).make_preferred().lexically_normal();
+				std::shared_ptr<Resource> res = foundProvider->second->load(fullPath.string());
 				assert(res);
 
 				std::shared_ptr<ResourceHandleState> state = std::make_shared<ResourceHandleState>();

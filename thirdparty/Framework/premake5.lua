@@ -128,6 +128,8 @@ projects.ExampleApplication.project("Solitaire")
 projects.ExampleApplication.project("UiDocking")
 projects.ExampleApplication.project("UiScaling")
 projects.ExampleApplication.project("Whitney")
+projects.ExampleApplication.project("BasicScene")
+projects.ExampleApplication.project("Granular")
 group ""
 
 projects.Tests.project()

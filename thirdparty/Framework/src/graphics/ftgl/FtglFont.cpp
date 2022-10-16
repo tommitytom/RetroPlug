@@ -18,7 +18,7 @@ FtglFont::~FtglFont() {
 std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const char* fontData, size_t fontDataSize, f32 fontSize, std::string_view name) {
 	Dimension atlasSize(1024, 1024);
 
-	ftgl::texture_atlas_t* atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 3);
+	ftgl::texture_atlas_t* atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 4);
 	ftgl::texture_font_t* font = ftgl::texture_font_new_from_memory(atlas, fontSize, fontData, fontDataSize);
 	size_t missed = ftgl::texture_font_load_glyphs(font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ");
 
@@ -26,13 +26,13 @@ std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const 
 		spdlog::error("Missed {} glyphs when loading {}", missed, name);
 	}
 
-	const uint32 dataSize = atlasSize.w * atlasSize.h * 3;
+	const uint32 dataSize = atlasSize.w * atlasSize.h * 4;
 	std::vector<uint8> data(dataSize);
 	memcpy(data.data(), atlas->data, dataSize);
 
 	TextureHandle texture = resourceManager.create<Texture>(fmt::format("fonts/Karla-Regular/{}/texture", fontSize), TextureDesc{
 		.dimensions = atlasSize,
-		.depth = 3,
+		.depth = 4,
 		.data = std::move(data)
 	});
 

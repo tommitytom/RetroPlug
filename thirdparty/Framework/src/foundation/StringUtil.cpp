@@ -27,6 +27,7 @@ std::string StringUtil::formatClassName(std::string_view className) {
 			if (lastLower && std::isupper(className[i])) {
 				name.push_back(' ');
 				name.push_back(className[i]);
+				lastLower = false;
 			} else {
 				name.push_back(className[i]);
 				lastLower = true;
@@ -37,6 +38,27 @@ std::string StringUtil::formatClassName(std::string_view className) {
 	}
 
 	return std::string(className);
+}
+
+// TODO: Move to MetaUtil?
+std::string StringUtil::formatMemberName(std::string_view memberName) {
+	std::string name;
+	bool lastLower = false;
+
+	name.push_back(std::toupper(memberName[0]));
+
+	for (size_t i = 1; i < memberName.size(); ++i) {
+		if (lastLower && std::isupper(memberName[i])) {
+			name.push_back(' ');
+			name.push_back(memberName[i]);
+			lastLower = false;
+		} else {
+			name.push_back(memberName[i]);
+			lastLower = true;
+		}
+	}
+
+	return name;
 }
 
 std::string StringUtil::toString(const std::wstring& wstr) {

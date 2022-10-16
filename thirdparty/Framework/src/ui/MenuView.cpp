@@ -322,8 +322,8 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
 
 			canvas.line(
-				{ item.area.x + _indentSize, yPos }, 
-				{ (f32)getDimensions().w, yPos }, 
+				PointF{ item.area.x + _indentSize, yPos }, 
+				PointF{ (f32)getDimensions().w, yPos },
 				Color4(255, 255, 255, 127)
 			);
 		}

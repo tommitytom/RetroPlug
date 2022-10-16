@@ -40,6 +40,14 @@ namespace fw {
 			_shared->fontManager = fontManager;
 		}
 
+		View::Shared& getShared() {
+			return _sharedData;
+		}
+
+		const View::Shared& getShared() const {
+			return _sharedData;
+		}
+
 		void setPixelDensity(f32 pixelDensity) {
 			if (pixelDensity != _sharedData.pixelDensity) {
 				_sharedData.pixelDensity = pixelDensity;
@@ -58,6 +66,7 @@ namespace fw {
 				if (!current->onKey(key, down)) {
 					current = current->getParent();
 				} else {
+					current->emit(KeyEvent{ key, down });
 					return true;
 				}
 			}

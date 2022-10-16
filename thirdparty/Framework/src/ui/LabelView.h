@@ -51,7 +51,6 @@ namespace fw {
 			canvas.setColor(_color);
 			canvas.setFont(_fontName, _fontSize);
 			canvas.text(0, 0, _text);
-			canvas.strokeRect((DimensionF)getDimensions(), _color);
 		}
 	};
 

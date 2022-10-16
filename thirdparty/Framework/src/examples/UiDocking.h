@@ -6,6 +6,7 @@
 #include "ui/WaveView.h"
 #include "ui/VerticalSplitter.h"
 #include "ui/Dock.h"
+#include "ui/ObjectInspectorView.h"
 //#include "node/AudioGraph.h"
 //#include "core/RetroPlugNodes.h"
 
@@ -19,6 +20,7 @@ namespace fw {
 		//AudioManager _audioManager;
 		//AudioGraph _audioGraph;
 
+		ObjectInspectorViewPtr _propGrid;
 		DockSplitterPtr _splitter;
 		DockPtr _dock;
 
@@ -32,6 +34,8 @@ namespace fw {
 		~UiDocking() {}
 
 		void onResize(Dimension dimensions) override;
+
+		void onUpdate(f32 delta) override;
 
 		//void onDrop(int count, const char** paths) override;
 

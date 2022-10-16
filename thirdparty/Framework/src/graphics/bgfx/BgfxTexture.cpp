@@ -62,7 +62,7 @@ std::shared_ptr<Resource> BgfxTextureProvider::load(std::string_view uri) {
 					.depth = imageContainer->m_format == bgfx::TextureFormat::RGB8 ? 3u : 4u
 				};
 
-				return std::make_shared<BgfxTexture>(handle);
+				return std::make_shared<BgfxTexture>(handle, desc);
 			} else {
 				spdlog::error("Failed to load texture at {}: {}", uri, err.getMessage().getPtr());
 			}
@@ -93,7 +93,7 @@ std::shared_ptr<Resource> BgfxTextureProvider::create(const TextureDesc& desc, s
 
 	//bgfx::setName(handle, uri.data());
 
-	return std::make_shared<BgfxTexture>(handle);
+	return std::make_shared<BgfxTexture>(handle, desc);
 }
 
 bool BgfxTextureProvider::update(Texture& resource, const TextureDesc& desc) {
@@ -102,6 +102,8 @@ bool BgfxTextureProvider::update(Texture& resource, const TextureDesc& desc) {
 
 	BgfxTexture& texture = (BgfxTexture&)resource;
 	const bgfx::Memory* mem = bgfx::copy(desc.data.data(), (uint32)desc.data.size());
+
+	texture._desc = desc;
 
 	bgfx::updateTexture2D(texture.getBgfxHandle(), 0, 0, 0, 0, desc.dimensions.w, desc.dimensions.h, mem);
 

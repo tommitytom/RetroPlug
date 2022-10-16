@@ -3,32 +3,47 @@
 #include <spdlog/spdlog.h>
 
 #include "WaveformUtil.h"
+#include "foundation/Curves.h"
 
 using namespace fw;
 
 const f32 MIN_SAMPLES_VIEWABLE = 100.0f;
 const f32 ZOOM_STEP_COUNT = 20.0f;
 
-void WaveView::updateSlice() {
+void WaveView::updateSlice(Dimension dimensions) {
 	if (_audioData.size() == 0) {
 		return;
 	}
 
-	size_t sampleCount = (size_t)(getDimensions().w * getWorldScale()) - 2;
-	WaveformUtil::generate(_audioData.slice(_slicePosition, _sliceSize), _waveform, sampleCount);
+	_waveform.channels.resize(_channelCount);
+
+	size_t sampleCount = (size_t)(dimensions.w * getWorldScale()) - 2;
+
+	for (uint32 i = 0; i < _channelCount; ++i) {
+		WaveformUtil::generate(_audioData.slice(_slicePosition * _channelCount, _sliceSize * _channelCount), _waveform.channels[i], sampleCount, i, _channelCount);
+	}
 }
 
-bool WaveView::onMouseScroll(PointT<f32> delta, Point position) {
+uint32 WaveView::getViewableSampleCount() {
+	return 0;
+}
+
+bool WaveView::onMouseScroll(PointF delta, Point position) {
 	// Get the sample under the cursor
 
-	f32 totalSize = (f32)_audioData.size();
-	f32 viewableSamples = totalSize * _zoom * _zoom;
+	f32 totalSize = (f32)(_audioData.size() / _channelCount);
+	const f32 minSize = 50;
+
+	f32 zoomPow = Curves::pow3(_zoom);
+
+	f32 viewableSamples = totalSize * zoomPow;
 	f32 frac = (f32)position.x / (f32)getDimensions().w;
 
 	f32 stepSize = 1.0f / ZOOM_STEP_COUNT;
-	_zoom = MathUtil::clamp(_zoom - delta.y * stepSize, 0.01f, 1.0f);
+	_zoom = MathUtil::clamp(_zoom - delta.y * stepSize, 0.0f, 1.0f);
+	zoomPow = Curves::pow3(_zoom);
 
-	f32 newViewableSamples = totalSize * _zoom * _zoom;
+	f32 newViewableSamples = MathUtil::clamp(totalSize * zoomPow, minSize, totalSize);
 	f32 diff = viewableSamples - newViewableSamples;
 
 	_startOffset += diff * frac;
@@ -49,6 +64,26 @@ bool WaveView::onMouseScroll(PointT<f32> delta, Point position) {
 	return true;
 }
 
+bool WaveView::sampleToPixel(uint64 sample, f32& pixel) {
+	uint64 ranged = sample - _slicePosition;
+	f32 frac = (f32)ranged / (f32)_sliceSize;
+	pixel = frac * getDimensionsF().w;
+	return sample >= _slicePosition && sample < _slicePosition + _sliceSize;
+}
+
+size_t WaveView::pixelToSample(f32 pixel) {
+	// TODO: Maybe get the sample in the middle of the chunk that makes up this pixel
+
+	f32 frac = pixel / getDimensionsF().w;
+	return _slicePosition + (size_t)(_sliceSize * frac);
+}
+
+struct WaveFormSection {
+	f32 startPixel;
+	f32 size;
+	Color4F color;
+};
+
 void WaveView::onRender(Canvas& canvas) {
 	f32 scaleFactor = getWorldScale();
 	RectF area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
@@ -56,6 +91,8 @@ void WaveView::onRender(Canvas& canvas) {
 	f32 yMid = area.bottom() / 2;
 	f32 yScale = yMid - pixelWidth * 2;
 
+	Color4F waveformColor = Color4(_theme.waveform.r, _theme.waveform.g, _theme.waveform.b, (uint8)(_theme.waveform.a * getAlpha()));
+	Color4F waveformSelected = Color4(_theme.waveformSelected.r, _theme.waveformSelected.g, _theme.waveformSelected.b, (uint8)(_theme.waveformSelected.a * getAlpha()));
 	Color4F background = Color4(_theme.background.r, _theme.background.g, _theme.background.b, (uint8)(_theme.background.a * getAlpha()));
 	Color4F foreground = Color4(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha()));
 	Color4F midLine = Color4(_theme.foreground.r, _theme.foreground.g, _theme.foreground.b, (uint8)(_theme.foreground.a * getAlpha() * 0.65f));
@@ -65,50 +102,89 @@ void WaveView::onRender(Canvas& canvas) {
 	// Draw background
 	canvas.fillRect((Dimension)getDimensions(), background);
 
+	// Draw selection background
+
+	f32 w = getDimensionsF().w;
+	
+	f32 selectionStart = 0.0f;
+	f32 selectionEnd = w;
+
+	std::vector<WaveFormSection> sections;
+
+	if (_selectionSize) {
+		bool selectionStartVisible = sampleToPixel(_selectionOffset, selectionStart);
+		bool selectionEndVisible = sampleToPixel(_selectionOffset + _selectionSize, selectionEnd);
+		bool selectionVisible = selectionStart < 0 && selectionEnd > w;
+
+		if (selectionVisible) {
+			selectionStart = MathUtil::clamp(selectionStart, 0.0f, w);
+			selectionEnd = MathUtil::clamp(selectionEnd, 0.0f, w);
+
+			f32 offset = 0.0f;
+
+			if (selectionStartVisible) {
+				sections.push_back(WaveFormSection{
+					.startPixel = 0,
+					.size = selectionStart,
+					.color = waveformColor
+				});
+
+				offset = selectionStart;
+			}
+
+			if (selectionEndVisible) {
+				f32 selectedSize = selectionEnd - offset;
+
+				sections.push_back(WaveFormSection{
+					.startPixel = offset,
+					.size = selectedSize,
+					.color = waveformSelected
+				});
+
+				sections.push_back(WaveFormSection{
+					.startPixel = selectionEnd,
+					.size = w - selectionEnd,
+					.color = waveformColor
+				});
+			} else {
+				sections.push_back(WaveFormSection{
+					.startPixel = offset,
+					.size = w - offset,
+					.color = waveformSelected
+				});
+			}
+		}
+	}
+
 	// Draw outline
-	canvas.strokeRect((DimensionF)getDimensions(), foreground);
+	canvas.strokeRect((DimensionF)getDimensions(), foreground);	
 
-	// Draw mid line
-	canvas.line({ 0, yMid }, { area.w, yMid }, midLine);
+	if (_waveform.channels.size() == 0) {
+		return;
+	}
 
-	std::vector<PointF> points = _waveform.linePoints;
+	std::vector<PointF> points = _waveform.channels[0].linePoints;
+
+	canvas.setColor(waveformColor);
 
 	if (points.size() > 2) {
  		// Draw waveform lines
 
-		//nvgBeginPath(vg);
-		//nvgMoveTo(vg, pixelWidth, points[0].y * yScale + yMid);
-
-		for (size_t i = 0; i < points.size(); ++i) {
+		for (size_t i = 0; i < points.size() - 1; i += 2) {
 			points[i].x = (points[i].x + 1.0f) / scaleFactor;
 			points[i].y = (points[i].y * yScale) + yMid;
 
-			//nvgLineTo(vg, (points[i].x + 1.0f) / scaleFactor, points[i].y * yScale + yMid);
+			points[i + 1].x = (points[i + 1].x + 1.0f) / scaleFactor;
+			points[i + 1].y = (points[i + 1].y * yScale) + yMid;
+
+			canvas.line(points[i], points[i + 1]);
 		}
 
-		canvas.lines(points, foreground);
-
-		//nvgStrokeColor(vg, foreground);
-		//nvgStroke(vg);
-
-		/*if (_markers.size()) {
-			// Draw markers
-			f32 endOffset = _startOffset + (f32)_sliceSize;
-			f32 markerScale = ((f32)getDimensions().w / (f32)_sliceSize);
-			NVGcolor selection = nvgRGBA(_theme.selection.r, _theme.selection.g, _theme.selection.b, (uint8)(_theme.selection.a * getAlpha()));
-
-			for (f32 xOff : _markers) {
-				if (xOff > _startOffset && xOff < endOffset) {
-					f32 pos = (xOff - _startOffset) * markerScale;
-
-					nvgBeginPath(vg);
-					nvgMoveTo(vg, pos, pixelWidth);
-					nvgLineTo(vg, pos, (f32)getDimensions().h);
-
-					nvgStrokeColor(vg, selection);
-					nvgStroke(vg);
-				}
-			}
-		}*/
+		if (points.size() < getDimensions().w / 2) {
+			// TODO: Draw rects for samples
+		}
 	}
+
+	// Draw mid line
+	canvas.line(0.0f, yMid, area.w, yMid, midLine);
 }

@@ -313,16 +313,16 @@ public:
     meta_any invoke(const id_type id, Args &&...args);
 
     /**
-     * @brief Sets the value of a given variable.
-     *
-     * The type of the value is such that a cast or conversion to the type of
-     * the variable is possible. Otherwise, invoking the setter does nothing.
-     *
-     * @tparam Type Type of value to assign.
-     * @param id Unique identifier.
-     * @param value Parameter to use to set the underlying variable.
-     * @return True in case of success, false otherwise.
-     */
+        * @brief Sets the value of a given variable.
+        *
+        * The type of the value is such that a cast or conversion to the type of
+        * the variable is possible. Otherwise, invoking the setter does nothing.
+        *
+        * @tparam Type Type of value to assign.
+        * @param id Unique identifier.
+        * @param value Parameter to use to set the underlying variable.
+        * @return True in case of success, false otherwise.
+        */
     template<typename Type>
     bool set(const id_type id, Type &&value);
 

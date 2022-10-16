@@ -12,11 +12,18 @@ namespace fw::engine {
 	};
 
 	class Texture : public Resource {
+	protected:
+		TextureDesc _desc;
+
 	public:
 		using DescT = TextureDesc;
 
-		Texture() : Resource(entt::type_id<Texture>()) {}
+		Texture(const TextureDesc& desc) : Resource(entt::type_id<Texture>()), _desc(desc) {}
 		~Texture() = default;
+
+		const TextureDesc& getDesc() const {
+			return _desc;
+		}
 	};
 
 	using TextureHandle = TypedResourceHandle<Texture>;
