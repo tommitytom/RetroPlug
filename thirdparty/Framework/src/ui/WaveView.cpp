@@ -74,10 +74,16 @@ bool WaveView::sampleToPixel(uint64 sample, f32& pixel) {
 }
 
 size_t WaveView::pixelToSample(f32 pixel) {
-	// TODO: Maybe get the sample in the middle of the chunk that makes up this pixel
+	size_t targetSize = (size_t)(getDimensions().w * getWorldScale()) - 2;
+	f32 chunkOffset = 0;
+
+	if (_sliceSize > targetSize) {
+		// TODO: Maybe get the sample in the middle of the chunk that makes up this pixel
+		//chunkOffset = ((f32)_sliceSize / (f32)targetSize) * 0.5f;
+	}
 
 	f32 frac = pixel / getDimensionsF().w;
-	return _slicePosition + (size_t)(_sliceSize * frac);
+	return _slicePosition + (size_t)(_sliceSize * frac) + (size_t)chunkOffset;
 }
 
 struct WaveFormSection {
@@ -107,7 +113,7 @@ void WaveView::onRender(Canvas& canvas) {
 	// Draw selection background
 
 	f32 w = getDimensionsF().w;
-	
+
 	f32 selectionStart = 0.0f;
 	f32 selectionEnd = w;
 
@@ -159,7 +165,7 @@ void WaveView::onRender(Canvas& canvas) {
 	}
 
 	// Draw outline
-	canvas.strokeRect((DimensionF)getDimensions(), foreground);	
+	canvas.strokeRect((DimensionF)getDimensions(), foreground);
 
 	if (_waveform.channels.size() == 0) {
 		return;

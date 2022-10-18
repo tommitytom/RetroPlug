@@ -512,10 +512,11 @@ namespace fw {
 
 					bool clip = view->getClip();
 					if (clip) {
-						canvas.pushScissor((Rect)view->getWorldArea());
+						canvas.pushScissor(view->getWorldArea());
 					}
 
 					view->onRender(canvas);
+					propagateRender(canvas, view->getChildren());
 
 					if (clip) {
 						canvas.popScissor();
@@ -523,7 +524,7 @@ namespace fw {
 				}
 			}
 
-			for (ViewPtr& view : views) {
+			/*for (ViewPtr& view : views) {
 				if (view->isVisible()) {
 					canvas.setTranslation((PointF)view->getWorldPosition());
 					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
@@ -539,7 +540,7 @@ namespace fw {
 						canvas.popScissor();
 					}
 				}
-			}
+			}*/
 		}
 
 		bool propagateMouseScroll(PointT<f32> delta, Point position) {
