@@ -335,10 +335,10 @@ Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const T
 	uint32 v = (uint32)_geom.vertices.size();
 
 	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * area.position, agbr, { uvArea.top, uvArea.left } },
-		CanvasVertex{ _transform * area.topRight(), agbr, { uvArea.top, uvArea.right } },
-		CanvasVertex{ _transform * area.bottomRight(), agbr, { uvArea.bottom, uvArea.right } },
-		CanvasVertex{ _transform * area.bottomLeft(), agbr, { uvArea.bottom, uvArea.left } },
+		CanvasVertex{ _transform * area.position, agbr, { uvArea.left, uvArea.top } },
+		CanvasVertex{ _transform * area.topRight(), agbr, { uvArea.right, uvArea.top } },
+		CanvasVertex{ _transform * area.bottomRight(), agbr, { uvArea.right, uvArea.bottom } },
+		CanvasVertex{ _transform * area.bottomLeft(), agbr, { uvArea.left, uvArea.bottom } },
 	});
 
 	_geom.indices.insert(_geom.indices.end(), {

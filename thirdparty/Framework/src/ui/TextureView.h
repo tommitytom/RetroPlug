@@ -18,6 +18,10 @@ namespace fw {
 
 		void setImage(const Image& image);
 
+		void setTexture(TextureHandle texture) {
+			_texture = texture;
+		}
+
 		void clear() { _texture = TextureHandle(); }
 
 		void onRender(Canvas& canvas) override;

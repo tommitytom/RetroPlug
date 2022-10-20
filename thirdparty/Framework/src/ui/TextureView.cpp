@@ -33,7 +33,7 @@ void TextureView::setImage(const Image& image) {
 
 void TextureView::onRender(Canvas& canvas) {
 	if (_texture.isValid()) {
-		canvas.texture(_texture, _textureArea, Color4F(1, 1, 1, getAlpha()));
+		canvas.texture(_texture, getDimensionsF(), Color4F(1, 1, 1, getAlpha()));
 	} else {
 		canvas.fillRect(_textureArea, Color4F(1, 1, 1, getAlpha()));
 	}

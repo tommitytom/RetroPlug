@@ -5,14 +5,16 @@
 #include "foundation/Event.h"
 #include "foundation/Math.h"
 #include "audio/AudioManager.h"
+#include "audio/Granular.h"
+#include "audio/Oscillators.h"
 #include "audio/SampleLoaderUtil.h"
+#include "ui/KnobView.h"
 #include "ui/PlotView.h"
 #include "ui/SliderView.h"
+#include "ui/TextureView.h"
 #include "ui/View.h"
-#include "ui/WaveView.h"
 #include "ui/WaveformUtil.h"
-#include "audio/Oscillators.h"
-#include "audio/Granular.h"
+#include "ui/WaveView.h"
 
 namespace fw {
 	using NoteIndex = uint32;
@@ -79,7 +81,7 @@ namespace fw {
 			if (!buffer.isEmpty()) {
 				return pos >= offset && pos < offset + buffer.getFrameCount();
 			}
-			
+
 			return false;
 		}
 
@@ -142,7 +144,7 @@ namespace fw {
 	private:
 		std::unordered_map<NoteIndex, VoicePtr> _voices;
 
-	public:		
+	public:
 		void addVoice(NoteIndex note, VoicePtr&& voice) {
 			auto found = _voices.find(note);
 
@@ -227,12 +229,12 @@ namespace fw {
 			// TODO: Apply short envelope to avoid clicks
 			setState(VoiceState::Finished);
 		}
-	};	
+	};
 
 	class MyAudioProceessor : public AudioProcessor {
 	private:
 		EventNode _eventNode;
-		
+
 		VoiceManager _voiceManager;
 		std::array<Note, 128> _notes;
 		f32 _amp = 0.0f;
@@ -249,9 +251,9 @@ namespace fw {
 
 			_eventNode.subscribe<NoteParameterChangeEvent>([&](const NoteParameterChangeEvent& ev) {
 				_notes[ev.note].parameters.values[(uint32)ev.type - 1] = ev.value;
-				
+
 				GrainSamplerVoice* voice = (GrainSamplerVoice*)_voiceManager.getVoiceForNote(ev.note);
-				
+
 				if (voice) {
 					switch (ev.type) {
 						case ParameterType::Amp: voice->setAmp(ev.value); break;
@@ -269,7 +271,7 @@ namespace fw {
 
 			_eventNode.subscribe<SetNoteArrayEvent>([&](const SetNoteArrayEvent& ev) {
 				_notes = ev.notes;
-			});			
+			});
 
 			_eventNode.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) { playNote(ev.note); });
 
@@ -359,7 +361,7 @@ namespace fw {
 				} else {
 					emit(SampleClickEvent{ _lastClicked, false });
 				}
-			}			
+			}
 
 			return true;
 		}
@@ -398,7 +400,7 @@ namespace fw {
 
 				f32 startPixel;
 				f32 endPixel;
-				
+
 				bool startVisible = parent->sampleToPixel((size_t)note.offset, startPixel);
 				bool endVisible = parent->sampleToPixel((size_t)note.getEnd(), endPixel);
 
@@ -437,7 +439,7 @@ namespace fw {
 
 	public:
 		Granular() : View({ 1024, 768 }), _waveformBuffer(48000 * 5) {
-			setType<Granular>(); 
+			setType<Granular>();
 			setFocusPolicy(FocusPolicy::Click);
 			setSizingPolicy(SizingPolicy::FitToParent);
 		}
@@ -538,7 +540,7 @@ namespace fw {
 				Note& next = _notes[ev.idx + 1];
 
 				note.buffer = _sampleData.slice(note.offset, ev.marker - note.offset);
-				
+
 				next.buffer = _sampleData.slice(ev.marker, next.getEnd() - ev.marker);
 				next.offset = ev.marker;
 
@@ -575,6 +577,19 @@ namespace fw {
 			slider5->setArea({ 10, 200, 500, 30 });
 			slider5->setRange(2.0f, 50.0f);
 			slider5->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
+
+			TextureHandle knobTexture1 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
+			TextureHandle knobTexture2 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
+			TextureHandle knobTexture3 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M3.png");
+			TextureHandle upTexture = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\up.png");
+
+			auto knob = addChild<KnobView>("Amp");
+			//auto knob = addChild<TextureView>("Amp");
+			knob->setTexture(knobTexture1, 128);
+			//knob->setTexture(knobTexture2, 16);
+			//knob->setTexture(upTexture);
+			knob->setArea({ 10, 250, knob->getTileSize().w, knob->getTileSize().h });
+			//knob->setArea({ 10, 250, 200, 200 });
 
 			eventNode->subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
 				_playerOverlay->setHighlight(ev.note, true);
