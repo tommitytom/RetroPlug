@@ -10,10 +10,10 @@
 #include "core/ProjectExporter.h"
 #include "core/SystemWrapper.h"
 #include "sameboy/SameBoySystem.h"
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
-#include "util/SolUtil.h"
+#include "foundation/SolUtil.h"
 
 using namespace rp;
 
@@ -23,11 +23,11 @@ void loadRomDialog(Project* project, SystemWrapperPtr system) {
 	if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
 		if (system) {
 			LoadConfig loadConfig = LoadConfig{
-				.romBuffer = std::make_shared<Uint8Buffer>(),
-				.sramBuffer = std::make_shared<Uint8Buffer>()
+				.romBuffer = std::make_shared<fw::Uint8Buffer>(),
+				.sramBuffer = std::make_shared<fw::Uint8Buffer>()
 			};
 
-			if (!fsutil::readFile(files[0], loadConfig.romBuffer.get())) {
+			if (!fw::FsUtil::readFile(files[0], loadConfig.romBuffer.get())) {
 				return;
 			}
 
@@ -84,9 +84,9 @@ bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
 
 	spdlog::info("Saving SRAM to {}", path);
 
-	Uint8Buffer target;
+	fw::Uint8Buffer target;
 	if (system->getSystem()->saveSram(target)) {
-		if (fsutil::writeFile(path, (const char*)target.data(), target.size())) {
+		if (fw::FsUtil::writeFile(path, (const char*)target.data(), target.size())) {
 			return true;
 		}
 
@@ -107,9 +107,9 @@ bool saveState(Project* project, SystemWrapperPtr system) {
 
 	spdlog::info("Saving state to {}", path);
 
-	Uint8Buffer target;
+	fw::Uint8Buffer target;
 	if (system->getSystem()->saveState(target)) {
-		if (fsutil::writeFile(path, (const char*)target.data(), target.size())) {
+		if (fw::FsUtil::writeFile(path, (const char*)target.data(), target.size())) {
 			return true;
 		}
 
@@ -122,19 +122,19 @@ bool saveState(Project* project, SystemWrapperPtr system) {
 }
 
 bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWrapperPtr system) {
-	std::vector<std::byte> fileData = fsutil::readFile(romPath);
+	std::vector<std::byte> fileData = fw::FsUtil::readFile(romPath);
 
 	system->load({
 		.romPath = romPath.string()
 	}, {
-		.romBuffer = std::make_shared<Uint8Buffer>((uint8*)fileData.data(), fileData.size()),
+		.romBuffer = std::make_shared<fw::Uint8Buffer>((uint8*)fileData.data(), fileData.size()),
 		.reset = true
 	});
 
 	return true;
 }
 
-void MenuBuilder::populateRecent(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
 	std::vector<RecentFilePath> paths;
 	fileManager->loadRecent(paths);
 
@@ -155,8 +155,8 @@ void MenuBuilder::populateRecent(Menu& root, FileManager* fileManager, Project* 
 	}
 }
 
-void MenuBuilder::systemAddMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
-	Menu& loadRoot = root.subMenu("Add");
+void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+	fw::Menu& loadRoot = root.subMenu("Add");
 
 	loadRoot.action("Duplicate Current", [fileManager, project, system]() {
 		SystemSettings settings = system->getSettings();
@@ -176,8 +176,8 @@ void MenuBuilder::systemAddMenu(Menu& root, FileManager* fileManager, Project* p
 		.parent();
 }
 
-void MenuBuilder::systemLoadMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
-	Menu& loadRoot = root.subMenu("Load");
+void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+	fw::Menu& loadRoot = root.subMenu("Load");
 
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
 
@@ -193,7 +193,7 @@ void MenuBuilder::systemLoadMenu(Menu& root, FileManager* fileManager, Project* 
 		.parent();
 }
 
-void MenuBuilder::systemSaveMenu(Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
 	root.subMenu("Save")
 		/*.action("Project", [project, fileManager]() { saveProject(project, fileManager, false); })
 		.action("Project As...", [project, fileManager]() { saveProject(project, fileManager, true); })
@@ -201,7 +201,7 @@ void MenuBuilder::systemSaveMenu(Menu& root, FileManager* fileManager, Project* 
 		.action("SAV As...", [project, system]() { saveSram(project, system, true); })
 		.action("State As...", [project, system]() { saveState(project, system); })*/
 		.action("All ROMs + SAVs", [project]() {
-			Uint8Buffer target;
+		fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(*project, target)) {
 				FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
 			}

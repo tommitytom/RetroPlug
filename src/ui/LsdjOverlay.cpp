@@ -6,10 +6,11 @@
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
 #include "ui/SystemView.h"
+#include "ui/Menu.h"
 
 using namespace rp;
 
-std::shared_ptr<SamplerView> showSampleManager(View* parent, SystemWrapperPtr system) {
+std::shared_ptr<SamplerView> showSampleManager(fw::View* parent, SystemWrapperPtr system) {
 	std::vector<std::shared_ptr<SamplerView>> samplers;
 	parent->findChildren<SamplerView>(samplers);
 
@@ -35,7 +36,7 @@ std::shared_ptr<SamplerView> showSampleManager(View* parent, SystemWrapperPtr sy
 	return samplerView;
 }
 
-void showHdPlayer(View* parent, SystemWrapperPtr system) {
+void showHdPlayer(fw::View* parent, SystemWrapperPtr system) {
 	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
 	player->setSystem(system);
 	player->focus();
@@ -59,7 +60,7 @@ void LsdjOverlay::onInitialize() {
 	}
 }
 
-void LsdjOverlay::onMenu(Menu& menu) {
+void LsdjOverlay::onMenu(fw::Menu& menu) {
 	menu.subMenu("LSDJ")
 		.action("Sample Manager", [this]() { showSampleManager(getParent()->getParent(), _system); })
 		.action("HD Player", [this]() { showHdPlayer(getParent()->getParent()->getParent(), _system); })
@@ -155,11 +156,11 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 	}
 
 	if (samples.size() > 0) {
-		FileManager* fileManager = getShared<FileManager>();
+		FileManager* fileManager = getState<FileManager>();
 		std::string kitName;
 
 #ifndef RP_WEB
-		kitName = fsutil::getDirectoryName(samples[0]);
+		kitName = fw::FsUtil::getDirectoryName(samples[0]);
 #endif
 
 		// Make a local copy of the sample if we don't already have it

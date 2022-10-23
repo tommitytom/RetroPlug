@@ -2,13 +2,13 @@
 
 #include <string_view>
 
-#include "util/DataBuffer.h"
+#include "foundation/DataBuffer.h"
 #include "ui/LsdjModel.h"
 #include "lsdj/Rom.h"
 
 namespace rp::KitUtil {
 	struct SampleData {
-		Float32BufferPtr buffer;
+		fw::Float32BufferPtr buffer;
 		uint32 sampleRate;
 	};
 

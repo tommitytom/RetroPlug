@@ -8,9 +8,9 @@
 #include "roms/mgb.h"
 #include "sameboy/SameBoySystem.h"
 #include "ui/MenuBuilder.h"
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 #include "util/LoaderUtil.h"
-#include "util/SolUtil.h"
+#include "foundation/SolUtil.h"
 
 using namespace rp;
 

@@ -4,9 +4,9 @@
 #include <array>
 #include <spdlog/spdlog.h>
 
-#include "util/DataBuffer.h"
-#include "util/fs.h"
-#include "util/Random.h"
+#include "foundation/DataBuffer.h"
+#include "foundation/FsUtil.h"
+#include "foundation/Random.h"
 #include "core/MemoryAccessor.h"
 
 namespace rp::lsdj {
@@ -25,17 +25,17 @@ namespace rp::lsdj {
 		static const size_t SIZE = COLOR_SET_COUNT * COLOR_SET_SIZE;
 
 		struct ColorSet {
-			Color3 first;
-			Color3 second;
+			fw::Color3 first;
+			fw::Color3 second;
 		};
 
 		char name[NAME_SIZE] = { '\n' };
 		ColorSet sets[COLOR_SET_COUNT];
 
-		Color3 getColor(ColorSets colorSet, uint32 pixel) const {
+		fw::Color3 getColor(ColorSets colorSet, uint32 pixel) const {
 			ColorSet set = sets[(int)colorSet];
 
-			Color3 val;
+			fw::Color3 val;
 			switch (pixel) {
 			case 0:
 				val = set.first;
@@ -55,8 +55,8 @@ namespace rp::lsdj {
 		}
 
 	private:
-		Color3 blendColors(Color3 color1, Color3 color2) const {
-			return Color3{
+		fw::Color3 blendColors(fw::Color3 color1, fw::Color3 color2) const {
+			return fw::Color3{
 				.r = (uint8)((color1.r + color2.r) / 2),
 				.g = (uint8)((color1.g + color2.g) / 2),
 				.b = (uint8)((color1.b + color2.b) / 2)
@@ -84,7 +84,7 @@ namespace rp::lsdj {
 	namespace SampleUtil {
 		const size_t SAMPLES_PER_BYTE_4BIT = 2;
 
-		static void convertNibblesToF32(const Uint8Buffer& input, Float32Buffer& output) {
+		static void convertNibblesToF32(const fw::Uint8Buffer& input, fw::Float32Buffer& output) {
 			output.resize(input.size() * SAMPLES_PER_BYTE_4BIT);
 
 			for (size_t i = 0; i < input.size(); ++i) {
@@ -105,7 +105,7 @@ namespace rp::lsdj {
 			}
 		}
 
-		static void convertF32ToNibbles(const Float32Buffer& input, Uint8Buffer& output, f32 dither) {
+		static void convertF32ToNibbles(const fw::Float32Buffer& input, fw::Uint8Buffer& output, f32 dither) {
 			output.resize(input.size() / SAMPLES_PER_BYTE_4BIT);
 
 			int offset = 0;
@@ -116,7 +116,7 @@ namespace rp::lsdj {
 			outputBuffer[0] = 0;
 
 			f32 halfDither = dither * 0.5f;
-			Random ditherRand;
+			fw::Random ditherRand;
 			f32 state = ditherRand.nextFloatRange(-halfDither, halfDither);
 
 			for (size_t i = 0; i < input.size(); ++i) {
@@ -180,7 +180,7 @@ namespace rp::lsdj {
 			return kitData.isValid() && _idx != -1;
 		}
 
-		const Uint8Buffer& getBuffer() const {
+		const fw::Uint8Buffer& getBuffer() const {
 			return kitData.getBuffer();
 		}
 
@@ -195,7 +195,7 @@ namespace rp::lsdj {
 			return name.substr(0, spaceOff);
 		}
 
-		void setKitData(const Uint8Buffer& buffer) {
+		void setKitData(const fw::Uint8Buffer& buffer) {
 			kitData.write(0, buffer);
 		}
 
@@ -209,7 +209,7 @@ namespace rp::lsdj {
 			return std::string_view("N/A");
 		}
 
-		const Uint8Buffer getSampleData(size_t sampleIdx) const {
+		const fw::Uint8Buffer getSampleData(size_t sampleIdx) const {
 			size_t nameOffset = getSampleNameOffset(sampleIdx);
 
 			if (kitData[nameOffset] != 0) {
@@ -224,10 +224,10 @@ namespace rp::lsdj {
 				}
 			}
 
-			return Uint8Buffer();
+			return fw::Uint8Buffer();
 		}
 
-		int32 addSample(std::string_view name, const Uint8Buffer& data) {
+		int32 addSample(std::string_view name, const fw::Uint8Buffer& data) {
 			size_t sampleIdx;
 			uint16 offset;
 
@@ -252,7 +252,7 @@ namespace rp::lsdj {
 			// Write sample data
 			kitData.write(offset - 0x4000, data);
 
-			fsutil::writeFile("C:/temp/test.kit", (const char*)kitData.getData(), 0x4000);
+			fw::FsUtil::writeFile("C:/temp/test.kit", (const char*)kitData.getData(), 0x4000);
 
 			return (int32)sampleIdx;
 		}
@@ -283,7 +283,7 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool setSampleData(size_t sampleIdx, const Uint8Buffer& data) {
+		bool setSampleData(size_t sampleIdx, const fw::Uint8Buffer& data) {
 			if (data.size() == getSampleDataLength(sampleIdx)) {
 				// No need to rebuild offset table
 				size_t offset = getSampleOffset(sampleIdx) - 0x4000;
@@ -416,14 +416,14 @@ namespace rp::lsdj {
 			_valid = true;
 		}
 
-		Color3 unpackColor(const uint8* data) const {
-			Color3 col = {
+		fw::Color3 unpackColor(const uint8* data) const {
+			fw::Color3 col = {
 				.r = (uint8)(data[0] & 0x1F),
 				.g = (uint8)(((data[1] & 3) << 3) | ((data[0] & 0xE0) >> 5)),
 				.b = (uint8)(data[1] >> 2)
 			};
 
-			return Color3 {
+			return fw::Color3 {
 				.r = (uint8)(((col.r << 3) * 255) / 0xF8),
 				.g = (uint8)(((col.g << 3) * 255) / 0xF8),
 				.b = (uint8)(((col.b << 3) * 255) / 0xF8),
@@ -449,7 +449,7 @@ namespace rp::lsdj {
 			return bankIsEmptyKit(bankData);
 		}
 
-		void setKit(size_t idx, const Uint8Buffer& data) {
+		void setKit(size_t idx, const fw::Uint8Buffer& data) {
 
 		}
 
@@ -516,7 +516,7 @@ namespace rp::lsdj {
 			return kitData[nameOffset] != 0;
 		}
 
-		Uint8Buffer getKitSampleData(size_t kitIdx, size_t sampleIdx) const {
+		fw::Uint8Buffer getKitSampleData(size_t kitIdx, size_t sampleIdx) const {
 			size_t bankIdx = KIT_LOOKUP[kitIdx];
 			const uint8* kitData = getBankData(bankIdx);
 			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * 3;
@@ -527,11 +527,11 @@ namespace rp::lsdj {
 				size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
 
 				if (stop > start) {
-					return Uint8Buffer((uint8*)kitData + (start - BANK_SIZE), stop - start, false);
+					return fw::Uint8Buffer((uint8*)kitData + (start - BANK_SIZE), stop - start, false);
 				}
 			}
 
-			return Uint8Buffer();
+			return fw::Uint8Buffer();
 		}
 
 		std::string_view getFontName(size_t idx) const {
@@ -600,11 +600,11 @@ namespace rp::lsdj {
 		}
 
 	private:
-		bool bankIsKit(const Uint8Buffer& bankData) const {
+		bool bankIsKit(const fw::Uint8Buffer& bankData) const {
 			return bankData[0] == 0x60 && bankData[1] == 0x40;
 		}
 
-		bool bankIsEmptyKit(const Uint8Buffer& bankData) const {
+		bool bankIsEmptyKit(const fw::Uint8Buffer& bankData) const {
 			return bankData[0] == 0xFF && bankData[1] == 0xFF;
 		}
 

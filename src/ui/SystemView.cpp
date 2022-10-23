@@ -4,7 +4,7 @@
 
 #include "platform/FileDialog.h"
 #include "core/Project.h"
-#include "ui/KeyToButton.h"
+#include "foundation/KeyToButton.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
 #include "audio/AudioManager.h"
@@ -15,7 +15,7 @@ using namespace rp;
 
 SystemView::SystemView() : TextureView(), _frameBuffer(160, 144) {
 	setType<SystemView>();
-	setSizingPolicy(SizingPolicy::None);
+	setSizingPolicy(fw::SizingPolicy::None);
 }
 
 bool SystemView::onDrop(const std::vector<std::string>& paths) {
@@ -31,7 +31,7 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 	if (key == VirtualKey::Esc) {
 		if (down) {
 			// Generate menu
-			MenuPtr menu = std::make_shared<Menu>();
+			fw::MenuPtr menu = std::make_shared<fw::Menu>();
 			buildMenu(*menu);
 
 			MenuViewPtr menuView = addChild<MenuView>("Menu");
@@ -39,7 +39,7 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 			menuView->focus();
 		}
 	} else {
-		ButtonType::Enum button = keyToButton(key);
+		ButtonType::Enum button = fw::keyToButton(key);
 
 		if (button != ButtonType::MAX) {
 			SystemIoPtr& io = _system->getSystem()->getStream();
@@ -83,12 +83,12 @@ void loadRomDialog(Project* project) {
 	}
 }
 
-void SystemView::buildMenu(Menu& target) {
-	FileManager* fileManager = getShared<FileManager>();
-	Project* project = getShared<Project>();
+void SystemView::buildMenu(fw::Menu& target) {
+	FileManager* fileManager = getState<FileManager>();
+	Project* project = getState<Project>();
 	ProjectState& projectState = project->getState();
 
-	Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getSystem()->getRomName()).separator();
+	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getSystem()->getRomName()).separator();
 	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
 	MenuBuilder::systemAddMenu(root, fileManager, project, _system);
 	MenuBuilder::systemSaveMenu(root, fileManager, project, _system);
@@ -112,7 +112,7 @@ void SystemView::buildMenu(Menu& target) {
 		})
 		.separator();
 
-	Menu& settingsMenu = root.subMenu("Settings");
+	fw::Menu& settingsMenu = root.subMenu("Settings");
 
 	#ifndef RP_WEB
 	settingsMenu
@@ -139,7 +139,7 @@ void SystemView::buildMenu(Menu& target) {
 			.separator()
 			.action("Game Link", []() {});
 
-	for (ViewPtr child : getChildren()) {
+	for (fw::ViewPtr child : getChildren()) {
 		child->onMenu(target);
 	}
 }

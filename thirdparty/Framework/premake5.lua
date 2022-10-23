@@ -1,3 +1,5 @@
+_ROOT_PATH = ""
+
 local util = dofile("premake/util.lua")
 local dep = dofile("premake/dep/index.lua")
 local projects = dofile("premake/projects.lua")

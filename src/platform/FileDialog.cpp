@@ -1,6 +1,6 @@
 #include "FileDialog.h"
 
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 
 using namespace rp;
 
@@ -129,7 +129,7 @@ bool FileDialog::basicFileOpen(void* ui, std::vector<std::string>& target, const
 bool FileDialog::fileSaveData(void* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string target;
 	if (FileDialog::basicFileSave(ui, target, filters, fileName)) {
-		return fsutil::writeFile(target, data);
+		return fw::FsUtil::writeFile(target, data);
 	}
 
 	return false;
@@ -266,7 +266,7 @@ bool FileDialog::fileSaveData(UiHandle* ui, const rp::Uint8Buffer& data, const s
 
 	fs::create_directories("/.file-save-dialog/");
 
-	if (!fsutil::writeFile(filePath, data)) {
+	if (!fw::FsUtil::writeFile(filePath, data)) {
 		spdlog::error("Failed to save {}", filePath);
 		return false;
 	}

@@ -1,4 +1,4 @@
-local LUA_DIR = "thirdparty/lua"
+local LUA_DIR = _ROOT_PATH .. "thirdparty/lua"
 
 local m = {}
 

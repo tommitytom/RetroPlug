@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "platform/Types.h"
+#include "foundation/Types.h"
 #include "MessageBus.h"
 #include "Ports.h"
 #include "NodeBase.h"

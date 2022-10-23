@@ -6,8 +6,8 @@
 #include "lsdj/OffsetLookup.h"
 #include "platform/FileDialog.h"
 #include "foundation/StringUtil.h"
-#include "util/DataBuffer.h"
-#include "ui/KeyToButton.h"
+#include "foundation/DataBuffer.h"
+#include "foundation/KeyToButton.h"
 #include "ui/LsdjModel.h"
 
 using namespace rp;
@@ -22,12 +22,12 @@ const std::vector<FileDialogFilter> KIT_FILTER = {
 	{ "LSDj Kit Files", "*.kit" }
 };
 
-const RectT BOX_SIZE = RectT(6, 12, 13, 5);
-const RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * (int32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (int32)lsdj::TILE_WIDTH, BOX_SIZE.h * (int32)lsdj::TILE_HEIGHT };
+const fw::RectT BOX_SIZE = fw::RectT(6, 12, 13, 5);
+const fw::RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * (int32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (int32)lsdj::TILE_WIDTH, BOX_SIZE.h * (int32)lsdj::TILE_HEIGHT };
 
 SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();
-	_waveView = addChildAt<WaveView>("SamplerWaveView", BOX_AREA);
+	_waveView = addChildAt<fw::WaveView>("SamplerWaveView", BOX_AREA);
 }
 
 void SamplerView::setSystem(SystemWrapperPtr& system) {
@@ -85,7 +85,7 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 		return false;
 	}
 
-	ButtonType::Enum button = keyToButton(key);
+	ButtonType::Enum button = fw::keyToButton(key);
 
 	if (key == VirtualKey::W) {
 		_bHeld = down;
@@ -263,7 +263,7 @@ void SamplerView::onRender(Canvas& canvas) {
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
-	DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
+	fw::DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
 
 	uint8 kitIdx = _samplerState.selectedKit != -1 ? (uint8)_samplerState.selectedKit : 0;
 
@@ -390,7 +390,7 @@ void SamplerView::onRender(Canvas& canvas) {
 	LsdjCanvasView::onRender(canvas);
 }
 
-void populateEditKit(SystemPtr system, Menu& target) {
+void populateEditKit(SystemPtr system, fw::Menu& target) {
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	for (size_t i = 0; i < lsdj::Rom::KIT_COUNT; ++i) {
@@ -403,7 +403,7 @@ void populateEditKit(SystemPtr system, Menu& target) {
 	}
 }
 
-void populateRemoveKit(SystemPtr system, Menu& target) {
+void populateRemoveKit(SystemPtr system, fw::Menu& target) {
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	for (size_t i = 0; i < lsdj::Rom::KIT_COUNT; ++i) {
@@ -433,7 +433,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 	}
 }
 
-void SamplerView::buildMenu(Menu& target) {
+void SamplerView::buildMenu(fw::Menu& target) {
 	LsdjModelPtr model = _system->getModel<LsdjModel>();
 	bool kitEditable = model->kits.find(_samplerState.selectedKit) != model->kits.end();
 
@@ -470,19 +470,19 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 	std::vector<std::string> kitSamples;
 
 	for (const std::string& path : paths) {
-		if (fsutil::getFileExt(path) == ".kit") {
+		if (fw::FsUtil::getFileExt(path) == ".kit") {
 			model->addKit(system, path, kitIdx);
 			kitSamples.clear();
 			break;
 		}
 
-		if (fsutil::getFileExt(path) == ".wav") {
+		if (fw::FsUtil::getFileExt(path) == ".wav") {
 			kitSamples.push_back(path);
 		}
 	}
 
 	if (kitSamples.size() > 0) {
-		std::string kitName = fsutil::getDirectoryName(kitSamples[0]);
+		std::string kitName = fw::FsUtil::getDirectoryName(kitSamples[0]);
 		model->addKitSamples(system, paths, kitName, kitIdx);
 	}
 
@@ -517,7 +517,7 @@ void SamplerView::updateWaveform() {
 	}
 
 	size_t kitIdx = _samplerState.selectedKit;
-	Uint8Buffer sampleData;
+	fw::Uint8Buffer sampleData;
 	std::vector<f32> markers;
 
 	if (_samplerState.selectedSample == 0) {
@@ -535,10 +535,10 @@ void SamplerView::updateWaveform() {
 	}
 
 	if (sampleData.size() > 0) {
-		Float32Buffer samples;
+		fw::Float32Buffer samples;
 		lsdj::SampleUtil::convertNibblesToF32(sampleData, samples);
-		_waveView->setAudioData(std::move(samples));
-		_waveView->setMarkers(std::move(markers));
+		_waveView->setAudioData(std::move(samples), 1);
+		//_waveView->setMarkers(std::move(markers));
 	} else {
 		_waveView->clearWaveform();
 	}

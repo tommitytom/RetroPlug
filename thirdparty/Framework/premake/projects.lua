@@ -1,5 +1,6 @@
 local dep = dofile("dep/index.lua")
-local util = dofile("util.lua")
+--local util = dofile("util.lua")
+local util = dofile("thirdparty/Framework/premake/util.lua")
 
 local m = {
 	Foundation = {},
@@ -16,14 +17,14 @@ function m.Foundation.include()
 	dependson { "configure" }
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -44,8 +45,8 @@ function m.Foundation.project()
 	m.Foundation.include()
 
 	files {
-		"src/foundation/**.h",
-		"src/foundation/**.cpp"
+		_ROOT_PATH .. "src/foundation/**.h",
+		_ROOT_PATH .. "src/foundation/**.cpp"
 	}
 
 	util.liveppCompat()
@@ -61,14 +62,14 @@ function m.Graphics.include()
 	dep.freetype.include()
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -93,8 +94,8 @@ function m.Graphics.project()
 	m.Graphics.include()
 
 	files {
-		"src/graphics/**.h",
-		"src/graphics/**.cpp"
+		_ROOT_PATH .. "src/graphics/**.h",
+		_ROOT_PATH .. "src/graphics/**.cpp"
 	}
 
 	util.liveppCompat()
@@ -108,14 +109,14 @@ function m.Ui.include()
 	m.Graphics.include()
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -138,8 +139,8 @@ function m.Ui.project()
 	m.Graphics.include()
 
 	files {
-		"src/ui/**.h",
-		"src/ui/**.cpp"
+		_ROOT_PATH .. "src/ui/**.h",
+		_ROOT_PATH .. "src/ui/**.cpp"
 	}
 
 	util.liveppCompat()
@@ -153,14 +154,14 @@ function m.Audio.include()
 	m.Foundation.include()
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -183,8 +184,8 @@ function m.Audio.project()
 		m.Audio.include()
 
 		files {
-			"src/audio/**.h",
-			"src/audio/**.cpp"
+			_ROOT_PATH .. "src/audio/**.h",
+			_ROOT_PATH .. "src/audio/**.cpp"
 		}
 
 		util.liveppCompat()
@@ -200,14 +201,14 @@ function m.Application.include()
 	dep.glfw.include()
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -232,8 +233,8 @@ function m.Application.project()
 		m.Application.include()
 
 		files {
-			"src/application/**.h",
-			"src/application/**.cpp"
+			_ROOT_PATH .. "src/application/**.h",
+			_ROOT_PATH .. "src/application/**.cpp"
 		}
 
 		util.liveppCompat()
@@ -247,14 +248,14 @@ function m.Engine.include()
 	dep.box2d.include()
 
 	sysincludedirs {
-		"thirdparty",
-		"thirdparty/spdlog/include"
+		_ROOT_PATH .. "thirdparty",
+		_ROOT_PATH .. "thirdparty/spdlog/include"
 	}
 
 	includedirs {
-		"src",
-		"generated",
-		"resources"
+		_ROOT_PATH .. "src",
+		_ROOT_PATH .. "generated",
+		_ROOT_PATH .. "resources"
 	}
 
 	dep.bgfx.compat()
@@ -278,8 +279,8 @@ function m.Engine.project()
 	m.Engine.include()
 
 	files {
-		"src/engine/**.h",
-		"src/engine/**.cpp"
+		_ROOT_PATH .. "src/engine/**.h",
+		_ROOT_PATH .. "src/engine/**.cpp"
 	}
 
 	util.liveppCompat()
@@ -299,16 +300,16 @@ function m.ExampleApplication.project(name)
 		}
 
 		includedirs {
-			"src/examples"
+			_ROOT_PATH .. "src/examples"
 		}
 
 		files {
-			"src/examples/" .. name .. ".*",
-			"src/examples/main.cpp"
+			_ROOT_PATH .. "src/examples/" .. name .. ".*",
+			_ROOT_PATH .. "src/examples/main.cpp"
 		}
 
 		filter { "action:vs*" }
-			files { "thirdparty/entt/natvis/entt/*.natvis" }
+			files { _ROOT_PATH .. "thirdparty/entt/natvis/entt/*.natvis" }
 
 		--[[filter { "options:emscripten" }
 			buildoptions { "-matomics", "-mbulk-memory" }
@@ -331,17 +332,17 @@ function m.ExampleApplication.project(name)
 		}
 
 		includedirs {
-			"src/examples"
+			_ROOT_PATH .. "src/examples"
 		}
 
 		files {
-			"src/examples/" .. name .. ".*",
-			"src/examples/mainlivepp.cpp",
-			"src/examples/mainloop.cpp"
+			_ROOT_PATH .. "src/examples/" .. name .. ".*",
+			_ROOT_PATH .. "src/examples/mainlivepp.cpp",
+			_ROOT_PATH .. "src/examples/mainloop.cpp"
 		}
 
 		filter { "action:vs*" }
-			files { "thirdparty/entt/natvis/entt/*.natvis" }
+			files { _ROOT_PATH .. "thirdparty/entt/natvis/entt/*.natvis" }
 
 		util.liveppCompat()
 end
@@ -382,7 +383,7 @@ function m.Tests.project()
 	m.Engine.link()
 
 	files {
-		"src/tests/**.cpp"
+		_ROOT_PATH .. "src/tests/**.cpp"
 	}
 end
 

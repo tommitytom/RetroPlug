@@ -13,9 +13,9 @@ namespace rp {
 	public:
 		//DimensionT<f32> scale = DimensionT<f32>(2, 2);
 
-		GridViewPtr grid;
+		fw::GridViewPtr grid;
 		//ViewPtr overlayRoot;
-		GridOverlayPtr gridOverlay;
+		fw::GridOverlayPtr gridOverlay;
 
 		SystemProcessor processor;
 	};

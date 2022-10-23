@@ -22,7 +22,7 @@ extern "C" {
 #include "lsdj/Sav.h"
 #include "lsdj/LsdjUtil.h"
 
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 #include "util/GameboyUtil.h"
 
 using namespace rp;
@@ -74,7 +74,7 @@ void dumpRam(Context& ctx, const fs::path& path) {
 	size_t size;
 	uint16 bank;
 	void* data = GB_get_direct_access(ctx.gb, GB_DIRECT_ACCESS_RAM, &size, &bank);
-	fsutil::writeFile(DUMP_PATH / path, (const char*)data, size);
+	fw::FsUtil::writeFile(DUMP_PATH / path, (const char*)data, size);
 }
 
 BufferPtr dumpRam(Context& ctx) {

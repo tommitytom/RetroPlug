@@ -4,7 +4,7 @@
 
 #include "lsdj/KitUtil.h"
 #include "lsdj/Rom.h"
-#include "util/HashUtil.h"
+#include "foundation/HashUtil.h"
 #include "foundation/StringUtil.h"
 
 using namespace rp;
@@ -73,7 +73,7 @@ KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex k
 		newKit = rom.kitIsEmpty(kitIdx);
 	}
 
-	std::vector<std::byte> fileData = fsutil::readFile(path);
+	std::vector<std::byte> fileData = fw::FsUtil::readFile(path);
 	rom.getKit(kitIdx).setKitData(Uint8Buffer((uint8*)fileData.data(), fileData.size()));
 
 	setRequiresSave(true);
@@ -103,10 +103,10 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 		};
 
 		for (const std::string& path : paths) {
-			if (fsutil::getFileExt(path) == ".wav") {
-				std::string sampleName = fsutil::getFilename(path);
-				sampleName = fsutil::removeFileExt(sampleName);
-				sampleName = std::string(fsutil::removeUniqueId(sampleName));
+			if (fw::FsUtil::getFileExt(path) == ".wav") {
+				std::string sampleName = fw::FsUtil::getFilename(path);
+				sampleName = fw::FsUtil::removeFileExt(sampleName);
+				sampleName = std::string(fw::FsUtil::removeUniqueId(sampleName));
 
 				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
 

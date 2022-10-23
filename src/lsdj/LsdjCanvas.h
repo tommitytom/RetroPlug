@@ -2,8 +2,8 @@
 
 #include <stack>
 
-#include "util/DataBuffer.h"
-#include "util/Image.h"
+#include "foundation/DataBuffer.h"
+#include "foundation/Image.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
 #include "lsdj/Ram.h"
@@ -99,22 +99,22 @@ namespace rp::lsdj {
 		lsdj::Font _font;
 		lsdj::Palette _palette;
 
-		Color4* _tileBuffer = nullptr;
+		fw::Color4* _tileBuffer = nullptr;
 
-		Image _renderTarget;
-		DimensionT<uint32> _dimensions;
-		PointT<uint32> _translation = { 0, 0 };
+		fw::Image _renderTarget;
+		fw::DimensionT<uint32> _dimensions;
+		fw::PointT<uint32> _translation = { 0, 0 };
 
-		std::stack<PointT<uint32>> _translationStack;
+		std::stack<fw::PointT<uint32>> _translationStack;
 
 		int _textureHandle = -1;
 
 	public:
-		Canvas(DimensionT<uint32> dimensions);
-		Canvas(DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
+		Canvas(fw::DimensionT<uint32> dimensions);
+		Canvas(fw::DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
 		~Canvas();
 
-		void translate(PointT<uint32> translation) {
+		void translate(fw::PointT<uint32> translation) {
 			_translationStack.push(_translation);
 			_translation += translation;
 		}
@@ -154,19 +154,19 @@ namespace rp::lsdj {
 
 		void number(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true, bool dimmed = false);
 
-		Color4 getPixelColor(lsdj::ColorSets colorSetIdx, uint32 paletteIdx, uint8 alpha = 255);
+		fw::Color4 getPixelColor(lsdj::ColorSets colorSetIdx, uint32 paletteIdx, uint8 alpha = 255);
 
-		Color4 getPixelColor(const lsdj::Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha = 255);
+		fw::Color4 getPixelColor(const lsdj::Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha = 255);
 
 		//void drawDimmedTile(uint32 x, uint32 y, const Font::Tile& tile, Palette::ColorSet colorSet);
 
 		//void drawDimmedTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetIdx);
 
-		DimensionT<uint32> getDimensions() const {
+		fw::DimensionT<uint32> getDimensions() const {
 			return _dimensions;
 		}
 
-		Image& getRenderTarget() {
+		fw::Image& getRenderTarget() {
 			return _renderTarget;
 		}
 

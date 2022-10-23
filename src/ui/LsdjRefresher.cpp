@@ -1,10 +1,10 @@
 #include "LsdjRefresher.h"
 
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 
 using namespace rp;
 
-static uint32 calculateRowDifference(Image& v1, Image& v2) {
+static uint32 calculateRowDifference(fw::Image& v1, fw::Image& v2) {
 	assert(v1.dimensions() == v2.dimensions());
 
 	uint32 diffCount = 0;
@@ -17,7 +17,7 @@ static uint32 calculateRowDifference(Image& v1, Image& v2) {
 	return diffCount;
 }
 
-static void saveImage(Image& image, fs::path target) {
+static void saveImage(fw::Image& image, fs::path target) {
 	std::string p = target.string();
 	stbi_write_png(p.c_str(), image.w(), image.h(), 4, image.getData(), image.w() * 4);
 }

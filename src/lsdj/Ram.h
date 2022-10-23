@@ -1,7 +1,7 @@
 #pragma once
 
-#include "platform/Types.h"
-#include "util/DataBuffer.h"
+#include "foundation/Types.h"
+#include "foundation/DataBuffer.h"
 #include "core/MemoryAccessor.h"
 
 namespace rp::lsdj {
@@ -86,12 +86,12 @@ namespace rp::lsdj {
 			return _data[_offsets.channels[channel].phrasePosition];
 		}
 
-		void setCursorPosition(PointT<uint8> pos) {
+		void setCursorPosition(fw::PointT<uint8> pos) {
 			_data.set(_offsets.cursorX, pos.x);
 			_data.set(_offsets.cursorY, pos.y);
 		}
 
-		PointT<uint8> getCursorPosition() const {
+		fw::PointT<uint8> getCursorPosition() const {
 			return { _data[_offsets.cursorX], _data[_offsets.cursorY] };
 		}
 

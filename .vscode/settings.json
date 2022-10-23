@@ -48,7 +48,8 @@
 		"sysincludedirs",
 		"warnings",
 		"workspace",
-		"toolset"
+		"toolset",
+		"modules"
 	],
 	"files.associations": {
 		"functional": "cpp",

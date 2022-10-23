@@ -16,8 +16,8 @@ namespace rp {
 	class LsdjRefresher {
 	private:
 		SystemPtr _system;
-		ImagePtr _lastFrame;
-		ImagePtr _overlay;
+		fw::ImagePtr _lastFrame;
+		fw::ImagePtr _overlay;
 
 		lsdj::MemoryOffsets _offsets;
 
@@ -44,7 +44,7 @@ namespace rp {
 			return _system && _offsets.cursorX != 0;
 		}
 
-		ImagePtr getOverlay() {
+		fw::ImagePtr getOverlay() {
 			return _overlay;
 		}
 	};

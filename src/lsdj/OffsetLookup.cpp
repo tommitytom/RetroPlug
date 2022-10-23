@@ -5,10 +5,9 @@
 #include <spdlog/spdlog.h>
 
 #define XXH_INLINE_ALL
-#include "util/xxhash.h"
+#include "foundation/xxhash.h"
 
 #include "sameboy/OffsetCalculator.h"
-#include "util/xxhash.h"
 #include "util/GameboyUtil.h"
 #include "lsdj/LsdjUtil.h"
 
@@ -37,7 +36,7 @@ std::string formatTags(std::string_view tags) {
 	return "";
 }
 
-bool OffsetLookup::findOffsets(const Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate) {
+bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate) {
 	std::string romName = GameboyUtil::getRomName((const char*)romData.data());
 
 	if (!forceCalculate) {

@@ -17,7 +17,7 @@ namespace rp {
 
 	public:
 		template <typename T>
-		static T& constructOverlay(std::vector<ViewPtr>* target) {
+		static T& constructOverlay(std::vector<fw::ViewPtr>* target) {
 			std::shared_ptr<T> p = std::make_shared<T>();
 			target->push_back(p);
 			return *p;
@@ -32,8 +32,8 @@ namespace rp {
 			_factories.push_back({ std::move(romFilter), entt::resolve<T>() });
 		}
 
-		std::vector<ViewPtr> createOverlays(std::string_view romName) {
-			std::vector<ViewPtr> overlays;
+		std::vector<fw::ViewPtr> createOverlays(std::string_view romName) {
+			std::vector<fw::ViewPtr> overlays;
 
 			for (auto& factory : _factories) {
 				if (factory.first(romName)) {

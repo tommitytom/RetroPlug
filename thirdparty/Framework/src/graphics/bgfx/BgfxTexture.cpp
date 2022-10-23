@@ -29,7 +29,7 @@ BgfxTextureProvider::BgfxTextureProvider() {
 std::shared_ptr<Resource> BgfxTextureProvider::load(std::string_view uri) {
 	if (fs::exists(uri)) {
 		uintmax_t fileSize = fs::file_size(uri);
-		std::vector<std::byte> fileData = FsUtil::readFile(uri);
+		std::vector<std::byte> fileData = fw::FsUtil::readFile(uri);
 
 		if (fileData.size() > 0) {
 			bx::Error err;

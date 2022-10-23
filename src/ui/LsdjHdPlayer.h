@@ -5,13 +5,13 @@
 #include <entt/entity/handle.hpp>
 #include <spdlog/spdlog.h>
 
-#include "View.h"
+#include "ui/View.h"
 #include "core/SystemWrapper.h"
 #include "lsdj/LsdjUi.h"
 #include "ui/LsdjCanvasView.h"
 #include "ui/LsdjModel.h"
 #include "ui/SystemOverlayManager.h"
-#include "util/HashUtil.h"
+#include "foundation/HashUtil.h"
 #include "foundation/StringUtil.h"
 
 namespace rp {

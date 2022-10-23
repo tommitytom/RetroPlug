@@ -1,14 +1,14 @@
 #pragma once
 
-#include "TextureView.h"
+#include "ui/TextureView.h"
 #include "core/SystemWrapper.h"
-#include "platform/Menu.h"
+#include "ui/Menu.h"
 
 namespace rp {
-	class SystemView final : public TextureView {
+	class SystemView final : public fw::TextureView {
 	private:
 		SystemWrapperPtr _system;
-		Image _frameBuffer;
+		fw::Image _frameBuffer;
 
 		uint32 _version = 0;
 
@@ -26,7 +26,7 @@ namespace rp {
 
 		void setSystem(SystemWrapperPtr& system) {
 			_system = system;
-			setDimensions((Dimension)system->getSystem()->getResolution());
+			setDimensions((fw::Dimension)system->getSystem()->getResolution());
 		}
 
 		SystemWrapperPtr getSystem() {
@@ -45,7 +45,7 @@ namespace rp {
  			TextureView::onRender(canvas);
 		}
 
-		const Image& getFrameBuffer() const {
+		const fw::Image& getFrameBuffer() const {
 			return _frameBuffer;
 		}
 
@@ -54,7 +54,7 @@ namespace rp {
 		}
 
 	private:
-		void buildMenu(Menu& target);
+		void buildMenu(fw::Menu& target);
 	};
 
 	using SystemViewPtr = std::shared_ptr<SystemView>;

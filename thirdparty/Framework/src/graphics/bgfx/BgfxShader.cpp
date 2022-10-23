@@ -10,7 +10,7 @@ using namespace fw::engine;
 
 std::shared_ptr<Resource> BgfxShaderProvider::load(std::string_view uri) {
 	if (fs::exists(uri)) {
-		std::vector<std::byte> fileData = FsUtil::readFile(uri);
+		std::vector<std::byte> fileData = fw::FsUtil::readFile(uri);
 
 		if (fileData.size() > 0) {
 			const bgfx::Memory* mem = bgfx::copy(fileData.data(), (uint32)fileData.size());

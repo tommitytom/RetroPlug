@@ -7,15 +7,15 @@
 #include "core/System.h"
 #include "core/SystemProcessor.h"
 #include "core/UiState.h"
-#include "util/CircularBuffer.h"
+#include "foundation/CircularBuffer.h"
 
 namespace rp {
-	class AudioContext final : public AudioProcessor {
+	class AudioContext final : public fw::AudioProcessor {
 	private:
 		const size_t MIN_LATENCY = 48 * 100;
 		const size_t MAX_LATENCY = 48 * 200;
 
-		CircularBuffer<f32> _buffer;
+		fw::CircularBuffer<f32> _buffer;
 		bool _fillingBuffer = true;
 
 		AudioState _state;

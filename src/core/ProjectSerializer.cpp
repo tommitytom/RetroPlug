@@ -4,9 +4,9 @@
 #include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
-#include "util/fs.h"
-#include "util/MetaUtil.h"
-#include "util/SolUtil.h"
+#include "foundation/FsUtil.h"
+#include "foundation/MetaUtil.h"
+#include "foundation/SolUtil.h"
 
 using namespace rp;
 
@@ -15,7 +15,7 @@ const std::string_view RP_VERSION = "0.4.0";
 
 std::string ProjectSerializer::serialize(const ProjectState& state, const std::vector<SystemWrapperPtr>& systems) {
 	sol::state s;
-	SolUtil::prepareState(s);
+	fw::SolUtil::prepareState(s);
 	
 	sol::table output = s.create_table_with(
 		"path", state.path,
@@ -49,7 +49,7 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 		sol::table modelTable = systemTable.create_named("model");
 
 		for (auto& [modelType, model] : system->getModels()) {
-			std::string_view typeName = MetaUtil::getTypeName(modelType);
+			std::string_view typeName = fw::MetaUtil::getTypeName(modelType);
 			model->onSerialize(s, modelTable.create_named(typeName));
 		}
 
@@ -59,7 +59,7 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 	output["systems"] = systemsTable;
 
 	std::string target;
-	if (SolUtil::serializeTable(s, output, target)) {
+	if (fw::SolUtil::serializeTable(s, output, target)) {
 		return target;
 	} else {
 		spdlog::error("Failed to serialize project: {}", target);
@@ -69,16 +69,16 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 
 std::string ProjectSerializer::serializeModels(SystemWrapperPtr system) {
 	sol::state s;
-	SolUtil::prepareState(s);
+	fw::SolUtil::prepareState(s);
 
 	sol::table modelTable = s.create_table();
 	for (auto& [modelType, model] : system->getModels()) {
-		std::string_view typeName = MetaUtil::getTypeName(modelType);
+		std::string_view typeName = fw::MetaUtil::getTypeName(modelType);
 		model->onSerialize(s, modelTable.create_named(typeName));
 	}
 
 	std::string target;
-	if (SolUtil::serializeTable(s, modelTable, target)) {
+	if (fw::SolUtil::serializeTable(s, modelTable, target)) {
 		return target;
 	}
 
@@ -89,7 +89,7 @@ std::string ProjectSerializer::serializeModels(SystemWrapperPtr system) {
 bool ProjectSerializer::serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath) {
 	std::string output = serialize(state, systems);
 	if (output.size()) {
-		if (fsutil::writeTextFile(path, output)) {
+		if (fw::FsUtil::writeTextFile(path, output)) {
 			spdlog::info("Successfully wrote project file to {}", path);
 
 			if (updatePath) {
@@ -124,12 +124,12 @@ bool deserializeEnum(const sol::table& source, std::string_view name, T& target)
 
 bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, std::vector<SystemSettings>& systemSettings) {
 	sol::state s;
-	SolUtil::prepareState(s);
+	fw::SolUtil::prepareState(s);
 
-	std::string fileData = fsutil::readTextFile(path);
+	std::string fileData = fw::FsUtil::readTextFile(path);
 	
 	sol::table target;
-	bool ok = SolUtil::deserializeTable(s, fileData, target);
+	bool ok = fw::SolUtil::deserializeTable(s, fileData, target);
 
 	if (!ok) {
 		return false;
@@ -165,7 +165,7 @@ bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, 
 
 		sol::table modelTable = systemTable["model"];
 		std::string serializedState;
-		if (!SolUtil::serializeTable(s, modelTable, serializedState)) {
+		if (!fw::SolUtil::serializeTable(s, modelTable, serializedState)) {
 			spdlog::error("Failed to reserialize state during project load");
 			return false;
 		}

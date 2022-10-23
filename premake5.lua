@@ -1,6 +1,4 @@
-local util = dofile("premake/util.lua")
-local dep = dofile("premake/dep/index.lua")
-local projects = dofile("premake/projects.lua")
+local util = dofile("thirdparty/Framework/premake/util.lua")
 
 newoption {
 	trigger = "emscripten",
@@ -19,11 +17,11 @@ elseif _ACTION == "xcode4" then
 	PLATFORMS = { "x64" }
 end
 
-workspace "RetroPlugAll"
+workspace "RetroPlug"
 	location("build/" .. buildFolder)
 	platforms(PLATFORMS)
 	characterset "MBCS"
-	cppdialect "C++2a"
+	cppdialect "C++20"
 	flags { "MultiProcessorCompile" }
 
 	configurations { "Debug", "Release", "Tracer" }
@@ -72,7 +70,7 @@ workspace "RetroPlugAll"
 	filter { "system:windows", "options:not emscripten" }
 		cppdialect "C++latest"
 		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING", "_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING" }
-		disablewarnings { "4834" }
+		disablewarnings { 4834 }
 		buildoptions { "/Zc:__cplusplus" }
 
 	filter { "options:emscripten" }
@@ -92,7 +90,7 @@ workspace "RetroPlugAll"
 	filter {}
 
 util.createConfigureProject()
-util.createGeneratorProject()
+--util.createGeneratorProject()
 
 if _OPTIONS["emscripten"] == nil then
 	group "Utils"
@@ -108,31 +106,28 @@ if _OPTIONS["emscripten"] == nil then
 				links { "pthread" }
 end
 
+_ROOT_PATH = "thirdparty/Framework/"
+local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
+local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
+local projects = dofile("premake/projects.lua")
+local deps = dofile("premake/dep/index.lua")
+
 group "1 - Dependencies"
-dep.allProjects()
+fwDeps.allProjects()
+deps.allProjects()
 
 group "2 - Framework"
-projects.Foundation.project()
-projects.Graphics.project()
-projects.Audio.project()
-projects.Application.project()
-projects.Engine.project()
+fwProjects.Foundation.project()
+fwProjects.Graphics.project()
+fwProjects.Ui.project()
+fwProjects.Audio.project()
+fwProjects.Application.project()
+fwProjects.Engine.project()
 
-group "3 - RetroPlug"
-projects.SameBoy.project()
+group "3 - Modules"
+projects.Core.project()
+projects.SameBoyPlug.project()
 projects.RetroPlug.project()
-projects.RetroPlugApp.project()
-projects.RetroPlugApp.projectLivepp()
-group ""
 
-group "4 - Examples"
-
-projects.ExampleApplication.project("CanvasTest")
-projects.ExampleApplication.project("PhysicsTest")
-projects.ExampleApplication.project("ShaderReload")
-projects.ExampleApplication.project("Solitaire")
-projects.ExampleApplication.project("UiDocking")
-projects.ExampleApplication.project("UiScaling")
-group ""
-
-projects.Tests.project()
+group "4 - Applications"
+projects.Application.project()

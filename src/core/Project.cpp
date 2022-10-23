@@ -5,8 +5,8 @@
 
 #include "core/ProjectSerializer.h"
 #include "sameboy/SameBoySystem.h"
-#include "util/SolUtil.h"
-#include "util/fs.h"
+#include "foundation/SolUtil.h"
+#include "foundation/FsUtil.h"
 
 using namespace rp;
 
@@ -101,17 +101,17 @@ bool Project::save(std::string_view path) {
 
 SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, SystemId systemId) {
 	LoadConfig loadConfig = LoadConfig{
-		.romBuffer = std::make_shared<Uint8Buffer>(),
-		.sramBuffer = std::make_shared<Uint8Buffer>()
+		.romBuffer = std::make_shared<fw::Uint8Buffer>(),
+		.sramBuffer = std::make_shared<fw::Uint8Buffer>()
 	};
 
-	if (!fsutil::readFile(settings.romPath, loadConfig.romBuffer.get())) {
+	if (!fw::FsUtil::readFile(settings.romPath, loadConfig.romBuffer.get())) {
 		return nullptr;
 	}
 
 	if (settings.sramPath.size()) {
-		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
-		if (!fsutil::readFile(settings.sramPath, loadConfig.sramBuffer.get())) {
+		loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
+		if (!fw::FsUtil::readFile(settings.sramPath, loadConfig.sramBuffer.get())) {
 			// LOG
 		}
 	}
@@ -160,8 +160,8 @@ void Project::duplicateSystem(SystemId systemId, SystemSettings settings) {
 	SystemPtr system = systemWrapper->getSystem();
 
 	LoadConfig loadConfig = {
-		.romBuffer = std::make_shared<Uint8Buffer>(),
-		.stateBuffer = std::make_shared<Uint8Buffer>()
+		.romBuffer = std::make_shared<fw::Uint8Buffer>(),
+		.stateBuffer = std::make_shared<fw::Uint8Buffer>()
 	};
 
 	system->saveState(*loadConfig.stateBuffer);
@@ -205,7 +205,7 @@ void Project::clear() {
 	}
 
 	_lua = new sol::state();
-	SolUtil::prepareState(*_lua);
+	fw::SolUtil::prepareState(*_lua);
 
 	_version++;
 	_requiresSave = false;

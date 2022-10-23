@@ -7,7 +7,7 @@
 #include "core/SystemSettings.h"
 #include "lsdj/OffsetLookup.h"
 #include "lsdj/Sav.h"
-#include "platform/Types.h"
+#include "foundation/Types.h"
 
 namespace rp {
 	struct SampleSettings {

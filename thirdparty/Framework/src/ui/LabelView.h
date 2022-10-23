@@ -1,6 +1,6 @@
 #pragma once
 
-#include "View.h"
+#include "ui/View.h"
 #include "graphics/FontManager.h"
 
 namespace fw {

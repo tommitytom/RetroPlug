@@ -2,16 +2,16 @@
 
 #include "foundation/ResourceManager.h"
 
-using namespace fw;
+using namespace rp;
 
 const f32 MARGIN = 10.0f;
 
-const Color4 COLOR_WHITE = Color4(255, 255, 255, 255);
-const Color4 COLOR_GRAY = Color4(190, 190, 190, 255);
+const fw::Color4 COLOR_WHITE = fw::Color4(255, 255, 255, 255);
+const fw::Color4 COLOR_GRAY = fw::Color4(190, 190, 190, 255);
 
-MenuView::MenuView() : View({ 160, 144 }) {
+MenuView::MenuView() : fw::View({ 160, 144 }) {
 	setType<MenuView>();
-	_menuArea = RectF { MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
+	_menuArea = fw::RectF{ MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
 }
 
 void MenuView::onUpdate(f32 delta) {
@@ -24,8 +24,8 @@ void MenuView::onInitialize() {
 	//_font = getResourceManager().load<Font>("PlatNomor.ttf/16");
 }
 
-bool isHighlightable(MenuItemType type) {
-	return type != MenuItemType::Separator && type != MenuItemType::Title;
+bool isHighlightable(fw::MenuItemType type) {
+	return type != fw::MenuItemType::Separator && type != fw::MenuItemType::Title;
 }
 
 bool MenuView::moveCursorUp() {
@@ -70,18 +70,18 @@ void MenuView::updateScrollOffset(const PositionedMenuItem& item) {
 	}
 }
 
-void MenuView::flattenHierarchy(Menu& menu, PointF& pos) {
-	for (MenuItemBase* item : menu.getItems()) {
-		_flat.push_back({ RectF(pos.x, pos.y, 160, 0), item });
+void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
+	for (fw::MenuItemBase* item : menu.getItems()) {
+		_flat.push_back({ fw::RectF(pos.x, pos.y, 160, 0), item });
 
-		if (item->getType() == MenuItemType::SubMenu && _openMenus.count(item) > 0) {
+		if (item->getType() == fw::MenuItemType::SubMenu && _openMenus.count(item) > 0) {
 			_flat.back().area.h = _itemSpacing;
 
 			pos.x += _indentSize;
 			pos.y += _itemSpacing;
-			flattenHierarchy(*item->as<Menu>(), pos);
+			flattenHierarchy(*item->as<fw::Menu>(), pos);
 			pos.x -= _indentSize;
-		} else if (item->getType() == MenuItemType::Separator) {
+		} else if (item->getType() == fw::MenuItemType::Separator) {
 			_flat.back().area.h = _separatorSpacing;
 			pos.y += _separatorSpacing;
 		} else {
@@ -97,9 +97,9 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 	switch (key) {
 	case VirtualKey::LeftArrow:
 		if (down) {
-			MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == MenuItemType::MultiSelect) {
-				MultiSelect* multiSelect = menuItem->as<MultiSelect>();
+			fw::MenuItemBase* menuItem = getHighlighted();
+			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
 				multiSelect->prevItem();
 				multiSelect->getFunction()(multiSelect->getValue());
 			}
@@ -109,9 +109,9 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 
 	case VirtualKey::RightArrow:
 		if (down) {
-			MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == MenuItemType::MultiSelect) {
-				MultiSelect* multiSelect = menuItem->as<MultiSelect>();
+			fw::MenuItemBase* menuItem = getHighlighted();
+			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+				fw::MultiSelect* multiSelect = menuItem->as<MultiSelect>();
 				multiSelect->nextItem();
 				multiSelect->getFunction()(multiSelect->getValue());
 			}
@@ -157,7 +157,7 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 	return true;
 }
 
-void MenuView::setMenu(MenuPtr menu) {
+void MenuView::setMenu(fw::MenuPtr menu) {
 	_selectedIdx = 0;
 	_openMenus.clear();
 	_root = menu;
@@ -165,11 +165,11 @@ void MenuView::setMenu(MenuPtr menu) {
 }
 
 void MenuView::rebuildFlat() {
-	MenuItemBase* highlighted = getHighlighted();
+	fw::MenuItemBase* highlighted = getHighlighted();
 
 	_flat.clear();
 
-	PointF offset = { 0, 0 };
+	fw::PointF offset = { 0, 0 };
 	flattenHierarchy(*_root, offset);
 
 	_scrollStartOffset = 0;
@@ -202,15 +202,16 @@ void MenuView::rebuildFlat() {
 }
 
 void MenuView::activateHighlighted() {
-	MenuItemBase* item = getHighlighted();
+	fw::MenuItemBase* item = getHighlighted();
 
 	if (!item->isActive()) {
 		return;
 	}
 
 	switch (item->getType()) {
-	case MenuItemType::Action: {
-		ActionContextFunction& func = ((Action*)item)->getFunction();
+	case fw::MenuItemType::Action:
+	{
+		fw::ActionContextFunction& func = ((fw::Action*)item)->getFunction();
 
 		if (_autoClose) {
 			_context.close();
@@ -224,12 +225,13 @@ void MenuView::activateHighlighted() {
 
 		break;
 	}
-	case MenuItemType::Select: {
-		Select* select = (Select*)item;
+	case fw::MenuItemType::Select:
+	{
+		fw::Select* select = (fw::Select*)item;
 		select->toggleChecked();
 		break;
 	}
-	case MenuItemType::SubMenu:
+	case fw::MenuItemType::SubMenu:
 		if (_openMenus.count(item) == 0) {
 			_openMenus.insert(item);
 		} else {
@@ -242,7 +244,7 @@ void MenuView::activateHighlighted() {
 	}
 }
 
-MenuItemBase* MenuView::getHighlighted() {
+fw::MenuItemBase* MenuView::getHighlighted() {
 	if (_flat.size()) {
 		return _flat[_selectedIdx].menuItem;
 	}
@@ -250,7 +252,7 @@ MenuItemBase* MenuView::getHighlighted() {
 	return nullptr;
 }
 
-void MenuView::drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, Color4 color) {
+void MenuView::drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color) {
 	x += _menuArea.x + _drawOffset.x;
 	y += _menuArea.y + _drawOffset.y;
 
@@ -264,8 +266,8 @@ enum class ArrowDirection {
 	Down
 };
 
-void drawArrow(Canvas& canvas, const RectF& area, ArrowDirection dir) {
-	std::array<PointF, 3> points;
+void drawArrow(Canvas& canvas, const fw::RectF& area, ArrowDirection dir) {
+	std::array<fw::PointF, 3> points;
 
 	switch (dir) {
 	case ArrowDirection::Left:
@@ -290,18 +292,18 @@ void drawArrow(Canvas& canvas, const RectF& area, ArrowDirection dir) {
 		break;
 	}
 
-	canvas.lines(points, Color4F(1, 1, 1, 1));
+	canvas.lines(points, fw::Color4F(1, 1, 1, 1));
 }
 
-void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
-	DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
-	PointF drawOffset = _drawOffset + _menuArea.position;
+void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
+	fw::DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
+	fw::PointF drawOffset = _drawOffset + _menuArea.position;
 
-	canvas.fillRect(getDimensions(), Color4F(0, 0, 0, 0.8f));
+	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 0.8f));
 
 	for (size_t i = 0; i < _flat.size(); ++i) {
 		auto& item = _flat[i];
-		PointF itemOffset = item.area.position + drawOffset;
+		fw::PointF itemOffset = item.area.position + drawOffset;
 
 		// TODO: Only render this item if it is visible
 
@@ -309,45 +311,45 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 		uint8 alpha = item.menuItem->isActive() ? 255 : 127;
 
 		if (i == _selectedIdx) {
-			RectF arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
+			fw::RectF arrowArea(itemOffset.x - 6, itemOffset.y + 1.5f, ARROW_SIZE, ARROW_SIZE * 2);
 			drawArrow(canvas, arrowArea, ArrowDirection::Right);
 		}
 
-		if (item.menuItem->getType() != MenuItemType::Separator) {
+		if (item.menuItem->getType() != fw::MenuItemType::Separator) {
 			drawText(canvas, item.area.x, item.area.y, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
 
-			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
-			
+			fw::DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
+
 		} else {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
 
 			canvas.line(
-				PointF{ item.area.x + _indentSize, yPos }, 
-				PointF{ (f32)getDimensions().w, yPos },
-				Color4(255, 255, 255, 127)
+				fw::PointF{ item.area.x + _indentSize, yPos },
+				fw::PointF{ (f32)getDimensions().w, yPos },
+				fw::Color4(255, 255, 255, 127)
 			);
 		}
 
-		if (item.menuItem->getType() == MenuItemType::SubMenu) {
+		if (item.menuItem->getType() == fw::MenuItemType::SubMenu) {
 			const f32 ARROW_SIZE = 2.0f;
 
-			RectF arrowArea(itemOffset.x, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
+			fw::RectF arrowArea(itemOffset.x, itemOffset.y, ARROW_SIZE * 2, ARROW_SIZE);
 			arrowArea.x += 50;
 			arrowArea.y += 2;
 
 			//_menuArea.x + _drawOffset.x
-			
-			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
+
+			fw::DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
 			arrowArea.x = drawOffset.x + 5.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Down);
 		}
 
-		if (item.menuItem->getType() == MenuItemType::Select) {
+		if (item.menuItem->getType() == fw::MenuItemType::Select) {
 			const f32 CHECK_BOX_SIZE = _itemSpacing * 0.6f;
-			Select* select = item.menuItem->as<Select>();
+			fw::Select* select = item.menuItem->as<fw::Select>();
 
-			RectF checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
+			fw::RectF checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, itemOffset.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
 
 			/*nvgBeginPath(vg);
 			nvgRect(vg, checkboxArea.x, checkboxArea.y, checkboxArea.w, checkboxArea.h);
@@ -356,7 +358,7 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			nvgStroke(vg);
 
 			if (select->getChecked()) {
-				RectF checkArea = checkboxArea.shrink(1.5f);
+				fw::RectF checkArea = checkboxArea.shrink(1.5f);
 
 				nvgBeginPath(vg);
 				nvgMoveTo(vg, checkArea.x, checkArea.y);
@@ -369,15 +371,15 @@ void MenuView::drawMenu(Canvas& canvas, Menu& menu) {
 			}*/
 		}
 
-		if (item.menuItem->getType() == MenuItemType::MultiSelect) {
-			MultiSelect* multiSelect = item.menuItem->as<MultiSelect>();
+		if (item.menuItem->getType() == fw::MenuItemType::MultiSelect) {
+			fw::MultiSelect* multiSelect = item.menuItem->as<fw::MultiSelect>();
 
 			const f32 ARROW_SIZE = 2.0f;
-			RectF arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
+			fw::RectF arrowArea(itemOffset.x - 6, itemOffset.y, ARROW_SIZE, ARROW_SIZE * 2);
 			arrowArea.x += 50;
 			arrowArea.y += 1;
 
-			DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
+			fw::DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
 			arrowArea.x = drawOffset.x + 50.0f + bounds.w;
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Left);

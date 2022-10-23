@@ -4,6 +4,11 @@
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
 #include <entt/meta/resolve.hpp>
+#include <entt/core/hashed_string.hpp>
+
+#include "foundation/StringUtil.h"
+
+using namespace entt::literals;
 
 namespace fw::MetaUtil {
 	inline std::string_view getTypeName(entt::id_type typeId) {
@@ -59,7 +64,7 @@ namespace fw::MetaUtil {
 			std::string name(getName(data));
 
 			if (formatted) {
-				name = StringUtil::formatMemberName(name);
+				name = fw::StringUtil::formatMemberName(name);
 			}
 
 			ret.push_back(std::move(name));

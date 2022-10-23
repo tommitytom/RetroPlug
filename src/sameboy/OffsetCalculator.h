@@ -4,7 +4,7 @@
 #include <gb_struct_def.h>
 #include "sameboy/semver.hpp"
 
-#include "platform/Types.h"
+#include "foundation/Types.h"
 #include "lsdj/Ram.h"
 
 namespace rp::lsdj {

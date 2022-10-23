@@ -6,6 +6,6 @@
 #include "core/FileManager.h"
 #include "core/Project.h"
 
-namespace fw::LoaderUtil {
+namespace rp::LoaderUtil {
 	bool handleLoad(const std::vector<std::string>& files, FileManager& fileManager, Project& project);
 }

@@ -1,4 +1,4 @@
-local BOX2D_DIR = "thirdparty/box2d"
+local BOX2D_DIR = _ROOT_PATH .. "thirdparty/box2d"
 
 local m = {}
 

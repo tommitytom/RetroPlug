@@ -1,4 +1,4 @@
-local SFW_DIR = "thirdparty/simplefilewatcher"
+local SFW_DIR = _ROOT_PATH .. "thirdparty/simplefilewatcher"
 
 local m = {}
 

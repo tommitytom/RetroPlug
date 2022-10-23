@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <iostream>
+#include <entt/core/utility.hpp>
 
 extern "C" {
 #include <gb.h>
@@ -29,11 +30,11 @@ void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
 		}
 
 		if (target) {
-			std::visit(overload{
+			std::visit(entt::overloaded{
 				[&](uint8 val) { target[patch.offset] = val; },
 				[&](uint16 val) { memcpy(target + patch.offset, &val, sizeof(uint16)); },
 				[&](uint32 val) { memcpy(target + patch.offset, &val, sizeof(uint32)); },
-				[&](const Uint8Buffer& val) { memcpy(target + patch.offset, val.data(), val.size()); },
+				[&](const fw::Uint8Buffer& val) { memcpy(target + patch.offset, val.data(), val.size()); },
 			}, patch.data);
 		}
 	}
@@ -57,7 +58,7 @@ void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<Offse
 	}
 }
 
-std::string SameBoyManager::getRomName(const Uint8Buffer& romData) {
+std::string SameBoyManager::getRomName(const fw::Uint8Buffer& romData) {
 	return GameboyUtil::getRomName((const char*)romData.data());
 }
 

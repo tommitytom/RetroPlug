@@ -3,7 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include "core/SystemProcessor.h"
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 
 using namespace fw;
 
@@ -15,7 +15,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 	SystemProcessor& processor = project.getProcessor();
 
 	for (const std::string& path : files) {
-		std::string_view ext = fsutil::getFileExt(path);
+		std::string_view ext = fw::FsUtil::getFileExt(path);
 
 		if (ext == ".retroplug" || ext == ".rplg" || ext == ".rplg.lua") {
 			projectPaths.push_back(path);
@@ -60,7 +60,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			if (sramPaths.size() > 0) {
 				sramPath = std::string(sramPaths[0].first);
 			} else {
-				sramPath = fsutil::replaceFileExt(path.string(), ".sav", false);
+				sramPath = fw::FsUtil::replaceFileExt(path.string(), ".sav", false);
 			}
 
 			if (fs::exists(sramPath)) {

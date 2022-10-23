@@ -67,10 +67,10 @@ static void vblankHandler(GB_gameboy_t* gb) {
 
 	if (s->io) {
 		if (!s->io->output.video) {
-			s->io->output.video = std::make_shared<Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
+			s->io->output.video = std::make_shared<fw::Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
 		}
 
-		s->io->output.video->write((const Color4*)s->frameBuffer, PIXEL_COUNT);
+		s->io->output.video->write((const fw::Color4*)s->frameBuffer, PIXEL_COUNT);
 	}
 }
 
@@ -85,7 +85,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 	//GB_sample_t smp =  gb->apu_output.current_sample[0];
 
 	if (s->io) {
-		Float32Buffer* buffer = s->io->output.audio.get();
+		fw::Float32Buffer* buffer = s->io->output.audio.get();
 
 		if (buffer) {
 			if ((s->audioFrameCount + 1) * 2 <= buffer->size()) {
@@ -107,7 +107,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 }
 
 SameBoySystem::SameBoySystem(SystemId id): System<SameBoySystem>(id) {
-	_resolution = DimensionT<uint32>(160, 144);
+	_resolution = fw::DimensionT<uint32>(160, 144);
 }
 
 SameBoySystem::~SameBoySystem() {
@@ -129,7 +129,7 @@ MemoryAccessor SameBoySystem::getMemory(MemoryType type, AccessType access) {
 		size_t memSize;
 		uint16 memBank;
 		void* memData = GB_get_direct_access(_state.gb, sameboyType, &memSize, &memBank);
-		return MemoryAccessor(type, Uint8Buffer((uint8*)memData, memSize, false), 0, nullptr);
+		return MemoryAccessor(type, fw::Uint8Buffer((uint8*)memData, memSize, false), 0, nullptr);
 	}
 
 	return MemoryAccessor();
@@ -189,7 +189,7 @@ void SameBoySystem::setSampleRate(uint32 sampleRate) {
 	GB_set_sample_rate(_state.gb, sampleRate);
 }
 
-bool SameBoySystem::saveState(Uint8Buffer& target) {
+bool SameBoySystem::saveState(fw::Uint8Buffer& target) {
 	size_t size = GB_get_save_state_size(_state.gb);
 	if (target.size() != size) {
 		target.resize(size);

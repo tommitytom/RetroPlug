@@ -75,11 +75,11 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 		}
 
 		if (io) {
-			io->output.audio = std::make_shared<Float32Buffer>(sampleCount);
+			io->output.audio = std::make_shared<fw::Float32Buffer>(sampleCount);
 		}
 	}
 
-	Float32Buffer buffer(output, sampleCount);
+	fw::Float32Buffer buffer(output, sampleCount);
 	buffer.clear();
 
 	_state.processor.process(frameCount);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "View.h"
+#include "ui/View.h"
 
 namespace fw {
 	class PanelView : public View {

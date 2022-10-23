@@ -40,7 +40,7 @@ bool SameBoyProxySystem::load(LoadConfig&& loadConfig) {
 	return false; 
 }
 
-bool SameBoyProxySystem::saveSram(Uint8Buffer& target) {
+bool SameBoyProxySystem::saveSram(fw::Uint8Buffer& target) {
 	MemoryAccessor accessor = getMemory(MemoryType::Sram, AccessType::Read);
 	if (accessor.isValid()) {
 		accessor.getBuffer().copyTo(&target);
@@ -50,7 +50,7 @@ bool SameBoyProxySystem::saveSram(Uint8Buffer& target) {
 	return false;
 }
 
-bool SameBoyProxySystem::saveState(Uint8Buffer& target) {
+bool SameBoyProxySystem::saveState(fw::Uint8Buffer& target) {
 	if (_state.size()) {
 		_state.copyTo(&target);
 		return true;
@@ -78,7 +78,7 @@ MemoryAccessor SameBoyProxySystem::getMemory(MemoryType type, AccessType access)
 			}
 
 			if (offset.offset != -1) {
-				return MemoryAccessor(type, Uint8Buffer(_state.data() + offset.offset, offset.size, false), 0, io ? &io->input.patches : nullptr);
+				return MemoryAccessor(type, fw::Uint8Buffer(_state.data() + offset.offset, offset.size, false), 0, io ? &io->input.patches : nullptr);
 			}
 		}
 	}

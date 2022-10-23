@@ -3,9 +3,9 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "util/fs.h"
-#include "util/SolUtil.h"
-#include "util/StlUtil.h"
+#include "foundation/FsUtil.h"
+#include "foundation/SolUtil.h"
+#include "foundation/StlUtil.h"
 #include "foundation/StringUtil.h"
 
 using namespace rp;
@@ -31,16 +31,16 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 
 	try {
 		sol::state s;
-		SolUtil::prepareState(s);
+		fw::SolUtil::prepareState(s);
 
 		sol::table target;
 		std::string data;
 
 		bool valid = false;
 		if (fs::exists(_recentPath)) {
-			data = fsutil::readTextFile(_recentPath);
+			data = fw::FsUtil::readTextFile(_recentPath);
 
-			if (data.size() && SolUtil::deserializeTable(s, data, target)) {
+			if (data.size() && fw::SolUtil::deserializeTable(s, data, target)) {
 				valid = true;
 			}
 		}
@@ -66,8 +66,8 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 			return;
 		}
 
-		if (SolUtil::serializeTable(s, target, data)) {
-			if (!fsutil::writeTextFile(_recentPath, data)) {
+		if (fw::SolUtil::serializeTable(s, target, data)) {
+			if (!fw::FsUtil::writeTextFile(_recentPath, data)) {
 				spdlog::error("Failed to write recent list to {}", _recentPath.string());
 			}
 		} else {
@@ -83,20 +83,20 @@ void FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vect
 
 	if (fs::exists(_recentPath)) {
 		sol::state s;
-		SolUtil::prepareState(s);
+		fw::SolUtil::prepareState(s);
 
-		std::string data = fsutil::readTextFile(_recentPath);
+		std::string data = fw::FsUtil::readTextFile(_recentPath);
 
 		if (data.size()) {
 			sol::table target;
 
-			if (SolUtil::deserializeTable(s, data, target)) {
+			if (fw::SolUtil::deserializeTable(s, data, target)) {
 				auto entries = target["recent"].get<sol::nested<std::vector<sol::table>>>();
 
 				for (auto& item : entries) {
 					std::string type = item["type"].get<std::string>();
 
-					if (types.empty() || StlUtil::vectorContains(types, type)) {
+					if (types.empty() || fw::StlUtil::vectorContains(types, type)) {
 						paths.push_back({
 							.type = type,
 							.name = item["name"].get<std::string>(),
@@ -116,7 +116,7 @@ void FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vect
 }
 
 fs::path FileManager::addHashedFile(const fs::path& sourceFile, const fs::path& targetDir) {
-	uint32 contentHash = (uint32)fsutil::hashFileContent(sourceFile);
+	uint32 contentHash = (uint32)fw::FsUtil::hashFileContent(sourceFile);
 	std::string contentHashStr = fmt::format("{:08x}", contentHash);
 
 	fs::path fullTargetDir = _rootPath / targetDir;
@@ -172,7 +172,7 @@ fs::path FileManager::getUniqueDirectoryName(std::string suggested) {
 	fs::path baseDir = _rootPath.string();
 	std::string dirName = "";
 
-	StringUtil::ltrim(suggested, "/\\");
+	fw::StringUtil::ltrim(suggested, "/\\");
 
 	if (suggested.size() > 0) {
 		baseDir = _rootPath / suggested;

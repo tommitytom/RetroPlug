@@ -7,15 +7,16 @@
 #include <variant>
 
 #include <entt/core/type_info.hpp>
+#include <moodycamel/readerwriterqueue.h>
+#include <moodycamel/concurrentqueue.h>
 
-#include "platform/Types.h"
+#include "foundation/Types.h"
 #include "core/FixedQueue.h"
 #include "core/MemoryAccessor.h"
-#include "util/DataBuffer.h"
-#include "util/Image.h"
-#include "util/readerwriterqueue.h"
-#include "util/concurrentqueue.h"
+#include "foundation/DataBuffer.h"
+#include "foundation/Image.h"
 #include "core/ButtonStream.h"
+#include "core/Forward.h"
 
 namespace rp {
 	using SystemType = entt::id_type;
@@ -44,9 +45,9 @@ namespace rp {
 	};
 
 	struct LoadConfig {
-		Uint8BufferPtr romBuffer;
-		Uint8BufferPtr sramBuffer;
-		Uint8BufferPtr stateBuffer;
+		fw::Uint8BufferPtr romBuffer;
+		fw::Uint8BufferPtr sramBuffer;
+		fw::Uint8BufferPtr stateBuffer;
 		bool reset = false;
 
 		void merge(LoadConfig& other) {
@@ -93,10 +94,10 @@ namespace rp {
 
 		struct Output {
 			//std::vector<TimedByte> serial;
-			ImagePtr video;
-			Float32BufferPtr audio;
+			fw::ImagePtr video;
+			fw::Float32BufferPtr audio;
 			
-			Uint8BufferPtr state;
+			fw::Uint8BufferPtr state;
 
 			void reset() {
 				video = nullptr;
@@ -177,7 +178,7 @@ namespace rp {
 	class SystemBase {
 	protected:
 		SystemIoPtr _stream;
-		DimensionT<uint32> _resolution;
+		fw::DimensionT<uint32> _resolution;
 
 	private:
 		SystemId _id;
@@ -204,9 +205,9 @@ namespace rp {
 
 		virtual void setSampleRate(uint32 sampleRate) {}
 
-		virtual bool saveState(Uint8Buffer& target) { return false; }
+		virtual bool saveState(fw::Uint8Buffer& target) { return false; }
 
-		virtual bool saveSram(Uint8Buffer& target) { return false; }
+		virtual bool saveSram(fw::Uint8Buffer& target) { return false; }
 
 		virtual std::string getRomName() { return std::string(); }
 
@@ -221,7 +222,7 @@ namespace rp {
 				_nextStateCopy -= frameCount;
 
 				if (_stream && _nextStateCopy <= 0) {
-					_stream->output.state = std::make_shared<Uint8Buffer>();
+					_stream->output.state = std::make_shared<fw::Uint8Buffer>();
 					saveState(*_stream->output.state);
 
 					_nextStateCopy = _stateCopyInterval;
@@ -240,7 +241,7 @@ namespace rp {
 			}
 		}
 
-		DimensionT<uint32> getResolution() const {
+		fw::DimensionT<uint32> getResolution() const {
 			return _resolution;
 		}
 

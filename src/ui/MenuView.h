@@ -6,7 +6,7 @@
 #include "ui/Menu.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace rp {
 	/*class Menu {
 	public:
 		struct DrawItem {
@@ -87,11 +87,11 @@ namespace fw {
 	};*/
 
 	struct PositionedMenuItem {
-		RectT<f32> area;
-		MenuItemBase* menuItem;
+		fw::RectT<f32> area;
+		fw::MenuItemBase* menuItem;
 	};
 
-	class MenuView : public View {
+	class MenuView : public fw::View {
 	private:
 		std::string _fontName = "PlatNomor.ttf";
 		f32 _fontSize = 9.0f;
@@ -100,18 +100,18 @@ namespace fw {
 		f32 _itemSpacing = 20.0f;
 		f32 _separatorSpacing = 20.0f;
 
-		PointT<f32> _drawOffset;
+		fw::PointT<f32> _drawOffset;
 
-		RectT<f32> _menuArea;
-		DimensionT<f32> _menuBounds;
+		fw::RectT<f32> _menuArea;
+		fw::DimensionT<f32> _menuBounds;
 
 		f32 _scrollStartOffset = 0;
 		f32 _scrollEndOffset = 0;
 		f32 _scrollOffset = 0;
 
-		MenuPtr _root;
+		fw::MenuPtr _root;
 
-		std::unordered_set<MenuItemBase*> _openMenus;
+		std::unordered_set<fw::MenuItemBase*> _openMenus;
 
 		std::vector<PositionedMenuItem> _flat;
 		int32 _selectedIdx = 0;
@@ -119,7 +119,7 @@ namespace fw {
 		bool _autoClose = true;
 		bool _escCloses = true;
 
-		MenuContext _context;
+		fw::MenuContext _context;
 
 	public:
 		MenuView();
@@ -132,9 +132,9 @@ namespace fw {
 
 		bool onKey(VirtualKey::Enum key, bool down) override;
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override { return true; }
+		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point position) override { return true; }
 
-		void setMenu(MenuPtr menu);
+		void setMenu(fw::MenuPtr menu);
 
 		void setAutoClose(bool autoClose) {
 			_autoClose = autoClose;
@@ -145,9 +145,9 @@ namespace fw {
 		}
 
 	private:
-		void drawMenu(Canvas& canvas, Menu& menu);
+		void drawMenu(Canvas& canvas, fw::Menu& menu);
 
-		void drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, Color4 color);
+		void drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color);
 
 		bool moveCursorDown();
 
@@ -155,11 +155,11 @@ namespace fw {
 
 		void activateHighlighted();
 
-		MenuItemBase* getHighlighted();
+		fw::MenuItemBase* getHighlighted();
 
 		void rebuildFlat();
 
-		void flattenHierarchy(Menu& menu, PointT<f32>& pos);
+		void flattenHierarchy(fw::Menu& menu, fw::PointT<f32>& pos);
 
 		void updateScrollOffset(const PositionedMenuItem& item);
 	};

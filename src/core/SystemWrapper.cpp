@@ -7,9 +7,9 @@
 #include "core/ProxySystem.h"
 #include "core/SystemProcessor.h"
 #include "sameboy/SameBoySystem.h"
-#include "util/fs.h"
-#include "util/MetaUtil.h"
-#include "util/SolUtil.h"
+#include "foundation/FsUtil.h"
+#include "foundation/MetaUtil.h"
+#include "foundation/SolUtil.h"
 
 using namespace rp;
 
@@ -68,12 +68,12 @@ void SystemWrapper::deserializeModels() {
 
 	if (serialized.size()) {
 		sol::state lua;
-		SolUtil::prepareState(lua);
+		fw::SolUtil::prepareState(lua);
 		sol::table modelTable;
 
-		if (SolUtil::deserializeTable(lua, serialized, modelTable)) {
+		if (fw::SolUtil::deserializeTable(lua, serialized, modelTable)) {
 			for (auto& [type, model] : _models) {
-				std::string_view typeName = MetaUtil::getTypeName(type);
+				std::string_view typeName = fw::MetaUtil::getTypeName(type);
 				std::optional<sol::table> m = modelTable[typeName];
 
 				if (m.has_value() && m.value().valid()) {
@@ -94,7 +94,7 @@ void SystemWrapper::reset() {
 }
 
 bool SystemWrapper::saveSram(std::string_view path) {
-	Uint8Buffer buffer;
+	fw::Uint8Buffer buffer;
 
 	if (_system->saveSram(buffer)) {
 		fs::path fullPath = path;
@@ -106,7 +106,7 @@ bool SystemWrapper::saveSram(std::string_view path) {
 			}
 		}
 
-		if (fsutil::writeFile(path, buffer)) {
+		if (fw::FsUtil::writeFile(path, buffer)) {
 			spdlog::info("Wrote SRAM to {}", path);
 		} else {
 			spdlog::error("Failed to write SRAM to {}", path);

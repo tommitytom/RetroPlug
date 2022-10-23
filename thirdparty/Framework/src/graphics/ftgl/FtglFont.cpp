@@ -51,7 +51,7 @@ std::shared_ptr<Resource> FtglFontProvider::load(std::string_view uri) {
 
 	if (fs::exists(path)) {
 		uintmax_t fileSize = fs::file_size(path);
-		std::vector<std::byte> fileData = FsUtil::readFile(path);
+		std::vector<std::byte> fileData = fw::FsUtil::readFile(path);
 
 		if (fileData.size() > 0) {
 			f32 size = (f32)::atof(sizeStr.data());

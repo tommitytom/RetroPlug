@@ -1,11 +1,11 @@
-local FREETYPE_DIR = "thirdparty/freetype"
-local FREETYPEGL_DIR = "thirdparty/freetype-gl"
+local FREETYPE_DIR = _ROOT_PATH .. "thirdparty/freetype"
+local FREETYPEGL_DIR = _ROOT_PATH .. "thirdparty/freetype-gl"
 
 local m = {}
 
 function m.include()
 	sysincludedirs {
-		"thirdparty/zlib",
+		_ROOT_PATH .. "thirdparty/zlib",
 		FREETYPE_DIR .. "/include",
 		FREETYPEGL_DIR,
 	}

@@ -3,8 +3,8 @@
 #include <variant>
 #include <vector>
 
-#include "platform/Types.h"
-#include "util/DataBuffer.h"
+#include "foundation/Types.h"
+#include "foundation/DataBuffer.h"
 
 namespace rp {
 	enum class MemoryType {
@@ -16,20 +16,20 @@ namespace rp {
 
 	struct MemoryPatch {
 		MemoryType type;
-		std::variant<uint8, uint16, uint32, Uint8Buffer> data;
+		std::variant<uint8, uint16, uint32, fw::Uint8Buffer> data;
 		size_t offset;
 	};
 
 	class MemoryAccessor {
 	private:
 		MemoryType _type = MemoryType::Unknown;
-		Uint8Buffer _data;
+		fw::Uint8Buffer _data;
 		size_t _offset = 0;
 		std::vector<MemoryPatch>* _patches = nullptr;
 
 	public:
 		MemoryAccessor() {}
-		MemoryAccessor(MemoryType type, Uint8Buffer data, size_t offset, std::vector<MemoryPatch>* patches) : _type(type), _data(data), _offset(offset), _patches(patches) {}
+		MemoryAccessor(MemoryType type, fw::Uint8Buffer data, size_t offset, std::vector<MemoryPatch>* patches) : _type(type), _data(data), _offset(offset), _patches(patches) {}
 
 		std::vector<MemoryPatch>* getPatches() {
 			return _patches;
@@ -65,7 +65,7 @@ namespace rp {
 			}
 		}
 
-		void write(size_t pos, Uint8Buffer&& buffer) {
+		void write(size_t pos, fw::Uint8Buffer&& buffer) {
 			assert(isValid());
 			assert(pos + buffer.size() <= _data.size());
 
@@ -81,14 +81,14 @@ namespace rp {
 		}
 
 		void write(size_t pos, std::string_view text) {
-			write(pos, Uint8Buffer((uint8*)text.data(), text.size()));
+			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
 		}
 
 		void write(size_t pos, const std::string& text) {
-			write(pos, Uint8Buffer((uint8*)text.data(), text.size()));
+			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
 		}
 
-		void write(size_t pos, const Uint8Buffer& buffer) {
+		void write(size_t pos, const fw::Uint8Buffer& buffer) {
 			assert(isValid());
 			assert(pos + buffer.size() <= _data.size());
 
@@ -124,7 +124,7 @@ namespace rp {
 			return _data.size();
 		}
 
-		const Uint8Buffer& getBuffer() const {
+		const fw::Uint8Buffer& getBuffer() const {
 			return _data;
 		}
 	};

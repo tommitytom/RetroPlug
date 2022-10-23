@@ -9,14 +9,14 @@ namespace rp {
 	class SameBoyManager final : public SystemManager<SameBoySystem, SameBoyProxySystem> {
 	public:
 		bool canLoadRom(std::string_view path) override {
-			return StringUtil::endsWith(path, ".gb");
+			return fw::StringUtil::endsWith(path, ".gb");
 		}
 
 		bool canLoadSram(std::string_view path) override {
-			return StringUtil::endsWith(path, ".sav");
+			return fw::StringUtil::endsWith(path, ".sav");
 		}
 
-		std::string getRomName(const Uint8Buffer& romData) override;
+		std::string getRomName(const fw::Uint8Buffer& romData) override;
 
 		void process(uint32 frameCount) override;
 	};

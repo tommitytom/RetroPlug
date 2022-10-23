@@ -1,4 +1,4 @@
-local ZLIB_DIR = "thirdparty/zlib"
+local ZLIB_DIR = _ROOT_PATH .. "thirdparty/zlib"
 
 local m = {}
 

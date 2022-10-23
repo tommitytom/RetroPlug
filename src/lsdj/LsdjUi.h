@@ -3,14 +3,14 @@
 #include <any>
 #include <stack>
 
-#include "util/DataBuffer.h"
-#include "util/Image.h"
+#include "foundation/DataBuffer.h"
+#include "foundation/Image.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
 #include "lsdj/Ram.h"
 #include "lsdj/LsdjCanvas.h"
-#include "RpMath.h"
-#include "core/Input.h"
+#include "foundation/Math.h"
+#include "foundation/Input.h"
 
 namespace rp::lsdj {
 	struct InputState {

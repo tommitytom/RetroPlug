@@ -5,12 +5,12 @@
 #include <entt/entity/handle.hpp>
 #include <spdlog/spdlog.h>
 
-#include "View.h"
+#include "ui/View.h"
 #include "core/SystemWrapper.h"
 #include "ui/LsdjCanvasView.h"
 #include "ui/LsdjModel.h"
 #include "ui/SystemOverlayManager.h"
-#include "util/HashUtil.h"
+#include "foundation/HashUtil.h"
 #include "foundation/StringUtil.h"
 
 namespace rp {
@@ -24,11 +24,11 @@ namespace rp {
 		SystemWrapperPtr _system;
 		LsdjModelPtr _model;
 
-		Point _mousePosition;
+		fw::Point _mousePosition;
 
 		uint64 _songHash = 0;
 		f32 _songSwapCooldown = 0.0f;
-		std::vector<Uint8Buffer> _undoQueue;
+		std::vector<fw::Uint8Buffer> _undoQueue;
 		size_t _undoPosition = 0;
 
 		bool _aHeld = false;
@@ -38,14 +38,14 @@ namespace rp {
 		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {
 			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
-			setSizingPolicy(SizingPolicy::FitToParent);
+			setSizingPolicy(fw::SizingPolicy::FitToParent);
 		}
 
 		~LsdjOverlay() {}
 
 		void onInitialize() override;
 
-		void onMenu(Menu& menu) override;
+		void onMenu(fw::Menu& menu) override;
 
 		bool onKey(VirtualKey::Enum key, bool down) override;
 

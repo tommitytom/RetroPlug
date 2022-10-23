@@ -7,7 +7,7 @@
 #include "ui/LsdjModel.h"
 #include "ui/MenuView.h"
 #include "ui/WaveView.h"
-#include "util/SampleLoaderUtil.h"
+#include "audio/SampleLoaderUtil.h"
 
 namespace rp {
 	struct SamplerViewState {
@@ -20,7 +20,7 @@ namespace rp {
 	private:
 		SystemWrapperPtr _system;
 		SamplerViewState _samplerState;
-		WaveViewPtr _waveView;
+		fw::WaveViewPtr _waveView;
 
 		std::vector<KitUtil::SampleData> _sampleBuffers;
 
@@ -54,7 +54,7 @@ namespace rp {
 		void onRender(Canvas& canvas) override;
 
 	private:
-		void buildMenu(Menu& target);
+		void buildMenu(fw::Menu& target);
 
 		void loadSampleDialog(KitIndex kitIndex);
 

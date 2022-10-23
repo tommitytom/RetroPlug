@@ -1,8 +1,8 @@
 #pragma once
 
-#include <string>
 #include <map>
-#include "platform/Types.h"
+#include <string>
+#include "foundation/Types.h"
 #include "SystemSettings.h"
 
 namespace rp {

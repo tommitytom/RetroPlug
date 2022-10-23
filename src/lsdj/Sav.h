@@ -8,7 +8,7 @@
 #include <liblsdj/liblsdj/include/lsdj/instrument.h>
 #include <liblsdj/liblsdj/include/lsdj/wave.h>
 
-#include "util/DataBuffer.h"
+#include "foundation/DataBuffer.h"
 
 namespace rp::lsdj {
 	class Instrument {
@@ -119,15 +119,15 @@ namespace rp::lsdj {
 		Song(lsdj_song_t* song): _song(song) {}
 		Song(uint8* data): _song((lsdj_song_t*)data) {}
 
-		Uint8Buffer getBuffer() {
-			return Uint8Buffer((uint8*)_song, LSDJ_SONG_BYTE_COUNT);
+		fw::Uint8Buffer getBuffer() {
+			return fw::Uint8Buffer((uint8*)_song, LSDJ_SONG_BYTE_COUNT);
 		}
 
-		Uint8Buffer getSynthData(uint8 synth) const {
-			return Uint8Buffer(lsdj_wave_get_bytes(_song, synth * LSDJ_WAVE_PER_SYNTH_COUNT), LSDJ_WAVE_PER_SYNTH_COUNT * LSDJ_WAVE_BYTE_COUNT);
+		fw::Uint8Buffer getSynthData(uint8 synth) const {
+			return fw::Uint8Buffer(lsdj_wave_get_bytes(_song, synth * LSDJ_WAVE_PER_SYNTH_COUNT), LSDJ_WAVE_PER_SYNTH_COUNT * LSDJ_WAVE_BYTE_COUNT);
 		}
 
-		void setSynthData(uint8 synth, const Uint8Buffer& buffer) {
+		void setSynthData(uint8 synth, const fw::Uint8Buffer& buffer) {
 			size_t writeSize = std::min(buffer.size(), (size_t)(LSDJ_WAVE_PER_SYNTH_COUNT * LSDJ_WAVE_BYTE_COUNT));
 			uint8* data = lsdj_wave_get_bytes(_song, synth * LSDJ_WAVE_PER_SYNTH_COUNT);
 			memcpy(data, buffer.data(), writeSize);
@@ -163,8 +163,8 @@ namespace rp::lsdj {
 		lsdj_project_t* _project = nullptr;
 
 	public:
-		Project(): _project(nullptr) {}
-		Project(lsdj_project_t* project): _project(project) {}
+		Project() : _project(nullptr) {}
+		Project(lsdj_project_t* project) : _project(project) {}
 
 		uint8 getVersion() const {
 			return lsdj_project_get_version(_project);
@@ -192,7 +192,7 @@ namespace rp::lsdj {
 			lsdj_sav_new(&_sav, nullptr);
 		}
 
-		Sav(const Uint8Buffer& data) {
+		Sav(const fw::Uint8Buffer& data) {
 			load(data);
 		}
 
@@ -216,18 +216,18 @@ namespace rp::lsdj {
 			return lsdj_sav_read_from_memory(data, size, &_sav, nullptr);
 		}
 
-		lsdj_error_t load(const Uint8Buffer& data) {
+		lsdj_error_t load(const fw::Uint8Buffer& data) {
 			return load(data.data(), data.size());
 		}
 
-		void save(Uint8Buffer& target) {
+		void save(fw::Uint8Buffer& target) {
 			target.resize(LSDJ_SAV_SIZE);
 			size_t writeCount;
 			lsdj_sav_write_to_memory(_sav, target.data(), target.size(), &writeCount);
 		}
-		
-		Uint8Buffer save() {
-			Uint8Buffer data;
+
+		fw::Uint8Buffer save() {
+			fw::Uint8Buffer data;
 			save(data);
 			return data;
 		}

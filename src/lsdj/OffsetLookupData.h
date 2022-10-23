@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <string_view>
 
-#include "platform/Types.h"
+#include "foundation/Types.h"
 #include "sameboy/semver.hpp"
 
 namespace rp::lsdj {

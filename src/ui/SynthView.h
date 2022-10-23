@@ -16,7 +16,7 @@ namespace rp {
 	private:
 		SystemPtr _system;
 		SynthViewState _samplerState;
-		WaveViewPtr _waveView;
+		fw::WaveViewPtr _waveView;
 
 		lsdj::Ui _ui;
 
@@ -37,7 +37,7 @@ namespace rp {
 		void onRender(Canvas& canvas) override;
 
 	private:
-		void setWaveform(Float32Buffer& samples);
+		void setWaveform(fw::Float32Buffer& samples);
 
 		void updateWaveform(lsdj::Song& song);
 	};

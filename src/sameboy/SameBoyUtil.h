@@ -1,7 +1,7 @@
 #pragma once
 
 #include <gb_struct_def.h>
-#include "platform/Types.h"
+#include "foundation/Types.h"
 
 namespace rp::SameBoyUtil {
 	void spinMs(GB_gameboy_t* gb, f32 ms);

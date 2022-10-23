@@ -1,13 +1,13 @@
 #include "SynthView.h"
 
 #include "lsdj/OffsetLookup.h"
-#include "ui/KeyToButton.h"
-#include "util/HashUtil.h"
+#include "foundation/KeyToButton.h"
+#include "foundation/HashUtil.h"
 
 using namespace rp;
 
-const Rect WAVE_VIEW_SIZE = Rect(3, 12, 16, 5);
-const Rect WAVE_VIEW_AREA = { 
+const fw::Rect WAVE_VIEW_SIZE = fw::Rect(3, 12, 16, 5);
+const fw::Rect WAVE_VIEW_AREA = {
 	WAVE_VIEW_SIZE.x * (int32)lsdj::TILE_WIDTH, 
 	WAVE_VIEW_SIZE.y * (int32)lsdj::TILE_HEIGHT, 
 	WAVE_VIEW_SIZE.w * (int32)lsdj::TILE_WIDTH, 
@@ -16,7 +16,7 @@ const Rect WAVE_VIEW_AREA = {
 
 SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) { 
 	setType<SynthView>(); 
-	_waveView = addChildAt<WaveView>("SynthWaveView", WAVE_VIEW_AREA);
+	_waveView = addChildAt<fw::WaveView>("SynthWaveView", WAVE_VIEW_AREA);
 }
 
 void SynthView::setSystem(SystemPtr& system) {
@@ -29,7 +29,7 @@ void SynthView::setSystem(SystemPtr& system) {
 		_canvas.setFont(rom.getFont(0));
 		_canvas.setPalette(rom.getPalette(0));
 
-		_waveView->setTheme(WaveView::Theme{
+		_waveView->setTheme(fw::WaveView::Theme{
 			.foreground = palette.getColor(lsdj::ColorSets::Normal, 2),
 			.background = palette.getColor(lsdj::ColorSets::Shaded, 0),
 			.selection = palette.getColor(lsdj::ColorSets::Selection, 0),
@@ -53,8 +53,8 @@ bool SynthView::onDrop(const std::vector<std::string>& paths) {
 			std::string ext = fs::path(paths[i]).extension().string();
 
 			if (ext == ".snt") {
-				Uint8Buffer snt;
-				if (fsutil::readFile(paths[i], &snt)) {
+				fw::Uint8Buffer snt;
+				if (fw::FsUtil::readFile(paths[i], &snt)) {
 					song.setSynthData(_samplerState.selectedSynth, snt);
 					updateWaveform(song);
 				}
@@ -74,7 +74,7 @@ bool SynthView::onDrop(const std::vector<std::string>& paths) {
 }
 
 bool SynthView::onKey(VirtualKey::Enum key, bool down) {
-	ButtonType::Enum button = keyToButton(key);
+	ButtonType::Enum button = fw::keyToButton(key);
 
 	if (down) {
 		_ui.pressKey(key);
@@ -101,15 +101,15 @@ void SynthView::onUpdate(f32 delta) {
 	}
 }
 
-PointT<uint32> tileToPixel(PointT<uint32> tile) {
+fw::PointT<uint32> tileToPixel(fw::PointT<uint32> tile) {
 	return { tile.x * (uint32)lsdj::TILE_WIDTH, tile.y * (uint32)lsdj::TILE_HEIGHT };
 }
 
 void SynthView::updateWaveform(lsdj::Song& song) {
 	if (_samplerState.selectedSynth >= 0) {
-		Uint8Buffer synthData = song.getSynthData(_samplerState.selectedSynth);
+		fw::Uint8Buffer synthData = song.getSynthData(_samplerState.selectedSynth);
 
-		Float32Buffer samples;
+		fw::Float32Buffer samples;
 		lsdj::SampleUtil::convertNibblesToF32(synthData, samples);
 		setWaveform(samples);
 	}
@@ -127,7 +127,7 @@ void SynthView::onRender(Canvas& canvas) {
 
 	lsdj::Song song((uint8*)savData.getData());
 
-	uint64 sramHash = HashUtil::hash(song.getBuffer());
+	uint64 sramHash = fw::HashUtil::hash(song.getBuffer());
 	if (sramHash != _lastSramHash) {
 		updateWaveform(song);
 		_lastSramHash = sramHash;
@@ -140,7 +140,7 @@ void SynthView::onRender(Canvas& canvas) {
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
-	DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
+	fw::DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
 
 	uint8 synthIdx = _samplerState.selectedSynth;
 
@@ -193,7 +193,7 @@ void SynthView::onRender(Canvas& canvas) {
 	LsdjCanvasView::onRender(canvas);
 }
 
-void SynthView::setWaveform(Float32Buffer& samples) {
+void SynthView::setWaveform(fw::Float32Buffer& samples) {
 	/*WaveformBuffer waveform(_waveView->getExpectedSampleCount());
 	WaveformUtil::generate(samples, waveform);
 	_waveView->setWaveform(std::move(waveform));*/

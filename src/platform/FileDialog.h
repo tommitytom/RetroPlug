@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "platform/Types.h"
-#include "util/DataBuffer.h"
+#include "foundation/Types.h"
+#include "foundation/DataBuffer.h"
 
 #ifdef RP_WINDOWS
 using UiHandle = void;

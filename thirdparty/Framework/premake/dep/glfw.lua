@@ -1,6 +1,6 @@
 local m = {}
 
-local GLFW_DIR = "thirdparty/glfw"
+local GLFW_DIR = _ROOT_PATH .. "thirdparty/glfw"
 
 function m.include()
 	sysincludedirs {

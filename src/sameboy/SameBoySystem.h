@@ -71,7 +71,7 @@ namespace rp {
 
 		void setSampleRate(uint32 sampleRate) override;
 
-		bool saveState(Uint8Buffer& target) override;
+		bool saveState(fw::Uint8Buffer& target) override;
 
 		State& getState() {
 			return _state;

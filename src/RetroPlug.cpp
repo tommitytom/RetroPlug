@@ -1,6 +1,6 @@
 #include "RetroPlug.h"
 
-#include "util/SolUtil.h"
+#include "foundation/SolUtil.h"
 
 //#include "AudioContext.h"
 #include <sol/sol.hpp>
@@ -24,7 +24,7 @@
 #include "ui/SystemView.h"
 #include "ui/StartView.h"
 #include "ui/SystemOverlayManager.h"
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 #include "foundation/StringUtil.h"
 #include "core/AudioContext.h"
 

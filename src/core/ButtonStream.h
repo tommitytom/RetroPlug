@@ -2,7 +2,7 @@
 
 #include <assert.h>
 #include <array>
-#include "Input.h"
+#include "foundation/Input.h"
 
 namespace rp {
 	struct StreamButtonPress {
@@ -103,9 +103,9 @@ namespace rp {
 
 		ButtonStream<TotalPressCount>& data() { return _stream; }
 
-		void setIndex(SystemId idx) {
+		/*void setIndex(SystemId idx) {
 			_stream.idx = idx;
-		}
+		}*/
 	};
 
 	using GameboyButtonStream = ButtonStreamWriter<ButtonType::MAX, 32>;

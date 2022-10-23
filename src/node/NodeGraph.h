@@ -3,8 +3,8 @@
 #include <queue>
 #include <variant>
 
-#include "platform/Types.h"
-#include "util/DataBuffer.h"
+#include "foundation/Types.h"
+#include "foundation/DataBuffer.h"
 #include "node/Node.h"
 #include "NodeGraphProcessor.h"
 

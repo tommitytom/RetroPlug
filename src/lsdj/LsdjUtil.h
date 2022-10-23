@@ -4,7 +4,7 @@
 #include <sstream>
 
 #include "sameboy/semver.hpp"
-#include "platform/Types.h"
+#include "foundation/Types.h"
 
 namespace rp::LsdjUtil {
 	static bool getVersionFromName(const std::string& romName, std::string& target) {
