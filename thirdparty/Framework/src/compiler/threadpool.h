@@ -1,7 +1,7 @@
 #pragma once
 
 #include <thread>
-#include "blockingconcurrentqueue.h"
+#include <moodycamel/blockingconcurrentqueue.h>
 
 class ThreadPool {
 public:

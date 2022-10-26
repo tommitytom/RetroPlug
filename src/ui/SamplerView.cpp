@@ -4,7 +4,7 @@
 #include "lsdj/Rom.h"
 #include "lsdj/KitUtil.h"
 #include "lsdj/OffsetLookup.h"
-#include "platform/FileDialog.h"
+#include "ui/FileDialog.h"
 #include "foundation/StringUtil.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/KeyToButton.h"
@@ -12,13 +12,13 @@
 
 using namespace rp;
 
-const std::vector<FileDialogFilter> SAMPLE_FILTER = {
+const std::vector<fw::FileDialogFilter> SAMPLE_FILTER = {
 	{ "WAV Files", "*.wav" },
 	{ "FLAC Files", "*.flac" },
 	{ "MP3 Files", "*.mp3" }
 };
 
-const std::vector<FileDialogFilter> KIT_FILTER = {
+const std::vector<fw::FileDialogFilter> KIT_FILTER = {
 	{ "LSDj Kit Files", "*.kit" }
 };
 
@@ -116,7 +116,7 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 	if (key == VirtualKey::Esc) {
 		if (down) {
 			// Generate menu
-			MenuPtr menu = std::make_shared<Menu>();
+			fw::MenuPtr menu = std::make_shared<fw::Menu>();
 			buildMenu(*menu);
 
 			MenuViewPtr menuView = addChild<MenuView>("Menu");
@@ -425,7 +425,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 	if (kit.isValid()) {
 		std::string filename = fmt::format("{}.kit", kit.getName());
 
-		if (FileDialog::fileSaveData(nullptr, kit.getBuffer(), KIT_FILTER, filename)) {
+		if (fw::FileDialog::fileSaveData(nullptr, kit.getBuffer(), KIT_FILTER, filename)) {
 			spdlog::info("Saved kit to {}", filename);
 		} else {
 			spdlog::error("Failed to write kit to {}", filename);
@@ -455,7 +455,7 @@ void SamplerView::buildMenu(fw::Menu& target) {
 void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 	std::vector<std::string> files;
 
-	if (FileDialog::basicFileOpen(nullptr, files, SAMPLE_FILTER, true)) {
+	if (fw::FileDialog::basicFileOpen(nullptr, files, SAMPLE_FILTER, true)) {
 		addKitSamples(kitIdx, files);
 	}
 }

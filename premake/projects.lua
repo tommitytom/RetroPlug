@@ -64,6 +64,8 @@ function m.Core.include()
 	fwProjects.Foundation.include()
 	fwProjects.Graphics.include()
 	fwProjects.Ui.include()
+	fwProjects.Audio.include()
+	fwProjects.Application.include()
 	fwDeps.lua.include()
 	dep.minizip.include()
 	dep.SameBoy.include()
@@ -91,6 +93,10 @@ function m.Core.link()
 	links { "Core" }
 
 	fwProjects.Foundation.link()
+	fwProjects.Graphics.link()
+	fwProjects.Ui.link()
+	fwProjects.Audio.link()
+	fwProjects.Application.link()
 	fwDeps.lua.link()
 	dep.minizip.link()
 	dep.SameBoy.link()
@@ -162,7 +168,7 @@ function m.SameBoyPlug.project()
 		"src/sameboy/**.c",
 	}
 
-	util.liveppCompat()
+	--util.liveppCompat()
 end
 
 function m.RetroPlug.include()
@@ -218,16 +224,12 @@ function m.RetroPlug.project()
 	files {
 		"src/*.h",
 		"src/RetroPlug.cpp",
-		"src/core/**.h",
-		"src/core/**.cpp",
-		"src/generated/lua/*_%{cfg.platform}.h",
-		"src/generated/lua/*_%{cfg.platform}.cpp",
+		"src/generated/*.h",
+		"src/generated/*_%{cfg.platform}.cpp",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
 		"src/node/**.h",
 		"src/node/**.cpp",
-		"src/platform/**.h",
-		"src/platform/**.cpp",
 		"src/util/**.h",
 		"src/util/**.cpp",
 		"src/ui/**.h",

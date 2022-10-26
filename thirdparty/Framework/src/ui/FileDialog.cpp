@@ -2,7 +2,7 @@
 
 #include "foundation/FsUtil.h"
 
-using namespace rp;
+using namespace fw;
 
 #ifdef RP_WINDOWS
 
@@ -35,7 +35,7 @@ static std::string ws2s(const std::string& str) {
 	return str;
 }
 
-#ifdef WIN32
+#ifndef WIN32 // NOTE: Do a proper check here for wide strings!
 static tstring tstr(const std::string& str) {
 	return s2ws(str);
 }
@@ -54,7 +54,7 @@ static tstring tstr(const std::wstring& str) {
 #endif
 
 bool FileDialog::basicFileOpen(void* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
-	std::vector<std::pair<tstring, tstring>> wideFilters;
+	std::vector<std::pair<std::wstring, std::wstring>> wideFilters;
 
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
 	for (size_t i = 0; i < filters.size(); i++) {
@@ -126,7 +126,7 @@ bool FileDialog::basicFileOpen(void* ui, std::vector<std::string>& target, const
 	return target.size() > 0;
 }
 
-bool FileDialog::fileSaveData(void* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::fileSaveData(void* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string target;
 	if (FileDialog::basicFileSave(ui, target, filters, fileName)) {
 		return fw::FsUtil::writeFile(target, data);
@@ -136,7 +136,7 @@ bool FileDialog::fileSaveData(void* ui, const rp::Uint8Buffer& data, const std::
 }
 
 bool FileDialog::basicFileSave(void* ui, std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
-	std::vector<std::pair<tstring, tstring>> wideFilters;
+	std::vector<std::pair<std::wstring, std::wstring>> wideFilters;
 	std::wstring wideFilename = s2ws(fileName);
 
 	COMDLG_FILTERSPEC* targetFilters = new COMDLG_FILTERSPEC[filters.size()];
@@ -261,7 +261,7 @@ EM_ASYNC_JS(void, saveWebFileDialog, (const char* filePath), {
 	await saveFileDialog(filePath);
 });
 
-bool FileDialog::fileSaveData(UiHandle* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string filePath = "/.file-save-dialog/" + fileName;
 
 	fs::create_directories("/.file-save-dialog/");
@@ -322,7 +322,7 @@ bool FileDialog::basicFileSave(UiHandle* ui, std::string& target, const std::vec
 
 #else
 
-bool FileDialog::fileSaveData(UiHandle* ui, const rp::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	return false;
 }
 

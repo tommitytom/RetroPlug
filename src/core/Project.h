@@ -11,15 +11,14 @@
 //#include "core/ResourceManager.h"
 #include "core/Serializable.h"
 #include "core/SystemWrapper.h"
+#include "audio/AudioManager.h"
 
 namespace rp {
-	class AudioManager;
-
 	class Project {
 	private:
 		ProjectState _state;
 		//ResourceManager _resourceManager;
-		AudioManager* _audioManager = nullptr;
+		fw::AudioManager* _audioManager = nullptr;
 
 		sol::state* _lua = nullptr;
 		int32 _version = 0;
@@ -47,11 +46,11 @@ namespace rp {
 			_messageBus = orchestratorMessageBus;
 		}
 
-		void setAudioManager(AudioManager& audioManager) {
+		void setAudioManager(fw::AudioManager& audioManager) {
 			_audioManager = &audioManager;
 		}
 
-		AudioManager& getAudioManager() {
+		fw::AudioManager& getAudioManager() {
 			return *_audioManager;
 		}
 

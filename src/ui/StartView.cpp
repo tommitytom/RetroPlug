@@ -4,7 +4,7 @@
 
 #include "core/FileManager.h"
 #include "core/Project.h"
-#include "platform/FileDialog.h"
+#include "ui/FileDialog.h"
 #include "roms/mgb.h"
 #include "sameboy/SameBoySystem.h"
 #include "ui/MenuBuilder.h"
@@ -15,31 +15,31 @@
 using namespace rp;
 
 void StartView::setupMenu() {
-	MenuPtr menuRoot = std::make_shared<Menu>();
-	Menu& menu = *menuRoot;
+	fw::MenuPtr menuRoot = std::make_shared<fw::Menu>();
+	fw::Menu& menu = *menuRoot;
 
 	menu.title("RetroPlug v0.4.0")
 		.separator()
-		.action("Load...", [&](MenuContext& ctx) {
+		.action("Load...", [&](fw::MenuContext& ctx) {
 			ctx.retain();
 
 			std::vector<std::string> files;
-			if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				LoaderUtil::handleLoad(files, *getShared<FileManager>(), *getShared<Project>());
+			if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
+				LoaderUtil::handleLoad(files, *getState<FileManager>(), *getState<Project>());
 				ctx.close();
 			}
 		});
 
-	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getShared<FileManager>(), getShared<Project>(), nullptr);
+	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getState<FileManager>(), getState<Project>(), nullptr);
 
 	menu
 		.action("Load MGB", [this]() {
-			Project* project = getShared<Project>();
+			Project* project = getState<Project>();
 
 			SystemWrapperPtr system = project->addSystem<SameBoySystem>({
 				.romPath = "mgb.gb"
 			}, {
-				.romBuffer = std::make_shared<Uint8Buffer>(mgb, mgb_len) 
+				.romBuffer = std::make_shared<fw::Uint8Buffer>(mgb, mgb_len)
 			});
 
 			std::string systemName = fmt::format("System {}", system->getId());
@@ -57,5 +57,5 @@ void StartView::setupMenu() {
 }
 
 bool StartView::onDrop(const std::vector<std::string>& paths) {
-	return LoaderUtil::handleLoad(paths, *getShared<FileManager>(), *getShared<Project>());
+	return LoaderUtil::handleLoad(paths, *getState<FileManager>(), *getState<Project>());
 }

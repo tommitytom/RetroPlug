@@ -1,8 +1,8 @@
 #include "GridOverlay.h"
 
-#include "util/StlUtil.h"
+#include "foundation/StlUtil.h"
 
-using namespace fw;
+using namespace rp;
 
 bool hasSystem(const std::vector<SystemViewPtr>& views, SystemWrapperPtr system) {
 	for (SystemViewPtr systemView : views) {
@@ -14,12 +14,12 @@ bool hasSystem(const std::vector<SystemViewPtr>& views, SystemWrapperPtr system)
 	return false;
 }
 
-bool viewIsFocused(ViewPtr view) {
+bool viewIsFocused(fw::ViewPtr view) {
 	if (view->hasFocus()) {
 		return true;
 	}
 
-	for (ViewPtr child : view->getChildren()) {
+	for (fw::ViewPtr child : view->getChildren()) {
 		if (viewIsFocused(child)) {
 			return true;
 		}
@@ -28,7 +28,7 @@ bool viewIsFocused(ViewPtr view) {
 	return false;
 }
 
-void focusSystem(ViewPtr view) {
+void focusSystem(fw::ViewPtr view) {
 	if (view->getChildren().size()) {
 		view->getChildren().back()->focus();
 	} else {
@@ -36,13 +36,13 @@ void focusSystem(ViewPtr view) {
 	}
 }
 
-bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point pos) {
+bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, fw::Point pos) {
 	if (down) {
-		std::vector<ViewPtr>& children = _grid->getChildren();
+		std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
 		for (int32 i = (int32)children.size() - 1; i >= 0; --i) {
 			if (children[i]->getWorldArea().contains(pos)) {
-				setSelected((ViewIndex)i);
+				setSelected((fw::ViewIndex)i);
 				break;
 			}
 		}
@@ -52,13 +52,13 @@ bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, Point pos) 
 }
 
 void GridOverlay::onLayoutChanged() {
-	std::vector<ViewPtr>& children = _grid->getChildren();
+	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
 	for (size_t i = 0; i < children.size(); ++i) {
-		ViewPtr view = children[i];
+		fw::ViewPtr view = children[i];
 
 		if (viewIsFocused(view)) {
-			_selected = (ViewIndex)i;
+			_selected = (fw::ViewIndex)i;
 		}
 	}
 
@@ -66,8 +66,8 @@ void GridOverlay::onLayoutChanged() {
 }
 
 void GridOverlay::onUpdate(f32 delta) {
-	Project* project = getShared<Project>();
-	std::vector<ViewPtr>& children = _grid->getChildren();
+	Project* project = getState<Project>();
+	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
 	if (_projectVersion == -1 || _projectVersion != project->getVersion()) {
 		std::vector<SystemWrapperPtr>& systems = project->getSystems();
@@ -83,7 +83,7 @@ void GridOverlay::onUpdate(f32 delta) {
 
 		// Check for systems that were removed
 		for (SystemViewPtr systemView : systemViews) {
-			if (!StlUtil::vectorContains(systems, systemView->getSystem())) {
+			if (!fw::StlUtil::vectorContains(systems, systemView->getSystem())) {
 				_grid->removeChild(systemView);
 
 				// TODO: Also remove any related windows (like lsdj sample manager)
@@ -98,9 +98,9 @@ void GridOverlay::onUpdate(f32 delta) {
 
 				// TODO: Also remove any related windows (like lsdj sample manager)
 
-				std::vector<ViewPtr> overlays = getShared<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
+				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
 
-				for (ViewPtr overlay : overlays) {
+				for (fw::ViewPtr overlay : overlays) {
 					overlay->setName(fmt::format("{} ({})", overlay->getName(), system->getSystem()->getRomName()));
 					systemView->addChild(overlay);
 				}
@@ -115,13 +115,13 @@ void GridOverlay::onUpdate(f32 delta) {
 				// New system was added
 
 				std::string systemName = fmt::format("System {}", system->getId());
-				
+
 				SystemViewPtr systemView = _grid->addChild<SystemView>(systemName);
 				systemView->setSystem(system);
 
-				std::vector<ViewPtr> overlays = getShared<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
+				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
 
-				for (ViewPtr overlay : overlays) {
+				for (fw::ViewPtr overlay : overlays) {
 					overlay->setName(fmt::format("{} ({})", overlay->getName(), systemName));
 					systemView->addChild(overlay);
 				}
@@ -136,8 +136,8 @@ void GridOverlay::onUpdate(f32 delta) {
 }
 
 void GridOverlay::onRender(Canvas& canvas) {
-	if (_highlightMode == HighlightMode::Outline && _selected != INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
-		ViewPtr child = _grid->getChild(_selected);
+	if (_highlightMode == HighlightMode::Outline && _selected != fw::INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
+		fw::ViewPtr child = _grid->getChild(_selected);
 		auto childArea = child->getArea();
 
 		//canvas.strokeRect(childArea, COLOR_RED);
@@ -149,19 +149,19 @@ void GridOverlay::updateLayout() {
 		setArea(_grid->getArea());
 	}
 
-	std::vector<ViewPtr>& children = _grid->getChildren();
+	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
-	if (_selected == INVALID_VIEW_INDEX && children.size() > 0) {
+	if (_selected == fw::INVALID_VIEW_INDEX && children.size() > 0) {
 		_selected = 0;
 	}
 
 	if (_selected >= children.size()) {
 		if (children.size() > 0) {
-			_selected = (ViewIndex)children.size() - 1;
+			_selected = (fw::ViewIndex)children.size() - 1;
 		}
 	}
 
-	if (_selected != INVALID_VIEW_INDEX && (_refocus || !viewIsFocused(children[_selected]))) {
+	if (_selected != fw::INVALID_VIEW_INDEX && (_refocus || !viewIsFocused(children[_selected]))) {
 		focusSystem(children[_selected]);
 		_refocus = false;
 	}

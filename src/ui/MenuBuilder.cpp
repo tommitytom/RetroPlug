@@ -20,7 +20,7 @@ using namespace rp;
 void loadRomDialog(Project* project, SystemWrapperPtr system) {
 	std::vector<std::string> files;
 
-	if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
+	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
 		if (system) {
 			LoadConfig loadConfig = LoadConfig{
 				.romBuffer = std::make_shared<fw::Uint8Buffer>(),
@@ -50,7 +50,7 @@ bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
 	}
 
 	if (forceDialog) {
-		if (!FileDialog::basicFileSave(nullptr, path, { PROJECT_FILTER })) {
+		if (!fw::FileDialog::basicFileSave(nullptr, path, { PROJECT_FILTER })) {
 			return false;
 		}
 	}
@@ -77,7 +77,7 @@ bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
 	}
 
 	if (forceDialog) {
-		if (!FileDialog::basicFileSave(nullptr, path, { SAV_FILTER })) {
+		if (!fw::FileDialog::basicFileSave(nullptr, path, { SAV_FILTER })) {
 			return false;
 		}
 	}
@@ -101,7 +101,7 @@ bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
 bool saveState(Project* project, SystemWrapperPtr system) {
 	std::string path;
 
-	if (!FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
+	if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
 		return false;
 	}
 
@@ -203,7 +203,7 @@ void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Proje
 		.action("All ROMs + SAVs", [project]() {
 		fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(*project, target)) {
-				FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
+				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
 			}
 		})
 		.parent();

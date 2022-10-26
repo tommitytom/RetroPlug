@@ -10,7 +10,7 @@ EM_ASYNC_JS(void, setupWebFs, (), {
 #endif
 
 int main() {
-	return rp::app::Application::run<rp::RetroPlug>();
+	return fw::app::Application::run<rp::RetroPlug>();
 
 	/*{
 		app = new RetroPlugApplication("RetroPlug 0.4.0", 320, 288);

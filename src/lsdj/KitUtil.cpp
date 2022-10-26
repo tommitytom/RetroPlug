@@ -29,7 +29,7 @@ KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
 
 	KitUtil::SampleData sample;
 	sample.sampleRate = decoder.internalSampleRate;
-	sample.buffer = std::make_shared<Float32Buffer>();
+	sample.buffer = std::make_shared<fw::Float32Buffer>();
 
 	while (true) {
 		sample.buffer->resize(sample.buffer->size() + blockSize);
@@ -56,7 +56,7 @@ struct BiquadCoeffs {
 };
 
 void lowPassCoeffs(f32 cutoff, f32 q, f32 sampleRate, BiquadCoeffs& target) {
-	f32 omega = 2.0f * PI * cutoff / sampleRate;
+	f32 omega = 2.0f * fw::PI * cutoff / sampleRate;
 	f32 s = sin(omega);
 	f32 c = cos(omega);
 	f32 alpha = s / (2 * q);
@@ -91,7 +91,7 @@ enum FilterType {
 	ALLP
 };
 
-void convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const Float32Buffer& buffer, Float32Buffer& target) {
+void convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const fw::Float32Buffer& buffer, fw::Float32Buffer& target) {
 	const size_t inBufCapacity = 1024;
 	r8b::CFixedBuffer<f64> inBuf;
 	inBuf.alloc((int)buffer.size());
@@ -132,7 +132,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	assert(kitState.samples.size() == samples.size());
 	assert(samples.size() < 16);
 
-	std::vector<Uint8BufferPtr> targets;
+	std::vector<fw::Uint8BufferPtr> targets;
 	uint32 totalSampleDataSize = 0;
 
 	for (size_t i = 0; i < samples.size(); ++i) {
@@ -149,7 +149,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 		// Normalize and Apply gain
 
-		Float32Buffer gainTarget(sample.buffer->size());
+		fw::Float32Buffer gainTarget(sample.buffer->size());
 
 		f32 max = 0.0f;
 		for (size_t i = 0; i < gainTarget.size(); ++i) {
@@ -169,7 +169,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 		// Apply filter
 
-		Float32Buffer filterTarget = gainTarget.clone();
+		fw::Float32Buffer filterTarget = gainTarget.clone();
 
 		//if (settings.filter != FilterType::NONE) {
 		if (settings.filter == FilterType::LOWP) {
@@ -207,7 +207,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		}
 
 		// Resample
-		Float32Buffer resampled;
+		fw::Float32Buffer resampled;
 		convertSamplerate((f64)sample.sampleRate, (f64)GAMEBOY_SAMPLE_RATE, filterTarget, resampled);
 
 		/*ma_resampler_config config = ma_resampler_config_init(ma_format_f32, 1, sample.sampleRate, GAMEBOY_SAMPLE_RATE, ma_resample_algorithm_linear);
@@ -237,7 +237,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 			ditherLevel = ((f32)settings.dither / (f32)0xFF) * maxDither;
 		}
 
-		Uint8BufferPtr sampleData = std::make_shared<Uint8Buffer>();
+		fw::Uint8BufferPtr sampleData = std::make_shared<fw::Uint8Buffer>();
 		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData, ditherLevel);
 
 		targets.push_back(sampleData);
@@ -246,7 +246,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 	assert(totalSampleDataSize <= lsdj::Kit::MAX_SAMPLE_SPACE);
 
-	Uint8Buffer kitData(lsdj::Rom::BANK_SIZE);
+	fw::Uint8Buffer kitData(lsdj::Rom::BANK_SIZE);
 	kitData.clear();
 	writeString(kitData.data() + lsdj::Kit::NAME_OFFSET, lsdj::Kit::NAME_SIZE, kitState.name, ' ');
 

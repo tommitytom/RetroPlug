@@ -1,9 +1,9 @@
 #include "SolUtil.h"
-/*
+
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "generated/lua/CompiledScripts.h"
+#include "foundation/generated/CompiledScripts.h"
 
 using namespace fw;
 
@@ -77,4 +77,3 @@ bool SolUtil::deserializeTable(sol::state& s, const std::string& data, sol::tabl
 		return false;
 	}
 }
-*/

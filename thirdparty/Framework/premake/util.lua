@@ -55,7 +55,12 @@ function util.setupPch(name, dir)
 	filter {}
 end
 
-function util.createGeneratorProject()
+function util.createGeneratorProject(configPaths)
+	local commands = {}
+	for _ ,v in ipairs(configPaths) do
+		table.insert(commands, "%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler " .. v ..  " %{cfg.platform}")
+	end
+
 	group "0 - Build"
 
 	project "generator"
@@ -63,9 +68,7 @@ function util.createGeneratorProject()
 
 		dependson { "ScriptCompiler" }
 
-		prebuildcommands {
-			"%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler ../../src/compiler.config.lua %{cfg.platform}"
-		}
+		prebuildcommands(commands)
 
 	group ""
 end

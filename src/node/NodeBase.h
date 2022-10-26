@@ -6,7 +6,7 @@
 #include "foundation/Types.h"
 #include "MessageBus.h"
 #include "NodeProcessor.h"
-#include "RpMath.h"
+#include "foundation/Math.h"
 
 namespace rp {
 	enum class NodeLifecycleState {

@@ -5,7 +5,7 @@
 //#include "AudioContext.h"
 #include <sol/sol.hpp>
 
-#include "RpMath.h"
+#include "foundation/Math.h"
 #include "core/Project.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
@@ -16,7 +16,7 @@
 #include "ui/ViewManager.h"
 #include "core/AudioStreamSystem.h"
 #include "core/FileManager.h"
-#include "core/Input.h"
+#include "foundation/Input.h"
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
 #include "core/ProxySystem.h"
@@ -32,11 +32,11 @@ using namespace rp;
 
 RetroPlug::RetroPlug() : View({ 480, 432 }) {
 	setType<RetroPlug>();
-	setSizingPolicy(SizingPolicy::FitToContent);
+	setSizingPolicy(fw::SizingPolicy::FitToContent);
 }
 
 void RetroPlug::onInitialize() {
-	std::shared_ptr<AudioManager>& audioManager = *getShared<std::shared_ptr<AudioManager>>();
+	std::shared_ptr<fw::AudioManager>& audioManager = *getState<std::shared_ptr<fw::AudioManager>>();
 	_audioContext = std::make_shared<AudioContext>(&_ioMessageBus, &_orchestratorMessageBus);
 	audioManager->setProcessor(_audioContext);
 
@@ -47,22 +47,22 @@ void RetroPlug::onInitialize() {
 		_ioMessageBus.allocator.enqueue(std::make_unique<SystemIo>());
 	}
 
-	_fileManager = this->createShared<FileManager>();
-	_project = this->createShared<Project>();
+	_fileManager = this->createState<FileManager>();
+	_project = this->createState<Project>();
 	_project->setup(&_state.processor, &_orchestratorMessageBus);
 
 	_project->getModelFactory().addModelFactory<LsdjModel>([](std::string_view romName) {
-		std::string shortName = StringUtil::toLower(romName).substr(0, 4);
+		std::string shortName = fw::StringUtil::toLower(romName).substr(0, 4);
 		return shortName == "lsdj";
 	});
 
-	SystemOverlayManager* overlayManager = this->createShared<SystemOverlayManager>();
+	SystemOverlayManager* overlayManager = this->createState<SystemOverlayManager>();
 	overlayManager->addOverlayFactory<LsdjOverlay>([](std::string_view romName) {
-		std::string shortName = StringUtil::toLower(romName).substr(0, 4);
+		std::string shortName = fw::StringUtil::toLower(romName).substr(0, 4);
 		return shortName == "lsdj";
 	});
 
-	_state.grid = this->addChild<GridView>("Grid");
+	_state.grid = this->addChild<fw::GridView>("Grid");
 	_state.gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
 	_state.gridOverlay->setGrid(_state.grid);
 }
@@ -109,7 +109,7 @@ void RetroPlug::onUpdate(f32 delta) {
 	f32 scale = _project->getScale();
 	setScale(scale);
 
-	_state.grid->setLayoutMode((GridLayout)_project->getState().settings.layout);
+	_state.grid->setLayoutMode((fw::GridLayout)_project->getState().settings.layout);
 
 	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5);
 	processInput(frameCount);
@@ -123,7 +123,7 @@ void RetroPlug::onUpdate(f32 delta) {
 
 void RetroPlug::onRender(Canvas& canvas) {
 	// Scale?
-	canvas.fillRect(getDimensions(), Color4F(0, 0, 0, 1));
+	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 1));
 	processOutput();
 }
 

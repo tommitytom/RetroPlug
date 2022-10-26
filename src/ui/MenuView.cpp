@@ -111,7 +111,7 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 		if (down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
 			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
-				fw::MultiSelect* multiSelect = menuItem->as<MultiSelect>();
+				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
 				multiSelect->nextItem();
 				multiSelect->getFunction()(multiSelect->getValue());
 			}

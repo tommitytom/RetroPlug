@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/SystemWrapper.h"
-#include "platform/FileDialog.h"
+#include "ui/FileDialog.h"
 #include "ui/Menu.h"
 #include "util/RecentUtil.h"
 
@@ -9,11 +9,11 @@ namespace rp {
 	class FileManager;
 	class Project;
 
-	const FileDialogFilter ROM_FILTER = FileDialogFilter{ "GameBoy ROM Files", "*.gb" };
-	const FileDialogFilter PROJECT_FILTER = FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
-	const FileDialogFilter SAV_FILTER = FileDialogFilter{ "Gameboy SAV Files", "*.sav" };
-	const FileDialogFilter STATE_FILTER = FileDialogFilter{ "Gameboy State Files", "*.state" };
-	const FileDialogFilter ZIP_FILTER = FileDialogFilter{ "ZIP Files", "*.zip" };
+	const fw::FileDialogFilter ROM_FILTER = fw::FileDialogFilter{ "GameBoy ROM Files", "*.gb" };
+	const fw::FileDialogFilter PROJECT_FILTER = fw::FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
+	const fw::FileDialogFilter SAV_FILTER = fw::FileDialogFilter{ "Gameboy SAV Files", "*.sav" };
+	const fw::FileDialogFilter STATE_FILTER = fw::FileDialogFilter{ "Gameboy State Files", "*.state" };
+	const fw::FileDialogFilter ZIP_FILTER = fw::FileDialogFilter{ "ZIP Files", "*.zip" };
 }
 
 namespace rp::MenuBuilder {

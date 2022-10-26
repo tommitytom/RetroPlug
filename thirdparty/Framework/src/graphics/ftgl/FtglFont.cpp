@@ -45,7 +45,9 @@ FtglFontProvider::FtglFontProvider(ResourceManager& resourceManager) : _resource
 }
 
 std::shared_ptr<Resource> FtglFontProvider::load(std::string_view uri) {
-	size_t lastSlash = uri.find_last_of('/');
+	size_t lastSlash = uri.find_last_of("/\\");
+	assert(lastSlash != std::string::npos);
+
 	std::string_view path = uri.substr(0, lastSlash);
 	std::string_view sizeStr = uri.substr(lastSlash + 1);
 

@@ -10,25 +10,20 @@ std::string_view HEADER_CODE_TEMPLATE = R"(// WARNING! THIS CODE IS GENERATED AN
 #include <string_view>
 #include <unordered_map>
 #include <cstdint>
+#include "compiler/LuaScriptData.h"
 
 typedef struct lua_State lua_State;
 
 namespace CompiledScripts {
 
-struct Script {
-	const std::uint8_t* data;
-	size_t size;
-	bool compiled;
-};
-
-using ScriptLookup = std::unordered_map<std::string_view, Script>;
+using ScriptLookup = std::unordered_map<std::string_view, LuaScriptData>;
 
 )";
 
 std::string_view HEADER_FUNCS_TEMPLATE = R"(
 	int loader(lua_State* state);
 	void getScriptNames(std::vector<std::string_view>& names);
-	const Script* getScript(std::string_view path);
+	const LuaScriptData* getScript(std::string_view path);
 	const ScriptLookup& getScriptLookup();
 )";
 
@@ -62,7 +57,7 @@ void getScriptNames(std::vector<std::string_view>& names) {
 	}
 }
 
-const Script* getScript(std::string_view path) {
+const LuaScriptData* getScript(std::string_view path) {
 	const auto& found = _lookup.find(path);
 	if (found != _lookup.end()) {
 		return &found->second;

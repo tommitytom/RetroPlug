@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "platform/FileDialog.h"
+#include "ui/FileDialog.h"
 #include "core/Project.h"
 #include "foundation/KeyToButton.h"
 #include "ui/MenuView.h"
@@ -78,7 +78,7 @@ void SystemView::onUpdate(f32 delta) {
 void loadRomDialog(Project* project) {
 	std::vector<std::string> files;
 
-	if (FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
+	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
 		//project->addSystem<SameBoySystem>(files[0]);
 	}
 }
@@ -95,7 +95,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 
 	int audioDevice = 0;
 
-	AudioManager& audioManager = project->getAudioManager();
+	fw::AudioManager& audioManager = project->getAudioManager();
 
 	std::vector<std::string> audioDevices;
 	//audioManager.getDeviceNames(audioDevices);

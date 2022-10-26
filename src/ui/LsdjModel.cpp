@@ -74,7 +74,7 @@ KitIndex LsdjModel::addKit(SystemPtr system, const std::string& path, KitIndex k
 	}
 
 	std::vector<std::byte> fileData = fw::FsUtil::readFile(path);
-	rom.getKit(kitIdx).setKitData(Uint8Buffer((uint8*)fileData.data(), fileData.size()));
+	rom.getKit(kitIdx).setKitData(fw::Uint8Buffer((uint8*)fileData.data(), fileData.size()));
 
 	setRequiresSave(true);
 
@@ -99,7 +99,7 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
 
 		KitState kitState = KitState{
-			.name = StringUtil::toUpper(kitName),
+			.name = fw::StringUtil::toUpper(kitName),
 		};
 
 		for (const std::string& path : paths) {
@@ -111,7 +111,7 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
 
 				kitState.samples.push_back(KitSample{
-					.name = StringUtil::toUpper(sampleName),
+					.name = fw::StringUtil::toUpper(sampleName),
 					.path = path
 				});
 			}
@@ -139,8 +139,8 @@ KitIndex LsdjModel::addKitSamples(SystemPtr system, const std::vector<std::strin
 bool LsdjModel::isSramDirty() {
 	MemoryAccessor buffer = getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
 	if (buffer.isValid()) {
-		Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
-		uint64 songHash = HashUtil::hash(songBuffer);
+		fw::Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
+		uint64 songHash = fw::HashUtil::hash(songBuffer);
 
 		if (songHash != _songHash) {
 			_songHash = songHash;
@@ -156,7 +156,7 @@ bool LsdjModel::isSramDirty() {
 void LsdjModel::onBeforeLoad(LoadConfig& loadConfig) {
 	if ((!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) && !loadConfig.stateBuffer) {
 		lsdj::Sav sav;
-		loadConfig.sramBuffer = std::make_shared<Uint8Buffer>();
+		loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
 		sav.save(*loadConfig.sramBuffer);
 	}
 }

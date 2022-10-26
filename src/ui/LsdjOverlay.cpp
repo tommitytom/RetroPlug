@@ -45,7 +45,7 @@ void showHdPlayer(fw::View* parent, SystemWrapperPtr system) {
 void LsdjOverlay::onInitialize() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
 
-	Project* project = getShared<Project>();
+	Project* project = getState<Project>();
 	_model = _system->getModel<LsdjModel>();
 
 	if (_model->isRomValid()) {

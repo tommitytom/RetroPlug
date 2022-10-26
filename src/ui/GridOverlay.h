@@ -4,20 +4,20 @@
 #include "SystemView.h"
 #include "core/Project.h"
 
-namespace fw {
+namespace rp {
 	enum class HighlightMode {
 		Alpha,
 		Outline
 	};
 
-	class GridOverlay final : public View {
+	class GridOverlay final : public fw::View {
 	private:
-		ViewIndex _selected = INVALID_VIEW_INDEX;
+		fw::ViewIndex _selected = fw::INVALID_VIEW_INDEX;
 		f32 _unselectedAlpha = 0.75f;
 
 		HighlightMode _highlightMode = HighlightMode::Alpha;
 
-		ViewPtr _grid;
+		fw::ViewPtr _grid;
 
 		int32 _projectVersion = -1;
 		bool _refocus = false;
@@ -27,11 +27,11 @@ namespace fw {
 			setType<GridOverlay>(); 
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override;
+		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point pos) override;
 
 		void onLayoutChanged() override;
 
-		void setSelected(ViewIndex index) {
+		void setSelected(fw::ViewIndex index) {
 			_selected = index;
 			updateLayout();
 		}
@@ -51,7 +51,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		void setGrid(ViewPtr grid) {
+		void setGrid(fw::ViewPtr grid) {
 			_grid = grid;
 			updateLayout();
 		}

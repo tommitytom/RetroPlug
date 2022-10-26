@@ -15,7 +15,7 @@ namespace rp {
 
 		fw::GridViewPtr grid;
 		//ViewPtr overlayRoot;
-		fw::GridOverlayPtr gridOverlay;
+		GridOverlayPtr gridOverlay;
 
 		SystemProcessor processor;
 	};

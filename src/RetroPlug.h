@@ -17,12 +17,12 @@ namespace rp {
 	class Project;
 	class FileManager;
 
-	class RetroPlug final : public View {
+	class RetroPlug final : public fw::View {
 	private:
 		f64 _nextFrame = 0;
 
-		Uint8Buffer _romBuffer;
-		Uint8Buffer _savBuffer;
+		fw::Uint8Buffer _romBuffer;
+		fw::Uint8Buffer _savBuffer;
 
 		std::string _romPath;
 		std::string _savPath;

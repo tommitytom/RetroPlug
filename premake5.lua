@@ -90,21 +90,12 @@ workspace "RetroPlug"
 	filter {}
 
 util.createConfigureProject()
---util.createGeneratorProject()
+util.createGeneratorProject({
+	_MAIN_SCRIPT_DIR .. "/src/compiler.config.lua",
+	_MAIN_SCRIPT_DIR .. "/thirdparty/Framework/src/compiler.config.lua",
+})
 
-if _OPTIONS["emscripten"] == nil then
-	group "Utils"
-		project "ScriptCompiler"
-			kind "ConsoleApp"
-			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
-			includedirs { "src/compiler" }
-			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 
-			links { "lua" }
-
-			filter { "system:linux" }
-				links { "pthread" }
-end
 
 _ROOT_PATH = "thirdparty/Framework/"
 local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
@@ -131,3 +122,17 @@ projects.RetroPlug.project()
 
 group "4 - Applications"
 projects.Application.project()
+
+if _OPTIONS["emscripten"] == nil then
+	group "5 - Utils"
+		project "ScriptCompiler"
+			kind "ConsoleApp"
+			sysincludedirs { "thirdparty/Framework/thirdparty", "thirdparty/Framework/thirdparty/lua/src" }
+			includedirs { "thirdparty/Framework/src/compiler" }
+			files { "thirdparty/Framework/src/compiler/**.h", "thirdparty/Framework/src/compiler/**.c", "thirdparty/Framework/src/compiler/**.cpp" }
+
+			links { "lua" }
+
+			filter { "system:linux" }
+				links { "pthread" }
+end

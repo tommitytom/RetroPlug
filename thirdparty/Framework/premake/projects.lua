@@ -27,6 +27,7 @@ function m.Foundation.include()
 		_ROOT_PATH .. "resources"
 	}
 
+	dep.lua.include()
 	dep.bgfx.compat()
 
 	filter {}
@@ -36,6 +37,8 @@ function m.Foundation.link()
 	m.Foundation.include()
 
 	links { "Foundation" }
+
+	dep.lua.link()
 end
 
 function m.Foundation.project()
@@ -46,7 +49,9 @@ function m.Foundation.project()
 
 	files {
 		_ROOT_PATH .. "src/foundation/**.h",
-		_ROOT_PATH .. "src/foundation/**.cpp"
+		_ROOT_PATH .. "src/foundation/**.cpp",
+		_ROOT_PATH .. "src/foundation/generated/*.h",
+		_ROOT_PATH .. "src/foundation/generated/*_%{cfg.platform}.cpp",
 	}
 
 	util.liveppCompat()
