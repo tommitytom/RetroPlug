@@ -106,6 +106,35 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 	s->audioFrameCount++;
 }
 
+static void serialStart(GB_gameboy_t* gb, bool bit_received) {
+	SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
+	s->bitToSend = bit_received;
+
+	s->currentLinkByte |= bit_received << s->currentBitCount;
+	s->currentBitCount++;
+
+	if (s->currentBitCount == 8) {
+		s->io->output.serial.push_back(TimedByte{
+			.audioFrameOffset = (uint32)s->audioFrameCount,
+			.byte = s->currentLinkByte
+		});
+
+		s->currentLinkByte = 0;
+	}	
+}
+
+static bool serialEnd(GB_gameboy_t* gb) {
+	SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
+
+	bool ret = s->linkTargets.size() > 0 ? GB_serial_get_data_bit(s->linkTargets[0]->gb) : true;
+
+	for (SameBoySystem::State* linkTarget : s->linkTargets) {
+		GB_serial_set_data_bit(linkTarget->gb, s->bitToSend);
+	}
+
+	return ret;
+}
+
 SameBoySystem::SameBoySystem(SystemId id): System<SameBoySystem>(id) {
 	_resolution = fw::DimensionT<uint32>(160, 144);
 }
@@ -150,8 +179,8 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 			GB_set_rgb_encode_callback(_state.gb, rgbEncode);
 			GB_set_vblank_callback(_state.gb, vblankHandler);
 			GB_apu_set_sample_callback(_state.gb, audioHandler);
-			//GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
-			//GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
+			GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
+			GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
 
 			//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
 			GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);

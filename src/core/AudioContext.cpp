@@ -88,9 +88,15 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 
 	for (SystemPtr& system : _state.processor.getSystems()) {
 		SystemIoPtr& io = system->getStream();
-		if (io && io->output.audio) {
-			for (uint32 i = 0; i < sampleCount; ++i) {
-				buffer[i] = buffer[i] + io->output.audio->get(i);
+		if (io) {
+			if (io->output.audio) {
+				for (uint32 i = 0; i < sampleCount; ++i) {
+					buffer[i] = buffer[i] + io->output.audio->get(i);
+				}
+			}
+
+			if (io->output.serial.size()) {
+				// TODO: Send midi data out
 			}
 		}
 	}

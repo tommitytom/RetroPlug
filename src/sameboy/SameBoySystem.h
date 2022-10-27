@@ -45,9 +45,16 @@ namespace rp {
 			uint32 frameTicks = 0;
 			std::queue<OffsetButton> buttonQueue;
 
+			std::queue<TimedByte> serialQueue;
+
 			//int processTicks = 0;
-			//std::vector<SameBoyPlugState*> linkTargets;
-			//bool bitToSend;
+
+			int linkTicksRemain = 0;
+			std::vector<SameBoySystem::State*> linkTargets;
+			bool bitToSend;
+
+			uint8 currentLinkByte = 0;
+			size_t currentBitCount = 0;
 		};
 
 	private:
@@ -79,6 +86,10 @@ namespace rp {
 
 		const State& getState() const {
 			return _state;
+		}
+
+		uint32 getSampleRate() const {
+			return _sampleRate;
 		}
 
 	private:

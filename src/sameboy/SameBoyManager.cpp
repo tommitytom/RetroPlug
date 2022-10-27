@@ -14,6 +14,8 @@ using namespace rp;
 
 //const size_t CHANNEL_COUNT = 2;
 
+const size_t LINK_TICKS_MAX = 3907;
+
 FixedQueue<TimedButtonPress, 16> EMPTY_BUTTON_QUEUE;
 
 void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
@@ -58,6 +60,12 @@ void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<Offse
 	}
 }
 
+void processSerial(FixedQueue<TimedByte, 16>& source, std::queue<TimedByte>& target, f32 timeScale) {
+	while (source.count()) {
+		target.push(source.pop());
+	}
+}
+
 std::string SameBoyManager::getRomName(const fw::Uint8Buffer& romData) {
 	return GameboyUtil::getRomName((const char*)romData.data());
 }
@@ -77,8 +85,10 @@ void SameBoyManager::process(uint32 frameCount) {
 
 		if (state->io) {
 			SystemIo::Input& input = state->io->input;
+			f32 timeScale = (f32)system->getSampleRate() / 1000.0f;
 
-			processButtons(input.buttons, state->buttonQueue, 48000 / 1000.0);
+			processSerial(input.serial, state->serialQueue, timeScale);
+			processButtons(input.buttons, state->buttonQueue, timeScale);
 			processPatches(gb, input.patches);
 
 			if (input.loadConfig.hasChanges()) {
@@ -91,19 +101,21 @@ void SameBoyManager::process(uint32 frameCount) {
 		}
 
 		while (state->audioFrameCount < frameCount) {
-			/*if (_state.linkTicksRemain <= 0) {
-				if (!_state.serialQueue.empty()) {
-					OffsetByte b = _state.serialQueue.front();
-					_state.serialQueue.pop();
+			if (state->linkTicksRemain <= 0) {
+				auto serial = state->serialQueue;
 
-					for (int i = b.bitCount - 1; i >= 0; i--) {
+				if (!serial.empty()) {
+					TimedByte b = serial.front();
+					serial.pop();
+
+					for (int i = 8 - 1; i >= 0; i--) {
 						bool bit = (bool)((b.byte & (1 << i)) >> i);
-						GB_serial_set_data_bit(_state.gb, bit);
+						GB_serial_set_data_bit(state->gb, bit);
 					}
 				}
 
-				_state.linkTicksRemain += LINK_TICKS_MAX;
-			}*/
+				state->linkTicksRemain += LINK_TICKS_MAX;
+			}
 
 			// Send button presses if required
 
@@ -116,7 +128,7 @@ void SameBoyManager::process(uint32 frameCount) {
 
 			int ticks = GB_run(gb);
 			delta += ticks;
-			//_state.linkTicksRemain -= ticks;
+			state->linkTicksRemain -= ticks;
 		}
 
 		size_t buttonRemain = state->buttonQueue.size();
@@ -129,13 +141,14 @@ void SameBoyManager::process(uint32 frameCount) {
 
 		// If there are any serial/midi events that still haven't been processed, set their
 		// offsets to 0 so they get processed immediately at the start of the next frame.
-		/*size_t serialRemain = _state.serialQueue.size();
+		size_t serialRemain = state->serialQueue.size();
 		for (size_t i = 0; i < serialRemain; i++) {
-			OffsetByte b = _state.serialQueue.front();
-			b.offset = 0;
-			_state.serialQueue.push(b);
-			_state.serialQueue.pop();
-		}*/
+			TimedByte b = state->serialQueue.front();
+			state->serialQueue.pop();
+
+			b.audioFrameOffset = 0;
+			state->serialQueue.push(b);
+		}
 
 		state->io = nullptr;
 		state->audioFrameCount = 0;

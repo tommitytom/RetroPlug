@@ -93,13 +93,14 @@ namespace rp {
 		} input;
 
 		struct Output {
-			//std::vector<TimedByte> serial;
+			std::vector<TimedByte> serial;
 			fw::ImagePtr video;
 			fw::Float32BufferPtr audio;
 			
 			fw::Uint8BufferPtr state;
 
 			void reset() {
+				serial.clear();
 				video = nullptr;
 				audio = nullptr;
 				state = nullptr;
@@ -134,6 +135,14 @@ namespace rp {
 
 			if (other.output.state) {
 				output.state = std::move(other.output.state);
+			}
+
+			if (other.output.serial.size()) {
+				for (const TimedByte& b : other.output.serial) {
+					output.serial.push_back(b);
+				}
+
+				// TODO: Sort?
 			}
 		}
 
