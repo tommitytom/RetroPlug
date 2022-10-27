@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <iostream>
 
+#include <entt/core/utility.hpp>
+
 extern "C" {
 	#include <gb.h>
 	#include "SectionOffsetCollector.h"
@@ -21,6 +23,7 @@ extern "C" {
 using namespace rp;
 
 const GB_model_t DEFAULT_GAMEBOY_MODEL = GB_model_t::GB_MODEL_CGB_C;
+const size_t LINK_TICKS_MAX = 3907;
 
 GB_model_t getGameboyModelId(GameboyModel model) {
 	switch (model) {
@@ -227,6 +230,149 @@ bool SameBoySystem::saveState(fw::Uint8Buffer& target) {
 	GB_save_state_to_buffer(_state.gb, target.data());
 
 	return true;
+}
+
+bool SameBoySystem::processTick(size_t targetFrameCount) {
+	if (_state.linkTargets.empty()) {
+		if (_state.linkTicksRemain <= 0) {
+			auto serial = _state.serialQueue;
+
+			if (!serial.empty()) {
+				TimedByte b = serial.front();
+				serial.pop();
+
+				for (int i = 8 - 1; i >= 0; i--) {
+					bool bit = (bool)((b.byte & (1 << i)) >> i);
+					GB_serial_set_data_bit(_state.gb, bit);
+				}
+			}
+
+			_state.linkTicksRemain += LINK_TICKS_MAX;
+		}
+	} else {
+		_state.linkTicksRemain = 0;
+	}
+
+	// Send button presses if required
+
+	while (_state.buttonQueue.size() && _state.buttonQueue.front().offset <= _state.audioFrameCount) {
+		OffsetButton b = _state.buttonQueue.front();
+		_state.buttonQueue.pop();
+
+		GB_set_key_state(_state.gb, (GB_key_t)b.button, b.down);
+	}
+
+	int ticks = GB_run(_state.gb);
+	_state.linkTicksRemain -= ticks;
+
+	if (_state.audioFrameCount < targetFrameCount) {
+		return false;
+	}
+
+	if (_state.linkTargets.empty()) {
+		// If there are any serial/midi events that still haven't been processed, set their
+		// offsets to 0 so they get processed immediately at the start of the next frame.
+
+		size_t serialRemain = _state.serialQueue.size();
+
+		for (size_t i = 0; i < serialRemain; i++) {
+			TimedByte b = _state.serialQueue.front();
+			_state.serialQueue.pop();
+
+			b.audioFrameOffset = 0;
+			_state.serialQueue.push(b);
+		}
+	}
+
+	size_t buttonRemain = _state.buttonQueue.size();
+
+	for (size_t i = 0; i < buttonRemain; i++) {
+		OffsetButton button = _state.buttonQueue.front();
+		button.offset -= _state.audioFrameCount;
+		_state.buttonQueue.push(button);
+		_state.buttonQueue.pop();
+	}
+
+	_state.audioFrameCount = 0;
+
+	return true;
+}
+
+void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
+	for (MemoryPatch& patch : patches) {
+		size_t memSize;
+		uint16 memBank;
+		uint8* target = nullptr;
+
+		switch (patch.type) {
+		case MemoryType::Rom: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_ROM, &memSize, &memBank); break;
+		case MemoryType::Ram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_RAM, &memSize, &memBank); break;
+		case MemoryType::Sram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_CART_RAM, &memSize, &memBank); break;
+		case MemoryType::Unknown: break;
+		}
+
+		if (target) {
+			std::visit(entt::overloaded{
+				[&](uint8 val) { target[patch.offset] = val; },
+				[&](uint16 val) { memcpy(target + patch.offset, &val, sizeof(uint16)); },
+				[&](uint32 val) { memcpy(target + patch.offset, &val, sizeof(uint32)); },
+				[&](const fw::Uint8Buffer& val) { memcpy(target + patch.offset, val.data(), val.size()); },
+			}, patch.data);
+		}
+	}
+}
+
+void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
+	for (const ButtonStream<8>&stream : source) {
+		for (size_t i = 0; i < stream.pressCount; ++i) {
+			int offset = 0;
+			if (target.size() > 0) {
+				offset = target.back().offset + target.back().duration;
+			}
+
+			target.push(OffsetButton{
+				.offset = offset,
+				.duration = (int)(timeScale * stream.presses[i].duration),
+				.button = stream.presses[i].button,
+				.down = stream.presses[i].down
+			});
+		}
+	}
+}
+
+void processSerial(FixedQueue<TimedByte, 16>& source, std::queue<TimedByte>& target, f32 timeScale) {
+	while (source.count()) {
+		target.push(source.pop());
+	}
+}
+
+void SameBoySystem::acquireIo(SystemIo* io) {
+	_state.io = io;
+
+	SystemIo::Input& input = io->input;
+	f32 timeScale = (f32)getSampleRate() / 1000.0f;
+
+	if (_state.linkTargets.empty()) {
+		// Only process incoming serial messages if this gameboy is not linked to another
+		processSerial(input.serial, _state.serialQueue, timeScale);
+	}
+	
+	processButtons(input.buttons, _state.buttonQueue, timeScale);
+	processPatches(_state.gb, input.patches);
+
+	if (input.loadConfig.hasChanges()) {
+		load(std::move(input.loadConfig));
+	}
+
+	if (input.requestReset) {
+		reset();
+	}
+}
+
+SystemIo* SameBoySystem::releaseIo() {
+	SystemIo* ret = _state.io;
+	_state.io = nullptr;
+	return ret;
 }
 
 void SameBoySystem::destroy() {

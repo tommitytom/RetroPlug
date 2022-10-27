@@ -57,12 +57,10 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 			if (system->getStream()) {
 				system->getStream()->merge(*stream);
 				_ioMessageBus->dealloc(std::move(stream));
-			}
-			else {
+			} else {
 				system->setStream(std::move(stream));
 			}
-		}
-		else {
+		} else {
 			_ioMessageBus->dealloc(std::move(stream));
 		}
 	}

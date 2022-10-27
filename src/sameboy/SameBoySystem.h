@@ -4,6 +4,7 @@
 
 #include "core/System.h"
 #include "core/ProxySystem.h"
+#include "audio/AudioBuffer.h"
 
 namespace rp {
 	const size_t PIXEL_WIDTH = 160;
@@ -33,6 +34,7 @@ namespace rp {
 	class SameBoySystem final : public System<SameBoySystem> {
 	public:
 		struct State {
+			// TODO: This should use std::unique_ptr
 			SystemIo* io = nullptr;
 
 			GB_gameboy_t* gb = nullptr;
@@ -79,6 +81,12 @@ namespace rp {
 		void setSampleRate(uint32 sampleRate) override;
 
 		bool saveState(fw::Uint8Buffer& target) override;
+
+		bool processTick(size_t targetFrameCount);
+
+		void acquireIo(SystemIo* io);
+
+		SystemIo* releaseIo();
 
 		State& getState() {
 			return _state;
