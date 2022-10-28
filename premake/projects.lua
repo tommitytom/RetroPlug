@@ -110,7 +110,9 @@ function m.Core.project()
 
 	files {
 		"src/core/**.h",
-		"src/core/**.cpp"
+		"src/core/**.cpp",
+		"src/generated/*.h",
+		"src/generated/*_%{cfg.platform}.cpp",
 	}
 
 	util.liveppCompat()
@@ -224,8 +226,6 @@ function m.RetroPlug.project()
 	files {
 		"src/*.h",
 		"src/RetroPlug.cpp",
-		"src/generated/*.h",
-		"src/generated/*_%{cfg.platform}.cpp",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
 		"src/node/**.h",

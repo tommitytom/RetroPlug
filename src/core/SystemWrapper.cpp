@@ -3,13 +3,15 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "foundation/FsUtil.h"
+#include "foundation/MetaUtil.h"
+
+#include "core/LuaUtil.h"
 #include "core/ModelFactory.h"
 #include "core/ProxySystem.h"
 #include "core/SystemProcessor.h"
+
 #include "sameboy/SameBoySystem.h"
-#include "foundation/FsUtil.h"
-#include "foundation/MetaUtil.h"
-#include "foundation/SolUtil.h"
 
 using namespace rp;
 
@@ -68,8 +70,9 @@ void SystemWrapper::deserializeModels() {
 
 	if (serialized.size()) {
 		sol::state lua;
-		fw::SolUtil::prepareState(lua);
 		sol::table modelTable;
+
+		rp::LuaUtil::prepareState(lua);
 
 		if (fw::SolUtil::deserializeTable(lua, serialized, modelTable)) {
 			for (auto& [type, model] : _models) {

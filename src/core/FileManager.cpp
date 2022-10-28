@@ -4,9 +4,10 @@
 #include <spdlog/spdlog.h>
 
 #include "foundation/FsUtil.h"
-#include "foundation/SolUtil.h"
 #include "foundation/StlUtil.h"
 #include "foundation/StringUtil.h"
+
+#include "core/LuaUtil.h"
 
 using namespace rp;
 
@@ -31,7 +32,7 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 
 	try {
 		sol::state s;
-		fw::SolUtil::prepareState(s);
+		rp::LuaUtil::prepareState(s);
 
 		sol::table target;
 		std::string data;
@@ -83,7 +84,7 @@ void FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vect
 
 	if (fs::exists(_recentPath)) {
 		sol::state s;
-		fw::SolUtil::prepareState(s);
+		rp::LuaUtil::prepareState(s);
 
 		std::string data = fw::FsUtil::readTextFile(_recentPath);
 

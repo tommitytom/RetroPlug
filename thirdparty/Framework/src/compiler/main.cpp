@@ -13,6 +13,7 @@
 
 struct ModuleDesc {
 	std::string name;
+	std::string ns;
 	fs::path rootPath;
 	std::vector<ScriptDesc> scripts;
 	bool compile;
@@ -20,6 +21,7 @@ struct ModuleDesc {
 };
 
 struct CompilerState {
+	std::string ns;
 	std::vector<ModuleDesc> modules;
 	ThreadPool pool;
 };
@@ -58,11 +60,19 @@ void processModule(ModuleDesc& mod, CompilerState& state) {
 	}
 }
 
+void replaceNamespace(std::string& str, const std::string& ns) {
+	size_t pos = str.find(NAMESPACE_TEMPLATE);
+	str.replace(pos, NAMESPACE_TEMPLATE.length(), ns);
+}
+
 void writeHeaderFile(CompilerState& state, const fs::path& targetDir) {
 	fs::path targetHeaderPath = targetDir / "CompiledScripts.h";
+	std::string header = std::string(HEADER_CODE_TEMPLATE);
+
+	replaceNamespace(header, state.ns);
 
 	std::stringstream ss;
-	ss << HEADER_CODE_TEMPLATE;
+	ss << header;
 
 	std::sort(state.modules.begin(), state.modules.end(), [](ModuleDesc& l, ModuleDesc& r) {
 		return l.name < r.name;
@@ -110,8 +120,11 @@ void writeSourceFile(const ModuleDesc& mod, const fs::path& targetDir, const std
 
 	lookup << "};" << std::endl;
 
+	std::string sourceHeader = std::string(SOURCE_HEADER_TEMPLATE);
+	replaceNamespace(sourceHeader, mod.ns);
+
 	std::stringstream ss;
-	ss << SOURCE_HEADER_TEMPLATE;
+	ss << sourceHeader;
 	ss << mod.name << " {" << std::endl << std::endl;
 	ss << vars.str() << std::endl;
 	ss << lookup.str();
@@ -155,6 +168,11 @@ int main(int argc, char** argv) {
 		fs::path targetDir = (configDir / settings["outDir"].get<std::string>()).make_preferred();
 		fs::create_directories(targetDir);
 
+		sol::optional<std::string> nsOpt = settings["namespace"];
+		if (nsOpt.has_value()) {
+			state.ns = nsOpt.value();
+		}
+
 		size_t objSize = 0;
 		for (const auto& v : modules) objSize++;
 
@@ -164,11 +182,13 @@ int main(int argc, char** argv) {
 		for (const auto& v : modules) {
 			ModuleDesc& mod = state.modules[idx++];
 
-			std::string name = v.first.as<std::string>();
-			sol::table settings = v.second.as<sol::table>();
+			mod.ns = state.ns;
 
-			fs::path path = settings["path"].get<std::string>();
-			sol::optional<bool> compileOpt = settings["compile"];
+			std::string name = v.first.as<std::string>();
+			sol::table moduleSettings = v.second.as<sol::table>();
+
+			fs::path path = moduleSettings["path"].get<std::string>();
+			sol::optional<bool> compileOpt = moduleSettings["compile"];
 
 			mod.name = name;
 			mod.compile = !compileOpt.has_value() || compileOpt.value();

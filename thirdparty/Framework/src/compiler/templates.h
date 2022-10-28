@@ -2,6 +2,8 @@
 
 #include <string_view>
 
+std::string_view NAMESPACE_TEMPLATE = "<%NAMESPACE%>";
+
 std::string_view HEADER_CODE_TEMPLATE = R"(// WARNING! THIS CODE IS GENERATED AND WILL BE OVERWRITTEN!
 
 #pragma once
@@ -14,9 +16,7 @@ std::string_view HEADER_CODE_TEMPLATE = R"(// WARNING! THIS CODE IS GENERATED AN
 
 typedef struct lua_State lua_State;
 
-namespace CompiledScripts {
-
-using ScriptLookup = std::unordered_map<std::string_view, LuaScriptData>;
+namespace <%NAMESPACE%>CompiledScripts {
 
 )";
 
@@ -36,7 +36,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
-namespace CompiledScripts::)";
+namespace <%NAMESPACE%>CompiledScripts::)";
 
 std::string_view SOURCE_FOOTER_TEMPLATE = R"(
 int loader(lua_State* L) {

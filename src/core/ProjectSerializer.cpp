@@ -6,7 +6,8 @@
 
 #include "foundation/FsUtil.h"
 #include "foundation/MetaUtil.h"
-#include "foundation/SolUtil.h"
+
+#include "core/LuaUtil.h"
 
 using namespace rp;
 
@@ -15,8 +16,8 @@ const std::string_view RP_VERSION = "0.4.0";
 
 std::string ProjectSerializer::serialize(const ProjectState& state, const std::vector<SystemWrapperPtr>& systems) {
 	sol::state s;
-	fw::SolUtil::prepareState(s);
-	
+	rp::LuaUtil::prepareState(s);
+
 	sol::table output = s.create_table_with(
 		"path", state.path,
 		"projectVersion", PROJECT_VERSION,
@@ -69,7 +70,7 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 
 std::string ProjectSerializer::serializeModels(SystemWrapperPtr system) {
 	sol::state s;
-	fw::SolUtil::prepareState(s);
+	rp::LuaUtil::prepareState(s);
 
 	sol::table modelTable = s.create_table();
 	for (auto& [modelType, model] : system->getModels()) {
@@ -124,7 +125,7 @@ bool deserializeEnum(const sol::table& source, std::string_view name, T& target)
 
 bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, std::vector<SystemSettings>& systemSettings) {
 	sol::state s;
-	fw::SolUtil::prepareState(s);
+	rp::LuaUtil::prepareState(s);
 
 	std::string fileData = fw::FsUtil::readTextFile(path);
 	

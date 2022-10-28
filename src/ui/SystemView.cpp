@@ -137,7 +137,9 @@ void SystemView::buildMenu(fw::Menu& target) {
 				.parent()
 			.parent()
 			.separator()
-			.action("Game Link", []() {});
+			.action("Game Link", [&]() {
+//				_system->
+			});
 
 	for (fw::ViewPtr child : getChildren()) {
 		child->onMenu(target);

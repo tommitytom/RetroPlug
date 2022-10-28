@@ -3,10 +3,12 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "core/ProjectSerializer.h"
-#include "sameboy/SameBoySystem.h"
-#include "foundation/SolUtil.h"
 #include "foundation/FsUtil.h"
+
+#include "core/LuaUtil.h"
+#include "core/ProjectSerializer.h"
+
+#include "sameboy/SameBoySystem.h"
 
 using namespace rp;
 
@@ -205,7 +207,7 @@ void Project::clear() {
 	}
 
 	_lua = new sol::state();
-	fw::SolUtil::prepareState(*_lua);
+	rp::LuaUtil::prepareState(*_lua);
 
 	_version++;
 	_requiresSave = false;

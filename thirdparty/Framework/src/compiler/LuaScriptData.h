@@ -5,3 +5,5 @@ struct LuaScriptData {
 	size_t size;
 	bool compiled;
 };
+
+using ScriptLookup = std::unordered_map<std::string_view, LuaScriptData>;

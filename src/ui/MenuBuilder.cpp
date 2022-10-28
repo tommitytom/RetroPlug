@@ -9,11 +9,11 @@
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
 #include "core/SystemWrapper.h"
-#include "sameboy/SameBoySystem.h"
 #include "foundation/FsUtil.h"
+#include "foundation/SolUtil.h"
+#include "sameboy/SameBoySystem.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
-#include "foundation/SolUtil.h"
 
 using namespace rp;
 
@@ -31,7 +31,7 @@ void loadRomDialog(Project* project, SystemWrapperPtr system) {
 				return;
 			}
 
-			//system->load(std::move(loadConfig));
+			system->load(system->getSettings(), std::move(loadConfig));
 		} else {
 			//project->addSystem<SameBoySystem>(files[0]);
 		}
