@@ -1,8 +1,9 @@
 #include <Windows.h>
 #include <LivePP/API/LPP_API.h>
 #include <assert.h>
+#include <spdlog/spdlog.h>
 
-#include "util/fs.h"
+#include "foundation/FsUtil.h"
 
 extern void initMain(int argc, char** argv);
 extern bool mainLoop(void);
@@ -11,7 +12,8 @@ extern void destroyMain(void);
 int main(int argc, char** argv) {
 	fs::path currentDir(__FILE__);
 
-	fs::path p = currentDir.parent_path().parent_path().parent_path() / "thirdparty" / "LivePP";
+	fs::path p = currentDir.parent_path().parent_path().parent_path() / "thirdparty" / "Framework" / "thirdparty" / "LivePP";
+	spdlog::info("LivePP dir: {}", p.string());
 	HMODULE livePP = lpp::lppLoadAndRegister(p.wstring().c_str(), "RP");
 	assert(livePP);
 

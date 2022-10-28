@@ -352,11 +352,12 @@ Canvas& Canvas::texture(const TextureHandle& texture, const RectF& area, const T
 }
 
 Canvas& Canvas::strokeRect(const RectF& area, const Color4F& color) {
-	std::array<PointF, 4> points = {
+	std::array<PointF, 5> points = {
 		area.position,
 		area.topRight(),
 		area.bottomRight(),
-		area.bottomLeft()
+		area.bottomLeft(),
+		area.position
 	};
 
 	return lines(points, color);

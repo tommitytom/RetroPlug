@@ -122,6 +122,7 @@ projects.RetroPlug.project()
 
 group "4 - Applications"
 projects.Application.project()
+projects.Application.projectLivepp()
 
 if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"

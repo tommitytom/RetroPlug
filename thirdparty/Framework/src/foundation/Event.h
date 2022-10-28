@@ -165,23 +165,7 @@ namespace fw {
 			}
 		}
 
-		bool hasSubscribers(EventType eventType) const {
-			auto found = _state.lookup.find(eventType);
-
-			if (found != _state.lookup.end()) {
-				return found->second.size() > 0;
-			}
-
-			return false;
-		}
-
-		template <typename T>
-		bool hasSubscribers() const {
-			EventType eventType = entt::type_id<T>().index();
-			return hasSubscribers(eventType);
-		}
-
-		template <typename T>
+		/*template <typename T>
 		void broadcast(T&& event, bool includeSender = false) {
 			//static_cast<std::is_copy_constructible_v<T>>();
 
@@ -216,7 +200,7 @@ namespace fw {
 					});
 				}
 			}
-		}
+		}*/
 
 		template <typename T>
 		void broadcast(bool includeSender = false) {
@@ -235,6 +219,23 @@ namespace fw {
 				}
 			}
 		}
+
+		bool hasSubscribers(EventType eventType) const {
+			auto found = _state.lookup.find(eventType);
+
+			if (found != _state.lookup.end()) {
+				return found->second.size() > 0;
+			}
+
+			return false;
+		}
+
+		template <typename T>
+		bool hasSubscribers() const {
+			EventType eventType = entt::type_id<T>().index();
+			return hasSubscribers(eventType);
+		}
+
 
 		template <typename T>
 		void send(NodeId targetNodeId, const T& event) {

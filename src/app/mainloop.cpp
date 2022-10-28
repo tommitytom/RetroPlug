@@ -1,10 +1,10 @@
 #include "application/Application.h"
 #include "RetroPlug.h"
 
-static rp::app::Application* app;
+static fw::app::Application* app;
 
 void initMain(int argc, char** argv) {
-	app = new rp::app::Application();
+	app = new fw::app::Application();
 	app->setup<rp::RetroPlug>();
 }
 

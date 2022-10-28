@@ -91,6 +91,13 @@ namespace rp {
 		fw::MenuItemBase* menuItem;
 	};
 
+	enum class ArrowDirection {
+		Left,
+		Right,
+		Up,
+		Down
+	};
+
 	class MenuView : public fw::View {
 	private:
 		std::string _fontName = "PlatNomor.ttf";
@@ -148,6 +155,8 @@ namespace rp {
 		void drawMenu(Canvas& canvas, fw::Menu& menu);
 
 		void drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color);
+
+		void drawArrow(Canvas& canvas, fw::RectF area, ArrowDirection dir);
 
 		bool moveCursorDown();
 
