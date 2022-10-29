@@ -200,8 +200,8 @@ Canvas& Canvas::line(const PointF& from, const PointF& to, const Color4F& color)
 	uint32 v = (uint32)_geom.vertices.size();
 
 	_geom.vertices.insert(_geom.vertices.end(), {
-		CanvasVertex{ _transform * (from + 0.5f), agbr, { 0, 0 } },
-		CanvasVertex{ _transform * (to + 0.5f), agbr, { 0, 0 } }
+		CanvasVertex{ _transform * (from), agbr, { 0, 0 } },
+		CanvasVertex{ _transform * (to), agbr, { 0, 0 } }
 	});
 
 	_geom.indices.insert(_geom.indices.end(), { v + 0, v + 1 });

@@ -2,21 +2,21 @@
 
 #include <memory>
 #include <queue>
-#include <vector>
-#include <iostream>
 #include <variant>
+#include <vector>
 
 #include <entt/core/type_info.hpp>
 #include <moodycamel/readerwriterqueue.h>
 #include <moodycamel/concurrentqueue.h>
 
-#include "foundation/Types.h"
-#include "core/FixedQueue.h"
-#include "core/MemoryAccessor.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/Image.h"
+#include "foundation/Types.h"
+
 #include "core/ButtonStream.h"
+#include "core/FixedQueue.h"
 #include "core/Forward.h"
+#include "core/MemoryAccessor.h"
 
 namespace rp {
 	using SystemType = entt::id_type;
@@ -222,6 +222,14 @@ namespace rp {
 
 		virtual bool isProxy() const { return false; }
 
+		virtual void setGameLink(bool gameLink) {}
+
+		virtual bool getGameLink() { return false; }
+		
+		virtual void addLinkTarget(SystemBase* system) {}
+
+		virtual void removeLinkTarget(SystemBase* system) {}
+
 		void setStateCopyInterval(int32 interval) {
 			_stateCopyInterval = interval;
 		}
@@ -291,6 +299,7 @@ namespace rp {
 		SystemPtr replace;
 		SystemId remove = INVALID_SYSTEM_ID;
 		SystemId reset = INVALID_SYSTEM_ID;
+		SystemId gameLink = INVALID_SYSTEM_ID;
 	};
 
 	struct OrchestratorMessageBus {

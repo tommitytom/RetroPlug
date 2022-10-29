@@ -47,7 +47,7 @@ namespace fw::app {
 			WindowPtr window = _windowManager.createWindow<ViewT>();
 			createRenderContext(window);
 
-			window->getViewManager().setResourceManager(&_resourceManager, &_fontManager);
+			window->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
 		}
 
 		bool runFrame();

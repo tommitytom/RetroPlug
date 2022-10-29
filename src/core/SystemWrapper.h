@@ -48,6 +48,8 @@ namespace rp {
 
 		void reset();
 
+		void setGameLink(bool gameLink);
+
 		SystemId getId() const {
 			return _systemId;
 		}

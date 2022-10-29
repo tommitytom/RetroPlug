@@ -71,7 +71,7 @@ Application::~Application() {
 }
 
 void Application::createRenderContext(WindowPtr window) {
-	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager().getDimensions(), _resourceManager);
+	_renderContext = std::make_unique<BgfxRenderContext>(window->getNativeHandle(), window->getViewManager()->getDimensions(), _resourceManager);
 
 	_resourceManager.addProvider<TextureAtlas, TextureAtlasProvider>();
 	_resourceManager.addProvider<Font>(std::make_unique<FtglFontProvider>(_resourceManager));
@@ -97,7 +97,7 @@ bool Application::runFrame() {
 			_mainWindow = w;
 		}
 
-		w->getViewManager().getState().emplace(_audioManager);
+		w->getViewManager()->getState().emplace(_audioManager);
 		w->onInitialize();
 	}
 
@@ -110,12 +110,12 @@ bool Application::runFrame() {
 			WindowPtr w = *it;
 
 			if (!w->shouldClose()) {
-				w->getViewManager().setResourceManager(&_resourceManager, &_fontManager);
+				w->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
 
 				w->onUpdate(delta);
 
 				_canvas.setViewId(w->getId());
-				_canvas.beginRender(w->getViewManager().getDimensions(), 1.0f);
+				_canvas.beginRender(w->getViewManager()->getDimensions(), 1.0f);
 				w->onRender(_canvas);
 				_canvas.endRender();
 

@@ -15,9 +15,9 @@ void GridView::onChildAdded(ViewPtr view) {
 void GridView::onChildRemoved(ViewPtr view) {
 	updateLayout();
 
-	if (!getFocused() && getChildren().size() > 0) {
+	/*if (!getFocused() && getChildren().size() > 0) {
 		getChildren()[0]->focus();
-	}
+	}*/
 }
 
 void GridView::updateLayout() {

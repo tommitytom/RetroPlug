@@ -137,8 +137,8 @@ void SystemView::buildMenu(fw::Menu& target) {
 				.parent()
 			.parent()
 			.separator()
-			.action("Game Link", [&]() {
-//				_system->
+			.select("Game Link", _system->getSettings().gameLink, [&](bool selected) {
+				_system->setGameLink(selected);
 			});
 
 	for (fw::ViewPtr child : getChildren()) {

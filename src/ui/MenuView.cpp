@@ -339,12 +339,13 @@ void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
 			const f32 CHECK_BOX_SIZE = _itemSpacing * 0.6f;
 			fw::Select* select = item.menuItem->as<fw::Select>();
 
-			fw::RectF checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, item.area.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
+			fw::PointF pos = item.area.position + _menuArea.position + _drawOffset;
+			fw::RectF checkboxArea(_menuArea.right() - CHECK_BOX_SIZE - 1.0f, pos.y, CHECK_BOX_SIZE, CHECK_BOX_SIZE);
 
 			canvas.strokeRect(checkboxArea, fw::Color4F::white);
 
 			if (select->getChecked()) {
-				fw::RectF checkArea = checkboxArea.shrink(1.5f);
+				fw::RectF checkArea = checkboxArea.shrink(1.f);
 
 				canvas.line(checkArea.position, checkArea.bottomRight());
 				canvas.line(checkArea.bottomLeft(), checkArea.topRight());

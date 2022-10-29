@@ -10,7 +10,7 @@
 
 using namespace rp;
 
-std::shared_ptr<SamplerView> showSampleManager(fw::View* parent, SystemWrapperPtr system) {
+std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemWrapperPtr system) {
 	std::vector<std::shared_ptr<SamplerView>> samplers;
 	parent->findChildren<SamplerView>(samplers);
 
@@ -36,7 +36,7 @@ std::shared_ptr<SamplerView> showSampleManager(fw::View* parent, SystemWrapperPt
 	return samplerView;
 }
 
-void showHdPlayer(fw::View* parent, SystemWrapperPtr system) {
+void showHdPlayer(fw::ViewPtr parent, SystemWrapperPtr system) {
 	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
 	player->setSystem(system);
 	player->focus();

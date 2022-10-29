@@ -51,6 +51,7 @@ namespace rp {
 
 			//int processTicks = 0;
 
+			bool linkEnabled = false;
 			int linkTicksRemain = 0;
 			std::vector<SameBoySystem::State*> linkTargets;
 			bool bitToSend;
@@ -81,6 +82,14 @@ namespace rp {
 		void setSampleRate(uint32 sampleRate) override;
 
 		bool saveState(fw::Uint8Buffer& target) override;
+
+		void setGameLink(bool gameLink);
+
+		bool getGameLink() { return _state.linkEnabled; }
+
+		void addLinkTarget(SystemBase* system);
+
+		void removeLinkTarget(SystemBase* system);
 
 		bool processTick(size_t targetFrameCount);
 

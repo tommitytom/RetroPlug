@@ -180,7 +180,7 @@ namespace fw {
 				return false;
 			}
 
-			WaveView* parent = getSuper();
+			WaveViewPtr parent = getSuper();
 
 			updateMouseOver(pos);
 
@@ -218,7 +218,7 @@ namespace fw {
 			}
 
 			if (_dragging != -1) {
-				WaveView* parent = getSuper();
+				WaveViewPtr parent = getSuper();
 				uint64 sample = (uint64)parent->pixelToSample((f32)pos.x);
 
 				uint64 min = 1;
@@ -266,7 +266,7 @@ namespace fw {
 		}
 
 		void onRender(Canvas& canvas) override {
-			WaveView* parent = getSuper();
+			WaveViewPtr parent = getSuper();
 
 			// Draw outline
 			if (_editing) {

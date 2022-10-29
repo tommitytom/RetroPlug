@@ -80,7 +80,7 @@ namespace fw {
 	class View : public std::enable_shared_from_this<View> {
 	private:
 		struct Shared {
-			View* focused = nullptr;
+			std::weak_ptr<View> focused;
 			bool layoutDirty = true;
 			f32 pixelDensity = 1.0f;
 			std::vector<ViewPtr> removals;
@@ -109,7 +109,7 @@ namespace fw {
 
 		Shared* _shared = nullptr;
 
-		View* _parent = nullptr;
+		std::weak_ptr<View> _parent;
 		std::vector<ViewPtr> _children;
 		Rect _area;
 		f32 _scale = 1.0f;
@@ -166,7 +166,7 @@ namespace fw {
 			return eventType;
 		}
 
-		bool hasSubscription(EventType eventType, ViewPtr target) const {
+		bool hasSubscription(EventType eventType, ViewPtr& target) const {
 			auto found = _subscriptions.find(eventType);
 
 			if (found != _subscriptions.end()) {
@@ -181,18 +181,18 @@ namespace fw {
 		}
 
 		template <typename T>
-		bool hasSubscription(ViewPtr target) const {
+		bool hasSubscription(ViewPtr& target) const {
 			EventType eventType = entt::type_id<T>().index();
 			return hasSubscription(eventType, target);
 		}
 
 		template <typename T>
-		bool unsubscribe(ViewPtr source) {
+		bool unsubscribe(ViewPtr& source) {
 			EventType eventType = entt::type_id<T>().index();
 			return unsubscribe(eventType, source);
 		}
 
-		bool unsubscribe(EventType eventType, ViewPtr source) {
+		bool unsubscribe(EventType eventType, ViewPtr& source) {
 			auto found = source->_subscriptions.find(eventType);
 
 			if (found != source->_subscriptions.end()) {
@@ -343,7 +343,7 @@ namespace fw {
 		}
 
 		Point getWorldPosition() const {
-			View* parent = getParent();
+			ViewPtr parent = getParent();
 			if (parent) {
 				return parent->getWorldPosition() + (Point)(getPositionF() * parent->getWorldScale());
 			}
@@ -352,7 +352,7 @@ namespace fw {
 		}
 
 		f32 getWorldScale() const {
-			View* parent = getParent();
+			ViewPtr parent = getParent();
 			if (parent) {
 				return parent->getWorldScale() * getScale();
 			}
@@ -410,12 +410,12 @@ namespace fw {
 			return _shared->themeLookup.getOrEmplace<ThemeT>();
 		}
 
-		View* getFocused() const {
+		std::weak_ptr<View> getFocused() const {
 			if (_shared) {
 				return _shared->focused;
 			}
 
-			return nullptr;
+			return std::weak_ptr<View>();
 		}
 
 		void setSizingPolicy(SizingPolicy mode) {
@@ -432,32 +432,34 @@ namespace fw {
 		}
 
 		void remove() {
-			if (getParent()) {
-				getParent()->removeChild(shared_from_this());
+			ViewPtr parent = getParent();
+			if (parent) {
+				parent->removeChild(shared_from_this());
 			}
 		}
 
 		void focus() {
 			assert(_shared);
 			if (_shared) {
-				_shared->focused = this;
+				_shared->focused = shared_from_this();
 			}
 		}
 
 		void unfocus() {
 			assert(_shared);
 			if (_shared && hasFocus()) {
-				_shared->focused = nullptr;
+				_shared->focused.reset();
 			}
 		}
 
 		bool hasFocus() const {
-			return _shared && _shared->focused == this;
+			return _shared && _shared->focused.lock() == shared_from_this();
 		}
 
 		void bringToFront() {
-			assert(getParent());
-			std::vector<ViewPtr>& children = getParent()->getChildren();
+			ViewPtr parent = getParent();
+			assert(parent);
+			std::vector<ViewPtr>& children = parent->getChildren();
 
 			for (size_t i = 0; i < children.size(); ++i) {
 				if (children[i].get() == this) {
@@ -469,8 +471,9 @@ namespace fw {
 		}
 
 		void pushToBack() {
-			assert(getParent());
-			std::vector<ViewPtr>& children = getParent()->getChildren();
+			ViewPtr parent = getParent();
+			assert(parent);
+			std::vector<ViewPtr>& children = parent->getChildren();
 
 			for (size_t i = 0; i < children.size(); ++i) {
 				if (children[i].get() == this) {
@@ -510,11 +513,12 @@ namespace fw {
 		}
 
 		ViewPtr addChild(ViewPtr view) {
-			if (view->_parent) {
-				view->_parent->removeChild(view);
+			if (!view->_parent.expired()) {
+				view->_parent.lock()->removeChild(view);
 			}
 
-			view->_parent = this;
+			view->_parent = std::weak_ptr<View>();
+			view->_parent = shared_from_this();
 			view->setShared(_shared);
 
 			if (!view->_initialized) {
@@ -537,7 +541,7 @@ namespace fw {
 		}
 
 		bool isMounted() const {
-			return _parent != nullptr;
+			return !_parent.expired();
 		}
 
 		size_t getChildIndex(ViewPtr view) const {
@@ -565,16 +569,20 @@ namespace fw {
 		void removeChild(ViewPtr view) {
 			for (size_t i = 0; i < _children.size(); ++i) {
 				if (_children[i] == view) {
-					if (_shared && _shared->focused && childHasFocus(view.get(), _shared->focused)) {
-						_shared->focused = this;
-					}
+					if (_shared) {
+						ViewPtr focused = _shared->focused.lock();
+
+						if (focused && childHasFocus(view.get(), focused.get())) {
+							focused = shared_from_this();
+						}
+					}					
 
 					onChildRemoved(view);
 					view->onDismount();
 
 					_children.erase(_children.begin() + i);
 
-					view->_parent = nullptr;
+					view->_parent.reset();
 					view->_shared = nullptr;
 
 					setLayoutDirty();
@@ -726,8 +734,8 @@ namespace fw {
 			return (DimensionF)_area.dimensions;
 		}
 
-		View* getParent() const {
-			return _parent;
+		ViewPtr getParent() const {
+			return _parent.lock();
 		}
 
 		ViewPtr getChild(size_t idx) {
@@ -782,15 +790,14 @@ namespace fw {
 		}
 
 		Point getReleativePosition(ViewPtr& parent, Point position) {
+			ViewPtr currentParent = getParent();
+			
 			assert(parent != shared_from_this());
-			assert(getParent() != nullptr);
+			assert(currentParent != nullptr);
 
-			View* currentParent = getParent();
-
-			while (currentParent != parent.get()) {
+			while (currentParent != parent) {
 				position += currentParent->getPosition();
 				currentParent = currentParent->getParent();
-
 				assert(currentParent);
 			}
 

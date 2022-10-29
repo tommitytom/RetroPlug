@@ -48,6 +48,30 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 				system->reset();
 			}
 		}
+
+		if (change.gameLink != INVALID_SYSTEM_ID) {
+			SystemPtr system = _state.processor.findSystem(change.gameLink);
+			if (system) {
+				if (!system->getGameLink()) {
+					for (SystemPtr other : _state.processor.getSystems()) {
+						if (other->getGameLink()) {
+							other->addLinkTarget(system.get());
+							system->addLinkTarget(other.get());
+						}
+					}
+
+					system->setGameLink(true);
+				} else {
+					for (SystemPtr other : _state.processor.getSystems()) {
+						if (other->getGameLink()) {
+							other->removeLinkTarget(system.get());
+						}
+					}
+
+					system->setGameLink(false);
+				}
+			}
+		}
 	}
 
 	SystemIoPtr stream;

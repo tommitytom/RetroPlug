@@ -43,36 +43,36 @@ void GlfwNativeWindow::mouseEnterCallback(GLFWwindow* window, int entered) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 
 	if (entered > 0) {
-		w->getViewManager().onMouseEnter(w->_lastMousePosition);
+		w->getViewManager()->onMouseEnter(w->_lastMousePosition);
 	} else {
-		w->getViewManager().onMouseLeave();
+		w->getViewManager()->onMouseLeave();
 	}
 }
 
 void GlfwNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager().onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
+	w->getViewManager()->onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->_lastMousePosition = Point((int32)x, (int32)y);
-	w->getViewManager().onMouseMove(w->_lastMousePosition);
+	w->getViewManager()->onMouseMove(w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager().onMouseScroll(PointF((f32)x, (f32)y), w->_lastMousePosition);
+	w->getViewManager()->onMouseScroll(PointF((f32)x, (f32)y), w->_lastMousePosition);
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager().onResize(Dimension{ x, y });
+	w->getViewManager()->onResize(Dimension{ x, y });
 }
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager().onKey(convertKey(key), action > 0);
+	w->getViewManager()->onKey(convertKey(key), action > 0);
 }
 
 void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {
@@ -83,12 +83,12 @@ void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** 
 		p[i] = paths[i];
 	}
 
-	w->getViewManager().onDrop(p);
+	w->getViewManager()->onDrop(p);
 }
 
 void GlfwNativeWindow::windowCloseCallback(GLFWwindow* window) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	//w->getViewManager().onCloseWindowRequest();
+	//w->getViewManager()->onCloseWindowRequest();
 }
 
 #ifdef RP_WEB
@@ -146,14 +146,14 @@ void GlfwNativeWindow::onCleanup() {
 }
 
 void GlfwNativeWindow::onCreate() {
-	ViewManager& vm = getViewManager();
+	ViewManagerPtr vm = getViewManager();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, vm.getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, vm->getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
 	//glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
 
-	Dimension dimensions = vm.getDimensions();
-	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm.getName().data(), NULL, NULL);
+	Dimension dimensions = vm->getDimensions();
+	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
 
 	glfwSetWindowUserPointer(_window, this);
 
@@ -180,23 +180,23 @@ void GlfwNativeWindow::onCreate() {
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	//glfwWaitEventsTimeout(0.016);
 
-	ViewManager& vm = getViewManager();
+	ViewManagerPtr vm = getViewManager();
 
 	Dimension windowSize;
 	glfwGetWindowSize(_window, &windowSize.w, &windowSize.h);
 
-	Dimension viewSize = vm.getDimensions();
+	Dimension viewSize = vm->getDimensions();
 
 	// NOTE: An ID of 0 is always given to the main window.  It does not need a new frame buffer.
 	bool resizeFrameBuffer = getId() > 0 && !_frameBuffer;
 
 	if (windowSize.w != viewSize.w || windowSize.h != viewSize.h) {
-		if (vm.getSizingPolicy() == SizingPolicy::FitToContent) {
+		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content
 			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 		} else {
 			// Resize content to fit window
-			vm.setDimensions(windowSize);
+			vm->setDimensions(windowSize);
 			viewSize = windowSize;
 		}
 
@@ -218,8 +218,8 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		_frameBuffer->setViewFrameBuffer(getId());
 	}
 
-	vm.onUpdate(delta);
-	auto& shared = vm.getShared();
+	vm->onUpdate(delta);
+	auto& shared = vm->getShared();
 
 	if (shared.cursorChanged) {
 		if (_cursor) {

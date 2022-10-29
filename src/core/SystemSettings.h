@@ -19,6 +19,7 @@ namespace rp {
 		std::string romPath;
 		std::string sramPath;
 		bool includeRom = true;
+		bool gameLink = false;
 		InputSettings input;
 
 		std::string serialized;

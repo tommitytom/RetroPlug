@@ -60,9 +60,9 @@ namespace fw {
 		}
 
 		bool onKey(VirtualKey::Enum key, bool down) final override {
-			View* current = _shared->focused;
+			ViewPtr current = _shared->focused.lock();
 
-			while (current && current != this) {
+			while (current && current.get() != this) {
 				if (!current->onKey(key, down)) {
 					current = current->getParent();
 				} else {
@@ -75,7 +75,7 @@ namespace fw {
 		}
 
 		bool onButton(ButtonType::Enum button, bool down) final override {
-			View* current = _shared->focused;
+			ViewPtr current = _shared->focused.lock();
 
 			while (current) {
 				if (!current->onButton(button, down)) {
@@ -190,7 +190,7 @@ namespace fw {
 			if (_mouseState.buttons[MouseButton::Left]) {
 				if (!ctx.isDragging) {
 					// lock focus on current view
-					ViewPtr view = _shared->focused ? _shared->focused->shared_from_this() : nullptr;
+					ViewPtr view = _shared->focused.lock();
 					if (view) {
 						Rect worldArea = view->getWorldArea();
 
@@ -231,7 +231,7 @@ namespace fw {
 					FocusPolicy policy = _mouseOver[i]->getFocusPolicy();
 
 					if ((uint32)policy & (uint32)FocusPolicy::Click) {
-						_shared->focused = _mouseOver[i].get();
+						_shared->focused = _mouseOver[i];
 						_mouseOverClickIdx = i;
 						_mouseOverClickedItem = true;
 						break;
@@ -589,4 +589,6 @@ namespace fw {
 			return false;
 		}
 	};
+
+	using ViewManagerPtr = std::shared_ptr<ViewManager>;
 }

@@ -113,7 +113,7 @@ static void serialStart(GB_gameboy_t* gb, bool bit_received) {
 	SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
 	s->bitToSend = bit_received;
 
-	s->currentLinkByte |= bit_received << s->currentBitCount;
+	/*s->currentLinkByte |= bit_received << s->currentBitCount;
 	s->currentBitCount++;
 
 	if (s->currentBitCount == 8) {
@@ -123,7 +123,7 @@ static void serialStart(GB_gameboy_t* gb, bool bit_received) {
 		});
 
 		s->currentLinkByte = 0;
-	}	
+	}*/	
 }
 
 static bool serialEnd(GB_gameboy_t* gb) {
@@ -230,6 +230,30 @@ bool SameBoySystem::saveState(fw::Uint8Buffer& target) {
 	GB_save_state_to_buffer(_state.gb, target.data());
 
 	return true;
+}
+
+void SameBoySystem::setGameLink(bool gameLink) {
+	_state.linkEnabled = gameLink;
+
+	if (!gameLink) {
+		_state.linkTargets.clear();
+	}
+}
+
+void SameBoySystem::addLinkTarget(SystemBase* target) {
+	SameBoySystem* system = (SameBoySystem*)target;
+	_state.linkTargets.push_back(&system->getState());
+}
+
+void SameBoySystem::removeLinkTarget(SystemBase* target) {
+	SameBoySystem* system = (SameBoySystem*)target;
+
+	for (size_t i = 0; i < _state.linkTargets.size(); ++i) {
+		if (_state.linkTargets[i] == &system->getState()) {
+			_state.linkTargets.erase(_state.linkTargets.begin() + i);
+			break;
+		}
+	}
 }
 
 bool SameBoySystem::processTick(size_t targetFrameCount) {

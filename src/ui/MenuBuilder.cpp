@@ -5,15 +5,17 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "foundation/FsUtil.h"
+#include "foundation/SolUtil.h"
+
 #include "core/FileManager.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
 #include "core/SystemWrapper.h"
-#include "foundation/FsUtil.h"
-#include "foundation/SolUtil.h"
-#include "sameboy/SameBoySystem.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
+
+#include "sameboy/SameBoySystem.h"
 
 using namespace rp;
 
@@ -201,7 +203,7 @@ void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Proje
 		.action("SAV As...", [project, system]() { saveSram(project, system, true); })
 		.action("State As...", [project, system]() { saveState(project, system); })*/
 		.action("All ROMs + SAVs", [project]() {
-		fw::Uint8Buffer target;
+			fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(*project, target)) {
 				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
 			}

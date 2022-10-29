@@ -1,4 +1,6 @@
 #include "SystemWrapper.h"
+#include "SystemWrapper.h"
+#include "SystemWrapper.h"
 
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
@@ -94,6 +96,11 @@ void SystemWrapper::deserializeModels() {
 
 void SystemWrapper::reset() {
 	_messageBus->uiToAudio.enqueue(OrchestratorChange { .reset = _systemId });
+}
+
+void SystemWrapper::setGameLink(bool gameLink) {
+	_settings.gameLink = gameLink;
+	_messageBus->uiToAudio.enqueue(OrchestratorChange { .gameLink = _systemId });
 }
 
 bool SystemWrapper::saveSram(std::string_view path) {

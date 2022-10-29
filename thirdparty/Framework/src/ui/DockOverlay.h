@@ -20,7 +20,7 @@ namespace fw {
 		void onUpdate(f32 delta) override;
 
 		bool onDragMove(DragContext& ctx, Point position) override {
-			if (ctx.attached && ctx.attached->getParent() != _floating.get()) {
+			if (ctx.attached && ctx.attached->getParent() != _floating) {
 				spdlog::info("added to floating");
 
 				ctx.attached->setSizingPolicy(SizingPolicy::None);

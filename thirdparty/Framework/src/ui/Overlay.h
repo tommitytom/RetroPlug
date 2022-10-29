@@ -10,12 +10,12 @@ namespace fw {
 			setSizingPolicy(SizingPolicy::FitToParent);
 		}
 
-		ParentT* getSuper() {
-			return getParent()->asRaw<ParentT>();
+		std::shared_ptr<ParentT> getSuper() {
+			return getParent()->asShared<ParentT>();
 		}
 
-		ParentT* getSuper() const {
-			return getParent()->asRaw<ParentT>();
+		const std::shared_ptr<ParentT> getSuper() const {
+			return getParent()->asShared<ParentT>();
 		}
 	};
 }

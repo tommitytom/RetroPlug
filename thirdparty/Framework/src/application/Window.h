@@ -18,37 +18,38 @@ namespace fw::app {
 
 	class Window {
 	private:
-		ViewManager _viewManager;
+		ViewManagerPtr _viewManager;
 		uint32 _id;
 		ViewPtr _view;
 
 	public:
 		Window(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id): _id(id), _view(view) {
-			_viewManager.setResourceManager(resourceManager, fontManager);
-			_viewManager.setSizingPolicy(view->getSizingPolicy());
-			_viewManager.setDimensions(view->getDimensions());
-			_viewManager.setName(view->getName());
+			_viewManager = std::make_shared<ViewManager>();
+			_viewManager->setResourceManager(resourceManager, fontManager);
+			_viewManager->setSizingPolicy(view->getSizingPolicy());
+			_viewManager->setDimensions(view->getDimensions());
+			_viewManager->setName(view->getName());
 		}
 		~Window() = default;
 
 		virtual void onCreate() {}
 
 		virtual void onInitialize() {
-			_viewManager.addChild(_view);
-			_viewManager.onInitialize();
+			_viewManager->addChild(_view);
+			_viewManager->onInitialize();
 		}
 
 		virtual void onUpdate(f32 delta) {
-			_viewManager.onUpdate(delta);
+			_viewManager->onUpdate(delta);
 		}
 
 		virtual void onRender(engine::Canvas& canvas) {
-			_viewManager.onRender(canvas);
+			_viewManager->onRender(canvas);
 		}
 
 		virtual void onCleanup() {
 			_view = nullptr;
-			_viewManager = ViewManager();
+			_viewManager.reset();
 		}
 
 		virtual bool shouldClose() = 0;
@@ -59,7 +60,7 @@ namespace fw::app {
 			return _id;
 		}
 
-		ViewManager& getViewManager() {
+		ViewManagerPtr getViewManager() {
 			return _viewManager;
 		}
 
