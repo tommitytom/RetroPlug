@@ -51,7 +51,12 @@ void GlfwNativeWindow::mouseEnterCallback(GLFWwindow* window, int entered) {
 
 void GlfwNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager()->onMouseButton(convertMouseButton(button), action == GLFW_PRESS, w->_lastMousePosition);
+	w->getViewManager()->onMouseButton(MouseButtonEvent{
+		.button = convertMouseButton(button),
+		.action = (ButtonAction)GLFW_PRESS,
+		.down = action != GLFW_RELEASE,
+		.position = w->_lastMousePosition
+	});
 }
 
 void GlfwNativeWindow::mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
@@ -72,7 +77,10 @@ void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager()->onKey(convertKey(key), action > 0);
+	w->getViewManager()->onKey(KeyEvent{
+		.key = convertKey(key),
+		.down = action > 0
+	});
 }
 
 void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {

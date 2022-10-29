@@ -59,14 +59,14 @@ namespace fw {
 			return _sharedData.pixelDensity;
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) final override {
+		bool onKey(const KeyEvent& ev) final override {
 			ViewPtr current = _shared->focused.lock();
 
 			while (current && current.get() != this) {
-				if (!current->onKey(key, down)) {
+				if (!current->onKey(ev)) {
 					current = current->getParent();
 				} else {
-					current->emit(KeyEvent{ key, down });
+					current->emit(ev);
 					return true;
 				}
 			}
@@ -141,27 +141,27 @@ namespace fw {
 			return handled;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) final override {
+		bool onMouseButton(const MouseButtonEvent& ev) final override {
 			bool handled = false;
 			
-			_mouseState.buttons[button] = down;
+			_mouseState.buttons[ev.button] = ev.down;
 
-			if (button == MouseButton::Left && !down) {
+			if (ev.button == MouseButton::Left && !ev.down) {
 				DragContext& ctx = _shared->dragContext;
 				
 				if (ctx.isDragging) {
-					handleDragEnd(position);
+					handleDragEnd(ev.position);
 				} else {
 					// Focus is locked to a single element
 					// Process the mouse button release
-					handled = propagateClick(button, down, position, false);
-					handled |= handleMouseEnterLeave(position);
+					handled = propagateClick(ev, false);
+					handled |= handleMouseEnterLeave(ev.position);
 				}
 
 				return true;
 			}
 
-			return propagateClick(button, down, position, true);
+			return propagateClick(ev, true);
 		}
 
 		void onMouseLeave() final override {
@@ -225,7 +225,7 @@ namespace fw {
 			return handled;
 		}
 
-		bool propagateClick(MouseButton::Enum button, bool down, Point position, bool updateFocus) {
+		bool propagateClick(const MouseButtonEvent& ev, bool updateFocus) {
 			if (updateFocus) {
 				for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
 					FocusPolicy policy = _mouseOver[i]->getFocusPolicy();
@@ -239,10 +239,12 @@ namespace fw {
 				}
 			}
 			
-			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
-				Point childPosition = position - _mouseOver[i]->getWorldPosition();
+			MouseButtonEvent childEvent = ev;
 
-				if (_mouseOver[i]->onMouseButton(button, down, childPosition)) {		
+			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {	
+				childEvent.position =  ev.position - _mouseOver[i]->getWorldPosition();
+
+				if (_mouseOver[i]->onMouseButton(childEvent)) {
 					return true;
 				}
 			}

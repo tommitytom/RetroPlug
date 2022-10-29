@@ -73,7 +73,20 @@ namespace fw {
 	};
 
 	struct MouseScrollEvent {
-		PointT<f32> delta;
+		PointF delta;
+		Point position;
+	};
+
+	enum class ButtonAction {
+		Release,
+		Press,
+		Repeat
+	};
+
+	struct MouseButtonEvent {
+		MouseButton::Enum button;
+		ButtonAction action;
+		bool down; 
 		Point position;
 	};
 
@@ -291,7 +304,11 @@ namespace fw {
 
 		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
 
+		virtual bool onKey(const KeyEvent& ev) { return onKey(ev.key, ev.down); }
+
 		virtual bool onKey(VirtualKey::Enum key, bool down) { return false; }
+
+		virtual bool onMouseButton(const MouseButtonEvent& ev) { return onMouseButton(ev.button, ev.down, ev.position); }
 
 		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point position) { return false; }
 
@@ -410,12 +427,12 @@ namespace fw {
 			return _shared->themeLookup.getOrEmplace<ThemeT>();
 		}
 
-		std::weak_ptr<View> getFocused() const {
+		ViewPtr getFocused() const {
 			if (_shared) {
-				return _shared->focused;
+				return _shared->focused.lock();
 			}
 
-			return std::weak_ptr<View>();
+			return nullptr;
 		}
 
 		void setSizingPolicy(SizingPolicy mode) {
