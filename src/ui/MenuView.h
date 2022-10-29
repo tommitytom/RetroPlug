@@ -137,7 +137,7 @@ namespace rp {
 
 		void onRender(Canvas& canvas) override;
 
-		bool onKey(VirtualKey::Enum key, bool down) override;
+		bool onKey(const fw::KeyEvent& ev) override;
 
 		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point position) override { return true; }
 

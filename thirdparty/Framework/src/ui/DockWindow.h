@@ -30,7 +30,7 @@ namespace fw {
 
 		}*/
 
-		void onResize(Dimension dimensions) override {
+		void onResize(const ResizeEvent& ev) override {
 			updateLayout();
 		}
 

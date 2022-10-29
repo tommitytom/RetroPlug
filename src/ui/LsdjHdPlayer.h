@@ -45,8 +45,8 @@ namespace rp {
 
 		void onInitialize() override {}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
-			if (key == VirtualKey::Esc && down) {
+		bool onKey(const fw::KeyEvent& ev) override {
+			if (ev.key == VirtualKey::Esc && ev.down) {
 				this->remove();
 				return true;
 			}

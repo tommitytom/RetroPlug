@@ -93,10 +93,10 @@ void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 
 
 
-bool MenuView::onKey(VirtualKey::Enum key, bool down) {
-	switch (key) {
+bool MenuView::onKey(const fw::KeyEvent& ev) {
+	switch (ev.key) {
 	case VirtualKey::LeftArrow:
-		if (down) {
+		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
 			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
 				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
@@ -108,7 +108,7 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 		break;
 
 	case VirtualKey::RightArrow:
-		if (down) {
+		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
 			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
 				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
@@ -120,34 +120,34 @@ bool MenuView::onKey(VirtualKey::Enum key, bool down) {
 		break;
 
 	case VirtualKey::DownArrow:
-		if (down) {
+		if (ev.down) {
 			moveCursorDown();
 		}
 
 		break;
 	case VirtualKey::UpArrow:
-		if (down) {
+		if (ev.down) {
 			moveCursorUp();
 		}
 
 		break;
 
 	case VirtualKey::Enter:
-		if (down) {
+		if (ev.down) {
 			activateHighlighted();
 		}
 
 		break;
 
 	case VirtualKey::Space:
-		if (down) {
+		if (ev.down) {
 			activateHighlighted();
 		}
 
 		break;
 
 	case VirtualKey::Esc:
-		if (_escCloses && down) {
+		if (_escCloses && ev.down) {
 			this->remove();
 		}
 

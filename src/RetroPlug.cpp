@@ -127,9 +127,9 @@ void RetroPlug::onRender(Canvas& canvas) {
 	processOutput();
 }
 
-bool RetroPlug::onKey(VirtualKey::Enum key, bool down) {
-	if (key == VirtualKey::Tab) {
-		if (down) {
+bool RetroPlug::onKey(const fw::KeyEvent& ev) {
+	if (ev.key == VirtualKey::Tab) {
+		if (ev.down) {
 			_state.gridOverlay->incrementSelection();
 		}
 

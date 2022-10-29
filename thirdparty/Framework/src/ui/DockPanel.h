@@ -96,7 +96,7 @@ namespace fw {
 
 		bool onDrop(DragContext& ctx, Point position) override;
 
-		void onResize(Dimension dimensions) override {
+		void onResize(const ResizeEvent& ev) override {
 			updateLayout();
 		}
 

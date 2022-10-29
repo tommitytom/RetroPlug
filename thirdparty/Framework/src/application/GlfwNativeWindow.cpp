@@ -67,12 +67,18 @@ void GlfwNativeWindow::mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
 
 void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager()->onMouseScroll(PointF((f32)x, (f32)y), w->_lastMousePosition);
+	w->getViewManager()->onMouseScroll(MouseScrollEvent{
+		.delta = PointF((f32)x, (f32)y),
+		.position = w->_lastMousePosition
+	});
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	w->getViewManager()->onResize(Dimension{ x, y });
+	w->getViewManager()->onResize(ResizeEvent{
+		.size = Dimension{ x, y },
+		.oldSize = w->getViewManager()->getArea().dimensions
+	});
 }
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {

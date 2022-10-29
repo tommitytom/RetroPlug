@@ -57,8 +57,8 @@ namespace fw {
 
 		void onRender(Canvas& canvas) override;
 
-		void onResize(Dimension dimensions) override {
-			updateSlice(dimensions);
+		void onResize(const ResizeEvent& ev) override {
+			updateSlice(ev.size);
 		}
 
 		bool onMouseScroll(PointF delta, Point position) override;

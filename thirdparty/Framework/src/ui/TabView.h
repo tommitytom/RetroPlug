@@ -55,7 +55,7 @@ namespace fw {
 
 		void onRender(Canvas& canvas);
 
-		void onResize(Dimension dimensions) override {
+		void onResize(const ResizeEvent& ev) override {
 			updateLayout();
 		}
 

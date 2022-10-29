@@ -22,14 +22,14 @@ bool SystemView::onDrop(const std::vector<std::string>& paths) {
 	return false;
 }
 
-bool SystemView::onKey(VirtualKey::Enum key, bool down) {
-	if (key == VirtualKey::Tab) {
+bool SystemView::onKey(const fw::KeyEvent& ev) {
+	if (ev.key == VirtualKey::Tab) {
 		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
 		return false;
 	}
 
-	if (key == VirtualKey::Esc) {
-		if (down) {
+	if (ev.key == VirtualKey::Esc) {
+		if (ev.down) {
 			// Generate menu
 			fw::MenuPtr menu = std::make_shared<fw::Menu>();
 			buildMenu(*menu);
@@ -39,23 +39,23 @@ bool SystemView::onKey(VirtualKey::Enum key, bool down) {
 			menuView->focus();
 		}
 	} else {
-		ButtonType::Enum button = fw::keyToButton(key);
+		ButtonType::Enum button = fw::keyToButton(ev.key);
 
 		if (button != ButtonType::MAX) {
 			SystemIoPtr& io = _system->getSystem()->getStream();
-			_system->getSystem()->setButtonState(button, down);
+			_system->getSystem()->setButtonState(button, ev.down);
 		}
 	}
 
 	return true;
 }
 
-bool SystemView::onButton(ButtonType::Enum button, bool down) {
+bool SystemView::onButton(const fw::ButtonEvent& ev) {
 	SystemIoPtr& io = _system->getSystem()->getStream();
 
 	if (io) {
 		io->input.buttons.push_back(ButtonStream<8>{
-			.presses = { (int)button, down },
+			.presses = { (int)ev.button, ev.down },
 			.pressCount = 1
 		});
 	}

@@ -79,20 +79,20 @@ bool SamplerView::onDrop(const std::vector<std::string>& paths) {
 	return true;
 }
 
-bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
-	if (key == VirtualKey::Tab) {
+bool SamplerView::onKey(const fw::KeyEvent& ev) {
+	if (ev.key == VirtualKey::Tab) {
 		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
 		return false;
 	}
 
-	ButtonType::Enum button = fw::keyToButton(key);
+	ButtonType::Enum button = fw::keyToButton(ev.key);
 
-	if (key == VirtualKey::W) {
-		_bHeld = down;
+	if (ev.key == VirtualKey::W) {
+		_bHeld = ev.down;
 	}
 
-	if (_bHeld && down) {
-		if (key == VirtualKey::LeftArrow) {
+	if (_bHeld && ev.down) {
+		if (ev.key == VirtualKey::LeftArrow) {
 			_samplerState.selectedKit--;
 
 			if (_samplerState.selectedKit < 0) {
@@ -100,7 +100,7 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			}
 
 			updateWaveform();
-		} else if (key == VirtualKey::RightArrow) {
+		} else if (ev.key == VirtualKey::RightArrow) {
 			_samplerState.selectedKit++;
 
 			if (_samplerState.selectedKit >= lsdj::Rom::KIT_COUNT) {
@@ -113,8 +113,8 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 		return true;
 	}
 
-	if (key == VirtualKey::Esc) {
-		if (down) {
+	if (ev.key == VirtualKey::Esc) {
+		if (ev.down) {
 			// Generate menu
 			fw::MenuPtr menu = std::make_shared<fw::Menu>();
 			buildMenu(*menu);
@@ -127,14 +127,14 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 		return true;
 	}
 
-	if (down) {
-		if (key == VirtualKey::D) {
+	if (ev.down) {
+		if (ev.key == VirtualKey::D) {
 			_aHeld = true;
 		}
 
-		_ui.pressKey(key);
+		_ui.pressKey(ev.key);
 	} else {
-		if (key == VirtualKey::D && _aHeld) {
+		if (ev.key == VirtualKey::D && _aHeld) {
 			_aHeld = false;
 			LsdjModelPtr model = _system->getModel<LsdjModel>();
 			if (model) {
@@ -142,11 +142,11 @@ bool SamplerView::onKey(VirtualKey::Enum key, bool down) {
 			}
 		}
 
-		_ui.releaseKey(key);
+		_ui.releaseKey(ev.key);
 	}
 
 	if (button != ButtonType::MAX) {
-		if (down) {
+		if (ev.down) {
 			_ui.pressButton(button);
 		} else {
 			_ui.releaseButton(button);

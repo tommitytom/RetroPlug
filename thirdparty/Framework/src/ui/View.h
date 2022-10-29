@@ -90,6 +90,26 @@ namespace fw {
 		Point position;
 	};
 
+	struct ButtonEvent {
+		ButtonType::Enum button;
+		bool down;
+	};
+
+	struct MouseEnterEvent {
+		Point position;
+	};
+
+	struct MouseLeaveEvent {};
+
+	struct MouseMoveEvent {
+		Point position;
+	};
+
+	struct ResizeEvent {
+		Dimension size;
+		Dimension oldSize;
+	};
+
 	class View : public std::enable_shared_from_this<View> {
 	private:
 		struct Shared {
@@ -144,10 +164,6 @@ namespace fw {
 		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
 
 		~View() {
-			if (_shared) {
-				unfocus();
-			}
-
 			removeChildren();
 		}
 
@@ -302,6 +318,8 @@ namespace fw {
 
 		virtual void onRender(engine::Canvas& canvas) {}
 
+		virtual bool onButton(const ButtonEvent& ev) { return onButton(ev.button, ev.down); }
+
 		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
 
 		virtual bool onKey(const KeyEvent& ev) { return onKey(ev.key, ev.down); }
@@ -317,6 +335,8 @@ namespace fw {
 		virtual bool onMouseMove(Point pos) { return false; }
 
 		virtual void onMouseLeave() {}
+
+		virtual bool onMouseScroll(const MouseScrollEvent& ev) { return onMouseScroll(ev.delta, ev.position); }
 
 		virtual bool onMouseScroll(PointF delta, Point position) { return false; }
 
@@ -340,7 +360,9 @@ namespace fw {
 
 		virtual void onLayoutChanged() {}
 
-		virtual void onResize(Dimension dimensions) {}
+		virtual void onResize(const ResizeEvent& ev) {}
+
+		//virtual void onResize(Dimension dimensions) {}
 
 		virtual bool onDrop(const std::vector<std::string>& paths) { return false; }
 
@@ -579,9 +601,9 @@ namespace fw {
 			}
 		}
 
-		void removeChild(View* view) {
+		/*void removeChild(View* view) {
 			
-		}
+		}*/
 
 		void removeChild(ViewPtr view) {
 			for (size_t i = 0; i < _children.size(); ++i) {
@@ -737,7 +759,14 @@ namespace fw {
 		void setDimensions(Dimension dimensions) {
 			assert(dimensions.w >= 0 && dimensions.h >= 0);
 			if (dimensions != _area.dimensions) {
-				onResize(dimensions);
+				ResizeEvent ev = {
+					.size = dimensions,
+					.oldSize = _area.dimensions
+				};
+
+				onResize(ev);
+				emit(ev);
+
 				_area.dimensions = dimensions;
 				setLayoutDirty();
 			}
@@ -767,7 +796,14 @@ namespace fw {
 			assert(area.w >= 0 && area.h >= 0);
 
 			if (area != _area) {
-				onResize(area.dimensions);
+				ResizeEvent ev = {
+					.size = area.dimensions,
+					.oldSize = _area.dimensions
+				};
+
+				onResize(ev);
+				emit(ev);
+
 				_area = area;
 				setLayoutDirty();
 			}

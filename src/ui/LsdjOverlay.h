@@ -47,7 +47,7 @@ namespace rp {
 
 		void onMenu(fw::Menu& menu) override;
 
-		bool onKey(VirtualKey::Enum key, bool down) override;
+		bool onKey(const fw::KeyEvent& ev) override;
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 

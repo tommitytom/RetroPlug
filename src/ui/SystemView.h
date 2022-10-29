@@ -35,9 +35,9 @@ namespace rp {
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		bool onKey(VirtualKey::Enum key, bool down) override;
+		bool onKey(const fw::KeyEvent& ev) override;
 
-		bool onButton(ButtonType::Enum button, bool down) override;
+		bool onButton(const fw::ButtonEvent& ev) override;
 
 		void onUpdate(f32 delta) override;
 
