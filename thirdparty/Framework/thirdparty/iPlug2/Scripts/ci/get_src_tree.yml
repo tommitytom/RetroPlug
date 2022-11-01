@@ -1,0 +1,48 @@
+jobs:
+- job: GET_SRC_TREE
+
+  pool:
+    vmImage: 'ubuntu-latest'
+
+  steps:
+  - checkout: self
+
+  - bash: |
+      cd ./Dependencies/IGraphics
+      ./download-igraphics-libs.sh
+    displayName: Download IGraphics Dependencies SRC
+    condition: eq(variables.build_deps, true)
+
+  - bash: |
+      cd ./Dependencies/
+      ./download-prebuilt-libs.sh mac
+      ./download-prebuilt-libs.sh ios
+      ./download-prebuilt-libs.sh win
+    displayName: Download Prebuilt IGraphics Dependencies
+    condition: eq(variables.build_deps, false)
+
+  # comment out this step if you don't have access to the secure files (VST2_SDK.zip, AAX_SDK.zip)
+  - template: get_secure_files.yml
+
+  - bash: |
+      cd ./Dependencies/IPlug
+      ./download-iplug-sdks.sh
+    displayName: Download IPlug SDKs
+
+  - bash: |
+      rm -r .git
+      cd ./Dependencies/Build/
+      find . -type f -iname \*.png -delete
+    displayName: Delete unwanted files
+
+  - task: ArchiveFiles@2
+    inputs:
+      rootFolderOrFile: $(Build.SourcesDirectory)
+      archiveFile: '$(Build.ArtifactStagingDirectory)/SRC.zip'
+      includeRootFolder: false
+
+  - task: PublishPipelineArtifact@0
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+      artifactName: 'SRC'
+    displayName: Publish Source

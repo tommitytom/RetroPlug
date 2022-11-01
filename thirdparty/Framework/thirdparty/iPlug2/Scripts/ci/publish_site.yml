@@ -1,0 +1,73 @@
+jobs:
+- job: PUBLISH_WEBSITE_DOWNLOADS
+  dependsOn:
+    - BUILD_MAC_PROJECTS
+    - BUILD_WIN_PROJECTS
+  condition: |
+    and
+    (
+      in(dependencies.BUILD_MAC_PROJECTS.result, 'Succeeded'),
+      in(dependencies.BUILD_WIN_PROJECTS.result, 'Succeeded'),
+      eq(variables.publish_downloads, true)
+    )
+
+  strategy:
+    matrix:
+      SKIA:
+        graphics: 'SKIA'
+      # NANOVG:
+      #   graphics: 'NANOVG'
+
+  pool:
+    vmImage: 'ubuntu-latest'
+
+  steps:
+  - checkout: none
+
+  - template: projects.yml
+    parameters:
+      platform: publish_project.yml
+      graphics: $(graphics)
+      platformStr: 'MAC'
+
+  - template: projects.yml
+    parameters:
+      platform: publish_project.yml
+      graphics: $(graphics)
+      platformStr: 'WIN'
+
+- job: PUBLISH_WEBSITE_PAGES
+  dependsOn:
+    - BUILD_WEB_PROJECTS
+  condition: |
+    and
+    (
+      in(dependencies.BUILD_WEB_PROJECTS.result, 'Succeeded'),
+      eq(variables.publish_pages, true),
+      ne(variables['Build.Reason'], 'PullRequest')
+    )
+
+  pool:
+    vmImage: 'ubuntu-latest'
+
+  steps:
+  - checkout: none
+
+  - bash: |
+      git clone https://$PUBLISH_USER:$GITHUB_PAT@github.com/iPlug2/iPlug2.github.io.git $BUILD_SOURCESDIRECTORY
+    displayName: Clone website repo
+    env:
+      GITHUB_PAT: $(GITHUB_PAT)
+      PUBLISH_USER: $(PUBLISH_USER)
+
+  - template: projects.yml
+    parameters:
+      platform: publish_project.yml
+      graphics: 'NANOVG'
+      platformStr: 'WEB'
+
+  - template: projects.yml
+    parameters:
+      platform: publish_project.yml
+      graphics: 'CANVAS'
+      platformStr: 'WEB'
