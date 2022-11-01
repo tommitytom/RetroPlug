@@ -2252,6 +2252,7 @@ void IGraphicsWin::VBlankNotify()
 #endif
   #include "nanovg.c"
   #include "glad.c"
+#elif defined IGRAPHICS_FRAMEWORK
 #else
   #error
 #endif

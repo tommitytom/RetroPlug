@@ -1,5 +1,6 @@
 local paths = dofile("paths.lua")
 local dep = dofile(paths.SCRIPT_ROOT .. "dep/index.lua")
+local iplug2 = dofile(paths.SCRIPT_ROOT .. "dep/iplug2.lua")
 local util = dofile(paths.SCRIPT_ROOT .. "util.lua")
 
 local m = {
@@ -257,7 +258,7 @@ function m.ExampleApplication.project(name)
 		}
 
 		filter { "action:vs*" }
-		files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		--[[filter { "options:emscripten" }
 			buildoptions { "-matomics", "-mbulk-memory" }
@@ -293,7 +294,33 @@ function m.ExampleApplication.project(name)
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		util.liveppCompat()
+
+	iplug2.createApp(name)
+		m.Application.link()
+		m.Engine.link()
+		m.Ui.link()
+
+		defines {
+			"EXAMPLE_IMPL=" .. name
+		}
+
+		includedirs {
+			paths.SRC_ROOT .. "examples",
+			paths.SRC_ROOT .. "plugin"
+		}
+
+		files {
+			paths.SRC_ROOT .. "plugin/*",
+			paths.SRC_ROOT .. "examples/" .. name .. ".*"
+		}
+
+		filter { "action:vs*" }
+			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+
+		filter {}
 end
+
+
 
 --[[function m.ShaderReload.project()
 	project "ShaderReload"

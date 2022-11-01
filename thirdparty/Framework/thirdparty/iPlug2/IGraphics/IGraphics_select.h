@@ -50,6 +50,9 @@
   #elif defined IGRAPHICS_SKIA
     #include "IGraphicsSkia.h"
     #define IGRAPHICS_DRAW_CLASS_TYPE IGraphicsSkia
+  #elif defined IGRAPHICS_FRAMEWORK
+    #include "IGraphicsFramework.h"
+    #define IGRAPHICS_DRAW_CLASS_TYPE IGraphicsFramework
   #elif defined IGRAPHICS_CANVAS
      #include "IGraphicsCanvas.h"
      #define IGRAPHICS_DRAW_CLASS_TYPE IGraphicsCanvas

@@ -6,6 +6,7 @@ local m = {
 	box2d = dofile("box2d.lua"),
 	freetype = dofile("freetype.lua"),
 	simplefilewatcher = dofile("simplefilewatcher.lua"),
+	iplug2 = dofile("iplug2.lua"),
 }
 
 function m.allProjects()
@@ -18,6 +19,7 @@ function m.allProjects()
 	m.box2d.project()
 	m.freetype.project()
 	m.simplefilewatcher.project()
+	m.iplug2.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()
