@@ -50,6 +50,7 @@ void RetroPlug::onInitialize() {
 	_fileManager = this->createState<FileManager>();
 	_project = this->createState<Project>();
 	_project->setup(&_state.processor, &_orchestratorMessageBus);
+	_project->setAudioManager(*audioManager);
 
 	_project->getModelFactory().addModelFactory<LsdjModel>([](std::string_view romName) {
 		std::string shortName = fw::StringUtil::toLower(romName).substr(0, 4);
@@ -62,9 +63,7 @@ void RetroPlug::onInitialize() {
 		return shortName == "lsdj";
 	});
 
-	_state.grid = this->addChild<fw::GridView>("Grid");
-	_state.gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
-	_state.gridOverlay->setGrid(_state.grid);
+	_state.compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 }
 
 void RetroPlug::processInput(uint32 frameCount) {
@@ -107,14 +106,14 @@ void RetroPlug::processOutput() {
 
 void RetroPlug::onUpdate(f32 delta) {
 	f32 scale = _project->getScale();
-	setScale(scale);
 
-	_state.grid->setLayoutMode((fw::GridLayout)_project->getState().settings.layout);
+	_state.compactLayout->setScale(scale);
+	_state.compactLayout->setGridLayout((fw::GridLayout)_project->getState().settings.layout);
 
-	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5);
+	uint32 frameCount = (uint32)(_sampleRate * delta + 0.5f);
 	processInput(frameCount);
 
-	_project->update((f32)delta);
+	_project->update(delta);
 
 	_state.processor.process(frameCount);
 
@@ -122,19 +121,6 @@ void RetroPlug::onUpdate(f32 delta) {
 }
 
 void RetroPlug::onRender(Canvas& canvas) {
-	// Scale?
 	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 1));
 	processOutput();
-}
-
-bool RetroPlug::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == VirtualKey::Tab) {
-		if (ev.down) {
-			_state.gridOverlay->incrementSelection();
-		}
-
-		return true;
-	}
-
-	return false;
 }

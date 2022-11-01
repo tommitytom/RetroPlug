@@ -98,7 +98,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 	fw::AudioManager& audioManager = project->getAudioManager();
 
 	std::vector<std::string> audioDevices;
-	//audioManager.getDeviceNames(audioDevices);
+	audioManager.getDeviceNames(audioDevices);
 
 	root.separator()
 		.action("Reset System", [this]() {

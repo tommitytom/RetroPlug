@@ -57,8 +57,6 @@ namespace rp {
 
 		void onRender(Canvas& canvas) override;
 
-		bool onKey(const fw::KeyEvent& ev) override;
-
 	private:
 		void processInput(uint32 frameCount);
 
