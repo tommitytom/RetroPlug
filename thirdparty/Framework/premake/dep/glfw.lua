@@ -1,6 +1,8 @@
+local paths = dofile("../paths.lua")
+
 local m = {}
 
-local GLFW_DIR = _ROOT_PATH .. "thirdparty/glfw"
+local GLFW_DIR = paths.DEP_ROOT .. "glfw"
 
 function m.include()
 	sysincludedirs {

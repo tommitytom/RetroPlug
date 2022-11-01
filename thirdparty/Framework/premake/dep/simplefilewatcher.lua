@@ -1,4 +1,5 @@
-local SFW_DIR = _ROOT_PATH .. "thirdparty/simplefilewatcher"
+local paths = dofile("../paths.lua")
+local SFW_DIR = paths.DEP_ROOT .. "simplefilewatcher"
 
 local m = {}
 

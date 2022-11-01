@@ -1,4 +1,5 @@
-local ZLIB_DIR = _ROOT_PATH .. "thirdparty/zlib"
+local paths = dofile("../paths.lua")
+local ZLIB_DIR = paths.DEP_ROOT .. "zlib"
 
 local m = {}
 

@@ -1,4 +1,6 @@
-local BOX2D_DIR = _ROOT_PATH .. "thirdparty/box2d"
+local paths = dofile("../paths.lua")
+
+local BOX2D_DIR = paths.DEP_ROOT .. "box2d"
 
 local m = {}
 

@@ -95,9 +95,6 @@ util.createGeneratorProject({
 	_MAIN_SCRIPT_DIR .. "/thirdparty/Framework/src/compiler.config.lua",
 })
 
-
-
-_ROOT_PATH = "thirdparty/Framework/"
 local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
 local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
 local projects = dofile("premake/projects.lua")

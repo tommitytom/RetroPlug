@@ -1,8 +1,10 @@
+local paths = dofile("../paths.lua")
+
 local m = {}
 
-local BX_DIR = _ROOT_PATH .. "thirdparty/bx";
-local BIMG_DIR = _ROOT_PATH .. "thirdparty/bimg";
-local BGFX_DIR = _ROOT_PATH .. "thirdparty/bgfx";
+local BX_DIR = paths.DEP_ROOT .. "bx";
+local BIMG_DIR = paths.DEP_ROOT .. "bimg";
+local BGFX_DIR = paths.DEP_ROOT .. "bgfx";
 
 function m.includeBx()
 	defines {
@@ -32,7 +34,7 @@ function m.includeBimg()
 	defines { "TINYEXR_USE_MINIZ=0" }
 
 	sysincludedirs {
-		_ROOT_PATH .. "thirdparty/zlib",
+		paths.DEP_ROOT .. "zlib",
 		BIMG_DIR .. "/include",
 		BIMG_DIR .. "/3rdparty",
 		BIMG_DIR .. "/3rdparty/astc-codec",

@@ -1,11 +1,13 @@
-local FREETYPE_DIR = _ROOT_PATH .. "thirdparty/freetype"
-local FREETYPEGL_DIR = _ROOT_PATH .. "thirdparty/freetype-gl"
+local paths = dofile("../paths.lua")
+
+local FREETYPE_DIR = paths.DEP_ROOT .. "freetype"
+local FREETYPEGL_DIR = paths.DEP_ROOT .. "freetype-gl"
 
 local m = {}
 
 function m.include()
 	sysincludedirs {
-		_ROOT_PATH .. "thirdparty/zlib",
+		paths.DEP_ROOT .. "zlib",
 		FREETYPE_DIR .. "/include",
 		FREETYPEGL_DIR,
 	}

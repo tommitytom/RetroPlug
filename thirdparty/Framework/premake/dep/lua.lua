@@ -1,4 +1,6 @@
-local LUA_DIR = _ROOT_PATH .. "thirdparty/lua"
+local paths = dofile("../paths.lua")
+
+local LUA_DIR = paths.DEP_ROOT .. "lua"
 
 local m = {}
 
