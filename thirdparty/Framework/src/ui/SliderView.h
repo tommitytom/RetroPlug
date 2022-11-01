@@ -184,7 +184,7 @@ namespace fw {
 			}
 		}
 
-		void onResize(Dimension dim) override {
+		void onResize(const ResizeEvent& ev) override {
 			if (isMounted()) {
 				updateHandleArea();
 			}

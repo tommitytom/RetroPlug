@@ -40,8 +40,8 @@ namespace fw {
 			});
 		}
 
-		void onResize(Dimension dimensions) override {
-			_registry.ctx().at<RendererInfoSingleton>().dimensions = dimensions;
+		void onResize(const ResizeEvent& ev) override {
+			_registry.ctx().at<RendererInfoSingleton>().dimensions = ev.size;
 
 			CameraSingleton& camera = _registry.ctx().at<CameraSingleton>();
 			camera.viewPort = (RectF)getWorldArea();

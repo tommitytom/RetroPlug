@@ -110,17 +110,22 @@ namespace fw {
 
 			return EventNode(name, _state);
 		}
-		
-		void subscribe(EventType eventType, SubscriptionHandler&& func) {
-			assert(!hasSubscription(eventType));
 
-			handleSubscribe(_id, eventType);
-			broadcastSystem(SubscribeEvent{ .eventType = eventType });
-			
-			_subscriptions[eventType] = std::move(func);
+		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
+		EventType subscribe(std::function<void()>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(); });
+			return eventType;
 		}
 
-		template <typename T, typename Func>
+		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
+		EventType subscribe(std::function<void(const T&)>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
+			return eventType;
+		}
+
+		/*template <typename T, typename Func>
 		EventType subscribe(Func&& func) {
 			EventType eventType = entt::type_id<T>().index();
 
@@ -131,7 +136,7 @@ namespace fw {
 			}
 			
 			return eventType;
-		}
+		}*/
 
 		void unsubscribe(EventType eventType) {
 			assert(hasSubscription(eventType));
@@ -154,7 +159,7 @@ namespace fw {
 
 			if (found != _state.lookup.end()) {
 				for (const NodeReference& node : found->second) {
-					if (includeSender || node.id != _id) {
+					if (node.id != _id || includeSender) {
 						node.queue->enqueue(Event{
 							.sender = _id,
 							.kind = Event::Kind::User,
@@ -209,7 +214,7 @@ namespace fw {
 
 			if (found != _state.lookup.end()) {
 				for (const NodeReference& node : found->second) {
-					if (includeSender || node.id != _id) {
+					if (node.id != _id || includeSender) {
 						node.queue->enqueue(Event{
 							.sender = _id,
 							.kind = Event::Kind::User,
@@ -321,6 +326,15 @@ namespace fw {
 		EventNode& operator=(const EventNode&) = delete;
 
 	private:
+		void subscribe(EventType eventType, SubscriptionHandler&& func) {
+			assert(!hasSubscription(eventType));
+
+			handleSubscribe(_id, eventType);
+			broadcastSystem(SubscribeEvent{ .eventType = eventType });
+
+			_subscriptions[eventType] = std::move(func);
+		}
+
 		template <typename T>
 		void broadcastSystem(T&& ev) {
 			for (const auto& [nodeId, node] : _state.nodes) {
@@ -357,7 +371,7 @@ namespace fw {
 				[&](const SubscribeEvent& evt) {
 					handleSubscribe(ev.sender, evt.eventType);
 				}
-			}, myAny);*/
+			}, ev.value);*/
 
 			if (t == entt::type_id<AddNodeEvent>().index()) {
 				const AddNodeEvent& evt = entt::any_cast<const AddNodeEvent&>(ev.value);

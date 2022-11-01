@@ -28,7 +28,7 @@ namespace fw {
 		~PlotView() {}
 
 		void onInitialize() override { updatePoints(getDimensions()); }
-		void onResize(Dimension dim) override { updatePoints(dim); }
+		void onResize(const ResizeEvent& ev) override { updatePoints(ev.size); }
 
 		void onRender(Canvas& canvas) override {
 			canvas.fillRect(getDimensionsF(), _theme.background);

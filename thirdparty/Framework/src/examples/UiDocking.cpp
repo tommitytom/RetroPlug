@@ -249,7 +249,7 @@ void UiDocking::onInitialize() {
 	_audioManager.start();*/
 }
 
-void UiDocking::onResize(Dimension dimensions) {
+void UiDocking::onResize(const ResizeEvent& ev) {
 	//bgfx::reset((uint32_t)w, (uint32_t)h, BGFX_RESET_VSYNC);
 	//bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
 }

@@ -33,7 +33,7 @@ namespace fw {
 		UiDocking();
 		~UiDocking() {}
 
-		void onResize(Dimension dimensions) override;
+		void onResize(const ResizeEvent& ev) override;
 
 		void onUpdate(f32 delta) override;
 

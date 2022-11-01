@@ -162,10 +162,10 @@ namespace fw {
 			}
 		}
 
-		void onResize(Dimension dim) override {
+		void onResize(const ResizeEvent& ev) override {
 			f32 frac = (f32)_separatorX / (f32)getDimensions().w;
-			_separatorX = (int32)(dim.w * frac);
-			updateLayout(dim);
+			_separatorX = (int32)(ev.size.w * frac);
+			updateLayout(ev.size);
 		}
 
 		void onRender(Canvas& canvas) override {

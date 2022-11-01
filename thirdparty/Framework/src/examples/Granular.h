@@ -366,7 +366,7 @@ namespace fw {
 			return true;
 		}
 
-		void onResize(Dimension dimensions) {
+		void onResize(const ResizeEvent& ev) {
 			updateHighlights();
 		}
 
@@ -392,7 +392,7 @@ namespace fw {
 		}
 
 		void updateHighlights() {
-			WaveView* parent = getSuper();
+			WaveViewPtr parent = getSuper();
 			f32 w = getDimensionsF().w;
 
 			for (auto& hl : _highlights) {

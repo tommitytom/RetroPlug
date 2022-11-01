@@ -86,7 +86,7 @@ namespace fw {
 	struct MouseButtonEvent {
 		MouseButton::Enum button;
 		ButtonAction action;
-		bool down; 
+		bool down;
 		Point position;
 	};
 
@@ -162,10 +162,7 @@ namespace fw {
 	public:
 		View(Dimension dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
 		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
-
-		~View() {
-			removeChildren();
-		}
+		~View() = default;
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
@@ -195,7 +192,7 @@ namespace fw {
 			return eventType;
 		}
 
-		bool hasSubscription(EventType eventType, ViewPtr& target) const {
+		bool hasSubscription(EventType eventType, const ViewPtr& target) const {
 			auto found = _subscriptions.find(eventType);
 
 			if (found != _subscriptions.end()) {
@@ -210,18 +207,18 @@ namespace fw {
 		}
 
 		template <typename T>
-		bool hasSubscription(ViewPtr& target) const {
+		bool hasSubscription(const ViewPtr& target) const {
 			EventType eventType = entt::type_id<T>().index();
 			return hasSubscription(eventType, target);
 		}
 
 		template <typename T>
-		bool unsubscribe(ViewPtr& source) {
+		bool unsubscribe(ViewPtr source) {
 			EventType eventType = entt::type_id<T>().index();
 			return unsubscribe(eventType, source);
 		}
 
-		bool unsubscribe(EventType eventType, ViewPtr& source) {
+		bool unsubscribe(EventType eventType, ViewPtr source) {
 			auto found = source->_subscriptions.find(eventType);
 
 			if (found != source->_subscriptions.end()) {
@@ -361,8 +358,6 @@ namespace fw {
 		virtual void onLayoutChanged() {}
 
 		virtual void onResize(const ResizeEvent& ev) {}
-
-		//virtual void onResize(Dimension dimensions) {}
 
 		virtual bool onDrop(const std::vector<std::string>& paths) { return false; }
 
@@ -602,7 +597,7 @@ namespace fw {
 		}
 
 		/*void removeChild(View* view) {
-			
+
 		}*/
 
 		void removeChild(ViewPtr view) {
@@ -614,7 +609,7 @@ namespace fw {
 						if (focused && childHasFocus(view.get(), focused.get())) {
 							focused = shared_from_this();
 						}
-					}					
+					}
 
 					onChildRemoved(view);
 					view->onDismount();
@@ -844,7 +839,7 @@ namespace fw {
 
 		Point getReleativePosition(ViewPtr& parent, Point position) {
 			ViewPtr currentParent = getParent();
-			
+
 			assert(parent != shared_from_this());
 			assert(currentParent != nullptr);
 
