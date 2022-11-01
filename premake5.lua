@@ -94,7 +94,7 @@ project "RetroPlug"
 
 	configuration { "not emscripten" }
 		prebuildcommands {
-			"%{wks.location}/bin/x64/Debug/ScriptCompiler ../../src/compiler.config.lua"
+			"%{wks.location}/bin/%{cfg.platform}/Debug/ScriptCompiler ../../src/compiler.config.lua"
 		}
 
 	filter { "system:windows", "files:src/retroplug/luawrapper/**" }

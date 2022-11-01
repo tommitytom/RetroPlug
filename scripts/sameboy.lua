@@ -40,7 +40,7 @@ project "SameBoyBootRoms"
 	files { SAMEBOY_DIR .. "BootROMs/**.asm" }
 
 	prebuildcommands {
-		'rgbgfx -h -u -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
+		'rgbgfx -Z -u -c embedded -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
 		'"%{cfg.buildtarget.directory}/pb12" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
 	}
 
@@ -57,12 +57,32 @@ project "SameBoyBootRoms"
 
 end
 
+local function getVersion()
+	local file = io.open("../thirdparty/SameBoy/version.mk", "r")
+	if file == nil then
+		error("Failed to detect SameBoy version: version.mk could not be opened")
+	end
+
+	local version = file:read()
+	local st, en = version:find(":= ")
+
+	if st == nil then
+		error("Failed to detect SameBoy version: version.mk contains invalid data")
+	end
+
+	version = version:sub(en + 1)
+
+	file:close()
+
+	return version
+end
+
 project "SameBoy"
 	kind "StaticLib"
 	language "C"
 	toolset "clang"
 
-	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING" }
+	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING", [[GB_VERSION="]] .. getVersion() .. [["]] }
 
 	sysincludedirs {
 		SAMEBOY_DIR .. "Core",

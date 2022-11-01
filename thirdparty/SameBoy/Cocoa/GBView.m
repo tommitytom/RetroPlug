@@ -118,6 +118,7 @@ static const uint8_t workboy_vk_to_key[] = {
     JOYController *lastController;
     GB_frame_blending_mode_t _frameBlendingMode;
     bool _turbo;
+    bool _mouseControlEnabled;
 }
 
 + (instancetype)alloc
@@ -147,7 +148,7 @@ static const uint8_t workboy_vk_to_key[] = {
     
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(ratioKeepingChanged) name:@"GBAspectChanged" object:nil];
     tracking_area = [ [NSTrackingArea alloc] initWithRect:(NSRect){}
-                                                  options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
+                                                  options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect | NSTrackingMouseMoved
                                                     owner:self
                                                  userInfo:nil];
     [self addTrackingArea:tracking_area];
@@ -156,6 +157,7 @@ static const uint8_t workboy_vk_to_key[] = {
     [self addSubview:self.internalView];
     self.internalView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [JOYController registerListener:self];
+    _mouseControlEnabled = true;
 }
 
 - (void)screenSizeChanged
@@ -459,9 +461,34 @@ static const uint8_t workboy_vk_to_key[] = {
     [lastController setRumbleAmplitude:amp];
 }
 
+- (bool)shouldControllerUseJoystickForMotion:(JOYController *)controller
+{
+    if (!_gb) return false;
+    if (!GB_has_accelerometer(_gb)) return false;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7JoystickOverride"]) return true;
+    for (JOYAxes3D *axes in controller.axes3D) {
+        if (axes.usage == JOYAxes3DUsageOrientation || axes.usage == JOYAxes3DUsageAcceleration) {
+            return false;
+        }
+    }
+    return true;
+}
+
+- (bool)allowController
+{
+    if ([self.window isMainWindow]) return true;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBAllowBackgroundControllers"]) {
+        if ([(Document *)[NSApplication sharedApplication].orderedDocuments.firstObject mainWindow] == self.window) {
+            return true;
+        }
+    }
+    return false;
+}
+
 - (void)controller:(JOYController *)controller movedAxis:(JOYAxis *)axis
 {
-    if (![self.window isMainWindow]) return;
+    if (!_gb) return;
+    if (![self allowController]) return;
 
     NSDictionary *mapping = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"JoyKitInstanceMapping"][controller.uniqueID];
     if (!mapping) {
@@ -481,9 +508,53 @@ static const uint8_t workboy_vk_to_key[] = {
     }
 }
 
+- (void)controller:(JOYController *)controller movedAxes2D:(JOYAxes2D *)axes
+{
+    if (!_gb) return;
+    if ([self shouldControllerUseJoystickForMotion:controller]) {
+        if (!self.mouseControlsActive) {
+            GB_set_accelerometer_values(_gb, -axes.value.x, -axes.value.y);
+        }
+    }
+}
+
+- (void)controller:(JOYController *)controller movedAxes3D:(JOYAxes3D *)axes
+{
+    if (!_gb) return;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7JoystickOverride"]) return;
+    if (self.mouseControlsActive) return;
+    if (controller != lastController) return;
+    // When using Joy-Cons in dual-controller grip, ignore motion data from the left Joy-Con
+    if (controller.joyconType == JOYJoyConTypeDual) {
+        for (JOYController *child in [(JOYCombinedController *)controller children]) {
+            if (child.joyconType != JOYJoyConTypeRight && [child.axes3D containsObject:axes]) {
+                return;
+            }
+        }
+    }
+
+    if (axes.usage == JOYAxes3DUsageOrientation) {
+        for (JOYAxes3D *axes in controller.axes3D) {
+            // Only use orientation if there's no acceleration axes
+            if (axes.usage == JOYAxes3DUsageAcceleration) {
+                return;
+            }
+        }
+        JOYPoint3D point = axes.normalizedValue;
+        GB_set_accelerometer_values(_gb, point.x, point.z);
+    }
+    else if (axes.usage == JOYAxes3DUsageAcceleration) {
+        JOYPoint3D point = axes.gUnitsValue;
+        GB_set_accelerometer_values(_gb, point.x, point.z);
+    }
+}
+
 - (void)controller:(JOYController *)controller buttonChangedState:(JOYButton *)button
 {
-    if (![self.window isMainWindow]) return;
+    if (!_gb) return;
+    if (![self allowController]) return;
+    _mouseControlEnabled = false;
+    if (button.type == JOYButtonTypeAxes2DEmulated && [self shouldControllerUseJoystickForMotion:controller]) return;
     
     unsigned player_count = GB_get_player_count(_gb);
     if (self.document.partner) {
@@ -588,11 +659,18 @@ static const uint8_t workboy_vk_to_key[] = {
     return true;
 }
 
+- (bool)mouseControlsActive
+{
+    return _gb && GB_is_inited(_gb) && GB_has_accelerometer(_gb) &&
+           _mouseControlEnabled && [[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7AllowMouse"];
+}
+
 - (void)mouseEntered:(NSEvent *)theEvent
 {
     if (!mouse_hidden) {
         mouse_hidden = true;
-        if (_mouseHidingEnabled) {
+        if (_mouseHidingEnabled &&
+            !self.mouseControlsActive) {
             [NSCursor hide];
         }
     }
@@ -608,6 +686,46 @@ static const uint8_t workboy_vk_to_key[] = {
         }
     }
     [super mouseExited:theEvent];
+}
+
+- (void)mouseDown:(NSEvent *)event
+{
+    _mouseControlEnabled = true;
+    if (self.mouseControlsActive) {
+        if (event.type == NSEventTypeLeftMouseDown) {
+            GB_set_key_state(_gb, GB_KEY_A, true);
+        }
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event
+{
+    if (self.mouseControlsActive) {
+        if (event.type == NSEventTypeLeftMouseUp) {
+            GB_set_key_state(_gb, GB_KEY_A, false);
+        }
+    }
+}
+
+- (void)mouseMoved:(NSEvent *)event
+{
+    if (self.mouseControlsActive) {
+        NSPoint point = [self convertPoint:[event locationInWindow] toView:nil];
+        
+        point.x /= self.frame.size.width;
+        point.x *= 2;
+        point.x -= 1;
+        
+        point.y /= self.frame.size.height;
+        point.y *= 2;
+        point.y -= 1;
+        
+        if (GB_get_screen_width(_gb) != 160) { // has border
+            point.x *= 256 / 160.0;
+            point.y *= 224 / 114.0;
+        }
+        GB_set_accelerometer_values(_gb, -point.x, point.y);
+    }
 }
 
 - (void)setMouseHidingEnabled:(bool)mouseHidingEnabled

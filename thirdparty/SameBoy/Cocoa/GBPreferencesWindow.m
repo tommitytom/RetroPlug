@@ -1,8 +1,10 @@
 #import "GBPreferencesWindow.h"
+#import "GBJoyConManager.h"
 #import "NSString+StringForKey.h"
 #import "GBButtons.h"
 #import "BigSurToolbar.h"
 #import "GBViewMetal.h"
+#import "GBWarningPopover.h"
 #import <Carbon/Carbon.h>
 
 @implementation GBPreferencesWindow
@@ -23,17 +25,22 @@
     NSPopUpButton *_rtcPopupButton;
     NSButton *_aspectRatioCheckbox;
     NSButton *_analogControlsCheckbox;
+    NSButton *_controllersFocusCheckbox;
     NSEventModifierFlags previousModifiers;
     
-    NSPopUpButton *_dmgPopupButton, *_sgbPopupButton, *_cgbPopupButton;
+    NSPopUpButton *_dmgPopupButton, *_sgbPopupButton, *_cgbPopupButton, *_agbPopupButton;
     NSPopUpButton *_preferredJoypadButton;
     NSPopUpButton *_rumbleModePopupButton;
+    NSPopUpButton *_hotkey1PopupButton;
+    NSPopUpButton *_hotkey2PopupButton;
     NSSlider *_temperatureSlider;
     NSSlider *_interferenceSlider;
     NSSlider *_volumeSlider;
     NSButton *_autoUpdatesCheckbox;
     NSButton *_OSDCheckbox;
     NSButton *_screenshotFilterCheckbox;
+    NSButton *_joystickMBC7Checkbox;
+    NSButton *_mouseMBC7Checkbox;
 }
 
 + (NSArray *)filterList
@@ -63,7 +70,7 @@
 
 - (NSWindowToolbarStyle)toolbarStyle
 {
-    return NSWindowToolbarStylePreference;
+    return NSWindowToolbarStyleExpanded;
 }
 
 - (void)close
@@ -96,7 +103,7 @@
 {
     _colorCorrectionPopupButton = colorCorrectionPopupButton;
     NSInteger mode = [[NSUserDefaults standardUserDefaults] integerForKey:@"GBColorCorrection"];
-    [_colorCorrectionPopupButton selectItemAtIndex:mode];
+    [_colorCorrectionPopupButton selectItemWithTag:mode];
 }
 
 
@@ -153,8 +160,14 @@
 - (void)setColorPalettePopupButton:(NSPopUpButton *)colorPalettePopupButton
 {
     _colorPalettePopupButton = colorPalettePopupButton;
+    [self updatePalettesMenu];
     NSInteger mode = [[NSUserDefaults standardUserDefaults] integerForKey:@"GBColorPalette"];
-    [_colorPalettePopupButton selectItemAtIndex:mode];
+    if (mode >= 0) {
+        [_colorPalettePopupButton selectItemWithTag:mode];
+    }
+    else {
+        [_colorPalettePopupButton selectItemWithTitle:[[NSUserDefaults standardUserDefaults] stringForKey:@"GBCurrentTheme"] ?: @""];
+    }
 }
 
 - (NSPopUpButton *)colorPalettePopupButton
@@ -184,6 +197,45 @@
 - (NSPopUpButton *)rumbleModePopupButton
 {
     return _rumbleModePopupButton;
+}
+
+static inline NSString *keyEquivalentString(NSMenuItem *item)
+{
+    return [NSString stringWithFormat:@"%s%@", (item.keyEquivalentModifierMask & NSEventModifierFlagShift)? "^":"", item.keyEquivalent];
+}
+
+- (void)setHotkey1PopupButton:(NSPopUpButton *)hotkey1PopupButton
+{
+    _hotkey1PopupButton = hotkey1PopupButton;
+    NSString *keyEquivalent = [[NSUserDefaults standardUserDefaults] stringForKey:@"GBJoypadHotkey1"];
+    for (NSMenuItem *item in _hotkey1PopupButton.menu.itemArray) {
+        if ([keyEquivalent isEqualToString:keyEquivalentString(item)]) {
+            [_hotkey1PopupButton selectItem:item];
+            break;
+        }
+    }
+}
+
+- (NSPopUpButton *)hotkey1PopupButton
+{
+    return _hotkey1PopupButton;
+}
+
+- (void)setHotkey2PopupButton:(NSPopUpButton *)hotkey2PopupButton
+{
+    _hotkey2PopupButton = hotkey2PopupButton;
+    NSString *keyEquivalent = [[NSUserDefaults standardUserDefaults] stringForKey:@"GBJoypadHotkey2"];
+    for (NSMenuItem *item in _hotkey2PopupButton.menu.itemArray) {
+        if ([keyEquivalent isEqualToString:keyEquivalentString(item)]) {
+            [_hotkey2PopupButton selectItem:item];
+            break;
+        }
+    }
+}
+
+- (NSPopUpButton *)hotkey2PopupButton
+{
+    return _hotkey2PopupButton;
 }
 
 - (void)setRewindPopupButton:(NSPopUpButton *)rewindPopupButton
@@ -318,10 +370,29 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBHighpassFilterChanged" object:nil];
 }
 
+
+- (IBAction)changeMBC7JoystickOverride:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [(NSButton *)sender state] == NSOnState
+                                            forKey:@"GBMBC7JoystickOverride"];
+}
+
+- (IBAction)changeMBC7AllowMouse:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [(NSButton *)sender state] == NSOnState
+                                            forKey:@"GBMBC7AllowMouse"];
+}
+
 - (IBAction)changeAnalogControls:(id)sender
 {
     [[NSUserDefaults standardUserDefaults] setBool: [(NSButton *)sender state] == NSOnState
                                             forKey:@"GBAnalogControls"];
+}
+
+- (IBAction)changeControllerFocus:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setBool: [(NSButton *)sender state] == NSOnState
+                                            forKey:@"GBAllowBackgroundControllers"];
 }
 
 - (IBAction)changeAspectRatio:(id)sender
@@ -333,7 +404,7 @@
 
 - (IBAction)colorCorrectionChanged:(id)sender
 {
-    [[NSUserDefaults standardUserDefaults] setObject:@([sender indexOfSelectedItem])
+    [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedItem].tag)
                                               forKey:@"GBColorCorrection"];
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBColorCorrectionChanged" object:nil];
 }
@@ -356,6 +427,7 @@
 {
     [[NSUserDefaults standardUserDefaults] setObject:@([sender doubleValue] / 256.0)
                                               forKey:@"GBVolume"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"GBVolumeChanged" object:nil];
 }
 
 - (IBAction)franeBlendingModeChanged:(id)sender
@@ -366,10 +438,51 @@
     
 }
 
+- (void)updatePalettesMenu
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSDictionary *themes = [defaults dictionaryForKey:@"GBThemes"];
+    NSMenu *menu = _colorPalettePopupButton.menu;
+    while (menu.itemArray.count != 4) {
+        [menu removeItemAtIndex:4];
+    }
+    [menu addItem:[NSMenuItem separatorItem]];
+    for (NSString *name in [themes.allKeys sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:name action:nil keyEquivalent:@""];
+        item.tag = -2;
+        [menu addItem:item];
+    }
+    if (themes) {
+        [menu addItem:[NSMenuItem separatorItem]];
+    }
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"Custom…" action:nil keyEquivalent:@""];
+    item.tag = -1;
+    [menu addItem:item];
+}
+
 - (IBAction)colorPaletteChanged:(id)sender
 {
-    [[NSUserDefaults standardUserDefaults] setObject:@([sender indexOfSelectedItem])
-                                              forKey:@"GBColorPalette"];
+    signed tag = [sender selectedItem].tag;
+    if (tag == -2) {
+        [[NSUserDefaults standardUserDefaults] setObject:@(-1)
+                                                  forKey:@"GBColorPalette"];
+        [[NSUserDefaults standardUserDefaults] setObject:[sender selectedItem].title
+                                                  forKey:@"GBCurrentTheme"];
+
+    }
+    else if (tag == -1) {
+        [[NSUserDefaults standardUserDefaults] setObject:@(-1)
+                                                  forKey:@"GBColorPalette"];
+        [_paletteEditorController awakeFromNib];
+        [self beginSheet:_paletteEditor completionHandler:^(NSModalResponse returnCode) {
+            [self updatePalettesMenu];
+            [_colorPalettePopupButton selectItemWithTitle:[[NSUserDefaults standardUserDefaults] stringForKey:@"GBCurrentTheme"] ?: @""];
+        }];
+    }
+    else {
+        [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedItem].tag)
+                                                  forKey:@"GBColorPalette"];
+    }
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBColorPaletteChanged" object:nil];
 }
 
@@ -385,6 +498,18 @@
     [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedItem].tag)
                                               forKey:@"GBRumbleMode"];
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBRumbleModeChanged" object:nil];
+}
+
+- (IBAction)hotkey1Changed:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:keyEquivalentString([sender selectedItem])
+                                              forKey:@"GBJoypadHotkey1"];
+}
+
+- (IBAction)hotkey2Changed:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:keyEquivalentString([sender selectedItem])
+                                              forKey:@"GBJoypadHotkey2"];
 }
 
 - (IBAction)rewindLengthChanged:(id)sender
@@ -427,7 +552,7 @@
     if (joystick_configuration_state == GBUnderclock) {
         [self.configureJoypadButton setTitle:@"Press Button for Slo-Mo"]; // Full name is too long :<
     }
-    else if (joystick_configuration_state < GBButtonCount) {
+    else if (joystick_configuration_state < GBJoypadButtonCount) {
         [self.configureJoypadButton setTitle:[NSString stringWithFormat:@"Press Button for %@", GBButtonNames[joystick_configuration_state]]];
     }
     else {
@@ -449,7 +574,7 @@
         
     if (!button.isPressed) return;
     if (joystick_configuration_state == -1) return;
-    if (joystick_configuration_state == GBButtonCount) return;
+    if (joystick_configuration_state == GBJoypadButtonCount) return;
     if (!joystick_being_configured) {
         joystick_being_configured = controller.uniqueID;
     }
@@ -491,6 +616,8 @@
     [GBTurbo] = JOYButtonUsageL1,
     [GBRewind] = JOYButtonUsageL2,
     [GBUnderclock] = JOYButtonUsageR1,
+    [GBHotkey1] = GBJoyKitHotkey1,
+    [GBHotkey2] = GBJoyKitHotkey2,
     };
     
     if (joystick_configuration_state == GBUnderclock) {
@@ -498,7 +625,6 @@
         double max = 0;
         for (JOYAxis *axis in controller.axes) {
             if ((axis.value > 0.5 || (axis.equivalentButtonUsage == button.usage)) && axis.value >= max) {
-                max = axis.value;
                 mapping[@"AnalogUnderclock"] = @(axis.uniqueID);
                 break;
             }
@@ -525,6 +651,28 @@
     [self advanceConfigurationStateMachine];
 }
 
+- (NSButton *)joystickMBC7Checkbox
+{
+    return _joystickMBC7Checkbox;
+}
+
+- (void)setJoystickMBC7Checkbox:(NSButton *)joystickMBC7Checkbox
+{
+    _joystickMBC7Checkbox = joystickMBC7Checkbox;
+    [_joystickMBC7Checkbox setState: [[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7JoystickOverride"]];
+}
+
+- (NSButton *)mouseMBC7Checkbox
+{
+    return _mouseMBC7Checkbox;
+}
+
+- (void)setMouseMBC7Checkbox:(NSButton *)mouseMBC7Checkbox
+{
+    _mouseMBC7Checkbox = mouseMBC7Checkbox;
+    [_mouseMBC7Checkbox setState: [[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7AllowMouse"]];
+}
+
 - (NSButton *)analogControlsCheckbox
 {
     return _analogControlsCheckbox;
@@ -534,6 +682,17 @@
 {
     _analogControlsCheckbox = analogControlsCheckbox;
     [_analogControlsCheckbox setState: [[NSUserDefaults standardUserDefaults] boolForKey:@"GBAnalogControls"]];
+}
+
+- (NSButton *)controllersFocusCheckbox
+{
+    return _controllersFocusCheckbox;
+}
+
+- (void)setControllersFocusCheckbox:(NSButton *)controllersFocusCheckbox
+{
+    _controllersFocusCheckbox = controllersFocusCheckbox;
+    [_controllersFocusCheckbox setState: [[NSUserDefaults standardUserDefaults] boolForKey:@"GBAllowBackgroundControllers"]];
 }
 
 - (NSButton *)aspectRatioCheckbox
@@ -639,6 +798,17 @@
     return _cgbPopupButton;
 }
 
+- (void)setAgbPopupButton:(NSPopUpButton *)agbPopupButton
+{
+    _agbPopupButton = agbPopupButton;
+    [_agbPopupButton selectItemWithTag:[[NSUserDefaults standardUserDefaults] integerForKey:@"GBAGBModel"]];
+}
+
+- (NSPopUpButton *)agbPopupButton
+{
+    return _agbPopupButton;
+}
+
 - (IBAction)dmgModelChanged:(id)sender
 {
     [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedTag])
@@ -659,6 +829,13 @@
     [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedTag])
                                               forKey:@"GBCGBModel"];
     [[NSNotificationCenter defaultCenter] postNotificationName:@"GBCGBModelChanged" object:nil];
+}
+
+- (IBAction)agbModelChanged:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setObject:@([sender selectedTag])
+                                              forKey:@"GBAGBModel"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"GBAGBModelChanged" object:nil];
 }
 
 - (IBAction)reloadButtonsData:(id)sender
@@ -789,6 +966,50 @@
     else {
         [_screenshotFilterCheckbox setState: [[NSUserDefaults standardUserDefaults] boolForKey:@"GBFilterScreenshots"]];
     }
+}
+
+- (IBAction)displayColorCorrectionHelp:(id)sender
+{
+    [GBWarningPopover popoverWithContents:
+         (NSString * const[]){
+            [GB_COLOR_CORRECTION_DISABLED] = @"Colors are directly interpreted as sRGB, resulting in unbalanced colors and inaccurate hues.",
+            [GB_COLOR_CORRECTION_CORRECT_CURVES] = @"Colors have their brightness corrected, but hues remain unbalanced.",
+            [GB_COLOR_CORRECTION_MODERN_BALANCED] = @"Emulates a modern display. Blue contrast is moderately enhanced at the cost of slight hue inaccuracy.",
+            [GB_COLOR_CORRECTION_MODERN_BOOST_CONTRAST] = @"Like Modern – Balanced, but further boosts the contrast of greens and magentas that is lacking on the original hardware.",
+            [GB_COLOR_CORRECTION_REDUCE_CONTRAST] = @"Slightly reduce the contrast to better represent the tint and contrast of the original display.",
+            [GB_COLOR_CORRECTION_LOW_CONTRAST] = @"Harshly reduce the contrast to accurately represent the tint low constrast of the original display.",
+            [GB_COLOR_CORRECTION_MODERN_ACCURATE] = @"Emulates a modern display. Colors have their hues and brightness corrected.",
+         } [self.colorCorrectionPopupButton.selectedItem.tag]
+                                   title:self.colorCorrectionPopupButton.selectedItem.title
+                                   onView:sender
+                                  timeout:6
+                            preferredEdge:NSRectEdgeMaxX];
+}
+
+- (IBAction)displayHighPassHelp:(id)sender
+{
+    [GBWarningPopover popoverWithContents:
+     (NSString * const[]){
+        [GB_HIGHPASS_OFF] = @"No high-pass filter will be applied. DC offset will be kept, pausing and resuming will trigger audio pops.",
+        [GB_HIGHPASS_ACCURATE] = @"An accurate high-pass filter will be applied, removing the DC offset while somewhat attenuating the bass.",
+        [GB_HIGHPASS_REMOVE_DC_OFFSET] = @"A high-pass filter will be applied to the DC offset itself, removing the DC offset while preserving the waveform.",
+    } [self.highpassFilterPopupButton.indexOfSelectedItem]
+                                    title:self.highpassFilterPopupButton.selectedItem.title
+                                   onView:sender
+                                  timeout:6
+                            preferredEdge:NSRectEdgeMaxX];
+}
+
+- (IBAction)arrangeJoyCons:(id)sender
+{
+    [GBJoyConManager sharedInstance].arrangementMode = true;
+    [self beginSheet:self.joyconsSheet completionHandler:nil];
+}
+
+- (IBAction)closeJoyConsSheet:(id)sender
+{
+    [self endSheet:self.joyconsSheet];
+    [GBJoyConManager sharedInstance].arrangementMode = false;
 }
 
 @end

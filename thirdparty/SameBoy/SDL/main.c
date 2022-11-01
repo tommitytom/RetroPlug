@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <ctype.h>
+#include <unistd.h>
 #include <errno.h>
 #include <OpenDialog/open_dialog.h>
 #include <SDL.h>
@@ -13,7 +14,7 @@
 #include "console.h"
 
 #ifndef _WIN32
-#include <unistd.h>
+#include <fcntl.h>
 #else
 #include <Windows.h>
 #endif
@@ -161,22 +162,7 @@ static const char *end_capturing_logs(bool show_popup, bool should_exit, uint32_
 
 static void update_palette(void)
 {
-    switch (configuration.dmg_palette) {
-        case 1:
-            GB_set_palette(&gb, &GB_PALETTE_DMG);
-            break;
-            
-        case 2:
-            GB_set_palette(&gb, &GB_PALETTE_MGB);
-            break;
-            
-        case 3:
-            GB_set_palette(&gb, &GB_PALETTE_GBL);
-            break;
-            
-        default:
-            GB_set_palette(&gb, &GB_PALETTE_GREY);
-    }
+    GB_set_palette(&gb, current_dmg_palette());
 }
 
 static void screen_size_changed(void)
@@ -242,6 +228,25 @@ static void handle_events(GB_gameboy_t *gb)
                 }
                 break;
             }
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP: {
+                if (GB_has_accelerometer(gb) && configuration.allow_mouse_controls) {
+                    GB_set_key_state(gb, GB_KEY_A, event.type == SDL_MOUSEBUTTONDOWN);
+                }
+                break;
+            }
+                
+            case SDL_MOUSEMOTION: {
+                if (GB_has_accelerometer(gb) && configuration.allow_mouse_controls) {
+                    signed x = event.motion.x;
+                    signed y = event.motion.y;
+                    convert_mouse_coordinates(&x, &y);
+                    x = SDL_max(SDL_min(x, 160), 0);
+                    y = SDL_max(SDL_min(y, 144), 0);
+                    GB_set_accelerometer_values(gb, (x - 80) / -80.0, (y - 72) / -72.0);
+                }
+                break;
+            }
                 
             case SDL_JOYBUTTONUP:
             case SDL_JOYBUTTONDOWN: {
@@ -267,14 +272,50 @@ static void handle_events(GB_gameboy_t *gb)
                 else if (button == JOYPAD_BUTTON_MENU && event.type == SDL_JOYBUTTONDOWN) {
                     open_menu();
                 }
+                else if ((button == JOYPAD_BUTTON_HOTKEY_1 || button == JOYPAD_BUTTON_HOTKEY_2) && event.type == SDL_JOYBUTTONDOWN) {
+                    hotkey_action_t action = configuration.hotkey_actions[button - JOYPAD_BUTTON_HOTKEY_1];
+                    switch (action) {
+                        case HOTKEY_NONE:
+                            break;
+                        case HOTKEY_PAUSE:
+                            paused = !paused;
+                            break;
+                        case HOTKEY_MUTE:
+                            GB_audio_set_paused(GB_audio_is_playing());
+                            break;
+                        case HOTKEY_RESET:
+                            pending_command = GB_SDL_RESET_COMMAND;
+                            break;
+                        case HOTKEY_QUIT:
+                            pending_command = GB_SDL_QUIT_COMMAND;
+                            break;
+                        default:
+                            command_parameter = (action - HOTKEY_SAVE_STATE_1) / 2 + 1;
+                            pending_command = ((action - HOTKEY_SAVE_STATE_1) % 2)? GB_SDL_LOAD_STATE_COMMAND:GB_SDL_SAVE_STATE_COMMAND;
+                            break;
+                        case HOTKEY_SAVE_STATE_10:
+                            command_parameter = 0;
+                            pending_command = GB_SDL_SAVE_STATE_COMMAND;
+                            break;
+                        case HOTKEY_LOAD_STATE_10:
+                            command_parameter = 0;
+                            pending_command = GB_SDL_LOAD_STATE_COMMAND;
+                            break;
+                    }
+                }
             }
                 break;
                 
             case SDL_JOYAXISMOTION: {
                 static bool axis_active[2] = {false, false};
+                static double accel_values[2] = {0, 0};
                 joypad_axis_t axis = get_joypad_axis(event.jaxis.axis);
                 if (axis == JOYPAD_AXISES_X) {
-                    if (event.jaxis.value > JOYSTICK_HIGH) {
+                    if (GB_has_accelerometer(gb)) {
+                        accel_values[0] = event.jaxis.value / (double)32768.0;
+                        GB_set_accelerometer_values(gb, -accel_values[0], -accel_values[1]);
+                    }
+                    else if (event.jaxis.value > JOYSTICK_HIGH) {
                         axis_active[0] = true;
                         GB_set_key_state(gb, GB_KEY_RIGHT, true);
                         GB_set_key_state(gb, GB_KEY_LEFT, false);
@@ -291,7 +332,11 @@ static void handle_events(GB_gameboy_t *gb)
                     }
                 }
                 else if (axis == JOYPAD_AXISES_Y) {
-                    if (event.jaxis.value > JOYSTICK_HIGH) {
+                    if (GB_has_accelerometer(gb)) {
+                        accel_values[1] = event.jaxis.value / (double)32768.0;
+                        GB_set_accelerometer_values(gb, -accel_values[0], -accel_values[1]);
+                    }
+                    else if (event.jaxis.value > JOYSTICK_HIGH) {
                         axis_active[1] = true;
                         GB_set_key_state(gb, GB_KEY_DOWN, true);
                         GB_set_key_state(gb, GB_KEY_UP, false);
@@ -396,6 +441,16 @@ static void handle_events(GB_gameboy_t *gb)
                                     pending_command = GB_SDL_SAVE_STATE_COMMAND;
                                 }
                             }
+                            else if ((event.key.keysym.mod & KMOD_ALT) && event.key.keysym.scancode <= SDL_SCANCODE_4) {
+                                GB_channel_t channel = event.key.keysym.scancode - SDL_SCANCODE_1;
+                                bool state = !GB_is_channel_muted(gb, channel);
+                                
+                                GB_set_channel_muted(gb, channel, state);
+                                
+                                static char message[18];
+                                sprintf(message, "Channel %d %smuted", channel + 1, state? "" : "un");
+                                show_osd_text(message);
+                            }
                         }
                         break;
                 }
@@ -434,7 +489,7 @@ static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
     return SDL_MapRGB(pixel_format, r, g, b);
 }
 
-static void vblank(GB_gameboy_t *gb)
+static void vblank(GB_gameboy_t *gb, GB_vblank_type_t type)
 {
     if (underclock_down && clock_mutliplier > 0.5) {
         clock_mutliplier -= 1.0/16;
@@ -464,15 +519,17 @@ static void vblank(GB_gameboy_t *gb)
                   true);
         osd_countdown--;
     }
-    if (configuration.blending_mode) {
-        render_texture(active_pixel_buffer, previous_pixel_buffer);
-        uint32_t *temp = active_pixel_buffer;
-        active_pixel_buffer = previous_pixel_buffer;
-        previous_pixel_buffer = temp;
-        GB_set_pixels_output(gb, active_pixel_buffer);
-    }
-    else {
-        render_texture(active_pixel_buffer, NULL);
+    if (type != GB_VBLANK_TYPE_REPEAT) {
+        if (configuration.blending_mode) {
+            render_texture(active_pixel_buffer, previous_pixel_buffer);
+            uint32_t *temp = active_pixel_buffer;
+            active_pixel_buffer = previous_pixel_buffer;
+            previous_pixel_buffer = temp;
+            GB_set_pixels_output(gb, active_pixel_buffer);
+        }
+        else {
+            render_texture(active_pixel_buffer, NULL);
+        }
     }
     do_rewind = rewind_down;
     handle_events(gb);
@@ -510,7 +567,7 @@ static void gb_audio_callback(GB_gameboy_t *gb, GB_sample_t *sample)
         }
     }
     
-    if (GB_audio_get_queue_length() / sizeof(*sample) > GB_audio_get_frequency() / 4) {
+    if (GB_audio_get_queue_length() > GB_audio_get_frequency() / 8) { // Maximum lag of 0.125s
         return;
     }
     
@@ -523,6 +580,7 @@ static void gb_audio_callback(GB_gameboy_t *gb, GB_sample_t *sample)
     
 }
     
+static bool doing_hot_swap = false;
 static bool handle_pending_command(void)
 {
     switch (pending_command) {
@@ -575,6 +633,8 @@ static bool handle_pending_command(void)
         case GB_SDL_NO_COMMAND:
             return false;
             
+        case GB_SDL_CART_SWAP_COMMAND:
+            doing_hot_swap = true;
         case GB_SDL_RESET_COMMAND:
         case GB_SDL_NEW_FILE_COMMAND:
             GB_save_battery(&gb, battery_save_path_ptr);
@@ -590,12 +650,12 @@ static bool handle_pending_command(void)
 static void load_boot_rom(GB_gameboy_t *gb, GB_boot_rom_t type)
 {
     static const char *const names[] = {
-        [GB_BOOT_ROM_DMG0] = "dmg0_boot.bin",
+        [GB_BOOT_ROM_DMG_0] = "dmg0_boot.bin",
         [GB_BOOT_ROM_DMG] = "dmg_boot.bin",
         [GB_BOOT_ROM_MGB] = "mgb_boot.bin",
         [GB_BOOT_ROM_SGB] = "sgb_boot.bin",
         [GB_BOOT_ROM_SGB2] = "sgb2_boot.bin",
-        [GB_BOOT_ROM_CGB0] = "cgb0_boot.bin",
+        [GB_BOOT_ROM_CGB_0] = "cgb0_boot.bin",
         [GB_BOOT_ROM_CGB] = "cgb_boot.bin",
         [GB_BOOT_ROM_AGB] = "agb_boot.bin",
     };
@@ -612,6 +672,16 @@ static void load_boot_rom(GB_gameboy_t *gb, GB_boot_rom_t type)
     }
 }
 
+static bool is_path_writeable(const char *path)
+{
+    if (!access(path, W_OK)) return true;
+    int fd = creat(path, 0644);
+    if (fd == -1) return false;
+    close(fd);
+    unlink(path);
+    return true;
+}
+
 static void run(void)
 {
     SDL_ShowCursor(SDL_DISABLE);
@@ -621,8 +691,9 @@ restart:
     model = (GB_model_t [])
     {
         [MODEL_DMG] = GB_MODEL_DMG_B,
-        [MODEL_CGB] = GB_MODEL_CGB_E,
-        [MODEL_AGB] = GB_MODEL_AGB,
+        [MODEL_CGB] = GB_MODEL_CGB_0 + configuration.cgb_revision,
+        [MODEL_AGB] = configuration.agb_revision,
+        [MODEL_MGB] = GB_MODEL_MGB,
         [MODEL_SGB] = (GB_model_t [])
         {
             [SGB_NTSC] = GB_MODEL_SGB_NTSC,
@@ -632,7 +703,12 @@ restart:
     }[configuration.model];
     
     if (GB_is_inited(&gb)) {
-        GB_switch_model_and_reset(&gb, model);
+        if (doing_hot_swap) {
+            doing_hot_swap = false;
+        }
+        else {
+            GB_switch_model_and_reset(&gb, model);
+        }
     }
     else {
         GB_init(&gb, model);
@@ -692,6 +768,18 @@ restart:
     else {
         GB_load_rom(&gb, filename);
     }
+    
+    /* Configure battery */
+    char battery_save_path[path_length + 5]; /* At the worst case, size is strlen(path) + 4 bytes for .sav + NULL */
+    replace_extension(filename, path_length, battery_save_path, ".sav");
+    battery_save_path_ptr = battery_save_path;
+    GB_load_battery(&gb, battery_save_path);
+    if (GB_save_battery_size(&gb)) {
+        if (!is_path_writeable(battery_save_path)) {
+            GB_log(&gb, "The save path for this ROM is not writeable, progress will not be saved.\n");
+        }
+    }
+    
     end_capturing_logs(true, error, SDL_MESSAGEBOX_WARNING, "Warning");
     
     static char start_text[64];
@@ -700,13 +788,6 @@ restart:
     sprintf(start_text, "SameBoy v" GB_VERSION "\n%s\n%08X", title, GB_get_rom_crc32(&gb));
     show_osd_text(start_text);
 
-    
-    /* Configure battery */
-    char battery_save_path[path_length + 5]; /* At the worst case, size is strlen(path) + 4 bytes for .sav + NULL */
-    replace_extension(filename, path_length, battery_save_path, ".sav");
-    battery_save_path_ptr = battery_save_path;
-    GB_load_battery(&gb, battery_save_path);
-    
     /* Configure symbols */
     GB_debugger_load_symbol_file(&gb, resource_path("registers.sym"));
     
@@ -756,6 +837,11 @@ static void save_configuration(void)
     }
 }
 
+static void stop_recording(void)
+{
+    GB_stop_audio_recording(&gb);
+}
+
 static bool get_arg_flag(const char *flag, int *argc, char **argv)
 {
     for (unsigned i = 1; i < *argc; i++) {
@@ -801,7 +887,7 @@ int main(int argc, char **argv)
 
     signal(SIGINT, debugger_interrupt);
 
-    SDL_Init(SDL_INIT_EVERYTHING);
+    SDL_Init(SDL_INIT_EVERYTHING & ~SDL_INIT_AUDIO);
     if ((console_supported = CON_start(completer))) {
         CON_set_repeat_empty(true);
         CON_printf("SameBoy v" GB_VERSION "\n");
@@ -823,18 +909,31 @@ int main(int argc, char **argv)
         fclose(prefs_file);
         
         /* Sanitize for stability */
-        configuration.color_correction_mode %= GB_COLOR_CORRECTION_LOW_CONTRAST +1;
+        configuration.color_correction_mode %= GB_COLOR_CORRECTION_MODERN_ACCURATE + 1;
         configuration.scaling_mode %= GB_SDL_SCALING_MAX;
         configuration.default_scale %= GB_SDL_DEFAULT_SCALE_MAX + 1;
         configuration.blending_mode %= GB_FRAME_BLENDING_MODE_ACCURATE + 1;
         configuration.highpass_mode %= GB_HIGHPASS_MAX;
         configuration.model %= MODEL_MAX;
         configuration.sgb_revision %= SGB_MAX;
-        configuration.dmg_palette %= 3;
+        configuration.dmg_palette %= 5;
+        if (configuration.dmg_palette) {
+            configuration.gui_pallete_enabled = true;
+        }
         configuration.border_mode %= GB_BORDER_ALWAYS + 1;
         configuration.rumble_mode %= GB_RUMBLE_ALL_GAMES + 1;
         configuration.color_temperature %= 21;
         configuration.bootrom_path[sizeof(configuration.bootrom_path) - 1] = 0;
+        configuration.cgb_revision %= GB_MODEL_CGB_E - GB_MODEL_CGB_0 + 1;
+        configuration.audio_driver[15] = 0;
+        configuration.dmg_palette_name[24] = 0;
+        // Fix broken defaults, should keys 12-31 should be unmapped by default
+        if (configuration.joypad_configuration[31] == 0) {
+            memset(configuration.joypad_configuration + 12 , -1, 32 - 12);
+        }
+        if ((configuration.agb_revision & ~GB_MODEL_GBP_BIT) != GB_MODEL_AGB_A) {
+            configuration.agb_revision = GB_MODEL_AGB_A;
+        }
     }
     
     if (configuration.model >= MODEL_MAX) {
@@ -846,10 +945,14 @@ int main(int argc, char **argv)
     }
     
     atexit(save_configuration);
+    atexit(stop_recording);
     
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,
+                configuration.allow_background_controllers? "1" : "0");
 
     window = SDL_CreateWindow("SameBoy v" GB_VERSION, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                               160 * configuration.default_scale, 144 * configuration.default_scale, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);

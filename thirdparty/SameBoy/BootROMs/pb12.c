@@ -25,7 +25,7 @@ void write_all(int fd, const void *buf, size_t count) {
     }
 }
 
-int main()
+int main(void)
 {
     static uint8_t source[0x4000];
     size_t size = read(STDIN_FILENO, &source, sizeof(source));
@@ -87,7 +87,7 @@ int main()
         prev[1] = byte;
         if (bits >= 8) {
             uint8_t outctl = control >> (bits - 8);
-            assert(outctl != 1);
+            assert(outctl != 1); // 1 is reserved as the end byte
             write_all(STDOUT_FILENO, &outctl, 1);
             write_all(STDOUT_FILENO, literals, literals_size);
             bits -= 8;
