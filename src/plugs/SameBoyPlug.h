@@ -2,9 +2,11 @@
 
 #include <vector>
 #include <queue>
-#include <gb_struct_def.h>
 
 #include "retroplug/Messages.h"
+
+struct GB_gameboy_s;
+typedef struct GB_gameboy_s GB_gameboy_t;
 
 const size_t PIXEL_WIDTH = 160;
 const size_t PIXEL_HEIGHT = 144;

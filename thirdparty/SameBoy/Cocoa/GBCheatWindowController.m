@@ -52,7 +52,7 @@
     if (row >= cheatCount) {
         switch (columnIndex) {
             case 0:
-                return @(YES);
+                return @YES;
                 
             case 1:
                 return @NO;
@@ -67,7 +67,7 @@
     
     switch (columnIndex) {
         case 0:
-            return @(NO);
+            return @NO;
             
         case 1:
             return @(cheats[row]->enabled);
@@ -98,8 +98,10 @@
             [self tableViewSelectionDidChange:nil];
         }
         else {
-            NSBeep();
-            [GBWarningPopover popoverWithContents:@"This code is not a valid GameShark or GameGenie code" onView:self.importCodeField];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSBeep();
+                [GBWarningPopover popoverWithContents:@"This code is not a valid GameShark or GameGenie code" onView:self.importCodeField];
+            });
         }
     }];
 }

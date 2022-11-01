@@ -174,6 +174,9 @@ void ProcessingContext::process(float** outputs, size_t frameCount) {
 			} else {
 				linkedPlugs[linkedPlugCount++] = plug;
 			}
+			
+			plug->pressButtons(_buttonPresses[i].data().presses.data(), _buttonPresses[i].getCount());
+			_buttonPresses[i].clear();
 
 			totalPlugCount++;
 		}

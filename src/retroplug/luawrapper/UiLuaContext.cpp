@@ -18,9 +18,11 @@
 #include "platform/Logger.h"
 #include "Wrappers.h"
 
-//#ifdef COMPILE_LUA_SCRIPTS
+#ifdef COMPILE_LUA_SCRIPTS
 #include "generated/CompiledScripts.h"
-//#endif
+#endif
+
+//#define DEBUG_SCRIPTS
 
 void UiLuaContext::init(AudioContextProxy* proxy, const std::string& path, const std::string& scriptPath) {
 	_configPath = path;
@@ -47,7 +49,7 @@ bool UiLuaContext::onKey(VirtualKey key, bool down) {
 		return res;
 	}
 
-	return false;	
+	return false;
 }
 
 void UiLuaContext::onDoubleClick(float x, float y, MouseMod mod) {
@@ -91,14 +93,14 @@ void UiLuaContext::reload() {
 	if (_valid) {
 		callFunc(_viewRoot, "onReloadBegin");
 	}
-	
+
 	shutdown();
 	setup(false);
 
 	if (_valid) {
 		callFunc(_viewRoot, "onReloadEnd");
 	}
-	
+
 	_haltFrameProcessing = !_valid;
 }
 
@@ -141,13 +143,13 @@ bool UiLuaContext::setup(bool updateProject) {
 	_state = new sol::state();
 	sol::state& s = *_state;
 
-	s.open_libraries(	sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string, 
+	s.open_libraries(	sol::lib::base, sol::lib::package, sol::lib::table, sol::lib::string,
 						sol::lib::math, sol::lib::debug, sol::lib::coroutine, sol::lib::io	);
 
 	std::string packagePath = s["package"]["path"];
 	packagePath += ";" + _configPath + "/?.lua";
 
-#ifdef COMPILE_LUA_SCRIPTS
+#ifndef DEBUG_SCRIPTS
 	spdlog::info("Using precompiled lua scripts");
 	s.add_package_loader(CompiledScripts::common::loader);
 	s.add_package_loader(CompiledScripts::ui::loader);
@@ -158,7 +160,7 @@ bool UiLuaContext::setup(bool updateProject) {
 #endif
 
 	s["package"]["path"] = packagePath;
-	
+
 	luawrappers::registerCommon(s);
 	luawrappers::registerChrono(s);
 	luawrappers::registerLsdj(s);
@@ -191,7 +193,7 @@ bool UiLuaContext::setup(bool updateProject) {
 	);
 
 	// TODO: Fix naming of this too!
-	s.create_named_table("nativeutil", 
+	s.create_named_table("nativeutil",
 		"mergeMenu", mergeMenu
 	);
 
@@ -223,7 +225,7 @@ bool UiLuaContext::setup(bool updateProject) {
 	}
 
 	// Load the users config settings
-	// TODO: This should probably happen outside of this class since it may be used by the 
+	// TODO: This should probably happen outside of this class since it may be used by the
 	// audio lua context too.
 	std::string configPath = _configPath + "/config.lua";
 	bool configValid = false;

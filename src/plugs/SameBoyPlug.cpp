@@ -3,10 +3,6 @@
 #include <fstream>
 #include <xxhash.h>
 
-extern "C" {
-	#include <gb.h>
-}
-
 #include "retroplug/Constants.h"
 #include "retroplug/util/SampleConverter.h"
 #include "generated/bootroms/agb_boot.h"
@@ -15,6 +11,10 @@ extern "C" {
 #include "generated/bootroms/dmg_boot.h"
 #include "generated/bootroms/sgb_boot.h"
 #include "generated/bootroms/sgb2_boot.h"
+
+extern "C" {
+#include <gb.h>
+}
 
 const size_t LINK_TICKS_MAX = 3907;
 
@@ -83,7 +83,7 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 	return 255 << 24 | b << 16 | g << 8 | r;
 }
 
-static void vblankHandler(GB_gameboy_t* gb) {
+static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {
 	SameBoyPlugState* state = (SameBoyPlugState*)GB_get_user_data(gb);
 	state->vblankOccurred = true;
 }
@@ -136,7 +136,7 @@ void SameBoyPlug::init(GameboyModel model) {
 	GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
 	GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
 
-	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
+	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_MODERN_BALANCED);
 	GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
 
 	GB_set_rendering_disabled(_state.gb, true);

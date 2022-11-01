@@ -1,5 +1,10 @@
 #import "JOYButton.h"
 #import "JOYElement.h"
+#import <AppKit/AppKit.h>
+
+@interface JOYButton ()
+@property JOYButtonUsage originalUsage;
+@end
 
 @implementation JOYButton
 {
@@ -50,12 +55,12 @@
 
 - (uint64_t)uniqueID
 {
-    return _element.uniqueID;
+    return _element.uniqueID | (uint64_t)self.combinedIndex << 32;
 }
 
 - (NSString *)description
 {
-    return [NSString stringWithFormat:@"<%@: %p, %@ (%llu); State: %s>", self.className, self, self.usageString, self.uniqueID, _state? "Presssed" : "Released"];
+    return [NSString stringWithFormat:@"<%@: %p, %@ (%llx); State: %s>", self.className, self, self.usageString, self.uniqueID, _state? "Presssed" : "Released"];
 }
 
 - (instancetype)initWithElement:(JOYElement *)element
@@ -80,6 +85,14 @@
             case kHIDUsage_GD_SystemMainMenu: _usage = JOYButtonUsageHome; break;
         }
     }
+    else if (element.usagePage == kHIDPage_Consumer) {
+        switch (element.usage) {
+            case kHIDUsage_Csmr_ACHome: _usage = JOYButtonUsageHome; break;
+            case kHIDUsage_Csmr_ACBack: _usage = JOYButtonUsageSelect; break;
+        }
+    }
+    
+    _originalUsage = _usage;
     
     return self;
 }
@@ -99,4 +112,8 @@
     return false;
 }
 
+- (JOYButtonType)type
+{
+    return JOYButtonTypeNormal;
+}
 @end

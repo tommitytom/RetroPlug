@@ -1,4 +1,5 @@
 #import "JOYEmulatedButton.h"
+#import <AppKit/AppKit.h>
 
 @interface JOYButton ()
 {
@@ -9,26 +10,28 @@
 @implementation JOYEmulatedButton
 {
     uint64_t _uniqueID;
+    JOYButtonType _type;
 }
 
-- (instancetype)initWithUsage:(JOYButtonUsage)usage uniqueID:(uint64_t)uniqueID;
+- (instancetype)initWithUsage:(JOYButtonUsage)usage type:(JOYButtonType)type uniqueID:(uint64_t)uniqueID;
 {
     self = [super init];
     self.usage = usage;
     _uniqueID = uniqueID;
+    _type = type;
     
     return self;
 }
 
 - (uint64_t)uniqueID
 {
-    return _uniqueID;
+    return _uniqueID | (uint64_t)self.combinedIndex << 32;
 }
 
 - (bool)updateStateFromAxis:(JOYAxis *)axis
 {
     bool old = _state;
-    _state = [axis value] > 0.5;
+    _state = [axis value] > 0.8;
     return _state != old;
 }
 
@@ -86,6 +89,11 @@
         }
     }
     return _state != old;
+}
+
+- (JOYButtonType)type
+{
+    return _type;
 }
 
 @end

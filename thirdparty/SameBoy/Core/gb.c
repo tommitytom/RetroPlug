@@ -121,9 +121,20 @@ static void load_default_border(GB_gameboy_t *gb)
     }
 #endif
     
-    if (gb->model == GB_MODEL_AGB) {
+    if (gb->model > GB_MODEL_CGB_E) {
         #include "graphics/agb_border.inc"
         LOAD_BORDER();
+    }
+    else if (gb->model == GB_MODEL_MGB) {
+        #include "graphics/mgb_border.inc"
+        LOAD_BORDER();
+        if (gb->dmg_palette &&
+            gb->dmg_palette->colors[4].b > gb->dmg_palette->colors[4].r) {
+            for (unsigned i = 0; i < 7; i++) {
+                gb->borrowed_border.map[13 + 24 * 32 + i] = i + 1;
+                gb->borrowed_border.map[13 + 25 * 32 + i] = i + 8;
+            }
+        }
     }
     else if (GB_is_cgb(gb)) {
         #include "graphics/cgb_border.inc"
@@ -135,7 +146,19 @@ static void load_default_border(GB_gameboy_t *gb)
     }
 }
 
-void GB_init(GB_gameboy_t *gb, GB_model_t model)
+size_t GB_allocation_size(void)
+{
+    return sizeof(GB_gameboy_t);
+}
+
+GB_gameboy_t *GB_alloc(void)
+{
+    GB_gameboy_t *ret = malloc(sizeof(*ret));
+    ret->magic = 0;
+    return ret;
+}
+
+GB_gameboy_t *GB_init(GB_gameboy_t *gb, GB_model_t model)
 {
     memset(gb, 0, sizeof(*gb));
     gb->model = model;
@@ -162,6 +185,7 @@ void GB_init(GB_gameboy_t *gb, GB_model_t model)
     
     GB_reset(gb);
     load_default_border(gb);
+    return gb;
 }
 
 GB_model_t GB_get_model(GB_gameboy_t *gb)
@@ -205,7 +229,16 @@ void GB_free(GB_gameboy_t *gb)
         GB_remove_cheat(gb, gb->cheats[0]);
     }
 #endif
-    memset(gb, 0, sizeof(*gb));
+    GB_stop_audio_recording(gb);
+        memset(gb, 0, sizeof(*gb));
+}
+
+void GB_dealloc(GB_gameboy_t *gb)
+{
+    if (GB_is_inited(gb)) {
+        GB_free(gb);
+    }
+    free(gb);
 }
 
 int GB_load_boot_rom(GB_gameboy_t *gb, const char *path)
@@ -284,7 +317,7 @@ int GB_load_rom(GB_gameboy_t *gb, const char *path)
         gb->rom_size |= gb->rom_size >> 1;
         gb->rom_size++;
     }
-    if (gb->rom_size == 0) {
+    if (gb->rom_size < 0x8000) {
         gb->rom_size = 0x8000;
     }
     fseek(f, 0, SEEK_SET);
@@ -302,10 +335,32 @@ int GB_load_rom(GB_gameboy_t *gb, const char *path)
     return 0;
 }
 
+#define GBS_ENTRY 0x61
+#define GBS_ENTRY_SIZE 13
+
+static void generate_gbs_entry(GB_gameboy_t *gb, uint8_t *data)
+{
+    memcpy(data, (uint8_t[]) {
+        0xCD, // Call $XXXX
+        LE16(gb->gbs_header.init_address),
+        LE16(gb->gbs_header.init_address) >> 8,
+        0x76, // HALT
+        0x00, // NOP
+        0xAF, // XOR a
+        0xE0, // LDH [$FFXX], a
+        GB_IO_IF,
+        0xCD, // Call $XXXX
+        LE16(gb->gbs_header.play_address),
+        LE16(gb->gbs_header.play_address) >> 8,
+        0x18, // JR pc ± $XX
+        -10   // To HALT
+    }, GBS_ENTRY_SIZE);
+}
+
 void GB_gbs_switch_track(GB_gameboy_t *gb, uint8_t track)
 {
     GB_reset(gb);
-    GB_write_memory(gb, 0xFF00 + GB_IO_LCDC, 0x80);
+    GB_write_memory(gb, 0xFF00 + GB_IO_LCDC, GB_LCDC_ENABLE);
     GB_write_memory(gb, 0xFF00 + GB_IO_TAC, gb->gbs_header.TAC);
     GB_write_memory(gb, 0xFF00 + GB_IO_TMA, gb->gbs_header.TMA);
     GB_write_memory(gb, 0xFF00 + GB_IO_NR52, 0x80);
@@ -323,33 +378,49 @@ void GB_gbs_switch_track(GB_gameboy_t *gb, uint8_t track)
     if (gb->gbs_header.TAC & 0x80) {
         gb->cgb_double_speed = true; // Might mean double speed mode on a DMG
     }
-    gb->sp = LE16(gb->gbs_header.sp);
-    gb->pc = 0x100;
+    if (gb->gbs_header.load_address) {
+        gb->sp = LE16(gb->gbs_header.sp);
+        gb->pc = GBS_ENTRY;
+    }
+    else {
+        gb->pc = gb->sp = LE16(gb->gbs_header.sp - GBS_ENTRY_SIZE);
+        uint8_t entry[GBS_ENTRY_SIZE];
+        generate_gbs_entry(gb, entry);
+        for (unsigned i = 0; i < sizeof(entry); i++) {
+            GB_write_memory(gb, gb->pc + i, entry[i]);
+        }
+    }
+    
     gb->boot_rom_finished = true;
     gb->a = track;
     if (gb->sgb) {
         gb->sgb->intro_animation = GB_SGB_INTRO_ANIMATION_LENGTH;
         gb->sgb->disable_commands = true;
     }
+    if (gb->gbs_header.TAC & 0x40) {
+        gb->interrupt_enable = true;
+    }
 }
 
-int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
+int GB_load_gbs_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size, GB_gbs_info_t *info)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        GB_log(gb, "Could not open GBS: %s.\n", strerror(errno));
-        return errno;
-    }
-    fread(&gb->gbs_header, sizeof(gb->gbs_header), 1, f);
-    if (gb->gbs_header.magic != BE32('GBS\x01') ||
-        LE16(gb->gbs_header.load_address) < 0x400 ||
-        LE16(gb->gbs_header.load_address) >= 0x8000) {
-        GB_log(gb, "Not a valid GBS file: %s.\n", strerror(errno));
-        fclose(f);
+    if (size < sizeof(gb->gbs_header)) {
+        GB_log(gb, "Not a valid GBS file.\n");
         return -1;
     }
-    fseek(f, 0, SEEK_END);
-    size_t data_size = ftell(f) - sizeof(gb->gbs_header);
+
+    memcpy(&gb->gbs_header, buffer, sizeof(gb->gbs_header));
+
+    if (gb->gbs_header.magic != BE32('GBS\x01') ||
+        ((LE16(gb->gbs_header.load_address) < GBS_ENTRY + GBS_ENTRY_SIZE ||
+        LE16(gb->gbs_header.load_address) >= 0x8000) &&
+        LE16(gb->gbs_header.load_address) != 0)) {
+        GB_log(gb, "Not a valid GBS file.\n");
+        return -1;
+    }
+
+    size_t data_size = size - sizeof(gb->gbs_header);
+
     gb->rom_size = (data_size + LE16(gb->gbs_header.load_address) + 0x3FFF) & ~0x3FFF; /* Round to bank */
     /* And then round to a power of two */
     while (gb->rom_size & (gb->rom_size - 1)) {
@@ -358,22 +429,23 @@ int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
         gb->rom_size++;
     }
     
-    if (gb->rom_size == 0) {
+    if (gb->rom_size < 0x8000) {
         gb->rom_size = 0x8000;
     }
-    fseek(f, sizeof(gb->gbs_header), SEEK_SET);
+
     if (gb->rom) {
         free(gb->rom);
     }
+
     gb->rom = malloc(gb->rom_size);
     memset(gb->rom, 0xFF, gb->rom_size); /* Pad with 0xFFs */
-    fread(gb->rom + LE16(gb->gbs_header.load_address), 1, data_size, f);
-    fclose(f);
+    memcpy(gb->rom + LE16(gb->gbs_header.load_address), buffer + sizeof(gb->gbs_header), data_size);
     
     gb->cartridge_type = &GB_cart_defs[0x11];
     if (gb->mbc_ram) {
         free(gb->mbc_ram);
         gb->mbc_ram = NULL;
+        gb->mbc_ram_size = 0;
     }
     
     if (gb->cartridge_type->has_ram) {
@@ -382,32 +454,23 @@ int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
         memset(gb->mbc_ram, 0xFF, gb->mbc_ram_size);
     }
     
-    // Generate interrupt handlers
-    for (unsigned i = 0; i <= 0x38; i += 8) {
-        gb->rom[i] = 0xc3; // jp $XXXX
-        gb->rom[i + 1] = (LE16(gb->gbs_header.load_address) + i);
-        gb->rom[i + 2] = (LE16(gb->gbs_header.load_address) + i) >> 8;
-    }
-    for (unsigned i = 0x40; i <= 0x60; i += 8) {
-        gb->rom[i] = 0xc9; // ret
-    }
+    bool has_interrupts = gb->gbs_header.TAC & 0x40;
     
-    // Generate entry
-    memcpy(gb->rom + 0x100, (uint8_t[]) {
-        0xCD, // Call $XXXX
-        LE16(gb->gbs_header.init_address),
-        LE16(gb->gbs_header.init_address) >> 8,
-        0x76, // HALT
-        0x00, // NOP
-        0xAF, // XOR a
-        0xE0, // LDH [$FFXX], a
-        GB_IO_IF,
-        0xCD, // Call $XXXX
-        LE16(gb->gbs_header.play_address),
-        LE16(gb->gbs_header.play_address) >> 8,
-        0x18, // JR pc ± $XX
-        -10   // To HALT
-    }, 13);
+    if (gb->gbs_header.load_address) {
+        // Generate interrupt handlers
+        for (unsigned i = 0; i <= (has_interrupts? 0x50 : 0x38); i += 8) {
+            gb->rom[i] = 0xC3; // jp $XXXX
+            gb->rom[i + 1] = (LE16(gb->gbs_header.load_address) + i);
+            gb->rom[i + 2] = (LE16(gb->gbs_header.load_address) + i) >> 8;
+        }
+        for (unsigned i = has_interrupts? 0x58 : 0x40; i <= 0x60; i += 8) {
+            gb->rom[i] = 0xC9; // ret
+        }
+        
+        // Generate entry
+        generate_gbs_entry(gb, gb->rom + GBS_ENTRY);
+    }
+
     
     GB_gbs_switch_track(gb, gb->gbs_header.first_track - 1);
     if (info) {
@@ -425,6 +488,25 @@ int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
     return 0;
 }
 
+int GB_load_gbs(GB_gameboy_t *gb, const char *path, GB_gbs_info_t *info)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        GB_log(gb, "Could not open GBS: %s.\n", strerror(errno));
+        return errno;
+    }
+    fseek(f, 0, SEEK_END);
+    size_t file_size = MIN(ftell(f), sizeof(GB_gbs_header_t) + 0x4000 * 0x100); // Cap with the maximum MBC3 ROM size + GBS header
+    fseek(f, 0, SEEK_SET);
+    uint8_t *file_data = malloc(file_size);
+    fread(file_data, 1, file_size, f);
+    fclose(f);
+
+    int r = GB_load_gbs_from_buffer(gb, file_data, file_size, info);
+    free(file_data);
+    return r;
+}
+
 int GB_load_isx(GB_gameboy_t *gb, const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -436,11 +518,8 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
 #define READ(x) if (fread(&x, sizeof(x), 1, f) != 1) goto error
     fread(magic, 1, sizeof(magic), f);
     
-#ifdef GB_BIG_ENDIAN
-    bool extended = *(uint32_t *)&magic == 'ISX ';
-#else
-    bool extended = *(uint32_t *)&magic == __builtin_bswap32('ISX ');
-#endif
+
+    bool extended = *(uint32_t *)&magic == BE32('ISX ');
     
     fseek(f, extended? 0x20 : 0, SEEK_SET);
     
@@ -467,15 +546,11 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                 }
                 
                 READ(address);
-#ifdef GB_BIG_ENDIAN
-                address = __builtin_bswap16(address);
-#endif
+                address = LE16(address);
                 address &= 0x3FFF;
 
                 READ(length);
-#ifdef GB_BIG_ENDIAN
-                length = __builtin_bswap16(length);
-#endif
+                length = LE16(length);
 
                 size_t needed_size = bank * 0x4000 + address + length;
                 if (needed_size > 1024 * 1024 * 32) goto error;
@@ -496,14 +571,10 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                 uint32_t length;
                 
                 READ(address);
-#ifdef GB_BIG_ENDIAN
-                address = __builtin_bswap32(address);
-#endif
+                address = LE32(address);
                 
                 READ(length);
-#ifdef GB_BIG_ENDIAN
-                length = __builtin_bswap32(length);
-#endif
+                length = LE32(length);
                 size_t needed_size = address + length;
                 if (needed_size > 1024 * 1024 * 32) goto error;
 
@@ -527,9 +598,7 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                 uint16_t address;
                 uint8_t byte;
                 READ(count);
-#ifdef GB_BIG_ENDIAN
-                count = __builtin_bswap16(count);
-#endif
+                count = LE16(count);
                 while (count--) {
                     READ(length);
                     if (fread(name, length, 1, f) != 1) goto error;
@@ -544,9 +613,7 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                     }
                     
                     READ(address);
-#ifdef GB_BIG_ENDIAN
-                    address = __builtin_bswap16(address);
-#endif
+                    address = LE16(address);
                     GB_debugger_add_symbol(gb, bank, address, name);
                 }
                 break;
@@ -559,9 +626,7 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                 uint8_t flag;
                 uint32_t address;
                 READ(count);
-#ifdef GB_BIG_ENDIAN
-                count = __builtin_bswap16(count);
-#endif
+                count = LE16(count);
                 while (count--) {
                     READ(length);
                     if (fread(name, length + 1, 1, f) != 1) goto error;
@@ -569,9 +634,7 @@ int GB_load_isx(GB_gameboy_t *gb, const char *path)
                     READ(flag); // unused
                     
                     READ(address);
-#ifdef GB_BIG_ENDIAN
-                    address = __builtin_bswap32(address);
-#endif
+                    address = LE32(address);
                     // TODO: How to convert 32-bit addresses to Bank:Address? Needs to tell RAM and ROM apart
                 }
                 break;
@@ -662,7 +725,7 @@ error:
 
 void GB_load_rom_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t size)
 {
-    gb->rom_size = (size + 0x3fff) & ~0x3fff;
+    gb->rom_size = (size + 0x3FFF) & ~0x3FFF;
     while (gb->rom_size & (gb->rom_size - 1)) {
         gb->rom_size |= gb->rom_size >> 1;
         gb->rom_size++;
@@ -674,7 +737,7 @@ void GB_load_rom_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t siz
         free(gb->rom);
     }
     gb->rom = malloc(gb->rom_size);
-    memset(gb->rom, 0xff, gb->rom_size);
+    memset(gb->rom, 0xFF, gb->rom_size);
     memcpy(gb->rom, buffer, size);
     GB_configure_cart(gb);
     gb->tried_loading_sgb_border = false;
@@ -693,7 +756,7 @@ typedef struct {
     uint8_t padding4[3];
     uint8_t high;
     uint8_t padding5[3];
-} GB_vba_rtc_time_t;
+} vba_rtc_time_t;
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -702,7 +765,7 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved;
     uint64_t last_rtc_second;
     uint8_t rtc_data[4];
-} GB_tpp1_rtc_save_t;
+} tpp1_rtc_save_t;
 
 typedef union {
     struct __attribute__((packed)) {
@@ -711,17 +774,17 @@ typedef union {
     } sameboy_legacy;
     struct {
         /* Used by VBA versions with 32-bit timestamp*/
-        GB_vba_rtc_time_t rtc_real, rtc_latched;
+        vba_rtc_time_t rtc_real, rtc_latched;
         uint32_t last_rtc_second; /* Always little endian */
     } vba32;
     struct {
         /* Used by BGB and VBA versions with 64-bit timestamp*/
-        GB_vba_rtc_time_t rtc_real, rtc_latched;
+        vba_rtc_time_t rtc_real, rtc_latched;
         uint64_t last_rtc_second; /* Always little endian */
     } vba64;
-} GB_rtc_save_t;
+} rtc_save_t;
 
-static void GB_fill_tpp1_save_data(GB_gameboy_t *gb, GB_tpp1_rtc_save_t *data)
+static void fill_tpp1_save_data(GB_gameboy_t *gb, tpp1_rtc_save_t *data)
 {
     data->magic = BE32('TPP1');
     data->version = BE16(0x100);
@@ -745,10 +808,10 @@ int GB_save_battery_size(GB_gameboy_t *gb)
     }
     
     if (gb->cartridge_type->mbc_type == GB_TPP1) {
-        return gb->mbc_ram_size + sizeof(GB_tpp1_rtc_save_t);
+        return gb->mbc_ram_size + sizeof(tpp1_rtc_save_t);
     }
     
-    GB_rtc_save_t rtc_save_size;
+    rtc_save_t rtc_save_size;
     return gb->mbc_ram_size + (gb->cartridge_type->has_rtc ? sizeof(rtc_save_size.vba64) : 0);
 }
 
@@ -764,36 +827,25 @@ int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size)
 
     if (gb->cartridge_type->mbc_type == GB_TPP1) {
         buffer += gb->mbc_ram_size;
-        GB_tpp1_rtc_save_t rtc_save;
-        GB_fill_tpp1_save_data(gb, &rtc_save);
+        tpp1_rtc_save_t rtc_save;
+        fill_tpp1_save_data(gb, &rtc_save);
         memcpy(buffer, &rtc_save, sizeof(rtc_save));
     }
     else if (gb->cartridge_type->mbc_type == GB_HUC3) {
         buffer += gb->mbc_ram_size;
 
-#ifdef GB_BIG_ENDIAN
         GB_huc3_rtc_time_t rtc_save = {
-            __builtin_bswap64(gb->last_rtc_second),
-            __builtin_bswap16(gb->huc3_minutes),
-            __builtin_bswap16(gb->huc3_days),
-            __builtin_bswap16(gb->huc3_alarm_minutes),
-            __builtin_bswap16(gb->huc3_alarm_days),
-            gb->huc3_alarm_enabled,
+            LE64(gb->last_rtc_second),
+            LE16(gb->huc3.minutes),
+            LE16(gb->huc3.days),
+            LE16(gb->huc3.alarm_minutes),
+            LE16(gb->huc3.alarm_days),
+            gb->huc3.alarm_enabled,
         };
-#else
-        GB_huc3_rtc_time_t rtc_save = {
-            gb->last_rtc_second,
-            gb->huc3_minutes,
-            gb->huc3_days,
-            gb->huc3_alarm_minutes,
-            gb->huc3_alarm_days,
-            gb->huc3_alarm_enabled,
-        };
-#endif
         memcpy(buffer, &rtc_save, sizeof(rtc_save));
     }
     else if (gb->cartridge_type->has_rtc) {
-        GB_rtc_save_t rtc_save = {{{{0,}},},};
+        rtc_save_t rtc_save = {{{{0,}},},};
         rtc_save.vba64.rtc_real.seconds = gb->rtc_real.seconds;
         rtc_save.vba64.rtc_real.minutes = gb->rtc_real.minutes;
         rtc_save.vba64.rtc_real.hours = gb->rtc_real.hours;
@@ -804,11 +856,7 @@ int GB_save_battery_to_buffer(GB_gameboy_t *gb, uint8_t *buffer, size_t size)
         rtc_save.vba64.rtc_latched.hours = gb->rtc_latched.hours;
         rtc_save.vba64.rtc_latched.days = gb->rtc_latched.days;
         rtc_save.vba64.rtc_latched.high = gb->rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-        rtc_save.vba64.last_rtc_second = __builtin_bswap64(time(NULL));
-#else
-        rtc_save.vba64.last_rtc_second = time(NULL);
-#endif
+        rtc_save.vba64.last_rtc_second = LE64(time(NULL));
         memcpy(buffer + gb->mbc_ram_size, &rtc_save.vba64, sizeof(rtc_save.vba64));
     }
 
@@ -832,8 +880,8 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
         return EIO;
     }
     if (gb->cartridge_type->mbc_type == GB_TPP1) {
-        GB_tpp1_rtc_save_t rtc_save;
-        GB_fill_tpp1_save_data(gb, &rtc_save);
+        tpp1_rtc_save_t rtc_save;
+        fill_tpp1_save_data(gb, &rtc_save);
         
         if (fwrite(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
             fclose(f);
@@ -841,25 +889,14 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
         }
     }
     else if (gb->cartridge_type->mbc_type == GB_HUC3) {
-#ifdef GB_BIG_ENDIAN
         GB_huc3_rtc_time_t rtc_save = {
-            __builtin_bswap64(gb->last_rtc_second),
-            __builtin_bswap16(gb->huc3_minutes),
-            __builtin_bswap16(gb->huc3_days),
-            __builtin_bswap16(gb->huc3_alarm_minutes),
-            __builtin_bswap16(gb->huc3_alarm_days),
-            gb->huc3_alarm_enabled,
+            LE64(gb->last_rtc_second),
+            LE16(gb->huc3.minutes),
+            LE16(gb->huc3.days),
+            LE16(gb->huc3.alarm_minutes),
+            LE16(gb->huc3.alarm_days),
+            gb->huc3.alarm_enabled,
         };
-#else
-        GB_huc3_rtc_time_t rtc_save = {
-            gb->last_rtc_second,
-            gb->huc3_minutes,
-            gb->huc3_days,
-            gb->huc3_alarm_minutes,
-            gb->huc3_alarm_days,
-            gb->huc3_alarm_enabled,
-        };
-#endif
 
         if (fwrite(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
             fclose(f);
@@ -867,7 +904,7 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
         }
     }
     else if (gb->cartridge_type->has_rtc) {
-        GB_rtc_save_t rtc_save = {{{{0,}},},};
+        rtc_save_t rtc_save = {{{{0,}},},};
         rtc_save.vba64.rtc_real.seconds = gb->rtc_real.seconds;
         rtc_save.vba64.rtc_real.minutes = gb->rtc_real.minutes;
         rtc_save.vba64.rtc_real.hours = gb->rtc_real.hours;
@@ -878,11 +915,7 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
         rtc_save.vba64.rtc_latched.hours = gb->rtc_latched.hours;
         rtc_save.vba64.rtc_latched.days = gb->rtc_latched.days;
         rtc_save.vba64.rtc_latched.high = gb->rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-        rtc_save.vba64.last_rtc_second = __builtin_bswap64(time(NULL));
-#else
-        rtc_save.vba64.last_rtc_second = time(NULL);
-#endif
+        rtc_save.vba64.last_rtc_second = LE64(time(NULL));
         if (fwrite(&rtc_save.vba64, 1, sizeof(rtc_save.vba64), f) != sizeof(rtc_save.vba64)) {
             fclose(f);
             return EIO;
@@ -895,7 +928,7 @@ int GB_save_battery(GB_gameboy_t *gb, const char *path)
     return errno;
 }
 
-static void GB_load_tpp1_save_data(GB_gameboy_t *gb, const GB_tpp1_rtc_save_t *data)
+static void load_tpp1_save_data(GB_gameboy_t *gb, const tpp1_rtc_save_t *data)
 {
     gb->last_rtc_second = LE64(data->last_rtc_second);
     unrolled for (unsigned i = 4; i--;) {
@@ -911,13 +944,13 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
     }
     
     if (gb->cartridge_type->mbc_type == GB_TPP1) {
-        GB_tpp1_rtc_save_t rtc_save;
+        tpp1_rtc_save_t rtc_save;
         if (size - gb->mbc_ram_size < sizeof(rtc_save)) {
             goto reset_rtc;
         }
         memcpy(&rtc_save, buffer + gb->mbc_ram_size, sizeof(rtc_save));
         
-        GB_load_tpp1_save_data(gb, &rtc_save);
+        load_tpp1_save_data(gb, &rtc_save);
         
         if (gb->last_rtc_second > time(NULL)) {
             /* We must reset RTC here, or it will not advance. */
@@ -932,21 +965,12 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
             goto reset_rtc;
         }
         memcpy(&rtc_save, buffer + gb->mbc_ram_size, sizeof(rtc_save));
-#ifdef GB_BIG_ENDIAN
-        gb->last_rtc_second = __builtin_bswap64(rtc_save.last_rtc_second);
-        gb->huc3_minutes = __builtin_bswap16(rtc_save.minutes);
-        gb->huc3_days = __builtin_bswap16(rtc_save.days);
-        gb->huc3_alarm_minutes = __builtin_bswap16(rtc_save.alarm_minutes);
-        gb->huc3_alarm_days = __builtin_bswap16(rtc_save.alarm_days);
-        gb->huc3_alarm_enabled = rtc_save.alarm_enabled;
-#else
-        gb->last_rtc_second = rtc_save.last_rtc_second;
-        gb->huc3_minutes = rtc_save.minutes;
-        gb->huc3_days = rtc_save.days;
-        gb->huc3_alarm_minutes = rtc_save.alarm_minutes;
-        gb->huc3_alarm_days = rtc_save.alarm_days;
-        gb->huc3_alarm_enabled = rtc_save.alarm_enabled;
-#endif
+        gb->last_rtc_second = LE64(rtc_save.last_rtc_second);
+        gb->huc3.minutes = LE16(rtc_save.minutes);
+        gb->huc3.days = LE16(rtc_save.days);
+        gb->huc3.alarm_minutes = LE16(rtc_save.alarm_minutes);
+        gb->huc3.alarm_days = LE16(rtc_save.alarm_days);
+        gb->huc3.alarm_enabled = rtc_save.alarm_enabled;
         if (gb->last_rtc_second > time(NULL)) {
             /* We must reset RTC here, or it will not advance. */
             goto reset_rtc;
@@ -954,7 +978,7 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
         return;
     }
 
-    GB_rtc_save_t rtc_save;
+    rtc_save_t rtc_save;
     memcpy(&rtc_save, buffer + gb->mbc_ram_size, MIN(sizeof(rtc_save), size));
     switch (size - gb->mbc_ram_size) {
         case sizeof(rtc_save.sameboy_legacy):
@@ -974,11 +998,7 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
             gb->rtc_latched.hours = rtc_save.vba32.rtc_latched.hours;
             gb->rtc_latched.days = rtc_save.vba32.rtc_latched.days;
             gb->rtc_latched.high = rtc_save.vba32.rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-            gb->last_rtc_second = __builtin_bswap32(rtc_save.vba32.last_rtc_second);
-#else
-            gb->last_rtc_second = rtc_save.vba32.last_rtc_second;
-#endif
+            gb->last_rtc_second = LE32(rtc_save.vba32.last_rtc_second);
             break;
             
         case sizeof(rtc_save.vba64):
@@ -992,11 +1012,7 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
             gb->rtc_latched.hours = rtc_save.vba64.rtc_latched.hours;
             gb->rtc_latched.days = rtc_save.vba64.rtc_latched.days;
             gb->rtc_latched.high = rtc_save.vba64.rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-            gb->last_rtc_second = __builtin_bswap64(rtc_save.vba64.last_rtc_second);
-#else
-            gb->last_rtc_second = rtc_save.vba64.last_rtc_second;
-#endif
+            gb->last_rtc_second = LE64(rtc_save.vba64.last_rtc_second);
             break;
             
         default:
@@ -1016,9 +1032,11 @@ void GB_load_battery_from_buffer(GB_gameboy_t *gb, const uint8_t *buffer, size_t
 reset_rtc:
     gb->last_rtc_second = time(NULL);
     gb->rtc_real.high |= 0x80; /* This gives the game a hint that the clock should be reset. */
-    gb->huc3_days = 0xFFFF;
-    gb->huc3_minutes = 0xFFF;
-    gb->huc3_alarm_enabled = false;
+    if (gb->cartridge_type->mbc_type == GB_HUC3) {
+        gb->huc3.days = 0xFFFF;
+        gb->huc3.minutes = 0xFFF;
+        gb->huc3.alarm_enabled = false;
+    }
 exit:
     return;
 }
@@ -1036,12 +1054,12 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
     }
     
     if (gb->cartridge_type->mbc_type == GB_TPP1) {
-        GB_tpp1_rtc_save_t rtc_save;
+        tpp1_rtc_save_t rtc_save;
         if (fread(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
             goto reset_rtc;
         }
         
-        GB_load_tpp1_save_data(gb, &rtc_save);
+        load_tpp1_save_data(gb, &rtc_save);
         
         if (gb->last_rtc_second > time(NULL)) {
             /* We must reset RTC here, or it will not advance. */
@@ -1055,21 +1073,13 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
         if (fread(&rtc_save, sizeof(rtc_save), 1, f) != 1) {
             goto reset_rtc;
         }
-#ifdef GB_BIG_ENDIAN
-        gb->last_rtc_second = __builtin_bswap64(rtc_save.last_rtc_second);
-        gb->huc3_minutes = __builtin_bswap16(rtc_save.minutes);
-        gb->huc3_days = __builtin_bswap16(rtc_save.days);
-        gb->huc3_alarm_minutes = __builtin_bswap16(rtc_save.alarm_minutes);
-        gb->huc3_alarm_days = __builtin_bswap16(rtc_save.alarm_days);
-        gb->huc3_alarm_enabled = rtc_save.alarm_enabled;
-#else
-        gb->last_rtc_second = rtc_save.last_rtc_second;
-        gb->huc3_minutes = rtc_save.minutes;
-        gb->huc3_days = rtc_save.days;
-        gb->huc3_alarm_minutes = rtc_save.alarm_minutes;
-        gb->huc3_alarm_days = rtc_save.alarm_days;
-        gb->huc3_alarm_enabled = rtc_save.alarm_enabled;
-#endif
+        gb->last_rtc_second = LE64(rtc_save.last_rtc_second);
+        gb->huc3.minutes = LE16(rtc_save.minutes);
+        gb->huc3.days = LE16(rtc_save.days);
+        gb->huc3.alarm_minutes = LE16(rtc_save.alarm_minutes);
+        gb->huc3.alarm_days = LE16(rtc_save.alarm_days);
+        gb->huc3.alarm_enabled = rtc_save.alarm_enabled;
+
         if (gb->last_rtc_second > time(NULL)) {
             /* We must reset RTC here, or it will not advance. */
             goto reset_rtc;
@@ -1077,7 +1087,7 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
         return;
     }
 
-    GB_rtc_save_t rtc_save;
+    rtc_save_t rtc_save;
     switch (fread(&rtc_save, 1, sizeof(rtc_save), f)) {
         case sizeof(rtc_save.sameboy_legacy):
             memcpy(&gb->rtc_real, &rtc_save.sameboy_legacy.rtc_real, sizeof(gb->rtc_real));
@@ -1096,11 +1106,7 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
             gb->rtc_latched.hours = rtc_save.vba32.rtc_latched.hours;
             gb->rtc_latched.days = rtc_save.vba32.rtc_latched.days;
             gb->rtc_latched.high = rtc_save.vba32.rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-            gb->last_rtc_second = __builtin_bswap32(rtc_save.vba32.last_rtc_second);
-#else
-            gb->last_rtc_second = rtc_save.vba32.last_rtc_second;
-#endif
+            gb->last_rtc_second = LE32(rtc_save.vba32.last_rtc_second);
             break;
             
         case sizeof(rtc_save.vba64):
@@ -1114,11 +1120,7 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
             gb->rtc_latched.hours = rtc_save.vba64.rtc_latched.hours;
             gb->rtc_latched.days = rtc_save.vba64.rtc_latched.days;
             gb->rtc_latched.high = rtc_save.vba64.rtc_latched.high;
-#ifdef GB_BIG_ENDIAN
-            gb->last_rtc_second = __builtin_bswap64(rtc_save.vba64.last_rtc_second);
-#else
-            gb->last_rtc_second = rtc_save.vba64.last_rtc_second;
-#endif
+            gb->last_rtc_second = LE64(rtc_save.vba64.last_rtc_second);
             break;
             
         default:
@@ -1138,26 +1140,28 @@ void GB_load_battery(GB_gameboy_t *gb, const char *path)
 reset_rtc:
     gb->last_rtc_second = time(NULL);
     gb->rtc_real.high |= 0x80; /* This gives the game a hint that the clock should be reset. */
-    gb->huc3_days = 0xFFFF;
-    gb->huc3_minutes = 0xFFF;
-    gb->huc3_alarm_enabled = false;
+    if (gb->cartridge_type->mbc_type == GB_HUC3) {
+        gb->huc3.days = 0xFFFF;
+        gb->huc3.minutes = 0xFFF;
+        gb->huc3.alarm_enabled = false;
+    }
 exit:
     fclose(f);
     return;
 }
 
-uint8_t GB_run(GB_gameboy_t *gb)
+unsigned GB_run(GB_gameboy_t *gb)
 {
     gb->vblank_just_occured = false;
 
-    if (gb->sgb && gb->sgb->intro_animation < 140) {
+    if (gb->sgb && gb->sgb->intro_animation < 96) {
         /* On the SGB, the GB is halted after finishing the boot ROM.
            Then, after the boot animation is almost done, it's reset.
            Since the SGB HLE does not perform any header validity checks,
            we just halt the CPU (with hacky code) until the correct time.
            This ensures the Nintendo logo doesn't flash on screen, and
            the game does "run in background" while the animation is playing. */
-        GB_display_run(gb, 228);
+        GB_display_run(gb, 228, true);
         gb->cycles_since_last_sync += 228;
         return 228;
     }
@@ -1168,6 +1172,9 @@ uint8_t GB_run(GB_gameboy_t *gb)
     if (gb->vblank_just_occured) {
         GB_debugger_handle_async_commands(gb);
         GB_rewind_push(gb);
+    }
+    if (!(gb->io_registers[GB_IO_IF] & 0x10) && (gb->io_registers[GB_IO_JOYP] & 0x30) != 0x30) {
+        gb->joyp_accessed = true;
     }
     return gb->cycles_since_run;
 }
@@ -1197,6 +1204,11 @@ void GB_set_pixels_output(GB_gameboy_t *gb, uint32_t *output)
     gb->screen = output;
 }
 
+uint32_t *GB_get_pixels_output(GB_gameboy_t *gb)
+{
+    return gb->screen;
+}
+
 void GB_set_vblank_callback(GB_gameboy_t *gb, GB_vblank_callback_t callback)
 {
     gb->vblank_callback = callback;
@@ -1224,22 +1236,37 @@ void GB_set_async_input_callback(GB_gameboy_t *gb, GB_input_callback_t callback)
 #endif
 }
 
-const GB_palette_t GB_PALETTE_GREY = {{{0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xaa, 0xaa, 0xaa}, {0xff, 0xff, 0xff}, {0xff, 0xff, 0xff}}};
-const GB_palette_t GB_PALETTE_DMG  = {{{0x08, 0x18, 0x10}, {0x39, 0x61, 0x39}, {0x84, 0xa5, 0x63}, {0xc6, 0xde, 0x8c}, {0xd2, 0xe6, 0xa6}}};
-const GB_palette_t GB_PALETTE_MGB  = {{{0x07, 0x10, 0x0e}, {0x3a, 0x4c, 0x3a}, {0x81, 0x8d, 0x66}, {0xc2, 0xce, 0x93}, {0xcf, 0xda, 0xac}}};
-const GB_palette_t GB_PALETTE_GBL  = {{{0x0a, 0x1c, 0x15}, {0x35, 0x78, 0x62}, {0x56, 0xb4, 0x95}, {0x7f, 0xe2, 0xc3}, {0x91, 0xea, 0xd0}}};
+void GB_set_execution_callback(GB_gameboy_t *gb, GB_execution_callback_t callback)
+{
+    gb->execution_callback = callback;
+}
+
+void GB_set_lcd_line_callback(GB_gameboy_t *gb, GB_lcd_line_callback_t callback)
+{
+    gb->lcd_line_callback = callback;
+}
+
+void GB_set_lcd_status_callback(GB_gameboy_t *gb, GB_lcd_status_callback_t callback)
+{
+    gb->lcd_status_callback = callback;
+}
+
+const GB_palette_t GB_PALETTE_GREY = {{{0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xAA, 0xAA, 0xAA}, {0xFF, 0xFF, 0xFF}, {0xFF, 0xFF, 0xFF}}};
+const GB_palette_t GB_PALETTE_DMG  = {{{0x08, 0x18, 0x10}, {0x39, 0x61, 0x39}, {0x84, 0xA5, 0x63}, {0xC6, 0xDE, 0x8C}, {0xD2, 0xE6, 0xA6}}};
+const GB_palette_t GB_PALETTE_MGB  = {{{0x07, 0x10, 0x0E}, {0x3A, 0x4C, 0x3A}, {0x81, 0x8D, 0x66}, {0xC2, 0xCE, 0x93}, {0xCF, 0xDA, 0xAC}}};
+const GB_palette_t GB_PALETTE_GBL  = {{{0x0A, 0x1C, 0x15}, {0x35, 0x78, 0x62}, {0x56, 0xB4, 0x95}, {0x7F, 0xE2, 0xC3}, {0x91, 0xEA, 0xD0}}};
 
 static void update_dmg_palette(GB_gameboy_t *gb)
 {
     const GB_palette_t *palette = gb->dmg_palette ?: &GB_PALETTE_GREY;
     if (gb->rgb_encode_callback && !GB_is_cgb(gb)) {
-        gb->sprite_palettes_rgb[4] = gb->sprite_palettes_rgb[0] = gb->background_palettes_rgb[0] =
+        gb->object_palettes_rgb[4] = gb->object_palettes_rgb[0] = gb->background_palettes_rgb[0] =
         gb->rgb_encode_callback(gb, palette->colors[3].r, palette->colors[3].g, palette->colors[3].b);
-        gb->sprite_palettes_rgb[5] = gb->sprite_palettes_rgb[1] = gb->background_palettes_rgb[1] =
+        gb->object_palettes_rgb[5] = gb->object_palettes_rgb[1] = gb->background_palettes_rgb[1] =
         gb->rgb_encode_callback(gb, palette->colors[2].r, palette->colors[2].g, palette->colors[2].b);
-        gb->sprite_palettes_rgb[6] = gb->sprite_palettes_rgb[2] = gb->background_palettes_rgb[2] =
+        gb->object_palettes_rgb[6] = gb->object_palettes_rgb[2] = gb->background_palettes_rgb[2] =
         gb->rgb_encode_callback(gb, palette->colors[1].r, palette->colors[1].g, palette->colors[1].b);
-        gb->sprite_palettes_rgb[7] = gb->sprite_palettes_rgb[3] = gb->background_palettes_rgb[3] =
+        gb->object_palettes_rgb[7] = gb->object_palettes_rgb[3] = gb->background_palettes_rgb[3] =
         gb->rgb_encode_callback(gb, palette->colors[0].r, palette->colors[0].g, palette->colors[0].b);
         
         // LCD off color
@@ -1252,6 +1279,11 @@ void GB_set_palette(GB_gameboy_t *gb, const GB_palette_t *palette)
 {
     gb->dmg_palette = palette;
     update_dmg_palette(gb);
+}
+
+const GB_palette_t *GB_get_palette(GB_gameboy_t *gb)
+{
+    return gb->dmg_palette;
 }
 
 void GB_set_rgb_encode_callback(GB_gameboy_t *gb, GB_rgb_encode_callback_t callback)
@@ -1293,26 +1325,38 @@ void GB_set_serial_transfer_bit_end_callback(GB_gameboy_t *gb, GB_serial_transfe
 
 bool GB_serial_get_data_bit(GB_gameboy_t *gb)
 {
+    if (!(gb->io_registers[GB_IO_SC] & 0x80)) {
+        /* Disabled serial returns 0 bits */
+        return false;
+    }
+    
     if (gb->io_registers[GB_IO_SC] & 1) {
         /* Internal Clock */
         GB_log(gb, "Serial read request while using internal clock. \n");
-        return 0xFF;
+        return true;
     }
     return gb->io_registers[GB_IO_SB] & 0x80;
 }
 
 void GB_serial_set_data_bit(GB_gameboy_t *gb, bool data)
 {
+    if (!(gb->io_registers[GB_IO_SC] & 0x80)) {
+        /* Serial disabled */
+        return;
+    }
+
     if (gb->io_registers[GB_IO_SC] & 1) {
         /* Internal Clock */
         GB_log(gb, "Serial write request while using internal clock. \n");
         return;
     }
+    
     gb->io_registers[GB_IO_SB] <<= 1;
     gb->io_registers[GB_IO_SB] |= data;
     gb->serial_count++;
     if (gb->serial_count == 8) {
         gb->io_registers[GB_IO_IF] |= 8;
+        gb->io_registers[GB_IO_SC] &= ~0x80;
         gb->serial_count = 0;
     }
 }
@@ -1332,9 +1376,14 @@ bool GB_is_inited(GB_gameboy_t *gb)
     return gb->magic == state_magic();
 }
 
-bool GB_is_cgb(GB_gameboy_t *gb)
+bool GB_is_cgb(const GB_gameboy_t *gb)
 {
-    return (gb->model & GB_MODEL_FAMILY_MASK) == GB_MODEL_CGB_FAMILY;
+    return gb->model >= GB_MODEL_CGB_0;
+}
+
+bool GB_is_cgb_in_cgb_mode(GB_gameboy_t *gb)
+{
+    return gb->cgb_mode;
 }
 
 bool GB_is_sgb(GB_gameboy_t *gb)
@@ -1371,8 +1420,10 @@ void GB_set_user_data(GB_gameboy_t *gb, void *data)
 static void reset_ram(GB_gameboy_t *gb)
 {
     switch (gb->model) {
+        case GB_MODEL_MGB:
         case GB_MODEL_CGB_E:
-        case GB_MODEL_AGB: /* Unverified */
+        case GB_MODEL_AGB_A: /* Unverified */
+        case GB_MODEL_GBP_A:
             for (unsigned i = 0; i < gb->ram_size; i++) {
                 gb->ram[i] = GB_random();
             }
@@ -1401,14 +1452,28 @@ static void reset_ram(GB_gameboy_t *gb)
                 gb->ram[i] ^= GB_random() & GB_random() & GB_random();
             }
             break;
-        
+
+        case GB_MODEL_CGB_0:
+        case GB_MODEL_CGB_A:
+        case GB_MODEL_CGB_B:
         case GB_MODEL_CGB_C:
             for (unsigned i = 0; i < gb->ram_size; i++) {
                 if ((i & 0x808) == 0x800 || (i & 0x808) == 0x008) {
                     gb->ram[i] = 0;
                 }
                 else {
-                    gb->ram[i] = GB_random() | GB_random() | GB_random() | GB_random();
+                    gb->ram[i] = GB_random() | GB_random() | GB_random() | GB_random() | GB_random();
+                }
+            }
+            break;
+        case GB_MODEL_CGB_D:
+             for (unsigned i = 0; i < gb->ram_size; i++) {
+                gb->ram[i] = GB_random();
+                if (i & 0x800) {
+                    gb->ram[i] &= GB_random();
+                }
+                else {
+                    gb->ram[i] |= GB_random();
                 }
             }
             break;
@@ -1416,16 +1481,21 @@ static void reset_ram(GB_gameboy_t *gb)
     
     /* HRAM */
     switch (gb->model) {
+        case GB_MODEL_CGB_0:
+        case GB_MODEL_CGB_A:
+        case GB_MODEL_CGB_B:
         case GB_MODEL_CGB_C:
-        // case GB_MODEL_CGB_D:
+        case GB_MODEL_CGB_D:
         case GB_MODEL_CGB_E:
-        case GB_MODEL_AGB:
+        case GB_MODEL_AGB_A:
+        case GB_MODEL_GBP_A:
             for (unsigned i = 0; i < sizeof(gb->hram); i++) {
                 gb->hram[i] = GB_random();
             }
             break;
             
         case GB_MODEL_DMG_B:
+        case GB_MODEL_MGB:
         case GB_MODEL_SGB_NTSC: /* Unverified*/
         case GB_MODEL_SGB_PAL: /* Unverified */
         case GB_MODEL_SGB_NTSC_NO_SFC: /* Unverified */
@@ -1445,13 +1515,19 @@ static void reset_ram(GB_gameboy_t *gb)
     
     /* OAM */
     switch (gb->model) {
+        case GB_MODEL_CGB_0:
+        case GB_MODEL_CGB_A:
+        case GB_MODEL_CGB_B:
         case GB_MODEL_CGB_C:
+        case GB_MODEL_CGB_D: 
         case GB_MODEL_CGB_E:
-        case GB_MODEL_AGB:
-            /* Zero'd out by boot ROM anyway*/
+        case GB_MODEL_AGB_A:
+        case GB_MODEL_GBP_A:
+            /* Zero'd out by boot ROM anyway */
             break;
             
         case GB_MODEL_DMG_B:
+        case GB_MODEL_MGB:
         case GB_MODEL_SGB_NTSC: /* Unverified */
         case GB_MODEL_SGB_PAL: /* Unverified */
         case GB_MODEL_SGB_NTSC_NO_SFC: /* Unverified */
@@ -1474,12 +1550,27 @@ static void reset_ram(GB_gameboy_t *gb)
     
     /* Wave RAM */
     switch (gb->model) {
+        case GB_MODEL_CGB_0:
+        case GB_MODEL_CGB_A:
+        case GB_MODEL_CGB_B:
         case GB_MODEL_CGB_C:
+        case GB_MODEL_CGB_D:
         case GB_MODEL_CGB_E:
-        case GB_MODEL_AGB:
-            /* Initialized by CGB-A and newer, 0s in CGB-0*/
+        case GB_MODEL_AGB_A:
+        case GB_MODEL_GBP_A:
+            /* Initialized by CGB-A and newer, 0s in CGB-0 */
             break;
-            
+        case GB_MODEL_MGB: {
+            for (unsigned i = 0; i < GB_IO_WAV_END - GB_IO_WAV_START; i++) {
+                if (i & 1) {
+                    gb->io_registers[GB_IO_WAV_START + i] = GB_random() & GB_random();
+                }
+                else {
+                    gb->io_registers[GB_IO_WAV_START + i] = GB_random() | GB_random();
+                }
+            }
+            break;
+        }
         case GB_MODEL_DMG_B:
         case GB_MODEL_SGB_NTSC: /* Unverified*/
         case GB_MODEL_SGB_PAL: /* Unverified */
@@ -1487,18 +1578,13 @@ static void reset_ram(GB_gameboy_t *gb)
         case GB_MODEL_SGB_PAL_NO_SFC: /* Unverified */
         case GB_MODEL_SGB2:
         case GB_MODEL_SGB2_NO_SFC: {
-            uint8_t temp;
             for (unsigned i = 0; i < GB_IO_WAV_END - GB_IO_WAV_START; i++) {
                 if (i & 1) {
-                    temp = GB_random() & GB_random() & GB_random();
+                    gb->io_registers[GB_IO_WAV_START + i] = GB_random() & GB_random() & GB_random();
                 }
                 else {
-                    temp = GB_random() | GB_random() | GB_random();
+                    gb->io_registers[GB_IO_WAV_START + i] = GB_random() | GB_random() | GB_random();
                 }
-                gb->apu.wave_channel.wave_form[i * 2]     = temp >> 4;
-                gb->apu.wave_channel.wave_form[i * 2 + 1] = temp & 0xF;
-                gb->io_registers[GB_IO_WAV_START + i] = temp;
-
             }
             break;
         }
@@ -1511,12 +1597,16 @@ static void reset_ram(GB_gameboy_t *gb)
     if (GB_is_cgb(gb)) {
         for (unsigned i = 0; i < 64; i++) {
             gb->background_palettes_data[i] = GB_random(); /* Doesn't really matter as the boot ROM overrides it anyway*/
-            gb->sprite_palettes_data[i] = GB_random();
+            gb->object_palettes_data[i] = GB_random();
         }
         for (unsigned i = 0; i < 32; i++) {
             GB_palette_changed(gb, true, i * 2);
             GB_palette_changed(gb, false, i * 2);
         }
+    }
+    
+    if (!gb->cartridge_type->has_battery) {
+        memset(gb->mbc_ram, 0xFF, gb->mbc_ram_size);
     }
 }
 
@@ -1528,6 +1618,9 @@ static void request_boot_rom(GB_gameboy_t *gb)
             case GB_MODEL_DMG_B:
                 type = GB_BOOT_ROM_DMG;
                 break;
+            case GB_MODEL_MGB:
+                type = GB_BOOT_ROM_MGB;
+                break;
             case GB_MODEL_SGB_NTSC:
             case GB_MODEL_SGB_PAL:
             case GB_MODEL_SGB_NTSC_NO_SFC:
@@ -1538,11 +1631,18 @@ static void request_boot_rom(GB_gameboy_t *gb)
             case GB_MODEL_SGB2_NO_SFC:
                 type = GB_BOOT_ROM_SGB2;
                 break;
+            case GB_MODEL_CGB_0:
+                type = GB_BOOT_ROM_CGB_0;
+                break;
+            case GB_MODEL_CGB_A:
+            case GB_MODEL_CGB_B:
             case GB_MODEL_CGB_C:
+            case GB_MODEL_CGB_D:
             case GB_MODEL_CGB_E:
                 type = GB_BOOT_ROM_CGB;
                 break;
-            case GB_MODEL_AGB:
+            case GB_MODEL_AGB_A:
+            case GB_MODEL_GBP_A:
                 type = GB_BOOT_ROM_AGB;
                 break;
         }
@@ -1550,15 +1650,41 @@ static void request_boot_rom(GB_gameboy_t *gb)
     }
 }
 
-void GB_reset(GB_gameboy_t *gb)
+static void GB_reset_internal(GB_gameboy_t *gb, bool quick)
 {
+    struct {
+        uint8_t hram[sizeof(gb->hram)];
+        uint8_t background_palettes_data[sizeof(gb->background_palettes_data)];
+        uint8_t object_palettes_data[sizeof(gb->object_palettes_data)];
+        uint8_t oam[sizeof(gb->oam)];
+        uint8_t extra_oam[sizeof(gb->extra_oam)];
+        uint8_t dma, obp0, obp1;
+    } *preserved_state = NULL;
+    
+    if (quick) {
+        preserved_state = alloca(sizeof(*preserved_state));
+        memcpy(preserved_state->hram, gb->hram, sizeof(gb->hram));
+        memcpy(preserved_state->background_palettes_data, gb->background_palettes_data, sizeof(gb->background_palettes_data));
+        memcpy(preserved_state->object_palettes_data, gb->object_palettes_data, sizeof(gb->object_palettes_data));
+        memcpy(preserved_state->oam, gb->oam, sizeof(gb->oam));
+        memcpy(preserved_state->extra_oam, gb->extra_oam, sizeof(gb->extra_oam));
+        preserved_state->dma = gb->io_registers[GB_IO_DMA];
+        preserved_state->obp0 = gb->io_registers[GB_IO_OBP0];
+        preserved_state->obp1 = gb->io_registers[GB_IO_OBP1];
+    }
+    
     uint32_t mbc_ram_size = gb->mbc_ram_size;
     GB_model_t model = gb->model;
+    GB_update_clock_rate(gb);
+    uint8_t rtc_section[GB_SECTION_SIZE(rtc)];
+    memcpy(rtc_section, GB_GET_SECTION(gb, rtc), sizeof(rtc_section));
     memset(gb, 0, (size_t)GB_GET_SECTION((GB_gameboy_t *) 0, unsaved));
+    memcpy(GB_GET_SECTION(gb, rtc), rtc_section, sizeof(rtc_section));
     gb->model = model;
     gb->version = GB_STRUCT_VERSION;
     
-    gb->mbc_rom_bank = 1;
+    GB_reset_mbc(gb);
+    
     gb->last_rtc_second = time(NULL);
     gb->cgb_ram_bank = 1;
     gb->io_registers[GB_IO_JOYP] = 0xCF;
@@ -1578,18 +1704,12 @@ void GB_reset(GB_gameboy_t *gb)
         
         update_dmg_palette(gb);
     }
-    reset_ram(gb);
     
-    /* The serial interrupt always occur on the 0xF7th cycle of every 0x100 cycle since boot. */
-    gb->serial_cycles = 0x100-0xF7;
+    gb->serial_mask = 0x80;
     gb->io_registers[GB_IO_SC] = 0x7E;
-    
-    /* These are not deterministic, but 00 (CGB) and FF (DMG) are the most common initial values by far */
-    gb->io_registers[GB_IO_DMA] = gb->io_registers[GB_IO_OBP0] = gb->io_registers[GB_IO_OBP1] = GB_is_cgb(gb)? 0x00 : 0xFF;
-    
     gb->accessed_oam_row = -1;
-    
-    
+    gb->dma_current_dest = 0xA1;
+
     if (GB_is_hle_sgb(gb)) {
         if (!gb->sgb) {
             gb->sgb = malloc(sizeof(*gb->sgb));
@@ -1611,18 +1731,42 @@ void GB_reset(GB_gameboy_t *gb)
         }
     }
     
-    /* Todo: Ugly, fixme, see comment in the timer state machine */
-    gb->div_state = 3;
+    GB_set_internal_div_counter(gb, 8);
 
-    GB_apu_update_cycles_per_sample(gb);
-    
     if (gb->nontrivial_jump_state) {
         free(gb->nontrivial_jump_state);
         gb->nontrivial_jump_state = NULL;
     }
     
+    if (!quick) {
+        reset_ram(gb);
+        /* These are not deterministic, but 00 (CGB) and FF (DMG) are the most common initial values by far.
+         The retain their previous values on quick resets */
+        gb->io_registers[GB_IO_DMA] = gb->io_registers[GB_IO_OBP0] = gb->io_registers[GB_IO_OBP1] = GB_is_cgb(gb)? 0x00 : 0xFF;
+    }
+    else {
+        memcpy(gb->hram, preserved_state->hram, sizeof(gb->hram));
+        memcpy(gb->background_palettes_data, preserved_state->background_palettes_data, sizeof(gb->background_palettes_data));
+        memcpy(gb->object_palettes_data, preserved_state->object_palettes_data, sizeof(gb->object_palettes_data));
+        memcpy(gb->oam, preserved_state->oam, sizeof(gb->oam));
+        memcpy(gb->extra_oam, preserved_state->extra_oam, sizeof(gb->extra_oam));
+        gb->io_registers[GB_IO_DMA] = preserved_state->dma;
+        gb->io_registers[GB_IO_OBP0] = preserved_state->obp0;
+        gb->io_registers[GB_IO_OBP1] = preserved_state->obp1;
+    }
+    
     gb->magic = state_magic();
     request_boot_rom(gb);
+}
+
+void GB_reset(GB_gameboy_t *gb)
+{
+    GB_reset_internal(gb, false);
+}
+
+void GB_quick_reset(GB_gameboy_t *gb)
+{
+    GB_reset_internal(gb, true);
 }
 
 void GB_switch_model_and_reset(GB_gameboy_t *gb, GB_model_t model)
@@ -1662,7 +1806,11 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
     switch (access) {
         case GB_DIRECT_ACCESS_ROM:
             *size = gb->rom_size;
-            *bank = gb->mbc_rom_bank;
+            *bank = gb->mbc_rom_bank & (gb->rom_size / 0x4000 - 1);
+            return gb->rom;
+        case GB_DIRECT_ACCESS_ROM0:
+            *size = gb->rom_size;
+            *bank = gb->mbc_rom0_bank & (gb->rom_size / 0x4000 - 1);
             return gb->rom;
         case GB_DIRECT_ACCESS_RAM:
             *size = gb->ram_size;
@@ -1670,7 +1818,7 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
             return gb->ram;
         case GB_DIRECT_ACCESS_CART_RAM:
             *size = gb->mbc_ram_size;
-            *bank = gb->mbc_ram_bank;
+            *bank = gb->mbc_ram_bank & (gb->mbc_ram_size / 0x2000 - 1);
             return gb->mbc_ram;
         case GB_DIRECT_ACCESS_VRAM:
             *size = gb->vram_size;
@@ -1697,9 +1845,9 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
             *bank = 0;
             return &gb->background_palettes_data;
         case GB_DIRECT_ACCESS_OBP:
-            *size = sizeof(gb->sprite_palettes_data);
+            *size = sizeof(gb->object_palettes_data);
             *bank = 0;
-            return &gb->sprite_palettes_data;
+            return &gb->object_palettes_data;
         case GB_DIRECT_ACCESS_IE:
             *size = sizeof(gb->interrupt_enable);
             *bank = 0;
@@ -1711,28 +1859,42 @@ void *GB_get_direct_access(GB_gameboy_t *gb, GB_direct_access_t access, size_t *
     }
 }
 
+GB_registers_t *GB_get_registers(GB_gameboy_t *gb)
+{
+    return (GB_registers_t *)&gb->registers;
+}
+
 void GB_set_clock_multiplier(GB_gameboy_t *gb, double multiplier)
 {
     gb->clock_multiplier = multiplier;
-    GB_apu_update_cycles_per_sample(gb);
+    GB_update_clock_rate(gb);
 }
 
 uint32_t GB_get_clock_rate(GB_gameboy_t *gb)
 {
-    return GB_get_unmultiplied_clock_rate(gb) * gb->clock_multiplier;
+    return gb->clock_rate;
 }
-
 
 uint32_t GB_get_unmultiplied_clock_rate(GB_gameboy_t *gb)
 {
-    if (gb->model & GB_MODEL_PAL_BIT) {
-        return SGB_PAL_FREQUENCY;
-    }
-    if ((gb->model & ~GB_MODEL_NO_SFC_BIT) == GB_MODEL_SGB) {
-        return SGB_NTSC_FREQUENCY;
-    }
-    return CPU_FREQUENCY;
+    return gb->unmultiplied_clock_rate;
 }
+
+void GB_update_clock_rate(GB_gameboy_t *gb)
+{
+    if (gb->model & GB_MODEL_PAL_BIT) {
+        gb->unmultiplied_clock_rate = SGB_PAL_FREQUENCY;
+    }
+    else if ((gb->model & ~GB_MODEL_NO_SFC_BIT) == GB_MODEL_SGB) {
+        gb->unmultiplied_clock_rate = SGB_NTSC_FREQUENCY;
+    }
+    else {
+        gb->unmultiplied_clock_rate = CPU_FREQUENCY;
+    }
+    
+    gb->clock_rate = gb->unmultiplied_clock_rate * gb->clock_multiplier;
+}
+
 void GB_set_border_mode(GB_gameboy_t *gb, GB_border_mode_t border_mode)
 {
     if (gb->border_mode > GB_BORDER_ALWAYS) return;
@@ -1810,19 +1972,89 @@ void GB_set_boot_rom_load_callback(GB_gameboy_t *gb, GB_boot_rom_load_callback_t
 unsigned GB_time_to_alarm(GB_gameboy_t *gb)
 {
     if (gb->cartridge_type->mbc_type != GB_HUC3) return 0;
-    if (!gb->huc3_alarm_enabled) return 0;
-    if (!(gb->huc3_alarm_days & 0x2000)) return 0;
-    unsigned current_time = (gb->huc3_days & 0x1FFF) * 24 * 60 * 60 + gb->huc3_minutes * 60 + (time(NULL) % 60);
-    unsigned alarm_time = (gb->huc3_alarm_days & 0x1FFF) * 24 * 60 * 60 + gb->huc3_alarm_minutes * 60;
+    if (!gb->huc3.alarm_enabled) return 0;
+    if (!(gb->huc3.alarm_days & 0x2000)) return 0;
+    unsigned current_time = (gb->huc3.days & 0x1FFF) * 24 * 60 * 60 + gb->huc3.minutes * 60 + (time(NULL) % 60);
+    unsigned alarm_time = (gb->huc3.alarm_days & 0x1FFF) * 24 * 60 * 60 + gb->huc3.alarm_minutes * 60;
     if (current_time > alarm_time) return 0;
     return alarm_time - current_time;
 }
 
-void GB_set_rtc_mode(GB_gameboy_t *gb, GB_rtc_mode_t mode)
+bool GB_has_accelerometer(GB_gameboy_t *gb)
 {
-    if (gb->rtc_mode != mode) {
-        gb->rtc_mode = mode;
-        gb->rtc_cycles = 0;
-        gb->last_rtc_second = time(NULL);
+    return gb->cartridge_type->mbc_type == GB_MBC7;
+}
+
+void GB_set_accelerometer_values(GB_gameboy_t *gb, double x, double y)
+{
+    gb->accelerometer_x = x;
+    gb->accelerometer_y = y;
+}
+
+void GB_get_rom_title(GB_gameboy_t *gb, char *title)
+{
+    memset(title, 0, 17);
+    if (gb->rom_size >= 0x4000) {
+        for (unsigned i = 0; i < 0x10; i++) {
+            if (gb->rom[0x134 + i] < 0x20 || gb->rom[0x134 + i] >= 0x80) break;
+            title[i] = gb->rom[0x134 + i];
+        }
     }
+}
+
+uint32_t GB_get_rom_crc32(GB_gameboy_t *gb)
+{
+    static const uint32_t table[] = {
+        0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F,
+        0xE963A535, 0x9E6495A3, 0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,
+        0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91, 0x1DB71064, 0x6AB020F2,
+        0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
+        0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC, 0x14015C4F, 0x63066CD9,
+        0xFA0F3D63, 0x8D080DF5, 0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172,
+        0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B, 0x35B5A8FA, 0x42B2986C,
+        0xDBBBC9D6, 0xACBCF940, 0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
+        0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116, 0x21B4F4B5, 0x56B3C423,
+        0xCFBA9599, 0xB8BDA50F, 0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924,
+        0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D, 0x76DC4190, 0x01DB7106,
+        0x98D220BC, 0xEFD5102A, 0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
+        0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818, 0x7F6A0DBB, 0x086D3D2D,
+        0x91646C97, 0xE6635C01, 0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E,
+        0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457, 0x65B0D9C6, 0x12B7E950,
+        0x8BBEB8EA, 0xFCB9887C, 0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65,
+        0x4DB26158, 0x3AB551CE, 0xA3BC0074, 0xD4BB30E2, 0x4ADFA541, 0x3DD895D7,
+        0xA4D1C46D, 0xD3D6F4FB, 0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0,
+        0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7CC9, 0x5005713C, 0x270241AA,
+        0xBE0B1010, 0xC90C2086, 0x5768B525, 0x206F85B3, 0xB966D409, 0xCE61E49F,
+        0x5EDEF90E, 0x29D9C998, 0xB0D09822, 0xC7D7A8B4, 0x59B33D17, 0x2EB40D81,
+        0xB7BD5C3B, 0xC0BA6CAD, 0xEDB88320, 0x9ABFB3B6, 0x03B6E20C, 0x74B1D29A,
+        0xEAD54739, 0x9DD277AF, 0x04DB2615, 0x73DC1683, 0xE3630B12, 0x94643B84,
+        0x0D6D6A3E, 0x7A6A5AA8, 0xE40ECF0B, 0x9309FF9D, 0x0A00AE27, 0x7D079EB1,
+        0xF00F9344, 0x8708A3D2, 0x1E01F268, 0x6906C2FE, 0xF762575D, 0x806567CB,
+        0x196C3671, 0x6E6B06E7, 0xFED41B76, 0x89D32BE0, 0x10DA7A5A, 0x67DD4ACC,
+        0xF9B9DF6F, 0x8EBEEFF9, 0x17B7BE43, 0x60B08ED5, 0xD6D6A3E8, 0xA1D1937E,
+        0x38D8C2C4, 0x4FDFF252, 0xD1BB67F1, 0xA6BC5767, 0x3FB506DD, 0x48B2364B,
+        0xD80D2BDA, 0xAF0A1B4C, 0x36034AF6, 0x41047A60, 0xDF60EFC3, 0xA867DF55,
+        0x316E8EEF, 0x4669BE79, 0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236,
+        0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F, 0xC5BA3BBE, 0xB2BD0B28,
+        0x2BB45A92, 0x5CB36A04, 0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
+        0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A, 0x9C0906A9, 0xEB0E363F,
+        0x72076785, 0x05005713, 0x95BF4A82, 0xE2B87A14, 0x7BB12BAE, 0x0CB61B38,
+        0x92D28E9B, 0xE5D5BE0D, 0x7CDCEFB7, 0x0BDBDF21, 0x86D3D2D4, 0xF1D4E242,
+        0x68DDB3F8, 0x1FDA836E, 0x81BE16CD, 0xF6B9265B, 0x6FB077E1, 0x18B74777,
+        0x88085AE6, 0xFF0F6A70, 0x66063BCA, 0x11010B5C, 0x8F659EFF, 0xF862AE69,
+        0x616BFFD3, 0x166CCF45, 0xA00AE278, 0xD70DD2EE, 0x4E048354, 0x3903B3C2,
+        0xA7672661, 0xD06016F7, 0x4969474D, 0x3E6E77DB, 0xAED16A4A, 0xD9D65ADC,
+        0x40DF0B66, 0x37D83BF0, 0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
+        0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6, 0xBAD03605, 0xCDD70693,
+        0x54DE5729, 0x23D967BF, 0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94,
+        0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
+    };
+    
+    const uint8_t *byte = gb->rom;
+    uint32_t size = gb->rom_size;
+    uint32_t ret = 0xFFFFFFFF;
+    while (size--) {
+        ret = table[(ret ^ *byte++) & 0xFF] ^ (ret >> 8);
+    }
+    return ~ret;
 }
