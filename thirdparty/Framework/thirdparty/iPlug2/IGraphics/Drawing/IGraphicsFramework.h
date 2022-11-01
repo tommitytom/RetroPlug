@@ -13,6 +13,8 @@
 #include "IGraphics.h"
 #include "IPlugPlatform.h"
 
+#include <iostream>
+
 BEGIN_IPLUG_NAMESPACE
 BEGIN_IGRAPHICS_NAMESPACE
 
@@ -27,11 +29,11 @@ public:
 
   const char* GetDrawingAPIStr() override { return "Framework"; }
 
-  void BeginFrame() override {}
-  void EndFrame() override {}
-  void OnViewInitialized(void* pContext) override {}
-  void OnViewDestroyed() override {}
-  void DrawResize() override {}
+  void BeginFrame() override;
+  void EndFrame() override;
+  void OnViewInitialized(void* pContext) override;
+  void OnViewDestroyed() override;
+  void DrawResize() override;
 
   void DrawBitmap(const IBitmap& bitmap, const IRECT& dest, int srcX, int srcY, const IBlend* pBlend) override {}
 

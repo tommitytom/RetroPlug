@@ -1,4 +1,5 @@
 local paths = dofile("../paths.lua")
+local bgfx = dofile("bgfx.lua")
 
 local _p = paths.DEP_ROOT .. "iPlug2/"
 
@@ -10,9 +11,9 @@ function m.include()
 		"IPLUG_EDITOR=1",
 		"IPLUG_DSP=1",
 		"_CONSOLE",
-		--"IGRAPHICS_FRAMEWORK",
-		"IGRAPHICS_NANOVG",
-		"IGRAPHICS_GL2"
+		"IGRAPHICS_FRAMEWORK",
+		--"IGRAPHICS_NANOVG",
+		--"IGRAPHICS_GL2"
 	}
 
 	filter { "configurations:Debug" }
@@ -48,6 +49,8 @@ function m.include()
 		_p.."WDL"
 	}
 
+	bgfx.includeBgfx()
+
 	filter { "system:windows" }
 		disablewarnings { "4996", "4250", "4018", "4267", "4068", "4150" }
 		defines {
@@ -76,8 +79,8 @@ function m.source()
 		_p.."iPlug/*.cpp",
 		_p.."IGraphics/*.h",
 		_p.."IGraphics/*.cpp",
-		_p.."IGraphics/Drawing/*.h",
-		_p.."IGraphics/Drawing/*.h",
+		_p.."IGraphics/Drawing/IGraphicsFramework.h",
+		_p.."IGraphics/Drawing/IGraphicsFramework.cpp",
 		_p.."IGraphics/Controls/*.h",
 		_p.."IGraphics/Controls/*.cpp",
 		--_p.."IGraphics/Extras/*.h",

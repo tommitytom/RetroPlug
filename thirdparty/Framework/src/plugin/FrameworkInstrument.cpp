@@ -1,7 +1,9 @@
-#include "Plugin.h"
+#include "FrameworkInstrument.h"
 
 #include "IPlug_include_in_plug_src.h"
 #include "IGraphics_include_in_plug_src.h"
+
+#include "FrameworkView.h"
 
 FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) : Plugin(info, MakeConfig(0, 0)) {
 #if IPLUG_EDITOR 
@@ -10,10 +12,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) : Plugin(info
     };
 
     mLayoutFunc = [&](IGraphics* pGraphics) {
-        pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
-        pGraphics->AttachPanelBackground(COLOR_GRAY);
-        pGraphics->EnableMouseOver(true);
-        pGraphics->EnableMultiTouch(true);
+        pGraphics->AttachControl(new FrameworkView(IRECT(0, 0, PLUG_WIDTH, PLUG_HEIGHT)));
     };
 #endif
 }

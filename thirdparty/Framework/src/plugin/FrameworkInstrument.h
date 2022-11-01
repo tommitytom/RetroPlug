@@ -1,8 +1,7 @@
 #pragma once
 
 #include "IPlug_include_in_plug_hdr.h"
-//#include "IGraphics_include_in_plug_hdr.h"
-#include "IControls.h"
+#include "IGraphics_include_in_plug_hdr.h"
 
 using namespace iplug;
 using namespace igraphics;
