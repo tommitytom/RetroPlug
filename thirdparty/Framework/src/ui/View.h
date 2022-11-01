@@ -60,15 +60,22 @@ namespace fw {
 		ResizeNS,
 		ResizeNWSE,
 		REsizeNESW,
+		NotAllowed,
 		ResizeH = ResizeEW,
 		ResizeV = ResizeNS,
-		NotAllowed
 	};
 
 	using EventType = entt::id_type;
 
+	enum class KeyAction {
+		Release,
+		Press,
+		Repeat
+	};
+
 	struct KeyEvent {
 		VirtualKey::Enum key;
+		KeyAction action;
 		bool down;
 	};
 
@@ -77,15 +84,8 @@ namespace fw {
 		Point position;
 	};
 
-	enum class ButtonAction {
-		Release,
-		Press,
-		Repeat
-	};
-
 	struct MouseButtonEvent {
 		MouseButton::Enum button;
-		ButtonAction action;
 		bool down;
 		Point position;
 	};

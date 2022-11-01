@@ -6,7 +6,6 @@
 #include "Window.h"
 
 namespace fw::app {
-	template <typename WindowT>
 	class WindowManager {
 	private:
 		std::vector<WindowPtr> _windows;
@@ -14,6 +13,7 @@ namespace fw::app {
 		uint32 _nextViewId = 0;
 		std::stack<uint32> _availableIds;
 
+	protected:
 		ResourceManager& _resourceManager;
 		engine::FontManager& _fontManager;
 
@@ -21,22 +21,12 @@ namespace fw::app {
 		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		~WindowManager() {}
 
-		template <typename T>
-		WindowPtr createWindow() {
-			ViewPtr view = std::make_shared<T>();
-			WindowPtr window = std::make_shared<WindowT>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
-
+		void addWindow(WindowPtr window) {
 			window->onCreate();
 			_created.push_back(window);
-
-			return window;
 		}
 
-		std::vector<WindowPtr>& getWindows() {
-			return _windows;
-		}
-
-		void update(std::vector<WindowPtr>& created) {
+		virtual void update(std::vector<WindowPtr>& created) {
 			for (int32 i = (int32)_windows.size() - 1; i >= 0; --i) {
 				if (_windows[i]->shouldClose()) {
 					_availableIds.push(_windows[i]->getId());
@@ -65,6 +55,10 @@ namespace fw::app {
 		void closeAll() {
 			_created.clear();
 			_windows.clear();
+		}
+
+		std::vector<WindowPtr>& getWindows() {
+			return _windows;
 		}
 	};
 }

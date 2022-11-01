@@ -20,6 +20,9 @@ BEGIN_IGRAPHICS_NAMESPACE
 
 class IGraphicsFramework : public IGraphics
 {
+private:
+  void* _nativeWindowHandle = nullptr;
+
 public:
   IGraphicsFramework(IGEditorDelegate& dlg, int w, int h, int fps, float scale)
     : IGraphics(dlg, w, h, fps, scale)
@@ -28,6 +31,10 @@ public:
   ~IGraphicsFramework() {}
 
   const char* GetDrawingAPIStr() override { return "Framework"; }
+
+  void* GetNativeWindowHandle() {
+    return _nativeWindowHandle;
+  }
 
   void BeginFrame() override;
   void EndFrame() override;

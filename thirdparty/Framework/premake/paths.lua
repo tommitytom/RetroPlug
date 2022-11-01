@@ -8,4 +8,5 @@ return {
 	SRC_ROOT = REPO_ROOT .. "src/",
 	GENERATED_ROOT = REPO_ROOT .. "generated/",
 	RESOURCES_ROOT = REPO_ROOT .. "resources/",
+	BUILD_ROOT = REPO_ROOT .. "build/" .. _ACTION .. "/"
 }

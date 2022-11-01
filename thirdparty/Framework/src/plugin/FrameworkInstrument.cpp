@@ -12,7 +12,15 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) : Plugin(info
     };
 
     mLayoutFunc = [&](IGraphics* pGraphics) {
-        pGraphics->AttachControl(new FrameworkView(IRECT(0, 0, PLUG_WIDTH, PLUG_HEIGHT)));
+        IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
+
+        pGraphics->EnableMouseOver(true);
+        pGraphics->EnableMultiTouch(true);
+
+        pGraphics->AttachPanelBackground(COLOR_GRAY);
+
+        auto view = new FrameworkView(IRECT(0, 0, PLUG_WIDTH, PLUG_HEIGHT), gfx->GetNativeWindowHandle());
+        pGraphics->AttachControl(view);
     };
 #endif
 }

@@ -1,23 +1,6 @@
 #include "Application.h"
 
 #include <spdlog/spdlog.h>
-#include <GLFW/glfw3.h>
-
-#ifdef RP_WEB
-#include <emscripten.h>
-#include <emscripten/html5.h>
-static const char* s_canvas = "#canvas";
-#else
-#if RP_LINUX
-#define GLFW_EXPOSE_NATIVE_X11
-#elif RP_WINDOWS
-#define GLFW_EXPOSE_NATIVE_WIN32
-#elif RP_MACOS
-#define GLFW_EXPOSE_NATIVE_COCOA
-#endif
-
-#include <GLFW/glfw3native.h>
-#endif
 
 #include "foundation/FoundationModule.h"
 
@@ -35,19 +18,11 @@ using namespace fw;
 using namespace fw::engine;
 using namespace fw::app;
 
-void errorCallback(int error, const char* description) {
-	spdlog::error("GLFW error {}: {}", error, description);
-}
+using hrc = std::chrono::high_resolution_clock;
+using delta_duration = std::chrono::duration<f32>;
 
-Application::Application() : _fontManager(_resourceManager), _windowManager(_resourceManager, _fontManager), _canvas(_resourceManager, _fontManager) {
+Application::Application() : _fontManager(_resourceManager), _canvas(_resourceManager, _fontManager) {
 	FoundationModule::setup();
-
-	glfwSetErrorCallback(errorCallback);
-	
-	if (!glfwInit()) {
-		spdlog::critical("Failed to initialize GLFW!");
-		throw std::runtime_error("Failed to initialize GLFW!");
-	}
 
 	_audioManager = std::make_shared<AudioManager>();
 	_audioManager->start();
@@ -56,7 +31,7 @@ Application::Application() : _fontManager(_resourceManager), _windowManager(_res
 Application::~Application() {
 	_audioManager = nullptr;
 
-	_windowManager.closeAll();
+	_windowManager->closeAll();
 
 	_renderContext->cleanup();
 	_mainWindow->onCleanup();
@@ -67,7 +42,7 @@ Application::~Application() {
 	_renderContext = nullptr;
 	_mainWindow = nullptr;
 
-	glfwTerminate();
+	_windowManager = nullptr;
 }
 
 void Application::createRenderContext(WindowPtr window) {
@@ -79,18 +54,18 @@ void Application::createRenderContext(WindowPtr window) {
 	FontHandle font = _resourceManager.load<Font>("Roboto-Regular.ttf/16");
 
 	_canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), font);
+
+	_lastTime = hrc::now();
 }
 
 bool Application::runFrame() {
-	f64 time = glfwGetTime();
-	f32 delta = _lastTime > 0 ? (f32)(time - _lastTime) : 0.0f;
-	_lastTime = time;
-
-	// NOTE: On web this doesn't actually poll input - all input events are received BEFORE we enter runFrame
-	glfwPollEvents();
+	hrc::time_point time = hrc::now();
+	std::chrono::nanoseconds nanoDelta = time - _lastTime;
+	f32 delta = std::chrono::duration_cast<delta_duration>(nanoDelta).count();
+	_lastTime = time;	
 
 	std::vector<WindowPtr> created;
-	_windowManager.update(created);
+	_windowManager->update(created);
 
 	for (WindowPtr w : created) {
 		if (!_mainWindow) {
@@ -101,7 +76,7 @@ bool Application::runFrame() {
 		w->onInitialize();
 	}
 
-	std::vector<WindowPtr>& windows = _windowManager.getWindows();
+	std::vector<WindowPtr>& windows = _windowManager->getWindows();
 
 	if (windows.size()) {
 		_renderContext->beginFrame(delta);

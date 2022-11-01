@@ -13,9 +13,6 @@
 #include "ui/ViewManager.h"
 
 namespace fw::app {
-	template <typename T>
-	class WindowManager;
-
 	class Window {
 	private:
 		ViewManagerPtr _viewManager;
@@ -64,7 +61,6 @@ namespace fw::app {
 			return _viewManager;
 		}
 
-		template <typename T>
 		friend class WindowManager;
 	};
 

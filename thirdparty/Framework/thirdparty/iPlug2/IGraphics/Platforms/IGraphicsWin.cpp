@@ -460,6 +460,8 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     {
       ReleaseCapture();
       IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
+      info.ms.L = msg == WM_LBUTTONUP;
+      info.ms.R = msg == WM_RBUTTONUP;
       std::vector<IMouseInfo> list{ info };
       pGraphics->OnMouseUp(list);
       return 0;

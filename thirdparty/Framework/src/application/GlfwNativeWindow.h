@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Window.h"
+#include "WindowManager.h"
+
 #include "foundation/ResourceProvider.h"
 #include "graphics/FrameBuffer.h"
 
@@ -55,5 +57,27 @@ namespace fw::app {
 		static void windowCloseCallback(GLFWwindow* window);
 
 		static void errorCallback(int error, const char* description);
+	};
+
+	class GlfwWindowManager final : public WindowManager {
+	public:
+		GlfwWindowManager(ResourceManager& resourceManager, FontManager& fontManager);
+		~GlfwWindowManager();
+
+		void update(std::vector<WindowPtr>& created) override;
+
+		template <typename T>
+		WindowPtr createWindow() {
+			ViewPtr view = std::make_shared<T>();
+			WindowPtr window = std::make_shared<GlfwNativeWindow>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			addWindow(window);
+			return window;
+		}
+
+		template <typename T>
+		WindowPtr acquireWindow(void* nativeWindowHandle) {
+			assert(false); //NYI
+			return nullptr;
+		}
 	};
 }

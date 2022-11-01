@@ -30,7 +30,7 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, Re
 	bgfxInit.type = bgfx::RendererType::OpenGL;
 	bgfxInit.resolution.width = _resolution.w;
 	bgfxInit.resolution.height = _resolution.h;
-	bgfxInit.resolution.reset = BGFX_RESET_VSYNC;// | BGFX_RESET_MSAA_X2;
+	//bgfxInit.resolution.reset = BGFX_RESET_VSYNC;// | BGFX_RESET_MSAA_X2;
 	bgfxInit.platformData.nwh = _nativeWindowHandle;
 
 	bgfx::init(bgfxInit);

@@ -188,6 +188,11 @@ namespace fw {
 			return propagateDrop(paths, _mouseState.position, getChildren());
 		}
 
+		void onResize(const ResizeEvent& ev) override {
+			_area.dimensions = ev.size;
+			setLayoutDirty();
+		}
+
 		void onUpdate(f32 delta) override {
 			if (_shared->layoutDirty) {
 				updateLayout();

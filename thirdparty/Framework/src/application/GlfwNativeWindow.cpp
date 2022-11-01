@@ -53,7 +53,6 @@ void GlfwNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int a
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->getViewManager()->onMouseButton(MouseButtonEvent{
 		.button = convertMouseButton(button),
-		.action = (ButtonAction)GLFW_PRESS,
 		.down = action != GLFW_RELEASE,
 		.position = w->_lastMousePosition
 	});
@@ -397,4 +396,28 @@ MouseButton::Enum convertMouseButton(int button) {
 	}
 
 	return MouseButton::Unknown;
+}
+
+void errorCallback(int error, const char* description) {
+	spdlog::error("GLFW error {}: {}", error, description);
+}
+
+GlfwWindowManager::GlfwWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {
+	glfwSetErrorCallback(errorCallback);
+
+	if (!glfwInit()) {
+		spdlog::critical("Failed to initialize GLFW!");
+		throw std::runtime_error("Failed to initialize GLFW!");
+	}
+}
+
+GlfwWindowManager::~GlfwWindowManager() {
+	glfwTerminate();
+}
+
+void GlfwWindowManager::update(std::vector<WindowPtr>& created) {
+	WindowManager::update(created);
+
+	// NOTE: On web this doesn't actually poll input - all input events are received BEFORE we enter runFrame
+	//glfwPollEvents();
 }

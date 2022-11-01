@@ -5,20 +5,25 @@
 #include "graphics/bgfx/BgfxRenderContext.h"
 #include "graphics/FontManager.h"
 
-#include "GlfwNativeWindow.h"
 #include "Window.h"
 #include "WindowManager.h"
 
 #include "foundation/ResourceManager.h"
 #include "audio/AudioManager.h"
 
+#include "WrappedNativeWindow.h"
+
+#define FW_USE_GLFW
+#include "application/Config.h"
+
 namespace fw::app {
 	class Application {
 	private:
-		WindowManager<GlfwNativeWindow> _windowManager;
+		std::unique_ptr<WindowManager> _windowManager;
 		std::unique_ptr<BgfxRenderContext> _renderContext;
-		f64 _lastTime = 0.0;
 		engine::Canvas _canvas;
+
+		std::chrono::high_resolution_clock::time_point _lastTime;
 
 		ResourceManager _resourceManager;
 		engine::FontManager _fontManager;
@@ -43,11 +48,32 @@ namespace fw::app {
 		}
 
 		template <typename ViewT>
-		void setup() {
-			WindowPtr window = _windowManager.createWindow<ViewT>();
+		WindowPtr setup() {
+			auto manager = std::make_unique<WindowManagerT>(_resourceManager, _fontManager);
+			WindowPtr window = manager->createWindow<ViewT>();
+
+			_windowManager = std::move(manager);
+			
 			createRenderContext(window);
 
 			window->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
+
+			return window;
+		}
+
+		template <typename ViewT>
+		WindowPtr setup(void* nativeWindowHandle, fw::Dimension dimensions) {
+			_windowManager = std::make_unique<WindowManagerT>(_resourceManager, _fontManager);
+
+			ViewPtr view = std::make_shared<ViewT>();
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			_windowManager->addWindow(window);
+
+			createRenderContext(window);
+
+			window->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
+
+			return window;
 		}
 
 		bool runFrame();
