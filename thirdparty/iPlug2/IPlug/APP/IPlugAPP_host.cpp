@@ -769,7 +769,7 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
   }
   else if (pMsg->size())
   {
-    std::cout << deltatime << std::endl;
+    //std::cout << deltatime << std::endl;
     IMidiMsg msg;
     msg.mStatus = pMsg->at(0);
     pMsg->size() > 1 ? msg.mData1 = pMsg->at(1) : msg.mData1 = 0;

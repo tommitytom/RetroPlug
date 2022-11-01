@@ -105,7 +105,7 @@ function LsdjArduinoboy.onMidi(system, msg)
 		if msg.systemStatus == midi.SystemStatus.TimingClock then
 			processSync(system, msg.offset)
 		else
-			print(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
+			log.info(enumtil.toEnumString(midi.SystemStatus, msg.systemStatus))
 		end
 	end
 
@@ -125,6 +125,7 @@ function LsdjArduinoboy.onMidi(system, msg)
 		-- Notes trigger row numbers
 
 		if status == midi.Status.NoteOn then
+			log.info("noteon")
 			local rowIdx = midiMapRowNumber(msg.channel, msg.note)
 
 			if rowIdx ~= -1 then
@@ -138,9 +139,10 @@ function LsdjArduinoboy.onMidi(system, msg)
 				system:sendSerialByte(msg.offset, 0xFE)
 				state.lastRow = -1
 			end
-		-- Pseudocode... not sure what to handle here! FL studio does nothing useful when stop is clicked
-		elseif msg.type == "stop" then
-			system:sendSerialByte(msg.offset, 0xFE)
+		elseif status == midi.Status.System then
+			if msg.systemStatus == midi.SystemStatus.SequenceStop then
+				system:sendSerialByte(msg.offset, 0xFE)
+			end
 		end
 	end
 end

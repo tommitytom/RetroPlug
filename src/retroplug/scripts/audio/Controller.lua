@@ -141,18 +141,19 @@ function Controller:onMidi(offset, statusByte, data1, data2)
 			self:emit("onMidi", v, msg)
 		end
 	elseif r == MidiChannelRouting.OneChannelPerInstance then
-		local target = Project.systems[channel]
+		local target = Project.systems[channel + 1]
 
 		if target ~= nil then
-			local msg = midi.Message(offset, statusByte, data1, data2)
+			local msg = midi.Message(offset, status << 4, data1, data2)
 			self:emit("onMidi", target, msg)
 		end
 	elseif r == MidiChannelRouting.FourChannelsPerInstance then
 		local targetIdx = math.floor(channel / 4)
 		local target = Project.systems[targetIdx + 1]
+		local channelOffset = targetIdx * 4
 
 		if target ~= nil then
-			local msg = midi.Message(offset, (channel | (status << 4)), data1, data2)
+			local msg = midi.Message(offset, ((channel - channelOffset) | (status << 4)), data1, data2)
 			self:emit("onMidi", target, msg)
 		end
 	end

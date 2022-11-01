@@ -61,6 +61,16 @@ function View:initProject()
 	self.model:setup()
 end
 
+local function keyToString(key)
+	for k, v in pairs(Key) do
+		if v == key then
+			return k
+		end
+	end
+
+	return "Unknown (" .. tostring(key) .. ")"
+end
+
 function View:onKey(key, down)
 	if self._keyFilter:onKey(key, down) == true then
 		self.model:emit("onKey", key, down)

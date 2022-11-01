@@ -197,8 +197,8 @@ dofile("scripts/configure.lua")
 group "Targets"
 	iplug2.project.app(retroplugProject)
 	iplug2.project.vst2(retroplugProject)
-	iplug2.project.vst3(retroplugProject)
-	iplug2.project.wam(retroplugProject)
+	--iplug2.project.vst3(retroplugProject)
+	--iplug2.project.wam(retroplugProject)
 
 if _OPTIONS["emscripten"] then
 	local EMSDK_FLAGS = {

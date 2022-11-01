@@ -4,7 +4,7 @@
 		uiComponents = {},
 		audioComponents = {},
 		sameBoy = {
-			model = "auto",
+			model = "auto", -- auto, dmgB, cgbE, cgbC, agb
 			gameLink = false,
 			skipBootRom = false
 		},
@@ -15,7 +15,7 @@
 	},
 	-- Default project settings
 	project = {
-		saveType = "sram",
+		saveType = "sram", --sram, state
 		audioRouting = "stereoMixDown",
 		zoom = 2,
 		midiRouting = "sendToAll",

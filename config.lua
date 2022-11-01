@@ -1,13 +1,13 @@
 return {
 	plugin = {
-		version = "0.3.0",
+		version = "0.3.4",
 		name = "RetroPlug",
 		author = "tommitytom",
 		uniqueId = "2wvF",
 		authorId = "tmtt",
 		url = "https://tommitytom.co.uk",
 		email = "retroplug@tommitytom.co.uk",
-		copyright = "Copyright 2020 Tom Yaxley"
+		copyright = "Copyright 2021 Tom Yaxley"
 	},
 	config = {
 		default = {
