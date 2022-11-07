@@ -18,7 +18,7 @@ namespace rp {
 	private:
 		ProjectState _state;
 		//ResourceManager _resourceManager;
-		fw::AudioManager* _audioManager = nullptr;
+		fw::audio::AudioManager* _audioManager = nullptr;
 
 		sol::state* _lua = nullptr;
 		int32 _version = 0;
@@ -46,11 +46,11 @@ namespace rp {
 			_messageBus = orchestratorMessageBus;
 		}
 
-		void setAudioManager(fw::AudioManager& audioManager) {
+		void setAudioManager(fw::audio::AudioManager& audioManager) {
 			_audioManager = &audioManager;
 		}
 
-		fw::AudioManager& getAudioManager() {
+		fw::audio::AudioManager& getAudioManager() {
 			return *_audioManager;
 		}
 

@@ -237,6 +237,40 @@ end
 
 
 function m.ExampleApplication.project(name)
+	local crc32 = dofile(paths.SCRIPT_ROOT .. "dep/crc32.lua")
+
+	local config = {
+		version = "0.0.1",
+		name = name,
+		author = "tommitytom",
+		url = "https://tommitytom.co.uk",
+		email = "fw@tommitytom.co.uk",
+		copyright = "Tom Yaxley",
+
+		audio = {
+			inputs = 0,
+			outputs = 2,
+			midiIn = true,
+			midiOut = false,
+			latency = 0,
+			stateChunks = true,
+		},
+
+		graphics = {
+			width = 1024,
+			height = 768,
+			fps = 60,
+			vsync = true
+		},
+
+		plugin = {
+			uniqueId = string.format("%x", crc32(name)):sub(1, 4),
+			authorId = "tmtt",
+			type = "synth",
+			sharedResources = false,
+		}
+	}
+
 	project (name)
 		kind "ConsoleApp"
 
@@ -245,7 +279,8 @@ function m.ExampleApplication.project(name)
 		m.Ui.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name
+			"EXAMPLE_IMPL=" .. name,
+			"FW_USE_MINIAUDIO"
 		}
 
 		includedirs {
@@ -277,7 +312,8 @@ function m.ExampleApplication.project(name)
 		m.Ui.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name
+			"EXAMPLE_IMPL=" .. name,
+			"FW_USE_MINIAUDIO"
 		}
 
 		includedirs {
@@ -295,7 +331,29 @@ function m.ExampleApplication.project(name)
 
 		util.liveppCompat()
 
-	iplug2.createApp(name)
+	iplug2.createApp(config)
+		m.Application.link()
+		m.Engine.link()
+		m.Ui.link()
+
+		defines {
+			"EXAMPLE_IMPL=" .. name
+		}
+
+		includedirs {
+			paths.SRC_ROOT .. "examples"
+		}
+
+		files {
+			paths.SRC_ROOT .. "examples/" .. name .. ".*"
+		}
+
+		filter { "action:vs*" }
+			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+
+		filter {}
+
+	iplug2.createVst2(config)
 		m.Application.link()
 		m.Engine.link()
 		m.Ui.link()
@@ -306,11 +364,9 @@ function m.ExampleApplication.project(name)
 
 		includedirs {
 			paths.SRC_ROOT .. "examples",
-			paths.SRC_ROOT .. "plugin"
 		}
 
 		files {
-			paths.SRC_ROOT .. "plugin/*",
 			paths.SRC_ROOT .. "examples/" .. name .. ".*"
 		}
 

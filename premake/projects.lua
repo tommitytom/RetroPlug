@@ -2,6 +2,7 @@ local dep = dofile("dep/index.lua")
 local util = dofile("thirdparty/Framework/premake/util.lua")
 local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
 local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
+local iplug2 = dofile("thirdparty/Framework/premake/dep/iplug2.lua")
 
 local EMSDK_FLAGS = {
 	"-s WASM=1",
@@ -296,6 +297,27 @@ function m.Application.projectLivepp()
 	}
 	excludes {
 		"src/app/main.cpp",
+		"src/app/OffsetCalculatorMain.cpp"
+	}
+
+	util.liveppCompat()
+end
+
+function m.Application.iplugProject()
+	iplug2.createApp("config.lua")
+
+	m.RetroPlug.link()
+
+	defines {
+		"EXAMPLE_IMPL=RetroPlug"
+	}
+
+	--[[files {
+		"src/app/**.h",
+		"src/app/**.cpp"
+	}]]
+	excludes {
+		--"src/app/main.cpp",
 		"src/app/OffsetCalculatorMain.cpp"
 	}
 

@@ -1,5 +1,6 @@
 local paths = dofile("../paths.lua")
 local bgfx = dofile("bgfx.lua")
+local semver = dofile("semver.lua")
 
 local _p = paths.DEP_ROOT .. "iPlug2/"
 
@@ -11,9 +12,7 @@ function m.include()
 		"IPLUG_EDITOR=1",
 		"IPLUG_DSP=1",
 		"_CONSOLE",
-		"IGRAPHICS_FRAMEWORK",
-		--"IGRAPHICS_NANOVG",
-		--"IGRAPHICS_GL2"
+		"IGRAPHICS_FRAMEWORK"
 	}
 
 	filter { "configurations:Debug" }
@@ -32,8 +31,6 @@ function m.include()
 	}
 
 	includedirs {
-		"config",
-		"resources",
 		_p.."iPlug",
 		_p.."iPlug/Extras",
 		_p.."IGraphics",
@@ -73,8 +70,6 @@ function m.source()
 	m.include()
 
 	files {
-		--"config/config.h",
-
 		_p.."iPlug/*.h",
 		_p.."iPlug/*.cpp",
 		_p.."IGraphics/*.h",
@@ -83,8 +78,6 @@ function m.source()
 		_p.."IGraphics/Drawing/IGraphicsFramework.cpp",
 		_p.."IGraphics/Controls/*.h",
 		_p.."IGraphics/Controls/*.cpp",
-		--_p.."IGraphics/Extras/*.h",
-		--_p.."IGraphics/Extras/*.cpp",
 
 		_p.."Dependencies/IGraphics/NanoVG/src",
 		_p.."Dependencies/IGraphics/glad_GL2/src",
@@ -132,7 +125,35 @@ function m.project()
 			--disablewarnings { "4334", "4098", "4244" }
 end
 
-local function writeConfig(target)
+local function generateConfig(settings, target)
+	local function interp(s, tab)
+		return (s:gsub('($%b{})', function(w)
+			local sub = tab[w:sub(3, -2)]
+			if sub ~= nil then
+				return sub
+			end
+
+			print("WARNING: Failed to replace " .. w:sub(3, -2) .. ": No matching field in supplied table")
+			return w
+		end))
+	end
+
+	local function copyFields(target, source)
+		for k, v in pairs(source) do
+			if type(v) ~= "table" then
+				target[k] = v
+			end
+		end
+	end
+
+	local function convertBools(tab)
+		for k, v in pairs(tab) do
+			if type(v) == "boolean" then
+				if v == true then tab[k] = 1 else tab[k] = 0 end
+			end
+		end
+	end
+
 	os.mkdir(target)
 
 	local resRoot = paths.SRC_ROOT .. "plugin/resources/"
@@ -142,74 +163,152 @@ local function writeConfig(target)
 		os.copyfile(v, target .. path.getname(v))
 	end
 
-	local file = io.open(target .. "config.h", "w+")
-	file:write([[
-		#define PLUG_NAME "FrameworkInstrument"
-		#define PLUG_MFR "AcmeInc"
-		#define PLUG_VERSION_HEX 0x00010000
-		#define PLUG_VERSION_STR "1.0.0"
-		#define PLUG_UNIQUE_ID 'PmBl'
-		#define PLUG_MFR_ID 'Acme'
-		#define PLUG_URL_STR "https://iplug2.github.io"
-		#define PLUG_EMAIL_STR "spam@me.com"
-		#define PLUG_COPYRIGHT_STR "Copyright 2020 Acme Inc"
-		#define PLUG_CLASS_NAME FrameworkInstrument
-		#define PLUG_USER_CLASS_NAME Granular
+	local v = semver(settings.version)
+	local data = {
+		versionHex = string.format("0x%.8x", (v.major << 16) | (v.minor << 8) | (v.patch & 0xFF)),
+		channelIo = tostring(settings.audio.inputs) .. "-" .. tostring(settings.audio.outputs),
+		year = os.date("%Y")
+	}
 
-		#define BUNDLE_NAME "FrameworkInstrument"
-		#define BUNDLE_MFR "AcmeInc"
-		#define BUNDLE_DOMAIN "com"
+	copyFields(data, settings)
+	copyFields(data, settings.audio)
+	copyFields(data, settings.graphics)
+	copyFields(data, settings.plugin)
+	convertBools(data)
 
-		#define PLUG_CHANNEL_IO "0-2"
-		#define SHARED_RESOURCES_SUBPATH "FrameworkInstrument"
+	local s = interp([[// !! WARNING - THIS FILE IS GENERATED !!
 
-		#define PLUG_LATENCY 0
-		#define PLUG_TYPE 1
-		#define PLUG_DOES_MIDI_IN 1
-		#define PLUG_DOES_MIDI_OUT 1
-		#define PLUG_DOES_MPE 1
-		#define PLUG_DOES_STATE_CHUNKS 0
-		#define PLUG_HAS_UI 1
-		#define PLUG_WIDTH 1024
-		#define PLUG_HEIGHT 669
-		#define PLUG_FPS 60
-		#define PLUG_SHARED_RESOURCES 0
-		#define PLUG_HOST_RESIZE 0
+#pragma once
 
-		#define AUV2_ENTRY FrameworkInstrument_Entry
-		#define AUV2_ENTRY_STR "FrameworkInstrument_Entry"
-		#define AUV2_FACTORY FrameworkInstrument_Factory
-		#define AUV2_VIEW_CLASS FrameworkInstrument_View
-		#define AUV2_VIEW_CLASS_STR "FrameworkInstrument_View"
+#define PLUG_NAME "${name}"
+#define PLUG_MFR "${author}"
+#define PLUG_VERSION_HEX ${versionHex}
+#define PLUG_VERSION_STR "${version}"
+#define PLUG_UNIQUE_ID '${uniqueId}'
+#define PLUG_MFR_ID '${authorId}'
+#define PLUG_URL_STR "${url}"
+#define PLUG_EMAIL_STR "${email}"
+#define PLUG_COPYRIGHT_STR "Copyright ${year} ${author}"
+#define PLUG_CLASS_NAME FrameworkInstrument
 
-		#define AAX_TYPE_IDS 'IPI1', 'IPI2'
-		#define AAX_PLUG_MFR_STR "Acme"
-		#define AAX_PLUG_NAME_STR "FrameworkInstrument\nIPIS"
-		#define AAX_DOES_AUDIOSUITE 0
-		#define AAX_PLUG_CATEGORY_STR "Synth"
+#define BUNDLE_NAME "${name}"
+#define BUNDLE_MFR "${author}"
+#define BUNDLE_DOMAIN "com"
 
-		#define VST3_SUBCATEGORY "Instrument|Synth"
+#define PLUG_CHANNEL_IO "${channelIo}"
 
-		#define APP_NUM_CHANNELS 2
-		#define APP_N_VECTOR_WAIT 0
-		#define APP_MULT 1
-		#define APP_COPY_AUV3 0
-		#define APP_SIGNAL_VECTOR_SIZE 64
+#define PLUG_LATENCY ${latency}
+#define PLUG_TYPE 1
+#define PLUG_DOES_MIDI_IN ${midiIn}
+#define PLUG_DOES_MIDI_OUT ${midiOut}
+#define PLUG_DOES_MPE 1
+#define PLUG_DOES_STATE_CHUNKS ${stateChunks}
+#define PLUG_HAS_UI 0
+#define PLUG_WIDTH ${width}
+#define PLUG_HEIGHT ${height}
+#define PLUG_FPS ${fps}
+#define PLUG_SHARED_RESOURCES ${sharedResources}
+#define PLUG_HOST_RESIZE 0
 
-		#define ROBOTO_FN "Roboto-Regular.ttf"
+#define AUV2_ENTRY ${name}_Entry
+#define AUV2_ENTRY_STR "${name}_Entry"
+#define AUV2_FACTORY ${name}_Factory
+#define AUV2_VIEW_CLASS ${name}_View
+#define AUV2_VIEW_CLASS_STR "${name}_View"
 
-	]])
+#define AAX_TYPE_IDS 'EFN1', 'EFN2'
+#define AAX_PLUG_MFR_STR "${author}"
+#define AAX_PLUG_NAME_STR "${name}\nIPIS"
+#define AAX_DOES_AUDIOSUITE 0
+#define AAX_PLUG_CATEGORY_STR "Synth"
 
+#define VST3_SUBCATEGORY "Instrument"
+
+#define APP_NUM_CHANNELS 2
+#define APP_N_VECTOR_WAIT 0
+#define APP_MULT 1
+#define APP_COPY_AUV3 0
+#define APP_RESIZABLE 0
+#define APP_SIGNAL_VECTOR_SIZE 64
+]], data)
+
+	local configTarget = target .. "config.h"
+	--print("Writing config to " .. configTarget)
+	local file = io.open(configTarget, "w+")
+
+	if file == nil then
+		error("Failed to write config file")
+	end
+
+	file:write(s)
 	file:close()
 end
 
-function m.createApp(name)
-	local baseName = name .. "-iPlug2"
-	local fullName = baseName .. "-app"
+local function projectBase(config, pluginType)
+	if type(config) == "string" then
+		local file = io.open(config, "r")
+		if file == nil then
+			error("Failed to load config from " .. config)
+		end
 
-	writeConfig(paths.BUILD_ROOT .. "generated/" .. baseName .. "/")
+		local fun, err = load(file:read("*all"))
+		if err then error(err) end
+		config = fun()
+	end
+
+	local baseName = config.name .. "-iPlug2"
+	local fullName = baseName .. "-" .. pluginType
+
+	generateConfig(config, paths.PROJECT_BUILD_ROOT .. "generated/" .. baseName .. "/")
 
 	project(fullName)
+		m.include()
+
+		includedirs {
+			paths.SRC_ROOT .. "plugin",
+			"%{prj.location}/generated/" .. baseName
+		}
+
+		files {
+			paths.SRC_ROOT .. "plugin/*"
+		}
+
+		filter { "system:windows" }
+			files {
+				"%{prj.location}/generated/" .. baseName .. "/main.rc",
+			}
+
+			links { "Comctl32" }
+
+		filter {}
+
+		m.link()
+
+	return config
+end
+
+function m.createVst2(config)
+	projectBase(config, "vst2")
+	kind "SharedLib"
+
+	defines {
+		"VST2_API",
+		"VST_FORCE_DEPRECATED"
+	}
+
+	includedirs {
+		_p.."iPlug/VST2",
+		_p.."Dependencies/IPlug/VST2_SDK",
+	}
+
+	files {
+		_p.."iPlug/VST2/*.h",
+		_p.."iPlug/VST2/*.cpp"
+	}
+end
+
+function m.createApp(config)
+	config = projectBase(config, "app")
 	kind "WindowedApp"
 
 	filter { "system:windows", "configurations:Debug" }
@@ -219,8 +318,6 @@ function m.createApp(name)
 
 	defines { "APP_API" }
 
-	m.include()
-
 	--if config.allowMultiple == true then
 	--	defines { "APP_ALLOW_MULTIPLE_INSTANCES" }
 	--end
@@ -229,8 +326,7 @@ function m.createApp(name)
 		_p.."iPlug/APP",
 		_p.."Dependencies/IPlug/RTAudio",
 		_p.."Dependencies/IPlug/RTAudio/include",
-		_p.."Dependencies/IPlug/RTMidi",
-		"%{prj.location}/generated/" .. baseName
+		_p.."Dependencies/IPlug/RTMidi"
 	}
 
 	files {
@@ -250,18 +346,17 @@ function m.createApp(name)
 		files {
 			_p.."Dependencies/IPlug/RTAudio/include/*.h",
 			_p.."Dependencies/IPlug/RTAudio/include/*.cpp",
-			"%{prj.location}/generated/" .. baseName .. "/main.rc",
 		}
 
-		links { "dsound", "winmm", "Comctl32" }
+		links { "dsound", "winmm" }
 
 	filter { "system:macosx" }
 		defines {
 			"__MACOSX_CORE__",
 			"SWELL_COMPILED",
 			"SWELL_CLEANUP_ON_UNLOAD",
-			"OBJC_PREFIX=v" .. name,
-			"SWELL_APP_PREFIX=Swell_v" .. name
+			"OBJC_PREFIX=v" .. config.name,
+			"SWELL_APP_PREFIX=Swell_v" .. config.name
 		}
 
 		files {
@@ -293,8 +388,6 @@ function m.createApp(name)
 		}
 
 	filter {}
-
-	m.link()
 end
 
 return m

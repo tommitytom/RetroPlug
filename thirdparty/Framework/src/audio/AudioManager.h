@@ -1,46 +1,21 @@
 #pragma once
 
 #include <functional>
+#include <cassert>
 
 #include "foundation/Types.h"
 #include "AudioProcessor.h"
 
-namespace fw {
+namespace fw::audio {
 	using AudioCallback = std::function<void(f32* output, const f32* input, uint32 frameCount)>;
 
-	struct AudioFile {
-
-	};
-
-#ifdef RP_WEB
-
 	class AudioManager {
-	public:
-		bool start() { return true; }
-
-		void setCallback(AudioCallback&& cb) {}
-
-		void stop() {}
-
-		uint32 getSampleRate() { return 48000; }
-
-		void getDeviceNames(std::vector<std::string>& names) {}
-
-		bool setAudioDevice(uint32 idx) { return true; }
-	};
-
-#else
-
-	class AudioManager {
-	private:
-		struct State;
-
-		State* _state = nullptr;
+	protected:
 		std::shared_ptr<AudioProcessor> _processor;
 
 	public:
-		AudioManager();
-		~AudioManager();
+		AudioManager() {}
+		~AudioManager() {}
 
 		void setProcessor(std::shared_ptr<AudioProcessor> processor) {
 			_processor = processor;
@@ -50,18 +25,22 @@ namespace fw {
 			return _processor;
 		}
 
-		bool loadFile(std::string_view path, std::vector<f32>& target);
+		void process(f32* output, const f32* input, uint32 frameCount) {
+			_processor->onRender(output, input, frameCount);
+		}
 
-		bool start();
+		virtual bool start() { return false; }
 
-		void stop();
+		virtual void stop() {}
 
-		uint32 getSampleRate();
+		virtual void setSampleRate() {}
 
-		bool setAudioDevice(uint32 idx);
+		virtual uint32 getSampleRate() { return 48000; }
 
-		void getDeviceNames(std::vector<std::string>& names);
+		virtual bool setAudioDevice(uint32 idx) { return false; }
+
+		virtual void getDeviceNames(std::vector<std::string>& names) {}
+
+		virtual bool loadFile(std::string_view path, std::vector<f32>& target) { assert(false); return false; }
 	};
-
-#endif
 }

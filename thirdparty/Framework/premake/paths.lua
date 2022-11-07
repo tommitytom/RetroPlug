@@ -8,5 +8,6 @@ return {
 	SRC_ROOT = REPO_ROOT .. "src/",
 	GENERATED_ROOT = REPO_ROOT .. "generated/",
 	RESOURCES_ROOT = REPO_ROOT .. "resources/",
-	BUILD_ROOT = REPO_ROOT .. "build/" .. _ACTION .. "/"
+	BUILD_ROOT = REPO_ROOT .. "build/" .. _ACTION .. "/",
+	PROJECT_BUILD_ROOT = _MAIN_SCRIPT_DIR .. "/build/" .. _ACTION .. "/"
 }

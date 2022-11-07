@@ -1,3 +1,4 @@
+#define GB_INTERNAL
 #include <gb.h>
 
 #include "SectionOffsetCollector.h"

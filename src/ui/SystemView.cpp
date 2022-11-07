@@ -95,7 +95,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 
 	int audioDevice = 0;
 
-	fw::AudioManager& audioManager = project->getAudioManager();
+	fw::audio::AudioManager& audioManager = project->getAudioManager();
 
 	std::vector<std::string> audioDevices;
 	audioManager.getDeviceNames(audioDevices);

@@ -85,11 +85,11 @@ namespace rp {
 
 		void setGameLink(bool gameLink);
 
-		bool getGameLink() { return _state.linkEnabled; }
+		bool getGameLink() override { return _state.linkEnabled; }
 
-		void addLinkTarget(SystemBase* system);
+		void addLinkTarget(SystemBase* system) override;
 
-		void removeLinkTarget(SystemBase* system);
+		void removeLinkTarget(SystemBase* system) override;
 
 		bool processTick(size_t targetFrameCount);
 

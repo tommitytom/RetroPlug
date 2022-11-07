@@ -2,39 +2,37 @@
 #define MA_LOG_LEVEL MA_LOG_LEVEL_VERBOSE
 #include <miniaudio/miniaudio.h>
 
-#ifndef RP_WEB
-
-#include "AudioManager.h"
+#include "MiniAudioManager.h"
 
 #include <spdlog/spdlog.h>
 
-using namespace fw;
+using namespace fw::audio;
 
 static void callback(ma_device* pDevice, void* pOutput, const void* pInput, uint32 frameCount) {
-	AudioManager* m = (AudioManager*)pDevice->pUserData;
+	MiniAudioManager* m = (MiniAudioManager*)pDevice->pUserData;
 
 	if (m->getProcessor()) {
 		m->getProcessor()->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
 	}
 }
 
-struct AudioManager::State {
+struct MiniAudioManager::State {
 	ma_context context;
 	ma_device device;
 	uint32 sampleRate;
 };
 
-AudioManager::AudioManager() {
-	_state = new AudioManager::State();
+MiniAudioManager::MiniAudioManager() {
+	_state = new MiniAudioManager::State();
 	_state->sampleRate = 48000;
 }
 
-AudioManager::~AudioManager() {
+MiniAudioManager::~MiniAudioManager() {
 	stop();
 	delete _state;
 }
 
-bool AudioManager::setAudioDevice(uint32 idx) {
+bool MiniAudioManager::setAudioDevice(uint32 idx) {
 	ma_device_info* pPlaybackInfos;
 	ma_uint32 playbackCount;
 	ma_device_info* pCaptureInfos;
@@ -69,7 +67,7 @@ bool AudioManager::setAudioDevice(uint32 idx) {
 	return true;
 }
 
-void AudioManager::getDeviceNames(std::vector<std::string>& names) {
+void MiniAudioManager::getDeviceNames(std::vector<std::string>& names) {
 	ma_device_info* pPlaybackInfos;
 	ma_uint32 playbackCount;
 	ma_device_info* pCaptureInfos;
@@ -88,7 +86,7 @@ void AudioManager::getDeviceNames(std::vector<std::string>& names) {
 	}
 }
 
-bool AudioManager::loadFile(std::string_view path, std::vector<f32>& target) {
+bool MiniAudioManager::loadFile(std::string_view path, std::vector<f32>& target) {
 	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 11468);
 
 	ma_decoder decoder;
@@ -129,7 +127,7 @@ bool AudioManager::loadFile(std::string_view path, std::vector<f32>& target) {
 	}*/
 }
 
-bool AudioManager::start() {
+bool MiniAudioManager::start() {
 	if (ma_context_init(NULL, 0, NULL, &_state->context) != MA_SUCCESS) {
 		spdlog::error("Failed to create audio context");
 		return false;
@@ -168,12 +166,10 @@ bool AudioManager::start() {
 	return true;
 }
 
-void AudioManager::stop() {
+void MiniAudioManager::stop() {
 	ma_device_uninit(&_state->device); // This will stop the device so no need to do that manually.
 }
 
-uint32 AudioManager::getSampleRate() {
+uint32 MiniAudioManager::getSampleRate() {
 	return _state->sampleRate;
 }
-
-#endif

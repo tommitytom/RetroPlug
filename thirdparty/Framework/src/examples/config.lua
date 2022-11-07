@@ -1,6 +1,6 @@
 return {
-	version = "0.3.4",
-	name = "RetroPlug",
+	version = "0.0.1",
+	name = "Example",
 	author = "tommitytom",
 	url = "https://tommitytom.co.uk",
 	email = "fw@tommitytom.co.uk",
@@ -16,8 +16,8 @@ return {
 	},
 
 	graphics = {
-		width = 640,
-		height = 576,
+		width = 320,
+		height = 288,
 		fps = 60,
 		vsync = true
 	},

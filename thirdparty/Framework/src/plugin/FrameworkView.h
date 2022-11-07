@@ -50,14 +50,19 @@ public:
 
 class FrameworkView : public IControl {
 private:
-	fw::app::Application _app;
+	std::shared_ptr<fw::app::Application> _app;
 	fw::app::WindowPtr _window;
+	fw::ViewManagerPtr _vm;
 
 	bool _mouseOver = false;
 
 public:
 	FrameworkView(IRECT b, void* nativeWindowHandle);
 	~FrameworkView() {}
+
+	std::shared_ptr<fw::app::Application> getApplication() {
+		return _app;
+	}
 
 	void OnInit() override;
 

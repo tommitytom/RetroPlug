@@ -110,7 +110,7 @@ fwProjects.Graphics.project()
 fwProjects.Ui.project()
 fwProjects.Audio.project()
 fwProjects.Application.project()
-fwProjects.Engine.project()
+--fwProjects.Engine.project()
 
 group "3 - Modules"
 projects.Core.project()
@@ -120,6 +120,7 @@ projects.RetroPlug.project()
 group "4 - Applications"
 projects.Application.project()
 projects.Application.projectLivepp()
+projects.Application.iplugProject()
 
 if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"

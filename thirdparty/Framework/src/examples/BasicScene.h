@@ -157,7 +157,7 @@ namespace fw {
 
 			EventNode* eventNode = createState<EventNode>({ "Main" });
 
-			auto audioManager = getState<std::shared_ptr<AudioManager>>();
+			auto audioManager = getState<std::shared_ptr<audio::AudioManager>>();
 			audioManager->get()->setProcessor(std::make_shared<MyAudioProceessor>(eventNode->spawn("Audio")));
 
 			auto slider = addChild<SliderView>("Freq slider");

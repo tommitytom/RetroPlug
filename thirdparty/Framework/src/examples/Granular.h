@@ -549,7 +549,7 @@ namespace fw {
 				_playerOverlay->updateHighlights();
 			});
 
-			auto audioManager = getState<std::shared_ptr<AudioManager>>();
+			auto audioManager = getState<std::shared_ptr<audio::AudioManager>>();
 			audioManager->get()->setProcessor(std::make_shared<MyAudioProceessor>(eventNode->spawn("Audio"), _notes));
 
 			auto slider = addChild<SliderView>("Pitch slider");

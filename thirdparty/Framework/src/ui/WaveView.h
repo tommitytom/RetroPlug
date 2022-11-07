@@ -51,7 +51,7 @@ namespace fw {
 			return _selectionSize > 0;
 		}
 
-		bool sampleToPixel(size_t sample, f32& pixel);
+		bool sampleToPixel(uint64 sample, f32& pixel);
 
 		size_t pixelToSample(f32 pixel);
 

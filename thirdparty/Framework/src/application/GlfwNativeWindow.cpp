@@ -104,6 +104,11 @@ void GlfwNativeWindow::windowCloseCallback(GLFWwindow* window) {
 	//w->getViewManager()->onCloseWindowRequest();
 }
 
+void GlfwNativeWindow::windowRefreshCallback(GLFWwindow* window) {
+	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
+	//w->getViewManager()->onCloseWindowRequest();
+}
+
 #ifdef RP_WEB
 EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
 	Application* app = static_cast<Application*>(userData);
@@ -178,6 +183,7 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetWindowSizeCallback(_window, resizeCallback);
 	glfwSetDropCallback(_window, dropCallback);
 	glfwSetWindowCloseCallback(_window, windowCloseCallback);
+	glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
 
 #ifdef RP_WEB
 	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
@@ -419,5 +425,7 @@ void GlfwWindowManager::update(std::vector<WindowPtr>& created) {
 	WindowManager::update(created);
 
 	// NOTE: On web this doesn't actually poll input - all input events are received BEFORE we enter runFrame
-	//glfwPollEvents();
+	if (_pollInput) {
+		glfwPollEvents();
+	}
 }

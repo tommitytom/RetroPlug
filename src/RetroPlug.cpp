@@ -36,7 +36,7 @@ RetroPlug::RetroPlug() : View({ 480, 432 }) {
 }
 
 void RetroPlug::onInitialize() {
-	std::shared_ptr<fw::AudioManager>& audioManager = *getState<std::shared_ptr<fw::AudioManager>>();
+	std::shared_ptr<fw::audio::AudioManager>& audioManager = *getState<std::shared_ptr<fw::audio::AudioManager>>();
 	_audioContext = std::make_shared<AudioContext>(&_ioMessageBus, &_orchestratorMessageBus);
 	audioManager->setProcessor(_audioContext);
 

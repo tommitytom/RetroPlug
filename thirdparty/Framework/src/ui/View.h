@@ -90,6 +90,11 @@ namespace fw {
 		Point position;
 	};
 
+	struct MouseDoubleClickEvent {
+		MouseButton::Enum button;
+		Point position;
+	};
+
 	struct ButtonEvent {
 		ButtonType::Enum button;
 		bool down;
@@ -325,6 +330,14 @@ namespace fw {
 
 		virtual bool onMouseButton(const MouseButtonEvent& ev) { return onMouseButton(ev.button, ev.down, ev.position); }
 
+		virtual bool onMouseDoubleClick(const MouseDoubleClickEvent& ev) { 
+			return onMouseButton(MouseButtonEvent{
+				.button = ev.button,
+				.down = true,
+				.position = ev.position
+			}); 
+		}
+
 		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point position) { return false; }
 
 		virtual void onMouseEnter(Point pos) {}
@@ -400,6 +413,7 @@ namespace fw {
 
 		template <typename T>
 		T* createState(T&& item) {
+			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>(std::forward<T>(item));
 			}
@@ -409,6 +423,7 @@ namespace fw {
 
 		template <typename T>
 		T* createState(const T& item) {
+			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>(item);
 			}
@@ -418,6 +433,7 @@ namespace fw {
 
 		template <typename T>
 		T* createState() {
+			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>();
 			}

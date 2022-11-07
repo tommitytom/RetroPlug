@@ -32,12 +32,13 @@ namespace fw::app {
 		TextureHandle _defaultTexture;
 		ShaderProgramHandle _defaultProgram;
 
-		std::shared_ptr<AudioManager> _audioManager;
+		std::shared_ptr<audio::AudioManager> _audioManager;
 
 		WindowPtr _mainWindow;
 
 	public:
 		Application();
+		Application(std::shared_ptr<audio::AudioManager> audioManager);
 		~Application();
 
 		template <typename ViewT>
@@ -77,6 +78,10 @@ namespace fw::app {
 		}
 
 		bool runFrame();
+
+		std::shared_ptr<audio::AudioManager> getAudioManager() {
+			return _audioManager;
+		}
 
 	private:
 		void createRenderContext(WindowPtr window);

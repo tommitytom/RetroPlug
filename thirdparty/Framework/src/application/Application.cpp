@@ -12,6 +12,8 @@
 #include "graphics/bgfx/BgfxTexture.h"
 #include "graphics/ftgl/FtglFont.h"
 
+#include "audio/MiniAudioManager.h"
+
 #include "GlfwNativeWindow.h"
 
 using namespace fw;
@@ -24,7 +26,14 @@ using delta_duration = std::chrono::duration<f32>;
 Application::Application() : _fontManager(_resourceManager), _canvas(_resourceManager, _fontManager) {
 	FoundationModule::setup();
 
-	_audioManager = std::make_shared<AudioManager>();
+	_audioManager = std::make_shared<audio::MiniAudioManager>();
+	_audioManager->start();
+}
+
+Application::Application(std::shared_ptr<audio::AudioManager> audioManager) 
+	: _fontManager(_resourceManager), _canvas(_resourceManager, _fontManager), _audioManager(audioManager) 
+{
+	FoundationModule::setup();
 	_audioManager->start();
 }
 
@@ -39,8 +48,8 @@ Application::~Application() {
 	_resourceManager = ResourceManager();
 	_canvas.destroy();
 
-	_renderContext = nullptr;
 	_mainWindow = nullptr;
+	_renderContext = nullptr;
 
 	_windowManager = nullptr;
 }
@@ -72,7 +81,8 @@ bool Application::runFrame() {
 			_mainWindow = w;
 		}
 
-		w->getViewManager()->getState().emplace(_audioManager);
+		w->getViewManager()->createState(_audioManager);
+		//w->getViewManager()->getState().emplace(_audioManager);
 		w->onInitialize();
 	}
 

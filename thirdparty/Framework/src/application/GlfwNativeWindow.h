@@ -56,10 +56,15 @@ namespace fw::app {
 
 		static void windowCloseCallback(GLFWwindow* window);
 
+		static void windowRefreshCallback(GLFWwindow* window);
+
 		static void errorCallback(int error, const char* description);
 	};
 
 	class GlfwWindowManager final : public WindowManager {
+	private:
+		bool _pollInput = false;
+
 	public:
 		GlfwWindowManager(ResourceManager& resourceManager, FontManager& fontManager);
 		~GlfwWindowManager();
@@ -71,6 +76,9 @@ namespace fw::app {
 			ViewPtr view = std::make_shared<T>();
 			WindowPtr window = std::make_shared<GlfwNativeWindow>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			addWindow(window);
+
+			_pollInput = true;
+
 			return window;
 		}
 

@@ -3,7 +3,7 @@ local m = {}
 local SAMEBOY_DIR = "thirdparty/SameBoy"
 
 function m.include()
-	defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING", "GB_DISABLE_DEBUGGER"  }
+
 	sysincludedirs { SAMEBOY_DIR .. "/Core" }
 
 	filter {}
@@ -18,6 +18,8 @@ function m.project()
 	project "SameBoy"
 		kind "StaticLib"
 		language "C"
+
+		defines { "GB_INTERNAL", "GB_DISABLE_TIMEKEEPING", "GB_DISABLE_DEBUGGER"  }
 
 		m.include()
 
@@ -52,6 +54,7 @@ function m.project()
 			}
 
 		filter { "system:linux" }
+			disablewarnings { "unused-variable" }
 			buildoptions { "-Wno-implicit-function-declaration" }
 
 		filter {}
