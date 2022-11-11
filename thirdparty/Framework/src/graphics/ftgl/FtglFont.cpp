@@ -6,6 +6,7 @@
 
 #include "foundation/FsUtil.h"
 #include "graphics/resources/Karla-Regular.h"
+#include "graphics/resources/Roboto-Regular.h"
 
 using namespace fw;
 using namespace fw::engine;
@@ -30,7 +31,7 @@ std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const 
 	std::vector<uint8> data(dataSize);
 	memcpy(data.data(), atlas->data, dataSize);
 
-	TextureHandle texture = resourceManager.create<Texture>(fmt::format("fonts/Karla-Regular/{}/texture", fontSize), TextureDesc{
+	TextureHandle texture = resourceManager.create<Texture>(fmt::format("fonts/{}/{}/texture", name, fontSize), TextureDesc{
 		.dimensions = atlasSize,
 		.depth = 4,
 		.data = std::move(data)

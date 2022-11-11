@@ -10,6 +10,10 @@ namespace fw {
 		uint32 handleWidth = 15;
 	};
 
+	struct SliderChangeEvent {
+		f32 value = 0.0f;
+	};
+
 	class SliderView : public TypedPropertyEditor<f32> {
 	private:
 		f32 _min = 0;
@@ -206,6 +210,8 @@ namespace fw {
 
 			_values[0] = MathUtil::clamp((f32)pos.x / dim.w, 0.0f, 1.0f);
 			_lastEditedValue = 0;
+
+			emit(SliderChangeEvent{ getValue() });
 
 			if (ValueChangeEvent) {
 				ValueChangeEvent(getValue());

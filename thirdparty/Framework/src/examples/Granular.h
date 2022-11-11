@@ -591,6 +591,7 @@ namespace fw {
 			knob->setArea({ 10, 250, knob->getTileSize().w, knob->getTileSize().h });
 			//knob->setArea({ 10, 250, 200, 200 });
 
+
 			eventNode->subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
 				_playerOverlay->setHighlight(ev.note, true);
 			});

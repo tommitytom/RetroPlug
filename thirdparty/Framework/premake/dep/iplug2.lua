@@ -3,6 +3,7 @@ local bgfx = dofile("bgfx.lua")
 local semver = dofile("semver.lua")
 
 local _p = paths.DEP_ROOT .. "iPlug2/"
+local VST3_DEP_PATH = _p .. "Dependencies/IPlug/VST3_SDK/"
 
 local m = {}
 
@@ -125,19 +126,9 @@ function m.project()
 			--disablewarnings { "4334", "4098", "4244" }
 end
 
+local util = dofile("../util.lua")
+
 local function generateConfig(settings, target)
-	local function interp(s, tab)
-		return (s:gsub('($%b{})', function(w)
-			local sub = tab[w:sub(3, -2)]
-			if sub ~= nil then
-				return sub
-			end
-
-			print("WARNING: Failed to replace " .. w:sub(3, -2) .. ": No matching field in supplied table")
-			return w
-		end))
-	end
-
 	local function copyFields(target, source)
 		for k, v in pairs(source) do
 			if type(v) ~= "table" then
@@ -176,7 +167,7 @@ local function generateConfig(settings, target)
 	copyFields(data, settings.plugin)
 	convertBools(data)
 
-	local s = interp([[// !! WARNING - THIS FILE IS GENERATED !!
+	local s = util.interp([[// !! WARNING - THIS FILE IS GENERATED !!
 
 #pragma once
 
@@ -304,6 +295,43 @@ function m.createVst2(config)
 	files {
 		_p.."iPlug/VST2/*.h",
 		_p.."iPlug/VST2/*.cpp"
+	}
+end
+
+function m.createVst3(config)
+	projectBase(config, "vst3")
+	kind "SharedLib"
+	targetextension ".vst3"
+
+	defines {
+		"VST3_API",
+		"VST_FORCE_DEPRECATED"
+	}
+
+	includedirs {
+		_p.."iPlug/VST3",
+		_p.."Dependencies/IPlug/VST3_SDK"
+	}
+
+	files {
+		_p.."iPlug/VST3/*.h",
+		_p.."iPlug/VST3/*.cpp",
+		VST3_DEP_PATH .. "base/**.h",
+		VST3_DEP_PATH .. "base/**.cpp",
+		VST3_DEP_PATH .. "pluginterfaces/base/**.h",
+		VST3_DEP_PATH .. "pluginterfaces/base/**.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/common/commoniids.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/common/memorystream.*",
+		VST3_DEP_PATH .. "public.sdk/source/common/pluginview.*",
+		VST3_DEP_PATH .. "public.sdk/source/main/dllmain.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/main/pluginfactory.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstaudioeffect.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstbus.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstcomponent.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstcomponentbase.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstinitiids.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstparameters.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/vstsinglecomponenteffect.*",
 	}
 end
 

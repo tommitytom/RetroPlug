@@ -59,7 +59,7 @@ namespace fw {
 		ResizeEW,
 		ResizeNS,
 		ResizeNWSE,
-		REsizeNESW,
+		ResizeNESW,
 		NotAllowed,
 		ResizeH = ResizeEW,
 		ResizeV = ResizeNS,
@@ -162,45 +162,45 @@ namespace fw {
 		std::string _name;
 		entt::type_info _type;
 
-		std::unordered_map<EventType, std::vector<Subscription>> _subscriptions;
+		std::vector<std::pair<EventType, std::weak_ptr<View>>> _subscriptions;
+		std::unordered_map<EventType, std::vector<Subscription>> _subscriptionTargets;
 
 	public:
 		View(Dimension dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
 		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
-		~View() = default;
+		~View() {
+			unsubscribeAll();
+		}
+
+		void subscribe(EventType eventType, ViewPtr source, std::function<void(const entt::any&)>&& func) {
+			assert(!source->hasSubscription(eventType, shared_from_this()));
+
+			_subscriptions.push_back({ eventType, std::weak_ptr(source) });
+
+			source->_subscriptionTargets[eventType].push_back(Subscription{
+				.target = std::weak_ptr<View>(shared_from_this()),
+				.handler = std::move(func)
+			});
+		}
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-
-			assert(!source->hasSubscription<T>(shared_from_this()));
-
-			source->_subscriptions[eventType].push_back(Subscription{
-				.target = std::weak_ptr<View>(shared_from_this()),
-				.handler = [func = std::move(func)](const entt::any& v) { func(); }
-			});
-
+			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-
-			assert(!source->hasSubscription<T>(shared_from_this()));
-
-			source->_subscriptions[eventType].push_back(Subscription{
-				.target = std::weak_ptr<View>(shared_from_this()),
-				.handler = [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); }
-			});
-
+			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
 			return eventType;
 		}
 
 		bool hasSubscription(EventType eventType, const ViewPtr& target) const {
-			auto found = _subscriptions.find(eventType);
+			auto found = _subscriptionTargets.find(eventType);
 
-			if (found != _subscriptions.end()) {
+			if (found != _subscriptionTargets.end()) {
 				for (const Subscription& sub : found->second) {
 					if (!sub.target.expired() && sub.target.lock() == target) {
 						return true;
@@ -223,10 +223,43 @@ namespace fw {
 			return unsubscribe(eventType, source);
 		}
 
-		bool unsubscribe(EventType eventType, ViewPtr source) {
-			auto found = source->_subscriptions.find(eventType);
+		void unsubscribeAll() {
+			for (size_t i = 0; i < _subscriptions.size(); ++i) {
+				auto& sub = _subscriptions[i];
 
-			if (found != source->_subscriptions.end()) {
+				ViewPtr subPtr = sub.second.lock();
+				if (subPtr) {
+					auto found = subPtr->_subscriptionTargets.find(sub.first);
+
+					if (found != subPtr->_subscriptionTargets.end()) {
+						for (size_t i = 0; i < found->second.size(); ++i) {
+							Subscription& sub = found->second[i];
+
+							if (sub.target.lock() == shared_from_this()) {
+								found->second.erase(found->second.begin() + i);
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			_subscriptions.clear();
+		}
+
+		bool unsubscribe(EventType eventType, ViewPtr source) {
+			for (size_t i = 0; i < _subscriptions.size(); ++i) {
+				auto& sub = _subscriptions[i];
+
+				if (sub.first == eventType && sub.second.lock() == source) {
+					_subscriptions.erase(_subscriptions.begin() + i);
+					break;
+				}
+			}
+
+			auto found = source->_subscriptionTargets.find(eventType);
+
+			if (found != source->_subscriptionTargets.end()) {
 				for (size_t i = 0; i < found->second.size(); ++i) {
 					Subscription& sub = found->second[i];
 
@@ -243,9 +276,9 @@ namespace fw {
 		template <typename T>
 		void emit(T&& ev) {
 			EventType eventType = entt::type_id<T>().index();
-			auto found = _subscriptions.find(eventType);
+			auto found = _subscriptionTargets.find(eventType);
 
-			if (found != _subscriptions.end() && found->second.size()) {
+			if (found != _subscriptionTargets.end() && found->second.size()) {
 				entt::any v = ev;
 
 				for (auto it = found->second.begin(); it != found->second.end();) {
@@ -560,6 +593,10 @@ namespace fw {
 		std::shared_ptr<T> addChild(std::shared_ptr<T> view) {
 			addChild(std::static_pointer_cast<View>(view));
 			return view;
+		}
+
+		ViewPtr addChild2(ViewPtr view) {
+			return addChild(view);
 		}
 
 		ViewPtr addChild(ViewPtr view) {

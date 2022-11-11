@@ -99,4 +99,16 @@ function util.createConfigureProject(includeDeps)
 	group ""
 end
 
+function util.interp(s, tab)
+	return (s:gsub('($%b{})', function(w)
+		local sub = tab[w:sub(3, -2)]
+		if sub ~= nil then
+			return sub
+		end
+
+		print("WARNING: Failed to replace " .. w:sub(3, -2) .. ": No matching field in supplied table")
+		return w
+	end))
+end
+
 return util

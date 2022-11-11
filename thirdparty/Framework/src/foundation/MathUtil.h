@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include "foundation/Types.h"
 
 namespace fw::MathUtil {
 	template <typename T>

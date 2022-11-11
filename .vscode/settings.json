@@ -50,7 +50,22 @@
 		"workspace",
 		"toolset",
 		"modules",
-		"_MAIN_SCRIPT_DIR"
+		"_MAIN_SCRIPT_DIR",
+		"targetextension",
+		"onInitialize",
+		"View",
+		"LabelView",
+		"self",
+		"Color4F",
+		"Rect",
+		"onMouseButton",
+		"onRender",
+		"RectF",
+		"MouseButtonEvent",
+		"ButtonClickEvent",
+		"ButtonView",
+		"SliderView",
+		"SliderChangeEvent"
 	],
 	"files.associations": {
 		"functional": "cpp",

@@ -271,12 +271,23 @@ function m.ExampleApplication.project(name)
 		}
 	}
 
+	-- Create project files if they don't exist
+	local exampleRoot = paths.SRC_ROOT .. "examples/"
+	if os.isfile(exampleRoot .. name .. ".h") == false then
+		print("Creating example: " .. name)
+		local header = io.readfile(exampleRoot .. "ExampleTemplate.h")
+		local source = io.readfile(exampleRoot .. "ExampleTemplate.cpp")
+		io.writefile(exampleRoot .. name .. ".h", util.interp(header, { name = name }))
+		io.writefile(exampleRoot .. name .. ".cpp", util.interp(source, { name = name }))
+	end
+
 	project (name)
 		kind "ConsoleApp"
 
 		m.Application.link()
 		m.Engine.link()
 		m.Ui.link()
+		dep.simplefilewatcher.link()
 
 		defines {
 			"EXAMPLE_IMPL=" .. name,
@@ -293,6 +304,7 @@ function m.ExampleApplication.project(name)
 		}
 
 		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		--[[filter { "options:emscripten" }
@@ -310,6 +322,7 @@ function m.ExampleApplication.project(name)
 		m.Application.link()
 		m.Engine.link()
 		m.Ui.link()
+		dep.simplefilewatcher.link()
 
 		defines {
 			"EXAMPLE_IMPL=" .. name,
@@ -327,6 +340,7 @@ function m.ExampleApplication.project(name)
 		}
 
 		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		util.liveppCompat()
@@ -349,6 +363,7 @@ function m.ExampleApplication.project(name)
 		}
 
 		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		filter {}
@@ -371,6 +386,30 @@ function m.ExampleApplication.project(name)
 		}
 
 		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
+			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+
+		filter {}
+
+	iplug2.createVst3(config)
+		m.Application.link()
+		m.Engine.link()
+		m.Ui.link()
+
+		defines {
+			"EXAMPLE_IMPL=" .. name
+		}
+
+		includedirs {
+			paths.SRC_ROOT .. "examples",
+		}
+
+		files {
+			paths.SRC_ROOT .. "examples/" .. name .. ".*"
+		}
+
+		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		filter {}
