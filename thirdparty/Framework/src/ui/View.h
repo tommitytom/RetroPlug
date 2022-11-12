@@ -193,7 +193,7 @@ namespace fw {
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
+			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
 			return eventType;
 		}
 
@@ -604,8 +604,7 @@ namespace fw {
 				view->_parent.lock()->removeChild(view);
 			}
 
-			view->_parent = std::weak_ptr<View>();
-			view->_parent = shared_from_this();
+			view->_parent = std::weak_ptr<View>(shared_from_this());
 			view->setShared(_shared);
 
 			if (!view->_initialized) {

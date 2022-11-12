@@ -27,7 +27,6 @@ const fw::RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * 
 
 SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();
-	_waveView = addChildAt<fw::WaveView>("SamplerWaveView", BOX_AREA);
 }
 
 void SamplerView::setSystem(SystemWrapperPtr& system) {
@@ -65,6 +64,7 @@ void SamplerView::setSampleIndex(KitIndex kitIdx, size_t sampleIdx) {
 }
 
 void SamplerView::onInitialize() {
+	_waveView = addChildAt<fw::WaveView>("SamplerWaveView", BOX_AREA);
 	// TODO: This should happen in the LsdjModel
 	updateSampleBuffers();
 }
