@@ -92,7 +92,9 @@ workspace "Framework"
 	filter {}
 
 util.createConfigureProject()
---util.createGeneratorProject()
+util.createGeneratorProject({
+	_MAIN_SCRIPT_DIR .. "/src/compiler.config.lua"
+})
 
 if _OPTIONS["emscripten"] == nil then
 	group "Utils"
