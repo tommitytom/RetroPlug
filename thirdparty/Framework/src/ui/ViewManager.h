@@ -189,8 +189,17 @@ namespace fw {
 		}
 
 		void onResize(const ResizeEvent& ev) override {
-			_area.dimensions = ev.size;
-			setLayoutDirty();
+			/*switch (getSizingPolicy()) {
+			case fw::SizingPolicy::None:
+				break;
+			case fw::SizingPolicy::FitToContent: 
+				break;
+			case fw::SizingPolicy::FitToParent:
+				_area.dimensions = ev.size;
+				setLayoutDirty();
+				updateLayout();
+				break;
+			}*/
 		}
 
 		void onUpdate(f32 delta) override {

@@ -235,7 +235,7 @@ namespace fw {
 						for (size_t i = 0; i < found->second.size(); ++i) {
 							Subscription& sub = found->second[i];
 
-							if (sub.target.lock() == shared_from_this()) {
+							if (sub.target.expired() || sub.target.lock() == shared_from_this()) {
 								found->second.erase(found->second.begin() + i);
 								break;
 							}
