@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ui/View.h"
-
 #define SOL_ALL_SAFETIES_ON 1
 #include <sol/forward.hpp>
 #include <entt/core/utility.hpp>
 #include <FileWatcher/FileWatcher.h>
+
+#include "ui/View.h"
 
 namespace fw {
 	class LuaUi;
@@ -33,9 +33,8 @@ namespace fw {
 
 	class LuaUi : public View {
 	private:
-		std::unique_ptr<sol::state> _lua;
+		sol::state* _lua = nullptr;
 		std::string _scriptPath;
-		bool _valid = false;
 		
 		FW::FileWatcher _watcher;
 		FW::WatchID _watchId = 0;
@@ -46,7 +45,7 @@ namespace fw {
 
 	public:
 		LuaUi();
-		~LuaUi() = default;
+		~LuaUi();
 
 		void setScriptPath(const std::filesystem::path& path) {
 			if (_watchId != 0) {

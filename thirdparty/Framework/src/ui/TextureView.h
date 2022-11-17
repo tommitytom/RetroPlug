@@ -8,6 +8,7 @@ namespace fw {
 
 	class TextureView : public View {
 	private:
+		std::string _uri;
 		TextureHandle _texture;
 		RectF _textureArea;
 
@@ -22,7 +23,19 @@ namespace fw {
 			_texture = texture;
 		}
 
+		void setUri(const std::string& uri);
+
+		std::string_view getUri() const {
+			if (_texture.isValid()) {
+				return _texture.getUri();
+			}
+			
+			return "";
+		}
+
 		void clear() { _texture = TextureHandle(); }
+
+		void onInitialize() override;
 
 		void onRender(Canvas& canvas) override;
 	};

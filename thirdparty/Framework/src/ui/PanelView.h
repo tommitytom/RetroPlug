@@ -16,6 +16,10 @@ namespace fw {
 			_color = color;
 		}
 
+		const Color4F& getColor() const {
+			return _color;
+		}
+
 		void onRender(Canvas& canvas) override {
 			canvas.fillRect((Rect)getDimensions(), _color);
 		}

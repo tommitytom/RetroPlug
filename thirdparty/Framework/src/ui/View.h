@@ -306,18 +306,26 @@ namespace fw {
 		}
 
 		ResourceManager& getResourceManager() {
+			assert(_shared);
+			assert(_shared->resourceManager);
 			return *_shared->resourceManager;
 		}
 
 		const ResourceManager& getResourceManager() const {
+			assert(_shared);
+			assert(_shared->resourceManager);
 			return *_shared->resourceManager;
 		}
 
 		engine::FontManager& getFontManager() {
+			assert(_shared);
+			assert(_shared->fontManager);
 			return *_shared->fontManager;
 		}
 
 		const engine::FontManager& getFontManager() const {
+			assert(_shared);
+			assert(_shared->fontManager);
 			return *_shared->fontManager;
 		}
 
@@ -607,7 +615,8 @@ namespace fw {
 			view->_parent = std::weak_ptr<View>(shared_from_this());
 			view->setShared(_shared);
 
-			if (!view->_initialized) {
+			if (isInitialized() && !view->_initialized) {
+				// TODO: Call down the hierarchy
 				view->onInitialize();
 				view->_initialized = true;
 			}
@@ -615,7 +624,10 @@ namespace fw {
 			_children.push_back(view);
 			onChildAdded(view);
 
-			view->onMount();
+			if (isMounted()) {
+				// TODO: Call down the hierarchy
+				view->onMount();
+			}			
 
 			setLayoutDirty();
 
@@ -626,8 +638,12 @@ namespace fw {
 			return _initialized;
 		}
 
-		bool isMounted() const {
-			return !_parent.expired();
+		virtual bool isMounted() const {
+			if (!_parent.expired()) {
+				return _parent.lock()->isMounted();
+			}
+			
+			return false;
 		}
 
 		size_t getChildIndex(ViewPtr view) const {

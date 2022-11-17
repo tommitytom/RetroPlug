@@ -36,6 +36,10 @@ namespace fw {
 			_shared = &_sharedData;
 		}
 
+		bool isMounted() const override {
+			return true;
+		}
+
 		void setResourceManager(ResourceManager* resourceManager, FontManager* fontManager) {
 			_shared->resourceManager = resourceManager;
 			_shared->fontManager = fontManager;

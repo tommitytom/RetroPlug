@@ -10,6 +10,7 @@
 #include "ui/PanelView.h"
 #include "ui/ButtonView.h"
 #include "ui/SliderView.h"
+#include "ui/TextureView.h"
 
 using namespace entt::literals;
 using namespace fw;
@@ -19,11 +20,12 @@ SOL_BASE_CLASSES(fw::KnobView, fw::View);
 SOL_BASE_CLASSES(fw::LabelView, fw::View);
 SOL_BASE_CLASSES(fw::LuaUi, fw::View);
 SOL_BASE_CLASSES(fw::SliderView, fw::View);
-SOL_DERIVED_CLASSES(fw::View, fw::ButtonView, fw::LabelView, fw::KnobView, fw::LuaUi, fw::SliderView);
+SOL_BASE_CLASSES(fw::PanelView, fw::View);
+SOL_BASE_CLASSES(fw::TextureView, fw::View);
+SOL_DERIVED_CLASSES(fw::View, fw::ButtonView, fw::LabelView, fw::KnobView, fw::LuaUi, fw::SliderView, fw::PanelView, fw::TextureView);
 
 [[nodiscard]] entt::id_type getTypeId(const sol::table& obj) {
 	const auto f = obj["__typeId"].get<sol::function>();
-	assert(f.valid() && "type_id not exposed to lua!");
 	return f.valid() ? f().get<entt::id_type>() : -1;
 }
 
@@ -38,6 +40,38 @@ void registerEvent() {
 	entt::meta<EventT>()
 		.type(entt::type_id<EventT>().index())
 		.template func<&callSubscriber<EventT>>("callSubscriber"_hs);
+}
+
+inline sol::protected_function_result scriptErrorHandler(lua_State* L, sol::protected_function_result pfr) {
+	sol::error err = pfr;
+	spdlog::error(err.what());
+	return pfr;
+}
+
+template <typename Class, typename... Args>
+sol::usertype<Class> new_usertype(sol::state& lua, const std::string& name, Args&&... args) {
+	return lua.new_usertype<Class>(name,
+		//"__typeId", entt::type_index<Class>::value,
+		std::forward<Args>(args)...
+	);
+}
+
+template <typename T>
+auto createViewFactory(sol::state* lua) {
+	return sol::factories([]() {
+		return std::make_shared<T>();
+	}, [lua](const sol::table& items) {
+		auto view = std::make_shared<T>();
+		sol::protected_function init = lua->get<sol::protected_function>("updateProps");
+		sol::protected_function_result res = init(view, items);
+
+		if (!res.valid()) {
+			sol::error err = res;
+			spdlog::error(err.what());
+		}
+
+		return view;
+	});
 }
 
 LuaUi::LuaUi() : View({ 1024, 768 }) {
@@ -59,13 +93,15 @@ LuaUi::LuaUi() : View({ 1024, 768 }) {
 	setScriptPath(examplesDir / "LuaUi.lua");
 }
 
-void LuaUi::reloadScript() {
-	_valid = false;
-	_renderValid = false;
-	_updateValid = false;
+LuaUi::~LuaUi() {
 	unsubscribeAll();
 	removeChildren();
+	delete _lua;
+}
 
+#include "foundation/SolUtil.h"
+
+void LuaUi::reloadScript() {
 	if (_scriptPath == "") {
 		return;
 	}
@@ -75,26 +111,34 @@ void LuaUi::reloadScript() {
 		return;
 	}
 
-	_lua = std::make_unique<sol::state>();
-	_lua->open_libraries(sol::lib::base, sol::lib::package);
+	sol::state* lua = new sol::state();
+	lua->open_libraries(sol::lib::base, sol::lib::package);
 
-	_lua->new_usertype<MouseButtonEvent>("MouseButtonEvent",
+	SolUtil::addIncludePath(*lua, std::filesystem::path(_scriptPath).parent_path().string());
+
+	lua->new_enum("SizingPolicy",
+		"None", SizingPolicy::None,
+		"FitToContent", SizingPolicy::FitToContent,
+		"FitToParent", SizingPolicy::FitToParent
+	);
+
+	lua->new_usertype<MouseButtonEvent>("MouseButtonEvent",
 		"__typeId", entt::type_index<MouseButtonEvent>::value,
 		"button", &MouseButtonEvent::button,
 		"down", &MouseButtonEvent::down,
 		"position", &MouseButtonEvent::position
 	);
 
-	_lua->new_usertype<ButtonClickEvent>("ButtonClickEvent",
+	lua->new_usertype<ButtonClickEvent>("ButtonClickEvent",
 		"__typeId", entt::type_index<ButtonClickEvent>::value
 	);
 
-	_lua->new_usertype<SliderChangeEvent>("SliderChangeEvent",
+	lua->new_usertype<SliderChangeEvent>("SliderChangeEvent",
 		"__typeId", entt::type_index<SliderChangeEvent>::value,
 		"value", &SliderChangeEvent::value
 	);
 
-	_lua->new_usertype<Rect>("Rect",
+	lua->new_usertype<Rect>("Rect",
 		sol::constructors<Rect(), Rect(const Rect&), Rect(int32, int32, int32, int32)>(),
 		"x", &Rect::x,
 		"y", &Rect::y,
@@ -104,7 +148,7 @@ void LuaUi::reloadScript() {
 		"bottom", sol::property(&Rect::bottom)
 	);
 
-	_lua->new_usertype<RectF>("RectF",
+	lua->new_usertype<RectF>("RectF",
 		sol::constructors<RectF(), RectF(const RectF&), RectF(f32, f32, f32, f32)>(),
 		"x", &RectF::x,
 		"y", &RectF::y,
@@ -114,7 +158,7 @@ void LuaUi::reloadScript() {
 		"bottom", sol::property(&RectF::bottom)
 	);
 
-	_lua->new_usertype<Color4F>("Color4F",
+	lua->new_usertype<Color4F>("Color4F",
 		sol::constructors<Color4F(), Color4F(const Color4F&), Color4F(f32, f32, f32, f32)>(),
 		"r", &Color4F::r,
 		"g", &Color4F::g,
@@ -122,92 +166,113 @@ void LuaUi::reloadScript() {
 		"a", &Color4F::a
 	);
 
-	_lua->new_usertype<Canvas>("Canvas",
+	lua->new_usertype<Canvas>("Canvas",
+		sol::no_constructor,
 		"fillRect", sol::overload(
 			entt::overload<Canvas& (const RectF&)>(&Canvas::fillRect),
 			entt::overload<Canvas& (const RectF&, const Color4F&)>(&Canvas::fillRect)
 		)
 	);
 
-	_lua->new_usertype<View>("View",
-		"new", sol::factories([]() { return std::make_shared<View>(); }),
+	lua->new_usertype<View>("View",
+		"new", createViewFactory<View>(lua),
 		"sizingPolicy", sol::property(&View::getSizingPolicy, &View::setSizingPolicy),
 		"name", sol::property(&View::getName, &View::setName),
 		"area", sol::property(&View::getArea, &View::setArea),
 		"addChild", sol::overload(&View::addChild2),
 		"subscribe", [](View& self, const sol::table& ev, ViewPtr source, sol::protected_function f) {
 			EventType eventType = getTypeId(ev);
-			assert(eventType != -1);
-			if (eventType != -1) {
-				entt::meta_type t = entt::resolve(eventType);
-				assert(t);
-
-				self.subscribe(eventType, source, [t, f](const entt::any& data) {
-					if (auto caller = t.func("callSubscriber"_hs); caller) {
-						caller.invoke({}, data, f);
-					}
-				});
+			if (eventType == -1) {
+				spdlog::error("Unknown event type - make sure the object has a __typeId field");
+				return;
 			}
+
+			entt::meta_type t = entt::resolve(eventType);
+			if (!t) {
+				spdlog::error("Unknown event type - make sure the event has been registered with registerEvent<T>()");
+				return;
+			}
+
+			entt::meta_func subFunc = t.func("callSubscriber"_hs);
+			if (!subFunc) {
+				spdlog::error("Failed to find subscription handler - make sure the event has been registered with registerEvent<T>()");
+				return;
+			}
+
+			self.subscribe(eventType, source, [subFunc, f](const entt::any& data) {
+				subFunc.invoke({}, data, f);
+			});
 		}
 	);
 
-	_lua->new_usertype<LabelView>("LabelView",
+	auto ut = lua->new_usertype<LabelView>("LabelView",
 		sol::base_classes, sol::bases<View>(),
-		"new", sol::factories([]() { return std::make_shared<LabelView>(); }),
+		"new", createViewFactory<LabelView>(lua),
 		"text", sol::property(&LabelView::getText, &LabelView::setText),
 		"color", sol::property(&LabelView::getColor, &LabelView::setColor),
 		"font", sol::property(&LabelView::getFontFace, &LabelView::setFontFace),
 		"fontSize", sol::property(&LabelView::getFontSize, &LabelView::setFontSize)
 	);
 
-	_lua->new_usertype<KnobView>("KnobView",
+	lua->new_usertype<KnobView>("KnobView",
 		sol::base_classes, sol::bases<View>(),
-		"new", sol::factories([]() { return std::make_shared<KnobView>(); })
+		"new", createViewFactory<KnobView>(lua)
 	);
 
-	_lua->new_usertype<ButtonView>("ButtonView",
+	lua->new_usertype<ButtonView>("ButtonView",
 		sol::base_classes, sol::bases<View>(),
-		"new", sol::factories([]() { return std::make_shared<ButtonView>(); }),
+		"new", createViewFactory<ButtonView>(lua),
 		"text", sol::property(&ButtonView::getText, &ButtonView::setText)
 	);
 
-	_lua->new_usertype<SliderView>("SliderView",
+	lua->new_usertype<SliderView>("SliderView",
 		sol::base_classes, sol::bases<View>(),
-		"new", sol::factories([]() { return std::make_shared<SliderView>(); })
+		"new", createViewFactory<SliderView>(lua)
 	);
 
-	_lua->new_usertype<LuaUi>("LuaUi",
+	lua->new_usertype<PanelView>("PanelView",
+		sol::base_classes, sol::bases<View>(),
+		"new", createViewFactory<PanelView>(lua),
+		"color", sol::property(&PanelView::getColor, &PanelView::setColor)
+	);
+
+	lua->new_usertype<TextureView>("TextureView",
+		sol::base_classes, sol::bases<View>(),
+		"new", createViewFactory<TextureView>(lua),
+		"uri", sol::property(&TextureView::getUri, &TextureView::setUri)
+	);
+
+	spdlog::info(std::filesystem::current_path().string());
+
+	lua->new_usertype<LuaUi>("LuaUi",
 		sol::no_constructor,
 		sol::base_classes, sol::bases<View>()
 	);
 
-	sol::protected_function_result result;
-
-	try {
-		result = _lua->script_file(_scriptPath, &sol::script_default_on_error);
-		_valid = result.valid();
-
-		if (_valid) {
-			_lua->set("self", this);
-			_renderValid = true;
-			_updateValid = true;
-
-			if (getParent()) {
-				onInitialize();
-			}
-
-			return;
-		}
-	} catch (const std::exception& ex) {
-		spdlog::error("Failed to compile script: {}", ex.what());
-	}
+	sol::protected_function_result result = lua->safe_script_file(_scriptPath, &scriptErrorHandler);
 	
-	_lua = nullptr;
+	if (result.valid()) {
+		unsubscribeAll();
+		removeChildren();
+		delete _lua;
+		_lua = lua;
+		
+		lua->set("self", this);
+		_renderValid = true;
+		_updateValid = true;
+
+		if (getParent()) {
+			onInitialize();
+		}
+	} else {
+		result = sol::protected_function_result();
+		delete lua;
+	}
 }
 
 void LuaUi::onInitialize() {
-	if (_valid) {
-		sol::protected_function f = _lua->get("onInitialize");
+	if (_lua) {
+		sol::protected_function f = _lua->get<sol::protected_function>("onInitialize");
 		if (f) {
 			sol::protected_function_result res = f();
 
@@ -220,8 +285,8 @@ void LuaUi::onInitialize() {
 }
 
 bool LuaUi::onMouseButton(const MouseButtonEvent& ev) {
-	if (_valid) {
-		sol::protected_function f = _lua->get("onMouseButton");
+	if (_lua) {
+		sol::protected_function f = _lua->get<sol::protected_function>("onMouseButton");
 		if (f) {
 			sol::protected_function_result res = f(ev);
 
@@ -243,8 +308,8 @@ bool LuaUi::onMouseButton(const MouseButtonEvent& ev) {
 }
 
 bool LuaUi::onKey(const KeyEvent& ev) {
-	if (_valid) {
-		sol::protected_function f = _lua->get("onKey");
+	if (_lua) {
+		sol::protected_function f = _lua->get<sol::protected_function>("onKey");
 		if (f) {
 			sol::protected_function_result res = f(ev);
 
@@ -269,9 +334,9 @@ void LuaUi::onUpdate(f32 delta) {
 	_watcher.update();
 
 	if (_updateValid) {
-		sol::protected_function f = _lua->get("onUpdate");
+		sol::protected_function f = _lua->get<sol::protected_function>("onUpdate");
 		if (f) {
-			sol::protected_function_result res = f();
+			sol::protected_function_result res = f(delta);
 
 			if (!res.valid()) {
 				sol::error err = res;
@@ -284,7 +349,7 @@ void LuaUi::onUpdate(f32 delta) {
 
 void LuaUi::onRender(Canvas& canvas) {
 	if (_renderValid) {
-		sol::protected_function f = _lua->get("onRender");
+		sol::protected_function f = _lua->get<sol::protected_function>("onRender");
 		if (f) {
 			sol::protected_function_result res = f(canvas);
 
