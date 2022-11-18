@@ -90,7 +90,7 @@ LuaUi::LuaUi() : View({ 1024, 768 }) {
 	auto examplesDir = std::filesystem::current_path().parent_path().parent_path() / "src" / "examples";
 	spdlog::info(examplesDir.string());
 
-	setScriptPath(examplesDir / "LuaUi.lua");
+	setScriptPath(examplesDir / "Reactive.lua");
 }
 
 LuaUi::~LuaUi() {
@@ -112,7 +112,7 @@ void LuaUi::reloadScript() {
 	}
 
 	sol::state* lua = new sol::state();
-	lua->open_libraries(sol::lib::base, sol::lib::package);
+	lua->open_libraries(sol::lib::base, sol::lib::package, sol::lib::table);
 
 	SolUtil::addIncludePath(*lua, std::filesystem::path(_scriptPath).parent_path().string());
 
@@ -257,7 +257,7 @@ void LuaUi::reloadScript() {
 		delete _lua;
 		_lua = lua;
 		
-		lua->set("self", this);
+		lua->set("uiSelf", this);
 		_renderValid = true;
 		_updateValid = true;
 
