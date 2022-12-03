@@ -283,46 +283,42 @@ int getBreakCode(VirtualKey vk, uint8_t* target) {
 bool EmulatorView::OnKey(const IKeyPress& key, bool down) {
 	if (_plug && _plug->active()) {
 		Lsdj& lsdj = _plug->lsdj();
-		if (lsdj.found) {
-			if (lsdj.syncMode == LsdjSyncModes::Keyboard) {
-				uint8_t scancodes[8];
-				int count = 0;
-				if (down == true) {
-					count = getMakeCode((VirtualKey)key.VK, scancodes, true);
-				} else {
-					count = getBreakCode((VirtualKey)key.VK, scancodes);
-				}
-
-				const double LSDJ_PS2_BYTE_DELAY = 5.0;
-
-				if (count) {
-					int accum = (int)((_plug->sampleRate() / 1000.0) * LSDJ_PS2_BYTE_DELAY);
-					
-					const std::string* vkname = VirtualKeys::toString((VirtualKey)key.VK);
-					std::string vkn = (vkname ? *vkname : "Unknown");
-
-					std::cout << (down == true ? "KEY DOWN |" : "KEY UP   |");
-					std::cout << std::hex << " Char: " << key.utf8[0] << " | VK: " << vkn << " | PS/2: [ ";
-
-					std::stringstream lsdjCodes;
-					lsdjCodes << std::hex;
-
-					int offset = 0;
-					for (int i = 0; i < count; ++i) {
-						std::cout << "0x" << (int)(uint8_t)scancodes[i] << (i < count - 1 ? ", " : " ");
-						lsdjCodes << "0x" << (int)(uint8_t)(reverse(scancodes[i]) >> 1) << (i < count - 1 ? ", " : " ");
-						_plug->sendSerialByte(offset, reverse(scancodes[i]) >> 1);
-						offset += accum;
-					}
-
-					std::cout << "] | LSDj: [ " << lsdjCodes.str() << "]" << std::endl;
-				}
-
-				return true;
-			} else if (lsdj.keyboardShortcuts) {
-				return _lsdjKeyMap.onKey(key, down);
-			}
+		
+		uint8_t scancodes[8];
+		int count = 0;
+		if (down == true) {
+			count = getMakeCode((VirtualKey)key.VK, scancodes, true);
 		}
+		else {
+			count = getBreakCode((VirtualKey)key.VK, scancodes);
+		}
+
+		const double LSDJ_PS2_BYTE_DELAY = 5.0;
+
+		if (count) {
+			int accum = (int)((_plug->sampleRate() / 1000.0) * LSDJ_PS2_BYTE_DELAY);
+
+			const std::string* vkname = VirtualKeys::toString((VirtualKey)key.VK);
+			std::string vkn = (vkname ? *vkname : "Unknown");
+
+			std::cout << (down == true ? "KEY DOWN |" : "KEY UP   |");
+			std::cout << std::hex << " Char: " << key.utf8[0] << " | VK: " << vkn << " | PS/2: [ ";
+
+			std::stringstream lsdjCodes;
+			lsdjCodes << std::hex;
+
+			int offset = 0;
+			for (int i = 0; i < count; ++i) {
+				std::cout << "0x" << (int)(uint8_t)scancodes[i] << (i < count - 1 ? ", " : " ");
+				lsdjCodes << "0x" << (int)(uint8_t)(reverse(scancodes[i]) >> 1) << (i < count - 1 ? ", " : " ");
+				_plug->sendSerialByte(offset, scancodes[i]);
+				offset += accum;
+			}
+
+			std::cout << "] | LSDj: [ " << lsdjCodes.str() << "]" << std::endl;
+		}
+
+		return true;
 
 		ButtonEvent ev;
 		ev.id = _keyMap.getControllerButton((VirtualKey)key.VK);
