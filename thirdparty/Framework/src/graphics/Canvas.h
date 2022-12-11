@@ -223,7 +223,12 @@ namespace fw::engine {
 			return *this;
 		}
 
-		void beginRender(Dimension res, f32 pixelRatio);
+		void setDimensions(Dimension res, f32 pixelRatio) {
+			_res.dimensions = res;
+			_pixelRatio = pixelRatio;
+		}
+
+		void beginRender();
 
 		Canvas& setViewProjection(const Rect& viewPort, const RectF& proj) {
 			_viewPort = viewPort;

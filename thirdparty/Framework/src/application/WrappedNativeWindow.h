@@ -4,15 +4,12 @@
 #include "WindowManager.h"
 
 #include "foundation/ResourceProvider.h"
-#include "graphics/FrameBuffer.h"
 
 namespace fw::app {
 	class WrappedNativeWindow : public Window {
 	private:
 		void* _nativeWindowHandle = nullptr;
 		Point _lastMousePosition;
-		FrameBufferProvider* _frameBufferProvider = nullptr;
-		std::shared_ptr<FrameBuffer> _frameBuffer;
 
 		fw::Dimension _size;
 
@@ -37,10 +34,6 @@ namespace fw::app {
 
 		fw::Dimension setSize(fw::Dimension size) {
 			_size = size;
-		}
-
-		void setFrameBufferProvider(FrameBufferProvider* provider) {
-			_frameBufferProvider = provider;
 		}
 	};
 

@@ -9,7 +9,6 @@
 #include "foundation/ResourceManager.h"
 
 #include "graphics/bgfx/BgfxDefaultShaders.h"
-#include "graphics/bgfx/BgfxFrameBuffer.h"
 #include "graphics/bgfx/BgfxShader.h"
 #include "graphics/bgfx/BgfxShaderProgram.h"
 #include "graphics/bgfx/BgfxTexture.h"
@@ -19,11 +18,11 @@ namespace fs = std::filesystem;
 
 const bgfx::ViewId kClearView = 0;
 
-BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, ResourceManager& resourceManager)
-	: _nativeWindowHandle(nativeWindowHandle), _resolution(res), _resourceManager(resourceManager) {
+BgfxRenderContext::BgfxRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager)
+	: _mainWindow(mainWindow), _resolution(res), _resourceManager(resourceManager) {
 
 	bgfx::PlatformData pd;
-	pd.nwh = _nativeWindowHandle;
+	pd.nwh = _mainWindow;
 	bgfx::setPlatformData(pd);
 
 	bgfx::Init bgfxInit;
@@ -31,11 +30,10 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, Re
 	bgfxInit.resolution.width = _resolution.w;
 	bgfxInit.resolution.height = _resolution.h;
 	//bgfxInit.resolution.reset = BGFX_RESET_VSYNC;// | BGFX_RESET_MSAA_X2;
-	bgfxInit.platformData.nwh = _nativeWindowHandle;
+	bgfxInit.platformData.nwh = _mainWindow;
 
 	bgfx::init(bgfxInit);
 
-	_resourceManager.addProvider<FrameBuffer, BgfxFrameBufferProvider>();
 	_resourceManager.addProvider<Shader, BgfxShaderProvider>();
 	_resourceManager.addProvider<ShaderProgram>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
 	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
@@ -45,9 +43,9 @@ BgfxRenderContext::BgfxRenderContext(void* nativeWindowHandle, Dimension res, Re
 		.depth = 4
 	};
 	
-	const uint32 size = whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth;
+	const size_t size = (size_t)(whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth);
 	whiteTextureDesc.data.resize(size);
-	memset(whiteTextureDesc.data.data(), 0xFF, whiteTextureDesc.data.size());
+	memset(whiteTextureDesc.data.data(), 0xFF, size);
 
 	_defaultTexture = _resourceManager.create<Texture>("textures/white", whiteTextureDesc);
 
@@ -75,6 +73,11 @@ BgfxRenderContext::~BgfxRenderContext() {
 }
 
 void BgfxRenderContext::cleanup() {
+	for (FrameBuffer& fb : _frameBuffers) {
+		bgfx::destroy(fb.handle);
+	}
+	_frameBuffers.clear();
+
 	bgfx::destroy(_textureUniform);
 	bgfx::destroy(_scaleUniform);
 	bgfx::destroy(_resolutionUniform);
@@ -87,11 +90,26 @@ void BgfxRenderContext::cleanup() {
 void BgfxRenderContext::beginFrame(f32 delta) {
 	_lastDelta = delta;
 	_totalTime += (f64)delta;
+	_viewOffset = 0;
 }
 
-void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
+void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) {
 	const engine::CanvasGeometry& geom = canvas.getGeometry();
+	uint32 nextViewOffset = _viewOffset;
 	
+	bgfx::FrameBufferHandle frameBuffer;
+
+	if (window == _mainWindow) {
+		frameBuffer = BGFX_INVALID_HANDLE; // This sets the main window back buffer as the frame buffer
+
+		if (canvas.getDimensions() != _resolution) {
+			_resolution = canvas.getDimensions();
+			bgfx::reset((uint32_t)_resolution.w, (uint32_t)_resolution.h, BGFX_RESET_VSYNC);
+		}
+	} else {
+		frameBuffer = acquireFrameBuffer(window, canvas.getDimensions());
+	}
+
 	if (geom.vertices.size()) {
 		const bgfx::Memory* verts = bgfx::copy(geom.vertices.data(), (uint32)geom.vertices.size() * sizeof(engine::CanvasVertex));
 		const bgfx::Memory* inds = bgfx::copy(geom.indices.data(), (uint32)geom.indices.size() * sizeof(uint32));
@@ -120,16 +138,20 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 		f32 dim[4] = { (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, (f32)_totalTime, _lastDelta };
 		
 		for (const engine::CanvasBatch& batch : geom.batches) {
+			uint32 batchViewId = _viewOffset + batch.viewId;
+			assert(batchViewId <= 255);
+
 			f32 projMtx[16];
 			bx::mtxOrtho(projMtx, batch.projection.x, batch.projection.right(), batch.projection.bottom(), batch.projection.y, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 
 			//bgfx::setViewClear(viewId, BGFX_CLEAR_COLOR, 0x000000FF);
 			//bgfx::setViewRect(batch.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
 			//bgfx::setViewRect(batch.viewId, 0, 0, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
-			bgfx::setViewRect(batch.viewId, (uint16)batch.viewArea.x, (uint16)batch.viewArea.y, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
-			bgfx::setViewMode(batch.viewId, bgfx::ViewMode::Sequential);
-			bgfx::setViewTransform(batch.viewId, viewMtx, projMtx);
-			bgfx::setViewScissor(batch.viewId, (uint16)batch.scissor.x, (uint16)batch.scissor.y, (uint16)batch.scissor.w, (uint16)batch.scissor.h);
+			bgfx::setViewRect(batchViewId, (uint16)batch.viewArea.x, (uint16)batch.viewArea.y, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
+			bgfx::setViewMode(batchViewId, bgfx::ViewMode::Sequential);
+			bgfx::setViewTransform(batchViewId, viewMtx, projMtx);
+			bgfx::setViewScissor(batchViewId, (uint16)batch.scissor.x, (uint16)batch.scissor.y, (uint16)batch.scissor.w, (uint16)batch.scissor.h);
+			bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
 			for (const engine::CanvasSurface& surface : batch.surfaces) {
 				const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
@@ -172,14 +194,51 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas) {
 				bgfx::setIndexBuffer(_ind, (uint32)surface.indexOffset, (uint32)surface.indexCount);
 
 				bgfx::setState(state);
-				bgfx::submit(batch.viewId, program.getBgfxHandle());
+				bgfx::submit(batchViewId, program.getBgfxHandle());
+
+				nextViewOffset = batchViewId + 1;
 			}
 		}
 	}
+
+	_viewOffset = nextViewOffset;
 }
 
 void BgfxRenderContext::endFrame() {
 	bgfx::frame();
+	_frameCount++;
+
+	// TODO: Tidy up old frame buffers based on FrameBuffer::frameLastUsed and _frameCount
+}
+
+bgfx::FrameBufferHandle BgfxRenderContext::acquireFrameBuffer(NativeWindowHandle window, Dimension dimensions) {
+	for (FrameBuffer& frameBuffer : _frameBuffers) {
+		if (frameBuffer.window == window) {
+			// Frame buffer already exists for this window
+
+			if (frameBuffer.dimensions != dimensions) {
+				// Window has changed size, resize framebuffer
+
+				bgfx::destroy(frameBuffer.handle);
+				frameBuffer.handle = bgfx::createFrameBuffer(window, dimensions.w, dimensions.h);
+				frameBuffer.dimensions = dimensions;
+			}
+
+			frameBuffer.frameLastUsed = _frameCount;
+
+			return frameBuffer.handle;
+		}
+	}
+
+	// Frame buffer does not exist, create a new one
+	_frameBuffers.push_back(FrameBuffer{
+		.window = window,
+		.handle = bgfx::createFrameBuffer(window, dimensions.w, dimensions.h),
+		.dimensions = dimensions,
+		.frameLastUsed = _frameCount
+	});
+
+	return _frameBuffers.back().handle;
 }
 
 ShaderProgramHandle BgfxRenderContext::getDefaultProgram() const {

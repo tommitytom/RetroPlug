@@ -3,9 +3,6 @@
 #include "Window.h"
 #include "WindowManager.h"
 
-#include "foundation/ResourceProvider.h"
-#include "graphics/FrameBuffer.h"
-
 struct GLFWwindow;
 struct GLFWcursor;
 
@@ -14,8 +11,6 @@ namespace fw::app {
 	private:
 		GLFWwindow* _window = nullptr;
 		Point _lastMousePosition;
-		FrameBufferProvider* _frameBufferProvider = nullptr;
-		std::shared_ptr<FrameBuffer> _frameBuffer;
 
 		GLFWcursor* _cursor = nullptr;
 
@@ -31,11 +26,7 @@ namespace fw::app {
 		
 		bool shouldClose() override;
 
-		void* getNativeHandle() override;
-
-		void setFrameBufferProvider(FrameBufferProvider* provider) {
-			_frameBufferProvider = provider;
-		}
+		NativeWindowHandle getNativeHandle() override;
 
 	private:
 		static void mouseEnterCallback(GLFWwindow* window, int entered);

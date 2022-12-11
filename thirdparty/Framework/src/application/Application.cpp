@@ -6,7 +6,6 @@
 
 #include "graphics/Canvas.h"
 #include "graphics/TextureAtlas.h"
-#include "graphics/bgfx/BgfxFrameBuffer.h"
 #include "graphics/bgfx/BgfxShader.h"
 #include "graphics/bgfx/BgfxShaderProgram.h"
 #include "graphics/bgfx/BgfxTexture.h"
@@ -23,7 +22,7 @@ using namespace fw::app;
 using hrc = std::chrono::high_resolution_clock;
 using delta_duration = std::chrono::duration<f32>;
 
-Application::Application() : _fontManager(_resourceManager), _canvas(_resourceManager, _fontManager) {
+Application::Application() : _fontManager(_resourceManager) {
 	FoundationModule::setup();
 
 	_audioManager = std::make_shared<audio::MiniAudioManager>();
@@ -31,7 +30,7 @@ Application::Application() : _fontManager(_resourceManager), _canvas(_resourceMa
 }
 
 Application::Application(std::shared_ptr<audio::AudioManager> audioManager) 
-	: _fontManager(_resourceManager), _canvas(_resourceManager, _fontManager), _audioManager(audioManager) 
+	: _fontManager(_resourceManager), _audioManager(audioManager) 
 {
 	FoundationModule::setup();
 	_audioManager->start();
@@ -46,7 +45,7 @@ Application::~Application() {
 	_mainWindow->onCleanup();
 
 	_resourceManager = ResourceManager();
-	_canvas.destroy();
+	//_canvas.destroy();
 
 	_mainWindow = nullptr;
 	_renderContext = nullptr;
@@ -61,8 +60,6 @@ void Application::createRenderContext(WindowPtr window) {
 	_resourceManager.addProvider<Font>(std::make_unique<FtglFontProvider>(_resourceManager));
 
 	FontHandle font = _resourceManager.load<Font>("Roboto-Regular.ttf/16");
-
-	_canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), font);
 
 	_lastTime = hrc::now();
 }
@@ -95,16 +92,18 @@ bool Application::runFrame() {
 			WindowPtr w = *it;
 
 			if (!w->shouldClose()) {
+				Canvas& canvas = w->getCanvas();
+				canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), _resourceManager.load<Font>("Roboto-Regular.ttf/16"));
+
 				w->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
 
 				w->onUpdate(delta);
 
-				_canvas.setViewId(w->getId());
-				_canvas.beginRender(w->getViewManager()->getDimensions(), 1.0f);
-				w->onRender(_canvas);
-				_canvas.endRender();
+				canvas.beginRender();				
+				w->onRender(canvas);
+				canvas.endRender();
 
-				_renderContext->renderCanvas(_canvas);
+				_renderContext->renderCanvas(canvas, w->getNativeHandle());
 			}
 		}
 

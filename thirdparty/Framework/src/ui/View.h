@@ -152,7 +152,8 @@ namespace fw {
 		Rect _area;
 		f32 _scale = 1.0f;
 		f32 _alpha = 1.0f;
-		bool _initialized = false;
+		//bool _initialized = false;
+		bool _mounted = false;
 		bool _visible = true;
 		bool _clip = false;
 
@@ -613,21 +614,15 @@ namespace fw {
 			}
 
 			view->_parent = std::weak_ptr<View>(shared_from_this());
-			view->setShared(_shared);
-
-			if (isInitialized() && !view->_initialized) {
-				// TODO: Call down the hierarchy
-				view->onInitialize();
-				view->_initialized = true;
-			}
-
 			_children.push_back(view);
-			onChildAdded(view);
+			
+			if (isInitialized()) {
+				initializeRecursive(view);
 
-			if (isMounted()) {
-				// TODO: Call down the hierarchy
-				view->onMount();
-			}			
+				if (isMounted()) {
+					mountRecursive(view);
+				}
+			}
 
 			setLayoutDirty();
 
@@ -635,15 +630,11 @@ namespace fw {
 		}
 
 		bool isInitialized() const {
-			return _initialized;
+			return _shared != nullptr;
 		}
 
 		virtual bool isMounted() const {
-			if (!_parent.expired()) {
-				return _parent.lock()->isMounted();
-			}
-			
-			return false;
+			return _mounted;
 		}
 
 		size_t getChildIndex(ViewPtr view) const {
@@ -685,7 +676,7 @@ namespace fw {
 					_children.erase(_children.begin() + i);
 
 					view->_parent.reset();
-					view->_shared = nullptr;
+					//view->_shared = nullptr;
 
 					setLayoutDirty();
 
@@ -931,6 +922,35 @@ namespace fw {
 		}
 
 	private:
+		void initializeRecursive(ViewPtr view) {
+			assert(isInitialized());
+
+			if (!view->_shared) {
+				view->_shared = _shared;
+				view->onInitialize();
+			}
+
+			onChildAdded(view);
+
+			for (ViewPtr& child : view->getChildren()) {
+				if (!child->isInitialized()) {
+					view->initializeRecursive(child);
+				}
+			}
+		}
+
+		void mountRecursive(ViewPtr view) {
+			if (!view->isMounted()) {
+				view->onMount();
+			}
+
+			for (ViewPtr& child : view->getChildren()) {
+				if (!child->isMounted()) {
+					view->mountRecursive(child);
+				}
+			}
+		}
+
 		void setShared(Shared* shared) {
 			_shared = shared;
 

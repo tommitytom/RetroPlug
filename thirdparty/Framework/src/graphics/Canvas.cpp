@@ -45,13 +45,11 @@ Canvas& Canvas::clearProgram() {
 	return setProgram(_defaultProgram);
 }
 
-void Canvas::beginRender(Dimension res, f32 pixelRatio) {
+void Canvas::beginRender() {
 	clear();
 
-	_res.dimensions = res;
-	_viewPort = Rect(0, 0, res.w, res.h);
+	_viewPort = Rect(0, 0, _res.w, _res.h);
 	_projection = (RectF)_viewPort;
-	_pixelRatio = pixelRatio;
 	_font = _defaultFont;
 
 	_geom.batches.push_back(CanvasBatch {

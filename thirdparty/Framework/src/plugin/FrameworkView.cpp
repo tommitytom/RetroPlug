@@ -135,11 +135,11 @@ void FrameworkView::OnDrop(const char* str) {
 }
 
 void FrameworkView::OnRescale() {
-
+	spdlog::info("onRescale");
 }
 
 void FrameworkView::OnResize() {
-
+	spdlog::info("onResize, {}, {}", this->GetRECT().W(), this->GetRECT().H());
 }
 
 void FrameworkView::Draw(IGraphics& g) {

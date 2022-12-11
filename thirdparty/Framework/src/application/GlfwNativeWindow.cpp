@@ -73,47 +73,7 @@ void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
-	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	ViewManagerPtr vm = w->getViewManager();
-
-	/*vm->onResize(ResizeEvent{
-		.size = Dimension{ x, y },
-		.oldSize = vm->getDimensions()
-	});*/
-
-	Dimension viewSize = vm->getDimensions();
-	Dimension windowSize(x, y);
-
-	// NOTE: An ID of 0 is always given to the main window.  It does not need a new frame buffer.
-	bool resizeFrameBuffer = w->getId() > 0 && !w->_frameBuffer;
-
-	if (x != viewSize.w || y != viewSize.h) {
-		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
-			// Resize window to fit content
-			glfwSetWindowSize(w->_window, (int)viewSize.w, (int)viewSize.h);
-		} else {
-			// Resize content to fit window
-			vm->setDimensions(windowSize);
-			viewSize = windowSize;
-		}
-
-		if (w->getId() == 0) {
-			bgfx::reset((uint32_t)viewSize.w, (uint32_t)viewSize.h, BGFX_RESET_VSYNC);
-		} else {
-			resizeFrameBuffer = true;
-		}
-
-		bgfx::setViewRect(w->getId(), 0, 0, bgfx::BackbufferRatio::Equal);
-	}
-
-	if (resizeFrameBuffer && w->_frameBufferProvider) {
-		w->_frameBuffer = w->_frameBufferProvider->createTyped(FrameBufferDesc{
-			.dimensions = windowSize,
-			.nwh = w->getNativeHandle(),
-		});
-
-		w->_frameBuffer->setViewFrameBuffer(w->getId());
-	}
+	// NOTE: Resizing is now handled in GlfwNativeWindow::onUpdate
 }
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -196,7 +156,6 @@ GlfwNativeWindow::~GlfwNativeWindow() {
 
 void GlfwNativeWindow::onCleanup() {
 	Window::onCleanup();
-	_frameBuffer = nullptr;
 }
 
 void GlfwNativeWindow::onCreate() {
@@ -233,17 +192,12 @@ void GlfwNativeWindow::onCreate() {
 }
 
 void GlfwNativeWindow::onUpdate(f32 delta) {
-	//glfwWaitEventsTimeout(0.016);
-
 	ViewManagerPtr vm = getViewManager();
 
 	Dimension windowSize;
 	glfwGetWindowSize(_window, &windowSize.w, &windowSize.h);
 
 	Dimension viewSize = vm->getDimensions();
-
-	// NOTE: An ID of 0 is always given to the main window.  It does not need a new frame buffer.
-	bool resizeFrameBuffer = getId() > 0 && !_frameBuffer;
 
 	if (windowSize.w != viewSize.w || windowSize.h != viewSize.h) {
 		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
@@ -252,25 +206,8 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		} else {
 			// Resize content to fit window
 			vm->setDimensions(windowSize);
-			viewSize = windowSize;
+			getCanvas().setDimensions(windowSize, 1.0f);
 		}
-
-		if (getId() == 0) {
-			bgfx::reset((uint32_t)viewSize.w, (uint32_t)viewSize.h, BGFX_RESET_VSYNC);
-		} else {
-			resizeFrameBuffer = true;
-		}
-		
-		bgfx::setViewRect(getId(), 0, 0, bgfx::BackbufferRatio::Equal);
-	}
-
-	if (resizeFrameBuffer && _frameBufferProvider) {
-		_frameBuffer = _frameBufferProvider->createTyped(FrameBufferDesc{
-			.dimensions = windowSize,
-			.nwh = getNativeHandle(),
-		});
-
-		_frameBuffer->setViewFrameBuffer(getId());
 	}
 
 	vm->onUpdate(delta);

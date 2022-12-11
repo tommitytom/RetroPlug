@@ -21,7 +21,7 @@ namespace fw::app {
 	private:
 		std::unique_ptr<WindowManager> _windowManager;
 		std::unique_ptr<BgfxRenderContext> _renderContext;
-		engine::Canvas _canvas;
+		//engine::Canvas _canvas;
 
 		std::chrono::high_resolution_clock::time_point _lastTime;
 
@@ -63,7 +63,7 @@ namespace fw::app {
 		}
 
 		template <typename ViewT>
-		WindowPtr setup(void* nativeWindowHandle, fw::Dimension dimensions) {
+		WindowPtr setup(NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
 			_windowManager = std::make_unique<WindowManagerT>(_resourceManager, _fontManager);
 
 			ViewPtr view = std::make_shared<ViewT>();
