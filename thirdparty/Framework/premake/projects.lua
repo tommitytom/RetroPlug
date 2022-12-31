@@ -65,6 +65,7 @@ function m.Graphics.include()
 	m.Foundation.include()
 	dep.bgfx.include()
 	dep.glfw.include()
+	dep.glad.include()
 	dep.freetype.include()
 
 	dep.bgfx.compat()
@@ -78,6 +79,7 @@ function m.Graphics.link()
 	links { "Graphics" }
 
 	m.Foundation.link()
+	dep.glad.link()
 	dep.bgfx.link()
 	dep.freetype.link()
 end
@@ -90,8 +92,21 @@ function m.Graphics.project()
 
 	files {
 		paths.SRC_ROOT .. "graphics/**.h",
-		paths.SRC_ROOT .. "graphics/**.cpp"
+		paths.SRC_ROOT .. "graphics/**.cpp",
+		--paths.RESOURCES_ROOT .. "fonts/**.ttf"
 	}
+
+	filter("files:**.ttf")
+		buildmessage 'Compiling resource: %{file.relpath}'
+
+		-- One or more commands to run (required)
+		buildcommands {
+			'luac -o "%{cfg.objdir}/%{file.basename}.out" "%{file.relpath}"'
+		}
+
+		buildoutputs { '%{cfg.objdir}/%{file.basename}.h' }
+
+	filter{}
 
 	util.liveppCompat()
 end

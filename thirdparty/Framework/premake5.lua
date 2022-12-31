@@ -123,7 +123,7 @@ projects.Engine.project()
 
 group "3 - Examples"
 
---projects.ExampleApplication.project("CanvasTest")
+projects.ExampleApplication.project("CanvasTest")
 projects.ExampleApplication.project("PhysicsTest")
 --projects.ExampleApplication.project("ShaderReload")
 --projects.ExampleApplication.project("Solitaire")

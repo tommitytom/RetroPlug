@@ -2,7 +2,6 @@
 
 #include "foundation/Math.h"
 #include "foundation/ResourceHandle.h"
-#include "graphics/bgfx/BgfxResource.h"
 
 namespace fw::engine {
 	struct TextureDesc {

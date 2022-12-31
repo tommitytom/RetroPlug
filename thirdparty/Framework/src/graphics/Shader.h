@@ -7,9 +7,17 @@
 #include "foundation/ResourceHandle.h"
 
 namespace fw::engine {
+	enum class ShaderType {
+		Unknown,
+		Fragment,
+		Vertex,
+		Compute
+	};
+
 	struct ShaderDesc {
 		const uint8* data = nullptr;
 		uint32 size = 0;
+		ShaderType type = ShaderType::Unknown;
 	};
 
 	class Shader : public Resource {

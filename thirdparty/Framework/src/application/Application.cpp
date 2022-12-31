@@ -94,6 +94,7 @@ bool Application::runFrame() {
 			if (!w->shouldClose()) {
 				Canvas& canvas = w->getCanvas();
 				canvas.setDefaults(_renderContext->getDefaultTexture(), _renderContext->getDefaultProgram(), _resourceManager.load<Font>("Roboto-Regular.ttf/16"));
+				canvas.setDimensions(w->getViewManager()->getDimensions(), 1.0f);
 
 				w->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
 

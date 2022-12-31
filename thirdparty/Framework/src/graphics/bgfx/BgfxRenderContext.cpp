@@ -144,9 +144,6 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 			f32 projMtx[16];
 			bx::mtxOrtho(projMtx, batch.projection.x, batch.projection.right(), batch.projection.bottom(), batch.projection.y, -1, 1, 0, bgfx::getCaps()->homogeneousDepth);
 
-			//bgfx::setViewClear(viewId, BGFX_CLEAR_COLOR, 0x000000FF);
-			//bgfx::setViewRect(batch.viewId, 0, 0, bgfx::BackbufferRatio::Equal);
-			//bgfx::setViewRect(batch.viewId, 0, 0, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
 			bgfx::setViewRect(batchViewId, (uint16)batch.viewArea.x, (uint16)batch.viewArea.y, (uint16)batch.viewArea.w, (uint16)batch.viewArea.h);
 			bgfx::setViewMode(batchViewId, bgfx::ViewMode::Sequential);
 			bgfx::setViewTransform(batchViewId, viewMtx, projMtx);

@@ -13,7 +13,8 @@ function m.include()
 		"IPLUG_EDITOR=1",
 		"IPLUG_DSP=1",
 		"_CONSOLE",
-		"IGRAPHICS_FRAMEWORK"
+		"IGRAPHICS_FRAMEWORK",
+		"IGRAPHICS_GL3"
 	}
 
 	filter { "configurations:Debug" }
@@ -110,7 +111,8 @@ function m.link()
 	filter { "system:windows" }
 		links {
 			"Wininet",
-			"Shlwapi"
+			"Shlwapi",
+			"Opengl32"
 		}
 
 	filter {}
@@ -194,7 +196,7 @@ local function generateConfig(settings, target)
 #define PLUG_DOES_MIDI_OUT ${midiOut}
 #define PLUG_DOES_MPE 1
 #define PLUG_DOES_STATE_CHUNKS ${stateChunks}
-#define PLUG_HAS_UI 0
+#define PLUG_HAS_UI 1
 #define PLUG_WIDTH ${width}
 #define PLUG_HEIGHT ${height}
 #define PLUG_FPS ${fps}

@@ -7,10 +7,11 @@ local m = {
 	freetype = dofile("freetype.lua"),
 	simplefilewatcher = dofile("simplefilewatcher.lua"),
 	iplug2 = dofile("iplug2.lua"),
+	glad = dofile("glad.lua"),
+	bin2h = dofile("bin2h.lua"),
 }
 
 function m.allProjects()
-	--m.SameBoy.project()
 	m.bgfx.bxProject()
 	m.bgfx.bimgProject()
 	m.bgfx.bgfxProject()
@@ -20,6 +21,8 @@ function m.allProjects()
 	m.freetype.project()
 	m.simplefilewatcher.project()
 	m.iplug2.project()
+	m.glad.project()
+	m.bin2h.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

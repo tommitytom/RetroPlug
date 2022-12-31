@@ -161,12 +161,19 @@ void GlfwNativeWindow::onCleanup() {
 void GlfwNativeWindow::onCreate() {
 	ViewManagerPtr vm = getViewManager();
 
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	//glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	//glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+
 	glfwWindowHint(GLFW_RESIZABLE, vm->getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
 	//glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
 
 	Dimension dimensions = vm->getDimensions();
 	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
+
+	glfwMakeContextCurrent(_window);
 
 	glfwSetWindowUserPointer(_window, this);
 
@@ -206,12 +213,13 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		} else {
 			// Resize content to fit window
 			vm->setDimensions(windowSize);
-			getCanvas().setDimensions(windowSize, 1.0f);
 		}
 	}
 
 	vm->onUpdate(delta);
 	auto& shared = vm->getShared();
+
+	glfwSwapBuffers(_window);
 
 	if (shared.cursorChanged) {
 		if (_cursor) {

@@ -62,9 +62,7 @@ namespace fw::app {
 
 		void update(std::vector<WindowPtr>& created) override;
 
-		template <typename T>
-		WindowPtr createWindow() {
-			ViewPtr view = std::make_shared<T>();
+		WindowPtr createWindow(ViewPtr view) override {
 			WindowPtr window = std::make_shared<GlfwNativeWindow>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			addWindow(window);
 
