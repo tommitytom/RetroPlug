@@ -37,7 +37,9 @@ void StartView::setupMenu() {
 			Project* project = getState<Project>();
 
 			SystemWrapperPtr system = project->addSystem<SameBoySystem>({
-				.romPath = "mgb.gb"
+				.paths = {
+					.romPath = "mgb.gb"
+				}
 			}, {
 				.romBuffer = std::make_shared<fw::Uint8Buffer>(mgb, mgb_len)
 			});

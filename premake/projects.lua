@@ -119,10 +119,6 @@ function m.Core.project()
 	util.liveppCompat()
 end
 
-
-
-
-
 function m.SameBoyPlug.include()
 	dependson { "configure" }
 
@@ -179,10 +175,6 @@ function m.RetroPlug.include()
 
 	m.Core.include()
 	m.SameBoyPlug.include()
-	--fwDeps.bgfx.include()
-	--fwDeps.glfw.include()
-	--fwDeps.lua.include()
-	--dep.SameBoy.include()
 	dep.liblsdj.include()
 	dep.minizip.include()
 
@@ -208,7 +200,6 @@ function m.RetroPlug.link()
 
 	links { "RetroPlug" }
 
-	--dep.SameBoy.link()
 	m.SameBoyPlug.link()
 	fwDeps.bgfx.link()
 	fwDeps.glfw.link()
@@ -305,6 +296,27 @@ end
 
 function m.Application.iplugProject()
 	iplug2.createApp("config.lua")
+
+	m.RetroPlug.link()
+
+	defines {
+		"EXAMPLE_IMPL=RetroPlug"
+	}
+
+	--[[files {
+		"src/app/**.h",
+		"src/app/**.cpp"
+	}]]
+	excludes {
+		--"src/app/main.cpp",
+		"src/app/OffsetCalculatorMain.cpp"
+	}
+
+	util.liveppCompat()
+end
+
+function m.Application.iplugVst2()
+	iplug2.createVst2("config.lua")
 
 	m.RetroPlug.link()
 

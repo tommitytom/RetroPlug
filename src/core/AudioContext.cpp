@@ -3,6 +3,8 @@
 #include "sameboy/SameBoyManager.h"
 #include "core/AudioStreamSystem.h"
 
+#include "core/PassthroughMidiProcessor.h"
+
 using namespace rp;
 
 AudioContext::AudioContext(IoMessageBus* messageBus, OrchestratorMessageBus* orchestratorMessageBus) 
@@ -13,20 +15,43 @@ AudioContext::AudioContext(IoMessageBus* messageBus, OrchestratorMessageBus* orc
 	_state.processor.addManager<SystemManager<AudioStreamSystem>>();
 }
 
-void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
-	size_t sampleCount = (size_t)frameCount * 2;
+MidiProcessorPtr getMidiProcessor(std::string_view romName) {
+	if (romName == "MGB") {
+		return std::make_shared<PassthroughMidiProcessor>();
+	}
 
+	return nullptr;
+}
+
+void AudioContext::processMessageBus() {
 	OrchestratorChange change;
 	while (_orchestratorMessageBus->uiToAudio.try_dequeue(change)) {
 		if (change.add) {
+			_midiProcessors.push_back(getMidiProcessor(change.add->getRomName()));
 			_state.processor.addSystem(change.add);
 		}
 
 		if (change.remove != INVALID_SYSTEM_ID) {
+			for (size_t i = 0; i < _state.processor.getSystems().size(); ++i) {
+				SystemPtr system = _state.processor.getSystems()[i];
+				if (system->getId() == change.remove) {
+					_midiProcessors.erase(_midiProcessors.begin() + i);
+					break;
+				}
+			}
+
 			_state.processor.removeSystem(change.remove);
 		}
 
 		if (change.replace) {
+			for (size_t i = 0; i < _state.processor.getSystems().size(); ++i) {
+				SystemPtr system = _state.processor.getSystems()[i];
+				if (system->getId() == change.replace->getId()) {
+					_midiProcessors[i] = getMidiProcessor(change.add->getRomName());
+					break;
+				}
+			}
+
 			SystemPtr old = _state.processor.removeSystem(change.replace->getId());
 			_state.processor.addSystem(change.replace);
 			change.replace = old;
@@ -35,6 +60,14 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 		}
 
 		if (change.swap) {
+			for (size_t i = 0; i < _state.processor.getSystems().size(); ++i) {
+				SystemPtr system = _state.processor.getSystems()[i];
+				if (system->getId() == change.replace->getId()) {
+					_midiProcessors[i] = getMidiProcessor(change.add->getRomName());
+					break;
+				}
+			}
+
 			SystemPtr old = _state.processor.removeSystem(change.swap->getId());
 			_state.processor.addSystem(change.swap);
 			change.swap = old;
@@ -88,6 +121,12 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 			_ioMessageBus->dealloc(std::move(stream));
 		}
 	}
+}
+
+void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
+	processMessageBus();
+
+	size_t sampleCount = (size_t)frameCount * 2;
 
 	// Make sure systems have output buffers set
 	for (SystemPtr& system : _state.processor.getSystems()) {
@@ -170,6 +209,64 @@ void AudioContext::onRender(f32* output, const f32* input, uint32 frameCount) {
 			if (!_ioMessageBus->audioToUi.try_emplace(std::move(stream))) {
 				spdlog::warn("Failed to pass IO buffer to UI thread");
 			}
+		}
+	}
+}
+
+void AudioContext::onMidi(const fw::MidiMessage& message) {
+	processMessageBus();
+
+	const std::vector<SystemPtr>& systems = _state.processor.getSystems();
+	uint32 channel = message.getChannel();
+
+	/*for (SystemPtr& system : _state.processor.getSystems()) {
+		SystemIoPtr& io = system->getStream();
+		if (!io) {
+			io = _ioMessageBus->alloc(system->getId());
+		}
+	}*/
+
+	switch (_midiRouting) {
+		case MidiChannelRouting::SendToAll: {
+			for (size_t i = 0; i < systems.size(); i++) {
+				MidiProcessorPtr processor = _midiProcessors[i];
+				SystemIo& systemIo = *systems[i]->getStream();
+
+				if (processor) {
+					processor->onMidi(systemIo, message);
+				}
+			}
+
+			break;
+		}
+		case MidiChannelRouting::OneChannelPerInstance: {
+			if (channel < systems.size()) {
+				MidiProcessorPtr processor = _midiProcessors[channel];
+				SystemIo& systemIo = *systems[channel]->getStream();
+
+				if (processor) {
+					fw::MidiMessage msg = message;
+					msg.setChannel(0);
+					processor->onMidi(systemIo, msg);
+				}
+			}
+
+			break;
+		}
+		case MidiChannelRouting::FourChannelsPerInstance: {
+			if (channel < systems.size() * 4) {
+				uint32 ch = channel % 4;
+				MidiProcessorPtr processor = _midiProcessors[ch];
+				SystemIo& systemIo = *systems[ch]->getStream();
+
+				if (processor) {
+					fw::MidiMessage msg = message;
+					msg.setChannel(ch);
+					processor->onMidi(systemIo, msg);
+				}
+			}
+
+			break;
 		}
 	}
 }

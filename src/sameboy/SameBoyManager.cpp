@@ -29,12 +29,15 @@ void SameBoyManager::process(uint32 frameCount) {
 		}
 	}
 
-	while (!systems.empty()) {
-		for (auto it = systems.begin(); it != systems.end();) {
+	while (!systems.empty()) [[likely]] {
+		for (auto it = systems.begin(); it != systems.end();) [[likely]] {
 			SameBoySystem* system = *it;
+
 			if (!system->processTick(frameCount)) {
+				[[likely]]
 				++it;
 			} else {
+				[[unlikely]]
 				system->releaseIo();
 				it = systems.erase(it);
 			}

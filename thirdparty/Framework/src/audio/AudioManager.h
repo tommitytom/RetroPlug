@@ -43,4 +43,6 @@ namespace fw::audio {
 
 		virtual bool loadFile(std::string_view path, std::vector<f32>& target) { assert(false); return false; }
 	};
+
+	using AudioManagerPtr = std::shared_ptr<AudioManager>;
 }

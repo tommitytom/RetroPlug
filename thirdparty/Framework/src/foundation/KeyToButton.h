@@ -15,6 +15,7 @@ namespace fw {
 		case VirtualKey::W: button = ButtonType::B; break;
 		case VirtualKey::Enter: button = ButtonType::Start; break;
 		case VirtualKey::Space: button = ButtonType::Start; break;
+		case VirtualKey::Shift: button = ButtonType::Select; break;
 		case VirtualKey::LeftShift: button = ButtonType::Select; break;
 		}
 

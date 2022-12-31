@@ -10,19 +10,27 @@
 #include "core/Serializable.h"
 
 namespace rp {
+	struct SystemPaths {
+		std::string romPath;
+		std::string sramPath;
+	};
+
 	struct SystemSettings {
 		struct InputSettings {
 			std::string key;
 			std::string pad;
 		};
 
-		std::string romPath;
-		std::string sramPath;
 		bool includeRom = true;
 		bool gameLink = false;
 		InputSettings input;
 
 		std::string serialized;
 		//std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;
+	};
+
+	struct SystemDesc {
+		SystemPaths paths;
+		SystemSettings settings;
 	};
 }

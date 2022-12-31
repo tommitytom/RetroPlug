@@ -11,17 +11,23 @@
 using namespace fw;
 using namespace fw::engine;
 
-FtglFont::~FtglFont() {
+const std::string_view DEFAULT_CODEPOINTS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ";
+
+FtglFontFace::~FtglFontFace() {
 	ftgl::texture_font_delete(_font);
 	ftgl::texture_atlas_delete(_atlas);
 }
 
-std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const char* fontData, size_t fontDataSize, f32 fontSize, std::string_view name) {
+std::shared_ptr<FontFace> createTextureFont(ResourceManager& resourceManager, const char* fontData, size_t fontDataSize, f32 fontSize, std::string_view codePoints, std::string_view name) {
 	Dimension atlasSize(1024, 1024);
+
+	if (codePoints.empty()) {
+		codePoints = DEFAULT_CODEPOINTS;
+	}
 
 	ftgl::texture_atlas_t* atlas = ftgl::texture_atlas_new(atlasSize.w, atlasSize.h, 4);
 	ftgl::texture_font_t* font = ftgl::texture_font_new_from_memory(atlas, fontSize, fontData, fontDataSize);
-	size_t missed = ftgl::texture_font_load_glyphs(font, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ");
+	size_t missed = ftgl::texture_font_load_glyphs(font, codePoints.data());
 
 	if (missed > 0) {
 		spdlog::error("Missed {} glyphs when loading {}", missed, name);
@@ -37,42 +43,40 @@ std::shared_ptr<Font> createTextureFont(ResourceManager& resourceManager, const 
 		.data = std::move(data)
 	});
 
-	return std::make_shared<FtglFont>(texture, atlas, font);
+	return std::make_shared<FtglFontFace>(texture, atlas, font);
 }
 
-FtglFontProvider::FtglFontProvider(ResourceManager& resourceManager) : _resourceManager(resourceManager) {
-	_default = createTextureFont(_resourceManager, (const char*)Karla_Regular, Karla_Regular_len, 16.0f, "Karla-Regular");
+FtglFontFaceProvider::FtglFontFaceProvider(ResourceManager& resourceManager) : _resourceManager(resourceManager) {
+	_default = createTextureFont(_resourceManager, (const char*)Karla_Regular, Karla_Regular_len, 16.0f, DEFAULT_CODEPOINTS, "Karla-Regular");
 	assert(_default);
 }
 
-std::shared_ptr<Resource> FtglFontProvider::load(std::string_view uri) {
+std::shared_ptr<Resource> FtglFontFaceProvider::load(std::string_view uri) {
 	size_t lastSlash = uri.find_last_of("/\\");
 	assert(lastSlash != std::string::npos);
 
-	std::string_view path = uri.substr(0, lastSlash);
+	std::string_view fontUri = uri.substr(0, lastSlash);
 	std::string_view sizeStr = uri.substr(lastSlash + 1);
+	f32 size = (f32)::atof(sizeStr.data());
 
-	if (fs::exists(path)) {
-		uintmax_t fileSize = fs::file_size(path);
-		std::vector<std::byte> fileData = fw::FsUtil::readFile(path);
+	std::vector<std::string> deps;
+	return create(FontFaceDesc{
+		.font = std::string(fontUri),
+		.size = size
+	}, deps);
+}
 
-		if (fileData.size() > 0) {
-			f32 size = (f32)::atof(sizeStr.data());
-			return createTextureFont(_resourceManager, (const char*)fileData.data(), fileData.size(), size, path);
-		} else {
-			spdlog::error("Failed to load font at {}: The file contains no data", path);
-		}
-	} else {
-		spdlog::error("Failed to load font at {}: The file does not exist", path);
+std::shared_ptr<Resource> FtglFontFaceProvider::create(const FontFaceDesc& desc, std::vector<std::string>& deps) {
+	FontHandle fontHandle = _resourceManager.load<Font>(desc.font);
+
+	if (fontHandle.isValid() && fontHandle.isLoaded()) {
+		const Font& font = fontHandle.getResource();
+		return createTextureFont(_resourceManager, (const char*)font.getData().data(), font.getData().size(), desc.size, desc.codePoints, desc.font);
 	}
 
 	return _default;
 }
 
-std::shared_ptr<Resource> FtglFontProvider::create(const FontDesc& desc, std::vector<std::string>& deps) {
-	return nullptr;
-}
-
-bool FtglFontProvider::update(Font& resource, const FontDesc& desc) {
+bool FtglFontFaceProvider::update(FontFace& resource, const FontFaceDesc& desc) {
 	return false;
 }

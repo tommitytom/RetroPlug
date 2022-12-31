@@ -1,13 +1,19 @@
 #pragma once
 
+#include <vector>
+
 #include <spdlog/spdlog.h>
 
+#include "foundation/CircularBuffer.h"
+
 #include "audio/AudioProcessor.h"
+#include "audio/MidiMessage.h"
+
 #include "core/AudioState.h"
+#include "core/MidiProcessor.h"
 #include "core/System.h"
 #include "core/SystemProcessor.h"
 #include "core/UiState.h"
-#include "foundation/CircularBuffer.h"
 
 namespace rp {
 	class AudioContext final : public fw::AudioProcessor {
@@ -23,6 +29,9 @@ namespace rp {
 		IoMessageBus* _ioMessageBus;
 		OrchestratorMessageBus* _orchestratorMessageBus;
 
+		MidiChannelRouting _midiRouting = MidiChannelRouting::SendToAll;
+		std::vector<MidiProcessorPtr> _midiProcessors;
+
 		//size_t _currentBufferPos = 0;
 
 	public:
@@ -31,10 +40,15 @@ namespace rp {
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override;
 
+		void onMidi(const fw::MidiMessage& message) override;
+
 		void setSampleRate(uint32 sampleRate);
 		
 		AudioState& getState() {
 			return _state;
 		}
+
+	private:
+		void processMessageBus();
 	};
 }

@@ -70,8 +70,12 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 				sramPath = "";
 			}
 
-			SystemSettings systemSettings{ .romPath = path.string(), .sramPath = sramPath };
-			SystemPtr system = project.addSystem(pathPair.second, systemSettings)->getSystem();
+			SystemDesc desc{
+				.paths = {.romPath = path.string(), .sramPath = sramPath },
+				//TODO: Set defaults settings here
+			};
+
+			SystemPtr system = project.addSystem(pathPair.second, desc)->getSystem();
 			std::string romName = system->getRomName();
 
 			if (sramPath.empty()) {

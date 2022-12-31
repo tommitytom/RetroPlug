@@ -12,9 +12,7 @@ namespace fw::engine {
 		FontManager(ResourceManager& resourceManager): _resourceManager(resourceManager) {}
 		~FontManager() = default;
 
-		FontHandle loadFont(std::string_view uri, f32 size) {
-			return _resourceManager.load<Font>(fmt::format("{}/{}", uri, size));
-		}
+		FontFaceHandle loadFont(std::string_view fontUri, f32 size);
 
 		DimensionF measureText(std::string_view text, std::string_view fontName, f32 fontSize);
 	};

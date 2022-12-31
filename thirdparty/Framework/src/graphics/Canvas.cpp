@@ -362,29 +362,13 @@ Canvas& Canvas::strokeRect(const RectF& area, const Color4F& color) {
 }
 
 DimensionF Canvas::measureText(std::string_view text, std::string_view fontName, f32 fontSize) {
-	FontHandle handle = loadFont(fontName, fontSize);
-	FtglFont& font = handle.getResourceAs<FtglFont>();
-	ftgl::texture_font_t* textureFont = font.getTextureFont();
-
-	DimensionF ret(0, textureFont->height);
-
-	for (size_t i = 0; i < text.size(); ++i) {
-		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
-
-		if (i > 0) {
-			ret.w += ftgl::texture_glyph_get_kerning(glyph, text.data() + i - 1);
-		}
-
-		ret.w += glyph->advance_x;
-	}
-
-	return ret;
+	return _fontManager.measureText(text, fontName, fontSize);
 }
 
 Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& color) {
 	assert(_font.isValid());
 
-	FtglFont& font = _font.getResourceAs<FtglFont>();
+	FtglFontFace& font = _font.getResourceAs<FtglFontFace>();
 	checkSurface(RenderPrimitive::Triangles, font.getTexture());
 
 	ftgl::texture_font_t* textureFont = font.getTextureFont();

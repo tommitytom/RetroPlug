@@ -172,7 +172,7 @@ namespace fw {
 			f32 half = (dim.w - _handleRange) * 0.5f;
 
 			canvas
-				.fillRect(getDimensions(), hasFocus() ? Color4F(0.3f, 0.3f, 0.3f, 1.0f) : Color4F::darkGrey);
+				.fillRect(dim, hasFocus() ? Color4F(0.3f, 0.3f, 0.3f, 1.0f) : Color4F::darkGrey);
 
 			for (size_t i = _handleAreas.size() - 1; i >= 1; --i) {
 				canvas.fillRect(_handleAreas[i], Color4F::black);
@@ -184,8 +184,12 @@ namespace fw {
 
 			if (_showValueLabel) {
 				f32 value = getValueAt(_lastEditedValue);
-				canvas.text(getDimensionsF().w + 10.0f, 0.0f, fmt::format(_labelFormat, value));
+				canvas.text(dim.w + 10.0f, 0.0f, fmt::format(_labelFormat, value));
 			}
+		}
+
+		void onMount() override {
+			updateHandleArea();
 		}
 
 		void onResize(const ResizeEvent& ev) override {

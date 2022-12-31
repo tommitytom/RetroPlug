@@ -21,8 +21,8 @@ namespace rp {
 		SystemProcessor* _processor;
 		OrchestratorMessageBus* _messageBus;
 		ModelFactory* _modelFactory;
-
-		SystemSettings _settings;
+		
+		SystemDesc _desc;
 
 		uint32 _version = 0;
 
@@ -31,7 +31,7 @@ namespace rp {
 			_systemId(systemId), _processor(processor), _messageBus(messageBus), _modelFactory(modelFactory) {}
 		~SystemWrapper() {} 
 
-		SystemPtr load(const SystemSettings& settings, LoadConfig&& loadConfig);
+		SystemPtr load(const SystemDesc& systemDesc, LoadConfig&& loadConfig);
 
 		template <typename T>
 		std::shared_ptr<T> getModel() {
@@ -58,12 +58,12 @@ namespace rp {
 			return _system;
 		}
 
-		SystemSettings& getSettings() {
-			return _settings;
+		SystemDesc& getDesc() {
+			return _desc;
 		}
 
-		const SystemSettings& getSettings() const {
-			return _settings;
+		const SystemDesc& getDesc() const {
+			return _desc;
 		}
 
 		std::vector<std::pair<entt::id_type, ModelPtr>>& getModels() {
@@ -84,7 +84,7 @@ namespace rp {
 			}
 		}
 
-		bool saveSram() { return saveSram(_settings.sramPath); }
+		bool saveSram() { return saveSram(_desc.paths.sramPath); }
 
 		bool saveSram(std::string_view path);
 

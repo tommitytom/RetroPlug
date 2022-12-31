@@ -7,21 +7,18 @@
 
 using namespace fw;
 
-#include INCLUDE_EXAMPLE(EXAMPLE_IMPL)
-
-FrameworkView::FrameworkView(IRECT b, void* nativeWindowHandle) : IControl(b) {
-	auto audioManager = std::make_shared<audio::AudioManager>();
-	_app = std::make_shared<fw::app::Application>(audioManager);
-	_window = _app->setup<EXAMPLE_IMPL>(nativeWindowHandle, fw::Dimension{ (int32)b.W(), (int32)b.H() });
-	_vm = _window->getViewManager();
-}
+FrameworkView::FrameworkView(fw::app::UiContext& uiContext, fw::app::WindowPtr window) :
+	IControl(IRECT(0.0f, 0.0f, window->getViewManager()->getDimensionsF().w, window->getViewManager()->getDimensionsF().h)), 
+	_uiContext(uiContext),
+	_window(window),
+	_vm(window->getViewManager())
+{}
 
 void FrameworkView::OnInit() {
 	
 }
 
-bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) 
-{ 
+bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
 		.key = (VirtualKey::Enum)key.VK,
 		.action = KeyAction::Press,
@@ -29,8 +26,7 @@ bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key)
 	});
 }
 
-bool FrameworkView::OnKeyUp(float x, float y, const IKeyPress& key)
-{
+bool FrameworkView::OnKeyUp(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
 		.key = (VirtualKey::Enum)key.VK,
 		.action = KeyAction::Release,
@@ -143,7 +139,13 @@ void FrameworkView::OnResize() {
 }
 
 void FrameworkView::Draw(IGraphics& g) {
-	_app->runFrame();
+	_uiContext.runFrame();
+
+	Dimension dimensions = _vm->getDimensions();
+	if (dimensions != Dimension((int32)GetRECT().W(), (int32)GetRECT().H())) {
+		this->SetRECT(IRECT(0.0f, 0.0f, (f32)dimensions.w, (f32)dimensions.h));
+		g.Resize(dimensions.w, dimensions.h, 1.0f, true);
+	}	
 
 	ECursor cursor = ECursor::ARROW;
 

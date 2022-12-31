@@ -2,79 +2,32 @@
 
 #include <memory>
 
-#include "graphics/bgfx/BgfxRenderContext.h"
-#include "graphics/FontManager.h"
-
-#include "Window.h"
-#include "WindowManager.h"
-
-#include "foundation/ResourceManager.h"
-#include "audio/AudioManager.h"
-
-#include "WrappedNativeWindow.h"
-
-#define FW_USE_GLFW
-#include "application/Config.h"
+#include "application/UiContext.h"
 
 namespace fw::app {
 	class Application {
 	private:
-		std::unique_ptr<WindowManager> _windowManager;
-		std::unique_ptr<BgfxRenderContext> _renderContext;
-		//engine::Canvas _canvas;
-
-		std::chrono::high_resolution_clock::time_point _lastTime;
-
-		ResourceManager _resourceManager;
-		engine::FontManager _fontManager;
-
-		FontHandle _defaultHandle;
-		TextureHandle _defaultTexture;
-		ShaderProgramHandle _defaultProgram;
-
-		std::shared_ptr<audio::AudioManager> _audioManager;
-
-		WindowPtr _mainWindow;
+		audio::AudioManagerPtr _audioManager;
+		UiContextPtr _uiContext;
 
 	public:
 		Application();
-		Application(std::shared_ptr<audio::AudioManager> audioManager);
 		~Application();
 
-		template <typename ViewT>
+		template <typename ViewT, typename AudioT = void>
 		static int run() {
 			Application app;
-			app.setup<ViewT>();
+			app.setup<ViewT, AudioT>();
 			return app.doLoop();
 		}
 
-		template <typename ViewT>
+		template <typename ViewT, typename AudioT = void>
 		WindowPtr setup() {
-			auto manager = std::make_unique<WindowManagerT>(_resourceManager, _fontManager);
-			WindowPtr window = manager->createWindow<ViewT>();
+			if constexpr (!std::is_same_v<AudioT, void>) {
+				_audioManager->setProcessor(std::make_shared<AudioT>());
+			}
 
-			_windowManager = std::move(manager);
-			
-			createRenderContext(window);
-
-			window->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
-
-			return window;
-		}
-
-		template <typename ViewT>
-		WindowPtr setup(NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
-			_windowManager = std::make_unique<WindowManagerT>(_resourceManager, _fontManager);
-
-			ViewPtr view = std::make_shared<ViewT>();
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
-			_windowManager->addWindow(window);
-
-			createRenderContext(window);
-
-			window->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
-
-			return window;
+			return _uiContext->setup<ViewT>();
 		}
 
 		bool runFrame();
@@ -84,10 +37,10 @@ namespace fw::app {
 		}
 
 	private:
-		void createRenderContext(WindowPtr window);
-
 		int doLoop();
 
 		static void webFrameCallback(void* arg);
 	};
+
+	using ApplicationPtr = std::shared_ptr<Application>;
 }

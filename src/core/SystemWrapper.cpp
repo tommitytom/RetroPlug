@@ -1,6 +1,4 @@
 #include "SystemWrapper.h"
-#include "SystemWrapper.h"
-#include "SystemWrapper.h"
 
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
@@ -17,12 +15,12 @@
 
 using namespace rp;
 
-SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadConfig) {
+SystemPtr SystemWrapper::load(const SystemDesc& systemDesc, LoadConfig&& loadConfig) {
 	assert(loadConfig.romBuffer);
 
 	bool alreadyInitialized = _system != nullptr;
 	_models.clear();
-	_settings = settings;
+	_desc = systemDesc;
 
 	SystemManagerBase* manager = _processor->findManager<SameBoySystem>();
 
@@ -68,7 +66,7 @@ SystemPtr SystemWrapper::load(const SystemSettings& settings, LoadConfig&& loadC
 }
 
 void SystemWrapper::deserializeModels() {
-	std::string& serialized = _settings.serialized;
+	std::string& serialized = _desc.settings.serialized;
 
 	if (serialized.size()) {
 		sol::state lua;
@@ -99,7 +97,7 @@ void SystemWrapper::reset() {
 }
 
 void SystemWrapper::setGameLink(bool gameLink) {
-	_settings.gameLink = gameLink;
+	_desc.settings.gameLink = gameLink;
 	_messageBus->uiToAudio.enqueue(OrchestratorChange { .gameLink = _systemId });
 }
 

@@ -21,6 +21,8 @@ namespace fw::app {
 		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		~WindowManager() {}
 
+		virtual WindowPtr createWindow(ViewPtr view) = 0;
+
 		void addWindow(WindowPtr window) {
 			window->onCreate();
 			_created.push_back(window);

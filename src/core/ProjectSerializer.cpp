@@ -35,26 +35,31 @@ std::string ProjectSerializer::serialize(const ProjectState& state, const std::v
 	sol::table systemsTable = s.create_table();
 
 	for (const SystemWrapperPtr& system : systems) {
-		const SystemSettings& systemSettings = system->getSettings();
+		const SystemDesc& systemDesc = system->getDesc();
 
-		sol::table systemTable = s.create_table_with(
-			"romPath", systemSettings.romPath,
-			"sramPath", systemSettings.sramPath,
-			"includeRom", systemSettings.includeRom,
-			"input", s.create_table_with(
-				"key", systemSettings.input.key,
-				"pad", systemSettings.input.pad
+		sol::table descTable = s.create_table_with(
+			"paths", s.create_table_with(
+				"romPath", systemDesc.paths.romPath,
+				"sramPath", systemDesc.paths.sramPath
+			),
+			"settings", s.create_table_with(
+				"includeRom", systemDesc.settings.includeRom,
+				"input", s.create_table_with(
+					"key", systemDesc.settings.input.key,
+					"pad", systemDesc.settings.input.pad
+				),
+				"model", s.create_table()
 			)
 		);
 
-		sol::table modelTable = systemTable.create_named("model");
+		sol::table modelTable = descTable["settings"]["model"];
 
 		for (auto& [modelType, model] : system->getModels()) {
 			std::string_view typeName = fw::MetaUtil::getTypeName(modelType);
 			model->onSerialize(s, modelTable.create_named(typeName));
 		}
 
-		systemsTable.add(systemTable);
+		systemsTable.add(descTable);
 	}
 
 	output["systems"] = systemsTable;
@@ -123,7 +128,7 @@ bool deserializeEnum(const sol::table& source, std::string_view name, T& target)
 	return false;
 }
 
-bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, std::vector<SystemSettings>& systemSettings) {
+bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings) {
 	sol::state s;
 	rp::LuaUtil::prepareState(s);
 
@@ -164,22 +169,29 @@ bool ProjectSerializer::deserialize(std::string_view path, ProjectState& state, 
 			continue;
 		}
 
-		sol::table modelTable = systemTable["model"];
+		sol::table settingsTable = systemTable["settings"];
+		sol::table pathsTable = systemTable["paths"];
+
+		sol::table modelTable = settingsTable["model"];
 		std::string serializedState;
 		if (!fw::SolUtil::serializeTable(s, modelTable, serializedState)) {
 			spdlog::error("Failed to reserialize state during project load");
 			return false;
 		}
-		
-		systemSettings.push_back(SystemSettings {
-			.romPath = systemTable["romPath"],
-			.sramPath = systemTable["sramPath"],
-			.includeRom = systemTable["includeRom"],
-			.input = SystemSettings::InputSettings {
-				.key = systemTable["input"]["key"],
-				.pad = systemTable["input"]["pad"]
+
+		systemSettings.push_back(SystemDesc{
+			.paths = {
+				.romPath = pathsTable["romPath"],
+				.sramPath = pathsTable["sramPath"].get_or(std::string()),
 			},
-			.serialized = std::move(serializedState)
+			.settings = {
+				.includeRom = settingsTable["includeRom"],
+				.input = SystemSettings::InputSettings {
+					.key = settingsTable["input"]["key"],
+					.pad = settingsTable["input"]["pad"]
+				},
+				.serialized = std::move(serializedState)
+			}
 		});
 	}	
 

@@ -3,6 +3,11 @@
 #include <entt/meta/container.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
+#include <entt/core/hashed_string.hpp>
+
+using namespace entt::literals;
+
+#include "TypeInfo.h"
 
 namespace fw {
 	template <typename T>

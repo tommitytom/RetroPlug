@@ -382,6 +382,7 @@ void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
 
 void MenuView::onRender(Canvas& canvas) {
 	setClip(true);
+
 	_fontSize = 9.0f;
 	_itemSpacing = 12.0f;
 	_separatorSpacing = 7.0f;

@@ -2,10 +2,13 @@
 
 #include <string>
 
+#include <sol/sol.hpp>
+
 #include "audio/AudioManager.h"
 #include "core/AudioContext.h"
 #include "foundation/DataBuffer.h"
 #include "ui/View.h"
+#include "core/ProjectState.h"
 
 enum class ThreadTarget {
 	Ui,
@@ -48,6 +51,9 @@ private:
 
 	//std::vector<SystemIoPtr> _ioCollection;
 	size_t _totalIoAllocated = 0;
+
+	fw::TypeRegistry _typeRegistry;
+	rp::GlobalConfig _config;
 
 public:
 	RetroPlug();

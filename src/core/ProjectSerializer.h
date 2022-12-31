@@ -10,5 +10,5 @@ namespace rp::ProjectSerializer {
 
 	bool serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath);
 
-	bool deserialize(std::string_view path, ProjectState& state, std::vector<SystemSettings>& systemSettings);
+	bool deserialize(std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings);
 }

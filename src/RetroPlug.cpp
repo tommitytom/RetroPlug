@@ -5,6 +5,7 @@
 //#include "AudioContext.h"
 #include <sol/sol.hpp>
 
+#include "foundation/MetaFactory.h"
 #include "foundation/Math.h"
 #include "core/Project.h"
 #include "core/System.h"
@@ -27,16 +28,56 @@
 #include "foundation/FsUtil.h"
 #include "foundation/StringUtil.h"
 #include "core/AudioContext.h"
+#include "core/ConfigLoader.h"
+
+#include "fonts/PlatNomor.h"
 
 using namespace rp;
 
 RetroPlug::RetroPlug() : View({ 480, 432 }) {
 	setType<RetroPlug>();
 	setSizingPolicy(fw::SizingPolicy::FitToContent);
+
+	_typeRegistry.addCommonTypes();
+
+	_typeRegistry.addEnum<AudioChannelRouting>();
+	_typeRegistry.addEnum<MidiChannelRouting>();
+	_typeRegistry.addEnum<SystemLayout>();
+	_typeRegistry.addEnum<SaveStateType>();
+
+	_typeRegistry.addType<ProjectState::Settings>()
+		.addField<&ProjectState::Settings::audioRouting>("audioRouting")
+		.addField<&ProjectState::Settings::autoSave>("autoSave")
+		.addField<&ProjectState::Settings::includeRom>("includeRom")
+		.addField<&ProjectState::Settings::layout>("layout")
+		.addField<&ProjectState::Settings::midiRouting>("midiRouting")
+		.addField<&ProjectState::Settings::saveType>("saveType")
+		.addField<&ProjectState::Settings::zoom>("zoom");
+
+	_typeRegistry.addType<SystemSettings::InputSettings>()
+		.addField<&SystemSettings::InputSettings::key>("key")
+		.addField<&SystemSettings::InputSettings::pad>("pad");
+
+	_typeRegistry.addType<SystemSettings>()
+		.addField<&SystemSettings::includeRom>("includeRom")
+		.addField<&SystemSettings::gameLink>("gameLink")
+		.addField<&SystemSettings::input>("input");
+
+	_typeRegistry.addType<GlobalConfig>()
+		.addField<&GlobalConfig::projectSettings>("project")
+		.addField<&GlobalConfig::systemSettings>("system");
+
+	ConfigLoader::loadConfig(_typeRegistry, "C:\\temp\\rpconfig\\config.lua", _config);
 }
 
 void RetroPlug::onInitialize() {
-	std::shared_ptr<fw::audio::AudioManager>& audioManager = *getState<std::shared_ptr<fw::audio::AudioManager>>();
+	FontDesc fontDesc;
+	fontDesc.data.resize(PlatNomor_len);
+	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
+
+	getResourceManager().create<Font>("PlatNomor", fontDesc);
+
+	fw::audio::AudioManagerPtr& audioManager = *getState<fw::audio::AudioManagerPtr>();
 	_audioContext = std::make_shared<AudioContext>(&_ioMessageBus, &_orchestratorMessageBus);
 	audioManager->setProcessor(_audioContext);
 

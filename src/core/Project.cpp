@@ -77,57 +77,52 @@ std::string rp::Project::getName() {
 void Project::load(std::string_view path) {
 	clear();
 
-	std::vector<SystemSettings> systemSettings;
+	std::vector<SystemDesc> systemDescs;
 	
-	if (!ProjectSerializer::deserialize(path, _state, systemSettings)) {
+	if (!ProjectSerializer::deserialize(path, _state, systemDescs)) {
 		spdlog::error("Failed to load project at {}", path);
 		return;
 	}
 
 	// Create systems from new state
-	for (const SystemSettings& settings : systemSettings) {
-		addSystem<SameBoySystem>(settings);
+	for (const SystemDesc& desc : systemDescs) {
+		addSystem<SameBoySystem>(desc);
 	}
 
 	_requiresSave = false;
 }
 
 bool Project::save(std::string_view path) {
-	std::vector<SystemSettings> settings;
-	for (SystemWrapperPtr system : _systems) {
-		settings.push_back(system->getSettings());
-	}
-
 	return ProjectSerializer::serialize(path, _state, _systems, true);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, SystemId systemId) {
+SystemWrapperPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
 	LoadConfig loadConfig = LoadConfig{
 		.romBuffer = std::make_shared<fw::Uint8Buffer>(),
 		.sramBuffer = std::make_shared<fw::Uint8Buffer>()
 	};
 
-	if (!fw::FsUtil::readFile(settings.romPath, loadConfig.romBuffer.get())) {
+	if (!fw::FsUtil::readFile(systemDesc.paths.romPath, loadConfig.romBuffer.get())) {
 		return nullptr;
 	}
 
-	if (settings.sramPath.size()) {
+	if (systemDesc.paths.sramPath.size()) {
 		loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
-		if (!fw::FsUtil::readFile(settings.sramPath, loadConfig.sramBuffer.get())) {
+		if (!fw::FsUtil::readFile(systemDesc.paths.sramPath, loadConfig.sramBuffer.get())) {
 			// LOG
 		}
 	}
 
-	return addSystem(type, settings, std::move(loadConfig), systemId);
+	return addSystem(type, systemDesc, std::move(loadConfig), systemId);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId) {
+SystemWrapperPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId) {
 	if (systemId == INVALID_SYSTEM_ID) {
 		systemId = _nextId++;
 	}
 
 	SystemWrapperPtr system = std::make_shared<SystemWrapper>(systemId, _processor, _messageBus, &_modelFactory);
-	system->load(settings, std::forward<LoadConfig>(loadConfig));
+	system->load(systemDesc, std::forward<LoadConfig>(loadConfig));
 
 	_systems.push_back(system);
 	_version++;
@@ -157,7 +152,7 @@ void Project::removeSystem(SystemId systemId) {
 	}
 }
 
-void Project::duplicateSystem(SystemId systemId, SystemSettings settings) {
+void Project::duplicateSystem(SystemId systemId, SystemDesc desc) {
 	SystemWrapperPtr systemWrapper = findSystem(systemId);
 	SystemPtr system = systemWrapper->getSystem();
 
@@ -171,9 +166,9 @@ void Project::duplicateSystem(SystemId systemId, SystemSettings settings) {
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
+	desc.settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
 
-	auto cloned = addSystem(system->getType(), settings, std::move(loadConfig));
+	auto cloned = addSystem(system->getType(), desc, std::move(loadConfig));
 	cloned->saveSram();
 }
 

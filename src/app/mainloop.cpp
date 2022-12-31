@@ -5,7 +5,7 @@ static fw::app::Application* app;
 
 void initMain(int argc, char** argv) {
 	app = new fw::app::Application();
-	app->setup<rp::RetroPlug>();
+	app->setup<RetroPlug>();
 }
 
 bool mainLoop() {

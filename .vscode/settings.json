@@ -65,7 +65,18 @@
 		"ButtonClickEvent",
 		"ButtonView",
 		"SliderView",
-		"SliderChangeEvent"
+		"SliderChangeEvent",
+		"SizingPolicy",
+		"PanelView",
+		"updateProps",
+		"TextureView",
+		"Image",
+		"Button",
+		"Text",
+		"uiSelf",
+		"class",
+		"Container",
+		"Point"
 	],
 	"files.associations": {
 		"functional": "cpp",

@@ -10,7 +10,7 @@ struct TestFoo {
 };
 
 #include "foundation/MetaProperties.h"
-
+/*
 const std::array<Property, 1> _properties = {
 	Property {
 		.hash = entt::hashed_string{ "MyProperty" },
@@ -54,3 +54,4 @@ const TypeInfo& fw::typeInfo(TypeId type) {
 }
 
 template <class T> const TypeInfo& fw::typeInfo<TestFoo>() { return _items[0]; }
+*/

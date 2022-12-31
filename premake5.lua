@@ -121,6 +121,7 @@ group "4 - Applications"
 projects.Application.project()
 projects.Application.projectLivepp()
 projects.Application.iplugProject()
+projects.Application.iplugVst2()
 
 if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"

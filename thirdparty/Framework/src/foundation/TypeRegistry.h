@@ -1,0 +1,523 @@
+#pragma once
+
+#include <cassert>
+#include <span>
+#include <vector>
+
+#include <entt/core/any.hpp>
+#include <entt/core/hashed_string.hpp>
+#include <entt/core/type_info.hpp>
+#include <entt/entity/entity.hpp>
+#include <entt/meta/utility.hpp>
+
+#include <magic_enum.hpp>
+
+#include <spdlog/spdlog.h>
+
+#include "foundation/Types.h"
+
+namespace fw {
+	enum class TypeId : uint32 {};
+	enum class NameHash : uint32 {};
+
+	const TypeId INVALID_TYPE_ID = entt::null;
+	const NameHash INVALID_NAME_HASH = entt::null;
+
+	enum class EnTest {
+		One,
+		Two
+	};
+
+	class TypeInstance {
+	private:
+		entt::any _value;
+
+	public:
+		TypeInstance() = default;
+		TypeInstance(const TypeInstance&) = delete;
+		TypeInstance(TypeInstance&&) = default;
+
+		TypeInstance& operator=(const TypeInstance&) = delete;
+		TypeInstance& operator=(TypeInstance&&) = default;
+
+		template<typename Type, typename = std::enable_if_t<!std::is_same_v<std::decay_t<Type>, TypeInstance>>>
+		TypeInstance(Type& value) noexcept : TypeInstance{} {
+			if constexpr (std::is_same_v<std::decay_t<Type>, entt::any>) {
+				_value = value.as_ref();
+			} else {
+				_value.emplace<Type&>(value);
+			}
+		}
+
+		entt::any& getValue() {
+			return _value;
+		}
+
+		explicit operator bool() const ENTT_NOEXCEPT {
+			return static_cast<bool>(_value);
+		}
+
+		entt::any* operator->() {
+			return &_value;
+		}
+
+		const entt::any* operator->() const {
+			return &_value;
+		}
+	};
+
+	namespace internal {
+		enum class TypeTraits : uint32 {
+			None = 0,
+			Const = 1 << 0,
+			Static = 1 << 1,
+			Integral = 1 << 2,
+			FloatingPoint = 1 << 3,
+			Array = 1 << 4,
+			Enum = 1 << 5,
+			Class = 1 << 6,
+			Pointer = 1 << 7,
+			PointerLike = 1 << 8,
+			SequenceContainer = 1 << 9,
+			AssociativeContainer = 1 << 10,
+			_entt_enum_as_bitmask
+		};
+
+		template <typename T>
+		constexpr TypeTraits getTypeTraits() {
+			TypeTraits traits = TypeTraits::None;
+			if constexpr (std::is_class_v<T>) { traits |= TypeTraits::Class; }
+			if constexpr (std::is_enum_v<T>) { traits |= TypeTraits::Enum; }
+			if constexpr (std::is_integral_v<T>) { traits |= TypeTraits::Integral; }
+			if constexpr (std::is_floating_point_v<T>) { traits |= TypeTraits::FloatingPoint; }
+			if constexpr (std::is_array_v<T>) { traits |= TypeTraits::Array; }
+			if constexpr (std::is_pointer_v<T>) { traits |= TypeTraits::Pointer; }
+			return traits;
+		}
+
+		template <typename T, auto Data>
+		entt::any makeGetter(TypeInstance instance) {
+			if constexpr (std::is_member_pointer_v<decltype(Data)>) {
+				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
+				return entt::make_any<DataType&>(std::invoke(Data, entt::any_cast<T&>(instance.getValue())));
+			} else {
+				return Data;
+			}
+		}
+
+		template <typename T, auto Data>
+		void makeSetter(TypeInstance instance, const entt::any& value) {
+			using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
+			std::invoke(Data, entt::any_cast<T&>(instance.getValue())) = entt::any_cast<const DataType>(value);
+		}
+	}
+
+	template <typename T>
+	std::string_view getTypeName() {
+		std::string_view name = entt::type_id<T>().name();
+		size_t offset = name.find_first_of(' ');
+
+		if (offset != std::string::npos) {
+			return name.substr(offset + 1);
+		}
+
+		return name;
+	}
+
+	template <typename T>
+	TypeId getTypeId() {
+		return TypeId{ entt::type_id<T>().index() };
+	}
+
+	static TypeId getTypeId(const entt::any& value) {
+		return TypeId{ value.type().index() };
+	}
+
+	static NameHash getNameHash(std::string_view name) {
+		return NameHash{ entt::hashed_string(name.data(), name.size()).value() };
+	}
+
+	struct Property {
+		TypeId type = INVALID_TYPE_ID;
+		entt::any value;
+	};
+
+	struct Field {
+		TypeId type = INVALID_TYPE_ID;
+		NameHash hash = INVALID_NAME_HASH;
+		std::string_view name;
+		std::span<const Property> properties;
+
+		void(*setter)(TypeInstance instance, const entt::any& value) = nullptr;
+		entt::any(*getter)(TypeInstance instance) = nullptr;
+
+		template <typename T>
+		void set(TypeInstance instance, const T& value) const {
+			assert(setter);
+			assert(getTypeId<T>() == type);
+			setter(std::forward<TypeInstance>(instance), value);
+		}
+
+		template <typename T>
+		T& get(TypeInstance instance) const {
+			assert(getter);
+			assert(getTypeId<T>() == type);
+			return entt::any_cast<T&>(getter(std::forward<TypeInstance>(instance)));
+		}
+
+		entt::any get(TypeInstance instance) const {
+			assert(getter);
+			return getter(std::forward<TypeInstance>(instance));
+		}
+	};
+
+	struct Method {
+		NameHash hash = INVALID_NAME_HASH;
+		std::string_view name;
+		std::span<const Property> properties;
+	};
+
+	struct TypeInfo {
+		TypeId id = INVALID_TYPE_ID;
+		NameHash hash = INVALID_NAME_HASH;
+		std::string_view name;
+		std::span<const Field> fields;
+		std::span<const Property> properties;
+		std::span<const Method> methods;
+		internal::TypeTraits traits = internal::TypeTraits::None;
+		size_t size = 0;
+
+		template <typename T>
+		bool isType() const {
+			return getTypeId<T>() == id;
+		}
+
+		bool isClass() const {
+			return !!(traits & internal::TypeTraits::Class);
+		}
+
+		bool isEnum() const {
+			return !!(traits & internal::TypeTraits::Enum);
+		}
+
+		bool isIntegral() const {
+			return !!(traits & internal::TypeTraits::Integral);
+		}
+
+		bool isFloat() const {
+			return !!(traits & internal::TypeTraits::FloatingPoint);
+		}
+
+		bool isArray() const {
+			return !!(traits & internal::TypeTraits::Array);
+		}
+
+		template <typename T>
+		const Property* findProperty() const {
+			return findProperty(getTypeId<T>());
+		}
+
+		const Property* findProperty(TypeId typeId) const {
+			for (const Property& prop : properties) {
+				if (prop.type == typeId) {
+					return &prop;
+				}
+			}
+
+			return nullptr;
+		}
+
+		bool hasProperty(TypeId typeId) const {
+			return findProperty(typeId) != nullptr;
+		}
+
+		template <typename T>
+		bool hasProperty() const {
+			return findProperty(getTypeId<T>()) != nullptr;
+		}
+
+		const Field* findField(NameHash nameHash) const {
+			for (const Field& field : fields) {
+				if (field.hash == nameHash) {
+					return &field;
+				}
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		void setField(TypeInstance instance, std::string_view name, const T& value) const {
+			setField(std::forward<TypeInstance>(instance), getNameHash(name), value);
+		}
+
+		template <typename T>
+		void setField(TypeInstance instance, NameHash nameHash, const T& value) const {
+			const Field* found = findField(nameHash);
+			assert(found);
+			found->set(std::forward<TypeInstance>(instance), value);
+		}
+	};
+
+	struct TypeRegistryState {
+		std::vector<Field> fields;
+		std::vector<Property> properties;
+		std::vector<Method> methods;
+		std::vector<TypeInfo> types;
+
+		const TypeInfo* findTypeInfo(TypeId typeId) const {
+			if ((size_t)typeId < types.size()) {
+				const TypeInfo& typeInfo = types[(size_t)typeId];
+
+				if (typeInfo.id != INVALID_TYPE_ID) {
+					return &typeInfo;
+				}
+			}
+
+			return nullptr;
+		}
+
+		const TypeInfo* findTypeInfo(NameHash nameHash) const {
+			for (const TypeInfo& type : types) {
+				if (type.hash == nameHash) {
+					return &type;
+				}
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		const TypeInfo* findTypeInfo() const {
+			return findTypeInfo(getTypeId<T>());
+		}
+	};
+
+	template <typename T>
+	class TypeFactory {
+	private:
+		TypeInfo* _typeInfo = nullptr;
+		TypeRegistryState* _state = nullptr;
+
+		size_t _fieldOffset = 0;
+		size_t _propertyOffset = 0;
+		size_t _methodOffset = 0;
+
+	public:
+		TypeFactory(TypeInfo& typeInfo, TypeRegistryState& state) : _typeInfo(&typeInfo), _state(&state) {
+			_fieldOffset = state.fields.size();
+			_propertyOffset = state.properties.size();
+			_methodOffset = state.methods.size();
+		}
+
+		TypeFactory(TypeFactory&& other) noexcept {
+			*this = std::move(other);
+		}
+
+		~TypeFactory() {
+			if (_typeInfo) {
+				_typeInfo->fields = std::span(_state->fields.begin() + _fieldOffset, _state->fields.end());
+				_typeInfo->properties = std::span(_state->properties.begin() + _propertyOffset, _state->properties.end());
+				_typeInfo->methods = std::span(_state->methods.begin() + _methodOffset, _state->methods.end());
+			}
+		}
+
+		TypeFactory& operator=(TypeFactory&& other) noexcept {
+			_typeInfo = other._typeInfo;
+			_state = other._state;
+			_fieldOffset = other._fieldOffset;
+			_propertyOffset = other._propertyOffset;
+			_methodOffset = other._methodOffset;
+
+			other._typeInfo = nullptr;
+			other._state = nullptr;
+			other._fieldOffset = 0;
+			other._propertyOffset = 0;
+			other._methodOffset = 0;
+
+			return *this;
+		}
+
+		template <auto Data, typename ...PropertyType>
+		TypeFactory<T> addField(std::string_view name, PropertyType&&... property) {
+			assert(_state->fields.size() < _state->fields.capacity());
+
+			size_t propertyOffset = _state->properties.size();
+
+			([&] {
+				assert(_state->properties.size() < _state->properties.capacity());
+				assert(_state->findTypeInfo<PropertyType>());
+
+				_state->properties.push_back(Property{
+					.type = getTypeId<PropertyType>(),
+					.value = property
+				});
+			} (), ...);
+			
+			if constexpr (std::is_member_object_pointer_v<decltype(Data)>) {
+				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
+				assert(_state->findTypeInfo<DataType>());
+
+				_state->fields.push_back(Field{
+					.type = getTypeId<DataType>(),
+					.hash = getNameHash(name),
+					.name = name,
+					.properties = std::span(_state->properties.begin() + propertyOffset, _state->properties.end()),
+					.setter = &internal::makeSetter<T, Data>,
+					.getter = &internal::makeGetter<T, Data>,
+				});
+			} else {
+				using DataType = std::remove_reference_t<std::remove_pointer_t<decltype(Data)>>;
+				assert(_state->findTypeInfo<DataType>());
+
+				_state->fields.push_back(Field{
+					.type = getTypeId<DataType>(),
+					.hash = getNameHash(name),
+					.name = name,
+					.properties = std::span(_state->properties.begin() + propertyOffset, _state->properties.end()),
+					.setter = nullptr,
+					.getter = &internal::makeGetter<T, Data>,
+				});
+			}
+
+			return std::move(*this);
+		}
+
+		template<typename = std::enable_if_t<std::is_enum_v<T>>>
+		void addEnumFields() {
+			magic_enum::enum_for_each<T>([&](auto val) {
+				constexpr T valType = val;
+				std::string_view name = magic_enum::enum_name(valType);
+
+				_state->fields.push_back(Field{
+					.type = getTypeId<T>(),
+					.hash = getNameHash(name),
+					.name = name,
+					.getter = &internal::makeGetter<T, valType>
+				});
+			});
+		}
+
+		const TypeInfo& getType() const {
+			assert(_typeInfo);
+			return *_typeInfo;
+		}
+	};
+
+	class TypeFactoryBase {
+	private:
+		TypeId _typeId;
+
+	public:
+		template <typename T>
+		TypeFactoryBase(TypeFactory<T>&& factory) {
+			_typeId = factory.getType().id;
+		}
+	};
+
+	class TypeRegistry {
+	private:
+		TypeRegistryState _state;
+
+	public:
+		TypeRegistry(size_t maxFields = 256, size_t maxProperties = 256, size_t maxMethods = 256) {
+			_state.fields.reserve(maxFields);
+			_state.properties.reserve(maxProperties);
+			_state.methods.reserve(maxMethods);
+		}
+
+		~TypeRegistry() = default;
+
+		template <typename T>
+		TypeFactory<T> addType(std::string_view name = "") {
+			assert(!findTypeInfo<T>());
+
+			if (name.empty()) {
+				name = getTypeName<T>();
+			}
+
+			NameHash nameHash = getNameHash(name);
+
+			return std::move(addType<T>(nameHash, name));
+		}
+
+		template <typename T>
+		TypeFactory<T> addType(NameHash nameHash, std::string_view name = "") {
+			entt::id_type typeId = entt::type_id<T>().index();
+
+			if (name.empty()) {
+				name = getTypeName<T>();
+			}
+
+			_state.types.resize(std::max(_state.types.size(), (size_t)typeId + 1));
+
+			_state.types[typeId] = TypeInfo{
+				.id = getTypeId<T>(),
+				.hash = nameHash,
+				.name = name,
+				.traits = internal::getTypeTraits<T>(),
+				.size = sizeof(T)
+			};
+
+			return std::move(TypeFactory<T>(_state.types[typeId], _state));
+		}
+
+		template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
+		void addEnum() {
+			addType<T>().addEnumFields();
+		}
+
+		void addCommonTypes() {
+			addType<bool>("bool");
+			addType<int8>("int8");
+			addType<uint8>("uint8");
+			addType<int16>("int16");
+			addType<uint16>("uint16");
+			addType<int32>("int32");
+			addType<uint32>("uint32");
+			addType<int64>("int64");
+			addType<uint64>("uint64");
+			addType<f32>("f32");
+			addType<f64>("f64");
+			addType<std::string>("std::string");
+		}
+
+		const TypeInfo* findTypeInfo(NameHash nameHash) const {
+			return _state.findTypeInfo(nameHash);
+		}
+
+		const TypeInfo* findTypeInfo(TypeId typeId) const {
+			return _state.findTypeInfo(typeId);
+		}
+
+		const TypeInfo* findTypeInfo(const entt::any& value) const {
+			return _state.findTypeInfo(getTypeId(value));
+		}
+
+		template <typename T>
+		const TypeInfo* findTypeInfo() const {
+			return _state.findTypeInfo<T>();
+		}
+
+		const TypeInfo& getTypeInfo(NameHash nameHash) const {
+			const TypeInfo* typeInfo = findTypeInfo(nameHash);
+			assert(typeInfo);
+			return *typeInfo;
+		}
+
+		const TypeInfo& getTypeInfo(TypeId typeId) const {
+			assert((size_t)typeId < _state.types.size());
+			assert(_state.types[(size_t)typeId].id != INVALID_TYPE_ID);
+			return _state.types[(size_t)typeId];
+		}
+
+		const TypeInfo& getTypeInfo(const entt::any& value) const {
+			return getTypeInfo(getTypeId(value));
+		}
+
+		template <typename T>
+		const TypeInfo& getTypeInfo() const {
+			return getTypeInfo(getTypeId<T>());
+		}
+	};
+}

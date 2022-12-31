@@ -11,15 +11,15 @@ namespace ftgl {
 }
 
 namespace fw::engine {
-	class FtglFont final : public Font {
+	class FtglFontFace final : public FontFace {
 	private:
 		TextureHandle _texture;
 		ftgl::texture_atlas_t* _atlas = nullptr;
 		ftgl::texture_font_t* _font = nullptr;
 
 	public:
-		FtglFont(TextureHandle texture, ftgl::texture_atlas_t* atlas, ftgl::texture_font_t* font): _texture(texture), _atlas(atlas), _font(font) {}
-		~FtglFont();
+		FtglFontFace(TextureHandle texture, ftgl::texture_atlas_t* atlas, ftgl::texture_font_t* font) : _texture(texture), _atlas(atlas), _font(font) {}
+		~FtglFontFace();
 
 		TextureHandle getTexture() {
 			return _texture;
@@ -34,19 +34,19 @@ namespace fw::engine {
 		}
 	};
 
-	class FtglFontProvider : public TypedResourceProvider<Font> {
+	class FtglFontFaceProvider : public TypedResourceProvider<FontFace> {
 	private:
 		ResourceManager& _resourceManager;
-		std::shared_ptr<Font> _default;
+		std::shared_ptr<FontFace> _default;
 
 	public:
-		FtglFontProvider(ResourceManager& resourceManager);
-		~FtglFontProvider() = default;
+		FtglFontFaceProvider(ResourceManager& resourceManager);
+		~FtglFontFaceProvider() = default;
 
 		std::shared_ptr<Resource> load(std::string_view uri) override;
 
-		std::shared_ptr<Resource> create(const FontDesc& desc, std::vector<std::string>& deps) override;
+		std::shared_ptr<Resource> create(const FontFaceDesc& desc, std::vector<std::string>& deps) override;
 
-		bool update(Font& texture, const FontDesc& desc) override;
+		bool update(FontFace& fontFace, const FontFaceDesc& desc) override;
 	};
 }

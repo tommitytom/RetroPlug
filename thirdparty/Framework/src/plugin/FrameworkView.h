@@ -7,62 +7,21 @@
 
 #include "graphics/Canvas.h"
 
+#include "ui/PanelView.h"
+
 using namespace iplug;
 using namespace igraphics;
 
-#include "ui/PanelView.h"
-
-#include <iostream>
-
-class TestView : public fw::View {
-private:
-	fw::Color4F _col = fw::Color4F::red;
-
-public:
-	TestView() {
-		setType<TestView>();
-		setSizingPolicy(fw::SizingPolicy::FitToParent);
-	}
-
-	void onInitialize() override {
-		addChild<fw::PanelView>("Panel A")->setArea({ 0, 0, 20, 20 });
-		addChild<fw::PanelView>("Panel B")->setArea({ 20, 20, 20, 20 });
-	}
-
-	void onResize(const fw::ResizeEvent& ev) override {
-		std::cout << "" << std::endl;
-	}
-
-	void onRender(fw::engine::Canvas& canvas) override {
-		canvas.fillRect(getDimensions(), _col);
-	}
-
-	bool onMouseButton(const fw::MouseButtonEvent& ev) override {
-		if (_col == fw::Color4F::red) {
-			_col = fw::Color4F::blue;
-		} else {
-			_col = fw::Color4F::red;
-		}
-
-		return true;
-	}
-};
-
 class FrameworkView : public IControl {
 private:
-	std::shared_ptr<fw::app::Application> _app;
+	fw::app::UiContext& _uiContext;
 	fw::app::WindowPtr _window;
 	fw::ViewManagerPtr _vm;
-
 	bool _mouseOver = false;
 
 public:
-	FrameworkView(IRECT b, void* nativeWindowHandle);
+	FrameworkView(fw::app::UiContext& uiContext, fw::app::WindowPtr window);
 	~FrameworkView() {}
-
-	std::shared_ptr<fw::app::Application> getApplication() {
-		return _app;
-	}
 
 	void OnInit() override;
 

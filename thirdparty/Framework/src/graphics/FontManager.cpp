@@ -8,9 +8,23 @@
 using namespace fw;
 using namespace fw::engine;
 
+FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {
+	std::string fontFaceUri = fmt::format("{}/{}", fontUri, size);
+
+	FontFaceHandle fontFace = _resourceManager.get<FontFace>(fontFaceUri);
+	if (fontFace.isValid()) {
+		return fontFace;
+	}
+
+	return _resourceManager.create<FontFace>(fontFaceUri, FontFaceDesc {
+		.font = std::string(fontUri),
+		.size = size
+	});
+}
+
 DimensionF FontManager::measureText(std::string_view text, std::string_view fontName, f32 fontSize) {
-	FontHandle handle = loadFont(fontName, fontSize);
-	FtglFont& font = handle.getResourceAs<FtglFont>();
+	FontFaceHandle handle = loadFont(fontName, fontSize);
+	FtglFontFace& font = handle.getResourceAs<FtglFontFace>();
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
 	DimensionF ret(0, 0);

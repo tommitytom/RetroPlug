@@ -137,7 +137,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 				.parent()
 			.parent()
 			.separator()
-			.select("Game Link", _system->getSettings().gameLink, [&](bool selected) {
+			.select("Game Link", _system->getDesc().settings.gameLink, [&](bool selected) {
 				_system->setGameLink(selected);
 			});
 

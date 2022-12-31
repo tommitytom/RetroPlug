@@ -33,7 +33,7 @@ void loadRomDialog(Project* project, SystemWrapperPtr system) {
 				return;
 			}
 
-			system->load(system->getSettings(), std::move(loadConfig));
+			system->load(system->getDesc(), std::move(loadConfig));
 		} else {
 			//project->addSystem<SameBoySystem>(files[0]);
 		}
@@ -67,14 +67,14 @@ bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
 }
 
 bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
-	const SystemSettings& settings = system->getSettings();
+	const SystemDesc& settings = system->getDesc();
 	std::string path;
 
 	if (!forceDialog) {
-		if (settings.sramPath == "") {
+		if (settings.paths.sramPath == "") {
 			forceDialog = true;
 		} else {
-			path = settings.sramPath;
+			path = settings.paths.sramPath;
 		}
 	}
 
@@ -127,7 +127,9 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWr
 	std::vector<std::byte> fileData = fw::FsUtil::readFile(romPath);
 
 	system->load({
-		.romPath = romPath.string()
+		.paths = {
+			.romPath = romPath.string()
+		}
 	}, {
 		.romBuffer = std::make_shared<fw::Uint8Buffer>((uint8*)fileData.data(), fileData.size()),
 		.reset = true
@@ -161,9 +163,9 @@ void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Projec
 	fw::Menu& loadRoot = root.subMenu("Add");
 
 	loadRoot.action("Duplicate Current", [fileManager, project, system]() {
-		SystemSettings settings = system->getSettings();
-		settings.sramPath = fileManager->getUniqueFilename(settings.sramPath).string();
-		project->duplicateSystem(system->getId(), settings);
+		SystemDesc desc = system->getDesc();
+		desc.paths.sramPath = fileManager->getUniqueFilename(desc.paths.sramPath).string();
+		project->duplicateSystem(system->getId(), desc);
 	});
 
 	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);

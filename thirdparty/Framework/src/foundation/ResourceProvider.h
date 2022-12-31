@@ -14,6 +14,8 @@ namespace fw {
 		virtual std::shared_ptr<Resource> load(std::string_view uri) = 0;
 
 		virtual void reload(ResourceHandle handle) = 0;
+
+		virtual std::shared_ptr<Resource> getDefault() { return nullptr; }
 	};
 
 	template <typename T>

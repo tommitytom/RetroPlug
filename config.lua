@@ -1,14 +1,14 @@
 return {
-	version = "0.3.4",
+	version = "0.4.0",
 	name = "RetroPlug",
 	author = "tommitytom",
-	url = "https://tommitytom.co.uk",
-	email = "fw@tommitytom.co.uk",
+	url = "https://retroplug.io",
+	email = "hello@retroplug.io",
 	copyright = "Tom Yaxley",
 
 	audio = {
 		inputs = 0,
-		outputs = 8,
+		outputs = 2,
 		midiIn = true,
 		midiOut = false,
 		latency = 0,

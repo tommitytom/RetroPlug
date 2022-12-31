@@ -57,4 +57,9 @@ namespace rp {
 
 		std::string path;
 	};
+
+	struct GlobalConfig {
+		ProjectState::Settings projectSettings;
+		SystemSettings systemSettings;
+	};
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+//#include <memory>
+
 #include <string_view>
 #include <entt/core/type_info.hpp>
 
@@ -24,4 +26,6 @@ namespace fw {
 			return _type;
 		}
 	};
+
+	//using ResourcePtr = std::shared_ptr<Resource>;
 }

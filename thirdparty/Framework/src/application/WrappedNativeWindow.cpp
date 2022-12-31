@@ -15,7 +15,6 @@ void WrappedNativeWindow::onUpdate(f32 delta) {
 		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content
 			_size = viewSize;
-			//glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 		} else {
 			// Resize content to fit window
 			vm->setDimensions(_size);

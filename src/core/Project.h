@@ -102,22 +102,22 @@ namespace rp {
 		}
 
 		template <typename T>
-		SystemWrapperPtr addSystem(const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().index(), settings);
+		SystemWrapperPtr addSystem(const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID) {
+			return addSystem(entt::type_id<T>().index(), systemDesc);
 		}
 
-		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, SystemId systemId = INVALID_SYSTEM_ID);
+		SystemWrapperPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
 
 		template <typename T>
-		SystemWrapperPtr addSystem(const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().index(), settings, std::forward<LoadConfig>(loadConfig));
+		SystemWrapperPtr addSystem(const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
+			return addSystem(entt::type_id<T>().index(), systemDesc, std::forward<LoadConfig>(loadConfig));
 		}
 
-		SystemWrapperPtr addSystem(SystemType type, const SystemSettings& settings, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
+		SystemWrapperPtr addSystem(SystemType type, const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
 
 		void removeSystem(SystemId systemId);
 
-		void duplicateSystem(SystemId systemId, SystemSettings settings);
+		void duplicateSystem(SystemId systemId, SystemDesc settings);
 
 		SystemWrapperPtr findSystem(SystemId systemId);
 

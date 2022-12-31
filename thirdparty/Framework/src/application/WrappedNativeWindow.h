@@ -8,13 +8,13 @@
 namespace fw::app {
 	class WrappedNativeWindow : public Window {
 	private:
-		void* _nativeWindowHandle = nullptr;
+		NativeWindowHandle _nativeWindowHandle = nullptr;
 		Point _lastMousePosition;
 
 		fw::Dimension _size;
 
 	public:
-		WrappedNativeWindow(void* nwh, fw::Dimension size, ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id) 
+		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
 			: Window(resourceManager, fontManager, view, id), _nativeWindowHandle(nwh), _size(size) {}
 		~WrappedNativeWindow() = default;
 
@@ -42,16 +42,13 @@ namespace fw::app {
 		WrappedWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {}
 		~WrappedWindowManager() = default;
 
-		template <typename T>
-		WindowPtr createWindow() {
+		WindowPtr createWindow(ViewPtr view) override {
 			assert(false); // Not available with this window manager
 			return nullptr;
 		}
 
-		template <typename T>
-		WindowPtr acquireWindow(void* nativeWindowHandle) {
-			ViewPtr view = std::make_shared<T>();
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+		WindowPtr acquireWindow(NativeWindowHandle nativeWindowHandle, ViewPtr view) {
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, view->getDimensions(), & _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			addWindow(window);
 			return window;
 		}

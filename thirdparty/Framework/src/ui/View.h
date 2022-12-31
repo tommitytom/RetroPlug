@@ -3,15 +3,13 @@
 #include <memory>
 #include <vector>
 
-#include <entt/entity/entity.hpp>
 #include <entt/entity/registry.hpp>
-#include <entt/core/any.hpp>
-#include <entt/core/type_info.hpp>
 #include <spdlog/spdlog.h>
 
 #include "foundation/Input.h"
 #include "foundation/Math.h"
 #include "foundation/StringUtil.h"
+#include "foundation/TypeRegistry.h"
 
 #include "graphics/Canvas.h"
 #include "ui/TypeDataLookup.h"
@@ -670,10 +668,10 @@ namespace fw {
 						}
 					}
 
+					_children.erase(_children.begin() + i);
+					
 					onChildRemoved(view);
 					view->onDismount();
-
-					_children.erase(_children.begin() + i);
 
 					view->_parent.reset();
 					//view->_shared = nullptr;

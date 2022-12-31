@@ -39,7 +39,7 @@ namespace fw::engine {
 
 	struct CanvasVertex {
 		PointF pos;
-		uint32 abgr;
+		uint32 abgr = 0;
 		PointF uv;
 	};
 
@@ -96,13 +96,13 @@ namespace fw::engine {
 
 		TextureHandle _defaultTexture;
 		ShaderProgramHandle _defaultProgram;
-		FontHandle _defaultFont;
+		FontFaceHandle _defaultFont;
 
 		ShaderProgramHandle _program;
 
 		std::string _fontName = "Karla-Regular";
 		f32 _fontSize = 16.0f;
-		FontHandle _font;
+		FontFaceHandle _font;
 
 		PointF _translation = { 0, 0 };
 		PointF _scale = { 1, 1 };
@@ -147,11 +147,11 @@ namespace fw::engine {
 		void updateFont() {
 			assert(_fontName.size());
 			PointF scale = _transform.getScale();
-			_font = loadFont(_fontName, _fontSize * std::max(scale.x, scale.y));
+			_font = _fontManager.loadFont(_fontName, _fontSize * std::max(scale.x, scale.y));
 		}
 
-		FontHandle loadFont(std::string_view name, f32 size) {
-			return _resourceManager.load<Font>(fmt::format("{}/{}", name, size));
+		FontFaceHandle loadFont(std::string_view name, f32 size) {
+			return _fontManager.loadFont(name, size);
 		}
 
 		void clear() {
@@ -163,7 +163,7 @@ namespace fw::engine {
 			clearTransform();
 		}
 
-		void setDefaults(TextureHandle texture, ShaderProgramHandle program, FontHandle font) {
+		void setDefaults(TextureHandle texture, ShaderProgramHandle program, FontFaceHandle font) {
 			_defaultTexture = texture;
 			_defaultProgram = program;
 			_defaultFont = font;
