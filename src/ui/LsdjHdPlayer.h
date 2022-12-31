@@ -23,7 +23,7 @@ namespace rp {
 		lsdj::Ui _ui;
 
 	public:
-		LsdjHdPlayer() : LsdjCanvasView({ 160 * 4, 144 * 4 }), _ui(_canvas) {
+		LsdjHdPlayer() : LsdjCanvasView({ 160 * 5, 144 * 4 }), _ui(_canvas) {
 			setType<LsdjHdPlayer>();
 			setName("LSDJ HD Player");
 			setSizingPolicy(fw::SizingPolicy::None);

@@ -16,17 +16,13 @@ namespace rp {
 		}
 		~CompactLayoutView() = default;
 
-		void setGridLayout(fw::GridLayout layout) {
-			_grid->setLayoutMode(layout);
-		}
-
 		void onInitialize() override {
 			_grid = this->addChild<fw::GridView>("Grid");
 			_gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
 			_gridOverlay->setGrid(_grid);
 		}
 
-		bool onKey(const fw::KeyEvent& ev) {
+		bool onKey(const fw::KeyEvent& ev) override {
 			if (ev.key == VirtualKey::Tab) {
 				if (ev.down) {
 					_gridOverlay->incrementSelection();
@@ -36,6 +32,10 @@ namespace rp {
 			}
 
 			return false;
+		}
+
+		void setGridLayout(fw::GridLayout layout) {
+			_grid->setLayoutMode(layout);
 		}
 
 		fw::GridViewPtr& getGrid() {
