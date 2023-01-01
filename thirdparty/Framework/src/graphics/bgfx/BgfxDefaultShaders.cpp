@@ -16,7 +16,7 @@
 using namespace fw;
 using namespace fw::engine;
 
-std::pair<ShaderDesc, ShaderDesc> engine::getDefaultShaders() {
+std::pair<ShaderDesc, ShaderDesc> engine::getDefaultBgfxShaders() {
 	const uint8* vert = nullptr; uint32 vertSize = 0;
 	const uint8* frag = nullptr; uint32 fragSize = 0;
 

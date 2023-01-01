@@ -10,9 +10,9 @@
 namespace fw::engine {
 	GLenum getGlShaderType(ShaderType type) {
 		switch (type) {
-		case ShaderType::Fragment: return GL_FRAGMENT_SHADER;
-		case ShaderType::Vertex: return GL_VERTEX_SHADER;
-		//case ShaderType::Compute: return GL_COMPUTE_SHADER;
+			case ShaderType::Fragment: return GL_FRAGMENT_SHADER;
+			case ShaderType::Vertex: return GL_VERTEX_SHADER;
+			//case ShaderType::Compute: return GL_COMPUTE_SHADER;
 		}
 
 		return GL_INVALID_ENUM;

@@ -50,6 +50,8 @@ namespace fw::app {
 			_viewManager.reset();
 		}
 
+		virtual void onFrame() {}
+
 		virtual bool shouldClose() = 0;
 
 		virtual NativeWindowHandle getNativeHandle() = 0;

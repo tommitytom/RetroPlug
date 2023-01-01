@@ -7,22 +7,7 @@
 using namespace fw;
 using namespace fw::engine;
 
-BgfxShaderProgramProvider::BgfxShaderProgramProvider(const ResourceHandleLookup& lookup): _resources(lookup) {
-	auto shaders = getDefaultShaders();
-
-	BgfxShaderProvider shaderProvider;
-
-	std::vector<std::string> deps;
-	_vertexShader = shaderProvider.create(ShaderDesc{ .data = shaders.first.data, .size = shaders.first.size }, deps);
-	_fragmentShader = shaderProvider.create(ShaderDesc{ .data = shaders.second.data, .size = shaders.second.size }, deps);
-
-	bgfx::ProgramHandle handle = bgfx::createProgram(
-		std::static_pointer_cast<BgfxShader>(_vertexShader)->getBgfxHandle(),
-		std::static_pointer_cast<BgfxShader>(_fragmentShader)->getBgfxHandle()
-	);
-	
-	_defaultProgram = std::make_shared<BgfxShaderProgram>(handle, ShaderHandle(), ShaderHandle());
-}
+BgfxShaderProgramProvider::BgfxShaderProgramProvider(const ResourceHandleLookup& lookup) : _resources(lookup) {}
 
 std::shared_ptr<Resource> BgfxShaderProgramProvider::create(const ShaderProgramDesc& desc, std::vector<std::string>& deps) {
 	deps.push_back(desc.vertexShader);

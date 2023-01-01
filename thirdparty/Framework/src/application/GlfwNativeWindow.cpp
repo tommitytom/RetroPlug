@@ -198,6 +198,10 @@ void GlfwNativeWindow::onCreate() {
 	//glfwSetFramebufferSizeCallback(window, resizeCallback);
 }
 
+void GlfwNativeWindow::onFrame() {
+	glfwSwapBuffers(_window);
+}
+
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	ViewManagerPtr vm = getViewManager();
 
@@ -218,8 +222,6 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 
 	vm->onUpdate(delta);
 	auto& shared = vm->getShared();
-
-	glfwSwapBuffers(_window);
 
 	if (shared.cursorChanged) {
 		if (_cursor) {

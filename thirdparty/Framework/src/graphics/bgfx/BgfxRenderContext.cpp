@@ -37,27 +37,8 @@ BgfxRenderContext::BgfxRenderContext(NativeWindowHandle mainWindow, Dimension re
 	_resourceManager.addProvider<Shader, BgfxShaderProvider>();
 	_resourceManager.addProvider<ShaderProgram>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
 	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
-	
-	TextureDesc whiteTextureDesc = TextureDesc{
-		.dimensions = { 8, 8 },
-		.depth = 4
-	};
-	
-	const size_t size = (size_t)(whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth);
-	whiteTextureDesc.data.resize(size);
-	memset(whiteTextureDesc.data.data(), 0xFF, size);
 
-	_defaultTexture = _resourceManager.create<Texture>("textures/white", whiteTextureDesc);
-
-	auto shaderDescs = getDefaultShaders();
-
-	_resourceManager.create<Shader>("shaders/CanvasVertex", shaderDescs.first);
-	_resourceManager.create<Shader>("shaders/CanvasFragment", shaderDescs.second);
-
-	_defaultProgram = _resourceManager.create<ShaderProgram>("shaders/CanvasDefault", {
-		"shaders/CanvasVertex",
-		"shaders/CanvasFragment"
-	});
+	getDefaultShaders();
 
 	_textureUniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 	_scaleUniform = bgfx::createUniform("scale", bgfx::UniformType::Vec4);
@@ -83,8 +64,10 @@ void BgfxRenderContext::cleanup() {
 	bgfx::destroy(_resolutionUniform);
 	bgfx::destroy(_vert);
 	bgfx::destroy(_ind);
-	_defaultProgram = nullptr;
-	_defaultTexture = nullptr;
+}
+
+std::pair<engine::ShaderDesc, engine::ShaderDesc> BgfxRenderContext::getDefaultShaders() {
+	return getDefaultBgfxShaders();
 }
 
 void BgfxRenderContext::beginFrame(f32 delta) {
@@ -151,11 +134,8 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 			bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
 			for (const engine::CanvasSurface& surface : batch.surfaces) {
-				const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
-				const TextureHandle textureHandle = surface.texture.isValid() ? surface.texture : _defaultTexture;
-
-				const BgfxShaderProgram& program = programHandle.getResourceAs<BgfxShaderProgram>();
-				const BgfxTexture& texture = textureHandle.getResourceAs<BgfxTexture>();
+				const BgfxShaderProgram& program = surface.program.getResourceAs<BgfxShaderProgram>();
+				const BgfxTexture& texture = surface.texture.getResourceAs<BgfxTexture>();
 
 				uint64 state = 0
 					| BGFX_STATE_WRITE_RGB
@@ -236,8 +216,4 @@ bgfx::FrameBufferHandle BgfxRenderContext::acquireFrameBuffer(NativeWindowHandle
 	});
 
 	return _frameBuffers.back().handle;
-}
-
-ShaderProgramHandle BgfxRenderContext::getDefaultProgram() const {
-	return _defaultProgram;
 }

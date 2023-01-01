@@ -66,32 +66,6 @@ namespace fw {
 		_resourceManager.addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(_resourceManager.getLookup()));
 		_resourceManager.addProvider<Texture, GlTextureProvider>();
 
-		TextureDesc whiteTextureDesc = TextureDesc{
-			.dimensions = { 8, 8 },
-			.depth = 4
-		};
-
-		const size_t size = (size_t)(whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth);
-		whiteTextureDesc.data.resize(size);
-		memset(whiteTextureDesc.data.data(), 0xFF, size);
-
-		_defaultTexture = _resourceManager.create<Texture>("textures/white", whiteTextureDesc);
-
-		auto shaderDescs = getDefaultGlShaders();
-
-		_resourceManager.create<Shader>("shaders/CanvasVertex", shaderDescs.first);
-		_resourceManager.create<Shader>("shaders/CanvasFragment", shaderDescs.second);
-
-		_defaultProgram = _resourceManager.create<ShaderProgram>("shaders/CanvasDefault", {
-			"shaders/CanvasVertex",
-			"shaders/CanvasFragment"
-		});
-
-		GLuint programHandle = _defaultProgram.getResourceAs<GlShaderProgram>().getGlHandle();
-
-		_projUniform = glGetUniformLocation(programHandle, "u_proj");
-		_textureUniform = glGetUniformLocation(programHandle, "s_tex");
-
 		glGenVertexArrays(1, &_arrayBuffer);
 		glGenBuffers(1, &_vertexBuffer);
 		glGenBuffers(1, &_indexBuffer);
@@ -132,9 +106,10 @@ namespace fw {
 			_vertexBuffer = 0;
 			_indexBuffer = 0;
 		}
+	}
 
-		_defaultProgram = nullptr;
-		_defaultTexture = nullptr;
+	std::pair<engine::ShaderDesc, engine::ShaderDesc> GlRenderContext::getDefaultShaders() {
+		return getDefaultGlShaders();
 	}
 
 	void GlRenderContext::beginFrame(f32 delta) {
@@ -226,22 +201,25 @@ namespace fw {
 				//bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
 				for (const engine::CanvasSurface& surface : batch.surfaces) {
+					assert(surface.program.isValid());
+					assert(surface.texture.isValid());
+
 					GLenum primitive = getGlPrimitive(surface.primitive);
 					assert(primitive != GL_INVALID_ENUM);
 
-					const ShaderProgramHandle programHandle = surface.program.isValid() ? surface.program : _defaultProgram;
-					const TextureHandle textureHandle = surface.texture.isValid() ? surface.texture : _defaultTexture;
+					const GlShaderProgram& program = surface.program.getResourceAs<GlShaderProgram>();
+					const GlTexture& texture = surface.texture.getResourceAs<GlTexture>();
 
-					const GlShaderProgram& program = programHandle.getResourceAs<GlShaderProgram>();
-					const GlTexture& texture = textureHandle.getResourceAs<GlTexture>();
+					GLuint programHandle = program.getGlHandle();
+					const ShaderUniforms& uniforms = getShaderUniforms(programHandle);
 
-					glUseProgram(program.getGlHandle());
+					glUseProgram(programHandle);
 
 					glActiveTexture(GL_TEXTURE0);
 					glBindTexture(GL_TEXTURE_2D, texture.getGlHandle());
 
-					glUniform1i(_textureUniform, 0);
-					glUniformMatrix4fv(_projUniform, 1, GL_FALSE, projMtx);
+					glUniform1i(uniforms.textureUniform, 0);
+					glUniformMatrix4fv(uniforms.projUniform, 1, GL_FALSE, projMtx);
 
 					glBindVertexArray(_arrayBuffer);
 
@@ -261,6 +239,24 @@ namespace fw {
 	void GlRenderContext::endFrame() {
 		_frameCount++;
 		// TODO: Tidy up old frame buffers based on FrameBuffer::frameLastUsed and _frameCount
+	}
+
+	const GlRenderContext::ShaderUniforms& GlRenderContext::getShaderUniforms(uint32 programHandle) {
+		for (const std::pair<uint32, ShaderUniforms>& uniforms : _shaderUniforms) {
+			if (uniforms.first == programHandle) {
+				return uniforms.second;
+			}
+		}
+
+		_shaderUniforms.push_back({
+			programHandle,
+			ShaderUniforms{
+				.projUniform = glGetUniformLocation(programHandle, "u_proj"),
+				.textureUniform = glGetUniformLocation(programHandle, "s_tex")
+			}
+		});
+
+		return _shaderUniforms.back().second;
 	}
 
 	uint32 GlRenderContext::acquireFrameBuffer(NativeWindowHandle window, Dimension dimensions) {
@@ -292,9 +288,5 @@ namespace fw {
 
 		return _frameBuffers.back().handle;*/
 		return 0;
-	}
-
-	ShaderProgramHandle GlRenderContext::getDefaultProgram() const {
-		return _defaultProgram;
 	}
 }

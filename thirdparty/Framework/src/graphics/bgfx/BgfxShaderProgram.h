@@ -19,6 +19,7 @@ namespace fw::engine {
 	public:
 		BgfxShaderProgram(bgfx::ProgramHandle handle, ShaderHandle vertexShader, ShaderHandle fragmentShader)
 			: _handle(handle), _vertexShader(vertexShader), _fragmentShader(fragmentShader) {}
+
 		~BgfxShaderProgram() { 
 			if (bgfx::isValid(_handle)) {
 				bgfx::destroy(_handle);

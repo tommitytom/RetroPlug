@@ -23,6 +23,8 @@ namespace fw::app {
 		void onUpdate(f32 delta) override;
 
 		void onCleanup() override;
+
+		void onFrame() override;
 		
 		bool shouldClose() override;
 

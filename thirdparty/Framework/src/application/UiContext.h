@@ -1,8 +1,7 @@
 #pragma once
 
-//#include "graphics/bgfx/BgfxRenderContext.h"
-#include "graphics/gl/GlRenderContext.h"
 #include "graphics/FontManager.h"
+#include "graphics/RenderContext.h"
 
 #include "Window.h"
 #include "WindowManager.h"
@@ -19,14 +18,14 @@ namespace fw::app {
 	class UiContext {
 	private:
 		std::unique_ptr<WindowManager> _windowManager;
-		std::unique_ptr<GlRenderContext> _renderContext;
+		std::unique_ptr<RenderContext> _renderContext;
 
 		std::chrono::high_resolution_clock::time_point _lastTime;
 
 		ResourceManager _resourceManager;
 		engine::FontManager _fontManager;
 
-		FontHandle _defaultHandle;
+		FontFaceHandle _defaultFont;
 		TextureHandle _defaultTexture;
 		ShaderProgramHandle _defaultProgram;
 
@@ -34,13 +33,11 @@ namespace fw::app {
 
 		audio::AudioManagerPtr _audioManager;
 
-	public:
-		UiContext(audio::AudioManagerPtr audioManager);
-		~UiContext();
+		bool _flip = false;
 
-		WindowManager& getWindowManager() {
-			return *_windowManager;
-		}
+	public:
+		UiContext(audio::AudioManagerPtr audioManager, bool requiresFlip);
+		~UiContext();
 
 		bool runFrame();
 
@@ -74,6 +71,10 @@ namespace fw::app {
 			vm->createState<audio::AudioManagerPtr>(_audioManager);
 
 			return window;
+		}
+
+		WindowManager& getWindowManager() {
+			return *_windowManager;
 		}
 
 	private:

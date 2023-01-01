@@ -7,10 +7,7 @@
 #include "graphics/RenderContext.h"
 
 namespace fw {
-	class ResourceManager;
-	using NativeWindowHandle = void*;
-
-	class BgfxRenderContext {
+	class BgfxRenderContext : public RenderContext {
 	private:
 		struct FrameBuffer {
 			NativeWindowHandle window;
@@ -29,9 +26,6 @@ namespace fw {
 		bgfx::UniformHandle _scaleUniform;
 		bgfx::UniformHandle _resolutionUniform;
 
-		ShaderProgramHandle _defaultProgram;
-		TextureHandle _defaultTexture;
-
 		f32 _lastDelta = 0;
 		f64 _totalTime = 0;
 
@@ -47,23 +41,17 @@ namespace fw {
 		BgfxRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager);
 		~BgfxRenderContext();
 
-		void beginFrame(f32 delta);
+		void beginFrame(f32 delta) override;
 
-		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window);
+		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) override;
 
-		void endFrame();
+		void endFrame() override;
 
-		void cleanup();
+		void cleanup() override;
 
-		ShaderProgramHandle getDefaultProgram() const;
-
-		TextureHandle getDefaultTexture() const {
-			return _defaultTexture;
-		}
+		std::pair<engine::ShaderDesc, engine::ShaderDesc> getDefaultShaders() override;
 
 	private:
 		bgfx::FrameBufferHandle acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);
 	};
-
-	using RenderContext = BgfxRenderContext;
 }

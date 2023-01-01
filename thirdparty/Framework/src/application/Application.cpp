@@ -11,7 +11,7 @@ using namespace fw;
 using namespace fw::engine;
 using namespace fw::app;
 
-Application::Application() : _audioManager(std::make_shared<audio::MiniAudioManager>()), _uiContext(std::make_shared<UiContext>(_audioManager)) {
+Application::Application() : _audioManager(std::make_shared<audio::MiniAudioManager>()), _uiContext(std::make_shared<UiContext>(_audioManager, true)) {
 	FoundationModule::setup();
 	_audioManager->start();
 }

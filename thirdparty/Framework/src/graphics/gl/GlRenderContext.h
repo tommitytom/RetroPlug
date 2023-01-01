@@ -8,7 +8,7 @@ namespace fw {
 	class ResourceManager;
 	using NativeWindowHandle = void*;
 
-	class GlRenderContext {
+	class GlRenderContext : public RenderContext {
 	private:
 		struct FrameBuffer {
 			NativeWindowHandle window;
@@ -16,6 +16,15 @@ namespace fw {
 			Dimension dimensions;
 			uint32 frameLastUsed = 0;
 		};
+
+		struct ShaderUniforms {
+			int32 projUniform = -1;
+			int32 textureUniform = -1;
+			int32 scaleUniform = -1;
+			int32 resolutionUniform = -1;
+		};
+
+		std::vector<std::pair<uint32, ShaderUniforms>> _shaderUniforms;
 
 		NativeWindowHandle _mainWindow;
 		Dimension _resolution;
@@ -26,14 +35,6 @@ namespace fw {
 
 		uint32 _vertexBufferSize = 0;
 		uint32 _indexBufferSize = 0;
-
-		int32 _projUniform = -1;
-		int32 _textureUniform = -1;
-		int32 _scaleUniform = -1;
-		int32 _resolutionUniform = -1;
-
-		ShaderProgramHandle _defaultProgram;
-		TextureHandle _defaultTexture;
 
 		f32 _lastDelta = 0;
 		f64 _totalTime = 0;
@@ -50,23 +51,19 @@ namespace fw {
 		GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager);
 		~GlRenderContext();
 
-		void beginFrame(f32 delta);
+		void beginFrame(f32 delta) override;
 
-		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window);
+		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) override;
 
-		void endFrame();
+		void endFrame() override;
 
-		void cleanup();
+		void cleanup() override;
 
-		ShaderProgramHandle getDefaultProgram() const;
-
-		TextureHandle getDefaultTexture() const {
-			return _defaultTexture;
-		}
+		std::pair<engine::ShaderDesc, engine::ShaderDesc> getDefaultShaders();
 
 	private:
 		uint32 acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);
-	};
 
-	//using RenderContext = GlRenderContext;
+		const ShaderUniforms& getShaderUniforms(uint32 programHandle);
+	};
 }
