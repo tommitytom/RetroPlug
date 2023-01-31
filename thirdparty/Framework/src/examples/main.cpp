@@ -1,10 +1,14 @@
 #include "foundation/MacroTools.h"
+#include "application/ApplicationRunner.h"
 
-#include "application/Application.h"
-#include INCLUDE_EXAMPLE(EXAMPLE_IMPL)
+#ifndef APPLICATION_HEADER
+#define APPLICATION_HEADER APPLICATION_IMPL
+#endif
+
+#include INCLUDE_APPLICATION(APPLICATION_HEADER)
 
 using namespace fw;
 
 int main() {
-	return app::Application::run<EXAMPLE_IMPL>();
+	return app::ApplicationRunner::run<APPLICATION_IMPL>();
 }

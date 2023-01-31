@@ -1,6 +1,6 @@
 #include "GlShaderProgram.h"
 
-#include <glad/glad.h>
+#include <glad/gl.h>
 #include <spdlog/spdlog.h>
 
 #include "foundation/Resource.h"

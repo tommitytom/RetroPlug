@@ -4,7 +4,7 @@
 
 using namespace rp;
 
-bool hasSystem(const std::vector<SystemViewPtr>& views, SystemWrapperPtr system) {
+bool hasSystem(const std::vector<SystemViewPtr>& views, SystemPtr system) {
 	for (SystemViewPtr systemView : views) {
 		if (system == systemView->getSystem()) {
 			return true;
@@ -70,7 +70,7 @@ void GridOverlay::onUpdate(f32 delta) {
 	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
 	if (_projectVersion == -1 || _projectVersion != project->getVersion()) {
-		std::vector<SystemWrapperPtr>& systems = project->getSystems();
+		std::vector<SystemPtr>& systems = project->getSystems();
 
 		std::vector<SystemViewPtr> systemViews;
 		_grid->findChildren<SystemView>(systemViews);
@@ -94,14 +94,14 @@ void GridOverlay::onUpdate(f32 delta) {
 			if (systemView->versionIsDirty()) {
 				systemView->removeChildren();
 
-				SystemWrapperPtr system = systemView->getSystem();
+				SystemPtr system = systemView->getSystem();
 
 				// TODO: Also remove any related windows (like lsdj sample manager)
 
-				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
+				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
 
 				for (fw::ViewPtr overlay : overlays) {
-					overlay->setName(fmt::format("{} ({})", overlay->getName(), system->getSystem()->getRomName()));
+					overlay->setName(fmt::format("{} ({})", overlay->getName(), system->getRomName()));
 					systemView->addChild(overlay);
 				}
 
@@ -110,7 +110,7 @@ void GridOverlay::onUpdate(f32 delta) {
 			}
 		}
 
-		for (SystemWrapperPtr system : systems) {
+		for (SystemPtr system : systems) {
 			if (!hasSystem(systemViews, system)) {
 				// New system was added
 
@@ -119,7 +119,7 @@ void GridOverlay::onUpdate(f32 delta) {
 				SystemViewPtr systemView = _grid->addChild<SystemView>(systemName);
 				systemView->setSystem(system);
 
-				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getSystem()->getRomName());
+				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
 
 				for (fw::ViewPtr overlay : overlays) {
 					overlay->setName(fmt::format("{} ({})", overlay->getName(), systemName));
@@ -138,9 +138,7 @@ void GridOverlay::onUpdate(f32 delta) {
 void GridOverlay::onRender(Canvas& canvas) {
 	if (_highlightMode == HighlightMode::Outline && _selected != fw::INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
 		fw::ViewPtr child = _grid->getChild(_selected);
-		auto childArea = child->getArea();
-
-		//canvas.strokeRect(childArea, COLOR_RED);
+		canvas.strokeRect((fw::DimensionF)child->getDimensions(), fw::Color4F::red);
 	}
 }
 

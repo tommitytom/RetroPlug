@@ -2,6 +2,8 @@
 
 #include <gb_struct_def.h>
 
+#include <magic_enum.hpp>
+
 #include "core/System.h"
 #include "core/ProxySystem.h"
 #include "audio/AudioBuffer.h"
@@ -31,10 +33,10 @@ namespace rp {
 		bool down;
 	};
 
-	class SameBoySystem final : public System<SameBoySystem> {
+	class SameBoySystem final : public System {
 	public:
 		struct State {
-			// TODO: This should use std::unique_ptr
+			// TODO: This should use SystemIoPtr
 			SystemIo* io = nullptr;
 
 			GB_gameboy_t* gb = nullptr;
@@ -66,36 +68,32 @@ namespace rp {
 		std::string _romName;
 
 	public:
-		SameBoySystem(SystemId id);
+		SameBoySystem();
 		~SameBoySystem();
-
-		MemoryAccessor getMemory(MemoryType type, AccessType access = AccessType::ReadWrite) override;
 
 		bool load(LoadConfig&& loadConfig) override;
 
 		void reset() override;
 
-		std::string getRomName() override {
-			return _romName;
-		}
+		void addLinkTarget(System* system) override;
+
+		void removeLinkTarget(System* system) override;
+
+		void beginProcess();
+
+		bool processTick(size_t targetFrameCount);
+
+		MemoryAccessor getMemory(MemoryType type, AccessType access = AccessType::ReadWrite) override;
 
 		void setSampleRate(uint32 sampleRate) override;
 
 		bool saveState(fw::Uint8Buffer& target) override;
 
-		void setGameLink(bool gameLink);
+		void setGameLink(bool gameLink) override;
 
-		bool getGameLink() override { return _state.linkEnabled; }
-
-		void addLinkTarget(SystemBase* system) override;
-
-		void removeLinkTarget(SystemBase* system) override;
-
-		bool processTick(size_t targetFrameCount);
-
-		void acquireIo(SystemIo* io);
-
-		SystemIo* releaseIo();
+		bool getGameLink() override { 
+			return _state.linkEnabled; 
+		}
 
 		State& getState() {
 			return _state;
@@ -108,6 +106,12 @@ namespace rp {
 		uint32 getSampleRate() const {
 			return _sampleRate;
 		}
+
+		std::string getRomName() override {
+			return _romName;
+		}
+
+		SystemStateOffsets getStateOffsets() const override;
 
 	private:
 		void destroy();

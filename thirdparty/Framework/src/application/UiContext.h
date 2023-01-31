@@ -7,7 +7,6 @@
 #include "WindowManager.h"
 
 #include "foundation/ResourceManager.h"
-#include "audio/AudioManager.h"
 
 #include "WrappedNativeWindow.h"
 
@@ -31,34 +30,28 @@ namespace fw::app {
 
 		WindowPtr _mainWindow;
 
-		audio::AudioManagerPtr _audioManager;
-
 		bool _flip = false;
 
 	public:
-		UiContext(audio::AudioManagerPtr audioManager, bool requiresFlip);
+		UiContext(bool requiresFlip);
 		~UiContext();
 
 		bool runFrame();
 
-		template <typename ViewT>
-		WindowPtr setup() {
-			ViewPtr view = std::make_shared<ViewT>();
+		WindowPtr setup(ViewPtr view) {
 			WindowPtr window = _windowManager->createWindow(view);
 
 			createRenderContext(window);
 
 			ViewManagerPtr vm = window->getViewManager();
 			vm->setResourceManager(&_resourceManager, &_fontManager);
-			vm->createState<audio::AudioManagerPtr>(_audioManager);
+
+			_mainWindow = window;
 
 			return window;
 		}
 
-		template <typename ViewT>
-		WindowPtr addNativeWindow(NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
-			ViewPtr view = std::make_shared<ViewT>();
-
+		WindowPtr addNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
 			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			_windowManager->addWindow(window);
 
@@ -68,13 +61,20 @@ namespace fw::app {
 
 			ViewManagerPtr vm = window->getViewManager();
 			vm->setResourceManager(&_resourceManager, &_fontManager);
-			vm->createState<audio::AudioManagerPtr>(_audioManager);
+
+			if (!_mainWindow) {
+				_mainWindow = window;
+			}
 
 			return window;
 		}
 
 		WindowManager& getWindowManager() {
 			return *_windowManager;
+		}
+
+		WindowPtr getMainWindow() {
+			return _mainWindow;
 		}
 
 	private:

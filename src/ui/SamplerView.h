@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 #include "lsdj/KitUtil.h"
 #include "lsdj/LsdjUi.h"
 #include "ui/LsdjCanvasView.h"
@@ -18,7 +18,7 @@ namespace rp {
 
 	class SamplerView final : public LsdjCanvasView {
 	private:
-		SystemWrapperPtr _system;
+		SystemPtr _system;
 		SamplerViewState _samplerState;
 		fw::WaveViewPtr _waveView;
 
@@ -37,9 +37,9 @@ namespace rp {
 			return _samplerState;
 		}*/
 
-		void setSystem(SystemWrapperPtr& system);
+		void setSystem(SystemPtr& system);
 
-		SystemWrapperPtr getSystem() { return _system; }
+		SystemPtr getSystem() { return _system; }
 
 		void setSampleIndex(KitIndex kitIdx, size_t sampleIdx);
 

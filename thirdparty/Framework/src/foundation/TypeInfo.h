@@ -6,7 +6,7 @@
 
 #include <entt/core/any.hpp>
 #include <entt/core/type_info.hpp>
-#include <entt/entt.hpp>
+//#include <entt/entt.hpp>
 
 #include "foundation/Types.h"
 

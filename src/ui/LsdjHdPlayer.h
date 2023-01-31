@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "ui/View.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 #include "lsdj/LsdjUi.h"
 #include "ui/LsdjCanvasView.h"
 #include "ui/LsdjModel.h"
@@ -19,7 +19,7 @@ namespace rp {
 
 	class LsdjHdPlayer final : public LsdjCanvasView {
 	private:
-		SystemWrapperPtr _system;
+		SystemPtr _system;
 		lsdj::Ui _ui;
 
 	public:
@@ -27,21 +27,22 @@ namespace rp {
 			setType<LsdjHdPlayer>();
 			setName("LSDJ HD Player");
 			setSizingPolicy(fw::SizingPolicy::None);
+			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 
 		~LsdjHdPlayer() {}
 
-		void setSystem(SystemWrapperPtr& system) {
+		void setSystem(SystemPtr& system) {
 			_system = system;
 
-			lsdj::Rom rom = system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
+			lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 			if (rom.isValid()) {
 				_canvas.setFont(rom.getFont(1));
 				_canvas.setPalette(rom.getPalette(0));
 			}
 		}
 
-		SystemWrapperPtr getSystem() { return _system; }
+		SystemPtr getSystem() { return _system; }
 
 		void onInitialize() override {}
 
@@ -59,7 +60,7 @@ namespace rp {
 		void onRender(Canvas& canvas) override {
 			_canvas.clear();
 
-			LsdjModelPtr model = _system->getModel<LsdjModel>();
+			/*LsdjModelPtr model = _system->getModel<LsdjModel>();
 			if (model && model->getOffsetsValid()) {
 				MemoryAccessor sramAccessor = model->getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
 				MemoryAccessor ramAccessor = model->getSystem()->getMemory(MemoryType::Ram, AccessType::Read);
@@ -70,7 +71,7 @@ namespace rp {
 
 					_ui.renderMode2(sram.getWorkingSong(), ram);
 				}
-			}
+			}*/
 			
 			LsdjCanvasView::onRender(canvas);
 		}

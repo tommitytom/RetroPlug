@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include <glad/glad.h>
+#include <glad/gl.h>
 //#include <glfw/glfw3.h>
 
 #include "foundation/ResourceManager.h"
@@ -46,7 +46,7 @@ namespace fw {
 	GlRenderContext::GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager)
 		: _mainWindow(mainWindow), _resolution(res), _resourceManager(resourceManager) {
 
-		if (!gladLoadGL()) {
+		if (!gladLoaderLoadGL()) {
 			spdlog::error("Failed to initialize OpenGL context");
 			return;
 		}

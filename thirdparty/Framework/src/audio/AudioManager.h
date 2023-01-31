@@ -12,6 +12,7 @@ namespace fw::audio {
 	class AudioManager {
 	protected:
 		std::shared_ptr<AudioProcessor> _processor;
+		f32 _sampleRate = 48000;
 
 	public:
 		AudioManager() {}
@@ -19,6 +20,7 @@ namespace fw::audio {
 
 		void setProcessor(std::shared_ptr<AudioProcessor> processor) {
 			_processor = processor;
+			_processor->setSampleRate(_sampleRate);
 		}
 
 		const std::shared_ptr<AudioProcessor>& getProcessor() const {
@@ -33,9 +35,15 @@ namespace fw::audio {
 
 		virtual void stop() {}
 
-		virtual void setSampleRate() {}
+		virtual void setSampleRate(f32 sampleRate) { 
+			_sampleRate = sampleRate;
 
-		virtual uint32 getSampleRate() { return 48000; }
+			if (_processor) {
+				_processor->setSampleRate(sampleRate);
+			}
+		}
+
+		virtual f32 getSampleRate() { return _sampleRate; }
 
 		virtual bool setAudioDevice(uint32 idx) { return false; }
 

@@ -305,7 +305,8 @@ function m.ExampleApplication.project(name)
 		dep.simplefilewatcher.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name,
+			"APPLICATION_HEADER=" .. name,
+			"APPLICATION_IMPL=" .. name .. "Application",
 			"FW_USE_MINIAUDIO"
 		}
 
@@ -340,7 +341,8 @@ function m.ExampleApplication.project(name)
 		dep.simplefilewatcher.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name,
+			"APPLICATION_HEADER=" .. name,
+			"APPLICATION_IMPL=" .. name .. "Application",
 			"FW_USE_MINIAUDIO"
 		}
 
@@ -366,7 +368,8 @@ function m.ExampleApplication.project(name)
 		m.Ui.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name
+			"APPLICATION_HEADER=" .. name,
+			"APPLICATION_IMPL=" .. name .. "Application",
 		}
 
 		includedirs {
@@ -389,7 +392,8 @@ function m.ExampleApplication.project(name)
 		m.Ui.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name
+			"APPLICATION_HEADER=" .. name,
+			"APPLICATION_IMPL=" .. name .. "Application",
 		}
 
 		includedirs {
@@ -412,7 +416,7 @@ function m.ExampleApplication.project(name)
 		m.Ui.link()
 
 		defines {
-			"EXAMPLE_IMPL=" .. name
+			"APPLICATION_IMPL=" .. name
 		}
 
 		includedirs {

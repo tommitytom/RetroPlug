@@ -170,6 +170,6 @@ void MiniAudioManager::stop() {
 	ma_device_uninit(&_state->device); // This will stop the device so no need to do that manually.
 }
 
-uint32 MiniAudioManager::getSampleRate() {
-	return _state->sampleRate;
+f32 MiniAudioManager::getSampleRate() {
+	return (f32)_state->sampleRate;
 }

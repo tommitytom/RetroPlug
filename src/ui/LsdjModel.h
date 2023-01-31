@@ -5,46 +5,14 @@
 #include <unordered_map>
 
 #include "core/SystemSettings.h"
+#include "core/SystemService.h"
 #include "lsdj/OffsetLookup.h"
 #include "lsdj/Sav.h"
+#include "lsdj/LsdjSettings.h"
 #include "foundation/Types.h"
 
 namespace rp {
-	struct SampleSettings {
-		int32 dither = 0xFF;
-		int32 volume = 0xFF;
-		int32 gain = 0x1;
-		int32 pitch = 0x7F;
-		int32 filter = 0;
-		int32 cutoff = 0x7F;
-		int32 q = 0;
-	};
-
-	const SampleSettings EMPTY_SAMPLE_SETTINGS = SampleSettings{
-		.dither = -1,
-		.volume = -1,
-		.gain = -1,
-		.pitch = -1,
-		.filter = -1,
-		.cutoff = -1,
-		.q = -1,
-	};
-
-	struct KitSample {
-		std::string name;
-		std::string path;
-		SampleSettings settings = EMPTY_SAMPLE_SETTINGS;
-	};
-
-	struct KitState {
-		std::string name;
-		std::vector<KitSample> samples;
-		SampleSettings settings;
-	};
-
-	using KitIndex = size_t;
-
-	class LsdjModel final : public Model {
+	class LsdjModel final : public SystemService {
 	private:
 		lsdj::MemoryOffsets _ramOffsets;
 		bool _offsetsValid = false;
@@ -56,20 +24,16 @@ namespace rp {
 		std::unordered_map<KitIndex, KitState> kits;
 
 	public:
-		LsdjModel(): Model("lsdj") {}
+		LsdjModel(): SystemService(0x15D115D1) {}
 		~LsdjModel() {}
-
-		void onSerialize(sol::state& s, sol::table target) override;
-
-		void onDeserialize(sol::state& s, sol::table source) override;
 
 		void onBeforeLoad(LoadConfig& loadConfig) override;
 
-		void onAfterLoad(SystemPtr system) override;
+		void onAfterLoad(System& system) override;
 
-		void onUpdate(f32 delta) override;
+		//void onUpdate(f32 delta) override;
 
-		std::string getProjectName() override;
+		//std::string getProjectName() override;
 
 		void updateKit(KitIndex kitIdx);
 

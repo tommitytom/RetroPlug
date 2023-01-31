@@ -25,14 +25,12 @@ namespace fw::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
 	
-	UiContext::UiContext(audio::AudioManagerPtr audioManager, bool requiresFlip) : _fontManager(_resourceManager), _audioManager(audioManager) {
+	UiContext::UiContext(bool requiresFlip) : _fontManager(_resourceManager) {
 		_windowManager = std::make_unique<GlfwWindowManager>(_resourceManager, _fontManager);
 		_flip = RENDERER_REQUIRES_FLIP && requiresFlip;
 	}
 
 	UiContext::~UiContext() {
-		_audioManager = nullptr;
-
 		_windowManager->closeAll();
 
 		_renderContext->cleanup();
@@ -61,7 +59,6 @@ namespace fw::app {
 				_mainWindow = w;
 			}
 
-			w->getViewManager()->createState(_audioManager);
 			w->onInitialize();
 		}
 

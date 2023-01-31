@@ -1,11 +1,13 @@
 #include "SystemWrapper.h"
-
+/*
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "foundation/Event.h"
 #include "foundation/FsUtil.h"
 #include "foundation/MetaUtil.h"
 
+#include "core/Events.h"
 #include "core/LuaUtil.h"
 #include "core/ModelFactory.h"
 #include "core/ProxySystem.h"
@@ -50,10 +52,10 @@ SystemPtr SystemWrapper::load(const SystemDesc& systemDesc, LoadConfig&& loadCon
 	proxy->handleSetup(system);
 
 	if (!alreadyInitialized) {
-		_messageBus->uiToAudio.enqueue(OrchestratorChange { .add = system });
+		_eventNode->send("Audio"_hs, AddSystemEvent{ .system = system });
 	} else {
 		_processor->removeSystem(_systemId);
-		_messageBus->uiToAudio.enqueue(OrchestratorChange { .replace = system });
+		_eventNode->send("Audio"_hs, ReplaceSystemEvent{ .system = system });
 	}
 
 	_processor->addSystem(proxy);
@@ -93,12 +95,12 @@ void SystemWrapper::deserializeModels() {
 }
 
 void SystemWrapper::reset() {
-	_messageBus->uiToAudio.enqueue(OrchestratorChange { .reset = _systemId });
+	_eventNode->send("Audio"_hs, ResetSystemEvent{ .systemId = _systemId });
 }
 
 void SystemWrapper::setGameLink(bool gameLink) {
 	_desc.settings.gameLink = gameLink;
-	_messageBus->uiToAudio.enqueue(OrchestratorChange { .gameLink = _systemId });
+	_eventNode->send("Audio"_hs, SetGameLinkEvent{ .systemId = _systemId, .enabled = gameLink });
 }
 
 bool SystemWrapper::saveSram(std::string_view path) {
@@ -123,3 +125,4 @@ bool SystemWrapper::saveSram(std::string_view path) {
 
 	return false;
 }
+*/

@@ -12,12 +12,14 @@
 #include <moodycamel/concurrentqueue.h>
 #include <spdlog/spdlog.h>
 
+#include <windows.h>
+
 namespace fw {
 	class EventNode {
 	public:
 		using NodeId = entt::id_type;
 		using EventType = entt::id_type;
-		using SubscriptionHandler = std::function<void(const entt::any&)>;
+		using SubscriptionHandler = std::function<void(entt::any&)>;
 
 	private:
 		const size_t EVENTS_PER_UPDATE = 128;
@@ -74,6 +76,10 @@ namespace fw {
 			_incomingScratch.resize(EVENTS_PER_UPDATE);
 		}
 
+		const EventNodeState& getState() const {
+			return _state;
+		}
+
 		EventNode(const std::string& name) : _name(name) {
 			_id = entt::hashed_string{ _name.data() };
 			_incoming = std::make_shared<Queue>();
@@ -114,14 +120,28 @@ namespace fw {
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(); });
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType subscribe(std::function<void(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(entt::any_cast<const T&>(v)); });
+			return eventType;
+		}
+
+		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
+		EventType receive(std::function<void()>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(); });
+			return eventType;
+		}
+
+		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
+		EventType receive(std::function<void(T&&)>&& func) {
+			EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(std::move(entt::any_cast<T&>(v))); });
 			return eventType;
 		}
 
@@ -254,14 +274,24 @@ namespace fw {
 		}
 
 		template <typename T>
-		void send(NodeId targetNodeId, T&& event) {
-			assert(_state.nodes.contains(targetNodeId));
+		bool trySend(NodeId targetNodeId, T&& event) {
+			if (_state.nodes.contains(targetNodeId)) {
+				_state.nodes[targetNodeId].queue->enqueue(Event{
+					.sender = _id,
+					.kind = Event::Kind::User,
+					.value = std::move(event)
+				});
 
-			_state.nodes[targetNodeId].queue->enqueue(Event{
-				.sender = _id,
-				.kind = Event::Kind::User,
-				.value = std::move(event)
-			});
+				return true;
+			}
+
+			return false;
+		}
+
+		template <typename T>
+		void send(NodeId targetNodeId, T&& event) {
+			bool valid = trySend(targetNodeId, std::forward<T>(event));
+			assert(valid);
 		}
 
 		template <typename T>
@@ -279,7 +309,7 @@ namespace fw {
 			size_t amount = _incoming->try_dequeue_bulk(_incomingScratch.data(), EVENTS_PER_UPDATE);
 
 			for (size_t i = 0; i < amount; ++i) {
-				const Event& ev = _incomingScratch[i];
+				Event& ev = _incomingScratch[i];
 
 				if (ev.kind == Event::Kind::User) {
 					assert(_state.nodes.contains(ev.sender));
@@ -289,7 +319,7 @@ namespace fw {
 					if (handler) {
 						(*handler)(ev.value);
 					} else {
-						spdlog::warn("Node received a message it has not subscribed to: {}", ev.value.type().name());
+						spdlog::warn("Node '{}' received a message it has not subscribed to: {}", _name, ev.value.type().name());
 					}
 				} else {
 					processSystemEvent(ev);

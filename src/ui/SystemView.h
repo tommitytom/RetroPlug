@@ -1,14 +1,14 @@
 #pragma once
 
 #include "ui/TextureView.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 #include "ui/Menu.h"
 
 namespace rp {
 	class SystemView final : public fw::TextureView {
 	private:
-		SystemWrapperPtr _system;
-		fw::Image _frameBuffer;
+		SystemPtr _system;
+		//fw::Image _frameBuffer;
 
 		uint32 _version = 0;
 
@@ -17,19 +17,20 @@ namespace rp {
 		~SystemView() {}
 
 		bool versionIsDirty() const {
-			return _system->getVersion() != _version;
+			return false;
+			//return _system->getVersion() != _version;
 		}
 
 		void updateVersion() {
-			_version = _system->getVersion();
+			//_version = _system->getVersion();
 		}
 
-		void setSystem(SystemWrapperPtr& system) {
+		void setSystem(SystemPtr& system) {
 			_system = system;
-			setDimensions((fw::Dimension)system->getSystem()->getResolution());
+			setDimensions((fw::Dimension)system->getResolution());
 		}
 
-		SystemWrapperPtr getSystem() {
+		SystemPtr getSystem() {
 			return _system;
 		}
 
@@ -45,9 +46,9 @@ namespace rp {
  			TextureView::onRender(canvas);
 		}
 
-		const fw::Image& getFrameBuffer() const {
+		/*const fw::Image& getFrameBuffer() const {
 			return _frameBuffer;
-		}
+		}*/
 
 		uint32 getVersion() const {
 			return _version;

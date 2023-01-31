@@ -35,7 +35,7 @@
   #endif
 #elif defined IGRAPHICS_GL2 || defined IGRAPHICS_GL3
   #if defined OS_WIN
-    #include <glad/glad.h>
+    #include <glad/gl.h>
   #elif defined OS_MAC
     #if defined IGRAPHICS_GL2
       #include <OpenGL/gl.h>

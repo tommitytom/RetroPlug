@@ -12,7 +12,7 @@ function m.source()
 	m.include()
 
 	files {
-		GLAD_DIR .. "/src/glad.c"
+		GLAD_DIR .. "/src/**.c"
 	}
 end
 

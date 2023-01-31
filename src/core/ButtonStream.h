@@ -8,7 +8,7 @@ namespace rp {
 	struct StreamButtonPress {
 		int button;
 		bool down;
-		double duration; // in ms
+		double duration = 0; // in ms
 	};
 
 	template <const int TotalPressCount>

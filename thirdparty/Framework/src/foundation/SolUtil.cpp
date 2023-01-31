@@ -44,7 +44,7 @@ bool SolUtil::serializeTable(sol::state& s, const sol::table& source, std::strin
 	}	
 }
 
-bool SolUtil::deserializeTable(sol::state& s, const std::string& data, sol::table& target) {
+bool SolUtil::deserializeTable(sol::state& s, std::string_view data, sol::table& target) {
 	try {
 		sol::protected_function_result result = s.script("return require('serpent').load");
 

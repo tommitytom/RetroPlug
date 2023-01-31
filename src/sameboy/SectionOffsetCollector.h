@@ -2,10 +2,11 @@
 #define SECTION_OFFSET_COLLECTOR_h
 
 #include <gb_struct_def.h>
+#include <stdint.h>
 
 typedef struct {
-	int offset;
-	int size;
+	uint32_t offset;
+	uint32_t size;
 } GB_section_offset_pair_t;
 
 typedef struct {

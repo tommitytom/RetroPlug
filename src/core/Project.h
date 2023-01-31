@@ -6,66 +6,63 @@
 
 #include <sol/forward.hpp>
 
+#include "core/Events.h"
 #include "core/ModelFactory.h"
 #include "core/ProjectState.h"
-//#include "core/ResourceManager.h"
 #include "core/Serializable.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
+#include "core/SystemManager.h"
 #include "audio/AudioManager.h"
 
 namespace rp {
 	class Project {
 	private:
+		GlobalConfig _config;
 		ProjectState _state;
-		//ResourceManager _resourceManager;
-		fw::audio::AudioManager* _audioManager = nullptr;
+
+		const fw::TypeRegistry& _typeRegistry;
+		const SystemFactory& _systemFactory;
+		ConcurrentPoolAllocator<SystemIo>& _ioAllocator;
+		SystemManager _systemManager;
 
 		sol::state* _lua = nullptr;
 		int32 _version = 0;
 		SystemId _nextId = 1;
 
-		std::vector<SystemWrapperPtr> _systems;
-
-		SystemProcessor* _processor = nullptr;
-		OrchestratorMessageBus* _messageBus = nullptr;
+		fw::EventNode* _eventNode = nullptr;
 		ModelFactory _modelFactory;
 
 		bool _copyLocal = true;
 		bool _requiresSave = false;
 
 	public:
-		Project();
+		Project(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, ConcurrentPoolAllocator<SystemIo>& ioAllocator);
 		~Project();
 
 		ModelFactory& getModelFactory() {
 			return _modelFactory;
 		}
 
-		void setup(SystemProcessor* processor, OrchestratorMessageBus* orchestratorMessageBus) {
-			_processor = processor;
-			_messageBus = orchestratorMessageBus;
+		const SystemFactory& getSystemFactory() const {
+			return _systemFactory;
 		}
 
-		void setAudioManager(fw::audio::AudioManager& audioManager) {
-			_audioManager = &audioManager;
-		}
-
-		fw::audio::AudioManager& getAudioManager() {
-			return *_audioManager;
-		}
-
-		SystemProcessor& getProcessor() {
-			return *_processor;
-		}
-
-		void processIncoming();
+		void setup(fw::EventNode* eventNode, FetchStateResponse&& state);
 
 		std::string getName();
 
-		void update(f32 delta) {
-			for (SystemWrapperPtr system : _systems) {
-				system->update(delta);
+		void update(uint32 audioFrameCount) {
+			// Make sure systems have IO buffers
+			for (SystemPtr& system : _systemManager.getSystems()) {
+				if (!system->hasIo()) {
+					SystemIoPtr io = _ioAllocator.allocate();
+					io->reset();
+
+					system->setIo(std::move(io));
+				}
 			}
+
+			_systemManager.process(audioFrameCount);
 		}
 
 		const ProjectState& getState() const {
@@ -76,50 +73,40 @@ namespace rp {
 			return _state;
 		}
 
-		void load(std::string_view path);
+		bool load(std::string_view path);
 
-		bool save() { return save(_state.path); }
+		bool save();
 
-		bool save(std::string_view path);
+		bool save(std::string_view path) {
+			_state.path = std::string(path);
+			return save();
+		}
 
 		void saveIfRequired() {
 			if (!_state.path.empty()) {
-				for (SystemWrapperPtr& system : _systems) {
+				/*for (SystemPtr& system : _systems) {
 					for (auto [type, model] : system->getModels()) {
 						if (model->getRequiresSave()) {
 							_requiresSave = true;
 							model->setRequiresSave(false);
 						}
 					}
-				}
+				}*/	
 
 				if (_requiresSave && _state.settings.autoSave) {
 					save();
 					_requiresSave = false;
 				}
-			}
-			
+			}		
 		}
 
-		template <typename T>
-		SystemWrapperPtr addSystem(const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().index(), systemDesc);
-		}
+		SystemPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
 
-		SystemWrapperPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
-
-		template <typename T>
-		SystemWrapperPtr addSystem(const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID) {
-			return addSystem(entt::type_id<T>().index(), systemDesc, std::forward<LoadConfig>(loadConfig));
-		}
-
-		SystemWrapperPtr addSystem(SystemType type, const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
+		SystemPtr addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
 
 		void removeSystem(SystemId systemId);
 
-		void duplicateSystem(SystemId systemId, SystemDesc settings);
-
-		SystemWrapperPtr findSystem(SystemId systemId);
+		SystemPtr duplicateSystem(SystemId systemId = INVALID_SYSTEM_ID);
 
 		void clear();
 
@@ -131,8 +118,16 @@ namespace rp {
 			return (f32)_state.settings.zoom + 1.0f;
 		}
 
-		std::vector<SystemWrapperPtr>& getSystems() {
-			return _systems;
+		std::vector<SystemPtr>& getSystems() {
+			return _systemManager.getSystems();
+		}
+
+		SystemManager& getSystemManager() {
+			return _systemManager;
+		}
+
+		const GlobalConfig& getGlobalConfig() const {
+			return _config;
 		}
 	};
 }

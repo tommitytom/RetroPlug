@@ -6,8 +6,11 @@
 #include <vector>
 
 #include <entt/core/type_info.hpp>
+#include <entt/core/memory.hpp>
+#include <magic_enum.hpp>
 #include <moodycamel/readerwriterqueue.h>
 #include <moodycamel/concurrentqueue.h>
+#include <spdlog/spdlog.h>
 
 #include "foundation/DataBuffer.h"
 #include "foundation/Image.h"
@@ -17,21 +20,15 @@
 #include "core/FixedQueue.h"
 #include "core/Forward.h"
 #include "core/MemoryAccessor.h"
+#include "core/ProjectState.h"
 
 namespace rp {
-	using SystemType = entt::id_type;
-	const size_t MAX_SYSTEM_COUNT = 4;
-
-	struct SystemStateOffsets {
-		int32 coreState = -1;
-		int32 dma = -1;
-		int32 mbc = -1;
-		int32 hram = -1;
-		int32 timing = -1;
-		int32 apu = -1;
-		int32 rtc = -1;
-		int32 video = -1;
+	struct SystemStateOffset {
+		uint32 offset = 0;
+		uint32 size = 0;
 	};
+
+	using SystemStateOffsets = std::array<SystemStateOffset, magic_enum::enum_count<MemoryType>()>;
 
 	struct TimedByte {
 		uint32 audioFrameOffset;
@@ -45,32 +42,13 @@ namespace rp {
 	};
 
 	struct LoadConfig {
+		SystemDesc desc;
+
 		fw::Uint8BufferPtr romBuffer;
 		fw::Uint8BufferPtr sramBuffer;
 		fw::Uint8BufferPtr stateBuffer;
+		SaveStateType stateType = SaveStateType::None;
 		bool reset = false;
-
-		void merge(LoadConfig& other) {
-			if (other.romBuffer) {
-				romBuffer = std::move(other.romBuffer);
-			}
-
-			if (other.sramBuffer) {
-				sramBuffer = std::move(other.sramBuffer);
-			}
-
-			if (other.stateBuffer) {
-				stateBuffer = std::move(other.stateBuffer);
-			}
-
-			if (other.reset) {
-				other.reset = reset;
-			}
-		}
-
-		bool hasChanges() const {
-			return romBuffer || sramBuffer || stateBuffer || reset;
-		}
 	};
 
 	struct SystemIo {
@@ -80,15 +58,11 @@ namespace rp {
 			FixedQueue<TimedByte, 16> serial;
 			std::vector<ButtonStream<8>> buttons;
 			std::vector<MemoryPatch> patches;
-			bool requestReset = false;
-			LoadConfig loadConfig;
 
 			void reset() {
 				serial.reset();
 				buttons.clear();
 				patches.clear();
-				requestReset = false;
-				loadConfig = LoadConfig();
 			}
 		} input;
 
@@ -96,24 +70,15 @@ namespace rp {
 			std::vector<TimedByte> serial;
 			fw::ImagePtr video;
 			fw::Float32BufferPtr audio;
-			
-			fw::Uint8BufferPtr state;
 
 			void reset() {
 				serial.clear();
 				video = nullptr;
 				audio = nullptr;
-				state = nullptr;
 			}
 		} output;
 
-		void merge(SystemIo& other) { 
-			input.requestReset |= other.input.requestReset;
-
-			if (other.input.loadConfig.romBuffer) {
-				input.loadConfig.romBuffer = std::move(other.input.loadConfig.romBuffer);
-			}
-			
+		void merge(SystemIo& other) { 	
 			while (other.input.serial.count()) {
 				input.serial.tryPush(other.input.serial.pop());
 			}
@@ -133,10 +98,6 @@ namespace rp {
 				output.video = std::move(other.output.video);
 			}
 
-			if (other.output.state) {
-				output.state = std::move(other.output.state);
-			}
-
 			if (other.output.serial.size()) {
 				for (const TimedByte& b : other.output.serial) {
 					output.serial.push_back(b);
@@ -152,27 +113,67 @@ namespace rp {
 		}
 	};
 
-	using SystemIoPtr = std::unique_ptr<SystemIo>;
+	template <typename T>
+	class ConcurrentPoolAllocator {
+	private:
+		moodycamel::ConcurrentQueue<std::unique_ptr<T>> _pool;
 
-	struct IoMessageBus {
-		moodycamel::ReaderWriterQueue<SystemIoPtr> uiToAudio;
-		moodycamel::ReaderWriterQueue<SystemIoPtr> audioToUi;
-		moodycamel::ConcurrentQueue<SystemIoPtr> allocator;
+	public:
+		ConcurrentPoolAllocator(size_t poolSize = 32) : _pool(poolSize) {
+			for (size_t i = 0; i < poolSize; ++i) {
+				_pool.enqueue(std::make_unique<T>());
+			}
+		}
 
-		SystemIoPtr alloc(SystemId systemId) {
-			SystemIoPtr io;
-			if (allocator.try_dequeue(io)) {
-				io->systemId = systemId;
-				return io;
+		~ConcurrentPoolAllocator() {}
+
+		std::shared_ptr<T> allocate() {
+			std::shared_ptr<T> item = tryAllocate();
+			if (item) {
+				return item;
+			}
+
+			return std::make_shared<T>();
+		}
+
+		std::shared_ptr<T> tryAllocate() {
+			std::unique_ptr<T> item;
+			if (_pool.try_dequeue(item)) {
+				return std::shared_ptr<T>(item.release(), [&](T* ptr) {
+					if (!_pool.enqueue(std::unique_ptr<T>(ptr))) {
+						spdlog::error("Failed to return item to pool");
+					}
+				});
 			}
 
 			return nullptr;
 		}
+	};
 
-		void dealloc(SystemIoPtr&& io) {
-			io->reset();
-			allocator.enqueue(std::move(io));
+	using SystemIoPtr = std::shared_ptr<SystemIo>;
+
+	struct IoMessageBus {
+		ConcurrentPoolAllocator<SystemIo> allocator;
+
+		IoMessageBus(): allocator(MAX_IO_STREAMS) {}
+
+		SystemIoPtr alloc(SystemId systemId) {
+			SystemIoPtr io = allocator.allocate();
+			if (io) {
+				io->reset();
+				io->systemId = systemId;
+			} else {
+				spdlog::error("IO alloc failed");
+			}
+
+			return io;
 		}
+
+		/*void dealloc(SystemIoPtr&& io) {
+			io->reset();
+			io = nullptr;
+			//allocator.enqueue(std::move(io));
+		}*/
 	};
 
 	const int32 SRAM_COPY_INTERVAL = 2048;
@@ -184,27 +185,38 @@ namespace rp {
 		ReadWrite
 	};
 
-	class SystemBase {
+	class System {
 	protected:
 		SystemIoPtr _stream;
-		fw::DimensionT<uint32> _resolution;
+		fw::DimensionU32 _resolution;
+		fw::Image _frameBuffer;
 
 	private:
-		SystemId _id;
-		SystemType _type;
-		int32 _nextStateCopy = 0;
-		int32 _stateCopyInterval = 0;
+		SystemId _id = INVALID_SYSTEM_ID;
+		SystemType _type = INVALID_SYSTEM_TYPE;
+		SystemDesc _desc;
 
 		std::array<bool, ButtonType::MAX> _buttonState = { false };
+		std::vector<ModelPtr> _models;
+		std::vector<SystemServicePtr> _services;
 
 	public:
-		SystemBase(SystemId id, SystemType type): _id(id), _type(type) {}
-
-		const std::array<bool, ButtonType::MAX>& getButtonState() const {
-			return _buttonState;
-		}
+		System(SystemType type): _type(type) {}
+		~System() = default;
 
 		virtual MemoryAccessor getMemory(MemoryType type, AccessType access) { return MemoryAccessor(); }
+
+		void addService(SystemServicePtr service) {
+			_services.push_back(service);
+		}
+
+		std::vector<SystemServicePtr>& getServices() {
+			return _services;
+		}
+
+		const std::vector<SystemServicePtr>& getServices() const {
+			return _services;
+		}
 
 		virtual bool load(LoadConfig&& loadConfig) { return false; }
 
@@ -213,6 +225,8 @@ namespace rp {
 		virtual void process(uint32 frameCount) {}
 
 		virtual void setSampleRate(uint32 sampleRate) {}
+
+		virtual void setStateBuffer(fw::Uint8Buffer&& buffer) {}
 
 		virtual bool saveState(fw::Uint8Buffer& target) { return false; }
 
@@ -226,84 +240,87 @@ namespace rp {
 
 		virtual bool getGameLink() { return false; }
 		
-		virtual void addLinkTarget(SystemBase* system) {}
+		virtual void addLinkTarget(System* system) {}
 
-		virtual void removeLinkTarget(SystemBase* system) {}
+		virtual void removeLinkTarget(System* system) {}
 
-		void setStateCopyInterval(int32 interval) {
-			_stateCopyInterval = interval;
-		}
-
-		void processStateCopy(uint32 frameCount) {
-			if (_stateCopyInterval > 0) {
-				_nextStateCopy -= frameCount;
-
-				if (_stream && _nextStateCopy <= 0) {
-					_stream->output.state = std::make_shared<fw::Uint8Buffer>();
-					saveState(*_stream->output.state);
-
-					_nextStateCopy = _stateCopyInterval;
-				}
-			}
-		}
+		virtual SystemStateOffsets getStateOffsets() const { return SystemStateOffsets(); }
 
 		void setButtonState(ButtonType::Enum button, bool down) {
 			_buttonState[button] = down;
 
 			if (_stream) {
 				_stream->input.buttons.push_back(ButtonStream<8> {
-					.presses = { (int)button, down },
+					.presses = StreamButtonPress{ .button = (int)button, .down = down },
 					.pressCount = 1
 				});
 			}
 		}
 
-		fw::DimensionT<uint32> getResolution() const {
+		fw::DimensionU32 getResolution() const {
 			return _resolution;
 		}
 
-		void setStream(SystemIoPtr&& stream) {
-			_stream = std::move(stream);
+		void setIo(const SystemIoPtr& io) {
+			_stream = std::move(io);
 		}
 
-		SystemIoPtr& getStream() {
+		void acquireIo(SystemIoPtr&& io) {
+			if (_stream) {
+				_stream->merge(*io);
+			} else {
+				_stream = std::move(io);
+			}
+		}
+
+		SystemIoPtr releaseIo() {
+			return std::move(_stream);
+		}
+
+		bool hasIo() const {
+			return _stream != nullptr;
+		}
+
+		SystemIoPtr getIo() {
 			return _stream;
+		}
+
+		void setId(SystemId systemId) {
+			_id = systemId;
 		}
 
 		SystemId getId() const {
 			return _id;
 		}
 
-		SystemType getBaseType() const {
+		virtual SystemType getTargetType() const {
+			return getType();
+		}
+
+		SystemType getType() const {
 			return _type;
 		}
 
-		virtual SystemType getType() const {
-			return getBaseType();
+		const SystemDesc& getDesc() const {
+			return _desc;
 		}
 
-		friend class SystemOrchestrator;
+		void setDesc(SystemDesc&& desc) {
+			_desc = std::move(desc);
+		}
+
+		void setDesc(const SystemDesc& desc) {
+			_desc = desc;
+		}
+
+		const std::array<bool, ButtonType::MAX>& getButtonState() const {
+			return _buttonState;
+		}
+
+		const fw::Image& getFrameBuffer() const {
+			return _frameBuffer;
+		}
 	};
 
-	template <typename T>
-	class System : public SystemBase {
-	public:
-		System(SystemId id): SystemBase(id, entt::type_id<T>().index()) {}
-	};
-
-	using SystemPtr = std::shared_ptr<SystemBase>;
-
-	struct OrchestratorChange {
-		SystemPtr add;
-		SystemPtr swap;
-		SystemPtr replace;
-		SystemId remove = INVALID_SYSTEM_ID;
-		SystemId reset = INVALID_SYSTEM_ID;
-		SystemId gameLink = INVALID_SYSTEM_ID;
-	};
-
-	struct OrchestratorMessageBus {
-		moodycamel::ReaderWriterQueue<OrchestratorChange> uiToAudio;
-		moodycamel::ReaderWriterQueue<OrchestratorChange> audioToUi;
-	};
+	using SystemPtr = std::shared_ptr<System>;
 }

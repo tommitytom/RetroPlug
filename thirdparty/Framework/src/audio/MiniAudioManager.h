@@ -18,7 +18,7 @@ namespace fw::audio {
 
 		void stop() override;
 
-		uint32 getSampleRate() override;
+		f32 getSampleRate() override;
 
 		bool setAudioDevice(uint32 idx) override;
 

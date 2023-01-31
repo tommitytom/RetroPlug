@@ -12,7 +12,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 	std::vector<std::pair<std::string_view, SystemType>> romPaths;
 	std::vector<std::pair<std::string_view, SystemType>> sramPaths;
 
-	SystemProcessor& processor = project.getProcessor();
+	const SystemFactory& factory = project.getSystemFactory();
 
 	for (const std::string& path : files) {
 		std::string_view ext = fw::FsUtil::getFileExt(path);
@@ -20,12 +20,12 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 		if (ext == ".retroplug" || ext == ".rplg" || ext == ".rplg.lua") {
 			projectPaths.push_back(path);
 		} else {
-			std::vector<SystemType> loaderTypes = processor.getRomLoaders(path);
+			std::vector<SystemType> loaderTypes = factory.getRomLoaders(path);
 			if (loaderTypes.size()) {
 				romPaths.push_back({ path, loaderTypes[0] });
 			}
 
-			loaderTypes = processor.getSramLoaders(path);
+			loaderTypes = factory.getSramLoaders(path);
 			if (loaderTypes.size()) {
 				sramPaths.push_back({ path, loaderTypes[0] });
 			}
@@ -38,13 +38,13 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 		// Copy?
 
-		project.load(path.string());
-
-		fileManager.addRecent(RecentFilePath{
-			.type = "project",
-			.name = project.getName(),
-			.path = path,
-		});
+		if (project.load(path.string())) {
+			fileManager.addRecent(RecentFilePath{
+				.type = "project",
+				.name = project.getName(),
+				.path = path,
+			});
+		}
 
 		return true;
 	} else if (romPaths.size() > 0) {
@@ -52,7 +52,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			auto& pathPair = romPaths[i];
 			fs::path path = pathPair.first;
 
-			path = fileManager.addHashedFile(path, "roms");
+			fs::path hashedRomPath = fileManager.addHashedFile(path, "roms");
 			fs::path projectDir = fileManager.createUniqueDirectory("projects/");
 
 			// Load system
@@ -71,16 +71,12 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			}
 
 			SystemDesc desc{
-				.paths = {.romPath = path.string(), .sramPath = sramPath },
-				//TODO: Set defaults settings here
+				.paths = { .romPath = hashedRomPath.string(), .sramPath = sramPath },
+				.settings = project.getGlobalConfig().systemSettings
 			};
 
-			SystemPtr system = project.addSystem(pathPair.second, desc)->getSystem();
+			SystemPtr system = project.addSystem(pathPair.second, desc);
 			std::string romName = system->getRomName();
-
-			if (sramPath.empty()) {
-				// TODO: Save the SRAM to a new path
-			}
 
 			// Save project
 			fs::path projectPath = projectDir / "project.rplg.lua";
@@ -89,7 +85,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 			fileManager.addRecent(RecentFilePath{
 				.type = "project",
-				.name = romName,
+				.name = project.getName(),
 				.path = projectPath,
 			});
 

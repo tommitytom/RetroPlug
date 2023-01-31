@@ -90,7 +90,7 @@ LuaUi::LuaUi() : View({ 1024, 768 }) {
 	auto examplesDir = std::filesystem::current_path().parent_path().parent_path() / "src" / "examples";
 	spdlog::info(examplesDir.string());
 
-	setScriptPath(examplesDir / "Reactive.lua");
+	setScriptPath(examplesDir / "LuaUi.lua");
 }
 
 LuaUi::~LuaUi() {

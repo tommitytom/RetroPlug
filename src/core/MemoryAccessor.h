@@ -11,7 +11,8 @@ namespace rp {
 		Unknown,
 		Ram,
 		Rom,
-		Sram
+		Sram,
+		Vram
 	};
 
 	struct MemoryPatch {

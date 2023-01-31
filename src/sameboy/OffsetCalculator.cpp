@@ -261,7 +261,7 @@ bool getBakedOffsets(Context& ctx) {
 }
 
 bool getOffsets(Context& ctx) {
-	auto startTime = std::chrono::high_resolution_clock::now();
+	//auto startTime = std::chrono::high_resolution_clock::now();
 
 	if (getBakedOffsets(ctx)) {
 		return true;
@@ -295,10 +295,10 @@ bool getOffsets(Context& ctx) {
 
 	spin(ctx, getStartDelay(ctx.semver, ctx.tags));
 
-	uint8 value = 0xFF;
-	uint64 cycles = 0;
+	//uint8 value = 0xFF;
+	//uint64 cycles = 0;
 
-	size_t changeCount = 0;
+	//size_t changeCount = 0;
 
 	/*while (changeCount < 32) {
 		Buffer buf = getRam(ctx);
@@ -413,7 +413,7 @@ bool getOffsets(Context& ctx) {
 
 	filterOffsets(stoppedDump, activeOffsets, { 0x00, 0x00, 0x00, 0x00 });
 
-	auto endTime = std::chrono::high_resolution_clock::now();
+	//auto endTime = std::chrono::high_resolution_clock::now();
 
 	//auto duration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(endTime - startTime);
 	//std::cout << "TIME: " << duration.count() << std::endl;

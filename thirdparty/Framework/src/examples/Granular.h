@@ -15,6 +15,7 @@
 #include "ui/View.h"
 #include "ui/WaveformUtil.h"
 #include "ui/WaveView.h"
+#include "application/Application.h"
 
 namespace fw {
 	using NoteIndex = uint32;
@@ -231,10 +232,8 @@ namespace fw {
 		}
 	};
 
-	class MyAudioProceessor : public AudioProcessor {
+	class GranularAudioProcessor : public AudioProcessor {
 	private:
-		EventNode _eventNode;
-
 		VoiceManager _voiceManager;
 		std::array<Note, 128> _notes;
 		f32 _amp = 0.0f;
@@ -242,14 +241,16 @@ namespace fw {
 		Parameters _parameters;
 
 	public:
-		MyAudioProceessor(EventNode&& eventNode, const NoteArray& notes): _eventNode(std::move(eventNode)), _notes(notes) {
-			_eventNode.subscribe<ParameterChangeEvent>([&](const ParameterChangeEvent& ev) {
+		GranularAudioProcessor() {
+			EventNode& ev = getEventNode();
+
+			ev.subscribe<ParameterChangeEvent>([&](const ParameterChangeEvent& ev) {
 				switch (ev.type) {
 				case ParameterType::Amp: _amp = ev.value; break;
 				}
 			});
 
-			_eventNode.subscribe<NoteParameterChangeEvent>([&](const NoteParameterChangeEvent& ev) {
+			ev.subscribe<NoteParameterChangeEvent>([&](const NoteParameterChangeEvent& ev) {
 				_notes[ev.note].parameters.values[(uint32)ev.type - 1] = ev.value;
 
 				GrainSamplerVoice* voice = (GrainSamplerVoice*)_voiceManager.getVoiceForNote(ev.note);
@@ -265,44 +266,46 @@ namespace fw {
 				}
 			});
 
-			_eventNode.subscribe<SetNoteEvent>([&](const SetNoteEvent& ev) {
+			ev.subscribe<SetNoteEvent>([&](const SetNoteEvent& ev) {
 				_notes[ev.index] = ev.note;
 			});
 
-			_eventNode.subscribe<SetNoteArrayEvent>([&](const SetNoteArrayEvent& ev) {
+			ev.subscribe<SetNoteArrayEvent>([&](const SetNoteArrayEvent& ev) {
 				_notes = ev.notes;
 			});
 
-			_eventNode.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) { playNote(ev.note); });
+			ev.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) { playNote(ev.note); });
 
-			_eventNode.subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) { stopNote(ev.note); });
+			ev.subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) { stopNote(ev.note); });
 
-			_eventNode.subscribe<StopAllNotesEvent>([&]() { stopAllNotes(); });
+			ev.subscribe<StopAllNotesEvent>([&]() { stopAllNotes(); });
 		}
 
-		~MyAudioProceessor() = default;
+		~GranularAudioProcessor() = default;
 
 		void playNote(NoteIndex note) {
 			Note& noteData = _notes[note];
 
 			if (noteData.buffer.getFrameCount()) {
 				_voiceManager.addVoice(note, std::make_unique<GrainSamplerVoice>(noteData.buffer.ref(), noteData.parameters, getSampleRate()));
-				_eventNode.broadcast(PlayNoteEvent{ note });
+				getEventNode().broadcast(PlayNoteEvent{note});
 			}
 		}
 
 		void stopNote(NoteIndex note) {
 			_voiceManager.stopVoice(note);
-			_eventNode.broadcast(StopNoteEvent{ note });
+			getEventNode().broadcast(StopNoteEvent{ note });
 		}
 
 		void stopAllNotes() {
 			_voiceManager.stopAll();
-			_eventNode.broadcast<StopAllNotesEvent>();
+			getEventNode().broadcast<StopAllNotesEvent>();
 		}
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override {
-			_eventNode.update();
+			EventNode& ev = getEventNode();
+
+			ev.update();
 
 			StereoAudioBuffer out((StereoAudioBuffer::Frame*)output, frameCount, getSampleRate());
 			out.clear();
@@ -311,8 +314,8 @@ namespace fw {
 
 			AudioBufferUtil::mul(out, _amp);
 
-			if (_eventNode.hasSubscribers<AudioRenderEvent>()) {
-				_eventNode.broadcast(AudioRenderEvent{ out.clone() });
+			if (ev.hasSubscribers<AudioRenderEvent>()) {
+				ev.broadcast(AudioRenderEvent{ out.clone() });
 			}
 		}
 
@@ -446,7 +449,7 @@ namespace fw {
 		~Granular() = default;
 
 		void onInitialize() override {
-			EventNode* eventNode = createState<EventNode>({ "Main" });
+			EventNode* eventNode = getState<EventNode>();
 
 			_defaultParameters.amp = 1.0f;
 			_defaultParameters.grainSize = 25.0f;
@@ -461,6 +464,8 @@ namespace fw {
 			SampleLoaderUtil::loadSample("C:\\temp\\amen.wav", _sampleData);
 
 			_notes[0].buffer = _sampleData.ref();
+
+			eventNode->broadcast(SetNoteArrayEvent{ _notes });
 
 			_waveView = addChild<WaveView>("Waveform");
 			_waveView->setSizingPolicy(SizingPolicy::FitToParent);
@@ -548,9 +553,6 @@ namespace fw {
 
 				_playerOverlay->updateHighlights();
 			});
-
-			auto audioManager = getState<std::shared_ptr<audio::AudioManager>>();
-			audioManager->get()->setProcessor(std::make_shared<MyAudioProceessor>(eventNode->spawn("Audio"), _notes));
 
 			auto slider = addChild<SliderView>("Pitch slider");
 			slider->setArea({ 10, 10, 500, 30 });
@@ -678,3 +680,5 @@ namespace fw {
 		}
 	};
 }
+
+using GranularApplication = fw::app::BasicApplication<fw::Granular, fw::GranularAudioProcessor>;

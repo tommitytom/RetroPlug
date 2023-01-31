@@ -34,6 +34,13 @@ namespace fw {
 		}
 
 		template <typename T>
+		T& emplace(entt::any&& item) {
+			entt::id_type type = entt::type_id<T>().index();
+			_items[type] = std::move(item);
+			return entt::any_cast<T&>(_items[type]);
+		}
+
+		template <typename T>
 		const T* tryGet() const {
 			entt::id_type type = entt::type_id<T>().index();
 			auto found = _items.find(type);

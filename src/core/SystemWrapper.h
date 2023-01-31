@@ -1,5 +1,5 @@
 #pragma once
-
+/*
 #include <entt/meta/resolve.hpp>
 
 #include "core/Model.h"
@@ -7,9 +7,12 @@
 #include "core/SystemManager.h"
 #include "core/SystemSettings.h"
 
+namespace fw {
+	class EventNode;
+}
+
 namespace rp {
 	class SystemProcessor;
-	struct OrchestratorMessageBus;
 	class ModelFactory;
 
 	class SystemWrapper {
@@ -19,7 +22,7 @@ namespace rp {
 		std::vector<std::pair<entt::id_type, ModelPtr>> _models;
 
 		SystemProcessor* _processor;
-		OrchestratorMessageBus* _messageBus;
+		fw::EventNode* _eventNode;
 		ModelFactory* _modelFactory;
 		
 		SystemDesc _desc;
@@ -27,8 +30,8 @@ namespace rp {
 		uint32 _version = 0;
 
 	public:
-		SystemWrapper(SystemId systemId, SystemProcessor* processor, OrchestratorMessageBus* messageBus, ModelFactory* modelFactory): 
-			_systemId(systemId), _processor(processor), _messageBus(messageBus), _modelFactory(modelFactory) {}
+		SystemWrapper(SystemId systemId, SystemProcessor* processor, fw::EventNode* eventNode, ModelFactory* modelFactory):
+			_systemId(systemId), _processor(processor), _eventNode(eventNode), _modelFactory(modelFactory) {}
 		~SystemWrapper() {} 
 
 		SystemPtr load(const SystemDesc& systemDesc, LoadConfig&& loadConfig);
@@ -92,5 +95,6 @@ namespace rp {
 		void deserializeModels();
 	};
 
-	using SystemWrapperPtr = std::shared_ptr<SystemWrapper>;
+	using SystemPtr = std::shared_ptr<SystemWrapper>;
 }
+*/

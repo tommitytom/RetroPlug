@@ -1,5 +1,7 @@
-#include "application/Application.h"
-#include "RetroPlug.h"
+#include "foundation/MacroTools.h"
+#include "application/ApplicationRunner.h"
+
+#include INCLUDE_APPLICATION(APPLICATION_IMPL)
 
 #ifdef RP_WEB
 #include "app/WebAudio.h"
@@ -10,7 +12,7 @@ EM_ASYNC_JS(void, setupWebFs, (), {
 #endif
 
 int main() {
-	return fw::app::Application::run<RetroPlug>();
+	return fw::app::ApplicationRunner::run<APPLICATION_IMPL>();
 
 	/*{
 		app = new RetroPlugApplication("RetroPlug 0.4.0", 320, 288);

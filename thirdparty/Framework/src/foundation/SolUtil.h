@@ -9,5 +9,5 @@ namespace fw::SolUtil {
 
 	bool serializeTable(sol::state& s, const sol::table& source, std::string& target);
 
-	bool deserializeTable(sol::state& s, const std::string& data, sol::table& target);
+	bool deserializeTable(sol::state& s, std::string_view data, sol::table& target);
 }

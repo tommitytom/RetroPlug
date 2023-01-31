@@ -43,8 +43,8 @@ function m.include()
 		_p.."Dependencies/IGraphics/STB",
 		_p.."Dependencies/IGraphics/NanoSVG/src",
 		_p.."Dependencies/IGraphics/NanoVG/src",
-		_p.."Dependencies/IGraphics/glad_GL2/include",
-		_p.."Dependencies/IGraphics/glad_GL2/src",
+		_p.."Dependencies/IGraphics/glad_GL3/include",
+		_p.."Dependencies/IGraphics/glad_GL3/src",
 		_p.."WDL"
 	}
 
@@ -81,8 +81,7 @@ function m.source()
 		_p.."IGraphics/Controls/*.h",
 		_p.."IGraphics/Controls/*.cpp",
 
-		_p.."Dependencies/IGraphics/NanoVG/src",
-		_p.."Dependencies/IGraphics/glad_GL2/src",
+		--_p.."Dependencies/IGraphics/glad_GL3/src/**.c",
 	}
 
 	filter { "system:windows" }
@@ -183,6 +182,7 @@ local function generateConfig(settings, target)
 #define PLUG_EMAIL_STR "${email}"
 #define PLUG_COPYRIGHT_STR "Copyright ${year} ${author}"
 #define PLUG_CLASS_NAME FrameworkInstrument
+#define SHARED_RESOURCES_SUBPATH "${name}"
 
 #define BUNDLE_NAME "${name}"
 #define BUNDLE_MFR "${author}"
@@ -298,6 +298,8 @@ function m.createVst2(config)
 		_p.."iPlug/VST2/*.h",
 		_p.."iPlug/VST2/*.cpp"
 	}
+
+	targetdir "C:\\vst64"
 end
 
 function m.createVst3(config)

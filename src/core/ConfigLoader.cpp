@@ -7,11 +7,10 @@
 
 namespace rp {
 	bool ConfigLoader::loadConfig(const fw::TypeRegistry& typeRegistry, const std::filesystem::path& path, GlobalConfig& target) {
-		sol::state lua;
-
 		if (fs::exists(path)) {
 			std::string data = fw::FsUtil::readTextFile(path);
 
+			sol::state lua;
 			fw::SolUtil::prepareState(lua);
 
 			sol::table table;

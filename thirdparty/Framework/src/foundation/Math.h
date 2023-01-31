@@ -212,8 +212,6 @@ namespace fw {
 
 	template <typename T>
 	struct DimensionT {
-		const static DimensionT<T> zero;
-
 		T w;
 		T h;
 
@@ -330,13 +328,21 @@ namespace fw {
 		T area() const {
 			return w * h;
 		}
+
+		const static DimensionT<T> zero;
 	};
+
 	using DimensionI32 = DimensionT<int32>;
 	using DimensionU32 = DimensionT<uint32>;
 	using DimensionF32 = DimensionT<f32>;
 	using DimensionF64 = DimensionT<f64>;
 	using Dimension = DimensionI32;
 	using DimensionF = DimensionF32;
+
+	template <> inline const DimensionI32 DimensionI32::zero = DimensionI32(0, 0);
+	template <> inline const DimensionU32 DimensionU32::zero = DimensionU32(0, 0);
+	template <> inline const DimensionF32 DimensionF32::zero = DimensionF32(0, 0);
+	template <>	inline const DimensionF64 DimensionF64::zero = DimensionF64(0, 0);
 
 	template <typename T>
 	struct RectT {

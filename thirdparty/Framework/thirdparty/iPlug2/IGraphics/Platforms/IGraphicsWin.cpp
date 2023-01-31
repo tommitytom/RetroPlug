@@ -1071,7 +1071,7 @@ void IGraphicsWin::CreateGLContext()
 #endif
 
   //TODO: return false if GL init fails?
-  if (!gladLoadGL())
+  if (!gladLoaderLoadGL())
     DBGMSG("Error initializing glad");
 
   glGetError();

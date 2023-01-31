@@ -14,8 +14,7 @@ using namespace igraphics;
 class FrameworkInstrument final : public Plugin {
 private:
 	fw::audio::AudioManagerPtr _audioManager;
-	fw::app::UiContextPtr _uiContext;
-	fw::app::WindowPtr _window;
+	std::unique_ptr<fw::app::Application> _app;
 
 	fw::StereoAudioBuffer _input;
 	fw::StereoAudioBuffer _output;
@@ -23,6 +22,8 @@ private:
 	// This vector contains ascii keys that are currently held.  It is to work around a bug
 	// in Ableton Live, where it doesn't tell is what key is being released during a key up event.
 	std::vector<int> _heldKeys;
+
+	bool _editorOpen = false;
 
 public:
 	FrameworkInstrument(const InstanceInfo& info);
@@ -33,11 +34,11 @@ public:
 	void ProcessMidiMsg(const IMidiMsg& msg) override;
 	void OnReset() override;
 	void OnParamChange(int paramIdx) override {}
-	//void OnIdle() override;
+	void OnIdle() override;
 	bool OnMessage(int msgTag, int ctrlTag, int dataSize, const void* pData) override { return false; }
 	bool OnKeyDown(const IKeyPress& key) override;
 	bool OnKeyUp(const IKeyPress& key) override;
-	//bool SerializeState(IByteChunk& chunk) const override;
-	//int UnserializeState(const IByteChunk& chunk, int startPos) override;
+	bool SerializeState(IByteChunk& chunk) const override;
+	int UnserializeState(const IByteChunk& chunk, int startPos) override;
 #endif
 };

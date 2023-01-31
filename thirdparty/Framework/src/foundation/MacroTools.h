@@ -7,4 +7,4 @@
 #define CAT2(X,Y) X##Y
 #define CAT_2 CAT
 
-#define INCLUDE_EXAMPLE(X) STRINGIFY(CAT_2(X,.h))
+#define INCLUDE_APPLICATION(X) STRINGIFY(CAT_2(X,.h))

@@ -5,6 +5,7 @@
 #include "foundation/DataBuffer.h"
 #include "ui/LsdjModel.h"
 #include "lsdj/Rom.h"
+#include "lsdj/LsdjSettings.h"
 
 namespace rp::KitUtil {
 	struct SampleData {

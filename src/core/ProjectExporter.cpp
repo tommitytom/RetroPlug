@@ -10,9 +10,9 @@ using namespace rp;
 bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
 	zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
 
-	std::vector<SystemWrapperPtr>& systems = project.getSystems();
-	
-	std::string fileData = ProjectSerializer::serialize(project.getState(), systems);
+	std::vector<SystemPtr>& systems = project.getSystems();
+
+	/*std::string fileData = ProjectSerializer::serialize(project.getState(), systems);
 	if (fileData.size()) {
 		zipWriter.add("project.rplg.lua", fileData);
 
@@ -35,7 +35,9 @@ bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
 			target.write((const uint8*)buffer.data(), buffer.size());
 			return true;
 		}		
-	}
+	}*/
+
+	assert(false);
 
 	return false;
 }
@@ -43,10 +45,10 @@ bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
 bool ProjectExporter::exportRomsAndSavs(Project& project, fw::Uint8Buffer& target) {
 	zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
 
-	const std::vector<SystemWrapperPtr>& systems = project.getSystems();
+	const std::vector<SystemPtr>& systems = project.getSystems();
 
 	for (size_t i = 0; i < systems.size(); ++i) {
-		const SystemPtr system = systems[i]->getSystem();
+		const SystemPtr system = systems[i];
 		std::string name = fmt::format("{}-{}", i + 1, system->getRomName());
 
 		const MemoryAccessor rom = system->getMemory(MemoryType::Rom, AccessType::Read);

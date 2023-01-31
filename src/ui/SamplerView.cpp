@@ -29,15 +29,15 @@ SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();
 }
 
-void SamplerView::setSystem(SystemWrapperPtr& system) {
+void SamplerView::setSystem(SystemPtr& system) {
 	_system = system;
 
-	lsdj::Rom rom = system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
 		_canvas.setFont(rom.getFont(1));
 		_canvas.setPalette(rom.getPalette(0));
 
-		LsdjModelPtr model = _system->getModel<LsdjModel>();
+		LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 		int32 selectedKit = 999;
 
 		for (auto& kit : model->kits) {
@@ -136,9 +136,9 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 	} else {
 		if (ev.key == VirtualKey::D && _aHeld) {
 			_aHeld = false;
-			LsdjModelPtr model = _system->getModel<LsdjModel>();
+			LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 			if (model) {
-				model->setRequiresSave(true);
+				//model->setRequiresSave(true);
 			}
 		}
 
@@ -226,9 +226,9 @@ void SamplerView::onRender(Canvas& canvas) {
 		return;
 	}
 
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 
-	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::ReadWrite);
+	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::ReadWrite);
 	if (!rom.isValid()) {
 		return;
 	}
@@ -319,7 +319,7 @@ void SamplerView::onRender(Canvas& canvas) {
 		if (isEditable) {
 			if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
 				rom.setKitName(kitIdx, kitName);
-				model->setRequiresSave(true);
+				//model->setRequiresSave(true);
 			}
 		} else {
 			_c.text(13, 2, kitName, lsdj::ColorSets::Normal);
@@ -331,7 +331,7 @@ void SamplerView::onRender(Canvas& canvas) {
 		if (isEditable) {
 			if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
 				rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
-				model->setRequiresSave(true);
+				//model->setRequiresSave(true);
 			}
 		} else {
 			_c.text(16, 2, sampleName, lsdj::ColorSets::Normal);
@@ -434,7 +434,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 }
 
 void SamplerView::buildMenu(fw::Menu& target) {
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 	bool kitEditable = model->kits.find(_samplerState.selectedKit) != model->kits.end();
 
 	target.title("LSDJ Sample Manager")
@@ -442,11 +442,11 @@ void SamplerView::buildMenu(fw::Menu& target) {
 		.action("Add Kit...", [this]() { loadSampleDialog(-1); })
 		.action("Add Samples...", [this]() { loadSampleDialog(_samplerState.selectedKit); }, kitEditable)
 		.separator()
-		.action("Export Kit...", [this]() { exportKitDialog(_system->getSystem(), _samplerState.selectedKit); })
+		.action("Export Kit...", [this]() { exportKitDialog(_system, _samplerState.selectedKit); })
 		.separator();
 
-	populateEditKit(_system->getSystem(), target.subMenu("Edit Kit"));
-	populateRemoveKit(_system->getSystem(), target.subMenu("Remove Kit"));
+	populateEditKit(_system, target.subMenu("Edit Kit"));
+	populateRemoveKit(_system, target.subMenu("Remove Kit"));
 
 	target.separator()
 		.action("Close", [this]() { this->remove(); });
@@ -461,8 +461,8 @@ void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 }
 
 void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths) {
-	SystemPtr system = _system->getSystem();
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	SystemPtr system = _system;
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	bool newKit = rom.kitIsEmpty(kitIdx);
@@ -501,7 +501,7 @@ void SamplerView::updateSampleBuffers() {
 		return;
 	}
 
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 
 	auto found = model->kits.find(_samplerState.selectedKit);
 	if (found != model->kits.end()) {
@@ -511,7 +511,7 @@ void SamplerView::updateSampleBuffers() {
 }
 
 void SamplerView::updateWaveform() {
-	lsdj::Rom rom = _system->getSystem()->getMemory(MemoryType::Rom, AccessType::Read);
+	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (!rom.isValid()) {
 		return;
 	}

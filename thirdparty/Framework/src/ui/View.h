@@ -453,6 +453,8 @@ namespace fw {
 
 		template <typename T>
 		T* createState(T&& item) {
+			assert(_shared);
+
 			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>(std::forward<T>(item));
@@ -463,6 +465,8 @@ namespace fw {
 
 		template <typename T>
 		T* createState(const T& item) {
+			assert(_shared);
+
 			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>(item);
@@ -472,7 +476,21 @@ namespace fw {
 		}
 
 		template <typename T>
+		T* createState(entt::any&& item) {
+			assert(_shared);
+
+			spdlog::info("Creating state {}", entt::type_id<T>().name());
+			if (_shared && !getState<T>()) {
+				return &_shared->state.emplace<T>(std::forward<entt::any>(item));
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
 		T* createState() {
+			assert(_shared);
+
 			spdlog::info("Creating state {}", entt::type_id<T>().name());
 			if (_shared && !getState<T>()) {
 				return &_shared->state.emplace<T>();
@@ -483,6 +501,7 @@ namespace fw {
 
 		template <typename T>
 		T* getState() {
+			assert(_shared);
 			return _shared->state.tryGet<T>();
 		}
 

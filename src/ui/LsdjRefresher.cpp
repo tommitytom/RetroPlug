@@ -7,14 +7,14 @@ using namespace rp;
 static uint32 calculateRowDifference(fw::Image& v1, fw::Image& v2) {
 	assert(v1.dimensions() == v2.dimensions());
 
-	uint32 diffCount = 0;
-	for (uint32 i = 0; i < v1.h(); ++i) {
+	int32 diffCount = 0;
+	for (int32 i = 0; i < v1.h(); ++i) {
 		if (v1.getRow(i) != v2.getRow(i)) {
 			diffCount++;
 		}
 	}
 
-	return diffCount;
+	return (uint32)diffCount;
 }
 
 static void saveImage(fw::Image& image, fs::path target) {
@@ -58,8 +58,8 @@ void LsdjRefresher::update(f32 delta) {
 		}
 	}
 
-	if (_system->getStream() && _system->getStream()->output.video) {
-		_lastFrame = _system->getStream()->output.video;
+	if (_system->getIo() && _system->getIo()->output.video) {
+		_lastFrame = _system->getIo()->output.video;
 	}
 }
 
@@ -99,5 +99,5 @@ void LsdjRefresher::refresh() {
 		.press(dir2)
 		.releaseAll();
 
-	_system->getStream()->input.buttons.push_back(writer.data());
+	_system->getIo()->input.buttons.push_back(writer.data());
 }

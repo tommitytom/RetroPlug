@@ -4,46 +4,61 @@
 #include "IGraphics_include_in_plug_src.h"
 
 #include "FrameworkView.h"
+#include "foundation/MacroTools.h"
 #include "application/Application.h"
 
-#include "foundation/FoundationModule.h"
-#include "foundation/MacroTools.h"
+#ifndef APPLICATION_HEADER
+#define APPLICATION_HEADER APPLICATION_IMPL
+#endif
+
+#include INCLUDE_APPLICATION(APPLICATION_HEADER)
 
 using namespace fw;
-
-#include INCLUDE_EXAMPLE(EXAMPLE_IMPL)
 
 FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 	Plugin(info, MakeConfig(0, 0)),
 	_audioManager(std::make_shared<fw::audio::AudioManager>())
 {
-	FoundationModule::setup();
+	_app = std::make_unique<APPLICATION_IMPL>();
+	_audioManager->setSampleRate((f32)GetSampleRate());
+	_audioManager->setProcessor(_app->onCreateAudio());
 
-#if IPLUG_EDITOR 
-	_uiContext = std::make_shared<app::UiContext>(_audioManager);
+#if IPLUG_EDITOR
+	this->SetSizeConstraints(10, 999999, 10, 999999);
 
 	mMakeGraphicsFunc = [&]() {
 		return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
 	};
 
-	this->SetSizeConstraints(10, 999999, 10, 999999);
-
 	mLayoutFunc = [&](IGraphics* pGraphics) {
-		IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
+		assert(!_editorOpen);
 
-		pGraphics->EnableMouseOver(true);
-		pGraphics->EnableMultiTouch(true);
+		ViewPtr view = _app->onCreateUi();
 
-		pGraphics->AttachPanelBackground(COLOR_GRAY);
+		if (view) {
+			IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
+			std::shared_ptr<app::UiContext> uiContext = std::make_shared<app::UiContext>(false);
 
-		if (!_window) {
+			pGraphics->EnableMouseOver(true);
+			pGraphics->EnableMultiTouch(true);
+			pGraphics->AttachPanelBackground(COLOR_GRAY);
+
 			NativeWindowHandle nativeWindowHandle = gfx->GetNativeWindowHandle();
-			_window = _uiContext->addNativeWindow<EXAMPLE_IMPL>(nativeWindowHandle, fw::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
+			fw::app::WindowPtr window = uiContext->addNativeWindow(view, nativeWindowHandle, fw::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
+
+			ViewManagerPtr viewManager = window->getViewManager();
+			viewManager->createState(_audioManager);
+			viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
+
+			FrameworkView* frameworkView = new FrameworkView(uiContext, window, [&]() { _editorOpen = false; });
+			pGraphics->AttachControl(frameworkView);
+
+			fw::Dimension dimensions = viewManager->getDimensions();
+			pGraphics->Resize(dimensions.w, dimensions.h, 1.0f);
+			//frameworkView->SetRECT(IRECT(0.0f, 0.0f, (f32)dimensions.w, (f32)dimensions.h));
+
+			_editorOpen = true;
 		}
-
-		auto view = new FrameworkView(*_uiContext, _window);
-
-		pGraphics->AttachControl(view);
 	};
 #endif
 }
@@ -87,14 +102,15 @@ void FrameworkInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 }
 
 void FrameworkInstrument::OnReset() {
+	_audioManager->setSampleRate((f32)GetSampleRate());
 	//AudioSettings settings = { (size_t)NOutChansConnected(), 0, GetSampleRate() };
 	//_controller.audioController()->setAudioSettings(settings);
 }
-/*
+
 void FrameworkInstrument::OnIdle() {
-	
+
 }
-*/
+
 bool FrameworkInstrument::OnKeyDown(const IKeyPress& key) {
 	// Ascii keys do not receive a correct key up event in ableton.  This is to
 	// workaround that.
@@ -119,26 +135,34 @@ bool FrameworkInstrument::OnKeyUp(const IKeyPress& key) {
 	return GetUI()->OnKeyUp(0, 0, keyCopy);
 }
 
-/*bool FrameworkInstrument::SerializeState(IByteChunk& chunk) const {
-	/*DataBufferPtr buffer = _controller.saveState();
-	int size = (int)buffer->size();
+bool FrameworkInstrument::SerializeState(IByteChunk& chunk) const {
+	assert(_audioManager->getProcessor());
+	
+	fw::Uint8Buffer target;
+	_audioManager->getProcessor()->onSerialize(target);
+
+	uint32 size = target.size();
 	chunk.Put(&size);
-	chunk.PutBytes(buffer->data(), buffer->size());
-	return true;*//*
-	return false;
+
+	if (size) {
+		chunk.PutBytes(target.data(), target.size());
+	}
+
+	return true;
 }
 
 int FrameworkInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
-	/*int size;
+	assert(_audioManager->getProcessor());
+
+	uint32 size;
 	pos = chunk.Get(&size, pos);
 
-	if (size > 0 && size < 10 * 1024 * 1024) {
-		DataBufferPtr buffer = std::make_shared<DataBuffer<char>>(size);
-		chunk.GetBytes(buffer->data(), size, pos);
-		_controller.loadState(buffer);
+	if (size <= chunk.Size() - pos) {
+		fw::Uint8Buffer source((uint8*)chunk.GetData() + pos, size);
+		_audioManager->getProcessor()->onDeserialize(source);
 		return pos + size;
 	}
 
-	return pos;*//*
-	return 0;
-}*/
+	spdlog::error("Failed to deserialize state: Size is too large ({}).  Must be less than {}", size, chunk.Size() - pos);
+	return pos;
+}

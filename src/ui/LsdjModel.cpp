@@ -1,5 +1,5 @@
 #include "LsdjModel.h"
-
+/*
 #include <sol/sol.hpp>
 
 #include "lsdj/KitUtil.h"
@@ -161,8 +161,8 @@ void LsdjModel::onBeforeLoad(LoadConfig& loadConfig) {
 	}
 }
 
-void LsdjModel::onAfterLoad(SystemPtr system) {
-	MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
+void LsdjModel::onAfterLoad(System& system) {
+	MemoryAccessor buffer = system.getMemory(MemoryType::Rom, AccessType::Read);
 	lsdj::Rom rom(buffer);
 
 	if (rom.isValid()) {
@@ -177,9 +177,11 @@ void LsdjModel::onAfterLoad(SystemPtr system) {
 	}
 }
 
+/*
 void LsdjModel::onUpdate(f32 delta) {
 
 }
+
 
 std::string LsdjModel::getProjectName() { 
 	MemoryAccessor buffer = getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
@@ -259,3 +261,4 @@ void LsdjModel::onDeserialize(sol::state& s, sol::table source) {
 		updateKit(idx);
 	}
 }
+*/

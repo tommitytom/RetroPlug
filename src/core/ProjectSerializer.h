@@ -1,14 +1,15 @@
 #pragma once
 
+#include "foundation/TypeRegistry.h"
 #include "core/ProjectState.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 
 namespace rp::ProjectSerializer {
-	std::string serialize(const ProjectState& state, const std::vector<SystemWrapperPtr>& systems);
+	std::string serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<SystemDesc>& systems);
 
-	std::string serializeModels(SystemWrapperPtr system);
+	bool serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<SystemDesc>& systems, bool updatePath);
 
-	bool serialize(std::string_view path, ProjectState& state, const std::vector<SystemWrapperPtr>& systems, bool updatePath);
+	bool deserializeFromMemory(const fw::TypeRegistry& typeRegistry, std::string_view fileData, ProjectState& state, std::vector<SystemDesc>& systemSettings);
 
-	bool deserialize(std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings);
+	bool deserializeFromFile(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings);
 }

@@ -6,12 +6,6 @@
 #include "SystemSettings.h"
 
 namespace rp {
-	/*enum class SystemType {
-		Unknown,
-		Placeholder,
-		SameBoy
-	};*/
-
 	enum class SystemLayout {
 		Auto,
 		Row,
@@ -40,6 +34,7 @@ namespace rp {
 	};
 
 	enum class SaveStateType {
+		None,
 		Sram,
 		State
 	};

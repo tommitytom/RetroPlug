@@ -11,7 +11,7 @@
 #include "core/FileManager.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
 
@@ -19,7 +19,7 @@
 
 using namespace rp;
 
-void loadRomDialog(Project* project, SystemWrapperPtr system) {
+void loadRomDialog(Project* project, SystemPtr system) {
 	std::vector<std::string> files;
 
 	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
@@ -33,7 +33,11 @@ void loadRomDialog(Project* project, SystemWrapperPtr system) {
 				return;
 			}
 
-			system->load(system->getDesc(), std::move(loadConfig));
+			SystemDesc desc = system->getDesc();
+			desc.paths.romPath = files[0];
+
+			system->setDesc(std::move(desc));
+			system->load(std::move(loadConfig));
 		} else {
 			//project->addSystem<SameBoySystem>(files[0]);
 		}
@@ -66,7 +70,7 @@ bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
 	return project->save(path);
 }
 
-bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
+bool saveSram(Project* project, SystemPtr system, bool forceDialog) {
 	const SystemDesc& settings = system->getDesc();
 	std::string path;
 
@@ -87,7 +91,7 @@ bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
 	spdlog::info("Saving SRAM to {}", path);
 
 	fw::Uint8Buffer target;
-	if (system->getSystem()->saveSram(target)) {
+	if (system->saveSram(target)) {
 		if (fw::FsUtil::writeFile(path, (const char*)target.data(), target.size())) {
 			return true;
 		}
@@ -100,7 +104,7 @@ bool saveSram(Project* project, SystemWrapperPtr system, bool forceDialog) {
 	return false;
 }
 
-bool saveState(Project* project, SystemWrapperPtr system) {
+bool saveState(Project* project, SystemPtr system) {
 	std::string path;
 
 	if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
@@ -110,7 +114,7 @@ bool saveState(Project* project, SystemWrapperPtr system) {
 	spdlog::info("Saving state to {}", path);
 
 	fw::Uint8Buffer target;
-	if (system->getSystem()->saveState(target)) {
+	if (system->saveState(target)) {
 		if (fw::FsUtil::writeFile(path, (const char*)target.data(), target.size())) {
 			return true;
 		}
@@ -123,14 +127,14 @@ bool saveState(Project* project, SystemWrapperPtr system) {
 	return false;
 }
 
-bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWrapperPtr system) {
+bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemPtr system) {
 	std::vector<std::byte> fileData = fw::FsUtil::readFile(romPath);
 
+	SystemDesc desc = system->getDesc();
+	desc.paths.romPath = romPath.string();
+
 	system->load({
-		.paths = {
-			.romPath = romPath.string()
-		}
-	}, {
+		.desc = std::move(desc),
 		.romBuffer = std::make_shared<fw::Uint8Buffer>((uint8*)fileData.data(), fileData.size()),
 		.reset = true
 	});
@@ -138,14 +142,14 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemWr
 	return true;
 }
 
-void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
 	std::vector<RecentFilePath> paths;
 	fileManager->loadRecent(paths);
 
 	for (const RecentFilePath& path : paths) {
 		root.action(path.name, [p = path, fileManager, project, system]() {
 			if (p.type == "project") {
-				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, * fileManager, * project);
+				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, *fileManager, *project);
 			} else {
 				spdlog::error("Failed to load recent file: File type {} unknown", p.type);
 			}
@@ -159,13 +163,13 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Proje
 	}
 }
 
-void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Add");
 
 	loadRoot.action("Duplicate Current", [fileManager, project, system]() {
 		SystemDesc desc = system->getDesc();
 		desc.paths.sramPath = fileManager->getUniqueFilename(desc.paths.sramPath).string();
-		project->duplicateSystem(system->getId(), desc);
+		project->duplicateSystem(system->getId()/*, desc*/);
 	});
 
 	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
@@ -180,7 +184,7 @@ void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Projec
 		.parent();
 }
 
-void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Load");
 
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
@@ -197,7 +201,7 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager* fileManager, Proje
 		.parent();
 }
 
-void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemWrapperPtr system) {
+void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
 	root.subMenu("Save")
 		/*.action("Project", [project, fileManager]() { saveProject(project, fileManager, false); })
 		.action("Project As...", [project, fileManager]() { saveProject(project, fileManager, true); })

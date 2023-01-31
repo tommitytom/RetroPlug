@@ -35,13 +35,13 @@ namespace rp {
 		std::vector<fw::ViewPtr> createOverlays(std::string_view romName) {
 			std::vector<fw::ViewPtr> overlays;
 
-			for (auto& factory : _factories) {
+			/*for (auto& factory : _factories) {
 				if (factory.first(romName)) {
 					entt::meta_type type = factory.second;
 					spdlog::info("Creating overlay {} for {}", type.info().name(), romName);
 					type.construct(&overlays);
 				}
-			}
+			}*/
 
 			return overlays;
 		}

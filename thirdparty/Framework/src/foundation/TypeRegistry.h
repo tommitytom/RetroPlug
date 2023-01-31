@@ -9,20 +9,19 @@
 #include <entt/core/type_info.hpp>
 #include <entt/entity/entity.hpp>
 #include <entt/meta/utility.hpp>
+#include <entt/meta/template.hpp>
+#include <entt/meta/type_traits.hpp>
 
 #include <magic_enum.hpp>
 
 #include <spdlog/spdlog.h>
 
 #include "foundation/Types.h"
+#include "foundation/MetaTypes.h"
+#include "foundation/AssociativeContainer.h"
+#include "foundation/SequenceContainer.h"
 
 namespace fw {
-	enum class TypeId : uint32 {};
-	enum class NameHash : uint32 {};
-
-	const TypeId INVALID_TYPE_ID = entt::null;
-	const NameHash INVALID_NAME_HASH = entt::null;
-
 	enum class EnTest {
 		One,
 		Two
@@ -66,6 +65,10 @@ namespace fw {
 		}
 	};
 
+	static NameHash getNameHash(std::string_view name) {
+		return NameHash{ entt::hashed_string(name.data(), name.size()).value() };
+	}
+
 	namespace internal {
 		enum class TypeTraits : uint32 {
 			None = 0,
@@ -92,14 +95,41 @@ namespace fw {
 			if constexpr (std::is_floating_point_v<T>) { traits |= TypeTraits::FloatingPoint; }
 			if constexpr (std::is_array_v<T>) { traits |= TypeTraits::Array; }
 			if constexpr (std::is_pointer_v<T>) { traits |= TypeTraits::Pointer; }
+			if constexpr (entt::is_complete_v<entt::meta_sequence_container_traits<T>>) { traits |= TypeTraits::SequenceContainer; }
+			if constexpr (entt::is_complete_v<entt::meta_associative_container_traits<T>>) { traits |= TypeTraits::AssociativeContainer; }
 			return traits;
+		}
+
+		template <typename ...Args>
+		std::vector<TypeId> getTemplateArgs(entt::type_list<Args...>) {
+			std::vector<TypeId> ret;
+			(ret.push_back(getTypeId<Args>()), ...);
+			return ret;
 		}
 
 		template <typename T, auto Data>
 		entt::any makeGetter(TypeInstance instance) {
 			if constexpr (std::is_member_pointer_v<decltype(Data)>) {
+				assert(getTypeId<T>() == getTypeId(instance.getValue()));
+
 				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
-				return entt::make_any<DataType&>(std::invoke(Data, entt::any_cast<T&>(instance.getValue())));
+
+				if constexpr (std::is_invocable_v<decltype(Data), T&>) {
+					T* ref = entt::any_cast<T>(&instance.getValue());
+					if (ref) {
+						return entt::make_any<DataType&>(std::invoke(Data, *ref));
+					}
+				}
+				
+				if constexpr (std::is_invocable_v<decltype(Data), const T&>) {
+					const T* ref = entt::any_cast<const T>(&instance.getValue());
+					if (ref) {
+						return entt::make_any<DataType&>(std::invoke(Data, *ref));
+					}
+				}
+
+				assert(false);
+				return entt::any();
 			} else {
 				return Data;
 			}
@@ -109,6 +139,23 @@ namespace fw {
 		void makeSetter(TypeInstance instance, const entt::any& value) {
 			using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
 			std::invoke(Data, entt::any_cast<T&>(instance.getValue())) = entt::any_cast<const DataType>(value);
+		}
+
+		/*template <typename T>
+		meta_sequence_container createSequence() {
+			return meta_sequence_container{ std::in_place_type<T>, std::move(const_cast<entt::any&>(value)) };
+		}*/
+
+		template <typename T>
+		AssociativeContainer createAssociative(entt::any instance) {
+			assert(!instance.owner());
+			return AssociativeContainer{ std::in_place_type<T>, instance.as_ref() };
+		}
+
+		template <typename T>
+		SequenceContainer createSequence(entt::any instance) {
+			assert(!instance.owner());
+			return SequenceContainer{ std::in_place_type<T>, instance.as_ref() };
 		}
 	}
 
@@ -122,19 +169,6 @@ namespace fw {
 		}
 
 		return name;
-	}
-
-	template <typename T>
-	TypeId getTypeId() {
-		return TypeId{ entt::type_id<T>().index() };
-	}
-
-	static TypeId getTypeId(const entt::any& value) {
-		return TypeId{ value.type().index() };
-	}
-
-	static NameHash getNameHash(std::string_view name) {
-		return NameHash{ entt::hashed_string(name.data(), name.size()).value() };
 	}
 
 	struct Property {
@@ -179,11 +213,16 @@ namespace fw {
 
 	struct TypeInfo {
 		TypeId id = INVALID_TYPE_ID;
+		TypeId templateType = INVALID_TYPE_ID;
+		std::vector<TypeId> templateArgs;
 		NameHash hash = INVALID_NAME_HASH;
 		std::string_view name;
 		std::span<const Field> fields;
 		std::span<const Property> properties;
 		std::span<const Method> methods;
+		entt::any(*construct)() = nullptr;
+		SequenceContainer(*createSequenceContainer)(entt::any) = nullptr;
+		AssociativeContainer(*createAssociativeContainer)(entt::any) = nullptr;
 		internal::TypeTraits traits = internal::TypeTraits::None;
 		size_t size = 0;
 
@@ -192,8 +231,20 @@ namespace fw {
 			return getTypeId<T>() == id;
 		}
 
+		bool isTemplateSpecialization() const {
+			return templateType != INVALID_TYPE_ID;
+		}
+
 		bool isClass() const {
 			return !!(traits & internal::TypeTraits::Class);
+		}
+
+		bool isSequenceContainer() const {
+			return !!(traits & internal::TypeTraits::SequenceContainer);
+		}
+
+		bool isAssociativeContainer() const {
+			return !!(traits & internal::TypeTraits::AssociativeContainer);
 		}
 
 		bool isEnum() const {
@@ -257,6 +308,8 @@ namespace fw {
 			assert(found);
 			found->set(std::forward<TypeInstance>(instance), value);
 		}
+
+
 	};
 
 	struct TypeRegistryState {
@@ -353,7 +406,7 @@ namespace fw {
 					.value = property
 				});
 			} (), ...);
-			
+
 			if constexpr (std::is_member_object_pointer_v<decltype(Data)>) {
 				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
 				assert(_state->findTypeInfo<DataType>());
@@ -383,7 +436,7 @@ namespace fw {
 			return std::move(*this);
 		}
 
-		template<typename = std::enable_if_t<std::is_enum_v<T>>>
+		//template<typename = std::enable_if_t<std::is_enum_v<T>>>
 		void addEnumFields() {
 			magic_enum::enum_for_each<T>([&](auto val) {
 				constexpr T valType = val;
@@ -451,18 +504,34 @@ namespace fw {
 
 			_state.types.resize(std::max(_state.types.size(), (size_t)typeId + 1));
 
-			_state.types[typeId] = TypeInfo{
+			TypeInfo typeInfo = TypeInfo{
 				.id = getTypeId<T>(),
 				.hash = nameHash,
 				.name = name,
+				.construct = entt::make_any<T>,
 				.traits = internal::getTypeTraits<T>(),
 				.size = sizeof(T)
 			};
 
+			if constexpr (entt::is_complete_v<entt::meta_template_traits<T>>) {
+				typeInfo.templateType = getTypeId<typename entt::meta_template_traits<T>::class_type>();
+				typeInfo.templateArgs = internal::getTemplateArgs(typename entt::meta_template_traits<T>::args_type{});
+			}
+
+			if constexpr (entt::is_complete_v<entt::meta_sequence_container_traits<T>>) {
+				typeInfo.createSequenceContainer = &internal::createSequence<T>;
+			}
+
+			if constexpr (entt::is_complete_v<entt::meta_associative_container_traits<T>>) {
+				typeInfo.createAssociativeContainer = &internal::createAssociative<T>;
+			}
+
+			_state.types[typeId] = std::move(typeInfo);
+
 			return std::move(TypeFactory<T>(_state.types[typeId], _state));
 		}
 
-		template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
+		template<typename T>//, typename = std::enable_if_t<std::is_enum_v<T>>>
 		void addEnum() {
 			addType<T>().addEnumFields();
 		}
@@ -484,6 +553,10 @@ namespace fw {
 
 		const TypeInfo* findTypeInfo(NameHash nameHash) const {
 			return _state.findTypeInfo(nameHash);
+		}
+
+		const TypeInfo* findTypeInfo(std::string_view name) const {
+			return _state.findTypeInfo(getNameHash(name));
 		}
 
 		const TypeInfo* findTypeInfo(TypeId typeId) const {

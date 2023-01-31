@@ -158,14 +158,14 @@ void Canvas::fill(uint32 x, uint32 y, uint32 w, uint32 h, ColorSets colorSetIdx,
 	w *= TILE_WIDTH;
 	h *= TILE_HEIGHT;
 
-	if (x < _renderTarget.w() && y < _renderTarget.h()) {
-		if (x + w > _renderTarget.w()) {
-			w = _renderTarget.w() - x;
+	if (x < (uint32)_renderTarget.w() && y < (uint32)_renderTarget.h()) {
+		if (x + w > (uint32)_renderTarget.w()) {
+			w = (uint32)_renderTarget.w() - x;
 			//spdlog::warn("overflow");
 		}
 
-		if (y + h > _renderTarget.h()) {
-			y = _renderTarget.h() - y;
+		if (y + h > (uint32)_renderTarget.h()) {
+			y = (uint32)_renderTarget.h() - y;
 			//spdlog::warn("overflow");
 		}
 

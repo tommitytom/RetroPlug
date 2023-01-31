@@ -4,7 +4,7 @@
 #include "SectionOffsetCollector.h"
 
 void getSameboyStateOffsets(GB_gameboy_t* gb, GB_section_offsets_t* offsets) {
-    size_t offset = GB_SECTION_SIZE(header) +
+    uint32_t offset = GB_SECTION_SIZE(header) +
         GB_SECTION_SIZE(core_state) + sizeof(uint32_t) +
         GB_SECTION_SIZE(dma) + sizeof(uint32_t) +
         GB_SECTION_SIZE(mbc) + sizeof(uint32_t) +

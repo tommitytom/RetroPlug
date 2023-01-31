@@ -48,7 +48,7 @@ namespace fw::app {
 		}
 
 		WindowPtr acquireWindow(NativeWindowHandle nativeWindowHandle, ViewPtr view) {
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, view->getDimensions(), & _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, view->getDimensions(), &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			addWindow(window);
 			return window;
 		}

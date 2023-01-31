@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "ui/View.h"
-#include "core/SystemWrapper.h"
+#include "core/System.h"
 #include "ui/LsdjCanvasView.h"
 #include "ui/LsdjModel.h"
 #include "ui/SystemOverlayManager.h"
@@ -21,7 +21,7 @@ namespace rp {
 
 	class LsdjOverlay final : public LsdjCanvasView {
 	private:
-		SystemWrapperPtr _system;
+		SystemPtr _system;
 		LsdjModelPtr _model;
 
 		fw::Point _mousePosition;

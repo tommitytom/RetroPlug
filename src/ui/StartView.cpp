@@ -2,15 +2,18 @@
 
 #include <sol/sol.hpp>
 
+#include "foundation/FsUtil.h"
+#include "foundation/SolUtil.h"
+
 #include "core/FileManager.h"
 #include "core/Project.h"
 #include "ui/FileDialog.h"
-#include "roms/mgb.h"
-#include "sameboy/SameBoySystem.h"
 #include "ui/MenuBuilder.h"
-#include "foundation/FsUtil.h"
+
+#include "sameboy/SameBoySystem.h"
 #include "util/LoaderUtil.h"
-#include "foundation/SolUtil.h"
+
+#include "roms/mgb.h"
 
 using namespace rp;
 
@@ -36,11 +39,12 @@ void StartView::setupMenu() {
 		.action("Load MGB", [this]() {
 			Project* project = getState<Project>();
 
-			SystemWrapperPtr system = project->addSystem<SameBoySystem>({
-				.paths = {
-					.romPath = "mgb.gb"
-				}
-			}, {
+			SystemPtr system = project->addSystem(0x5A8EB011, {
+				.desc = {
+					.paths = {
+						.romPath = "mgb.gb"
+					}
+				},
 				.romBuffer = std::make_shared<fw::Uint8Buffer>(mgb, mgb_len)
 			});
 

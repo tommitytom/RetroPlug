@@ -137,6 +137,11 @@ function m.SameBoyPlug.include()
 		"resources"
 	}
 
+	filter { "toolset:clang" }
+		disablewarnings { "missing-braces", "c99-designator" }
+
+	filter {}
+
 	fwDeps.bgfx.compat()
 
 	filter {}
@@ -217,7 +222,7 @@ function m.RetroPlug.project()
 
 	files {
 		"src/*.h",
-		"src/RetroPlug.cpp",
+		"src/app/RetroPlugApplication.h",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
 		"src/node/**.h",
@@ -251,6 +256,10 @@ end
 function m.Application.project()
 	project "RetroPlugApp"
 	kind "ConsoleApp"
+
+	defines {
+		"APPLICATION_IMPL=RetroPlugApplication"
+	}
 
 	m.RetroPlug.link()
 
@@ -300,7 +309,7 @@ function m.Application.iplugProject()
 	m.RetroPlug.link()
 
 	defines {
-		"EXAMPLE_IMPL=RetroPlug"
+		"APPLICATION_IMPL=RetroPlugApplication"
 	}
 
 	--[[files {
@@ -321,7 +330,7 @@ function m.Application.iplugVst2()
 	m.RetroPlug.link()
 
 	defines {
-		"EXAMPLE_IMPL=RetroPlug"
+		"APPLICATION_IMPL=RetroPlugApplication"
 	}
 
 	--[[files {

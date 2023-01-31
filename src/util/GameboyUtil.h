@@ -18,4 +18,17 @@ namespace rp::GameboyUtil {
 
 		return romName;
 	}
+
+	static std::string_view getRomName(const fw::Uint8Buffer& romData) {
+		std::string_view romName((const char*)romData.data() + ROM_NAME_OFFSET, 15);
+
+		for (size_t i = 0; i < romName.size(); ++i) {
+			if (romName[i] == '\0') {
+				romName = romName.substr(0, i);
+				break;
+			}
+		}
+
+		return romName;
+	}
 }

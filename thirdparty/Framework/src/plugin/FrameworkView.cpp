@@ -7,12 +7,19 @@
 
 using namespace fw;
 
-FrameworkView::FrameworkView(fw::app::UiContext& uiContext, fw::app::WindowPtr window) :
+FrameworkView::FrameworkView(fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc) :
 	IControl(IRECT(0.0f, 0.0f, window->getViewManager()->getDimensionsF().w, window->getViewManager()->getDimensionsF().h)), 
+	_closeFunc(std::move(closeFunc)),
 	_uiContext(uiContext),
 	_window(window),
 	_vm(window->getViewManager())
 {}
+
+FrameworkView::~FrameworkView() {
+	if (_closeFunc) {
+		_closeFunc();
+	}
+}
 
 void FrameworkView::OnInit() {
 	
@@ -127,7 +134,7 @@ void FrameworkView::OnTouchCancelled(float x, float y, const IMouseMod& mod) {
 }
 
 void FrameworkView::OnDrop(const char* str) {
-	std::cout << std::endl;
+	_vm->onDrop(std::vector<std::string> { str });
 }
 
 void FrameworkView::OnRescale() {
@@ -139,7 +146,7 @@ void FrameworkView::OnResize() {
 }
 
 void FrameworkView::Draw(IGraphics& g) {
-	_uiContext.runFrame();
+	_uiContext->runFrame();
 
 	Dimension dimensions = _vm->getDimensions();
 	if (dimensions != Dimension((int32)GetRECT().W(), (int32)GetRECT().H())) {

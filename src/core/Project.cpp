@@ -2,6 +2,7 @@
 
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
+#include <entt/core/hashed_string.hpp>
 
 #include "foundation/FsUtil.h"
 
@@ -9,10 +10,19 @@
 #include "core/ProjectSerializer.h"
 
 #include "sameboy/SameBoySystem.h"
+#include "core/ProxySystem.h"
+#include "core/SystemService.h"
+
+using namespace entt::literals;
 
 using namespace rp;
 
-Project::Project() {
+Project::Project(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, ConcurrentPoolAllocator<SystemIo>& ioAllocator)
+	: _typeRegistry(typeRegistry)
+	, _systemFactory(systemFactory)
+	, _systemManager(systemFactory, ioAllocator)
+	, _ioAllocator(ioAllocator) 
+{
 	clear();
 }
 
@@ -22,23 +32,41 @@ Project::~Project() {
 	}
 }
 
-void Project::processIncoming() {
-	OrchestratorChange change;
-	while (_messageBus->audioToUi.try_dequeue(change)) {
-		if (change.swap) {
-			// TODO: Remove placeholder?
-			_processor->addSystem(change.swap);
+void Project::setup(fw::EventNode* eventNode, FetchStateResponse&& state) {
+	assert(!_eventNode);
+
+	_eventNode = eventNode;
+	_config = std::move(state.config);
+	_state = std::move(state.project);
+
+	for (SystemStateResponse& systemState : state.systems) {
+		if (_nextId <= systemState.id) {
+			_nextId = systemState.id + 1;
 		}
+
+		std::shared_ptr<ProxySystem> system = std::make_shared<ProxySystem>(
+			systemState.type, 
+			systemState.id, 
+			systemState.romName,
+			std::move(systemState.rom), 
+			std::move(systemState.state), 
+			*eventNode
+		);
+
+		system->setDesc(std::move(systemState.desc));
+		system->setResolution(systemState.resolution);
+		_systemManager.addSystem(system);
 	}
+
+	_version++;
+	_requiresSave = false;
 }
 
 std::string rp::Project::getName() {
 	std::string name;
 	std::unordered_map<std::string, size_t> romNames;
 
-	for (SystemWrapperPtr systemWrapper : _systems) {
-		SystemPtr system = systemWrapper->getSystem();
-
+	for (SystemPtr system : _systemManager.getSystems()) {
 		auto found = romNames.find(system->getRomName());
 
 		if (found != romNames.end()) {
@@ -61,43 +89,60 @@ std::string rp::Project::getName() {
 		}
 	}
 
-	for (SystemWrapperPtr system : _systems) {
-		for (auto [type, model] : system->getModels()) {
+	for (SystemPtr system : _systemManager.getSystems()) {
+		/*for (auto [type, model] : system->getModels()) {
 			std::string modelName = model->getProjectName();
 
 			if (modelName.size() > 0) {
 				return fmt::format("{} [{}]", modelName, name);
 			}
-		}
+		}*/
 	}
 
 	return name;
 }
 
-void Project::load(std::string_view path) {
-	clear();
-
+bool Project::load(std::string_view path) {
+	ProjectState projectState;
 	std::vector<SystemDesc> systemDescs;
 	
-	if (!ProjectSerializer::deserialize(path, _state, systemDescs)) {
+	if (!ProjectSerializer::deserializeFromFile(_typeRegistry, path, projectState, systemDescs)) {
 		spdlog::error("Failed to load project at {}", path);
-		return;
+		return false;
 	}
+
+	clear();
+
+	_state = std::move(projectState);
 
 	// Create systems from new state
 	for (const SystemDesc& desc : systemDescs) {
-		addSystem<SameBoySystem>(desc);
+		std::vector<SystemType> systemTypes = _systemFactory.getRomLoaders(desc.paths.romPath);
+
+		if (systemTypes.size() > 0) {
+			addSystem(systemTypes[0], desc);
+		} else {
+			spdlog::error("Failed to find a system that can load rom {}", desc.paths.romPath);
+		}		
 	}
 
 	_requiresSave = false;
+	return true;
 }
 
-bool Project::save(std::string_view path) {
-	return ProjectSerializer::serialize(path, _state, _systems, true);
+bool Project::save() {
+	std::vector<SystemDesc> systemDescs;
+
+	for (SystemPtr& system : _systemManager.getSystems()) {
+		systemDescs.push_back(system->getDesc());
+	}
+
+	return ProjectSerializer::serialize(_typeRegistry, _state.path, _state, systemDescs, false);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
+SystemPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
 	LoadConfig loadConfig = LoadConfig{
+		.desc = systemDesc,
 		.romBuffer = std::make_shared<fw::Uint8Buffer>(),
 		.sramBuffer = std::make_shared<fw::Uint8Buffer>()
 	};
@@ -113,37 +158,61 @@ SystemWrapperPtr Project::addSystem(SystemType type, const SystemDesc& systemDes
 		}
 	}
 
-	return addSystem(type, systemDesc, std::move(loadConfig), systemId);
+	return addSystem(type, std::move(loadConfig), systemId);
 }
 
-SystemWrapperPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, LoadConfig&& loadConfig, SystemId systemId) {
+SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId) {
 	if (systemId == INVALID_SYSTEM_ID) {
 		systemId = _nextId++;
 	}
 
-	SystemWrapperPtr system = std::make_shared<SystemWrapper>(systemId, _processor, _messageBus, &_modelFactory);
-	system->load(systemDesc, std::forward<LoadConfig>(loadConfig));
+	SystemPtr system = _systemFactory.createSystem(systemId, type);
 
-	_systems.push_back(system);
+	std::vector<SystemServiceType> serviceTypes = _systemFactory.getRelevantServiceTypes(loadConfig);
+	for (SystemServiceType type : serviceTypes) {
+		SystemServicePtr service = _systemFactory.createSystemService(type);
+		
+		auto found = loadConfig.desc.services.find(service->getType());
+		if (found != loadConfig.desc.services.end()) {
+			service->setState(found->second);
+		}
+
+		service->onBeforeLoad(loadConfig);
+
+		loadConfig.desc.services[service->getType()] = service->getState();
+
+		system->addService(service);
+	}
+	
+	system->load(std::forward<LoadConfig>(loadConfig));
+
+	for (SystemServicePtr& service : system->getServices()) {
+		service->onAfterLoad(*system);
+	}
+
+	fw::Uint8Buffer romData = system->getMemory(MemoryType::Rom, AccessType::Read).getBuffer().clone();
+	fw::Uint8Buffer stateData;
+	system->saveState(stateData);
+
+	std::shared_ptr<ProxySystem> proxySystem = std::make_shared<ProxySystem>(type, systemId, system->getRomName(), std::move(romData), std::move(stateData), *_eventNode);
+	proxySystem->setDesc(system->getDesc());
+	proxySystem->setResolution(system->getResolution());
+	_systemManager.addSystem(proxySystem);
+
+	_eventNode->send("Audio"_hs, AddSystemEvent{ .system = std::move(system) });
+
 	_version++;
 
 	if (_state.settings.autoSave) {
 		_requiresSave = true;
 	}
 
-	return system;
+	return proxySystem;
 }
 
 void Project::removeSystem(SystemId systemId) {
-	for (size_t i = 0; i < _systems.size(); ++i) {
-		SystemWrapperPtr system = _systems[i];
-
-		if (system->getId() == systemId) {
-			_systems.erase(_systems.begin() + i);
-		}
-	}
-
-	_messageBus->uiToAudio.enqueue(OrchestratorChange{ .remove = systemId });
+	_systemManager.removeSystem(systemId);
+	_eventNode->send("Audio"_hs, RemoveSystemEvent{ .systemId = systemId });
 
 	_version++;
 
@@ -152,11 +221,11 @@ void Project::removeSystem(SystemId systemId) {
 	}
 }
 
-void Project::duplicateSystem(SystemId systemId, SystemDesc desc) {
-	SystemWrapperPtr systemWrapper = findSystem(systemId);
-	SystemPtr system = systemWrapper->getSystem();
+SystemPtr Project::duplicateSystem(SystemId systemId) {
+	SystemPtr system = _systemManager.findSystem(systemId);
 
 	LoadConfig loadConfig = {
+		.desc = system->getDesc(),
 		.romBuffer = std::make_shared<fw::Uint8Buffer>(),
 		.stateBuffer = std::make_shared<fw::Uint8Buffer>()
 	};
@@ -166,34 +235,18 @@ void Project::duplicateSystem(SystemId systemId, SystemDesc desc) {
 	MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
-	desc.settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
+	//desc.settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
 
-	auto cloned = addSystem(system->getType(), desc, std::move(loadConfig));
-	cloned->saveSram();
-}
-
-SystemWrapperPtr Project::findSystem(SystemId systemId) {
-	for (size_t i = 0; i < _systems.size(); ++i) {
-		SystemWrapperPtr system = _systems[i];
-
-		if (system->getId() == systemId) {
-			return system;
-		}
-	}
-
-	return nullptr;
+	return addSystem(system->getTargetType(), std::move(loadConfig));
+	//cloned->saveSram();
 }
 
 void Project::clear() {
-	// Remove systems
-	std::vector<SystemId> systemIds;
-	for (auto system : _systems) {
-		systemIds.push_back(system->getId());
-	}
+	_systemManager.removeAllSystems();
 
-	for (SystemId systemId : systemIds) {
-		removeSystem(systemId);
-	}
+	if (_eventNode) {
+		_eventNode->send("Audio"_hs, RemoveAllSystemsEvent{});
+	}	
 
 	_state = ProjectState();
 

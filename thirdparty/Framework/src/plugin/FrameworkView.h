@@ -12,16 +12,19 @@
 using namespace iplug;
 using namespace igraphics;
 
+using ViewCloseFunc = std::function<void()>;
+
 class FrameworkView : public IControl {
 private:
-	fw::app::UiContext& _uiContext;
+	fw::app::UiContextPtr _uiContext;
 	fw::app::WindowPtr _window;
 	fw::ViewManagerPtr _vm;
 	bool _mouseOver = false;
+	ViewCloseFunc _closeFunc;
 
 public:
-	FrameworkView(fw::app::UiContext& uiContext, fw::app::WindowPtr window);
-	~FrameworkView() {}
+	FrameworkView(fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc);
+	~FrameworkView();
 
 	void OnInit() override;
 

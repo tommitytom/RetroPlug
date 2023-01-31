@@ -1,6 +1,6 @@
 #include "GlTexture.h"
 
-#include <glad/glad.h>
+#include <glad/gl.h>
 #include <spdlog/spdlog.h>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -49,7 +49,7 @@ namespace fw::engine {
 			if (fileData.size() > 0) {
 				Dimension dim;
 				int32 comp;
-				stbi_uc* imageData = stbi_load_from_memory((const stbi_uc*)fileData.data(), fileData.size(), &dim.w, &dim.h, &comp, 0);
+				stbi_uc* imageData = stbi_load_from_memory((const stbi_uc*)fileData.data(), (int)fileData.size(), &dim.w, &dim.h, &comp, 0);
 
 				if (imageData) {
 					GLenum format = getGlFormat(comp);

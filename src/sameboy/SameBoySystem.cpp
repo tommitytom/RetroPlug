@@ -6,10 +6,14 @@
 
 #include <entt/core/utility.hpp>
 
+
 extern "C" {
+	#define GB_INTERNAL
 	#include <gb.h>
 	#include "SectionOffsetCollector.h"
 }
+
+#include "sameboy/Constants.h"
 
 #include "bootroms/agb_boot.h"
 #include "bootroms/cgb_boot.h"
@@ -123,7 +127,7 @@ static void serialStart(GB_gameboy_t* gb, bool bit_received) {
 		});
 
 		s->currentLinkByte = 0;
-	}*/	
+	}*/
 }
 
 static bool serialEnd(GB_gameboy_t* gb) {
@@ -138,7 +142,7 @@ static bool serialEnd(GB_gameboy_t* gb) {
 	return ret;
 }
 
-SameBoySystem::SameBoySystem(SystemId id): System<SameBoySystem>(id) {
+SameBoySystem::SameBoySystem(): System(SAMEBOY_GUID) {
 	_resolution = fw::DimensionT<uint32>(160, 144);
 }
 
@@ -184,16 +188,16 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 			GB_apu_set_sample_callback(_state.gb, audioHandler);
 			GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
 			GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
-
-			//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
-			GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
-			GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
 		}
 
 		GB_load_rom_from_buffer(_state.gb, (const uint8_t*)loadConfig.romBuffer->data(), loadConfig.romBuffer->size());
 
 		_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
 	}
+
+	//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
+	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
+	GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
 
 	if (loadConfig.sramBuffer) {
 		GB_load_battery_from_buffer(_state.gb, (const uint8_t*)loadConfig.sramBuffer->data(), loadConfig.sramBuffer->size());
@@ -208,6 +212,8 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 	if (loadConfig.reset) {
 		GB_reset(_state.gb);
 	}
+
+	setDesc(std::move(loadConfig.desc));
 
 	return false; 
 }
@@ -240,12 +246,12 @@ void SameBoySystem::setGameLink(bool gameLink) {
 	}
 }
 
-void SameBoySystem::addLinkTarget(SystemBase* target) {
+void SameBoySystem::addLinkTarget(System* target) {
 	SameBoySystem* system = (SameBoySystem*)target;
 	_state.linkTargets.push_back(&system->getState());
 }
 
-void SameBoySystem::removeLinkTarget(SystemBase* target) {
+void SameBoySystem::removeLinkTarget(System* target) {
 	SameBoySystem* system = (SameBoySystem*)target;
 
 	for (size_t i = 0; i < _state.linkTargets.size(); ++i) {
@@ -254,6 +260,77 @@ void SameBoySystem::removeLinkTarget(SystemBase* target) {
 			break;
 		}
 	}
+}
+
+void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
+	for (MemoryPatch& patch : patches) {
+		size_t memSize;
+		uint16 memBank;
+		uint8* target = nullptr;
+
+		switch (patch.type) {
+		case MemoryType::Rom: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_ROM, &memSize, &memBank); break;
+		case MemoryType::Ram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_RAM, &memSize, &memBank); break;
+		case MemoryType::Sram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_CART_RAM, &memSize, &memBank); break;
+		case MemoryType::Unknown: break;
+		}
+
+		if (target) {
+			std::visit(entt::overloaded{
+				[&](uint8 val) { target[patch.offset] = val; },
+				[&](uint16 val) { memcpy(target + patch.offset, &val, sizeof(uint16)); },
+				[&](uint32 val) { memcpy(target + patch.offset, &val, sizeof(uint32)); },
+				[&](const fw::Uint8Buffer& val) { memcpy(target + patch.offset, val.data(), val.size()); },
+			}, patch.data);
+		}
+	}
+}
+
+void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
+	for (const ButtonStream<8>&stream : source) {
+		for (size_t i = 0; i < stream.pressCount; ++i) {
+			int offset = 0;
+			if (target.size() > 0) {
+				offset = target.back().offset + target.back().duration;
+			}
+
+			target.push(OffsetButton{
+				.offset = offset,
+				.duration = (int)(timeScale * stream.presses[i].duration),
+				.button = stream.presses[i].button,
+				.down = stream.presses[i].down
+			});
+		}
+	}
+}
+
+void processSerial(FixedQueue<TimedByte, 16>& source, std::queue<TimedByte>& target, f32 timeScale) {
+	while (source.count()) {
+		target.push(source.pop());
+	}
+}
+
+void SameBoySystem::beginProcess() {
+	_state.io = getIo().get();
+
+	SystemIo::Input& input = _state.io->input;
+	const f32 timeScale = (f32)getSampleRate() / 1000.0f;
+
+	if (_state.linkTargets.empty()) {
+		// Only process incoming serial messages if this gameboy is not linked to another
+		processSerial(input.serial, _state.serialQueue, timeScale);
+	}
+
+	processButtons(input.buttons, _state.buttonQueue, timeScale);
+	processPatches(_state.gb, input.patches);
+
+	/*if (input.loadConfig.hasChanges()) {
+		load(std::move(input.loadConfig));
+	}
+
+	if (input.requestReset) {
+		reset();
+	}*/
 }
 
 bool SameBoySystem::processTick(size_t targetFrameCount) {
@@ -322,81 +399,17 @@ bool SameBoySystem::processTick(size_t targetFrameCount) {
 	return true;
 }
 
-void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
-	for (MemoryPatch& patch : patches) {
-		size_t memSize;
-		uint16 memBank;
-		uint8* target = nullptr;
+SystemStateOffsets SameBoySystem::getStateOffsets() const {
+	GB_section_offsets_t sectionOffsets;
+	getSameboyStateOffsets(_state.gb, &sectionOffsets);
 
-		switch (patch.type) {
-		case MemoryType::Rom: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_ROM, &memSize, &memBank); break;
-		case MemoryType::Ram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_RAM, &memSize, &memBank); break;
-		case MemoryType::Sram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_CART_RAM, &memSize, &memBank); break;
-		case MemoryType::Unknown: break;
-		}
+	SystemStateOffsets offsets;
 
-		if (target) {
-			std::visit(entt::overloaded{
-				[&](uint8 val) { target[patch.offset] = val; },
-				[&](uint16 val) { memcpy(target + patch.offset, &val, sizeof(uint16)); },
-				[&](uint32 val) { memcpy(target + patch.offset, &val, sizeof(uint32)); },
-				[&](const fw::Uint8Buffer& val) { memcpy(target + patch.offset, val.data(), val.size()); },
-			}, patch.data);
-		}
-	}
-}
+	offsets[(size_t)MemoryType::Rom] = { sectionOffsets.mbc.offset, sectionOffsets.mbc.size };
+	offsets[(size_t)MemoryType::Ram] = { sectionOffsets.ram.offset, sectionOffsets.ram.size };
+	offsets[(size_t)MemoryType::Vram] = { sectionOffsets.video.offset, sectionOffsets.video.size };
 
-void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
-	for (const ButtonStream<8>&stream : source) {
-		for (size_t i = 0; i < stream.pressCount; ++i) {
-			int offset = 0;
-			if (target.size() > 0) {
-				offset = target.back().offset + target.back().duration;
-			}
-
-			target.push(OffsetButton{
-				.offset = offset,
-				.duration = (int)(timeScale * stream.presses[i].duration),
-				.button = stream.presses[i].button,
-				.down = stream.presses[i].down
-			});
-		}
-	}
-}
-
-void processSerial(FixedQueue<TimedByte, 16>& source, std::queue<TimedByte>& target, f32 timeScale) {
-	while (source.count()) {
-		target.push(source.pop());
-	}
-}
-
-void SameBoySystem::acquireIo(SystemIo* io) {
-	_state.io = io;
-
-	SystemIo::Input& input = io->input;
-	f32 timeScale = (f32)getSampleRate() / 1000.0f;
-
-	if (_state.linkTargets.empty()) {
-		// Only process incoming serial messages if this gameboy is not linked to another
-		processSerial(input.serial, _state.serialQueue, timeScale);
-	}
-	
-	processButtons(input.buttons, _state.buttonQueue, timeScale);
-	processPatches(_state.gb, input.patches);
-
-	if (input.loadConfig.hasChanges()) {
-		load(std::move(input.loadConfig));
-	}
-
-	if (input.requestReset) {
-		reset();
-	}
-}
-
-SystemIo* SameBoySystem::releaseIo() {
-	SystemIo* ret = _state.io;
-	_state.io = nullptr;
-	return ret;
+	return offsets;
 }
 
 void SameBoySystem::destroy() {

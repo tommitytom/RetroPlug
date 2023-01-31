@@ -10,7 +10,7 @@
 
 using namespace rp;
 
-std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemWrapperPtr system) {
+std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr system) {
 	std::vector<std::shared_ptr<SamplerView>> samplers;
 	parent->findChildren<SamplerView>(samplers);
 
@@ -36,7 +36,7 @@ std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemWrapper
 	return samplerView;
 }
 
-void showHdPlayer(fw::ViewPtr parent, SystemWrapperPtr system) {
+void showHdPlayer(fw::ViewPtr parent, SystemPtr system) {
 	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
 	player->setSystem(system);
 	player->focus();
@@ -45,7 +45,7 @@ void showHdPlayer(fw::ViewPtr parent, SystemWrapperPtr system) {
 void LsdjOverlay::onInitialize() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
 
-	Project* project = getState<Project>();
+	/*Project* project = getState<Project>();
 	_model = _system->getModel<LsdjModel>();
 
 	if (_model->isRomValid()) {
@@ -57,7 +57,7 @@ void LsdjOverlay::onInitialize() {
 			_canvas.setFont(rom.getFont(1));
 			_canvas.setPalette(rom.getPalette(0));
 		}
-	}
+	}*/
 }
 
 void LsdjOverlay::onMenu(fw::Menu& menu) {
@@ -73,8 +73,8 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 		return false;
 	}
 
-	SystemPtr system = _system->getSystem();
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	SystemPtr system;// = _system->getSystem();
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 
 	bool changed = false;
 	if (ev.key == VirtualKey::W) {
@@ -88,7 +88,7 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 	}
 
 	if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
-		_system->saveSram();
+		//_system->saveSram();
 	}
 
 	/*LsdjModelPtr model = _system->getModel<LsdjModel>();
@@ -119,8 +119,8 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 }
 
 bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
-	SystemPtr system = _system->getSystem();
-	LsdjModelPtr model = _system->getModel<LsdjModel>();
+	SystemPtr system;// = _system->getSystem();
+	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 
 	if (!model->isRomValid()) {
 		return false;

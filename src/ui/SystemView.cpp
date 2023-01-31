@@ -2,18 +2,22 @@
 
 #include <spdlog/spdlog.h>
 
-#include "ui/FileDialog.h"
-#include "core/Project.h"
 #include "foundation/KeyToButton.h"
+
+#include "core/Project.h"
+
+#include "audio/AudioManager.h"
+
+#include "ui/FileDialog.h"
+#include "ui/MenuBuilder.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
-#include "audio/AudioManager.h"
+
 #include "sameboy/SameBoySystem.h"
-#include "MenuBuilder.h"
 
 using namespace rp;
 
-SystemView::SystemView() : TextureView(), _frameBuffer(160, 144) {
+SystemView::SystemView() : TextureView() {
 	setType<SystemView>();
 	setSizingPolicy(fw::SizingPolicy::None);
 }
@@ -42,8 +46,8 @@ bool SystemView::onKey(const fw::KeyEvent& ev) {
 		ButtonType::Enum button = fw::keyToButton(ev.key);
 
 		if (button != ButtonType::MAX) {
-			SystemIoPtr& io = _system->getSystem()->getStream();
-			_system->getSystem()->setButtonState(button, ev.down);
+			SystemIoPtr io = _system->getIo();
+			_system->setButtonState(button, ev.down);
 		}
 	}
 
@@ -51,7 +55,7 @@ bool SystemView::onKey(const fw::KeyEvent& ev) {
 }
 
 bool SystemView::onButton(const fw::ButtonEvent& ev) {
-	SystemIoPtr& io = _system->getSystem()->getStream();
+	SystemIoPtr io = _system->getIo();
 
 	if (io) {
 		io->input.buttons.push_back(ButtonStream<8>{
@@ -64,14 +68,8 @@ bool SystemView::onButton(const fw::ButtonEvent& ev) {
 }
 
 void SystemView::onUpdate(f32 delta) {
-	SystemIoPtr& io = _system->getSystem()->getStream();
-	if (!io) {
-		return;
-	}
-
-	if (io->output.video) {
-		_frameBuffer.write(io->output.video->getBuffer());
-		setImage(*io->output.video);
+	if (_system->getFrameBuffer().dimensions() != fw::Dimension::zero) {
+		setImage(_system->getFrameBuffer());
 	}
 }
 
@@ -88,17 +86,17 @@ void SystemView::buildMenu(fw::Menu& target) {
 	Project* project = getState<Project>();
 	ProjectState& projectState = project->getState();
 
-	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getSystem()->getRomName()).separator();
+	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
 	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
 	MenuBuilder::systemAddMenu(root, fileManager, project, _system);
 	MenuBuilder::systemSaveMenu(root, fileManager, project, _system);
 
 	int audioDevice = 0;
 
-	fw::audio::AudioManager& audioManager = project->getAudioManager();
+	//fw::audio::AudioManager& audioManager = project->getAudioManager();
 
-	std::vector<std::string> audioDevices;
-	audioManager.getDeviceNames(audioDevices);
+	//std::vector<std::string> audioDevices;
+	//audioManager.getDeviceNames(audioDevices);
 
 	root.separator()
 		.action("Reset System", [this]() {
@@ -117,11 +115,11 @@ void SystemView::buildMenu(fw::Menu& target) {
 	#ifndef RP_WEB
 	settingsMenu
 		.subMenu("Audio")
-		.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
+		/*.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
 			if (v >= 0) {
 				project->getAudioManager().setAudioDevice((uint32)v);
 			}
-		})
+		})*/
 		.parent();
 	#endif
 
@@ -137,7 +135,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 				.parent()
 			.parent()
 			.separator()
-			.select("Game Link", _system->getDesc().settings.gameLink, [&](bool selected) {
+			.select("Game Link", _system->getGameLink(), [&](bool selected) {
 				_system->setGameLink(selected);
 			});
 

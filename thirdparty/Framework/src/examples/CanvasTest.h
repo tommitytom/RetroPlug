@@ -2,6 +2,7 @@
 
 #include "foundation/Math.h"
 #include "ui/View.h"
+#include "application/Application.h"
 
 namespace fw {
 	class CanvasTest : public View {
@@ -35,4 +36,6 @@ namespace fw {
 				.text(0, 0, "Hello world!");
 		}
 	};
+
+	using CanvasTestApplication = fw::app::BasicApplication<CanvasTest, void>;
 }

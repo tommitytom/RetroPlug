@@ -494,6 +494,20 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
       uint8_t** ppData = (uint8_t**) ptr;
       if (ppData)
       {
+        // START HACK ----------------------
+        IByteChunk& c = _this->mState;
+        c.Clear();
+        bool ok = _this->SerializeState(c);
+
+        if (ok && c.Size())
+        {
+          *ppData = c.GetData();
+          return c.Size();
+        }
+
+        return 0;
+        // END HACK ----------------------
+
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
         IByteChunk::InitChunkWithIPlugVer(chunk);
@@ -521,6 +535,15 @@ VstIntPtr VSTCALLBACK IPlugVST2::VSTDispatcher(AEffect *pEffect, VstInt32 opCode
     {
       if (ptr)
       {
+        // START HACK ----------------------
+        _this->mState.Clear();
+        _this->mState.Resize((int)value);
+        memcpy(_this->mState.GetData(), ptr, value);
+        int p = _this->UnserializeState(_this->mState, 0);
+        _this->OnRestoreState();
+        return 1;
+        // END HACK ----------------------
+
         bool isBank = (!idx);
         IByteChunk& chunk = (isBank ? _this->mBankState : _this->mState);
         chunk.Resize((int) value);

@@ -33,7 +33,7 @@ void WaveformUtil::generate(const Float32Buffer& samples, Waveform& waveform, si
 	} else {
 		const f32 fullChunkSize = (f32)frameCount / (f32)targetSize;
 		const size_t chunkSize = (size_t)fullChunkSize;
-		const f32 chunkRemain = fmod(fullChunkSize, 1);
+		const f32 chunkRemain = fmodf(fullChunkSize, 1);
 
 		f32 overflow = 0.0f;
 		size_t nextChunkSize = chunkSize;

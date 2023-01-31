@@ -1,4 +1,4 @@
-FROM emscripten/emsdk:2.0.34
+FROM emscripten/emsdk:3.1.10
 
 # [Option] Install zsh
 ARG INSTALL_ZSH="true"
@@ -17,7 +17,7 @@ COPY library-scripts/setup-apt-mirrors.sh /tmp/library-scripts/
 COPY library-scripts/setup-emscripten.sh /tmp/library-scripts/
 
 RUN bash /tmp/library-scripts/setup-apt-mirrors.sh
-RUN bash /tmp/library-scripts/setup-emscripten.sh
+#RUN bash /tmp/library-scripts/setup-emscripten.sh
 
 RUN bash /tmp/library-scripts/common-debian.sh "${INSTALL_ZSH}" "${USERNAME}" "${USER_UID}" "${USER_GID}" "${UPGRADE_PACKAGES}" \
 	&& apt-get update \

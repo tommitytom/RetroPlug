@@ -1,0 +1,77 @@
+#pragma once
+
+#include <string>
+
+#include <sol/sol.hpp>
+
+#include "foundation/DataBuffer.h"
+#include "audio/AudioManager.h"
+#include "core/ProjectState.h"
+#include "core/RetroPlugProcessor.h"
+#include "core/System.h"
+#include "ui/View.h"
+#include "ui/CompactLayoutView.h"
+
+namespace rp {
+	enum class ThreadTarget {
+		Ui,
+		Audio
+	};
+
+	class Project;
+	class FileManager;
+
+	class RetroPlugView final : public fw::View {
+	private:
+		f64 _nextFrame = 0;
+
+		fw::Uint8Buffer _romBuffer;
+		fw::Uint8Buffer _savBuffer;
+
+		std::string _romPath;
+		std::string _savPath;
+
+		bool _ready = false;
+
+		IoMessageBus& _ioMessageBus;
+		const fw::TypeRegistry& _typeRegistry;
+
+		//std::shared_ptr<RetroPlugProcessor> _audioProcessor;
+
+		CompactLayoutViewPtr _compactLayout;
+
+		Project _project;
+		FileManager* _fileManager = nullptr;
+
+		//SystemIndex _selected = INVALID_SYSTEM_IDX;
+
+		uint32 _sampleRate = 48000;
+
+		ThreadTarget _defaultTarget = ThreadTarget::Audio;
+
+		//std::vector<SystemIoPtr> _ioCollection;
+		size_t _totalIoAllocated = 0;
+
+		GlobalConfig _config;
+
+		f32 _stateFetchInterval = 1.0f / 60.0f;
+		f32 _nextStateFetch;
+
+		uint64 _lastPingTime = 0;
+
+	public:
+		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
+		~RetroPlugView() = default;
+
+		void onInitialize() override;
+
+		void onUpdate(f32 delta) override;
+
+		void onRender(Canvas& canvas) override;
+
+	private:
+		void processOutput();
+
+		void setupEventHandlers();
+	};
+}
