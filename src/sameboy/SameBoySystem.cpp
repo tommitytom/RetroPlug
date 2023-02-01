@@ -336,7 +336,7 @@ void SameBoySystem::beginProcess() {
 bool SameBoySystem::processTick(size_t targetFrameCount) {
 	if (_state.linkTargets.empty()) {
 		if (_state.linkTicksRemain <= 0) {
-			auto serial = _state.serialQueue;
+			std::queue<TimedByte>& serial = _state.serialQueue;
 
 			if (!serial.empty()) {
 				TimedByte b = serial.front();

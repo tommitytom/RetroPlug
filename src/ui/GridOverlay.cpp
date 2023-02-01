@@ -76,8 +76,10 @@ void GridOverlay::onUpdate(f32 delta) {
 		_grid->findChildren<SystemView>(systemViews);
 
 		if (systems.empty()) {
-			_grid->addChild<StartView>("Start View");
-		} else if (_grid->findChild<StartView>()) {
+			if (!_grid->findChild<StartView>()) {
+				_grid->addChild<StartView>("Start View");
+			}
+		} else {
 			_grid->removeChild<StartView>();
 		}
 

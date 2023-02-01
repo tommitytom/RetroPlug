@@ -20,7 +20,6 @@ namespace rp {
 
 		ProjectState _projectState;
 		GlobalConfig _config;
-		std::vector<SystemDesc> _systemDescs;
 
 		const fw::TypeRegistry& _typeRegistry;
 		const SystemFactory& _systemFactory;

@@ -31,7 +31,7 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 				.type = system->getType(),
 				.id = system->getId(),
 				.romName = system->getRomName(),
-				.desc = _systemDescs[i],
+				.desc = system->getDesc(),
 				.stateOffsets = system->getStateOffsets(),
 				.state = std::move(state),
 				.rom = std::move(rom),
@@ -168,12 +168,14 @@ void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
 	const std::vector<SystemPtr>& systems = _systemManager.getSystems();
 	uint32 channel = message.getChannel();
 
-	/*for (SystemPtr& system : _systemManager.getSystems()) {
-		SystemIoPtr& io = system->getStream();
+	for (SystemPtr& system : _systemManager.getSystems()) {
+		SystemIoPtr io = system->getIo();
+
 		if (!io) {
 			io = _ioMessageBus.alloc(system->getId());
+			system->setIo(io);
 		}
-	}*/
+	}
 
 	switch (_projectState.settings.midiRouting) {
 		case MidiChannelRouting::SendToAll: {
@@ -237,11 +239,11 @@ void RetroPlugProcessor::onDeserialize(const fw::Uint8Buffer& source) {
 
 	if (ProjectSerializer::deserializeFromMemory(_typeRegistry, fileData, projectState, systemDescs)) {
 		_projectState = std::move(projectState);
-		_systemDescs = std::move(systemDescs);
+		std::vector<SystemDesc> systemDescs = std::move(systemDescs);
 
 		uint32 systemId = 1;
 
-		for (const SystemDesc& desc : _systemDescs) {
+		for (const SystemDesc& desc : systemDescs) {
 			std::vector<SystemType> systemTypes = _systemFactory.getRomLoaders(desc.paths.romPath);
 
 			if (systemTypes.size() > 0) {
