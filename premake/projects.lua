@@ -83,7 +83,7 @@ function m.Core.include()
 		"resources"
 	}
 
-	fwDeps.bgfx.compat()
+	--fwDeps.bgfx.compat()
 
 	filter {}
 end
@@ -142,7 +142,7 @@ function m.SameBoyPlug.include()
 
 	filter {}
 
-	fwDeps.bgfx.compat()
+	--fwDeps.bgfx.compat()
 
 	filter {}
 end
@@ -164,6 +164,8 @@ function m.SameBoyPlug.project()
 
 	filter { "system:windows" }
 		toolset "clang"
+
+	filter {}
 
 	files {
 		"src/sameboy/**.h",
@@ -195,7 +197,7 @@ function m.RetroPlug.include()
 		"resources"
 	}
 
-	fwDeps.bgfx.compat()
+	--fwDeps.bgfx.compat()
 
 	filter {}
 end
@@ -206,7 +208,7 @@ function m.RetroPlug.link()
 	links { "RetroPlug" }
 
 	m.SameBoyPlug.link()
-	fwDeps.bgfx.link()
+	--fwDeps.bgfx.link()
 	fwDeps.glfw.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()

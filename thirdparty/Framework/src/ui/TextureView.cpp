@@ -33,7 +33,7 @@ void TextureView::setImage(const Image& image) {
 
 void TextureView::setUri(const std::string& uri) {
 	_uri = uri;
-	
+
 	if (isInitialized()) {
 		_texture = getResourceManager().load<Texture>(uri);
 	}
@@ -45,7 +45,7 @@ void TextureView::onInitialize() {
 	}
 }
 
-void TextureView::onRender(Canvas& canvas) {
+void TextureView::onRender(fw::Canvas& canvas) {
 	if (_texture.isValid()) {
 		canvas.texture(_texture, getDimensionsF(), Color4F(1, 1, 1, getAlpha()));
 	} else {

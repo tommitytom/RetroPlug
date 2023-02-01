@@ -38,7 +38,7 @@ namespace fw {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(engine::Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override;
 

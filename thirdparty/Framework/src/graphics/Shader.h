@@ -6,7 +6,7 @@
 #include "foundation/Resource.h"
 #include "foundation/ResourceHandle.h"
 
-namespace fw::engine {
+namespace fw {
 	enum class ShaderType {
 		Unknown,
 		Fragment,

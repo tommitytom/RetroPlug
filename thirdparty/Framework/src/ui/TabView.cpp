@@ -84,7 +84,7 @@ bool TabView::onMouseButton(MouseButton::Enum button, bool down, Point position)
 	return false;
 }
 
-void TabView::onRender(Canvas& canvas) {
+void TabView::onRender(fw::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), RP_COLOR_BACKGROUND);
 
 	if (_showHeader) {

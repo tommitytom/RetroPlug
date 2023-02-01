@@ -5,7 +5,7 @@
 #include "foundation/FsUtil.h"
 #include "fonts/Karla-Regular.h"
 
-namespace fw::engine {
+namespace fw {
 	FontProvider::FontProvider() {
 		std::vector<std::byte> data;
 		data.resize(Karla_Regular_len);

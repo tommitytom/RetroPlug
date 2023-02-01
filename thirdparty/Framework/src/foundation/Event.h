@@ -12,8 +12,6 @@
 #include <moodycamel/concurrentqueue.h>
 #include <spdlog/spdlog.h>
 
-#include <windows.h>
-
 namespace fw {
 	class EventNode {
 	public:
@@ -90,7 +88,7 @@ namespace fw {
 
 		EventNode(EventNode&& other) noexcept { *this = std::move(other); }
 		EventNode(const EventNode&) = delete;
-		
+
 		~EventNode() {
 			destroy();
 		}
@@ -154,7 +152,7 @@ namespace fw {
 			} else {
 				subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); });
 			}
-			
+
 			return eventType;
 		}*/
 
@@ -213,7 +211,7 @@ namespace fw {
 								.value = event
 							});
 						}
-						
+
 					}
 				}
 
@@ -396,7 +394,7 @@ namespace fw {
 
 			/*entt::any_visit(entt::overloaded{
 				[&](const AddNodeEvent& evt) {
-					handleAddNode(NodeReference{.id = evt.nodeId, .queue = evt.queue }); 
+					handleAddNode(NodeReference{.id = evt.nodeId, .queue = evt.queue });
 				},
 				[&](const SubscribeEvent& evt) {
 					handleSubscribe(ev.sender, evt.eventType);
@@ -434,9 +432,9 @@ namespace fw {
 
 			for (auto& [k, v] : _state.lookup) {
 				size_t idx = vectorIndexAt(v, NodeReference{ .id = nodeId });
-				
-				if (idx != -1) { 
-					v.erase(v.begin() + idx); 
+
+				if (idx != -1) {
+					v.erase(v.begin() + idx);
 				}
 			}
 		}
@@ -458,7 +456,7 @@ namespace fw {
 			nodes.erase(nodes.begin() + idx);
 
 			_state.nodes.erase(nodeId);
-		}	
+		}
 
 		inline const SubscriptionHandler* getSubscriptionHandler(EventType eventType) const {
 			auto found = _subscriptions.find(eventType);
@@ -479,7 +477,7 @@ namespace fw {
 
 			return -1;
 		}
-		
+
 		template <typename T>
 		inline bool vectorContains(const std::vector<T>& vec, const T& item) const {
 			return vectorIndexAt(vec, item) != -1;

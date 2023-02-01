@@ -21,7 +21,7 @@ namespace fw {
 			_color = color;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas.fillRect(getDimensions(), _color);
 		}
 	};
@@ -210,7 +210,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			auto res = getDimensions();
 
 			canvas.fillRect(res, RP_COLOR_BACKGROUND);

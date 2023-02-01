@@ -12,7 +12,7 @@
 #include "foundation/Types.h"
 
 namespace rp {
-	class LsdjModel final : public SystemService {
+	class LsdjModel : public SystemService {
 	private:
 		lsdj::MemoryOffsets _ramOffsets;
 		bool _offsetsValid = false;
@@ -32,6 +32,10 @@ namespace rp {
 		void onAfterLoad(System& system) override;
 
 		//void onUpdate(f32 delta) override;
+
+		void setState(const entt::any& data) override {}
+
+		const entt::any getState() const override { return entt::any{}; }
 
 		//std::string getProjectName() override;
 

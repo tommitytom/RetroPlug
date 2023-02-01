@@ -9,10 +9,10 @@
 #include "graphics/ftgl/FtglFont.h"
 
 using namespace fw;
-using namespace fw::engine;
+
 namespace fs = std::filesystem;
 
-constexpr PointF FIXED_VERTEX_OFFSET = PointF(0.00125f / 2.0f, 0);
+const PointF FIXED_VERTEX_OFFSET = PointF{0.00125f / 2.0f, 0};
 
 uint32 toUint32Abgr(const Color4F& color) {
 	return
@@ -162,7 +162,7 @@ Canvas& Canvas::points(const PointF* points, uint32 count) {
 	uint32 v = (uint32)_geom.vertices.size();
 
 	for (uint32 i = 0; i < count; ++i) {
-		_geom.vertices.push_back(CanvasVertex{ _transform * points[i], agbr, 0, 0 });
+		_geom.vertices.push_back(CanvasVertex{ _transform * points[i], agbr, { 0, 0 } });
 		_geom.indices.push_back(v + i);
 	}
 
@@ -178,7 +178,7 @@ Canvas& Canvas::polygon(const PointF* points, uint32 count) {
 	uint32 v = (uint32)_geom.vertices.size();
 
 	for (uint32 i = 0; i < count; ++i) {
-		_geom.vertices.push_back(CanvasVertex{ _transform * points[i], agbr, 0, 0 });
+		_geom.vertices.push_back(CanvasVertex{ _transform * points[i], agbr, { 0, 0 } });
 	}
 
 	_geom.indices.insert(_geom.indices.end(), {

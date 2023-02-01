@@ -1,4 +1,5 @@
 local MINIZIP_DIR = "thirdparty/minizip-ng"
+local ZLIB_DIR = "thirdparty/Framework/thirdparty/zlib"
 local LZMA_DIR = MINIZIP_DIR .. "/lib/liblzma/src"
 
 local m = {}
@@ -113,7 +114,7 @@ end
 
 function m.link()
 	m.include()
-	links { "zlib", "minizip" }
+	links { "minizip", "zlib" }
 end
 
 function m.project()
@@ -289,7 +290,7 @@ function m.project()
 
 		filter { "system:not macosx" }
 			sysincludedirs {
-				MINIZIP_DIR .. "/lib/zlib",
+				ZLIB_DIR
 			}
 
 		filter "system:windows"
@@ -343,6 +344,8 @@ function m.project()
 				MINIZIP_DIR .. "/mz_strm_os_posix.c",
 				MINIZIP_DIR .. "/mz_os_posix.c",
 			}
+
+		filter {}
 end
 
 return m

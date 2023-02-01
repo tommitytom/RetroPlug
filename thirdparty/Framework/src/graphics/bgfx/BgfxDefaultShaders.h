@@ -4,6 +4,6 @@
 
 #include "graphics/Shader.h"
 
-namespace fw::engine {
+namespace fw {
 	std::pair<ShaderDesc, ShaderDesc> getDefaultBgfxShaders();
 }

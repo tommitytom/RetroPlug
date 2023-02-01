@@ -50,9 +50,9 @@ void PhysicsTest::onUpdate(f32 delta) {
 	}
 }
 
-void PhysicsTest::onRender(engine::Canvas& canvas) {
+void PhysicsTest::onRender(fw::Canvas& canvas) {
 	if (!_upTex.isValid()) {
-		_upTex  = getResourceManager().load<engine::Texture>("taco.png");
+		_upTex  = getResourceManager().load<fw::Texture>("taco.png");
 	}
 
 	PhysicsWorldSingleton& physicsWorld = _registry.ctx().at<PhysicsWorldSingleton>();
@@ -116,7 +116,7 @@ void PhysicsTest::onRender(engine::Canvas& canvas) {
 	//getCanvas().fillRect({ 100, 100, 100, 100 }, { 0, 1, 0, 1 });
 	//getCanvas().texture(_upTex, { 100, 100, 100, 100 }, { 1, 1, 1, 1 });
 
-	//getCanvas().texture(engine::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
+	//getCanvas().texture(fw::CanvasTextureHandle(1), { 100, 100, 512, 512 }, Color4F(1, 1, 1, 1));
 
 	//canvas.setFont(_font);
 	canvas.text(100, 100, "Hello world!", Color4F(1, 1, 1, 1));

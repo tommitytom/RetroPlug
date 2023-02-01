@@ -24,7 +24,7 @@ const bool RENDERER_REQUIRES_FLIP = true;
 namespace fw::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
-	
+
 	UiContext::UiContext(bool requiresFlip) : _fontManager(_resourceManager) {
 		_windowManager = std::make_unique<GlfwWindowManager>(_resourceManager, _fontManager);
 		_flip = RENDERER_REQUIRES_FLIP && requiresFlip;
@@ -44,7 +44,7 @@ namespace fw::app {
 
 		_windowManager = nullptr;
 	}
-	
+
 	bool UiContext::runFrame() {
 		hrc::time_point time = hrc::now();
 		std::chrono::nanoseconds nanoDelta = time - _lastTime;
@@ -98,7 +98,7 @@ namespace fw::app {
 
 		return false;
 	}
-	
+
 	void UiContext::createRenderContext(WindowPtr window) {
 		_renderContext = std::make_unique<RenderContextT>(window->getNativeHandle(), window->getViewManager()->getDimensions(), _resourceManager);
 
@@ -119,8 +119,8 @@ namespace fw::app {
 
 		auto shaderDescs = _renderContext->getDefaultShaders();
 
-		_resourceManager.create<engine::Shader>("shaders/CanvasVertex", shaderDescs.first);
-		_resourceManager.create<engine::Shader>("shaders/CanvasFragment", shaderDescs.second);
+		_resourceManager.create<fw::Shader>("shaders/CanvasVertex", shaderDescs.first);
+		_resourceManager.create<fw::Shader>("shaders/CanvasFragment", shaderDescs.second);
 
 		_defaultProgram = _resourceManager.create<ShaderProgram>("shaders/CanvasDefault", {
 			"shaders/CanvasVertex",

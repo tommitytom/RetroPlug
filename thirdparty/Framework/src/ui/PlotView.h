@@ -30,7 +30,7 @@ namespace fw {
 		void onInitialize() override { updatePoints(getDimensions()); }
 		void onResize(const ResizeEvent& ev) override { updatePoints(ev.size); }
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas.fillRect(getDimensionsF(), _theme.background);
 
 			if (_points.size() > 2) {

@@ -42,7 +42,7 @@ namespace fw::app {
 			_viewManager->onUpdate(delta);
 		}
 
-		virtual void onRender(engine::Canvas& canvas) {
+		virtual void onRender(fw::Canvas& canvas) {
 			_viewManager->onRender(canvas);
 		}
 

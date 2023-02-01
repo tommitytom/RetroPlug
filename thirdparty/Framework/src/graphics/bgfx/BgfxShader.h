@@ -7,7 +7,7 @@
 #include "graphics/Shader.h"
 #include "graphics/bgfx/BgfxResource.h"
 
-namespace fw::engine {
+namespace fw {
 	using BgfxShader = BgfxResource<Shader, bgfx::ShaderHandle>;
 
 	class BgfxShaderProvider : public TypedResourceProvider<Shader> {

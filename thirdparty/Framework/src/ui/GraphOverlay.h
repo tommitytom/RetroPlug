@@ -9,7 +9,7 @@ namespace fw {
 		GraphOverlay(Dimension dimensions) : View(dimensions) { setType<GraphOverlay>(); }
 		~GraphOverlay() { }
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 
 		}
 	};

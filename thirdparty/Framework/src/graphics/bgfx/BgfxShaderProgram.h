@@ -9,7 +9,7 @@
 #include "graphics/Shader.h"
 #include "graphics/ShaderProgram.h"
 
-namespace fw::engine {
+namespace fw {
 	class BgfxShaderProgram : public ShaderProgram {
 	private:
 		bgfx::ProgramHandle _handle = { bgfx::kInvalidHandle };
@@ -20,7 +20,7 @@ namespace fw::engine {
 		BgfxShaderProgram(bgfx::ProgramHandle handle, ShaderHandle vertexShader, ShaderHandle fragmentShader)
 			: _handle(handle), _vertexShader(vertexShader), _fragmentShader(fragmentShader) {}
 
-		~BgfxShaderProgram() { 
+		~BgfxShaderProgram() {
 			if (bgfx::isValid(_handle)) {
 				bgfx::destroy(_handle);
 			}

@@ -5,6 +5,13 @@
 		"dockerfile": "Dockerfile",
 	},
 
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--security-opt",
+		"seccomp=unconfined",
+		"--net=host"
+	],
+
 	// Run command on the host machine before starting docker
 	//"initializeCommand": "mkdir -p build/emscripten/debug && mkdir -p build/emscripten/development && mkdir -p build/emscripten/release && mkdir -p build/emscripten/dist",
 
@@ -33,6 +40,11 @@
 	"forwardPorts": [
 		1338
 	],
+
+	"remoteEnv": {
+		"DISPLAY": "172.30.96.1:0"  // Windows / Mac OS
+		//"DISPLAY": ":0"                      // Linux
+	},
 
 	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "emscripten"

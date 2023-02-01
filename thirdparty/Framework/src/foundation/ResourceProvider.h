@@ -37,8 +37,8 @@ namespace fw {
 				state.resource = load(state.uri);
 			} else {
 				assert(state.desc);
-				state.resource = create(entt::any_cast<T::DescT>(state.desc));
-			}			
+				state.resource = create(entt::any_cast<typename T::DescT>(state.desc));
+			}
 		}
 
 		std::shared_ptr<T> createTyped(const typename T::DescT& desc) {

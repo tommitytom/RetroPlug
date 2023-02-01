@@ -24,7 +24,7 @@ namespace rp {
 
 	public:
 		GridOverlay() {
-			setType<GridOverlay>(); 
+			setType<GridOverlay>();
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point pos) override;
@@ -44,7 +44,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 		void setUnselectedAlpha(f32 alpha) {
 			_unselectedAlpha = alpha;

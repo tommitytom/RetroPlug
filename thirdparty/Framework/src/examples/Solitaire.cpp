@@ -269,13 +269,13 @@ void Solitaire::onUpdate(f32 delta) {
 	SceneGraphUtil::updateWorldTransforms(_registry, _rootEntity);
 }
 
-void Solitaire::onRender(engine::Canvas& canvas) {
+void Solitaire::onRender(fw::Canvas& canvas) {
 	SceneGraphUtil::eachRecursive(_registry, _rootEntity, [&](entt::entity e) {
 		const SpriteRenderComponent* sprite = _registry.try_get<SpriteRenderComponent>(e);
 
 		if (sprite) {
 			const WorldTransformComponent& trans = _registry.get<WorldTransformComponent>(e);
-			canvas.setTransform(trans.transform);			
+			canvas.setTransform(trans.transform);
 			canvas.texture(sprite->tile.handle, sprite->renderArea, sprite->tile.uvArea, sprite->color);
 		}
 	});

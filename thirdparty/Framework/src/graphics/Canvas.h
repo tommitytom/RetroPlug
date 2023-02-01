@@ -26,7 +26,7 @@ namespace ftgl {
 	struct texture_font_t;
 }
 
-namespace fw::engine {
+namespace fw {
 	enum TextAlignFlags {
 		Left = 1 << 0,
 		Center = 1 << 1,
@@ -236,7 +236,7 @@ namespace fw::engine {
 			return *this;
 		}
 
-		Canvas& resetViewProjection() { 
+		Canvas& resetViewProjection() {
 			_viewPort = Rect(0, 0, _res.w, _res.h);
 			_projection = (RectF)_viewPort;
 			return *this;
@@ -326,7 +326,7 @@ namespace fw::engine {
 		}
 
 		inline uint32 writeVertex(const PointF& pos, uint32 color) {
-			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, 0, 0 });
+			_geom.vertices.push_back(CanvasVertex{ _transform * pos, color, { 0, 0 } });
 			return (uint32)_geom.vertices.size() - 1;
 		}
 
@@ -337,4 +337,4 @@ namespace fw::engine {
 	};
 }
 
-using namespace fw::engine;
+//using namespace fw;

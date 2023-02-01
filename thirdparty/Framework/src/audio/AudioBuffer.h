@@ -143,8 +143,8 @@ namespace fw {
 	class InterleavedAudioBuffer {
 	public:
 		constexpr static const uint32 ChannelCount = _ChannelCount;
-		using Frame = typename AudioFrame<_ChannelCount, T>;
-		
+		using Frame = AudioFrame<_ChannelCount, T>;
+
 	private:
 		DataBuffer<Frame> _frames;
 		f32 _sampleRate = 48000.0f;

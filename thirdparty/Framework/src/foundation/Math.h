@@ -86,6 +86,9 @@ namespace fw {
 		T x = 0;
 		T y = 0;
 
+		PointT() {}
+		PointT(T _x, T _y): x(_x), y(_y) {}
+
 		bool operator==(const PointT& other) const {
 			return x == other.x && y == other.y;
 		}
@@ -215,9 +218,9 @@ namespace fw {
 		T w;
 		T h;
 
-		DimensionT(): w(0), h(0) {}
-		DimensionT(const DimensionT& other) : w(other.w), h(other.h) {}
-		DimensionT(T _w, T _h): w(_w), h(_h) {}
+		constexpr DimensionT(): w(0), h(0) {}
+		constexpr DimensionT(const DimensionT& other) : w(other.w), h(other.h) {}
+		constexpr DimensionT(T _w, T _h): w(_w), h(_h) {}
 
 		bool operator==(const DimensionT& other) const {
 			return w == other.w && h == other.h;
@@ -520,8 +523,8 @@ namespace fw {
 
 		PointF operator*(const PointF& other) const {
 			return PointF{
-				.x = (m11 * other.x) + (m12 * other.y) + m13,
-				.y = (m21 * other.x) + (m22 * other.y) + m23
+				(m11 * other.x) + (m12 * other.y) + m13,
+				(m21 * other.x) + (m22 * other.y) + m23
 			};
 		}
 

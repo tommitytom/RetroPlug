@@ -87,7 +87,7 @@ namespace fw {
 			return true;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			entt::registry& reg = getRegistry();
 
 			beginSceneRender(reg, canvas);

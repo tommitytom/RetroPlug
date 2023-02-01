@@ -6,7 +6,7 @@
 #include "foundation/FsUtil.h"
 
 using namespace fw;
-using namespace fw::engine;
+
 
 std::shared_ptr<Resource> BgfxShaderProvider::load(std::string_view uri) {
 	if (fs::exists(uri)) {

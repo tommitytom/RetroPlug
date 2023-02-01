@@ -31,7 +31,7 @@ namespace fw {
 
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 
 		}
 	};

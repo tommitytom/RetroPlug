@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include <array>
 #include <vector>
@@ -104,7 +104,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 		bool onMouseMove(Point pos) override {
 			_mouseOverHeader = _titleArea.contains(pos);

@@ -57,7 +57,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override {}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			_canvas.clear();
 
 			/*LsdjModelPtr model = _system->getModel<LsdjModel>();
@@ -72,7 +72,7 @@ namespace rp {
 					_ui.renderMode2(sram.getWorkingSong(), ram);
 				}
 			}*/
-			
+
 			LsdjCanvasView::onRender(canvas);
 		}
 	};

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "mz.h"
 #include "mz_os.h"
 #include "mz_strm.h"
@@ -8,7 +10,7 @@
 #include "mz_zip.h"
 #include "mz_zip_rw.h"
 
-#include <stdio.h> 
+#include <stdio.h>
 #include <assert.h>
 #include <string>
 #include <string_view>
@@ -68,7 +70,7 @@ namespace zipp {
             case MZ_SIGN_ERROR: return "MZ_SIGN_ERROR: Signing error";
             case MZ_SYMLINK_ERROR: return "MZ_SYMLINK_ERROR: Symbolic link error";
         }
-        
+
         return "Unknown error";
     }
 
@@ -172,7 +174,7 @@ namespace zipp {
             entry.version_madeby = MZ_VERSION_MADEBY;
 			entry.compression_method = (uint16_t)_settings.method;
             entry.flag = MZ_ZIP_FLAG_UTF8;
-            
+
 			int32_t err = mz_zip_writer_add_buffer(_handle, (void*)data, (int32_t)size, &entry);
 			return err == MZ_OK;
 		}

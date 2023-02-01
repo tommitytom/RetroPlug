@@ -20,8 +20,8 @@ namespace fw {
 		bool _mouseOverHeader = false;
 
 	public:
-		TabView() { 
-			setType<TabView>(); 
+		TabView() {
+			setType<TabView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~TabView() = default;
@@ -53,7 +53,7 @@ namespace fw {
 			return _dragStartPosition;
 		}
 
-		void onRender(Canvas& canvas);
+		void onRender(fw::Canvas& canvas) override;
 
 		void onResize(const ResizeEvent& ev) override {
 			updateLayout();

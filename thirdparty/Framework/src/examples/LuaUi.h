@@ -35,7 +35,7 @@ namespace fw {
 	private:
 		sol::state* _lua = nullptr;
 		std::string _scriptPath;
-		
+
 		FW::FileWatcher _watcher;
 		FW::WatchID _watchId = 0;
 		FileUpdateDelegate _listener;
@@ -67,6 +67,6 @@ namespace fw {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 	};
 }

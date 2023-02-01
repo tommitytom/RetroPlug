@@ -26,8 +26,8 @@ namespace fw {
 		std::vector<Connection> _connections;
 
 	public:
-		GraphView() { 
-			setType<GraphView>(); 
+		GraphView() {
+			setType<GraphView>();
 
 			_container = addChild<View>("Graph Container");
 		}
@@ -51,7 +51,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			if (!_graph) {
 				return;
 			}
@@ -65,7 +65,7 @@ namespace fw {
 	private:
 		void rebuildGraph() {
 			_container->removeChildren();
-			
+
 			size_t i = 0;
 			for (NodePtr node : _graph->getNodes()) {
 				NodeViewPtr view = _overlay->addChild<NodeView>(fmt::format("Node {}", i));

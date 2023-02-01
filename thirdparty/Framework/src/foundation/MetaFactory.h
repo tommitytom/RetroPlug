@@ -27,7 +27,7 @@ namespace fw {
 		template <auto Field, typename ...Property>
 		MetaFactory& addField(std::string_view name, Property... property) {
 			_factory
-				.data<Field, entt::as_ref_t>(entt::hashed_string(name.data(), name.size()))
+				.template data<Field, entt::as_ref_t>(entt::hashed_string(name.data(), name.size()))
 				.props(
 					std::make_pair("Name"_hs, name),
 					std::make_pair("Order"_hs, _fieldIdx++),

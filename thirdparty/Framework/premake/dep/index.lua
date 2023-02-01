@@ -12,9 +12,9 @@ local m = {
 }
 
 function m.allProjects()
-	m.bgfx.bxProject()
-	m.bgfx.bimgProject()
-	m.bgfx.bgfxProject()
+	--m.bgfx.bxProject()
+	--m.bgfx.bimgProject()
+	--m.bgfx.bgfxProject()
 	m.lua.project()
 	m.zlib.project()
 	m.box2d.project()

@@ -22,7 +22,7 @@ namespace rp {
 
 		void setState(const entt::any& data) override {}
 
-		const entt::any getState() const { return entt::any{}; }
+		const entt::any getState() const override { return entt::any{}; }
 	};
 
 	class MgbServiceProvider : public SystemServiceProvider {

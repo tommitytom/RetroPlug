@@ -386,7 +386,7 @@ namespace fw {
 			_highlights.clear();
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			for (auto& hl : _highlights) {
 				if (hl.second.w > 0) {
 					canvas.fillRect(hl.second, Color4F(1, 1, 1, 0.5f));

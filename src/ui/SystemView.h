@@ -42,7 +42,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
  			TextureView::onRender(canvas);
 		}
 

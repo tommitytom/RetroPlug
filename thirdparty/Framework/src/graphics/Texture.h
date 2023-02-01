@@ -3,7 +3,7 @@
 #include "foundation/Math.h"
 #include "foundation/ResourceHandle.h"
 
-namespace fw::engine {
+namespace fw {
 	struct TextureDesc {
 		Dimension dimensions;
 		uint32 depth;

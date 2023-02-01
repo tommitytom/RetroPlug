@@ -129,7 +129,7 @@ namespace fw {
 			TypeDataLookup state;
 			TypeDataLookup themeLookup;
 
-			FontManager* fontManager = nullptr;
+			fw::FontManager* fontManager = nullptr;
 			ResourceManager* resourceManager = nullptr;
 
 			CursorType cursor = CursorType::Arrow;
@@ -316,13 +316,13 @@ namespace fw {
 			return *_shared->resourceManager;
 		}
 
-		engine::FontManager& getFontManager() {
+		fw::FontManager& getFontManager() {
 			assert(_shared);
 			assert(_shared->fontManager);
 			return *_shared->fontManager;
 		}
 
-		const engine::FontManager& getFontManager() const {
+		const fw::FontManager& getFontManager() const {
 			assert(_shared);
 			assert(_shared->fontManager);
 			return *_shared->fontManager;
@@ -358,7 +358,7 @@ namespace fw {
 
 		virtual void onUpdate(f32 delta) {}
 
-		virtual void onRender(engine::Canvas& canvas) {}
+		virtual void onRender(fw::Canvas& canvas) {}
 
 		virtual bool onButton(const ButtonEvent& ev) { return onButton(ev.button, ev.down); }
 
@@ -370,12 +370,12 @@ namespace fw {
 
 		virtual bool onMouseButton(const MouseButtonEvent& ev) { return onMouseButton(ev.button, ev.down, ev.position); }
 
-		virtual bool onMouseDoubleClick(const MouseDoubleClickEvent& ev) { 
+		virtual bool onMouseDoubleClick(const MouseDoubleClickEvent& ev) {
 			return onMouseButton(MouseButtonEvent{
 				.button = ev.button,
 				.down = true,
 				.position = ev.position
-			}); 
+			});
 		}
 
 		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point position) { return false; }
@@ -632,7 +632,7 @@ namespace fw {
 
 			view->_parent = std::weak_ptr<View>(shared_from_this());
 			_children.push_back(view);
-			
+
 			if (isInitialized()) {
 				initializeRecursive(view);
 
@@ -688,7 +688,7 @@ namespace fw {
 					}
 
 					_children.erase(_children.begin() + i);
-					
+
 					onChildRemoved(view);
 					view->onDismount();
 

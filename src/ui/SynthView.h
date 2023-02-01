@@ -34,7 +34,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 	private:
 		void setWaveform(fw::Float32Buffer& samples);

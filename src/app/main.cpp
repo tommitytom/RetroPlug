@@ -1,7 +1,9 @@
 #include "foundation/MacroTools.h"
 #include "application/ApplicationRunner.h"
 
-#include INCLUDE_APPLICATION(APPLICATION_IMPL)
+//#include STRINGIFY(CAT_2(APPLICATION_IMPL,.h))
+//#include INCLUDE_APPLICATION(APPLICATION_IMPL)
+#include "RetroPlugApplication.h"
 
 #ifdef RP_WEB
 #include "app/WebAudio.h"

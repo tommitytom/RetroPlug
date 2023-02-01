@@ -29,7 +29,7 @@ namespace fw {
 			if (_texture.isValid()) {
 				return _texture.getUri();
 			}
-			
+
 			return "";
 		}
 
@@ -37,6 +37,6 @@ namespace fw {
 
 		void onInitialize() override;
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 	};
 }

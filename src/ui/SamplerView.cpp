@@ -151,7 +151,7 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 		} else {
 			_ui.releaseButton(button);
 		}
-	}	
+	}
 
 	return true;
 }
@@ -221,7 +221,7 @@ bool defaultSelect(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 default
 	return false;
 }
 
-void SamplerView::onRender(Canvas& canvas) {
+void SamplerView::onRender(fw::Canvas& canvas) {
 	if (!_system) {
 		return;
 	}

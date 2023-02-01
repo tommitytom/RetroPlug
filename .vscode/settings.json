@@ -171,6 +171,11 @@
 		"any": "cpp",
 		"cinttypes": "cpp",
 		"csignal": "cpp",
-		"span": "cpp"
-	}
+		"span": "cpp",
+		"ranges": "cpp",
+		"memory_resource": "cpp",
+		"shared_mutex": "cpp",
+		"cfenv": "cpp"
+	},
+	"Lua.runtime.version": "Lua 5.4"
 }

@@ -168,7 +168,7 @@ namespace fw {
 			updateLayout(ev.size);
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			Dimension dim = getDimensions();
 			canvas.fillRect(dim, Color4F::darkGrey);
 
@@ -184,14 +184,14 @@ namespace fw {
 				canvas
 					.line(0, rowY, dim.w, rowY, Color4F::lightGrey)
 					.line(Point{ _separatorX, rowY }, Point{ _separatorX, rowY + groupHeight }, Color4F::lightGrey);
-				
+
 				rowY += _rowHeight + 1;
 
 				for (int32 i = 0; i < totalRowCount; ++i) {
 					canvas.line(0, rowY, dim.w, rowY, Color4F::lightGrey);
 					rowY += _rowHeight + 1;
 				}
-			}		
+			}
 		}
 	};
 

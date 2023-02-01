@@ -49,17 +49,17 @@ namespace fw {
 
 	public:
 		GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager);
-		~GlRenderContext();
+		~GlRenderContext() = default;
 
 		void beginFrame(f32 delta) override;
 
-		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) override;
+		void renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) override;
 
 		void endFrame() override;
 
 		void cleanup() override;
 
-		std::pair<engine::ShaderDesc, engine::ShaderDesc> getDefaultShaders();
+		std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() override;
 
 	private:
 		uint32 acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);

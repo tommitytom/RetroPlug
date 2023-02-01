@@ -66,7 +66,7 @@ void BgfxRenderContext::cleanup() {
 	bgfx::destroy(_ind);
 }
 
-std::pair<engine::ShaderDesc, engine::ShaderDesc> BgfxRenderContext::getDefaultShaders() {
+std::pair<fw::ShaderDesc, fw::ShaderDesc> BgfxRenderContext::getDefaultShaders() {
 	return getDefaultBgfxShaders();
 }
 
@@ -76,10 +76,10 @@ void BgfxRenderContext::beginFrame(f32 delta) {
 	_viewOffset = 0;
 }
 
-void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) {
-	const engine::CanvasGeometry& geom = canvas.getGeometry();
+void BgfxRenderContext::renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) {
+	const fw::CanvasGeometry& geom = canvas.getGeometry();
 	uint32 nextViewOffset = _viewOffset;
-	
+
 	bgfx::FrameBufferHandle frameBuffer;
 
 	if (window == _mainWindow) {
@@ -94,7 +94,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 	}
 
 	if (geom.vertices.size()) {
-		const bgfx::Memory* verts = bgfx::copy(geom.vertices.data(), (uint32)geom.vertices.size() * sizeof(engine::CanvasVertex));
+		const bgfx::Memory* verts = bgfx::copy(geom.vertices.data(), (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex));
 		const bgfx::Memory* inds = bgfx::copy(geom.indices.data(), (uint32)geom.indices.size() * sizeof(uint32));
 
 		if (bgfx::isValid(_vert)) {
@@ -119,8 +119,8 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 		bx::mtxIdentity(viewMtx);
 
 		f32 dim[4] = { (f32)canvas.getDimensions().w, (f32)canvas.getDimensions().h, (f32)_totalTime, _lastDelta };
-		
-		for (const engine::CanvasBatch& batch : geom.batches) {
+
+		for (const fw::CanvasBatch& batch : geom.batches) {
 			uint32 batchViewId = _viewOffset + batch.viewId;
 			assert(batchViewId <= 255);
 
@@ -133,7 +133,7 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 			bgfx::setViewScissor(batchViewId, (uint16)batch.scissor.x, (uint16)batch.scissor.y, (uint16)batch.scissor.w, (uint16)batch.scissor.h);
 			bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
-			for (const engine::CanvasSurface& surface : batch.surfaces) {
+			for (const fw::CanvasSurface& surface : batch.surfaces) {
 				const BgfxShaderProgram& program = surface.program.getResourceAs<BgfxShaderProgram>();
 				const BgfxTexture& texture = surface.texture.getResourceAs<BgfxTexture>();
 
@@ -148,18 +148,18 @@ void BgfxRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle 
 					;
 
 				switch (surface.primitive) {
-				case engine::RenderPrimitive::LineList:
+				case fw::RenderPrimitive::LineList:
 					state |= BGFX_STATE_PT_LINES;
 					if (_lineAA) state |= BGFX_STATE_LINEAA;
 					break;
-				case engine::RenderPrimitive::LineStrip:
+				case fw::RenderPrimitive::LineStrip:
 					state |= BGFX_STATE_PT_LINESTRIP;
 					if (_lineAA) state |= BGFX_STATE_LINEAA;
 					break;
-				case engine::RenderPrimitive::Points:
+				case fw::RenderPrimitive::Points:
 					state |= BGFX_STATE_PT_POINTS;
 					break;
-				case engine::RenderPrimitive::TriangleStrip:
+				case fw::RenderPrimitive::TriangleStrip:
 					state |= BGFX_STATE_PT_TRISTRIP;
 					break;
 				}

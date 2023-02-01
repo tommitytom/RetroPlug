@@ -5,7 +5,7 @@
 #include "foundation/FsUtil.h"
 #include "foundation/Input.h"
 #include "foundation/Math.h"
-#include "foundation/MetaFactory.h"
+//#include "foundation/MetaFactory.h"
 #include "foundation/StringUtil.h"
 #include "foundation/SolUtil.h"
 
@@ -45,11 +45,11 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 void RetroPlugView::onInitialize() {
 	createState<SystemOverlayManager>();
 
-	FontDesc fontDesc;
+	fw::FontDesc fontDesc;
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
 
-	getResourceManager().create<Font>("PlatNomor", fontDesc);
+	getResourceManager().create<fw::Font>("PlatNomor", fontDesc);
 
 	_fileManager = this->createState<FileManager>();
 	this->createState<Project>(entt::forward_as_any(_project));
@@ -81,7 +81,7 @@ void RetroPlugView::setupEventHandlers() {
 	});
 
 	node.receive<CollectSystemEvent>([&](CollectSystemEvent&& ev) {
-		// This ensures the system that has been removed is deallocated in the UI 
+		// This ensures the system that has been removed is deallocated in the UI
 		// thread rather than the audio thread.
 		ev.system.reset();
 	});
@@ -115,11 +115,11 @@ void RetroPlugView::processOutput() {
 void RetroPlugView::onUpdate(f32 delta) {
 	fw::EventNode& eventNode = *getState<fw::EventNode>();
 	eventNode.update();
-	
+
 	if (_lastPingTime == 0) {
 		_lastPingTime = (uint64)std::chrono::high_resolution_clock::now().time_since_epoch().count();
 		eventNode.send("Audio"_hs, PingEvent{ .time = _lastPingTime });
-	}	
+	}
 
 	f32 scale = _project.getScale();
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
@@ -141,7 +141,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 	}
 }
 
-void RetroPlugView::onRender(Canvas& canvas) {
+void RetroPlugView::onRender(fw::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 1));
 	processOutput();
 }

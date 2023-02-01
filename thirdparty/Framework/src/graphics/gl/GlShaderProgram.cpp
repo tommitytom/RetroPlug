@@ -8,7 +8,7 @@
 #include "graphics/gl/GlShader.h"
 #include "graphics/gl/GlUtil.h"
 
-namespace fw::engine {
+namespace fw {
 	GlShaderProgram::~GlShaderProgram() {
 		glDeleteProgram(_handle);
 		_handle = 0;
@@ -56,7 +56,7 @@ namespace fw::engine {
 				glAttachShader(program, frag.getGlHandle());
 
 				glLinkProgram(program);
-				
+
 				if (!GlUtil::checkProgramLinkError(program)) {
 					return std::make_shared<GlShaderProgram>(program, vertHandle, fragHandle);
 				}

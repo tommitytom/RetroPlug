@@ -32,7 +32,7 @@ namespace fw::app {
 			return _size;
 		}
 
-		fw::Dimension setSize(fw::Dimension size) {
+		void setSize(fw::Dimension size) {
 			_size = size;
 		}
 	};

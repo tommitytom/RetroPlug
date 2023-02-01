@@ -8,14 +8,14 @@ using namespace rp;
 
 const fw::Rect WAVE_VIEW_SIZE = fw::Rect(3, 12, 16, 5);
 const fw::Rect WAVE_VIEW_AREA = {
-	WAVE_VIEW_SIZE.x * (int32)lsdj::TILE_WIDTH, 
-	WAVE_VIEW_SIZE.y * (int32)lsdj::TILE_HEIGHT, 
-	WAVE_VIEW_SIZE.w * (int32)lsdj::TILE_WIDTH, 
-	WAVE_VIEW_SIZE.h * (int32)lsdj::TILE_HEIGHT 
+	WAVE_VIEW_SIZE.x * (int32)lsdj::TILE_WIDTH,
+	WAVE_VIEW_SIZE.y * (int32)lsdj::TILE_HEIGHT,
+	WAVE_VIEW_SIZE.w * (int32)lsdj::TILE_WIDTH,
+	WAVE_VIEW_SIZE.h * (int32)lsdj::TILE_HEIGHT
 };
 
-SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) { 
-	setType<SynthView>(); 
+SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
+	setType<SynthView>();
 	_waveView = addChildAt<fw::WaveView>("SynthWaveView", WAVE_VIEW_AREA);
 }
 
@@ -115,7 +115,7 @@ void SynthView::updateWaveform(lsdj::Song& song) {
 	}
 }
 
-void SynthView::onRender(Canvas& canvas) {
+void SynthView::onRender(fw::Canvas& canvas) {
 	if (!_system) {
 		return;
 	}

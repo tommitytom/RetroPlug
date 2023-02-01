@@ -49,12 +49,17 @@ function m.project()
 			ZLIB_DIR .. "/zutil.c",
 		}
 
+		filter "system:linux"
+			disablewarnings { "deprecated-non-prototype" }
+
 		filter "system:windows"
 			defines { "_WINDOWS" }
 			disablewarnings { 4996, 4267 }
 
 		filter "system:not windows"
 			defines { 'HAVE_UNISTD_H' }
+
+		filter {}
 end
 
 return m

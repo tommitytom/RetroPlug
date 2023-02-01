@@ -8,7 +8,7 @@
 
 #include "foundation/FsUtil.h"
 
-namespace fw::engine {
+namespace fw {
 	GLenum getGlFormat(int32 compCount) {
 		switch (compCount) {
 			case 1: return GL_RED;

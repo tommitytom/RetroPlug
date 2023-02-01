@@ -2,7 +2,7 @@
 
 #include <bgfx/bgfx.h>
 
-namespace fw::engine {
+namespace fw {
 	template <typename BaseT, typename HandleT>
 	class BgfxResource : public BaseT {
 	private:
@@ -11,7 +11,7 @@ namespace fw::engine {
 	public:
 		BgfxResource() = default;
 		BgfxResource(HandleT handle) : _handle(handle) {}
-		~BgfxResource() { 
+		~BgfxResource() {
 			if (bgfx::isValid(_handle)) {
 				bgfx::destroy(_handle);
 			}

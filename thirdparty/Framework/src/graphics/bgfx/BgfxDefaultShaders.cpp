@@ -14,9 +14,9 @@
 #include "shaders/vs_tex_metal.h"
 
 using namespace fw;
-using namespace fw::engine;
 
-std::pair<ShaderDesc, ShaderDesc> engine::getDefaultBgfxShaders() {
+
+std::pair<ShaderDesc, ShaderDesc> fw::getDefaultBgfxShaders() {
 	const uint8* vert = nullptr; uint32 vertSize = 0;
 	const uint8* frag = nullptr; uint32 fragSize = 0;
 

@@ -18,8 +18,10 @@ static const char* s_canvas = "#canvas";
 #include <GLFW/glfw3native.h>
 #endif
 
-using namespace fw;
-using namespace fw::app;
+//using namespace fw;
+//using namespace fw::app;
+
+namespace fw::app {
 
 MouseButton::Enum convertMouseButton(int button);
 VirtualKey::Enum convertKey(int key);
@@ -29,12 +31,12 @@ void* GlfwNativeWindow::getNativeHandle() {
 	return (void*)"canvas";
 #elif RP_LINUX
 	//init.platformData.ndt = glfwGetX11Display();
-	//return (void*)(uintptr_t)glfwGetX11Window(window);
+	return (void*)(uintptr_t)glfwGetX11Window(_window);
 #elif RP_MACOS
 	return glfwGetCocoaWindow(_window);
 #elif RP_WINDOWS
 	return glfwGetWin32Window(_window);
-#else 
+#else
 	#error "Platform not supported!"
 #endif
 }
@@ -411,4 +413,6 @@ void GlfwWindowManager::update(std::vector<WindowPtr>& created) {
 	if (_pollInput) {
 		glfwPollEvents();
 	}
+}
+
 }

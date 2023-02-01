@@ -92,7 +92,7 @@ struct WaveFormSection {
 	Color4F color;
 };
 
-void WaveView::onRender(Canvas& canvas) {
+void WaveView::onRender(fw::Canvas& canvas) {
 	f32 scaleFactor = getWorldScale();
 	RectF area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
 	f32 pixelWidth = 1.0f / scaleFactor;

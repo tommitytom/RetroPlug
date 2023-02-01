@@ -20,7 +20,7 @@ namespace fw {
 			return _color;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas.fillRect((Rect)getDimensions(), _color);
 		}
 	};

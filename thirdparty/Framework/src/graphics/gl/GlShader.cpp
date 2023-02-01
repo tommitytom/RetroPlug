@@ -7,7 +7,7 @@
 #include "foundation/FsUtil.h"
 #include "graphics/gl/GlUtil.h"
 
-namespace fw::engine {
+namespace fw {
 	GLenum getGlShaderType(ShaderType type) {
 		switch (type) {
 			case ShaderType::Fragment: return GL_FRAGMENT_SHADER;

@@ -20,7 +20,7 @@ namespace fw {
 			setPosition(node->getPosition());
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			/*NVGcontext* vg = getVg();
 			auto area = getArea();
 

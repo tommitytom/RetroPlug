@@ -5,7 +5,7 @@
 #include "graphics/bgfx/BgfxShader.h"
 
 using namespace fw;
-using namespace fw::engine;
+
 
 BgfxShaderProgramProvider::BgfxShaderProgramProvider(const ResourceHandleLookup& lookup) : _resources(lookup) {}
 

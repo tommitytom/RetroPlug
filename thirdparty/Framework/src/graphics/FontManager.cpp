@@ -6,7 +6,7 @@
 #include "graphics/ftgl/FtglFont.h"
 
 using namespace fw;
-using namespace fw::engine;
+
 
 FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {
 	std::string fontFaceUri = fmt::format("{}/{}", fontUri, size);

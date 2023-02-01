@@ -3,7 +3,7 @@
 #include "foundation/ResourceManager.h"
 #include "graphics/Font.h"
 
-namespace fw::engine {
+namespace fw {
 	class FontManager {
 	private:
 		ResourceManager& _resourceManager;

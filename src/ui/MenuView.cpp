@@ -72,7 +72,7 @@ void MenuView::updateScrollOffset(const PositionedMenuItem& item) {
 
 void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 	for (fw::MenuItemBase* item : menu.getItems()) {
-		_flat.push_back({ fw::RectF(pos.x, pos.y, 160, 0), item }); 
+		_flat.push_back({ fw::RectF(pos.x, pos.y, 160, 0), item });
 
 		if (item->getType() == fw::MenuItemType::SubMenu && _openMenus.count(item) > 0) {
 			_flat.back().area.h = _itemSpacing;
@@ -252,14 +252,14 @@ fw::MenuItemBase* MenuView::getHighlighted() {
 	return nullptr;
 }
 
-void MenuView::drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color) {
+void MenuView::drawText(fw::Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color) {
 	x += _menuArea.x + _drawOffset.x;
 	y += _menuArea.y + _drawOffset.y;
 
 	canvas.text(x, y, text, color);
 }
 
-void MenuView::drawArrow(Canvas& canvas, fw::RectF area, ArrowDirection dir) {
+void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir) {
 	std::array<fw::PointF, 3> points;
 
 	area.position += _menuArea.position + _drawOffset;
@@ -290,7 +290,7 @@ void MenuView::drawArrow(Canvas& canvas, fw::RectF area, ArrowDirection dir) {
 	canvas.lines(points, fw::Color4F(1, 1, 1, 1));
 }
 
-void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
+void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 	fw::DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
 	fw::PointF drawOffset = _drawOffset + _menuArea.position;
 
@@ -327,7 +327,7 @@ void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
 			fw::DimensionF bounds = getFontManager().measureText(item.menuItem->getName(), _fontName, _fontSize);
 
 			f32 offset = (item.area.h - bounds.h) * 0.5f;
-			
+
 			fw::RectF arrowArea(item.area.x + bounds.w, item.area.y + offset, ARROW_SIZE * 2, ARROW_SIZE);
 			arrowArea.x += 3;
 			arrowArea.y += 1;
@@ -368,7 +368,7 @@ void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
 
 			f32 arrowOffset = (item.area.h - bounds.h) * 0.5f;
 			f32 textOffset = (textArea.w - bounds.w) * 0.5f;
-			
+
 			fw::RectF arrowArea(textArea.x, textArea.y + arrowOffset, ARROW_SIZE, ARROW_SIZE * 2);
 
 			drawArrow(canvas, arrowArea, ArrowDirection::Left);
@@ -380,7 +380,7 @@ void MenuView::drawMenu(Canvas& canvas, fw::Menu& menu) {
 	}
 }
 
-void MenuView::onRender(Canvas& canvas) {
+void MenuView::onRender(fw::Canvas& canvas) {
 	setClip(true);
 
 	_fontSize = 9.0f;
@@ -388,7 +388,7 @@ void MenuView::onRender(Canvas& canvas) {
 	_separatorSpacing = 7.0f;
 
 	canvas.setFont(_fontName, _fontSize);
-	canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
+	canvas.setTextAlign(fw::TextAlignFlags::Top | fw::TextAlignFlags::Left);
 
 	if (_root) {
 		rebuildFlat();

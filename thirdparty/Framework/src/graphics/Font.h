@@ -5,7 +5,7 @@
 #include "foundation/ResourceHandle.h"
 #include "foundation/ResourceProvider.h"
 
-namespace fw::engine {
+namespace fw {
 	struct FontDesc {
 		std::vector<std::byte> data;
 	};

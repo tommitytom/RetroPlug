@@ -48,7 +48,7 @@ void WaveformUtil::generate(const Float32Buffer& samples, Waveform& waveform, si
 			f32 min = 1.0f;
 			f32 max = -1.0f;
 
-			for (chunkPos; chunkPos < chunkEnd; chunkPos++) {
+			for (; chunkPos < chunkEnd; chunkPos++) {
 				f32 sample = samples[chunkPos * channelCount + channel];
 				sample = MathUtil::clamp(sample, -1.0f, 1.0f);
 				min = std::min(sample, min);

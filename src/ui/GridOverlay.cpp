@@ -135,7 +135,7 @@ void GridOverlay::onUpdate(f32 delta) {
 	}
 }
 
-void GridOverlay::onRender(Canvas& canvas) {
+void GridOverlay::onRender(fw::Canvas& canvas) {
 	if (_highlightMode == HighlightMode::Outline && _selected != fw::INVALID_VIEW_INDEX && _grid->getChildren().size() > 1) {
 		fw::ViewPtr child = _grid->getChild(_selected);
 		canvas.strokeRect((fw::DimensionF)child->getDimensions(), fw::Color4F::red);

@@ -2,13 +2,14 @@
 
 #include <filesystem>
 #include <unordered_map>
+#include <vector>
 
 #include <texture-atlas.h>
 #include <texture-font.h>
 
 #include "foundation/Types.h"
 
-namespace fw::engine {
+namespace fw {
 	class Font {
 	private:
 		struct SizedFont {
@@ -60,7 +61,7 @@ namespace fw::engine {
 		}
 
 		FontHandle loadFontFromFile(const std::string& name, const std::filesystem::path& path) {
-			
+
 		}
 
 		FontHandle loadFontFromMemory(const std::string& name, const char* data, size_t size) {

@@ -6,7 +6,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
 
-namespace fw::engine {
+namespace fw {
 	class BgfxTexture : public Texture {
 	private:
 		bgfx::TextureHandle _handle = { bgfx::kInvalidHandle };
@@ -35,7 +35,7 @@ namespace fw::engine {
 		BgfxTextureProvider();
 		~BgfxTextureProvider() = default;
 
-		std::shared_ptr<Resource> getDefault() { return _default; }
+		std::shared_ptr<Resource> getDefault() override { return _default; }
 
 		std::shared_ptr<Resource> load(std::string_view uri) override;
 

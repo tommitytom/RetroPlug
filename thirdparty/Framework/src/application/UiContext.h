@@ -22,7 +22,7 @@ namespace fw::app {
 		std::chrono::high_resolution_clock::time_point _lastTime;
 
 		ResourceManager _resourceManager;
-		engine::FontManager _fontManager;
+		fw::FontManager _fontManager;
 
 		FontFaceHandle _defaultFont;
 		TextureHandle _defaultTexture;

@@ -10,7 +10,7 @@ namespace ftgl {
 	struct texture_font_t;
 }
 
-namespace fw::engine {
+namespace fw {
 	class FtglFontFace final : public FontFace {
 	private:
 		TextureHandle _texture;

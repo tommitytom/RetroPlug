@@ -5,7 +5,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
 
-namespace fw::engine {
+namespace fw {
 	struct TextureAtlasDesc {
 		TextureHandle texture;
 		std::vector<std::pair<std::string, Rect>> tiles;
@@ -21,7 +21,7 @@ namespace fw::engine {
 	struct TextureAtlasTile {
 		TextureHandle handle;
 		DimensionF dimensions;
-		TileArea uvArea = TileArea(0, 0, 1, 1);
+		TileArea uvArea = TileArea{0, 0, 1, 1};
 		std::string name;
 	};
 
@@ -35,7 +35,7 @@ namespace fw::engine {
 		TextureAtlas(const TextureAtlasDesc& desc) : Resource(entt::type_id<TextureAtlas>()) {
 			assert(desc.texture.isLoaded());
 			DimensionF dimensions = (DimensionF)desc.texture.getDesc().dimensions;
-			
+
 			for (const auto& tile : desc.tiles) {
 				_tiles[ResourceUtil::hashUri(tile.first)] = TextureAtlasTile {
 					.handle = desc.texture,

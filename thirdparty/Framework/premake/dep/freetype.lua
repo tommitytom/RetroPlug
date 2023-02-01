@@ -15,6 +15,14 @@ function m.include()
 	defines {
 		"FT2_BUILD_LIBRARY", "FT_CONFIG_OPTION_SYSTEM_ZLIB",
 	}
+
+	filter { "system:linux" }
+		defines {
+			"HAVE_FCNTL_H",
+			"HAVE_UNISTD_H"
+		}
+
+	filter {}
 end
 
 function m.source()
@@ -86,13 +94,19 @@ function m.source()
 
 	filter "system:linux"
 		files {
-			FREETYPE_DIR .. "/builds/unix/ftsystem.c"
+			FREETYPE_DIR .. "/builds/unix/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftdebug.c"
 		}
 end
 
 function m.link()
 	m.include()
 	links { "freetype" }
+
+	filter { "system:linux" }
+		links { "dl", "pthread" }
+
+	filter{}
 end
 
 function m.project()

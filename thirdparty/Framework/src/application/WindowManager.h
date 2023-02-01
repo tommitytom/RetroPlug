@@ -15,11 +15,11 @@ namespace fw::app {
 
 	protected:
 		ResourceManager& _resourceManager;
-		engine::FontManager& _fontManager;
+		fw::FontManager& _fontManager;
 
 	public:
 		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
-		~WindowManager() {}
+		virtual ~WindowManager() {}
 
 		virtual WindowPtr createWindow(ViewPtr view) = 0;
 

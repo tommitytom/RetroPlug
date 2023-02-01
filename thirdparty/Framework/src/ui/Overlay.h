@@ -11,11 +11,11 @@ namespace fw {
 		}
 
 		std::shared_ptr<ParentT> getSuper() {
-			return getParent()->asShared<ParentT>();
+			return getParent()->template asShared<ParentT>();
 		}
 
 		const std::shared_ptr<ParentT> getSuper() const {
-			return getParent()->asShared<ParentT>();
+			return getParent()->template asShared<ParentT>();
 		}
 	};
 }

@@ -26,7 +26,7 @@ namespace fw {
 		std::vector<f32> _values = { 0.0f };
 		std::vector<RectF> _handleAreas = { RectF() };
 		size_t _lastEditedValue = 0;
-		
+
 		bool _dragging = false;
 		bool _mouseOverHandle = false;
 
@@ -38,7 +38,7 @@ namespace fw {
 	public:
 		std::function<void(f32)> ValueChangeEvent;
 
-		SliderView() { 
+		SliderView() {
 			setType<SliderView>();
 			setDimensions({ 200, 30 });
 			setFocusPolicy(FocusPolicy::Click);
@@ -60,7 +60,7 @@ namespace fw {
 
 		void setHandleCount(size_t handleCount) {
 			assert(handleCount > 0 && handleCount < 4);
-			
+
 			while (handleCount < _handleAreas.size()) {
 				_handleAreas.pop_back();
 				_values.pop_back();
@@ -80,7 +80,7 @@ namespace fw {
 
 		void setValueAt(size_t handleIdx, f32 value) {
 			_values[handleIdx] = (MathUtil::clamp(value, _min, _max) - _min) / getRange();
-			
+
 			if (!_dragging) {
 				_lastEditedValue = handleIdx;
 			}
@@ -158,7 +158,7 @@ namespace fw {
 			} else {
 				_mouseOverHandle = _handleAreas[0].contains((PointF)pos);
 			}
-			
+
 			return true;
 		}
 
@@ -166,7 +166,7 @@ namespace fw {
 			_mouseOverHandle = _dragging;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			DimensionF dim = getDimensionsF();
 			f32 mid = floor(dim.h * 0.5f);
 			f32 half = (dim.w - _handleRange) * 0.5f;

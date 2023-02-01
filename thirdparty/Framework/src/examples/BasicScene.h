@@ -57,8 +57,8 @@ namespace fw {
 		std::vector<std::pair<SineOsc, f32>> _oscilators;
 
 	public:
-		SineBankOsc(size_t count, f32 sampleRate) { 
-			_oscilators.reserve(count); 
+		SineBankOsc(size_t count, f32 sampleRate) {
+			_oscilators.reserve(count);
 
 			for (size_t i = 0; i < count; ++i) {
 				_oscilators.push_back({ SineOsc(0.0f, sampleRate), 0.0f });
@@ -119,7 +119,7 @@ namespace fw {
 
 		f32 getSampleRate() const {
 			return 48000.0f;
-		}		
+		}
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override {
 			_eventNode.update();
@@ -136,7 +136,7 @@ namespace fw {
 		entt::entity _camera = entt::null;
 		entt::entity _ball = entt::null;
 		entt::entity _grid = entt::null;
-		
+
 		f32 _cameraMoveSpeed = 50.0f;
 		PointF _velocity;
 
@@ -182,7 +182,7 @@ namespace fw {
 			SceneView::onUpdate(delta);
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			entt::registry& reg = getRegistry();
 
 			beginSceneRender(reg, canvas);
@@ -191,9 +191,9 @@ namespace fw {
 			endSceneRender(canvas);
 		}
 
-		bool onMouseScroll(PointF delta, Point position) override { 
+		bool onMouseScroll(PointF delta, Point position) override {
 			getRegistry().get<OrthographicCameraComponent>(_camera).zoom += delta.y * 0.01f;
-			return true; 
+			return true;
 		}
 
 		bool onKey(VirtualKey::Enum key, bool down) override {

@@ -63,12 +63,12 @@ namespace fw {
 			assert(isValid());
 			return _state->resource->getType();
 		}
-		
+
 		size_t useCount() const noexcept {
 			assert(isValid());
 			return _state.use_count();
 		}
-		
+
 		Resource& getResourceBase() {
 			assert(isValid());
 			return *_state->resource;
@@ -136,7 +136,7 @@ namespace fw {
 
 		const typename T::DescT& getDesc() const {
 			assert(isValid());
-			return entt::any_cast<const T::DescT&>(_state->desc);
+			return entt::any_cast<const typename T::DescT&>(_state->desc);
 		}
 
 		T& operator->() {

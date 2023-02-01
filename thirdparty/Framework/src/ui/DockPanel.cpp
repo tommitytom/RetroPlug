@@ -44,7 +44,7 @@ bool DockPanel::onDrop(DragContext& ctx, Point position) {
 	switch (targetType) {
 	case DropTargetType::Center:
 		_displayMode = DisplayMode::Tab;
-		addChild(sourceWindowPanel);	
+		addChild(sourceWindowPanel);
 		break;
 	case DropTargetType::Left:
 		// Add splitter
@@ -93,7 +93,7 @@ bool DockPanel::onDrop(DragContext& ctx, Point position) {
 	return true;
 }
 
-void DockPanel::onRender(Canvas& canvas) {
+void DockPanel::onRender(fw::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 
 	if (_showHeader) {

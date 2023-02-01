@@ -16,8 +16,8 @@ namespace fw {
 		entt::registry _registry;
 
 	public:
-		SceneView(Dimension dimensions = { 100, 100 }) : View(dimensions) { 
-			setType<SceneView>(); 
+		SceneView(Dimension dimensions = { 100, 100 }) : View(dimensions) {
+			setType<SceneView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 
@@ -28,13 +28,13 @@ namespace fw {
 
 			_registry = WorldUtil::createWorld(&rm);
 
-			_registry.ctx().emplace<RendererInfoSingleton>(RendererInfoSingleton{ 
-				.dimensions = getDimensions() 
+			_registry.ctx().emplace<RendererInfoSingleton>(RendererInfoSingleton{
+				.dimensions = getDimensions()
 			});
 
 			RectF worldArea = (RectF)getWorldArea();
 
-			_registry.ctx().emplace<CameraSingleton>(CameraSingleton{ 
+			_registry.ctx().emplace<CameraSingleton>(CameraSingleton{
 				.viewPort = worldArea,
 				.projection = worldArea
 			});
@@ -53,7 +53,7 @@ namespace fw {
 			WorldUtil::clearEvents(_registry);
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			beginSceneRender(_registry, canvas);
 			SpriteRenderSystem::update(_registry, canvas);
 			endSceneRender(canvas);
@@ -73,7 +73,7 @@ namespace fw {
 			canvas.setViewProjection((Rect)camera.viewPort, camera.projection);
 		}
 
-		void endSceneRender(Canvas& canvas) {
+		void endSceneRender(fw::Canvas& canvas) {
 			canvas.resetViewProjection();
 		}
 	};

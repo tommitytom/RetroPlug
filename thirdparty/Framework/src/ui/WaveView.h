@@ -32,7 +32,7 @@ namespace fw {
 
 		uint64 _slicePosition = 0;
 		uint64 _sliceSize = 0;
-		
+
 		uint64 _selectionOffset = 0;
 		uint64 _selectionSize = 0;
 		bool _selecting = false;
@@ -41,8 +41,8 @@ namespace fw {
 		PointF _wheelPosition;
 
 	public:
-		WaveView() { 
-			setType<WaveView>(); 
+		WaveView() {
+			setType<WaveView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~WaveView() {}
@@ -55,7 +55,7 @@ namespace fw {
 
 		size_t pixelToSample(f32 pixel);
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 		void onResize(const ResizeEvent& ev) override {
 			updateSlice(ev.size);
@@ -223,7 +223,7 @@ namespace fw {
 
 				uint64 min = 1;
 				uint64 max = parent->getSliceSize() - 1;
-				
+
 				if (_dragging > 0) {
 					min = _markers[_dragging - 1] + 1;
 				}
@@ -265,7 +265,7 @@ namespace fw {
 			return _editing;
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			WaveViewPtr parent = getSuper();
 
 			// Draw outline

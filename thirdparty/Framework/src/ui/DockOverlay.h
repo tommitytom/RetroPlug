@@ -40,7 +40,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 	};
 
 	using DockOverlayPtr = std::shared_ptr<DockOverlay>;

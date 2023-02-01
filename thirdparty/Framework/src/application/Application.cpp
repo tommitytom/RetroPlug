@@ -1,6 +1,6 @@
 #include "Application.h"
 
-#include "foundation/FoundationModule.h"
+//#include "foundation/FoundationModule.h"
 
 #ifdef RP_WINDOWS
 #include <spdlog/sinks/msvc_sink.h>
@@ -17,6 +17,6 @@ namespace fw::app {
 		spdlog::set_default_logger(logger);
 #endif
 
-		FoundationModule::setup();
+		//FoundationModule::setup();
 	}
 }

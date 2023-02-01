@@ -7,7 +7,7 @@
 #include "graphics/Shader.h"
 #include "graphics/ShaderProgram.h"
 
-namespace fw::engine {
+namespace fw {
 	class GlShaderProgram : public ShaderProgram {
 	private:
 		uint32 _handle = 0;

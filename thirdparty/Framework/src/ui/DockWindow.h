@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include "ui/View.h"
 
@@ -12,7 +12,7 @@ namespace fw {
 		RectT<uint32> _panelArea;
 		std::string _title;
 		DockPanelPtr _panel;
-		
+
 		bool _dragOver = false;
 
 	public:
@@ -38,7 +38,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 		}
 

@@ -3,7 +3,7 @@
 #include "foundation/Resource.h"
 #include "foundation/ResourceHandle.h"
 
-namespace fw::engine {
+namespace fw {
 	struct ShaderProgramDesc {
 		std::string vertexShader;
 		std::string fragmentShader;

@@ -73,7 +73,7 @@ namespace fw {
 		glBindVertexArray(_arrayBuffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _indexBuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
-		
+
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(CanvasVertex), (void*)offsetof(CanvasVertex, pos));
 		glEnableVertexAttribArray(0);
 
@@ -85,10 +85,6 @@ namespace fw {
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
-	}
-
-	GlRenderContext::~GlRenderContext() {
-
 	}
 
 	void GlRenderContext::cleanup() {
@@ -108,7 +104,7 @@ namespace fw {
 		}
 	}
 
-	std::pair<engine::ShaderDesc, engine::ShaderDesc> GlRenderContext::getDefaultShaders() {
+	std::pair<fw::ShaderDesc, fw::ShaderDesc> GlRenderContext::getDefaultShaders() {
 		return getDefaultGlShaders();
 	}
 
@@ -118,21 +114,21 @@ namespace fw {
 		_viewOffset = 0;
 	}
 
-	GLenum getGlPrimitive(engine::RenderPrimitive primitive) {
+	GLenum getGlPrimitive(fw::RenderPrimitive primitive) {
 		switch (primitive) {
-		case engine::RenderPrimitive::Triangles: return GL_TRIANGLES;
-		case engine::RenderPrimitive::TriangleFan: return GL_TRIANGLE_FAN;
-		case engine::RenderPrimitive::TriangleStrip: return GL_TRIANGLE_STRIP;
-		case engine::RenderPrimitive::LineList: return GL_LINES;
-		case engine::RenderPrimitive::LineStrip: return GL_LINE_STRIP;
-		case engine::RenderPrimitive::Points: return GL_POINTS;
+		case fw::RenderPrimitive::Triangles: return GL_TRIANGLES;
+		case fw::RenderPrimitive::TriangleFan: return GL_TRIANGLE_FAN;
+		case fw::RenderPrimitive::TriangleStrip: return GL_TRIANGLE_STRIP;
+		case fw::RenderPrimitive::LineList: return GL_LINES;
+		case fw::RenderPrimitive::LineStrip: return GL_LINE_STRIP;
+		case fw::RenderPrimitive::Points: return GL_POINTS;
 		}
 
 		return GL_INVALID_ENUM;
 	}
 
-	void GlRenderContext::renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) {
-		const engine::CanvasGeometry& geom = canvas.getGeometry();
+	void GlRenderContext::renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) {
+		const fw::CanvasGeometry& geom = canvas.getGeometry();
 		uint32 nextViewOffset = _viewOffset;
 
 		/*bgfx::FrameBufferHandle frameBuffer;
@@ -155,7 +151,7 @@ namespace fw {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		if (geom.vertices.size()) {
-			uint32 vertSize = (uint32)geom.vertices.size() * sizeof(engine::CanvasVertex);
+			uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
 			uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
 
 			glBindVertexArray(_arrayBuffer);
@@ -182,7 +178,7 @@ namespace fw {
 
 			f32 _pixelRatio = 1.0f;
 
-			for (const engine::CanvasBatch& batch : geom.batches) {
+			for (const fw::CanvasBatch& batch : geom.batches) {
 				uint32 batchViewId = _viewOffset + batch.viewId;
 				assert(batchViewId <= 255);
 
@@ -200,7 +196,7 @@ namespace fw {
 
 				//bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
-				for (const engine::CanvasSurface& surface : batch.surfaces) {
+				for (const fw::CanvasSurface& surface : batch.surfaces) {
 					assert(surface.program.isValid());
 					assert(surface.texture.isValid());
 

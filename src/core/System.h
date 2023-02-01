@@ -78,7 +78,7 @@ namespace rp {
 			}
 		} output;
 
-		void merge(SystemIo& other) { 	
+		void merge(SystemIo& other) {
 			while (other.input.serial.count()) {
 				input.serial.tryPush(other.input.serial.pop());
 			}
@@ -239,7 +239,7 @@ namespace rp {
 		virtual void setGameLink(bool gameLink) {}
 
 		virtual bool getGameLink() { return false; }
-		
+
 		virtual void addLinkTarget(System* system) {}
 
 		virtual void removeLinkTarget(System* system) {}
@@ -251,7 +251,7 @@ namespace rp {
 
 			if (_stream) {
 				_stream->input.buttons.push_back(ButtonStream<8> {
-					.presses = StreamButtonPress{ .button = (int)button, .down = down },
+					.presses = StreamButtonPress{ .button = (int)button, .down = down, .duration = 0 },
 					.pressCount = 1
 				});
 			}

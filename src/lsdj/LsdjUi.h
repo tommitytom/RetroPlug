@@ -5,12 +5,12 @@
 
 #include "foundation/DataBuffer.h"
 #include "foundation/Image.h"
+#include "foundation/Input.h"
+#include "foundation/Math.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
 #include "lsdj/Ram.h"
 #include "lsdj/LsdjCanvas.h"
-#include "foundation/Math.h"
-#include "foundation/Input.h"
 
 namespace rp::lsdj {
 	struct InputState {
@@ -29,7 +29,7 @@ namespace rp::lsdj {
 		void* focused = nullptr;
 
 		std::unordered_map<void*, std::any> elementState;
-		
+
 		std::stack<int32> columnStack;
 		int32 currentColumn = 0;
 		int32 focusedColumn = 0;
@@ -75,10 +75,10 @@ namespace rp::lsdj {
 	class Ui {
 	private:
 		UiState _state;
-		Canvas& _c;
+		lsdj::Canvas& _c;
 
 	public:
-		Ui(Canvas& canvas): _c(canvas) {}
+		Ui(lsdj::Canvas& canvas): _c(canvas) {}
 		~Ui() {}
 
 		template <typename T>
@@ -175,7 +175,7 @@ namespace rp::lsdj {
 			_state.input.buttonReleases.clear();
 			_state.input.keyPresses.clear();
 			_state.input.keyReleases.clear();
-			
+
 			if (!_state.foundFocusThisFrame) {
 				_state.focused = nullptr;
 			} else {
@@ -276,7 +276,7 @@ namespace rp::lsdj {
 						moveFocusDown();
 					}
 				}
-				
+
 				if (_state.horizontalNav) {
 					if (buttonPressed(ButtonType::Left)) {
 						moveFocusLeft();
@@ -343,15 +343,15 @@ namespace rp::lsdj {
 					selected--;
 					changed = true;
 				}
-				
+
 				if (buttonPressed(ButtonType::Down) && selected < (int32)itemCount - 1) {
 					selected++;
 					changed = true;
 				}
 			}
-			
+
 			for (uint32 i = 0; i < (uint32)itemCount; ++i) {
-				_c.text(x, y + i, items[i], (int32)i == selected ? ColorSets::Selection : ColorSets::Normal);
+				//_c.text(x, y + i, items[i], (int32)i == selected ? ColorSets::Selection : ColorSets::Normal);
 			}
 
 			popElement();
@@ -555,9 +555,9 @@ namespace rp::lsdj {
 				uint32 off = x - (uint32)items[selected].size();
 				_c.text(off, y, items[selected], colorSet, dimmed);
 			}
-			
+
 			popElement();
-			
+
 			return changed;
 		}
 
@@ -580,7 +580,7 @@ namespace rp::lsdj {
 
 			if (hasFocus() && editable) {
 				int32 range = max - min;
-				
+
 				if (buttonDown(ButtonType::A)) {
 					if (buttonPressed(ButtonType::Up)) {
 						move = 0x10;

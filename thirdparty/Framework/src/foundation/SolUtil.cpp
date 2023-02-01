@@ -41,7 +41,7 @@ bool SolUtil::serializeTable(sol::state& s, const sol::table& source, std::strin
 	} catch (...) {
 		spdlog::error("Failed to serialize table");
 		return false;
-	}	
+	}
 }
 
 bool SolUtil::deserializeTable(sol::state& s, std::string_view data, sol::table& target) {

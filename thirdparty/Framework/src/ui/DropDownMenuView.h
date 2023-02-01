@@ -69,7 +69,7 @@ namespace fw {
 		}
 
 		void onInitialize() override {
-			
+
 		}
 
 		void setEditable(bool editable) {
@@ -90,15 +90,15 @@ namespace fw {
 					if (down) {
 						setValue(_selectedIndex == (int32)_items.size() - 1 ? 0 : _selectedIndex + 1, true);
 					}
-					
+
 					return true;
 				}
-				
+
 				if (key == VirtualKey::LeftArrow) {
 					if (down) {
 						setValue(_selectedIndex == 0 ? (int32)_items.size() - 1 : _selectedIndex - 1, true);
 					}
-					
+
 					return true;
 				}
 			}
@@ -107,10 +107,10 @@ namespace fw {
 		}
 
 		void onMouseLeave() override {
-			
+
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			DimensionF dim = getDimensionsF();
 
 			std::string text = _selectedIndex != -1 ? _items[_selectedIndex].first : "";

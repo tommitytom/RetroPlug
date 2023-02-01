@@ -100,12 +100,12 @@ namespace fw {
 
 		bool onMouseButton(const MouseButtonEvent& ev) override {
 			bool handled = false;
-			
+
 			_mouseState.buttons[ev.button] = ev.down;
 
 			if (ev.button == MouseButton::Left && !ev.down) {
 				DragContext& ctx = _shared->dragContext;
-				
+
 				if (ctx.isDragging) {
 					handleDragEnd(ev.position);
 				} else {
@@ -186,9 +186,9 @@ namespace fw {
 			return handled;
 		}
 
-		
 
-		bool onDrop(const std::vector<std::string>& paths) override { 
+
+		bool onDrop(const std::vector<std::string>& paths) override {
 			return propagateDrop(paths, _mouseState.position, getChildren());
 		}
 
@@ -196,7 +196,7 @@ namespace fw {
 			/*switch (getSizingPolicy()) {
 			case fw::SizingPolicy::None:
 				break;
-			case fw::SizingPolicy::FitToContent: 
+			case fw::SizingPolicy::FitToContent:
 				break;
 			case fw::SizingPolicy::FitToParent:
 				_area.dimensions = ev.size;
@@ -210,7 +210,7 @@ namespace fw {
 			if (_shared->layoutDirty) {
 				updateLayout();
 			}
-			
+
 			propagateUpdate(getChildren(), delta);
 
 			_shared->removals.clear();
@@ -220,7 +220,7 @@ namespace fw {
 			}
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			propagateRender(canvas, getChildren());
 		}
 
@@ -456,7 +456,7 @@ namespace fw {
 		void updateLayout() {
 			propagateSizingUpdate(getChildren());
 			propagateLayoutChange(getChildren());
-			
+
 			_area = Rect();
 			calculateTotalArea(getChildren(), { 0, 0 }, _area);
 
@@ -524,7 +524,7 @@ namespace fw {
 			}
 		}
 
-		void propagateRender(Canvas& canvas, std::vector<ViewPtr>& views) {
+		void propagateRender(fw::Canvas& canvas, std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
 					canvas.setTranslation((PointF)view->getWorldPosition());

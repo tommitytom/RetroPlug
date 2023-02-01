@@ -51,7 +51,7 @@ namespace fw {
 			_watcher.update();
 		}
 
-		void onRender(engine::Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas
 				.setProgram(_program)
 				.fillRect(Rect{ { 0, 0 }, canvas.getDimensions() }, Color4F(1, 1, 1, 1))

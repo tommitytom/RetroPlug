@@ -48,11 +48,11 @@ namespace fw {
 
 		ObjectInspectorViewPtr _objectInspector;
 		SliderViewPtr _positionSlider;
-		
+
 		std::vector<Dot> _dots;
 
 	public:
-		Whitney() : View({ 1024, 768 }) { 
+		Whitney() : View({ 1024, 768 }) {
 			setType<Whitney>();
 			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
@@ -93,7 +93,7 @@ namespace fw {
 		}
 
 		~Whitney() = default;
-		 
+
 		void onInitialize() override {
 			//_dotCountSlider->setCurve(SliderScaler::pow2);
 			//_durationSlider->setCurve(SliderScaler::pow2);
@@ -120,10 +120,10 @@ namespace fw {
 
 				MetaUtil::tryGetProp<Range>(field, range);
 				MetaUtil::tryGetProp<StepSize>(field, stepSize);
-				
+
 				f32* baseValue = field.get(_baseSettings).try_cast<f32>();
 				f32* modulatedValue = field.get(_settings).try_cast<f32>();
-				
+
 				_modTargets.push_back(PropertyModulator::Target{
 					.name = fieldName,
 					.field = field,
@@ -237,7 +237,7 @@ namespace fw {
 
 				for (auto& mod : _modulators) {
 					mod.first.update(delta);
-					
+
 					for (PropertyModulator::Target& target : mod.first.targets) {
 						mod.second->asShared<SliderView>()->setValueAt(1, target.target.getValue());
 					}
@@ -305,7 +305,7 @@ namespace fw {
 			}
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			if (_settings.dotsOverLines) {
 				if (_settings.drawLines) { renderLines(canvas); }
 				if (_settings.drawDots) { renderDots(canvas); }
@@ -316,7 +316,7 @@ namespace fw {
 		}
 
 	private:
-		void renderLines(Canvas& canvas) const {
+		void renderLines(fw::Canvas& canvas) const {
 			std::vector<PointF> points(_dots.size());
 
 			for (size_t i = 0; i < _dots.size() - 1; ++i) {
@@ -326,7 +326,7 @@ namespace fw {
 			}
 		}
 
-		void renderDots(Canvas& canvas) const {
+		void renderDots(fw::Canvas& canvas) const {
 			for (size_t i = 0; i < _dots.size(); ++i) {
 				canvas.texture(_circle, _dots[i].area, _dots[i].dotColor);
 			}

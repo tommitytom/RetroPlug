@@ -23,7 +23,7 @@ namespace fw {
 			_phase = fmod(_phase + delta, PI2);
 		}
 
-		void onRender(Canvas& canvas) override {
+		void onRender(fw::Canvas& canvas) override {
 			canvas
 				.setScale({ 2.0f, 2.0f })
 				.setRotation(_phase)

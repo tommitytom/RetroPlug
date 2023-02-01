@@ -47,7 +47,7 @@ workspace "RetroPlug"
 
 	filter { "system:linux", "options:not emscripten" }
 		defines { "RP_LINUX", "RP_POSIX" }
-		buildoptions { "-Wno-unused-function" }
+		buildoptions { "-Wno-unused-function", "-gdwarf-4" }
 
 	filter { "system:macosx", "options:not emscripten" }
 		defines { "RP_MACOS", "RP_POSIX" }
@@ -80,11 +80,12 @@ workspace "RetroPlug"
 			"deprecated-volatile"
 		}
 
-	filter { "system:linux" }
+	filter { "toolset:clang" }
 		disablewarnings {
 			"switch",
 			"unused-result",
 			"unused-function",
+			"c99-designator"
 		}
 
 	filter {}

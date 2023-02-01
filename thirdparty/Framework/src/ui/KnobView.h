@@ -67,7 +67,7 @@ namespace fw {
 				_value = MathUtil::clamp(_clickValue + (f32)dist.y * _stepSize, 0.0f, 1.0f);
 				emit(ControllerChangedEvent{ getValue() });
 			}
-			
+
 			return true;
 		}
 
@@ -75,7 +75,7 @@ namespace fw {
 			return _value * (_max - _min) + _min;
 		}
 
-		void onRender(Canvas& canvas) {
+		void onRender(fw::Canvas& canvas) {
 			int32 tileOffset = (int32)(_value * (_tileCount - 1));
 			Rect tile(0, tileOffset * _tileSize.h, _tileSize.w, _tileSize.h);
 			f32 h = (f32)_texture.getResource().getDesc().dimensions.h;

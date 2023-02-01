@@ -35,7 +35,7 @@ auto callSubscriber(const entt::any& data, const sol::function& f) {
 	f(ev);
 }
 
-template <typename EventT> 
+template <typename EventT>
 void registerEvent() {
 	entt::meta<EventT>()
 		.type(entt::type_id<EventT>().index())
@@ -250,13 +250,13 @@ void LuaUi::reloadScript() {
 	);
 
 	sol::protected_function_result result = lua->safe_script_file(_scriptPath, &scriptErrorHandler);
-	
+
 	if (result.valid()) {
 		unsubscribeAll();
 		removeChildren();
 		delete _lua;
 		_lua = lua;
-		
+
 		lua->set("uiSelf", this);
 		_renderValid = true;
 		_updateValid = true;
@@ -347,7 +347,7 @@ void LuaUi::onUpdate(f32 delta) {
 	}
 }
 
-void LuaUi::onRender(Canvas& canvas) {
+void LuaUi::onRender(fw::Canvas& canvas) {
 	if (_renderValid) {
 		sol::protected_function f = _lua->get<sol::protected_function>("onRender");
 		if (f) {

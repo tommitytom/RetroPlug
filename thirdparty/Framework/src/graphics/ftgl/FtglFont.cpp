@@ -9,7 +9,7 @@
 #include "graphics/resources/Roboto-Regular.h"
 
 using namespace fw;
-using namespace fw::engine;
+
 
 const std::string_view DEFAULT_CODEPOINTS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ";
 

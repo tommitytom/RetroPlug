@@ -131,11 +131,11 @@ namespace rp {
 	public:
 		MenuView();
 
-		void onInitialize();
+		void onInitialize() override;
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(Canvas& canvas) override;
+		void onRender(fw::Canvas& canvas) override;
 
 		bool onKey(const fw::KeyEvent& ev) override;
 
@@ -152,11 +152,11 @@ namespace rp {
 		}
 
 	private:
-		void drawMenu(Canvas& canvas, fw::Menu& menu);
+		void drawMenu(fw::Canvas& canvas, fw::Menu& menu);
 
-		void drawText(Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color);
+		void drawText(fw::Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color);
 
-		void drawArrow(Canvas& canvas, fw::RectF area, ArrowDirection dir);
+		void drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir);
 
 		bool moveCursorDown();
 

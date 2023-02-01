@@ -63,12 +63,12 @@ function m.Graphics.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	dep.bgfx.include()
+	--dep.bgfx.include()
 	dep.glfw.include()
 	dep.glad.include()
 	dep.freetype.include()
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -80,7 +80,7 @@ function m.Graphics.link()
 
 	m.Foundation.link()
 	dep.glad.link()
-	dep.bgfx.link()
+	--dep.bgfx.link()
 	dep.freetype.link()
 end
 
@@ -94,6 +94,10 @@ function m.Graphics.project()
 		paths.SRC_ROOT .. "graphics/**.h",
 		paths.SRC_ROOT .. "graphics/**.cpp",
 		--paths.RESOURCES_ROOT .. "fonts/**.ttf"
+	}
+
+	excludes {
+		paths.SRC_ROOT .. "graphics/bgfx/**",
 	}
 
 	filter("files:**.ttf")

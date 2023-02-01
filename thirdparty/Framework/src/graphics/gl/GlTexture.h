@@ -3,7 +3,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
 
-namespace fw::engine {
+namespace fw {
 	class GlTexture : public Texture {
 	private:
 		uint32 _handle = 0;

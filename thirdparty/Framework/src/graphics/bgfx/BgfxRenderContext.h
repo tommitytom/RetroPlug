@@ -43,13 +43,13 @@ namespace fw {
 
 		void beginFrame(f32 delta) override;
 
-		void renderCanvas(engine::Canvas& canvas, NativeWindowHandle window) override;
+		void renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) override;
 
 		void endFrame() override;
 
 		void cleanup() override;
 
-		std::pair<engine::ShaderDesc, engine::ShaderDesc> getDefaultShaders() override;
+		std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() override;
 
 	private:
 		bgfx::FrameBufferHandle acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);
