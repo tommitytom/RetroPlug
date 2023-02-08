@@ -7,6 +7,16 @@
 using namespace rp;
 using namespace entt::literals;
 
+SystemServicePtr findService(SystemPtr system, SystemServiceType type) {
+	for (SystemServicePtr service : system->getServices()) {
+		if (service->getType() == type) {
+			return service;
+		}
+	}
+
+	return nullptr;
+}
+
 RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus)
 	: _ioMessageBus(messageBus), _typeRegistry(typeRegistry), _systemFactory(systemFactory), _systemManager(systemFactory, messageBus.allocator)
 {
@@ -119,6 +129,20 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 
 	node.receive<RemoveAllSystemsEvent>([&]() {
 		_systemManager.removeAllSystems();
+	});
+
+	node.receive<SystemServiceEvent>([&](SystemServiceEvent&& ev) {
+		SystemPtr system = _systemManager.findSystem(ev.systemId);
+		
+		if (system) {
+			SystemServicePtr service = findService(system, ev.systemServiceType);
+			
+			if (service) {
+				entt::any state = service->getState();
+				assert(!state.owner());
+				ev.caller(state, ev.arg);
+			}
+		}
 	});
 }
 
@@ -245,7 +269,6 @@ void RetroPlugProcessor::onDeserialize(const fw::Uint8Buffer& source) {
 
 	if (ProjectSerializer::deserializeFromMemory(_typeRegistry, fileData, projectState, systemDescs)) {
 		_projectState = std::move(projectState);
-		std::vector<SystemDesc> systemDescs = std::move(systemDescs);
 
 		uint32 systemId = 1;
 

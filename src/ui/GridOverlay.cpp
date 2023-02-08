@@ -1,6 +1,7 @@
 #include "GridOverlay.h"
 
 #include "foundation/StlUtil.h"
+#include "ui/SystemOverlay.h"
 
 using namespace rp;
 
@@ -124,9 +125,11 @@ void GridOverlay::onUpdate(f32 delta) {
 				const SystemFactory& systemFactory = getState<const SystemFactory>();
 
 				for (SystemServicePtr& service : system->getServices()) {
-					fw::ViewPtr serviceView = systemFactory.createSystemServiceUi(service->getType());
+					SystemOverlayPtr serviceView = systemFactory.createSystemServiceUi(service->getType());
 
 					if (serviceView) {
+						serviceView->setSystem(system);
+						serviceView->setSystemService(service);
 						systemView->addChild(serviceView);
 					} else {
 						spdlog::debug("System service {} does not contain a UI", service->getType());

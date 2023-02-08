@@ -13,7 +13,7 @@ namespace rp {
 		uint64 _songHash = 0;
 		//LsdjRefresher _refresher;
 		
-		LsdjServiceSettings _settings;
+		LsdjServiceSettings _state;
 		
 	public:
 		LsdjService() : SystemService(LSDJ_SERVICE_TYPE) {}
@@ -24,11 +24,19 @@ namespace rp {
 		void onAfterLoad(System& system) override;
 
 		void setState(const entt::any& data) override {
-			_settings = entt::any_cast<const LsdjServiceSettings&>(data);
+			_state = entt::any_cast<const LsdjServiceSettings&>(data);
+		}
+
+		void setState(entt::any&& data) override {
+			_state = std::move(entt::any_cast<LsdjServiceSettings&>(data));
 		}
 
 		const entt::any getState() const override {
-			return entt::forward_as_any(_settings);
+			return entt::forward_as_any(_state);
+		}
+
+		entt::any getState() override {
+			return entt::forward_as_any(_state);
 		}
 	};
 }

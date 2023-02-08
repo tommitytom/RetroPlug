@@ -19,13 +19,9 @@ namespace rp {
 			queue.tryPush(TimedByte{ .audioFrameOffset = message.offset, .byte = message.data1 });
 			queue.tryPush(TimedByte{ .audioFrameOffset = message.offset, .byte = message.data2 });
 		}
-
-		void setState(const entt::any& data) override {}
-
-		const entt::any getState() const override { return entt::any{}; }
 	};
 
-	class MgbServiceProvider : public SystemServiceProvider {
+	class MgbServiceProvider final : public SystemServiceProvider {
 	public:
 		bool match(const LoadConfig& loadConfig) override {
 			std::string_view romName = GameboyUtil::getRomName(*loadConfig.romBuffer);
@@ -34,7 +30,7 @@ namespace rp {
 
 		SystemServiceType getType() override { return 0x80B80B80; }
 
-		fw::ViewPtr onCreateUi() override { return nullptr; }
+		SystemOverlayPtr onCreateUi() override { return nullptr; }
 
 		SystemServicePtr onCreateService() const override {
 			return std::make_shared<MgbService>();

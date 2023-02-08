@@ -12,7 +12,7 @@ namespace rp {
 
 		virtual SystemServiceType getType() = 0;
 
-		virtual fw::ViewPtr onCreateUi() { return nullptr; }
+		virtual SystemOverlayPtr onCreateUi() { return nullptr; }
 
 		virtual SystemServicePtr onCreateService() const { return nullptr; }
 	};

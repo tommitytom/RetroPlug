@@ -14,16 +14,16 @@ namespace rp {
 	}
 
 	void ArduinoboyService::onMidi(System& system, const fw::MidiMessage& message) {
-		switch (_settings.syncMode) {
+		switch (getRawState().syncMode) {
 		case LsdjSyncMode::MidiSyncArduinoboy:
 			if (message.getStatusMsg() == fw::MidiMessage::StatusMessage::NoteOn) {
 				switch (message.getNoteNumber()) {
 				case 24: _arduinoboyPlaying = true; break;
 				case 25: _arduinoboyPlaying = false; break;
-				case 26: _settings.tempoDivisor = 1; break;
-				case 27: _settings.tempoDivisor = 2; break;
-				case 28: _settings.tempoDivisor = 4; break;
-				case 29: _settings.tempoDivisor = 8; break;
+				case 26: getRawState().tempoDivisor = 1; break;
+				case 27: getRawState().tempoDivisor = 2; break;
+				case 28: getRawState().tempoDivisor = 4; break;
+				case 29: getRawState().tempoDivisor = 8; break;
 				default:
 					if (message.getNoteNumber() >= 30) {
 						system.getIo()->input.serial.tryPush(TimedByte{
@@ -83,7 +83,7 @@ namespace rp {
 
 		if (mTimeInfo.mTransportIsRunning) {
 			if (lsdj.found) {
-				switch (_settings.syncMode) {
+				switch (getRawState().syncMode) {
 				case LsdjSyncMode::Midi:
 					ProcessSync(plug, frameCount, 1, 0xF8);
 					break;

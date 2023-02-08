@@ -19,7 +19,7 @@ namespace rp {
 
 		SystemServiceType getType() override { return LSDJ_SERVICE_TYPE; }
 
-		fw::ViewPtr onCreateUi() override { 
+		SystemOverlayPtr onCreateUi() override { 
 			return std::make_shared<LsdjOverlay>();
 		}
 
@@ -38,7 +38,7 @@ namespace rp {
 
 		SystemServiceType getType() override { return ARDUINOBOY_SERVICE_TYPE; }
 
-		fw::ViewPtr onCreateUi() override {
+		SystemOverlayPtr onCreateUi() override {
 			return std::make_shared<ArduinoboyOverlay>();
 		}
 

@@ -8,6 +8,7 @@ namespace rp {
 	using SystemType = Guid;
 	using SystemServiceType = Guid;
 	using SystemId = Guid;
+	using SystemServiceId = Guid;
 
 	class System;
 	class SystemProcessor;
@@ -17,6 +18,7 @@ namespace rp {
 	class SystemService;
 	class SystemServiceProvider;
 	class SystemAudioProcessor;
+	class SystemOverlay;
 	class ProxySystem;
 	class Project;
 	class Model;
@@ -30,10 +32,12 @@ namespace rp {
 	using SystemServicePtr = std::shared_ptr<SystemService>;
 	using SystemServiceProviderPtr = std::shared_ptr<SystemServiceProvider>;
 	using SystemAudioProcessorPtr = std::shared_ptr<SystemAudioProcessor>;
+	using SystemOverlayPtr = std::shared_ptr<SystemOverlay>;
 	using ProxySystemPtr = std::shared_ptr<ProxySystem>;
 	using ModelPtr = std::shared_ptr<Model>;
 	
 	constexpr SystemId INVALID_SYSTEM_ID = -1;
+	constexpr SystemServiceId INVALID_SYSTEM_SERVICE_ID = -1;
 	constexpr SystemType INVALID_SYSTEM_TYPE = 0;
 	constexpr SystemServiceType INVALID_SYSTEM_SERVICE_TYPE = 0;
 

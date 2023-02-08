@@ -34,7 +34,7 @@ namespace rp {
 
 		SystemServicePtr createSystemService(SystemServiceType systemServiceType) const;
 
-		fw::ViewPtr createSystemServiceUi(SystemServiceType systemServiceType) const;
+		SystemOverlayPtr createSystemServiceUi(SystemServiceType systemServiceType) const;
 
 		std::vector<SystemType> getRomLoaders(std::string_view path) const;
 

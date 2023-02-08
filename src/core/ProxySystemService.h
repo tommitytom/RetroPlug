@@ -21,8 +21,12 @@ namespace rp {
 
 		void onMidi(System& system, const fw::MidiMessage& message) override {}
 
+		void setState(entt::any&& data) override { _state = std::move(data); }
+
 		void setState(const entt::any& data) override { _state = data; }
 
+		entt::any getState() override { return _state; }
+		
 		const entt::any getState() const override { return _state; }
 	};
 

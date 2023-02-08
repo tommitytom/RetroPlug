@@ -40,7 +40,7 @@ namespace rp {
 		return service;
 	}
 
-	fw::ViewPtr SystemFactory::createSystemServiceUi(SystemServiceType systemServiceType) const {
+	SystemOverlayPtr SystemFactory::createSystemServiceUi(SystemServiceType systemServiceType) const {
 		SystemServiceProviderPtr found;
 
 		for (const SystemServiceProviderPtr& provider : _services) {
@@ -52,7 +52,7 @@ namespace rp {
 
 		assert(found);
 
-		fw::ViewPtr serviceView = found->onCreateUi();
+		SystemOverlayPtr serviceView = found->onCreateUi();
 		return serviceView;
 	}
 

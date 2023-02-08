@@ -12,6 +12,7 @@
 #include "ui/SystemOverlayManager.h"
 #include "foundation/HashUtil.h"
 #include "foundation/StringUtil.h"
+#include "ui/SystemOverlay.h"
 
 namespace rp {
 	const size_t MAX_UNDO_QUEUE_SIZE = 10;
@@ -19,7 +20,7 @@ namespace rp {
 
 	class Menu;
 
-	class LsdjOverlay final : public LsdjCanvasView {
+	class LsdjOverlay final : public SystemOverlay {
 	private:
 		SystemPtr _system;
 		SystemServicePtr _service;
@@ -37,7 +38,7 @@ namespace rp {
 		LsdjServiceSettings _settings;
 
 	public:
-		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {
+		LsdjOverlay() {
 			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
 			setSizingPolicy(fw::SizingPolicy::FitToParent);
