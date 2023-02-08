@@ -17,11 +17,11 @@ namespace rp {
 }
 
 namespace rp::MenuBuilder {
-	void populateRecent(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system);
+	void populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 
-	void systemLoadMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system);
+	void systemLoadMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 
-	void systemAddMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system);
+	void systemAddMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 
-	void systemSaveMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system);
+	void systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 }

@@ -19,7 +19,7 @@
 
 using namespace rp;
 
-void loadRomDialog(Project* project, SystemPtr system) {
+void loadRomDialog(Project& project, SystemPtr system) {
 	std::vector<std::string> files;
 
 	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
@@ -39,19 +39,19 @@ void loadRomDialog(Project* project, SystemPtr system) {
 			system->setDesc(std::move(desc));
 			system->load(std::move(loadConfig));
 		} else {
-			//project->addSystem<SameBoySystem>(files[0]);
+			//project.addSystem<SameBoySystem>(files[0]);
 		}
 	}
 }
 
-bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
+bool saveProject(Project& project, FileManager& fileManager, bool forceDialog) {
 	std::string path;
 
 	if (!forceDialog) {
-		if (project->getState().path == "") {
+		if (project.getState().path == "") {
 			forceDialog = true;
 		} else {
-			path = project->getState().path;
+			path = project.getState().path;
 		}
 	}
 
@@ -61,16 +61,16 @@ bool saveProject(Project* project, FileManager* fileManager, bool forceDialog) {
 		}
 	}
 
-	fileManager->addRecent(RecentFilePath {
+	fileManager.addRecent(RecentFilePath {
 		.type = "project",
-		.name = project->getName(),
+		.name = project.getName(),
 		.path = path,
 	});
 
-	return project->save(path);
+	return project.save(path);
 }
 
-bool saveSram(Project* project, SystemPtr system, bool forceDialog) {
+bool saveSram(Project& project, SystemPtr system, bool forceDialog) {
 	const SystemDesc& settings = system->getDesc();
 	std::string path;
 
@@ -104,7 +104,7 @@ bool saveSram(Project* project, SystemPtr system, bool forceDialog) {
 	return false;
 }
 
-bool saveState(Project* project, SystemPtr system) {
+bool saveState(Project& project, SystemPtr system) {
 	std::string path;
 
 	if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
@@ -142,14 +142,14 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemPt
 	return true;
 }
 
-void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
+void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	std::vector<RecentFilePath> paths;
-	fileManager->loadRecent(paths);
+	fileManager.loadRecent(paths);
 
 	for (const RecentFilePath& path : paths) {
-		root.action(path.name, [p = path, fileManager, project, system]() {
+		root.action(path.name, [p = path, &fileManager, &project, system]() {
 			if (p.type == "project") {
-				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, *fileManager, *project);
+				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, fileManager, project);
 			} else {
 				spdlog::error("Failed to load recent file: File type {} unknown", p.type);
 			}
@@ -163,55 +163,55 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager* fileManager, Proje
 	}
 }
 
-void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
+void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Add");
 
-	loadRoot.action("Duplicate Current", [fileManager, project, system]() {
+	loadRoot.action("Duplicate Current", [&fileManager, &project, system]() {
 		SystemDesc desc = system->getDesc();
-		desc.paths.sramPath = fileManager->getUniqueFilename(desc.paths.sramPath).string();
-		project->duplicateSystem(system->getId()/*, desc*/);
+		desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
+		project.duplicateSystem(system->getId()/*, desc*/);
 	});
 
 	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
 
 	loadRoot
-		.action("ROM...", [project]() { loadRomDialog(project, nullptr); })
+		.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
 		.subMenu("ROM As")
-			.action("ABG...", [project]() { loadRomDialog(project, nullptr); })
-			.action("CBG C...", [project]() { loadRomDialog(project, nullptr); })
-			.action("DMG...", [project]() { loadRomDialog(project, nullptr); })
+			.action("ABG...", [&project]() { loadRomDialog(project, nullptr); })
+			.action("CBG C...", [&project]() { loadRomDialog(project, nullptr); })
+			.action("DMG...", [&project]() { loadRomDialog(project, nullptr); })
 			.parent()
 		.parent();
 }
 
-void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
+void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Load");
 
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
 
 	loadRoot
 		.action("Project...", []() {})
-		.action("ROM...", [project, system]() { loadRomDialog(project, system); })
+		.action("ROM...", [&project, system]() { loadRomDialog(project, system); })
 		.subMenu("ROM As")
-			.action("ABG...", [project, system]() { loadRomDialog(project, system); })
-			.action("CBG C...", [project, system]() { loadRomDialog(project, system); })
-			.action("DMG...", [project, system]() { loadRomDialog(project, system); })
+			.action("ABG...", [&project, system]() { loadRomDialog(project, system); })
+			.action("CBG C...", [&project, system]() { loadRomDialog(project, system); })
+			.action("DMG...", [&project, system]() { loadRomDialog(project, system); })
 			.parent()
 		.action("SAV...", []() {})
 		.parent();
 }
 
-void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager* fileManager, Project* project, SystemPtr system) {
+void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	root.subMenu("Save")
-		/*.action("Project", [project, fileManager]() { saveProject(project, fileManager, false); })
-		.action("Project As...", [project, fileManager]() { saveProject(project, fileManager, true); })
-		.action("SAV", [project, system]() { saveSram(project, system, false); })
-		.action("SAV As...", [project, system]() { saveSram(project, system, true); })
-		.action("State As...", [project, system]() { saveState(project, system); })*/
-		.action("All ROMs + SAVs", [project]() {
+		/*.action("Project", [&project, fileManager]() { saveProject(project, fileManager, false); })
+		.action("Project As...", [&project, fileManager]() { saveProject(project, fileManager, true); })
+		.action("SAV", [&project, system]() { saveSram(project, system, false); })
+		.action("SAV As...", [&project, system]() { saveSram(project, system, true); })
+		.action("State As...", [&project, system]() { saveState(project, system); })*/
+		.action("All ROMs + SAVs", [&project]() {
 			fw::Uint8Buffer target;
-			if (ProjectExporter::exportRomsAndSavs(*project, target)) {
-				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project->getName() + ".zip");
+			if (ProjectExporter::exportRomsAndSavs(project, target)) {
+				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project.getName() + ".zip");
 			}
 		})
 		.parent();

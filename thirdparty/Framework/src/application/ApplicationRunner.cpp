@@ -27,7 +27,7 @@ namespace fw::app {
 			ViewManagerPtr viewManager = window->getViewManager();
 
 			if (_audioManager) {
-				viewManager->createState(_audioManager);
+				viewManager->createState<audio::AudioManagerPtr>(_audioManager);
 				viewManager->createState<EventNode>(audioProcessor->getEventNode().spawn("Ui"));
 			} else {
 				viewManager->createState<EventNode>(EventNode("Ui"));

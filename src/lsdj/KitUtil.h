@@ -3,7 +3,7 @@
 #include <string_view>
 
 #include "foundation/DataBuffer.h"
-#include "ui/LsdjModel.h"
+#include "lsdj/LsdjModel.h"
 #include "lsdj/Rom.h"
 #include "lsdj/LsdjSettings.h"
 

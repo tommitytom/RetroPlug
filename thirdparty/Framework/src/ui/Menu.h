@@ -197,6 +197,12 @@ namespace fw {
 		}
 
 		Menu& subMenu(const std::string& name, bool active = true) {
+			for (MenuItemBase* item : _items) {
+				if (item->getType() == MenuItemType::SubMenu && item->getName() == name) {
+					return *((Menu*)item);
+				}
+			}
+
 			Menu* m = new Menu(name, active, this);
 			addItem(m);
 			return *m;

@@ -74,13 +74,14 @@ public:
 
 		_typeRegistry.addEnum<LsdjSyncMode>();
 
-		_typeRegistry.addType<LsdjServiceSettings>()
-			.addField<&LsdjServiceSettings::syncMode>("syncMode")
-			.addField<&LsdjServiceSettings::tempoDivisor>("tempoDivisor")
+		_typeRegistry.addType<ArduinoboyServiceSettings>()
+			.addField<&ArduinoboyServiceSettings::syncMode>("syncMode")
+			.addField<&ArduinoboyServiceSettings::tempoDivisor>("tempoDivisor")
 			;
 
 		_systemFactory.addSystemProvider<SameBoyProvider>();
 		_systemFactory.addSystemProvider<ProxyProvider>();
+		_systemFactory.addSystemServiceProvider<ArduinoboyServiceProvider>();
 		_systemFactory.addSystemServiceProvider<LsdjServiceProvider>();
 		_systemFactory.addSystemServiceProvider<MgbServiceProvider>();
 	}

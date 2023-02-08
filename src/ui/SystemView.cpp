@@ -77,14 +77,14 @@ void loadRomDialog(Project* project) {
 	std::vector<std::string> files;
 
 	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
-		//project->addSystem<SameBoySystem>(files[0]);
+		//project.addSystem<SameBoySystem>(files[0]);
 	}
 }
 
 void SystemView::buildMenu(fw::Menu& target) {
-	FileManager* fileManager = getState<FileManager>();
-	Project* project = getState<Project>();
-	ProjectState& projectState = project->getState();
+	FileManager& fileManager = getState<FileManager>();
+	Project& project = getState<Project>();
+	ProjectState& projectState = project.getState();
 
 	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
 	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
@@ -93,7 +93,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 
 	int audioDevice = 0;
 
-	//fw::audio::AudioManager& audioManager = project->getAudioManager();
+	//fw::audio::AudioManager& audioManager = project.getAudioManager();
 
 	//std::vector<std::string> audioDevices;
 	//audioManager.getDeviceNames(audioDevices);
@@ -102,9 +102,9 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.action("Reset System", [this]() {
 			_system->reset();
 		})
-		.action("Remove System", [this, project]() {
-			if (project->getSystems().size() > 1) {
-				project->removeSystem(_system->getId());
+		.action("Remove System", [this, &project]() {
+			if (project.getSystems().size() > 1) {
+				project.removeSystem(_system->getId());
 				this->remove();
 			}
 		})
@@ -117,27 +117,29 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.subMenu("Audio")
 		/*.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
 			if (v >= 0) {
-				project->getAudioManager().setAudioDevice((uint32)v);
+				project.getAudioManager().setAudioDevice((uint32)v);
 			}
 		})*/
 		.parent();
 	#endif
 
-		settingsMenu
-			.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
-			.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)projectState.settings.layout, [this, project](int layout) {
-				project->getState().settings.layout = (SystemLayout)layout;
-				setLayoutDirty();
-			})
-			.subMenu("Save Options...")
-				.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
-				.select("Include ROM", &projectState.settings.includeRom)
-				.parent()
+	settingsMenu.multiSelect("MIDI", { "SendToAll", "FourChannelsPerInstance", "OneChannelPerInstance" }, &projectState.settings.midiRouting).parent();
+
+	settingsMenu
+		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
+		.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)projectState.settings.layout, [this, &project](int layout) {
+			project.getState().settings.layout = (SystemLayout)layout;
+			setLayoutDirty();
+		})
+		.subMenu("Save Options...")
+			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
+			.select("Include ROM", &projectState.settings.includeRom)
 			.parent()
-			.separator()
-			.select("Game Link", _system->getGameLink(), [&](bool selected) {
-				_system->setGameLink(selected);
-			});
+		.parent()
+		.separator()
+		.select("Game Link", _system->getGameLink(), [&](bool selected) {
+			_system->setGameLink(selected);
+		});
 
 	for (fw::ViewPtr child : getChildren()) {
 		child->onMenu(target);

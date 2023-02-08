@@ -48,6 +48,7 @@ namespace rp {
 		fw::Uint8Buffer state;
 		fw::Uint8Buffer rom;
 		fw::DimensionU32 resolution;
+		std::vector<std::pair<SystemServiceType, entt::any>> services;
 	};
 
 	struct FetchStateResponse {

@@ -33,11 +33,10 @@ namespace fw {
 			return entt::any_cast<T&>(_items[type]);
 		}
 
-		template <typename T>
-		T& emplace(entt::any&& item) {
-			entt::id_type type = entt::type_id<T>().index();
+		entt::any& emplace(entt::any&& item) {
+			entt::id_type type = item.type().index();
 			_items[type] = std::move(item);
-			return entt::any_cast<T&>(_items[type]);
+			return _items[type];
 		}
 
 		template <typename T>
@@ -59,6 +58,26 @@ namespace fw {
 
 			if (found != _items.end()) {
 				return &entt::any_cast<T&>(found->second);
+			}
+
+			return nullptr;
+		}
+
+		const entt::any* tryGet(entt::id_type type) const {
+			auto found = _items.find(type);
+
+			if (found != _items.end()) {
+				return &found->second;
+			}
+
+			return nullptr;
+		}
+
+		entt::any* tryGet(entt::id_type type) {
+			auto found = _items.find(type);
+
+			if (found != _items.end()) {
+				return &found->second;
 			}
 
 			return nullptr;

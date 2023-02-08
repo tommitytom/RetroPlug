@@ -27,6 +27,11 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 
 			system->saveState(state);
 
+			std::vector<std::pair<SystemServiceType, entt::any>> services;
+			for (const auto& service : system->getServices()) {
+				services.push_back({ service->getType(), service->getState() });
+			}
+
 			systemStates.push_back(SystemStateResponse{
 				.type = system->getType(),
 				.id = system->getId(),
@@ -35,7 +40,8 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 				.stateOffsets = system->getStateOffsets(),
 				.state = std::move(state),
 				.rom = std::move(rom),
-				.resolution = system->getResolution()
+				.resolution = system->getResolution(),
+				.services = std::move(services)
 			});
 		}
 

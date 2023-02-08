@@ -28,7 +28,7 @@ void StartView::setupMenu() {
 
 			std::vector<std::string> files;
 			if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				LoaderUtil::handleLoad(files, *getState<FileManager>(), *getState<Project>());
+				LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>());
 				ctx.close();
 			}
 		});
@@ -37,9 +37,9 @@ void StartView::setupMenu() {
 
 	menu
 		.action("Load MGB", [this]() {
-			Project* project = getState<Project>();
+			Project& project = getState<Project>();
 
-			SystemPtr system = project->addSystem(0x5A8EB011, {
+			SystemPtr system = project.addSystem(0x5A8EB011, {
 				.desc = {
 					.paths = {
 						.romPath = "mgb.gb"
@@ -63,5 +63,5 @@ void StartView::setupMenu() {
 }
 
 bool StartView::onDrop(const std::vector<std::string>& paths) {
-	return LoaderUtil::handleLoad(paths, *getState<FileManager>(), *getState<Project>());
+	return LoaderUtil::handleLoad(paths, getState<FileManager>(), getState<Project>());
 }

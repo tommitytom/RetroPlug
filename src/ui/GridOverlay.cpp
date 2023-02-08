@@ -66,11 +66,11 @@ void GridOverlay::onLayoutChanged() {
 }
 
 void GridOverlay::onUpdate(f32 delta) {
-	Project* project = getState<Project>();
+	Project& project = getState<Project>();
 	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
-	if (_projectVersion == -1 || _projectVersion != project->getVersion()) {
-		std::vector<SystemPtr>& systems = project->getSystems();
+	if (_projectVersion == -1 || _projectVersion != project.getVersion()) {
+		std::vector<SystemPtr>& systems = project.getSystems();
 
 		std::vector<SystemViewPtr> systemViews;
 		_grid->findChildren<SystemView>(systemViews);
@@ -100,12 +100,12 @@ void GridOverlay::onUpdate(f32 delta) {
 
 				// TODO: Also remove any related windows (like lsdj sample manager)
 
-				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
+				/*std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
 
 				for (fw::ViewPtr overlay : overlays) {
 					overlay->setName(fmt::format("{} ({})", overlay->getName(), system->getRomName()));
 					systemView->addChild(overlay);
-				}
+				}*/
 
 				systemView->updateVersion();
 				_refocus = true;
@@ -121,18 +121,30 @@ void GridOverlay::onUpdate(f32 delta) {
 				SystemViewPtr systemView = _grid->addChild<SystemView>(systemName);
 				systemView->setSystem(system);
 
-				std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
+				const SystemFactory& systemFactory = getState<const SystemFactory>();
+
+				for (SystemServicePtr& service : system->getServices()) {
+					fw::ViewPtr serviceView = systemFactory.createSystemServiceUi(service->getType());
+
+					if (serviceView) {
+						systemView->addChild(serviceView);
+					} else {
+						spdlog::debug("System service {} does not contain a UI", service->getType());
+					}
+				}
+
+				/*std::vector<fw::ViewPtr> overlays = getState<SystemOverlayManager>()->createOverlays(system->getRomName());
 
 				for (fw::ViewPtr overlay : overlays) {
 					overlay->setName(fmt::format("{} ({})", overlay->getName(), systemName));
 					systemView->addChild(overlay);
-				}
+				}*/
 
 				_refocus = true;
 			}
 		}
 
-		_projectVersion = project->getVersion();
+		_projectVersion = project.getVersion();
 		//updateLayout();
 	}
 }

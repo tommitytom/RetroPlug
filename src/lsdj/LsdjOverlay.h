@@ -7,8 +7,8 @@
 
 #include "ui/View.h"
 #include "core/System.h"
-#include "ui/LsdjCanvasView.h"
-#include "ui/LsdjModel.h"
+#include "lsdj/LsdjCanvasView.h"
+#include "lsdj/LsdjModel.h"
 #include "ui/SystemOverlayManager.h"
 #include "foundation/HashUtil.h"
 #include "foundation/StringUtil.h"
@@ -22,7 +22,7 @@ namespace rp {
 	class LsdjOverlay final : public LsdjCanvasView {
 	private:
 		SystemPtr _system;
-		LsdjModelPtr _model;
+		SystemServicePtr _service;
 
 		fw::Point _mousePosition;
 
@@ -33,6 +33,8 @@ namespace rp {
 
 		bool _aHeld = false;
 		bool _bHeld = false;
+
+		LsdjServiceSettings _settings;
 
 	public:
 		LsdjOverlay(): LsdjCanvasView({ 160, 144 }) {

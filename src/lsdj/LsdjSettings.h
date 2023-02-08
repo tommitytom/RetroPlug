@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "foundation/Types.h"
+#include "core/Forward.h"
 
 namespace rp {
 	enum class LsdjSyncMode {
@@ -54,7 +55,14 @@ namespace rp {
 	using KitIndex = size_t;
 
 	struct LsdjServiceSettings {
+		KitIndex kit = 0;
+	};
+
+	struct ArduinoboyServiceSettings {
 		LsdjSyncMode syncMode = LsdjSyncMode::Off;
 		uint32 tempoDivisor = 1;
 	};
+
+	const SystemServiceType LSDJ_SERVICE_TYPE = 0x15D115D1;
+	const SystemServiceType ARDUINOBOY_SERVICE_TYPE = 0x421D1B01;
 }

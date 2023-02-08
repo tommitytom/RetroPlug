@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/System.h"
-#include "ui/LsdjCanvasView.h"
+#include "lsdj/LsdjCanvasView.h"
 #include "lsdj/LsdjUi.h"
 #include "ui/WaveView.h"
 #include "lsdj/KitUtil.h"

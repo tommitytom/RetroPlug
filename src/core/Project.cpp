@@ -11,6 +11,7 @@
 
 #include "sameboy/SameBoySystem.h"
 #include "core/ProxySystem.h"
+#include "core/ProxySystemService.h"
 #include "core/SystemService.h"
 
 using namespace entt::literals;
@@ -32,10 +33,10 @@ Project::~Project() {
 	}
 }
 
-void Project::setup(fw::EventNode* eventNode, FetchStateResponse&& state) {
+void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
 	assert(!_eventNode);
 
-	_eventNode = eventNode;
+	_eventNode = &eventNode;
 	_config = std::move(state.config);
 	_state = std::move(state.project);
 
@@ -49,12 +50,18 @@ void Project::setup(fw::EventNode* eventNode, FetchStateResponse&& state) {
 			systemState.id, 
 			systemState.romName,
 			std::move(systemState.rom), 
-			std::move(systemState.state), 
-			*eventNode
+			std::move(systemState.state),
+			eventNode
 		);
 
 		system->setDesc(std::move(systemState.desc));
 		system->setResolution(systemState.resolution);
+
+		for (const auto& [type, state] : systemState.services) {
+			spdlog::critical("adding service type: {}", type);
+			system->addService(std::make_shared<ProxySystemService>(type, state));
+		}
+
 		_systemManager.addSystem(system);
 	}
 
@@ -197,6 +204,12 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 	std::shared_ptr<ProxySystem> proxySystem = std::make_shared<ProxySystem>(type, systemId, system->getRomName(), std::move(romData), std::move(stateData), *_eventNode);
 	proxySystem->setDesc(system->getDesc());
 	proxySystem->setResolution(system->getResolution());
+
+	for (SystemServicePtr& service : system->getServices()) {
+		ProxySystemServicePtr proxyService = std::make_shared<ProxySystemService>(service->getType(), service->getState());
+		proxySystem->addService(proxyService);
+	}
+
 	_systemManager.addSystem(proxySystem);
 
 	_eventNode->send("Audio"_hs, AddSystemEvent{ .system = std::move(system) });

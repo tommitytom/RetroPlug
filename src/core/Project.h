@@ -47,7 +47,7 @@ namespace rp {
 			return _systemFactory;
 		}
 
-		void setup(fw::EventNode* eventNode, FetchStateResponse&& state);
+		void setup(fw::EventNode& eventNode, FetchStateResponse&& state);
 
 		std::string getName();
 

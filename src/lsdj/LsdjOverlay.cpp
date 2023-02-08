@@ -2,7 +2,7 @@
 
 #include "core/FileManager.h"
 #include "core/Project.h"
-#include "ui/LsdjHdPlayer.h"
+#include "lsdj/LsdjHdPlayer.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
 #include "ui/SystemView.h"
@@ -44,8 +44,17 @@ void showHdPlayer(fw::ViewPtr parent, SystemPtr system) {
 
 void LsdjOverlay::onInitialize() {
 	_system = getParent()->asRaw<SystemView>()->getSystem();
+	_service = nullptr;
 
-	/*Project* project = getState<Project>();
+	for (SystemServicePtr& service : _system->getServices()) {
+		if (service->getType() == LSDJ_SERVICE_TYPE) {
+			_service = service;
+		}
+	}
+
+	assert(_service);
+
+	/*Project& project = getState<Project>();
 	_model = _system->getModel<LsdjModel>();
 
 	if (_model->isRomValid()) {
@@ -87,9 +96,9 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 		changed = true;
 	}
 
-	if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
+	//if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
 		//_system->saveSram();
-	}
+	//}
 
 	/*LsdjModelPtr model = _system->getModel<LsdjModel>();
 	if (model->getOffsetsValid() && down && key == VirtualKey::Z) {
@@ -119,7 +128,7 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 }
 
 bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
-	SystemPtr system;// = _system->getSystem();
+	/*SystemPtr system;// = _system->getSystem();
 	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 
 	if (!model->isRomValid()) {
@@ -156,7 +165,7 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 	}
 
 	if (samples.size() > 0) {
-		FileManager* fileManager = getState<FileManager>();
+		FileManager& fileManager = getState<FileManager>();
 		std::string kitName;
 
 #ifndef RP_WEB
@@ -165,7 +174,7 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 
 		// Make a local copy of the sample if we don't already have it
 		for (std::string& samplePath : samples) {
-			samplePath = fileManager->addHashedFile(samplePath, "samples").string();
+			samplePath = fileManager.addHashedFile(samplePath, "samples").string();
 		}
 
 		kitIdx = model->addKitSamples(system, samples, kitName);
@@ -177,7 +186,7 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 		samplerView->setSampleIndex(kitIdx, 0);
 
 		return true;
-	}
+	}*/
 
 	return false;
 }

@@ -8,7 +8,7 @@
 #include "foundation/StringUtil.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/KeyToButton.h"
-#include "ui/LsdjModel.h"
+#include "lsdj/LsdjModel.h"
 
 using namespace rp;
 
@@ -461,7 +461,7 @@ void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 }
 
 void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths) {
-	SystemPtr system = _system;
+	/*SystemPtr system = _system;
 	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
@@ -493,7 +493,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 
 	if (newKit) {
 		_system->reset();
-	}
+	}*/
 }
 
 void SamplerView::updateSampleBuffers() {
@@ -505,7 +505,7 @@ void SamplerView::updateSampleBuffers() {
 
 	auto found = model->kits.find(_samplerState.selectedKit);
 	if (found != model->kits.end()) {
-		model->updateKit(_samplerState.selectedKit);
+		//model->updateKit(_samplerState.selectedKit);
 		updateWaveform();
 	}
 }

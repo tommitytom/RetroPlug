@@ -44,26 +44,27 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 
 void RetroPlugView::onInitialize() {
 	createState<SystemOverlayManager>();
+	createState(entt::forward_as_any(_project.getSystemFactory()));
 
 	fw::FontDesc fontDesc;
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
-
+	
 	getResourceManager().create<fw::Font>("PlatNomor", fontDesc);
 
-	_fileManager = this->createState<FileManager>();
-	this->createState<Project>(entt::forward_as_any(_project));
+	_fileManager = &this->createState<FileManager>();
+	this->createState(entt::forward_as_any(_project));
 
 	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 
 	setupEventHandlers();
-	getState<fw::EventNode>()->send("Audio"_hs, FetchStateRequest{});
+	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
 
 	_nextStateFetch = _stateFetchInterval;
 }
 
 void RetroPlugView::setupEventHandlers() {
-	fw::EventNode& node = *getState<fw::EventNode>();
+	fw::EventNode& node = getState<fw::EventNode>();
 
 	node.receive<FetchStateResponse>([&](FetchStateResponse&& res) {
 		_project.setup(getState<fw::EventNode>(), std::move(res));
@@ -95,7 +96,7 @@ void RetroPlugView::setupEventHandlers() {
 }
 
 void RetroPlugView::processOutput() {
-	fw::EventNode& ev = *getState<fw::EventNode>();
+	fw::EventNode& ev = getState<fw::EventNode>();
 
 	for (SystemPtr& system : _project.getSystemManager().getSystems()) {
 		SystemIoPtr io = system->getIo();
@@ -113,7 +114,7 @@ void RetroPlugView::processOutput() {
 }
 
 void RetroPlugView::onUpdate(f32 delta) {
-	fw::EventNode& eventNode = *getState<fw::EventNode>();
+	fw::EventNode& eventNode = getState<fw::EventNode>();
 	eventNode.update();
 
 	if (_lastPingTime == 0) {

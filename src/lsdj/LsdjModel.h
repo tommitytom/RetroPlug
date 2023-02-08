@@ -41,9 +41,9 @@ namespace rp {
 
 		void updateKit(KitIndex kitIdx);
 
-		KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);
+		//KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);
 
-		KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, std::string_view name = "", KitIndex kitIdx = -1);
+		//KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, std::string_view name = "", KitIndex kitIdx = -1);
 
 		lsdj::MemoryOffsets& getMemoryOffsets() {
 			return _ramOffsets;
@@ -57,7 +57,7 @@ namespace rp {
 			return _romValid;
 		}
 
-		bool isSramDirty();
+		//bool isSramDirty();
 	};
 
 	using LsdjModelPtr = std::shared_ptr<LsdjModel>;
