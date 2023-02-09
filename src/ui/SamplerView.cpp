@@ -8,7 +8,6 @@
 #include "foundation/StringUtil.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/KeyToButton.h"
-#include "lsdj/LsdjModel.h"
 
 using namespace rp;
 
@@ -29,18 +28,19 @@ SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
 	setType<SamplerView>();
 }
 
-void SamplerView::setSystem(SystemPtr& system) {
+void SamplerView::setSystem(SystemPtr& system, SystemServicePtr& service) {
 	_system = system;
+	_service = service;
 
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
 		_canvas.setFont(rom.getFont(1));
 		_canvas.setPalette(rom.getPalette(0));
 
-		LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+		LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 		int32 selectedKit = 999;
 
-		for (auto& kit : model->kits) {
+		for (auto& kit : settings.kits) {
 			if (kit.first < selectedKit) {
 				selectedKit = (int32)kit.first;
 			}
@@ -136,10 +136,10 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 	} else {
 		if (ev.key == VirtualKey::D && _aHeld) {
 			_aHeld = false;
-			LsdjModelPtr model;// = _system->getModel<LsdjModel>();
-			if (model) {
-				//model->setRequiresSave(true);
-			}
+			//LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+			//if (model) {
+				//settings.setRequiresSave(true);
+			//}
 		}
 
 		_ui.releaseKey(ev.key);
@@ -226,32 +226,32 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 		return;
 	}
 
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+	LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 
 	lsdj::Rom rom = _system->getMemory(MemoryType::Rom, AccessType::ReadWrite);
 	if (!rom.isValid()) {
 		return;
 	}
 
-	auto found = model->kits.find(_samplerState.selectedKit);
-	bool isEditable = found != model->kits.end();
+	auto found = settings.kits.find(_samplerState.selectedKit);
+	bool isEditable = found != settings.kits.end();
 	bool editingGlobal = true;
 
 	SampleSettings defaultSettings;
 	SampleSettings emptySettings = EMPTY_SAMPLE_SETTINGS;
-	SampleSettings* settings = &defaultSettings;
+	SampleSettings* sampleSettings = &defaultSettings;
 	SampleSettings* globalSettings = &defaultSettings;
 
 	if (isEditable) {
 		globalSettings = &found->second.settings;
 
 		if (_samplerState.selectedSample == 0) {
-			settings = globalSettings;
+			sampleSettings = globalSettings;
 		} else if (_samplerState.selectedSample > 0 && _samplerState.selectedSample <= (int32)found->second.samples.size()) {
-			settings = &found->second.samples[_samplerState.selectedSample - 1].settings;
+			sampleSettings = &found->second.samples[_samplerState.selectedSample - 1].settings;
 			editingGlobal = false;
 		} else {
-			settings = &emptySettings;
+			sampleSettings = &emptySettings;
 			isEditable = false;
 		}
 	}
@@ -319,7 +319,7 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 		if (isEditable) {
 			if (_ui.textBox(13, 2, kitName, lsdj::Kit::NAME_SIZE)) {
 				rom.setKitName(kitIdx, kitName);
-				//model->setRequiresSave(true);
+				//settings.setRequiresSave(true);
 			}
 		} else {
 			_c.text(13, 2, kitName, lsdj::ColorSets::Normal);
@@ -331,7 +331,7 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 		if (isEditable) {
 			if (_ui.textBox(16, 2, sampleName, lsdj::Kit::SAMPLE_NAME_SIZE)) {
 				rom.setKitSampleName(kitIdx, sampleIdx, sampleName);
-				//model->setRequiresSave(true);
+				//settings.setRequiresSave(true);
 			}
 		} else {
 			_c.text(16, 2, sampleName, lsdj::ColorSets::Normal);
@@ -342,17 +342,17 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 	lsdj::SpinOptions::Enum spinOptions = isEditable ? lsdj::SpinOptions::None : lsdj::SpinOptions::Disabled;
 
 	_c.text(propertyName, 4, "DITHER", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 4, settings->dither, globalSettings->dither, 0, 0xFF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 4, sampleSettings->dither, globalSettings->dither, 0, 0xFF, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 5, "VOL", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 5, settings->volume, globalSettings->volume, 0, 0xFF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 5, sampleSettings->volume, globalSettings->volume, 0, 0xFF, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 6, "GAIN", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 6, settings->gain, globalSettings->gain, 0x1, 0xF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 6, sampleSettings->gain, globalSettings->gain, 0x1, 0xF, isEditable)) {
 		updateSampleBuffers();
 	}
 	/*if (defaultSelect<10>(_ui, 19, 6, settings->gain, globalSettings->gain, {"1x", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x"}, isEditable)) {
@@ -360,24 +360,24 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 	}*/
 
 	_c.text(propertyName, 7, "PITCH", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 7, settings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 7, sampleSettings->pitch, globalSettings->pitch, 0, 0xFF, isEditable)) {
 		//updateSampleBuffers();
 	}
 
 
 
 	_c.text(propertyName, 8, "FILTER", lsdj::ColorSets::Normal);
-	if (defaultSelect<5>(_ui, 19, 8, settings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable)) {
+	if (defaultSelect<5>(_ui, 19, 8, sampleSettings->filter, globalSettings->filter, { "NONE", "LOWP", "HIGHP", "BANDP", "ALLP" }, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 9, "CUTOFF", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 9, settings->cutoff, globalSettings->cutoff, 0, 0xFF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 9, sampleSettings->cutoff, globalSettings->cutoff, 0, 0xFF, isEditable)) {
 		updateSampleBuffers();
 	}
 
 	_c.text(propertyName, 10, "Q", lsdj::ColorSets::Normal);
-	if (defaultHexSpin(_ui, 19, 10, settings->q, globalSettings->q, 0, 0xF, isEditable)) {
+	if (defaultHexSpin(_ui, 19, 10, sampleSettings->q, globalSettings->q, 0, 0xF, isEditable)) {
 		updateSampleBuffers();
 	}
 
@@ -434,8 +434,8 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 }
 
 void SamplerView::buildMenu(fw::Menu& target) {
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
-	bool kitEditable = model->kits.find(_samplerState.selectedKit) != model->kits.end();
+	const LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
+	bool kitEditable = settings.kits.find(_samplerState.selectedKit) != settings.kits.end();
 
 	target.title("LSDJ Sample Manager")
 		.separator()
@@ -461,8 +461,8 @@ void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 }
 
 void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>& paths) {
-	/*SystemPtr system = _system;
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+	SystemPtr system = _system;
+	LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
 	bool newKit = rom.kitIsEmpty(kitIdx);
@@ -471,7 +471,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 
 	for (const std::string& path : paths) {
 		if (fw::FsUtil::getFileExt(path) == ".kit") {
-			model->addKit(system, path, kitIdx);
+			KitUtil::addKit(system, settings, path, kitIdx);
 			kitSamples.clear();
 			break;
 		}
@@ -483,7 +483,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 
 	if (kitSamples.size() > 0) {
 		std::string kitName = fw::FsUtil::getDirectoryName(kitSamples[0]);
-		model->addKitSamples(system, paths, kitName, kitIdx);
+		KitUtil::addKitSamples(system, settings, paths, kitName, kitIdx);
 	}
 
 	_samplerState.selectedKit = (int32)kitIdx;
@@ -493,7 +493,7 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 
 	if (newKit) {
 		_system->reset();
-	}*/
+	}
 }
 
 void SamplerView::updateSampleBuffers() {
@@ -501,11 +501,11 @@ void SamplerView::updateSampleBuffers() {
 		return;
 	}
 
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+	LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 
-	auto found = model->kits.find(_samplerState.selectedKit);
-	if (found != model->kits.end()) {
-		//model->updateKit(_samplerState.selectedKit);
+	auto found = settings.kits.find(_samplerState.selectedKit);
+	if (found != settings.kits.end()) {
+		//settings.updateKit(_samplerState.selectedKit);
 		updateWaveform();
 	}
 }

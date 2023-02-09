@@ -25,9 +25,9 @@ namespace rp {
 
 		void setState(const entt::any& data) override { _state = data; }
 
-		entt::any getState() override { return _state; }
+		entt::any getState() override { return _state.as_ref(); }
 		
-		const entt::any getState() const override { return _state; }
+		const entt::any getState() const override { return _state.as_ref(); }
 	};
 
 	using ProxySystemServicePtr = std::shared_ptr<ProxySystemService>;

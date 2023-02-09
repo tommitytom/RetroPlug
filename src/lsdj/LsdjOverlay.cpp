@@ -10,7 +10,7 @@
 
 using namespace rp;
 
-std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr system) {
+std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service) {
 	std::vector<std::shared_ptr<SamplerView>> samplers;
 	parent->findChildren<SamplerView>(samplers);
 
@@ -25,7 +25,7 @@ std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr sys
 
 	if (!samplerView) {
 		samplerView = parent->addChild<SamplerView>("LSDj Sample Manager");
-		samplerView->setSystem(system);
+		samplerView->setSystem(system, service);
 
 		// TODO: Show kit currently under cursor!
 		//samplerView->setSampleIndex()
@@ -36,24 +36,13 @@ std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr sys
 	return samplerView;
 }
 
-void showHdPlayer(fw::ViewPtr parent, SystemPtr system) {
+void showHdPlayer(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service) {
 	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
 	player->setSystem(system);
 	player->focus();
 }
 
 void LsdjOverlay::onInitialize() {
-	_system = getParent()->asRaw<SystemView>()->getSystem();
-	_service = nullptr;
-
-	for (SystemServicePtr& service : _system->getServices()) {
-		if (service->getType() == LSDJ_SERVICE_TYPE) {
-			_service = service;
-		}
-	}
-
-	assert(_service);
-
 	/*Project& project = getState<Project>();
 	_model = _system->getModel<LsdjModel>();
 
@@ -71,8 +60,8 @@ void LsdjOverlay::onInitialize() {
 
 void LsdjOverlay::onMenu(fw::Menu& menu) {
 	menu.subMenu("LSDJ")
-		.action("Sample Manager", [this]() { showSampleManager(getParent()->getParent(), _system); })
-		.action("HD Player", [this]() { showHdPlayer(getParent()->getParent()->getParent(), _system); })
+		.action("Sample Manager", [this]() { showSampleManager(getParent()->getParent(), getSystem(), getService()); })
+		.action("HD Player", [this]() { showHdPlayer(getParent()->getParent()->getParent(), getSystem(), getService()); })
 		.parent();
 }
 
@@ -82,8 +71,7 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 		return false;
 	}
 
-	SystemPtr system;// = _system->getSystem();
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+	LsdjServiceSettings& settings = getService()->getStateAs<LsdjServiceSettings>();
 
 	bool changed = false;
 	if (ev.key == VirtualKey::W) {
@@ -128,12 +116,13 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 }
 
 bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
-	/*SystemPtr system;// = _system->getSystem();
-	LsdjModelPtr model;// = _system->getModel<LsdjModel>();
+	SystemPtr system = getSystem();
+	LsdjServiceSettings& settings = getService()->getStateAs<LsdjServiceSettings>();
 
-	if (!model->isRomValid()) {
+	// What does this actually check?
+	/*if (!model->isRomValid()) {
 		return false;
-	}
+	}*/
 
 	//bool foundSamples = false;
 	size_t kitIdx = -1;
@@ -149,17 +138,17 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 					dirSamples.push_back(item.path().string());
 					//foundSamples = true;
 				} else if (item.path().extension() == ".kit") {
-					kitIdx = model->addKit(system, item.path().string());
+					KitUtil::addKit(system, settings, item.path().string());
 					//foundSamples = true;
 				}
 			}
-
-			kitIdx = model->addKitSamples(system, dirSamples);
+			
+			kitIdx = KitUtil::addKitSamples(system, settings, dirSamples);
 		} else if (fs::path(path).extension() == ".wav") {
 			samples.push_back(path);
 			//foundSamples = true;
 		} else if (fs::path(path).extension() == ".kit") {
-			kitIdx = model->addKit(system, path);
+			kitIdx = KitUtil::addKit(system, settings, path);
 			//foundSamples = true;
 		}
 	}
@@ -177,16 +166,16 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 			samplePath = fileManager.addHashedFile(samplePath, "samples").string();
 		}
 
-		kitIdx = model->addKitSamples(system, samples, kitName);
+		kitIdx = KitUtil::addKitSamples(system, settings, samples, kitName);
 	}
 
 	if (kitIdx != -1) {
 		system->reset();
-		auto samplerView = showSampleManager(getParent()->getParent(), _system);
+		auto samplerView = showSampleManager(getParent()->getParent(), system, getService());
 		samplerView->setSampleIndex(kitIdx, 0);
 
 		return true;
-	}*/
+	}
 
 	return false;
 }

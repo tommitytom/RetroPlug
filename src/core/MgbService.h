@@ -8,9 +8,11 @@
 #include "util/GameboyUtil.h"
 
 namespace rp {
+	const SystemServiceType MGB_SERVICE_TYPE = 0x80B80B80;
+
 	class MgbService final : public SystemService {
 	public:
-		MgbService() : SystemService(0x80B80B80) {}
+		MgbService() : SystemService(MGB_SERVICE_TYPE) {}
 		~MgbService() = default;
 
 		void onMidi(System& system, const fw::MidiMessage& message) override {
@@ -28,7 +30,7 @@ namespace rp {
 			return romName == "MGB";
 		}
 
-		SystemServiceType getType() override { return 0x80B80B80; }
+		SystemServiceType getType() override { return MGB_SERVICE_TYPE; }
 
 		SystemOverlayPtr onCreateUi() override { return nullptr; }
 

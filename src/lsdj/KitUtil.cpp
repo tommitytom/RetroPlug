@@ -10,6 +10,8 @@
 #include <r8brain/r8bbase.h>
 #include <r8brain/CDSPResampler.h>
 
+#include "foundation/StringUtil.h"
+
 using namespace rp;
 
 const uint32 GAMEBOY_SAMPLE_RATE = 11468;
@@ -286,4 +288,100 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	std::chrono::duration<double, std::milli> fp_ms = endTime - startTime;
 
 	//spdlog::info("sample processing time: {}", fp_ms.count());
+}
+
+void KitUtil::updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Write);
+	if (!rom.isValid()) {
+		spdlog::error("Failed to write kit: Rom data is not available to write");
+		return;
+	}
+
+	auto found = settings.kits.find(kitIdx);
+	if (found == settings.kits.end()) {
+		spdlog::error("Failed to update sample buffers - kit not found");
+		return;
+	}
+
+	std::vector<KitUtil::SampleData> sampleBuffers;
+	for (const KitSample& sample : found->second.samples) {
+		sampleBuffers.push_back(KitUtil::loadSample(sample.path));
+	}
+
+	lsdj::Kit kit = rom.getKit(kitIdx);
+	KitUtil::patchKit(kit, found->second, sampleBuffers);
+}
+
+KitIndex KitUtil::addKit(SystemPtr system, LsdjServiceSettings& settings, const std::string& path, KitIndex kitIdx) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Write);
+	if (!rom.isValid()) {
+		return -1;
+	}
+
+	bool newKit = kitIdx == -1;
+	if (kitIdx == -1) {
+		kitIdx = rom.nextEmptyKitIdx();
+	} else {
+		settings.kits.erase(kitIdx);
+		newKit = rom.kitIsEmpty(kitIdx);
+	}
+
+	std::vector<std::byte> fileData = fw::FsUtil::readFile(path);
+	rom.getKit(kitIdx).setKitData(fw::Uint8Buffer((uint8*)fileData.data(), fileData.size()));
+
+	return kitIdx;
+}
+
+KitIndex KitUtil::addKitSamples(SystemPtr system, LsdjServiceSettings& settings, const std::vector<std::string>& paths, std::string_view name, KitIndex kitIdx) {
+	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+	if (!rom.isValid()) {
+		return -1;
+	}
+
+	bool newKit = kitIdx == -1;
+	if (kitIdx == -1) {
+		kitIdx = rom.nextEmptyKitIdx();
+	} else {
+		newKit = rom.kitIsEmpty(kitIdx);
+	}
+
+	if (kitIdx != -1) {
+		std::string kitName = name.empty() ? fmt::format("KIT {0:x}", kitIdx + 1) : std::string(name);
+		kitName = kitName.substr(0, std::min(lsdj::Kit::NAME_SIZE, kitName.size()));
+
+		KitState kitState = KitState{
+			.name = fw::StringUtil::toUpper(kitName),
+		};
+
+		for (const std::string& path : paths) {
+			if (fw::FsUtil::getFileExt(path) == ".wav") {
+				std::string sampleName = fw::FsUtil::getFilename(path);
+				sampleName = fw::FsUtil::removeFileExt(sampleName);
+				sampleName = std::string(fw::FsUtil::removeUniqueId(sampleName));
+
+				sampleName = sampleName.substr(0, std::min(lsdj::Kit::SAMPLE_NAME_SIZE, sampleName.size()));
+
+				kitState.samples.push_back(KitSample{
+					.name = fw::StringUtil::toUpper(sampleName),
+					.path = path
+				});
+			}
+		}
+
+		if (kitState.samples.size() > 0) {
+			auto found = settings.kits.find(kitIdx);
+
+			if (found != settings.kits.end()) {
+				for (const KitSample& sample : kitState.samples) {
+					found->second.samples.push_back(sample);
+				}
+			} else {
+				settings.kits[kitIdx] = kitState;
+			}
+
+			KitUtil::updateKit(system, settings, kitIdx);
+		}
+	}
+
+	return kitIdx;
 }

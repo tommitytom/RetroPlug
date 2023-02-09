@@ -26,12 +26,12 @@ namespace rp {
 			_service = service;
 		}
 		
-		System& getSystem() {
-			return *_system;
+		SystemPtr getSystem() {
+			return _system;
 		}
 		
-		SystemService& getService() {
-			return *_service;
+		SystemServicePtr getService() {
+			return _service;
 		}
 
 		SystemServiceType getServiceType() {
@@ -51,18 +51,16 @@ namespace rp {
 
 	template <typename T>
 	class TypedSystemOverlay : public SystemOverlay {
-	private:
-		T _state;
-
 	public:
 		TypedSystemOverlay() {}
 
 		T& getServiceState() {
-			return _state;
+			entt::any value = getService()->getState();
+			return entt::any_cast<T&>(value);
 		}
 
 		const T& getServiceState() const {
-			return _state;
+			return entt::any_cast<const T&>(getService()->getState());
 		}
 
 		template <auto Candidate>
@@ -71,11 +69,12 @@ namespace rp {
 			
 			fw::EventNode& node = getState<fw::EventNode>();
 			
-			_state.*Candidate = data;
+			T& serviceState = getServiceState();
+			serviceState.*Candidate = data;
 			
 			node.send<SystemServiceEvent>("Audio"_hs, SystemServiceEvent{
-				.systemId = getSystem().getId(),
-				.systemServiceType = getService().getType(),
+				.systemId = getSystem()->getId(),
+				.systemServiceType = getService()->getType(),
 				.caller = &parameterSetter<T, Candidate>,
 				.arg = std::move(data)
 			});

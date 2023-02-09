@@ -55,6 +55,7 @@ namespace rp {
 	using KitIndex = size_t;
 
 	struct LsdjServiceSettings {
+		std::unordered_map<KitIndex, KitState> kits;
 		KitIndex kit = 0;
 	};
 

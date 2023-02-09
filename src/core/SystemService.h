@@ -37,6 +37,17 @@ namespace rp {
 		virtual const entt::any getState() const { return entt::any{}; }
 
 		virtual entt::any getState() { return entt::any{}; }
+		
+		template <typename T>
+		T& getStateAs() {
+			entt::any state = getState();
+			return entt::any_cast<T&>(state);
+		}
+
+		template <typename T>
+		const T& getStateAs() const {
+			return entt::any_cast<const T&>(getState());
+		}
 
 		SystemServiceType getType() const {
 			return _type;

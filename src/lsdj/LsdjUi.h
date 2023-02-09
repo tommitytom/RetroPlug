@@ -351,7 +351,7 @@ namespace rp::lsdj {
 			}
 
 			for (uint32 i = 0; i < (uint32)itemCount; ++i) {
-				//_c.text(x, y + i, items[i], (int32)i == selected ? ColorSets::Selection : ColorSets::Normal);
+				_c.text(x, y + i, items[i], (int32)i == selected ? ColorSets::Selection : ColorSets::Normal);
 			}
 
 			popElement();

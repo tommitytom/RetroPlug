@@ -37,13 +37,7 @@ namespace rp {
 
 		const entt::any getState() const override { return entt::any{}; }
 
-		//std::string getProjectName() override;
-
 		void updateKit(KitIndex kitIdx);
-
-		//KitIndex addKit(SystemPtr system, const std::string& path, KitIndex kitIdx = -1);
-
-		//KitIndex addKitSamples(SystemPtr system, const std::vector<std::string>& paths, std::string_view name = "", KitIndex kitIdx = -1);
 
 		lsdj::MemoryOffsets& getMemoryOffsets() {
 			return _ramOffsets;
@@ -59,6 +53,4 @@ namespace rp {
 
 		//bool isSramDirty();
 	};
-
-	using LsdjModelPtr = std::shared_ptr<LsdjModel>;
 }

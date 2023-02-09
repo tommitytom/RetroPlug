@@ -22,9 +22,6 @@ namespace rp {
 
 	class LsdjOverlay final : public SystemOverlay {
 	private:
-		SystemPtr _system;
-		SystemServicePtr _service;
-
 		fw::Point _mousePosition;
 
 		uint64 _songHash = 0;

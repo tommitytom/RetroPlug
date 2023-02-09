@@ -19,6 +19,8 @@ namespace rp {
 	class SamplerView final : public LsdjCanvasView {
 	private:
 		SystemPtr _system;
+		SystemServicePtr _service;
+
 		SamplerViewState _samplerState;
 		fw::WaveViewPtr _waveView;
 
@@ -37,7 +39,7 @@ namespace rp {
 			return _samplerState;
 		}*/
 
-		void setSystem(SystemPtr& system);
+		void setSystem(SystemPtr& system, SystemServicePtr& service);
 
 		SystemPtr getSystem() { return _system; }
 
