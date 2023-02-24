@@ -496,7 +496,7 @@ namespace fw {
 		return deserializeItem(registry, source, target.getValue(), fieldStack);
 	}
 
-	bool LuaSerializer::deserializeFromString(const fw::TypeRegistry& registry, const std::string& source, TypeInstance target) {
+	bool LuaSerializer::deserializeFromString(const fw::TypeRegistry& registry, std::string_view source, TypeInstance target) {
 		sol::state lua;
 		SolUtil::prepareState(lua);
 
@@ -509,6 +509,10 @@ namespace fw {
 		}
 
 		return false;
+	}
+
+	bool LuaSerializer::deserializeFromBuffer(const fw::TypeRegistry& registry, const fw::Uint8Buffer& source, TypeInstance target) {
+		return LuaSerializer::deserializeFromString(registry, std::string_view((const char*)source.data(), source.size()), std::move(target));
 	}
 }
 

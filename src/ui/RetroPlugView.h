@@ -9,8 +9,10 @@
 #include "core/ProjectState.h"
 #include "core/RetroPlugProcessor.h"
 #include "core/System.h"
-#include "ui/View.h"
 #include "ui/CompactLayoutView.h"
+#include "ui/LabelView.h"
+#include "ui/View.h"
+#include "foundation/ResourceReloader.h"
 
 namespace rp {
 	enum class ThreadTarget {
@@ -23,6 +25,8 @@ namespace rp {
 
 	class RetroPlugView final : public fw::View {
 	private:
+		using hrc = std::chrono::high_resolution_clock;
+
 		f64 _nextFrame = 0;
 
 		fw::Uint8Buffer _romBuffer;
@@ -57,7 +61,13 @@ namespace rp {
 		f32 _stateFetchInterval = 1.0f / 60.0f;
 		f32 _nextStateFetch;
 
-		uint64 _lastPingTime = 0;
+		bool _doPing = true;
+		std::optional<hrc::time_point> _lastPingTime;
+		std::optional<hrc::time_point> _lastPongTime;
+		bool _audioThreadActive = false;
+		fw::LabelViewPtr _threadWarning;
+
+		fw::ResourceReloader _resourceReloader;
 
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
@@ -68,6 +78,8 @@ namespace rp {
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;
+
+		bool onKey(const fw::KeyEvent& ev) override;
 
 	private:
 		void processOutput();

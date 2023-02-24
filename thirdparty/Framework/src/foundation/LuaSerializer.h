@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/DataBuffer.h"
 #include "foundation/TypeRegistry.h"
 #include <sol/sol.hpp>
 
@@ -12,5 +13,7 @@ namespace fw::LuaSerializer {
 
 	bool deserialize(const fw::TypeRegistry& registry, const sol::object& source, TypeInstance target);
 
-	bool deserializeFromString(const fw::TypeRegistry& registry, const std::string& source, TypeInstance target);
+	bool deserializeFromString(const fw::TypeRegistry& registry, std::string_view source, TypeInstance target);
+
+	bool deserializeFromBuffer(const fw::TypeRegistry& registry, const fw::Uint8Buffer& source, TypeInstance target);
 }

@@ -92,7 +92,7 @@ static const std::vector<OffsetDesc> OFFSET_GROUPS = {
 	{ 224, 364, 380, 512, 1054, 1055 },
 };
 
-static const std::unordered_map<uint32, RomVersionDesc> VERSION_LOOKUP = {
+static const std::unordered_map<uint64, RomVersionDesc> VERSION_LOOKUP = {
 	{ 39296686, { semver::version { 4, 0, 0 }, 0 }},
 	{ 2059020996, { semver::version { 4, 0, 1 }, 0 }},
 	{ 2638915703, { semver::version { 4, 0, 2 }, 0 }},

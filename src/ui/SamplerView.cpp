@@ -409,7 +409,7 @@ void populateRemoveKit(SystemPtr system, fw::Menu& target) {
 	for (size_t i = 0; i < lsdj::Rom::KIT_COUNT; ++i) {
 		if (rom.getKit(i).isValid()) {
 			target.action(fmt::format("{}: {}", i, rom.getKitName(i)), [system]() {
-				lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+				lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Write);
 				//rom.removeKit(i);
 			});
 		}

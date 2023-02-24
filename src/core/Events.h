@@ -1,9 +1,11 @@
 #pragma once
 
+#include <chrono>
+
 #include "foundation/DataBuffer.h"
+#include "core/ProjectState.h"
 #include "core/System.h"
 #include "core/SystemSettings.h"
-#include "core/ProjectState.h"
 
 namespace rp {
 	struct AddSystemEvent {
@@ -72,10 +74,10 @@ namespace rp {
 	};
 
 	struct PingEvent {
-		uint64 time;
+		std::chrono::high_resolution_clock::time_point time;
 	};
 
 	struct PongEvent {
-		uint64 time;
+		std::chrono::high_resolution_clock::time_point time;
 	};
 }

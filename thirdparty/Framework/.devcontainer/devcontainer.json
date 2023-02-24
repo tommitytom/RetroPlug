@@ -1,5 +1,5 @@
 {
-	"name": "Retro Plug",
+	"name": "Framework",
 
 	"build": {
 		"dockerfile": "Dockerfile",
@@ -24,17 +24,21 @@
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": [
-		"dbaeumer.vscode-eslint",
-		"ms-vscode.cpptools",
-		"dtsvet.vscode-wasm",
-		"firefox-devtools.vscode-firefox-debug",
-		"ms-edgedevtools.vscode-edge-devtools",
-		"mutantdino.resourcemonitor",
-		"sumneko.lua",
-		"eamodio.gitlens",
-		"mhutchie.git-graph"
-	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"dbaeumer.vscode-eslint",
+				"ms-vscode.cpptools",
+				"dtsvet.vscode-wasm",
+				"firefox-devtools.vscode-firefox-debug",
+				"ms-edgedevtools.vscode-edge-devtools",
+				"mutantdino.resourcemonitor",
+				"sumneko.lua",
+				"eamodio.gitlens",
+				"mhutchie.git-graph"
+			]
+		}
+	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [

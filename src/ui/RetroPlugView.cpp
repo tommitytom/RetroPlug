@@ -8,8 +8,8 @@
 //#include "foundation/MetaFactory.h"
 #include "foundation/StringUtil.h"
 #include "foundation/SolUtil.h"
+#include "foundation/LuaScriptResource.h"
 
-#include "core/ConfigLoader.h"
 #include "core/Events.h"
 #include "core/FileManager.h"
 #include "core/Project.h"
@@ -27,8 +27,11 @@
 #include "ui/ViewManager.h"
 
 #include "fonts/PlatNomor.h"
+#include "foundation/LuaSerializer.h"
 
 using namespace rp;
+
+constexpr std::chrono::duration AUDIO_THREAD_TIMEOUT = std::chrono::milliseconds(500);
 
 RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus):
 	View({ 480, 432 }),
@@ -39,10 +42,28 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	setType<RetroPlugView>();
 	setName("RetroPlug v0.4.0");
 	setSizingPolicy(fw::SizingPolicy::FitToContent);
-	ConfigLoader::loadConfig(_typeRegistry, "C:\\temp\\rpconfig\\config.lua", _config);
+}
+
+template <typename T>
+void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloader, std::string_view path, T& target) {
+	fw::ResourceManager& rm = *reloader.getResourceManager();
+
+	reloader.startWatch<fw::LuaScriptResource>(path, [&](const fw::LuaScriptHandle& handle) {
+		fw::LuaSerializer::deserializeFromBuffer(reg, handle.getResource().getData(), target);
+	});
+
+	rm.load<fw::LuaScriptResource>(path);
 }
 
 void RetroPlugView::onInitialize() {
+	fw::ResourceManager& rm = getResourceManager();
+	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
+
+	_resourceReloader.setResourceManager(rm);
+	_resourceReloader.startWatch("C:\\temp\\rpconfig");
+
+	setupScriptWatch(_typeRegistry, _resourceReloader, "C:\\temp\\rpconfig\\config.lua", _config);
+	
 	createState<SystemOverlayManager>();
 	createState(entt::forward_as_any(_project.getSystemFactory()));
 
@@ -50,7 +71,7 @@ void RetroPlugView::onInitialize() {
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
 	
-	getResourceManager().create<fw::Font>("PlatNomor", fontDesc);
+	rm.create<fw::Font>("PlatNomor", fontDesc);
 
 	_fileManager = &this->createState<FileManager>();
 	this->createState(entt::forward_as_any(_project));
@@ -61,6 +82,15 @@ void RetroPlugView::onInitialize() {
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
 
 	_nextStateFetch = _stateFetchInterval;
+}
+
+bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
+	if (ev.key == VirtualKey::P && ev.down) {
+		_doPing = !_doPing;
+		return true;
+	}
+
+	return false;
 }
 
 void RetroPlugView::setupEventHandlers() {
@@ -88,10 +118,9 @@ void RetroPlugView::setupEventHandlers() {
 	});
 
 	node.receive<PongEvent>([&](PongEvent&& ev) {
-		uint64 time = (uint64)std::chrono::high_resolution_clock::now().time_since_epoch().count();
-		uint64 duration = time - ev.time;
-		f32 ms = (f32)duration * 0.000001f;
-		_lastPingTime = 0;
+		_lastPongTime = hrc::now();
+		//std::chrono::nanoseconds duration = *_lastPongTime - ev.time;
+		_lastPingTime = std::nullopt;
 	});
 }
 
@@ -117,9 +146,30 @@ void RetroPlugView::onUpdate(f32 delta) {
 	fw::EventNode& eventNode = getState<fw::EventNode>();
 	eventNode.update();
 
-	if (_lastPingTime == 0) {
-		_lastPingTime = (uint64)std::chrono::high_resolution_clock::now().time_since_epoch().count();
-		eventNode.send("Audio"_hs, PingEvent{ .time = _lastPingTime });
+	_resourceReloader.update();
+	getResourceManager().frame();
+
+	hrc::time_point time =  hrc::now();
+
+	if (_doPing && !_lastPingTime.has_value()) {
+		_lastPingTime = time;
+		eventNode.send("Audio"_hs, PingEvent{ .time = time });
+	}
+
+	bool audioThreadActive = _lastPongTime.has_value() && (time - *_lastPongTime) < AUDIO_THREAD_TIMEOUT;
+	if (audioThreadActive != _audioThreadActive) {
+		_audioThreadActive = audioThreadActive;
+		
+		if (!audioThreadActive) {
+			_threadWarning = this->addChild<fw::LabelView>("Audio Thread Warning");
+			_threadWarning->setDimensions({ 300, 100 });
+			_threadWarning->setText("WARNING!");
+		} else {
+			if (_threadWarning) {
+				_threadWarning->remove();
+				_threadWarning = nullptr;
+			}
+		}
 	}
 
 	f32 scale = _project.getScale();

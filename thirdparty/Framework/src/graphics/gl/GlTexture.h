@@ -27,6 +27,8 @@ namespace fw {
 		GlTextureProvider();
 		~GlTextureProvider() = default;
 
+		void getExtensions(std::vector<std::string>& target) override { target.insert(target.begin(), { ".png", ".jpg" }); }
+
 		std::shared_ptr<Resource> getDefault() override { return _default; }
 
 		std::shared_ptr<Resource> load(std::string_view uri) override;

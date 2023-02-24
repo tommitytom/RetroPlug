@@ -8,16 +8,18 @@
                 "${workspaceFolder}/thirdparty/**"
             ],
             "defines": [
-                "GB_INTERNAL",
-                "GB_DISABLE_TIMEKEEPING",
-                "GB_DISABLE_DEBUGGER",
                 "RP_LINUX"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "linux-clang-x64",
             "configurationProvider": "ms-vscode.makefile-tools",
-            "compilerPath": "/usr/bin/clang++"
+            "compilerPath": "/usr/bin/clang++",
+            "browse": {
+                "path": [
+                    "/emsdk/upstream/emscripten/system/include"
+                ]
+            }
         },
         {
             "name": "Win32",
@@ -27,9 +29,6 @@
                 "${workspaceFolder}/thirdparty/**"
             ],
             "defines": [
-                "GB_INTERNAL",
-                "GB_DISABLE_TIMEKEEPING",
-                "GB_DISABLE_DEBUGGER",
                 "RP_WINDOWS"
             ],
             "cStandard": "c17",

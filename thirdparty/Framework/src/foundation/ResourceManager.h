@@ -15,6 +15,7 @@ namespace fw {
 		std::unordered_map<entt::id_type, std::shared_ptr<ResourceProvider>> _providers;
 		ResourceHandleLookup _resources;
 		std::filesystem::path _rootPath;
+		std::vector<ResourceHandle> _loadedThisFrame;
 
 	public:
 		ResourceManager() = default;
@@ -69,6 +70,11 @@ namespace fw {
 			return *_providers[entt::type_id<ResourceT>().index()];
 		}
 
+		bool has(std::string_view uri) const {
+			UriHash uriHash = entt::hashed_string(uri.data());
+			return _resources.contains(uriHash);
+		}
+
 		ResourceHandle load(std::string_view uri, entt::id_type resourceType) {
 			UriHash uriHash = entt::hashed_string(uri.data());
 
@@ -91,6 +97,8 @@ namespace fw {
 				state->fromDisk = true;
 
 				_resources[uriHash] = ResourceHandle(state);
+
+				_loadedThisFrame.push_back(ResourceHandle(state));
 
 				return ResourceHandle(state);
 			} else {
@@ -196,7 +204,9 @@ namespace fw {
 				auto found = _providers.find(handle.getType().index());
 
 				if (found != _providers.end()) {
-					found->second->reload(handle);
+					if (found->second->reload(handle)) {
+						_loadedThisFrame.push_back(handle);
+					}
 
 					for (const auto& [k, v] : _resources) {
 						for (const std::string& dep : v.getDependencies()) {
@@ -206,20 +216,28 @@ namespace fw {
 						}
 					}
 				} else {
-					spdlog::error("Failed to reload resource {}. A resource provider for type {} could not be found", handle.getType().name());
+					spdlog::error("Failed to reload resource {}. A resource provider for type {} could not be found", uri, handle.getType().name());
 				}
 			} else {
 				spdlog::error("Failed to reload resource {}, the resource has not been loaded", uri);
 			}
 		}
 
+		const std::vector<ResourceHandle>& getLoadedThisFrame() const {
+			return _loadedThisFrame;
+		}
+
 		void frame() {
-			for (auto it = _resources.begin(); it != _resources.end(); ++it) {
+			_loadedThisFrame.clear();
+			
+			/*for (auto it = _resources.begin(); it != _resources.end();) {
 				if (it->second.useCount() == 1) {
 					spdlog::debug("Unloading resource: {}", it->second.getUri());
 					it = _resources.erase(it);
+				} else {
+					++it;
 				}
-			}
+			}*/
 		}
 
 		private:

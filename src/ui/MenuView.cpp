@@ -105,7 +105,7 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 			}
 		}
 
-		break;
+		return true;
 
 	case VirtualKey::RightArrow:
 		if (ev.down) {
@@ -117,44 +117,44 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 			}
 		}
 
-		break;
+		return true;
 
 	case VirtualKey::DownArrow:
 		if (ev.down) {
 			moveCursorDown();
 		}
 
-		break;
+		return true;
 	case VirtualKey::UpArrow:
 		if (ev.down) {
 			moveCursorUp();
 		}
 
-		break;
+		return true;
 
 	case VirtualKey::Enter:
 		if (ev.down) {
 			activateHighlighted();
 		}
 
-		break;
+		return true;
 
 	case VirtualKey::Space:
 		if (ev.down) {
 			activateHighlighted();
 		}
 
-		break;
+		return true;
 
 	case VirtualKey::Esc:
 		if (_escCloses && ev.down) {
 			this->remove();
 		}
 
-		break;
+		return true;
 	}
 
-	return true;
+	return false;
 }
 
 void MenuView::setMenu(fw::MenuPtr menu) {

@@ -29,6 +29,7 @@ function m.Foundation.include()
 	}
 
 	dep.lua.include()
+	dep.simplefilewatcher.include()
 	dep.bgfx.compat()
 
 	filter {}
@@ -40,6 +41,7 @@ function m.Foundation.link()
 	links { "Foundation" }
 
 	dep.lua.link()
+	dep.simplefilewatcher.link()
 end
 
 function m.Foundation.project()
@@ -306,7 +308,6 @@ function m.ExampleApplication.project(name)
 		m.Application.link()
 		m.Engine.link()
 		m.Ui.link()
-		dep.simplefilewatcher.link()
 
 		defines {
 			"APPLICATION_HEADER=" .. name,

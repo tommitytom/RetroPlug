@@ -13,9 +13,11 @@ namespace fw {
 	public:
 		virtual std::shared_ptr<Resource> load(std::string_view uri) = 0;
 
-		virtual void reload(ResourceHandle handle) = 0;
+		virtual bool reload(ResourceHandle handle) = 0;
 
 		virtual std::shared_ptr<Resource> getDefault() { return nullptr; }
+
+		virtual void getExtensions(std::vector<std::string>& target) {}
 	};
 
 	template <typename T>
@@ -30,7 +32,7 @@ namespace fw {
 
 		virtual bool update(T& resource, const typename T::DescT& desc) { return false; }
 
-		virtual void reload(ResourceHandle handle) override {
+		virtual bool reload(ResourceHandle handle) override {
 			ResourceHandleState& state = handle.getState();
 
 			if (state.fromDisk) {
@@ -39,6 +41,8 @@ namespace fw {
 				assert(state.desc);
 				state.resource = create(entt::any_cast<typename T::DescT>(state.desc));
 			}
+
+			return state.resource != nullptr;
 		}
 
 		std::shared_ptr<T> createTyped(const typename T::DescT& desc) {
