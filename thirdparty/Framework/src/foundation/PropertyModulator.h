@@ -2,7 +2,9 @@
 
 #include "foundation/Math.h"
 #include "foundation/MathUtil.h"
+#include "foundation/MetaProperties.h"
 #include "foundation/Properties.h"
+#include "foundation/TypeRegistry.h"
 
 namespace fw {
 	struct PropertyModulator {
@@ -27,9 +29,49 @@ namespace fw {
 
 		struct Target {
 			std::string name;
-			entt::meta_data field;
-			PropertyF32 source;
-			PropertyF32 target;
+			const fw::Field* field = nullptr;
+			entt::any source;
+			entt::any target;
+			
+			/*Target() {}
+
+			Target(const Target& other) = delete;
+
+			Target(Target&& other) noexcept {
+				*this = std::move(other);
+			}*/
+
+			/*Target& operator=(Target&& other) noexcept {
+				assert(!other.source.owner());
+				assert(!other.target.owner());
+
+				name = std::move(other.name);
+				field = other.field;
+				source = std::move(other.source);
+				target = std::move(other.target);
+
+				other.field = nullptr;
+
+				assert(!source.owner());
+				assert(!target.owner());
+
+				return *this;
+			}*/
+			
+			/*Target& operator=(const Target& other) {
+				assert(!other.source.owner());
+				assert(!other.target.owner());
+				
+				name = other.name;
+				field = other.field;
+				source = other.source.as_ref();
+				target = other.target.as_ref();
+
+				assert(!source.owner());
+				assert(!target.owner());
+
+				return *this;
+			}*/
 		};
 
 		Type type = Type::Sine;
@@ -73,13 +115,21 @@ namespace fw {
 			}
 
 			for (PropertyModulator::Target& target : this->targets) {
-				if (!target.source.isValid()) {
-					continue;
+				assert(!target.source.owner());
+				assert(!target.target.owner());
+
+				f32 source = entt::any_cast<f32>(target.source);
+				f32 min = 0.0f;
+				f32 range = 1.0f;
+
+				if (const TypedProperty<Range>* rangeProp = target.field->findProperty<Range>(); rangeProp) {
+					min = rangeProp->getValue().getMin();
+					range = rangeProp->getValue().getMax() - min;
 				}
 
-				f32 source = target.source.getValue();
-				f32 min = target.source.getMin();
-				f32 range = target.source.getRange();
+				if (const TypedProperty<StepSize>* stepSize = target.field->findProperty<StepSize>(); stepSize) {
+					
+				}
 
 				f32 ranged = source - min;
 				ranged += modSource * range * this->range;
@@ -104,7 +154,8 @@ namespace fw {
 					break;
 				}
 
-				target.target.setValue(min + ranged);
+				target.target.assign(min + ranged);
+				assert(!target.target.owner());
 			}
 		}
 	};

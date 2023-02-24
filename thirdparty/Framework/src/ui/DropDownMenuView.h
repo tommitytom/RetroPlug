@@ -42,6 +42,17 @@ namespace fw {
 			setValue(0);
 		}
 
+		template <const size_t Count>
+		void setItems(const std::array<std::string_view, Count>& items) {
+			_items.clear();
+
+			for (size_t i = 0; i < items.size(); ++i) {
+				_items.push_back(std::pair<std::string, entt::any>(items[i], i));
+			}
+
+			setValue(0);
+		}
+
 		void clearItems() {
 			_items.clear();
 			setValue(-1);

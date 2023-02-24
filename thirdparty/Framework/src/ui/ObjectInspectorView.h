@@ -16,8 +16,8 @@ namespace fw {
 	class ObjectInspectorView : public PropertyEditorView {
 	private:
 		struct FieldWrapper {
-			entt::meta_data field;
-			entt::meta_any value;
+			const fw::Field& field;
+			entt::any value;
 			PropertyEditorBasePtr editor;
 		};
 
@@ -30,10 +30,10 @@ namespace fw {
 
 	public:
 		template <typename T>
-		std::shared_ptr<T> findEditor(entt::meta_data field) {
+		std::shared_ptr<T> findEditor(const fw::Field& field) {
 			for (const FieldGroup& group : _fieldGroups) {
 				for (const FieldWrapper& wrapper : group.fields) {
-					if (wrapper.field.id() == field.id()) {
+					if (wrapper.field.type == field.type) {
 						return std::static_pointer_cast<T>(wrapper.editor);
 					}
 				}
@@ -42,43 +42,35 @@ namespace fw {
 			return nullptr;
 		}
 
-		void addObject(std::string_view name, entt::meta_any obj) {
+		void addObject(const fw::TypeRegistry& reg, std::string_view name, fw::TypeInstance objInstance) {
 			size_t fieldId = 0;
 			size_t groupId = _fieldGroups.size();
+			
+			entt::any& obj = objInstance.getValue();
+			assert(!obj.owner());
 
-			entt::meta_type objType = obj.type();
-			assert(objType.id() != 0);
+			const fw::TypeInfo* objType = reg.findTypeInfo(obj);
+			assert(objType);
 
 			Group& group = pushGroup(name);
 			FieldGroup fieldGroup;
 
-			std::vector<entt::meta_data> fields = MetaUtil::getSortedFields(objType);
-
-			for (const entt::meta_data& field : fields) {
+			for (const fw::Field& field : objType->fields) {
 				FieldWrapper fieldWrap = {
 					.field = field,
 					.value = field.get(obj)
 				};
 
-				entt::meta_type fieldType = field.type();
-				entt::meta_prop nameProp = field.prop("Name"_hs);
-				std::string_view name = nameProp.value().cast<std::string_view>();
-
-				if (fieldType.is_enum()) {
-					entt::meta_any v = fieldWrap.value;
-					v.allow_cast<int32>();
-					int32 value = v.cast<int32>();
-					fieldWrap.editor = createDropDown<int32>(name, field, value, groupId, fieldId);
-				} else if (fieldType.is_arithmetic()) {
-					if (fieldType == entt::resolve<f32>()) {
-						fieldWrap.editor = createSlider<f32>(name, field, fieldWrap.value.cast<f32>(), groupId, fieldId);
-					} else if (fieldType == entt::resolve<size_t>()) {
-						fieldWrap.editor = createSlider<size_t>(name, field, fieldWrap.value.cast<size_t>(), groupId, fieldId);
-					}
-				} else if (fieldType.is_class()) {
-					if (fieldType == entt::resolve<std::string>()) {
-						if (UriBrowser uriBrowser; MetaUtil::tryGetProp<UriBrowser>(field, uriBrowser)) {
-							std::vector<std::string> uris = getResourceManager().getUris(uriBrowser.getItems());
+				const fw::TypeInfo& fieldType = reg.getTypeInfo(field.type);
+				
+				if (fieldType.isEnum()) {
+					fieldWrap.editor = createDropDown(reg, field.name, field, fieldWrap.value, groupId, fieldId);
+				} else if (fieldType.isIntegral() || fieldType.isFloat()) {
+					fieldWrap.editor = createSlider(field.name, field, fieldWrap.value, groupId, fieldId);
+				} else if (fieldType.isClass()) {
+					if (fieldType.isType<std::string>()) {
+						if (const TypedProperty<UriBrowser>* uriBrowser = fieldType.findProperty<UriBrowser>(); uriBrowser) {
+							std::vector<std::string> uris = getResourceManager().getUris(uriBrowser->getValue().getItems());
 
 							DropDownMenuViewPtr dropdown = addProperty<DropDownMenuView>(name);
 
@@ -99,15 +91,10 @@ namespace fw {
 			_fieldGroups.push_back(std::move(fieldGroup));
 		}
 
-		template <typename T>
-		void addObject(std::string_view name, T& obj) {
-			addObject(name, entt::meta_handle(obj)->as_ref());
-		}
-
-		PropertyEditorBasePtr getPropertyEditor(entt::meta_data field) {
+		PropertyEditorBasePtr getPropertyEditor(const fw::Field& field) {
 			for (const FieldGroup& group : _fieldGroups) {
 				for (const FieldWrapper& wrapper : group.fields) {
-					if (wrapper.field.id() == field.id()) {
+					if (wrapper.field == field) {
 						return wrapper.editor;
 					}
 				}
@@ -117,53 +104,125 @@ namespace fw {
 		}
 
 		template <typename T>
-		SliderViewPtr createSlider(std::string_view nameView, entt::meta_data field, T value, size_t groupId, size_t fieldId) {
+		T anyToNumber(entt::any& value) {
+			static_assert(std::is_arithmetic_v<T>);
+
+			fw::TypeId typeId = fw::getTypeId(value);
+
+			if (typeId == fw::getTypeId<f32>()) {
+				return static_cast<T>(entt::any_cast<f32>(value));
+			} else if (typeId == fw::getTypeId<f64>()) {
+				return static_cast<T>(entt::any_cast<f64>(value));
+			} else if (typeId == fw::getTypeId<int8>()) {
+				return static_cast<T>(entt::any_cast<int8>(value));
+			} else if (typeId == fw::getTypeId<int16>()) {
+				return static_cast<T>(entt::any_cast<int16>(value));
+			} else if (typeId == fw::getTypeId<int32>()) {
+				return static_cast<T>(entt::any_cast<int32>(value));
+			} else if (typeId == fw::getTypeId<int64>()) {
+				return static_cast<T>(entt::any_cast<int64>(value));
+			} else if (typeId == fw::getTypeId<uint8>()) {
+				return static_cast<T>(entt::any_cast<uint8>(value));
+			} else if (typeId == fw::getTypeId<uint16>()) {
+				return static_cast<T>(entt::any_cast<uint16>(value));
+			} else if (typeId == fw::getTypeId<uint32>()) {
+				return static_cast<T>(entt::any_cast<uint32>(value));
+			} else if (typeId == fw::getTypeId<uint64>()) {
+				return static_cast<T>(entt::any_cast<uint64>(value));
+			} else if (typeId == fw::getTypeId<bool>()) {
+				return static_cast<T>(entt::any_cast<bool>(value));
+			}
+			
+			assert(false);
+
+			return 0;
+		}
+
+		template <typename T>
+		entt::any numberToAny(T num, TypeId targetType) {
+			static_assert(std::is_arithmetic_v<T>);
+
+			if (targetType == fw::getTypeId<f32>()) {
+				return entt::any(static_cast<f32>(num));
+			} else if (targetType == fw::getTypeId<f64>()) {
+				return entt::any(static_cast<f64>(num));
+			} else if (targetType == fw::getTypeId<int8>()) {
+				return entt::any(static_cast<int8>(num));
+			} else if (targetType == fw::getTypeId<int16>()) {
+				return entt::any(static_cast<int16>(num));
+			} else if (targetType == fw::getTypeId<int32>()) {
+				return entt::any(static_cast<int32>(num));
+			} else if (targetType == fw::getTypeId<int64>()) {
+				return entt::any(static_cast<int64>(num));
+			} else if (targetType == fw::getTypeId<uint8>()) {
+				return entt::any(static_cast<uint8>(num));
+			} else if (targetType == fw::getTypeId<uint16>()) {
+				return entt::any(static_cast<uint16>(num));
+			} else if (targetType == fw::getTypeId<uint32>()) {
+				return entt::any(static_cast<uint32>(num));
+			} else if (targetType == fw::getTypeId<uint64>()) {
+				return entt::any(static_cast<uint64>(num));
+			} else if (targetType == fw::getTypeId<bool>()) {
+				return entt::any(static_cast<bool>(num));
+			}
+
+			assert(false);
+
+			return 0;
+		}
+
+		SliderViewPtr createSlider(std::string_view nameView, const fw::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
+			assert(!value.owner());
+
 			std::string name;
-			if (DisplayName displayName; MetaUtil::tryGetProp<DisplayName>(field, displayName)) {
-				name = displayName.getName();
+			if (const TypedProperty<DisplayName>* displayName = field.findProperty<DisplayName>(); displayName) {
+				name = displayName->getValue().getName();
 			} else {
 				name = StringUtil::formatMemberName(nameView);
 			}
 
 			SliderViewPtr slider = addProperty<SliderView>(name);
 
-			if (Range range; MetaUtil::tryGetProp<Range>(field, range)) {
-				slider->setRange(range.getMin(), range.getMax());
+			if (const TypedProperty<Range>* range = field.findProperty<Range>(); range) {
+				slider->setRange(range->getValue().getMin(), range->getValue().getMax());
 			}
 
-			if (StepSize stepSize; MetaUtil::tryGetProp<StepSize>(field, stepSize)) {
-				slider->setStepSize(stepSize.getValue());
+			if (const TypedProperty<StepSize>* stepSize = field.findProperty<StepSize>(); stepSize) {
+				slider->setStepSize(stepSize->getValue().getValue());
 			}
 
 			/*if (Curve curve; MetaUtil::tryGetProp<Curve>(field, curve)) {
 				slider->setCurve(curve.getFunc());
 			}*/
 
-			slider->setValue((f32)value);
+			slider->setValue(anyToNumber<f32>(value));
 
 			slider->ValueChangeEvent = [groupId, fieldId, this](f32 v) {
-				_fieldGroups[groupId].fields[fieldId].value.assign((T)v);
+				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
+
+				_fieldGroups[groupId].fields[fieldId].value.assign(v);
+
+				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
 			};
 
 			return slider;
 		}
 
-		template <typename T>
-		DropDownMenuViewPtr createDropDown(std::string_view nameView, entt::meta_data field, T value, size_t groupId, size_t fieldId) {
-			assert(field.type().is_enum());
+		DropDownMenuViewPtr createDropDown(const TypeRegistry& reg, std::string_view nameView, const fw::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
+			assert(reg.getTypeInfo(field.type).isEnum());
 
 			std::vector<std::string> items;
 
-			std::vector<entt::meta_data> fields = MetaUtil::getSortedFields(field.type());
+			const fw::TypeInfo& enumType = reg.getTypeInfo(field.type);
 
-			for (entt::meta_data enumField : fields) {
-				std::string enumFieldName = StringUtil::formatMemberName(MetaUtil::getName(enumField));
+			for (const fw::Field& enumField : enumType.fields) {
+				std::string enumFieldName = StringUtil::formatMemberName(enumField.name);
 				items.push_back(enumFieldName);
 			}
 
 			std::string name;
-			if (DisplayName displayName; MetaUtil::tryGetProp<DisplayName>(field, displayName)) {
-				name = displayName.getName();
+			if (const TypedProperty<DisplayName>* displayName = field.findProperty<DisplayName>(); displayName) {
+				name = displayName->getValue().getName();
 			} else {
 				name = StringUtil::formatMemberName(nameView);
 			}
@@ -171,10 +230,18 @@ namespace fw {
 			DropDownMenuViewPtr dropdown = addProperty<DropDownMenuView>(name);
 
 			dropdown->setItems(items);
-			dropdown->setValue((int32)value);
+			dropdown->setValue(anyToNumber<int32>(value));
 
 			dropdown->ValueChangeEvent = [groupId, fieldId, this](int32 v) {
-				_fieldGroups[groupId].fields[fieldId].value.assign((T)v);
+				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
+
+				entt::any val = _fieldGroups[groupId].fields[fieldId].value.as_ref();
+				assert(!val.owner());
+
+				val.assign(numberToAny(v, fw::getTypeId(val)));
+				assert(!val.owner());
+
+				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
 			};
 
 			return dropdown;

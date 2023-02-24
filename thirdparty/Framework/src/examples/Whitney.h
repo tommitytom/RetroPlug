@@ -1,7 +1,6 @@
 #pragma once
 
 #include "foundation/Math.h"
-#include "foundation/MetaFactory.h"
 #include "foundation/PropertyModulator.h"
 
 #include "ui/DropDownMenuView.h"
@@ -52,6 +51,8 @@ namespace fw {
 		SliderViewPtr _positionSlider;
 
 		std::vector<Dot> _dots;
+		
+		fw::TypeRegistry _typeRegistry;
 
 	public:
 		Whitney() : View({ 1024, 768 }) {
@@ -59,28 +60,25 @@ namespace fw {
 			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
 
-			MetaFactory<PropertyModulator::Type>()
-				.addField<PropertyModulator::Type::Sine>("sine")
-				.addField<PropertyModulator::Type::Triangle>("triangle")
-				.addField<PropertyModulator::Type::SawTooth>("sawTooth")
-				.addField<PropertyModulator::Type::Pulse>("pulse");
+			_typeRegistry.addCommonTypes();
+			
+			_typeRegistry.addEnum<PropertyModulator::Type>();
+			_typeRegistry.addEnum<PropertyModulator::Mode>();
+			_typeRegistry.addEnum<PropertyModulator::Timing>();
 
-			MetaFactory<PropertyModulator::Mode>()
-				.addField<PropertyModulator::Mode::Wrap>("wrap")
-				.addField<PropertyModulator::Mode::Clamp>("clamp")
-				.addField<PropertyModulator::Mode::PingPong>("pingPong");
+			_typeRegistry.addType<Range>();
+			_typeRegistry.addType<Curve>();
+			_typeRegistry.addType<StepSize>();
+			_typeRegistry.addType<UriBrowser>();
+			_typeRegistry.addType<DisplayName>();
 
-			MetaFactory<PropertyModulator::Timing>()
-				.addField<PropertyModulator::Timing::Frequency>("frequency")
-				.addField<PropertyModulator::Timing::Multiplier>("multiplier");
-
-			MetaFactory<PropertyModulator>()
+			_typeRegistry.addType<PropertyModulator>()
 				.addField<&PropertyModulator::type>("type")
 				.addField<&PropertyModulator::mode>("mode")
 				.addField<&PropertyModulator::frequency>("frequency", Range(0.01f, 1.0f))
 				.addField<&PropertyModulator::range>("range");
 
-			MetaFactory<Settings>()
+			_typeRegistry.addType<Settings>()
 				.addField<&Settings::dotCount>("dotCount", Range(2, 20000))
 				.addField<&Settings::duration>("duration", Range(2, 20000), Curve(Curves::pow2))
 				.addField<&Settings::minSize>("minSize", Range(0.01f, 50.0f))
@@ -107,31 +105,26 @@ namespace fw {
 				_dots.push_back(Dot());
 			}
 
-			std::vector<entt::meta_data> fields = MetaUtil::getSortedFields(entt::resolve<Settings>());
-
-			for (entt::meta_data field : fields) {
-				if (field.type() != entt::resolve<f32>()) {
+			for (const fw::Field& field : _typeRegistry.getTypeInfo<Settings>().fields) {
+				if (field.type != getTypeId<f32>()) {
 					continue;
 				}
 
-				std::string fieldName = StringUtil::formatMemberName(MetaUtil::getName(field));
+				std::string fieldName = StringUtil::formatMemberName(field.name);
 				_modTargetNames.push_back(fieldName);
 
-				Range range;
-				StepSize stepSize;
-
-				MetaUtil::tryGetProp<Range>(field, range);
-				MetaUtil::tryGetProp<StepSize>(field, stepSize);
-
-				f32* baseValue = field.get(_baseSettings).try_cast<f32>();
-				f32* modulatedValue = field.get(_settings).try_cast<f32>();
+				assert(!field.get(_baseSettings).owner());
+				assert(!field.get(_settings).owner());
 
 				_modTargets.push_back(PropertyModulator::Target{
-					.name = fieldName,
-					.field = field,
-					.source = PropertyF32(baseValue, range.getMin(), range.getMax(), stepSize.getValue()),
-					.target = PropertyF32(modulatedValue, range.getMin(), range.getMax(), stepSize.getValue())
+					.name = std::move(fieldName),
+					.field = &field,
+					.source = field.get(_baseSettings).as_ref(),
+					.target = field.get(_settings).as_ref()
 				});
+
+				assert(!_modTargets.back().source.owner());
+				assert(!_modTargets.back().target.owner());
 			}
 
 			addModulator();
@@ -155,7 +148,7 @@ namespace fw {
 				_dirty = true;
 			};
 
-			_objectInspector->addObject("Settings", _baseSettings);
+			_objectInspector->addObject(_typeRegistry, "Settings", _baseSettings);
 
 			for (size_t i = 0; i < _modulators.size(); ++i) {
 				_objectInspector->pushGroup(fmt::format("Modulator {}", i + 1));
@@ -165,8 +158,8 @@ namespace fw {
 
 				modTarget->ValueChangeEvent = [i, this](int32 index) {
 					if (index >= 0) {
-						const PropertyModulator::Target& sourceTarget = _modTargets[index];
-						auto editor = _objectInspector->findEditor<SliderView>(sourceTarget.field);
+						PropertyModulator::Target& sourceTarget = _modTargets[index];
+						auto editor = _objectInspector->findEditor<SliderView>(*sourceTarget.field);
 
 						if (_modulators[i].second) {
 							SliderViewPtr slider = _modulators[i].second->asShared<SliderView>();
@@ -174,7 +167,12 @@ namespace fw {
 						}
 
 						_modulators[i].first.targets.clear();
-						_modulators[i].first.targets.push_back(sourceTarget);
+						_modulators[i].first.targets.push_back(PropertyModulator::Target{
+							.name = sourceTarget.name,
+							.field = sourceTarget.field,
+							.source = std::move(sourceTarget.source),
+							.target = std::move(sourceTarget.target),
+						});
 
 						editor->setHandleCount(2);
 						_modulators[i].second = editor;
@@ -184,15 +182,15 @@ namespace fw {
 				//_objectInspector->addEnumProperty<PropertyModulator::Type>(_modulators[i].first);
 
 				DropDownMenuViewPtr typeMenu = _objectInspector->addProperty<DropDownMenuView>("Type");
-				typeMenu->setItems(MetaUtil::getEnumNames<PropertyModulator::Type>(true));
+				typeMenu->setItems(magic_enum::enum_names<PropertyModulator::Type>());
 				typeMenu->ValueChangeEvent = [i, this](int32 index) { _modulators[i].first.type = (PropertyModulator::Type)index; };
 
 				DropDownMenuViewPtr modeMenu = _objectInspector->addProperty<DropDownMenuView>("Mode");
-				modeMenu->setItems(MetaUtil::getEnumNames<PropertyModulator::Mode>(true));
+				modeMenu->setItems(magic_enum::enum_names<PropertyModulator::Mode>());
 				modeMenu->ValueChangeEvent = [i, this](int32 index) { _modulators[i].first.mode = (PropertyModulator::Mode)index; };
 
 				DropDownMenuViewPtr timingMenu = _objectInspector->addProperty<DropDownMenuView>("Timing");
-				timingMenu->setItems(MetaUtil::getEnumNames<PropertyModulator::Timing>(true));
+				timingMenu->setItems(magic_enum::enum_names<PropertyModulator::Timing>());
 				timingMenu->ValueChangeEvent = [i, this](int32 index) { _modulators[i].first.timing = (PropertyModulator::Timing)index; };
 
 				if (_modulators[i].first.timing == PropertyModulator::Timing::Frequency) {
@@ -241,7 +239,7 @@ namespace fw {
 					mod.first.update(delta);
 
 					for (PropertyModulator::Target& target : mod.first.targets) {
-						mod.second->asShared<SliderView>()->setValueAt(1, target.target.getValue());
+						mod.second->asShared<SliderView>()->setValueAt(1, entt::any_cast<f32>(target.target));
 					}
 				}
 			}

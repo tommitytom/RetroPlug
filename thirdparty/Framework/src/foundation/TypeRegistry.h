@@ -176,6 +176,14 @@ namespace fw {
 		entt::any value;
 	};
 
+	template <typename T>
+	struct TypedProperty : public Property {
+		const T& getValue() const {
+			assert(type == fw::getTypeId<T>());
+			return entt::any_cast<const T&>(value);
+		}
+	};
+
 	struct Field {
 		TypeId type = INVALID_TYPE_ID;
 		NameHash hash = INVALID_NAME_HASH;
@@ -184,6 +192,10 @@ namespace fw {
 
 		void(*setter)(TypeInstance instance, const entt::any& value) = nullptr;
 		entt::any(*getter)(TypeInstance instance) = nullptr;
+
+		bool operator==(const Field& other) const {
+			return type == other.type;
+		}
 
 		template <typename T>
 		void set(TypeInstance instance, const T& value) const {
@@ -201,7 +213,40 @@ namespace fw {
 
 		entt::any get(TypeInstance instance) const {
 			assert(getter);
-			return getter(std::forward<TypeInstance>(instance));
+			return getter(std::forward<TypeInstance>(instance)).as_ref();
+		}
+
+		const Property* findProperty(TypeId typeId) const {
+			for (const Property& prop : properties) {
+				if (prop.type == typeId) {
+					return &prop;
+				}
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		const TypedProperty<T>* findProperty() const {
+			return static_cast<const TypedProperty<T>*>(findProperty(fw::getTypeId<T>()));
+		}
+		
+		const Property& getProperty(TypeId typeId) const {
+			const Property* prop = findProperty(typeId);
+			assert(prop);
+			return *prop;
+		}
+
+		template <typename T>
+		const TypedProperty<T>& getProperty() const {
+			const TypedProperty<T>* prop = findProperty<T>();
+			assert(prop);
+			return *prop;
+		}
+
+		template <typename T>
+		const T& getPropertyValue() const {
+			return getProperty<T>().getValue();
 		}
 	};
 
@@ -263,11 +308,6 @@ namespace fw {
 			return !!(traits & internal::TypeTraits::Array);
 		}
 
-		template <typename T>
-		const Property* findProperty() const {
-			return findProperty(getTypeId<T>());
-		}
-
 		const Property* findProperty(TypeId typeId) const {
 			for (const Property& prop : properties) {
 				if (prop.type == typeId) {
@@ -278,13 +318,36 @@ namespace fw {
 			return nullptr;
 		}
 
+		template <typename T>
+		const TypedProperty<T>* findProperty() const {
+			return static_cast<const TypedProperty<T>*>(findProperty(fw::getTypeId<T>()));
+		}
+
+		const Property& getProperty(TypeId typeId) const {
+			const Property* prop = findProperty(typeId);
+			assert(prop);
+			return *prop;
+		}
+
+		template <typename T>
+		const TypedProperty<T>& getProperty() const {
+			const TypedProperty<T>* prop = findProperty<T>();
+			assert(prop);
+			return *prop;
+		}
+
+		template <typename T>
+		const T& getPropertyValue() const {
+			return getProperty<T>().getValue();
+		}
+
 		bool hasProperty(TypeId typeId) const {
 			return findProperty(typeId) != nullptr;
 		}
 
 		template <typename T>
 		bool hasProperty() const {
-			return findProperty(getTypeId<T>()) != nullptr;
+			return hasProperty(getTypeId<T>());
 		}
 
 		const Field* findField(NameHash nameHash) const {
@@ -308,8 +371,6 @@ namespace fw {
 			assert(found);
 			found->set(std::forward<TypeInstance>(instance), value);
 		}
-
-
 	};
 
 	struct TypeRegistryState {
@@ -399,7 +460,7 @@ namespace fw {
 
 			([&] {
 				assert(_state->properties.size() < _state->properties.capacity());
-				assert(_state->findTypeInfo<PropertyType>());
+				assert(_state->findTypeInfo<PropertyType>()); // Property types must be registered
 
 				_state->properties.push_back(Property{
 					.type = getTypeId<PropertyType>(),
@@ -409,7 +470,7 @@ namespace fw {
 
 			if constexpr (std::is_member_object_pointer_v<decltype(Data)>) {
 				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
-				assert(_state->findTypeInfo<DataType>());
+				assert(_state->findTypeInfo<DataType>()); // Types referenced in fields must be registered
 
 				_state->fields.push_back(Field{
 					.type = getTypeId<DataType>(),
