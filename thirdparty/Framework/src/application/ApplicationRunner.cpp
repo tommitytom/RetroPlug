@@ -37,7 +37,7 @@ namespace fw::app {
 		if (_audioManager) {
 			_audioManager->start();
 		}
-		
+
 		//_app->onInitialize(*_uiContext, _audioManager);
 
 		return _uiContext->getMainWindow();
@@ -48,7 +48,7 @@ namespace fw::app {
 	}
 
 	int ApplicationRunner::doLoop() {
-#if RP_WEB
+#ifdef RP_WEB
 		emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
 #else
 		while (runFrame()) {}

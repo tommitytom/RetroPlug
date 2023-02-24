@@ -1,5 +1,7 @@
 #include "WebAudioManager.h"
 
+#ifdef RP_WEB
+
 #include <emscripten/em_math.h>
 #include <emscripten/webaudio.h>
 
@@ -110,3 +112,5 @@ namespace fw::audio {
 		return 48000;
 	}
 }
+
+#endif

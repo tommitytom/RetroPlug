@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef RP_WEB
 #include "AudioManager.h"
 
 namespace fw::audio {
@@ -23,3 +24,4 @@ namespace fw::audio {
 		void getDeviceNames(std::vector<std::string>& names) override;
 	};
 }
+#endif
