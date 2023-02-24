@@ -10,6 +10,8 @@
 #include "ui/SliderView.h"
 #include "ui/View.h"
 
+#include "application/Application.h"
+
 namespace fw {
 	struct Dot {
 		Point pos;
@@ -340,4 +342,6 @@ namespace fw {
 			v.a = alpha;
 		}
 	};
+
+	using WhitneyApplication = fw::app::BasicApplication<Whitney, void>;
 }

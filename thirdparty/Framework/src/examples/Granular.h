@@ -449,7 +449,7 @@ namespace fw {
 		~Granular() = default;
 
 		void onInitialize() override {
-			EventNode* eventNode = getState<EventNode>();
+			EventNode& eventNode = getState<EventNode>();
 
 			_defaultParameters.amp = 1.0f;
 			_defaultParameters.grainSize = 25.0f;
@@ -465,7 +465,7 @@ namespace fw {
 
 			_notes[0].buffer = _sampleData.ref();
 
-			eventNode->broadcast(SetNoteArrayEvent{ _notes });
+			eventNode.broadcast(SetNoteArrayEvent{ _notes });
 
 			_waveView = addChild<WaveView>("Waveform");
 			_waveView->setSizingPolicy(SizingPolicy::FitToParent);
@@ -474,17 +474,21 @@ namespace fw {
 
 			_playerOverlay = _waveView->addChild(std::make_shared<SamplePlayerOverlay>(_notes));
 
-			subscribe<SampleClickEvent>(_playerOverlay, [this, eventNode](const SampleClickEvent& ev) {
+			subscribe<SampleClickEvent>(_playerOverlay, [this](const SampleClickEvent& ev) {
+				EventNode& eventNode = getState<EventNode>();
+				
 				if (ev.pressed && !_notes[ev.index].buffer.isEmpty()) {
-					eventNode->broadcast(PlayNoteEvent{ .note = ev.index });
+					eventNode.broadcast(PlayNoteEvent{ .note = ev.index });
 				} else {
-					eventNode->broadcast<StopAllNotesEvent>();
+					eventNode.broadcast<StopAllNotesEvent>();
 				}
 			});
 
 			_markerOverlay = _waveView->addChild<WaveMarkerOverlay>("Marker Overlay");
 
-			subscribe<MarkerAddedEvent>(_markerOverlay, [eventNode, this](const MarkerAddedEvent& ev) {
+			subscribe<MarkerAddedEvent>(_markerOverlay, [this](const MarkerAddedEvent& ev) {
+				EventNode& eventNode = getState<EventNode>();
+				
 				Note& note = _notes[ev.idx];
 				assert(note.contains(ev.marker));
 
@@ -512,12 +516,14 @@ namespace fw {
 					.parameters = _defaultParameters
 				};
 
-				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+				eventNode.broadcast(SetNoteArrayEvent{ _notes });
 
 				_playerOverlay->updateHighlights();
 			});
 
-			subscribe<MarkerRemovedEvent>(_markerOverlay, [eventNode, this](const MarkerRemovedEvent& ev) {
+			subscribe<MarkerRemovedEvent>(_markerOverlay, [this](const MarkerRemovedEvent& ev) {
+				EventNode& eventNode = getState<EventNode>();
+				
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 
@@ -535,12 +541,14 @@ namespace fw {
 
 				_notes.back() = Note();
 
-				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+				eventNode.broadcast(SetNoteArrayEvent{ _notes });
 
 				_playerOverlay->updateHighlights();
 			});
 
-			subscribe<MarkerChangedEvent>(_markerOverlay, [eventNode, this](const MarkerChangedEvent& ev) {
+			subscribe<MarkerChangedEvent>(_markerOverlay, [this](const MarkerChangedEvent& ev) {
+				EventNode& eventNode = getState<EventNode>();
+				
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 
@@ -549,7 +557,7 @@ namespace fw {
 				next.buffer = _sampleData.slice(ev.marker, next.getEnd() - ev.marker);
 				next.offset = ev.marker;
 
-				eventNode->broadcast(SetNoteArrayEvent{ _notes });
+				eventNode.broadcast(SetNoteArrayEvent{ _notes });
 
 				_playerOverlay->updateHighlights();
 			});
@@ -558,27 +566,27 @@ namespace fw {
 			slider->setArea({ 10, 10, 500, 30 });
 			slider->setRange(-3.0f, 3.0f);
 			slider->setValue(0.0f);
-			slider->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::Pitch, value }); };
+			slider->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::Pitch, value }); };
 
 			auto slider2 = addChild<SliderView>("Amp slider");
 			slider2->setArea({ 10, 50, 500, 30 });
 			slider2->setRange(0.0f, 0.2f);
-			slider2->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(ParameterChangeEvent{ ParameterType::Amp, value }); };
+			slider2->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(ParameterChangeEvent{ ParameterType::Amp, value }); };
 
 			auto slider3 = addChild<SliderView>("Stretch slider");
 			slider3->setArea({ 10, 100, 500, 30 });
 			slider3->setRange(1.0f, 20.0f);
-			slider3->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::Stretch, value }); };
+			slider3->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::Stretch, value }); };
 
 			auto slider4 = addChild<SliderView>("Overlap slider");
 			slider4->setArea({ 10, 150, 500, 30 });
 			slider4->setRange(0.0f, 0.5f);
-			slider4->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::Overlap, value }); };
+			slider4->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::Overlap, value }); };
 
 			auto slider5 = addChild<SliderView>("Grain Size slider");
 			slider5->setArea({ 10, 200, 500, 30 });
 			slider5->setRange(2.0f, 50.0f);
-			slider5->ValueChangeEvent = [eventNode](f32 value) { eventNode->broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
+			slider5->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
 
 			TextureHandle knobTexture1 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
 			TextureHandle knobTexture2 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
@@ -594,15 +602,15 @@ namespace fw {
 			//knob->setArea({ 10, 250, 200, 200 });
 
 
-			eventNode->subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
+			eventNode.subscribe<PlayNoteEvent>([&](const PlayNoteEvent& ev) {
 				_playerOverlay->setHighlight(ev.note, true);
 			});
 
-			eventNode->subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) {
+			eventNode.subscribe<StopNoteEvent>([&](const StopNoteEvent& ev) {
 				_playerOverlay->setHighlight(ev.note, false);
 			});
 
-			eventNode->subscribe<StopAllNotesEvent>([&]() {
+			eventNode.subscribe<StopAllNotesEvent>([&]() {
 				_playerOverlay->removeHighlights();
 			});
 
@@ -610,7 +618,7 @@ namespace fw {
 			plot->setArea({ 10, 140, 400, 400 });
 			plot->setFunc(Envelopes::hann);*/
 
-			/*eventNode->subscribe<AudioRenderEvent>([&](const AudioRenderEvent& ev) {
+			/*eventNode.subscribe<AudioRenderEvent>([&](const AudioRenderEvent& ev) {
 				size_t copyAmount = std::min(ev.buffer.getFrameCount(), _waveformBuffer.getFrameCount());
 				size_t moveAmount = _waveformBuffer.getFrameCount() - copyAmount;
 
@@ -629,12 +637,12 @@ namespace fw {
 		}
 
 		void onUpdate(f32 delta) override {
-			getState<EventNode>()->update();
+			getState<EventNode>().update();
 		}
 
 		bool onKey(VirtualKey::Enum key, bool down) override {
 			if (key == VirtualKey::Space && down) {
-				getState<EventNode>()->broadcast<TogglePauseEvent>();
+				getState<EventNode>().broadcast<TogglePauseEvent>();
 			}
 
 			if (key == VirtualKey::E && down) {
@@ -660,11 +668,11 @@ namespace fw {
 				if (down) {
 					if (!_keysDown.contains(key)) {
 						_keysDown.insert(key);
-						getState<EventNode>()->broadcast(PlayNoteEvent{ .note = (NoteIndex)noteIdx });
+						getState<EventNode>().broadcast(PlayNoteEvent{ .note = (NoteIndex)noteIdx });
 					}
 				} else {
 					_keysDown.erase(key);
-					getState<EventNode>()->broadcast(StopNoteEvent{ .note = (NoteIndex)noteIdx });
+					getState<EventNode>().broadcast(StopNoteEvent{ .note = (NoteIndex)noteIdx });
 				}
 			}
 

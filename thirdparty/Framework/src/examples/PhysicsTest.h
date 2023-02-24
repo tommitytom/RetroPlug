@@ -44,4 +44,6 @@ namespace fw {
 
 		bool onMouseMove(Point position) override;
 	};
+
+	using PhysicsTestApplication = fw::app::BasicApplication<PhysicsTest, void>;
 }

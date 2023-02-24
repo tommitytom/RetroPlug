@@ -101,7 +101,7 @@ end
 
 function m.link()
 	m.include()
-	links { "freetype" }
+	links { "zlib", "freetype" }
 
 	filter { "system:linux" }
 		links { "dl", "pthread" }

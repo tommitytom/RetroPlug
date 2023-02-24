@@ -68,9 +68,9 @@ namespace fw {
 				for (int32 i = 0; i < res.w; ++i) {
 					f32 ratio = (f32)i / w;
 
-					_points[i] = {
-						.x = (f32)i,
-						.y = res.h - (_func(ratio) * res.h)
+					_points[i] = PointF{
+						(f32)i,
+						res.h - (_func(ratio) * res.h)
 					};
 				}
 			}
