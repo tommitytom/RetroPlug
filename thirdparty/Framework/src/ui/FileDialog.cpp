@@ -4,7 +4,7 @@
 
 using namespace fw;
 
-#ifdef RP_WINDOWS
+#ifdef FW_OS_WINDOWS
 
 #include <string>
 #include <vector>
@@ -237,7 +237,7 @@ tstring FileDialog::basicFileSave(IGraphics* ui, const std::vector<FileDialogFil
 	return tstr(f.Get());
 }*/
 
-#elif RP_WEB
+#elif FW_PLATFORM_WEB
 
 #include <emscripten.h>
 #include <spdlog/spdlog.h>

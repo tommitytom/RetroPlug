@@ -1,6 +1,6 @@
 #include "ProcessUtil.h"
 
-#ifdef RP_WINDOWS
+#ifdef FW_OS_WINDOWS
 #include <fcntl.h>
 #include <windows.h>
 #include <io.h>
@@ -44,7 +44,7 @@ std::string getCommandlineString(const std::string& path, const std::vector<std:
 }
 
 int32 ProcessUtil::runProcess(const std::string& path, const std::vector<std::string>& args, bool silent) {
-#ifdef RP_WINDOWS
+#ifdef FW_OS_WINDOWS
 	STARTUPINFO startInfo;
 
 	ZeroMemory(&startInfo, sizeof(startInfo));

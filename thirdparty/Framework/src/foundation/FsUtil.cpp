@@ -4,7 +4,7 @@
 #include <string>
 #include <spdlog/spdlog.h>
 
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 #include <emscripten.h>
 
 EM_ASYNC_JS(void, syncWebFs, (), {

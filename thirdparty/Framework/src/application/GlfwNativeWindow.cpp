@@ -75,8 +75,9 @@ void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
-	spdlog::info("GlfwNativeWindow::resizeCallback: {}, {}", x, y);
-	// NOTE: Resizing is now handled in GlfwNativeWindow::onUpdate
+	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
+	w->setDimensions({ x, y });
+	// NOTE: View resizing is handled in GlfwNativeWindow::onUpdate
 }
 
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {

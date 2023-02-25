@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stb/stb_image.h>
+
 #include "foundation/Math.h"
 #include "foundation/PropertyModulator.h"
 
@@ -100,9 +102,13 @@ namespace fw {
 			//_dotCountSlider->setCurve(SliderScaler::pow2);
 			//_durationSlider->setCurve(SliderScaler::pow2);
 
+			Dimension dim;
+			int comp;
+			stbi_uc* imageData = stbi_load_from_memory((const stbi_uc*)circle_512, (int)circle_512_len, &dim.w, &dim.h, &comp, 0);
+
 			std::vector<uint8> circleImage;
-			circleImage.resize(circle_512_len);
-			memcpy(circleImage.data(), circle_512, circle_512_len);
+			circleImage.resize(dim.w * dim.h * comp);
+			memcpy(circleImage.data(), imageData, circleImage.size());
 
 			_modulators.reserve(8);
 			_circle = getResourceManager().create<Texture>(TextureDesc {

@@ -44,8 +44,8 @@ function m.project()
 		language "C"
 		m.source()
 
-		--filter { "action:vs*" }
-			--disablewarnings { 4101, 4267, 4305, 4996, 4018, 4244 }
+		filter { "action:vs*" }
+			disablewarnings { 4101, 4267, 4305, 4996, 4018, 4244 }
 
 		filter {}
 end

@@ -14,7 +14,7 @@ function m.source()
 	filter { "system:windows or linux" }
 		files {
 			GLAD_DIR .. "/src/gl.c",
-			GLAD_DIR .. "/src/vulkan.c",
+			--GLAD_DIR .. "/src/vulkan.c",
 		}
 
 	filter { "platforms:Emscripten" }

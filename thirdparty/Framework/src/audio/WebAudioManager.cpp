@@ -1,6 +1,6 @@
 #include "WebAudioManager.h"
 
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 
 #include <emscripten/em_math.h>
 #include <emscripten/webaudio.h>

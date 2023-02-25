@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 #include "AudioManager.h"
 
 namespace fw::audio {

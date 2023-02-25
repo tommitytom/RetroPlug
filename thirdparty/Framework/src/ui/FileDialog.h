@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef RP_WINDOWS
+#ifdef FW_OS_WINDOWS
 // FIXME: For some reason this has to be defined in the header, which is a bit nasty.  I think it's
 // due to something else being included (possibly windows.h) in another file
 #include <ShObjIdl.h>
@@ -13,7 +13,7 @@
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 
-#ifdef RP_WINDOWS
+#ifdef FW_OS_WINDOWS
 namespace fw {
 	using UiHandle = void;
 }
