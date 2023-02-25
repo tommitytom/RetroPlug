@@ -12,10 +12,10 @@ function m.includeBx()
 		"BX_CONFIG_CRT_DIRECTORY_READER=0"
 	}
 
-	sysincludedirs {
+	includedirs {
 		BX_DIR .. "/3rdparty",
 		BX_DIR .. "/include",
-		BX_DIR .. "/include/compat/msvc"
+		--BX_DIR .. "/include/compat/msvc"
 	}
 
 	filter "configurations:Debug"
@@ -33,7 +33,7 @@ end
 function m.includeBimg()
 	defines { "TINYEXR_USE_MINIZ=0" }
 
-	sysincludedirs {
+	includedirs {
 		paths.DEP_ROOT .. "zlib",
 		BIMG_DIR .. "/include",
 		BIMG_DIR .. "/3rdparty",
@@ -44,7 +44,7 @@ function m.includeBimg()
 end
 
 function m.includeBgfx()
-	sysincludedirs {
+	includedirs {
 		BX_DIR .. "/include",
 		BIMG_DIR .. "/include",
 		BGFX_DIR .. "/include",
@@ -58,6 +58,10 @@ function m.includeBgfx()
 		"BGFX_CONFIG_MULTITHREADED=0",
 		-- "BGFX_CONFIG_TRANSIENT_VERTEX_BUFFER_SIZE=(6<<22)" -- Causes issues with emscripten?
 	}
+
+	filter { "platforms:Emscripten" }
+		defines { "BGFX_CONFIG_RENDERER_OPENGLES=30" }
+
 
 	--filter { "options:emscripten" }
 		--defines { "BGFX_CONFIG_RENDERER_OPENGLES=30" }
@@ -199,11 +203,11 @@ end
 
 function m.compat()
 	filter "action:vs*"
-		--includedirs { path.join(BX_DIR, "include/compat/msvc") }
+		includedirs { path.join(BX_DIR, "include/compat/msvc") }
 	filter { "system:windows", "action:gmake" }
 		includedirs { path.join(BX_DIR, "include/compat/mingw") }
 	filter { "system:macosx" }
-		sysincludedirs { path.join(BX_DIR, "include/compat/osx") }
+		includedirs { path.join(BX_DIR, "include/compat/osx") }
 		buildoptions { "-x objective-c++" }
 	filter {}
 end

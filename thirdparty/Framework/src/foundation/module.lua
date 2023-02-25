@@ -1,3 +1,4 @@
+--[[
 local m = {
 	name = "Foundation",
 	author = "tommitytom <hello@tommitytom.co.uk>",
@@ -7,7 +8,7 @@ local m = {
 }
 
 function m.include()
-	sysincludedirs {
+	includedirs {
 		"thirdparty"
 	}
 
@@ -29,4 +30,4 @@ function m.link()
 	links { "Foundation" }
 end
 
-return m
+return m]]

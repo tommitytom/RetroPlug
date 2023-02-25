@@ -2,7 +2,12 @@
 
 #include <fstream>
 
+#ifdef FW_PLATFORM_WEB
+#include <glad/gles2.h>
+#else
 #include <glad/gl.h>
+#endif
+
 //#include <glfw/glfw3.h>
 
 #include "foundation/ResourceManager.h"
@@ -46,10 +51,18 @@ namespace fw {
 	GlRenderContext::GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager)
 		: _mainWindow(mainWindow), _resolution(res), _resourceManager(resourceManager) {
 
+
+#ifdef FW_PLATFORM_WEB
+		if (!gladLoaderLoadGLES2()) {
+			spdlog::error("Failed to initialize OpenGL context");
+			return;
+		}
+#else
 		if (!gladLoaderLoadGL()) {
 			spdlog::error("Failed to initialize OpenGL context");
 			return;
 		}
+#endif
 
 		/*if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
 			spdlog::error("Failed to initialize OpenGL context");
@@ -59,8 +72,8 @@ namespace fw {
 		//glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB);
 		//glDebugMessageCallbackARB(MessageCallback, 0);
 
-		glEnable(GL_LINE_SMOOTH);
-		glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+		//glEnable(GL_LINE_SMOOTH);
+		//glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
 		_resourceManager.addProvider<Shader, GlShaderProvider>();
 		_resourceManager.addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(_resourceManager.getLookup()));

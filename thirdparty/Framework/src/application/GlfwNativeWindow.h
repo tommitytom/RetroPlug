@@ -11,12 +11,19 @@ namespace fw::app {
 	private:
 		GLFWwindow* _window = nullptr;
 		Point _lastMousePosition;
+		Dimension _dimensions;
 
 		GLFWcursor* _cursor = nullptr;
 
 	public:
-		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id) : Window(resourceManager, fontManager, view, id) {}
+		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
+			: Window(resourceManager, fontManager, view, id),
+			_dimensions(view->getDimensions())
+		{}
+
 		~GlfwNativeWindow();
+
+		void setDimensions(Dimension dimensions) override;
 
 		void onCreate() override;
 
@@ -25,7 +32,7 @@ namespace fw::app {
 		void onCleanup() override;
 
 		void onFrame() override;
-		
+
 		bool shouldClose() override;
 
 		NativeWindowHandle getNativeHandle() override;

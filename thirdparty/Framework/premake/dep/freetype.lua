@@ -1,15 +1,13 @@
 local paths = dofile("../paths.lua")
 
 local FREETYPE_DIR = paths.DEP_ROOT .. "freetype"
-local FREETYPEGL_DIR = paths.DEP_ROOT .. "freetype-gl"
 
 local m = {}
 
 function m.include()
-	sysincludedirs {
+	includedirs {
 		paths.DEP_ROOT .. "zlib",
-		FREETYPE_DIR .. "/include",
-		FREETYPEGL_DIR,
+		FREETYPE_DIR .. "/include"
 	}
 
 	defines {
@@ -69,21 +67,6 @@ function m.source()
 		FREETYPE_DIR .. "/src/type1/type1.c",
 		FREETYPE_DIR .. "/src/type42/type42.c",
 		FREETYPE_DIR .. "/src/winfonts/winfnt.c",
-
-		FREETYPEGL_DIR .. "/distance-field.h",
-		FREETYPEGL_DIR .. "/distance-field.c",
-		FREETYPEGL_DIR .. "/edtaa3func.h",
-		FREETYPEGL_DIR .. "/edtaa3func.c",
-		FREETYPEGL_DIR .. "/ftgl-utils.h",
-		FREETYPEGL_DIR .. "/ftgl-utils.c",
-		FREETYPEGL_DIR .. "/texture-font.h",
-		FREETYPEGL_DIR .. "/texture-font.c",
-		FREETYPEGL_DIR .. "/texture-atlas.h",
-		FREETYPEGL_DIR .. "/texture-atlas.c",
-		FREETYPEGL_DIR .. "/utf8-utils.h",
-		FREETYPEGL_DIR .. "/utf8-utils.c",
-		FREETYPEGL_DIR .. "/vector.h",
-		FREETYPEGL_DIR .. "/vector.c",
 	}
 
 	filter "system:windows"
@@ -101,7 +84,9 @@ end
 
 function m.link()
 	m.include()
-	links { "zlib", "freetype" }
+
+	filter { "platforms:not Emscripten" }
+		links { "freetype", "zlib" }
 
 	filter { "system:linux" }
 		links { "dl", "pthread" }

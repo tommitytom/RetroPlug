@@ -115,7 +115,8 @@
 			"format": "cpp",
 			"future": "cpp",
 			"stop_token": "cpp",
-			"valarray": "cpp"
+			"valarray": "cpp",
+			"vulkan.h": "c"
 		}
 	}
 }

@@ -18,7 +18,7 @@ namespace fw {
 		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<LabelView>(); }
 		~LabelView() = default;
 
-		void onInitialize() {
+		void onInitialize() override {
 			//setSizingPolicy(SizingPolicy::FitToContent);
 		}
 

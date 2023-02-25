@@ -109,11 +109,11 @@ void writeSourceFile(const ModuleDesc& mod, const fs::path& targetDir, const std
 
 			vars << " };" << std::endl;
 
-			lookup << "\t{ \"" << 
-				compiled.name << "\", { " << 
-				compiled.varName << ", " << 
-				compiled.data.size() << ", " << 
-				(mod.compile ? "true" : "false") << " } }," << 
+			lookup << "\t{ \"" <<
+				compiled.name << "\", { " <<
+				compiled.varName << ", " <<
+				compiled.data.size() << ", " <<
+				(mod.compile ? "true" : "false") << " } }," <<
 				std::endl;
 		}
 	}

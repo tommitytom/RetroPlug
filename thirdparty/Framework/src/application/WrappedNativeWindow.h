@@ -18,6 +18,8 @@ namespace fw::app {
 			: Window(resourceManager, fontManager, view, id), _nativeWindowHandle(nwh), _size(size) {}
 		~WrappedNativeWindow() = default;
 
+		void setDimensions(Dimension dimensions) override {}
+
 		void onCreate() override;
 
 		void onUpdate(f32 delta) override;

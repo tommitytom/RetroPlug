@@ -1,5 +1,9 @@
 #include "ApplicationRunner.h"
 
+#ifdef FW_PLATFORM_WEB
+#include <emscripten/emscripten.h>
+#endif
+
 #include "audio/MiniAudioManager.h"
 
 namespace fw::app {
@@ -48,7 +52,7 @@ namespace fw::app {
 	}
 
 	int ApplicationRunner::doLoop() {
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 		emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
 #else
 		while (runFrame()) {}
@@ -58,7 +62,7 @@ namespace fw::app {
 	}
 
 	void ApplicationRunner::webFrameCallback(void* arg) {
-		ApplicationRunner* app = (ApplicationRunner*)arg;
+		ApplicationRunner* app = reinterpret_cast<ApplicationRunner*>(arg);
 		app->runFrame();
 	}
 }

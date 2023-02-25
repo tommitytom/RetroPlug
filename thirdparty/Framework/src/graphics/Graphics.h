@@ -61,11 +61,11 @@ namespace fw {
 		}
 
 		FontHandle loadFontFromFile(const std::string& name, const std::filesystem::path& path) {
-
+			return FontHandle{};
 		}
 
 		FontHandle loadFontFromMemory(const std::string& name, const char* data, size_t size) {
-
+			return FontHandle{};
 		}
 	};
 }

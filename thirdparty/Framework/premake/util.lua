@@ -66,9 +66,11 @@ function util.createGeneratorProject(configPaths)
 	project "generator"
 		kind "Utility"
 
-		dependson { "ScriptCompiler" }
+		filter { "platforms:not Emscripten" }
+			dependson { "ScriptCompiler" }
+			prebuildcommands(commands)
 
-		prebuildcommands(commands)
+		filter {}
 
 	group ""
 end

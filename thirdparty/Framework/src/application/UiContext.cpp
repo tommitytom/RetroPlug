@@ -5,7 +5,7 @@
 #include "graphics/TextureAtlas.h"
 #include "graphics/ftgl/FtglFont.h"
 
-#define FW_RENDERER_GL
+#define FW_RENDERER_BGFX
 
 #if defined(FW_RENDERER_GL)
 #include "graphics/gl/GlRenderContext.h"

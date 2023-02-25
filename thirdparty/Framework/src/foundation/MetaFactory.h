@@ -1,5 +1,5 @@
 #pragma once
-
+/*
 //#include <entt/meta/container.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
@@ -51,7 +51,7 @@ namespace fw {
 				std::make_pair("Order"_hs, _fieldIdx++),
 				forwardProps<Property>(property)...
 			);
-			*/
+			*//*
 			return *this;
 		}
 
@@ -62,3 +62,4 @@ namespace fw {
 		}
 	};
 }
+*/

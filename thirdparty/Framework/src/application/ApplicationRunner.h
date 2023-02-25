@@ -28,6 +28,18 @@ namespace fw::app {
 
 		WindowPtr setup(std::unique_ptr<Application>&& app);
 
+		bool isReady() const {
+			return _app != nullptr;
+		}
+
+		Application& getApplication() {
+			return *_app;
+		}
+
+		UiContext& getUiContext() {
+			return *_uiContext;
+		}
+
 		bool runFrame();
 
 		int doLoop();

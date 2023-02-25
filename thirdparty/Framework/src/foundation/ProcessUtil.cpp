@@ -13,8 +13,9 @@
 #endif
 
 #include <stdio.h>
-
 #include <spdlog/spdlog.h>
+
+#include <sstream>
 
 #include "foundation/StringUtil.h"
 

@@ -2,6 +2,7 @@ local paths = dofile("paths.lua")
 local dep = dofile(paths.SCRIPT_ROOT .. "dep/index.lua")
 local iplug2 = dofile(paths.SCRIPT_ROOT .. "dep/iplug2.lua")
 local util = dofile(paths.SCRIPT_ROOT .. "util.lua")
+local emscripten = dofile(paths.SCRIPT_ROOT .. "emscripten.lua")
 
 local m = {
 	Foundation = {},
@@ -17,9 +18,15 @@ local m = {
 function m.Foundation.include()
 	dependson { "configure" }
 
-	sysincludedirs {
+	includedirs {
 		paths.DEP_ROOT,
 		paths.DEP_ROOT .. "spdlog/include"
+	}
+
+	includedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
 	}
 
 	includedirs {
@@ -57,6 +64,7 @@ function m.Foundation.project()
 		paths.SRC_ROOT .. "foundation/generated/*_%{cfg.platform}.cpp",
 	}
 
+	dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -65,12 +73,13 @@ function m.Graphics.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	--dep.bgfx.include()
+	dep.bgfx.include()
 	dep.glfw.include()
 	dep.glad.include()
 	dep.freetype.include()
+	dep.freetypeGl.include()
 
-	--dep.bgfx.compat()
+	dep.bgfx.compat()
 
 	filter {}
 end
@@ -82,8 +91,9 @@ function m.Graphics.link()
 
 	m.Foundation.link()
 	dep.glad.link()
-	--dep.bgfx.link()
+	dep.bgfx.link()
 	dep.freetype.link()
+	dep.freetypeGl.link()
 end
 
 function m.Graphics.project()
@@ -99,7 +109,7 @@ function m.Graphics.project()
 	}
 
 	excludes {
-		paths.SRC_ROOT .. "graphics/bgfx/**",
+		--paths.SRC_ROOT .. "graphics/bgfx/**",
 	}
 
 	filter("files:**.ttf")
@@ -114,6 +124,7 @@ function m.Graphics.project()
 
 	filter{}
 
+	dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -328,14 +339,19 @@ function m.ExampleApplication.project(name)
 			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
-		--[[filter { "options:emscripten" }
-			buildoptions { "-matomics", "-mbulk-memory" }
+		filter { "platforms:Emscripten" }
+			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
+			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. name .. ".html", }
 
-		filter { "options:emscripten", "configurations:Debug" }
-			linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+		filter { "platforms:Emscripten", "configurations:Debug*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }
 
-		filter { "options:emscripten", "configurations:Release" }
-			linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }]]
+		filter { "platforms:Emscripten", "configurations:Development*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.development) }
+
+		filter { "platforms:Emscripten", "configurations:Release*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.release) }
+		filter {}
 
 	project (name .. "-live++")
 		kind "ConsoleApp"
@@ -450,7 +466,7 @@ end
 	m.Application.link()
 	dep.simplefilewatcher.link()
 
-	sysincludedirs {
+	includedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en-us">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<link rel="icon" type="image/webp" sizes="16x16" href="favicon-16x16.webp">
+		<link rel="icon" type="image/webp" sizes="32x32" href="favicon-32x32.webp">
+		<title>Framework</title>
+		<style>
+			body {
+				font-family: arial;
+				margin: 0;
+				padding: none;
+				background-color: black;
+
+				overflow: hidden;
+			}
+
+			.emscripten { padding-right: 0; margin-left: auto; margin-right: auto; display: block; }
+			div.emscripten { text-align: center; }
+			div.emscripten_border { border: 1px solid black; }
+			/* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+			canvas.emscripten { border: 0px none; background-color: black; }
+
+			#canvas {
+				position: absolute;
+				top: 0;
+				left: 0;
+
+				z-index: -1;
+			}
+
+			#fullscreen-button {
+				position: absolute;
+				bottom: 10px;
+				right: 10px;
+
+				z-index: 999;
+			}
+
+			.centered {
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+			}
+
+			.lds-dual-ring {
+				display: inline-block;
+				width: 80px;
+				height: 80px;
+			}
+			.lds-dual-ring:after {
+				content: " ";
+				display: block;
+				width: 64px;
+				height: 64px;
+				margin: 8px;
+				border-radius: 50%;
+				border: 6px solid #fff;
+				border-color: #fff transparent #fff transparent;
+				animation: lds-dual-ring 1.2s linear infinite;
+			}
+			@keyframes lds-dual-ring {
+				0% {
+					transform: rotate(0deg);
+				}
+				100% {
+					transform: rotate(360deg);
+				}
+			}
+		</style>
+		<script
+			src="https://browser.sentry-cdn.com/6.17.9/bundle.min.js"
+			integrity="sha384-bg8ATkDzxNiciak2tVJV/r+DHguxvOKHQqRi2SKP2mc8IOZphuG/bYdsyBm+KQC3"
+			crossorigin="anonymous"
+		></script>
+		<script src="wasm-support.js"></script>
+		<script>
+			Sentry.init({
+				dsn: "https://e467e88c4bff44de9cb700ac08d12dc7@o1128959.ingest.sentry.io/6227916",
+				release: "embersword@v0.0.1",
+				tracesSampleRate: 1.0,
+			});
+		</script>
+	</head>
+	<body>
+		<div id="spinloader" class="lds-dual-ring centered"></div>
+
+		<script type="text/javascript" src="index.js"></script>
+
+		<input type="button" value="Fullscreen" id="fullscreen-button" onclick="Module.requestFullscreen(false, true)">
+
+		<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+
+		<script type='text/javascript'>
+			var spinloaderElement = document.getElementById('spinloader');
+			var canvas = document.getElementById('canvas');
+
+			function getUrlParameter(name) {
+				name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+				var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+				var results = regex.exec(location.search);
+				return results === null ? null : decodeURIComponent(results[1].replace(/\+/g, ' '));
+			}
+
+			var Module = {
+				preRun: [],
+				postRun: [function() {
+					setTimeout(function() {
+						var resizeFunc = Module.cwrap('resize_window', 'void', ['number', 'number']);
+
+						window.addEventListener("resize", function() {
+							var myWidth = 0;
+							var myHeight = 0;
+
+							if (typeof (window.innerWidth) == 'number') {
+								myWidth = window.innerWidth;
+								myHeight = window.innerHeight;
+							} else {
+								if (document.documentElement && (document.documentElement.clientWidth || document.documentElement.clientHeight)) {
+									myWidth = document.documentElement.clientWidth;
+									myHeight = document.documentElement.clientHeight;
+								} else {
+									if (document.body && (document.body.clientWidth || document.body.clientHeight)) {
+										myWidth = document.body.clientWidth;
+										myHeight = document.body.clientHeight;
+									}
+								}
+							}
+
+							canvas.width = myWidth;
+							canvas.height = myHeight;
+							resizeFunc(myWidth, myHeight);
+						});
+
+						window.dispatchEvent(new Event('resize'));  // Initial resize
+					}, 10);
+				}],
+				print: (function() {
+					return function(text) {
+						if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+						// These replacements are necessary if you render to raw HTML
+						//text = text.replace(/&/g, "&amp;");
+						//text = text.replace(/</g, "&lt;");
+						//text = text.replace(/>/g, "&gt;");
+						//text = text.replace('\n', '<br>', 'g');
+						console.log(text);
+					};
+				})(),
+				printErr: function(text) {
+					if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+					console.error(text);
+				},
+				canvas: (function() {
+					var canvas = document.getElementById('canvas');
+
+					// As a default initial behavior, pop up an alert when webgl context is lost. To make your
+					// application robust, you may want to override this behavior before shipping!
+					// See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+					canvas.addEventListener("webglcontextlost", function(e) {
+						alert('WebGL context lost. You will need to reload the page.');
+						e.preventDefault();
+					}, false);
+
+					return canvas;
+				})(),
+				setStatus: function(text) {
+					console.log(text);
+				},
+				totalDependencies: 0,
+				monitorRunDependencies: function(left) {
+					if (left === 0) {
+						spinloaderElement.style.display = 'none';
+					}
+				}
+			};
+
+			window.onerror = function(event) {
+				// TODO: Do not warn on ok events like simulating an infinite loop or exitStatus
+				Module.setStatus('Exception thrown, see JavaScript console');
+				Module.setStatus = function(text) {
+					if (text) Module.printErr('[post-exception status] ' + text);
+				};
+			};
+
+			function setupTickWorker(module) {
+				const tickWorker = new Worker('tick-worker.js');
+				const advanceFrameFunc = module.cwrap('advance_frame', 'void', []);
+
+				tickWorker.addEventListener('message', (e) => {
+					advanceFrameFunc();
+				});
+
+				document.addEventListener('visibilitychange', (e) => {
+					if (document.hidden) {
+						tickWorker.postMessage('start');
+					} else {
+						tickWorker.postMessage('stop');
+					}
+				});
+			}
+
+			createModule(Module).then((module) => {
+				//setupTickWorker(module)
+			});
+		</script>
+
+		{{{ SCRIPT }}}
+	</body>
+</html>

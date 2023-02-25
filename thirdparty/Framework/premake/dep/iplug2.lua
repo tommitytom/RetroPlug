@@ -28,7 +28,7 @@ function m.include()
 
 	filter {}
 
-	sysincludedirs {
+	includedirs {
 		_p.."iPlug"
 	}
 

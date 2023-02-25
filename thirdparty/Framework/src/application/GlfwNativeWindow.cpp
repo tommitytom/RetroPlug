@@ -2,16 +2,16 @@
 
 #include <GLFW/glfw3.h>
 
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 #include <emscripten.h>
 #include <emscripten/html5.h>
 static const char* s_canvas = "#canvas";
 #else
-#if RP_LINUX
+#if FW_OS_LINUX
 #define GLFW_EXPOSE_NATIVE_X11
-#elif RP_WINDOWS
+#elif FW_OS_WINDOWS
 #define GLFW_EXPOSE_NATIVE_WIN32
-#elif RP_MACOS
+#elif FW_OS_MACOS
 #define GLFW_EXPOSE_NATIVE_COCOA
 #endif
 
@@ -27,14 +27,14 @@ MouseButton::Enum convertMouseButton(int button);
 VirtualKey::Enum convertKey(int key);
 
 void* GlfwNativeWindow::getNativeHandle() {
-#if RP_WEB
+#if FW_PLATFORM_WEB
 	return (void*)"canvas";
-#elif RP_LINUX
+#elif FW_OS_LINUX
 	//init.platformData.ndt = glfwGetX11Display();
 	return (void*)(uintptr_t)glfwGetX11Window(_window);
-#elif RP_MACOS
+#elif FW_OS_MACOS
 	return glfwGetCocoaWindow(_window);
-#elif RP_WINDOWS
+#elif FW_OS_WINDOWS
 	return glfwGetWin32Window(_window);
 #else
 	#error "Platform not supported!"
@@ -75,6 +75,7 @@ void GlfwNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
 }
 
 void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
+	spdlog::info("GlfwNativeWindow::resizeCallback: {}, {}", x, y);
 	// NOTE: Resizing is now handled in GlfwNativeWindow::onUpdate
 }
 
@@ -107,7 +108,7 @@ void GlfwNativeWindow::windowRefreshCallback(GLFWwindow* window) {
 	//w->getViewManager()->onCloseWindowRequest();
 }
 
-#ifdef RP_WEB
+/*#ifdef FW_PLATFORM_WEB
 EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
 	Application* app = static_cast<Application*>(userData);
 
@@ -148,7 +149,7 @@ EMSCRIPTEN_RESULT touchcancel_callback(int eventType, const EmscriptenTouchEvent
 
 	return 0;
 }
-#endif
+#endif*/
 
 GlfwNativeWindow::~GlfwNativeWindow() {
 	if (_window) {
@@ -189,12 +190,12 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetWindowCloseCallback(_window, windowCloseCallback);
 	glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
 
-#ifdef RP_WEB
+/*#ifdef FW_PLATFORM_WEB
 	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
 	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchmove_callback);
 	emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
 	emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
-#endif
+#endif*/
 
 	//glfwSetCharCallback(_window, charCb);
 	//glfwSetFramebufferSizeCallback(window, resizeCallback);
@@ -204,21 +205,25 @@ void GlfwNativeWindow::onFrame() {
 	glfwSwapBuffers(_window);
 }
 
+void GlfwNativeWindow::setDimensions(Dimension dimensions) {
+	if (getViewManager()->getSizingPolicy() != SizingPolicy::FitToContent) {
+		_dimensions = dimensions;
+	}
+}
+
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	ViewManagerPtr vm = getViewManager();
 
-	Dimension windowSize;
-	glfwGetWindowSize(_window, &windowSize.w, &windowSize.h);
-
 	Dimension viewSize = vm->getDimensions();
 
-	if (windowSize.w != viewSize.w || windowSize.h != viewSize.h) {
+	if (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h) {
 		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content
 			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
+			_dimensions = viewSize;
 		} else {
 			// Resize content to fit window
-			vm->setDimensions(windowSize);
+			vm->setDimensions(_dimensions);
 		}
 	}
 

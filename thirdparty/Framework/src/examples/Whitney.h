@@ -9,6 +9,8 @@
 #include "ui/SliderView.h"
 #include "ui/View.h"
 
+#include "textures/circle-512.h"
+
 #include "application/Application.h"
 
 namespace fw {
@@ -51,7 +53,7 @@ namespace fw {
 		SliderViewPtr _positionSlider;
 
 		std::vector<Dot> _dots;
-		
+
 		fw::TypeRegistry _typeRegistry;
 
 	public:
@@ -61,7 +63,7 @@ namespace fw {
 			setFocusPolicy(FocusPolicy::Click);
 
 			_typeRegistry.addCommonTypes();
-			
+
 			_typeRegistry.addEnum<PropertyModulator::Type>();
 			_typeRegistry.addEnum<PropertyModulator::Mode>();
 			_typeRegistry.addEnum<PropertyModulator::Timing>();
@@ -98,8 +100,18 @@ namespace fw {
 			//_dotCountSlider->setCurve(SliderScaler::pow2);
 			//_durationSlider->setCurve(SliderScaler::pow2);
 
+			std::vector<uint8> circleImage;
+			circleImage.resize(circle_512_len);
+			memcpy(circleImage.data(), circle_512, circle_512_len);
+
 			_modulators.reserve(8);
-			_circle = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\circle-512.png");
+			_circle = getResourceManager().create<Texture>(TextureDesc {
+				.dimensions = { 512, 512 },
+				.depth = 4,
+				.data = circleImage
+			});
+
+			//_circle = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\circle-512.png");
 
 			for (size_t i = 0; i < _baseSettings.dotCount; ++i) {
 				_dots.push_back(Dot());

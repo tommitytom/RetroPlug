@@ -128,6 +128,9 @@ namespace fw {
 		VoiceState _state = VoiceState::Inactive;
 
 	public:
+		Voice() {}
+		virtual ~Voice() {}
+
 		virtual void process(StereoAudioBuffer& buffer) = 0;
 
 		VoiceState getState() const {
@@ -369,7 +372,7 @@ namespace fw {
 			return true;
 		}
 
-		void onResize(const ResizeEvent& ev) {
+		void onResize(const ResizeEvent& ev) override {
 			updateHighlights();
 		}
 
@@ -476,7 +479,7 @@ namespace fw {
 
 			subscribe<SampleClickEvent>(_playerOverlay, [this](const SampleClickEvent& ev) {
 				EventNode& eventNode = getState<EventNode>();
-				
+
 				if (ev.pressed && !_notes[ev.index].buffer.isEmpty()) {
 					eventNode.broadcast(PlayNoteEvent{ .note = ev.index });
 				} else {
@@ -488,7 +491,7 @@ namespace fw {
 
 			subscribe<MarkerAddedEvent>(_markerOverlay, [this](const MarkerAddedEvent& ev) {
 				EventNode& eventNode = getState<EventNode>();
-				
+
 				Note& note = _notes[ev.idx];
 				assert(note.contains(ev.marker));
 
@@ -523,7 +526,7 @@ namespace fw {
 
 			subscribe<MarkerRemovedEvent>(_markerOverlay, [this](const MarkerRemovedEvent& ev) {
 				EventNode& eventNode = getState<EventNode>();
-				
+
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 
@@ -548,7 +551,7 @@ namespace fw {
 
 			subscribe<MarkerChangedEvent>(_markerOverlay, [this](const MarkerChangedEvent& ev) {
 				EventNode& eventNode = getState<EventNode>();
-				
+
 				Note& note = _notes[ev.idx];
 				Note& next = _notes[ev.idx + 1];
 

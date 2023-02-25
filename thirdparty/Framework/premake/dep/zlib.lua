@@ -4,7 +4,7 @@ local ZLIB_DIR = paths.DEP_ROOT .. "zlib"
 local m = {}
 
 function m.include()
-	sysincludedirs { ZLIB_DIR }
+	includedirs { ZLIB_DIR }
 	defines {
 		"_LARGEFILE64_SOURCE=0",
 		"N_FSEEKO=1"

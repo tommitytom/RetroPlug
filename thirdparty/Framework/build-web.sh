@@ -2,7 +2,8 @@
 
 set -e
 
-BUILD_CONFIG="$1"
+PROJECT_NAME="$1"
+BUILD_CONFIG="$2"
 DEPLOY=false
 
 if [ -z "$BUILD_CONFIG" ]; then
@@ -15,10 +16,19 @@ if [ "$BUILD_CONFIG" = "dist" ]; then
 fi
 
 WORKING_DIR="$PWD"
-BUILD_DIR="${WORKING_DIR}/build/emscripten"
-BUILD_CONFIG_DIR="${BUILD_DIR}/${BUILD_CONFIG}"
+
+BUILD_DIR="${WORKING_DIR}/build/gmake2"
+NATIVE_BUILD_CONFIG_DIR="${BUILD_DIR}/${BUILD_CONFIG}"
+WEB_BUILD_CONFIG_DIR="${BUILD_DIR}/${BUILD_CONFIG}"
+
+echo "Building native code to to ${NATIVE_BUILD_CONFIG_DIR}"
+echo "Building web code to to ${WEB_BUILD_CONFIG_DIR}"
+
+NATIVE_BIN_DIR="${BUILD_DIR}/bin/${BUILD_CONFIG}_x64"
+WEB_BIN_DIR="${BUILD_DIR}/bin/${BUILD_CONFIG}_Emscripten"
 DIST_DIR="${BUILD_DIR}/dist"
 
+echo "Compiling lua scripts"
 cd build/gmake2
 CC=clang CXX=clang++ make config=release_x86 -j$(nproc) ScriptCompiler
 bin/x86/Release/ScriptCompiler ../../src/compiler.config.lua x86
@@ -26,7 +36,7 @@ cd ../..
 
 cd ${BUILD_DIR}
 mkdir -p ${BUILD_CONFIG}
-emmake make config=${BUILD_CONFIG}_x86 -j$(nproc) RetroPlugApp
+make config=${BUILD_CONFIG}_emscripten -j$(nproc) ${PROJECT_NAME}
 
 if [ "$DEPLOY" = true ]; then
 	echo "Preparing distribution..."
@@ -38,19 +48,22 @@ if [ "$DEPLOY" = true ]; then
 	rm -f *.js
 	rm -f *.wasm
 
-	[[ -d "${BUILD_CONFIG_DIR}" ]] && cp -r ${BUILD_CONFIG_DIR}/* "${DIST_DIR}"
+	[[ -d "${WEB_BUILD_CONFIG_DIR}" ]] && cp -r ${WEB_BUILD_CONFIG_DIR}/* "${DIST_DIR}"
 
 	echo "Generating wasm and js hashes..."
 
-	WASM_HASH=$(md5sum index.wasm | cut -c 1-8)
-	WORKER_HASH=$(md5sum index.worker.js | cut -c 1-8)
-	sed -i "s/index.worker.js/index.worker.${WORKER_HASH}.js/g" index.js
-	sed -i "s/index.wasm/index.${WASM_HASH}.wasm/g" index.js
+	cd ${WEB_BUILD_CONFIG_DIR}
 
-	JS_HASH=$(md5sum index.js | cut -c 1-8)
-	sed -i "s/index.js/index.${JS_HASH}.js/g" index.html
+	WASM_HASH=$(md5sum ${PROJECT_NAME}.wasm | cut -c 1-8)
+	WORKER_HASH=$(md5sum ${PROJECT_NAME}.worker.js | cut -c 1-8)
+	sed -i "s/${PROJECT_NAME}.worker.js/${PROJECT_NAME}.worker.${WORKER_HASH}.js/g" ${PROJECT_NAME}.js
+	sed -i "s/${PROJECT_NAME}.wasm/${PROJECT_NAME}.${WASM_HASH}.wasm/g" ${PROJECT_NAME}.js
 
-	mv index.js index.${JS_HASH}.js
-	mv index.worker.js index.worker.${WORKER_HASH}.js
-	mv index.wasm index.${WASM_HASH}.wasm
+	JS_HASH=$(md5sum ${PROJECT_NAME}.js | cut -c 1-8)
+	sed -i "s/${PROJECT_NAME}.js/${PROJECT_NAME}.${JS_HASH}.js/g" ${PROJECT_NAME}.html
+	sed -i "s/index.js/${PROJECT_NAME}.${JS_HASH}.js/g" ${PROJECT_NAME}.html
+
+	mv ${PROJECT_NAME}.js ${PROJECT_NAME}.${JS_HASH}.js
+	mv ${PROJECT_NAME}.worker.js ${PROJECT_NAME}.worker.${WORKER_HASH}.js
+	mv ${PROJECT_NAME}.wasm ${PROJECT_NAME}.${WASM_HASH}.wasm
 fi

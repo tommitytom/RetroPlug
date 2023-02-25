@@ -5,7 +5,7 @@ local m = {}
 local GLFW_DIR = paths.DEP_ROOT .. "glfw"
 
 function m.include()
-	sysincludedirs {
+	includedirs {
 		GLFW_DIR .. "/include"
 	}
 
@@ -28,6 +28,7 @@ end
 
 function m.project()
 	project "glfw"
+		removeplatforms { "Emscripten" }
 		kind "StaticLib"
 		language "C"
 

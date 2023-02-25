@@ -1,3 +1,5 @@
+require "premake/emscripten"
+
 local util = dofile("premake/util.lua")
 local dep = dofile("premake/dep/index.lua")
 local projects = dofile("premake/projects.lua")
@@ -11,48 +13,105 @@ util.disableFastUpToDateCheck({ "generator", "configure" })
 
 local buildFolder = _ACTION
 
-local PLATFORMS = { "x86", "x64" }
-if _OPTIONS["emscripten"] ~= nil then
-	PLATFORMS = { "x86" }
+if _OPTIONS["web"] then
 	buildFolder = "emscripten"
+end
+
+local PLATFORMS = { "x86", "x64" }
+
+if _ACTION == "gmake2" then
+	table.insert(PLATFORMS, "Emscripten")
 elseif _ACTION == "xcode4" then
 	PLATFORMS = { "x64" }
 end
 
+
 workspace "Framework"
 	location("build/" .. buildFolder)
-	platforms(PLATFORMS)
-	characterset "MBCS"
-	cppdialect "C++20"
+
+	configurations { "Debug", "Development", "Release", "Debug-ASAN", "Development-ASAN", "Release-ASAN", "Release-Profiling" }
+	platforms (PLATFORMS)
 	flags { "MultiProcessorCompile" }
+	language "C++"
+	characterset "MBCS"
+	cppdialect "c++20"
+	vectorextensions "SSE2"
 
-	configurations { "Debug", "Release", "Tracer" }
-
-	defines { "NOMINMAX" }
-
-	filter "configurations:Debug"
-		defines { "RP_DEBUG", "DEBUG", "_DEBUG" }
+	filter "configurations:Debug*"
+		defines { "_DEBUG", "FW_DEBUG" }
+		optimize "Off"
+		symbols "On"
+	filter "configurations:Development*"
+		defines { "NDEBUG", "FW_DEVELOPMENT" }
+		optimize "Full"
+		symbols "On"
+		inlining "Explicit"
+		intrinsics "Off"
+		omitframepointer "Off"
+	filter "configurations:Release*"
+		defines { "NDEBUG", "FW_RELEASE" }
+		-- intrinsics "On"
+		optimize "Full"
+	filter "configurations:Release-Profiling"
+		defines { "FW_PROFILING" }
+		symbols "On" -- For tracy
+	filter { "action:vs*", "configurations:Debug* or Development*" }
 		symbols "Full"
+	filter { "action:vs*", "platforms:Emscripten" }
+		toolset "emcc"
 
-	filter "configurations:Release"
-		defines { "RP_RELEASE", "NDEBUG" }
-		optimize "On"
-		--flags { "LinkTimeOptimization" }
+	filter "platforms:x86"
+		architecture "x86"
+	filter "platforms:x64"
+		architecture "x64"
+	filter "platforms:Emscripten"
+		architecture "x86"
+		defines { "FW_PLATFORM_WEB", "FW_COMPILER_CLANG" }
 
-	filter "configurations:Tracer"
-		defines { "RP_TRACER", "NDEBUG", "TRACER_BUILD" }
-		optimize "On"
+	filter { "action:vs*", "configurations:*ASAN" }
+		buildoptions { "/fsanitize=address" }
+		editandcontinue "Off"
+		flags { "NoIncrementalLink" }
 
-	filter { "options:emscripten" }
-		defines { "RP_WEB" }
-		buildoptions { "-matomics", "-mbulk-memory", "-fexceptions" }
+	filter { "action:gmake2", "configurations:*ASAN" }
+		buildoptions { "-fsanitize=address" }
+		linkoptions { "-fsanitize=address" }
 
-	filter { "system:linux", "options:not emscripten" }
-		defines { "RP_LINUX", "RP_POSIX" }
-		buildoptions { "-Wno-unused-function" }
+	filter { "system:linux", "platforms:not Emscripten" }
+		toolset "clang"
+		defines { "FW_OS_LINUX" }
 
-	filter { "system:macosx", "options:not emscripten" }
-		defines { "RP_MACOS", "RP_POSIX" }
+	filter { "system:linux" }
+		defines { "FW_COMPILER_CLANG" }
+		buildoptions { "-Wfatal-errors" }
+		disablewarnings { "macro-redefined", "switch", "nonportable-include-path" }
+
+	filter { "system:windows", "platforms:not Emscripten" }
+		defines { "FW_OS_WINDOWS" }
+
+	filter { "action:vs*", "platforms:not Emscripten" }
+		defines {
+			"FW_COMPILER_MSVC",
+			"NOMINMAX",
+			"_CRT_SECURE_NO_WARNINGS",
+			"_SILENCE_CXX20_CISO646_REMOVED_WARNING",
+			"_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING"
+		}
+
+		staticruntime "on"
+		libdirs {  "dep/lib" }
+		buildoptions { "/Zc:__cplusplus" }
+
+	filter { "platforms:Emscripten" }
+		defines { "FW_PLATFORM_WEB" }
+		disablewarnings { "macro-redefined", "switch" }
+		buildoptions { "-matomics", "-mbulk-memory", "-msimd128" }
+
+	filter { "platforms:not Emscripten" }
+		defines { "FW_PLATFORM_STANDALONE" }
+
+		filter { "system:macosx", "options:not emscripten" }
+		defines { "FW_OS_MACOS", "FW_OS_POSIX" }
 
 		xcodebuildsettings {
 			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
@@ -69,26 +128,6 @@ workspace "Framework"
 			"-mmacosx-version-min=10.15"
 		}
 
-	filter { "system:windows", "options:not emscripten" }
-		cppdialect "C++latest"
-		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING", "_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING" }
-		disablewarnings { 4834 }
-		buildoptions { "/Zc:__cplusplus" }
-
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-		disablewarnings {
-			"deprecated-enum-float-conversion",
-			"deprecated-volatile"
-		}
-
-	filter { "system:linux" }
-		disablewarnings {
-			"switch",
-			"unused-result",
-			"unused-function",
-		}
-
 	filter {}
 
 util.createConfigureProject()
@@ -99,8 +138,10 @@ util.createGeneratorProject({
 if _OPTIONS["emscripten"] == nil then
 	group "Utils"
 		project "ScriptCompiler"
+			removeplatforms { "Emscripten" }
 			kind "ConsoleApp"
-			sysincludedirs { "thirdparty", "thirdparty/lua/src" }
+
+			includedirs { "thirdparty", "thirdparty/lua/src" }
 			includedirs { "src/compiler" }
 			files { "src/compiler/**.h", "src/compiler/**.c", "src/compiler/**.cpp" }
 

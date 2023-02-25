@@ -5,7 +5,7 @@ local BIN2H_DIR = paths.DEP_ROOT .. "bin2h"
 local m = {}
 
 function m.include()
-	sysincludedirs { BIN2H_DIR .. "/include" }
+	includedirs { BIN2H_DIR .. "/include" }
 end
 
 function m.source()

@@ -8,7 +8,7 @@
                 "${workspaceFolder}/thirdparty/**"
             ],
             "defines": [
-                "RP_LINUX"
+                "FW_PLATFORM_WEB"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",
@@ -29,7 +29,7 @@
                 "${workspaceFolder}/thirdparty/**"
             ],
             "defines": [
-                "RP_WINDOWS"
+                "FW_OS_WIN"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",

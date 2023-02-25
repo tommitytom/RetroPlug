@@ -4,7 +4,7 @@ local SFW_DIR = paths.DEP_ROOT .. "simplefilewatcher"
 local m = {}
 
 function m.include()
-	sysincludedirs { SFW_DIR .. "/include" }
+	includedirs { SFW_DIR .. "/include" }
 end
 
 function m.source()
@@ -23,6 +23,7 @@ end
 
 function m.project()
 	project "simplefilewatcher"
+		removeplatforms { "Emscripten" }
 		kind "StaticLib"
 
 		m.source()

@@ -31,6 +31,8 @@ namespace fw::app {
 		}
 		~Window() = default;
 
+		virtual void setDimensions(Dimension dimensions) = 0;
+
 		virtual void onCreate() {}
 
 		virtual void onInitialize() {
