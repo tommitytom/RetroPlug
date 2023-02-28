@@ -76,7 +76,7 @@ namespace fw {
 
 		bool mouseOverSeparator(Point pos) const {
 			int32 separatorX = getSeperatorX();
-			return separatorX - seperatorHandleSize && pos.x < separatorX + seperatorHandleSize;
+			return pos.x > separatorX - seperatorHandleSize && pos.x < separatorX + seperatorHandleSize;
 		}
 
 		bool onMouseMove(Point pos) override {

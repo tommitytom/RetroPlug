@@ -2,9 +2,10 @@
 
 #ifdef FW_PLATFORM_WEB
 #include <emscripten/emscripten.h>
-#endif
-
+#include "audio/WebAudioManager.h"
+#else
 #include "audio/MiniAudioManager.h"
+#endif
 
 namespace fw::app {
 	ApplicationRunner::~ApplicationRunner() {
@@ -25,7 +26,12 @@ namespace fw::app {
 		assert(view || audioProcessor);
 
 		if (audioProcessor) {
+#ifdef FW_PLATFORM_WEB
+			_audioManager = std::make_shared<audio::WebAudioManager>();
+#else
 			_audioManager = std::make_shared<audio::MiniAudioManager>();
+#endif
+			
 			_audioManager->setProcessor(audioProcessor);
 		}
 
