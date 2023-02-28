@@ -8,6 +8,10 @@
 
 namespace fw::app {
 	ApplicationRunner::~ApplicationRunner() {
+		destroy();
+	}
+
+	void ApplicationRunner::destroy() {
 		_audioManager = nullptr;
 		_uiContext = nullptr;
 	}

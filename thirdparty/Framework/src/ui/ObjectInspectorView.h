@@ -65,6 +65,8 @@ namespace fw {
 				
 				if (fieldType.isEnum()) {
 					fieldWrap.editor = createDropDown(reg, field.name, field, fieldWrap.value, groupId, fieldId);
+				} else if (fieldType.isType<bool>()) {
+					//fieldWrap.editor = createCheckbox(field.name, field, fieldWrap.value, groupId, fieldId);
 				} else if (fieldType.isIntegral() || fieldType.isFloat()) {
 					fieldWrap.editor = createSlider(field.name, field, fieldWrap.value, groupId, fieldId);
 				} else if (fieldType.isClass()) {
@@ -78,7 +80,8 @@ namespace fw {
 							//dropdown->setValue((int32)value);
 
 							dropdown->ValueChangeEvent = [groupId, fieldId, this](int32 v) {
-								_fieldGroups[groupId].fields[fieldId].value.assign(v);
+								bool valid = _fieldGroups[groupId].fields[fieldId].value.assign(v);
+								assert(valid);
 							};
 						}
 					}
@@ -198,11 +201,13 @@ namespace fw {
 			slider->setValue(anyToNumber<f32>(value));
 
 			slider->ValueChangeEvent = [groupId, fieldId, this](f32 v) {
-				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
+				auto& field = _fieldGroups[groupId].fields[fieldId];
+				assert(!field.value.owner());
 
-				_fieldGroups[groupId].fields[fieldId].value.assign(v);
+				bool valid = field.value.assign(numberToAny(v, field.field.type));
+				assert(valid);
 
-				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());
+				assert(!field.value.owner());
 			};
 
 			return slider;
@@ -238,7 +243,8 @@ namespace fw {
 				entt::any val = _fieldGroups[groupId].fields[fieldId].value.as_ref();
 				assert(!val.owner());
 
-				val.assign(numberToAny(v, fw::getTypeId(val)));
+				bool valid = val.assign(numberToAny(v, fw::getTypeId(val)));
+				assert(valid);
 				assert(!val.owner());
 
 				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());

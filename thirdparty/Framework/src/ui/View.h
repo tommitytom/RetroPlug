@@ -831,18 +831,25 @@ namespace fw {
 
 		void setDimensions(Dimension dimensions) {
 			assert(dimensions.w >= 0 && dimensions.h >= 0);
-			if (dimensions != _area.dimensions) {
-				ResizeEvent ev = {
-					.size = dimensions,
-					.oldSize = _area.dimensions
-				};
+			
+			if (isMounted()) {	
+				if (dimensions != _area.dimensions) {
+					ResizeEvent ev = {
+						.size = dimensions,
+						.oldSize = _area.dimensions
+					};
 
-				onResize(ev);
-				emit(ev);
+					onResize(ev);
+					emit(ev);
 
+					_area.dimensions = dimensions;
+					setLayoutDirty();
+				}
+			} else {
 				_area.dimensions = dimensions;
 				setLayoutDirty();
 			}
+			
 		}
 
 		Dimension getDimensions() const {
@@ -961,6 +968,7 @@ namespace fw {
 		void mountRecursive(ViewPtr view) {
 			if (!view->isMounted()) {
 				view->onMount();
+				view->_mounted = true;
 			}
 
 			for (ViewPtr& child : view->getChildren()) {

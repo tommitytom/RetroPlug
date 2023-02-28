@@ -23,15 +23,17 @@ namespace fw {
 		std::vector<Group> _groups;
 
 		int32 _rowHeight = 20;
-		int32 _separatorX;
 		bool _draggingSeparator = false;
 		int32 _propPadding = 1;
+
+		f32 _separatorPerc = 0.25f;
+
+		const int32 seperatorHandleSize = 4;
 
 	public:
 		PropertyEditorView() {
 			setType<PropertyEditorView>();
 			setFocusPolicy(FocusPolicy::Click);
-			_separatorX = getDimensions().w / 2;
 		}
 
 		~PropertyEditorView() = default;
@@ -72,12 +74,19 @@ namespace fw {
 			_groups.clear();
 		}
 
+		bool mouseOverSeparator(Point pos) const {
+			int32 separatorX = getSeperatorX();
+			return separatorX - seperatorHandleSize && pos.x < separatorX + seperatorHandleSize;
+		}
+
 		bool onMouseMove(Point pos) override {
+			int32 separatorX = getSeperatorX();
+
 			if (_draggingSeparator) {
-				_separatorX = pos.x;
+				_separatorPerc = MathUtil::clamp((f32)pos.x / (f32)getDimensionsF().w, 0.0f, 1.0f);
 				updateLayout(getDimensions());
 				setCursor(CursorType::ResizeH);
-			} else if (pos.x == _separatorX) {
+			} else if (pos.x == separatorX) {
 				spdlog::info("OVER mid");
 				setCursor(CursorType::ResizeH);
 			} else {
@@ -130,7 +139,7 @@ namespace fw {
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
-			_draggingSeparator = down && pos.x == _separatorX;
+			_draggingSeparator = down && mouseOverSeparator(pos);
 			return true;
 		}
 
@@ -142,9 +151,19 @@ namespace fw {
 			updateLayout(getDimensions());
 		}
 
+		void onMount() override {
+			updateLayout(getDimensions());
+		}
+
+		int32 getSeperatorX() const {
+			return (int32)(getDimensionsF().w * _separatorPerc);
+		}
+
 		void updateLayout(Dimension dim) {
-			Rect labelOffset(0, 0, _separatorX, _rowHeight);
-			Rect propOffset(_separatorX + 1, 0, dim.w - _separatorX - 1, _rowHeight);
+			int32 separatorX = getSeperatorX();
+			
+			Rect labelOffset(0, 0, separatorX, _rowHeight);
+			Rect propOffset(separatorX + 1, 0, dim.w - separatorX - 1, _rowHeight);
 
 			for (Group& group : _groups) {
 				group.label->setArea(Rect(labelOffset.position, Dimension(dim.w, _rowHeight)));
@@ -163,12 +182,11 @@ namespace fw {
 		}
 
 		void onResize(const ResizeEvent& ev) override {
-			f32 frac = (f32)_separatorX / (f32)getDimensions().w;
-			_separatorX = (int32)(ev.size.w * frac);
 			updateLayout(ev.size);
 		}
 
 		void onRender(fw::Canvas& canvas) override {
+			int32 separatorX = getSeperatorX();
 			Dimension dim = getDimensions();
 			canvas.fillRect(dim, Color4F::darkGrey);
 
@@ -183,7 +201,7 @@ namespace fw {
 
 				canvas
 					.line(0, rowY, dim.w, rowY, Color4F::lightGrey)
-					.line(Point{ _separatorX, rowY }, Point{ _separatorX, rowY + groupHeight }, Color4F::lightGrey);
+					.line(Point{ separatorX, rowY }, Point{ separatorX, rowY + groupHeight }, Color4F::lightGrey);
 
 				rowY += _rowHeight + 1;
 

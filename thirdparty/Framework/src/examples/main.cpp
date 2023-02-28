@@ -22,7 +22,7 @@ extern "C" {
 
 		if (runner.isReady()) {
 			runner.getUiContext().getMainWindow()->setDimensions({ width, height });
-		}
+		} 
 	}
 
 	void advance_frame() {

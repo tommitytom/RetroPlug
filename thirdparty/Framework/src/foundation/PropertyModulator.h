@@ -39,9 +39,11 @@ namespace fw {
 
 			Target(Target&& other) noexcept {
 				*this = std::move(other);
-			}*/
+			}
 
-			/*Target& operator=(Target&& other) noexcept {
+			Target& operator=(const Target& other) = delete;
+
+			Target& operator=(Target&& other) noexcept {
 				assert(!other.source.owner());
 				assert(!other.target.owner());
 
@@ -56,9 +58,11 @@ namespace fw {
 				assert(!target.owner());
 
 				return *this;
-			}*/
+			}
 			
-			/*Target& operator=(const Target& other) {
+			
+
+			Target& operator=(const Target& other) {
 				assert(!other.source.owner());
 				assert(!other.target.owner());
 				
@@ -117,6 +121,11 @@ namespace fw {
 			for (PropertyModulator::Target& target : this->targets) {
 				assert(!target.source.owner());
 				assert(!target.target.owner());
+
+				if (!target.source) {
+					spdlog::error("target.source is empty!");
+					continue;
+				}
 
 				f32 source = entt::any_cast<f32>(target.source);
 				f32 min = 0.0f;

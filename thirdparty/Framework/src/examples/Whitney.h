@@ -157,7 +157,8 @@ namespace fw {
 			}
 
 			_objectInspector = addChildAt<ObjectInspectorView>("Property Editor", { 50, 50 });
-			_objectInspector->setSizingPolicy(SizingPolicy::FitToContent);
+			_objectInspector->setSizingPolicy(SizingPolicy::None);
+			_objectInspector->setDimensions({ 300, 600 });
 
 			_positionSlider = _objectInspector->addProperty<SliderView>("Position");
 			_positionSlider->setRange(0, _settings.duration);
@@ -188,8 +189,8 @@ namespace fw {
 						_modulators[i].first.targets.push_back(PropertyModulator::Target{
 							.name = sourceTarget.name,
 							.field = sourceTarget.field,
-							.source = std::move(sourceTarget.source),
-							.target = std::move(sourceTarget.target),
+							.source = std::move(sourceTarget.source.as_ref()),
+							.target = std::move(sourceTarget.target.as_ref()),
 						});
 
 						editor->setHandleCount(2);

@@ -1,23 +1,25 @@
 #include "foundation/MacroTools.h"
 
 #include "application/Application.h"
-#include INCLUDE_APPLICATION(EXAMPLE_IMPL)
+#include "application/ApplicationRunner.h"
+//#include INCLUDE_APPLICATION(EXAMPLE_IMPL)
+
+#include "Whitney.h"
+#include "CanvasTest.h"
+#include "Granular.h"
 
 using namespace fw;
 
-static app::Application* gApp = nullptr;
+fw::app::ApplicationRunner runner;
 
 void initMain(int argc, char** argv) {
-	gApp = new app::Application();
-	gApp->setup<EXAMPLE_IMPL>();
+	runner.setup<APPLICATION_IMPL>();
 }
 
 bool mainLoop() {
-	assert(gApp);
-	return gApp->runFrame();
+	return runner.runFrame();
 }
 
 void destroyMain() {
-	delete gApp;
-	gApp = nullptr;
+	runner.destroy();
 }

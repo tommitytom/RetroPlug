@@ -35,9 +35,12 @@ namespace fw::app {
 
 		_renderContext->cleanup();
 		_mainWindow->onCleanup();
+		
+		_defaultFont = nullptr;
+		_defaultTexture = nullptr;
+		_defaultProgram = nullptr;
 
 		_resourceManager = ResourceManager();
-		//_canvas.destroy();
 
 		_mainWindow = nullptr;
 		_renderContext = nullptr;

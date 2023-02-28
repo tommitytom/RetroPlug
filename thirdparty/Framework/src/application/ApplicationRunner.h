@@ -44,6 +44,8 @@ namespace fw::app {
 
 		int doLoop();
 
+		void destroy();
+
 		static void webFrameCallback(void* arg);
 	};
 }
