@@ -16,6 +16,9 @@
 #include "ui/WaveformUtil.h"
 #include "ui/WaveView.h"
 #include "application/Application.h"
+#include "foundation/FsUtil.h"
+
+#include "audio/amen.h"
 
 namespace fw {
 	using NoteIndex = uint32;
@@ -464,7 +467,8 @@ namespace fw {
 				note.parameters = _defaultParameters;
 			}
 
-			SampleLoaderUtil::loadSample("C:\\temp\\amen.wav", _sampleData);
+			fw::Uint8Buffer amenBuffer(amen, amen_len);
+			SampleLoaderUtil::loadSampleFromBuffer(amenBuffer, _sampleData);
 
 			_notes[0].buffer = _sampleData.ref();
 
