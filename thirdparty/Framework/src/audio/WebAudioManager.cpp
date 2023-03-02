@@ -18,10 +18,53 @@ EM_BOOL OnCanvasClick(int eventType, const EmscriptenMouseEvent *mouseEvent, voi
 	return EM_FALSE;
 }
 
+EM_BOOL GenerateNoise(int numInputs, const AudioSampleFrame *inputs,
+                      int numOutputs, AudioSampleFrame *outputs,
+                      int numParams, const AudioParamFrame *params,
+                      void *userData)
+{
+	assert(userData);
+	fw::audio::WebAudioManager* manager = reinterpret_cast<fw::audio::WebAudioManager*>(userData);
+	fw::StereoAudioBuffer& input = manager->getInput();
+	fw::StereoAudioBuffer& output = manager->getOutput();
+	fw::AudioProcessorPtr processor = manager->getProcessor();
+	assert(processor);
+
+	/*for(int i = 0; i < numOutputs; ++i) {
+		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
+			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise
+		}
+	}*/
+
+	if (processor) {
+		input.clear();
+
+		processor->onRender(output.getSamples(), input.getSamples(), 128);
+
+		assert(numOutputs == 1);
+		assert(outputs[0].numberOfChannels == 2);
+
+		for (uint32 i = 0; i < output.ChannelCount; ++i) {
+			for (uint32 j = 0; j < output.getFrameCount(); ++j) {
+				outputs[0].data[i * output.getFrameCount() + j] = output.getSample(j, i);
+			}
+		}
+
+		/*for (uint32 i = 0; i < output.getFrameCount(); ++i) {
+			for (uint32 j = 0; j < output.ChannelCount; ++j) {
+				outputs[0].data[j * output.getFrameCount() + i] = output.getSample(i, j);
+			}
+		}*/
+	}
+
+	return EM_TRUE; // Keep the graph output going
+}
+
 void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void *userData) {
 	if (!success) return; // Check browser console in a debug build for detailed errors
+	assert(userData);
 
-	int outputChannelCounts[1] = { 1 };
+	int outputChannelCounts[1] = { 2 };
 	EmscriptenAudioWorkletNodeCreateOptions options = {
 		.numberOfInputs = 0,
 		.numberOfOutputs = 1,
@@ -34,7 +77,7 @@ void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
     	"framework-generator",
 		&options,
 		&GenerateNoise,
-		0
+		userData
 	);
 
 	// Connect it to audio context destination
@@ -46,38 +89,18 @@ void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
 
 void AudioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void* userData) {
 	if (!success) return; // Check browser console in a debug build for detailed errors
+	assert(userData);
 
 	WebAudioWorkletProcessorCreateOptions opts = {
 		.name = "framework-generator",
 	};
 
-	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &AudioWorkletProcessorCreated, 0);
-}
-
-EM_BOOL GenerateNoise(int numInputs, const AudioSampleFrame *inputs,
-                      int numOutputs, AudioSampleFrame *outputs,
-                      int numParams, const AudioParamFrame *params,
-                      void *userData)
-{
-	fw::audio::WebAudioManager* manager = reinterpret_cast<fw::audio::WebAudioManager*>(userData);
-	auto processor = manager->getProcessor();
-
-	if (processor) {
-		processor->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
-	}
-
-	for(int i = 0; i < numOutputs; ++i) {
-		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
-			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise
-		}
-	}
-
-	return EM_TRUE; // Keep the graph output going
+	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &AudioWorkletProcessorCreated, userData);
 }
 
 namespace fw::audio {
 	WebAudioManager::WebAudioManager() {
-
+		_output.resize(128);
 	}
 
 	WebAudioManager::~WebAudioManager() {
@@ -99,7 +122,7 @@ namespace fw::audio {
 		EMSCRIPTEN_WEBAUDIO_T context = emscripten_create_audio_context(0);
 
 		emscripten_start_wasm_audio_worklet_thread_async(context, audioThreadStack, sizeof(audioThreadStack),
-														 &AudioThreadInitialized, 0);
+														 &AudioThreadInitialized, this);
 
 		return true;
 	}

@@ -310,7 +310,6 @@ namespace fw {
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override {
 			EventNode& ev = getEventNode();
-
 			ev.update();
 
 			StereoAudioBuffer out((StereoAudioBuffer::Frame*)output, frameCount, getSampleRate());

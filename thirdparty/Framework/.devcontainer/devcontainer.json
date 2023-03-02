@@ -16,7 +16,7 @@
 	//"initializeCommand": "mkdir -p build/emscripten/debug && mkdir -p build/emscripten/development && mkdir -p build/emscripten/release && mkdir -p build/emscripten/dist",
 
 	// Run commands after the container is created.
-	//"postCreateCommand": "echo 'PATH=$PATH:/emsdk/upstream/bin' >> /home/emscripten/.bashrc && sudo nginx -c /workspaces/RetroPlugNext/.devcontainer/nginx/default.conf",
+	//"postCreateCommand": "emrun --no_browser --port 1338 ./build/gmake2",
 
 	// Set *default* container specific settings.json values on container create.
 	"settings": {
