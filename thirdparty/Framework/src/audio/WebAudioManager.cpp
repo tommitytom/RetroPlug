@@ -9,7 +9,7 @@
 
 uint8_t audioThreadStack[4096];
 
-EM_BOOL OnCanvasClick(int eventType, const EmscriptenMouseEvent *mouseEvent, void *userData) {
+EM_BOOL onCanvasClick(int eventType, const EmscriptenMouseEvent *mouseEvent, void *userData) {
 	EMSCRIPTEN_WEBAUDIO_T audioContext = (EMSCRIPTEN_WEBAUDIO_T)userData;
 	if (emscripten_audio_context_state(audioContext) != AUDIO_CONTEXT_STATE_RUNNING) {
 		emscripten_resume_audio_context_sync(audioContext);
@@ -18,7 +18,7 @@ EM_BOOL OnCanvasClick(int eventType, const EmscriptenMouseEvent *mouseEvent, voi
 	return EM_FALSE;
 }
 
-EM_BOOL GenerateNoise(int numInputs, const AudioSampleFrame *inputs,
+EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       int numOutputs, AudioSampleFrame *outputs,
                       int numParams, const AudioParamFrame *params,
                       void *userData)
@@ -60,7 +60,7 @@ EM_BOOL GenerateNoise(int numInputs, const AudioSampleFrame *inputs,
 	return EM_TRUE; // Keep the graph output going
 }
 
-void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void *userData) {
+void audioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void *userData) {
 	if (!success) return; // Check browser console in a debug build for detailed errors
 	assert(userData);
 
@@ -76,7 +76,7 @@ void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
 		audioContext,
     	"framework-generator",
 		&options,
-		&GenerateNoise,
+		&generateAudio,
 		userData
 	);
 
@@ -84,10 +84,10 @@ void AudioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
 	EM_ASM({emscriptenGetAudioObject($0).connect(emscriptenGetAudioObject($1).destination)}, wasmAudioWorklet, audioContext);
 
 	// Resume context on mouse click
-	emscripten_set_click_callback("canvas", (void*)audioContext, 0, OnCanvasClick);
+	emscripten_set_click_callback("canvas", (void*)audioContext, 0, onCanvasClick);
 }
 
-void AudioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void* userData) {
+void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void* userData) {
 	if (!success) return; // Check browser console in a debug build for detailed errors
 	assert(userData);
 
@@ -95,7 +95,7 @@ void AudioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success,
 		.name = "framework-generator",
 	};
 
-	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &AudioWorkletProcessorCreated, userData);
+	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &audioWorkletProcessorCreated, userData);
 }
 
 namespace fw::audio {
@@ -122,7 +122,7 @@ namespace fw::audio {
 		EMSCRIPTEN_WEBAUDIO_T context = emscripten_create_audio_context(0);
 
 		emscripten_start_wasm_audio_worklet_thread_async(context, audioThreadStack, sizeof(audioThreadStack),
-														 &AudioThreadInitialized, this);
+														 &audioThreadInitialized, this);
 
 		return true;
 	}
