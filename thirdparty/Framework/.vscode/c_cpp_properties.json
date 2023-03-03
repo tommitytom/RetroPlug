@@ -5,7 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/src/**",
                 "${workspaceFolder}/resources/**",
-                "${workspaceFolder}/thirdparty/**"
+                "${workspaceFolder}/thirdparty/**",
+                "/emsdk/upstream/emscripten/system/include"
             ],
             "defines": [
                 "FW_PLATFORM_WEB"
