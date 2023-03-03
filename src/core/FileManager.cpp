@@ -12,13 +12,13 @@
 using namespace rp;
 
 FileManager::FileManager() {
-#ifdef RP_WEB
+#ifdef FW_PLATFORM_WEB
 	_rootPath = "/retroplug";
-#elif RP_LINUX
+#elif FW_OS_LINUX
 	_rootPath = "~/.retroplug";
-#elif RP_WINDOWS
+#elif FW_OS_WINDOWS
 	_rootPath = "c:\\temp\\retroplug";
-#elif RP_MACOS
+#elif FW_OS_MACOS
     _rootPath = "~/.retroplug";
 #else
 #error "Platform is not supported!

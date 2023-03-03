@@ -11,7 +11,7 @@
                 "GB_INTERNAL",
                 "GB_DISABLE_TIMEKEEPING",
                 "GB_DISABLE_DEBUGGER",
-                "RP_LINUX"
+                "FW_OS_LINUX"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",
@@ -30,7 +30,7 @@
                 "GB_INTERNAL",
                 "GB_DISABLE_TIMEKEEPING",
                 "GB_DISABLE_DEBUGGER",
-                "RP_WINDOWS"
+                "FW_OS_WINDOWS"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",

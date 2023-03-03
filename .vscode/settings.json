@@ -76,7 +76,12 @@
 		"uiSelf",
 		"class",
 		"Container",
-		"Point"
+		"Point",
+		"vectorextensions",
+		"omitframepointer",
+		"editandcontinue",
+		"staticruntime",
+		"libdirs"
 	],
 	"files.associations": {
 		"functional": "cpp",

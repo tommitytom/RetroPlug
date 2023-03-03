@@ -1,4 +1,5 @@
 local util = dofile("thirdparty/Framework/premake/util.lua")
+require("thirdparty/Framework/premake/emscripten")
 
 newoption {
 	trigger = "emscripten",
@@ -7,88 +8,8 @@ newoption {
 
 util.disableFastUpToDateCheck({ "generator", "configure" })
 
-local buildFolder = _ACTION
-
-local PLATFORMS = { "x86", "x64" }
-if _OPTIONS["emscripten"] ~= nil then
-	PLATFORMS = { "x86" }
-	buildFolder = "emscripten"
-elseif _ACTION == "xcode4" then
-	PLATFORMS = { "x64" }
-end
-
 workspace "RetroPlug"
-	location("build/" .. buildFolder)
-	platforms(PLATFORMS)
-	characterset "MBCS"
-	cppdialect "C++20"
-	flags { "MultiProcessorCompile" }
-
-	configurations { "Debug", "Release", "Tracer" }
-
-	defines { "NOMINMAX" }
-
-	filter "configurations:Debug"
-		defines { "RP_DEBUG", "DEBUG", "_DEBUG" }
-		symbols "Full"
-
-	filter "configurations:Release"
-		defines { "RP_RELEASE", "NDEBUG" }
-		optimize "On"
-		--flags { "LinkTimeOptimization" }
-
-	filter "configurations:Tracer"
-		defines { "RP_TRACER", "NDEBUG", "TRACER_BUILD" }
-		optimize "On"
-
-	filter { "options:emscripten" }
-		defines { "RP_WEB" }
-		buildoptions { "-matomics", "-mbulk-memory", "-fexceptions" }
-
-	filter { "system:linux", "options:not emscripten" }
-		defines { "RP_LINUX", "RP_POSIX" }
-		buildoptions { "-Wno-unused-function", "-gdwarf-4" }
-
-	filter { "system:macosx", "options:not emscripten" }
-		defines { "RP_MACOS", "RP_POSIX" }
-
-		xcodebuildsettings {
-			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
-			--["CODE_SIGN_IDENTITY"] = "",
-			--["PROVISIONING_PROFILE_SPECIFIER"] = "",
-			--["PRODUCT_BUNDLE_IDENTIFIER"] = "com.tommitytom.app.RetroPlug"
-		};
-
-		buildoptions {
-			"-mmacosx-version-min=10.15"
-		}
-
-		linkoptions {
-			"-mmacosx-version-min=10.15"
-		}
-
-	filter { "system:windows", "options:not emscripten" }
-		cppdialect "C++latest"
-		defines { "RP_WINDOWS", "_CRT_SECURE_NO_WARNINGS", "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING", "_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING" }
-		disablewarnings { 4834 }
-		buildoptions { "/Zc:__cplusplus" }
-
-	filter { "options:emscripten" }
-		buildoptions { "-matomics", "-mbulk-memory" }
-		disablewarnings {
-			"deprecated-enum-float-conversion",
-			"deprecated-volatile"
-		}
-
-	filter { "toolset:clang" }
-		disablewarnings {
-			"switch",
-			"unused-result",
-			"unused-function",
-			"c99-designator"
-		}
-
-	filter {}
+	util.setupWorkspace()
 
 util.createConfigureProject()
 util.createGeneratorProject({
