@@ -11,7 +11,7 @@
 using namespace fw;
 
 
-const std::string_view DEFAULT_CODEPOINTS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()[]_-+. ";
+const std::string_view DEFAULT_CODEPOINTS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&:;*()[]_-+. ";
 
 FtglFontFace::~FtglFontFace() {
 	ftgl::texture_font_delete(_font);

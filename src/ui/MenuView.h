@@ -101,7 +101,7 @@ namespace rp {
 	class MenuView : public fw::View {
 	private:
 		std::string _fontName = "PlatNomor";
-		f32 _fontSize = 9.0f;
+		f32 _fontSize = 7.0f;
 
 		f32 _indentSize = 10.0f;
 		f32 _itemSpacing = 20.0f;

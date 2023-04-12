@@ -4,12 +4,15 @@
 
 #include "foundation/FsUtil.h"
 #include "fonts/Karla-Regular.h"
+#include "fonts/Monaco.h"
 
 namespace fw {
 	FontProvider::FontProvider() {
 		std::vector<std::byte> data;
-		data.resize(Karla_Regular_len);
-		memcpy(data.data(), Karla_Regular, Karla_Regular_len);
+		//data.resize(Karla_Regular_len);
+		//memcpy(data.data(), Karla_Regular, Karla_Regular_len);
+		data.resize(Monaco_len);
+		memcpy(data.data(), Monaco, Monaco_len);
 
 		_default = std::make_shared<Font>(std::move(data));
 	}

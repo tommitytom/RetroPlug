@@ -68,6 +68,7 @@ function m.Core.include()
 	fwProjects.Audio.include()
 	fwProjects.Application.include()
 	fwDeps.lua.include()
+	fwDeps.simdjson.include()
 	dep.minizip.include()
 	dep.SameBoy.include()
 
@@ -99,6 +100,7 @@ function m.Core.link()
 	fwProjects.Audio.link()
 	fwProjects.Application.link()
 	fwDeps.lua.link()
+	fwDeps.simdjson.link()
 	dep.minizip.link()
 	dep.SameBoy.link()
 end
@@ -311,7 +313,8 @@ function m.Application.iplugProject()
 	m.RetroPlug.link()
 
 	defines {
-		"APPLICATION_IMPL=RetroPlugApplication"
+		"APPLICATION_IMPL=RetroPlugApplication",
+		"FW_PLATFORM_PLUGIN"
 	}
 
 	--[[files {
@@ -332,7 +335,8 @@ function m.Application.iplugVst2()
 	m.RetroPlug.link()
 
 	defines {
-		"APPLICATION_IMPL=RetroPlugApplication"
+		"APPLICATION_IMPL=RetroPlugApplication",
+		"FW_PLATFORM_PLUGIN"
 	}
 
 	--[[files {

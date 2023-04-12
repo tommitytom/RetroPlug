@@ -31,13 +31,13 @@ namespace rp {
 	using SystemStateOffsets = std::array<SystemStateOffset, magic_enum::enum_count<MemoryType>()>;
 
 	struct TimedByte {
-		uint32 audioFrameOffset;
-		uint8 byte;
+		uint8 byte = 0;
+		uint32 audioFrameOffset = 0;
 	};
 
 	struct TimedButtonPress {
-		uint32 button;
-		bool down;
+		uint32 button = 0;
+		bool down = false;
 		uint32 audioFrameOffset = 0;
 	};
 
@@ -225,6 +225,8 @@ namespace rp {
 		virtual void process(uint32 frameCount) {}
 
 		virtual void setSampleRate(uint32 sampleRate) {}
+
+		virtual uint32 getSampleRate() const { assert(false);  return 0; }
 
 		virtual void setStateBuffer(fw::Uint8Buffer&& buffer) {}
 

@@ -148,6 +148,7 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Proje
 
 	for (const RecentFilePath& path : paths) {
 		root.action(path.name, [p = path, &fileManager, &project, system]() {
+			spdlog::info("Loading {}", p.path.string());
 			if (p.type == "project") {
 				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, fileManager, project);
 			} else {

@@ -32,7 +32,7 @@ namespace rp {
 				if (factory.first(romName)) {
 					entt::meta_type type = factory.second;
 					ModelPtr model;
-					type.construct(&model);
+					entt::meta_any v = type.construct(&model);
 					models.push_back({ type.id(), model });
 				}
 			}

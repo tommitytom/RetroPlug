@@ -76,13 +76,13 @@ bool ProjectSerializer::deserializeFromMemory(const fw::TypeRegistry& typeRegist
 	sol::table settings = target["settings"];
 	if (!fw::LuaSerializer::deserialize(typeRegistry, settings, state.settings)) {
 		spdlog::error("Failed to deserialize project settings");
-		return false;
+		//return false;
 	}
 
 	sol::table systemsTable = target["systems"];
 	if (!fw::LuaSerializer::deserialize(typeRegistry, systemsTable, systemSettings)) {
 		spdlog::error("Failed to deserialize systems");
-		return false;
+		//return false;
 	}
 
 	return true;

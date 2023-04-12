@@ -17,9 +17,9 @@ namespace rp {
 
 		void onMidi(System& system, const fw::MidiMessage& message) override {
 			auto& queue = system.getIo()->input.serial;
-			queue.tryPush(TimedByte{ .audioFrameOffset = message.offset, .byte = message.status });
-			queue.tryPush(TimedByte{ .audioFrameOffset = message.offset, .byte = message.data1 });
-			queue.tryPush(TimedByte{ .audioFrameOffset = message.offset, .byte = message.data2 });
+			queue.tryPush(TimedByte{ .byte = message.status, .audioFrameOffset = message.offset });
+			queue.tryPush(TimedByte{ .byte = message.data1, .audioFrameOffset = message.offset });
+			queue.tryPush(TimedByte{ .byte = message.data2, .audioFrameOffset = message.offset });
 		}
 	};
 

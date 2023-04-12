@@ -50,6 +50,7 @@ group "3 - Examples"
 
 projects.ExampleApplication.project("CanvasTest")
 projects.ExampleApplication.project("PhysicsTest")
+projects.ExampleApplication.project("StaticReflection")
 --projects.ExampleApplication.project("ShaderReload")
 --projects.ExampleApplication.project("Solitaire")
 --projects.ExampleApplication.project("UiDocking")
@@ -57,7 +58,7 @@ projects.ExampleApplication.project("PhysicsTest")
 projects.ExampleApplication.project("Whitney")
 --projects.ExampleApplication.project("BasicScene")
 projects.ExampleApplication.project("Granular")
-projects.ExampleApplication.project("LuaUi")
+--projects.ExampleApplication.project("LuaUi")
 group ""
 
 projects.Tests.project()

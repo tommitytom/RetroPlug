@@ -14,8 +14,8 @@ namespace fw::app {
 		fw::Dimension _size;
 
 	public:
-		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
-			: Window(resourceManager, fontManager, view, id), _nativeWindowHandle(nwh), _size(size) {}
+		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManagerPtr resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
+			: Window(resourceManager.get(), fontManager, view, id), _nativeWindowHandle(nwh), _size(size) {}
 		~WrappedNativeWindow() = default;
 
 		void setDimensions(Dimension dimensions) override {}
@@ -50,9 +50,10 @@ namespace fw::app {
 		}
 
 		WindowPtr acquireWindow(NativeWindowHandle nativeWindowHandle, ViewPtr view) {
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, view->getDimensions(), &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
-			addWindow(window);
-			return window;
+			return nullptr;
+			//WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, view->getDimensions(), _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			//addWindow(window);
+			//return window;
 		}
 	};
 }

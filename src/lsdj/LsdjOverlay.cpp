@@ -60,8 +60,12 @@ void LsdjOverlay::onInitialize() {
 
 void LsdjOverlay::onMenu(fw::Menu& menu) {
 	menu.subMenu("LSDJ")
-		.action("Sample Manager", [this]() { showSampleManager(getParent()->getParent(), getSystem(), getService()); })
-		.action("HD Player", [this]() { showHdPlayer(getParent()->getParent()->getParent(), getSystem(), getService()); })
+		.action("Sample Manager", [this]() { 
+			showSampleManager(getParent()->getParent(), getNode()->getSystem(), getNode()->getSystemService()); 
+		})
+		.action("HD Player", [this]() { 
+			showHdPlayer(getParent()->getParent()->getParent(), getNode()->getSystem(), getNode()->getSystemService()); 
+		})
 		.parent();
 }
 
@@ -71,7 +75,7 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 		return false;
 	}
 
-	LsdjServiceSettings& settings = getService()->getStateAs<LsdjServiceSettings>();
+	LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
 
 	bool changed = false;
 	if (ev.key == VirtualKey::W) {
@@ -116,8 +120,8 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 }
 
 bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
-	SystemPtr system = getSystem();
-	LsdjServiceSettings& settings = getService()->getStateAs<LsdjServiceSettings>();
+	SystemPtr system = getNode()->getSystem();
+	LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
 
 	// What does this actually check?
 	/*if (!model->isRomValid()) {
@@ -171,7 +175,7 @@ bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
 
 	if (kitIdx != -1) {
 		system->reset();
-		auto samplerView = showSampleManager(getParent()->getParent(), system, getService());
+		auto samplerView = showSampleManager(getParent()->getParent(), system, getNode()->getSystemService());
 		samplerView->setSampleIndex(kitIdx, 0);
 
 		return true;

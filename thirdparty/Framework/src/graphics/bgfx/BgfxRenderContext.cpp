@@ -18,8 +18,12 @@ namespace fs = std::filesystem;
 
 const bgfx::ViewId kClearView = 0;
 
-BgfxRenderContext::BgfxRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager)
-	: _mainWindow(mainWindow), _resolution(res), _resourceManager(resourceManager) {
+void BgfxRenderContext::initialize(NativeWindowHandle mainWindow, Dimension res) {
+	ResourceManagerPtr rm = getResourceManager();
+	assert(rm);
+	
+	_mainWindow = mainWindow;
+	_resolution = res;
 
 	bgfx::PlatformData pd;
 	pd.nwh = _mainWindow;
@@ -34,9 +38,9 @@ BgfxRenderContext::BgfxRenderContext(NativeWindowHandle mainWindow, Dimension re
 
 	bgfx::init(bgfxInit);
 
-	_resourceManager.addProvider<Shader, BgfxShaderProvider>();
-	_resourceManager.addProvider<ShaderProgram>(std::make_unique<BgfxShaderProgramProvider>(_resourceManager.getLookup()));
-	_resourceManager.addProvider<Texture, BgfxTextureProvider>();
+	rm->addProvider<Shader, BgfxShaderProvider>();
+	rm->addProvider<ShaderProgram>(std::make_unique<BgfxShaderProgramProvider>(rm->getLookup()));
+	rm->addProvider<Texture, BgfxTextureProvider>();
 
 	getDefaultShaders();
 

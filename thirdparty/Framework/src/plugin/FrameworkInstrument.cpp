@@ -7,6 +7,8 @@
 #include "foundation/MacroTools.h"
 #include "application/Application.h"
 
+#include "graphics/gl/GlRenderContext.h"
+
 #ifndef APPLICATION_HEADER
 #define APPLICATION_HEADER APPLICATION_IMPL
 #endif
@@ -37,17 +39,18 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 
 		if (view) {
 			IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
-			std::shared_ptr<app::UiContext> uiContext = std::make_shared<app::UiContext>(false);
+			
+			std::shared_ptr<app::UiContext> uiContext = std::make_shared<app::UiContext>(std::make_unique<GlRenderContext>(false));
 
 			pGraphics->EnableMouseOver(true);
 			pGraphics->EnableMultiTouch(true);
 			pGraphics->AttachPanelBackground(COLOR_GRAY);
 
 			NativeWindowHandle nativeWindowHandle = gfx->GetNativeWindowHandle();
-			fw::app::WindowPtr window = uiContext->addNativeWindow(view, nativeWindowHandle, fw::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
+			fw::app::WindowPtr window = uiContext->setupNativeWindow(view, nativeWindowHandle, fw::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
 
 			ViewManagerPtr viewManager = window->getViewManager();
-			viewManager->createState(_audioManager);
+			viewManager->createState(_audioManager.get());
 			viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
 
 			FrameworkView* frameworkView = new FrameworkView(uiContext, window, [&]() { _editorOpen = false; });
@@ -67,6 +70,8 @@ void FrameworkInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 	if (!_audioManager->getProcessor()) {
 		return;
 	}
+
+	checkTransportRunning();
 
 	_output.resize((uint32)nFrames);
 
@@ -93,6 +98,8 @@ void FrameworkInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 	if (!_audioManager->getProcessor()) {
 		return;
 	}
+
+	checkTransportRunning();
 
 	_audioManager->getProcessor()->onMidi(fw::MidiMessage{
 		.status = msg.mStatus,
@@ -165,4 +172,17 @@ int FrameworkInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 
 	spdlog::error("Failed to deserialize state: Size is too large ({}).  Must be less than {}", size, chunk.Size() - pos);
 	return pos;
+}
+
+bool FrameworkInstrument::checkTransportRunning() {
+	if (mTimeInfo.mTransportIsRunning != _transportRunning) {
+		_transportRunning = mTimeInfo.mTransportIsRunning;
+
+		auto processor = _audioManager->getProcessor();
+		if (processor) {
+			processor->onTransportChange(_transportRunning);
+		}
+	}
+
+	return _transportRunning;
 }

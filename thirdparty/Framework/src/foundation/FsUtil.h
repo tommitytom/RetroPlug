@@ -110,7 +110,7 @@ namespace fw::FsUtil {
 
 			try {
 				std::string::size_type sz;
-				std::stoul(std::string(beforeDash), &sz, beforeDash.size() < 8 ? 10 : 16);
+				size_t ret = std::stoul(std::string(beforeDash), &sz, beforeDash.size() < 8 ? 10 : 16);
 
 				if (sz == beforeDash.size()) {
 					return beforeDash;

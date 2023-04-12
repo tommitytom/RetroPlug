@@ -122,8 +122,11 @@ void SystemView::buildMenu(fw::Menu& target) {
 		})*/
 		.parent();
 	#endif
-
-	settingsMenu.multiSelect("MIDI", { "SendToAll", "FourChannelsPerInstance", "OneChannelPerInstance" }, &projectState.settings.midiRouting).parent();
+	
+	settingsMenu
+		.multiSelect("MIDI", { "SendToAll", "FourChannelsPerInstance", "OneChannelPerInstance" }, &projectState.settings.midiRouting)
+		.multiSelect("Audio Routing", { "StereoMixDown", "TwoChannelsPerInstance", "TwoChannelsPerChannel" }, &projectState.settings.audioRouting)
+		.parent();
 
 	settingsMenu
 		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)

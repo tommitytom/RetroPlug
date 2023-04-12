@@ -10,6 +10,7 @@ local m = {
 	iplug2 = dofile("iplug2.lua"),
 	glad = dofile("glad.lua"),
 	bin2h = dofile("bin2h.lua"),
+	simdjson = dofile("simdjson.lua"),
 }
 
 function m.allProjects()
@@ -25,6 +26,7 @@ function m.allProjects()
 	m.iplug2.project()
 	m.glad.project()
 	m.bin2h.project()
+	m.simdjson.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

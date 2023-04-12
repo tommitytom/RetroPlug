@@ -1,7 +1,5 @@
 #include "Application.h"
 
-//#include "foundation/FoundationModule.h"
-
 #ifdef FW_OS_WINDOWS
 #include <spdlog/sinks/msvc_sink.h>
 #endif
@@ -16,7 +14,5 @@ namespace fw::app {
 		auto logger = std::make_shared<spdlog::logger>("", spdlog::sinks_init_list{ consoleSink, msvcSink });
 		spdlog::set_default_logger(logger);
 #endif
-
-		//FoundationModule::setup();
 	}
 }

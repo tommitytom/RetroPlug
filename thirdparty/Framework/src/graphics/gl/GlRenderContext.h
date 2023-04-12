@@ -45,11 +45,11 @@ namespace fw {
 
 		bool _lineAA = true;
 
-		ResourceManager& _resourceManager;
-
 	public:
-		GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager);
+		GlRenderContext(bool requiresFlip) : RenderContext(requiresFlip) {}
 		~GlRenderContext() = default;
+
+		void initialize(NativeWindowHandle mainWindow, Dimension res) override;
 
 		void beginFrame(f32 delta) override;
 

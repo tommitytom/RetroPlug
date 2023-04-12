@@ -253,4 +253,6 @@ namespace fw {
 				return nullptr;
 			}
 	};
+
+	using ResourceManagerPtr = std::shared_ptr<ResourceManager>;
 }

@@ -29,7 +29,7 @@ namespace fw {
 
 		struct Target {
 			std::string name;
-			const fw::Field* field = nullptr;
+			//const fw::Field* field = nullptr;
 			entt::any source;
 			entt::any target;
 			
@@ -131,14 +131,14 @@ namespace fw {
 				f32 min = 0.0f;
 				f32 range = 1.0f;
 
-				if (const TypedProperty<Range>* rangeProp = target.field->findProperty<Range>(); rangeProp) {
+				/*if (const TypedProperty<Range>* rangeProp = target.field->findProperty<Range>(); rangeProp) {
 					min = rangeProp->getValue().getMin();
 					range = rangeProp->getValue().getMax() - min;
 				}
 
 				if (const TypedProperty<StepSize>* stepSize = target.field->findProperty<StepSize>(); stepSize) {
 					
-				}
+				}*/
 
 				f32 ranged = source - min;
 				ranged += modSource * range * this->range;

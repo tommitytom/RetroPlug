@@ -44,9 +44,9 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 				.name = project.getName(),
 				.path = path,
 			});
-		}
 
-		return true;
+			return true;
+		}
 	} else if (romPaths.size() > 0) {
 		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
 			auto& pathPair = romPaths[i];

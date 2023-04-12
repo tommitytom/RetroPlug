@@ -11,6 +11,7 @@ const fw::Color4 COLOR_GRAY = fw::Color4(190, 190, 190, 255);
 
 MenuView::MenuView() : fw::View({ 160, 144 }) {
 	setType<MenuView>();
+	setFocusPolicy(fw::FocusPolicy::Click);
 	_menuArea = fw::RectF{ MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
 }
 
@@ -383,9 +384,9 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 void MenuView::onRender(fw::Canvas& canvas) {
 	setClip(true);
 
-	_fontSize = 9.0f;
-	_itemSpacing = 12.0f;
-	_separatorSpacing = 7.0f;
+	_fontSize = 6.0f;
+	_itemSpacing = 10.0f;
+	_separatorSpacing = 5.0f;
 
 	canvas.setFont(_fontName, _fontSize);
 	canvas.setTextAlign(fw::TextAlignFlags::Top | fw::TextAlignFlags::Left);

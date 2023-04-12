@@ -6,10 +6,10 @@
 namespace fw {
 	class FontManager {
 	private:
-		ResourceManager& _resourceManager;
+		std::shared_ptr<ResourceManager> _resourceManager;
 
 	public:
-		FontManager(ResourceManager& resourceManager): _resourceManager(resourceManager) {}
+		FontManager(std::shared_ptr<ResourceManager> resourceManager): _resourceManager(resourceManager) {}
 		~FontManager() = default;
 
 		FontFaceHandle loadFont(std::string_view fontUri, f32 size);

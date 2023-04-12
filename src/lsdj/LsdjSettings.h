@@ -11,7 +11,9 @@ namespace rp {
 		Off,
 		MidiSync,
 		MidiSyncArduinoboy,
-		MidiMap
+		MidiMap,
+		Keyboard,
+		KeyboardMidi
 	};
 
 	struct TimeInfo {
@@ -61,6 +63,7 @@ namespace rp {
 
 	struct ArduinoboyServiceSettings {
 		LsdjSyncMode syncMode = LsdjSyncMode::Off;
+		bool autoPlay = false;
 		uint32 tempoDivisor = 1;
 	};
 

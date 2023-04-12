@@ -24,4 +24,11 @@ namespace fw::MathUtil {
 	static f64 round(f64 value) {
 		return floor(value + 0.5);
 	}
+
+	static uint8 reverse(uint8 b) {
+		b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+		b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+		b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+		return b;
+	}
 }

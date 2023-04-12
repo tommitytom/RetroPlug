@@ -17,26 +17,21 @@ namespace fw::app {
 		_uiContext = nullptr;
 	}
 
-	WindowPtr ApplicationRunner::setup(std::unique_ptr<Application>&& app) {
+	WindowPtr ApplicationRunner::setup(std::unique_ptr<Application>&& app, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager) {
 		_app = std::move(app);
 
-		AudioProcessorPtr audioProcessor = _app->onCreateAudio();
-		ViewPtr view = _app->onCreateUi();
+		AudioProcessorPtr audioProcessor = audioManager ? _app->onCreateAudio() : nullptr;
+		ViewPtr view = renderContext ? _app->onCreateUi() : nullptr;
 
 		assert(view || audioProcessor);
 
 		if (audioProcessor) {
-#ifdef FW_PLATFORM_WEB
-			_audioManager = std::make_shared<audio::WebAudioManager>();
-#else
-			_audioManager = std::make_shared<audio::MiniAudioManager>();
-#endif
-			
+			_audioManager = std::move(audioManager);			
 			_audioManager->setProcessor(audioProcessor);
 		}
 
 		if (view) {
-			_uiContext = std::make_unique<UiContext>(true);
+			_uiContext = std::make_unique<UiContext>(std::move(renderContext));
 			WindowPtr window = _uiContext->setup(view);
 			ViewManagerPtr viewManager = window->getViewManager();
 
@@ -59,6 +54,10 @@ namespace fw::app {
 
 	bool ApplicationRunner::runFrame() {
 		return _uiContext->runFrame();
+	}
+
+	void ApplicationRunner::reload() {
+		_uiContext->handleHotReload();
 	}
 
 	int ApplicationRunner::doLoop() {

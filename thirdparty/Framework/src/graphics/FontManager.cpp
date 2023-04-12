@@ -11,12 +11,12 @@ using namespace fw;
 FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {
 	std::string fontFaceUri = fmt::format("{}/{}", fontUri, size);
 
-	FontFaceHandle fontFace = _resourceManager.get<FontFace>(fontFaceUri);
+	FontFaceHandle fontFace = _resourceManager->get<FontFace>(fontFaceUri);
 	if (fontFace.isValid()) {
 		return fontFace;
 	}
 
-	return _resourceManager.create<FontFace>(fontFaceUri, FontFaceDesc {
+	return _resourceManager->create<FontFace>(fontFaceUri, FontFaceDesc {
 		.font = std::string(fontUri),
 		.size = size
 	});

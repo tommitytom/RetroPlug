@@ -47,6 +47,7 @@ namespace fw {
 		ViewPtr source;
 		ViewPtr attached;
 		std::vector<ViewPtr> targets;
+		Point sourcePoint;
 	};
 
 	enum class CursorType {
@@ -63,50 +64,7 @@ namespace fw {
 		ResizeV = ResizeNS,
 	};
 
-	using EventType = entt::id_type;
-
-	enum class KeyAction {
-		Release,
-		Press,
-		Repeat
-	};
-
-	struct KeyEvent {
-		VirtualKey::Enum key;
-		KeyAction action;
-		bool down;
-	};
-
-	struct MouseScrollEvent {
-		PointF delta;
-		Point position;
-	};
-
-	struct MouseButtonEvent {
-		MouseButton::Enum button;
-		bool down;
-		Point position;
-	};
-
-	struct MouseDoubleClickEvent {
-		MouseButton::Enum button;
-		Point position;
-	};
-
-	struct ButtonEvent {
-		ButtonType::Enum button;
-		bool down;
-	};
-
-	struct MouseEnterEvent {
-		Point position;
-	};
-
-	struct MouseLeaveEvent {};
-
-	struct MouseMoveEvent {
-		Point position;
-	};
+	using EventType = entt::id_type;	
 
 	struct ResizeEvent {
 		Dimension size;
@@ -422,10 +380,17 @@ namespace fw {
 
 		virtual void onDismount() {}
 
-		void beginDrag(ViewPtr placeholder) {
+		virtual void onFocus() {}
+		
+		virtual void onLostFocus() {}
+
+		virtual void onHotReload() {}
+
+		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;
 			_shared->dragContext.source = shared_from_this();
 			_shared->dragContext.attached = placeholder;
+			_shared->dragContext.sourcePoint = sourcePos;
 			spdlog::info("Beginning drag of {}", getName());
 		}
 
@@ -457,15 +422,15 @@ namespace fw {
 			return _shared->state.tryGet<T>();
 		}
 
-		entt::any* tryGetState(entt::id_type type) {
-			assert(_shared);
-			return _shared->state.tryGet(type);
-		}
-
 		template <typename T>
 		const T* tryGetState() const {
 			assert(_shared);
 			return _shared->state.tryGet<T>();
+		}
+
+		entt::any* tryGetState(entt::id_type type) {
+			assert(_shared);
+			return _shared->state.tryGet(type);
 		}
 
 		template <typename T>
@@ -551,8 +516,15 @@ namespace fw {
 
 		void focus() {
 			assert(_shared);
-			if (_shared) {
+			if (_shared && !hasFocus()) {
+				ViewPtr currentFocus = _shared->focused.lock();
+
+				if (currentFocus) {
+					currentFocus->unfocus();
+				}
+
 				_shared->focused = shared_from_this();
+				onFocus();
 			}
 		}
 
@@ -560,6 +532,7 @@ namespace fw {
 			assert(_shared);
 			if (_shared && hasFocus()) {
 				_shared->focused.reset();
+				onLostFocus();
 			}
 		}
 

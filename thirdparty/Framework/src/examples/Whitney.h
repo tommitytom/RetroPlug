@@ -15,6 +15,49 @@
 
 #include "application/Application.h"
 
+#include "ui/ObjectInspectorUtil.h"
+
+namespace fw {
+	struct WhitneySettings {
+		size_t dotCount = 1250;
+		f32 duration = 280;
+		f32 minSize = 0.5f;
+		f32 maxSize = 50.0f;
+		f32 dotAlpha = 0.9f;
+		f32 lineAlpha = 0.9f;
+		f32 hueOffset = 0.0f;
+		bool drawDots = true;
+		bool drawLines = true;
+		bool dotsOverLines = true;
+	};
+}
+
+REFL_AUTO(
+	type(fw::WhitneySettings),
+	field(dotCount, fw::RangeAttribute(2, 20000)),
+	field(duration, fw::RangeAttribute(10.0f, 20000)/*, fw::CurveAttribute(Curves::pow2)*/),
+	field(minSize, fw::RangeAttribute(0.01f, 50.0f)),
+	field(maxSize, fw::RangeAttribute(0.01f, 50.0f)),
+	field(dotAlpha),
+	field(lineAlpha),
+	field(hueOffset),
+	field(drawDots),
+	field(drawLines),
+	field(dotsOverLines)
+)
+
+REFL_AUTO(
+	type(fw::PropertyModulator),
+	field(type),
+	field(mode),
+	field(timing),
+	field(frequency),
+	field(multiplier),
+	field(range),
+	field(position),
+	field(cycleLength)
+)
+
 namespace fw {
 	struct Dot {
 		Point pos;
@@ -25,21 +68,8 @@ namespace fw {
 
 	class Whitney : public View {
 	private:
-		struct Settings {
-			size_t dotCount = 1250;
-			f32 duration = 280;
-			f32 minSize = 0.5f;
-			f32 maxSize = 50.0f;
-			f32 dotAlpha = 0.9f;
-			f32 lineAlpha = 0.9f;
-			f32 hueOffset = 0.0f;
-			bool drawDots = true;
-			bool drawLines = true;
-			bool dotsOverLines = true;
-		};
-
-		Settings _baseSettings;
-		Settings _settings;
+		WhitneySettings _baseSettings;
+		WhitneySettings _settings;
 
 		std::vector<PropertyModulator::Target> _modTargets;
 		std::vector<std::string> _modTargetNames;
@@ -55,45 +85,12 @@ namespace fw {
 		SliderViewPtr _positionSlider;
 
 		std::vector<Dot> _dots;
-
-		fw::TypeRegistry _typeRegistry;
-
+		
 	public:
 		Whitney() : View({ 1024, 768 }) {
 			setType<Whitney>();
 			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
-
-			_typeRegistry.addCommonTypes();
-
-			_typeRegistry.addEnum<PropertyModulator::Type>();
-			_typeRegistry.addEnum<PropertyModulator::Mode>();
-			_typeRegistry.addEnum<PropertyModulator::Timing>();
-
-			_typeRegistry.addType<Range>();
-			_typeRegistry.addType<Curve>();
-			_typeRegistry.addType<StepSize>();
-			_typeRegistry.addType<UriBrowser>();
-			_typeRegistry.addType<DisplayName>();
-
-			_typeRegistry.addType<PropertyModulator>()
-				.addField<&PropertyModulator::type>("type")
-				.addField<&PropertyModulator::mode>("mode")
-				.addField<&PropertyModulator::frequency>("frequency", Range(0.01f, 1.0f))
-				.addField<&PropertyModulator::range>("range");
-
-			_typeRegistry.addType<Settings>()
-				.addField<&Settings::dotCount>("dotCount", Range(2, 20000))
-				.addField<&Settings::duration>("duration", Range(2, 20000), Curve(Curves::pow2))
-				.addField<&Settings::minSize>("minSize", Range(0.01f, 50.0f))
-				.addField<&Settings::maxSize>("maxSize", Range(0.01f, 50.0f))
-				.addField<&Settings::dotAlpha>("dotAlpha")
-				.addField<&Settings::lineAlpha>("lineAlpha")
-				.addField<&Settings::hueOffset>("hueOffset")
-				.addField<&Settings::drawDots>("drawDots")
-				.addField<&Settings::drawLines>("drawLines")
-				.addField<&Settings::dotsOverLines>("dotsOverLines")
-				;
 		}
 
 		~Whitney() = default;
@@ -123,7 +120,26 @@ namespace fw {
 				_dots.push_back(Dot());
 			}
 
-			for (const fw::Field& field : _typeRegistry.getTypeInfo<Settings>().fields) {
+			for_each(refl::reflect<WhitneySettings>().members, [&](auto member) {
+				using MemberType = std::decay_t<decltype(member(_baseSettings))>;
+
+				if constexpr (is_writable(member)/* && refl::descriptor::has_attribute<serializable>(member)*/) {
+					std::string fieldName = StringUtil::formatMemberName(get_display_name(member));
+					
+					_modTargetNames.push_back(fieldName);
+					
+					_modTargets.push_back(PropertyModulator::Target{
+						.name = std::move(fieldName),
+						.source = entt::any(member(_baseSettings)),
+						.target = entt::any(member(_settings))
+					});
+
+					assert(_modTargets.back().source.owner());
+					assert(_modTargets.back().target.owner());
+				}
+			});
+
+			/*for (const fw::Field& field : _typeRegistry.getTypeInfo<Settings>().fields) {
 				if (field.type != getTypeId<f32>()) {
 					continue;
 				}
@@ -143,10 +159,10 @@ namespace fw {
 
 				assert(!_modTargets.back().source.owner());
 				assert(!_modTargets.back().target.owner());
-			}
+			}*/
 
-			addModulator();
-			addModulator();
+			//addModulator();
+			//addModulator();
 
 			rebuildPropertyGrid();
 		}
@@ -167,7 +183,7 @@ namespace fw {
 				_dirty = true;
 			};
 
-			_objectInspector->addObject(_typeRegistry, "Settings", _baseSettings);
+			ObjectInspectorUtil::reflect(_objectInspector, _baseSettings);
 
 			for (size_t i = 0; i < _modulators.size(); ++i) {
 				_objectInspector->pushGroup(fmt::format("Modulator {}", i + 1));
@@ -175,7 +191,7 @@ namespace fw {
 				DropDownMenuViewPtr modTarget = _objectInspector->addProperty<DropDownMenuView>("Target");
 				modTarget->setItems(_modTargetNames);
 
-				modTarget->ValueChangeEvent = [i, this](int32 index) {
+				/*modTarget->ValueChangeEvent = [i, this](int32 index) {
 					if (index >= 0) {
 						PropertyModulator::Target& sourceTarget = _modTargets[index];
 						auto editor = _objectInspector->findEditor<SliderView>(*sourceTarget.field);
@@ -196,7 +212,7 @@ namespace fw {
 						editor->setHandleCount(2);
 						_modulators[i].second = editor;
 					}
-				};
+				};*/
 
 				//_objectInspector->addEnumProperty<PropertyModulator::Type>(_modulators[i].first);
 

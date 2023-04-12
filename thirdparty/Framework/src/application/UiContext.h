@@ -21,7 +21,7 @@ namespace fw::app {
 
 		std::chrono::high_resolution_clock::time_point _lastTime;
 
-		ResourceManager _resourceManager;
+		std::shared_ptr<ResourceManager> _resourceManager;
 		fw::FontManager _fontManager;
 
 		FontFaceHandle _defaultFont;
@@ -30,37 +30,36 @@ namespace fw::app {
 
 		WindowPtr _mainWindow;
 
-		bool _flip = false;
+		//bool _flip = false;
 
 	public:
-		UiContext(bool requiresFlip);
+		UiContext(std::unique_ptr<RenderContext>&& renderContext);
 		~UiContext();
 
 		bool runFrame();
 
+		void handleHotReload();
+
 		WindowPtr setup(ViewPtr view) {
 			WindowPtr window = _windowManager->createWindow(view);
-
-			createRenderContext(window);
-
+			initRenderContext(window);
+			
 			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(&_resourceManager, &_fontManager);
+			vm->setResourceManager(_resourceManager.get(), &_fontManager);
 
 			_mainWindow = window;
 
 			return window;
 		}
 
-		WindowPtr addNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, &_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			_windowManager->addWindow(window);
 
-			if (!_renderContext) {
-				createRenderContext(window);
-			}
+			initRenderContext(window);
 
 			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(&_resourceManager, &_fontManager);
+			vm->setResourceManager(_resourceManager.get(), &_fontManager);
 
 			if (!_mainWindow) {
 				_mainWindow = window;
@@ -78,7 +77,7 @@ namespace fw::app {
 		}
 
 	private:
-		void createRenderContext(WindowPtr window);
+		void initRenderContext(WindowPtr window);
 	};
 
 	using UiContextPtr = std::shared_ptr<UiContext>;

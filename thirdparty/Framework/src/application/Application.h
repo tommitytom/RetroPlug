@@ -6,10 +6,6 @@
 
 namespace fw::app {
 	class Application {
-	private:
-		//fw::AudioProcessorPtr _audioProcessor;
-		//fw::ViewPtr _view;
-
 	public:
 		Application();
 		~Application() = default;

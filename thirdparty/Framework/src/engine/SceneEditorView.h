@@ -71,8 +71,8 @@ namespace fw {
 
 				SpriteComponent& sprite = getRegistry().get<SpriteComponent>(_sprite);
 
-				getState<SelectionSingleton>()->selected.clear();
-				getState<SelectionSingleton>()->selected.push_back(entt::meta_handle(sprite)->as_ref());
+				//getState<SelectionSingleton>()->selected.clear();
+				//getState<SelectionSingleton>()->selected.push_back(entt::meta_handle(sprite)->as_ref());
 			}
 
 			return true;

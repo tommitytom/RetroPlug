@@ -7,6 +7,10 @@ extern void initMain(int argc, char** argv);
 extern bool mainLoop(void);
 extern void destroyMain(void);
 
+extern void reload(lpp::LppHotReloadPostpatchHookId, const wchar_t* const recompiledModulePath, const wchar_t* const* const modifiedFiles, unsigned int modifiedFilesCount, const wchar_t* const* const modifiedClassLayouts, unsigned int modifiedClassLayoutsCount);
+
+LPP_HOTRELOAD_POSTPATCH_HOOK(reload);
+
 int main(int argc, char** argv) {
 	std::filesystem::path currentDir(__FILE__);
 

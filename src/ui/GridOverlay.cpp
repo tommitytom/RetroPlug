@@ -128,8 +128,8 @@ void GridOverlay::onUpdate(f32 delta) {
 					SystemOverlayPtr serviceView = systemFactory.createSystemServiceUi(service->getType());
 
 					if (serviceView) {
-						serviceView->setSystem(system);
-						serviceView->setSystemService(service);
+						SystemServiceNodePtr node = std::make_shared<SystemServiceNode>("Audio"_hs, system, service);
+						serviceView->setNode(node);
 						systemView->addChild(serviceView);
 					} else {
 						spdlog::debug("System service {} does not contain a UI", service->getType());

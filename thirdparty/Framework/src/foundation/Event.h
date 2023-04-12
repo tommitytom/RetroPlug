@@ -12,6 +12,8 @@
 #include <moodycamel/concurrentqueue.h>
 #include <spdlog/spdlog.h>
 
+#include "foundation/TypeRegistry.h"
+
 namespace fw {
 	class EventNode {
 	public:
@@ -483,4 +485,71 @@ namespace fw {
 			return vectorIndexAt(vec, item) != -1;
 		}
 	};
+
+	class EventReceiver;
+	
+	class EventEmitter {
+	private:
+		EventNode& _node;
+		EventNode::NodeId _targetNode;
+
+		std::weak_ptr<EventReceiver> _target;
+		
+	public:
+		EventEmitter(EventNode& node, std::string_view targetNode, std::weak_ptr<EventReceiver> target) : EventEmitter(node, entt::hashed_string(targetNode.data(), targetNode.size()), target) {}
+		EventEmitter(EventNode& node, EventNode::NodeId targetNode, std::weak_ptr<EventReceiver> target): _node(node), _targetNode(targetNode), _target(target) {}
+		~EventEmitter() = default;
+
+		
+		void emit() {
+			//_node.send(_targetNode)
+		}
+	};
+
+	class EventReceiver {
+	private:
+		std::unordered_map<EventNode::EventType, EventNode::SubscriptionHandler> _subscriptions;
+		
+	public:
+		void receiveEvent(entt::any& ev) {
+			EventNode::EventType eventType = ev.type().index();
+			
+			auto found = _subscriptions.find(eventType);
+			if (found != _subscriptions.end()) {
+				found->second(ev);
+			}
+		}
+
+	protected:
+		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
+		EventNode::EventType receive(std::function<void()>&& func) {
+			EventNode::EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(); });
+			return eventType;
+		}
+
+		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
+		EventNode::EventType receive(std::function<void(T&&)>&& func) {
+			EventNode::EventType eventType = entt::type_id<T>().index();
+			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(std::move(entt::any_cast<T&>(v))); });
+			return eventType;
+		}
+
+	private:
+		void subscribe(EventNode::EventType type, EventNode::SubscriptionHandler&& handler) {
+			_subscriptions[type] = std::move(handler);
+		}
+	};
+
+	struct Foo : public EventReceiver {
+		int v = 0;
+	};
+	
+	static void create() {
+		//Foo obj;
+		
+		//EventNode node("Root");
+		
+		//EventEmitter emitter(node, "Audio", obj);
+	}
 }

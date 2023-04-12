@@ -192,6 +192,10 @@ namespace fw {
 			return propagateDrop(paths, _mouseState.position, getChildren());
 		}
 
+		void onHotReload() override {
+			propagateHotReload(getChildren());
+		}
+
 		void onResize(const ResizeEvent& ev) override {
 			/*switch (getSizingPolicy()) {
 			case fw::SizingPolicy::None:
@@ -233,6 +237,13 @@ namespace fw {
 			for (ViewPtr view : views) {
 				spdlog::info("{}- {}", indent, view->getName());
 				propagatePrint(view->getChildren(), indent + '\t');
+			}
+		}
+
+		void propagateHotReload(std::vector<ViewPtr>& views) {
+			for (ViewPtr view : views) {
+				view->onHotReload();
+				propagateHotReload(view->getChildren());
 			}
 		}
 
@@ -291,9 +302,11 @@ namespace fw {
 					FocusPolicy policy = _mouseOver[i]->getFocusPolicy();
 
 					if ((uint32)policy & (uint32)FocusPolicy::Click) {
-						_shared->focused = _mouseOver[i];
+						_mouseOver[i]->focus();
+						
 						_mouseOverClickIdx = i;
 						_mouseOverClickedItem = true;
+						
 						break;
 					}
 				}

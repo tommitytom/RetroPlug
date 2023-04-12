@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <unordered_map>
+#include "foundation/Math.h"
 
 namespace MouseButton {
 	enum Enum : unsigned int {
@@ -203,6 +204,20 @@ namespace VirtualKey {
 		LeftMenu = 0xA4,
 		RightMenu = 0xA5,
 
+		Oem1 = 0xBA,
+		Oem2 = 0xBF,
+		Oem3 = 0xC0,
+		Oem4 = 0xDB,
+		Oem5 = 0xDC,
+		Oem6 = 0xDD,
+		Oem7 = 0xDE,
+		Oem8 = 0xDF,
+
+		OemPlus = 0xBB,
+		OemComma = 0xBC,
+		OemMinus = 0xBD,
+		OemPeriod = 0xBE,
+
 		COUNT
 	};
 
@@ -320,6 +335,18 @@ namespace VirtualKey {
 		{ "RightCtrl", VirtualKey::RightCtrl },
 		{ "LeftMenu", VirtualKey::LeftMenu },
 		{ "RightMenu", VirtualKey::RightMenu },
+		{ "Oem1", VirtualKey::Oem1 },
+		{ "Oem2", VirtualKey::Oem2 },
+		{ "Oem3", VirtualKey::Oem3 },
+		{ "Oem4", VirtualKey::Oem4 },
+		{ "Oem5", VirtualKey::Oem5 },
+		{ "Oem6", VirtualKey::Oem6 },
+		{ "Oem7", VirtualKey::Oem7 },
+		{ "Oem8", VirtualKey::Oem8 },
+		{ "OemPlus", VirtualKey::OemPlus },
+		{ "OemComma", VirtualKey::OemComma },
+		{ "OemMinus", VirtualKey::OemMinus },
+		{ "OemPeriod", VirtualKey::OemPeriod },
 	};
 
 	static VirtualKey::Enum fromString(std::string_view key) {
@@ -340,4 +367,49 @@ namespace VirtualKey {
 
 		return "Unknown";
 	}
+}
+
+namespace fw {
+	enum class KeyAction {
+		Release,
+		Press,
+		Repeat
+	};
+
+	struct KeyEvent {
+		VirtualKey::Enum key;
+		KeyAction action;
+		bool down;
+	};
+
+	struct MouseScrollEvent {
+		PointF delta;
+		Point position;
+	};
+
+	struct MouseButtonEvent {
+		MouseButton::Enum button;
+		bool down;
+		Point position;
+	};
+
+	struct MouseDoubleClickEvent {
+		MouseButton::Enum button;
+		Point position;
+	};
+
+	struct ButtonEvent {
+		ButtonType::Enum button;
+		bool down;
+	};
+
+	struct MouseEnterEvent {
+		Point position;
+	};
+
+	struct MouseLeaveEvent {};
+
+	struct MouseMoveEvent {
+		Point position;
+	};
 }

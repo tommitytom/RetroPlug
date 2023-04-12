@@ -10,10 +10,15 @@ namespace rp {
 		int32 _lastRow = -1;
 		TimeInfo _timeInfo;
 		bool _arduinoboyPlaying = false;
+		uint8 _keyboardOctave = 0;
 
 	public:
 		ArduinoboyService() : TypedSystemService(ARDUINOBOY_SERVICE_TYPE) {}
 		~ArduinoboyService() = default;
+
+		void onAfterLoad(System& system) override;
+
+		void onTransportChange(System& system, bool running) override;
 
 		void onMidi(System& system, const fw::MidiMessage& message) override;
 

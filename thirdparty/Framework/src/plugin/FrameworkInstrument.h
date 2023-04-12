@@ -25,6 +25,8 @@ private:
 
 	bool _editorOpen = false;
 
+	bool _transportRunning = false;
+
 public:
 	FrameworkInstrument(const InstanceInfo& info);
 	~FrameworkInstrument() = default;
@@ -40,5 +42,7 @@ public:
 	bool OnKeyUp(const IKeyPress& key) override;
 	bool SerializeState(IByteChunk& chunk) const override;
 	int UnserializeState(const IByteChunk& chunk, int startPos) override;
+
+	bool checkTransportRunning();
 #endif
 };

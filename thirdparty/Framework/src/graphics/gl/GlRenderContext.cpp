@@ -48,9 +48,9 @@ namespace fw {
 		_result[15] = 1.0f;
 	}
 
-	GlRenderContext::GlRenderContext(NativeWindowHandle mainWindow, Dimension res, ResourceManager& resourceManager)
-		: _mainWindow(mainWindow), _resolution(res), _resourceManager(resourceManager) {
-
+	void GlRenderContext::initialize(NativeWindowHandle mainWindow, Dimension res) {
+		_mainWindow = mainWindow;
+		_resolution = res;
 
 #ifdef FW_PLATFORM_WEB
 		if (!gladLoaderLoadGLES2()) {
@@ -75,9 +75,10 @@ namespace fw {
 		//glEnable(GL_LINE_SMOOTH);
 		//glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
-		_resourceManager.addProvider<Shader, GlShaderProvider>();
-		_resourceManager.addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(_resourceManager.getLookup()));
-		_resourceManager.addProvider<Texture, GlTextureProvider>();
+		ResourceManagerPtr rm = getResourceManager();
+		rm->addProvider<Shader, GlShaderProvider>();
+		rm->addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(rm->getLookup()));
+		rm->addProvider<Texture, GlTextureProvider>();
 
 		glGenVertexArrays(1, &_arrayBuffer);
 		glGenBuffers(1, &_vertexBuffer);

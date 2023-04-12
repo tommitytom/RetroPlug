@@ -133,6 +133,18 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 
 	node.receive<SystemServiceEvent>([&](SystemServiceEvent&& ev) {
 		SystemPtr system = _systemManager.findSystem(ev.systemId);
+
+		if (system) {
+			SystemServicePtr service = findService(system, ev.systemServiceType);
+
+			if (service) {
+				service->receiveEvent(ev.data);
+			}
+		}
+	});
+
+	node.receive<SystemServiceDataEvent>([&](SystemServiceDataEvent&& ev) {
+		SystemPtr system = _systemManager.findSystem(ev.systemId);
 		
 		if (system) {
 			SystemServicePtr service = findService(system, ev.systemServiceType);
@@ -144,6 +156,14 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 			}
 		}
 	});
+}
+
+void RetroPlugProcessor::onTransportChange(bool playing) {
+	for (SystemPtr& system : _systemManager.getSystems()) {
+		for (SystemServicePtr& service : system->getServices()) {
+			service->onTransportChange(*system, playing);
+		}
+	}
 }
 
 void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {

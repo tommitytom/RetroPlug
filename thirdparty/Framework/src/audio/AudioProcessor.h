@@ -17,6 +17,8 @@ namespace fw {
 
 		virtual void onRender(f32* output, const f32* input, uint32 frameCount) = 0;
 
+		virtual void onTransportChange(bool playing) {}
+
 		virtual void onMidi(const fw::MidiMessage& message) {}
 
 		virtual void onSampleRateChange(f32 sampleRate) {}

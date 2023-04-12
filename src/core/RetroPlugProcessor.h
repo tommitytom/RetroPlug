@@ -33,6 +33,8 @@ namespace rp {
 
 		void onMidi(const fw::MidiMessage& message) override;
 
+		void onTransportChange(bool playing) override;
+
 		void onSampleRateChange(f32 sampleRate) override;
 
 		void onSerialize(fw::Uint8Buffer& target) override;

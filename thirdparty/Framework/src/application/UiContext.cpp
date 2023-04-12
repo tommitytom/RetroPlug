@@ -5,29 +5,17 @@
 #include "graphics/TextureAtlas.h"
 #include "graphics/ftgl/FtglFont.h"
 
-#define FW_RENDERER_BGFX
-
-#if defined(FW_RENDERER_GL)
-#include "graphics/gl/GlRenderContext.h"
-using RenderContextT = fw::GlRenderContext;
-const bool RENDERER_REQUIRES_FLIP = true;
-#elif defined(FW_RENDERER_BGFX)
-#include "graphics/bgfx/BgfxRenderContext.h"
-using RenderContextT = fw::BgfxRenderContext;
-const bool RENDERER_REQUIRES_FLIP = false;
-#else
-#include "graphics/gl/GlRenderContext.h"
-using RenderContextT = fw::GlRenderContext;
-const bool RENDERER_REQUIRES_FLIP = true;
-#endif
-
 namespace fw::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
 
-	UiContext::UiContext(bool requiresFlip) : _fontManager(_resourceManager) {
-		_windowManager = std::make_unique<GlfwWindowManager>(_resourceManager, _fontManager);
-		_flip = RENDERER_REQUIRES_FLIP && requiresFlip;
+	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext) : 
+		_resourceManager(std::make_shared<ResourceManager>()), 
+		_fontManager(_resourceManager) 
+	{
+		_renderContext = std::move(renderContext);
+		_windowManager = std::make_unique<GlfwWindowManager>(*_resourceManager, _fontManager);
+		_renderContext->setResourceManager(_resourceManager);
 	}
 
 	UiContext::~UiContext() {
@@ -40,12 +28,19 @@ namespace fw::app {
 		_defaultTexture = nullptr;
 		_defaultProgram = nullptr;
 
-		_resourceManager = ResourceManager();
+		_resourceManager = nullptr;
 
 		_mainWindow = nullptr;
 		_renderContext = nullptr;
 
 		_windowManager = nullptr;
+	}
+
+	void UiContext::handleHotReload() {
+		if (_mainWindow) {
+			ViewManagerPtr vm = _mainWindow->getViewManager();
+			vm->onHotReload();
+		}
 	}
 
 	bool UiContext::runFrame() {
@@ -78,7 +73,7 @@ namespace fw::app {
 					canvas.setDefaults(_defaultTexture, _defaultProgram, _defaultFont);
 					canvas.setDimensions(w->getViewManager()->getDimensions(), 1.0f);
 
-					w->getViewManager()->setResourceManager(&_resourceManager, &_fontManager);
+					w->getViewManager()->setResourceManager(_resourceManager.get(), &_fontManager);
 
 					w->onUpdate(delta);
 
@@ -88,7 +83,7 @@ namespace fw::app {
 
 					_renderContext->renderCanvas(canvas, w->getNativeHandle());
 
-					if (_flip) {
+					if (_renderContext->requiresFlip()) {
 						w->onFrame();
 					}
 				}
@@ -102,12 +97,12 @@ namespace fw::app {
 		return false;
 	}
 
-	void UiContext::createRenderContext(WindowPtr window) {
-		_renderContext = std::make_unique<RenderContextT>(window->getNativeHandle(), window->getViewManager()->getDimensions(), _resourceManager);
-
-		_resourceManager.addProvider<Font, FontProvider>();
-		_resourceManager.addProvider<TextureAtlas, TextureAtlasProvider>();
-		_resourceManager.addProvider<FontFace>(std::make_unique<FtglFontFaceProvider>(_resourceManager));
+	void UiContext::initRenderContext(WindowPtr window) {
+		_renderContext->initialize(window->getNativeHandle(), window->getViewManager()->getDimensions());
+		
+		_resourceManager->addProvider<Font, FontProvider>();
+		_resourceManager->addProvider<TextureAtlas, TextureAtlasProvider>();
+		_resourceManager->addProvider<FontFace>(std::make_unique<FtglFontFaceProvider>(*_resourceManager));
 
 		TextureDesc whiteTextureDesc = TextureDesc{
 			.dimensions = { 8, 8 },
@@ -118,14 +113,14 @@ namespace fw::app {
 		whiteTextureDesc.data.resize(size);
 		memset(whiteTextureDesc.data.data(), 0xFF, size);
 
-		_defaultTexture = _resourceManager.create<Texture>("textures/white", whiteTextureDesc);
+		_defaultTexture = _resourceManager->create<Texture>("textures/white", whiteTextureDesc);
 
 		auto shaderDescs = _renderContext->getDefaultShaders();
 
-		_resourceManager.create<fw::Shader>("shaders/CanvasVertex", shaderDescs.first);
-		_resourceManager.create<fw::Shader>("shaders/CanvasFragment", shaderDescs.second);
+		_resourceManager->create<fw::Shader>("shaders/CanvasVertex", shaderDescs.first);
+		_resourceManager->create<fw::Shader>("shaders/CanvasFragment", shaderDescs.second);
 
-		_defaultProgram = _resourceManager.create<ShaderProgram>("shaders/CanvasDefault", {
+		_defaultProgram = _resourceManager->create<ShaderProgram>("shaders/CanvasDefault", {
 			"shaders/CanvasVertex",
 			"shaders/CanvasFragment"
 		});

@@ -19,22 +19,23 @@ namespace fw {
 		}
 	};
 
-	class PropertyF32 : public PropertyBase {
+	template <typename T> requires std::is_arithmetic_v<T>
+	class PropertyNumeric : public PropertyBase {
 	private:
-		f32* _value = nullptr;
-		f32 _min = 0.0f;
-		f32 _max = 0.0f;
-		f32 _stepSize = 0.0f;
+		T* _value = nullptr;
+		T _min = 0;
+		T _max = 0;
+		T _stepSize = 0;
 		Curves::Func _curve = nullptr;
 
 	public:
-		PropertyF32() {}
-		PropertyF32(const PropertyF32& other) { *this = other; }
-		PropertyF32(PropertyF32&& other) noexcept { *this = std::move(other); }
-		PropertyF32(f32* value, f32 min = 0.0f, f32 max = 0.0f, f32 stepSize = 0.0f, Curves::Func curve = Curves::linear)
+		PropertyNumeric() {}
+		PropertyNumeric(const PropertyNumeric& other) { *this = other; }
+		PropertyNumeric(PropertyNumeric&& other) noexcept { *this = std::move(other); }
+		PropertyNumeric(T* value, T min = 0, T max = 0, T stepSize = 0, Curves::Func curve = Curves::linear)
 			: _value(value), _min(min), _max(max), _stepSize(stepSize), _curve(curve) {}
 
-		PropertyF32& operator=(const PropertyF32& other) noexcept {
+		PropertyNumeric& operator=(const PropertyNumeric& other) noexcept {
 			_value = other._value;
 			_min = other._min;
 			_max = other._max;
@@ -45,8 +46,8 @@ namespace fw {
 
 			return *this;
 		}
-		
-		PropertyF32& operator=(PropertyF32&& other) noexcept {
+
+		PropertyNumeric& operator=(PropertyNumeric&& other) noexcept {
 			_value = other._value;
 			_min = other._min;
 			_max = other._max;
@@ -64,25 +65,25 @@ namespace fw {
 			return *this;
 		}
 
-		void setValue(f32 value) {
-			f32 range = getRange();
-			f32 rangedValue = value - _min;
+		void setValue(T value) {
+			f32 range = static_cast<f32>(getRange());
+			f32 rangedValue = static_cast<f32>(value - _min);
 
-			if (_min != 0.0f && _max != 0.0f) {
+			if (_min != 0 && _max != 0) {
 				f32 frac = MathUtil::clamp(rangedValue, 0.0f, range) / range;
 				frac = MathUtil::clamp(_curve(frac), 0.0f, 1.0f);
 				rangedValue = frac * range;
 			}
 
 			if (_stepSize > 0) {
-				rangedValue -= fmod(rangedValue, _stepSize);
+				rangedValue -= fmod(rangedValue, static_cast<f32>(_stepSize));
 			}
 
-			*_value = rangedValue + _min;
+			*_value = static_cast<T>(rangedValue + (f32)_min);
 			incrementVersion();
 		}
 
-		void setRange(f32 min, f32 max) {
+		void setRange(T min, T max) {
 			_min = min;
 			_max = max;
 			setValue(*_value);
@@ -92,19 +93,19 @@ namespace fw {
 			_curve = func;
 		}
 
-		f32 getMin() const {
+		T getMin() const {
 			return _min;
 		}
 
-		f32 getMax() const {
+		T getMax() const {
 			return _max;
 		}
 
-		f32 getValue() const {
+		T getValue() const {
 			return *_value;
 		}
 
-		f32 getRange() const {
+		T getRange() const {
 			return _max - _min;
 		}
 
@@ -112,4 +113,6 @@ namespace fw {
 			return _value != nullptr;
 		}
 	};
+
+	using PropertyF32 = PropertyNumeric<f32>;
 }
