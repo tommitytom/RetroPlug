@@ -26,7 +26,7 @@ namespace fw {
 
 		void clear() {
 			for (NodeDesc& node : _nodes) {
-				node.destroy(node.data);
+				node.destroy(reinterpret_cast<std::byte*>(node.data));
 			}
 			
 			_data.clear();
@@ -57,14 +57,14 @@ namespace fw {
 			NodeDesc& inputNode = _nodes[_nodeLookup[inputNodeIdx]];
 
 			const void* outputPointer = outputNode.outputPointers[outputPort];
-			InputSetterFunc setter = inputNode.inputSetters[outputPort];
+			InputSetterFunc setter = inputNode.inputSetters[inputPort];
 
 			setter(outputPointer);
 		}
 
 		void process() {
 			for (NodeDesc& node : _nodes) {
-				node.process(node.data);
+				node.process(reinterpret_cast<std::byte*>(node.data));
 			}
 		}
 
@@ -82,6 +82,12 @@ namespace fw {
 			size_t offset = _nodeLookup[idx];
 			assert(_nodes[offset].type == entt::type_hash<T>::value());
 			return *reinterpret_cast<const NodeState<T>*>(_nodes[offset].data);
+		}
+
+		entt::any getNodeState(size_t idx) const {
+			assert(idx < _nodeLookup.size());
+			size_t offset = _nodeLookup[idx];
+			return _nodes[offset].data->getFullState();
 		}
 	};
 }

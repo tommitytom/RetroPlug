@@ -29,6 +29,12 @@ namespace fw {
 		std::vector<FieldGroup> _fieldGroups;
 
 	public:
+		void clear() {
+			_fieldGroups.clear();
+			clearProperties();
+			removeChildren();
+		}
+		
 		template <typename T>
 		std::shared_ptr<T> findEditor(const fw::Field& field) {
 			for (const FieldGroup& group : _fieldGroups) {

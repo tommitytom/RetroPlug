@@ -134,6 +134,7 @@ function m.Ui.include()
 	dependson { "configure" }
 
 	m.Graphics.include()
+	dep.yoga.include()
 	dep.bgfx.compat()
 
 	filter {}
@@ -145,13 +146,14 @@ function m.Ui.link()
 	links { "Ui" }
 
 	m.Graphics.link()
+	dep.yoga.link()
 end
 
 function m.Ui.project()
 	project "Ui"
 	kind "StaticLib"
 
-	m.Graphics.include()
+	m.Ui.include()
 
 	files {
 		paths.SRC_ROOT .. "ui/**.h",
@@ -319,6 +321,7 @@ function m.ExampleApplication.project(name)
 		m.Application.link()
 		m.Engine.link()
 		m.Ui.link()
+		dep.simdjson.link()
 
 		defines {
 			"APPLICATION_HEADER=" .. name,
@@ -360,6 +363,7 @@ function m.ExampleApplication.project(name)
 		m.Engine.link()
 		m.Ui.link()
 		dep.simplefilewatcher.link()
+		dep.simdjson.link()
 
 		defines {
 			"APPLICATION_HEADER=" .. name,
@@ -382,7 +386,7 @@ function m.ExampleApplication.project(name)
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
 		util.liveppCompat()
-
+--[[
 	iplug2.createApp(config)
 		m.Application.link()
 		m.Engine.link()
@@ -452,7 +456,7 @@ function m.ExampleApplication.project(name)
 			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
 
-		filter {}
+		filter {}]]
 end
 
 

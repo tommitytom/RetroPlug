@@ -45,6 +45,16 @@ namespace fw {
 			return prop;
 		}
 
+		Group& pushGroup(const std::string& name) {
+			_groups.push_back(Group{
+				.label = addChild<LabelView>(fmt::format("{} Label", name))
+			});
+
+			_groups.back().label->setText(name);
+
+			return _groups.back();
+		}
+
 		Group& pushGroup(std::string_view name) {
 			_groups.push_back(Group{
 				.label = addChild<LabelView>(fmt::format("{} Label", name))
@@ -84,7 +94,7 @@ namespace fw {
 
 			if (_draggingSeparator) {
 				_separatorPerc = MathUtil::clamp((f32)pos.x / (f32)getDimensionsF().w, 0.0f, 1.0f);
-				updateLayout(getDimensions());
+				updateLayout();
 				setCursor(CursorType::ResizeH);
 			} else if (pos.x == separatorX) {
 				spdlog::info("OVER mid");
@@ -148,15 +158,19 @@ namespace fw {
 		}
 
 		void onInitialize() override {
-			updateLayout(getDimensions());
+			updateLayout();
 		}
 
 		void onMount() override {
-			updateLayout(getDimensions());
+			updateLayout();
 		}
 
 		int32 getSeperatorX() const {
 			return (int32)(getDimensionsF().w * _separatorPerc);
+		}
+
+		void updateLayout() {
+			updateLayout(getDimensions());
 		}
 
 		void updateLayout(Dimension dim) {

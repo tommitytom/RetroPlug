@@ -397,6 +397,10 @@ namespace fw {
 			return RectT<T>(x + amount, y + amount, w - amount * 2, h - amount * 2);
 		}
 
+		RectT<T> grow(T amount) const {
+			return RectT<T>(x - amount, y - amount, w + amount * 2, h + amount * 2);
+		}
+
 		RectT<T> combine(const RectT<T>& other) const {
 			RectT<T> ret = *this;
 

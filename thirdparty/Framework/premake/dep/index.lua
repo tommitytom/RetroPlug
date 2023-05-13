@@ -11,6 +11,7 @@ local m = {
 	glad = dofile("glad.lua"),
 	bin2h = dofile("bin2h.lua"),
 	simdjson = dofile("simdjson.lua"),
+	yoga = dofile("yoga.lua"),
 }
 
 function m.allProjects()
@@ -27,6 +28,7 @@ function m.allProjects()
 	m.glad.project()
 	m.bin2h.project()
 	m.simdjson.project()
+	m.yoga.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

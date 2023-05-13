@@ -51,6 +51,8 @@ group "3 - Examples"
 projects.ExampleApplication.project("CanvasTest")
 projects.ExampleApplication.project("PhysicsTest")
 projects.ExampleApplication.project("StaticReflection")
+projects.ExampleApplication.project("StableDiffusion")
+projects.ExampleApplication.project("NewUi")
 --projects.ExampleApplication.project("ShaderReload")
 --projects.ExampleApplication.project("Solitaire")
 --projects.ExampleApplication.project("UiDocking")

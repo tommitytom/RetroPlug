@@ -7,7 +7,7 @@
 
 namespace fw {
 	struct SliderTheme {
-		uint32 handleWidth = 15;
+		uint32 handleWidth = 4;
 	};
 
 	struct SliderChangeEvent {
@@ -179,12 +179,14 @@ namespace fw {
 			}
 
 			canvas
-				.fillRect(_handleAreas[0], _mouseOverHandle ? Color4F::red : Color4F::white)
-				.line( half, mid , half + _handleRange, mid, Color4F::green);
+				.fillRect(RectF(0, 0, _handleAreas[0].x, dim.h), Color4F::lightGrey)
+				.fillRect(_handleAreas[0], _mouseOverHandle ? Color4F(0.5f, 0.5f, 0.5f, 1.0f) : Color4F(0.6f, 0.6f, 0.6f, 1.0f));
+				//.line( half, mid , half + _handleRange, mid, Color4F::green);
 
 			if (_showValueLabel) {
 				f32 value = getValueAt(_lastEditedValue);
-				canvas.text(dim.w + 10.0f, 0.0f, fmt::format(_labelFormat, value));
+				canvas.setTextAlign(TextAlignFlags::Left | TextAlignFlags::Middle);
+				canvas.text(RectF({ 0, 0 }, dim), fmt::format(_labelFormat, value), fw::Color4F::black);
 			}
 		}
 

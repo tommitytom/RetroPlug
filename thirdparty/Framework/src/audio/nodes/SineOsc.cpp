@@ -10,11 +10,11 @@ namespace fw {
 		f32 freq = input.freq();
 
 		for (uint32 i = 0; i < node.frameCount; ++i) {
-			f32 sample = sinf(state.phase) * input.amp();
+			f32 sample = sinf(state.phase) * amp;
 
-			state.phase += 2.0f * PI * input.freq() / 48000.0f;
-			if (state.phase > 2.0f * PI) {
-				state.phase -= 2.0f * PI;
+			state.phase += PI2 * freq / 48000.0f;
+			if (state.phase > PI2) {
+				state.phase -= PI2;
 			}
 
 			output.output.setSample(i, 0, sample);
@@ -37,5 +37,14 @@ namespace fw {
 		}
 
 		output.output = 240.0f + (sample * 20.0f);
+	}
+
+	void processAddFloat(NodeState<AddFloatNode>& node) {
+		const NodeState<AddFloatNode>::Input& input = node.input();
+		node.output().output = input.in1() + input.in2();
+	}
+
+	void processConstFloatNode(NodeState<ConstFloatNode>& node) {
+		node.output().value = 0.0f;
 	}
 }

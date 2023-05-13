@@ -11,6 +11,7 @@
 //#include "CanvasTest.h"
 //#include "Granular.h"
 #include "StaticReflection.h"
+#include "StableDiffusion.h"
 
 using namespace fw;
 

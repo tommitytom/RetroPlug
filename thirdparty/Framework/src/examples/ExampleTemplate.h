@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/View.h"
+#include "application/Application.h"
 
 namespace fw {
 	class ${name} : public View {
@@ -35,4 +36,6 @@ namespace fw {
 
 		}
 	};
+
+	using ${name}Application = fw::app::BasicApplication<${name}, void>;
 }

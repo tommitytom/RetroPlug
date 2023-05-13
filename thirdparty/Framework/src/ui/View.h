@@ -143,7 +143,7 @@ namespace fw {
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
-			subscribe(eventType, [func = std::move(func)](const entt::any& v) { func(); });
+			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { func(); });
 			return eventType;
 		}
 

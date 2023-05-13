@@ -14,7 +14,7 @@ namespace fw::NodeGraphCompiler {
 
 			NodeDesc nodeDesc {
 				.type = info.type,
-				.data = data,
+				.data = reinterpret_cast<NodeStateBase*>(data),
 				.process = info.process,
 				.destroy = info.destroy
 			};

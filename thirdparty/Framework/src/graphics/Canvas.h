@@ -144,6 +144,10 @@ namespace fw {
 			return *this;
 		}
 
+		uint32 getTextAlign() const {
+			return _textAlign;
+		}
+
 		void updateFont() {
 			assert(_fontName.size());
 			PointF scale = _transform.getScale();
@@ -295,6 +299,8 @@ namespace fw {
 		Canvas& text(f32 x, f32 y, std::string_view text) { return this->text({ x, y }, text, _color); }
 
 		Canvas& text(f32 x, f32 y, std::string_view text, const Color4F& color) { return this->text({ x, y }, text, color); }
+
+		Canvas& text(const RectF& area, std::string_view text, const Color4F& color);
 
 		Canvas& fillCircle(const PointF& pos, f32 radius) { return this->fillCircle(pos, radius, _color); }
 

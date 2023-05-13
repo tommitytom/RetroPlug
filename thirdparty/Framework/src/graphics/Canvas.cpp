@@ -365,6 +365,15 @@ DimensionF Canvas::measureText(std::string_view text, std::string_view fontName,
 	return _fontManager.measureText(text, fontName, fontSize);
 }
 
+Canvas& Canvas::text(const RectF& area, std::string_view text, const Color4F& color) {
+	if (_textAlign & TextAlignFlags::Top) {
+		// TODO: Should probably handle the other cases too?
+		//vpos.y += textureFont->ascender;
+	}
+
+	return *this;
+}
+
 Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& color) {
 	assert(_font.isValid());
 
@@ -377,6 +386,7 @@ Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& co
 	PointF vpos = _transform * pos;
 
 	if (_textAlign & TextAlignFlags::Top) {
+		// TODO: Should probably handle the other cases too?
 		vpos.y += textureFont->ascender;
 	}
 

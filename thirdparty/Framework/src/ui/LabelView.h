@@ -11,7 +11,7 @@ namespace fw {
 		std::string _fontName = "Karla-Regular";
 		f32 _fontSize = 12.0f;
 
-		uint32 _alignment = TextAlignFlags::Left | TextAlignFlags::Baseline;
+		uint32 _alignment = TextAlignFlags::Left | TextAlignFlags::Top;
 
 	public:
 		LabelView() { setType<LabelView>(); }
@@ -70,13 +70,39 @@ namespace fw {
 			}
 		}
 
-		void onRender(fw::Canvas& canvas) override {
-			_alignment = TextAlignFlags::Left | TextAlignFlags::Top;
+		void setTextAlignment(uint32 flags) {
+			_alignment = flags;
+		}
 
-			canvas.setTextAlign(_alignment);
-			canvas.setColor(_color);
+		void onRender(fw::Canvas& canvas) override {
 			canvas.setFont(_fontName, _fontSize);
-			canvas.text(0, 0, _text);
+			_alignment = TextAlignFlags::Middle| TextAlignFlags::Left;
+			
+			DimensionF dim = getDimensionsF();
+			DimensionF textSize = canvas.measureText(_text);
+			RectF textArea({ 0, 0 }, textSize);
+
+			f32 xDiff = dim.w - textSize.w;
+			f32 yDiff = dim.h - textSize.h;
+
+			if (_alignment & TextAlignFlags::Center) {	
+				textArea.x += xDiff / 2;
+			} else if (_alignment & TextAlignFlags::Right) {
+				textArea.x = textSize.w - xDiff;
+			}
+
+			if (_alignment & TextAlignFlags::Middle) {
+				textArea.y += yDiff / 2;
+			} else if (_alignment & TextAlignFlags::Bottom) {
+				textArea.y = textSize.h - yDiff;
+			}
+
+			uint32 lastAlign = canvas.getTextAlign();
+			canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
+
+			canvas.text(textArea.position, _text, _color);
+
+			canvas.setTextAlign(lastAlign);
 		}
 	};
 

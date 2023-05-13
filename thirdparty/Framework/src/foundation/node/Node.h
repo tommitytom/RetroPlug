@@ -110,7 +110,7 @@ namespace fw {
 			return _outputs;
 		}
 
-	protected:
+	//protected:
 		NodePortIndex addInput(std::string_view name, uint32 type) {
 			_inputs.push_back(NodeInput{
 				.name = std::string(name),
@@ -129,6 +129,4 @@ namespace fw {
 			return static_cast<NodePortIndex>(_outputs.size() - 1);
 		}		
 	};
-
-	
 }

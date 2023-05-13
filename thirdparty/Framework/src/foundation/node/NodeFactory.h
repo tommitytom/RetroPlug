@@ -14,6 +14,9 @@ namespace fw {
 	using AllocStateFunc = std::function<void(std::byte*, NodeDesc&)>;
 
 	struct NodeTypeInfo {
+		struct Input { std::string name; entt::id_type type; };
+		struct Output { std::string name; entt::id_type type; };
+
 		NodeType type = 0;
 		std::string_view typeName;
 		size_t stateSize = 0;
@@ -21,12 +24,15 @@ namespace fw {
 		NodeProcFunc destroy = nullptr;
 		AllocStateFunc allocState = nullptr;
 		AllocNodeFunc allocNode = nullptr;
+
+		std::vector<Input> inputs;
+		std::vector<Output> outputs;
 	};
 
 	struct NodeDesc {
 		entt::id_type type = entt::null;
 		std::string_view typeName;
-		std::byte* data = nullptr;
+		NodeStateBase* data = nullptr;
 
 		NodeProcFunc process = nullptr;
 		NodeProcFunc destroy = nullptr;
@@ -66,6 +72,13 @@ namespace fw {
 	template <typename T>
 	void makeDestroy(std::byte* data) {
 		//reinterpret_cast<NodeState<T>*>(data)->~NodeState();
+	}
+
+	template <typename T>
+	void makeInspector(entt::any& data) {
+		FullNodeState<T>& state = entt::any_cast<FullNodeState<T>>(data);
+		//state.input
+		
 	}
 	
 	class NodeFactory {

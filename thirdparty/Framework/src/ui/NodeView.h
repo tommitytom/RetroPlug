@@ -61,10 +61,13 @@ namespace fw {
 
 				if (dist > 10) {
 					beginDrag(nullptr, position);
+					_mouseDown = false;
 				}
+				
+				return true;
 			}
 
-			return true;
+			return false;
 		}
 
 		Rect getPortArea() const {
@@ -144,10 +147,13 @@ namespace fw {
 
 				if (dist > 10) {
 					beginDrag(nullptr, position);
+					_mouseDown = false;
 				}
+
+				return true;
 			}
-			
-			return true;
+
+			return false;
 		}
 
 		Rect getInputPortArea(size_t index) const {
@@ -242,15 +248,19 @@ namespace fw {
 			dim.h = 20;
 			canvas.fillRect(dim, Color4F(0.55f, 0.55f, 0.55f, 1.0f));
 
-
-			PointF nodePos;
+			PointF nodePos(0, 2.0f);
+			canvas.setTextAlign(fw::TextAlignFlags::Top);
 			canvas.text(nodePos, _node->getName(), fw::Color4F::black);
+		}
+
+		uint32 getNodeIndex() const {
+			return _node->getIndex();
 		}
 	};
 
 	using NodeViewPtr = std::shared_ptr<NodeView>;
 
-	enum GraphDragState {
+	enum class GraphDragState {
 		None,
 		Held,
 		Node,
@@ -271,6 +281,7 @@ namespace fw {
 		NodeViewPtr _movingNode;
 
 		std::vector<NodeViewPtr> _nodes;
+		uint32 _selectedIndex = -1;
 
 		std::optional<std::pair<Point, Point>> _draggingLine;
 		//Point _mousePos;
@@ -289,11 +300,20 @@ namespace fw {
 			_nodes.clear();
 			removeChildren();			
 
-			for (auto node : _graph->getNodes()) {
-				NodeViewPtr nodeView = this->addChildAt<NodeView>(node->getName(), node->getPosition());
-				nodeView->setDimensions({ 200, 200 });
-				nodeView->setNode(node);
-				_nodes.push_back(nodeView);
+			if (_graph) {
+				for (auto node : _graph->getNodes()) {
+					NodeViewPtr nodeView = this->addChildAt<NodeView>(node->getName(), node->getPosition());
+					nodeView->setDimensions({ 200, 200 });
+					nodeView->setNode(node);
+					_nodes.push_back(nodeView);
+
+					subscribe<MouseButtonEvent>(nodeView, [this, nodeView](const MouseButtonEvent& ev) {
+						if (ev.button == MouseButton::Left && ev.down) {
+							_selectedIndex = nodeView->getNodeIndex();
+							emit(NodeSelectionChanged{ nodeView });
+						}
+					});
+				}
 			}
 		}
 
@@ -303,11 +323,22 @@ namespace fw {
 
 			if (down) {
 				_dragState = GraphDragState::Held;
+				
+				if (_selectedIndex != -1) {
+					_selectedIndex = -1;
+					emit(NodeSelectionChanged{});
+				}
 			} else {
 				_dragState = GraphDragState::None;
 			}
+			
+			clearSelection();
 
 			return true;
+		}
+
+		void clearSelection() {
+			_selectedIndex = -1;
 		}
 
 		bool onMouseMove(Point position) override {
@@ -354,7 +385,13 @@ namespace fw {
 				auto portView = ctx.source->asShared<NodePortView>();
 				auto nodeView = portView->getParent()->asShared<NodeView>();
 				
-				Point startPoint = nodeView->getOutputPortConnectionPoint(portView);
+				Point startPoint;
+				if (portView->getPortDirection() == PortDirection::Input) {
+					startPoint = nodeView->getInputPortConnectionPoint(portView);
+				} else {
+					startPoint = nodeView->getOutputPortConnectionPoint(portView);
+				}
+				
 				Point endPoint = pos;
 
 				for (auto target : ctx.targets) {
@@ -366,7 +403,12 @@ namespace fw {
 							targetPortView->getPortType() == portView->getPortType()
 						) {
 							auto targetNodeView = targetPortView->getParent()->asShared<NodeView>();
-							endPoint = targetNodeView->getInputPortConnectionPoint(targetPortView);
+
+							if (targetPortView->getPortDirection() == PortDirection::Input) {
+								endPoint = targetNodeView->getInputPortConnectionPoint(targetPortView);
+							} else {
+								endPoint = targetNodeView->getOutputPortConnectionPoint(targetPortView);
+							}
 
 							break;
 						}
@@ -388,6 +430,10 @@ namespace fw {
 			canvas.setFont("Karla-Regular", 11.75f);
 			canvas.fillRect(getDimensionsF(), Color4F::darkGrey);
 
+			if (!_graph) {
+				return;
+			}
+
 			for (auto& conn : _graph->getConnections()) {
 				auto inputNode = conn.inputNode.lock();
 				auto outputNode = conn.outputNode.lock();
@@ -406,6 +452,12 @@ namespace fw {
 				canvas.line(startPoint, endPoint, fw::Color4F::white);
 
 				//assert(input.type == output.type);
+			}
+
+			if (_selectedIndex != -1) {
+				auto selected = _nodes[_selectedIndex];
+				auto highlightArea = selected->getArea().grow(3);
+				canvas.strokeRect(RectF(highlightArea), fw::Color4F::green);
 			}
 
 			if (_draggingLine.has_value()) {
