@@ -17,7 +17,7 @@ namespace fw {
 
 		DropDownMenuView() {
 			setType<DropDownMenuView>();
-			setDimensions({ 200, 30 });
+			getLayout().setDimensions(Dimension{ 200, 30 });
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~DropDownMenuView() = default;
@@ -128,6 +128,7 @@ namespace fw {
 
 			canvas
 				.fillRect(getDimensions(), hasFocus() ? Color4F(0.3f, 0.3f, 0.3f, 1.0f) : Color4F::darkGrey)
+				.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left)
 				.text(0.0f, 0.0f, fmt::format("{} - {}", _selectedIndex, text));
 		}
 	};

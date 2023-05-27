@@ -154,6 +154,10 @@ namespace fw {
 			_font = _fontManager.loadFont(_fontName, _fontSize * std::max(scale.x, scale.y));
 		}
 
+		FontFaceHandle getFont() {
+			return _font;
+		}
+
 		FontFaceHandle loadFont(std::string_view name, f32 size) {
 			return _fontManager.loadFont(name, size);
 		}
@@ -294,7 +298,7 @@ namespace fw {
 
 		Canvas& texture(const TextureHandle& texture, const RectF& area, const TileArea& uvArea) { return this->texture(texture, area, uvArea, _color); }
 
-		Canvas& text(const PointF& pos, std::string_view text, const Color4F& color);
+		Canvas& text(PointF pos, std::string_view text, const Color4F& color);
 
 		Canvas& text(f32 x, f32 y, std::string_view text) { return this->text({ x, y }, text, _color); }
 
@@ -340,6 +344,8 @@ namespace fw {
 			_geom.indices.insert(_geom.indices.end(), { v1, v2, v3 });
 			getTopSurface().indexCount += 3;
 		}
+
+		void writeText(PointF pos, std::string_view text, const Color4F& color);
 	};
 }
 

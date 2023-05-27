@@ -29,11 +29,13 @@ namespace fw {
 		ViewManager() : View({ 100, 100 }) {
 			setType<ViewManager>();
 			_shared = &_sharedData;
+			calculateLayout();
 		}
 
 		ViewManager(Dimension dimensions): View(dimensions) {
 			setType<ViewManager>();
 			_shared = &_sharedData;
+			calculateLayout();
 		}
 
 		bool isMounted() const override {
@@ -62,6 +64,21 @@ namespace fw {
 
 		f32 getPixelDensity() const {
 			return _sharedData.pixelDensity;
+		}
+
+		bool onChar(const CharEvent& ev) override {
+			ViewPtr current = _shared->focused.lock();
+
+			while (current && current.get() != this) {
+				if (!current->onChar(ev)) {
+					current = current->getParent();
+				} else {
+					current->emit(ev);
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		bool onKey(const KeyEvent& ev) override {
@@ -205,14 +222,14 @@ namespace fw {
 			case fw::SizingPolicy::FitToParent:
 				_area.dimensions = ev.size;
 				setLayoutDirty();
-				updateLayout();
+				calculateLayout();
 				break;
 			}*/
 		}
 
 		void onUpdate(f32 delta) override {
 			if (_shared->layoutDirty) {
-				updateLayout();
+				calculateLayout();
 			}
 
 			propagateUpdate(getChildren(), delta);
@@ -220,7 +237,7 @@ namespace fw {
 			_shared->removals.clear();
 
 			if (_shared->layoutDirty) {
-				updateLayout();
+				calculateLayout();
 			}
 		}
 
@@ -230,6 +247,21 @@ namespace fw {
 
 		void printHierarchy() {
 			propagatePrint(getChildren(), "");
+		}
+
+		void calculateLayout() {
+			/*propagateSizingUpdate(getChildren());
+			propagateLayoutChange(getChildren());
+
+			_area = Rect();
+			calculateTotalArea(getChildren(), { 0, 0 }, _area);
+
+			propagateSizingUpdate(getChildren());
+			propagateLayoutChange(getChildren());*/
+
+			YGNodeCalculateLayout(_layout.getNode(), YGUndefined, YGUndefined, YGDirectionInherit);
+
+			_shared->layoutDirty = true;
 		}
 
 	private:
@@ -466,49 +498,10 @@ namespace fw {
 			return false;
 		}
 
-		void updateLayout() {
-			propagateSizingUpdate(getChildren());
-			propagateLayoutChange(getChildren());
-
-			_area = Rect();
-			calculateTotalArea(getChildren(), { 0, 0 }, _area);
-
-			propagateSizingUpdate(getChildren());
-			propagateLayoutChange(getChildren());
-
-			_shared->layoutDirty = false;
-		}
-
 		void propagateLayoutChange(std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				view->onLayoutChanged();
 				propagateLayoutChange(view->getChildren());
-			}
-		}
-
-		void propagateSizingUpdate(std::vector<ViewPtr>& views) {
-			for (ViewPtr& view : views) {
-				if (view->_sizingMode == SizingPolicy::FitToParent) {
-					assert(view->getParent());
-					assert(view->getParent()->getSizingPolicy() != SizingPolicy::FitToContent);
-
-					Rect area = { {0, 0}, view->getParent()->getDimensions() };
-
-					if (view->getArea() != area) {
-						view->setArea(area);
-					}
-				}
-
-				propagateSizingUpdate(view->getChildren());
-
-				if (view->_sizingMode == SizingPolicy::FitToContent) {
-					Rect targetArea;
-					calculateTotalArea(view->getChildren(), { 0, 0 }, targetArea);
-
-					if (view->getArea() != targetArea) {
-						view->setArea(targetArea);
-					}
-				}
 			}
 		}
 

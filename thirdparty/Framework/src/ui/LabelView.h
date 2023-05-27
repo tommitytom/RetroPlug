@@ -64,10 +64,10 @@ namespace fw {
 		}
 
 		void updateArea() {
-			if (isInitialized() && getSizingPolicy() != SizingPolicy::FitToParent) {
+			/*if (isInitialized() && getSizingPolicy() != SizingPolicy::FitToParent) {
 				DimensionF textArea = getFontManager().measureText(_text, _fontName, _fontSize);
 				setDimensions((Dimension)textArea);
-			}
+			}*/
 		}
 
 		void setTextAlignment(uint32 flags) {
@@ -76,7 +76,7 @@ namespace fw {
 
 		void onRender(fw::Canvas& canvas) override {
 			canvas.setFont(_fontName, _fontSize);
-			_alignment = TextAlignFlags::Middle| TextAlignFlags::Left;
+			_alignment = TextAlignFlags::Middle | TextAlignFlags::Left;
 			
 			DimensionF dim = getDimensionsF();
 			DimensionF textSize = canvas.measureText(_text);

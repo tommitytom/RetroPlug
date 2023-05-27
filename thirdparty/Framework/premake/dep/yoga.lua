@@ -12,8 +12,8 @@ function m.source()
 	m.include()
 
 	files {
-		YOGA_DIR .. "/*.h",
-		YOGA_DIR .. "/*.cpp"
+		YOGA_DIR .. "/**.h",
+		YOGA_DIR .. "/**.cpp"
 	}
 end
 

@@ -382,6 +382,10 @@ namespace fw {
 		bool down;
 	};
 
+	struct CharEvent {
+		uint32 keyCode = 0;
+	};
+
 	struct MouseScrollEvent {
 		PointF delta;
 		Point position;

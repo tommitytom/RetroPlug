@@ -23,14 +23,13 @@ namespace fw {
 			if (ctx.attached && ctx.attached->getParent() != _floating) {
 				spdlog::info("added to floating");
 
-				ctx.attached->setSizingPolicy(SizingPolicy::None);
-				ctx.attached->setDimensions({ 300, 300 });
+				ctx.attached->getLayout().setDimensions(Dimension{ 300, 300 });
 
 				_floating->addChild(ctx.attached);
 			}
 
 			ctx.attached->bringToFront();
-			ctx.attached->setPosition(position);
+			//ctx.attached->setPosition(position);
 
 			return true;
 		}

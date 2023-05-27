@@ -46,7 +46,7 @@ namespace fw::app {
 
 		static void mouseScrollCallback(GLFWwindow* window, double x, double y);
 
-		static void charCallback(GLFWwindow* window, unsigned int keycode) {}
+		static void charCallback(GLFWwindow* window, unsigned int keycode);
 
 		static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 

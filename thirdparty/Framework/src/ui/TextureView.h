@@ -14,7 +14,6 @@ namespace fw {
 
 	public:
 		TextureView() { setType<TextureView>(); }
-		TextureView(Dimension dimensions) : View(dimensions) { setType<TextureView>(); }
 		~TextureView() = default;
 
 		void setImage(const Image& image);

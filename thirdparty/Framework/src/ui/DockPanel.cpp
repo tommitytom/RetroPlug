@@ -216,7 +216,7 @@ void DockPanel::arrangePanels() {
 		case DisplayMode::Single:
 		case DisplayMode::Tab: {
 			for (DockPanelPtr& panel : _panels) {
-				panel->setDimensions(getDimensions());
+				panel->getLayout().setDimensions(getDimensions());
 			}
 
 			break;

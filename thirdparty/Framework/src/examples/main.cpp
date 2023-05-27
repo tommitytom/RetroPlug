@@ -10,8 +10,9 @@
 //#include "Whitney.h"
 //#include "CanvasTest.h"
 //#include "Granular.h"
-#include "StaticReflection.h"
-#include "StableDiffusion.h"
+//#include "StaticReflection.h"
+//#include "StableDiffusion.h"
+#include "NewUi.h"
 
 using namespace fw;
 

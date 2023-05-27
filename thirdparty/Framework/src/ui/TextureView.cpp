@@ -18,10 +18,6 @@ void TextureView::setImage(const Image& image) {
 		});
 
 		_textureArea = { 0.0f, 0.0f, (f32)image.dimensions().w, (f32)image.dimensions().h };
-
-		if (getSizingPolicy() == SizingPolicy::FitToContent) {
-			setDimensions(image.dimensions());
-		}
 	} else {
 		getResourceManager().update(_texture, TextureDesc {
 			.dimensions = image.dimensions(),

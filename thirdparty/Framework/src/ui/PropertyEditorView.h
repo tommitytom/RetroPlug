@@ -64,24 +64,41 @@ namespace fw {
 		}
 
 		void addProperty(std::string_view name, PropertyEditorBasePtr editor) {
-			editor->setSizingPolicy(SizingPolicy::None);
-
 			Prop prop = {
 				.label = addChild<LabelView>(fmt::format("{} Label", name)),
 				.editor = addChild<PropertyEditorBase>(editor)
 			};
 
+			prop.label->getLayout().setJustifyContent(FlexJustify::FlexStart);
+			prop.label->getLayout().setFlexAlignItems(FlexAlign::Stretch);
+			prop.label->getLayout().setFlexAlignSelf(FlexAlign::Auto);
+			prop.label->getLayout().setFlexAlignContent(FlexAlign::Stretch);
+			prop.label->getLayout().setDimensions(FlexDimensionValue{
+				.width = FlexValue(FlexUnit::Percent, 50.0f),
+				.height = FlexValue((f32)_rowHeight)
+			});
+
+			prop.editor->getLayout().setJustifyContent(FlexJustify::FlexStart);
+			prop.editor->getLayout().setFlexAlignItems(FlexAlign::Stretch);
+			prop.editor->getLayout().setFlexAlignSelf(FlexAlign::Auto);
+			prop.editor->getLayout().setFlexAlignContent(FlexAlign::Stretch);
+			prop.editor->getLayout().setDimensions(FlexDimensionValue{
+				.width = FlexValue(FlexUnit::Percent, 50.0f),
+				.height = FlexValue((f32)_rowHeight)
+			});
+
 			prop.label->setText(name);
 
 			if (_groups.empty()) {
-				pushGroup(fmt::format("{} Group", name));
+				//pushGroup(fmt::format("{} Group", name));
 			}
 
-			_groups.back().props.push_back(prop);
+			//_groups.back().props.push_back(prop);
 		}
 
 		void clearProperties() {
 			_groups.clear();
+			this->removeChildren();
 		}
 
 		bool mouseOverSeparator(Point pos) const {
@@ -89,7 +106,7 @@ namespace fw {
 			return pos.x > separatorX - seperatorHandleSize && pos.x < separatorX + seperatorHandleSize;
 		}
 
-		bool onMouseMove(Point pos) override {
+		/*bool onMouseMove(Point pos) override {
 			int32 separatorX = getSeperatorX();
 
 			if (_draggingSeparator) {
@@ -104,7 +121,7 @@ namespace fw {
 			}
 
 			return true;
-		}
+		}*/
 
 		bool onKey(VirtualKey::Enum key, bool down) override {
 			if ((key == VirtualKey::UpArrow || key == VirtualKey::DownArrow) && down) {
@@ -149,7 +166,7 @@ namespace fw {
 		}
 
 		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
-			_draggingSeparator = down && mouseOverSeparator(pos);
+			//_draggingSeparator = down && mouseOverSeparator(pos);
 			return true;
 		}
 
@@ -158,18 +175,28 @@ namespace fw {
 		}
 
 		void onInitialize() override {
-			updateLayout();
+			getLayout().setLayoutDirection(LayoutDirection::LTR);
+			getLayout().setFlexDirection(FlexDirection::Row);
+			getLayout().setFlexWrap(FlexWrap::Wrap);
+			getLayout().setPadding(FlexRect{
+				.top = 10.0f,
+				.left = 10.0f,
+				.bottom = 10.0f,
+				.right = 10.0f,
+			});
+
+			//updateLayout();
 		}
 
 		void onMount() override {
-			updateLayout();
+			//updateLayout();
 		}
 
 		int32 getSeperatorX() const {
 			return (int32)(getDimensionsF().w * _separatorPerc);
 		}
 
-		void updateLayout() {
+		/*void updateLayout() {
 			updateLayout(getDimensions());
 		}
 
@@ -193,10 +220,10 @@ namespace fw {
 					propOffset.y += _rowHeight + 1;
 				}
 			}
-		}
+		}*/
 
 		void onResize(const ResizeEvent& ev) override {
-			updateLayout(ev.size);
+			//updateLayout(ev.size);
 		}
 
 		void onRender(fw::Canvas& canvas) override {

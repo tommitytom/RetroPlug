@@ -13,6 +13,7 @@
 
 #include "graphics/Canvas.h"
 #include "ui/TypeDataLookup.h"
+#include "ui/ViewLayout.h"
 
 namespace fw {
 	namespace engine {
@@ -105,7 +106,6 @@ namespace fw {
 
 		std::weak_ptr<View> _parent;
 		std::vector<ViewPtr> _children;
-		Rect _area;
 		f32 _scale = 1.0f;
 		f32 _alpha = 1.0f;
 		//bool _initialized = false;
@@ -113,7 +113,6 @@ namespace fw {
 		bool _visible = true;
 		bool _clip = false;
 
-		SizingPolicy _sizingMode = SizingPolicy::None;
 		FocusPolicy _focusPolicy = FocusPolicy::None;
 
 		std::string _name;
@@ -122,12 +121,12 @@ namespace fw {
 		std::vector<std::pair<EventType, std::weak_ptr<View>>> _subscriptions;
 		std::unordered_map<EventType, std::vector<Subscription>> _subscriptionTargets;
 
+		ViewLayout _layout;
+
 	public:
-		View(Dimension dimensions = { 100, 100 }) : _area({}, dimensions), _type(entt::type_id<View>()) {}
-		View(Dimension dimensions, entt::type_info type) : _type(type), _area({}, dimensions) {}
-		~View() {
-			unsubscribeAll();
-		}
+		View(Dimension dimensions = { 100, 100 }) : _type(entt::type_id<View>()), _layout(dimensions) {}
+		View(Dimension dimensions, entt::type_info type) : _layout(dimensions), _type(type) {}
+		~View() { unsubscribeAll(); }
 
 		void subscribe(EventType eventType, ViewPtr source, std::function<void(const entt::any&)>&& func) {
 			assert(!source->hasSubscription(eventType, shared_from_this()));
@@ -309,7 +308,7 @@ namespace fw {
 		}
 
 		bool isVisible() const {
-			return _visible && getDimensions().w > 0 && getDimensions().h > 0;
+			return _visible && _layout.getDimensions().w > 0 && _layout.getDimensions().h > 0;
 		}
 
 		virtual void onInitialize() {}
@@ -321,6 +320,8 @@ namespace fw {
 		virtual bool onButton(const ButtonEvent& ev) { return onButton(ev.button, ev.down); }
 
 		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
+
+		virtual bool onChar(const CharEvent& ev) { return false; }
 
 		virtual bool onKey(const KeyEvent& ev) { return onKey(ev.key, ev.down); }
 
@@ -494,15 +495,6 @@ namespace fw {
 			return nullptr;
 		}
 
-		void setSizingPolicy(SizingPolicy mode) {
-			_sizingMode = mode;
-			setLayoutDirty();
-		}
-
-		SizingPolicy getSizingPolicy() const {
-			return _sizingMode;
-		}
-
 		entt::type_info getType() const {
 			return _type;
 		}
@@ -605,6 +597,10 @@ namespace fw {
 				view->_parent.lock()->removeChild(view);
 			}
 
+			uint32 idx = (uint32)_children.size();
+			
+			YGNodeInsertChild(_layout.getNode(), view->getLayout().getNode(), idx);
+
 			view->_parent = std::weak_ptr<View>(shared_from_this());
 			_children.push_back(view);
 
@@ -662,6 +658,8 @@ namespace fw {
 						}
 					}
 
+					YGNodeRemoveChild(_layout.getNode(), view->getLayout().getNode());
+
 					_children.erase(_children.begin() + i);
 
 					onChildRemoved(view);
@@ -679,6 +677,14 @@ namespace fw {
 			if (_shared) {
 				_shared->removals.push_back(view);
 			}
+		}
+
+		ViewLayout& getLayout() {
+			return _layout;
+		}
+
+		const ViewLayout& getLayout() const {
+			return _layout;
 		}
 
 		void removeChildren() {
@@ -769,17 +775,6 @@ namespace fw {
 			}
 		}
 
-		void setPosition(int32 x, int32 y) {
-			setPosition({ x, y });
-		}
-
-		void setPosition(Point pos) {
-			if (pos != _area.position) {
-				_area.position = pos;
-				setLayoutDirty();
-			}
-		}
-
 		void setScale(f32 scale) {
 			_scale = scale;
 
@@ -790,47 +785,8 @@ namespace fw {
 			setLayoutDirty();
 		}
 
-		Point getPosition() const {
-			return _area.position;
-		}
-
-		PointF getPositionF() const {
-			return (PointF)_area.position;
-		}
-
 		f32 getScale() const {
 			return _scale;
-		}
-
-		void setDimensions(Dimension dimensions) {
-			assert(dimensions.w >= 0 && dimensions.h >= 0);
-			
-			if (isMounted()) {	
-				if (dimensions != _area.dimensions) {
-					ResizeEvent ev = {
-						.size = dimensions,
-						.oldSize = _area.dimensions
-					};
-
-					onResize(ev);
-					emit(ev);
-
-					_area.dimensions = dimensions;
-					setLayoutDirty();
-				}
-			} else {
-				_area.dimensions = dimensions;
-				setLayoutDirty();
-			}
-			
-		}
-
-		Dimension getDimensions() const {
-			return _area.dimensions;
-		}
-
-		DimensionF getDimensionsF() const {
-			return (DimensionF)_area.dimensions;
 		}
 
 		ViewPtr getParent() const {
@@ -841,14 +797,10 @@ namespace fw {
 			return _children[idx];
 		}
 
-		const Rect& getArea() const {
-			return _area;
-		}
-
 		void setArea(const Rect& area) {
 			assert(area.w >= 0 && area.h >= 0);
 
-			if (area != _area) {
+			/*if (area != _area) {
 				ResizeEvent ev = {
 					.size = area.dimensions,
 					.oldSize = _area.dimensions
@@ -859,7 +811,7 @@ namespace fw {
 
 				_area = area;
 				setLayoutDirty();
-			}
+			}*/
 		}
 
 		void setAlpha(f32 alpha) {
@@ -895,7 +847,7 @@ namespace fw {
 			return _name;
 		}
 
-		Point getReleativePosition(ViewPtr& parent, Point position) {
+		Point getRelativePosition(ViewPtr& parent, Point position) {
 			ViewPtr currentParent = getParent();
 
 			assert(parent != shared_from_this());
@@ -908,6 +860,26 @@ namespace fw {
 			}
 
 			return position;
+		}
+
+		PointF getPositionF() const {
+			return _layout.getPosition();
+		}
+
+		Point getPosition() const {
+			return Point(_layout.getPosition());
+		}
+
+		DimensionF getDimensionsF() const {
+			return _layout.getDimensions();
+		}
+
+		Dimension getDimensions() const {
+			return Dimension(_layout.getDimensions());
+		}
+
+		Rect getArea() const {
+			return Rect(_layout.getArea());
 		}
 
 	protected:

@@ -23,9 +23,9 @@ namespace fw::app {
 		Window(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id): _id(id), _canvas(*resourceManager, *fontManager), _view(view) {
 			_viewManager = std::make_shared<ViewManager>();
 			_viewManager->setResourceManager(resourceManager, fontManager);
-			_viewManager->setSizingPolicy(view->getSizingPolicy());
-			_viewManager->setDimensions(view->getDimensions());
+			_viewManager->getLayout().setDimensions(view->getDimensions());
 			_viewManager->setName(view->getName());
+			_viewManager->calculateLayout();
 
 			_canvas.setDimensions(view->getDimensions(), 1.0f);
 		}

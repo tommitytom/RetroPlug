@@ -12,7 +12,6 @@ void TabView::onChildAdded(ViewPtr child) {
 		_panelIdx = 0;
 	}
 
-	child->setSizingPolicy(SizingPolicy::None);
 	child->setClip(true);
 
 	updateLayout();

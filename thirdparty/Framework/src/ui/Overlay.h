@@ -7,7 +7,10 @@ namespace fw {
 	class Overlay : public View {
 	public:
 		Overlay() {
-			setSizingPolicy(SizingPolicy::FitToParent);
+			getLayout().setDimensions(FlexDimensionValue{
+				FlexValue(FlexUnit::Percent, 100.0f),
+				FlexValue(FlexUnit::Percent, 100.0f)
+			});
 		}
 
 		std::shared_ptr<ParentT> getSuper() {

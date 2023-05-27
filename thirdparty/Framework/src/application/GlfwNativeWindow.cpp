@@ -80,10 +80,18 @@ void GlfwNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
 	// NOTE: View resizing is handled in GlfwNativeWindow::onUpdate
 }
 
+void GlfwNativeWindow::charCallback(GLFWwindow* window, unsigned int keycode) {
+	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
+	w->getViewManager()->onChar(CharEvent{
+		.keyCode = keycode
+	});
+}
+
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->getViewManager()->onKey(KeyEvent{
 		.key = convertKey(key),
+		.action = (KeyAction)action,
 		.down = action > 0
 	});
 }
@@ -171,7 +179,8 @@ void GlfwNativeWindow::onCreate() {
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	//glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 
-	glfwWindowHint(GLFW_RESIZABLE, vm->getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
+	//glfwWindowHint(GLFW_RESIZABLE, vm->getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	//glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
 
 	Dimension dimensions = vm->getDimensions();
@@ -182,6 +191,7 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetWindowUserPointer(_window, this);
 
 	glfwSetKeyCallback(_window, keyCallback);
+	glfwSetCharCallback(_window, charCallback);
 	glfwSetScrollCallback(_window, mouseScrollCallback);
 	glfwSetCursorPosCallback(_window, mouseMoveCallback);
 	glfwSetCursorEnterCallback(_window, mouseEnterCallback);
@@ -205,11 +215,9 @@ void GlfwNativeWindow::onCreate() {
 void GlfwNativeWindow::onFrame() {
 	glfwSwapBuffers(_window);
 }
-
+ 
 void GlfwNativeWindow::setDimensions(Dimension dimensions) {
-	if (getViewManager()->getSizingPolicy() != SizingPolicy::FitToContent) {
-		_dimensions = dimensions;
-	}
+	_dimensions = dimensions;
 }
 
 void GlfwNativeWindow::onUpdate(f32 delta) {
@@ -218,14 +226,16 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 	Dimension viewSize = vm->getDimensions();
 
 	if (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h) {
-		if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
+		vm->getLayout().setDimensions(_dimensions);
+		
+		/*if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content
 			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 			_dimensions = viewSize;
 		} else {
 			// Resize content to fit window
 			vm->setDimensions(_dimensions);
-		}
+		}*/
 	}
 
 	vm->onUpdate(delta);

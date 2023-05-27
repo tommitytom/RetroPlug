@@ -106,7 +106,7 @@ namespace fw::JsonSerializer {
 
 			return res.error();
 		}
-
+		
 		template <typename TargetType>
 		static simdjson::error_code deserializeObject(simdjson::ondemand::value source, TargetType& target) {
 			simdjson::simdjson_result<simdjson::ondemand::object> obj = source.get_object();

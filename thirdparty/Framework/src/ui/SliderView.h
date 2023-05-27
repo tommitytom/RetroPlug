@@ -40,7 +40,7 @@ namespace fw {
 
 		SliderView() {
 			setType<SliderView>();
-			setDimensions({ 200, 30 });
+			getLayout().setDimensions(Dimension{ 200, 30 });
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~SliderView() = default;
@@ -164,6 +164,10 @@ namespace fw {
 
 		void onMouseLeave() override {
 			_mouseOverHandle = _dragging;
+		}
+
+		void onUpdate(f32 delta) override {
+			updateHandleArea();
 		}
 
 		void onRender(fw::Canvas& canvas) override {

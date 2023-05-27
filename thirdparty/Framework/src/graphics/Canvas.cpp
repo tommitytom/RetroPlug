@@ -366,40 +366,63 @@ DimensionF Canvas::measureText(std::string_view text, std::string_view fontName,
 }
 
 Canvas& Canvas::text(const RectF& area, std::string_view text, const Color4F& color) {
-	if (_textAlign & TextAlignFlags::Top) {
-		// TODO: Should probably handle the other cases too?
-		//vpos.y += textureFont->ascender;
+	PointF textPos = area.position;
+
+	DimensionF textSize = measureText(text);
+	f32 xDiff = area.w - textSize.w;
+	f32 yDiff = area.h - textSize.h;
+
+	if (_textAlign & TextAlignFlags::Center) {
+		textPos.x += xDiff / 2;
+	} else if (_textAlign & TextAlignFlags::Right) {
+		textPos.x = area.w - xDiff;
 	}
+
+	if (_textAlign & TextAlignFlags::Middle) {
+		textPos.y += yDiff / 2;
+	} else if (_textAlign & TextAlignFlags::Bottom) {
+		textPos.y = area.h - yDiff;
+	}
+
+	writeText(textPos, text, color);
 
 	return *this;
 }
 
-Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& color) {
+Canvas& Canvas::text(PointF pos, std::string_view text, const Color4F& color) {
 	assert(_font.isValid());
 
 	FtglFontFace& font = _font.getResourceAs<FtglFontFace>();
-	checkSurface(RenderPrimitive::Triangles, font.getTexture());
+	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
+	if (_textAlign & TextAlignFlags::Top) {
+		pos.y += textureFont->ascender;
+	}
+
+	writeText(pos, text, color);
+
+	return *this;
+}
+
+void Canvas::writeText(PointF pos, std::string_view text, const Color4F& color) {
+	FtglFontFace& font = _font.getResourceAs<FtglFontFace>();
+	checkSurface(RenderPrimitive::Triangles, font.getTexture());
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
 	uint32 agbr = toUint32Abgr(color);
-	PointF vpos = _transform * pos;
 
-	if (_textAlign & TextAlignFlags::Top) {
-		// TODO: Should probably handle the other cases too?
-		vpos.y += textureFont->ascender;
-	}
-
+	pos = _transform * pos;
+	
 	for (size_t i = 0; i < text.size(); ++i) {
 		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
 
 		if (glyph) {
 			if (i > 0) {
-				vpos.x += ftgl::texture_glyph_get_kerning(glyph, text.data() + i - 1);
+				pos.x += ftgl::texture_glyph_get_kerning(glyph, text.data() + i - 1);
 			}
 
-			f32 x0 = floor(vpos.x + glyph->offset_x);
-			f32 y0 = floor(vpos.y - glyph->offset_y);
+			f32 x0 = floor(pos.x + glyph->offset_x);
+			f32 y0 = floor(pos.y - glyph->offset_y);
 			f32 x1 = floor(x0 + glyph->width);
 			f32 y1 = floor(y0 + glyph->height);
 			f32 s0 = glyph->s0;
@@ -423,9 +446,7 @@ Canvas& Canvas::text(const PointF& pos, std::string_view text, const Color4F& co
 
 			getTopSurface().indexCount += 6;
 
-			vpos.x += glyph->advance_x;
+			pos.x += glyph->advance_x;
 		}
 	}
-
-	return *this;
 }
