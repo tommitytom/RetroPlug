@@ -372,6 +372,11 @@ Canvas& Canvas::text(const RectF& area, std::string_view text, const Color4F& co
 	f32 xDiff = area.w - textSize.w;
 	f32 yDiff = area.h - textSize.h;
 
+	FtglFontFace& font = _font.getResourceAs<FtglFontFace>();
+	ftgl::texture_font_t* textureFont = font.getTextureFont();
+
+	textPos.y += textureFont->ascender;
+
 	if (_textAlign & TextAlignFlags::Center) {
 		textPos.x += xDiff / 2;
 	} else if (_textAlign & TextAlignFlags::Right) {

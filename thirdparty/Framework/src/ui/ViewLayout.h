@@ -106,6 +106,11 @@ namespace fw {
 			return YGNodeStyleGetFlexShrink(_yogaNode);
 		}
 
+		FlexValue getMinHeight() {
+			auto value = YGNodeStyleGetMinHeight(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setMinHeight(FlexValue min) {
 			switch (min.getUnit()) {
 			case FlexUnit::Point: YGNodeStyleSetMinHeight(_yogaNode, min.getValue()); break;
@@ -114,6 +119,11 @@ namespace fw {
 			}
 
 			_dirty = true;
+		}
+
+		FlexValue getMaxHeight() {
+			auto value = YGNodeStyleGetMaxHeight(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
 		}
 
 		void setMaxHeight(FlexValue max) {
@@ -126,6 +136,11 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getMinWidth() {
+			auto value = YGNodeStyleGetMinWidth(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setMinWidth(FlexValue min) {
 			switch (min.getUnit()) {
 			case FlexUnit::Point: YGNodeStyleSetMinWidth(_yogaNode, min.getValue()); break;
@@ -134,6 +149,11 @@ namespace fw {
 			}
 
 			_dirty = true;
+		}
+
+		FlexValue getMaxWidth() {
+			auto value = YGNodeStyleGetMaxWidth(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
 		}
 
 		void setMaxWidth(FlexValue max) {
@@ -146,6 +166,11 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getWidth() {
+			auto value = YGNodeStyleGetWidth(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setWidth(FlexValue min) {
 			switch (min.getUnit()) {
 			case FlexUnit::Point: YGNodeStyleSetWidth(_yogaNode, min.getValue()); break;
@@ -155,6 +180,11 @@ namespace fw {
 			}
 
 			_dirty = true;
+		}
+
+		FlexValue getHeight() {
+			auto value = YGNodeStyleGetHeight(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
 		}
 
 		void setHeight(FlexValue min) {
@@ -257,6 +287,11 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getFlexBasis() const {
+			YGValue value = YGNodeStyleGetFlexBasis(_yogaNode);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setMinDimensions(FlexDimensionValue min) {
 			setMinWidth(min.width);
 			setMinHeight(min.height);
@@ -316,6 +351,7 @@ namespace fw {
 
 REFL_AUTO(
 	type(fw::ViewLayout),
+	
 	func(getFlexDirection, property("flexDirection")), func(setFlexDirection, property("flexDirection")),
 	func(getJustifyContent, property("justifyContent")), func(setJustifyContent, property("justifyContent")),
 	func(getFlexAlignItems, property("flexAlignItems")), func(setFlexAlignItems, property("flexAlignItems")),
@@ -324,5 +360,13 @@ REFL_AUTO(
 	func(getLayoutDirection, property("layoutDirection")), func(setLayoutDirection, property("layoutDirection")),
 	func(getFlexWrap, property("flexWrap")), func(setFlexWrap, property("flexWrap")),
 	func(getFlexGrow, property("flexGrow")), func(setFlexGrow, property("flexGrow")),
-	func(getFlexShrink, property("flexShrink")), func(setFlexShrink, property("flexShrink"))
+	func(getFlexShrink, property("flexShrink")), func(setFlexShrink, property("flexShrink")),
+	func(getFlexBasis, property("flexBasis")), func(setFlexBasis, property("flexBasis")),
+
+	func(getMinWidth, property("minWidth")), func(setMinWidth, property("minWidth")),
+	func(getMaxWidth, property("maxWidth")), func(setMaxWidth, property("maxWidth")),
+	func(getMinHeight, property("minHeight")), func(setMinHeight, property("minHeight")),
+	func(getMaxHeight, property("maxHeight")), func(setMaxHeight, property("maxHeight")),
+	func(getWidth, property("width")), func(setWidth, property("width")),
+	func(getHeight, property("height")), func(setHeight, property("height"))
 )

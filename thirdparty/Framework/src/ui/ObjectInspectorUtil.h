@@ -4,6 +4,8 @@
 
 #include "foundation/Attributes.h"
 #include "ObjectInspectorView.h"
+#include "ui/Flex.h"
+#include "ui/TextEditView.h"
 
 namespace fw::ObjectInspectorUtil {
 	template <typename T>
@@ -61,6 +63,12 @@ namespace fw::ObjectInspectorUtil {
 						writer(item, magic_enum::enum_value<MemberType>(v));
 					}
 				};
+			} else if constexpr (std::is_same_v<MemberType, std::string>) {
+				TextEditViewPtr textEdit = inspector->addProperty<TextEditView>(get_display_name(member));
+				textEdit->setText(reader(item));
+			} else if constexpr (std::is_same_v<MemberType, FlexValue>) {
+				FlexValueEditViewPtr flexValueEdit = inspector->addProperty<FlexValueEditView>(get_display_name(member));
+				flexValueEdit->setValue(reader(item));
 			}
 		});
 	}

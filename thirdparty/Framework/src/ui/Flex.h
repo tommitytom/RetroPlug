@@ -140,8 +140,16 @@ namespace fw {
 			return _unit;
 		}
 
+		void setUnit(FlexUnit unit) {
+			_unit = unit;
+		}
+
 		f32 getValue() const {
 			return _value;
+		}
+
+		void setValue(f32 value) {
+			_value = value;
 		}
 		
 		bool isValid() const {
@@ -183,3 +191,15 @@ namespace fw {
 		std::optional<f32> aspectRatio;
 	};
 }
+
+REFL_AUTO(
+	type(fw::FlexValue),
+	func(getUnit, property("unit")), func(setUnit, property("unit")),
+	func(getValue, property("value")), func(setValue, property("value"))
+)
+
+/*REFL_AUTO(
+	type(fw::FlexRect),
+	func(getUnit, property("unit")), func(setUnit, property("unit")),
+	func(getValue, property("value")), func(setValue, property("value"))
+)*/
