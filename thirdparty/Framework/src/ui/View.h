@@ -25,6 +25,7 @@ namespace fw {
 	class Menu;
 	class View;
 	using ViewPtr = std::shared_ptr<View>;
+	using ConstViewPtr = std::shared_ptr<const View>;
 
 	using ViewIndex = uint32;
 	constexpr ViewIndex INVALID_VIEW_INDEX = -1;
@@ -308,7 +309,7 @@ namespace fw {
 		}
 
 		bool isVisible() const {
-			return _visible && _layout.getDimensions().w > 0 && _layout.getDimensions().h > 0;
+			return _visible && _layout.getCalculatedDimensions().w > 0 && _layout.getCalculatedDimensions().h > 0;
 		}
 
 		virtual void onInitialize() {}
@@ -402,6 +403,15 @@ namespace fw {
 			}
 
 			return getPosition();
+		}
+
+		PointF getWorldPositionF() const {
+			ViewPtr parent = getParent();
+			if (parent) {
+				return parent->getWorldPositionF() + (getPositionF() * parent->getWorldScale());
+			}
+
+			return getPositionF();
 		}
 
 		f32 getWorldScale() const {
@@ -679,6 +689,10 @@ namespace fw {
 			}
 		}
 
+		void setLayout(ViewLayout&& layout) {
+			_layout = std::move(layout);
+		}
+
 		ViewLayout& getLayout() {
 			return _layout;
 		}
@@ -793,7 +807,7 @@ namespace fw {
 			return _parent.lock();
 		}
 
-		ViewPtr getChild(size_t idx) {
+		ViewPtr getChild(size_t idx) const {
 			return _children[idx];
 		}
 
@@ -863,23 +877,27 @@ namespace fw {
 		}
 
 		PointF getPositionF() const {
-			return _layout.getPosition();
+			return _layout.getCalculatedPosition();
 		}
 
 		Point getPosition() const {
-			return Point(_layout.getPosition());
+			return Point(_layout.getCalculatedPosition());
 		}
 
 		DimensionF getDimensionsF() const {
-			return _layout.getDimensions();
+			return _layout.getCalculatedDimensions();
 		}
 
 		Dimension getDimensions() const {
-			return Dimension(_layout.getDimensions());
+			return Dimension(_layout.getCalculatedDimensions());
 		}
 
 		Rect getArea() const {
-			return Rect(_layout.getArea());
+			return Rect(_layout.getCalculatedArea());
+		}
+
+		RectF getAreaF() const {
+			return _layout.getCalculatedArea();
 		}
 
 	protected:
@@ -890,6 +908,10 @@ namespace fw {
 			if (_name.empty()) {
 				_name = StringUtil::formatClassName(_type.name());
 			}
+		}
+
+		const Shared* getShared() const {
+			return _shared;
 		}
 
 	private:
@@ -948,3 +970,10 @@ namespace fw {
 		friend class ViewManager;
 	};
 }
+
+REFL_AUTO(
+	type(fw::View),
+	func(getName, property("name")), func(setName, property("name")),
+	func(getAlpha, property("alpha")), func(setAlpha, property("alpha")),
+	func(getLayout, property("layout")), func(setLayout, property("layout"))
+)

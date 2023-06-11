@@ -8,7 +8,7 @@
 namespace fw {
 	class ViewLayout {
 	private:
-		YGNodeRef _yogaNode;
+		YGNodeRef _yogaNode = nullptr;
 		bool _dirty = false;
 		
 	public:
@@ -24,6 +24,22 @@ namespace fw {
 		~ViewLayout() {
 			YGNodeFree(_yogaNode);
 		}
+		
+		ViewLayout& operator=(ViewLayout&& other) noexcept {
+			if (_yogaNode) {
+				YGNodeFree(_yogaNode);
+			}
+			
+			_yogaNode = other._yogaNode;
+			_dirty = true;
+			
+			other._yogaNode = nullptr;
+			other._dirty = false;
+
+			return *this;
+		}
+
+		ViewLayout& operator=(const ViewLayout&) = delete;
 
 		void setJustifyContent(FlexJustify justify) {
 			YGNodeStyleSetJustifyContent(_yogaNode, (YGJustify)justify);
@@ -106,7 +122,7 @@ namespace fw {
 			return YGNodeStyleGetFlexShrink(_yogaNode);
 		}
 
-		FlexValue getMinHeight() {
+		FlexValue getMinHeight() const {
 			auto value = YGNodeStyleGetMinHeight(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -121,7 +137,7 @@ namespace fw {
 			_dirty = true;
 		}
 
-		FlexValue getMaxHeight() {
+		FlexValue getMaxHeight() const {
 			auto value = YGNodeStyleGetMaxHeight(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -136,7 +152,7 @@ namespace fw {
 			_dirty = true;
 		}
 
-		FlexValue getMinWidth() {
+		FlexValue getMinWidth() const {
 			auto value = YGNodeStyleGetMinWidth(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -151,7 +167,7 @@ namespace fw {
 			_dirty = true;
 		}
 
-		FlexValue getMaxWidth() {
+		FlexValue getMaxWidth() const {
 			auto value = YGNodeStyleGetMaxWidth(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -166,7 +182,7 @@ namespace fw {
 			_dirty = true;
 		}
 
-		FlexValue getWidth() {
+		FlexValue getWidth() const {
 			auto value = YGNodeStyleGetWidth(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -182,7 +198,7 @@ namespace fw {
 			_dirty = true;
 		}
 
-		FlexValue getHeight() {
+		FlexValue getHeight() const {
 			auto value = YGNodeStyleGetHeight(_yogaNode);
 			return FlexValue((FlexUnit)value.unit, value.value);
 		}
@@ -198,9 +214,13 @@ namespace fw {
 			_dirty = true;
 		}
 
-		void setFlexAspectRatio(f32 ratio) {
+		void setAspectRatio(f32 ratio) {
 			YGNodeStyleSetAspectRatio(_yogaNode, ratio);
 			_dirty = true;
+		}
+
+		f32 getAspectRatio() const {
+			return YGNodeStyleGetAspectRatio(_yogaNode);
 		}
 
 		void setFlexPositionType(FlexPositionType positionType) {
@@ -218,6 +238,11 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getPadding(FlexEdge edge) const {
+			auto value = YGNodeStyleGetPadding(_yogaNode, (YGEdge)edge);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setPadding(const FlexRect& rect) {
 			setPadding(FlexEdge::Top, rect.top);
 			setPadding(FlexEdge::Left, rect.left);
@@ -225,20 +250,38 @@ namespace fw {
 			setPadding(FlexEdge::Right, rect.right);
 		}
 
-		void setBorder(FlexEdge edge, FlexValue value) {
-			switch (value.getUnit()) {
-			case FlexUnit::Point: YGNodeStyleSetBorder(_yogaNode, (YGEdge)edge, value.getValue()); break;
-			default: assert(false);
-			}
+		FlexRect getPadding() const {
+			return FlexRect{
+				getPadding(FlexEdge::Top),
+				getPadding(FlexEdge::Left),
+				getPadding(FlexEdge::Bottom),
+				getPadding(FlexEdge::Right)
+			};
+		}
 
+		void setBorder(FlexEdge edge, f32 value) {
+			YGNodeStyleSetBorder(_yogaNode, (YGEdge)edge, value);
 			_dirty = true;
 		}
 
-		void setBorder(const FlexRect& rect) {
+		f32 getBorder(FlexEdge edge) const {
+			return YGNodeStyleGetBorder(_yogaNode, (YGEdge)edge);
+		}
+
+		void setBorder(const FlexBorder& rect) {
 			setBorder(FlexEdge::Top, rect.top);
 			setBorder(FlexEdge::Left, rect.left);
 			setBorder(FlexEdge::Bottom, rect.bottom);
 			setBorder(FlexEdge::Right, rect.right);
+		}
+
+		FlexBorder getBorder() const {
+			return FlexBorder{
+				getBorder(FlexEdge::Top),
+				getBorder(FlexEdge::Left),
+				getBorder(FlexEdge::Bottom),
+				getBorder(FlexEdge::Right)
+			};
 		}
 
 		void setPosition(FlexEdge edge, FlexValue value) {
@@ -251,11 +294,25 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getPosition(FlexEdge edge) const {
+			YGValue value = YGNodeStyleGetPosition(_yogaNode, (YGEdge)edge);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setPosition(const FlexRect& rect) {
 			setPosition(FlexEdge::Top, rect.top);
 			setPosition(FlexEdge::Left, rect.left);
 			setPosition(FlexEdge::Bottom, rect.bottom);
 			setPosition(FlexEdge::Right, rect.right);
+		}
+
+		FlexRect getPosition() const {
+			return FlexRect{
+				getPosition(FlexEdge::Top),
+				getPosition(FlexEdge::Left),
+				getPosition(FlexEdge::Bottom),
+				getPosition(FlexEdge::Right)
+			};
 		}
 
 		void setMargin(FlexEdge edge, FlexValue value) {
@@ -269,11 +326,25 @@ namespace fw {
 			_dirty = true;
 		}
 
+		FlexValue getMargin(FlexEdge edge) const {
+			YGValue value = YGNodeStyleGetMargin(_yogaNode, (YGEdge)edge);
+			return FlexValue((FlexUnit)value.unit, value.value);
+		}
+
 		void setMargin(const FlexRect& rect) {
 			setMargin(FlexEdge::Top, rect.top);
 			setMargin(FlexEdge::Left, rect.left);
 			setMargin(FlexEdge::Bottom, rect.bottom);
 			setMargin(FlexEdge::Right, rect.right);
+		}
+
+		FlexRect getMargin() const {
+			return FlexRect{
+				getMargin(FlexEdge::Top),
+				getMargin(FlexEdge::Left),
+				getMargin(FlexEdge::Bottom),
+				getMargin(FlexEdge::Right)
+			};
 		}
 
 		void setFlexBasis(FlexValue value) {
@@ -321,6 +392,11 @@ namespace fw {
 			setHeight(dimensions.height);
 		}
 
+		void setDimensions(FlexValue dimensions) {
+			setWidth(dimensions);
+			setHeight(dimensions);
+		}
+
 		void setDimensions(Dimension dimensions) {
 			setDimensions(FlexDimensionValue{
 				(f32)dimensions.w,
@@ -328,18 +404,18 @@ namespace fw {
 			});
 		}
 		
-		PointF getPosition() const {
+		PointF getCalculatedPosition() const {
 			return PointF(YGNodeLayoutGetLeft(_yogaNode), YGNodeLayoutGetTop(_yogaNode));
 		}
 		
-		DimensionF getDimensions() const {
+		DimensionF getCalculatedDimensions() const {
 			return DimensionF(YGNodeLayoutGetWidth(_yogaNode), YGNodeLayoutGetHeight(_yogaNode));
 		}
 
-		RectF getArea() const {
+		RectF getCalculatedArea() const {
 			return RectF{
-				getPosition(),
-				getDimensions()
+				getCalculatedPosition(),
+				getCalculatedDimensions()
 			};
 		}
 
@@ -362,11 +438,15 @@ REFL_AUTO(
 	func(getFlexGrow, property("flexGrow")), func(setFlexGrow, property("flexGrow")),
 	func(getFlexShrink, property("flexShrink")), func(setFlexShrink, property("flexShrink")),
 	func(getFlexBasis, property("flexBasis")), func(setFlexBasis, property("flexBasis")),
-
 	func(getMinWidth, property("minWidth")), func(setMinWidth, property("minWidth")),
 	func(getMaxWidth, property("maxWidth")), func(setMaxWidth, property("maxWidth")),
 	func(getMinHeight, property("minHeight")), func(setMinHeight, property("minHeight")),
 	func(getMaxHeight, property("maxHeight")), func(setMaxHeight, property("maxHeight")),
 	func(getWidth, property("width")), func(setWidth, property("width")),
-	func(getHeight, property("height")), func(setHeight, property("height"))
+	func(getHeight, property("height")), func(setHeight, property("height")),
+	func(getAspectRatio, property("aspectRatio")), func(setAspectRatio, property("aspectRatio")),
+	func(getPosition, property("position")), func(setPosition, property("position")),
+	func(getPadding, property("padding")), func(setPadding, property("padding")),
+	func(getMargin, property("margin")), func(setMargin, property("margin")),
+	func(getBorder, property("border")), func(setBorder, property("border"))
 )

@@ -36,6 +36,7 @@ namespace fw {
 		bool _active = false;
 
 		ViewPtr _selected;
+		ViewPtr _highlighted;
 		PropertyEditorViewPtr _propGrid;
 			
 	public:
@@ -47,35 +48,71 @@ namespace fw {
 			_propGrid = view;
 		}
 
+		void setEditRoot(ViewPtr view) {
+			_view = view;
+		}
+
 		void setSelected(ViewPtr view) {
 			_selected = view;
 
 			_propGrid->clearProperties();
+			_propGrid->pushGroup(std::string_view("General"));
 			
-			ObjectInspectorUtil::reflect(_propGrid, view->getLayout());
+			ObjectInspectorUtil::reflect<View>(_propGrid, *view);
+		}
+
+		bool onMouseMove(Point pos) override {
+			if (/*!_active || */!_view) {
+				return false;
+			}
+
+			_highlighted = getChildAtPoint(_view, PointF(pos), true);
+
+			return true;
 		}
 
 		bool onMouseButton(const MouseButtonEvent& ev) override {
-			if (!_active) {
-				//return false;
+			if (/*!_active || */!_view) {
+				return false;
 			}
 			
 			if (ev.button == MouseButton::Left && ev.down) {
-				//_view->hitTest();
+				setSelected(getChildAtPoint(_view, PointF(ev.position), true));
 			}
 
 			return true;
 		}
 
 		void onRender(fw::Canvas& canvas) override {
-			if (!_selected) {
-				return;
+			if (_highlighted) {
+				Rect area = _highlighted->getWorldArea();
+				area.position -= getWorldPosition();
+				canvas.strokeRect(RectF(area), Color4F::green);
 			}
 
-			Rect area = _selected->getWorldArea();
-			area.position -= getWorldPosition();
+			if (_selected) {
+				Rect area = _selected->getWorldArea();
+				area.position -= getWorldPosition();
+				canvas.strokeRect(RectF(area), Color4F::red);
+			}
+		}
 
-			canvas.strokeRect(RectF(area), Color4F::red);
+	private:
+		ViewPtr getChildAtPoint(const ViewPtr& current, PointF point, bool recursive) {
+			for (int32 i = (int32)current->getChildren().size() - 1; i >= 0; --i) {
+				fw::ViewPtr child = current->getChildren()[i];
+				PointF childPos = point - child->getPositionF();
+
+				if (child->getDimensionsF().contains(childPos.x, childPos.y)) {
+					if (recursive) {
+						return getChildAtPoint(child, childPos, true);
+					}
+					
+					return child;
+				}
+			}
+
+			return current;
 		}
 	};
 
@@ -142,38 +179,39 @@ namespace fw {
 
 		void onInitialize() override {
 			_splitter = addChild<Splitter>("Container");
-			_splitter->getLayout().setDimensions(FlexDimensionValue{
-				FlexValue(FlexUnit::Percent, 100.0f),
-				FlexValue(FlexUnit::Percent, 100.0f)
-			});
+			_splitter->getLayout().setDimensions(100_pc);
 
 			_propGrid = _splitter->addChild<PropertyEditorView>("Property Grid");
 			_splitter->setLeft(_propGrid);
 
-			_panel = _splitter->addChild<PanelView>("Panel");
-			_panel->setColor(Color4F::blue);
+			_panel = _splitter->addChild<PanelView>("Right Panel");
 			_splitter->setRight(_panel);
 			
 			_splitter->setSplitPercentage(0.25f);
 
-			auto text = _panel->addChild<TextEditView>("TextEdit");
-			text->getLayout().setFlexPositionType(FlexPositionType::Absolute);
-			text->getLayout().setPosition(FlexEdge::Top, 10);
-			text->getLayout().setPosition(FlexEdge::Left, 10);
-			text->getLayout().setDimensions(Dimension{ 200, 40 });
-			
-			auto panel = _panel->addChild<PanelView>("Panel");
+			auto panel = _panel->addChild<PanelView>("Edit Panel");
+			panel->setColor(Color4F::blue);
 			panel->getLayout().setFlexPositionType(FlexPositionType::Absolute);
-			panel->getLayout().setPosition(FlexEdge::Top, 100);
-			panel->getLayout().setPosition(FlexEdge::Left, 100);
-			panel->getLayout().setDimensions(Dimension{500, 500});
-			panel->setColor(Color4F::white);
-
+			panel->getLayout().setDimensions(100_pc);
 			panel->getLayout().setLayoutDirection(LayoutDirection::LTR);
 			panel->getLayout().setFlexDirection(FlexDirection::Row);
 			panel->getLayout().setJustifyContent(FlexJustify::FlexStart);
 			panel->getLayout().setFlexAlignItems(FlexAlign::FlexStart);
 			panel->getLayout().setFlexAlignContent(FlexAlign::Stretch);
+
+			/*auto text = panel->addChild<TextEditView>("TextEdit");
+			text->getLayout().setFlexPositionType(FlexPositionType::Absolute);
+			text->getLayout().setPosition(FlexEdge::Top, 100);
+			text->getLayout().setPosition(FlexEdge::Left, 100);
+			text->getLayout().setDimensions(Dimension{ 200, 40 });*/
+
+			auto propGrid = panel->addChild<PropertyEditorView>("PropertyEditorView");
+			propGrid->getLayout().setFlexPositionType(FlexPositionType::Absolute);
+			propGrid->getLayout().setPosition(FlexEdge::Top, 100);
+			propGrid->getLayout().setPosition(FlexEdge::Left, 100);
+			propGrid->getLayout().setDimensions(Dimension{ 250, 600 });
+			
+			ObjectInspectorUtil::reflect<View>(propGrid, *panel);
 			
 			auto c1 = panel->addChild<PanelView>("C1");
 			c1->setColor(Color4F::darkGrey);
@@ -181,19 +219,18 @@ namespace fw {
 			auto c2 = panel->addChild<PanelView>("C2");
 			c2->setColor(Color4F::lightGrey);
 			c2->getLayout().setDimensions(Dimension{ 75, 75 });
+			auto c3 = panel->addChild<PanelView>("C3");
+			c3->setColor(Color4F::darkGrey);
+			c3->getLayout().setDimensions(Dimension{ 75, 75 });
 
 			auto overlay = _panel->addChild<EditOverlay>("Edit overlay");
+			overlay->setEditRoot(panel);
 			overlay->setPropGrid(_propGrid);
 			overlay->setSelected(panel);
-			overlay->getLayout().setDimensions(FlexDimensionValue{
-				FlexValue(FlexUnit::Percent, 100.0f),
-				FlexValue(FlexUnit::Percent, 100.0f)
-			});
+			overlay->getLayout().setFlexPositionType(FlexPositionType::Absolute);
+			overlay->getLayout().setDimensions(100_pc);
 
-			getLayout().setDimensions(FlexDimensionValue{
-				FlexValue(FlexUnit::Percent, 100.0f),
-				FlexValue(FlexUnit::Percent, 100.0f)
-			});
+			getLayout().setDimensions(100_pc);
 		}
 
 		bool onMouseButton(const MouseButtonEvent& ev) override {
@@ -210,6 +247,7 @@ namespace fw {
 		}
 
 		void onUpdate(f32 delta) override {
+			_panel->setName("Edit Panel");
 		}
 
 		void onRender(fw::Canvas& canvas) override {

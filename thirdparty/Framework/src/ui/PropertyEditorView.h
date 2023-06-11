@@ -45,19 +45,21 @@ namespace fw {
 			return prop;
 		}
 
-		Group& pushGroup(const std::string& name) {
-			_groups.push_back(Group{
-				.label = addChild<LabelView>(fmt::format("{} Label", name))
-			});
-
-			_groups.back().label->setText(name);
-
-			return _groups.back();
-		}
-
 		Group& pushGroup(std::string_view name) {
+			LabelViewPtr label = addChild<LabelView>(fmt::format("{} Label", name));
+
+			label->getLayout().setJustifyContent(FlexJustify::FlexStart);
+			label->getLayout().setFlexAlignItems(FlexAlign::Stretch);
+			label->getLayout().setFlexAlignSelf(FlexAlign::Auto);
+			label->getLayout().setFlexAlignContent(FlexAlign::Stretch);
+			label->getLayout().setFlexGrow(1.0f);
+			label->getLayout().setDimensions(FlexDimensionValue{
+				.width = FlexValue(FlexUnit::Percent, 100.0f),
+				.height = FlexValue((f32)_rowHeight)
+			});
+			
 			_groups.push_back(Group{
-				.label = addChild<LabelView>(fmt::format("{} Label", name))
+				.label = label
 			});
 
 			return _groups.back();
@@ -90,10 +92,10 @@ namespace fw {
 			prop.label->setText(name);
 
 			if (_groups.empty()) {
-				//pushGroup(fmt::format("{} Group", name));
+				pushGroup(fmt::format("{} Group", name));
 			}
 
-			//_groups.back().props.push_back(prop);
+			_groups.back().props.push_back(prop);
 		}
 
 		void clearProperties() {
@@ -236,7 +238,7 @@ namespace fw {
 			int32 rowCount = (dim.h / _rowHeight) + 1;
 			int32 rowY = _rowHeight;
 
-			for (const Group& group : _groups) {
+			/*for (const Group& group : _groups) {
 				int32 totalRowCount = std::min(rowCount, (int32)group.props.size());
 				int32 groupHeight = totalRowCount * (_rowHeight + 1);
 
@@ -250,7 +252,7 @@ namespace fw {
 					canvas.line(0, rowY, dim.w, rowY, Color4F::lightGrey);
 					rowY += _rowHeight + 1;
 				}
-			}
+			}*/
 		}
 	};
 

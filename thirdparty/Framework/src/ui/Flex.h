@@ -157,6 +157,14 @@ namespace fw {
 		}
 	};
 
+	static FlexValue operator""_pc(long double value) {
+		return FlexValue(FlexUnit::Percent, (f32)value);
+	}
+
+	static FlexValue operator""_pc(unsigned long long int value) {
+		return FlexValue(FlexUnit::Percent, (f32)value);
+	}
+
 	struct FlexDimensionValue {
 		FlexValue width;
 		FlexValue height;
@@ -167,6 +175,13 @@ namespace fw {
 		FlexValue left;
 		FlexValue bottom;
 		FlexValue right;
+	};
+
+	struct FlexBorder {
+		f32 top = 0.0f;
+		f32 left = 0.0f;
+		f32 bottom = 0.0f;
+		f32 right = 0.0f;
 	};
 
 	struct Flex {

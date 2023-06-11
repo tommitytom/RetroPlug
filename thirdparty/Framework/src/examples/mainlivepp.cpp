@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <assert.h>
 #include <Windows.h>
-#include "LivePP/API/LPP_API_x64_CPP.h"
+#include <LivePP/API/LPP_API_x64_CPP.h>
 
 extern void initMain(int argc, char** argv);
 extern bool mainLoop(void);

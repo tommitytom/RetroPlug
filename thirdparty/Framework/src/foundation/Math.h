@@ -332,6 +332,10 @@ namespace fw {
 			return w * h;
 		}
 
+		bool contains(T x, T y) const {
+			return x >= 0 && x < w && y >= 0 && y < h;
+		}
+
 		const static DimensionT<T> zero;
 	};
 

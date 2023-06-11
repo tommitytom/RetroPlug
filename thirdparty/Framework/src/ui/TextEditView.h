@@ -42,6 +42,7 @@ namespace fw {
 		bool setText(const std::string& text) {	
 			if (!_validator || _validator(text)) {
 				_text = text;
+				if (TextChangeEvent) { TextChangeEvent(text); }
 				onTextUpdated(_text);
 				return true;
 			}
@@ -199,10 +200,6 @@ namespace fw {
 				return;
 			}
 
-			if (unit == FlexUnit::Percent) {
-				v /= 100.0f;
-			}
-
 			_value = FlexValue(unit, v);
 			
 			if (ValueChangeEvent) {
@@ -218,7 +215,7 @@ namespace fw {
 				setText(fmt::format("{}", value.getValue()));
 				break;
 			case FlexUnit::Percent:
-				setText(fmt::format("{}%", value.getValue() * 100.0f));
+				setText(fmt::format("{}%", value.getValue()));
 				break;
 			default:
 				setText("");
