@@ -26,7 +26,6 @@ namespace rp {
 		LsdjHdPlayer() : LsdjCanvasView({ 160 * 5, 144 * 4 }), _ui(_canvas) {
 			setType<LsdjHdPlayer>();
 			setName("LSDJ HD Player");
-			setSizingPolicy(fw::SizingPolicy::None);
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 

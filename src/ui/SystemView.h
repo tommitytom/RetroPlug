@@ -27,7 +27,7 @@ namespace rp {
 
 		void setSystem(SystemPtr& system) {
 			_system = system;
-			setDimensions((fw::Dimension)system->getResolution());
+			getLayout().setDimensions((fw::Dimension)system->getResolution());
 		}
 
 		SystemPtr getSystem() {

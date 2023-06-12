@@ -15,6 +15,8 @@
 #include "ui/TypeDataLookup.h"
 #include "ui/ViewLayout.h"
 
+using namespace fw::literals;
+
 namespace fw {
 	namespace engine {
 		class Canvas;

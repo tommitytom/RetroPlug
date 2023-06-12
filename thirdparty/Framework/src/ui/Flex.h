@@ -157,14 +157,16 @@ namespace fw {
 		}
 	};
 
-	static FlexValue operator""_pc(long double value) {
-		return FlexValue(FlexUnit::Percent, (f32)value);
-	}
+	namespace literals {
+		static FlexValue operator""_pc(long double value) {
+			return FlexValue(FlexUnit::Percent, (f32)value);
+		}
 
-	static FlexValue operator""_pc(unsigned long long int value) {
-		return FlexValue(FlexUnit::Percent, (f32)value);
+		static FlexValue operator""_pc(unsigned long long int value) {
+			return FlexValue(FlexUnit::Percent, (f32)value);
+		}
 	}
-
+	
 	struct FlexDimensionValue {
 		FlexValue width;
 		FlexValue height;

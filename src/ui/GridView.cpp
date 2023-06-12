@@ -4,7 +4,10 @@ using namespace fw;
 
 GridView::GridView() {
 	setType<GridView>();
-	setSizingPolicy(SizingPolicy::FitToContent);
+}
+
+void GridView::onInitialize() {
+	getLayout().setDimensions(100_pc);
 }
 
 void GridView::onChildAdded(ViewPtr view) {
@@ -21,7 +24,7 @@ void GridView::onChildRemoved(ViewPtr view) {
 }
 
 void GridView::updateLayout() {
-	std::vector<ViewPtr>& children = getChildren();
+	/*std::vector<ViewPtr>& children = getChildren();
 
 	GridLayout layout = _layout;
 	if (layout == GridLayout::Auto) {
@@ -73,5 +76,5 @@ void GridView::updateLayout() {
 	}
 	case GridLayout::Auto:
 		break;
-	}
+	}*/
 }

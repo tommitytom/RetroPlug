@@ -7,6 +7,8 @@
 #include "core/System.h"
 #include "ui/View.h"
 
+using namespace fw::literals;
+
 namespace rp {
 	class SystemOverlay : public fw::View {
 	private:
@@ -14,7 +16,7 @@ namespace rp {
 
 	public:
 		SystemOverlay() {
-			setSizingPolicy(fw::SizingPolicy::FitToParent);
+			getLayout().setDimensions(100_pc);
 		}
 		
 		void setNode(SystemServiceNodePtr node) {

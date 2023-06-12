@@ -38,7 +38,7 @@ namespace rp {
 		LsdjOverlay() {
 			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
-			setSizingPolicy(fw::SizingPolicy::FitToParent);
+			getLayout().setDimensions(100_pc);
 		}
 
 		~LsdjOverlay() {}

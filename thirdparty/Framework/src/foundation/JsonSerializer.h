@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <map>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <magic_enum.hpp>

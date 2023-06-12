@@ -7,8 +7,6 @@
 //#include INCLUDE_APPLICATION(APPLICATION_IMPL)
 #include "RetroPlugApplication.h"
 
-#include "core/jsontest.h"
-
 #define FW_RENDERER_BGFX
 
 #if defined(FW_RENDERER_GL)
@@ -64,8 +62,6 @@ extern "C" {
 #endif
 
 int main() {
-	jsontest();
-
 	runner.setup<APPLICATION_IMPL, RenderContextT, AudioManagerT>();
 	return runner.doLoop();
 

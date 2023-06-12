@@ -12,7 +12,6 @@ namespace rp {
 	public:
 		CompactLayoutView() { 
 			setType<CompactLayoutView>(); 
-			setSizingPolicy(fw::SizingPolicy::FitToContent);
 		}
 		~CompactLayoutView() = default;
 

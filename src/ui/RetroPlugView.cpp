@@ -41,7 +41,6 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 {
 	setType<RetroPlugView>();
 	setName("RetroPlug v0.4.0");
-	setSizingPolicy(fw::SizingPolicy::FitToContent);
 }
 
 template <typename T>
@@ -162,7 +161,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 		
 		if (!audioThreadActive) {
 			_threadWarning = this->addChild<fw::LabelView>("Audio Thread Warning");
-			_threadWarning->setDimensions({ 300, 100 });
+			_threadWarning->getLayout().setDimensions(fw::Dimension{ 300, 100 });
 			_threadWarning->setText("WARNING!");
 		} else {
 			if (_threadWarning) {

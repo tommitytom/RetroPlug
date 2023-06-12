@@ -24,6 +24,8 @@ namespace fw {
 			}
 		}
 
+		void onInitialize() override;
+		
 		void onChildAdded(ViewPtr view) override;
 
 		void onChildRemoved(ViewPtr view) override;
