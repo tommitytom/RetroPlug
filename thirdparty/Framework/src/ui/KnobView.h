@@ -38,7 +38,7 @@ namespace fw {
 			_tileSize = texture.getResource().getDesc().dimensions;
 			_tileSize.h /= _tileCount;
 
-			setDimensions(_tileSize);
+			getLayout().setDimensions(_tileSize);
 		}
 
 		void setRange(f32 min, f32 max) {

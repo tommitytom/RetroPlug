@@ -349,7 +349,7 @@ namespace fw {
 		}
 
 		void onInitialize() override {
-			subscribe<ZoomChangedEvent>(getSuper()->shared_from_this(), [this](const ZoomChangedEvent& ev) {
+			subscribe<ZoomChangedEvent>(getSuper()->sharedFromThis<View>(), [this](const ZoomChangedEvent& ev) {
 				updateHighlights();
 			});
 		}
@@ -449,11 +449,12 @@ namespace fw {
 		Granular() : View({ 1024, 768 }), _waveformBuffer(48000 * 5) {
 			setType<Granular>();
 			setFocusPolicy(FocusPolicy::Click);
-			setSizingPolicy(SizingPolicy::FitToParent);
 		}
 		~Granular() = default;
 
 		void onInitialize() override {
+			getLayout().setDimensions(100_pc);
+			
 			EventNode& eventNode = getState<EventNode>();
 
 			_defaultParameters.amp = 1.0f;
@@ -474,7 +475,7 @@ namespace fw {
 			eventNode.broadcast(SetNoteArrayEvent{ _notes });
 
 			_waveView = addChild<WaveView>("Waveform");
-			_waveView->setSizingPolicy(SizingPolicy::FitToParent);
+			_waveView->getLayout().setDimensions(100_pc);
 			//_waveView->setAudioData(_waveformBuffer.getSampleBuffer(), 2);
 			_waveView->setAudioData(_sampleData.getSampleBuffer(), 2);
 
@@ -594,10 +595,10 @@ namespace fw {
 			slider5->setRange(2.0f, 50.0f);
 			slider5->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
 
-			TextureHandle knobTexture1 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
-			TextureHandle knobTexture2 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
-			TextureHandle knobTexture3 = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M3.png");
-			TextureHandle upTexture = getResourceManager().load<Texture>("C:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\up.png");
+			TextureHandle knobTexture1 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
+			TextureHandle knobTexture2 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
+			TextureHandle knobTexture3 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M3.png");
+			TextureHandle upTexture = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\up.png");
 
 			auto knob = addChild<KnobView>("Amp");
 			//auto knob = addChild<TextureView>("Amp");
@@ -640,6 +641,8 @@ namespace fw {
 					_waveView->updateSlice();
 				}
 			});*/
+
+			
 		}
 
 		void onUpdate(f32 delta) override {

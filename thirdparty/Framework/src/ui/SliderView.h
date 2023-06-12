@@ -16,6 +16,9 @@ namespace fw {
 
 	class SliderView : public TypedPropertyEditor<f32> {
 	private:
+		const f32 ARROW_STEP_COUNT = 10.0f;
+		const f32 ARROW_STEP_SIZE = 1.0f / ARROW_STEP_COUNT;
+		
 		f32 _min = 0;
 		f32 _max = 1;
 		f32 _stepSize = 0;
@@ -148,6 +151,26 @@ namespace fw {
 			return true;
 		}
 
+		bool onKey(VirtualKey::Enum key, bool down) override {
+			if (key == VirtualKey::RightArrow) {
+				if (down) {
+					setHandleValue(0, _values[0] + ARROW_STEP_SIZE, true);
+				}
+
+				return true;
+			}
+
+			if (key == VirtualKey::LeftArrow) {
+				if (down) {
+					setHandleValue(0, _values[0] - ARROW_STEP_SIZE, true);
+				}
+
+				return true;
+			}
+
+			return false;
+		}
+
 		bool onMouseMove(Point pos) override {
 			if (!_editable) {
 				return true;
@@ -211,25 +234,6 @@ namespace fw {
 		}
 
 	private:
-		void dragHandle(Point pos) {
-			DimensionF dim = getDimensionsF();
-			f32 handleWidth = (f32)getTheme<SliderTheme>().handleWidth;
-
-			dim.w -= handleWidth;
-			pos.x -= (int32)(handleWidth / 2);
-
-			_values[0] = MathUtil::clamp((f32)pos.x / dim.w, 0.0f, 1.0f);
-			_lastEditedValue = 0;
-
-			emit(SliderChangeEvent{ getValue() });
-
-			if (ValueChangeEvent) {
-				ValueChangeEvent(getValue());
-			}
-
-			updateHandleArea();
-		}
-
 		void updateHandleArea() {
 			DimensionF dim = getDimensionsF();
 			f32 handleWidth = (f32)getTheme<SliderTheme>().handleWidth;
@@ -241,6 +245,31 @@ namespace fw {
 				_handleAreas[i] = RectF(_values[i] * _handleRange, 0, handleWidth, dim.h);
 			}
 		}
+		
+		void setHandleValue(size_t idx, f32 value, bool emitEvents) {
+			_values[idx] = MathUtil::clamp(value, 0.0f, 1.0f);
+			_lastEditedValue = 0;
+
+			if (emitEvents) {
+				emit(SliderChangeEvent{ getValue() });
+
+				if (ValueChangeEvent) {
+					ValueChangeEvent(getValue());
+				}
+			}
+
+			updateHandleArea();
+		}
+		
+		void dragHandle(Point pos) {
+			DimensionF dim = getDimensionsF();
+			f32 handleWidth = (f32)getTheme<SliderTheme>().handleWidth;
+
+			dim.w -= handleWidth;
+			pos.x -= (int32)(handleWidth / 2);
+
+			setHandleValue(0, (f32)pos.x / dim.w, true);
+		}		
 	};
 
 	using SliderViewPtr = std::shared_ptr<SliderView>;

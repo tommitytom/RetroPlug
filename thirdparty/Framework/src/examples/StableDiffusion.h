@@ -240,7 +240,6 @@ namespace fw {
 	public:
 		StableDiffusion() : View({ 1024, 768 }) {
 			setType<StableDiffusion>();
-			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
 
 			_client = std::make_unique<ComfyClient>("127.0.0.1:8188");
@@ -261,13 +260,15 @@ namespace fw {
 
 		void onInitialize() override {
 			extractNodes();
+			
+			getLayout().setDimensions(100_pc);
 
 			auto button = addChild<ButtonView>("Button");
-			button->setPosition(10, 10);
+			button->getLayout().setPositionEdge(FlexEdge::Left, 10);
+			button->getLayout().setPositionEdge(FlexEdge::Top, 10);
 
 			_output = addChild<TextureView>("Output");
-			_output->setPosition(10, 100);
-			_output->setDimensions({ 400, 400 });
+			_output->setArea(Rect(10, 100, 400, 400));
 			
 			subscribe<ButtonClickEvent>(button, [this]() {
 				std::string prompt = FsUtil::readTextFile("C:\\temp\\graph.json");

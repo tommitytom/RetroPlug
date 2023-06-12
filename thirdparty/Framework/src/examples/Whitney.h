@@ -89,13 +89,13 @@ namespace fw {
 	public:
 		Whitney() : View({ 1024, 768 }) {
 			setType<Whitney>();
-			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
 		}
 
 		~Whitney() = default;
 
 		void onInitialize() override {
+			getLayout().setDimensions(100_pc);
 			//_dotCountSlider->setCurve(SliderScaler::pow2);
 			//_durationSlider->setCurve(SliderScaler::pow2);
 
@@ -173,8 +173,8 @@ namespace fw {
 			}
 
 			_objectInspector = addChildAt<ObjectInspectorView>("Property Editor", { 50, 50 });
-			_objectInspector->setSizingPolicy(SizingPolicy::None);
-			_objectInspector->setDimensions({ 300, 600 });
+			_objectInspector->getLayout().setFlexPositionType(FlexPositionType::Absolute);
+			_objectInspector->getLayout().setDimensions(Dimension{ 300, 600 });
 
 			_positionSlider = _objectInspector->addProperty<SliderView>("Position");
 			_positionSlider->setRange(0, _settings.duration);

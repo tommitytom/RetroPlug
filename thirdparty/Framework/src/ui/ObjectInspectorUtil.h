@@ -52,7 +52,20 @@ namespace fw::ObjectInspectorUtil {
 					dropdown->setValue(member(item) == false ? 0 : 1);
 				}
 
-				dropdown->ValueChangeEvent = [&](int32 v) { propSetter(member, item, v != 0); };
+				dropdown->ValueChangeEvent = [&, changed](int32 v) {
+					if constexpr (has_writer(member)) {
+						auto writer = get_writer(member);
+						writer(item, v != 0);
+					} else {
+						if constexpr (std::is_reference_v<MemberType> && !std::is_const_v<std::remove_reference_t<MemberType>>) {
+							member(item) = v != 0;
+						} else {
+							//spdlog::info("Failed to set slider value: {}", v);
+						}
+					}
+
+					changed();
+				};
 			} else if constexpr (std::is_floating_point_v<UnderlyingMemberType> || std::is_integral_v<UnderlyingMemberType>) {
 				SliderViewPtr slider = inspector->addProperty<SliderView>(get_display_name(member));
 
@@ -193,7 +206,7 @@ namespace fw::ObjectInspectorUtil {
 							auto writer = get_writer(member);
 							writer(item, static_cast<const UnderlyingMemberType&>(*shared));
 						} else {
-							spdlog::info("Failed to update {}", get_display_name(member));
+							spdlog::error("Failed to update object property: {}", get_display_name(member));
 						}
 
 						changed();

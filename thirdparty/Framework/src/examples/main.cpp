@@ -21,7 +21,7 @@ fw::app::ApplicationRunner runner;
 #define FW_RENDERER_BGFX
 
 #if defined(FW_RENDERER_GL)
-#include "graphics/gl/GlRenderContext.h"x 
+#include "graphics/gl/GlRenderContext.h"
 using RenderContextT = fw::GlRenderContext;
 #elif defined(FW_RENDERER_BGFX)
 #include "graphics/bgfx/BgfxRenderContext.h"

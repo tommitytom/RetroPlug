@@ -575,7 +575,7 @@ namespace fw {
 					children.erase(children.begin() + i);
 					children.push_back(this->sharedFromThis<View>());
 					break;
-				}
+			}
 			}
 		}
 
@@ -603,7 +603,8 @@ namespace fw {
 		template <typename T>
 		std::shared_ptr<T> addChildAt(std::string_view name, const Point& position) {
 			std::shared_ptr<T> child = addChild<T>(name);
-			child->setPosition(position);
+			child->getLayout().setPositionEdge(FlexEdge::Left, (f32)position.x);
+			child->getLayout().setPositionEdge(FlexEdge::Top, (f32)position.y);
 			return std::move(child);
 		}
 
@@ -836,6 +837,12 @@ namespace fw {
 
 		void setArea(const Rect& area) {
 			assert(area.w >= 0 && area.h >= 0);
+			
+			getLayout().setFlexPositionType(FlexPositionType::Absolute);
+			getLayout().setPositionEdge(FlexEdge::Left, (f32)area.x);
+			getLayout().setPositionEdge(FlexEdge::Top, (f32)area.y);
+			getLayout().setWidth((f32)area.w);
+			getLayout().setHeight((f32)area.x);
 
 			/*if (area != _area) {
 				ResizeEvent ev = {
