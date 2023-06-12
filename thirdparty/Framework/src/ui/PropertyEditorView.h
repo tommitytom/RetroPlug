@@ -28,6 +28,8 @@ namespace fw {
 
 		f32 _separatorPerc = 0.25f;
 
+		f32 _indent = 0;
+
 		const int32 seperatorHandleSize = 4;
 
 	public:
@@ -45,14 +47,24 @@ namespace fw {
 			return prop;
 		}
 
+		void indent(size_t amount = 1) {
+			_indent += (f32)amount;
+		}
+
+		void unindent(size_t amount = 1) {
+			_indent -= (f32)amount;
+		}
+
 		Group& pushGroup(std::string_view name) {
 			LabelViewPtr label = addChild<LabelView>(fmt::format("{} Label", name));
 
+			label->setText(fmt::format("> {}", name));
 			label->getLayout().setJustifyContent(FlexJustify::FlexStart);
 			label->getLayout().setFlexAlignItems(FlexAlign::Stretch);
 			label->getLayout().setFlexAlignSelf(FlexAlign::Auto);
 			label->getLayout().setFlexAlignContent(FlexAlign::Stretch);
 			label->getLayout().setFlexGrow(1.0f);
+			label->getLayout().setPositionEdge(FlexEdge::Left, _indent * 15.0f);
 			label->getLayout().setDimensions(FlexDimensionValue{
 				.width = FlexValue(FlexUnit::Percent, 100.0f),
 				.height = FlexValue((f32)_rowHeight)
@@ -66,6 +78,10 @@ namespace fw {
 		}
 
 		void addProperty(std::string_view name, PropertyEditorBasePtr editor) {
+			if (_groups.empty()) {
+				pushGroup("Properties");
+			}
+			
 			Prop prop = {
 				.label = addChild<LabelView>(fmt::format("{} Label", name)),
 				.editor = addChild<PropertyEditorBase>(editor)
@@ -75,6 +91,7 @@ namespace fw {
 			prop.label->getLayout().setFlexAlignItems(FlexAlign::Stretch);
 			prop.label->getLayout().setFlexAlignSelf(FlexAlign::Auto);
 			prop.label->getLayout().setFlexAlignContent(FlexAlign::Stretch);
+			prop.label->getLayout().setPositionEdge(FlexEdge::Left, _indent * 15.0f);
 			prop.label->getLayout().setDimensions(FlexDimensionValue{
 				.width = FlexValue(FlexUnit::Percent, 50.0f),
 				.height = FlexValue((f32)_rowHeight)
@@ -90,10 +107,6 @@ namespace fw {
 			});
 
 			prop.label->setText(name);
-
-			if (_groups.empty()) {
-				pushGroup(fmt::format("{} Group", name));
-			}
 
 			_groups.back().props.push_back(prop);
 		}

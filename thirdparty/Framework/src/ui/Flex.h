@@ -183,28 +183,6 @@ namespace fw {
 		f32 bottom = 0.0f;
 		f32 right = 0.0f;
 	};
-
-	struct Flex {
-		std::optional<LayoutDirection> direction;
-		std::optional<FlexDirection> flexDirection;
-		std::optional<FlexValue> basis;
-		std::optional<f32> grow;
-		std::optional<f32> shrink;
-		std::optional<FlexWrap> flexWrap;
-
-		std::optional<FlexJustify> justify;
-		std::optional<FlexAlign> alignItems;
-		std::optional<FlexAlign> alignSelf;
-		std::optional<FlexAlign> alignContent;
-
-		std::optional<FlexValue> width;
-		std::optional<FlexValue> height;
-		std::optional<FlexValue> minWidth;
-		std::optional<FlexValue> minHeight;
-		std::optional<FlexValue> maxWidth;
-		std::optional<FlexValue> maxHeight;
-		std::optional<f32> aspectRatio;
-	};
 }
 
 REFL_AUTO(
@@ -213,8 +191,18 @@ REFL_AUTO(
 	func(getValue, property("value")), func(setValue, property("value"))
 )
 
-/*REFL_AUTO(
+REFL_AUTO(
 	type(fw::FlexRect),
-	func(getUnit, property("unit")), func(setUnit, property("unit")),
-	func(getValue, property("value")), func(setValue, property("value"))
-)*/
+	field(top),
+	field(left),
+	field(bottom),
+	field(right)
+)
+
+REFL_AUTO(
+	type(fw::FlexBorder),
+	field(top),
+	field(left),
+	field(bottom),
+	field(right)
+)

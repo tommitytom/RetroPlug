@@ -14,6 +14,8 @@ namespace fw {
 		uint32 _alignment = TextAlignFlags::Left | TextAlignFlags::Top;
 
 	public:
+		RegisterObject();
+
 		LabelView() { setType<LabelView>(); }
 		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<LabelView>(); }
 		~LabelView() = default;
@@ -108,3 +110,8 @@ namespace fw {
 
 	using LabelViewPtr = std::shared_ptr<LabelView>;
 }
+
+REFL_AUTO(
+	type(fw::LabelView, bases<fw::View>),
+	func(setText, property("text")), func(getText, property("text"))
+)

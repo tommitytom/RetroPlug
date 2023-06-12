@@ -13,12 +13,18 @@ namespace fw {
 		Color4F _color = RP_COLOR_BLACK;
 
 	public:
+		RegisterObject();
+		
 		PanelView() {
 			setType<PanelView>();
 		}
 
 		void setColor(Color4F color) {
 			_color = color;
+		}
+
+		const Color4F& getColor() const {
+			return _color;
 		}
 
 		void onRender(fw::Canvas& canvas) override {
@@ -286,3 +292,8 @@ namespace fw {
 
 	using DockSplitterPtr = std::shared_ptr<DockSplitter>;
 }
+
+REFL_AUTO(
+	type(fw::PanelView, bases<fw::View>),
+	func(setColor, property("color")), func(setColor, property("color"))
+)

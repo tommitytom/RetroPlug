@@ -73,7 +73,28 @@ namespace fw {
 		Dimension oldSize;
 	};
 
-	class View : public std::enable_shared_from_this<View> {
+	class Object : public std::enable_shared_from_this<Object> {
+	public:
+		virtual uint32 getTypeId() const = 0;
+
+		virtual std::string_view getTypeName() const = 0;
+
+		template <typename T = Object>
+		std::shared_ptr<T> sharedFromThis() {
+			return std::static_pointer_cast<T>(shared_from_this());
+		}
+
+		template <typename T = Object>
+		std::shared_ptr<const T> sharedFromThis() const {
+			return std::static_pointer_cast<const T>(shared_from_this());
+		}
+	};
+	
+#define RegisterObject() \
+	uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
+	std::string_view getTypeName() const override { return entt::type_name<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); }
+
+	class View : public Object {
 	private:
 		struct Shared {
 			std::weak_ptr<View> focused;
@@ -125,17 +146,19 @@ namespace fw {
 		ViewLayout _layout;
 
 	public:
+		RegisterObject()
+
 		View(Dimension dimensions = { 100, 100 }) : _type(entt::type_id<View>()), _layout(dimensions) {}
 		View(Dimension dimensions, entt::type_info type) : _layout(dimensions), _type(type) {}
 		~View() { unsubscribeAll(); }
 
 		void subscribe(EventType eventType, ViewPtr source, std::function<void(const entt::any&)>&& func) {
-			assert(!source->hasSubscription(eventType, shared_from_this()));
+			assert(!source->hasSubscription(eventType, sharedFromThis<View>()));
 
 			_subscriptions.push_back({ eventType, std::weak_ptr(source) });
 
 			source->_subscriptionTargets[eventType].push_back(Subscription{
-				.target = std::weak_ptr<View>(shared_from_this()),
+				.target = std::weak_ptr<View>(sharedFromThis<View>()),
 				.handler = std::move(func)
 			});
 		}
@@ -192,7 +215,7 @@ namespace fw {
 						for (size_t i = 0; i < found->second.size(); ++i) {
 							Subscription& sub = found->second[i];
 
-							if (sub.target.expired() || sub.target.lock() == shared_from_this()) {
+							if (sub.target.expired() || sub.target.lock() == sharedFromThis<View>()) {
 								found->second.erase(found->second.begin() + i);
 								break;
 							}
@@ -220,7 +243,7 @@ namespace fw {
 				for (size_t i = 0; i < found->second.size(); ++i) {
 					Subscription& sub = found->second[i];
 
-					if (!sub.target.expired() && sub.target.lock() == shared_from_this()) {
+					if (!sub.target.expired() && sub.target.lock() == sharedFromThis<View>()) {
 						found->second.erase(found->second.begin() + i);
 						return true;
 					}
@@ -390,7 +413,7 @@ namespace fw {
 
 		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;
-			_shared->dragContext.source = shared_from_this();
+			_shared->dragContext.source = sharedFromThis<View>();
 			_shared->dragContext.attached = placeholder;
 			_shared->dragContext.sourcePoint = sourcePos;
 			spdlog::info("Beginning drag of {}", getName());
@@ -512,7 +535,7 @@ namespace fw {
 		void remove() {
 			ViewPtr parent = getParent();
 			if (parent) {
-				parent->removeChild(shared_from_this());
+				parent->removeChild(sharedFromThis<View>());
 			}
 		}
 
@@ -525,7 +548,7 @@ namespace fw {
 					currentFocus->unfocus();
 				}
 
-				_shared->focused = shared_from_this();
+				_shared->focused = sharedFromThis<View>();
 				onFocus();
 			}
 		}
@@ -539,7 +562,7 @@ namespace fw {
 		}
 
 		bool hasFocus() const {
-			return _shared && _shared->focused.lock() == shared_from_this();
+			return _shared && _shared->focused.lock() == sharedFromThis<View>();
 		}
 
 		void bringToFront() {
@@ -550,7 +573,7 @@ namespace fw {
 			for (size_t i = 0; i < children.size(); ++i) {
 				if (children[i].get() == this) {
 					children.erase(children.begin() + i);
-					children.push_back(this->shared_from_this());
+					children.push_back(this->sharedFromThis<View>());
 					break;
 				}
 			}
@@ -564,7 +587,7 @@ namespace fw {
 			for (size_t i = 0; i < children.size(); ++i) {
 				if (children[i].get() == this) {
 					children.erase(children.begin() + i);
-					children.insert(children.begin(), this->shared_from_this());
+					children.insert(children.begin(), this->sharedFromThis<View>());
 					break;
 				}
 			}
@@ -611,7 +634,7 @@ namespace fw {
 			
 			YGNodeInsertChild(_layout.getNode(), view->getLayout().getNode(), idx);
 
-			view->_parent = std::weak_ptr<View>(shared_from_this());
+			view->_parent = std::weak_ptr<View>(sharedFromThis<View>());
 			_children.push_back(view);
 
 			if (isInitialized()) {
@@ -664,7 +687,7 @@ namespace fw {
 						ViewPtr focused = _shared->focused.lock();
 
 						if (focused && childHasFocus(view.get(), focused.get())) {
-							focused = shared_from_this();
+							focused = sharedFromThis<View>();
 						}
 					}
 
@@ -850,7 +873,7 @@ namespace fw {
 		template <typename T>
 		std::shared_ptr<T> asShared() {
 			assert(isType<T>());
-			return std::static_pointer_cast<T>(shared_from_this());
+			return std::static_pointer_cast<T>(sharedFromThis<View>());
 		}
 
 		void setName(std::string_view name) {
@@ -864,7 +887,7 @@ namespace fw {
 		Point getRelativePosition(ViewPtr& parent, Point position) {
 			ViewPtr currentParent = getParent();
 
-			assert(parent != shared_from_this());
+			assert(parent != sharedFromThis<View>());
 			assert(currentParent != nullptr);
 
 			while (currentParent != parent) {

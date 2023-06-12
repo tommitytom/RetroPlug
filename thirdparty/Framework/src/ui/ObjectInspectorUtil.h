@@ -18,7 +18,7 @@ namespace fw::ObjectInspectorUtil {
 	}
 
 	template <typename T>
-	void reflect(PropertyEditorViewPtr inspector, T& item) {
+	void reflect(PropertyEditorViewPtr inspector, T& item, const std::function<void()>& changed = []() {}) {
 		static constexpr auto members = filter(refl::member_list<T>{}, [&](auto member) {
 			if constexpr (is_readable(member)) {
 				return has_writer(member);
@@ -37,7 +37,7 @@ namespace fw::ObjectInspectorUtil {
 		
 		for_each(members, [&](auto member) {
 			using Descriptor = decltype(member);
-			using MemberType = typename Descriptor::template return_type<typename Descriptor::declaring_type&>;
+			using MemberType = decltype(member(item));
 			using UnderlyingMemberType = std::decay_t<MemberType>;
 
 			if constexpr (std::is_same_v<UnderlyingMemberType, bool>) {
@@ -50,7 +50,7 @@ namespace fw::ObjectInspectorUtil {
 					dropdown->setValue(reader(item) == false ? 0 : 1);
 				} else {
 					dropdown->setValue(member(item) == false ? 0 : 1);
-				}				
+				}
 
 				dropdown->ValueChangeEvent = [&](int32 v) { propSetter(member, item, v != 0); };
 			} else if constexpr (std::is_floating_point_v<UnderlyingMemberType> || std::is_integral_v<UnderlyingMemberType>) {
@@ -75,7 +75,7 @@ namespace fw::ObjectInspectorUtil {
 					slider->setValue(static_cast<f32>(member(item)));
 				}
 
-				slider->ValueChangeEvent = [&](f32 v) {
+				slider->ValueChangeEvent = [&, changed](f32 v) {
 					if constexpr (has_writer(member)) {
 						auto writer = get_writer(member);
 						writer(item, static_cast<UnderlyingMemberType>(v));
@@ -86,6 +86,8 @@ namespace fw::ObjectInspectorUtil {
 							//spdlog::info("Failed to set slider value: {}", v);
 						}
 					}
+
+					changed();
 				};
 			} else if constexpr (std::is_enum_v<UnderlyingMemberType>) {
 				DropDownMenuViewPtr dropdown = inspector->addProperty<DropDownMenuView>(get_display_name(member));
@@ -109,7 +111,7 @@ namespace fw::ObjectInspectorUtil {
 					}
 				}
 
-				dropdown->ValueChangeEvent = [&](int32 v) {
+				dropdown->ValueChangeEvent = [&, changed](int32 v) {
 					if (v >= 0 && v < magic_enum::enum_count<UnderlyingMemberType>()) {
 						if constexpr (has_writer(member)) {
 							auto writer = get_writer(member);
@@ -121,6 +123,8 @@ namespace fw::ObjectInspectorUtil {
 								//spdlog::info("Failed to set slider value: {}", v);
 							}
 						}
+
+						changed();
 						//propSetter(member, item, magic_enum::enum_value<UnderlyingMemberType>(v));
 					}
 				};
@@ -134,7 +138,7 @@ namespace fw::ObjectInspectorUtil {
 					textEdit->setText(member(item));
 				}
 
-				textEdit->TextChangeEvent = [&](const std::string& v) {
+				textEdit->TextChangeEvent = [&, changed](const std::string& v) {
 					if constexpr (has_writer(member)) {
 						auto writer = get_writer(member);
 						writer(item, static_cast<UnderlyingMemberType>(v));
@@ -143,6 +147,8 @@ namespace fw::ObjectInspectorUtil {
 							member(item) = static_cast<UnderlyingMemberType>(v);
 						}
 					}
+
+					changed();
 				};
 			} else if constexpr (std::is_same_v<UnderlyingMemberType, FlexValue>) {
 				FlexValueEditViewPtr flexValueEdit = inspector->addProperty<FlexValueEditView>(get_display_name(member));
@@ -154,7 +160,7 @@ namespace fw::ObjectInspectorUtil {
 					flexValueEdit->setValue(member(item));
 				}
 
-				flexValueEdit->ValueChangeEvent = [&](const FlexValue &v) {
+				flexValueEdit->ValueChangeEvent = [&, changed](const FlexValue &v) {
 					if constexpr (has_writer(member)) {
 						auto writer = get_writer(member);
 						writer(item, static_cast<UnderlyingMemberType>(v));
@@ -163,19 +169,52 @@ namespace fw::ObjectInspectorUtil {
 							member(item) = static_cast<UnderlyingMemberType>(v);
 						}
 					}
+
+					changed();
 				};
 			} else if constexpr (std::is_class_v<UnderlyingMemberType>) {
+				inspector->pushGroup(get_display_name(member));
+				inspector->indent();
+
 				if constexpr (std::is_reference_v<MemberType> && !std::is_const_v<std::remove_reference_t<MemberType>>) {
-					reflect(inspector, member(item));
+					ObjectInspectorUtil::reflect(inspector, member(item), changed);
 				} else {
-					spdlog::info("Failed to reflect class: Member {} is not accessible", get_display_name(member));
+					std::shared_ptr<UnderlyingMemberType> shared;
+
+					if constexpr (has_reader(member)) {
+						auto reader = get_reader(member);
+						shared = std::make_shared<UnderlyingMemberType>(reader(item));
+					} else {
+						shared = std::make_shared<UnderlyingMemberType>(member(item));
+					}
+					
+					ObjectInspectorUtil::reflect(inspector, *shared, [member, &item, shared, changed]() {
+						if constexpr (has_writer(member)) {
+							auto writer = get_writer(member);
+							writer(item, static_cast<const UnderlyingMemberType&>(*shared));
+						} else {
+							spdlog::info("Failed to update {}", get_display_name(member));
+						}
+
+						changed();
+					});
+					
+					//spdlog::info("Failed to reflect class: Member {} is not accessible", get_display_name(member));
 				}				
+				
+				inspector->unindent();
 			}
 		});
 	}
 
 	template <typename T>
-	void reflectAny(ObjectInspectorViewPtr inspector, entt::any& item) {
+	void reflectAny(PropertyEditorViewPtr inspector, entt::any& item) {
 		reflect<T>(inspector, entt::any_cast<T>(item));
+	}
+
+	template <typename T>
+	void reflectObject(PropertyEditorViewPtr inspector, Object& obj) {
+		assert(obj.getTypeId() == entt::type_hash<T>::value());
+		reflect<T>(inspector, static_cast<T&>(obj));
 	}
 }

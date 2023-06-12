@@ -15,12 +15,20 @@
 using namespace fw;
 
 namespace fw {
-	using PropFunc = void(*)(PropertyEditorViewPtr, entt::any&);
-	/*const std::unordered_map<entt::id_type, PropFunc> PROP_FUNCS = {
-		{ entt::type_hash<ViewLayout>::value(), &ObjectInspectorUtil::reflectAny<ViewLayout> }
-	};
+	using PropAnyFunc = void(*)(PropertyEditorViewPtr, entt::any&);
+	using PropObjectFunc = void(*)(PropertyEditorViewPtr, fw::Object&);
 
-	struct MyMemberInfo {
+	const std::unordered_map<entt::id_type, PropObjectFunc> PROP_OBJECT_FUNCS = {
+		{ entt::type_hash<View>::value(), &ObjectInspectorUtil::reflectObject<View> },
+		{ entt::type_hash<LabelView>::value(), &ObjectInspectorUtil::reflectObject<LabelView> },
+		{ entt::type_hash<PanelView>::value(), &ObjectInspectorUtil::reflectObject<PanelView> }
+	};
+	
+	/*const std::unordered_map<entt::id_type, PropAnyFunc> PROP_ANY_FUNCS = {
+		{ entt::type_hash<ViewLayout>::value(), &ObjectInspectorUtil::reflectAny<ViewLayout> }
+	};*/
+
+	/*struct MyMemberInfo {
 		std::string_view name;
 	};
 
@@ -58,7 +66,14 @@ namespace fw {
 			_propGrid->clearProperties();
 			_propGrid->pushGroup(std::string_view("General"));
 			
-			ObjectInspectorUtil::reflect<View>(_propGrid, *view);
+			uint32 typeId = view->getTypeId();
+
+			auto found = PROP_OBJECT_FUNCS.find(view->getTypeId());
+			if (found != PROP_OBJECT_FUNCS.end()) {
+				found->second(_propGrid, *view);
+			} else {
+				ObjectInspectorUtil::reflect<View>(_propGrid, *view);
+			}
 		}
 
 		bool onMouseMove(Point pos) override {
@@ -207,11 +222,11 @@ namespace fw {
 
 			auto propGrid = panel->addChild<PropertyEditorView>("PropertyEditorView");
 			propGrid->getLayout().setFlexPositionType(FlexPositionType::Absolute);
-			propGrid->getLayout().setPosition(FlexEdge::Top, 100);
-			propGrid->getLayout().setPosition(FlexEdge::Left, 100);
-			propGrid->getLayout().setDimensions(Dimension{ 250, 600 });
+			propGrid->getLayout().setPositionEdge(FlexEdge::Top, 100);
+			propGrid->getLayout().setPositionEdge(FlexEdge::Left, 100);
+			propGrid->getLayout().setDimensions(Dimension{ 400, 600 });
 			
-			ObjectInspectorUtil::reflect<View>(propGrid, *panel);
+			ObjectInspectorUtil::reflect(propGrid, *panel);
 			
 			auto c1 = panel->addChild<PanelView>("C1");
 			c1->setColor(Color4F::darkGrey);
