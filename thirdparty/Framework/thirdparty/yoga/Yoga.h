@@ -97,6 +97,13 @@ WIN_EXPORT void YGNodeCalculateLayout(
     float availableHeight,
     YGDirection ownerDirection);
 
+WIN_EXPORT void YGNodeCalculateLayoutWithContext(
+    YGNodeRef node,
+    float availableWidth,
+    float availableHeight,
+    YGDirection ownerDirection,
+    void* layoutContext);
+
 // Mark a node as dirty. Only valid for nodes with a custom measure function
 // set.
 //

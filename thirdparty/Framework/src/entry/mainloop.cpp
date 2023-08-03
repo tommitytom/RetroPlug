@@ -1,21 +1,6 @@
 #include "foundation/MacroTools.h"
 #include "application/ApplicationRunner.h"
-#include <filesystem>
-#include <assert.h>
-#include <Windows.h>
-#include "LivePP/API/LPP_API_x64_CPP.h"
-
-#ifndef APPLICATION_HEADER
-#define APPLICATION_HEADER APPLICATION_IMPL
-#endif
-
-//#include INCLUDE_APPLICATION(APPLICATION_HEADER)
-
-//#include "Whitney.h"
-//#include "CanvasTest.h"
-//#include "Granular.h"
-//#include "StaticReflection.h"
-#include "NewUi.h"
+#include "entry/ApplicationFactory.h"
 
 using namespace fw;
 
@@ -65,7 +50,7 @@ extern "C" {
 #endif
 
 void initMain(int argc, char** argv) {
-	runner.setup<APPLICATION_IMPL, RenderContextT, AudioManagerT>();
+	runner.setup<RenderContextT, AudioManagerT>(ApplicationFactory::create());
 }
 
 bool mainLoop() {
@@ -76,6 +61,6 @@ void destroyMain() {
 	runner.destroy();
 }
 
-void reload(lpp::LppHotReloadPostpatchHookId, const wchar_t* const recompiledModulePath, const wchar_t* const* const modifiedFiles, unsigned int modifiedFilesCount, const wchar_t* const* const modifiedClassLayouts, unsigned int modifiedClassLayoutsCount) {
+void reload() {
 	runner.reload();
 }

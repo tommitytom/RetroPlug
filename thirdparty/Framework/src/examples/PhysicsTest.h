@@ -9,6 +9,7 @@
 #include "graphics/Texture.h"
 #include "graphics/Font.h"
 
+#include "application/Application.h"
 #include "application/Window.h"
 
 namespace fw {
@@ -45,5 +46,5 @@ namespace fw {
 		bool onMouseMove(Point position) override;
 	};
 
-	using PhysicsTestApplication = fw::app::BasicApplication<PhysicsTest, void>;
+	using PhysicsTestApplication = fw::app::BasicApplication<PhysicsTest>;
 }

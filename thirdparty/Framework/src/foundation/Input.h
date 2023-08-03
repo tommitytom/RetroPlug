@@ -417,3 +417,10 @@ namespace fw {
 		Point position;
 	};
 }
+
+#include "foundation/MathMeta.h"
+
+REFL_AUTO(
+	type(fw::MouseMoveEvent),
+	field(position)
+)

@@ -12,6 +12,10 @@ namespace fw {
 		bool _dirty = false;
 		
 	public:
+		ViewLayout(ViewLayout&& other) noexcept {
+			*this = std::move(other);
+		}
+
 		ViewLayout() : _yogaNode(YGNodeNew()) {
 
 		}
@@ -19,10 +23,27 @@ namespace fw {
 		ViewLayout(Dimension dimensions) : _yogaNode(YGNodeNew()) {
 			setDimensions(dimensions);
 			YGNodeCalculateLayout(_yogaNode, YGUndefined, YGUndefined, YGDirectionInherit);
+
 		}
 
 		~ViewLayout() {
 			YGNodeFree(_yogaNode);
+		}
+
+		uint32 getChildCount() const {
+			return YGNodeGetChildCount(_yogaNode);
+		}
+
+		YGNodeRef getChild(size_t idx) {
+			return YGNodeGetChild(_yogaNode, (uint32)idx);
+		}
+
+		YGNodeConstRef getChild(size_t idx) const {
+			return YGNodeGetChild(_yogaNode, (uint32)idx);
+		}
+
+		entt::entity getEntity() {
+			return static_cast<entt::entity>(reinterpret_cast<std::uintptr_t>(YGNodeGetContext(_yogaNode)));
 		}
 		
 		ViewLayout& operator=(ViewLayout&& other) noexcept {
@@ -46,10 +67,21 @@ namespace fw {
 			
 			_yogaNode = YGNodeClone(other._yogaNode);
 			_dirty = true;
+
+			return *this;
+		}
+
+		void setOverflow(FlexOverflow overflow) {
+			YGNodeStyleSetOverflow(_yogaNode, (YGOverflow)overflow);
+			_dirty = true;
+		}
+		
+		FlexOverflow getOverflow() const {
+			return (FlexOverflow)YGNodeStyleGetOverflow(_yogaNode);
 		}
 
 		void setJustifyContent(FlexJustify justify) {
-			YGNodeStyleSetJustifyContent(_yogaNode, (YGJustify)justify);
+			YGNodeStyleSetJustifyContent(_yogaNode, (YGJustify)justify);			
 			_dirty = true;
 		}
 
@@ -345,6 +377,13 @@ namespace fw {
 			setMarginEdge(FlexEdge::Right, rect.right);
 		}
 
+		void setMarginValue(FlexValue value) {
+			setMarginEdge(FlexEdge::Top, value);
+			setMarginEdge(FlexEdge::Left, value);
+			setMarginEdge(FlexEdge::Bottom, value);
+			setMarginEdge(FlexEdge::Right, value);
+		}
+
 		FlexRect getMargin() const {
 			return FlexRect{
 				getMarginEdge(FlexEdge::Top),
@@ -352,6 +391,13 @@ namespace fw {
 				getMarginEdge(FlexEdge::Bottom),
 				getMarginEdge(FlexEdge::Right)
 			};
+		}
+
+		void setPaddingValue(FlexValue value) {
+			setPaddingEdge(FlexEdge::Top, value);
+			setPaddingEdge(FlexEdge::Left, value);
+			setPaddingEdge(FlexEdge::Bottom, value);
+			setPaddingEdge(FlexEdge::Right, value);
 		}
 
 		void setFlexBasis(FlexValue value) {
@@ -411,7 +457,41 @@ namespace fw {
 				getCalculatedDimensions()
 			};
 		}
+		
+		PointF getWorldPosition() {
+			YGNodeRef parent = YGNodeGetParent(_yogaNode);
+			if (parent) {
+				return getCalculatedPosition() + PointF(YGNodeLayoutGetLeft(parent), YGNodeLayoutGetTop(parent));
+			}
 
+			return getCalculatedPosition();
+		}
+
+		RectF getWorldArea() {
+			return RectF{
+				getWorldPosition(),
+				getCalculatedDimensions()
+			};
+		}
+
+		FlexBorder getComputedPadding() const {
+			return FlexBorder{
+				YGNodeLayoutGetPadding(_yogaNode, YGEdge::YGEdgeTop),
+				YGNodeLayoutGetPadding(_yogaNode, YGEdge::YGEdgeLeft),
+				YGNodeLayoutGetPadding(_yogaNode, YGEdge::YGEdgeBottom),
+				YGNodeLayoutGetPadding(_yogaNode, YGEdge::YGEdgeRight)
+			};
+		}
+
+		FlexBorder getComputedMargin() const {
+			return FlexBorder{
+				YGNodeLayoutGetMargin(_yogaNode, YGEdge::YGEdgeTop),
+				YGNodeLayoutGetMargin(_yogaNode, YGEdge::YGEdgeLeft),
+				YGNodeLayoutGetMargin(_yogaNode, YGEdge::YGEdgeBottom),
+				YGNodeLayoutGetMargin(_yogaNode, YGEdge::YGEdgeRight)
+			};
+		}
+		
 		YGNodeRef getNode() const {
 			return _yogaNode;
 		}
@@ -421,25 +501,26 @@ namespace fw {
 REFL_AUTO(
 	type(fw::ViewLayout),
 	
-	func(getFlexDirection, property("flexDirection")), func(setFlexDirection, property("flexDirection")),
-	func(getJustifyContent, property("justifyContent")), func(setJustifyContent, property("justifyContent")),
-	func(getFlexAlignItems, property("flexAlignItems")), func(setFlexAlignItems, property("flexAlignItems")),
-	func(getFlexAlignSelf, property("flexAlignSelf")), func(setFlexAlignSelf, property("flexAlignSelf")),
-	func(getFlexAlignContent, property("flexAlignContent")), func(setFlexAlignContent, property("flexAlignContent")),
-	func(getLayoutDirection, property("layoutDirection")), func(setLayoutDirection, property("layoutDirection")),
-	func(getFlexWrap, property("flexWrap")), func(setFlexWrap, property("flexWrap")),
-	func(getFlexGrow, property("flexGrow")), func(setFlexGrow, property("flexGrow")),
-	func(getFlexShrink, property("flexShrink")), func(setFlexShrink, property("flexShrink")),
-	func(getFlexBasis, property("flexBasis")), func(setFlexBasis, property("flexBasis")),
-	func(getMinWidth, property("minWidth")), func(setMinWidth, property("minWidth")),
-	func(getMaxWidth, property("maxWidth")), func(setMaxWidth, property("maxWidth")),
-	func(getMinHeight, property("minHeight")), func(setMinHeight, property("minHeight")),
-	func(getMaxHeight, property("maxHeight")), func(setMaxHeight, property("maxHeight")),
-	func(getWidth, property("width")), func(setWidth, property("width")),
-	func(getHeight, property("height")), func(setHeight, property("height")),
-	func(getAspectRatio, property("aspectRatio")), func(setAspectRatio, property("aspectRatio")),
-	func(getPosition, property("position")), func(setPosition, property("position")),
-	func(getPadding, property("padding")), func(setPadding, property("padding")),
-	func(getMargin, property("margin")), func(setMargin, property("margin")),
-	func(getBorder, property("border")), func(setBorder, property("border"))
+	func(getFlexDirection,		property("flexDirection")),		func(setFlexDirection,		property("flexDirection")),
+	func(getJustifyContent,		property("justifyContent")),	func(setJustifyContent,		property("justifyContent")),
+	func(getFlexAlignItems,		property("flexAlignItems")),	func(setFlexAlignItems,		property("flexAlignItems")),
+	func(getFlexAlignSelf,		property("flexAlignSelf")),		func(setFlexAlignSelf,		property("flexAlignSelf")),
+	func(getFlexAlignContent,	property("flexAlignContent")),	func(setFlexAlignContent,	property("flexAlignContent")),
+	func(getLayoutDirection,	property("layoutDirection")),	func(setLayoutDirection,	property("layoutDirection")),
+	func(getFlexWrap,			property("flexWrap")),			func(setFlexWrap,			property("flexWrap")),
+	func(getFlexGrow,			property("flexGrow")),			func(setFlexGrow,			property("flexGrow")),
+	func(getFlexShrink,			property("flexShrink")),		func(setFlexShrink,			property("flexShrink")),
+	func(getFlexBasis,			property("flexBasis")),			func(setFlexBasis,			property("flexBasis")),
+	func(getMinWidth,			property("minWidth")),			func(setMinWidth,			property("minWidth")),
+	func(getMaxWidth,			property("maxWidth")),			func(setMaxWidth,			property("maxWidth")),
+	func(getMinHeight,			property("minHeight")),			func(setMinHeight,			property("minHeight")),
+	func(getMaxHeight,			property("maxHeight")),			func(setMaxHeight,			property("maxHeight")),
+	func(getWidth,				property("width")),				func(setWidth,				property("width")),
+	func(getHeight,				property("height")),			func(setHeight,				property("height")),
+	func(getAspectRatio,		property("aspectRatio")),		func(setAspectRatio,		property("aspectRatio")),
+	func(getPosition,			property("position")),			func(setPosition,			property("position")),
+	func(getPadding,			property("padding")),			func(setPadding,			property("padding")),
+	func(getMargin,				property("margin")),			func(setMargin,				property("margin")),
+	func(getBorder,				property("border")),			func(setBorder,				property("border")),
+	func(getOverflow,			property("overflow")),			func(setOverflow,			property("overflow"))
 )

@@ -184,8 +184,8 @@ namespace fw {
 	public:
 		StaticReflection() : View({ 1024, 768 }) {
 			setType<StaticReflection>();
-			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
+			getLayout().setDimensions(100_pc);
 
 			this->addInspector<SineOsc>();
 			this->addInspector<SineLfo>();
@@ -219,7 +219,7 @@ namespace fw {
 						ObjectInspectorUtil::reflect(inspector, state.state);
 					}
 
-					inspector->updateLayout();
+					//inspector->updateLayout();
 				}
 			};
 		}
@@ -228,16 +228,20 @@ namespace fw {
 			fw::EventNode& eventNode = getState<fw::EventNode>();
 
 			auto splitter = addChild<DockSplitter>("Splitter");
-			splitter->setSizingPolicy(fw::SizingPolicy::FitToParent);			
+			getLayout().setDimensions(100_pc);
+			
+			splitter->getLayout().setDimensions(100_pc);
 
 			//_graphView = addChild<NodeGraphView>("Node Graph");
 			_graphView = splitter->addItem<NodeGraphView>("Node Graph", 300);
-			_graphView->setSizingPolicy(fw::SizingPolicy::FitToParent);
+			getLayout().setDimensions(100_pc);
+			_graphView->getLayout().setDimensions(100_pc);
 			_graphView->setGraph(_graph);
 
 			//_objectInspector = addChildAt<ObjectInspectorView>("Property Editor", { 10, 10 });
 			_objectInspector = splitter->addItem<ObjectInspectorView>("Node Graph", 300);
-			_objectInspector->setSizingPolicy(fw::SizingPolicy::FitToParent);
+			getLayout().setDimensions(100_pc);
+			_objectInspector->getLayout().setDimensions(100_pc);
 			//_objectInspector->setSizingPolicy(SizingPolicy::None);
 			//_objectInspector->setDimensions({ 300, 600 });
 

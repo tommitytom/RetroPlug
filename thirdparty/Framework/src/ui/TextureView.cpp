@@ -5,6 +5,10 @@
 
 using namespace fw;
 
+void TextureView::loadImage(const std::filesystem::path& path) {
+	
+}
+
 void TextureView::setImage(const Image& image) {
 	size_t dataSize = image.getBuffer().size() * 4;
 	std::vector<uint8> data(dataSize);

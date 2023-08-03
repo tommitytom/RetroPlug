@@ -4,36 +4,11 @@
 
 #include <spdlog/spdlog.h>
 
-#include "ui/View.h"
 #include "ui/Colors.h"
+#include "ui/PanelView.h"
+#include "ui/View.h"
 
 namespace fw {
-	class PanelView : public View {
-	private:
-		Color4F _color = RP_COLOR_BLACK;
-
-	public:
-		RegisterObject();
-		
-		PanelView() {
-			setType<PanelView>();
-		}
-
-		void setColor(Color4F color) {
-			_color = color;
-		}
-
-		const Color4F& getColor() const {
-			return _color;
-		}
-
-		void onRender(fw::Canvas& canvas) override {
-			canvas.fillRect(getDimensions(), _color);
-		}
-	};
-
-	using PanelViewPtr = std::shared_ptr<PanelView>;
-
 	class DockWindow;
 	class DockPanel;
 	class Dock;
@@ -292,8 +267,3 @@ namespace fw {
 
 	using DockSplitterPtr = std::shared_ptr<DockSplitter>;
 }
-
-REFL_AUTO(
-	type(fw::PanelView, bases<fw::View>),
-	func(setColor, property("color")), func(setColor, property("color"))
-)

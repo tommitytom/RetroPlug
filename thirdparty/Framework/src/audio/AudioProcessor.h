@@ -3,6 +3,7 @@
 #include "foundation/DataBuffer.h"
 #include "foundation/Event.h"
 #include "foundation/Types.h"
+#include "audio/AudioBuffer.h"
 #include "audio/MidiMessage.h"
 
 namespace fw {
@@ -42,6 +43,14 @@ namespace fw {
 
 		const EventNode& getEventNode() const {
 			return _eventNode;
+		}
+	};
+
+	class NullAudioProcessor : public AudioProcessor {
+	public:
+		void onRender(f32* output, const f32* input, uint32 frameCount) override {
+			fw::StereoAudioBuffer out((StereoAudioBuffer::Frame*)output, frameCount, getSampleRate());
+			out.clear();
 		}
 	};
 

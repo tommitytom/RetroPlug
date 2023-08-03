@@ -24,6 +24,10 @@ FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {
 
 DimensionF FontManager::measureText(std::string_view text, std::string_view fontName, f32 fontSize) {
 	FontFaceHandle handle = loadFont(fontName, fontSize);
+	return measureText(text, handle);
+}
+
+DimensionF FontManager::measureText(std::string_view text, FontFaceHandle handle) {
 	FtglFontFace& font = handle.getResourceAs<FtglFontFace>();
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 

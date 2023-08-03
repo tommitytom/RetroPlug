@@ -1,5 +1,7 @@
 #include "application/Application.h"
-#include "RetroPlug.h"
+#include "RetroPlugApplication.h"
+
+#include <LivePP/API/LPP_API_x64_CPP.h>
 
 static fw::app::Application* app;
 
@@ -14,4 +16,8 @@ bool mainLoop() {
 
 void destroyMain() {
 	delete app;
+}
+
+void reload(lpp::LppHotReloadPostpatchHookId, const wchar_t* const recompiledModulePath, const wchar_t* const* const modifiedFiles, unsigned int modifiedFilesCount, const wchar_t* const* const modifiedClassLayouts, unsigned int modifiedClassLayoutsCount) {
+	runner.reload();
 }

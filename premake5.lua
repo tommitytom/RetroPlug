@@ -40,10 +40,56 @@ projects.SameBoyPlug.project()
 projects.RetroPlug.project()
 
 group "4 - Applications"
-projects.Application.project()
+
+fwProjects.Application.create({
+	version = "0.4.0",
+	name = "RetroPlug",
+	header = "RetroPlugApplication.h",
+	author = "tommitytom",
+	url = "https://retroplug.io",
+	email = "hello@retroplug.io",
+	copyright = "Tom Yaxley",
+
+	targets = {
+		"vst2",
+		"vst3",
+		"standalone",
+		"standalone-livepp",
+		"standalone-iplug",
+		"au",
+		"aax",
+		"web"
+	},
+
+	audio = {
+		inputs = 0,
+		outputs = 2,
+		midiIn = true,
+		midiOut = false,
+		latency = 0,
+		stateChunks = true,
+	},
+
+	graphics = {
+		width = 320,
+		height = 288,
+		fps = 60,
+		vsync = true
+	},
+
+	plugin = {
+		authorId = "tmtt",
+		type = "synth",
+		sharedResources = false,
+	}
+}, function()
+	projects.RetroPlug.link()
+end)
+
+--[[projects.Application.project()
 projects.Application.projectLivepp()
 projects.Application.iplugProject()
-projects.Application.iplugVst2()
+projects.Application.iplugVst2()]]
 
 if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"

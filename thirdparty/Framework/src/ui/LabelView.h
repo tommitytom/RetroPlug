@@ -5,6 +5,7 @@
 
 namespace fw {
 	class LabelView : public View {
+		RegisterObject()
 	private:
 		Color4F _color = Color4F(1, 1, 1, 1);
 		std::string _text;
@@ -14,8 +15,6 @@ namespace fw {
 		uint32 _alignment = TextAlignFlags::Left | TextAlignFlags::Top;
 
 	public:
-		RegisterObject();
-
 		LabelView() { setType<LabelView>(); }
 		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<LabelView>(); }
 		~LabelView() = default;

@@ -6,6 +6,8 @@ namespace fw {
 	struct ButtonClickEvent {};
 
 	class ButtonView : public View {
+		RegisterObject()
+			
 	private:
 		std::string _text = "Button";
 		bool _mouseOver = false;
@@ -47,8 +49,6 @@ namespace fw {
 		}
 
 		void onRender(fw::Canvas& canvas) {
-			
-
 			Color4F bgColor = Color4F::darkGrey;
 			if (_mouseOver) { bgColor = Color4F::lightGrey; }
 			if (_mouseDown) { bgColor = Color4F(0.4f, 0.4f, 0.4f, 1.0f); }
@@ -56,7 +56,13 @@ namespace fw {
 			canvas
 				.fillRect(getDimensionsF(), bgColor)
 				.strokeRect(getDimensionsF(), Color4F::black)
-				.text(PointF(10, 10), _text, Color4F::white);
+				.setTextAlign(TextAlignFlags::Middle | TextAlignFlags::Center)
+				.text(getDimensionsF(), _text, Color4F::white);
 		}
 	};
 }
+
+REFL_AUTO(
+	type(fw::ButtonView, bases<fw::View>),
+	func(getText, property("text")), func(setText, property("text"))
+)

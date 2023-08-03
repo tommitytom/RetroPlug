@@ -154,6 +154,10 @@ namespace fw {
 			_font = _fontManager.loadFont(_fontName, _fontSize * std::max(scale.x, scale.y));
 		}
 
+		void setFont(FontFaceHandle handle) {
+			_font = handle;
+		}
+
 		FontFaceHandle getFont() {
 			return _font;
 		}
@@ -190,6 +194,7 @@ namespace fw {
 		}
 
 		Canvas& pushScissor(const Rect& area) {
+			// TODO: Should merge here!
 			_scissorStack.push_back(area);
 			return *this;
 		}

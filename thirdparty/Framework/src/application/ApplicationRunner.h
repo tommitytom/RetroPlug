@@ -21,9 +21,9 @@ namespace fw::app {
 			return runner.doLoop();
 		}
 
-		template <typename ApplicationT, typename RenderContextT, typename AudioContextT>
-		WindowPtr setup() {
-			return setup(std::make_unique<ApplicationT>(), std::make_unique<RenderContextT>(), std::make_shared<AudioContextT>());
+		template <typename RenderContextT, typename AudioContextT>
+		WindowPtr setup(std::unique_ptr<Application>&& app) {
+			return setup(std::forward<std::unique_ptr<Application>>(app), std::make_unique<RenderContextT>(), std::make_shared<AudioContextT>());
 		}
 
 		WindowPtr setup(std::unique_ptr<Application>&& app, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager);

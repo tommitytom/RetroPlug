@@ -10,6 +10,7 @@ namespace fw {
 	};
 
 	class KnobView : public View {
+		RegisterObject()
 	private:
 		f32 _value = 0.0f;
 		f32 _stepSize = 0.01f;
@@ -75,6 +76,10 @@ namespace fw {
 			return _value * (_max - _min) + _min;
 		}
 
+		void setValue(f32 value) {
+			_value = (value - _min) / (_max - _min);
+		}
+
 		void onRender(fw::Canvas& canvas) override {
 			int32 tileOffset = (int32)(_value * (_tileCount - 1));
 			Rect tile(0, tileOffset * _tileSize.h, _tileSize.w, _tileSize.h);
@@ -91,3 +96,8 @@ namespace fw {
 		}
 	};
 }
+
+REFL_AUTO(
+	type(fw::KnobView, bases<fw::View>),
+	func(getValue, property("value")), func(setValue, property("value"))
+)

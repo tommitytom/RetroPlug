@@ -303,7 +303,7 @@ namespace fw {
 			if (_graph) {
 				for (auto node : _graph->getNodes()) {
 					NodeViewPtr nodeView = this->addChildAt<NodeView>(node->getName(), node->getPosition());
-					nodeView->setDimensions({ 200, 200 });
+					nodeView->getLayout().setDimensions(Dimension{ 200, 200 });
 					nodeView->setNode(node);
 					_nodes.push_back(nodeView);
 
@@ -378,7 +378,9 @@ namespace fw {
 		
 		bool onDragMove(DragContext& ctx, Point pos) override {
 			if (ctx.source->isType<NodeView>()) {
-				ctx.source->setPosition(pos - ctx.sourcePoint);
+				Point newPos = pos - ctx.sourcePoint;
+				ctx.source->getLayout().setPositionEdge(FlexEdge::Left, newPos.x);
+				ctx.source->getLayout().setPositionEdge(FlexEdge::Top, newPos.y);
 			}
 
 			if (ctx.source->isType<NodePortView>()) {

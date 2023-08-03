@@ -252,6 +252,7 @@ function m.Plugin.project()
 	m.RetroPlug.link()
 
 	files {
+		"src/entry/ApplicationFactory.*",
 		"src/plugin/**.h",
 		"src/plugin/**.cpp"
 	}

@@ -5,9 +5,11 @@
 
 #include <entt/entity/registry.hpp>
 #include <spdlog/spdlog.h>
+#include <refl.hpp>
 
 #include "foundation/Input.h"
 #include "foundation/Math.h"
+#include "foundation/Object.h"
 #include "foundation/StringUtil.h"
 #include "foundation/TypeRegistry.h"
 
@@ -75,29 +77,14 @@ namespace fw {
 		Dimension oldSize;
 	};
 
-	class Object : public std::enable_shared_from_this<Object> {
-	public:
-		virtual uint32 getTypeId() const = 0;
-
-		virtual std::string_view getTypeName() const = 0;
-
-		template <typename T = Object>
-		std::shared_ptr<T> sharedFromThis() {
-			return std::static_pointer_cast<T>(shared_from_this());
-		}
-
-		template <typename T = Object>
-		std::shared_ptr<const T> sharedFromThis() const {
-			return std::static_pointer_cast<const T>(shared_from_this());
-		}
-	};
-	
-#define RegisterObject() \
-	uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
-	std::string_view getTypeName() const override { return entt::type_name<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); }
-
 	class View : public Object {
+		RegisterObject()
 	private:
+		struct GlobalKeyHandler {
+			std::weak_ptr<View> view;
+			std::function<bool(const KeyEvent&)> func;
+		};
+
 		struct Shared {
 			std::weak_ptr<View> focused;
 			bool layoutDirty = true;
@@ -117,6 +104,8 @@ namespace fw {
 
 			CursorType cursor = CursorType::Arrow;
 			bool cursorChanged = true;
+
+			std::vector<GlobalKeyHandler> globalKeyHandlers;
 		};
 
 		using SubscriptionHandler = std::function<void(const entt::any&)>;
@@ -148,11 +137,16 @@ namespace fw {
 		ViewLayout _layout;
 
 	public:
-		RegisterObject()
-
 		View(Dimension dimensions = { 100, 100 }) : _type(entt::type_id<View>()), _layout(dimensions) {}
 		View(Dimension dimensions, entt::type_info type) : _layout(dimensions), _type(type) {}
 		~View() { unsubscribeAll(); }
+
+		void addGlobalKeyHandler(std::function<bool(const KeyEvent&)>&& func) {
+			_shared->globalKeyHandlers.push_back(GlobalKeyHandler{ 
+				.view = sharedFromThis<View>(), 
+				.func = std::move(func) 
+			});
+		}
 
 		void subscribe(EventType eventType, ViewPtr source, std::function<void(const entt::any&)>&& func) {
 			assert(!source->hasSubscription(eventType, sharedFromThis<View>()));
@@ -272,6 +266,10 @@ namespace fw {
 					}
 				}
 			}
+		}
+
+		void fitToParent() {
+			getLayout().setDimensions(100_pc);
 		}
 
 		void setCursor(CursorType cursor) {
@@ -630,7 +628,13 @@ namespace fw {
 
 		ViewPtr addChild(ViewPtr view) {
 			if (!view->_parent.expired()) {
-				view->_parent.lock()->removeChild(view);
+				ViewPtr parent = view->_parent.lock();
+				
+				if (parent == shared_from_this()) {
+					return view;
+				}
+				
+				parent->removeChild(view);
 			}
 
 			uint32 idx = (uint32)_children.size();
@@ -715,8 +719,12 @@ namespace fw {
 			}
 		}
 
-		void setLayout(ViewLayout&& layout) {
+		/*void setLayout(ViewLayout&& layout) {
 			_layout = std::move(layout);
+		}*/
+
+		void setLayout(const ViewLayout& layout) {
+			_layout = layout;
 		}
 
 		ViewLayout& getLayout() {

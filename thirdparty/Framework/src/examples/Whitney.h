@@ -67,6 +67,7 @@ namespace fw {
 	};
 
 	class Whitney : public View {
+		RegisterObject()
 	private:
 		WhitneySettings _baseSettings;
 		WhitneySettings _settings;
@@ -376,5 +377,9 @@ namespace fw {
 		}
 	};
 
-	using WhitneyApplication = fw::app::BasicApplication<Whitney, void>;
+	using WhitneyApplication = fw::app::BasicApplication<Whitney>;
 }
+
+REFL_AUTO(
+	type(fw::Whitney, bases<fw::View>)
+)

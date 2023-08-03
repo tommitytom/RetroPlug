@@ -4,10 +4,11 @@
 
 namespace fw {
 	class PanelView : public View {
+		RegisterObject()
 	private:
-		Color4F _color = Color4F(1, 1, 1, 1);
+		Color4F _color = Color4F::clear;
 
-	public:
+	public:	
 		PanelView() { setType<PanelView>(); }
 		PanelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<PanelView>(); }
 		~PanelView() = default;
@@ -27,6 +28,8 @@ namespace fw {
 
 	using PanelViewPtr = std::shared_ptr<PanelView>;
 }
+
+#include "foundation/MathMeta.h"
 
 REFL_AUTO(
 	type(fw::PanelView, bases<fw::View>),

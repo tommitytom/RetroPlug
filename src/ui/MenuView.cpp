@@ -92,8 +92,6 @@ void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 	}
 }
 
-
-
 bool MenuView::onKey(const fw::KeyEvent& ev) {
 	switch (ev.key) {
 	case VirtualKey::LeftArrow:
@@ -257,6 +255,7 @@ void MenuView::drawText(fw::Canvas& canvas, f32 x, f32 y, std::string_view text,
 	x += _menuArea.x + _drawOffset.x;
 	y += _menuArea.y + _drawOffset.y;
 
+	canvas.setTextAlign(fw::TextAlignFlags::Left | fw::TextAlignFlags::Middle);
 	canvas.text(x, y, text, color);
 }
 

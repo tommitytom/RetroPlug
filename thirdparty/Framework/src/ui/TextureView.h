@@ -7,6 +7,7 @@ namespace fw {
 	class Image;
 
 	class TextureView : public View {
+		RegisterObject()
 	private:
 		std::string _uri;
 		TextureHandle _texture;
@@ -15,6 +16,8 @@ namespace fw {
 	public:
 		TextureView() { setType<TextureView>(); }
 		~TextureView() = default;
+
+		void loadImage(const std::filesystem::path& path);
 
 		void setImage(const Image& image);
 
@@ -38,4 +41,6 @@ namespace fw {
 
 		void onRender(fw::Canvas& canvas) override;
 	};
+
+	using TextureViewPtr = std::shared_ptr<TextureView>;
 }

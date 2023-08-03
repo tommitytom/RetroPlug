@@ -85,8 +85,8 @@ namespace fw {
 					break;
 				}
 			}
-
-			return true;
+			
+			return ev.key != VirtualKey::UpArrow && ev.key != VirtualKey::DownArrow;
 		}
 
 		bool onChar(const CharEvent& ev) override {
@@ -121,6 +121,7 @@ namespace fw {
 	};
 
 	class TextEditView : public TextEditBaseView<std::string> {
+		RegisterObject()
 	public:
 		TextEditView() {
 			setType<TextEditView>();
@@ -136,10 +137,11 @@ namespace fw {
 	};
 
 	class FlexValueEditView : public TextEditBaseView<FlexValue> {
+		RegisterObject()
 	private:
 		FlexValue _value;
 
-	public:
+	public:		
 		std::function<void(const FlexValue&)> ValueChangeEvent;
 		
 		FlexValueEditView() {
@@ -236,9 +238,11 @@ namespace fw {
 }
 
 REFL_AUTO(
-	type(fw::TextEditView)
+	type(fw::TextEditView, bases<fw::View>),
+	func(getValue, property("value")), func(setValue, property("value"))
 )
 
 REFL_AUTO(
-	type(fw::FlexValueEditView)
+	type(fw::FlexValueEditView, bases<fw::View>),
+	func(getValue, property("value")), func(setValue, property("value"))
 )

@@ -15,5 +15,7 @@ namespace fw {
 		FontFaceHandle loadFont(std::string_view fontUri, f32 size);
 
 		DimensionF measureText(std::string_view text, std::string_view fontName, f32 fontSize);
+
+		DimensionF measureText(std::string_view text, FontFaceHandle handle);
 	};
 }

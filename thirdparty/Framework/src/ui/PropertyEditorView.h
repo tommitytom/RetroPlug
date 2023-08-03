@@ -36,6 +36,7 @@ namespace fw {
 		PropertyEditorView() {
 			setType<PropertyEditorView>();
 			setFocusPolicy(FocusPolicy::Click);
+			getLayout().setOverflow(FlexOverflow::Scroll);
 		}
 
 		~PropertyEditorView() = default;
@@ -193,12 +194,7 @@ namespace fw {
 			getLayout().setLayoutDirection(LayoutDirection::LTR);
 			getLayout().setFlexDirection(FlexDirection::Row);
 			getLayout().setFlexWrap(FlexWrap::Wrap);
-			getLayout().setPadding(FlexRect{
-				.top = 10.0f,
-				.left = 10.0f,
-				.bottom = 10.0f,
-				.right = 10.0f,
-			});
+			getLayout().setPadding(FlexRect{ 10.0f, 10.0f, 10.0f, 10.0f });
 
 			//updateLayout();
 		}

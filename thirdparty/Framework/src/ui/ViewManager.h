@@ -81,7 +81,25 @@ namespace fw {
 			return false;
 		}
 
+		void addGlobalKeyHandler() {
+			
+		}
+
 		bool onKey(const KeyEvent& ev) override {
+			auto it = _shared->globalKeyHandlers.begin();
+
+			while (it != _shared->globalKeyHandlers.end()) {
+				if (it->view.expired()) {
+					it = _shared->globalKeyHandlers.erase(it);
+				} else {
+					if (it->func(ev)) {
+						return true;
+					}
+					
+					++it;
+				}
+			}
+
 			ViewPtr current = _shared->focused.lock();
 
 			while (current && current.get() != this) {
@@ -250,18 +268,8 @@ namespace fw {
 		}
 
 		void calculateLayout() {
-			/*propagateSizingUpdate(getChildren());
-			propagateLayoutChange(getChildren());
-
-			_area = Rect();
-			calculateTotalArea(getChildren(), { 0, 0 }, _area);
-
-			propagateSizingUpdate(getChildren());
-			propagateLayoutChange(getChildren());*/
-
 			YGNodeCalculateLayout(_layout.getNode(), YGUndefined, YGUndefined, YGDirectionInherit);
-
-			_shared->layoutDirty = true;
+			_shared->layoutDirty = true; // Forcing constant layout updates for now...
 		}
 
 	private:
@@ -533,40 +541,23 @@ namespace fw {
 		void propagateRender(fw::Canvas& canvas, std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
+					FlexOverflow overflow = view->getLayout().getOverflow();
+					
 					canvas.setTranslation((PointF)view->getWorldPosition());
 					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
-
-					bool clip = view->getClip();
-					if (clip) {
+					
+					if (overflow != FlexOverflow::Visible) {
 						canvas.pushScissor(view->getWorldArea());
 					}
 
 					view->onRender(canvas);
 					propagateRender(canvas, view->getChildren());
 
-					if (clip) {
+					if (overflow != FlexOverflow::Visible) {
 						canvas.popScissor();
 					}
 				}
 			}
-
-			/*for (ViewPtr& view : views) {
-				if (view->isVisible()) {
-					canvas.setTranslation((PointF)view->getWorldPosition());
-					canvas.setScale({ view->getWorldScale(), view->getWorldScale() });
-
-					bool clip = view->getClip();
-					if (clip) {
-						canvas.pushScissor((Rect)view->getWorldArea());
-					}
-
-					propagateRender(canvas, view->getChildren());
-
-					if (clip) {
-						canvas.popScissor();
-					}
-				}
-			}*/
 		}
 
 		bool propagateMouseScroll(const MouseScrollEvent& ev) {

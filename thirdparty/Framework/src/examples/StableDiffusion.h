@@ -41,6 +41,25 @@ using websocketpp::lib::bind;
 typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
 
 namespace fw {
+	struct StableDiffusionQuery {
+		std::string prompt;
+		std::string negative;
+		uint32 seed = 0;
+		uint32 steps = 30;
+		uint32 cfg = 8;
+	};
+}
+
+REFL_AUTO(
+	type(fw::StableDiffusionQuery),
+	field(prompt),
+	field(negative),
+	field(seed, fw::RangeAttribute(0, std::numeric_limits<uint32>::max())),
+	field(steps, fw::RangeAttribute(1, 150)),
+	field(cfg, fw::RangeAttribute(0, 30))
+)
+
+namespace fw {
 	struct ComfyProgressEvent {
 		uint32 value = 0;
 		uint32 max = 0;
@@ -134,8 +153,10 @@ namespace fw {
 			return res->body;
 		}
 
-		void prompt(std::string data) {
-			_http.Post("/prompt", data, "application/json");
+		std::string prompt(const std::string& data) {
+			auto res = _http.Post("/prompt", data, "application/json");
+			auto body = json::parse(res->body);
+			return body["prompt_id"];
 		}
 
 		template <typename T>
@@ -231,11 +252,43 @@ namespace fw {
 
 	const fs::path COMFY_OUTPUT_PATH = "E:\\code\\ComfyUI\\output\\";
 
+	class TextureCanvasView : public View {
+		RegisterObject()
+	private:
+		TextureViewPtr _texture;
+		
+	public:
+		TextureCanvasView() = default;
+		~TextureCanvasView() = default;
+
+		void onInitialize() override {
+			_texture = addChild<TextureView>("Texture");
+		}
+		
+		void setTexture(TextureHandle texture) {
+			Texture& tex = texture.getResourceAs<Texture>();
+			_texture->setTexture(texture);
+			_texture->getLayout().setDimensions(tex.getDesc().dimensions);
+		}
+	};
+
+	struct PromptStatus {
+		std::string promptId;
+	};
+
 	class StableDiffusion : public View {
+		RegisterObject()
 	private:
 		NodeRegistry _nodeRegistry;
 		std::unique_ptr<ComfyClient> _client;
-		std::shared_ptr<TextureView> _output;
+		std::shared_ptr<TextureCanvasView> _output;
+
+		StableDiffusionQuery _query;
+
+		PropertyEditorViewPtr _propGrid;
+		PanelViewPtr _progBar;
+
+		std::vector<PromptStatus> _promptQueue;
 
 	public:
 		StableDiffusion() : View({ 1024, 768 }) {
@@ -244,8 +297,10 @@ namespace fw {
 
 			_client = std::make_unique<ComfyClient>("127.0.0.1:8188");
 
-			_client->on<ComfyProgressEvent>([](const ComfyProgressEvent& ev) {
-				spdlog::info("Progress: {}/{}", ev.value, ev.max);
+			_client->on<ComfyProgressEvent>([&](const ComfyProgressEvent& ev) {
+				f32 perc = ((f32)ev.value / (f32)ev.max) * 100.0f;
+				spdlog::info("Progress: {}/{} - {}%", ev.value, ev.max, perc);
+				_progBar->getLayout().setWidth(FlexValue(FlexUnit::Percent, perc));
 			});
 
 			_client->on<ComfyExecutedEvent>([&](const ComfyExecutedEvent& ev) {
@@ -263,19 +318,47 @@ namespace fw {
 			
 			getLayout().setDimensions(100_pc);
 
-			auto button = addChild<ButtonView>("Button");
-			button->getLayout().setPositionEdge(FlexEdge::Left, 10);
-			button->getLayout().setPositionEdge(FlexEdge::Top, 10);
+			SplitterViewPtr splitter = addChild<SplitterView>("Root Splitter");			
+			ViewPtr sidePanel = splitter->addChild<View>("Side Panel");
 
-			_output = addChild<TextureView>("Output");
-			_output->setArea(Rect(10, 100, 400, 400));
+			auto button = sidePanel->addChild<ButtonView>("Generate Button");
+			button->getLayout().setWidth(100_pc);
+			button->getLayout().setHeight(40);
+			button->setText("Generate");
+
+			PanelViewPtr progContainer = sidePanel->addChild<PanelView>("Progress Container");
+			progContainer->getLayout().setWidth(100_pc);
+			progContainer->getLayout().setHeight(5);
+
+			_progBar = progContainer->addChild<PanelView>("Progress Bar");
+			_progBar->setColor(Color4(153, 217, 334));
+			_progBar->getLayout().setWidth(100_pc);
+			_progBar->getLayout().setHeight(100_pc);
+
+			_propGrid = sidePanel->addChild<PropertyEditorView>("Property Grid");
+			_propGrid->fitToParent();
 			
+			_output = splitter->addChild<TextureCanvasView>("Output");
+			
+			splitter->setLeft(sidePanel);
+			splitter->setRight(_output);
+			splitter->setSplitPercentage(0.25f);
+			splitter->fitToParent();
+
 			subscribe<ButtonClickEvent>(button, [this]() {
 				std::string prompt = FsUtil::readTextFile("C:\\temp\\graph.json");
 				json data = json::parse(prompt);
 				data["client_id"] = _client->getId();
+				data["prompt"]["3"]["inputs"]["seed"] = _query.seed;
+				data["prompt"]["3"]["inputs"]["steps"] = _query.steps;
+				data["prompt"]["3"]["inputs"]["cfg"] = _query.cfg;
+				data["prompt"]["6"]["inputs"]["text"] = _query.prompt;
+				data["prompt"]["7"]["inputs"]["text"] = _query.negative;
+				
 				_client->prompt(data.dump());
 			});
+
+			ObjectInspectorUtil::reflect(_propGrid, _query);
 		}
 
 		void extractNodes() {
@@ -389,5 +472,9 @@ namespace fw {
 		}
 	};
 
-	using StableDiffusionApplication = fw::app::BasicApplication<StableDiffusion, void>;
+	using StableDiffusionApplication = fw::app::BasicApplication<StableDiffusion>;
 }
+
+REFL_AUTO(
+	type(fw::StableDiffusion, bases<fw::View>)
+)

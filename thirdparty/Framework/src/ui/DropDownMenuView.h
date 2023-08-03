@@ -6,13 +6,14 @@
 
 namespace fw {
 	class DropDownMenuView : public TypedPropertyEditor<int32> {
+		RegisterObject()
 	private:
 		bool _editable = true;
 
 		int32 _selectedIndex = -1;
 		std::vector<std::pair<std::string, entt::any>> _items;
 
-	public:
+	public:		
 		std::function<void(int32)> ValueChangeEvent;
 
 		DropDownMenuView() {
@@ -135,3 +136,8 @@ namespace fw {
 
 	using DropDownMenuViewPtr = std::shared_ptr<DropDownMenuView>;
 }
+
+REFL_AUTO(
+	type(fw::DropDownMenuView, bases<fw::View>),
+	func(getValue, property("value")), func(setValue, property("value"))
+)

@@ -15,6 +15,7 @@ namespace fw {
 	};
 
 	class SliderView : public TypedPropertyEditor<f32> {
+		RegisterObject()
 	private:
 		const f32 ARROW_STEP_COUNT = 10.0f;
 		const f32 ARROW_STEP_SIZE = 1.0f / ARROW_STEP_COUNT;
@@ -274,3 +275,8 @@ namespace fw {
 
 	using SliderViewPtr = std::shared_ptr<SliderView>;
 }
+
+REFL_AUTO(
+	type(fw::SliderView, bases<fw::View>),
+	func(getValue, property("value")), func(setValue, property("value"))
+)

@@ -3,6 +3,7 @@
 #include <refl.hpp>
 
 #include "foundation/Attributes.h"
+#include "foundation/ReflUtil.h"
 #include "ObjectInspectorView.h"
 #include "ui/Flex.h"
 #include "ui/TextEditView.h"
@@ -20,19 +21,7 @@ namespace fw::ObjectInspectorUtil {
 	template <typename T>
 	void reflect(PropertyEditorViewPtr inspector, T& item, const std::function<void()>& changed = []() {}) {
 		static constexpr auto members = filter(refl::member_list<T>{}, [&](auto member) {
-			if constexpr (is_readable(member)) {
-				return has_writer(member);
-			}
-
-			if constexpr (!has_reader(member) && !has_writer(member)) {
-				using Descriptor = decltype(member);
-				using MemberType = typename Descriptor::template return_type<typename Descriptor::declaring_type&>;
-				if constexpr (std::is_reference_v<MemberType> && !std::is_const_v<std::remove_reference_t<MemberType>>) {
-					return true;
-				}
-			}
-		
-			return false;
+			return fw::ReflUtil::isWritable<T>(member);
 		});
 		
 		for_each(members, [&](auto member) {

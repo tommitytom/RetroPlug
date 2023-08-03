@@ -132,6 +132,7 @@ namespace fw {
 
 	public:
 		FlexValue() {}
+		FlexValue(const FlexValue& value): _unit(value._unit), _value(value._value) {}
 		FlexValue(f32 value) : _unit(FlexUnit::Point), _value(value) {}
 		FlexValue(FlexUnit unit, f32 value = 0.0f) : _unit(unit), _value(value) {}
 		~FlexValue() = default;
@@ -177,6 +178,11 @@ namespace fw {
 		FlexValue left;
 		FlexValue bottom;
 		FlexValue right;
+
+		FlexRect() {}
+		FlexRect(const FlexRect& other): top(other.top), left(other.left), bottom(other.bottom), right(other.right) {}
+		FlexRect(FlexValue value) : top(value), left(value), bottom(value), right(value) {}
+		FlexRect(FlexValue _top, FlexValue _left, FlexValue _bottom, FlexValue _right) : top(_top), left(_left), bottom(_bottom), right(_right) {}
 	};
 
 	struct FlexBorder {
@@ -184,8 +190,15 @@ namespace fw {
 		f32 left = 0.0f;
 		f32 bottom = 0.0f;
 		f32 right = 0.0f;
+
+		FlexBorder() {}
+		FlexBorder(const FlexBorder& other) : top(other.top), left(other.left), bottom(other.bottom), right(other.right) {}
+		FlexBorder(f32 value) : top(value), left(value), bottom(value), right(value) {}
+		FlexBorder(f32 _top, f32 _left, f32 _bottom, f32 _right) : top(_top), left(_left), bottom(_bottom), right(_right) {}
 	};
 }
+
+#include <refl.hpp>
 
 REFL_AUTO(
 	type(fw::FlexValue),

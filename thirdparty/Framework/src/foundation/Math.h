@@ -58,8 +58,16 @@ namespace fw {
 		Color4F(const Color3& other) : r(other.r / 255.0f), g(other.g / 255.0f), b(other.b / 255.0f), a(1) {}
 		Color4F(const Color4& other) : r(other.r / 255.0f), g(other.g / 255.0f), b(other.b / 255.0f), a(other.a / 255.0f) {}
 
-		bool operator==(Color4F color) const {
+		bool operator==(const Color4F& color) const {
 			return r == color.r && g == color.g && b == color.b && a == color.a;
+		}
+
+		Color4F& operator=(const Color4F& color) {
+			r = color.r;
+			g = color.g;
+			b = color.b;
+			a = color.a;
+			return *this;
 		}
 
 		static const Color4F clear;

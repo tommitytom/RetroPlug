@@ -10,7 +10,11 @@ local m = {
 	Ui = {},
 	Audio = {},
 	Engine = {},
-	Application = {},
+	Application = {
+		test2 = function ()
+
+		end
+	},
 	ExampleApplication = {},
 	Tests = {}
 }
@@ -269,17 +273,132 @@ function m.Engine.project()
 	util.liveppCompat()
 end
 
+local function tableContains(table, element)
+	for _, value in pairs(table) do
+		if value == element then
+			return true
+		end
+	end
 
-function m.ExampleApplication.project(name)
+	return false
+end
+
+local function createStandalone(config, impl)
+	project (config.name .. "-app")
+		kind "ConsoleApp"
+
+		impl()
+
+		defines {
+			"FW_USE_MINIAUDIO"
+		}
+
+		files {
+			paths.SRC_ROOT .. "entry/main.cpp",
+			paths.SRC_ROOT .. "entry/mainloop.cpp"
+		}
+
+		filter { "platforms:Emscripten" }
+			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
+			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. config.name .. ".html", }
+
+		filter { "platforms:Emscripten", "configurations:Debug*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }
+
+		filter { "platforms:Emscripten", "configurations:Development*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.development) }
+
+		filter { "platforms:Emscripten", "configurations:Release*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.release) }
+		filter {}
+end
+
+local function createLivePp(config, impl)
+	project (config.name .. "-live++")
+		kind "ConsoleApp"
+
+		impl()
+
+		defines {
+			"FW_USE_MINIAUDIO"
+		}
+
+		files {
+			paths.SRC_ROOT .. "entry/mainlivepp.cpp",
+			paths.SRC_ROOT .. "entry/mainloop.cpp"
+		}
+
+		util.liveppCompatLink()
+end
+
+function m.Application.create(config, impl)
 	local crc32 = dofile(paths.SCRIPT_ROOT .. "dep/crc32.lua")
 
-	local config = {
+	if config.header == nil then
+		config.header = config.name .. "Application.h"
+	end
+
+	if config.plugin ~= nil then
+		if config.plugin.uniqueId == nil then
+			config.plugin.uniqueId = string.format("%x", crc32(config.name)):sub(1, 4)
+		end
+	end
+
+	-- Create project files if they don't exist
+	local fullHeaderPath = paths.SRC_ROOT .. config.header
+	if os.isfile(fullHeaderPath) == false then
+		print("Creating project: " .. config.name)
+		local header = io.readfile(paths.SRC_ROOT .. "templates/ApplicationTemplate.h")
+		local source = io.readfile(paths.SRC_ROOT .. "templates/ApplicationTemplate.cpp")
+		io.writefile(fullHeaderPath, util.interp(header, { name = config.name }))
+		io.writefile(string.gsub(fullHeaderPath, ".h", ".cpp"), util.interp(source, { name = config.name }))
+	end
+
+	local function wrappedImpl()
+		m.Application.link()
+		m.Ui.link()
+
+		defines {
+			"APPLICATION_HEADER=" .. config.header,
+			"APPLICATION_IMPL=" .. config.name .. "Application",
+		}
+
+		files {
+			paths.SRC_ROOT .. "entry/ApplicationFactory.*"
+		}
+
+		impl()
+	end
+
+	if tableContains(config.targets, "standalone") then createStandalone(config, wrappedImpl) end
+	if tableContains(config.targets, "standalone-livepp") then createLivePp(config, wrappedImpl) end
+
+	if tableContains(config.targets, "standalone-iplug") then iplug2.createApp(config); wrappedImpl() end
+	if tableContains(config.targets, "vst2") then iplug2.createVst2(config); wrappedImpl() end
+	if tableContains(config.targets, "vst3") then iplug2.createVst3(config); wrappedImpl() end
+	--if tableContains(config.targets, "aax") then iplug2.createAax(config); wrappedImpl() end
+	--if tableContains(config.targets, "au") then iplug2.createAu(config); wrappedImpl() end
+end
+
+function m.ExampleApplication.project(name)
+	m.Application.create({
 		version = "0.0.1",
 		name = name,
+		header = "examples/" .. name .. ".h",
 		author = "tommitytom",
 		url = "https://tommitytom.co.uk",
 		email = "fw@tommitytom.co.uk",
 		copyright = "Tom Yaxley",
+		targets = {
+			"vst2",
+			"vst3",
+			"standalone",
+			"standalone-livepp",
+			"standalone-iplug",
+			"au",
+			"aax",
+			"web"
+		},
 
 		audio = {
 			inputs = 0,
@@ -298,36 +417,13 @@ function m.ExampleApplication.project(name)
 		},
 
 		plugin = {
-			uniqueId = string.format("%x", crc32(name)):sub(1, 4),
 			authorId = "tmtt",
 			type = "synth",
 			sharedResources = false,
 		}
-	}
-
-	-- Create project files if they don't exist
-	local exampleRoot = paths.SRC_ROOT .. "examples/"
-	if os.isfile(exampleRoot .. name .. ".h") == false then
-		print("Creating example: " .. name)
-		local header = io.readfile(exampleRoot .. "ExampleTemplate.h")
-		local source = io.readfile(exampleRoot .. "ExampleTemplate.cpp")
-		io.writefile(exampleRoot .. name .. ".h", util.interp(header, { name = name }))
-		io.writefile(exampleRoot .. name .. ".cpp", util.interp(source, { name = name }))
-	end
-
-	project (name)
-		kind "ConsoleApp"
-
-		m.Application.link()
+	}, function()
 		m.Engine.link()
-		m.Ui.link()
 		dep.simdjson.link()
-
-		defines {
-			"APPLICATION_HEADER=" .. name,
-			"APPLICATION_IMPL=" .. name .. "Application",
-			"FW_USE_MINIAUDIO"
-		}
 
 		includedirs {
 			paths.SRC_ROOT .. "examples"
@@ -335,128 +431,12 @@ function m.ExampleApplication.project(name)
 
 		files {
 			paths.SRC_ROOT .. "examples/" .. name .. ".*",
-			paths.SRC_ROOT .. "examples/main.cpp"
 		}
 
 		filter { "action:vs*" }
 			buildoptions { "/bigobj" }
 			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
-
-		filter { "platforms:Emscripten" }
-			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
-			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. name .. ".html", }
-
-		filter { "platforms:Emscripten", "configurations:Debug*" }
-			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }
-
-		filter { "platforms:Emscripten", "configurations:Development*" }
-			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.development) }
-
-		filter { "platforms:Emscripten", "configurations:Release*" }
-			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.release) }
-		filter {}
-
-	project (name .. "-live++")
-		kind "ConsoleApp"
-
-		m.Application.link()
-		m.Engine.link()
-		m.Ui.link()
-		dep.simplefilewatcher.link()
-		dep.simdjson.link()
-
-		defines {
-			"APPLICATION_HEADER=" .. name,
-			"APPLICATION_IMPL=" .. name .. "Application",
-			"FW_USE_MINIAUDIO"
-		}
-
-		includedirs {
-			paths.SRC_ROOT .. "examples"
-		}
-
-		files {
-			paths.SRC_ROOT .. "examples/" .. name .. ".*",
-			paths.SRC_ROOT .. "examples/mainlivepp.cpp",
-			paths.SRC_ROOT .. "examples/mainloop.cpp"
-		}
-
-		filter { "action:vs*" }
-			buildoptions { "/bigobj" }
-			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
-
-		util.liveppCompat()
---[[
-	iplug2.createApp(config)
-		m.Application.link()
-		m.Engine.link()
-		m.Ui.link()
-
-		defines {
-			"APPLICATION_HEADER=" .. name,
-			"APPLICATION_IMPL=" .. name .. "Application",
-		}
-
-		includedirs {
-			paths.SRC_ROOT .. "examples"
-		}
-
-		files {
-			paths.SRC_ROOT .. "examples/" .. name .. ".*"
-		}
-
-		filter { "action:vs*" }
-			buildoptions { "/bigobj" }
-			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
-
-		filter {}
-
-	iplug2.createVst2(config)
-		m.Application.link()
-		m.Engine.link()
-		m.Ui.link()
-
-		defines {
-			"APPLICATION_HEADER=" .. name,
-			"APPLICATION_IMPL=" .. name .. "Application",
-		}
-
-		includedirs {
-			paths.SRC_ROOT .. "examples",
-		}
-
-		files {
-			paths.SRC_ROOT .. "examples/" .. name .. ".*"
-		}
-
-		filter { "action:vs*" }
-			buildoptions { "/bigobj" }
-			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
-
-		filter {}
-
-	iplug2.createVst3(config)
-		m.Application.link()
-		m.Engine.link()
-		m.Ui.link()
-
-		defines {
-			"APPLICATION_IMPL=" .. name
-		}
-
-		includedirs {
-			paths.SRC_ROOT .. "examples",
-		}
-
-		files {
-			paths.SRC_ROOT .. "examples/" .. name .. ".*"
-		}
-
-		filter { "action:vs*" }
-			buildoptions { "/bigobj" }
-			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
-
-		filter {}]]
+	end)
 end
 
 

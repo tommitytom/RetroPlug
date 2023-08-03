@@ -37,5 +37,5 @@ namespace fw {
 		}
 	};
 
-	using CanvasTestApplication = fw::app::BasicApplication<CanvasTest, void>;
+	using CanvasTestApplication = fw::app::BasicApplication<CanvasTest>;
 }

@@ -4,16 +4,10 @@
 #include "IGraphics_include_in_plug_src.h"
 
 #include "FrameworkView.h"
-#include "foundation/MacroTools.h"
 #include "application/Application.h"
+#include "entry/ApplicationFactory.h"
 
 #include "graphics/gl/GlRenderContext.h"
-
-#ifndef APPLICATION_HEADER
-#define APPLICATION_HEADER APPLICATION_IMPL
-#endif
-
-#include INCLUDE_APPLICATION(APPLICATION_HEADER)
 
 using namespace fw;
 
@@ -21,7 +15,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 	Plugin(info, MakeConfig(0, 0)),
 	_audioManager(std::make_shared<fw::audio::AudioManager>())
 {
-	_app = std::make_unique<APPLICATION_IMPL>();
+	_app = ApplicationFactory::create();
 	_audioManager->setSampleRate((f32)GetSampleRate());
 	_audioManager->setProcessor(_app->onCreateAudio());
 

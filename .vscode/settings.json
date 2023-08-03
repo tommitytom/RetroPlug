@@ -81,7 +81,9 @@
 		"omitframepointer",
 		"editandcontinue",
 		"staticruntime",
-		"libdirs"
+		"libdirs",
+		"removeplatforms",
+		"fw"
 	],
 	"files.associations": {
 		"functional": "cpp",

@@ -35,11 +35,12 @@ function util.setupWorkspace()
 	characterset "MBCS"
 	cppdialect "c++20"
 	vectorextensions "SSE2"
+	editAndContinue "off"
 
 	filter "configurations:Debug*"
 		defines { "_DEBUG", "FW_DEBUG" }
 		optimize "Off"
-		symbols "On"
+		symbols "Full"
 	filter "configurations:Development*"
 		defines { "NDEBUG", "FW_DEVELOPMENT" }
 		optimize "Full"
@@ -133,8 +134,19 @@ end
 function util.liveppCompat()
 	filter { "action:vs*" }
 		editAndContinue "off"
-		linkoptions { "/FUNCTIONPADMIN", "/OPT:NOREF", "/OPT:NOICF" }
 		symbols "Full"
+	filter {}
+end
+
+function util.liveppCompatLink()
+	premake.override(premake.vstudio.vc2010, "optimizeReferences", function(base, cfg)
+		return
+	end)
+
+	util.liveppCompat()
+
+	filter { "action:vs*" }
+		linkoptions { "/FUNCTIONPADMIN", "/OPT:NOREF", "/OPT:NOICF" }
 	filter {}
 end
 
