@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include "foundation/Math.h"
 
-namespace MouseButton {
-	enum Enum : unsigned int {
+namespace fw {
+	enum class MouseButton : unsigned int {
 		Unknown,
 		Left,
 		Right,
@@ -13,34 +13,34 @@ namespace MouseButton {
 		COUNT
 	};
 
-	static const std::unordered_map<std::string_view, MouseButton::Enum> Lookup = {
-		{ "Left", MouseButton::Left },
-		{ "Right", MouseButton::Right },
-		{ "Middle", MouseButton::Middle }
-	};
+	namespace MouseButtonUtil {
+		static const std::unordered_map<std::string_view, MouseButton> Lookup = {
+			{ "Left", MouseButton::Left },
+			{ "Right", MouseButton::Right },
+			{ "Middle", MouseButton::Middle }
+		};
 
-	static MouseButton::Enum fromString(std::string_view key) {
-		auto found = Lookup.find(key);
-		if (found != Lookup.end()) {
-			return found->second;
-		}
-
-		return MouseButton::Unknown;
-	}
-
-	static std::string_view toString(MouseButton::Enum idx) {
-		for (auto& key : Lookup) {
-			if (key.second == idx) {
-				return key.first;
+		static MouseButton fromString(std::string_view key) {
+			auto found = Lookup.find(key);
+			if (found != Lookup.end()) {
+				return found->second;
 			}
+
+			return MouseButton::Unknown;
 		}
 
-		return "Unknown";
-	}
-}
+		static std::string_view toString(MouseButton idx) {
+			for (auto& key : Lookup) {
+				if (key.second == idx) {
+					return key.first;
+				}
+			}
 
-namespace ButtonType {
-	enum Enum : unsigned int {
+			return "Unknown";
+		}
+	}
+
+	enum class ButtonType : unsigned int {
 		Right,
 		Left,
 		Up,
@@ -52,43 +52,43 @@ namespace ButtonType {
 		MAX
 	};
 
-	const std::unordered_map<std::string_view, ButtonType::Enum> Lookup = {
-		{ "Left", ButtonType::Left },
-		{ "Up", ButtonType::Up },
-		{ "Right", ButtonType::Right },
-		{ "Down", ButtonType::Down },
-		{ "A", ButtonType::A },
-		{ "B", ButtonType::B },
-		{ "Start", ButtonType::Start },
-		{ "Select", ButtonType::Select }
-	};
+	namespace ButtonTypeUtil {
+		const std::unordered_map<std::string_view, ButtonType> Lookup = {
+			{ "Left", ButtonType::Left },
+			{ "Up", ButtonType::Up },
+			{ "Right", ButtonType::Right },
+			{ "Down", ButtonType::Down },
+			{ "A", ButtonType::A },
+			{ "B", ButtonType::B },
+			{ "Start", ButtonType::Start },
+			{ "Select", ButtonType::Select }
+		};
 
-	static ButtonType::Enum fromString(std::string_view name) {
-		auto found = Lookup.find(name);
-		if (found != Lookup.end()) {
-			return found->second;
+		static ButtonType fromString(std::string_view name) {
+			auto found = Lookup.find(name);
+			if (found != Lookup.end()) {
+				return found->second;
+			}
+
+			return ButtonType::MAX;
 		}
 
-		return ButtonType::MAX;
-	}
-
-	static std::string_view toString(ButtonType::Enum button) {
-		switch (button) {
-		case ButtonType::Left: return "Left";
-		case ButtonType::Up: return "Up";
-		case ButtonType::Right: return "Right";
-		case ButtonType::Down: return "Down";
-		case ButtonType::A: return "A";
-		case ButtonType::B: return "B";
-		case ButtonType::Start: return "Start";
-		case ButtonType::Select: return "Select";
-		default: return "";
+		static std::string_view toString(ButtonType button) {
+			switch (button) {
+			case ButtonType::Left: return "Left";
+			case ButtonType::Up: return "Up";
+			case ButtonType::Right: return "Right";
+			case ButtonType::Down: return "Down";
+			case ButtonType::A: return "A";
+			case ButtonType::B: return "B";
+			case ButtonType::Start: return "Start";
+			case ButtonType::Select: return "Select";
+			default: return "";
+			}
 		}
 	}
-}
 
-namespace VirtualKey {
-	enum Enum : unsigned int {
+	enum class VirtualKey : unsigned int {
 		Unknown = 0x00,
 		Backspace = 0x08,
 		Tab = 0x09,
@@ -221,155 +221,155 @@ namespace VirtualKey {
 		COUNT
 	};
 
-	static const std::unordered_map<std::string_view, VirtualKey::Enum> Lookup = {
-		{ "Backspace", VirtualKey::Backspace },
-		{ "Tab", VirtualKey::Tab },
-		{ "Clear", VirtualKey::Clear },
-		{ "Enter", VirtualKey::Enter },
-		{ "Shift", VirtualKey::Shift },
-		{ "Ctrl", VirtualKey::Ctrl },
-		{ "Alt", VirtualKey::Alt },
-		{ "Pause", VirtualKey::Pause },
-		{ "Caps", VirtualKey::Caps },
-		{ "Esc", VirtualKey::Esc },
-		{ "Space", VirtualKey::Space },
-		{ "PageUp", VirtualKey::PageUp },
-		{ "PageDown", VirtualKey::PageDown },
-		{ "End", VirtualKey::End },
-		{ "Home", VirtualKey::Home },
-		{ "LeftArrow", VirtualKey::LeftArrow },
-		{ "UpArrow", VirtualKey::UpArrow },
-		{ "RightArrow", VirtualKey::RightArrow },
-		{ "DownArrow", VirtualKey::DownArrow },
-		{ "Select", VirtualKey::Select },
-		{ "Print", VirtualKey::Print },
-		{ "Execute", VirtualKey::Execute },
-		{ "PrintScreen", VirtualKey::PrintScreen },
-		{ "Insert", VirtualKey::Insert },
-		{ "Delete", VirtualKey::Delete },
-		{ "Help", VirtualKey::Help },
-		{ "0", VirtualKey::Num0 },
-		{ "1", VirtualKey::Num1 },
-		{ "2", VirtualKey::Num2 },
-		{ "3", VirtualKey::Num3 },
-		{ "4", VirtualKey::Num4 },
-		{ "5", VirtualKey::Num5 },
-		{ "6", VirtualKey::Num6 },
-		{ "7", VirtualKey::Num7 },
-		{ "8", VirtualKey::Num8 },
-		{ "9", VirtualKey::Num9 },
-		{ "A", VirtualKey::A },
-		{ "B", VirtualKey::B },
-		{ "C", VirtualKey::C },
-		{ "D", VirtualKey::D },
-		{ "E", VirtualKey::E },
-		{ "F", VirtualKey::F },
-		{ "G", VirtualKey::G },
-		{ "H", VirtualKey::H },
-		{ "I", VirtualKey::I },
-		{ "J", VirtualKey::J },
-		{ "K", VirtualKey::K },
-		{ "L", VirtualKey::L },
-		{ "M", VirtualKey::M },
-		{ "N", VirtualKey::N },
-		{ "O", VirtualKey::O },
-		{ "P", VirtualKey::P },
-		{ "Q", VirtualKey::Q },
-		{ "R", VirtualKey::R },
-		{ "S", VirtualKey::S },
-		{ "T", VirtualKey::T },
-		{ "U", VirtualKey::U },
-		{ "V", VirtualKey::V },
-		{ "W", VirtualKey::W },
-		{ "X", VirtualKey::X },
-		{ "Y", VirtualKey::Y },
-		{ "Z", VirtualKey::Z },
-		{ "LeftWin", VirtualKey::LeftWin },
-		{ "RightWin", VirtualKey::RightWin },
-		{ "Sleep", VirtualKey::Sleep },
-		{ "NumPad0", VirtualKey::NumPad0 },
-		{ "NumPad1", VirtualKey::NumPad1 },
-		{ "NumPad2", VirtualKey::NumPad2 },
-		{ "NumPad3", VirtualKey::NumPad3 },
-		{ "NumPad4", VirtualKey::NumPad4 },
-		{ "NumPad5", VirtualKey::NumPad5 },
-		{ "NumPad6", VirtualKey::NumPad6 },
-		{ "NumPad7", VirtualKey::NumPad7 },
-		{ "NumPad8", VirtualKey::NumPad8 },
-		{ "NumPad9", VirtualKey::NumPad9 },
-		{ "Multiply", VirtualKey::Multiply },
-		{ "Add", VirtualKey::Add },
-		{ "Separator", VirtualKey::Separator },
-		{ "Subtract", VirtualKey::Subtract },
-		{ "Decimal", VirtualKey::Decimal },
-		{ "Divide", VirtualKey::Divide },
-		{ "F1", VirtualKey::F1 },
-		{ "F2", VirtualKey::F2 },
-		{ "F3", VirtualKey::F3 },
-		{ "F4", VirtualKey::F4 },
-		{ "F5", VirtualKey::F5 },
-		{ "F6", VirtualKey::F6 },
-		{ "F7", VirtualKey::F7 },
-		{ "F8", VirtualKey::F8 },
-		{ "F9", VirtualKey::F9 },
-		{ "F10", VirtualKey::F10 },
-		{ "F11", VirtualKey::F11 },
-		{ "F12", VirtualKey::F12 },
-		{ "F13", VirtualKey::F13 },
-		{ "F14", VirtualKey::F14 },
-		{ "F15", VirtualKey::F15 },
-		{ "F16", VirtualKey::F16 },
-		{ "F17", VirtualKey::F17 },
-		{ "F18", VirtualKey::F18 },
-		{ "F19", VirtualKey::F19 },
-		{ "F20", VirtualKey::F20 },
-		{ "F21", VirtualKey::F21 },
-		{ "F22", VirtualKey::F22 },
-		{ "F23", VirtualKey::F23 },
-		{ "F24", VirtualKey::F24 },
-		{ "NumLock", VirtualKey::NumLock },
-		{ "Scroll", VirtualKey::Scroll },
-		{ "LeftShift", VirtualKey::LeftShift },
-		{ "RightShift", VirtualKey::RightShift },
-		{ "LeftCtrl", VirtualKey::LeftCtrl },
-		{ "RightCtrl", VirtualKey::RightCtrl },
-		{ "LeftMenu", VirtualKey::LeftMenu },
-		{ "RightMenu", VirtualKey::RightMenu },
-		{ "Oem1", VirtualKey::Oem1 },
-		{ "Oem2", VirtualKey::Oem2 },
-		{ "Oem3", VirtualKey::Oem3 },
-		{ "Oem4", VirtualKey::Oem4 },
-		{ "Oem5", VirtualKey::Oem5 },
-		{ "Oem6", VirtualKey::Oem6 },
-		{ "Oem7", VirtualKey::Oem7 },
-		{ "Oem8", VirtualKey::Oem8 },
-		{ "OemPlus", VirtualKey::OemPlus },
-		{ "OemComma", VirtualKey::OemComma },
-		{ "OemMinus", VirtualKey::OemMinus },
-		{ "OemPeriod", VirtualKey::OemPeriod },
-	};
+	namespace VirtualKeyUtil {
+		static const std::unordered_map<std::string_view, VirtualKey> Lookup = {
+			{ "Backspace", VirtualKey::Backspace },
+			{ "Tab", VirtualKey::Tab },
+			{ "Clear", VirtualKey::Clear },
+			{ "Enter", VirtualKey::Enter },
+			{ "Shift", VirtualKey::Shift },
+			{ "Ctrl", VirtualKey::Ctrl },
+			{ "Alt", VirtualKey::Alt },
+			{ "Pause", VirtualKey::Pause },
+			{ "Caps", VirtualKey::Caps },
+			{ "Esc", VirtualKey::Esc },
+			{ "Space", VirtualKey::Space },
+			{ "PageUp", VirtualKey::PageUp },
+			{ "PageDown", VirtualKey::PageDown },
+			{ "End", VirtualKey::End },
+			{ "Home", VirtualKey::Home },
+			{ "LeftArrow", VirtualKey::LeftArrow },
+			{ "UpArrow", VirtualKey::UpArrow },
+			{ "RightArrow", VirtualKey::RightArrow },
+			{ "DownArrow", VirtualKey::DownArrow },
+			{ "Select", VirtualKey::Select },
+			{ "Print", VirtualKey::Print },
+			{ "Execute", VirtualKey::Execute },
+			{ "PrintScreen", VirtualKey::PrintScreen },
+			{ "Insert", VirtualKey::Insert },
+			{ "Delete", VirtualKey::Delete },
+			{ "Help", VirtualKey::Help },
+			{ "0", VirtualKey::Num0 },
+			{ "1", VirtualKey::Num1 },
+			{ "2", VirtualKey::Num2 },
+			{ "3", VirtualKey::Num3 },
+			{ "4", VirtualKey::Num4 },
+			{ "5", VirtualKey::Num5 },
+			{ "6", VirtualKey::Num6 },
+			{ "7", VirtualKey::Num7 },
+			{ "8", VirtualKey::Num8 },
+			{ "9", VirtualKey::Num9 },
+			{ "A", VirtualKey::A },
+			{ "B", VirtualKey::B },
+			{ "C", VirtualKey::C },
+			{ "D", VirtualKey::D },
+			{ "E", VirtualKey::E },
+			{ "F", VirtualKey::F },
+			{ "G", VirtualKey::G },
+			{ "H", VirtualKey::H },
+			{ "I", VirtualKey::I },
+			{ "J", VirtualKey::J },
+			{ "K", VirtualKey::K },
+			{ "L", VirtualKey::L },
+			{ "M", VirtualKey::M },
+			{ "N", VirtualKey::N },
+			{ "O", VirtualKey::O },
+			{ "P", VirtualKey::P },
+			{ "Q", VirtualKey::Q },
+			{ "R", VirtualKey::R },
+			{ "S", VirtualKey::S },
+			{ "T", VirtualKey::T },
+			{ "U", VirtualKey::U },
+			{ "V", VirtualKey::V },
+			{ "W", VirtualKey::W },
+			{ "X", VirtualKey::X },
+			{ "Y", VirtualKey::Y },
+			{ "Z", VirtualKey::Z },
+			{ "LeftWin", VirtualKey::LeftWin },
+			{ "RightWin", VirtualKey::RightWin },
+			{ "Sleep", VirtualKey::Sleep },
+			{ "NumPad0", VirtualKey::NumPad0 },
+			{ "NumPad1", VirtualKey::NumPad1 },
+			{ "NumPad2", VirtualKey::NumPad2 },
+			{ "NumPad3", VirtualKey::NumPad3 },
+			{ "NumPad4", VirtualKey::NumPad4 },
+			{ "NumPad5", VirtualKey::NumPad5 },
+			{ "NumPad6", VirtualKey::NumPad6 },
+			{ "NumPad7", VirtualKey::NumPad7 },
+			{ "NumPad8", VirtualKey::NumPad8 },
+			{ "NumPad9", VirtualKey::NumPad9 },
+			{ "Multiply", VirtualKey::Multiply },
+			{ "Add", VirtualKey::Add },
+			{ "Separator", VirtualKey::Separator },
+			{ "Subtract", VirtualKey::Subtract },
+			{ "Decimal", VirtualKey::Decimal },
+			{ "Divide", VirtualKey::Divide },
+			{ "F1", VirtualKey::F1 },
+			{ "F2", VirtualKey::F2 },
+			{ "F3", VirtualKey::F3 },
+			{ "F4", VirtualKey::F4 },
+			{ "F5", VirtualKey::F5 },
+			{ "F6", VirtualKey::F6 },
+			{ "F7", VirtualKey::F7 },
+			{ "F8", VirtualKey::F8 },
+			{ "F9", VirtualKey::F9 },
+			{ "F10", VirtualKey::F10 },
+			{ "F11", VirtualKey::F11 },
+			{ "F12", VirtualKey::F12 },
+			{ "F13", VirtualKey::F13 },
+			{ "F14", VirtualKey::F14 },
+			{ "F15", VirtualKey::F15 },
+			{ "F16", VirtualKey::F16 },
+			{ "F17", VirtualKey::F17 },
+			{ "F18", VirtualKey::F18 },
+			{ "F19", VirtualKey::F19 },
+			{ "F20", VirtualKey::F20 },
+			{ "F21", VirtualKey::F21 },
+			{ "F22", VirtualKey::F22 },
+			{ "F23", VirtualKey::F23 },
+			{ "F24", VirtualKey::F24 },
+			{ "NumLock", VirtualKey::NumLock },
+			{ "Scroll", VirtualKey::Scroll },
+			{ "LeftShift", VirtualKey::LeftShift },
+			{ "RightShift", VirtualKey::RightShift },
+			{ "LeftCtrl", VirtualKey::LeftCtrl },
+			{ "RightCtrl", VirtualKey::RightCtrl },
+			{ "LeftMenu", VirtualKey::LeftMenu },
+			{ "RightMenu", VirtualKey::RightMenu },
+			{ "Oem1", VirtualKey::Oem1 },
+			{ "Oem2", VirtualKey::Oem2 },
+			{ "Oem3", VirtualKey::Oem3 },
+			{ "Oem4", VirtualKey::Oem4 },
+			{ "Oem5", VirtualKey::Oem5 },
+			{ "Oem6", VirtualKey::Oem6 },
+			{ "Oem7", VirtualKey::Oem7 },
+			{ "Oem8", VirtualKey::Oem8 },
+			{ "OemPlus", VirtualKey::OemPlus },
+			{ "OemComma", VirtualKey::OemComma },
+			{ "OemMinus", VirtualKey::OemMinus },
+			{ "OemPeriod", VirtualKey::OemPeriod },
+		};
 
-	static VirtualKey::Enum fromString(std::string_view key) {
-		auto found = Lookup.find(key);
-		if (found != Lookup.end()) {
-			return found->second;
-		}
-
-		return VirtualKey::Unknown;
-	}
-
-	static std::string_view toString(VirtualKey::Enum idx) {
-		for (auto& key : Lookup) {
-			if (key.second == idx) {
-				return key.first;
+		static VirtualKey fromString(std::string_view key) {
+			auto found = Lookup.find(key);
+			if (found != Lookup.end()) {
+				return found->second;
 			}
+
+			return VirtualKey::Unknown;
 		}
 
-		return "Unknown";
-	}
-}
+		static std::string_view toString(VirtualKey idx) {
+			for (auto& key : Lookup) {
+				if (key.second == idx) {
+					return key.first;
+				}
+			}
 
-namespace fw {
+			return "Unknown";
+		}
+	}
+
 	enum class KeyAction {
 		Release,
 		Press,
@@ -377,7 +377,7 @@ namespace fw {
 	};
 
 	struct KeyEvent {
-		VirtualKey::Enum key;
+		VirtualKey key;
 		KeyAction action;
 		bool down;
 	};
@@ -392,18 +392,22 @@ namespace fw {
 	};
 
 	struct MouseButtonEvent {
-		MouseButton::Enum button;
+		MouseButton button;
 		bool down;
 		Point position;
 	};
 
+	struct MouseFocusEvent {};
+
+	struct MouseBlurEvent {};
+
 	struct MouseDoubleClickEvent {
-		MouseButton::Enum button;
+		MouseButton button;
 		Point position;
 	};
 
 	struct ButtonEvent {
-		ButtonType::Enum button;
+		ButtonType button;
 		bool down;
 	};
 
@@ -422,5 +426,29 @@ namespace fw {
 
 REFL_AUTO(
 	type(fw::MouseMoveEvent),
+	field(position)
+)
+
+REFL_AUTO(
+	type(fw::MouseEnterEvent),
+	field(position)
+)
+
+REFL_AUTO(
+	type(fw::MouseLeaveEvent)
+)
+
+REFL_AUTO(
+	type(fw::MouseFocusEvent)
+)
+
+REFL_AUTO(
+	type(fw::MouseBlurEvent)
+)
+
+REFL_AUTO(
+	type(fw::MouseButtonEvent),
+	field(button),
+	field(down),
 	field(position)
 )

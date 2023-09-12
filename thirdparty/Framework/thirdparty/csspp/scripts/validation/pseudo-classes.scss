@@ -1,0 +1,48 @@
+// CSS Preprocessor
+// Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+@if $pseudo_name != "active"
+and $pseudo_name != "checked"
+and $pseudo_name != "disabled"
+and $pseudo_name != "empty"
+and $pseudo_name != "enabled"
+and $pseudo_name != "first-child"
+and $pseudo_name != "first-of-type"
+and $pseudo_name != "focus"
+and $pseudo_name != "hover"
+and $pseudo_name != "invalid"
+and $pseudo_name != "last-child"
+and $pseudo_name != "last-of-type"
+and $pseudo_name != "link"
+and $pseudo_name != "only-child"
+and $pseudo_name != "only-of-type"
+and $pseudo_name != "required"
+and $pseudo_name != "root"
+and $pseudo_name != "target"
+and $pseudo_name != "valid"
+and $pseudo_name != "visited" {
+    @error $pseudo_name + " is not a valid name for a pseudo class; CSS only supports root, first-child, last-child, first-of-type, last-of-type, only-child, only-of-type, empty, link, visitived, active, hover, focus, target, enabled, disabled, and checked. (functions are not included in this list since you did not use '(' at the end of the word.)";
+}
+
+// Local Variables:
+// mode: scss
+// indent-tabs-mode: nil
+// c-basic-offset: 4
+// tab-width: 4
+// End:
+
+// vim: ts=4 sw=4 et

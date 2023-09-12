@@ -1,0 +1,53 @@
+ul li > .test:hover, #h1 {
+	padding: 5px;
+}
+
+body {
+  background-color: rgb(1, 255, 1);
+
+
+
+  .test {
+    background-color: red;
+  }
+}
+
+div {
+  transition-property: width;
+  transition-duration: 100ms;
+  transition-timing-function: linear;
+  transition-delay: 1s;
+
+  width: 50px;
+  height: 100px;
+  background-color: red;
+}
+
+div:hover {
+  width: 400px;
+  height: 100px;
+  background-color: blue;
+}
+
+.containerl {
+  display: flex;
+  width: 25%;
+  height: 100%;
+  background-color: red;
+  color: white;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

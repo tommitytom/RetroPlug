@@ -1,0 +1,106 @@
+// CSS Preprocessor
+// Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+//
+// List of HTML tags and attributes that are accepted by default
+// Any other tag and attribute needs to be added manually
+// with your own @selectors and @extends within the selector.
+//
+// For example, if you want to support a tag named author:
+//
+// @selectors
+// {
+//    @extends;
+//    tags: author;
+// }
+//
+// The list of invalid-tags will prevent you from using those in your
+// selectors. These are HTML 4.01 and older tags that are deprecated
+// and may not work on all devices.
+//
+// The list of functions only includes functions that are not also
+// defined internally. These are functions recognized in CSS 3.
+//
+
+@selectors
+{
+    tags:
+            // HTML 4 and older tags
+                // document
+            base body head html link meta noscript script style
+                // blocks
+            aside blockquote div hr iframe
+                // form
+            button dialog fieldset form input label legend optgroup
+            option select
+                // paragraphs
+            h1 h2 h3 h4 h5 h6 p pre address textarea
+                // list
+            dd dl dt li ol ul
+                // table
+            col colgroup table tbody td tfoot th thead tr
+                // inline
+            a abbr b bdo br cite code del dfn em i img ins kbd
+            mark q s samp small span strong sub sup u var
+                // other
+            area caption embed object map param rt rp ruby
+
+            // HTML 5 tags
+            // Note that HTML 5 does not really limit you to a specific
+            // list of tags which is why you may extend this list
+            audio canvas data datalist details figcaption figure footer
+            header hgroup main menu menuitem meter nav output progress
+            section source summary svg template time track video wbr
+
+        ;
+    invalid-tags:
+            //
+            // HTML 4 and earlier versions had tags that are now
+            // replaced by CSS capabilities and thus the tag was
+            // deprecated
+            //
+            // there are also some non-standard tags that should
+            // not be used
+            //
+            // content is a DOM/JavaScript feature, not a tag you
+            // can use as is so you cannot have it in CSS
+            //
+            // Note: <title> is here because you cannot style the
+            //       title wih CSS (the title appears in the window
+            //       title bar and a tab which you cannot style)
+            //
+            acronym applet basefont bgsound big blink center
+            content decoration dir font frame frameset isindex
+            keygen listing marquee noframes plaintext shadow
+            space strike title tt xmp
+        ;
+    attributes:
+            cite datetime dir for form high href low max method
+            min name optimum select src value
+        ;
+    functions:
+            transform
+        ;
+}
+
+// Local Variables:
+// mode: scss
+// indent-tabs-mode: nil
+// tab-width: 4
+// End:
+
+// vim: ts=4 sw=4 et

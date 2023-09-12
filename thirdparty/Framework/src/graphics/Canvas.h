@@ -82,6 +82,34 @@ namespace fw {
 		std::vector<CanvasBatch> batches;
 	};
 
+	struct BorderWidth {
+		f32 top = 0.0f;
+		f32 left = 0.0f;
+		f32 bottom = 0.0f;
+		f32 right = 0.0f;
+
+		bool operator==(const BorderWidth& other) const {
+			return top == other.top && left == other.left && bottom == other.bottom && right == other.right;
+		}
+
+		static const BorderWidth zero;
+	};
+
+	inline const BorderWidth BorderWidth::zero = BorderWidth();
+
+	struct BorderColor {
+		Color4F top;
+		Color4F left;
+		Color4F bottom;
+		Color4F right;
+	};
+
+	struct StrokedRect {
+		RectF area;
+		BorderWidth width;
+		BorderColor color;
+	};
+
 	class Canvas {
 	private:
 		CanvasGeometry _geom;
@@ -279,6 +307,8 @@ namespace fw {
 
 		Canvas& polygon(const PointF* points, uint32 count);
 
+		Canvas& polygon(std::span<PointF> points) { return this->polygon(points.data(), (uint32)points.size()); }
+
 		Canvas& points(const PointF* points, uint32 count);
 
 		Canvas& points(std::span<PointF> points) { return this->points(points.data(), (uint32)points.size()); }
@@ -292,6 +322,8 @@ namespace fw {
 		Canvas& fillRect(const Rect& area) { return this->fillRect((RectF)area, _color); }
 
 		Canvas& strokeRect(const RectF& area, const Color4F& color);
+
+		Canvas& strokeRect(const StrokedRect& rect);
 
 		Canvas& texture(const TextureRenderDesc& desc);
 

@@ -5,7 +5,7 @@
 
 #include "ui/Flex.h"
 
-namespace fw {
+namespace fw {	
 	class ViewLayout {
 	private:
 		YGNodeRef _yogaNode = nullptr;

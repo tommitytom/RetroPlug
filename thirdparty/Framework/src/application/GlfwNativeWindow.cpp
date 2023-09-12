@@ -23,8 +23,8 @@ static const char* s_canvas = "#canvas";
 
 namespace fw::app {
 
-MouseButton::Enum convertMouseButton(int button);
-VirtualKey::Enum convertKey(int key);
+MouseButton convertMouseButton(int button);
+VirtualKey convertKey(int key);
 
 void* GlfwNativeWindow::getNativeHandle() {
 #if FW_PLATFORM_WEB
@@ -249,8 +249,8 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 
 		switch (shared.cursor) {
 		case CursorType::Arrow: _cursor = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); break;
-		case CursorType::ResizeH: _cursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR); break;
-		case CursorType::ResizeV: _cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR); break;
+		case CursorType::ResizeEW: _cursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR); break;
+		case CursorType::ResizeNS: _cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR); break;
 		case CursorType::Hand: _cursor = glfwCreateStandardCursor(GLFW_HAND_CURSOR); break;
 		case CursorType::IBeam: _cursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR); break;
 		case CursorType::Crosshair: _cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR); break;
@@ -268,7 +268,7 @@ bool GlfwNativeWindow::shouldClose() {
 	return glfwWindowShouldClose(_window);
 }
 
-VirtualKey::Enum convertKey(int key) {
+VirtualKey convertKey(int key) {
 	switch (key) {
 		case GLFW_KEY_SPACE: return VirtualKey::Space;
 		//case GLFW_KEY_APOSTROPHE: return VirtualKey::Apo;
@@ -395,7 +395,7 @@ VirtualKey::Enum convertKey(int key) {
 	return VirtualKey::Unknown;
 }
 
-MouseButton::Enum convertMouseButton(int button) {
+MouseButton convertMouseButton(int button) {
 	switch (button) {
 	case GLFW_MOUSE_BUTTON_LEFT: return MouseButton::Left;
 	case GLFW_MOUSE_BUTTON_RIGHT: return MouseButton::Right;

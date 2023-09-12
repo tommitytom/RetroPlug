@@ -41,7 +41,7 @@ namespace fw {
 
 		void onRender(fw::Canvas& canvas) override;
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override;
+		bool onMouseButton(MouseButton button, bool down, Point position) override;
 
 		bool onMouseMove(Point position) override;
 	};

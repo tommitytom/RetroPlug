@@ -30,7 +30,7 @@ local function parseFlexBorder(value: fw.FlexRectT|number, key: string): fw.Flex
 	elseif type(value) == "table" then
 		local v = value as fw.FlexBorderT
 		return fw.FlexBorder(v.left, v.top, v.right, v.bottom)
-	elseif type(value) == "cdata" then
+	elseif type(value) == "userdata" then
 		return value as fw.FlexBorderT
 	elseif type(value) ~= "nil" then
 		print("WARN: Failed to update '" .. key .. "', value of type " .. type(value) .. " is not supported")
@@ -43,7 +43,9 @@ local function parseFlexRect(value: fw.FlexRectT|number, key: string): fw.FlexRe
 	if type(value) == "userdata" then
 		return value as fw.FlexRectT
 	elseif type(value) == "number" then
+		print("fw.FlexValue1")
 		local v = fw.FlexValue(value as number)
+		print("fw.FlexValue2")
 		return fw.FlexRect(v, v, v, v)
 	elseif type(value) == "table" then
 		local v = value as fw.FlexRectT
@@ -132,11 +134,14 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 		return fw.document:getRootElement()
 	end,
 	setProperty = function(node: HostElementHandle, name: string, value: any)
+		assert(type(name) == "string")
 		local style = fw.document:getStyle(node) as { string: any }
 
-		local san = sanitizers[name]
-		if san then
-			value = san(value, name)
+		if value ~= nil then
+			local san = sanitizers[name]
+			if san then
+				value = san(value, name)
+			end
 		end
 
 		style[name] = value

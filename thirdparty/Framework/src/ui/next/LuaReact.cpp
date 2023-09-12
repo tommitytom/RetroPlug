@@ -2,6 +2,7 @@
 
 #include "ui/next/Document.h"
 #include "ui/next/StyleComponentsMeta.h"
+#include "ui/next/StyleUtil.h"
 
 namespace fw {
 	f64 getTime() {
@@ -37,6 +38,8 @@ namespace fw {
 				spdlog::error(result.errorMessage());
 			}
 		}
+
+		_doc.update(dt);
 	}
 
 	void LuaReact::reload() {
@@ -67,7 +70,13 @@ namespace fw {
 					.addProperty("value", &FlexValue::getValue, &FlexValue::setValue)
 				.endClass()
 				.beginClass<FlexRect>("FlexRect")
-					.addConstructor<void(), void(const FlexRect&), void(FlexValue), void(FlexValue, FlexValue, FlexValue, FlexValue)>()
+					.addConstructor<
+						void(), 
+						void(const FlexRect&), 
+						void(FlexValue), 
+						void(FlexValue, FlexValue, FlexValue, FlexValue),
+						void(f32, f32, f32, f32)
+					>()
 					.addProperty("top", &FlexRect::top)
 					.addProperty("left", &FlexRect::left)
 					.addProperty("bottom", &FlexRect::bottom)
@@ -100,5 +109,125 @@ namespace fw {
 			lua_close(_lua);
 			_lua = nullptr;
 		}
+
+		update(0.3f);
+		_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+	}
+	
+	bool LuaReact::handleMouseMove(PointF pos) {
+		entt::registry& reg = _doc.getRegistry();
+		bool changed = false;
+
+		std::vector<DomElementHandle>& current = _mouseOver[_currentMouseOver];
+		std::vector<DomElementHandle>& next = _mouseOver[1 - _currentMouseOver];
+		assert(next.empty());
+
+		getElementsAtPosition(_doc.getRootElement(), pos, next);
+
+		for (auto it = current.rbegin(); it != current.rend(); ++it) {
+			if (!StlUtil::vectorContains(next, *it)) {
+				reg.remove<MouseEnteredTag>(*it);
+				StyleUtil::markStyleDirty(reg, *it, true);
+				changed |= emitEvent(*it, "onMouseLeave", MouseLeaveEvent{});
+			}
+		}
+
+		for (DomElementHandle e : next) {
+			if (!StlUtil::vectorContains(current, e)) {
+				reg.emplace_or_replace<MouseEnteredTag>(e);
+				StyleUtil::markStyleDirty(reg, e, true);
+				changed |= emitRelativeEvent(e, "onMouseEnter", MouseEnterEvent{ Point(pos) });
+			}
+		}
+
+		DomElementHandle currentTop = !current.empty() ? current.back() : entt::null;
+		DomElementHandle nextTop = !next.empty() ? next.back() : entt::null;
+
+		if (currentTop != nextTop) {
+			if (currentTop != entt::null) {
+				reg.remove<MouseOverTag>(currentTop);
+				StyleUtil::markStyleDirty(reg, currentTop, true);
+				changed |= emitEvent(currentTop, "onMouseOut", MouseLeaveEvent{});
+			}
+
+			if (nextTop != entt::null) {
+				reg.emplace_or_replace<MouseOverTag>(nextTop);
+				StyleUtil::markStyleDirty(reg, nextTop, true);
+				changed |= emitRelativeEvent(nextTop, "onMouseOver", MouseEnterEvent{ Point(pos) });
+			}
+		}
+
+		_cursor = CursorType::Arrow;
+
+		// Mouse over whatever is at the top of the stack
+		for (auto it = next.rbegin(); it != next.rend(); ++it) {
+			DomElementHandle e = *it;
+
+			CursorType* cursor = reg.try_get<CursorType>(e);
+			if (cursor) {
+				_cursor = *cursor;
+			}
+
+			bool fired = emitRelativeEvent(e, "onMouseMove", MouseMoveEvent{ Point(pos) });
+			changed |= fired;
+
+			if (fired) {
+				break;
+			}
+		}
+
+		current.clear();
+		_currentMouseOver = 1 - _currentMouseOver;
+
+		return changed;
+	}
+	
+	bool LuaReact::handleMouseButton(const MouseButtonEvent& ev) {
+		bool fired = propagateMouseButton(_doc.getRootElement(), ev);
+
+		if (_mouseFocus != entt::null && !ev.down) {
+			fired |= emitEvent(_mouseFocus, "onMouseBlur", MouseBlurEvent{});
+			_mouseFocus = entt::null;
+		}
+
+		return fired;
+	}
+	
+	void LuaReact::getElementsAtPosition(const DomElementHandle e, const PointF pos, std::vector<DomElementHandle>& items) {
+		entt::registry& reg = _doc.getRegistry();
+		const RectF& area = reg.get<WorldAreaComponent>(e).area;
+
+		if (area.contains(pos)) {
+			items.push_back(e);
+
+			_doc.each(e, [&](DomElementHandle child) {
+				getElementsAtPosition(child, pos, items);
+			});
+		}
+	}
+	
+	bool LuaReact::propagateMouseButton(DomElementHandle e, const MouseButtonEvent& ev) {
+		entt::registry& reg = _doc.getRegistry();
+		const RectF& area = reg.get<WorldAreaComponent>(e).area;
+
+		if (area.contains(PointF(ev.position))) {
+			MouseButtonEvent newEvent = ev;
+			newEvent.position = ev.position - Point(area.position);
+
+			if (emitEvent(e, "onMouseButton", std::move(newEvent))) {
+				if (ev.down) {
+					emitEvent(e, "onMouseFocus", MouseFocusEvent{});
+					_mouseFocus = e;
+				}
+
+				return true;
+			}
+
+			_doc.each(e, [&](DomElementHandle child) {
+				propagateMouseButton(child, ev);
+			});
+		}
+
+		return false;
 	}
 }

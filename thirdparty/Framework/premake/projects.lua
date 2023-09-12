@@ -139,6 +139,8 @@ function m.Ui.include()
 
 	m.Graphics.include()
 	dep.yoga.include()
+	dep.less.include()
+	dep.csspp.include()
 	dep.bgfx.compat()
 
 	filter {}
@@ -151,6 +153,8 @@ function m.Ui.link()
 
 	m.Graphics.link()
 	dep.yoga.link()
+	dep.less.link()
+	dep.csspp.link()
 end
 
 function m.Ui.project()
@@ -158,6 +162,7 @@ function m.Ui.project()
 	kind "StaticLib"
 
 	m.Ui.include()
+	dep.csspp.include()
 
 	files {
 		paths.SRC_ROOT .. "ui/**.h",

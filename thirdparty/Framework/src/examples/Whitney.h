@@ -251,11 +251,11 @@ namespace fw {
 			_modulators.push_back(std::pair<PropertyModulator, PropertyEditorBasePtr>());
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			return true;
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			if (key == VirtualKey::Space && !down) {
 				_playing = !_playing;
 			}

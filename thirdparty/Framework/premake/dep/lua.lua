@@ -40,6 +40,7 @@ function m.project()
 
 		--filter "system:windows"
 			--disablewarnings { "4334", "4098", "4244" }
+		--filter{}
 end
 
 return m

@@ -1,8 +1,23 @@
 #pragma once
 
 #include <yoga/Yoga.h>
+#include "foundation/Types.h"
 
 namespace fw {
+	enum class CursorType {
+		Arrow,
+		Hand,
+		IBeam,
+		Crosshair,
+		ResizeEW,
+		ResizeNS,
+		ResizeNWSE,
+		ResizeNESW,
+		NotAllowed,
+		//ResizeH = ResizeEW,
+		//ResizeV = ResizeNS,
+	};
+	
 	enum class FlexAlign {
 		Auto = YGAlignAuto,
 		FlexStart = YGAlignFlexStart,
@@ -183,6 +198,7 @@ namespace fw {
 		FlexRect(const FlexRect& other): top(other.top), left(other.left), bottom(other.bottom), right(other.right) {}
 		FlexRect(FlexValue value) : top(value), left(value), bottom(value), right(value) {}
 		FlexRect(FlexValue _top, FlexValue _left, FlexValue _bottom, FlexValue _right) : top(_top), left(_left), bottom(_bottom), right(_right) {}
+		FlexRect(f32 _top, f32 _left, f32 _bottom, f32 _right) : top(_top), left(_left), bottom(_bottom), right(_right) {}
 	};
 
 	struct FlexBorder {

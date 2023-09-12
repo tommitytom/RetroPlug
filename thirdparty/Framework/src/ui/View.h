@@ -56,20 +56,6 @@ namespace fw {
 		Point sourcePoint;
 	};
 
-	enum class CursorType {
-		Arrow,
-		Hand,
-		IBeam,
-		Crosshair,
-		ResizeEW,
-		ResizeNS,
-		ResizeNWSE,
-		ResizeNESW,
-		NotAllowed,
-		ResizeH = ResizeEW,
-		ResizeV = ResizeNS,
-	};
-
 	using EventType = entt::id_type;	
 
 	struct ResizeEvent {
@@ -277,6 +263,10 @@ namespace fw {
 			_shared->cursorChanged = true;
 		}
 
+		CursorType getCursor() const {
+			return _shared->cursor;
+		}
+
 		void setClip(bool clip) {
 			_clip = clip;
 		}
@@ -343,13 +333,13 @@ namespace fw {
 
 		virtual bool onButton(const ButtonEvent& ev) { return onButton(ev.button, ev.down); }
 
-		virtual bool onButton(ButtonType::Enum button, bool down) { return false; }
+		virtual bool onButton(ButtonType button, bool down) { return false; }
 
 		virtual bool onChar(const CharEvent& ev) { return false; }
 
 		virtual bool onKey(const KeyEvent& ev) { return onKey(ev.key, ev.down); }
 
-		virtual bool onKey(VirtualKey::Enum key, bool down) { return false; }
+		virtual bool onKey(VirtualKey key, bool down) { return false; }
 
 		virtual bool onMouseButton(const MouseButtonEvent& ev) { return onMouseButton(ev.button, ev.down, ev.position); }
 
@@ -361,7 +351,7 @@ namespace fw {
 			});
 		}
 
-		virtual bool onMouseButton(MouseButton::Enum button, bool down, Point position) { return false; }
+		virtual bool onMouseButton(MouseButton button, bool down, Point position) { return false; }
 
 		virtual void onMouseEnter(Point pos) {}
 

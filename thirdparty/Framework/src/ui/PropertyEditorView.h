@@ -139,7 +139,7 @@ namespace fw {
 			return true;
 		}*/
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			if ((key == VirtualKey::UpArrow || key == VirtualKey::DownArrow) && down) {
 				for (size_t i = 0; i < _groups.size(); ++i) {
 					Group& group = _groups[i];
@@ -181,7 +181,7 @@ namespace fw {
 			return true;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			//_draggingSeparator = down && mouseOverSeparator(pos);
 			return true;
 		}

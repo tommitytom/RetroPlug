@@ -12,11 +12,17 @@ global type Reconciler = record<ElementT, PropsT, EventsT>
 end
 
 global type ElementFunc = function(PropsMap): Element
+global type TypedElementFunc = function<PropsT>(PropsT): Element
 global type PropsMap = {string: any}
 
 global record Element
-	type: string|ElementFunc
+	type: ElementFunc|string
 	props: PropsMap
 end
+
+--[[global type TypedElement = record<PropsT>
+	type: string|ElementFunc
+	props: PropsT
+end]]
 
 global type ActionFunc = function<T>(T): T

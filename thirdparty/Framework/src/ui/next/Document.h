@@ -1,15 +1,15 @@
 #pragma once
 
 #include <entt/entity/registry.hpp>
+
 #include "DocumentTypes.h"
 #include "DomStyle.h"
 #include "graphics/FontManager.h"
 
-namespace fw {	
+namespace fw {
 	class Document {
 	private:
 		entt::registry _reg;
-		entt::entity _root;
 		FontManager _fontManager;
 
 	public:
@@ -17,6 +17,8 @@ namespace fw {
 		~Document() = default;
 
 		void clear();
+
+		void loadStyle(const std::filesystem::path& path);
 
 		DomElementHandle createElement(const std::string& tag);
 
@@ -32,11 +34,11 @@ namespace fw {
 			return _reg;
 		}
 
-		DomElementHandle getRootElement() const {
-			return _root;
-		}
+		DomElementHandle getRootElement() const;
 
 		void calculateLayout(DimensionF dim);
+
+		void update(f32 dt);
 
 		DomElementHandle getNodeHandle(YGNodeRef node) {
 			return static_cast<DomElementHandle>(reinterpret_cast<std::uintptr_t>(YGNodeGetContext(node)));

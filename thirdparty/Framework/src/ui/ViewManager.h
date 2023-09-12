@@ -11,7 +11,7 @@ namespace fw {
 	class ViewManager final : public View {
 	private:
 		struct MouseState {
-			bool buttons[MouseButton::COUNT] = { false };
+			bool buttons[(size_t)MouseButton::COUNT] = { false };
 			Point position;
 			Point dragDistance;
 		};
@@ -136,7 +136,7 @@ namespace fw {
 		bool onMouseButton(const MouseButtonEvent& ev) override {
 			bool handled = false;
 
-			_mouseState.buttons[ev.button] = ev.down;
+			_mouseState.buttons[(size_t)ev.button] = ev.down;
 
 			if (ev.button == MouseButton::Left && !ev.down) {
 				DragContext& ctx = _shared->dragContext;
@@ -159,7 +159,7 @@ namespace fw {
 		void onMouseLeave() override {
 			bool buttonHeld = false;
 
-			for (size_t i = 0; i < MouseButton::COUNT; ++i) {
+			for (size_t i = 0; i < (size_t)MouseButton::COUNT; ++i) {
 				buttonHeld |= _mouseState.buttons[i];
 			}
 
@@ -180,7 +180,7 @@ namespace fw {
 			bool handled = false;
 			DragContext& ctx = _shared->dragContext;
 
-			if (_mouseState.buttons[MouseButton::Left]) {
+			if (_mouseState.buttons[(size_t)MouseButton::Left]) {
 				if (!ctx.isDragging) {
 					// lock focus on current view
 					ViewPtr view = _shared->focused.lock();

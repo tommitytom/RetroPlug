@@ -3,8 +3,8 @@
 #include "foundation/Input.h"
 
 namespace fw {
-	static ButtonType::Enum keyToButton(VirtualKey::Enum key) {
-		ButtonType::Enum button = ButtonType::MAX;
+	static ButtonType keyToButton(VirtualKey key) {
+		ButtonType button = ButtonType::MAX;
 
 		switch (key) {
 		case VirtualKey::LeftArrow: button = ButtonType::Left; break;

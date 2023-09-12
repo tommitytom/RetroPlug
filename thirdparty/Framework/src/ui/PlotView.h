@@ -38,7 +38,7 @@ namespace fw {
 			}
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			updatePoints(getDimensions());
 			return true;
 		}

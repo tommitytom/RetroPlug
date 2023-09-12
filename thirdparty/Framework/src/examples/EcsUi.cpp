@@ -45,12 +45,21 @@ namespace fw {
 		return _react->handleMouseMove(PointF(pos));
 	}
 
+	bool EcsUi::onMouseButton(const MouseButtonEvent& ev) {
+		return _react->handleMouseButton(ev);
+	}
+
 	bool EcsUi::onKey(const KeyEvent& ev) {
 		return false;
 	}
 
 	void EcsUi::onUpdate(f32 delta) {
 		_react->update(delta);
+
+		CursorType cursor = _react->getCursor();
+		if (cursor != getCursor()) {
+			setCursor(_react->getCursor());
+		}
 	}
 	
 	void EcsUi::onRender(fw::Canvas& canvas) {

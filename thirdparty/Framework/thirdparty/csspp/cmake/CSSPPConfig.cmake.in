@@ -1,0 +1,62 @@
+# Try to find the CSS Preprocessor development files
+#
+# Once done this will define
+#
+# CSSPP_FOUND        - System has the csspp library
+# CSSPP_INCLUDE_DIR  - The csspp include directories
+# CSSPP_LIBRARY      - The libraries needed to use libcsspp
+# CSSPP_DEFINITIONS  - Compiler switches required for linking against csspp
+#
+# License:
+#   Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 2 of the License, or
+#   (at your option) any later version.
+#  
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#  
+#   You should have received a copy of the GNU General Public License
+#   along with this program; if not, write to the Free Software
+#   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# Version
+set(CSSPP_VERSION_MAJOR @CSSPP_VERSION_MAJOR@)
+set(CSSPP_VERSION_MINOR @CSSPP_VERSION_MINOR@)
+set(CSSPP_VERSION_PATCH @CSSPP_VERSION_PATCH@)
+set(CSSPP_VERSION @CSSPP_VERSION_MAJOR@.@CSSPP_VERSION_MINOR@.@CSSPP_VERSION_PATCH@)
+
+# For verification files
+set(CSSPP_CONFIG_DIR /usr/lib/csspp)
+
+find_path(CSSPP_INCLUDE_DIR csspp/csspp.h
+                      HINTS $ENV{CSSPP_INCLUDE_DIR}
+              PATH_SUFFIXES csspp
+)
+
+find_library(CSSPP_LIBRARY csspp
+                     HINTS $ENV{CSSPP_LIBRARY}
+)
+
+mark_as_advanced(CSSPP_INCLUDE_DIR CSSPP_LIBRARY)
+
+set(CSSPP_INCLUDE_DIRS ${CSSPP_INCLUDE_DIR})
+set(CSSPP_LIBRARIES ${CSSPP_LIBRARY})
+
+# handle the QUIETLY and REQUIRED arguments and set CSSPP_FOUND to TRUE
+# if all listed variables are TRUE
+#
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(
+    CSSPP
+    DEFAULT_MSG
+    CSSPP_INCLUDE_DIR
+    CSSPP_LIBRARY
+)
+
+# vim: ts=4 sw=4 et

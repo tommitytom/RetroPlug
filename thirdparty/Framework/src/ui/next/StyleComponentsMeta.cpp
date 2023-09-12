@@ -12,9 +12,9 @@ namespace fw {
 		//LuaReflection::addClass<FlexValue>(lua);
 		//LuaReflection::addClass<Color4F>(lua);
 
-		LuaReflection::addClass<PointI32>(lua);
-		LuaReflection::addClass<PointF32>(lua);
-		LuaReflection::addClass<MouseMoveEvent>(lua);
+		LuaReflection::addEnum<MouseButton>(lua);
+		LuaReflection::addEnum<ButtonType>(lua);
+		//LuaReflection::addEnum<VirtualKey>(lua);		
 
 		LuaReflection::addEnum<FlexAlign>(lua);
 		LuaReflection::addEnum<FlexDimension>(lua);
@@ -30,12 +30,23 @@ namespace fw {
 		LuaReflection::addEnum<FlexPositionType>(lua);
 		LuaReflection::addEnum<FlexUnit>(lua);
 		LuaReflection::addEnum<FlexWrap>(lua);
+		LuaReflection::addEnum<CursorType>(lua);
 
 		LuaReflection::addClass<ViewLayout>(lua);
+
+		LuaReflection::addClass<PointI32>(lua);
+		LuaReflection::addClass<PointF32>(lua);
+		LuaReflection::addClass<MouseMoveEvent>(lua);
+		LuaReflection::addClass<MouseButtonEvent>(lua);
+		LuaReflection::addClass<MouseEnterEvent>(lua);
+		LuaReflection::addClass<MouseLeaveEvent>(lua);
+		LuaReflection::addClass<MouseFocusEvent>(lua);
+		LuaReflection::addClass<MouseBlurEvent>(lua);
 
 		luabridge::getGlobalNamespace(lua)
 			.beginNamespace("fw")
 				.beginClass<DomStyle>("DomStyle")
+					.addProperty("cursor", &DomStyle::getCursor, &DomStyle::setCursor)
 					.addProperty("flexDirection", &DomStyle::getFlexDirection, &DomStyle::setFlexDirection)
 					.addProperty("justifyContent", &DomStyle::getJustifyContent, &DomStyle::setJustifyContent)
 					.addProperty("flexAlignItems", &DomStyle::getFlexAlignItems, &DomStyle::setFlexAlignItems)
@@ -63,6 +74,7 @@ namespace fw {
 					.addProperty("color", &DomStyle::getColor, &DomStyle::setColor)
 					.addProperty("backgroundColor", &DomStyle::getBackgroundColor, &DomStyle::setBackgroundColor)
 					.addProperty("nodeValue", &DomStyle::getNodeValue, &DomStyle::setNodeValue)
+					.addProperty("className", &DomStyle::getClassName, &DomStyle::setClassName)
 				.endClass()
 				.beginClass<Document>("Document")
 					.addFunction("createElement", &Document::createElement)
@@ -71,10 +83,7 @@ namespace fw {
 					.addFunction("removeChild", &Document::removeChild)
 					.addFunction("getStyle", &Document::getStyle)
 					.addFunction("getRootElement", &Document::getRootElement)
-				.endClass()
-				.beginClass<MouseMoveEvent>("MouseMoveEvent")
-					.addProperty("position", &MouseMoveEvent::position)
-				.endClass()			
+				.endClass()	
 			.endNamespace();
 	}
 }

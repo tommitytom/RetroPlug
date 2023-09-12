@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# File:
+#      dev/CMakeLists.txt
+#
+# Description:
+#      Script to run a release build once in a while since the warnings
+#      work differently in release than in debug mode.
+#
+# Documentation:
+#      See the CMake documentation.
+#
+# License:
+#      csspp -- a CSS Preprocessor
+#      Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+#
+#      https://snapwebsites.org/
+#      contact@m2osw.com
+#
+#      This program is free software; you can redistribute it and/or modify
+#      it under the terms of the GNU General Public License as published by
+#      the Free Software Foundation; either version 2 of the License, or
+#      (at your option) any later version.
+#
+#      This program is distributed in the hope that it will be useful,
+#      but WITHOUT ANY WARRANTY; without even the implied warranty of
+#      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#      GNU General Public License for more details.
+#
+#      You should have received a copy of the GNU General Public License
+#      along with this program; if not, write to the Free Software
+#      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
+
+set -e
+
+start_date=`date`
+
+if test "$1" = "--help" -o "$1" = "-h"
+then
+    echo "Usage: $0 [--opt] [test-name]"
+    echo "where --opt is one of:"
+    echo "   --help         show this help screen"
+    exit 1;
+fi
+
+SOURCE_PATH=`pwd`
+. dev/version
+echo "***"
+echo "*** csspp coverage for version $FULL_VERSION (`date`)"
+echo "***"
+DIRNAME=csspp_release
+mkdir -p tmp/build/$DIRNAME
+rm -rf tmp/build/$DIRNAME/*
+cd tmp/build
+BUILD_PATH=`pwd`
+cd $DIRNAME
+ln -s ../../../../../cmake .
+# request coverage in this build
+export ADVGETOPT_INCLUDE_DIR=$SOURCE_PATH/../../../BUILD/dist/include
+export ADVGETOPT_LIBRARY=$SOURCE_PATH/../../../BUILD/dist/lib
+export AdvGetOpt_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export SnapCMakeModules_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export SnapDoxygen_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export Catch_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+
+echo "----------------------------------------"
+ls $SOURCE_PATH/../../../BUILD/dist/share/cmake
+echo "----------------------------------------"
+
+cmake -DCMAKE_INSTALL_PREFIX:PATH="$SOURCE_PATH/$BUILD_PATH/dist" \
+      -DCMAKE_BUILD_TYPE=Release \
+          ../../..
+echo
+echo "***"
+echo "*** compile (`date`)"
+echo "***"
+VERBOSE=1 make
+
+
+# Run the tests once in release mode too (some optimization could break
+# the preprocessor in some way.)
+echo
+echo "***"
+echo "*** run tests (`date`)"
+echo "***"
+tests/csspp_tests --scripts $SOURCE_PATH/scripts --version-script scripts
+
+
+end_date=`date`
+
+echo "Process started  on $start_date"
+echo "Process finished on $end_date"
+
+# Local Variables:
+# indent-tabs-mode: nil
+# tab-width: 4
+# End:
+
+# vim: ts=4 sw=4 et

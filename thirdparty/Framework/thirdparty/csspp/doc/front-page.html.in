@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html prefix="og: http://ogp.me/ns#">
+	<head>
+		<meta content="text/html; charset=utf-8" http-equiv="Content-Type"/>
+		<title>CSS Preprocessor | A fast command line tool and C++ library to work with CSS data</title>
+		<meta content="width=device-width, initial-scale=1" name="viewport"/>
+		<meta content="CSS Preprocessor is a powerful professional grade extension to the CSS 1, 2, and 3 languages." name="description"/>
+		<meta content="http://csspp.org/images/csspp-logo.png" property="og:image"/>
+		<link href="http://csspp.org/favicon.ico" type="image/x-icon" rel="shortcut icon"/>
+		<link href="https://plus.google.com/+AlexisWilke" rel="author"/>
+		<style>
+			/* Mobile compatible CSS and Page */
+			html
+			{
+				height: 100%;
+			}
+			body
+			{
+				padding: 0;
+				margin: 0;
+				background-color: white;
+				width: 100%;
+				min-height: 100%;
+				font-family: sans-serif;
+			}
+			div
+			{
+				padding: 0;
+				margin: 0;
+			}
+			div.menu
+			{
+				background: #606090;
+				font-size: 130%;
+				line-height: 3em;
+				width: 100%;
+				border-bottom: 3px solid #303048;
+			}
+			div.menu a
+			{
+				display: inline-block;
+				padding: 0 30px;
+				color: white;
+				text-decoration: none;
+				text-shadow: 1px 1px 1px #000000;
+			}
+			div.menu a:hover
+			{
+				color: #ffaa44;
+			}
+			div.transparent-menu-placeholder
+			{
+				display: none;
+				font-size: 130%;
+				height: 3em;
+				padding-bottom: 3px;
+			}
+			div.header
+			{
+				border-top: 1px solid #ddd;
+				background: #8888bb;
+				color: white;
+			}
+			div.left-header
+			{
+				padding-left: 10%;
+				float: left;
+				width: 23%;
+				text-align: center;
+			}
+			div .left-header .css
+			{
+				font-size: 350%;
+				line-height: 0.8em;
+			}
+			div .left-header a
+			{
+				color: inherit;
+				text-decoration: none;
+			}
+			div.right-header
+			{
+				padding-left: 15%;
+				float: left;
+				width: 50%;
+			}
+			div.right-header .larger
+			{
+				font-size: 150%;
+				text-align: center;
+			}
+			div.right-header .smaller
+			{
+				font-size: 80%;
+				color: #eeeeee;
+			}
+			div.version
+			{
+				padding: 5px 30px;
+				font-size: 70%;
+				min-height: 1.2em;
+				color: #eeffee;
+				background-color: #338833;
+				text-align: right;
+			}
+			div.content
+			{
+				padding: 10px 5%;
+			}
+			p.notice
+			{
+				padding: 10px;
+				font-size: 80%;
+				font-style: italic;
+				color: #666666;
+				background-color: #f0f0e0;
+				border: 1px solid #ddddb8;
+			}
+			ul.tiled
+			{
+				padding: 0;
+				margin: 0;
+				width: 100%;
+			}
+			ul.tiled li.item
+			{
+				padding: 0 3%;
+				display: block;
+				float: left;
+				list-style: outside none none;
+				width: 26%;
+				vertical-align: top;
+			}
+			ul.tiled li.item.four
+			{
+				clear: both;
+			}
+			ul.tiled li.item h3
+			{
+				font-variant: small-caps;
+				font-size: 155%;
+				text-shadow: 2px 2px 3px #aaaadd;
+			}
+			ul.tiled li.item a
+			{
+				color: #8888bb;
+				text-decoration: none;
+			}
+			ul.tiled li.item a:hover
+			{
+				color: #ff8800;
+				font-variant: small-caps;
+			}
+			div.transparent-copyright-placeholder
+			{
+				display: none;
+				font-size: 80%;
+				height: 2em;
+			}
+			div.copyright
+			{
+				font-size: 80%;
+				color: #ddd;
+				background: #8888bb;
+				padding-top: 0.5em;
+				min-height: 1.5em;
+				width: 100%;
+				text-align: center;
+				border-top: 1px solid #ddd;
+			}
+			div.copyright a
+			{
+				color: white;
+				text-decoration: none;
+			}
+			div.copyright a:hover
+			{
+				color: #ffaa44;
+			}
+
+			/* wide screens */
+			@media only screen and (min-width: 1300px)
+			{
+				div.menu
+				{
+					position: fixed;
+					top: 0;
+					z-index: 2;
+				}
+				div.copyright
+				{
+					position: fixed;
+					bottom: 0;
+					z-index: 1;
+				}
+				div.transparent-copyright-placeholder,
+				div.transparent-menu-placeholder
+				{
+					display: block;
+				}
+			}
+
+			/* cell phones */
+			@media only screen and (max-width: 480px)
+			{
+				div.left-header
+				{
+					float: none;
+					padding-left: 0;
+					width: 100%;
+				}
+				div.right-header
+				{
+					float: none;
+					padding-left: 2%;
+					width: 96%;
+					padding-bottom: 1px;
+				}
+				ul.tiled li.item
+				{
+					float: none;
+					width: 80%;
+				}
+				ul.tiled li.item h3
+				{
+					margin: 10px 0 0 0;
+				}
+				span.company::before
+				{
+					content: "\a";
+					white-space: pre;
+				}
+				span.version-and-date-separator
+				{
+					color: #338833;
+				}
+				span.version-and-date-separator::before
+				{
+					content: "\a";
+					white-space: pre;
+				}
+			}
+
+			/* wider cell phones (usually landscape) */
+			@media only screen and (min-width: 481px) and (max-width: 800px)
+			{
+				div.left-header
+				{
+					padding-left: 2%;
+					padding-right: 5%;
+				}
+				ul.tiled li.item
+				{
+					width: 40%;
+				}
+				ul.tiled li.item.three,
+				ul.tiled li.item.five
+				{
+					clear: both;
+				}
+				ul.tiled li.item.four
+				{
+					clear: none;
+				}
+			}
+			.license-logos
+			{
+				display: flex;
+				flex-direction: row;
+			}
+			.license-logos .license-item
+			{
+				flex: auto;
+			}
+			.license-logos .license-item.gpl
+			{
+				padding-top: 13px;
+				font-size: 150%;
+				font-weight: bold;
+				text-align: center;
+			}
+			.license-logos .license-item.gpl a
+			{
+				color: black;
+				text-decoration: none;
+			}
+			.license-logos .license-item.gpl a:hover
+			{
+				color: #f80;
+				font-variant: none;
+			}
+			.download-button
+			{
+				text-align: center;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="menu">
+			<a href="/"><strong>CSS Preprocessor</strong></a>
+			<a href="https://snapwebsites.org/project/csspp">Project</a>
+			<a href="https://github.com/m2osw/csspp/releases">Downloads</a>
+			<a rel="nofollow" href="https://github.com/m2osw/csspp">Source Repository</a>
+			<a rel="nofollow" href="https://github.com/m2osw/csspp/issues">Support</a>
+			<a href="/documentation/csspp-doc-1.0/">Documentation</a>
+		</div>
+		<div class="transparent-menu-placeholder"></div>
+		<div class="header">
+			<div class="left-header">
+				<h1><a href="/"><span class="css">CSS</span><br/>Preprocessor</a></h1>
+			</div>
+			<div class="right-header">
+				<p class="larger">A powerful professional grade extension<br/>to the CSS language!<p>
+				<p class="smaller">
+					Write CSS code which:
+				</p>
+				<ol class="smaller">
+					<li>Is nested (in other words: a tool to write real <strong>Cascading</strong> Style Sheet!),</li>
+					<li>Supports variables,</li>
+					<li>Allows for user defined functions,</li>
+					<li>Performs strong validation of your source code.</li>
+				</ol>
+			</div>
+			<div style="clear: both;"></div>
+		</div>
+		<div class="version">
+			Current CSS Preprocessor Version @CSSPP_VERSION_MAJOR@.@CSSPP_VERSION_MINOR@.@CSSPP_VERSION_PATCH@ <span class="version-and-date-separator">&mdash;</span> Last Updated on @NOW@
+		</div>
+		<div class="content">
+			<ul class="tiled">
+				<li class="item one">
+					<h3>CSS Compatible</h3>
+					<p>
+						The syntax accepted by <b>CSS Preprocessor</b> is 100% based on
+						CSS 3 and thus is is compatible with CSS 3, 2, and 1.
+						<b>CSS Preprocessor</b> <em>only</em> adds powerful
+						extensions using the basic CSS 3 syntax. This means you may
+						write regular CSS and still validate and minify your CSS 3 code
+						with <b>CSS Preprocessor</b>.
+					</p>
+				</li>
+				<li class="item two">
+					<h3>Do More With Less</h3>
+					<p>
+						The extensions offered by <b>CSS Preprocessor</b> allow you
+						to write less code and do more faster, especially with the
+						support of nested rules and attributes and the use of
+						variables and C/C++ like expressions. <b>CSS Preprocessor</b>
+						also supports internal and user defined functions.
+					</p>
+				</li>
+				<li class="item three">
+					<h3>Maturity</h3>
+					<p>
+						Version 1.0.5 of <b>CSS Preprocessor</b> library has 100%
+						<a href="http://lcov.csspp.org/">coverage</a> of all its
+						classes making it very stable. It also supports most
+						of the functions and capabilities found in
+						<a rel="nofollow" href="http://sass-lang.com">SASS</a>
+						and <a rel="nofollow" href="http://lesscss.org">{less}</a>,
+						two other quite advanced CSS preprocessors.
+					</p>
+				</li>
+				<li class="item four">
+					<h3>Reusability</h3>
+					<p>
+						The <b>CSS Preprocessor</b> environment is a C++11 library
+						that comes with a very modular way of handling the CSS code.
+						It can read .css and .scss files (.scss is CSS plus the
+						extensions offered by <b>CSS Preprocessor</b>). The library
+						can then validate the code and output it back compressed
+						or beautified. The
+						<a href="https://snapwebsites.org/">Snap! Websites</a> project
+						uses the library to automatically compress all the CSS files
+						uploaded on any website, making it really easy to have an
+						optimized website.
+					</p>
+				</li>
+				<li class="item five">
+					<h3>Documentation</h3>
+					<p>
+						The language supported by <b>CSS Preprocessor</b> is fully
+						<a href="/documentation/csspp-doc-1.0/">documented</A>.
+						The documentation is offered as a tarball to
+						download. It can also be generated using doxygen. The
+						documentation explains certain choices in making such and
+						such work or not work. Especially, we wanted to be as close
+						as possible to the CSS 3 language so had to avoid offering
+						certain syntactical entries offered by other CSS languages,
+						entries that would otherwise make us non-compatible with
+						CSS 3.
+					</p>
+				</li>
+				<li class="item six">
+					<h3>License</h3>
+					<p>
+						<b>CSS Preprocessor</b> is licensed under the GPL version 2.
+						This means you can use it in your open source projects or with
+						your company commercial products. Note that if you make
+						modifications to the csspp project, you must make those
+						changes available to your users / customers. We would also
+						dearly appreciate you sharing them with us so we can continue
+						to improve the library much faster.
+					</p>
+					<div class="license-logos">
+						<div class="license-item gpl"><a rel="nofollow"
+							href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html">GNU<br/>GPL v2</a></div>
+						<div class="license-item"><a rel="nofollow"
+							href="https://opensource.org/"><img
+							src="images/open-source-initiative-logo.png" width="72" height="82"/></a></div>
+						<div style="clear: both;"></div>
+					</div>
+				</li>
+			</ul>
+			<div style="clear: both;"></div>
+			<p class="download-button">
+				<ul>
+				  <li><a href="https://github.com/m2osw/csspp/releases"
+							rel="nofollow">Download Sources Github</a></li>
+				  <li><a href="https://launchpad.net/~snapcpp/+archive/ubuntu/ppa"
+							rel="nofollow">Download Binary Packages From Launchpad</a></li>
+				</ul>
+			</p>
+		</div>
+		<div class="transparent-copyright-placeholder"></div>
+		<div class="copyright">
+			<strong>CSS Preprocessor</strong> &mdash; Copyright &copy; 2015-2019 by <span class="company"><a href="https://www.m2osw.com/">Made to Order Software Corporation</a></span>
+		</div>
+		<script>
+			(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+			(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+			m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+			})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+			ga('create', 'UA-4615342-30', 'auto');
+			ga('send', 'pageview');
+		</script>
+	</body>
+</html>
+<!--
+vim: ts=2 sw=2
+-->

@@ -11,82 +11,98 @@ namespace fw {
 	static void drawBorder(fw::Canvas& canvas, const RectF& area, const FlexBorder& border, Color4F color) {
 		if (border.left != 0.0f) {
 			canvas.fillRect(RectF{
-				area.x - border.left,
-				area.y - border.top,
+				area.x,
+				area.y,
 				border.left,
-				area.h + border.top + border.bottom
+				area.h
 			}, color);
 		}
 
 		if (border.top != 0.0f) {
 			canvas.fillRect(RectF{
-				area.x - border.left,
-				area.y - border.top,
-				area.w + border.left + border.right,
+				area.x,
+				area.y,
+				area.w,
 				border.top
 			}, color);
 		}
 
 		if (border.right != 0.0f) {
 			canvas.fillRect(RectF{
-				area.right(),
-				area.y - border.top,
+				area.right() - border.right,
+				area.y,
 				border.right,
-				area.h + border.top + border.bottom
+				area.h
 			}, color);
 		}
 
 		if (border.bottom != 0.0f) {
 			canvas.fillRect(RectF{
-				area.x - border.left,
-				area.bottom(),
-				area.w + border.left + border.right,
+				area.x,
+				area.bottom() - border.bottom,
+				area.w,
 				border.bottom
 			}, color);
 		}
 	}
 
-	void renderElement(fw::Canvas& canvas, Document& doc, DomElementHandle e) {
+	void renderElement(fw::Canvas& canvas, Document& doc, const DomElementHandle elementHandle) {
 		entt::registry& reg = doc.getRegistry();
+		const StyleHandle styleHandle = reg.get<StyleReferences>(elementHandle).current;
 
-		DomStyle style = doc.getStyle(e);
+		DomStyle style = doc.getStyle(elementHandle);
 		FlexBorder border = style.getBorder();
 		if (std::isnan(border.top)) { border.top = 0.0f; }
 		if (std::isnan(border.left)) { border.left = 0.0f; }
 		if (std::isnan(border.bottom)) { border.bottom = 0.0f; }
 		if (std::isnan(border.right)) { border.right = 0.0f; }
 
-		const RectF& area = reg.get<WorldAreaComponent>(e).area;
+		const RectF& area = reg.get<WorldAreaComponent>(elementHandle).area;
 
-		const BackgroundColorStyle* bg = reg.try_get<BackgroundColorStyle>(e);
+		const styles::BackgroundColor* bg = reg.try_get<styles::BackgroundColor>(styleHandle);
 		if (bg) {
-			canvas.fillRect(area, bg->color);
+			canvas.fillRect(area, bg->value);
 		}
 
-		const ColorStyle* fg = reg.try_get<ColorStyle>(e);
+		const styles::Color* fg = reg.try_get<styles::Color>(styleHandle);
+		Color4F borderColor = fg ? fg->value : Color4F::black;
 
-		drawBorder(canvas, area, border, Color4F::black);
+		canvas.strokeRect(StrokedRect{
+			.area = area,
+			.width = BorderWidth {
+				.top = border.top,
+				.left = border.left,
+				.bottom = border.bottom,
+				.right= border.right
+			},
+			.color = {
+				.top = borderColor,
+				.left = borderColor,
+				.bottom = borderColor,
+				.right = borderColor
+			}
+		});
 
-		//canvas.strokeRect(area, Color4F::green);
+		//canvas.strokeRect(area, Color4F::white);
 
-		const TextureComponent* texture = reg.try_get<TextureComponent>(e);
+		const TextureComponent* texture = reg.try_get<TextureComponent>(elementHandle);
 		if (texture) {
 			canvas.texture(texture->texture, area);
 		}
 
-		const TextComponent* text = reg.try_get<TextComponent>(e);
+		const TextComponent* text = reg.try_get<TextComponent>(elementHandle);
 		if (text) {
-			const FontFaceStyle* face = reg.try_get<FontFaceStyle>(e);
+			const FontFaceStyle* face = reg.try_get<FontFaceStyle>(styleHandle);
 			
 			if (face && face->handle.isValid()) {
 				FlexBorder padding = style.getComputedPadding();
 				RectF textArea(area.x + padding.left, area.y + padding.top, area.w - padding.left - padding.right, area.h - padding.top - padding.bottom);
 				canvas.setFont(face->handle);
-				canvas.text(textArea, text->text, fg ? fg->color : Color4F::white);
+				canvas.text(textArea, text->text, fg ? fg->value : Color4F::white);
 			}
 		}
 
-		DocumentUtil::each(reg, e, [&](entt::entity child) {
+		DocumentUtil::each(reg, elementHandle, [&](entt::entity child) {
 			renderElement(canvas, doc, child);
 		});
 	}

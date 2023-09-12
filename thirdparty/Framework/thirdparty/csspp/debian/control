@@ -1,0 +1,68 @@
+Source: csspp
+Priority: extra
+Maintainer: Alexis Wilke <alexis@m2osw.com>
+Build-Depends: cmake,
+    debhelper,
+    doxygen,
+    graphviz,
+    libadvgetopt-dev (>= 2.0.14.0~jammy),
+    libboost-dev,
+    libexcept-dev (>= 1.0.5.0~jammy),
+    libutf8-dev (>= 1.0.6.0~jammy),
+    snapcatch2 (>= 2.9.1.0~jammy),
+    snapcmakemodules (>= 1.0.35.3~jammy),
+    snapdev (>= 1.1.2.0~jammy)
+Standards-Version: 3.9.4
+Section: libs
+Homepage: https://snapwebsites.org/
+Vcs-Git: https://github.com/m2osw/snapcpp.git
+Vcs-Browser: https://github.com/m2osw/csspp
+
+Package: libcsspp-dev
+Section: libdevel
+Architecture: any
+Depends: libcsspp (= ${binary:Version}), ${misc:Depends}
+Recommends: csspp-doc (= ${binary:Version})
+Description: CSS Preprocessor library development files for C++.
+ This package includes all the necessary files for you to develop code
+ that link against the libcsspp library.
+ .
+ This is the development package complete with C++ headers.
+
+Package: csspp-doc
+Section: doc
+Architecture: all
+Depends: ${misc:Depends}
+Recommends: libcsspp (= ${binary:Version})
+Description: C++ library API documentation.
+ The CSS Preprocessor comes with a library one can use in their own C++
+ application. It reads and processes CSS files and strings and spits them
+ back out based on an Agent string and other similar data entry.
+ .
+ This is the documenation package to use with the libcsspp-dev package.
+
+Package: libcsspp
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: CSS Preprocessor C++ library.
+ The CSS Preprocessor library is used with the CSS Preprocessor tools and
+ software that link against it.
+ .
+ This is the runtime package for the CSS Preprocessor C++ library.
+
+Package: csspp
+Section: web
+Architecture: any
+Depends: libcsspp (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Suggests: csspp-doc (>=1.0)
+Description: Preprocess extended CSS to compressed CSS.
+ This package includes the csspp tool one can use to transform an extended
+ CSS file to a compressed CSS. The tool supports variables (i.e. $my_color),
+ encapsulation (i.e. div { border: 1px; a { color: red } }), and many more
+ extensions. The documentation includes all the detailed information about
+ all the available extensions.
+ .
+ This package contains the CSS Proprocessor command line tool.
+
+# vim: ts=4 sw=4 et

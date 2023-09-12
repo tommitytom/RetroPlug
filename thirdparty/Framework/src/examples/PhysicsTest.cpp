@@ -128,7 +128,7 @@ bool PhysicsTest::onMouseMove(Point position) {
 	return true;
 }
 
-bool PhysicsTest::onMouseButton(MouseButton::Enum button, bool down, Point position) {
+bool PhysicsTest::onMouseButton(MouseButton button, bool down, Point position) {
 	entt::entity e = _registry.create();
 
 	if (button == MouseButton::Left) {

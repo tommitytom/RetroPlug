@@ -52,7 +52,7 @@ namespace fw {
 			return _tileSize;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			if (button == MouseButton::Left) {
 				_clickPos = pos;
 				_mouseDown = down;

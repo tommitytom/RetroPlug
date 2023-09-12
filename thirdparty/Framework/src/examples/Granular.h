@@ -354,7 +354,7 @@ namespace fw {
 			});
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			if (button == MouseButton::Left) {
 				if (down) {
 					uint64 sampleOffset = getSuper()->pixelToSample((f32)position.x);
@@ -443,7 +443,7 @@ namespace fw {
 
 		NoteParameters _defaultParameters;
 
-		std::unordered_set<VirtualKey::Enum> _keysDown;
+		std::unordered_set<VirtualKey> _keysDown;
 
 	public:
 		Granular() : View({ 1024, 768 }), _waveformBuffer(48000 * 5) {
@@ -649,7 +649,7 @@ namespace fw {
 			getState<EventNode>().update();
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			if (key == VirtualKey::Space && down) {
 				getState<EventNode>().broadcast<TogglePauseEvent>();
 			}
@@ -692,7 +692,7 @@ namespace fw {
 			return true;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			return true;
 		}
 	};

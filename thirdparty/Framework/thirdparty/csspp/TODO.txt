@@ -1,0 +1,112 @@
+
+
+To be closer to what SASS supports, we shall implement the following
+additional features:
+
+
+. Variable named when calling a function (to allow any order):
+
+     $func(name: $var_name, arg2: value2, ...)
+
+
+. Implement @extend
+
+
+. Support the placeholder in the assembler
+
+
+. Change the expression implementation to do it in two steps to avoid
+  problems with ?: operator (and maybe others); the current version
+  forces us to calculate everything which means if something goes wrong
+  we may end up with what looks like an invalid expression even if it is
+  not. By first parsing everything and creating a tree, we could 100%
+  avoid calculating what is going to be simplified in the first place.
+  In the case of the ?: oeprator, that means only the true or false
+  tree is taken in account. The other tree is completely ignored.
+
+
+. @mixin functions have access to globals (read) but cannot modify globals
+  even with the !global flag as in:
+
+      @mixin func()
+      {
+        $var: 33 !global;
+      }
+
+  $var outside of func() is unchanged...
+
+
+. Add !important in variables, preventing further definitions of that variable
+
+      $var-final: 3px !important;
+
+      $var-final: 15px;  <-- error, !important prevents redefinition
+
+
+. Add code to check all selectors (that way we can err on a syntax error):
+
+      @selectors {
+        @extends; [or] @override; -- whether we reset the system lists or not
+        tags: html div p span ...;
+        invalid-tags: title link script iframe ...;
+        classes: .wrapper .menu-item ...;
+        identifiers: #content #menu ...;
+        attributes: href enabled class ...;
+        attribute-values: ???; -- would we really want to support that one?!
+      }
+
+
+. Add proper support for -moz-, -ms-, etc. with selector (pseudo-classes, etc.)
+
+    At this point I am thinking that a good way could be to test
+    a first time with the name as is and if the name starts with -<name>-
+    (where <name> is a known browser "name") then we try again without
+    the -<name>-. This gives us a way to allow extensions that do not
+    otherwise have a standard equivalent.
+
+    A similar method will be required to check field names.
+
+    Also, I added some "inline compiler validation" that checks things like
+    an asterisk before a field name (*border: 1px; for IE5-IE7) and a few
+    other IE special features (many filters, expression() and probably more
+    as time passes.)
+
+
+. Validations generate errors printing out their own position, we would
+  need to show the position in the user source, not the validation SCSS file.
+
+
+. Implement the @import loop detection (i.e. if A imports itself through
+  other @imports or not)
+
+
+. Implement a better compression method by converting all the rules in
+  structures and then spiting out those structures back as CSS. For
+  example, the following:
+
+    {
+      margin-top: 5px;
+      margin-bottom: 5px;
+      margin-left: 3px;
+      margin-right: 3px;
+    }
+
+   will currently be optimized by removing the spaces and the last ';' as
+   in the following;
+
+    {margin-top:5px;margin-bottom:5px;margin-left:3px;margin-right:3px}
+
+   When we could compress this better by knowing that margin can be
+   optimized in this way:
+
+    {margin:5px 3px;}
+
+
+. Design a test which checks the csspp command line itself.
+
+
+. Write a test to make sure that the MasterCMakeLists.txt is valid in
+  the final tarball.
+
+
+vim: tw=2 sw=2 et

@@ -296,7 +296,7 @@ function onFrame(dt)
 	luact.update_frame(dt)
 
 	React.work_loop(function ()
-		print("loop")
+		--print("loop")
 		local diff = fw.getTime() - start
 		return (dt - diff) * 1000
 	end)

@@ -19,10 +19,6 @@ namespace fw {
 		
 		void onInitialize() override;
 
-		bool onMouseButton(const MouseButtonEvent& ev) override {
-			return false;
-		}
-
 		bool onKey(const KeyEvent& ev) override;
 
 		void onUpdate(f32 delta) override;
@@ -32,6 +28,8 @@ namespace fw {
 		void onHotReload() override;
 
 		bool onMouseMove(Point pos) override;
+
+		bool onMouseButton(const MouseButtonEvent& ev) override;
 
 	private:
 		bool propagateMouseMove(entt::entity e, PointF pos);

@@ -1,0 +1,9 @@
+
+With the current setup, compiling csspp should be done from within the
+snapcpp environment or using the standalone tarball (see dev/INSTALL.md
+for details about that other option).
+
+The csspp project is also available pre-compiled on launchpad, which is
+probably you best/easiest option if you have Ubuntu or some other Debian
+flavor system.
+

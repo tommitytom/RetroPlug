@@ -88,7 +88,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			bool handled = false;
 
 			updateLayout();

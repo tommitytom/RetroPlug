@@ -32,19 +32,35 @@ namespace fw {
 		~DomStyle() = default;
 
 		void setColor(const Color4F& color) {
-			_reg.emplace_or_replace<ColorStyle>(_entity, ColorStyle{ color });
+			_reg.emplace_or_replace<styles::Color>(_entity, styles::Color{ color });
 		}
 
 		const Color4F& getColor() const {
-			return _reg.get<ColorStyle>(_entity).color;
+			return _reg.get<styles::Color>(_entity).value;
 		}
 
 		void setBackgroundColor(const Color4F& color) {
-			_reg.emplace_or_replace<BackgroundColorStyle>(_entity, BackgroundColorStyle{ color });
+			_reg.emplace_or_replace<styles::BackgroundColor>(_entity, styles::BackgroundColor{ color });
 		}
 
 		const Color4F& getBackgroundColor() const {
-			return _reg.get<BackgroundColorStyle>(_entity).color;
+			return _reg.get<styles::BackgroundColor>(_entity).value;
+		}
+
+		std::string getClassName() const {
+			return fmt::format("{}", fmt::join(_reg.get<StyleClassComponent>(_entity).classNames, " "));
+		}
+
+		void setClassName(const std::string& value) {
+			std::string tmp;
+			std::stringstream ss(value);
+			
+			StyleClassComponent& styleClass = _reg.get_or_emplace<StyleClassComponent>(_entity);
+			styleClass.classNames.clear();
+
+			while (getline(ss, tmp, ',')) {
+				styleClass.classNames.push_back(tmp);
+			}
 		}
 
 		const std::string& getNodeValue() const {
@@ -53,6 +69,15 @@ namespace fw {
 
 		void setNodeValue(const std::string& value) {
 			_reg.get<TextComponent>(_entity).text = value;
+			YGNodeMarkDirty(_node);
+		}
+
+		uint32 getCursor() const {
+			return (uint32)CursorType::Arrow;
+		}
+
+		void setCursor(uint32 value) {
+			_reg.emplace_or_replace<CursorType>(_entity, (CursorType)value);
 		}
 
 		template <typename T>

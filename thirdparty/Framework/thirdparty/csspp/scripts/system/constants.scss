@@ -1,0 +1,45 @@
+// CSS Preprocessor
+// Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+// TODO: once supported, add the !important flag so these constants cannot be overwritten
+
+$_csspp_e:      2.7182818284590452354;      // e
+$_csspp_log2e:  1.4426950408889634074;      // log_2(e)
+$_csspp_log10e: 0.43429448190325182765;     // log_10(e)
+$_csspp_ln2e:   0.69314718055994530942;     // log_e(2)
+$_csspp_ln10e:  2.30258509299404568402;     // log_e(10)
+$_csspp_pi:     3.14159265358979323846;     // pi
+$_csspp_pi_rad: 3.14159265358979323846rad;  // pi as an angle
+$_csspp_sqrt2:  1.41421356237309504880;     // sqrt(2)
+
+// The csspp command line tool also adds the following variables:
+//     $_csspp_usdate = "MM/DD/YYYY";
+//     $_csspp_month  = "MM";
+//     $_csspp_day    = "DD";
+//     $_csspp_year   = "YYYY";
+//     $_csspp_time   = "HH:MM:SS";
+//     $_csspp_hour   = "HH";
+//     $_csspp_minute = "MM";
+//     $_csspp_second = "SS";
+
+// Local Variables:
+// mode: scss
+// indent-tabs-mode: nil
+// tab-width: 4
+// End:
+
+// vim: ts=4 sw=4 et

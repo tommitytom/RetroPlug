@@ -135,7 +135,7 @@ namespace fw {
 			}
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			if (button == MouseButton::Left && down) {
 				for (int32 i = 0; i < (int32)_tabAreas.size(); ++i) {
 					if (_tabAreas[i].contains(position)) {

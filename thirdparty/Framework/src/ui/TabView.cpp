@@ -63,7 +63,7 @@ void TabView::setCurrentPanel(int32 panelIdx) {
 	}
 }
 
-bool TabView::onMouseButton(MouseButton::Enum button, bool down, Point position) {
+bool TabView::onMouseButton(MouseButton button, bool down, Point position) {
 	if (button == MouseButton::Left) {
 		_draggingTabIdx = -1;
 

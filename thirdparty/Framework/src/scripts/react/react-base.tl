@@ -1,14 +1,17 @@
 require("base")
 
-local type ComponentFunc = function(ElementFunc): ElementFunc
-local type ComponentFuncNoProps = function(function(): Element): ElementFunc
+local DEBUG_MODE = false
+
+--local type ComponentFunc = function(ElementFunc): ElementFunc
+--local type TypedComponentFunc = function<T>(TypedElementFunc<T>): TypedElementFunc<T>
+--local type ComponentFuncNoProps = function(function(): Element): ElementFunc
 
 local type React = record<ElementT>
 	createElement: function(string|ElementFunc, PropsMap): Element
 	render: function(Element, ElementT)
-	useState: function<T>(T): T, function(ActionFunc<T>)
+	useState: function<T>(T): T, function(ActionFunc<T>|T)
 	workLoop: function(function(): number)
-	component: ComponentFunc
+	component: function<T>(TypedElementFunc<T>): TypedElementFunc<T>
 	getCurrentRoot: function(): Fiber
 end
 
@@ -98,7 +101,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		-- Remove old properties
 		for name, _ in pairs(prevProps) do
 			if isProperty(name) and isGone(nextProps)(name) then
-				print("", "nulling", name)
+				if DEBUG_MODE == true then print("", "nulling", name) end
 				--style[name] = nil
 				--reconciler.setProperty(dom, name, nil)
 			end
@@ -107,7 +110,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		-- Set new or changed properties
 		for name, nextValue in pairs(nextProps) do
 			if isProperty(name) and isNew(prevProps, nextProps)(name) then
-				print("", "setting", name, nextValue)
+				if DEBUG_MODE == true then print("", "setting", name, nextValue) end
 				--TODO: Sanitize!
 				--style[name] = nextValue
 				reconciler.setProperty(dom, name, nextValue)
@@ -165,7 +168,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		local domParent = domParentFiber.dom
 		assert(domParent ~= nil)
 
-		print(fiber.effectTag, fiber.type)
+		if DEBUG_MODE == true then print(fiber.effectTag, fiber.type) end
 
 		if fiber.effectTag == "PLACEMENT" and fiber.dom then
 			reconciler.appendChild(domParent, fiber.dom)
@@ -275,7 +278,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 	end
 
 	local function performUnitOfWork(fiber: Fiber): Fiber
-		print("", fiber.type)
+		if DEBUG_MODE == true then print("", fiber.type) end
 		if type(fiber.type) == "function" then
 			updateFunctionComponent(fiber)
 		else
@@ -298,7 +301,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		return nil
 	end
 
-	local function useState<T>(initial: T): T, function(ActionFunc<T>)
+	local function useState<T>(initial: T): T, function(ActionFunc<T>|T)
 		assert(_wipFiber ~= nil)
 		assert(_wipFiber.hooks ~= nil)
 		assert(_hookIndex ~= nil)
@@ -318,10 +321,17 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 			hook.state = action(hook.state)
 		end
 
-		local function setState(action: ActionFunc<T>)
+		local function setState(value: ActionFunc<T>|T)
 			assert(_currentRoot)
 
-			table.insert(hook.queue, action)
+			local action: ActionFunc<T>
+			if type(value) == "function" then
+				action = value as ActionFunc<T>
+			else
+				action = function(): T return value as T end
+			end
+
+			table.insert(hook.queue, action as ActionFunc<T>)
 
 			_wipRoot = {
 				dom = _currentRoot.dom,
@@ -338,7 +348,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 	end
 
 	local function commitRoot()
-		print("", "committing root")
+		if DEBUG_MODE == true then print("", "committing root") end
 		for _, fiber in ipairs(_deletions) do
 			commitWork(fiber)
 		end

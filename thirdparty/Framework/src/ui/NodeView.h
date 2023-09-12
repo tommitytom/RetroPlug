@@ -41,7 +41,7 @@ namespace fw {
 			return _direction;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			_clickPos = position;
 			_mouseDown = down;
 			return true;
@@ -135,7 +135,7 @@ namespace fw {
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			_clickPos = position;
 			_mouseDown = down;
 			return true;
@@ -317,7 +317,7 @@ namespace fw {
 			}
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			_clickPos = position;
 			_mouseDown = down;
 

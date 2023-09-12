@@ -8,6 +8,10 @@
 #include <LuaBridge.h>
 #include "ui/Flex.h"
 #include <entt/entity/entity.hpp>
+#include "foundation/Input.h"
+
+template <> struct luabridge::Stack<fw::MouseButton> : luabridge::Enum<fw::MouseButton> {};
+template <> struct luabridge::Stack<fw::ButtonType> : luabridge::Enum<fw::ButtonType> {};
 
 template <> struct luabridge::Stack<fw::FlexAlign> : luabridge::Enum<fw::FlexAlign> {};
 template <> struct luabridge::Stack<fw::FlexDimension> : luabridge::Enum<fw::FlexDimension> {};

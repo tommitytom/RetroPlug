@@ -15,6 +15,7 @@ namespace fw {
 	};
 
 	using DomElementHandle = entt::entity;
+	using StyleHandle = entt::entity;
 
 	enum class EventFlag {
 		Empty = 0,

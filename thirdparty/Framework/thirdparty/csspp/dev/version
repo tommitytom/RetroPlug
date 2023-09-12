@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# File:
+#      dev/version
+#
+# Description:
+#      Definitions to create the build environment with cmake
+#
+# Documentation:
+#      See the CMake documentation.
+#
+# License:
+#      csspp -- a CSS Preprocessor
+#      Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+#
+#      https://snapwebsites.org/
+#      contact@m2osw.com
+#
+#      This program is free software; you can redistribute it and/or modify
+#      it under the terms of the GNU General Public License as published by
+#      the Free Software Foundation; either version 2 of the License, or
+#      (at your option) any later version.
+#
+#      This program is distributed in the hope that it will be useful,
+#      but WITHOUT ANY WARRANTY; without even the implied warranty of
+#      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#      GNU General Public License for more details.
+#
+#      You should have received a copy of the GNU General Public License
+#      along with this program; if not, write to the Free Software
+#      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
+
+# Retrieve the project version from the changelog file
+FULL_VERSION=`dpkg-parsechangelog --show-field Version | sed -e 's/~.*//' -e 's/\(^[0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/'`
+
+# Extract each number
+MAJOR_VERSION=`echo $FULL_VERSION | sed -e 's/\([0-9]\+\)\.[0-9]\+\.[0-9]\+/\1/'`
+MINOR_VERSION=`echo $FULL_VERSION | sed -e 's/[0-9]\+\.\([0-9]\+\)\.[0-9]\+/\1/'`
+PATCH_VERSION=`echo $FULL_VERSION | sed -e 's/[0-9]\+\.[0-9]\+\.\([0-9]\+\)/\1/'`
+
+# Define a VERSION as just MAJOR + MINOR
+VERSION=${MAJOR_VERSION}.${MINOR_VERSION}
+
+# Local Variables:
+# indent-tabs-mode: nil
+# tab-width: 4
+# End:
+
+# vim: ts=4 sw=4 et nocindent

@@ -3,18 +3,31 @@ require("base")
 global type HostElementHandle = integer
 
 global record fw
-	record MouseMoveEvent
+	record PointF32T
 		userdata
 		x: number
 		y: number
 	end
 
+	record MouseMoveEvent
+		userdata
+		position: PointF32T
+	end
+
 	record MouseButtonEvent
 		userdata
-		x: number
-		y: number
+		position: PointF32T
 		button: integer
-		pressed: boolean
+		down: boolean
+	end
+
+	record MouseEnterEvent
+		userdata
+		position: PointF32T
+	end
+
+	record MouseLeaveEvent
+		userdata
 	end
 
 	record Color4FT
@@ -152,6 +165,38 @@ global record fw
 		WrapReverse: integer
 	end
 
+	record MouseButton
+		Unknown: integer
+		Left: integer
+		Right: integer
+		Middle: integer
+	end
+
+	record ButtonType
+		Right: integer
+		Left: integer
+		Up: integer
+		Down: integer
+		A: integer
+		B: integer
+		Select: integer
+		Start: integer
+	end
+
+	record CursorType
+		Arrow: integer
+		Hand: integer
+		IBeam: integer
+		Crosshair: integer
+		ResizeEW: integer
+		ResizeNS: integer
+		ResizeNWSE: integer
+		ResizeNESW: integer
+		NotAllowed: integer
+		--ResizeH: integer
+		--ResizeV: integer
+	end
+
 	record HostStyle
 		-- Flex properties
 		flexDirection: integer
@@ -179,14 +224,22 @@ global record fw
 		flexPositionType: integer
 
 		-- Style properties
+		className: string|{string}
 		color: Color4FT
 		backgroundColor: Color4FT
+		cursor: integer
 
 		-- Events
 		onMouseButton: function(MouseButtonEvent)
 		onMouseMove: function(MouseMoveEvent)
+		onMouseEnter: function(MouseEnterEvent)
+		onMouseLeave: function()
+		onMouseOver: function(MouseEnterEvent)
+		onMouseOut: function()
+		onMouseFocus: function()
+		onMouseBlur: function()
 
-		children: {string|Element}
+		children: {Element|string}
 	end
 
 	record HostEvents

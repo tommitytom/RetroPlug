@@ -1,0 +1,162 @@
+#!/bin/bash -e
+#
+# File:
+#      dev/pack
+#
+# Description:
+#      A shell script used to generate the source package with all the
+#      Snap! Websites dependencies (which are all in one at this point.)
+#
+# Documentation:
+#      This script is currently considered internal and is not directly
+#      documented. It may be useful to you, although it is likely that
+#      it won't be.
+#
+# License:
+#      csspp -- a CSS Preprocessor
+#      Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+#
+#      https://snapwebsites.org/project/csspp
+#      contact@m2osw.com
+#
+#      This program is free software; you can redistribute it and/or modify
+#      it under the terms of the GNU General Public License as published by
+#      the Free Software Foundation; either version 2 of the License, or
+#      (at your option) any later version.
+#
+#      This program is distributed in the hope that it will be useful,
+#      but WITHOUT ANY WARRANTY; without even the implied warranty of
+#      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#      GNU General Public License for more details.
+#
+#      You should have received a copy of the GNU General Public License
+#      along with this program; if not, write to the Free Software
+#      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
+
+set -e
+
+SOURCE_REPO=../../../sources-repo
+
+echo "-- verify clean source availability"
+if ! test -d $SOURCE_REPO
+then
+    echo "ERROR:"
+    echo "To use this script, we expect you to have a directory named"
+    echo "sources-repo, which is a pristine copy of the git repository."
+    echo "Create that directory like any other git repository and place"
+    echo "it in the parent of the snapcpp directory. The script will"
+    echo "automatically update the files on each run."
+    echo
+    echo "   cd ../../.."
+    echo "   git clone --recursive https://github.com/m2osw/snapcpp.git sources-repo"
+    exit 1
+fi
+
+echo "-- verify version"
+if ! test -x dev/version
+then
+    echo "ERROR:"
+    echo "Are you in the top directory of the project?"
+    exit 1
+fi
+
+# Get both versions
+. dev/version
+DEBIAN_VERSION=`dpkg-parsechangelog --show-field Version | sed -e s/~.*// -e 's/\(^[0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/'`
+
+if test "$FULL_VERSION" != "$DEBIAN_VERSION"
+then
+    echo "error: CMakeLists.txt says version $FULL_VERSION and the changelog"
+    echo "error: says $DEBIAN_VERSION instead. Please fix and try again."
+    exit 1;
+fi
+
+echo "-- prepare package directory"
+cd $SOURCE_REPO
+SOURCE_REPO=`pwd`
+cd ..
+rm -rf packages
+mkdir packages
+cd packages
+PACKAGES_DIR=`pwd`
+cd $SOURCE_REPO
+
+# this top folder probably doesn't need to be updated, but for cleanliness
+#
+echo "-- update top folder"
+MAIN=`git branch --list main`
+if test "${MAIN}" != ""
+then
+    git pull origin main
+else
+    git pull origin master
+fi
+
+# For list of dependencies, see ../../../BUILD/clean-dependencies.svg
+
+DEPENDENCIES="
+    advgetopt
+    cmake
+    cppthread
+    csspp
+    libexcept
+    libutf8
+    snapcatch2
+    snapdev
+    "
+
+for p in ${DEPENDENCIES}
+do
+    (
+        echo "-- process project \"${p}\""
+        name=$p
+        if test "$p" = "cmake"
+        then
+            name=snapcmakemodules
+        else
+            cd contrib
+        fi
+
+        # We use submodules now, make sure to update each one of them individually
+        (
+            cd $p
+            MAIN=`git branch --list main`
+            if test "${MAIN}" != ""
+            then
+                git pull origin main
+            else
+                git pull origin master
+            fi
+        )
+
+        rm -f ${p}_*.tar.gz
+        echo "-- process project \"${p}\" [dpkg-source -b $name]"
+        dpkg-source -b $p
+        mv ${name}_*.tar.gz $PACKAGES_DIR
+    )
+done
+
+cd ..
+rm -rf tmp/csspp
+mkdir -p tmp/csspp
+cd tmp/csspp
+for f in ../../packages/*.tar.gz
+do
+    tar xf $f
+done
+cp csspp/dev/MasterCMakeLists.txt CMakeLists.txt
+cp csspp/dev/INSTALL.md .
+cp csspp/dev/ubuntu-dependencies.sh .
+cd csspp
+VERSION=`dpkg-parsechangelog --show-field Version`
+cd ../..
+tar czf csspp_${VERSION}.tar.gz csspp
+cp csspp_${VERSION}.tar.gz ../packages/csspp-all_${VERSION}.tar.gz
+
+# Local Variables:
+# indent-tabs-mode: nil
+# tab-width: 4
+# End:
+
+# vim: ts=4 sw=4 et

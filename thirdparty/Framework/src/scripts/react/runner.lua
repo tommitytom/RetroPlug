@@ -5,4 +5,5 @@ package.path = package.path .. root .. "?\\init.lua"
 print("--------------------------------------------------")
 
 require("tl").loader()
+--require("mimic")
 require("main")

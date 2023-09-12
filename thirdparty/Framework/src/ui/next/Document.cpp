@@ -1,11 +1,17 @@
 #include "Document.h"
 
-#include "graphics/FontUtil.h"
-#include "ui/next/StyleComponents.h"
-#include "graphics/Font.h"
+#include <iostream>
+#include <fstream>
 
-#include "DocumentUtil.h"
 #include <yoga/YGNode.h>
+
+#include "graphics/Font.h"
+#include "graphics/FontUtil.h"
+#include "ui/next/CssUtil.h"
+#include "ui/next/DocumentUtil.h"
+#include "ui/next/LayoutUtil.h"
+#include "ui/next/StyleComponents.h"
+#include "ui/next/StyleUtil.h"
 
 namespace fw {	
 	YGNodeRef getNode(entt::registry& reg, entt::entity e) {
@@ -35,22 +41,37 @@ namespace fw {
 		return YGSize{ 0, 0 };
 	}
 
+	void Document::loadStyle(const std::filesystem::path& path) {
+		std::vector<Stylesheet> stylesheets;
+		CssUtil::loadStyle(_reg, path, stylesheets);
+		StyleUtil::addStyleSheets(_reg, std::move(stylesheets));
+	}
+
 	void Document::clear() {
 		_reg = entt::registry();
 		_reg.on_destroy<YGNodeRef>().connect<destroyYogaNode>();
-		_root = createElement("div");
+		DocumentUtil::setup(_reg, createElement("body"));
+		StyleUtil::setup(_reg);
+		CssUtil::setup(_reg);
+	}
+
+	void Document::update(f32 dt) {
+		StyleUtil::update(_reg, dt);
+		LayoutUtil::update(_reg, dt);
 	}
 
 	DomElementHandle createNode(entt::registry& reg) {
 		DomElementHandle e = reg.create();
-		YGNodeRef node = YGNodeNew();
+		
+		YGNodeRef node = reg.emplace<YGNodeRef>(e, YGNodeNew());
+		setNodeHandle(node, e);
 
-		reg.emplace<YGNodeRef>(e, node);
+		StyleReferences& styleRef = reg.emplace<StyleReferences>(e);
+		styleRef.current = StyleUtil::createEmptyStyle(reg, e);
+
 		reg.emplace<FlexStyleFlag>(e, FlexStyleFlag::Empty);
 		reg.emplace<EventFlag>(e, EventFlag::Empty);
 
-		setNodeHandle(node, e);
-		
 		return e;
 	}
 	
@@ -84,6 +105,10 @@ namespace fw {
 			_reg.destroy(child);
 		}
 	}
+
+	DomElementHandle Document::getRootElement() const {
+		return DocumentUtil::getRootNode(_reg);
+	}
 	
 	DomStyle Document::getStyle(DomElementHandle element) {
 		return DomStyle(_reg, element, getNode(_reg, element));
@@ -108,9 +133,10 @@ namespace fw {
 	}
 	
 	void Document::calculateLayout(DimensionF dim) {
-		YGNodeCalculateLayoutWithContext(getNode(_reg, _root), dim.w, dim.h, YGDirectionInherit, &_reg);
+		DomElementHandle root =  DocumentUtil::getRootNode(_reg);
+		YGNodeCalculateLayoutWithContext(getNode(_reg, root), dim.w, dim.h, YGDirectionInherit, &_reg);
 		
 		// Calculate world positions of all nodes
-		updateWorldPositions(*this, _root, PointF());
+		updateWorldPositions(*this, root, PointF());
 	}
 }

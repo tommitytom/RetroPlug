@@ -174,7 +174,7 @@ Canvas& Canvas::points(const PointF* points, uint32 count) {
 Canvas& Canvas::polygon(const PointF* points, uint32 count) {
 	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
 
-	uint32 agbr = toUint32Abgr(Color4F(1, 1, 1, 1));
+	uint32 agbr = toUint32Abgr(_color);
 	uint32 v = (uint32)_geom.vertices.size();
 
 	for (uint32 i = 0; i < count; ++i) {
@@ -276,6 +276,71 @@ Canvas& Canvas::fillRect(const RectF& area, const Color4F& color) {
 	});
 
 	getTopSurface().indexCount += 6;
+
+	return *this;
+}
+
+Canvas& Canvas::strokeRect(const StrokedRect& rect) {
+	if (rect.area.area() <= 0.0f || rect.width == BorderWidth::zero) {
+		return *this;
+	}
+
+	checkSurface(RenderPrimitive::Triangles, _defaultTexture);
+
+	RectF innerArea = {
+		rect.area.x + rect.width.left,
+		rect.area.y + rect.width.top,
+		rect.area.w - rect.width.right - rect.width.left,
+		rect.area.h - rect.width.bottom - rect.width.top
+	};
+
+	if (rect.width.top != 0.0f) {
+		std::array<PointF, 4> borderVerts = {
+			rect.area.position, // top left
+			rect.area.topRight(), // top right
+			innerArea.topRight(), // bottom right
+			innerArea.position, // bottom left
+		};
+	
+		setColor(rect.color.top);
+		polygon(borderVerts);
+	}
+
+	if (rect.width.left != 0.0f) {
+		std::array<PointF, 4> borderVerts = {
+			rect.area.position, // top left
+			innerArea.position, // top right
+			innerArea.bottomLeft(), // bottom right
+			rect.area.bottomLeft(), // bottom left
+		};
+
+		setColor(rect.color.left);
+		polygon(borderVerts);
+	}
+
+	if (rect.width.bottom > 0.0f) {
+		std::array<PointF, 4> borderVerts = {
+			innerArea.bottomLeft(), // top left
+			innerArea.bottomRight(), // top right
+			rect.area.bottomRight(), // bottom right
+			rect.area.bottomLeft(), // bottom left
+		};
+
+		setColor(rect.color.bottom);
+		polygon(borderVerts);
+	}
+
+	if (rect.width.right > 0.0f) {
+		std::array<PointF, 4> borderVerts = {
+			innerArea.topRight(), // top left
+			rect.area.topRight(), // top right
+			rect.area.bottomRight(), // bottom right
+			innerArea.bottomRight(), // bottom left
+		};
+
+		setColor(rect.color.right);
+		polygon(borderVerts);
+	}
 
 	return *this;
 }
@@ -455,3 +520,4 @@ void Canvas::writeText(PointF pos, std::string_view text, const Color4F& color) 
 		}
 	}
 }
+

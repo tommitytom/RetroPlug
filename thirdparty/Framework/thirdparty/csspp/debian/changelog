@@ -1,0 +1,421 @@
+csspp (1.0.32.0~jammy) jammy; urgency=high
+
+  * Renamed exceptions.h without the 's': exception.h.
+  * Some clean ups.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 24 Dec 2022 12:08:23 -0800
+
+csspp (1.0.31.6~bionic) bionic; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 12 Nov 2022 17:46:58 -0800
+
+csspp (1.0.31.5~bionic) bionic; urgency=high
+
+  * Rebuild against newer dependencies.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 31 Oct 2022 14:47:09 -0700
+
+csspp (1.0.31.4~bionic) bionic; urgency=high
+
+  * Retry build with newer advgetopt fix.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 15 Jul 2022 05:39:17 -0700
+
+csspp (1.0.31.3~bionic) bionic; urgency=high
+
+  * Updated the doxy file, just in case.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 11 Jul 2022 17:06:18 -0700
+
+csspp (1.0.31.2~bionic) bionic; urgency=high
+
+  * Some more clean ups.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 21 May 2022 08:56:52 -0700
+
+csspp (1.0.31.1~bionic) bionic; urgency=high
+
+  * Fixed compat version to v10.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 21 May 2022 08:56:52 -0700
+
+csspp (1.0.31.0~bionic) bionic; urgency=high
+
+  * Updated the advgetopt options to use the new scheme so it compiles.
+  * Added the Environment Variable Into.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 05 Mar 2022 21:11:14 -0800
+
+csspp (1.0.30.0~bionic) bionic; urgency=high
+
+  * The website upload now also uploads the documentation.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 26 Feb 2022 08:09:51 -0800
+
+csspp (1.0.29.1~bionic) bionic; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 13 Feb 2022 13:21:51 -0800
+
+csspp (1.0.29.0~bionic) bionic; urgency=high
+
+  * Moved the headers along the code and renamed the directory csspp.
+  * Started some clean up of the copyright notice.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 16 Jan 2022 07:06:15 -0800
+
+csspp (1.0.28.4~bionic) bionic; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 29 Aug 2021 15:24:51 -0700
+
+csspp (1.0.28.3~bionic) bionic; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 24 Aug 2021 16:59:22 -0700
+
+csspp (1.0.28.2~bionic) bionic; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 04 Jun 2021 21:07:22 -0700
+
+csspp (1.0.28.1~xenial) xenial; urgency=high
+
+  * Bump version to rebuild against latest.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 29 May 2021 18:28:35 -0700
+
+csspp (1.0.28.0~xenial) xenial; urgency=high
+
+  * Adding an Hirsute version.
+  * Fixed the library name in the CSSPPFind.cmake file.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 15 May 2021 11:02:18 -0700
+
+csspp (1.0.27.4~xenial) xenial; urgency=high
+
+  * Updated the dev/pack script. We have many dependencies now.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 10 May 2021 17:12:42 -0700
+
+csspp (1.0.27.3~xenial) xenial; urgency=high
+
+  * Bump version for a rebuild for newer cppthread.
+  * Updated the copyright notices.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 15 Mar 2021 23:08:31 -0700
+
+csspp (1.0.27.2~xenial) xenial; urgency=high
+
+  * Bump version for a rebuild for newer cppthread.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 15 Jan 2021 20:38:56 -0800
+
+csspp (1.0.27.1~xenial) xenial; urgency=high
+
+  * Bump version for a rebuild.
+  * Adjusted version for advgetopt (min. needed is 2.0.14 now).
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 13 Nov 2020 20:44:08 -0800
+
+csspp (1.0.27.0~xenial) xenial; urgency=high
+
+  * Updated csspp to compile against the newest version of advgetopt.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 13 Nov 2020 20:01:29 -0800
+
+csspp (1.0.26.0~xenial) xenial; urgency=high
+
+  * Fixed the advgetopt exception names.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 28 Sep 2019 23:11:48 -0800
+
+csspp (1.0.25.0~xenial) xenial; urgency=high
+
+  * Added the libboost-dev as a dependency.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri,  9 Aug 2019 21:45:57 -0800
+
+csspp (1.0.24.0~xenial) xenial; urgency=high
+
+  * Added the libuft8 as a dependency.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri,  9 Aug 2019 21:04:13 -0800
+
+csspp (1.0.23.0~xenial) xenial; urgency=high
+
+  * Fixed the fallthrough statements with the C++17 attribute.
+  * Added the advgetopt system flags to the csspp command line tool.
+  * Fixed a few std::swap() -> swap() to get the correct call work.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 19 Jul 2019 16:55:48 -0800
+
+csspp (1.0.22.1~xenial) xenial; urgency=high
+
+  * Added the `snapdev` dependency.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 17 Jul 2019 21:31:28 -0800
+
+csspp (1.0.22.0~xenial) xenial; urgency=high
+
+  * Added in=C++ to the MAPPING_EXTENSION.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 11 Jun 2019 23:44:54 -0800
+
+csspp (1.0.21.0~xenial) xenial; urgency=high
+
+  * Updated to work with the newer version of advgetopt.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 19 May 2019 17:36:42 -0800
+
+csspp (1.0.20.0~xenial) xenial; urgency=high
+
+  * Removed the definition of the CSSPP version from the selectors.scss.
+  * Small clean up.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 27 Aug 2018 20:28:09 -0800
+
+csspp (1.0.19.1~xenial) xenial; urgency=high
+
+  * Bump version to get a recompile on launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Fri, 27 Jul 2018 00:45:54 -0800
+
+csspp (1.0.19.0~xenial) xenial; urgency=high
+
+  * Made code -Weffc++ compatible.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 25 Jul 2018 18:24:25 -0800
+
+csspp (1.0.18.7~xenial) xenial; urgency=high
+
+  * Bump version to recompile, trying again as it failed with an ASAN error.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 27 Jun 2018 19:46:10 -0800
+
+csspp (1.0.18.6~xenial) xenial; urgency=high
+
+  * Bump version to recompile without the -fsanitizer flags.
+  * Removed the LD_PRELOAD, although kept the commands, just in case.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 27 Jun 2018 19:46:10 -0800
+
+csspp (1.0.18.5~xenial) xenial; urgency=high
+
+  * Try LD_PRELOAD to see whether that works.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 27 Jun 2018 13:12:18 -0800
+
+csspp (1.0.18.4~xenial) xenial; urgency=high
+
+  * Try to see whether csspp gets ASAN or not.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 27 Jun 2018 12:14:57 -0800
+
+csspp (1.0.18.3~xenial) xenial; urgency=high
+
+  * Execution failed while building, do one more attempt.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 26 Jun 2018 21:50:34 -0800
+
+csspp (1.0.18.2~xenial) xenial; urgency=high
+
+  * Bump version to recompile with the -fsanitizer flags.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 26 Jun 2018 20:03:27 -0800
+
+csspp (1.0.18.1~xenial) xenial; urgency=high
+
+  * Fixed the protocol to the snapwebsites.org.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Thu,  8 Feb 2018 00:56:41 -0700
+
+csspp (1.0.18.0~xenial) xenial; urgency=high
+
+  * Added a catch so csspp will properly exit on that exception.
+  * Bumped copyright notice to 2018.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 28 Jan 2018 03:35:42 -0700
+
+csspp (1.0.17.0~xenial) xenial; urgency=high
+
+  * SNAP-187: Removed the warning when finding a #id after other selectors.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue,  2 May 2017 21:30:22 -0700
+
+csspp (1.0.16.0~xenial) xenial; urgency=high
+
+  * SNAP-187: Fixed the DIVIDE for calc() so it works.
+  * Added a test to specifically verify that a divide in calc() works.
+  * Fixed a test which verified that DIVIDE would fail in that case.
+  * Fixed the dev/build-release and dev/pack scripts.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Thu, 23 Mar 2017 18:02:22 -0700
+
+csspp (1.0.15.0~xenial) xenial; urgency=high
+
+  * SNAP-289: Added a try/catch in a destructor.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 18 Mar 2017 02:12:22 -0700
+
+csspp (1.0.14.0~xenial) xenial; urgency=high
+
+  * SNAP-187: Added an "rem" in the test, just to make sure it works.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat,  4 Mar 2017 01:00:22 -0700
+
+csspp (1.0.13.0~xenial) xenial; urgency=high
+
+  * SNAP-187: Added support for @viewport.
+  * Added support for @keyframes (quite different compiling!)
+  * Added a new node type: FRAME, for the @keyframes.
+  * Updated the mk script so it corresponds to the new BUILD scheme.
+  * Enhanced an error I ran into in output_component_value().
+  * Added support for specialized pseudo names.
+  * Added a compiler and assembler tests for the @keyframes.
+  * Updated the node test with the FRAME node type.
+  * Updated the tests so they all pass.
+  * Fixed version definition in top CMakeLists.txt, we now use the changelog.
+  * Fixed version definition in dev/version to read it from changelog.
+  * Updated the coverage script to the new BUILD scheme.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 12 Feb 2017 00:18:22 -0700
+
+csspp (1.0.12.0~xenial) xenial; urgency=high
+
+  * Bumped copyright notices to 2017..
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed,  4 Jan 2017 23:22:22 -0700
+
+csspp (1.0.11.0~xenial) xenial; urgency=high
+
+  * SNAP-110: Bumped version to get my test system to upgrade properly.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 13 Sep 2016 11:59:22 -0700
+
+csspp (1.0.10~trusty) trusty; urgency=high
+
+  * Added a fix to the output of declaration with multiple argument lists.
+    Each argument list has to be separated by a comma.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 03 Apr 2016 19:24:15 -0800
+
+csspp (1.0.9~trusty) trusty; urgency=high
+
+  * Added a few catch() to main() of the csspp tool. (Coverity)
+  * Fixed a bug (4 instances) with the '&' operator. Version 1.0.8 had one fix.
+  * Bumped date to 2016.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 09 Jan 2016 20:25:01 -0800
+
+csspp (1.0.8~trusty) trusty; urgency=high
+
+  * Fixed a potential buffer overflow in lexer::ungetc().
+  * Fixed a test in a while(), missing parenthesis, in a test.
+  * Compiler created using 'this' instead of 'true' as parameter.
+  * Fixed the name of a #define of a header file.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sat, 12 Dec 2015 15:14:15 -0700
+
+csspp (1.0.7~trusty) trusty; urgency=high
+
+  * Changed the behavior as some names in CSS are case sensitive.
+    (i.e. class names and in XHTML, tag names should also be.)
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 07 Oct 2015 00:15:33 -0700
+
+csspp (1.0.6~trusty) trusty; urgency=high
+
+  * Implemented support for the @return command in mixin functions.
+  * Made a couple of functions internal so they work as expected.
+  * Fixed a crashing bug when just - appears in an expression.
+  * Broke up the expression.cpp in 10 files to easily track coverage.
+  * Fixed the install target for the library.
+  * Made it possible to compile CSS Preprocessor under cygwin.
+  * Updated the tests and documentation accordingly.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 27 Jul 2015 03:01:38 -0700
+
+csspp (1.0.5~trusty) trusty; urgency=high
+
+  * Added all the remaining expression tests.
+  * Got the array and map to work as expected.
+  * Added support for negative offsets (to get items from the end of the array.)
+  * Finished implementing expression variables and tested them.
+  * Properly check trigonometry parameters as these are expected to be angles.
+  * In internal functions, broke up decimal number and percent in cases where
+    both are not 1 to 1 equivalent.
+  * Verify dimensions in several more internal functions (min/max/...).
+  * Fixed the names of internal functions that included a '-' instead of an '_'.
+  * Fixed many expressions so they would work as expected.
+  * Fixed the output of an identifier with special characters.
+  * Changed the set_hsl()/get_hsl() to use a radiant angle instead of degrees.
+  * Removed the color::adjust_...() functions which are not used.
+  * Fixed output of "-0" to be replaced by "0".
+  * Fixed code so it would compile and run successfully in release mode.
+  * Fixed the lexer integer part overflow test so it works in all cases.
+  * Updated the node output so it can easily be checked in more cases.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Mon, 13 Jul 2015 12:57:26 -0700
+
+csspp (1.0.4~trusty) trusty; urgency=high
+
+  * Added proper support for dimensions in various places.
+  * Wrote test to verify multiplicative expressions (100% coverage).
+  * Fixed the multiplicative operations according to the test results.
+  * Fixed the handling of expressions written between parenthesis.
+  * Added support for many color operations.
+  * Added support to multiply unicode range with NULL.
+  * Added a new page to list expressions by type of data.
+  * Fixed the get_color()/get_hsl() which were not const yet.
+  * Fixed compiler to handle component values that are not in a sub-list.
+  * Removed the special handling of '=' + '=' from expressions.
+  * Applied a fix to the handling of the power operator, not tested yet.
+  * Updated the additive test to cover 100% of the additions.
+  * Added a test for the power operator.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Thu,  9 Jul 2015 19:00:00 -0700
+
+csspp (1.0.3~trusty) trusty; urgency=high
+
+  * Added a --no-logo command line option.
+  * Allow comments to appear within { ... }, but still just by themselves
+    (this allows for conditionally adding @preserve comments.)
+  * Added BOOLEAN support as a unary expression.
+  * Added "border-radius" as a "font metric" field since it uses '/' to
+    separate vertical and horizontal lengths.
+  * Fixed a compiler test tags which were completely incorrect.
+  * Added a test to verify the --no-logo option.
+  * Changed the '[hide]' tag with '[hidden]' because '[hide]' is a
+    special catch tag which prevents such tests from being run by default.
+  * Updated the pack script to verify versions.
+  * Started test to verify the expression class.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun,  5 Jul 2015 19:58:31 -0700
+
+csspp (1.0.2~trusty) trusty; urgency=high
+
+  * Fixed the TRUE and FALSE in the node header as these may be #define names.
+  * Scripts were not being added to the library package as expected.
+  * Various small enhancements.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 10 Jun 2015 05:18:21 -0700
+
+csspp (1.0.1~trusty) trusty; urgency=high
+
+  * First public release.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 10 Jun 2015 05:18:21 -0700
+
+csspp (1.0.0~trusty) trusty; urgency=high
+
+  * Initial release.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Tue, 09 Jun 2015 21:31:26 -0700
+

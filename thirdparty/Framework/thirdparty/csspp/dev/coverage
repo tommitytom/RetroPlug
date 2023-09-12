@@ -1,0 +1,306 @@
+#!/bin/bash
+#
+# File:
+#      dev/coverage
+#
+# Description:
+#      Definitions to create the build environment with cmake
+#
+# Documentation:
+#      See the CMake documentation.
+#
+# License:
+#      csspp -- a CSS Preprocessor
+#      Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+#
+#      https://snapwebsites.org/
+#      contact@m2osw.com
+#
+#      This program is free software; you can redistribute it and/or modify
+#      it under the terms of the GNU General Public License as published by
+#      the Free Software Foundation; either version 2 of the License, or
+#      (at your option) any later version.
+#
+#      This program is distributed in the hope that it will be useful,
+#      but WITHOUT ANY WARRANTY; without even the implied warranty of
+#      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#      GNU General Public License for more details.
+#
+#      You should have received a copy of the GNU General Public License
+#      along with this program; if not, write to the Free Software
+#      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
+
+set -e
+
+start_date=`date`
+
+if test "$1" = "--help" -o "$1" = "-h"
+then
+    echo "Usage: $0 [--opt] [test-name]"
+    echo "where --opt is one of:"
+    echo "   --all          run all tests"
+    echo "   --full         run all tests and publish to the world"
+    echo "   --one-by-one   run all the tests, one by one, with --test <name> for each"
+    echo "   --test name    run a specific test in a test specific directory"
+    echo "                  (see list below, do NOT include the square brackets)"
+    echo
+    echo "To run specific tests, use one of the tags defined in the test suite with --test."
+    echo "   '[additive]' (expressions sub-set)"
+    echo "   '[assembler]'"
+    echo "   '[color]'"
+    echo "   '[compiler]'"
+    echo "   '[condition]' (expressions sub-set)"
+    echo "   '[csspp]'"
+    echo "   '[equality]' (expressions sub-set)"
+    echo "   '[error]'"
+    echo "   '[expression]' (all expressions)"
+    echo "   '[full-coverage]' (all tests)"
+    echo "   '[internal-functions]' (expressions sub-set)"
+    echo "   '[lexer]'"
+    echo "   '[list]' (expressions sub-set)"
+    echo "   '[logical-and]' (expressions sub-set)"
+    echo "   '[logical-or]' (expressions sub-set)"
+    echo "   '[multiplicative]' (expressions sub-set)"
+    echo "   '[node]'"
+    echo "   '[nth-child]'"
+    echo "   '[parser]'"
+    echo "   '[position]'"
+    echo "   '[power]' (expressions sub-set)"
+    echo "   '[relational]' (expressions sub-set)"
+    echo "   '[unary]' (expressions sub-set)"
+    echo "   '[unicode-range]'"
+    echo "You may use the list option to see the available tests and tags:"
+    echo "   csspp_tests --list-tests"
+    exit 1;
+fi
+
+if test "$1" = "--one-by-one"
+then
+    # This is useful to make sure that each class test covers that
+    # class by itself
+    mkdir -p tmp/build
+    echo "<html><head><title>Coverage</title></head><body><h1>Coverage</h1>" >tmp/build/index.html
+    count=1
+    for t in additive assembler color compiler conditional csspp equality \
+             error expression full-coverage internal-functions lexer \
+             list logical-and logical-or multiplicative node nth-child \
+             parser position power relational unary unicode-range
+    do
+        echo -n "`date +'%D %T'`: Building: $t ... "
+        echo "<h2>${count}. <a href='csspp_coverage_${t}_html/index.html'>$t<a/></h2>" >>tmp/build/index.html
+        echo "<a href='csspp_coverage_${t}_html/statistics.html'>Statistics</a>" >>tmp/build/index.html
+        echo "<a href='csspp_coverage_${t}/coverage_script_log.html'>Logs</a>" >>tmp/build/index.html
+        if $0 --test $t >tmp/build/csspp_coverage_${t}.log 2>&1
+        then
+            echo "<iframe src='csspp_coverage_${t}_html/lib/index.html' width='100%' height='500'></iframe>" >>tmp/build/index.html
+            echo "success!"
+        else
+            echo "<div style='border: 1px solid red; margin: 0 30px; padding: 10px;'>Failed...</div>" >>tmp/build/index.html
+            if test -f "tmp/build/csspp_coverage_${t}_html/lib/index.html"
+            then
+                echo "<a href='csspp_coverage_${t}_html/lib/index.html'>View Old Coverage Data</a>" >>tmp/build/index.html
+            fi
+            echo "failure... logs are in: tmp/build/csspp_coverage_${t}.log"
+        fi
+        echo "<html><head><title>Log for ${t}</title></head><body><pre>" >tmp/build/csspp_coverage_${t}/coverage_script_log.html
+        cat tmp/build/csspp_coverage_${t}.log >>tmp/build/csspp_coverage_${t}/coverage_script_log.html
+        echo "</pre></body></html>" >>tmp/build/csspp_coverage_${t}/coverage_script_log.html
+        count=`expr $count + 1`
+    done
+    echo "</body></html>" >>tmp/build/index.html
+
+    end_date=`date`
+    echo "Process started  on $start_date"
+    echo "Process finished on $end_date"
+    exit 0
+fi
+
+if test "$1" = "--full"
+then
+    FULL=true
+    shift
+else
+    FULL=false
+fi
+
+DIRNAME=
+if test "$1" = "--test"
+then
+    if $FULL
+    then
+        echo "$0: error: --full and --test are mutually exclusive."
+        exit 1;
+    fi
+    shift
+    if test "$1" = "full-coverage"
+    then
+        TEST=
+        DIRNAME="csspp_coverage_full-coverage"
+        # We also need to remove it which will work like "--all" below
+        shift
+    else
+        TEST=$1
+    fi
+else
+    TEST=
+fi
+
+SOURCE_PATH=`pwd`
+. dev/version
+echo "***"
+echo "*** csspp coverage for version $FULL_VERSION (`date`)"
+echo "***"
+if test -z "$DIRNAME"
+then
+    if test -z "$TEST"
+    then
+        DIRNAME=csspp_coverage
+    else
+        DIRNAME=csspp_coverage_$TEST
+    fi
+fi
+mkdir -p tmp/build/$DIRNAME
+rm -rf tmp/build/$DIRNAME/*
+cd tmp/build
+BUILD_PATH=`pwd`
+cd $DIRNAME
+ln -s ../../../../snapCMakeModules .
+# request coverage in this build
+export ADVGETOPT_INCLUDE_DIR=$SOURCE_PATH/../../../BUILD/dist/include
+export ADVGETOPT_LIBRARY=$SOURCE_PATH/../../../BUILD/dist/lib
+export AdvGetOpt_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export SnapCMakeModules_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export SnapDoxygen_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+export Catch_DIR=$SOURCE_PATH/../../../BUILD/dist/share/cmake
+cmake -DCMAKE_INSTALL_PREFIX:PATH="$SOURCE_PATH/$BUILD_PATH/dist" \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -Dcsspp_project_COVERAGE:BOOL=ON \
+          ../../..
+echo
+echo "***"
+echo "*** compile (`date`)"
+echo "***"
+VERBOSE=1 make
+echo
+echo "***"
+echo "*** run (`date`)"
+echo "***"
+if test `tests/csspp_tests --version` != "$FULL_VERSION"
+then
+    echo "the version of test_csspp (`BUILD/tests/test_csspp --version`) is not equal to the project version ($FULL_VERSION)"
+    exit 1;
+fi
+if $FULL
+then
+    # We test the pipe status on exit to detect whether the test failed
+    echo "Start running the tests on `date`" >test_log.txt
+    echo >>test_log.txt
+    # --success generates way too much output for HTML
+    tests/csspp_tests --scripts $SOURCE_PATH/scripts --version-script scripts --durations yes 2>&1 | tee -a test_log.txt; test ${PIPESTATUS[0]} -eq 0
+    echo >>test_log.txt
+    echo "Finished running the tests on `date`" >>test_log.txt
+else
+    # "brief" test while working on a specific test
+    if test "$1" == "--all" -o -z "$1"
+    then
+        if ! test -z "$TEST"
+        then
+            echo "$0: error: --test and --all are mutually exclusive"
+            exit 1;
+        fi
+        # Do it all, but not published
+        tests/csspp_tests --scripts $SOURCE_PATH/scripts --version-script scripts
+    else
+        if test -z "$TEST"
+        then
+            tests/csspp_tests --scripts $SOURCE_PATH/scripts --version-script scripts "$1"
+        else
+            tests/csspp_tests --scripts $SOURCE_PATH/scripts --version-script scripts "[$TEST]"
+        fi
+    fi
+    # just in case, remove the log file if there is one
+    rm -f test_log.txt
+fi
+cd ..
+
+echo
+echo "***"
+echo "*** gcov/lcov (`date`)"
+echo "***"
+
+
+# The following lcov options can be used under Ubuntu 14.04+
+# Use --no-external and --base-directory $SOURCE_PATH
+# to avoid /usr/include and other unwanted files
+# (only available in lcov version 1.10+)
+lcov --capture --no-external --directory $DIRNAME --base-directory $SOURCE_PATH --output-file coverage.info
+mkdir -p ${DIRNAME}_html
+genhtml --legend --demangle-cpp --no-branch-coverage --show-details coverage.info --output-directory ${DIRNAME}_html
+
+# gprof -q -I ../../../include -I ../../../lib -I ../../../src -I ../../../tests ../csspp_coverage_assembler/tests/csspp_tests | less -S
+#   only gprof does NOT profile anything outside of the binary (so csspp_test but not the library!) So unless we link statically
+# sprof would normally work on .so but that's complicated (by default it fails loading)
+# oprofile would work on the entire system, but that requires a peculiar setup of the machine...
+#   http://smackerelofopinion.blogspot.com/2013/05/getting-started-with-oprofile-on-ubuntu.html
+
+
+
+end_date=`date`
+
+# Statistics
+echo "<html><head><title>csspp $FULL_VERSION statistics</title></head><body>" >${DIRNAME}_html/statistics.html
+echo "<h3>Statistics of the csspp $FULL_VERSION code</h3>" >>${DIRNAME}_html/statistics.html
+echo "<p>Back to <a href=\"..\">CSS Preprocessor Coverage Data</a>.</p>" >>${DIRNAME}_html/statistics.html
+echo "<pre>" >>${DIRNAME}_html/statistics.html
+cloc --autoconf --by-file-by-lang $SOURCE_PATH/include/ $SOURCE_PATH/lib/ $SOURCE_PATH/src/ >>${DIRNAME}_html/statistics.html
+echo "</pre><h3>Statistics of the csspp $FULL_VERSION tests</h3><pre>" >>${DIRNAME}_html/statistics.html
+cloc --autoconf --by-file-by-lang $SOURCE_PATH/tests/ >>${DIRNAME}_html/statistics.html
+echo "</pre></body></html>" >>${DIRNAME}_html/statistics.html
+
+# Test output (Logs)
+echo "<html><head><title>csspp $FULL_VERSION test logs</title></head><body>" >${DIRNAME}_html/test_log.html
+echo "<p>Back to <a href=\"../..\">CSS Preprocessor Coverage Data</a>.</p>" >>${DIRNAME}_html/test_log.html
+echo "<h3>Logs for the csspp $FULL_VERSION tests</h3><p>Tests started on $start_date and finished on $end_date</p><pre>" >>${DIRNAME}_html/test_log.html
+if test -f $DIRNAME/test_log.txt
+then
+    # If test_log.txt does not exist, the user got the logs in the
+    # console already
+    cat $DIRNAME/test_log.txt >>${DIRNAME}_html/test_log.html
+fi
+echo "</pre></body></html>" >>${DIRNAME}_html/test_log.html
+
+
+if test -f $DIRNAME/test_log.txt
+then
+    echo "***"
+    echo "*** publication to ... ($end_date)"
+    echo "***"
+
+    # For publication, if that directory does not exist, you probably don't
+    # have a website to display this data
+    if test -d /usr/clients/www/lcov.csspp.org/public_html
+    then
+        mkdir -p /usr/clients/www/lcov.csspp.org/public_html/documentation
+        cp -r $DIRNAME/doc/csspp-doc-*/* /usr/clients/www/lcov.csspp.org/public_html/documentation/.
+        cp $SOURCE_PATH/dev/index.php /usr/clients/www/lcov.csspp.org/public_html/.
+        mkdir -p /usr/clients/www/lcov.csspp.org/public_html/csspp-$FULL_VERSION
+        cp -r ${DIRNAME}_html/* /usr/clients/www/lcov.csspp.org/public_html/csspp-$FULL_VERSION/.
+        cp ${DIRNAME}_html/statistics.html /usr/clients/www/lcov.csspp.org/public_html/csspp-$FULL_VERSION/.
+
+        scp ${DIRNAME}/doc/front-page.html build.m2osw.com:/var/www/csspp/public_html/index.html
+        scp ${SOURCE_PATH}/doc/favicon.ico build.m2osw.com:/var/www/csspp/public_html/favicon.ico
+        scp ${SOURCE_PATH}/doc/images/csspp-logo.png build.m2osw.com:/var/www/csspp/public_html/images/csspp-logo.png
+        scp ${SOURCE_PATH}/doc/images/open-source-initiative-logo.png build.m2osw.com:/var/www/csspp/public_html/images/open-source-initiative-logo.png
+    fi
+fi
+
+echo "Process started  on $start_date"
+echo "Process finished on $end_date"
+
+# Local Variables:
+# indent-tabs-mode: nil
+# tab-width: 4
+# End:
+
+# vim: ts=4 sw=4 et

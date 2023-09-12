@@ -88,7 +88,7 @@ namespace fw {
 			_editable = editable;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			return true;
 		}
 
@@ -96,7 +96,7 @@ namespace fw {
 			return true;
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			if (_items.size()) {
 				if (key == VirtualKey::RightArrow) {
 					if (down) {

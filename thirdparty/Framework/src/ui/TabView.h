@@ -34,7 +34,7 @@ namespace fw {
 
 		bool onMouseMove(Point pos) override;
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override;
+		bool onMouseButton(MouseButton button, bool down, Point position) override;
 
 		void onMouseLeave() override {
 			_mouseOverHeader = false;

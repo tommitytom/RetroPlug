@@ -67,7 +67,7 @@ namespace fw {
 			updateSlice(getDimensions());
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) override {
+		bool onMouseButton(MouseButton button, bool down, Point position) override {
 			_clickPos = position;
 			_selecting = down;
 
@@ -175,7 +175,7 @@ namespace fw {
 			}
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			if (!_editing) {
 				return false;
 			}

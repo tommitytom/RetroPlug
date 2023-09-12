@@ -27,7 +27,7 @@ void FrameworkView::OnInit() {
 
 bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
-		.key = (VirtualKey::Enum)key.VK,
+		.key = (VirtualKey)key.VK,
 		.action = KeyAction::Press,
 		.down = true
 	});
@@ -35,14 +35,14 @@ bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
 
 bool FrameworkView::OnKeyUp(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
-		.key = (VirtualKey::Enum)key.VK,
+		.key = (VirtualKey)key.VK,
 		.action = KeyAction::Release,
 		.down = false
 	});
 }
 
-MouseButton::Enum getMouseButton(const IMouseMod& mod) {
-	MouseButton::Enum button = MouseButton::Unknown;
+MouseButton getMouseButton(const IMouseMod& mod) {
+	MouseButton button = MouseButton::Unknown;
 
 	if (mod.L) {
 		button = MouseButton::Left;
@@ -59,7 +59,7 @@ void FrameworkView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	//OnMouseOver(x, y, mod);
 
 	fw::Point pos = fw::Point((int32)x, (int32)y);
-	MouseButton::Enum button = getMouseButton(mod);
+	MouseButton button = getMouseButton(mod);
 
 	if (button != MouseButton::Unknown) {
 		_vm->onMouseButton(fw::MouseButtonEvent{
@@ -74,7 +74,7 @@ void FrameworkView::OnMouseUp(float x, float y, const IMouseMod& mod) {
 	//OnMouseOver(x, y, mod);
 
 	fw::Point pos = fw::Point((int32)x, (int32)y);
-	MouseButton::Enum button = getMouseButton(mod);
+	MouseButton button = getMouseButton(mod);
 
 	if (button != MouseButton::Unknown) {
 		_vm->onMouseButton(fw::MouseButtonEvent{
@@ -87,7 +87,7 @@ void FrameworkView::OnMouseUp(float x, float y, const IMouseMod& mod) {
 
 void FrameworkView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
 	fw::Point pos = fw::Point((int32)x, (int32)y);
-	MouseButton::Enum button = getMouseButton(mod);
+	MouseButton button = getMouseButton(mod);
 
 	_vm->onMouseDoubleClick(fw::MouseDoubleClickEvent{
 		.button = button,

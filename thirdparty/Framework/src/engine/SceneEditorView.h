@@ -54,7 +54,7 @@ namespace fw {
 			SceneView::onUpdate(delta);
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point pos) override {
+		bool onMouseButton(MouseButton button, bool down, Point pos) override {
 			if (button == MouseButton::Left) {
 				_draggingGrid = down;
 
@@ -96,7 +96,7 @@ namespace fw {
 			endSceneRender(canvas);
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			f32 _cameraMoveSpeed = 300;
 			switch (key) {
 			case VirtualKey::LeftArrow: _velocity.x = down ? -_cameraMoveSpeed : 0.0f; break;

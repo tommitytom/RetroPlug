@@ -1,0 +1,135 @@
+// CSS Preprocessor
+// Copyright (c) 2015-2022  Made to Order Software Corp.  All Rights Reserved
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+@mixin adjust_hue($color, $angle)
+{
+    @return hsla(deg2rad(hue($color)) + $angle, saturation($color), lightness($color), alpha($color));
+}
+
+@mixin complement($color)
+{
+    @return adjust_hue($color, $_csspp_pi_rad);
+}
+
+@mixin darken($color, $percent)
+{
+    @return lighten($color, - $percent);
+}
+
+@mixin deg2rad($angle)
+{
+    @return $angle * $_csspp_pi_rad / 180deg;
+}
+
+@mixin desaturate($color, $percent)
+{
+    @return saturate($color, - $percent);
+}
+
+@mixin fade_in($color, $number)
+{
+    @return opacify($color, $number);
+}
+
+@mixin fade_out($color, $number)
+{
+    @return transparentize($color, $number);
+}
+
+@mixin grayscale($color)
+{
+    // TBD: we may want to use a much better gray scale computation
+    //      (i.e. the Y in JPEG images is much better to the eye than
+    //      the L in HSL.)
+    @return saturate($color, - saturation($color));
+}
+
+@mixin invert($color)
+{
+    @return rgba(255.0 - red($color), 255.0 - green($color), 255.0 - blue($color), alpha($color));
+}
+
+@mixin lighten($color, $percent)
+{
+    @return hsla(hue($color), saturation($color), lightness($color) + $percent, alpha($color));
+}
+
+@mixin mix($color1, $color2, $weight: 0.5)
+{
+    @return $color1 * $weight + $color2 * (1.0 - $weight);
+}
+
+@mixin opacify($color, $number)
+{
+    @return rgba($color, alpha($color) + $number);
+}
+
+@mixin opacity($color)
+{
+    @return alpha($color);
+}
+
+@mixin quote($identifier)
+{
+    @return string($identifier);
+}
+
+@mixin remove_unit($value)
+{
+    @return unit($value) = "%"
+                ? decimal_number($value)
+                : type_of($value) = "integer"
+                    ? $value / integer("1" + unit($value))
+                    : $value / decimal_number("1" + unit($value));
+}
+
+@mixin saturate($color, $percent)
+{
+    @return hsla(hue($color), saturation($color) + $percent, lightness($color), alpha($color));
+}
+
+@mixin set_unit($value, $unit)
+{
+    @return string($unit) = "%"
+                ? percentage($value)
+                : type_of($value) = "integer"
+                    ? integer(string(remove_unit($value)) + string($unit))
+                    : decimal_number(string(remove_unit($value)) + string($unit));
+}
+
+@mixin transparentize($color, $number)
+{
+    @return rgba($color, alpha($color) - $number);
+}
+
+@mixin unitless($number)
+{
+    @return unit($number) = "";
+}
+
+@mixin unquote($string)
+{
+    @return identifier($string);
+}
+
+// Local Variables:
+// mode: scss
+// indent-tabs-mode: nil
+// tab-width: 4
+// End:
+
+// vim: ts=4 sw=4 et

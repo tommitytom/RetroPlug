@@ -39,11 +39,11 @@ namespace fw {
 			rebuildGraph();
 		}
 
-		bool onKey(VirtualKey::Enum key, bool down) override {
+		bool onKey(VirtualKey key, bool down) override {
 			return false;
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, Point position) final override {
+		bool onMouseButton(MouseButton button, bool down, Point position) final override {
 			return false;
 		}
 
