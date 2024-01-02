@@ -70,6 +70,23 @@ namespace fw {
 	}
 
 	namespace internal {
+		template<typename T>
+		struct function_traits;
+
+		template<typename R, typename ...Args>
+		struct function_traits<std::function<R(Args...)>>
+		{
+			static const size_t nargs = sizeof...(Args);
+
+			typedef R result_type;
+
+			template <size_t i>
+			struct arg
+			{
+				typedef typename std::tuple_element<i, std::tuple<Args...>>::type type;
+			};
+		};
+
 		enum class TypeTraits : uint32 {
 			None = 0,
 			Const = 1 << 0,
@@ -107,8 +124,24 @@ namespace fw {
 			return ret;
 		}
 
+		template <typename T, auto Func>
+		entt::any makePropertyGetter(TypeInstance instance) {
+			static_assert(std::is_invocable_v<decltype(Func), T&>);
+			T* ref = entt::any_cast<T>(&instance.getValue());
+			assert(ref);
+			return std::invoke(Func, *ref);
+		}
+
+		template <typename T, auto Func>
+		void makePropertySetter(TypeInstance instance, const entt::any& value) {
+			//static_assert(std::is_invocable_v<decltype(Func), T&>);
+			using ArgsType = entt::meta_function_helper_t<T, std::remove_reference_t<decltype(Func)>>::args_type;
+			using ArgType = entt::type_list_element_t<0, ArgsType>;
+			std::invoke(Func, entt::any_cast<T&>(instance.getValue()), entt::any_cast<const ArgType>(value));
+		}
+
 		template <typename T, auto Data>
-		entt::any makeGetter(TypeInstance instance) {
+		entt::any makeFieldGetter(TypeInstance instance) {
 			if constexpr (std::is_member_pointer_v<decltype(Data)>) {
 				assert(getTypeId<T>() == getTypeId(instance.getValue()));
 
@@ -136,7 +169,7 @@ namespace fw {
 		}
 
 		template <typename T, auto Data>
-		void makeSetter(TypeInstance instance, const entt::any& value) {
+		void makeFieldSetter(TypeInstance instance, const entt::any& value) {
 			using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
 			std::invoke(Data, entt::any_cast<T&>(instance.getValue())) = entt::any_cast<const DataType>(value);
 		}
@@ -452,21 +485,30 @@ namespace fw {
 			return *this;
 		}
 
+		template <auto Getter, auto Setter, typename ...AttributeType>
+		TypeFactory<T> addProperty(std::string_view name, AttributeType&&... attribute) {
+			std::span<const Attribute> attributes = addAttributes(attribute...);
+
+			using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Getter)>::return_type>;
+			assert(_state->findTypeInfo<DataType>()); // Types referenced in fields must be registered
+
+			_state->fields.push_back(Field{
+				.type = getTypeId<DataType>(),
+				.hash = getNameHash(name),
+				.name = name,
+				.attributes = attributes,
+				.setter = &internal::makePropertySetter<T, Setter>,
+				.getter = &internal::makePropertyGetter<T, Getter>,
+			});
+
+			return std::move(*this);
+		}
+
 		template <auto Data, typename ...AttributeType>
 		TypeFactory<T> addField(std::string_view name, AttributeType&&... attribute) {
 			assert(_state->fields.size() < _state->fields.capacity());
 
-			size_t attributeOffset = _state->attributes.size();
-
-			([&] {
-				assert(_state->attributes.size() < _state->attributes.capacity());
-				assert(_state->findTypeInfo<AttributeType>()); // Attribute types must be registered
-
-				_state->attributes.push_back(Attribute{
-					.type = getTypeId<AttributeType>(),
-					.value = attribute
-				});
-			} (), ...);
+			std::span<const Attribute> attributes = addAttributes(attribute...);
 
 			if constexpr (std::is_member_object_pointer_v<decltype(Data)>) {
 				using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Data)>::return_type>;
@@ -476,9 +518,9 @@ namespace fw {
 					.type = getTypeId<DataType>(),
 					.hash = getNameHash(name),
 					.name = name,
-					.attributes = std::span(_state->attributes.begin() + attributeOffset, _state->attributes.end()),
-					.setter = &internal::makeSetter<T, Data>,
-					.getter = &internal::makeGetter<T, Data>,
+					.attributes = attributes,
+					.setter = &internal::makeFieldSetter<T, Data>,
+					.getter = &internal::makeFieldGetter<T, Data>,
 				});
 			} else {
 				using DataType = std::remove_reference_t<std::remove_pointer_t<decltype(Data)>>;
@@ -488,9 +530,9 @@ namespace fw {
 					.type = getTypeId<DataType>(),
 					.hash = getNameHash(name),
 					.name = name,
-					.attributes = std::span(_state->attributes.begin() + attributeOffset, _state->attributes.end()),
+					.attributes = attributes,
 					.setter = nullptr,
-					.getter = &internal::makeGetter<T, Data>,
+					.getter = &internal::makeFieldGetter<T, Data>,
 				});
 			}
 
@@ -507,7 +549,7 @@ namespace fw {
 					.type = getTypeId<T>(),
 					.hash = getNameHash(name),
 					.name = name,
-					.getter = &internal::makeGetter<T, valType>
+					.getter = &internal::makeFieldGetter<T, valType>
 				});
 			});
 		}
@@ -515,6 +557,24 @@ namespace fw {
 		const TypeInfo& getType() const {
 			assert(_typeInfo);
 			return *_typeInfo;
+		}
+
+	private:
+		template <typename ...AttributeType>
+		std::span<const Attribute> addAttributes(AttributeType&&... attribute) {
+			size_t attributeOffset = _state->attributes.size();
+
+			([&] {
+				assert(_state->attributes.size() < _state->attributes.capacity());
+				assert(_state->findTypeInfo<AttributeType>()); // Attribute types must be registered
+
+				_state->attributes.push_back(Attribute{
+					.type = getTypeId<AttributeType>(),
+					.value = attribute
+				});
+			} (), ...);
+
+			return std::span(_state->attributes.begin() + attributeOffset, _state->attributes.end());
 		}
 	};
 

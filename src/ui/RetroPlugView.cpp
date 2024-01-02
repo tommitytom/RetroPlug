@@ -25,6 +25,7 @@
 #include "ui/SystemOverlayManager.h"
 #include "ui/SystemView.h"
 #include "ui/ViewManager.h"
+#include "ui/VerticalSplitter.h"
 
 #include "fonts/PlatNomor.h"
 #include "foundation/LuaSerializer.h"
@@ -76,7 +77,11 @@ void RetroPlugView::onInitialize() {
 	_fileManager = &this->createState<FileManager>();
 	this->createState(entt::forward_as_any(_project));
 
-	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
+	auto splitter = this->addChild<fw::DockSplitter>("Splitter");
+	_inspector = splitter->addItem<fw::ObjectInspectorView>("Inspector", 0);
+	_compactLayout = splitter->addItem<CompactLayoutView>("Compact Layout", 100);
+
+	//_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 
 	setupEventHandlers();
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});

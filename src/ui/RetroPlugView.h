@@ -12,6 +12,7 @@
 #include "ui/CompactLayoutView.h"
 #include "ui/LabelView.h"
 #include "ui/View.h"
+#include "ui/ObjectInspectorView.h"
 #include "foundation/ResourceReloader.h"
 
 namespace rp {
@@ -69,6 +70,8 @@ namespace rp {
 		fw::LabelViewPtr _threadWarning;
 
 		fw::ResourceReloader _resourceReloader;
+
+		fw::ObjectInspectorViewPtr _inspector;
 
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
