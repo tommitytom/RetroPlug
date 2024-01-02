@@ -44,15 +44,23 @@ namespace fw {
 	void Document::loadStyle(const std::filesystem::path& path) {
 		std::vector<Stylesheet> stylesheets;
 		CssUtil::loadStyle(_reg, path, stylesheets);
-		StyleUtil::addStyleSheets(_reg, std::move(stylesheets));
+		StyleUtil::addStyleSheets(_reg, path, std::move(stylesheets));
 	}
 
 	void Document::clear() {
+		YGNodeRef* nodeDef = _reg.ctx().find<YGNodeRef>();
+		if (nodeDef) {
+			YGNodeFree(*nodeDef);
+		}
+
 		_reg = entt::registry();
 		_reg.on_destroy<YGNodeRef>().connect<destroyYogaNode>();
+		_reg.ctx().emplace<YGNodeRef>(YGNodeNew());
+		_reg.ctx().emplace<FontManager*>(&_fontManager);
 		DocumentUtil::setup(_reg, createElement("body"));
 		StyleUtil::setup(_reg);
 		CssUtil::setup(_reg);
+		
 	}
 
 	void Document::update(f32 dt) {
@@ -69,6 +77,7 @@ namespace fw {
 		StyleReferences& styleRef = reg.emplace<StyleReferences>(e);
 		styleRef.current = StyleUtil::createEmptyStyle(reg, e);
 
+		reg.emplace<StyleDirtyTag>(e);
 		reg.emplace<FlexStyleFlag>(e, FlexStyleFlag::Empty);
 		reg.emplace<EventFlag>(e, EventFlag::Empty);
 

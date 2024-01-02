@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title></title>
+
+</head>
+<body style="display: flex; background-color: red;">
+	<script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+	<script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+	<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+	<style>
+		.root {
+			display: flex;
+			flex-direction: column;
+			flex-wrap: nowrap;
+			align-items: flex-start;
+		}
+
+		.container {
+			display: flex;
+			background-color: blue;
+			color: white;
+			border-left: solid green 15px;
+			width: 100px;
+			height: 100px;
+		}
+
+		.container:hover {
+			background-color: yellow;
+		}
+
+		.container:active {
+			background-color: blueviolet;
+			border: 2px black solid;
+		}
+
+		input {
+			width: 500px;
+		}
+
+		button {
+			background-color: red;
+		}
+
+		button:hover {
+			background-color: green;
+		}
+
+		button:active {
+			background-color: yellow;
+		}
+	</style>
+
+	<div id="root"></div>
+
+	<script type="text/babel">
+		const App = (props) => {
+			const evFunc = (e) => {
+				//console.log(e._reactName + ':', e);
+				console.log(e._reactName);
+			}
+
+			return <div className="root">
+				<div  className="container"
+					onClick={evFunc}
+					onContextMenu={evFunc}
+					onDoubleClick={evFunc}
+
+					onMouseDown={evFunc}
+					onMouseEnter={evFunc}
+					onMouseLeave={evFunc}
+					onMouseMove={evFunc}
+					onMouseOut={evFunc}
+					onMouseOver={evFunc}
+					onMouseUp={evFunc}
+
+					onPointerDown={evFunc}
+					onPointerMove={evFunc}
+					onPointerUp={evFunc}
+					onPointerCancel={evFunc}
+					onGotPointerCapture={evFunc}
+					onLostPointerCapture={evFunc}
+					onPointerEnter={evFunc}
+					onPointerLeave={evFunc}
+					onPointerOver={evFunc}
+					onPointerOut={evFunc}
+
+					onFocus={evFunc}
+					onBlur={evFunc}
+					onSelect={evFunc}
+				>
+
+				</div>
+				<button
+					onClick={evFunc}
+					onContextMenu={evFunc}
+					onDoubleClick={evFunc}
+					onDrag={evFunc}
+					onDragEnd={evFunc}
+					onDragEnter={evFunc}
+					onDragExit={evFunc}
+					onDragLeave={evFunc}
+					onDragOver={evFunc}
+					onDragStart={evFunc}
+					onDrop={evFunc}
+					onMouseDown={evFunc}
+					onMouseEnter={evFunc}
+					onMouseLeave={evFunc}
+					onMouseMove={evFunc}
+					onMouseOut={evFunc}
+					onMouseOver={evFunc}
+					onMouseUp={evFunc}
+
+					onPointerCancel={evFunc}
+
+					onFocus={evFunc}
+					onBlur={evFunc}
+					onSelect={evFunc}
+
+
+				>test</button>
+				<input type="checkbox" name="" id="" />
+			</div>
+	  };
+
+	  ReactDOM.render(
+		<App />,
+		document.getElementById('root')
+	  );
+	</script>
+</body>
+</html>

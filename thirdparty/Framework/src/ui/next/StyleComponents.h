@@ -13,6 +13,7 @@
 namespace fw {
 	struct RootTag {};
 	struct StyleDirtyTag {};
+	struct StyleUpdatedTag {};
 	
 	//struct PreviousStyleTag {};
 	struct CurrentStyleTag {};
@@ -20,8 +21,10 @@ namespace fw {
 	struct TargetStyleTag {};
 	struct TransitionFinishedTag {};
 
+	struct ActiveTag {};
 	struct MouseEnteredTag {};
 	struct MouseOverTag {};
+	struct MouseFocusTag {};
 	struct ElementReferenceComponent { DomElementHandle handle = entt::null; };
 	
 	struct TextComponent {
@@ -34,6 +37,7 @@ namespace fw {
 
 	struct StyleReferences {
 		StyleHandle current = entt::null;
+		StyleHandle prev = entt::null;
 		StyleHandle from = entt::null;
 		StyleHandle to = entt::null;
 		std::vector<entt::entity> transitions;

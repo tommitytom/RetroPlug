@@ -1,6 +1,7 @@
 #pragma once
 
 #include <entt/entity/registry.hpp>
+#include <yoga/Yoga.h>
 #include "DocumentTypes.h"
 
 namespace fw{

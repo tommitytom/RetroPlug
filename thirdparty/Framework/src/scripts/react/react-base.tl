@@ -10,20 +10,40 @@ local type React = record<ElementT>
 	createElement: function(string|ElementFunc, PropsMap): Element
 	render: function(Element, ElementT)
 	useState: function<T>(T): T, function(ActionFunc<T>|T)
+	useEffect: function()
+	useRef: function<T>(T): T
 	workLoop: function(function(): number)
 	component: function<T>(TypedElementFunc<T>): TypedElementFunc<T>
+	nativeComponent: function(string): function(PropsMap): Element
 	getCurrentRoot: function(): Fiber
 end
 
+local enum EffectTags
+	"PLACEMENT"
+	"UPDATE"
+	"DELETION"
+end
+
 return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT, PropsT, EventsT>): React<DomElementT>
+	local type Hook = record
+		tag: string
+	end
+
+	local type RefHook = record<T>
+		tag: string
+		current: T
+	end
+
 	local type StateHook = record<T>
+		tag: string
 		state: T
 		queue: {ActionFunc<T>}
 	end
 
-	local record AnonStateHook
-		state: any
-		queue: {ActionFunc<any>}
+	local type EffectHook = record
+		tag: string
+		fn: function()
+		deps: {any}
 	end
 
 	local record Fiber
@@ -34,8 +54,8 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		sibling: Fiber
 		alternate: Fiber
 		dom: DomElementT
-		effectTag: string
-		hooks: {AnonStateHook}
+		effectTag: EffectTags
+		hooks: {Hook}
 	end
 
 	local function createTextElement(text: string): Element
@@ -49,11 +69,14 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 	end
 
 	local function createElement(constructor: string|ElementFunc, props: PropsMap): Element
-		if props.children == nil then
-			props.children = {}
+		if props.children == nil then props.children = {} end
+		local children = props.children as {string|Element}
+
+		for i,v in ipairs(props as {string|Element}) do
+			table.insert(children, v)
+			props[i] = nil
 		end
 
-		local children = props.children as {string|Element}
 		for i,v in ipairs(children) do
 			if v is string then
 				children[i] = createTextElement(v)
@@ -301,17 +324,60 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		return nil
 	end
 
+	local function useContext<T>(initial: T): T, function(ActionFunc<T>|T)
+	end
+
+	local function getAlternateHook(fiber: Fiber, tag: string, index: integer): Hook
+		local oldHook: Hook =
+			fiber.alternate and
+			fiber.alternate.hooks and
+			fiber.alternate.hooks[index] as Hook
+
+		if oldHook ~= nil and oldHook.tag == tag then
+			return oldHook
+		end
+	end
+
+	local function useRef<T>(initial: T): T, function(ActionFunc<T>|T)
+		assert(_wipFiber ~= nil)
+		assert(_wipFiber.hooks ~= nil)
+		assert(_hookIndex ~= nil)
+
+		local oldHook = getAlternateHook(_wipFiber, "REF", _hookIndex) as RefHook<T>
+
+		local hook: RefHook<T> = {
+			tag = "REF",
+			current = oldHook ~= nil and oldHook.current or initial
+		}
+
+		table.insert(_wipFiber.hooks, hook as Hook)
+		_hookIndex = _hookIndex + 1
+	end
+
+	local function useEffect<T>(fn: function(), deps: {any}): T, function(ActionFunc<T>|T)
+		assert(_wipFiber ~= nil)
+		assert(_wipFiber.hooks ~= nil)
+		assert(_hookIndex ~= nil)
+
+		local hook: EffectHook = {
+			tag = "EFFECT",
+			fn = fn,
+			deps = deps,
+		}
+
+		table.insert(_wipFiber.hooks, hook as Hook)
+		_hookIndex = _hookIndex + 1
+	end
+
 	local function useState<T>(initial: T): T, function(ActionFunc<T>|T)
 		assert(_wipFiber ~= nil)
 		assert(_wipFiber.hooks ~= nil)
 		assert(_hookIndex ~= nil)
 
-		local oldHook: StateHook<T> =
-			_wipFiber.alternate and
-			_wipFiber.alternate.hooks and
-			_wipFiber.alternate.hooks[_hookIndex] as StateHook<T>
+		local oldHook = getAlternateHook(_wipFiber, "STATE", _hookIndex) as StateHook<T>
 
 		local hook: StateHook<T> = {
+			tag = "STATE",
 			state = oldHook ~= nil and oldHook.state or initial,
 			queue = {},
 		}
@@ -342,8 +408,9 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 			_deletions = {}
 		end
 
-		table.insert(_wipFiber.hooks, hook as AnonStateHook)
+		table.insert(_wipFiber.hooks, hook as Hook)
 		_hookIndex = _hookIndex + 1
+
 		return hook.state, setState
 	end
 
@@ -378,12 +445,21 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		end
 	end
 
+	local function nativeComponent(name: string): function(PropsMap): Element
+		return function(props: PropsMap): Element
+			return createElement(name, props)
+		end
+	end
+
 	return {
 		createElement = createElement,
 		render = render,
+		useEffect = useEffect,
+		useRef = useRef,
 		useState = useState,
 		workLoop = workLoop,
 		component = component,
+		nativeComponent = nativeComponent,
 		getCurrentRoot = function(): Fiber return _currentRoot end,
 	}
 end

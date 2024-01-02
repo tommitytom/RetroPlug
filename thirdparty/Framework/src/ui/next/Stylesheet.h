@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <vector>
 #include <entt/fwd.hpp>
 #include <entt/entity/entity.hpp>
@@ -28,6 +29,7 @@ namespace fw {
 		ClassSelector,
 		PseudoClassSelector,
 		PseudoElementSelector,
+		AttributeSelector,
 		Combinator,
 	};
 
@@ -62,9 +64,14 @@ namespace fw {
 	};
 
 	struct Specificity {
+		size_t index = 0;
 		int32 a = 0;
 		int32 b = 0;
 		int32 c = 0;
+
+		bool operator==(const Specificity& v) const {
+			return a == v.a && b == v.b && c == v.c && index == v.index;
+		}
 	};
 
 	struct SelectorGroup {
@@ -83,6 +90,7 @@ namespace fw {
 	};
 
 	struct Stylesheet {
+		std::filesystem::path filePath;
 		SelectorGroup selectorGroup;
 		std::shared_ptr<StylesheetRule> rule;
 	};

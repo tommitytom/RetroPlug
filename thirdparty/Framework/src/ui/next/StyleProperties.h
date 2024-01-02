@@ -90,13 +90,75 @@ namespace fw {
 		MatchParent,
 		JustifyAll
 	};
+
+	enum class BorderStyleType {
+		None,
+		Hidden,
+		Dotted,
+		Dashed,
+		Solid,
+		Double,
+		Groove,
+		Ridge,
+		Inset,
+		Outset
+	};
 }
 
 namespace fw::styles {
+	DefineStyleProperty("cursor", Cursor, fw::CursorType, InheritedTag);
 	DefineStyleProperty("color", Color, Color4F, AnimatableTag, InheritedTag);
 	DefineStyleProperty("background-color", BackgroundColor, Color4F, AnimatableTag);
+	
+	DefineStyleProperty("margin-bottom", MarginBottom, FlexValue, AnimatableTag);
+	DefineStyleProperty("margin-top", MarginTop, FlexValue, AnimatableTag);
+	DefineStyleProperty("margin-left", MarginLeft, FlexValue, AnimatableTag);
+	DefineStyleProperty("margin-right", MarginRight, FlexValue, AnimatableTag);
+
+	DefineStyleProperty("padding-bottom", PaddingBottom, FlexValue, AnimatableTag);
+	DefineStyleProperty("padding-top", PaddingTop, FlexValue, AnimatableTag);
+	DefineStyleProperty("padding-left", PaddingLeft, FlexValue, AnimatableTag);
+	DefineStyleProperty("padding-right", PaddingRight, FlexValue, AnimatableTag);
+
+	DefineStyleProperty("border-bottom-width", BorderBottomWidth, LengthValue, AnimatableTag);
+	DefineStyleProperty("border-top-width", BorderTopWidth, LengthValue, AnimatableTag);
+	DefineStyleProperty("border-left-width", BorderLeftWidth, LengthValue, AnimatableTag);
+	DefineStyleProperty("border-right-width", BorderRightWidth, LengthValue, AnimatableTag);
+	DefineStyleProperty("border-bottom-color", BorderBottomColor, Color4F, AnimatableTag);
+	DefineStyleProperty("border-top-color", BorderTopColor, Color4F, AnimatableTag);
+	DefineStyleProperty("border-left-color", BorderLeftColor, Color4F, AnimatableTag);
+	DefineStyleProperty("border-right-color", BorderRightColor, Color4F, AnimatableTag);
+	DefineStyleProperty("border-bottom-style", BorderBottomStyle, BorderStyleType);
+	DefineStyleProperty("border-top-style", BorderTopStyle, BorderStyleType);
+	DefineStyleProperty("border-left-style", BorderLeftStyle, BorderStyleType);
+	DefineStyleProperty("border-right-style", BorderRightStyle, BorderStyleType);
+
+	// flex-flow
+	DefineStyleProperty("flex-direction", FlexDirection, fw::FlexDirection);
+	DefineStyleProperty("flex-wrap", FlexWrap, fw::FlexWrap);
+	
+	DefineStyleProperty("flex-basis", FlexBasis, FlexValue);
+	DefineStyleProperty("flex-grow", FlexGrow, f32);
+	DefineStyleProperty("flex-shrink", FlexShrink, f32);
+	DefineStyleProperty("align-items", AlignItems, fw::FlexAlign);
+	DefineStyleProperty("align-content", AlignContent, fw::FlexAlign);
+	DefineStyleProperty("align-self", AlignSelf, fw::FlexAlign);
+	DefineStyleProperty("justify-content", JustifyContent, fw::FlexJustify);
+	DefineStyleProperty("overflow", Overflow, fw::FlexOverflow);
+
+	DefineStyleProperty("position", Position, fw::FlexPositionType);
+	DefineStyleProperty("top", Top, fw::FlexValue, AnimatableTag);
+	DefineStyleProperty("left", Left, fw::FlexValue, AnimatableTag);
+	DefineStyleProperty("bottom", Bottom, fw::FlexValue, AnimatableTag);
+	DefineStyleProperty("right", Right, fw::FlexValue, AnimatableTag);
+
 	DefineStyleProperty("width", Width, FlexValue, AnimatableTag);
 	DefineStyleProperty("height", Height, FlexValue, AnimatableTag);
+	DefineStyleProperty("min-width", MinWidth, FlexValue, AnimatableTag);
+	DefineStyleProperty("min-height", MinHeight, FlexValue, AnimatableTag);
+	DefineStyleProperty("max-width", MaxWidth, FlexValue, AnimatableTag);
+	DefineStyleProperty("max-height", MaxHeight, FlexValue, AnimatableTag);
+	
 	DefineStyleProperty("transition-property", TransitionProperty, std::string);
 	DefineStyleProperty("transition-duration", TransitionDuration, std::chrono::duration<f32>);
 	DefineStyleProperty("transition-timing-function", TransitionTimingFunction, TimingFunction);

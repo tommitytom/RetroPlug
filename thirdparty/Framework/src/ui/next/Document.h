@@ -10,7 +10,7 @@ namespace fw {
 	class Document {
 	private:
 		entt::registry _reg;
-		FontManager _fontManager;
+		FontManager& _fontManager;
 
 	public:
 		Document(FontManager& fontManager) : _fontManager(fontManager) { clear(); }

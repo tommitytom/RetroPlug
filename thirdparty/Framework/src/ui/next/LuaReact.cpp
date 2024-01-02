@@ -12,7 +12,11 @@ namespace fw {
 	
 	LuaReact::LuaReact(FontManager& fontManager, const std::filesystem::path& path) : _doc(fontManager), _path(path) {
 		_listener.setCallback([&](FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
-			reload();
+			if (filename.ends_with(".css")) {
+				_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+			} else {
+				reload();
+			}
 		});
 
 		std::string root = std::filesystem::path(_path).remove_filename().string();
@@ -29,6 +33,7 @@ namespace fw {
 
 	void LuaReact::update(f32 dt) {
 		_fileWatcher.update();
+		_listener.update(dt);
 
 		if (_lua) {
 			luabridge::LuaRef cb = luabridge::getGlobal(_lua, "onFrame");
@@ -110,7 +115,7 @@ namespace fw {
 			_lua = nullptr;
 		}
 
-		update(0.3f);
+		//update(0.3f);
 		_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
 	}
 	
@@ -163,9 +168,9 @@ namespace fw {
 		for (auto it = next.rbegin(); it != next.rend(); ++it) {
 			DomElementHandle e = *it;
 
-			CursorType* cursor = reg.try_get<CursorType>(e);
+			const styles::Cursor* cursor = StyleUtil::findProperty<styles::Cursor>(reg, e, true);
 			if (cursor) {
-				_cursor = *cursor;
+				_cursor = cursor->value;
 			}
 
 			bool fired = emitRelativeEvent(e, "onMouseMove", MouseMoveEvent{ Point(pos) });
@@ -183,9 +188,12 @@ namespace fw {
 	}
 	
 	bool LuaReact::handleMouseButton(const MouseButtonEvent& ev) {
+		entt::registry& reg = _doc.getRegistry();
 		bool fired = propagateMouseButton(_doc.getRootElement(), ev);
 
 		if (_mouseFocus != entt::null && !ev.down) {
+			reg.remove<MouseFocusTag>(_mouseFocus);
+			StyleUtil::markStyleDirty(reg, _mouseFocus, true);
 			fired |= emitEvent(_mouseFocus, "onMouseBlur", MouseBlurEvent{});
 			_mouseFocus = entt::null;
 		}
@@ -216,6 +224,10 @@ namespace fw {
 
 			if (emitEvent(e, "onMouseButton", std::move(newEvent))) {
 				if (ev.down) {
+					// NOTE: Maybe if 2 buttons are pressed something different should happen?
+					// How do we track releases?
+					reg.emplace_or_replace<MouseFocusTag>(e);
+					StyleUtil::markStyleDirty(reg, e, true);
 					emitEvent(e, "onMouseFocus", MouseFocusEvent{});
 					_mouseFocus = e;
 				}

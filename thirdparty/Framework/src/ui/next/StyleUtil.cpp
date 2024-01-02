@@ -12,6 +12,7 @@
 #include "StyleComponents.h"
 #include "Stylesheet.h"
 #include "Transitions.h"
+#include "graphics/FontManager.h"
 
 namespace fw {
 	struct Animator {
@@ -46,6 +47,8 @@ namespace fw {
 			case SelectorType::PseudoClassSelector: {
 				if (item.name == "hover") {
 					return reg.all_of<MouseEnteredTag>(handle);
+				}  else if (item.name == "active") {
+					return reg.all_of<MouseFocusTag>(handle);
 				} else {
 					spdlog::warn("CSS psuedo class selector of type {} not implemented", item.name);
 				}
@@ -115,31 +118,21 @@ namespace fw {
 		return true;
 	}
 
-	void StyleUtil::addStyleSheets(entt::registry& reg, std::vector<Stylesheet>&& stylesheets) {
+	void StyleUtil::addStyleSheets(entt::registry& reg, const std::filesystem::path& path, std::vector<Stylesheet>&& stylesheets) {
 		StyleSingleton& styleSingleton = reg.ctx().at<StyleSingleton>();
+
+		for (auto it = styleSingleton.selectors.begin(); it != styleSingleton.selectors.end();) {
+			if (it->filePath == path) {
+				it = styleSingleton.selectors.erase(it);
+			} else {
+				++it;
+			}
+		}	
+
 		styleSingleton.selectors.insert(styleSingleton.selectors.end(), stylesheets.begin(), stylesheets.end());
 
 		// Force all nodes to update their styles
 		reg.view<StyleReferences>().each([&](entt::entity e) { reg.emplace_or_replace<StyleDirtyTag>(e); });
-	}
-
-	void StyleUtil::setup(entt::registry& reg) {
-		reg.ctx().emplace<StyleSingleton>(StyleSingleton{
-			.propMethods = {
-				makePropertyVTable<styles::BackgroundColor>(),
-				makePropertyVTable<styles::Color>(),
-				makePropertyVTable<styles::Height>(),
-				makePropertyVTable<styles::TransitionDelay>(),
-				makePropertyVTable<styles::TransitionDuration>(),
-				makePropertyVTable<styles::TransitionProperty>(),
-				makePropertyVTable<styles::TransitionTimingFunction>(),
-				makePropertyVTable<styles::FontFamily>(),
-				makePropertyVTable<styles::FontSize>(),
-				makePropertyVTable<styles::FontWeight>(),
-				makePropertyVTable<styles::TextAlign>(),
-				makePropertyVTable<styles::Width>()
-			}
-		});
 	}
 
 	StyleHandle StyleUtil::createEmptyStyle(entt::registry& reg, const DomElementHandle element) {
@@ -159,38 +152,39 @@ namespace fw {
 	}
 
 	template <typename T>
-	const T* findParentProp(entt::registry& reg, const DomElementHandle handle) {
-		DomElementHandle parent = DocumentUtil::getParent(reg, handle);
-
-		while (parent != entt::null) {
-			const T* found = reg.try_get<T>(reg.get<StyleReferences>(handle).current);
-			
-			if (found) {
-				return found;
-			}
-
-			return nullptr;
-		}
-
-		return nullptr;
-	}
-
-	template <typename T>
-	void inheritProperty(entt::registry& reg, const DomElementHandle sourceElement, const StyleHandle targetStyle) {
-		const T* prop = findParentProp<T>(reg, sourceElement);
+	void inheritProperty(entt::registry& reg, const DomElementHandle sourceElement, const StyleHandle targetStyle, const T& def) {
+		const T* prop = StyleUtil::findProperty<T>(reg, sourceElement, false);
 		if (prop) {
 			reg.emplace<T>(targetStyle, *prop);
+		} else {
+			reg.emplace<T>(targetStyle, def);
 		}
 	}
 
 	StyleHandle createTextStyle(entt::registry& reg, const DomElementHandle handle) {
 		StyleHandle style = StyleUtil::createEmptyStyle(reg, handle);
 		
-		inheritProperty<styles::FontFamily>(reg, handle, style);
-		inheritProperty<styles::FontSize>(reg, handle, style);
-		inheritProperty<styles::FontWeight>(reg, handle, style);
+		inheritProperty<styles::FontFamily>(reg, handle, style, styles::FontFamily{ "Karla-Regular" });
+		inheritProperty<styles::FontSize>(reg, handle, style, styles::FontSize{ .value = { LengthType::Default, 16 } });
+		inheritProperty<styles::FontWeight>(reg, handle, style, styles::FontWeight {});
 
 		return style;
+	}
+
+	bool sortRules(const Stylesheet* l, const Stylesheet* r) {
+		const Specificity& lSpec = l->selectorGroup.specificity;
+		const Specificity& rSpec = r->selectorGroup.specificity;
+		
+		if (lSpec.a != rSpec.a) {
+			return lSpec.a > rSpec.a;
+		} else if (lSpec.b != rSpec.b) {
+			return lSpec.b > rSpec.b;
+		} else if (lSpec.c != rSpec.c) {
+			return lSpec.c > rSpec.c;
+		}
+
+		// When 2 rules have the same specificity, the one that appears later in the file is given prominence
+		return lSpec.index > rSpec.index;
 	}
 
 	StyleHandle createStyle(entt::registry& reg, const DomElementHandle handle) {
@@ -201,20 +195,26 @@ namespace fw {
 
 		StyleReferences& styleRef = reg.get<StyleReferences>(handle);
 		const StyleSingleton& styleSingleton = reg.ctx().at<StyleSingleton>();
-		std::vector<const StylesheetRule*> rules;
+		std::vector<const Stylesheet*> rules;
+		std::unordered_map<entt::id_type, const StylesheetRule::Property*> props;
 
 		for (const Stylesheet& selector : styleSingleton.selectors) {
 			if (isSelected(reg, handle, selector.selectorGroup)) {
-				rules.push_back(selector.rule.get());
+				rules.insert(rules.begin(), &selector);
 			}
 		}
 
-		// TODO: Sort and filter by specificity
+		std::sort(rules.begin(), rules.end(), sortRules);
 
-		std::unordered_map<entt::id_type, const StylesheetRule::Property*> props;
+		for (auto it = rules.rbegin(); it != rules.rend(); ++it) {
+			for (const StylesheetRule::Property& prop : (*it)->rule->properties) {
+				props[prop.data.type().index()] = &prop;
+			}
+		}
 
-		for (const StylesheetRule* rule : rules) {
-			for (const StylesheetRule::Property& prop : rule->properties) {
+		const StylesheetRule* inlineStyle = reg.try_get<StylesheetRule>(handle);
+		if (inlineStyle) {
+			for (const StylesheetRule::Property& prop : inlineStyle->properties) {
 				props[prop.data.type().index()] = &prop;
 			}
 		}
@@ -271,8 +271,6 @@ namespace fw {
 				assert(reg.valid(styleRef.from));
 				assert(reg.valid(styleRef.to));
 
-				spdlog::info(reg.get<ElementTag>(element).tag);
-
 				if (!found->second.copy(reg, styleRef.current, styleRef.to)) {
 					continue;
 				}
@@ -328,41 +326,47 @@ namespace fw {
 
 		reg.destroy(transitionHandle);
 	}
+	
+	void removeAllTransitions(entt::registry& reg, StyleReferences& styleRef) {
+		for (entt::entity trans : styleRef.transitions) {
+			reg.destroy(trans);
+		}
+
+		styleRef.transitions.clear();
+
+		if (styleRef.from != entt::null) {
+			reg.destroy(styleRef.from);
+			styleRef.from = entt::null;
+		}
+
+		if (styleRef.to != entt::null) {
+			reg.destroy(styleRef.to);
+			styleRef.to = entt::null;
+		}
+	}
+
+	void removeAllTransitions(entt::registry& reg, DomElementHandle handle) {
+		removeAllTransitions(reg, reg.get<StyleReferences>(handle));
+	}
 
 	void updateElementStyle(entt::registry& reg, DomElementHandle elementHandle, bool force) {
 		if (reg.all_of<StyleDirtyTag>(elementHandle) || force) {
-			assert(reg.all_of<StyleReferences>(elementHandle));
 			StyleReferences& styleRef = reg.get<StyleReferences>(elementHandle);
+			removeAllTransitions(reg, styleRef);
+
+			assert(styleRef.prev == entt::null);
 			
-			while (styleRef.transitions.size()) {
-				removeTransition(reg, elementHandle, styleRef.transitions.back());
-			}
+			styleRef.prev = styleRef.current;
+			reg.remove<CurrentStyleTag, CurrentStyleDirtyTag>(styleRef.prev);
+			
+			styleRef.current = createStyle(reg, elementHandle);
+			reg.emplace<LayoutDirtyTag>(styleRef.current);
+			reg.emplace<CurrentStyleTag>(styleRef.current);
+			reg.emplace<CurrentStyleDirtyTag>(styleRef.current);
 
-			assert(styleRef.from == entt::null);
-			assert(styleRef.to == entt::null);
+			reg.emplace<StyleUpdatedTag>(elementHandle);
 
-			StyleHandle nextStyle = createStyle(reg, elementHandle);
-			reg.emplace<LayoutDirtyTag>(nextStyle);
-			reg.emplace<CurrentStyleTag>(nextStyle);
-			reg.emplace<CurrentStyleDirtyTag>(nextStyle);
-
-			// this should probably be deferred to transitionSystem
-			styles::TransitionProperty* transition = reg.try_get<styles::TransitionProperty>(nextStyle);
-			if (transition && reg.all_of<styles::TransitionDuration>(nextStyle)) {
-				styleRef.from = styleRef.current;
-				//reg.emplace<PreviousStyleTag>(styleRef.from);
-				reg.remove<CurrentStyleTag, CurrentStyleDirtyTag>(styleRef.from);
-
-				styleRef.current = nextStyle;
-				styleRef.to = StyleUtil::createEmptyStyle(reg, elementHandle);
-
-				std::vector<std::string_view> propNames;
-				splitString(transition->value, ' ', propNames);
-				initializeTransitions(reg, elementHandle, styleRef, propNames);
-			} else {
-				styleRef.current = nextStyle;
-			}
-
+			// Once we enounter a dirty style, all child nodes also need to be updated
 			force = true;
 		}
 
@@ -375,26 +379,34 @@ namespace fw {
 		if (!reg.view<StyleDirtyTag>().empty()) {
 			// There is a dirty style in the node tree somewhere
 			// Start from the root node and recreate styles for nodes that have StyleDirtyTag
+			// This could be way more efficient (like sorting and iterating a flat list of dirty nodes)
+			// but this is the most fool proof for now.
 			updateElementStyle(reg, DocumentUtil::getRootNode(reg), false);
 			reg.clear<StyleDirtyTag>();
 		}
 	}
 
+	void updateFonts(entt::registry& reg) {
+		FontManager* fontManager = reg.ctx().at<FontManager*>();
+
+		reg.view<styles::FontFamily, CurrentStyleDirtyTag>().each([&](StyleHandle style, const styles::FontFamily& family) {
+			f32 size = reg.get<styles::FontSize>(style).value.value;
+			reg.emplace<FontFaceStyle>(style, FontFaceStyle{ fontManager->loadFont(family.value.familyName, size) });
+		});
+	}
+
 	void updateTransitions(entt::registry& reg, f32 dt) {
 		reg.view<styles::TransitionProperty, CurrentStyleDirtyTag>().each([&](StyleHandle style, const styles::TransitionProperty& transition) {
-			// get style ref
-			// remove existing transitions
+			DomElementHandle element = reg.get<ElementReferenceComponent>(style).handle;
+			StyleReferences& styleRef = reg.get<StyleReferences>(element);
 
-			
-			/*reg.emplace<PreviousStyleTag>(styleRef.from);
-			reg.remove<CurrentStyleTag, CurrentStyleDirtyTag>(styleRef.from);
-
-			styleRef.current = nextStyle;
-			styleRef.to = StyleUtil::createEmptyStyle(reg, elementHandle);
+			styleRef.from = styleRef.prev;
+			styleRef.prev = entt::null;
+			styleRef.to = StyleUtil::createEmptyStyle(reg, element);
 
 			std::vector<std::string_view> propNames;
 			splitString(transition.value, ' ', propNames);
-			initializeTransitions(reg, elementHandle, styleRef, propNames);*/
+			initializeTransitions(reg, element, styleRef, propNames);
 		});
 
 		reg.view<Transition>().each([&](const entt::entity e, Transition& transition) {
@@ -419,8 +431,90 @@ namespace fw {
 		});
 	}
 
+	void cleanupStyles(entt::registry& reg) {
+		reg.view<StyleUpdatedTag>().each([&](DomElementHandle element) {
+			StyleReferences& styleRef = reg.get<StyleReferences>(element);
+			if (styleRef.prev != entt::null) {
+				reg.destroy(styleRef.prev);
+				styleRef.prev = entt::null;
+			}
+		});
+
+		reg.clear<StyleUpdatedTag, CurrentStyleDirtyTag>();
+	}
+
 	void StyleUtil::update(entt::registry& reg, f32 dt) {
 		updateStyles(reg);
+		updateFonts(reg);
 		updateTransitions(reg, dt);
+		cleanupStyles(reg);
+	}
+
+	void StyleUtil::setup(entt::registry& reg) {
+		reg.ctx().emplace<StyleSingleton>(StyleSingleton{
+			.propMethods = {
+				makePropertyVTable<styles::Cursor>(),
+				makePropertyVTable<styles::Color>(),
+				makePropertyVTable<styles::BackgroundColor>(),
+
+				makePropertyVTable<styles::MarginBottom>(),
+				makePropertyVTable<styles::MarginTop>(),
+				makePropertyVTable<styles::MarginLeft>(),
+				makePropertyVTable<styles::MarginRight>(),
+
+				makePropertyVTable<styles::PaddingBottom>(),
+				makePropertyVTable<styles::PaddingTop>(),
+				makePropertyVTable<styles::PaddingLeft>(),
+				makePropertyVTable<styles::PaddingRight>(),
+
+				makePropertyVTable<styles::BorderBottomWidth>(),
+				makePropertyVTable<styles::BorderTopWidth>(),
+				makePropertyVTable<styles::BorderLeftWidth>(),
+				makePropertyVTable<styles::BorderRightWidth>(),
+				makePropertyVTable<styles::BorderBottomColor>(),
+				makePropertyVTable<styles::BorderTopColor>(),
+				makePropertyVTable<styles::BorderLeftColor>(),
+				makePropertyVTable<styles::BorderRightColor>(),
+				makePropertyVTable<styles::BorderBottomStyle>(),
+				makePropertyVTable<styles::BorderTopStyle>(),
+				makePropertyVTable<styles::BorderLeftStyle>(),
+				makePropertyVTable<styles::BorderRightStyle>(),
+
+				// flex-flow
+				makePropertyVTable<styles::FlexDirection>(),
+				makePropertyVTable<styles::FlexWrap>(),
+
+				makePropertyVTable<styles::FlexBasis>(),
+				makePropertyVTable<styles::FlexGrow>(),
+				makePropertyVTable<styles::FlexShrink>(),
+				makePropertyVTable<styles::AlignItems>(),
+				makePropertyVTable<styles::AlignContent>(),
+				makePropertyVTable<styles::AlignSelf>(),
+				makePropertyVTable<styles::JustifyContent>(),
+				makePropertyVTable<styles::Overflow>(),
+
+				makePropertyVTable<styles::Position>(),
+				makePropertyVTable<styles::Top>(),
+				makePropertyVTable<styles::Left>(),
+				makePropertyVTable<styles::Bottom>(),
+				makePropertyVTable<styles::Right>(),
+
+				makePropertyVTable<styles::Width>(),
+				makePropertyVTable<styles::Height>(),
+				makePropertyVTable<styles::MinWidth>(),
+				makePropertyVTable<styles::MinHeight>(),
+				makePropertyVTable<styles::MaxWidth>(),
+				makePropertyVTable<styles::MaxHeight>(),
+
+				makePropertyVTable<styles::TransitionProperty>(),
+				makePropertyVTable<styles::TransitionDuration>(),
+				makePropertyVTable<styles::TransitionTimingFunction>(),
+				makePropertyVTable<styles::TransitionDelay>(),
+				makePropertyVTable<styles::FontFamily>(),
+				makePropertyVTable<styles::FontSize>(),
+				makePropertyVTable<styles::FontWeight>(),
+				makePropertyVTable<styles::TextAlign>(),
+			}
+		});
 	}
 }

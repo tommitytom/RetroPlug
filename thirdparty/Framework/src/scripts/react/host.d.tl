@@ -198,7 +198,6 @@ global record fw
 	end
 
 	record HostStyle
-		-- Flex properties
 		flexDirection: integer
 		justifyContent: integer
 		flexAlignItems: integer
@@ -222,12 +221,17 @@ global record fw
 		border: FlexBorderT|number
 		overflow: integer
 		flexPositionType: integer
-
-		-- Style properties
-		className: string|{string}
 		color: Color4FT
 		backgroundColor: Color4FT
 		cursor: integer
+	end
+
+	record HostElement
+		{Element|string}
+
+		-- Style properties
+		className: string|{string}
+		style: HostStyle
 
 		-- Events
 		onMouseButton: function(MouseButtonEvent)

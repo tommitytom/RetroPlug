@@ -13,7 +13,7 @@ end
 
 global type ElementFunc = function(PropsMap): Element
 global type TypedElementFunc = function<PropsT>(PropsT): Element
-global type PropsMap = {string: any}
+global type PropsMap = {string|number: any}
 
 global record Element
 	type: ElementFunc|string
