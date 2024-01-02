@@ -74,7 +74,7 @@ bool SynthView::onDrop(const std::vector<std::string>& paths) {
 }
 
 bool SynthView::onKey(const fw::KeyEvent& ev) {
-	ButtonType::Enum button = fw::keyToButton(ev.key);
+	fw::ButtonType button = fw::keyToButton(ev.key);
 
 	if (ev.down) {
 		_ui.pressKey(ev.key);
@@ -82,7 +82,7 @@ bool SynthView::onKey(const fw::KeyEvent& ev) {
 		_ui.releaseKey(ev.key);
 	}
 
-	if (button != ButtonType::MAX) {
+	if (button != fw::ButtonType::MAX) {
 		if (ev.down) {
 			_ui.pressButton(button);
 		} else {

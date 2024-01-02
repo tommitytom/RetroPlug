@@ -5,17 +5,20 @@
 
 namespace fw {
 	enum class CursorType {
+		None,
 		Arrow,
 		Hand,
 		IBeam,
 		Crosshair,
 		ResizeEW,
 		ResizeNS,
+		ResizeNE,
+		ResizeNW,
+		ResizeSE,
+		ResizeSW,
 		ResizeNWSE,
 		ResizeNESW,
-		NotAllowed,
-		//ResizeH = ResizeEW,
-		//ResizeV = ResizeNS,
+		NotAllowed
 	};
 	
 	enum class FlexAlign {

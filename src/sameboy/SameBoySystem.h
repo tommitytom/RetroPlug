@@ -103,7 +103,7 @@ namespace rp {
 			return _state;
 		}
 
-		uint32 getSampleRate() const {
+		uint32 getSampleRate() const override {
 			return _sampleRate;
 		}
 

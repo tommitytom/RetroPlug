@@ -70,7 +70,7 @@ void LsdjOverlay::onMenu(fw::Menu& menu) {
 }
 
 bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == VirtualKey::Tab) {
+	if (ev.key == fw::VirtualKey::Tab) {
 		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
 		return false;
 	}
@@ -78,12 +78,12 @@ bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
 	LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
 
 	bool changed = false;
-	if (ev.key == VirtualKey::W) {
+	if (ev.key == fw::VirtualKey::W) {
 		_bHeld = ev.down;
 		changed = true;
 	}
 
-	if (ev.key == VirtualKey::D) {
+	if (ev.key == fw::VirtualKey::D) {
 		_aHeld = ev.down;
 		changed = true;
 	}

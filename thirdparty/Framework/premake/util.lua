@@ -37,6 +37,14 @@ function util.setupWorkspace()
 	vectorextensions "SSE2"
 	editAndContinue "off"
 
+	filter "platforms:x86"
+		architecture "x86"
+	filter "platforms:x64"
+		architecture "x64"
+	filter "platforms:Emscripten"
+		architecture "x86"
+		defines { "FW_PLATFORM_WEB", "FW_COMPILER_CLANG" }
+
 	filter "configurations:Debug*"
 		defines { "_DEBUG", "FW_DEBUG" }
 		optimize "Off"
@@ -59,14 +67,6 @@ function util.setupWorkspace()
 		symbols "Full"
 	filter { "action:vs*", "platforms:Emscripten" }
 		toolset "emcc"
-
-	filter "platforms:x86"
-		architecture "x86"
-	filter "platforms:x64"
-		architecture "x64"
-	filter "platforms:Emscripten"
-		architecture "x86"
-		defines { "FW_PLATFORM_WEB", "FW_COMPILER_CLANG" }
 
 	filter { "action:vs*", "configurations:*ASAN" }
 		buildoptions { "/fsanitize=address" }
@@ -101,6 +101,7 @@ function util.setupWorkspace()
 		staticruntime "on"
 		libdirs {  "dep/lib" }
 		buildoptions { "/Zc:__cplusplus" }
+		disablewarnings { 4996, 4043 }
 
 	filter { "platforms:Emscripten" }
 		defines { "FW_PLATFORM_WEB" }

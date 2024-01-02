@@ -80,19 +80,19 @@ bool SamplerView::onDrop(const std::vector<std::string>& paths) {
 }
 
 bool SamplerView::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == VirtualKey::Tab) {
+	if (ev.key == fw::VirtualKey::Tab) {
 		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
 		return false;
 	}
 
-	ButtonType::Enum button = fw::keyToButton(ev.key);
+	fw::ButtonType button = fw::keyToButton(ev.key);
 
-	if (ev.key == VirtualKey::W) {
+	if (ev.key == fw::VirtualKey::W) {
 		_bHeld = ev.down;
 	}
 
 	if (_bHeld && ev.down) {
-		if (ev.key == VirtualKey::LeftArrow) {
+		if (ev.key == fw::VirtualKey::LeftArrow) {
 			_samplerState.selectedKit--;
 
 			if (_samplerState.selectedKit < 0) {
@@ -100,7 +100,7 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 			}
 
 			updateWaveform();
-		} else if (ev.key == VirtualKey::RightArrow) {
+		} else if (ev.key == fw::VirtualKey::RightArrow) {
 			_samplerState.selectedKit++;
 
 			if (_samplerState.selectedKit >= lsdj::Rom::KIT_COUNT) {
@@ -113,7 +113,7 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 		return true;
 	}
 
-	if (ev.key == VirtualKey::Esc) {
+	if (ev.key == fw::VirtualKey::Esc) {
 		if (ev.down) {
 			// Generate menu
 			fw::MenuPtr menu = std::make_shared<fw::Menu>();
@@ -128,13 +128,13 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 	}
 
 	if (ev.down) {
-		if (ev.key == VirtualKey::D) {
+		if (ev.key == fw::VirtualKey::D) {
 			_aHeld = true;
 		}
 
 		_ui.pressKey(ev.key);
 	} else {
-		if (ev.key == VirtualKey::D && _aHeld) {
+		if (ev.key == fw::VirtualKey::D && _aHeld) {
 			_aHeld = false;
 			//LsdjModelPtr model;// = _system->getModel<LsdjModel>();
 			//if (model) {
@@ -145,7 +145,7 @@ bool SamplerView::onKey(const fw::KeyEvent& ev) {
 		_ui.releaseKey(ev.key);
 	}
 
-	if (button != ButtonType::MAX) {
+	if (button != fw::ButtonType::MAX) {
 		if (ev.down) {
 			_ui.pressButton(button);
 		} else {
@@ -176,8 +176,8 @@ bool defaultHexSpin(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 defaul
 		editValue = defaultValue;
 	}
 
-	if (ui.buttonDown(ButtonType::B)) {
-		if (ui.buttonPressed(ButtonType::A)) {
+	if (ui.buttonDown(fw::ButtonType::B)) {
+		if (ui.buttonPressed(fw::ButtonType::A)) {
 			value = -1;
 			return true;
 		}
@@ -206,8 +206,8 @@ bool defaultSelect(lsdj::Ui& ui, uint32 x, uint32 y, int32& value, int32 default
 		editValue = defaultValue;
 	}
 
-	if (ui.buttonDown(ButtonType::B)) {
-		if (ui.buttonPressed(ButtonType::A)) {
+	if (ui.buttonDown(fw::ButtonType::B)) {
+		if (ui.buttonPressed(fw::ButtonType::A)) {
 			value = -1;
 			return true;
 		}

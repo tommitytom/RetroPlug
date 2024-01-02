@@ -14,13 +14,13 @@
 
 namespace rp::lsdj {
 	struct InputState {
-		std::vector<ButtonType::Enum> buttonPresses;
-		std::vector<ButtonType::Enum> buttonReleases;
-		std::array<bool, ButtonType::MAX> buttonStates = { false };
+		std::vector<fw::ButtonType> buttonPresses;
+		std::vector<fw::ButtonType> buttonReleases;
+		std::array<bool, static_cast<int>(fw::ButtonType::MAX)> buttonStates = { false };
 
-		std::vector<VirtualKey::Enum> keyPresses;
-		std::vector<VirtualKey::Enum> keyReleases;
-		std::array<bool, VirtualKey::COUNT> keyStates = { false };
+		std::vector<fw::VirtualKey> keyPresses;
+		std::vector<fw::VirtualKey> keyReleases;
+		std::array<bool, static_cast<int>(fw::VirtualKey::COUNT)> keyStates = { false };
 	};
 
 	struct UiState {
@@ -78,7 +78,7 @@ namespace rp::lsdj {
 		lsdj::Canvas& _c;
 
 	public:
-		Ui(lsdj::Canvas& canvas): _c(canvas) {}
+		Ui(lsdj::Canvas& canvas) : _c(canvas) {}
 		~Ui() {}
 
 		template <typename T>
@@ -197,28 +197,28 @@ namespace rp::lsdj {
 			_state.colRowCounts = _state.nextColRowCounts;
 		}
 
-		void pressKey(VirtualKey::Enum key) {
-			_state.input.keyStates[key] = true;
+		void pressKey(fw::VirtualKey key) {
+			_state.input.keyStates[static_cast<int>(key)] = true;
 			_state.input.keyPresses.push_back(key);
 		}
 
-		void releaseKey(VirtualKey::Enum key) {
-			_state.input.keyStates[key] = false;
+		void releaseKey(fw::VirtualKey key) {
+			_state.input.keyStates[static_cast<int>(key)] = false;
 			_state.input.keyReleases.push_back(key);
 		}
 
-		void pressButton(ButtonType::Enum button) {
-			_state.input.buttonStates[button] = true;
+		void pressButton(fw::ButtonType button) {
+			_state.input.buttonStates[static_cast<int>(button)] = true;
 			_state.input.buttonPresses.push_back(button);
 		}
 
-		void releaseButton(ButtonType::Enum button) {
-			_state.input.buttonStates[button] = false;
+		void releaseButton(fw::ButtonType button) {
+			_state.input.buttonStates[static_cast<int>(button)] = false;
 			_state.input.buttonReleases.push_back(button);
 		}
 
-		bool keyPressed(VirtualKey::Enum key) {
-			for (VirtualKey::Enum k : _state.input.keyPresses) {
+		bool keyPressed(fw::VirtualKey key) {
+			for (fw::VirtualKey k : _state.input.keyPresses) {
 				if (k == key) {
 					return true;
 				}
@@ -227,8 +227,8 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool keyReleased(VirtualKey::Enum key) {
-			for (VirtualKey::Enum k : _state.input.keyReleases) {
+		bool keyReleased(fw::VirtualKey key) {
+			for (fw::VirtualKey k : _state.input.keyReleases) {
 				if (k == key) {
 					return true;
 				}
@@ -237,12 +237,12 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool keyDown(VirtualKey::Enum key) const {
-			return _state.input.keyStates[key];
+		bool keyDown(fw::VirtualKey key) const {
+			return _state.input.keyStates[static_cast<int>(key)];
 		}
 
-		bool buttonPressed(ButtonType::Enum button) {
-			for (ButtonType::Enum b : _state.input.buttonPresses) {
+		bool buttonPressed(fw::ButtonType button) {
+			for (fw::ButtonType b : _state.input.buttonPresses) {
 				if (b == button) {
 					return true;
 				}
@@ -251,8 +251,8 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool buttonReleased(ButtonType::Enum button) {
-			for (ButtonType::Enum b : _state.input.buttonReleases) {
+		bool buttonReleased(fw::ButtonType button) {
+			for (fw::ButtonType b : _state.input.buttonReleases) {
 				if (b == button) {
 					return true;
 				}
@@ -261,28 +261,28 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool buttonDown(ButtonType::Enum button) const {
-			return _state.input.buttonStates[button];
+		bool buttonDown(fw::ButtonType button) const {
+			return _state.input.buttonStates[static_cast<int>(button)];
 		}
 
 		void handleNavigation() {
-			if (!buttonDown(ButtonType::A) && !buttonDown(ButtonType::B) && !buttonDown(ButtonType::Select)) {
+			if (!buttonDown(fw::ButtonType::A) && !buttonDown(fw::ButtonType::B) && !buttonDown(fw::ButtonType::Select)) {
 				if (_state.verticalNav) {
-					if (buttonPressed(ButtonType::Up)) {
+					if (buttonPressed(fw::ButtonType::Up)) {
 						moveFocusUp();
 					}
 
-					if (buttonPressed(ButtonType::Down)) {
+					if (buttonPressed(fw::ButtonType::Down)) {
 						moveFocusDown();
 					}
 				}
 
 				if (_state.horizontalNav) {
-					if (buttonPressed(ButtonType::Left)) {
+					if (buttonPressed(fw::ButtonType::Left)) {
 						moveFocusLeft();
 					}
 
-					if (buttonPressed(ButtonType::Right)) {
+					if (buttonPressed(fw::ButtonType::Right)) {
 						moveFocusRight();
 					}
 				}
@@ -339,12 +339,12 @@ namespace rp::lsdj {
 			if (hasFocus()) {
 				setNavigationEnabled(false, true);
 
-				if (buttonPressed(ButtonType::Up) && selected > 0) {
+				if (buttonPressed(fw::ButtonType::Up) && selected > 0) {
 					selected--;
 					changed = true;
 				}
 
-				if (buttonPressed(ButtonType::Down) && selected < (int32)itemCount - 1) {
+				if (buttonPressed(fw::ButtonType::Down) && selected < (int32)itemCount - 1) {
 					selected++;
 					changed = true;
 				}
@@ -366,54 +366,54 @@ namespace rp::lsdj {
 			std::string initialValue;
 		};
 
-		bool convertKeyPress(VirtualKey::Enum key, char& out) {
+		bool convertKeyPress(fw::VirtualKey key, char& out) {
 			switch (key) {
-			case VirtualKey::A: out = 'A'; return true;
-			case VirtualKey::B: out = 'B'; return true;
-			case VirtualKey::C: out = 'C'; return true;
-			case VirtualKey::D: out = 'D'; return true;
-			case VirtualKey::E: out = 'E'; return true;
-			case VirtualKey::F: out = 'F'; return true;
-			case VirtualKey::G: out = 'G'; return true;
-			case VirtualKey::H: out = 'H'; return true;
-			case VirtualKey::I: out = 'I'; return true;
-			case VirtualKey::J: out = 'J'; return true;
-			case VirtualKey::K: out = 'K'; return true;
-			case VirtualKey::L: out = 'L'; return true;
-			case VirtualKey::M: out = 'M'; return true;
-			case VirtualKey::N: out = 'N'; return true;
-			case VirtualKey::O: out = 'O'; return true;
-			case VirtualKey::P: out = 'P'; return true;
-			case VirtualKey::Q: out = 'Q'; return true;
-			case VirtualKey::R: out = 'R'; return true;
-			case VirtualKey::S: out = 'S'; return true;
-			case VirtualKey::T: out = 'T'; return true;
-			case VirtualKey::U: out = 'U'; return true;
-			case VirtualKey::V: out = 'V'; return true;
-			case VirtualKey::W: out = 'W'; return true;
-			case VirtualKey::X: out = 'X'; return true;
-			case VirtualKey::Y: out = 'Y'; return true;
-			case VirtualKey::Z: out = 'Z'; return true;
-			case VirtualKey::Num0: out = '0'; return true;
-			case VirtualKey::Num1: out = '1'; return true;
-			case VirtualKey::Num2: out = '2'; return true;
-			case VirtualKey::Num3: out = '3'; return true;
-			case VirtualKey::Num4: out = '4'; return true;
-			case VirtualKey::Num5: out = '5'; return true;
-			case VirtualKey::Num6: out = '6'; return true;
-			case VirtualKey::Num7: out = '7'; return true;
-			case VirtualKey::Num8: out = '8'; return true;
-			case VirtualKey::Num9: out = '9'; return true;
-			case VirtualKey::NumPad0: out = '0'; return true;
-			case VirtualKey::NumPad1: out = '1'; return true;
-			case VirtualKey::NumPad2: out = '2'; return true;
-			case VirtualKey::NumPad3: out = '3'; return true;
-			case VirtualKey::NumPad4: out = '4'; return true;
-			case VirtualKey::NumPad5: out = '5'; return true;
-			case VirtualKey::NumPad6: out = '6'; return true;
-			case VirtualKey::NumPad7: out = '7'; return true;
-			case VirtualKey::NumPad8: out = '8'; return true;
-			case VirtualKey::NumPad9: out = '9'; return true;
+			case fw::VirtualKey::A: out = 'A'; return true;
+			case fw::VirtualKey::B: out = 'B'; return true;
+			case fw::VirtualKey::C: out = 'C'; return true;
+			case fw::VirtualKey::D: out = 'D'; return true;
+			case fw::VirtualKey::E: out = 'E'; return true;
+			case fw::VirtualKey::F: out = 'F'; return true;
+			case fw::VirtualKey::G: out = 'G'; return true;
+			case fw::VirtualKey::H: out = 'H'; return true;
+			case fw::VirtualKey::I: out = 'I'; return true;
+			case fw::VirtualKey::J: out = 'J'; return true;
+			case fw::VirtualKey::K: out = 'K'; return true;
+			case fw::VirtualKey::L: out = 'L'; return true;
+			case fw::VirtualKey::M: out = 'M'; return true;
+			case fw::VirtualKey::N: out = 'N'; return true;
+			case fw::VirtualKey::O: out = 'O'; return true;
+			case fw::VirtualKey::P: out = 'P'; return true;
+			case fw::VirtualKey::Q: out = 'Q'; return true;
+			case fw::VirtualKey::R: out = 'R'; return true;
+			case fw::VirtualKey::S: out = 'S'; return true;
+			case fw::VirtualKey::T: out = 'T'; return true;
+			case fw::VirtualKey::U: out = 'U'; return true;
+			case fw::VirtualKey::V: out = 'V'; return true;
+			case fw::VirtualKey::W: out = 'W'; return true;
+			case fw::VirtualKey::X: out = 'X'; return true;
+			case fw::VirtualKey::Y: out = 'Y'; return true;
+			case fw::VirtualKey::Z: out = 'Z'; return true;
+			case fw::VirtualKey::Num0: out = '0'; return true;
+			case fw::VirtualKey::Num1: out = '1'; return true;
+			case fw::VirtualKey::Num2: out = '2'; return true;
+			case fw::VirtualKey::Num3: out = '3'; return true;
+			case fw::VirtualKey::Num4: out = '4'; return true;
+			case fw::VirtualKey::Num5: out = '5'; return true;
+			case fw::VirtualKey::Num6: out = '6'; return true;
+			case fw::VirtualKey::Num7: out = '7'; return true;
+			case fw::VirtualKey::Num8: out = '8'; return true;
+			case fw::VirtualKey::Num9: out = '9'; return true;
+			case fw::VirtualKey::NumPad0: out = '0'; return true;
+			case fw::VirtualKey::NumPad1: out = '1'; return true;
+			case fw::VirtualKey::NumPad2: out = '2'; return true;
+			case fw::VirtualKey::NumPad3: out = '3'; return true;
+			case fw::VirtualKey::NumPad4: out = '4'; return true;
+			case fw::VirtualKey::NumPad5: out = '5'; return true;
+			case fw::VirtualKey::NumPad6: out = '6'; return true;
+			case fw::VirtualKey::NumPad7: out = '7'; return true;
+			case fw::VirtualKey::NumPad8: out = '8'; return true;
+			case fw::VirtualKey::NumPad9: out = '9'; return true;
 			}
 
 			return false;
@@ -436,7 +436,7 @@ namespace rp::lsdj {
 			if (hasFocus()) {
 				if (editable) {
 					if (state.editing) {
-						if (keyPressed(VirtualKey::Backspace)) {
+						if (keyPressed(fw::VirtualKey::Backspace)) {
 							if (state.cursorPos > 0) {
 								if (text[state.cursorPos] == ' ') {
 									state.cursorPos--;
@@ -447,7 +447,7 @@ namespace rp::lsdj {
 								changed = true;
 							}
 						} else {
-							for (VirtualKey::Enum key : _state.input.keyPresses) {
+							for (fw::VirtualKey key : _state.input.keyPresses) {
 								// Convert to LSDJ char
 								char ch;
 								if (convertKeyPress(key, ch)) {
@@ -462,18 +462,18 @@ namespace rp::lsdj {
 							}
 						}
 
-						if (buttonPressed(ButtonType::Start)) {
+						if (buttonPressed(fw::ButtonType::Start)) {
 							state.editing = false;
 							state.initialValue.clear();
 						}
 
-						if (buttonPressed(ButtonType::Down)) {
+						if (buttonPressed(fw::ButtonType::Down)) {
 							state.editing = false;
 							state.initialValue.clear();
 							moveFocusDown();
 						}
 					} else {
-						if (buttonDown(ButtonType::A) || buttonDown(ButtonType::Start)) {
+						if (buttonDown(fw::ButtonType::A) || buttonDown(fw::ButtonType::Start)) {
 							state.editing = true;
 							state.initialValue = text;
 
@@ -529,14 +529,14 @@ namespace rp::lsdj {
 			bool dimmed = options & SelectOptions::Dimmed;
 
 			if (hasFocus() && editable) {
-				if (buttonDown(ButtonType::A) && buttonPressed(ButtonType::Left)) {
+				if (buttonDown(fw::ButtonType::A) && buttonPressed(fw::ButtonType::Left)) {
 					if (selected > 0) {
 						selected--;
 						changed = true;
 					}
 				}
 
-				if (buttonDown(ButtonType::A) && buttonPressed(ButtonType::Right)) {
+				if (buttonDown(fw::ButtonType::A) && buttonPressed(fw::ButtonType::Right)) {
 					if (selected < (int32)itemCount - 1) {
 						selected++;
 						changed = true;
@@ -581,20 +581,20 @@ namespace rp::lsdj {
 			if (hasFocus() && editable) {
 				int32 range = max - min;
 
-				if (buttonDown(ButtonType::A)) {
-					if (buttonPressed(ButtonType::Up)) {
+				if (buttonDown(fw::ButtonType::A)) {
+					if (buttonPressed(fw::ButtonType::Up)) {
 						move = 0x10;
 					}
 
-					if (buttonPressed(ButtonType::Down)) {
+					if (buttonPressed(fw::ButtonType::Down)) {
 						move = -0x10;
 					}
 
-					if (buttonPressed(ButtonType::Left)) {
+					if (buttonPressed(fw::ButtonType::Left)) {
 						move = -0x01;
 					}
 
-					if (buttonPressed(ButtonType::Right)) {
+					if (buttonPressed(fw::ButtonType::Right)) {
 						move = 0x01;
 					}
 

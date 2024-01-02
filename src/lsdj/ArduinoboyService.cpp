@@ -139,7 +139,7 @@ namespace rp {
 	void ArduinoboyService::onTransportChange(System& system, bool running) {
 		if (getRawState().autoPlay) {
 			ButtonStream<8> presses;
-			presses.presses[0] = StreamButtonPress{ ButtonType::Start, true, 30 };
+			presses.presses[0] = StreamButtonPress{ (int)fw::ButtonType::Start, true, 30 };
 			system.getIo()->input.buttons.push_back(presses);
 		}
 	}

@@ -169,6 +169,11 @@ function m.Ui.project()
 		paths.SRC_ROOT .. "ui/**.cpp"
 	}
 
+	filter { "action:vs*" }
+		buildoptions { "/bigobj" }
+		files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+	filter {}
+
 	util.liveppCompat()
 end
 

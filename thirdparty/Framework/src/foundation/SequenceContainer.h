@@ -187,8 +187,8 @@ namespace fw {
 	};
 }
 
-/*namespace entt {
+namespace entt {
 	template<typename Type, typename... Args>
 	struct meta_sequence_container_traits<std::vector<Type, Args...>>
 		: fw::BasicSequenceContainerTraits<std::vector<Type, Args...>> {};
-}*/
+}

@@ -22,7 +22,7 @@ namespace rp {
 		}
 
 		bool onKey(const fw::KeyEvent& ev) override {
-			if (ev.key == VirtualKey::Tab) {
+			if (ev.key == fw::VirtualKey::Tab) {
 				if (ev.down) {
 					_gridOverlay->incrementSelection();
 				}

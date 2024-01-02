@@ -139,7 +139,7 @@ namespace rp {
 
 		bool onKey(const fw::KeyEvent& ev) override;
 
-		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point position) override { return true; }
+		bool onMouseButton(fw::MouseButton button, bool down, fw::Point position) override { return true; }
 
 		void setMenu(fw::MenuPtr menu);
 

@@ -27,7 +27,7 @@ namespace rp {
 			setType<GridOverlay>();
 		}
 
-		bool onMouseButton(MouseButton::Enum button, bool down, fw::Point pos) override;
+		bool onMouseButton(fw::MouseButton button, bool down, fw::Point pos) override;
 
 		void onLayoutChanged() override;
 

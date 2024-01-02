@@ -94,7 +94,7 @@ void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 
 bool MenuView::onKey(const fw::KeyEvent& ev) {
 	switch (ev.key) {
-	case VirtualKey::LeftArrow:
+	case fw::VirtualKey::LeftArrow:
 		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
 			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
@@ -106,7 +106,7 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 
 		return true;
 
-	case VirtualKey::RightArrow:
+	case fw::VirtualKey::RightArrow:
 		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
 			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
@@ -118,34 +118,34 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 
 		return true;
 
-	case VirtualKey::DownArrow:
+	case fw::VirtualKey::DownArrow:
 		if (ev.down) {
 			moveCursorDown();
 		}
 
 		return true;
-	case VirtualKey::UpArrow:
+	case fw::VirtualKey::UpArrow:
 		if (ev.down) {
 			moveCursorUp();
 		}
 
 		return true;
 
-	case VirtualKey::Enter:
+	case fw::VirtualKey::Enter:
 		if (ev.down) {
 			activateHighlighted();
 		}
 
 		return true;
 
-	case VirtualKey::Space:
+	case fw::VirtualKey::Space:
 		if (ev.down) {
 			activateHighlighted();
 		}
 
 		return true;
 
-	case VirtualKey::Esc:
+	case fw::VirtualKey::Esc:
 		if (_escCloses && ev.down) {
 			this->remove();
 		}

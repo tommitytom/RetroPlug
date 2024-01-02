@@ -247,10 +247,17 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 			_cursor = nullptr;
 		}
 
+		// This is not ideal since GLFW only provides a very small set of cursors to use
 		switch (shared.cursor) {
+		case CursorType::ResizeNS:
+		case CursorType::ResizeNE:
+		case CursorType::ResizeNW:
+		case CursorType::ResizeSE:
+		case CursorType::ResizeSW:
+			_cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+			break;
 		case CursorType::Arrow: _cursor = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); break;
 		case CursorType::ResizeEW: _cursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR); break;
-		case CursorType::ResizeNS: _cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR); break;
 		case CursorType::Hand: _cursor = glfwCreateStandardCursor(GLFW_HAND_CURSOR); break;
 		case CursorType::IBeam: _cursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR); break;
 		case CursorType::Crosshair: _cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR); break;

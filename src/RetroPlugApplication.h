@@ -1,6 +1,6 @@
 #pragma once
 
-#include <entt/meta/container.hpp>
+//#include <entt/meta/container.hpp>
 
 #include "core/Project.h"
 #include "core/ProxySystem.h"
@@ -60,7 +60,7 @@ public:
 			.addField<&SystemSettings::gameLink>("gameLink")
 			.addField<&SystemSettings::input>("input");
 
-		//_typeRegistry.addType<std::unordered_map<SystemServiceType, entt::any>>();
+		_typeRegistry.addType<std::unordered_map<SystemServiceType, entt::any>>();
 
 		_typeRegistry.addType<SystemDesc>()
 			.addField<&SystemDesc::paths>("paths")

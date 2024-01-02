@@ -196,7 +196,7 @@ namespace rp {
 		SystemType _type = INVALID_SYSTEM_TYPE;
 		SystemDesc _desc;
 
-		std::array<bool, ButtonType::MAX> _buttonState = { false };
+		std::array<bool, static_cast<int>(fw::ButtonType::MAX)> _buttonState = { false };
 		std::vector<ModelPtr> _models;
 		std::vector<SystemServicePtr> _services;
 
@@ -248,8 +248,8 @@ namespace rp {
 
 		virtual SystemStateOffsets getStateOffsets() const { return SystemStateOffsets(); }
 
-		void setButtonState(ButtonType::Enum button, bool down) {
-			_buttonState[button] = down;
+		void setButtonState(fw::ButtonType button, bool down) {
+			_buttonState[(int)button] = down;
 
 			if (_stream) {
 				_stream->input.buttons.push_back(ButtonStream<8> {
@@ -315,7 +315,7 @@ namespace rp {
 			_desc = desc;
 		}
 
-		const std::array<bool, ButtonType::MAX>& getButtonState() const {
+		const std::array<bool, (int)fw::ButtonType::MAX>& getButtonState() const {
 			return _buttonState;
 		}
 

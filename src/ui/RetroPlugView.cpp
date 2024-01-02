@@ -84,7 +84,7 @@ void RetroPlugView::onInitialize() {
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == VirtualKey::P && ev.down) {
+	if (ev.key == fw::VirtualKey::P && ev.down) {
 		_doPing = !_doPing;
 		return true;
 	}

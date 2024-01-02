@@ -79,24 +79,24 @@ void LsdjRefresher::refresh() {
 	lsdj::Ram ram(_system->getMemory(MemoryType::Ram, AccessType::Read), _offsets);
 
 	uint8 currentScreen = ram.getScreenY();
-	ButtonType::Enum dir1 = ButtonType::Down;
-	ButtonType::Enum dir2 = ButtonType::Up;
+	fw::ButtonType dir1 = fw::ButtonType::Down;
+	fw::ButtonType dir2 = fw::ButtonType::Up;
 
 	_screen1 = currentScreen + 1;
 	_screen2 = currentScreen;
 
 	if (ram.getScreenY() == 1) {
 		_screen1 = currentScreen - 1;
-		dir1 = ButtonType::Up;
-		dir2 = ButtonType::Down;
+		dir1 = fw::ButtonType::Up;
+		dir2 = fw::ButtonType::Down;
 	}
 
-	ButtonStreamWriter<ButtonType::MAX, 8> writer;
+	ButtonStreamWriter<(int)fw::ButtonType::MAX, 8> writer;
 	writer.setDefaultDelay(40);
 	writer
-		.holdDuration(ButtonType::Select, 40)
-		.press(dir1)
-		.press(dir2)
+		.holdDuration((int)fw::ButtonType::Select, 40)
+		.press((int)dir1)
+		.press((int)dir2)
 		.releaseAll();
 
 	_system->getIo()->input.buttons.push_back(writer.data());

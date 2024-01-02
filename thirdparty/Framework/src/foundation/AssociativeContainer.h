@@ -207,7 +207,7 @@ namespace fw {
 	};
 }
 
-/*namespace entt {
+namespace entt {
 	template<typename Key, typename Value, typename... Args>
 	struct meta_associative_container_traits<std::unordered_map<Key, Value, Args...>>
 		: fw::BasicAssociativeContainerTraits<std::unordered_map<Key, Value, Args...>> {};
@@ -215,4 +215,4 @@ namespace fw {
 	template<typename Key, typename Value, typename... Args>
 	struct meta_associative_container_traits<std::map<Key, Value, Args...>>
 		: fw::BasicAssociativeContainerTraits<std::map<Key, Value, Args...>> {};
-}*/
+}

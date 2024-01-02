@@ -16,7 +16,7 @@ namespace rp {
 		}
 
 		bool onKey(const fw::KeyEvent& ev) override {			
-			if (ev.key == VirtualKey::P && ev.down) {
+			if (ev.key == fw::VirtualKey::P && ev.down) {
 				_keyCapture = !_keyCapture;
 				return true;
 			}
@@ -25,7 +25,7 @@ namespace rp {
 				return false;
 			}
 
-			if (ev.key >= VirtualKey::A && ev.key <= VirtualKey::Z) {
+			if (ev.key >= fw::VirtualKey::A && ev.key <= fw::VirtualKey::Z) {
 				getNode()->sendEvent(getState<fw::EventNode>(), fw::KeyEvent(ev));
 				return true;
 			}

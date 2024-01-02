@@ -98,10 +98,17 @@ void FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vect
 					std::string type = item["type"].get<std::string>();
 
 					if (types.empty() || fw::StlUtil::vectorContains(types, type)) {
+						std::string name = item["name"].get<std::string>();
+						std::string path = item["path"].get<std::string>();
+
+						if (name.empty()) {
+							name = fs::path(path).filename().string();
+						}
+
 						paths.push_back({
 							.type = type,
-							.name = item["name"].get<std::string>(),
-							.path = item["path"].get<std::string>(),
+							.name = name,
+							.path = path
 						});
 					}
 				}

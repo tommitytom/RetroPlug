@@ -108,5 +108,5 @@ namespace rp {
 		}*/
 	};
 
-	using GameboyButtonStream = ButtonStreamWriter<ButtonType::MAX, 32>;
+	using GameboyButtonStream = ButtonStreamWriter<static_cast<int>(fw::ButtonType::MAX), 32>;
 }

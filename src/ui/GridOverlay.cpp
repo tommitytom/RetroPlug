@@ -37,7 +37,7 @@ void focusSystem(fw::ViewPtr view) {
 	}
 }
 
-bool GridOverlay::onMouseButton(MouseButton::Enum button, bool down, fw::Point pos) {
+bool GridOverlay::onMouseButton(fw::MouseButton button, bool down, fw::Point pos) {
 	if (down) {
 		std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
