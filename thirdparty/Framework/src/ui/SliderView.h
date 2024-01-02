@@ -43,7 +43,6 @@ namespace fw {
 		std::function<void(f32)> ValueChangeEvent;
 
 		SliderView() {
-			setType<SliderView>();
 			getLayout().setDimensions(Dimension{ 200, 30 });
 			setFocusPolicy(FocusPolicy::Click);
 		}

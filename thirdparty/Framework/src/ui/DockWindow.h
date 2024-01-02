@@ -6,6 +6,7 @@
 
 namespace fw {
 	class DockWindow : public View {
+		RegisterObject();
 	private:
 		uint32 _titleAreaHeight = 20;
 		RectT<uint32> _titleArea;
@@ -16,7 +17,7 @@ namespace fw {
 		bool _dragOver = false;
 
 	public:
-		DockWindow() { setType<DockWindow>(); }
+		DockWindow() {}
 
 		void onInitialize() override {
 			updateLayout();

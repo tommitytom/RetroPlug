@@ -6,13 +6,14 @@
 
 namespace fw {
 	class Dock : public View {
+		RegisterObject();
 	private:
 		ViewPtr _dockedRoot;
 		ViewPtr _floatingWinows;
 		DockOverlayPtr _overlay;
 
 	public:
-		Dock() { setType<Dock>(); }
+		Dock() {}
 		~Dock() = default;
 
 		void onInitialize() override;

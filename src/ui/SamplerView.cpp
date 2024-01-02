@@ -25,7 +25,7 @@ const fw::RectT BOX_SIZE = fw::RectT(6, 12, 13, 5);
 const fw::RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * (int32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (int32)lsdj::TILE_WIDTH, BOX_SIZE.h * (int32)lsdj::TILE_HEIGHT };
 
 SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
-	setType<SamplerView>();
+
 }
 
 void SamplerView::setSystem(SystemPtr& system, SystemServicePtr& service) {

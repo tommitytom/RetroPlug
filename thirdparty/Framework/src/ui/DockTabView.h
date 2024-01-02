@@ -4,8 +4,9 @@
 
 namespace fw {
 	class DockTabView : public TabView {
+		RegisterObject();
 	public:
-		DockTabView() { setType<DockTabView>(); }
+		DockTabView() {}
 		~DockTabView() = default;
 
 		bool onMouseMove(Point pos) override {

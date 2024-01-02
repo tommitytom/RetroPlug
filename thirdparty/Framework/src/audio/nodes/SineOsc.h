@@ -27,8 +27,8 @@ namespace fw {
 
 REFL_AUTO(
 	type(fw::SineOsc::Input),
-	field(freq, fw::TypedAttribute<f32>(0.0f, 20000.0f)),
-	field(amp, fw::RangeAttribute(0.0f, 1.0f))
+	field(freq, fw::reflutil::TypedAttribute<f32>(0.0f, 20000.0f)),
+	field(amp, fw::reflutil::RangeAttribute(0.0f, 1.0f))
 )
 
 REFL_AUTO(
@@ -58,8 +58,8 @@ namespace fw {
 
 REFL_AUTO(
 	type(fw::SineLfo::Input),
-	field(freq, fw::RangeAttribute(0.0f, 20000.0f)),
-	field(amp, fw::RangeAttribute(0.0f, 1.0f))
+	field(freq, fw::reflutil::RangeAttribute(0.0f, 20000.0f)),
+	field(amp, fw::reflutil::RangeAttribute(0.0f, 1.0f))
 )
 
 REFL_AUTO(

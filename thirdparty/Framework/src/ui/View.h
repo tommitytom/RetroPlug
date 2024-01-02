@@ -115,7 +115,6 @@ namespace fw {
 		FocusPolicy _focusPolicy = FocusPolicy::None;
 
 		std::string _name;
-		entt::type_info _type;
 
 		std::vector<std::pair<EventType, std::weak_ptr<View>>> _subscriptions;
 		std::unordered_map<EventType, std::vector<Subscription>> _subscriptionTargets;
@@ -123,8 +122,7 @@ namespace fw {
 		ViewLayout _layout;
 
 	public:
-		View(Dimension dimensions = { 100, 100 }) : _type(entt::type_id<View>()), _layout(dimensions) {}
-		View(Dimension dimensions, entt::type_info type) : _layout(dimensions), _type(type) {}
+		View(Dimension dimensions = { 100, 100 }) : _layout(dimensions) {}
 		~View() { unsubscribeAll(); }
 
 		void addGlobalKeyHandler(std::function<bool(const KeyEvent&)>&& func) {
@@ -255,6 +253,7 @@ namespace fw {
 		}
 
 		void fitToParent() {
+			getLayout().setFlexPositionType(FlexPositionType::Absolute);
 			getLayout().setDimensions(100_pc);
 		}
 
@@ -518,10 +517,6 @@ namespace fw {
 			return nullptr;
 		}
 
-		entt::type_info getType() const {
-			return _type;
-		}
-
 		void remove() {
 			ViewPtr parent = getParent();
 			if (parent) {
@@ -617,6 +612,10 @@ namespace fw {
 		}
 
 		ViewPtr addChild(ViewPtr view) {
+			if (view->getName().empty()) {
+				view->setName(view->getTypeInfo().name());
+			}
+
 			if (!view->_parent.expired()) {
 				ViewPtr parent = view->_parent.lock();
 				
@@ -868,7 +867,7 @@ namespace fw {
 
 		template <typename T>
 		bool isType() const {
-			return _type == entt::type_id<T>();
+			return getTypeInfo() == entt::type_id<T>();
 		}
 
 		template <typename T>
@@ -931,15 +930,6 @@ namespace fw {
 		}
 
 	protected:
-		template <typename T>
-		void setType() {
-			_type = entt::type_id<T>();
-
-			if (_name.empty()) {
-				_name = StringUtil::formatClassName(_type.name());
-			}
-		}
-
 		const Shared* getShared() const {
 			return _shared;
 		}

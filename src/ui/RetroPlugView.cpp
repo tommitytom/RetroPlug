@@ -39,7 +39,6 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus)
 {
-	setType<RetroPlugView>();
 	setName("RetroPlug v0.4.0");
 }
 
@@ -55,6 +54,8 @@ void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloade
 }
 
 void RetroPlugView::onInitialize() {
+	getLayout().setOverflow(fw::FlexOverflow::Visible);
+
 	fw::ResourceManager& rm = getResourceManager();
 	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
 

@@ -18,7 +18,7 @@
 using namespace rp;
 
 SystemView::SystemView() : TextureView() {
-	setType<SystemView>();
+
 }
 
 bool SystemView::onDrop(const std::vector<std::string>& paths) {

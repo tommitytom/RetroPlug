@@ -3,11 +3,12 @@
 using namespace fw;
 
 GridView::GridView() {
-	setType<GridView>();
+
 }
 
 void GridView::onInitialize() {
-	getLayout().setDimensions(100_pc);
+	//getLayout().setDimensions(100_pc);
+	getLayout().setOverflow(fw::FlexOverflow::Visible);
 }
 
 void GridView::onChildAdded(ViewPtr view) {

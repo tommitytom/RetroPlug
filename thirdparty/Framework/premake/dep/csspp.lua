@@ -34,7 +34,7 @@ function m.project()
 
 		filter "system:windows"
 			disablewarnings {
-				"4244"
+				"4244", "4068"
 			}
 
 		filter {}

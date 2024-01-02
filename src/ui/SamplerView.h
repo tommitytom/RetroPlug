@@ -17,6 +17,7 @@ namespace rp {
 	};
 
 	class SamplerView final : public LsdjCanvasView {
+		RegisterObject();
 	private:
 		SystemPtr _system;
 		SystemServicePtr _service;

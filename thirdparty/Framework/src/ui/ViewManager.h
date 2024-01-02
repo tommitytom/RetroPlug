@@ -9,6 +9,7 @@
 
 namespace fw {
 	class ViewManager final : public View {
+		RegisterObject();
 	private:
 		struct MouseState {
 			bool buttons[(size_t)MouseButton::COUNT] = { false };
@@ -27,13 +28,11 @@ namespace fw {
 
 	public:
 		ViewManager() : View({ 100, 100 }) {
-			setType<ViewManager>();
 			_shared = &_sharedData;
 			calculateLayout();
 		}
 
 		ViewManager(Dimension dimensions): View(dimensions) {
-			setType<ViewManager>();
 			_shared = &_sharedData;
 			calculateLayout();
 		}
@@ -86,6 +85,10 @@ namespace fw {
 		}
 
 		bool onKey(const KeyEvent& ev) override {
+			if (ev.key == fw::VirtualKey::T) {
+				printHierarchy();
+			}
+
 			auto it = _shared->globalKeyHandlers.begin();
 
 			while (it != _shared->globalKeyHandlers.end()) {
@@ -551,6 +554,9 @@ namespace fw {
 					}
 
 					view->onRender(canvas);
+
+					canvas.strokeRect(RectF(PointF{ 0, 0 }, view->getDimensionsF()), {1, 0, 0, 1});
+
 					propagateRender(canvas, view->getChildren());
 
 					if (overflow != FlexOverflow::Visible) {

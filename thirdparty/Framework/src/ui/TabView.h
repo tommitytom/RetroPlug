@@ -4,6 +4,7 @@
 
 namespace fw {
 	class TabView : public View {
+		RegisterObject();
 	private:
 		std::vector<ViewPtr> _panels;
 		std::vector<Rect> _tabAreas;
@@ -21,7 +22,6 @@ namespace fw {
 
 	public:
 		TabView() {
-			setType<TabView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~TabView() = default;

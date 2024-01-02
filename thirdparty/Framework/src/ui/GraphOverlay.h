@@ -4,9 +4,10 @@
 
 namespace fw {
 	class GraphOverlay : public View {
+		RegisterObject();
 	public:
-		GraphOverlay() { setType<GraphOverlay>(); }
-		GraphOverlay(Dimension dimensions) : View(dimensions) { setType<GraphOverlay>(); }
+		GraphOverlay() {}
+		GraphOverlay(Dimension dimensions) : View(dimensions) {}
 		~GraphOverlay() { }
 
 		void onRender(fw::Canvas& canvas) override {

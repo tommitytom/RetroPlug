@@ -5,6 +5,7 @@
 namespace fw {
 	template <typename ParentT>
 	class Overlay : public View {
+		RegisterObject();
 	public:
 		Overlay() {
 			getLayout().setDimensions(FlexDimensionValue{

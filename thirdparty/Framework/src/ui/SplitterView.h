@@ -12,7 +12,6 @@ namespace fw {
 
 	public:
 		SplitterView() {
-			setType<SplitterView>();
 			getLayout().setLayoutDirection(LayoutDirection::LTR);
 			getLayout().setFlexDirection(FlexDirection::Row);
 			getLayout().setJustifyContent(FlexJustify::FlexStart);

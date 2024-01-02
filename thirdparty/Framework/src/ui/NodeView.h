@@ -14,6 +14,7 @@ namespace fw {
 	};
 
 	class NodePortView : public View {
+		RegisterObject();
 	private:
 		uint32 _type = 0;
 
@@ -24,7 +25,6 @@ namespace fw {
 
 	public:
 		NodePortView() {
-			setType<NodePortView>();
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 
@@ -120,6 +120,7 @@ namespace fw {
 	using NodePortViewPtr = std::shared_ptr<NodePortView>;
 	
 	class NodeView : public View {
+		RegisterObject();
 	private:
 		NodePtr _node;
 
@@ -131,7 +132,6 @@ namespace fw {
 
 	public:
 		NodeView() { 
-			setType<NodeView>();
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 
@@ -272,6 +272,7 @@ namespace fw {
 	};
 
 	class NodeGraphView : public View {
+		RegisterObject();
 	private:
 		NodeGraphPtr _graph;
 		Point _clickPos;
@@ -287,8 +288,8 @@ namespace fw {
 		//Point _mousePos;
 
 	public:
-		NodeGraphView() { setType<NodeGraphView>(); }
-		NodeGraphView(Dimension dimensions) : View(dimensions) { setType<NodeGraphView>(); }
+		NodeGraphView() {}
+		NodeGraphView(Dimension dimensions) : View(dimensions) {}
 		~NodeGraphView() { }
 
 		void setGraph(NodeGraphPtr graph) {

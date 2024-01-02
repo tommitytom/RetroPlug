@@ -10,6 +10,8 @@
 namespace fw {
 	class Object : public std::enable_shared_from_this<Object> {
 	public:
+		virtual entt::type_info getTypeInfo() const = 0;
+
 		virtual uint32 getTypeId() const = 0;
 
 		virtual std::string_view getTypeName() const = 0;
@@ -28,6 +30,7 @@ namespace fw {
 
 #define RegisterObject() \
 	public: \
+	virtual entt::type_info getTypeInfo() const override { return entt::type_id<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>(); } \
 	virtual uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
 	virtual std::string_view getTypeName() const override { return entt::type_name<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
 	private:

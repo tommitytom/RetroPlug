@@ -11,6 +11,7 @@ namespace rp {
 	};
 
 	class GridOverlay final : public fw::View {
+		RegisterObject();
 	private:
 		fw::ViewIndex _selected = fw::INVALID_VIEW_INDEX;
 		f32 _unselectedAlpha = 0.75f;
@@ -23,10 +24,6 @@ namespace rp {
 		bool _refocus = false;
 
 	public:
-		GridOverlay() {
-			setType<GridOverlay>();
-		}
-
 		bool onMouseButton(fw::MouseButton button, bool down, fw::Point pos) override;
 
 		void onLayoutChanged() override;

@@ -8,6 +8,7 @@
 
 namespace fw {
 	class PropertyEditorView : public View {
+		RegisterObject();
 	protected:
 		struct Prop {
 			LabelViewPtr label;
@@ -34,7 +35,6 @@ namespace fw {
 
 	public:
 		PropertyEditorView() {
-			setType<PropertyEditorView>();
 			setFocusPolicy(FocusPolicy::Click);
 			getLayout().setOverflow(FlexOverflow::Scroll);
 		}

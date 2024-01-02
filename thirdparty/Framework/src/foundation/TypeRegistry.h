@@ -171,13 +171,13 @@ namespace fw {
 		return name;
 	}
 
-	struct Property {
+	struct Attribute {
 		TypeId type = INVALID_TYPE_ID;
 		entt::any value;
 	};
 
 	template <typename T>
-	struct TypedProperty : public Property {
+	struct TypedAttribute : public Attribute {
 		const T& getValue() const {
 			assert(type == fw::getTypeId<T>());
 			return entt::any_cast<const T&>(value);
@@ -188,7 +188,7 @@ namespace fw {
 		TypeId type = INVALID_TYPE_ID;
 		NameHash hash = INVALID_NAME_HASH;
 		std::string_view name;
-		std::span<const Property> properties;
+		std::span<const Attribute> attributes;
 
 		void(*setter)(TypeInstance instance, const entt::any& value) = nullptr;
 		entt::any(*getter)(TypeInstance instance) = nullptr;
@@ -216,10 +216,10 @@ namespace fw {
 			return getter(std::forward<TypeInstance>(instance)).as_ref();
 		}
 
-		const Property* findProperty(TypeId typeId) const {
-			for (const Property& prop : properties) {
-				if (prop.type == typeId) {
-					return &prop;
+		const Attribute* findAttribute(TypeId typeId) const {
+			for (const Attribute& attrib : attributes) {
+				if (attrib.type == typeId) {
+					return &attrib;
 				}
 			}
 
@@ -227,33 +227,33 @@ namespace fw {
 		}
 
 		template <typename T>
-		const TypedProperty<T>* findProperty() const {
-			return static_cast<const TypedProperty<T>*>(findProperty(fw::getTypeId<T>()));
+		const TypedAttribute<T>* findAttribute() const {
+			return static_cast<const TypedAttribute<T>*>(findAttribute(fw::getTypeId<T>()));
 		}
-		
-		const Property& getProperty(TypeId typeId) const {
-			const Property* prop = findProperty(typeId);
-			assert(prop);
-			return *prop;
+
+		const Attribute& getAttribute(TypeId typeId) const {
+			const Attribute* attrib = findAttribute(typeId);
+			assert(attrib);
+			return *attrib;
 		}
 
 		template <typename T>
-		const TypedProperty<T>& getProperty() const {
-			const TypedProperty<T>* prop = findProperty<T>();
-			assert(prop);
-			return *prop;
+		const TypedAttribute<T>& getAttribute() const {
+			const TypedAttribute<T>* attrib = findAttribute<T>();
+			assert(attrib);
+			return *attrib;
 		}
 
 		template <typename T>
-		const T& getPropertyValue() const {
-			return getProperty<T>().getValue();
+		const T& getAttributeValue() const {
+			return getAttribute<T>().getValue();
 		}
 	};
 
 	struct Method {
 		NameHash hash = INVALID_NAME_HASH;
 		std::string_view name;
-		std::span<const Property> properties;
+		std::span<const Attribute> attributes;
 	};
 
 	struct TypeInfo {
@@ -263,7 +263,7 @@ namespace fw {
 		NameHash hash = INVALID_NAME_HASH;
 		std::string_view name;
 		std::span<const Field> fields;
-		std::span<const Property> properties;
+		std::span<const Attribute> attributes;
 		std::span<const Method> methods;
 		entt::any(*construct)() = nullptr;
 		SequenceContainer(*createSequenceContainer)(entt::any) = nullptr;
@@ -308,10 +308,10 @@ namespace fw {
 			return !!(traits & internal::TypeTraits::Array);
 		}
 
-		const Property* findProperty(TypeId typeId) const {
-			for (const Property& prop : properties) {
-				if (prop.type == typeId) {
-					return &prop;
+		const Attribute* findAttribute(TypeId typeId) const {
+			for (const Attribute& attribute : attributes) {
+				if (attribute.type == typeId) {
+					return &attribute;
 				}
 			}
 
@@ -319,35 +319,35 @@ namespace fw {
 		}
 
 		template <typename T>
-		const TypedProperty<T>* findProperty() const {
-			return static_cast<const TypedProperty<T>*>(findProperty(fw::getTypeId<T>()));
+		const TypedAttribute<T>* findAttribute() const {
+			return static_cast<const TypedAttribute<T>*>(findAttribute(fw::getTypeId<T>()));
 		}
 
-		const Property& getProperty(TypeId typeId) const {
-			const Property* prop = findProperty(typeId);
-			assert(prop);
-			return *prop;
-		}
-
-		template <typename T>
-		const TypedProperty<T>& getProperty() const {
-			const TypedProperty<T>* prop = findProperty<T>();
-			assert(prop);
-			return *prop;
+		const Attribute& getAttribute(TypeId typeId) const {
+			const Attribute* attribute = findAttribute(typeId);
+			assert(attribute);
+			return *attribute;
 		}
 
 		template <typename T>
-		const T& getPropertyValue() const {
-			return getProperty<T>().getValue();
-		}
-
-		bool hasProperty(TypeId typeId) const {
-			return findProperty(typeId) != nullptr;
+		const TypedAttribute<T>& getAttribute() const {
+			const TypedAttribute<T>* attribute = findAttribute<T>();
+			assert(attribute);
+			return *attribute;
 		}
 
 		template <typename T>
-		bool hasProperty() const {
-			return hasProperty(getTypeId<T>());
+		const T& getAttributeValue() const {
+			return getAttribute<T>().getValue();
+		}
+
+		bool hasAttribute(TypeId typeId) const {
+			return findAttribute(typeId) != nullptr;
+		}
+
+		template <typename T>
+		bool hasAttribute() const {
+			return hasAttribute(getTypeId<T>());
 		}
 
 		const Field* findField(NameHash nameHash) const {
@@ -375,7 +375,7 @@ namespace fw {
 
 	struct TypeRegistryState {
 		std::vector<Field> fields;
-		std::vector<Property> properties;
+		std::vector<Attribute> attributes;
 		std::vector<Method> methods;
 		std::vector<TypeInfo> types;
 
@@ -414,13 +414,13 @@ namespace fw {
 		TypeRegistryState* _state = nullptr;
 
 		size_t _fieldOffset = 0;
-		size_t _propertyOffset = 0;
+		size_t _attributeOffset = 0;
 		size_t _methodOffset = 0;
 
 	public:
 		TypeFactory(TypeInfo& typeInfo, TypeRegistryState& state) : _typeInfo(&typeInfo), _state(&state) {
 			_fieldOffset = state.fields.size();
-			_propertyOffset = state.properties.size();
+			_attributeOffset = state.attributes.size();
 			_methodOffset = state.methods.size();
 		}
 
@@ -431,7 +431,7 @@ namespace fw {
 		~TypeFactory() {
 			if (_typeInfo) {
 				_typeInfo->fields = std::span(_state->fields.begin() + _fieldOffset, _state->fields.end());
-				_typeInfo->properties = std::span(_state->properties.begin() + _propertyOffset, _state->properties.end());
+				_typeInfo->attributes = std::span(_state->attributes.begin() + _attributeOffset, _state->attributes.end());
 				_typeInfo->methods = std::span(_state->methods.begin() + _methodOffset, _state->methods.end());
 			}
 		}
@@ -440,31 +440,31 @@ namespace fw {
 			_typeInfo = other._typeInfo;
 			_state = other._state;
 			_fieldOffset = other._fieldOffset;
-			_propertyOffset = other._propertyOffset;
+			_attributeOffset = other._attributeOffset;
 			_methodOffset = other._methodOffset;
 
 			other._typeInfo = nullptr;
 			other._state = nullptr;
 			other._fieldOffset = 0;
-			other._propertyOffset = 0;
+			other._attributeOffset = 0;
 			other._methodOffset = 0;
 
 			return *this;
 		}
 
-		template <auto Data, typename ...PropertyType>
-		TypeFactory<T> addField(std::string_view name, PropertyType&&... property) {
+		template <auto Data, typename ...AttributeType>
+		TypeFactory<T> addField(std::string_view name, AttributeType&&... attribute) {
 			assert(_state->fields.size() < _state->fields.capacity());
 
-			size_t propertyOffset = _state->properties.size();
+			size_t attributeOffset = _state->attributes.size();
 
 			([&] {
-				assert(_state->properties.size() < _state->properties.capacity());
-				assert(_state->findTypeInfo<PropertyType>()); // Property types must be registered
+				assert(_state->attributes.size() < _state->attributes.capacity());
+				assert(_state->findTypeInfo<AttributeType>()); // Attribute types must be registered
 
-				_state->properties.push_back(Property{
-					.type = getTypeId<PropertyType>(),
-					.value = property
+				_state->attributes.push_back(Attribute{
+					.type = getTypeId<AttributeType>(),
+					.value = attribute
 				});
 			} (), ...);
 
@@ -476,7 +476,7 @@ namespace fw {
 					.type = getTypeId<DataType>(),
 					.hash = getNameHash(name),
 					.name = name,
-					.properties = std::span(_state->properties.begin() + propertyOffset, _state->properties.end()),
+					.attributes = std::span(_state->attributes.begin() + attributeOffset, _state->attributes.end()),
 					.setter = &internal::makeSetter<T, Data>,
 					.getter = &internal::makeGetter<T, Data>,
 				});
@@ -488,7 +488,7 @@ namespace fw {
 					.type = getTypeId<DataType>(),
 					.hash = getNameHash(name),
 					.name = name,
-					.properties = std::span(_state->properties.begin() + propertyOffset, _state->properties.end()),
+					.attributes = std::span(_state->attributes.begin() + attributeOffset, _state->attributes.end()),
 					.setter = nullptr,
 					.getter = &internal::makeGetter<T, Data>,
 				});
@@ -534,9 +534,9 @@ namespace fw {
 		TypeRegistryState _state;
 
 	public:
-		TypeRegistry(size_t maxFields = 256, size_t maxProperties = 256, size_t maxMethods = 256) {
+		TypeRegistry(size_t maxFields = 256, size_t maxAttributes = 256, size_t maxMethods = 256) {
 			_state.fields.reserve(maxFields);
-			_state.properties.reserve(maxProperties);
+			_state.attributes.reserve(maxAttributes);
 			_state.methods.reserve(maxMethods);
 		}
 

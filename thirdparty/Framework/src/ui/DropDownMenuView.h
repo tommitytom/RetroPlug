@@ -17,7 +17,6 @@ namespace fw {
 		std::function<void(int32)> ValueChangeEvent;
 
 		DropDownMenuView() {
-			setType<DropDownMenuView>();
 			getLayout().setDimensions(Dimension{ 200, 30 });
 			setFocusPolicy(FocusPolicy::Click);
 		}

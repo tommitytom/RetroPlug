@@ -124,7 +124,6 @@ namespace fw {
 		RegisterObject()
 	public:
 		TextEditView() {
-			setType<TextEditView>();
 		}
 
 		void setValue(const std::string& value) override {
@@ -145,7 +144,6 @@ namespace fw {
 		std::function<void(const FlexValue&)> ValueChangeEvent;
 		
 		FlexValueEditView() {
-			setType<FlexValueEditView>();
 			setPlaceholder("auto");
 			
 			setValidator([](const std::string& text) -> bool {

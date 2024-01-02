@@ -9,8 +9,8 @@ namespace fw {
 		Color4F _color = Color4F::clear;
 
 	public:	
-		PanelView() { setType<PanelView>(); }
-		PanelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<PanelView>(); }
+		PanelView() {}
+		PanelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) {}
 		~PanelView() = default;
 
 		void setColor(const Color4F& color) {

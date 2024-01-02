@@ -15,8 +15,8 @@ namespace fw {
 		uint32 _alignment = TextAlignFlags::Left | TextAlignFlags::Top;
 
 	public:
-		LabelView() { setType<LabelView>(); }
-		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) { setType<LabelView>(); }
+		LabelView() {}
+		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) {}
 		~LabelView() = default;
 
 		void onInitialize() override {

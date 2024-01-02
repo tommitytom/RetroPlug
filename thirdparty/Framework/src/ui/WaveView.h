@@ -12,6 +12,7 @@ namespace fw {
 	};
 
 	class WaveView final : public View {
+		RegisterObject();
 	public:
 		struct Theme {
 			Color4 foreground = Color4(255, 255, 255, 255);
@@ -42,7 +43,6 @@ namespace fw {
 
 	public:
 		WaveView() {
-			setType<WaveView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~WaveView() {}
@@ -147,6 +147,7 @@ namespace fw {
 	};
 
 	class WaveMarkerOverlay final : public Overlay<WaveView> {
+		RegisterObject();
 	private:
 		std::vector<uint64> _markers;
 		bool _editing = false;
@@ -155,7 +156,6 @@ namespace fw {
 
 	public:
 		WaveMarkerOverlay() {
-			setType<WaveMarkerOverlay>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~WaveMarkerOverlay() {}

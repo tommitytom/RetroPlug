@@ -10,6 +10,7 @@
 
 namespace fw {
 	class GraphView : public View {
+		RegisterObject();
 	private:
 		struct Connection {
 			NodeViewPtr outputNode;
@@ -27,8 +28,6 @@ namespace fw {
 
 	public:
 		GraphView() {
-			setType<GraphView>();
-
 			_container = addChild<View>("Graph Container");
 		}
 

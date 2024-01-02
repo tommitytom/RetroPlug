@@ -19,7 +19,6 @@ namespace fw {
 
 	public:
 		EditOverlay() {
-			setType<EditOverlay>();
 			getLayout().setFlexPositionType(FlexPositionType::Absolute);
 			getLayout().setDimensions(100_pc);
 		}
@@ -103,7 +102,7 @@ namespace fw {
 		bool _active = false;
 
 	public:
-		EditView() : View({ 1024, 768 }) { setType<EditView>(); }
+		EditView() : View({ 1024, 768 }) {}
 
 		void onInitialize() override {
 			addGlobalKeyHandler([&](const KeyEvent& ev) {

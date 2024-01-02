@@ -18,13 +18,13 @@ namespace rp {
 	class Menu;
 
 	class LsdjHdPlayer final : public LsdjCanvasView {
+		RegisterObject();
 	private:
 		SystemPtr _system;
 		lsdj::Ui _ui;
 
 	public:
 		LsdjHdPlayer() : LsdjCanvasView({ 160 * 5, 144 * 4 }), _ui(_canvas) {
-			setType<LsdjHdPlayer>();
 			setName("LSDJ HD Player");
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}

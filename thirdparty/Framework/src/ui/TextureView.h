@@ -14,7 +14,7 @@ namespace fw {
 		RectF _textureArea;
 
 	public:
-		TextureView() { setType<TextureView>(); }
+		TextureView() {}
 		~TextureView() = default;
 
 		void loadImage(const std::filesystem::path& path);

@@ -4,7 +4,7 @@
 #include <refl.hpp>
 #include "foundation/Types.h"
 
-namespace fw {
+namespace fw::reflutil {
 	struct RangeAttribute : refl::attr::usage::field {
 		const f32 min;
 		const f32 max;

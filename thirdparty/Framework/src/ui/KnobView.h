@@ -28,7 +28,6 @@ namespace fw {
 
 	public:
 		KnobView() {
-			setType<KnobView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 

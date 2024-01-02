@@ -10,7 +10,6 @@ const fw::Color4 COLOR_WHITE = fw::Color4(255, 255, 255, 255);
 const fw::Color4 COLOR_GRAY = fw::Color4(190, 190, 190, 255);
 
 MenuView::MenuView() : fw::View({ 160, 144 }) {
-	setType<MenuView>();
 	setFocusPolicy(fw::FocusPolicy::Click);
 	_menuArea = fw::RectF{ MARGIN, MARGIN, 160 - MARGIN * 2, 144 - MARGIN * 2 };
 }
@@ -23,6 +22,9 @@ void MenuView::onUpdate(f32 delta) {
 
 void MenuView::onInitialize() {
 	//_font = getResourceManager().load<Font>("PlatNomor.ttf/16");
+	//setArea({ 0, 0, 160, 144 });
+	getLayout().setFlexPositionType(fw::FlexPositionType::Absolute);
+	fitToParent();
 }
 
 bool isHighlightable(fw::MenuItemType type) {

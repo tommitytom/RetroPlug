@@ -21,6 +21,7 @@ namespace fw {
 	using DropTargetArray = std::array<RectT<int32>, (size_t)DropTargetType::None>;
 
 	class DockPanel : public View {
+		RegisterObject();
 	private:
 		enum class DisplayMode {
 			None,
@@ -52,7 +53,7 @@ namespace fw {
 		const int32 DROP_TARGET_SIZE = 30;
 		const int32 DROP_TARGET_DISTANCE = 60; // Distance from center
 
-		DockPanel() { setType<DockPanel>(); }
+		DockPanel() {}
 
 		void onChildAdded(ViewPtr child) override {
 			DockPanelPtr panel = child->asShared<DockPanel>();

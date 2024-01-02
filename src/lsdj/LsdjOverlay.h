@@ -21,6 +21,7 @@ namespace rp {
 	class Menu;
 
 	class LsdjOverlay final : public SystemOverlay {
+		RegisterObject();
 	private:
 		fw::Point _mousePosition;
 
@@ -36,9 +37,7 @@ namespace rp {
 
 	public:
 		LsdjOverlay() {
-			setType<LsdjOverlay>();
 			setName("LSDJ Overlay");
-			getLayout().setDimensions(100_pc);
 		}
 
 		~LsdjOverlay() {}

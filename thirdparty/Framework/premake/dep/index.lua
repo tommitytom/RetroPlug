@@ -12,7 +12,6 @@ local m = {
 	bin2h = dofile("bin2h.lua"),
 	simdjson = dofile("simdjson.lua"),
 	yoga = dofile("yoga.lua"),
-	less = dofile("less.lua"),
 	csspp = dofile("csspp.lua"),
 }
 
@@ -31,7 +30,6 @@ function m.allProjects()
 	m.bin2h.project()
 	m.simdjson.project()
 	m.yoga.project()
-	m.less.project()
 	m.csspp.project()
 
 	if _OPTIONS["emscripten"] == nil then

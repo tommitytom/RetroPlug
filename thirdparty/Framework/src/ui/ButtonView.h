@@ -15,7 +15,6 @@ namespace fw {
 
 	public:
 		ButtonView() {
-			setType<ButtonView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~ButtonView() = default;

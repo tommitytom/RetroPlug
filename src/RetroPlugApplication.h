@@ -7,6 +7,7 @@
 #include "core/RetroPlugProcessor.h"
 
 #include "ui/RetroPlugView.h"
+#include "ui/ViewLayout.h"
 
 #include "application/Application.h"
 
@@ -32,6 +33,8 @@ public:
 		_typeRegistry.addEnum<MidiChannelRouting>();
 		_typeRegistry.addEnum<SystemLayout>();
 		_typeRegistry.addEnum<SaveStateType>();
+
+		_typeRegistry.addType<fw::ViewLayout>();			
 
 		_typeRegistry.addType<ProjectState::Settings>()
 			.addField<&ProjectState::Settings::audioRouting>("audioRouting")

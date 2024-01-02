@@ -139,7 +139,6 @@ function m.Ui.include()
 
 	m.Graphics.include()
 	dep.yoga.include()
-	dep.less.include()
 	dep.csspp.include()
 	dep.bgfx.compat()
 
@@ -153,7 +152,6 @@ function m.Ui.link()
 
 	m.Graphics.link()
 	dep.yoga.link()
-	dep.less.link()
 	dep.csspp.link()
 end
 

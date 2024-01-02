@@ -6,12 +6,12 @@
 
 namespace rp {
 	class ArduinoboyOverlay final : public TypedSystemOverlay<ArduinoboyServiceSettings> {
+		RegisterObject();
 	private:
 		bool _keyCapture = false;
 		
 	public:
 		ArduinoboyOverlay() {
-			setType<ArduinoboyOverlay>();
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 

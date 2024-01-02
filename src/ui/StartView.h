@@ -11,9 +11,9 @@
 
 namespace rp {
 	class StartView final : public MenuView {
+		RegisterObject();
 	public:
 		StartView() {
-			setType<StartView>();
 			setEscCloses(false);
 		}
 

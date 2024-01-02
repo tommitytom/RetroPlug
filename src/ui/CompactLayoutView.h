@@ -5,17 +5,17 @@
 
 namespace rp {
 	class CompactLayoutView final : public fw::View {
+		RegisterObject();
 	private:
 		fw::GridViewPtr _grid;
 		GridOverlayPtr _gridOverlay;
 
 	public:
-		CompactLayoutView() { 
-			setType<CompactLayoutView>(); 
-		}
+		CompactLayoutView() = default;
 		~CompactLayoutView() = default;
 
 		void onInitialize() override {
+			getLayout().setOverflow(fw::FlexOverflow::Visible);
 			_grid = this->addChild<fw::GridView>("Grid");
 			_gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
 			_gridOverlay->setGrid(_grid);

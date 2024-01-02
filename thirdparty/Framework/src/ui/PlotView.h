@@ -4,6 +4,7 @@
 
 namespace fw {
 	class PlotView final : public View {
+		RegisterObject();
 	public:
 		using Func = f32(*)(f32);
 
@@ -22,7 +23,6 @@ namespace fw {
 
 	public:
 		PlotView() {
-			setType<PlotView>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 		~PlotView() {}

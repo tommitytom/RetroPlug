@@ -20,6 +20,7 @@ namespace fw {
 	};
 
 	class DockSplitter : public View {
+		RegisterObject();
 	private:
 		std::vector<f32> _handleOffsets;
 		std::vector<Rect> _handleAreas;
@@ -35,7 +36,6 @@ namespace fw {
 
 	public:
 		DockSplitter() {
-			setType<DockSplitter>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 

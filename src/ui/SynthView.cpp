@@ -15,7 +15,6 @@ const fw::Rect WAVE_VIEW_AREA = {
 };
 
 SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
-	setType<SynthView>();
 	_waveView = addChildAt<fw::WaveView>("SynthWaveView", WAVE_VIEW_AREA);
 }
 

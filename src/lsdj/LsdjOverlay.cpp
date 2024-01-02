@@ -43,6 +43,7 @@ void showHdPlayer(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service
 }
 
 void LsdjOverlay::onInitialize() {
+	fitToParent();
 	/*Project& project = getState<Project>();
 	_model = _system->getModel<LsdjModel>();
 

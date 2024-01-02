@@ -99,6 +99,7 @@ namespace rp {
 	};
 
 	class MenuView : public fw::View {
+		RegisterObject();
 	private:
 		std::string _fontName = "PlatNomor";
 		f32 _fontSize = 7.0f;

@@ -58,13 +58,13 @@ namespace fw::ObjectInspectorUtil {
 			} else if constexpr (std::is_floating_point_v<UnderlyingMemberType> || std::is_integral_v<UnderlyingMemberType>) {
 				SliderViewPtr slider = inspector->addProperty<SliderView>(get_display_name(member));
 
-				if constexpr (refl::descriptor::has_attribute<RangeAttribute>(member)) {
-					auto&& attrib = refl::descriptor::get_attribute<RangeAttribute>(member);
+				if constexpr (refl::descriptor::has_attribute<reflutil::RangeAttribute>(member)) {
+					auto&& attrib = refl::descriptor::get_attribute<reflutil::RangeAttribute>(member);
 					slider->setRange(attrib.min, attrib.max);
 				}
 
-				if constexpr (refl::descriptor::has_attribute<StepSizeAttribute>(member)) {
-					auto&& attrib = refl::descriptor::get_attribute<StepSizeAttribute>(member);
+				if constexpr (refl::descriptor::has_attribute<reflutil::StepSizeAttribute>(member)) {
+					auto&& attrib = refl::descriptor::get_attribute<reflutil::StepSizeAttribute>(member);
 					slider->setStepSize(attrib.value);
 				} else if constexpr (std::is_integral_v<UnderlyingMemberType>) {
 					slider->setStepSize(1.0f);

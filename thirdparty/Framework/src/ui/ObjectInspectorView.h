@@ -14,6 +14,7 @@
 
 namespace fw {
 	class ObjectInspectorView : public PropertyEditorView {
+		RegisterObject();
 	private:
 		struct FieldWrapper {
 			const fw::Field& field;
@@ -77,7 +78,7 @@ namespace fw {
 					fieldWrap.editor = createSlider(field.name, field, fieldWrap.value, groupId, fieldId);
 				} else if (fieldType.isClass()) {
 					if (fieldType.isType<std::string>()) {
-						if (const TypedProperty<UriBrowser>* uriBrowser = fieldType.findProperty<UriBrowser>(); uriBrowser) {
+						if (const TypedAttribute<UriBrowser>* uriBrowser = fieldType.findAttribute<UriBrowser>(); uriBrowser) {
 							std::vector<std::string> uris = getResourceManager().getUris(uriBrowser->getValue().getItems());
 
 							DropDownMenuViewPtr dropdown = addProperty<DropDownMenuView>(name);
@@ -184,7 +185,7 @@ namespace fw {
 			assert(!value.owner());
 
 			std::string name;
-			if (const TypedProperty<DisplayName>* displayName = field.findProperty<DisplayName>(); displayName) {
+			if (const TypedAttribute<DisplayName>* displayName = field.findAttribute<DisplayName>(); displayName) {
 				name = displayName->getValue().getName();
 			} else {
 				name = StringUtil::formatMemberName(nameView);
@@ -192,11 +193,11 @@ namespace fw {
 
 			SliderViewPtr slider = addProperty<SliderView>(name);
 
-			if (const TypedProperty<Range>* range = field.findProperty<Range>(); range) {
+			if (const TypedAttribute<Range>* range = field.findAttribute<Range>(); range) {
 				slider->setRange(range->getValue().getMin(), range->getValue().getMax());
 			}
 
-			if (const TypedProperty<StepSize>* stepSize = field.findProperty<StepSize>(); stepSize) {
+			if (const TypedAttribute<StepSize>* stepSize = field.findAttribute<StepSize>(); stepSize) {
 				slider->setStepSize(stepSize->getValue().getValue());
 			}
 
@@ -232,7 +233,7 @@ namespace fw {
 			}
 
 			std::string name;
-			if (const TypedProperty<DisplayName>* displayName = field.findProperty<DisplayName>(); displayName) {
+			if (const TypedAttribute<DisplayName>* displayName = field.findAttribute<DisplayName>(); displayName) {
 				name = displayName->getValue().getName();
 			} else {
 				name = StringUtil::formatMemberName(nameView);
