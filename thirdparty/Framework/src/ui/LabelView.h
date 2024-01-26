@@ -19,8 +19,19 @@ namespace fw {
 		LabelView(Dimension dimensions, const Color4F& color = Color4F(1, 1, 1, 1)) : View(dimensions), _color(color) {}
 		~LabelView() = default;
 
+		static YGSize measureText(YGNodeRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) {
+			void* ctx = YGNodeGetContext(node);
+			LabelView* view = (LabelView*)ctx;
+			DimensionF textArea = view->getFontManager().measureText(view->getText(), view->getFontFace(), view->getFontSize());
+			return YGSize{
+				.width = textArea.w,
+				.height = textArea.h
+			};
+		}
+
 		void onInitialize() override {
 			//setSizingPolicy(SizingPolicy::FitToContent);
+			getLayout().setMeasureFunc(measureText);
 		}
 
 		void setColor(const Color4F& color) {

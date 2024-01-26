@@ -2,7 +2,9 @@
 
 #include <refl.hpp>
 #include <yoga/Yoga.h>
+#include <yoga/YGNode.h>
 
+#include "foundation/Math.h"
 #include "ui/Flex.h"
 
 namespace fw {	
@@ -69,6 +71,14 @@ namespace fw {
 			_dirty = true;
 
 			return *this;
+		}
+
+		void setContext(void* context) {
+			YGNodeSetContext(_yogaNode, context);
+		}
+
+		void setMeasureFunc(YGMeasureFunc func) {
+			YGNodeSetMeasureFunc(_yogaNode, func);
 		}
 
 		void setOverflow(FlexOverflow overflow) {

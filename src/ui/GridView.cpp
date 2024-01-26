@@ -8,7 +8,8 @@ GridView::GridView() {
 
 void GridView::onInitialize() {
 	//getLayout().setDimensions(100_pc);
-	getLayout().setOverflow(fw::FlexOverflow::Visible);
+	//getLayout().setOverflow(fw::FlexOverflow::Visible);
+	getLayout().setFlexDirection(fw::FlexDirection::Row);
 }
 
 void GridView::onChildAdded(ViewPtr view) {
@@ -19,13 +20,13 @@ void GridView::onChildAdded(ViewPtr view) {
 void GridView::onChildRemoved(ViewPtr view) {
 	updateLayout();
 
-	/*if (!getFocused() && getChildren().size() > 0) {
+	if (!getFocused() && getChildren().size() > 0) {
 		getChildren()[0]->focus();
-	}*/
+	}
 }
 
 void GridView::updateLayout() {
-	/*std::vector<ViewPtr>& children = getChildren();
+	std::vector<ViewPtr>& children = getChildren();
 
 	GridLayout layout = _layout;
 	if (layout == GridLayout::Auto) {
@@ -36,23 +37,21 @@ void GridView::updateLayout() {
 		}
 	}
 
+	fw::Dimension dimensions;
+
 	switch (layout) {
 	case GridLayout::Row: {
-		uint32 xOffset = 0;
-
 		for (ViewPtr& view : children) {
-			view->setPosition(xOffset, 0);
-			xOffset += view->getArea().w;
+			dimensions.w += view->getArea().w;
+			dimensions.h = std::max(dimensions.h, view->getArea().h);
 		}
 
 		break;
 	}
 	case GridLayout::Column:{
-		uint32 yOffset = 0;
-
 		for (ViewPtr& view : children) {
-			view->setPosition(0, yOffset);
-			yOffset += view->getArea().h;
+			dimensions.w += std::max(dimensions.w, view->getArea().w); 
+			dimensions.h = view->getArea().h;
 		}
 
 		break;
@@ -60,22 +59,22 @@ void GridView::updateLayout() {
 	case GridLayout::Grid: {
 		const uint32 colCount = 2;
 
-		for (uint32 i = 0; i < (uint32)children.size(); ++i) {
-			ViewPtr& view = children[i];
-
-			uint32 rowIdx = i / colCount;
-			uint32 colIdx = i % colCount;
-
-			// NOTE: This will break if child views have differing sizes!
-			uint32 xOffset = colIdx * 160;// view->getDimensions().w;
-			uint32 yOffset = rowIdx * 144;// view->getDimensions().h;
-
-			view->setPosition(xOffset, yOffset);
+		if (children.size() <= 2) {
+			dimensions.w = 160 * children.size();
+			dimensions.h = 144;
+		} else {
+			dimensions.w = 160 * colCount;
+			dimensions.h = 144 * 2;
 		}
 
 		break;
 	}
 	case GridLayout::Auto:
 		break;
-	}*/
+	}
+
+	fw::FlexDimensionValue v;
+	v.width = dimensions.w;
+	v.height = dimensions.h;
+	getLayout().setMinDimensions(v);
 }

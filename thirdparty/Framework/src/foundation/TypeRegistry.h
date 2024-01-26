@@ -504,6 +504,25 @@ namespace fw {
 			return std::move(*this);
 		}
 
+		template <auto Getter, typename ...AttributeType>
+		TypeFactory<T> addProperty(std::string_view name, AttributeType&&... attribute) {
+			std::span<const Attribute> attributes = addAttributes(attribute...);
+
+			using DataType = std::remove_reference_t<typename entt::meta_function_helper_t<T, decltype(Getter)>::return_type>;
+			assert(_state->findTypeInfo<DataType>()); // Types referenced in fields must be registered
+
+			_state->fields.push_back(Field{
+				.type = getTypeId<DataType>(),
+				.hash = getNameHash(name),
+				.name = name,
+				.attributes = attributes,
+				.setter = nullptr,
+				.getter = &internal::makePropertyGetter<T, Getter>,
+			});
+
+			return std::move(*this);
+		}
+
 		template <auto Data, typename ...AttributeType>
 		TypeFactory<T> addField(std::string_view name, AttributeType&&... attribute) {
 			assert(_state->fields.size() < _state->fields.capacity());

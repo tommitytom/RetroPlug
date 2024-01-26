@@ -77,7 +77,7 @@ namespace fw {
 
 			_panels.push_back(panel);
 
-			updateLayout();
+			//updateLayout();
 		}
 
 		void onResize(const ResizeEvent& ev) override {

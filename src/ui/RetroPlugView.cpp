@@ -21,11 +21,14 @@
 #include "core/ProjectSerializer.h"
 #include "core/ProxySystem.h"
 
+#include "ui/PanelView.h"
 #include "ui/StartView.h"
 #include "ui/SystemOverlayManager.h"
 #include "ui/SystemView.h"
 #include "ui/ViewManager.h"
 #include "ui/VerticalSplitter.h"
+#include "ui/PanelView.h"
+#include "ui/UiEditOverlay.h"
 
 #include "fonts/PlatNomor.h"
 #include "foundation/LuaSerializer.h"
@@ -54,8 +57,72 @@ void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloade
 	rm.load<fw::LuaScriptResource>(path);
 }
 
+void addTreeNodes(fw::TreeViewNode& node, fw::ViewPtr view) {
+	node.name = view->getName();
+
+	for (const auto& child : view->getChildren()) {
+		addTreeNodes(node.children.emplace_back(), child);
+	}
+}
+
+void RetroPlugView::initViews() {
+	this->removeChildren();
+
+	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
+	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
+	//_compactLayout->fitToParent();
+
+	/*auto splitter = this->addChild<fw::DockSplitter>("Splitter");
+	splitter->fitToParent();
+
+	fw::ViewPtr inspectorContainer = splitter->addItem<fw::View>("InspectorPanel", 0);
+	inspectorContainer->fitToParent();
+
+	_viewTree = inspectorContainer->addChild<fw::TreeView>("UiTree");
+	_viewTree->getLayout().setDimensions(fw::FlexDimensionValue{
+		.width = fw::FlexValue(fw::FlexUnit::Percent, 100.0f),
+		.height = fw::FlexValue(fw::FlexUnit::Auto)
+	});
+
+	_inspector = inspectorContainer->addChild<fw::ObjectInspectorView>("Inspector");
+	_inspector->getLayout().setDimensions(fw::FlexDimensionValue{
+		.width = fw::FlexValue(fw::FlexUnit::Percent, 100.0f),
+		.height = fw::FlexValue(fw::FlexUnit::Auto)
+	});
+
+	_editContainer = splitter->addItem<fw::View>("UI Editor Container", 100);
+	_editContainer->fitToParent();
+	
+	_compactLayout = _editContainer->addChild<CompactLayoutView>("Compact Layout");
+	_compactLayout->fitToParent();
+
+	std::shared_ptr<fw::UiEditOverlay> editOverlay = std::make_shared<fw::UiEditOverlay>(_typeRegistry, _inspector);
+	_editContainer->addChild(editOverlay);
+
+	editOverlay->setName("UI Overlay");
+	editOverlay->fitToParent();
+	editOverlay->setView(_editContainer);
+
+	_inspector->addView(_typeRegistry, _compactLayout);*/
+}
+
+void RetroPlugView::onHotReload() {
+	initViews();
+}
+
 void RetroPlugView::onInitialize() {
-	getLayout().setOverflow(fw::FlexOverflow::Visible);
+	addGlobalKeyHandler([&](const fw::KeyEvent& ev) {
+		if (ev.down && ev.key == fw::VirtualKey::F5) {
+			_viewTree->getRootNode().children.clear();
+			addTreeNodes(_viewTree->getRootNode(), _editContainer);
+			_viewTree->refresh();
+		}
+
+		return false;
+	});
+
+	//getLayout().setOverflow(fw::FlexOverflow::Visible);
+	fitToParent();
 
 	fw::ResourceManager& rm = getResourceManager();
 	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
@@ -77,9 +144,7 @@ void RetroPlugView::onInitialize() {
 	_fileManager = &this->createState<FileManager>();
 	this->createState(entt::forward_as_any(_project));
 
-	auto splitter = this->addChild<fw::DockSplitter>("Splitter");
-	_inspector = splitter->addItem<fw::ObjectInspectorView>("Inspector", 0);
-	_compactLayout = splitter->addItem<CompactLayoutView>("Compact Layout", 100);
+	initViews();
 
 	//_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 
@@ -181,7 +246,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
 	_compactLayout->setScale(scale);
-	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
+	//_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
 	_project.update(audioFrameCount);
 	_project.saveIfRequired();

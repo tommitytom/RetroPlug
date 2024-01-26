@@ -23,7 +23,7 @@ namespace rp {
 
 		void onInitialize() override { 
 			MenuView::onInitialize();
-			setupMenu(); 
+			setupMenu();
 		}
 
 	private:

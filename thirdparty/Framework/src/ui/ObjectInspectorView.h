@@ -49,6 +49,10 @@ namespace fw {
 			return nullptr;
 		}
 
+		void addView(const fw::TypeRegistry& reg, ViewPtr view) {
+			addObject(reg, view->getName() + " Layout", view->getLayout());
+		}
+
 		void addObject(const fw::TypeRegistry& reg, std::string_view name, fw::TypeInstance objInstance) {
 			size_t fieldId = 0;
 			size_t groupId = _fieldGroups.size();
@@ -241,8 +245,11 @@ namespace fw {
 
 			DropDownMenuViewPtr dropdown = addProperty<DropDownMenuView>(name);
 
+			auto valueType = reg.getTypeInfo(value);
+
 			dropdown->setItems(items);
-			dropdown->setValue(anyToNumber<int32>(value));
+			dropdown->setValue(0);
+			//dropdown->setValue(anyToNumber<int32>(value));
 
 			dropdown->ValueChangeEvent = [groupId, fieldId, this](int32 v) {
 				assert(!_fieldGroups[groupId].fields[fieldId].value.owner());

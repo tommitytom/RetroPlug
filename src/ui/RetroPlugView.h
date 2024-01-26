@@ -11,6 +11,7 @@
 #include "core/System.h"
 #include "ui/CompactLayoutView.h"
 #include "ui/LabelView.h"
+#include "ui/TreeView.h"
 #include "ui/View.h"
 #include "ui/ObjectInspectorView.h"
 #include "foundation/ResourceReloader.h"
@@ -72,6 +73,8 @@ namespace rp {
 		fw::ResourceReloader _resourceReloader;
 
 		fw::ObjectInspectorViewPtr _inspector;
+		fw::TreeViewPtr _viewTree;
+		fw::ViewPtr _editContainer;
 
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
@@ -79,11 +82,15 @@ namespace rp {
 
 		void onInitialize() override;
 
+		void initViews();
+
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;
 
 		bool onKey(const fw::KeyEvent& ev) override;
+
+		void onHotReload() override;
 
 	private:
 		void processOutput();

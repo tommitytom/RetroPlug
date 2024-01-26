@@ -23,8 +23,8 @@ void MenuView::onUpdate(f32 delta) {
 void MenuView::onInitialize() {
 	//_font = getResourceManager().load<Font>("PlatNomor.ttf/16");
 	//setArea({ 0, 0, 160, 144 });
-	getLayout().setFlexPositionType(fw::FlexPositionType::Absolute);
-	fitToParent();
+	//getLayout().setFlexPositionType(fw::FlexPositionType::Absolute);
+	//fitToParent();
 }
 
 bool isHighlightable(fw::MenuItemType type) {

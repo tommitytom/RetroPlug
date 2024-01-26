@@ -18,6 +18,7 @@ namespace rp {
 			getLayout().setOverflow(fw::FlexOverflow::Visible);
 			_grid = this->addChild<fw::GridView>("Grid");
 			_gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
+			_gridOverlay->fitToParent();
 			_gridOverlay->setGrid(_grid);
 		}
 

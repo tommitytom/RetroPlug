@@ -278,7 +278,8 @@ namespace fw {
 	private:
 		void propagatePrint(std::vector<ViewPtr>& views, std::string indent) {
 			for (ViewPtr view : views) {
-				spdlog::info("{}- {}", indent, view->getName());
+				fw::Rect worldArea = view->getWorldArea();
+				spdlog::info("{}- {} [{}, {}, {}, {}]", indent, view->getName(), worldArea.x, worldArea.y, worldArea.w, worldArea.h);
 				propagatePrint(view->getChildren(), indent + '\t');
 			}
 		}

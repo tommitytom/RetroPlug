@@ -38,6 +38,7 @@ bool SystemView::onKey(const fw::KeyEvent& ev) {
 			buildMenu(*menu);
 
 			MenuViewPtr menuView = addChild<MenuView>("Menu");
+			menuView->fitToParent();
 			menuView->setMenu(menu);
 			menuView->focus();
 		}

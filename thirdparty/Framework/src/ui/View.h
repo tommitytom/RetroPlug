@@ -122,7 +122,8 @@ namespace fw {
 		ViewLayout _layout;
 
 	public:
-		View(Dimension dimensions = { 100, 100 }) : _layout(dimensions) {}
+		View() { _layout.setContext(static_cast<void*>(this)); }
+		View(Dimension dimensions) : _layout(dimensions) { _layout.setContext(static_cast<void*>(this)); }
 		~View() { unsubscribeAll(); }
 
 		void addGlobalKeyHandler(std::function<bool(const KeyEvent&)>&& func) {
@@ -841,7 +842,7 @@ namespace fw {
 			getLayout().setPositionEdge(FlexEdge::Left, (f32)area.x);
 			getLayout().setPositionEdge(FlexEdge::Top, (f32)area.y);
 			getLayout().setWidth((f32)area.w);
-			getLayout().setHeight((f32)area.x);
+			getLayout().setHeight((f32)area.h);
 
 			/*if (area != _area) {
 				ResizeEvent ev = {
@@ -927,6 +928,14 @@ namespace fw {
 
 		RectF getAreaF() const {
 			return _layout.getCalculatedArea();
+		}
+
+		RectF getScaledAreaF() const {
+			f32 scale = getWorldScale();
+			RectF area = _layout.getCalculatedArea();
+			area.position *= scale;
+			area.dimensions *= scale;
+			return area;
 		}
 
 	protected:
