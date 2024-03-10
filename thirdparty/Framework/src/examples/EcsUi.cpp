@@ -8,7 +8,6 @@
 
 namespace fw {
 	EcsUi::EcsUi() : View({ 1024, 768 }) {
-		setType<EcsUi>();
 		getLayout().setDimensions(100_pc);
 		setFocusPolicy(FocusPolicy::Click);
 	}

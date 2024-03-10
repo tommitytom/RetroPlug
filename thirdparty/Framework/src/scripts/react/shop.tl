@@ -33,7 +33,7 @@ end
 local ProductCategoryRow = React.component(function (props: ProductCategoryRowProps): Element
 	return r.tr {
 		r.th {
-			colSpan = 2,
+			--colSpan = 2,
 			props.category
 		}
 	}
@@ -92,9 +92,9 @@ end
 local SearchBar = React.component(function (props: SearchBarProps): Element
 	return r.form {
 		r.input {
-			type = "text",
-			value = props.filterText,
-			placeholder = "Search...",
+			--type = "text",
+			--value = props.filterText,
+			--placeholder = "Search...",
 			onChange = function (e: string)
 				--props.onFilterTextChange(e.target.value)
 				props.onFilterTextChange(e)
@@ -102,8 +102,8 @@ local SearchBar = React.component(function (props: SearchBarProps): Element
 		},
 		r.label {
 			r.input {
-				type = "checkbox",
-				checked = props.inStockOnly,
+				--type = "checkbox",
+				--checked = props.inStockOnly,
 				onChange = function (_: string)
 					--props.onInStockOnlyChange(e.target.checked)
 				end
@@ -124,6 +124,7 @@ local FilterableProductTable = React.component(function (props: FilterableProduc
 
 	return (
 		r.div {
+			className = "productTable",
 			SearchBar {
 				filterText = filterText,
 				inStockOnly = inStockOnly,

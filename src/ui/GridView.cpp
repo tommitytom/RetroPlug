@@ -12,6 +12,10 @@ void GridView::onInitialize() {
 	getLayout().setFlexDirection(fw::FlexDirection::Row);
 }
 
+void GridView::onUpdate(f32 dt) {
+	//updateLayout();
+}
+
 void GridView::onChildAdded(ViewPtr view) {
 	updateLayout();
 	view->focus();

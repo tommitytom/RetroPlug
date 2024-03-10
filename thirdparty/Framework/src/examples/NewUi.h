@@ -44,7 +44,6 @@ namespace fw {
 	public:
 		NewUi() : View({ 1024, 768 }) {
 			reflTest();
-			setType<NewUi>();
 			setFocusPolicy(FocusPolicy::Click);
 			getLayout().setDimensions(100_pc);
 

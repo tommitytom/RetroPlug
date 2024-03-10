@@ -120,10 +120,10 @@ namespace fw::LuaReflection {
 					} else {*/
 						if constexpr (refl::descriptor::has_writer(member)) {
 							//spdlog::info("\tProperty: {}", get_display_name(member));
-							bridgeClass.addProperty(
+							/*bridgeClass.addProperty(
 										refl::descriptor::get_display_name(member),
 										refl::descriptor::get_pointer(member),
-										refl::descriptor::get_pointer(refl::descriptor::get_writer(member)));
+										refl::descriptor::get_pointer(refl::descriptor::get_writer(member)));*/
 						} else {
 							//spdlog::info("\tRead Only Property: {}", get_display_name(member));
 							//bridgeClass.addProperty(refl::descriptor::get_display_name(member), refl::descriptor::get_pointer(member));

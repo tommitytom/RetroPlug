@@ -121,8 +121,8 @@ void RetroPlugView::onInitialize() {
 		return false;
 	});
 
-	//getLayout().setOverflow(fw::FlexOverflow::Visible);
-	fitToParent();
+	getLayout().setOverflow(fw::FlexOverflow::Visible);
+	//fitToParent();
 
 	fw::ResourceManager& rm = getResourceManager();
 	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();

@@ -9,11 +9,11 @@ namespace fw {
 		std::chrono::high_resolution_clock::duration time = std::chrono::high_resolution_clock::now().time_since_epoch();
 		return std::chrono::duration_cast<std::chrono::duration<f64>>(time).count();
 	}
-	
+
 	LuaReact::LuaReact(FontManager& fontManager, const std::filesystem::path& path) : _doc(fontManager), _path(path) {
 		_listener.setCallback([&](FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
 			if (filename.ends_with(".css")) {
-				_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+				_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
 			} else {
 				reload();
 			}
@@ -24,7 +24,7 @@ namespace fw {
 
 		reload();
 	}
-	
+
 	LuaReact::~LuaReact() {
 		if (_lua) {
 			lua_close(_lua);
@@ -76,9 +76,9 @@ namespace fw {
 				.endClass()
 				.beginClass<FlexRect>("FlexRect")
 					.addConstructor<
-						void(), 
-						void(const FlexRect&), 
-						void(FlexValue), 
+						void(),
+						void(const FlexRect&),
+						void(FlexValue),
 						void(FlexValue, FlexValue, FlexValue, FlexValue),
 						void(f32, f32, f32, f32)
 					>()
@@ -110,15 +110,15 @@ namespace fw {
 		int ret = luaL_dofile(_lua, _path.string().c_str());
 		if (ret != 0) {
 			spdlog::error(lua_tostring(_lua, -1));
-			
+
 			lua_close(_lua);
 			_lua = nullptr;
 		}
 
 		//update(0.3f);
-		_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+		_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
 	}
-	
+
 	bool LuaReact::handleMouseMove(PointF pos) {
 		entt::registry& reg = _doc.getRegistry();
 		bool changed = false;
@@ -186,7 +186,7 @@ namespace fw {
 
 		return changed;
 	}
-	
+
 	bool LuaReact::handleMouseButton(const MouseButtonEvent& ev) {
 		entt::registry& reg = _doc.getRegistry();
 		bool fired = propagateMouseButton(_doc.getRootElement(), ev);
@@ -200,7 +200,7 @@ namespace fw {
 
 		return fired;
 	}
-	
+
 	void LuaReact::getElementsAtPosition(const DomElementHandle e, const PointF pos, std::vector<DomElementHandle>& items) {
 		entt::registry& reg = _doc.getRegistry();
 		const RectF& area = reg.get<WorldAreaComponent>(e).area;
@@ -213,7 +213,7 @@ namespace fw {
 			});
 		}
 	}
-	
+
 	bool LuaReact::propagateMouseButton(DomElementHandle e, const MouseButtonEvent& ev) {
 		entt::registry& reg = _doc.getRegistry();
 		const RectF& area = reg.get<WorldAreaComponent>(e).area;

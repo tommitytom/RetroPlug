@@ -25,6 +25,8 @@ namespace fw {
 			}
 		}
 
+		void onUpdate(f32 dt) override;
+
 		void onInitialize() override;
 		
 		void onChildAdded(ViewPtr view) override;
