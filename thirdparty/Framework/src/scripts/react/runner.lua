@@ -6,4 +6,4 @@ print("--------------------------------------------------")
 
 require("tl").loader()
 --require("mimic")
-require("shop")
+require("main")

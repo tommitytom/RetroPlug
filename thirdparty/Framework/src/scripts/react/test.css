@@ -1,7 +1,5 @@
-
-
 body {
-  background-color: rgb(1, 255, 1);
+  background-color: rgb(255, 255, 1);
   height: 100%;
   width: 100%;
   position: absolute;
@@ -27,7 +25,9 @@ button {
   padding-left: 10px;
   padding-right: 10px;
 
-  background-color: red;
+  background-color: darkblue;
+
+  cursor: ew-resize;
 }
 
 button:hover {

@@ -14,6 +14,10 @@
 #include "ui/next/StyleUtil.h"
 
 namespace fw {	
+	struct CssSingleton {
+		CssUtil::StyleParserLookup styleParsers;
+	};
+
 	YGNodeRef getNode(entt::registry& reg, entt::entity e) {
 		return reg.get<YGNodeRef>(e);
 	}
@@ -43,7 +47,7 @@ namespace fw {
 
 	void Document::loadStyle(const std::filesystem::path& path) {
 		std::vector<Stylesheet> stylesheets;
-		CssUtil::loadStyle(_reg, path, stylesheets);
+		CssUtil::loadStyle(_reg.ctx().at<CssSingleton>().styleParsers, path, stylesheets);
 		StyleUtil::addStyleSheets(_reg, path, std::move(stylesheets));
 	}
 
@@ -59,8 +63,8 @@ namespace fw {
 		_reg.ctx().emplace<FontManager*>(&_fontManager);
 		DocumentUtil::setup(_reg, createElement("body"));
 		StyleUtil::setup(_reg);
-		CssUtil::setup(_reg);
-		
+
+		CssUtil::setup(_reg.ctx().emplace<CssSingleton>().styleParsers);
 	}
 
 	void Document::update(f32 dt) {

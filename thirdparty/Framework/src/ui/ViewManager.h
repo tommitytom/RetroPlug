@@ -556,7 +556,7 @@ namespace fw {
 
 					view->onRender(canvas);
 
-					canvas.strokeRect(RectF(PointF{ 0, 0 }, view->getDimensionsF()), {1, 0, 0, 1});
+					//canvas.strokeRect(RectF(PointF{ 0, 0 }, view->getDimensionsF()), {1, 0, 0, 1});
 
 					propagateRender(canvas, view->getChildren());
 

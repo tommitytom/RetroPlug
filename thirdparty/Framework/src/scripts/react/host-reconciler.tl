@@ -10,10 +10,13 @@ local eventBus: EventBus = {
 	entities = {}
 }
 
-global function processHostEvent(entity: HostElementHandle, name: string, ev: any): boolean
+global function processHostEvent(entity: integer, name: string, ev: any): boolean
+	print(entity, name, ev)
 	local e = eventBus.entities[entity]
+	print("e", e)
 	if e then
 		local emitter = e[name]
+		print("emitter", emitter)
 		if emitter then
 			emitter(ev)
 			return true
@@ -82,6 +85,19 @@ local function parseColor4F(value: fw.Color4FT, key: string): fw.Color4FT
 	return fw.Color4F()
 end
 
+local function parseLengthValue(value: fw.LengthValueT, key: string): fw.LengthValueT
+	if type(value) == "userdata" then
+		return value as fw.LengthValueT
+	elseif type(value) == "number" then
+		local v = value as number
+		return fw.LengthValue(v)
+	elseif type(value) ~= "nil" then
+		print("WARN: Failed to update '" .. key .. "', value of type " .. type(value) .. " is not supported")
+	end
+
+	return fw.LengthValue()
+end
+
 local sanitizers: {string:function(any, string): any} = {
 	border = parseFlexBorder,
 	padding = parseFlexRect,
@@ -96,8 +112,85 @@ local sanitizers: {string:function(any, string): any} = {
 	height = parseFlexValue,
 	color = parseColor4F,
 	backgroundColor = parseColor4F,
+	fontSize = parseLengthValue
 }
 
+local function parseStyle(node: HostElementHandle, items: {string:any})
+	local style = node:getStyle()
+	style:clear()
+
+	for k,v in pairs(items) do
+		local value = v
+		if value ~= nil then
+			local san = sanitizers[k]
+			if san then
+				value = san(value, k)
+			end
+		end
+
+		style["set_"..k](style, value)
+	end
+
+	node:updateLayoutStyle()
+end
+
+local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
+	appendChild = function (node: HostElementHandle, child: HostElementHandle)
+		node:addChild(child)
+	end,
+	removeChild = function (node: HostElementHandle, child: HostElementHandle)
+		node:removeChild(child)
+	end,
+	addEventListener = function (node: HostElementHandle, name: string, func: function(any): any)
+		local counterId = node.counterId
+		print("adding event listener", name, counterId)
+
+		local e = eventBus.entities[counterId]
+		if not e then
+			e = {}
+			eventBus.entities[counterId] = e
+		end
+
+		e[name] = func
+
+		fw.document:addEventListener(node, name)
+	end,
+	removeEventListener = function (node: HostElementHandle, name: string, func: function(any): any)
+		local counterId = node.counterId
+		print("removing event listener", name, counterId)
+
+		local e = eventBus.entities[counterId]
+		if e then e[name] = nil end
+
+		fw.document:removeEventListener(node, name)
+	end,
+	getStyle = function (node: HostElementHandle): fw.HostStyle
+		return fw.document:getStyle(node)
+	end,
+	createElement = function (tag: string): HostElementHandle
+		return fw.ReactElementView(tag)
+	end,
+	createTextNode = function (text: string): HostElementHandle
+		return fw.ReactTextView(text)
+	end,
+	getRootElement = function (): HostElementHandle
+		return fw.document
+	end,
+	setProperty = function(node: HostElementHandle, name: string, value: any)
+		assert(type(name) == "string")
+
+		if name == "style" then
+			parseStyle(node, value as {string:any})
+		else
+			node[name] = value
+		end
+	end,
+	getProperty = function(node: HostElementHandle, name: string): any
+		return node[name]
+	end
+}
+
+--[[
 local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 	appendChild = function (node: HostElementHandle, child: HostElementHandle)
 		fw.document:appendChild(node, child)
@@ -151,5 +244,5 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 		return style[name]
 	end
 }
-
+]]
 return reconciler

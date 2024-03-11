@@ -144,4 +144,24 @@ local App = React.component(function (_: PropsMap): Element
 	return FilterableProductTable { products = PRODUCTS }
 end)
 
-React.render(App {})
+local App2 = React.component(function (_: PropsMap): Element
+	return r.div {
+		style = {
+			backgroundColor = fw.Color4F(0, 0, 0, 1),
+			flexDirection = fw.FlexDirection.Column,
+			color = fw.Color4F(0, 1, 1, 1),
+			fontSize = 80
+		},
+		"hey",
+		r.div { style = { color = fw.Color4F(1, 1, 1, 1) }, "twatszzzzzzzzzzzzzzzzzzz" },
+		r.div {
+			style = {
+				width = 50,
+				height = 50,
+				backgroundColor = fw.Color4F(0, 1, 0, 1)
+			}
+		}
+	}
+end)
+
+React.render(App2 {})

@@ -87,6 +87,25 @@ namespace fw {
 		};
 
 		std::vector<Property> properties;
+
+		template <typename T>
+		void setProperty(const T& value) {
+			properties.push_back(Property{
+				.name = T::PropertyName,
+				.data = T{value}
+			});
+		}
+
+		template <typename T>
+		const T* findProperty() const {
+			for (const auto& p : properties) {
+				if (p.name == T::PropertyName) {
+					return &entt::any_cast<const T&>(p.data);
+				}
+			}
+
+			return nullptr;
+		}
 	};
 
 	struct Stylesheet {

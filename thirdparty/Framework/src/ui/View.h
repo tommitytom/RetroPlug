@@ -144,6 +144,17 @@ namespace fw {
 			});
 		}
 
+		void subscribe(EventType eventType, ViewPtr source, const std::function<void(const entt::any&)>& func) {
+			assert(!source->hasSubscription(eventType, sharedFromThis<View>()));
+
+			_subscriptions.push_back({ eventType, std::weak_ptr(source) });
+
+			source->_subscriptionTargets[eventType].push_back(Subscription{
+				.target = std::weak_ptr<View>(sharedFromThis<View>()),
+				.handler = func
+			});
+		}
+
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
@@ -354,6 +365,8 @@ namespace fw {
 		virtual bool onMouseButton(MouseButton button, bool down, Point position) { return false; }
 
 		virtual void onMouseEnter(Point pos) {}
+
+		virtual bool onMouseMove(const MouseMoveEvent& ev) { return onMouseMove(ev.position); }
 
 		virtual bool onMouseMove(Point pos) { return false; }
 
@@ -677,6 +690,10 @@ namespace fw {
 
 		}*/
 
+		void removeChild2(ViewPtr view) {
+			removeChild(view);
+		}
+
 		void removeChild(ViewPtr view) {
 			for (size_t i = 0; i < _children.size(); ++i) {
 				if (_children[i] == view) {
@@ -873,13 +890,13 @@ namespace fw {
 
 		template <typename T>
 		T* asRaw() {
-			assert(isType<T>());
-			return (T*)this;
+			//assert(isType<T>());
+			return static_cast<T*>(this);
 		}
 
 		template <typename T>
 		std::shared_ptr<T> asShared() {
-			assert(isType<T>());
+			//assert(isType<T>());
 			return std::static_pointer_cast<T>(sharedFromThis<View>());
 		}
 

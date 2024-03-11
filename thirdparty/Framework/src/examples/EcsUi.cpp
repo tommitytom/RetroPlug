@@ -17,7 +17,9 @@ namespace fw {
 	}
 	
 	void EcsUi::onInitialize() {
-		_react = std::make_shared<LuaReact>(getFontManager(), "E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
+		//_react = std::make_shared<LuaReact>(getFontManager(), "E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
+		_reactView = addChild<ReactView>("React");
+		_reactView->setPath("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
 	}
 
 	/*bool EcsUi::propagateMouseClick(entt::entity e, MouseButtonEvent ev) {
@@ -40,7 +42,7 @@ namespace fw {
 	}*/
 	
 
-	bool EcsUi::onMouseMove(Point pos) {
+	/*bool EcsUi::onMouseMove(Point pos) {
 		return _react->handleMouseMove(PointF(pos));
 	}
 
@@ -51,23 +53,23 @@ namespace fw {
 	bool EcsUi::onKey(const KeyEvent& ev) {
 		return false;
 	}
-
+	*/
 	void EcsUi::onUpdate(f32 delta) {
-		_react->update(delta);
+		//_react->update(delta);
 
-		CursorType cursor = _react->getCursor();
+		/*CursorType cursor = _react->getCursor();
 		if (cursor != getCursor()) {
 			setCursor(_react->getCursor());
-		}
+		}*/
 	}
-	
+	/*
 	void EcsUi::onRender(fw::Canvas& canvas) {
 		Document& doc = _react->getDocument();
 		doc.calculateLayout(DimensionF(canvas.getDimensions()));
 		DocumentRenderer::render(canvas, doc);
-	}
+	}*/
 
 	void EcsUi::onHotReload() { 
-		_react->reload(); 
+		_reactView->reload(); 
 	}
 }

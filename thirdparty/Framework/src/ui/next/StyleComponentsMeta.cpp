@@ -32,6 +32,14 @@ namespace fw {
 		LuaReflection::addEnum<FlexWrap>(lua);
 		LuaReflection::addEnum<CursorType>(lua);
 
+		LuaReflection::addEnum<TransitionTimingType>(lua);
+		LuaReflection::addEnum<FontStyleType>(lua);
+		LuaReflection::addEnum<FontWeightType>(lua);
+		LuaReflection::addEnum<FontGenericType>(lua);
+		LuaReflection::addEnum<LengthType>(lua);
+		LuaReflection::addEnum<TextAlignType>(lua);
+		LuaReflection::addEnum<BorderStyleType>(lua);
+
 		LuaReflection::addClass<ViewLayout>(lua);
 
 		LuaReflection::addClass<PointI32>(lua);
@@ -43,9 +51,11 @@ namespace fw {
 		LuaReflection::addClass<MouseFocusEvent>(lua);
 		LuaReflection::addClass<MouseBlurEvent>(lua);
 
+		//LuaReflection::addClass<LengthValue>(lua);
+
 		luabridge::getGlobalNamespace(lua)
 			.beginNamespace("fw")
-				.beginClass<DomStyle>("DomStyle")
+				/*.beginClass<DomStyle>("DomStyle")
 					.addProperty("cursor", &DomStyle::getCursor, &DomStyle::setCursor)
 					.addProperty("flexDirection", &DomStyle::getFlexDirection, &DomStyle::setFlexDirection)
 					.addProperty("justifyContent", &DomStyle::getJustifyContent, &DomStyle::setJustifyContent)
@@ -83,7 +93,7 @@ namespace fw {
 					.addFunction("removeChild", &Document::removeChild)
 					.addFunction("getStyle", &Document::getStyle)
 					.addFunction("getRootElement", &Document::getRootElement)
-				.endClass()	
+				.endClass()*/
 			.endNamespace();
 	}
 }

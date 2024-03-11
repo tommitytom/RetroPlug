@@ -78,6 +78,10 @@ namespace fw {
 	struct LengthValue {
 		LengthType type = LengthType::Default;
 		f32 value = 0.0f;
+
+		LengthValue() {}
+		LengthValue(f32 _value) : value(_value) {}
+		LengthValue(LengthType _type, f32 _value): type(_type), value(_value) {}
 	};
 
 	enum class TextAlignType {
@@ -191,3 +195,11 @@ namespace fw::styles {
 	//DefineStyleProperty("widows", Widows, Color4F, InheritedTag);
 	//DefineStyleProperty("word-spacing", WordSpacing, Color4F, InheritedTag);
 }
+
+#include <refl.hpp>
+
+REFL_AUTO(
+	type(fw::LengthValue),
+	field(type),
+	field(value)
+)

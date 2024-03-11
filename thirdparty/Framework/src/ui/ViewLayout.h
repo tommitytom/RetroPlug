@@ -6,6 +6,7 @@
 
 #include "foundation/Math.h"
 #include "ui/Flex.h"
+#include "ui/next/StyleComponents.h"
 
 namespace fw {	
 	class ViewLayout {
@@ -75,6 +76,10 @@ namespace fw {
 
 		void setContext(void* context) {
 			YGNodeSetContext(_yogaNode, context);
+		}
+
+		void reset() {
+			YGNodeReset(_yogaNode);
 		}
 
 		void setMeasureFunc(YGMeasureFunc func) {
@@ -505,6 +510,9 @@ namespace fw {
 		YGNodeRef getNode() const {
 			return _yogaNode;
 		}
+
+		template <typename T>
+		void setProperty(const T& container);
 	};
 }
 

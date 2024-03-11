@@ -18,12 +18,6 @@
 #include "Stylesheet.h"
 
 namespace fw {
-	struct CssSingleton {
-		using ParseStyleFunc = std::function<void(const csspp::node::pointer_t&, std::vector<StylesheetRule::Property>&)>;
-		using StyleParserLookup = std::unordered_map<std::string_view, ParseStyleFunc>;
-		StyleParserLookup styleParsers;
-	};
-
 	template <typename T>
 	std::string toString(const T& x) {
 		std::ostringstream ss;
@@ -128,10 +122,7 @@ namespace fw {
 		const std::string& str = value->get_string();
 		csspp::integer_t num = value->get_integer();
 		
-		return LengthValue{
-			.type = LengthType::Pixel,
-			.value = (f32)num,
-		};
+		return LengthValue{ LengthType::Pixel, (f32)num };
 	}
 
 	template <>
@@ -511,7 +502,7 @@ namespace fw {
 		}
 	}
 
-	void parseSingleProperty(const csspp::node::pointer_t& node, const CssSingleton::StyleParserLookup& parserLookup, StylesheetRule& rule) {
+	void parseSingleProperty(const csspp::node::pointer_t& node, const CssUtil::StyleParserLookup& parserLookup, StylesheetRule& rule) {
 		assert(node->is(csspp::node_type_t::DECLARATION));
 
 		const std::string& name = node->get_string();
@@ -524,7 +515,7 @@ namespace fw {
 		}
 	}
 
-	void parseProperties(const csspp::node::pointer_t& node, const CssSingleton::StyleParserLookup& parserLookup, StylesheetRule& rule) {
+	void parseProperties(const csspp::node::pointer_t& node, const CssUtil::StyleParserLookup& parserLookup, StylesheetRule& rule) {
 		assert(node->is(csspp::node_type_t::LIST) || node->is(csspp::node_type_t::DECLARATION));
 
 		if (node->is(csspp::node_type_t::LIST)) {
@@ -537,9 +528,7 @@ namespace fw {
 		}
 	}
 
-	bool CssUtil::loadStyle(const entt::registry& reg, const std::filesystem::path& path, std::vector<Stylesheet>& styleSheets) {
-		const CssSingleton& cssSingleton = reg.ctx().at<CssSingleton>();
-
+	bool CssUtil::loadStyle(const StyleParserLookup& lookup, const std::filesystem::path& path, std::vector<Stylesheet>& styleSheets) {
 		const int f_precision = 3;
 
 		std::ifstream in(path);
@@ -576,7 +565,7 @@ namespace fw {
 					parseSelectors(item, selector.selectors);
 					calculateSpecificity(selector.selectors, selector.specificity);
 				} else if (item->is(csspp::node_type_t::OPEN_CURLYBRACKET)) {					
-					parseProperties(item->get_child(0), cssSingleton.styleParsers, *rule);
+					parseProperties(item->get_child(0), lookup, *rule);
 					break;
 				} else {
 					spdlog::warn("Encountered unsupported node of type {} when parsing stylesheet", toString(item->get_type()));
@@ -592,80 +581,78 @@ namespace fw {
 	}
 	
 	template <typename T>
-	constexpr std::pair<std::string_view, CssSingleton::ParseStyleFunc> makeStyleParser() {
+	constexpr std::pair<std::string_view, CssUtil::ParseStyleFunc> makeStyleParser() {
 		return std::make_pair(T::PropertyName, parseProperty<T>);
 	}
 
 	template <auto Func>
-	constexpr std::pair<std::string_view, CssSingleton::ParseStyleFunc> makeCompositeStyleParser(std::string_view name) {
+	constexpr std::pair<std::string_view, CssUtil::ParseStyleFunc> makeCompositeStyleParser(std::string_view name) {
 		return std::make_pair(name, Func);
 	}
 
-	void CssUtil::setup(entt::registry& reg) {
-		reg.ctx().emplace<CssSingleton>(CssSingleton{
-			.styleParsers = {
-				makeStyleParser<styles::Cursor>(),
-				makeStyleParser<styles::Color>(),
-				makeStyleParser<styles::BackgroundColor>(),
+	void CssUtil::setup(StyleParserLookup& lookup) {
+		lookup = StyleParserLookup {
+			makeStyleParser<styles::Cursor>(),
+			makeStyleParser<styles::Color>(),
+			makeStyleParser<styles::BackgroundColor>(),
 
-				makeStyleParser<styles::MarginBottom>(),
-				makeStyleParser<styles::MarginTop>(),
-				makeStyleParser<styles::MarginLeft>(),
-				makeStyleParser<styles::MarginRight>(),
+			makeStyleParser<styles::MarginBottom>(),
+			makeStyleParser<styles::MarginTop>(),
+			makeStyleParser<styles::MarginLeft>(),
+			makeStyleParser<styles::MarginRight>(),
 
-				makeStyleParser<styles::PaddingBottom>(),
-				makeStyleParser<styles::PaddingTop>(),
-				makeStyleParser<styles::PaddingLeft>(),
-				makeStyleParser<styles::PaddingRight>(),
+			makeStyleParser<styles::PaddingBottom>(),
+			makeStyleParser<styles::PaddingTop>(),
+			makeStyleParser<styles::PaddingLeft>(),
+			makeStyleParser<styles::PaddingRight>(),
 
-				makeStyleParser<styles::BorderBottomWidth>(),
-				makeStyleParser<styles::BorderTopWidth>(),
-				makeStyleParser<styles::BorderLeftWidth>(),
-				makeStyleParser<styles::BorderRightWidth>(),
-				makeStyleParser<styles::BorderBottomColor>(),
-				makeStyleParser<styles::BorderTopColor>(),
-				makeStyleParser<styles::BorderLeftColor>(),
-				makeStyleParser<styles::BorderRightColor>(),
-				makeStyleParser<styles::BorderBottomStyle>(),
-				makeStyleParser<styles::BorderTopStyle>(),
-				makeStyleParser<styles::BorderLeftStyle>(),
-				makeStyleParser<styles::BorderRightStyle>(),
+			makeStyleParser<styles::BorderBottomWidth>(),
+			makeStyleParser<styles::BorderTopWidth>(),
+			makeStyleParser<styles::BorderLeftWidth>(),
+			makeStyleParser<styles::BorderRightWidth>(),
+			makeStyleParser<styles::BorderBottomColor>(),
+			makeStyleParser<styles::BorderTopColor>(),
+			makeStyleParser<styles::BorderLeftColor>(),
+			makeStyleParser<styles::BorderRightColor>(),
+			makeStyleParser<styles::BorderBottomStyle>(),
+			makeStyleParser<styles::BorderTopStyle>(),
+			makeStyleParser<styles::BorderLeftStyle>(),
+			makeStyleParser<styles::BorderRightStyle>(),
 
-				// flex-flow
-				makeStyleParser<styles::FlexDirection>(),
-				makeStyleParser<styles::FlexWrap>(),
+			// flex-flow
+			makeStyleParser<styles::FlexDirection>(),
+			makeStyleParser<styles::FlexWrap>(),
 
-				makeStyleParser<styles::FlexBasis>(),
-				makeStyleParser<styles::FlexGrow>(),
-				makeStyleParser<styles::FlexShrink>(),
-				makeStyleParser<styles::AlignItems>(),
-				makeStyleParser<styles::AlignContent>(),
-				makeStyleParser<styles::AlignSelf>(),
-				makeStyleParser<styles::JustifyContent>(),
-				makeStyleParser<styles::Overflow>(),
+			makeStyleParser<styles::FlexBasis>(),
+			makeStyleParser<styles::FlexGrow>(),
+			makeStyleParser<styles::FlexShrink>(),
+			makeStyleParser<styles::AlignItems>(),
+			makeStyleParser<styles::AlignContent>(),
+			makeStyleParser<styles::AlignSelf>(),
+			makeStyleParser<styles::JustifyContent>(),
+			makeStyleParser<styles::Overflow>(),
 
-				makeStyleParser<styles::Position>(),
-				makeStyleParser<styles::Top>(),
-				makeStyleParser<styles::Left>(),
-				makeStyleParser<styles::Bottom>(),
-				makeStyleParser<styles::Right>(),
+			makeStyleParser<styles::Position>(),
+			makeStyleParser<styles::Top>(),
+			makeStyleParser<styles::Left>(),
+			makeStyleParser<styles::Bottom>(),
+			makeStyleParser<styles::Right>(),
 
-				makeStyleParser<styles::Width>(),
-				makeStyleParser<styles::Height>(),
-				makeStyleParser<styles::MinWidth>(),
-				makeStyleParser<styles::MinHeight>(),
-				makeStyleParser<styles::MaxWidth>(),
-				makeStyleParser<styles::MaxHeight>(),
+			makeStyleParser<styles::Width>(),
+			makeStyleParser<styles::Height>(),
+			makeStyleParser<styles::MinWidth>(),
+			makeStyleParser<styles::MinHeight>(),
+			makeStyleParser<styles::MaxWidth>(),
+			makeStyleParser<styles::MaxHeight>(),
 
-				makeStyleParser<styles::TransitionProperty>(),
-				makeStyleParser<styles::TransitionDuration>(),
-				makeStyleParser<styles::TransitionTimingFunction>(),
-				makeStyleParser<styles::TransitionDelay>(),
-				makeStyleParser<styles::FontFamily>(),
-				makeStyleParser<styles::FontSize>(),
-				makeStyleParser<styles::FontWeight>(),
-				makeStyleParser<styles::TextAlign>(),
-			}
-		});
+			makeStyleParser<styles::TransitionProperty>(),
+			makeStyleParser<styles::TransitionDuration>(),
+			makeStyleParser<styles::TransitionTimingFunction>(),
+			makeStyleParser<styles::TransitionDelay>(),
+			makeStyleParser<styles::FontFamily>(),
+			makeStyleParser<styles::FontSize>(),
+			makeStyleParser<styles::FontWeight>(),
+			makeStyleParser<styles::TextAlign>(),
+		};
 	}
 }

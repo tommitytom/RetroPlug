@@ -32,6 +32,10 @@ local App = React.component(function (_: PropsMap): Element
 						setCount(count + 1)
 					end
 				end,
+				onMouseMove = function(ev: fw.MouseMoveEvent)
+					print("weee")
+					--setCursor(fw.CursorType.ResizeEW)
+				end,
 				"shiz"
 			},
 			--tostring(count)
@@ -40,6 +44,7 @@ local App = React.component(function (_: PropsMap): Element
 			className = "container-slider",
 			--draggable = true,
 			onMouseMove = function(ev: fw.MouseMoveEvent)
+				print("weee")
 				--setCursor(fw.CursorType.ResizeEW)
 			end,
 		},

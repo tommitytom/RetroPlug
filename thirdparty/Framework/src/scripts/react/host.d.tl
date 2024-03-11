@@ -40,6 +40,14 @@ global record fw
 
 	Color4F: function(number, number, number, number): Color4FT
 
+	record LengthValueT
+		userdata
+		type: any
+		value: number
+	end
+
+	LengthValue: function(number): LengthValueT
+
 	record FlexValueT
 		userdata
 		unit: any
@@ -67,6 +75,14 @@ global record fw
 	end
 
 	FlexBorder: function(number, number, number, number): FlexBorderT
+
+	record FontFamilyValueT
+		userdata
+		familyName: string
+		generic: any
+	end
+
+	FontFamilyValue: function(number, number, number, number): FontFamilyValueT
 
 	record FlexAlign
 		Auto: integer
@@ -197,6 +213,20 @@ global record fw
 		--ResizeV: integer
 	end
 
+
+	record LengthType
+		Default: integer
+		Small: integer
+		Large: integer
+		Dynamic: integer
+		Em: integer
+		Rem: integer
+		Pixel: integer
+		Point: integer
+	end
+
+
+
 	record HostStyle
 		flexDirection: integer
 		justifyContent: integer
@@ -224,6 +254,9 @@ global record fw
 		color: Color4FT
 		backgroundColor: Color4FT
 		cursor: integer
+		fontFamily: FontFamilyValueT|string
+		fontSize: LengthValueT|number
+
 	end
 
 	record HostElement
