@@ -69,10 +69,12 @@ namespace fw {
 			ViewPtr current = _shared->focused.lock();
 
 			while (current && current.get() != this) {
-				if (!current->onChar(ev)) {
+				bool handled = current->onChar(ev);
+				handled |= current->emit(ev);
+
+				if (!handled) {
 					current = current->getParent();
 				} else {
-					current->emit(ev);
 					return true;
 				}
 			}
@@ -106,10 +108,12 @@ namespace fw {
 			ViewPtr current = _shared->focused.lock();
 
 			while (current && current.get() != this) {
-				if (!current->onKey(ev)) {
+				bool handled = current->onKey(ev);
+				handled |= current->emit(ev);
+
+				if (!handled) {
 					current = current->getParent();
 				} else {
-					current->emit(ev);
 					return true;
 				}
 			}
@@ -121,10 +125,12 @@ namespace fw {
 			ViewPtr current = _shared->focused.lock();
 
 			while (current) {
-				if (!current->onButton(ev)) {
+				bool handled = current->onButton(ev);
+				handled |= current->emit(ev);
+
+				if (!handled) {
 					current = current->getParent();
 				} else {
-					current->emit(ev);
 					return true;
 				}
 			}
@@ -361,8 +367,10 @@ namespace fw {
 			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
 				childEvent.position = ev.position - _mouseOver[i]->getWorldPosition();
 
-				if (_mouseOver[i]->onMouseButton(childEvent)) {
-					_mouseOver[i]->emit(childEvent);
+				bool handled = _mouseOver[i]->onMouseButton(childEvent);
+				handled |= _mouseOver[i]->emit(childEvent);
+
+				if (handled) {
 					return true;
 				}
 			}
@@ -471,8 +479,10 @@ namespace fw {
 			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
 				Point childPosition = position - _mouseOver[i]->getWorldPosition();
 
-				if (_mouseOver[i]->onMouseMove(childPosition)) {
-					_mouseOver[i]->emit(MouseMoveEvent{ childPosition });
+				bool handled = _mouseOver[i]->onMouseMove(childPosition);
+				handled |= _mouseOver[i]->emit(MouseMoveEvent{ childPosition });
+
+				if (handled) {
 					return true;
 				}
 			}
@@ -486,7 +496,10 @@ namespace fw {
 
 				if (view->isVisible() && view->getWorldArea().contains(position)) {
 					if (!propagateDragMove(position, view->getChildren())) {
-						if (view->onDragMove(_shared->dragContext, position - view->getWorldPosition())) {
+						bool handled = view->onDragMove(_shared->dragContext, position - view->getWorldPosition());
+						// TODO: call emit
+
+						if (handled) {
 							return true;
 						}
 					}
@@ -573,8 +586,10 @@ namespace fw {
 			for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
 				childEvent.position = ev.position - _mouseOver[i]->getWorldPosition();
 
-				if (_mouseOver[i]->onMouseScroll(childEvent)) {
-					_mouseOver[i]->emit(childEvent);
+				bool handled = _mouseOver[i]->onMouseScroll(childEvent);
+				handled |= _mouseOver[i]->emit(childEvent);
+
+				if (handled) {
 					return true;
 				}
 			}
@@ -605,7 +620,10 @@ namespace fw {
 
 				if (view->isVisible() && view->getWorldArea().contains(position)) {
 					if (!propagateDrop(paths, position, view->getChildren())) {
-						if (view->onDrop(paths)) {
+						bool handled = view->onDrop(paths);
+						// TODO: emit
+
+						if (handled) {
 							return true;
 						}
 					}

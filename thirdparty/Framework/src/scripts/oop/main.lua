@@ -12,3 +12,4 @@ setProperties(v, { id = "poooo" })
 print(v.id)
 fw.document:addChild(v)
 fw.document:addChild(fw.ReactElementView())
+

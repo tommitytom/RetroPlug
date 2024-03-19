@@ -138,7 +138,7 @@ namespace fw::LuaReflection {
 				}
 			} else if constexpr (refl::descriptor::is_field(member)) {
 				//static_assert(ptr != nullptr);
-				//spdlog::info("\tMember: {}, {}", get_display_name(member), ptr != nullptr);
+				spdlog::info("\tMember: {}, {}", get_display_name(member), ptr != nullptr);
 				if constexpr (ptr != nullptr) {
 					bridgeClass.addProperty(get_display_name(member), ptr);
 				}

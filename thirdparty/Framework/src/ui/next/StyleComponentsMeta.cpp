@@ -14,7 +14,8 @@ namespace fw {
 
 		LuaReflection::addEnum<MouseButton>(lua);
 		LuaReflection::addEnum<ButtonType>(lua);
-		//LuaReflection::addEnum<VirtualKey>(lua);		
+		LuaReflection::addEnum<VirtualKey>(lua);		
+		LuaReflection::addEnum<KeyAction>(lua);
 
 		LuaReflection::addEnum<FlexAlign>(lua);
 		LuaReflection::addEnum<FlexDimension>(lua);
@@ -50,6 +51,8 @@ namespace fw {
 		LuaReflection::addClass<MouseLeaveEvent>(lua);
 		LuaReflection::addClass<MouseFocusEvent>(lua);
 		LuaReflection::addClass<MouseBlurEvent>(lua);
+		//LuaReflection::addClass<KeyEvent>(lua);
+		LuaReflection::addClass<CharEvent>(lua);
 
 		//LuaReflection::addClass<LengthValue>(lua);
 

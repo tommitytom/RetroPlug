@@ -12,6 +12,8 @@
 
 template <> struct luabridge::Stack<fw::MouseButton> : luabridge::Enum<fw::MouseButton> {};
 template <> struct luabridge::Stack<fw::ButtonType> : luabridge::Enum<fw::ButtonType> {};
+template <> struct luabridge::Stack<fw::VirtualKey> : luabridge::Enum<fw::VirtualKey> {};
+template <> struct luabridge::Stack<fw::KeyAction> : luabridge::Enum<fw::KeyAction> {};
 
 template <> struct luabridge::Stack<fw::FlexAlign> : luabridge::Enum<fw::FlexAlign> {};
 template <> struct luabridge::Stack<fw::FlexDimension> : luabridge::Enum<fw::FlexDimension> {};

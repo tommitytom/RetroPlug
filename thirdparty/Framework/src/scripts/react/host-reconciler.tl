@@ -13,10 +13,10 @@ local eventBus: EventBus = {
 global function processHostEvent(entity: integer, name: string, ev: any): boolean
 	print(entity, name, ev)
 	local e = eventBus.entities[entity]
-	print("e", e)
+
 	if e then
 		local emitter = e[name]
-		print("emitter", emitter)
+
 		if emitter then
 			emitter(ev)
 			return true
@@ -46,9 +46,7 @@ local function parseFlexRect(value: fw.FlexRectT|number, key: string): fw.FlexRe
 	if type(value) == "userdata" then
 		return value as fw.FlexRectT
 	elseif type(value) == "number" then
-		print("fw.FlexValue1")
 		local v = fw.FlexValue(value as number)
-		print("fw.FlexValue2")
 		return fw.FlexRect(v, v, v, v)
 	elseif type(value) == "table" then
 		local v = value as fw.FlexRectT
@@ -98,7 +96,7 @@ local function parseLengthValue(value: fw.LengthValueT, key: string): fw.LengthV
 	return fw.LengthValue()
 end
 
-local sanitizers: {string:function(any, string): any} = {
+local sanitizers: {string: function(any, string): any} = {
 	border = parseFlexBorder,
 	padding = parseFlexRect,
 	margin = parseFlexRect,
@@ -112,7 +110,26 @@ local sanitizers: {string:function(any, string): any} = {
 	height = parseFlexValue,
 	color = parseColor4F,
 	backgroundColor = parseColor4F,
-	fontSize = parseLengthValue
+	fontSize = parseLengthValue,
+
+	borderBottomWidth = parseLengthValue,
+	borderTopWidth = parseLengthValue,
+	borderLeftWidth = parseLengthValue,
+	borderRightWidth = parseLengthValue,
+	borderBottomColor = parseColor4F,
+	borderTopColor = parseColor4F,
+	borderLeftColor = parseColor4F,
+	borderRightColor = parseColor4F,
+
+	marginBottom = parseFlexValue,
+	marginTop = parseFlexValue,
+	marginLeft = parseFlexValue,
+	marginRight = parseFlexValue,
+
+	paddingBottom = parseFlexValue,
+	paddingTop = parseFlexValue,
+	paddingLeft = parseFlexValue,
+	paddingRight = parseFlexValue
 }
 
 local function parseStyle(node: HostElementHandle, items: {string:any})
@@ -133,6 +150,8 @@ local function parseStyle(node: HostElementHandle, items: {string:any})
 
 	node:updateLayoutStyle()
 end
+
+local counter = 0
 
 local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 	appendChild = function (node: HostElementHandle, child: HostElementHandle)
@@ -168,10 +187,16 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 		return fw.document:getStyle(node)
 	end,
 	createElement = function (tag: string): HostElementHandle
-		return fw.ReactElementView(tag)
+		local elem = fw.ReactElementView(tag)
+		elem.counterId = counter
+		counter = counter + 1
+		return elem
 	end,
 	createTextNode = function (text: string): HostElementHandle
-		return fw.ReactTextView(text)
+		local elem = fw.ReactTextView(text)
+		elem.counterId = counter
+		counter = counter + 1
+		return elem
 	end,
 	getRootElement = function (): HostElementHandle
 		return fw.document
@@ -181,7 +206,7 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 
 		if name == "style" then
 			parseStyle(node, value as {string:any})
-		else
+		elseif name ~= "ref" then
 			node[name] = value
 		end
 	end,

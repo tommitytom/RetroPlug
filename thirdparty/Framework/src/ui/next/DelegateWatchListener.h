@@ -1,6 +1,7 @@
 #pragma once
 
 #include <FileWatcher/FileWatcher.h>
+#include "foundation/Types.h"
 
 namespace fw {
 	class DelegateWatchListener : public FW::FileWatchListener {

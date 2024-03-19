@@ -13,6 +13,7 @@ namespace fw {
 			Color4F color = Color4F::black;
 			std::string_view family = "Karla-Regular";
 			f32 size = 12.0f;
+			TextAlignType textAlign = TextAlignType::Left;
 		};
 
 	public:

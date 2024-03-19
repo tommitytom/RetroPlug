@@ -90,9 +90,12 @@ void GlfwNativeWindow::charCallback(GLFWwindow* window, unsigned int keycode) {
 void GlfwNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
 	w->getViewManager()->onKey(KeyEvent{
-		.key = convertKey(key),
 		.action = (KeyAction)action,
-		.down = action > 0
+		.key = convertKey(key),
+		.down = action > 0,
+
+		.action2 = (uint32)action,
+		.key2 = (uint32)convertKey(key)
 	});
 }
 

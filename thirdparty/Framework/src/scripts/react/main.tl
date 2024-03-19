@@ -32,6 +32,9 @@ local App = React.component(function (_: PropsMap): Element
 						setCount(count + 1)
 					end
 				end,
+				onMouseEnter = function(ev: fw.MouseEnterEvent)
+					print(ev.position.x, ev.position.y)
+				end,
 				onMouseMove = function(ev: fw.MouseMoveEvent)
 					print("weee")
 					--setCursor(fw.CursorType.ResizeEW)
@@ -50,6 +53,10 @@ local App = React.component(function (_: PropsMap): Element
 		},
 		r.div {
 			className = "container-r",
+			onMouseMove = function(ev: fw.MouseMoveEvent)
+				print("weee")
+				--setCursor(fw.CursorType.ResizeEW)
+			end,
 			"I'm just gonna write some text here i think..."
 		}
 	}

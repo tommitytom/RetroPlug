@@ -370,16 +370,20 @@ namespace fw {
 		}
 	}
 
-	enum class KeyAction {
+	// NOTE: Must match 'action' from GLFW
+	enum class KeyAction : unsigned int {
 		Release,
 		Press,
 		Repeat
 	};
 
 	struct KeyEvent {
-		VirtualKey key;
 		KeyAction action;
+		VirtualKey key;
 		bool down;
+
+		uint32 action2;
+		uint32 key2;
 	};
 
 	struct CharEvent {
@@ -451,4 +455,16 @@ REFL_AUTO(
 	field(button),
 	field(down),
 	field(position)
+)
+
+REFL_AUTO(
+	type(fw::KeyEvent),
+	field(action),
+	field(down),
+	field(key)
+)
+
+REFL_AUTO(
+	type(fw::CharEvent),
+	field(keyCode)
 )

@@ -27,7 +27,6 @@ namespace fw {
 			this->setCursor(CursorType::Arrow);
 		}
 	}
-
 	
 	void ReactElementView::onMouseLeave() {
 		_inputState &= ~InputStateFlag::Hover;
@@ -48,7 +47,7 @@ namespace fw {
 
 		updateStyles();
 
-		return true;
+		return false;
 	}
 
 	void ReactElementView::onUpdate(f32 dt) {
@@ -62,6 +61,31 @@ namespace fw {
 		if (bg) {
 			canvas.fillRect(getDimensionsF(), bg->value);
 		}
+
+		FlexBorder border = getLayout().getBorder();
+		if (std::isnan(border.top)) { border.top = 0.0f; }
+		if (std::isnan(border.left)) { border.left = 0.0f; }
+		if (std::isnan(border.bottom)) { border.bottom = 0.0f; }
+		if (std::isnan(border.right)) { border.right = 0.0f; }
+
+		const styles::BorderLeftColor* borderColor = findStyleProperty<styles::BorderLeftColor>();
+		Color4F col = borderColor ? borderColor->value : Color4F(1, 1, 1, 1);
+
+		canvas.strokeRect(StrokedRect{
+			.area = getDimensionsF(),
+			.width = BorderWidth {
+				.top = border.top,
+				.left = border.left,
+				.bottom = border.bottom,
+				.right = border.right
+			},
+			.color = {
+				.top = col,
+				.left = col,
+				.bottom = col,
+				.right = col
+			}
+		});
 	}
 
 	void ReactElementView::updateStyles() {
@@ -80,6 +104,10 @@ namespace fw {
 		updateLayoutStyle();
 
 		_styleDirty = false;
+
+		this->forEach(false, [](const ViewPtr& child, ViewIndex idx) {
+			child->asRaw<ReactElementView>()->updateStyles();
+		});
 	}
 	
 	void ReactElementView::updateLayoutStyle() {

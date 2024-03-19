@@ -1,0 +1,63 @@
+body {
+  background-color: black;
+  color: white;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  direction: ltr;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: flex-start;
+  align-content: stretch;
+  cursor: default;
+}
+
+.root {
+	flex-direction: row;
+}
+
+.overlay {
+	background-color: rgba(0, 0, 0, 0.9);
+	width: 100%;
+	height: 100%;
+}
+
+.menuItem {
+  flex-direction: column;
+	font-size: 20px;
+  padding-left: 20px;
+}
+
+.menuRow {
+  flex-direction: row;
+	font-size: 20px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  align-content: flex-end;
+}
+
+.multiselect {
+  flex-direction: row;
+  flex-grow: 1;
+}
+
+.multiselect-text {
+  color: green;
+  text-align: center;
+  flex-grow: 1;
+}
+
+.checkbox {
+  flex-direction: row;
+  flex-grow: 1;
+}
+
+.checkbox-check {
+  text-align: center;
+  max-width: 20px;
+}
+
+.selected {
+  background-color: white;
+  color: black;
+}

@@ -7,14 +7,21 @@ namespace fw {
 	}
 	
 	void ReactTextView::onRender(fw::Canvas& canvas) {
-		uint32 lastAlign = canvas.getTextAlign();
-		canvas.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left);
-
 		FontSettings settings;
 		getFontSettings(settings);
+		
+		const uint32 lastAlign = canvas.getTextAlign();
+		uint32 align = TextAlignFlags::Top;		
 
+		if (settings.textAlign == TextAlignType::Center) {
+			align |= TextAlignFlags::Center;
+		} else if (settings.textAlign == TextAlignType::Right) {
+			align |= TextAlignFlags::Right;
+		}
+
+		canvas.setTextAlign(align);
 		canvas.setFont(settings.family, settings.size);
-		canvas.text(0, 0, _nodeValue, settings.color);
+		canvas.text(getDimensionsF(), _nodeValue, settings.color);
 
 		canvas.setTextAlign(lastAlign);
 	}
@@ -23,11 +30,13 @@ namespace fw {
 		const styles::Color* colorProp = findStyleProperty<styles::Color>();
 		const styles::FontFamily* familyProp = findStyleProperty<styles::FontFamily>();
 		const styles::FontSize* sizeProp = findStyleProperty<styles::FontSize>();
+		const styles::TextAlign* textAlignProp = findStyleProperty<styles::TextAlign>();
 		//const styles::FontWeight* weightProp = findStyleProperty<styles::FontWeight>();
 
 		if (colorProp) { settings.color = colorProp->value; }
 		if (familyProp) { settings.family = familyProp->value.familyName; }
 		if (sizeProp) { settings.size = sizeProp->value.value; }
+		if (textAlignProp) { settings.textAlign = textAlignProp->value; }
 	}
 	
 	YGSize ReactTextView::measureText(YGNodeRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) {

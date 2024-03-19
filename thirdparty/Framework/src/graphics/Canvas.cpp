@@ -445,7 +445,7 @@ Canvas& Canvas::text(const RectF& area, std::string_view text, const Color4F& co
 	if (_textAlign & TextAlignFlags::Center) {
 		textPos.x += xDiff / 2;
 	} else if (_textAlign & TextAlignFlags::Right) {
-		textPos.x = area.w - xDiff;
+		textPos.x = area.w - textSize.w;
 	}
 
 	if (_textAlign & TextAlignFlags::Middle) {

@@ -6,12 +6,16 @@ local DEBUG_MODE = false
 --local type TypedComponentFunc = function<T>(TypedElementFunc<T>): TypedElementFunc<T>
 --local type ComponentFuncNoProps = function(function(): Element): ElementFunc
 
+local type RefHookResult = record<T>
+	current: T
+end
+
 local type React = record<ElementT>
 	createElement: function(string|ElementFunc, PropsMap): Element
 	render: function(Element, ElementT)
 	useState: function<T>(T): T, function(ActionFunc<T>|T)
 	useEffect: function()
-	useRef: function<T>(T): T
+	useRef: function<T>(T): RefHookResult<T>
 	workLoop: function(function(): number)
 	component: function<T>(TypedElementFunc<T>): TypedElementFunc<T>
 	nativeComponent: function(string): function(PropsMap): Element
@@ -69,12 +73,17 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 	end
 
 	local function createElement(constructor: string|ElementFunc, props: PropsMap): Element
-		if props.children == nil then props.children = {} end
-		local children = props.children as {string|Element}
+		local children: {string|Element} = {}
 
 		for i,v in ipairs(props as {string|Element}) do
 			table.insert(children, v)
 			props[i] = nil
+		end
+
+		if props.children ~= nil then
+			for _,v in ipairs(props.children) do
+				table.insert(children, v)
+			end
 		end
 
 		for i,v in ipairs(children) do
@@ -82,6 +91,8 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 				children[i] = createTextElement(v)
 			end
 		end
+
+		props.children = children
 
 		return {
 			type = constructor,
@@ -284,6 +295,10 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 			fiber.dom = createDom(fiber)
 		end
 
+		if fiber.props.ref ~= nil then
+			fiber.props.ref.current = fiber.dom
+		end
+
 		reconcileChildren(fiber, fiber.props.children as {Element})
 	end
 
@@ -352,6 +367,8 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 
 		table.insert(_wipFiber.hooks, hook as Hook)
 		_hookIndex = _hookIndex + 1
+
+		return hook
 	end
 
 	local function useEffect<T>(fn: function(), deps: {any}): T, function(ActionFunc<T>|T)

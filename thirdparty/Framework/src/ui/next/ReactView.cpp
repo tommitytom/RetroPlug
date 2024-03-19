@@ -2,12 +2,12 @@
 
 #include "foundation/Input.h"
 #include "foundation/LuaReflection.h"
+#include "ui/View.h"
 #include "ui/next/DocumentRenderer.h"
 #include "ui/next/LuaReact.h"
-#include "ui/next/StyleComponentsMeta.h"
-#include "ui/View.h"
-#include "ui/next/StyleUtil.h"
 #include "ui/next/StyleCache.h"
+#include "ui/next/StyleComponentsMeta.h"
+#include "ui/next/StyleUtil.h"
 
 #include "ui/next/ReactTextView.h"
 
@@ -166,7 +166,7 @@ namespace fw {
 		StyleCache& styleCache = this->getState<StyleCache>();
 		styleCache.clear();
 
-		styleCache.load("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+		//styleCache.load("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
 
 		_lua = luaL_newstate();
 		luaL_openlibs(_lua);
@@ -179,6 +179,10 @@ namespace fw {
 		luabridge::getGlobalNamespace(_lua)
 			.beginNamespace("fw")
 				.addFunction("getTime", &getTime)
+				.addFunction("loadStyle", [this](const std::string& path) { 
+					getState<StyleCache>().load(path);
+					_root->updateStyles();
+				})
 				.beginClass<Color4F>("Color4F")
 					.addConstructor<void(), void(f32, f32, f32, f32)>()
 					.addProperty("r", &Color4F::r)
@@ -216,18 +220,27 @@ namespace fw {
 					.addProperty("bottom", &FlexBorder::bottom)
 					.addProperty("right", &FlexBorder::right)
 				.endClass()
+				.beginClass<KeyEvent>("KeyEvent")
+					.addConstructor<void()>()
+					.addProperty("key", &KeyEvent::key)
+					.addProperty("action", &KeyEvent::action)
+					.addProperty("down", &KeyEvent::down)
+				.endClass()
 				.beginClass<Object>("Object")
 				.endClass()
 				.deriveClass<View, Object>("View")
 					.addConstructorFrom<std::shared_ptr<View>, void()> ()
 					.addFunction("addChild", &View::addChild2)
 					.addFunction("removeChild", &View::removeChild2)
+					.addFunction("focus", &View::focus)
+					.addFunction("unfocus", &View::unfocus)
 				.endClass()
 				.deriveClass<ReactElementView, View>("ReactElementView")
 					.addConstructorFrom<std::shared_ptr<ReactElementView>, void(), void(const std::string&)>()
 					.addProperty("id", &ReactElementView::getId, &ReactElementView::setId)
-					.addProperty("counterId", &ReactElementView::getCounterId)
+					.addProperty("counterId", &ReactElementView::getCounterId, &ReactElementView::setCounterId)
 					.addProperty("className", &ReactElementView::getClassName, &ReactElementView::setClassName)
+					.addProperty("tabIndex", &ReactElementView::getTabIndex, &ReactElementView::setTabIndex)
 					.addFunction("getStyle", &ReactElementView::getInlineStyle)
 					.addFunction("updateLayoutStyle", &ReactElementView::updateLayoutStyle)
 				.endClass()

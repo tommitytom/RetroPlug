@@ -42,6 +42,7 @@ namespace fw {
 		std::vector<std::shared_ptr<StylesheetRule>> _styles;
 		bool _styleDirty = false;
 		InputStateFlag _inputState = InputStateFlag::None;
+		uint32 _tabIndex = -1;
 
 		uint32 _counterId = -1;
 
@@ -52,10 +53,25 @@ namespace fw {
 
 		void onInitialize() override {
 			updateStyles();
-			_counterId = getState<IdCounter>().count++;
 		}
 
+		void setTabIndex(uint32 tabIndex) {
+			_tabIndex = tabIndex;
+			if (tabIndex != -1) {
+				this->setFocusPolicy(FocusPolicy::Click);
+			}
+		}
+
+		uint32 getTabIndex() const {
+			return _tabIndex;
+		}
+
+		void setCounterId(uint32 counterId) {
+			_counterId = counterId;
+		}
+		
 		uint32 getCounterId() const {
+			assert(_counterId != -1);
 			return _counterId;
 		}
 
