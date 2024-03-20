@@ -92,134 +92,134 @@ global record fw
 	FontFamilyValue: function(number, number, number, number): FontFamilyValueT
 
 	record VirtualKey
-		Unknown: number
-		Backspace: number
-		Tab: number
-		Clear: number
-		Enter: number
-		Shift: number
-		Ctrl: number
-		Alt: number
-		Pause: number
-		Caps: number
-		Esc: number
-		Space: number
-		PageUp: number
-		PageDown: number
-		End: number
-		Home: number
-		LeftArrow: number
-		UpArrow: number
-		RightArrow: number
-		DownArrow: number
-		Select: number
-		Print: number
-		Execute: number
-		PrintScreen: number
-		Insert: number
-		Delete: number
-		Help: number
-		Num0: number
-		Num1: number
-		Num2: number
-		Num3: number
-		Num4: number
-		Num5: number
-		Num6: number
-		Num7: number
-		Num8: number
-		Num9: number
-		A: number
-		B: number
-		C: number
-		D: number
-		E: number
-		F: number
-		G: number
-		H: number
-		I: number
-		J: number
-		K: number
-		L: number
-		M: number
-		N: number
-		O: number
-		P: number
-		Q: number
-		R: number
-		S: number
-		T: number
-		U: number
-		V: number
-		W: number
-		X: number
-		Y: number
-		Z: number
-		LeftWin: number
-		RightWin: number
-		Sleep: number
-		NumPad0: number
-		NumPad1: number
-		NumPad2: number
-		NumPad3: number
-		NumPad4: number
-		NumPad5: number
-		NumPad6: number
-		NumPad7: number
-		NumPad8: number
-		NumPad9: number
-		Multiply: number
-		Add: number
-		Separator: number
-		Subtract: number
-		Decimal: number
-		Divide: number
-		F1: number
-		F2: number
-		F3: number
-		F4: number
-		F5: number
-		F6: number
-		F7: number
-		F8: number
-		F9: number
-		F10: number
-		F11: number
-		F12: number
-		F13: number
-		F14: number
-		F15: number
-		F16: number
-		F17: number
-		F18: number
-		F19: number
-		F20: number
-		F21: number
-		F22: number
-		F23: number
-		F24: number
-		NumLock: number
-		Scroll: number
-		LeftShift: number
-		RightShift: number
-		LeftCtrl: number
-		RightCtrl: number
-		LeftMenu: number
-		RightMenu: number
+		Unknown: integer
+		Backspace: integer
+		Tab: integer
+		Clear: integer
+		Enter: integer
+		Shift: integer
+		Ctrl: integer
+		Alt: integer
+		Pause: integer
+		Caps: integer
+		Esc: integer
+		Space: integer
+		PageUp: integer
+		PageDown: integer
+		End: integer
+		Home: integer
+		LeftArrow: integer
+		UpArrow: integer
+		RightArrow: integer
+		DownArrow: integer
+		Select: integer
+		Print: integer
+		Execute: integer
+		PrintScreen: integer
+		Insert: integer
+		Delete: integer
+		Help: integer
+		Num0: integer
+		Num1: integer
+		Num2: integer
+		Num3: integer
+		Num4: integer
+		Num5: integer
+		Num6: integer
+		Num7: integer
+		Num8: integer
+		Num9: integer
+		A: integer
+		B: integer
+		C: integer
+		D: integer
+		E: integer
+		F: integer
+		G: integer
+		H: integer
+		I: integer
+		J: integer
+		K: integer
+		L: integer
+		M: integer
+		N: integer
+		O: integer
+		P: integer
+		Q: integer
+		R: integer
+		S: integer
+		T: integer
+		U: integer
+		V: integer
+		W: integer
+		X: integer
+		Y: integer
+		Z: integer
+		LeftWin: integer
+		RightWin: integer
+		Sleep: integer
+		NumPad0: integer
+		NumPad1: integer
+		NumPad2: integer
+		NumPad3: integer
+		NumPad4: integer
+		NumPad5: integer
+		NumPad6: integer
+		NumPad7: integer
+		NumPad8: integer
+		NumPad9: integer
+		Multiply: integer
+		Add: integer
+		Separator: integer
+		Subtract: integer
+		Decimal: integer
+		Divide: integer
+		F1: integer
+		F2: integer
+		F3: integer
+		F4: integer
+		F5: integer
+		F6: integer
+		F7: integer
+		F8: integer
+		F9: integer
+		F10: integer
+		F11: integer
+		F12: integer
+		F13: integer
+		F14: integer
+		F15: integer
+		F16: integer
+		F17: integer
+		F18: integer
+		F19: integer
+		F20: integer
+		F21: integer
+		F22: integer
+		F23: integer
+		F24: integer
+		NumLock: integer
+		Scroll: integer
+		LeftShift: integer
+		RightShift: integer
+		LeftCtrl: integer
+		RightCtrl: integer
+		LeftMenu: integer
+		RightMenu: integer
 
-		Oem1: number
-		Oem2: number
-		Oem3: number
-		Oem4: number
-		Oem5: number
-		Oem6: number
-		Oem7: number
-		Oem8: number
+		Oem1: integer
+		Oem2: integer
+		Oem3: integer
+		Oem4: integer
+		Oem5: integer
+		Oem6: integer
+		Oem7: integer
+		Oem8: integer
 
-		OemPlus: number
-		OemComma: number
-		OemMinus: number
-		OemPeriod: number
+		OemPlus: integer
+		OemComma: integer
+		OemMinus: integer
+		OemPeriod: integer
 	end
 
 	record FlexAlign
@@ -395,9 +395,7 @@ global record fw
 		height: FlexValueT|number|string
 		aspectRatio: number
 		position: FlexRectT
-		padding: FlexRectT|number
-		margin: FlexRectT|number
-		border: FlexBorderT|number
+
 		overflow: integer
 		flexPositionType: integer
 		color: Color4FT
@@ -406,23 +404,34 @@ global record fw
 		fontFamily: FontFamilyValueT|string
 		fontSize: LengthValueT|number
 
+		border: FlexBorderT|number
+
+		borderWidth: LengthValueT|number
 		borderBottomWidth: LengthValueT|number
 		borderTopWidth: LengthValueT|number
 		borderLeftWidth: LengthValueT|number
 		borderRightWidth: LengthValueT|number
+
+		borderColor: Color4FT
 		borderBottomColor: Color4FT
 		borderTopColor: Color4FT
 		borderLeftColor: Color4FT
 		borderRightColor: Color4FT
+
+		borderStyle: BorderStyleType
 		borderBottomStyle: BorderStyleType
 		borderTopStyle: BorderStyleType
 		borderLeftStyle: BorderStyleType
 		borderRightStyle: BorderStyleType
 
+		margin: FlexRectT|number
+
 		marginBottom: FlexValueT|number
 		marginTop: FlexValueT|number
 		marginLeft: FlexValueT|number
 		marginRight: FlexValueT|number
+
+		padding: FlexRectT|number
 
 		paddingBottom: FlexValueT|number
 		paddingTop: FlexValueT|number

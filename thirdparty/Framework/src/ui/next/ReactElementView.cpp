@@ -68,8 +68,10 @@ namespace fw {
 		if (std::isnan(border.bottom)) { border.bottom = 0.0f; }
 		if (std::isnan(border.right)) { border.right = 0.0f; }
 
-		const styles::BorderLeftColor* borderColor = findStyleProperty<styles::BorderLeftColor>();
-		Color4F col = borderColor ? borderColor->value : Color4F(1, 1, 1, 1);
+		const styles::BorderLeftColor* borderLeftColor = findStyleProperty<styles::BorderLeftColor>();
+		const styles::BorderRightColor* borderRightColor = findStyleProperty<styles::BorderRightColor>();
+		const styles::BorderTopColor* borderTopColor = findStyleProperty<styles::BorderTopColor>();
+		const styles::BorderBottomColor* borderBottomColor = findStyleProperty<styles::BorderBottomColor>();
 
 		canvas.strokeRect(StrokedRect{
 			.area = getDimensionsF(),
@@ -80,10 +82,10 @@ namespace fw {
 				.right = border.right
 			},
 			.color = {
-				.top = col,
-				.left = col,
-				.bottom = col,
-				.right = col
+				.top = borderTopColor ? borderTopColor->value : Color4F::white,
+				.left = borderLeftColor ? borderLeftColor->value : Color4F::white,
+				.bottom = borderBottomColor ? borderBottomColor->value : Color4F::white,
+				.right = borderRightColor ? borderRightColor->value : Color4F::white
 			}
 		});
 	}

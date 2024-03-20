@@ -26,13 +26,13 @@ namespace fw {
 	}
 
 	template <typename T>
-	T parsePropertyValue(const csspp::node::pointer_t& node);
+	T parsePropertyValue(const csspp::node::pointer_t& node, size_t argIdx);
 
 	template <>
-	f32 parsePropertyValue<f32>(const csspp::node::pointer_t& node) {
+	f32 parsePropertyValue<f32>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 
 		switch (value->get_type()) {
 		case csspp::node_type_t::INTEGER:
@@ -46,10 +46,10 @@ namespace fw {
 	}
 
 	template <>
-	Color4F parsePropertyValue<Color4F>(const csspp::node::pointer_t& node) {
+	Color4F parsePropertyValue<Color4F>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::COLOR));
 
 		Color4F col;
@@ -59,10 +59,10 @@ namespace fw {
 	}
 
 	template <>
-	FlexValue parsePropertyValue<FlexValue>(const csspp::node::pointer_t& node) {
+	FlexValue parsePropertyValue<FlexValue>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 
 		switch (value->get_type()) {
 		case csspp::node_type_t::INTEGER:
@@ -79,30 +79,30 @@ namespace fw {
 	}
 
 	template <>
-	std::string parsePropertyValue<std::string>(const csspp::node::pointer_t& node) {
+	std::string parsePropertyValue<std::string>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
-		
+
 		return value->get_string();
 	}
 
 	template <>
-	TimingFunction parsePropertyValue<TimingFunction>(const csspp::node::pointer_t& node) {
+	TimingFunction parsePropertyValue<TimingFunction>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		return TimingFunction{ TransitionTimingType::Linear };
 	}
 
 	template <>
-	FontFamilyValue parsePropertyValue<FontFamilyValue>(const csspp::node::pointer_t& node) {
+	FontFamilyValue parsePropertyValue<FontFamilyValue>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		//value->get_dim1
@@ -113,23 +113,28 @@ namespace fw {
 	}
 
 	template <>
-	LengthValue parsePropertyValue<LengthValue>(const csspp::node::pointer_t& node) {
+	LengthValue parsePropertyValue<LengthValue>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
-		assert(value->is(csspp::node_type_t::INTEGER));
+		const auto& value = arg->get_child(argIdx);
+		assert(value->is(csspp::node_type_t::INTEGER) || value->is(csspp::node_type_t::IDENTIFIER));
 
-		const std::string& str = value->get_string();
-		csspp::integer_t num = value->get_integer();
-		
-		return LengthValue{ LengthType::Pixel, (f32)num };
+		LengthType type = CssUtil::parseLength(value->get_string());
+
+		if (value->is(csspp::node_type_t::INTEGER)) {
+			return LengthValue{ type, (f32)value->get_integer() };
+		} else if (value->is(csspp::node_type_t::IDENTIFIER)) {
+			return LengthValue{ type, 0.0f };
+		}
+
+		return LengthValue{ LengthType::Default };
 	}
 
 	template <>
-	FontWeightValue parsePropertyValue<FontWeightValue>(const csspp::node::pointer_t& node) {
+	FontWeightValue parsePropertyValue<FontWeightValue>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -141,10 +146,10 @@ namespace fw {
 	}
 
 	template <>
-	TextAlignType parsePropertyValue<TextAlignType>(const csspp::node::pointer_t& node) {
+	TextAlignType parsePropertyValue<TextAlignType>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -163,10 +168,10 @@ namespace fw {
 	}
 
 	template <>
-	FlexPositionType parsePropertyValue<FlexPositionType>(const csspp::node::pointer_t& node) {
+	FlexPositionType parsePropertyValue<FlexPositionType>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -180,10 +185,10 @@ namespace fw {
 	}
 
 	template <>
-	FlexOverflow parsePropertyValue<FlexOverflow>(const csspp::node::pointer_t& node) {
+	FlexOverflow parsePropertyValue<FlexOverflow>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -197,12 +202,12 @@ namespace fw {
 	}
 
 	template <>
-	FlexJustify parsePropertyValue<FlexJustify>(const csspp::node::pointer_t& node) {
+	FlexJustify parsePropertyValue<FlexJustify>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
-		
+
 		const std::string& str = value->get_string();
 
 		if (str == "flex-start") { return FlexJustify::FlexStart; }
@@ -217,10 +222,10 @@ namespace fw {
 	}
 
 	template <>
-	FlexAlign parsePropertyValue<FlexAlign>(const csspp::node::pointer_t& node) {
+	FlexAlign parsePropertyValue<FlexAlign>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -239,10 +244,10 @@ namespace fw {
 	}
 
 	template <>
-	fw::FlexWrap parsePropertyValue<fw::FlexWrap>(const csspp::node::pointer_t& node) {
+	fw::FlexWrap parsePropertyValue<fw::FlexWrap>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
@@ -256,14 +261,14 @@ namespace fw {
 	}
 
 	template <>
-	FlexDirection parsePropertyValue<FlexDirection>(const csspp::node::pointer_t& node) {
+	FlexDirection parsePropertyValue<FlexDirection>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
-		
+
 		if (str == "column") { return FlexDirection::Column; }
 		if (str == "column-reverse") { return FlexDirection::ColumnReverse; }
 		if (str == "row") { return FlexDirection::Row; }
@@ -274,97 +279,89 @@ namespace fw {
 	}
 
 	template <>
-	BorderStyleType parsePropertyValue<BorderStyleType>(const csspp::node::pointer_t& node) {
+	BorderStyleType parsePropertyValue<BorderStyleType>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
-		const std::string& str = value->get_string();
+		BorderStyleType style = CssUtil::parseBorderStyle(value->get_string());
+		if (style != BorderStyleType::None) {
+			return style;
+		}
 
-		if (str == "none") { return BorderStyleType::None; }
-		if (str == "hidden") { return BorderStyleType::Hidden; }
-		if (str == "dotted") { return BorderStyleType::Dotted; }
-		if (str == "dashed") { return BorderStyleType::Dashed; }
-		if (str == "solid") { return BorderStyleType::Solid; }
-		if (str == "double") { return BorderStyleType::Double; }
-		if (str == "groove") { return BorderStyleType::Groove; }
-		if (str == "ridge") { return BorderStyleType::Ridge; }
-		if (str == "inset") { return BorderStyleType::Inset; }
-		if (str == "outset") { return BorderStyleType::Outset; }
-
-		spdlog::warn("Failed to parse border style value: {}", str);
+		spdlog::warn("Failed to parse border style value: {}", value->get_string());
 		return BorderStyleType::Solid;
 	}
 
 	template <>
-	CursorType parsePropertyValue<CursorType>(const csspp::node::pointer_t& node) {
+	CursorType parsePropertyValue<CursorType>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
+		const auto& value = arg->get_child(argIdx);
 		assert(value->is(csspp::node_type_t::IDENTIFIER));
 
 		const std::string& str = value->get_string();
 
 		if (str == "auto") { return CursorType::Arrow; }
 		if (str == "default") { return CursorType::Arrow; }
-		if (str == "none") {return CursorType::Arrow; }
-		if (str == "context-menu") {return CursorType::Arrow; }
-		if (str == "help") {return CursorType::Arrow; }
-		if (str == "pointer") {return CursorType::Arrow; }
-		if (str == "progress") {return CursorType::Arrow; }
-		if (str == "wait") {return CursorType::Arrow; }
-		if (str == "cell") {return CursorType::Arrow; }
-		if (str == "crosshair") {return CursorType::Crosshair; }
-		if (str == "text") {return CursorType::IBeam; }
-		if (str == "vertical-text") {return CursorType::IBeam; }
-		if (str == "alias") {return CursorType::Arrow; }
-		if (str == "copy") {return CursorType::Arrow; }
-		if (str == "move") {return CursorType::Arrow; }
-		if (str == "no-drop") {return CursorType::Arrow; }
-		if (str == "not-allowed") {return CursorType::Arrow; }
-		if (str == "grab") {return CursorType::Hand; }
-		if (str == "grabbing") {return CursorType::Hand; }
-		if (str == "e-resize") {return CursorType::ResizeEW; }
-		if (str == "n-resize") {return CursorType::ResizeNS; }
-		if (str == "ne-resize") {return CursorType::ResizeNE; }
-		if (str == "nw-resize") {return CursorType::ResizeNW; }
-		if (str == "s-resize") {return CursorType::ResizeNS; }
-		if (str == "se-resize") {return CursorType::ResizeSE; }
-		if (str == "sw-resize") {return CursorType::ResizeSW; }
-		if (str == "w-resize") {return CursorType::ResizeEW; }
-		if (str == "ew-resize") {return CursorType::ResizeEW; }
-		if (str == "ns-resize") {return CursorType::ResizeNS; }
-		if (str == "nesw-resize") {return CursorType::ResizeNESW; }
-		if (str == "nwse-resize") {return CursorType::ResizeNWSE; }
-		if (str == "col-resize") {return CursorType::ResizeEW; }
-		if (str == "row-resize") {return CursorType::ResizeNS; }
-		if (str == "all-scroll") {return CursorType::Arrow; }
-		if (str == "zoom-in") {return CursorType::Arrow; }
-		if (str == "zoom-out") {return CursorType::Arrow; }
+		if (str == "none") { return CursorType::Arrow; }
+		if (str == "context-menu") { return CursorType::Arrow; }
+		if (str == "help") { return CursorType::Arrow; }
+		if (str == "pointer") { return CursorType::Arrow; }
+		if (str == "progress") { return CursorType::Arrow; }
+		if (str == "wait") { return CursorType::Arrow; }
+		if (str == "cell") { return CursorType::Arrow; }
+		if (str == "crosshair") { return CursorType::Crosshair; }
+		if (str == "text") { return CursorType::IBeam; }
+		if (str == "vertical-text") { return CursorType::IBeam; }
+		if (str == "alias") { return CursorType::Arrow; }
+		if (str == "copy") { return CursorType::Arrow; }
+		if (str == "move") { return CursorType::Arrow; }
+		if (str == "no-drop") { return CursorType::Arrow; }
+		if (str == "not-allowed") { return CursorType::Arrow; }
+		if (str == "grab") { return CursorType::Hand; }
+		if (str == "grabbing") { return CursorType::Hand; }
+		if (str == "e-resize") { return CursorType::ResizeEW; }
+		if (str == "n-resize") { return CursorType::ResizeNS; }
+		if (str == "ne-resize") { return CursorType::ResizeNE; }
+		if (str == "nw-resize") { return CursorType::ResizeNW; }
+		if (str == "s-resize") { return CursorType::ResizeNS; }
+		if (str == "se-resize") { return CursorType::ResizeSE; }
+		if (str == "sw-resize") { return CursorType::ResizeSW; }
+		if (str == "w-resize") { return CursorType::ResizeEW; }
+		if (str == "ew-resize") { return CursorType::ResizeEW; }
+		if (str == "ns-resize") { return CursorType::ResizeNS; }
+		if (str == "nesw-resize") { return CursorType::ResizeNESW; }
+		if (str == "nwse-resize") { return CursorType::ResizeNWSE; }
+		if (str == "col-resize") { return CursorType::ResizeEW; }
+		if (str == "row-resize") { return CursorType::ResizeNS; }
+		if (str == "all-scroll") { return CursorType::Arrow; }
+		if (str == "zoom-in") { return CursorType::Arrow; }
+		if (str == "zoom-out") { return CursorType::Arrow; }
 
 		spdlog::warn("Failed to parse border style value: {}", str);
 		return CursorType::Arrow;
 	}
 
 	template <>
-	std::chrono::duration<f32> parsePropertyValue<std::chrono::duration<f32>>(const csspp::node::pointer_t& node) {
+	std::chrono::duration<f32> parsePropertyValue<std::chrono::duration<f32>>(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
-		const auto& value = arg->get_child(0);
-		
+		const auto& value = arg->get_child(argIdx);
+
 		f32 time = 0;
 		std::string_view timeRep;
-		
+
 		switch (value->get_type()) {
-			case csspp::node_type_t::INTEGER:
-				time = (f32)value->get_integer();
-				timeRep = value->get_string();
-				break;
-			case csspp::node_type_t::DECIMAL_NUMBER:
-				time = (f32)value->get_decimal_number();
-				timeRep = value->get_string();
-				break;
+		case csspp::node_type_t::INTEGER:
+			time = (f32)value->get_integer();
+			timeRep = value->get_string();
+			break;
+		case csspp::node_type_t::DECIMAL_NUMBER:
+			time = (f32)value->get_decimal_number();
+			timeRep = value->get_string();
+			break;
 		}
 
 		if (timeRep == "s") {
@@ -377,20 +374,43 @@ namespace fw {
 		return std::chrono::duration<f32>{};
 	}
 
-	template <typename T>
-	void parseProperty(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items) {
-		using ValueType = decltype(T::value);
-		items.push_back(StylesheetRule::Property{
-			.name = T::PropertyName,
-			.data = T { parsePropertyValue<ValueType>(node) },
-			.set = &propertySetter<T>,
-		});
-	}
-
-	void parseBorder(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items) {
+	CssKeyword parseKeywordProperty(const csspp::node::pointer_t& node, size_t argIdx) {
 		const auto& arg = node->get_child(0);
 		assert(arg->is(csspp::node_type_t::ARG));
+		const auto& value = arg->get_child(argIdx);
+
+		if (value->get_type() == csspp::node_type_t::STRING) {
+			return CssUtil::parseKeyword(value->get_string());
+		}
+
+		return CssKeyword::None;
+	}
+
+	template <typename T>
+	void parseProperty(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items, size_t argIdx) {
+		using ValueType = decltype(T::value);
 		
+		CssKeyword keyword = parseKeywordProperty(node, argIdx);
+		if (keyword == CssKeyword::None) {
+			items.push_back(StylesheetRule::Property{
+				.name = T::PropertyName,
+				.data = T(parsePropertyValue<ValueType>(node, argIdx)),
+				.set = &propertySetter<T>,
+			});
+		} else {
+			items.push_back(StylesheetRule::Property{
+				.name = T::PropertyName,
+				.data = T(keyword),
+				.set = &propertySetter<T>,
+			});
+		}
+	}
+
+	template <typename TopT, typename BottomT, typename LeftT, typename RightT>
+	void parseShorthandEdgeProperty(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items, size_t argIdx) {
+		const auto& arg = node->get_child(0);
+		assert(arg->is(csspp::node_type_t::ARG));
+
 		size_t paramCount = 0;
 		for (size_t i = 0; i < arg->size(); ++i) {
 			if (!arg->get_child(i)->is(csspp::node_type_t::WHITESPACE)) {
@@ -398,35 +418,86 @@ namespace fw {
 			}
 		}
 
+		switch (paramCount) {
+			case 1: {
+				parseProperty<TopT>(node, items, 0);
+				parseProperty<BottomT>(node, items, 0);
+				parseProperty<LeftT>(node, items, 0);
+				parseProperty<RightT>(node, items, 0);
+				break;
+			}
+			case 2: {
+				parseProperty<TopT>(node, items, 0);
+				parseProperty<BottomT>(node, items, 0);
+				parseProperty<LeftT>(node, items, 2);
+				parseProperty<RightT>(node, items, 2);
+				break;
+			}
+			case 3: {
+				parseProperty<TopT>(node, items, 0);
+				parseProperty<LeftT>(node, items, 2);
+				parseProperty<RightT>(node, items, 2);
+				parseProperty<BottomT>(node, items, 4);
+				break;
+			}
+			case 4: {
+				parseProperty<TopT>(node, items, 0);
+				parseProperty<RightT>(node, items, 2);
+				parseProperty<LeftT>(node, items, 4);
+				parseProperty<BottomT>(node, items, 6);
+				break;
+			}
+			default:
+				spdlog::warn("Too many properties ({}) supplied to CSS property");
+		}
+	}
+
+	void parseBorderProperty(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items, size_t argIdx) {
+		const auto& arg = node->get_child(0);
+		assert(arg->is(csspp::node_type_t::ARG));
+
 		//std::cout << "-------" << std::endl;
 		//std::cout << *node << std::endl;
 		//std::cout << "-------" << std::endl;
-		
-		/*items.push_back(StylesheetRule::Property{
-			.name = "border-top-width",
-			.data = T { parsePropertyValue<ValueType>(node) },
-			.set = &propertySetter<T>,
-		});
 
-		items.push_back(StylesheetRule::Property{
-			.name = "border-left-width",
-			.data = T { parsePropertyValue<ValueType>(node) },
-			.set = &propertySetter<T>,
-		});
+		size_t paramCount = 0;
+		for (size_t i = 0; i < arg->size(); ++i) {
+			const auto& child = arg->get_child(i);
+			if (!child->is(csspp::node_type_t::WHITESPACE)) {
+				if (child->is(csspp::node_type_t::COLOR)) {
+					parseProperty<styles::BorderTopColor>(node, items, i);
+					parseProperty<styles::BorderBottomColor>(node, items, i);
+					parseProperty<styles::BorderLeftColor>(node, items, i);
+					parseProperty<styles::BorderRightColor>(node, items, i);
+				} else if (child->is(csspp::node_type_t::INTEGER)) {
+					parseProperty<styles::BorderTopWidth>(node, items, i);
+					parseProperty<styles::BorderBottomWidth>(node, items, i);
+					parseProperty<styles::BorderLeftWidth>(node, items, i);
+					parseProperty<styles::BorderRightWidth>(node, items, i);
+				} else if (child->is(csspp::node_type_t::IDENTIFIER)) {
+					LengthType lengthType = CssUtil::parseLength(child->get_string());
+					if (lengthType != LengthType::None) {
+						parseProperty<styles::BorderTopWidth>(node, items, i);
+						parseProperty<styles::BorderBottomWidth>(node, items, i);
+						parseProperty<styles::BorderLeftWidth>(node, items, i);
+						parseProperty<styles::BorderRightWidth>(node, items, i);
+					} else {
+						BorderStyleType styleType = CssUtil::parseBorderStyle(child->get_string());
+						if (styleType != BorderStyleType::None) {
+							parseProperty<styles::BorderTopStyle>(node, items, i);
+							parseProperty<styles::BorderBottomStyle>(node, items, i);
+							parseProperty<styles::BorderLeftStyle>(node, items, i);
+							parseProperty<styles::BorderRightStyle>(node, items, i);
+						}
+					}
+				}
 
-		items.push_back(StylesheetRule::Property{
-			.name = "border-bottom-width",
-			.data = T { parsePropertyValue<ValueType>(node) },
-			.set = &propertySetter<T>,
-		});
-
-		items.push_back(StylesheetRule::Property{
-			.name = "border-right-width",
-			.data = T { parsePropertyValue<ValueType>(node) },
-			.set = &propertySetter<T>,
-		});*/
+				if (++paramCount == 3) {
+					return;
+				}
+			}
+		}
 	}
-
 
 	void parseSelectors(const csspp::node::pointer_t& items, std::vector<Selector>& selectors) {
 		Selector* current = &selectors.emplace_back();
@@ -460,23 +531,23 @@ namespace fw {
 			}
 		}
 	}
-	
+
 	void traverse(const Selector& node, Specificity& result) {
 		for (auto item : node.items) {
 			switch (item.type) {
-			case SelectorType::IdSelector: 
-				++result.a; 
-				break;
-			case SelectorType::AttributeSelector:
-			case SelectorType::ClassSelector:
-				++result.b;
-				break;
-			case SelectorType::PseudoElementSelector:
-				++result.c;
-				break;
-			case SelectorType::PseudoClassSelector: 
-				++result.b;
-				break;
+				case SelectorType::IdSelector:
+					++result.a;
+					break;
+				case SelectorType::AttributeSelector:
+				case SelectorType::ClassSelector:
+					++result.b;
+					break;
+				case SelectorType::PseudoElementSelector:
+					++result.c;
+					break;
+				case SelectorType::PseudoClassSelector:
+					++result.b;
+					break;
 			}
 		}
 	}
@@ -485,18 +556,18 @@ namespace fw {
 		for (const Selector& selector : selectors) {
 			for (const Selector::Item& item : selector.items) {
 				switch (item.type) {
-				case SelectorType::IdSelector:
-					++result.a;
-					break;
-				case SelectorType::AttributeSelector:
-				case SelectorType::ClassSelector:
-				case SelectorType::PseudoClassSelector:
-					++result.b;
-					break;
-				case SelectorType::TypeSelector:
-				case SelectorType::PseudoElementSelector:
-					++result.c;
-					break;
+					case SelectorType::IdSelector:
+						++result.a;
+						break;
+					case SelectorType::AttributeSelector:
+					case SelectorType::ClassSelector:
+					case SelectorType::PseudoClassSelector:
+						++result.b;
+						break;
+					case SelectorType::TypeSelector:
+					case SelectorType::PseudoElementSelector:
+						++result.c;
+						break;
 				}
 			}
 		}
@@ -509,7 +580,7 @@ namespace fw {
 		auto found = parserLookup.find(name);
 
 		if (found != parserLookup.end()) {
-			found->second(node, rule.properties);
+			found->second(node, rule.properties, 0);
 		} else {
 			spdlog::warn("CSS selector of type {} is not supported", name);
 		}
@@ -564,7 +635,7 @@ namespace fw {
 					SelectorGroup& selector = selectors.emplace_back(Specificity{ j });
 					parseSelectors(item, selector.selectors);
 					calculateSpecificity(selector.selectors, selector.specificity);
-				} else if (item->is(csspp::node_type_t::OPEN_CURLYBRACKET)) {					
+				} else if (item->is(csspp::node_type_t::OPEN_CURLYBRACKET)) {
 					parseProperties(item->get_child(0), lookup, *rule);
 					break;
 				} else {
@@ -579,10 +650,15 @@ namespace fw {
 
 		return true;
 	}
-	
+
 	template <typename T>
 	constexpr std::pair<std::string_view, CssUtil::ParseStyleFunc> makeStyleParser() {
 		return std::make_pair(T::PropertyName, parseProperty<T>);
+	}
+
+	template <typename TopT, typename BottomT, typename LeftT, typename RightT>
+	constexpr std::pair<std::string_view, CssUtil::ParseStyleFunc> makeShorthandEdgeParser(std::string_view name) {
+		return std::make_pair(name, parseShorthandEdgeProperty<TopT, BottomT, LeftT, RightT>);
 	}
 
 	template <auto Func>
@@ -596,24 +672,30 @@ namespace fw {
 			makeStyleParser<styles::Color>(),
 			makeStyleParser<styles::BackgroundColor>(),
 
+			makeShorthandEdgeParser<styles::MarginTop, styles::MarginBottom, styles::MarginLeft, styles::MarginRight>("margin"),
 			makeStyleParser<styles::MarginBottom>(),
 			makeStyleParser<styles::MarginTop>(),
 			makeStyleParser<styles::MarginLeft>(),
 			makeStyleParser<styles::MarginRight>(),
 
+			makeShorthandEdgeParser<styles::PaddingTop, styles::PaddingBottom, styles::PaddingLeft, styles::PaddingRight>("padding"),
 			makeStyleParser<styles::PaddingBottom>(),
 			makeStyleParser<styles::PaddingTop>(),
 			makeStyleParser<styles::PaddingLeft>(),
 			makeStyleParser<styles::PaddingRight>(),
 
+			makeCompositeStyleParser<parseBorderProperty>("border"),
+			makeShorthandEdgeParser<styles::BorderTopWidth, styles::BorderBottomWidth, styles::BorderLeftWidth, styles::BorderRightWidth>("border-width"),
 			makeStyleParser<styles::BorderBottomWidth>(),
 			makeStyleParser<styles::BorderTopWidth>(),
 			makeStyleParser<styles::BorderLeftWidth>(),
 			makeStyleParser<styles::BorderRightWidth>(),
+			makeShorthandEdgeParser<styles::BorderTopColor, styles::BorderBottomColor, styles::BorderLeftColor, styles::BorderRightColor>("border-color"),
 			makeStyleParser<styles::BorderBottomColor>(),
 			makeStyleParser<styles::BorderTopColor>(),
 			makeStyleParser<styles::BorderLeftColor>(),
 			makeStyleParser<styles::BorderRightColor>(),
+			makeShorthandEdgeParser<styles::BorderTopStyle, styles::BorderBottomStyle, styles::BorderLeftStyle, styles::BorderRightStyle>("border-style"),
 			makeStyleParser<styles::BorderBottomStyle>(),
 			makeStyleParser<styles::BorderTopStyle>(),
 			makeStyleParser<styles::BorderLeftStyle>(),
@@ -654,5 +736,40 @@ namespace fw {
 			makeStyleParser<styles::FontWeight>(),
 			makeStyleParser<styles::TextAlign>(),
 		};
+	}
+
+	CssKeyword CssUtil::parseKeyword(std::string_view text) {
+		if (text == "initial") { return CssKeyword::Initial; }
+		if (text == "inherit") { return CssKeyword::Inherit; }
+		if (text == "unset") { return CssKeyword::Unset; }
+		if (text == "revert") { return CssKeyword::Revert; }
+		if (text == "revert-layer") { return CssKeyword::RevertLayer; }
+		return CssKeyword::None;
+	}
+
+	LengthType CssUtil::parseLength(std::string_view text) {
+		if (text == "default") { return LengthType::Default; }
+		if (text == "small") { return LengthType::Small; }
+		if (text == "medium") { return LengthType::Medium; }
+		if (text == "large") { return LengthType::Large; }
+		if (text == "dynamic") { return LengthType::Dynamic; }
+		if (text == "em") { return LengthType::Em; }
+		if (text == "rem") { return LengthType::Rem; }
+		if (text == "px") { return LengthType::Pixel; }
+		if (text == "pt") { return LengthType::Point; }
+		return LengthType::None;
+	}
+
+	BorderStyleType CssUtil::parseBorderStyle(std::string_view text) {
+		if (text == "hidden") { return BorderStyleType::Hidden; }
+		if (text == "dotted") { return BorderStyleType::Dotted; }
+		if (text == "dashed") { return BorderStyleType::Dashed; }
+		if (text == "solid") { return BorderStyleType::Solid; }
+		if (text == "double") { return BorderStyleType::Double; }
+		if (text == "groove") { return BorderStyleType::Groove; }
+		if (text == "ridge") { return BorderStyleType::Ridge; }
+		if (text == "inset") { return BorderStyleType::Inset; }
+		if (text == "outset") { return BorderStyleType::Outset; }
+		return BorderStyleType::None;
 	}
 }

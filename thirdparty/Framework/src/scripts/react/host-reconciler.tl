@@ -10,8 +10,10 @@ local eventBus: EventBus = {
 	entities = {}
 }
 
+local type NativeStyle = {string:function(any, any)}
+local type StyleSetterFunc = function(NativeStyle, string, any);
+
 global function processHostEvent(entity: integer, name: string, ev: any): boolean
-	print(entity, name, ev)
 	local e = eventBus.entities[entity]
 
 	if e then
@@ -58,12 +60,23 @@ local function parseFlexRect(value: fw.FlexRectT|number, key: string): fw.FlexRe
 	return fw.FlexRect()
 end
 
-local function parseFlexValue(value: fw.FlexValueT|number, key: string): fw.FlexValueT
+local function endswith(str: string, suffix: string): boolean
+    return str:sub(-#suffix) == suffix
+end
+
+local function parseFlexValue(value: fw.FlexValueT|number|string, key: string): fw.FlexValueT
 	if type(value) == "number" then
 		return fw.FlexValue(value as number)
 	elseif type(value) == "userdata" then
 		return value as fw.FlexValueT
-	elseif type(value) ~= "nil" then
+	elseif type(value) == "string" then
+		local v = value as string
+		if endswith(v, "%") then
+			return fw.FlexValue(fw.FlexUnit.Percent, tonumber(v:sub(1, #v - 1)))
+		end
+	end
+
+	if type(value) ~= "nil" then
 		print("WARN: Failed to update '" .. key .. "', value of type " .. type(value) .. " is not supported")
 	end
 
@@ -96,56 +109,89 @@ local function parseLengthValue(value: fw.LengthValueT, key: string): fw.LengthV
 	return fw.LengthValue()
 end
 
-local sanitizers: {string: function(any, string): any} = {
-	border = parseFlexBorder,
-	padding = parseFlexRect,
-	margin = parseFlexRect,
-	position = parseFlexRect,
-	flexBasis = parseFlexValue,
-	minWidth = parseFlexValue,
-	maxWidth = parseFlexValue,
-	minHeight = parseFlexValue,
-	maxHeight = parseFlexValue,
-	width = parseFlexValue,
-	height = parseFlexValue,
-	color = parseColor4F,
-	backgroundColor = parseColor4F,
-	fontSize = parseLengthValue,
+local function parseBorderColor(style: NativeStyle, key: string, value: fw.Color4FT)
+	local col = parseColor4F(value, key)
+	style["set_borderLeftColor"](style, col)
+	style["set_borderRightColor"](style, col)
+	style["set_borderTopColor"](style, col)
+	style["set_borderBottomColor"](style, col)
+end
 
-	borderBottomWidth = parseLengthValue,
-	borderTopWidth = parseLengthValue,
-	borderLeftWidth = parseLengthValue,
-	borderRightWidth = parseLengthValue,
-	borderBottomColor = parseColor4F,
-	borderTopColor = parseColor4F,
-	borderLeftColor = parseColor4F,
-	borderRightColor = parseColor4F,
+local function parseBorderWidth(style: NativeStyle, key: string, value: fw.LengthValueT)
+	local len = parseLengthValue(value, key)
+	style["set_borderLeftWidth"](style, len)
+	style["set_borderRightWidth"](style, len)
+	style["set_borderTopWidth"](style, len)
+	style["set_borderBottomWidth"](style, len)
+end
 
-	marginBottom = parseFlexValue,
-	marginTop = parseFlexValue,
-	marginLeft = parseFlexValue,
-	marginRight = parseFlexValue,
+local function parsePadding(style: NativeStyle, key: string, value: fw.FlexValueT)
+	local len = parseFlexValue(value, key)
+	style["set_paddingLeft"](style, len)
+	style["set_paddingRight"](style, len)
+	style["set_paddingTop"](style, len)
+	style["set_paddingBottom"](style, len)
+end
 
-	paddingBottom = parseFlexValue,
-	paddingTop = parseFlexValue,
-	paddingLeft = parseFlexValue,
-	paddingRight = parseFlexValue
+local function parserWrapper(fn: function(any, string): any): StyleSetterFunc
+	return function(style: NativeStyle, key: string, value: any)
+		style["set_" .. key](style, fn(value, key))
+	end
+end
+
+local styleSetters: {string: StyleSetterFunc} = {
+	margin = parserWrapper(parseFlexRect),
+	position = parserWrapper(parseFlexRect),
+	flexBasis = parserWrapper(parseFlexValue),
+	minWidth = parserWrapper(parseFlexValue),
+	maxWidth = parserWrapper(parseFlexValue),
+	minHeight = parserWrapper(parseFlexValue),
+	maxHeight = parserWrapper(parseFlexValue),
+	width = parserWrapper(parseFlexValue),
+	height = parserWrapper(parseFlexValue),
+	color = parserWrapper(parseColor4F),
+	backgroundColor = parserWrapper(parseColor4F),
+	fontSize = parserWrapper(parseLengthValue),
+
+	border = parseBorderWidth,
+	borderWidth = parseBorderWidth,
+	borderBottomWidth = parserWrapper(parseLengthValue),
+	borderTopWidth = parserWrapper(parseLengthValue),
+	borderLeftWidth = parserWrapper(parseLengthValue),
+	borderRightWidth = parserWrapper(parseLengthValue),
+
+	borderColor = parseBorderColor,
+	borderBottomColor = parserWrapper(parseColor4F),
+	borderTopColor = parserWrapper(parseColor4F),
+	borderLeftColor = parserWrapper(parseColor4F),
+	borderRightColor = parserWrapper(parseColor4F),
+
+	marginBottom = parserWrapper(parseFlexValue),
+	marginTop = parserWrapper(parseFlexValue),
+	marginLeft = parserWrapper(parseFlexValue),
+	marginRight = parserWrapper(parseFlexValue),
+
+	padding = parsePadding,
+	paddingBottom = parserWrapper(parseFlexValue),
+	paddingTop = parserWrapper(parseFlexValue),
+	paddingLeft = parserWrapper(parseFlexValue),
+	paddingRight = parserWrapper(parseFlexValue)
 }
 
 local function parseStyle(node: HostElementHandle, items: {string:any})
-	local style = node:getStyle()
+	local style = node:getStyle() as NativeStyle
 	style:clear()
 
 	for k,v in pairs(items) do
 		local value = v
 		if value ~= nil then
-			local san = sanitizers[k]
-			if san then
-				value = san(value, k)
+			local setter = styleSetters[k]
+			if setter then
+				setter(style, k, value)
+			else
+				print("Failed to find style setter for " .. k)
 			end
 		end
-
-		style["set_"..k](style, value)
 	end
 
 	node:updateLayoutStyle()
@@ -162,8 +208,6 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 	end,
 	addEventListener = function (node: HostElementHandle, name: string, func: function(any): any)
 		local counterId = node.counterId
-		print("adding event listener", name, counterId)
-
 		local e = eventBus.entities[counterId]
 		if not e then
 			e = {}
@@ -175,10 +219,7 @@ local reconciler: Reconciler<HostElementHandle, fw.HostStyle, fw.HostEvents> = {
 		fw.document:addEventListener(node, name)
 	end,
 	removeEventListener = function (node: HostElementHandle, name: string, func: function(any): any)
-		local counterId = node.counterId
-		print("removing event listener", name, counterId)
-
-		local e = eventBus.entities[counterId]
+		local e = eventBus.entities[node.counterId]
 		if e then e[name] = nil end
 
 		fw.document:removeEventListener(node, name)

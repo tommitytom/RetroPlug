@@ -126,33 +126,56 @@ namespace fw {
 		}
 
 		template <typename T>
-		const T* findStyleProperty() {
-			for (auto& style : _styles) {
-				const T* prop = style->findProperty<T>();
-				if (prop) {
-					return prop;
-				}
-			}
-
-			if constexpr (entt::type_list_contains_v<typename T::Tags, InheritedTag>) {
-				ViewPtr parent = getParent();
-
-				if (parent && !parent->isType<ReactView>()) {
-					return parent->asRaw<ReactElementView>()->template findStyleProperty<T>();
-				}
+		const T* inheritProperty() const {
+			ViewPtr parent = getParent();
+			if (parent && !parent->isType<ReactView>()) {
+				return parent->asRaw<ReactElementView>()->template findStyleProperty<T>();
 			}
 
 			return nullptr;
 		}
 
 		template <typename T>
-		void findStyleProperty(decltype(T::value)& target) {
+		const T* findStyleProperty() const {
 			for (auto& style : _styles) {
 				const T* prop = style->findProperty<T>();
 				if (prop) {
-					target = prop->value;
-					return;
+					// TODO: Handle revert and revert-layer
+					assert(prop->keyword != CssKeyword::Revert && prop->keyword != CssKeyword::RevertLayer);
+
+					switch (prop->keyword) {
+						case CssKeyword::None: {
+							return prop;
+						}
+						case CssKeyword::Initial: {
+							return &T::Initial;
+						}
+						case CssKeyword::Inherit: {
+							return inheritProperty<T>();
+						}
+						case CssKeyword::Unset: {
+							if constexpr (entt::type_list_contains_v<typename T::Tags, InheritedTag>) {
+								return inheritProperty<T>();
+							}
+
+							return &T::Initial;
+						}
+					}
 				}
+			}
+
+			if constexpr (entt::type_list_contains_v<typename T::Tags, InheritedTag>) {
+				return inheritProperty<T>();
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
+		void findStyleProperty(decltype(T::value)& target) const {
+			const T* prop = findStyleProperty<T>();
+			if (prop) {
+				target = prop->value;
 			}
 		}
 

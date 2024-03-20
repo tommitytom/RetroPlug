@@ -6,12 +6,27 @@
 #include "foundation/Types.h"
 #include "foundation/Math.h"
 
+enum class CssKeyword {
+	None,
+	Initial,
+	Inherit,
+	Unset,
+	Revert,
+	RevertLayer
+};
+
 #define DefineStyleProperty(propName, propType, valueType, ...) \
 	struct propType {\
 		static constexpr std::string_view PropertyName = propName;\
 		using Tags = entt::type_list<__VA_ARGS__>;\
 		valueType value;\
-	};
+		CssKeyword keyword = CssKeyword::None;\
+		propType() {}\
+		explicit propType(valueType _value) : value(_value) {}\
+		explicit propType(CssKeyword _keyword) : keyword(_keyword) {}\
+		static const propType Initial;\
+	};\
+	inline const propType propType::Initial = propType();
 
 namespace fw {
 	struct AnimatableTag {};
@@ -65,8 +80,10 @@ namespace fw {
 	};
 
 	enum class LengthType {
+		None,
 		Default,
 		Small,
+		Medium,
 		Large,
 		Dynamic,
 		Em,
@@ -80,8 +97,8 @@ namespace fw {
 		f32 value = 0.0f;
 
 		LengthValue() {}
-		LengthValue(f32 _value) : value(_value) {}
-		LengthValue(LengthType _type, f32 _value): type(_type), value(_value) {}
+		LengthValue(f32 _value) : type(LengthType::Pixel), value(_value) {}
+		LengthValue(LengthType _type, f32 _value = 0.0f): type(_type), value(_value) {}
 	};
 
 	enum class TextAlignType {

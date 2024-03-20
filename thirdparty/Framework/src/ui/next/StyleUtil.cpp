@@ -164,8 +164,8 @@ namespace fw {
 	StyleHandle createTextStyle(entt::registry& reg, const DomElementHandle handle) {
 		StyleHandle style = StyleUtil::createEmptyStyle(reg, handle);
 		
-		inheritProperty<styles::FontFamily>(reg, handle, style, styles::FontFamily{ "Karla-Regular" });
-		inheritProperty<styles::FontSize>(reg, handle, style, styles::FontSize{ .value = { LengthType::Default, 16 } });
+		inheritProperty<styles::FontFamily>(reg, handle, style, styles::FontFamily{ FontFamilyValue { "Karla-Regular" } });
+		inheritProperty<styles::FontSize>(reg, handle, style, styles::FontSize{ LengthValue { LengthType::Default, 16 } });
 		inheritProperty<styles::FontWeight>(reg, handle, style, styles::FontWeight {});
 
 		return style;

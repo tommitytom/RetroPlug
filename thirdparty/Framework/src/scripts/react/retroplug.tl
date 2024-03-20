@@ -38,23 +38,14 @@ local record MenuCheckboxProps
 	checked: boolean
 end
 local MenuCheckbox = React.component(function (props: MenuCheckboxProps): Element
+	local content: string = nil
+	if props.checked then content = "X" end
+
 	return r.div {
 		className = "checkbox",
-		r.span {
-			className = "multiselect-text",
-		},
 		r.div {
 			className = "checkbox-check",
-			style = {
-				fontSize = 15,
-				width = 20,
-				borderLeftWidth = fw.LengthValue(1),
-				borderRightWidth = fw.LengthValue(1),
-				borderTopWidth = fw.LengthValue(1),
-				borderBottomWidth = fw.LengthValue(1),
-				borderLeftColor = fw.Color4F(1, 1, 1, 1),
-			},
-			"X"
+			content
 		}
 	}
 end)
@@ -163,7 +154,6 @@ end
 local Basic = React.component(function (_: PropsMap): Element
 	local counter: MenuIdCounter = { count  = 0 }
 	local pos, setPos = React.useState(0 as integer)
-	local refTest = React.useRef(nil as fw.HostElement)
 
 	local renderedItems = {}
 	for _, v in ipairs(menuItems.children) do
@@ -172,7 +162,6 @@ local Basic = React.component(function (_: PropsMap): Element
 
 	return r.div {
 		className = "root",
-		ref = refTest,
 
 		tabIndex = 0,
 		onKey = function(ev: fw.KeyEvent): boolean
@@ -191,11 +180,8 @@ local Basic = React.component(function (_: PropsMap): Element
 				width = 160 * 3,
 				height = 144 * 3,
 
-				borderLeftWidth = fw.LengthValue(1),
-				borderRightWidth = fw.LengthValue(1),
-				borderTopWidth = fw.LengthValue(1),
-				borderBottomWidth = fw.LengthValue(1),
-				borderLeftColor = fw.Color4F(1, 0, 0, 1)
+				border = 1,
+				borderColor = fw.Color4F(1, 0, 0, 1),
 			},
 		},
 		r.div {
