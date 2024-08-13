@@ -39,6 +39,7 @@ namespace fw {
 		std::string _id;
 		std::string _elementName;
 		std::string _className;
+		std::unordered_set<std::string_view> _classNames;
 		std::vector<std::shared_ptr<StylesheetRule>> _styles;
 		bool _styleDirty = false;
 		InputStateFlag _inputState = InputStateFlag::None;
@@ -120,9 +121,10 @@ namespace fw {
 			return _className;
 		}
 
-		void setClassName(const std::string& className) {
-			_className = className;
-			updateStyles();
+		void setClassName(const std::string& className);
+
+		bool hasClassName(const std::string& className) const {
+			return _classNames.contains(className);
 		}
 
 		template <typename T>
@@ -137,7 +139,7 @@ namespace fw {
 
 		template <typename T>
 		const T* findStyleProperty() const {
-			for (auto& style : _styles) {
+			for (const auto& style : _styles) {
 				const T* prop = style->findProperty<T>();
 				if (prop) {
 					// TODO: Handle revert and revert-layer

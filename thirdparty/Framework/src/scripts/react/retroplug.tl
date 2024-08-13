@@ -1,23 +1,36 @@
 local React = require("react")
 local r = require("react-elements")
+local menuItems = require("testmenu")
 
 fw.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\retroplug.css")
 
 local record MenuRowProps
-	selected: boolean
+	idx: integer
+	selectedIdx: integer
+	setSelected: function(integer)
+	onClick: function()
 	indent: integer
 	children: {Element|string}
 end
 local MenuRow = React.component(function (props: MenuRowProps): Element
 	local className = "menuRow"
-	if props.selected == true then className = className .. " selected" end
+	if props.selectedIdx == props.idx then className = className .. " selected" end
 
 	return r.div {
 		className = className,
 		style = {
-			paddingLeft = fw.FlexValue(20 + props.indent * 20),
-			paddingRight = fw.FlexValue(10)
+			paddingLeft = 20 + props.indent * 20
 		},
+		onMouseMove = function()
+			if props.idx ~= props.selectedIdx then
+				props.setSelected(props.idx)
+			end
+		end,
+		onMouseButton = function(ev: fw.MouseButtonEvent)
+			if props.onClick and ev.button == fw.MouseButton.Left and ev.down == true then
+				props.onClick()
+			end
+		end,
 		children = props.children
 	}
 end)
@@ -28,9 +41,9 @@ end
 local MenuSelector = React.component(function (props: MenuSelectorProps): Element
 	return r.div {
 		className = "multiselect",
-		r.span { style = { paddingLeft = fw.FlexValue(20) }, "<" },
+		r.span { className = "multiselect-scroller", "<" },
 		r.span { className = "multiselect-text", props.selected },
-		r.span { ">" },
+		r.span { className = "multiselect-scroller", ">" }
 	}
 end)
 
@@ -43,78 +56,9 @@ local MenuCheckbox = React.component(function (props: MenuCheckboxProps): Elemen
 
 	return r.div {
 		className = "checkbox",
-		r.div {
-			className = "checkbox-check",
-			content
-		}
+		r.div { className = "checkbox-check", content }
 	}
 end)
-
-local record MenuItemType
-	name: string
-	type: string
-	items: {string}
-	children: {MenuItemType}
-end
-
-local menuItems: MenuItemType = {
-	children = {
-		{
-			name = "Load",
-			children = {
-				{ name = "ROM..." },
-				{
-					name = "ROM As",
-					children = {
-						{ name = "ABG..." },
-						{ name = "CBG C..." },
-						{ name = "DMG..." },
-					}
-				}
-			},
-		},
-		{
-			name = "stuff",
-			children = {
-				{
-					name = "Select",
-					type = "multiselect",
-					items = { "a", "b", "c" }
-				},
-				{
-					name = "Check",
-					type = "checkbox",
-				},
-			}
-		},
-		{
-			name = "Add System",
-			children = {
-				{ name = "Duplicate current" },
-				{ name = "ROM..." },
-				{
-					name = "ROM As",
-					children = {
-						{ name = "ABG..." },
-						{ name = "CBG C..." },
-						{ name = "DMG..." },
-					}
-				}
-			}
-		}, {
-			name = "Load MGB"
-		}
-	}
-}
-
-local function foreach<T, R>(tab: {T}, fn: function(T): R): {R}
-	local items = {}
-	for _,v in ipairs(tab) do
-		table.insert(items, fn(v))
-	end
-
-	return items
-end
 
 local record MenuIdCounter
 	count: integer
@@ -126,53 +70,85 @@ local function nextId(counter: MenuIdCounter): integer
 	return value
 end
 
-local function renderMenu(item: MenuItemType, idx: MenuIdCounter, selectedIdx: number, indent: integer, items: {Element})
-	local id = nextId(idx)
-	local selected = id == selectedIdx
-	local content: Element = nil
+local type ExpandState = {string: boolean}
 
-	if item.type == "multiselect" then
-		content = MenuSelector { selected = "itemA" }
-	elseif item.type == "checkbox" then
-		content = MenuCheckbox { checked = true }
-	end
+local record MenuProps
+	menu: MenuItemType
+end
+local Menu = React.component(function (props: MenuProps): Element
+	local counter: MenuIdCounter = { count = 0 }
+	local expandState, setExpandState = React.useState({} as ExpandState)
+	local selectedId, setSelectedId = React.useState(0 as integer)
+	local setSelected = setSelectedId as function(integer)
+	local items: {Element} = {}
 
-	table.insert(items, MenuRow{
-		indent = indent,
-		selected = selected,
-		item.name,
-		content
-	})
+	local function renderMenu(item: MenuItemType, indent: integer)
+		if item.type == "separator" then
+			table.insert(items, r.div { className = "menu-separator" })
+		else
+			local id = nextId(counter)
+			local content: Element = nil
+			local expandFn: function() = nil
 
-	if item.children ~= nil then
-		for _, v in ipairs(item.children) do
-			renderMenu(v, idx, selectedIdx, indent + 1, items)
+			if item.type == "multiselect" then
+				content = MenuSelector { selected = "itemA" }
+			elseif item.type == "checkbox" then
+				content = MenuCheckbox { checked = true }
+			elseif item.type == "action" then
+			elseif item.type == "submenu" then
+				expandFn = function()
+					setExpandState(function(cur: ExpandState): ExpandState
+						local s = {}
+						for k, v in pairs(cur) do s[k] = v end
+						s[item.key] = not (s[item.key] or false)
+						return s
+					end)
+				end
+			end
+
+			table.insert(items, MenuRow{
+				idx = id,
+				indent = indent,
+				selectedIdx = selectedId,
+				setSelected = setSelected,
+				onClick = expandFn,
+				id .. " - " .. item.key .. " - " .. item.name,
+				content
+			})
+
+			if item.type == "submenu" and item.children ~= nil then
+				if expandState[item.key] then
+					for _, v in ipairs(item.children) do
+						renderMenu(v, indent + 1)
+					end
+				end
+			end
 		end
 	end
-end
 
-local Basic = React.component(function (_: PropsMap): Element
-	local counter: MenuIdCounter = { count  = 0 }
-	local pos, setPos = React.useState(0 as integer)
-
-	local renderedItems = {}
-	for _, v in ipairs(menuItems.children) do
-		renderMenu(v, counter, pos, 0, renderedItems)
+	for _, v in ipairs(props.menu.children) do
+		renderMenu(v, 0)
 	end
 
 	return r.div {
-		className = "root",
-
+		className = "menu",
 		tabIndex = 0,
 		onKey = function(ev: fw.KeyEvent): boolean
-			if ev.key == fw.VirtualKey.UpArrow and ev.down == true and pos > 0 then
-				setPos(pos - 1)
+			if ev.key == fw.VirtualKey.UpArrow and ev.down == true and selectedId > 0 then
+				setSelectedId(selectedId - 1)
 			end
 
 			if ev.key == fw.VirtualKey.DownArrow and ev.down == true then
-				setPos(pos + 1)
+				setSelectedId(selectedId + 1)
 			end
 		end,
+		children = items
+	}
+end)
+
+local Basic = React.component(function (_: PropsMap): Element
+	return r.div {
+		className = "root",
 
 		r.div {
 			style = {
@@ -193,29 +169,9 @@ local Basic = React.component(function (_: PropsMap): Element
 			r.div {
 				className = "overlay",
 
-				onMouseButton = function(ev: fw.MouseButtonEvent): boolean
-					print("click", ev.button)
-					return true
-				end,
-
-				r.span {
-					style = {
-						marginTop = fw.FlexValue(20),
-						marginLeft = fw.FlexValue(20),
-						fontSize = 30
-					},
-					"RetroPlug 0.4.0",
-				},
-				r.div {
-					style = {
-						width = "100%",
-						height = 2,
-						backgroundColor = fw.Color4F(1,1,1,1),
-						marginTop = fw.FlexValue(20),
-						marginBottom = fw.FlexValue(20),
-					}
-				},
-				table.unpack(renderedItems)
+				r.span { className = "title", "RetroPlug 0.4.0" },
+				r.div { className = "title-separator" },
+				Menu { menu = menuItems }
 			}
 		},
 	}

@@ -18,6 +18,7 @@ global type PropsMap = {string|number: any}
 global record Element
 	type: ElementFunc|string
 	props: PropsMap
+	key: string
 end
 
 --[[global type TypedElement = record<PropsT>

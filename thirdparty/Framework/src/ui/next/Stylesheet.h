@@ -83,7 +83,7 @@ namespace fw {
 		struct Property {
 			std::string_view name;
 			entt::any data;
-			PropertySetFunc set;
+			//PropertySetFunc set;
 		};
 
 		std::vector<Property> properties;

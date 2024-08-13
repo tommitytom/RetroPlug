@@ -222,7 +222,7 @@ namespace fw {
 		StyleHandle style = StyleUtil::createEmptyStyle(reg, handle);
 
 		for (const auto& [k, v] : props) {
-			v->set(reg, style, v->data);
+			//v->set(reg, style, v->data);
 		}
 		
 		return style;

@@ -177,5 +177,6 @@
 		"shared_mutex": "cpp",
 		"cfenv": "cpp"
 	},
-	"Lua.runtime.version": "Lua 5.4"
+	"Lua.runtime.version": "Lua 5.4",
+	"dotnet.defaultSolution": "disable"
 }

@@ -1,5 +1,7 @@
 #include "ReactElementView.h"
 
+#include <ranges>
+
 #include "ui/next/StyleCache.h"
 
 namespace fw {
@@ -54,6 +56,27 @@ namespace fw {
 		if (_styleDirty) {
 			updateLayoutStyle();
 		}
+	}
+
+	void ReactElementView::setClassName(const std::string& className) {
+		_className = className;
+		_classNames.clear();
+
+		std::size_t start = 0;
+		std::size_t end = 0;
+		while ((end = _className.find(' ', start)) != std::string::npos) {
+			if (end != start) {
+				_classNames.insert(std::string_view(_className.begin() + start, _className.begin() + end));
+			}
+
+			start = end + 1;
+		}
+
+		if (end != start) {
+			_classNames.insert(std::string_view(_className.begin() + start, _className.end()));
+		}
+
+		updateStyles();
 	}
 	
 	void ReactElementView::onRender(fw::Canvas& canvas) {
@@ -155,7 +178,5 @@ namespace fw {
 		setLayoutStyleProperty<styles::MinHeight>();
 		setLayoutStyleProperty<styles::MaxWidth>();
 		setLayoutStyleProperty<styles::MaxHeight>();
-	}
-	
-	
+	}	
 }

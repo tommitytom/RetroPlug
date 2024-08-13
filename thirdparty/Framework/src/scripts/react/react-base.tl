@@ -10,6 +10,21 @@ local type RefHookResult = record<T>
 	current: T
 end
 
+local type TypedContext = record<T>
+	value: T
+end
+
+local type TypedContextProps = record<T>
+	value: T
+	children: {Element|string}
+end
+
+local type ContextResult = record<T>
+	fn: any
+	Provider: TypedElementFunc<T>
+	--Consumer: function(function(T)): Element
+end
+
 local type React = record<ElementT>
 	createElement: function(string|ElementFunc, PropsMap): Element
 	render: function(Element, ElementT)
@@ -20,6 +35,9 @@ local type React = record<ElementT>
 	component: function<T>(TypedElementFunc<T>): TypedElementFunc<T>
 	nativeComponent: function(string): function(PropsMap): Element
 	getCurrentRoot: function(): Fiber
+
+	createContext: function<T>(T): ContextResult<T>
+	useContext: function<T>(ContextResult<T>): T
 end
 
 local enum EffectTags
@@ -60,6 +78,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		dom: DomElementT
 		effectTag: EffectTags
 		hooks: {Hook}
+		key: string
 	end
 
 	local function createTextElement(text: string): Element
@@ -72,16 +91,37 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		}
 	end
 
+	local function flatten<T>(tab: {T}): {T}
+		local result: {T} = {}
+		for _,v in ipairs(tab) do
+			if type(v) == "table" then
+				for _,v2 in ipairs(flatten(v)) do
+					table.insert(result, v2)
+				end
+			else
+				table.insert(result, v)
+			end
+		end
+
+		return result
+	end
+
 	local function createElement(constructor: string|ElementFunc, props: PropsMap): Element
+		local key = props.key as string
+		props.key = nil
 		local children: {string|Element} = {}
 
-		for i,v in ipairs(props as {string|Element}) do
+		for _,v in ipairs(props as {string|Element}) do
 			table.insert(children, v)
+			--props[i] = nil
+		end
+
+		for i,_ in ipairs(props as {string|Element}) do
 			props[i] = nil
 		end
 
 		if props.children ~= nil then
-			for _,v in ipairs(props.children) do
+			for _,v in ipairs(props.children as {string|Element}) do
 				table.insert(children, v)
 			end
 		end
@@ -97,6 +137,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		return {
 			type = constructor,
 			props = props,
+			key = key
 		}
 	end
 
@@ -125,17 +166,19 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 
 		-- Remove old or changed event listeners
 		for name, prevValue in pairs(prevProps) do
-			if isEvent(name) and (not nextProps[name] or isNew(prevProps, nextProps)(name)) then
+			local nameStr = name as string
+			if isEvent(nameStr) and (not nextProps[name] or isNew(prevProps, nextProps)(nameStr)) then
 				assert(type(prevValue) == "function")
 				local func = prevValue as function(any): any
-				reconciler.removeEventListener(dom, name, func)
+				reconciler.removeEventListener(dom, nameStr, func)
 			end
 		end
 
 		-- Remove old properties
 		for name, _ in pairs(prevProps) do
-			if isProperty(name) and isGone(nextProps)(name) then
-				if DEBUG_MODE == true then print("", "nulling", name) end
+			local nameStr = name as string
+			if isProperty(nameStr) and isGone(nextProps)(nameStr) then
+				if DEBUG_MODE == true then print("", "nulling", nameStr) end
 				--style[name] = nil
 				--reconciler.setProperty(dom, name, nil)
 			end
@@ -143,20 +186,22 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 
 		-- Set new or changed properties
 		for name, nextValue in pairs(nextProps) do
-			if isProperty(name) and isNew(prevProps, nextProps)(name) then
-				if DEBUG_MODE == true then print("", "setting", name, nextValue) end
+			local nameStr = name as string
+			if isProperty(nameStr) and isNew(prevProps, nextProps)(nameStr) then
+				if DEBUG_MODE == true then print("", "setting", nameStr, nextValue) end
 				--TODO: Sanitize!
 				--style[name] = nextValue
-				reconciler.setProperty(dom, name, nextValue)
+				reconciler.setProperty(dom, nameStr, nextValue)
 			end
 		end
 
 		-- Add event listeners
 		for name, nextValue in pairs(nextProps) do
-			if isEvent(name) and isNew(prevProps, nextProps)(name) then
+			local nameStr = name as string
+			if isEvent(nameStr) and isNew(prevProps, nextProps)(nameStr) then
 				assert(type(nextValue) == "function")
 				local func = nextValue as function(any): any
-				reconciler.addEventListener(dom, name, func)
+				reconciler.addEventListener(dom, nameStr, func)
 			end
 		end
 	end
@@ -210,6 +255,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 			updateDom(fiber.dom, fiber.alternate.props, fiber.props)
 		elseif fiber.effectTag == "DELETION" then
 			commitDeletion(fiber, domParent)
+			return
 		end
 
 		commitWork(fiber.child)
@@ -237,14 +283,24 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		_nextUnitOfWork = _wipRoot
 	end
 
+	local function findChildWithKey(fiber: Fiber, key: any): Fiber
+		local oldFiber = fiber.alternate and fiber.alternate.child
+		while oldFiber do
+			if oldFiber.key == key then
+				return oldFiber
+			end
+			oldFiber = oldFiber.sibling
+		end
+		return nil
+	end
+
 	local function reconcileChildren(wipFiber: Fiber, elements: {Element})
 		local index = 1
-		local oldFiber: Fiber = wipFiber.alternate and wipFiber.alternate.child
 		local prevSibling: Fiber = nil
 
-		while index <= #elements or oldFiber ~= nil do
-			local element = elements[index]
-			local sameType: boolean = oldFiber ~= nil and element ~= nil and element.type == oldFiber.type
+		for _, element in ipairs(elements) do
+			local oldFiber = findChildWithKey(wipFiber, element.key)
+			local sameType = oldFiber ~= nil and element ~= nil and element.type == oldFiber.type
 			local newFiber: Fiber = nil
 
 			if sameType then
@@ -255,6 +311,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 					parent = wipFiber,
 					alternate = oldFiber,
 					effectTag = "UPDATE",
+					key = element.key, -- Store the key in the new fiber
 				}
 			end
 
@@ -266,16 +323,13 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 					parent = wipFiber,
 					alternate = nil,
 					effectTag = "PLACEMENT",
+					key = element.key, -- Store the key in the new fiber
 				}
 			end
 
 			if oldFiber and not sameType then
 				oldFiber.effectTag = "DELETION"
 				table.insert(_deletions, oldFiber)
-			end
-
-			if oldFiber then
-				oldFiber = oldFiber.sibling
 			end
 
 			if index == 1 then
@@ -339,9 +393,6 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		return nil
 	end
 
-	local function useContext<T>(initial: T): T, function(ActionFunc<T>|T)
-	end
-
 	local function getAlternateHook(fiber: Fiber, tag: string, index: integer): Hook
 		local oldHook: Hook =
 			fiber.alternate and
@@ -353,7 +404,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		end
 	end
 
-	local function useRef<T>(initial: T): T, function(ActionFunc<T>|T)
+	local function useRef<T>(initial: T): RefHook<T>
 		assert(_wipFiber ~= nil)
 		assert(_wipFiber.hooks ~= nil)
 		assert(_hookIndex ~= nil)
@@ -386,6 +437,42 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		_hookIndex = _hookIndex + 1
 	end
 
+	local function createComponent(func: ElementFunc): function(PropsMap): Element
+		return function(props: PropsMap): Element
+			return createElement(func, props)
+		end
+	end
+
+	local function createContext<T>(defaultValue: T): ContextResult<T>
+		local context: TypedContext<T> = { value = defaultValue }
+
+		local function providerConstructor(props: TypedContextProps<T>): Element
+			assert(#props.children == 1, "Provider must have exactly one child")
+			context.value = props.value
+			return props.children[1] as Element
+		end
+
+		return {
+			fn = providerConstructor,
+			Provider = createComponent(providerConstructor)
+		}
+	end
+
+	local function useContext<T>(context: ContextResult<T>): T
+		assert(_wipFiber ~= nil)
+
+		local fiber = _wipFiber
+		while fiber do
+			if fiber.type == context.fn as ElementFunc then
+				return (fiber.props as TypedContextProps<T>).value
+			end
+
+			fiber = fiber.parent
+		end
+
+		error("Context not found")
+	end
+
 	local function useState<T>(initial: T): T, function(ActionFunc<T>|T)
 		assert(_wipFiber ~= nil)
 		assert(_wipFiber.hooks ~= nil)
@@ -414,7 +501,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 				action = function(): T return value as T end
 			end
 
-			table.insert(hook.queue, action as ActionFunc<T>)
+			table.insert(hook.queue, action)
 
 			_wipRoot = {
 				dom = _currentRoot.dom,
@@ -456,11 +543,7 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		end
 	end
 
-	local function component(func: ElementFunc): function(PropsMap): Element
-		return function(props: PropsMap): Element
-			return createElement(func, props)
-		end
-	end
+
 
 	local function nativeComponent(name: string): function(PropsMap): Element
 		return function(props: PropsMap): Element
@@ -475,8 +558,11 @@ return function<DomElementT, PropsT, EventsT>(reconciler: Reconciler<DomElementT
 		useRef = useRef,
 		useState = useState,
 		workLoop = workLoop,
-		component = component,
+		component = createComponent,
 		nativeComponent = nativeComponent,
 		getCurrentRoot = function(): Fiber return _currentRoot end,
+
+		createContext = createContext,
+		useContext = useContext
 	}
 end

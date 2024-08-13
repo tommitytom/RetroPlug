@@ -387,22 +387,22 @@ namespace fw {
 	}
 
 	template <typename T>
+	void emplaceProperty(std::vector<StylesheetRule::Property>& items, T&& prop) {
+		items.push_back(StylesheetRule::Property{
+			.name = T::PropertyName,
+			.data = std::move(prop),
+		});
+	}
+
+	template <typename T>
 	void parseProperty(const csspp::node::pointer_t& node, std::vector<StylesheetRule::Property>& items, size_t argIdx) {
 		using ValueType = decltype(T::value);
 		
 		CssKeyword keyword = parseKeywordProperty(node, argIdx);
 		if (keyword == CssKeyword::None) {
-			items.push_back(StylesheetRule::Property{
-				.name = T::PropertyName,
-				.data = T(parsePropertyValue<ValueType>(node, argIdx)),
-				.set = &propertySetter<T>,
-			});
+			emplaceProperty(items, T(parsePropertyValue<ValueType>(node, argIdx)));
 		} else {
-			items.push_back(StylesheetRule::Property{
-				.name = T::PropertyName,
-				.data = T(keyword),
-				.set = &propertySetter<T>,
-			});
+			emplaceProperty(items, T(keyword));
 		}
 	}
 
@@ -465,29 +465,31 @@ namespace fw {
 			const auto& child = arg->get_child(i);
 			if (!child->is(csspp::node_type_t::WHITESPACE)) {
 				if (child->is(csspp::node_type_t::COLOR)) {
-					parseProperty<styles::BorderTopColor>(node, items, i);
-					parseProperty<styles::BorderBottomColor>(node, items, i);
-					parseProperty<styles::BorderLeftColor>(node, items, i);
-					parseProperty<styles::BorderRightColor>(node, items, i);
+					Color4F color = parsePropertyValue<Color4F>(node, i);
+					emplaceProperty(items, styles::BorderTopColor(color));
+					emplaceProperty(items, styles::BorderBottomColor(color));
+					emplaceProperty(items, styles::BorderLeftColor(color));
+					emplaceProperty(items, styles::BorderRightColor(color));
 				} else if (child->is(csspp::node_type_t::INTEGER)) {
-					parseProperty<styles::BorderTopWidth>(node, items, i);
-					parseProperty<styles::BorderBottomWidth>(node, items, i);
-					parseProperty<styles::BorderLeftWidth>(node, items, i);
-					parseProperty<styles::BorderRightWidth>(node, items, i);
+					LengthValue length = parsePropertyValue<LengthValue>(node, i);
+					emplaceProperty(items, styles::BorderTopWidth(length));
+					emplaceProperty(items, styles::BorderBottomWidth(length));
+					emplaceProperty(items, styles::BorderLeftWidth(length));
+					emplaceProperty(items, styles::BorderRightWidth(length));
 				} else if (child->is(csspp::node_type_t::IDENTIFIER)) {
 					LengthType lengthType = CssUtil::parseLength(child->get_string());
 					if (lengthType != LengthType::None) {
-						parseProperty<styles::BorderTopWidth>(node, items, i);
-						parseProperty<styles::BorderBottomWidth>(node, items, i);
-						parseProperty<styles::BorderLeftWidth>(node, items, i);
-						parseProperty<styles::BorderRightWidth>(node, items, i);
+						emplaceProperty(items, styles::BorderTopWidth(lengthType));
+						emplaceProperty(items, styles::BorderBottomWidth(lengthType));
+						emplaceProperty(items, styles::BorderLeftWidth(lengthType));
+						emplaceProperty(items, styles::BorderRightWidth(lengthType));
 					} else {
 						BorderStyleType styleType = CssUtil::parseBorderStyle(child->get_string());
 						if (styleType != BorderStyleType::None) {
-							parseProperty<styles::BorderTopStyle>(node, items, i);
-							parseProperty<styles::BorderBottomStyle>(node, items, i);
-							parseProperty<styles::BorderLeftStyle>(node, items, i);
-							parseProperty<styles::BorderRightStyle>(node, items, i);
+							emplaceProperty(items, styles::BorderTopStyle(styleType));
+							emplaceProperty(items, styles::BorderBottomStyle(styleType));
+							emplaceProperty(items, styles::BorderLeftStyle(styleType));
+							emplaceProperty(items, styles::BorderRightStyle(styleType));
 						}
 					}
 				}

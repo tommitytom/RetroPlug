@@ -6,7 +6,7 @@
 #include "foundation/Types.h"
 #include "foundation/Math.h"
 
-enum class CssKeyword {
+enum class CssKeyword : uint8 {
 	None,
 	Initial,
 	Inherit,
@@ -193,7 +193,6 @@ namespace fw::styles {
 	//DefineStyleProperty("border-collapse", BorderCollapse, Color4F, InheritedTag);
 	//DefineStyleProperty("border-spacing", BorderSpacing, Color4F, InheritedTag);
 	//DefineStyleProperty("caption-side", CaptionSide, Color4F, InheritedTag);
-	//DefineStyleProperty("cursor", Cursor, Color4F, InheritedTag);
 	//DefineStyleProperty("direction", Direction, Color4F, InheritedTag);
 	//DefineStyleProperty("empty-cells", EmptyCells, Color4F, InheritedTag);
 	//DefineStyleProperty("font-style", FontStyle, FontStyleType, InheritedTag);

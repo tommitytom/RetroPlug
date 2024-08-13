@@ -39,7 +39,7 @@ namespace fw {
 		}
 		case SelectorType::ClassSelector:
 		{
-			return view->getClassName().find(item.name) != std::string::npos;
+			return view->hasClassName(item.name);
 		}
 		case SelectorType::TypeSelector:
 		{
