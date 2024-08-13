@@ -6,7 +6,7 @@
 
 namespace rp {
 	class SystemView final : public fw::TextureView {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		SystemPtr _system;
 		//fw::Image _frameBuffer;

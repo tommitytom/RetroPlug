@@ -7,7 +7,7 @@ namespace fw {
 	class Image;
 
 	class TextureView : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		std::string _uri;
 		TextureHandle _texture;

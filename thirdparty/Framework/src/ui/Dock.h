@@ -6,7 +6,7 @@
 
 namespace fw {
 	class Dock : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		ViewPtr _dockedRoot;
 		ViewPtr _floatingWinows;

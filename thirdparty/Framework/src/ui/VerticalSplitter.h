@@ -20,7 +20,7 @@ namespace fw {
 	};
 
 	class DockSplitter : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		std::vector<f32> _handleOffsets;
 		std::vector<Rect> _handleAreas;

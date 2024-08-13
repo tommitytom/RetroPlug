@@ -11,7 +11,7 @@ namespace rp {
 	};
 
 	class GridOverlay final : public fw::View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		fw::ViewIndex _selected = fw::INVALID_VIEW_INDEX;
 		f32 _unselectedAlpha = 0.75f;

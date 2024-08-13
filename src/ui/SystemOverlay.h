@@ -56,7 +56,7 @@ namespace rp {
 
 		template <auto Candidate>
 		void setField(FieldType<T, Candidate>::type&& data) {
-			getServiceNode()->template setField<Candidate>(getState<fw::EventNode>(), std::forward<FieldType<T, Candidate>::type>(data));
+			//getServiceNode()->template setField<Candidate>(getState<fw::EventNode>(), std::forward<FieldType<T, Candidate>::type>(data));
 		}
 	};
 }

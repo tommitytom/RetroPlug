@@ -4,7 +4,7 @@
 
 namespace fw {
 	class DockTabView : public TabView {
-		RegisterObject();
+		FwRegisterObject();
 	public:
 		DockTabView() {}
 		~DockTabView() = default;

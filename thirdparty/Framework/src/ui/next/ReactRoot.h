@@ -12,7 +12,7 @@ namespace fw {
 	};
 
 	class ReactRoot : public ReactElementView {
-		RegisterObject();
+		FwRegisterObject();
 
 	private:
 		lua_State* _lua;

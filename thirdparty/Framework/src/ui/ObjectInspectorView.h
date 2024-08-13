@@ -14,7 +14,7 @@
 
 namespace fw {
 	class ObjectInspectorView : public PropertyEditorView {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		struct FieldWrapper {
 			const fw::Field& field;

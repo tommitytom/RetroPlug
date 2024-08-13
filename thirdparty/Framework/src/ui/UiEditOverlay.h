@@ -4,7 +4,7 @@
 
 namespace fw {
 	class UiEditOverlay : public fw::View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		std::weak_ptr<fw::View> _view;
 		std::weak_ptr<fw::View> _mouseOver;

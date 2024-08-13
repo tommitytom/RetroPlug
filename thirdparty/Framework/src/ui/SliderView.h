@@ -15,7 +15,7 @@ namespace fw {
 	};
 
 	class SliderView : public TypedPropertyEditor<f32> {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		const f32 ARROW_STEP_COUNT = 10.0f;
 		const f32 ARROW_STEP_SIZE = 1.0f / ARROW_STEP_COUNT;

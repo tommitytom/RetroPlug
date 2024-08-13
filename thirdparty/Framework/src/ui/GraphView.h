@@ -10,7 +10,7 @@
 
 namespace fw {
 	class GraphView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		struct Connection {
 			NodeViewPtr outputNode;

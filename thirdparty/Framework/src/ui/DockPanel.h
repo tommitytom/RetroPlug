@@ -21,7 +21,7 @@ namespace fw {
 	using DropTargetArray = std::array<RectT<int32>, (size_t)DropTargetType::None>;
 
 	class DockPanel : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		enum class DisplayMode {
 			None,

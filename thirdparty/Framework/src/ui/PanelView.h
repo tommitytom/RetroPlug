@@ -4,7 +4,7 @@
 
 namespace fw {
 	class PanelView : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		Color4F _color = Color4F::clear;
 

@@ -121,7 +121,7 @@ namespace fw {
 	};
 
 	class TextEditView : public TextEditBaseView<std::string> {
-		RegisterObject()
+		FwRegisterObject()
 	public:
 		TextEditView() {
 		}
@@ -136,7 +136,7 @@ namespace fw {
 	};
 
 	class FlexValueEditView : public TextEditBaseView<FlexValue> {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		FlexValue _value;
 

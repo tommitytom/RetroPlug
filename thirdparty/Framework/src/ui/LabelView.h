@@ -5,7 +5,7 @@
 
 namespace fw {
 	class LabelView : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		Color4F _color = Color4F(1, 1, 1, 1);
 		std::string _text;

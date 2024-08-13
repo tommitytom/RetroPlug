@@ -13,7 +13,7 @@
 
 namespace fw {
 	class ReactView : public View {
-		RegisterObject()
+		FwRegisterObject()
 
 	private:
 		lua_State* _lua = nullptr;

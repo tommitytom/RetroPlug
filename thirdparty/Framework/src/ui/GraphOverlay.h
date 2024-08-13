@@ -4,7 +4,7 @@
 
 namespace fw {
 	class GraphOverlay : public View {
-		RegisterObject();
+		FwRegisterObject();
 	public:
 		GraphOverlay() {}
 		GraphOverlay(Dimension dimensions) : View(dimensions) {}

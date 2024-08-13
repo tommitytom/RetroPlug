@@ -12,7 +12,7 @@ namespace fw {
 	};
 
 	class WaveView final : public View {
-		RegisterObject();
+		FwRegisterObject();
 	public:
 		struct Theme {
 			Color4 foreground = Color4(255, 255, 255, 255);
@@ -147,7 +147,7 @@ namespace fw {
 	};
 
 	class WaveMarkerOverlay final : public Overlay<WaveView> {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		std::vector<uint64> _markers;
 		bool _editing = false;

@@ -9,7 +9,7 @@
 
 namespace fw {
 	class ViewManager final : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		struct MouseState {
 			bool buttons[(size_t)MouseButton::COUNT] = { false };

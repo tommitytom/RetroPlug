@@ -6,7 +6,7 @@
 
 namespace fw {
 	class DropDownMenuView : public TypedPropertyEditor<int32> {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		bool _editable = true;
 

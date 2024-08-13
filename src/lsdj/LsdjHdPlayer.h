@@ -18,7 +18,7 @@ namespace rp {
 	class Menu;
 
 	class LsdjHdPlayer final : public LsdjCanvasView {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		SystemPtr _system;
 		lsdj::Ui _ui;

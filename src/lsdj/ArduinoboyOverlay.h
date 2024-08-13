@@ -6,7 +6,7 @@
 
 namespace rp {
 	class ArduinoboyOverlay final : public TypedSystemOverlay<ArduinoboyServiceSettings> {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		bool _keyCapture = false;
 		

@@ -11,7 +11,7 @@ namespace fw {
 	};
 
 	class EditOverlay : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		ViewPtr _view;
 		ViewPtr _selected;
@@ -91,7 +91,7 @@ namespace fw {
 	using EditOverlayPtr = std::shared_ptr<EditOverlay>;
 
 	class EditView : public View {
-		RegisterObject()
+		FwRegisterObject()
 			
 	private:
 		PropertyEditorViewPtr _propGrid;

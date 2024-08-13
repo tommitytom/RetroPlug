@@ -5,7 +5,7 @@
 
 namespace rp {
 	class LsdjCanvasView : public fw::TextureView {
-		RegisterObject();
+		FwRegisterObject();
 	protected:
 		lsdj::Canvas _canvas;
 

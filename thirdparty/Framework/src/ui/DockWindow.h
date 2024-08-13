@@ -6,7 +6,7 @@
 
 namespace fw {
 	class DockWindow : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		uint32 _titleAreaHeight = 20;
 		RectT<uint32> _titleArea;

@@ -13,7 +13,7 @@ namespace rp {
 	};
 
 	class SynthView final : public LsdjCanvasView {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		SystemPtr _system;
 		SynthViewState _samplerState;

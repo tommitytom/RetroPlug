@@ -4,7 +4,7 @@
 
 namespace fw {
 	class SplitterView : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		ViewPtr _left;
 		ViewPtr _right;

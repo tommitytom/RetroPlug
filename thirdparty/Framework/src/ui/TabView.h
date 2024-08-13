@@ -4,7 +4,7 @@
 
 namespace fw {
 	class TabView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		std::vector<ViewPtr> _panels;
 		std::vector<Rect> _tabAreas;

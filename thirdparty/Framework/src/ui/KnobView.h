@@ -10,7 +10,7 @@ namespace fw {
 	};
 
 	class KnobView : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		f32 _value = 0.0f;
 		f32 _stepSize = 0.01f;

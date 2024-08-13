@@ -27,16 +27,16 @@ void FrameworkView::OnInit() {
 
 bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
-		.key = (VirtualKey)key.VK,
 		.action = KeyAction::Press,
+		.key = (VirtualKey)key.VK,
 		.down = true
 	});
 }
 
 bool FrameworkView::OnKeyUp(float x, float y, const IKeyPress& key) {
 	return _vm->onKey(fw::KeyEvent{
-		.key = (VirtualKey)key.VK,
 		.action = KeyAction::Release,
+		.key = (VirtualKey)key.VK,
 		.down = false
 	});
 }

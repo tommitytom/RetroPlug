@@ -8,7 +8,7 @@
 
 namespace fw {
 	class PropertyEditorView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	protected:
 		struct Prop {
 			LabelViewPtr label;

@@ -64,7 +64,7 @@ namespace fw {
 	};
 
 	class View : public Object {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		struct GlobalKeyHandler {
 			std::weak_ptr<View> view;

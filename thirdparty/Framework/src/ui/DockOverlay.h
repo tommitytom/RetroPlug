@@ -4,7 +4,7 @@
 
 namespace fw {
 	class DockOverlay : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		ViewPtr _docked;
 		ViewPtr _floating;

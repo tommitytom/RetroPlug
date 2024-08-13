@@ -5,7 +5,7 @@
 
 namespace fw {
 	class PropertyEditorBase : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		bool _valueChanged = false;
 

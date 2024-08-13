@@ -11,7 +11,7 @@ namespace fw {
 	};
 
 	class TreeView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		int32 _rowHeight = 20;
 

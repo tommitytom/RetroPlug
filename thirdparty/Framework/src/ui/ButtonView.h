@@ -6,7 +6,7 @@ namespace fw {
 	struct ButtonClickEvent {};
 
 	class ButtonView : public View {
-		RegisterObject()
+		FwRegisterObject()
 			
 	private:
 		std::string _text = "Button";

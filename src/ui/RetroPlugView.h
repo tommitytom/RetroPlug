@@ -26,7 +26,7 @@ namespace rp {
 	class FileManager;
 
 	class RetroPlugView final : public fw::View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		using hrc = std::chrono::high_resolution_clock;
 

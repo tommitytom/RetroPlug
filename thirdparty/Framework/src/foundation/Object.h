@@ -28,7 +28,7 @@ namespace fw {
 	};
 }
 
-#define RegisterObject() \
+#define FwRegisterObject() \
 	public: \
 	virtual entt::type_info getTypeInfo() const override { return entt::type_id<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>(); } \
 	virtual uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \

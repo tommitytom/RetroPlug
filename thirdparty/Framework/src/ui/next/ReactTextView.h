@@ -4,7 +4,7 @@
 
 namespace fw {
 	class ReactTextView : public ReactElementView {
-		RegisterObject()
+		FwRegisterObject()
 
 	private:
 		std::string _nodeValue;

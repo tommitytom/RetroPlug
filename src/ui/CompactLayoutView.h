@@ -5,7 +5,7 @@
 
 namespace rp {
 	class CompactLayoutView final : public fw::View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		fw::GridViewPtr _grid;
 		GridOverlayPtr _gridOverlay;

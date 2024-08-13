@@ -33,7 +33,7 @@ namespace fw {
 	};
 
 	class ReactElementView : public View {
-		RegisterObject()
+		FwRegisterObject()
 
 	private:
 		std::string _id;

@@ -21,7 +21,7 @@ namespace rp {
 	class Menu;
 
 	class LsdjOverlay final : public SystemOverlay {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		fw::Point _mousePosition;
 

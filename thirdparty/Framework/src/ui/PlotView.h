@@ -4,7 +4,7 @@
 
 namespace fw {
 	class PlotView final : public View {
-		RegisterObject();
+		FwRegisterObject();
 	public:
 		using Func = f32(*)(f32);
 

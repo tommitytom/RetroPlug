@@ -14,7 +14,7 @@ namespace fw {
 	};
 
 	class NodePortView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		uint32 _type = 0;
 
@@ -120,7 +120,7 @@ namespace fw {
 	using NodePortViewPtr = std::shared_ptr<NodePortView>;
 	
 	class NodeView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		NodePtr _node;
 
@@ -272,7 +272,7 @@ namespace fw {
 	};
 
 	class NodeGraphView : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		NodeGraphPtr _graph;
 		Point _clickPos;

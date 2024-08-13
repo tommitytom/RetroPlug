@@ -11,7 +11,7 @@ namespace fw {
 	};
 
 	class GridView final : public View {
-		RegisterObject();
+		FwRegisterObject();
 	private:
 		GridLayout _layout = GridLayout::Auto;
 
