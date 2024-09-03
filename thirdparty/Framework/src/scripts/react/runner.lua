@@ -1,4 +1,4 @@
-local root = ";E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\"
+local root = ";C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\"
 package.path = package.path .. root .. "?.lua"
 package.path = package.path .. root .. "?\\init.lua"
 

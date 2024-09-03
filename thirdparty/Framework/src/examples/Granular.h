@@ -595,10 +595,10 @@ namespace fw {
 			slider5->setRange(2.0f, 50.0f);
 			slider5->ValueChangeEvent = [this](f32 value) { getState<EventNode>().broadcast(NoteParameterChangeEvent{ 0, ParameterType::GrainSize, value }); };
 
-			TextureHandle knobTexture1 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
-			TextureHandle knobTexture2 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
-			TextureHandle knobTexture3 = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\knob-M3.png");
-			TextureHandle upTexture = getResourceManager().load<Texture>("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\up.png");
+			TextureHandle knobTexture1 = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\resources\\textures\\knob-M.png");
+			TextureHandle knobTexture2 = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\resources\\textures\\knob-M2.png");
+			TextureHandle knobTexture3 = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\resources\\textures\\knob-M3.png");
+			TextureHandle upTexture = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\resources\\textures\\up.png");
 
 			auto knob = addChild<KnobView>("Amp");
 			//auto knob = addChild<TextureView>("Amp");

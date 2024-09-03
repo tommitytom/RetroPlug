@@ -227,10 +227,12 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 	ViewManagerPtr vm = getViewManager();
 
 	Dimension viewSize = vm->getDimensions();
+	viewSize = vm->getDimensions();
 
-	if (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h) {		
-		//_dimensions = viewSize;
-		vm->getLayout().setDimensions(_dimensions);
+	if (viewSize.w > 0 && viewSize.h > 0 && (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h)) {
+		_dimensions = viewSize;
+		//vm->getLayout().setDimensions(_dimensions);
+		glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 		
 		/*if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content

@@ -17,9 +17,9 @@ namespace fw {
 	}
 	
 	void EcsUi::onInitialize() {
-		//_react = std::make_shared<LuaReact>(getFontManager(), "E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
+		//_react = std::make_shared<LuaReact>(getFontManager(), "C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
 		_reactView = addChild<ReactView>("React");
-		_reactView->setPath("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
+		_reactView->setPath("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\runner.lua");
 	}
 
 	/*bool EcsUi::propagateMouseClick(entt::entity e, MouseButtonEvent ev) {

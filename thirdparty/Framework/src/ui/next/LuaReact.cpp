@@ -13,7 +13,7 @@ namespace fw {
 	LuaReact::LuaReact(FontManager& fontManager, const std::filesystem::path& path) : _doc(fontManager), _path(path) {
 		_listener.setCallback([&](FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
 			if (filename.ends_with(".css")) {
-				_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
+				_doc.loadStyle("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
 			} else {
 				reload();
 			}
@@ -116,7 +116,7 @@ namespace fw {
 		}
 
 		//update(0.3f);
-		_doc.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
+		_doc.loadStyle("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\shop.css");
 	}
 
 	bool LuaReact::handleMouseMove(PointF pos) {

@@ -1,1 +1,1 @@
-premake5 vs2022
+thirdparty\bin\premake5 vs2022

@@ -41,21 +41,39 @@ void GridView::updateLayout() {
 		}
 	}
 
-	fw::Dimension dimensions;
+	fw::DimensionF dimensions;
 
 	switch (layout) {
 	case GridLayout::Row: {
 		for (ViewPtr& view : children) {
-			dimensions.w += view->getArea().w;
-			dimensions.h = std::max(dimensions.h, view->getArea().h);
+			fw::DimensionF childDimensions = view->getDimensionsF();
+			if (std::isnan(childDimensions.w)) {
+				childDimensions.w = 160;
+			}
+
+			if (std::isnan(childDimensions.h)) {
+				childDimensions.h = 144;
+			}
+
+			dimensions.w += childDimensions.w;
+			dimensions.h = std::max(childDimensions.h, childDimensions.h);
 		}
 
 		break;
 	}
 	case GridLayout::Column:{
 		for (ViewPtr& view : children) {
-			dimensions.w += std::max(dimensions.w, view->getArea().w); 
-			dimensions.h = view->getArea().h;
+			fw::DimensionF childDimensions = view->getDimensionsF();
+			if (std::isnan(childDimensions.w)) {
+				childDimensions.w = 160;
+			}
+
+			if (std::isnan(childDimensions.h)) {
+				childDimensions.h = 144;
+			}
+
+			dimensions.w += std::max(dimensions.w, childDimensions.w);
+			dimensions.h = childDimensions.h;
 		}
 
 		break;
@@ -64,11 +82,11 @@ void GridView::updateLayout() {
 		const uint32 colCount = 2;
 
 		if (children.size() <= 2) {
-			dimensions.w = 160 * children.size();
-			dimensions.h = 144;
+			dimensions.w = 160.0f * static_cast<f32>(children.size());
+			dimensions.h = 144.0f;
 		} else {
-			dimensions.w = 160 * colCount;
-			dimensions.h = 144 * 2;
+			dimensions.w = 160.0f * colCount;
+			dimensions.h = 144.0f * 2;
 		}
 
 		break;
@@ -78,7 +96,8 @@ void GridView::updateLayout() {
 	}
 
 	fw::FlexDimensionValue v;
-	v.width = dimensions.w;
-	v.height = dimensions.h;
+	v.width = static_cast<f32>(dimensions.w);
+	v.height = static_cast<f32>(dimensions.h);
 	getLayout().setMinDimensions(v);
+	getLayout().setDimensions(v);
 }

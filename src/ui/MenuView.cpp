@@ -253,12 +253,12 @@ fw::MenuItemBase* MenuView::getHighlighted() {
 	return nullptr;
 }
 
-void MenuView::drawText(fw::Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color) {
-	x += _menuArea.x + _drawOffset.x;
-	y += _menuArea.y + _drawOffset.y;
+void MenuView::drawText(fw::Canvas& canvas, fw::RectF area, std::string_view text, fw::Color4 color) {
+	area.x += _menuArea.x + _drawOffset.x;
+	area.y += _menuArea.y + _drawOffset.y;
 
-	canvas.setTextAlign(fw::TextAlignFlags::Left | fw::TextAlignFlags::Middle);
-	canvas.text(x, y, text, color);
+	canvas.setTextAlign(fw::TextAlignFlags::Middle | fw::TextAlignFlags::Left);
+	canvas.text(area, text, color);
 }
 
 void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir) {
@@ -312,7 +312,7 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 		}
 
 		if (item.menuItem->getType() != fw::MenuItemType::Separator) {
-			drawText(canvas, item.area.x, item.area.y, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
+			drawText(canvas, item.area, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
 		} else {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
 
@@ -371,10 +371,14 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 			f32 arrowOffset = (item.area.h - bounds.h) * 0.5f;
 			f32 textOffset = (textArea.w - bounds.w) * 0.5f;
 
+			//textArea.x += textOffset;
+
 			fw::RectF arrowArea(textArea.x, textArea.y + arrowOffset, ARROW_SIZE, ARROW_SIZE * 2);
 
+			textArea.x += textOffset;
+
 			drawArrow(canvas, arrowArea, ArrowDirection::Left);
-			drawText(canvas, textArea.x + textOffset, item.area.y, selected, COLOR_WHITE);
+			drawText(canvas, textArea, selected, COLOR_WHITE);
 
 			arrowArea.x = textArea.right() - arrowArea.w - 8;
 			drawArrow(canvas, arrowArea, ArrowDirection::Right);
@@ -385,12 +389,12 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 void MenuView::onRender(fw::Canvas& canvas) {
 	setClip(true);
 
-	_fontSize = 6.0f;
+	_fontSize = 7.0f;
 	_itemSpacing = 10.0f;
 	_separatorSpacing = 5.0f;
 
 	canvas.setFont(_fontName, _fontSize);
-	canvas.setTextAlign(fw::TextAlignFlags::Top | fw::TextAlignFlags::Left);
+	canvas.setTextAlign(fw::TextAlignFlags::Middle | fw::TextAlignFlags::Left);
 
 	if (_root) {
 		rebuildFlat();

@@ -62,7 +62,7 @@ namespace rp {
 		GlobalConfig _config;
 
 		f32 _stateFetchInterval = 1.0f / 60.0f;
-		f32 _nextStateFetch;
+		f32 _nextStateFetch = _stateFetchInterval;
 
 		bool _doPing = true;
 		std::optional<hrc::time_point> _lastPingTime;

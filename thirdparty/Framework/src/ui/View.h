@@ -728,7 +728,7 @@ namespace fw {
 						ViewPtr focused = _shared->focused.lock();
 
 						if (focused && childHasFocus(view.get(), focused.get())) {
-							focused = sharedFromThis<View>();
+							_shared->focused = sharedFromThis<View>();
 						}
 					}
 

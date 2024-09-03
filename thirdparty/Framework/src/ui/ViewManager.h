@@ -29,6 +29,7 @@ namespace fw {
 	public:
 		ViewManager() : View({ 100, 100 }) {
 			_shared = &_sharedData;
+			getLayout().setOverflow(FlexOverflow::Visible);
 			calculateLayout();
 		}
 
@@ -266,6 +267,8 @@ namespace fw {
 			if (_shared->layoutDirty) {
 				calculateLayout();
 			}
+
+			this->setArea(getChild(0)->getArea());
 		}
 
 		void onRender(fw::Canvas& canvas) override {

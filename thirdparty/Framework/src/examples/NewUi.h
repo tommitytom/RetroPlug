@@ -34,7 +34,7 @@ namespace fw {
 	});*/
 	
 	class NewUi : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		PropertyEditorViewPtr _propGrid;
 		PanelViewPtr _panel;
@@ -63,7 +63,7 @@ namespace fw {
 			LuaReflection::addClass<ViewLayout>(_lua);
 			LuaReflection::addClass<View>(_lua);
 			
-			luaL_dofile(_lua, "E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\ui\\main.lua");
+			luaL_dofile(_lua, "C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\ui\\main.lua");
 		}
 
 		~NewUi() {

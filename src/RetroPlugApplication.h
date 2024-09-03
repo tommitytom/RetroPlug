@@ -84,6 +84,37 @@ public:
 			.addField<&ArduinoboyServiceSettings::tempoDivisor>("tempoDivisor")
 			;
 
+		_typeRegistry.addType<SampleSettings>()
+			.addField<&SampleSettings::dither>("dither")
+			.addField<&SampleSettings::volume>("volume")
+			.addField<&SampleSettings::gain>("gain")
+			.addField<&SampleSettings::pitch>("pitch")
+			.addField<&SampleSettings::filter>("filter")
+			.addField<&SampleSettings::cutoff>("cutoff")
+			.addField<&SampleSettings::q>("q")
+			;
+
+		_typeRegistry.addType<KitSample>()
+			.addField<&KitSample::name>("name")
+			.addField<&KitSample::path>("path")
+			.addField<&KitSample::settings>("settings")
+			;
+
+		_typeRegistry.addType<std::vector<KitSample>>();
+
+		_typeRegistry.addType<KitState>()
+			.addField<&KitState::name>("name")
+			.addField<&KitState::samples>("samples")
+			.addField<&KitState::settings>("settings")
+			;
+
+		_typeRegistry.addType<std::unordered_map<KitIndex, KitState>>();
+
+		_typeRegistry.addType<LsdjServiceSettings>()
+			.addField<&LsdjServiceSettings::kits>("kits")
+			.addField<&LsdjServiceSettings::kit>("kit")
+			;
+
 		_systemFactory.addSystemProvider<SameBoyProvider>();
 		_systemFactory.addSystemProvider<ProxyProvider>();
 		_systemFactory.addSystemServiceProvider<ArduinoboyServiceProvider>();

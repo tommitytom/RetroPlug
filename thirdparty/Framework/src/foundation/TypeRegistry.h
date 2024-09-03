@@ -246,7 +246,7 @@ namespace fw {
 
 		entt::any get(TypeInstance instance) const {
 			assert(getter);
-			return getter(std::forward<TypeInstance>(instance)).as_ref();
+			return getter(std::forward<TypeInstance>(instance));
 		}
 
 		const Attribute* findAttribute(TypeId typeId) const {

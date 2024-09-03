@@ -111,7 +111,7 @@ namespace fw {
 			);
 		}
 
-		spdlog::error("Failed to serialize any");
+		spdlog::error("Failed to serialize unknown type: {}", anyValue.type().name());
 		//logSerializeTypeError(source.get_type(), type.name, fieldStack);
 
 		return sol::make_object(lua, sol::nil);

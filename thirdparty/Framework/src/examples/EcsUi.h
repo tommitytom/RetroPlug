@@ -9,7 +9,7 @@ namespace fw {
 	class LuaReact;
 
 	class EcsUi : public View {
-		RegisterObject()
+		FwRegisterObject()
 			
 	private:
 		//std::shared_ptr<LuaReact> _react;

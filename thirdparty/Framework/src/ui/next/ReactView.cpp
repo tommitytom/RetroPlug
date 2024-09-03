@@ -17,6 +17,50 @@ namespace fw {
 		return std::chrono::duration_cast<std::chrono::duration<f64>>(time).count();
 	}
 
+	// Custom error handler function
+	static int traceback(lua_State* L) {
+		if (!lua_isstring(L, 1))  /* 'message' not a string? */
+			return 1;  /* keep it intact */
+		lua_getglobal(L, "debug");
+		if (!lua_istable(L, -1)) {
+			lua_pop(L, 1);
+			return 1;
+		}
+		lua_getfield(L, -1, "traceback");
+		if (!lua_isfunction(L, -1)) {
+			lua_pop(L, 2);
+			return 1;
+		}
+		lua_pushvalue(L, 1);  /* pass error message */
+		lua_pushinteger(L, 2);  /* skip this function and traceback */
+		lua_call(L, 2, 1);  /* call debug.traceback */
+		return 1;
+	}
+
+	// Modified function to run Lua code and get stack trace
+	int runLuaWithStackTrace(lua_State* L, const std::string& path) {
+		lua_pushcfunction(L, traceback);  // Push the error handler function
+		int errfunc = lua_gettop(L);
+
+		int ret = luaL_loadfile(L, path.c_str());
+		if (ret != 0) {
+			std::string errMsg = lua_tostring(L, -1);
+			spdlog::error("Failed to load Lua file: {}", errMsg);
+			lua_pop(L, 2);  // Remove error message and error handler
+			return ret;
+		}
+
+		ret = lua_pcall(L, 0, 0, errfunc);
+		if (ret != 0) {
+			std::string errMsg = lua_tostring(L, -1);
+			spdlog::error("Lua error: {}", errMsg);
+			lua_pop(L, 2);  // Remove error message and error handler
+		}
+
+		lua_pop(L, 1);  // Remove error handler
+		return ret;
+	}
+
 	ReactView::ReactView() : View({ 1024, 768 }) {
 		setName("ReactView");
 		getLayout().setDimensions(100_pc);
@@ -166,7 +210,7 @@ namespace fw {
 		StyleCache& styleCache = this->getState<StyleCache>();
 		styleCache.clear();
 
-		//styleCache.load("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
+		//styleCache.load("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\test.css");
 
 		_lua = luaL_newstate();
 		luaL_openlibs(_lua);
@@ -257,10 +301,8 @@ namespace fw {
 
 		addStyleSetters(_lua);
 
-		int ret = luaL_dofile(_lua, _path.string().c_str());
+		int ret = runLuaWithStackTrace(_lua, _path.string());
 		if (ret != 0) {
-			spdlog::error(lua_tostring(_lua, -1));
-
 			lua_close(_lua);
 			_lua = nullptr;
 		}

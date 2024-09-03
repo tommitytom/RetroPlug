@@ -613,6 +613,8 @@ namespace fw {
 		csspp::parser p(l);
 		csspp::node::pointer_t root = p.stylesheet();
 
+		spdlog::critical((std::filesystem::current_path().string()));
+
 		csspp::compiler compiler;
 		compiler.set_root(root);
 		compiler.add_path(std::filesystem::current_path().string());

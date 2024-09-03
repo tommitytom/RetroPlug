@@ -155,7 +155,7 @@ namespace rp {
 	private:
 		void drawMenu(fw::Canvas& canvas, fw::Menu& menu);
 
-		void drawText(fw::Canvas& canvas, f32 x, f32 y, std::string_view text, fw::Color4 color);
+		void drawText(fw::Canvas& canvas, fw::RectF area, std::string_view text, fw::Color4 color);
 
 		void drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir);
 

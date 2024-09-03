@@ -440,7 +440,7 @@ Canvas& Canvas::text(const RectF& area, std::string_view text, const Color4F& co
 	FtglFontFace& font = _font.getResourceAs<FtglFontFace>();
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
-	textPos.y += textureFont->ascender;
+	textPos.y += textureFont->ascender / _scale.y;
 
 	if (_textAlign & TextAlignFlags::Center) {
 		textPos.x += xDiff / 2;

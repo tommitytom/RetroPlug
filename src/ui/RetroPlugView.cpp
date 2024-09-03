@@ -33,6 +33,10 @@
 #include "fonts/PlatNomor.h"
 #include "foundation/LuaSerializer.h"
 
+#include "foundation/Any.h"
+
+#include "foundation/LuaSerializer.h"
+
 using namespace rp;
 
 constexpr std::chrono::duration AUDIO_THREAD_TIMEOUT = std::chrono::milliseconds(500);
@@ -69,6 +73,7 @@ void RetroPlugView::initViews() {
 	this->removeChildren();
 
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
+
 	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 	//_compactLayout->fitToParent();
 
@@ -246,7 +251,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
 	_compactLayout->setScale(scale);
-	//_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
+	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
 	_project.update(audioFrameCount);
 	_project.saveIfRequired();
@@ -259,6 +264,14 @@ void RetroPlugView::onUpdate(f32 delta) {
 		}
 
 		_nextStateFetch = _stateFetchInterval;
+	}
+
+	fw::ViewLayout& layout = _compactLayout->getGrid()->getLayout();
+	auto area = fw::RectF(0, 0, layout.getMinWidth().getValue(), layout.getMinHeight().getValue());
+	if (!std::isnan(area.w) && !std::isnan(area.h)) {
+		area.w *= scale;
+		area.h *= scale;
+		this->setArea(fw::Rect(area));
 	}
 }
 
