@@ -166,14 +166,20 @@ void RetroPlugProcessor::onTransportChange(bool playing) {
 	}
 }
 
-void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
+void RetroPlugProcessor::onTransportUpdate(const fw::TimeInfo& timeInfo) {
+	for (SystemPtr& system : _systemManager.getSystems()) {
+		for (SystemServicePtr& service : system->getServices()) {
+			service->onTransportUpdate(*system, timeInfo);
+		}
+	}
+}
+
+void RetroPlugProcessor::onBeginUpdate(uint32 frameCount) {
+	size_t sampleCount = (size_t)frameCount * 2;
 	fw::EventNode& ev = getEventNode();
+
 	ev.update();
 
-	size_t sampleCount = (size_t)frameCount * 2;
-	fw::Float32Buffer buffer(output, sampleCount);
-	buffer.clear();
-	
 	// Make sure systems have output buffers set
 	for (SystemPtr& system : _systemManager.getSystems()) {
 		SystemIoPtr io = system->getIo();
@@ -187,6 +193,14 @@ void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCou
 			io->output.audio = std::make_shared<fw::Float32Buffer>(sampleCount);
 		}
 	}
+}
+
+void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
+	size_t sampleCount = (size_t)frameCount * 2;
+	fw::EventNode& ev = getEventNode();
+
+	fw::Float32Buffer buffer(output, sampleCount);
+	buffer.clear();
 
 	_systemManager.process(frameCount);
 
@@ -215,9 +229,6 @@ void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
 	fw::EventNode& ev = getEventNode();
 	ev.update();
 
-	const std::vector<SystemPtr>& systems = _systemManager.getSystems();
-	uint32 channel = message.getChannel();
-
 	for (SystemPtr& system : _systemManager.getSystems()) {
 		SystemIoPtr io = system->getIo();
 
@@ -226,6 +237,9 @@ void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
 			system->setIo(io);
 		}
 	}
+
+	const std::vector<SystemPtr>& systems = _systemManager.getSystems();
+	uint32 channel = message.getChannel();
 
 	switch (_projectState.settings.midiRouting) {
 		case MidiChannelRouting::SendToAll: {

@@ -3,6 +3,7 @@
 #include "core/System.h"
 #include "core/SystemProcessor.h"
 #include "core/SystemProvider.h"
+#include "core/SystemService.h"
 
 namespace rp {
 	SystemManager::SystemManager(const SystemFactory& factory, ConcurrentPoolAllocator<SystemIo>& ioAllocator): _ioAllocator(ioAllocator) {
@@ -68,7 +69,12 @@ namespace rp {
 	void SystemManager::process(uint32 audioFrameCount) {
 		for (SystemPtr& system : _systems) {
 			assert(system->hasIo());
+			for (SystemServicePtr& service : system->getServices()) {
+				service->onBeforeProcess(*system);
+			}
 		}
+
+		
 
 		for (auto& [type, systems] : _groupedSystems) {
 			if (systems.first) {
@@ -78,6 +84,12 @@ namespace rp {
 					system->process(audioFrameCount);
 				}
 			}			
+		}
+
+		for (SystemPtr& system : _systems) {
+			for (SystemServicePtr& service : system->getServices()) {
+				service->onAfterProcess(*system);
+			}
 		}
 	}
 }

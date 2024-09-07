@@ -148,10 +148,15 @@ void FrameworkView::OnResize() {
 void FrameworkView::Draw(IGraphics& g) {
 	_uiContext->runFrame();
 
-	Dimension dimensions = _vm->getDimensions();
-	if (dimensions != Dimension((int32)GetRECT().W(), (int32)GetRECT().H())) {
-		this->SetRECT(IRECT(0.0f, 0.0f, (f32)dimensions.w, (f32)dimensions.h));
-		g.Resize(dimensions.w, dimensions.h, 1.0f, true);
+	Dimension currentWindow = Dimension((int32)GetRECT().W(), (int32)GetRECT().H());
+	
+	Dimension dimensions = _vm->getChild(0)->getDimensions();
+
+	if (dimensions != currentWindow) {
+		if (dimensions.w > currentWindow.w || dimensions.h > currentWindow.h) {
+			this->SetRECT(IRECT(0.0f, 0.0f, (f32)dimensions.w, (f32)dimensions.h));
+			g.Resize(dimensions.w, dimensions.h, 1.0f, true);
+		}
 	}	
 
 	ECursor cursor = ECursor::ARROW;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/MidiMessage.h"
+#include "audio/TimeInfo.h"
 #include "core/Forward.h"
 #include "core/System.h"
 #include "foundation/Event.h"
@@ -36,6 +37,8 @@ namespace rp {
 		virtual void onAfterProcess(System& system) {}
 
 		virtual void onTransportChange(System& system, bool running) {}
+
+		virtual void onTransportUpdate(System& system, const fw::TimeInfo& timeInfo) {}
 
 		virtual void onMidi(System& system, const fw::MidiMessage& message) {}
 

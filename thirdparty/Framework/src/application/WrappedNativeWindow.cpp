@@ -20,7 +20,8 @@ void WrappedNativeWindow::onUpdate(f32 delta) {
 			vm->setDimensions(_size);
 		}*/
 
-		vm->getLayout().setDimensions(_size);
+		_size = viewSize;
+		//vm->getLayout().setDimensions(_size);
 	}
 
 	vm->onUpdate(delta);

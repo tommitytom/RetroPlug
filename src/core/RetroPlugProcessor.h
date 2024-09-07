@@ -8,6 +8,7 @@
 
 #include "audio/AudioProcessor.h"
 #include "audio/MidiMessage.h"
+#include "audio/TimeInfo.h"
 
 #include "core/Events.h"
 #include "core/System.h"
@@ -29,11 +30,15 @@ namespace rp {
 		RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
 		~RetroPlugProcessor() {}
 
+		void onBeginUpdate(uint32 frameCount) override;
+
 		void onRender(f32* output, const f32* input, uint32 frameCount) override;
 
 		void onMidi(const fw::MidiMessage& message) override;
 
 		void onTransportChange(bool playing) override;
+
+		void onTransportUpdate(const fw::TimeInfo& timeInfo) override;
 
 		void onSampleRateChange(f32 sampleRate) override;
 

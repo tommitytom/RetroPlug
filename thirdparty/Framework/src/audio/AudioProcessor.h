@@ -5,6 +5,7 @@
 #include "foundation/Types.h"
 #include "audio/AudioBuffer.h"
 #include "audio/MidiMessage.h"
+#include "audio/TimeInfo.h"
 
 namespace fw {
 	class AudioProcessor {
@@ -16,9 +17,13 @@ namespace fw {
 		AudioProcessor(): _eventNode("Audio") {}
 		~AudioProcessor() = default;
 
+		virtual void onBeginUpdate(uint32 frameCount) {};
+
 		virtual void onRender(f32* output, const f32* input, uint32 frameCount) = 0;
 
 		virtual void onTransportChange(bool playing) {}
+
+		virtual void onTransportUpdate(const TimeInfo& timeInfo) {}
 
 		virtual void onMidi(const fw::MidiMessage& message) {}
 

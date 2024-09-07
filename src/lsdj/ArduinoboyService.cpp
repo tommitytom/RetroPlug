@@ -137,17 +137,51 @@ namespace rp {
 	}
 
 	void ArduinoboyService::onTransportChange(System& system, bool running) {
-		if (getRawState().autoPlay) {
+		const ArduinoboyServiceSettings& settings = getRawState();
+
+		if (settings.syncMode == LsdjSyncMode::MidiSyncArduinoboy) {
+			auto& serial = system.getIo()->input.serial;
+
+			if (running) {
+				sendSerialByte(serial, 0, 0xFA);
+			} else {
+				sendSerialByte(serial, 0, 0xFC);
+			}
+		}
+
+		if (settings.autoPlay) {
+			// TODO: Determine if lsdj is already playing
+
 			ButtonStream<8> presses;
 			presses.presses[0] = StreamButtonPress{ (int)fw::ButtonType::Start, true, 30 };
 			system.getIo()->input.buttons.push_back(presses);
 		}
 	}
 
+	void ArduinoboyService::onTransportUpdate(System& system, const fw::TimeInfo& timeInfo) {
+		if (timeInfo.transportIsRunning) {
+			const ArduinoboyServiceSettings& settings = getRawState();
+
+			switch (settings.syncMode) {
+			case LsdjSyncMode::MidiSync:
+				processSync(system, timeInfo.frameCount, 1, 0xF8);
+				break;
+			case LsdjSyncMode::MidiSyncArduinoboy:
+				// TODO: Check if playing here?
+				processSync(system, timeInfo.frameCount, settings.tempoDivisor, 0xF8);
+				break;
+			case LsdjSyncMode::MidiMap:
+				processSync(system, timeInfo.frameCount, 1, 0xFF);
+				break;
+			}
+		}
+	}
+
 	void ArduinoboyService::onMidi(System& system, const fw::MidiMessage& message) {
 		auto& serial = system.getIo()->input.serial;
+		ArduinoboyServiceSettings& settings = getRawState();
 
-		switch (getRawState().syncMode) {
+		switch (settings.syncMode) {
 			case LsdjSyncMode::KeyboardMidi:
 				if (message.getStatusMsg() == fw::MidiMessage::StatusMessage::NoteOn) {
 					uint8 note = (uint8)message.getNoteNumber();
@@ -183,10 +217,10 @@ namespace rp {
 					switch (message.getNoteNumber()) {
 						case 24: _arduinoboyPlaying = true; break;
 						case 25: _arduinoboyPlaying = false; break;
-						case 26: getRawState().tempoDivisor = 1; break;
-						case 27: getRawState().tempoDivisor = 2; break;
-						case 28: getRawState().tempoDivisor = 4; break;
-						case 29: getRawState().tempoDivisor = 8; break;
+						case 26: settings.tempoDivisor = 1; break;
+						case 27: settings.tempoDivisor = 2; break;
+						case 28: settings.tempoDivisor = 4; break;
+						case 29: settings.tempoDivisor = 8; break;
 						default:
 							if (message.getNoteNumber() >= 30) {
 								sendSerialByte(serial, (uint8)(message.getNoteNumber() - 30), message.offset);
@@ -222,7 +256,9 @@ namespace rp {
 	}
 
 	void ArduinoboyService::onMidiClock(System& system) {
-		/*Lsdj& lsdj = plug->lsdj();
+		spdlog::info("sgesgs");
+/*
+		Lsdj& lsdj = plug->lsdj();
 		if (_transportChanged && plug->midiSync() && !lsdj.found) {
 			if (mTimeInfo.mTransportIsRunning) {
 				plug->sendMidiByte(0, 0xFA);
@@ -234,8 +270,8 @@ namespace rp {
 		if (mTimeInfo.mTransportIsRunning) {
 			if (lsdj.found) {
 				switch (getRawState().syncMode) {
-				case LsdjSyncMode::Midi:
-					ProcessSync(plug, frameCount, 1, 0xF8);
+				case LsdjSyncMode::MidiSync:
+					processSync(plug, frameCount, 1, 0xF8);
 					break;
 				case LsdjSyncMode::MidiSyncArduinoboy:
 					if (lsdj.arduinoboyPlaying) {
@@ -249,18 +285,18 @@ namespace rp {
 			} else if (plug->midiSync()) {
 				processSync(plug, frameCount, 1, 0xF8);
 			}
-		}*/
+		}
+		*/
 	}
 
-	void ArduinoboyService::processSync(System& system, int32 sampleCount, int32 tempoDivisor, char value) {
-		const int32 resolution = 24 / tempoDivisor;
-		const f64 samplesPerMs = _timeInfo.sampleRate / 1000.0;
-		const f64 beatLenMs = (60000.0 / _timeInfo.tempo);
+	void ppqTicker(const fw::TimeInfo& time, uint32 resolution, std::function<void(uint32 ppq, uint32 offset)>&& func) {
+		const f64 samplesPerMs = time.sampleRate / 1000.0;
+		const f64 beatLenMs = (60000.0 / time.tempo);
 		const f64 beatLenSamples = beatLenMs * samplesPerMs;
 		const f64 beatLenSamples24 = beatLenSamples / resolution;
 
-		const f64 ppq24 = _timeInfo.ppqPos * resolution;
-		const f64 framePpqLen = (sampleCount / beatLenSamples) * resolution;
+		const f64 ppq24 = time.ppqPos * resolution;
+		const f64 framePpqLen = (time.frameCount / beatLenSamples) * resolution;
 
 		const f64 nextPpq24 = ppq24 + framePpqLen;
 
@@ -275,18 +311,26 @@ namespace rp {
 			sync = true;
 			offset = (int32)(beatLenSamples24 * amount);
 
-			if (offset >= sampleCount) {
+			if (offset >= time.frameCount) {
 				//consoleLogLine(("Overshot: " + std::to_string(offset - sampleCount)));
-				offset = sampleCount - 1;
+				offset = time.frameCount - 1;
 			}
 
 			if (offset < 0) {
 				offset = 0;
 			}
-		}
 
-		if (sync) {
-			sendSerialByte(system.getIo()->input.serial, (uint8)value, (uint32)offset);
+			func(static_cast<uint32>(ppq24), static_cast<uint32>(offset));
+		}
+	}
+
+	void ArduinoboyService::processSync(System& system, int32 sampleCount, int32 tempoDivisor, uint8 value) {
+		if (system.hasIo()) {
+			auto& serial = system.getIo()->input.serial;
+
+			ppqTicker(_timeInfo, 24, [&serial, value](uint32 ppq, uint32 offset) {
+				sendSerialByte(serial, value, offset);
+			});
 		}
 	}
 }

@@ -65,7 +65,30 @@ void FrameworkInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 		return;
 	}
 
+	auto processor = _audioManager->getProcessor();
+
+	processor->onBeginUpdate(nFrames);
+
 	checkTransportRunning();
+
+	if (_transportRunning && processor) {
+		processor->onTransportUpdate(fw::TimeInfo{
+			.sampleRate = GetSampleRate(),
+			.tempo = mTimeInfo.mTempo,
+			.samplePos = mTimeInfo.mSamplePos,
+			.ppqPos = mTimeInfo.mPPQPos,
+			.lastBar = mTimeInfo.mLastBar,
+			.cycleStart = mTimeInfo.mCycleStart,
+			.cycleEnd = mTimeInfo.mCycleEnd,
+
+			.numerator = mTimeInfo.mNumerator,
+			.denominator = mTimeInfo.mDenominator,
+			.frameCount = static_cast<uint32>(nFrames),
+
+			.transportIsRunning = mTimeInfo.mTransportIsRunning,
+			.transportLoopEnabled = mTimeInfo.mTransportLoopEnabled
+		});
+	}
 
 	_output.resize((uint32)nFrames);
 
@@ -169,10 +192,11 @@ int FrameworkInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 }
 
 bool FrameworkInstrument::checkTransportRunning() {
+	auto processor = _audioManager->getProcessor();
+
 	if (mTimeInfo.mTransportIsRunning != _transportRunning) {
 		_transportRunning = mTimeInfo.mTransportIsRunning;
-
-		auto processor = _audioManager->getProcessor();
+	
 		if (processor) {
 			processor->onTransportChange(_transportRunning);
 		}

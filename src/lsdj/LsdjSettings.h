@@ -16,12 +16,6 @@ namespace rp {
 		KeyboardMidi
 	};
 
-	struct TimeInfo {
-		f64 sampleRate = 44100.0;
-		f64 tempo = 120.0;
-		f64 ppqPos = 0;
-	};
-
 	struct SampleSettings {
 		int32 dither = 0xFF;
 		int32 volume = 0xFF;
