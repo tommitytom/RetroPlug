@@ -164,14 +164,14 @@ namespace rp {
 
 			switch (settings.syncMode) {
 			case LsdjSyncMode::MidiSync:
-				processSync(system, timeInfo.frameCount, 1, 0xF8);
+				processSync(system, timeInfo, 1, 0xF8);
 				break;
 			case LsdjSyncMode::MidiSyncArduinoboy:
 				// TODO: Check if playing here?
-				processSync(system, timeInfo.frameCount, settings.tempoDivisor, 0xF8);
+				processSync(system, timeInfo, settings.tempoDivisor, 0xF8);
 				break;
 			case LsdjSyncMode::MidiMap:
-				processSync(system, timeInfo.frameCount, 1, 0xFF);
+				processSync(system, timeInfo, 1, 0xFF);
 				break;
 			}
 		}
@@ -297,38 +297,38 @@ namespace rp {
 
 		const f64 ppq24 = time.ppqPos * resolution;
 		const f64 framePpqLen = (time.frameCount / beatLenSamples) * resolution;
+		const f64 framePpqEnd = ppq24 + framePpqLen;
 
-		const f64 nextPpq24 = ppq24 + framePpqLen;
+		f64 lastPpq24 = ppq24;
+		f64 nextPpq24 = ceil(ppq24);
+		f64 offset = 0;
 
-		bool sync = false;
-		int32 offset = 0;
-
-		if (ppq24 == 0) {
-			sync = true;
-		} else if ((int32)ppq24 != (int32)nextPpq24) {
-			f64 amount = ceil(ppq24) - ppq24;
-
-			sync = true;
-			offset = (int32)(beatLenSamples24 * amount);
+		while (nextPpq24 < framePpqEnd) {
+			f64 amount = nextPpq24 - lastPpq24;
+			offset += beatLenSamples24 * amount;
 
 			if (offset >= time.frameCount) {
 				//consoleLogLine(("Overshot: " + std::to_string(offset - sampleCount)));
 				offset = time.frameCount - 1;
 			}
 
-			if (offset < 0) {
-				offset = 0;
+			if (offset < 0.0) {
+				offset = 0.0;
 			}
 
-			func(static_cast<uint32>(ppq24), static_cast<uint32>(offset));
+			func(static_cast<uint32>(nextPpq24), static_cast<uint32>(offset));
+
+			lastPpq24 = nextPpq24;
+			nextPpq24 += 1.0;
 		}
 	}
 
-	void ArduinoboyService::processSync(System& system, int32 sampleCount, int32 tempoDivisor, uint8 value) {
+	void ArduinoboyService::processSync(System& system, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value) {
 		if (system.hasIo()) {
 			auto& serial = system.getIo()->input.serial;
 
-			ppqTicker(_timeInfo, 24, [&serial, value](uint32 ppq, uint32 offset) {
+			ppqTicker(timeInfo, 24, [&serial, value](uint32 ppq, uint32 offset) {
+				//spdlog::info("PPQ: {}, Offset: {}", ppq, offset);
 				sendSerialByte(serial, value, offset);
 			});
 		}

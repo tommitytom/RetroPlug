@@ -9,7 +9,6 @@ namespace rp {
 	class ArduinoboyService final : public TypedSystemService<ArduinoboyServiceSettings> {
 	private:
 		int32 _lastRow = -1;
-		fw::TimeInfo _timeInfo;
 		bool _arduinoboyPlaying = false;
 		uint8 _keyboardOctave = 0;
 
@@ -30,6 +29,6 @@ namespace rp {
 	private:
 		void processInstanceMidiMessage(System& system, const fw::MidiMessage& msg, int channel);
 
-		void processSync(System& system, int32 sampleCount, int32 tempoDivisor, uint8 value);
+		void processSync(System& system, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value);
 	};
 }
