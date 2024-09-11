@@ -37,6 +37,10 @@ void focusSystem(fw::ViewPtr view) {
 	}
 }
 
+void GridOverlay::onInitialize() {
+	this->fitToParent();
+}
+
 bool GridOverlay::onMouseButton(fw::MouseButton button, bool down, fw::Point pos) {
 	if (down) {
 		std::vector<fw::ViewPtr>& children = _grid->getChildren();
@@ -148,7 +152,7 @@ void GridOverlay::onUpdate(f32 delta) {
 		}
 
 		_projectVersion = project.getVersion();
-		//updateLayout();
+		updateLayout();
 	}
 }
 

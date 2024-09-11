@@ -3,6 +3,7 @@
 #include "foundation/Event.h"
 #include "foundation/Input.h"
 #include "foundation/MathUtil.h"
+#include "audio/PpqUtil.h"
 #include "Ps2Util.h"
 
 namespace rp {
@@ -160,6 +161,7 @@ namespace rp {
 
 	void ArduinoboyService::onTransportUpdate(System& system, const fw::TimeInfo& timeInfo) {
 		if (timeInfo.transportIsRunning) {
+			assert(system.hasIo());
 			const ArduinoboyServiceSettings& settings = getRawState();
 
 			switch (settings.syncMode) {
@@ -178,6 +180,7 @@ namespace rp {
 	}
 
 	void ArduinoboyService::onMidi(System& system, const fw::MidiMessage& message) {
+		assert(system.hasIo());
 		auto& serial = system.getIo()->input.serial;
 		ArduinoboyServiceSettings& settings = getRawState();
 
@@ -289,48 +292,10 @@ namespace rp {
 		*/
 	}
 
-	void ppqTicker(const fw::TimeInfo& time, uint32 resolution, std::function<void(uint32 ppq, uint32 offset)>&& func) {
-		const f64 samplesPerMs = time.sampleRate / 1000.0;
-		const f64 beatLenMs = (60000.0 / time.tempo);
-		const f64 beatLenSamples = beatLenMs * samplesPerMs;
-		const f64 beatLenSamples24 = beatLenSamples / resolution;
-
-		const f64 ppq24 = time.ppqPos * resolution;
-		const f64 framePpqLen = (time.frameCount / beatLenSamples) * resolution;
-		const f64 framePpqEnd = ppq24 + framePpqLen;
-
-		f64 lastPpq24 = ppq24;
-		f64 nextPpq24 = ceil(ppq24);
-		f64 offset = 0;
-
-		while (nextPpq24 < framePpqEnd) {
-			f64 amount = nextPpq24 - lastPpq24;
-			offset += beatLenSamples24 * amount;
-
-			if (offset >= time.frameCount) {
-				//consoleLogLine(("Overshot: " + std::to_string(offset - sampleCount)));
-				offset = time.frameCount - 1;
-			}
-
-			if (offset < 0.0) {
-				offset = 0.0;
-			}
-
-			func(static_cast<uint32>(nextPpq24), static_cast<uint32>(offset));
-
-			lastPpq24 = nextPpq24;
-			nextPpq24 += 1.0;
-		}
-	}
-
 	void ArduinoboyService::processSync(System& system, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value) {
-		if (system.hasIo()) {
-			auto& serial = system.getIo()->input.serial;
-
-			ppqTicker(timeInfo, 24, [&serial, value](uint32 ppq, uint32 offset) {
-				//spdlog::info("PPQ: {}, Offset: {}", ppq, offset);
-				sendSerialByte(serial, value, offset);
-			});
-		}
+		auto& serial = system.getIo()->input.serial;
+		fw::PpqUtil::eachTick(timeInfo, 24 / tempoDivisor, [&serial, value](uint32 ppq, uint32 offset) {
+			sendSerialByte(serial, value, offset);
+		});
 	}
 }

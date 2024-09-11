@@ -7,9 +7,9 @@ GridView::GridView() {
 }
 
 void GridView::onInitialize() {
-	//getLayout().setDimensions(100_pc);
-	//getLayout().setOverflow(fw::FlexOverflow::Visible);
-	getLayout().setFlexDirection(fw::FlexDirection::Row);
+	fw::ViewLayout& layout = getLayout();
+	layout.setFlexDirection(fw::FlexDirection::Row);
+	layout.setFlexWrap(fw::FlexWrap::Wrap);
 }
 
 void GridView::onUpdate(f32 dt) {

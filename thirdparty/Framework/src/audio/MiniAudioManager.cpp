@@ -12,7 +12,9 @@ static void callback(ma_device* pDevice, void* pOutput, const void* pInput, uint
 	MiniAudioManager* m = (MiniAudioManager*)pDevice->pUserData;
 
 	if (m->getProcessor()) {
-		m->getProcessor()->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
+		fw::AudioProcessor& processor = *m->getProcessor();
+		processor.onBeginUpdate(frameCount);
+		processor.onRender((f32*)pOutput, (const f32*)pInput, frameCount);
 	}
 }
 

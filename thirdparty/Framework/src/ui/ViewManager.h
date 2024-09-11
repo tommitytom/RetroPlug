@@ -177,7 +177,7 @@ namespace fw {
 				for (int32 i = (int32)_mouseOver.size() - 1; i >= 0; --i) {
 					ViewPtr& view = _mouseOver[i];
 
-					spdlog::info("Mouse leaving {}", view->getName());
+					spdlog::debug("Mouse leaving {}", view->getName());
 					view->onMouseLeave();
 					view->emit(MouseLeaveEvent{});
 				}
@@ -199,14 +199,14 @@ namespace fw {
 
 						if (_mouseOverClickedItem) {
 							if (!worldArea.contains(pos)) {
-								spdlog::info("Mouse leaving (held) {}", view->getName());
+								spdlog::debug("Mouse leaving (held) {}", view->getName());
 								view->onMouseLeave();
 								view->emit(MouseLeaveEvent{});
 								_mouseOverClickedItem = false;
 							}
 						} else {
 							if (worldArea.contains(pos)) {
-								spdlog::info("Mouse entering (held) {}", view->getName());
+								spdlog::debug("Mouse entering (held) {}", view->getName());
 								view->onMouseEnter(pos - worldArea.position);
 								view->emit(MouseEnterEvent{ pos - worldArea.position });
 								_mouseOverClickedItem = true;
@@ -288,7 +288,7 @@ namespace fw {
 		void propagatePrint(std::vector<ViewPtr>& views, std::string indent) {
 			for (ViewPtr view : views) {
 				fw::Rect worldArea = view->getWorldArea();
-				spdlog::info("{}- {} [{}, {}, {}, {}]", indent, view->getName(), worldArea.x, worldArea.y, worldArea.w, worldArea.h);
+				spdlog::debug("{}- {} [{}, {}, {}, {}]", indent, view->getName(), worldArea.x, worldArea.y, worldArea.w, worldArea.h);
 				propagatePrint(view->getChildren(), indent + '\t');
 			}
 		}
@@ -309,15 +309,15 @@ namespace fw {
 				propagateDragLeave(position);
 
 				if (target) {
-					spdlog::info("Finished dragging {} on to {}", ctx.source->getName(), target ? target->getName() : "nothing");
+					spdlog::debug("Finished dragging {} on to {}", ctx.source->getName(), target ? target->getName() : "nothing");
 				} else {
-					spdlog::info("Finished dragging {} on to nothing (there was no target)");
+					spdlog::debug("Finished dragging {} on to nothing (there was no target)");
 				}
 
 				ctx.source->onDragFinish(ctx);
 				ctx.source = nullptr;
 			} else {
-				spdlog::info("Finished drop - there was no source");
+				spdlog::debug("Finished drop - there was no source");
 			}
 
 			ctx.isDragging = false;
@@ -402,7 +402,7 @@ namespace fw {
 				ViewPtr& view = _mouseOver[i];
 
 				if (!view->isVisible() || !view->getWorldArea().contains(position)) {
-					spdlog::info("Mouse leaving {}", view->getName());
+					spdlog::debug("Mouse leaving {}", view->getName());
 
 					view->onMouseLeave();
 					view->emit(MouseLeaveEvent{});
@@ -423,7 +423,7 @@ namespace fw {
 					target.push_back(view);
 
 					if (!StlUtil::vectorContains(_mouseOver, view)) {
-						spdlog::info("Mouse entering {}", view->getName());
+						spdlog::debug("Mouse entering {}", view->getName());
 
 						view->onMouseEnter(position - view->getWorldPosition());
 						view->emit(MouseEnterEvent{ position - view->getWorldPosition() });
@@ -446,7 +446,7 @@ namespace fw {
 					target.push_back(view);
 
 					if (!StlUtil::vectorContains(ctx.targets, view)) {
-						spdlog::info("Drag entering {}", view->getName());
+						spdlog::debug("Drag entering {}", view->getName());
 						view->onDragEnter(ctx, position - view->getWorldPosition());
 						handled = true;
 					}
@@ -468,7 +468,7 @@ namespace fw {
 				ViewPtr& view = dragOver[i];
 
 				if (!view->isVisible() || !view->getWorldArea().contains(position)) {
-					spdlog::info("Drag leaving {}", view->getName());
+					spdlog::debug("Drag leaving {}", view->getName());
 					view->onDragLeave(ctx);
 					dragOver.erase(dragOver.begin() + i);
 					handled = true;

@@ -27,8 +27,6 @@ namespace rp {
 		void onMidiClock(System& system);
 
 	private:
-		void processInstanceMidiMessage(System& system, const fw::MidiMessage& msg, int channel);
-
 		void processSync(System& system, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value);
 	};
 }

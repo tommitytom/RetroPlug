@@ -1,5 +1,7 @@
 #pragma once
 
+#include "foundation/Types.h"
+
 namespace fw {
 	struct TimeInfo {
 		f64 sampleRate = 44100.0;

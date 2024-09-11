@@ -24,6 +24,8 @@ namespace rp {
 		bool _refocus = false;
 
 	public:
+		void onInitialize() override;
+
 		bool onMouseButton(fw::MouseButton button, bool down, fw::Point pos) override;
 
 		void onLayoutChanged() override;
