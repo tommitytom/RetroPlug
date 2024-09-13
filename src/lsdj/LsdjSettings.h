@@ -5,6 +5,7 @@
 
 #include "foundation/Types.h"
 #include "core/Forward.h"
+#include "lsdj/Ram.h"
 
 namespace rp {
 	enum class LsdjSyncMode {
@@ -53,6 +54,10 @@ namespace rp {
 	struct LsdjServiceSettings {
 		std::unordered_map<KitIndex, KitState> kits;
 		KitIndex kit = 0;
+
+		lsdj::MemoryOffsets ramOffsets;
+		bool romValid = false;
+		bool offsetsValid = false;
 	};
 
 	struct ArduinoboyServiceSettings {

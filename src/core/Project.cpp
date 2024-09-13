@@ -51,7 +51,8 @@ void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
 			systemState.romName,
 			std::move(systemState.rom), 
 			std::move(systemState.state),
-			eventNode
+			eventNode,
+			systemState.stateOffsets
 		);
 
 		system->setDesc(std::move(systemState.desc));
@@ -201,7 +202,16 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 	fw::Uint8Buffer stateData;
 	system->saveState(stateData);
 
-	std::shared_ptr<ProxySystem> proxySystem = std::make_shared<ProxySystem>(type, systemId, system->getRomName(), std::move(romData), std::move(stateData), *_eventNode);
+	std::shared_ptr<ProxySystem> proxySystem = std::make_shared<ProxySystem>(
+		type, 
+		systemId, 
+		system->getRomName(), 
+		std::move(romData), 
+		std::move(stateData), 
+		*_eventNode, 
+		system->getStateOffsets()
+	);
+
 	proxySystem->setDesc(system->getDesc());
 	proxySystem->setResolution(system->getResolution());
 

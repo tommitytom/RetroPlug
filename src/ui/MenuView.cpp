@@ -311,7 +311,9 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 			drawArrow(canvas, arrowArea, ArrowDirection::Right);
 		}
 
+		fw::DimensionF textDimensions;
 		if (item.menuItem->getType() != fw::MenuItemType::Separator) {
+			textDimensions = canvas.measureText(item.menuItem->getName());
 			drawText(canvas, item.area, item.menuItem->getName(), item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
 		} else {
 			f32 yPos = item.area.y + (_separatorSpacing / 2) + drawOffset.y - 2.0f;
@@ -358,7 +360,7 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 			fw::MultiSelect* multiSelect = item.menuItem->as<fw::MultiSelect>();
 
 			const f32 ARROW_SIZE = 2.0f;
-			f32 textWidth = 86;
+			const f32 arrowHeightDiff = floor((item.area.h - (ARROW_SIZE * 2)) * 0.5f);
 
 			auto& selectItems = multiSelect->getItems();
 			int value = multiSelect->getValue();
@@ -366,22 +368,21 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 			const std::string& selected = value < selectItems.size() ? selectItems[multiSelect->getValue()] : "";
 
 			fw::DimensionF bounds = getFontManager().measureText(selected, _fontName, _fontSize);
-			fw::RectF textArea(160 - textWidth - 4, item.area.y, textWidth, bounds.h);
 
-			f32 arrowOffset = (item.area.h - bounds.h) * 0.5f;
-			f32 textOffset = (textArea.w - bounds.w) * 0.5f;
+			const f32 textStart = _menuArea.x + _drawOffset.x + item.area.position.x + textDimensions.w;
+			const f32 textWidth = dim.w - textStart;
 
-			//textArea.x += textOffset;
+			fw::RectF availableArea = fw::RectF(item.area.position.x + textDimensions.w, item.area.position.y, textWidth, item.area.h);
+			availableArea = availableArea.shrink(4.0f, 0.0f);
 
-			fw::RectF arrowArea(textArea.x, textArea.y + arrowOffset, ARROW_SIZE, ARROW_SIZE * 2);
+			fw::RectF leftArrowArea(availableArea.x, availableArea.y + arrowHeightDiff, ARROW_SIZE, ARROW_SIZE * 2);
+			fw::RectF rightArrowArea(availableArea.right() - ARROW_SIZE, leftArrowArea.y, ARROW_SIZE, ARROW_SIZE * 2);
 
-			textArea.x += textOffset;
-
-			drawArrow(canvas, arrowArea, ArrowDirection::Left);
-			drawText(canvas, textArea, selected, COLOR_WHITE);
-
-			arrowArea.x = textArea.right() - arrowArea.w - 8;
-			drawArrow(canvas, arrowArea, ArrowDirection::Right);
+			drawArrow(canvas, leftArrowArea, ArrowDirection::Left);
+			canvas.setTextAlign(fw::TextAlignFlags::Middle | fw::TextAlignFlags::Center);
+			availableArea.position += _menuArea.position + _drawOffset;
+			canvas.text(availableArea, selected, fw::Color4F::white);
+			drawArrow(canvas, rightArrowArea, ArrowDirection::Right);
 		}
 	}
 }

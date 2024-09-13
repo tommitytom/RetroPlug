@@ -37,6 +37,7 @@ std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr sys
 }
 
 void showHdPlayer(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service) {
+	parent->removeChildren();
 	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
 	player->setSystem(system);
 	player->focus();
@@ -65,7 +66,8 @@ void LsdjOverlay::onMenu(fw::Menu& menu) {
 			showSampleManager(getParent()->getParent(), getNode()->getSystem(), getNode()->getSystemService()); 
 		})
 		.action("HD Player", [this]() { 
-			showHdPlayer(getParent()->getParent()->getParent(), getNode()->getSystem(), getNode()->getSystemService()); 
+			fw::ViewPtr root = getParent()->getParent()->getParent()->getParent();
+			showHdPlayer(root, getNode()->getSystem(), getNode()->getSystemService());
 		})
 		.parent();
 }

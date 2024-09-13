@@ -18,10 +18,12 @@ namespace rp {
 		lsdj::Rom rom(buffer);
 
 		if (rom.isValid()) {
-			_romValid = true;
-			_offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), _ramOffsets, false);
+			LsdjServiceSettings& state = getRawState();
+			
+			state.romValid = true;
+			state.offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), state.ramOffsets, false);
 
-			if (_offsetsValid) {
+			if (state.offsetsValid) {
 				//_refresher.setSystem(system, _ramOffsets);
 			} else {
 				spdlog::warn("Failed to find ROM offsets");

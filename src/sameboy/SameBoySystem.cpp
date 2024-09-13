@@ -405,7 +405,7 @@ SystemStateOffsets SameBoySystem::getStateOffsets() const {
 
 	SystemStateOffsets offsets;
 
-	offsets[(size_t)MemoryType::Rom] = { sectionOffsets.mbc.offset, sectionOffsets.mbc.size };
+	offsets[(size_t)MemoryType::Sram] = { sectionOffsets.mbc.offset, sectionOffsets.mbc.size };
 	offsets[(size_t)MemoryType::Ram] = { sectionOffsets.ram.offset, sectionOffsets.ram.size };
 	offsets[(size_t)MemoryType::Vram] = { sectionOffsets.video.offset, sectionOffsets.video.size };
 

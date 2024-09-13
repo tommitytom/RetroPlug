@@ -10,6 +10,7 @@
 
 #include <entt/core/any.hpp>
 #include <moodycamel/concurrentqueue.h>
+#include <moodycamel/blockingconcurrentqueue.h>
 #include <spdlog/spdlog.h>
 
 #include "foundation/TypeRegistry.h"
@@ -35,12 +36,13 @@ namespace fw {
 			entt::any value;
 		};
 
-		using Queue = moodycamel::ConcurrentQueue<Event>;
+		using Queue = moodycamel::BlockingConcurrentQueue<Event>;
 		using QueuePtr = std::shared_ptr<Queue>;
+		using QueueWeakPtr = std::weak_ptr<Queue>;
 
 		struct NodeReference {
 			NodeId id;
-			QueuePtr queue;
+			QueueWeakPtr queue;
 
 			bool operator==(const NodeReference& other) const { return id == other.id; }
 		};
@@ -50,7 +52,7 @@ namespace fw {
 			std::unordered_map<EventType, std::vector<NodeReference>> lookup;
 		};
 
-		struct AddNodeEvent { NodeId nodeId; QueuePtr queue; };
+		struct AddNodeEvent { NodeId nodeId; QueueWeakPtr queue; };
 		struct SubscribeEvent { EventType eventType; };
 		struct UnsubscribeEvent { EventType eventType; };
 		struct RemoveNodeEvent {};
@@ -62,24 +64,19 @@ namespace fw {
 		std::unordered_map<EventType, SubscriptionHandler> _subscriptions;
 
 		EventNodeState _state;
-
 		std::vector<Event> _incomingScratch;
 
-	public:
 		EventNode(const std::string& name, const EventNodeState& state) : _name(name), _state(state) {
 			_id = entt::hashed_string{ _name.data() };
 			assert(_state.nodes.contains(_id));
 
-			_incoming = _state.nodes[_id].queue;
+			_incoming = _state.nodes[_id].queue.lock();
 			assert(_incoming);
 
 			_incomingScratch.resize(EVENTS_PER_UPDATE);
 		}
 
-		const EventNodeState& getState() const {
-			return _state;
-		}
-
+	public:
 		EventNode(const std::string& name) : _name(name) {
 			_id = entt::hashed_string{ _name.data() };
 			_incoming = std::make_shared<Queue>();
@@ -95,21 +92,11 @@ namespace fw {
 			destroy();
 		}
 
-		void destroy() {
-			broadcastSystem<RemoveNodeEvent>();
-			_id = 0;
-			_name.clear();
-			_incoming = nullptr;
-			_subscriptions.clear();
-			_state = EventNodeState();
-			_incomingScratch.clear();
-		}
-
 		EventNode spawn(const std::string& name) {
-			NodeId nodeId = entt::hashed_string{ name.c_str() };
+			const NodeId nodeId = entt::hashed_string{ name.c_str() };
 			assert(!_state.nodes.contains(nodeId));
 
-			QueuePtr queue = std::make_shared<Queue>();
+			const QueuePtr queue = std::make_shared<Queue>();
 
 			handleAddNode(NodeReference{ .id = nodeId, .queue = queue });
 			broadcastSystem(AddNodeEvent{ .nodeId = nodeId, .queue = queue });
@@ -117,30 +104,40 @@ namespace fw {
 			return EventNode(name, _state);
 		}
 
+		void destroy() {
+			broadcastSystem<RemoveNodeEvent>();
+			_id = 0;
+			_name.clear();
+			_subscriptions.clear();
+			_state = EventNodeState();
+			_incomingScratch.clear();
+			_incoming = nullptr;
+		}	
+
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(std::function<void()>&& func) {
-			EventType eventType = entt::type_id<T>().index();
+			const EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType subscribe(std::function<void(const T&)>&& func) {
-			EventType eventType = entt::type_id<T>().index();
+			const EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(entt::any_cast<const T&>(v)); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType receive(std::function<void()>&& func) {
-			EventType eventType = entt::type_id<T>().index();
+			const EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
 		EventType receive(std::function<void(T&&)>&& func) {
-			EventType eventType = entt::type_id<T>().index();
+			const EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, [func = std::move(func)](entt::any& v) { func(std::move(entt::any_cast<T&>(v))); });
 			return eventType;
 		}
@@ -174,79 +171,72 @@ namespace fw {
 
 		template <typename T>
 		void broadcast(const T& event, bool includeSender = false) {
-			EventType eventType = entt::type_id<T>().index();
-			auto found = _state.lookup.find(eventType);
+			const EventType eventType = entt::type_id<T>().index();
+			const auto found = _state.lookup.find(eventType);
 
 			if (found != _state.lookup.end()) {
 				for (const NodeReference& node : found->second) {
 					if (node.id != _id || includeSender) {
-						node.queue->enqueue(Event{
-							.sender = _id,
-							.kind = Event::Kind::User,
-							.value = event
-						});
+						const QueuePtr queue = node.queue.lock();
+						if (queue) {
+							queue->enqueue(Event{
+								.sender = _id,
+								.kind = Event::Kind::User,
+								.value = event
+							});
+						}						
 					}
 				}
 			}
 		}
 
-		/*template <typename T>
+		template <typename T> 
 		void broadcast(T&& event, bool includeSender = false) {
-			//static_cast<std::is_copy_constructible_v<T>>();
-
-			EventType eventType = entt::type_id<T>().index();
-			auto found = _state.lookup.find(eventType);
+			const EventType eventType = entt::type_id<T>().index();
+			const auto found = _state.lookup.find(eventType);
 
 			if (found != _state.lookup.end()) {
-				size_t foundFirst = -1;
-
-				for (size_t i = 0; i < found->second.size(); ++i) {
+				const size_t subCount = found->second.size();
+				for (size_t i = 0; i < subCount; ++i) {
 					const NodeReference& node = found->second[i];
 
-					if (includeSender || node.id != _id) {
-						if (foundFirst == -1) {
-							foundFirst = i;
-						} else {
-							node.queue->enqueue(Event{
+					if (node.id != _id || includeSender) {
+						const QueuePtr queue = node.queue.lock();
+						if (queue) {
+							queue->enqueue(Event{
 								.sender = _id,
 								.kind = Event::Kind::User,
-								.value = event
+								.value = i < subCount - 1 ? entt::make_any<T>(event) : entt::forward_as_any(event)
 							});
 						}
-
 					}
 				}
-
-				if (foundFirst != -1) {
-					found->second[foundFirst].queue->enqueue(Event{
-						.sender = _id,
-						.kind = Event::Kind::User,
-						.value = std::move(event)
-					});
-				}
 			}
-		}*/
+		}
 
 		template <typename T>
 		void broadcast(bool includeSender = false) {
-			EventType eventType = entt::type_id<T>().index();
-			auto found = _state.lookup.find(eventType);
+			const EventType eventType = entt::type_id<T>().index();
+			const auto found = _state.lookup.find(eventType);
 
 			if (found != _state.lookup.end()) {
 				for (const NodeReference& node : found->second) {
 					if (node.id != _id || includeSender) {
-						node.queue->enqueue(Event{
-							.sender = _id,
-							.kind = Event::Kind::User,
-							.value = entt::make_any<T>()
-						});
+						const QueuePtr queue = node.queue.lock();
+						if (queue) {
+							queue->enqueue(Event{
+								.sender = _id,
+								.kind = Event::Kind::User,
+								.value = entt::make_any<T>()
+							});
+						}						
 					}
 				}
 			}
 		}
 
 		bool hasSubscribers(EventType eventType) const {
-			auto found = _state.lookup.find(eventType);
+			const auto found = _state.lookup.find(eventType);
 
 			if (found != _state.lookup.end()) {
 				return found->second.size() > 0;
@@ -257,32 +247,37 @@ namespace fw {
 
 		template <typename T>
 		bool hasSubscribers() const {
-			EventType eventType = entt::type_id<T>().index();
+			const EventType eventType = entt::type_id<T>().index();
 			return hasSubscribers(eventType);
 		}
-
 
 		template <typename T>
 		void send(NodeId targetNodeId, const T& event) {
 			assert(_state.nodes.contains(targetNodeId));
 
-			_state.nodes[targetNodeId].queue->enqueue(Event{
-				.sender = _id,
-				.kind = Event::Kind::User,
-				.value = event
-			});
+			const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
+			if (queue) {
+				queue->enqueue(Event{
+					.sender = _id,
+					.kind = Event::Kind::User,
+					.value = event
+				});
+			}
 		}
 
 		template <typename T>
 		bool trySend(NodeId targetNodeId, T&& event) {
 			if (_state.nodes.contains(targetNodeId)) {
-				_state.nodes[targetNodeId].queue->enqueue(Event{
-					.sender = _id,
-					.kind = Event::Kind::User,
-					.value = std::move(event)
-				});
+				const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
+				if (queue) {
+					queue->enqueue(Event{
+						.sender = _id,
+						.kind = Event::Kind::User,
+						.value = std::move(event)
+					});
 
-				return true;
+					return true;
+				}
 			}
 
 			return false;
@@ -290,7 +285,7 @@ namespace fw {
 
 		template <typename T>
 		void send(NodeId targetNodeId, T&& event) {
-			bool valid = trySend(targetNodeId, std::forward<T>(event));
+			const bool valid = trySend(targetNodeId, std::forward<T>(event));
 			assert(valid);
 		}
 
@@ -298,16 +293,60 @@ namespace fw {
 		void send(NodeId targetNodeId) {
 			assert(_state.nodes.contains(targetNodeId));
 
-			_state.nodes[targetNodeId].queue->enqueue(Event{
-				.sender = _id,
-				.kind = Event::Kind::User,
-				.value = entt::make_any<T>()
-			});
+			const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
+			if (queue) {
+				queue->enqueue(Event{
+					.sender = _id,
+					.kind = Event::Kind::User,
+					.value = entt::make_any<T>()
+				});
+			}
 		}
 
 		void update() {
-			size_t amount = _incoming->try_dequeue_bulk(_incomingScratch.data(), EVENTS_PER_UPDATE);
+			const size_t amount = _incoming->try_dequeue_bulk(_incomingScratch.data(), _incomingScratch.size());
+			processIncoming(amount);
+		}
 
+		void wait(int64 timeout) {
+			const size_t amount = _incoming->wait_dequeue_bulk_timed(_incomingScratch.data(), _incomingScratch.size(), timeout);
+			processIncoming(amount);
+		}
+
+		inline bool hasSubscription(EventType eventType) const {
+			return _subscriptions.find(eventType) != _subscriptions.end();
+		}
+
+		template <typename T>
+		inline bool hasSubscription() const {
+			return hasSubscription(entt::type_id<T>().index());
+		}
+
+		NodeId getId() const {
+			return _id;
+		}
+
+		const EventNodeState& getState() const {
+			return _state;
+		}
+
+		EventNode& operator=(EventNode&& other) noexcept {
+			_id = other._id;
+			_name = std::move(other._name);
+			_incoming = std::move(other._incoming);
+			_state = std::move(other._state);
+			_subscriptions = std::move(other._subscriptions);
+			_incomingScratch = std::move(other._incomingScratch);
+
+			other._id = 0;
+
+			return *this;
+		}
+
+		EventNode& operator=(const EventNode&) = delete;
+
+	private:
+		void processIncoming(size_t amount) {
 			for (size_t i = 0; i < amount; ++i) {
 				Event& ev = _incomingScratch[i];
 
@@ -327,35 +366,6 @@ namespace fw {
 			}
 		}
 
-		bool hasSubscription(EventType eventType) const {
-			return _subscriptions.find(eventType) != _subscriptions.end();
-		}
-
-		template <typename T>
-		bool hasSubscription() const {
-			return hasSubscription(entt::type_id<T>().index());
-		}
-
-		NodeId getId() const {
-			return _id;
-		}
-
-		EventNode& operator=(EventNode&& other) noexcept {
-			_id = other._id;
-			_name = std::move(other._name);
-			_incoming = std::move(other._incoming);
-			_state = std::move(other._state);
-			_subscriptions = std::move(other._subscriptions);
-			_incomingScratch = std::move(other._incomingScratch);
-
-			other._id = 0;
-
-			return *this;
-		}
-
-		EventNode& operator=(const EventNode&) = delete;
-
-	private:
 		void subscribe(EventType eventType, SubscriptionHandler&& func) {
 			assert(!hasSubscription(eventType));
 
@@ -369,11 +379,14 @@ namespace fw {
 		void broadcastSystem(T&& ev) {
 			for (const auto& [nodeId, node] : _state.nodes) {
 				if (nodeId != _id) {
-					node.queue->enqueue(Event{
-						.sender = _id,
-						.kind = Event::Kind::System,
-						.value = ev
-					});
+					const QueuePtr queue = node.queue.lock();
+					if (queue) {
+						queue->enqueue(Event{
+							.sender = _id,
+							.kind = Event::Kind::System,
+							.value = ev
+						});
+					}
 				}
 			}
 		}
@@ -382,26 +395,20 @@ namespace fw {
 		void broadcastSystem() {
 			for (const auto& [nodeId, node] : _state.nodes) {
 				if (nodeId != _id) {
-					node.queue->enqueue(Event{
-						.sender = _id,
-						.kind = Event::Kind::System,
-						.value = entt::make_any<T>()
-					});
+					const QueuePtr queue = node.queue.lock();
+					if (queue) {
+						queue->enqueue(Event{
+							.sender = _id,
+							.kind = Event::Kind::System,
+							.value = entt::make_any<T>()
+						});
+					}					
 				}
 			}
 		}
 
 		void processSystemEvent(const Event& ev) {
-			EventType t = ev.value.type().index();
-
-			/*entt::any_visit(entt::overloaded{
-				[&](const AddNodeEvent& evt) {
-					handleAddNode(NodeReference{.id = evt.nodeId, .queue = evt.queue });
-				},
-				[&](const SubscribeEvent& evt) {
-					handleSubscribe(ev.sender, evt.eventType);
-				}
-			}, ev.value);*/
+			const EventType t = ev.value.type().index();
 
 			if (t == entt::type_id<AddNodeEvent>().index()) {
 				const AddNodeEvent& evt = entt::any_cast<const AddNodeEvent&>(ev.value);
@@ -432,8 +439,9 @@ namespace fw {
 			assert(_state.nodes.contains(nodeId));
 			_state.nodes.erase(nodeId);
 
+			// Remove subscriptions
 			for (auto& [k, v] : _state.lookup) {
-				size_t idx = vectorIndexAt(v, NodeReference{ .id = nodeId });
+				const size_t idx = vectorIndexAt(v, NodeReference{ .id = nodeId });
 
 				if (idx != -1) {
 					v.erase(v.begin() + idx);
@@ -452,7 +460,7 @@ namespace fw {
 			assert(_state.nodes.contains(nodeId));
 			std::vector<NodeReference>& nodes = _state.lookup[eventType];
 
-			size_t idx = vectorIndexAt(nodes, NodeReference{ .id = nodeId });
+			const size_t idx = vectorIndexAt(nodes, NodeReference{ .id = nodeId });
 			assert(idx != -1);
 
 			nodes.erase(nodes.begin() + idx);
@@ -461,7 +469,7 @@ namespace fw {
 		}
 
 		inline const SubscriptionHandler* getSubscriptionHandler(EventType eventType) const {
-			auto found = _subscriptions.find(eventType);
+			const auto found = _subscriptions.find(eventType);
 			if (found != _subscriptions.end()) {
 				return &found->second;
 			}
@@ -502,6 +510,7 @@ namespace fw {
 
 		
 		void emit() {
+			assert(false);
 			//_node.send(_targetNode)
 		}
 	};

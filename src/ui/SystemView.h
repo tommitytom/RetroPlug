@@ -35,6 +35,10 @@ namespace rp {
 			return _system;
 		}
 
+		void onInitialize() override {
+			getLayout().setOverflow(fw::FlexOverflow::Hidden);
+		}
+
 		bool onDrop(const std::vector<std::string>& paths) override;
 
 		bool onKey(const fw::KeyEvent& ev) override;

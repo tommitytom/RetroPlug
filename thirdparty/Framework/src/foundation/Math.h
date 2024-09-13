@@ -409,8 +409,16 @@ namespace fw {
 			return RectT<T>(x + amount, y + amount, w - amount * 2, h - amount * 2);
 		}
 
+		RectT<T> shrink(T wAmount, T hAmount) const {
+			return RectT<T>(x + wAmount, y + hAmount, w - wAmount * 2, h - hAmount * 2);
+		}
+
 		RectT<T> grow(T amount) const {
 			return RectT<T>(x - amount, y - amount, w + amount * 2, h + amount * 2);
+		}
+
+		RectT<T> grow(T wAmount, T hAmount) const {
+			return RectT<T>(x - wAmount, y - hAmount, w + wAmount * 2, h + hAmount * 2);
 		}
 
 		RectT<T> combine(const RectT<T>& other) const {

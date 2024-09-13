@@ -2,6 +2,7 @@
 
 #include <entt/core/hashed_string.hpp>
 
+#include "foundation/FsUtil.h"
 #include "foundation/Event.h"
 #include "core/Events.h"
 #include "core/System.h"
@@ -22,9 +23,10 @@ namespace rp {
 		std::vector<SystemServiceType> _services;
 
 	public:
-		ProxySystem(SystemType type, SystemId id, const std::string& romName, fw::Uint8Buffer&& rom, fw::Uint8Buffer&& state, fw::EventNode& eventNode) :
+		ProxySystem(SystemType type, SystemId id, const std::string& romName, fw::Uint8Buffer&& rom, fw::Uint8Buffer&& state, fw::EventNode& eventNode, const SystemStateOffsets& stateOffsets) :
 			System(1),
 			_targetType(type),
+			_stateOffsets(stateOffsets),
 			_rom(std::move(rom)),
 			_state(std::move(state)),
 			_romName(romName),

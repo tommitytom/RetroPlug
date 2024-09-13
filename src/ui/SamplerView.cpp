@@ -505,7 +505,7 @@ void SamplerView::updateSampleBuffers() {
 
 	auto found = settings.kits.find(_samplerState.selectedKit);
 	if (found != settings.kits.end()) {
-		//settings.updateKit(_samplerState.selectedKit);
+		KitUtil::updateKit(_system, settings, _samplerState.selectedKit);
 		updateWaveform();
 	}
 }
