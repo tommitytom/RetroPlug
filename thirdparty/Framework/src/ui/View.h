@@ -56,6 +56,10 @@ namespace fw {
 		Point sourcePoint;
 	};
 
+	struct CloseWindowContext {
+		bool closing = true;
+	};
+
 	using EventType = entt::id_type;	
 
 	struct ResizeEvent {
@@ -440,6 +444,8 @@ namespace fw {
 		virtual void onLostFocus() {}
 
 		virtual void onHotReload() {}
+
+		virtual bool onCloseWindowRequest(CloseWindowContext& ctx) { return false; }
 
 		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;

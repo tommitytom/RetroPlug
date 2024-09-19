@@ -41,6 +41,10 @@ namespace rp {
 			updateLayout();
 		}
 
+		void refocus() {
+			_refocus = true;
+		}
+
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;

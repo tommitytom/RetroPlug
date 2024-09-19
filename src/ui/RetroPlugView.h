@@ -92,6 +92,8 @@ namespace rp {
 
 		void onHotReload() override;
 
+		bool onCloseWindowRequest(fw::CloseWindowContext& ctx) override;
+
 	private:
 		void processOutput();
 

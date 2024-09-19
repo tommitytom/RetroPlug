@@ -7,14 +7,18 @@
 namespace rp {
 	void LsdjService::onBeforeLoad(LoadConfig& loadConfig) {
 		if ((!loadConfig.sramBuffer || loadConfig.sramBuffer->size() == 0) && !loadConfig.stateBuffer) {
-			lsdj::Sav sav;
+			// LSDj has to initialize the SRAM if no save data is available when it starts
+			// Create an SRAM buffer from an empty save to skip this init step
+
 			loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
+
+			lsdj::Sav sav;
 			sav.save(*loadConfig.sramBuffer);
 		}
 	}
 
 	void LsdjService::onAfterLoad(System& system) {
-		MemoryAccessor buffer = system.getMemory(MemoryType::Rom, AccessType::Read);
+		const MemoryAccessor buffer = system.getMemory(MemoryType::Rom, AccessType::Read);
 		lsdj::Rom rom(buffer);
 
 		if (rom.isValid()) {

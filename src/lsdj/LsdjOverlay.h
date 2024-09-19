@@ -20,7 +20,7 @@ namespace rp {
 
 	class Menu;
 
-	class LsdjOverlay final : public SystemOverlay {
+	class LsdjOverlay final : public TypedSystemOverlay<LsdjServiceSettings> {
 		FwRegisterObject();
 	private:
 		fw::Point _mousePosition;

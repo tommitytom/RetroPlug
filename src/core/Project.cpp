@@ -145,7 +145,12 @@ bool Project::save() {
 		systemDescs.push_back(system->getDesc());
 	}
 
-	return ProjectSerializer::serialize(_typeRegistry, _state.path, _state, systemDescs, false);
+	if (ProjectSerializer::serialize(_typeRegistry, _state.path, _state, systemDescs, false)) {
+		_requiresSave = false;
+		return true;
+	}
+
+	return false;
 }
 
 SystemPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
@@ -225,10 +230,7 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 	_eventNode->send("Audio"_hs, AddSystemEvent{ .system = std::move(system) });
 
 	_version++;
-
-	if (_state.settings.autoSave) {
-		_requiresSave = true;
-	}
+	_requiresSave = true;
 
 	return proxySystem;
 }
@@ -238,10 +240,7 @@ void Project::removeSystem(SystemId systemId) {
 	_eventNode->send("Audio"_hs, RemoveSystemEvent{ .systemId = systemId });
 
 	_version++;
-
-	if (_state.settings.autoSave) {
-		_requiresSave = true;
-	}
+	_requiresSave = true;
 }
 
 SystemPtr Project::duplicateSystem(SystemId systemId) {
@@ -259,9 +258,9 @@ SystemPtr Project::duplicateSystem(SystemId systemId) {
 	romData.getBuffer().copyTo(loadConfig.romBuffer.get());
 
 	//desc.settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
+	//cloned->saveSram();
 
 	return addSystem(system->getTargetType(), std::move(loadConfig));
-	//cloned->saveSram();
 }
 
 void Project::clear() {

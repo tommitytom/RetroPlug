@@ -74,7 +74,7 @@ void GridOverlay::onUpdate(f32 delta) {
 	Project& project = getState<Project>();
 	std::vector<fw::ViewPtr>& children = _grid->getChildren();
 
-	if (_projectVersion == -1 || _projectVersion != project.getVersion()) {
+	if (_projectVersion == -1 || _projectVersion != project.getVersion() || _refocus) {
 		std::vector<SystemPtr>& systems = project.getSystems();
 
 		std::vector<SystemViewPtr> systemViews;

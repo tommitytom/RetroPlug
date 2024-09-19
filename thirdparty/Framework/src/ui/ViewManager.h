@@ -275,6 +275,10 @@ namespace fw {
 			propagateRender(canvas, getChildren());
 		}
 
+		bool onCloseWindowRequest(CloseWindowContext& ctx) override { 
+			return propagateCloseWindowRequest(getChildren(), ctx);
+		}
+
 		void printHierarchy() {
 			propagatePrint(getChildren(), "");
 		}
@@ -476,6 +480,20 @@ namespace fw {
 			}
 
 			return handled;
+		}
+
+		bool propagateCloseWindowRequest(std::vector<ViewPtr>& views, CloseWindowContext& ctx) {
+			for (ViewPtr& view : views) {
+				if (view->onCloseWindowRequest(ctx)) {
+					return true;
+				}
+
+				if (propagateCloseWindowRequest(view->getChildren(), ctx)) {
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		bool propagateMouseMove(Point position) {

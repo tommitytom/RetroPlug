@@ -26,11 +26,6 @@ local function handleMapInput(target, config, map)
 	table.insert(target, { config = config, lookup = lookup, combos = combos })
 end
 
-local InputConfig = class()
-function InputConfig:init()
-	self.configs = {}
-end
-
 local function tableEmpty(tab)
 	for _, _ in pairs(tab) do
 		return false
@@ -81,6 +76,11 @@ local function createEnv()
 		parsed = parsed,
 		env = env
 	}
+end
+
+local InputConfig = class()
+function InputConfig:init()
+	self.configs = {}
 end
 
 function InputConfig:loadFromString(name, code)

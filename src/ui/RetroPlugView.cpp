@@ -250,6 +250,15 @@ void RetroPlugView::onUpdate(f32 delta) {
 	f32 scale = _project.getScale();
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
+	if (getChildren().empty()) {
+		addChild(_compactLayout);
+		auto grid = _compactLayout->findChild<GridOverlay>();
+
+		if (grid) {
+			grid->refocus();
+		}
+	}
+
 	_compactLayout->setScale(scale);
 	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
@@ -278,4 +287,9 @@ void RetroPlugView::onUpdate(f32 delta) {
 void RetroPlugView::onRender(fw::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 1));
 	processOutput();
+}
+
+bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
+
+	return true;
 }

@@ -508,6 +508,8 @@ void SamplerView::updateSampleBuffers() {
 		KitUtil::updateKit(_system, settings, _samplerState.selectedKit);
 		updateWaveform();
 	}
+
+	
 }
 
 void SamplerView::updateWaveform() {

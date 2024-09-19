@@ -10,6 +10,8 @@
 #include "core/LuaUtil.h"
 #include "foundation/LuaSerializer.h"
 
+#include "lsdj/LsdjService.h"
+
 using namespace rp;
 
 const std::string_view PROJECT_VERSION = "1.0.0";
@@ -18,6 +20,11 @@ const std::string_view RP_VERSION = "0.4.0";
 std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<SystemDesc>& systems) {
 	sol::state s;
 	fw::SolUtil::prepareState(s);
+
+	Guid guid = 0x15D115D1;
+
+	const entt::any& value = systems[0].services.at(guid);
+	LsdjServiceSettings settings =  entt::any_cast<LsdjServiceSettings>(value);
 
 	sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
 	projectTable["projectVersion"] = PROJECT_VERSION;

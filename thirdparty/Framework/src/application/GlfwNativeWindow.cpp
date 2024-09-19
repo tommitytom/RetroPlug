@@ -112,7 +112,11 @@ void GlfwNativeWindow::dropCallback(GLFWwindow* window, int count, const char** 
 
 void GlfwNativeWindow::windowCloseCallback(GLFWwindow* window) {
 	GlfwNativeWindow* w = static_cast<GlfwNativeWindow*>(glfwGetWindowUserPointer(window));
-	//w->getViewManager()->onCloseWindowRequest();
+	CloseWindowContext ctx;
+	w->getViewManager()->onCloseWindowRequest(ctx);
+	if (!ctx.closing) {
+		glfwSetWindowShouldClose(window, 0);
+	}
 }
 
 void GlfwNativeWindow::windowRefreshCallback(GLFWwindow* window) {
