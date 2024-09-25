@@ -1,5 +1,7 @@
 #include "LuaSerializer.h"
 
+#include <spdlog/spdlog.h>
+
 #include "foundation/SolUtil.h"
 #include "foundation/AssociativeContainer.h"
 

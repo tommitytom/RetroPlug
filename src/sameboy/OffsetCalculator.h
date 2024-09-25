@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <gb_struct_def.h>
+#include <defs.h>
 #include "sameboy/semver.hpp"
 
 #include "foundation/Types.h"

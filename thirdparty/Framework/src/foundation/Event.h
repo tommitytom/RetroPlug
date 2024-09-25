@@ -11,7 +11,6 @@
 #include <entt/core/any.hpp>
 #include <moodycamel/concurrentqueue.h>
 #include <moodycamel/blockingconcurrentqueue.h>
-#include <spdlog/spdlog.h>
 
 #include "foundation/TypeRegistry.h"
 
@@ -358,7 +357,7 @@ namespace fw {
 					if (handler) {
 						(*handler)(ev.value);
 					} else {
-						spdlog::warn("Node '{}' received a message it has not subscribed to: {}", _name, ev.value.type().name());
+						//spdlog::warn("Node '{}' received a message it has not subscribed to: {}", _name, ev.value.type().name());
 					}
 				} else {
 					processSystemEvent(ev);

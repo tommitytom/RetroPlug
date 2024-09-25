@@ -1,5 +1,7 @@
 #include "ArduinoboyService.h"
 
+#include <spdlog/spdlog.h>
+
 #include "foundation/Event.h"
 #include "foundation/Input.h"
 #include "foundation/MathUtil.h"

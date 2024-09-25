@@ -14,8 +14,6 @@
 
 #include <magic_enum.hpp>
 
-#include <spdlog/spdlog.h>
-
 #include "foundation/Types.h"
 #include "foundation/MetaTypes.h"
 #include "foundation/AssociativeContainer.h"

@@ -10,7 +10,6 @@
 #include <magic_enum.hpp>
 #include <moodycamel/readerwriterqueue.h>
 #include <moodycamel/concurrentqueue.h>
-#include <spdlog/spdlog.h>
 
 #include "foundation/DataBuffer.h"
 #include "foundation/Image.h"
@@ -141,7 +140,7 @@ namespace rp {
 			if (_pool.try_dequeue(item)) {
 				return std::shared_ptr<T>(item.release(), [&](T* ptr) {
 					if (!_pool.enqueue(std::unique_ptr<T>(ptr))) {
-						spdlog::error("Failed to return item to pool");
+						//spdlog::error("Failed to return item to pool");
 					}
 				});
 			}
@@ -163,7 +162,7 @@ namespace rp {
 				io->reset();
 				io->systemId = systemId;
 			} else {
-				spdlog::error("IO alloc failed");
+				//spdlog::error("IO alloc failed");
 			}
 
 			return io;

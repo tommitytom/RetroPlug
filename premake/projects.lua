@@ -72,7 +72,7 @@ function m.Core.include()
 	dep.minizip.include()
 	dep.SameBoy.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -127,7 +127,7 @@ function m.SameBoyPlug.include()
 	dep.SameBoy.include()
 	m.Core.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -140,6 +140,13 @@ function m.SameBoyPlug.include()
 	}
 
 	filter { "toolset:clang" }
+		buildoptions {
+			"-Wno-unused-variable",
+			"-Wno-unused-function",
+			"-Wno-missing-braces",
+			"-Wno-switch",
+			"-Wno-int-in-bool-context"
+		}
 		disablewarnings { "missing-braces", "c99-designator" }
 
 	filter {}
@@ -158,6 +165,8 @@ function m.SameBoyPlug.link()
 	dep.SameBoy.link()
 end
 
+local SAMEBOY_DIR = "thirdparty/SameBoy"
+
 function m.SameBoyPlug.project()
 	project "SameBoyPlug"
 	kind "StaticLib"
@@ -166,6 +175,7 @@ function m.SameBoyPlug.project()
 
 	filter { "system:windows" }
 		toolset "clang"
+		includedirs { SAMEBOY_DIR .. "/Windows" }
 
 	filter {}
 
@@ -187,7 +197,7 @@ function m.RetroPlug.include()
 	dep.liblsdj.include()
 	dep.minizip.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",

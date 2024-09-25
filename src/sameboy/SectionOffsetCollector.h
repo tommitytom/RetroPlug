@@ -1,7 +1,7 @@
 #ifndef SECTION_OFFSET_COLLECTOR_h
 #define SECTION_OFFSET_COLLECTOR_h
 
-#include <gb_struct_def.h>
+#include <defs.h>
 #include <stdint.h>
 
 typedef struct {
