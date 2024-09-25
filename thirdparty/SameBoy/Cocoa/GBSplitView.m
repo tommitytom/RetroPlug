@@ -8,7 +8,7 @@
 - (void)setDividerColor:(NSColor *)color 
 {
     _dividerColor = color;
-    [self setNeedsDisplay:YES];
+    [self setNeedsDisplay:true];
 }
 
 - (NSColor *)dividerColor 
@@ -17,6 +17,12 @@
         return _dividerColor;
     }
     return [super dividerColor];
+}
+
+- (void)drawDividerInRect:(NSRect)rect
+{
+    [self.dividerColor set];
+    NSRectFill(rect);
 }
 
 /* Mavericks comaptibility */

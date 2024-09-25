@@ -5,6 +5,7 @@
 #import "GBViewMetal.h"
 #import "GBButtons.h"
 #import "NSString+StringForKey.h"
+#import "NSObject+DefaultsObserver.h"
 #import "Document.h"
 
 #define JOYSTICK_HIGH 0x4000
@@ -104,11 +105,9 @@ static const uint8_t workboy_vk_to_key[] = {
 
 @implementation GBView
 {
-    uint32_t *image_buffers[3];
-    unsigned char current_buffer;
-    BOOL mouse_hidden;
+    bool mouse_hidden;
     NSTrackingArea *tracking_area;
-    BOOL _mouseHidingEnabled;
+    bool _mouseHidingEnabled;
     bool axisActive[2];
     bool underclockKeyDown;
     double clockMultiplier;
@@ -116,7 +115,10 @@ static const uint8_t workboy_vk_to_key[] = {
     bool analogClockMultiplierValid;
     NSEventModifierFlags previousModifiers;
     JOYController *lastController;
-    GB_frame_blending_mode_t _frameBlendingMode;
+    bool _turbo;
+    bool _mouseControlEnabled;
+    NSMutableDictionary<NSNumber *, JOYController *> *_controllerMapping;
+    unsigned _lastPlayerCount;
 }
 
 + (instancetype)alloc
@@ -135,16 +137,19 @@ static const uint8_t workboy_vk_to_key[] = {
     return [super allocWithZone:zone];
 }
 
-- (void) createInternalView
-{
-    assert(false && "createInternalView must not be inherited");
-}
-
 - (void) _init
 {
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(ratioKeepingChanged) name:@"GBAspectChanged" object:nil];
+    [self registerForDraggedTypes:[NSArray arrayWithObjects: NSFilenamesPboardType, nil]];
+    
+    __unsafe_unretained GBView *weakSelf = self;
+    [self observeStandardDefaultsKey:@"GBAspectRatioUnkept" withBlock:^(id newValue) {
+        [weakSelf setFrame:weakSelf.superview.frame];
+    }];
+    [self observeStandardDefaultsKey:@"JoyKitDefaultControllers" withBlock:^(id newValue) {
+        [weakSelf reassignControllers];
+    }];
     tracking_area = [ [NSTrackingArea alloc] initWithRect:(NSRect){}
-                                                  options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
+                                                  options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect | NSTrackingMouseMoved
                                                     owner:self
                                                  userInfo:nil];
     [self addTrackingArea:tracking_area];
@@ -153,57 +158,98 @@ static const uint8_t workboy_vk_to_key[] = {
     [self addSubview:self.internalView];
     self.internalView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [JOYController registerListener:self];
+    _mouseControlEnabled = true;
+    [self reassignControllers];
+}
+
+- (void)controllerConnected:(JOYController *)controller
+{
+    [self reassignControllers];
+}
+
+- (void)controllerDisconnected:(JOYController *)controller
+{
+    [self reassignControllers];
+}
+
+- (unsigned)playerCount
+{
+    if (self.document.partner) {
+        return 2;
+    }
+    if (!_gb) {
+        return 1;
+    }
+    return GB_get_player_count(_gb);
+}
+
+- (void)reassignControllers
+{
+    unsigned playerCount = self.playerCount;
+    /* Don't assign controlelrs if there's only one player, allow all controllers. */
+    if (playerCount == 1) {
+        _controllerMapping = [NSMutableDictionary dictionary];
+        return;
+    }
+    
+    if (!_controllerMapping) {
+        _controllerMapping = [NSMutableDictionary dictionary];
+    }
+    
+    for (NSNumber *player in [_controllerMapping copy]) {
+        if (player.unsignedIntValue >= playerCount || !_controllerMapping[player].connected) {
+            [_controllerMapping removeObjectForKey:player];
+        }
+    }
+    
+    _lastPlayerCount = playerCount;
+    for (unsigned i = 0; i < playerCount; i++) {
+        NSString *preferredJoypad = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"JoyKitDefaultControllers"]
+                                      objectForKey:n2s(i)];
+        for (JOYController *controller in [JOYController allControllers]) {
+            if (!controller.connected) continue;
+            if ([controller.uniqueID isEqual:preferredJoypad]) {
+                _controllerMapping[@(i)] = controller;
+                break;
+            }
+        }
+    }
+}
+
+- (void)tryAssigningController:(JOYController *)controller
+{
+    unsigned playerCount = self.playerCount;
+    if (playerCount == 1) return;
+    if (_controllerMapping.count == playerCount) return;
+    if ([_controllerMapping.allValues containsObject:controller]) return;
+    for (unsigned i = 0; i < playerCount; i++) {
+        if (!_controllerMapping[@(i)]) {
+            _controllerMapping[@(i)] = controller;
+            return;
+        }
+    }
+}
+
+- (NSDictionary<NSNumber *, JOYController *> *)controllerMapping
+{
+    if (_lastPlayerCount != self.playerCount) {
+        [self reassignControllers];
+    }
+    
+    return _controllerMapping;
 }
 
 - (void)screenSizeChanged
 {
-    if (image_buffers[0]) free(image_buffers[0]);
-    if (image_buffers[1]) free(image_buffers[1]);
-    if (image_buffers[2]) free(image_buffers[2]);
-    
-    size_t buffer_size = sizeof(image_buffers[0][0]) * GB_get_screen_width(_gb) * GB_get_screen_height(_gb);
-    
-    image_buffers[0] = calloc(1, buffer_size);
-    image_buffers[1] = calloc(1, buffer_size);
-    image_buffers[2] = calloc(1, buffer_size);
+    [super screenSizeChanged];
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [self setFrame:self.superview.frame];
     });
 }
 
-- (void) ratioKeepingChanged
-{
-    [self setFrame:self.superview.frame];
-}
-
-- (void) setFrameBlendingMode:(GB_frame_blending_mode_t)frameBlendingMode
-{
-    _frameBlendingMode = frameBlendingMode;
-    [self setNeedsDisplay:YES];
-}
-
-
-- (GB_frame_blending_mode_t)frameBlendingMode
-{
-    if (_frameBlendingMode == GB_FRAME_BLENDING_MODE_ACCURATE) {
-        if (!_gb || GB_is_sgb(_gb)) {
-            return GB_FRAME_BLENDING_MODE_SIMPLE;
-        }
-        return GB_is_odd_frame(_gb)? GB_FRAME_BLENDING_MODE_ACCURATE_ODD : GB_FRAME_BLENDING_MODE_ACCURATE_EVEN;
-    }
-    return _frameBlendingMode;
-}
-- (unsigned char) numberOfBuffers
-{
-    return _frameBlendingMode? 3 : 2;
-}
-
 - (void)dealloc
 {
-    free(image_buffers[0]);
-    free(image_buffers[1]);
-    free(image_buffers[2]);
     if (mouse_hidden) {
         mouse_hidden = false;
         [NSCursor unhide];
@@ -212,6 +258,7 @@ static const uint8_t workboy_vk_to_key[] = {
     [self setRumble:0];
     [JOYController unregisterListener:self];
 }
+
 - (instancetype)initWithCoder:(NSCoder *)coder
 {
     if (!(self = [super initWithCoder:coder])) { 
@@ -257,12 +304,19 @@ static const uint8_t workboy_vk_to_key[] = {
 - (void) flip
 {
     if (analogClockMultiplierValid && [[NSUserDefaults standardUserDefaults] boolForKey:@"GBAnalogControls"]) {
+        clockMultiplier = 1.0;
         GB_set_clock_multiplier(_gb, analogClockMultiplier);
         if (self.document.partner) {
             GB_set_clock_multiplier(self.document.partner.gb, analogClockMultiplier);
         }
         if (analogClockMultiplier == 1.0) {
             analogClockMultiplierValid = false;
+        }
+        if (analogClockMultiplier < 2.0 && analogClockMultiplier > 1.0) {
+            GB_set_turbo_mode(_gb, false, false);
+            if (self.document.partner) {
+                GB_set_turbo_mode(self.document.partner.gb, false, false);
+            }
         }
     }
     else {
@@ -281,12 +335,15 @@ static const uint8_t workboy_vk_to_key[] = {
             }
         }
     }
-    current_buffer = (current_buffer + 1) % self.numberOfBuffers;
-}
-
-- (uint32_t *) pixels
-{
-    return image_buffers[(current_buffer + 1) % self.numberOfBuffers];
+    if ((!analogClockMultiplierValid && clockMultiplier > 1) ||
+        _turbo || (analogClockMultiplierValid && analogClockMultiplier > 1)) {
+        [self.osdView displayText:@"Fast forwarding…"];
+    }
+    else if ((!analogClockMultiplierValid && clockMultiplier < 1) ||
+             (analogClockMultiplierValid && analogClockMultiplier < 1)) {
+        [self.osdView displayText:@"Slow motion…"];
+    }
+    [super flip];
 }
 
 -(void)keyDown:(NSEvent *)theEvent
@@ -327,6 +384,7 @@ static const uint8_t workboy_vk_to_key[] = {
                         else {
                             GB_set_turbo_mode(_gb, true, self.isRewinding);
                         }
+                        _turbo = true;
                         analogClockMultiplierValid = false;
                         break;
                         
@@ -334,6 +392,7 @@ static const uint8_t workboy_vk_to_key[] = {
                         if (!self.document.partner) {
                             self.isRewinding = true;
                             GB_set_turbo_mode(_gb, false, false);
+                            _turbo = false;
                         }
                         break;
                         
@@ -399,6 +458,7 @@ static const uint8_t workboy_vk_to_key[] = {
                         else {
                             GB_set_turbo_mode(_gb, false, false);
                         }
+                        _turbo = false;
                         analogClockMultiplierValid = false;
                         break;
                         
@@ -438,9 +498,34 @@ static const uint8_t workboy_vk_to_key[] = {
     [lastController setRumbleAmplitude:amp];
 }
 
+- (bool)shouldControllerUseJoystickForMotion:(JOYController *)controller
+{
+    if (!_gb) return false;
+    if (!GB_has_accelerometer(_gb)) return false;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7JoystickOverride"]) return true;
+    for (JOYAxes3D *axes in controller.axes3D) {
+        if (axes.usage == JOYAxes3DUsageOrientation || axes.usage == JOYAxes3DUsageAcceleration) {
+            return false;
+        }
+    }
+    return true;
+}
+
+- (bool)allowController
+{
+    if ([self.window isMainWindow]) return true;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBAllowBackgroundControllers"]) {
+        if ([(Document *)[NSApplication sharedApplication].orderedDocuments.firstObject mainWindow] == self.window) {
+            return true;
+        }
+    }
+    return false;
+}
+
 - (void)controller:(JOYController *)controller movedAxis:(JOYAxis *)axis
 {
-    if (![self.window isMainWindow]) return;
+    if (!_gb) return;
+    if (![self allowController]) return;
 
     NSDictionary *mapping = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"JoyKitInstanceMapping"][controller.uniqueID];
     if (!mapping) {
@@ -449,39 +534,94 @@ static const uint8_t workboy_vk_to_key[] = {
     
     if ((axis.usage == JOYAxisUsageR1 && !mapping) ||
         axis.uniqueID == [mapping[@"AnalogUnderclock"] unsignedLongValue]){
-        analogClockMultiplier = MIN(MAX(1 - axis.value + 0.2, 1.0 / 3), 1.0);
+        analogClockMultiplier = MIN(MAX(1 - axis.value + 0.05, 1.0 / 3), 1.0);
         analogClockMultiplierValid = true;
     }
     
     else if ((axis.usage == JOYAxisUsageL1 && !mapping) ||
         axis.uniqueID == [mapping[@"AnalogTurbo"] unsignedLongValue]){
-        analogClockMultiplier = MIN(MAX(axis.value * 3 + 0.8, 1.0), 3.0);
+        analogClockMultiplier = MIN(MAX(axis.value * 3 + 0.95, 1.0), 3.0);
         analogClockMultiplierValid = true;
+    }
+}
+
+- (void)controller:(JOYController *)controller movedAxes2D:(JOYAxes2D *)axes
+{
+    if (!_gb) return;
+    if ([self shouldControllerUseJoystickForMotion:controller]) {
+        if (!self.mouseControlsActive) {
+            GB_set_accelerometer_values(_gb, -axes.value.x, -axes.value.y);
+        }
+    }
+}
+
+- (void)controller:(JOYController *)controller movedAxes3D:(JOYAxes3D *)axes
+{
+    if (!_gb) return;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7JoystickOverride"]) return;
+    if (self.mouseControlsActive) return;
+    if (controller != lastController) return;
+    // When using Joy-Cons in dual-controller grip, ignore motion data from the left Joy-Con
+    if (controller.joyconType == JOYJoyConTypeDual) {
+        for (JOYController *child in [(JOYCombinedController *)controller children]) {
+            if (child.joyconType != JOYJoyConTypeRight && [child.axes3D containsObject:axes]) {
+                return;
+            }
+        }
+    }
+    
+    NSDictionary<NSNumber *, JOYController *> *controllerMapping = [self controllerMapping];
+    GB_gameboy_t *effectiveGB = _gb;
+    
+    if (self.document.partner) {
+        if (controllerMapping[@1] == controller) {
+            effectiveGB = self.document.partner.gb;
+        }
+        if (controllerMapping[@0] != controller) {
+            return;
+        }
+        
+    }
+
+    if (axes.usage == JOYAxes3DUsageOrientation) {
+        for (JOYAxes3D *axes in controller.axes3D) {
+            // Only use orientation if there's no acceleration axes
+            if (axes.usage == JOYAxes3DUsageAcceleration) {
+                return;
+            }
+        }
+        JOYPoint3D point = axes.normalizedValue;
+        GB_set_accelerometer_values(effectiveGB, point.x, point.z);
+    }
+    else if (axes.usage == JOYAxes3DUsageAcceleration) {
+        JOYPoint3D point = axes.gUnitsValue;
+        GB_set_accelerometer_values(effectiveGB, point.x, point.z);
     }
 }
 
 - (void)controller:(JOYController *)controller buttonChangedState:(JOYButton *)button
 {
-    if (![self.window isMainWindow]) return;
+    if (!_gb) return;
+    if (![self allowController]) return;
+    _mouseControlEnabled = false;
+    if (button.type == JOYButtonTypeAxes2DEmulated && [self shouldControllerUseJoystickForMotion:controller]) return;
     
-    unsigned player_count = GB_get_player_count(_gb);
-    if (self.document.partner) {
-        player_count = 2;
-    }
+    [self tryAssigningController:controller];
+    
+    unsigned playerCount = self.playerCount;
 
     IOPMAssertionID assertionID;
     IOPMAssertionDeclareUserActivity(CFSTR(""), kIOPMUserActiveLocal, &assertionID);
     
-    for (unsigned player = 0; player < player_count; player++) {
-        NSString *preferred_joypad = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"JoyKitDefaultControllers"]
-                                      objectForKey:n2s(player)];
-        if (player_count != 1 && // Single player, accpet inputs from all joypads
-            !(player == 0 && !preferred_joypad) && // Multiplayer, but player 1 has no joypad configured, so it takes inputs from all joypads
-            ![preferred_joypad isEqualToString:controller.uniqueID]) {
-            continue;
-        }
+    
+    NSDictionary<NSNumber *, JOYController *> *controllerMapping = [self controllerMapping];
+    for (unsigned player = 0; player < playerCount; player++) {
+        JOYController *preferredJoypad = controllerMapping[@(player)];
+        if (preferredJoypad && preferredJoypad != controller) continue; // The player has a different assigned controller
+        if (!preferredJoypad && playerCount != 1) continue; // The player has no assigned controller in multiplayer mode, prevent controller inputs
+        
         dispatch_async(dispatch_get_main_queue(), ^{
-            [controller setPlayerLEDs:1 << player];
+            [controller setPlayerLEDs:[controller LEDMaskForPlayer:player]];
         });
         NSDictionary *mapping = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"JoyKitInstanceMapping"][controller.uniqueID];
         if (!mapping) {
@@ -490,7 +630,7 @@ static const uint8_t workboy_vk_to_key[] = {
         
         JOYButtonUsage usage = ((JOYButtonUsage)[mapping[n2s(button.uniqueID)] unsignedIntValue]) ?: button.usage;
         if (!mapping && usage >= JOYButtonUsageGeneric0) {
-            usage = (const JOYButtonUsage[]){JOYButtonUsageY, JOYButtonUsageA, JOYButtonUsageB, JOYButtonUsageX}[(usage - JOYButtonUsageGeneric0) & 3];
+            usage = GB_inline_const(JOYButtonUsage[], {JOYButtonUsageY, JOYButtonUsageA, JOYButtonUsageB, JOYButtonUsageX})[(usage - JOYButtonUsageGeneric0) & 3];
         }
         
         GB_gameboy_t *effectiveGB = _gb;
@@ -532,17 +672,22 @@ static const uint8_t workboy_vk_to_key[] = {
                     else {
                         GB_set_turbo_mode(_gb, false, false);
                     }
+                    _turbo = false;
                 }
                 break;
             }
         
             case JOYButtonUsageL1: {
-                if (self.document.isSlave) {
-                    GB_set_turbo_mode(self.document.partner.gb, button.isPressed, false); break;
+                if (!analogClockMultiplierValid || analogClockMultiplier == 1.0 || !button.isPressed) {
+                    if (self.document.isSlave) {
+                        GB_set_turbo_mode(self.document.partner.gb, button.isPressed, false);
+                    }
+                    else {
+                        GB_set_turbo_mode(_gb, button.isPressed, button.isPressed && self.isRewinding);
+                    }
+                    _turbo = button.isPressed;
                 }
-                else {
-                    GB_set_turbo_mode(_gb, button.isPressed, button.isPressed && self.isRewinding); break;
-                }
+                break;
             }
 
             case JOYButtonUsageR1: underclockKeyDown = button.isPressed; break;
@@ -559,14 +704,21 @@ static const uint8_t workboy_vk_to_key[] = {
 
 - (BOOL)acceptsFirstResponder
 {
-    return YES;
+    return true;
+}
+
+- (bool)mouseControlsActive
+{
+    return _gb && GB_is_inited(_gb) && GB_has_accelerometer(_gb) &&
+           _mouseControlEnabled && [[NSUserDefaults standardUserDefaults] boolForKey:@"GBMBC7AllowMouse"];
 }
 
 - (void)mouseEntered:(NSEvent *)theEvent
 {
     if (!mouse_hidden) {
         mouse_hidden = true;
-        if (_mouseHidingEnabled) {
+        if (_mouseHidingEnabled &&
+            !self.mouseControlsActive) {
             [NSCursor hide];
         }
     }
@@ -584,7 +736,47 @@ static const uint8_t workboy_vk_to_key[] = {
     [super mouseExited:theEvent];
 }
 
-- (void)setMouseHidingEnabled:(BOOL)mouseHidingEnabled
+- (void)mouseDown:(NSEvent *)event
+{
+    _mouseControlEnabled = true;
+    if (self.mouseControlsActive) {
+        if (event.type == NSEventTypeLeftMouseDown) {
+            GB_set_key_state(_gb, GB_KEY_A, true);
+        }
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event
+{
+    if (self.mouseControlsActive) {
+        if (event.type == NSEventTypeLeftMouseUp) {
+            GB_set_key_state(_gb, GB_KEY_A, false);
+        }
+    }
+}
+
+- (void)mouseMoved:(NSEvent *)event
+{
+    if (self.mouseControlsActive) {
+        NSPoint point = [self convertPoint:[event locationInWindow] toView:nil];
+        
+        point.x /= self.frame.size.width;
+        point.x *= 2;
+        point.x -= 1;
+        
+        point.y /= self.frame.size.height;
+        point.y *= 2;
+        point.y -= 1;
+        
+        if (GB_get_screen_width(_gb) != 160) { // has border
+            point.x *= 256 / 160.0;
+            point.y *= 224 / 114.0;
+        }
+        GB_set_accelerometer_values(_gb, -point.x, point.y);
+    }
+}
+
+- (void)setMouseHidingEnabled:(bool)mouseHidingEnabled
 {
     if (mouseHidingEnabled == _mouseHidingEnabled) return;
 
@@ -599,7 +791,7 @@ static const uint8_t workboy_vk_to_key[] = {
     }
 }
 
-- (BOOL)isMouseHidingEnabled
+- (bool)isMouseHidingEnabled
 {
     return _mouseHidingEnabled;
 }
@@ -616,14 +808,35 @@ static const uint8_t workboy_vk_to_key[] = {
     previousModifiers = event.modifierFlags;
 }
 
-- (uint32_t *)currentBuffer
+-(NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender
 {
-    return image_buffers[current_buffer];
+    NSPasteboard *pboard = [sender draggingPasteboard];
+    
+    if ( [[pboard types] containsObject:NSURLPboardType] ) {
+        NSURL *fileURL = [NSURL URLFromPasteboard:pboard];
+        if (GB_is_save_state(fileURL.fileSystemRepresentation)) {
+            return NSDragOperationGeneric;
+        }
+    }
+    return NSDragOperationNone;
 }
 
-- (uint32_t *)previousBuffer
+-(BOOL)performDragOperation:(id<NSDraggingInfo>)sender
 {
-    return image_buffers[(current_buffer + 2) % self.numberOfBuffers];
+    NSPasteboard *pboard = [sender draggingPasteboard];
+    
+    if ( [[pboard types] containsObject:NSURLPboardType] ) {
+        NSURL *fileURL = [NSURL URLFromPasteboard:pboard];
+        return [_document loadStateFile:fileURL.fileSystemRepresentation noErrorOnNotFound:false];
+    }
+
+    return false;
 }
 
+- (NSImage *)renderToImage;
+{
+    /* Not going to support this on OpenGL, OpenGL is too much of a terrible API for me
+       to bother figuring out how the hell something so trivial can be done. */
+    return nil;
+}
 @end
