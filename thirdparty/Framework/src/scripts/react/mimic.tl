@@ -15,12 +15,14 @@ local BorderedRect = React.component(function (props: BorderedRectProps): Elemen
 	end
 
 	return r.div {
-		flexDirection = fw.FlexDirection.Column,
-		backgroundColor = fw.Color4F(1, 0, 0, 1),
-		width = 120,
-		height = 120,
-		color = fw.Color4F(1, 1, 1, 0.5),
-		border = 10,
+		style = {
+			flexDirection = fw.FlexDirection.Column,
+			backgroundColor = fw.Color4F(1, 0, 0, 1),
+			width = 120,
+			height = 120,
+			color = fw.Color4F(1, 1, 1, 0.5),
+			border = 5
+		},
 		onMouseEnter = function ()
 			print("onMouseEnter: " .. props.name)
 		end,
@@ -32,9 +34,11 @@ local BorderedRect = React.component(function (props: BorderedRectProps): Elemen
 		end,
 		children = {
 			r.div {
-				width = 50,
-				height = 50,
-				backgroundColor = fw.Color4F(0, 0, 1, 1),
+				style = {
+					width = 50,
+					height = 50,
+					backgroundColor = fw.Color4F(0, 0, 1, 1),
+				},				
 				onMouseEnter = function ()
 					print("onMouseEnter: inner " .. props.name)
 				end,

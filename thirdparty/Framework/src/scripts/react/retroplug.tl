@@ -2,7 +2,7 @@ local React = require("react")
 local r = require("react-elements")
 local menuItems = require("testmenu")
 
-fw.loadStyle("E:\\code\\RetroPlugNext\\thirdparty\\Framework\\src\\scripts\\react\\retroplug.css")
+fw.loadStyle("C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\react\\retroplug.css")
 
 local record MenuRowProps
 	idx: integer
