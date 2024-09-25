@@ -163,8 +163,8 @@ function m.Ui.project()
 	dep.csspp.include()
 
 	files {
-		paths.SRC_ROOT .. "ui/**.h",
-		paths.SRC_ROOT .. "ui/**.cpp"
+		paths.SRC_ROOT .. "ui/*.h",
+		paths.SRC_ROOT .. "ui/*.cpp"
 	}
 
 	filter { "action:vs*" }
