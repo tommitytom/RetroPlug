@@ -22,12 +22,12 @@ local m = {
 function m.Foundation.include()
 	dependson { "configure" }
 
-	includedirs {
+	externalincludedirs {
 		paths.DEP_ROOT,
 		paths.DEP_ROOT .. "spdlog/include"
 	}
 
-	includedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
@@ -139,7 +139,7 @@ function m.Ui.include()
 
 	m.Graphics.include()
 	dep.yoga.include()
-	dep.csspp.include()
+	--dep.csspp.include()
 	dep.bgfx.compat()
 
 	filter {}
@@ -152,7 +152,7 @@ function m.Ui.link()
 
 	m.Graphics.link()
 	dep.yoga.link()
-	dep.csspp.link()
+	--dep.csspp.link()
 end
 
 function m.Ui.project()
@@ -160,11 +160,11 @@ function m.Ui.project()
 	kind "StaticLib"
 
 	m.Ui.include()
-	dep.csspp.include()
+	--dep.csspp.include()
 
 	files {
-		paths.SRC_ROOT .. "ui/**.h",
-		paths.SRC_ROOT .. "ui/**.cpp"
+		paths.SRC_ROOT .. "ui/*.h",
+		paths.SRC_ROOT .. "ui/*.cpp"
 	}
 
 	filter { "action:vs*" }

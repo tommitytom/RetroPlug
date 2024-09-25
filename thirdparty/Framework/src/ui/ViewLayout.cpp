@@ -1,5 +1,7 @@
 #include "ViewLayout.h"
 
+#include "ui/next/StyleProperties.h"
+
 namespace fw
 {
 	// Margin

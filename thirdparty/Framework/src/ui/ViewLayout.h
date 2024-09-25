@@ -3,10 +3,10 @@
 #include <refl.hpp>
 #include <yoga/Yoga.h>
 #include <yoga/YGNode.h>
+#include <entt/entity/fwd.hpp>
 
 #include "foundation/Math.h"
 #include "ui/Flex.h"
-#include "ui/next/StyleComponents.h"
 
 namespace fw {	
 	class ViewLayout {
