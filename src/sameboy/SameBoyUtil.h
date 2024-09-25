@@ -1,6 +1,6 @@
 #pragma once
 
-#include <gb_struct_def.h>
+#include <defs.h>
 #include "foundation/Types.h"
 
 namespace rp::SameBoyUtil {

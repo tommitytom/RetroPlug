@@ -1,9 +1,9 @@
-#ifndef workboy_h
-#define workboy_h
+#pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
-#include "gb_struct_def.h"
+#include "defs.h"
 
 
 typedef struct {
@@ -114,5 +114,3 @@ void GB_connect_workboy(GB_gameboy_t *gb,
                         GB_workboy_get_time_callback get_time_callback);
 bool GB_workboy_is_enabled(GB_gameboy_t *gb);
 void GB_workboy_set_key(GB_gameboy_t *gb, uint8_t key);
-
-#endif

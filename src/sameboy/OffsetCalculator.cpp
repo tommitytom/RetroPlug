@@ -105,7 +105,7 @@ void dumpFb(Context& ctx, const fs::path& path) {
 	stbi_write_png(p.c_str(), 160, 144, 4, ctx.frameBuffer, 160 * 4);
 }
 
-static void vblankHandler(GB_gameboy_t* gb) {}
+static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {}
 
 static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 	Context* ctx = (Context*)GB_get_user_data(gb);

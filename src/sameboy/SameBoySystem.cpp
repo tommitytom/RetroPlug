@@ -69,7 +69,7 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 	return 255 << 24 | b << 16 | g << 8 | r;
 }
 
-static void vblankHandler(GB_gameboy_t* gb) {
+static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {
 	SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
 
 	if (s->io) {
