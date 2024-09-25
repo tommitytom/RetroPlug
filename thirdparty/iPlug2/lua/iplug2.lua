@@ -62,7 +62,7 @@ local function projectBase(targetName, name)
 		"_CONSOLE"
 	}
 
-	sysincludedirs {
+	externalincludedirs {
 		_p.."iPlug"
 	}
 

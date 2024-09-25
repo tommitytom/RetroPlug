@@ -69,10 +69,10 @@ function m.Core.include()
 	fwProjects.Application.include()
 	fwDeps.lua.include()
 	fwDeps.simdjson.include()
-	dep.minizip.include()
+	--dep.minizip.include()
 	dep.SameBoy.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -101,7 +101,7 @@ function m.Core.link()
 	fwProjects.Application.link()
 	fwDeps.lua.link()
 	fwDeps.simdjson.link()
-	dep.minizip.link()
+	--dep.minizip.link()
 	dep.SameBoy.link()
 end
 
@@ -127,7 +127,7 @@ function m.SameBoyPlug.include()
 	dep.SameBoy.include()
 	m.Core.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -185,9 +185,9 @@ function m.RetroPlug.include()
 	m.Core.include()
 	m.SameBoyPlug.include()
 	dep.liblsdj.include()
-	dep.minizip.include()
+	--dep.minizip.include()
 
-	sysincludedirs {
+	externalincludedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
@@ -215,7 +215,7 @@ function m.RetroPlug.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()
 	dep.r8brain.link()
-	dep.minizip.link()
+	--dep.minizip.link()
 end
 
 function m.RetroPlug.project()

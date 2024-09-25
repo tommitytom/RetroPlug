@@ -3,7 +3,7 @@ local m = {}
 local SAMEBOY_DIR = "thirdparty/SameBoy"
 
 function m.include()
-	sysincludedirs { SAMEBOY_DIR .. "/Core" }
+	externalincludedirs { SAMEBOY_DIR .. "/Core" }
 
 	filter {}
 end
@@ -22,12 +22,12 @@ function m.project()
 
 		m.include()
 
-		sysincludedirs {
+		externalincludedirs {
 			"thirdparty",
 			"thirdparty/spdlog/include"
 		}
 
-		includedirs {
+		externalincludedirs {
 			"src",
 			"resources"
 		}

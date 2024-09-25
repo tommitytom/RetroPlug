@@ -97,7 +97,7 @@ function m.include()
 		--"HAVE_WZAES",
 	}
 
-	sysincludedirs {
+	externalincludedirs {
 		MINIZIP_DIR,
 		LZMA_DIR,
 		LZMA_DIR .. "/common",
@@ -289,7 +289,7 @@ function m.project()
 			defines { "ZLIB_DEBUG" }
 
 		filter { "system:not macosx" }
-			sysincludedirs {
+			externalincludedirs {
 				ZLIB_DIR
 			}
 

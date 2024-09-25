@@ -3,7 +3,7 @@ local R8BRAIN_DIR = "thirdparty/r8brain"
 local m = {}
 
 function m.include()
-	sysincludedirs { R8BRAIN_DIR }
+	externalincludedirs { R8BRAIN_DIR }
 end
 
 function m.source()
