@@ -5,7 +5,7 @@ local LUA_DIR = paths.DEP_ROOT .. "lua"
 local m = {}
 
 function m.include()
-	includedirs { LUA_DIR .. "/src" }
+	externalincludedirs { LUA_DIR .. "/src" }
 
 	filter { "system:linux" }
 		defines { "LUA_USE_POSIX" }

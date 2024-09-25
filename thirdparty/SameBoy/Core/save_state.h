@@ -5,7 +5,7 @@
 
 #define GB_PADDING(type, old_usage) type old_usage##__do_not_use
 
-//#ifdef __cplusplus
+#ifdef __cplusplus
 /* For bsnes integration. C++ code does not need section information, and throws a fit over certain types such
    as anonymous enums inside unions */
 #if __clang__
@@ -45,7 +45,6 @@ int GB_get_state_model_from_buffer(const uint8_t *buffer, size_t length, GB_mode
 
 #ifdef GB_INTERNAL
 #define internal
-
 static inline uint32_t GB_state_magic(void)
 {
     if (sizeof(bool) == 1) return 'SAME';

@@ -192,6 +192,7 @@ void GlfwNativeWindow::onCreate() {
 
 	Dimension dimensions = vm->getDimensions();
 	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
+	assert(_window);
 
 	glfwMakeContextCurrent(_window);
 

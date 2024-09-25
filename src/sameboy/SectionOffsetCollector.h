@@ -1,6 +1,10 @@
 #ifndef SECTION_OFFSET_COLLECTOR_h
 #define SECTION_OFFSET_COLLECTOR_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <defs.h>
 #include <stdint.h>
 
@@ -23,4 +27,8 @@ typedef struct {
 
 void getSameboyStateOffsets(GB_gameboy_t* gb, GB_section_offsets_t* offsets);
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif

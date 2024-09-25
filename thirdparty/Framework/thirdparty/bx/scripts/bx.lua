@@ -16,7 +16,7 @@ local function userdefines()
 end
 
 function using_bx()
-	includedirs {
+	externalincludedirs {
 		path.join(BX_DIR, "include"),
 	}
 
@@ -40,7 +40,7 @@ end
 project "bx"
 	kind "StaticLib"
 
-	includedirs {
+	externalincludedirs {
 		path.join(BX_DIR, "include"),
 		path.join(BX_DIR, "3rdparty"),
 	}

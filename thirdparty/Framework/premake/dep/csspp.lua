@@ -5,7 +5,7 @@ local CSSPP_DIR = paths.DEP_ROOT .. "csspp"
 local m = {}
 
 function m.include()
-	includedirs { CSSPP_DIR, CSSPP_DIR .. "/csspp" }
+	externalincludedirs { CSSPP_DIR, CSSPP_DIR .. "/csspp" }
 end
 
 function m.source()

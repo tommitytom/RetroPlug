@@ -5,7 +5,7 @@ local FREETYPE_DIR = paths.DEP_ROOT .. "freetype"
 local m = {}
 
 function m.include()
-	includedirs {
+	externalincludedirs {
 		paths.DEP_ROOT .. "zlib",
 		FREETYPE_DIR .. "/include"
 	}
@@ -80,6 +80,19 @@ function m.source()
 			FREETYPE_DIR .. "/builds/unix/ftsystem.c",
 			FREETYPE_DIR .. "/src/base/ftdebug.c"
 		}
+
+	filter "system:macosx"
+		includedirs {
+			FREETYPE_DIR .. "/src/base"
+		}
+
+		files {
+			FREETYPE_DIR .. "/src/base/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftdebug.c",
+			FREETYPE_DIR .. "/builds/mac/ftmac.c",
+		}
+
+	filter {}
 end
 
 function m.link()

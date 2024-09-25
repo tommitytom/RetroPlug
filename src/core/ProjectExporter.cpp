@@ -3,12 +3,12 @@
 #include <spdlog/spdlog.h>
 
 #include "core/ProjectSerializer.h"
-#include "foundation/zipp.h"
+//#include "foundation/zipp.h"
 
 using namespace rp;
 
 bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
-	zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
+	//zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
 
 	std::vector<SystemPtr>& systems = project.getSystems();
 
@@ -43,7 +43,7 @@ bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
 }
 
 bool ProjectExporter::exportRomsAndSavs(Project& project, fw::Uint8Buffer& target) {
-	zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
+	/*zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
 
 	const std::vector<SystemPtr>& systems = project.getSystems();
 
@@ -65,7 +65,7 @@ bool ProjectExporter::exportRomsAndSavs(Project& project, fw::Uint8Buffer& targe
 		target.resize(buffer.size());
 		target.write((const uint8*)buffer.data(), buffer.size());
 		return true;
-	}
+	}*/
 
 	return false;
 }

@@ -5,7 +5,7 @@ local YOGA_DIR = paths.DEP_ROOT .. "yoga"
 local m = {}
 
 function m.include()
-	includedirs { paths.DEP_ROOT }
+	externalincludedirs { paths.DEP_ROOT }
 end
 
 function m.source()

@@ -210,6 +210,7 @@ uint16_t GB_get_channel_period(GB_gameboy_t *gb, GB_channel_t channel);
 void GB_get_apu_wave_table(GB_gameboy_t *gb, uint8_t *wave_table);
 bool GB_get_channel_edge_triggered(GB_gameboy_t *gb, GB_channel_t channel);
 #ifdef GB_INTERNAL
+#define internal
 internal bool GB_apu_is_DAC_enabled(GB_gameboy_t *gb, GB_channel_t index);
 internal void GB_apu_write(GB_gameboy_t *gb, uint8_t reg, uint8_t value);
 internal uint8_t GB_apu_read(GB_gameboy_t *gb, uint8_t reg);

@@ -1,4 +1,4 @@
-#include "LuaReflection.h"
+/*#include "LuaReflection.h"
 
 #include <assert.h>
 
@@ -33,3 +33,4 @@ namespace fw::LuaReflection {
 		return std::string(name);
 	}
 }
+*/

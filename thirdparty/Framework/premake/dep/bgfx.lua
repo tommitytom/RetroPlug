@@ -12,7 +12,7 @@ function m.includeBx()
 		"BX_CONFIG_CRT_DIRECTORY_READER=0"
 	}
 
-	includedirs {
+	externalincludedirs {
 		BX_DIR .. "/3rdparty",
 		BX_DIR .. "/include",
 		--BX_DIR .. "/include/compat/msvc"
@@ -33,7 +33,7 @@ end
 function m.includeBimg()
 	defines { "TINYEXR_USE_MINIZ=0" }
 
-	includedirs {
+	externalincludedirs {
 		paths.DEP_ROOT .. "zlib",
 		BIMG_DIR .. "/include",
 		BIMG_DIR .. "/3rdparty",
@@ -44,7 +44,7 @@ function m.includeBimg()
 end
 
 function m.includeBgfx()
-	includedirs {
+	externalincludedirs {
 		BX_DIR .. "/include",
 		BIMG_DIR .. "/include",
 		BGFX_DIR .. "/include",
@@ -203,11 +203,11 @@ end
 
 function m.compat()
 	filter "action:vs*"
-		includedirs { path.join(BX_DIR, "include/compat/msvc") }
+		externalincludedirs { path.join(BX_DIR, "include/compat/msvc") }
 	filter { "system:windows", "action:gmake" }
-		includedirs { path.join(BX_DIR, "include/compat/mingw") }
+		externalincludedirs { path.join(BX_DIR, "include/compat/mingw") }
 	filter { "system:macosx" }
-		includedirs { path.join(BX_DIR, "include/compat/osx") }
+		externalincludedirs { path.join(BX_DIR, "include/compat/osx") }
 		buildoptions { "-x objective-c++" }
 	filter {}
 end

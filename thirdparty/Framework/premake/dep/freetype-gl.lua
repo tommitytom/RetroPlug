@@ -6,7 +6,7 @@ local FREETYPEGL_DIR = paths.DEP_ROOT .. "freetype-gl"
 local m = {}
 
 function m.include()
-	includedirs {
+	externalincludedirs {
 		FREETYPE_DIR .. "/include",
 		FREETYPEGL_DIR,
 	}

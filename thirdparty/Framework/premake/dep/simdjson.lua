@@ -5,7 +5,7 @@ local SIMDJSON_DIR = paths.DEP_ROOT .. "simdjson"
 local m = {}
 
 function m.include()
-	includedirs { SIMDJSON_DIR .. "/include" }
+	externalincludedirs { SIMDJSON_DIR .. "/include" }
 end
 
 function m.source()

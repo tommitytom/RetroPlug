@@ -166,15 +166,17 @@ namespace fw {
 					unit = FlexUnit::Percent;
 					number = std::string_view(text.data(), text.size() - 1);
 				}
+                
+                return false;
 
-				f32 v;
+				/*f32 v;
 				std::from_chars_result res = std::from_chars(number.data(), number.data() + number.size(), v);
 				if (res.ec != std::errc()) {
 					spdlog::error("Failed to convert '{}' to float", number);
 					return false;
-				}
+				}*/
 
-				return true;
+				//return true;
 			});
 		}
 
@@ -192,7 +194,7 @@ namespace fw {
 				number = std::string_view(value.data(), value.size() - 1);
 			}
 
-			f32 v;
+			/*f32 v;
 			std::from_chars_result res = std::from_chars(number.data(), number.data() + number.size(), v);
 			
 			if (res.ec != std::errc()) {
@@ -204,10 +206,10 @@ namespace fw {
 			
 			if (ValueChangeEvent) {
 				ValueChangeEvent(_value);
-			}
+			}*/
 		}
 
-		void setValue(const FlexValue& value) {
+		void setValue(const FlexValue& value) override {
 			_value = value;
 			
 			switch (value.getUnit()) {

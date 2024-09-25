@@ -13,7 +13,7 @@
 
 #include "foundation/ReflUtil.h"
 #include "foundation/Object.h"
-
+/*
 namespace fw::LuaReflection {
 	namespace internal {
 		constexpr size_t MAX_NAMESPACES = 4;
@@ -117,18 +117,18 @@ namespace fw::LuaReflection {
 									refl::descriptor::get_display_name(member),
 									refl::descriptor::get_pointer(member),
 									refl::descriptor::get_pointer(writer));
-					} else {*/
+					} else {
 						if constexpr (refl::descriptor::has_writer(member)) {
 							//spdlog::info("\tProperty: {}", get_display_name(member));
-							/*bridgeClass.addProperty(
-										refl::descriptor::get_display_name(member),
-										refl::descriptor::get_pointer(member),
-										refl::descriptor::get_pointer(refl::descriptor::get_writer(member)));*/
+							//bridgeClass.addProperty(
+										//refl::descriptor::get_display_name(member),
+										//refl::descriptor::get_pointer(member),
+										//refl::descriptor::get_pointer(refl::descriptor::get_writer(member)));
 						} else {
 							//spdlog::info("\tRead Only Property: {}", get_display_name(member));
 							//bridgeClass.addProperty(refl::descriptor::get_display_name(member), refl::descriptor::get_pointer(member));
 						}
-					//}
+					}
 				}				
 			} else if constexpr (refl::descriptor::is_function(member)) {
 				//static_assert(ptr != nullptr);

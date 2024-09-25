@@ -83,7 +83,7 @@ namespace fw {
 	}
 
 	template <typename T>
-	constexpr std::pair<std::string_view, PropertyVTable> makePropertyVTable() {
+	constexpr typename std::pair<std::string_view, PropertyVTable> makePropertyVTable() {
 		std::pair<std::string_view, PropertyVTable> item = std::make_pair(T::PropertyName, PropertyVTable{
 			.set = propertySetter<T>,
 			.copy = propertyCopier<T>

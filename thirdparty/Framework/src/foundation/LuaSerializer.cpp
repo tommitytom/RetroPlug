@@ -83,7 +83,7 @@ namespace fw {
 		spdlog::error("Failed to serialize integer");
 		//logSerializeTypeError(source.get_type(), type.name, fieldStack);
 
-		return sol::make_object(lua, sol::nil);
+		return sol::make_object(lua, sol::lua_nil);
 	}
 
 	sol::object serializeFloat(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
@@ -95,7 +95,7 @@ namespace fw {
 		spdlog::error("Failed to serialize float");
 		//logSerializeTypeError(source.get_type(), type.name, fieldStack);
 
-		return sol::make_object(lua, sol::nil);
+		return sol::make_object(lua, sol::lua_nil);
 	}
 
 	sol::object serializeString(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
@@ -116,7 +116,7 @@ namespace fw {
 		spdlog::error("Failed to serialize unknown type: {}", anyValue.type().name());
 		//logSerializeTypeError(source.get_type(), type.name, fieldStack);
 
-		return sol::make_object(lua, sol::nil);
+		return sol::make_object(lua, sol::lua_nil);
 	}
 
 	sol::object serializeEnum(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
@@ -139,7 +139,7 @@ namespace fw {
 		// spdlog::error("Lua deserialization: Failed to assign enum value '{}' to field '{}'", value, fieldStack.getFieldPath());
 		// logDeserializeTypeError(source.get_type(), type.name, fieldStack);
 
-		return sol::make_object(lua, sol::nil);
+		return sol::make_object(lua, sol::lua_nil);
 	}
 
 	sol::object serializeClass(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
@@ -223,7 +223,7 @@ namespace fw {
 			spdlog::error("Lua serialization: Field '{}' type '{}' has not been added to the type registry", fieldStack.getFieldPath(), source.type().name());
 		}
 
-		return sol::make_object(lua, sol::nil);
+		return sol::make_object(lua, sol::lua_nil);
 	}
 
 	sol::object LuaSerializer::serializeToObject(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source) {

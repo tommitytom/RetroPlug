@@ -5,7 +5,7 @@ local m = {}
 local GLFW_DIR = paths.DEP_ROOT .. "glfw"
 
 function m.include()
-	includedirs {
+	externalincludedirs {
 		GLFW_DIR .. "/include"
 	}
 

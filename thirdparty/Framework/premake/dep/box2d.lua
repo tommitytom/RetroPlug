@@ -5,7 +5,7 @@ local BOX2D_DIR = paths.DEP_ROOT .. "box2d"
 local m = {}
 
 function m.include()
-	includedirs { BOX2D_DIR .. "/include" }
+	externalincludedirs { BOX2D_DIR .. "/include" }
 end
 
 function m.source()
