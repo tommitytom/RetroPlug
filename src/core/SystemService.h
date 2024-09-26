@@ -169,7 +169,7 @@ namespace rp {
 		}
 		
 		template <auto Candidate>
-		void setField(fw::EventNode& node, FieldType<StateT, Candidate>::type&& data) {
+		void setField(fw::EventNode& node, typename FieldType<StateT, Candidate>::type&& data) {
 			static_assert(std::is_member_object_pointer_v<decltype(Candidate)>);
 
 			StateT& serviceState = getServiceState();
