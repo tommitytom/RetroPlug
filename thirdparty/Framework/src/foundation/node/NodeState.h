@@ -13,8 +13,8 @@ namespace fw {
 	template <typename T>
 	struct FullNodeState {
 		T state;
-		T::Input input;
-		T::Output output;
+		typename T::Input input;
+		typename T::Output output;
 	};
 	
 	class NodeStateBase {
@@ -25,11 +25,11 @@ namespace fw {
 	template <typename T>
 	class NodeState : public NodeStateBase {
 	private:
-		static const T::Input _defaultInput;
+		static const typename T::Input _defaultInput;
 		
 		T _state;
 		fw::RefProxy<typename T::Input> _input;
-		T::Output _output;
+		typename T::Output _output;
 
 	public:
 		using Input = fw::RefProxy<typename T::Input>;

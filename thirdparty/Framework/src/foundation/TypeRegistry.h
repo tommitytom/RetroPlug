@@ -133,7 +133,7 @@ namespace fw {
 		template <typename T, auto Func>
 		void makePropertySetter(TypeInstance instance, const entt::any& value) {
 			//static_assert(std::is_invocable_v<decltype(Func), T&>);
-			using ArgsType = entt::meta_function_helper_t<T, std::remove_reference_t<decltype(Func)>>::args_type;
+			using ArgsType = typename entt::meta_function_helper_t<T, std::remove_reference_t<decltype(Func)>>::args_type;
 			using ArgType = entt::type_list_element_t<0, ArgsType>;
 			std::invoke(Func, entt::any_cast<T&>(instance.getValue()), entt::any_cast<const ArgType>(value));
 		}
