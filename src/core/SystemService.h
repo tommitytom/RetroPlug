@@ -161,6 +161,7 @@ namespace rp {
 	public:
 		StateT& getServiceState() {
 			entt::any value = _service->getState();
+			assert(!value.owner());
 			return entt::any_cast<StateT&>(value);
 		}
 

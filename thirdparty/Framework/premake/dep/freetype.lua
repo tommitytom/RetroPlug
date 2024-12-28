@@ -77,6 +77,8 @@ function m.source()
 
 	filter "system:linux"
 		files {
+			FREETYPE_DIR .. "/src/base/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftobjs.c",
 			FREETYPE_DIR .. "/builds/unix/ftsystem.c",
 			FREETYPE_DIR .. "/src/base/ftdebug.c"
 		}
@@ -86,7 +88,7 @@ function m.link()
 	m.include()
 
 	filter { "platforms:not Emscripten" }
-		links { "freetype", "zlib" }
+		--links { "freetype", "zlib" }
 
 	filter { "system:linux" }
 		links { "dl", "pthread" }

@@ -5,9 +5,9 @@
 #include "core/System.h"
 
 namespace rp::ProjectSerializer {
-	std::string serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<SystemDesc>& systems);
+	std::string serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems);
 
-	bool serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<SystemDesc>& systems, bool updatePath);
+	bool serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<const SystemDesc*>& systems, bool updatePath);
 
 	bool deserializeFromMemory(const fw::TypeRegistry& typeRegistry, std::string_view fileData, ProjectState& state, std::vector<SystemDesc>& systemSettings);
 

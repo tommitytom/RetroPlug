@@ -34,6 +34,7 @@ namespace fw {
 		uint32 _frameCount = 0;
 
 		bool _lineAA = true;
+		bool _initialized = false;
 
 	public:
 		BgfxRenderContext() : RenderContext(false) {}
@@ -48,6 +49,8 @@ namespace fw {
 		void endFrame() override;
 
 		void cleanup() override;
+
+		void shutdown() override;
 
 		std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() override;
 

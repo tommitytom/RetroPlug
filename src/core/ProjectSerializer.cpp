@@ -17,20 +17,24 @@ using namespace rp;
 const std::string_view PROJECT_VERSION = "1.0.0";
 const std::string_view RP_VERSION = "0.4.0";
 
-std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<SystemDesc>& systems) {
+std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems) {
 	sol::state s;
 	fw::SolUtil::prepareState(s);
 
-	Guid guid = 0x15D115D1;
-
-	const entt::any& value = systems[0].services.at(guid);
-	LsdjServiceSettings settings =  entt::any_cast<LsdjServiceSettings>(value);
+	Guid guid = 0x421D1B01;
+	const entt::any& value = systems[0]->services.at(guid);
+	const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
 
 	sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
 	projectTable["projectVersion"] = PROJECT_VERSION;
 	projectTable["retroPlugVersion"] = RP_VERSION;
 
-	projectTable["systems"] = fw::LuaSerializer::serializeToObject(typeRegistry, s, systems);
+	sol::table systemsTable = projectTable.create("systems", (int)systems.size());
+
+	for (size_t i = 0; i < systems.size(); ++i) {
+		const SystemDesc& systemDesc = *systems[i];
+		systemsTable.add(fw::LuaSerializer::serializeToObject(typeRegistry, s, systemDesc));
+	}
 
 	std::string target;
 	if (fw::SolUtil::serializeTable(s, projectTable, target)) {
@@ -41,7 +45,7 @@ std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, c
 	}
 }
 
-bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<SystemDesc>& systems, bool updatePath) {
+bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<const SystemDesc*>& systems, bool updatePath) {
 	if (updatePath) {
 		state.path = std::string(path.data());
 	}

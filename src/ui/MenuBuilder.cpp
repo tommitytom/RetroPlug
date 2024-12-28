@@ -194,11 +194,6 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 	loadRoot
 		.action("Project...", []() {})
 		.action("ROM...", [&project, system]() { loadRomDialog(project, system); })
-		.subMenu("ROM As")
-			.action("ABG...", [&project, system]() { loadRomDialog(project, system); })
-			.action("CBG C...", [&project, system]() { loadRomDialog(project, system); })
-			.action("DMG...", [&project, system]() { loadRomDialog(project, system); })
-			.parent()
 		.action("SAV...", []() {})
 		.parent();
 }
