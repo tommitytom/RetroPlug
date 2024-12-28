@@ -80,7 +80,9 @@ function m.source()
 			FREETYPE_DIR .. "/src/base/ftsystem.c",
 			FREETYPE_DIR .. "/src/base/ftobjs.c",
 			FREETYPE_DIR .. "/builds/unix/ftsystem.c",
-			FREETYPE_DIR .. "/src/base/ftdebug.c"
+			FREETYPE_DIR .. "/src/base/ftdebug.c",
+			FREETYPE_DIR .. "/src/base/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftobjs.c",
 		}
 end
 

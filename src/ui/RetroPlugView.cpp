@@ -133,7 +133,7 @@ void RetroPlugView::onInitialize() {
 	//rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
 
 	_resourceReloader.setResourceManager(rm);
-	_resourceReloader.startWatch("C:\\temp\\rpconfig");
+	//_resourceReloader.startWatch("C:\\temp\\rpconfig");
 
 	setupScriptWatch(_typeRegistry, _resourceReloader, "C:\\temp\\rpconfig\\config.lua", _config);
 	
