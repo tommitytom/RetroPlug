@@ -54,11 +54,11 @@ template <typename T>
 void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloader, std::string_view path, T& target) {
 	fw::ResourceManager& rm = *reloader.getResourceManager();
 
-	reloader.startWatch<fw::LuaScriptResource>(path, [&](const fw::LuaScriptHandle& handle) {
+	/*reloader.startWatch<fw::LuaScriptResource>(path, [&](const fw::LuaScriptHandle& handle) {
 		fw::LuaSerializer::deserializeFromBuffer(reg, handle.getResource().getData(), target);
-	});
+	});*/
 
-	rm.load<fw::LuaScriptResource>(path);
+	//rm.load<fw::LuaScriptResource>(path);
 }
 
 void addTreeNodes(fw::TreeViewNode& node, fw::ViewPtr view) {
@@ -130,7 +130,7 @@ void RetroPlugView::onInitialize() {
 	//fitToParent();
 
 	fw::ResourceManager& rm = getResourceManager();
-	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
+	//rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
 
 	_resourceReloader.setResourceManager(rm);
 	_resourceReloader.startWatch("C:\\temp\\rpconfig");

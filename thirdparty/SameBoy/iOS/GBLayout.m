@@ -99,6 +99,11 @@ static bool HasHomeBar(void)
     bezelRect.origin.y -= borderWidth;
     bezelRect.size.width += borderWidth * 2;
     bezelRect.size.height += borderWidth * 2;
+    
+    if (bezelRect.origin.y + bezelRect.size.height >= self.size.height - _homeBar) {
+        bezelRect.origin.y = -32;
+        bezelRect.size.height = self.size.height + 32;
+    }
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bezelRect cornerRadius:borderWidth];
     CGContextSaveGState(context);
     CGContextSetShadowWithColor(context, (CGSize){0, _factor}, _factor, [UIColor colorWithWhite:1 alpha:0.25].CGColor);
@@ -142,6 +147,9 @@ static bool HasHomeBar(void)
     CGRect rect = CGRectMake(0,
                              range.location - range.length / 3,
                              self.size.width, range.length * 2);
+    if (self.size.width > self.size.height) {
+        rect.origin.x += _cutout / 2;
+    }
     NSMutableParagraphStyle *style = [NSParagraphStyle defaultParagraphStyle].mutableCopy;
     style.alignment = NSTextAlignmentCenter;
     [@"SAMEBOY" drawInRect:rect

@@ -11,6 +11,7 @@
 #import "GBTerminalTextFieldCell.h"
 #import "BigSurToolbar.h"
 #import "GBPaletteEditorController.h"
+#import "GBCheatSearchController.h"
 #import "GBObjectView.h"
 #import "GBPaletteView.h"
 #import "GBHexStatusBarRepresenter.h"
@@ -48,16 +49,6 @@
 /* Todo: The general Objective-C coding style conflicts with SameBoy's. This file needs a cleanup. */
 /* Todo: Split into category files! This is so messy!!! */
 
-enum model {
-    MODEL_NONE,
-    MODEL_DMG,
-    MODEL_CGB,
-    MODEL_AGB,
-    MODEL_SGB,
-    MODEL_MGB,
-    
-    MODEL_QUICK_RESET = -1,
-};
 
 @interface Document ()
 @property GBAudioClient *audioClient;
@@ -100,6 +91,7 @@ enum model {
     bool _logToSideView;
     bool _shouldClearSideView;
     enum model _currentModel;
+    bool _usesAutoModel;
     
     bool _rewind;
     bool _modelsChanging;
@@ -126,6 +118,8 @@ enum model {
     
     NSDate *_fileModificationTime;
     __weak NSThread *_emulationThread;
+    
+    GBCheatSearchController *_cheatSearchController;
 }
 
 static void boot_rom_load(GB_gameboy_t *gb, GB_boot_rom_t type)
@@ -140,7 +134,7 @@ static void vblank(GB_gameboy_t *gb, GB_vblank_type_t type)
     [self vblankWithType:type];
 }
 
-static void consoleLog(GB_gameboy_t *gb, const char *string, GB_log_attributes attributes)
+static void consoleLog(GB_gameboy_t *gb, const char *string, GB_log_attributes_t attributes)
 {
     Document *self = (__bridge Document *)GB_get_user_data(gb);
     [self log:string withAttributes: attributes];
@@ -263,6 +257,7 @@ static void debuggerReloadCallback(GB_gameboy_t *gb)
             
         case MODEL_NONE:
         case MODEL_QUICK_RESET:
+        case MODEL_AUTO:
         case MODEL_CGB:
             return (GB_model_t)[[NSUserDefaults standardUserDefaults] integerForKey:@"GBCGBModel"];
             
@@ -303,7 +298,7 @@ static void debuggerReloadCallback(GB_gameboy_t *gb)
     GB_apu_set_sample_callback(&_gb, audioCallback);
     GB_set_rumble_callback(&_gb, rumbleCallback);
     GB_set_infrared_callback(&_gb, infraredStateChanged);
-    GB_set_debugger_reload_callback(&_gb, debuggerReloadCallback);
+    GB_debugger_set_reload_callback(&_gb, debuggerReloadCallback);
     
     GB_gameboy_t *gb = &_gb;
     __unsafe_unretained Document *weakSelf = self;
@@ -341,6 +336,14 @@ static void debuggerReloadCallback(GB_gameboy_t *gb)
     
     [self observeStandardDefaultsKey:@"GBRumbleMode" withBlock:^(NSNumber *value) {
         GB_set_rumble_mode(gb, value.unsignedIntValue);
+    }];
+    
+    [self observeStandardDefaultsKey:@"GBDebuggerFont" withBlock:^(NSString *value) {
+        [self updateFonts];
+    }];
+    
+    [self observeStandardDefaultsKey:@"GBDebuggerFontSize" withBlock:^(NSString *value) {
+        [self updateFonts];
     }];
 }
 
@@ -677,15 +680,46 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     GB_load_boot_rom(&_gb, [path UTF8String]);
 }
 
+- (enum model)bestModelForROM
+{
+    uint8_t *rom = GB_get_direct_access(&_gb, GB_DIRECT_ACCESS_ROM, NULL, NULL);
+    if (!rom) return MODEL_CGB;
+    
+    if (rom[0x143] & 0x80) { // Has CGB features
+        return MODEL_CGB;
+    }
+    if (rom[0x146] == 3) { // Has SGB features
+        return MODEL_SGB;
+    }
+    
+    if (rom[0x14B] == 1) { // Nintendo-licensed (most likely has boot ROM palettes)
+        return MODEL_CGB;
+    }
+
+    if (rom[0x14B] == 0x33 &&
+        rom[0x144] == '0' &&
+        rom[0x145] == '1') { // Ditto
+        return MODEL_CGB;
+    }
+    
+    return MODEL_DMG;
+}
+
 - (IBAction)reset:(id)sender
 {
     [self stop];
     size_t old_width = GB_get_screen_width(&_gb);
     
-    if ([sender tag] != MODEL_NONE) {
+    if ([sender tag] > MODEL_NONE) {
+        /* User explictly selected a model, save the preference */
         _currentModel = (enum model)[sender tag];
+        _usesAutoModel = _currentModel == MODEL_AUTO;
+        [[NSUserDefaults standardUserDefaults] setInteger:_currentModel forKey:@"GBEmulatedModel"];
     }
     
+    /* Reload the ROM, SAV and SYM files */
+    [self loadROM];
+
     if ([sender tag] == MODEL_QUICK_RESET) {
         GB_quick_reset(&_gb);
     }
@@ -699,16 +733,6 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     
     [self updateMinSize];
     
-    if ([sender tag] > MODEL_NONE) {
-        /* User explictly selected a model, save the preference */
-        [[NSUserDefaults standardUserDefaults] setBool:_currentModel == MODEL_DMG forKey:@"EmulateDMG"];
-        [[NSUserDefaults standardUserDefaults] setBool:_currentModel == MODEL_SGB forKey:@"EmulateSGB"];
-        [[NSUserDefaults standardUserDefaults] setBool:_currentModel == MODEL_AGB forKey:@"EmulateAGB"];
-        [[NSUserDefaults standardUserDefaults] setBool:_currentModel == MODEL_MGB forKey:@"EmulateMGB"];
-    }
-    
-    /* Reload the ROM, SAV and SYM files */
-    [self loadROM];
 
     [self start];
 
@@ -750,6 +774,87 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
 }
 
+- (NSFont *)debuggerFontOfSize:(unsigned)size
+{
+    if (!size) {
+        size = [[NSUserDefaults standardUserDefaults] integerForKey:@"GBDebuggerFontSize"];
+    }
+    
+    bool retry = false;
+    
+again:;
+    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"GBDebuggerFont"];
+    if (@available(macOS 10.15, *)) {
+        if ([selectedFont isEqual:@"SF Mono"]) {
+            return [NSFont monospacedSystemFontOfSize:size weight:NSFontWeightRegular];
+        }
+    }
+    
+    NSFont *ret = [NSFont fontWithName:selectedFont size:size];
+    if (ret) return ret;
+    
+    if (retry) {
+        return [NSFont userFixedPitchFontOfSize:size];
+    }
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"GBDebuggerFont"];
+    retry = true;
+    goto again;
+}
+
+
+- (void)updateFonts
+{
+    _hexController.font = [self debuggerFontOfSize:12];
+    [self.paletteView reloadData:self];
+    [self.objectView reloadData:self];
+    
+    NSFont *newFont = [self debuggerFontOfSize:0];
+    NSFont *newBoldFont = [[NSFontManager sharedFontManager] convertFont:newFont toHaveTrait:NSBoldFontMask];
+    self.debuggerSideViewInput.font = newFont;
+    
+    unsigned inputHeight = MAX(ceil([@" " sizeWithAttributes:@{
+        NSFontAttributeName: newFont
+    }].height) + 6, 26);
+    
+    
+    NSRect frame = _consoleInput.frame;
+    unsigned oldHeight = frame.size.height;
+    frame.size.height = inputHeight;
+    _consoleInput.frame = frame;
+    
+    frame = _debugBar.frame;
+    frame.origin.y += (signed)(inputHeight - oldHeight);
+    _debugBar.frame = frame;
+    
+    frame = _debuggerScrollView.frame;
+    frame.origin.y += (signed)(inputHeight - oldHeight);
+    frame.size.height -= (signed)(inputHeight - oldHeight);
+    _debuggerScrollView.frame = frame;
+    
+    _consoleInput.font = newFont;
+    
+    for (NSTextView *view in @[_debuggerSideView, _consoleOutput]) {
+        NSMutableAttributedString *newString = view.attributedString.mutableCopy;
+        [view.attributedString enumerateAttribute:NSFontAttributeName
+                                          inRange:NSMakeRange(0, view.attributedString.length)
+                                          options:0
+                                       usingBlock:^(NSFont *value, NSRange range, BOOL *stop) {
+            if ([[NSFontManager sharedFontManager] fontNamed:value.fontName hasTraits:NSBoldFontMask]) {
+                [newString addAttributes:@{
+                    NSFontAttributeName: newBoldFont
+                } range:range];
+            }
+            else {
+                [newString addAttributes:@{
+                    NSFontAttributeName: newFont
+                } range:range];
+            }
+        }];
+        [view.textStorage setAttributedString:newString];
+    }
+    [_consoleOutput scrollToEndOfDocument:nil];
+}
+
 - (void)windowControllerDidLoadNib:(NSWindowController *)aController 
 {
     [super windowControllerDidLoadNib:aController];
@@ -765,7 +870,7 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     NSMutableParagraphStyle *paragraph_style = [[NSMutableParagraphStyle alloc] init];
     [paragraph_style setLineSpacing:2];
         
-    self.debuggerSideViewInput.font = [NSFont userFixedPitchFontOfSize:12];
+    self.debuggerSideViewInput.font = [self debuggerFontOfSize:0];
     self.debuggerSideViewInput.textColor = [NSColor whiteColor];
     self.debuggerSideViewInput.defaultParagraphStyle = paragraph_style;
     [self.debuggerSideViewInput setString:@"registers\nbacktrace\n"];
@@ -871,19 +976,10 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [self observeStandardDefaultsKey:@"GBVolume" withBlock:^(id newValue) {
         weakSelf->_volume = [[NSUserDefaults standardUserDefaults] doubleForKey:@"GBVolume"];
     }];
-        
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"EmulateDMG"]) {
-        _currentModel = MODEL_DMG;
-    }
-    else if ([[NSUserDefaults standardUserDefaults] boolForKey:@"EmulateSGB"]) {
-        _currentModel = MODEL_SGB;
-    }
-    else if ([[NSUserDefaults standardUserDefaults] boolForKey:@"EmulateMGB"]) {
-        _currentModel = MODEL_MGB;
-    }
-    else {
-        _currentModel = [[NSUserDefaults standardUserDefaults] boolForKey:@"EmulateAGB"]? MODEL_AGB : MODEL_CGB;
-    }
+    
+    
+    _currentModel = [[NSUserDefaults standardUserDefaults] integerForKey:@"GBEmulatedModel"];
+    _usesAutoModel = _currentModel == MODEL_AUTO;
     
     [self initCommon];
     self.view.gb = &_gb;
@@ -900,9 +996,10 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     }
 }
 
-- (void) initMemoryView
+- (void)initMemoryView
 {
     _hexController = [[HFController alloc] init];
+    _hexController.font = [self debuggerFontOfSize:12];
     [_hexController setBytesPerColumn:1];
     [_hexController setEditMode:HFOverwriteMode];
     
@@ -946,6 +1043,16 @@ static unsigned *multiplication_table_for_frequency(unsigned frequency)
     [self.memoryView addSubview:layoutView];
     self.memoryView = layoutView;
 
+    CGSize contentSize = _memoryWindow.contentView.frame.size;
+    while (_hexController.bytesPerLine < 16) {
+        contentSize.width += 4;
+        [_memoryWindow setContentSize:contentSize];
+    }
+    while (_hexController.bytesPerLine > 16) {
+        contentSize.width -= 4;
+        [_memoryWindow setContentSize:contentSize];
+    }
+    
     self.memoryBankItem.enabled = false;
 }
 
@@ -1125,7 +1232,7 @@ static bool is_path_writeable(const char *path)
     return true;
 }
 
-- (int) loadROM
+- (int)loadROM
 {
     __block int ret = 0;
     NSString *fileName = self.romPath;
@@ -1159,7 +1266,7 @@ static bool is_path_writeable(const char *path)
             }
         }
         GB_load_battery(&_gb, self.savPath.UTF8String);
-        GB_load_cheats(&_gb, self.chtPath.UTF8String);
+        GB_load_cheats(&_gb, self.chtPath.UTF8String, true);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.cheatWindowController cheatsUpdated];
         });
@@ -1177,6 +1284,9 @@ static bool is_path_writeable(const char *path)
         [GBWarningPopover popoverWithContents:rom_warnings onWindow:self.mainWindow];
     }
     _fileModificationTime = [[NSFileManager defaultManager] attributesOfItemAtPath:fileName error:nil][NSFileModificationDate];
+    if (_usesAutoModel) {
+        _currentModel = [self bestModelForROM];
+    }
     return ret;
 }
 
@@ -1243,14 +1353,19 @@ static bool is_path_writeable(const char *path)
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)anItem
 {
     if ([anItem action] == @selector(mute:)) {
-        [(NSMenuItem *)anItem setState:!_audioClient.isPlaying];
+        if (_running) {
+            [(NSMenuItem *)anItem setState:!_audioClient.isPlaying];
+        }
+        else {
+            [(NSMenuItem *)anItem setState:[[NSUserDefaults standardUserDefaults] boolForKey:@"Mute"]];
+        }
     }
     else if ([anItem action] == @selector(togglePause:)) {
         [(NSMenuItem *)anItem setState:self.isPaused];
         return !GB_debugger_is_stopped(&_gb);
     }
     else if ([anItem action] == @selector(reset:) && anItem.tag != MODEL_NONE && anItem.tag != MODEL_QUICK_RESET) {
-        [(NSMenuItem *)anItem setState:anItem.tag == _currentModel];
+        [(NSMenuItem *)anItem setState:(anItem.tag == _currentModel) || (anItem.tag == MODEL_AUTO && _usesAutoModel)];
     }
     else if ([anItem action] == @selector(interrupt:)) {
         if (![[NSUserDefaults standardUserDefaults] boolForKey:@"DeveloperMode"]) {
@@ -1441,7 +1556,7 @@ enum GBWindowResizeAction
     [_consoleOutputLock unlock];
 }
 
-- (void) log: (const char *) string withAttributes: (GB_log_attributes) attributes
+- (void)log:(const char *)string withAttributes:(GB_log_attributes_t)attributes
 {
     NSString *nsstring = @(string); // For ref-counting
     if (_capturedOutput) {
@@ -1450,7 +1565,7 @@ enum GBWindowResizeAction
     }
     
     
-    NSFont *font = [NSFont userFixedPitchFontOfSize:12];
+    NSFont *font = [self debuggerFontOfSize:0];
     NSUnderlineStyle underline = NSUnderlineStyleNone;
     if (attributes & GB_LOG_BOLD) {
         font = [[NSFontManager sharedFontManager] convertFont:font toHaveTrait:NSBoldFontMask];
@@ -1691,18 +1806,6 @@ enum GBWindowResizeAction
     [self log:log withAttributes:0];
 }
 
-- (uint8_t) readMemory:(uint16_t)addr
-{
-    while (!GB_is_inited(&_gb));
-    return GB_safe_read_memory(&_gb, addr);
-}
-
-- (void) writeMemory:(uint16_t)addr value:(uint8_t)value
-{
-    while (!GB_is_inited(&_gb));
-    GB_write_memory(&_gb, addr, value);
-}
-
 - (void)performAtomicBlock: (void (^)())block
 {
     while (!GB_is_inited(&_gb));
@@ -1762,6 +1865,11 @@ enum GBWindowResizeAction
 {
     if (self.memoryWindow.isVisible) {
         [_hexController reloadData];
+    }
+    if (_cheatSearchController.window.isVisible) {
+        if ([_cheatSearchController.tableView editedColumn] != 2) {
+            [_cheatSearchController.tableView reloadData];
+        }
     }
 }
 
@@ -2047,7 +2155,7 @@ enum GBWindowResizeAction
                 NSError *error;
                 AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType: AVMediaTypeVideo];
                 AVCaptureDeviceInput *input = [AVCaptureDeviceInput deviceInputWithDevice: device error: &error];
-                CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions([[[device formats] lastObject] formatDescription]);
+                CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions([[device activeFormat] formatDescription]);
 
                 if (!input) {
                     GB_camera_updated(&_gb);
@@ -2386,6 +2494,14 @@ enum GBWindowResizeAction
 - (IBAction)showCheats:(id)sender
 {
     [self.cheatsWindow makeKeyAndOrderFront:nil];
+}
+
+- (IBAction)showCheatSearch:(id)sender
+{
+    if (!_cheatSearchController) {
+        _cheatSearchController = [GBCheatSearchController controllerWithDocument:self];
+    }
+    [_cheatSearchController.window makeKeyAndOrderFront:sender];
 }
 
 - (IBAction)toggleCheats:(id)sender
@@ -2771,6 +2887,17 @@ enum GBWindowResizeAction
 - (IBAction)debuggerButtonPressed:(NSButton *)sender
 {
     [self queueDebuggerCommand:sender.alternateTitle];
+}
+
++ (NSArray<NSString *> *)readableTypes
+{
+    NSMutableSet *set = [NSMutableSet setWithArray:[super readableTypes]];
+    for (NSString *type in @[@"gb", @"gbc", @"isx", @"gbs"]) {
+        [set addObject:(__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension,
+                                                                                           (__bridge CFStringRef)type,
+                                                                                           NULL)];
+    }
+    return [set allObjects];
 }
 
 @end
