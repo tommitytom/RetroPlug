@@ -7,6 +7,7 @@ typedef enum {
     GBRunModeTurbo,
     GBRunModeRewind,
     GBRunModePaused,
+    GBRunModeUnderclock,
 } GBRunMode;
 
 @interface GBViewController : UIViewController <UIApplicationDelegate,
@@ -21,7 +22,13 @@ typedef enum {
 - (void)openStates;
 - (void)openSettings;
 - (void)showAbout;
+- (void)openConnectMenu;
+- (void)openCheats;
+- (void)emptyPrinterFeed;
 - (void)saveStateToFile:(NSString *)file;
 - (bool)loadStateFromFile:(NSString *)file;
+- (bool)handleOpenURLs:(NSArray <NSURL *> *)urls
+           openInPlace:(bool)inPlace;
+- (void)dismissViewController;
 @property (nonatomic) GBRunMode runMode;
 @end

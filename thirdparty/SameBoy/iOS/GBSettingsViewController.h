@@ -17,15 +17,14 @@ typedef enum {
     GBUnderclock,
     // GBHotkey1, // Todo
     // GBHotkey2, // Todo
-    GBJoypadButtonCount,
-    GBButtonCount =  GBUnderclock + 1,
-    GBGameBoyButtonCount = GBStart + 1,
+    GBTotalButtonCount,
+    GBKeyboardButtonCount =  GBUnderclock + 1,
+    GBPerPlayerButtonCount = GBStart + 1,
     GBUnusedButton = 0xFF,
 } GBButton;
 
 @interface GBSettingsViewController : UITableViewController
 + (UIViewController *)settingsViewControllerWithLeftButton:(UIBarButtonItem *)button;
-+ (const GB_palette_t *)paletteForTheme:(NSString *)theme;
 + (GBButton)controller:(GCController *)controller convertUsageToButton:(GBControllerUsage)usage;
 + (GBTheme *)themeNamed:(NSString *)name;
 @end

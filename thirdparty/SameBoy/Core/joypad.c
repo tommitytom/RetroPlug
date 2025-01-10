@@ -221,3 +221,11 @@ void GB_set_emulate_joypad_bouncing(GB_gameboy_t *gb, bool emulate)
 {
     gb->no_bouncing_emulation = !emulate;
 }
+
+void GB_set_update_input_hint_callback(GB_gameboy_t *gb, GB_update_input_hint_callback_t callback)
+{
+    if (!callback) {
+        GB_ASSERT_NOT_RUNNING_OTHER_THREAD(gb)
+    }
+    gb->update_input_hint_callback = callback;
+}

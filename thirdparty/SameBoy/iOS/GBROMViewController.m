@@ -1,16 +1,14 @@
-#import "GBLoadROMTableViewController.h"
+#import "GBROMViewController.h"
 #import "GBROMManager.h"
 #import "GBViewController.h"
-#import "GBHubViewController.h"
+#import "GBLibraryViewController.h"
 #import <CoreServices/CoreServices.h>
 #import <objc/runtime.h>
 
-@interface GBLoadROMTableViewController() <UIDocumentPickerDelegate>
-@end
-
-@implementation GBLoadROMTableViewController
+@implementation GBROMViewController
 {
     NSIndexPath *_renamingPath;
+    NSArray *_roms;
 }
 
 - (instancetype)init
@@ -19,10 +17,9 @@
     self.navigationItem.rightBarButtonItem = self.editButtonItem;
     
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(deselectRow)
+                                             selector:@selector(reactivate)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
-    
     return self;
 }
 
@@ -33,25 +30,17 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (section == 1) return 3;
-    return [GBROMManager sharedManager].allROMs.count;
+    if (section == 1) return 2;
+    return (_roms = [GBROMManager sharedManager].allROMs).count;
 }
 
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+- (UITableViewCell *)cellForROM:(NSString *)rom
 {
-    if (indexPath.section == 1) {
-        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-        switch (indexPath.item) {
-            case 0: cell.textLabel.text = @"Import ROM files"; break;
-            case 1: cell.textLabel.text = @"Browse Homebrew Hub"; break;
-            case 2: cell.textLabel.text = @"Show Library in Files"; break;
-        }
-        return cell;
-    }
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    NSString *rom = [GBROMManager sharedManager].allROMs[[indexPath indexAtPosition:1]];
-    cell.textLabel.text = rom;
-    cell.accessoryType = [rom isEqualToString:[GBROMManager sharedManager].currentROM]? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    cell.textLabel.text = rom.lastPathComponent;
+    bool isCurrentROM = [rom isEqualToString:[GBROMManager sharedManager].currentROM];
+    bool checkmark = isCurrentROM;
+    cell.accessoryType = checkmark? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     
     NSString *pngPath = [[[GBROMManager sharedManager] autosaveStateFileForROM:rom] stringByAppendingPathExtension:@"png"];
     UIGraphicsBeginImageContextWithOptions((CGSize){60, 60}, false, self.view.window.screen.scale);
@@ -70,6 +59,20 @@
     UIGraphicsEndImageContext();
     
     return cell;
+
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (indexPath.section == 1) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        switch (indexPath.item) {
+            case 0: cell.textLabel.text = @"Import ROM files"; break;
+            case 1: cell.textLabel.text = @"Show Library in Files"; break;
+        }
+        return cell;
+    }
+    return [self cellForROM:_roms[[indexPath indexAtPosition:1]]];
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -81,7 +84,7 @@
 
 - (NSString *)title
 {
-    return @"ROM Library";
+    return @"Local Library";
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
@@ -89,6 +92,13 @@
     if (section == 0) return nil;
 
     return @"You can also import ROM files by opening them in SameBoy using the Files app or a web browser, or by sending them over with AirDrop.";
+}
+
+- (void)romSelectedAtIndex:(unsigned)index
+{
+    NSString *rom = _roms[index];
+    [GBROMManager sharedManager].currentROM = rom;
+    [self.presentingViewController dismissViewControllerAnimated:true completion:nil];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
@@ -100,20 +110,21 @@
                 NSString *gbUTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)@"gb", NULL);
                 NSString *gbcUTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)@"gbc", NULL);
                 NSString *isxUTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)@"isx", NULL);
-                
+                NSString *zipUTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)@"zip", NULL);
+
                 NSMutableSet *extensions = [NSMutableSet set];
-                [extensions addObjectsFromArray:(__bridge NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)gbUTI, kUTTagClassFilenameExtension)];
-                [extensions addObjectsFromArray:(__bridge NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)gbcUTI, kUTTagClassFilenameExtension)];
-                [extensions addObjectsFromArray:(__bridge NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)isxUTI, kUTTagClassFilenameExtension)];
+                [extensions addObjectsFromArray:(__bridge_transfer NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)gbUTI, kUTTagClassFilenameExtension)];
+                [extensions addObjectsFromArray:(__bridge_transfer NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)gbcUTI, kUTTagClassFilenameExtension)];
+                [extensions addObjectsFromArray:(__bridge_transfer NSArray *)UTTypeCopyAllTagsWithClass((__bridge CFStringRef)isxUTI, kUTTagClassFilenameExtension)];
                 
                 if (extensions.count != 3) {
                     if (![[NSUserDefaults standardUserDefaults] boolForKey:@"GBShownUTIWarning"]) {
                         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"File Association Conflict"
                                                                                        message:@"Due to a limitation in iOS, the file picker will allow you to select files not supported by SameBoy. SameBoy will only import GB, GBC and ISX files.\n\nIf you have a multi-system emulator installed, updating it could fix this problem."
                                                                                 preferredStyle:UIAlertControllerStyleAlert];
-                        [alert  addAction:[UIAlertAction actionWithTitle:@"Close"
-                                                                   style:UIAlertActionStyleCancel
-                                                                 handler:^(UIAlertAction *action) {
+                        [alert addAction:[UIAlertAction actionWithTitle:@"Close"
+                                                                  style:UIAlertActionStyleCancel
+                                                                handler:^(UIAlertAction *action) {
                             [[NSUserDefaults standardUserDefaults] setBool:true forKey:@"GBShownUTIWarning"];
                             [self tableView:tableView didSelectRowAtIndexPath:indexPath];
                         }]];
@@ -121,14 +132,15 @@
                         return;
                     }
                 }
-                
+                                
                 [self.presentingViewController dismissViewControllerAnimated:true completion:^{
                     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"com.github.liji32.sameboy.gb",
                                                                                                                              @"com.github.liji32.sameboy.gbc",
                                                                                                                              @"com.github.liji32.sameboy.isx",
                                                                                                                              gbUTI ?: @"",
                                                                                                                              gbcUTI ?: @"",
-                                                                                                                             isxUTI ?: @""]
+                                                                                                                             isxUTI ?: @"",
+                                                                                                                             zipUTI ?: @""]
                                                                                                                     inMode:UIDocumentPickerModeImport];
                     picker.allowsMultipleSelection = true;
                     if (@available(iOS 13.0, *)) {
@@ -141,81 +153,22 @@
                 return;
             }
             case 1: {
-                [self.navigationController pushViewController:[[GBHubViewController alloc] init]
-                                                     animated:true];
-                return;
-            }
-            case 2: {
-                [[UIApplication sharedApplication] openURL:[NSURL URLWithString:[NSString stringWithFormat:@"shareddocuments://%@", NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).firstObject]]
+                NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"shareddocuments://%@",
+                                                   [self.rootPath stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLPathAllowedCharacterSet]]]];
+                [[UIApplication sharedApplication] openURL:url
                                                    options:nil
                                          completionHandler:nil];
                 return;
             }
         }
     }
-    [GBROMManager sharedManager].currentROM = [GBROMManager sharedManager].allROMs[[indexPath indexAtPosition:1]];
-    [self.presentingViewController dismissViewControllerAnimated:true completion:^{
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"GBROMChanged" object:nil];
-    }];
+    [self romSelectedAtIndex:indexPath.row];
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray <NSURL *>*)urls
 {
-    NSMutableArray<NSURL *> *validURLs = [NSMutableArray array];
-    NSMutableArray<NSString *> *skippedBasenames = [NSMutableArray array];
-
-    for (NSURL *url in urls) {
-        if ([@[@"gb", @"gbc", @"isx"] containsObject:url.pathExtension.lowercaseString]) {
-            [validURLs addObject:url];
-        }
-        else {
-            [skippedBasenames addObject:url.lastPathComponent];
-        }
-    }
-    
-    if (skippedBasenames.count) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Unsupported Files"
-                                                                       message:[NSString stringWithFormat:@"Could not import the following files because they're not supported:\n%@",
-                                                                                [skippedBasenames componentsJoinedByString:@"\n"]]
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert  addAction:[UIAlertAction actionWithTitle:@"Close"
-                                                   style:UIAlertActionStyleCancel
-                                                 handler:^(UIAlertAction *action) {
-            [[NSUserDefaults standardUserDefaults] setBool:false forKey:@"GBShownUTIWarning"]; // Somebody might need a reminder
-        }]];
-        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:true completion:nil];
-        urls = validURLs;
-    }
-    
-    if (urls.count == 1) {
-        NSURL *url = urls.firstObject;
-        NSString *potentialROM = [[url.path stringByDeletingLastPathComponent] lastPathComponent];
-        if ([[[GBROMManager sharedManager] romFileForROM:potentialROM].stringByStandardizingPath isEqualToString:url.path.stringByStandardizingPath]) {
-            [GBROMManager sharedManager].currentROM = potentialROM;
-        }
-        else {
-            [url startAccessingSecurityScopedResource];
-            [GBROMManager sharedManager].currentROM =
-            [[GBROMManager sharedManager] importROM:url.path
-                                       keepOriginal:true];
-            [url stopAccessingSecurityScopedResource];
-        }
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"GBROMChanged" object:nil];
-    }
-    else {
-        for (NSURL *url in urls) {
-            NSString *potentialROM = [[url.path stringByDeletingLastPathComponent] lastPathComponent];
-            if ([[[GBROMManager sharedManager] romFileForROM:potentialROM].stringByStandardizingPath isEqualToString:url.path.stringByStandardizingPath]) {
-                // That's an already imported ROM
-                continue;
-            }
-            [url startAccessingSecurityScopedResource];
-            [[GBROMManager sharedManager] importROM:url.path
-                                       keepOriginal:true];
-            [url stopAccessingSecurityScopedResource];
-        }
-        [(GBViewController *)[UIApplication sharedApplication].keyWindow.rootViewController openLibrary];
-    }
+    [(GBViewController *)[UIApplication sharedApplication].delegate handleOpenURLs:urls
+                                                                       openInPlace:false];
 }
 
 - (UIModalPresentationStyle)modalPresentationStyle
@@ -223,28 +176,34 @@
     return UIModalPresentationOverFullScreen;
 }
 
+- (void)deleteROMAtIndex:(unsigned)index
+{
+    NSString *rom = _roms[index];
+
+    [[GBROMManager sharedManager] deleteROM:rom];
+    [self.tableView deleteRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:index inSection:0]] withRowAnimation:UITableViewRowAnimationAutomatic];
+    if ([[GBROMManager sharedManager].currentROM isEqualToString:rom]) {
+        [GBROMManager sharedManager].currentROM = nil;
+    }
+}
+
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
 {
     if (indexPath.section == 1) return;
 
     if (editingStyle != UITableViewCellEditingStyleDelete) return;
-    NSString *rom = [GBROMManager sharedManager].allROMs[[indexPath indexAtPosition:1]];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Delete ROM “%@”?", rom]
+    NSString *rom = [self.tableView cellForRowAtIndexPath:indexPath].textLabel.text;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Delete “%@”?", rom]
                                                                    message: @"Save data for this ROM will also be deleted."
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert  addAction:[UIAlertAction actionWithTitle:@"Delete"
-                                               style:UIAlertActionStyleDestructive
-                                             handler:^(UIAlertAction *action) {
-        [[GBROMManager sharedManager] deleteROM:rom];
-        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-        if ([[GBROMManager sharedManager].currentROM isEqualToString:rom]) {
-            [GBROMManager sharedManager].currentROM = nil;
-            [[NSNotificationCenter defaultCenter] postNotificationName:@"GBROMChanged" object:nil];
-        }
+    [alert addAction:[UIAlertAction actionWithTitle:@"Delete"
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction *action) {
+        [self deleteROMAtIndex:indexPath.row];
     }]];
-    [alert  addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                               style:UIAlertActionStyleCancel
-                                             handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
     [self presentViewController:alert animated:true completion:nil];
 }
 
@@ -253,10 +212,12 @@
     if (indexPath.section == 1) return;
     
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
-    UITextField *field = [[UITextField alloc] initWithFrame:cell.textLabel.frame];
+    CGRect frame = cell.textLabel.frame;
+    frame.size.width = cell.textLabel.superview.frame.size.width - 8 - frame.origin.x;
+    UITextField *field = [[UITextField alloc] initWithFrame:frame];
     field.font = cell.textLabel.font;
     field.text = cell.textLabel.text;
-    cell.textLabel.text = @"";
+    cell.textLabel.textColor = [UIColor clearColor];
     [[cell.textLabel superview] addSubview:field];
     [field becomeFirstResponder];
     [field selectAll:nil];
@@ -264,29 +225,36 @@
     [field addTarget:self action:@selector(doneRename:) forControlEvents:UIControlEventEditingDidEnd | UIControlEventEditingDidEndOnExit];
 }
 
+- (void)renameROM:(NSString *)oldName toName:(NSString *)newName
+{
+    [[GBROMManager sharedManager] renameROM:oldName toName:newName];
+    [self.tableView reloadData];
+}
+
 - (void)doneRename:(UITextField *)sender
 {
     if (!_renamingPath) return;
     NSString *newName = sender.text;
-    NSString *oldName = [GBROMManager sharedManager].allROMs[[_renamingPath indexAtPosition:1]];
+    NSString *oldName = [self.tableView cellForRowAtIndexPath:_renamingPath].textLabel.text;
+    
     _renamingPath = nil;
     if ([newName isEqualToString:oldName]) {
         [self.tableView reloadData];
         return;
     }
+    
     if ([newName containsString:@"/"]) {
         [self.tableView reloadData];
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"You can't use a name that contains “/”. Please choose another name."
                                                                        message:nil
                                                                 preferredStyle:UIAlertControllerStyleAlert];
-        [alert  addAction:[UIAlertAction actionWithTitle:@"OK"
-                                                   style:UIAlertActionStyleCancel
-                                                 handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                  style:UIAlertActionStyleCancel
+                                                handler:nil]];
         [self presentViewController:alert animated:true completion:nil];
         return;
     }
-    [[GBROMManager sharedManager] renameROM:oldName toName:newName];
-    [self.tableView reloadData];
+    [self renameROM:oldName toName:newName];
     _renamingPath = nil;
 }
 
@@ -294,6 +262,13 @@
 {
     return indexPath.section == 0;
 }
+
+- (void)duplicateROMAtIndex:(unsigned)index
+{
+    [[GBROMManager sharedManager] duplicateROM:_roms[index]];
+    [self.tableView reloadData];
+}
+
 
 // Leave these ROM management to iOS 13.0 and up for now
 - (UIContextMenuConfiguration *)tableView:(UITableView *)tableView
@@ -305,7 +280,16 @@ contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
     return [UIContextMenuConfiguration configurationWithIdentifier:nil
                                                    previewProvider:nil
                                                     actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
-        return [UIMenu menuWithTitle:nil children:@[
+        UIAction *deleteAction = [UIAction actionWithTitle:@"Delete"
+                                                     image:[UIImage systemImageNamed:@"trash"]
+                                                identifier:nil
+                                                   handler:^(UIAction *action) {
+            [self tableView:tableView
+         commitEditingStyle:UITableViewCellEditingStyleDelete
+          forRowAtIndexPath:indexPath];
+        }];
+        deleteAction.attributes = UIMenuElementAttributesDestructive;
+        NSMutableArray *items = @[
             [UIAction actionWithTitle:@"Rename"
                                 image:[UIImage systemImageNamed:@"pencil"]
                            identifier:nil
@@ -316,10 +300,11 @@ contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
                                 image:[UIImage systemImageNamed:@"plus.square.on.square"]
                            identifier:nil
                               handler:^(__kindof UIAction *action) {
-                [[GBROMManager sharedManager] duplicateROM:[GBROMManager sharedManager].allROMs[[indexPath indexAtPosition:1]]];
-                [self.tableView reloadData];
+                [self duplicateROMAtIndex:indexPath.row];
             }],
-        ]];
+        ].mutableCopy;
+        [items addObject:deleteAction];
+        return [UIMenu menuWithTitle:nil children:items];
     }];
 }
 
@@ -330,9 +315,24 @@ contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
     }
 }
 
+- (void)reactivate
+{
+    [self deselectRow];
+    // Do not auto-reload if busy
+    if (self.view.window.userInteractionEnabled) {
+        [self.tableView reloadData];
+    }
+}
+
 - (void)viewWillAppear:(BOOL)animated
 {
     [self.tableView reloadData];
+    [super viewWillAppear:animated];
+}
+
+- (NSString *)rootPath
+{
+    return [GBROMManager sharedManager].localRoot;
 }
 
 @end

@@ -18,7 +18,9 @@ extern "C" {
 #include "bootroms/agb_boot.h"
 #include "bootroms/cgb_boot.h"
 #include "bootroms/cgb_boot_fast.h"
+#include "bootroms/cgb0_boot.h"
 #include "bootroms/dmg_boot.h"
+#include "bootroms/mgb_boot.h"
 #include "bootroms/sgb_boot.h"
 #include "bootroms/sgb2_boot.h"
 

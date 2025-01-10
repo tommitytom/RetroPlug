@@ -57,7 +57,7 @@ void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloade
 	/*reloader.startWatch<fw::LuaScriptResource>(path, [&](const fw::LuaScriptHandle& handle) {
 		fw::LuaSerializer::deserializeFromBuffer(reg, handle.getResource().getData(), target);
 	});
-
+	
 	rm.load<fw::LuaScriptResource>(path);*/
 }
 

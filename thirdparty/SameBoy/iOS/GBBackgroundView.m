@@ -5,14 +5,14 @@
 #import "GBViewController.h"
 #import "GBROMManager.h"
 
-double CGPointSquaredDistance(CGPoint a, CGPoint b)
+static double CGPointSquaredDistance(CGPoint a, CGPoint b)
 {
     double deltaX = a.x - b.x;
     double deltaY = a.y - b.y;
     return deltaX * deltaX + deltaY * deltaY;
 }
 
-double CGPointAngle(CGPoint a, CGPoint b)
+static double CGPointAngle(CGPoint a, CGPoint b)
 {
     double deltaX = a.x - b.x;
     double deltaY = a.y - b.y;
@@ -91,6 +91,7 @@ static GB_key_mask_t angleToKeyMask(double angle)
     bool _inDynamicSpeedMode;
     bool _previewMode;
     
+    UIView *_fadeView;
     UIImageView *_dpadView;
     UIImageView *_dpadShadowView;
     UIImageView *_aButtonView;
@@ -104,6 +105,7 @@ static GB_key_mask_t angleToKeyMask(double angle)
     NSTimer *_fadeTimer;
     
     GB_key_mask_t _lastMask;
+    bool _fullScreenMode;
 }
 
 - (void)reloadThemeImages
@@ -115,6 +117,12 @@ static GB_key_mask_t angleToKeyMask(double angle)
     self.usesSwipePad = self.usesSwipePad;
 }
 
+- (void)setDefaultScreenLabel
+{
+    _screenLabel.text = @"Tap the Game Boy screen to open the menu and load a ROM from the library.";
+}
+
+
 - (instancetype)initWithLayout:(GBLayout *)layout;
 {
     self = [super initWithImage:nil];
@@ -124,12 +132,12 @@ static GB_key_mask_t angleToKeyMask(double angle)
     _touches = [NSMutableSet set];
     
     _screenLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    _screenLabel.text = @"Tap the Game Boy screen to open the menu and load a ROM from the library.";
     _screenLabel.font = [UIFont systemFontOfSize:20 weight:UIFontWeightMedium];
     _screenLabel.textAlignment = NSTextAlignmentCenter;
     _screenLabel.textColor = [UIColor whiteColor];
     _screenLabel.lineBreakMode = NSLineBreakByWordWrapping;
     _screenLabel.numberOfLines = 0;
+    [self setDefaultScreenLabel];
     [self addSubview:_screenLabel];
     
     _dpadView = [[UIImageView alloc] initWithImage:[_layout.theme imageNamed:@"dpad"]];
@@ -142,11 +150,17 @@ static GB_key_mask_t angleToKeyMask(double angle)
     _dpadShadowView.hidden = true;
     _gbView = [[GBViewMetal alloc] initWithFrame:CGRectZero];
     
+    _fadeView = [[UIView alloc] initWithFrame:self.frame];
+    _fadeView.backgroundColor = [UIColor colorWithWhite:0 alpha:0];
+    _fadeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _fadeView.multipleTouchEnabled = true;
+    
     [self addSubview:_dpadView];
     [self addSubview:_aButtonView];
     [self addSubview:_bButtonView];
     [self addSubview:_startButtonView];
     [self addSubview:_selectButtonView];
+    [self addSubview:_fadeView];
     [self addSubview:_gbView];
     
     [_dpadView addSubview:_dpadShadowView];
@@ -183,6 +197,10 @@ static GB_key_mask_t angleToKeyMask(double angle)
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
     if (_previewMode) return;
+    if (_fullScreenMode) {
+        self.fullScreenMode = false;
+        return;
+    }
     static const double dpadRadius = 75;
     CGPoint dpadLocation = _layout.dpadLocation;
     double factor = [UIScreen mainScreen].scale;
@@ -460,12 +478,28 @@ static GB_key_mask_t angleToKeyMask(double angle)
     screenFrame.size.width /= [UIScreen mainScreen].scale;
     screenFrame.size.height /= [UIScreen mainScreen].scale;
     
-    _gbView.frame = screenFrame;
+    if (_fullScreenMode) {
+        CGRect fullScreenFrame = layout.fullScreenRect;
+        fullScreenFrame.origin.x /= [UIScreen mainScreen].scale;
+        fullScreenFrame.origin.y /= [UIScreen mainScreen].scale;
+        fullScreenFrame.size.width /= [UIScreen mainScreen].scale;
+        fullScreenFrame.size.height /= [UIScreen mainScreen].scale;
+        _gbView.frame = fullScreenFrame;
+    }
+    else {
+        _gbView.frame = screenFrame;
+    }
     
     screenFrame.origin.x += 8;
     screenFrame.origin.y += 8;
     screenFrame.size.width -= 16;
     screenFrame.size.height -= 16;
+    
+    if (@available(iOS 13.0, *)) {
+        self.overrideUserInterfaceStyle = layout.theme.isDark? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.tintColor = layout.theme.buttonColor;
+    }
+
     _screenLabel.frame = screenFrame;
 }
 
@@ -577,6 +611,23 @@ static GB_key_mask_t angleToKeyMask(double angle)
         _screenLabel = nil;
     }
     _previewMode = true;
+}
+
+- (bool)fullScreenMode
+{
+    return _fullScreenMode;
+}
+
+- (void)setFullScreenMode:(bool)fullScreenMode
+{
+    if (fullScreenMode == _fullScreenMode) return;
+    _fullScreenMode = fullScreenMode;
+    [UIView animateWithDuration:1.0/3 animations:^{
+        // Animating alpha has some weird quirks for some reason
+        _fadeView.backgroundColor = [UIColor colorWithWhite:0 alpha:fullScreenMode];
+        [self setLayout:_layout];
+    }];
+    [self.window.rootViewController setNeedsStatusBarAppearanceUpdate];
 }
 
 @end
