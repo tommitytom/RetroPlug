@@ -28,11 +28,12 @@ namespace fw::app {
 		_defaultTexture = nullptr;
 		_defaultProgram = nullptr;
 
-		_resourceManager = nullptr;
-
 		_mainWindow = nullptr;
-		_renderContext = nullptr;
 
+		_resourceManager->cleanup();
+		_resourceManager = nullptr;
+		_renderContext = nullptr;
+		
 		_windowManager = nullptr;
 	}
 

@@ -64,6 +64,24 @@ namespace rp {
 		LsdjSyncMode syncMode = LsdjSyncMode::Off;
 		bool autoPlay = false;
 		uint32 tempoDivisor = 1;
+/*
+		ArduinoboyServiceSettings& operator=(const ArduinoboyServiceSettings& other) {
+			syncMode = other.syncMode;
+			autoPlay = other.autoPlay;
+			tempoDivisor = other.tempoDivisor;
+			return *this;
+		}
+
+		ArduinoboyServiceSettings& operator=(ArduinoboyServiceSettings&& other) noexcept {
+			syncMode = other.syncMode;
+			autoPlay = other.autoPlay;
+			tempoDivisor = other.tempoDivisor;
+			other.syncMode = LsdjSyncMode::Off;
+			other.autoPlay = false;
+			other.tempoDivisor = 1;
+			return *this;
+		}
+		*/
 	};
 
 	const SystemServiceType LSDJ_SERVICE_TYPE = 0x15D115D1;

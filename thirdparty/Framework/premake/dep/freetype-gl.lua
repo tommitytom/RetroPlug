@@ -35,7 +35,7 @@ end
 
 function m.link()
 	m.include()
-	links { "freetype-gl" }
+	links { "freetype-gl", "freetype" }
 end
 
 function m.project()

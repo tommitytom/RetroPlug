@@ -56,12 +56,12 @@ namespace fw {
 	namespace FileDialog {
 		using Callback = std::function<void(std::vector<std::string>&, bool)>;
 
-		bool fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb);
+		//bool fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb);
 
 		bool fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName = "");
 
 		bool basicFileOpen(UiHandle* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect = false, bool foldersOnly = false);
 		bool basicFileSave(UiHandle* ui, std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName = "");
-		void basicMessageBox();
+		//void basicMessageBox();
 	}
 }

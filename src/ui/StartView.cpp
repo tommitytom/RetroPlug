@@ -11,6 +11,7 @@
 #include "ui/MenuBuilder.h"
 
 #include "sameboy/SameBoySystem.h"
+#include "sameboy/Constants.h"
 #include "util/LoaderUtil.h"
 
 #include "roms/mgb.h"
@@ -39,7 +40,7 @@ void StartView::setupMenu() {
 		.action("Load MGB", [this]() {
 			Project& project = getState<Project>();
 
-			SystemPtr system = project.addSystem(0x5A8EB011, {
+			SystemPtr system = project.addSystem(SAMEBOY_GUID, {
 				.desc = {
 					.paths = {
 						.romPath = "mgb.gb"

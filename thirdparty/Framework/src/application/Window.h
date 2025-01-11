@@ -49,7 +49,8 @@ namespace fw::app {
 		}
 
 		virtual void onCleanup() {
-			_viewManager.reset();
+			_viewManager = nullptr;
+			_view = nullptr;
 		}
 
 		virtual void onFrame() {}

@@ -28,6 +28,8 @@ namespace fw {
 
 		virtual void cleanup() = 0;
 
+		virtual void shutdown() = 0;
+
 		virtual std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() = 0;
 
 		bool requiresFlip() const {

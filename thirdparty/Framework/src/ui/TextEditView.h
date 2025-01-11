@@ -207,7 +207,7 @@ namespace fw {
 			}
 		}
 
-		void setValue(const FlexValue& value) {
+		void setValue(const FlexValue& value) override {
 			_value = value;
 			
 			switch (value.getUnit()) {
@@ -222,7 +222,7 @@ namespace fw {
 			}
 		}
 
-		FlexValue getValue() const {
+		FlexValue getValue() const override {
 			return _value;
 		}
 

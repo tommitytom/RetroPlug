@@ -35,13 +35,13 @@ namespace rp {
 		~TypedSystemOverlay() = default;
 
 		T& getServiceState() {
-			return getNode()->getSystemService()->getStateAs<T&>();
+			return getNode()->getSystemService()->template getStateAs<T&>();
 			//entt::any value = getService()->getState();
 			//return entt::any_cast<T&>(value);
 		}
 
 		const T& getServiceState() const {
-			return getNode()->getSystemService()->getStateAs<const T&>();
+			return getNode()->getSystemService()->template getStateAs<const T&>();
 			//return entt::any_cast<const T&>(getService()->getState());
 		}
 
@@ -55,7 +55,7 @@ namespace rp {
 		}
 
 		template <auto Candidate>
-		void setField(FieldType<T, Candidate>::type&& data) {
+		void setField(typename FieldType<T, Candidate>::type&& data) {
 			getServiceNode()->template setField<Candidate>(getState<fw::EventNode>(), std::forward<typename FieldType<T, Candidate>::type>(data));
 		}
 	};

@@ -6,9 +6,6 @@
 
 #ifdef GB_INTERNAL
 
-#define internal
-#define noinline
-
 // "Keyword" definitions
 #define likely(x)   GB_likely(x)
 #define unlikely(x) GB_unlikely(x)
@@ -27,10 +24,8 @@
 #define __builtin_bswap16(x) ({ typeof(x) _x = (x); _x >> 8 | _x << 8; })
 #endif
 
-
-
-//#define internal __attribute__((visibility("hidden")))
-//#define noinline __attribute__((noinline))
+#define internal __attribute__((visibility("hidden")))
+#define noinline __attribute__((noinline))
 
 #if __clang__
 #define unrolled _Pragma("unroll")

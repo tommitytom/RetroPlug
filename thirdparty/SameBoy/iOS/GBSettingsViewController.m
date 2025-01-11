@@ -1,7 +1,8 @@
 #import "GBSettingsViewController.h"
-#import "GBTemperatureSlider.h"
+#import "GBSlider.h"
 #import "GBViewBase.h"
 #import "GBThemesViewController.h"
+#import "GBPalettePicker.h"
 #import "GBHapticManager.h"
 #import "GCExtendedGamepad+AllElements.h"
 #import <objc/runtime.h>
@@ -21,95 +22,6 @@ static NSString const *typeLightTemp = @"typeLightTemp";
     NSArray<NSDictionary *> *_structure;
     UINavigationController *_detailsNavigation;
     NSArray<NSArray<GBTheme *> *> *_themes; // For prewarming
-}
-
-+ (const GB_palette_t *)paletteForTheme:(NSString *)theme
-{
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([theme isEqualToString:@"Greyscale"]) {
-        return &GB_PALETTE_GREY;
-    }
-    if ([theme isEqualToString:@"Lime (Game Boy)"]) {
-        return &GB_PALETTE_DMG;
-    }
-    if ([theme isEqualToString:@"Olive (Pocket)"]) {
-        return &GB_PALETTE_MGB;
-    }
-    if ([theme isEqualToString:@"Teal (Light)"]) {
-        return &GB_PALETTE_GBL;
-    }
-    static GB_palette_t customPalette;
-    NSArray *colors = [defaults dictionaryForKey:@"GBThemes"][theme][@"Colors"];
-    if (colors.count != 5) return &GB_PALETTE_DMG;
-    unsigned i = 0;
-    for (NSNumber *color in colors) {
-        uint32_t c = [color unsignedIntValue];
-        customPalette.colors[i++] = (struct GB_color_s) {c, c >> 8, c >> 16};
-    }
-    return &customPalette;
-}
-
-+ (UIColor *) colorFromGBColor:(const struct GB_color_s *)color
-{
-    return [UIColor colorWithRed:color->r / 255.0
-                           green:color->g / 255.0
-                            blue:color->b / 255.0
-                           alpha:1.0];
-}
-
-+ (UIImage *)previewImageForTheme:(NSString *)theme
-{
-    const GB_palette_t *palette = [self paletteForTheme:theme];
-    UIGraphicsBeginImageContextWithOptions((CGSize){29, 29}, false, [UIScreen mainScreen].scale);
-    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 29, 29) cornerRadius:7];
-    [[self colorFromGBColor:&palette->colors[4]] set];
-    [path fill];
-    
-    path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(4, 4, 9, 9) cornerRadius:2];
-    [[self colorFromGBColor:&palette->colors[0]] set];
-    [path fill];
-    
-    path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(16, 4, 9, 9) cornerRadius:2];
-    [[self colorFromGBColor:&palette->colors[1]] set];
-    [path fill];
-    
-    path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(4, 16, 9, 9) cornerRadius:2];
-    [[self colorFromGBColor:&palette->colors[2]] set];
-    [path fill];
-    
-    path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(16, 16, 9, 9) cornerRadius:2];
-    [[self colorFromGBColor:&palette->colors[3]] set];
-    [path fill];
-    
-    UIImage *ret = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    return ret;
-}
-
-+ (NSArray<NSDictionary *> *)paletteMenu
-{
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSArray *themes = [@[
-        @"Greyscale",
-        @"Lime (Game Boy)",
-        @"Olive (Pocket)",
-        @"Teal (Light)",
-    ] arrayByAddingObjectsFromArray:[[defaults dictionaryForKey:@"GBThemes"] allKeys]];
-    NSMutableArray<NSDictionary *> *themeItems = [NSMutableArray arrayWithCapacity:themes.count];
-    for (NSString *theme in themes) {
-        [themeItems addObject: @{@"type": typeRadio, @"pref": @"GBCurrentTheme",
-                                 @"title": theme, @"value": theme,
-                                 @"image": [self previewImageForTheme:theme]}];
-    }
-    return @[
-        @{
-            @"items": [themeItems subarrayWithRange:(NSRange){0, 4}]
-        },
-        @{
-            @"items": [themeItems subarrayWithRange:(NSRange){4, themeItems.count - 4}]
-        }
-    ];
 }
 
 + (NSArray<NSDictionary *> *)rootStructure
@@ -203,12 +115,12 @@ static NSString const *typeLightTemp = @"typeLightTemp";
                     @{@"type": typeRadio, @"pref": @"GBSGBModel", @"title": @"Super Game Boy 2",      @"value": @(GB_MODEL_SGB2),},
                 ]),
                 QUICK_SUBMENU(@"Game Boy Color", @[
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB 0 (Experimental)", @"value": @(GB_MODEL_CGB_0),},
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB A (Experimental)", @"value": @(GB_MODEL_CGB_A),},
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB B (Experimental)", @"value": @(GB_MODEL_CGB_B),},
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB C (Experimental)", @"value": @(GB_MODEL_CGB_C),},
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB D",                @"value": @(GB_MODEL_CGB_D),},
-                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB E",                @"value": @(GB_MODEL_CGB_E),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB 0", @"value": @(GB_MODEL_CGB_0),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB A", @"value": @(GB_MODEL_CGB_A),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB B", @"value": @(GB_MODEL_CGB_B),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB C", @"value": @(GB_MODEL_CGB_C),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB D", @"value": @(GB_MODEL_CGB_D),},
+                    @{@"type": typeRadio, @"pref": @"GBCGBModel", @"title": @"CPU CGB E", @"value": @(GB_MODEL_CGB_E),},
                 ]),
                 QUICK_SUBMENU(@"Game Boy Advance", @[
                     @{@"type": typeDisabled, @"title": @"CPU AGB 0 (Early GBA)",},
@@ -244,6 +156,7 @@ static NSString const *typeLightTemp = @"typeLightTemp";
                                 @{@"type": typeRadio, @"pref": @"GBFilter", @"title": @"Monochrome LCD Display", @"value": @"MonoLCD",},
                                 @{@"type": typeRadio, @"pref": @"GBFilter", @"title": @"LCD Display", @"value": @"LCD",},
                                 @{@"type": typeRadio, @"pref": @"GBFilter", @"title": @"CRT Display", @"value": @"CRT",},
+                                @{@"type": typeRadio, @"pref": @"GBFilter", @"title": @"Flat CRT Display", @"value": @"FlatCRT",},
                             ]
                         },
                         @{
@@ -283,7 +196,7 @@ static NSString const *typeLightTemp = @"typeLightTemp";
                     [GB_COLOR_CORRECTION_MODERN_BALANCED] = @"Emulates a modern display. Blue contrast is moderately enhanced at the cost of slight hue inaccuracy.",
                     [GB_COLOR_CORRECTION_MODERN_BOOST_CONTRAST] = @"Like Modern – Balanced, but further boosts the contrast of greens and magentas that is lacking on the original hardware.",
                     [GB_COLOR_CORRECTION_REDUCE_CONTRAST] = @"Slightly reduce the contrast to better represent the tint and contrast of the original display.",
-                    [GB_COLOR_CORRECTION_LOW_CONTRAST] = @"Harshly reduce the contrast to accurately represent the tint and low constrast of the original display.",
+                    [GB_COLOR_CORRECTION_LOW_CONTRAST] = @"Harshly reduce the contrast to accurately represent the tint and low contrast of the original display.",
                     [GB_COLOR_CORRECTION_MODERN_ACCURATE] = @"Emulates a modern display. Colors have their hues and brightness corrected.",
                 })[MIN(GB_COLOR_CORRECTION_MODERN_ACCURATE, [[NSUserDefaults standardUserDefaults] integerForKey:@"GBColorCorrection"])];
             },
@@ -305,8 +218,16 @@ static NSString const *typeLightTemp = @"typeLightTemp";
         @{
             @"items": @[@{
                 @"title": @"Monochrome Palette",
-                @"type": typeOptionSubmenu,
-                @"submenu": [self paletteMenu]
+                @"type": typeBlock,
+                @"block": ^bool(GBSettingsViewController *controller) {
+                    UITableViewStyle style = UITableViewStyleGrouped;
+                    if (@available(iOS 13.0, *)) {
+                        style = UITableViewStyleInsetGrouped;
+                    }
+                    [controller.navigationController pushViewController:[[GBPalettePicker alloc] initWithStyle:style] animated:true];
+                    return true;
+                },
+                @"pref": @"GBCurrentTheme",
             }],
             @"footer": @"This palette will be used when emulating a monochrome model such as the original Game Boy."
         }
@@ -399,10 +320,16 @@ static NSString const *typeLightTemp = @"typeLightTemp";
             ],
             @"footer": ^NSString *(){
                 if ([[NSUserDefaults standardUserDefaults] boolForKey:@"GBSwipeState"]) {
-                    return @"Swipe down on the Game Boy to save the state into state slot 1. Swipe up to load the state from state slot 1";
+                    return @"Swipe down on the Game Boy to save the state into state slot 1. Swipe up to load the state from state slot 1.";
                 }
                 return @" "; // This space is needed, otherwise UITableView spacing breaks
             },
+        },
+        @{
+            @"items": @[
+                @{@"type": typeCheck, @"pref": @"GBControllersHideInterface", @"title": @"Hide UI While Using a Controller"},
+            ],
+            @"footer": @"When enabled, the on-screen user interface will be hidden while a game controller is being used."
         },
         @{
             @"header": @"Enable Rumble",
@@ -424,9 +351,8 @@ static NSString const *typeLightTemp = @"typeLightTemp";
         },
     ];
     
-    return @[
-        @{
-            @"items": @[
+    
+    NSArray *rootItems = @[
                     @{
                         @"title": @"Emulation",
                         @"type": typeSubmenu,
@@ -457,7 +383,12 @@ static NSString const *typeLightTemp = @"typeLightTemp";
                         @"class": [GBThemesViewController class],
                         @"image": [UIImage imageNamed:@"themeSettings"],
                     },
-            ]
+    ];
+    
+
+     return @[
+        @{
+            @"items": rootItems,
         }
     ];
 }
@@ -690,9 +621,9 @@ static NSString *LocalizedNameForElement(GCControllerElement *element, GBControl
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Controllers Connected"
                                                                        message:@"There are no connected game controllers to configure"
                                                                 preferredStyle:UIAlertControllerStyleAlert];
-        [alert  addAction:[UIAlertAction actionWithTitle:@"Close"
-                                                   style:UIAlertActionStyleCancel
-                                                 handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Close"
+                                                  style:UIAlertActionStyleCancel
+                                                handler:nil]];
         [self presentViewController:alert animated:true completion:nil];
         return false;
         
@@ -784,9 +715,14 @@ static id ValueForItem(NSDictionary *item)
                 }
             }
         }
+        else if (item[@"pref"]) {
+            cell.detailTextLabel.text = [[NSUserDefaults standardUserDefaults] stringForKey:item[@"pref"]];
+        }
     }
     else if (item[@"type"] == typeRadio) {
-        if ([ValueForItem(item) isEqual:item[@"value"]]) {
+        id settingValue = ValueForItem(item);
+        id itemValue = item[@"value"];
+        if (settingValue == itemValue || [settingValue isEqual:itemValue]) {
             cell.accessoryType = UITableViewCellAccessoryCheckmark;
         }
     }
@@ -834,7 +770,7 @@ static id ValueForItem(NSDictionary *item)
         rect.size.height -= 24;
         rect.origin.x += 12;
         rect.origin.y += 12;
-        UISlider *slider = [item[@"type"] == typeLightTemp? [GBTemperatureSlider alloc] : [UISlider alloc] initWithFrame:rect];
+        UISlider *slider = [item[@"type"] == typeLightTemp? [GBSlider alloc] : [UISlider alloc] initWithFrame:rect];
         slider.continuous = true;
         slider.minimumValue = [item[@"min"] floatValue];
         slider.maximumValue = [item[@"max"] floatValue];

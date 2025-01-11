@@ -161,6 +161,7 @@ namespace rp {
 	public:
 		StateT& getServiceState() {
 			entt::any value = _service->getState();
+			assert(!value.owner());
 			return entt::any_cast<StateT&>(value);
 		}
 
@@ -169,7 +170,7 @@ namespace rp {
 		}
 		
 		template <auto Candidate>
-		void setField(fw::EventNode& node, FieldType<StateT, Candidate>::type&& data) {
+		void setField(fw::EventNode& node, typename FieldType<StateT, Candidate>::type&& data) {
 			static_assert(std::is_member_object_pointer_v<decltype(Candidate)>);
 
 			StateT& serviceState = getServiceState();

@@ -145,7 +145,8 @@ function m.SameBoyPlug.include()
 			"-Wno-unused-function",
 			"-Wno-missing-braces",
 			"-Wno-switch",
-			"-Wno-int-in-bool-context"
+			"-Wno-int-in-bool-context",
+			"-Wno-c99-designator"
 		}
 		disablewarnings { "missing-braces", "c99-designator" }
 

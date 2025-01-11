@@ -6,7 +6,6 @@
 
 #include <entt/core/utility.hpp>
 
-
 extern "C" {
 	#define GB_INTERNAL
 	#include <gb.h>
@@ -18,7 +17,9 @@ extern "C" {
 #include "bootroms/agb_boot.h"
 #include "bootroms/cgb_boot.h"
 #include "bootroms/cgb_boot_fast.h"
+#include "bootroms/cgb0_boot.h"
 #include "bootroms/dmg_boot.h"
+#include "bootroms/mgb_boot.h"
 #include "bootroms/sgb_boot.h"
 #include "bootroms/sgb2_boot.h"
 
@@ -70,14 +71,16 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 }
 
 static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {
-	SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
+	if (type == GB_VBLANK_TYPE_NORMAL_FRAME) {
+		SameBoySystem::State* s = (SameBoySystem::State*)GB_get_user_data(gb);
 
-	if (s->io) {
-		if (!s->io->output.video) {
-			s->io->output.video = std::make_shared<fw::Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
+		if (s->io) {
+			if (!s->io->output.video) {
+				s->io->output.video = std::make_shared<fw::Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
+			}
+
+			s->io->output.video->write((const fw::Color4*)s->frameBuffer, PIXEL_COUNT);
 		}
-
-		s->io->output.video->write((const fw::Color4*)s->frameBuffer, PIXEL_COUNT);
 	}
 }
 
@@ -188,16 +191,19 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 			GB_apu_set_sample_callback(_state.gb, audioHandler);
 			GB_set_serial_transfer_bit_start_callback(_state.gb, serialStart);
 			GB_set_serial_transfer_bit_end_callback(_state.gb, serialEnd);
+
+			GB_set_background_rendering_disabled(_state.gb, false);
+			GB_set_object_rendering_disabled(_state.gb, false);
 		}
 
 		GB_load_rom_from_buffer(_state.gb, (const uint8_t*)loadConfig.romBuffer->data(), loadConfig.romBuffer->size());
 
+		//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
+		GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
+		GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
+
 		_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
 	}
-
-	//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
-	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
-	GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
 
 	if (loadConfig.sramBuffer) {
 		GB_load_battery_from_buffer(_state.gb, (const uint8_t*)loadConfig.sramBuffer->data(), loadConfig.sramBuffer->size());

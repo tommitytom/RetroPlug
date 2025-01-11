@@ -155,6 +155,16 @@ __attribute__((objc_direct_members))
 }
 
 
+- (UIColor *)buttonColor
+{
+    double r, g, b;
+    [_brandColor getRed:&r green:&g blue:&b alpha:NULL];
+    if (r == 1.0 && g == 1.0 && b == 1.0) {
+        return _backgroundGradientTop;
+    }
+    return [UIColor colorWithRed:r green:g blue:b alpha:1.0];
+}
+
 - (bool)isDark
 {
     double r, g, b;
@@ -183,7 +193,7 @@ __attribute__((objc_direct_members))
 {
     if (_horizontalPreview) return _horizontalPreview;
     _renderingPreview = true;
-    GBLayout *layout = [[GBHorizontalLayout alloc] initWithTheme:self];
+    GBLayout *layout = [[GBHorizontalLayout alloc] initWithTheme:self cutoutOnRight:false];
     _renderingPreview = false;
     GBBackgroundView *view = [[GBBackgroundView alloc] initWithLayout:layout];
     [view enterPreviewMode:false];

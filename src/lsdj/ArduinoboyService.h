@@ -24,7 +24,7 @@ namespace rp {
 
 		void onMidi(System& system, const fw::MidiMessage& message) override;
 
-		void onMidiClock(System& system);
+		void onMidiClock(System& system) override;
 
 	private:
 		void processSync(System& system, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value);

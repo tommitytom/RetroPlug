@@ -12,9 +12,7 @@
 using namespace rp;
 
 const std::vector<fw::FileDialogFilter> SAMPLE_FILTER = {
-	{ "WAV Files", "*.wav" },
-	{ "FLAC Files", "*.flac" },
-	{ "MP3 Files", "*.mp3" }
+	{ "Audio Files", "*.wav *.flac *.mp3" }
 };
 
 const std::vector<fw::FileDialogFilter> KIT_FILTER = {
@@ -465,6 +463,14 @@ void SamplerView::addKitSamples(KitIndex kitIdx, const std::vector<std::string>&
 	LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 
+	if (kitIdx == -1) {
+		kitIdx = rom.nextEmptyKitIdx();
+		if (kitIdx == -1) {
+			spdlog::warn("Failed to add kit - no kit slots remain");
+			return;
+		}
+	}
+
 	bool newKit = rom.kitIsEmpty(kitIdx);
 
 	std::vector<std::string> kitSamples;
@@ -507,9 +513,7 @@ void SamplerView::updateSampleBuffers() {
 	if (found != settings.kits.end()) {
 		KitUtil::updateKit(_system, settings, _samplerState.selectedKit);
 		updateWaveform();
-	}
-
-	
+	}	
 }
 
 void SamplerView::updateWaveform() {
