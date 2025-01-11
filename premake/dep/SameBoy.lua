@@ -45,11 +45,11 @@ function m.project()
 
         files { SAMEBOY_DIR .. "/BootROMs/pb12.c" }
 
-        configuration { "windows" }
+        filter { "configurations:windows" }
             defines { "_CRT_SECURE_NO_WARNINGS" }
             includedirs { SAMEBOY_DIR .. "/Windows" }
 
-        configuration { "macosx" }
+        filter { "configurations:macosx" }
             --[[xcodebuildsettings {
                 ["MACOSX_DEPLOYMENT_TARGET"] = "10.14"
             }]]
