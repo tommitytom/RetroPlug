@@ -11,7 +11,7 @@ namespace rp {
 
 	const fw::FileDialogFilter ROM_FILTER = fw::FileDialogFilter{ "GameBoy ROM Files", "*.gb" };
 	const fw::FileDialogFilter PROJECT_FILTER = fw::FileDialogFilter{ "RetroPlug Project Files", "*.rplg" };
-	const fw::FileDialogFilter SAV_FILTER = fw::FileDialogFilter{ "Gameboy SAV Files", "*.sav" };
+	const fw::FileDialogFilter SAV_FILTER = fw::FileDialogFilter{ "Gameboy SAV Files", "*.sav *.srm" };
 	const fw::FileDialogFilter STATE_FILTER = fw::FileDialogFilter{ "Gameboy State Files", "*.state" };
 	const fw::FileDialogFilter ZIP_FILTER = fw::FileDialogFilter{ "ZIP Files", "*.zip" };
 }

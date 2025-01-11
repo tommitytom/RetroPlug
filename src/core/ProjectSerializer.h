@@ -4,6 +4,11 @@
 #include "core/ProjectState.h"
 #include "core/System.h"
 
+namespace rp {
+	const std::string_view PROJECT_VERSION = "1.0.0";
+	const std::string_view RP_VERSION = "0.5.0";
+}
+
 namespace rp::ProjectSerializer {
 	std::string serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems);
 

@@ -6,7 +6,6 @@
 
 #include <entt/core/utility.hpp>
 
-
 extern "C" {
 	#define GB_INTERNAL
 	#include <gb.h>
@@ -199,12 +198,12 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 
 		GB_load_rom_from_buffer(_state.gb, (const uint8_t*)loadConfig.romBuffer->data(), loadConfig.romBuffer->size());
 
+		//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
+		GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
+		GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
+
 		_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
 	}
-
-	//GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
-	GB_set_color_correction_mode(_state.gb, GB_COLOR_CORRECTION_DISABLED);
-	GB_set_highpass_filter_mode(_state.gb, GB_HIGHPASS_ACCURATE);
 
 	if (loadConfig.sramBuffer) {
 		GB_load_battery_from_buffer(_state.gb, (const uint8_t*)loadConfig.sramBuffer->data(), loadConfig.sramBuffer->size());

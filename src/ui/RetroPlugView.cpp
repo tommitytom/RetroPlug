@@ -47,7 +47,9 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus)
 {
-	setName("RetroPlug v0.4.0");
+	std::string name = "RetroPlug v";
+	name += RP_VERSION;
+	setName(name);
 }
 
 template <typename T>

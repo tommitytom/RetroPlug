@@ -11,19 +11,16 @@
 #include "foundation/LuaSerializer.h"
 
 #include "lsdj/LsdjService.h"
+#include "lsdj/LsdjSettings.h"
 
 using namespace rp;
-
-const std::string_view PROJECT_VERSION = "1.0.0";
-const std::string_view RP_VERSION = "0.4.0";
 
 std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems) {
 	sol::state s;
 	fw::SolUtil::prepareState(s);
 
-	Guid guid = 0x421D1B01;
-	const entt::any& value = systems[0]->services.at(guid);
-	const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
+	//const entt::any& value = systems[0]->services.at(ARDUINOBOY_SERVICE_TYPE);
+	//const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
 
 	sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
 	projectTable["projectVersion"] = PROJECT_VERSION;

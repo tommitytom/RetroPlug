@@ -16,6 +16,7 @@
 #include "util/RecentUtil.h"
 
 #include "sameboy/SameBoySystem.h"
+#include "sameboy/Constants.h"
 
 using namespace rp;
 
@@ -23,24 +24,49 @@ void loadRomDialog(Project& project, SystemPtr system) {
 	std::vector<std::string> files;
 
 	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
+		LoadConfig loadConfig = LoadConfig{
+			.desc = {
+				.paths = {
+					.romPath = files[0]
+				}
+			},
+			.romBuffer = std::make_shared<fw::Uint8Buffer>(),
+			.sramBuffer = std::make_shared<fw::Uint8Buffer>()
+		};
+
+		if (!fw::FsUtil::readFile(files[0], loadConfig.romBuffer.get())) {
+			return;
+		}
+
 		if (system) {
-			LoadConfig loadConfig = LoadConfig{
-				.romBuffer = std::make_shared<fw::Uint8Buffer>(),
-				.sramBuffer = std::make_shared<fw::Uint8Buffer>()
-			};
-
-			if (!fw::FsUtil::readFile(files[0], loadConfig.romBuffer.get())) {
-				return;
-			}
-
 			SystemDesc desc = system->getDesc();
 			desc.paths.romPath = files[0];
 
 			system->setDesc(std::move(desc));
 			system->load(std::move(loadConfig));
 		} else {
-			//project.addSystem<SameBoySystem>(files[0]);
+			project.addSystem(SAMEBOY_GUID, std::move(loadConfig));
 		}
+	}
+}
+
+void loadSavDialog(Project& project, SystemPtr system) {
+	std::vector<std::string> files;
+
+	if (fw::FileDialog::basicFileOpen(nullptr, files, { SAV_FILTER }, false)) {
+		LoadConfig config{
+			.sramBuffer = std::make_shared<fw::Uint8Buffer>()
+		};
+
+		if (!fw::FsUtil::readFile(files[0], config.sramBuffer.get())) {
+			return;
+		}
+
+		SystemDesc desc = system->getDesc();
+		desc.paths.sramPath = files[0];
+
+		system->setDesc(std::move(desc));
+		system->load(std::move(config));
 	}
 }
 
@@ -178,11 +204,6 @@ void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager& fileManager, Projec
 
 	loadRoot
 		.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
-		.subMenu("ROM As")
-			.action("ABG...", [&project]() { loadRomDialog(project, nullptr); })
-			.action("CBG C...", [&project]() { loadRomDialog(project, nullptr); })
-			.action("DMG...", [&project]() { loadRomDialog(project, nullptr); })
-			.parent()
 		.parent();
 }
 
@@ -192,9 +213,17 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
 
 	loadRoot
-		.action("Project...", []() {})
+		.action("Project...", [&](fw::MenuContext& ctx) {
+			ctx.retain();
+
+			std::vector<std::string> files;
+			if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
+				LoaderUtil::handleLoad(files, fileManager, project);
+				ctx.close();
+			}
+		})
 		.action("ROM...", [&project, system]() { loadRomDialog(project, system); })
-		.action("SAV...", []() {})
+		.action("SAV...", [&project, system]() { loadSavDialog(project, system); })
 		.parent();
 }
 
