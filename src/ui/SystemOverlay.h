@@ -26,6 +26,10 @@ namespace rp {
 		SystemServiceNodePtr getNode() {
 			return _node;
 		}
+
+		SystemServiceNodePtr getNode() const {
+			return _node;
+		}
 	};
 
 	template <typename T>

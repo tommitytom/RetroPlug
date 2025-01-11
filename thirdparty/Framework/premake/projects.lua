@@ -41,7 +41,7 @@ function m.Foundation.include()
 
 	dep.lua.include()
 	dep.simplefilewatcher.include()
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -68,7 +68,7 @@ function m.Foundation.project()
 		paths.SRC_ROOT .. "foundation/generated/*_%{cfg.platform}.cpp",
 	}
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -77,13 +77,13 @@ function m.Graphics.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	dep.bgfx.include()
-	dep.glfw.include()
+	--dep.bgfx.include()
+	--dep.glfw.include()
 	dep.glad.include()
 	dep.freetype.include()
 	dep.freetypeGl.include()
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -95,7 +95,7 @@ function m.Graphics.link()
 
 	m.Foundation.link()
 	dep.glad.link()
-	dep.bgfx.link()
+	--dep.bgfx.link()
 	dep.freetype.link()
 	dep.freetypeGl.link()
 end
@@ -113,7 +113,7 @@ function m.Graphics.project()
 	}
 
 	excludes {
-		--paths.SRC_ROOT .. "graphics/bgfx/**",
+		paths.SRC_ROOT .. "graphics/bgfx/**",
 	}
 
 	filter("files:**.ttf")
@@ -128,7 +128,7 @@ function m.Graphics.project()
 
 	filter{}
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -140,7 +140,7 @@ function m.Ui.include()
 	m.Graphics.include()
 	dep.yoga.include()
 	--dep.csspp.include()
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -181,7 +181,7 @@ function m.Audio.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -215,9 +215,9 @@ function m.Application.include()
 
 	m.Graphics.include()
 	m.Audio.include()
-	dep.glfw.include()
+	--dep.glfw.include()
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end
@@ -229,7 +229,7 @@ function m.Application.link()
 
 	m.Graphics.link()
 	m.Audio.link()
-	dep.glfw.link()
+	--dep.glfw.link()
 end
 
 function m.Application.project()
@@ -243,6 +243,10 @@ function m.Application.project()
 			paths.SRC_ROOT .. "application/**.cpp"
 		}
 
+		excludes {
+			paths.SRC_ROOT .. "application/Glfw*",
+		}
+
 		util.liveppCompat()
 end
 
@@ -253,7 +257,7 @@ function m.Engine.include()
 	m.Graphics.include()
 	dep.box2d.include()
 
-	dep.bgfx.compat()
+	--dep.bgfx.compat()
 
 	filter {}
 end

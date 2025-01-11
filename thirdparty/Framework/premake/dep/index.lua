@@ -1,6 +1,6 @@
 local m = {
-	glfw = 	dofile("glfw.lua"),
-	bgfx = dofile("bgfx.lua"),
+	--glfw = 	dofile("glfw.lua"),
+	--bgfx = dofile("bgfx.lua"),
 	lua = dofile("lua.lua"),
 	zlib = dofile("zlib.lua"),
 	box2d = dofile("box2d.lua"),
@@ -16,9 +16,9 @@ local m = {
 }
 
 function m.allProjects()
-	m.bgfx.bxProject()
-	m.bgfx.bimgProject()
-	m.bgfx.bgfxProject()
+	--m.bgfx.bxProject()
+	--m.bgfx.bimgProject()
+	--m.bgfx.bgfxProject()
 	m.lua.project()
 	m.zlib.project()
 	m.box2d.project()
@@ -33,7 +33,7 @@ function m.allProjects()
 	--m.csspp.project()
 
 	if _OPTIONS["emscripten"] == nil then
-		m.glfw.project()
+		--m.glfw.project()
 	end
 end
 

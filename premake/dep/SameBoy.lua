@@ -120,7 +120,7 @@ function m.project()
 			}
 
 		filter { "system:linux" }
-			disablewarnings { "unused-variable" }
+			disablewarnings { "unused-variable", "multichar" }
 			buildoptions { "-Wno-implicit-function-declaration" }
 
 		filter {}

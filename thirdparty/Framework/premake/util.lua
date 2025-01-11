@@ -34,13 +34,13 @@ function util.setupWorkspace()
 	language "C++"
 	characterset "MBCS"
 	cppdialect "c++20"
-	vectorextensions "SSE2"
+	--vectorextensions "SSE2"
 	editAndContinue "off"
 
 	filter "platforms:x86"
 		architecture "x86"
 	filter "platforms:x64"
-		architecture "x64"
+		architecture "arm64"
 	filter "platforms:Emscripten"
 		architecture "x86"
 		defines { "FW_PLATFORM_WEB", "FW_COMPILER_CLANG" }

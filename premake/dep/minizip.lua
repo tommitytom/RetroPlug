@@ -38,7 +38,7 @@ function m.include()
 		"HAVE_INTTYPES_H",
 		"HAVE___BUILTIN_ASSUME_ALIGNED",
 
-		"HAVE_IMMINTRIN_H",
+		--"HAVE_IMMINTRIN_H", -- TODO: Enable this only for x86/x64
 		"HAVE__MM_MOVEMASK_EPI8",
 		"HAVE_MF_BT2",
 		"HAVE_MF_BT3",

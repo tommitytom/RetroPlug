@@ -222,7 +222,7 @@ function m.RetroPlug.link()
 
 	m.SameBoyPlug.link()
 	--fwDeps.bgfx.link()
-	fwDeps.glfw.link()
+	--fwDeps.glfw.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()
 	dep.r8brain.link()

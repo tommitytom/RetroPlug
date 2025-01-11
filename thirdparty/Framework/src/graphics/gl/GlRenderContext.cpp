@@ -3,6 +3,10 @@
 #include <fstream>
 
 #ifdef FW_PLATFORM_WEB
+#define FW_USE_GLES
+#endif
+
+#ifdef FW_USE_GLES
 #include <glad/gles2.h>
 #else
 #include <glad/gl.h>
@@ -52,7 +56,7 @@ namespace fw {
 		_mainWindow = mainWindow;
 		_resolution = res;
 
-#ifdef FW_PLATFORM_WEB
+#ifdef FW_USE_GLES
 		if (!gladLoaderLoadGLES2()) {
 			spdlog::error("Failed to initialize OpenGL context");
 			return;
