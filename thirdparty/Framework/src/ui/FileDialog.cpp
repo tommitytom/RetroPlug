@@ -113,7 +113,7 @@ bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, c
 		stringFilters.push_back(filter.extensions);
 	}
 
-	target = pfd::open_file::open_file("Open File", "", stringFilters, multiSelect).result();
+	target = pfd::open_file("Open File", "", stringFilters, multiSelect ? pfd::opt::multiselect : pfd::opt::none).result();
 	return !target.empty();
 }
 
@@ -125,7 +125,7 @@ bool FileDialog::basicFileSave(UiHandle* ui, std::string& target, const std::vec
 		stringFilters.push_back(filter.extensions);
 	}
 
-	target = pfd::save_file::save_file("Save File", "", stringFilters).result();
+	target = pfd::save_file("Save File", "", stringFilters).result();
 	return !target.empty();
 }
 
