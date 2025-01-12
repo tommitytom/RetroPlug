@@ -1,0 +1,493 @@
+#include "SdlNativeWindow.h"
+
+#include <SDL.h>
+#include <SDL_syswm.h>
+
+namespace fw::app {
+
+	MouseButton convertMouseButton(int button);
+	VirtualKey convertKey(int key);
+
+	void* SdlNativeWindow::getNativeHandle() {
+		SDL_SysWMinfo wmInfo;
+		SDL_VERSION(&wmInfo.version);
+		SDL_GetWindowWMInfo(_window, &wmInfo);
+		return wmInfo.info.win.window;
+	}
+
+	void SdlNativeWindow::mouseEnterCallback(GLFWwindow* window, int entered) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+
+		if (entered > 0) {
+			w->getViewManager()->onMouseEnter(w->_lastMousePosition);
+		} else {
+			w->getViewManager()->onMouseLeave();
+		}
+	}
+
+	void SdlNativeWindow::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->getViewManager()->onMouseButton(MouseButtonEvent{
+			.button = convertMouseButton(button),
+			.down = action != GLFW_RELEASE,
+			.position = w->_lastMousePosition
+		});
+	}
+
+	void SdlNativeWindow::mouseMoveCallback(GLFWwindow* window, f64 x, f64 y) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->_lastMousePosition = Point((int32)x, (int32)y);
+		w->getViewManager()->onMouseMove(w->_lastMousePosition);
+	}
+
+	void SdlNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->getViewManager()->onMouseScroll(MouseScrollEvent{
+			.delta = PointF((f32)x, (f32)y),
+			.position = w->_lastMousePosition
+		});
+	}
+
+	void SdlNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->setDimensions({ x, y });
+		// NOTE: View resizing is handled in SdlNativeWindow::onUpdate
+	}
+
+	void SdlNativeWindow::charCallback(GLFWwindow* window, unsigned int keycode) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->getViewManager()->onChar(CharEvent{
+			.keyCode = keycode
+		});
+	}
+
+	void SdlNativeWindow::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		w->getViewManager()->onKey(KeyEvent{
+			.action = (KeyAction)action,
+			.key = convertKey(key),
+			.down = action > 0,
+
+			.action2 = (uint32)action,
+			.key2 = (uint32)convertKey(key)
+		});
+	}
+
+	void SdlNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		std::vector<std::string> p(count);
+
+		for (int i = 0; i < count; ++i) {
+			p[i] = paths[i];
+		}
+
+		w->getViewManager()->onDrop(p);
+	}
+
+	void SdlNativeWindow::windowCloseCallback(GLFWwindow* window) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		CloseWindowContext ctx;
+		w->getViewManager()->onCloseWindowRequest(ctx);
+		if (!ctx.closing) {
+			glfwSetWindowShouldClose(window, 0);
+		}
+	}
+
+	void SdlNativeWindow::windowRefreshCallback(GLFWwindow* window) {
+		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
+		//w->getViewManager()->onCloseWindowRequest();
+	}
+
+	/*#ifdef FW_PLATFORM_WEB
+	EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+		Application* app = static_cast<Application*>(userData);
+
+		for (int i = 0; i < touchEvent->numTouches; ++i) {
+			app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+		}
+
+		return 0;
+	}
+
+	EMSCRIPTEN_RESULT touchmove_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+		Application* app = static_cast<Application*>(userData);
+
+		for (int i = 0; i < touchEvent->numTouches; ++i) {
+			app->onTouchStart((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+		}
+
+		return 0;
+	}
+
+
+	EMSCRIPTEN_RESULT touchend_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+		Application* app = static_cast<Application*>(userData);
+
+		for (int i = 0; i < touchEvent->numTouches; ++i) {
+			app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+		}
+
+		return 0;
+	}
+
+	EMSCRIPTEN_RESULT touchcancel_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
+		Application* app = static_cast<Application*>(userData);
+
+		for (int i = 0; i < touchEvent->numTouches; ++i) {
+			app->onTouchEnd((double)touchEvent->touches[i].canvasX, (double)touchEvent->touches[i].canvasY);
+		}
+
+		return 0;
+	}
+	#endif*/
+
+	SdlNativeWindow::~SdlNativeWindow() {
+		if (_window) {
+			SDL_DestroyWindow(_window);
+			_window = nullptr;
+		}
+	}
+
+	void SdlNativeWindow::onCleanup() {
+		Window::onCleanup();
+	}
+
+	void SdlNativeWindow::onCreate() {
+		ViewManagerPtr vm = getViewManager();
+		Dimension dimensions = vm->getDimensions();
+
+		_window = SDL_CreateWindow(vm->getName().data(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, dimensions.w, dimensions.h, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+		SDL_GL_SetSwapInterval(0);
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+		auto glc = SDL_GL_CreateContext(_window);
+		auto rdr = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
+
+		//glfwMakeContextCurrent(_window);
+		//glfwSetWindowUserPointer(_window, this);
+
+		/*
+		glfwSetKeyCallback(_window, keyCallback);
+		glfwSetCharCallback(_window, charCallback);
+		glfwSetScrollCallback(_window, mouseScrollCallback);
+		glfwSetCursorPosCallback(_window, mouseMoveCallback);
+		glfwSetCursorEnterCallback(_window, mouseEnterCallback);
+		glfwSetMouseButtonCallback(_window, mouseButtonCallback);
+		glfwSetWindowSizeCallback(_window, resizeCallback);
+		glfwSetDropCallback(_window, dropCallback);
+		glfwSetWindowCloseCallback(_window, windowCloseCallback);
+		glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
+
+		#ifdef FW_PLATFORM_WEB
+			emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
+			emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchmove_callback);
+			emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
+			emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
+		#endif*/
+
+		//glfwSetCharCallback(_window, charCb);
+		//glfwSetFramebufferSizeCallback(window, resizeCallback);
+	}
+
+	void SdlNativeWindow::onFrame() {
+		SDL_GL_SwapWindow(_window);
+	}
+
+	void SdlNativeWindow::setDimensions(Dimension dimensions) {
+		_dimensions = dimensions;
+	}
+
+	void SdlNativeWindow::onUpdate(f32 delta) {
+		ViewManagerPtr vm = getViewManager();
+
+		Dimension viewSize = vm->getDimensions();
+		viewSize = vm->getDimensions();
+
+		if (viewSize.w > 0 && viewSize.h > 0 && (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h)) {
+			_dimensions = viewSize;
+			//vm->getLayout().setDimensions(_dimensions);
+			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
+
+			/*if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
+				// Resize window to fit content
+				glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
+				_dimensions = viewSize;
+			} else {
+				// Resize content to fit window
+				vm->setDimensions(_dimensions);
+			}*/
+		}
+
+		vm->onUpdate(delta);
+		auto& shared = vm->getShared();
+
+		if (shared.cursorChanged) {
+			if (_cursor) {
+				glfwDestroyCursor(_cursor);
+				_cursor = nullptr;
+			}
+
+			// This is not ideal since GLFW only provides a very small set of cursors to use
+			switch (shared.cursor) {
+			case CursorType::ResizeNS:
+			case CursorType::ResizeNE:
+			case CursorType::ResizeNW:
+			case CursorType::ResizeSE:
+			case CursorType::ResizeSW:
+				_cursor = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+				break;
+			case CursorType::Arrow: _cursor = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); break;
+			case CursorType::ResizeEW: _cursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR); break;
+			case CursorType::Hand: _cursor = glfwCreateStandardCursor(GLFW_HAND_CURSOR); break;
+			case CursorType::IBeam: _cursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR); break;
+			case CursorType::Crosshair: _cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR); break;
+			}
+
+			if (_cursor) {
+				glfwSetCursor(_window, _cursor);
+			}
+
+			shared.cursorChanged = false;
+		}
+	}
+
+	bool SdlNativeWindow::shouldClose() {
+		return false;
+	}
+
+	VirtualKey convertKey(SDL_Keycode key) {
+		switch (key) {
+		case SDLK_SPACE: return VirtualKey::Space;
+			//case GLFW_KEY_APOSTROPHE: return VirtualKey::Apo;
+			//case GLFW_KEY_COMMA: return VirtualKey::comma;
+		case GLFW_KEY_MINUS: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_PERIOD: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_SLASH: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_0: return VirtualKey::Num0;
+		case GLFW_KEY_1: return VirtualKey::Num1;
+		case GLFW_KEY_2: return VirtualKey::Num2;
+		case GLFW_KEY_3: return VirtualKey::Num3;
+		case GLFW_KEY_4: return VirtualKey::Num4;
+		case GLFW_KEY_5: return VirtualKey::Num5;
+		case GLFW_KEY_6: return VirtualKey::Num6;
+		case GLFW_KEY_7: return VirtualKey::Num7;
+		case GLFW_KEY_8: return VirtualKey::Num8;
+		case GLFW_KEY_9: return VirtualKey::Num9;
+			//case GLFW_KEY_SEMICOLON: return VirtualKey::semi;
+			//case GLFW_KEY_EQUAL: return VirtualKey::equa;
+		case GLFW_KEY_A: return VirtualKey::A;
+		case GLFW_KEY_B: return VirtualKey::B;
+		case GLFW_KEY_C: return VirtualKey::C;
+		case GLFW_KEY_D: return VirtualKey::D;
+		case GLFW_KEY_E: return VirtualKey::E;
+		case GLFW_KEY_F: return VirtualKey::F;
+		case GLFW_KEY_G: return VirtualKey::G;
+		case GLFW_KEY_H: return VirtualKey::H;
+		case GLFW_KEY_I: return VirtualKey::I;
+		case GLFW_KEY_J: return VirtualKey::J;
+		case GLFW_KEY_K: return VirtualKey::K;
+		case GLFW_KEY_L: return VirtualKey::L;
+		case GLFW_KEY_M: return VirtualKey::M;
+		case GLFW_KEY_N: return VirtualKey::N;
+		case GLFW_KEY_O: return VirtualKey::O;
+		case GLFW_KEY_P: return VirtualKey::P;
+		case GLFW_KEY_Q: return VirtualKey::Q;
+		case GLFW_KEY_R: return VirtualKey::R;
+		case GLFW_KEY_S: return VirtualKey::S;
+		case GLFW_KEY_T: return VirtualKey::T;
+		case GLFW_KEY_U: return VirtualKey::U;
+		case GLFW_KEY_V: return VirtualKey::V;
+		case GLFW_KEY_W: return VirtualKey::W;
+		case GLFW_KEY_X: return VirtualKey::X;
+		case GLFW_KEY_Y: return VirtualKey::Y;
+		case GLFW_KEY_Z: return VirtualKey::Z;
+			//case GLFW_KEY_LEFT_BRACKET: return VirtualKey::leftbra;
+			//case GLFW_KEY_BACKSLASH: return VirtualKey::slas;
+		case GLFW_KEY_RIGHT_BRACKET: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_GRAVE_ACCENT: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_WORLD_1: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_WORLD_2: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_ESCAPE: return VirtualKey::Esc;
+		case GLFW_KEY_ENTER: return VirtualKey::Enter;
+		case GLFW_KEY_TAB: return VirtualKey::Tab;
+		case GLFW_KEY_BACKSPACE: return VirtualKey::Backspace;
+		case GLFW_KEY_INSERT: return VirtualKey::Insert;
+		case GLFW_KEY_DELETE: return VirtualKey::Delete;
+		case GLFW_KEY_RIGHT: return VirtualKey::RightArrow;
+		case GLFW_KEY_LEFT: return VirtualKey::LeftArrow;
+		case GLFW_KEY_DOWN: return VirtualKey::DownArrow;
+		case GLFW_KEY_UP: return VirtualKey::UpArrow;
+		case GLFW_KEY_PAGE_UP: return VirtualKey::PageUp;
+		case GLFW_KEY_PAGE_DOWN: return VirtualKey::PageDown;
+		case GLFW_KEY_HOME: return VirtualKey::Home;
+		case GLFW_KEY_END: return VirtualKey::End;
+		case GLFW_KEY_CAPS_LOCK: return VirtualKey::Caps;
+		case GLFW_KEY_SCROLL_LOCK: return VirtualKey::Scroll;
+		case GLFW_KEY_NUM_LOCK: return VirtualKey::NumLock;
+		case GLFW_KEY_PRINT_SCREEN: return VirtualKey::PrintScreen;
+		case GLFW_KEY_PAUSE: return VirtualKey::Pause;
+		case GLFW_KEY_F1: return VirtualKey::F1;
+		case GLFW_KEY_F2: return VirtualKey::F2;
+		case GLFW_KEY_F3: return VirtualKey::F3;
+		case GLFW_KEY_F4: return VirtualKey::F4;
+		case GLFW_KEY_F5: return VirtualKey::F5;
+		case GLFW_KEY_F6: return VirtualKey::F6;
+		case GLFW_KEY_F7: return VirtualKey::F7;
+		case GLFW_KEY_F8: return VirtualKey::F8;
+		case GLFW_KEY_F9: return VirtualKey::F9;
+		case GLFW_KEY_F10: return VirtualKey::F10;
+		case GLFW_KEY_F11: return VirtualKey::F11;
+		case GLFW_KEY_F12: return VirtualKey::F12;
+		case GLFW_KEY_F13: return VirtualKey::F13;
+		case GLFW_KEY_F14: return VirtualKey::F14;
+		case GLFW_KEY_F15: return VirtualKey::F15;
+		case GLFW_KEY_F16: return VirtualKey::F16;
+		case GLFW_KEY_F17: return VirtualKey::F17;
+		case GLFW_KEY_F18: return VirtualKey::F18;
+		case GLFW_KEY_F19: return VirtualKey::F19;
+		case GLFW_KEY_F20: return VirtualKey::F20;
+		case GLFW_KEY_F21: return VirtualKey::F21;
+		case GLFW_KEY_F22: return VirtualKey::F22;
+		case GLFW_KEY_F23: return VirtualKey::F23;
+		case GLFW_KEY_F24: return VirtualKey::F24;
+			//case GLFW_KEY_F25: return VirtualKey::F25;
+		case GLFW_KEY_KP_0: return VirtualKey::NumPad0;
+		case GLFW_KEY_KP_1: return VirtualKey::NumPad1;
+		case GLFW_KEY_KP_2: return VirtualKey::NumPad2;
+		case GLFW_KEY_KP_3: return VirtualKey::NumPad3;
+		case GLFW_KEY_KP_4: return VirtualKey::NumPad4;
+		case GLFW_KEY_KP_5: return VirtualKey::NumPad5;
+		case GLFW_KEY_KP_6: return VirtualKey::NumPad6;
+		case GLFW_KEY_KP_7: return VirtualKey::NumPad7;
+		case GLFW_KEY_KP_8: return VirtualKey::NumPad8;
+		case GLFW_KEY_KP_9: return VirtualKey::NumPad9;
+		case GLFW_KEY_KP_DECIMAL: return VirtualKey::Decimal;
+		case GLFW_KEY_KP_DIVIDE: return VirtualKey::Divide;
+		case GLFW_KEY_KP_MULTIPLY: return VirtualKey::Multiply;
+		case GLFW_KEY_KP_SUBTRACT: return VirtualKey::Subtract;
+		case GLFW_KEY_KP_ADD: return VirtualKey::Add;
+		case GLFW_KEY_KP_ENTER: return VirtualKey::Enter;
+			//case GLFW_KEY_KP_EQUAL: return VirtualKey::equal;
+		case GLFW_KEY_LEFT_SHIFT: return VirtualKey::LeftShift;
+		case GLFW_KEY_LEFT_CONTROL: return VirtualKey::LeftCtrl;
+		case GLFW_KEY_LEFT_ALT: return VirtualKey::Alt;
+		case GLFW_KEY_LEFT_SUPER: return VirtualKey::LeftWin;
+		case GLFW_KEY_RIGHT_SHIFT: return VirtualKey::RightShift;
+		case GLFW_KEY_RIGHT_CONTROL: return VirtualKey::RightCtrl;
+		case GLFW_KEY_RIGHT_ALT: return VirtualKey::Alt;
+		case GLFW_KEY_RIGHT_SUPER: return VirtualKey::RightWin;
+			//case GLFW_KEY_MENU: return VirtualKey::LeftMenu;
+		}
+
+		return VirtualKey::Unknown;
+	}
+
+	MouseButton convertMouseButton(Uint32 button) {
+		
+		switch (button) {
+		case SDL_BUTTON_LEFT: return MouseButton::Left;
+		case SDL_BUTTON_RIGHT: return MouseButton::Right;
+		case SDL_BUTTON_MIDDLE: return MouseButton::Middle;
+		}
+
+		return MouseButton::Unknown;
+	}
+
+	void errorCallback(int error, const char* description) {
+		spdlog::error("GLFW error {}: {}", error, description);
+	}
+
+	SdlWindowManager::SdlWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {
+	}
+
+	SdlWindowManager::~SdlWindowManager() {
+	}
+
+	void SdlWindowManager::update(std::vector<WindowPtr>& created) {
+		WindowManager::update(created);
+
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			// Get the window ID from the event
+			Uint32 windowId = event.window.windowID;
+			const auto window = findSdlWindow(windowId);
+
+			switch (event.type) {
+			case SDL_QUIT:
+				//isRunning = false;
+				break;
+
+			case SDL_WINDOWEVENT:
+			{
+				
+
+				switch (event.window.event) {
+				case SDL_WINDOWEVENT_CLOSE:
+				{
+					auto found = findSdlWindow(windowId);
+					if (found) {
+						CloseWindowContext ctx;
+						found->getViewManager()->onCloseWindowRequest(ctx);
+						if (ctx.closing) {
+							SDL_DestroyRenderer(windows[windowId].renderer);
+							SDL_DestroyWindow(windows[windowId].window);
+						}
+
+						// If no windows left, quit the application
+						if (getWindows().empty()) {
+							isRunning = false;
+						}
+					}
+					break;
+				}
+				}
+				break;
+			}
+
+			case SDL_MOUSEMOTION:
+			{
+				window->_lastMousePosition = Point((int32)event.motion.x, (int32)event.motion.y);
+				window->getViewManager()->onMouseMove(window->_lastMousePosition);
+				break;
+			}
+
+			case SDL_MOUSEBUTTONDOWN:
+			{
+				convertMouseButton(event.button.type);
+				// Get the window ID from the event
+				Uint32 windowId = event.button.windowID;
+				if (windows.count(windowId)) {
+					std::cout << "Mouse clicked in window " << windowId
+						<< " at (" << event.button.x << ", "
+						<< event.button.y << ")" << std::endl;
+				}
+				break;
+			}
+
+			case SDL_KEYDOWN:
+			{
+				convertKey(event.key.keysym.sym);
+
+				// Get the window ID from the event
+				Uint32 windowId = event.key.windowID;
+				if (event.key.keysym.sym == SDLK_ESCAPE) {
+					
+				}
+				// You can handle window-specific keyboard events here
+				break;
+			}
+			}
+		}
+	}
+
+
+	std::shared_ptr<SdlNativeWindow> SdlWindowManager::findSdlWindow(uint32 id) {
+		for (const auto& window : getWindows()) {
+			std::static_pointer_cast<SdlNativeWindow>(window)->
+		}
+	}
+}

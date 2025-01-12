@@ -1,5 +1,6 @@
 local m = {
 	glfw = 	dofile("glfw.lua"),
+	sdl = 	dofile("sdl.lua"),
 	bgfx = dofile("bgfx.lua"),
 	lua = dofile("lua.lua"),
 	zlib = dofile("zlib.lua"),
