@@ -11,7 +11,7 @@ namespace fw::app {
 		SDL_Window* _window = nullptr;
 		Point _lastMousePosition;
 		Dimension _dimensions;
-		
+		uint32 _sdlWindowId = -1;
 
 	public:
 		SdlNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
@@ -35,29 +35,11 @@ namespace fw::app {
 
 		NativeWindowHandle getNativeHandle() override;
 
+		uint32 getSdlWindowId() const {
+			return _sdlWindowId;
+		}
+
 	private:
-		static void mouseEnterCallback(GLFWwindow* window, int entered);
-
-		static void mouseMoveCallback(GLFWwindow* window, double x, double y);
-
-		static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-
-		static void mouseScrollCallback(GLFWwindow* window, double x, double y);
-
-		static void charCallback(GLFWwindow* window, unsigned int keycode);
-
-		static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-
-		static void resizeCallback(GLFWwindow* window, int width, int height);
-
-		static void dropCallback(GLFWwindow* window, int count, const char** paths);
-
-		static void windowCloseCallback(GLFWwindow* window);
-
-		static void windowRefreshCallback(GLFWwindow* window);
-
-		static void errorCallback(int error, const char* description);
-
 		friend class SdlWindowManager;
 	};
 

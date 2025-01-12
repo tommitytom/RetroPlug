@@ -157,6 +157,7 @@ namespace fw::app {
 		Dimension dimensions = vm->getDimensions();
 
 		_window = SDL_CreateWindow(vm->getName().data(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, dimensions.w, dimensions.h, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+		_sdlWindowId = SDL_GetWindowID(_window);
 
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -487,7 +488,12 @@ namespace fw::app {
 
 	std::shared_ptr<SdlNativeWindow> SdlWindowManager::findSdlWindow(uint32 id) {
 		for (const auto& window : getWindows()) {
-			std::static_pointer_cast<SdlNativeWindow>(window)->
+			auto w = std::static_pointer_cast<SdlNativeWindow>(window);
+			if (w == id) {
+				return w;
+			}
 		}
+
+		return nullptr;
 	}
 }
