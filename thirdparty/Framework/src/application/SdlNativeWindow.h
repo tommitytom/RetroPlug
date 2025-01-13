@@ -12,6 +12,7 @@ namespace fw::app {
 		Point _lastMousePosition;
 		Dimension _dimensions;
 		uint32 _sdlWindowId = -1;
+		bool _shouldClose = false;
 
 	public:
 		SdlNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)

@@ -15,52 +15,6 @@ namespace fw::app {
 		return wmInfo.info.win.window;
 	}
 
-	/*void SdlNativeWindow::mouseScrollCallback(GLFWwindow* window, f64 x, f64 y) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		w->getViewManager()->onMouseScroll(MouseScrollEvent{
-			.delta = PointF((f32)x, (f32)y),
-			.position = w->_lastMousePosition
-		});
-	}
-
-	void SdlNativeWindow::resizeCallback(GLFWwindow* window, int x, int y) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		w->setDimensions({ x, y });
-		// NOTE: View resizing is handled in SdlNativeWindow::onUpdate
-	}
-
-	void SdlNativeWindow::charCallback(GLFWwindow* window, unsigned int keycode) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		w->getViewManager()->onChar(CharEvent{
-			.keyCode = keycode
-		});
-	}
-
-	void SdlNativeWindow::dropCallback(GLFWwindow* window, int count, const char** paths) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		std::vector<std::string> p(count);
-
-		for (int i = 0; i < count; ++i) {
-			p[i] = paths[i];
-		}
-
-		w->getViewManager()->onDrop(p);
-	}
-
-	void SdlNativeWindow::windowCloseCallback(GLFWwindow* window) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		CloseWindowContext ctx;
-		w->getViewManager()->onCloseWindowRequest(ctx);
-		if (!ctx.closing) {
-			glfwSetWindowShouldClose(window, 0);
-		}
-	}
-
-	void SdlNativeWindow::windowRefreshCallback(GLFWwindow* window) {
-		SdlNativeWindow* w = static_cast<SdlNativeWindow*>(glfwGetWindowUserPointer(window));
-		//w->getViewManager()->onCloseWindowRequest();
-	}*/
-
 	/*#ifdef FW_PLATFORM_WEB
 	EMSCRIPTEN_RESULT touchstart_callback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData) {
 		Application* app = static_cast<Application*>(userData);
@@ -135,26 +89,12 @@ namespace fw::app {
 		//glfwSetWindowUserPointer(_window, this);
 
 		/*
-		glfwSetKeyCallback(_window, keyCallback);
-		glfwSetCharCallback(_window, charCallback);
-		glfwSetScrollCallback(_window, mouseScrollCallback);
-		glfwSetCursorPosCallback(_window, mouseMoveCallback);
-		glfwSetCursorEnterCallback(_window, mouseEnterCallback);
-		glfwSetMouseButtonCallback(_window, mouseButtonCallback);
-		glfwSetWindowSizeCallback(_window, resizeCallback);
-		glfwSetDropCallback(_window, dropCallback);
-		glfwSetWindowCloseCallback(_window, windowCloseCallback);
-		glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
-
 		#ifdef FW_PLATFORM_WEB
 			emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
 			emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchmove_callback);
 			emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
 			emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
 		#endif*/
-
-		//glfwSetCharCallback(_window, charCb);
-		//glfwSetFramebufferSizeCallback(window, resizeCallback);
 	}
 
 	void SdlNativeWindow::onFrame() {
@@ -175,6 +115,7 @@ namespace fw::app {
 			_dimensions = viewSize;
 			//vm->getLayout().setDimensions(_dimensions);
 			//glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
+			SDL_SetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 
 			/*if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 				// Resize window to fit content
@@ -221,7 +162,7 @@ namespace fw::app {
 	}
 
 	bool SdlNativeWindow::shouldClose() {
-		return false;
+		return _shouldClose;
 	}
 
 	VirtualKey convertKey(SDL_Keycode key) {
@@ -366,21 +307,99 @@ namespace fw::app {
 
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
-			// Get the window ID from the event
-			const auto window = findSdlWindow(event.window.windowID);
-
-			if (!window) {
-				spdlog::warn("Failed to process event: Window could not be found!");
-				continue;
-			}
-
 			switch (event.type) {
 			case SDL_QUIT:
-				//isRunning = false;
+				for (auto& w : getWindows()) {
+					std::static_pointer_cast<SdlNativeWindow>(w)->_shouldClose = true;
+				}
+				
 				break;
 
+			case SDL_MOUSEMOTION:
+			{
+				const auto window = findSdlWindow(event.motion.windowID);
+				window->_lastMousePosition = Point(event.motion.x, event.motion.y);
+				window->getViewManager()->onMouseMove(window->_lastMousePosition);
+				break;
+			}
+
+			case SDL_MOUSEBUTTONDOWN:
+			case SDL_MOUSEBUTTONUP:
+			{
+				const auto window = findSdlWindow(event.button.windowID);
+				window->_lastMousePosition.x = event.button.x;
+				window->_lastMousePosition.y = event.button.y;
+
+				window->getViewManager()->onMouseButton(MouseButtonEvent{
+					.button = convertMouseButton(event.button.type),
+					.down = event.window.event == SDL_MOUSEBUTTONDOWN,
+					.position = window->_lastMousePosition
+				});
+
+				break;
+			}
+			case SDL_MOUSEWHEEL:
+			{
+				const auto window = findSdlWindow(event.wheel.windowID);
+				window->getViewManager()->onMouseScroll(MouseScrollEvent{
+					.delta = PointF((f32)event.wheel.x, (f32)event.wheel.y),
+					.position = window->_lastMousePosition
+				});
+				break;
+			}
+			case SDL_KEYDOWN:
+			case SDL_KEYUP:
+			{
+				const auto window = findSdlWindow(event.key.windowID);
+
+				KeyAction action = KeyAction::Press;
+				if (event.key.repeat) {
+					action = KeyAction::Repeat;
+				} else if (event.type == SDL_KEYUP) {
+					action = KeyAction::Release;
+				}
+				
+				const VirtualKey key = convertKey(event.key.keysym.sym);
+
+				window->getViewManager()->onKey(KeyEvent{
+					.action = action,
+					.key = key,
+					.down = action != KeyAction::Release,
+
+					// Whats all this then?
+					.action2 = (uint32)action,
+					.key2 = (uint32)key
+				});
+
+				break;
+			}
+			case SDL_TEXTINPUT:
+			{
+				const auto window = findSdlWindow(event.text.windowID);
+				window->getViewManager()->onChar(CharEvent{
+					.keyCode = (unsigned int)event.text.text[0]  // Note: This is simplified, might need UTF-8 handling
+				});
+				break;
+			}
+			case SDL_DROPFILE:
+			{
+				const auto window = findSdlWindow(event.drop.windowID);
+				std::vector<std::string> paths;
+				paths.push_back(event.drop.file);
+				window->getViewManager()->onDrop(paths);
+				SDL_free(event.drop.file);  // SDL requires us to free this
+				break;
+			}
 			case SDL_WINDOWEVENT:
 			{
+				// Get the window ID from the event
+				const auto window = findSdlWindow(event.window.windowID);
+
+				if (!window) {
+					spdlog::warn("Failed to process event: Window could not be found!");
+					continue;
+				}
+
 				switch (event.window.event) {
 				case SDL_WINDOWEVENT_ENTER:
 				{
@@ -397,64 +416,16 @@ namespace fw::app {
 					CloseWindowContext ctx;
 					window->getViewManager()->onCloseWindowRequest(ctx);
 					if (ctx.closing) {
-						
-					}
-
-					// If no windows left, quit the application
-					if (getWindows().empty()) {
-						//isRunning = false;
+						window->_shouldClose = true;
 					}
 					break;
 				}
+				case SDL_WINDOWEVENT_RESIZED:
+				{
+					window->setDimensions({ (int32)event.window.data1, (int32)event.window.data2 });
+					break;
 				}
-				break;
-			}
-
-			case SDL_MOUSEMOTION:
-			{
-				window->_lastMousePosition = Point((int32)event.motion.x, (int32)event.motion.y);
-				window->getViewManager()->onMouseMove(window->_lastMousePosition);
-				break;
-			}
-
-			case SDL_MOUSEBUTTONDOWN:
-			case SDL_MOUSEBUTTONUP:
-			{
-				window->_lastMousePosition.x = event.button.x;
-				window->_lastMousePosition.y = event.button.y;
-
-				window->getViewManager()->onMouseButton(MouseButtonEvent{
-					.button = convertMouseButton(event.button.type),
-					.down = event.window.event == SDL_MOUSEBUTTONDOWN,
-					.position = window->_lastMousePosition
-				});
-
-				break;
-			}
-			case SDL_KEYDOWN:
-			case SDL_KEYUP:
-			{
-				KeyAction action = KeyAction::Press;
-				if (event.key.repeat) {
-					action = KeyAction::Repeat;
-				} else if (event.type == SDL_KEYUP) {
-					action = KeyAction::Release;
 				}
-				
-				const VirtualKey key = convertKey(event.key.keysym.sym);
-
-				spdlog::info("key: {} {}", action, action != KeyAction::Release);
-
-				window->getViewManager()->onKey(KeyEvent{
-					.action = action,
-					.key = key,
-					.down = action != KeyAction::Release,
-
-					// Whats all this then?
-					.action2 = (uint32)action,
-					.key2 = (uint32)key
-				});
-
 				break;
 			}
 			}
