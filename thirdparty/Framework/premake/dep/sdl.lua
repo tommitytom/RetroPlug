@@ -10,7 +10,8 @@ end
 
 function m.link()
 	m.include()
-	links { "sdl2" }
+    libdirs { SDL_DIR .. "/lib/x64" }
+	links { "SDL2" }
 end
 
 return m

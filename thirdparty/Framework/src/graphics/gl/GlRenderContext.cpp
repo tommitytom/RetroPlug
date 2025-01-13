@@ -3,6 +3,10 @@
 #include <fstream>
 
 #ifdef FW_PLATFORM_WEB
+#define FW_USE_GLES
+#endif
+
+#ifdef FW_USE_GLES
 #include <glad/gles2.h>
 #else
 #include <glad/gl.h>

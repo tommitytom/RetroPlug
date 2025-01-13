@@ -97,6 +97,7 @@ function m.Graphics.link()
 	m.Foundation.link()
 	dep.glad.link()
 	dep.bgfx.link()
+	dep.sdl.link()
 	dep.freetype.link()
 	dep.freetypeGl.link()
 end
