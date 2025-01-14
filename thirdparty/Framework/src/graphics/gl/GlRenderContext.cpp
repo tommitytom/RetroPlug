@@ -6,8 +6,13 @@
 #define FW_USE_GLES
 #endif
 
+#define FW_USE_GLES
+
 #ifdef FW_USE_GLES
-#include <glad/gles2.h>
+#include <SDL2/SDL.h>
+
+#define GL_GLEXT_PROTOTYPES 1
+#include <SDL2/SDL_opengles2.h>
 #else
 #include <glad/gl.h>
 #endif
@@ -24,12 +29,12 @@
 namespace fs = std::filesystem;
 
 namespace fw {
-	void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
-		spdlog::error("GL error: {}", message);
+	//void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
+		//spdlog::error("GL error: {}", message);
 		//fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
 				//(type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
 				 // type, severity, message);
-	}
+	//}
 
 	void mtxOrtho(float* _result, float _left, float _right, float _bottom, float _top, float _near, float _far, float _offset, bool _homogeneousNdc) {
 		const float aa = 2.0f / (_right - _left);
@@ -57,10 +62,10 @@ namespace fw {
 		_resolution = res;
 
 #ifdef FW_USE_GLES
-		if (!gladLoaderLoadGLES2()) {
+		/*if (!gladLoadGLES2Loader()) {
 			spdlog::error("Failed to initialize OpenGL context");
 			return;
-		}
+		}*/
 #else
 		if (!gladLoaderLoadGL()) {
 			spdlog::error("Failed to initialize OpenGL context");
@@ -84,11 +89,11 @@ namespace fw {
 		rm->addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(rm->getLookup()));
 		rm->addProvider<Texture, GlTextureProvider>();
 
-		glGenVertexArrays(1, &_arrayBuffer);
+		glGenVertexArraysOES(1, &_arrayBuffer);
 		glGenBuffers(1, &_vertexBuffer);
 		glGenBuffers(1, &_indexBuffer);
 
-		glBindVertexArray(_arrayBuffer);
+		glBindVertexArrayOES(_arrayBuffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _indexBuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
 
@@ -102,7 +107,7 @@ namespace fw {
 		glEnableVertexAttribArray(2);
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
+		glBindVertexArrayOES(0);
 	}
 
 	void GlRenderContext::cleanup() {
@@ -112,7 +117,7 @@ namespace fw {
 		_frameBuffers.clear();*/
 
 		if (_arrayBuffer != 0) {
-			glDeleteVertexArrays(1, &_arrayBuffer);
+			glDeleteVertexArraysOES(1, &_arrayBuffer);
 			glDeleteBuffers(1, &_vertexBuffer);
 			glDeleteBuffers(1, &_indexBuffer);
 
@@ -172,7 +177,7 @@ namespace fw {
 			uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
 			uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
 
-			glBindVertexArray(_arrayBuffer);
+			glBindVertexArrayOES(_arrayBuffer);
 
 			glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
 
@@ -235,7 +240,7 @@ namespace fw {
 					glUniform1i(uniforms.textureUniform, 0);
 					glUniformMatrix4fv(uniforms.projUniform, 1, GL_FALSE, projMtx);
 
-					glBindVertexArray(_arrayBuffer);
+					glBindVertexArrayOES(_arrayBuffer);
 
 					glDrawElements(primitive, (GLsizei)surface.indexCount, GL_UNSIGNED_INT, (void*)(surface.indexOffset * sizeof(uint32)));
 
@@ -244,7 +249,7 @@ namespace fw {
 			}
 
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
-			glBindVertexArray(0);
+			glBindVertexArrayOES(0);
 		}
 
 		_viewOffset = nextViewOffset;

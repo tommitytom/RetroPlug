@@ -11,6 +11,10 @@ end
 function m.source()
 	m.include()
 
+	files {
+		GLAD_DIR .. "/src/gles2.c"
+	}
+
 	filter { "system:windows or linux" }
 		files {
 			GLAD_DIR .. "/src/gl.c",

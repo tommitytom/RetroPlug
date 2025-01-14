@@ -12,7 +12,14 @@ namespace fw::app {
 		SDL_SysWMinfo wmInfo;
 		SDL_VERSION(&wmInfo.version);
 		SDL_GetWindowWMInfo(_window, &wmInfo);
-		return wmInfo.info.win.window;
+
+		#if defined(SDL_VIDEO_DRIVER_WINDOWS)
+			return wmInfo.info.win.window;
+		#elif defined(SDL_VIDEO_DRIVER_X11)
+			return wmInfo.info.x11.window;
+		#endif
+
+		return nullptr;
 	}
 
 	/*#ifdef FW_PLATFORM_WEB
@@ -111,9 +118,12 @@ namespace fw::app {
 		Dimension viewSize = vm->getDimensions();
 		viewSize = vm->getDimensions();
 
+		viewSize.w = 640;
+		viewSize.h = 480;
+
 		if (viewSize.w > 0 && viewSize.h > 0 && (_dimensions.w != viewSize.w || _dimensions.h != viewSize.h)) {
 			_dimensions = viewSize;
-			//vm->getLayout().setDimensions(_dimensions);
+			vm->getLayout().setDimensions(_dimensions);
 			//glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 			SDL_SetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
 

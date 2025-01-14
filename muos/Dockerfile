@@ -4,18 +4,15 @@ WORKDIR /workspace
 
 COPY . .
 
-RUN apt update
-RUN apt install -y ccache
-RUN apt install -y curl
-RUN apt install -y make
-RUN apt install -y git
+RUN mkdir /muos-sdk && tar xzvf aarch64-buildroot-linux-gnu_sdk-buildroot.tar.gz -C /muos-sdk --strip-components=1
+
+RUN apt-get -qq -y update && apt-get -y install ccache curl make git 
 # RUN apt install -y binutils
 
 
-RUN mkdir /muos-sdk
 # This requires the toolchain to be in the repo. If we can host it somewhere this could
 # be changed to a curl
-RUN tar xzvf aarch64-buildroot-linux-gnu_sdk-buildroot.tar.gz -C /muos-sdk --strip-components=1
+
 
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1 
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libm.so.6 /lib64/libm.so.6
