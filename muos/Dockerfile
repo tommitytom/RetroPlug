@@ -6,7 +6,7 @@ COPY . .
 
 RUN mkdir /muos-sdk && tar xzvf aarch64-buildroot-linux-gnu_sdk-buildroot.tar.gz -C /muos-sdk --strip-components=1
 
-RUN apt-get -qq -y update && apt-get -y install ccache curl make git 
+RUN apt-get -qq -y update && apt-get -y install ccache curl make git git-lfs
 # RUN apt install -y binutils
 
 
