@@ -79,6 +79,7 @@ function m.Graphics.include()
 	m.Foundation.include()
 	--dep.bgfx.include()
 	--dep.glfw.include()
+	dep.sdl.include()
 	dep.glad.include()
 	dep.freetype.include()
 	dep.freetypeGl.include()
@@ -96,6 +97,7 @@ function m.Graphics.link()
 	m.Foundation.link()
 	dep.glad.link()
 	--dep.bgfx.link()
+	dep.sdl.link()
 	dep.freetype.link()
 	dep.freetypeGl.link()
 end
@@ -215,8 +217,9 @@ function m.Application.include()
 
 	m.Graphics.include()
 	m.Audio.include()
-	--dep.glfw.include()
 
+	dep.sdl.include()
+	--dep.glfw.include()
 	--dep.bgfx.compat()
 
 	filter {}
