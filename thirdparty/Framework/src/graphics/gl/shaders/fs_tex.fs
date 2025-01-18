@@ -1,16 +1,17 @@
-#version 330 core
+#version 100
 
-out vec4 FragColor;
+precision mediump float;
 
-in vec4 v_color;
-in vec2 v_texcoord0;
+// Change 'in' to 'varying' for inputs from vertex shader
+varying vec4 v_color;
+varying vec2 v_texcoord0;
 
 uniform sampler2D s_tex;
 
 uniform mat4 u_proj;
 
+// GLES 2.0 doesn't use 'out' variables, it uses gl_FragColor
 void main() {
-	//FragColor = vec4(1, 0, 0, 1);
-	//FragColor = v_color;
-    FragColor = texture(s_tex, v_texcoord0) * v_color;
+    // Change texture() to texture2D()
+    gl_FragColor = texture2D(s_tex, v_texcoord0) * v_color;
 }

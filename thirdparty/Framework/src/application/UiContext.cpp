@@ -99,11 +99,43 @@ namespace fw::app {
 		return false;
 	}
 
+	WindowPtr UiContext::setup(ViewPtr view) {
+			WindowPtr window = _windowManager->createWindow(view);
+			initRenderContext(window);
+			
+			ViewManagerPtr vm = window->getViewManager();
+			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+
+			_mainWindow = window;
+
+			return window;
+		}
+
+		WindowPtr UiContext::setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			_windowManager->addWindow(window);
+
+			initRenderContext(window);
+
+			ViewManagerPtr vm = window->getViewManager();
+			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+
+			if (!_mainWindow) {
+				_mainWindow = window;
+			}
+
+			return window;
+		}
+
 	void UiContext::initRenderContext(WindowPtr window) {
+		printf("initRenderContext\n");
 		_renderContext->initialize(window->getNativeHandle(), window->getViewManager()->getDimensions());
 		
+		printf("font\n");
 		_resourceManager->addProvider<Font, FontProvider>();
+		printf("texture\n");
 		_resourceManager->addProvider<TextureAtlas, TextureAtlasProvider>();
+		printf("fontface\n");
 		_resourceManager->addProvider<FontFace>(std::make_unique<FtglFontFaceProvider>(*_resourceManager));
 
 		TextureDesc whiteTextureDesc = TextureDesc{
@@ -112,22 +144,35 @@ namespace fw::app {
 		};
 
 		const size_t size = (size_t)(whiteTextureDesc.dimensions.w * whiteTextureDesc.dimensions.h * whiteTextureDesc.depth);
+		printf("size\n");
 		whiteTextureDesc.data.resize(size);
+		printf("resize\n");
 		memset(whiteTextureDesc.data.data(), 0xFF, size);
 
+		printf("default tex\n");
 		_defaultTexture = _resourceManager->create<Texture>("textures/white", whiteTextureDesc);
 
+		printf("shadedesc\n");
 		auto shaderDescs = _renderContext->getDefaultShaders();
 
+		printf("Creating shaders: vert\n");
+		spdlog::info("Creating shaders: vert");
 		_resourceManager->create<fw::Shader>("shaders/CanvasVertex", shaderDescs.first);
+		spdlog::info("Creating shaders: frag");
 		_resourceManager->create<fw::Shader>("shaders/CanvasFragment", shaderDescs.second);
+		
+		spdlog::info("Creating program: shaders/CanvasDefault");
 
 		_defaultProgram = _resourceManager->create<ShaderProgram>("shaders/CanvasDefault", {
 			"shaders/CanvasVertex",
 			"shaders/CanvasFragment"
 		});
 
+		spdlog::info("Creating font: Karla-Regular");
+
 		_defaultFont = _fontManager.loadFont("Karla-Regular", 16);
+
+		spdlog::info("fin");
 
 		_lastTime = hrc::now();
 	}

@@ -47,6 +47,7 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus)
 {
+	printf("init consttr\n");
 	std::string name = "RetroPlug v";
 	name += RP_VERSION;
 	setName(name);
@@ -118,6 +119,7 @@ void RetroPlugView::onHotReload() {
 }
 
 void RetroPlugView::onInitialize() {
+	printf("init rpzz\n");
 	addGlobalKeyHandler([&](const fw::KeyEvent& ev) {
 		if (ev.down && ev.key == fw::VirtualKey::F5) {
 			_viewTree->getRootNode().children.clear();

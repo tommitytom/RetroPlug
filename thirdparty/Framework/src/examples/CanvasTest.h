@@ -6,17 +6,18 @@
 
 namespace fw {
 	class CanvasTest : public View {
+		FwRegisterObject()
 	private:
 		f32 _phase = 0.0f;
 		f32 _scale = 1.0f;
 		TextureHandle _circle;
 
 	public:
-		CanvasTest() : View({ 1024, 768 }) { setType<CanvasTest>(); }
+		CanvasTest() : View({ 640, 480 }) {}
 		~CanvasTest() = default;
 
 		void onInitialize() override {
-			_circle = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\circle-512.png");
+			_circle = getResourceManager().load<Texture>("circle-512.png");
 		}
 
 		void onUpdate(f32 delta) override {

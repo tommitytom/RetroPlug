@@ -80,9 +80,15 @@ namespace fw::app {
 		ViewManagerPtr vm = getViewManager();
 		Dimension dimensions = vm->getDimensions();
 
+		if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+			printf("Unable to initialize SDL: %s\n", SDL_GetError());
+			return;
+		}
+		
 		_window = SDL_CreateWindow(vm->getName().data(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, dimensions.w, dimensions.h, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 		_sdlWindowId = SDL_GetWindowID(_window);
 
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 		SDL_GL_SetSwapInterval(0);

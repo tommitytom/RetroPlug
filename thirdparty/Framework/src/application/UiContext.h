@@ -40,33 +40,9 @@ namespace fw::app {
 
 		void handleHotReload();
 
-		WindowPtr setup(ViewPtr view) {
-			WindowPtr window = _windowManager->createWindow(view);
-			initRenderContext(window);
-			
-			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+		WindowPtr setup(ViewPtr view);
 
-			_mainWindow = window;
-
-			return window;
-		}
-
-		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
-			_windowManager->addWindow(window);
-
-			initRenderContext(window);
-
-			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(_resourceManager.get(), &_fontManager);
-
-			if (!_mainWindow) {
-				_mainWindow = window;
-			}
-
-			return window;
-		}
+		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions);
 
 		WindowManager& getWindowManager() {
 			return *_windowManager;

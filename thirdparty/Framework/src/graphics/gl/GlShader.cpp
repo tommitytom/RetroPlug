@@ -50,9 +50,11 @@ namespace fw {
 					.type = shaderType
 				}, deps);
 			} else {
+				printf("Failed to load shader at %s, failed to open the file\n", uri.data());
 				spdlog::error("Failed to load shader at {}, failed to open the file", uri);
 			}
 		} else {
+			printf("Failed to load shader at %s, failed to open the file\n", uri.data());
 			spdlog::error("Failed to load shader at {}, the file does not exist", uri);
 		}
 
@@ -60,19 +62,55 @@ namespace fw {
 	}
 
 	std::shared_ptr<Resource> GlShaderProvider::create(const ShaderDesc& desc, std::vector<std::string>& deps) {
+		printf("GlShaderProvider::create\n");
+		// First verify we have a valid GL context
+		if (glGetError() != GL_NO_ERROR) {
+			printf("GL error exists before shader creation\n");
+			return nullptr;
+		}
+
+		printf("desc.data\n");
 		const GLchar* dataPtr = (const GLchar*)desc.data;
 		GLint shaderSize = (GLint)desc.size;
+		printf("getGlShaderType\n");
 		GLenum shaderType = getGlShaderType(desc.type);
-		assert(shaderType != GL_INVALID_ENUM);
 
-		uint32 shader = glCreateShader(shaderType);
+		printf("Creating shader of type 0x%x with size: %d\n", shaderType, shaderSize);
+
+		if (shaderType == GL_INVALID_ENUM) {
+			printf("Invalid shader type\n");
+			return nullptr;
+		}
+
+		// Create shader with error checking
+		GLuint shader = glCreateShader(shaderType);
+		GLenum error = glGetError();
+		
+		if (error != GL_NO_ERROR || shader == 0) {
+			printf("Failed to create shader: GL error 0x%x\n", error);
+			return nullptr;
+		}
+
+		printf("Created shader %u\n", shader);
+
 		glShaderSource(shader, 1, &dataPtr, &shaderSize);
+		error = glGetError();
+		if (error != GL_NO_ERROR) {
+			printf("Error setting shader source: 0x%x\n", error);
+			glDeleteShader(shader);
+			return nullptr;
+		}
+
 		glCompileShader(shader);
+		printf("Compilation complete\n");
 
 		if (!GlUtil::checkShaderCompileError(shader)) {
+			printf("Shader compilation succeeded\n");
 			return std::make_shared<GlShader>(shader);
 		}
 
+		printf("Shader compilation failed\n");
+		glDeleteShader(shader);
 		return nullptr;
 	}
 }

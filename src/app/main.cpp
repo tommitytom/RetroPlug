@@ -62,7 +62,19 @@ extern "C" {
 }
 #endif
 
+void handler(int sig) {
+    void *array[10];
+    size_t size = backtrace(array, 10);
+    fprintf(stderr, "Error: signal %d:\n", sig);
+    backtrace_symbols_fd(array, size, STDERR_FILENO);
+    exit(1);
+}
+
 int main() {
+	printf("RetroPlug 0.4.0\n");
+
+	signal(SIGSEGV, handler);
+	
 	runner.setup<APPLICATION_IMPL, RenderContextT, AudioManagerT>();
 	return runner.doLoop();
 

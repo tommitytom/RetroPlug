@@ -6,18 +6,20 @@ COPY . .
 
 RUN mkdir /muos-sdk && tar xzvf aarch64-buildroot-linux-gnu_sdk-buildroot.tar.gz -C /muos-sdk --strip-components=1
 
-RUN apt-get -qq -y update && apt-get -y install ccache curl make git git-lfs
+RUN apt-get -qq -y update && apt-get -y install ccache curl make git git-lfs binfmt-support qemu-user qemu-user-static gdb
 # RUN apt install -y binutils
 
 
 # This requires the toolchain to be in the repo. If we can host it somewhere this could
 # be changed to a curl
 
-
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1 
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libm.so.6 /lib64/libm.so.6
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libgcc_s.so.1 /lib64/libgcc_s.so.1
 RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libc.so.6 /lib64/libc.so.6
+RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libdl.so.2 /lib64/libdl.so.2
+RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/libpthread.so.0 /lib64/libpthread.so.0
+RUN ln -s /muos-sdk/aarch64-buildroot-linux-gnu/sysroot/lib/librt.so.1 /lib64/librt.so.1
 
 ENV DEVICE=RG35XXPLUS
 

@@ -9,6 +9,7 @@ namespace fw {
 
 	public:
 		RetroPlug() : View({ 1024, 768 }) {
+			printf("cosntruct\n");
 			setType<RetroPlug>();
 			setSizingPolicy(SizingPolicy::FitToParent);
 			setFocusPolicy(FocusPolicy::Click);
@@ -17,7 +18,7 @@ namespace fw {
 		~RetroPlug() = default;
 
 		void onInitialize() override {
-
+			printf("init rp\n");
 		}
 
 		bool onMouseButton(const MouseButtonEvent& ev) override {

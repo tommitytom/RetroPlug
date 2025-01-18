@@ -9,12 +9,11 @@
 #define FW_USE_GLES
 
 #ifdef FW_USE_GLES
-#include <SDL2/SDL.h>
-
-#define GL_GLEXT_PROTOTYPES 1
-#include <SDL2/SDL_opengles2.h>
+	#include <SDL2/SDL.h>
+	#define GL_GLEXT_PROTOTYPES 1
+	#include <SDL2/SDL_opengles2.h>
 #else
-#include <glad/gl.h>
+	#include <glad/gl.h>
 #endif
 
 //#include <glfw/glfw3.h>
@@ -25,6 +24,8 @@
 #include "graphics/gl/GlShader.h"
 #include "graphics/gl/GlShaderProgram.h"
 #include "graphics/gl/GlTexture.h"
+
+#include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 
@@ -58,6 +59,7 @@ namespace fw {
 	}
 
 	void GlRenderContext::initialize(NativeWindowHandle mainWindow, Dimension res) {
+		
 		_mainWindow = mainWindow;
 		_resolution = res;
 
@@ -84,11 +86,26 @@ namespace fw {
 		//glEnable(GL_LINE_SMOOTH);
 		//glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
+		GLint contextFlags;
+glGetIntegerv(GL_CONTEXT_FLAGS, &contextFlags);
+printf("GL Context Flags: 0x%x\n", contextFlags);
+
+const char* vendor = (const char*)glGetString(GL_VENDOR);
+const char* renderer = (const char*)glGetString(GL_RENDERER);
+const char* version = (const char*)glGetString(GL_VERSION);
+printf("GL Vendor: %s\n", vendor ? vendor : "null");
+printf("GL Renderer: %s\n", renderer ? renderer : "null");
+printf("GL Version: %s\n", version ? version : "null");
+
 		ResourceManagerPtr rm = getResourceManager();
+		printf("shader\n");
 		rm->addProvider<Shader, GlShaderProvider>();
+		printf("shaderprogrteam\n");
 		rm->addProvider<ShaderProgram>(std::make_unique<GlShaderProgramProvider>(rm->getLookup()));
+		printf("texture\n");
 		rm->addProvider<Texture, GlTextureProvider>();
 
+printf("verts\n");
 		glGenVertexArraysOES(1, &_arrayBuffer);
 		glGenBuffers(1, &_vertexBuffer);
 		glGenBuffers(1, &_indexBuffer);
@@ -97,6 +114,7 @@ namespace fw {
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _indexBuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
 
+printf("attribs\n");
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(CanvasVertex), (void*)offsetof(CanvasVertex, pos));
 		glEnableVertexAttribArray(0);
 
