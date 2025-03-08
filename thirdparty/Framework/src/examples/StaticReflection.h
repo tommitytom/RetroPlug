@@ -161,6 +161,7 @@ namespace fw {
 	};
 		
 	class StaticReflection : public View {
+		FwRegisterObject()
 	private:
 		NodeGraphPtr _graph;
 		
@@ -183,7 +184,6 @@ namespace fw {
 
 	public:
 		StaticReflection() : View({ 1024, 768 }) {
-			setType<StaticReflection>();
 			setFocusPolicy(FocusPolicy::Click);
 			getLayout().setDimensions(100_pc);
 
