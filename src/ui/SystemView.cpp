@@ -105,9 +105,17 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.separator();
 
 	fw::Menu& settingsMenu = root.subMenu("Settings");
+	settingsMenu.multiSelect("Save Type", { "SRAM", "State" }, (int)_system->getDesc().settings.saveType, [system = std::weak_ptr(_system)](int value) {
+		SystemPtr systemPtr = system.lock();
+		SystemDesc desc = systemPtr->getDesc();
+		desc.settings.saveType = (SaveStateType)value;
+		systemPtr->setDesc(std::move(desc));
+	});
+
+	fw::Menu& globalSettingsMenu = root.subMenu("Global Settings");
 
 	#ifndef RP_WEB
-	settingsMenu
+	globalSettingsMenu
 		.subMenu("Audio")
 		/*.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
 			if (v >= 0) {
@@ -115,21 +123,20 @@ void SystemView::buildMenu(fw::Menu& target) {
 			}
 		})*/
 		.parent();
-	#endif
-	
-	settingsMenu
+#endif
+
+	globalSettingsMenu
 		.multiSelect("MIDI", { "Send To All", "Four Channels Per Instance", "One Channel Per Instance" }, &projectState.settings.midiRouting)
 		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &projectState.settings.audioRouting)
 		.parent();
 
-	settingsMenu
+	globalSettingsMenu
 		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
 		.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)projectState.settings.layout, [this, &project](int layout) {
 			project.getState().settings.layout = (SystemLayout)layout;
 			setLayoutDirty();
 		})
 		.subMenu("Save Options...")
-			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
 			.select("Include ROM", &projectState.settings.includeRom)
 			.parent()
 		.parent()

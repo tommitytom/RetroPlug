@@ -240,6 +240,8 @@ function m.RetroPlug.project()
 		"src/app/RetroPlugApplication.h",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
+		"src/nanoloop/**.h",
+		"src/nanoloop/**.cpp",
 		"src/node/**.h",
 		"src/node/**.cpp",
 		"src/util/**.h",

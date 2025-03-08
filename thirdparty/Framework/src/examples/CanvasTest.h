@@ -6,13 +6,14 @@
 
 namespace fw {
 	class CanvasTest : public View {
+		FwRegisterObject()
 	private:
 		f32 _phase = 0.0f;
 		f32 _scale = 1.0f;
 		TextureHandle _circle;
 
 	public:
-		CanvasTest() : View({ 1024, 768 }) { setType<CanvasTest>(); }
+		CanvasTest() : View({ 1024, 768 }) {}
 		~CanvasTest() = default;
 
 		void onInitialize() override {

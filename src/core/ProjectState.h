@@ -34,18 +34,11 @@ namespace rp {
 		VideoFeedLost
 	};
 
-	enum class SaveStateType {
-		None,
-		Sram,
-		State
-	};
-
 	struct ProjectState {
 		struct Settings {
 			AudioChannelRouting audioRouting = AudioChannelRouting::StereoMixDown;
 			MidiChannelRouting midiRouting = MidiChannelRouting::SendToAll;
 			SystemLayout layout = SystemLayout::Auto;
-			SaveStateType saveType = SaveStateType::Sram;
 			int zoom = 2;
 			bool includeRom = true;
 			bool autoSave = true;
@@ -65,7 +58,7 @@ namespace rp {
 }
 
 struct serializable : refl::attr::usage::field, refl::attr::usage::function {};
-
+/*
 REFL_AUTO(
 	type(rp::ProjectState::Settings),
 	field(audioRouting, serializable()),
@@ -82,3 +75,4 @@ REFL_AUTO(
 	field(settings, serializable()),
 	field(path, serializable())
 )
+*/

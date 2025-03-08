@@ -42,7 +42,6 @@ public:
 			.addField<&ProjectState::Settings::includeRom>("includeRom")
 			.addField<&ProjectState::Settings::layout>("layout")
 			.addField<&ProjectState::Settings::midiRouting>("midiRouting")
-			.addField<&ProjectState::Settings::saveType>("saveType")
 			.addField<&ProjectState::Settings::zoom>("zoom");
 
 		_typeRegistry.addType<SystemPaths>()
@@ -59,6 +58,7 @@ public:
 			.addField<&SystemSettings::InputSettings::pad>("pad");
 
 		_typeRegistry.addType<SystemSettings>()
+			.addField<&SystemSettings::saveType>("saveType")
 			.addField<&SystemSettings::includeRom>("includeRom")
 			.addField<&SystemSettings::gameLink>("gameLink")
 			.addField<&SystemSettings::input>("input");

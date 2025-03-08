@@ -229,12 +229,12 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 
 void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	root.subMenu("Save")
-		/*.action("Project", [&project, fileManager]() { saveProject(project, fileManager, false); })
-		.action("Project As...", [&project, fileManager]() { saveProject(project, fileManager, true); })
+		.action("Project", [&project, &fileManager]() { saveProject(project, fileManager, false); })
+		.action("Project As...", [&project, &fileManager]() { saveProject(project, fileManager, true); })
 		.action("SAV", [&project, system]() { saveSram(project, system, false); })
 		.action("SAV As...", [&project, system]() { saveSram(project, system, true); })
-		.action("State As...", [&project, system]() { saveState(project, system); })*/
-		.action("All ROMs + SAVs", [&project]() {
+		.action("State As...", [&project, system]() { saveState(project, system); })
+		.action("Export All ROMs + SAVs as ZIP", [&project]() {
 			fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(project, target)) {
 				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project.getName() + ".zip");

@@ -12,9 +12,16 @@
 #include "foundation/TypeRegistry.h"
 
 namespace rp {
+	enum class SaveStateType {
+		None,
+		Sram,
+		State
+	};
+
 	struct SystemPaths {
 		std::string romPath;
 		std::string sramPath;
+		std::string statePath;
 	};
 
 	struct SystemSettings {
@@ -26,6 +33,7 @@ namespace rp {
 		bool includeRom = true;
 		bool gameLink = false;
 		InputSettings input;
+		SaveStateType saveType = SaveStateType::Sram;
 
 		std::string serialized;
 		//std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;
