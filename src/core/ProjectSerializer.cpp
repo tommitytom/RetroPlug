@@ -89,7 +89,7 @@ bool ProjectSerializer::deserializeFromMemory(const fw::TypeRegistry& typeRegist
 
 	sol::table systemsTable = target["systems"];
 	if (!fw::LuaSerializer::deserialize(typeRegistry, systemsTable, systemSettings)) {
-		spdlog::error("Failed to deserialize systems");
+		spdlog::warn("Failed to fully deserialize systems");
 		//return false;
 	}
 

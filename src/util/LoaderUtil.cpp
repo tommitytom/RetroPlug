@@ -11,6 +11,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 	std::vector<std::string_view> projectPaths;
 	std::vector<std::pair<std::string_view, SystemType>> romPaths;
 	std::vector<std::pair<std::string_view, SystemType>> sramPaths;
+	std::vector<std::string_view> statePaths;
 
 	const SystemFactory& factory = project.getSystemFactory();
 
@@ -19,6 +20,8 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 		if (ext == ".retroplug" || ext == ".rplg" || ext == ".rplg.lua") {
 			projectPaths.push_back(path);
+		} else if (ext == ".state") {
+			statePaths.push_back(path);
 		} else {
 			std::vector<SystemType> loaderTypes = factory.getRomLoaders(path);
 			if (loaderTypes.size()) {
@@ -70,8 +73,22 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 				sramPath = "";
 			}
 
+			std::string statePath;
+			if (statePaths.size() > 0) {
+				statePath = std::string(statePaths[0]);
+			} else {
+				statePath = fw::FsUtil::replaceFileExt(path.string(), ".state", false);
+			}
+
+			if (fs::exists(statePath)) {
+				// Copy .sav
+				//statePath = fileManager.addUniqueFile(statePath, projectDir).string();
+			} else {
+				statePath = "";
+			}
+
 			SystemDesc desc{
-				.paths = { .romPath = hashedRomPath.string(), .sramPath = sramPath },
+				.paths = { .romPath = hashedRomPath.string(), .sramPath = sramPath, .statePath = statePath },
 				.settings = project.getGlobalConfig().systemSettings
 			};
 

@@ -273,7 +273,7 @@ namespace fw {
 						valid = false;
 					}
 				} else {
-					spdlog::error("Lua deserialization: Field '{}' missing in lua table", fieldStack.getFieldPath());
+					spdlog::warn("Lua deserialization: Field '{}' missing in lua table", fieldStack.getFieldPath());
 					valid = false;
 				}
 

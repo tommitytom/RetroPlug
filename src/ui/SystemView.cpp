@@ -80,7 +80,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 	Project& project = getState<Project>();
 	ProjectState& projectState = project.getState();
 
-	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
+	fw::Menu& root = target.title(fmt::format("RetroPlug v{} - {}", RP_VERSION, _system->getRomName())).separator();
 	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
 	MenuBuilder::systemAddMenu(root, fileManager, project, _system);
 	MenuBuilder::systemSaveMenu(root, fileManager, project, _system);
@@ -105,12 +105,15 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.separator();
 
 	fw::Menu& settingsMenu = root.subMenu("Settings");
-	settingsMenu.multiSelect("Save Type", { "SRAM", "State" }, (int)_system->getDesc().settings.saveType, [system = std::weak_ptr(_system)](int value) {
+
+	const bool hasSram = _system->getMemory(MemoryType::Sram, AccessType::Read).getSize();
+
+	settingsMenu.multiSelect("Save Type", { "SRAM", "State" }, (int)_system->getDesc().settings.saveType - 1, [system = std::weak_ptr(_system)](int value) {
 		SystemPtr systemPtr = system.lock();
 		SystemDesc desc = systemPtr->getDesc();
-		desc.settings.saveType = (SaveStateType)value;
+		desc.settings.saveType = (SaveStateType)(value + 1);
 		systemPtr->setDesc(std::move(desc));
-	});
+	}, hasSram);
 
 	fw::Menu& globalSettingsMenu = root.subMenu("Global Settings");
 

@@ -161,7 +161,7 @@ namespace rp {
 
 		void drawText(fw::Canvas& canvas, fw::RectF area, std::string_view text, fw::Color4 color);
 
-		void drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir);
+		void drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir, fw::Color4F color = fw::Color4F(1, 1, 1, 1));
 
 		bool moveCursorDown();
 

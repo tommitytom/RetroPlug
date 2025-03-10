@@ -164,7 +164,12 @@ SystemPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, Syst
 		return nullptr;
 	}
 
-	if (systemDesc.paths.sramPath.size()) {
+	if (systemDesc.paths.statePath.size()) {
+		loadConfig.stateBuffer = std::make_shared<fw::Uint8Buffer>();
+		if (!fw::FsUtil::readFile(systemDesc.paths.statePath, loadConfig.stateBuffer.get())) {
+			// LOG
+		}
+	} else if (systemDesc.paths.sramPath.size()) {
 		loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
 		if (!fw::FsUtil::readFile(systemDesc.paths.sramPath, loadConfig.sramBuffer.get())) {
 			// LOG

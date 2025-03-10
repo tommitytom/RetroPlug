@@ -22,7 +22,7 @@ void StartView::setupMenu() {
 	fw::MenuPtr menuRoot = std::make_shared<fw::Menu>();
 	fw::Menu& menu = *menuRoot;
 
-	menu.title("RetroPlug v0.4.0")
+	menu.title(fmt::format("RetroPlug v{}", RP_VERSION))
 		.separator()
 		.action("Load...", [&](fw::MenuContext& ctx) {
 			ctx.retain();

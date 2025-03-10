@@ -99,7 +99,7 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 	case fw::VirtualKey::LeftArrow:
 		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+			if (menuItem->isActive() && menuItem->getType() == fw::MenuItemType::MultiSelect) {
 				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
 				multiSelect->prevItem();
 				multiSelect->getFunction()(multiSelect->getValue());
@@ -111,7 +111,7 @@ bool MenuView::onKey(const fw::KeyEvent& ev) {
 	case fw::VirtualKey::RightArrow:
 		if (ev.down) {
 			fw::MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+			if (menuItem->isActive() && menuItem->getType() == fw::MenuItemType::MultiSelect) {
 				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
 				multiSelect->nextItem();
 				multiSelect->getFunction()(multiSelect->getValue());
@@ -261,7 +261,7 @@ void MenuView::drawText(fw::Canvas& canvas, fw::RectF area, std::string_view tex
 	canvas.text(area, text, color);
 }
 
-void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir) {
+void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir, fw::Color4F color) {
 	std::array<fw::PointF, 3> points;
 
 	area.position += _menuArea.position + _drawOffset;
@@ -289,7 +289,7 @@ void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir)
 		break;
 	}
 
-	canvas.lines(points, fw::Color4F(1, 1, 1, 1));
+	canvas.lines(points, color);
 }
 
 void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
@@ -381,7 +381,7 @@ void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
 			drawArrow(canvas, leftArrowArea, ArrowDirection::Left);
 			canvas.setTextAlign(fw::TextAlignFlags::Middle | fw::TextAlignFlags::Center);
 			availableArea.position += _menuArea.position + _drawOffset;
-			canvas.text(availableArea, selected, fw::Color4F::white);
+			canvas.text(availableArea, selected, item.menuItem->isActive() ? COLOR_WHITE : COLOR_GRAY);
 			drawArrow(canvas, rightArrowArea, ArrowDirection::Right);
 		}
 	}

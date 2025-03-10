@@ -46,7 +46,8 @@ public:
 
 		_typeRegistry.addType<SystemPaths>()
 			.addField<&SystemPaths::romPath>("romPath")
-			.addField<&SystemPaths::sramPath>("sramPath");		
+			.addField<&SystemPaths::statePath>("statePath")
+			.addField<&SystemPaths::sramPath>("sramPath");
 
 		_typeRegistry.addType<ProjectState>()
 			.addField<&ProjectState::settings>("settings")

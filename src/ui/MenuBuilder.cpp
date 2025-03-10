@@ -130,18 +130,31 @@ bool saveSram(Project& project, SystemPtr system, bool forceDialog) {
 	return false;
 }
 
-bool saveState(Project& project, SystemPtr system) {
+bool saveState(Project& project, SystemPtr system, bool forceDialog) {
+	SystemDesc settings = system->getDesc();
 	std::string path;
 
-	if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
-		return false;
+	if (!forceDialog) {
+		if (settings.paths.statePath == "") {
+			forceDialog = true;
+		} else {
+			path = settings.paths.statePath;
+		}
 	}
+
+	if (forceDialog) {
+		if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
+			return false;
+		}
+	}	
 
 	spdlog::info("Saving state to {}", path);
 
 	fw::Uint8Buffer target;
 	if (system->saveState(target)) {
 		if (fw::FsUtil::writeFile(path, (const char*)target.data(), target.size())) {
+			settings.paths.statePath = path;
+			system->setDesc(settings);
 			return true;
 		}
 
@@ -228,12 +241,16 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 }
 
 void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
-	root.subMenu("Save")
+	bool hasSram = system->getMemory(MemoryType::Sram, AccessType::Read).getSize() > 0;
+
+	root
+		.subMenu("Save")
 		.action("Project", [&project, &fileManager]() { saveProject(project, fileManager, false); })
 		.action("Project As...", [&project, &fileManager]() { saveProject(project, fileManager, true); })
-		.action("SAV", [&project, system]() { saveSram(project, system, false); })
-		.action("SAV As...", [&project, system]() { saveSram(project, system, true); })
-		.action("State As...", [&project, system]() { saveState(project, system); })
+		.action("SAV", [&project, system]() { saveSram(project, system, false); }, hasSram)
+		.action("SAV As...", [&project, system]() { saveSram(project, system, true); }, hasSram)
+		.action("State", [&project, system]() { saveState(project, system, false); })
+		.action("State As...", [&project, system]() { saveState(project, system, true); })
 		.action("Export All ROMs + SAVs as ZIP", [&project]() {
 			fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(project, target)) {

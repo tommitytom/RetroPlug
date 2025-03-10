@@ -103,19 +103,16 @@ namespace fw {
 		std::vector<std::string> _items;
 		int _value;
 		MultiSelectFunction _func;
-		bool _active;
 
 	public:
 		MultiSelect(const std::string& name, const std::vector<std::string>& items, int value, MultiSelectFunction&& func, bool active, int id)
-			: MenuItemBase(MenuItemType::MultiSelect, name, id), _items(items), _value(value), _func(func), _active(active) {}
+			: MenuItemBase(MenuItemType::MultiSelect, name, active, id), _items(items), _value(value), _func(func) {}
 
 		const std::vector<std::string>& getItems() const { return _items; }
 
 		int getValue() const { return _value; }
 
 		MultiSelectFunction& getFunction() { return _func; }
-
-		bool isActive() const { return _active; }
 
 		void nextItem() {
 			_value = (_value + 1) % _items.size();

@@ -320,7 +320,14 @@ void RetroPlugProcessor::onDeserialize(const fw::Uint8Buffer& source) {
 					continue;
 				}
 
-				if (desc.paths.sramPath.size()) {
+				if (desc.paths.statePath.size()) {
+					loadConfig.stateBuffer = std::make_shared<fw::Uint8Buffer>();
+
+					if (!fw::FsUtil::readFile(desc.paths.statePath, loadConfig.stateBuffer.get())) {
+						spdlog::error("Failed to load system state: File does not exist at {}", desc.paths.statePath);
+						continue;
+					}
+				} else if (desc.paths.sramPath.size()) {
 					loadConfig.sramBuffer = std::make_shared<fw::Uint8Buffer>();
 
 					if (!fw::FsUtil::readFile(desc.paths.sramPath, loadConfig.sramBuffer.get())) {
