@@ -41,15 +41,42 @@ using namespace rp;
 
 constexpr std::chrono::duration AUDIO_THREAD_TIMEOUT = std::chrono::milliseconds(500);
 
+namespace {
+	std::string formatTitle(const std::string& extra, bool requiresSave) {
+		std::string title = "RetroPlug v";
+		title += RP_VERSION;
+
+		if (extra.size()) {
+			title += " - " + extra;
+		}
+
+		if (requiresSave) {
+			title += " *";
+		}
+
+		return title;
+	}
+}
+
 RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus):
 	View({ 480, 432 }),
 	_typeRegistry(typeRegistry),
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus)
 {
-	std::string name = "RetroPlug v";
-	name += RP_VERSION;
-	setName(name);
+}
+
+void RetroPlugView::updateTitle() {
+	const auto& systems = _project.getSystems();
+	std::string title;
+	
+	if (systems.empty()) {
+		title = formatTitle("", false);
+	} else {
+		title = formatTitle(systems[0]->getRomName(), _project.requiresSave());
+	}
+	
+	findParent<fw::ViewManager>()->setWindowTitle(title);
 }
 
 template <typename T>
@@ -122,6 +149,8 @@ void RetroPlugView::onHotReload() {
 }
 
 void RetroPlugView::onInitialize() {
+	this->updateTitle();
+
 	addGlobalKeyHandler([&](const fw::KeyEvent& ev) {
 		if (ev.down && ev.key == fw::VirtualKey::F5) {
 			_viewTree->getRootNode().children.clear();
@@ -274,6 +303,8 @@ void RetroPlugView::onUpdate(f32 delta) {
 
 	if (projectSettings.autoSave) {
 		_project.saveIfRequired();
+	} else {
+		updateTitle();
 	}
 
 	_nextStateFetch -= delta;
@@ -293,6 +324,11 @@ void RetroPlugView::onUpdate(f32 delta) {
 		area.h *= scale;
 		this->setArea(fw::Rect(area));
 	}
+
+	if (_project.getVersion() != _projectVersion) {
+		_projectVersion = _project.getVersion();
+		updateTitle();
+	}
 }
 
 void RetroPlugView::onRender(fw::Canvas& canvas) {
@@ -301,7 +337,6 @@ void RetroPlugView::onRender(fw::Canvas& canvas) {
 }
 
 bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
-	_project.setDirty();
 	if (_project.requiresSave()) {
 		// Ask the user if they want to save!
 		ctx.closing = false;

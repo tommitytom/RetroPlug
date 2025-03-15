@@ -26,6 +26,7 @@ namespace fw {
 		bool _mouseOverClickedItem = false;
 		size_t _mouseOverClickIdx = 0;
 		bool _shouldClose = false;
+		std::string _windowTitle = "Application";
 
 	public:
 		ViewManager() : View({ 100, 100 }) {
@@ -37,6 +38,14 @@ namespace fw {
 		ViewManager(Dimension dimensions): View(dimensions) {
 			_shared = &_sharedData;
 			calculateLayout();
+		}
+
+		const std::string getWindowTitle() const {
+			return _windowTitle;
+		}
+
+		void setWindowTitle(const std::string& title) {
+			_windowTitle = title;
 		}
 
 		bool isMounted() const override {

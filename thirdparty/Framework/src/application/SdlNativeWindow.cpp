@@ -160,6 +160,11 @@ namespace fw::app {
 			*/
 		}
 
+		if (_windowTitle != vm->getWindowTitle()) {
+			_windowTitle = vm->getWindowTitle();
+			SDL_SetWindowTitle(_window, _windowTitle.c_str());
+		}
+
 		_shouldClose = vm->shouldClose();
 	}
 

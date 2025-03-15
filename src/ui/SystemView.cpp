@@ -141,6 +141,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 			setLayoutDirty();
 		})
 		.subMenu("Save Options...")
+			.select("Auto Save", &projectState.settings.autoSave)
 			.select("Include ROM", &projectState.settings.includeRom)
 			.parent()
 		.parent()

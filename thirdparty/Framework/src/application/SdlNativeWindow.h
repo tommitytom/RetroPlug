@@ -13,6 +13,7 @@ namespace fw::app {
 		Dimension _dimensions;
 		uint32 _sdlWindowId = -1;
 		bool _shouldClose = false;
+		std::string _windowTitle;
 
 	public:
 		SdlNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)

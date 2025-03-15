@@ -50,6 +50,7 @@ namespace rp {
 		ModalViewPtr _modal;
 
 		Project _project;
+		size_t _projectVersion = 0;
 		FileManager* _fileManager = nullptr;
 
 		//SystemIndex _selected = INVALID_SYSTEM_IDX;
@@ -100,5 +101,7 @@ namespace rp {
 		void processOutput();
 
 		void setupEventHandlers();
+
+		void updateTitle();
 	};
 }
