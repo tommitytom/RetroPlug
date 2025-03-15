@@ -795,6 +795,20 @@ namespace fw {
 				}
 			}
 		}
+		
+		template <typename T>
+		std::shared_ptr<T> findParent() const {
+			ViewPtr current = getParent();
+    
+			while (current) {
+				if (current->isType<T>()) {
+					return current->asShared<T>();
+				}
+				current = current->getParent();
+			}
+    
+			return nullptr;
+		}
 
 		template <typename T>
 		std::shared_ptr<T> findChild(bool recursive = false) {

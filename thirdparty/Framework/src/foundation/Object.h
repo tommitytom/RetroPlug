@@ -34,3 +34,6 @@ namespace fw {
 	virtual uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
 	virtual std::string_view getTypeName() const override { return entt::type_name<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
 	private:
+
+#define FwRegisterPtr(name) \
+	using name##Ptr = std::shared_ptr<name>;

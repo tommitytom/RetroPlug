@@ -5,8 +5,8 @@
 
 namespace fw::app {
 
-	MouseButton convertMouseButton(int button);
-	VirtualKey convertKey(int key);
+	//MouseButton convertSdlMouseButton(int button);
+	VirtualKey convertSdlKey(int key);
 
 	void* SdlNativeWindow::getNativeHandle() {
 		SDL_SysWMinfo wmInfo;
@@ -159,13 +159,15 @@ namespace fw::app {
 			shared.cursorChanged = false;
 			*/
 		}
+
+		_shouldClose = vm->shouldClose();
 	}
 
 	bool SdlNativeWindow::shouldClose() {
 		return _shouldClose;
 	}
 
-	VirtualKey convertKey(SDL_Keycode key) {
+	VirtualKey convertSdlKey(SDL_Keycode key) {
 		switch (key) {
 			case SDLK_SPACE: return VirtualKey::Space;
 			case SDLK_MINUS: return VirtualKey::LeftCtrl;
@@ -281,7 +283,7 @@ namespace fw::app {
 		return VirtualKey::Unknown;
 	}
 
-	MouseButton convertMouseButton(Uint32 button) {
+	MouseButton convertSdlMouseButton(Uint32 button) {
 		
 		switch (button) {
 		case SDL_BUTTON_LEFT: return MouseButton::Left;
@@ -292,7 +294,7 @@ namespace fw::app {
 		return MouseButton::Unknown;
 	}
 
-	void errorCallback(int error, const char* description) {
+	inline void errorCallback(int error, const char* description) {
 		spdlog::error("SDL error {}: {}", error, description);
 	}
 
@@ -309,12 +311,17 @@ namespace fw::app {
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
 			case SDL_QUIT:
-				for (auto& w : getWindows()) {
-					std::static_pointer_cast<SdlNativeWindow>(w)->_shouldClose = true;
+			{
+				auto window = findSdlWindow(event.motion.windowID);
+				if (!window) {
+					window = std::static_pointer_cast<SdlNativeWindow>(getWindows()[0]);
 				}
-				
-				break;
 
+				CloseWindowContext ctx;
+				window->getViewManager()->onCloseWindowRequest(ctx);
+				window->_shouldClose = ctx.closing;
+				break;
+			}
 			case SDL_MOUSEMOTION:
 			{
 				const auto window = findSdlWindow(event.motion.windowID);
@@ -331,8 +338,8 @@ namespace fw::app {
 				window->_lastMousePosition.y = event.button.y;
 
 				window->getViewManager()->onMouseButton(MouseButtonEvent{
-					.button = convertMouseButton(event.button.type),
-					.down = event.window.event == SDL_MOUSEBUTTONDOWN,
+					.button = convertSdlMouseButton(event.button.button),
+					.down = event.button.state == SDL_PRESSED,
 					.position = window->_lastMousePosition
 				});
 
@@ -359,7 +366,7 @@ namespace fw::app {
 					action = KeyAction::Release;
 				}
 				
-				const VirtualKey key = convertKey(event.key.keysym.sym);
+				const VirtualKey key = convertSdlKey(event.key.keysym.sym);
 
 				window->getViewManager()->onKey(KeyEvent{
 					.action = action,
@@ -413,11 +420,7 @@ namespace fw::app {
 				}
 				case SDL_WINDOWEVENT_CLOSE:
 				{
-					CloseWindowContext ctx;
-					window->getViewManager()->onCloseWindowRequest(ctx);
-					if (ctx.closing) {
-						window->_shouldClose = true;
-					}
+					// See SDL_QUIT
 					break;
 				}
 				case SDL_WINDOWEVENT_RESIZED:

@@ -86,6 +86,10 @@ namespace rp {
 			_requiresSave = true;
 		}
 
+		bool requiresSave() const {
+			return _requiresSave;
+		}
+
 		void saveIfRequired() {
 			if (!_state.path.empty()) {
 				/*for (SystemPtr& system : _systems) {

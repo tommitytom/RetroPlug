@@ -13,6 +13,7 @@
 #include "ui/LabelView.h"
 #include "ui/TreeView.h"
 #include "ui/View.h"
+#include "ui/ModalView.h"
 #include "ui/ObjectInspectorView.h"
 #include "foundation/ResourceReloader.h"
 
@@ -46,6 +47,7 @@ namespace rp {
 		//std::shared_ptr<RetroPlugProcessor> _audioProcessor;
 
 		CompactLayoutViewPtr _compactLayout;
+		ModalViewPtr _modal;
 
 		Project _project;
 		FileManager* _fileManager = nullptr;

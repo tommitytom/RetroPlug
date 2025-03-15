@@ -77,6 +77,10 @@ void RetroPlugView::initViews() {
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
 
 	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
+
+	_modal = this->addChild<ModalView>("Modal");
+	_modal->setArea({ 0, 0, 200, 200 });
+
 	//_compactLayout->fitToParent();
 
 	/*auto splitter = this->addChild<fw::DockSplitter>("Splitter");
@@ -261,11 +265,16 @@ void RetroPlugView::onUpdate(f32 delta) {
 		}
 	}
 
+	const ProjectState::Settings& projectSettings = _project.getState().settings;
+
 	_compactLayout->setScale(scale);
-	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
+	_compactLayout->setGridLayout((fw::GridLayout)projectSettings.layout);
 
 	_project.update(audioFrameCount);
-	_project.saveIfRequired();
+
+	if (projectSettings.autoSave) {
+		_project.saveIfRequired();
+	}
 
 	_nextStateFetch -= delta;
 
@@ -292,6 +301,24 @@ void RetroPlugView::onRender(fw::Canvas& canvas) {
 }
 
 bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
+	_project.setDirty();
+	if (_project.requiresSave()) {
+		// Ask the user if they want to save!
+		ctx.closing = false;
+		
+		_modal->show(ModalType::YesNoCancel, "Do you want to save changes?", [&](ModalButtonType button) {
+			if (button == ModalButtonType::Yes) {
+				_project.save();
+			}
+
+			if (button != ModalButtonType::Cancel) {
+				this->findParent<fw::ViewManager>()->closeWindow(true);
+			}
+		});
+	} else {
+		ctx.closing = true;
+		this->findParent<fw::ViewManager>()->closeWindow(true);
+	}
 
 	return true;
 }

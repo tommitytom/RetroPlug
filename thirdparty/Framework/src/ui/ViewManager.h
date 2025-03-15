@@ -25,6 +25,7 @@ namespace fw {
 		std::vector<ViewPtr> _dragOver;
 		bool _mouseOverClickedItem = false;
 		size_t _mouseOverClickIdx = 0;
+		bool _shouldClose = false;
 
 	public:
 		ViewManager() : View({ 100, 100 }) {
@@ -273,6 +274,20 @@ namespace fw {
 
 		void onRender(fw::Canvas& canvas) override {
 			propagateRender(canvas, getChildren());
+		}
+
+		bool shouldClose() const {
+			return _shouldClose;
+		}
+
+		void closeWindow(bool force) {
+			if (force) {
+				_shouldClose = true;
+			} else {
+				CloseWindowContext ctx;
+				onCloseWindowRequest(ctx);
+				_shouldClose = ctx.closing;
+			}
 		}
 
 		bool onCloseWindowRequest(CloseWindowContext& ctx) override { 

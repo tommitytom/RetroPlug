@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <sol/forward.hpp>
 
 namespace fw::SolUtil {

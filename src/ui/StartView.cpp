@@ -9,6 +9,7 @@
 #include "core/Project.h"
 #include "ui/FileDialog.h"
 #include "ui/MenuBuilder.h"
+#include "ui/ViewManager.h"
 
 #include "sameboy/SameBoySystem.h"
 #include "sameboy/Constants.h"
@@ -57,7 +58,10 @@ void StartView::setupMenu() {
 		})
 		.separator()
 		.subMenu("Settings")
-		.parent();
+		.parent()
+		.action("Exit", [&]() {
+			this->findParent<fw::ViewManager>()->closeWindow(false);
+		});
 
 	setMenu(menuRoot);
 	setAutoClose(false);

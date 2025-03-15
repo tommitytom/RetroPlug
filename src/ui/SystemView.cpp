@@ -8,6 +8,7 @@
 
 #include "audio/AudioManager.h"
 
+#include "ui/ViewManager.h"
 #include "ui/FileDialog.h"
 #include "ui/MenuBuilder.h"
 #include "ui/MenuView.h"
@@ -146,6 +147,10 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.separator()
 		.select("Game Link", _system->getGameLink(), [&](bool selected) {
 			_system->setGameLink(selected);
+		})
+		.separator()
+		.action("Exit", [&]() {
+			this->findParent<fw::ViewManager>()->closeWindow(false);
 		});
 
 	for (fw::ViewPtr child : getChildren()) {
