@@ -31,14 +31,29 @@ bool isHighlightable(fw::MenuItemType type) {
 	return type != fw::MenuItemType::Separator && type != fw::MenuItemType::Title;
 }
 
+bool MenuView::tryMoveCursor(int32 i) {
+	const PositionedMenuItem& item = _flat[i];
+
+	if (isHighlightable(item.menuItem->getType())) {
+		_selectedIdx = i;
+		updateScrollOffset(item);
+		return true;
+	}
+
+	return false;
+}
+
 bool MenuView::moveCursorUp() {
+	const int32 current = _selectedIdx;
+
 	for (int32 i = (int32)_selectedIdx - 1; i >= 0; --i) {
-		const PositionedMenuItem& item = _flat[i];
+		if (tryMoveCursor(i)) {
+			return true;
+		}
+	}
 
-		if (isHighlightable(item.menuItem->getType())) {
-			_selectedIdx = i;
-			updateScrollOffset(item);
-
+	for (int32 i = (int32)_flat.size() - 1; i >= current; --i) {
+		if (tryMoveCursor(i)) {
 			return true;
 		}
 	}
@@ -47,13 +62,16 @@ bool MenuView::moveCursorUp() {
 }
 
 bool MenuView::moveCursorDown() {
-	for (size_t i = _selectedIdx + 1; i < _flat.size(); ++i) {
-		const PositionedMenuItem& item = _flat[i];
+	const int32 current = _selectedIdx;
 
-		if (isHighlightable(item.menuItem->getType())) {
-			_selectedIdx = (int32)i;
-			updateScrollOffset(item);
+	for (int32 i = _selectedIdx + 1; i < (int32)_flat.size(); ++i) {
+		if (tryMoveCursor(i)) {
+			return true;
+		}
+	}
 
+	for (int32 i = 0; i < current; ++i) {
+		if (tryMoveCursor(i)) {
 			return true;
 		}
 	}

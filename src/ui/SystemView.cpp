@@ -116,6 +116,10 @@ void SystemView::buildMenu(fw::Menu& target) {
 		systemPtr->setDesc(std::move(desc));
 	}, hasSram);
 
+	for (fw::ViewPtr child : getChildren()) {
+		child->onMenu(settingsMenu);
+	}
+
 	fw::Menu& globalSettingsMenu = root.subMenu("Global Settings");
 
 	#ifndef RP_WEB
@@ -153,8 +157,4 @@ void SystemView::buildMenu(fw::Menu& target) {
 		.action("Exit", [&]() {
 			this->findParent<fw::ViewManager>()->closeWindow(false);
 		});
-
-	for (fw::ViewPtr child : getChildren()) {
-		child->onMenu(target);
-	}
 }

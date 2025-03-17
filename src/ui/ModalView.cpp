@@ -32,9 +32,16 @@ namespace rp {
 	}
 
 	void ModalView::show(CurrentModal&& modal) {
+		if (!getParent()) {
+			spdlog::error("Modal has no parent");
+			return;
+		}
+
 		if (_current.has_value()) {
 			return;
 		}
+
+		addChild<fw::LabelView>("Modal Text")->setText(modal.message);
 
 		switch (modal.type) {
 		case ModalType::Ok:

@@ -50,8 +50,15 @@ namespace rp {
 
 			lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 			if (rom.isValid()) {
-				_canvas.setFont(rom.getFont(1));
-				_canvas.setPalette(rom.getPalette(0));
+				MemoryAccessor savData = system->getMemory(MemoryType::Sram, AccessType::Read);
+				if (savData.isValid()) {
+					lsdj::Sav sav = savData.getBuffer();
+					_canvas.setFont(rom.getFont(sav.getWorkingSong().getFontIndex()));
+					_canvas.setPalette(rom.getPalette(sav.getWorkingSong().getPaletteIndex()));
+				} else {
+					_canvas.setFont(rom.getFont(0));
+					_canvas.setPalette(rom.getPalette(0));
+				}
 			}
 		}
 

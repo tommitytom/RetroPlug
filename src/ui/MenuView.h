@@ -167,6 +167,8 @@ namespace rp {
 
 		bool moveCursorUp();
 
+		bool tryMoveCursor(int32 i);
+
 		void activateHighlighted();
 
 		fw::MenuItemBase* getHighlighted();

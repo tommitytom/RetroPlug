@@ -535,6 +535,7 @@ namespace rp::lsdj {
 		}
 
 		std::string_view getFontName(size_t idx) const {
+			idx = (idx + 1) % FONT_COUNT; // Index seems to require increment + wrap
 			return std::string_view((const char*)_fontNames + idx * (Font::NAME_SIZE - 1), Font::NAME_SIZE);
 		}
 
@@ -543,6 +544,7 @@ namespace rp::lsdj {
 		}
 
 		void getFont(size_t idx, Font& font) const {
+			idx = (idx + 1) % FONT_COUNT; // Index seems to require increment + wrap
 			const uint8* data = _fontData + idx * Font::SIZE + Font::HEADER_SIZE;
 
 			//strncpy_s(font.name, (const char*)_fontNames + idx * (Font::NAME_SIZE - 1), Font::NAME_SIZE);
