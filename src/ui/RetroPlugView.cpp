@@ -133,9 +133,9 @@ void RetroPlugView::onInitialize() {
 	rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
 
 	_resourceReloader.setResourceManager(rm);
-	_resourceReloader.startWatch("C:\\temp\\rpconfig");
+	//_resourceReloader.startWatch("~/Library/Application Support/RetroPlug");
 
-	setupScriptWatch(_typeRegistry, _resourceReloader, "C:\\temp\\rpconfig\\config.lua", _config);
+	//setupScriptWatch(_typeRegistry, _resourceReloader, "~/Library/Application Support/RetroPlug/config.lua", _config);
 	
 	createState<SystemOverlayManager>();
 	createState(entt::forward_as_any(_project.getSystemFactory()));
