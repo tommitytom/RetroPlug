@@ -67,6 +67,8 @@ namespace fw {
 		Dimension oldSize;
 	};
 
+	struct DismountEvent {};
+
 	class View : public Object {
 		FwRegisterObject()
 	private:
@@ -743,6 +745,8 @@ namespace fw {
 					_children.erase(_children.begin() + i);
 
 					onChildRemoved(view);
+
+					view->emit(DismountEvent{});
 					view->onDismount();
 
 					view->_parent.reset();

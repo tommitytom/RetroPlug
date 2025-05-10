@@ -293,8 +293,8 @@ void MenuView::drawArrow(fw::Canvas& canvas, fw::RectF area, ArrowDirection dir)
 }
 
 void MenuView::drawMenu(fw::Canvas& canvas, fw::Menu& menu) {
-	fw::DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
-	fw::PointF drawOffset = _drawOffset + _menuArea.position;
+	const fw::DimensionT<f32> dim = { (f32)getDimensions().w, (f32)getDimensions().h };
+	const fw::PointF drawOffset = _drawOffset + _menuArea.position;
 
 	canvas.fillRect(getDimensions(), fw::Color4F(0, 0, 0, 0.8f));
 

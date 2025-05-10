@@ -91,6 +91,10 @@ namespace rp {
 		fw::MenuItemBase* menuItem;
 	};
 
+	struct MenuCloseEvent {
+
+	};
+
 	enum class ArrowDirection {
 		Left,
 		Right,

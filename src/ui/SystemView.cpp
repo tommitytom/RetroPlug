@@ -41,6 +41,8 @@ bool SystemView::onKey(const fw::KeyEvent& ev) {
 			menuView->fitToParent();
 			menuView->setMenu(menu);
 			menuView->focus();
+
+			subscribe<fw::DismountEvent>(menuView, [this]() { getState<Project>().setDirty(); });
 		}
 	} else {
 		fw::ButtonType button = fw::keyToButton(ev.key);
@@ -73,14 +75,6 @@ void SystemView::onUpdate(f32 delta) {
 	}
 }
 
-void loadRomDialog(Project* project) {
-	std::vector<std::string> files;
-
-	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
-		//project.addSystem<SameBoySystem>(files[0]);
-	}
-}
-
 void SystemView::buildMenu(fw::Menu& target) {
 	FileManager& fileManager = getState<FileManager>();
 	Project& project = getState<Project>();
@@ -107,7 +101,7 @@ void SystemView::buildMenu(fw::Menu& target) {
 				project.removeSystem(_system->getId());
 				this->remove();
 			}
-		})
+		}, project.getSystems().size() > 1)
 		.separator();
 
 	fw::Menu& settingsMenu = root.subMenu("Settings");

@@ -51,11 +51,19 @@ void BgfxRenderContext::initialize(NativeWindowHandle mainWindow, Dimension res)
 	bgfx::setViewClear(0, BGFX_CLEAR_COLOR, 0x000000FF, 0.0f);
 	bgfx::setViewRect(0, 0, 0, bgfx::BackbufferRatio::Equal);
 	bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
+
+	_initialized = true;
 }
 
 BgfxRenderContext::~BgfxRenderContext() {
-	cleanup();
-	bgfx::shutdown();
+	shutdown();
+}
+
+void BgfxRenderContext::shutdown() {
+	if (_initialized) {
+		bgfx::shutdown();
+		_initialized = false;
+	}
 }
 
 void BgfxRenderContext::cleanup() {
@@ -69,6 +77,8 @@ void BgfxRenderContext::cleanup() {
 	if (bgfx::isValid(_resolutionUniform)) { bgfx::destroy(_resolutionUniform); _resolutionUniform = BGFX_INVALID_HANDLE; }
 	if (bgfx::isValid(_vert)) { bgfx::destroy(_vert); _vert = BGFX_INVALID_HANDLE; }
 	if (bgfx::isValid(_ind)) { bgfx::destroy(_ind); _ind = BGFX_INVALID_HANDLE; }
+
+	bgfx::frame();
 }
 
 std::pair<fw::ShaderDesc, fw::ShaderDesc> BgfxRenderContext::getDefaultShaders() {

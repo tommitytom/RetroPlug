@@ -14,6 +14,7 @@
 
 namespace fw {
 	class PhysicsTest : public View {
+		FwRegisterObject()
 	private:
 		entt::registry _registry;
 		DimensionF _windowSize;
@@ -30,9 +31,7 @@ namespace fw {
 		PointF _lastMousePos;
 
 	public:
-		PhysicsTest() : View({ 1366, 768 }) {
-			setType<PhysicsTest>();
-		}
+		PhysicsTest() : View({ 1366, 768 }) {}
 		~PhysicsTest() = default;
 
 		void onInitialize() override;

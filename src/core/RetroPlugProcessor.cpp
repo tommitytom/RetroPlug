@@ -286,9 +286,9 @@ void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {
 }
 
 void RetroPlugProcessor::onSerialize(fw::Uint8Buffer& target) {
-	std::vector<SystemDesc> systemDescs;
+	std::vector<const SystemDesc*> systemDescs;
 	for (SystemPtr system : _systemManager.getSystems()) {
-		systemDescs.push_back(system->getDesc());
+		systemDescs.push_back(&system->getDesc());
 	}
 
 	std::string data = ProjectSerializer::serialize(_typeRegistry, _projectState, systemDescs);

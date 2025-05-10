@@ -2,6 +2,7 @@
 
 #include <stb/stb_image.h>
 
+#include "foundation/Attributes.h"
 #include "foundation/Math.h"
 #include "foundation/PropertyModulator.h"
 
@@ -34,10 +35,10 @@ namespace fw {
 
 REFL_AUTO(
 	type(fw::WhitneySettings),
-	field(dotCount, fw::RangeAttribute(2, 20000)),
-	field(duration, fw::RangeAttribute(10.0f, 20000)/*, fw::CurveAttribute(Curves::pow2)*/),
-	field(minSize, fw::RangeAttribute(0.01f, 50.0f)),
-	field(maxSize, fw::RangeAttribute(0.01f, 50.0f)),
+	field(dotCount, fw::reflutil::RangeAttribute(2, 20000)),
+	field(duration, fw::reflutil::RangeAttribute(10.0f, 20000)/*, fw::CurveAttribute(Curves::pow2)*/),
+	field(minSize, fw::reflutil::RangeAttribute(0.01f, 50.0f)),
+	field(maxSize, fw::reflutil::RangeAttribute(0.01f, 50.0f)),
 	field(dotAlpha),
 	field(lineAlpha),
 	field(hueOffset),
@@ -67,7 +68,7 @@ namespace fw {
 	};
 
 	class Whitney : public View {
-		RegisterObject()
+		FwRegisterObject()
 	private:
 		WhitneySettings _baseSettings;
 		WhitneySettings _settings;
@@ -89,7 +90,6 @@ namespace fw {
 		
 	public:
 		Whitney() : View({ 1024, 768 }) {
-			setType<Whitney>();
 			setFocusPolicy(FocusPolicy::Click);
 		}
 

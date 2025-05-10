@@ -82,6 +82,10 @@ namespace rp {
 			return save();
 		}
 
+		void setDirty() {
+			_requiresSave = true;
+		}
+
 		void saveIfRequired() {
 			if (!_state.path.empty()) {
 				/*for (SystemPtr& system : _systems) {

@@ -108,7 +108,7 @@ public:
 			.addField<&KitState::settings>("settings")
 			;
 
-		_typeRegistry.addType<KitIndex>();
+		//_typeRegistry.addType<KitIndex>();
 		_typeRegistry.addType<std::unordered_map<KitIndex, KitState>>();
 
 		_typeRegistry.addType<LsdjServiceSettings>()

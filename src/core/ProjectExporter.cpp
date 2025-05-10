@@ -43,7 +43,7 @@ bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
 }
 
 bool ProjectExporter::exportRomsAndSavs(Project& project, fw::Uint8Buffer& target) {
-	/*zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
+	/*zipp::Writer zipWriter({.method = zipp::CompressionMethod::Deflate});
 
 	const std::vector<SystemPtr>& systems = project.getSystems();
 

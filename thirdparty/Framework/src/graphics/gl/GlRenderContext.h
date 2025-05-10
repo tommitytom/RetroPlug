@@ -26,7 +26,7 @@ namespace fw {
 
 		std::vector<std::pair<uint32, ShaderUniforms>> _shaderUniforms;
 
-		NativeWindowHandle _mainWindow;
+		NativeWindowHandle _mainWindow = nullptr;
 		Dimension _resolution;
 
 		uint32 _arrayBuffer = 0;
@@ -46,7 +46,7 @@ namespace fw {
 		bool _lineAA = true;
 
 	public:
-		GlRenderContext(bool requiresFlip) : RenderContext(requiresFlip) {}
+		GlRenderContext(bool requiresFlip = true) : RenderContext(requiresFlip) {}
 		~GlRenderContext() = default;
 
 		void initialize(NativeWindowHandle mainWindow, Dimension res) override;
@@ -58,6 +58,8 @@ namespace fw {
 		void endFrame() override;
 
 		void cleanup() override;
+
+		void shutdown() override {}
 
 		std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() override;
 

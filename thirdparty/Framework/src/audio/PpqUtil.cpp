@@ -1,5 +1,7 @@
 #include "PpqUtil.h"
 
+#include <cmath>
+
 namespace fw {
 	void PpqUtil::eachTick(const fw::TimeInfo& time, uint32 resolution, std::function<void(uint32 ppq, uint32 offset)>&& func) {
 		const f64 samplesPerMs = time.sampleRate / 1000.0;
@@ -12,7 +14,7 @@ namespace fw {
 		const f64 framePpqEnd = ppq24 + framePpqLen;
 
 		f64 lastPpq24 = ppq24;
-		f64 nextPpq24 = ceil(ppq24);
+		f64 nextPpq24 = std::ceil(ppq24);
 		f64 offset = 0;
 
 		// TODO: Worth putting a check here to avoid potential infinite while loop?

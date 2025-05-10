@@ -224,7 +224,7 @@ namespace fw {
 			}
 		}
 
-		FlexValue getValue() const {
+		FlexValue getValue() const override {
 			return _value;
 		}
 

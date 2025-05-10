@@ -5,5 +5,5 @@
 #include "foundation/ResourceHandle.h"
 
 namespace fw {
-	DefineDataResourceType(LuaScript, { ".lua" });
+	//DefineDataResourceType(LuaScript, { ".lua" });
 }

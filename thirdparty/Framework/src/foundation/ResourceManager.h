@@ -19,7 +19,12 @@ namespace fw {
 
 	public:
 		ResourceManager() = default;
-		~ResourceManager() = default;
+		~ResourceManager() { cleanup(); }
+
+		void cleanup() {
+			_loadedThisFrame.clear();
+			_resources.clear();
+		}
 
 		void setRootPath(const std::filesystem::path& path) {
 			if (path.is_relative()) {
