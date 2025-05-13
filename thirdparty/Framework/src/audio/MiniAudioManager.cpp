@@ -104,7 +104,8 @@ bool MiniAudioManager::loadFile(std::string_view path, std::vector<f32>& target)
 	while (true) {
 		target.resize(target.size() + blockSize);
 
-		ma_uint64 framesRead = ma_decoder_read_pcm_frames(&decoder, target.data() + offset, blockSize);
+        ma_uint64 framesRead;
+        ma_decoder_read_pcm_frames(&decoder, target.data() + offset, blockSize, &framesRead);
 		offset += (size_t)framesRead;
 
 		if (framesRead < blockSize) {

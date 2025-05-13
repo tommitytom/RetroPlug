@@ -655,6 +655,7 @@ EUIAppearance IGraphicsMac::GetUIAppearance() const
   #include "IGraphicsNanoVG.cpp"
 #elif defined IGRAPHICS_SKIA
   #include "IGraphicsSkia.cpp"
+#elif defined IGRAPHICS_FRAMEWORK
 #else
   #error Either NO_IGRAPHICS or one and only one choice of graphics library must be defined!
 #endif

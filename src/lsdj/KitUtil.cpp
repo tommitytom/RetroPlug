@@ -30,13 +30,14 @@ KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
 	size_t offset = 0;
 
 	KitUtil::SampleData sample;
-	sample.sampleRate = decoder.internalSampleRate;
+	sample.sampleRate = decoder.outputSampleRate;
 	sample.buffer = std::make_shared<fw::Float32Buffer>();
 
 	while (true) {
 		sample.buffer->resize(sample.buffer->size() + blockSize);
 
-		ma_uint64 framesRead = ma_decoder_read_pcm_frames(&decoder, sample.buffer->data() + offset, blockSize);
+		ma_uint64 framesRead;
+		ma_decoder_read_pcm_frames(&decoder, sample.buffer->data() + offset, blockSize, &framesRead);
 		offset += (size_t)framesRead;
 
 		if (framesRead < blockSize) {
@@ -200,7 +201,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 			ma_biquad filter;
 			ma_biquad_config filterConfig = ma_biquad_config_init(ma_format_f32, 1, coeff.b0, coeff.b1, coeff.b2, coeff.a0, coeff.a1, coeff.a2);
-			ma_result filterResult = ma_biquad_init(&filterConfig, &filter);
+			ma_result filterResult = ma_biquad_init(&filterConfig, NULL, &filter);
 			if (filterResult == MA_SUCCESS) {
 				ma_biquad_process_pcm_frames(&filter, filterTarget.data(), gainTarget.data(), gainTarget.size());
 			} else {

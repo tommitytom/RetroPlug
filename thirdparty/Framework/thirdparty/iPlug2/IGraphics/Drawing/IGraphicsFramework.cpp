@@ -5,7 +5,11 @@ using namespace igraphics;
 
 void IGraphicsFramework::OnViewInitialized(void* pContext)
 {
-  _nativeWindowHandle = (void*)WindowFromDC((HDC)pContext);
+  #ifdef FW_OS_WINDOWS
+    _nativeWindowHandle = (void*)WindowFromDC((HDC)pContext);
+  #else
+  //_nativeWindowHandle = pContext;
+  #endif
 }
 
 void IGraphicsFramework::BeginFrame()

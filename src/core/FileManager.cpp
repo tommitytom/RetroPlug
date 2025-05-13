@@ -19,7 +19,7 @@ FileManager::FileManager() {
 #elif FW_OS_WINDOWS
 	_rootPath = "c:\\temp\\retroplug";
 #elif FW_OS_MACOS
-    _rootPath = "~/.retroplug";
+    _rootPath = "~/Library/Application Support/RetroPlug";
 #else
 #error "Platform is not supported!
 #endif
@@ -152,7 +152,7 @@ fs::path FileManager::addHashedFile(const fs::path& sourceFile, const fs::path& 
 }
 
 fs::path FileManager::addUniqueFile(const fs::path& sourceFile, const fs::path& targetDir) {
-	fs::path fullTargetDir = _rootPath / targetDir;
+	fs::path fullTargetDir = targetDir;
 	if (!fs::exists(fullTargetDir)) {
 		fs::create_directories(fullTargetDir);
 	}
@@ -229,7 +229,7 @@ fs::path FileManager::getUniqueFilename(const fs::path& suggested) {
 	size_t countStart = 0;
 	size_t countMax = 99999;
 	fs::path fullTargetPath;
-	fs::path fullTargetDir = _rootPath / suggested.parent_path();
+	fs::path fullTargetDir = suggested.parent_path();
 	std::string filename = suggested.filename().string();
 
 	size_t dashFound = filename.find_first_of('-');

@@ -17,7 +17,8 @@ bool AudioLoaderUtil::load(std::string_view path, Float32Buffer& target) {
 	ma_decoder_get_available_frames(&decoder, &sampleCount);
 	target.resize((size_t)sampleCount);
 
-	ma_uint64 framesRead = ma_decoder_read_pcm_frames(&decoder, target.data(), sampleCount);
+    ma_uint64 framesRead;
+    ma_decoder_read_pcm_frames(&decoder, target.data(), sampleCount, &framesRead);
 	if (framesRead < sampleCount) {
 		spdlog::info("Loaded file");
 	}

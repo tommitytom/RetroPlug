@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>IPlugInstrument</string>
+	<string>RetroPlug</string>
 	<key>CFBundleGetInfoString</key>
 	<string>RetroPlug v0.5.0 Copyright 2025 tommitytom</string>
 	<key>CFBundleIconFile</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>IPlugInstrument</string>
+	<string>RetroPlug</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>

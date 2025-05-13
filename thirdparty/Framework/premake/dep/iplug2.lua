@@ -299,13 +299,40 @@ function m.createVst2(config)
 		_p.."iPlug/VST2/*.cpp"
 	}
 
-	targetdir "C:\\vst64"
+	filter { "action:xcode4" }
+		xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
+			["PRODUCT_BUNDLE_IDENTIFIER"] = 'com.tommitytom.vst.RetroPlug',
+			["CODE_SIGN_STYLE"] = "Automatic",
+			["INFOPLIST_FILE"] = "../../resources/Resources/RetroPlug-VST2-Info.plist",
+			["CODE_SIGN_ENTITLEMENTS"] = "../../resources/Resources/RetroPlug-VST2.entitlements",
+			["ENABLE_HARDENED_RUNTIME"] = "YES",
+
+			["WRAPPER_EXTENSION"] = "vst",
+			["GENERATE_PKGINFO_FILE"] = "YES",
+
+			["EXECUTABLE_PREFIX"] = "", -- Remove "lib" prefix
+			["DYLIB_COMPATIBILITY_VERSION"] = "", -- Remove compatibility version
+			["MACH_O_TYPE"] = "mh_bundle",
+			["DYLIB_CURRENT_VERSION"] = "", -- Remove current version
+
+			-- Add bundle-specific settings
+			["PRODUCT_NAME"] = "$(TARGET_NAME)",
+			["CONFIGURATION_BUILD_DIR"] = "$(PROJECT_DIR)/build/$(CONFIGURATION)",
+
+			["DSTROOT"] = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/VST", -- Installation directory
+			["INSTALL_PATH"] = "/", -- Installation build products location (root)
+			["DEPLOYMENT_LOCATION"] = "YES", -- Enable separate installation location
+			["SKIP_INSTALL"] = "NO", -- Allow installation
+		}
+
+	--targetdir "C:\\vst64"
 end
 
 function m.createVst3(config)
 	projectBase(config, "vst3")
 	kind "SharedLib"
-	targetextension ".vst3"
+	--targetextension ".bundle"
 
 	defines {
 		"VST3_API",
@@ -324,11 +351,13 @@ function m.createVst3(config)
 		VST3_DEP_PATH .. "base/**.cpp",
 		VST3_DEP_PATH .. "pluginterfaces/base/**.h",
 		VST3_DEP_PATH .. "pluginterfaces/base/**.cpp",
+		--VST3_DEP_PATH .. "public.sdk/source/vst3stdsdk.cpp",
 		VST3_DEP_PATH .. "public.sdk/source/common/commoniids.cpp",
 		VST3_DEP_PATH .. "public.sdk/source/common/memorystream.*",
 		VST3_DEP_PATH .. "public.sdk/source/common/pluginview.*",
-		VST3_DEP_PATH .. "public.sdk/source/main/dllmain.cpp",
-		VST3_DEP_PATH .. "public.sdk/source/main/pluginfactory.cpp",
+		VST3_DEP_PATH .. "public.sdk/source/common/commonstringconvert.*",
+		VST3_DEP_PATH .. "public.sdk/source/common/threadchecker.*",
+		VST3_DEP_PATH .. "public.sdk/source/main/pluginfactory.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstaudioeffect.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstbus.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstcomponent.*",
@@ -336,7 +365,60 @@ function m.createVst3(config)
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstinitiids.cpp",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstparameters.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstsinglecomponenteffect.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/utility/stringconvert.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/connectionproxy.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/eventlist.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/hostclasses.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/module.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/parameterchanges.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/plugprovider.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/pluginterfacesupport.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/processdata.*",
 	}
+
+	filter { "system:windows" }
+		files {
+			VST3_DEP_PATH .. "public.sdk/source/main/dllmain.cpp"
+		}
+
+	filter { "system:macosx" }
+		files {
+			VST3_DEP_PATH .. "public.sdk/source/main/macmain.cpp",
+			VST3_DEP_PATH .. "public.sdk/source/main/macexport.exp",
+			VST3_DEP_PATH .. "public.sdk/source/vst/hosting/module_mac.mm",
+			VST3_DEP_PATH .. "public.sdk/source/common/threadchecker_mac.mm",
+		}
+
+		xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
+			["PRODUCT_BUNDLE_IDENTIFIER"] = 'com.tommitytom.vst3.RetroPlug',
+			["CODE_SIGN_STYLE"] = "Automatic",
+			["INFOPLIST_FILE"] = "../../resources/Resources/RetroPlug-VST3-Info.plist",
+			["CODE_SIGN_ENTITLEMENTS"] = "../../resources/Resources/RetroPlug-VST3.entitlements",
+			["ENABLE_HARDENED_RUNTIME"] = "YES",
+
+			["WRAPPER_EXTENSION"] = "vst3",
+			["GENERATE_PKGINFO_FILE"] = "YES",
+
+			["EXECUTABLE_PREFIX"] = "", -- Remove "lib" prefix
+			["DYLIB_COMPATIBILITY_VERSION"] = "", -- Remove compatibility version
+			["MACH_O_TYPE"] = "mh_bundle",
+			["DYLIB_CURRENT_VERSION"] = "", -- Remove current version
+
+			-- Add bundle-specific settings
+			["PRODUCT_NAME"] = "$(TARGET_NAME)",
+			["CONFIGURATION_BUILD_DIR"] = "$(PROJECT_DIR)/build/$(CONFIGURATION)",
+
+			["DSTROOT"] = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/VST3", -- Installation directory
+			["INSTALL_PATH"] = "/", -- Installation build products location (root)
+			["DEPLOYMENT_LOCATION"] = "YES", -- Enable separate installation location
+			["SKIP_INSTALL"] = "NO", -- Allow installation
+		}
+
+	filter { "system:macosx", "files:**/module_mac.mm" }
+		buildoptions { "-fobjc-arc" }
+
+	filter {}
 end
 
 function m.createApp(config)
@@ -417,6 +499,31 @@ function m.createApp(config)
 			"-framework OpenGL",
 			"-framework IOKit",
 			"-framework Security"
+		}
+
+		xcodebuildsettings {
+			["MACOSX_DEPLOYMENT_TARGET"] = "10.15",
+			["PRODUCT_BUNDLE_IDENTIFIER"] = 'com.tommitytom.app.RetroPlug',
+			["CODE_SIGN_STYLE"] = "Automatic",
+			["INFOPLIST_FILE"] = "../../resources/Resources/RetroPlug-iPlugApp-Info.plist",
+			--["CODE_SIGN_ENTITLEMENTS"] = "../../resources/Resources/RetroPlug-VST3.entitlements",
+			["ENABLE_HARDENED_RUNTIME"] = "YES",
+
+			["GENERATE_PKGINFO_FILE"] = "YES",
+
+			["EXECUTABLE_PREFIX"] = "", -- Remove "lib" prefix
+			["DYLIB_COMPATIBILITY_VERSION"] = "", -- Remove compatibility version
+			["MACH_O_TYPE"] = "mh_bundle",
+			["DYLIB_CURRENT_VERSION"] = "", -- Remove current version
+
+			-- Add bundle-specific settings
+			["PRODUCT_NAME"] = "$(TARGET_NAME)",
+			["CONFIGURATION_BUILD_DIR"] = "$(PROJECT_DIR)/build/$(CONFIGURATION)",
+
+			--["DSTROOT"] = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/VST3", -- Installation directory
+			["INSTALL_PATH"] = "/", -- Installation build products location (root)
+			--["DEPLOYMENT_LOCATION"] = "YES", -- Enable separate installation location
+			--["SKIP_INSTALL"] = "NO", -- Allow installation
 		}
 
 	filter {}

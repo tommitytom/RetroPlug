@@ -11,6 +11,7 @@
 #pragma once
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "pluginterfaces/base/keycodes.h"
+#include "base/source/fstring.h"
 
 #include "IPlugStructs.h"
 
