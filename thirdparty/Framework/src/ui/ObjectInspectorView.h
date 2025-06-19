@@ -63,7 +63,7 @@ namespace fw {
 			const fw::TypeInfo* objType = reg.findTypeInfo(obj);
 			assert(objType);
 
-			Group& group = pushGroup(name);
+			//Group& group = pushGroup(name);
 			FieldGroup fieldGroup;
 
 			for (const fw::Field& field : objType->fields) {

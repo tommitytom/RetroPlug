@@ -68,7 +68,6 @@ function m.Core.include()
 	fwProjects.Audio.include()
 	fwProjects.Application.include()
 	fwDeps.lua.include()
-	fwDeps.simdjson.include()
 	--dep.minizip.include()
 	dep.SameBoy.include()
 
@@ -84,8 +83,6 @@ function m.Core.include()
 		"resources"
 	}
 
-	--fwDeps.bgfx.compat()
-
 	filter {}
 end
 
@@ -100,7 +97,6 @@ function m.Core.link()
 	fwProjects.Audio.link()
 	fwProjects.Application.link()
 	fwDeps.lua.link()
-	fwDeps.simdjson.link()
 	--dep.minizip.link()
 	dep.SameBoy.link()
 end
@@ -151,8 +147,6 @@ function m.SameBoyPlug.include()
 		disablewarnings { "missing-braces", "c99-designator" }
 
 	filter {}
-
-	--fwDeps.bgfx.compat()
 
 	filter {}
 end
@@ -210,8 +204,6 @@ function m.RetroPlug.include()
 		"resources"
 	}
 
-	--fwDeps.bgfx.compat()
-
 	filter {}
 end
 
@@ -221,7 +213,6 @@ function m.RetroPlug.link()
 	links { "RetroPlug" }
 
 	m.SameBoyPlug.link()
-	--fwDeps.bgfx.link()
 	fwDeps.glfw.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()

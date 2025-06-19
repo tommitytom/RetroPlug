@@ -103,7 +103,7 @@ function m.link()
 	m.include()
 
 	filter { "platforms:not Emscripten" }
-		--links { "freetype", "zlib" }
+		links { "zlib" }
 
 	filter { "system:linux" }
 		links { "dl", "pthread" }

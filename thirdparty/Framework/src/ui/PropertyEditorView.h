@@ -238,14 +238,14 @@ namespace fw {
 		}
 
 		void onRender(fw::Canvas& canvas) override {
-			int32 separatorX = getSeperatorX();
+			//int32 separatorX = getSeperatorX();
 			Dimension dim = getDimensions();
 			canvas.fillRect(dim, Color4F::darkGrey);
 
 			//canvas.line(Point{ _separatorX, 0 }, Point{ _separatorX, dim.h }, Color4F::lightGrey);
 
-			int32 rowCount = (dim.h / _rowHeight) + 1;
-			int32 rowY = _rowHeight;
+			//int32 rowCount = (dim.h / _rowHeight) + 1;
+			//int32 rowY = _rowHeight;
 
 			/*for (const Group& group : _groups) {
 				int32 totalRowCount = std::min(rowCount, (int32)group.props.size());

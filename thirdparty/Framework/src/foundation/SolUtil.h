@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sol/forward.hpp>
+#include <string>
 
 namespace fw::SolUtil {
 	void prepareState(sol::state& s);

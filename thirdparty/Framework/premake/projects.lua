@@ -41,7 +41,6 @@ function m.Foundation.include()
 
 	dep.lua.include()
 	dep.simplefilewatcher.include()
-	dep.bgfx.compat()
 
 	filter {}
 end
@@ -68,7 +67,6 @@ function m.Foundation.project()
 		paths.SRC_ROOT .. "foundation/generated/*_%{cfg.platform}.cpp",
 	}
 
-	dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -77,13 +75,11 @@ function m.Graphics.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	dep.bgfx.include()
+	dep.stb.include()
 	dep.glfw.include()
 	dep.glad.include()
 	dep.freetype.include()
 	dep.freetypeGl.include()
-
-	dep.bgfx.compat()
 
 	filter {}
 end
@@ -94,8 +90,8 @@ function m.Graphics.link()
 	links { "Graphics" }
 
 	m.Foundation.link()
+	dep.stb.link()
 	dep.glad.link()
-	dep.bgfx.link()
 	dep.freetype.link()
 	dep.freetypeGl.link()
 end
@@ -112,10 +108,6 @@ function m.Graphics.project()
 		--paths.RESOURCES_ROOT .. "fonts/**.ttf"
 	}
 
-	excludes {
-		--paths.SRC_ROOT .. "graphics/bgfx/**",
-	}
-
 	filter("files:**.ttf")
 		buildmessage 'Compiling resource: %{file.relpath}'
 
@@ -128,7 +120,6 @@ function m.Graphics.project()
 
 	filter{}
 
-	dep.bgfx.compat()
 	util.liveppCompat()
 end
 
@@ -139,8 +130,6 @@ function m.Ui.include()
 
 	m.Graphics.include()
 	dep.yoga.include()
-	--dep.csspp.include()
-	dep.bgfx.compat()
 
 	filter {}
 end
@@ -181,7 +170,6 @@ function m.Audio.include()
 	dependson { "configure" }
 
 	m.Foundation.include()
-	dep.bgfx.compat()
 
 	filter {}
 end
@@ -217,8 +205,6 @@ function m.Application.include()
 	m.Audio.include()
 	dep.glfw.include()
 
-	dep.bgfx.compat()
-
 	filter {}
 end
 
@@ -244,41 +230,6 @@ function m.Application.project()
 		}
 
 		util.liveppCompat()
-end
-
-
-function m.Engine.include()
-	dependson { "configure" }
-
-	m.Graphics.include()
-	dep.box2d.include()
-
-	dep.bgfx.compat()
-
-	filter {}
-end
-
-function m.Engine.link()
-	m.Engine.include()
-
-	links { "engine" }
-
-	m.Graphics.link()
-	dep.box2d.link()
-end
-
-function m.Engine.project()
-	project "Engine"
-	kind "StaticLib"
-
-	m.Engine.include()
-
-	files {
-		paths.SRC_ROOT .. "engine/**.h",
-		paths.SRC_ROOT .. "engine/**.cpp"
-	}
-
-	util.liveppCompat()
 end
 
 local function tableContains(table, element)
@@ -430,9 +381,6 @@ function m.ExampleApplication.project(name)
 			sharedResources = false,
 		}
 	}, function()
-		m.Engine.link()
-		dep.simdjson.link()
-
 		includedirs {
 			paths.SRC_ROOT .. "examples"
 		}

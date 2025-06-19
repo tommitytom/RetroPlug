@@ -6,14 +6,11 @@ using namespace fw;
 
 fw::app::ApplicationRunner runner;
 
-//#define FW_RENDERER_BGFX
+//#define FW_RENDERER_GL
 
 #if defined(FW_RENDERER_GL)
 #include "graphics/gl/GlRenderContext.h"x 
 using RenderContextT = fw::GlRenderContext;
-#elif defined(FW_RENDERER_BGFX)
-#include "graphics/bgfx/BgfxRenderContext.h"
-using RenderContextT = fw::BgfxRenderContext;
 #else
 #include "graphics/gl/GlRenderContext.h"
 using RenderContextT = fw::GlRenderContext;

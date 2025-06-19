@@ -1,5 +1,4 @@
 local paths = dofile("../paths.lua")
-local bgfx = dofile("bgfx.lua")
 local semver = dofile("semver.lua")
 
 local _p = paths.DEP_ROOT .. "iPlug2/"
@@ -47,8 +46,6 @@ function m.include()
 		_p.."Dependencies/IGraphics/glad_GL3/src",
 		_p.."WDL"
 	}
-
-	bgfx.includeBgfx()
 
 	filter { "system:windows" }
 		disablewarnings { "4996", "4250", "4018", "4267", "4068", "4150" }

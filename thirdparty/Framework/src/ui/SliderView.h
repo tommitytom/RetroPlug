@@ -195,8 +195,8 @@ namespace fw {
 
 		void onRender(fw::Canvas& canvas) override {
 			DimensionF dim = getDimensionsF();
-			f32 mid = floor(dim.h * 0.5f);
-			f32 half = (dim.w - _handleRange) * 0.5f;
+			//f32 mid = floor(dim.h * 0.5f);
+			//f32 half = (dim.w - _handleRange) * 0.5f;
 
 			canvas
 				.fillRect(dim, hasFocus() ? Color4F(0.3f, 0.3f, 0.3f, 1.0f) : Color4F::darkGrey);
@@ -237,7 +237,7 @@ namespace fw {
 		void updateHandleArea() {
 			DimensionF dim = getDimensionsF();
 			f32 handleWidth = (f32)getTheme<SliderTheme>().handleWidth;
-			f32 halfHandleWidth = floor(handleWidth * 0.5f);
+			//f32 halfHandleWidth = floor(handleWidth * 0.5f);
 
 			_handleRange = dim.w - handleWidth;
 
