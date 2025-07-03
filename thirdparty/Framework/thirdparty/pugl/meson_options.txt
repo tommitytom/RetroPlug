@@ -1,0 +1,44 @@
+# Copyright 2021-2025 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+option('bindings_cpp', type: 'feature', yield: true,
+       description: 'Build C++ bindings')
+
+option('cairo', type: 'feature',
+       description: 'Enable support for the Cairo graphics API')
+
+option('docs', type: 'feature', yield: true,
+       description: 'Build documentation')
+
+option('docs_cpp', type: 'boolean', value: false,
+       description: 'Attempt to build C++ documentation for development')
+
+option('examples', type: 'feature', yield: true,
+       description: 'Build example programs')
+
+option('lint', type: 'boolean', value: false, yield: true,
+       description: 'Run code quality checks')
+
+option('opengl', type: 'feature',
+       description: 'Enable support for the OpenGL graphics API')
+
+option('stub', type: 'boolean',
+       description: 'Build stub backend')
+
+option('tests', type: 'feature', yield: true,
+       description: 'Build tests')
+
+option('vulkan', type: 'feature',
+       description: 'Enable support for the Vulkan graphics API')
+
+option('win_wchar', type: 'feature', yield: true,
+       description: 'Use UTF-16 wchar_t and UNICODE with Windows API')
+
+option('xcursor', type: 'feature',
+       description: 'Support changing the cursor on X11')
+
+option('xrandr', type: 'feature',
+       description: 'Support accessing the refresh rate on X11')
+
+option('xsync', type: 'feature',
+       description: 'Support timers on X11')

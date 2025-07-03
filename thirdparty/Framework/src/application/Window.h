@@ -18,6 +18,7 @@ namespace fw::app {
 		ViewManagerPtr _viewManager;
 		uint32 _id;
 		Canvas _canvas;
+		std::function<void()> _createHandler;
 
 	public:
 		Window(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id): _id(id), _canvas(*resourceManager, *fontManager), _view(view) {
@@ -32,6 +33,8 @@ namespace fw::app {
 		~Window() = default;
 
 		virtual void setDimensions(Dimension dimensions) = 0;
+
+		virtual Dimension getDimensions() const = 0;
 
 		virtual void onCreate() {}
 
@@ -55,9 +58,21 @@ namespace fw::app {
 
 		virtual void onFrame() {}
 
+		virtual void show() {}
+
 		virtual bool shouldClose() = 0;
 
 		virtual NativeWindowHandle getNativeHandle() = 0;
+
+		virtual void setParent(NativeWindowHandle handle) {}
+
+		void setCreateHandler(std::function<void()>&& func) {
+			_createHandler = std::move(func);
+		}
+
+		std::function<void()>& getCreateHandler() {
+			return _createHandler;
+		}
 
 		Canvas& getCanvas() {
 			return _canvas;

@@ -1,0 +1,13 @@
+# Copyright 2020-2024 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+Checks: >
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -cert-err33-c,
+  -cert-err34-c,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -hicpp-multiway-paths-covered,
+  -hicpp-signed-bitwise,
+  -llvm-header-guard,
+  -readability-function-cognitive-complexity,
+InheritParentConfig: true

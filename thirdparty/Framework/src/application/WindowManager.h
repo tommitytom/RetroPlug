@@ -21,7 +21,7 @@ namespace fw::app {
 		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		virtual ~WindowManager() {}
 
-		virtual WindowPtr createWindow(ViewPtr view) = 0;
+		virtual WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) = 0;
 
 		void addWindow(WindowPtr window) {
 			window->onCreate();
@@ -52,7 +52,11 @@ namespace fw::app {
 			}
 
 			_created.clear();
+
+			onUpdate();
 		}
+
+		virtual void onUpdate() {}
 
 		void closeAll() {
 			_created.clear();

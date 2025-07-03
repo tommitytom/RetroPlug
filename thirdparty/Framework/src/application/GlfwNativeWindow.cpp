@@ -18,9 +18,6 @@ static const char* s_canvas = "#canvas";
 #include <GLFW/glfw3native.h>
 #endif
 
-//using namespace fw;
-//using namespace fw::app;
-
 namespace fw::app {
 
 MouseButton convertMouseButton(int button);
@@ -208,6 +205,7 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetDropCallback(_window, dropCallback);
 	glfwSetWindowCloseCallback(_window, windowCloseCallback);
 	glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
+	//glfwSetFramebufferSizeCallback(window, resizeCallback);
 
 /*#ifdef FW_PLATFORM_WEB
 	emscripten_set_touchstart_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchstart_callback);
@@ -215,9 +213,6 @@ void GlfwNativeWindow::onCreate() {
 	emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchend_callback);
 	emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, app, 1, touchcancel_callback);
 #endif*/
-
-	//glfwSetCharCallback(_window, charCb);
-	//glfwSetFramebufferSizeCallback(window, resizeCallback);
 }
 
 void GlfwNativeWindow::onFrame() {

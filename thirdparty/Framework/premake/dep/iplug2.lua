@@ -363,14 +363,14 @@ function m.createVst3(config)
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstparameters.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/vstsinglecomponenteffect.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/utility/stringconvert.*",
-		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/connectionproxy.*",
+		--[[VST3_DEP_PATH .. "public.sdk/source/vst/hosting/connectionproxy.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/eventlist.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/hostclasses.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/module.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/parameterchanges.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/plugprovider.*",
 		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/pluginterfacesupport.*",
-		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/processdata.*",
+		VST3_DEP_PATH .. "public.sdk/source/vst/hosting/processdata.*",]]
 	}
 
 	filter { "system:windows" }

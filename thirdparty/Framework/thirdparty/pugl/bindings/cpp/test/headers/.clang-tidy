@@ -1,0 +1,26 @@
+# Copyright 2020-2025 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+Checks: >
+  *,
+  -*-magic-numbers,
+  -*-use-using,
+  -altera-*,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -llvmlibc-*,
+  -modernize-redundant-void-arg,
+  -modernize-use-trailing-return-type,
+  -performance-enum-size,
+  -readability-implicit-bool-conversion,
+CheckOptions:
+  - key:   readability-function-cognitive-complexity.Threshold
+    value: '2'
+  - key:   readability-identifier-length.IgnoredParameterNames
+    value: '^(f)|(id)|(x)|(y)$'
+  - key:   readability-identifier-length.IgnoredVariableNames
+    value: '^(r)$'
+FormatStyle: file
+HeaderFilterRegex: '.*'
+WarningsAsErrors: '*'

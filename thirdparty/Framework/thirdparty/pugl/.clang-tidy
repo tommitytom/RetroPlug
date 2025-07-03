@@ -1,0 +1,23 @@
+# Copyright 2020-2025 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+Checks: >
+  *,
+  -*-magic-numbers,
+  -altera*,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-switch-missing-default-case,
+  -clang-diagnostic-unused-function,
+  -clang-diagnostic-unused-macros,
+  -llvmlibc-*,
+  -misc-include-cleaner,
+  -readability-avoid-nested-conditional-operator,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+CheckOptions:
+  - key: hicpp-uppercase-literal-suffix.NewSuffixes
+    value: L;U;f
+  - key: readability-uppercase-literal-suffix.NewSuffixes
+    value: L;U;f
+FormatStyle: file
+HeaderFilterRegex: 'pugl/.*'

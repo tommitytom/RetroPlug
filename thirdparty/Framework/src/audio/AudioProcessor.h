@@ -17,7 +17,7 @@ namespace fw {
 		AudioProcessor(): _eventNode("Audio") {}
 		~AudioProcessor() = default;
 
-		virtual void onBeginUpdate(uint32 frameCount) {};
+		virtual void onBeginUpdate(uint32 frameCount) {}
 
 		virtual void onRender(f32* output, const f32* input, uint32 frameCount) = 0;
 

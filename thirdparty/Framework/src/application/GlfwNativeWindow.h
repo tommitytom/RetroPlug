@@ -25,6 +25,10 @@ namespace fw::app {
 
 		void setDimensions(Dimension dimensions) override;
 
+		Dimension getDimensions() const override {
+			return _dimensions;
+		}
+
 		void onCreate() override;
 
 		void onUpdate(f32 delta) override;
@@ -71,7 +75,7 @@ namespace fw::app {
 
 		void update(std::vector<WindowPtr>& created) override;
 
-		WindowPtr createWindow(ViewPtr view) override {
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {
 			WindowPtr window = std::make_shared<GlfwNativeWindow>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
 			addWindow(window);
 

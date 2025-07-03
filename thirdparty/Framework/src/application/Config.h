@@ -4,8 +4,10 @@
 #include "application/GlfwNativeWindow.h"
 namespace fw::app { using WindowManagerT = GlfwWindowManager; }
 #else
-#include "application/WindowManager.h"
-namespace fw::app { using WindowManagerT = WindowManager; }
+//#include "application/WindowManager.h"
+//namespace fw::app { using WindowManagerT = WindowManager; }
+#include "application/PuglWindow.h"
+namespace fw::app { using WindowManagerT = PuglWindowManager; }
 #endif
 
 #ifdef FW_USE_MINIAUDIO

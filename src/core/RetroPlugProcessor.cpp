@@ -55,7 +55,7 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 			});
 		}
 
-		node.send("Ui"_hs, FetchStateResponse {
+		node.trySend("Ui"_hs, FetchStateResponse {
 			.config = _config,
 			.project = _projectState,
 			.systems = std::move(systemStates)

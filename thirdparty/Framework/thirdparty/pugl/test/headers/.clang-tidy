@@ -1,0 +1,16 @@
+# Copyright 2020-2025 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+Checks: >
+  *,
+  -*-magic-numbers,
+  -altera-*,
+  -llvmlibc-*,
+CheckOptions:
+  - key:   readability-function-cognitive-complexity.Threshold
+    value: '0'
+  - key:   readability-identifier-length.IgnoredParameterNames
+    value: '^(id)|(x)|(y)$'
+FormatStyle: file
+HeaderFilterRegex: '.*'
+WarningsAsErrors: '*'

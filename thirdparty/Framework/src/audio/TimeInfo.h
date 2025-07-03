@@ -6,9 +6,9 @@ namespace fw {
 	struct TimeInfo {
 		f64 sampleRate = 44100.0;
 		f64 tempo = 120.0;
-		f64 samplePos = -1.0;
+		//f64 samplePos = -1.0;
 		f64 ppqPos = -1.0;
-		f64 lastBar = -1.0;
+		//f64 lastBar = -1.0;
 		f64 cycleStart = -1.0;
 		f64 cycleEnd = -1.0;
 

@@ -228,7 +228,7 @@ function m.RetroPlug.project()
 
 	files {
 		"src/*.h",
-		"src/app/RetroPlugApplication.h",
+		"src/RetroPlugApplication.*",
 		"src/lsdj/**.h",
 		"src/lsdj/**.cpp",
 		"src/node/**.h",

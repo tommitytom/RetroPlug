@@ -40,6 +40,7 @@ namespace fw {
 		using QueueWeakPtr = std::weak_ptr<Queue>;
 
 		struct NodeReference {
+			std::string name; // For debugging only
 			NodeId id;
 			QueueWeakPtr queue;
 
@@ -51,7 +52,7 @@ namespace fw {
 			std::unordered_map<EventType, std::vector<NodeReference>> lookup;
 		};
 
-		struct AddNodeEvent { NodeId nodeId; QueueWeakPtr queue; };
+		struct AddNodeEvent { std::string name;  NodeId nodeId; QueueWeakPtr queue; };
 		struct SubscribeEvent { EventType eventType; };
 		struct UnsubscribeEvent { EventType eventType; };
 		struct RemoveNodeEvent {};
@@ -81,7 +82,7 @@ namespace fw {
 			_incoming = std::make_shared<Queue>();
 			_incomingScratch.resize(EVENTS_PER_UPDATE);
 
-			handleAddNode(NodeReference{ .id = _id, .queue = _incoming });
+			handleAddNode(NodeReference{ .name = name, .id = _id, .queue = _incoming });
 		}
 
 		EventNode(EventNode&& other) noexcept { *this = std::move(other); }
@@ -97,8 +98,8 @@ namespace fw {
 
 			const QueuePtr queue = std::make_shared<Queue>();
 
-			handleAddNode(NodeReference{ .id = nodeId, .queue = queue });
-			broadcastSystem(AddNodeEvent{ .nodeId = nodeId, .queue = queue });
+			handleAddNode(NodeReference{ .name = name, .id = nodeId, .queue = queue });
+			broadcastSystem(AddNodeEvent{ .name = name, .nodeId = nodeId, .queue = queue });
 
 			return EventNode(name, _state);
 		}
@@ -111,7 +112,7 @@ namespace fw {
 			_state = EventNodeState();
 			_incomingScratch.clear();
 			_incoming = nullptr;
-		}	
+		}
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
 		EventType subscribe(std::function<void()>&& func) {
@@ -168,6 +169,26 @@ namespace fw {
 			unsubscribe(entt::type_id<T>().index());
 		}
 
+		// Add this public method to the EventNode class
+		void unsubscribeAll() {
+			// Collect all event types we're subscribed to
+			std::vector<EventType> eventTypes;
+			eventTypes.reserve(_subscriptions.size());
+
+			for (const auto& [eventType, handler] : _subscriptions) {
+				eventTypes.push_back(eventType);
+			}
+
+			// Unsubscribe from each event type
+			for (EventType eventType : eventTypes) {
+				handleUnsubscribe(_id, eventType);
+				broadcastSystem(UnsubscribeEvent{ .eventType = eventType });
+			}
+
+			// Clear all subscriptions
+			_subscriptions.clear();
+		}
+
 		template <typename T>
 		void broadcast(const T& event, bool includeSender = false) {
 			const EventType eventType = entt::type_id<T>().index();
@@ -183,13 +204,13 @@ namespace fw {
 								.kind = Event::Kind::User,
 								.value = event
 							});
-						}						
+						}
 					}
 				}
 			}
 		}
 
-		template <typename T> 
+		template <typename T>
 		void broadcast(T&& event, bool includeSender = false) {
 			const EventType eventType = entt::type_id<T>().index();
 			const auto found = _state.lookup.find(eventType);
@@ -228,7 +249,7 @@ namespace fw {
 								.kind = Event::Kind::User,
 								.value = entt::make_any<T>()
 							});
-						}						
+						}
 					}
 				}
 			}
@@ -401,7 +422,7 @@ namespace fw {
 							.kind = Event::Kind::System,
 							.value = entt::make_any<T>()
 						});
-					}					
+					}
 				}
 			}
 		}
@@ -411,7 +432,7 @@ namespace fw {
 
 			if (t == entt::type_id<AddNodeEvent>().index()) {
 				const AddNodeEvent& evt = entt::any_cast<const AddNodeEvent&>(ev.value);
-				handleAddNode(NodeReference{ .id = evt.nodeId, .queue = evt.queue });
+				handleAddNode(NodeReference{ .name = evt.name, .id = evt.nodeId, .queue = evt.queue });
 			}
 
 			if (t == entt::type_id<SubscribeEvent>().index()) {
@@ -463,8 +484,6 @@ namespace fw {
 			assert(idx != -1);
 
 			nodes.erase(nodes.begin() + idx);
-
-			_state.nodes.erase(nodeId);
 		}
 
 		inline const SubscriptionHandler* getSubscriptionHandler(EventType eventType) const {
@@ -494,20 +513,20 @@ namespace fw {
 	};
 
 	class EventReceiver;
-	
+
 	class EventEmitter {
 	private:
 		EventNode& _node;
 		EventNode::NodeId _targetNode;
 
 		std::weak_ptr<EventReceiver> _target;
-		
+
 	public:
 		EventEmitter(EventNode& node, std::string_view targetNode, std::weak_ptr<EventReceiver> target) : EventEmitter(node, entt::hashed_string(targetNode.data(), targetNode.size()), target) {}
 		EventEmitter(EventNode& node, EventNode::NodeId targetNode, std::weak_ptr<EventReceiver> target): _node(node), _targetNode(targetNode), _target(target) {}
 		~EventEmitter() = default;
 
-		
+
 		void emit() {
 			assert(false);
 			//_node.send(_targetNode)
@@ -517,11 +536,11 @@ namespace fw {
 	class EventReceiver {
 	private:
 		std::unordered_map<EventNode::EventType, EventNode::SubscriptionHandler> _subscriptions;
-		
+
 	public:
 		void receiveEvent(entt::any& ev) {
 			EventNode::EventType eventType = ev.type().index();
-			
+
 			auto found = _subscriptions.find(eventType);
 			if (found != _subscriptions.end()) {
 				found->second(ev);
@@ -552,12 +571,12 @@ namespace fw {
 	struct Foo : public EventReceiver {
 		int v = 0;
 	};
-	
+
 	static void create() {
 		//Foo obj;
-		
+
 		//EventNode node("Root");
-		
+
 		//EventEmitter emitter(node, "Audio", obj);
 	}
 }

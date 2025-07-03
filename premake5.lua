@@ -58,7 +58,8 @@ fwProjects.Application.create({
 		"standalone-iplug",
 		"au",
 		"aax",
-		"web"
+		"web",
+		"clap"
 	},
 
 	audio = {

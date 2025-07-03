@@ -34,6 +34,10 @@ namespace fw::app {
 			return _size;
 		}
 
+		Dimension getDimensions() const override {
+			return _size;
+		}
+
 		void setSize(fw::Dimension size) {
 			_size = size;
 		}
@@ -44,7 +48,7 @@ namespace fw::app {
 		WrappedWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {}
 		~WrappedWindowManager() = default;
 
-		WindowPtr createWindow(ViewPtr view) override {
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {
 			assert(false); // Not available with this window manager
 			return nullptr;
 		}

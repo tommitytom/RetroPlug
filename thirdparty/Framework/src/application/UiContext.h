@@ -10,7 +10,7 @@
 
 #include "WrappedNativeWindow.h"
 
-#define FW_USE_GLFW
+//#define FW_USE_GLFW
 #include "application/Config.h"
 
 namespace fw::app {
@@ -40,10 +40,21 @@ namespace fw::app {
 
 		void handleHotReload();
 
-		WindowPtr setup(ViewPtr view) {
-			WindowPtr window = _windowManager->createWindow(view);
+		WindowPtr setup(ViewPtr view, NativeWindowHandle parent = nullptr) {
+			WindowPtr window = _windowManager->createWindow(view, parent);
 			initRenderContext(window);
-			
+
+			ViewManagerPtr vm = window->getViewManager();
+			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+
+			_mainWindow = window;
+
+			return window;
+		}
+
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent = nullptr) {
+			WindowPtr window = _windowManager->createWindow(view, parent);
+
 			ViewManagerPtr vm = window->getViewManager();
 			vm->setResourceManager(_resourceManager.get(), &_fontManager);
 
@@ -76,7 +87,6 @@ namespace fw::app {
 			return _mainWindow;
 		}
 
-	private:
 		void initRenderContext(WindowPtr window);
 	};
 

@@ -165,8 +165,8 @@ namespace fw {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		if (geom.vertices.size()) {
-			uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
-			uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
+			const uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
+			const uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
 
 			glBindVertexArray(_arrayBuffer);
 
@@ -214,13 +214,13 @@ namespace fw {
 					assert(surface.program.isValid());
 					assert(surface.texture.isValid());
 
-					GLenum primitive = getGlPrimitive(surface.primitive);
+					const GLenum primitive = getGlPrimitive(surface.primitive);
 					assert(primitive != GL_INVALID_ENUM);
 
 					const GlShaderProgram& program = surface.program.getResourceAs<GlShaderProgram>();
 					const GlTexture& texture = surface.texture.getResourceAs<GlTexture>();
 
-					GLuint programHandle = program.getGlHandle();
+					const GLuint programHandle = program.getGlHandle();
 					const ShaderUniforms& uniforms = getShaderUniforms(programHandle);
 
 					glUseProgram(programHandle);

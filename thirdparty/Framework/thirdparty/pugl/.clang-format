@@ -1,0 +1,33 @@
+# Copyright 2020-2025 David Robillard <d@drobilla.net>
+# SPDX-License-Identifier: 0BSD OR ISC
+
+---
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignEscapedNewlines: Left
+AttributeMacros:
+  - PUGL_API
+  - PUGL_CONST_API
+  - PUGL_CONST_FUNC
+  - PUGL_MALLOC_API
+  - PUGL_MALLOC_FUNC
+  - PUGL_WARN_UNUSED_RESULT
+BasedOnStyle: Mozilla
+BraceWrapping:
+  AfterNamespace: false
+  AfterClass: true
+  AfterEnum: false
+  AfterExternBlock: false
+  AfterFunction: true
+  AfterStruct: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+BreakBeforeBraces: Custom
+Cpp11BracedListStyle: true
+IndentCaseLabels: false
+IndentPPDirectives: AfterHash
+KeepEmptyLinesAtTheStartOfBlocks: false
+SpacesInContainerLiterals: false
+StatementMacros:
+  - PUGL_UNUSED
+...

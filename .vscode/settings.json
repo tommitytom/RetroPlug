@@ -183,7 +183,8 @@
 		"memory_resource": "cpp",
 		"shared_mutex": "cpp",
 		"cfenv": "cpp",
-		"gb.h": "c"
+		"gb.h": "c",
+		"cplug.h": "c"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

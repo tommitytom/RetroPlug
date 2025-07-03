@@ -204,6 +204,7 @@ function m.Application.include()
 	m.Graphics.include()
 	m.Audio.include()
 	dep.glfw.include()
+	dep.pugl.include()
 
 	filter {}
 end
@@ -216,6 +217,7 @@ function m.Application.link()
 	m.Graphics.link()
 	m.Audio.link()
 	dep.glfw.link()
+	dep.pugl.link()
 end
 
 function m.Application.project()
@@ -271,6 +273,85 @@ local function createStandalone(config, impl)
 			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.release) }
 		filter {}
 end
+
+local function createClap(config, impl)
+	local dep = paths.DEP_ROOT .. "CPLUG"
+	project (config.name .. "-clap")
+		language "C++"
+		kind "SharedLib"
+
+		includedirs {
+			dep .. "/src"
+		}
+
+		forceincludes {
+			paths.SRC_ROOT .. "/plugin/cplug/config.h"
+		}
+
+		files {
+			dep .. "/src/cplug.h",
+			dep .. "/src/cplug_clap.c",
+			dep .. "/src/clap/**",
+			paths.SRC_ROOT .. "/plugin/cplug/**"
+		}
+
+		impl()
+
+		filter {}
+end
+
+local function createVst3(config, impl)
+	local dep = paths.DEP_ROOT .. "CPLUG"
+	project (config.name .. "-vst3")
+		language "C++"
+		kind "SharedLib"
+		targetextension ".vst3"
+
+		includedirs {
+			dep .. "/src"
+		}
+
+		forceincludes {
+			paths.SRC_ROOT .. "/plugin/cplug/config.h"
+		}
+
+		files {
+			dep .. "/src/cplug.h",
+			dep .. "/src/cplug_vst3.c",
+			dep .. "/src/vst3_c_api.h",
+			paths.SRC_ROOT .. "/plugin/cplug/**"
+		}
+
+		impl()
+
+		filter "system:windows"
+			disablewarnings { "4244", "4018", "4267" }
+
+		filter {}
+end
+
+--[[
+local function createVst3(config, impl)
+	local dep = paths.DEP_ROOT .. "vst3"
+	project (config.name .. "-vst3")
+		kind "SharedLib"
+
+		includedirs {
+			dep
+		}
+
+		files {
+			dep .. "/public.sdk/source/main/dllmain.cpp",
+			paths.SRC_ROOT .. "/plugin/vst3/**"
+		}
+
+		links { "vst3" }
+
+		impl()
+
+		filter {}
+end
+]]
 
 local function createLivePp(config, impl)
 	project (config.name .. "-live++")
@@ -335,6 +416,8 @@ function m.Application.create(config, impl)
 	if tableContains(config.targets, "standalone-iplug") then iplug2.createApp(config); wrappedImpl() end
 	if tableContains(config.targets, "vst2") then iplug2.createVst2(config); wrappedImpl() end
 	if tableContains(config.targets, "vst3") then iplug2.createVst3(config); wrappedImpl() end
+	if tableContains(config.targets, "vst3") then createVst3(config, wrappedImpl); end
+	if tableContains(config.targets, "clap") then createClap(config, wrappedImpl); end
 	--if tableContains(config.targets, "aax") then iplug2.createAax(config); wrappedImpl() end
 	--if tableContains(config.targets, "au") then iplug2.createAu(config); wrappedImpl() end
 end
