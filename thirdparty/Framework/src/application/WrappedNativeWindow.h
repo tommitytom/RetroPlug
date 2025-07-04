@@ -14,8 +14,8 @@ namespace fw::app {
 		fw::Dimension _size;
 
 	public:
-		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManagerPtr resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
-			: Window(resourceManager.get(), fontManager, view, id), _nativeWindowHandle(nwh), _size(size) {}
+		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManagerPtr resourceManager, FontManagerPtr fontManager, ViewPtr view, uint32 id)
+			: Window(resourceManager.get(), fontManager.get(), view, id), _nativeWindowHandle(nwh), _size(size) { }
 		~WrappedNativeWindow() = default;
 
 		void setDimensions(Dimension dimensions) override {}
@@ -45,7 +45,7 @@ namespace fw::app {
 
 	class WrappedWindowManager final : public WindowManager {
 	public:
-		WrappedWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {}
+		WrappedWindowManager(ResourceManagerPtr resourceManager, FontManagerPtr fontManager) : WindowManager(resourceManager, fontManager) {}
 		~WrappedWindowManager() = default;
 
 		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {

@@ -69,14 +69,14 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 
 	node.receive<RemoveSystemEvent>([&](const RemoveSystemEvent& ev) {
 		SystemPtr system = _systemManager.removeSystem(ev.systemId);
-		node.send("Ui"_hs, CollectSystemEvent{ .system = std::move(system) });
+		node.trySend("Ui"_hs, CollectSystemEvent{ .system = std::move(system) });
 	});
 
 	node.receive<ReplaceSystemEvent>([&](ReplaceSystemEvent&& ev) {
 		SystemPtr old = _systemManager.removeSystem(ev.system->getId());
 		_systemManager.addSystem(std::move(ev.system));
 
-		node.send("Ui"_hs, CollectSystemEvent{ .system = old });
+		node.trySend("Ui"_hs, CollectSystemEvent{ .system = old });
 	});
 
 	node.receive<ResetSystemEvent>([&](ResetSystemEvent&& ev) {
@@ -119,12 +119,12 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 		if (system) {
 			FetchSaveStateResponse res{ .systemId = ev.systemId };
 			system->saveState(res.state);
-			node.send("Ui"_hs, std::move(res));
+			node.trySend("Ui"_hs, std::move(res));
 		}
 	});
 
 	node.receive<PingEvent>([&](PingEvent&& ev) {
-		node.send("Ui"_hs, PongEvent{ .time = ev.time });
+		node.trySend("Ui"_hs, PongEvent{ .time = ev.time });
 	});
 
 	node.receive<RemoveAllSystemsEvent>([&]() {

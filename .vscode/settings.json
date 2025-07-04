@@ -86,6 +86,7 @@
 		"fw"
 	],
 	"files.associations": {
+		"*.h": "cpp",
 		"functional": "cpp",
 		"deque": "cpp",
 		"forward_list": "cpp",
@@ -184,7 +185,9 @@
 		"shared_mutex": "cpp",
 		"cfenv": "cpp",
 		"gb.h": "c",
-		"cplug.h": "c"
+		"cplug.h": "c",
+		"coroutine": "cpp",
+		"resumable": "cpp"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

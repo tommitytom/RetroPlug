@@ -1,3 +1,5 @@
+#include <pugl/pugl.h>
+#include <pugl/gl.h>
 #include <cplug.h>
 #include <vst3_c_api.h>
 
@@ -59,8 +61,7 @@ static int AsciiToVK(int ascii) {
 
 static int VSTKeyCodeToVK(int code, int ascii) {
 	// If the keycode provided by the host is 0, we can still calculate the VK from the ascii value
-	// NOTE: VKEY_EQUALS Doesn't seem to map to a Windows VK, so get the VK from the ascii char instead
-	if (code == 0 || code == VK_OEM_PLUS) {
+	if (code == 0) {
 		return AsciiToVK(ascii);
 	}
 
@@ -141,7 +142,6 @@ extern "C" {
 		CPlugPlugin* plugin = new CPlugPlugin{ 
 			.app = std::move(app),
 			.audioManager = audioManager,
-			//.uiEventNode = audioManager->getProcessor()->getEventNode().spawn("Ui")
 		};
 
 		return plugin;
@@ -330,7 +330,14 @@ extern "C" {
 
 		switch (event->type) {
 		case PUGL_REALIZE: {
-			std::unique_ptr<fw::app::UiContext> uiContext = std::make_unique<fw::app::UiContext>(std::make_unique<fw::GlRenderContext>(false));
+			fw::ResourceManagerPtr resourceManager = std::make_shared<fw::ResourceManager>();
+			std::unique_ptr<fw::app::UiContext> uiContext = std::make_unique<fw::app::UiContext>(
+				std::make_unique<fw::GlRenderContext>(false),
+				std::make_unique<fw::app::WrappedWindowManager>(
+					resourceManager,
+					std::make_shared<fw::FontManager>(resourceManager)
+				)
+			);
 
 			window = uiContext->setupNativeWindow(gui->appView, nullptr, gui->appView->getDimensions());
 			
@@ -380,7 +387,7 @@ extern "C" {
 				.position = fw::Point{ (int32)event->button.x, (int32)event->button.y }
 			});
 			break;
-/*
+
 		case PUGL_KEY_PRESS:
 		case PUGL_KEY_RELEASE:
 			viewManager->onKey(fw::KeyEvent{
@@ -389,7 +396,7 @@ extern "C" {
 				.down = event->type == PUGL_KEY_PRESS,
 			});
 			break;
-*/
+
 		case PUGL_TEXT:
 			spdlog::info("Text input: {}", event->text.character);
 			break;
@@ -469,7 +476,11 @@ extern "C" {
 
 	void cplug_setScaleFactor(void* userGUI, float scale) {
 		CPlugGui* gui = static_cast<CPlugGui*>(userGUI);
-		gui->uiContext->getMainWindow()->getViewManager()->setScale(scale);
+		if (gui->uiContext) {
+			gui->uiContext->getMainWindow()->getViewManager()->setScale(scale);
+		} else if (gui->appView) {
+			gui->appView->setScale(scale);
+		}
 	}
 
 	void cplug_onKeyDown(void* userGUI, const int16_t key_char, const int16_t key_code, const int16_t modifiers) {

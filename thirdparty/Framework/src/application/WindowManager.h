@@ -14,12 +14,15 @@ namespace fw::app {
 		std::stack<uint32> _availableIds;
 
 	protected:
-		ResourceManager& _resourceManager;
-		fw::FontManager& _fontManager;
+		fw::ResourceManagerPtr _resourceManager;
+		fw::FontManagerPtr _fontManager;
 
 	public:
-		WindowManager(ResourceManager& resourceManager, FontManager& fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
+		WindowManager(fw::ResourceManagerPtr resourceManager, fw::FontManagerPtr fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		virtual ~WindowManager() {}
+
+		const fw::ResourceManagerPtr& getResourceManager() { return _resourceManager; }
+		const fw::FontManagerPtr& getFontManager() { return _fontManager; }
 
 		virtual WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) = 0;
 

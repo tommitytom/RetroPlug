@@ -18,4 +18,6 @@ namespace fw {
 
 		DimensionF measureText(std::string_view text, FontFaceHandle handle);
 	};
+
+	using FontManagerPtr = std::shared_ptr<FontManager>;
 }

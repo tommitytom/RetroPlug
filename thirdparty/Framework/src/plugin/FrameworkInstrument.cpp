@@ -33,9 +33,16 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 
 		if (view) {
 			IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
-			
-			std::shared_ptr<app::UiContext> uiContext = std::make_shared<app::UiContext>(std::make_unique<GlRenderContext>(false));
 
+			fw::ResourceManagerPtr resourceManager = std::make_shared<fw::ResourceManager>();
+			std::shared_ptr<fw::app::UiContext> uiContext = std::make_shared<fw::app::UiContext>(
+				std::make_unique<fw::GlRenderContext>(false),
+				std::make_unique<fw::app::WrappedWindowManager>(
+					resourceManager,
+					std::make_shared<fw::FontManager>(resourceManager)
+				)
+			);
+			
 			pGraphics->EnableMouseOver(true);
 			pGraphics->EnableMultiTouch(true);
 			pGraphics->AttachPanelBackground(COLOR_GRAY);
@@ -75,9 +82,9 @@ void FrameworkInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 		processor->onTransportUpdate(fw::TimeInfo{
 			.sampleRate = GetSampleRate(),
 			.tempo = mTimeInfo.mTempo,
-			.samplePos = mTimeInfo.mSamplePos,
+			//.samplePos = mTimeInfo.mSamplePos,
 			.ppqPos = mTimeInfo.mPPQPos,
-			.lastBar = mTimeInfo.mLastBar,
+			//.lastBar = mTimeInfo.mLastBar,
 			.cycleStart = mTimeInfo.mCycleStart,
 			.cycleEnd = mTimeInfo.mCycleEnd,
 

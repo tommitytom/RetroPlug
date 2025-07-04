@@ -10,7 +10,6 @@
 
 #include "WrappedNativeWindow.h"
 
-//#define FW_USE_GLFW
 #include "application/Config.h"
 
 namespace fw::app {
@@ -21,8 +20,8 @@ namespace fw::app {
 
 		std::chrono::high_resolution_clock::time_point _lastTime;
 
-		std::shared_ptr<ResourceManager> _resourceManager;
-		fw::FontManager _fontManager;
+		fw::ResourceManagerPtr _resourceManager;
+		fw::FontManagerPtr _fontManager;
 
 		FontFaceHandle _defaultFont;
 		TextureHandle _defaultTexture;
@@ -33,7 +32,7 @@ namespace fw::app {
 		//bool _flip = false;
 
 	public:
-		UiContext(std::unique_ptr<RenderContext>&& renderContext);
+		UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager);
 		~UiContext();
 
 		bool runFrame();
@@ -45,7 +44,7 @@ namespace fw::app {
 			initRenderContext(window);
 
 			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+			vm->setResourceManager(_resourceManager.get(), _fontManager.get());
 
 			_mainWindow = window;
 
@@ -56,7 +55,7 @@ namespace fw::app {
 			WindowPtr window = _windowManager->createWindow(view, parent);
 
 			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+			vm->setResourceManager(_resourceManager.get(), _fontManager.get());
 
 			_mainWindow = window;
 
@@ -64,13 +63,13 @@ namespace fw::app {
 		}
 
 		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
-			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, _fontManager, view, std::numeric_limits<uint32>::max());
 			_windowManager->addWindow(window);
 
 			initRenderContext(window);
 
 			ViewManagerPtr vm = window->getViewManager();
-			vm->setResourceManager(_resourceManager.get(), &_fontManager);
+			vm->setResourceManager(_resourceManager.get(), _fontManager.get());
 
 			if (!_mainWindow) {
 				_mainWindow = window;

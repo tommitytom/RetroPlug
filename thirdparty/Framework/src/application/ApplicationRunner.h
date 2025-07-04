@@ -14,19 +14,12 @@ namespace fw::app {
 		ApplicationRunner() {}
 		~ApplicationRunner();
 
-		template <typename ApplicationT, typename RenderContextT, typename AudioContextT>
-		static int run() {
-			ApplicationRunner runner;
-			runner.setup<ApplicationT, RenderContextT, AudioContextT>();
-			return runner.doLoop();
-		}
-
-		template <typename RenderContextT, typename AudioContextT>
+		/*template <typename WindowManagerT, typename RenderContextT, typename AudioContextT>
 		WindowPtr setup(std::unique_ptr<Application>&& app) {
-			return setup(std::forward<std::unique_ptr<Application>>(app), std::make_unique<RenderContextT>(), std::make_shared<AudioContextT>());
-		}
+			return setup(std::forward<std::unique_ptr<Application>>(app), std::make_unique<WindowManagerT>(), std::make_unique<RenderContextT>(), std::make_shared<AudioContextT>());
+		}*/
 
-		WindowPtr setup(std::unique_ptr<Application>&& app, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager);
+		WindowPtr setup(std::unique_ptr<Application>&& app, std::unique_ptr<WindowManager>&& windowManager, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager);
 
 		bool isReady() const {
 			return _app != nullptr;

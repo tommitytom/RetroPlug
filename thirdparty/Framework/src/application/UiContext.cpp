@@ -9,12 +9,12 @@ namespace fw::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
 
-	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext) : 
-		_resourceManager(std::make_shared<ResourceManager>()), 
-		_fontManager(_resourceManager) 
+	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager) :
+		_resourceManager(windowManager->getResourceManager()), 
+		_fontManager(windowManager->getFontManager())
 	{
+		_windowManager = std::move(windowManager);
 		_renderContext = std::move(renderContext);
-		_windowManager = std::make_unique<WindowManagerT>(*_resourceManager, _fontManager);
 		_renderContext->setResourceManager(_resourceManager);
 	}
 
@@ -74,7 +74,7 @@ namespace fw::app {
 					canvas.setDefaults(_defaultTexture, _defaultProgram, _defaultFont);
 					canvas.setDimensions(w->getViewManager()->getDimensions(), 1.0f);
 
-					w->getViewManager()->setResourceManager(_resourceManager.get(), &_fontManager);
+					w->getViewManager()->setResourceManager(_resourceManager.get(), _fontManager.get());
 
 					w->onUpdate(delta);
 
@@ -126,7 +126,7 @@ namespace fw::app {
 			"shaders/CanvasFragment"
 		});
 
-		_defaultFont = _fontManager.loadFont("Karla-Regular", 16);
+		_defaultFont = _fontManager->loadFont("Karla-Regular", 16);
 
 		_lastTime = hrc::now();
 	}

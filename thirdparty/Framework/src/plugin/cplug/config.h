@@ -27,8 +27,8 @@
 #define CPLUG_AUV2_VIEW_CLASS_STR "CPLUGExampleView"
 static const unsigned kAudioUnitProperty_UserPlugin = 'plug';
 
-#define CPLUG_CLAP_ID "com.cplug.example"
-#define CPLUG_CLAP_DESCRIPTION "Example plugin"
+#define CPLUG_CLAP_ID "com.tommitytom.retroplug"
+#define CPLUG_CLAP_DESCRIPTION "RetroPlug"
 #define CPLUG_CLAP_FEATURES CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_STEREO
 
 #define CPLUG_NUM_PARAMS 0

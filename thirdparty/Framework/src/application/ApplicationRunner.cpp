@@ -17,7 +17,7 @@ namespace fw::app {
 		_uiContext = nullptr;
 	}
 
-	WindowPtr ApplicationRunner::setup(std::unique_ptr<Application>&& app, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager) {
+	WindowPtr ApplicationRunner::setup(std::unique_ptr<Application>&& app, std::unique_ptr<WindowManager>&& windowManager, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager) {
 		_app = std::move(app);
 
 		AudioProcessorPtr audioProcessor = audioManager ? _app->onCreateAudio() : nullptr;
@@ -31,7 +31,7 @@ namespace fw::app {
 		}
 
 		if (view) {
-			_uiContext = std::make_unique<UiContext>(std::move(renderContext));
+			_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
 			WindowPtr window = _uiContext->setup(view);
 			ViewManagerPtr viewManager = window->getViewManager();
 

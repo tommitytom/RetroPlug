@@ -2,6 +2,8 @@
 #include "application/ApplicationRunner.h"
 #include "entry/ApplicationFactory.h"
 
+#include "application/GlfwNativeWindow.h"
+
 using namespace fw;
 
 fw::app::ApplicationRunner runner;
@@ -46,8 +48,10 @@ extern "C" {
 }
 #endif
 
-void initMain(int argc, char** argv) {
-	runner.setup<RenderContextT, AudioManagerT>(ApplicationFactory::create());
+void initMain(int argc, char** argv) {	
+	fw::ResourceManagerPtr resourceManager = std::make_shared<ResourceManager>();
+	std::shared_ptr<fw::FontManager> fontManager = std::make_shared<fw::FontManager>(resourceManager);
+	runner.setup(ApplicationFactory::create(), std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager), std::make_unique<RenderContextT>(), std::make_unique<AudioManagerT>());
 }
 
 bool mainLoop() {

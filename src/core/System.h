@@ -111,17 +111,17 @@ namespace rp {
 			output.reset();
 		}
 	};
-
+	
 	template <typename T>
 	class ConcurrentPoolAllocator {
 	private:
-		moodycamel::ConcurrentQueue<std::unique_ptr<T>> _pool;
+		//moodycamel::ConcurrentQueue<std::unique_ptr<T>> _pool;
 
 	public:
-		ConcurrentPoolAllocator(size_t poolSize = 32) : _pool(poolSize) {
-			for (size_t i = 0; i < poolSize; ++i) {
+		ConcurrentPoolAllocator(size_t poolSize = 32)/* : _pool(poolSize)*/ {
+			/*for (size_t i = 0; i < poolSize; ++i) {
 				_pool.enqueue(std::make_unique<T>());
-			}
+			}*/
 		}
 
 		~ConcurrentPoolAllocator() {}
@@ -136,7 +136,8 @@ namespace rp {
 		}
 
 		std::shared_ptr<T> tryAllocate() {
-			std::unique_ptr<T> item;
+			return std::make_shared<T>();
+			/*std::unique_ptr<T> item;
 			if (_pool.try_dequeue(item)) {
 				return std::shared_ptr<T>(item.release(), [&](T* ptr) {
 					if (!_pool.enqueue(std::unique_ptr<T>(ptr))) {
@@ -145,10 +146,10 @@ namespace rp {
 				});
 			}
 
-			return nullptr;
+			return nullptr;*/
 		}
 	};
-
+	
 	using SystemIoPtr = std::shared_ptr<SystemIo>;
 
 	struct IoMessageBus {

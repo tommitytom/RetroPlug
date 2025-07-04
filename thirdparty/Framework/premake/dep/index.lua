@@ -6,7 +6,6 @@ local m = {
 	freetypeGl = dofile("freetype-gl.lua"),
 	simplefilewatcher = dofile("simplefilewatcher.lua"),
 	iplug2 = dofile("iplug2.lua"),
-	vst3 = dofile("vst3.lua"),
 	glad = dofile("glad.lua"),
 	bin2h = dofile("bin2h.lua"),
 	yoga = dofile("yoga.lua"),
@@ -21,7 +20,6 @@ function m.allProjects()
 	m.freetypeGl.project()
 	m.simplefilewatcher.project()
 	m.iplug2.project()
-	m.vst3.project()
 	m.glad.project()
 	m.bin2h.project()
 	m.yoga.project()

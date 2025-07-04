@@ -422,7 +422,7 @@ void errorCallback(int error, const char* description) {
 	spdlog::error("GLFW error {}: {}", error, description);
 }
 
-GlfwWindowManager::GlfwWindowManager(ResourceManager& resourceManager, FontManager& fontManager) : WindowManager(resourceManager, fontManager) {
+GlfwWindowManager::GlfwWindowManager(ResourceManagerPtr resourceManager, FontManagerPtr fontManager) : WindowManager(resourceManager, fontManager) {
 	glfwSetErrorCallback(errorCallback);
 
 	if (!glfwInit()) {

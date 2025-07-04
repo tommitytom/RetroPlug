@@ -251,6 +251,7 @@ local function createStandalone(config, impl)
 		impl()
 
 		defines {
+			"FW_USE_GLFW",
 			"FW_USE_MINIAUDIO"
 		}
 
@@ -279,6 +280,8 @@ local function createClap(config, impl)
 	project (config.name .. "-clap")
 		language "C++"
 		kind "SharedLib"
+		targetdir "C:/Program Files/Common Files/CLAP"
+		targetextension ".clap"
 
 		includedirs {
 			dep .. "/src"
@@ -305,6 +308,7 @@ local function createVst3(config, impl)
 	project (config.name .. "-vst3")
 		language "C++"
 		kind "SharedLib"
+		targetdir "C:/Program Files/Common Files/VST3"
 		targetextension ".vst3"
 
 		includedirs {
@@ -411,13 +415,13 @@ function m.Application.create(config, impl)
 	end
 
 	if tableContains(config.targets, "standalone") then createStandalone(config, wrappedImpl) end
-	if tableContains(config.targets, "standalone-livepp") then createLivePp(config, wrappedImpl) end
+	--if tableContains(config.targets, "standalone-livepp") then createLivePp(config, wrappedImpl) end
 
 	if tableContains(config.targets, "standalone-iplug") then iplug2.createApp(config); wrappedImpl() end
 	if tableContains(config.targets, "vst2") then iplug2.createVst2(config); wrappedImpl() end
-	if tableContains(config.targets, "vst3") then iplug2.createVst3(config); wrappedImpl() end
+	--if tableContains(config.targets, "vst3") then iplug2.createVst3(config); wrappedImpl() end
 	if tableContains(config.targets, "vst3") then createVst3(config, wrappedImpl); end
-	if tableContains(config.targets, "clap") then createClap(config, wrappedImpl); end
+	--if tableContains(config.targets, "clap") then createClap(config, wrappedImpl); end
 	--if tableContains(config.targets, "aax") then iplug2.createAax(config); wrappedImpl() end
 	--if tableContains(config.targets, "au") then iplug2.createAu(config); wrappedImpl() end
 end

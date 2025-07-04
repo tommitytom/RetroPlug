@@ -70,13 +70,13 @@ namespace fw::app {
 		bool _pollInput = false;
 
 	public:
-		GlfwWindowManager(ResourceManager& resourceManager, FontManager& fontManager);
+		GlfwWindowManager(ResourceManagerPtr resourceManager, FontManagerPtr fontManager);
 		~GlfwWindowManager();
 
 		void update(std::vector<WindowPtr>& created) override;
 
 		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {
-			WindowPtr window = std::make_shared<GlfwNativeWindow>(&_resourceManager, &_fontManager, view, std::numeric_limits<uint32>::max());
+			WindowPtr window = std::make_shared<GlfwNativeWindow>(_resourceManager.get(), _fontManager.get(), view, std::numeric_limits<uint32>::max());
 			addWindow(window);
 
 			_pollInput = true;
