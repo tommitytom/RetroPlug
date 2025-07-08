@@ -212,7 +212,8 @@ void MenuView::activateHighlighted() {
 	switch (item->getType()) {
 	case fw::MenuItemType::Action:
 	{
-		fw::ActionContextFunction& func = ((fw::Action*)item)->getFunction();
+		fw::Action* action = (fw::Action*)item;
+		fw::ActionContextFunction& func = action->getFunction();
 
 		if (_autoClose) {
 			_context.close();
@@ -222,6 +223,9 @@ void MenuView::activateHighlighted() {
 
 		if (_context.isClosing()) {
 			this->remove();
+		} else if (_context.isDisablingCurrent()) {
+			item->setActive(false);
+			_context.disableCurrent(false);
 		}
 
 		break;

@@ -423,7 +423,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 	if (kit.isValid()) {
 		std::string filename = fmt::format("{}.kit", kit.getName());
 
-		if (fw::FileDialog::fileSaveData(nullptr, kit.getBuffer(), KIT_FILTER, filename)) {
+		if (fw::FileDialog::saveFileData(kit.getBuffer(), KIT_FILTER, filename)) {
 			spdlog::info("Saved kit to {}", filename);
 		} else {
 			spdlog::error("Failed to write kit to {}", filename);
@@ -453,7 +453,7 @@ void SamplerView::buildMenu(fw::Menu& target) {
 void SamplerView::loadSampleDialog(KitIndex kitIdx) {
 	std::vector<std::string> files;
 
-	if (fw::FileDialog::basicFileOpen(nullptr, files, SAMPLE_FILTER, true)) {
+	if (fw::FileDialog::openFile(files, SAMPLE_FILTER, true)) {
 		addKitSamples(kitIdx, files);
 	}
 }

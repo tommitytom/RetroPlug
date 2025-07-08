@@ -5,6 +5,7 @@
 #include "foundation/KeyToButton.h"
 
 #include "core/Project.h"
+#include "core/ProjectSerializer.h"
 
 #include "audio/AudioManager.h"
 
@@ -78,65 +79,20 @@ void SystemView::onUpdate(f32 delta) {
 void SystemView::buildMenu(fw::Menu& target) {
 	FileManager& fileManager = getState<FileManager>();
 	Project& project = getState<Project>();
+	GlobalSettings& globalSettings = getState<GlobalSettings>();
 	ProjectState& projectState = project.getState();
+	fw::audio::AudioManagerPtr& audioManager = getState<fw::audio::AudioManagerPtr>();
 
-	fw::Menu& root = target.title("RetroPlug v0.4.0 - " + _system->getRomName()).separator();
-	MenuBuilder::systemLoadMenu(root, fileManager, project, _system);
-	MenuBuilder::systemAddMenu(root, fileManager, project, _system);
-	MenuBuilder::systemSaveMenu(root, fileManager, project, _system);
+	fw::Menu& root = target.title(fmt::format("RetroPlug v{} - {}", rp::RP_VERSION, _system->getRomName())).separator();
+	MenuBuilder::populateRecent(root.subMenu("Recent"), fileManager, project, _system);
+	root.separator();
+	MenuBuilder::projectMenu(root.subMenu("Project"), fileManager, project, *_system);
+	MenuBuilder::systemMenu(root.subMenu("System"), fileManager, project, _system);
+	MenuBuilder::settingsMenu(root.subMenu("Settings"), fileManager, project, globalSettings, *audioManager);
 
-	int audioDevice = 0;
-
-	//fw::audio::AudioManager& audioManager = project.getAudioManager();
-
-	//std::vector<std::string> audioDevices;
-	//audioManager.getDeviceNames(audioDevices);
-
-	root.separator()
-		.action("Reset System", [this]() {
-			_system->reset();
-		})
-		.action("Remove System", [this, &project]() {
-			if (project.getSystems().size() > 1) {
-				project.removeSystem(_system->getId());
-				this->remove();
-			}
-		}, project.getSystems().size() > 1)
-		.separator();
-
-	fw::Menu& settingsMenu = root.subMenu("Settings");
-
-	#ifndef RP_WEB
-	settingsMenu
-		.subMenu("Audio")
-		/*.multiSelect("Device", audioDevices, audioDevice, [project](int v) {
-			if (v >= 0) {
-				project.getAudioManager().setAudioDevice((uint32)v);
-			}
-		})*/
-		.parent();
-	#endif
-	
-	settingsMenu
-		.multiSelect("MIDI", { "Send To All", "Four Channels Per Instance", "One Channel Per Instance" }, &projectState.settings.midiRouting)
-		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &projectState.settings.audioRouting)
-		.parent();
-
-	settingsMenu
-		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &projectState.settings.zoom)
-		.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)projectState.settings.layout, [this, &project](int layout) {
-			project.getState().settings.layout = (SystemLayout)layout;
-			setLayoutDirty();
-		})
-		.subMenu("Save Options...")
-			.multiSelect("Type", { "SRAM", "State" }, &projectState.settings.saveType)
-			.select("Include ROM", &projectState.settings.includeRom)
-			.parent()
-		.parent()
-		.separator()
-		.select("Game Link", _system->getGameLink(), [&](bool selected) {
-			_system->setGameLink(selected);
-		});
+	if (getChildren().size() > 0) {
+		root.separator();
+	}
 
 	for (fw::ViewPtr child : getChildren()) {
 		child->onMenu(target);

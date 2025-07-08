@@ -6,7 +6,9 @@
 #include "foundation/SolUtil.h"
 
 #include "core/FileManager.h"
+#include "core/GlobalSettings.h"
 #include "core/Project.h"
+#include "core/ProjectSerializer.h"
 #include "ui/FileDialog.h"
 #include "ui/MenuBuilder.h"
 
@@ -22,13 +24,13 @@ void StartView::setupMenu() {
 	fw::MenuPtr menuRoot = std::make_shared<fw::Menu>();
 	fw::Menu& menu = *menuRoot;
 
-	menu.title("RetroPlug v0.4.0")
+	menu.title(fmt::format("RetroPlug v{}", rp::RP_VERSION))
 		.separator()
 		.action("Load...", [&](fw::MenuContext& ctx) {
 			ctx.retain();
 
 			std::vector<std::string> files;
-			if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
+			if (fw::FileDialog::openFile(files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
 				LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>());
 				ctx.close();
 			}
@@ -55,9 +57,9 @@ void StartView::setupMenu() {
 
 			this->remove();
 		})
-		.separator()
-		.subMenu("Settings")
-		.parent();
+		.separator();
+
+	MenuBuilder::settingsMenu(menu.subMenu("Settings"), getState<FileManager>(), getState<Project>(), getState<GlobalSettings>(), *getState<fw::audio::AudioManagerPtr>());
 
 	setMenu(menuRoot);
 	setAutoClose(false);

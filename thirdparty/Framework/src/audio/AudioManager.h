@@ -47,6 +47,8 @@ namespace fw::audio {
 
 		virtual bool setAudioDevice(uint32 idx) { return false; }
 
+		virtual std::string getActiveDeviceName() { return ""; }
+
 		virtual void getDeviceNames(std::vector<std::string>& names) {}
 
 		virtual bool loadFile(std::string_view path, std::vector<f32>& target) { assert(false); return false; }

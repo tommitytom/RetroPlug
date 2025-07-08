@@ -29,7 +29,7 @@ EM_ASYNC_JS(void, saveWebFileDialog, (const char* filePath), {
 	await saveFileDialog(filePath);
 });
 
-bool FileDialog::fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFileData(const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string filePath = "/.file-save-dialog/" + fileName;
 
 	fs::create_directories("/.file-save-dialog/");
@@ -44,7 +44,7 @@ bool FileDialog::fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const s
 	return true;
 }
 
-bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
+bool FileDialog::openFileAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
 	char* paths = openWebFileDialog();
 	std::vector<std::string> target;
 
@@ -66,7 +66,7 @@ bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, boo
 	return false;
 }
 
-bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
+bool FileDialog::openFile(std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
 	char* paths = openWebFileDialog();
 
 	if (paths) {
@@ -84,26 +84,26 @@ bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, c
 	return false;
 }
 
-bool FileDialog::basicFileSave(UiHandle* ui, std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFile(std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	return false;
 }
 
 #else
 
-bool FileDialog::fileSaveData(UiHandle* ui, const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFileData(const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string target;
-	if (FileDialog::basicFileSave(ui, target, filters, fileName)) {
+	if (FileDialog::saveFile(target, filters, fileName)) {
 		return fw::FsUtil::writeFile(target, data);
 	}
 
 	return false;
 }
 
-/*bool FileDialog::fileOpenAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
+bool FileDialog::openFileAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb) {
 	return false;
-}*/
+}
 
-bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
+bool FileDialog::openFile(std::vector<std::string>& target, const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly) {
 	std::vector<std::string> stringFilters;
 
 	for (const FileDialogFilter& filter : filters) {
@@ -117,7 +117,7 @@ bool FileDialog::basicFileOpen(UiHandle* ui, std::vector<std::string>& target, c
 	return !target.empty();
 }
 
-bool FileDialog::basicFileSave(UiHandle* ui, std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFile(std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::vector<std::string> stringFilters;
 
 	for (const FileDialogFilter& filter : filters) {

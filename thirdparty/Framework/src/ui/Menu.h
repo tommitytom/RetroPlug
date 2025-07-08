@@ -22,6 +22,7 @@ namespace fw {
 	class MenuContext {
 	private:
 		bool _closing = false;
+		bool _disableCurrent = false;
 
 	public:
 		void close() { _closing = true; }
@@ -29,6 +30,12 @@ namespace fw {
 		void retain() { _closing = false; }
 
 		bool isClosing() const { return _closing; }
+
+		bool isDisablingCurrent() const { return _disableCurrent; }
+
+		void disableCurrent(bool disabling = true) {
+			_disableCurrent = disabling;
+		}
 	};
 
 	using MultiSelectFunction = std::function<void(int)>;
@@ -65,6 +72,8 @@ namespace fw {
 		}
 
 		bool isActive() const { return _active; }
+
+		void setActive(bool active) { _active = active; }
 	};
 
 	class Select : public MenuItemBase {

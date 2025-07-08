@@ -7,13 +7,16 @@
 
 #include "foundation/FsUtil.h"
 #include "foundation/SolUtil.h"
+#include "foundation/StlUtil.h"
 
 #include "core/FileManager.h"
+#include "core/GlobalSettings.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
 #include "core/System.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
+#include "audio/AudioManager.h"
 
 #include "sameboy/SameBoySystem.h"
 #include "sameboy/Constants.h"
@@ -23,7 +26,7 @@ using namespace rp;
 void loadRomDialog(Project& project, SystemPtr system) {
 	std::vector<std::string> files;
 
-	if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER }, false)) {
+	if (fw::FileDialog::openFile(files, { ROM_FILTER }, false)) {
 		LoadConfig loadConfig = LoadConfig{
 			.desc = {
 				.paths = {
@@ -53,7 +56,7 @@ void loadRomDialog(Project& project, SystemPtr system) {
 void loadSavDialog(Project& project, SystemPtr system) {
 	std::vector<std::string> files;
 
-	if (fw::FileDialog::basicFileOpen(nullptr, files, { SAV_FILTER }, false)) {
+	if (fw::FileDialog::openFile(files, { SAV_FILTER }, false)) {
 		LoadConfig config{
 			.sramBuffer = std::make_shared<fw::Uint8Buffer>()
 		};
@@ -82,7 +85,7 @@ bool saveProject(Project& project, FileManager& fileManager, bool forceDialog) {
 	}
 
 	if (forceDialog) {
-		if (!fw::FileDialog::basicFileSave(nullptr, path, { PROJECT_FILTER })) {
+		if (!fw::FileDialog::saveFile(path, { PROJECT_FILTER })) {
 			return false;
 		}
 	}
@@ -109,7 +112,7 @@ bool saveSram(Project& project, SystemPtr system, bool forceDialog) {
 	}
 
 	if (forceDialog) {
-		if (!fw::FileDialog::basicFileSave(nullptr, path, { SAV_FILTER })) {
+		if (!fw::FileDialog::saveFile(path, { SAV_FILTER })) {
 			return false;
 		}
 	}
@@ -133,7 +136,7 @@ bool saveSram(Project& project, SystemPtr system, bool forceDialog) {
 bool saveState(Project& project, SystemPtr system) {
 	std::string path;
 
-	if (!fw::FileDialog::basicFileSave(nullptr, path, { STATE_FILTER })) {
+	if (!fw::FileDialog::saveFile(path, { STATE_FILTER })) {
 		return false;
 	}
 
@@ -168,6 +171,116 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemPt
 	return true;
 }
 
+void MenuBuilder::projectMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system) {
+	root
+		.subMenu("Add System")
+			.action("Duplicate Current", [&system, &fileManager, &project]() {
+				SystemDesc desc = system.getDesc();
+				desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
+				project.duplicateSystem(system.getId()/*, desc*/);
+			})
+			.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
+			.parent()
+		.action("Remove System", [&project, &system]() {
+			if (project.getSystems().size() > 1) {
+				project.removeSystem(system.getId());
+			}
+		}, project.getSystems().size() > 1)
+		.separator()
+		.action("New", [&project]() { project.clear(); })
+		.action("Load...", [&fileManager, &project](fw::MenuContext& ctx) {
+			ctx.retain();
+
+			std::vector<std::string> files;
+			if (fw::FileDialog::openFile(files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
+				LoaderUtil::handleLoad(files, fileManager, project);
+				ctx.close();
+			}
+		})
+		.action("Save", [&fileManager, &project]() {
+			if (saveProject(project, fileManager, false)) {
+				spdlog::info("Project saved successfully");
+			} else {
+				spdlog::error("Failed to save project");
+			}
+		})
+		.action("Save As...", [&fileManager, &project]() {
+			if (saveProject(project, fileManager, true)) {
+				spdlog::info("Project saved successfully");
+			} else {
+				spdlog::error("Failed to save project");
+			}
+		})
+		.action("Export all ROMs + SAVs", [&project]() {
+			fw::Uint8Buffer target;
+			if (ProjectExporter::exportRomsAndSavs(project, target)) {
+				fw::FileDialog::saveFileData(target, { ZIP_FILTER }, project.getName() + ".zip");
+			}
+		})
+		.separator()
+		.multiSelect("Zoom", { "1x", "2x", "3x", "4x", "5x", "6x" }, &project.getState().settings.zoom)
+		.multiSelect("Layout", { "Auto", "Row", "Column", "Grid" }, (int)project.getState().settings.layout, [&project](int layout) {
+			project.getState().settings.layout = (SystemLayout)layout;
+		})
+		.multiSelect("MIDI", { "Send To All", "Four Channels Per Instance", "One Channel Per Instance" }, &project.getState().settings.midiRouting)
+		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &project.getState().settings.audioRouting);
+}
+
+void MenuBuilder::systemMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
+	root
+		.select("Game Link", system->getGameLink(), [system](bool val) { system->setGameLink(val); })
+		.separator()
+		.action("Load ROM...", [&project]() { loadRomDialog(project, nullptr); })
+		.action("Reset", []() {})
+		.separator()
+		.action("Clear SRAM", []() {})
+		.action("Save SRAM", []() {})
+		.action("Save SRAM As...", []() {})
+		.separator()
+		.action("Clear State", []() {})
+		.action("Save State", []() {})
+		.action("Save State as...", []() {});
+}
+
+void MenuBuilder::settingsMenu(fw::Menu& root, FileManager& fileManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager) {
+#ifndef RP_WEB
+	std::vector<std::string> audioDevices;
+	audioManager.getDeviceNames(audioDevices);
+
+	std::string activeAudioDeviceName = audioManager.getActiveDeviceName();
+	spdlog::info("Active audio device: {}", activeAudioDeviceName);
+
+	int32 audioDevice = fw::StlUtil::getVectorIndex(audioDevices, activeAudioDeviceName);
+	if (audioDevice < 0) {
+		audioDevice = 0; // Default to first device if not found
+	}
+
+	settings.audioDeviceId = (uint32)audioDevice;
+
+	root
+		.subMenu("Audio")
+			.multiSelect("Device", audioDevices, audioDevice, [&audioManager, &settings](int v) {
+				std::vector<std::string> audioDevices;
+				audioManager.getDeviceNames(audioDevices);
+
+				settings.audioDeviceId = (uint32)v;
+				settings.audioDeviceName = audioDevices[v];
+			})
+			.action("Apply", [&](fw::MenuContext& ctx) {
+				audioManager.setAudioDevice((uint32)settings.audioDeviceId);
+				ctx.retain();
+			})
+		.parent()
+		.separator();
+#endif
+
+	root
+		.multiSelect("Keyboard", { "Default" }, 0, [](int idx) {})
+		.multiSelect("Pad", { "Default" }, 0, [](int idx) {})
+		.separator()
+		.action("Open Settings Folder", []() {});
+}
+
 void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
 	std::vector<RecentFilePath> paths;
 	fileManager.loadRecent(paths);
@@ -175,7 +288,7 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Proje
 	for (const RecentFilePath& path : paths) {
 		root.action(path.name, [p = path, &fileManager, &project, system]() {
 			spdlog::info("Loading {}", p.path.string());
-			
+
 			if (p.type == "project") {
 				LoaderUtil::handleLoad(std::vector<std::string> { p.path.string() }, fileManager, project);
 			} else {
@@ -185,7 +298,7 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Proje
 			/*if (system) {
 				handleSystemLoad(p.path, "", system);
 			} else {
-				
+
 			}*/
 		});
 	}
@@ -217,7 +330,7 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 			ctx.retain();
 
 			std::vector<std::string> files;
-			if (fw::FileDialog::basicFileOpen(nullptr, files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
+			if (fw::FileDialog::openFile(files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
 				LoaderUtil::handleLoad(files, fileManager, project);
 				ctx.close();
 			}
@@ -237,7 +350,7 @@ void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager& fileManager, Proje
 		.action("All ROMs + SAVs", [&project]() {
 			fw::Uint8Buffer target;
 			if (ProjectExporter::exportRomsAndSavs(project, target)) {
-				fw::FileDialog::fileSaveData(nullptr, target, { ZIP_FILTER }, project.getName() + ".zip");
+				fw::FileDialog::saveFileData(target, { ZIP_FILTER }, project.getName() + ".zip");
 			}
 		})
 		.parent();

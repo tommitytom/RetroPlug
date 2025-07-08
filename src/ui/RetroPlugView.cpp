@@ -12,6 +12,7 @@
 
 #include "core/Events.h"
 #include "core/FileManager.h"
+#include "core/GlobalSettings.h"
 #include "core/Project.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
@@ -46,10 +47,8 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_typeRegistry(typeRegistry),
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus)
-{
-	std::string name = "RetroPlug v";
-	name += RP_VERSION;
-	setName(name);
+{	
+	setName(fmt::format("RetroPlug v{}", RP_VERSION));
 }
 
 template <typename T>
@@ -151,6 +150,7 @@ void RetroPlugView::onInitialize() {
 
 	_fileManager = &this->createState<FileManager>();
 	this->createState(entt::forward_as_any(_project));
+	this->createState<GlobalSettings>();
 
 	initViews();
 

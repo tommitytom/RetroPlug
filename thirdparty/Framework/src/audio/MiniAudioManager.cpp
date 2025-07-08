@@ -169,6 +169,15 @@ bool MiniAudioManager::start() {
 	return true;
 }
 
+std::string MiniAudioManager::getActiveDeviceName() {
+	ma_device_info info;
+	if (ma_device_get_info(&_state->device, ma_device_type_playback, &info) != MA_SUCCESS) {
+		return "";
+	}
+
+	return info.name;
+}
+
 void MiniAudioManager::stop() {
 	ma_device_uninit(&_state->device); // This will stop the device so no need to do that manually.
 }

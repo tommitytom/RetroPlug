@@ -19,7 +19,7 @@ namespace fw::StlUtil {
 	template <typename T>
 	static int32 getVectorIndex(const std::vector<T>& vec, const T& item) {
 		for (size_t i = 0; i < vec.size(); ++i) {
-			if (&vec[i] == &item) {
+			if (vec[i] == item) {
 				return (int32)i;
 			}
 		}
