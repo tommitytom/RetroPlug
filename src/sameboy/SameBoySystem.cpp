@@ -292,8 +292,8 @@ void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
 	}
 }
 
-void processButtons(const std::vector<ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
-	for (const ButtonStream<8>&stream : source) {
+void processButtons(const std::vector<fw::ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
+	for (const fw::ButtonStream<8>&stream : source) {
 		for (size_t i = 0; i < stream.pressCount; ++i) {
 			int offset = 0;
 			if (target.size() > 0) {

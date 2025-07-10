@@ -91,7 +91,7 @@ void LsdjRefresher::refresh() {
 		dir2 = fw::ButtonType::Down;
 	}
 
-	ButtonStreamWriter<(int)fw::ButtonType::MAX, 8> writer;
+	fw::ButtonStreamWriter<(int)fw::ButtonType::MAX, 8> writer;
 	writer.setDefaultDelay(40);
 	writer
 		.holdDuration((int)fw::ButtonType::Select, 40)

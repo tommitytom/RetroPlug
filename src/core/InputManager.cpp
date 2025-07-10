@@ -43,8 +43,15 @@ namespace rp {
 		s.new_enum<fw::PadButtonType>("Pad", fw::PadButtonTypeUtil::Items);
 		s.new_enum<fw::VirtualKey>("Key", fw::VirtualKeyUtil::Items);
 
-		s.new_usertype<System>("System",
-			"setButtonState", &System::setButtonState
+		s.new_usertype<fw::ButtonWriter>("ButtonStream",
+			"hold", &fw::ButtonWriter::hold,
+			"release", &fw::ButtonWriter::release,
+			"releaseAll", &fw::ButtonWriter::releaseAll,
+			"delay", &fw::ButtonWriter::delay,
+			"press", &fw::ButtonWriter::press,
+			"holdDuration", &fw::ButtonWriter::holdDuration,
+			"releaseDuration", &fw::ButtonWriter::releaseDuration,
+			"releaseAllDuration", &fw::ButtonWriter::releaseAllDuration
 		);
 
 		s.script("require('InputConfigParser')");
@@ -82,31 +89,11 @@ namespace rp {
 		return false;
 	}
 
-	bool InputManager::processGlobalButton(fw::ButtonType button, bool down) {
-		if (!_valid) return false;
-		sol::function func = (*_lua)["processButton"];
-		if (func.valid()) {
-			func(button, down);
-			return true;
-		}
-		return false;
-	}
-
-	bool InputManager::processKey(fw::VirtualKey key, bool down, System* system) {
+	bool InputManager::processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons) {
 		if (!_valid) return false;
 		sol::function func = (*_lua)["processKey"];
 		if (func.valid()) {
-			func(key, down, system);
-			return true;
-		}
-		return false;
-	}
-	
-	bool rp::InputManager::processGlobalKey(fw::VirtualKey key, bool down) {
-		if (!_valid) return false;
-		sol::function func = (*_lua)["processGlobalKey"];
-		if (func.valid()) {
-			func(key, down);
+			func(key, down, buttons);
 			return true;
 		}
 		return false;

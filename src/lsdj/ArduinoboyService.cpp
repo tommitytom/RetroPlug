@@ -155,8 +155,8 @@ namespace rp {
 		if (settings.autoPlay) {
 			// TODO: Determine if lsdj is already playing
 
-			ButtonStream<8> presses;
-			presses.presses[0] = StreamButtonPress{ (int)fw::ButtonType::Start, true, 30 };
+			fw::ButtonStream<8> presses;
+			presses.presses[0] = fw::StreamButtonPress{ (int)fw::ButtonType::Start, true, 30 };
 			system.getIo()->input.buttons.push_back(presses);
 		}
 	}

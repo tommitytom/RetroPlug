@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 #include <refl.hpp>
 
+#include "foundation/ButtonStream.h"
 #include "foundation/Input.h"
 #include "foundation/Math.h"
 #include "foundation/Object.h"
@@ -448,6 +449,8 @@ namespace fw {
 		virtual void onHotReload() {}
 
 		virtual bool onCloseWindowRequest(CloseWindowContext& ctx) { return false; }
+
+		virtual void processButtons(const ButtonWriter& stream) {}
 
 		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;

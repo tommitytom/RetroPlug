@@ -102,7 +102,7 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-local function handleInput(mapGroup, key, down, pressed, hooks, system)
+local function handleInput(mapGroup, key, down, pressed, hooks, buttons)
 	local handled = false
 	for _, map in ipairs(mapGroup) do
 		-- Do a basic map from key to button
@@ -110,11 +110,11 @@ local function handleInput(mapGroup, key, down, pressed, hooks, system)
 		if found ~= nil then
 			if type(found) == "table" then
 				if found.func ~= nil then
-					if found.func(down, system) ~= false then
+					if found.func(down, buttons) ~= false then
 						handled = true
 					end
 				end
-			elseif system ~= nil then
+			elseif buttons ~= nil then
 				for _, fn in ipairs(hooks) do
 					if fn(found, down) ~= false then
 						handled = true
@@ -122,7 +122,12 @@ local function handleInput(mapGroup, key, down, pressed, hooks, system)
 				end
 
 				if handled == false then
-					system:setButtonState(found, down)
+					log.info("Setting button state for " .. found .. " to " .. tostring(down))
+					if down == true then
+						buttons:holdDuration(found, 0)
+					else
+						buttons:releaseDuration(found, 0)
+					end
 					handled = true
 				end
 			end
@@ -165,7 +170,7 @@ local function tableRemoveElement(tab, el)
 	end
 end
 
-function processKey(key, down, system)
+function processKey(key, down, buttons)
 	if down == true then
 		table.insert(keysPressed, key)
 	else
@@ -174,8 +179,8 @@ function processKey(key, down, system)
 
 	local handled = handleInput(parsed.key.global, key, down, keysPressed, buttonHooks)
 
-	if handled ~= true and system ~= nil then
-		handled = handleInput(parsed.key.system, key, down, keysPressed, buttonHooks, system)
+	if handled ~= true and buttons ~= nil then
+		handled = handleInput(parsed.key.system, key, down, keysPressed, buttonHooks, buttons)
 	end
 
 	return handled

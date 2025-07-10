@@ -142,9 +142,9 @@ namespace rp {
 
 		void onRender(fw::Canvas& canvas) override;
 
-		bool onKey(const fw::KeyEvent& ev) override;
-
 		bool onMouseButton(fw::MouseButton button, bool down, fw::Point position) override { return true; }
+
+		void processButtons(const fw::ButtonWriter& stream) override;
 
 		void setMenu(fw::MenuPtr menu);
 

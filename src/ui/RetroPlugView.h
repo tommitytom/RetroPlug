@@ -44,6 +44,7 @@ namespace rp {
 		IoMessageBus& _ioMessageBus;
 		const fw::TypeRegistry& _typeRegistry;
 		InputManager _inputManager;
+		fw::ButtonWriter _buttons;
 
 		//std::shared_ptr<RetroPlugProcessor> _audioProcessor;
 

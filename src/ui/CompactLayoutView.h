@@ -34,7 +34,7 @@ namespace rp {
 			return false;
 		}
 
-		fw::ViewIndex getSelectedSystem() const {
+		fw::ViewPtr getSelected() const {
 			return _gridOverlay->getSelected();
 		}
 

@@ -41,23 +41,17 @@ namespace rp {
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		//bool onKey(const fw::KeyEvent& ev) override;
-
-		bool onButton(const fw::ButtonEvent& ev) override;
-
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override {
  			TextureView::onRender(canvas);
 		}
 
-		/*const fw::Image& getFrameBuffer() const {
-			return _frameBuffer;
-		}*/
-
 		uint32 getVersion() const {
 			return _version;
 		}
+
+		void processButtons(const fw::ButtonWriter& stream);
 
 	private:
 		void buildMenu(fw::Menu& target);

@@ -4,7 +4,7 @@
 #include <array>
 #include "foundation/Input.h"
 
-namespace rp {
+namespace fw {
 	struct StreamButtonPress {
 		int button;
 		bool down;
@@ -108,5 +108,5 @@ namespace rp {
 		}*/
 	};
 
-	using GameboyButtonStream = ButtonStreamWriter<static_cast<int>(fw::ButtonType::MAX), 32>;
+	using ButtonWriter = ButtonStreamWriter<static_cast<int>(fw::ButtonType::MAX), 8>;
 }

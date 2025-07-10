@@ -11,11 +11,11 @@
 #include <moodycamel/readerwriterqueue.h>
 #include <moodycamel/concurrentqueue.h>
 
+#include "foundation/ButtonStream.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/Image.h"
 #include "foundation/Types.h"
 
-#include "core/ButtonStream.h"
 #include "core/FixedQueue.h"
 #include "core/Forward.h"
 #include "core/MemoryAccessor.h"
@@ -55,7 +55,7 @@ namespace rp {
 
 		struct Input {
 			FixedQueue<TimedByte, 16> serial;
-			std::vector<ButtonStream<8>> buttons;
+			std::vector<fw::ButtonStream<8>> buttons;
 			std::vector<MemoryPatch> patches;
 
 			void reset() {
@@ -82,7 +82,7 @@ namespace rp {
 				input.serial.tryPush(other.input.serial.pop());
 			}
 
-			for (ButtonStream<8>& buttonStream : other.input.buttons) {
+			for (const fw::ButtonStream<8>& buttonStream : other.input.buttons) {
 				input.buttons.push_back(buttonStream);
 			}
 
@@ -196,7 +196,7 @@ namespace rp {
 		SystemType _type = INVALID_SYSTEM_TYPE;
 		SystemDesc _desc;
 
-		std::array<bool, static_cast<int>(fw::ButtonType::MAX)> _buttonState = { false };
+		//std::array<bool, static_cast<int>(fw::ButtonType::MAX)> _buttonState = { false };
 		std::vector<ModelPtr> _models;
 		std::vector<SystemServicePtr> _services;
 
@@ -248,15 +248,20 @@ namespace rp {
 
 		virtual SystemStateOffsets getStateOffsets() const { return SystemStateOffsets(); }
 
-		void setButtonState(fw::ButtonType button, bool down) {
+		/*void setButtonState(fw::ButtonType button, bool down) {
 			_buttonState[(int)button] = down;
 
 			if (_stream) {
-				_stream->input.buttons.push_back(ButtonStream<8> {
-					.presses = StreamButtonPress{ .button = (int)button, .down = down, .duration = 0 },
+				_stream->input.buttons.push_back(fw::ButtonStream<8> {
+					.presses = fw::StreamButtonPress{ .button = (int)button, .down = down, .duration = 0 },
 					.pressCount = 1
 				});
 			}
+		}*/
+
+		std::vector<fw::ButtonStream<8>>& getButtons() {
+			assert(_stream);
+			return _stream->input.buttons;
 		}
 
 		fw::DimensionU32 getResolution() const {
@@ -315,9 +320,9 @@ namespace rp {
 			_desc = desc;
 		}
 
-		const std::array<bool, (int)fw::ButtonType::MAX>& getButtonState() const {
+		/*const std::array<bool, (int)fw::ButtonType::MAX>& getButtonState() const {
 			return _buttonState;
-		}
+		}*/
 
 		const fw::Image& getFrameBuffer() const {
 			return _frameBuffer;

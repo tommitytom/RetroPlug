@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <sol/forward.hpp>
 #include "foundation/Input.h"
+#include "foundation/ButtonStream.h"
 
 namespace rp {
 	class System;
@@ -22,13 +23,9 @@ namespace rp {
 
 		std::vector<std::string> getAvailableConfigs() const;
 
-		bool processKey(fw::VirtualKey key, bool down, System* system);
-
-		bool processGlobalKey(fw::VirtualKey key, bool down);
+		bool processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons);
 
 		bool processButton(fw::ButtonType button, bool down);
-
-		bool processGlobalButton(fw::ButtonType button, bool down);
 
 		bool isValid() const {
 			return _valid;

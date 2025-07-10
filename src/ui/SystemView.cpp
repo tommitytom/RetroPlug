@@ -55,23 +55,15 @@ bool SystemView::onDrop(const std::vector<std::string>& paths) {
 	return true;
 }*/
 
-bool SystemView::onButton(const fw::ButtonEvent& ev) {
-	SystemIoPtr io = _system->getIo();
-
-	if (io) {
-		io->input.buttons.push_back(ButtonStream<8>{
-			.presses = { (int)ev.button, ev.down },
-			.pressCount = 1
-		});
-	}
-
-	return true;
-}
-
 void SystemView::onUpdate(f32 delta) {
 	if (_system->getFrameBuffer().dimensions() != fw::Dimension::zero) {
 		setImage(_system->getFrameBuffer());
 	}
+}
+
+void SystemView::processButtons(const fw::ButtonWriter& stream) {
+	spdlog::info("Buttons: {}, {}", stream.data().presses[0].button, stream.data().presses[0].down);
+	_system->getButtons().push_back(stream.data());
 }
 
 void SystemView::buildMenu(fw::Menu& target) {

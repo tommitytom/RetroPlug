@@ -3,7 +3,7 @@
 #include <sol/sol.hpp>
 #include "foundation/Input.h"
 #include "foundation/SolUtil.h"
-#include "core/ButtonStream.h"
+#include "foundation/ButtonStream.h"
 
 namespace rp {
 	class InputMapper {

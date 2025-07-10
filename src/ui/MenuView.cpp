@@ -94,68 +94,71 @@ void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 	}
 }
 
-bool MenuView::onKey(const fw::KeyEvent& ev) {
-	switch (ev.key) {
-	case fw::VirtualKey::LeftArrow:
-		if (ev.down) {
-			fw::MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
-				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
-				multiSelect->prevItem();
-				multiSelect->getFunction()(multiSelect->getValue());
+void MenuView::processButtons(const fw::ButtonWriter& stream) {
+	for (size_t i = 0; i < stream.getCount(); ++i) {
+		const fw::StreamButtonPress& ev = stream.data().presses[i];
+		fw::ButtonType button = static_cast<fw::ButtonType>(ev.button);
+
+		switch (button) {
+		case fw::ButtonType::Left:
+			if (ev.down) {
+				fw::MenuItemBase* menuItem = getHighlighted();
+				if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+					fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
+					multiSelect->prevItem();
+					multiSelect->getFunction()(multiSelect->getValue());
+				}
 			}
-		}
 
-		return true;
+			break;
 
-	case fw::VirtualKey::RightArrow:
-		if (ev.down) {
-			fw::MenuItemBase* menuItem = getHighlighted();
-			if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
-				fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
-				multiSelect->nextItem();
-				multiSelect->getFunction()(multiSelect->getValue());
+		case fw::ButtonType::Right:
+			if (ev.down) {
+				fw::MenuItemBase* menuItem = getHighlighted();
+				if (menuItem->getType() == fw::MenuItemType::MultiSelect) {
+					fw::MultiSelect* multiSelect = menuItem->as<fw::MultiSelect>();
+					multiSelect->nextItem();
+					multiSelect->getFunction()(multiSelect->getValue());
+				}
 			}
+
+			break;
+
+		case fw::ButtonType::Down:
+			if (ev.down) {
+				moveCursorDown();
+			}
+
+			break;
+		case fw::ButtonType::Up:
+			if (ev.down) {
+				moveCursorUp();
+			}
+
+			break;
+
+		case fw::ButtonType::A:
+			if (ev.down) {
+				activateHighlighted();
+			}
+
+			break;
+
+		case fw::ButtonType::Start:
+			if (ev.down) {
+				activateHighlighted();
+			}
+
+			break;
+
+		case fw::ButtonType::B:
+			if (_escCloses && ev.down) {
+				this->remove();
+			}
+
+			break;
 		}
-
-		return true;
-
-	case fw::VirtualKey::DownArrow:
-		if (ev.down) {
-			moveCursorDown();
-		}
-
-		return true;
-	case fw::VirtualKey::UpArrow:
-		if (ev.down) {
-			moveCursorUp();
-		}
-
-		return true;
-
-	case fw::VirtualKey::Enter:
-		if (ev.down) {
-			activateHighlighted();
-		}
-
-		return true;
-
-	case fw::VirtualKey::Space:
-		if (ev.down) {
-			activateHighlighted();
-		}
-
-		return true;
-
-	case fw::VirtualKey::Esc:
-		if (_escCloses && ev.down) {
-			this->remove();
-		}
-
-		return true;
 	}
-
-	return false;
 }
 
 void MenuView::setMenu(fw::MenuPtr menu) {

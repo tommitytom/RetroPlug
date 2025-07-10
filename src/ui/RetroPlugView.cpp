@@ -157,15 +157,17 @@ void RetroPlugView::onInitialize() {
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
-	fw::ViewIndex selected = _compactLayout->getSelectedSystem();
-	std::vector<SystemPtr> systems = _project.getSystemManager().getSystems();
-	SystemPtr system;
+	fw::ViewPtr selected = _compactLayout->getSelected();
 
-	if (selected < systems.size()) {
-		system = systems[selected];
+	if (!_inputManager.processKey(ev.key, ev.down, _buttons)) {
+		return false;
 	}
 
-	return _inputManager.processKey(ev.key, ev.down, system ? system.get() : nullptr);
+	selected->processButtons(_buttons);
+
+	_buttons.clear();
+
+	return true;
 }
 
 void RetroPlugView::setupEventHandlers() {

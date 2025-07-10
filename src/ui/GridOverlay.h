@@ -35,8 +35,12 @@ namespace rp {
 			updateLayout();
 		}
 
-		fw::ViewIndex getSelected() const {
-			return _selected;
+		fw::ViewPtr getSelected() const {	
+			if (_selected < _grid->getChildren().size()) {
+				return _grid->getChild(_selected);
+			}
+
+			return nullptr;
 		}
 
 		void incrementSelection() {
