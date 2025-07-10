@@ -1,19 +1,9 @@
 #pragma once
 
-//#include <entt/meta/container.hpp>
-
-#include "core/Project.h"
-#include "core/ProxySystem.h"
-#include "core/RetroPlugProcessor.h"
-
-#include "ui/RetroPlugView.h"
-#include "ui/UiReflect.h"
-
+#include "foundation/TypeRegistry.h"
+#include "core/SystemFactory.h"
+#include "core/System.h"
 #include "application/Application.h"
-
-#include "sameboy/SameBoyFactory.h"
-#include "lsdj/LsdjServiceProvider.h"
-#include "core/MgbService.h"
 
 using namespace rp;
 

@@ -1,6 +1,5 @@
 #pragma once
 
-//#include <lsdj/sav.h>
 #include <algorithm>
 #include <liblsdj/liblsdj/include/lsdj/sav.h>
 #include <liblsdj/liblsdj/include/lsdj/chain.h>

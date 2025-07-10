@@ -17,6 +17,8 @@ namespace rp {
 		std::filesystem::path _recentPath;
 
 	public:
+		static std::filesystem::path getContentPath();
+
 		FileManager();
 		~FileManager() {}
 

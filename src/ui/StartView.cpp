@@ -5,8 +5,9 @@
 #include "foundation/FsUtil.h"
 #include "foundation/SolUtil.h"
 
+#include "core/Constants.h"
 #include "core/FileManager.h"
-#include "core/GlobalSettings.h"
+#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
 #include "ui/FileDialog.h"

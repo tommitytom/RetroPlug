@@ -41,7 +41,7 @@ namespace rp {
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		bool onKey(const fw::KeyEvent& ev) override;
+		//bool onKey(const fw::KeyEvent& ev) override;
 
 		bool onButton(const fw::ButtonEvent& ev) override;
 

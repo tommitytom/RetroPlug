@@ -5,7 +5,9 @@
 #include <sol/sol.hpp>
 
 #include "foundation/DataBuffer.h"
+#include "foundation/ResourceReloader.h"
 #include "audio/AudioManager.h"
+#include "core/InputManager.h"
 #include "core/ProjectState.h"
 #include "core/RetroPlugProcessor.h"
 #include "core/System.h"
@@ -14,7 +16,6 @@
 #include "ui/TreeView.h"
 #include "ui/View.h"
 #include "ui/ObjectInspectorView.h"
-#include "foundation/ResourceReloader.h"
 
 namespace rp {
 	enum class ThreadTarget {
@@ -42,6 +43,7 @@ namespace rp {
 
 		IoMessageBus& _ioMessageBus;
 		const fw::TypeRegistry& _typeRegistry;
+		InputManager _inputManager;
 
 		//std::shared_ptr<RetroPlugProcessor> _audioProcessor;
 
@@ -59,7 +61,7 @@ namespace rp {
 		//std::vector<SystemIoPtr> _ioCollection;
 		size_t _totalIoAllocated = 0;
 
-		GlobalConfig _config;
+		//GlobalConfig _config;
 
 		f32 _stateFetchInterval = 1.0f / 60.0f;
 		f32 _nextStateFetch = _stateFetchInterval;

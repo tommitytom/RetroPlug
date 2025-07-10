@@ -4,8 +4,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <sol/forward.hpp>
-
 #include "core/Events.h"
 #include "core/ModelFactory.h"
 #include "core/ProjectState.h"
@@ -17,7 +15,7 @@
 namespace rp {
 	class Project {
 	private:
-		GlobalConfig _config;
+		RetroPlugConfig _config;
 		ProjectState _state;
 
 		const fw::TypeRegistry& _typeRegistry;
@@ -25,7 +23,6 @@ namespace rp {
 		ConcurrentPoolAllocator<SystemIo>& _ioAllocator;
 		SystemManager _systemManager;
 
-		sol::state* _lua = nullptr;
 		int32 _version = 0;
 		SystemId _nextId = 1;
 
@@ -95,13 +92,13 @@ namespace rp {
 							model->setRequiresSave(false);
 						}
 					}
-				}*/	
+				}*/
 
 				if (_requiresSave && _state.settings.autoSave) {
 					save();
 					_requiresSave = false;
 				}
-			}		
+			}
 		}
 
 		SystemPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
@@ -130,7 +127,7 @@ namespace rp {
 			return _systemManager;
 		}
 
-		const GlobalConfig& getGlobalConfig() const {
+		const RetroPlugConfig& getGlobalConfig() const {
 			return _config;
 		}
 	};

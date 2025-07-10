@@ -72,7 +72,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 			SystemDesc desc{
 				.paths = { .romPath = hashedRomPath.string(), .sramPath = sramPath },
-				.settings = project.getGlobalConfig().systemSettings
+				.settings = project.getGlobalConfig().system
 			};
 
 			SystemPtr system = project.addSystem(pathPair.second, desc);

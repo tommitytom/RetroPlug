@@ -1,7 +1,9 @@
 #pragma once
 
+#include <initializer_list>
 #include <string_view>
 #include <unordered_map>
+
 #include "foundation/Math.h"
 
 namespace fw {
@@ -53,7 +55,7 @@ namespace fw {
 	};
 
 	namespace ButtonTypeUtil {
-		const std::unordered_map<std::string_view, ButtonType> Lookup = {
+		const std::initializer_list<std::pair<std::string_view, ButtonType>> Items = {
 			{ "Left", ButtonType::Left },
 			{ "Up", ButtonType::Up },
 			{ "Right", ButtonType::Right },
@@ -63,6 +65,8 @@ namespace fw {
 			{ "Start", ButtonType::Start },
 			{ "Select", ButtonType::Select }
 		};
+
+		const std::unordered_map<std::string_view, ButtonType> Lookup = {Items.begin(), Items.end()};
 
 		static ButtonType fromString(std::string_view name) {
 			auto found = Lookup.find(name);
@@ -74,17 +78,125 @@ namespace fw {
 		}
 
 		static std::string_view toString(ButtonType button) {
-			switch (button) {
-			case ButtonType::Left: return "Left";
-			case ButtonType::Up: return "Up";
-			case ButtonType::Right: return "Right";
-			case ButtonType::Down: return "Down";
-			case ButtonType::A: return "A";
-			case ButtonType::B: return "B";
-			case ButtonType::Start: return "Start";
-			case ButtonType::Select: return "Select";
-			default: return "";
+			for (const auto& [name, type] : Lookup) {
+				if (type == button) {
+					return name;
+				}
 			}
+			return "";
+		}
+	}
+
+	enum class PadButtonType : unsigned int {
+		//Axis converted to button presses
+		LeftStickLeft,
+		LeftStickRight,
+		LeftStickDown,
+		LeftStickUp,
+		RightStickLeft,
+		RightStickRight,
+		RightStickDown,
+		RightStickUp,
+
+		//Actual button presses
+		Start,
+		Select,
+		Left,
+		Right,
+		Up,
+		Down,
+		A,
+		B,
+		X,
+		Y,
+		L1,
+		R1,
+		L2,
+		R2,
+		L3,
+		R3,
+		Home,
+		Button17,
+		Button18,
+		Button19,
+		Button20,
+		Button21,
+		Button22,
+		Button23,
+		Button24,
+		Button25,
+		Button26,
+		Button27,
+		Button28,
+		Button29,
+		Button30,
+		Button31,
+
+		COUNT
+	};
+
+	namespace PadButtonTypeUtil {
+		const std::initializer_list<std::pair<std::string_view, PadButtonType>> Items = {
+			{ "LeftStickLeft", PadButtonType::LeftStickLeft },
+			{ "LeftStickRight", PadButtonType::LeftStickRight },
+			{ "LeftStickDown", PadButtonType::LeftStickDown },
+			{ "LeftStickUp", PadButtonType::LeftStickUp },
+			{ "RightStickLeft", PadButtonType::RightStickLeft },
+			{ "RightStickRight", PadButtonType::RightStickRight },
+			{ "RightStickDown", PadButtonType::RightStickDown },
+			{ "RightStickUp", PadButtonType::RightStickUp },
+			{ "Start", PadButtonType::Start },
+			{ "Select", PadButtonType::Select },
+			{ "Left", PadButtonType::Left },
+			{ "Right", PadButtonType::Right },
+			{ "Up", PadButtonType::Up },
+			{ "Down", PadButtonType::Down },
+			{ "A", PadButtonType::A },
+			{ "B", PadButtonType::B },
+			{ "X", PadButtonType::X },
+			{ "Y", PadButtonType::Y },
+			{ "L1", PadButtonType::L1 },
+			{ "R1", PadButtonType::R1 },
+			{ "L2", PadButtonType::L2 },
+			{ "R2", PadButtonType::R2 },
+			{ "L3", PadButtonType::L3 },
+			{ "R3", PadButtonType::R3 },
+			{ "Home", PadButtonType::Home },
+			{ "Button17", PadButtonType::Button17 },
+			{ "Button18", PadButtonType::Button18 },
+			{ "Button19", PadButtonType::Button19 },
+			{ "Button20", PadButtonType::Button20 },
+			{ "Button21", PadButtonType::Button21 },
+			{ "Button22", PadButtonType::Button22 },
+			{ "Button23", PadButtonType::Button23 },
+			{ "Button24", PadButtonType::Button24 },
+			{ "Button25", PadButtonType::Button25 },
+			{ "Button26", PadButtonType::Button26 },
+			{ "Button27", PadButtonType::Button27 },
+			{ "Button28", PadButtonType::Button28 },
+			{ "Button29", PadButtonType::Button29 },
+			{ "Button30", PadButtonType::Button30 },
+			{ "Button31", PadButtonType::Button31 }
+		};
+
+		const std::unordered_map<std::string_view, PadButtonType> Lookup = { Items.begin(), Items.end() };
+
+		static PadButtonType fromString(std::string_view name) {
+			auto found = Lookup.find(name);
+			if (found != Lookup.end()) {
+				return found->second;
+			}
+
+			return PadButtonType::COUNT;
+		}
+
+		static std::string_view toString(PadButtonType button) {
+			for (const auto& [name, type] : Lookup) {
+				if (type == button) {
+					return name;
+				}
+			}
+			return "";
 		}
 	}
 
@@ -222,7 +334,7 @@ namespace fw {
 	};
 
 	namespace VirtualKeyUtil {
-		static const std::unordered_map<std::string_view, VirtualKey> Lookup = {
+		const std::initializer_list<std::pair<std::string_view, VirtualKey>> Items = {
 			{ "Backspace", VirtualKey::Backspace },
 			{ "Tab", VirtualKey::Tab },
 			{ "Clear", VirtualKey::Clear },
@@ -350,23 +462,24 @@ namespace fw {
 			{ "OemPeriod", VirtualKey::OemPeriod },
 		};
 
-		static VirtualKey fromString(std::string_view key) {
-			auto found = Lookup.find(key);
+		const std::unordered_map<std::string_view, VirtualKey> Lookup = { Items.begin(), Items.end() };
+
+		static VirtualKey fromString(std::string_view name) {
+			auto found = Lookup.find(name);
 			if (found != Lookup.end()) {
 				return found->second;
 			}
 
-			return VirtualKey::Unknown;
+			return VirtualKey::COUNT;
 		}
 
-		static std::string_view toString(VirtualKey idx) {
-			for (auto& key : Lookup) {
-				if (key.second == idx) {
-					return key.first;
+		static std::string_view toString(VirtualKey button) {
+			for (const auto& [name, type] : Lookup) {
+				if (type == button) {
+					return name;
 				}
 			}
-
-			return "Unknown";
+			return "";
 		}
 	}
 
@@ -425,46 +538,3 @@ namespace fw {
 		Point position;
 	};
 }
-
-#include "foundation/MathMeta.h"
-
-REFL_AUTO(
-	type(fw::MouseMoveEvent),
-	field(position)
-)
-
-REFL_AUTO(
-	type(fw::MouseEnterEvent),
-	field(position)
-)
-
-REFL_AUTO(
-	type(fw::MouseLeaveEvent)
-)
-
-REFL_AUTO(
-	type(fw::MouseFocusEvent)
-)
-
-REFL_AUTO(
-	type(fw::MouseBlurEvent)
-)
-
-REFL_AUTO(
-	type(fw::MouseButtonEvent),
-	field(button),
-	field(down),
-	field(position)
-)
-
-REFL_AUTO(
-	type(fw::KeyEvent),
-	field(action),
-	field(down),
-	field(key)
-)
-
-REFL_AUTO(
-	type(fw::CharEvent),
-	field(keyCode)
-)

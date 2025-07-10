@@ -18,14 +18,8 @@ namespace rp {
 	};
 
 	struct SystemSettings {
-		struct InputSettings {
-			std::string key;
-			std::string pad;
-		};
-
 		bool includeRom = true;
 		bool gameLink = false;
-		InputSettings input;
 
 		std::string serialized;
 		//std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;

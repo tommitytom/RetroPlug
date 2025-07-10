@@ -10,7 +10,7 @@
 #include "foundation/StlUtil.h"
 
 #include "core/FileManager.h"
-#include "core/GlobalSettings.h"
+#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
 #include "core/System.h"

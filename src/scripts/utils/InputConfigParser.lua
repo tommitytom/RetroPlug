@@ -1,7 +1,22 @@
-local class = require("class")
-local Action = require("Action")
 local log = require("log")
-local pathutil = require("pathutil")
+local inspect = require("inspect")
+
+Action = {}
+setmetatable(Action, {
+	__index = function(table, componentName)
+		local actionNameTable = {}
+		setmetatable(actionNameTable, {
+			__index = function(table, actionName)
+				return {
+					component = componentName,
+					action = actionName
+				}
+			end
+		})
+
+		return actionNameTable
+	end
+})
 
 -- Processes the data passed in by the user
 local function handleMapInput(target, config, map)
@@ -34,63 +49,152 @@ local function tableEmpty(tab)
 	return true
 end
 
-local function cleanData(data)
-	if data.config.name == nil then data.config.name = data.config.filename end
+parsed = {
+	config = {},
+	key = { system = {}, global = {} },
+	pad = { system = {}, global = {} }
+}
 
-	if tableEmpty(data.key.system) and tableEmpty(data.key.global) then
-		data.key = nil
+--Button = Button,
+--Key = Key,
+--Pad = Pad,
+--HostType = HostType,
+
+InputConfig = function(config) parsed.config = config or {} end
+KeyMap = function(config, map) handleMapInput(parsed.key.system, config, map) end
+PadMap = function(config, map) handleMapInput(parsed.pad.system, config, map) end
+GlobalKeyMap = function(config, map) handleMapInput(parsed.key.global, config, map) end
+GlobalPadMap = function(config, map) handleMapInput(parsed.pad.global, config, map) end
+
+function cleanData()
+	if parsed.config.name == nil then parsed.config.name = parsed.config.filename end
+
+	if tableEmpty(parsed.key.system) and tableEmpty(parsed.key.global) then
+		parsed.key = nil
 	else
-		data.key.filename = data.config.filename
+		parsed.key.filename = parsed.config.filename
 	end
 
-	if tableEmpty(data.pad.system) and tableEmpty(data.pad.global) then
-		data.pad = nil
+	if tableEmpty(parsed.pad.system) and tableEmpty(parsed.pad.global) then
+		parsed.pad = nil
 	else
-		data.pad.filename = data.config.filename
+		parsed.pad.filename = parsed.config.filename
+	end
+
+	log.info(inspect(parsed))
+end
+
+local function matchCombo(combos, pressed)
+	for combo, v in pairs(combos) do
+		if #combo == #pressed then
+			local match = true
+			for i = 1, #combo, 1 do
+				if combo[i] ~= pressed[i] then
+					match = false
+					break
+				end
+			end
+
+			if match == true then
+				return v
+			end
+		end
 	end
 end
 
-local function createEnv()
-	local parsed = {
-		config = {},
-		key = { system = {}, global = {} },
-		pad = { system = {}, global = {} }
-	}
+local function handleInput(mapGroup, key, down, pressed, hooks, system)
+	local handled = false
+	for _, map in ipairs(mapGroup) do
+		-- Do a basic map from key to button
+		local found = map.lookup[key]
+		if found ~= nil then
+			if type(found) == "table" then
+				if found.func ~= nil then
+					if found.func(down, system) ~= false then
+						handled = true
+					end
+				end
+			elseif system ~= nil then
+				for _, fn in ipairs(hooks) do
+					if fn(found, down) ~= false then
+						handled = true
+					end
+				end
 
-	local env = {
-		Action = Action,
+				if handled == false then
+					system:setButtonState(found, down)
+					handled = true
+				end
+			end
+		end
 
-		Button = Button,
-		Key = Key,
-		Pad = Pad,
-		HostType = HostType,
+		-- If the key is being pressed look for combos
+		if down == true then
+			local found = matchCombo(map.combos, pressed)
+			if found ~= nil and type(found) == "table" then
+				if found.func ~= nil then
+					if found.func(down, system) ~= false then
+						handled = true
+					end
+				end
+			end
+		else
+			-- TODO: Check for combos that have been released?
+		end
+	end
 
-		InputConfig = function(config) parsed.config = config or {} end,
-		KeyMap = function(config, map) handleMapInput(parsed.key.system, config, map) end,
-		PadMap = function(config, map) handleMapInput(parsed.pad.system, config, map) end,
-		GlobalKeyMap = function(config, map) handleMapInput(parsed.key.global, config, map) end,
-		GlobalPadMap = function(config, map) handleMapInput(parsed.pad.global, config, map) end
-	}
-
-	return {
-		parsed = parsed,
-		env = env
-	}
+	return handled
 end
 
-local InputConfig = class()
-function InputConfig:init()
+local keysPressed = {}
+local buttonsPressed = {}
+local buttonHooks = {}
+
+local function tableFind(tab, el)
+    for index, value in pairs(tab) do
+        if value == el then
+            return index
+        end
+	end
+end
+
+local function tableRemoveElement(tab, el)
+	local idx = tableFind(tab, el)
+	if idx ~= nil then
+		table.remove(tab, idx)
+	end
+end
+
+function processKey(key, down, system)
+	if down == true then
+		table.insert(keysPressed, key)
+	else
+		tableRemoveElement(keysPressed, key)
+	end
+
+	local handled = handleInput(parsed.key.global, key, down, keysPressed, buttonHooks)
+
+	if handled ~= true and system ~= nil then
+		handled = handleInput(parsed.key.system, key, down, keysPressed, buttonHooks, system)
+	end
+
+	return handled
+end
+
+--[[
+local InputConfig = {}
+function InputConfig.init()
 	self.configs = {}
 end
 
-function InputConfig:loadFromString(name, code)
+function InputConfig.loadFromString(name, code)
 	local env = createEnv()
 	local f, err = load(code, name, "t", env.env)
 
 	self:parseConfig(f, err, env.parsed, name, name)
 end
 
-function InputConfig:load(path)
+function InputConfig.load(path)
 	path = pathutil.clean(path)
 
 	local filename = pathutil.filename(path)
@@ -100,7 +204,7 @@ function InputConfig:load(path)
 	self:parseConfig(f, err, env.parsed, filename, path)
 end
 
-function InputConfig:parseConfig(f, err, parsed, filename, path)
+function InputConfig.parseConfig(f, err, parsed, filename, path)
 	if f ~= nil then
 		local ok, ret = pcall(f)
 
@@ -120,3 +224,4 @@ function InputConfig:parseConfig(f, err, parsed, filename, path)
 end
 
 return InputConfig
+]]

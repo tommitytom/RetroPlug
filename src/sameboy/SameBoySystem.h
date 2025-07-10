@@ -7,6 +7,7 @@
 #include "core/System.h"
 #include "core/ProxySystem.h"
 #include "audio/AudioBuffer.h"
+#include "sameboy/SameboyConfig.h"
 
 namespace rp {
 	const size_t PIXEL_WIDTH = 160;
@@ -14,17 +15,6 @@ namespace rp {
 	const size_t PIXEL_COUNT = (PIXEL_WIDTH * PIXEL_HEIGHT);
 	const size_t FRAME_BUFFER_SIZE = (PIXEL_COUNT * 4);
 	const size_t AUDIO_SCRATCH_SIZE = 44100;
-
-	enum class GameboyModel {
-		Auto,
-		DmgB,
-		//SgbNtsc,
-		//SgbPal,
-		//Sgb2,
-		CgbC,
-		CgbE,
-		Agb
-	};
 
 	struct OffsetButton {
 		int offset;

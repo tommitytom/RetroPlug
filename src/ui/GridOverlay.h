@@ -35,6 +35,10 @@ namespace rp {
 			updateLayout();
 		}
 
+		fw::ViewIndex getSelected() const {
+			return _selected;
+		}
+
 		void incrementSelection() {
 			_selected++;
 			_selected %= _grid->getChildren().size();

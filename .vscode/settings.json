@@ -83,7 +83,8 @@
 		"staticruntime",
 		"libdirs",
 		"removeplatforms",
-		"fw"
+		"fw",
+		"_consolePrint"
 	],
 	"files.associations": {
 		"*.h": "cpp",

@@ -20,7 +20,7 @@ namespace rp {
 		SystemManager _systemManager;
 
 		ProjectState _projectState;
-		GlobalConfig _config;
+		RetroPlugConfig _config;
 
 		const fw::TypeRegistry& _typeRegistry;
 		const SystemFactory& _systemFactory;

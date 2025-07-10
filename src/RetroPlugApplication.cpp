@@ -1,5 +1,18 @@
 #include "RetroPlugApplication.h"
 
+#include "foundation/OsPath.h"
+
+#include "core/ConfigSerializer.h"
+#include "core/MgbService.h"
+#include "core/Project.h"
+#include "core/ProxySystem.h"
+#include "core/RetroPlugConfig.h"
+#include "core/RetroPlugProcessor.h"
+#include "sameboy/SameBoyFactory.h"
+#include "lsdj/LsdjServiceProvider.h"
+#include "ui/RetroPlugView.h"
+#include "ui/UiReflect.h"
+
 RetroPlugApplication::RetroPlugApplication() {
 	_typeRegistry.addCommonTypes();
 
@@ -30,14 +43,10 @@ RetroPlugApplication::RetroPlugApplication() {
 		//.addField<&ProjectState::path>("path")
 		;
 
-	_typeRegistry.addType<SystemSettings::InputSettings>()
-		.addField<&SystemSettings::InputSettings::key>("key")
-		.addField<&SystemSettings::InputSettings::pad>("pad");
-
 	_typeRegistry.addType<SystemSettings>()
 		.addField<&SystemSettings::includeRom>("includeRom")
 		.addField<&SystemSettings::gameLink>("gameLink")
-		.addField<&SystemSettings::input>("input");
+		;
 
 	_typeRegistry.addType<std::unordered_map<SystemServiceType, entt::any>>();
 
@@ -49,9 +58,16 @@ RetroPlugApplication::RetroPlugApplication() {
 
 	_typeRegistry.addType<std::vector<SystemDesc>>();
 
-	_typeRegistry.addType<GlobalConfig>()
-		.addField<&GlobalConfig::projectSettings>("project")
-		.addField<&GlobalConfig::systemSettings>("system");
+	_typeRegistry.addType<GlobalSettings>()
+		.addField<&GlobalSettings::audioDeviceName>("audioDeviceName")
+		.addField<&GlobalSettings::keyboard>("keyboard")
+		.addField<&GlobalSettings::pad>("pad")
+		;
+
+	_typeRegistry.addType<RetroPlugConfig>()
+		.addField<&RetroPlugConfig::settings>("settings")
+		.addField<&RetroPlugConfig::project>("project")
+		.addField<&RetroPlugConfig::system>("system");
 
 	_typeRegistry.addEnum<LsdjSyncMode>();
 
@@ -97,6 +113,29 @@ RetroPlugApplication::RetroPlugApplication() {
 	_systemFactory.addSystemServiceProvider<ArduinoboyServiceProvider>();
 	_systemFactory.addSystemServiceProvider<LsdjServiceProvider>();
 	_systemFactory.addSystemServiceProvider<MgbServiceProvider>();
+
+	// Load global settings
+	std::filesystem::path configDir = fw::OsPath::getContentPath();
+	configDir /= "RetroPlug";
+	configDir /= "0.3";
+	std::string configPath = (configDir / "config.lua").string();
+
+	RetroPlugConfig config;
+
+	std::string fileData = fw::FsUtil::readTextFile(configPath);
+	if (fileData.empty()) {
+		// Config does not exist, first check if we need to migrate, otherwise write default
+		ConfigSerializer::serialize(_typeRegistry, configPath, config);
+	} else {
+		if (!ConfigSerializer::deserializeFromMemory(_typeRegistry, fileData, config)) {
+			spdlog::error("Failed to load RetroPlug config from {}", configPath);
+		}
+	}	
+
+	// Load input maps
+	for (auto const& dirEntry : std::filesystem::directory_iterator{ configDir / "input" }) {
+		std::cout << dirEntry.path() << '\n';
+	}
 }
 
 fw::ViewPtr RetroPlugApplication::onCreateUi() {

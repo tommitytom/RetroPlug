@@ -264,7 +264,7 @@ namespace rp {
 		}
 
 		void setIo(const SystemIoPtr& io) {
-			_stream = std::move(io);
+			_stream = io;
 		}
 
 		void acquireIo(SystemIoPtr&& io) {

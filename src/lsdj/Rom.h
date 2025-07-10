@@ -167,7 +167,7 @@ namespace rp::lsdj {
 		// sample data, 0x3fa0 bytes
 
 		MemoryAccessor kitData;
-		int32 _idx;
+		int32 _idx = -1;
 
 		Kit() {}
 		Kit(MemoryAccessor _kitData, int32 idx): kitData(_kitData), _idx(idx) {}
@@ -251,8 +251,6 @@ namespace rp::lsdj {
 
 			// Write sample data
 			kitData.write(offset - 0x4000, data);
-
-			fw::FsUtil::writeFile("C:/temp/test.kit", (const char*)kitData.getData(), 0x4000);
 
 			return (int32)sampleIdx;
 		}
@@ -450,14 +448,13 @@ namespace rp::lsdj {
 		}
 
 		void setKit(size_t idx, const fw::Uint8Buffer& data) {
-
+			assert(false); // NYI
 		}
 
 		Kit getKit(size_t idx) {
 			size_t bankIdx = KIT_LOOKUP[idx];
 			return Kit(getBankAccessor(bankIdx), (int32)idx);
 		}
-
 
 		std::string_view getKitName(size_t idx) const {
 			size_t bankIdx = KIT_LOOKUP[idx];

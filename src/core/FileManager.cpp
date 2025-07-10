@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include "foundation/FsUtil.h"
+#include "foundation/OsPath.h"
 #include "foundation/StlUtil.h"
 #include "foundation/StringUtil.h"
 
@@ -11,19 +12,27 @@
 
 using namespace rp;
 
-FileManager::FileManager() {
-#ifdef FW_PLATFORM_WEB
-	_rootPath = "/retroplug";
-#elif FW_OS_LINUX
-	_rootPath = "~/.retroplug";
-#elif FW_OS_WINDOWS
-	_rootPath = "c:\\temp\\retroplug";
-#elif FW_OS_MACOS
-    _rootPath = "~/Library/Application Support/RetroPlug";
-#else
-#error "Platform is not supported!
-#endif
+std::filesystem::path FileManager::getContentPath() {
+	std::filesystem::path path;
+	#ifdef FW_PLATFORM_WEB
+		path = "/retroplug";
+	#elif FW_OS_LINUX
+		path = "~/.retroplug";
+	#elif FW_OS_WINDOWS
+		path = fw::OsPath::getContentPath();
+		path /= "RetroPlug";
+	#elif FW_OS_MACOS
+		path = fw::OsPath::getContentPath();
+		path /= "RetroPlug";
+	#else
+		#error "Platform is not supported!"
+	#endif
 
+	return path / "0.3";
+}
+
+FileManager::FileManager() {
+	_rootPath = FileManager::getContentPath();
 	_recentPath = _rootPath / "recent.lua";
 }
 

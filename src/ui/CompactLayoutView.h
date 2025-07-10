@@ -34,6 +34,10 @@ namespace rp {
 			return false;
 		}
 
+		fw::ViewIndex getSelectedSystem() const {
+			return _gridOverlay->getSelected();
+		}
+
 		void setGridLayout(fw::GridLayout layout) {
 			_grid->setLayoutMode(layout);
 		}

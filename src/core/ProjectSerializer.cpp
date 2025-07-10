@@ -7,105 +7,106 @@
 #include "foundation/FsUtil.h"
 #include "foundation/MetaUtil.h"
 
+#include "core/Constants.h"
 #include "core/LuaUtil.h"
 #include "foundation/LuaSerializer.h"
 
 #include "lsdj/LsdjService.h"
 #include "lsdj/LsdjSettings.h"
 
-using namespace rp;
+namespace rp {
+	std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems) {
+		sol::state s;
+		fw::SolUtil::prepareState(s);
 
-std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems) {
-	sol::state s;
-	fw::SolUtil::prepareState(s);
+		//const entt::any& value = systems[0]->services.at(ARDUINOBOY_SERVICE_TYPE);
+		//const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
 
-	//const entt::any& value = systems[0]->services.at(ARDUINOBOY_SERVICE_TYPE);
-	//const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
+		sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
+		projectTable["projectVersion"] = PROJECT_VERSION;
+		projectTable["retroPlugVersion"] = RP_VERSION;
 
-	sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
-	projectTable["projectVersion"] = PROJECT_VERSION;
-	projectTable["retroPlugVersion"] = RP_VERSION;
+		sol::table systemsTable = projectTable.create("systems", (int)systems.size());
 
-	sol::table systemsTable = projectTable.create("systems", (int)systems.size());
+		for (size_t i = 0; i < systems.size(); ++i) {
+			const SystemDesc& systemDesc = *systems[i];
+			systemsTable.add(fw::LuaSerializer::serializeToObject(typeRegistry, s, systemDesc));
+		}
 
-	for (size_t i = 0; i < systems.size(); ++i) {
-		const SystemDesc& systemDesc = *systems[i];
-		systemsTable.add(fw::LuaSerializer::serializeToObject(typeRegistry, s, systemDesc));
-	}
-
-	std::string target;
-	if (fw::SolUtil::serializeTable(s, projectTable, target)) {
-		return target;
-	} else {
-		spdlog::error("Failed to serialize project: {}", target);
-		return "{}";
-	}
-}
-
-bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<const SystemDesc*>& systems, bool updatePath) {
-	if (updatePath) {
-		state.path = std::string(path.data());
-	}
-	
-	std::string output = serialize(typeRegistry, state, systems);
-	if (output.size()) {
-		if (fw::FsUtil::writeTextFile(path, output)) {
-			spdlog::info("Successfully wrote project file to {}", path);
-			return true;
+		std::string target;
+		if (fw::SolUtil::serializeTable(s, projectTable, target)) {
+			return target;
 		} else {
-			spdlog::error("Failed to save project to file");
+			spdlog::error("Failed to serialize project: {}", target);
+			return "{}";
+		}
+	}
+
+	bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<const SystemDesc*>& systems, bool updatePath) {
+		if (updatePath) {
+			state.path = std::string(path.data());
+		}
+
+		std::string output = serialize(typeRegistry, state, systems);
+		if (output.size()) {
+			if (fw::FsUtil::writeTextFile(path, output)) {
+				spdlog::info("Successfully wrote project file to {}", path);
+				return true;
+			} else {
+				spdlog::error("Failed to save project to file");
+				return false;
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	bool ProjectSerializer::deserializeFromMemory(const fw::TypeRegistry& typeRegistry, std::string_view fileData, ProjectState& state, std::vector<SystemDesc>& systemSettings) {
+		sol::state s;
+		rp::LuaUtil::prepareState(s);
+
+		sol::table target;
+		bool ok = fw::SolUtil::deserializeTable(s, fileData, target);
+
+		if (!ok) {
 			return false;
+		}
+
+		state = ProjectState();
+
+		std::string projectVersion = target["projectVersion"];
+		std::string retroPlugVersion = target["retroPlugVersion"];
+
+		// TODO: Check versions - migrate if necessary
+
+		sol::table settings = target["settings"];
+		if (!fw::LuaSerializer::deserialize(typeRegistry, settings, state.settings)) {
+			spdlog::error("Failed to deserialize project settings");
+			//return false;
+		}
+
+		sol::table systemsTable = target["systems"];
+		if (!fw::LuaSerializer::deserialize(typeRegistry, systemsTable, systemSettings)) {
+			spdlog::error("Failed to deserialize systems");
+			//return false;
 		}
 
 		return true;
 	}
 
-	return false;
-}
+	bool ProjectSerializer::deserializeFromFile(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings) {
+		std::string fileData = fw::FsUtil::readTextFile(path);
+		if (fileData.empty()) {
+			return false;
+		}
 
-bool ProjectSerializer::deserializeFromMemory(const fw::TypeRegistry& typeRegistry, std::string_view fileData, ProjectState& state, std::vector<SystemDesc>& systemSettings) {
-	sol::state s;
-	rp::LuaUtil::prepareState(s);
+		if (!ProjectSerializer::deserializeFromMemory(typeRegistry, fileData, state, systemSettings)) {
+			return false;
+		}
 
-	sol::table target;
-	bool ok = fw::SolUtil::deserializeTable(s, fileData, target);
-
-	if (!ok) {
-		return false;
+		state.path = std::string(path);
+		return true;
 	}
-
-	state = ProjectState();
-
-	std::string projectVersion = target["projectVersion"];
-	std::string retroPlugVersion = target["retroPlugVersion"];
-
-	// TODO: Check versions - migrate if necessary
-
-	sol::table settings = target["settings"];
-	if (!fw::LuaSerializer::deserialize(typeRegistry, settings, state.settings)) {
-		spdlog::error("Failed to deserialize project settings");
-		//return false;
-	}
-
-	sol::table systemsTable = target["systems"];
-	if (!fw::LuaSerializer::deserialize(typeRegistry, systemsTable, systemSettings)) {
-		spdlog::error("Failed to deserialize systems");
-		//return false;
-	}
-
-	return true;
-}
-
-bool ProjectSerializer::deserializeFromFile(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, std::vector<SystemDesc>& systemSettings) {
-	std::string fileData = fw::FsUtil::readTextFile(path);
-	if (fileData.empty()) {
-		return false;
-	}
-
-	if (!ProjectSerializer::deserializeFromMemory(typeRegistry, fileData, state, systemSettings)) {
-		return false;
-	}
-
-	state.path = std::string(path);
-	return true;
 }

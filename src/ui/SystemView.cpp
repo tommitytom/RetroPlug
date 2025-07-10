@@ -4,6 +4,8 @@
 
 #include "foundation/KeyToButton.h"
 
+#include "core/Constants.h"
+#include "core/InputManager.h"
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
 
@@ -26,7 +28,7 @@ bool SystemView::onDrop(const std::vector<std::string>& paths) {
 	return false;
 }
 
-bool SystemView::onKey(const fw::KeyEvent& ev) {
+/*bool SystemView::onKey(const fw::KeyEvent& ev) {
 	if (ev.key == fw::VirtualKey::Tab) {
 		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
 		return false;
@@ -46,16 +48,12 @@ bool SystemView::onKey(const fw::KeyEvent& ev) {
 			subscribe<fw::DismountEvent>(menuView, [this]() { getState<Project>().setDirty(); });
 		}
 	} else {
-		fw::ButtonType button = fw::keyToButton(ev.key);
-
-		if (button != fw::ButtonType::MAX) {
-			SystemIoPtr io = _system->getIo();
-			_system->setButtonState(button, ev.down);
-		}
+		InputManager& inputManager = getState<InputManager>();
+		inputManager.processKey(ev.key, ev.down);
 	}
 
 	return true;
-}
+}*/
 
 bool SystemView::onButton(const fw::ButtonEvent& ev) {
 	SystemIoPtr io = _system->getIo();

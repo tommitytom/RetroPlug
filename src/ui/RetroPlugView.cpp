@@ -10,9 +10,11 @@
 #include "foundation/SolUtil.h"
 #include "foundation/LuaScriptResource.h"
 
+#include "core/Constants.h"
 #include "core/Events.h"
 #include "core/FileManager.h"
-#include "core/GlobalSettings.h"
+#include "core/InputManager.h"
+#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
@@ -46,8 +48,10 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	View({ 480, 432 }),
 	_typeRegistry(typeRegistry),
 	_project(typeRegistry, systemFactory, messageBus.allocator),
-	_ioMessageBus(messageBus)
+	_ioMessageBus(messageBus),
+	_inputManager(FileManager::getContentPath() / "input")
 {	
+	_inputManager.load("default.lua");
 	setName(fmt::format("RetroPlug v{}", RP_VERSION));
 }
 
@@ -117,16 +121,6 @@ void RetroPlugView::onHotReload() {
 }
 
 void RetroPlugView::onInitialize() {
-	addGlobalKeyHandler([&](const fw::KeyEvent& ev) {
-		if (ev.down && ev.key == fw::VirtualKey::F5) {
-			_viewTree->getRootNode().children.clear();
-			addTreeNodes(_viewTree->getRootNode(), _editContainer);
-			_viewTree->refresh();
-		}
-
-		return false;
-	});
-
 	getLayout().setOverflow(fw::FlexOverflow::Visible);
 	//fitToParent();
 
@@ -163,12 +157,15 @@ void RetroPlugView::onInitialize() {
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == fw::VirtualKey::P && ev.down) {
-		_doPing = !_doPing;
-		return true;
+	fw::ViewIndex selected = _compactLayout->getSelectedSystem();
+	std::vector<SystemPtr> systems = _project.getSystemManager().getSystems();
+	SystemPtr system;
+
+	if (selected < systems.size()) {
+		system = systems[selected];
 	}
 
-	return false;
+	return _inputManager.processKey(ev.key, ev.down, system ? system.get() : nullptr);
 }
 
 void RetroPlugView::setupEventHandlers() {

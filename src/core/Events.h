@@ -6,6 +6,7 @@
 #include "core/ProjectState.h"
 #include "core/System.h"
 #include "core/SystemSettings.h"
+#include "core/RetroPlugConfig.h"
 
 namespace rp {
 	struct AddSystemEvent {
@@ -54,7 +55,7 @@ namespace rp {
 	};
 
 	struct FetchStateResponse {
-		GlobalConfig config;
+		RetroPlugConfig config;
 		ProjectState project;
 		std::vector<SystemStateResponse> systems;
 	};

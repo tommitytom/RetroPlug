@@ -1,6 +1,5 @@
 #include "Project.h"
 
-#include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 #include <entt/core/hashed_string.hpp>
 
@@ -22,15 +21,13 @@ Project::Project(const fw::TypeRegistry& typeRegistry, const SystemFactory& syst
 	: _typeRegistry(typeRegistry)
 	, _systemFactory(systemFactory)
 	, _systemManager(systemFactory, ioAllocator)
-	, _ioAllocator(ioAllocator) 
+	, _ioAllocator(ioAllocator)
 {
 	clear();
 }
 
 Project::~Project() {
-	if (_lua) {
-		delete _lua;
-	}
+
 }
 
 void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
@@ -46,10 +43,10 @@ void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
 		}
 
 		std::shared_ptr<ProxySystem> system = std::make_shared<ProxySystem>(
-			systemState.type, 
-			systemState.id, 
+			systemState.type,
+			systemState.id,
 			systemState.romName,
-			std::move(systemState.rom), 
+			std::move(systemState.rom),
 			std::move(systemState.state),
 			eventNode,
 			systemState.stateOffsets
@@ -113,7 +110,7 @@ std::string rp::Project::getName() {
 bool Project::load(std::string_view path) {
 	ProjectState projectState;
 	std::vector<SystemDesc> systemDescs;
-	
+
 	if (!ProjectSerializer::deserializeFromFile(_typeRegistry, path, projectState, systemDescs)) {
 		spdlog::error("Failed to load project at {}", path);
 		return false;
@@ -131,7 +128,7 @@ bool Project::load(std::string_view path) {
 			addSystem(systemTypes[0], desc);
 		} else {
 			spdlog::error("Failed to find a system that can load rom {}", desc.paths.romPath);
-		}		
+		}
 	}
 
 	_requiresSave = false;
@@ -184,7 +181,7 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 	std::vector<SystemServiceType> serviceTypes = _systemFactory.getRelevantServiceTypes(loadConfig);
 	for (SystemServiceType type : serviceTypes) {
 		SystemServicePtr service = _systemFactory.createSystemService(type);
-		
+
 		auto found = loadConfig.desc.services.find(service->getType());
 		if (found != loadConfig.desc.services.end()) {
 			service->setState(found->second);
@@ -196,7 +193,7 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 
 		system->addService(service);
 	}
-	
+
 	system->load(std::forward<LoadConfig>(loadConfig));
 
 	for (SystemServicePtr& service : system->getServices()) {
@@ -208,12 +205,12 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 	system->saveState(stateData);
 
 	std::shared_ptr<ProxySystem> proxySystem = std::make_shared<ProxySystem>(
-		type, 
-		systemId, 
-		system->getRomName(), 
-		std::move(romData), 
-		std::move(stateData), 
-		*_eventNode, 
+		type,
+		systemId,
+		system->getRomName(),
+		std::move(romData),
+		std::move(stateData),
+		*_eventNode,
 		system->getStateOffsets()
 	);
 
@@ -268,16 +265,9 @@ void Project::clear() {
 
 	if (_eventNode) {
 		_eventNode->send("Audio"_hs, RemoveAllSystemsEvent{});
-	}	
-
-	_state = ProjectState();
-
-	if (_lua) {
-		delete _lua;
 	}
 
-	_lua = new sol::state();
-	rp::LuaUtil::prepareState(*_lua);
+	_state = ProjectState();
 
 	_version++;
 	_requiresSave = false;
