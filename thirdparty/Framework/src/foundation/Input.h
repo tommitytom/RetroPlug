@@ -66,7 +66,7 @@ namespace fw {
 			{ "Select", ButtonType::Select }
 		};
 
-		const std::unordered_map<std::string_view, ButtonType> Lookup = {Items.begin(), Items.end()};
+		const std::unordered_map<std::string_view, ButtonType> Lookup = { Items.begin(), Items.end() };
 
 		static ButtonType fromString(std::string_view name) {
 			auto found = Lookup.find(name);

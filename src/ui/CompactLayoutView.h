@@ -20,6 +20,10 @@ namespace rp {
 			_gridOverlay = this->addChild<GridOverlay>("Grid Overlay");
 			_gridOverlay->fitToParent();
 			_gridOverlay->setGrid(_grid);
+
+			subscribe<fw::ChildRemovedEvent>(_grid, [this](const fw::ChildRemovedEvent& ev) {
+				_gridOverlay->refocus();
+			});
 		}
 
 		GridItemPtr getSelected() const {

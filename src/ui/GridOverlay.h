@@ -68,7 +68,6 @@ namespace rp {
 			updateLayout();
 		}
 
-	private:
 		void updateLayout();
 	};
 

@@ -211,11 +211,3 @@ namespace fw::styles {
 	//DefineStyleProperty("widows", Widows, Color4F, InheritedTag);
 	//DefineStyleProperty("word-spacing", WordSpacing, Color4F, InheritedTag);
 }
-
-#include <refl.hpp>
-
-REFL_AUTO(
-	type(fw::LengthValue),
-	field(type),
-	field(value)
-)

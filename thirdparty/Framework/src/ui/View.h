@@ -67,6 +67,8 @@ namespace fw {
 		Dimension oldSize;
 	};
 
+	struct ChildAddedEvent { ViewPtr view; };
+	struct ChildRemovedEvent { ViewPtr view; };
 	struct DismountEvent {};
 
 	class View : public Object {
@@ -746,6 +748,7 @@ namespace fw {
 
 					_children.erase(_children.begin() + i);
 
+					emit(ChildRemovedEvent{ view });
 					onChildRemoved(view);
 
 					view->emit(DismountEvent{});
@@ -1009,6 +1012,7 @@ namespace fw {
 			}
 
 			onChildAdded(view);
+			emit(ChildAddedEvent{ view });
 
 			for (ViewPtr& child : view->getChildren()) {
 				if (!child->isInitialized()) {

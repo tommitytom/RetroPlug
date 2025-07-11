@@ -1,6 +1,6 @@
 #include "ViewLayout.h"
 
-#include "ui/next/StyleProperties.h"
+#include "ui/StyleProperties.h"
 
 namespace fw
 {
