@@ -18,9 +18,15 @@ namespace rp {
 
 		~LsdjCanvasView() {}
 
+		lsdj::Canvas& getCanvas() {
+			return _canvas;
+		}
+
 		virtual void onRender(fw::Canvas& canvas) override {
 			setImage(_canvas.getRenderTarget());
 			fw::TextureView::onRender(canvas);
 		}
 	};
+
+	using LsdjCanvasViewPtr = std::shared_ptr<LsdjCanvasView>;
 }

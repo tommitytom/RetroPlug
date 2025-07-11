@@ -22,18 +22,20 @@ const std::vector<fw::FileDialogFilter> KIT_FILTER = {
 const fw::RectT BOX_SIZE = fw::RectT(6, 12, 13, 5);
 const fw::RectT BOX_AREA = { BOX_SIZE.x * (int32)lsdj::TILE_WIDTH, BOX_SIZE.y * (int32)lsdj::TILE_HEIGHT, BOX_SIZE.w * (int32)lsdj::TILE_WIDTH, BOX_SIZE.h * (int32)lsdj::TILE_HEIGHT };
 
-SamplerView::SamplerView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
+SamplerView::SamplerView(): _canvasView(std::make_shared<LsdjCanvasView>(fw::Dimension{160, 144 })), _ui(_canvasView->getCanvas()) {
 	getLayout().setMinDimensions({ 160, 144 });
+	_canvasView->getLayout().setMinDimensions({ 160, 144 });
 }
 
 void SamplerView::setSystem(SystemPtr& system, SystemServicePtr& service) {
 	_system = system;
 	_service = service;
+	lsdj::Canvas& canvas = _canvasView->getCanvas();
 
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
-		_canvas.setFont(rom.getFont(1));
-		_canvas.setPalette(rom.getPalette(0));
+		canvas.setFont(rom.getFont(1));
+		canvas.setPalette(rom.getPalette(0));
 
 		LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 		int32 selectedKit = 999;
@@ -62,6 +64,7 @@ void SamplerView::setSampleIndex(KitIndex kitIdx, size_t sampleIdx) {
 }
 
 void SamplerView::onInitialize() {
+	addChild(_canvasView);
 	_waveView = addChildAt<fw::WaveView>("SamplerWaveView", BOX_AREA);
 	// TODO: This should happen in the LsdjModel
 	updateSampleBuffers();
@@ -77,81 +80,45 @@ bool SamplerView::onDrop(const std::vector<std::string>& paths) {
 	return true;
 }
 
-bool SamplerView::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == fw::VirtualKey::Tab) {
-		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
-		return false;
-	}
+void SamplerView::processButtons(const fw::ButtonWriter& stream) {
+	for (size_t i = 0; i < stream.getCount(); ++i) {
+		auto buttonData = stream.data().presses[i];
+		fw::ButtonType button = fw::ButtonType(buttonData.button);
 
-	fw::ButtonType button = fw::keyToButton(ev.key);
+		if (button == fw::ButtonType::B) {
+			_bHeld = buttonData.down;
+		}
 
-	if (ev.key == fw::VirtualKey::W) {
-		_bHeld = ev.down;
-	}
+		if (_bHeld && buttonData.down) {
+			if (button == fw::ButtonType::Left) {
+				_samplerState.selectedKit--;
 
-	if (_bHeld && ev.down) {
-		if (ev.key == fw::VirtualKey::LeftArrow) {
-			_samplerState.selectedKit--;
+				if (_samplerState.selectedKit < 0) {
+					_samplerState.selectedKit = 0;
+				}
 
-			if (_samplerState.selectedKit < 0) {
-				_samplerState.selectedKit = 0;
+				updateWaveform();
+			} else if (button == fw::ButtonType::Right) {
+				_samplerState.selectedKit++;
+
+				if (_samplerState.selectedKit >= lsdj::Rom::KIT_COUNT) {
+					_samplerState.selectedKit = lsdj::Rom::KIT_COUNT - 1;
+				}
+
+				updateWaveform();
 			}
 
-			updateWaveform();
-		} else if (ev.key == fw::VirtualKey::RightArrow) {
-			_samplerState.selectedKit++;
+			continue;
+		}
 
-			if (_samplerState.selectedKit >= lsdj::Rom::KIT_COUNT) {
-				_samplerState.selectedKit = lsdj::Rom::KIT_COUNT - 1;
+		if (button != fw::ButtonType::MAX) {
+			if (buttonData.down) {
+				_ui.pressButton(button);
+			} else {
+				_ui.releaseButton(button);
 			}
-
-			updateWaveform();
 		}
-
-		return true;
-	}
-
-	if (ev.key == fw::VirtualKey::Esc) {
-		if (ev.down) {
-			// Generate menu
-			fw::MenuPtr menu = std::make_shared<fw::Menu>();
-			buildMenu(*menu);
-
-			MenuViewPtr menuView = addChild<MenuView>("Menu");
-			menuView->setMenu(menu);
-			menuView->focus();
-		}
-
-		return true;
-	}
-
-	if (ev.down) {
-		if (ev.key == fw::VirtualKey::D) {
-			_aHeld = true;
-		}
-
-		_ui.pressKey(ev.key);
-	} else {
-		if (ev.key == fw::VirtualKey::D && _aHeld) {
-			_aHeld = false;
-			//LsdjModelPtr model;// = _system->getModel<LsdjModel>();
-			//if (model) {
-				//settings.setRequiresSave(true);
-			//}
-		}
-
-		_ui.releaseKey(ev.key);
-	}
-
-	if (button != fw::ButtonType::MAX) {
-		if (ev.down) {
-			_ui.pressButton(button);
-		} else {
-			_ui.releaseButton(button);
-		}
-	}
-
-	return true;
+	}	
 }
 
 void SamplerView::onUpdate(f32 delta) {
@@ -254,10 +221,11 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 		}
 	}
 
-	_canvas.clear();
+	lsdj::Canvas& _c = _canvasView->getCanvas();
+
+	_c.clear();
 	_ui.startFrame();
 
-	lsdj::Canvas& _c = _canvas;
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
@@ -385,7 +353,8 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 
 	_ui.endFrame();
 
-	LsdjCanvasView::onRender(canvas);
+	_canvasView->onRender(canvas);
+	//LsdjCanvasView::onRender(canvas);
 }
 
 void populateEditKit(SystemPtr system, fw::Menu& target) {
@@ -431,7 +400,7 @@ void exportKitDialog(SystemPtr system, KitIndex kitIdx) {
 	}
 }
 
-void SamplerView::buildMenu(fw::Menu& target) {
+void SamplerView::createMenu(fw::Menu& target) {
 	const LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 	bool kitEditable = settings.kits.find(_samplerState.selectedKit) != settings.kits.end();
 

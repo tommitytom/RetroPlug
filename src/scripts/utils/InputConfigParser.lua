@@ -102,19 +102,18 @@ local function matchCombo(combos, pressed)
 	end
 end
 
-local function handleInput(mapGroup, key, down, pressed, hooks, buttons)
+local function handleInput(mapGroup, key, down, pressed, hooks, buttons, actions)
 	local handled = false
 	for _, map in ipairs(mapGroup) do
 		-- Do a basic map from key to button
 		local found = map.lookup[key]
 		if found ~= nil then
 			if type(found) == "table" then
-				if found.func ~= nil then
-					if found.func(down, buttons) ~= false then
-						handled = true
-					end
+				-- Found an action
+				if down == true then
+					actions:add(found.component .. "." .. found.action)
 				end
-			elseif buttons ~= nil then
+			else
 				for _, fn in ipairs(hooks) do
 					if fn(found, down) ~= false then
 						handled = true
@@ -122,7 +121,6 @@ local function handleInput(mapGroup, key, down, pressed, hooks, buttons)
 				end
 
 				if handled == false then
-					log.info("Setting button state for " .. found .. " to " .. tostring(down))
 					if down == true then
 						buttons:holdDuration(found, 0)
 					else
@@ -170,17 +168,17 @@ local function tableRemoveElement(tab, el)
 	end
 end
 
-function processKey(key, down, buttons)
+function processKey(key, down, buttons, actions)
 	if down == true then
 		table.insert(keysPressed, key)
 	else
 		tableRemoveElement(keysPressed, key)
 	end
 
-	local handled = handleInput(parsed.key.global, key, down, keysPressed, buttonHooks)
+	local handled = handleInput(parsed.key.global, key, down, keysPressed, buttonHooks, buttons, actions)
 
 	if handled ~= true and buttons ~= nil then
-		handled = handleInput(parsed.key.system, key, down, keysPressed, buttonHooks, buttons)
+		handled = handleInput(parsed.key.system, key, down, keysPressed, buttonHooks, buttons, actions)
 	end
 
 	return handled

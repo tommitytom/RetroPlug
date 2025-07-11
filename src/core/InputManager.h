@@ -23,7 +23,7 @@ namespace rp {
 
 		std::vector<std::string> getAvailableConfigs() const;
 
-		bool processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons);
+		bool processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions);
 
 		bool processButton(fw::ButtonType button, bool down);
 

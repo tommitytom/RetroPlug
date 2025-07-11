@@ -79,6 +79,8 @@ namespace rp {
 		fw::TreeViewPtr _viewTree;
 		fw::ViewPtr _editContainer;
 
+		std::weak_ptr<MenuView> _menu;
+
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
 		~RetroPlugView() = default;

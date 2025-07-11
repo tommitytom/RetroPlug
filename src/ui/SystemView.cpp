@@ -20,7 +20,7 @@
 
 using namespace rp;
 
-SystemView::SystemView() : TextureView() {
+SystemView::SystemView() : GridItem() {
 
 }
 
@@ -56,17 +56,46 @@ bool SystemView::onDrop(const std::vector<std::string>& paths) {
 }*/
 
 void SystemView::onUpdate(f32 delta) {
-	if (_system->getFrameBuffer().dimensions() != fw::Dimension::zero) {
-		setImage(_system->getFrameBuffer());
+	const fw::Image& frameBuffer = _system->getFrameBuffer();
+
+	if (frameBuffer.dimensions() != fw::Dimension::zero) {
+		size_t dataSize = frameBuffer.getBuffer().size() * 4;
+		std::vector<uint8> data(dataSize);
+		memcpy(data.data(), frameBuffer.getData(), dataSize);
+
+		if (_texture.isValid() && (fw::Dimension)_textureArea.dimensions == frameBuffer.dimensions()) {
+			[[likely]]
+			getResourceManager().update(_texture, fw::TextureDesc{
+				.dimensions = frameBuffer.dimensions(),
+				.depth = 4,
+				.data = std::move(data)
+			});
+		} else {
+			_texture = getResourceManager().create<fw::Texture>(fw::TextureDesc{
+				.dimensions = frameBuffer.dimensions(),
+				.depth = 4,
+				.data = std::move(data)
+			});
+
+			_textureArea = { 0.0f, 0.0f, (f32)frameBuffer.dimensions().w, (f32)frameBuffer.dimensions().h };
+		}
+	}
+}
+
+void SystemView::onRender(fw::Canvas& canvas) {
+	if (_texture.isValid()) {
+		[[likely]]
+		canvas.texture(_texture, getDimensionsF(), fw::Color4F(1, 1, 1, getAlpha()));
+	} else {
+		canvas.fillRect(_textureArea, fw::Color4F(1, 1, 1, getAlpha()));
 	}
 }
 
 void SystemView::processButtons(const fw::ButtonWriter& stream) {
-	spdlog::info("Buttons: {}, {}", stream.data().presses[0].button, stream.data().presses[0].down);
 	_system->getButtons().push_back(stream.data());
 }
 
-void SystemView::buildMenu(fw::Menu& target) {
+void SystemView::createMenu(fw::Menu& target) {
 	FileManager& fileManager = getState<FileManager>();
 	Project& project = getState<Project>();
 	GlobalSettings& globalSettings = getState<GlobalSettings>();

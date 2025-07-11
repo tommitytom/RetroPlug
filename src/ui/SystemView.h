@@ -1,16 +1,18 @@
 #pragma once
 
-#include "ui/TextureView.h"
-#include "core/System.h"
+#include "graphics/Texture.h"
+#include "ui/GridItem.h"
 #include "ui/Menu.h"
+#include "ui/View.h"
+#include "core/System.h"
 
 namespace rp {
-	class SystemView final : public fw::TextureView {
+	class SystemView final : public GridItem {
 		FwRegisterObject();
 	private:
 		SystemPtr _system;
-		//fw::Image _frameBuffer;
-
+		fw::RectF _textureArea;
+		fw::TextureHandle _texture;
 		uint32 _version = 0;
 
 	public:
@@ -43,9 +45,7 @@ namespace rp {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(fw::Canvas& canvas) override {
- 			TextureView::onRender(canvas);
-		}
+		void onRender(fw::Canvas& canvas) override;
 
 		uint32 getVersion() const {
 			return _version;
@@ -53,8 +53,7 @@ namespace rp {
 
 		void processButtons(const fw::ButtonWriter& stream);
 
-	private:
-		void buildMenu(fw::Menu& target);
+		void createMenu(fw::Menu& menu) override;
 	};
 
 	using SystemViewPtr = std::shared_ptr<SystemView>;

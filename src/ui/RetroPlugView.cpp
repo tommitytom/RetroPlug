@@ -157,13 +157,43 @@ void RetroPlugView::onInitialize() {
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
-	fw::ViewPtr selected = _compactLayout->getSelected();
-
-	if (!_inputManager.processKey(ev.key, ev.down, _buttons)) {
+	std::vector<std::string> actions;
+	if (!_inputManager.processKey(ev.key, ev.down, _buttons, actions)) {
 		return false;
 	}
 
-	selected->processButtons(_buttons);
+	MenuViewPtr currentMenu = _menu.lock();
+	if (currentMenu) {
+		currentMenu->processButtons(_buttons);
+
+		if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ShowMenu"))) {
+			currentMenu->remove();
+			_menu.reset();
+		}
+	} else {
+		GridItemPtr selected = _compactLayout->getSelected();
+		if (selected) {
+			selected->processButtons(_buttons);
+		}
+
+		for (auto action : actions) {
+			if (action == "RetroPlug.ShowMenu") {
+				if (selected) {
+					fw::MenuPtr menu = std::make_shared<fw::Menu>();
+					selected->createMenu(*menu);
+
+					MenuViewPtr menuView = selected->addChild<MenuView>("Menu");
+					menuView->fitToParent();
+					menuView->setMenu(menu);
+					menuView->focus();
+
+					subscribe<fw::DismountEvent>(menuView, [this]() { getState<Project>().setDirty(); });
+
+					_menu = menuView;
+				}
+			}
+		}
+	}
 
 	_buttons.clear();
 

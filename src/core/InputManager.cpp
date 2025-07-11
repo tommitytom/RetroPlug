@@ -89,11 +89,11 @@ namespace rp {
 		return false;
 	}
 
-	bool InputManager::processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons) {
+	bool InputManager::processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions) {
 		if (!_valid) return false;
 		sol::function func = (*_lua)["processKey"];
 		if (func.valid()) {
-			func(key, down, buttons);
+			func(key, down, buttons, actions);
 			return true;
 		}
 		return false;

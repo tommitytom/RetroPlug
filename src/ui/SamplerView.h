@@ -5,6 +5,7 @@
 #include "lsdj/LsdjUi.h"
 #include "lsdj/LsdjCanvasView.h"
 #include "lsdj/LsdjModel.h"
+#include "ui/GridItem.h"
 #include "ui/MenuView.h"
 #include "ui/WaveView.h"
 #include "audio/SampleLoaderUtil.h"
@@ -16,7 +17,7 @@ namespace rp {
 		//SampleSettings settings;
 	};
 
-	class SamplerView final : public LsdjCanvasView {
+	class SamplerView final : public GridItem {
 		FwRegisterObject();
 	private:
 		SystemPtr _system;
@@ -27,6 +28,7 @@ namespace rp {
 
 		std::vector<KitUtil::SampleData> _sampleBuffers;
 
+		LsdjCanvasViewPtr _canvasView;
 		lsdj::Ui _ui;
 
 		bool _aHeld = false;
@@ -50,15 +52,15 @@ namespace rp {
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		bool onKey(const fw::KeyEvent& ev) override;
-
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;
 
-	private:
-		void buildMenu(fw::Menu& target);
+		void processButtons(const fw::ButtonWriter& stream) override;
 
+		void createMenu(fw::Menu& menu) override;
+
+	private:
 		void loadSampleDialog(KitIndex kitIndex);
 
 		void updateSampleBuffers();

@@ -3,6 +3,7 @@
 #include "StartView.h"
 #include "SystemView.h"
 #include "core/Project.h"
+#include "ui/GridItem.h"
 
 namespace rp {
 	enum class HighlightMode {
@@ -35,9 +36,9 @@ namespace rp {
 			updateLayout();
 		}
 
-		fw::ViewPtr getSelected() const {	
+		GridItemPtr getSelected() const {
 			if (_selected < _grid->getChildren().size()) {
-				return _grid->getChild(_selected);
+				return _grid->getChild(_selected)->sharedFromThis<GridItem>();
 			}
 
 			return nullptr;
