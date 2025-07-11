@@ -164,6 +164,8 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 
 					_menu = menuView;
 				}
+			} else if (action == "RetroPlug.NextSystem") {
+				_compactLayout->getGridOverlay()->incrementSelection();
 			} else {
 				spdlog::warn("Unhandled action: {}", action);
 			}

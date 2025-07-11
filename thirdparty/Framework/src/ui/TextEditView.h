@@ -236,13 +236,3 @@ namespace fw {
 	using TextEditViewPtr = std::shared_ptr<TextEditView>;
 	using FlexValueEditViewPtr = std::shared_ptr<FlexValueEditView>;
 }
-
-REFL_AUTO(
-	type(fw::TextEditView, bases<fw::View>),
-	func(getValue, property("value")), func(setValue, property("value"))
-)
-
-REFL_AUTO(
-	type(fw::FlexValueEditView, bases<fw::View>),
-	func(getValue, property("value")), func(setValue, property("value"))
-)

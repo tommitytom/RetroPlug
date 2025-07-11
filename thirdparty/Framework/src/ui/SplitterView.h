@@ -54,9 +54,3 @@ namespace fw {
 
 	using SplitterViewPtr = std::shared_ptr<SplitterView>;
 }
-
-#include <refl.hpp>
-
-REFL_AUTO(
-	type(fw::SplitterView, bases<fw::View>)
-)

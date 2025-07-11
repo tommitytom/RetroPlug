@@ -152,6 +152,7 @@ void GridOverlay::onUpdate(f32 delta) {
 		}
 
 		_projectVersion = project.getVersion();
+		_selected %= _grid->getChildren().size();
 		updateLayout();
 	}
 }

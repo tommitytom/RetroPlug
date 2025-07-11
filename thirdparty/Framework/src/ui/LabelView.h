@@ -120,8 +120,3 @@ namespace fw {
 
 	using LabelViewPtr = std::shared_ptr<LabelView>;
 }
-
-REFL_AUTO(
-	type(fw::LabelView, bases<fw::View>),
-	func(setText, property("text")), func(getText, property("text"))
-)

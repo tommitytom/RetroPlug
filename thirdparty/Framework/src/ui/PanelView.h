@@ -28,10 +28,3 @@ namespace fw {
 
 	using PanelViewPtr = std::shared_ptr<PanelView>;
 }
-
-#include "foundation/MathMeta.h"
-
-REFL_AUTO(
-	type(fw::PanelView, bases<fw::View>),
-	func(getColor, property("color")), func(setColor, property("color"))
-)

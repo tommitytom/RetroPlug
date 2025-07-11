@@ -95,8 +95,3 @@ namespace fw {
 		}
 	};
 }
-
-REFL_AUTO(
-	type(fw::KnobView, bases<fw::View>),
-	func(getValue, property("value")), func(setValue, property("value"))
-)

@@ -60,8 +60,3 @@ namespace fw {
 		}
 	};
 }
-
-REFL_AUTO(
-	type(fw::ButtonView, bases<fw::View>),
-	func(getText, property("text")), func(setText, property("text"))
-)

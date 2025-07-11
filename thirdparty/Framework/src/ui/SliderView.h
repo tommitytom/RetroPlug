@@ -274,8 +274,3 @@ namespace fw {
 
 	using SliderViewPtr = std::shared_ptr<SliderView>;
 }
-
-REFL_AUTO(
-	type(fw::SliderView, bases<fw::View>),
-	func(getValue, property("value")), func(setValue, property("value"))
-)

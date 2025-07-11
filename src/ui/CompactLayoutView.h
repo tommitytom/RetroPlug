@@ -22,18 +22,6 @@ namespace rp {
 			_gridOverlay->setGrid(_grid);
 		}
 
-		bool onKey(const fw::KeyEvent& ev) override {
-			if (ev.key == fw::VirtualKey::Tab) {
-				if (ev.down) {
-					_gridOverlay->incrementSelection();
-				}
-
-				return true;
-			}
-
-			return false;
-		}
-
 		GridItemPtr getSelected() const {
 			return _gridOverlay->getSelected();
 		}

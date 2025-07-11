@@ -5,7 +5,6 @@
 
 #include <entt/entity/registry.hpp>
 #include <spdlog/spdlog.h>
-#include <refl.hpp>
 
 #include "foundation/ButtonStream.h"
 #include "foundation/Input.h"
@@ -1056,10 +1055,3 @@ namespace fw {
 		friend class ViewManager;
 	};
 }
-
-REFL_AUTO(
-	type(fw::View),
-	func(getName, property("name")), func(setName, property("name")),
-	func(getAlpha, property("alpha")), func(setAlpha, property("alpha")),
-	func(getLayout, property("layout")), func(setLayout, property("layout"))
-)

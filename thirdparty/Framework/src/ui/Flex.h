@@ -216,27 +216,3 @@ namespace fw {
 		FlexBorder(f32 _top, f32 _left, f32 _bottom, f32 _right) : top(_top), left(_left), bottom(_bottom), right(_right) {}
 	};
 }
-
-#include <refl.hpp>
-
-REFL_AUTO(
-	type(fw::FlexValue),
-	func(getUnit, property("unit")), func(setUnit, property("unit")),
-	func(getValue, property("value")), func(setValue, property("value"))
-)
-
-REFL_AUTO(
-	type(fw::FlexRect),
-	field(top),
-	field(left),
-	field(bottom),
-	field(right)
-)
-
-REFL_AUTO(
-	type(fw::FlexBorder),
-	field(top),
-	field(left),
-	field(bottom),
-	field(right)
-)

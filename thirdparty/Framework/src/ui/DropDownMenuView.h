@@ -135,8 +135,3 @@ namespace fw {
 
 	using DropDownMenuViewPtr = std::shared_ptr<DropDownMenuView>;
 }
-
-REFL_AUTO(
-	type(fw::DropDownMenuView, bases<fw::View>),
-	func(getValue, property("value")), func(setValue, property("value"))
-)

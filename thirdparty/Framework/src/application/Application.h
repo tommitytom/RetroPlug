@@ -3,7 +3,6 @@
 #include "foundation/Event.h"
 #include "audio/AudioManager.h"
 #include "application/UiContext.h"
-#include "ui/EditOverlay.h"
 
 namespace fw::app {
 	class Application {
@@ -20,15 +19,7 @@ namespace fw::app {
 	class BasicApplication : public Application {
 	public:
 		fw::ViewPtr onCreateUi() override {
-			if constexpr (!std::is_same_v<ViewT, void>) {
-				ViewPtr view = std::make_shared<ViewT>();
-				EditViewPtr editView = std::make_shared<EditView>();
-				editView->setView(view);
-				editView->getLayout().setDimensions(view->getDimensions());
-				return editView;
-			}
-
-			return nullptr;
+			return std::make_shared<ViewT>();
 		}
 
 		fw::AudioProcessorPtr onCreateAudio() override {
