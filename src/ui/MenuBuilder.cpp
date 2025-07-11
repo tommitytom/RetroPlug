@@ -256,8 +256,7 @@ void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Proje
 
 	state->audioOutDeviceId = (uint32)audioOutDevice;
 
-	root
-		.multiSelect("Audio Out", state->audioOut, audioOutDevice, [state](int v) { state->audioOutDeviceId = (uint32)v; })
+	root.multiSelect("Audio Out", state->audioOut, audioOutDevice, [state](int v) { state->audioOutDeviceId = (uint32)v; })
 		.separator();
 #endif
 
@@ -265,12 +264,12 @@ void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Proje
 		state->inputConfigs.push_back(config.name + (config.valid ? "" : " [!]"));
 	}
 
-	int32 keySelected = inputManager.getSelectedIndex(InputType::Key);
-	int32 padSelected = inputManager.getSelectedIndex(InputType::Pad);
+	state->keyConfigId = inputManager.getSelectedIndex(InputType::Key);
+	state->padConfigId = inputManager.getSelectedIndex(InputType::Pad);
 
 	root
-		.multiSelect("Keyboard", state->inputConfigs, keySelected, [state](int idx) { state->keyConfigId = idx; })
-		.multiSelect("Pad", state->inputConfigs, padSelected, [state](int idx) { state->padConfigId = idx; })
+		.multiSelect("Keyboard", state->inputConfigs, state->keyConfigId, [state](int idx) { state->keyConfigId = idx; })
+		.multiSelect("Pad", state->inputConfigs, state->padConfigId, [state](int idx) { state->padConfigId = idx; })
 		.separator()
 		.action("Apply", [&audioManager, &inputManager, state](fw::MenuContext& ctx) {
 			auto inputConfigs = inputManager.getAvailableConfigs();
