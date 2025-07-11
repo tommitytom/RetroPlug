@@ -36,6 +36,43 @@ FileManager::FileManager() {
 	_recentPath = _rootPath / "recent.lua";
 }
 
+Watch::Id FileManager::startWatch(const std::filesystem::path& path, Watch::Callback&& func) {
+	std::string watchPath;
+
+	if (std::filesystem::is_directory(path)) {
+		watchPath = path.string();
+	} else {
+		watchPath = path.parent_path().string();
+	}
+
+	Watch* existing = findWatch(watchPath);
+	if (!existing) {
+		FW::WatchID watchId = _watcher.addWatch(watchPath, this);
+		_reloaders.push_back({ watchId, watchPath });
+		existing = &_reloaders.back();
+	}
+
+	existing->callbacks.push_back({ path.string(), std::move(func) });
+
+	return existing->watchId;
+}
+
+void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
+	spdlog::debug("File action: {} {} {}", dir, filename, action);
+	std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
+	for (Watch& watch : _reloaders) {
+		if (watch.watchId == watchid) {
+			for (const auto& callback : watch.callbacks) {
+				if (callback.first == fullPath || callback.first == dir) {
+					callback.second(fullPath, action);
+				}
+			}
+			return;
+		}
+	}
+	spdlog::warn("No watch found for path: {}", fullPath);
+}
+
 void FileManager::addRecent(RecentFilePath&& recent) {
 	spdlog::debug("Adding recent path '{}' to {}", recent.path.string(), _recentPath.string());
 

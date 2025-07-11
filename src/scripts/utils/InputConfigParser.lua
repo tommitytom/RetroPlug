@@ -1,5 +1,4 @@
 local log = require("log")
-local inspect = require("inspect")
 
 Action = {}
 setmetatable(Action, {
@@ -61,10 +60,22 @@ parsed = {
 --HostType = HostType,
 
 InputConfig = function(config) parsed.config = config or {} end
-KeyMap = function(config, map) handleMapInput(parsed.key.system, config, map) end
-PadMap = function(config, map) handleMapInput(parsed.pad.system, config, map) end
-GlobalKeyMap = function(config, map) handleMapInput(parsed.key.global, config, map) end
-GlobalPadMap = function(config, map) handleMapInput(parsed.pad.global, config, map) end
+
+function prepare(inputType)
+	if inputType == "key" then
+		KeyMap = function(config, map) handleMapInput(parsed.key.system, config, map) end
+		GlobalKeyMap = function(config, map) handleMapInput(parsed.key.global, config, map) end
+		PadMap = function(config, map) end
+		GlobalPadMap = function(config, map) end
+	end
+
+	if inputType == "pad" then
+		KeyMap = function(config, map) end
+		GlobalKeyMap = function(config, map) end
+		PadMap = function(config, map) handleMapInput(parsed.pad.system, config, map) end
+		GlobalPadMap = function(config, map) handleMapInput(parsed.pad.global, config, map) end
+	end
+end
 
 function cleanData()
 	if parsed.config.name == nil then parsed.config.name = parsed.config.filename end
@@ -80,8 +91,6 @@ function cleanData()
 	else
 		parsed.pad.filename = parsed.config.filename
 	end
-
-	log.info(inspect(parsed))
 end
 
 local function matchCombo(combos, pressed)
@@ -102,43 +111,49 @@ local function matchCombo(combos, pressed)
 	end
 end
 
+local function handleFound(found, down, hooks, buttons, actions)
+	local handled = false
+
+	if type(found) == "table" then
+		-- Found an action
+		if down == true then
+			actions:add(found.component .. "." .. found.action)
+		end
+	else
+		for _, fn in ipairs(hooks) do
+			if fn(found, down) ~= false then
+				handled = true
+			end
+		end
+
+		if handled == false then
+			if down == true then
+				buttons:holdDuration(found, 0)
+			else
+				buttons:releaseDuration(found, 0)
+			end
+			handled = true
+		end
+	end
+end
+
 local function handleInput(mapGroup, key, down, pressed, hooks, buttons, actions)
 	local handled = false
 	for _, map in ipairs(mapGroup) do
 		-- Do a basic map from key to button
 		local found = map.lookup[key]
 		if found ~= nil then
-			if type(found) == "table" then
-				-- Found an action
-				if down == true then
-					actions:add(found.component .. "." .. found.action)
-				end
-			else
-				for _, fn in ipairs(hooks) do
-					if fn(found, down) ~= false then
-						handled = true
-					end
-				end
-
-				if handled == false then
-					if down == true then
-						buttons:holdDuration(found, 0)
-					else
-						buttons:releaseDuration(found, 0)
-					end
-					handled = true
-				end
+			if handleFound(found, down, hooks, buttons, actions) == true then
+				handled = true
 			end
 		end
 
 		-- If the key is being pressed look for combos
 		if down == true then
 			local found = matchCombo(map.combos, pressed)
-			if found ~= nil and type(found) == "table" then
-				if found.func ~= nil then
-					if found.func(down, system) ~= false then
-						handled = true
-					end
+			if found ~= nil then
+				if handleFound(found, down, hooks, buttons, actions) == true then
+					handled = true
 				end
 			end
 		else

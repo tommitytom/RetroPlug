@@ -8,8 +8,10 @@
 #include "foundation/FsUtil.h"
 #include "foundation/SolUtil.h"
 #include "foundation/StlUtil.h"
+#include "foundation/Shell.h"
 
 #include "core/FileManager.h"
+#include "core/InputManager.h"
 #include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
@@ -173,20 +175,6 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemPt
 
 void MenuBuilder::projectMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system) {
 	root
-		.subMenu("Add System")
-			.action("Duplicate Current", [&system, &fileManager, &project]() {
-				SystemDesc desc = system.getDesc();
-				desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
-				project.duplicateSystem(system.getId()/*, desc*/);
-			})
-			.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
-			.parent()
-		.action("Remove System", [&project, &system]() {
-			if (project.getSystems().size() > 1) {
-				project.removeSystem(system.getId());
-			}
-		}, project.getSystems().size() > 1)
-		.separator()
 		.action("New", [&project]() { project.clear(); })
 		.action("Load...", [&fileManager, &project](fw::MenuContext& ctx) {
 			ctx.retain();
@@ -242,43 +230,87 @@ void MenuBuilder::systemMenu(fw::Menu& root, FileManager& fileManager, Project& 
 		.action("Save State as...", []() {});
 }
 
-void MenuBuilder::settingsMenu(fw::Menu& root, FileManager& fileManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager) {
-#ifndef RP_WEB
-	std::vector<std::string> audioDevices;
-	audioManager.getDeviceNames(audioDevices);
+struct SettingsMenuState {
+	std::vector<std::string> audioOut;
+	std::vector<std::string> inputConfigs;
+	
+	int32 audioOutDeviceId = 0;
+	int32 keyConfigId = 0;
+	int32 padConfigId = 0;
+};
 
-	std::string activeAudioDeviceName = audioManager.getActiveDeviceName();
+void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager) {
+	auto state = std::make_shared<SettingsMenuState>();
+
+#ifndef RP_WEB
+	std::vector<std::string> audioIn;
+	audioManager.getDeviceNames(audioIn, state->audioOut);
+
+	std::string activeAudioDeviceName = audioManager.getActiveOutputName();
 	spdlog::info("Active audio device: {}", activeAudioDeviceName);
 
-	int32 audioDevice = fw::StlUtil::getVectorIndex(audioDevices, activeAudioDeviceName);
-	if (audioDevice < 0) {
-		audioDevice = 0; // Default to first device if not found
+	int32 audioOutDevice = fw::StlUtil::getVectorIndex(state->audioOut, activeAudioDeviceName);
+	if (audioOutDevice < 0) {
+		audioOutDevice = 0; // Default to first device if not found
 	}
 
-	settings.audioDeviceId = (uint32)audioDevice;
+	state->audioOutDeviceId = (uint32)audioOutDevice;
 
 	root
-		.subMenu("Audio")
-			.multiSelect("Device", audioDevices, audioDevice, [&audioManager, &settings](int v) {
-				std::vector<std::string> audioDevices;
-				audioManager.getDeviceNames(audioDevices);
-
-				settings.audioDeviceId = (uint32)v;
-				settings.audioDeviceName = audioDevices[v];
-			})
-			.action("Apply", [&](fw::MenuContext& ctx) {
-				audioManager.setAudioDevice((uint32)settings.audioDeviceId);
-				ctx.retain();
-			})
-		.parent()
+		.multiSelect("Audio Out", state->audioOut, audioOutDevice, [state](int v) { state->audioOutDeviceId = (uint32)v; })
 		.separator();
 #endif
 
+	for (const auto& config : inputManager.getAvailableConfigs()) {
+		state->inputConfigs.push_back(config.name + (config.valid ? "" : " [!]"));
+	}
+
+	int32 keySelected = inputManager.getSelectedIndex(InputType::Key);
+	int32 padSelected = inputManager.getSelectedIndex(InputType::Pad);
+
 	root
-		.multiSelect("Keyboard", { "Default" }, 0, [](int idx) {})
-		.multiSelect("Pad", { "Default" }, 0, [](int idx) {})
+		.multiSelect("Keyboard", state->inputConfigs, keySelected, [state](int idx) { state->keyConfigId = idx; })
+		.multiSelect("Pad", state->inputConfigs, padSelected, [state](int idx) { state->padConfigId = idx; })
 		.separator()
-		.action("Open Settings Folder", []() {});
+		.action("Apply", [&audioManager, &inputManager, state](fw::MenuContext& ctx) {
+			auto inputConfigs = inputManager.getAvailableConfigs();
+			if (state->keyConfigId >= 0 && state->keyConfigId < (int32)inputConfigs.size()) {
+				auto config = inputConfigs[state->keyConfigId];
+				if (config.valid) {
+					inputManager.load(inputConfigs[state->keyConfigId].name, InputType::Key);
+				}
+			}
+
+			if (state->padConfigId >= 0 && state->padConfigId < (int32)inputConfigs.size()) {
+				auto config = inputConfigs[state->padConfigId];
+				if (config.valid) {
+					inputManager.load(inputConfigs[state->padConfigId].name, InputType::Pad);
+				}
+			}
+
+			audioManager.setAudioDevice((uint32)state->audioOutDeviceId);
+
+			ctx.retain();
+		})
+		.separator()
+		.action("Open Settings Folder", []() { fw::openShellFolder(FileManager::getContentPath().string()); });
+}
+
+void MenuBuilder::commonMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system) {
+	root.subMenu("Add System")
+			.action("Duplicate Current", [&system, &fileManager, &project]() {
+				SystemDesc desc = system.getDesc();
+				desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
+				project.duplicateSystem(system.getId()/*, desc*/);
+			})
+			.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
+			.parent()
+		.action("Remove System", [&project, &system]() {
+			if (project.getSystems().size() > 1) {
+				project.removeSystem(system.getId());
+			}
+		}, project.getSystems().size() > 1)
+		;
 }
 
 void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {

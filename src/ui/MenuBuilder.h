@@ -11,6 +11,7 @@ namespace fw::audio {
 
 namespace rp {
 	class FileManager;
+	class InputManager;
 	class Project;
 	struct GlobalSettings;
 
@@ -24,11 +25,13 @@ namespace rp {
 namespace rp::MenuBuilder {
 	void populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 
+	void commonMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system);
+
 	void projectMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system);
 
 	void systemMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 
-	void settingsMenu(fw::Menu& root, FileManager& fileManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager);
+	void settingsMenu(fw::Menu& root, InputManager& inputManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager);
 
 	void systemLoadMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 

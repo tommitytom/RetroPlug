@@ -43,6 +43,7 @@ namespace rp {
 
 		IoMessageBus& _ioMessageBus;
 		const fw::TypeRegistry& _typeRegistry;
+		FileManager _fileManager;
 		InputManager _inputManager;
 		fw::ButtonWriter _buttons;
 
@@ -51,7 +52,6 @@ namespace rp {
 		CompactLayoutViewPtr _compactLayout;
 
 		Project _project;
-		FileManager* _fileManager = nullptr;
 
 		//SystemIndex _selected = INVALID_SYSTEM_IDX;
 

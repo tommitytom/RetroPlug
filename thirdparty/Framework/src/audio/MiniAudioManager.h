@@ -22,8 +22,8 @@ namespace fw::audio {
 
 		bool setAudioDevice(uint32 idx) override;
 
-		std::string getActiveDeviceName() override;
+		std::string getActiveOutputName() override;
 
-		void getDeviceNames(std::vector<std::string>& names) override;
+		void getDeviceNames(std::vector<std::string>& inputs, std::vector<std::string>& outputs) override;
 	};
 }

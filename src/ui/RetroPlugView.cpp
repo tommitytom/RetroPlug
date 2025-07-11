@@ -5,7 +5,6 @@
 #include "foundation/FsUtil.h"
 #include "foundation/Input.h"
 #include "foundation/Math.h"
-//#include "foundation/MetaFactory.h"
 #include "foundation/StringUtil.h"
 #include "foundation/SolUtil.h"
 #include "foundation/LuaScriptResource.h"
@@ -14,15 +13,14 @@
 #include "core/Events.h"
 #include "core/FileManager.h"
 #include "core/InputManager.h"
-#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
+#include "core/ProjectSerializer.h"
+#include "core/ProxySystem.h"
+#include "core/RetroPlugConfig.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
 #include "core/SystemProcessor.h"
 #include "core/SystemSettings.h"
-#include "core/Project.h"
-#include "core/ProjectSerializer.h"
-#include "core/ProxySystem.h"
 
 #include "ui/PanelView.h"
 #include "ui/StartView.h"
@@ -30,14 +28,11 @@
 #include "ui/SystemView.h"
 #include "ui/ViewManager.h"
 #include "ui/VerticalSplitter.h"
-#include "ui/PanelView.h"
 #include "ui/UiEditOverlay.h"
 
 #include "fonts/PlatNomor.h"
-#include "foundation/LuaSerializer.h"
 
 #include "foundation/Any.h"
-
 #include "foundation/LuaSerializer.h"
 
 using namespace rp;
@@ -49,21 +44,9 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_typeRegistry(typeRegistry),
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus),
-	_inputManager(FileManager::getContentPath() / "input")
-{	
-	_inputManager.load("default.lua");
+	_inputManager(_fileManager)
+{
 	setName(fmt::format("RetroPlug v{}", RP_VERSION));
-}
-
-template <typename T>
-void setupScriptWatch(const fw::TypeRegistry& reg, fw::ResourceReloader& reloader, std::string_view path, T& target) {
-	fw::ResourceManager& rm = *reloader.getResourceManager();
-
-	/*reloader.startWatch<fw::LuaScriptResource>(path, [&](const fw::LuaScriptHandle& handle) {
-		fw::LuaSerializer::deserializeFromBuffer(reg, handle.getResource().getData(), target);
-	});
-	
-	rm.load<fw::LuaScriptResource>(path);*/
 }
 
 void addTreeNodes(fw::TreeViewNode& node, fw::ViewPtr view) {
@@ -122,16 +105,6 @@ void RetroPlugView::onHotReload() {
 
 void RetroPlugView::onInitialize() {
 	getLayout().setOverflow(fw::FlexOverflow::Visible);
-	//fitToParent();
-
-	fw::ResourceManager& rm = getResourceManager();
-	//rm.addProvider<fw::LuaScriptResource, fw::LuaScriptProvider>();
-
-	_resourceReloader.setResourceManager(rm);
-	//_resourceReloader.startWatch("~/Library/Application Support/RetroPlug");
-	//_resourceReloader.startWatch("C:\\temp\\rpconfig");
-
-	//setupScriptWatch(_typeRegistry, _resourceReloader, "~/Library/Application Support/RetroPlug/config.lua", _config);
 	
 	createState<SystemOverlayManager>();
 	createState(entt::forward_as_any(_project.getSystemFactory()));
@@ -140,15 +113,15 @@ void RetroPlugView::onInitialize() {
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
 	
+	fw::ResourceManager& rm = getResourceManager();
 	rm.create<fw::Font>("PlatNomor", fontDesc);
 
-	_fileManager = &this->createState<FileManager>();
+	this->createState(entt::forward_as_any(_inputManager));
+	this->createState(entt::forward_as_any(_fileManager));
 	this->createState(entt::forward_as_any(_project));
 	this->createState<GlobalSettings>();
 
 	initViews();
-
-	//_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 
 	setupEventHandlers();
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
@@ -166,7 +139,7 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	if (currentMenu) {
 		currentMenu->processButtons(_buttons);
 
-		if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ShowMenu"))) {
+		if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ToggleMenu"))) {
 			currentMenu->remove();
 			_menu.reset();
 		}
@@ -177,7 +150,7 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 		}
 
 		for (auto action : actions) {
-			if (action == "RetroPlug.ShowMenu") {
+			if (action == "RetroPlug.ToggleMenu") {
 				if (selected) {
 					fw::MenuPtr menu = std::make_shared<fw::Menu>();
 					selected->createMenu(*menu);
@@ -191,6 +164,8 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 
 					_menu = menuView;
 				}
+			} else {
+				spdlog::warn("Unhandled action: {}", action);
 			}
 		}
 	}
@@ -253,7 +228,6 @@ void RetroPlugView::onUpdate(f32 delta) {
 	fw::EventNode& eventNode = getState<fw::EventNode>();
 	eventNode.update();
 
-	_resourceReloader.update();
 	getResourceManager().frame();
 
 	hrc::time_point time =  hrc::now();

@@ -69,7 +69,7 @@ bool MiniAudioManager::setAudioDevice(uint32 idx) {
 	return true;
 }
 
-void MiniAudioManager::getDeviceNames(std::vector<std::string>& names) {
+void MiniAudioManager::getDeviceNames(std::vector<std::string>& inputs, std::vector<std::string>& outputs) {
 	ma_device_info* pPlaybackInfos;
 	ma_uint32 playbackCount;
 	ma_device_info* pCaptureInfos;
@@ -80,11 +80,15 @@ void MiniAudioManager::getDeviceNames(std::vector<std::string>& names) {
 	}
 
 	if (playbackCount == 0) {
-		spdlog::warn("No audio devices were detected on this system");
+		spdlog::warn("No audio output devices were detected on this system");
 	}
 
 	for (ma_uint32 i = 0; i < playbackCount; ++i) {
-		names.push_back(std::string(pPlaybackInfos[i].name));
+		outputs.push_back(std::string(pPlaybackInfos[i].name));
+	}
+
+	for (ma_uint32 i = 0; i < captureCount; ++i) {
+		inputs.push_back(std::string(pCaptureInfos[i].name));
 	}
 }
 
@@ -169,7 +173,7 @@ bool MiniAudioManager::start() {
 	return true;
 }
 
-std::string MiniAudioManager::getActiveDeviceName() {
+std::string MiniAudioManager::getActiveOutputName() {
 	ma_device_info info;
 	if (ma_device_get_info(&_state->device, ma_device_type_playback, &info) != MA_SUCCESS) {
 		return "";

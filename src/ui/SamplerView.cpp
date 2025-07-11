@@ -353,8 +353,7 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 
 	_ui.endFrame();
 
-	_canvasView->onRender(canvas);
-	//LsdjCanvasView::onRender(canvas);
+	//_canvasView->onRender(canvas);
 }
 
 void populateEditKit(SystemPtr system, fw::Menu& target) {

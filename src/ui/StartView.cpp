@@ -60,7 +60,7 @@ void StartView::setupMenu() {
 		})
 		.separator();
 
-	MenuBuilder::settingsMenu(menu.subMenu("Settings"), getState<FileManager>(), getState<Project>(), getState<GlobalSettings>(), *getState<fw::audio::AudioManagerPtr>());
+	MenuBuilder::settingsMenu(menu.subMenu("Settings"), getState<InputManager>(), getState<Project>(), getState<GlobalSettings>(), *getState<fw::audio::AudioManagerPtr>());
 
 	setMenu(menuRoot);
 	setAutoClose(false);
