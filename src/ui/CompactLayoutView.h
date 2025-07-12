@@ -21,6 +21,10 @@ namespace rp {
 			_gridOverlay->fitToParent();
 			_gridOverlay->setGrid(_grid);
 
+			subscribe<fw::ChildAddedEvent>(_grid, [this](const fw::ChildAddedEvent& ev) {
+				_gridOverlay->setSelected(_grid->getChildren().size() - 1);
+				_gridOverlay->refocus();
+			});
 			subscribe<fw::ChildRemovedEvent>(_grid, [this](const fw::ChildRemovedEvent& ev) {
 				_gridOverlay->refocus();
 			});

@@ -353,6 +353,8 @@ void SamplerView::onRender(fw::Canvas& canvas) {
 
 	_ui.endFrame();
 
+	_canvasView->setAlpha(getAlpha());
+
 	//_canvasView->onRender(canvas);
 }
 
