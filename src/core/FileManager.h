@@ -39,14 +39,6 @@ namespace rp {
 		FileManager();
 		~FileManager() {}
 
-		void setRootPath(const std::filesystem::path& rootPath) {
-			_rootPath = rootPath;
-		}
-
-		const std::filesystem::path& getRootPath() const {
-			return _rootPath;
-		}
-
 		Watch::Id startWatch(const std::filesystem::path& path, Watch::Callback&& func);
 
 		void addRecent(RecentFilePath&& recent);

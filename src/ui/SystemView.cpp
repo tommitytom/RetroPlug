@@ -97,20 +97,21 @@ void SystemView::processButtons(const fw::ButtonWriter& stream) {
 
 void SystemView::createMenu(fw::Menu& target) {
 	FileManager& fileManager = getState<FileManager>();
+	fw::FileDialogManager& dialogManager = getState<fw::FileDialogManager>();
 	InputManager& inputManager = getState<InputManager>();
 	Project& project = getState<Project>();
-	GlobalSettings& globalSettings = getState<GlobalSettings>();
-	ProjectState& projectState = project.getState();
+	RetroPlugConfig& config = getState<RetroPlugConfig>();
+	const fw::TypeRegistry& typeReg = getState<const fw::TypeRegistry>();
 	fw::audio::AudioManagerPtr& audioManager = getState<fw::audio::AudioManagerPtr>();
 
 	fw::Menu& root = target.title(fmt::format("RetroPlug v{} - {}", rp::RP_VERSION, _system->getRomName())).separator();
 	MenuBuilder::populateRecent(root.subMenu("Recent"), fileManager, project, _system);
 	root.separator();
-	MenuBuilder::commonMenu(root, fileManager, project, *_system);
+	MenuBuilder::commonMenu(root, dialogManager, fileManager, project, *_system);
 	root.separator();
 	MenuBuilder::projectMenu(root.subMenu("Project"), fileManager, project, *_system);
-	MenuBuilder::systemMenu(root.subMenu("System"), fileManager, project, _system);
-	MenuBuilder::settingsMenu(root.subMenu("Settings"), inputManager, project, globalSettings, *audioManager);
+	MenuBuilder::systemMenu(root.subMenu("System"), dialogManager, fileManager, project, _system);
+	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, *audioManager);
 
 	if (getChildren().size() > 0) {
 		root.separator();

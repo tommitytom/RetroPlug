@@ -17,7 +17,7 @@ SystemServicePtr findService(SystemPtr system, SystemServiceType type) {
 	return nullptr;
 }
 
-RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus)
+RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config)
 	: _ioMessageBus(messageBus), _typeRegistry(typeRegistry), _systemFactory(systemFactory), _systemManager(systemFactory, messageBus.allocator)
 {
 	fw::EventNode& node = getEventNode();

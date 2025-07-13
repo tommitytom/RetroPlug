@@ -4,7 +4,7 @@ return {
 		namespace = "rp::"
 	},
 	modules = {
-		config = { path = "scripts/config/0.4", compile = false },
+		config = { path = "scripts/config", compile = false },
 		utils = { path = "scripts/utils" }
 	}
 }

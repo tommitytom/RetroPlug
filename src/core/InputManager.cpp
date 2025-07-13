@@ -14,7 +14,7 @@
 
 namespace rp {
 	InputManager::InputManager(FileManager& fileManager) : _fileManager(fileManager) {
-		_rootPath = _fileManager.getRootPath() / "input";
+		_rootPath = FileManager::getContentPath() / "input";
 		_selectedConfigs[(int)InputType::Key] = "default.lua";
 		_selectedConfigs[(int)InputType::Pad] = "default.lua";
 
@@ -124,6 +124,7 @@ namespace rp {
 		if (!result.valid()) {
 			spdlog::error("Failed to clean input config data: {}", result.get<sol::error>().what());
 			delete s;
+			return;
 		}
 		
 		if (keyValid || padValid) {

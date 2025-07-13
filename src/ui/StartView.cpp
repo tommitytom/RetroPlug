@@ -30,11 +30,12 @@ void StartView::setupMenu() {
 		.action("Load...", [&](fw::MenuContext& ctx) {
 			ctx.retain();
 
-			std::vector<std::string> files;
-			if (fw::FileDialog::openFile(files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>());
-				ctx.close();
-			}
+			fw::FileDialogManager& dialog = getState<fw::FileDialogManager>();
+			dialog.openFile({ ROM_FILTER, PROJECT_FILTER }, pfd::opt::multiselect, [&](std::vector<std::string>&& files) {
+				if (LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>())) {
+					ctx.close();
+				}
+			});
 		});
 
 	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getState<FileManager>(), getState<Project>(), nullptr);
@@ -60,7 +61,16 @@ void StartView::setupMenu() {
 		})
 		.separator();
 
-	MenuBuilder::settingsMenu(menu.subMenu("Settings"), getState<InputManager>(), getState<Project>(), getState<GlobalSettings>(), *getState<fw::audio::AudioManagerPtr>());
+	auto reg = getState<const fw::TypeRegistry>();
+
+	MenuBuilder::settingsMenu(
+		menu.subMenu("Settings"), 
+		getState<const fw::TypeRegistry>(), 
+		getState<InputManager>(), 
+		getState<Project>(), 
+		getState<RetroPlugConfig>(), 
+		*getState<fw::audio::AudioManagerPtr>()
+	);
 
 	setMenu(menuRoot);
 	setAutoClose(false);

@@ -27,46 +27,16 @@ struct MiniAudioManager::State {
 MiniAudioManager::MiniAudioManager() {
 	_state = new MiniAudioManager::State();
 	_state->sampleRate = 48000;
+
+	if (ma_context_init(NULL, 0, NULL, &_state->context) != MA_SUCCESS) {
+		spdlog::error("Failed to create audio context");
+	}
 }
 
 MiniAudioManager::~MiniAudioManager() {
 	stop();
+	ma_device_uninit(&_state->device); // This will stop the device so no need to do that manually.
 	delete _state;
-}
-
-bool MiniAudioManager::setAudioDevice(uint32 idx) {
-	ma_device_info* pPlaybackInfos;
-	ma_uint32 playbackCount;
-	ma_device_info* pCaptureInfos;
-	ma_uint32 captureCount;
-	if (ma_context_get_devices(&_state->context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
-		spdlog::error("Failed to enumerate audio devices");
-		return false;
-	}
-
-	if (idx >= playbackCount) {
-		spdlog::error("Failed to set audio device: Device index is invalid");
-		return false;
-	}
-
-	ma_device_stop(&_state->device);
-
-	ma_device_config config = ma_device_config_init(ma_device_type_playback);
-	config.playback.pDeviceID = &pPlaybackInfos[idx].id;
-	config.playback.format = ma_format_f32;
-	config.playback.channels = 2;
-	config.sampleRate = _state->sampleRate; // Set to 0 to use the device's native sample rate.
-	config.dataCallback = callback;
-	config.pUserData = this;
-
-	if (ma_device_init(NULL, &config, &_state->device) != MA_SUCCESS) {
-		spdlog::error("Failed to initialize audio device");
-		return false;
-	}
-
-	ma_device_start(&_state->device);
-
-	return true;
 }
 
 void MiniAudioManager::getDeviceNames(std::vector<std::string>& inputs, std::vector<std::string>& outputs) {
@@ -134,12 +104,15 @@ bool MiniAudioManager::loadFile(std::string_view path, std::vector<f32>& target)
 	}*/
 }
 
-bool MiniAudioManager::start() {
-	if (ma_context_init(NULL, 0, NULL, &_state->context) != MA_SUCCESS) {
-		spdlog::error("Failed to create audio context");
-		return false;
-	}
+bool MiniAudioManager::start(int32 idx) {
+	return setAudioDevice(idx);
+}
 
+bool MiniAudioManager::setAudioDevice(int32 idx) {
+	if (_active) {
+		ma_device_stop(&_state->device);
+	}
+	
 	ma_device_info* pPlaybackInfos;
 	ma_uint32 playbackCount;
 	ma_device_info* pCaptureInfos;
@@ -149,26 +122,31 @@ bool MiniAudioManager::start() {
 		return false;
 	}
 
-	// Loop over each device info and do something with it. Here we just print the name with their index. You may want
-	// to give the user the opportunity to choose which device they'd prefer.
-	for (ma_uint32 iDevice = 0; iDevice < playbackCount; iDevice += 1) {
-		printf("%d - %s\n", iDevice, pPlaybackInfos[iDevice].name);
+	if (idx != -1 && idx >= playbackCount) {
+		spdlog::error("Failed to set audio device: Device index is invalid");
+		return false;
 	}
 
 	ma_device_config config = ma_device_config_init(ma_device_type_playback);
-	//config.playback.pDeviceID = &pPlaybackInfos[0].id;
 	config.playback.format = ma_format_f32;
 	config.playback.channels = 2;
 	config.sampleRate = _state->sampleRate; // Set to 0 to use the device's native sample rate.
 	config.dataCallback = callback;
 	config.pUserData = this;
 
+	if (idx != -1) {
+		config.playback.pDeviceID = &pPlaybackInfos[idx].id;
+	}
+
 	if (ma_device_init(NULL, &config, &_state->device) != MA_SUCCESS) {
 		spdlog::error("Failed to initialize audio device");
 		return false;
 	}
 
-	ma_device_start(&_state->device); // The device is sleeping by default so you'll need to start it manually.
+	ma_device_start(&_state->device);
+
+	_active = true;
+	_outputIdx = idx;
 
 	return true;
 }
@@ -183,7 +161,9 @@ std::string MiniAudioManager::getActiveOutputName() {
 }
 
 void MiniAudioManager::stop() {
-	ma_device_uninit(&_state->device); // This will stop the device so no need to do that manually.
+	if (_active) {
+		ma_device_stop(&_state->device);
+	}
 }
 
 f32 MiniAudioManager::getSampleRate() {

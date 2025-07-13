@@ -13,24 +13,10 @@
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 
-#ifdef FW_OS_WINDOWS
-namespace fw {
-	using UiHandle = void;
-}
-#else
-namespace iplug {
-	namespace igraphics {
-		class IGraphics;
-	}
-}
-
-using UiHandle = iplug::igraphics::IGraphics;
-#endif
-
 namespace fw {
 	struct FileDialogFilter {
 		std::string name;
-		std::string extensions;
+		std::vector<std::string> extensions;
 	};
 
 	enum class DialogType {

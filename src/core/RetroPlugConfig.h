@@ -7,8 +7,8 @@
 namespace rp {
 	struct GlobalSettings {
 		std::string audioDeviceName;
-		std::string keyboard;
-		std::string pad;
+		std::string keyboard = "default.lua";
+		std::string pad = "default.lua";
 	};
 	
 	struct RetroPlugConfig {

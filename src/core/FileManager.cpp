@@ -1,5 +1,6 @@
 #include "FileManager.h"
 
+#include <semver/semver.hpp>
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
@@ -8,6 +9,7 @@
 #include "foundation/StlUtil.h"
 #include "foundation/StringUtil.h"
 
+#include "core/Constants.h"
 #include "core/LuaUtil.h"
 
 using namespace rp;
@@ -28,7 +30,9 @@ std::filesystem::path FileManager::getContentPath() {
 		#error "Platform is not supported!"
 	#endif
 
-	return path / "0.3";
+	semver::version version;
+	semver::parse(rp::RP_VERSION, version);
+	return path / fmt::format("{}.{}", version.major(), version.minor());
 }
 
 FileManager::FileManager() {

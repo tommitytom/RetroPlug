@@ -43,10 +43,6 @@ namespace fw::app {
 			}
 		}
 
-		if (_audioManager) {
-			_audioManager->start();
-		}
-
 		//_app->onInitialize(*_uiContext, _audioManager);
 
 		return _uiContext->getMainWindow();

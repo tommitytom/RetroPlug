@@ -10,7 +10,8 @@ KeyMap({
 	[Key.DownArrow] = Button.Down,
 	[Key.RightArrow] = Button.Right,
 
-	[Key.Ctrl] = Button.Select,
+	[Key.LeftCtrl] = Button.Select,
+	[Key.LeftShift] = Button.Select,
 	[Key.Enter] = Button.Start,
 
 	[Key.W] = Button.B,
@@ -19,6 +20,7 @@ KeyMap({
 
 -- Keyboard keys mapped to global events, regardless of what gameboy is selected
 GlobalKeyMap({
+	[Key.Esc] = Action.RetroPlug.ToggleMenu,
 	[Key.Tab] = Action.RetroPlug.NextSystem,
 	[{ Key.Ctrl, Key.S }] = Action.RetroPlug.SaveProject
 })

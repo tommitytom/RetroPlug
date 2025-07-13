@@ -10,11 +10,12 @@
 #include "foundation/StlUtil.h"
 #include "foundation/Shell.h"
 
+#include "core/ConfigUtil.h"
 #include "core/FileManager.h"
 #include "core/InputManager.h"
-#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/ProjectExporter.h"
+#include "core/RetroPlugConfig.h"
 #include "core/System.h"
 #include "util/LoaderUtil.h"
 #include "util/RecentUtil.h"
@@ -25,10 +26,8 @@
 
 using namespace rp;
 
-void loadRomDialog(Project& project, SystemPtr system) {
-	std::vector<std::string> files;
-
-	if (fw::FileDialog::openFile(files, { ROM_FILTER }, false)) {
+void loadRomDialog(fw::FileDialogManager& dialog, Project& project, SystemPtr system) {
+	dialog.openFile({ ROM_FILTER }, pfd::opt::none, [&](std::vector<std::string>&& files) {
 		LoadConfig loadConfig = LoadConfig{
 			.desc = {
 				.paths = {
@@ -52,7 +51,7 @@ void loadRomDialog(Project& project, SystemPtr system) {
 		} else {
 			project.addSystem(SAMEBOY_GUID, std::move(loadConfig));
 		}
-	}
+	});
 }
 
 void loadSavDialog(Project& project, SystemPtr system) {
@@ -214,11 +213,11 @@ void MenuBuilder::projectMenu(fw::Menu& root, FileManager& fileManager, Project&
 		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &project.getState().settings.audioRouting);
 }
 
-void MenuBuilder::systemMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
+void MenuBuilder::systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
 	root
 		.select("Game Link", system->getGameLink(), [system](bool val) { system->setGameLink(val); })
 		.separator()
-		.action("Load ROM...", [&project]() { loadRomDialog(project, nullptr); })
+		.action("Load ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 		.action("Reset", []() {})
 		.separator()
 		.action("Clear SRAM", []() {})
@@ -239,7 +238,7 @@ struct SettingsMenuState {
 	int32 padConfigId = 0;
 };
 
-void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Project& project, GlobalSettings& settings, fw::audio::AudioManager& audioManager) {
+void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, InputManager& inputManager, Project& project, RetroPlugConfig& config, fw::audio::AudioManager& audioManager) {
 	auto state = std::make_shared<SettingsMenuState>();
 
 #ifndef RP_WEB
@@ -271,23 +270,28 @@ void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Proje
 		.multiSelect("Keyboard", state->inputConfigs, state->keyConfigId, [state](int idx) { state->keyConfigId = idx; })
 		.multiSelect("Pad", state->inputConfigs, state->padConfigId, [state](int idx) { state->padConfigId = idx; })
 		.separator()
-		.action("Apply", [&audioManager, &inputManager, state](fw::MenuContext& ctx) {
+		.action("Apply", [&audioManager, &inputManager, &config, &types, state](fw::MenuContext& ctx) {
 			auto inputConfigs = inputManager.getAvailableConfigs();
 			if (state->keyConfigId >= 0 && state->keyConfigId < (int32)inputConfigs.size()) {
-				auto config = inputConfigs[state->keyConfigId];
-				if (config.valid) {
-					inputManager.load(inputConfigs[state->keyConfigId].name, InputType::Key);
+				auto inputConfig = inputConfigs[state->keyConfigId];
+				if (inputConfig.valid) {
+					inputManager.load(inputConfig.name, InputType::Key);
+					config.settings.keyboard = inputConfig.name;
 				}
 			}
 
 			if (state->padConfigId >= 0 && state->padConfigId < (int32)inputConfigs.size()) {
-				auto config = inputConfigs[state->padConfigId];
-				if (config.valid) {
-					inputManager.load(inputConfigs[state->padConfigId].name, InputType::Pad);
+				auto inputConfig = inputConfigs[state->padConfigId];
+				if (inputConfig.valid) {
+					inputManager.load(inputConfig.name, InputType::Pad);
+					config.settings.pad = inputConfig.name;
 				}
 			}
 
 			audioManager.setAudioDevice((uint32)state->audioOutDeviceId);
+			config.settings.audioDeviceName = state->audioOut[state->audioOutDeviceId];
+
+			ConfigUtil::serialize(types, (FileManager::getContentPath() / "config.lua").string(), config);
 
 			ctx.retain();
 		})
@@ -295,14 +299,14 @@ void MenuBuilder::settingsMenu(fw::Menu& root, InputManager& inputManager, Proje
 		.action("Open Settings Folder", []() { fw::openShellFolder(FileManager::getContentPath().string()); });
 }
 
-void MenuBuilder::commonMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system) {
+void MenuBuilder::commonMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, System& system) {
 	root.subMenu("Add System")
 			.action("Duplicate Current", [&system, &fileManager, &project]() {
 				SystemDesc desc = system.getDesc();
 				desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
 				project.duplicateSystem(system.getId()/*, desc*/);
 			})
-			.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
+			.action("ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 			.parent()
 		.action("Remove System", [&project, &system]() {
 			if (project.getSystems().size() > 1) {
@@ -335,7 +339,7 @@ void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Proje
 	}
 }
 
-void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
+void MenuBuilder::systemAddMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Add");
 
 	loadRoot.action("Duplicate Current", [&fileManager, &project, system]() {
@@ -347,11 +351,11 @@ void MenuBuilder::systemAddMenu(fw::Menu& root, FileManager& fileManager, Projec
 	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
 
 	loadRoot
-		.action("ROM...", [&project]() { loadRomDialog(project, nullptr); })
+		.action("ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 		.parent();
 }
 
-void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
+void MenuBuilder::systemLoadMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
 	fw::Menu& loadRoot = root.subMenu("Load");
 
 	populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
@@ -366,8 +370,8 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, FileManager& fileManager, Proje
 				ctx.close();
 			}
 		})
-		.action("ROM...", [&project, system]() { loadRomDialog(project, system); })
-		.action("SAV...", [&project, system]() { loadSavDialog(project, system); })
+		.action("ROM...", [&project, &dialog, system]() { loadRomDialog(dialog, project, system); })
+		.action("SAV...", [&project, &dialog, system]() { loadSavDialog(project, system); })
 		.parent();
 }
 

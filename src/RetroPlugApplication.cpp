@@ -2,7 +2,7 @@
 
 #include "foundation/OsPath.h"
 
-#include "core/ConfigSerializer.h"
+#include "core/ConfigUtil.h"
 #include "core/MgbService.h"
 #include "core/Project.h"
 #include "core/ProxySystem.h"
@@ -114,34 +114,13 @@ RetroPlugApplication::RetroPlugApplication() {
 	_systemFactory.addSystemServiceProvider<LsdjServiceProvider>();
 	_systemFactory.addSystemServiceProvider<MgbServiceProvider>();
 
-	// Load global settings
-	std::filesystem::path configDir = fw::OsPath::getContentPath();
-	configDir /= "RetroPlug";
-	configDir /= "0.3";
-	std::string configPath = (configDir / "config.lua").string();
-
-	RetroPlugConfig config;
-
-	std::string fileData = fw::FsUtil::readTextFile(configPath);
-	if (fileData.empty()) {
-		// Config does not exist, first check if we need to migrate, otherwise write default
-		ConfigSerializer::serialize(_typeRegistry, configPath, config);
-	} else {
-		if (!ConfigSerializer::deserializeFromMemory(_typeRegistry, fileData, config)) {
-			spdlog::error("Failed to load RetroPlug config from {}", configPath);
-		}
-	}	
-
-	// Load input maps
-	for (auto const& dirEntry : std::filesystem::directory_iterator{ configDir / "input" }) {
-		std::cout << dirEntry.path() << '\n';
-	}
+	ConfigUtil::initContent(_typeRegistry, _config);
 }
 
 fw::ViewPtr RetroPlugApplication::onCreateUi() {
-	return std::make_shared<RetroPlugView>(_typeRegistry, _systemFactory, _ioMessageBus);
+	return std::make_shared<RetroPlugView>(_typeRegistry, _systemFactory, _ioMessageBus, _config);
 }
 
 fw::AudioProcessorPtr RetroPlugApplication::onCreateAudio() {
-	return std::make_shared<RetroPlugProcessor>(_typeRegistry, _systemFactory, _ioMessageBus);
+	return std::make_shared<RetroPlugProcessor>(_typeRegistry, _systemFactory, _ioMessageBus, _config);
 }

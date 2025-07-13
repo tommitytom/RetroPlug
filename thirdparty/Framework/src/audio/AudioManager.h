@@ -31,7 +31,7 @@ namespace fw::audio {
 			_processor->onRender(output, input, frameCount);
 		}
 
-		virtual bool start() { return false; }
+		virtual bool start(int32 idx) { return false; }
 
 		virtual void stop() {}
 
@@ -45,7 +45,7 @@ namespace fw::audio {
 
 		virtual f32 getSampleRate() { return _sampleRate; }
 
-		virtual bool setAudioDevice(uint32 idx) { return false; }
+		virtual bool setAudioDevice(int32 idx) { return false; }
 
 		virtual std::string getActiveOutputName() { return ""; }
 

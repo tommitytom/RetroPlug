@@ -107,10 +107,10 @@ bool FileDialog::openFile(std::vector<std::string>& target, const std::vector<Fi
 	std::vector<std::string> stringFilters;
 
 	for (const FileDialogFilter& filter : filters) {
-		std::string name = filter.name + " (" + filter.extensions + ")";
+		std::string name = filter.name;
 
 		stringFilters.push_back(name);
-		stringFilters.push_back(filter.extensions);
+		stringFilters.push_back("");
 	}
 
 	target = pfd::open_file("Open File", "", stringFilters, multiSelect ? pfd::opt::multiselect : pfd::opt::none).result();
@@ -122,7 +122,7 @@ bool FileDialog::saveFile(std::string& target, const std::vector<FileDialogFilte
 
 	for (const FileDialogFilter& filter : filters) {
 		stringFilters.push_back(filter.name);
-		stringFilters.push_back(filter.extensions);
+		stringFilters.push_back("");
 	}
 
 	target = pfd::save_file("Save File", "", stringFilters).result();

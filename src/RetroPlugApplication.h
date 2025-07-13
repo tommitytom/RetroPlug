@@ -1,8 +1,9 @@
 #pragma once
 
 #include "foundation/TypeRegistry.h"
-#include "core/SystemFactory.h"
+#include "core/RetroPlugConfig.h"
 #include "core/System.h"
+#include "core/SystemFactory.h"
 #include "application/Application.h"
 
 using namespace rp;
@@ -12,6 +13,7 @@ private:
 	IoMessageBus _ioMessageBus;
 	fw::TypeRegistry _typeRegistry;
 	SystemFactory _systemFactory;
+	RetroPlugConfig _config;
 
 public:
 	RetroPlugApplication();

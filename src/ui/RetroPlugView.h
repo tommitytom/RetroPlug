@@ -2,8 +2,6 @@
 
 #include <string>
 
-#include <sol/sol.hpp>
-
 #include "foundation/DataBuffer.h"
 #include "foundation/ResourceReloader.h"
 #include "audio/AudioManager.h"
@@ -16,6 +14,7 @@
 #include "ui/TreeView.h"
 #include "ui/View.h"
 #include "ui/ObjectInspectorView.h"
+#include "ui/FileDialogManager.h"
 
 namespace rp {
 	enum class ThreadTarget {
@@ -31,36 +30,19 @@ namespace rp {
 	private:
 		using hrc = std::chrono::high_resolution_clock;
 
-		f64 _nextFrame = 0;
-
-		fw::Uint8Buffer _romBuffer;
-		fw::Uint8Buffer _savBuffer;
-
-		std::string _romPath;
-		std::string _savPath;
-
-		bool _ready = false;
-
 		IoMessageBus& _ioMessageBus;
 		const fw::TypeRegistry& _typeRegistry;
 		FileManager _fileManager;
 		InputManager _inputManager;
+		fw::FileDialogManager _fileDialogManager;
 		fw::ButtonWriter _buttons;
 
-		//std::shared_ptr<RetroPlugProcessor> _audioProcessor;
-
 		CompactLayoutViewPtr _compactLayout;
-
 		Project _project;
-
-		//SystemIndex _selected = INVALID_SYSTEM_IDX;
 
 		uint32 _sampleRate = 48000;
 
 		ThreadTarget _defaultTarget = ThreadTarget::Audio;
-
-		//std::vector<SystemIoPtr> _ioCollection;
-		size_t _totalIoAllocated = 0;
 
 		//GlobalConfig _config;
 
@@ -75,14 +57,11 @@ namespace rp {
 
 		fw::ResourceReloader _resourceReloader;
 
-		fw::ObjectInspectorViewPtr _inspector;
-		fw::TreeViewPtr _viewTree;
-		fw::ViewPtr _editContainer;
-
 		std::weak_ptr<MenuView> _menu;
+		RetroPlugConfig _config;
 
 	public:
-		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus);
+		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config);
 		~RetroPlugView() = default;
 
 		void onInitialize() override;

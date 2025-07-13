@@ -8,19 +8,22 @@ namespace fw::audio {
 		struct State;
 		State* _state = nullptr;
 
+		bool _active = false;
+		int32 _outputIdx = -1;
+
 	public:
 		MiniAudioManager();
 		~MiniAudioManager();
 
 		bool loadFile(std::string_view path, std::vector<f32>& target) override;
 
-		bool start() override;
+		bool start(int32 idx) override;
 
 		void stop() override;
 
 		f32 getSampleRate() override;
 
-		bool setAudioDevice(uint32 idx) override;
+		bool setAudioDevice(int32 idx) override;
 
 		std::string getActiveOutputName() override;
 

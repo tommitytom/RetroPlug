@@ -12,11 +12,11 @@
 using namespace rp;
 
 const std::vector<fw::FileDialogFilter> SAMPLE_FILTER = {
-	{ "Audio Files", "*.wav *.flac *.mp3" }
+	{ "Audio Files", {"*.wav", "*.flac", "*.mp3"} }
 };
 
 const std::vector<fw::FileDialogFilter> KIT_FILTER = {
-	{ "LSDj Kit Files", "*.kit" }
+	{ "LSDj Kit Files", { "*.kit" } }
 };
 
 const fw::RectT BOX_SIZE = fw::RectT(6, 12, 13, 5);

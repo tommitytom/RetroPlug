@@ -9,6 +9,7 @@
 #include "foundation/SolUtil.h"
 #include "foundation/LuaScriptResource.h"
 
+#include "core/ConfigUtil.h"
 #include "core/Constants.h"
 #include "core/Events.h"
 #include "core/FileManager.h"
@@ -39,64 +40,25 @@ using namespace rp;
 
 constexpr std::chrono::duration AUDIO_THREAD_TIMEOUT = std::chrono::milliseconds(500);
 
-RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus):
+RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config):
 	View({ 480, 432 }),
 	_typeRegistry(typeRegistry),
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus),
-	_inputManager(_fileManager)
+	_inputManager(_fileManager),
+	_config(config)
 {
 	setName(fmt::format("RetroPlug v{}", RP_VERSION));
-}
 
-void addTreeNodes(fw::TreeViewNode& node, fw::ViewPtr view) {
-	node.name = view->getName();
-
-	for (const auto& child : view->getChildren()) {
-		addTreeNodes(node.children.emplace_back(), child);
-	}
+	_inputManager.load(_config.settings.keyboard, InputType::Key);
+	_inputManager.load(_config.settings.pad, InputType::Pad);
 }
 
 void RetroPlugView::initViews() {
 	this->removeChildren();
-
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
-
 	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
 	//_compactLayout->fitToParent();
-
-	/*auto splitter = this->addChild<fw::DockSplitter>("Splitter");
-	splitter->fitToParent();
-
-	fw::ViewPtr inspectorContainer = splitter->addItem<fw::View>("InspectorPanel", 0);
-	inspectorContainer->fitToParent();
-
-	_viewTree = inspectorContainer->addChild<fw::TreeView>("UiTree");
-	_viewTree->getLayout().setDimensions(fw::FlexDimensionValue{
-		.width = fw::FlexValue(fw::FlexUnit::Percent, 100.0f),
-		.height = fw::FlexValue(fw::FlexUnit::Auto)
-	});
-
-	_inspector = inspectorContainer->addChild<fw::ObjectInspectorView>("Inspector");
-	_inspector->getLayout().setDimensions(fw::FlexDimensionValue{
-		.width = fw::FlexValue(fw::FlexUnit::Percent, 100.0f),
-		.height = fw::FlexValue(fw::FlexUnit::Auto)
-	});
-
-	_editContainer = splitter->addItem<fw::View>("UI Editor Container", 100);
-	_editContainer->fitToParent();
-	
-	_compactLayout = _editContainer->addChild<CompactLayoutView>("Compact Layout");
-	_compactLayout->fitToParent();
-
-	std::shared_ptr<fw::UiEditOverlay> editOverlay = std::make_shared<fw::UiEditOverlay>(_typeRegistry, _inspector);
-	_editContainer->addChild(editOverlay);
-
-	editOverlay->setName("UI Overlay");
-	editOverlay->fitToParent();
-	editOverlay->setView(_editContainer);
-
-	_inspector->addView(_typeRegistry, _compactLayout);*/
 }
 
 void RetroPlugView::onHotReload() {
@@ -105,6 +67,13 @@ void RetroPlugView::onHotReload() {
 
 void RetroPlugView::onInitialize() {
 	getLayout().setOverflow(fw::FlexOverflow::Visible);
+
+	fw::audio::AudioManagerPtr& audioManager = getState<fw::audio::AudioManagerPtr>();
+	std::vector<std::string> audioIn;
+	std::vector<std::string> audioOut;
+	audioManager->getDeviceNames(audioIn, audioOut);
+	const int32 idx = fw::StlUtil::getVectorIndex(audioOut, _config.settings.audioDeviceName);
+	audioManager->start(idx);
 	
 	createState<SystemOverlayManager>();
 	createState(entt::forward_as_any(_project.getSystemFactory()));
@@ -118,8 +87,10 @@ void RetroPlugView::onInitialize() {
 
 	this->createState(entt::forward_as_any(_inputManager));
 	this->createState(entt::forward_as_any(_fileManager));
+	this->createState(entt::forward_as_any(_fileDialogManager));
 	this->createState(entt::forward_as_any(_project));
-	this->createState<GlobalSettings>();
+	this->createState(entt::forward_as_any(_config));
+	this->createState(entt::forward_as_any(_typeRegistry));
 
 	initViews();
 
@@ -135,9 +106,16 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 		return false;
 	}
 
+	// If a file dialog opens as the result of a key press, then this function will block until it is closed.
+	// Because of this _buttons will never be properly cleared, so when the key up event in processed, it will
+	// double process the key down event. To ensure this doesnt happen, we make a copy of the button presses to pass
+	// to child elements, and clear the button list right away.
+	fw::ButtonWriter buttonWriter(_buttons);
+	_buttons.clear();
+
 	MenuViewPtr currentMenu = _menu.lock();
 	if (currentMenu) {
-		currentMenu->processButtons(_buttons);
+		currentMenu->processButtons(buttonWriter);
 
 		if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ToggleMenu"))) {
 			currentMenu->remove();
@@ -146,7 +124,7 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	} else {
 		GridItemPtr selected = _compactLayout->getSelected();
 		if (selected) {
-			selected->processButtons(_buttons);
+			selected->processButtons(buttonWriter);
 		}
 
 		for (auto action : actions) {
@@ -160,7 +138,9 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 					menuView->setMenu(menu);
 					menuView->focus();
 
-					subscribe<fw::DismountEvent>(menuView, [this]() { getState<Project>().setDirty(); });
+					subscribe<fw::DismountEvent>(menuView, [this]() { 
+						_project.setDirty();
+					});
 
 					_menu = menuView;
 				}
@@ -171,8 +151,6 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 			}
 		}
 	}
-
-	_buttons.clear();
 
 	return true;
 }
@@ -231,6 +209,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 	eventNode.update();
 
 	getResourceManager().frame();
+	_fileDialogManager.update();
 
 	hrc::time_point time =  hrc::now();
 
