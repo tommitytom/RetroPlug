@@ -37,6 +37,7 @@ namespace rp {
 		fw::FileDialogManager _fileDialogManager;
 		fw::ButtonWriter _buttons;
 
+		SystemContainerViewPtr _systemContainer;
 		CompactLayoutViewPtr _compactLayout;
 		Project _project;
 

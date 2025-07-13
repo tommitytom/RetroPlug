@@ -185,11 +185,11 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 		auto found = loadConfig.desc.services.find(service->getType());
 		if (found != loadConfig.desc.services.end()) {
 			service->setState(found->second);
+			found->second = service->getState();
+			assert(!found->second.owner());
 		}
 
 		service->onBeforeLoad(loadConfig);
-
-		loadConfig.desc.services[service->getType()] = service->getState();
 
 		system->addService(service);
 	}
@@ -214,13 +214,16 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 		system->getStateOffsets()
 	);
 
-	proxySystem->setDesc(system->getDesc());
 	proxySystem->setResolution(system->getResolution());
 
+	SystemDesc proxyDesc = system->getDesc();
 	for (SystemServicePtr& service : system->getServices()) {
 		ProxySystemServicePtr proxyService = std::make_shared<ProxySystemService>(service->getType(), service->getState());
 		proxySystem->addService(proxyService);
+		proxyDesc.services[proxyService->getType()] = proxyService->getState();
 	}
+
+	proxySystem->setDesc(std::move(proxyDesc));
 
 	_systemManager.addSystem(proxySystem);
 

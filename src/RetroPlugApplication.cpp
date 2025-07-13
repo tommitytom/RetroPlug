@@ -72,6 +72,7 @@ RetroPlugApplication::RetroPlugApplication() {
 	_typeRegistry.addEnum<LsdjSyncMode>();
 
 	_typeRegistry.addType<ArduinoboyServiceSettings>()
+		.addField<&ArduinoboyServiceSettings::autoPlay>("autoPlay")
 		.addField<&ArduinoboyServiceSettings::syncMode>("syncMode")
 		.addField<&ArduinoboyServiceSettings::tempoDivisor>("tempoDivisor")
 		;

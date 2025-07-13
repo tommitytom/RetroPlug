@@ -75,16 +75,15 @@ void RetroPlugView::onInitialize() {
 	const int32 idx = fw::StlUtil::getVectorIndex(audioOut, _config.settings.audioDeviceName);
 	audioManager->start(idx);
 	
-	createState<SystemOverlayManager>();
-	createState(entt::forward_as_any(_project.getSystemFactory()));
-
 	fw::FontDesc fontDesc;
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
-	
+
 	fw::ResourceManager& rm = getResourceManager();
 	rm.create<fw::Font>("PlatNomor", fontDesc);
-
+	
+	this->createState<SystemOverlayManager>();
+	this->createState(entt::forward_as_any(_project.getSystemFactory()));
 	this->createState(entt::forward_as_any(_inputManager));
 	this->createState(entt::forward_as_any(_fileManager));
 	this->createState(entt::forward_as_any(_fileDialogManager));

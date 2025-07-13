@@ -4,7 +4,13 @@
 #include "ui/GridView.h"
 
 namespace rp {
-	class CompactLayoutView final : public fw::View {
+	class SystemContainerView : public fw::View {
+		FwRegisterObject();
+	};
+
+	using SystemContainerViewPtr = std::shared_ptr<SystemContainerView>;
+
+	class CompactLayoutView final : public SystemContainerView {
 		FwRegisterObject();
 	private:
 		fw::GridViewPtr _grid;

@@ -67,7 +67,7 @@ namespace rp {
 	}
 
 	void ArduinoboyService::onAfterLoad(System& system) {
-		this->receive<fw::KeyEvent>([this, &system](const fw::KeyEvent& ev) {
+		/*this->receive<fw::KeyEvent>([this, &system](const fw::KeyEvent& ev) {
 			switch (getRawState().syncMode) {
 			case LsdjSyncMode::Keyboard: {
 				uint8_t scancodes[8];
@@ -114,7 +114,7 @@ namespace rp {
 				break;
 			}
 			}
-		});
+		});*/
 	}
 
 	void sendSerialByte(FixedQueue<TimedByte, 16>& target, uint8 byte, uint32 audioFrameOffset) {

@@ -134,7 +134,7 @@ bool saveSram(Project& project, SystemPtr system, bool forceDialog) {
 	return false;
 }
 
-bool saveState(Project& project, SystemPtr system) {
+bool saveState(Project& project, SystemPtr system, bool forceDialog) {
 	std::string path;
 
 	if (!fw::FileDialog::saveFile(path, { STATE_FILTER })) {
@@ -218,15 +218,16 @@ void MenuBuilder::systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, File
 		.select("Game Link", system->getGameLink(), [system](bool val) { system->setGameLink(val); })
 		.separator()
 		.action("Load ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
-		.action("Reset", []() {})
+		.action("Reset", [system]() { system->reset(); })
 		.separator()
-		.action("Clear SRAM", []() {})
-		.action("Save SRAM", []() {})
-		.action("Save SRAM As...", []() {})
+		.action("Clear SRAM", [system]() {
+			system->reset();
+		})
+		.action("Save SRAM", [&project, system]() { saveSram(project, system, false); })
+		.action("Save SRAM As...", [&project, system]() { saveSram(project, system, true); })
 		.separator()
-		.action("Clear State", []() {})
-		.action("Save State", []() {})
-		.action("Save State as...", []() {});
+		.action("Save State", [&project, system]() { saveState(project, system, false); })
+		.action("Save State as...", [&project, system]() { saveState(project, system, false); });
 }
 
 struct SettingsMenuState {
@@ -238,26 +239,24 @@ struct SettingsMenuState {
 	int32 padConfigId = 0;
 };
 
-void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, InputManager& inputManager, Project& project, RetroPlugConfig& config, fw::audio::AudioManager& audioManager) {
+void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, InputManager& inputManager, Project& project, RetroPlugConfig& config, fw::audio::AudioManager* audioManager) {
 	auto state = std::make_shared<SettingsMenuState>();
 
-#ifndef RP_WEB
-	std::vector<std::string> audioIn;
-	audioManager.getDeviceNames(audioIn, state->audioOut);
+	if (audioManager) {
+		std::vector<std::string> audioIn;
+		audioManager->getDeviceNames(audioIn, state->audioOut);
 
-	std::string activeAudioDeviceName = audioManager.getActiveOutputName();
-	spdlog::info("Active audio device: {}", activeAudioDeviceName);
+		std::string activeAudioDeviceName = audioManager->getActiveOutputName();
+		int32 audioOutDevice = fw::StlUtil::getVectorIndex(state->audioOut, activeAudioDeviceName);
+		if (audioOutDevice < 0) {
+			audioOutDevice = 0; // Default to first device if not found
+		}
 
-	int32 audioOutDevice = fw::StlUtil::getVectorIndex(state->audioOut, activeAudioDeviceName);
-	if (audioOutDevice < 0) {
-		audioOutDevice = 0; // Default to first device if not found
+		state->audioOutDeviceId = (uint32)audioOutDevice;
+
+		root.multiSelect("Audio Out", state->audioOut, audioOutDevice, [state](int v) { state->audioOutDeviceId = (uint32)v; })
+			.separator();
 	}
-
-	state->audioOutDeviceId = (uint32)audioOutDevice;
-
-	root.multiSelect("Audio Out", state->audioOut, audioOutDevice, [state](int v) { state->audioOutDeviceId = (uint32)v; })
-		.separator();
-#endif
 
 	for (const auto& config : inputManager.getAvailableConfigs()) {
 		state->inputConfigs.push_back(config.name + (config.valid ? "" : " [!]"));
@@ -288,7 +287,7 @@ void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, In
 				}
 			}
 
-			audioManager.setAudioDevice((uint32)state->audioOutDeviceId);
+			audioManager->setAudioDevice((uint32)state->audioOutDeviceId);
 			config.settings.audioDeviceName = state->audioOut[state->audioOutDeviceId];
 
 			ConfigUtil::serialize(types, (FileManager::getContentPath() / "config.lua").string(), config);

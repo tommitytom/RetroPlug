@@ -111,7 +111,7 @@ void SystemView::createMenu(fw::Menu& target) {
 	root.separator();
 	MenuBuilder::projectMenu(root.subMenu("Project"), fileManager, project, *_system);
 	MenuBuilder::systemMenu(root.subMenu("System"), dialogManager, fileManager, project, _system);
-	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, *audioManager);
+	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, audioManager.get());
 
 	if (getChildren().size() > 0) {
 		root.separator();

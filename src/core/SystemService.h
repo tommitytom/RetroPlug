@@ -110,7 +110,7 @@ namespace rp {
 		SystemServicePtr _service;
 
 	public:
-		SystemServiceNode(fw::EventNode::NodeId targetNode, SystemPtr system, SystemServicePtr service): 
+		SystemServiceNode(fw::EventNode::NodeId targetNode, const SystemPtr& system, const SystemServicePtr& service): 
 			_targetNode(targetNode), _system(system), _service(service) {}
 		~SystemServiceNode() {}
 
@@ -123,19 +123,19 @@ namespace rp {
 			});
 		}
 
-		void setSystem(SystemPtr system) {
+		void setSystem(const SystemPtr& system) {
 			_system = system;
 		}
 
-		void setSystemService(SystemServicePtr service) {
+		void setSystemService(const SystemServicePtr& service) {
 			_service = service;
 		}
 		
-		SystemPtr getSystem() {
+		const SystemPtr& getSystem() {
 			return _system;
 		}
 		
-		SystemServicePtr getSystemService() {
+		const SystemServicePtr& getSystemService() {
 			return _service;
 		}
 

@@ -122,7 +122,7 @@ bool MiniAudioManager::setAudioDevice(int32 idx) {
 		return false;
 	}
 
-	if (idx != -1 && idx >= playbackCount) {
+	if (idx != -1 && idx >= (int32)playbackCount) {
 		spdlog::error("Failed to set audio device: Device index is invalid");
 		return false;
 	}

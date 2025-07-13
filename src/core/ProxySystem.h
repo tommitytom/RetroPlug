@@ -119,6 +119,7 @@ namespace rp {
 		}
 
 		void setGameLink(bool gameLink) override {
+			_desc.settings.gameLink = gameLink;
 			_gameLink = gameLink;
 			_eventNode.send("Audio"_hs, SetGameLinkEvent{ .systemId = getId(), .enabled = gameLink});
 		}

@@ -44,9 +44,9 @@ std::string_view findBootRom(GameboyModel model, bool fastBoot) {
 	switch (model) {
 	case GameboyModel::DmgB: return std::string_view((const char*)dmg_boot, dmg_boot_len);
 	case GameboyModel::Agb: return std::string_view((const char*)agb_boot, agb_boot_len);
-		//case GameboyModel::SgbNtsc: return std::string_view((const char*)sgb_boot, sgb_boot_len);
-		//case GameboyModel::SgbPal: return std::string_view((const char*)sgb_boot, sgb_boot_len);
-		//case GameboyModel::Sgb2: return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
+	//case GameboyModel::SgbNtsc: return std::string_view((const char*)sgb_boot, sgb_boot_len);
+	//case GameboyModel::SgbPal: return std::string_view((const char*)sgb_boot, sgb_boot_len);
+	//case GameboyModel::Sgb2: return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
 	case GameboyModel::CgbE:
 	case GameboyModel::CgbC:
 	default:
@@ -246,6 +246,7 @@ bool SameBoySystem::saveState(fw::Uint8Buffer& target) {
 
 void SameBoySystem::setGameLink(bool gameLink) {
 	_state.linkEnabled = gameLink;
+	_desc.settings.gameLink = gameLink;
 
 	if (!gameLink) {
 		_state.linkTargets.clear();

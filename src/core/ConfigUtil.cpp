@@ -9,9 +9,6 @@
 
 #include "core/LuaUtil.h"
 
-#include <rfl/json.hpp>
-#include <rfl.hpp>
-
 namespace rp {
 	void ConfigUtil::initContent(const fw::TypeRegistry& typeRegistry, RetroPlugConfig& config) {
 		// Load global settings

@@ -190,11 +190,11 @@ namespace rp {
 		SystemIoPtr _stream;
 		fw::DimensionU32 _resolution;
 		fw::Image _frameBuffer;
+		SystemDesc _desc;
 
 	private:
 		SystemId _id = INVALID_SYSTEM_ID;
 		SystemType _type = INVALID_SYSTEM_TYPE;
-		SystemDesc _desc;
 
 		//std::array<bool, static_cast<int>(fw::ButtonType::MAX)> _buttonState = { false };
 		std::vector<ModelPtr> _models;

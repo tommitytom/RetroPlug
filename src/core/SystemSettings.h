@@ -20,9 +20,6 @@ namespace rp {
 	struct SystemSettings {
 		bool includeRom = true;
 		bool gameLink = false;
-
-		std::string serialized;
-		//std::unordered_map<entt::id_type, std::shared_ptr<Model>> models;
 	};
 
 	struct SystemDesc {

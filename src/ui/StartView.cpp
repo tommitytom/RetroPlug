@@ -61,15 +61,13 @@ void StartView::setupMenu() {
 		})
 		.separator();
 
-	auto reg = getState<const fw::TypeRegistry>();
-
 	MenuBuilder::settingsMenu(
 		menu.subMenu("Settings"), 
 		getState<const fw::TypeRegistry>(), 
 		getState<InputManager>(), 
 		getState<Project>(), 
 		getState<RetroPlugConfig>(), 
-		*getState<fw::audio::AudioManagerPtr>()
+		getState<fw::audio::AudioManagerPtr>().get()
 	);
 
 	setMenu(menuRoot);
