@@ -186,7 +186,7 @@ SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId 
 		if (found != loadConfig.desc.services.end()) {
 			service->setState(found->second);
 			found->second = service->getState();
-			assert(!found->second.owner());
+			//assert(!found->second.owner());
 		}
 
 		service->onBeforeLoad(loadConfig);

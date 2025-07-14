@@ -894,6 +894,11 @@ namespace fw {
 			return _children[idx];
 		}
 
+		template <typename T>
+		std::shared_ptr<T> getChildAs(size_t idx) const {
+			return _children[idx]->asShared<T>();
+		}
+
 		void setArea(const Rect& area) {
 			assert(area.w >= 0 && area.h >= 0);
 			

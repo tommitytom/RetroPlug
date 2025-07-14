@@ -225,14 +225,29 @@ void RetroPlugView::onUpdate(f32 delta) {
 		_audioThreadActive = audioThreadActive;
 		
 		if (!audioThreadActive) {
-			_threadWarning = this->addChild<fw::LabelView>("Audio Thread Warning");
-			_threadWarning->getLayout().setDimensions(fw::Dimension{ 300, 100 });
-			_threadWarning->setText("WARNING!");
-		} else {
 			if (_threadWarning) {
 				_threadWarning->remove();
-				_threadWarning = nullptr;
 			}
+
+			_threadWarning = this->addChild<fw::PanelView>("Audio Thread Warning Panel");
+			_threadWarning->setColor(fw::Color4(207, 39, 39, 240));
+			_threadWarning->setBorderColor(fw::Color4F(1, 0, 0, 1));
+			fw::ViewLayout& layout = _threadWarning->getLayout();
+
+			layout.setFlexAlignItems(fw::FlexAlign::Center);
+			layout.setJustifyContent(fw::FlexJustify::Center);
+			layout.setFlexPositionType(fw::FlexPositionType::Absolute);
+			layout.setHeight(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 10));
+			layout.setWidth(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 90));
+			layout.setPositionEdge(fw::FlexEdge::Left, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
+			layout.setPositionEdge(fw::FlexEdge::Bottom, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
+
+			auto text = _threadWarning->addChild<fw::LabelView>("Audio Thread Warning Text");
+			text->setText("Audio thread inactive - check settings");
+			text->setFont("PlatNomor", 7 * _project.getScale());
+		} else if (_threadWarning) {
+			_threadWarning->remove();
+			_threadWarning = nullptr;
 		}
 	}
 
@@ -250,6 +265,10 @@ void RetroPlugView::onUpdate(f32 delta) {
 
 	_compactLayout->setScale(scale);
 	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
+
+	if (_threadWarning) {
+		_threadWarning->getChildAs<fw::LabelView>(0)->setFont("PlatNomor", 7 * _project.getScale());
+	}
 
 	_project.update(audioFrameCount);
 	_project.saveIfRequired();

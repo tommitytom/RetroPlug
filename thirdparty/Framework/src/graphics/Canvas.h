@@ -323,6 +323,8 @@ namespace fw {
 
 		Canvas& strokeRect(const RectF& area, const Color4F& color);
 
+		Canvas& strokeRect(const Rect& area, const Color4F& color) { return this->strokeRect((RectF)area, color); }
+
 		Canvas& strokeRect(const StrokedRect& rect);
 
 		Canvas& texture(const TextureRenderDesc& desc);

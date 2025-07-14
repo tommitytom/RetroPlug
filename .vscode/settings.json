@@ -84,7 +84,10 @@
 		"libdirs",
 		"removeplatforms",
 		"fw",
-		"_consolePrint"
+		"_consolePrint",
+		"externalincludedirs",
+		"Key",
+		"Pad"
 	],
 	"files.associations": {
 		"*.h": "cpp",

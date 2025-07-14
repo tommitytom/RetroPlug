@@ -13,6 +13,7 @@
 #include "ui/LabelView.h"
 #include "ui/TreeView.h"
 #include "ui/View.h"
+#include "ui/PanelView.h"
 #include "ui/ObjectInspectorView.h"
 #include "ui/FileDialogManager.h"
 
@@ -54,7 +55,7 @@ namespace rp {
 		std::optional<hrc::time_point> _lastPingTime;
 		std::optional<hrc::time_point> _lastPongTime;
 		bool _audioThreadActive = false;
-		fw::LabelViewPtr _threadWarning;
+		fw::PanelViewPtr _threadWarning;
 
 		fw::ResourceReloader _resourceReloader;
 
