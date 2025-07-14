@@ -3,6 +3,7 @@
 #include <string>
 
 #include "foundation/DataBuffer.h"
+#include "foundation/GainputGamepadManager.h"
 #include "foundation/ResourceReloader.h"
 #include "audio/AudioManager.h"
 #include "core/InputManager.h"
@@ -62,6 +63,8 @@ namespace rp {
 		std::weak_ptr<MenuView> _menu;
 		RetroPlugConfig _config;
 
+		fw::GainputGamepadManager _gamepadManager;
+
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config);
 		~RetroPlugView() = default;
@@ -81,6 +84,8 @@ namespace rp {
 		bool onCloseWindowRequest(fw::CloseWindowContext& ctx) override;
 
 	private:
+		void processInput(const fw::ButtonWriter& buttonWriter, const std::vector<std::string>& actions);
+
 		void processOutput();
 
 		void setupEventHandlers();

@@ -45,7 +45,8 @@ PadMap({
 
 -- Gamepad buttons mapped to global events, regardless of what gameboy is selected
 GlobalPadMap({
-	[Pad.Y] = Action.RetroPlug.NextSystem
+	[Pad.X] = Action.RetroPlug.ToggleMenu,
+	[Pad.Y] = Action.RetroPlug.NextSystem,
 })
 
 -- Keys and shortcuts specific to LSDj

@@ -100,6 +100,22 @@ void RetroPlugView::onInitialize() {
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
 
 	_nextStateFetch = _stateFetchInterval;
+
+	_gamepadManager.setCallback([this](fw::PadButtonType button, bool down) {
+		std::vector<std::string> actions;
+		if (!_inputManager.processButton(button, down, _buttons, actions)) {
+			return;
+		}
+
+		// If a file dialog opens as the result of a key press, then this function will block until it is closed.
+		// Because of this _buttons will never be properly cleared, so when the key up event in processed, it will
+		// double process the key down event. To ensure this doesnt happen, we make a copy of the button presses to pass
+		// to child elements, and clear the button list right away.
+		fw::ButtonWriter buttonWriter(_buttons);
+		_buttons.clear();
+
+		processInput(buttonWriter, actions);
+	});
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
@@ -115,6 +131,12 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	fw::ButtonWriter buttonWriter(_buttons);
 	_buttons.clear();
 
+	processInput(buttonWriter, actions);
+
+	return true;
+}
+
+void RetroPlugView::processInput(const fw::ButtonWriter& buttonWriter, const std::vector<std::string>& actions) {
 	MenuViewPtr currentMenu = _menu.lock();
 	if (currentMenu) {
 		currentMenu->processButtons(buttonWriter);
@@ -140,7 +162,7 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 					menuView->setMenu(menu);
 					menuView->focus();
 
-					subscribe<fw::DismountEvent>(menuView, [this]() { 
+					subscribe<fw::DismountEvent>(menuView, [this]() {
 						_project.setDirty();
 					});
 
@@ -153,8 +175,6 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 			}
 		}
 	}
-
-	return true;
 }
 
 void RetroPlugView::setupEventHandlers() {
@@ -212,6 +232,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 
 	getResourceManager().frame();
 	_fileDialogManager.update();
+	_gamepadManager.update();
 
 	hrc::time_point time =  hrc::now();
 

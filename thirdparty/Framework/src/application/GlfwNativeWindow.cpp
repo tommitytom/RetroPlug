@@ -194,6 +194,9 @@ void GlfwNativeWindow::onCreate() {
 	glfwMakeContextCurrent(_window);
 
 	glfwSetWindowUserPointer(_window, this);
+	
+	//glfwSetJoystick
+	//glfwSetJoystickCallback(joystickCallback);
 
 	glfwSetKeyCallback(_window, keyCallback);
 	glfwSetCharCallback(_window, charCallback);

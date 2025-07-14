@@ -41,6 +41,7 @@ function m.Foundation.include()
 
 	dep.lua.include()
 	dep.simplefilewatcher.include()
+	dep.gainput.include()
 
 	filter {}
 end
@@ -52,6 +53,7 @@ function m.Foundation.link()
 
 	dep.lua.link()
 	dep.simplefilewatcher.link()
+	dep.gainput.link()
 end
 
 function m.Foundation.project()
@@ -308,7 +310,7 @@ local function createVst3(config, impl)
 	project (config.name .. "-vst3")
 		language "C++"
 		kind "SharedLib"
-		--targetdir "C:/Program Files/Common Files/VST3"
+		targetdir "C:/Program Files/Common Files/VST3"
 		targetextension ".vst3"
 
 		includedirs {

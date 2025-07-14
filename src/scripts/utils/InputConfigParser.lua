@@ -199,6 +199,22 @@ function processKey(key, down, buttons, actions)
 	return handled
 end
 
+function processButton(sourceButton, down, buttons, actions)
+	if down == true then
+		table.insert(buttonsPressed, sourceButton)
+	else
+		tableRemoveElement(buttonsPressed, sourceButton)
+	end
+
+	local handled = handleInput(parsed.pad.global, sourceButton, down, buttonsPressed, buttonHooks, buttons, actions)
+
+	if handled ~= true and buttons ~= nil then
+		handled = handleInput(parsed.pad.system, sourceButton, down, buttonsPressed, buttonHooks, buttons, actions)
+	end
+
+	return handled
+end
+
 --[[
 local InputConfig = {}
 function InputConfig.init()

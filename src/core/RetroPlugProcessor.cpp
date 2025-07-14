@@ -330,8 +330,8 @@ void RetroPlugProcessor::onDeserialize(const fw::Uint8Buffer& source) {
 				}
 
 				SystemPtr system = _systemFactory.createSystem(systemId++, systemTypes[0]);
-				system->setSampleRate((uint32)getSampleRate());
 				system->load(std::move(loadConfig));
+				system->setSampleRate((uint32)getSampleRate());
 
 				_systemManager.addSystem(std::move(system));
 			} else {

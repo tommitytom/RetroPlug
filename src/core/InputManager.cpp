@@ -149,7 +149,7 @@ namespace rp {
 		reload();
 	}
 
-	bool InputManager::processButton(fw::ButtonType button, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions) {
+	bool InputManager::processButton(fw::PadButtonType button, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions) {
 		if (!isValid()) return false;
 		sol::function func = (*_lua)["processButton"];
 		if (func.valid()) {

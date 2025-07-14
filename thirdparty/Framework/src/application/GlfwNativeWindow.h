@@ -54,6 +54,8 @@ namespace fw::app {
 
 		static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
+		static void joystickCallback(int jid, int event);
+
 		static void resizeCallback(GLFWwindow* window, int width, int height);
 
 		static void dropCallback(GLFWwindow* window, int count, const char** paths);

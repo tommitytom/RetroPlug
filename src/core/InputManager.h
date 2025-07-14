@@ -54,7 +54,7 @@ namespace rp {
 
 		bool processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions);
 
-		bool processButton(fw::ButtonType button, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions);
+		bool processButton(fw::PadButtonType button, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions);
 
 		bool isValid() const {
 			return _lua != nullptr;

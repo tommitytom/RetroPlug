@@ -10,6 +10,7 @@ local m = {
 	bin2h = dofile("bin2h.lua"),
 	yoga = dofile("yoga.lua"),
 	stb = dofile("stb.lua"),
+	gainput = dofile("gainput.lua"),
 	pugl = dofile("pugl.lua"),
 }
 
@@ -24,6 +25,7 @@ function m.allProjects()
 	m.bin2h.project()
 	m.yoga.project()
 	m.stb.project()
+	m.gainput.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()

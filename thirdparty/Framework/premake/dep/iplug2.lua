@@ -281,7 +281,7 @@ function m.createVst2(config)
 	projectBase(config, "vst2")
 	kind "SharedLib"
 
-	--targetdir "C:/VST64"
+	targetdir "C:/VST64"
 
 	defines {
 		"VST2_API",
@@ -324,8 +324,6 @@ function m.createVst2(config)
 			["DEPLOYMENT_LOCATION"] = "YES", -- Enable separate installation location
 			["SKIP_INSTALL"] = "NO", -- Allow installation
 		}
-
-	--targetdir "C:\\vst64"
 end
 
 function m.createVst3(config)
@@ -376,6 +374,7 @@ function m.createVst3(config)
 	}
 
 	filter { "system:windows" }
+
 		files {
 			VST3_DEP_PATH .. "public.sdk/source/main/dllmain.cpp"
 		}
