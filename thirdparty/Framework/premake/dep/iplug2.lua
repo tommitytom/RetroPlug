@@ -281,6 +281,8 @@ function m.createVst2(config)
 	projectBase(config, "vst2")
 	kind "SharedLib"
 
+	--targetdir "C:/VST64"
+
 	defines {
 		"VST2_API",
 		"VST_FORCE_DEPRECATED"

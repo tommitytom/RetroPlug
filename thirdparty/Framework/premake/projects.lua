@@ -280,7 +280,7 @@ local function createClap(config, impl)
 	project (config.name .. "-clap")
 		language "C++"
 		kind "SharedLib"
-		targetdir "C:/Program Files/Common Files/CLAP"
+		--targetdir "C:/Program Files/Common Files/CLAP"
 		targetextension ".clap"
 
 		includedirs {
@@ -308,7 +308,7 @@ local function createVst3(config, impl)
 	project (config.name .. "-vst3")
 		language "C++"
 		kind "SharedLib"
-		targetdir "C:/Program Files/Common Files/VST3"
+		--targetdir "C:/Program Files/Common Files/VST3"
 		targetextension ".vst3"
 
 		includedirs {
