@@ -102,7 +102,7 @@ void SystemView::createMenu(fw::Menu& target) {
 	Project& project = getState<Project>();
 	RetroPlugConfig& config = getState<RetroPlugConfig>();
 	const fw::TypeRegistry& typeReg = getState<const fw::TypeRegistry>();
-	fw::audio::AudioManagerPtr& audioManager = getState<fw::audio::AudioManagerPtr>();
+	fw::audio::AudioManagerPtr* audioManagerPtr = tryGetState<fw::audio::AudioManagerPtr>();
 
 	fw::Menu& root = target.title(fmt::format("RetroPlug v{} - {}", rp::RP_VERSION, _system->getRomName())).separator();
 	MenuBuilder::populateRecent(root.subMenu("Recent"), fileManager, project, _system);
@@ -111,7 +111,7 @@ void SystemView::createMenu(fw::Menu& target) {
 	root.separator();
 	MenuBuilder::projectMenu(root.subMenu("Project"), fileManager, project, *_system);
 	MenuBuilder::systemMenu(root.subMenu("System"), dialogManager, fileManager, project, _system);
-	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, audioManager.get());
+	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, audioManagerPtr != nullptr ? audioManagerPtr->get() : nullptr);
 
 	if (getChildren().size() > 0) {
 		root.separator();

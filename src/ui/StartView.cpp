@@ -61,13 +61,15 @@ void StartView::setupMenu() {
 		})
 		.separator();
 
+	fw::audio::AudioManagerPtr* audioManagerPtr = tryGetState<fw::audio::AudioManagerPtr>();
+
 	MenuBuilder::settingsMenu(
 		menu.subMenu("Settings"), 
 		getState<const fw::TypeRegistry>(), 
 		getState<InputManager>(), 
 		getState<Project>(), 
 		getState<RetroPlugConfig>(), 
-		getState<fw::audio::AudioManagerPtr>().get()
+		audioManagerPtr != nullptr ? audioManagerPtr->get() : nullptr
 	);
 
 	setMenu(menuRoot);

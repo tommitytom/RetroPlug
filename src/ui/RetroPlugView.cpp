@@ -68,12 +68,15 @@ void RetroPlugView::onHotReload() {
 void RetroPlugView::onInitialize() {
 	getLayout().setOverflow(fw::FlexOverflow::Visible);
 
-	fw::audio::AudioManagerPtr& audioManager = getState<fw::audio::AudioManagerPtr>();
-	std::vector<std::string> audioIn;
-	std::vector<std::string> audioOut;
-	audioManager->getDeviceNames(audioIn, audioOut);
-	const int32 idx = fw::StlUtil::getVectorIndex(audioOut, _config.settings.audioDeviceName);
-	audioManager->start(idx);
+	fw::audio::AudioManagerPtr* audioManagerPtr = tryGetState<fw::audio::AudioManagerPtr>();
+	if (audioManagerPtr) {
+		fw::audio::AudioManagerPtr& audioManager = *audioManagerPtr;
+		std::vector<std::string> audioIn;
+		std::vector<std::string> audioOut;
+		audioManager->getDeviceNames(audioIn, audioOut);
+		const int32 idx = fw::StlUtil::getVectorIndex(audioOut, _config.settings.audioDeviceName);
+		audioManager->start(idx);
+	}	
 	
 	fw::FontDesc fontDesc;
 	fontDesc.data.resize(PlatNomor_len);
