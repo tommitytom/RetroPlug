@@ -35,7 +35,7 @@ install:
 
   - cmd: 7z e premake-5.0.0-beta7-windows.zip
   - cmd: 7z e rgbds-0.5.1-win64.zip
-  - cmd: 7z e ci/dep.7z
+  - cmd: 7z e ci/dep.7z -othirdparty/Framework
 
   - cmd: set PATH=c:\retroplug;%PATH%
 build_script:
