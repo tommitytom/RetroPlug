@@ -216,7 +216,9 @@ void MenuBuilder::projectMenu(fw::Menu& root, const fw::TypeRegistry& types, Fil
 			project.getState().settings.layout = (SystemLayout)layout;
 		})
 		.multiSelect("MIDI", { "Send To All", "Four Channels Per Instance", "One Channel Per Instance" }, &project.getState().settings.midiRouting)
-		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &project.getState().settings.audioRouting);
+		.multiSelect("Audio Routing", { "Stereo Mix Down", "Two Channels Per Instance", "Two Channels Per Channel" }, &project.getState().settings.audioRouting)
+		.select("Auto Save", &project.getState().settings.autoSave)
+		;
 }
 
 void MenuBuilder::systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
@@ -226,7 +228,7 @@ void MenuBuilder::systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, File
 		.action("Load ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 		.action("Reset", [system]() { system->reset(); })
 		.separator()
-		.action("Clear SRAM", [system]() {
+		.action("New SRAM", [system]() {
 			system->reset();
 		})
 		.action("Save SRAM", [&project, system]() { saveSram(project, system, false); })

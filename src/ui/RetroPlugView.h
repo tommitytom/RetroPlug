@@ -73,8 +73,6 @@ namespace rp {
 
 		void onInitialize() override;
 
-		void initViews();
-
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;
@@ -86,6 +84,8 @@ namespace rp {
 		bool onCloseWindowRequest(fw::CloseWindowContext& ctx) override;
 
 	private:
+		void initViews(SystemContainerViewPtr container);
+
 		void processOutput();
 
 		void setupEventHandlers();

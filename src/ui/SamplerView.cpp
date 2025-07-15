@@ -34,8 +34,17 @@ void SamplerView::setSystem(SystemPtr& system, SystemServicePtr& service) {
 
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
-		canvas.setFont(rom.getFont(1));
-		canvas.setPalette(rom.getPalette(0));
+		uint8 fontIndex = 1;
+		uint8 paletteIndex = 0;
+
+		MemoryAccessor sramAccessor = _system->getMemory(MemoryType::Sram, AccessType::Read);
+		if (sramAccessor.isValid()) {
+			lsdj::Sav sav(sramAccessor.getBuffer());
+			fontIndex = (sav.getWorkingSong().getFontIndex() + 1) % 3;
+			paletteIndex = sav.getWorkingSong().getPaletteIndex();
+		}
+		canvas.setFont(rom.getFont(fontIndex));
+		canvas.setPalette(rom.getPalette(paletteIndex));
 
 		LsdjServiceSettings& settings = _service->getStateAs<LsdjServiceSettings>();
 		int32 selectedKit = 999;

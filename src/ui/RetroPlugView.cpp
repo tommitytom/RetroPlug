@@ -30,6 +30,7 @@
 #include "ui/ViewManager.h"
 #include "ui/VerticalSplitter.h"
 #include "ui/UiEditOverlay.h"
+#include "ui/SwapContainerState.h"
 
 #include "fonts/PlatNomor.h"
 
@@ -56,24 +57,25 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_gamepadManager.setAxisButtonThreshold(0.5f);
 }
 
-void RetroPlugView::initViews() {
+void RetroPlugView::initViews(SystemContainerViewPtr container) {
 	this->removeChildren();
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
 
 	if (_project.getSystems().empty()) {
 		_systemContainer = addChild<StartView>("Start View");
 	} else {
-		_systemContainer = addChild<CompactLayoutView>("Compact Layout");
-		const GridOverlayPtr& grid = _systemContainer->findChild<GridOverlay>();
-
-		if (grid) {
-			grid->refocus();
+		if (!container) {
+			container = std::make_shared<CompactLayoutView>(&_project);
 		}
+
+		_systemContainer = addChild(container);
 	}
+
+	_systemContainer->focus();
 }
 
 void RetroPlugView::onHotReload() {
-	initViews();
+	initViews(nullptr);
 }
 
 void RetroPlugView::onInitialize() {
@@ -104,8 +106,9 @@ void RetroPlugView::onInitialize() {
 	this->createState(entt::forward_as_any(_project));
 	this->createState(entt::forward_as_any(_config));
 	this->createState(entt::forward_as_any(_typeRegistry));
+	this->createState<SwapContainerState>();
 
-	initViews();
+	initViews(nullptr);
 
 	setupEventHandlers();
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
@@ -245,8 +248,11 @@ void RetroPlugView::onUpdate(f32 delta) {
 	f32 scale = _project.getScale();
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
-	if (!_systemContainer || (_systemContainer->isType<StartView>() && _project.getSystems().size())) {
-		initViews();
+	SwapContainerState& swapContainer = getState<SwapContainerState>();
+	if (swapContainer.requestedContainer) {
+		initViews(swapContainer.requestedContainer);
+	} else if (!_systemContainer || _systemContainer->getParent() == nullptr || (_systemContainer->isType<StartView>() && _project.getSystems().size())) {
+		initViews(nullptr);
 	}
 
 	_systemContainer->setScale(scale);
@@ -257,7 +263,10 @@ void RetroPlugView::onUpdate(f32 delta) {
 	}
 
 	_project.update(audioFrameCount);
-	_project.saveIfRequired();
+
+	if (_project.getState().settings.autoSave) {
+		_project.saveIfRequired();
+	}
 
 	_nextStateFetch -= delta;
 

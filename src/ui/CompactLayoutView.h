@@ -11,9 +11,11 @@ namespace rp {
 		fw::GridViewPtr _grid;
 		GridOverlayPtr _gridOverlay;
 		std::weak_ptr<MenuView> _menu;
+		Project* _project = nullptr;
 
 	public:
 		CompactLayoutView() = default;
+		CompactLayoutView(Project* project) : _project(project) {}
 		~CompactLayoutView() = default;
 
 		void onInitialize() override;
@@ -25,6 +27,10 @@ namespace rp {
 		}
 
 		void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) override;
+
+		void setProject(Project* project) {
+			_project = project;
+		}
 
 		GridItemPtr getSelected() const {
 			return _gridOverlay->getSelected();

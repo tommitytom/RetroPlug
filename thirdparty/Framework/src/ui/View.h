@@ -802,6 +802,20 @@ namespace fw {
 		}
 
 		template <typename T>
+		std::shared_ptr<T> findParent() {
+			ViewPtr parent = _parent.lock();
+			if (parent) {
+				if (parent->isType<T>()) {
+					return parent->asShared<T>();
+				}
+
+				return parent->findParent<T>();
+			}
+
+			return nullptr;
+		}
+
+		template <typename T>
 		std::shared_ptr<T> findChild(bool recursive = false) {
 			for (ViewPtr& child : _children) {
 				if (child->isType<T>()) {

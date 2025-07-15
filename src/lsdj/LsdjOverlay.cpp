@@ -7,264 +7,266 @@
 #include "ui/SamplerView.h"
 #include "ui/SystemView.h"
 #include "ui/Menu.h"
+#include "ui/SwapContainerState.h"
+#include "ui/GridView.h"
 
-using namespace rp;
+namespace rp {
+	std::shared_ptr<SamplerView> showSampleManager(fw::GridViewPtr parent, SystemPtr system, SystemServicePtr service) {
+		std::vector<std::shared_ptr<SamplerView>> samplers;
+		parent->findChildren<SamplerView>(samplers);
 
-std::shared_ptr<SamplerView> showSampleManager(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service) {
-	std::vector<std::shared_ptr<SamplerView>> samplers;
-	parent->findChildren<SamplerView>(samplers);
+		std::shared_ptr<SamplerView> samplerView;
 
-	std::shared_ptr<SamplerView> samplerView;
-
-	for (std::shared_ptr<SamplerView> sampler : samplers) {
-		if (sampler->getSystem() == system) {
-			// Already open - focus and return
-			samplerView = sampler;
-		}
-	}
-
-	if (!samplerView) {
-		samplerView = parent->addChild<SamplerView>("LSDj Sample Manager");
-		samplerView->setSystem(system, service);
-
-		// TODO: Show kit currently under cursor!
-		//samplerView->setSampleIndex()
-	}
-
-	samplerView->focus();
-
-	return samplerView;
-}
-
-void showHdPlayer(fw::ViewPtr parent, SystemPtr system, SystemServicePtr service) {
-	parent->removeChildren();
-	auto player = parent->addChild<LsdjHdPlayer>("LSDJ HD Player");
-	player->setSystem(system);
-	player->focus();
-}
-
-void LsdjOverlay::onInitialize() {
-	fitToParent();
-	/*Project& project = getState<Project>();
-	_model = _system->getModel<LsdjModel>();
-
-	if (_model->isRomValid()) {
-		SystemPtr system = _system->getSystem();
-		MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
-
-		if (buffer.isValid()) {
-			lsdj::Rom rom(buffer);
-			_canvas.setFont(rom.getFont(1));
-			_canvas.setPalette(rom.getPalette(0));
-		}
-	}*/
-}
-
-void LsdjOverlay::onMenu(fw::Menu& menu) {
-	menu.subMenu("LSDJ")
-		.action("Sample Manager", [this]() { 
-			showSampleManager(getParent()->getParent(), getNode()->getSystem(), getNode()->getSystemService()); 
-		})
-		.action("HD Player", [this]() { 
-			fw::ViewPtr root = getParent()->getParent()->getParent()->getParent();
-			showHdPlayer(root, getNode()->getSystem(), getNode()->getSystemService());
-		})
-		.parent();
-}
-
-bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
-	LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
-
-	bool changed = false;
-	if (ev.key == fw::VirtualKey::W) {
-		_bHeld = ev.down;
-		changed = true;
-	}
-
-	if (ev.key == fw::VirtualKey::D) {
-		_aHeld = ev.down;
-		changed = true;
-	}
-
-	//if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
-		//_system->saveSram();
-	//}
-
-	/*LsdjModelPtr model = _system->getModel<LsdjModel>();
-	if (model->getOffsetsValid() && down && key == VirtualKey::Z) {
-		if (_undoPosition > 1) {
-			_undoPosition--;
-
-			spdlog::info("UNDO");
-
-			// Copy frame buffer and display it until refresh is finished
-
-			lsdj::Ram ram(system->getMemory(MemoryType::Ram, AccessType::Read), model->getMemoryOffsets());
-			MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Write);
-
-			if (ram.isValid() && sram.isValid()) {
-				_songHash = HashUtil::hash(_undoQueue[_undoPosition]);
-				_songSwapCooldown = DEFAULT_SONG_SWAP_COOLDOWN;
-				sram.write(0, _undoQueue[_undoPosition]);
-
-				//_refresher.refresh();
+		for (std::shared_ptr<SamplerView> sampler : samplers) {
+			if (sampler->getSystem() == system) {
+				// Already open - focus and return
+				samplerView = sampler;
 			}
 		}
 
-		return true;
-	}*/
+		if (!samplerView) {
+			samplerView = parent->addChild<SamplerView>("LSDj Sample Manager");
+			samplerView->setSystem(system, service);
 
-	return false;
-}
+			// TODO: Show kit currently under cursor!
+			//samplerView->setSampleIndex()
+		}
 
-bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
-	SystemPtr system = getNode()->getSystem();
-	LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
+		samplerView->focus();
 
-	// What does this actually check?
-	/*if (!model->isRomValid()) {
-		return false;
-	}*/
+		return samplerView;
+	}
 
-	//bool foundSamples = false;
-	size_t kitIdx = -1;
+	void LsdjOverlay::onInitialize() {
+		fitToParent();
+		/*Project& project = getState<Project>();
+		_model = _system->getModel<LsdjModel>();
 
-	std::vector<std::string> samples;
+		if (_model->isRomValid()) {
+			SystemPtr system = _system->getSystem();
+			MemoryAccessor buffer = system->getMemory(MemoryType::Rom, AccessType::Read);
 
-	for (const std::string& path : paths) {
-		if (fs::is_directory(path)) {
-			std::vector<std::string> dirSamples;
+			if (buffer.isValid()) {
+				lsdj::Rom rom(buffer);
+				_canvas.setFont(rom.getFont(1));
+				_canvas.setPalette(rom.getPalette(0));
+			}
+		}*/
+	}
 
-			for (const fs::directory_entry& item : fs::directory_iterator(path)) {
-				if (item.path().extension() == ".wav") {
-					dirSamples.push_back(item.path().string());
-					//foundSamples = true;
-				} else if (item.path().extension() == ".kit") {
-					KitUtil::addKit(system, settings, item.path().string());
-					//foundSamples = true;
+	void LsdjOverlay::onMenu(fw::Menu& menu) {
+		menu.subMenu("LSDJ")
+			.action("Sample Manager", [this]() {
+				fw::GridViewPtr grid = this->findParent<fw::GridView>();
+				showSampleManager(grid, getNode()->getSystem(), getNode()->getSystemService());
+			})
+			.action("HD Player", [this]() {
+				SwapContainerState& swapContainer = getState<SwapContainerState>();
+				auto player = std::make_shared<LsdjHdPlayer>();
+				player->setSystem(getNode()->getSystem());
+				swapContainer.requestedContainer = player;
+			})
+			.parent();
+	}
+
+	bool LsdjOverlay::onKey(const fw::KeyEvent& ev) {
+		LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
+
+		bool changed = false;
+		if (ev.key == fw::VirtualKey::W) {
+			_bHeld = ev.down;
+			changed = true;
+		}
+
+		if (ev.key == fw::VirtualKey::D) {
+			_aHeld = ev.down;
+			changed = true;
+		}
+
+		//if (changed && (!_aHeld && !_bHeld) && model->isSramDirty()) {
+			//_system->saveSram();
+		//}
+
+		/*LsdjModelPtr model = _system->getModel<LsdjModel>();
+		if (model->getOffsetsValid() && down && key == VirtualKey::Z) {
+			if (_undoPosition > 1) {
+				_undoPosition--;
+
+				spdlog::info("UNDO");
+
+				// Copy frame buffer and display it until refresh is finished
+
+				lsdj::Ram ram(system->getMemory(MemoryType::Ram, AccessType::Read), model->getMemoryOffsets());
+				MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Write);
+
+				if (ram.isValid() && sram.isValid()) {
+					_songHash = HashUtil::hash(_undoQueue[_undoPosition]);
+					_songSwapCooldown = DEFAULT_SONG_SWAP_COOLDOWN;
+					sram.write(0, _undoQueue[_undoPosition]);
+
+					//_refresher.refresh();
 				}
 			}
-			
-			kitIdx = KitUtil::addKitSamples(system, settings, dirSamples);
-		} else if (fs::path(path).extension() == ".wav") {
-			samples.push_back(path);
-			//foundSamples = true;
-		} else if (fs::path(path).extension() == ".kit") {
-			kitIdx = KitUtil::addKit(system, settings, path);
-			//foundSamples = true;
-		}
+
+			return true;
+		}*/
+
+		return false;
 	}
 
-	if (samples.size() > 0) {
-		FileManager& fileManager = getState<FileManager>();
-		std::string kitName;
+	bool LsdjOverlay::onDrop(const std::vector<std::string>& paths) {
+		SystemPtr system = getNode()->getSystem();
+		LsdjServiceSettings& settings = getNode()->getSystemService()->getStateAs<LsdjServiceSettings>();
+
+		// What does this actually check?
+		/*if (!model->isRomValid()) {
+			return false;
+		}*/
+
+		//bool foundSamples = false;
+		size_t kitIdx = -1;
+
+		std::vector<std::string> samples;
+
+		for (const std::string& path : paths) {
+			if (fs::is_directory(path)) {
+				std::vector<std::string> dirSamples;
+
+				for (const fs::directory_entry& item : fs::directory_iterator(path)) {
+					if (item.path().extension() == ".wav") {
+						dirSamples.push_back(item.path().string());
+						//foundSamples = true;
+					} else if (item.path().extension() == ".kit") {
+						KitUtil::addKit(system, settings, item.path().string());
+						//foundSamples = true;
+					}
+				}
+
+				kitIdx = KitUtil::addKitSamples(system, settings, dirSamples);
+			} else if (fs::path(path).extension() == ".wav") {
+				samples.push_back(path);
+				//foundSamples = true;
+			} else if (fs::path(path).extension() == ".kit") {
+				kitIdx = KitUtil::addKit(system, settings, path);
+				//foundSamples = true;
+			}
+		}
+
+		if (samples.size() > 0) {
+			FileManager& fileManager = getState<FileManager>();
+			std::string kitName;
 
 #ifndef RP_WEB
-		kitName = fw::FsUtil::getDirectoryName(samples[0]);
+			kitName = fw::FsUtil::getDirectoryName(samples[0]);
 #endif
 
-		// Make a local copy of the sample if we don't already have it
-		for (std::string& samplePath : samples) {
-			samplePath = fileManager.addHashedFile(samplePath, "samples").string();
+			// Make a local copy of the sample if we don't already have it
+			for (std::string& samplePath : samples) {
+				samplePath = fileManager.addHashedFile(samplePath, "samples").string();
+			}
+
+			kitIdx = KitUtil::addKitSamples(system, settings, samples, kitName);
 		}
 
-		kitIdx = KitUtil::addKitSamples(system, settings, samples, kitName);
-	}
+		if (kitIdx != -1) {
+			system->reset();
+			auto samplerView = showSampleManager(findParent<fw::GridView>(), system, getNode()->getSystemService());
+			samplerView->setSampleIndex(kitIdx, 0);
 
-	if (kitIdx != -1) {
-		system->reset();
-		auto samplerView = showSampleManager(getParent()->getParent(), system, getNode()->getSystemService());
-		samplerView->setSampleIndex(kitIdx, 0);
-
-		return true;
-	}
-
-	return false;
-}
-
-void LsdjOverlay::onUpdate(f32 delta) {
-	/*if (_system) {
-		SystemPtr system = _system->getSystem();
-
-		if (_songSwapCooldown > 0.0f) {
-			_songSwapCooldown -= delta;
+			return true;
 		}
 
-		//_refresher.update(delta);
+		return false;
+	}
 
-		MemoryAccessor buffer = system->getMemory(MemoryType::Sram, AccessType::Read);
-		if (buffer.isValid()) {
-			Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
-			uint64 songHash = HashUtil::hash(songBuffer);
+	void LsdjOverlay::onUpdate(f32 delta) {
+		/*if (_system) {
+			SystemPtr system = _system->getSystem();
 
-			if (songHash != _songHash && _songSwapCooldown <= 0.0f) {
-				//spdlog::info("SRAM Changed!");
+			if (_songSwapCooldown > 0.0f) {
+				_songSwapCooldown -= delta;
+			}
 
-				if (_undoQueue.size() > 0 && _undoPosition < _undoQueue.size() - 1) {
-					_undoQueue.resize(_undoPosition + 1);
+			//_refresher.update(delta);
+
+			MemoryAccessor buffer = system->getMemory(MemoryType::Sram, AccessType::Read);
+			if (buffer.isValid()) {
+				Uint8Buffer songBuffer = buffer.getBuffer().slice(0, LSDJ_SONG_BYTE_COUNT);
+				uint64 songHash = HashUtil::hash(songBuffer);
+
+				if (songHash != _songHash && _songSwapCooldown <= 0.0f) {
+					//spdlog::info("SRAM Changed!");
+
+					if (_undoQueue.size() > 0 && _undoPosition < _undoQueue.size() - 1) {
+						_undoQueue.resize(_undoPosition + 1);
+					}
+
+					if (_undoQueue.size() == MAX_UNDO_QUEUE_SIZE) {
+						_undoQueue.erase(_undoQueue.begin());
+					}
+
+					_undoPosition = _undoQueue.size();
+					_undoQueue.push_back(songBuffer.clone());
+
+					_songHash = songHash;
+				}
+			}
+		}*/
+	}
+
+	void LsdjOverlay::onRender(fw::Canvas& canvas) {
+		//_canvas.clear();
+		//_canvas.text(0, 0, "SHIT", lsdj::ColorSets::Normal);
+
+		/*if (_refresher.getOverlay()) {
+			Image& target = _canvas.getRenderTarget();
+			_refresher.getOverlay()->getBuffer().copyTo(&target.getBuffer());
+		}*/
+
+		//LsdjCanvasView::onRender(canvas);
+	}
+
+	void LsdjOverlay::processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+		fw::ButtonStreamWriter writer(buttons);
+
+		for (auto it = actions.begin(); it != actions.end();) {
+			if (it->starts_with("Lsdj.")) {
+				const std::string& action = *it;
+
+				if (action == "Lsdj.DownTenRows") {
+					writer.hold(fw::ButtonType::B).delay(100).hold(fw::ButtonType::Down).releaseAll();
+				} else if (action == "Lsdj.UpTenRows") {
+					writer.hold(fw::ButtonType::B).hold(fw::ButtonType::Up).releaseAll();
+				} else if (action == "Lsdj.ScreenUp") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Up).releaseAll();
+				} else if (action == "Lsdj.ScreenDown") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Down).releaseAll();
+				} else if (action == "Lsdj.ScreenLeft") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Left).releaseAll();
+				} else if (action == "Lsdj.ScreenRight") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Right).releaseAll();
+				} else if (action == "Lsdj.Delete") {
+					writer.hold(fw::ButtonType::B).hold(fw::ButtonType::A).releaseAll();
+				} else if (action == "Lsdj.BeginSelection") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::B).releaseAll();
+				} else if (action == "Lsdj.BeginRowSelection") {
+					writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
+				} else if (action == "Lsdj.SelectAll") {
+					writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
+				} else if (action == "Lsdj.CancelSelection") {
+					writer.press(fw::ButtonType::B);
+				} else if (action == "Lsdj.Copy") {
+					writer.press(fw::ButtonType::B);
+				} else if (action == "Lsdj.Cut") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
+				} else if (action == "Lsdj.Paste") {
+					writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
 				}
 
-				if (_undoQueue.size() == MAX_UNDO_QUEUE_SIZE) {
-					_undoQueue.erase(_undoQueue.begin());
-				}
-
-				_undoPosition = _undoQueue.size();
-				_undoQueue.push_back(songBuffer.clone());
-
-				_songHash = songHash;
+				it = actions.erase(it);
+			} else {
+				++it;
 			}
 		}
-	}*/
-}
-
-void LsdjOverlay::onRender(fw::Canvas& canvas) {
-	//_canvas.clear();
-	//_canvas.text(0, 0, "SHIT", lsdj::ColorSets::Normal);
-
-	/*if (_refresher.getOverlay()) {
-		Image& target = _canvas.getRenderTarget();
-		_refresher.getOverlay()->getBuffer().copyTo(&target.getBuffer());
-	}*/
-
-	//LsdjCanvasView::onRender(canvas);
-}
-
-void rp::LsdjOverlay::processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
-	fw::ButtonStreamWriter writer(buttons);
-
-	for (const std::string& action : actions) {
-		if (action == "Lsdj.DownTenRows") {
-			writer.hold(fw::ButtonType::B).delay(100).hold(fw::ButtonType::Down).releaseAll();
-		} else if (action == "Lsdj.UpTenRows") {
-			writer.hold(fw::ButtonType::B).hold(fw::ButtonType::Up).releaseAll();
-		} else if (action == "Lsdj.ScreenUp") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Up).releaseAll();
-		} else if (action == "Lsdj.ScreenDown") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Down).releaseAll();
-		} else if (action == "Lsdj.ScreenLeft") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Left).releaseAll();
-		} else if (action == "Lsdj.ScreenRight") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Right).releaseAll();
-		} else if (action == "Lsdj.Delete") {
-			writer.hold(fw::ButtonType::B).hold(fw::ButtonType::A).releaseAll();
-		} else if (action == "Lsdj.BeginSelection") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::B).releaseAll();
-		} else if (action == "Lsdj.BeginRowSelection") {
-			writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
-		} else if (action == "Lsdj.SelectAll") {
-			writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
-		} else if (action == "Lsdj.CancelSelection") {
-			writer.press(fw::ButtonType::B);
-		} else if (action == "Lsdj.Copy") {
-			writer.press(fw::ButtonType::B);
-		} else if (action == "Lsdj.Cut") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
-		} else if (action == "Lsdj.Paste") {
-			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
-		}
 	}
-
-	std::remove_if(actions.begin(), actions.end(), [](const std::string& action) {
-		return action.starts_with("Lsdj.");
-	});
 }

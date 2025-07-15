@@ -10,7 +10,7 @@
 
 namespace rp {
 	const uint8 startOctave = 36;
-	const uint8 noteStart = 48;
+	const uint8 KEYBOARD_NODE_START = 48;
 
 	const uint8 keyboardNoteMap[24] = { 0x1A,0x1B,0x22,0x23,0x21,0x2A,0x34,0x32,0x33,0x31,0x3B,0x3A,
 										 0x15,0x1E,0x1D,0x26,0x24,0x2D,0x2E,0x2C,0x36,0x35,0x3D,0x3C };
@@ -36,23 +36,8 @@ namespace rp {
 	const uint8_t keyboardInsDn = 0x04;
 	const uint8_t keyboardInsUp = 0x0C;
 
-	const uint8_t keyboardTblDn = 0x03;
 	const uint8_t keyboardTblUp = 0x0B;
-
-	const uint8_t keyboardTblCue = 0x29;
-
-	const uint8_t keyboardMut1 = 0x01;
-	const uint8_t keyboardMut2 = 0x09;
-	const uint8_t keyboardMut3 = 0x78;
-	const uint8_t keyboardMut4 = 0x07;
-
-	const uint8_t keyboardCurL = 0x6B;
-	const uint8_t keyboardCurR = 0x74;
-	const uint8_t keyboardCurU = 0x75;
-	const uint8_t keyboardCurD = 0x72;
-	const uint8_t keyboardPgUp = 0x7D;
-	const uint8_t keyboardPgDn = 0x7A;
-	const uint8_t keyboardEntr = 0x5A;
+	const uint8_t keyboardTblDn = 0x03;
 	
 	int32 midiMapRowNumber(int32 channel, int32 note) {
 		if (channel == 0) {
@@ -168,8 +153,9 @@ namespace rp {
 				processSync(system, timeInfo, 1, 0xF8);
 				break;
 			case LsdjSyncMode::MidiSyncArduinoboy:
-				// TODO: Check if playing here?
-				processSync(system, timeInfo, settings.tempoDivisor, 0xF8);
+				if (_arduinoboyPlaying) {
+					processSync(system, timeInfo, settings.tempoDivisor, 0xF8);
+				}
 				break;
 			case LsdjSyncMode::MidiMap:
 				processSync(system, timeInfo, 1, 0xFF);
@@ -188,8 +174,8 @@ namespace rp {
 				if (message.getStatusMsg() == fw::MidiMessage::StatusMessage::NoteOn) {
 					uint8 note = (uint8)message.getNoteNumber();
 				
-					if (message.getNoteNumber() >= noteStart) {
-						note -= noteStart;
+					if (note >= KEYBOARD_NODE_START) {
+						note -= KEYBOARD_NODE_START;
 					
 						_keyboardOctave = changeOctave(serial, note / 12, _keyboardOctave);
 

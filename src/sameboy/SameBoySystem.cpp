@@ -314,7 +314,7 @@ void processButtons(const std::vector<fw::StreamButtonPress>& source, std::queue
 		target.push(OffsetButton{
 			.offset = offset,
 			.duration = (int)(timeScale * press.duration),
-			.button = press.button,
+			.button = (int)press.button,
 			.down = press.down
 		});
 	}

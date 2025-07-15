@@ -20,6 +20,8 @@ namespace rp {
 	}
 	
 	void CompactLayoutView::processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+		assert(_project);
+
 		MenuViewPtr currentMenu = _menu.lock();
 		if (currentMenu) {
 			currentMenu->processButtons(buttons);
@@ -42,7 +44,7 @@ namespace rp {
 						menuView->focus();
 
 						subscribe<fw::DismountEvent>(menuView, [this]() {
-							//_project.setDirty();
+							_project->setDirty();
 						});
 
 						_menu = menuView;
@@ -51,7 +53,7 @@ namespace rp {
 					} else if (action == "RetroPlug.PreviousSystem") {
 						getGridOverlay()->decrementSelection();
 					} else if (action == "RetroPlug.SaveProject") {
-						//_project.setDirty();
+						_project->save();
 					}
 				}
 
