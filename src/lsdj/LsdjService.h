@@ -2,7 +2,6 @@
 
 #include "core/SystemService.h"
 #include "lsdj/LsdjSettings.h"
-#include "lsdj/Ram.h"
 
 namespace rp {
 	class LsdjService final : public TypedSystemService<LsdjServiceSettings> {

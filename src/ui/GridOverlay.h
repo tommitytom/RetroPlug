@@ -50,6 +50,15 @@ namespace rp {
 			updateLayout();
 		}
 
+		void decrementSelection() {
+			if (_selected > 0) {
+				_selected--;
+			} else {
+				_selected = (fw::ViewIndex)_grid->getChildren().size() - 1;
+			}
+			updateLayout();
+		}
+
 		void refocus() {
 			_refocus = true;
 		}

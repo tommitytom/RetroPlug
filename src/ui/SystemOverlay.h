@@ -26,6 +26,8 @@ namespace rp {
 		SystemServiceNodePtr getNode() {
 			return _node;
 		}
+
+		virtual void processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {}
 	};
 
 	template <typename T>

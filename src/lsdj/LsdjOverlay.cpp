@@ -228,3 +228,43 @@ void LsdjOverlay::onRender(fw::Canvas& canvas) {
 
 	//LsdjCanvasView::onRender(canvas);
 }
+
+void rp::LsdjOverlay::processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+	fw::ButtonStreamWriter writer(buttons);
+
+	for (const std::string& action : actions) {
+		if (action == "Lsdj.DownTenRows") {
+			writer.hold(fw::ButtonType::B).delay(100).hold(fw::ButtonType::Down).releaseAll();
+		} else if (action == "Lsdj.UpTenRows") {
+			writer.hold(fw::ButtonType::B).hold(fw::ButtonType::Up).releaseAll();
+		} else if (action == "Lsdj.ScreenUp") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Up).releaseAll();
+		} else if (action == "Lsdj.ScreenDown") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Down).releaseAll();
+		} else if (action == "Lsdj.ScreenLeft") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Left).releaseAll();
+		} else if (action == "Lsdj.ScreenRight") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::Right).releaseAll();
+		} else if (action == "Lsdj.Delete") {
+			writer.hold(fw::ButtonType::B).hold(fw::ButtonType::A).releaseAll();
+		} else if (action == "Lsdj.BeginSelection") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::B).releaseAll();
+		} else if (action == "Lsdj.BeginRowSelection") {
+			writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
+		} else if (action == "Lsdj.SelectAll") {
+			writer.hold(fw::ButtonType::Select).press(fw::ButtonType::B).press(fw::ButtonType::B).hold(fw::ButtonType::B).releaseAll();
+		} else if (action == "Lsdj.CancelSelection") {
+			writer.press(fw::ButtonType::B);
+		} else if (action == "Lsdj.Copy") {
+			writer.press(fw::ButtonType::B);
+		} else if (action == "Lsdj.Cut") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
+		} else if (action == "Lsdj.Paste") {
+			writer.hold(fw::ButtonType::Select).hold(fw::ButtonType::A).releaseAll();
+		}
+	}
+
+	std::remove_if(actions.begin(), actions.end(), [](const std::string& action) {
+		return action.starts_with("Lsdj.");
+	});
+}

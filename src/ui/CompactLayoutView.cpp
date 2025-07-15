@@ -48,6 +48,10 @@ namespace rp {
 						_menu = menuView;
 					} else if (action == "RetroPlug.NextSystem") {
 						getGridOverlay()->incrementSelection();
+					} else if (action == "RetroPlug.PreviousSystem") {
+						getGridOverlay()->decrementSelection();
+					} else if (action == "RetroPlug.SaveProject") {
+						//_project.setDirty();
 					}
 				}
 

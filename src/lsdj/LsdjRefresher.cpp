@@ -94,8 +94,8 @@ void LsdjRefresher::refresh() {
 	fw::ButtonStreamWriter writer(_system->getIo()->input.buttons);
 	writer.setDefaultDelay(40);
 	writer
-		.holdDuration((int)fw::ButtonType::Select, 40)
-		.press((int)dir1)
-		.press((int)dir2)
+		.holdDuration(fw::ButtonType::Select, 40)
+		.press(dir1)
+		.press(dir2)
 		.releaseAll();
 }

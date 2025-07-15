@@ -67,7 +67,7 @@ namespace rp {
 
 			if (ev.key == fw::VirtualKey::Space) {
 				SystemIoPtr io = _system->getIo(); 
-				io->input.buttons.push_back(fw::StreamButtonPress{ .button = (int)fw::ButtonType::Start, .down = ev.down, .duration = 0 });
+				io->input.buttons.push_back(fw::StreamButtonPress{ .button = fw::ButtonType::Start, .down = ev.down, .duration = 0 });
 				return true;
 			}
 

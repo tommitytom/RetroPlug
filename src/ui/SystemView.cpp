@@ -15,6 +15,7 @@
 #include "ui/MenuBuilder.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
+#include "ui/SystemOverlay.h"
 
 #include "sameboy/SameBoySystem.h"
 
@@ -92,6 +93,15 @@ void SystemView::onRender(fw::Canvas& canvas) {
 }
 
 void SystemView::processInput(std::vector<fw::StreamButtonPress>& stream, std::vector<std::string>& actions) {
+	for (const auto& child : getChildren()) {
+		if (child->isType<MenuView>()) {
+			// MenuView will handle its own input
+			continue;
+		}
+		const SystemOverlayPtr& overlay = child->asShared<SystemOverlay>();
+		overlay->processInput(*_system, stream, actions);
+		
+	}
 	_system->processInput(stream, actions);
 }
 

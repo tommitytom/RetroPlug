@@ -53,5 +53,7 @@ namespace rp {
 		void onUpdate(f32 delta) override;
 
 		void onRender(fw::Canvas& canvas) override;
+
+		void processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions);
 	};
 }

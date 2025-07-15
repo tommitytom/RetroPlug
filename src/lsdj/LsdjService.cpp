@@ -1,6 +1,7 @@
 #include "LsdjService.h"
 
 #include "lsdj/OffsetLookup.h"
+#include "lsdj/Ram.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
 

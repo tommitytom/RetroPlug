@@ -154,7 +154,7 @@ namespace rp {
 
 		if (settings.autoPlay) {
 			// TODO: Determine if lsdj is already playing
-			system.getIo()->input.buttons.push_back(fw::StreamButtonPress{ (int)fw::ButtonType::Start, true, 30 });
+			system.getIo()->input.buttons.push_back(fw::StreamButtonPress{ fw::ButtonType::Start, true, 30 });
 		}
 	}
 

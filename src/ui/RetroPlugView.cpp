@@ -53,6 +53,7 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 
 	_inputManager.load(_config.settings.keyboard, InputType::Key);
 	_inputManager.load(_config.settings.pad, InputType::Pad);
+	_gamepadManager.setAxisButtonThreshold(0.5f);
 }
 
 void RetroPlugView::initViews() {

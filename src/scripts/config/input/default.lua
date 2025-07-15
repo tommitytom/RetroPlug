@@ -57,7 +57,7 @@ KeyMap({ romName = "LSDj*" }, {
 	[Key.Delete] = Action.Lsdj.Delete,
 	[Key.PageDown] = Action.Lsdj.DownTenRows,
 	[Key.PageUp] = Action.Lsdj.UpTenRows,
-	[Key.Shift] = Action.Lsdj.BeginSelection,
+	--[Key.Shift] = Action.Lsdj.BeginSelection,
 	[Key.Esc] = Action.Lsdj.CancelSelection,
 })
 
