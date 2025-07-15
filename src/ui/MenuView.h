@@ -144,7 +144,7 @@ namespace rp {
 
 		bool onMouseButton(fw::MouseButton button, bool down, fw::Point position) override { return true; }
 
-		void processButtons(const fw::ButtonWriter& stream) override;
+		void processButtons(const std::vector<fw::StreamButtonPress>& stream);
 
 		void setMenu(fw::MenuPtr menu);
 

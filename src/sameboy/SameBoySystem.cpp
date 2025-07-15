@@ -27,6 +27,7 @@ extern "C" {
 
 using namespace rp;
 
+const f32 DEFAULT_MUTE_TIMEOUT = 0.35f;
 const GB_model_t DEFAULT_GAMEBOY_MODEL = GB_model_t::GB_MODEL_CGB_C;
 const size_t LINK_TICKS_MAX = 3907;
 
@@ -94,12 +95,18 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 
 	//GB_sample_t smp =  gb->apu_output.current_sample[0];
 
+	if (s->muteTimeout > 0) {
+		sample->left = 0;
+		sample->right = 0;
+		s->muteTimeout--;
+	}
+
 	if (s->io) {
 		fw::Float32Buffer* buffer = s->io->output.audio.get();
+		f32* target = buffer->data();
 
 		if (buffer) {
 			if ((s->audioFrameCount + 1) * 2 <= buffer->size()) {
-				f32* target = buffer->data();
 				target[s->audioFrameCount * 2] = s16ToF32(sample->left);
 				target[s->audioFrameCount * 2 + 1] = s16ToF32(sample->right);
 
@@ -110,6 +117,8 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 				//spdlog::warn("Audio buffer overflow!");
 				//std::cout << "Audio buffer overflow!" << std::endl;
 			}
+		} else {
+
 		}
 	}
 
@@ -217,6 +226,7 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 
 	if (loadConfig.reset) {
 		GB_reset(_state.gb);
+		_state.muteTimeout = (uint32)(DEFAULT_MUTE_TIMEOUT * _sampleRate);
 	}
 
 	setDesc(std::move(loadConfig.desc));
@@ -226,6 +236,7 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 
 void SameBoySystem::reset() {
 	GB_reset(_state.gb);
+	_state.muteTimeout = (uint32)(DEFAULT_MUTE_TIMEOUT * _sampleRate);
 }
 
 void SameBoySystem::setSampleRate(uint32 sampleRate) {
@@ -293,21 +304,19 @@ void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
 	}
 }
 
-void processButtons(const std::vector<fw::ButtonStream<8>>& source, std::queue<OffsetButton>& target, f32 timeScale) {
-	for (const fw::ButtonStream<8>&stream : source) {
-		for (size_t i = 0; i < stream.pressCount; ++i) {
-			int offset = 0;
-			if (target.size() > 0) {
-				offset = target.back().offset + target.back().duration;
-			}
-
-			target.push(OffsetButton{
-				.offset = offset,
-				.duration = (int)(timeScale * stream.presses[i].duration),
-				.button = stream.presses[i].button,
-				.down = stream.presses[i].down
-			});
+void processButtons(const std::vector<fw::StreamButtonPress>& source, std::queue<OffsetButton>& target, f32 timeScale) {
+	for (const fw::StreamButtonPress& press : source) {
+		int offset = 0;
+		if (target.size() > 0) {
+			offset = target.back().offset + target.back().duration;
 		}
+
+		target.push(OffsetButton{
+			.offset = offset,
+			.duration = (int)(timeScale * press.duration),
+			.button = press.button,
+			.down = press.down
+		});
 	}
 }
 

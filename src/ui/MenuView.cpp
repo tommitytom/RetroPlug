@@ -94,9 +94,9 @@ void MenuView::flattenHierarchy(fw::Menu& menu, fw::PointF& pos) {
 	}
 }
 
-void MenuView::processButtons(const fw::ButtonWriter& stream) {
-	for (size_t i = 0; i < stream.getCount(); ++i) {
-		const fw::StreamButtonPress& ev = stream.data().presses[i];
+void MenuView::processButtons(const std::vector<fw::StreamButtonPress>& stream) {
+	for (size_t i = 0; i < stream.size(); ++i) {
+		const fw::StreamButtonPress& ev = stream[i];
 		fw::ButtonType button = static_cast<fw::ButtonType>(ev.button);
 
 		switch (button) {

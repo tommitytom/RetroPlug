@@ -44,15 +44,15 @@ namespace rp {
 		s.new_enum<fw::PadButtonType>("Pad", fw::PadButtonTypeUtil::Items);
 		s.new_enum<fw::VirtualKey>("Key", fw::VirtualKeyUtil::Items);
 
-		s.new_usertype<fw::ButtonWriter>("ButtonStream",
-			"hold", &fw::ButtonWriter::hold,
-			"release", &fw::ButtonWriter::release,
-			"releaseAll", &fw::ButtonWriter::releaseAll,
-			"delay", &fw::ButtonWriter::delay,
-			"press", &fw::ButtonWriter::press,
-			"holdDuration", &fw::ButtonWriter::holdDuration,
-			"releaseDuration", &fw::ButtonWriter::releaseDuration,
-			"releaseAllDuration", &fw::ButtonWriter::releaseAllDuration
+		s.new_usertype<fw::ButtonStreamWriter>("ButtonStreamWriter",
+			"hold", &fw::ButtonStreamWriter::hold,
+			"release", &fw::ButtonStreamWriter::release,
+			"releaseAll", &fw::ButtonStreamWriter::releaseAll,
+			"delay", &fw::ButtonStreamWriter::delay,
+			"press", &fw::ButtonStreamWriter::press,
+			"holdDuration", &fw::ButtonStreamWriter::holdDuration,
+			"releaseDuration", &fw::ButtonStreamWriter::releaseDuration,
+			"releaseAllDuration", &fw::ButtonStreamWriter::releaseAllDuration
 		);
 
 		sol::protected_function_result result = s.script("require('InputConfigParser')");
@@ -149,7 +149,7 @@ namespace rp {
 		reload();
 	}
 
-	bool InputManager::processButton(fw::PadButtonType button, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions) {
+	bool InputManager::processButton(fw::PadButtonType button, bool down, fw::ButtonStreamWriter& buttons, std::vector<std::string>& actions) {
 		if (!isValid()) return false;
 		sol::function func = (*_lua)["processButton"];
 		if (func.valid()) {
@@ -159,7 +159,7 @@ namespace rp {
 		return false;
 	}
 
-	bool InputManager::processKey(fw::VirtualKey key, bool down, fw::ButtonWriter& buttons, std::vector<std::string>& actions) {
+	bool InputManager::processKey(fw::VirtualKey key, bool down, fw::ButtonStreamWriter& buttons, std::vector<std::string>& actions) {
 		if (!isValid()) return false;
 		sol::function func = (*_lua)["processKey"];
 		if (func.valid()) {

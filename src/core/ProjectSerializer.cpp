@@ -15,12 +15,9 @@
 #include "lsdj/LsdjSettings.h"
 
 namespace rp {
-	std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<const SystemDesc*>& systems) {
+	std::string ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, const ProjectState& state, const std::vector<SystemDesc>& systems) {
 		sol::state s;
 		fw::SolUtil::prepareState(s);
-
-		//const entt::any& value = systems[0]->services.at(ARDUINOBOY_SERVICE_TYPE);
-		//const ArduinoboyServiceSettings& settings =  entt::any_cast<const ArduinoboyServiceSettings&>(value);
 
 		sol::table projectTable = fw::LuaSerializer::serializeToObject(typeRegistry, s, state).as<sol::table>();
 		projectTable["projectVersion"] = PROJECT_VERSION;
@@ -29,8 +26,7 @@ namespace rp {
 		sol::table systemsTable = projectTable.create("systems", (int)systems.size());
 
 		for (size_t i = 0; i < systems.size(); ++i) {
-			const SystemDesc& systemDesc = *systems[i];
-			systemsTable.add(fw::LuaSerializer::serializeToObject(typeRegistry, s, systemDesc));
+			systemsTable.add(fw::LuaSerializer::serializeToObject(typeRegistry, s, systems[i]));
 		}
 
 		std::string target;
@@ -42,7 +38,7 @@ namespace rp {
 		}
 	}
 
-	bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<const SystemDesc*>& systems, bool updatePath) {
+	bool ProjectSerializer::serialize(const fw::TypeRegistry& typeRegistry, std::string_view path, ProjectState& state, const std::vector<SystemDesc>& systems, bool updatePath) {
 		if (updatePath) {
 			state.path = std::string(path.data());
 		}

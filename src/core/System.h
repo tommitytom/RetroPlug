@@ -55,7 +55,7 @@ namespace rp {
 
 		struct Input {
 			FixedQueue<TimedByte, 16> serial;
-			std::vector<fw::ButtonStream<8>> buttons;
+			std::vector<fw::StreamButtonPress> buttons;
 			std::vector<MemoryPatch> patches;
 
 			void reset() {
@@ -82,8 +82,8 @@ namespace rp {
 				input.serial.tryPush(other.input.serial.pop());
 			}
 
-			for (const fw::ButtonStream<8>& buttonStream : other.input.buttons) {
-				input.buttons.push_back(buttonStream);
+			for (const fw::StreamButtonPress& press : other.input.buttons) {
+				input.buttons.push_back(press);
 			}
 
 			for (MemoryPatch& patch : other.input.patches) {
@@ -195,9 +195,6 @@ namespace rp {
 	private:
 		SystemId _id = INVALID_SYSTEM_ID;
 		SystemType _type = INVALID_SYSTEM_TYPE;
-
-		//std::array<bool, static_cast<int>(fw::ButtonType::MAX)> _buttonState = { false };
-		std::vector<ModelPtr> _models;
 		std::vector<SystemServicePtr> _services;
 
 	public:
@@ -248,21 +245,7 @@ namespace rp {
 
 		virtual SystemStateOffsets getStateOffsets() const { return SystemStateOffsets(); }
 
-		/*void setButtonState(fw::ButtonType button, bool down) {
-			_buttonState[(int)button] = down;
-
-			if (_stream) {
-				_stream->input.buttons.push_back(fw::ButtonStream<8> {
-					.presses = fw::StreamButtonPress{ .button = (int)button, .down = down, .duration = 0 },
-					.pressCount = 1
-				});
-			}
-		}*/
-
-		std::vector<fw::ButtonStream<8>>& getButtons() {
-			assert(_stream);
-			return _stream->input.buttons;
-		}
+		virtual void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions);
 
 		fw::DimensionU32 getResolution() const {
 			return _resolution;

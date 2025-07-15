@@ -37,10 +37,12 @@ namespace rp {
 		FileManager _fileManager;
 		InputManager _inputManager;
 		fw::FileDialogManager _fileDialogManager;
-		fw::ButtonWriter _buttons;
+
+		std::vector<fw::StreamButtonPress> _buttons;
+		fw::ButtonStreamWriter _buttonWriter;
 
 		SystemContainerViewPtr _systemContainer;
-		CompactLayoutViewPtr _compactLayout;
+		//CompactLayoutViewPtr _compactLayout;
 		Project _project;
 
 		uint32 _sampleRate = 48000;
@@ -84,8 +86,6 @@ namespace rp {
 		bool onCloseWindowRequest(fw::CloseWindowContext& ctx) override;
 
 	private:
-		void processInput(const fw::ButtonWriter& buttonWriter, const std::vector<std::string>& actions);
-
 		void processOutput();
 
 		void setupEventHandlers();

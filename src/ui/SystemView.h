@@ -28,12 +28,12 @@ namespace rp {
 			//_version = _system->getVersion();
 		}
 
-		void setSystem(SystemPtr& system) {
+		void setSystem(const SystemPtr& system) {
 			_system = system;
 			getLayout().setDimensions((fw::Dimension)system->getResolution());
 		}
 
-		SystemPtr getSystem() {
+		const SystemPtr& getSystem() {
 			return _system;
 		}
 
@@ -51,7 +51,7 @@ namespace rp {
 			return _version;
 		}
 
-		void processButtons(const fw::ButtonWriter& stream);
+		void processInput(std::vector<fw::StreamButtonPress>& stream, std::vector<std::string>& actions) override;
 
 		void createMenu(fw::Menu& menu) override;
 	};

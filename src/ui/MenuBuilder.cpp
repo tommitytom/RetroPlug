@@ -172,7 +172,7 @@ bool handleSystemLoad(const fs::path& romPath, const fs::path& savPath, SystemPt
 	return true;
 }
 
-void MenuBuilder::projectMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system) {
+void MenuBuilder::projectMenu(fw::Menu& root, const fw::TypeRegistry& types, FileManager& fileManager, Project& project, System& system) {
 	root
 		.action("New", [&project]() { project.clear(); })
 		.action("Load...", [&fileManager, &project](fw::MenuContext& ctx) {
@@ -198,9 +198,15 @@ void MenuBuilder::projectMenu(fw::Menu& root, FileManager& fileManager, Project&
 				spdlog::error("Failed to save project");
 			}
 		})
-		.action("Export all ROMs + SAVs", [&project]() {
+		.action("Export all ROMs + SAVs", [&project, &types]() {
+			ProjectExporter::Settings settings = {
+				.project = true,
+				.includeFiles = true,
+				.samples = false
+			};
+			
 			fw::Uint8Buffer target;
-			if (ProjectExporter::exportRomsAndSavs(project, target)) {
+			if (ProjectExporter::exportProject(settings, types, project.getState(), project.getSystems(), target)) {
 				fw::FileDialog::saveFileData(target, { ZIP_FILTER }, project.getName() + ".zip");
 			}
 		})
@@ -347,8 +353,6 @@ void MenuBuilder::systemAddMenu(fw::Menu& root, fw::FileDialogManager& dialog, F
 		project.duplicateSystem(system->getId()/*, desc*/);
 	});
 
-	//populateRecent(loadRoot.subMenu("Recent"), fileManager, project, nullptr);
-
 	loadRoot
 		.action("ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 		.parent();
@@ -371,21 +375,5 @@ void MenuBuilder::systemLoadMenu(fw::Menu& root, fw::FileDialogManager& dialog, 
 		})
 		.action("ROM...", [&project, &dialog, system]() { loadRomDialog(dialog, project, system); })
 		.action("SAV...", [&project, &dialog, system]() { loadSavDialog(project, system); })
-		.parent();
-}
-
-void MenuBuilder::systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
-	root.subMenu("Save")
-		/*.action("Project", [&project, fileManager]() { saveProject(project, fileManager, false); })
-		.action("Project As...", [&project, fileManager]() { saveProject(project, fileManager, true); })
-		.action("SAV", [&project, system]() { saveSram(project, system, false); })
-		.action("SAV As...", [&project, system]() { saveSram(project, system, true); })
-		.action("State As...", [&project, system]() { saveState(project, system); })*/
-		.action("All ROMs + SAVs", [&project]() {
-			fw::Uint8Buffer target;
-			if (ProjectExporter::exportRomsAndSavs(project, target)) {
-				fw::FileDialog::saveFileData(target, { ZIP_FILTER }, project.getName() + ".zip");
-			}
-		})
 		.parent();
 }

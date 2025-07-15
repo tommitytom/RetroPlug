@@ -136,10 +136,10 @@ bool Project::load(std::string_view path) {
 }
 
 bool Project::save() {
-	std::vector<const SystemDesc*> systemDescs;
+	std::vector<SystemDesc> systemDescs;
 
 	for (SystemPtr& system : _systemManager.getSystems()) {
-		systemDescs.push_back(&system->getDesc());
+		systemDescs.push_back(system->getDesc());
 	}
 
 	if (ProjectSerializer::serialize(_typeRegistry, _state.path, _state, systemDescs, false)) {

@@ -8,23 +8,24 @@
 #include "ui/MenuView.h"
 #include "lsdj/LsdjUi.h"
 #include "lsdj/LsdjOverlay.h"
+#include "ui/SystemContainerView.h"
 
 namespace rp {
-	class StartView final : public MenuView {
+	class StartView final : public SystemContainerView {
 		FwRegisterObject();
-	public:
-		StartView() {
-			setEscCloses(false);
-		}
 
+	private:
+		MenuViewPtr _menu;
+
+	public:
+		StartView() {}
 		~StartView() {}
+
+		void onInitialize() override;
 
 		bool onDrop(const std::vector<std::string>& paths) override;
 
-		void onInitialize() override { 
-			MenuView::onInitialize();
-			setupMenu();
-		}
+		void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) override;
 
 	private:
 		void setupMenu();

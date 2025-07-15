@@ -80,9 +80,9 @@ bool SamplerView::onDrop(const std::vector<std::string>& paths) {
 	return true;
 }
 
-void SamplerView::processButtons(const fw::ButtonWriter& stream) {
-	for (size_t i = 0; i < stream.getCount(); ++i) {
-		auto buttonData = stream.data().presses[i];
+void SamplerView::processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+	for (size_t i = 0; i < buttons.size(); ++i) {
+		auto buttonData = buttons[i];
 		fw::ButtonType button = fw::ButtonType(buttonData.button);
 
 		if (button == fw::ButtonType::B) {
@@ -119,6 +119,8 @@ void SamplerView::processButtons(const fw::ButtonWriter& stream) {
 			}
 		}
 	}	
+
+	buttons.clear();
 }
 
 void SamplerView::onUpdate(f32 delta) {

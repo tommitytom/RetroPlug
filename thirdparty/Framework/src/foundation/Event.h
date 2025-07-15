@@ -287,8 +287,9 @@ namespace fw {
 
 		template <typename T>
 		bool trySend(NodeId targetNodeId, T&& event) {
-			if (_state.nodes.contains(targetNodeId)) {
-				const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
+			auto found = _state.nodes.find(targetNodeId);
+			if (found != _state.nodes.end()) {
+				const QueuePtr queue = found->second.queue.lock();
 				if (queue) {
 					queue->enqueue(Event{
 						.sender = _id,

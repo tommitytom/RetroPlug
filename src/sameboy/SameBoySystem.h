@@ -50,6 +50,8 @@ namespace rp {
 
 			uint8 currentLinkByte = 0;
 			size_t currentBitCount = 0;
+
+			uint32 muteTimeout = 48000;
 		};
 
 	private:

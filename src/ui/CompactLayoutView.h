@@ -2,25 +2,29 @@
 
 #include "ui/GridOverlay.h"
 #include "ui/GridView.h"
+#include "ui/SystemContainerView.h"
 
 namespace rp {
-	class SystemContainerView : public fw::View {
-		FwRegisterObject();
-	};
-
-	using SystemContainerViewPtr = std::shared_ptr<SystemContainerView>;
-
 	class CompactLayoutView final : public SystemContainerView {
 		FwRegisterObject();
 	private:
 		fw::GridViewPtr _grid;
 		GridOverlayPtr _gridOverlay;
+		std::weak_ptr<MenuView> _menu;
 
 	public:
 		CompactLayoutView() = default;
 		~CompactLayoutView() = default;
 
 		void onInitialize() override;
+
+		void onUpdate(f32 delta) override {
+			auto dim = _grid->getDimensionsF();
+			getLayout().setMinWidth(fw::FlexValue(dim.w));
+			getLayout().setMinHeight(fw::FlexValue(dim.h));
+		}
+
+		void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) override;
 
 		GridItemPtr getSelected() const {
 			return _gridOverlay->getSelected();

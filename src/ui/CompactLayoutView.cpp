@@ -1,5 +1,7 @@
 #include "CompactLayoutView.h"
 
+#include "foundation/StlUtil.h"
+
 namespace rp {
 	void CompactLayoutView::onInitialize() {
 		getLayout().setOverflow(fw::FlexOverflow::Visible);
@@ -15,5 +17,42 @@ namespace rp {
 		subscribe<fw::ChildRemovedEvent>(_grid, [this](const fw::ChildRemovedEvent& ev) {
 			_gridOverlay->refocus();
 		});
+	}
+	
+	void CompactLayoutView::processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+		MenuViewPtr currentMenu = _menu.lock();
+		if (currentMenu) {
+			currentMenu->processButtons(buttons);
+
+			if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ToggleMenu"))) {
+				currentMenu->remove();
+				_menu.reset();
+			}
+		} else {
+			GridItemPtr selected = _gridOverlay->getSelected();
+			if (selected) {
+				for (auto action : actions) {
+					if (action == "RetroPlug.ToggleMenu") {
+						fw::MenuPtr menu = std::make_shared<fw::Menu>();
+						selected->createMenu(*menu);
+
+						MenuViewPtr menuView = selected->addChild<MenuView>("Menu");
+						menuView->fitToParent();
+						menuView->setMenu(menu);
+						menuView->focus();
+
+						subscribe<fw::DismountEvent>(menuView, [this]() {
+							//_project.setDirty();
+						});
+
+						_menu = menuView;
+					} else if (action == "RetroPlug.NextSystem") {
+						getGridOverlay()->incrementSelection();
+					}
+				}
+
+				selected->processInput(buttons, actions);
+			}
+		}
 	}
 }

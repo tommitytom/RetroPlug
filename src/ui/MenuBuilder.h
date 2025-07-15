@@ -28,7 +28,7 @@ namespace rp::MenuBuilder {
 
 	void commonMenu(fw::Menu& root, fw::FileDialogManager& dialogManager, FileManager& fileManager, Project& project, System& system);
 
-	void projectMenu(fw::Menu& root, FileManager& fileManager, Project& project, System& system);
+	void projectMenu(fw::Menu& root, const fw::TypeRegistry& types, FileManager& fileManager, Project& project, System& system);
 
 	void systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system);
 
@@ -37,6 +37,4 @@ namespace rp::MenuBuilder {
 	void systemLoadMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system);
 
 	void systemAddMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system);
-
-	void systemSaveMenu(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system);
 }

@@ -19,15 +19,14 @@
 
 #include "roms/mgb.h"
 
-using namespace rp;
+namespace rp {
+	void StartView::setupMenu() {
+		fw::MenuPtr menuRoot = std::make_shared<fw::Menu>();
+		fw::Menu& menu = *menuRoot;
 
-void StartView::setupMenu() {
-	fw::MenuPtr menuRoot = std::make_shared<fw::Menu>();
-	fw::Menu& menu = *menuRoot;
-
-	menu.title(fmt::format("RetroPlug v{}", rp::RP_VERSION))
-		.separator()
-		.action("Load...", [&](fw::MenuContext& ctx) {
+		menu.title(fmt::format("RetroPlug v{}", rp::RP_VERSION))
+			.separator()
+			.action("Load...", [&](fw::MenuContext& ctx) {
 			ctx.retain();
 
 			fw::FileDialogManager& dialog = getState<fw::FileDialogManager>();
@@ -38,44 +37,55 @@ void StartView::setupMenu() {
 			});
 		});
 
-	MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getState<FileManager>(), getState<Project>(), nullptr);
+		MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getState<FileManager>(), getState<Project>(), nullptr);
 
-	menu
-		.action("Load MGB", [this]() {
-			Project& project = getState<Project>();
+		menu
+			.action("Load MGB", [this]() {
+				Project& project = getState<Project>();
 
-			SystemPtr system = project.addSystem(SAMEBOY_GUID, {
-				.desc = {
-					.paths = {
-						.romPath = "mgb.gb"
-					}
-				},
-				.romBuffer = std::make_shared<fw::Uint8Buffer>(mgb, mgb_len)
-			});
+				SystemPtr system = project.addSystem(SAMEBOY_GUID, {
+					.desc = {
+						.paths = {
+							.romPath = "mgb.gb"
+						}
+					},
+					.romBuffer = std::make_shared<fw::Uint8Buffer>(mgb, mgb_len)
+				});
 
-			std::string systemName = fmt::format("System {}", system->getId());
-			std::shared_ptr<SystemView> view = getParent()->addChild<SystemView>(systemName);
-			view->setSystem(system);
+				std::string systemName = fmt::format("System {}", system->getId());
+				std::shared_ptr<SystemView> view = getParent()->addChild<SystemView>(systemName);
+				view->setSystem(system);
 
-			this->remove();
-		})
-		.separator();
+				this->remove();
+			})
+			.separator();
 
-	fw::audio::AudioManagerPtr* audioManagerPtr = tryGetState<fw::audio::AudioManagerPtr>();
+		fw::audio::AudioManagerPtr* audioManagerPtr = tryGetState<fw::audio::AudioManagerPtr>();
 
-	MenuBuilder::settingsMenu(
-		menu.subMenu("Settings"), 
-		getState<const fw::TypeRegistry>(), 
-		getState<InputManager>(), 
-		getState<Project>(), 
-		getState<RetroPlugConfig>(), 
-		audioManagerPtr != nullptr ? audioManagerPtr->get() : nullptr
-	);
+		MenuBuilder::settingsMenu(
+			menu.subMenu("Settings"),
+			getState<const fw::TypeRegistry>(),
+			getState<InputManager>(),
+			getState<Project>(),
+			getState<RetroPlugConfig>(),
+			audioManagerPtr != nullptr ? audioManagerPtr->get() : nullptr
+		);
 
-	setMenu(menuRoot);
-	setAutoClose(false);
-}
+		_menu->setMenu(menuRoot);
+		_menu->setAutoClose(false);
+	}
 
-bool StartView::onDrop(const std::vector<std::string>& paths) {
-	return LoaderUtil::handleLoad(paths, getState<FileManager>(), getState<Project>());
+	void StartView::onInitialize() {
+		_menu = addChild<MenuView>("Menu");
+		_menu->setEscCloses(false);
+		setupMenu();
+	}
+
+	bool StartView::onDrop(const std::vector<std::string>& paths) {
+		return LoaderUtil::handleLoad(paths, getState<FileManager>(), getState<Project>());
+	}
+
+	void StartView::processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+		_menu->processButtons(buttons);
+	}
 }

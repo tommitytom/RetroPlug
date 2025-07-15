@@ -91,8 +91,8 @@ void SystemView::onRender(fw::Canvas& canvas) {
 	}
 }
 
-void SystemView::processButtons(const fw::ButtonWriter& stream) {
-	_system->getButtons().push_back(stream.data());
+void SystemView::processInput(std::vector<fw::StreamButtonPress>& stream, std::vector<std::string>& actions) {
+	_system->processInput(stream, actions);
 }
 
 void SystemView::createMenu(fw::Menu& target) {
@@ -109,7 +109,7 @@ void SystemView::createMenu(fw::Menu& target) {
 	root.separator();
 	MenuBuilder::commonMenu(root, dialogManager, fileManager, project, *_system);
 	root.separator();
-	MenuBuilder::projectMenu(root.subMenu("Project"), fileManager, project, *_system);
+	MenuBuilder::projectMenu(root.subMenu("Project"), typeReg, fileManager, project, *_system);
 	MenuBuilder::systemMenu(root.subMenu("System"), dialogManager, fileManager, project, _system);
 	MenuBuilder::settingsMenu(root.subMenu("Settings"), typeReg, inputManager, project, config, audioManagerPtr != nullptr ? audioManagerPtr->get() : nullptr);
 

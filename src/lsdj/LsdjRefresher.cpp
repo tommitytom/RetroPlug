@@ -91,13 +91,11 @@ void LsdjRefresher::refresh() {
 		dir2 = fw::ButtonType::Down;
 	}
 
-	fw::ButtonStreamWriter<(int)fw::ButtonType::MAX, 8> writer;
+	fw::ButtonStreamWriter writer(_system->getIo()->input.buttons);
 	writer.setDefaultDelay(40);
 	writer
 		.holdDuration((int)fw::ButtonType::Select, 40)
 		.press((int)dir1)
 		.press((int)dir2)
 		.releaseAll();
-
-	_system->getIo()->input.buttons.push_back(writer.data());
 }

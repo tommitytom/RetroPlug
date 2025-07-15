@@ -451,7 +451,7 @@ namespace fw {
 
 		virtual bool onCloseWindowRequest(CloseWindowContext& ctx) { return false; }
 
-		virtual void processButtons(const ButtonWriter& stream) {}
+		//virtual void processButtons(const ButtonWriter& stream) {}
 
 		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;

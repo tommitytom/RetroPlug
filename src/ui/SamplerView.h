@@ -56,7 +56,7 @@ namespace rp {
 
 		void onRender(fw::Canvas& canvas) override;
 
-		void processButtons(const fw::ButtonWriter& stream) override;
+		void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) override;
 
 		void createMenu(fw::Menu& menu) override;
 

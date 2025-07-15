@@ -51,6 +51,8 @@ namespace rp {
 		virtual const entt::any getState() const { return entt::any{}; }
 
 		virtual entt::any getState() { return entt::any{}; }
+
+		virtual void processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {}
 		
 		template <typename T>
 		T& getStateAs() {

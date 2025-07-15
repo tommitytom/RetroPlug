@@ -1,20 +1,14 @@
 #pragma once
 
 #include "ui/View.h"
-#include "foundation/ButtonStream.h"
 
 namespace rp {
-	class GridItem : public fw::View {
+	class SystemContainerView : public fw::View {
 		FwRegisterObject();
 	private:
 	public:
-		GridItem() {}
-		~GridItem() = default;
-
-		virtual void createMenu(fw::Menu& menu) = 0;
-
 		virtual void processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) = 0;
 	};
 
-	using GridItemPtr = std::shared_ptr<GridItem>;
+	using SystemContainerViewPtr = std::shared_ptr<SystemContainerView>;
 }

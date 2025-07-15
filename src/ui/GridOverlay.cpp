@@ -80,14 +80,6 @@ void GridOverlay::onUpdate(f32 delta) {
 		std::vector<SystemViewPtr> systemViews;
 		_grid->findChildren<SystemView>(systemViews);
 
-		if (systems.empty()) {
-			if (!_grid->findChild<StartView>()) {
-				_grid->addChild<StartView>("Start View");
-			}
-		} else {
-			_grid->removeChild<StartView>();
-		}
-
 		// Check for systems that were removed
 		for (SystemViewPtr systemView : systemViews) {
 			if (!fw::StlUtil::vectorContains(systems, systemView->getSystem())) {

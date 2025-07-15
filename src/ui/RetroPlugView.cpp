@@ -46,7 +46,8 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_project(typeRegistry, systemFactory, messageBus.allocator),
 	_ioMessageBus(messageBus),
 	_inputManager(_fileManager),
-	_config(config)
+	_config(config),
+	_buttonWriter(_buttons)
 {
 	setName(fmt::format("RetroPlug v{}", RP_VERSION));
 
@@ -57,8 +58,17 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 void RetroPlugView::initViews() {
 	this->removeChildren();
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
-	_compactLayout = this->addChild<CompactLayoutView>("Compact Layout");
-	//_compactLayout->fitToParent();
+
+	if (_project.getSystems().empty()) {
+		_systemContainer = addChild<StartView>("Start View");
+	} else {
+		_systemContainer = addChild<CompactLayoutView>("Compact Layout");
+		const GridOverlayPtr& grid = _systemContainer->findChild<GridOverlay>();
+
+		if (grid) {
+			grid->refocus();
+		}
+	}
 }
 
 void RetroPlugView::onHotReload() {
@@ -76,15 +86,15 @@ void RetroPlugView::onInitialize() {
 		audioManager->getDeviceNames(audioIn, audioOut);
 		const int32 idx = fw::StlUtil::getVectorIndex(audioOut, _config.settings.audioDeviceName);
 		audioManager->start(idx);
-	}	
-	
+	}
+
 	fw::FontDesc fontDesc;
 	fontDesc.data.resize(PlatNomor_len);
 	memcpy(fontDesc.data.data(), PlatNomor, PlatNomor_len);
 
 	fw::ResourceManager& rm = getResourceManager();
 	rm.create<fw::Font>("PlatNomor", fontDesc);
-	
+
 	this->createState<SystemOverlayManager>();
 	this->createState(entt::forward_as_any(_project.getSystemFactory()));
 	this->createState(entt::forward_as_any(_inputManager));
@@ -103,7 +113,7 @@ void RetroPlugView::onInitialize() {
 
 	_gamepadManager.setCallback([this](fw::PadButtonType button, bool down) {
 		std::vector<std::string> actions;
-		if (!_inputManager.processButton(button, down, _buttons, actions)) {
+		if (!_inputManager.processButton(button, down, _buttonWriter, actions)) {
 			return;
 		}
 
@@ -111,16 +121,16 @@ void RetroPlugView::onInitialize() {
 		// Because of this _buttons will never be properly cleared, so when the key up event in processed, it will
 		// double process the key down event. To ensure this doesnt happen, we make a copy of the button presses to pass
 		// to child elements, and clear the button list right away.
-		fw::ButtonWriter buttonWriter(_buttons);
-		_buttons.clear();
+		std::vector<fw::StreamButtonPress> buttons = _buttonWriter.data();
+		_buttonWriter.clear();
 
-		processInput(buttonWriter, actions);
+		_systemContainer->processInput(buttons, actions);
 	});
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	std::vector<std::string> actions;
-	if (!_inputManager.processKey(ev.key, ev.down, _buttons, actions)) {
+	if (!_inputManager.processKey(ev.key, ev.down, _buttonWriter, actions)) {
 		return false;
 	}
 
@@ -128,53 +138,12 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	// Because of this _buttons will never be properly cleared, so when the key up event in processed, it will
 	// double process the key down event. To ensure this doesnt happen, we make a copy of the button presses to pass
 	// to child elements, and clear the button list right away.
-	fw::ButtonWriter buttonWriter(_buttons);
-	_buttons.clear();
+	std::vector<fw::StreamButtonPress> buttons = _buttonWriter.data();
+	_buttonWriter.clear();
 
-	processInput(buttonWriter, actions);
+	_systemContainer->processInput(buttons, actions);
 
 	return true;
-}
-
-void RetroPlugView::processInput(const fw::ButtonWriter& buttonWriter, const std::vector<std::string>& actions) {
-	MenuViewPtr currentMenu = _menu.lock();
-	if (currentMenu) {
-		currentMenu->processButtons(buttonWriter);
-
-		if (fw::StlUtil::vectorContains(actions, std::string("RetroPlug.ToggleMenu"))) {
-			currentMenu->remove();
-			_menu.reset();
-		}
-	} else {
-		GridItemPtr selected = _compactLayout->getSelected();
-		if (selected) {
-			selected->processButtons(buttonWriter);
-		}
-
-		for (auto action : actions) {
-			if (action == "RetroPlug.ToggleMenu") {
-				if (selected) {
-					fw::MenuPtr menu = std::make_shared<fw::Menu>();
-					selected->createMenu(*menu);
-
-					MenuViewPtr menuView = selected->addChild<MenuView>("Menu");
-					menuView->fitToParent();
-					menuView->setMenu(menu);
-					menuView->focus();
-
-					subscribe<fw::DismountEvent>(menuView, [this]() {
-						_project.setDirty();
-					});
-
-					_menu = menuView;
-				}
-			} else if (action == "RetroPlug.NextSystem") {
-				_compactLayout->getGridOverlay()->incrementSelection();
-			} else {
-				spdlog::warn("Unhandled action: {}", action);
-			}
-		}
-	}
 }
 
 void RetroPlugView::setupEventHandlers() {
@@ -244,7 +213,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 	bool audioThreadActive = _lastPongTime.has_value() && (time - *_lastPongTime) < AUDIO_THREAD_TIMEOUT;
 	if (audioThreadActive != _audioThreadActive) {
 		_audioThreadActive = audioThreadActive;
-		
+
 		if (!audioThreadActive) {
 			if (_threadWarning) {
 				_threadWarning->remove();
@@ -275,17 +244,12 @@ void RetroPlugView::onUpdate(f32 delta) {
 	f32 scale = _project.getScale();
 	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
-	if (getChildren().empty()) {
-		addChild(_compactLayout);
-		auto grid = _compactLayout->findChild<GridOverlay>();
-
-		if (grid) {
-			grid->refocus();
-		}
+	if (!_systemContainer || (_systemContainer->isType<StartView>() && _project.getSystems().size())) {
+		initViews();
 	}
 
-	_compactLayout->setScale(scale);
-	_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
+	_systemContainer->setScale(scale);
+	//_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
 	if (_threadWarning) {
 		_threadWarning->getChildAs<fw::LabelView>(0)->setFont("PlatNomor", 7 * _project.getScale());
@@ -304,8 +268,8 @@ void RetroPlugView::onUpdate(f32 delta) {
 		_nextStateFetch = _stateFetchInterval;
 	}
 
-	fw::ViewLayout& layout = _compactLayout->getGrid()->getLayout();
-	auto area = fw::RectF(0, 0, layout.getMinWidth().getValue(), layout.getMinHeight().getValue());
+	const fw::ViewLayout& layout = _systemContainer->getLayout();
+	fw::RectF area = fw::RectF(0, 0, layout.getMinWidth().getValue(), layout.getMinHeight().getValue());
 	if (!std::isnan(area.w) && !std::isnan(area.h)) {
 		area.w *= scale;
 		area.h *= scale;
@@ -319,6 +283,5 @@ void RetroPlugView::onRender(fw::Canvas& canvas) {
 }
 
 bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
-
 	return true;
 }

@@ -11,20 +11,16 @@ namespace fw {
 		double duration = 0; // in ms
 	};
 
-	template <const int TotalPressCount>
-	struct ButtonStream {
-		std::array<StreamButtonPress, TotalPressCount> presses;
-		size_t pressCount = 0;
-	};
-
-	template <const int ButtonCount, const int TotalPressCount>
 	class ButtonStreamWriter {
 	private:
-		ButtonStream<TotalPressCount> _stream;
-		bool _state[ButtonCount] = { false };
+		std::vector<StreamButtonPress>& _stream;
+		std::array<bool, static_cast<int>(ButtonType::MAX)> _state = { false };
 		double _defaultDelay = 50.0;
 
 	public:
+		ButtonStreamWriter(std::vector<StreamButtonPress>& stream): _stream(stream) {}
+		~ButtonStreamWriter() = default;
+
 		ButtonStreamWriter& press(int button) {
 			hold(button);
 			release(button);
@@ -34,13 +30,12 @@ namespace fw {
 		ButtonStreamWriter& hold(int button) { return holdDuration(button, -1); }
 
 		ButtonStreamWriter& holdDuration(int button, double postDelay) {
-			assert(_stream.pressCount < TotalPressCount);
 			if (!_state[button]) {
 				if (postDelay < 0) {
 					postDelay = _defaultDelay;
 				}
 
-				_stream.presses[_stream.pressCount++] = StreamButtonPress{ button, true, postDelay };
+				_stream.push_back(StreamButtonPress{ button, true, postDelay });
 				_state[button] = true;
 			}
 
@@ -50,13 +45,12 @@ namespace fw {
 		ButtonStreamWriter& release(int button) { return releaseDuration(button, -1); }
 
 		ButtonStreamWriter& releaseDuration(int button, double postDelay) {
-			assert(_stream.pressCount < TotalPressCount);
 			if (_state[button]) {
 				if (postDelay < 0) {
 					postDelay = _defaultDelay;
 				}
 
-				_stream.presses[_stream.pressCount++] = StreamButtonPress{ button, false, postDelay };
+				_stream.push_back(StreamButtonPress{ button, false, postDelay });
 				_state[button] = false;
 			}
 
@@ -64,8 +58,8 @@ namespace fw {
 		}
 
 		ButtonStreamWriter& delay(double d) {
-			if (_stream.pressCount > 0) {
-				_stream.presses[_stream.pressCount - 1].duration += d;
+			if (_stream.size() > 0) {
+				_stream.back().duration += d;
 			}
 
 			return *this;
@@ -74,7 +68,7 @@ namespace fw {
 		ButtonStreamWriter& releaseAll() { return releaseAllDuration(-1); }
 
 		ButtonStreamWriter& releaseAllDuration(double postDelay) {
-			for (int i = 0; i < ButtonCount; ++i) {
+			for (int i = 0; i < _state.size(); ++i) {
 				if (_state[i]) {
 					releaseDuration(i, 0);
 				}
@@ -86,10 +80,10 @@ namespace fw {
 		}
 
 		void clear() {
-			_stream.pressCount = 0;
+			_stream.clear();
 		}
 
-		size_t getCount() const { return _stream.pressCount; }
+		size_t getCount() const { return _stream.size(); }
 
 		void setDefaultDelay(double delay) {
 			_defaultDelay = delay;
@@ -99,14 +93,8 @@ namespace fw {
 			return _defaultDelay;
 		}
 
-		const ButtonStream<TotalPressCount>& data() const { return _stream; }
+		const std::vector<fw::StreamButtonPress>& data() const { return _stream; }
 
-		ButtonStream<TotalPressCount>& data() { return _stream; }
-
-		/*void setIndex(SystemId idx) {
-			_stream.idx = idx;
-		}*/
+		std::vector<fw::StreamButtonPress>& data() { return _stream; }
 	};
-
-	using ButtonWriter = ButtonStreamWriter<static_cast<int>(fw::ButtonType::MAX), 8>;
 }

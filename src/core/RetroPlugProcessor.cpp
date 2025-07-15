@@ -1,5 +1,6 @@
 #include "RetroPlugProcessor.h"
 
+#include "core/ProjectExporter.h"
 #include "core/ProjectSerializer.h"
 #include "core/SystemService.h"
 #include "foundation/FsUtil.h"
@@ -286,12 +287,23 @@ void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {
 }
 
 void RetroPlugProcessor::onSerialize(fw::Uint8Buffer& target) {
-	std::vector<const SystemDesc*> systemDescs;
+	std::vector<SystemDesc> systemDescs;
 	for (SystemPtr system : _systemManager.getSystems()) {
-		systemDescs.push_back(&system->getDesc());
+		systemDescs.push_back(system->getDesc());
 	}
 
-	std::string data = ProjectSerializer::serialize(_typeRegistry, _projectState, systemDescs);
+	ProjectExporter::Settings settings = {
+		.project = true,
+		.includeFiles = false, // We don't need to export roms and savs here
+		.samples = false
+	};
+
+	fw::Uint8Buffer data;
+	if (!ProjectExporter::exportProject(settings, _typeRegistry, _projectState, _systemManager.getSystems(), data)) {
+		spdlog::error("Failed to serialize project data for saving");
+		return;
+	}
+
 	target.resize(target.size() + data.size());
 	target.write((uint8*)data.data(), data.size());
 }

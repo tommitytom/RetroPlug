@@ -5,67 +5,50 @@
 #include "core/ProjectSerializer.h"
 #include "core/zipp.h"
 
-using namespace rp;
+namespace rp {
+	bool ProjectExporter::exportProject(const Settings& settings, const fw::TypeRegistry& types, const ProjectState& project, const std::vector<SystemPtr>& systems, fw::Uint8Buffer& target) {
+		zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
 
-bool ProjectExporter::exportProject(Project& project, fw::Uint8Buffer& target) {
-	//zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
+		std::unordered_set<std::string> romNames;
+		std::vector<SystemDesc> systemDescs;
+		for (const SystemPtr& system : systems) {
+			systemDescs.push_back(system->getDesc());
+			romNames.insert(systemDescs.back().paths.romPath);
+		}
 
-	std::vector<SystemPtr>& systems = project.getSystems();
+		if (settings.project) {
+			std::string fileData = ProjectSerializer::serialize(types, project, systemDescs);
+			if (fileData.size()) {
+				zipWriter.add("project.rplg.lua", fileData);
+			}
+		}
 
-	/*std::string fileData = ProjectSerializer::serialize(project.getState(), systems);
-	if (fileData.size()) {
-		zipWriter.add("project.rplg.lua", fileData);
+		if (settings.includeFiles) {
+			for (size_t i = 0; i < systems.size(); ++i) {
+				const SystemPtr& system = systems[i];
+				std::string name = fmt::format("{}-{}", i + 1, system->getRomName());
 
-		for (size_t i = 0; i < systems.size(); ++i) {
-			SystemPtr system = systems[i]->getSystem();
-			std::string name = fmt::format("{}-{}", i + 1, system->getRomName());
-			
-			MemoryAccessor rom = system->getMemory(MemoryType::Rom, AccessType::Read);
-			MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Read);
-			
-			zipWriter.add(name + ".gb", (const char*)rom.getData(), rom.getSize());
-			zipWriter.add(name + ".sav", (const char*)sram.getData(), sram.getSize());
+				MemoryAccessor rom = system->getMemory(MemoryType::Rom, AccessType::Read);
+				MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Read);
+
+				zipWriter.add(name + ".gb", (const char*)rom.getData(), rom.getSize());
+				zipWriter.add(name + ".sav", (const char*)sram.getData(), sram.getSize());
+			}
+		} else {
+
 		}
 
 		zipWriter.close();
 		std::string_view buffer = zipWriter.getBuffer();
 
-		if (buffer.size()) {
-			target.resize(buffer.size());
-			target.write((const uint8*)buffer.data(), buffer.size());
-			return true;
-		}		
-	}*/
+		if (!buffer.size()) {
+			spdlog::error("ProjectExporter: No data to export.");
+			return false;
+		}
 
-	assert(false);
-
-	return false;
-}
-
-bool ProjectExporter::exportRomsAndSavs(Project& project, fw::Uint8Buffer& target) {
-	zipp::Writer zipWriter({.method = zipp::CompressionMethod::Deflate});
-
-	const std::vector<SystemPtr>& systems = project.getSystems();
-
-	for (size_t i = 0; i < systems.size(); ++i) {
-		const SystemPtr system = systems[i];
-		std::string name = fmt::format("{}-{}", i + 1, system->getRomName());
-
-		const MemoryAccessor rom = system->getMemory(MemoryType::Rom, AccessType::Read);
-		const MemoryAccessor sram = system->getMemory(MemoryType::Sram, AccessType::Read);
-
-		zipWriter.add(name + ".gb", (const char*)rom.getData(), rom.getSize());
-		zipWriter.add(name + ".sav", (const char*)sram.getData(), sram.getSize());
-	}
-
-	zipWriter.close();
-	std::string_view buffer = zipWriter.getBuffer();
-
-	if (buffer.size()) {
 		target.resize(buffer.size());
 		target.write((const uint8*)buffer.data(), buffer.size());
+
 		return true;
 	}
-
-	return false;
 }

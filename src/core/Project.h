@@ -119,6 +119,13 @@ namespace rp {
 			return (f32)_state.settings.zoom + 1.0f;
 		}
 
+		void getSystemDescs(std::vector<SystemDesc>& systemDescs) const {
+			systemDescs.clear();
+			for (const SystemPtr& system : _systemManager.getSystems()) {
+				systemDescs.push_back(system->getDesc());
+			}
+		}
+
 		std::vector<SystemPtr>& getSystems() {
 			return _systemManager.getSystems();
 		}
