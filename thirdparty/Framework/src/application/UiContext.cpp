@@ -14,8 +14,13 @@ namespace fw::app {
 		_fontManager(_resourceManager) 
 	{
 		_renderContext = std::move(renderContext);
-		//_windowManager = std::make_unique<GlfwWindowManager>(*_resourceManager, _fontManager);
+
+#if FW_USE_SDL
 		_windowManager = std::make_unique<SdlWindowManager>(*_resourceManager, _fontManager);
+#else
+		_windowManager = std::make_unique<GlfwWindowManager>(*_resourceManager, _fontManager);
+#endif
+
 		_renderContext->setResourceManager(_resourceManager);
 	}
 

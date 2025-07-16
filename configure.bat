@@ -1,1 +1,1 @@
-premake5 vs2022
+.\thirdparty\Framework\thirdparty\bin\premake5.exe vs2022

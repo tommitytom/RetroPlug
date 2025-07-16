@@ -11,7 +11,7 @@ end
 function m.link()
 	m.include()
     libdirs { SDL_DIR .. "/lib/x64" }
-	links { "SDL2" }
+	--links { "SDL2" }
 end
 
 return m

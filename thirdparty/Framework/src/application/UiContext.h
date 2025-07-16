@@ -10,7 +10,7 @@
 
 #include "WrappedNativeWindow.h"
 
-#define FW_USE_SDL 1
+#define FW_USE_GLFW 1
 #include "application/Config.h"
 
 namespace fw::app {
