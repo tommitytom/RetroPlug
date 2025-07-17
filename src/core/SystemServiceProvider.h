@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+
 #include "core/Forward.h"
 #include "ui/View.h"
 
@@ -11,6 +12,8 @@ namespace rp {
 		virtual bool match(const LoadConfig& loadConfig) = 0;
 
 		virtual SystemServiceType getType() = 0;
+
+		virtual std::string getProjectName(System& system) const { return ""; }
 
 		virtual SystemOverlayPtr onCreateUi() { return nullptr; }
 

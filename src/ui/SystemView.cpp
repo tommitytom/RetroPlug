@@ -125,9 +125,14 @@ void SystemView::createMenu(fw::Menu& target) {
 
 	if (getChildren().size() > 0) {
 		root.separator();
+
+		for (fw::ViewPtr child : getChildren()) {
+			child->onMenu(target);
+		}
 	}
 
-	for (fw::ViewPtr child : getChildren()) {
-		child->onMenu(target);
-	}
+	/*root.separator()
+		.action("Close", []() {
+			
+		});*/
 }

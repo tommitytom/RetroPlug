@@ -91,4 +91,13 @@ namespace rp {
 
 		return ret;
 	}
+	
+	const SystemServiceProviderPtr& SystemFactory::findServiceProvider(SystemServiceType type) const {
+		for (const SystemServiceProviderPtr& provider : _services) {
+			if (provider->getType() == type) {
+				return provider;
+			}
+		}
+		return nullptr;
+	}
 }

@@ -266,6 +266,12 @@ void RetroPlugView::onUpdate(f32 delta) {
 
 	if (_project.getState().settings.autoSave) {
 		_project.saveIfRequired();
+
+		_fileManager.addRecent(RecentFilePath{
+			.type = "project",
+			.name = _project.getName(),
+			.path = _project.getState().path
+		});
 	}
 
 	_nextStateFetch -= delta;

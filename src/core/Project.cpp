@@ -12,6 +12,7 @@
 #include "core/ProxySystem.h"
 #include "core/ProxySystemService.h"
 #include "core/SystemService.h"
+#include "core/SystemServiceProvider.h"
 
 using namespace entt::literals;
 
@@ -69,19 +70,48 @@ void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
 
 std::string rp::Project::getName() {
 	std::string name;
-	std::unordered_map<std::string, size_t> romNames;
 
-	for (SystemPtr system : _systemManager.getSystems()) {
-		auto found = romNames.find(system->getRomName());
-
-		if (found != romNames.end()) {
-			found->second++;
-		} else {
-			romNames[system->getRomName()] = 1;
-		}
+	if (!_state.path.empty()) {
+		std::filesystem::path path = _state.path;
+		name = path.filename().string();
 	}
 
-	bool first = true;
+	std::unordered_map<std::string, size_t> romNames;
+
+
+	for (const SystemPtr& system : _systemManager.getSystems()) {
+		if (name.size() > 0) {
+			name += " - ";
+		}
+
+		bool hasName = false;
+		for (const auto& service : system->getServices()) {
+			const SystemServiceProviderPtr& provider = _systemFactory.findServiceProvider(service->getType());
+			std::string modelName = provider->getProjectName(*system);
+			if (modelName.size() > 0) {
+				name += modelName;
+				hasName = true;
+				break;
+			}
+		}
+
+		if (!hasName) {
+			name += system->getRomName();
+			hasName = true;
+		}
+
+		/*if (!hasName) {
+			auto found = romNames.find(system->getRomName());
+
+			if (found != romNames.end()) {
+				found->second++;
+			} else {
+				romNames[system->getRomName()] = 1;
+			}
+		}*/
+	}
+
+	/*bool first = true;
 	for (auto v : romNames) {
 		if (!first) {
 			name += " | ";
@@ -92,17 +122,9 @@ std::string rp::Project::getName() {
 		} else {
 			name += fmt::format("{}x {}", v.second, v.first);
 		}
-	}
 
-	for (SystemPtr system : _systemManager.getSystems()) {
-		/*for (auto [type, model] : system->getModels()) {
-			std::string modelName = model->getProjectName();
-
-			if (modelName.size() > 0) {
-				return fmt::format("{} [{}]", modelName, name);
-			}
-		}*/
-	}
+		first = false;
+	}*/
 
 	return name;
 }

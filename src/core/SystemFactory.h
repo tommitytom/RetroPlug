@@ -49,5 +49,7 @@ namespace rp {
 		const std::vector<SystemServiceProviderPtr>& getSystemServiceProviders() const {
 			return _services;
 		}
+
+		const SystemServiceProviderPtr& findServiceProvider(SystemServiceType type) const;
 	};
 }

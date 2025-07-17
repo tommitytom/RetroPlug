@@ -278,9 +278,10 @@ void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, In
 		.multiSelect("Pad", state->inputConfigs, state->padConfigId, [state](int idx) { state->padConfigId = idx; })
 		.separator()
 		.action("Apply", [&audioManager, &inputManager, &config, &types, state](fw::MenuContext& ctx) {
-			auto inputConfigs = inputManager.getAvailableConfigs();
+			const auto& inputConfigs = inputManager.getAvailableConfigs();
+
 			if (state->keyConfigId >= 0 && state->keyConfigId < (int32)inputConfigs.size()) {
-				auto inputConfig = inputConfigs[state->keyConfigId];
+				const auto& inputConfig = inputConfigs[state->keyConfigId];
 				if (inputConfig.valid) {
 					inputManager.load(inputConfig.name, InputType::Key);
 					config.settings.keyboard = inputConfig.name;
@@ -288,7 +289,7 @@ void MenuBuilder::settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, In
 			}
 
 			if (state->padConfigId >= 0 && state->padConfigId < (int32)inputConfigs.size()) {
-				auto inputConfig = inputConfigs[state->padConfigId];
+				const auto& inputConfig = inputConfigs[state->padConfigId];
 				if (inputConfig.valid) {
 					inputManager.load(inputConfig.name, InputType::Pad);
 					config.settings.pad = inputConfig.name;

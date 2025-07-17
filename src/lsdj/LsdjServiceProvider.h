@@ -17,6 +17,16 @@ namespace rp {
 			return shortName == "lsdj";
 		}
 
+		std::string getProjectName(System& system) const override {
+			MemoryAccessor sram = system.getMemory(MemoryType::Sram, AccessType::Read);
+			if (sram.isValid()) {
+				lsdj::Sav sav(sram.getBuffer());
+				return std::string(sav.getWorkingProject().getName());
+			}
+
+			return "";
+		}
+
 		SystemServiceType getType() override { return LSDJ_SERVICE_TYPE; }
 
 		SystemOverlayPtr onCreateUi() override { 
