@@ -5,6 +5,7 @@
 #include "foundation/Event.h"
 #include "core/Forward.h"
 #include "core/System.h"
+#include "core/SystemService.h"
 #include "ui/View.h"
 
 using namespace fw::literals;

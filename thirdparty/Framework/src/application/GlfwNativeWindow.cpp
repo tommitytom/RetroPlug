@@ -227,7 +227,7 @@ void GlfwNativeWindow::setDimensions(Dimension dimensions) {
 }
 
 void GlfwNativeWindow::onUpdate(f32 delta) {
-	ViewManagerPtr vm = getViewManager();
+	const ViewManagerPtr& vm = getViewManager();
 
 	Dimension viewSize = vm->getDimensions();
 	viewSize = vm->getDimensions();
@@ -281,7 +281,9 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 }
 
 bool GlfwNativeWindow::shouldClose() {
-	return glfwWindowShouldClose(_window);
+	const ViewManagerPtr& vm = getViewManager();
+	auto& shared = vm->getShared();
+	return glfwWindowShouldClose(_window) || shared.closeRequested;
 }
 
 VirtualKey convertKey(int key) {

@@ -23,14 +23,16 @@
 #include "core/SystemProcessor.h"
 #include "core/SystemSettings.h"
 
+#include "ui/DialogView.h"
+#include "ui/MenuView.h"
 #include "ui/PanelView.h"
 #include "ui/StartView.h"
 #include "ui/SystemOverlayManager.h"
 #include "ui/SystemView.h"
+#include "ui/SwapContainerState.h"
+#include "ui/UiEditOverlay.h"
 #include "ui/ViewManager.h"
 #include "ui/VerticalSplitter.h"
-#include "ui/UiEditOverlay.h"
-#include "ui/SwapContainerState.h"
 
 #include "fonts/PlatNomor.h"
 
@@ -48,7 +50,8 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 	_ioMessageBus(messageBus),
 	_inputManager(_fileManager),
 	_config(config),
-	_buttonWriter(_buttons)
+	_buttonWriter(_buttons),
+	_fileManager(typeRegistry)
 {
 	setName(fmt::format("RetroPlug v{}", RP_VERSION));
 
@@ -61,14 +64,15 @@ void RetroPlugView::initViews(SystemContainerViewPtr container) {
 	this->removeChildren();
 	this->getLayout().setOverflow(fw::FlexOverflow::Visible);
 
-	if (_project.getSystems().empty()) {
-		_systemContainer = addChild<StartView>("Start View");
-	} else {
-		if (!container) {
-			container = std::make_shared<CompactLayoutView>(&_project);
-		}
-
+	if (container) {
 		_systemContainer = addChild(container);
+	} else {
+		if (_project.getSystems().empty()) {
+			_systemContainer = addChild<StartView>("Start View");
+		} else {
+			_systemContainer = std::make_shared<CompactLayoutView>(&_project);
+			addChild(_systemContainer);
+		}
 	}
 
 	_systemContainer->focus();
@@ -99,6 +103,7 @@ void RetroPlugView::onInitialize() {
 	rm.create<fw::Font>("PlatNomor", fontDesc);
 
 	this->createState<SystemOverlayManager>();
+	this->createState<SwapContainerState>();
 	this->createState(entt::forward_as_any(_project.getSystemFactory()));
 	this->createState(entt::forward_as_any(_inputManager));
 	this->createState(entt::forward_as_any(_fileManager));
@@ -106,7 +111,6 @@ void RetroPlugView::onInitialize() {
 	this->createState(entt::forward_as_any(_project));
 	this->createState(entt::forward_as_any(_config));
 	this->createState(entt::forward_as_any(_typeRegistry));
-	this->createState<SwapContainerState>();
 
 	initViews(nullptr);
 
@@ -200,14 +204,14 @@ void RetroPlugView::processOutput() {
 }
 
 void RetroPlugView::onUpdate(f32 delta) {
+	hrc::time_point time = hrc::now();
+
 	fw::EventNode& eventNode = getState<fw::EventNode>();
 	eventNode.update();
 
 	getResourceManager().frame();
 	_fileDialogManager.update();
 	_gamepadManager.update();
-
-	hrc::time_point time =  hrc::now();
 
 	if (_doPing && !_lastPingTime.has_value()) {
 		_lastPingTime = time;
@@ -219,38 +223,21 @@ void RetroPlugView::onUpdate(f32 delta) {
 		_audioThreadActive = audioThreadActive;
 
 		if (!audioThreadActive) {
-			if (_threadWarning) {
-				_threadWarning->remove();
-			}
-
-			_threadWarning = this->addChild<fw::PanelView>("Audio Thread Warning Panel");
-			_threadWarning->setColor(fw::Color4(207, 39, 39, 240));
-			_threadWarning->setBorderColor(fw::Color4F(1, 0, 0, 1));
-			fw::ViewLayout& layout = _threadWarning->getLayout();
-
-			layout.setFlexAlignItems(fw::FlexAlign::Center);
-			layout.setJustifyContent(fw::FlexJustify::Center);
-			layout.setFlexPositionType(fw::FlexPositionType::Absolute);
-			layout.setHeight(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 10));
-			layout.setWidth(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 90));
-			layout.setPositionEdge(fw::FlexEdge::Left, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
-			layout.setPositionEdge(fw::FlexEdge::Bottom, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
-
-			auto text = _threadWarning->addChild<fw::LabelView>("Audio Thread Warning Text");
-			text->setText("Audio thread inactive - check settings");
-			text->setFont("PlatNomor", 7 * _project.getScale());
+			if (_threadWarning) _threadWarning->remove();
+			_threadWarning = this->addChild<ThreadWarning>("Audio Thread Warning Panel");
 		} else if (_threadWarning) {
 			_threadWarning->remove();
 			_threadWarning = nullptr;
 		}
 	}
 
-	f32 scale = _project.getScale();
-	uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
+	const f32 scale = _project.getScale();
+	const uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
 	SwapContainerState& swapContainer = getState<SwapContainerState>();
 	if (swapContainer.requestedContainer) {
 		initViews(swapContainer.requestedContainer);
+		swapContainer.requestedContainer = nullptr;
 	} else if (!_systemContainer || _systemContainer->getParent() == nullptr || (_systemContainer->isType<StartView>() && _project.getSystems().size())) {
 		initViews(nullptr);
 	}
@@ -259,19 +246,20 @@ void RetroPlugView::onUpdate(f32 delta) {
 	//_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
 	if (_threadWarning) {
+		_threadWarning->bringToFront();
 		_threadWarning->getChildAs<fw::LabelView>(0)->setFont("PlatNomor", 7 * _project.getScale());
 	}
 
 	_project.update(audioFrameCount);
 
 	if (_project.getState().settings.autoSave) {
-		_project.saveIfRequired();
-
-		_fileManager.addRecent(RecentFilePath{
-			.type = "project",
-			.name = _project.getName(),
-			.path = _project.getState().path
-		});
+		if (_project.saveIfRequired()) {
+			_fileManager.addRecent(RecentFilePath{
+				.type = "project",
+				.name = _project.getName(),
+				.path = _project.getState().path
+			});
+		}
 	}
 
 	_nextStateFetch -= delta;
@@ -299,5 +287,21 @@ void RetroPlugView::onRender(fw::Canvas& canvas) {
 }
 
 bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
+	if (_project.isDirty()) {
+		DialogViewPtr dialog = std::make_shared<DialogView>("Save changes?", DialogType::YesNo);
+		subscribe<DialogResult>(dialog, [&](const DialogResult& result) {
+			if (result == DialogResult::Yes) {
+				Project& project = getState<Project>();
+				project.save();
+			}
+
+			this->requestClose();
+		});
+
+		SwapContainerState& swapContainer = getState<SwapContainerState>();
+		swapContainer.requestedContainer = dialog;
+		ctx.closing = false;
+	}
+	
 	return true;
 }

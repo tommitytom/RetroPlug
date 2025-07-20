@@ -83,7 +83,12 @@ namespace rp {
 			_requiresSave = true;
 		}
 
-		void saveIfRequired() {
+		bool isDirty() const {
+			return _requiresSave;
+		}
+
+		// Returns true if save was required. Note that this will also be true even if the save was not successful.
+		bool saveIfRequired() {
 			if (!_state.path.empty()) {
 				/*for (SystemPtr& system : _systems) {
 					for (auto [type, model] : system->getModels()) {
@@ -97,8 +102,11 @@ namespace rp {
 				if (_requiresSave && _state.settings.autoSave) {
 					save();
 					_requiresSave = false;
+					return true;
 				}
 			}
+
+			return false;
 		}
 
 		SystemPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);

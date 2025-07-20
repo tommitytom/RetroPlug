@@ -87,7 +87,8 @@
 		"_consolePrint",
 		"externalincludedirs",
 		"Key",
-		"Pad"
+		"Pad",
+		"targetdir"
 	],
 	"files.associations": {
 		"*.h": "cpp",

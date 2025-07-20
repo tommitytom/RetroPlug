@@ -11,12 +11,14 @@
 #include "core/RetroPlugProcessor.h"
 #include "core/System.h"
 #include "ui/CompactLayoutView.h"
+#include "ui/DialogView.h"
+#include "ui/FileDialogManager.h"
 #include "ui/LabelView.h"
+#include "ui/ObjectInspectorView.h"
+#include "ui/PanelView.h"
+#include "ui/ThreadWarning.h"
 #include "ui/TreeView.h"
 #include "ui/View.h"
-#include "ui/PanelView.h"
-#include "ui/ObjectInspectorView.h"
-#include "ui/FileDialogManager.h"
 
 namespace rp {
 	enum class ThreadTarget {
@@ -58,12 +60,14 @@ namespace rp {
 		std::optional<hrc::time_point> _lastPingTime;
 		std::optional<hrc::time_point> _lastPongTime;
 		bool _audioThreadActive = false;
-		fw::PanelViewPtr _threadWarning;
+		ThreadWarningPtr _threadWarning;
 
 		fw::ResourceReloader _resourceReloader;
 
 		std::weak_ptr<MenuView> _menu;
 		RetroPlugConfig _config;
+
+		DialogViewPtr _dialogView;
 
 		fw::GainputGamepadManager _gamepadManager;
 

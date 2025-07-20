@@ -5,11 +5,12 @@
 #include <spdlog/spdlog.h>
 
 #include "foundation/FsUtil.h"
+#include "foundation/LuaSerializer.h"
 #include "foundation/MetaUtil.h"
+#include "foundation/SolUtil.h"
 
 #include "core/Constants.h"
 #include "core/LuaUtil.h"
-#include "foundation/LuaSerializer.h"
 
 #include "lsdj/LsdjService.h"
 #include "lsdj/LsdjSettings.h"

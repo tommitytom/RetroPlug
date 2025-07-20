@@ -214,6 +214,8 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 		_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
 	}
 
+	assert(_state.gb);
+
 	if (loadConfig.sramBuffer) {
 		GB_load_battery_from_buffer(_state.gb, (const uint8_t*)loadConfig.sramBuffer->data(), loadConfig.sramBuffer->size());
 	}
@@ -231,7 +233,21 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 
 	setDesc(std::move(loadConfig.desc));
 
-	return false; 
+	return false;
+}
+
+bool SameBoySystem::loadSram(fw::Uint8Buffer&& sramBuffer) {
+	GB_load_battery_from_buffer(_state.gb, (const uint8_t*)sramBuffer.data(), sramBuffer.size());
+	return true;
+}
+
+bool SameBoySystem::loadState(fw::Uint8Buffer&& stateBuffer) {
+	if (GB_load_state_from_buffer(_state.gb, stateBuffer.data(), stateBuffer.size()) != 0) {
+		std::cerr << "Failed to load state buffer" << std::endl;
+		return false;
+	}
+
+	return true;
 }
 
 void SameBoySystem::reset() {

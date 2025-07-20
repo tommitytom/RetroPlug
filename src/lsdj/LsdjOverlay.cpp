@@ -5,6 +5,7 @@
 #include "lsdj/LsdjHdPlayer.h"
 #include "ui/MenuView.h"
 #include "ui/SamplerView.h"
+#include "ui/SynthView.h"
 #include "ui/SystemView.h"
 #include "ui/Menu.h"
 #include "ui/SwapContainerState.h"
@@ -37,6 +38,32 @@ namespace rp {
 		return samplerView;
 	}
 
+	std::shared_ptr<SynthView> showSynthEditor(fw::GridViewPtr parent, SystemPtr system, SystemServicePtr service) {
+		std::vector<std::shared_ptr<SynthView>> synthEditors;
+		parent->findChildren<SynthView>(synthEditors);
+
+		std::shared_ptr<SynthView> synthEditorView;
+
+		for (const std::shared_ptr<SynthView>& synthEditor : synthEditors) {
+			if (synthEditor->getSystem() == system) {
+				// Already open - focus and return
+				synthEditorView = synthEditor;
+			}
+		}
+
+		if (!synthEditorView) {
+			synthEditorView = parent->addChild<SynthView>("LSDj Sample Manager");
+			synthEditorView->setSystem(system, service);
+
+			// TODO: Show kit currently under cursor!
+			//samplerView->setSampleIndex()
+		}
+
+		synthEditorView->focus();
+
+		return synthEditorView;
+	}
+
 	void LsdjOverlay::onInitialize() {
 		fitToParent();
 		/*Project& project = getState<Project>();
@@ -59,6 +86,10 @@ namespace rp {
 			.action("Sample Manager", [this]() {
 				fw::GridViewPtr grid = this->findParent<fw::GridView>();
 				showSampleManager(grid, getNode()->getSystem(), getNode()->getSystemService());
+			})
+			.action("Synth Editor", [this]() {
+				fw::GridViewPtr grid = this->findParent<fw::GridView>();
+				showSynthEditor(grid, getNode()->getSystem(), getNode()->getSystemService());
 			})
 			.action("HD Player", [this]() {
 				SwapContainerState& swapContainer = getState<SwapContainerState>();

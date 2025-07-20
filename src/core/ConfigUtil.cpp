@@ -5,9 +5,12 @@
 
 #include "foundation/FsUtil.h"
 #include "foundation/LuaSerializer.h"
-#include "core/FileManager.h"
+#include "foundation/SolUtil.h"
 
+#include "core/FileManager.h"
 #include "core/LuaUtil.h"
+
+#include "generated/CompiledScripts.h"
 
 namespace rp {
 	void ConfigUtil::initContent(const fw::TypeRegistry& typeRegistry, RetroPlugConfig& config) {

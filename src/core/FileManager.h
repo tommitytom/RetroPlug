@@ -7,11 +7,13 @@
 
 #include <FileWatcher/FileWatcher.h>
 
+#include "foundation/TypeRegistry.h"
+
 namespace rp {
 	struct RecentFilePath {
 		std::string type;
 		std::string name;
-		std::filesystem::path path;
+		std::string path;
 	};
 
 	struct Watch {
@@ -33,17 +35,19 @@ namespace rp {
 		FW::FileWatcher _watcher;
 		std::vector<Watch> _reloaders;
 
+		const fw::TypeRegistry& _types;
+
 	public:
 		static std::filesystem::path getContentPath();
 
-		FileManager();
+		FileManager(const fw::TypeRegistry& types);
 		~FileManager() {}
 
 		Watch::Id startWatch(const std::filesystem::path& path, Watch::Callback&& func);
 
 		void addRecent(RecentFilePath&& recent);
 
-		void loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types = {});
+		bool loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types = {});
 
 		std::filesystem::path addHashedFile(const std::filesystem::path& sourceFile, const std::filesystem::path& targetDir);
 

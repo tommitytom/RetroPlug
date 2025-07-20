@@ -6,6 +6,11 @@ newoption {
 	description = "Build with emscripten"
 }
 
+newoption {
+	trigger = "admin",
+	description = "Writes VST plugins to protected folders on windows (requires admin privileges)",
+}
+
 util.disableFastUpToDateCheck({ "generator", "configure" })
 
 workspace "RetroPlug"

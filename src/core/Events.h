@@ -74,6 +74,16 @@ namespace rp {
 		LoadConfig config;
 	};
 
+	struct LoadSramEvent {
+		SystemId systemId = INVALID_SYSTEM_ID;
+		fw::Uint8Buffer sramBuffer;
+	};
+
+	struct LoadStateEvent {
+		SystemId systemId = INVALID_SYSTEM_ID;
+		fw::Uint8Buffer stateBuffer;
+	};
+
 	struct PingEvent {
 		std::chrono::high_resolution_clock::time_point time;
 	};

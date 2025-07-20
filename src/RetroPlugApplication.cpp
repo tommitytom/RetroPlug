@@ -8,7 +8,9 @@
 #include "core/ProxySystem.h"
 #include "core/RetroPlugConfig.h"
 #include "core/RetroPlugProcessor.h"
+#include "core/FileManager.h"
 #include "sameboy/SameBoyFactory.h"
+#include "lsdj/ArduinoboyServiceProvider.h"
 #include "lsdj/LsdjServiceProvider.h"
 #include "ui/RetroPlugView.h"
 #include "ui/UiReflect.h"
@@ -108,6 +110,14 @@ RetroPlugApplication::RetroPlugApplication() {
 		.addField<&LsdjServiceSettings::kits>("kits")
 		.addField<&LsdjServiceSettings::kit>("kit")
 		;
+
+	_typeRegistry.addType<RecentFilePath>()
+		.addField<&RecentFilePath::name>("name")
+		.addField<&RecentFilePath::path>("path")
+		.addField<&RecentFilePath::type>("type")
+		;
+
+	_typeRegistry.addType<std::vector<RecentFilePath>>();
 
 	_systemFactory.addSystemProvider<SameBoyProvider>();
 	_systemFactory.addSystemProvider<ProxyProvider>();

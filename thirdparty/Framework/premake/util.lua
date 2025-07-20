@@ -20,7 +20,7 @@ function util.setupWorkspace()
 
 	local PLATFORMS = { "x86", "x64" }
 
-	if _ACTION == "gmake2" then
+	if _ACTION == "gmake" then
 		table.insert(PLATFORMS, "Emscripten")
 	elseif _ACTION == "xcode4" then
 		PLATFORMS = { "x64" }
@@ -73,7 +73,7 @@ function util.setupWorkspace()
 		editandcontinue "Off"
 		flags { "NoIncrementalLink" }
 
-	filter { "action:gmake2", "configurations:*ASAN" }
+	filter { "action:gmake", "configurations:*ASAN" }
 		buildoptions { "-fsanitize=address" }
 		linkoptions { "-fsanitize=address" }
 

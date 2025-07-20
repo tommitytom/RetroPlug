@@ -1,0 +1,17 @@
+#pragma once
+
+#include "ui/LabelView.h"
+#include "ui/PanelView.h"
+
+namespace rp {
+	class ThreadWarning : public fw::PanelView {
+		FwRegisterObject()
+	public:
+		ThreadWarning();
+		~ThreadWarning() = default;
+
+		void setTextScale(f32 scale);
+	};
+
+	using ThreadWarningPtr = std::shared_ptr<ThreadWarning>;
+}

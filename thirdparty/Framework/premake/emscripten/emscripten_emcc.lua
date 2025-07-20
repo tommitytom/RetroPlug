@@ -278,7 +278,7 @@
 	}
 
 	function emcc.gettoolname(cfg, tool)
-		if _ACTION == "gmake" or _ACTION == "gmake2" then
+		if _ACTION == "gmake" then
 			if cfg.emccpath ~= nil then
 				return path.join(cfg.emccpath, emcc.tools[tool])
 			end

@@ -1,11 +1,12 @@
 #include "FileManager.h"
 
 #include <semver/semver.hpp>
-#include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
 #include "foundation/FsUtil.h"
+#include "foundation/LuaSerializer.h"
 #include "foundation/OsPath.h"
+#include "foundation/SolUtil.h"
 #include "foundation/StlUtil.h"
 #include "foundation/StringUtil.h"
 
@@ -35,7 +36,7 @@ std::filesystem::path FileManager::getContentPath() {
 	return path / fmt::format("{}.{}", version.major(), version.minor());
 }
 
-FileManager::FileManager() {
+FileManager::FileManager(const fw::TypeRegistry& types): _types(types) {
 	_rootPath = FileManager::getContentPath();
 	_recentPath = _rootPath / "recent.lua";
 }
@@ -78,7 +79,7 @@ void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, c
 }
 
 void FileManager::addRecent(RecentFilePath&& recent) {
-	spdlog::debug("Adding recent path '{}' to {}", recent.path.string(), _recentPath.string());
+	spdlog::debug("Adding recent path '{}' to {}", recent.path, _recentPath.string());
 
 	try {
 		sol::state s;
@@ -109,7 +110,7 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 		}
 
 		sol::protected_function f = funcRes.get<sol::protected_function>();
-		sol::protected_function_result funcRes2 = f(target, recent.type, recent.name, recent.path.string());
+		sol::protected_function_result funcRes2 = f(target, recent.type, recent.name, recent.path);
 
 		if (!funcRes2.valid()) {
 			sol::error err = funcRes2;
@@ -129,48 +130,35 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 	}
 }
 
-void FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types) {
+bool FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types) {
 	spdlog::debug("Loading recent file list from {}", _recentPath.string());
 
-	if (fs::exists(_recentPath)) {
-		sol::state s;
-		rp::LuaUtil::prepareState(s);
-
-		std::string data = fw::FsUtil::readTextFile(_recentPath);
-
-		if (data.size()) {
-			sol::table target;
-
-			if (fw::SolUtil::deserializeTable(s, data, target)) {
-				auto entries = target["recent"].get<sol::nested<std::vector<sol::table>>>();
-
-				for (auto& item : entries) {
-					std::string type = item["type"].get<std::string>();
-
-					if (types.empty() || fw::StlUtil::vectorContains(types, type)) {
-						std::string name = item["name"].get<std::string>();
-						std::string path = item["path"].get<std::string>();
-
-						if (name.empty()) {
-							name = fs::path(path).filename().string();
-						}
-
-						paths.push_back({
-							.type = type,
-							.name = name,
-							.path = path
-						});
-					}
-				}
-			} else {
-				spdlog::error("Failed to load list of recent files");
-			}
-		} else {
-			spdlog::debug("Recent file list was empty, skipping");
-		}
-	} else {
+	if (!fs::exists(_recentPath)) {
 		spdlog::debug("No recent file list found, skipping");
+		return false;
 	}
+
+	std::string data = fw::FsUtil::readTextFile(_recentPath);
+	if (!data.size()) {
+		spdlog::debug("Recent file list was empty, skipping");
+		return false;
+	}
+
+	sol::state s;
+	LuaUtil::prepareState(s);
+	
+	sol::table target;
+	if (!fw::SolUtil::deserializeTable(s, data, target)) {
+		spdlog::error("Failed to load list of recent files");
+		return false;
+	}
+
+	if (!fw::LuaSerializer::deserialize(_types, target["recent"], paths)) {
+		spdlog::error("Failed to deserialize project settings");
+		return false;
+	}
+
+	return true;
 }
 
 fs::path FileManager::addHashedFile(const fs::path& sourceFile, const fs::path& targetDir) {

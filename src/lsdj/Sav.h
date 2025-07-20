@@ -178,7 +178,7 @@ namespace rp::lsdj {
 		}
 
 		bool isValid() const {
-			return _project;
+			return _project != nullptr;
 		}
 	};
 

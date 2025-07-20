@@ -282,7 +282,6 @@ local function createClap(config, impl)
 	project (config.name .. "-clap")
 		language "C++"
 		kind "SharedLib"
-		--targetdir "C:/Program Files/Common Files/CLAP"
 		targetextension ".clap"
 
 		includedirs {
@@ -302,6 +301,9 @@ local function createClap(config, impl)
 
 		impl()
 
+		filter { "options:admin", "system:windows" }
+			targetdir "C:/Program Files/Common Files/CLAP"
+
 		filter {}
 end
 
@@ -310,7 +312,6 @@ local function createVst3(config, impl)
 	project (config.name .. "-vst3")
 		language "C++"
 		kind "SharedLib"
-		targetdir "C:/Program Files/Common Files/VST3"
 		targetextension ".vst3"
 
 		includedirs {
@@ -329,6 +330,9 @@ local function createVst3(config, impl)
 		}
 
 		impl()
+
+		filter { "options:admin", "system:windows" }
+			targetdir "C:/Program Files/Common Files/VST3"
 
 		filter "system:windows"
 			disablewarnings { "4244", "4018", "4267" }

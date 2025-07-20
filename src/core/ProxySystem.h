@@ -70,9 +70,21 @@ namespace rp {
 		}
 
 		bool load(LoadConfig&& loadConfig) override {
+			assert(false);
 			setDesc(loadConfig.desc);
 			_eventNode.send("Audio"_hs, LoadEvent{ .systemId = getId(), .config = std::move(loadConfig) });
 			return true; 
+		}
+
+		bool loadSram(fw::Uint8Buffer&& sramBuffer) override {
+			_eventNode.send("Audio"_hs, LoadSramEvent{ .systemId = getId(), .sramBuffer = std::move(sramBuffer) });
+			return true; 
+		}
+
+		bool loadState(fw::Uint8Buffer&& stateBuffer) override {
+			_state = stateBuffer.clone();
+			_eventNode.send("Audio"_hs, LoadStateEvent{ .systemId = getId(), .stateBuffer = std::move(stateBuffer) });
+			return true;
 		}
 
 		void reset() override {

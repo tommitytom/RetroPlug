@@ -65,6 +65,10 @@ namespace rp {
 
 		bool load(LoadConfig&& loadConfig) override;
 
+		bool loadSram(fw::Uint8Buffer&& sramBuffer) override;
+
+		bool loadState(fw::Uint8Buffer&& stateBuffer) override;
+
 		void reset() override;
 
 		void addLinkTarget(System* system) override;

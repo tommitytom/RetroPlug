@@ -50,6 +50,6 @@ namespace rp {
 			return _services;
 		}
 
-		const SystemServiceProviderPtr& findServiceProvider(SystemServiceType type) const;
+		SystemServiceProviderPtr findServiceProvider(SystemServiceType type) const;
 	};
 }

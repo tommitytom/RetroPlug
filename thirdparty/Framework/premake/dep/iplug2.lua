@@ -281,8 +281,6 @@ function m.createVst2(config)
 	projectBase(config, "vst2")
 	kind "SharedLib"
 
-	--targetdir "C:/VST64"
-
 	defines {
 		"VST2_API",
 		"VST_FORCE_DEPRECATED"
@@ -324,6 +322,11 @@ function m.createVst2(config)
 			["DEPLOYMENT_LOCATION"] = "YES", -- Enable separate installation location
 			["SKIP_INSTALL"] = "NO", -- Allow installation
 		}
+
+	filter { "options:admin", "system:windows" }
+		targetdir "C:/VST64"
+
+	filter {}
 end
 
 function m.createVst3(config)
@@ -374,7 +377,6 @@ function m.createVst3(config)
 	}
 
 	filter { "system:windows" }
-
 		files {
 			VST3_DEP_PATH .. "public.sdk/source/main/dllmain.cpp"
 		}
@@ -415,6 +417,9 @@ function m.createVst3(config)
 
 	filter { "system:macosx", "files:**/module_mac.mm" }
 		buildoptions { "-fobjc-arc" }
+
+	filter { "options:admin", "system:windows" }
+		targetdir "C:/Program Files/Common Files/VST3"
 
 	filter {}
 end

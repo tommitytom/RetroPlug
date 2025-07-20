@@ -157,6 +157,20 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 			}
 		}
 	});
+
+	node.receive<LoadSramEvent>([&](LoadSramEvent&& ev) {
+		SystemPtr system = _systemManager.findSystem(ev.systemId);
+		if (system) {
+			system->loadSram(std::move(ev.sramBuffer));
+		}
+	});
+
+	node.receive<LoadStateEvent>([&](LoadStateEvent&& ev) {
+		SystemPtr system = _systemManager.findSystem(ev.systemId);
+		if (system) {
+			system->loadState(std::move(ev.stateBuffer));
+		}
+	});
 }
 
 void RetroPlugProcessor::onTransportChange(bool playing) {

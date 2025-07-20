@@ -4,13 +4,11 @@
 #include "lsdj/LsdjSettings.h"
 
 namespace rp {
-	class LsdjServiceProvider : public SystemServiceProvider {
+	class ArduinoboyServiceProvider : public SystemServiceProvider {
 	public:
 		bool match(const LoadConfig& loadConfig) override;
 
-		std::string getProjectName(System& system) const override;
-
-		SystemServiceType getType() override { return LSDJ_SERVICE_TYPE; }
+		SystemServiceType getType() override { return ARDUINOBOY_SERVICE_TYPE; }
 
 		SystemOverlayPtr onCreateUi() override;
 

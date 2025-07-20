@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/ProjectSerializer.h"
 #include "core/SystemProcessor.h"
 #include "foundation/FsUtil.h"
 
@@ -34,11 +35,9 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 	if (projectPaths.size() > 0) {
 		// Load project
-		fs::path path = fs::path(projectPaths[0]);
+		std::string path = std::string(projectPaths[0]);
 
-		// Copy?
-
-		if (project.load(path.string())) {
+		if (project.load(path)) {
 			fileManager.addRecent(RecentFilePath{
 				.type = "project",
 				.name = project.getName(),
@@ -47,8 +46,117 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 
 			return true;
 		}
-	} else if (romPaths.size() > 0) {
+	} else if (romPaths.size() == 1) {
+		const auto& pathPair = romPaths[0];
+		std::string romPath = std::string(pathPair.first);
+		std::string sramPath;
+		if (sramPaths.size() > 0) {
+			sramPath = std::string(sramPaths[0].first);
+		} else {
+			sramPath = fw::FsUtil::replaceFileExt(romPath, ".sav", false);
+		}
+		if (!fs::exists(sramPath)) {
+			sramPath = "";
+		} else {
+			const std::string projectPath = fw::FsUtil::replaceFileExt(sramPath, ".rplg", false);
+			// Is there a project matching save/rom path?
+			
+			if (fw::FsUtil::exists(projectPath)) {
+				const fw::TypeRegistry t;
+				ProjectState projectState;
+				std::vector<SystemDesc> systemDescs;
+				if (ProjectSerializer::deserializeFromFile(t, projectPath, projectState, systemDescs)) {
+					for (const SystemDesc& desc : systemDescs) {
+						if (desc.paths.sramPath == sramPath && desc.paths.romPath == romPath) {
+							spdlog::info("Found matching project for save path: {}", projectPath);
+							if (project.load(projectPath)) {
+								fileManager.addRecent(RecentFilePath{
+									.type = "project",
+									.name = project.getName(),
+									.path = projectPath,
+								});
+
+								return true;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		SystemDesc desc{
+			.paths = { .romPath = romPath, .sramPath = sramPath },
+			.settings = project.getGlobalConfig().system
+		};
+		SystemPtr system = project.addSystem(pathPair.second, desc);
+		if (system) {
+			std::string romName = system->getRomName();
+			std::string romFileName = fw::FsUtil::getFilename(romPath);
+			if (romName.size() && romFileName.size()) {
+				romName += " (" + romFileName + ")";
+			} else if (romName.empty() && romFileName.size()) {
+				romName = romFileName;
+			}
+			fileManager.addRecent(RecentFilePath{
+				.type = "rom",
+				.name = romName,
+				.path = romPath,
+			});
+			return true;
+		} else {
+			spdlog::error("Failed to add system for ROM: {}", romPath);
+			return false;
+		}
+	} else if (romPaths.size() > 1) {
+		bool valid = false;
+
+		project.clear();
+
 		for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
+			const auto& pathPair = romPaths[i];
+			std::string romPath = std::string(pathPair.first);
+
+			std::string sramPath;
+			if (sramPaths.size() > i) {
+				sramPath = std::string(sramPaths[i].first);
+			} else {
+				sramPath = fw::FsUtil::replaceFileExt(romPath, ".sav", false);
+			}
+
+			if (!fs::exists(sramPath)) {
+				sramPath = "";
+			}
+
+			SystemDesc desc{
+				.paths = { .romPath = romPath, .sramPath = sramPath },
+				.settings = project.getGlobalConfig().system
+			};
+
+			SystemPtr system = project.addSystem(pathPair.second, desc);
+			if (system) {
+				valid = true;
+				std::string romName = system->getRomName();
+				std::string romFileName = fw::FsUtil::getFilename(romPath);
+
+				if (romName.size() && romFileName.size()) {
+					romName += " (" + romFileName + ")";
+				} else if (romName.empty() && romFileName.size()) {
+					romName = romFileName;
+				}
+
+				fileManager.addRecent(RecentFilePath{
+					.type = "rom",
+					.name = romName,
+					.path = romPath,
+				});
+			} else {
+				spdlog::error("Failed to add system for ROM: {}", romPath);
+			}
+		}
+
+		return true;
+
+		/*for (size_t i = 0; i < std::min(romPaths.size(), MAX_SYSTEM_COUNT); ++i) {
 			auto& pathPair = romPaths[i];
 			fs::path path = pathPair.first;
 
@@ -86,13 +194,11 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			fileManager.addRecent(RecentFilePath{
 				.type = "project",
 				.name = project.getName(),
-				.path = projectPath,
+				.path = projectPath.string(),
 			});
 
 			break;
-		}
-	} else if (sramPaths.size() > 0) {
-
+		}*/
 	}
 
 	return false;

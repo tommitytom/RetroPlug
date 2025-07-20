@@ -1,21 +1,19 @@
 #include "StartView.h"
 
-#include <sol/sol.hpp>
-
 #include "foundation/FsUtil.h"
-#include "foundation/SolUtil.h"
-
 #include "core/Constants.h"
 #include "core/FileManager.h"
-#include "core/RetroPlugConfig.h"
 #include "core/Project.h"
 #include "core/ProjectSerializer.h"
+#include "core/RetroPlugConfig.h"
+#include "core/System.h"
 #include "ui/FileDialog.h"
+#include "ui/FileDialogManager.h"
 #include "ui/MenuBuilder.h"
-
-#include "sameboy/SameBoySystem.h"
-#include "sameboy/Constants.h"
+#include "ui/SystemView.h"
 #include "util/LoaderUtil.h"
+
+#include "sameboy/Constants.h"
 
 #include "roms/mgb.h"
 
@@ -26,16 +24,16 @@ namespace rp {
 
 		menu.title(fmt::format("RetroPlug v{}", rp::RP_VERSION))
 			.separator()
-			.action("Load...", [&](fw::MenuContext& ctx) {
-			ctx.retain();
+				.action("Load...", [&](fw::MenuContext& ctx) {
+				ctx.retain();
 
-			fw::FileDialogManager& dialog = getState<fw::FileDialogManager>();
-			dialog.openFile({ ROM_FILTER, PROJECT_FILTER }, pfd::opt::multiselect, [&](std::vector<std::string>&& files) {
-				if (LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>())) {
-					ctx.close();
-				}
+				fw::FileDialogManager& dialog = getState<fw::FileDialogManager>();
+				dialog.openFile({ ROM_FILTER, PROJECT_FILTER }, pfd::opt::multiselect, [&](std::vector<std::string>&& files) {
+					if (LoaderUtil::handleLoad(files, getState<FileManager>(), getState<Project>())) {
+						ctx.close();
+					}
+				});
 			});
-		});
 
 		MenuBuilder::populateRecent(menu.subMenu("Load Recent"), getState<FileManager>(), getState<Project>(), nullptr);
 

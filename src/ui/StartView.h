@@ -1,14 +1,7 @@
 #pragma once
 
-#include "core/System.h"
-#include "lsdj/LsdjCanvasView.h"
-#include "ui/SystemView.h"
-#include "ui/SamplerView.h"
-#include "ui/SynthView.h"
-#include "ui/MenuView.h"
-#include "lsdj/LsdjUi.h"
-#include "lsdj/LsdjOverlay.h"
 #include "ui/SystemContainerView.h"
+#include "ui/MenuView.h"
 
 namespace rp {
 	class StartView final : public SystemContainerView {

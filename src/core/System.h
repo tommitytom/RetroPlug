@@ -217,6 +217,10 @@ namespace rp {
 
 		virtual bool load(LoadConfig&& loadConfig) { return false; }
 
+		virtual bool loadSram(fw::Uint8Buffer&& sramBuffer) { return false; }
+
+		virtual bool loadState(fw::Uint8Buffer&& stateBuffer) { return false; }
+
 		virtual void reset() {}
 
 		virtual void process(uint32 frameCount) {}

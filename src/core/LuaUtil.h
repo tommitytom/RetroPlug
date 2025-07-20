@@ -1,7 +1,6 @@
 #pragma once
 
-#include "foundation/SolUtil.h"
-#include "generated/CompiledScripts.h"
+#include <sol/forward.hpp>
 
 namespace rp::LuaUtil {
 	void prepareState(sol::state& state);

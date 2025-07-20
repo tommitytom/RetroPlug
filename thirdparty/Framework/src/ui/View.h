@@ -98,6 +98,7 @@ namespace fw {
 
 			CursorType cursor = CursorType::Arrow;
 			bool cursorChanged = true;
+			bool closeRequested = false;
 
 			std::vector<GlobalKeyHandler> globalKeyHandlers;
 		};
@@ -452,6 +453,11 @@ namespace fw {
 		virtual bool onCloseWindowRequest(CloseWindowContext& ctx) { return false; }
 
 		//virtual void processButtons(const ButtonWriter& stream) {}
+
+		void requestClose() {
+			assert(_shared);
+			_shared->closeRequested = true;
+		}
 
 		void beginDrag(ViewPtr placeholder, Point sourcePos = Point()) {
 			_shared->dragContext.isDragging = true;

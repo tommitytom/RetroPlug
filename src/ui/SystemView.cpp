@@ -26,35 +26,20 @@ SystemView::SystemView() : GridItem() {
 }
 
 bool SystemView::onDrop(const std::vector<std::string>& paths) {
+	for (const std::string& path : paths) {
+		if (fw::FsUtil::getFileExt(path, false) == ".sav") {
+			fw::Uint8Buffer buffer;
+			if (fw::FsUtil::readFile(path, &buffer)) {
+				_system->loadSram(std::move(buffer));
+				_system->reset();
+			}
+
+			break;
+		}
+	}
+
 	return false;
 }
-
-/*bool SystemView::onKey(const fw::KeyEvent& ev) {
-	if (ev.key == fw::VirtualKey::Tab) {
-		// TODO: This is temporary.  Ideally there will be a global key handler that picks up tabs for moving between instances etc!
-		return false;
-	}
-
-	if (ev.key == fw::VirtualKey::Esc) {
-		if (ev.down) {
-			// Generate menu
-			fw::MenuPtr menu = std::make_shared<fw::Menu>();
-			buildMenu(*menu);
-
-			MenuViewPtr menuView = addChild<MenuView>("Menu");
-			menuView->fitToParent();
-			menuView->setMenu(menu);
-			menuView->focus();
-
-			subscribe<fw::DismountEvent>(menuView, [this]() { getState<Project>().setDirty(); });
-		}
-	} else {
-		InputManager& inputManager = getState<InputManager>();
-		inputManager.processKey(ev.key, ev.down);
-	}
-
-	return true;
-}*/
 
 void SystemView::onUpdate(f32 delta) {
 	const fw::Image& frameBuffer = _system->getFrameBuffer();

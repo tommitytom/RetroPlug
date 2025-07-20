@@ -3,6 +3,7 @@
 #include "lsdj/OffsetLookup.h"
 #include "foundation/KeyToButton.h"
 #include "foundation/HashUtil.h"
+#include "ui/Menu.h"
 
 using namespace rp;
 
@@ -14,19 +15,36 @@ const fw::Rect WAVE_VIEW_AREA = {
 	WAVE_VIEW_SIZE.h * (int32)lsdj::TILE_HEIGHT
 };
 
-SynthView::SynthView() : LsdjCanvasView({ 160, 144 }), _ui(_canvas) {
-	_waveView = addChildAt<fw::WaveView>("SynthWaveView", WAVE_VIEW_AREA);
+SynthView::SynthView() : _canvasView(std::make_shared<LsdjCanvasView>(fw::Dimension{ 160, 144 })), _ui(_canvasView->getCanvas()) {
+	getLayout().setMinDimensions({ 160, 144 });
+	_canvasView->getLayout().setMinDimensions({ 160, 144 });
 }
 
-void SynthView::setSystem(SystemPtr& system) {
+void SynthView::onInitialize() {
+	addChild(_canvasView);
+	_waveView = addChildAt<fw::WaveView>("SamplerWaveView", WAVE_VIEW_AREA);
+}
+
+void SynthView::setSystem(SystemPtr& system, SystemServicePtr& service) {
 	_system = system;
+
+	lsdj::Canvas& canvas = _canvasView->getCanvas();
 
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Read);
 	if (rom.isValid()) {
-		lsdj::Palette palette = rom.getPalette(0);
+		uint8 fontIndex = 1;
+		uint8 paletteIndex = 0;
 
-		_canvas.setFont(rom.getFont(0));
-		_canvas.setPalette(rom.getPalette(0));
+		MemoryAccessor sramAccessor = _system->getMemory(MemoryType::Sram, AccessType::Read);
+		if (sramAccessor.isValid()) {
+			lsdj::Sav sav(sramAccessor.getBuffer());
+			fontIndex = (sav.getWorkingSong().getFontIndex() + 1) % 3;
+			paletteIndex = sav.getWorkingSong().getPaletteIndex();
+		}
+
+		lsdj::Palette palette = rom.getPalette(paletteIndex);
+		canvas.setFont(rom.getFont(fontIndex));
+		canvas.setPalette(palette);
 
 		_waveView->setTheme(fw::WaveView::Theme{
 			.foreground = palette.getColor(lsdj::ColorSets::Normal, 2),
@@ -57,10 +75,6 @@ bool SynthView::onDrop(const std::vector<std::string>& paths) {
 					song.setSynthData(_samplerState.selectedSynth, snt);
 					updateWaveform(song);
 				}
-			} else if (ext == ".wav") {
-
-			} else if (ext == ".lua") {
-
 			}
 		}
 
@@ -92,6 +106,27 @@ bool SynthView::onKey(const fw::KeyEvent& ev) {
 	}
 
 	return false;
+}
+
+void SynthView::processInput(std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {
+	for (size_t i = 0; i < buttons.size(); ++i) {
+		const fw::StreamButtonPress& buttonData = buttons[i];
+		const fw::ButtonType button = fw::ButtonType(buttonData.button);
+
+		if (button != fw::ButtonType::MAX) {
+			if (buttonData.down) {
+				_ui.pressButton(button);
+			} else {
+				_ui.releaseButton(button);
+			}
+		}
+	}
+
+	buttons.clear();
+}
+
+void SynthView::createMenu(fw::Menu& target) {
+	target.action("Close", [this]() { this->remove(); });
 }
 
 void SynthView::onUpdate(f32 delta) {
@@ -126,22 +161,23 @@ void SynthView::onRender(fw::Canvas& canvas) {
 
 	lsdj::Song song((uint8*)savData.getData());
 
-	uint64 sramHash = fw::HashUtil::hash(song.getBuffer());
+	const uint64 sramHash = fw::HashUtil::hash(song.getBuffer());
 	if (sramHash != _lastSramHash) {
 		updateWaveform(song);
 		_lastSramHash = sramHash;
 	}
 
-	_canvas.clear();
+	lsdj::Canvas& _c = _canvasView->getCanvas();
+
+	_c.clear();
 	_ui.startFrame();
 
-	lsdj::Canvas& _c = _canvas;
 	_c.setTranslation(0, 0);
 	_ui.handleNavigation();
 
 	fw::DimensionT<uint32> dimensionTiles(_c.getDimensions().w / lsdj::TILE_WIDTH, _c.getDimensions().h / lsdj::TILE_HEIGHT);
 
-	uint8 synthIdx = _samplerState.selectedSynth;
+	const uint8 synthIdx = _samplerState.selectedSynth;
 
 	_c.fill(0, 0, dimensionTiles.w, dimensionTiles.h, lsdj::ColorSets::Normal, 0);
 	_c.text(3, 0, "SYNTH", lsdj::ColorSets::Normal);
@@ -189,11 +225,9 @@ void SynthView::onRender(fw::Canvas& canvas) {
 	_ui.popColumn();
 	_ui.endFrame();
 
-	LsdjCanvasView::onRender(canvas);
+	_canvasView->setAlpha(getAlpha());
 }
 
 void SynthView::setWaveform(fw::Float32Buffer& samples) {
-	/*WaveformBuffer waveform(_waveView->getExpectedSampleCount());
-	WaveformUtil::generate(samples, waveform);
-	_waveView->setWaveform(std::move(waveform));*/
+	_waveView->setAudioData(std::move(samples), 1);
 }

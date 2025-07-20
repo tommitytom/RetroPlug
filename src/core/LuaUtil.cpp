@@ -2,6 +2,9 @@
 
 #include <sol/sol.hpp>
 
+#include "foundation/SolUtil.h"
+#include "generated/CompiledScripts.h"
+
 using namespace rp;
 
 void LuaUtil::prepareState(sol::state& state) {
