@@ -27,6 +27,10 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 		_systemManager.acquireIo(std::move(stream));
 	});
 
+	node.receive<SetProjectState>([&](SetProjectState&& ev) {
+		_projectState = std::move(ev.project);
+	});
+
 	node.receive<FetchStateRequest>([&]() {
 		std::vector<SystemStateResponse> systemStates;
 
@@ -87,12 +91,20 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 		}
 	});
 
-	node.receive<SetGameLinkEvent>([&](SetGameLinkEvent&& ev) {
+	node.receive<LoadRomEvent>([&](LoadRomEvent&& ev) {
 		SystemPtr system = _systemManager.findSystem(ev.systemId);
-
 		if (system) {
-			if (ev.enabled != system->getGameLink()) {
-				if (ev.enabled) {
+			system->loadRom(std::move(ev.romBuffer));
+		}
+	});
+
+	node.receive<SetSettingsEvent>([&](SetSettingsEvent&& ev) {
+		SystemPtr system = _systemManager.findSystem(ev.systemId);
+		if (system) {
+			SystemDesc desc = system->getDesc();
+
+			if (desc.settings.gameLink != ev.settings.gameLink) {
+				if (ev.settings.gameLink) {
 					for (SystemPtr other : _systemManager.getSystems()) {
 						if (other->getGameLink()) {
 							other->addLinkTarget(system.get());
@@ -111,6 +123,9 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 					system->setGameLink(false);
 				}
 			}
+
+			desc.settings = ev.settings;
+			system->setDesc(std::move(desc));
 		}
 	});
 

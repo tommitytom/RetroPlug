@@ -48,6 +48,7 @@ RetroPlugApplication::RetroPlugApplication() {
 	_typeRegistry.addType<SystemSettings>()
 		.addField<&SystemSettings::includeRom>("includeRom")
 		.addField<&SystemSettings::gameLink>("gameLink")
+		.addField<&SystemSettings::reloadRomOnChange>("reloadRomOnChange")
 		;
 
 	_typeRegistry.addType<std::unordered_map<SystemServiceType, entt::any>>();

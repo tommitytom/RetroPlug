@@ -240,6 +240,12 @@ namespace rp {
 				}
 
 				break;
+			case LsdjSyncMode::MidiPassthrough: {
+				auto& queue = system.getIo()->input.serial;
+				queue.tryPush(TimedByte{ .byte = message.status, .audioFrameOffset = message.offset });
+				queue.tryPush(TimedByte{ .byte = message.data1, .audioFrameOffset = message.offset });
+				queue.tryPush(TimedByte{ .byte = message.data2, .audioFrameOffset = message.offset });
+			}
 			}
 	}
 

@@ -31,16 +31,15 @@ namespace rp {
 		SystemId systemId;
 	};
 
-	struct SetGameLinkEvent {
-		SystemId systemId;
-		bool enabled;
-	};
-
 	struct CollectSystemEvent {
 		SystemPtr system;
 	};
 
 	struct FetchStateRequest {};
+
+	struct SetProjectState {
+		ProjectState project;
+	};
 
 	struct SystemStateResponse {
 		SystemType type = 0;
@@ -79,6 +78,11 @@ namespace rp {
 		fw::Uint8Buffer sramBuffer;
 	};
 
+	struct LoadRomEvent {
+		SystemId systemId = INVALID_SYSTEM_ID;
+		fw::Uint8Buffer romBuffer;
+	};
+
 	struct LoadStateEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
 		fw::Uint8Buffer stateBuffer;
@@ -91,4 +95,14 @@ namespace rp {
 	struct PongEvent {
 		std::chrono::high_resolution_clock::time_point time;
 	};
+
+	struct SetSettingsEvent {
+		SystemId systemId = INVALID_SYSTEM_ID;
+		SystemSettings settings;
+	};;
+
+	struct SetDescEvent {
+		SystemId systemId = INVALID_SYSTEM_ID;
+		SystemDesc desc;
+	};;
 }

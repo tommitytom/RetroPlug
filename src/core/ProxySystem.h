@@ -19,7 +19,7 @@ namespace rp {
 		fw::Uint8Buffer _state;
 		std::string _romName;
 		fw::EventNode& _eventNode;
-		bool _gameLink = false;
+		SystemDesc _desc;
 		std::vector<SystemServiceType> _services;
 
 	public:
@@ -76,7 +76,14 @@ namespace rp {
 			return true; 
 		}
 
+		bool loadRom(fw::Uint8Buffer&& romBuffer) override {
+			_rom = std::move(romBuffer);
+			_eventNode.send("Audio"_hs, LoadRomEvent{ .systemId = getId(), .romBuffer = _rom.clone() });
+			return true;
+		}
+
 		bool loadSram(fw::Uint8Buffer&& sramBuffer) override {
+			// TODO: Write SRAM to state here? use getMemory
 			_eventNode.send("Audio"_hs, LoadSramEvent{ .systemId = getId(), .sramBuffer = std::move(sramBuffer) });
 			return true; 
 		}
@@ -132,15 +139,21 @@ namespace rp {
 
 		void setGameLink(bool gameLink) override {
 			_desc.settings.gameLink = gameLink;
-			_gameLink = gameLink;
-			_eventNode.send("Audio"_hs, SetGameLinkEvent{ .systemId = getId(), .enabled = gameLink});
+			
+			SystemSettings settings = _desc.settings;
+			settings.gameLink = gameLink;
+			_eventNode.send("Audio"_hs, SetSettingsEvent{ .systemId = getId(), .settings = settings });
 		}
 
-		bool getGameLink() override { return _gameLink; }
+		bool getGameLink() override { return _desc.settings.gameLink; }
 
 		void addLinkTarget(System* system) override {}
 
 		void removeLinkTarget(System* system) override {}
+
+		void onDescUpdated(const SystemDesc& oldDesc, const SystemDesc& newDesc) override {
+			_eventNode.send("Audio"_hs, SetDescEvent{ .systemId = getId(), .desc = newDesc });
+		}
 	};
 
 	using ProxySystemPtr = std::shared_ptr<ProxySystem>;

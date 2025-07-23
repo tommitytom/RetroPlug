@@ -18,13 +18,18 @@ namespace rp {
 
 	struct Watch {
 		using Action = FW::Action;
-		using Callback = std::function<void(const std::string&, Action)>;
+		using CallbackFunc = std::function<void(const std::string&, Action)>;
 		using Id = FW::WatchID;
+
+		struct Callback {
+			Id id;
+			CallbackFunc func;
+		};
 
 		Id watchId;
 		std::string path;
 
-		std::vector<std::pair<std::string, Callback>> callbacks;
+		std::unordered_map<std::string, Callback> callbacks;
 	};
 
 	class FileManager : public FW::FileWatchListener {
@@ -35,6 +40,8 @@ namespace rp {
 		FW::FileWatcher _watcher;
 		std::vector<Watch> _reloaders;
 
+		Watch::Id _nextWatchId = 1;
+
 		const fw::TypeRegistry& _types;
 
 	public:
@@ -43,7 +50,9 @@ namespace rp {
 		FileManager(const fw::TypeRegistry& types);
 		~FileManager() {}
 
-		Watch::Id startWatch(const std::filesystem::path& path, Watch::Callback&& func);
+		Watch::Id startWatch(const std::filesystem::path& path, Watch::CallbackFunc&& func);
+
+		void removeWatch(Watch::Id watchId);
 
 		void addRecent(RecentFilePath&& recent);
 
@@ -60,6 +69,8 @@ namespace rp {
 		std::filesystem::path getUniqueFilename(const std::filesystem::path& suggested);
 
 		void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) override;
+
+		void update();
 
 	private:
 		Watch* findWatch(const std::string& path) {

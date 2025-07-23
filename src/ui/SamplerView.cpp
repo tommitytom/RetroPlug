@@ -421,7 +421,8 @@ void SamplerView::createMenu(fw::Menu& target) {
 		.action("Add Kit...", [this]() { loadSampleDialog(-1); })
 		.action("Add Samples...", [this]() { loadSampleDialog(_samplerState.selectedKit); }, kitEditable)
 		.separator()
-		.action("Export Kit...", [this]() { exportKitDialog(_system, _samplerState.selectedKit); })
+		.action("Export LSDJ Kit...", [this]() { exportKitDialog(_system, _samplerState.selectedKit); })
+		//.action("Export RetroPlug Kit...", [this]() { exportKitDialog(_system, _samplerState.selectedKit); })
 		.separator();
 
 	populateEditKit(_system, target.subMenu("Edit Kit"));

@@ -41,7 +41,7 @@ FileManager::FileManager(const fw::TypeRegistry& types): _types(types) {
 	_recentPath = _rootPath / "recent.lua";
 }
 
-Watch::Id FileManager::startWatch(const std::filesystem::path& path, Watch::Callback&& func) {
+Watch::Id FileManager::startWatch(const std::filesystem::path& path, Watch::CallbackFunc&& func) {
 	std::string watchPath;
 
 	if (std::filesystem::is_directory(path)) {
@@ -57,9 +57,27 @@ Watch::Id FileManager::startWatch(const std::filesystem::path& path, Watch::Call
 		existing = &_reloaders.back();
 	}
 
-	existing->callbacks.push_back({ path.string(), std::move(func) });
+	Watch::Id id = _nextWatchId++;
+	existing->callbacks.insert({ path.string(), Watch::Callback { .id = id, .func = std::move(func) } });
 
-	return existing->watchId;
+	return id;
+}
+
+void FileManager::removeWatch(Watch::Id watchId) {
+	for (Watch& watch : _reloaders) {
+		for (const auto& [f, s] : watch.callbacks) {
+			if (s.id == watchId) {
+				spdlog::debug("Removing watch {} for path {}", watchId, f);
+				watch.callbacks.erase(f);
+
+				if (watch.callbacks.empty()) {
+					_watcher.removeWatch(watch.watchId);
+				}
+
+				break;
+			}
+		}
+	}
 }
 
 void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
@@ -69,13 +87,12 @@ void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, c
 		if (watch.watchId == watchid) {
 			for (const auto& callback : watch.callbacks) {
 				if (callback.first == fullPath || callback.first == dir) {
-					callback.second(fullPath, action);
+					callback.second.func(fullPath, action);
 				}
 			}
 			return;
 		}
 	}
-	spdlog::warn("No watch found for path: {}", fullPath);
 }
 
 void FileManager::addRecent(RecentFilePath&& recent) {
@@ -128,6 +145,10 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 	} catch (...) {
 		spdlog::error("Failed to update recent list");
 	}
+}
+
+void FileManager::update() {
+	_watcher.update();
 }
 
 bool FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types) {

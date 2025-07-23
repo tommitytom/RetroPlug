@@ -217,6 +217,8 @@ namespace rp {
 
 		virtual bool load(LoadConfig&& loadConfig) { return false; }
 
+		virtual bool loadRom(fw::Uint8Buffer&& romBuffer) { return false; }
+
 		virtual bool loadSram(fw::Uint8Buffer&& sramBuffer) { return false; }
 
 		virtual bool loadState(fw::Uint8Buffer&& stateBuffer) { return false; }
@@ -304,8 +306,11 @@ namespace rp {
 		}
 
 		void setDesc(const SystemDesc& desc) {
+			onDescUpdated(_desc, desc);
 			_desc = desc;
 		}
+
+		virtual void onDescUpdated(const SystemDesc& oldDesc, const SystemDesc& newDesc) {}
 
 		/*const std::array<bool, (int)fw::ButtonType::MAX>& getButtonState() const {
 			return _buttonState;

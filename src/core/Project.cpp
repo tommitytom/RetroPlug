@@ -137,11 +137,101 @@ namespace rp {
 		return true;
 	}
 
+	fs::path getUniqueFilename(const fs::path& suggested) {
+		if (!fs::exists(suggested)) {
+			return suggested;
+		}
+
+		size_t countStart = 2;
+		size_t countMax = 99999;
+		fs::path fullTargetPath;
+		fs::path fullTargetDir = suggested.parent_path();
+		std::string filename = suggested.filename().string();
+
+		size_t dashFound = filename.find_last_of('-');
+		size_t dotFound = filename.find_last_of('.');
+		assert(dotFound != std::string::npos);
+
+		std::string filenameWithoutExt = filename.substr(0, dotFound);
+		std::string extension = filename.substr(dotFound);
+
+		if (dashFound < dotFound) {
+			filenameWithoutExt = filenameWithoutExt.substr(0, dashFound);
+
+			std::string afterDash = filename.substr(dashFound, dotFound - dashFound);
+			try {
+				countStart = std::stoi(afterDash);
+				countStart++;
+
+				filename = filename.substr(dashFound + 1);
+			} catch (...) {
+				// Text before dash is not a number, ignore it
+			}
+		}
+
+		for (size_t i = countStart; i < countMax; ++i) {
+			fullTargetPath = fullTargetDir / fmt::format("{}-{}{}", filenameWithoutExt, i, extension);
+
+			if (!fs::exists(fullTargetPath)) {
+				return fullTargetPath;
+			}
+		}
+
+		spdlog::error("Failed to create unique filename!");
+		return "";
+	}
+
 	bool Project::save() {
 		std::vector<SystemDesc> systemDescs;
 
 		for (const SystemPtr& system : _systemManager.getSystems()) {
-			systemDescs.push_back(system->getDesc());
+			SystemDesc desc = system->getDesc();
+
+			fw::Uint8Buffer buffer;
+
+			if (_state.settings.saveType == SaveStateType::Sram) {
+				if (desc.paths.sramPath.empty()) {
+					desc.paths.sramPath = getUniqueFilename(fw::FsUtil::replaceFileExt(desc.paths.romPath, ".sav")).string();
+				}
+					
+				spdlog::info("Saving SRAM for system {} to {}", system->getId(), desc.paths.sramPath);
+
+				system->saveSram(buffer);
+				if (!fw::FsUtil::writeFile(desc.paths.sramPath, buffer)) {
+					spdlog::error("Failed to write SRAM for system {}", system->getId());
+				}
+			} else if (_state.settings.saveType == SaveStateType::State) {
+				if (desc.paths.statePath.empty()) {
+					desc.paths.statePath = getUniqueFilename(fw::FsUtil::replaceFileExt(desc.paths.romPath, ".state")).string();
+				}
+
+				spdlog::info("Saving state for system {} to {}", system->getId(), desc.paths.statePath);
+
+				system->saveState(buffer);
+				if (!fw::FsUtil::writeFile(desc.paths.statePath, buffer)) {
+					spdlog::error("Failed to write SRAM for system {}", system->getId());
+				}
+			}
+
+			system->setDesc(desc);
+			systemDescs.push_back(desc);
+		}
+
+		if (_state.path.empty() && systemDescs.size()) {
+			const SystemDesc& desc = systemDescs[0];
+
+			if (_state.settings.saveType == SaveStateType::State && desc.paths.statePath.size()) {
+				_state.path = fw::FsUtil::replaceFileExt(desc.paths.statePath, ".rplg", false);
+			} else if (_state.settings.saveType == SaveStateType::Sram && desc.paths.sramPath.size()) {
+				_state.path = fw::FsUtil::replaceFileExt(desc.paths.sramPath, ".rplg", false);
+			} else {
+				spdlog::error("Unknown save type: {}", _state.settings.saveType);
+				return false;
+			}
+		}
+
+		if (_state.path.empty()) {
+			return false;
 		}
 
 		if (ProjectSerializer::serialize(_typeRegistry, _state.path, _state, systemDescs, false)) {
@@ -255,13 +345,13 @@ namespace rp {
 			.stateBuffer = std::make_shared<fw::Uint8Buffer>()
 		};
 
+		loadConfig.desc.paths.sramPath = "";
+		loadConfig.desc.paths.statePath = "";
+
 		system->saveState(*loadConfig.stateBuffer);
 
 		MemoryAccessor romData = system->getMemory(MemoryType::Rom, AccessType::Read);
 		romData.getBuffer().copyTo(loadConfig.romBuffer.get());
-
-		//desc.settings.serialized = ProjectSerializer::serializeModels(systemWrapper);
-		//cloned->saveSram();
 
 		return addSystem(system->getTargetType(), std::move(loadConfig));
 	}

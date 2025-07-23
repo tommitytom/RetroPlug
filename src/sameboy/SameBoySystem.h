@@ -58,12 +58,15 @@ namespace rp {
 		State _state;
 		uint32 _sampleRate = 48000;
 		std::string _romName;
+		SystemDesc _desc;
 
 	public:
 		SameBoySystem();
 		~SameBoySystem();
 
 		bool load(LoadConfig&& loadConfig) override;
+
+		bool loadRom(fw::Uint8Buffer&& romBuffer) override;
 
 		bool loadSram(fw::Uint8Buffer&& sramBuffer) override;
 

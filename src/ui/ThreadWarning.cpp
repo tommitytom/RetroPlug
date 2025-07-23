@@ -15,7 +15,9 @@ namespace rp {
 		layout.setWidth(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 90));
 		layout.setPositionEdge(fw::FlexEdge::Left, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
 		layout.setPositionEdge(fw::FlexEdge::Bottom, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
+	}
 
+	void ThreadWarning::onInitialize() {
 		auto text = addChild<fw::LabelView>("Audio Thread Warning Text");
 		text->setText("Audio thread inactive - check settings");
 		text->setFont("PlatNomor", 7);

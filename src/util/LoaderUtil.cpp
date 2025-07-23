@@ -62,9 +62,10 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			// Is there a project matching save/rom path?
 			
 			if (fw::FsUtil::exists(projectPath)) {
-				const fw::TypeRegistry t;
 				ProjectState projectState;
 				std::vector<SystemDesc> systemDescs;
+				const fw::TypeRegistry& t = project.getTypeRegistry();
+
 				if (ProjectSerializer::deserializeFromFile(t, projectPath, projectState, systemDescs)) {
 					for (const SystemDesc& desc : systemDescs) {
 						if (desc.paths.sramPath == sramPath && desc.paths.romPath == romPath) {
@@ -83,6 +84,8 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 				}
 			}
 		}
+
+		project.clear();
 
 		SystemDesc desc{
 			.paths = { .romPath = romPath, .sramPath = sramPath },

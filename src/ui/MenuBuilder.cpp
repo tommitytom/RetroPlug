@@ -173,7 +173,7 @@ namespace rp {
 
 	void MenuBuilder::projectMenu(fw::Menu& root, const fw::TypeRegistry& types, FileManager& fileManager, Project& project, System& system) {
 		root
-			.action("New", [&project]() { project.clear(); })
+			//.action("New", [&project]() { project.clear(); })
 			.action("Load...", [&fileManager, &project](fw::MenuContext& ctx) {
 				ctx.retain();
 
@@ -221,8 +221,15 @@ namespace rp {
 	}
 
 	void MenuBuilder::systemMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
+		const SystemDesc& desc = system->getDesc();
+
 		root
 			.select("Game Link", system->getGameLink(), [system](bool val) { system->setGameLink(val); })
+			.select("Reload on ROM change", desc.settings.reloadRomOnChange, [system](bool val) {
+				SystemDesc desc = system->getDesc();
+				desc.settings.reloadRomOnChange = val;
+				system->setDesc(desc);
+			})
 			.separator()
 			.action("Load ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 			.action("Reset", [system]() { system->reset(); })
@@ -277,31 +284,31 @@ namespace rp {
 			.multiSelect("Pad", state->inputConfigs, state->padConfigId, [state](int idx) { state->padConfigId = idx; })
 			.separator()
 			.action("Apply", [&audioManager, &inputManager, &config, &types, state](fw::MenuContext& ctx) {
-			const auto& inputConfigs = inputManager.getAvailableConfigs();
+				const auto& inputConfigs = inputManager.getAvailableConfigs();
 
-			if (state->keyConfigId >= 0 && state->keyConfigId < (int32)inputConfigs.size()) {
-				const auto& inputConfig = inputConfigs[state->keyConfigId];
-				if (inputConfig.valid) {
-					inputManager.load(inputConfig.name, InputType::Key);
-					config.settings.keyboard = inputConfig.name;
+				if (state->keyConfigId >= 0 && state->keyConfigId < (int32)inputConfigs.size()) {
+					const auto& inputConfig = inputConfigs[state->keyConfigId];
+					if (inputConfig.valid) {
+						inputManager.load(inputConfig.name, InputType::Key);
+						config.settings.keyboard = inputConfig.name;
+					}
 				}
-			}
 
-			if (state->padConfigId >= 0 && state->padConfigId < (int32)inputConfigs.size()) {
-				const auto& inputConfig = inputConfigs[state->padConfigId];
-				if (inputConfig.valid) {
-					inputManager.load(inputConfig.name, InputType::Pad);
-					config.settings.pad = inputConfig.name;
+				if (state->padConfigId >= 0 && state->padConfigId < (int32)inputConfigs.size()) {
+					const auto& inputConfig = inputConfigs[state->padConfigId];
+					if (inputConfig.valid) {
+						inputManager.load(inputConfig.name, InputType::Pad);
+						config.settings.pad = inputConfig.name;
+					}
 				}
-			}
 
-			audioManager->setAudioDevice((uint32)state->audioOutDeviceId);
-			config.settings.audioDeviceName = state->audioOut[state->audioOutDeviceId];
+				audioManager->setAudioDevice((uint32)state->audioOutDeviceId);
+				config.settings.audioDeviceName = state->audioOut[state->audioOutDeviceId];
 
-			ConfigUtil::serialize(types, (FileManager::getContentPath() / "config.lua").string(), config);
+				ConfigUtil::serialize(types, (FileManager::getContentPath() / "config.lua").string(), config);
 
-			ctx.retain();
-		})
+				ctx.retain();
+			})
 			.separator()
 			.action("Open Settings Folder", []() { fw::openShellFolder(FileManager::getContentPath().string()); });
 	}
@@ -310,16 +317,16 @@ namespace rp {
 		root.subMenu("Add System")
 			.action("Duplicate Current", [&system, &fileManager, &project]() {
 				SystemDesc desc = system.getDesc();
-				desc.paths.sramPath = fileManager.getUniqueFilename(desc.paths.sramPath).string();
+				desc.paths.sramPath = "";
 				project.duplicateSystem(system.getId()/*, desc*/);
 			})
 			.action("ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
 			.parent()
 			.action("Remove System", [&project, &system]() {
-			if (project.getSystems().size() > 1) {
-				project.removeSystem(system.getId());
-			}
-		}, project.getSystems().size() > 1);
+				if (project.getSystems().size() > 1) {
+					project.removeSystem(system.getId());
+				}
+			}, project.getSystems().size() > 1);
 	}
 
 	void MenuBuilder::populateRecent(fw::Menu& root, FileManager& fileManager, Project& project, SystemPtr system) {
@@ -335,12 +342,6 @@ namespace rp {
 				} else {
 					spdlog::error("Failed to load recent file: File type {} unknown", p.type);
 				}
-
-				/*if (system) {
-					handleSystemLoad(p.path, "", system);
-				} else {
-
-				}*/
 			});
 		}
 	}
@@ -356,26 +357,6 @@ namespace rp {
 
 		loadRoot
 			.action("ROM...", [&project, &dialog]() { loadRomDialog(dialog, project, nullptr); })
-			.parent();
-	}
-
-	void MenuBuilder::systemLoadMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system) {
-		fw::Menu& loadRoot = root.subMenu("Load");
-
-		populateRecent(loadRoot.subMenu("Recent"), fileManager, project, system);
-
-		loadRoot
-			.action("Project...", [&](fw::MenuContext& ctx) {
-			ctx.retain();
-
-			std::vector<std::string> files;
-			if (fw::FileDialog::openFile(files, { ROM_FILTER, PROJECT_FILTER }, true, false)) {
-				LoaderUtil::handleLoad(files, fileManager, project);
-				ctx.close();
-			}
-		})
-			.action("ROM...", [&project, &dialog, system]() { loadRomDialog(dialog, project, system); })
-			.action("SAV...", [&project, &dialog, system]() { loadSavDialog(project, system); })
 			.parent();
 	}
 }

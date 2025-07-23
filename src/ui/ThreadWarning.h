@@ -10,6 +10,8 @@ namespace rp {
 		ThreadWarning();
 		~ThreadWarning() = default;
 
+		void onInitialize() override;
+
 		void setTextScale(f32 scale);
 	};
 

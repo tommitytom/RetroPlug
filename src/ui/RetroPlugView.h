@@ -40,6 +40,8 @@ namespace rp {
 		InputManager _inputManager;
 		fw::FileDialogManager _fileDialogManager;
 
+		std::unordered_map<SystemId, Watch::Id> _romWatchers;
+
 		std::vector<fw::StreamButtonPress> _buttons;
 		fw::ButtonStreamWriter _buttonWriter;
 
@@ -93,5 +95,9 @@ namespace rp {
 		void processOutput();
 
 		void setupEventHandlers();
+
+		void updateWatchers();
+
+		void updateThreadWarning(hrc::time_point time);
 	};
 }

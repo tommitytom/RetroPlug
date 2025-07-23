@@ -44,6 +44,10 @@ namespace rp {
 			return _systemFactory;
 		}
 
+		const fw::TypeRegistry& getTypeRegistry() const {
+			return _typeRegistry;
+		}
+
 		void setup(fw::EventNode& eventNode, FetchStateResponse&& state);
 
 		std::string getName();

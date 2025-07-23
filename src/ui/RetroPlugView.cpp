@@ -203,21 +203,52 @@ void RetroPlugView::processOutput() {
 	}
 }
 
-void RetroPlugView::onUpdate(f32 delta) {
-	hrc::time_point time = hrc::now();
+void RetroPlugView::updateWatchers() {
+	for (const SystemPtr& system : _project.getSystems()) {
+		const SystemDesc& desc = system->getDesc();
+		auto found = _romWatchers.find(system->getId());
 
-	fw::EventNode& eventNode = getState<fw::EventNode>();
-	eventNode.update();
+		// Check for systems that have been removed
+		for (auto it = _romWatchers.begin(); it != _romWatchers.end();) {
+			const SystemId systemId = it->first;
+			auto found = std::find_if(_project.getSystems().begin(), _project.getSystems().end(), [systemId](const SystemPtr& system) {
+				return system->getId() == systemId;
+			});
 
-	getResourceManager().frame();
-	_fileDialogManager.update();
-	_gamepadManager.update();
+			if (found == _project.getSystems().end()) {
+				spdlog::info("Removing expired file watcher for {}", systemId);
+				_fileManager.removeWatch(it->second);
+				it = _romWatchers.erase(it);
+			} else {
+				++it;
+			}
+		}
 
-	if (_doPing && !_lastPingTime.has_value()) {
-		_lastPingTime = time;
-		eventNode.send("Audio"_hs, PingEvent{ .time = time });
+		if (desc.settings.reloadRomOnChange) {
+			if (found == _romWatchers.end()) {
+				spdlog::info("Adding ROM watcher for system {} at {}", system->getId(), desc.paths.romPath);
+				Watch::Id watchId = _fileManager.startWatch(desc.paths.romPath, [&system, romPath = desc.paths.romPath](const std::string& path, Watch::Action action) {
+					if (action == Watch::Action::Modified) {
+						spdlog::info("Detected change in {}. Reloading!", romPath);
+						fw::Uint8Buffer romBuffer;
+						fw::FsUtil::readFile(romPath, &romBuffer);
+						system->loadRom(std::move(romBuffer));
+					}
+				});
+
+				_romWatchers[system->getId()] = watchId;
+			}
+		} else {
+			if (found != _romWatchers.end()) {
+				spdlog::info("Removing file watcher at {}", desc.paths.romPath);
+				_fileManager.removeWatch(found->second);
+				_romWatchers.erase(found);
+			}
+		}
 	}
+}
 
+void RetroPlugView::updateThreadWarning(hrc::time_point time) {
 	bool audioThreadActive = _lastPongTime.has_value() && (time - *_lastPongTime) < AUDIO_THREAD_TIMEOUT;
 	if (audioThreadActive != _audioThreadActive) {
 		_audioThreadActive = audioThreadActive;
@@ -231,6 +262,30 @@ void RetroPlugView::onUpdate(f32 delta) {
 		}
 	}
 
+	if (_threadWarning) {
+		_threadWarning->bringToFront();
+		_threadWarning->getChildAs<fw::LabelView>(0)->setFont("PlatNomor", 7 * _project.getScale());
+	}
+}
+
+void RetroPlugView::onUpdate(f32 delta) {
+	hrc::time_point time = hrc::now();
+
+	fw::EventNode& eventNode = getState<fw::EventNode>();
+	eventNode.update();
+
+	getResourceManager().frame();
+	_fileDialogManager.update();
+	_gamepadManager.update();
+	_fileManager.update();
+
+	if (_doPing && !_lastPingTime.has_value()) {
+		_lastPingTime = time;
+		eventNode.send("Audio"_hs, PingEvent{ .time = time });
+	}
+
+	updateWatchers();
+
 	const f32 scale = _project.getScale();
 	const uint32 audioFrameCount = (uint32)(_sampleRate * delta + 0.5f);
 
@@ -238,17 +293,18 @@ void RetroPlugView::onUpdate(f32 delta) {
 	if (swapContainer.requestedContainer) {
 		initViews(swapContainer.requestedContainer);
 		swapContainer.requestedContainer = nullptr;
-	} else if (!_systemContainer || _systemContainer->getParent() == nullptr || (_systemContainer->isType<StartView>() && _project.getSystems().size())) {
+	} else if (!_systemContainer 
+		|| _systemContainer->getParent() == nullptr 
+		|| (_systemContainer->isType<StartView>() && _project.getSystems().size()) 
+		|| (!_systemContainer->isType<StartView>() && _project.getSystems().empty())
+	) {
 		initViews(nullptr);
 	}
 
 	_systemContainer->setScale(scale);
 	//_compactLayout->setGridLayout((fw::GridLayout)_project.getState().settings.layout);
 
-	if (_threadWarning) {
-		_threadWarning->bringToFront();
-		_threadWarning->getChildAs<fw::LabelView>(0)->setFont("PlatNomor", 7 * _project.getScale());
-	}
+	updateThreadWarning(time);
 
 	_project.update(audioFrameCount);
 

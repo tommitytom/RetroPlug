@@ -14,7 +14,8 @@ namespace rp {
 		MidiSyncArduinoboy,
 		MidiMap,
 		Keyboard,
-		KeyboardMidi
+		KeyboardMidi,
+		MidiPassthrough
 	};
 
 	struct SampleSettings {

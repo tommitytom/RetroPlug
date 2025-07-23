@@ -236,6 +236,11 @@ bool SameBoySystem::load(LoadConfig&& loadConfig) {
 	return false;
 }
 
+bool SameBoySystem::loadRom(fw::Uint8Buffer&& romBuffer) {
+	GB_load_rom_from_buffer(_state.gb, (const uint8_t*)romBuffer.data(), romBuffer.size());
+	return true;
+}
+
 bool SameBoySystem::loadSram(fw::Uint8Buffer&& sramBuffer) {
 	GB_load_battery_from_buffer(_state.gb, (const uint8_t*)sramBuffer.data(), sramBuffer.size());
 	return true;

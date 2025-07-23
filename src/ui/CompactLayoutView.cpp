@@ -44,6 +44,7 @@ namespace rp {
 						menuView->focus();
 
 						subscribe<fw::DismountEvent>(menuView, [this]() {
+							getState<fw::EventNode>().trySend("Ui"_hs, SetProjectState{ _project->getState() });
 							_project->setDirty();
 						});
 

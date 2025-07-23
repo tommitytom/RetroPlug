@@ -34,7 +34,5 @@ namespace rp::MenuBuilder {
 
 	void settingsMenu(fw::Menu& root, const fw::TypeRegistry& types, InputManager& inputManager, Project& project, RetroPlugConfig& config, fw::audio::AudioManager* audioManager);
 
-	void systemLoadMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system);
-
 	void systemAddMenu(fw::Menu& root, fw::FileDialogManager& dialog, FileManager& fileManager, Project& project, SystemPtr system);
 }
