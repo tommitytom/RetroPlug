@@ -10,6 +10,8 @@ KeyMap({
 	[Key.DownArrow] = Button.Down,
 	[Key.RightArrow] = Button.Right,
 
+	[Key.Ctrl] = Button.Select,
+	[Key.Shift] = Button.Select,
 	[Key.LeftCtrl] = Button.Select,
 	[Key.LeftShift] = Button.Select,
 	[Key.Enter] = Button.Start,
