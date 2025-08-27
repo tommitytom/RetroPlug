@@ -3,7 +3,7 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "foundation/generated/CompiledScripts.h"
+#include "framework-generated/CompiledScripts.h"
 
 using namespace fw;
 

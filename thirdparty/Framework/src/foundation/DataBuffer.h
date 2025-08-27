@@ -26,6 +26,12 @@ namespace fw {
 		DataBuffer(T* data, size_t size, bool ownsData = false) : _data(data), _size(size), _ownsData(ownsData) {}
 		~DataBuffer() { destroy(); }
 
+		static DataBuffer<T> from(const T* data, size_t size) {
+			DataBuffer<T> buffer(size);
+			buffer.write(data, size);
+			return buffer;
+		}
+
 		bool isOwnerOfData() const {
 			return _ownsData;
 		}
@@ -67,7 +73,7 @@ namespace fw {
 
 		void write(const T* source, size_t size) {
 			assert(size <= _size);
-			memcpy(_data, source, size * sizeof(T));
+			memcpy(static_cast<void*>(_data), source, size * sizeof(T));
 		}
 
 		void write(const DataBuffer<T>& other) {
@@ -96,21 +102,21 @@ namespace fw {
 
 		DataBuffer<T> slice(size_t pos, size_t size = 0) {
 			assert(pos + size <= _size);
-			
+
 			if (size == 0) {
 				size = _size - pos;
 			}
-			
+
 			return DataBuffer<T>(_data + pos, size);
 		}
 
 		const DataBuffer<T> slice(size_t pos, size_t size = 0) const {
 			assert(pos + size <= _size);
-			
+
 			if (size == 0) {
 				size = _size - pos;
 			}
-			
+
 			return DataBuffer<T>(_data + pos, size);
 		}
 
@@ -123,13 +129,11 @@ namespace fw {
 		}
 
 		void clear() {
-			memset(_data, 0, _size * sizeof(T));
+			std::fill(_data, _data + _size, T());
 		}
 
 		void clear(const T& value) {
-			for (size_t i = 0; i < _size; ++i) {
-				_data[i] = value;
-			}
+			std::fill(_data, _data + _size, value);
 		}
 
 		void reserve(size_t size) {
@@ -140,7 +144,7 @@ namespace fw {
 				T* data = new T[size];
 
 				if (_size > 0) {
-					memcpy(data, _data, _size * sizeof(T));
+					memcpy(static_cast<void*>(data), _data, _size * sizeof(T));
 					destroy();
 				}
 
@@ -168,7 +172,7 @@ namespace fw {
 
 		size_t copyFrom(const DataBuffer& other) {
 			size_t writeAmount = std::min(_size, other.size());
-			memcpy(_data, other._data, writeAmount * sizeof(T));
+			memcpy(static_cast<void*>(_data), static_cast<void*>(other._data), writeAmount * sizeof(T));
 			_size = std::max(_size, writeAmount);
 			return writeAmount;
 		}
@@ -179,7 +183,7 @@ namespace fw {
 		}
 
 		void copyTo(T* target) const {
-			memcpy(target, _data, _size * sizeof(T));
+			memcpy(static_cast<void*>(target), static_cast<void*>(_data), _size * sizeof(T));
 		}
 
 		DataBuffer clone() const {
@@ -193,7 +197,7 @@ namespace fw {
 				return false;
 			}
 
-			return memcmp(_data, other._data, _size * sizeof(T)) == 0;
+			return memcmp(static_cast<void*>(_data), static_cast<void*>(other._data), _size * sizeof(T)) == 0;
 		}
 
 		bool operator!=(const DataBuffer& other) const {
@@ -201,7 +205,7 @@ namespace fw {
 				return true;
 			}
 
-			return memcmp(_data, other._data, _size * sizeof(T)) != 0;
+			return memcmp(static_cast<void*>(_data), static_cast<void*>(other._data), _size * sizeof(T)) != 0;
 		}
 
 		DataBuffer& operator=(const DataBuffer& other) {

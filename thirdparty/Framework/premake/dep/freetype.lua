@@ -5,7 +5,7 @@ local FREETYPE_DIR = paths.DEP_ROOT .. "freetype"
 local m = {}
 
 function m.include()
-	externalincludedirs {
+	includedirs {
 		paths.DEP_ROOT .. "zlib",
 		FREETYPE_DIR .. "/include"
 	}

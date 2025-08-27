@@ -16,15 +16,13 @@ namespace fw::audio {
 
 		bool loadFile(std::string_view path, std::vector<f32>& target) override;
 
-		bool start() override;
+		bool start(int32 idx) override;
 
 		void stop() override;
 
 		f32 getSampleRate() override;
 
-		bool setAudioDevice(uint32 idx) override;
-
-		void getDeviceNames(std::vector<std::string>& names) override;
+		bool setAudioDevice(int32 idx) override;
 
 		fw::StereoAudioBuffer& getInput() {
 			return _input;

@@ -42,7 +42,7 @@ bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& of
 	if (!forceCalculate) {
 		uint32 romHash = XXH32(romData.data(), 0x4000, 0);
 
-		spdlog::info("Finding ROM offsets.  Name: {}, Hash: {}", romName, romHash);
+		spdlog::info("Finding ROM offsets - Name: {}, Hash: {}", romName, romHash);
 
 		auto found = VERSION_LOOKUP.find(romHash);
 		if (found != VERSION_LOOKUP.end()) {
@@ -59,10 +59,13 @@ bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& of
 		std::string version;
 
 		if (LsdjUtil::getVersionFromName(romName, version)) {
+			spdlog::info("Version extracted from name: '{}'", version);
 			semver::version semVer = LsdjUtil::getSemVerFromVersion(version);
 
+			int checkedItems = 0;
 			for (const auto& item : VERSION_LOOKUP) {
-				if (item.second.tags.empty() || item.second.tags == "stable") {
+				checkedItems++;
+				if (item.second.tags.empty()) {
 					if (item.second.version == semVer) {
 						const RomVersionDesc& romDesc = item.second;
 
@@ -78,10 +81,14 @@ bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& of
 		}
 	}
 
-	OffsetCalculator::Context ctx;
-	if (OffsetCalculator::calculate((const char*)romData.data(), ctx)) {
+	// Keep this on the heap as emscripten isn't happy with it on the stack!
+
+	spdlog::info("Hash and name lookup failed or skipped, attempting offset calculation");
+	std::unique_ptr<OffsetCalculator::Context> ctx = std::make_unique<OffsetCalculator::Context>();
+
+	if (OffsetCalculator::calculate((const char*)romData.data(), *ctx)) {
 		spdlog::info("Found offsets by calculation");
-		offsets = ctx.offsets;
+		offsets = ctx->offsets;
 
 		return true;
 	}

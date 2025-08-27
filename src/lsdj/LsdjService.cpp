@@ -24,7 +24,7 @@ namespace rp {
 
 		if (rom.isValid()) {
 			LsdjServiceSettings& state = getRawState();
-			
+
 			state.romValid = true;
 			state.offsetsValid = lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), state.ramOffsets, false);
 

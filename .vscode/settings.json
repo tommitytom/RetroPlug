@@ -192,7 +192,16 @@
 		"gb.h": "c",
 		"cplug.h": "c",
 		"coroutine": "cpp",
-		"resumable": "cpp"
+		"resumable": "cpp",
+		"execution": "cpp",
+		"print": "cpp",
+		"__bit_reference": "cpp",
+		"__hash_table": "cpp",
+		"__locale": "cpp",
+		"__node_handle": "cpp",
+		"__split_buffer": "cpp",
+		"__tree": "cpp",
+		"__verbose_abort": "cpp"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

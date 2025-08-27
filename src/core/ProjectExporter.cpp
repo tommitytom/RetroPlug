@@ -3,11 +3,11 @@
 #include <spdlog/spdlog.h>
 
 #include "core/ProjectSerializer.h"
-#include "core/zipp.h"
+//#include "core/zipp.h"
 
 namespace rp {
 	bool ProjectExporter::exportProject(const Settings& settings, const fw::TypeRegistry& types, const ProjectState& project, const std::vector<SystemPtr>& systems, fw::Uint8Buffer& target) {
-		zipp::Writer zipWriter({ .method = zipp::CompressionMethod::Deflate });
+		/*zipp::Writer zipWriter({.method = zipp::CompressionMethod::Deflate});
 
 		std::unordered_set<std::string> romNames;
 		std::vector<SystemDesc> systemDescs;
@@ -49,6 +49,8 @@ namespace rp {
 		target.resize(buffer.size());
 		target.write((const uint8*)buffer.data(), buffer.size());
 
-		return true;
+		return true;*/
+
+		return false;
 	}
 }

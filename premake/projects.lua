@@ -5,28 +5,37 @@ local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
 local iplug2 = dofile("thirdparty/Framework/premake/dep/iplug2.lua")
 
 local EMSDK_FLAGS = {
-	"-s WASM=1",
+	--"-s WASM=1",
 	--"-s LLD_REPORT_UNDEFINED",
-	[[-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]']],
+	--[[-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]']]
 	--"-s TOTAL_MEMORY=512MB",
-	"-s ENVIRONMENT=web,worker,audioworklet",
+
+	"-s STACK_SIZE=7MB",
+	"-s DEFAULT_PTHREAD_STACK_SIZE=5MB",
+
+	"-s ENVIRONMENT=web,worker",
 	"-s ALLOW_MEMORY_GROWTH=1",
+	"-s INITIAL_MEMORY=1024MB",
 	--"-s USE_ES6_IMPORT_META=0",
-	"-s USE_PTHREADS=1",
+	--"-s USE_PTHREADS=1",
 	--"-s PTHREAD_POOL_SIZE=2",
-	"-s USE_GLFW=3",
-	"-s USE_WEBGL2=1",
+	--"-s USE_GLFW=3",
+	--"-s USE_WEBGL2=1",
 	"-s FORCE_FILESYSTEM=1",
 	--"-s FULL_ES3=1",
 	--"-s MIN_WEBGL_VERSION=2",
 	--"-s MAX_WEBGL_VERSION=2", -- https://emscripten.org/docs/porting/multimedia_and_graphics/OpenGL-support.html#opengl-support-webgl-subset
-	"-s NO_DISABLE_EXCEPTION_CATCHING=1",
-	"-s ASYNCIFY",
+	--"-s NO_DISABLE_EXCEPTION_CATCHING=1",
+	--"-s ASYNCIFY",
+	"-s USE_FREETYPE=1",
+	"-s AUDIO_WORKLET=1",
+	"-s WASM_WORKERS=1",
 
 	"-lidbfs.js",
 
 	"--shell-file ../../templates/shell_minimal.html",
-	"--post-js ../../templates/processor.js",
+	--"--post-js ../../templates/processor.js",
+	"--emrun",
 
 	"-fexceptions",
 }
@@ -34,14 +43,33 @@ local EMSDK_FLAGS = {
 local EMSDK_DEBUG_FLAGS = {
 	"-s ASSERTIONS=1",
 	"-g",
-	"-o debug/index.html"
+	--"-O0",
+	--"-gsource-map",
+	"-s SAFE_HEAP=2",
+	"-s STACK_OVERFLOW_CHECK=1",
+	"-s WARN_UNALIGNED=1",
+	"-o debug/index.html",
+	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
+	"-s WASM_BIGINT",
+	--"-v"
+}
+
+local EMSDK_DEVELOPMENT_FLAGS = {
+	"-s ASSERTIONS=1",
+	"-g",
+	"-O1",
+	"-s SAFE_HEAP=1",
+	--"-s STACK_OVERFLOW_CHECK=1",
+	--"-s WARN_UNALIGNED=1",
+	"-o development/index.html",
+	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 }
 
 local EMSDK_RELEASE_FLAGS = {
-	"-s ASSERTIONS=1",
-	--"-s ELIMINATE_DUPLICATE_FUNCTIONS=1",
+	--"-s ASSERTIONS=1",
+	"-s ELIMINATE_DUPLICATE_FUNCTIONS=1",
 	--"-s MINIMAL_RUNTIME",
-	"-g",
+	--"-g",
 	"-O3",
 	"-closure",
 	"-o release/index.html"
@@ -57,8 +85,6 @@ local m = {
 	Tests = {}
 }
 
-
-
 function m.Core.include()
 	dependson { "configure" }
 
@@ -68,10 +94,10 @@ function m.Core.include()
 	fwProjects.Audio.include()
 	fwProjects.Application.include()
 	fwDeps.lua.include()
-	dep.minizip.include()
+	--dep.minizip.include()
 	dep.SameBoy.include()
 
-	externalincludedirs {
+	includedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -97,7 +123,7 @@ function m.Core.link()
 	fwProjects.Audio.link()
 	fwProjects.Application.link()
 	fwDeps.lua.link()
-	dep.minizip.link()
+	--dep.minizip.link()
 	dep.SameBoy.link()
 end
 
@@ -110,8 +136,8 @@ function m.Core.project()
 	files {
 		"src/core/**.h",
 		"src/core/**.cpp",
-		"src/generated/*.h",
-		"src/generated/*_%{cfg.platform}.cpp",
+		"src/retroplug-generated/*.h",
+		"src/retroplug-generated/*_%{cfg.architecture}.cpp",
 	}
 
 	util.liveppCompat()
@@ -123,7 +149,7 @@ function m.SameBoyPlug.include()
 	dep.SameBoy.include()
 	m.Core.include()
 
-	externalincludedirs {
+	includedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
 		"thirdparty/spdlog/include",
@@ -190,9 +216,9 @@ function m.RetroPlug.include()
 	m.Core.include()
 	m.SameBoyPlug.include()
 	dep.liblsdj.include()
-	dep.minizip.include()
+	--dep.minizip.include()
 
-	externalincludedirs {
+	includedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
@@ -217,7 +243,15 @@ function m.RetroPlug.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()
 	dep.r8brain.link()
-	dep.minizip.link()
+	--dep.minizip.link()
+
+	filter { "platforms:Emscripten", "configurations:Debug" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+	filter { "platforms:Emscripten", "configurations:Release" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
+
+	filter {}
 end
 
 function m.RetroPlug.project()
@@ -238,6 +272,8 @@ function m.RetroPlug.project()
 		"src/ui/**.h",
 		"src/ui/**.cpp",
 	}
+
+	filter{}
 
 	util.liveppCompat()
 end
@@ -261,6 +297,8 @@ function m.Plugin.project()
 end
 
 function m.Application.project()
+	print("Configuring Application project")
+
 	project "RetroPlugApp"
 	kind "ConsoleApp"
 
@@ -283,10 +321,13 @@ function m.Application.project()
 	filter { "system:linux" }
 		linkoptions { "-no-pie" } -- maybe put in premake.lua?
 
-	filter { "options:emscripten", "configurations:Debug" }
+	filter { "platforms:Emscripten", "configurations:Debug*" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
 
-	filter { "options:emscripten", "configurations:Release" }
+	filter { "platforms:Emscripten", "configurations:Development*" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEVELOPMENT_FLAGS) }
+
+	filter { "platforms:Emscripten", "configurations:Release*" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
 
 	filter {}

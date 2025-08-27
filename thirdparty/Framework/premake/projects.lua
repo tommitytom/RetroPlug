@@ -22,12 +22,12 @@ local m = {
 function m.Foundation.include()
 	dependson { "configure" }
 
-	externalincludedirs {
+	includedirs {
 		paths.DEP_ROOT,
 		paths.DEP_ROOT .. "spdlog/include"
 	}
 
-	externalincludedirs {
+	includedirs {
 		"thirdparty",
 		"thirdparty/spdlog/include",
 		"thirdparty/sol",
@@ -40,8 +40,13 @@ function m.Foundation.include()
 	}
 
 	dep.lua.include()
-	dep.simplefilewatcher.include()
-	dep.gainput.include()
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "deprecated-literal-operator", "unknown-warning-option" }
+
+	filter { "platforms:not Emscripten" }
+		dep.gainput.include()
+		dep.simplefilewatcher.include()
 
 	filter {}
 end
@@ -52,8 +57,12 @@ function m.Foundation.link()
 	links { "Foundation" }
 
 	dep.lua.link()
-	dep.simplefilewatcher.link()
-	dep.gainput.link()
+
+	filter { "platforms:not Emscripten" }
+		dep.simplefilewatcher.link()
+		dep.gainput.link()
+
+	filter {}
 end
 
 function m.Foundation.project()
@@ -65,9 +74,14 @@ function m.Foundation.project()
 	files {
 		paths.SRC_ROOT .. "foundation/**.h",
 		paths.SRC_ROOT .. "foundation/**.cpp",
-		paths.SRC_ROOT .. "foundation/generated/*.h",
-		paths.SRC_ROOT .. "foundation/generated/*_%{cfg.platform}.cpp",
+		paths.SRC_ROOT .. "framework-generated/*.h",
+		paths.SRC_ROOT .. "framework-generated/*_%{cfg.architecture}.cpp",
 	}
+
+	filter "platforms:Emscripten"
+		excludes { paths.SRC_ROOT .. "foundation/GainputGamepadManager.*" }
+
+	filter {}
 
 	util.liveppCompat()
 end
@@ -198,15 +212,15 @@ function m.Audio.project()
 		util.liveppCompat()
 end
 
-
-
 function m.Application.include()
 	dependson { "configure" }
 
 	m.Graphics.include()
 	m.Audio.include()
 	dep.glfw.include()
-	dep.pugl.include()
+
+	filter { "platforms:not Emscripten" }
+		dep.pugl.include()
 
 	filter {}
 end
@@ -219,7 +233,11 @@ function m.Application.link()
 	m.Graphics.link()
 	m.Audio.link()
 	dep.glfw.link()
-	dep.pugl.link()
+
+	filter { "platforms:not Emscripten" }
+		--dep.pugl.link()
+
+	filter {}
 end
 
 function m.Application.project()

@@ -48,6 +48,8 @@ namespace rp {
 			return _typeRegistry;
 		}
 
+		void setEventNode(fw::EventNode& node);
+
 		void setup(fw::EventNode& eventNode, FetchStateResponse&& state);
 
 		std::string getName();

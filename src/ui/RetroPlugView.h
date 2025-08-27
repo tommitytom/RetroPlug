@@ -2,8 +2,13 @@
 
 #include <string>
 
-#include "foundation/DataBuffer.h"
+#include "foundation/GamepadManager.h"
+
+#ifndef FW_PLATFORM_WEB
 #include "foundation/GainputGamepadManager.h"
+#endif
+
+#include "foundation/DataBuffer.h"
 #include "foundation/ResourceReloader.h"
 #include "audio/AudioManager.h"
 #include "core/InputManager.h"
@@ -40,7 +45,7 @@ namespace rp {
 		InputManager _inputManager;
 		fw::FileDialogManager _fileDialogManager;
 
-		std::unordered_map<SystemId, Watch::Id> _romWatchers;
+		std::unordered_map<SystemId, fw::WatchId> _romWatchers;
 
 		std::vector<fw::StreamButtonPress> _buttons;
 		fw::ButtonStreamWriter _buttonWriter;
@@ -71,7 +76,7 @@ namespace rp {
 
 		DialogViewPtr _dialogView;
 
-		fw::GainputGamepadManager _gamepadManager;
+		//fw::GamepadManager _gamepadManager;
 
 	public:
 		RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config);

@@ -542,7 +542,11 @@ namespace rp::lsdj {
 		void getFont(size_t idx, Font& font) const {
 			const uint8* data = _fontData + idx * Font::SIZE + Font::HEADER_SIZE;
 
+			#ifdef __STDC_WANT_SECURE_LIB__
 			strncpy_s(font.name, (const char*)_fontNames + idx * (Font::NAME_SIZE - 1), Font::NAME_SIZE);
+			#else
+			strncpy(font.name, (const char*)_fontNames + idx * (Font::NAME_SIZE - 1), Font::NAME_SIZE);
+			#endif
 
 			for (size_t i = 0; i < Font::TILE_COUNT; ++i) {
 				const uint8* tileData = data + i * Font::TILE_SIZE;

@@ -50,7 +50,7 @@ namespace rp {
 		SampleSettings settings;
 	};
 
-	using KitIndex = size_t;
+	using KitIndex = uint32;
 
 	struct LsdjServiceSettings {
 		std::unordered_map<KitIndex, KitState> kits;

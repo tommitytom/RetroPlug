@@ -55,6 +55,8 @@ namespace fw {
 		MenuItemBase(MenuItemType type, const std::string& name, bool active, int id = -1) : _type(type), _name(name), _active(active), _id(id) {}
 
 	public:
+		virtual ~MenuItemBase() = default;
+
 		MenuItemType getType() const { return _type; }
 
 		int getId() const { return _id; }

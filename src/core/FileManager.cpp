@@ -41,58 +41,12 @@ FileManager::FileManager(const fw::TypeRegistry& types): _types(types) {
 	_recentPath = _rootPath / "recent.lua";
 }
 
-Watch::Id FileManager::startWatch(const std::filesystem::path& path, Watch::CallbackFunc&& func) {
-	std::string watchPath;
-
-	if (std::filesystem::is_directory(path)) {
-		watchPath = path.string();
-	} else {
-		watchPath = path.parent_path().string();
-	}
-
-	Watch* existing = findWatch(watchPath);
-	if (!existing) {
-		FW::WatchID watchId = _watcher.addWatch(watchPath, this);
-		_reloaders.push_back({ watchId, watchPath });
-		existing = &_reloaders.back();
-	}
-
-	Watch::Id id = _nextWatchId++;
-	existing->callbacks.insert({ path.string(), Watch::Callback { .id = id, .func = std::move(func) } });
-
-	return id;
+fw::WatchId FileManager::startWatch(const std::filesystem::path& path, fw::WatchCallbackFunc&& func) {
+	return 0;
 }
 
-void FileManager::removeWatch(Watch::Id watchId) {
-	for (Watch& watch : _reloaders) {
-		for (const auto& [f, s] : watch.callbacks) {
-			if (s.id == watchId) {
-				spdlog::debug("Removing watch {} for path {}", watchId, f);
-				watch.callbacks.erase(f);
+void FileManager::removeWatch(fw::WatchId watchId) {
 
-				if (watch.callbacks.empty()) {
-					_watcher.removeWatch(watch.watchId);
-				}
-
-				break;
-			}
-		}
-	}
-}
-
-void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
-	spdlog::debug("File action: {} {} {}", dir, filename, action);
-	std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
-	for (Watch& watch : _reloaders) {
-		if (watch.watchId == watchid) {
-			for (const auto& callback : watch.callbacks) {
-				if (callback.first == fullPath || callback.first == dir) {
-					callback.second.func(fullPath, action);
-				}
-			}
-			return;
-		}
-	}
 }
 
 void FileManager::addRecent(RecentFilePath&& recent) {
@@ -148,7 +102,7 @@ void FileManager::addRecent(RecentFilePath&& recent) {
 }
 
 void FileManager::update() {
-	_watcher.update();
+	//_watcher.update();
 }
 
 bool FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vector<std::string>& types) {
@@ -167,7 +121,7 @@ bool FileManager::loadRecent(std::vector<RecentFilePath>& paths, const std::vect
 
 	sol::state s;
 	LuaUtil::prepareState(s);
-	
+
 	sol::table target;
 	if (!fw::SolUtil::deserializeTable(s, data, target)) {
 		spdlog::error("Failed to load list of recent files");

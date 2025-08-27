@@ -19,17 +19,17 @@ function m.allProjects()
 	m.zlib.project()
 	m.freetype.project()
 	m.freetypeGl.project()
-	m.simplefilewatcher.project()
 	m.iplug2.project()
 	m.glad.project()
 	m.bin2h.project()
 	m.yoga.project()
 	m.stb.project()
-	m.gainput.project()
 
 	if _OPTIONS["emscripten"] == nil then
 		m.glfw.project()
 		m.pugl.project()
+		m.gainput.project()
+		m.simplefilewatcher.project()
 	end
 end
 

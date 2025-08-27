@@ -1,13 +1,11 @@
 #include "GainputGamepadManager.h"
-
+#ifndef FW_PLATFORM_WEB
 #include <string>
 #include <vector>
 
 #include <spdlog/spdlog.h>
 
 namespace fw {
-	
-
 	GainputGamepadManager::GainputGamepadManager(): _myDeviceButtonListener(_padManager), _inputMap(_padManager, "testmap") {
 		_padId = _padManager.CreateDevice<gainput::InputDevicePad>();
 
@@ -109,3 +107,4 @@ namespace fw {
 		}
 	}
 }
+#endif

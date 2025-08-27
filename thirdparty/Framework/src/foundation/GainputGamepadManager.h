@@ -25,8 +25,7 @@ namespace fw {
 	public:
 		MyDeviceButtonListener(gainput::InputManager& manager) : manager(manager) {}
 
-		bool OnDeviceButtonBool(gainput::DeviceId deviceId, gainput::DeviceButtonId deviceButton, bool oldValue, bool newValue)
-		{
+		bool OnDeviceButtonBool(gainput::DeviceId deviceId, gainput::DeviceButtonId deviceButton, bool oldValue, bool newValue) {
 			const gainput::InputDevice* device = manager.GetDevice(deviceId);
 			char buttonName[64];
 			device->GetButtonName(deviceButton, buttonName, 64);
@@ -34,8 +33,7 @@ namespace fw {
 			return true;
 		}
 
-		bool OnDeviceButtonFloat(gainput::DeviceId deviceId, gainput::DeviceButtonId deviceButton, float oldValue, float newValue)
-		{
+		bool OnDeviceButtonFloat(gainput::DeviceId deviceId, gainput::DeviceButtonId deviceButton, float oldValue, float newValue) {
 			const gainput::InputDevice* device = manager.GetDevice(deviceId);
 			char buttonName[64];
 			device->GetButtonName(deviceButton, buttonName, 64);

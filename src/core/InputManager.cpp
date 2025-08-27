@@ -4,12 +4,13 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
+#include "framework-generated/CompiledScripts.h"
+#include "retroplug-generated/CompiledScripts.h"
+
 #include "foundation/FsUtil.h"
 #include "foundation/Logger.h"
 #include "foundation/SolUtil.h"
 #include "foundation/StlUtil.h"
-#include "foundation/generated/CompiledScripts.h"
-#include "generated/CompiledScripts.h"
 #include "core/System.h"
 
 namespace rp {
@@ -20,7 +21,7 @@ namespace rp {
 
 		fileManager.startWatch(
 			_rootPath,
-			[this](const std::string& path, Watch::Action action) {
+			[this](const std::string& path, fw::WatchAction action) {
 				this->reload();
 			}
 		);
@@ -126,7 +127,7 @@ namespace rp {
 			delete s;
 			return;
 		}
-		
+
 		if (keyValid || padValid) {
 			if (_lua) {
 				delete _lua;

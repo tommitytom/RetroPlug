@@ -5,7 +5,7 @@ local GLAD_DIR = paths.DEP_ROOT .. "glad"
 local m = {}
 
 function m.include()
-	externalincludedirs { GLAD_DIR .. "/include" }
+	includedirs { GLAD_DIR .. "/include" }
 end
 
 function m.source()

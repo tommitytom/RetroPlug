@@ -11,10 +11,10 @@ namespace rp {
 		layout.setFlexPositionType(fw::FlexPositionType::Absolute);
 		layout.setFlexAlignItems(fw::FlexAlign::Center);
 		layout.setJustifyContent(fw::FlexJustify::Center);
-		layout.setHeight(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 10));
-		layout.setWidth(fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 90));
-		layout.setPositionEdge(fw::FlexEdge::Left, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
-		layout.setPositionEdge(fw::FlexEdge::Bottom, fw::FlexValue::FlexValue(fw::FlexUnit::Percent, 5));
+		layout.setHeight(fw::FlexValue(fw::FlexUnit::Percent, 10));
+		layout.setWidth(fw::FlexValue(fw::FlexUnit::Percent, 90));
+		layout.setPositionEdge(fw::FlexEdge::Left, fw::FlexValue(fw::FlexUnit::Percent, 5));
+		layout.setPositionEdge(fw::FlexEdge::Bottom, fw::FlexValue(fw::FlexUnit::Percent, 5));
 	}
 
 	void ThreadWarning::onInitialize() {
@@ -22,7 +22,7 @@ namespace rp {
 		text->setText("Audio thread inactive - check settings");
 		text->setFont("PlatNomor", 7);
 	}
-	
+
 	void ThreadWarning::setTextScale(f32 scale) {
 		findChild<fw::LabelView>()->setFont("PlatNomor", 7 * scale);
 	}

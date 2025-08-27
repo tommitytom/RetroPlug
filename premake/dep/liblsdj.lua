@@ -3,7 +3,7 @@ local LIBLSDJ_DIR = "thirdparty/liblsdj"
 local m = {}
 
 function m.include()
-	externalincludedirs { LIBLSDJ_DIR .. "/liblsdj/include/lsdj" }
+	includedirs { LIBLSDJ_DIR .. "/liblsdj/include/lsdj" }
 end
 
 function m.source()

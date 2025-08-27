@@ -55,7 +55,12 @@ void initMain(int argc, char** argv) {
 }
 
 bool mainLoop() {
+#ifdef FW_PLATFORM_WEB
+	runner.doLoop();
+	return false;
+#else
 	return runner.runFrame();
+#endif
 }
 
 void destroyMain() {

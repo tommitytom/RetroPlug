@@ -40,7 +40,7 @@ function util.setupWorkspace()
 	filter "platforms:x86"
 		architecture "x86"
 	filter "platforms:x64"
-		architecture "x64"
+		architecture "x86_64"
 	filter "platforms:Emscripten"
 		architecture "x86"
 		defines { "FW_PLATFORM_WEB", "FW_COMPILER_CLANG" }
@@ -73,9 +73,13 @@ function util.setupWorkspace()
 		editandcontinue "Off"
 		flags { "NoIncrementalLink" }
 
-	filter { "action:gmake", "configurations:*ASAN" }
+	filter { "action:gmake", "configurations:*ASAN", "platforms:not Emscripten" }
 		buildoptions { "-fsanitize=address" }
 		linkoptions { "-fsanitize=address" }
+
+	filter { "action:gmake", "configurations:*ASAN", "platforms:Emscripten" }
+		buildoptions { "-fsanitize=undefined" }
+		linkoptions { "-fsanitize=undefined" }
 
 	filter { "system:linux", "platforms:not Emscripten" }
 		toolset "clang"
@@ -191,7 +195,7 @@ end
 function util.createGeneratorProject(configPaths)
 	local commands = {}
 	for _ ,v in ipairs(configPaths) do
-		table.insert(commands, "%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler " .. v ..  " %{cfg.platform}")
+		table.insert(commands, "%{wks.location}/bin/%{cfg.platform}/%{cfg.buildcfg}/ScriptCompiler " .. v ..  " %{cfg.architecture}")
 	end
 
 	group "0 - Build"

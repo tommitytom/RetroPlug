@@ -5,7 +5,7 @@ local STB_DIR = paths.DEP_ROOT .. "stb"
 local m = {}
 
 function m.include()
-	externalincludedirs { STB_DIR .. "/src" }
+	includedirs { STB_DIR .. "/src" }
 end
 
 function m.source()

@@ -1,12 +1,13 @@
 local MINIZIP_DIR = "thirdparty/minizip-ng"
 local ZLIB_DIR = "thirdparty/Framework/thirdparty/zlib"
-local LZMA_DIR = MINIZIP_DIR .. "/lib/liblzma/src"
+--local LZMA_DIR = MINIZIP_DIR .. "/lib/liblzma/src"
 
 local m = {}
 
 function m.include()
 	defines {
 		-- liblzma
+		--[[
 		"HAVE_VISIBILITY=0",
 		"HAVE_CHECK_CRC32",
 		"HAVE_CHECK_CRC64",
@@ -50,8 +51,9 @@ function m.include()
 		"TUKLIB_SYMBOL_PREFIX=lzma_",
 
 		"PACKAGE_BUGREPORT=\"lasse.collin@tukaani.org\"",
-		"PACKAGE_NAME=\"XZ Utils\"",
+		"PACKAGE_NAME=\"XZUtils\"",
 		"PACKAGE_URL=\"https://tukaani.org/xz/\"",
+		]]
 
 		-- zstd
 		--"ZSTD_MULTITHREAD",
@@ -89,27 +91,29 @@ function m.include()
 		-- minizip
 		"HAVE_ZLIB",
 		--"HAVE_BZIP2",
-		"HAVE_LZMA",
-		"LZMA_API_STATIC",
+		--"HAVE_LZMA",
+		--"LZMA_API_STATIC",
 		--"HAVE_ZSTD",
 		--"MZ_ZIP_SIGNING",
 		--"HAVE_PKCRYPT",
 		--"HAVE_WZAES",
 	}
 
-	externalincludedirs {
+	includedirs {
 		MINIZIP_DIR,
-		LZMA_DIR,
-		LZMA_DIR .. "/common",
-		LZMA_DIR .. "/liblzma/common",
-		LZMA_DIR .. "/liblzma/api",
-		LZMA_DIR .. "/liblzma/check",
-		LZMA_DIR .. "/liblzma/lz",
-		LZMA_DIR .. "/liblzma/lzma",
-		LZMA_DIR .. "/liblzma/delta",
-		LZMA_DIR .. "/liblzma/rangecoder",
-		LZMA_DIR .. "/liblzma/simple",
+		--LZMA_DIR,
+		--LZMA_DIR .. "/common",
+		--LZMA_DIR .. "/liblzma/common",
+		--LZMA_DIR .. "/liblzma/api",
+		--LZMA_DIR .. "/liblzma/check",
+		--LZMA_DIR .. "/liblzma/lz",
+		--LZMA_DIR .. "/liblzma/lzma",
+		--LZMA_DIR .. "/liblzma/delta",
+		--LZMA_DIR .. "/liblzma/rangecoder",
+		--LZMA_DIR .. "/liblzma/simple",
 	}
+
+	filter {}
 end
 
 function m.link()
@@ -130,6 +134,7 @@ function m.project()
 		}
 
 		files {
+			--[[
 			LZMA_DIR .. "/common/mythread.h",
 			LZMA_DIR .. "/common/sysdefs.h",
 			LZMA_DIR .. "/common/tuklib_common.h",
@@ -271,6 +276,7 @@ function m.project()
 			LZMA_DIR .. "/liblzma/simple/simple_private.h",
 			LZMA_DIR .. "/liblzma/simple/sparc.c",
 			LZMA_DIR .. "/liblzma/simple/x86.c"
+			]]
 		}
 
 		excludes {
@@ -278,6 +284,7 @@ function m.project()
 			MINIZIP_DIR .. "/minigzip.c",
 			MINIZIP_DIR .. "/miniunz.c",
 			MINIZIP_DIR .. "/mz_strm_bzip.c",
+			MINIZIP_DIR .. "/mz_strm_lzma.c",
 			MINIZIP_DIR .. "/mz_strm_zstd.c",
 			MINIZIP_DIR .. "/mz_strm_libcomp.*",
 			MINIZIP_DIR .. "/mz_crypt_*.c",
@@ -289,7 +296,7 @@ function m.project()
 			defines { "ZLIB_DEBUG" }
 
 		filter { "system:not macosx" }
-			externalincludedirs {
+			includedirs {
 				ZLIB_DIR
 			}
 
@@ -343,6 +350,11 @@ function m.project()
 			files {
 				MINIZIP_DIR .. "/mz_strm_os_posix.c",
 				MINIZIP_DIR .. "/mz_os_posix.c",
+			}
+
+		filter { "platforms:Emscripten" }
+			defines {
+				"MZ_ZIP_NO_CRYPTO"
 			}
 
 		filter {}

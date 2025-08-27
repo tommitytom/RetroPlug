@@ -1,6 +1,6 @@
 return {
 	settings = {
-		outDir = "foundation/generated",
+		outDir = "framework-generated",
 		namespace = "fw::"
 	},
 	modules = {

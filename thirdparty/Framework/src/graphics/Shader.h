@@ -5,6 +5,7 @@
 #include "foundation/Types.h"
 #include "foundation/Resource.h"
 #include "foundation/ResourceHandle.h"
+#include "foundation/DataBuffer.h"
 
 namespace fw {
 	enum class ShaderType {
@@ -15,8 +16,7 @@ namespace fw {
 	};
 
 	struct ShaderDesc {
-		const uint8* data = nullptr;
-		uint32 size = 0;
+		Uint8Buffer data;
 		ShaderType type = ShaderType::Unknown;
 	};
 

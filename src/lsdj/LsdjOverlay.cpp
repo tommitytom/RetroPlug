@@ -202,7 +202,7 @@ namespace rp {
 		if (kitIdx != -1) {
 			system->reset();
 			auto samplerView = showSampleManager(findParent<fw::GridView>(), system, getNode()->getSystemService());
-			samplerView->setSampleIndex(kitIdx, 0);
+			samplerView->setSampleIndex((rp::KitIndex)kitIdx, 0);
 
 			return true;
 		}

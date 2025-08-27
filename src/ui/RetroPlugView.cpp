@@ -57,7 +57,7 @@ RetroPlugView::RetroPlugView(const fw::TypeRegistry& typeRegistry, const SystemF
 
 	_inputManager.load(_config.settings.keyboard, InputType::Key);
 	_inputManager.load(_config.settings.pad, InputType::Pad);
-	_gamepadManager.setAxisButtonThreshold(0.5f);
+	//_gamepadManager.setAxisButtonThreshold(0.5f);
 }
 
 void RetroPlugView::initViews(SystemContainerViewPtr container) {
@@ -118,7 +118,7 @@ void RetroPlugView::onInitialize() {
 	getState<fw::EventNode>().send("Audio"_hs, FetchStateRequest{});
 
 	_nextStateFetch = _stateFetchInterval;
-
+/*
 	_gamepadManager.setCallback([this](fw::PadButtonType button, bool down) {
 		std::vector<std::string> actions;
 		if (!_inputManager.processButton(button, down, _buttonWriter, actions)) {
@@ -134,6 +134,7 @@ void RetroPlugView::onInitialize() {
 
 		_systemContainer->processInput(buttons, actions);
 	});
+*/
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
@@ -157,7 +158,10 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 void RetroPlugView::setupEventHandlers() {
 	fw::EventNode& node = getState<fw::EventNode>();
 
+	_project.setEventNode(node);
+
 	node.receive<FetchStateResponse>([&](FetchStateResponse&& res) {
+		spdlog::info("Received state response");
 		_project.setup(getState<fw::EventNode>(), std::move(res));
 	});
 
@@ -227,8 +231,8 @@ void RetroPlugView::updateWatchers() {
 		if (desc.settings.reloadRomOnChange) {
 			if (found == _romWatchers.end()) {
 				spdlog::info("Adding ROM watcher for system {} at {}", system->getId(), desc.paths.romPath);
-				Watch::Id watchId = _fileManager.startWatch(desc.paths.romPath, [&system, romPath = desc.paths.romPath](const std::string& path, Watch::Action action) {
-					if (action == Watch::Action::Modified) {
+				fw::WatchId watchId = _fileManager.startWatch(desc.paths.romPath, [&system, romPath = desc.paths.romPath](const std::string& path, fw::WatchAction action) {
+					if (action == fw::WatchAction::Modified) {
 						spdlog::info("Detected change in {}. Reloading!", romPath);
 						fw::Uint8Buffer romBuffer;
 						fw::FsUtil::readFile(romPath, &romBuffer);
@@ -276,7 +280,7 @@ void RetroPlugView::onUpdate(f32 delta) {
 
 	getResourceManager().frame();
 	_fileDialogManager.update();
-	_gamepadManager.update();
+	//_gamepadManager.update();
 	_fileManager.update();
 
 	if (_doPing && !_lastPingTime.has_value()) {
@@ -293,9 +297,9 @@ void RetroPlugView::onUpdate(f32 delta) {
 	if (swapContainer.requestedContainer) {
 		initViews(swapContainer.requestedContainer);
 		swapContainer.requestedContainer = nullptr;
-	} else if (!_systemContainer 
-		|| _systemContainer->getParent() == nullptr 
-		|| (_systemContainer->isType<StartView>() && _project.getSystems().size()) 
+	} else if (!_systemContainer
+		|| _systemContainer->getParent() == nullptr
+		|| (_systemContainer->isType<StartView>() && _project.getSystems().size())
 		|| (!_systemContainer->isType<StartView>() && _project.getSystems().empty())
 	) {
 		initViews(nullptr);
@@ -358,6 +362,6 @@ bool RetroPlugView::onCloseWindowRequest(fw::CloseWindowContext& ctx) {
 		swapContainer.requestedContainer = dialog;
 		ctx.closing = false;
 	}
-	
+
 	return true;
 }

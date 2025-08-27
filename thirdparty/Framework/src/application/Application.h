@@ -8,7 +8,7 @@ namespace fw::app {
 	class Application {
 	public:
 		Application();
-		~Application() = default;
+		virtual ~Application() = default;
 
 		virtual fw::ViewPtr onCreateUi() { return nullptr; }
 

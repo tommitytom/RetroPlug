@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 #include <entt/core/hashed_string.hpp>
+#include <iostream>
 
 #include "foundation/FsUtil.h"
 
@@ -30,9 +31,11 @@ namespace rp {
 
 	}
 
-	void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
-		assert(!_eventNode);
+	void Project::setEventNode(fw::EventNode& node) {
+		_eventNode = &node;
+	}
 
+	void Project::setup(fw::EventNode& eventNode, FetchStateResponse&& state) {
 		_eventNode = &eventNode;
 		_config = std::move(state.config);
 		_state = std::move(state.project);
@@ -89,11 +92,11 @@ namespace rp {
 			if (!hasName) {
 				std::string romFilename = fw::FsUtil::getFilename(system->getDesc().paths.romPath);
 				name += system->getRomName();
-				
+
 				if (romFilename.size()) {
 					name += " (" + romFilename + ")";
 				}
-				
+
 				hasName = true;
 			}
 		}
@@ -193,7 +196,7 @@ namespace rp {
 				if (desc.paths.sramPath.empty()) {
 					desc.paths.sramPath = getUniqueFilename(fw::FsUtil::replaceFileExt(desc.paths.romPath, ".sav")).string();
 				}
-					
+
 				spdlog::info("Saving SRAM for system {} to {}", system->getId(), desc.paths.sramPath);
 
 				system->saveSram(buffer);

@@ -50,7 +50,7 @@ void SamplerView::setSystem(SystemPtr& system, SystemServicePtr& service) {
 		int32 selectedKit = 999;
 
 		for (auto& kit : settings.kits) {
-			if (kit.first < selectedKit) {
+			if ((int32)kit.first < selectedKit) {
 				selectedKit = (int32)kit.first;
 			}
 		}

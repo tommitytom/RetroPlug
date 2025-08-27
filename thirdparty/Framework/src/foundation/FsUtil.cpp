@@ -7,9 +7,11 @@
 #ifdef FW_PLATFORM_WEB
 #include <emscripten.h>
 
-EM_ASYNC_JS(void, syncWebFs, (), {
+/*EM_ASYNC_JS(void, syncWebFs, (), {
 	await syncFs();
-});
+});*/
+
+static void syncWebFs() {}
 
 #else
 

@@ -10,4 +10,10 @@ namespace fw {
 	}
 }
 
+#else
+
+namespace fw {
+	void openShellFolder(const std::string& path) {}
+}
+
 #endif

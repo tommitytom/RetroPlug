@@ -76,13 +76,12 @@ void LsdjModel::onAfterLoad(System& system) {
 	}
 }
 
-/*
 void LsdjModel::onUpdate(f32 delta) {
 
 }
 
 
-std::string LsdjModel::getProjectName() { 
+std::string LsdjModel::getProjectName() {
 	MemoryAccessor buffer = getSystem()->getMemory(MemoryType::Sram, AccessType::Read);
 	if (!buffer.isValid()) {
 		return "";
@@ -102,7 +101,7 @@ std::string LsdjModel::getProjectName() {
 	if (sav.getProjectCount() > 0) {
 		name = fmt::format("{} (+{})", name, sav.getProjectCount());
 	}
-	
+
 	return name;
 }
 

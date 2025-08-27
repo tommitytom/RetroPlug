@@ -3,7 +3,7 @@ local GAINPUT_DIR = paths.DEP_ROOT .. "gainput"
 local m = {}
 
 function m.include()
-	externalincludedirs { GAINPUT_DIR .. "/lib/include" }
+	includedirs { GAINPUT_DIR .. "/lib/include" }
 end
 
 function m.source()

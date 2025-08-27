@@ -3,7 +3,7 @@
 #include <sol/sol.hpp>
 
 #include "foundation/SolUtil.h"
-#include "generated/CompiledScripts.h"
+#include "retroplug-generated/CompiledScripts.h"
 
 using namespace rp;
 

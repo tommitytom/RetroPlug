@@ -151,7 +151,7 @@ namespace fw {
 						return entt::make_any<DataType&>(std::invoke(Data, *ref));
 					}
 				}
-				
+
 				if constexpr (std::is_invocable_v<decltype(Data), const T&>) {
 					const T* ref = entt::any_cast<const T>(&instance.getValue());
 					if (ref) {
@@ -193,10 +193,13 @@ namespace fw {
 	template <typename T>
 	std::string_view getTypeName() {
 		std::string_view name = entt::type_id<T>().name();
-		size_t offset = name.find_first_of(' ');
 
-		if (offset != std::string::npos) {
-			return name.substr(offset + 1);
+		if (name.starts_with("class ") || name.starts_with("struct ")) {
+			size_t offset = name.find_first_of(' ');
+
+			if (offset != std::string::npos) {
+				return name.substr(offset + 1);
+			}
 		}
 
 		return name;

@@ -5,7 +5,7 @@ local m = {}
 local PUGL_DIR = paths.DEP_ROOT .. "pugl"
 
 function m.include()
-	externalincludedirs {
+	includedirs {
 		PUGL_DIR .. "/include",
 		PUGL_DIR .. "/bindings/cpp/include"
 	}

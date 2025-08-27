@@ -45,8 +45,7 @@ namespace fw {
 				std::vector<std::string> deps;
 
 				return create(ShaderDesc{
-					.data = (uint8*)fileData.data(),
-					.size = (uint32)fileData.size(),
+					.data = Uint8Buffer::from((const uint8*)fileData.data(), fileData.size()),
 					.type = shaderType
 				}, deps);
 			} else {
@@ -60,8 +59,8 @@ namespace fw {
 	}
 
 	std::shared_ptr<Resource> GlShaderProvider::create(const ShaderDesc& desc, std::vector<std::string>& deps) {
-		const GLchar* dataPtr = (const GLchar*)desc.data;
-		GLint shaderSize = (GLint)desc.size;
+		const GLchar* dataPtr = (const GLchar*)desc.data.data();
+		GLint shaderSize = (GLint)desc.data.size();
 		GLenum shaderType = getGlShaderType(desc.type);
 		assert(shaderType != GL_INVALID_ENUM);
 

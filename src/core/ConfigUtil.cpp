@@ -10,7 +10,7 @@
 #include "core/FileManager.h"
 #include "core/LuaUtil.h"
 
-#include "generated/CompiledScripts.h"
+#include "retroplug-generated/CompiledScripts.h"
 
 namespace rp {
 	void ConfigUtil::initContent(const fw::TypeRegistry& typeRegistry, RetroPlugConfig& config) {
@@ -38,9 +38,9 @@ namespace rp {
 
 		std::string configData = fw::FsUtil::readTextFile(contentPath / "config.lua");
 		if (configData.empty()) {
-			ConfigUtil::serialize(typeRegistry, configPath, config);
+			//ConfigUtil::serialize(typeRegistry, configPath, config);
 		} else {
-			ConfigUtil::deserializeFromMemory(typeRegistry, configData, config);
+			//ConfigUtil::deserializeFromMemory(typeRegistry, configData, config);
 		}
 	}
 

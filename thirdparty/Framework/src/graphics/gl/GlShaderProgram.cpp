@@ -3,6 +3,7 @@
 #include <glad/gl.h>
 #include <spdlog/spdlog.h>
 
+#include "foundation/DataBuffer.h"
 #include "foundation/Resource.h"
 #include "graphics/gl/GlDefaultShaders.h"
 #include "graphics/gl/GlShader.h"
@@ -20,8 +21,8 @@ namespace fw {
 		GlShaderProvider shaderProvider;
 
 		std::vector<std::string> deps;
-		_vertexShader = shaderProvider.create(ShaderDesc{ .data = shaders.first.data, .size = shaders.first.size, .type = ShaderType::Vertex }, deps);
-		_fragmentShader = shaderProvider.create(ShaderDesc{ .data = shaders.second.data, .size = shaders.second.size, .type = ShaderType::Fragment }, deps);
+		_vertexShader = shaderProvider.create(ShaderDesc{ .data = shaders.first.data, .type = ShaderType::Vertex}, deps);
+		_fragmentShader = shaderProvider.create(ShaderDesc{ .data = shaders.second.data, .type = ShaderType::Fragment }, deps);
 
 		assert(_vertexShader);
 		assert(_fragmentShader);

@@ -4,15 +4,51 @@
 #include <cctype>
 #include <codecvt>
 #include <locale>
+#include <format>
 
 using namespace fw;
+
+#ifdef FW_OS_WINDOWS
+#include <windows.h>
+#endif
 
 //_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 
 std::wstring StringUtil::toWString(const std::string& str) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-	return converterX.from_bytes(str);
+	if (str.empty()) return {};
+
+#ifdef FW_OS_WINDOWS
+	int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+	if (size <= 0) return {};
+
+	std::wstring result(size - 1, L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, result.data(), size);
+	return result;
+
+#else
+	try {
+		std::mbstate_t state = std::mbstate_t();
+		std::locale loc("en_US.UTF-8");
+		const std::codecvt<wchar_t, char, std::mbstate_t>& codecvt =
+			std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(loc);
+
+		std::vector<wchar_t> buffer(str.length());
+		const char* from_end;
+		wchar_t* to_end;
+
+		auto result = codecvt.in(state, str.data(), str.data() + str.length(), from_end,
+								buffer.data(), buffer.data() + buffer.size(), to_end);
+
+		if (result == std::codecvt_base::ok) {
+			return std::wstring(buffer.data(), to_end);
+		}
+	} catch (...) {
+		// Fallback to simple conversion for ASCII
+	}
+
+	// Fallback for ASCII-compatible strings
+	return std::wstring(str.begin(), str.end());
+#endif
 }
 
 std::string StringUtil::formatClassName(std::string_view className) {
@@ -62,9 +98,7 @@ std::string StringUtil::formatMemberName(std::string_view memberName) {
 }
 
 std::string StringUtil::toString(const std::wstring& wstr) {
-	using convert_typeX = std::codecvt_utf8<wchar_t>;
-	std::wstring_convert<convert_typeX, wchar_t> converterX;
-	return converterX.to_bytes(wstr);
+	return std::format("{}", std::string(wstr.begin(), wstr.end()));
 }
 
 std::string StringUtil::toLower(std::string_view s) {

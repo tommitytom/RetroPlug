@@ -42,7 +42,7 @@ void Canvas::updateTileTexture() {
 	uint32 xOffset = 0;
 	uint32 yOffset = 0;
 
-	memset(_tileBuffer, 0, TILE_BUFFER_SIZE * sizeof(fw::Color4));
+	memset((void*)_tileBuffer, 0, TILE_BUFFER_SIZE * sizeof(fw::Color4));
 
 	for (uint32 colorSetIdx = 0; colorSetIdx < 10; ++colorSetIdx) {
 		const Palette::ColorSet& colorSet = _palette.sets[colorSetIdx % 5];
@@ -180,7 +180,7 @@ void Canvas::fill(uint32 x, uint32 y, uint32 w, uint32 h, ColorSets colorSetIdx,
 
 			for (uint32 tileY = 1; tileY < h; ++tileY) {
 				uint32 targetOffset = tileY * _renderTarget.w();
-				memcpy(target + targetOffset, target, rowBytes);
+				memcpy((void*)(target + targetOffset), target, rowBytes);
 			}
 		}
 	}
@@ -229,7 +229,7 @@ void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetI
 		fw::Color4* target = _renderTarget.getData() + y * w + x;
 
 		for (uint32 tileY = 0; tileY < Font::TILE_HEIGHT; ++tileY) {
-			memcpy(target, source, Font::TILE_WIDTH * sizeof(fw::Color4));
+			memcpy((void*)target, source, Font::TILE_WIDTH * sizeof(fw::Color4));
 			target += w;
 			source += Font::TILE_WIDTH;
 		}

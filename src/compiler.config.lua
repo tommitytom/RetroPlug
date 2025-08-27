@@ -1,6 +1,6 @@
 return {
 	settings = {
-		outDir = "generated",
+		outDir = "retroplug-generated",
 		namespace = "rp::"
 	},
 	modules = {

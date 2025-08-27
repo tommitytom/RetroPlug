@@ -27,7 +27,7 @@ local function getVersion()
 end
 
 function m.include()
-	externalincludedirs { SAMEBOY_DIR .. "/Core" }
+	includedirs { SAMEBOY_DIR .. "/Core" }
 
 	filter {}
 end
@@ -59,24 +59,24 @@ function m.project()
 	project "SameBoyBootRoms"
 		kind "Utility"
 		dependson { "pb12", "bin2h" }
-	
+
 		files { SAMEBOY_DIR .. "/BootROMs/**.asm" }
-	
+
 		prebuildcommands {
 			'rgbgfx -Z -u -c embedded -o "%{cfg.objdir}/SameBoyLogo.2bpp" "' .. BOOTROM_DIR .. '/SameBoyLogo.png"',
 			'"%{cfg.buildtarget.directory}/pb12" < "%{cfg.objdir}/SameBoyLogo.2bpp" > "%{cfg.objdir}/SameBoyLogo.pb12"'
 		}
-	
-		
+
+
 		filter ("files:**.asm")
 			buildmessage '%{file.basename}.asm'
-	
+
 			buildcommands {
 				'rgbasm -i "' .. BOOTROM_RES_DIR .. '" -i "' .. BOOTROM_DIR .. '" -o "' .. BOOTROM_OBJ .. '" "%{file.relpath}"',
 				'rgblink -o "' .. BOOTROM_BIN .. '" "' .. BOOTROM_OBJ .. '"',
 				'"%{cfg.buildtarget.directory}/bin2h" "' .. BOOTROM_BIN .. '" "' .. BOOTROM_HEADER .. '" -id=%{file.basename}'
 			}
-	
+
 			buildoutputs { BOOTROM_OBJ, BOOTROM_BIN, BOOTROM_HEADER }
 ]]
 
@@ -88,12 +88,12 @@ function m.project()
 
 		m.include()
 
-		externalincludedirs {
+		includedirs {
 			"thirdparty",
 			"thirdparty/spdlog/include"
 		}
 
-		externalincludedirs {
+		includedirs {
 			"src",
 			"resources"
 		}

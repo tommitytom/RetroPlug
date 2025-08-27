@@ -4,7 +4,7 @@ local SFW_DIR = paths.DEP_ROOT .. "simplefilewatcher"
 local m = {}
 
 function m.include()
-	externalincludedirs { SFW_DIR .. "/include" }
+	includedirs { SFW_DIR .. "/include" }
 end
 
 function m.source()

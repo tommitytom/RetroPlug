@@ -101,7 +101,7 @@ if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"
 		project "ScriptCompiler"
 			kind "ConsoleApp"
-			externalincludedirs { "thirdparty/Framework/thirdparty", "thirdparty/Framework/thirdparty/lua/src" }
+			includedirs { "thirdparty/Framework/thirdparty", "thirdparty/Framework/thirdparty/lua/src" }
 			includedirs { "thirdparty/Framework/src/compiler" }
 			files { "thirdparty/Framework/src/compiler/**.h", "thirdparty/Framework/src/compiler/**.c", "thirdparty/Framework/src/compiler/**.cpp" }
 

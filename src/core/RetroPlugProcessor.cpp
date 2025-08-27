@@ -161,10 +161,10 @@ RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, con
 
 	node.receive<SystemServiceDataEvent>([&](SystemServiceDataEvent&& ev) {
 		SystemPtr system = _systemManager.findSystem(ev.systemId);
-		
+
 		if (system) {
 			SystemServicePtr service = findService(system, ev.systemServiceType);
-			
+
 			if (service) {
 				entt::any state = service->getState();
 				assert(!state.owner());
@@ -238,7 +238,7 @@ void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCou
 
 	for (SystemPtr& system : _systemManager.getSystems()) {
 		SystemIoPtr io = system->getIo();
-		
+
 		if (io->output.audio) {
 			for (uint32 i = 0; i < sampleCount; ++i) {
 				buffer[i] = buffer[i] + io->output.audio->get(i);
@@ -286,7 +286,7 @@ void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
 				fw::MidiMessage msg = message;
 				msg.setChannel(0);
 
-				for (SystemServicePtr& service : systems[channel]->getServices()) {	
+				for (SystemServicePtr& service : systems[channel]->getServices()) {
 					service->onMidi(*systems[channel], msg);
 				}
 			}

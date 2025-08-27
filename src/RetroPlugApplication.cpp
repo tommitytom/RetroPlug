@@ -1,5 +1,7 @@
 #include "RetroPlugApplication.h"
 
+#include <spdlog/spdlog.h>
+
 #include "foundation/OsPath.h"
 
 #include "core/ConfigUtil.h"
@@ -130,9 +132,11 @@ RetroPlugApplication::RetroPlugApplication() {
 }
 
 fw::ViewPtr RetroPlugApplication::onCreateUi() {
+	spdlog::info("Creating ui");
 	return std::make_shared<RetroPlugView>(_typeRegistry, _systemFactory, _ioMessageBus, _config);
 }
 
 fw::AudioProcessorPtr RetroPlugApplication::onCreateAudio() {
+	spdlog::info("Creating audio");
 	return std::make_shared<RetroPlugProcessor>(_typeRegistry, _systemFactory, _ioMessageBus, _config);
 }

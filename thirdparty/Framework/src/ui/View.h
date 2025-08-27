@@ -133,7 +133,7 @@ namespace fw {
 	public:
 		View() { _layout.setContext(static_cast<void*>(this)); }
 		View(Dimension dimensions) : _layout(dimensions) { _layout.setContext(static_cast<void*>(this)); }
-		~View() { unsubscribeAll(); }
+		virtual ~View() { unsubscribeAll(); }
 
 		void addGlobalKeyHandler(std::function<bool(const KeyEvent&)>&& func) {
 			_shared->globalKeyHandlers.push_back(GlobalKeyHandler{ 

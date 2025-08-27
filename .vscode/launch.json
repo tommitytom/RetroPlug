@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+			"type": "chrome",
+			"request": "launch",
+			"name": "Launch Chrome against localhost",
+			"url": "http://localhost:6931/RetroPlug.html",
+			"webRoot": "${workspaceFolder}"
+		},
+        {
             "name": "Debug RetroPlug",
             "type": "cppdbg",
             "request": "launch",

@@ -5,11 +5,11 @@ local LUA_DIR = paths.DEP_ROOT .. "lua"
 local m = {}
 
 function m.include()
-	externalincludedirs { LUA_DIR .. "/src" }
+	includedirs { LUA_DIR .. "/src" }
 
 	filter { "system:linux" }
 		defines { "LUA_USE_POSIX" }
-		buildoptions { "-Wno-string-plus-int" }
+		disablewarnings { "string-plus-int" }
 	filter {}
 end
 
