@@ -48,7 +48,7 @@ namespace fw::app {
 		WrappedWindowManager(ResourceManagerPtr resourceManager, FontManagerPtr fontManager) : WindowManager(resourceManager, fontManager) {}
 		~WrappedWindowManager() = default;
 
-		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) override {
 			assert(false); // Not available with this window manager
 			return nullptr;
 		}

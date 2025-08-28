@@ -7,15 +7,6 @@
 
 uint8_t audioThreadStack[4096];
 
-EM_BOOL onCanvasClick(int eventType, const EmscriptenMouseEvent *mouseEvent, void *userData) {
-	EMSCRIPTEN_WEBAUDIO_T audioContext = (EMSCRIPTEN_WEBAUDIO_T)userData;
-	if (emscripten_audio_context_state(audioContext) != AUDIO_CONTEXT_STATE_RUNNING) {
-		emscripten_resume_audio_context_sync(audioContext);
-	}
-
-	return EM_FALSE;
-}
-
 EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       int numOutputs, AudioSampleFrame *outputs,
                       int numParams, const AudioParamFrame *params,
@@ -81,9 +72,6 @@ void audioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
 
 	// Connect it to audio context destination
 	emscripten_audio_node_connect(wasmAudioWorklet, audioContext, 0, 0);
-
-	// Resume context on mouse click
-	emscripten_set_click_callback("canvas", (void*)audioContext, 0, onCanvasClick);
 }
 
 void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void* userData) {
@@ -97,10 +85,8 @@ void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success,
 	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &audioWorkletProcessorCreated, userData);
 }
 
-
-
 namespace fw::audio {
-	WebAudioManager::WebAudioManager() {
+	WebAudioManager::WebAudioManager(int audioContextId): _audioContextId(audioContextId) {
 		_output.resize(128);
 	}
 
@@ -117,11 +103,7 @@ namespace fw::audio {
 	}
 
 	bool WebAudioManager::start(int32 idx) {
-		EMSCRIPTEN_WEBAUDIO_T context = emscripten_create_audio_context(0);
-
-		std::shared_ptr<AudioProcessor> processor = this->getProcessor();
-
-		emscripten_start_wasm_audio_worklet_thread_async(context, audioThreadStack, sizeof(audioThreadStack),
+		emscripten_start_wasm_audio_worklet_thread_async(_audioContextId, audioThreadStack, sizeof(audioThreadStack),
 														 &audioThreadInitialized, this);
 
 		return true;

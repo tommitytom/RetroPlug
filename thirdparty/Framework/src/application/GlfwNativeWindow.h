@@ -9,6 +9,7 @@ struct GLFWcursor;
 namespace fw::app {
 	class GlfwNativeWindow : public Window {
 	private:
+		std::string _canvasId;
 		GLFWwindow* _window = nullptr;
 		Point _lastMousePosition;
 		Dimension _dimensions;
@@ -16,9 +17,10 @@ namespace fw::app {
 		GLFWcursor* _cursor = nullptr;
 
 	public:
-		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id)
+		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId)
 			: Window(resourceManager, fontManager, view, id),
-			_dimensions(view->getDimensions())
+			_dimensions(view->getDimensions()),
+			_canvasId(canvasId)
 		{}
 
 		~GlfwNativeWindow();
@@ -77,8 +79,8 @@ namespace fw::app {
 
 		void update(std::vector<WindowPtr>& created) override;
 
-		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) override {
-			WindowPtr window = std::make_shared<GlfwNativeWindow>(_resourceManager.get(), _fontManager.get(), view, std::numeric_limits<uint32>::max());
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) override {
+			WindowPtr window = std::make_shared<GlfwNativeWindow>(_resourceManager.get(), _fontManager.get(), view, std::numeric_limits<uint32>::max(), canvasId);
 			addWindow(window);
 
 			_pollInput = true;

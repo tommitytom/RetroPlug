@@ -201,7 +201,8 @@
 		"__node_handle": "cpp",
 		"__split_buffer": "cpp",
 		"__tree": "cpp",
-		"__verbose_abort": "cpp"
+		"__verbose_abort": "cpp",
+		"*.inc": "cpp"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

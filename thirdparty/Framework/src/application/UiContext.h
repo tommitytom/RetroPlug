@@ -39,8 +39,8 @@ namespace fw::app {
 
 		void handleHotReload();
 
-		WindowPtr setup(ViewPtr view, NativeWindowHandle parent = nullptr) {
-			WindowPtr window = _windowManager->createWindow(view, parent);
+		WindowPtr setup(ViewPtr view, NativeWindowHandle parent = nullptr, const std::string& canvasId = "") {
+			WindowPtr window = _windowManager->createWindow(view, parent, canvasId);
 			initRenderContext(window);
 
 			ViewManagerPtr vm = window->getViewManager();
@@ -51,8 +51,8 @@ namespace fw::app {
 			return window;
 		}
 
-		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent = nullptr) {
-			WindowPtr window = _windowManager->createWindow(view, parent);
+		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent = nullptr, const std::string& canvasId = "") {
+			WindowPtr window = _windowManager->createWindow(view, parent, canvasId);
 
 			ViewManagerPtr vm = window->getViewManager();
 			vm->setResourceManager(_resourceManager.get(), _fontManager.get());

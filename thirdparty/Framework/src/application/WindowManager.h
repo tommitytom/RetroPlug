@@ -24,7 +24,7 @@ namespace fw::app {
 		const fw::ResourceManagerPtr& getResourceManager() { return _resourceManager; }
 		const fw::FontManagerPtr& getFontManager() { return _fontManager; }
 
-		virtual WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent) = 0;
+		virtual WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) = 0;
 
 		void addWindow(WindowPtr window) {
 			window->onCreate();

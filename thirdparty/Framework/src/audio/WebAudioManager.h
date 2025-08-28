@@ -9,9 +9,10 @@ namespace fw::audio {
 	private:
 		fw::StereoAudioBuffer _input;
 		fw::StereoAudioBuffer _output;
+		int _audioContextId;
 
 	public:
-		WebAudioManager();
+		WebAudioManager(int audioContextId);
 		~WebAudioManager();
 
 		bool loadFile(std::string_view path, std::vector<f32>& target) override;
@@ -32,5 +33,7 @@ namespace fw::audio {
 			return _output;
 		}
 	};
+
+	using WebAudioManagerPtr = std::shared_ptr<WebAudioManager>;
 }
 #endif

@@ -27,7 +27,7 @@ const GLFWCanvas: React.FC<GLFWCanvasProps> = ({
 
 		pendingApp.load().then(() => {
 			if (mounted) {
-				pendingApp.setup(canvasRef.current!.id, audioContextRef.current!);
+				pendingApp.setup('canvas', audioContextRef.current!);
 				setApp(pendingApp);
 			}
 		});

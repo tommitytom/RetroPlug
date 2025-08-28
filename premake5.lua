@@ -90,6 +90,9 @@ fwProjects.Application.create({
 	}
 }, function()
 	projects.RetroPlug.link()
+	filter { "platforms:Emscripten" }
+		files { "src/EmscriptenBindings.cpp" }
+	filter{}
 end)
 
 --[[projects.Application.project()

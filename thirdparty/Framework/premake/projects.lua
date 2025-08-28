@@ -275,14 +275,18 @@ local function createStandalone(config, impl)
 			"FW_USE_MINIAUDIO"
 		}
 
-		files {
-			paths.SRC_ROOT .. "entry/main.cpp",
-			paths.SRC_ROOT .. "entry/mainloop.cpp"
-		}
+		filter { "platforms:not Emscripten" }
+			files {
+				paths.SRC_ROOT .. "entry/main.cpp",
+				paths.SRC_ROOT .. "entry/mainloop.cpp"
+			}
 
 		filter { "platforms:Emscripten" }
 			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
 			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. config.name .. ".mjs", }
+			files {
+				paths.SRC_ROOT .. "entry/main_emscripten.cpp"
+			}
 
 		filter { "platforms:Emscripten", "configurations:Debug*" }
 			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }

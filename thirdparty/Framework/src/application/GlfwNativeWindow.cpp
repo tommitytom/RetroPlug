@@ -1,11 +1,9 @@
 #include "GlfwNativeWindow.h"
 
-#include <GLFW/glfw3.h>
-
 #ifdef FW_PLATFORM_WEB
 #include <emscripten.h>
 #include <emscripten/html5.h>
-static const char* s_canvas = "#canvas";
+#include <GLFW/emscripten_glfw3.h>
 #else
 #if FW_OS_LINUX
 #define GLFW_EXPOSE_NATIVE_X11
@@ -15,6 +13,7 @@ static const char* s_canvas = "#canvas";
 #define GLFW_EXPOSE_NATIVE_COCOA
 #endif
 
+#include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #endif
 
@@ -177,6 +176,11 @@ void GlfwNativeWindow::onCleanup() {
 void GlfwNativeWindow::onCreate() {
 	ViewManagerPtr vm = getViewManager();
 
+	#ifdef FW_PLATFORM_WEB
+	glfwDefaultWindowHints();
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    //glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+	#else
 	//glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -186,15 +190,17 @@ void GlfwNativeWindow::onCreate() {
 	//glfwWindowHint(GLFW_RESIZABLE, vm->getSizingPolicy() != SizingPolicy::FitToContent ? GLFW_TRUE : GLFW_FALSE);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	//glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+	#endif
 
 	Dimension dimensions = vm->getDimensions();
+	emscripten_glfw_set_next_window_canvas_selector(_canvasId.c_str());
 	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
 	assert(_window);
 
 	glfwMakeContextCurrent(_window);
 
 	glfwSetWindowUserPointer(_window, this);
-	
+
 	//glfwSetJoystick
 	//glfwSetJoystickCallback(joystickCallback);
 
@@ -221,7 +227,7 @@ void GlfwNativeWindow::onCreate() {
 void GlfwNativeWindow::onFrame() {
 	glfwSwapBuffers(_window);
 }
- 
+
 void GlfwNativeWindow::setDimensions(Dimension dimensions) {
 	_dimensions = dimensions;
 }
@@ -236,7 +242,7 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 		_dimensions = viewSize;
 		//vm->getLayout().setDimensions(_dimensions);
 		glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);
-		
+
 		/*if (vm->getSizingPolicy() == SizingPolicy::FitToContent) {
 			// Resize window to fit content
 			glfwSetWindowSize(_window, (int)viewSize.w, (int)viewSize.h);

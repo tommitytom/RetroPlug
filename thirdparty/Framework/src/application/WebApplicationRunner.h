@@ -1,25 +1,24 @@
 #pragma once
 
+#include <emscripten/webaudio.h>
 #include "application/Application.h"
 #include "application/UiContext.h"
+#include "audio/WebAudioManager.h"
 
 namespace fw::app {
 	class WebApplicationRunner {
 	private:
-		audio::AudioManagerPtr _audioManager;
+		audio::WebAudioManagerPtr _audioManager;
 		std::unique_ptr<UiContext> _uiContext;
 		std::unique_ptr<Application> _app;
 
 	public:
-		ApplicationRunner() {}
-		~ApplicationRunner();
+		WebApplicationRunner(std::unique_ptr<Application>&& app) : _app(std::move(app)) {}
+		~WebApplicationRunner();
 
-		/*template <typename WindowManagerT, typename RenderContextT, typename AudioContextT>
-		WindowPtr setup(std::unique_ptr<Application>&& app) {
-			return setup(std::forward<std::unique_ptr<Application>>(app), std::make_unique<WindowManagerT>(), std::make_unique<RenderContextT>(), std::make_shared<AudioContextT>());
-		}*/
+		void setup(EMSCRIPTEN_WEBAUDIO_T audioContextId, const std::string& canvasId);
 
-		WindowPtr setup(std::unique_ptr<Application>&& app, std::unique_ptr<WindowManager>&& windowManager, std::unique_ptr<RenderContext>&& renderContext, std::shared_ptr<audio::AudioManager> audioManager);
+		void destroy();
 
 		bool isReady() const {
 			return _app != nullptr;
@@ -35,12 +34,6 @@ namespace fw::app {
 
 		bool runFrame();
 
-		int doLoop();
-
-		void reload();
-
-		void destroy();
-
-		static void webFrameCallback(void* arg);
+		void doLoop();
 	};
 }

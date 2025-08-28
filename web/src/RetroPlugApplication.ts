@@ -26,6 +26,8 @@ export class RetroPlugApplication {
 				console.error('WASM Error:', text);
 			}
 		}) as MainModule;
+
+		console.log('WASM module loaded');
 	}
 
 	setup(canvasId: string, audioContext: AudioContext) {
@@ -33,12 +35,15 @@ export class RetroPlugApplication {
 			throw new Error('WASM module is not initialized');
 		}
 
-		this._module.emscriptenRegisterAudioObject(audioContext);
+		const contextId = this._module.emscriptenRegisterAudioObject(audioContext);
+
+		const runner = new this._module.WebApplicationRunner();
+		runner.setup(contextId, canvasId);
 		//this._module._createView(canvasId);
 	}
 
 	createView(canvasId: string) {
-		console.assert(this._module, 'WASM module is not initialized');
+		console.assert(!!this._module, 'WASM module is not initialized');
 		//this._module!._createView(canvasId);
 	}
 }
