@@ -200,10 +200,13 @@ else:
   EMSDK_SET_ENV = os.path.join(EMSDK_PATH, 'emsdk_set_env.bat')
 
 
-# Parses https://github.com/emscripten-core/emscripten/tree/d6aced8 to a pair (https://github.com/emscripten-core/emscripten, d6aced8)
+# Parses https://github.com/emscripten-core/emscripten/tree/d6aced8 to a triplet
+# (https://github.com/emscripten-core/emscripten, d6aced8, emscripten-core)
+# or https://github.com/emscripten-core/emscripten/commit/00b76f81f6474113fcf540db69297cfeb180347e
+# to (https://github.com/emscripten-core/emscripten, 00b76f81f6474113fcf540db69297cfeb180347e, emscripten-core)
 def parse_github_url_and_refspec(url):
   if not url:
-    return ('', '')
+    return ('', '', None)
 
   if url.endswith(('/tree/', '/tree', '/commit/', '/commit')):
     raise Exception('Malformed git URL and refspec ' + url + '!')
@@ -211,13 +214,17 @@ def parse_github_url_and_refspec(url):
   if '/tree/' in url:
     if url.endswith('/'):
       raise Exception('Malformed git URL and refspec ' + url + '!')
-    return url.split('/tree/')
+    url, refspec = url.split('/tree/')
+    remote_name = url.split('/')[-2]
+    return (url, refspec, remote_name)
   elif '/commit/' in url:
     if url.endswith('/'):
       raise Exception('Malformed git URL and refspec ' + url + '!')
-    return url.split('/commit/')
+    url, refspec = url.split('/commit/')
+    remote_name = url.split('/')[-2]
+    return (url, refspec, remote_name)
   else:
-    return (url, 'main')  # Assume the default branch is main in the absence of a refspec
+    return (url, 'main', None)  # Assume the default branch is main in the absence of a refspec
 
 
 ARCHIVE_SUFFIXES = ('zip', '.tar', '.gz', '.xz', '.tbz2', '.bz2')
@@ -812,40 +819,58 @@ def git_recent_commits(repo_path, n=20):
     return []
 
 
-def git_clone(url, dstpath, branch):
+def get_git_remotes(repo_path):
+  remotes = []
+  output = subprocess.check_output([GIT(), 'remote', '-v'], stderr=subprocess.STDOUT, text=True, cwd=repo_path)
+  for line in output.splitlines():
+    remotes += [line.split()[0]]
+  return remotes
+
+
+def git_clone(url, dstpath, branch, remote_name='origin'):
   debug_print('git_clone(url=' + url + ', dstpath=' + dstpath + ')')
   if os.path.isdir(os.path.join(dstpath, '.git')):
-    debug_print("Repository '" + url + "' already cloned to directory '" + dstpath + "', skipping.")
-    return True
+    remotes = get_git_remotes(dstpath)
+    if remote_name in remotes:
+      debug_print('Repository ' + url + ' with remote "' + remote_name + '" already cloned to directory ' + dstpath + ', skipping.')
+      return True
+    else:
+      debug_print('Repository ' + url + ' with remote "' + remote_name + '" already cloned to directory ' + dstpath + ', but remote has not yet been added. Creating.')
+      return run([GIT(), 'remote', 'add', remote_name, url], cwd=dstpath) == 0
+
   mkdir_p(dstpath)
   git_clone_args = ['--recurse-submodules', '--branch', branch]  # Do not check out a branch (installer will issue a checkout command right after)
   if GIT_CLONE_SHALLOW:
     git_clone_args += ['--depth', '1']
   print('Cloning from ' + url + '...')
-  return run([GIT(), 'clone'] + git_clone_args + [url, dstpath]) == 0
+  return run([GIT(), 'clone', '-o', remote_name] + git_clone_args + [url, dstpath]) == 0
 
 
-def git_pull(repo_path, branch_or_tag):
-  debug_print('git_pull(repo_path=' + repo_path + ', branch/tag=' + branch_or_tag + ')')
-  ret = run([GIT(), 'fetch', '--quiet', 'origin'], repo_path)
+def git_pull(repo_path, branch_or_tag, remote_name='origin'):
+  debug_print('git_pull(repo_path=' + repo_path + ', branch/tag=' + branch_or_tag + ', remote_name=' + remote_name + ')')
+  ret = run([GIT(), 'fetch', '--quiet', remote_name], repo_path)
   if ret != 0:
     return False
   try:
     print("Fetching latest changes to the branch/tag '" + branch_or_tag + "' for '" + repo_path + "'...")
-    ret = run([GIT(), 'fetch', '--quiet', 'origin'], repo_path)
-    if ret != 0:
-      return False
-    # this line assumes that the user has not gone and manually messed with the
-    # repo and added new remotes to ambiguate the checkout.
-    ret = run([GIT(), 'checkout', '--recurse-submodules', '--quiet', branch_or_tag], repo_path)
+    ret = run([GIT(), 'fetch', '--quiet', remote_name], repo_path)
     if ret != 0:
       return False
     # Test if branch_or_tag is a branch, or if it is a tag that needs to be updated
     target_is_tag = run([GIT(), 'symbolic-ref', '-q', 'HEAD'], repo_path, quiet=True)
+
+    if target_is_tag:
+      ret = run([GIT(), 'checkout', '--recurse-submodules', '--quiet', branch_or_tag], repo_path)
+    else:
+      local_branch_prefix = (remote_name + '_') if remote_name != 'origin' else ''
+      ret = run([GIT(), 'checkout', '--recurse-submodules', '--quiet', '-B', local_branch_prefix + branch_or_tag,
+                 '--track', remote_name + '/' + branch_or_tag], repo_path)
+    if ret != 0:
+      return False
     if not target_is_tag:
       # update branch to latest (not needed for tags)
       # this line assumes that the user has not gone and made local changes to the repo
-      ret = run([GIT(), 'merge', '--ff-only', 'origin/' + branch_or_tag], repo_path)
+      ret = run([GIT(), 'merge', '--ff-only', remote_name + '/' + branch_or_tag], repo_path)
     if ret != 0:
       return False
     run([GIT(), 'submodule', 'update', '--init'], repo_path, quiet=True)
@@ -857,14 +882,16 @@ def git_pull(repo_path, branch_or_tag):
   return True
 
 
-def git_clone_checkout_and_pull(url, dstpath, branch):
-  debug_print('git_clone_checkout_and_pull(url=' + url + ', dstpath=' + dstpath + ', branch=' + branch + ')')
+def git_clone_checkout_and_pull(url, dstpath, branch, override_remote_name='origin'):
+  debug_print('git_clone_checkout_and_pull(url=' + url + ', dstpath=' + dstpath + ', branch=' + branch + ', override_remote_name=' + override_remote_name + ')')
 
-  # If the repository has already been cloned before, issue a pull operation. Otherwise do a new clone.
-  if os.path.isdir(os.path.join(dstpath, '.git')):
-    return git_pull(dstpath, branch)
-  else:
-    return git_clone(url, dstpath, branch)
+  # Make sure the repository is cloned first
+  success = git_clone(url, dstpath, branch, override_remote_name)
+  if not success:
+    return False
+
+  # And/or issue a pull/checkout to get to latest code.
+  return git_pull(dstpath, branch, override_remote_name)
 
 
 # Each tool can have its own build type, or it can be overridden on the command
@@ -1450,6 +1477,85 @@ def find_emscripten_root(active_tools):
   return root
 
 
+def fetch_nightly_node_versions():
+  # Node.js Apple ARM64 nightly downloads are currently out of order, so pin
+  # to recent version that does still exist. https://github.com/nodejs/node/issues/59654
+  if MACOS and ARCH == 'arm64':
+    return ['v25.0.0-nightly20250715b305119844']
+
+  url = "https://nodejs.org/download/nightly/"
+  with urlopen(url) as response:
+    html = response.read().decode("utf-8")
+
+  # Regex to capture href values like v7.0.0-nightly2016080175c6d9dd95/
+  pattern = re.compile(r'<a href="(v[0-9]+\.[0-9]+\.[0-9]+-nightly[0-9a-f]+)/">')
+  matches = pattern.findall(html)
+  return matches
+
+
+def dir_installed_nightly_node_versions():
+  path = os.path.abspath('node')
+  try:
+    return [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name)) and name.startswith("nightly-")]
+  except Exception:
+    return []
+
+
+def extract_newest_node_nightly_version(versions):
+  def parse(v):
+    # example: v7.0.0-nightly2016080175c6d9dd95
+    m = re.match(r'v(\d+)\.(\d+)\.(\d+)-nightly(\d+)', v)
+    if m:
+      major, minor, patch, nightly = m.groups()
+      return [int(major), int(minor), int(patch), int(nightly)]
+    else:
+      return []
+
+  try:
+    return max(versions, key=lambda v: parse(v))
+  except Exception:
+    return None
+
+
+def download_node_nightly(tool):
+  nightly_versions = fetch_nightly_node_versions()
+  latest_nightly = extract_newest_node_nightly_version(nightly_versions)
+  print('Latest Node.js Nightly download available is "' + latest_nightly + '"')
+
+  output_dir = os.path.abspath('node/nightly-' + latest_nightly)
+  # Node.js zip structure quirk: Linux and macOS archives have a /bin,
+  # Windows does not. Unify the file structures.
+  if WINDOWS:
+    output_dir += '/bin'
+
+  if os.path.isdir(output_dir):
+    return True
+
+  url = tool.url.replace('%version%', latest_nightly)
+  if WINDOWS:
+    os_ = 'win'
+  elif LINUX:
+    os_ = 'linux'
+  elif MACOS:
+    os_ = 'darwin'
+  else:
+    os_ = ''
+  if platform.machine().lower() in ["x86_64", "amd64"]:
+    arch = 'x64'
+  elif platform.machine().lower() in ["arm64", "aarch64"]:
+    arch = 'arm64'
+  if WINDOWS:
+    zip_suffix = 'zip'
+  else:
+    zip_suffix = 'tar.gz'
+  url = url.replace('%os%', os_)
+  url = url.replace('%arch%', arch)
+  url = url.replace('%zip_suffix%', zip_suffix)
+  download_and_extract(url, output_dir)
+  open(tool.get_version_file_path(), 'w').write('node-nightly-64bit')
+  return True
+
+
 # returns a tuple (string,string) of config files paths that need to used
 # to activate emsdk env depending on $SHELL, defaults to bash.
 def get_emsdk_shell_env_configs():
@@ -1484,7 +1590,10 @@ def generate_em_config(active_tools, permanently_activate, system):
     activated_config['NODE_JS'] = node_fallback
 
   for name, value in activated_config.items():
-    cfg += name + " = '" + value + "'\n"
+    if value.startswith('['):
+      cfg += name + " = " + value + "\n"
+    else:
+      cfg += name + " = '" + value + "'\n"
 
   emroot = find_emscripten_root(active_tools)
   if emroot:
@@ -1579,6 +1688,11 @@ class Tool(object):
     str = str.replace('%.exe%', '.exe' if WINDOWS else '')
     if '%llvm_build_bin_dir%' in str:
       str = str.replace('%llvm_build_bin_dir%', llvm_build_bin_dir(self))
+    if '%latest_downloaded_node_nightly_dir%' in str:
+      installed_node_nightlys = dir_installed_nightly_node_versions()
+      latest_node_nightly = extract_newest_node_nightly_version(installed_node_nightlys)
+      if latest_node_nightly:
+        str = str.replace('%latest_downloaded_node_nightly_dir%', latest_node_nightly)
 
     return str
 
@@ -1700,10 +1814,11 @@ class Tool(object):
           return False
 
     if self.download_url() is None:
-      # This tool does not contain downloadable elements, so it is installed by default.
+      debug_print(str(self) + ' has no files to download, so is installed by default.')
       return True
 
     content_exists = is_nonempty_directory(self.installation_path())
+    debug_print(str(self) + ' installation path is ' + self.installation_path() + ', exists: ' + str(content_exists) + '.')
 
     # For e.g. fastcomp clang from git repo, the activated PATH is the
     # directory where the compiler is built to, and installation_path is
@@ -1849,14 +1964,16 @@ class Tool(object):
     print("Installing tool '" + str(self) + "'..")
     url = self.download_url()
 
-    if hasattr(self, 'custom_install_script') and self.custom_install_script == 'build_llvm':
-      success = build_llvm(self)
-    elif hasattr(self, 'custom_install_script') and self.custom_install_script == 'build_ninja':
-      success = build_ninja(self)
-    elif hasattr(self, 'custom_install_script') and self.custom_install_script == 'build_ccache':
-      success = build_ccache(self)
+    custom_install_scripts = {
+      'build_llvm': build_llvm,
+      'build_ninja': build_ninja,
+      'build_ccache': build_ccache,
+      'download_node_nightly': download_node_nightly
+    }
+    if hasattr(self, 'custom_install_script') and self.custom_install_script in custom_install_scripts:
+      success = custom_install_scripts[self.custom_install_script](self)
     elif hasattr(self, 'git_branch'):
-      success = git_clone_checkout_and_pull(url, self.installation_path(), self.git_branch)
+      success = git_clone_checkout_and_pull(url, self.installation_path(), self.git_branch, getattr(self, 'remote_name', 'origin'))
     elif url.endswith(ARCHIVE_SUFFIXES):
       success = download_and_extract(url, self.installation_path(),
                                      filename_prefix=getattr(self, 'download_prefix', ''))
@@ -1869,7 +1986,7 @@ class Tool(object):
     if hasattr(self, 'custom_install_script'):
       if self.custom_install_script == 'emscripten_npm_install':
         success = emscripten_npm_install(self, self.installation_path())
-      elif self.custom_install_script in ('build_llvm', 'build_ninja', 'build_ccache'):
+      elif self.custom_install_script in ('build_llvm', 'build_ninja', 'build_ccache', 'download_node_nightly'):
         # 'build_llvm' is a special one that does the download on its
         # own, others do the download manually.
         pass
@@ -2726,6 +2843,9 @@ def main(args):
                                   --override-repository emscripten-main@https://github.com/<fork>/emscripten/tree/<refspec>
 
 
+   emsdk deactivate tool/sdk    - Removes the given tool or SDK from the current set of activated tools.
+
+
    emsdk uninstall <tool/sdk>   - Removes the given tool or SDK from disk.''')
 
     if WINDOWS:
@@ -2826,7 +2946,7 @@ def main(args):
       errlog('Failed to find tool ' + tool_name + '!')
       return False
     else:
-      t.url, t.git_branch = parse_github_url_and_refspec(url_and_refspec)
+      t.url, t.git_branch, t.remote_name = parse_github_url_and_refspec(url_and_refspec)
       debug_print('Reading git repository URL "' + t.url + '" and git branch "' + t.git_branch + '" for Tool "' + tool_name + '".')
 
     forked_url = extract_string_arg('--override-repository')
@@ -2995,7 +3115,7 @@ def main(args):
   elif cmd == 'update-tags':
     errlog('`update-tags` is not longer needed.  To install the latest tot release just run `install tot`')
     return 0
-  elif cmd == 'activate':
+  elif cmd == 'activate' or cmd == 'deactivate':
     if arg_permanent:
       print('Registering active Emscripten environment permanently')
       print('')
@@ -3007,7 +3127,14 @@ def main(args):
         tool = find_sdk(arg)
         if tool is None:
           error_on_missing_tool(arg)
-      tools_to_activate += [tool]
+
+      if cmd == 'activate':
+        tools_to_activate += [tool]
+      elif tool in tools_to_activate:
+        print('Deactivating tool ' + str(tool) + '.')
+        tools_to_activate.remove(tool)
+      else:
+        print('Tool "' + arg + '" was not active, no need to deactivate.')
     if not tools_to_activate:
       errlog('No tools/SDKs specified to activate! Usage:\n   emsdk activate tool/sdk1 [tool/sdk2] [...]')
       return 1

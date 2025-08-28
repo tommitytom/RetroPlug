@@ -7,7 +7,7 @@ emscripten.flags.base = {
 	--"-s MODULARIZE=1",
 
 	--"-s LLD_REPORT_UNDEFINED",
-	[[-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]']],
+	[[-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","emscriptenRegisterAudioObject"]']],
 	--"-s MODULARIZE=1",
 	--"-s EXPORT_NAME=createModule",
 	--"-s EXPORT_ES6=0", -- Turn this on once this bug is fixed: https://bugzilla.mozilla.org/show_bug.cgi?id=1247687
@@ -24,7 +24,7 @@ emscripten.flags.base = {
 	"-s MIN_WEBGL_VERSION=2",
 	"-s MAX_WEBGL_VERSION=2", -- https://emscripten.org/docs/porting/multimedia_and_graphics/OpenGL-support.html#opengl-support-webgl-subset
 	--"-s FORCE_FILESYSTEM=1",
-	"-s EXPORTED_FUNCTIONS='[\"_main\", \"_resize_window\", \"_advance_frame\"]'",
+	--"-s EXPORTED_FUNCTIONS='[\"_main\", \"_resize_window\", \"_advance_frame\"]'",
 	--"-s FULL_ES3=1",
 	--"-s MIN_WEBGL_VERSION=2",
 	--"-s MAX_WEBGL_VERSION=2", -- https://emscripten.org/docs/porting/multimedia_and_graphics/OpenGL-support.html#opengl-support-webgl-subset

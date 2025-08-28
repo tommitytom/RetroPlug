@@ -282,7 +282,7 @@ local function createStandalone(config, impl)
 
 		filter { "platforms:Emscripten" }
 			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
-			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. config.name .. ".html", }
+			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. config.name .. ".mjs", }
 
 		filter { "platforms:Emscripten", "configurations:Debug*" }
 			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }

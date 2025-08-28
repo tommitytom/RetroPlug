@@ -30,10 +30,17 @@ local EMSDK_FLAGS = {
 	"-s USE_FREETYPE=1",
 	"-s AUDIO_WORKLET=1",
 	"-s WASM_WORKERS=1",
+	"-s MODULARIZE=1",
+	"-s EXPORT_ES6=1",
+	"-s EXPORT_NAME=RetroPlugModule",
 
 	"-lidbfs.js",
+	"-lembind",
+	"--emit-tsd RetroPlug.d.ts",
 
-	"--shell-file ../../templates/shell_minimal.html",
+	"--no-entry",
+
+	--"--shell-file ../../templates/shell_minimal.html",
 	--"--post-js ../../templates/processor.js",
 	"--emrun",
 
@@ -48,7 +55,6 @@ local EMSDK_DEBUG_FLAGS = {
 	"-s SAFE_HEAP=2",
 	"-s STACK_OVERFLOW_CHECK=1",
 	"-s WARN_UNALIGNED=1",
-	"-o debug/index.html",
 	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 	"-s WASM_BIGINT",
 	--"-v"
@@ -61,7 +67,6 @@ local EMSDK_DEVELOPMENT_FLAGS = {
 	"-s SAFE_HEAP=1",
 	--"-s STACK_OVERFLOW_CHECK=1",
 	--"-s WARN_UNALIGNED=1",
-	"-o development/index.html",
 	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 }
 
@@ -71,8 +76,7 @@ local EMSDK_RELEASE_FLAGS = {
 	--"-s MINIMAL_RUNTIME",
 	--"-g",
 	"-O3",
-	"-closure",
-	"-o release/index.html"
+	"-closure"
 }
 
 local m = {

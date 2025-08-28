@@ -40,23 +40,17 @@ function ActivateEmscripten() {
 
 function GenerateSolution() {
 
-    Write-Host "`nGenerating Game Solution...`n" -ForegroundColor DarkMagenta
 
     $extraFlags = if ($ExtraDebug) { "--em-extra-debug" } else { "" }
-
     .\thirdparty\Framework\thirdparty\bin\premake5 --emscripten gmake $extraFlags
 
     if (!$? -or ($LastExitCode -ne 0)) {
-        throw "Generating Game Solution failed: '$LASTEXITCODE'."
     }
 }
-
 function Compile([string] $Type) {
 
-    Write-Host "`nCompiling Game for $Type...`n" -ForegroundColor DarkMagenta
 
     New-Item -Path "$PSScriptRoot\build\gmake" -Name "$Type" -ItemType Directory -Force | Out-Null
-
     Push-Location "$PSScriptRoot\build\gmake"
 
     $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
@@ -67,10 +61,8 @@ function Compile([string] $Type) {
     Pop-Location
 
     if (!$? -or ($LastExitCode -ne 0)) {
-        throw "Compiling Game failed: '$LASTEXITCODE'."
     }
 }
-
 function PatchWindowsMakefiles() {
     # On Windows mkdir returns an error when a path already exists.
     # That causes build errors because makefiles have directory targets that "build" with mkdir,
@@ -87,11 +79,12 @@ function PatchWindowsMakefiles() {
     }
 }
 
-function CopyWebTemplate([string] $Type) {
-    Copy-Item "$PSScriptRoot\webtemplate\tick-worker.js" -Destination "$PSScriptRoot\build\gmake\game\$Type\tick-worker.js" -Force
-    if (!$?) {
-        throw "Copy Web Template (tick-worker.js) failed: '$LASTEXITCODE'."
-    }
+function CopyToWebBuild([string] $Type) {
+    New-Item -ItemType Directory -Path "$PSScriptRoot\web\src\native" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$PSScriptRoot\web\public" -Force | Out-Null
+
+    Copy-Item "$PSScriptRoot\build\gmake\$Type\*" -Destination "$PSScriptRoot\web\src\native" -Include "*.mjs", "*.d.ts" -Force
+    Copy-Item "$PSScriptRoot\build\gmake\$Type\*.wasm" -Destination "$PSScriptRoot\web\public" -Force
 }
 
 # force the current working directory to the directory where the script is located
@@ -105,9 +98,8 @@ if ($Configure) {
     PatchWindowsMakefiles
 }
 
-# Build Game
 Compile $BuildType
-#CopyWebTemplate $BuildType
+CopyToWebBuild $BuildType
 
 # restore the original working directory
 Pop-Location
