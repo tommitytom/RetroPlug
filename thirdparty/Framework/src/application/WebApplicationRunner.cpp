@@ -1,5 +1,7 @@
 #include "WebApplicationRunner.h"
 
+#include <spdlog/spdlog.h>
+
 #include <emscripten/emscripten.h>
 #include "audio/WebAudioManager.h"
 
@@ -24,21 +26,28 @@ namespace fw::app {
 	void WebApplicationRunner::setup(EMSCRIPTEN_WEBAUDIO_T audioContextId, const std::string& canvasId) {
 		_audioManager = std::make_shared<audio::WebAudioManager>(audioContextId);
 		_audioManager->setProcessor(_app->onCreateAudio());
+		_audioManager->start(-1);
 
 		auto resourceManager = std::make_shared<ResourceManager>();
 		auto fontManager = std::make_shared<fw::FontManager>(resourceManager);
 		auto windowManager = std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager);
-		auto renderContext = std::make_unique<fw::GlRenderContext>();
+		auto renderContext = std::make_unique<fw::GlRenderContext>(false);
 		_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
 
 		ViewPtr view = _app->onCreateUi();
-		WindowPtr window = _uiContext->setup(view, nullptr, canvasId);
-		ViewManagerPtr viewManager = window->getViewManager();
+		_window = _uiContext->setup(view, nullptr, canvasId);
+		ViewManagerPtr viewManager = _window->getViewManager();
 		viewManager->createState<audio::AudioManagerPtr>(_audioManager);
 		viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
+
+		spdlog::info("Web application setup complete {}", (uintptr_t)viewManager->getChild(0).get());
 	}
 
 	void WebApplicationRunner::doLoop() {
 		emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
+	}
+
+	bool WebApplicationRunner::runFrame() {
+		return _uiContext->runFrame();
 	}
 }

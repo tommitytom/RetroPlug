@@ -60,7 +60,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 		} else {
 			const std::string projectPath = fw::FsUtil::replaceFileExt(sramPath, ".rplg", false);
 			// Is there a project matching save/rom path?
-			
+
 			if (fw::FsUtil::exists(projectPath)) {
 				ProjectState projectState;
 				std::vector<SystemDesc> systemDescs;

@@ -94,6 +94,10 @@ namespace rp {
 
 		bool onCloseWindowRequest(fw::CloseWindowContext& ctx) override;
 
+		Project* getProject() {
+			return &_project;
+		}
+
 	private:
 		void initViews(SystemContainerViewPtr container);
 

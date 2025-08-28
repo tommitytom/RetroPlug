@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include <variant>
 #include <vector>
@@ -78,7 +78,7 @@ namespace rp {
 					.data = buffer.isOwnerOfData() ? std::move(buffer) : buffer.clone(),
 					.offset = _offset + pos
 				});
-			}			
+			}
 		}
 
 		void write(size_t pos, const fw::Uint8Buffer& buffer) {
@@ -102,7 +102,7 @@ namespace rp {
 
 		void write(size_t pos, const std::string& text) {
 			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
-		}			
+		}
 
 		MemoryAccessor slice(size_t start, size_t size) {
 			return MemoryAccessor(_type, _data.slice(start, size), _offset + start, _patches);

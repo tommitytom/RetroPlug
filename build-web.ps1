@@ -84,7 +84,7 @@ function CopyToWebBuild([string] $Type) {
     New-Item -ItemType Directory -Path "$PSScriptRoot\web\public" -Force | Out-Null
 
     Copy-Item "$PSScriptRoot\build\gmake\$Type\*" -Destination "$PSScriptRoot\web\src\native" -Include "*.mjs", "*.d.ts" -Force
-    Copy-Item "$PSScriptRoot\build\gmake\$Type\*.wasm" -Destination "$PSScriptRoot\web\public" -Force
+    Copy-Item "$PSScriptRoot\build\gmake\$Type\*" -Destination "$PSScriptRoot\web\public" -Include "*.mjs", "*.wasm" -Force
 }
 
 # force the current working directory to the directory where the script is located

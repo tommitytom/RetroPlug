@@ -8,7 +8,7 @@
 			"type": "chrome",
 			"request": "launch",
 			"name": "Launch Chrome against localhost",
-			"url": "http://localhost:6931/RetroPlug.html",
+			"url": "http://localhost:5173/",
 			"webRoot": "${workspaceFolder}"
 		},
         {

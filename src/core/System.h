@@ -111,7 +111,7 @@ namespace rp {
 			output.reset();
 		}
 	};
-	
+
 	template <typename T>
 	class ConcurrentPoolAllocator {
 	private:
@@ -149,7 +149,7 @@ namespace rp {
 			return nullptr;*/
 		}
 	};
-	
+
 	using SystemIoPtr = std::shared_ptr<SystemIo>;
 
 	struct IoMessageBus {

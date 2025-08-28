@@ -12,18 +12,18 @@ EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       int numParams, const AudioParamFrame *params,
                       void *userData)
 {
+	/*for(int i = 0; i < numOutputs; ++i) {
+		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
+			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise
+		}
+	}*/
+
 	assert(userData);
 	fw::audio::WebAudioManager* manager = reinterpret_cast<fw::audio::WebAudioManager*>(userData);
 	fw::StereoAudioBuffer& input = manager->getInput();
 	fw::StereoAudioBuffer& output = manager->getOutput();
 	fw::AudioProcessorPtr processor = manager->getProcessor();
 	assert(processor);
-
-	/*for(int i = 0; i < numOutputs; ++i) {
-		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
-			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise
-		}
-	}*/
 
 	if (processor) {
 		input.clear();
@@ -103,9 +103,13 @@ namespace fw::audio {
 	}
 
 	bool WebAudioManager::start(int32 idx) {
+		if (_running) return false;
+
+		//EMSCRIPTEN_WEBAUDIO_T context = emscripten_create_audio_context(0);
 		emscripten_start_wasm_audio_worklet_thread_async(_audioContextId, audioThreadStack, sizeof(audioThreadStack),
 														 &audioThreadInitialized, this);
 
+		_running = true;
 		return true;
 	}
 

@@ -86,6 +86,10 @@ namespace fw::app {
 			return _id;
 		}
 
+		ViewPtr getView() {
+			return _view;
+		}
+
 		const ViewManagerPtr& getViewManager() {
 			return _viewManager;
 		}

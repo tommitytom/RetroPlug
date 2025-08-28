@@ -1,7 +1,12 @@
-import type { MainModule } from './native/RetroPlug.d.ts';
+import type { MainModule, RetroPlugView, WebApplicationRunner } from './native/RetroPlug.d.ts';
 
 export class RetroPlugApplication {
 	private _module: MainModule|null = null;
+	private _runner: WebApplicationRunner|null = null;
+
+	get module() {
+		return this._module;
+	}
 
 	async load() {
 		const moduleFactory = (await import('./native/RetroPlug.mjs')).default;
@@ -30,20 +35,36 @@ export class RetroPlugApplication {
 		console.log('WASM module loaded');
 	}
 
-	setup(canvasId: string, audioContext: AudioContext) {
+	get runner(): WebApplicationRunner|null {
+		return this._runner;
+	}
+
+	get view(): RetroPlugView|null {
+		console.assert(!!this._runner);
+		const view = this._runner!.getView();
+		console.assert(!!view);
+		if (view) {
+			return this._module!.upcastView(view);
+		}
+
+		return null;
+	}
+
+	setup(canvasId: string, audioContext: AudioContext|null) {
 		if (!this._module) {
 			throw new Error('WASM module is not initialized');
 		}
 
 		const contextId = this._module.emscriptenRegisterAudioObject(audioContext);
 
-		const runner = new this._module.WebApplicationRunner();
-		runner.setup(contextId, canvasId);
-		//this._module._createView(canvasId);
+		console.log('AudioContext registered with ID:', contextId);
+
+		this._runner = new this._module.WebApplicationRunner();
+		this._runner.setup(contextId, canvasId);
+		this._runner.doLoop();
 	}
 
-	createView(canvasId: string) {
-		console.assert(!!this._module, 'WASM module is not initialized');
-		//this._module!._createView(canvasId);
+	destroy() {
+		//this._module?.destroy();
 	}
 }

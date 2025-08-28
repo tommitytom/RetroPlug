@@ -11,6 +11,7 @@ namespace fw::app {
 		audio::WebAudioManagerPtr _audioManager;
 		std::unique_ptr<UiContext> _uiContext;
 		std::unique_ptr<Application> _app;
+		WindowPtr _window;
 
 	public:
 		WebApplicationRunner(std::unique_ptr<Application>&& app) : _app(std::move(app)) {}
@@ -30,6 +31,10 @@ namespace fw::app {
 
 		UiContext& getUiContext() {
 			return *_uiContext;
+		}
+
+		ViewPtr getView() {
+			return _window->getView();
 		}
 
 		bool runFrame();

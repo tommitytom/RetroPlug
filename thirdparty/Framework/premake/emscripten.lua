@@ -51,7 +51,7 @@ emscripten.flags.debug = {
 	--"-s SAFE_HEAP=1",
 	--"-s WARN_UNALIGNED=1",
 	"-g",
-	"--source-map-base http://localhost:6931/"
+	"--source-map-base http://localhost:5713/"
 }
 
 emscripten.flags.development = {

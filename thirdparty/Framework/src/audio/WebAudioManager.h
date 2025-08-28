@@ -10,6 +10,7 @@ namespace fw::audio {
 		fw::StereoAudioBuffer _input;
 		fw::StereoAudioBuffer _output;
 		int _audioContextId;
+		bool _running = false;
 
 	public:
 		WebAudioManager(int audioContextId);

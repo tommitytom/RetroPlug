@@ -32,7 +32,9 @@ local EMSDK_FLAGS = {
 	"-s WASM_WORKERS=1",
 	"-s MODULARIZE=1",
 	"-s EXPORT_ES6=1",
-	"-s EXPORT_NAME=RetroPlugModule",
+	--"-s EXPORT_NAME=RetroPlugModule",
+
+	"-s NO_EXIT_RUNTIME=1",
 
 	"-lidbfs.js",
 	"-lembind",
@@ -40,24 +42,20 @@ local EMSDK_FLAGS = {
 
 	"--no-entry",
 
-	--"--shell-file ../../templates/shell_minimal.html",
-	--"--post-js ../../templates/processor.js",
-	"--emrun",
-
 	"-fexceptions",
 }
 
 local EMSDK_DEBUG_FLAGS = {
 	"-s ASSERTIONS=1",
 	"-g",
-	--"-O0",
+	"-O0",
 	--"-gsource-map",
 	"-s SAFE_HEAP=2",
 	"-s STACK_OVERFLOW_CHECK=1",
 	"-s WARN_UNALIGNED=1",
 	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 	"-s WASM_BIGINT",
-	--"-v"
+	"-s WEBAUDIO_DEBUG=1"
 }
 
 local EMSDK_DEVELOPMENT_FLAGS = {

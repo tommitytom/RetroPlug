@@ -35,7 +35,7 @@ namespace rp {
 	using SystemOverlayPtr = std::shared_ptr<SystemOverlay>;
 	using ProxySystemPtr = std::shared_ptr<ProxySystem>;
 	using ModelPtr = std::shared_ptr<Model>;
-	
+
 	constexpr SystemId INVALID_SYSTEM_ID = -1;
 	constexpr SystemServiceId INVALID_SYSTEM_SERVICE_ID = -1;
 	constexpr SystemType INVALID_SYSTEM_TYPE = 0;

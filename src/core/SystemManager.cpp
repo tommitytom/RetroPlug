@@ -74,7 +74,7 @@ namespace rp {
 			}
 		}
 
-		
+
 
 		for (auto& [type, systems] : _groupedSystems) {
 			if (systems.first) {
@@ -83,7 +83,7 @@ namespace rp {
 				for (SystemPtr& system : systems.second) {
 					system->process(audioFrameCount);
 				}
-			}			
+			}
 		}
 
 		for (SystemPtr& system : _systems) {
