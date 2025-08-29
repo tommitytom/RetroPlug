@@ -414,20 +414,6 @@ namespace rp::lsdj {
 			_valid = true;
 		}
 
-		fw::Color3 unpackColor(const uint8* data) const {
-			fw::Color3 col = {
-				.r = (uint8)(data[0] & 0x1F),
-				.g = (uint8)(((data[1] & 3) << 3) | ((data[0] & 0xE0) >> 5)),
-				.b = (uint8)(data[1] >> 2)
-			};
-
-			return fw::Color3 {
-				.r = (uint8)(((col.r << 3) * 255) / 0xF8),
-				.g = (uint8)(((col.g << 3) * 255) / 0xF8),
-				.b = (uint8)(((col.b << 3) * 255) / 0xF8),
-			};
-		}
-
 		uint8 getTilePixel(const uint8* data, uint32 x, uint32 y) const {
 			uint32 pixelOffset = y * 2;
 			uint32 xMask = 7 - x;
@@ -617,6 +603,20 @@ namespace rp::lsdj {
 
 		uint8 getBankVerion(const uint8* bankData) {
 			return bankData[BANK_VERSION_OFFSET];
+		}
+
+		fw::Color3 unpackColor(const uint8* data) const {
+			fw::Color3 col = {
+				.r = (uint8)(data[0] & 0x1F),
+				.g = (uint8)(((data[1] & 3) << 3) | ((data[0] & 0xE0) >> 5)),
+				.b = (uint8)(data[1] >> 2)
+			};
+
+			return fw::Color3 {
+				.r = (uint8)(((col.r << 3) * 255) / 0xF8),
+				.g = (uint8)(((col.g << 3) * 255) / 0xF8),
+				.b = (uint8)(((col.b << 3) * 255) / 0xF8),
+			};
 		}
 	};
 }

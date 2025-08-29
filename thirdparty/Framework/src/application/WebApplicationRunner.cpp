@@ -10,8 +10,16 @@
 
 namespace fw::app {
 	static void webFrameCallback(void* arg) {
-		WebApplicationRunner* app = reinterpret_cast<WebApplicationRunner*>(arg);
-		app->runFrame();
+		WebApplicationRunner* runner = reinterpret_cast<WebApplicationRunner*>(arg);
+		runner->runFrame();
+	}
+
+	WebApplicationRunner::WebApplicationRunner(std::unique_ptr<Application>&& app) : _app(std::move(app)) {
+		auto resourceManager = std::make_shared<ResourceManager>();
+		auto fontManager = std::make_shared<fw::FontManager>(resourceManager);
+		auto windowManager = std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager);
+		auto renderContext = std::make_unique<fw::GlRenderContext>(false);
+		_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
 	}
 
 	WebApplicationRunner::~WebApplicationRunner() {
@@ -19,32 +27,39 @@ namespace fw::app {
 	}
 
 	void WebApplicationRunner::destroy() {
+		_window = nullptr;
 		_audioManager = nullptr;
 		_uiContext = nullptr;
+		_app = nullptr;
 	}
 
-	void WebApplicationRunner::setup(EMSCRIPTEN_WEBAUDIO_T audioContextId, const std::string& canvasId) {
+	void WebApplicationRunner::setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId) {
 		_audioManager = std::make_shared<audio::WebAudioManager>(audioContextId);
 		_audioManager->setProcessor(_app->onCreateAudio());
 		_audioManager->start(-1);
+	}
 
-		auto resourceManager = std::make_shared<ResourceManager>();
-		auto fontManager = std::make_shared<fw::FontManager>(resourceManager);
-		auto windowManager = std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager);
-		auto renderContext = std::make_unique<fw::GlRenderContext>(false);
-		_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
-
+	void WebApplicationRunner::setupGraphics(const std::string& canvasId) {
+		assert(_audioManager);
 		ViewPtr view = _app->onCreateUi();
 		_window = _uiContext->setup(view, nullptr, canvasId);
 		ViewManagerPtr viewManager = _window->getViewManager();
 		viewManager->createState<audio::AudioManagerPtr>(_audioManager);
 		viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
-
-		spdlog::info("Web application setup complete {}", (uintptr_t)viewManager->getChild(0).get());
 	}
 
-	void WebApplicationRunner::doLoop() {
+	void WebApplicationRunner::destroyGraphics() {
+		//_window = nullptr;
+	}
+
+	void WebApplicationRunner::start() {
+		assert(_window);
 		emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
+	}
+
+	void WebApplicationRunner::stop() {
+		assert(_window);
+		emscripten_cancel_main_loop();
 	}
 
 	bool WebApplicationRunner::runFrame() {

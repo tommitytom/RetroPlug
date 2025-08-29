@@ -14,10 +14,14 @@ namespace fw::app {
 		WindowPtr _window;
 
 	public:
-		WebApplicationRunner(std::unique_ptr<Application>&& app) : _app(std::move(app)) {}
+		WebApplicationRunner(std::unique_ptr<Application>&& app);
 		~WebApplicationRunner();
 
-		void setup(EMSCRIPTEN_WEBAUDIO_T audioContextId, const std::string& canvasId);
+		void setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId);
+
+		void setupGraphics(const std::string& canvasId);
+
+		void destroyGraphics();
 
 		void destroy();
 
@@ -39,6 +43,8 @@ namespace fw::app {
 
 		bool runFrame();
 
-		void doLoop();
+		void start();
+
+		void stop();
 	};
 }

@@ -25,8 +25,11 @@ EMSCRIPTEN_BINDINGS(framework) {
 
 	class_<fw::app::WebApplicationRunner>("WebApplicationRunner")
 		.constructor(&makeRunner, allow_raw_pointers())
-		.function("setup", &fw::app::WebApplicationRunner::setup)
-		.function("doLoop", &fw::app::WebApplicationRunner::doLoop)
+		.function("setupAudio", &fw::app::WebApplicationRunner::setupAudio)
+		.function("setupGraphics", &fw::app::WebApplicationRunner::setupGraphics)
+		.function("destroyGraphics", &fw::app::WebApplicationRunner::destroyGraphics)
+		.function("start", &fw::app::WebApplicationRunner::start)
+		.function("stop", &fw::app::WebApplicationRunner::stop)
 		.function("getView", &fw::app::WebApplicationRunner::getView)
 	;
 
