@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Maximize2, Minimize2, Move, GripVertical, Plus } from 'lucide-react';
 import '../styles/DockableEditor.css';
-import '../styles/globals.css';
+//import '../styles/globals.css';
 
 export interface Panel {
 	id: string;

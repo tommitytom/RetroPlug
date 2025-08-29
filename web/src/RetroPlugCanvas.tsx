@@ -53,17 +53,30 @@ async function onDrop(event: DragEvent, app: RetroPlugApplication) {
 
 export const RetroPlugCanvas: React.FC = () => {
 	const containerRef = useRef<HTMLDivElement>(null);
-	const { app } = useRetroPlug();
+	const { app, audioContextState } = useRetroPlug();
 
 	useEffect(() => {
 		if (!app || !containerRef.current) return;
 
 		const handleDragOver = (event: DragEvent) => {
 			event.preventDefault();
+
+			// Set cursor based on audio context state
+			if (audioContextState !== 'running') {
+				event.dataTransfer!.dropEffect = 'none';
+			} else {
+				event.dataTransfer!.dropEffect = 'copy';
+			}
 		};
 
 		const handleDrop = async (event: DragEvent) => {
 			event.preventDefault();
+
+			// Only allow drop if audio context is running
+			if (audioContextState !== 'running') {
+				return;
+			}
+
 			onDrop(event, app);
 		};
 
@@ -76,7 +89,7 @@ export const RetroPlugCanvas: React.FC = () => {
 				containerRef.current.ondrop = null;
 			}
 		};
-	}, [app]);
+	}, [app, audioContextState]);
 
 	return (
 		<div ref={containerRef}>
