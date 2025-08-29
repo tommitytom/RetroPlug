@@ -1,5 +1,9 @@
 #include "application/GlfwNativeWindow.h"
 
+#ifdef _MSC_VER
+	#define __attribute__(x)
+#endif
+
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
 #include "core/Project.h"

@@ -1,10 +1,10 @@
 #include "WebApplicationRunner.h"
 
+#include <emscripten/emscripten.h>
+
 #include <spdlog/spdlog.h>
 
-#include <emscripten/emscripten.h>
 #include "audio/WebAudioManager.h"
-
 #include "graphics/gl/GlRenderContext.h"
 #include "application/GlfwNativeWindow.h"
 

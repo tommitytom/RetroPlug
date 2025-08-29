@@ -3,21 +3,24 @@ import React, { useEffect, useRef } from "react";
 import { useRetroPlug } from "./contexts/RetroPlugContext";
 import { FrameworkCanvas } from "./FrameworkCanvas";
 import { RetroPlugApplication } from "./RetroPlugApplication";
+import { type Uint8Buffer } from "./native/RetroPlug";
+
+async function convertFile(app: RetroPlugApplication, file: File): Promise<Uint8Buffer> {
+	const romData = new Uint8Array(await file.arrayBuffer());
+	const romBuffer = new app.module!.Uint8Buffer(romData.byteLength);
+	romBuffer.data().set(romData);
+	return romBuffer;
+}
 
 async function onDrop(event: DragEvent, app: RetroPlugApplication) {
-	const project = app.view!.getProject()!;
-	console.assert(!!project);
+	const project = app.project;
 
 	const files = event.dataTransfer!.files;
-	if (files.length > 0 && app) {
-		const file = files[0];
+	if (files.length > 1 && app) {
+		const rom = await convertFile(app, files[0]);
+		const sav = await convertFile(app, files[1]);
 
-		const data = new Uint8Array(await file.arrayBuffer());
-		const buffer = new app.module!.Uint8Buffer(data.byteLength);
-		buffer.data().set(data);
-
-		const system = project!.loadSystem(
-			0x5a8eb011,
+		project.loadSystem(
 			{
 				desc: {
 					paths: {
@@ -31,23 +34,13 @@ async function onDrop(event: DragEvent, app: RetroPlugApplication) {
 						reloadRomOnChange: true,
 					},
 				},
-				romBuffer: buffer,
-				sramBuffer: null,
+				romBuffer: rom,
+				sramBuffer: sav,
 				stateBuffer: null,
 				stateType: app!.module!.SaveStateType.Sram,
 				reset: false,
 			},
-			4294967295
 		);
-
-		if (system) {
-			const systemMemory = system.getMemory(
-				app.module!.MemoryType.Sram,
-				app.module!.AccessType.Read
-			);
-			const sav = new app.module!.LsdjSav(systemMemory.getBuffer());
-			console.log("song valid:", sav.isValid);
-		}
 	}
 }
 

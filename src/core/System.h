@@ -196,6 +196,7 @@ namespace rp {
 		SystemId _id = INVALID_SYSTEM_ID;
 		SystemType _type = INVALID_SYSTEM_TYPE;
 		std::vector<SystemServicePtr> _services;
+		size_t _version = 0;
 
 	public:
 		System(SystemType type): _type(type) {}
@@ -255,6 +256,14 @@ namespace rp {
 
 		fw::DimensionU32 getResolution() const {
 			return _resolution;
+		}
+
+		size_t getVersion() const {
+			return _version;
+		}
+
+		void incrementVersion() {
+			_version++;
 		}
 
 		void setIo(const SystemIoPtr& io) {

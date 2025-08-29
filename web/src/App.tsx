@@ -1,8 +1,10 @@
 import { type Panel, DockableEditor } from "./components/DockableEditor";
-import { SystemPanel } from './panels/SystemPanel';
-import { RetroPlugCanvas } from "./RetroPlugCanvas";
 import { useRetroPlug } from "./contexts/RetroPlugContext";
 import { RetroPlugProvider } from "./contexts/RetroPlugProvider";
+import { InspectorPanel } from './panels/InspectorPanel';
+import { SystemPanel } from './panels/SystemPanel';
+import { FileTreePanel } from './panels/FileTreePanel';
+import { RetroPlugCanvas } from "./RetroPlugCanvas";
 
 function LoadSpinner() {
 	const { isLoading } = useRetroPlug();
@@ -19,12 +21,14 @@ function LoadSpinner() {
 
 const panels: Panel[] = [
 	{ id: 'system', title: 'System', content: <SystemPanel /> },
+	{ id: 'inspector', title: 'Inspector', content: <InspectorPanel /> },
+	{ id: 'filetree', title: 'File Tree', content: <FileTreePanel /> }
 ];
 
 const initialLayout = {
-	left: { id: 'left', panels: [], activePanel: '', size: 350 },
+	left: { id: 'left', panels: ['filetree'], activePanel: 'filetree', size: 350 },
 	center: { id: 'center', panels: ['system'], activePanel: 'system', size: 0 },
-	right: { id: 'right', panels: [], activePanel: '', size: 350 },
+	right: { id: 'right', panels: ['inspector'], activePanel: 'inspector', size: 350 },
 	bottom: { id: 'bottom', panels: [], activePanel: '', size: 200 },
 };
 

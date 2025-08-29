@@ -1,5 +1,9 @@
 #include "application/GlfwNativeWindow.h"
 
+#ifdef _MSC_VER
+	#define __attribute__(x)
+#endif
+
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
 #include "core/Project.h"
@@ -8,6 +12,7 @@
 #include "lsdj/Ram.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
+#include "sameboy/Constants.h"
 
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
@@ -18,11 +23,40 @@
 using namespace emscripten;
 using namespace rp;
 
+
+#include <emscripten/wasmfs.h>
+
 std::shared_ptr<RetroPlugView> upcastView(const fw::ViewPtr& view) {
 	return std::static_pointer_cast<RetroPlugView>(view);
 }
 
+/*std::string lsdjProject_getName(rp::lsdj::Project& project) {
+	return std::string(project.getName());
+}*/
+
+emscripten::val lsdjProject_getName(rp::lsdj::Project& project) {
+	std::string name = std::string(project.getName());
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val system_getRomName(rp::System& system) {
+	std::string name = std::string(system.getRomName());
+	return emscripten::val::u8string(name.c_str());
+}
+
+void setupWasmFs() {
+	//backend_t opfs = wasmfs_create_opfs_backend();
+	//spdlog::info("Created OPFS backend");
+	//int err = wasmfs_create_directory("/opfs", 0777, opfs);
+	//spdlog::info("Created OPFS directory: {}", err == 0 ? "success" : "failed");
+}
+
 EMSCRIPTEN_BINDINGS(retroPlug) {
+	function("setupWasmFs", &setupWasmFs);
+
+	constant("SAMEBOY_GUID", SAMEBOY_GUID);
+	constant("INVALID_SYSTEM_ID", INVALID_SYSTEM_ID);
+
 	// Bindings for SystemPaths
 	value_object<SystemPaths>("SystemPaths")
 		.field("romPath", &SystemPaths::romPath)
@@ -62,16 +96,27 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
 	;
 
-	class_<System>("System")
-		.smart_ptr<std::shared_ptr<System>>("SystemPtr")
+	class_<System>("NativeSystem")
+		.smart_ptr<std::shared_ptr<System>>("NativeSystemPtr")
 		.function("reset", &System::reset)
 		.function("getMemory", &System::getMemory)
+		.function("getRomName", &System::getRomName)
+		.property("desc", &System::getDesc)
+		.property("version", &System::getVersion)
+		.function("incrementVersion", &System::incrementVersion)
 	;
 
-	class_<Project>("Project")
+	class_<Project>("NativeProject")
 		.function("addSystem", select_overload<SystemPtr(SystemType, const SystemDesc&, SystemId)>(&Project::addSystem))
 		.function("loadSystem", select_overload<SystemPtr(SystemType, LoadConfig&&, SystemId)>(&Project::addSystem))
+		.function("getSystem", &Project::getSystem)
+		.property("systemCount", &Project::getSystemCount)
+		.function("duplicateSystem", &Project::duplicateSystem)
 		.function("removeSystem", &Project::removeSystem)
+		.property("version", &Project::getVersion)
+		.property("scale", &Project::getScale)
+		.function("clear", &Project::clear)
+		.property("isDirty", &Project::isDirty, &Project::setDirty)
 	;
 
 	class_<RetroPlugView, base<fw::View>>("RetroPlugView")
@@ -79,14 +124,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getProject", &RetroPlugView::getProject, return_value_policy::reference())
 	;
 
-	enum_<AccessType>("AccessType")
+	enum_<AccessType>("NativeAccessType")
 		.value("Unknown", AccessType::Unknown)
 		.value("Read", AccessType::Read)
 		.value("Write", AccessType::Write)
 		.value("ReadWrite", AccessType::ReadWrite)
 	;
 
-	enum_<MemoryType>("MemoryType")
+	enum_<MemoryType>("NativeMemoryType")
 		.value("Unknown", MemoryType::Unknown)
 		.value("Ram", MemoryType::Ram)
 		.value("Rom", MemoryType::Rom)
@@ -150,7 +195,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// LSDJ bindings
-	class_<rp::lsdj::Instrument>("LsdjInstrument")
+	class_<rp::lsdj::Instrument>("NativeLsdjInstrument")
 		.property("type", &rp::lsdj::Instrument::getType)
 		.property("kit1", &rp::lsdj::Instrument::getKit1)
 		.property("kit2", &rp::lsdj::Instrument::getKit2)
@@ -158,7 +203,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("index", &rp::lsdj::Instrument::getIndex)
 	;
 
-	class_<rp::lsdj::Phrase>("LsdjPhrase")
+	class_<rp::lsdj::Phrase>("NativeLsdjPhrase")
 		.function("getNote", &rp::lsdj::Phrase::getNote)
 		.function("getInstrumentIndex", &rp::lsdj::Phrase::getInstrumentIndex)
 		.function("getInstrument", &rp::lsdj::Phrase::getInstrument)
@@ -168,7 +213,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("isValid", &rp::lsdj::Phrase::isValid)
 	;
 
-	class_<rp::lsdj::Chain>("LsdjChain")
+	class_<rp::lsdj::Chain>("NativeLsdjChain")
 		.function("getPhraseIndex", &rp::lsdj::Chain::getPhraseIndex)
 		.function("getPhrase", &rp::lsdj::Chain::getPhrase)
 		.function("getPhraseTransposition", &rp::lsdj::Chain::getPhraseTransposition)
@@ -176,7 +221,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("isValid", &rp::lsdj::Chain::isValid)
 	;
 
-	class_<rp::lsdj::Song>("LsdjSong")
+	class_<rp::lsdj::Song>("NativeLsdjSong")
 		.function("getBuffer", &rp::lsdj::Song::getBuffer)
 		.function("getSynthData", &rp::lsdj::Song::getSynthData)
 		.function("setSynthData", &rp::lsdj::Song::setSynthData)
@@ -188,14 +233,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("isRowBookMarked", &rp::lsdj::Song::isRowBookMarked)
 	;
 
-	class_<rp::lsdj::Project>("LsdjProject")
+	class_<rp::lsdj::Project>("NativeLsdjProject")
 		.property("version", &rp::lsdj::Project::getVersion)
-		//.function("getName", &rp::lsdj::Project::getName)
+		.function("getName", &lsdjProject_getName)
 		.property("song", &rp::lsdj::Project::getSong)
 		.property("isValid", &rp::lsdj::Project::isValid)
 	;
 
-	class_<rp::lsdj::Sav>("LsdjSav")
+	class_<rp::lsdj::Sav>("NativeLsdjSav")
 		.constructor<>()
 		.constructor<const fw::Uint8Buffer&>()
 		.function("free", &rp::lsdj::Sav::free)

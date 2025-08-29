@@ -75,14 +75,20 @@ function m.source()
 			FREETYPE_DIR .. "/builds/windows/ftdebug.c"
 		}
 
+	filter "platforms:Emscripten"
+		files {
+			FREETYPE_DIR .. "/src/base/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftobjs.c",
+			--FREETYPE_DIR .. "/builds/unix/ftsystem.c",
+			FREETYPE_DIR .. "/src/base/ftdebug.c"
+		}
+
 	filter "system:linux"
 		files {
 			FREETYPE_DIR .. "/src/base/ftsystem.c",
 			FREETYPE_DIR .. "/src/base/ftobjs.c",
 			FREETYPE_DIR .. "/builds/unix/ftsystem.c",
-			FREETYPE_DIR .. "/src/base/ftdebug.c",
-			FREETYPE_DIR .. "/src/base/ftsystem.c",
-			FREETYPE_DIR .. "/src/base/ftobjs.c",
+			FREETYPE_DIR .. "/src/base/ftdebug.c"
 		}
 
 	filter "system:macosx"

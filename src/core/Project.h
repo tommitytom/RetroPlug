@@ -85,8 +85,8 @@ namespace rp {
 			return save();
 		}
 
-		void setDirty() {
-			_requiresSave = true;
+		void setDirty(bool value = true) {
+			_requiresSave = value;
 		}
 
 		bool isDirty() const {
@@ -142,6 +142,14 @@ namespace rp {
 
 		std::vector<SystemPtr>& getSystems() {
 			return _systemManager.getSystems();
+		}
+
+		size_t getSystemCount() const {
+			return _systemManager.getSystems().size();
+		}
+
+		const SystemPtr& getSystem(SystemId systemId) {
+			return _systemManager.getSystems()[systemId];
 		}
 
 		SystemManager& getSystemManager() {

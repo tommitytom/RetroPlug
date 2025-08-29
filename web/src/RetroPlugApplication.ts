@@ -1,60 +1,88 @@
-import type { MainModule, RetroPlugView, WebApplicationRunner } from './native/RetroPlug.d.ts';
+import type {
+	MainModule,
+	NativeProject,
+	RetroPlugView,
+	WebApplicationRunner
+} from "./native/RetroPlug.d.ts";
+import { Project } from "./wrapper/Project.ts";
 
 export class RetroPlugApplication {
-	private _module: MainModule|null = null;
-	private _runner: WebApplicationRunner|null = null;
+	private _module: MainModule | null = null;
+	private _runner: WebApplicationRunner | null = null;
 
 	get module() {
 		return this._module;
 	}
 
 	async load() {
-		const moduleFactory = (await import('./native/RetroPlug.mjs')).default;
+		const moduleFactory = (await import("./native/RetroPlug.mjs")).default;
 
-		this._module = await moduleFactory({
+		this._module = (await moduleFactory({
 			locateFile: (path: string) => {
-				if (path.endsWith('.wasm')) {
-					return '/RetroPlug.wasm';
+				if (path.endsWith(".wasm")) {
+					return "/RetroPlug.wasm";
 				}
 				return path;
 			},
-			preRun: [() => {
-				console.log('WASM module pre-run');
-			}],
+			preRun: [
+				(mod) => {
+					console.log("WASM module pre-run");
+				},
+			],
 			onRuntimeInitialized: () => {
-				console.log('WASM runtime initialized');
+				console.log("WASM runtime initialized");
 			},
 			print: (text: string) => {
-				console.log('WASM:', text);
+				console.log("WASM:", text);
 			},
 			printErr: (text: string) => {
-				console.error('WASM Error:', text);
-			}
-		}) as MainModule;
+				console.error("WASM Error:", text);
+			},
+		})) as MainModule;
 
+		this._module.setupWasmFs();
 		this._runner = new this._module.WebApplicationRunner();
 
-		console.log('WASM module loaded');
+		console.log("WASM module loaded");
 	}
 
-	get runner(): WebApplicationRunner|null {
+	get runner(): WebApplicationRunner | null {
 		return this._runner;
 	}
 
-	get view(): RetroPlugView|null {
-		console.assert(!!this._runner);
-		const view = this._runner!.getView();
-		console.assert(!!view);
-		if (view) {
-			return this._module!.upcastView(view);
+	get view(): RetroPlugView {
+		if (!this._module || !this._runner) {
+			throw new Error("WASM module is not initialized");
 		}
 
-		return null;
+		const view = this._runner.getView();
+		if (!view) {
+			throw new Error("WASM view is not initialized");
+		}
+
+		return this._module.upcastView(view)!;
 	}
 
-	setupAudio(audioContext: AudioContext|null) {
+	get project(): Project {
+		const project = this.view.getProject();
+		if (!project) {
+			throw new Error("WASM project is not initialized");
+		}
+		return new Project(this._module!, project);
+	}
+
+	get nativeProject(): NativeProject {
+		const project = this.view.getProject();
+		if (!project) {
+			throw new Error("WASM project is not initialized");
+		}
+
+		return project;
+	}
+
+	setupAudio(audioContext: AudioContext | null) {
 		if (!this._module || !this._runner) {
-			throw new Error('WASM module is not initialized');
+			throw new Error("WASM module is not initialized");
 		}
 
 		const contextId = this._module.emscriptenRegisterAudioObject(audioContext);
@@ -63,7 +91,7 @@ export class RetroPlugApplication {
 
 	setupGraphics(canvasId: string) {
 		if (!this._module || !this._runner) {
-			throw new Error('WASM module is not initialized');
+			throw new Error("WASM module is not initialized");
 		}
 
 		this._runner.setupGraphics(canvasId);
@@ -72,7 +100,7 @@ export class RetroPlugApplication {
 
 	destroyGraphics() {
 		if (!this._module || !this._runner) {
-			throw new Error('WASM module is not initialized');
+			throw new Error("WASM module is not initialized");
 		}
 
 		this._runner.stop();

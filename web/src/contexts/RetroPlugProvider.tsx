@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { RetroPlugContext } from "./RetroPlugContext";
 import { RetroPlugApplication } from "../RetroPlugApplication";
@@ -8,6 +8,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const canvasIdRef = useRef<string | null>(null);
 	const [app, setApp] = useState<RetroPlugApplication | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
+	const [isReady, setIsReady] = useState<boolean>(false);
 	const [audioContextState, setAudioContextState] =
 		useState<AudioContextState>("suspended");
 
@@ -52,7 +53,15 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 						pendingApp.setupAudio(audioContextRef.current);
 
 						if (canvasIdRef.current) {
-							pendingApp.setupGraphics(canvasIdRef.current);
+							try {
+								// This function seems to return fine but seemingly throws an exception after
+								// Investigate!
+								pendingApp.setupGraphics(canvasIdRef.current);
+							} catch (ex) {
+								console.error("Error setting up graphics:", ex);
+							}
+
+							setIsReady(true);
 						}
 					} catch (ex) {
 						console.error("Error setting up WASM module:", ex);
@@ -67,6 +76,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		return () => {
 			mounted = false;
 
+			setIsReady(false);
 			setApp(null);
 			pendingApp.destroy();
 
@@ -81,17 +91,26 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	const setCanvasId = (id: string | null) => {
+	const setCanvasId = useCallback((id: string | null) => {
 		if (app) {
 			app.destroyGraphics();
+			setIsReady(false);
 		}
 
 		canvasIdRef.current = id;
 
 		if (app && id !== null) {
-			app.setupGraphics(id);
+			try {
+				// This function seems to return fine but seemingly throws an exception after
+				// Investigate!
+				app.setupGraphics(id);
+			} catch (ex) {
+				console.error("Error setting up graphics:", ex);
+			}
+
+			setIsReady(true);
 		}
-	};
+	}, [app]);
 
 	return (
 		<RetroPlugContext.Provider
@@ -99,6 +118,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 				app,
 				audioContext: audioContextRef.current,
 				isLoading,
+				isReady,
 				audioContextState,
 				canvasId: canvasIdRef.current,
 				setCanvasId,

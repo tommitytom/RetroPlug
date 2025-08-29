@@ -5,6 +5,7 @@ interface RetroPlugContextType {
 	canvasId: string | null;
 	setCanvasId: (entityId: string | null) => void;
 	isLoading: boolean;
+	isReady: boolean;
 	audioContext: AudioContext | null;
 	audioContextState: AudioContextState;
 	app: RetroPlugApplication|null;
