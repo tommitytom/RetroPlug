@@ -5,9 +5,10 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
 	{ ignores: ['dist'] },
 	{
+		globalIgnores: ['**/RetroPlug.d.ts'],
 		extends: [js.configs.recommended, ...tseslint.configs.recommended],
 		files: ['**/*.ts'],
-		ignores: ['dist', 'node_modules'],
+		ignores: ['dist'],
 		languageOptions: {
 			ecmaVersion: 2020,
 			globals: globals.node,

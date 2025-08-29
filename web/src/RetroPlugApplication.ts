@@ -25,7 +25,7 @@ export class RetroPlugApplication {
 				return path;
 			},
 			preRun: [
-				(mod) => {
+				() => {
 					console.log("WASM module pre-run");
 				},
 			],

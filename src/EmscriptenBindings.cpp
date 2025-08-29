@@ -45,6 +45,54 @@ emscripten::val system_getRomName(rp::System& system) {
 	return emscripten::val::u8string(name.c_str());
 }
 
+// LSDJ string_view wrapper functions
+emscripten::val lsdjKit_getName(rp::lsdj::Kit& kit) {
+	std::string name = std::string(kit.getName());
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val lsdjKit_getSampleName(rp::lsdj::Kit& kit, size_t sampleIdx) {
+	std::string name = std::string(kit.getSampleName(sampleIdx));
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val lsdjRom_getKitName(rp::lsdj::Rom& rom, size_t idx) {
+	std::string name = std::string(rom.getKitName(idx));
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val lsdjRom_getKitSampleName(rp::lsdj::Rom& rom, size_t kitIdx, size_t sampleIdx) {
+	std::string name = std::string(rom.getKitSampleName(kitIdx, sampleIdx));
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val lsdjRom_getFontName(rp::lsdj::Rom& rom, size_t idx) {
+	std::string name = std::string(rom.getFontName(idx));
+	return emscripten::val::u8string(name.c_str());
+}
+
+emscripten::val lsdjRom_getPaletteName(rp::lsdj::Rom& rom, size_t idx) {
+	std::string name = std::string(rom.getPaletteName(idx));
+	return emscripten::val::u8string(name.c_str());
+}
+
+// LSDJ string_view parameter wrapper functions
+int32 lsdjKit_addSample(rp::lsdj::Kit& kit, const std::string& name, const fw::Uint8Buffer& data) {
+	return kit.addSample(std::string_view(name), data);
+}
+
+void lsdjKit_setSampleName(rp::lsdj::Kit& kit, size_t sampleIdx, const std::string& name) {
+	kit.setSampleName(sampleIdx, std::string_view(name));
+}
+
+void lsdjRom_setKitName(rp::lsdj::Rom& rom, size_t idx, const std::string& name) {
+	rom.setKitName(idx, std::string_view(name));
+}
+
+void lsdjRom_setKitSampleName(rp::lsdj::Rom& rom, size_t kitIdx, size_t sampleIdx, const std::string& name) {
+	rom.setKitSampleName(kitIdx, sampleIdx, std::string_view(name));
+}
+
 void setupWasmFs() {
 	//backend_t opfs = wasmfs_create_opfs_backend();
 	//spdlog::info("Created OPFS backend");
@@ -168,6 +216,29 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("FILE_OPEN_FAILED", LSDJ_FILE_OPEN_FAILED)
 	;
 
+	// LSDJ Rom enums
+	enum_<rp::lsdj::ColorSets>("LsdjColorSets")
+		.value("Normal", rp::lsdj::ColorSets::Normal)
+		.value("Shaded", rp::lsdj::ColorSets::Shaded)
+		.value("Alternate", rp::lsdj::ColorSets::Alternate)
+		.value("Selection", rp::lsdj::ColorSets::Selection)
+		.value("Scroll", rp::lsdj::ColorSets::Scroll)
+	;
+
+	// LSDJ Ram enums
+	enum_<rp::lsdj::ScreenType>("LsdjScreenType")
+		.value("Unknown", rp::lsdj::ScreenType::Unknown)
+		.value("Song", rp::lsdj::ScreenType::Song)
+		.value("Chain", rp::lsdj::ScreenType::Chain)
+		.value("Phrase", rp::lsdj::ScreenType::Phrase)
+		.value("Instrument", rp::lsdj::ScreenType::Instrument)
+		.value("Table", rp::lsdj::ScreenType::Table)
+		.value("Project", rp::lsdj::ScreenType::Project)
+		.value("Wave", rp::lsdj::ScreenType::Wave)
+		.value("Synth", rp::lsdj::ScreenType::Synth)
+		.value("Groove", rp::lsdj::ScreenType::Groove)
+	;
+
 	enum_<lsdj_channel_t>("lsdj_channel_t")
 		.value("PULSE1", LSDJ_CHANNEL_PULSE1)
 		.value("PULSE2", LSDJ_CHANNEL_PULSE2)
@@ -207,6 +278,76 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("ARDUINO_BOY_Q", LSDJ_COMMAND_ARDUINO_BOY_Q)
 		.value("ARDUINO_BOY_Y", LSDJ_COMMAND_ARDUINO_BOY_Y)
 		.value("B", LSDJ_COMMAND_B)
+	;
+
+	// LSDJ Rom constants
+	constant("LSDJ_ROM_SIZE", rp::lsdj::Rom::ROM_SIZE);
+	constant("LSDJ_BANK_COUNT", rp::lsdj::Rom::BANK_COUNT);
+	constant("LSDJ_BANK_SIZE", rp::lsdj::Rom::BANK_SIZE);
+	constant("LSDJ_PALETTE_COUNT", rp::lsdj::Rom::PALETTE_COUNT);
+	constant("LSDJ_FONT_COUNT", rp::lsdj::Rom::FONT_COUNT);
+	constant("LSDJ_KIT_COUNT", rp::lsdj::Rom::KIT_COUNT);
+
+	// Framework struct bindings
+	value_object<fw::Color3>("Color3")
+		.field("r", &fw::Color3::r)
+		.field("g", &fw::Color3::g)
+		.field("b", &fw::Color3::b)
+	;
+
+	value_object<fw::PointT<uint8>>("PointU8")
+		.field("x", &fw::PointT<uint8>::x)
+		.field("y", &fw::PointT<uint8>::y)
+	;
+
+	// LSDJ Rom struct bindings
+	value_object<rp::lsdj::Palette::ColorSet>("LsdjPaletteColorSet")
+		.field("first", &rp::lsdj::Palette::ColorSet::first)
+		.field("second", &rp::lsdj::Palette::ColorSet::second)
+	;
+
+	class_<rp::lsdj::Palette>("NativeLsdjPalette")
+		.function("getColor", &rp::lsdj::Palette::getColor)
+	;
+
+	class_<rp::lsdj::Font::Tile>("NativeLsdjFontTile")
+	;
+
+	class_<rp::lsdj::Font>("NativeLsdjFont")
+	;
+
+	class_<rp::lsdj::Kit>("NativeLsdjKit")
+		.constructor<>()
+		.constructor<MemoryAccessor, int32>()
+		.property("index", &rp::lsdj::Kit::getIndex)
+		.property("isValid", &rp::lsdj::Kit::isValid)
+		.property("buffer", &rp::lsdj::Kit::getBuffer)
+		.function("getName", &lsdjKit_getName)
+		.function("setKitData", &rp::lsdj::Kit::setKitData)
+		.function("getSampleName", &lsdjKit_getSampleName)
+		.function("getSampleData", &rp::lsdj::Kit::getSampleData)
+		.function("addSample", &lsdjKit_addSample)
+		.function("setSampleName", &lsdjKit_setSampleName)
+		.function("setSampleData", &rp::lsdj::Kit::setSampleData)
+		.function("getSampleDataLength", &rp::lsdj::Kit::getSampleDataLength)
+		.function("getSampleOffset", &rp::lsdj::Kit::getSampleOffset)
+		.property("remainingData", &rp::lsdj::Kit::getRemainingData)
+	;
+
+	// LSDJ Ram struct bindings
+	value_object<rp::lsdj::MemoryOffsets::Channel>("LsdjMemoryOffsetsChannel")
+		.field("active", &rp::lsdj::MemoryOffsets::Channel::active)
+		.field("songPosition", &rp::lsdj::MemoryOffsets::Channel::songPosition)
+		.field("chainPosition", &rp::lsdj::MemoryOffsets::Channel::chainPosition)
+		.field("phrasePosition", &rp::lsdj::MemoryOffsets::Channel::phrasePosition)
+	;
+
+	value_object<rp::lsdj::MemoryOffsets>("LsdjMemoryOffsets")
+		.field("tempo", &rp::lsdj::MemoryOffsets::tempo)
+		.field("cursorX", &rp::lsdj::MemoryOffsets::cursorX)
+		.field("cursorY", &rp::lsdj::MemoryOffsets::cursorY)
+		.field("screenX", &rp::lsdj::MemoryOffsets::screenX)
+		.field("screenY", &rp::lsdj::MemoryOffsets::screenY)
 	;
 
 	// LSDJ bindings
@@ -267,6 +408,50 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("workingProject", &rp::lsdj::Sav::getWorkingProject)
 		.property("workingSong", &rp::lsdj::Sav::getWorkingSong)
 		.function("setWorkingProject", &rp::lsdj::Sav::setWorkingProject)
+	;
+
+	class_<rp::lsdj::Rom>("NativeLsdjRom")
+		.constructor<>()
+		.constructor<MemoryAccessor>()
+		.property("isValid", &rp::lsdj::Rom::isValid)
+		.function("getBankAccessor", &rp::lsdj::Rom::getBankAccessor)
+		.function("getAccessor", &rp::lsdj::Rom::getAccessor, return_value_policy::reference())
+		.function("updateOffsets", &rp::lsdj::Rom::updateOffsets)
+		.function("kitIsEmpty", &rp::lsdj::Rom::kitIsEmpty)
+		.function("getKit", &rp::lsdj::Rom::getKit)
+		.function("getKitName", &lsdjRom_getKitName)
+		.function("setKitName", &lsdjRom_setKitName)
+		.function("getKitSampleName", &lsdjRom_getKitSampleName)
+		.function("setKitSampleName", &lsdjRom_setKitSampleName)
+		.function("kitSampleExists", &rp::lsdj::Rom::kitSampleExists)
+		.function("getKitSampleData", &rp::lsdj::Rom::getKitSampleData)
+		.function("getFontName", &lsdjRom_getFontName)
+		.function("getPaletteName", &lsdjRom_getPaletteName)
+		.function("getFont", select_overload<rp::lsdj::Font(size_t) const>(&rp::lsdj::Rom::getFont))
+		.function("getPalette", &rp::lsdj::Rom::getPalette)
+		.function("getNextEmptyKit", &rp::lsdj::Rom::getNextEmptyKit)
+		.function("nextEmptyKitIdx", &rp::lsdj::Rom::nextEmptyKitIdx)
+	;
+
+	class_<rp::lsdj::Ram>("NativeLsdjRam")
+		.constructor<>()
+		.constructor<MemoryAccessor, const rp::lsdj::MemoryOffsets&>()
+		.property("isValid", &rp::lsdj::Ram::isValid)
+		.function("setData", &rp::lsdj::Ram::setData)
+		.function("setOffsets", &rp::lsdj::Ram::setOffsets)
+		.function("isChannelActive", &rp::lsdj::Ram::isChannelActive)
+		.function("getSongPosition", &rp::lsdj::Ram::getSongPosition)
+		.function("getChainPosition", &rp::lsdj::Ram::getChainPosition)
+		.function("getPhrasePosition", &rp::lsdj::Ram::getPhrasePosition)
+		.function("setCursorPosition", &rp::lsdj::Ram::setCursorPosition)
+		.function("getCursorPosition", &rp::lsdj::Ram::getCursorPosition)
+		.function("getCursorX", &rp::lsdj::Ram::getCursorX)
+		.function("setCursorX", &rp::lsdj::Ram::setCursorX)
+		.function("getCursorY", &rp::lsdj::Ram::getCursorY)
+		.function("getScreenX", &rp::lsdj::Ram::getScreenX)
+		.function("getScreenY", &rp::lsdj::Ram::getScreenY)
+		.function("getScreen", &rp::lsdj::Ram::getScreen)
+		.function("getTempo", &rp::lsdj::Ram::getTempo)
 	;
 
 
