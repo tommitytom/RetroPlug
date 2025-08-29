@@ -34,19 +34,29 @@ export class Project {
 		this._project.clear();
 	}
 
-	getNativeSystem(index: SystemId) {
-		const system = this._project.getSystem(index);
+	getNativeSystemById(id: SystemId) {
+		const system = this._project.getSystem(id);
+		if (!system) throw new Error(`System not found at id ${id}`);
+		return system;
+	}
+
+	getSystemById(id: SystemId) {
+		return new System(this._module, this.getNativeSystemById(id));
+	}
+
+	getNativeSystemByIndex(index: SystemId) {
+		const system = this._project.getSystemByIndex(index);
 		if (!system) throw new Error(`System not found at index ${index}`);
 		return system;
 	}
 
-	getSystem(index: SystemId) {
-		return new System(this._module, this.getNativeSystem(index));
+	getSystemByIndex(index: SystemId) {
+		return new System(this._module, this.getNativeSystemByIndex(index));
 	}
 
-	duplicateSystem(index: SystemId) {
-		const system = this._project.duplicateSystem(index);
-		if (!system) throw new Error(`Failed to duplicate system at index ${index}`);
+	duplicateSystem(id: SystemId) {
+		const system = this._project.duplicateSystem(id);
+		if (!system) throw new Error(`Failed to duplicate system at id ${id}`);
 		return new System(this._module, system);
 	}
 
@@ -73,11 +83,11 @@ export class Project {
 				return {
 					next(): IteratorResult<System> {
 						if (index < self.systemCount) {
-							const value = self.getSystem(index);
+							const value = self.getSystemByIndex(index);
 							index++;
 							return { value, done: false };
 						} else {
-							return { value: undefined as any, done: true };
+							return { value: undefined, done: true };
 						}
 					}
 				};

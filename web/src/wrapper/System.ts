@@ -2,7 +2,8 @@ import type {
 	MainModule,
 	NativeAccessType,
 	NativeMemoryType,
-	NativeSystem,
+	NativeProxySystem,
+	NativeSystemStateHashes,
 } from "../native/RetroPlug";
 
 export enum AccessType {
@@ -58,9 +59,9 @@ function convertAccessType(
 
 export class System {
 	private _module: MainModule;
-	private _system: NativeSystem;
+	private _system: NativeProxySystem;
 
-	constructor(module: MainModule, system: NativeSystem) {
+	constructor(module: MainModule, system: NativeProxySystem) {
 		this._module = module;
 		this._system = system;
 	}
@@ -78,5 +79,14 @@ export class System {
 
 	reset() {
 		this._system.reset();
+	}
+
+	get stateHashes(): NativeSystemStateHashes {
+		return this._system.getStateHashes();
+	}
+
+	get lsdjSav() {
+		const systemMemory = this.getMemory(MemoryType.Sram, AccessType.Read);
+		return new this._module.NativeLsdjSav(systemMemory.getBuffer());
 	}
 }

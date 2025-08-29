@@ -180,6 +180,7 @@ void GlfwNativeWindow::onCreate() {
 	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     //glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+	emscripten_glfw_set_next_window_canvas_selector(_canvasId.c_str());
 	#else
 	//glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -193,7 +194,6 @@ void GlfwNativeWindow::onCreate() {
 	#endif
 
 	Dimension dimensions = vm->getDimensions();
-	emscripten_glfw_set_next_window_canvas_selector(_canvasId.c_str());
 	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
 	assert(_window);
 

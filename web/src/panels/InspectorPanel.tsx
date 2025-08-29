@@ -1,41 +1,63 @@
 import { useEffect, useState } from "react";
-import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { AccessType, MemoryType, System } from "../wrapper/System";
-import { useProject } from '../hooks/RetroPlugHooks';
 
-const SystemInspector: React.FC<{ system: System }> = ({ system }) => {
-	const { app } = useRetroPlug();
+import { useProject, useSystem, useSystemMemoryHash } from "../hooks/RetroPlugHooks";
+import { Project } from "../wrapper/Project";
+import { MemoryType, System } from "../wrapper/System";
+
+const LsdjSavInspector: React.FC<{ system: System | null }> = ({ system }) => {
 	const [songName, setSongName] = useState("");
+	const hash = useSystemMemoryHash(system, MemoryType.Sram);
 
 	useEffect(() => {
-		if (!app || !system) return;
+		if (!system) return;
 
-		const systemMemory = system.getMemory(MemoryType.Sram, AccessType.Read);
-		const sav = new app.module!.NativeLsdjSav(systemMemory.getBuffer());
+		const sav = system.lsdjSav;
 		const name = sav.workingProject.getName();
 		setSongName(name);
-	}, [app, system]);
+	}, [system, hash]);
 
-	return <div>{songName}</div>;
+	return (
+		<div>
+			{songName}
+		</div>
+	);
+};
+
+const SystemInspector: React.FC<{
+	project: Project | null;
+	systemIdx: number;
+}> = ({ project, systemIdx }) => {
+	const system = useSystem(project, systemIdx);
+
+	return (
+		<div>
+			{system?.romName}
+			<LsdjSavInspector system={system} />
+		</div>
+	);
 };
 
 export const InspectorPanel: React.FC = () => {
 	const project = useProject();
-	const [systems, setSystems] = useState<System[]>([]);
+	const [systemCount, setSystemCount] = useState<number>(0);
 
 	useEffect(() => {
 		if (!project) {
-			setSystems([]);
+			setSystemCount(0);
 			return;
 		}
 
-		setSystems(Array.from(project.systems));
+		setSystemCount(project.systemCount);
 	}, [project]);
 
 	return (
 		<div>
-			{systems.map((system, idx) => (
-				<SystemInspector key={`system-${idx}`} system={system} />
+			{Array.from({ length: systemCount }, (_, idx) => (
+				<SystemInspector
+					key={`system-${idx}`}
+					project={project}
+					systemIdx={idx}
+				/>
 			))}
 		</div>
 	);

@@ -4,6 +4,7 @@
 
 #include "core/ProjectSerializer.h"
 #include "core/SystemProcessor.h"
+#include "core/ProxySystem.h"
 #include "foundation/FsUtil.h"
 
 using namespace rp;
@@ -91,7 +92,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 			.paths = { .romPath = romPath, .sramPath = sramPath },
 			.settings = project.getGlobalConfig().system
 		};
-		SystemPtr system = project.addSystem(pathPair.second, desc);
+		ProxySystemPtr system = project.addSystem(pathPair.second, desc);
 		if (system) {
 			std::string romName = system->getRomName();
 			std::string romFileName = fw::FsUtil::getFilename(romPath);
@@ -135,7 +136,7 @@ bool LoaderUtil::handleLoad(const std::vector<std::string>& files, FileManager& 
 				.settings = project.getGlobalConfig().system
 			};
 
-			SystemPtr system = project.addSystem(pathPair.second, desc);
+			ProxySystemPtr system = project.addSystem(pathPair.second, desc);
 			if (system) {
 				valid = true;
 				std::string romName = system->getRomName();

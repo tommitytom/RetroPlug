@@ -7,6 +7,7 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
 #include "core/Project.h"
+#include "core/ProxySystem.h"
 #include "foundation/DataBuffer.h"
 #include "ui/RetroPlugView.h"
 #include "lsdj/Ram.h"
@@ -106,10 +107,24 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("incrementVersion", &System::incrementVersion)
 	;
 
+	value_array<SystemStateHashes>("NativeSystemStateHashes")
+		.element(emscripten::index<0>())
+		.element(emscripten::index<1>())
+		.element(emscripten::index<2>())
+		.element(emscripten::index<3>())
+		.element(emscripten::index<4>())
+	;
+
+	class_<ProxySystem, base<System>>("NativeProxySystem")
+		.smart_ptr<std::shared_ptr<ProxySystem>>("NativeProxySystemPtr")
+		.function("getStateHashes", &ProxySystem::getStateHashes)
+	;
+
 	class_<Project>("NativeProject")
-		.function("addSystem", select_overload<SystemPtr(SystemType, const SystemDesc&, SystemId)>(&Project::addSystem))
-		.function("loadSystem", select_overload<SystemPtr(SystemType, LoadConfig&&, SystemId)>(&Project::addSystem))
+		.function("addSystem", select_overload<ProxySystemPtr(SystemType, const SystemDesc&, SystemId)>(&Project::addSystem))
+		.function("loadSystem", select_overload<ProxySystemPtr(SystemType, LoadConfig&&, SystemId)>(&Project::addSystem))
 		.function("getSystem", &Project::getSystem)
+		.function("getSystemByIndex", &Project::getSystemByIndex)
 		.property("systemCount", &Project::getSystemCount)
 		.function("duplicateSystem", &Project::duplicateSystem)
 		.function("removeSystem", &Project::removeSystem)
@@ -253,6 +268,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("workingSong", &rp::lsdj::Sav::getWorkingSong)
 		.function("setWorkingProject", &rp::lsdj::Sav::setWorkingProject)
 	;
+
+
 
 	function("upcastView", &upcastView);
 }

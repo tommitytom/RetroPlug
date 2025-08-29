@@ -1,6 +1,7 @@
 #include "foundation/MacroTools.h"
 #include "application/ApplicationRunner.h"
 #include "entry/ApplicationFactory.h"
+#include "application/GlfwNativeWindow.h"
 
 using namespace fw;
 

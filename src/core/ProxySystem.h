@@ -4,6 +4,7 @@
 
 #include "foundation/FsUtil.h"
 #include "foundation/Event.h"
+#include "foundation/HashUtil.h"
 #include "core/Events.h"
 #include "core/System.h"
 #include "core/SystemProvider.h"
@@ -15,6 +16,7 @@ namespace rp {
 	private:
 		SystemType _targetType;
 		SystemStateOffsets _stateOffsets;
+		SystemStateHashes _stateHashes = {0};
 		fw::Uint8Buffer _rom;
 		fw::Uint8Buffer _state;
 		std::string _romName;
@@ -73,7 +75,7 @@ namespace rp {
 			assert(false);
 			setDesc(loadConfig.desc);
 			_eventNode.send("Audio"_hs, LoadEvent{ .systemId = getId(), .config = std::move(loadConfig) });
-			return true; 
+			return true;
 		}
 
 		bool loadRom(fw::Uint8Buffer&& romBuffer) override {
@@ -85,7 +87,7 @@ namespace rp {
 		bool loadSram(fw::Uint8Buffer&& sramBuffer) override {
 			// TODO: Write SRAM to state here? use getMemory
 			_eventNode.send("Audio"_hs, LoadSramEvent{ .systemId = getId(), .sramBuffer = std::move(sramBuffer) });
-			return true; 
+			return true;
 		}
 
 		bool loadState(fw::Uint8Buffer&& stateBuffer) override {
@@ -100,6 +102,17 @@ namespace rp {
 
 		void setStateBuffer(fw::Uint8Buffer&& buffer) override {
 			_state = std::move(buffer);
+			updateStateHashes();
+		}
+
+		const SystemStateHashes& getStateHashes() const {
+			return _stateHashes;
+		}
+
+		void updateStateHashes() {
+			for (size_t i = 0; i < _stateHashes.size(); ++i) {
+				_stateHashes[i] = fw::HashUtil::hash(_state.slice(_stateOffsets[i].offset, _stateOffsets[i].size));
+			}
 		}
 
 		void process(uint32 frameCount) override {
@@ -119,7 +132,7 @@ namespace rp {
 			return false;
 		}
 
-		bool saveSram(fw::Uint8Buffer& target) override { 
+		bool saveSram(fw::Uint8Buffer& target) override {
 			MemoryAccessor accessor = getMemory(MemoryType::Sram, AccessType::Read);
 			if (accessor.isValid()) {
 				accessor.getBuffer().copyTo(&target);
@@ -139,7 +152,7 @@ namespace rp {
 
 		void setGameLink(bool gameLink) override {
 			_desc.settings.gameLink = gameLink;
-			
+
 			SystemSettings settings = _desc.settings;
 			settings.gameLink = gameLink;
 			_eventNode.send("Audio"_hs, SetSettingsEvent{ .systemId = getId(), .settings = settings });

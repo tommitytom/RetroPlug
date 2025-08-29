@@ -7,6 +7,7 @@
 #include "core/Events.h"
 #include "core/ModelFactory.h"
 #include "core/ProjectState.h"
+#include "core/ProxySystem.h"
 #include "core/Serializable.h"
 #include "core/System.h"
 #include "core/SystemManager.h"
@@ -115,13 +116,13 @@ namespace rp {
 			return false;
 		}
 
-		SystemPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
+		ProxySystemPtr addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId = INVALID_SYSTEM_ID);
 
-		SystemPtr addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
+		ProxySystemPtr addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId = INVALID_SYSTEM_ID);
 
 		void removeSystem(SystemId systemId);
 
-		SystemPtr duplicateSystem(SystemId systemId = INVALID_SYSTEM_ID);
+		ProxySystemPtr duplicateSystem(SystemId systemId = INVALID_SYSTEM_ID);
 
 		void clear();
 
@@ -148,8 +149,16 @@ namespace rp {
 			return _systemManager.getSystems().size();
 		}
 
-		const SystemPtr& getSystem(SystemId systemId) {
-			return _systemManager.getSystems()[systemId];
+		ProxySystemPtr getSystemByIndex(size_t index) {
+			return std::static_pointer_cast<ProxySystem>(_systemManager.getSystems()[index]);
+		}
+
+		ProxySystemPtr getSystem(SystemId systemId) {
+			SystemPtr system = getSystemManager().findSystem(systemId);
+			if (!system) {
+				return nullptr;
+			}
+			return std::static_pointer_cast<ProxySystem>(system);
 		}
 
 		SystemManager& getSystemManager() {

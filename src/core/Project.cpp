@@ -245,7 +245,7 @@ namespace rp {
 		return false;
 	}
 
-	SystemPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
+	ProxySystemPtr Project::addSystem(SystemType type, const SystemDesc& systemDesc, SystemId systemId) {
 		LoadConfig loadConfig = LoadConfig{
 			.desc = systemDesc,
 			.romBuffer = std::make_shared<fw::Uint8Buffer>(),
@@ -267,7 +267,7 @@ namespace rp {
 		return addSystem(type, std::move(loadConfig), systemId);
 	}
 
-	SystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId) {
+	ProxySystemPtr Project::addSystem(SystemType type, LoadConfig&& loadConfig, SystemId systemId) {
 		if (systemId == INVALID_SYSTEM_ID) {
 			systemId = _nextId++;
 		}
@@ -339,7 +339,7 @@ namespace rp {
 		_requiresSave = true;
 	}
 
-	SystemPtr Project::duplicateSystem(SystemId systemId) {
+	ProxySystemPtr Project::duplicateSystem(SystemId systemId) {
 		SystemPtr system = _systemManager.findSystem(systemId);
 
 		LoadConfig loadConfig = {

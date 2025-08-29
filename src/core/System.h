@@ -7,7 +7,6 @@
 
 #include <entt/core/type_info.hpp>
 #include <entt/core/memory.hpp>
-#include <magic_enum.hpp>
 #include <moodycamel/readerwriterqueue.h>
 #include <moodycamel/concurrentqueue.h>
 
@@ -27,7 +26,8 @@ namespace rp {
 		uint32 size = 0;
 	};
 
-	using SystemStateOffsets = std::array<SystemStateOffset, magic_enum::enum_count<MemoryType>()>;
+	using SystemStateOffsets = std::array<SystemStateOffset, 5>;
+	using SystemStateHashes = std::array<uint64, 5>;
 
 	struct TimedByte {
 		uint8 byte = 0;

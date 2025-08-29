@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef FW_PLATFORM_WEB
 #include <emscripten/webaudio.h>
 #include "application/Application.h"
 #include "application/UiContext.h"
@@ -48,3 +49,4 @@ namespace fw::app {
 		void stop();
 	};
 }
+#endif

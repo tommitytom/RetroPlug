@@ -7,6 +7,7 @@
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugConfig.h"
 #include "core/System.h"
+#include "core/ProxySystem.h"
 #include "ui/FileDialog.h"
 #include "ui/FileDialogManager.h"
 #include "ui/MenuBuilder.h"
@@ -41,7 +42,7 @@ namespace rp {
 			.action("Load MGB", [this]() {
 				Project& project = getState<Project>();
 
-				SystemPtr system = project.addSystem(SAMEBOY_GUID, {
+				ProxySystemPtr system = project.addSystem(SAMEBOY_GUID, {
 					.desc = {
 						.paths = {
 							.romPath = "mgb.gb"

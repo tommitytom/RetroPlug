@@ -1,5 +1,6 @@
 #include "WebApplicationRunner.h"
 
+#ifdef FW_PLATFORM_WEB
 #include <emscripten/emscripten.h>
 
 #include <spdlog/spdlog.h>
@@ -66,3 +67,4 @@ namespace fw::app {
 		return _uiContext->runFrame();
 	}
 }
+#endif
