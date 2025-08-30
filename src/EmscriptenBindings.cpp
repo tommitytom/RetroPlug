@@ -18,6 +18,7 @@
 #include "sameboy/Constants.h"
 #include "core/audio/Effect.h"
 #include "core/audio/BiquadEffect.h"
+#include "core/audio/DitherEffect.h"
 #include "core/audio/EffectChain.h"
 
 // Additional includes for LSDJ enums
@@ -559,6 +560,34 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("isStable", &BiquadEffect::isStable)
 		.function("getMagnitudeResponse", &BiquadEffect::getMagnitudeResponse)
 	;
+
+	// DitherMode enum
+	enum_<DitherMode>("DitherMode")
+		.value("ErrorDiffusion", DitherMode::ErrorDiffusion)
+		.value("SierraLite", DitherMode::SierraLite)
+		.value("HighPassTPDF", DitherMode::HighPassTPDF)
+		.value("ShapedTPDF2ndOrder", DitherMode::ShapedTPDF2ndOrder)
+		.value("JJNErrorDiffusion", DitherMode::JJNErrorDiffusion)
+	;
+
+	// DitherEffect class
+	class_<DitherEffect, base<Effect>>("DitherEffect")
+		.constructor<>()
+		.function("process", &DitherEffect::process)
+		.function("setMode", &DitherEffect::setMode)
+		.function("setBitDepth", &DitherEffect::setBitDepth)
+		.function("setEnabled", &DitherEffect::setEnabled)
+		.function("getMode", &DitherEffect::getMode)
+		.function("getBitDepth", &DitherEffect::getBitDepth)
+		.function("isEnabled", &DitherEffect::isEnabled)
+		.function("reset", &DitherEffect::reset)
+		.function("configureErrorDiffusion", &DitherEffect::configureErrorDiffusion)
+		.function("configureSierraLite", &DitherEffect::configureSierraLite)
+		.function("configureHighPassTPDF", &DitherEffect::configureHighPassTPDF)
+		.function("configureShapedTPDF2ndOrder", &DitherEffect::configureShapedTPDF2ndOrder)
+		.function("configureJJNErrorDiffusion", &DitherEffect::configureJJNErrorDiffusion)
+	;
+
 	// EffectChain class
 	class_<EffectChain>("EffectChain")
 		.constructor<>()
