@@ -5,29 +5,7 @@ import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { NativeLsdjKit, NativeLsdjRom } from "../native/RetroPlug";
 import "../styles/RomEditorPanel.css";
 import { convertFile, convertFloat32Buffer } from "../utils/FileUtil";
-import { GAMEBOY_SAMPLE_RATE, LSDJ_KIT_COUNT, LSDJ_KIT_SAMPLE_COUNT } from "../wrapper/Lsdj";
-
-// Utility function to play an audio sample using Web Audio API
-function playSample(audioContext: AudioContext, sampleData: Float32Array, volume: number, sampleRate: number) {
-	if (!audioContext || !sampleData || sampleData.length === 0) return;
-
-	// Create an audio buffer
-	const buffer = audioContext.createBuffer(1, sampleData.length, sampleRate);
-	const channelData = buffer.getChannelData(0);
-
-	// Copy the sample data to the buffer
-	for (let i = 0; i < sampleData.length; i++) {
-		channelData[i] = sampleData[i] * volume;
-	}
-
-	// Create and configure buffer source
-	const source = audioContext.createBufferSource();
-	source.buffer = buffer;
-	source.connect(audioContext.destination);
-
-	// Play the sample
-	source.start();
-}
+import { GAMEBOY_SAMPLE_RATE, LSDJ_KIT_COUNT, LSDJ_KIT_SAMPLE_COUNT, playSample } from "../wrapper/Lsdj";
 
 interface IIndexedKit {
 	id: number;
@@ -36,42 +14,74 @@ interface IIndexedKit {
 }
 
 
-function renderWaveForm(canvas: HTMLCanvasElement, sampleData: Float32Array) {
+function renderWaveForm(canvas: HTMLCanvasElement, sampleData: Float32Array, markers: number[]) {
 	const ctx = canvas.getContext("2d");
 	if (!ctx) return;
 
-	const width = canvas.width;
-	const height = canvas.height;
+	const width = canvas.clientWidth;
+	const height = canvas.clientHeight;
 
-	ctx.strokeStyle = 'white';
 	ctx.clearRect(0, 0, width, height);
+
+	ctx.save();
+	ctx.strokeStyle = 'white';
+	ctx.lineWidth = 1;
 	ctx.beginPath();
 
 	const step = Math.ceil(sampleData.length / width);
 	for (let x = 0; x < width; x++) {
 		const min = Math.min(...sampleData.subarray(x * step, (x + 1) * step));
 		const max = Math.max(...sampleData.subarray(x * step, (x + 1) * step));
-		ctx.moveTo(x, (1 + min) * height / 2);
-		ctx.lineTo(x, (1 + max) * height / 2);
+		ctx.moveTo(x + 0.5, (1 + min) * height / 2);
+		ctx.lineTo(x + 0.5, (1 + max) * height / 2);
 	}
-
 	ctx.stroke();
+	ctx.restore();
+
+	ctx.save();
+	ctx.strokeStyle = 'red';
+	ctx.lineWidth = 1;
+	ctx.beginPath();
+	for (const marker of markers) {
+		const scaledMarker = (marker / sampleData.length) * width;
+		ctx.moveTo(scaledMarker + 0.5, 0);
+		ctx.lineTo(scaledMarker + 0.5, height);
+	}
+	ctx.stroke();
+	ctx.restore();
 }
 
 type WaveViewProps = {
 	sampleData: Float32Array;
 	markers: number[];
+	className?: string;
 }
-const WaveView = ({ sampleData, markers }: WaveViewProps) => {
+const WaveView = ({ sampleData, markers, className }: WaveViewProps) => {
 	const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
 	useEffect(() => {
-		if (!sampleData) return;
-		renderWaveForm(canvasRef.current!, sampleData);
-	}, [sampleData]);
+		const canvas = canvasRef.current;
+		if (!canvas || !sampleData) return;
+
+		const dpr = window.devicePixelRatio || 1;
+		const width = canvas.clientWidth;
+		const height = canvas.clientHeight;
+		if (width === 0 || height === 0) return;
+
+		canvas.width = width * dpr;
+		canvas.height = height * dpr;
+
+		const ctx = canvas.getContext("2d");
+		if (ctx) {
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			ctx.scale(dpr, dpr);
+		}
+
+		renderWaveForm(canvas, sampleData, markers);
+	}, [sampleData, markers]);
 
 	return (
-		<canvas ref={canvasRef} />
+		<canvas ref={canvasRef} className={className} />
 	);
 }
 
@@ -84,6 +94,8 @@ interface INamedSample {
 const LsdjKit: React.FC<{ kit: IIndexedKit; audioContext: AudioContext | null }> = ({ kit, audioContext }) => {
 	const {app} = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
+	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
+	const [markers, setMarkers] = useState<number[]>([]);
 
 	useEffect(() => {
 		if (!app || !kit) {
@@ -104,7 +116,20 @@ const LsdjKit: React.FC<{ kit: IIndexedKit; audioContext: AudioContext | null }>
 			}
 		}
 
+		const markers: number[] = [];
+		const fullSampleSize = namedSamples.reduce((acc, sample) => acc + sample.data.length, 0);
+		const fullSample = new Float32Array(fullSampleSize);
+		let offset = 0;
+		for (const sample of namedSamples) {
+			fullSample.set(sample.data, offset);
+			offset += sample.data.length;
+
+			markers.push(offset);
+		}
+
 		setSamples(namedSamples);
+		setKitSample(fullSample);
+		setMarkers(markers);
 	}, [kit, setSamples]);
 
 	const handleSampleClick = useCallback((sampleData: Float32Array) => {
@@ -131,7 +156,7 @@ const LsdjKit: React.FC<{ kit: IIndexedKit; audioContext: AudioContext | null }>
 							className="sample-waveform-clickable"
 							title="Click to play sample"
 						>
-							<WaveView sampleData={sample.data} />
+							<WaveView sampleData={sample.data} markers={[]} />
 						</div>
 					</div>
 				))}
