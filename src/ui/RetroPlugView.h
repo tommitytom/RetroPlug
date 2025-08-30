@@ -25,6 +25,8 @@
 #include "ui/TreeView.h"
 #include "ui/View.h"
 
+#include "lsdj/LsdjSettings.h"
+
 namespace rp {
 	enum class ThreadTarget {
 		Ui,
@@ -51,7 +53,6 @@ namespace rp {
 		fw::ButtonStreamWriter _buttonWriter;
 
 		SystemContainerViewPtr _systemContainer;
-		//CompactLayoutViewPtr _compactLayout;
 		Project _project;
 
 		uint32 _sampleRate = 48000;
@@ -97,6 +98,10 @@ namespace rp {
 		Project* getProject() {
 			return &_project;
 		}
+
+		entt::any getSystemServiceState(SystemId id, SystemServiceType type);
+
+		LsdjServiceSettings getLsdjState(SystemId id);
 
 	private:
 		void initViews(SystemContainerViewPtr container);

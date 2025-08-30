@@ -4,6 +4,7 @@
 #include "foundation/KeyToButton.h"
 #include "foundation/HashUtil.h"
 #include "ui/Menu.h"
+#include "lsdj/SampleUtil.h"
 
 using namespace rp;
 

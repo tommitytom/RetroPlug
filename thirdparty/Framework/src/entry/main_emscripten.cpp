@@ -22,6 +22,10 @@ val Uint8Buffer_data(Uint8Buffer& buffer) {
 	return val(typed_memory_view(buffer.size(), buffer.data()));
 }
 
+val Float32Buffer_data(Float32Buffer& buffer) {
+	return val(typed_memory_view(buffer.size(), buffer.data()));
+}
+
 EMSCRIPTEN_BINDINGS(framework) {
 	class_<fw::View>("View")
 		.smart_ptr<std::shared_ptr<fw::View>>("ViewPtr")
@@ -42,5 +46,14 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.constructor(&std::make_shared<Uint8Buffer>)
 		.constructor(&std::make_shared<Uint8Buffer, size_t>)
 		.function("data", &Uint8Buffer_data)
+		.function("size", &Uint8Buffer::size)
+	;
+
+	class_<Float32Buffer>("Float32Buffer")
+		.smart_ptr<std::shared_ptr<Float32Buffer>>("Float32BufferPtr")
+		.constructor(&std::make_shared<Float32Buffer>)
+		.constructor(&std::make_shared<Float32Buffer, size_t>)
+		.function("data", &Float32Buffer_data)
+		.function("size", &Float32Buffer::size)
 	;
 }

@@ -155,7 +155,7 @@ namespace fw {
 			return eventType;
 		}*/
 
-		void unsubscribe(EventType eventType) {
+		void unsubscribe(const EventType eventType) {
 			assert(hasSubscription(eventType));
 
 			handleUnsubscribe(_id, eventType);
@@ -190,7 +190,7 @@ namespace fw {
 		}
 
 		template <typename T>
-		void broadcast(const T& event, bool includeSender = false) {
+		void broadcast(const T& event, const bool includeSender = false) {
 			const EventType eventType = entt::type_id<T>().index();
 			const auto found = _state.lookup.find(eventType);
 
@@ -211,7 +211,7 @@ namespace fw {
 		}
 
 		template <typename T>
-		void broadcast(T&& event, bool includeSender = false) {
+		void broadcast(T&& event, const bool includeSender = false) {
 			const EventType eventType = entt::type_id<T>().index();
 			const auto found = _state.lookup.find(eventType);
 
@@ -235,7 +235,7 @@ namespace fw {
 		}
 
 		template <typename T>
-		void broadcast(bool includeSender = false) {
+		void broadcast(const bool includeSender = false) {
 			const EventType eventType = entt::type_id<T>().index();
 			const auto found = _state.lookup.find(eventType);
 
@@ -255,7 +255,7 @@ namespace fw {
 			}
 		}
 
-		bool hasSubscribers(EventType eventType) const {
+		bool hasSubscribers(const EventType eventType) const {
 			const auto found = _state.lookup.find(eventType);
 
 			if (found != _state.lookup.end()) {
@@ -272,7 +272,7 @@ namespace fw {
 		}
 
 		template <typename T>
-		void send(NodeId targetNodeId, const T& event) {
+		void send(const NodeId targetNodeId, const T& event) {
 			assert(_state.nodes.contains(targetNodeId));
 
 			const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
@@ -286,7 +286,7 @@ namespace fw {
 		}
 
 		template <typename T>
-		bool trySend(NodeId targetNodeId, T&& event) {
+		bool trySend(const NodeId targetNodeId, T&& event) {
 			auto found = _state.nodes.find(targetNodeId);
 			if (found != _state.nodes.end()) {
 				const QueuePtr queue = found->second.queue.lock();
@@ -305,13 +305,13 @@ namespace fw {
 		}
 
 		template <typename T>
-		void send(NodeId targetNodeId, T&& event) {
+		void send(const NodeId targetNodeId, T&& event) {
 			const bool valid = trySend(targetNodeId, std::forward<T>(event));
 			assert(valid);
 		}
 
 		template <typename T>
-		void send(NodeId targetNodeId) {
+		void send(const NodeId targetNodeId) {
 			assert(_state.nodes.contains(targetNodeId));
 
 			const QueuePtr queue = _state.nodes[targetNodeId].queue.lock();
@@ -334,7 +334,7 @@ namespace fw {
 			processIncoming(amount);
 		}
 
-		inline bool hasSubscription(EventType eventType) const {
+		inline bool hasSubscription(const EventType eventType) const {
 			return _subscriptions.find(eventType) != _subscriptions.end();
 		}
 
@@ -367,14 +367,14 @@ namespace fw {
 		EventNode& operator=(const EventNode&) = delete;
 
 	private:
-		void processIncoming(size_t amount) {
+		void processIncoming(const size_t amount) {
 			for (size_t i = 0; i < amount; ++i) {
 				Event& ev = _incomingScratch[i];
 
 				if (ev.kind == Event::Kind::User) {
 					assert(_state.nodes.contains(ev.sender));
 
-					const SubscriptionHandler* handler = getSubscriptionHandler(ev.value.type().index());
+					const SubscriptionHandler* handler = findSubscriptionHandler(ev.value.type().index());
 
 					if (handler) {
 						(*handler)(ev.value);
@@ -387,7 +387,7 @@ namespace fw {
 			}
 		}
 
-		void subscribe(EventType eventType, SubscriptionHandler&& func) {
+		void subscribe(const EventType eventType, SubscriptionHandler&& func) {
 			assert(!hasSubscription(eventType));
 
 			handleSubscribe(_id, eventType);
@@ -456,7 +456,7 @@ namespace fw {
 			_state.nodes[node.id] = node;
 		}
 
-		void handleRemoveNode(NodeId nodeId) {
+		void handleRemoveNode(const NodeId nodeId) {
 			assert(_state.nodes.contains(nodeId));
 			_state.nodes.erase(nodeId);
 
@@ -470,14 +470,14 @@ namespace fw {
 			}
 		}
 
-		void handleSubscribe(NodeId nodeId, EventType eventType) {
+		void handleSubscribe(const NodeId nodeId, const EventType eventType) {
 			assert(_state.nodes.contains(nodeId));
 			assert(!vectorContains(_state.lookup[eventType], _state.nodes[nodeId]));
 
 			_state.lookup[eventType].push_back(_state.nodes[nodeId]);
 		}
 
-		void handleUnsubscribe(NodeId nodeId, EventType eventType) {
+		void handleUnsubscribe(const NodeId nodeId, const EventType eventType) {
 			assert(_state.nodes.contains(nodeId));
 			std::vector<NodeReference>& nodes = _state.lookup[eventType];
 
@@ -487,7 +487,7 @@ namespace fw {
 			nodes.erase(nodes.begin() + idx);
 		}
 
-		inline const SubscriptionHandler* getSubscriptionHandler(EventType eventType) const {
+		inline const SubscriptionHandler* findSubscriptionHandler(const EventType eventType) const {
 			const auto found = _subscriptions.find(eventType);
 			if (found != _subscriptions.end()) {
 				return &found->second;

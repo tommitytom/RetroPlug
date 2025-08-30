@@ -1,6 +1,8 @@
 import type {
+	LsdjMemoryOffsets,
 	MainModule,
 	NativeAccessType,
+	NativeLsdjRam,
 	NativeMemoryType,
 	NativeProxySystem,
 	NativeSystemStateHashes,
@@ -20,6 +22,8 @@ export enum MemoryType {
 	Sram,
 	Vram,
 }
+
+export const LSDJ_SERVICE_TYPE = 0x15D115D1;
 
 function convertMemoryType(
 	module: MainModule,
@@ -70,6 +74,10 @@ export class System {
 		return this._system.getRomName();
 	}
 
+	get id() {
+		return this._system.id;
+	}
+
 	getMemory(memoryType: MemoryType, accessType: AccessType) {
 		return this._system.getMemory(
 			convertMemoryType(this._module, memoryType),
@@ -88,5 +96,15 @@ export class System {
 	get lsdjSav() {
 		const systemMemory = this.getMemory(MemoryType.Sram, AccessType.Read);
 		return new this._module.NativeLsdjSav(systemMemory.getBuffer());
+	}
+
+	get lsdjRom() {
+		const systemMemory = this.getMemory(MemoryType.Rom, AccessType.Read);
+		return new this._module.NativeLsdjRom(systemMemory);
+	}
+
+	getLsdjRam(ramOffset: LsdjMemoryOffsets): NativeLsdjRam {
+		const systemMemory = this.getMemory(MemoryType.Ram, AccessType.Read);
+		return new this._module.NativeLsdjRam(systemMemory, ramOffset);
 	}
 }

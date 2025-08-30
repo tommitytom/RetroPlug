@@ -6,14 +6,14 @@
 #include "lsdj/Ram.h"
 
 namespace rp {
-	class ArduinoboyService final : public TypedSystemService<ArduinoboyServiceSettings> {
+	class ArduinoboyService final : public TypedSystemService<ArduinoboyServiceSettings, ARDUINOBOY_SERVICE_TYPE> {
 	private:
 		int32 _lastRow = -1;
 		bool _arduinoboyPlaying = false;
 		uint8 _keyboardOctave = 0;
 
 	public:
-		ArduinoboyService() : TypedSystemService(ARDUINOBOY_SERVICE_TYPE) {}
+		ArduinoboyService() = default;
 		~ArduinoboyService() = default;
 
 		void onAfterLoad(System& system) override;

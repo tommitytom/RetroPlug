@@ -14,9 +14,10 @@ namespace rp {
 	class SystemOverlay : public fw::View {
 	private:
 		SystemServiceNodePtr _node;
+		SystemServiceType _serviceType;
 
 	public:
-		SystemOverlay() {
+		SystemOverlay(SystemServiceType type): _serviceType(type) {
 			getLayout().setDimensions(100_pc);
 		}
 		
@@ -28,13 +29,17 @@ namespace rp {
 			return _node;
 		}
 
+		SystemServiceType getServiceType() const {
+			return _serviceType;
+		}
+
 		virtual void processInput(System& system, std::vector<fw::StreamButtonPress>& buttons, std::vector<std::string>& actions) {}
 	};
 
-	template <typename T>
+	template <typename T, const SystemServiceType Type>
 	class TypedSystemOverlay : public SystemOverlay {
 	public:
-		TypedSystemOverlay() {}
+		TypedSystemOverlay(): SystemOverlay(Type) {}
 		~TypedSystemOverlay() = default;
 
 		T& getServiceState() {

@@ -27,12 +27,15 @@
 #include "ui/MenuView.h"
 #include "ui/PanelView.h"
 #include "ui/StartView.h"
+#include "ui/SystemOverlay.h"
 #include "ui/SystemOverlayManager.h"
 #include "ui/SystemView.h"
 #include "ui/SwapContainerState.h"
 #include "ui/UiEditOverlay.h"
 #include "ui/ViewManager.h"
 #include "ui/VerticalSplitter.h"
+
+#include "lsdj/LsdjOverlay.h"
 
 #include "fonts/PlatNomor.h"
 
@@ -138,6 +141,11 @@ void RetroPlugView::onInitialize() {
 }
 
 bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
+	if (ev.key == fw::VirtualKey::F1 && ev.down) {
+		LsdjServiceSettings state = getLsdjState(1);
+		getSystemServiceState(1, LSDJ_SERVICE_TYPE);
+	}
+
 	std::vector<std::string> actions;
 	if (!_inputManager.processKey(ev.key, ev.down, _buttonWriter, actions)) {
 		return false;
@@ -153,6 +161,38 @@ bool RetroPlugView::onKey(const fw::KeyEvent& ev) {
 	_systemContainer->processInput(buttons, actions);
 
 	return true;
+}
+
+entt::any RetroPlugView::getSystemServiceState(SystemId id, SystemServiceType type) {
+	if (_systemContainer->isType<CompactLayoutView>()) {
+		auto grid = _systemContainer->asShared<CompactLayoutView>()->getGrid();
+
+		std::vector<SystemViewPtr> systemViews;
+		grid->findChildren<SystemView>(systemViews);
+
+		for (const SystemViewPtr& systemView : systemViews) {
+			SystemPtr system = systemView->getSystem();
+
+			if (system && system->getId() == id) {
+				for (size_t i = 0; i < systemView->getChildren().size(); i++) {
+					auto child = std::static_pointer_cast<SystemOverlay>(systemView->getChildren()[i]);
+					if (child->getServiceType() == type) {
+						return child->getNode()->getSystemService()->getState();
+					}
+				}
+			}
+		}
+	}
+
+	return entt::any();
+}
+
+LsdjServiceSettings RetroPlugView::getLsdjState(SystemId id) {
+	auto state = getSystemServiceState(id, LSDJ_SERVICE_TYPE);
+	if (state) {
+		return entt::any_cast<LsdjServiceSettings&>(state);
+	}
+	return LsdjServiceSettings();
 }
 
 void RetroPlugView::setupEventHandlers() {

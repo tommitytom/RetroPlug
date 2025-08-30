@@ -22,7 +22,7 @@ namespace rp {
 		std::string _romName;
 		fw::EventNode& _eventNode;
 		SystemDesc _desc;
-		std::vector<SystemServiceType> _services;
+		std::vector<SystemServiceType> _serviceIds;
 
 	public:
 		ProxySystem(SystemType type, SystemId id, const std::string& romName, fw::Uint8Buffer&& rom, fw::Uint8Buffer&& state, fw::EventNode& eventNode, const SystemStateOffsets& stateOffsets) :
@@ -39,12 +39,12 @@ namespace rp {
 
 		~ProxySystem() = default;
 
-		const std::vector<SystemServiceType>& getServices() const {
-			return _services;
+		const std::vector<SystemServiceType>& getServiceIds() const {
+			return _serviceIds;
 		}
 
-		void setServices(std::vector<SystemServiceType>&& services) {
-			_services = std::move(services);
+		void setServicesIds(std::vector<SystemServiceType>&& services) {
+			_serviceIds = std::move(services);
 		}
 
 		MemoryAccessor getMemory(MemoryType type, AccessType access) override {

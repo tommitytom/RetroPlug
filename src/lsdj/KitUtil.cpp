@@ -11,6 +11,7 @@
 #include <r8brain/CDSPResampler.h>
 
 #include "foundation/StringUtil.h"
+#include "lsdj/SampleUtil.h"
 
 using namespace rp;
 

@@ -60,19 +60,22 @@ export class RetroPlugApplication {
 			throw new Error("WASM view is not initialized");
 		}
 
-		return this._module.upcastView(view)!;
+		const final = this._module.upcastView(view)!;
+		view.delete();
+
+		return final;
 	}
 
 	get project(): Project {
-		const project = this.view.getProject();
-		if (!project) {
-			throw new Error("WASM project is not initialized");
-		}
+		const project = this.nativeProject;
 		return new Project(this._module!, project);
 	}
 
 	get nativeProject(): NativeProject {
-		const project = this.view.getProject();
+		const view = this.view;
+		const project = view.getProject();
+		view.delete();
+
 		if (!project) {
 			throw new Error("WASM project is not initialized");
 		}

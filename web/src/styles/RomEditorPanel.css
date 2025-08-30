@@ -1,0 +1,23 @@
+/* ROM Editor Panel styles */
+
+.rom-drop-area {
+	transition: all 0.3s ease;
+}
+
+.rom-drop-area.drag-over {
+	border-color: rgb(59, 130, 246);
+	background-color: rgba(59, 130, 246, 0.05);
+}
+
+.rom-drop-area:not(.drag-over) {
+	border-color: rgb(75, 85, 99);
+	background-color: rgb(31, 41, 55);
+}
+
+.rom-drop-text {
+	transition: color 0.3s ease;
+}
+
+.rom-drop-text.drag-over {
+	color: rgb(147, 197, 253);
+}

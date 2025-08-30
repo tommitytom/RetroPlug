@@ -4,6 +4,7 @@
 #include "lsdj/Rom.h"
 #include "lsdj/KitUtil.h"
 #include "lsdj/OffsetLookup.h"
+#include "lsdj/SampleUtil.h"
 #include "ui/FileDialog.h"
 #include "foundation/StringUtil.h"
 #include "foundation/DataBuffer.h"
@@ -127,7 +128,7 @@ void SamplerView::processInput(std::vector<fw::StreamButtonPress>& buttons, std:
 				_ui.releaseButton(button);
 			}
 		}
-	}	
+	}
 
 	buttons.clear();
 }
@@ -495,7 +496,7 @@ void SamplerView::updateSampleBuffers() {
 	if (found != settings.kits.end()) {
 		KitUtil::updateKit(_system, settings, _samplerState.selectedKit);
 		updateWaveform();
-	}	
+	}
 }
 
 void SamplerView::updateWaveform() {

@@ -19,7 +19,7 @@ namespace rp {
 		void(*caller)(entt::any&, entt::any&) = nullptr;
 		entt::any arg;
 	};
-	
+
 	class SystemService :public fw::EventReceiver {
 	private:
 		SystemServiceType _type = INVALID_SYSTEM_TYPE;
@@ -70,14 +70,15 @@ namespace rp {
 
 	using SystemServicePtr = std::shared_ptr<SystemService>;
 
-	template <typename T>
+	template <typename T, const SystemServiceType Type>
 	class TypedSystemService : public SystemService {
 	private:
 		T _state;
-		
+
 	public:
-		TypedSystemService(SystemServiceType type) : SystemService(type) {}
-		
+		TypedSystemService() : SystemService(Type) {}
+		virtual ~TypedSystemService() = default;
+
 		void setState(const entt::any& data) override {
 			_state = entt::any_cast<const T&>(data);
 		}
@@ -110,7 +111,7 @@ namespace rp {
 		SystemServicePtr _service;
 
 	public:
-		SystemServiceNode(fw::EventNode::NodeId targetNode, const SystemPtr& system, const SystemServicePtr& service): 
+		SystemServiceNode(fw::EventNode::NodeId targetNode, const SystemPtr& system, const SystemServicePtr& service):
 			_targetNode(targetNode), _system(system), _service(service) {}
 		~SystemServiceNode() {}
 
@@ -130,11 +131,11 @@ namespace rp {
 		void setSystemService(const SystemServicePtr& service) {
 			_service = service;
 		}
-		
+
 		const SystemPtr& getSystem() {
 			return _system;
 		}
-		
+
 		const SystemServicePtr& getSystemService() {
 			return _service;
 		}
@@ -168,7 +169,7 @@ namespace rp {
 		const StateT& getServiceState() const {
 			return entt::any_cast<const StateT&>(_service->getState());
 		}
-		
+
 		template <auto Candidate>
 		void setField(fw::EventNode& node, typename FieldType<StateT, Candidate>::type&& data) {
 			static_assert(std::is_member_object_pointer_v<decltype(Candidate)>);

@@ -3,14 +3,7 @@ import React, { useEffect, useRef } from "react";
 import { useRetroPlug } from "./contexts/RetroPlugContext";
 import { FrameworkCanvas } from "./FrameworkCanvas";
 import { RetroPlugApplication } from "./RetroPlugApplication";
-import { type Uint8Buffer } from "./native/RetroPlug";
-
-async function convertFile(app: RetroPlugApplication, file: File): Promise<Uint8Buffer> {
-	const romData = new Uint8Array(await file.arrayBuffer());
-	const romBuffer = new app.module!.Uint8Buffer(romData.byteLength);
-	romBuffer.data().set(romData);
-	return romBuffer;
-}
+import { convertFile } from './utils/FileUtil';
 
 async function onDrop(event: DragEvent, app: RetroPlugApplication) {
 	const project = app.project;

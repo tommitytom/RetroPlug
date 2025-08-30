@@ -38,7 +38,7 @@ namespace fw::app {
 			return *_uiContext;
 		}
 
-		ViewPtr getView() {
+		ViewPtr getView() const {
 			return _window->getView();
 		}
 

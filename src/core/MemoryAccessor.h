@@ -30,6 +30,7 @@ namespace rp {
 
 	public:
 		MemoryAccessor() {}
+		MemoryAccessor(MemoryType type, fw::Uint8Buffer data, size_t offset) : _type(type), _data(data), _offset(offset), _patches(nullptr) {}
 		MemoryAccessor(MemoryType type, fw::Uint8Buffer data, size_t offset, std::vector<MemoryPatch>* patches) : _type(type), _data(data), _offset(offset), _patches(patches) {}
 
 		std::vector<MemoryPatch>* getPatches() {

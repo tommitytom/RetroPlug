@@ -5,7 +5,7 @@
 #include "lsdj/ArduinoboyService.h"
 
 namespace rp {
-	class ArduinoboyOverlay final : public TypedSystemOverlay<ArduinoboyServiceSettings> {
+	class ArduinoboyOverlay final : public TypedSystemOverlay<ArduinoboyServiceSettings, ARDUINOBOY_SERVICE_TYPE> {
 		FwRegisterObject();
 	private:
 		bool _keyCapture = false;

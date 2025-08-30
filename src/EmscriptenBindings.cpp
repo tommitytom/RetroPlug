@@ -8,11 +8,13 @@
 #include <emscripten/bind.h>
 #include "core/Project.h"
 #include "core/ProxySystem.h"
+#include "core/ProxySystemService.h"
 #include "foundation/DataBuffer.h"
 #include "ui/RetroPlugView.h"
 #include "lsdj/Ram.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
+#include "lsdj/LsdjSettings.h"
 #include "sameboy/Constants.h"
 
 // Additional includes for LSDJ enums
@@ -93,6 +95,18 @@ void lsdjRom_setKitSampleName(rp::lsdj::Rom& rom, size_t kitIdx, size_t sampleId
 	rom.setKitSampleName(kitIdx, sampleIdx, std::string_view(name));
 }
 
+ProxySystemServicePtr ProxySystem_findService(ProxySystem& system, SystemServiceType type) {
+	for (const auto& service : system.getServices()) {
+		if (service->getType() == type) {
+			return std::static_pointer_cast<ProxySystemService>(service);
+		}
+	}
+
+	return nullptr;
+}
+
+#include "lsdj/SampleUtil.h"
+
 void setupWasmFs() {
 	//backend_t opfs = wasmfs_create_opfs_backend();
 	//spdlog::info("Created OPFS backend");
@@ -102,6 +116,9 @@ void setupWasmFs() {
 
 EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("setupWasmFs", &setupWasmFs);
+
+	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32);
+	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
 
 	constant("SAMEBOY_GUID", SAMEBOY_GUID);
 	constant("INVALID_SYSTEM_ID", INVALID_SYSTEM_ID);
@@ -141,6 +158,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<MemoryAccessor>("MemoryAccessor")
+		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
 		.function("getBuffer", &MemoryAccessor::getBuffer)
 		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
 	;
@@ -152,6 +170,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getRomName", &System::getRomName)
 		.property("desc", &System::getDesc)
 		.property("version", &System::getVersion)
+		.property("id", &System::getId)
 		.function("incrementVersion", &System::incrementVersion)
 	;
 
@@ -166,6 +185,17 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	class_<ProxySystem, base<System>>("NativeProxySystem")
 		.smart_ptr<std::shared_ptr<ProxySystem>>("NativeProxySystemPtr")
 		.function("getStateHashes", &ProxySystem::getStateHashes)
+		.function("findService", &ProxySystem_findService)
+	;
+
+	value_object<LsdjServiceSettings>("NativeLsdjServiceSettings")
+		.field("ramOffsets", &LsdjServiceSettings::ramOffsets)
+		.field("romValid", &LsdjServiceSettings::romValid)
+		.field("offsetsValid", &LsdjServiceSettings::offsetsValid)
+	;
+
+	class_<ProxySystemService>("NativeProxySystemService")
+		.smart_ptr<std::shared_ptr<ProxySystemService>>("NativeProxySystemServicePtr")
 	;
 
 	class_<Project>("NativeProject")
@@ -185,6 +215,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	class_<RetroPlugView, base<fw::View>>("RetroPlugView")
 		.smart_ptr<std::shared_ptr<RetroPlugView>>("RetroPlugViewPtr")
 		.function("getProject", &RetroPlugView::getProject, return_value_policy::reference())
+		.function("getLsdjState", &RetroPlugView::getLsdjState)
 	;
 
 	enum_<AccessType>("NativeAccessType")
@@ -281,12 +312,12 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// LSDJ Rom constants
-	constant("LSDJ_ROM_SIZE", rp::lsdj::Rom::ROM_SIZE);
-	constant("LSDJ_BANK_COUNT", rp::lsdj::Rom::BANK_COUNT);
-	constant("LSDJ_BANK_SIZE", rp::lsdj::Rom::BANK_SIZE);
-	constant("LSDJ_PALETTE_COUNT", rp::lsdj::Rom::PALETTE_COUNT);
-	constant("LSDJ_FONT_COUNT", rp::lsdj::Rom::FONT_COUNT);
-	constant("LSDJ_KIT_COUNT", rp::lsdj::Rom::KIT_COUNT);
+	//constant("LSDJ_ROM_SIZE", rp::lsdj::Rom::ROM_SIZE);
+	//constant("LSDJ_BANK_COUNT", rp::lsdj::Rom::BANK_COUNT);
+	//constant("LSDJ_BANK_SIZE", rp::lsdj::Rom::BANK_SIZE);
+	//constant("LSDJ_PALETTE_COUNT", rp::lsdj::Rom::PALETTE_COUNT);
+	//constant("LSDJ_FONT_COUNT", rp::lsdj::Rom::FONT_COUNT);
+	//constant("LSDJ_KIT_COUNT", rp::lsdj::Rom::KIT_COUNT);
 
 	// Framework struct bindings
 	value_object<fw::Color3>("Color3")
