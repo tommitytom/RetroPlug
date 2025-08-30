@@ -498,7 +498,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// Audio Buffer bindings
-	class_<fw::AudioBuffer>("AudioBuffer")
+	class_<fw::AudioBuffer>("NativeAudioBuffer")
 		.constructor<uint32, uint32, f32>()
 		.function("resize", &fw::AudioBuffer::resize)
 		.function("getReadPointer", &AudioBuffer_getReadPointer)
@@ -518,13 +518,13 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// Effect base class
-	class_<Effect>("Effect")
-		.smart_ptr<std::shared_ptr<Effect>>("EffectPtr")
+	class_<Effect>("NativeEffect")
+		.smart_ptr<std::shared_ptr<Effect>>("NativeEffectPtr")
 		.function("process", &Effect::process, pure_virtual())
 	;
 
 	// FilterType enum
-	enum_<FilterType>("FilterType")
+	enum_<FilterType>("NativeFilterType")
 		.value("LowPass", FilterType::LowPass)
 		.value("HighPass", FilterType::HighPass)
 		.value("BandPass", FilterType::BandPass)
@@ -536,7 +536,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// BiquadEffect class
-	class_<BiquadEffect, base<Effect>>("BiquadEffect")
+	class_<BiquadEffect, base<Effect>>("NativeBiquadEffect")
 		.constructor<>()
 		.function("process", &BiquadEffect::process)
 		.function("setFilterType", &BiquadEffect::setFilterType)
@@ -562,7 +562,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// DitherMode enum
-	enum_<DitherMode>("DitherMode")
+	enum_<DitherMode>("NativeDitherMode")
 		.value("ErrorDiffusion", DitherMode::ErrorDiffusion)
 		.value("SierraLite", DitherMode::SierraLite)
 		.value("HighPassTPDF", DitherMode::HighPassTPDF)
@@ -571,7 +571,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// DitherEffect class
-	class_<DitherEffect, base<Effect>>("DitherEffect")
+	class_<DitherEffect, base<Effect>>("NativeDitherEffect")
 		.constructor<>()
 		.function("process", &DitherEffect::process)
 		.function("setMode", &DitherEffect::setMode)
@@ -589,7 +589,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// EffectChain class
-	class_<EffectChain>("EffectChain")
+	class_<EffectChain>("NativeEffectChain")
 		.constructor<>()
 		.function("addEffect", &EffectChain::addEffect)
 		.function("removeEffect", &EffectChain::removeEffect)

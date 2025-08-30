@@ -1,10 +1,19 @@
+import { BiquadEffect } from "./effects/BiquadEffect.ts";
 import type {
 	MainModule,
 	NativeProject,
 	RetroPlugView,
-	WebApplicationRunner
+	WebApplicationRunner,
+	MemoryAccessor,
+	NativeMemoryType,
+	Uint8Buffer,
+	LsdjMemoryOffsets,
+	NativeLsdjRom,
+	NativeBiquadEffect,
+	NativeEffect
 } from "./native/RetroPlug.d.ts";
 import { Project } from "./wrapper/Project.ts";
+import { convertMemoryType, MemoryType } from "./wrapper/System.ts";
 
 export class RetroPlugApplication {
 	private _module: MainModule | null = null;
@@ -81,6 +90,61 @@ export class RetroPlugApplication {
 		}
 
 		return project;
+	}
+
+	createAudioBuffer(channelCount: number, sampleCount: number, sampleRate: number) {
+		return new this._module!.NativeAudioBuffer(channelCount, sampleCount, sampleRate);
+	}
+
+	createBiquadEffect() {
+		return new BiquadEffect(this._module!, new this._module!.NativeBiquadEffect());
+	}
+
+	createDitherEffect() {
+		return new this._module!.NativeDitherEffect();
+	}
+
+	createEffectChain() {
+		return new this._module!.NativeEffectChain();
+	}
+
+	createMemoryAccessor(memoryType: MemoryType, buffer: Uint8Buffer, offset: number = 0) {
+		return new this._module!.MemoryAccessor(convertMemoryType(this._module!, memoryType), buffer, offset);
+	}
+
+	createLsdjSav(): any;
+	createLsdjSav(buffer: Uint8Buffer): any;
+	createLsdjSav(buffer?: Uint8Buffer) {
+		if (buffer !== undefined) {
+			return new this._module!.NativeLsdjSav(buffer);
+		}
+		return new this._module!.NativeLsdjSav();
+	}
+
+	createLsdjRom(accessor: MemoryAccessor): NativeLsdjRom {
+		return new this._module!.NativeLsdjRom(accessor);
+	}
+
+	createLsdjRam(accessor: MemoryAccessor, offsets: LsdjMemoryOffsets) {
+		return new this._module!.NativeLsdjRam(accessor, offsets);
+	}
+
+	createUint8Buffer(): Uint8Buffer;
+	createUint8Buffer(size: number): Uint8Buffer;
+	createUint8Buffer(size?: number) {
+		if (size !== undefined) {
+			return new this._module!.Uint8Buffer(size);
+		}
+		return new this._module!.Uint8Buffer();
+	}
+
+	createFloat32Buffer(): any;
+	createFloat32Buffer(size: number): any;
+	createFloat32Buffer(size?: number) {
+		if (size !== undefined) {
+			return new this._module!.Float32Buffer(size);
+		}
+		return new this._module!.Float32Buffer();
 	}
 
 	setupAudio(audioContext: AudioContext | null) {

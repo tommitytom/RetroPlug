@@ -25,7 +25,7 @@ export enum MemoryType {
 
 export const LSDJ_SERVICE_TYPE = 0x15D115D1;
 
-function convertMemoryType(
+export function convertMemoryType(
 	module: MainModule,
 	type: MemoryType,
 ): NativeMemoryType {
