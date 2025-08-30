@@ -28,9 +28,9 @@ export const EffectItem: React.FC<EffectItemProps> = ({
 			</div>
 
 			<div className="space-y-2">
-				{effect.effect.getParameters().map((parameter, paramIndex) => (
+				{effect.effect.getParameters().map((parameter) => (
 					<EffectParameter
-						key={paramIndex}
+						key={`${effect.id}-${parameter.name}`}
 						parameter={parameter}
 						onParameterChange={(value) => onParameterChange(effect.id, parameter, value)}
 					/>
