@@ -2,7 +2,7 @@
 
 #include <string_view>
 #include "foundation/DataBuffer.h"
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 
 #define MA_LOG_LEVEL MA_LOG_LEVEL_VERBOSE
 #include <miniaudio/miniaudio.h>

@@ -6,7 +6,7 @@
 
 #include "core/System.h"
 #include "core/ProxySystem.h"
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 #include "sameboy/SameboyConfig.h"
 
 namespace rp {

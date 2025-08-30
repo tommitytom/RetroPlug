@@ -2,7 +2,7 @@
 
 #include "foundation/DataBuffer.h"
 #include "foundation/MathUtil.h"
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 
 namespace fw {
 	struct Waveform {

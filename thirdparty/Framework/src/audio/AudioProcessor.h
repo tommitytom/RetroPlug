@@ -3,7 +3,7 @@
 #include "foundation/DataBuffer.h"
 #include "foundation/Event.h"
 #include "foundation/Types.h"
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 #include "audio/MidiMessage.h"
 #include "audio/TimeInfo.h"
 

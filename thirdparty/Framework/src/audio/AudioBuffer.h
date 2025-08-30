@@ -9,20 +9,20 @@ namespace fw {
 		std::vector<DataBuffer<SampleType>> _channels;
 		uint32 _channelCount;
 		uint32 _sampleCount;
-		f64 _sampleRate = 44100.0;
+		f32 _sampleRate = 44100.0f;
 
 	public:
-		AudioBufferT(uint32 channels = 2, uint32 samples = 0)
-			: _channelCount(channels), _sampleCount(samples) {
+		AudioBufferT(uint32 channels = 2, uint32 samples = 0, f32 sampleRate = 44100.0f)
+			: _channelCount(channels), _sampleCount(samples), _sampleRate(sampleRate) {
 			resize(channels, samples);
 		}
 
 		AudioBufferT(const AudioBufferT& other)
-			: _channelCount(other._channelCount), _sampleCount(other._sampleCount) {
+			: _channelCount(other._channelCount), _sampleCount(other._sampleCount), _sampleRate(other._sampleRate) {
 			_channels.resize(_channelCount);
 			for (uint32 ch = 0; ch < _channelCount; ++ch) {
-				_channels[ch] = std::make_unique<SampleType[]>(_sampleCount);
-				std::memcpy(_channels[ch].get(), other._channels[ch].get(),
+				_channels[ch] = DataBuffer<SampleType>(_sampleCount);
+				std::memcpy(_channels[ch].data(), other._channels[ch].data(),
 							_sampleCount * sizeof(SampleType));
 			}
 		}
@@ -30,7 +30,8 @@ namespace fw {
 		AudioBufferT(AudioBufferT&& other) noexcept
 			: _channels(std::move(other._channels)),
 			_channelCount(other._channelCount),
-			_sampleCount(other._sampleCount) {
+			_sampleCount(other._sampleCount),
+			_sampleRate(other._sampleRate) {
 			other._channelCount = 0;
 			other._sampleCount = 0;
 		}
@@ -38,9 +39,10 @@ namespace fw {
 		// Copy assignment
 		AudioBufferT& operator=(const AudioBufferT& other) {
 			if (this != &other) {
+				_sampleRate = other._sampleRate;
 				resize(other._channelCount, other._sampleCount);
 				for (uint32 ch = 0; ch < _channelCount; ++ch) {
-					std::memcpy(_channels[ch].get(), other._channels[ch].get(),
+					std::memcpy(_channels[ch].data(), other._channels[ch].data(),
 								_sampleCount * sizeof(SampleType));
 				}
 			}
@@ -50,9 +52,10 @@ namespace fw {
 		// Move assignment
 		AudioBufferT& operator=(AudioBufferT&& other) noexcept {
 			if (this != &other) {
-				_channels = std::move(other.channels);
+				_channels = std::move(other._channels);
 				_channelCount = other._channelCount;
 				_sampleCount = other._sampleCount;
+				_sampleRate = other._sampleRate;
 				other._channelCount = 0;
 				other._sampleCount = 0;
 			}
@@ -83,6 +86,10 @@ namespace fw {
 			return _channels[channel].data();
 		}
 
+		void setSampleRate(f32 sampleRate) {
+			_sampleRate = sampleRate;
+		}
+
 		// Access operators
 		const SampleType& operator()(uint32 channel, uint32 sample) const {
 			return _channels[channel][sample];
@@ -95,14 +102,14 @@ namespace fw {
 		// Clear all channels
 		void clear() {
 			for (uint32 ch = 0; ch < _channelCount; ++ch) {
-				std::memset(_channels[ch].get(), 0, _sampleCount * sizeof(SampleType));
+				std::memset(_channels[ch].data(), 0, _sampleCount * sizeof(SampleType));
 			}
 		}
 
 		// Clear specific channel
 		void clearChannel(uint32 channel) {
 			if (channel < _channelCount) {
-				std::memset(_channels[channel].get(), 0, _sampleCount * sizeof(SampleType));
+				std::memset(_channels[channel].data(), 0, _sampleCount * sizeof(SampleType));
 			}
 		}
 
@@ -118,8 +125,8 @@ namespace fw {
 		void copyFrom(const AudioBufferT& source, uint32 srcChannel, uint32 destChannel) {
 			if (destChannel < _channelCount && srcChannel < source._channelCount) {
 				uint32 samplesToCopy = std::min(_sampleCount, source._sampleCount);
-				std::memcpy(_channels[destChannel].get(),
-							source._channels[srcChannel].get(),
+				std::memcpy(_channels[destChannel].data(),
+							source._channels[srcChannel].data(),
 							samplesToCopy * sizeof(SampleType));
 			}
 		}
@@ -134,8 +141,8 @@ namespace fw {
 												_sampleCount - startSample,
 												source._sampleCount - startSample});
 
-				std::memcpy(&_channels[destChannel][startSample],
-							&source._channels[srcChannel][startSample],
+				std::memcpy(&_channels[destChannel].get(startSample),
+							&source._channels[srcChannel].get(startSample),
 							samplesToCopy * sizeof(SampleType));
 			}
 		}
@@ -145,8 +152,8 @@ namespace fw {
 					SampleType gain = SampleType(1)) {
 			if (destChannel < _channelCount && srcChannel < source._channelCount) {
 				uint32 samplesToAdd = std::min(_sampleCount, source._sampleCount);
-				auto* dest = _channels[destChannel].get();
-				const auto* src = source._channels[srcChannel].get();
+				auto* dest = _channels[destChannel].data();
+				const auto* src = source._channels[srcChannel].data();
 
 				for (uint32 i = 0; i < samplesToAdd; ++i) {
 					dest[i] += src[i] * gain;
@@ -157,7 +164,7 @@ namespace fw {
 		// Apply gain to channel
 		void applyGain(uint32 channel, SampleType gain) {
 			if (channel < _channelCount) {
-				auto* data = _channels[channel].get();
+				auto* data = _channels[channel].data();
 				for (uint32 i = 0; i < _sampleCount; ++i) {
 					data[i] *= gain;
 				}
@@ -167,7 +174,7 @@ namespace fw {
 		uint32 getChannelCount() const { return _channelCount; }
 		uint32 getSampleCount() const { return _sampleCount; }
 		uint32 getSizeInBytes() const { return _channelCount * _sampleCount * sizeof(SampleType); }
-		f64 getSampleRate() const { return _sampleRate; }
+		f32 getSampleRate() const { return _sampleRate; }
 
 		bool isEmpty() const { return _channelCount == 0 || _sampleCount == 0; }
 

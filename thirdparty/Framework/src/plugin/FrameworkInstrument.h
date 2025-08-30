@@ -5,7 +5,7 @@
 #include "IPlug_include_in_plug_hdr.h"
 #include "IGraphics_include_in_plug_hdr.h"
 
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 #include "application/Application.h"
 
 using namespace iplug;

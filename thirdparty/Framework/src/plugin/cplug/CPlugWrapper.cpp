@@ -3,7 +3,7 @@
 #include <cplug.h>
 #include <vst3_c_api.h>
 
-#include "audio/AudioBuffer.h"
+#include "audio/InterleavedAudioBuffer.h"
 #include "entry/ApplicationFactory.h"
 #include "application/Application.h"
 #include "graphics/gl/GlRenderContext.h"

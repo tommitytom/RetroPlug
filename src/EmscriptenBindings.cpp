@@ -16,6 +16,9 @@
 #include "lsdj/Sav.h"
 #include "lsdj/LsdjSettings.h"
 #include "sameboy/Constants.h"
+#include "core/audio/Effect.h"
+#include "core/audio/BiquadEffect.h"
+#include "core/audio/EffectChain.h"
 
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
@@ -93,6 +96,14 @@ void lsdjRom_setKitName(rp::lsdj::Rom& rom, size_t idx, const std::string& name)
 
 void lsdjRom_setKitSampleName(rp::lsdj::Rom& rom, size_t kitIdx, size_t sampleIdx, const std::string& name) {
 	rom.setKitSampleName(kitIdx, sampleIdx, std::string_view(name));
+}
+
+val AudioBuffer_getWritePointer(fw::AudioBuffer& buffer, uint32 channel) {
+	return val(typed_memory_view(buffer.getSampleCount(), buffer.getWritePointer(channel)));
+}
+
+val AudioBuffer_getReadPointer(fw::AudioBuffer& buffer, uint32 channel) {
+	return val(typed_memory_view(buffer.getSampleCount(), buffer.getReadPointer(channel)));
 }
 
 ProxySystemServicePtr ProxySystem_findService(ProxySystem& system, SystemServiceType type) {
@@ -485,7 +496,76 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getTempo", &rp::lsdj::Ram::getTempo)
 	;
 
+	// Audio Buffer bindings
+	class_<fw::AudioBuffer>("AudioBuffer")
+		.constructor<uint32, uint32, f32>()
+		.function("resize", &fw::AudioBuffer::resize)
+		.function("getReadPointer", &AudioBuffer_getReadPointer)
+		.function("getWritePointer", &AudioBuffer_getWritePointer)
+		.function("clear", &fw::AudioBuffer::clear)
+		.function("clearChannel", &fw::AudioBuffer::clearChannel)
+		.function("clearSamples", &fw::AudioBuffer::clearSamples)
+		.function("copyFrom", select_overload<void(const fw::AudioBuffer&, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
+		.function("copyFromRange", select_overload<void(const fw::AudioBuffer&, uint32, uint32, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
+		.function("addFrom", &fw::AudioBuffer::addFrom)
+		.function("applyGain", &fw::AudioBuffer::applyGain)
+		.property("channelCount", &fw::AudioBuffer::getChannelCount)
+		.property("sampleCount", &fw::AudioBuffer::getSampleCount)
+		.property("sizeInBytes", &fw::AudioBuffer::getSizeInBytes)
+		.property("sampleRate", &fw::AudioBuffer::getSampleRate, &fw::AudioBuffer::setSampleRate)
+		.function("isEmpty", &fw::AudioBuffer::isEmpty)
+	;
 
+	// Effect base class
+	class_<Effect>("Effect")
+		.smart_ptr<std::shared_ptr<Effect>>("EffectPtr")
+		.function("process", &Effect::process, pure_virtual())
+	;
+
+	// FilterType enum
+	enum_<FilterType>("FilterType")
+		.value("LowPass", FilterType::LowPass)
+		.value("HighPass", FilterType::HighPass)
+		.value("BandPass", FilterType::BandPass)
+		.value("BandStop", FilterType::BandStop)
+		.value("Peak", FilterType::Peak)
+		.value("LowShelf", FilterType::LowShelf)
+		.value("HighShelf", FilterType::HighShelf)
+		.value("AllPass", FilterType::AllPass)
+	;
+
+	// BiquadEffect class
+	class_<BiquadEffect, base<Effect>>("BiquadEffect")
+		.constructor<>()
+		.function("process", &BiquadEffect::process)
+		.function("setFilterType", &BiquadEffect::setFilterType)
+		.function("setFrequency", &BiquadEffect::setFrequency)
+		.function("setQ", &BiquadEffect::setQ)
+		.function("setGain", &BiquadEffect::setGain)
+		.function("setSampleRate", &BiquadEffect::setSampleRate)
+		.function("getFilterType", &BiquadEffect::getFilterType)
+		.function("getFrequency", &BiquadEffect::getFrequency)
+		.function("getQ", &BiquadEffect::getQ)
+		.function("getGain", &BiquadEffect::getGain)
+		.function("getSampleRate", &BiquadEffect::getSampleRate)
+		.function("reset", &BiquadEffect::reset)
+		.function("configureLowPass", &BiquadEffect::configureLowPass)
+		.function("configureHighPass", &BiquadEffect::configureHighPass)
+		.function("configureBandPass", &BiquadEffect::configureBandPass)
+		.function("configureBandStop", &BiquadEffect::configureBandStop)
+		.function("configurePeaking", &BiquadEffect::configurePeaking)
+		.function("configureLowShelf", &BiquadEffect::configureLowShelf)
+		.function("configureHighShelf", &BiquadEffect::configureHighShelf)
+		.function("isStable", &BiquadEffect::isStable)
+		.function("getMagnitudeResponse", &BiquadEffect::getMagnitudeResponse)
+	;
+	// EffectChain class
+	class_<EffectChain>("EffectChain")
+		.constructor<>()
+		.function("addEffect", &EffectChain::addEffect)
+		.function("removeEffect", &EffectChain::removeEffect)
+		.function("process", &EffectChain::process)
+	;
 
 	function("upcastView", &upcastView);
 }

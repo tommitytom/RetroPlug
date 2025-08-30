@@ -3,7 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <list>
 #include "audio/AudioBuffer.h"
-#include "foundation/InterpolationUtil.h"
+#include "audio/InterleavedAudioBuffer.h"
 #include <iostream>
 
 namespace fw {
