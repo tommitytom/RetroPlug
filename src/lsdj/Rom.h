@@ -146,7 +146,7 @@ namespace rp::lsdj {
 				size_t start = (0xFF & kitData[offset]) | ((0xFF & kitData[offset + 1]) << 8);
 				size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
 
-				spdlog::info("{}, {} :: {}, {}, {}, {}", start - 0x4000, stop - 0x4000, (uint32)kitData[offset], (uint32)kitData[offset + 1], (uint32)kitData[offset + 2], (uint32)kitData[offset + 3]);
+				//spdlog::info("{}, {} :: {}, {}, {}, {}", start - 0x4000, stop - 0x4000, (uint32)kitData[offset], (uint32)kitData[offset + 1], (uint32)kitData[offset + 2], (uint32)kitData[offset + 3]);
 
 				if (stop > start) {
 					return kitData.getBuffer().slice(start - 0x4000, stop - start);

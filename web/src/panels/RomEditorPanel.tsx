@@ -5,7 +5,29 @@ import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { NativeLsdjKit, NativeLsdjRom } from "../native/RetroPlug";
 import "../styles/RomEditorPanel.css";
 import { convertFile, convertFloat32Buffer } from "../utils/FileUtil";
-import { LSDJ_KIT_COUNT, LSDJ_KIT_SAMPLE_COUNT } from "../wrapper/Lsdj";
+import { GAMEBOY_SAMPLE_RATE, LSDJ_KIT_COUNT, LSDJ_KIT_SAMPLE_COUNT } from "../wrapper/Lsdj";
+
+// Utility function to play an audio sample using Web Audio API
+function playSample(audioContext: AudioContext, sampleData: Float32Array, volume: number, sampleRate: number) {
+	if (!audioContext || !sampleData || sampleData.length === 0) return;
+
+	// Create an audio buffer
+	const buffer = audioContext.createBuffer(1, sampleData.length, sampleRate);
+	const channelData = buffer.getChannelData(0);
+
+	// Copy the sample data to the buffer
+	for (let i = 0; i < sampleData.length; i++) {
+		channelData[i] = sampleData[i] * volume;
+	}
+
+	// Create and configure buffer source
+	const source = audioContext.createBufferSource();
+	source.buffer = buffer;
+	source.connect(audioContext.destination);
+
+	// Play the sample
+	source.start();
+}
 
 interface IIndexedKit {
 	id: number;
@@ -38,8 +60,9 @@ function renderWaveForm(canvas: HTMLCanvasElement, sampleData: Float32Array) {
 
 type WaveViewProps = {
 	sampleData: Float32Array;
+	markers: number[];
 }
-const WaveView = ({ sampleData }: WaveViewProps) => {
+const WaveView = ({ sampleData, markers }: WaveViewProps) => {
 	const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
 	useEffect(() => {
@@ -58,7 +81,7 @@ interface INamedSample {
 }
 
 // Displays a single LSDJ kit
-const LsdjKit: React.FC<{ kit: IIndexedKit }> = ({ kit }) => {
+const LsdjKit: React.FC<{ kit: IIndexedKit; audioContext: AudioContext | null }> = ({ kit, audioContext }) => {
 	const {app} = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 
@@ -84,14 +107,32 @@ const LsdjKit: React.FC<{ kit: IIndexedKit }> = ({ kit }) => {
 		setSamples(namedSamples);
 	}, [kit, setSamples]);
 
+	const handleSampleClick = useCallback((sampleData: Float32Array) => {
+		if (audioContext) {
+			playSample(audioContext, sampleData, 0.25, GAMEBOY_SAMPLE_RATE);
+		}
+	}, [audioContext]);
+
 	return (
 		<div>
 			<div key={`${kit.name}-${kit.id}`}>{kit.name}</div>
 			<div>
 				{samples.map((sample, idx) => (
 					<div key={`${sample.name}-${idx}`}>
-						<div>{sample.name}</div>
-						<WaveView sampleData={sample.data} />
+						<div
+							onClick={() => handleSampleClick(sample.data)}
+							className="sample-clickable"
+							title="Click to play sample"
+						>
+							{sample.name}
+						</div>
+						<div
+							onClick={() => handleSampleClick(sample.data)}
+							className="sample-waveform-clickable"
+							title="Click to play sample"
+						>
+							<WaveView sampleData={sample.data} />
+						</div>
 					</div>
 				))}
 			</div>
@@ -153,7 +194,7 @@ export const RomEditorPanel: React.FC = () => {
 				<div className="w-full h-full flex items-center justify-center">
 					<div className="text-lg font-medium text-gray-300">
 						{kits.map((kit) => (
-							<LsdjKit key={`${kit.name}-${kit.id}`} kit={kit} />
+							<LsdjKit key={`${kit.name}-${kit.id}`} kit={kit} audioContext={audioContext} />
 						))}
 					</div>
 				</div>

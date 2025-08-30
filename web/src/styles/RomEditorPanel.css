@@ -21,3 +21,13 @@
 .rom-drop-text.drag-over {
 	color: rgb(147, 197, 253);
 }
+
+.sample-clickable {
+	cursor: pointer;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.sample-waveform-clickable {
+	cursor: pointer;
+}
