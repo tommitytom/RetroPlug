@@ -1,276 +1,196 @@
 #pragma once
 
-#include <span>
-
 #include "foundation/DataBuffer.h"
 
 namespace fw {
-	using AudioSampleT = f32;
-
-	template <const uint32 _ChannelCount, typename T = AudioSampleT>
-	class AudioFrame {
+	template<typename SampleType = f32>
+	class AudioBufferT {
 	private:
-		T _samples[_ChannelCount];
+		std::vector<DataBuffer<SampleType>> _channels;
+		uint32 _channelCount;
+		uint32 _sampleCount;
+		f64 _sampleRate = 44100.0;
 
 	public:
-		constexpr static const uint32 ChannelCount = _ChannelCount;
+		AudioBufferT(uint32 channels = 2, uint32 samples = 0)
+			: _channelCount(channels), _sampleCount(samples) {
+			resize(channels, samples);
+		}
 
-		AudioFrame() {}
-		AudioFrame(const AudioFrame& other) { *this = other; }
-		AudioFrame(const std::array<T, _ChannelCount>& samples) { *this = samples; }
-
-		constexpr T& operator[](uint32 channelIdx) { return _samples[channelIdx]; }
-		constexpr const T& operator[](uint32 channelIdx) const { return _samples[channelIdx]; }
-
-		constexpr AudioFrame& operator=(const AudioFrame& other) {
-			for (size_t i = 0; i < _ChannelCount; ++i) {
-				_samples[i] = other._samples[i];
+		AudioBufferT(const AudioBufferT& other)
+			: _channelCount(other._channelCount), _sampleCount(other._sampleCount) {
+			_channels.resize(_channelCount);
+			for (uint32 ch = 0; ch < _channelCount; ++ch) {
+				_channels[ch] = std::make_unique<SampleType[]>(_sampleCount);
+				std::memcpy(_channels[ch].get(), other._channels[ch].get(),
+							_sampleCount * sizeof(SampleType));
 			}
+		}
 
+		AudioBufferT(AudioBufferT&& other) noexcept
+			: _channels(std::move(other._channels)),
+			_channelCount(other._channelCount),
+			_sampleCount(other._sampleCount) {
+			other._channelCount = 0;
+			other._sampleCount = 0;
+		}
+
+		// Copy assignment
+		AudioBufferT& operator=(const AudioBufferT& other) {
+			if (this != &other) {
+				resize(other._channelCount, other._sampleCount);
+				for (uint32 ch = 0; ch < _channelCount; ++ch) {
+					std::memcpy(_channels[ch].get(), other._channels[ch].get(),
+								_sampleCount * sizeof(SampleType));
+				}
+			}
 			return *this;
 		}
 
-		constexpr AudioFrame& operator=(const std::array<T, _ChannelCount>& samples) {
-			for (size_t i = 0; i < _ChannelCount; ++i) {
-				_samples[i] = samples[i];
+		// Move assignment
+		AudioBufferT& operator=(AudioBufferT&& other) noexcept {
+			if (this != &other) {
+				_channels = std::move(other.channels);
+				_channelCount = other._channelCount;
+				_sampleCount = other._sampleCount;
+				other._channelCount = 0;
+				other._sampleCount = 0;
 			}
-
 			return *this;
 		}
 
-		constexpr AudioFrame operator+(const AudioFrame& other) {
-			AudioFrame out = *this;
-			out += other;
-			return out;
-		}
+		// Resize buffer
+		void resize(uint32 newChannels, uint32 newSamples) {
+			_channelCount = newChannels;
+			_sampleCount = newSamples;
+			_channels.clear();
+			_channels.resize(_channelCount);
 
-		constexpr AudioFrame& operator+=(const AudioFrame& other) {
-			for (size_t i = 0; i < _ChannelCount; ++i) {
-				_samples[i] += other._samples[i];
+			for (uint32 ch = 0; ch < _channelCount; ++ch) {
+				_channels[ch] = DataBuffer<SampleType>(newSamples);
 			}
-
-			return *this;
 		}
 
-		constexpr AudioFrame operator*(const AudioFrame& other) {
-			AudioFrame out = *this;
-			out *= other;
-			return out;
+		// Get channel data pointer (const)
+		const SampleType* getReadPointer(uint32 channel) const {
+			assert(channel < _channelCount);
+			return _channels[channel].data();
 		}
 
-		constexpr AudioFrame& operator*=(const AudioFrame& other) {
-			for (size_t i = 0; i < _ChannelCount; ++i) {
-				_samples[i] *= other._samples[i];
+		// Get channel data pointer (non-const)
+		SampleType* getWritePointer(uint32 channel) {
+			assert(channel < _channelCount);
+			return _channels[channel].data();
+		}
+
+		// Access operators
+		const SampleType& operator()(uint32 channel, uint32 sample) const {
+			return _channels[channel][sample];
+		}
+
+		SampleType& operator()(uint32 channel, uint32 sample) {
+			return _channels[channel][sample];
+		}
+
+		// Clear all channels
+		void clear() {
+			for (uint32 ch = 0; ch < _channelCount; ++ch) {
+				std::memset(_channels[ch].get(), 0, _sampleCount * sizeof(SampleType));
 			}
-
-			return *this;
 		}
 
-		constexpr AudioFrame operator*(f32 v) {
-			AudioFrame out = *this;
-			out *= v;
-			return out;
-		}
-
-		constexpr AudioFrame& operator*=(f32 v) {
-			for (size_t i = 0; i < _ChannelCount; ++i) {
-				_samples[i] *= v;
+		// Clear specific channel
+		void clearChannel(uint32 channel) {
+			if (channel < _channelCount) {
+				std::memset(_channels[channel].get(), 0, _sampleCount * sizeof(SampleType));
 			}
-
-			return *this;
 		}
 
-		constexpr T l() const { return _samples[0]; }
-		constexpr T r() const { return _samples[1]; }
+		// Clear range of samples in a channel
+		void clearSamples(uint32 channel, uint32 startSample, uint32 _sampleCountToClear) {
+			if (channel < _channelCount && startSample < _sampleCount) {
+				uint32 samplesToZero = std::min(_sampleCountToClear, _sampleCount - startSample);
+				std::memset(&_channels[channel][startSample], 0, samplesToZero * sizeof(SampleType));
+			}
+		}
 
-		constexpr T* raw() { return _samples; }
-		constexpr const T* raw() const { return _samples; }
-	};
+		// Copy from another buffer
+		void copyFrom(const AudioBufferT& source, uint32 srcChannel, uint32 destChannel) {
+			if (destChannel < _channelCount && srcChannel < source._channelCount) {
+				uint32 samplesToCopy = std::min(_sampleCount, source._sampleCount);
+				std::memcpy(_channels[destChannel].get(),
+							source._channels[srcChannel].get(),
+							samplesToCopy * sizeof(SampleType));
+			}
+		}
 
-	template <typename T = AudioSampleT>
-	class TypedAudioBuffer {
-	private:
-		DataBuffer<T> _frames;
-		f32 _sampleRate = 44100.0f;
-		uint32 _frameCount = 0;
-		uint32 _channelCount = 0;
+		// Copy range of samples
+		void copyFrom(const AudioBufferT& source, uint32 srcChannel, uint32 destChannel,
+					uint32 startSample, uint32 _sampleCountToCopy) {
+			if (destChannel < _channelCount && srcChannel < source._channelCount &&
+				startSample < _sampleCount && startSample < source._sampleCount) {
 
-	public:
-		struct Frame {
-			T* samples;
-			uint32 channelCount;
+				uint32 samplesToCopy = std::min({_sampleCountToCopy,
+												_sampleCount - startSample,
+												source._sampleCount - startSample});
 
-			T l() const { assert(channelCount > 0); return samples[0]; }
-			T r() const { assert(channelCount > 1); return samples[1]; }
-			T at(uint32 channel) const { assert(channel < channelCount); return samples[channel]; }
+				std::memcpy(&_channels[destChannel][startSample],
+							&source._channels[srcChannel][startSample],
+							samplesToCopy * sizeof(SampleType));
+			}
+		}
+
+		// Add samples from another buffer (mixing)
+		void addFrom(const AudioBufferT& source, uint32 srcChannel, uint32 destChannel,
+					SampleType gain = SampleType(1)) {
+			if (destChannel < _channelCount && srcChannel < source._channelCount) {
+				uint32 samplesToAdd = std::min(_sampleCount, source._sampleCount);
+				auto* dest = _channels[destChannel].get();
+				const auto* src = source._channels[srcChannel].get();
+
+				for (uint32 i = 0; i < samplesToAdd; ++i) {
+					dest[i] += src[i] * gain;
+				}
+			}
+		}
+
+		// Apply gain to channel
+		void applyGain(uint32 channel, SampleType gain) {
+			if (channel < _channelCount) {
+				auto* data = _channels[channel].get();
+				for (uint32 i = 0; i < _sampleCount; ++i) {
+					data[i] *= gain;
+				}
+			}
+		}
+		// Getters
+		uint32 getChannelCount() const { return _channelCount; }
+		uint32 getSampleCount() const { return _sampleCount; }
+		uint32 getSizeInBytes() const { return _channelCount * _sampleCount * sizeof(SampleType); }
+		f64 getSampleRate() const { return _sampleRate; }
+
+		bool isEmpty() const { return _channelCount == 0 || _sampleCount == 0; }
+
+		// Iterator support for range-based loops on individual channels
+		class ChannelIterator {
+		private:
+			SampleType* ptr;
+		public:
+			explicit ChannelIterator(SampleType* p) : ptr(p) {}
+			SampleType& operator*() { return *ptr; }
+			SampleType* operator->() { return ptr; }
+			ChannelIterator& operator++() { ++ptr; return *this; }
+			bool operator!=(const ChannelIterator& other) const { return ptr != other.ptr; }
 		};
 
-		TypedAudioBuffer() {}
-		TypedAudioBuffer(uint32 frameCount, uint32 channelCount, f32 sampleRate)
-			: _frameCount(frameCount), _channelCount(channelCount), _sampleRate(sampleRate), _frames(frameCount* channelCount) {}
-
-		uint32 getFrameCount() const {
-			return _frameCount;
+		ChannelIterator begin(uint32 channel) {
+			return ChannelIterator(_channels[channel].data());
 		}
 
-		T getSample(uint32 frame, uint32 channel) const {
-			assert(channel < _channelCount);
-			assert(frame < _frames.size() / _channelCount);
-			return _frames[frame * _channelCount + channel];
-		}
-
-		DataBuffer<T>& getBuffer() {
-			return _frames;
-		}
-
-		const DataBuffer<T>& getBuffer() const {
-			return _frames;
-		}
-
-		Frame getFrame(uint32 frame) {
-			uint32 offset = frame * _channelCount;
-			assert(offset < _frames.size());
-			assert(offset + _channelCount <= _frames.size());
-
-			return Frame{
-				.samples = _frames.data() + offset,
-				.channelCount = _channelCount
-			};
+		ChannelIterator end(uint32 channel) {
+			return ChannelIterator(_channels[channel].data() + _sampleCount);
 		}
 	};
 
-	template <const uint32 _ChannelCount, typename T = AudioSampleT>
-	class InterleavedAudioBuffer {
-	public:
-		constexpr static const uint32 ChannelCount = _ChannelCount;
-		using Frame = AudioFrame<_ChannelCount, T>;
-
-	private:
-		DataBuffer<Frame> _frames;
-		f32 _sampleRate = 48000.0f;
-
-	public:
-		InterleavedAudioBuffer() {}
-		InterleavedAudioBuffer(uint32 frameCount, f32 sampleRate = 48000) : _frames(frameCount), _sampleRate(sampleRate) {}
-		InterleavedAudioBuffer(const DataBuffer<Frame>& other, f32 sampleRate = 48000) : _frames(other), _sampleRate(sampleRate) {}
-		InterleavedAudioBuffer(DataBuffer<Frame>&& other, f32 sampleRate = 48000) : _frames(std::move(other)), _sampleRate(sampleRate) {}
-		InterleavedAudioBuffer(const InterleavedAudioBuffer& other) { *this = other; }
-		InterleavedAudioBuffer(InterleavedAudioBuffer&& other) noexcept { *this = std::move(other); }
-		InterleavedAudioBuffer(Frame* frames, uint32 frameCount, f32 sampleRate = 48000, bool ownsData = false) : _frames(frames, frameCount, ownsData), _sampleRate(sampleRate) {}
-		InterleavedAudioBuffer(T* samples, uint32 frameCount, f32 sampleRate = 48000, bool ownsData = false) : _frames((Frame*)samples, frameCount, ownsData), _sampleRate(sampleRate) {}
-		~InterleavedAudioBuffer() = default;
-
-		void resize(uint32 frameCount) {
-			_frames.resize(frameCount);
-		}
-
-		void clear() {
-			_frames.clear();
-		}
-
-		InterleavedAudioBuffer slice(uint32 offset, uint32 size) {
-			return InterleavedAudioBuffer(_frames.slice(offset, size), _sampleRate);
-		}
-
-		InterleavedAudioBuffer ref() {
-			return slice(0, (uint32)_frames.size());
-		}
-
-		InterleavedAudioBuffer clone() const {
-			return InterleavedAudioBuffer(_frames.clone(), _sampleRate);
-		}
-
-		void setSample(uint32 frame, uint32 channel, T value) {
-			assert(frame < _frames.size());
-			assert(channel < ChannelCount);
-			_frames[frame][channel] = value;
-		}
-
-		T getSample(uint32 frame, uint32 channel) const {
-			assert(frame < _frames.size());
-			assert(channel < ChannelCount);
-			return _frames[frame][channel];
-		}
-
-		void setFrame(uint32 frame, const Frame& other) {
-			assert(frame < _frames.size());
-			_frames[frame] = other;
-		}
-
-		Frame& operator[](uint32 frame) {
-			assert(frame < _frames.size());
-			return _frames[frame];
-		}
-
-		const Frame& operator[](uint32 frame) const {
-			assert(frame < _frames.size());
-			return _frames[frame];
-		}
-
-		T* getSamples() {
-			return (T*)_frames.data();
-		}
-
-		const T* getSamples() const {
-			return (const T*)_frames.data();
-		}
-
-		DataBuffer<T> getSampleBuffer() {
-			return DataBuffer<T>(getSamples(), getSampleCount());
-		}
-
-		const DataBuffer<T> getSampleBuffer() const {
-			return DataBuffer<T>(getSamples(), getSampleCount());
-		}
-
-		DataBuffer<Frame>& getBuffer() {
-			return _frames;
-		}
-
-		const DataBuffer<Frame>& getBuffer() const {
-			return _frames;
-		}
-
-		uint32 getFrameCount() const {
-			return (uint32)_frames.size();
-		}
-
-		uint32 getSampleCount() const {
-			return (uint32)_frames.size() * ChannelCount;
-		}
-
-		bool isEmpty() const {
-			return _frames.size() == 0;
-		}
-
-		f32 getSampleRate() const {
-			return _sampleRate;
-		}
-
-		InterleavedAudioBuffer& operator=(const DataBuffer<Frame>& other) {
-			_frames = other;
-			return *this;
-		}
-
-		InterleavedAudioBuffer& operator=(DataBuffer<Frame>&& other) {
-			_frames = std::move(other);
-			return *this;
-		}
-
-		InterleavedAudioBuffer& operator=(const InterleavedAudioBuffer& other) {
-			_frames = other._frames;
-			_sampleRate = other._sampleRate;
-			return *this;
-		}
-
-		InterleavedAudioBuffer& operator=(InterleavedAudioBuffer&& other) noexcept {
-			_frames = std::move(other._frames);
-			_sampleRate = other._sampleRate;
-			return *this;
-		}
-	};
-
-	using AudioBuffer = TypedAudioBuffer<AudioSampleT>;
-	using MonoAudioBuffer = InterleavedAudioBuffer<1>;
-	using StereoAudioBuffer = InterleavedAudioBuffer<2>;
+	using AudioBuffer = AudioBufferT<f32>;
 }

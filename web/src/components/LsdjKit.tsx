@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import type { IIndexedKit, INamedSample } from '../components/types';
+import { EffectList } from "../components/EffectList";
 import { WaveView } from "../components/WaveView";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { NativeLsdjKit } from "../native/RetroPlug";
@@ -23,6 +24,7 @@ export const LsdjKit: React.FC<{
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
 	const [markers, setMarkers] = useState<number[]>([]);
+	const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
 
 	const handleSampleClick = useCallback(
 		(sampleData: Float32Array) => {
@@ -75,7 +77,7 @@ export const LsdjKit: React.FC<{
 	}, [kit, setSamples]);
 
 	return (
-		<div className="w-full max-w-4xl mx-auto p-2 bg-gray-800 rounded-lg shadow-lg">
+		<div className="w-full max-w-4xl mx-auto p-2 bg-gray-800 rounded-sm shadow-lg">
 			<div
 				className={`flex items-center cursor-pointer hover:bg-gray-750 rounded-lg p-1 -m-1 transition-colors duration-200 ${isExpanded ? 'mb-2' : ''}`}
 				onClick={onToggle}
@@ -83,7 +85,7 @@ export const LsdjKit: React.FC<{
 				<div className="text-white mr-2 text-sm">
 					{isExpanded ? "▼" : "▶"}
 				</div>
-				<h2 className={`text-lg font-semibold text-white flex-1 ${isExpanded ? 'border-b border-gray-600 pb-1' : ''}`}>
+				<h2 className={`text-md font-semibold text-white flex-1 ${isExpanded ? 'border-b border-gray-600 pb-1' : ''}`}>
 					{kit.name}
 				</h2>
 			</div>
@@ -98,10 +100,14 @@ export const LsdjKit: React.FC<{
 							<WaveView
 								sampleData={kitSample}
 								markers={markers}
-								className="w-full h-[80px] bg-gray-900 border border-gray-700 rounded-md"
+								className="w-full h-[80px] bg-gray-900 border border-gray-700 rounded-sm"
 							/>
 						</div>
 					</div>
+					<EffectList
+						isExpanded={isEffectsExpanded}
+						onToggle={() => setIsEffectsExpanded(!isEffectsExpanded)}
+					/>
 				</>
 			)}
 		</div>
