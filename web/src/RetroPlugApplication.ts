@@ -49,7 +49,6 @@ export class RetroPlugApplication {
 			},
 		})) as MainModule;
 
-		this._module.setupWasmFs();
 		this._runner = new this._module.WebApplicationRunner();
 
 		console.log("WASM module loaded");

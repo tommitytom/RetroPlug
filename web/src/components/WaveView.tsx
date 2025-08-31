@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 function renderWaveForm(
 	canvas: HTMLCanvasElement,
@@ -52,6 +52,26 @@ export const WaveView: React.FC<WaveViewProps> = ({
 	className,
 }) => {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const [canvasSize, setCanvasSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+	// Use ResizeObserver to track canvas size changes
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		if (!canvas) return;
+
+		const updateSize = () => {
+			setCanvasSize({ width: canvas.clientWidth, height: canvas.clientHeight });
+		};
+
+		updateSize();
+
+		const resizeObserver = new ResizeObserver(updateSize);
+		resizeObserver.observe(canvas);
+
+		return () => {
+			resizeObserver.disconnect();
+		};
+	}, []);
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -72,7 +92,7 @@ export const WaveView: React.FC<WaveViewProps> = ({
 		}
 
 		renderWaveForm(canvas, sampleData, markers || []);
-	}, [sampleData, markers]);
+	}, [sampleData, markers, canvasSize]);
 
 	return <canvas ref={canvasRef} className={className} />;
 };

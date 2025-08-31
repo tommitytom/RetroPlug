@@ -1,5 +1,6 @@
 import React from "react";
 import { EffectParameterType, type IEffectParameter } from "../effects/Effect";
+import { SliderProperty } from "./SliderProperty";
 
 interface EffectParameterProps {
 	parameter: IEffectParameter;
@@ -16,38 +17,13 @@ export const EffectParameter: React.FC<EffectParameterProps> = ({
 				{parameter.name}:
 			</label>
 			{parameter.type === EffectParameterType.Slider && (
-				<>
-					<input
-						title={`${parameter.name} Slider`}
-						type="range"
-						min={parameter.min || 0}
-						max={parameter.max || 1}
-						step="0.01"
-						value={parameter.getter() as number}
-						onChange={(e) => onParameterChange(parseFloat(e.target.value))}
-						className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-						style={{
-							background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((parameter.getter() as number - (parameter.min || 0)) / ((parameter.max || 1) - (parameter.min || 0))) * 100}%, #4b5563 ${((parameter.getter() as number - (parameter.min || 0)) / ((parameter.max || 1) - (parameter.min || 0))) * 100}%, #4b5563 100%)`,
-						}}
-					/>
-					<input
-						title={`${parameter.name} Editor`}
-						type="number"
-						min={parameter.min || 0}
-						max={parameter.max || 1}
-						step="0.01"
-						value={(parameter.getter() as number).toFixed(2)}
-						onChange={(e) => {
-							const value = parseFloat(e.target.value) || 0;
-							const clampedValue = Math.max(
-								parameter.min || 0,
-								Math.min(parameter.max || 1, value)
-							);
-							onParameterChange(clampedValue);
-						}}
-						className="w-16 px-1 py-0 text-xs bg-gray-700 text-white border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-					/>
-				</>
+				<SliderProperty
+					min={parameter.min}
+					max={parameter.max}
+					step={parameter.step}
+					defaultValue={parameter.getter() as number}
+					onChange={onParameterChange}
+				/>
 			)}
 			{parameter.type === EffectParameterType.Dropdown && (
 				<select

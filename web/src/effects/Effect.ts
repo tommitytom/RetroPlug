@@ -11,6 +11,7 @@ export interface IEffectParameter {
 	type: EffectParameterType;
 	min?: number;
 	max?: number;
+	step?: number;
 	options?: string[];
 
 	getter: () => number | string | boolean;

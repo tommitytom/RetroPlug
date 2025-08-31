@@ -35,7 +35,7 @@ export const EffectList: React.FC<EffectListProps> = ({
 	) => {
 		parameter.setter(value);
 		// Force re-render by updating the effects array
-		setEffects([...effects]);
+		//setEffects([...effects]);
 	};
 
 	return (
