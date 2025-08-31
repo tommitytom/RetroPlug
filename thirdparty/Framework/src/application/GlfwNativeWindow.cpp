@@ -211,9 +211,13 @@ void GlfwNativeWindow::onCreate() {
 	glfwSetCursorEnterCallback(_window, mouseEnterCallback);
 	glfwSetMouseButtonCallback(_window, mouseButtonCallback);
 	glfwSetWindowSizeCallback(_window, resizeCallback);
+
+#ifndef FW_PLATFORM_WEB
 	glfwSetDropCallback(_window, dropCallback);
 	glfwSetWindowCloseCallback(_window, windowCloseCallback);
 	glfwSetWindowRefreshCallback(_window, windowRefreshCallback);
+#endif
+
 	//glfwSetFramebufferSizeCallback(window, resizeCallback);
 
 /*#ifdef FW_PLATFORM_WEB
