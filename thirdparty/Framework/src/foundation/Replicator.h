@@ -82,6 +82,10 @@ namespace fw::Replicator {
 		std::vector<EmplaceComponentEvent> components;
 	};
 
+	template <typename Component> struct ComponentCreatedTag {};
+	template <typename Component> struct ComponentUpdatedTag {};
+	template <typename Component> struct ComponentDestroyedTag {};
+
 	inline ReplicatorContext& getContext(entt::registry& registry) {
 		return registry.ctx().at<ReplicatorContext>();
 	}
@@ -152,6 +156,8 @@ namespace fw::Replicator {
 				});
 			}
 		}
+
+		registry.emplace_or_replace<ComponentCreatedTag<Component>>(e);
 	}
 
 	template <typename Component>
@@ -166,6 +172,8 @@ namespace fw::Replicator {
 				});
 			}
 		}
+
+		registry.emplace_or_replace<ComponentUpdatedTag<Component>>(e);
 	}
 
 	template <typename Component>
@@ -179,6 +187,8 @@ namespace fw::Replicator {
 				});
 			}
 		}
+
+		registry.emplace_or_replace<ComponentDestroyedTag<Component>>(e);
 	}
 
 	inline void handleErrorState(ReplicatorContext& ctx) {
