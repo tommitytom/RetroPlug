@@ -15,7 +15,7 @@ namespace fw {
 
 	public:
 		AudioProcessor(): _eventNode("Audio") {}
-		~AudioProcessor() = default;
+		virtual ~AudioProcessor() = default;
 
 		virtual void onBeginUpdate(uint32 frameCount) {}
 

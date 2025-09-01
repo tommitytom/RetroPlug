@@ -13,6 +13,8 @@ namespace fw::app {
 		virtual fw::ViewPtr onCreateUi() { return nullptr; }
 
 		virtual fw::AudioProcessorPtr onCreateAudio() { return nullptr; }
+
+		virtual void onUpdate(f32 deltaTime) {}
 	};
 
 	template <typename ViewT, typename AudioT = NullAudioProcessor>

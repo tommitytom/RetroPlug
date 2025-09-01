@@ -25,6 +25,16 @@ namespace fw {
 		std::shared_ptr<const T> sharedFromThis() const {
 			return std::static_pointer_cast<const T>(shared_from_this());
 		}
+
+		template <typename T>
+		bool isType() const {
+			return getTypeInfo() == entt::type_id<T>();
+		}
+
+		template <typename T>
+		T* asRaw() {
+			return static_cast<T*>(this);
+		}
 	};
 }
 

@@ -70,6 +70,18 @@ namespace fw::Replicator {
 			}
 		});
 
+		eventNode.receive<PatchComponentFieldEvent>([&registry, &ctx](PatchComponentFieldEvent&& ev) {
+			assert(ctx.state != ReplicatorState::Unsubscribed);
+
+			if (ctx.state == ReplicatorState::Ready) [[likely]] {
+				if (registry.valid(ev.entity)) {
+					ev.patcher(registry, ev.entity, std::move(ev.data));
+				} else {
+					toggleError(registry);
+				}
+			}
+		});
+
 		eventNode.receive<DestroyComponentEvent>([&registry, &ctx](DestroyComponentEvent&& ev) {
 			assert(ctx.state != ReplicatorState::Unsubscribed);
 
@@ -108,6 +120,7 @@ namespace fw::Replicator {
 		}
 
 		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, false, canMutate, ReplicatorState::Ready);
+		ctx.targets.push_back(targetNodeId);
 
 		eventNode.receive<StateResponseEvent>([&registry, &ctx](StateResponseEvent&& ev) {
 			registry.clear();
@@ -167,7 +180,7 @@ namespace fw::Replicator {
 		for (const fw::EventNode::NodeId target : ctx.targets) {
 			ctx.eventNode.send(target, DestroyEntityEvent{
 				.entity = entity
-				});
+			});
 		}
 
 		registry.destroy(entity);
@@ -184,6 +197,11 @@ namespace fw::Replicator {
 			ctx.eventNode.unsubscribe<StateRequestEvent>();
 		} else {
 			ctx.eventNode.unsubscribe<StateResponseEvent>();
+
+			if (ctx.state != ReplicatorState::Unsubscribed) {
+				assert(ctx.targets.size() == 1);
+				unsubscribe(registry, ctx.targets[0]);
+			}
 		}
 
 		ctx.eventNode.unsubscribe<CreateEntityEvent>();

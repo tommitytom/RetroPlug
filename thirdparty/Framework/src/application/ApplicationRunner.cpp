@@ -28,6 +28,7 @@ namespace fw::app {
 		if (audioProcessor) {
 			_audioManager = std::move(audioManager);			
 			_audioManager->setProcessor(audioProcessor);
+			_audioManager->start(-1);
 		}
 
 		if (view) {
@@ -37,9 +38,9 @@ namespace fw::app {
 
 			if (_audioManager) {
 				viewManager->createState<audio::AudioManagerPtr>(_audioManager);
-				viewManager->createState<EventNode>(audioProcessor->getEventNode().spawn("Ui"));
+				//viewManager->createState<EventNode>(audioProcessor->getEventNode().spawn("Ui"));
 			} else {
-				viewManager->createState<EventNode>(EventNode("Ui"));
+				//viewManager->createState<EventNode>(EventNode("Ui"));
 			}
 		}
 
@@ -49,6 +50,7 @@ namespace fw::app {
 	}
 
 	bool ApplicationRunner::runFrame() {
+		_app->onUpdate(0);
 		return _uiContext->runFrame();
 	}
 

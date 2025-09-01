@@ -226,6 +226,7 @@ function m.RetroPlug.include()
 
 	includedirs {
 		"src",
+		"src/ecs",
 		"generated",
 		"resources"
 	}
@@ -271,126 +272,11 @@ function m.RetroPlug.project()
 		"src/util/**.cpp",
 		"src/ui/**.h",
 		"src/ui/**.cpp",
+		"src/ecs/**.h",
+		"src/ecs/**.cpp",
 	}
 
 	filter{}
-
-	util.liveppCompat()
-end
-
-function m.Plugin.include()
-	m.RetroPlug.include()
-
-	includedirs {
-		"resource"
-	}
-end
-
-function m.Plugin.project()
-	m.RetroPlug.link()
-
-	files {
-		"src/entry/ApplicationFactory.*",
-		"src/plugin/**.h",
-		"src/plugin/**.cpp"
-	}
-end
-
-function m.Application.project()
-	print("Configuring Application project")
-
-	project "RetroPlugApp"
-	kind "ConsoleApp"
-
-	defines {
-		"APPLICATION_IMPL=RetroPlugApplication"
-	}
-
-	m.RetroPlug.link()
-
-	files {
-		"src/app/**.h",
-		"src/app/**.cpp"
-	}
-	excludes {
-		"src/app/mainloop.cpp",
-		"src/app/mainlivepp.cpp",
-		"src/app/OffsetCalculatorMain.cpp"
-	}
-
-	filter { "system:linux" }
-		linkoptions { "-no-pie" } -- maybe put in premake.lua?
-
-	filter { "platforms:Emscripten", "configurations:Debug*" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
-
-	filter { "platforms:Emscripten", "configurations:Development*" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEVELOPMENT_FLAGS) }
-
-	filter { "platforms:Emscripten", "configurations:Release*" }
-		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }
-
-	filter {}
-end
-
-function m.Application.projectLivepp()
-	project "RetroPlugApp-live++"
-	kind "ConsoleApp"
-
-	m.RetroPlug.link()
-
-	files {
-		"src/app/**.h",
-		"src/app/**.cpp"
-	}
-	excludes {
-		"src/app/main.cpp",
-		"src/app/OffsetCalculatorMain.cpp"
-	}
-
-	util.liveppCompat()
-end
-
-function m.Application.iplugProject()
-	iplug2.createApp("config.lua")
-
-	m.RetroPlug.link()
-
-	defines {
-		"APPLICATION_IMPL=RetroPlugApplication",
-		"FW_PLATFORM_PLUGIN"
-	}
-
-	--[[files {
-		"src/app/**.h",
-		"src/app/**.cpp"
-	}]]
-	excludes {
-		--"src/app/main.cpp",
-		"src/app/OffsetCalculatorMain.cpp"
-	}
-
-	util.liveppCompat()
-end
-
-function m.Application.iplugVst2()
-	iplug2.createVst2("config.lua")
-
-	m.RetroPlug.link()
-
-	defines {
-		"APPLICATION_IMPL=RetroPlugApplication",
-		"FW_PLATFORM_PLUGIN"
-	}
-
-	--[[files {
-		"src/app/**.h",
-		"src/app/**.cpp"
-	}]]
-	excludes {
-		--"src/app/main.cpp",
-		"src/app/OffsetCalculatorMain.cpp"
-	}
 
 	util.liveppCompat()
 end

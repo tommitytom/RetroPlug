@@ -430,9 +430,11 @@ function m.Application.create(config, impl)
 		m.Application.link()
 		m.Ui.link()
 
+		local namespace = config.namespace or ""
+
 		defines {
 			"APPLICATION_HEADER=" .. config.header,
-			"APPLICATION_IMPL=" .. config.name .. "Application",
+			"APPLICATION_IMPL=" .. namespace .. config.name .. "Application",
 		}
 
 		files {

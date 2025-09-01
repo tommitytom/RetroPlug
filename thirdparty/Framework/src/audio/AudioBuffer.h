@@ -161,6 +161,27 @@ namespace fw {
 			}
 		}
 
+		void fromInterleaved(const SampleType* interleavedData, uint32 channels, uint32 samples) {
+			resize(channels, samples);
+
+			for (uint32 ch = 0; ch < _channelCount; ++ch) {
+				SampleType* dest = _channels[ch].data();
+				for (uint32 s = 0; s < _sampleCount; ++s) {
+					dest[s] = interleavedData[s * _channelCount + ch];
+				}
+			}
+		}
+
+		// Convert to interleaved format
+		void toInterleaved(SampleType* interleavedData, uint32 channels, uint32 samples) const {
+			assert(channels == _channelCount && samples == _sampleCount);
+			for (uint32 s = 0; s < _sampleCount; ++s) {
+				for (uint32 ch = 0; ch < _channelCount; ++ch) {
+					interleavedData[s * _channelCount + ch] = _channels[ch][s];
+				}
+			}
+		}
+
 		// Apply gain to channel
 		void applyGain(uint32 channel, SampleType gain) {
 			if (channel < _channelCount) {

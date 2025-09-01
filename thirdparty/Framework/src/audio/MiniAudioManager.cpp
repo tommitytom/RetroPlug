@@ -11,10 +11,10 @@ using namespace fw::audio;
 static void callback(ma_device* pDevice, void* pOutput, const void* pInput, uint32 frameCount) {
 	MiniAudioManager* m = (MiniAudioManager*)pDevice->pUserData;
 
-	if (m->getProcessor()) {
-		fw::AudioProcessor& processor = *m->getProcessor();
-		processor.onBeginUpdate(frameCount);
-		processor.onRender((f32*)pOutput, (const f32*)pInput, frameCount);
+	fw::AudioProcessorPtr processor = m->getProcessor();
+	if (processor) {
+		processor->onBeginUpdate(frameCount);
+		processor->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
 	}
 }
 

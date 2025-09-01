@@ -47,9 +47,10 @@ projects.RetroPlug.project()
 group "4 - Applications"
 
 fwProjects.Application.create({
-	version = "0.4.0",
-	name = "RetroPlug",
-	header = "RetroPlugApplication.h",
+	version = "0.5.0",
+	name = "RetroPlugEcs",
+	namespace = "rp::",
+	header = "ecs/RetroPlugEcsApplication.h",
 	author = "tommitytom",
 	url = "https://retroplug.io",
 	email = "hello@retroplug.io",

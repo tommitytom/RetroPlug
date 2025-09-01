@@ -951,17 +951,6 @@ namespace fw {
 		}
 
 		template <typename T>
-		bool isType() const {
-			return getTypeInfo() == entt::type_id<T>();
-		}
-
-		template <typename T>
-		T* asRaw() {
-			//assert(isType<T>());
-			return static_cast<T*>(this);
-		}
-
-		template <typename T>
 		std::shared_ptr<T> asShared() {
 			//assert(isType<T>());
 			return std::static_pointer_cast<T>(sharedFromThis<View>());
