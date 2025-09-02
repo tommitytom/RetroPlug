@@ -6,12 +6,12 @@
 namespace rp {
 	class RetroPlugEcsApplication : public fw::app::Application {
 	private:
-		std::weak_ptr<RetroPlugProject> _project;
+		RetroPlugProjectPtr _project;
 		fw::EventNode::NodeId _audioNodeId = 0;
-		std::optional<fw::EventNode> _uiEventNode = std::nullopt;
+		std::optional<fw::EventNode> _audioEventNode = std::nullopt;
 
 	public:
-		RetroPlugEcsApplication() = default;
+		RetroPlugEcsApplication();
 		~RetroPlugEcsApplication() = default;
 
 		fw::ViewPtr onCreateUi() override;

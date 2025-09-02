@@ -14,7 +14,7 @@ namespace fw {
 		f32 _sampleRate = 48000;
 
 	public:
-		AudioProcessor(): _eventNode("Audio") {}
+		AudioProcessor(EventNode&& eventNode): _eventNode(std::move(eventNode)) {}
 		virtual ~AudioProcessor() = default;
 
 		virtual void onBeginUpdate(uint32 frameCount) {}

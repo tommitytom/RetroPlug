@@ -92,6 +92,8 @@ namespace fw {
 
 		size_t size() const { return _size; }
 
+		bool empty() const { return _size == 0; }
+
 		uint32_t readUint32(size_t pos) {
 			return *((uint32_t*)(_data + pos));
 		}

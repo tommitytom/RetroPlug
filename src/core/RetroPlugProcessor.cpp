@@ -18,8 +18,8 @@ SystemServicePtr findService(SystemPtr system, SystemServiceType type) {
 	return nullptr;
 }
 
-RetroPlugProcessor::RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config)
-	: _ioMessageBus(messageBus), _typeRegistry(typeRegistry), _systemFactory(systemFactory), _systemManager(systemFactory, messageBus.allocator)
+RetroPlugProcessor::RetroPlugProcessor(fw::EventNode&& eventNode, const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config)
+	: AudioProcessor(std::move(eventNode)), _ioMessageBus(messageBus), _typeRegistry(typeRegistry), _systemFactory(systemFactory), _systemManager(systemFactory, messageBus.allocator)
 {
 	fw::EventNode& node = getEventNode();
 

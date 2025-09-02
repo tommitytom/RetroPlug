@@ -12,6 +12,7 @@ import {
 	LSDJ_KIT_SAMPLE_COUNT,
 	playSample
 } from "../wrapper/Lsdj";
+import { EffectInstance } from "../types/EffectTypes";
 
 // Displays a single LSDJ kit
 export const LsdjKit: React.FC<{
@@ -25,6 +26,7 @@ export const LsdjKit: React.FC<{
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
 	const [markers, setMarkers] = useState<number[]>([]);
 	const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
+	const [effects, setEffects] = useState<EffectInstance[]>([]);
 
 	const handleSampleClick = useCallback(
 		(sampleData: Float32Array) => {
@@ -76,6 +78,11 @@ export const LsdjKit: React.FC<{
 		setMarkers(markers);
 	}, [kit, setSamples]);
 
+	const handleEffectsChange = useCallback((newEffects: any) => {
+		// Handle effects change
+		//kit.kit.getSampleData
+	}, []);
+
 	return (
 		<div className="w-full max-w-4xl mx-auto p-2 bg-gray-800 rounded-sm shadow-lg">
 			<div
@@ -107,6 +114,7 @@ export const LsdjKit: React.FC<{
 					<EffectList
 						isExpanded={isEffectsExpanded}
 						onToggle={() => setIsEffectsExpanded(!isEffectsExpanded)}
+						onEffectsChange={handleEffectsChange}
 					/>
 				</>
 			)}

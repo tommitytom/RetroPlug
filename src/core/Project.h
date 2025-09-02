@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "core/Events.h"
-#include "core/ModelFactory.h"
 #include "core/ProjectState.h"
 #include "core/ProxySystem.h"
 #include "core/Serializable.h"
@@ -28,7 +27,6 @@ namespace rp {
 		SystemId _nextId = 1;
 
 		fw::EventNode* _eventNode = nullptr;
-		ModelFactory _modelFactory;
 
 		bool _copyLocal = true;
 		bool _requiresSave = false;
@@ -36,10 +34,6 @@ namespace rp {
 	public:
 		Project(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, ConcurrentPoolAllocator<SystemIo>& ioAllocator);
 		~Project();
-
-		ModelFactory& getModelFactory() {
-			return _modelFactory;
-		}
 
 		const SystemFactory& getSystemFactory() const {
 			return _systemFactory;

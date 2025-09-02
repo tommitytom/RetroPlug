@@ -25,9 +25,9 @@ namespace fw::Replicator {
 
 	enum class ReplicatorState {
 		Unsubscribed,
+		RequestingState,
 		Ready,
-		Error,
-		RequestingState
+		Error
 	};
 
 	struct EmplaceComponentEvent;
@@ -55,7 +55,7 @@ namespace fw::Replicator {
 		bool receiving = false;
 
 		std::vector<fw::EventNode::NodeId> targets;
-		std::unordered_map<ReplicatorFunction, ReplicatorSubscription> replicators;
+		std::unordered_map<entt::id_type, ReplicatorSubscription> replicators;
 	};
 
 	struct RegistrySubscribeEvent {
@@ -128,6 +128,47 @@ namespace fw::Replicator {
 
 		if (!registry.all_of<Component>(entity)) [[likely]] {
 			registry.emplace<Component>(entity, std::move(entt::any_cast<Component&&>(data)));
+			registry.emplace_or_replace<ComponentCreatedTag<Component>>(entity);
+		} else {
+			toggleError(registry);
+		}
+	}
+
+	template <typename Component>
+	void componentUpdater(entt::registry& registry, entt::entity entity, entt::any&& data) {
+		assert(data.owner());
+		assert(getContext(registry).state == ReplicatorState::Ready);
+
+		if (registry.all_of<Component>(entity)) [[likely]] {
+			registry.replace<Component>(entity, std::move(entt::any_cast<Component&&>(data)));
+			registry.emplace_or_replace<ComponentUpdatedTag<Component>>(entity);
+		} else {
+			toggleError(registry);
+		}
+	}
+
+	template<auto MemberPtr, typename Component, typename FieldType>
+	void componentFieldPatcher(entt::registry& registry, entt::entity entity, entt::any&& data) {
+		assert(data.owner());
+		assert(getContext(registry).state == ReplicatorState::Ready);
+
+		Component* comp = registry.try_get<Component>(entity);
+		if (comp) [[likely]] {
+			auto value = entt::any_cast<FieldType&&>(std::move(data));
+			patchField<MemberPtr, Component, FieldType>(*comp, std::move(value));
+			registry.emplace_or_replace<ComponentUpdatedTag<Component>>(entity);
+		} else {
+			toggleError(registry);
+		}
+	}
+
+	template <typename Component>
+	void componentDestroyer(entt::registry& registry, entt::entity entity) {
+		assert(getContext(registry).state == ReplicatorState::Ready);
+
+		if (registry.all_of<Component>(entity)) [[likely]] {
+			registry.remove<Component>(entity);
+			registry.emplace_or_replace<ComponentDestroyedTag<Component>>(entity);
 		} else {
 			toggleError(registry);
 		}
@@ -145,42 +186,6 @@ namespace fw::Replicator {
 		}
 	}
 
-	template <typename Component>
-	void componentUpdater(entt::registry& registry, entt::entity entity, entt::any&& data) {
-		assert(data.owner());
-		assert(getContext(registry).state == ReplicatorState::Ready);
-
-		if (registry.all_of<Component>(entity)) [[likely]] {
-			registry.replace<Component>(entity, std::move(entt::any_cast<Component&&>(data)));
-		} else {
-			toggleError(registry);
-		}
-	}
-
-	template<auto MemberPtr, typename Component, typename FieldType>
-	void componentFieldPatcher(entt::registry& registry, entt::entity entity, entt::any&& data) {
-		assert(data.owner());
-		assert(getContext(registry).state == ReplicatorState::Ready);
-
-		Component* comp = registry.try_get<Component>(entity);
-		if (comp) [[likely]] {
-			auto value = entt::any_cast<FieldType&&>(std::move(data));
-			patchField<MemberPtr, Component, FieldType>(*comp, std::move(value));
-		} else {
-			toggleError(registry);
-		}
-	}
-
-	template <typename Component>
-	void componentDestroyer(entt::registry& registry, entt::entity entity) {
-		assert(getContext(registry).state == ReplicatorState::Ready);
-
-		if (registry.all_of<Component>(entity)) [[likely]] {
-			registry.remove<Component>(entity);
-		} else {
-			toggleError(registry);
-		}
-	}
 
 	template <typename Component>
 	void handleConstruct(entt::registry& registry, entt::entity e) {
@@ -279,7 +284,11 @@ namespace fw::Replicator {
 
 	template <typename Component>
 	bool isReplicating(const ReplicatorContext& ctx) {
-		return ctx.replicators.contains(&replicate<Component>);
+		return ctx.replicators.contains(entt::type_id<Component>().index());
+	}
+
+	inline ReplicatorState getState(entt::registry& registry) {
+		return getContext(registry).state;
 	}
 
 	template <typename Component>
@@ -293,11 +302,32 @@ namespace fw::Replicator {
 		registry.on_destroy<Component>().connect<handleDestroy<Component>>();
 		registry.on_update<Component>().connect<handleUpdate<Component>>();
 
-		ctx.replicators[&replicate<Component>] = ReplicatorSubscription{
+		ctx.replicators[entt::type_id<Component>().index()] = ReplicatorSubscription{
 			.emplacer = componentEmplacer<Component>,
 			.collector = componentCollector<Component>,
 			.dereplicator = dereplicate<Component>
 		};
+	}
+
+	// Overload for multiple components (variadic template)
+	template <typename Component, typename... OtherComponents>
+		requires (sizeof...(OtherComponents) > 0)  // Only enable when there's more than one component
+	void replicate(entt::registry& registry) {
+		replicate<Component>(registry);
+		replicate<OtherComponents...>(registry);
+	}
+
+	// Helper to unpack type_list (internal implementation detail)
+	template <typename... Components>
+	void replicate_from_list(entt::registry& registry, entt::type_list<Components...>) {
+		replicate<Components...>(registry);
+	}
+
+	// Overload for type_list
+	template <typename TypeList>
+		requires std::is_same_v<TypeList, typename TypeList::type>  // Check if it's a type_list
+	void replicate(entt::registry& registry) {
+		replicate_from_list(registry, TypeList{});
 	}
 
 	template <typename Component>
@@ -306,7 +336,7 @@ namespace fw::Replicator {
 
 		assert(isReplicating<Component>(ctx));
 
-		ctx.replicators.erase(&replicate<Component>);
+		ctx.replicators.erase(entt::type_id<Component>().index());
 
 		registry.on_construct<Component>().disconnect<handleConstruct<Component>>();
 		registry.on_destroy<Component>().disconnect<handleDestroy<Component>>();
@@ -316,6 +346,19 @@ namespace fw::Replicator {
 	entt::entity spawn(entt::registry& registry);
 
 	entt::entity destroy(entt::registry& registry, entt::entity entity);
+
+	template <typename Component>
+	bool emplaceRemote(entt::registry& registry, entt::entity entity, Component&& component) {
+		ReplicatorContext& ctx = getContext(registry);
+		assert(ctx.canMutate);
+		assert(!isReplicating<Component>(ctx));
+
+		return ctx.eventNode.trySend(ctx.targets[0], EmplaceComponentEvent{
+			.entity = entity,
+			.data = entt::make_any<Component>(std::forward<Component>(component)),
+			.emplacer = componentEmplacer<Component>
+		});
+	}
 
 	template<typename T>
 	struct member_pointer_class;

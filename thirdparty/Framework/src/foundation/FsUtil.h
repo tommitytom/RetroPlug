@@ -157,6 +157,8 @@ namespace fw::FsUtil {
 
 	size_t readFile(const fs::path& path, Uint8Buffer* target);
 
+	size_t readFile(const std::string& path, Uint8Buffer& target);
+
 	uint64 lastWriteTime(const fs::path& path);
 
 	bool copyFile(std::string_view from, std::string_view to);

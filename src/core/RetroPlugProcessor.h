@@ -27,7 +27,7 @@ namespace rp {
 		IoMessageBus& _ioMessageBus;
 
 	public:
-		RetroPlugProcessor(const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config);
+		RetroPlugProcessor(fw::EventNode&& eventNode, const fw::TypeRegistry& typeRegistry, const SystemFactory& systemFactory, IoMessageBus& messageBus, const RetroPlugConfig& config);
 		~RetroPlugProcessor() {}
 
 		void onBeginUpdate(uint32 frameCount) override;

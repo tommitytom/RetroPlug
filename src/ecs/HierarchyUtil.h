@@ -14,7 +14,7 @@ namespace rp::HierarchyUtil {
 	 * @param parent The parent entity to iterate children of (must have HierarchyComponent)
 	 * @param func Callback function called for each child entity
 	 */
-	void each(entt::registry& registry, entt::entity parent, const std::function<void(entt::entity)>& func) {
+	inline void each(entt::registry& registry, entt::entity parent, std::function<void(entt::entity)>&& func) {
 		assert(registry.all_of<HierarchyComponent>(parent));
 
 		const auto& parentHierarchy = registry.get<HierarchyComponent>(parent);
@@ -27,6 +27,29 @@ namespace rp::HierarchyUtil {
 		}
 	}
 
+	template <typename ...Components>
+	inline void eachAllOf(entt::registry& registry, entt::entity parent, std::function<void(entt::entity, Components&...)>&& func) {
+		assert(registry.all_of<HierarchyComponent>(parent));
+
+		const auto& parentHierarchy = registry.get<HierarchyComponent>(parent);
+		entt::entity current = parentHierarchy.first;
+
+		while (current != entt::null) {
+			if (registry.all_of<Components...>(current)) {
+				std::apply(func, std::tuple_cat(std::make_tuple(current), std::tie(registry.get<Components>(current)...)));
+			}
+			const auto& currentHierarchy = registry.get<HierarchyComponent>(current);
+			current = currentHierarchy.next;
+		}
+	}
+
+	inline size_t count(entt::registry& registry, entt::entity parent) {
+		assert(registry.all_of<HierarchyComponent>(parent));
+		size_t count = 0;
+		each(registry, parent, [&](entt::entity) { count++; });
+		return count;
+	}
+
 	/**
 	 * Adds a child entity to a parent entity in the hierarchy.
 	 * Creates HierarchyComponent for both entities if they don't exist.
@@ -36,7 +59,7 @@ namespace rp::HierarchyUtil {
 	 * @param parent The parent entity to add the child to
 	 * @param child The child entity to be added
 	 */
-	void addChild(entt::registry& registry, entt::entity parent, entt::entity child) {
+	inline void addChild(entt::registry& registry, entt::entity parent, entt::entity child) {
 		// Ensure both entities have hierarchy components
 		if (!registry.all_of<HierarchyComponent>(parent)) {
 			registry.emplace<HierarchyComponent>(parent);
@@ -84,7 +107,7 @@ namespace rp::HierarchyUtil {
 	 * @param registry The ECS registry containing the entities
 	 * @param child The child entity to remove (must have HierarchyComponent)
 	 */
-	void removeChild(entt::registry& registry, entt::entity child) {
+	inline void removeChild(entt::registry& registry, entt::entity child) {
 		assert(registry.all_of<HierarchyComponent>(child));
 
 		auto& childHierarchy = registry.get<HierarchyComponent>(child);
@@ -120,6 +143,25 @@ namespace rp::HierarchyUtil {
 		childHierarchy.next = entt::null;
 	}
 
+	inline void destroyHierarchy(entt::registry& registry, entt::entity entity, bool destroyRoot) {
+		if (!registry.all_of<HierarchyComponent>(entity)) {
+			return;
+		}
+
+		// Recursively destroy all children
+		each(registry, entity, [&](entt::entity child) {
+			destroyHierarchy(registry, child, true);
+		});
+		
+		// Destroy the entity itself if specified
+		if (destroyRoot) {
+			removeChild(registry, entity);
+			registry.destroy(entity);
+		} else {
+			registry.remove<HierarchyComponent>(entity);
+		}
+	}
+
 	/**
 	 * Completely removes an entity and all its descendants from the hierarchy.
 	 * This is a destructive operation that recursively removes the entire subtree.
@@ -129,7 +171,7 @@ namespace rp::HierarchyUtil {
 	 * @param registry The ECS registry containing the entities
 	 * @param entity The entity to remove along with its entire subtree
 	 */
-	void removeFromHierarchy(entt::registry& registry, entt::entity entity) {
+	inline void removeFromHierarchy(entt::registry& registry, entt::entity entity) {
 		if (!registry.all_of<HierarchyComponent>(entity)) {
 			return;
 		}
@@ -158,7 +200,7 @@ namespace rp::HierarchyUtil {
 	 * @param parent The parent entity to start iteration from (must have HierarchyComponent)
 	 * @param func Callback function called for each descendant entity
 	 */
-	void eachRecursive(entt::registry& registry, entt::entity parent, const std::function<void(entt::entity)>& func) {
+	inline void eachRecursive(entt::registry& registry, entt::entity parent, std::function<void(entt::entity)>&& func) {
 		assert(registry.all_of<HierarchyComponent>(parent));
 
 		std::queue<entt::entity> queue;
@@ -188,7 +230,7 @@ namespace rp::HierarchyUtil {
 	 * @param parent The parent entity to start iteration from (must have HierarchyComponent)
 	 * @param func Callback function called for each descendant entity
 	 */
-	void eachRecursiveDepthFirst(entt::registry& registry, entt::entity parent, const std::function<void(entt::entity)>& func) {
+	inline void eachRecursiveDepthFirst(entt::registry& registry, entt::entity parent, const std::function<void(entt::entity)>& func) {
 		assert(registry.all_of<HierarchyComponent>(parent));
 
 		each(registry, parent, [&](entt::entity child) {

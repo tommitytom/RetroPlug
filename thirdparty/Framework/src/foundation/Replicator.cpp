@@ -116,10 +116,11 @@ namespace fw::Replicator {
 
 	bool Replicator::subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate) {
 		if (!eventNode.trySend(targetNodeId, RegistrySubscribeEvent{ .nodeId = eventNode.getId() })) {
+			spdlog::error("Failed to send subscribe event to node {}", targetNodeId);
 			return false;
 		}
 
-		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, false, canMutate, ReplicatorState::Ready);
+		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, false, canMutate, ReplicatorState::RequestingState);
 		ctx.targets.push_back(targetNodeId);
 
 		eventNode.receive<StateResponseEvent>([&registry, &ctx](StateResponseEvent&& ev) {
@@ -158,22 +159,22 @@ namespace fw::Replicator {
 	}
 
 	entt::entity Replicator::spawn(entt::registry& registry) {
-		ReplicatorContext& ctx = getContext(registry);
+		const ReplicatorContext& ctx = getContext(registry);
 		assert(!ctx.receiving);
 
-		entt::entity e = registry.create();
+		const entt::entity e = registry.create();
 
 		for (const fw::EventNode::NodeId target : ctx.targets) {
 			ctx.eventNode.send(target, CreateEntityEvent{
 				.entity = e
-				});
+			});
 		}
 
 		return e;
 	}
 
 	entt::entity Replicator::destroy(entt::registry& registry, entt::entity entity) {
-		ReplicatorContext& ctx = getContext(registry);
+		const ReplicatorContext& ctx = getContext(registry);
 		assert(!ctx.receiving);
 		assert(registry.valid(entity));
 

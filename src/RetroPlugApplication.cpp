@@ -138,5 +138,5 @@ fw::ViewPtr RetroPlugApplication::onCreateUi() {
 
 fw::AudioProcessorPtr RetroPlugApplication::onCreateAudio() {
 	spdlog::info("Creating audio");
-	return std::make_shared<RetroPlugProcessor>(_typeRegistry, _systemFactory, _ioMessageBus, _config);
+	return std::make_shared<RetroPlugProcessor>(fw::EventNode("Audio"), _typeRegistry, _systemFactory, _ioMessageBus, _config);
 }

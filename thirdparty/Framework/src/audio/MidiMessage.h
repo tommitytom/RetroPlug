@@ -166,10 +166,17 @@ namespace fw {
 			return -1;
 		}
 
-		f64 getPitchWheel() const {
+		int32 getPitchWheel() const {
 			if (getStatusMsg() == StatusMessage::PitchWheel) {
-				int32 val = (data2 << 7) + data1;
-				return (f64)(val - 8192) / 8192.0;
+				return (data2 << 7) + data1;
+			}
+
+			return 0;
+		}
+
+		f64 getPitchWheelScaled() const {
+			if (getStatusMsg() == StatusMessage::PitchWheel) {
+				return (f64)(getPitchWheel() - 8192) / 8192.0;
 			}
 
 			return 0.0;
@@ -179,12 +186,16 @@ namespace fw {
 			return (ControlChangeMessage)data1;
 		}
 
-		f64 controlChange(ControlChangeMessage idx) const {
+		int32 controlChange(ControlChangeMessage idx) const {
 			if (getStatusMsg() == StatusMessage::ControlChange && getControlChangeIdx() == idx) {
-				return (f64)data2 / 127.0;
+				return data2;
 			}
 
-			return -1.0;
+			return 0;
+		}
+
+		f64 controlChangeScaled(ControlChangeMessage idx) const {
+			return (f64)controlChange(idx) / 127.0;
 		}
 
 		void clear() {

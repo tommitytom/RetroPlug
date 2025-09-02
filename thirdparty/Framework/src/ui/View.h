@@ -886,6 +886,10 @@ namespace fw {
 			return _children;
 		}
 
+		size_t getChildCount() const {
+			return _children.size();
+		}
+
 		void setLayoutDirty() {
 			if (_shared) {
 				_shared->layoutDirty = true;

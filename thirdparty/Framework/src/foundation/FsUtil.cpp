@@ -76,6 +76,11 @@ size_t FsUtil::fileSize(const fs::path& path) {
 	return (size_t)f.tellg();
 }
 
+size_t FsUtil::readFile(const std::string& path, Uint8Buffer& target) {
+	fs::path p = path;
+	return FsUtil::readFile(p, &target);
+}
+
 std::vector<std::byte> FsUtil::readFile(const fs::path& path) {
 	std::vector<std::byte> target;
 	std::ifstream f(path.lexically_normal(), std::ios::binary);

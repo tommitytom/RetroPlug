@@ -21,7 +21,6 @@ namespace rp {
 	class SystemOverlay;
 	class ProxySystem;
 	class Project;
-	class Model;
 
 	struct LoadConfig;
 
@@ -34,7 +33,6 @@ namespace rp {
 	using SystemAudioProcessorPtr = std::shared_ptr<SystemAudioProcessor>;
 	using SystemOverlayPtr = std::shared_ptr<SystemOverlay>;
 	using ProxySystemPtr = std::shared_ptr<ProxySystem>;
-	using ModelPtr = std::shared_ptr<Model>;
 
 	constexpr SystemId INVALID_SYSTEM_ID = -1;
 	constexpr SystemServiceId INVALID_SYSTEM_SERVICE_ID = -1;

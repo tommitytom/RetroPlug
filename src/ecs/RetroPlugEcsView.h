@@ -23,5 +23,12 @@ namespace rp {
 		void onRender(fw::Canvas& canvas) override;
 
 		bool onKey(const fw::KeyEvent& event) override;
+
+	private:
+		void rebuildUi();
+
+		entt::registry& getRegistry() {
+			return _project->getRegistry();
+		}
 	};
 }

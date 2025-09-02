@@ -51,7 +51,12 @@ namespace fw::app {
 
 	bool ApplicationRunner::runFrame() {
 		_app->onUpdate(0);
-		return _uiContext->runFrame();
+
+		if (_uiContext) {
+			return _uiContext->runFrame();
+		}
+
+		return true;
 	}
 
 	void ApplicationRunner::reload() {
