@@ -1,0 +1,92 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+.cache
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake
+**/CMakeCache.txt
+**/Makefile
+**/*.cmake
+**/CMakeFiles/**
+**/reflect-cpp-tests
+**/build/**
+**/build_clang/**
+
+# Output files
+*.avro
+*.bson
+*.capnproto
+*.cbor
+*.json
+*.fb
+*.flexbuf
+*.msgpack
+*.toml
+*.ubjson
+*.xml
+*.yml
+*.yaml
+
+!vcpkg.json
+!.github/**/*.yml
+!.github/**/*.yaml
+!benchmarks/**/*.json
+
+# clangd
+compile_flags.txt
+compile_commands.json
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+vcpkg_installed/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
