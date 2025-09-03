@@ -3,6 +3,7 @@ local m = {
 	liblsdj = dofile("liblsdj.lua"),
 	r8brain = dofile("r8brain.lua"),
 	minizip = dofile("minizip.lua"),
+	reflcpp = dofile("refl-cpp.lua"),
 }
 
 function m.allProjects()
@@ -10,6 +11,7 @@ function m.allProjects()
 	m.liblsdj.project()
 	m.r8brain.project()
 	m.minizip.project()
+	m.reflcpp.project()
 end
 
 return m

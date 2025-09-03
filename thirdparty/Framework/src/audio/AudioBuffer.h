@@ -12,6 +12,8 @@ namespace fw {
 		f32 _sampleRate = 44100.0f;
 
 	public:
+		using SampleTypeT = SampleType;
+
 		AudioBufferT(uint32 channels = 2, uint32 samples = 0, f32 sampleRate = 44100.0f)
 			: _channelCount(channels), _sampleCount(samples), _sampleRate(sampleRate) {
 			resize(channels, samples);
@@ -191,6 +193,13 @@ namespace fw {
 				}
 			}
 		}
+
+		void applyGain(SampleType gain) {
+			for (uint32 ch = 0; ch < _channelCount; ++ch) {
+				applyGain(ch, gain);
+			}
+		}
+
 		// Getters
 		uint32 getChannelCount() const { return _channelCount; }
 		uint32 getSampleCount() const { return _sampleCount; }

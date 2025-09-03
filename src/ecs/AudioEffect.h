@@ -89,17 +89,13 @@ namespace rp {
 		}
 
 		void process(entt::registry& registry, entt::entity e, fw::AudioBuffer& out, const fw::AudioBuffer& in) final override {
-			_registry = &registry;
-
 			auto comps = registry.get<const Component, StateComponents...>(e);
 			std::apply([this](auto&... args) {
-				this->processTyped(args...);
-			}, std::tuple_cat(std::make_tuple(std::ref(out), std::cref(in)), comps));
-
-			_registry = nullptr;
+				this->process(args...);
+			}, std::tuple_cat(std::make_tuple(std::ref(out)), comps));
 		}
 
-		virtual void process(fw::AudioBuffer& out, const fw::AudioBuffer& in, const Component& comp, StateComponents&...) = 0;
+		virtual void process(fw::AudioBuffer& out, const Component& comp, StateComponents&...) = 0;
 
 		entt::registry& getRegistry() {
 			assert(_registry);
@@ -112,6 +108,7 @@ namespace rp {
 		}
 	};
 
+	// Same as audioeffect?
 	template<typename Component, typename... StateComponents>
 	class AudioGenerator : public AudioEffectBase {
 	private:

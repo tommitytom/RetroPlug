@@ -1,7 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <entt/entity/registry.hpp>
 #include "ui/View.h"
+#include "ecs/ProjectSerializerContext.h"
+#include "core/CoreComponents.h"
 
 namespace rp {
 	class SystemHookBase {
@@ -25,6 +28,10 @@ namespace rp {
 		virtual void onDestroy(entt::registry& registry, entt::entity entity) const {}
 
 		virtual fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const { return nullptr; }
+
+		virtual void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const {}
+
+		virtual void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const {}
 	};
 
 	template <typename SystemComponent>

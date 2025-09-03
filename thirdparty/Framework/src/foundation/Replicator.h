@@ -272,7 +272,7 @@ namespace fw::Replicator {
 
 	void setupOwner(entt::registry& registry, fw::EventNode& eventNode);
 
-	bool subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate);
+	bool subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate, bool requestState = true);
 
 	bool unsubscribe(entt::registry& registry, fw::EventNode::NodeId ownerNodeId);
 

@@ -11,6 +11,36 @@
 #include "ecs/LsdjInstance.h"
 
 namespace rp {
+	const char* json_str =
+		"{"
+		"  \"systems\": ["
+		"    {"
+		"      \"components\": ["
+		"        {"
+		"          \"type\": 2738470842,"
+		"          \"name\": \"rp::SystemLoadComponent\","
+		"          \"data\": {"
+		"            \"entries\": {"
+		"              \"rom\": { \"path\": \"C:\\\\retro\\\\LSDj-v5.0.3.gb\" },"
+		"              \"sram\": { \"path\": \"C:\\\\retro\\\\LSDj-v5.0.3.sav\" }"
+		"            }"
+		"          }"
+		"        },"
+		"        {"
+		"          \"type\": 2711173061,"
+		"          \"name\": \"rp::SameBoyComponent\","
+		"          \"data\": { \"model\": \"CgbC\", \"fastBoot\": true }"
+		"        },"
+		"        {"
+		"          \"type\": 1454910132,"
+		"          \"name\": \"rp::LsdjComponent\","
+		"          \"data\": { \"kits\": {} }"
+		"        }"
+		"      ]"
+		"    }"
+		"  ]"
+		"}";
+
 	class EcsSystemView : public fw::View {
 		FwRegisterObject()
 	private:
@@ -139,7 +169,7 @@ namespace rp {
 				systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
 				systemView->focus();
 
-				eachHook(systemType, _project->getServiceHooks(), [&](const SystemHookBase& hook) {
+				eachHook(systemType, _project->getContext().serviceHooks, [&](const SystemHookBase& hook) {
 					fw::ViewPtr overlay = hook.onCreateOverlay(registry, e);
 					if (overlay) {
 						systemView->addChild(overlay);
@@ -174,14 +204,19 @@ namespace rp {
 
 	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
 		if (event.down && event.key == fw::VirtualKey::F5) {
+			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
+			_project->deserialize(archive);
+			/*
 			_project->addSystem(SystemLoadComponent{
 				.entries = {
-					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } }
+					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
+					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
 				},
 			}, SameBoyComponent{
 				.model = GameboyModel::CgbC,
 				.fastBoot = true
 			});
+			*/
 
 			/*entt::entity e = SineGenerator::emplace(registry);
 

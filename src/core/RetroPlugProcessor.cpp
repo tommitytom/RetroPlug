@@ -314,7 +314,7 @@ void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {
 		system->setSampleRate((uint32)sampleRate);
 	}
 }
-
+/*
 void RetroPlugProcessor::onSerialize(fw::Uint8Buffer& target) {
 	std::vector<SystemDesc> systemDescs;
 	for (SystemPtr system : _systemManager.getSystems()) {
@@ -381,3 +381,4 @@ void RetroPlugProcessor::onDeserialize(const fw::Uint8Buffer& source) {
 		}
 	}
 }
+*/

@@ -10,14 +10,13 @@
 #include "core/SystemHook.h"
 #include "sameboy/SameBoyComponents.h"
 #include "foundation/FsUtil.h"
+#include "ecs/RetroPlugProjectContext.h"
 
 namespace rp {
 	class RetroPlugProject {
 	private:
 		fw::EventNode _eventNode;
 		entt::registry _registry;
-		std::vector<std::unique_ptr<SystemHookBase>> _systemHooks;
-		std::vector<std::unique_ptr<SystemHookBase>> _serviceHooks;
 
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
@@ -32,8 +31,13 @@ namespace rp {
 
 			SystemLoadComponent& load = _registry.emplace<SystemLoadComponent>(entity, std::move(config));
 			_registry.emplace<T>(entity, std::move(component));
+			_registry.emplace<SystemComponent>(entity, systemType);
 
 			handleLoad(entity, load, systemType);
+
+			fw::Uint8Buffer archive;
+			serialize(archive);
+			//deserialize(archive);
 
 			return entity;
 		}
@@ -42,9 +46,9 @@ namespace rp {
 
 		void onUpdate(f32 deltaTime);
 
-		void serialize(fw::Uint8Buffer& archive) const {}
+		void serialize(fw::Uint8Buffer& archive) const;
 
-		void deserialize(const fw::Uint8Buffer& archive) {}
+		void deserialize(const fw::Uint8Buffer& archive);
 
 		fw::EventNode& getEventNode() {
 			return _eventNode;
@@ -58,12 +62,12 @@ namespace rp {
 			return _registry;
 		}
 
-		const std::vector<std::unique_ptr<SystemHookBase>>& getSystemHooks() const {
-			return _systemHooks;
+		RetroPlugProjectContext& getContext() {
+			return _registry.ctx().at<RetroPlugProjectContext>();
 		}
 
-		const std::vector<std::unique_ptr<SystemHookBase>>& getServiceHooks() const {
-			return _serviceHooks;
+		const RetroPlugProjectContext& getContext() const {
+			return _registry.ctx().at<const RetroPlugProjectContext>();
 		}
 
 	private:

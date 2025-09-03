@@ -1,5 +1,7 @@
 #include "RetroPlugEcsProcessor.h"
 
+#include <spdlog/spdlog.h>
+
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
 #include "Components.h"
@@ -30,8 +32,16 @@ namespace rp {
 		fw::Replicator::replicate<ReplicatedTypes>(_registry);
 
 		node.receive<ButtonEvent>([this](ButtonEvent&& ev) {
+			if (!_registry.valid(ev.entity)) {
+				return;
+			}
+
 			SameBoyStateComponent* state = _registry.try_get<SameBoyStateComponent>(ev.entity);
-			state->io->input.buttons.push_back(fw::StreamButtonPress{
+			if (!state) {
+				return;
+			}
+
+			state->state->io->input.buttons.push_back(fw::StreamButtonPress{
 				.button = (fw::ButtonType)ev.button,
 				.down = ev.down
 			});
@@ -61,15 +71,15 @@ namespace rp {
 
 		onCreate<SameBoyStateComponent>(_registry, [](entt::registry& registry, entt::entity entity) {
 			const AudioSettingsContext& settings = registry.ctx().at<AudioSettingsContext>();
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			SameBoyUtil::setUserData(state, (void*)&state);
+			SameBoyState& state = *registry.get<SameBoyStateComponent>(entity).state;
 			SameBoyUtil::setSampleRate(state, (uint32)settings.sampleRate);
 			state.io = std::make_shared<SystemIo>();
 		});
 
 		onDestroy<SameBoyStateComponent>(_registry, [](entt::registry& registry, entt::entity entity) {
 			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			SameBoyUtil::destroy(state);
+			SameBoyUtil::destroy(*state.state);
+			state.state = nullptr;
 			HierarchyUtil::destroyHierarchy(registry, entity, false);
 			registry.remove<SameBoyStateComponent>(entity);
 		});
@@ -80,9 +90,11 @@ namespace rp {
 			return;
 		}
 
-		for (const auto& [e, state] : view.each()) {
+		for (const auto& [e, s] : view.each()) {
+			SameBoyState& state = *s.state;
 			state.io = state.io ? state.io : std::make_shared<SystemIo>();
 			state.io->output.audio = std::make_shared<fw::Float32Buffer>(settings.blockSize * 2);
+			state.io->output.audio->clear();
 		}
 
 		SameBoyUtil::process(view.storage().raw(), view.size(), settings.blockSize);
@@ -90,12 +102,14 @@ namespace rp {
 		f32* outL = out.getWritePointer(0);
 		f32* outR = out.getWritePointer(1);
 
-		for (const auto& [e, state] : view.each()) {
+		for (const auto& [e, s] : view.each()) {
+			SameBoyState& state = *s.state;
 			const f32* buffer = state.io->output.audio->data();
+
 			for (uint32 i = 0; i < settings.blockSize; ++i) {
 				outL[i] += buffer[i * 2 + 0];
 				outR[i] += buffer[i * 2 + 1];
-			}
+			}		
 
 			state.io->output.audio = nullptr;
 
@@ -144,19 +158,5 @@ namespace rp {
 	}
 
 	void RetroPlugEcsProcessor::onSampleRateChange(f32 sampleRate) {
-	}
-
-	void RetroPlugEcsProcessor::onSerialize(fw::Uint8Buffer& target) {
-		// Thread safe? Who knows!
-		if (_serializeHook) {
-			_serializeHook(target);
-		}
-	}
-
-	void RetroPlugEcsProcessor::onDeserialize(const fw::Uint8Buffer& source) {
-		// Thread safe? Who knows!
-		if (_deserializeHook) {
-			_deserializeHook(source);
-		}
 	}
 }

@@ -23,25 +23,18 @@ namespace rp {
 		bool fastBoot = true;
 	};
 
-	struct SameBoyStateComponent {
+	struct SameBoyState {
 		GB_gameboy_t* gb;
-		std::queue<OffsetButton> buttonQueue;
+		SystemIoPtr io;
 		char frameBuffer[FRAME_BUFFER_SIZE];
+		std::queue<OffsetButton> buttonQueue;
 		//std::queue<TimedByte> serialQueue;
 		GameboyModel model = GameboyModel::Auto;
 		bool fastBoot = true;
-		SystemIoPtr io;
 		uint32 audioFrameCount = 0;
+	};
 
-		// Delete copy operations
-		SameBoyStateComponent(const SameBoyStateComponent&) = delete;
-		SameBoyStateComponent& operator=(const SameBoyStateComponent&) = delete;
-
-		// Keep move operations (automatically generated)
-		SameBoyStateComponent(SameBoyStateComponent&&) = default;
-		SameBoyStateComponent& operator=(SameBoyStateComponent&&) = default;
-
-		SameBoyStateComponent() = default;
-		~SameBoyStateComponent() = default;
+	struct SameBoyStateComponent {
+		std::unique_ptr<SameBoyState> state;
 	};
 }

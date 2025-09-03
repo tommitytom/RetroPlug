@@ -36,5 +36,9 @@ namespace rp {
 		void onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const override;
 
 		fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const override;
+
+		void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const override;
+
+		void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const override;
 	};
 }

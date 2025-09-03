@@ -96,6 +96,7 @@ function m.Core.include()
 	fwDeps.lua.include()
 	--dep.minizip.include()
 	dep.SameBoy.include()
+	dep.reflcpp.include()
 
 	includedirs {
 		"thirdparty",
@@ -125,6 +126,7 @@ function m.Core.link()
 	fwDeps.lua.link()
 	--dep.minizip.link()
 	dep.SameBoy.link()
+	dep.reflcpp.link()
 end
 
 function m.Core.project()

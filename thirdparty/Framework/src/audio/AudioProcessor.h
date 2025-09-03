@@ -29,10 +29,6 @@ namespace fw {
 
 		virtual void onSampleRateChange(f32 sampleRate) {}
 
-		virtual void onSerialize(fw::Uint8Buffer& target) {}
-
-		virtual void onDeserialize(const fw::Uint8Buffer& source) {}
-
 		void setSampleRate(f32 sampleRate) { 
 			_sampleRate = sampleRate;
 			onSampleRateChange(sampleRate);

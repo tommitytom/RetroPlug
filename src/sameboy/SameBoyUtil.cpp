@@ -45,8 +45,8 @@ f32 SameBoyUtil::cyclesToMs(GB_gameboy_t* gb, uint64 cycles) {
 
 const GB_model_t DEFAULT_GAMEBOY_MODEL = GB_model_t::GB_MODEL_CGB_C;
 
-SameBoyStateComponent& getStateComponent(GB_gameboy_t* gb) {
-	return *(SameBoyStateComponent*)GB_get_user_data(gb);
+SameBoyState& getStateComponent(GB_gameboy_t* gb) {
+	return *(SameBoyState*)GB_get_user_data(gb);
 }
 
 GB_model_t getGameboyModelId(GameboyModel model) {
@@ -85,7 +85,7 @@ static uint32_t rgbEncode(GB_gameboy_t* gb, uint8_t r, uint8_t g, uint8_t b) {
 
 static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {
 	if (type == GB_VBLANK_TYPE_NORMAL_FRAME) {
-		SameBoyStateComponent& s = getStateComponent(gb);
+		SameBoyState& s = getStateComponent(gb);
 
 		if (s.io) {
 			if (!s.io->output.video) {
@@ -104,7 +104,7 @@ static f32 s16ToF32(int16 source) {
 }
 
 static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
-	SameBoyStateComponent& s = getStateComponent(gb);
+	SameBoyState& s = getStateComponent(gb);
 
 	//GB_sample_t smp =  gb->apu_output.current_sample[0];
 
@@ -139,7 +139,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 }
 
 void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t type) {
-	const SameBoyStateComponent& s = getStateComponent(gb);
+	const SameBoyState& s = getStateComponent(gb);
 	GB_model_t model = getGameboyModelId(s.model);
 	std::string_view bootRom = findBootRom(model, s.fastBoot);
 	GB_load_boot_rom_from_buffer(gb, (const unsigned char*)bootRom.data(), bootRom.size());
@@ -163,7 +163,7 @@ void processButtons(const std::vector<fw::StreamButtonPress>& source, std::queue
 
 void SameBoyUtil::process(SameBoyStateComponent** systems, size_t systemCount, uint32 sampleCount) {
 	for (size_t i = 0; i < systemCount; ++i) {
-		SameBoyStateComponent& s = *systems[i];
+		SameBoyState& s = *systems[i]->state;
 
 		SystemIo::Input& input = s.io->input;
 		const f32 timeScale = (f32)GB_get_sample_rate(s.gb) / 1000.0f;
@@ -201,9 +201,9 @@ static void serialStart(GB_gameboy_t* gb, bool bit_received) {}
 
 static bool serialEnd(GB_gameboy_t* gb) { return true; }
 
-bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyStateComponent& state, uint32 sampleRate, const SystemLoadComponent& load) {
-	auto romEntry = load.entries.find("rom");
-	if (romEntry == load.entries.end() || romEntry->second.data.size() == 0) {
+bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint32 sampleRate, const SystemLoadComponent& load) {
+	const fw::Uint8Buffer* rom = load.findData("rom");
+	if (!rom) {
 		return false;
 	}
 
@@ -228,25 +228,23 @@ bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyStateComponent& sta
 	GB_set_background_rendering_disabled(gb, false);
 	GB_set_object_rendering_disabled(gb, false);
 
-	GB_load_rom_from_buffer(gb, (const uint8_t*)romEntry->second.data.data(), romEntry->second.data.size());
+	GB_load_rom_from_buffer(gb, (const uint8_t*)rom->data(), rom->size());
 
 	//GB_set_color_correction_mode(gb, GB_COLOR_CORRECTION_EMULATE_HARDWARE);
 	GB_set_color_correction_mode(gb, GB_COLOR_CORRECTION_DISABLED);
 	GB_set_highpass_filter_mode(gb, GB_HIGHPASS_ACCURATE);
 
-	auto sramEntry = load.entries.find("sram");
-	if (sramEntry != load.entries.end() && sramEntry->second.data.size() > 0) {
-		GB_load_battery_from_buffer(state.gb, (const uint8_t*)sramEntry->second.data.data(), sramEntry->second.data.size());
+	const fw::Uint8Buffer* sram = load.findData("sram");
+	if (sram) {
+		GB_load_battery_from_buffer(state.gb, (const uint8_t*)sram->data(), sram->size());
 	}
 
-	auto stateEntry = load.entries.find("state");
-	if (stateEntry != load.entries.end() && stateEntry->second.data.size() > 0) {
-		if (GB_load_state_from_buffer(state.gb, stateEntry->second.data.data(), stateEntry->second.data.size()) != 0) {
+	const fw::Uint8Buffer* stateBuffer = load.findData("state");
+	if (stateBuffer) {
+		if (GB_load_state_from_buffer(state.gb, stateBuffer->data(), stateBuffer->size()) != 0) {
 			//std::cerr << "Failed to load state buffer" << std::endl;
 		}
 	}
-
-	GB_reset(gb);
 
 	//_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
 	//SameBoyUtil::spinMs(gb, 500.0f); // Skip bootrom
@@ -254,18 +252,25 @@ bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyStateComponent& sta
 	return true;
 }
 
-void SameBoyUtil::setSampleRate(SameBoyStateComponent& state, uint32 sampleRate) {
+void SameBoyUtil::setRenderingDisabled(SameBoyState& state, bool disabled) {
+	if (state.gb) {
+		GB_set_background_rendering_disabled(state.gb, disabled);
+		GB_set_object_rendering_disabled(state.gb, disabled);
+	}
+}
+
+void SameBoyUtil::setSampleRate(SameBoyState& state, uint32 sampleRate) {
 	if (state.gb) {
 		GB_set_sample_rate(state.gb, sampleRate);
 	}
 }
 
-void SameBoyUtil::setUserData(SameBoyStateComponent& state, void* userData) {
+void SameBoyUtil::setUserData(SameBoyState& state, void* userData) {
 	if (state.gb) {
 		GB_set_user_data(state.gb, userData);
 	}
 }
 
-void SameBoyUtil::destroy(SameBoyStateComponent& state) {
+void SameBoyUtil::destroy(SameBoyState& state) {
 	delete state.gb;
 }

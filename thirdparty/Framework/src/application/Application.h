@@ -15,6 +15,10 @@ namespace fw::app {
 		virtual fw::AudioProcessorPtr onCreateAudio() { return nullptr; }
 
 		virtual void onUpdate(f32 deltaTime) {}
+
+		virtual void onSerialize(fw::Uint8Buffer& buffer) {}
+
+		virtual void onDeserialize(const fw::Uint8Buffer& buffer) {}
 	};
 
 	template <typename ViewT, typename AudioT = NullAudioProcessor>

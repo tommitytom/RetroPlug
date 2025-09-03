@@ -315,7 +315,7 @@ extern "C" {
 	void cplug_saveState(void* userPlugin, const void* stateCtx, cplug_writeProc writeProc) {
 		CPlugPlugin* plugin = static_cast<CPlugPlugin*>(userPlugin);
 		fw::Uint8Buffer buffer;
-		plugin->audioManager->getProcessor()->onSerialize(buffer);
+		plugin->app->onSerialize(buffer);
 		writeProc(stateCtx, buffer.data(), buffer.size());
 	}
 
@@ -324,7 +324,7 @@ extern "C" {
 		fw::Uint8Buffer buffer(1024 * 1024);
 		int64_t readSize = readProc(stateCtx, buffer.data(), buffer.size());
 		buffer.resize((size_t)readSize);
-		plugin->audioManager->getProcessor()->onDeserialize(buffer);
+		plugin->app->onDeserialize(buffer);
 	}
 
 	static PuglStatus onPuglEvent(PuglView* view, const PuglEvent* event) {

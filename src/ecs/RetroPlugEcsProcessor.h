@@ -40,9 +40,5 @@ namespace rp {
 		void onTransportUpdate(const fw::TimeInfo& timeInfo) override;
 
 		void onSampleRateChange(f32 sampleRate) override;
-
-		void onSerialize(fw::Uint8Buffer& target) override;
-
-		void onDeserialize(const fw::Uint8Buffer& source) override;
 	};
 }

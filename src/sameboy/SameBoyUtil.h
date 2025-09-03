@@ -8,6 +8,7 @@
 namespace rp {
 	struct SameBoyComponent;
 	struct SameBoyStateComponent;
+	struct SameBoyState;
 }
 
 namespace rp::SameBoyUtil {
@@ -19,13 +20,15 @@ namespace rp::SameBoyUtil {
 
 	f32 cyclesToMs(GB_gameboy_t* gb, uint64 cycles);
 
-	bool setup(const SameBoyComponent& comp, SameBoyStateComponent& state, uint32 sampleRate, const SystemLoadComponent& load);
+	bool setup(const SameBoyComponent& comp, SameBoyState& state, uint32 sampleRate, const SystemLoadComponent& load);
 
-	void setSampleRate(SameBoyStateComponent& state, uint32 sampleRate);
+	void setSampleRate(SameBoyState& state, uint32 sampleRate);
 
-	void setUserData(SameBoyStateComponent& state, void* userData);
+	void setUserData(SameBoyState& state, void* userData);
+
+	void setRenderingDisabled(SameBoyState& state, bool disabled);
 
 	void process(SameBoyStateComponent** systems, size_t systemCount, uint32 sampleCount);
 
-	void destroy(SameBoyStateComponent& state);
+	void destroy(SameBoyState& state);
 }

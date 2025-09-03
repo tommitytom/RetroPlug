@@ -170,7 +170,7 @@ bool FrameworkInstrument::SerializeState(IByteChunk& chunk) const {
 	assert(_audioManager->getProcessor());
 	
 	fw::Uint8Buffer target;
-	_audioManager->getProcessor()->onSerialize(target);
+	_app->onSerialize(target);
 
 	uint32 size = target.size();
 	chunk.Put(&size);
@@ -190,7 +190,7 @@ int FrameworkInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 
 	if (size <= chunk.Size() - pos) {
 		fw::Uint8Buffer source((uint8*)chunk.GetData() + pos, size);
-		_audioManager->getProcessor()->onDeserialize(source);
+		_app->onDeserialize(source);
 		return pos + size;
 	}
 

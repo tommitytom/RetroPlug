@@ -114,13 +114,15 @@ namespace fw::Replicator {
 		setupMutators(registry, eventNode);
 	}
 
-	bool Replicator::subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate) {
-		if (!eventNode.trySend(targetNodeId, RegistrySubscribeEvent{ .nodeId = eventNode.getId() })) {
-			spdlog::error("Failed to send subscribe event to node {}", targetNodeId);
-			return false;
+	bool Replicator::subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate, bool requestState) {
+		if (requestState) {
+			if (!eventNode.trySend(targetNodeId, RegistrySubscribeEvent{ .nodeId = eventNode.getId() })) {
+				spdlog::error("Failed to send subscribe event to node {}", targetNodeId);
+				return false;
+			}
 		}
 
-		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, false, canMutate, ReplicatorState::RequestingState);
+		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, false, canMutate, requestState ? ReplicatorState::RequestingState : ReplicatorState::Ready);
 		ctx.targets.push_back(targetNodeId);
 
 		eventNode.receive<StateResponseEvent>([&registry, &ctx](StateResponseEvent&& ev) {
