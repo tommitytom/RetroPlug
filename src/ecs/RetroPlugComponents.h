@@ -61,12 +61,15 @@ namespace rp {
 		uint32 offset = 0;
 		uint32 length = 0;
 		std::vector<LsdjEffect> effects;
+
+		rfl::Skip<fw::Uint8Buffer> data; // Populated on first load
 	};
 
 	struct LsdjKitComponent {
 		int32 kitId = -1;
 		std::string name;
 		std::vector<LsdjEffect> effects;
+		std::vector<LsdjSampleComponent> samples;
 	};
 
 	struct LsdjComponent {

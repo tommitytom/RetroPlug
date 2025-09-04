@@ -1,7 +1,7 @@
 #include "RetroPlugEcsProcessor.h"
 
 #include <spdlog/spdlog.h>
-#include <emscripten.h>
+//#include <emscripten.h>
 
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
@@ -15,6 +15,7 @@
 #include "ecs/HierarchyUtil.h"
 #include "core/SystemHook.h"
 #include "core/Events.h"
+#include "foundation/EmscriptenUtil.h"
 
 namespace rp {
 	using namespace entt::literals;
@@ -39,8 +40,6 @@ namespace rp {
 		AudioHooksContext() = default;
 		~AudioHooksContext() = default;
 	};
-
-
 
 	class SameBoyAudioHooks : public AudioSystemHook {
 	public:
@@ -141,8 +140,6 @@ namespace rp {
 	}
 
 	void RetroPlugEcsProcessor::onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in) {
-
-
 		AudioSettingsContext& settings = _registry.ctx().at<AudioSettingsContext>();
 		settings.sampleRate = out.getSampleRate();
 		settings.blockSize = out.getSampleCount();

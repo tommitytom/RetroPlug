@@ -13,6 +13,7 @@
 #include "sameboy/SameBoyComponents.h"
 #include "foundation/FsUtil.h"
 #include "ecs/RetroPlugProjectContext.h"
+#include "ecs/LsdjProject.h"
 
 namespace rp {
 	class RetroPlugProject {
@@ -66,6 +67,12 @@ namespace rp {
 
 		void deserialize(const fw::Uint8Buffer& archive);
 
+		uint32 getMemoryVersion(entt::entity entity, MemoryType type) const;
+
+		MemoryAccessor getSystemMemory(entt::entity entity, MemoryType type, AccessType access);
+
+		std::vector<uint32> getSystemIds() const;
+
 		fw::EventNode& getEventNode() {
 			return _eventNode;
 		}
@@ -84,6 +91,10 @@ namespace rp {
 
 		const RetroPlugProjectContext& getContext() const {
 			return _registry.ctx().at<const RetroPlugProjectContext>();
+		}
+
+		LsdjController getLsdjController() {
+			return LsdjController(_registry);
 		}
 
 	private:

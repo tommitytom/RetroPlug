@@ -7,21 +7,17 @@ import { RetroPlugApplication } from "./RetroPlugApplication";
 async function onDrop(event: DragEvent, app: RetroPlugApplication) {
 	const project = app.project;
 
-	console.log(project);
-
 	const files = event.dataTransfer!.files;
 	if (files.length > 1 && app) {
 		const romData = new Uint8Array(await files[0].arrayBuffer());
 		const savData = new Uint8Array(await files[1].arrayBuffer());
 
-		const entity = project.addSystem({
+		project.addSystem({
 			entries: {
 				rom: { data: romData },
 				sram: { data: savData },
 			}
 		});
-
-		console.log(entity);
 	}
 }
 

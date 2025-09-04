@@ -44,7 +44,7 @@ export function convertMemoryType(
 	}
 }
 
-function convertAccessType(
+export function convertAccessType(
 	module: MainModule,
 	type: AccessType,
 ): NativeAccessType {

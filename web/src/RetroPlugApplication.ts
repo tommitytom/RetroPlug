@@ -16,13 +16,27 @@ export class RetroPlugApplication {
 	private _module: MainModule | null = null;
 	private _runner: WebApplicationRunner | null = null;
 	private _nativeApp: NativeRetroPlugEcsApplication | null = null;
+	private _nativeProject: NativeRetroPlugProject | null = null;
 
 	get module() {
 		return this._module;
 	}
 
+	get runner(): WebApplicationRunner | null {
+		return this._runner;
+	}
+
+	get project(): Project {
+		const project = this.nativeProject;
+		return new Project(this._module!, project);
+	}
+
 	get nativeApp() {
 		return this._nativeApp;
+	}
+
+	get nativeProject(): NativeRetroPlugProject {
+		return this._nativeProject!;
 	}
 
 	async load() {
@@ -53,21 +67,9 @@ export class RetroPlugApplication {
 
 		this._runner = new this._module.WebApplicationRunner();
 		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
+		this._nativeProject = this._nativeApp!.getProject()!;
 
 		console.log("WASM module loaded");
-	}
-
-	get runner(): WebApplicationRunner | null {
-		return this._runner;
-	}
-
-	get project(): Project {
-		const project = this.nativeProject;
-		return new Project(this._module!, project);
-	}
-
-	get nativeProject(): NativeRetroPlugProject {
-		return this._nativeApp!.getProject()!;
 	}
 
 	createAudioBuffer(channelCount: number, sampleCount: number, sampleRate: number) {

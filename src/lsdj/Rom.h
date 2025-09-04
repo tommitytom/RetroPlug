@@ -362,6 +362,10 @@ namespace rp::lsdj {
 			return bankIsEmptyKit(bankData);
 		}
 
+		size_t getKitCount() const {
+			return KIT_COUNT;
+		}
+
 		void setKit(size_t idx, const fw::Uint8Buffer& data) {
 			assert(false); // NYI
 		}

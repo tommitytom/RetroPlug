@@ -1,5 +1,6 @@
 import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject, NativeSameBoyComponent, NativeSystemLoadComponent, NativeSystemLoadEntry } from "../native/RetroPlug";
-import { convertBuffer } from "../utils/FileUtil";
+import { fromUint8Array } from "../utils/FileUtil";
+import { AccessType, convertAccessType, convertMemoryType, MemoryType } from "./System";
 
 export const INVALID_SYSTEM_ID = 4294967295;
 
@@ -102,6 +103,38 @@ export class Project {
 	}
 */
 
+	getSystemMemoryVersion(system: SystemId, memoryType: MemoryType) {
+		return this._project.getMemoryVersion(system, convertMemoryType(this._module, memoryType));
+	}
+
+	getSystemMemory(system: SystemId, memoryType: MemoryType, accessType: AccessType) {
+		return this._project.getSystemMemory(system, convertMemoryType(this._module, memoryType), convertAccessType(this._module, accessType));
+	}
+
+	getSystemIds(): SystemId[] {
+		const ids = this._project.getSystemIds();
+		const out: SystemId[] = [];
+		for (let i = 0; i < ids.size(); i++) {
+			out.push(ids.get(i)!);
+		}
+
+		return out;
+	}
+
+	getLsdjController() {
+		return this._project.getLsdjController();
+	}
+
+	subscribeToMemory(system: SystemId, memoryType: MemoryType) {
+		console.log(`Subscribing to memory: ${memoryType} for system: ${system}`);
+		this._project.subscribeToMemory(system, convertMemoryType(this._module, memoryType));
+	}
+
+	unsubscribeFromMemory(system: SystemId, memoryType: MemoryType) {
+		console.log(`Unsubscribing from memory: ${memoryType} for system: ${system}`);
+		this._project.unsubscribeFromMemory(system, convertMemoryType(this._module, memoryType));
+	}
+
 	addSystem(load: SystemLoadComponent, sameboy?: SameBoyComponent) {
 		sameboy = sameboy || {};
 		const nativeLoad = new this._module.NativeSystemLoadComponent();
@@ -110,7 +143,7 @@ export class Project {
 			const { path, data } = load.entries[entry];
 			const systemEntry = new this._module!.NativeSystemLoadEntry();
 			if (path) systemEntry.path = path;
-			if (data) systemEntry.setData(convertBuffer(this._module, data));
+			if (data) systemEntry.setData(fromUint8Array(this._module, data));
 			nativeLoad.entries.set(entry, systemEntry);
 		}
 

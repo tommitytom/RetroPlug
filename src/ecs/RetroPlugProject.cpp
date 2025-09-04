@@ -59,6 +59,8 @@ namespace rp {
 				stateComp->stateFetchTimer = STATE_FETCH_INTERVAL;
 				stateComp->lastStateUpdate = _totalTime;
 			} else {
+				stateComp->memoryFetchTimer = MEMORY_FETCH_INTERVAL;
+
 				VersionedMemory* memory = stateComp->find(ev.type);
 				if (!memory) {
 					spdlog::warn("Received FetchMemoryResponse for entity {} for unsubscribed memory type {}", ev.entity, (int)ev.type);
@@ -71,7 +73,6 @@ namespace rp {
 				}
 
 				memory->lastUpdate = _totalTime;
-				stateComp->memoryFetchTimer = MEMORY_FETCH_INTERVAL;
 			}
 		});
 
@@ -87,6 +88,49 @@ namespace rp {
 		_eventNode.unsubscribe<FetchMemoryResponse>();
 		_eventNode.unsubscribe<SystemIoEvent>();
 		fw::Replicator::shutdown(_registry);
+	}
+
+	uint32 RetroPlugProject::getMemoryVersion(entt::entity entity, MemoryType type) const {
+		if (!_registry.valid(entity)) {
+			return 0;
+		}
+
+		const SystemStateComponent* state = _registry.try_get<SystemStateComponent>(entity);
+		if (state) {
+			const VersionedMemory* memory = state->find(type);
+			if (memory) {
+				return memory->version;
+			}
+		}
+
+		return 0;
+	}
+
+	MemoryAccessor RetroPlugProject::getSystemMemory(entt::entity entity, MemoryType type, AccessType access) {
+		if (!_registry.valid(entity)) {
+			return MemoryAccessor();
+		}
+
+		SystemStateComponent* state = _registry.try_get<SystemStateComponent>(entity);
+		if (state) {
+			VersionedMemory* memory = state->find(type);
+			if (memory) {
+				return MemoryAccessor(type, memory->data.ref(), 0);
+			}
+		}
+
+		return MemoryAccessor();
+	}
+
+	std::vector<uint32> RetroPlugProject::getSystemIds() const {
+		std::vector<uint32> ids;
+		auto view = _registry.view<SystemComponent>();
+		ids.reserve(view.size());
+		for (entt::entity entity : view) {
+			ids.push_back((uint32)entity);
+		}
+
+		return ids;
 	}
 
 	entt::entity RetroPlugProject::addSystem(const std::vector<std::string>& paths) {
@@ -152,10 +196,16 @@ namespace rp {
 			}
 
 			if (system.memoryFetchTimer.update(deltaTime)) {
+				bool fetching = false;
+
 				for (const VersionedMemory& mem : system.memory) {
 					if (mem.subscriberCount > 0) {
-						_eventNode.trySend("Audio"_hs, FetchMemoryRequest{ .entity = e, .type = mem.type });
+						fetching |= _eventNode.trySend("Audio"_hs, FetchMemoryRequest{ .entity = e, .type = mem.type });
 					}
+				}
+
+				if (!fetching) {
+					system.memoryFetchTimer = MEMORY_FETCH_INTERVAL;
 				}
 			}
 		}

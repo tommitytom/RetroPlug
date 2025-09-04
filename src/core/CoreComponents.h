@@ -29,9 +29,9 @@ namespace rp {
 		CountdownTimer(f32 time) : _time(time) {}
 
 		bool update(f32 deltaTime) {
-			if (_time > 0.0f) {
+			if (_time >= 0.0f) {
 				_time -= deltaTime;
-				if (_time <= 0.0f) return true;
+				if (_time < 0.0f) return true;
 			} else {
 				_time -= deltaTime;
 			}

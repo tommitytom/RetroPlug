@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	type ReactNode,
+} from "react";
 
-import { RetroPlugContext } from "./RetroPlugContext";
 import { RetroPlugApplication } from "../RetroPlugApplication";
+import { Project } from "../wrapper/Project";
+import { RetroPlugContext } from "./RetroPlugContext";
 
 export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const canvasIdRef = useRef<string | null>(null);
 	const [app, setApp] = useState<RetroPlugApplication | null>(null);
+	const [project, setProject] = useState<Project | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
 	const [isReady, setIsReady] = useState<boolean>(false);
 	const [audioContextState, setAudioContextState] =
@@ -26,7 +34,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 					audioContextRef.current.resume();
 				}
 			},
-			{ once: true }
+			{ once: true },
 		);
 
 		const handleAudioContextStateChange = () => {
@@ -37,7 +45,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 
 		audioContextRef.current.addEventListener(
 			"statechange",
-			handleAudioContextStateChange
+			handleAudioContextStateChange,
 		);
 
 		let mounted = true;
@@ -67,6 +75,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 						console.error("Error setting up WASM module:", ex);
 					}
 					setApp(pendingApp);
+					setProject(pendingApp.project);
 				}
 			})
 			.catch((err) => {
@@ -78,12 +87,13 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 
 			setIsReady(false);
 			setApp(null);
+			setProject(null);
 			pendingApp.destroy();
 
 			if (audioContextRef.current) {
 				audioContextRef.current.removeEventListener(
 					"statechange",
-					handleAudioContextStateChange
+					handleAudioContextStateChange,
 				);
 				audioContextRef.current.close();
 				audioContextRef.current = null;
@@ -91,31 +101,35 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	const setCanvasId = useCallback((id: string | null) => {
-		if (app) {
-			app.destroyGraphics();
-			setIsReady(false);
-		}
-
-		canvasIdRef.current = id;
-
-		if (app && id !== null) {
-			try {
-				// This function seems to return fine but seemingly throws an exception after
-				// Investigate!
-				app.setupGraphics(id);
-			} catch (ex) {
-				console.error("Error setting up graphics:", ex);
+	const setCanvasId = useCallback(
+		(id: string | null) => {
+			if (app) {
+				app.destroyGraphics();
+				setIsReady(false);
 			}
 
-			setIsReady(true);
-		}
-	}, [app]);
+			canvasIdRef.current = id;
+
+			if (app && id !== null) {
+				try {
+					// This function seems to return fine but seemingly throws an exception after
+					// Investigate!
+					app.setupGraphics(id);
+				} catch (ex) {
+					console.error("Error setting up graphics:", ex);
+				}
+
+				setIsReady(true);
+			}
+		},
+		[app],
+	);
 
 	return (
 		<RetroPlugContext.Provider
 			value={{
 				app,
+				project,
 				audioContext: audioContextRef.current,
 				isLoading,
 				isReady,

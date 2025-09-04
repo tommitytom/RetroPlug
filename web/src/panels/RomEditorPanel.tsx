@@ -10,7 +10,7 @@ import {
 } from "../wrapper/Lsdj";
 
 import "../styles/RomEditorPanel.css";
-import { convertBuffer } from "../utils/FileUtil";
+import { fromUint8Array } from "../utils/FileUtil";
 
 export const RomEditorPanel: React.FC = () => {
 	const { app, audioContext } = useRetroPlug();
@@ -29,7 +29,7 @@ export const RomEditorPanel: React.FC = () => {
 					const fileData = new Uint8Array(await file.arrayBuffer());
 					const accessor = new app.module!.MemoryAccessor(
 						app.module!.NativeMemoryType.Rom,
-						convertBuffer(app.module!, fileData),
+						fromUint8Array(app.module!, fileData),
 						0,
 					);
 					const rom = new app.module!.NativeLsdjRom(accessor);

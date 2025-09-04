@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import { RetroPlugApplication } from '../RetroPlugApplication';
+import { Project } from '../wrapper/Project';
 
 interface RetroPlugContextType {
 	canvasId: string | null;
@@ -9,6 +10,7 @@ interface RetroPlugContextType {
 	audioContext: AudioContext | null;
 	audioContextState: AudioContextState;
 	app: RetroPlugApplication|null;
+	project: Project | null;
 }
 
 export const RetroPlugContext = createContext<RetroPlugContextType | undefined>(undefined);

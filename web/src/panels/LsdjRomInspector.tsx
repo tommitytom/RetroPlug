@@ -1,34 +1,12 @@
-import { use, useCallback, useEffect, useState } from "react";
-
-import { useProject, useSystemMemory, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import { type SystemId } from "../wrapper/Project";
-import { MemoryType } from "../wrapper/System";
-import type { NativeLsdjKit, NativeLsdjKitDesc, NativeLsdjRom } from "../native/RetroPlug";
+import { useCallback, useEffect, useState } from "react";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
+import { useProject, useSystemMemory } from "../hooks/RetroPlugHooks";
+import type { NativeLsdjKit, NativeLsdjKitDesc, NativeLsdjRom } from "../native/RetroPlug";
+import { SystemId } from "../wrapper/Project";
+import { MemoryType } from "../wrapper/System";
 import { LSDJ_KIT_COUNT } from "../wrapper/Lsdj";
 import { LsdjKit } from "../components/LsdjKit";
-import { HexEditor } from "hex-editor-react";
-import "hex-editor-react/dist/hex-editor.css";
-import { fromUint8Array, toUint8Array } from "../utils/FileUtil";
-
-const LsdjSavInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
-	const [songName, setSongName] = useState("");
-	const hash = useSystemMemoryVersion(systemId, MemoryType.Sram);
-
-	useEffect(() => {
-		if (!systemId) return;
-		//const sav = system.lsdjSav;
-		//const name = sav.workingProject.getName();
-		//setSongName(name);
-	}, [systemId, hash, setSongName]);
-
-	return (
-		<div>
-			{hash}
-			{songName}
-		</div>
-	);
-};
+import { FileDropZone } from "../components/FileDropZone";
 
 interface IIndexedKit {
 	id: number;
@@ -36,7 +14,7 @@ interface IIndexedKit {
 	kit: NativeLsdjKit;
 }
 
-const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
+export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 	const { app, audioContext } = useRetroPlug();
 	const project = useProject();
 	const romData = useSystemMemory(systemId, MemoryType.Rom);
@@ -44,6 +22,7 @@ const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 	const [romKits, setRomKits] = useState<IIndexedKit[]>([]);
 	const [expandedKits, setExpandedKits] = useState<Set<number>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
+	const [isDragOver, setIsDragOver] = useState(false);
 
 	const toggleKit = useCallback((kitId: number) => {
 		setExpandedKits(prev => {
@@ -55,6 +34,26 @@ const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 			}
 			return newSet;
 		});
+	}, []);
+
+	const handleFileDrop = useCallback((files: FileList) => {
+		// Placeholder callback for handling dropped audio files
+		console.log('Files dropped:', files);
+		// TODO: Implement audio sample import functionality
+	}, []);
+
+	const handleDragEnter = useCallback((e: React.DragEvent) => {
+		e.preventDefault();
+		setIsDragOver(true);
+	}, []);
+
+	const handleDragLeave = useCallback((e: React.DragEvent) => {
+		e.preventDefault();
+		setIsDragOver(false);
+	}, []);
+
+	const handleDragOver = useCallback((e: React.DragEvent) => {
+		e.preventDefault();
 	}, []);
 
 	useEffect(() => {
@@ -150,77 +149,6 @@ const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 					</div>
 				</div>
 			</div>
-		</div>
-	);
-};
-
-const LsdjRamInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
-	const hash = useSystemMemoryVersion(systemId, MemoryType.Ram);
-	const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-
-	useEffect(() => {
-		//if (!system || !app) return;
-		//setPos({ x: ram.getCursorX(), y: ram.getCursorY() });
-	}, [systemId, hash]);
-
-	return (
-		<div>
-			{pos && (
-				<>
-					<div>X: {pos.x}</div>
-					<div>Y: {pos.y}</div>
-				</>
-			)}
-		</div>
-	);
-};
-
-const SystemMemoryInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
-	const memory = useSystemMemory(systemId, MemoryType.Ram);
-
-	return (
-		<div>
-			<HexEditor
-				data={memory ? toUint8Array(memory.getBuffer()).slice().buffer : undefined}
-			/>
-		</div>
-
-	);
-};
-
-const SystemInspector: React.FC<{
-	systemId: number;
-}> = ({ systemId }) => {
-	return (
-		<div>
-			<LsdjSavInspector systemId={systemId} />
-			<LsdjRomInspector systemId={systemId} />
-			<LsdjRamInspector systemId={systemId} />
-		</div>
-	);
-};
-
-export const InspectorPanel: React.FC = () => {
-	const project = useProject();
-	const [systemIds, setSystemIds] = useState<SystemId[]>([]);
-
-	useEffect(() => {
-		if (!project) {
-			setSystemIds([]);
-			return;
-		}
-
-		setSystemIds(project.getSystemIds());
-	}, [project]);
-
-	return (
-		<div>
-			{systemIds.map((id) => (
-				<SystemInspector
-					key={`system-${id}`}
-					systemId={id}
-				/>
-			))}
 		</div>
 	);
 };

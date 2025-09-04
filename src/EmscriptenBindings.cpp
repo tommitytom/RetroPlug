@@ -23,6 +23,7 @@
 
 #include "ecs/RetroPlugEcsView.h"
 #include "ecs/RetroPlugProject.h"
+#include "ecs/LsdjProject.h"
 
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
@@ -148,6 +149,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	class_<MemoryAccessor>("MemoryAccessor")
 		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
 		.function("getBuffer", &MemoryAccessor::getBuffer)
+		.function("getSize", &MemoryAccessor::getSize)
 		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
 	;
 
@@ -166,6 +168,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	register_map<std::string, SystemLoadEntry>("SystemLoadEntryVector");
 	register_vector<std::string>("StringVector");
+	register_vector<uint32>("Uint32Vector");
 
 	enum_<entt::entity>("Entity");
 
@@ -175,10 +178,28 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<RetroPlugProject>("NativeRetroPlugProject")
-		.function("addSystem", &RetroPlugProject::addSystem<SameBoyComponent>)
-		.function("removeSystem", &RetroPlugProject::removeSystem)
+		.function("addSystem", +[](RetroPlugProject& project, const SystemLoadComponent& config, const SameBoyComponent& component) -> uint32 {
+			return (uint32)project.addSystem(config, component);
+		})
+		.function("removeSystem", +[](RetroPlugProject& project, uint32 systemId) {
+			project.removeSystem(entt::entity(systemId));
+		})
+		.function("getSystemMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type, AccessType access) -> MemoryAccessor {
+			return project.getSystemMemory(entt::entity(systemId), type, access);
+		})
+		.function("getMemoryVersion", +[](RetroPlugProject& project, uint32 systemId, MemoryType type) -> uint32 {
+			return project.getMemoryVersion(entt::entity(systemId), type);
+		})
+		.function("subscribeToMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type) -> void {
+			project.subscribeToMemory(entt::entity(systemId), type);
+		})
+		.function("unsubscribeFromMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type) -> void {
+			project.unsubscribeFromMemory(entt::entity(systemId), type);
+		})
+		.function("getLsdjController", &RetroPlugProject::getLsdjController)
 		.function("serialize", &RetroPlugProject::serialize)
 		.function("deserialize", &RetroPlugProject::deserialize)
+		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.property("systemCount", &RetroPlugProject::getSystemCount)
 		.property("version", &RetroPlugProject::getVersion)
 	;
@@ -219,6 +240,49 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("Rom", MemoryType::Rom)
 		.value("Sram", MemoryType::Sram)
 		.value("Vram", MemoryType::Vram)
+	;
+
+	value_object<LsdjSampleComponent>("NativeLsdjSampleComponent")
+		//.field("effects", &LsdjSampleComponent::effects)
+		.field("length", &LsdjSampleComponent::length)
+		.field("name", &LsdjSampleComponent::name)
+		.field("offset", &LsdjSampleComponent::offset)
+		.field("path", &LsdjSampleComponent::path)
+		.field("sampleId", &LsdjSampleComponent::sampleId)
+	;
+
+	register_vector<LsdjKitComponent>("NativeLsdjKitComponentVector");
+	register_vector<LsdjSampleComponent>("NativeLsdjSampleComponentVector");
+
+	value_object<LsdjKitComponent>("NativeLsdjKitComponent")
+		//.field("effects", &LsdjKitComponent::effects)
+		.field("samples", &LsdjKitComponent::samples)
+		.field("kitId", &LsdjKitComponent::kitId)
+		.field("name", &LsdjKitComponent::name)
+	;
+
+	value_object<LsdjKitDesc>("NativeLsdjKitDesc")
+		.field("id", &LsdjKitDesc::id)
+		.field("name", &LsdjKitDesc::name)
+		.field("editable", &LsdjKitDesc::editable)
+	;
+
+	register_vector<LsdjKitDesc>("NativeLsdjKitDescVector");
+
+	class_<LsdjController>("NativeLsdjController")
+		.function("getKitDescs", +[](LsdjController& project, SystemId system) -> std::vector<LsdjKitDesc> {
+			std::vector<LsdjKitDesc> descs;
+			project.getKitDescs((entt::entity)system, descs);
+			return descs;
+		})
+		.function("getKitComponent", +[](LsdjController& project, SystemId system, uint32 kitId) -> LsdjKitComponent {
+			const LsdjKitComponent* comp = project.getKitComponent((entt::entity)system, kitId);
+			if (comp) return *comp;
+			return LsdjKitComponent{};
+		})
+		.function("setKitComponent", +[](LsdjController& project, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
+			return project.setKitComponent((entt::entity)system, kitId, component);
+		})
 	;
 
 	// LSDJ enum bindings
