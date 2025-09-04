@@ -31,6 +31,9 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.smart_ptr<std::shared_ptr<fw::View>>("ViewPtr")
 	;
 
+	class_<fw::app::Application>("NativeApplication")
+	;
+
 	class_<fw::app::WebApplicationRunner>("WebApplicationRunner")
 		.constructor(&makeRunner, allow_raw_pointers())
 		.function("setupAudio", &fw::app::WebApplicationRunner::setupAudio)
@@ -39,6 +42,7 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.function("start", &fw::app::WebApplicationRunner::start)
 		.function("stop", &fw::app::WebApplicationRunner::stop)
 		.function("getView", &fw::app::WebApplicationRunner::getView)
+		.function("getApplication", &fw::app::WebApplicationRunner::getApplication, return_value_policy::reference())
 	;
 
 	class_<Uint8Buffer>("Uint8Buffer")

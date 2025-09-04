@@ -1,11 +1,9 @@
-import type { Float32Buffer, Uint8Buffer } from "../native/RetroPlug";
-import { RetroPlugApplication } from "../RetroPlugApplication";
+import type { Float32Buffer, MainModule, Uint8Buffer } from "../native/RetroPlug";
 
-export async function convertFile(app: RetroPlugApplication, file: File): Promise<Uint8Buffer> {
-	const romData = new Uint8Array(await file.arrayBuffer());
-	const romBuffer = new app.module!.Uint8Buffer(romData.byteLength);
-	romBuffer.data().set(romData);
-	return romBuffer;
+export function convertBuffer(module: MainModule, buffer: Uint8Array): Uint8Buffer {
+	const target = new module!.Uint8Buffer(buffer.byteLength);
+	target.data().set(buffer);
+	return target;
 }
 
 export function convertFloat32Buffer(buffer: Float32Buffer): Float32Array {

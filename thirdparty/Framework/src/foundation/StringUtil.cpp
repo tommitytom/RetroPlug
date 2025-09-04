@@ -98,7 +98,49 @@ std::string StringUtil::formatMemberName(std::string_view memberName) {
 }
 
 std::string StringUtil::toString(const std::wstring& wstr) {
-	return std::format("{}", std::string(wstr.begin(), wstr.end()));
+	if (wstr.empty()) return {};
+
+#ifdef FW_OS_WINDOWS
+	int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+	if (size <= 0) return {};
+
+	std::string result(size - 1, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, result.data(), size, nullptr, nullptr);
+	return result;
+
+#else
+	try {
+		std::mbstate_t state = std::mbstate_t();
+		std::locale loc("en_US.UTF-8");
+		const std::codecvt<wchar_t, char, std::mbstate_t>& codecvt =
+			std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(loc);
+
+		std::vector<char> buffer(wstr.length() * 4); // UTF-8 can be up to 4 bytes per character
+		const wchar_t* from_end;
+		char* to_end;
+
+		auto result = codecvt.out(state, wstr.data(), wstr.data() + wstr.length(), from_end,
+								 buffer.data(), buffer.data() + buffer.size(), to_end);
+
+		if (result == std::codecvt_base::ok) {
+			return std::string(buffer.data(), to_end);
+		}
+	} catch (...) {
+		// Fallback to simple conversion for ASCII
+	}
+
+	// Fallback for ASCII-compatible strings
+	std::string result;
+	result.reserve(wstr.length());
+	for (wchar_t wc : wstr) {
+		if (wc < 128) { // ASCII range
+			result.push_back(static_cast<char>(wc));
+		} else {
+			result.push_back('?'); // Replace non-ASCII with placeholder
+		}
+	}
+	return result;
+#endif
 }
 
 std::string StringUtil::toLower(std::string_view s) {

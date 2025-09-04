@@ -21,6 +21,9 @@
 #include "core/audio/DitherEffect.h"
 #include "core/audio/EffectChain.h"
 
+#include "ecs/RetroPlugEcsView.h"
+#include "ecs/RetroPlugProject.h"
+
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
 #include <liblsdj/liblsdj/include/lsdj/channel.h>
@@ -33,8 +36,10 @@ using namespace rp;
 
 #include <emscripten/wasmfs.h>
 
-std::shared_ptr<RetroPlugView> upcastView(const fw::ViewPtr& view) {
-	return std::static_pointer_cast<RetroPlugView>(view);
+#include "ecs/RetroPlugEcsApplication.h"
+
+RetroPlugEcsApplication* upcastApplication(fw::app::Application& app) {
+	return (RetroPlugEcsApplication*)&app;
 }
 
 /*std::string lsdjProject_getName(rp::lsdj::Project& project) {
@@ -107,14 +112,16 @@ val AudioBuffer_getReadPointer(fw::AudioBuffer& buffer, uint32 channel) {
 	return val(typed_memory_view(buffer.getSampleCount(), buffer.getReadPointer(channel)));
 }
 
-ProxySystemServicePtr ProxySystem_findService(ProxySystem& system, SystemServiceType type) {
-	for (const auto& service : system.getServices()) {
-		if (service->getType() == type) {
-			return std::static_pointer_cast<ProxySystemService>(service);
-		}
-	}
+entt::entity RetroPlugProject_addSystem(RetroPlugProject& project, const SystemLoadComponent& load, const SameBoyComponent& comp) {
+	return project.addSystem(load, comp);
+}
 
-	return nullptr;
+fw::Uint8Buffer SystemLoadEntry_data_get(SystemLoadEntry& entry) {
+	return entry.data();
+}
+
+void SystemLoadEntry_data_set(SystemLoadEntry& entry, fw::Uint8Buffer value) {
+	entry.data.set(value);
 }
 
 #include "lsdj/SampleUtil.h"
@@ -132,72 +139,16 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32);
 	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
 
-	constant("SAMEBOY_GUID", SAMEBOY_GUID);
-	constant("INVALID_SYSTEM_ID", INVALID_SYSTEM_ID);
-
-	// Bindings for SystemPaths
-	value_object<SystemPaths>("SystemPaths")
-		.field("romPath", &SystemPaths::romPath)
-		.field("sramPath", &SystemPaths::sramPath)
-		.field("statePath", &SystemPaths::statePath)
-	;
-
-	value_object<SystemSettings>("SystemSettings")
-		.field("includeRom", &SystemSettings::includeRom)
-		.field("gameLink", &SystemSettings::gameLink)
-		.field("reloadRomOnChange", &SystemSettings::reloadRomOnChange)
-	;
-
-	value_object<SystemDesc>("SystemDesc")
-		.field("paths", &SystemDesc::paths)
-		.field("settings", &SystemDesc::settings)
-		//.field("services", &SystemDesc::services)
-	;
-
 	enum_<SaveStateType>("SaveStateType")
         .value("None", SaveStateType::None)
         .value("Sram", SaveStateType::Sram)
         .value("State", SaveStateType::State)
     ;
 
-	value_object<LoadConfig>("LoadConfig")
-		.field("desc", &LoadConfig::desc)
-		.field("romBuffer", &LoadConfig::romBuffer)
-		.field("sramBuffer", &LoadConfig::sramBuffer)
-		.field("stateBuffer", &LoadConfig::stateBuffer)
-		.field("stateType", &LoadConfig::stateType)
-		.field("reset", &LoadConfig::reset)
-	;
-
 	class_<MemoryAccessor>("MemoryAccessor")
 		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
 		.function("getBuffer", &MemoryAccessor::getBuffer)
 		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
-	;
-
-	class_<System>("NativeSystem")
-		.smart_ptr<std::shared_ptr<System>>("NativeSystemPtr")
-		.function("reset", &System::reset)
-		.function("getMemory", &System::getMemory)
-		.function("getRomName", &System::getRomName)
-		.property("desc", &System::getDesc)
-		.property("version", &System::getVersion)
-		.property("id", &System::getId)
-		.function("incrementVersion", &System::incrementVersion)
-	;
-
-	value_array<SystemStateHashes>("NativeSystemStateHashes")
-		.element(emscripten::index<0>())
-		.element(emscripten::index<1>())
-		.element(emscripten::index<2>())
-		.element(emscripten::index<3>())
-		.element(emscripten::index<4>())
-	;
-
-	class_<ProxySystem, base<System>>("NativeProxySystem")
-		.smart_ptr<std::shared_ptr<ProxySystem>>("NativeProxySystemPtr")
-		.function("getStateHashes", &ProxySystem::getStateHashes)
-		.function("findService", &ProxySystem_findService)
 	;
 
 	value_object<LsdjServiceSettings>("NativeLsdjServiceSettings")
@@ -206,28 +157,53 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.field("offsetsValid", &LsdjServiceSettings::offsetsValid)
 	;
 
-	class_<ProxySystemService>("NativeProxySystemService")
-		.smart_ptr<std::shared_ptr<ProxySystemService>>("NativeProxySystemServicePtr")
+	class_<SystemLoadEntry>("NativeSystemLoadEntry")
+		.constructor()
+		.property("path", &SystemLoadEntry::path)
+		.function("getData", &SystemLoadEntry_data_get)
+		.function("setData", &SystemLoadEntry_data_set)
 	;
 
-	class_<Project>("NativeProject")
-		.function("addSystem", select_overload<ProxySystemPtr(SystemType, const SystemDesc&, SystemId)>(&Project::addSystem))
-		.function("loadSystem", select_overload<ProxySystemPtr(SystemType, LoadConfig&&, SystemId)>(&Project::addSystem))
-		.function("getSystem", &Project::getSystem)
-		.function("getSystemByIndex", &Project::getSystemByIndex)
-		.property("systemCount", &Project::getSystemCount)
-		.function("duplicateSystem", &Project::duplicateSystem)
-		.function("removeSystem", &Project::removeSystem)
-		.property("version", &Project::getVersion)
-		.property("scale", &Project::getScale)
-		.function("clear", &Project::clear)
-		.property("isDirty", &Project::isDirty, &Project::setDirty)
+	register_map<std::string, SystemLoadEntry>("SystemLoadEntryVector");
+	register_vector<std::string>("StringVector");
+
+	enum_<entt::entity>("Entity");
+
+	class_<SystemLoadComponent>("NativeSystemLoadComponent")
+		.constructor()
+		.property("entries", &SystemLoadComponent::entries, return_value_policy::reference())
 	;
 
-	class_<RetroPlugView, base<fw::View>>("RetroPlugView")
-		.smart_ptr<std::shared_ptr<RetroPlugView>>("RetroPlugViewPtr")
-		.function("getProject", &RetroPlugView::getProject, return_value_policy::reference())
-		.function("getLsdjState", &RetroPlugView::getLsdjState)
+	class_<RetroPlugProject>("NativeRetroPlugProject")
+		.function("addSystem", &RetroPlugProject::addSystem<SameBoyComponent>)
+		.function("removeSystem", &RetroPlugProject::removeSystem)
+		.function("serialize", &RetroPlugProject::serialize)
+		.function("deserialize", &RetroPlugProject::deserialize)
+		.property("systemCount", &RetroPlugProject::getSystemCount)
+		.property("version", &RetroPlugProject::getVersion)
+	;
+
+	enum_<GameboyModel>("NativeGameboyModel")
+		.value("Auto", GameboyModel::Auto)
+		.value("DmgB", GameboyModel::DmgB)
+		//.value("SgbNtsc", GameboyModel::SgbNtsc)
+		//.value("SgbPal", GameboyModel::SgbPal)
+		//.value("Sgb2", GameboyModel::Sgb2)
+		.value("CgbC", GameboyModel::CgbC)
+		.value("CgbE", GameboyModel::CgbE)
+		.value("Agb", GameboyModel::Agb)
+	;
+
+	value_object<SameBoyComponent>("NativeSameBoyComponent")
+		.field("model", &SameBoyComponent::model)
+		.field("fastBoot", &SameBoyComponent::fastBoot)
+	;
+
+	class_<RetroPlugEcsView, base<fw::View>>("RetroPlugEcsView")
+	;
+
+	class_<RetroPlugEcsApplication>("NativeRetroPlugEcsApplication")
+		.function("getProject", &RetroPlugEcsApplication::getProjectPtr, allow_raw_pointers())
 	;
 
 	enum_<AccessType>("NativeAccessType")
@@ -509,7 +485,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("copyFrom", select_overload<void(const fw::AudioBuffer&, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
 		.function("copyFromRange", select_overload<void(const fw::AudioBuffer&, uint32, uint32, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
 		.function("addFrom", &fw::AudioBuffer::addFrom)
-		.function("applyGain", &fw::AudioBuffer::applyGain)
+		//.function("applyGain", &fw::AudioBuffer::applyGain)
 		.property("channelCount", &fw::AudioBuffer::getChannelCount)
 		.property("sampleCount", &fw::AudioBuffer::getSampleCount)
 		.property("sizeInBytes", &fw::AudioBuffer::getSizeInBytes)
@@ -596,5 +572,5 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("process", &EffectChain::process)
 	;
 
-	function("upcastView", &upcastView);
+	function("upcastApplication", &upcastApplication, return_value_policy::reference());
 }

@@ -4,9 +4,8 @@
 #include "RetroPlugEcsView.h"
 
 namespace rp {
-	RetroPlugEcsApplication::RetroPlugEcsApplication() {
-		_audioEventNode = fw::EventNode("Audio");
-		_project = std::make_shared<RetroPlugProject>(_audioEventNode->spawn("Ui"), _audioEventNode->getId());
+	RetroPlugEcsApplication::RetroPlugEcsApplication(): _audioEventNode("Audio"), _project(_audioEventNode->spawn("Ui"), _audioEventNode->getId()) {
+		spdlog::info("Created RetroPlugEcsApplication. project: {}", (uintptr_t)&_project);
 	}
 
 	fw::ViewPtr RetroPlugEcsApplication::onCreateUi() {
@@ -14,18 +13,10 @@ namespace rp {
 	}
 
 	fw::AudioProcessorPtr RetroPlugEcsApplication::onCreateAudio() {
-		auto view = std::make_shared<RetroPlugEcsProcessor>(std::move(_audioEventNode.value()));
-		view->setSerializeHook([this](fw::Uint8Buffer& buffer) { _project->serialize(buffer); });
-		view->setDeserializeHook([this](const fw::Uint8Buffer& buffer) { _project->deserialize(buffer); });
-		return view;
+		return std::make_shared<RetroPlugEcsProcessor>(std::move(_audioEventNode.value()));
 	}
 
 	void RetroPlugEcsApplication::onUpdate(f32 deltaTime) {
-		// NOTE: Delta time is currently always 0
-		_project->onUpdate(deltaTime);
-	}
-
-	RetroPlugProjectPtr RetroPlugEcsApplication::getProject() {
-		return _project;
+		_project.onUpdate(deltaTime);
 	}
 }

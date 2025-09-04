@@ -3,37 +3,25 @@ import React, { useEffect, useRef } from "react";
 import { useRetroPlug } from "./contexts/RetroPlugContext";
 import { FrameworkCanvas } from "./FrameworkCanvas";
 import { RetroPlugApplication } from "./RetroPlugApplication";
-import { convertFile } from './utils/FileUtil';
 
 async function onDrop(event: DragEvent, app: RetroPlugApplication) {
 	const project = app.project;
 
+	console.log(project);
+
 	const files = event.dataTransfer!.files;
 	if (files.length > 1 && app) {
-		const rom = await convertFile(app, files[0]);
-		const sav = await convertFile(app, files[1]);
+		const romData = new Uint8Array(await files[0].arrayBuffer());
+		const savData = new Uint8Array(await files[1].arrayBuffer());
 
-		project.loadSystem(
-			{
-				desc: {
-					paths: {
-						romPath: "",
-						sramPath: "",
-						statePath: "",
-					},
-					settings: {
-						includeRom: true,
-						gameLink: false,
-						reloadRomOnChange: true,
-					},
-				},
-				romBuffer: rom,
-				sramBuffer: sav,
-				stateBuffer: null,
-				stateType: app!.module!.SaveStateType.Sram,
-				reset: false,
-			},
-		);
+		const entity = project.addSystem({
+			entries: {
+				rom: { data: romData },
+				sram: { data: savData },
+			}
+		});
+
+		console.log(entity);
 	}
 }
 

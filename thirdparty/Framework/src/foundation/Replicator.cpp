@@ -2,8 +2,10 @@
 
 #include <spdlog/spdlog.h>
 
-namespace fw::Replicator {
+namespace fw {
 	bool sendState(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId target) {
+		using namespace Replicator;
+
 		ReplicatorContext& ctx = getContext(registry);
 		StateResponseEvent response;
 
@@ -19,6 +21,8 @@ namespace fw::Replicator {
 	}
 
 	void setupMutators(entt::registry& registry, fw::EventNode& eventNode) {
+		using namespace Replicator;
+
 		ReplicatorContext& ctx = getContext(registry);
 
 		eventNode.receive<CreateEntityEvent>([&registry, &ctx](CreateEntityEvent&& ev) {

@@ -1,6 +1,7 @@
 #include "RetroPlugEcsProcessor.h"
 
 #include <spdlog/spdlog.h>
+#include <emscripten.h>
 
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
@@ -12,6 +13,8 @@
 #include "foundation/FsUtil.h"
 #include "ecs/RetroPlugComponents.h"
 #include "ecs/HierarchyUtil.h"
+#include "core/SystemHook.h"
+#include "core/Events.h"
 
 namespace rp {
 	using namespace entt::literals;
@@ -21,7 +24,43 @@ namespace rp {
 		uint32 blockSize = 512;
 	};
 
+	struct AudioHooksContext {
+		std::vector<std::unique_ptr<AudioSystemHook>> systemHooks;
+		std::vector<std::unique_ptr<AudioSystemHook>> serviceHooks;
+
+		// Delete copy operations
+		AudioHooksContext(const AudioHooksContext&) = delete;
+		AudioHooksContext& operator=(const AudioHooksContext&) = delete;
+
+		// Keep move operations (automatically generated)
+		AudioHooksContext(AudioHooksContext&&) = default;
+		AudioHooksContext& operator=(AudioHooksContext&&) = default;
+
+		AudioHooksContext() = default;
+		~AudioHooksContext() = default;
+	};
+
+
+
+	class SameBoyAudioHooks : public AudioSystemHook {
+	public:
+		SameBoyAudioHooks() : AudioSystemHook(entt::type_id<SameBoyComponent>().index()) {}
+
+		void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const override {
+			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
+			SameBoyUtil::saveState(*state.state, target);
+		}
+
+		MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const override {
+			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
+			return SameBoyUtil::getMemory(*state.state, type, access);
+		}
+	};
+
 	RetroPlugEcsProcessor::RetroPlugEcsProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
+		AudioHooksContext& hooks = _registry.ctx().emplace<AudioHooksContext>();
+		hooks.systemHooks.push_back(std::make_unique<SameBoyAudioHooks>());
+
 		_registry.ctx().emplace<AudioSettingsContext>();
 		AudioEffectContext& effectCtx = _registry.ctx().emplace<AudioEffectContext>();
 
@@ -46,6 +85,43 @@ namespace rp {
 				.down = ev.down
 			});
 		});
+
+		node.receive<FetchMemoryRequest>([this](FetchMemoryRequest&& ev){
+			if (!_registry.valid(ev.entity)) {
+				return;
+			}
+
+			SystemComponent* system = _registry.try_get<SystemComponent>(ev.entity);
+			if (!system) {
+				return;
+			}
+
+			AudioHooksContext& hooks = _registry.ctx().at<AudioHooksContext>();
+			AudioSystemHook* hook = findHook(system->systemType, hooks.systemHooks);
+			assert(hook);
+
+			fw::Uint8Buffer target;
+
+			if (ev.type == MemoryType::Unknown) {
+				hook->onSaveState(_registry, ev.entity, target);
+			} else {
+				MemoryAccessor memory = hook->onGetMemory(_registry, ev.entity, ev.type, AccessType::Read);
+				target.resize(memory.getSize());
+				target.write(memory.getBuffer());
+			}
+
+			if (!target.empty()) {
+				getEventNode().trySend("Ui"_hs, FetchMemoryResponse{
+					.entity = ev.entity,
+					.type = ev.type,
+					.state = std::move(target)
+				});
+			}
+		});
+
+		node.receive<PingEvent>([&](PingEvent&& ev) {
+			node.trySend("Ui"_hs, PongEvent{ .time = ev.time });
+		});
 	}
 
 	RetroPlugEcsProcessor::~RetroPlugEcsProcessor() {
@@ -65,6 +141,8 @@ namespace rp {
 	}
 
 	void RetroPlugEcsProcessor::onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in) {
+
+
 		AudioSettingsContext& settings = _registry.ctx().at<AudioSettingsContext>();
 		settings.sampleRate = out.getSampleRate();
 		settings.blockSize = out.getSampleCount();
@@ -109,7 +187,7 @@ namespace rp {
 			for (uint32 i = 0; i < settings.blockSize; ++i) {
 				outL[i] += buffer[i * 2 + 0];
 				outR[i] += buffer[i * 2 + 1];
-			}		
+			}
 
 			state.io->output.audio = nullptr;
 

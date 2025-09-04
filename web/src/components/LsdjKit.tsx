@@ -12,7 +12,7 @@ import {
 	LSDJ_KIT_SAMPLE_COUNT,
 	playSample
 } from "../wrapper/Lsdj";
-import { EffectInstance } from "../types/EffectTypes";
+import type { EffectInstance } from "../types/EffectTypes";
 
 // Displays a single LSDJ kit
 export const LsdjKit: React.FC<{

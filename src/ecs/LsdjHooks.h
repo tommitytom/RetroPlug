@@ -27,7 +27,7 @@ namespace rp {
 		~EcsLsdjOverlay() = default;
 
 		void onRender(fw::Canvas& canvas) override {
-			canvas.fillRect(getDimensionsF(), fw::Color4F(0, 0, 0, 0.5f * getAlpha()));
+			//canvas.fillRect(getDimensionsF(), fw::Color4F(0, 0, 0, 0.5f * getAlpha()));
 		}
 	};
 

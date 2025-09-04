@@ -2,7 +2,7 @@
 
 #include "ecs/HierarchyUtil.h"
 #include "ecs/RetroPlugComponents.h"
-
+/*
 namespace rp {
 	class ReplicatedHierarhcyAccessor {
 	protected:
@@ -92,3 +92,4 @@ namespace rp {
 		}
 	};
 }
+*/

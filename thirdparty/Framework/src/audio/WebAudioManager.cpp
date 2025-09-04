@@ -2,6 +2,8 @@
 
 #ifdef FW_PLATFORM_WEB
 
+#include <spdlog/spdlog.h>
+#include <emscripten.h>
 #include <emscripten/em_math.h>
 #include <emscripten/webaudio.h>
 
@@ -12,6 +14,7 @@ EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       int numParams, const AudioParamFrame *params,
                       void *userData)
 {
+
 	/*for(int i = 0; i < numOutputs; ++i) {
 		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
 			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise

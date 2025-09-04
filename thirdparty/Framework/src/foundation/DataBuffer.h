@@ -199,12 +199,20 @@ namespace fw {
 				return false;
 			}
 
+			if (other._data == _data) {
+				return true;
+			}
+
 			return memcmp(static_cast<void*>(_data), static_cast<void*>(other._data), _size * sizeof(T)) == 0;
 		}
 
 		bool operator!=(const DataBuffer& other) const {
 			if (other._size != _size) {
 				return true;
+			}
+
+			if (other._data == _data) {
+				return false;
 			}
 
 			return memcmp(static_cast<void*>(_data), static_cast<void*>(other._data), _size * sizeof(T)) != 0;

@@ -6,9 +6,6 @@
 #include "graphics/ftgl/FtglFont.h"
 
 namespace fw::app {
-	using hrc = std::chrono::high_resolution_clock;
-	using delta_duration = std::chrono::duration<f32>;
-
 	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager) :
 		_resourceManager(windowManager->getResourceManager()), 
 		_fontManager(windowManager->getFontManager())
@@ -44,12 +41,7 @@ namespace fw::app {
 		}
 	}
 
-	bool UiContext::runFrame() {
-		hrc::time_point time = hrc::now();
-		std::chrono::nanoseconds nanoDelta = time - _lastTime;
-		f32 delta = std::chrono::duration_cast<delta_duration>(nanoDelta).count();
-		_lastTime = time;
-
+	bool UiContext::runFrame(f32 deltaTime) {
 		std::vector<WindowPtr> created;
 		_windowManager->update(created);
 
@@ -64,7 +56,7 @@ namespace fw::app {
 		std::vector<WindowPtr>& windows = _windowManager->getWindows();
 
 		if (windows.size()) {
-			_renderContext->beginFrame(delta);
+			_renderContext->beginFrame(deltaTime);
 
 			for (auto it = windows.begin(); it != windows.end(); ++it) {
 				WindowPtr w = *it;
@@ -76,7 +68,7 @@ namespace fw::app {
 
 					w->getViewManager()->setResourceManager(_resourceManager.get(), _fontManager.get());
 
-					w->onUpdate(delta);
+					w->onUpdate(deltaTime);
 
 					canvas.beginRender();
 					w->onRender(canvas);
@@ -127,7 +119,5 @@ namespace fw::app {
 		});
 
 		_defaultFont = _fontManager->loadFont("Karla-Regular", 16);
-
-		_lastTime = hrc::now();
 	}
 }

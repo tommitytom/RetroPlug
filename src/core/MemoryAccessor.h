@@ -15,6 +15,13 @@ namespace rp {
 		Vram
 	};
 
+	enum class AccessType {
+		Unknown,
+		Read,
+		Write,
+		ReadWrite
+	};
+
 	struct MemoryPatch {
 		MemoryType type;
 		std::variant<uint8, uint16, uint32, fw::Uint8Buffer> data;

@@ -55,7 +55,7 @@ function Compile([string] $Type) {
 
     $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
 
-    ..\..\thirdparty\bin\make.exe "-j$cores" "RetroPlug-app" config=$Type"_emscripten"
+    ..\..\thirdparty\bin\make.exe "-j$cores" "RetroPlugEcs-app" config=$Type"_emscripten"
     #..\..\thirdparty\bin\make.exe "RetroPlug-app" config=$Type"_emscripten"
 
     Pop-Location

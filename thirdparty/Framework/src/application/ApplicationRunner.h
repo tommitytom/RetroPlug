@@ -9,6 +9,7 @@ namespace fw::app {
 		audio::AudioManagerPtr _audioManager;
 		std::unique_ptr<UiContext> _uiContext;
 		std::unique_ptr<Application> _app;
+		std::chrono::high_resolution_clock::time_point _lastTime;
 
 	public:
 		ApplicationRunner() {}

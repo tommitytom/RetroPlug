@@ -13,6 +13,7 @@ namespace fw::app {
 		std::unique_ptr<UiContext> _uiContext;
 		std::unique_ptr<Application> _app;
 		WindowPtr _window;
+		std::chrono::high_resolution_clock::time_point _lastTime;
 
 	public:
 		WebApplicationRunner(std::unique_ptr<Application>&& app);

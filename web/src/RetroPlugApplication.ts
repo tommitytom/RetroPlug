@@ -1,16 +1,13 @@
 import { BiquadEffect } from "./effects/BiquadEffect.ts";
 import type {
-	MainModule,
-	NativeProject,
-	RetroPlugView,
-	WebApplicationRunner,
-	MemoryAccessor,
-	NativeMemoryType,
-	Uint8Buffer,
 	LsdjMemoryOffsets,
+	MainModule,
+	MemoryAccessor,
 	NativeLsdjRom,
-	NativeBiquadEffect,
-	NativeEffect
+	NativeRetroPlugEcsApplication,
+	NativeRetroPlugProject,
+	Uint8Buffer,
+	WebApplicationRunner
 } from "./native/RetroPlug.d.ts";
 import { Project } from "./wrapper/Project.ts";
 import { convertMemoryType, MemoryType } from "./wrapper/System.ts";
@@ -18,18 +15,23 @@ import { convertMemoryType, MemoryType } from "./wrapper/System.ts";
 export class RetroPlugApplication {
 	private _module: MainModule | null = null;
 	private _runner: WebApplicationRunner | null = null;
+	private _nativeApp: NativeRetroPlugEcsApplication | null = null;
 
 	get module() {
 		return this._module;
 	}
 
+	get nativeApp() {
+		return this._nativeApp;
+	}
+
 	async load() {
-		const moduleFactory = (await import("./native/RetroPlug.mjs")).default;
+		const moduleFactory = (await import("./native/RetroPlugEcs.mjs")).default;
 
 		this._module = (await moduleFactory({
 			locateFile: (path: string) => {
 				if (path.endsWith(".wasm")) {
-					return "/RetroPlug.wasm";
+					return "/RetroPlugEcs.wasm";
 				}
 				return path;
 			},
@@ -50,6 +52,7 @@ export class RetroPlugApplication {
 		})) as MainModule;
 
 		this._runner = new this._module.WebApplicationRunner();
+		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
 
 		console.log("WASM module loaded");
 	}
@@ -58,37 +61,13 @@ export class RetroPlugApplication {
 		return this._runner;
 	}
 
-	get view(): RetroPlugView {
-		if (!this._module || !this._runner) {
-			throw new Error("WASM module is not initialized");
-		}
-
-		const view = this._runner.getView();
-		if (!view) {
-			throw new Error("WASM view is not initialized");
-		}
-
-		const final = this._module.upcastView(view)!;
-		view.delete();
-
-		return final;
-	}
-
 	get project(): Project {
 		const project = this.nativeProject;
 		return new Project(this._module!, project);
 	}
 
-	get nativeProject(): NativeProject {
-		const view = this.view;
-		const project = view.getProject();
-		view.delete();
-
-		if (!project) {
-			throw new Error("WASM project is not initialized");
-		}
-
-		return project;
+	get nativeProject(): NativeRetroPlugProject {
+		return this._nativeApp!.getProject()!;
 	}
 
 	createAudioBuffer(channelCount: number, sampleCount: number, sampleRate: number) {

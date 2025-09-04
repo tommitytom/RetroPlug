@@ -4,6 +4,7 @@
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 #include "core/CoreComponents.h"
+#include "core/MemoryAccessor.h"
 
 namespace rp {
 	struct SameBoyComponent;
@@ -21,6 +22,10 @@ namespace rp::SameBoyUtil {
 	f32 cyclesToMs(GB_gameboy_t* gb, uint64 cycles);
 
 	bool setup(const SameBoyComponent& comp, SameBoyState& state, uint32 sampleRate, const SystemLoadComponent& load);
+
+	MemoryAccessor getMemory(SameBoyState& state, MemoryType type, AccessType access = AccessType::ReadWrite);
+
+	void saveState(SameBoyState& state, fw::Uint8Buffer& target);
 
 	void setSampleRate(SameBoyState& state, uint32 sampleRate);
 

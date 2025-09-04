@@ -8,7 +8,7 @@
 #include "sameboy/SameBoyComponents.h"
 #include "ecs/RetroPlugComponents.h"
 #include "ecs/HierarchyUtil.h"
-#include "ecs/LsdjInstance.h"
+//#include "ecs/LsdjInstance.h"
 
 namespace rp {
 	const char* json_str =
@@ -89,12 +89,11 @@ namespace rp {
 		}
 
 		void onUpdate(f32 delta) override {
-			
+
 		}
 
 		void onRender(fw::Canvas& canvas) override {
-			if (_texture.isValid()) {
-				[[likely]]
+			if (_texture.isValid()) [[likely]] {
 				canvas.texture(_texture, getDimensionsF(), fw::Color4F(1, 1, 1, getAlpha()));
 			} else {
 				canvas.fillRect(_textureArea, fw::Color4F(1, 1, 1, getAlpha()));
@@ -102,7 +101,7 @@ namespace rp {
 		}
 	};
 
-	RetroPlugEcsView::RetroPlugEcsView(const RetroPlugProjectPtr& project) : View({ 480, 432 }), _project(project) {
+	RetroPlugEcsView::RetroPlugEcsView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
 		setName(fmt::format("RetroPlug v{}", RP_VERSION));
 		setFocusPolicy(fw::FocusPolicy::Click);
 	}
@@ -112,8 +111,13 @@ namespace rp {
 		getLayout().setOverflow(fw::FlexOverflow::Visible);
 	}
 
+	bool RetroPlugEcsView::onDrop(const std::vector<std::string>& paths) {
+		_project.addSystem(paths);
+		return true;
+	}
+
 	void RetroPlugEcsView::onUpdate(f32 deltaTime) {
-		_project->onUpdate(deltaTime);
+		_project.onUpdate(deltaTime);
 	}
 
 	void RetroPlugEcsView::onRender(fw::Canvas& canvas) {
@@ -169,7 +173,7 @@ namespace rp {
 				systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
 				systemView->focus();
 
-				eachHook(systemType, _project->getContext().serviceHooks, [&](const SystemHookBase& hook) {
+				eachHook(systemType, _project.getContext().serviceHooks, [&](const SystemHookBase& hook) {
 					fw::ViewPtr overlay = hook.onCreateOverlay(registry, e);
 					if (overlay) {
 						systemView->addChild(overlay);
@@ -183,7 +187,7 @@ namespace rp {
 						return;
 					}
 
-					_project->getEventNode().trySend("Audio"_hs, ButtonEvent{
+					_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
 						.entity = e,
 						.button = (int)button,
 						.down = ev.down
@@ -205,9 +209,9 @@ namespace rp {
 	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
 		if (event.down && event.key == fw::VirtualKey::F5) {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
-			_project->deserialize(archive);
-			/*
-			_project->addSystem(SystemLoadComponent{
+			//_project.deserialize(archive);
+			
+			entt::entity entity = _project.addSystem(SystemLoadComponent{
 				.entries = {
 					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
 					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
@@ -216,7 +220,8 @@ namespace rp {
 				.model = GameboyModel::CgbC,
 				.fastBoot = true
 			});
-			*/
+
+			_project.subscribeToMemory(entity, MemoryType::Ram);
 
 			/*entt::entity e = SineGenerator::emplace(registry);
 

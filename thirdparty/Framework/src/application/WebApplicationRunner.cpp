@@ -10,6 +10,9 @@
 #include "application/GlfwNativeWindow.h"
 
 namespace fw::app {
+	using hrc = std::chrono::high_resolution_clock;
+	using delta_duration = std::chrono::duration<f32>;
+
 	static void webFrameCallback(void* arg) {
 		WebApplicationRunner* runner = reinterpret_cast<WebApplicationRunner*>(arg);
 		runner->runFrame();
@@ -21,6 +24,7 @@ namespace fw::app {
 		auto windowManager = std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager);
 		auto renderContext = std::make_unique<fw::GlRenderContext>(false);
 		_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
+		_lastTime = hrc::now();
 	}
 
 	WebApplicationRunner::~WebApplicationRunner() {
@@ -46,7 +50,7 @@ namespace fw::app {
 		_window = _uiContext->setup(view, nullptr, canvasId);
 		ViewManagerPtr viewManager = _window->getViewManager();
 		viewManager->createState<audio::AudioManagerPtr>(_audioManager);
-		viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
+		//viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
 	}
 
 	void WebApplicationRunner::destroyGraphics() {
@@ -64,7 +68,14 @@ namespace fw::app {
 	}
 
 	bool WebApplicationRunner::runFrame() {
-		return _uiContext->runFrame();
+		const hrc::time_point time = hrc::now();
+		const std::chrono::nanoseconds nanoDelta = time - _lastTime;
+		const f32 delta = std::chrono::duration_cast<delta_duration>(nanoDelta).count();
+		_lastTime = time;
+
+		_app->onUpdate(delta);
+
+		return _uiContext->runFrame(delta);
 	}
 }
 #endif

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <entt/entity/registry.hpp>
+#include <spdlog/spdlog.h>
 
 #include "foundation/Event.h"
 #include "foundation/DataBuffer.h"
@@ -17,30 +19,44 @@ namespace rp {
 	private:
 		fw::EventNode _eventNode;
 		entt::registry _registry;
+		f32 _totalTime = 0.0f;
+
+		bool _doPing = true;
+		std::optional<std::chrono::high_resolution_clock::time_point> _lastPingTime;
+		std::optional<std::chrono::high_resolution_clock::time_point> _lastPongTime;
 
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
 		~RetroPlugProject();
 
 		template <typename T>
-		entt::entity addSystem(SystemLoadComponent&& config, T&& component) {
+		entt::entity addSystem(const SystemLoadComponent& config, const T& component) {
 			//assert(fw::Replicator::isReplicating<T>(fw::Replicator::getContext(_registry)));
 
 			entt::id_type systemType = entt::type_id<T>().index();
 			entt::entity entity = fw::Replicator::spawn(_registry);
 
-			SystemLoadComponent& load = _registry.emplace<SystemLoadComponent>(entity, std::move(config));
-			_registry.emplace<T>(entity, std::move(component));
-			_registry.emplace<SystemComponent>(entity, systemType);
+			SystemLoadComponent& load = _registry.emplace<SystemLoadComponent>(entity, config);
+			_registry.emplace<T>(entity, component);
 
 			handleLoad(entity, load, systemType);
 
-			fw::Uint8Buffer archive;
-			serialize(archive);
-			//deserialize(archive);
-
 			return entity;
 		}
+
+		entt::entity addSystem(const std::vector<std::string>& paths);
+
+		inline size_t getSystemCount() const {
+			return _registry.view<SystemComponent>().size();
+		}
+
+		inline uint32 getVersion() const {
+			return _registry.ctx().at<RetroPlugProjectContext>().version;
+		}
+
+		void subscribeToMemory(entt::entity entity, MemoryType type);
+
+		void unsubscribeFromMemory(entt::entity entity, MemoryType type);
 
 		void removeSystem(entt::entity entity);
 

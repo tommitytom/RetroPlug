@@ -111,13 +111,6 @@ namespace rp {
 
 	const int32 SRAM_COPY_INTERVAL = 2048;
 
-	enum class AccessType {
-		Unknown,
-		Read,
-		Write,
-		ReadWrite
-	};
-
 	class System {
 	protected:
 		SystemIoPtr _stream;

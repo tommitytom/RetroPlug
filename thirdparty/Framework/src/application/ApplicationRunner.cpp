@@ -8,6 +8,9 @@
 #endif
 
 namespace fw::app {
+	using hrc = std::chrono::high_resolution_clock;
+	using delta_duration = std::chrono::duration<f32>;
+
 	ApplicationRunner::~ApplicationRunner() {
 		destroy();
 	}
@@ -46,14 +49,21 @@ namespace fw::app {
 
 		//_app->onInitialize(*_uiContext, _audioManager);
 
+		_lastTime = hrc::now();
+
 		return _uiContext->getMainWindow();
 	}
 
 	bool ApplicationRunner::runFrame() {
-		_app->onUpdate(0);
+		hrc::time_point time = hrc::now();
+		std::chrono::nanoseconds nanoDelta = time - _lastTime;
+		f32 delta = std::chrono::duration_cast<delta_duration>(nanoDelta).count();
+		_lastTime = time;
+
+		_app->onUpdate(delta);
 
 		if (_uiContext) {
-			return _uiContext->runFrame();
+			return _uiContext->runFrame(delta);
 		}
 
 		return true;

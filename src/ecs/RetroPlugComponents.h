@@ -17,6 +17,17 @@ namespace rp {
 		SystemIoPtr io;
 	};
 
+	struct FetchMemoryRequest {
+		entt::entity entity;
+		MemoryType type;
+	};
+
+	struct FetchMemoryResponse {
+		entt::entity entity;
+		MemoryType type;
+		fw::Uint8Buffer state;
+	};
+
 	struct ButtonEvent {
 		entt::entity entity;
 		int button;
@@ -65,6 +76,7 @@ namespace rp {
 	};
 
 	using ReplicatedTypes = entt::type_list<
+		SystemComponent,
 		HierarchyComponent,
 		LsdjComponent,
 		LsdjKitComponent,

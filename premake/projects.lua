@@ -27,6 +27,8 @@ local EMSDK_FLAGS = {
 	"-lembind",
 	"--emit-tsd RetroPlug.d.ts",
 	"--no-entry",
+
+	"-s WASM_BIGINT",
 }
 
 -- if toggling this, remember to update exceptions in util.lua. this line:
@@ -37,9 +39,9 @@ if useWasmFs then
 	table.insert(EMSDK_FLAGS, "-s JSPI=1")
 	table.insert(EMSDK_FLAGS, "-fwasm-exceptions")
 else
-	table.insert(EMSDK_FLAGS, "-lidbfs.js")
-	table.insert(EMSDK_FLAGS, "-s FORCE_FILESYSTEM=1")
-	table.insert(EMSDK_FLAGS, "-s ASYNCIFY=1")
+	--table.insert(EMSDK_FLAGS, "-lidbfs.js")
+	--table.insert(EMSDK_FLAGS, "-s FORCE_FILESYSTEM=1")
+	--table.insert(EMSDK_FLAGS, "-s ASYNCIFY=1")
 	table.insert(EMSDK_FLAGS, "-fexceptions")
 end
 
@@ -51,8 +53,7 @@ local EMSDK_DEBUG_FLAGS = {
 	"-s SAFE_HEAP=2",
 	"-s STACK_OVERFLOW_CHECK=1",
 	"-s WARN_UNALIGNED=1",
-	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
-	"-s WASM_BIGINT",
+	"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 	"-s WEBAUDIO_DEBUG=1"
 }
 
@@ -69,10 +70,12 @@ local EMSDK_DEVELOPMENT_FLAGS = {
 local EMSDK_RELEASE_FLAGS = {
 	--"-s ASSERTIONS=1",
 	"-s ELIMINATE_DUPLICATE_FUNCTIONS=1",
+	"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 	--"-s MINIMAL_RUNTIME",
 	--"-g",
 	"-O3",
-	"-closure"
+	"-closure",
+	"-s WEBAUDIO_DEBUG=1"
 }
 
 local m = {
@@ -250,6 +253,9 @@ function m.RetroPlug.link()
 
 	filter { "platforms:Emscripten", "configurations:Debug" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
+
+	filter { "platforms:Emscripten", "configurations:Development" }
+		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEVELOPMENT_FLAGS) }
 
 	filter { "platforms:Emscripten", "configurations:Release" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_RELEASE_FLAGS) }

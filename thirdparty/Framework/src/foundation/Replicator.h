@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <concepts>
 
+#include <spdlog/spdlog.h>
 #include <entt/entity/registry.hpp>
 #include <entt/entity/entity.hpp>
 
@@ -298,9 +299,9 @@ namespace fw::Replicator {
 		assert(ctx.canMutate);
 		assert(!isReplicating<Component>(ctx));
 
-		registry.on_construct<Component>().connect<handleConstruct<Component>>();
-		registry.on_destroy<Component>().connect<handleDestroy<Component>>();
-		registry.on_update<Component>().connect<handleUpdate<Component>>();
+		registry.on_construct<Component>().template connect<handleConstruct<Component>>();
+		registry.on_destroy<Component>().template connect<handleDestroy<Component>>();
+		registry.on_update<Component>().template connect<handleUpdate<Component>>();
 
 		ctx.replicators[entt::type_id<Component>().index()] = ReplicatorSubscription{
 			.emplacer = componentEmplacer<Component>,
@@ -338,9 +339,9 @@ namespace fw::Replicator {
 
 		ctx.replicators.erase(entt::type_id<Component>().index());
 
-		registry.on_construct<Component>().disconnect<handleConstruct<Component>>();
-		registry.on_destroy<Component>().disconnect<handleDestroy<Component>>();
-		registry.on_update<Component>().disconnect<handleUpdate<Component>>();
+		registry.on_construct<Component>().template disconnect<handleConstruct<Component>>();
+		registry.on_destroy<Component>().template disconnect<handleDestroy<Component>>();
+		registry.on_update<Component>().template disconnect<handleUpdate<Component>>();
 	}
 
 	entt::entity spawn(entt::registry& registry);
@@ -377,10 +378,10 @@ namespace fw::Replicator {
 		assert(isReplicating<Component>(getContext(registry)));
 
 		Component& component = registry.get<Component>(entity);
-		
+
 		handleFieldPatch<MemberPtr, Component, ValueType>(registry, entity, value);
 		patchField<MemberPtr>(component, std::forward<ValueType>(value));
-		
+
 		registry.emplace_or_replace<ComponentUpdatedTag<Component>>(entity);
 	}
 

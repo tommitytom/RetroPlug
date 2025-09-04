@@ -15,13 +15,23 @@ function m.source()
 	files {
 		REFLCPP_DIR .. "/src/reflectcpp.cpp",
 		REFLCPP_DIR .. "/src/reflectcpp_json.cpp",
-		REFLCPP_DIR .. "/src/yyjson.c"
+		--REFLCPP_DIR .. "/src/yyjson.c"
 	}
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "character-conversion" }
+
+	filter {}
 end
 
 function m.link()
 	m.include()
 	links { "refl-cpp" }
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "character-conversion" }
+
+	filter {}
 end
 
 function m.project()

@@ -7,17 +7,24 @@
 #include "core/CoreComponents.h"
 
 namespace rp {
-	class SystemHookBase {
+	class HookBase {
 	private:
 		entt::id_type _systemType;
 
 	public:
-		SystemHookBase(entt::id_type systemType) : _systemType(systemType) {}
-		virtual ~SystemHookBase() {}
+		HookBase(entt::id_type systemType) : _systemType(systemType) {}
+		virtual ~HookBase() {}
 
 		entt::id_type getType() const {
 			return _systemType;
 		}
+	};
+
+	class SystemHookBase : public HookBase {
+	public:
+		SystemHookBase(entt::id_type systemType) : HookBase(systemType) {}
+
+		virtual void onLoadRequset(entt::registry& registry, const std::vector<std::string>& paths, SystemLoadComponent& load) const {}
 
 		virtual void onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load) const {}
 
@@ -70,6 +77,16 @@ namespace rp {
 		virtual fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity, SystemComponent& system) const { return nullptr; }
 	};
 
+	class AudioSystemHook : public HookBase {
+	public:
+		AudioSystemHook(entt::id_type systemType): HookBase(systemType) {}
+		virtual ~AudioSystemHook() {}
+
+		virtual void onSaveSram(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
+		virtual void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
+		virtual MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const { return MemoryAccessor(); }
+	};
+
 	inline void eachHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks, std::function<void(const SystemHookBase&)>&& func) {
 		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
 			if (hook->getType() == systemType) {
@@ -82,5 +99,23 @@ namespace rp {
 		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
 			func(*hook);
 		}
+	}
+
+	inline SystemHookBase* findHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks) {
+		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
+			if (hook->getType() == systemType) {
+				return static_cast<SystemHookBase*>(hook.get());
+			}
+		}
+		return nullptr;
+	}
+
+	inline AudioSystemHook* findHook(entt::id_type systemType, const std::vector<std::unique_ptr<AudioSystemHook>>& hooks) {
+		for (const std::unique_ptr<AudioSystemHook>& hook : hooks) {
+			if (hook->getType() == systemType) {
+				return static_cast<AudioSystemHook*>(hook.get());
+			}
+		}
+		return nullptr;
 	}
 }

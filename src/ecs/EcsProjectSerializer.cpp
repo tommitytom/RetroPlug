@@ -1,5 +1,3 @@
-#pragma once
-
 #include "EcsProjectSerializer.h"
 #include "core/CoreComponents.h"
 #include "foundation/Replicator.h"

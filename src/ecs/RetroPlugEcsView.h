@@ -10,13 +10,15 @@ namespace rp {
 		FwRegisterObject()
 
 	private:
-		RetroPlugProjectPtr _project;
+		RetroPlugProject& _project;
 
 	public:
-		RetroPlugEcsView(const RetroPlugProjectPtr& project);
+		RetroPlugEcsView(RetroPlugProject& project);
 		~RetroPlugEcsView() = default;
 
 		void onInitialize() override;
+
+		bool onDrop(const std::vector<std::string>& paths) override;
 
 		void onUpdate(f32 deltaTime) override;
 
@@ -28,7 +30,7 @@ namespace rp {
 		void rebuildUi();
 
 		entt::registry& getRegistry() {
-			return _project->getRegistry();
+			return _project.getRegistry();
 		}
 	};
 }

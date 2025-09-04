@@ -204,6 +204,7 @@ static bool serialEnd(GB_gameboy_t* gb) { return true; }
 bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint32 sampleRate, const SystemLoadComponent& load) {
 	const fw::Uint8Buffer* rom = load.findData("rom");
 	if (!rom) {
+		std::cerr << "Failed to find ROM data" << std::endl;
 		return false;
 	}
 
@@ -250,6 +251,35 @@ bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint3
 	//SameBoyUtil::spinMs(gb, 500.0f); // Skip bootrom
 
 	return true;
+}
+
+MemoryAccessor SameBoyUtil::getMemory(SameBoyState& state, MemoryType type, AccessType access) {
+	GB_direct_access_t sameboyType;
+	bool found = false;
+
+	switch (type) {
+	case MemoryType::Rom: sameboyType = GB_DIRECT_ACCESS_ROM; found = true; break;
+	case MemoryType::Ram: sameboyType = GB_DIRECT_ACCESS_RAM; found = true; break;
+	case MemoryType::Sram: sameboyType = GB_DIRECT_ACCESS_CART_RAM; found = true; break;
+	case MemoryType::Unknown: break;
+	}
+
+	if (found) {
+		size_t memSize;
+		uint16 memBank;
+		void* memData = GB_get_direct_access(state.gb, sameboyType, &memSize, &memBank);
+		return MemoryAccessor(type, fw::Uint8Buffer((uint8*)memData, memSize, false), 0, nullptr);
+	}
+
+	return MemoryAccessor();
+}
+
+void SameBoyUtil::saveState(SameBoyState& state, fw::Uint8Buffer& target) {
+	if (state.gb) {
+		size_t size = GB_get_save_state_size(state.gb);
+		target.resize(size);
+		GB_save_state_to_buffer(state.gb, target.data());
+	}
 }
 
 void SameBoyUtil::setRenderingDisabled(SameBoyState& state, bool disabled) {

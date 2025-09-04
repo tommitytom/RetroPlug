@@ -18,8 +18,6 @@ namespace fw::app {
 		std::unique_ptr<WindowManager> _windowManager;
 		std::unique_ptr<RenderContext> _renderContext;
 
-		std::chrono::high_resolution_clock::time_point _lastTime;
-
 		fw::ResourceManagerPtr _resourceManager;
 		fw::FontManagerPtr _fontManager;
 
@@ -35,7 +33,7 @@ namespace fw::app {
 		UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager);
 		~UiContext();
 
-		bool runFrame();
+		bool runFrame(f32 deltaTime);
 
 		void handleHotReload();
 

@@ -7,6 +7,7 @@
 
 namespace rp {
 	struct RetroPlugProjectContext {
+		uint32 version = 0;
 		std::vector<std::unique_ptr<SystemHookBase>> systemHooks;
 		std::vector<std::unique_ptr<SystemHookBase>> serviceHooks;
 

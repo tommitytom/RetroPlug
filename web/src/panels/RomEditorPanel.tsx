@@ -5,12 +5,12 @@ import { LsdjKit } from "../components/LsdjKit";
 import type { IIndexedKit } from "../components/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { NativeLsdjRom } from "../native/RetroPlug";
-import { convertFile } from "../utils/FileUtil";
 import {
 	LSDJ_KIT_COUNT
 } from "../wrapper/Lsdj";
 
 import "../styles/RomEditorPanel.css";
+import { convertBuffer } from "../utils/FileUtil";
 
 export const RomEditorPanel: React.FC = () => {
 	const { app, audioContext } = useRetroPlug();
@@ -26,10 +26,10 @@ export const RomEditorPanel: React.FC = () => {
 			for (let i = 0; i < files.length; i++) {
 				const file = files[i];
 				if (file.name.endsWith(".gb")) {
-					const fileData = await convertFile(app, file);
+					const fileData = new Uint8Array(await file.arrayBuffer());
 					const accessor = new app.module!.MemoryAccessor(
 						app.module!.NativeMemoryType.Rom,
-						fileData,
+						convertBuffer(app.module!, fileData),
 						0,
 					);
 					const rom = new app.module!.NativeLsdjRom(accessor);

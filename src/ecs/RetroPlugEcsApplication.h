@@ -6,9 +6,8 @@
 namespace rp {
 	class RetroPlugEcsApplication : public fw::app::Application {
 	private:
-		RetroPlugProjectPtr _project;
-		fw::EventNode::NodeId _audioNodeId = 0;
 		std::optional<fw::EventNode> _audioEventNode = std::nullopt;
+		RetroPlugProject _project;
 
 	public:
 		RetroPlugEcsApplication();
@@ -20,6 +19,12 @@ namespace rp {
 
 		void onUpdate(f32 deltaTime) override;
 
-		RetroPlugProjectPtr getProject();
+		RetroPlugProject& getProject() {
+			return _project;
+		}
+
+		RetroPlugProject* getProjectPtr() {
+			return &_project;
+		}
 	};
 }
