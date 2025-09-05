@@ -6,7 +6,8 @@ import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { Uint8Buffer } from "../native/RetroPlug";
 import type { EffectInstance } from "../types/EffectTypes";
 import type { INamedSample } from '../types/LsdjTypes';
-import { convertFloat32Buffer, downloadUint8Buffer, sanitizeFilename } from "../utils/NativeUtil";
+import { downloadUint8Buffer, sanitizeFilename } from "../utils/FileUtil";
+import { convertFloat32Buffer } from "../utils/NativeUtil";
 
 import "../styles/RomEditorPanel.css";
 

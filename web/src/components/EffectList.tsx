@@ -51,6 +51,8 @@ export const EffectList: React.FC<EffectListProps> = ({
 				<button
 					className="text-green-400 hover:text-green-300 hover:bg-green-600/20 text-sm font-bold px-2 py-1 rounded-sm transition-colors duration-200"
 					onClick={(e) => {
+						console.log('add effect!');
+
 						e.stopPropagation();
 						setEffects([
 							...effects,

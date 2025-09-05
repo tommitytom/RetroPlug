@@ -169,8 +169,8 @@ export class Project {
 		this._project.removeSystem(system);
 	}
 
-	resetSystem(system: SystemId, remote: boolean = false): void {
-		this._project.resetSystem(system, remote);
+	resetSystem(system: SystemId, remote: boolean = false): boolean {
+		return this._project.resetSystem(system, remote);
 	}
 
 	/**

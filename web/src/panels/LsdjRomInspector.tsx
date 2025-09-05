@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FileDropZone } from "../components/FileDropZone";
 import { LsdjKitEditor } from "../components/LsdjKit";
-import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { useProject, useSystemMemory, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import type { NativeLsdjSav, Uint8Buffer } from "../native/RetroPlug";
+import { useProject, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
+import type { NativeLsdjKitDesc, Uint8Buffer } from "../native/RetroPlug";
 import type { LsdjKit } from "../types/LsdjTypes";
 import { fromUint8Array, vectorToArray } from "../utils/NativeUtil";
+import { deepEqual } from "../utils/StateUtil";
 import type { SystemId } from "../wrapper/Project";
 import { MemoryType } from "../wrapper/System";
 
@@ -31,10 +31,10 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 	const project = useProject();
 	const romVersion = useSystemMemoryVersion(systemId, MemoryType.Rom);
 	const savVersion = useSystemMemoryVersion(systemId, MemoryType.Sram);
+	const containerRef = useRef<HTMLDivElement>(null);
 	const [expandedKits, setExpandedKits] = useState<Set<number>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
-	const containerRef = useRef<HTMLDivElement>(null);
 	const [version, setVersion] = useState<number>(0);
 	const [romKits, setRomKits] = useState<LsdjKit[]>([]);
 	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('editable');
@@ -139,7 +139,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 		console.log(project.serialize());
 
 		setVersion(prev => prev + 1);
-	}, []);
+	}, [project]);
 
 	// Use native DOM events for more reliable drag and drop
 	useEffect(() => {
@@ -208,10 +208,13 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 		timer.start();
 
 		const lsdj = project.getLsdjController();
-		const descs = lsdj.getKitDescs(systemId, true);
-		const kits = vectorToArray<LsdjKit>(descs);
+		const descs = lsdj.getKitDescs(systemId, false);
+		const kits = vectorToArray<NativeLsdjKitDesc>(descs) as LsdjKit[];
 
-		setRomKits(kits);
+		if (!deepEqual(kits, romKits)) {
+			setRomKits(kits);
+			console.log('Kits updated!');
+		}
 
 		descs.delete();
 		lsdj.delete();

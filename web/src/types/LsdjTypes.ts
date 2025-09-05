@@ -11,5 +11,5 @@ export interface LsdjKitData {
 }
 
 export interface LsdjKit extends NativeLsdjKitDesc {
-
+	name: string;
 }
