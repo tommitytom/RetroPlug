@@ -213,6 +213,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 								name={kit.name.valueOf() as string}
 								id={kit.id}
 								kitData={expandedKits.has(kit.id) ? getKitData(kit.id) : null}
+								editable={kit.editable}
 								isExpanded={expandedKits.has(kit.id)}
 								onToggle={() => toggleKit(kit.id)}
 							/>
