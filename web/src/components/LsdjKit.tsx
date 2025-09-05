@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { EffectList } from "../components/EffectList";
+import { EditableText } from "../components/EditableText";
 import { WaveView } from "../components/WaveView";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { Uint8Buffer } from "../native/RetroPlug";
@@ -19,7 +20,8 @@ export const LsdjKitEditor: React.FC<{
 	isExpanded: boolean;
 	usageCount?: number;
 	onToggle: () => void;
-}> = ({ id, name, kitData, editable, isExpanded, usageCount, onToggle }) => {
+	onNameChange?: (newName: string) => void;
+}> = ({ id, name, kitData, editable, isExpanded, usageCount, onToggle, onNameChange }) => {
 	const { project } = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
@@ -88,6 +90,15 @@ export const LsdjKitEditor: React.FC<{
 		//kit.kit.getSampleData
 	}, []);
 
+	// Name validation function for EditableText
+	const validateAndNormalizeName = useCallback((input: string): string => {
+		// Convert to uppercase, allow only alphanumeric and dashes, limit to 6 characters
+		return input
+			.toUpperCase()
+			.replace(/[^A-Z0-9-]/g, '')
+			.slice(0, 6);
+	}, []);
+
 	return (
 		<div className="border border-gray-700 rounded-sm overflow-hidden">
 			<div
@@ -100,7 +111,14 @@ export const LsdjKitEditor: React.FC<{
 					</div>
 					<span className="font-mono font-medium">{id.toString(16).padStart(2, '0').toUpperCase()}</span>
 					<span className="font-medium mx-1">-</span>
-					<span className="font-medium">{name}</span>
+					<EditableText
+						value={name}
+						onChange={onNameChange}
+						className="font-medium"
+						maxLength={6}
+						validator={validateAndNormalizeName}
+						title="Click to edit kit name"
+					/>
 				</div>
 				<div className="flex items-center gap-2">
 					{/*(usageCount || 0) > 0 && (

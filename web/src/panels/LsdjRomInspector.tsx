@@ -221,7 +221,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 
 		const timeTaken = timer.stop();
 		console.log(`Time taken to analyze ROM: ${timeTaken}ms`);
-	}, [project, romVersion, version, savVersion]);
+	}, [project, romVersion, version, savVersion, romKits, setRomKits]);
 
 	const toggleAllKits = useCallback(() => {
 		if (allExpanded) {
@@ -295,7 +295,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 								</div>
 								<button
 									onClick={toggleAllKits}
-									className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+									className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded border border-gray-600 hover:border-gray-500 transition-colors duration-200"
 								>
 									{allExpanded ? "Collapse All" : "Expand All"}
 								</button>

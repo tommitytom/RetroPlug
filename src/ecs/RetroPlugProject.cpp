@@ -266,6 +266,12 @@ namespace rp {
 		ctx.version++;
 	}
 
+	void RetroPlugProject::clearSystems() {
+		for (const auto& [e, system] : _registry.view<SystemComponent>().each()) {
+			removeSystem(e);
+		}
+	}
+
 	void RetroPlugProject::serialize(fw::Uint8Buffer& archive) const {
 		std::string target;
 		ProjectSerializer::serialize(_registry, target);

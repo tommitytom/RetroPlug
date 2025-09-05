@@ -27,7 +27,7 @@ const panels: Panel[] = [
 ];
 
 const initialLayout = {
-	left: { id: 'left', panels: ['fileTree'], activePanel: 'fileTree', size: 350 },
+	left: { id: 'left', panels: ['fileTree'], activePanel: 'fileTree', size: 375 },
 	center: { id: 'center', panels: ['system'], activePanel: 'system', size: 0 },
 	right: { id: 'right', panels: ['inspector'], activePanel: 'inspector', size: 600 },
 	bottom: { id: 'bottom', panels: [], activePanel: '', size: 200 },

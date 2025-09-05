@@ -63,14 +63,28 @@ const SystemMemoryInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) =
 	);
 };
 
+type InspectorType = 'sav' | 'rom' | 'ram';
+
 const SystemInspector: React.FC<{
 	systemId: number;
-}> = ({ systemId }) => {
+	inspectorType: InspectorType;
+}> = ({ systemId, inspectorType }) => {
+	const renderInspector = () => {
+		switch (inspectorType) {
+			case 'sav':
+				return <LsdjSavInspector systemId={systemId} />;
+			case 'rom':
+				return <LsdjRomInspector systemId={systemId} />;
+			case 'ram':
+				return <LsdjRamInspector systemId={systemId} />;
+			default:
+				return <SystemMemoryInspector systemId={systemId} />;
+		}
+	};
+
 	return (
 		<div>
-			<LsdjSavInspector systemId={systemId} />
-			<LsdjRomInspector systemId={systemId} />
-			<LsdjRamInspector systemId={systemId} />
+			{renderInspector()}
 		</div>
 	);
 };
@@ -78,24 +92,68 @@ const SystemInspector: React.FC<{
 export const InspectorPanel: React.FC = () => {
 	const project = useProject();
 	const [systemIds, setSystemIds] = useState<SystemId[]>([]);
+	const [selectedSystemId, setSelectedSystemId] = useState<SystemId | null>(null);
+	const [selectedInspectorType, setSelectedInspectorType] = useState<InspectorType>('rom');
 
 	useEffect(() => {
 		if (!project) {
 			setSystemIds([]);
+			setSelectedSystemId(null);
 			return;
 		}
 
-		setSystemIds(project.getSystemIds());
-	}, [project]);
+		const ids = project.getSystemIds().sort((a, b) => a - b); // Sort system IDs in ascending order
+		setSystemIds(ids);
+
+		// Auto-select the first system if none is selected
+		if (ids.length > 0 && (selectedSystemId === null || !ids.includes(selectedSystemId))) {
+			setSelectedSystemId(ids[0]);
+		}
+	}, [project, selectedSystemId]);
 
 	return (
 		<div>
-			{systemIds.map((id) => (
+			<div className="flex items-center gap-2 px-3 py-2">
+				<label htmlFor="inspector-select" className="text-white text-sm font-medium">
+					Inspector:
+				</label>
+				<select
+					id="inspector-select"
+					value={selectedInspectorType}
+					onChange={(e) => setSelectedInspectorType(e.target.value as InspectorType)}
+					className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+				>
+					<option value="rom">ROM</option>
+					<option value="sav">SAV</option>
+					<option value="ram">RAM</option>
+				</select>
+				{systemIds.length > 1 && (
+					<>
+						<label htmlFor="system-select" className="text-white text-sm font-medium ml-4">
+							Select System:
+						</label>
+						<select
+							id="system-select"
+							value={selectedSystemId ?? ''}
+							onChange={(e) => setSelectedSystemId(Number(e.target.value))}
+							className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+						>
+							{systemIds.map((id) => (
+								<option key={id} value={id}>
+									System {id}
+								</option>
+							))}
+						</select>
+					</>
+				)}
+			</div>
+			{selectedSystemId !== null && (
 				<SystemInspector
-					key={`system-${id}`}
-					systemId={id}
+					key={`system-${selectedSystemId}-${selectedInspectorType}`}
+					systemId={selectedSystemId}
+					inspectorType={selectedInspectorType}
 				/>
-			))}
+			)}
 		</div>
 	);
 };

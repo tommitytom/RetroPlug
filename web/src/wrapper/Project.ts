@@ -169,6 +169,10 @@ export class Project {
 		this._project.removeSystem(system);
 	}
 
+	clearSystems(): void {
+		this._project.clearSystems();
+	}
+
 	resetSystem(system: SystemId, remote: boolean = false): boolean {
 		return this._project.resetSystem(system, remote);
 	}

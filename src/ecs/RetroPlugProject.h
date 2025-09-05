@@ -63,6 +63,8 @@ namespace rp {
 
 		void removeSystem(entt::entity entity);
 
+		void clearSystems();
+
 		void onUpdate(f32 deltaTime);
 
 		void serialize(fw::Uint8Buffer& archive) const;
