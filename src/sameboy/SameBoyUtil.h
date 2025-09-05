@@ -38,5 +38,7 @@ namespace rp::SameBoyUtil {
 
 	SystemStateOffsets getStateOffsets(SameBoyState& state);
 
+	void reset(SameBoyState& state);
+
 	void destroy(SameBoyState& state);
 }

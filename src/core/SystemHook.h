@@ -94,6 +94,7 @@ namespace rp {
 		virtual void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
 		virtual MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const { return MemoryAccessor(); }
 		virtual void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {}
+		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
 	};
 
 	inline void eachHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks, std::function<void(const SystemHookBase&)>&& func) {

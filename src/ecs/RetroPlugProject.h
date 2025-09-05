@@ -47,6 +47,8 @@ namespace rp {
 
 		entt::entity addSystem(const std::vector<std::string>& paths);
 
+		bool resetSystem(entt::entity system, bool remote);
+
 		inline size_t getSystemCount() const {
 			return _registry.view<SystemComponent>().size();
 		}

@@ -124,6 +124,10 @@ namespace rp {
 		return 0;
 	}
 
+	bool RetroPlugProject::resetSystem(entt::entity system, bool remote) {
+		_eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system });
+	}
+
 	MemoryAccessor RetroPlugProject::getSystemMemory(entt::entity entity, MemoryType type, AccessType access) {
 		if (!_registry.valid(entity)) {
 			return MemoryAccessor();

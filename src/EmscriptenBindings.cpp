@@ -187,6 +187,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("removeSystem", +[](RetroPlugProject& project, uint32 systemId) {
 			project.removeSystem(entt::entity(systemId));
 		})
+		.function("resetSystem", +[](RetroPlugProject& project, uint32 systemId, bool remote) {
+			project.resetSystem(entt::entity(systemId), remote);
+		})
 		.function("getSystemMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type, AccessType access) -> MemoryAccessor {
 			return project.getSystemMemory(entt::entity(systemId), type, access);
 		})

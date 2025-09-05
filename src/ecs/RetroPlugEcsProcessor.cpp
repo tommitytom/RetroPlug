@@ -58,7 +58,18 @@ namespace rp {
 		void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const override {
 			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
 			MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, patch.type, AccessType::Write);
-			accessor.write(patch.offset, patch.data);
+
+			std::visit(entt::overloaded{
+				[&](uint8 val) { accessor.set(patch.offset, val); },
+				[&](uint16 val) { accessor.write(patch.offset, val); },
+				[&](uint32 val) { accessor.write(patch.offset, val); },
+				[&](const fw::Uint8Buffer& val) { accessor.write(patch.offset, val); },
+			}, patch.data);
+		}
+
+		void onReset(entt::registry& registry, entt::entity entity) const override {
+			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
+			SameBoyUtil::reset(*state.state);
 		}
 	};
 
@@ -145,6 +156,21 @@ namespace rp {
 
 		node.receive<PingEvent>([&](PingEvent&& ev) {
 			node.trySend("Ui"_hs, PongEvent{ .time = ev.time });
+		});
+
+		node.receive<ResetSystemEntityEvent>([&](ResetSystemEntityEvent&& ev) {
+			if (!_registry.valid(ev.entity)) {
+				return;
+			}
+			SystemComponent* system = _registry.try_get<SystemComponent>(ev.entity);
+			if (!system) {
+				return;
+			}
+
+			AudioHooksContext& hooks = _registry.ctx().at<AudioHooksContext>();
+			AudioSystemHook* hook = findHook(system->systemType, hooks.systemHooks);
+			assert(hook);
+			hook->onReset(_registry, ev.entity);
 		});
 	}
 

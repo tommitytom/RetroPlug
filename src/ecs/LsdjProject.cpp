@@ -124,7 +124,7 @@ namespace rp {
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
-		patch.data = kit.getBuffer();
+		patch.data = kit.getBuffer().clone();
 		patch.offset = lsdj::Rom::KIT_LOOKUP[kitId] * lsdj::Rom::BANK_SIZE;
 
 		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();

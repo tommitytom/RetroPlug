@@ -316,6 +316,12 @@ SystemStateOffsets SameBoyUtil::getStateOffsets(SameBoyState& state) {
 	return offsets;
 }
 
+void SameBoyUtil::reset(SameBoyState& state) {
+	if (state.gb) {
+		GB_reset(state.gb);
+	}
+}
+
 void SameBoyUtil::destroy(SameBoyState& state) {
 	delete state.gb;
 }

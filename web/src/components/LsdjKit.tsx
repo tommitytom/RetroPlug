@@ -6,7 +6,7 @@ import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { Uint8Buffer } from "../native/RetroPlug";
 import type { EffectInstance } from "../types/EffectTypes";
 import type { INamedSample } from '../types/LsdjTypes';
-import { convertFloat32Buffer } from "../utils/NativeUtil";
+import { convertFloat32Buffer, downloadUint8Buffer, sanitizeFilename } from "../utils/NativeUtil";
 
 import "../styles/RomEditorPanel.css";
 
@@ -114,6 +114,44 @@ export const LsdjKitEditor: React.FC<{
 					}`}>
 						{editable ? 'Editable' : 'Baked'}
 					</span>
+					<button
+						className={`p-1 rounded-sm transition-colors duration-200 ${
+							kitData
+								? 'text-blue-400 hover:text-blue-300 hover:bg-blue-600/20'
+								: 'text-gray-500 hover:text-gray-400 hover:bg-gray-600/20'
+						}`}
+						onClick={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+
+							if (kitData) {
+								try {
+									const filename = `${sanitizeFilename(name)}.kit`;
+									downloadUint8Buffer(kitData, filename);
+								} catch (error) {
+									console.error('Download failed:', error);
+								}
+							} else {
+								console.log('No kitData available for download');
+							}
+						}}
+						title={kitData ? "Download kit" : "Kit data not available"}
+					>
+						<svg
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						>
+							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+							<polyline points="7,10 12,15 17,10"></polyline>
+							<line x1="12" y1="15" x2="12" y2="3"></line>
+						</svg>
+					</button>
 					<button
 						className="p-1 text-red-400 hover:text-red-300 hover:bg-red-600/20 rounded-sm transition-colors duration-200"
 						onClick={(e) => {

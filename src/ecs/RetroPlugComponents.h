@@ -17,6 +17,10 @@ namespace rp {
 		SystemIoPtr io;
 	};
 
+	struct ResetSystemEntityEvent {
+		entt::entity entity;
+	};
+
 	struct FetchMemoryRequest {
 		entt::entity entity;
 		MemoryType type;

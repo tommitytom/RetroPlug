@@ -134,6 +134,8 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			samples
 		});
 
+		project.resetSystem(systemId, true);
+
 		console.log(project.serialize());
 
 		setVersion(prev => prev + 1);

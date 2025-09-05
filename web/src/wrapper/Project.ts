@@ -1,6 +1,6 @@
 import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
 import { convertAccessType, convertMemoryType, fromUint8Array } from "../utils/NativeUtil";
-import { AccessType, MemoryType } from "./System";
+import { AccessType, MemoryType, System } from "./System";
 
 export const INVALID_SYSTEM_ID = 4294967295;
 
@@ -165,8 +165,12 @@ export class Project {
 		return e;
 	}
 
-	removeSystem(index: SystemId): void {
-		this._project.removeSystem({ value: index } as Entity);
+	removeSystem(system: SystemId): void {
+		this._project.removeSystem(system);
+	}
+
+	resetSystem(system: SystemId, remote: boolean = false): void {
+		this._project.resetSystem(system, remote);
 	}
 
 	/**
