@@ -6,24 +6,27 @@
 
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
+
+#include "foundation/DataBuffer.h"
+#include "ui/RetroPlugView.h"
+
 #include "core/Project.h"
 #include "core/ProxySystem.h"
 #include "core/ProxySystemService.h"
-#include "foundation/DataBuffer.h"
-#include "ui/RetroPlugView.h"
-#include "lsdj/Ram.h"
-#include "lsdj/Rom.h"
-#include "lsdj/Sav.h"
-#include "lsdj/LsdjSettings.h"
-#include "sameboy/Constants.h"
 #include "core/audio/Effect.h"
 #include "core/audio/BiquadEffect.h"
 #include "core/audio/DitherEffect.h"
 #include "core/audio/EffectChain.h"
+#include "sameboy/Constants.h"
 
 #include "ecs/RetroPlugEcsView.h"
 #include "ecs/RetroPlugProject.h"
 #include "ecs/LsdjProject.h"
+#include "lsdj/Ram.h"
+#include "lsdj/Rom.h"
+#include "lsdj/Sav.h"
+#include "lsdj/LsdjSettings.h"
+#include "lsdj/SampleUtil.h"
 
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
@@ -125,14 +128,14 @@ void SystemLoadEntry_data_set(SystemLoadEntry& entry, fw::Uint8Buffer value) {
 	entry.data.set(value);
 }
 
-#include "lsdj/SampleUtil.h"
-
 void setupWasmFs() {
 	//backend_t opfs = wasmfs_create_opfs_backend();
 	//spdlog::info("Created OPFS backend");
 	//int err = wasmfs_create_directory("/opfs", 0777, opfs);
 	//spdlog::info("Created OPFS directory: {}", err == 0 ? "success" : "failed");
 }
+
+using SkipUint8Buffer = rfl::Skip<fw::Uint8Buffer>;
 
 EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("setupWasmFs", &setupWasmFs);
@@ -198,7 +201,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("getLsdjController", &RetroPlugProject::getLsdjController)
 		.function("serialize", &RetroPlugProject::serialize)
+		.function("serializeToString", &RetroPlugProject::serializeToString)
 		.function("deserialize", &RetroPlugProject::deserialize)
+		//.function("deserializeFromString", &RetroPlugProject::deserializeFromString)
 		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.property("systemCount", &RetroPlugProject::getSystemCount)
 		.property("version", &RetroPlugProject::getVersion)
@@ -242,13 +247,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("Vram", MemoryType::Vram)
 	;
 
-	value_object<LsdjSampleComponent>("NativeLsdjSampleComponent")
-		//.field("effects", &LsdjSampleComponent::effects)
-		.field("length", &LsdjSampleComponent::length)
-		.field("name", &LsdjSampleComponent::name)
-		.field("offset", &LsdjSampleComponent::offset)
-		.field("path", &LsdjSampleComponent::path)
-		.field("sampleId", &LsdjSampleComponent::sampleId)
+	class_<LsdjSampleComponent>("NativeLsdjSampleComponent")
+		.constructor()
+		.property("length", &LsdjSampleComponent::length)
+		.property("name", &LsdjSampleComponent::name)
+		.property("offset", &LsdjSampleComponent::offset)
+		.property("path", &LsdjSampleComponent::path)
+		.property("sampleId", &LsdjSampleComponent::sampleId)
+		.function("getData", +[](LsdjSampleComponent& comp) -> fw::Uint8Buffer& { return comp.data.get(); }, return_value_policy::reference())
+		.function("setData", +[](LsdjSampleComponent& comp, const fw::Uint8Buffer& data) -> void { comp.data.set(data); })
 	;
 
 	register_vector<LsdjKitComponent>("NativeLsdjKitComponentVector");
@@ -282,6 +289,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("setKitComponent", +[](LsdjController& project, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
 			return project.setKitComponent((entt::entity)system, kitId, component);
+		})
+		.function("addKitComponent", +[](LsdjController& project, SystemId system, const LsdjKitComponent& component) -> bool {
+			return project.addKitComponent((entt::entity)system, component);
+		})
+		.function("getKitData", +[](LsdjController& project, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
+			return project.getKitData((entt::entity)system, kitId);
+		})
+		.function("getKitSample", +[](LsdjController& project, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
+			return project.getKitSample((entt::entity)system, kitId, sampleId);
 		})
 	;
 
@@ -401,7 +417,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	class_<rp::lsdj::Kit>("NativeLsdjKit")
 		.constructor<>()
-		.constructor<MemoryAccessor, int32>()
+		//.constructor<MemoryAccessor, int32>()
+		.constructor<const fw::Uint8Buffer&, int32>()
 		.property("index", &rp::lsdj::Kit::getIndex)
 		.property("isValid", &rp::lsdj::Kit::isValid)
 		.property("buffer", &rp::lsdj::Kit::getBuffer)
@@ -414,6 +431,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("setSampleData", &rp::lsdj::Kit::setSampleData)
 		.function("getSampleDataLength", &rp::lsdj::Kit::getSampleDataLength)
 		.function("getSampleOffset", &rp::lsdj::Kit::getSampleOffset)
+		.function("getSampleCount", &rp::lsdj::Kit::getSampleCount)
 		.property("remainingData", &rp::lsdj::Kit::getRemainingData)
 	;
 
@@ -495,7 +513,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	class_<rp::lsdj::Rom>("NativeLsdjRom")
 		.constructor<>()
-		.constructor<MemoryAccessor>()
+		//.constructor<MemoryAccessor>()
+		.constructor<const fw::Uint8Buffer&>()
 		.property("isValid", &rp::lsdj::Rom::isValid)
 		.function("getBankAccessor", &rp::lsdj::Rom::getBankAccessor)
 		.function("getAccessor", &rp::lsdj::Rom::getAccessor, return_value_policy::reference())

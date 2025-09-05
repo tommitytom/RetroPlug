@@ -1,28 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
-import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { useProject, useSystemMemory } from "../hooks/RetroPlugHooks";
-import type { NativeLsdjKit, NativeLsdjKitDesc, NativeLsdjRom } from "../native/RetroPlug";
-import { SystemId } from "../wrapper/Project";
-import { MemoryType } from "../wrapper/System";
-import { LSDJ_KIT_COUNT } from "../wrapper/Lsdj";
-import { LsdjKit } from "../components/LsdjKit";
-import { FileDropZone } from "../components/FileDropZone";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-interface IIndexedKit {
-	id: number;
-	name: string;
-	kit: NativeLsdjKit;
-}
+import { FileDropZone } from "../components/FileDropZone";
+import { LsdjKitEditor } from "../components/LsdjKit";
+import { useRetroPlug } from "../contexts/RetroPlugContext";
+import { useProject, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
+import type { Uint8Buffer } from "../native/RetroPlug";
+import type { LsdjKit } from "../types/LsdjTypes";
+import { fromUint8Array, vectorToArray } from "../utils/NativeUtil";
+import type { SystemId } from "../wrapper/Project";
+import { MemoryType } from "../wrapper/System";
 
 export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
-	const { app, audioContext } = useRetroPlug();
 	const project = useProject();
-	const romData = useSystemMemory(systemId, MemoryType.Rom);
-	const [rom, setRom] = useState<NativeLsdjRom | null>(null);
-	const [romKits, setRomKits] = useState<IIndexedKit[]>([]);
+	const romVersion = useSystemMemoryVersion(systemId, MemoryType.Rom);
 	const [expandedKits, setExpandedKits] = useState<Set<number>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [version, setVersion] = useState<number>(0);
+	const [romKits, setRomKits] = useState<LsdjKit[]>([]);
 
 	const toggleKit = useCallback((kitId: number) => {
 		setExpandedKits(prev => {
@@ -36,41 +32,129 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 		});
 	}, []);
 
-	const handleFileDrop = useCallback((files: FileList) => {
-		// Placeholder callback for handling dropped audio files
-		console.log('Files dropped:', files);
-		// TODO: Implement audio sample import functionality
+	const getKitData = useCallback((kitId: number): Uint8Buffer | null => {
+		if (!project) return null;
+
+		const lsdj = project.getLsdjController();
+		const kitData = lsdj.getKitData(systemId, kitId);
+		lsdj.delete();
+
+		if (!kitData) return null;
+
+		if (kitData.size() === 0) {
+			kitData.delete();
+			return null;
+		}
+
+		return kitData;
+	}, [project]);
+
+	const handleFileDrop = useCallback(async (files: FileList) => {
+		if (!project) return;
+
+		const module = project.module;
+		const lsdj = project.getLsdjController();
+		const samples = new module.NativeLsdjSampleComponentVector();
+		let i = 0;
+		for (const file of files) {
+			if (!file.name.match(/\.(wav|aiff?|mp3|ogg)$/i)) {
+				console.warn('Invalid file type:', file.name);
+				continue;
+			}
+
+			const sample = new module.NativeLsdjSampleComponent();
+			sample.sampleId = i++;
+		  	sample.length = 0;
+		  	sample.offset = 0;
+		  	sample.name = file.name.substring(0, 3).toUpperCase();
+		  	sample.path = file.name;
+		  	sample.setData(fromUint8Array(module, new Uint8Array(await file.arrayBuffer())));
+
+			samples.push_back(sample);
+		}
+
+		lsdj.addKitComponent(systemId, {
+			kitId: -1,
+			name: "KIT",
+			samples
+		});
+
+		console.log(project.serialize());
+
+		setVersion(prev => prev + 1);
 	}, []);
 
-	const handleDragEnter = useCallback((e: React.DragEvent) => {
-		e.preventDefault();
-		setIsDragOver(true);
-	}, []);
+	// Use native DOM events for more reliable drag and drop
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
 
-	const handleDragLeave = useCallback((e: React.DragEvent) => {
-		e.preventDefault();
-		setIsDragOver(false);
-	}, []);
+		let dragCounter = 0;
 
-	const handleDragOver = useCallback((e: React.DragEvent) => {
-		e.preventDefault();
-	}, []);
+		const handleDragEnter = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			dragCounter++;
+			console.log('Native drag enter detected', dragCounter);
+
+			if (e.dataTransfer?.types.includes('Files')) {
+				console.log('Files detected, showing drop zone');
+				setIsDragOver(true);
+			}
+		};
+
+		const handleDragLeave = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			dragCounter--;
+			console.log('Native drag leave detected', dragCounter);
+
+			if (dragCounter === 0) {
+				setIsDragOver(false);
+			}
+		};
+
+		const handleDragOver = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+
+		const handleDrop = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			dragCounter = 0;
+			setIsDragOver(false);
+
+			const files = e.dataTransfer?.files;
+			if (files && files.length > 0) {
+				handleFileDrop(files);
+			}
+		};
+
+		container.addEventListener('dragenter', handleDragEnter);
+		container.addEventListener('dragleave', handleDragLeave);
+		container.addEventListener('dragover', handleDragOver);
+		container.addEventListener('drop', handleDrop);
+
+		return () => {
+			container.removeEventListener('dragenter', handleDragEnter);
+			container.removeEventListener('dragleave', handleDragLeave);
+			container.removeEventListener('dragover', handleDragOver);
+			container.removeEventListener('drop', handleDrop);
+		};
+	}, [handleFileDrop]);
 
 	useEffect(() => {
 		if (!project) return;
 		const lsdj = project.getLsdjController();
 		const descs = lsdj.getKitDescs(systemId);
 
-		const allKits: NativeLsdjKitDesc[] = [];
-		for (let i = 0; i < descs.size(); ++i) {
-			allKits.push(descs.get(i)!);
-		}
+		const kits = vectorToArray<LsdjKit>(descs);
+		setRomKits(kits);
 
 		descs.delete();
 		lsdj.delete();
-
-		console.log(allKits);
-	}, [project, romData]);
+	}, [project, romVersion, version]);
 
 	const toggleAllKits = useCallback(() => {
 		if (allExpanded) {
@@ -81,35 +165,6 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			setAllExpanded(true);
 		}
 	}, [allExpanded, romKits]);
-
-	useEffect(() => {
-		if (!app || !romData) return;
-		const module = app.module!;
-		setRom(new module.NativeLsdjRom(romData));
-	}, [app, romData]);
-
-	useEffect(() => {
-		if (!rom) return;
-
-		const indexedKits: IIndexedKit[] = [];
-
-		for (let i = 0; i < LSDJ_KIT_COUNT; ++i) {
-			if (!rom.kitIsEmpty(i)) {
-				const kit = rom.getKit(i);
-
-				if (kit && kit.isValid) {
-					indexedKits.push({ id: i, name: kit.getName(), kit });
-				}
-			}
-		}
-
-		setRomKits(indexedKits);
-		// Reset expanded state when ROM changes
-		setExpandedKits(new Set());
-		setAllExpanded(false);
-
-		//return () => rom.delete();
-	}, [rom]);
 
 	// Update allExpanded state based on individual kit states
 	useEffect(() => {
@@ -122,7 +177,22 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 	}, [expandedKits, romKits]);
 
 	return (
-		<div className="w-full h-full bg-gray-900">
+		<div
+			ref={containerRef}
+			className="w-full h-full bg-gray-900 relative"
+		>
+			{isDragOver && (
+				<div className="absolute inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+					<div className="w-4/5 h-4/5">
+						<FileDropZone
+							onFileDrop={handleFileDrop}
+							title="Drop audio samples here"
+							subtitle="Drop to add samples to kit"
+							supportedFormats="Supported formats: .wav, .aiff, .mp3, .ogg"
+						/>
+					</div>
+				</div>
+			)}
 			<div className="w-full h-full overflow-y-auto">
 				<div className="min-h-full py-4 px-3">
 					{romKits.length > 0 && (
@@ -138,10 +208,11 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 					)}
 					<div className="space-y-2">
 						{romKits.map((kit) => (
-							<LsdjKit
+							<LsdjKitEditor
 								key={`${kit.name}-${kit.id}`}
-								kit={kit}
-								audioContext={audioContext}
+								name={kit.name.valueOf() as string}
+								id={kit.id}
+								kitData={expandedKits.has(kit.id) ? getKitData(kit.id) : null}
 								isExpanded={expandedKits.has(kit.id)}
 								onToggle={() => toggleKit(kit.id)}
 							/>

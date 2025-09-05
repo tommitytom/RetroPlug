@@ -24,24 +24,15 @@ namespace rp {
 		LsdjController(entt::registry& registry): _registry(registry) {}
 		~LsdjController() = default;
 
-		void getKitDescs(entt::entity entity, std::vector<LsdjKitDesc>& target) const {
-			const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, entity);
+		void getKitDescs(entt::entity system, std::vector<LsdjKitDesc>& target) const {
+			const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 			if (!lsdj) return;
 
-			SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(_registry, entity);
-			if (!systemState) return;
-
-			const VersionedMemory* romData = systemState->find(MemoryType::Rom);
-			spdlog::info("rom data: {}, size: {}", romData ? "valid" : "invalid", romData ? romData->data.size() : 0);
-			if (romData) {
-				lsdj::Rom rom(MemoryAccessor(MemoryType::Rom, romData->data.ref(), 0));
-
-				spdlog::info("rom valid: {}", rom.isValid() ? "yes" : "no");
-				if (rom.isValid()) {
-					for (size_t i = 0; i < rom.getKitCount(); i++) {
-						if (rom.kitIsEmpty(i)) continue;
-						target.push_back({(KitIndex)i, std::string(rom.getKitName(i)), false});
-					}
+			lsdj::Rom rom = getLsdjRom(system);
+			if (rom.isValid()) {
+				for (size_t i = 0; i < rom.getKitCount(); i++) {
+					if (rom.kitIsEmpty(i)) continue;
+					target.push_back({(KitIndex)i, std::string(rom.getKitName(i)), false});
 				}
 			}
 
@@ -53,12 +44,10 @@ namespace rp {
 					target.push_back({id, kit.name, true});
 				}
 			}
-
-			spdlog::info("kit count {}", target.size());
 		}
 
-		const LsdjKitComponent* getKitComponent(entt::entity entity, uint32 kitId) const {
-			const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, entity);
+		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const {
+			const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 			if (!lsdj) return nullptr;
 
 			auto found = lsdj->kits.find(kitId);
@@ -69,12 +58,87 @@ namespace rp {
 			return nullptr;
 		}
 
-		bool setKitComponent(entt::entity entity, uint32 kitId, const LsdjKitComponent& comp) {
-			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, entity);
+		bool setKitComponent(entt::entity system, uint32 kitId, const LsdjKitComponent& comp) {
+			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 			if (!lsdj) return false;
 
 			lsdj->kits[kitId] = comp;
 			return true;
+		}
+
+		bool removeKitComponent(entt::entity system, uint32 kitId) {
+			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+			if (!lsdj) return false;
+
+			lsdj->kits.erase(kitId);
+			return true;
+		}
+
+		bool addKitComponent(entt::entity system, const LsdjKitComponent& comp) {
+			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+			if (!lsdj) return false;
+
+			lsdj::Rom rom = getLsdjRom(system);
+			if (!rom.isValid()) return false;
+
+			lsdj::Kit nextEmpty = rom.getNextEmptyKit();
+			if (!nextEmpty.isValid()) return false;
+
+			lsdj->kits[nextEmpty.getIndex()] = comp;
+
+			return true;
+		}
+
+		fw::Uint8Buffer getKitSample(entt::entity system, uint32 kitId, uint32 sampleId) {
+			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+			if (!lsdj) return fw::Uint8Buffer();
+
+			lsdj::Rom rom = getLsdjRom(system);
+			if (rom.isValid()) {
+				if (kitId >= rom.getKitCount()) return fw::Uint8Buffer();
+
+				lsdj::Kit kit = rom.getKit(kitId);
+				if (!kit.isValid()) return fw::Uint8Buffer();
+
+				return kit.getSampleData(sampleId);
+			}
+
+			return fw::Uint8Buffer();
+		}
+
+		fw::Uint8Buffer getKitData(entt::entity system, uint32 kitId) {
+			LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+			if (!lsdj) return fw::Uint8Buffer();
+
+			lsdj::Rom rom = getLsdjRom(system);
+			if (rom.isValid()) {
+				if (kitId >= rom.getKitCount()) return fw::Uint8Buffer();
+
+				lsdj::Kit kit = rom.getKit(kitId);
+				if (!kit.isValid()) return fw::Uint8Buffer();
+
+				return kit.getBuffer();
+			}
+
+			return fw::Uint8Buffer();
+		}
+
+		lsdj::Rom getLsdjRom(const SystemStateComponent& systemState) const {
+			const VersionedMemory* romData = systemState.find(MemoryType::Rom);
+			if (romData) {
+				return lsdj::Rom(MemoryAccessor(MemoryType::Rom, romData->data.ref(), 0));
+			}
+
+			return lsdj::Rom();
+		}
+
+		lsdj::Rom getLsdjRom(entt::entity system) const {
+			const SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(_registry, system);
+			if (systemState) {
+				return getLsdjRom(*systemState);
+			}
+
+			return lsdj::Rom();
 		}
 	};
 }

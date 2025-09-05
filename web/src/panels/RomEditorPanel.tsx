@@ -1,8 +1,7 @@
+/*
 import React, { useCallback, useEffect, useState } from "react";
 
 import { FileDropZone } from "../components/FileDropZone";
-import { LsdjKit } from "../components/LsdjKit";
-import type { IIndexedKit } from "../components/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { NativeLsdjRom } from "../native/RetroPlug";
 import {
@@ -10,7 +9,6 @@ import {
 } from "../wrapper/Lsdj";
 
 import "../styles/RomEditorPanel.css";
-import { fromUint8Array } from "../utils/FileUtil";
 
 export const RomEditorPanel: React.FC = () => {
 	const { app, audioContext } = useRetroPlug();
@@ -136,3 +134,4 @@ export const RomEditorPanel: React.FC = () => {
 		</div>
 	);
 };
+*/

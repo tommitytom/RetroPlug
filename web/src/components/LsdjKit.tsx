@@ -1,57 +1,60 @@
 import React, { useCallback, useEffect, useState } from "react";
 
-import type { IIndexedKit, INamedSample } from '../components/types';
 import { EffectList } from "../components/EffectList";
 import { WaveView } from "../components/WaveView";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
-import type { NativeLsdjKit } from "../native/RetroPlug";
-import "../styles/RomEditorPanel.css";
-import { convertFloat32Buffer } from "../utils/FileUtil";
-import {
-	GAMEBOY_SAMPLE_RATE,
-	LSDJ_KIT_SAMPLE_COUNT,
-	playSample
-} from "../wrapper/Lsdj";
+import type { Uint8Buffer } from "../native/RetroPlug";
 import type { EffectInstance } from "../types/EffectTypes";
+import type { INamedSample } from '../types/LsdjTypes';
+import { convertFloat32Buffer } from "../utils/NativeUtil";
+
+import "../styles/RomEditorPanel.css";
 
 // Displays a single LSDJ kit
-export const LsdjKit: React.FC<{
-	kit: IIndexedKit;
-	audioContext: AudioContext | null;
+export const LsdjKitEditor: React.FC<{
+	id: number;
+	name: string;
+	kitData: Uint8Buffer|null;
 	isExpanded: boolean;
 	onToggle: () => void;
-}> = ({ kit, audioContext, isExpanded, onToggle }) => {
-	const { app } = useRetroPlug();
+}> = ({ id, name, kitData, isExpanded, onToggle }) => {
+	const { project } = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
 	const [markers, setMarkers] = useState<number[]>([]);
 	const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
 	const [effects, setEffects] = useState<EffectInstance[]>([]);
 
-	const handleSampleClick = useCallback(
+	/*const handleSampleClick = useCallback(
 		(sampleData: Float32Array) => {
 			if (audioContext) {
 				playSample(audioContext, sampleData, 0.25, GAMEBOY_SAMPLE_RATE);
 			}
 		},
 		[audioContext],
-	);
+	);*/
+
+	const handleSampleClick = (buf: Float32Array) => {};
 
 	useEffect(() => {
-		if (!app || !kit) {
+		if (!project || !kitData || !isExpanded) {
 			setSamples([]);
 			return;
 		}
 
-		const mod = app.module!;
+		const mod = project.module;
+		const kit = new mod.NativeLsdjKit(kitData, id);
 
 		const namedSamples: INamedSample[] = [];
-		for (let i = 0; i < LSDJ_KIT_SAMPLE_COUNT; ++i) {
-			const sampleName = kit.kit.getSampleName(i);
+		const sampleCount = kit.getSampleCount();
+		for (let i = 0; i < sampleCount; ++i) {
+			const sampleName = kit.getSampleName(i);
 			if (sampleName && sampleName !== "N/A") {
-				const sampleData = kit.kit.getSampleData(i);
+				const sampleData = kit.getSampleData(i);
 				const target = new mod.Float32Buffer(sampleData.size());
+
 				mod.convertNibblesToF32(sampleData, target);
+
 				namedSamples.push({
 					name: sampleName,
 					data: convertFloat32Buffer(target),
@@ -76,7 +79,7 @@ export const LsdjKit: React.FC<{
 		setSamples(namedSamples);
 		setKitSample(fullSample);
 		setMarkers(markers);
-	}, [kit, setSamples]);
+	}, [isExpanded, id, kitData, setSamples]);
 
 	const handleEffectsChange = useCallback((newEffects: any) => {
 		// Handle effects change
@@ -93,7 +96,7 @@ export const LsdjKit: React.FC<{
 					{isExpanded ? "▼" : "▶"}
 				</div>
 				<h2 className={`text-md font-semibold text-white flex-1 ${isExpanded ? 'border-b border-gray-600 pb-1' : ''}`}>
-					{kit.name}
+					{name}
 				</h2>
 			</div>
 			{isExpanded && kitSample && (

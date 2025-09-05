@@ -251,12 +251,22 @@ namespace rp {
 		archive.write((const uint8*)target.data(), target.size());
 	}
 
-	void RetroPlugProject::deserialize(const fw::Uint8Buffer& archive) {
-		std::string_view source((const char*)archive.data(), archive.size());
-		ProjectSerializer::deserialize(_registry, source);
+	std::string RetroPlugProject::serializeToString() const {
+		std::string target;
+		ProjectSerializer::serialize(_registry, target);
+		return target;
+	}
+
+	void RetroPlugProject::deserializeFromString(std::string_view str) {
+		ProjectSerializer::deserialize(_registry, str);
 
 		for (const auto& [e, system, load] : _registry.view<SystemComponent, SystemLoadComponent>().each()) {
 			handleLoad(e, load, system.systemType);
 		}
+	}
+
+	void RetroPlugProject::deserialize(const fw::Uint8Buffer& archive) {
+		std::string_view source((const char*)archive.data(), archive.size());
+		deserializeFromString(source);
 	}
 }

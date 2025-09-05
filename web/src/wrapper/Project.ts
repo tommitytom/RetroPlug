@@ -1,5 +1,5 @@
-import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject, NativeSameBoyComponent, NativeSystemLoadComponent, NativeSystemLoadEntry } from "../native/RetroPlug";
-import { fromUint8Array } from "../utils/FileUtil";
+import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
+import { fromUint8Array } from "../utils/NativeUtil";
 import { AccessType, convertAccessType, convertMemoryType, MemoryType } from "./System";
 
 export const INVALID_SYSTEM_ID = 4294967295;
@@ -52,6 +52,10 @@ export class Project {
 		console.assert(!!project);
 		this._module = module;
 		this._project = project;
+	}
+
+	get module() {
+		return this._module;
 	}
 
 	get isDirty(): boolean {
@@ -119,6 +123,10 @@ export class Project {
 		}
 
 		return out;
+	}
+
+	serialize(): string {
+		return this._project.serializeToString();
 	}
 
 	getLsdjController() {

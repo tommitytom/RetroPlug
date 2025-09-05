@@ -100,6 +100,7 @@ namespace rp::lsdj {
 
 		Kit() {}
 		Kit(MemoryAccessor _kitData, int32 idx): kitData(_kitData), _idx(idx) {}
+		Kit(const fw::Uint8Buffer& buffer, int32 idx): Kit(MemoryAccessor(MemoryType::Rom, buffer, 0), idx) {}
 
 		int32 getIndex() const {
 			return _idx;
@@ -107,6 +108,10 @@ namespace rp::lsdj {
 
 		bool isValid() const {
 			return kitData.isValid() && _idx != -1;
+		}
+
+		size_t getSampleCount() const {
+			return Kit::MAX_SAMPLES;
 		}
 
 		const fw::Uint8Buffer& getBuffer() const {
@@ -280,6 +285,7 @@ namespace rp::lsdj {
 
 		Rom() {}
 		Rom(MemoryAccessor romData) : _romData(romData) { updateOffsets(); }
+		Rom(const fw::Uint8Buffer& buffer) : Rom(MemoryAccessor(MemoryType::Rom, buffer, 0)) {}
 
 		Rom& operator=(const Rom& other) {
 			_romData = other._romData;
