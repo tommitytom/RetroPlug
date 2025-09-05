@@ -39,15 +39,17 @@ export const EffectList: React.FC<EffectListProps> = ({
 	};
 
 	return (
-		<div className="w-full bg-gray-800 border border-gray-700 rounded-xs shadow-lg mt-2">
+		<div className="border border-gray-700 rounded-sm overflow-hidden mt-2">
 			<div
-				className={`flex items-center cursor-pointer hover:bg-gray-750 rounded-t-lg p-1 transition-colors duration-200`}
+				className="px-2 py-1 bg-gray-800 font-medium flex items-center justify-between text-sm cursor-pointer hover:bg-gray-750 transition-colors duration-200"
 				onClick={onToggle}
 			>
-				<div className="text-white mr-2 text-sm">{isExpanded ? "▼" : "▶"}</div>
-				<h3 className="text-md font-semibold text-white flex-1">Effects</h3>
+				<div className="flex items-center">
+					<div className="text-white mr-2 text-xs">{isExpanded ? "▼" : "▶"}</div>
+					<span className="font-medium">Effects</span>
+				</div>
 				<button
-					className="text-white hover:text-gray-300 text-xl font-bold px-2 py-1 rounded transition-colors duration-200"
+					className="text-green-400 hover:text-green-300 hover:bg-green-600/20 text-sm font-bold px-2 py-1 rounded-sm transition-colors duration-200"
 					onClick={(e) => {
 						e.stopPropagation();
 						setEffects([
@@ -66,7 +68,7 @@ export const EffectList: React.FC<EffectListProps> = ({
 			</div>
 
 			{isExpanded && (
-				<div className="px-2 pb-2">
+				<div className="p-2 bg-gray-900">
 					{effects.map((effect, index) => (
 						<div key={effect.id}>
 							{index > 0 && <hr className="border-gray-600 my-1" />}

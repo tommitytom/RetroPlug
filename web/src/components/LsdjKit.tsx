@@ -148,11 +148,13 @@ export const LsdjKitEditor: React.FC<{
 							/>
 						</div>
 					</div>
-					<EffectList
-						isExpanded={isEffectsExpanded}
-						onToggle={() => setIsEffectsExpanded(!isEffectsExpanded)}
-						onEffectsChange={handleEffectsChange}
-					/>
+					{editable && (
+						<EffectList
+							isExpanded={isEffectsExpanded}
+							onToggle={() => setIsEffectsExpanded(!isEffectsExpanded)}
+							onEffectsChange={handleEffectsChange}
+						/>
+					)}
 				</div>
 			)}
 		</div>

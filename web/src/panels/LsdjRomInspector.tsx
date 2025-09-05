@@ -19,6 +19,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [version, setVersion] = useState<number>(0);
 	const [romKits, setRomKits] = useState<LsdjKit[]>([]);
+	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('index');
 
 	const toggleKit = useCallback((kitId: number) => {
 		setExpandedKits(prev => {
@@ -48,6 +49,32 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 
 		return kitData;
 	}, [project]);
+
+	const sortKits = useCallback((kits: LsdjKit[], sortMethod: typeof sortBy): LsdjKit[] => {
+		const kitsCopy = [...kits];
+
+		switch (sortMethod) {
+			case 'index':
+				return kitsCopy.sort((a, b) => a.id - b.id);
+			case 'editable':
+				return kitsCopy.sort((a, b) => {
+					// Editable kits first, then non-editable
+					if (a.editable && !b.editable) return -1;
+					if (!a.editable && b.editable) return 1;
+					// If both have same editable status, sort by index
+					return a.id - b.id;
+				});
+			case 'mostUsed':
+				// TODO: Implement most used sorting when usage data is available
+				// For now, fall back to index sorting
+				console.log('Most Used sorting not yet implemented, falling back to index sorting');
+				return kitsCopy.sort((a, b) => a.id - b.id);
+			default:
+				return kitsCopy;
+		}
+	}, []);
+
+	const sortedRomKits = sortKits(romKits, sortBy);
 
 	const handleFileDrop = useCallback(async (files: FileList) => {
 		if (!project) return;
@@ -161,20 +188,20 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			setExpandedKits(new Set());
 			setAllExpanded(false);
 		} else {
-			setExpandedKits(new Set(romKits.map(kit => kit.id)));
+			setExpandedKits(new Set(sortedRomKits.map(kit => kit.id)));
 			setAllExpanded(true);
 		}
-	}, [allExpanded, romKits]);
+	}, [allExpanded, sortedRomKits]);
 
 	// Update allExpanded state based on individual kit states
 	useEffect(() => {
-		if (romKits.length === 0) {
+		if (sortedRomKits.length === 0) {
 			setAllExpanded(false);
 			return;
 		}
-		const allKitsExpanded = romKits.every(kit => expandedKits.has(kit.id));
+		const allKitsExpanded = sortedRomKits.every(kit => expandedKits.has(kit.id));
 		setAllExpanded(allKitsExpanded);
-	}, [expandedKits, romKits]);
+	}, [expandedKits, sortedRomKits]);
 
 	return (
 		<div
@@ -198,16 +225,33 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 					{romKits.length > 0 && (
 						<div className="mb-4 flex justify-between items-center">
 							<h1 className="text-2xl font-bold text-white">Kits</h1>
-							<button
-								onClick={toggleAllKits}
-								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
-							>
-								{allExpanded ? "Collapse All" : "Expand All"}
-							</button>
+							<div className="flex items-center gap-4">
+								<div className="flex items-center gap-2">
+									<label htmlFor="sort-select" className="text-white text-sm font-medium">
+										Sort by:
+									</label>
+									<select
+										id="sort-select"
+										value={sortBy}
+										onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+										className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+									>
+										<option value="index">Index</option>
+										<option value="editable">Editable</option>
+										<option value="mostUsed">Most Used</option>
+									</select>
+								</div>
+								<button
+									onClick={toggleAllKits}
+									className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+								>
+									{allExpanded ? "Collapse All" : "Expand All"}
+								</button>
+							</div>
 						</div>
 					)}
 					<div className="space-y-2">
-						{romKits.map((kit) => (
+						{sortedRomKits.map((kit) => (
 							<LsdjKitEditor
 								key={`${kit.name}-${kit.id}`}
 								name={kit.name.valueOf() as string}
