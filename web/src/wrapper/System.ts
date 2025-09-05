@@ -4,8 +4,6 @@ import type {
 	NativeAccessType,
 	NativeLsdjRam,
 	NativeMemoryType,
-	NativeProxySystem,
-	NativeSystemStateHashes,
 } from "../native/RetroPlug";
 
 export enum AccessType {
@@ -16,50 +14,16 @@ export enum AccessType {
 }
 
 export enum MemoryType {
-	Unknown,
 	Ram,
 	Rom,
 	Sram,
 	Vram,
+	MAX
 }
 
 export const LSDJ_SERVICE_TYPE = 0x15D115D1;
 
-export function convertMemoryType(
-	module: MainModule,
-	type: MemoryType,
-): NativeMemoryType {
-	switch (type) {
-		case MemoryType.Ram:
-			return module.NativeMemoryType.Ram;
-		case MemoryType.Rom:
-			return module.NativeMemoryType.Rom;
-		case MemoryType.Sram:
-			return module.NativeMemoryType.Sram;
-		case MemoryType.Vram:
-			return module.NativeMemoryType.Vram;
-		case MemoryType.Unknown:
-		default:
-			return module.NativeMemoryType.Unknown;
-	}
-}
 
-export function convertAccessType(
-	module: MainModule,
-	type: AccessType,
-): NativeAccessType {
-	switch (type) {
-		case AccessType.Read:
-			return module.NativeAccessType.Read;
-		case AccessType.Write:
-			return module.NativeAccessType.Write;
-		case AccessType.ReadWrite:
-			return module.NativeAccessType.ReadWrite;
-		case AccessType.Unknown:
-		default:
-			return module.NativeAccessType.Unknown;
-	}
-}
 
 export class System {
 	private _module: MainModule;

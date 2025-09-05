@@ -74,6 +74,10 @@ namespace rp::lsdj {
 			return _phraseIdx;
 		}
 
+		size_t getLength() const {
+			return LSDJ_PHRASE_LENGTH;
+		}
+
 		bool isValid() const {
 			return _phraseIdx != LSDJ_CHAIN_NO_PHRASE;
 		}
@@ -102,6 +106,10 @@ namespace rp::lsdj {
 
 		uint8 getIndex() const {
 			return _chainIdx;
+		}
+
+		uint8 getPhraseCount() const {
+			return LSDJ_CHAIN_LENGTH;
 		}
 
 		bool isValid() const {
@@ -152,6 +160,26 @@ namespace rp::lsdj {
 			return lsdj_song_get_color_palette(_song);
 		}
 
+		uint8 getChainCount() const {
+			return LSDJ_CHAIN_COUNT;
+		}
+
+		uint8 getPhraseCount() const {
+			return LSDJ_PHRASE_COUNT;
+		}
+
+		uint8 getInstrumentCount() const {
+			return LSDJ_INSTRUMENT_COUNT;
+		}
+
+		lsdj::Phrase getPhrase(uint8 index) {
+			return lsdj::Phrase(_song, index);
+		}
+
+		lsdj::Instrument getInstrument(uint8 index) {
+			return lsdj::Instrument(_song, index);
+		}
+
 		bool isRowBookMarked(uint8 channel, uint8 row) const {
 			return lsdj_song_is_row_bookmarked(_song, row, (lsdj_channel_t)channel);
 		}
@@ -164,6 +192,7 @@ namespace rp::lsdj {
 	public:
 		Project() : _project(nullptr) {}
 		Project(lsdj_project_t* project) : _project(project) {}
+		Project(fw::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()) {}
 
 		uint8 getVersion() const {
 			return lsdj_project_get_version(_project);
@@ -193,6 +222,49 @@ namespace rp::lsdj {
 
 		Sav(const fw::Uint8Buffer& data) {
 			load(data);
+		}
+
+		// Copy constructor
+		Sav(const Sav& other) {
+			if (other._sav) {
+				lsdj_error_t err = lsdj_sav_copy(other._sav, &_sav, nullptr);
+				if (err != LSDJ_SUCCESS) {
+					_sav = nullptr;
+				}
+			} else {
+				lsdj_sav_new(&_sav, nullptr);
+			}
+		}
+
+		// Copy assignment operator
+		Sav& operator=(const Sav& other) {
+			if (this != &other) {
+				free();
+				if (other._sav) {
+					lsdj_error_t err = lsdj_sav_copy(other._sav, &_sav, nullptr);
+					if (err != LSDJ_SUCCESS) {
+						_sav = nullptr;
+					}
+				} else {
+					lsdj_sav_new(&_sav, nullptr);
+				}
+			}
+			return *this;
+		}
+
+		// Move constructor
+		Sav(Sav&& other) noexcept : _sav(other._sav) {
+			other._sav = nullptr;
+		}
+
+		// Move assignment operator
+		Sav& operator=(Sav&& other) noexcept {
+			if (this != &other) {
+				free();
+				_sav = other._sav;
+				other._sav = nullptr;
+			}
+			return *this;
 		}
 
 		~Sav() {
@@ -240,7 +312,7 @@ namespace rp::lsdj {
 				if (proj) {
 					count++;
 				}
-				
+
 			}
 
 			return count;
@@ -255,7 +327,7 @@ namespace rp::lsdj {
 			if (idx != LSDJ_SAV_NO_ACTIVE_PROJECT_INDEX) {
 				return getProject(idx);
 			}
-			
+
 			return Project();
 		}
 

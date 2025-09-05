@@ -3,7 +3,9 @@
 #include <string_view>
 
 extern "C" {
+#define GB_INTERNAL
 #include <gb.h>
+#include "SectionOffsetCollector.h"
 }
 
 #include "bootroms/agb_boot.h"
@@ -261,7 +263,7 @@ MemoryAccessor SameBoyUtil::getMemory(SameBoyState& state, MemoryType type, Acce
 	case MemoryType::Rom: sameboyType = GB_DIRECT_ACCESS_ROM; found = true; break;
 	case MemoryType::Ram: sameboyType = GB_DIRECT_ACCESS_RAM; found = true; break;
 	case MemoryType::Sram: sameboyType = GB_DIRECT_ACCESS_CART_RAM; found = true; break;
-	case MemoryType::Unknown: break;
+	case MemoryType::MAX: break;
 	}
 
 	if (found) {
@@ -299,6 +301,19 @@ void SameBoyUtil::setUserData(SameBoyState& state, void* userData) {
 	if (state.gb) {
 		GB_set_user_data(state.gb, userData);
 	}
+}
+
+SystemStateOffsets SameBoyUtil::getStateOffsets(SameBoyState& state) {
+	GB_section_offsets_t sectionOffsets;
+	getSameboyStateOffsets(state.gb, &sectionOffsets);
+
+	SystemStateOffsets offsets;
+
+	offsets[(size_t)MemoryType::Sram] = { sectionOffsets.mbc.offset, sectionOffsets.mbc.size };
+	offsets[(size_t)MemoryType::Ram] = { sectionOffsets.ram.offset, sectionOffsets.ram.size };
+	offsets[(size_t)MemoryType::Vram] = { sectionOffsets.video.offset, sectionOffsets.video.size };
+
+	return offsets;
 }
 
 void SameBoyUtil::destroy(SameBoyState& state) {

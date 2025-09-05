@@ -36,9 +36,28 @@ namespace rp {
 		}
 
 		SystemStateComponent& systemState = registry.get<SystemStateComponent>(entity);
+		systemState.stateOffsets = SameBoyUtil::getStateOffsets(*state.state);
 		SameBoyUtil::saveState(*state.state, systemState.state);
 
+		for (size_t i = 0; i < (size_t)MemoryType::MAX; i++) {
+			const MemoryType type = (MemoryType)i;
+			const MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, type, AccessType::Read);
+
+			if (accessor.isValid()) {
+				systemState.memory.push_back(VersionedMemory{
+					.type = type,
+					.data = accessor.getBuffer().clone(),
+					.version = 1,
+					.subscriberCount = 0
+				});
+			}
+		}
+
 		fw::Replicator::emplaceRemote(registry, entity, std::move(state));
+	}
+
+	void SameboyHooks::onReset(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
+
 	}
 
 	void SameboyHooks::onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const {

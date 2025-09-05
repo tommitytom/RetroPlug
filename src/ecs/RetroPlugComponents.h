@@ -22,6 +22,11 @@ namespace rp {
 		MemoryType type;
 	};
 
+	struct MemoryPatchEvent {
+		entt::entity entity;
+		std::vector<MemoryPatch> patches;
+	};
+
 	struct FetchMemoryResponse {
 		entt::entity entity;
 		MemoryType type;

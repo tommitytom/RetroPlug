@@ -3,23 +3,42 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileDropZone } from "../components/FileDropZone";
 import { LsdjKitEditor } from "../components/LsdjKit";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { useProject, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import type { Uint8Buffer } from "../native/RetroPlug";
+import { useProject, useSystemMemory, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
+import type { NativeLsdjSav, Uint8Buffer } from "../native/RetroPlug";
 import type { LsdjKit } from "../types/LsdjTypes";
 import { fromUint8Array, vectorToArray } from "../utils/NativeUtil";
 import type { SystemId } from "../wrapper/Project";
 import { MemoryType } from "../wrapper/System";
 
+class Timer {
+	private _startTime: number | null = null;
+
+	start() {
+		this._startTime = performance.now();
+	}
+
+	stop(): number {
+		if (this._startTime !== null) {
+			const duration = performance.now() - this._startTime;
+			this._startTime = null;
+			return duration;
+		}
+		return 0;
+	}
+}
+
 export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 	const project = useProject();
 	const romVersion = useSystemMemoryVersion(systemId, MemoryType.Rom);
+	const savVersion = useSystemMemoryVersion(systemId, MemoryType.Sram);
 	const [expandedKits, setExpandedKits] = useState<Set<number>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [version, setVersion] = useState<number>(0);
 	const [romKits, setRomKits] = useState<LsdjKit[]>([]);
-	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('index');
+	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('editable');
+	const [hideUnused, setHideUnused] = useState(false);
 
 	const toggleKit = useCallback((kitId: number) => {
 		setExpandedKits(prev => {
@@ -51,7 +70,12 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 	}, [project]);
 
 	const sortKits = useCallback((kits: LsdjKit[], sortMethod: typeof sortBy): LsdjKit[] => {
-		const kitsCopy = [...kits];
+		let kitsCopy = [...kits];
+
+		// Filter out unused kits if hideUnused is enabled
+		if (hideUnused) {
+			kitsCopy = kitsCopy.filter(kit => kit.useCount > 0);
+		}
 
 		switch (sortMethod) {
 			case 'index':
@@ -65,14 +89,18 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 					return a.id - b.id;
 				});
 			case 'mostUsed':
-				// TODO: Implement most used sorting when usage data is available
-				// For now, fall back to index sorting
-				console.log('Most Used sorting not yet implemented, falling back to index sorting');
-				return kitsCopy.sort((a, b) => a.id - b.id);
+				return kitsCopy.sort((a, b) => {
+					// Sort by use count in descending order (most used first)
+					if (a.useCount !== b.useCount) {
+						return b.useCount - a.useCount;
+					}
+					// If use counts are equal, sort by index
+					return a.id - b.id;
+				});
 			default:
 				return kitsCopy;
 		}
-	}, []);
+	}, [hideUnused]);
 
 	const sortedRomKits = sortKits(romKits, sortBy);
 
@@ -173,15 +201,22 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 
 	useEffect(() => {
 		if (!project) return;
-		const lsdj = project.getLsdjController();
-		const descs = lsdj.getKitDescs(systemId);
 
+		const timer = new Timer();
+		timer.start();
+
+		const lsdj = project.getLsdjController();
+		const descs = lsdj.getKitDescs(systemId, true);
 		const kits = vectorToArray<LsdjKit>(descs);
+
 		setRomKits(kits);
 
 		descs.delete();
 		lsdj.delete();
-	}, [project, romVersion, version]);
+
+		const timeTaken = timer.stop();
+		console.log(`Time taken to analyze ROM: ${timeTaken}ms`);
+	}, [project, romVersion, version, savVersion]);
 
 	const toggleAllKits = useCallback(() => {
 		if (allExpanded) {
@@ -241,6 +276,18 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 										<option value="mostUsed">Most Used</option>
 									</select>
 								</div>
+								<div className="flex items-center gap-2">
+									<input
+										type="checkbox"
+										id="hide-unused"
+										checked={hideUnused}
+										onChange={(e) => setHideUnused(e.target.checked)}
+										className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+									/>
+									<label htmlFor="hide-unused" className="text-white text-sm font-medium">
+										Hide unused
+									</label>
+								</div>
 								<button
 									onClick={toggleAllKits}
 									className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
@@ -256,6 +303,7 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 								key={`${kit.name}-${kit.id}`}
 								name={kit.name.valueOf() as string}
 								id={kit.id}
+								usageCount={kit.useCount}
 								kitData={expandedKits.has(kit.id) ? getKitData(kit.id) : null}
 								editable={kit.editable}
 								isExpanded={expandedKits.has(kit.id)}

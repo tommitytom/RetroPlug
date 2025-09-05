@@ -1,4 +1,5 @@
-import type { Float32Buffer, MainModule, Uint8Buffer } from "../native/RetroPlug";
+import type { Float32Buffer, MainModule, NativeAccessType, NativeMemoryType, Uint8Buffer } from "../native/RetroPlug";
+import { AccessType, MemoryType } from "../wrapper/System";
 
 export interface NativeVector<T> {
 	size(): number;
@@ -30,4 +31,40 @@ export function vectorToArray<T>(vec: NativeVector<T>): T[] {
 		arr.push(vec.get(i)!);
 	}
 	return arr;
+}
+
+export function convertMemoryType(
+	module: MainModule,
+	type: MemoryType,
+): NativeMemoryType {
+	switch (type) {
+		case MemoryType.Ram:
+			return module.NativeMemoryType.Ram;
+		case MemoryType.Rom:
+			return module.NativeMemoryType.Rom;
+		case MemoryType.Sram:
+			return module.NativeMemoryType.Sram;
+		case MemoryType.Vram:
+			return module.NativeMemoryType.Vram;
+		case MemoryType.MAX:
+		default:
+			return module.NativeMemoryType.MAX;
+	}
+}
+
+export function convertAccessType(
+	module: MainModule,
+	type: AccessType,
+): NativeAccessType {
+	switch (type) {
+		case AccessType.Read:
+			return module.NativeAccessType.Read;
+		case AccessType.Write:
+			return module.NativeAccessType.Write;
+		case AccessType.ReadWrite:
+			return module.NativeAccessType.ReadWrite;
+		case AccessType.Unknown:
+		default:
+			return module.NativeAccessType.Unknown;
+	}
 }

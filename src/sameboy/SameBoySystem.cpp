@@ -170,7 +170,7 @@ MemoryAccessor SameBoySystem::getMemory(MemoryType type, AccessType access) {
 	case MemoryType::Rom: sameboyType = GB_DIRECT_ACCESS_ROM; found = true; break;
 	case MemoryType::Ram: sameboyType = GB_DIRECT_ACCESS_RAM; found = true; break;
 	case MemoryType::Sram: sameboyType = GB_DIRECT_ACCESS_CART_RAM; found = true; break;
-	case MemoryType::Unknown: break;
+	case MemoryType::MAX: break;
 	}
 
 	if (found) {
@@ -311,7 +311,7 @@ void processPatches(GB_gameboy_t* gb, std::vector<MemoryPatch>& patches) {
 		case MemoryType::Rom: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_ROM, &memSize, &memBank); break;
 		case MemoryType::Ram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_RAM, &memSize, &memBank); break;
 		case MemoryType::Sram: target = (uint8*)GB_get_direct_access(gb, GB_DIRECT_ACCESS_CART_RAM, &memSize, &memBank); break;
-		case MemoryType::Unknown: break;
+		case MemoryType::MAX: break;
 		}
 
 		if (target) {

@@ -5,6 +5,9 @@
 #include "sameboy/SameBoyComponents.h"
 #include "ui/View.h"
 #include "ecs/RetroPlugComponents.h"
+#include "ecs/LsdjProject.h"
+
+#include <ctype.h>
 
 namespace rp {
 	class EcsSystemOverlay : public fw::View {
@@ -20,11 +23,38 @@ namespace rp {
 	class EcsLsdjOverlay : public EcsSystemOverlay {
 		FwRegisterObject()
 	private:
-		LsdjComponent& _lsdj;
+		LsdjController _lsdj;
 
 	public:
-		EcsLsdjOverlay(LsdjComponent& lsdj) : _lsdj(lsdj) {}
+		EcsLsdjOverlay(LsdjController lsdj) : _lsdj(lsdj) {}
 		~EcsLsdjOverlay() = default;
+
+		bool onDrop(const std::vector<std::string>& paths) override {
+			LsdjKitComponent comp;
+			comp.name = "KIT";
+
+			int32 i = 0;
+			for (const std::string& path: paths) {
+				if (path.ends_with(".wav")) {
+					std::string name = std::filesystem::path(path).filename().string().substr(0, 3);
+					std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
+
+					LsdjSampleComponent sampleComp{
+						.sampleId = i++,
+						.name = name,
+						.path = path
+					};
+
+					fw::FsUtil::readFile(paths[0], sampleComp.data());
+
+					comp.samples.push_back(std::move(sampleComp));
+				}
+			}
+
+			_lsdj.addKitComponent(entt::entity(0), std::move(comp));
+
+			return true;
+		}
 
 		void onRender(fw::Canvas& canvas) override {
 			//canvas.fillRect(getDimensionsF(), fw::Color4F(0, 0, 0, 0.5f * getAlpha()));

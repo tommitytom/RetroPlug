@@ -32,6 +32,8 @@ namespace rp {
 
 		virtual void onAfterLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load) const {}
 
+		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
+
 		virtual void onDestroy(entt::registry& registry, entt::entity entity) const {}
 
 		virtual fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const { return nullptr; }
@@ -64,6 +66,12 @@ namespace rp {
 
 		virtual void onAfterLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SystemComponent& component) const {}
 
+		void onReset(entt::registry& registry, entt::entity entity) const override {
+			onReset(registry, entity, registry.get<SystemComponent>(entity));
+		}
+
+		virtual void onReset(entt::registry& registry, entt::entity entity, SystemComponent& component) const {}
+
 		void onDestroy(entt::registry& registry, entt::entity entity) const override {
 			onDestroy(registry, entity, registry.get<SystemComponent>(entity));
 		}
@@ -85,6 +93,7 @@ namespace rp {
 		virtual void onSaveSram(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
 		virtual void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
 		virtual MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const { return MemoryAccessor(); }
+		virtual void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {}
 	};
 
 	inline void eachHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks, std::function<void(const SystemHookBase&)>&& func) {

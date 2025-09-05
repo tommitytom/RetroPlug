@@ -240,11 +240,11 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	enum_<MemoryType>("NativeMemoryType")
-		.value("Unknown", MemoryType::Unknown)
 		.value("Ram", MemoryType::Ram)
 		.value("Rom", MemoryType::Rom)
 		.value("Sram", MemoryType::Sram)
 		.value("Vram", MemoryType::Vram)
+		.value("MAX", MemoryType::MAX)
 	;
 
 	class_<LsdjSampleComponent>("NativeLsdjSampleComponent")
@@ -272,32 +272,39 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.field("id", &LsdjKitDesc::id)
 		.field("name", &LsdjKitDesc::name)
 		.field("editable", &LsdjKitDesc::editable)
+		.field("useCount", &LsdjKitDesc::useCount)
 	;
 
 	register_vector<LsdjKitDesc>("NativeLsdjKitDescVector");
 
 	class_<LsdjController>("NativeLsdjController")
-		.function("getKitDescs", +[](LsdjController& project, SystemId system) -> std::vector<LsdjKitDesc> {
+		.function("getLsdjSav", +[](LsdjController& controller, SystemId system) -> lsdj::Sav {
+			return controller.getLsdjSav((entt::entity)system);
+		})
+		.function("getLsdjProject", +[](LsdjController& controller, SystemId system) -> lsdj::Project {
+			return controller.getLsdjProject((entt::entity)system);
+		})
+		.function("getKitDescs", +[](LsdjController& controller, SystemId system, bool includeUseCount) -> std::vector<LsdjKitDesc> {
 			std::vector<LsdjKitDesc> descs;
-			project.getKitDescs((entt::entity)system, descs);
+			controller.getKitDescs((entt::entity)system, descs, includeUseCount);
 			return descs;
 		})
-		.function("getKitComponent", +[](LsdjController& project, SystemId system, uint32 kitId) -> LsdjKitComponent {
-			const LsdjKitComponent* comp = project.getKitComponent((entt::entity)system, kitId);
+		.function("getKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId) -> LsdjKitComponent {
+			const LsdjKitComponent* comp = controller.getKitComponent((entt::entity)system, kitId);
 			if (comp) return *comp;
 			return LsdjKitComponent{};
 		})
-		.function("setKitComponent", +[](LsdjController& project, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
-			return project.setKitComponent((entt::entity)system, kitId, component);
+		.function("setKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
+			return controller.setKitComponent((entt::entity)system, kitId, component);
 		})
-		.function("addKitComponent", +[](LsdjController& project, SystemId system, const LsdjKitComponent& component) -> bool {
-			return project.addKitComponent((entt::entity)system, component);
+		.function("addKitComponent", +[](LsdjController& controller, SystemId system, const LsdjKitComponent& component) -> bool {
+			return controller.addKitComponent((entt::entity)system, component);
 		})
-		.function("getKitData", +[](LsdjController& project, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
-			return project.getKitData((entt::entity)system, kitId);
+		.function("getKitData", +[](LsdjController& controller, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
+			return controller.getKitData((entt::entity)system, kitId);
 		})
-		.function("getKitSample", +[](LsdjController& project, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
-			return project.getKitSample((entt::entity)system, kitId, sampleId);
+		.function("getKitSample", +[](LsdjController& controller, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
+			return controller.getKitSample((entt::entity)system, kitId, sampleId);
 		})
 	;
 
@@ -466,6 +473,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getInstrument", &rp::lsdj::Phrase::getInstrument)
 		.function("getCommand", &rp::lsdj::Phrase::getCommand)
 		.function("getCommandValue", &rp::lsdj::Phrase::getCommandValue)
+		.property("length", &rp::lsdj::Phrase::getLength)
 		.property("index", &rp::lsdj::Phrase::getIndex)
 		.property("isValid", &rp::lsdj::Phrase::isValid)
 	;
@@ -474,6 +482,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getPhraseIndex", &rp::lsdj::Chain::getPhraseIndex)
 		.function("getPhrase", &rp::lsdj::Chain::getPhrase)
 		.function("getPhraseTransposition", &rp::lsdj::Chain::getPhraseTransposition)
+		.property("phraseCount", &rp::lsdj::Chain::getPhraseCount)
 		.property("index", &rp::lsdj::Chain::getIndex)
 		.property("isValid", &rp::lsdj::Chain::isValid)
 	;
@@ -487,6 +496,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getChain", &rp::lsdj::Song::getChain)
 		.property("fontIndex", &rp::lsdj::Song::getFontIndex)
 		.property("paletteIndex", &rp::lsdj::Song::getPaletteIndex)
+		.property("chainCount", &rp::lsdj::Song::getChainCount)
 		.function("isRowBookMarked", &rp::lsdj::Song::isRowBookMarked)
 	;
 

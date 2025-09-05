@@ -10,6 +10,8 @@ namespace rp {
 
 		void onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const override;
 
+		void onReset(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const override;
+
 		void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const override;
 
 		void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const override;

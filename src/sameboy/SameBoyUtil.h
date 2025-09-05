@@ -5,6 +5,7 @@
 #include "foundation/DataBuffer.h"
 #include "core/CoreComponents.h"
 #include "core/MemoryAccessor.h"
+#include "core/System.h"
 
 namespace rp {
 	struct SameBoyComponent;
@@ -34,6 +35,8 @@ namespace rp::SameBoyUtil {
 	void setRenderingDisabled(SameBoyState& state, bool disabled);
 
 	void process(SameBoyStateComponent** systems, size_t systemCount, uint32 sampleCount);
+
+	SystemStateOffsets getStateOffsets(SameBoyState& state);
 
 	void destroy(SameBoyState& state);
 }

@@ -27,7 +27,7 @@ namespace rp {
 	}
 
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
-		RetroPlugProjectContext& projectCtx = _registry.ctx().emplace<RetroPlugProjectContext>();
+		RetroPlugProjectContext& projectCtx = _registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		projectCtx.addSystemHook<SameboyHooks>();
 		projectCtx.addServiceHook<LsdjHooks>();
 
@@ -54,10 +54,27 @@ namespace rp {
 				return;
 			}
 
-			if (ev.type == MemoryType::Unknown) {
+			if (ev.type == MemoryType::MAX) {
 				stateComp->state = std::move(ev.state);
 				stateComp->stateFetchTimer = STATE_FETCH_INTERVAL;
 				stateComp->lastStateUpdate = _totalTime;
+
+				if (stateComp->stateOffsets.has_value()) {
+					const SystemStateOffsets& offsets = *stateComp->stateOffsets;
+
+					for (size_t i = 0; i < (size_t)MemoryType::MAX; i++) {
+						const MemoryType type = (MemoryType)i;
+						VersionedMemory* memory = stateComp->find(ev.type);
+						if (memory) {
+							fw::Uint8Buffer slice = stateComp->state.slice(offsets[i].offset, offsets[i].size);
+							if (slice != memory->data) {
+								memory->data.resize(slice.size());
+								memory->data.write(slice);
+								memory->version++;
+							}
+						}
+					}
+				}
 			} else {
 				stateComp->memoryFetchTimer = MEMORY_FETCH_INTERVAL;
 
@@ -68,7 +85,8 @@ namespace rp {
 				}
 
 				if (ev.state != memory->data) {
-					memory->data = std::move(ev.state);
+					memory->data.resize(ev.state.size());
+					memory->data.write(ev.state);
 					memory->version++;
 				}
 
@@ -191,8 +209,8 @@ namespace rp {
 
 		for (const auto& [e, system] : _registry.view<SystemStateComponent>().each()) {
 			if (system.stateFetchTimer.update(deltaTime)) {
-				// Fetching MemoryType::Unknown means fetching the entire state
-				_eventNode.trySend("Audio"_hs, FetchMemoryRequest{ .entity = e, .type = MemoryType::Unknown });
+				// Fetching MemoryType::MAX means fetching the entire state
+				_eventNode.trySend("Audio"_hs, FetchMemoryRequest{ .entity = e, .type = MemoryType::MAX });
 			}
 
 			if (system.memoryFetchTimer.update(deltaTime)) {

@@ -15,13 +15,44 @@
 
 using namespace rp;
 
-const uint32 GAMEBOY_SAMPLE_RATE = 11468;
-
 KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
 	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
 
 	ma_decoder decoder;
 	ma_result result = ma_decoder_init_file(path.data(), &config, &decoder);
+
+	if (result != MA_SUCCESS) {
+		return KitUtil::SampleData{};
+	}
+
+	size_t blockSize = 24000;
+	size_t offset = 0;
+
+	KitUtil::SampleData sample;
+	sample.sampleRate = decoder.outputSampleRate;
+	sample.buffer = std::make_shared<fw::Float32Buffer>();
+
+	while (true) {
+		sample.buffer->resize(sample.buffer->size() + blockSize);
+
+		ma_uint64 framesRead;
+		ma_decoder_read_pcm_frames(&decoder, sample.buffer->data() + offset, blockSize, &framesRead);
+		offset += (size_t)framesRead;
+
+		if (framesRead < blockSize) {
+			sample.buffer->resize(offset);
+			break;
+		}
+	}
+
+	return sample;
+}
+
+KitUtil::SampleData KitUtil::loadSample(const fw::Uint8Buffer& buffer) {
+	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
+
+	ma_decoder decoder;
+	ma_result result = ma_decoder_init_memory(buffer.data(), buffer.size(), &config, &decoder);
 
 	if (result != MA_SUCCESS) {
 		return KitUtil::SampleData{};
@@ -95,7 +126,7 @@ enum FilterType {
 	ALLP
 };
 
-void convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const fw::Float32Buffer& buffer, fw::Float32Buffer& target) {
+void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const fw::Float32Buffer& buffer, fw::Float32Buffer& target) {
 	const size_t inBufCapacity = 1024;
 	r8b::CFixedBuffer<f64> inBuf;
 	inBuf.alloc((int)buffer.size());

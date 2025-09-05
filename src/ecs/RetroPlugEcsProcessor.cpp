@@ -54,6 +54,12 @@ namespace rp {
 			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
 			return SameBoyUtil::getMemory(*state.state, type, access);
 		}
+
+		void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const override {
+			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
+			MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, patch.type, AccessType::Write);
+			accessor.write(patch.offset, patch.data);
+		}
 	};
 
 	RetroPlugEcsProcessor::RetroPlugEcsProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
@@ -101,7 +107,7 @@ namespace rp {
 
 			fw::Uint8Buffer target;
 
-			if (ev.type == MemoryType::Unknown) {
+			if (ev.type == MemoryType::MAX) {
 				hook->onSaveState(_registry, ev.entity, target);
 			} else {
 				MemoryAccessor memory = hook->onGetMemory(_registry, ev.entity, ev.type, AccessType::Read);
@@ -115,6 +121,25 @@ namespace rp {
 					.type = ev.type,
 					.state = std::move(target)
 				});
+			}
+		});
+
+		node.receive<MemoryPatchEvent>([this](MemoryPatchEvent&& ev) {
+			if (!_registry.valid(ev.entity)) {
+				return;
+			}
+
+			SystemComponent* system = _registry.try_get<SystemComponent>(ev.entity);
+			if (!system) {
+				return;
+			}
+
+			AudioHooksContext& hooks = _registry.ctx().at<AudioHooksContext>();
+			AudioSystemHook* hook = findHook(system->systemType, hooks.systemHooks);
+			assert(hook);
+
+			for (const MemoryPatch& patch : ev.patches) {
+				hook->onPatchMemory(_registry, ev.entity, patch);
 			}
 		});
 

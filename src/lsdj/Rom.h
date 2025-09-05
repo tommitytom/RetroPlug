@@ -10,6 +10,11 @@
 #include "core/MemoryAccessor.h"
 
 namespace rp::lsdj {
+	inline void writeString(uint8* target, size_t targetSize, std::string_view source, char startVal) {
+		memset(target, startVal, targetSize);
+		memcpy(target, source.data(), std::min(targetSize, source.size()));
+	}
+
 	enum class ColorSets {
 		Normal,
 		Shaded,
@@ -248,6 +253,48 @@ namespace rp::lsdj {
 			return MAX_SAMPLE_SPACE;
 		}
 
+		void clearSamples() {
+			kitData.clear();
+		}
+
+		size_t writeSamples(const std::string& kitName, const std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+			fw::Uint8Buffer kitBuffer(kitData.getSize());
+			writeString(kitBuffer.data() + lsdj::Kit::NAME_OFFSET, lsdj::Kit::NAME_SIZE, kitName, ' ');
+
+			uint16* offsets = (uint16*)kitBuffer.data();
+			uint8* names = kitBuffer.data() + lsdj::Kit::SAMPLE_NAME_OFFSET;
+			uint8* sampleData = kitBuffer.data() + lsdj::Kit::SAMPLE_DATA_OFFSET;
+			uint16 sampleDataOffset = 0x4000 + (uint16)lsdj::Kit::SAMPLE_DATA_OFFSET;
+
+			uint16 offset = 0;
+			offsets[0] = sampleDataOffset;
+
+			for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
+				uint32 sampleNameOffset = (uint32)(lsdj::Kit::SAMPLE_NAME_SIZE * i);
+
+				if (i < samples.size()) {
+					// Write name
+					writeString(names + sampleNameOffset, lsdj::Kit::SAMPLE_NAME_SIZE, samples[i].first, '-');
+
+					// Write sample
+					memcpy(sampleData + offset, samples[i].second.data(), samples[i].second.size());
+
+					// Write offset
+					offset += (uint16)samples[i].second.size();
+					offsets[i + 1] = offset + sampleDataOffset;
+				} else {
+					names[sampleNameOffset] = 0;
+					names[sampleNameOffset + 1] = '-';
+					names[sampleNameOffset + 2] = '-';
+					offsets[i + 1] = 0;
+				}
+			}
+
+			kitData.write(0, kitBuffer);
+
+			return 0;
+		}
+
 	private:
 		size_t getSampleNameOffset(size_t sampleIdx) const {
 			return Kit::SAMPLE_NAME_OFFSET + sampleIdx * 3;
@@ -264,24 +311,24 @@ namespace rp::lsdj {
 		const uint8* _paletteData = nullptr;
 		const uint8* _fontData = nullptr;
 
-		const std::array<uint8, 30> NAME_CHECK = { 0x47, 0x52, 0x41, 0x59, 0, 0x49, 0x4E, 0x56, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-		const std::array<uint8, 20> PALETTE_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x48, 0x48 };
-		const std::array<uint8, 16> FONT_CHECK = { 0, 0, 0, 0, 0xD0, 0x90, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0xD0, 0x90, 0, 0 };
-		const std::array<uint8, 6> VERSION_CHECK = { 0x4C, 0x53, 0x44, 0x6A, 0x2D, 0x76 };
+		inline constexpr static std::array<uint8, 30> NAME_CHECK = { 0x47, 0x52, 0x41, 0x59, 0, 0x49, 0x4E, 0x56, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+		inline constexpr static std::array<uint8, 20> PALETTE_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x48, 0x48 };
+		inline constexpr static std::array<uint8, 16> FONT_CHECK = { 0, 0, 0, 0, 0xD0, 0x90, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0xD0, 0x90, 0, 0 };
+		inline constexpr static std::array<uint8, 6> VERSION_CHECK = { 0x4C, 0x53, 0x44, 0x6A, 0x2D, 0x76 };
 
 	public:
-		static const size_t ROM_SIZE = 0x100000;
+		inline constexpr static size_t ROM_SIZE = 0x100000;
 
-		static const size_t BANK_COUNT = 64;
-		static const size_t BANK_SIZE = 0x4000;
+		inline constexpr static size_t BANK_COUNT = 64;
+		inline constexpr static size_t BANK_SIZE = 0x4000;
 
-		static const size_t PALETTE_COUNT = 6;
+		inline constexpr static size_t PALETTE_COUNT = 6;
 
-		static const size_t FONT_COUNT = 3;
-		static const size_t ALTERNATE_FONT_OFFSET = 0x4D2;
+		inline constexpr static size_t FONT_COUNT = 3;
+		inline constexpr static size_t ALTERNATE_FONT_OFFSET = 0x4D2;
 
-		static const size_t KIT_COUNT = 51;
-		const std::array<size_t, 51> KIT_LOOKUP = { 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 };
+		inline constexpr static size_t KIT_COUNT = 51;
+		inline constexpr static std::array<size_t, 51> KIT_LOOKUP = { 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 };
 
 		Rom() {}
 		Rom(MemoryAccessor romData) : _romData(romData) { updateOffsets(); }
@@ -396,7 +443,7 @@ namespace rp::lsdj {
 			}
 
 			for (size_t i = targetName.size(); i < Kit::NAME_SIZE; ++i) {
-				targetName[i] = '-';
+				targetName.push_back('-');
 			}
 
 			_romData.write(bankIdx * BANK_SIZE + Kit::NAME_OFFSET, targetName);

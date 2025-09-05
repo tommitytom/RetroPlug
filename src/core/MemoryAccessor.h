@@ -8,11 +8,11 @@
 
 namespace rp {
 	enum class MemoryType {
-		Unknown,
 		Ram,
 		Rom,
 		Sram,
-		Vram
+		Vram,
+		MAX
 	};
 
 	enum class AccessType {
@@ -30,7 +30,7 @@ namespace rp {
 
 	class MemoryAccessor {
 	private:
-		MemoryType _type = MemoryType::Unknown;
+		MemoryType _type = MemoryType::MAX;
 		fw::Uint8Buffer _data;
 		size_t _offset = 0;
 		std::vector<MemoryPatch>* _patches = nullptr;
@@ -112,6 +112,18 @@ namespace rp {
 			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
 		}
 
+		void clear(uint8 value = 0) {
+			_data.clear(value);
+
+			if (_patches) {
+				_patches->push_back(MemoryPatch{
+					.type = _type,
+					.data = _data.clone(),
+					.offset = _offset
+				});
+			}
+		}
+
 		MemoryAccessor slice(size_t start, size_t size) {
 			return MemoryAccessor(_type, _data.slice(start, size), _offset + start, _patches);
 		}
@@ -122,7 +134,7 @@ namespace rp {
 		}
 
 		bool isValid() const {
-			return _type != MemoryType::Unknown;
+			return _type != MemoryType::MAX;
 		}
 
 		const uint8* getData() const {

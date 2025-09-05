@@ -9,8 +9,9 @@ import type {
 	Uint8Buffer,
 	WebApplicationRunner
 } from "./native/RetroPlug.d.ts";
+import { convertMemoryType } from "./utils/NativeUtil.ts";
 import { Project } from "./wrapper/Project.ts";
-import { convertMemoryType, MemoryType } from "./wrapper/System.ts";
+import { MemoryType } from "./wrapper/System.ts";
 
 export class RetroPlugApplication {
 	private _module: MainModule | null = null;
@@ -102,7 +103,7 @@ export class RetroPlugApplication {
 	}
 
 	createLsdjRom(accessor: MemoryAccessor): NativeLsdjRom {
-		return new this._module!.NativeLsdjRom(accessor);
+		return new this._module!.NativeLsdjRom(accessor.getBuffer());
 	}
 
 	createLsdjRam(accessor: MemoryAccessor, offsets: LsdjMemoryOffsets) {

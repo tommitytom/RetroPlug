@@ -16,8 +16,9 @@ export const LsdjKitEditor: React.FC<{
 	kitData: Uint8Buffer|null;
 	editable: boolean;
 	isExpanded: boolean;
+	usageCount?: number;
 	onToggle: () => void;
-}> = ({ id, name, kitData, editable, isExpanded, onToggle }) => {
+}> = ({ id, name, kitData, editable, isExpanded, usageCount, onToggle }) => {
 	const { project } = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
@@ -96,9 +97,16 @@ export const LsdjKitEditor: React.FC<{
 					<div className="text-white mr-2 text-xs">
 						{isExpanded ? "▼" : "▶"}
 					</div>
+					<span className="font-mono font-medium">{id.toString(16).padStart(2, '0').toUpperCase()}</span>
+					<span className="font-medium mx-1">-</span>
 					<span className="font-medium">{name}</span>
 				</div>
 				<div className="flex items-center gap-2">
+					{/*(usageCount || 0) > 0 && (
+						<span className={`px-2 py-1 rounded text-xs text-gray-400 bg-gray-700`}>
+							Usage Count: {usageCount || 0}
+						</span>
+					)*/}
 					<span className={`px-2 py-1 rounded text-xs ${
 						editable
 							? 'text-green-400 bg-green-900/30'
@@ -134,7 +142,7 @@ export const LsdjKitEditor: React.FC<{
 				</div>
 			</div>
 			{isExpanded && kitSample && (
-				<div className="p-2 bg-gray-900">
+				<div className={`bg-gray-900 ${editable ? 'p-2' : 'pt-2 px-2 pb-1'}`}>
 					<div className="mb-2">
 						<div
 							onClick={() => handleSampleClick(kitSample)}

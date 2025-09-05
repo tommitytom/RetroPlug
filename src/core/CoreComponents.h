@@ -7,6 +7,7 @@
 
 #include "foundation/DataBuffer.h"
 #include "core/MemoryAccessor.h"
+#include "core/System.h"
 
 namespace rp {
 	struct SystemComponent {
@@ -14,7 +15,7 @@ namespace rp {
 	};
 
 	struct VersionedMemory {
-		MemoryType type = MemoryType::Unknown;
+		MemoryType type = MemoryType::MAX;
 		fw::Uint8Buffer data;
 		uint32 version = 0;
 		f32 lastUpdate = 0;
@@ -57,6 +58,7 @@ namespace rp {
 		f32 lastStateUpdate = 0.0f;
 		CountdownTimer stateFetchTimer = STATE_FETCH_INTERVAL;
 		CountdownTimer memoryFetchTimer = MEMORY_FETCH_INTERVAL;
+		std::optional<SystemStateOffsets> stateOffsets;
 
 		VersionedMemory* find(MemoryType type) {
 			auto found = std::find_if(memory.begin(), memory.end(), [type](const VersionedMemory& mem) { return mem.type == type; });

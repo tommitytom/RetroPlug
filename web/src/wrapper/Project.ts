@@ -1,6 +1,6 @@
 import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
-import { fromUint8Array } from "../utils/NativeUtil";
-import { AccessType, convertAccessType, convertMemoryType, MemoryType } from "./System";
+import { convertAccessType, convertMemoryType, fromUint8Array } from "../utils/NativeUtil";
+import { AccessType, MemoryType } from "./System";
 
 export const INVALID_SYSTEM_ID = 4294967295;
 

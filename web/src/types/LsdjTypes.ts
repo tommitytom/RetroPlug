@@ -10,4 +10,6 @@ export interface LsdjKitData {
 	//effects
 }
 
-export interface LsdjKit extends NativeLsdjKitDesc {}
+export interface LsdjKit extends NativeLsdjKitDesc {
+
+}

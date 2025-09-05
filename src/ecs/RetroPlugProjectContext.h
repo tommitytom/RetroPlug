@@ -5,8 +5,13 @@
 
 #include "core/SystemHook.h"
 
+namespace fw {
+	class EventNode;
+}
+
 namespace rp {
 	struct RetroPlugProjectContext {
+		fw::EventNode& eventNode;
 		uint32 version = 0;
 		std::vector<std::unique_ptr<SystemHookBase>> systemHooks;
 		std::vector<std::unique_ptr<SystemHookBase>> serviceHooks;
@@ -28,10 +33,10 @@ namespace rp {
 		RetroPlugProjectContext& operator=(const RetroPlugProjectContext&) = delete;
 
 		// Keep move operations (automatically generated)
-		RetroPlugProjectContext(RetroPlugProjectContext&&) = default;
-		RetroPlugProjectContext& operator=(RetroPlugProjectContext&&) = default;
+		//RetroPlugProjectContext(RetroPlugProjectContext&&) = default;
+		//RetroPlugProjectContext& operator=(RetroPlugProjectContext&&) = default;
 
-		RetroPlugProjectContext() = default;
+		RetroPlugProjectContext(fw::EventNode& eventNode_): eventNode(eventNode_) {}
 		~RetroPlugProjectContext() = default;
 	};
 }
