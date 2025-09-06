@@ -18,10 +18,20 @@ function renderWaveForm(
 	ctx.lineWidth = 1;
 	ctx.beginPath();
 
-	const step = Math.ceil(sampleData.length / width);
+	// Calculate samples per pixel for proper scaling
+	const samplesPerPixel = sampleData.length / width;
+
 	for (let x = 0; x < width; x++) {
-		const min = Math.min(...sampleData.subarray(x * step, (x + 1) * step));
-		const max = Math.max(...sampleData.subarray(x * step, (x + 1) * step));
+		// Calculate the exact sample range for this pixel
+		const startSample = Math.floor(x * samplesPerPixel);
+		const endSample = Math.min(Math.floor((x + 1) * samplesPerPixel), sampleData.length);
+
+		if (startSample >= endSample) continue;
+
+		const sampleSlice = sampleData.subarray(startSample, endSample);
+		const min = Math.min(...sampleSlice);
+		const max = Math.max(...sampleSlice);
+
 		ctx.moveTo(x + 0.5, ((1 + min) * height) / 2);
 		ctx.lineTo(x + 0.5, ((1 + max) * height) / 2);
 	}
