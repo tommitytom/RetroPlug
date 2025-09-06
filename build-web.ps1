@@ -13,7 +13,7 @@ if ($ExtraDebug)
     $Configure = $true
 }
 
-$EMSCRIPTEN_VERSION = "4.0.13"
+$EMSCRIPTEN_VERSION = "sdk-upstream-main-64bit"
 
 function InstallEmscripten() {
 
@@ -90,7 +90,7 @@ function CopyToWebBuild([string] $Type) {
 # force the current working directory to the directory where the script is located
 Push-Location $PSScriptRoot
 
-InstallEmscripten
+#InstallEmscripten
 ActivateEmscripten
 
 if ($Configure) {

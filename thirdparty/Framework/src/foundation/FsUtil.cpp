@@ -6,6 +6,19 @@
 
 #ifdef FW_PLATFORM_WEB
 #include <emscripten.h>
+#include <emscripten/wasmfs.h>
+#include <iostream>
+
+void fw::FsUtil::setupFs() {
+	/*backend_t opfs = wasmfs_create_opfs_backend();
+	int err = wasmfs_create_directory("/share", 0777, opfs);
+	if (err) {
+		std::cerr << "Failed to create /share" << std::endl;
+	} else {
+		std::cout << "Created "
+				<< "/share" << std::endl;
+	}*/
+}
 
 /*EM_ASYNC_JS(void, syncWebFs, (), {
 	await syncFs();

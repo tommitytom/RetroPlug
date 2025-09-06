@@ -2,10 +2,12 @@
 
 #include "RetroPlugEcsProcessor.h"
 #include "RetroPlugEcsView.h"
+#include "foundation/FsUtil.h"
 
 namespace rp {
 	RetroPlugEcsApplication::RetroPlugEcsApplication(): _audioEventNode("Audio"), _project(_audioEventNode->spawn("Ui"), _audioEventNode->getId()) {
 		spdlog::info("Created RetroPlugEcsApplication. project: {}", (uintptr_t)&_project);
+		fw::FsUtil::setupFs();
 	}
 
 	fw::ViewPtr RetroPlugEcsApplication::onCreateUi() {

@@ -33,15 +33,15 @@ local EMSDK_FLAGS = {
 
 -- if toggling this, remember to update exceptions in util.lua. this line:
 -- buildoptions { "-fwasm-exceptions" }
-local useWasmFs = false;
+local useWasmFs = true;
 if useWasmFs then
 	table.insert(EMSDK_FLAGS, "-s WASMFS=1")
 	table.insert(EMSDK_FLAGS, "-s JSPI=1")
 	table.insert(EMSDK_FLAGS, "-fwasm-exceptions")
 else
-	--table.insert(EMSDK_FLAGS, "-lidbfs.js")
-	--table.insert(EMSDK_FLAGS, "-s FORCE_FILESYSTEM=1")
-	--table.insert(EMSDK_FLAGS, "-s ASYNCIFY=1")
+	table.insert(EMSDK_FLAGS, "-lidbfs.js")
+	table.insert(EMSDK_FLAGS, "-s FORCE_FILESYSTEM=1")
+	table.insert(EMSDK_FLAGS, "-s ASYNCIFY=1")
 	table.insert(EMSDK_FLAGS, "-fexceptions")
 end
 
@@ -236,6 +236,9 @@ function m.RetroPlug.include()
 		"resources"
 	}
 
+	filter { "platforms:Emscripten" }
+		disablewarnings { "character-conversion" }
+
 	filter {}
 end
 
@@ -250,6 +253,9 @@ function m.RetroPlug.link()
 	fwDeps.lua.link()
 	dep.r8brain.link()
 	--dep.minizip.link()
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "character-conversion" }
 
 	filter { "platforms:Emscripten", "configurations:Debug" }
 		linkoptions { util.joinFlags(EMSDK_FLAGS, EMSDK_DEBUG_FLAGS) }
@@ -283,6 +289,9 @@ function m.RetroPlug.project()
 		"src/ecs/**.h",
 		"src/ecs/**.cpp",
 	}
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "character-conversion" }
 
 	filter{}
 

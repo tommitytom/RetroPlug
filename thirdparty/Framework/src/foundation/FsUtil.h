@@ -16,6 +16,8 @@ namespace fs = std::filesystem;
 #include "foundation/DataBuffer.h"
 
 namespace fw::FsUtil {
+	void setupFs();
+
 	inline std::string_view getFilename(std::string_view path) {
 		auto idx = path.find_last_of("/\\");
 		if (idx != std::string::npos) {

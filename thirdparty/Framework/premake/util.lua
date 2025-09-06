@@ -112,7 +112,7 @@ function util.setupWorkspace()
 		defines { "FW_PLATFORM_WEB" }
 		disablewarnings { "macro-redefined", "switch" }
 		buildoptions { "-matomics", "-mbulk-memory", "-msimd128" }
-		--buildoptions { "-fwasm-exceptions" }
+		buildoptions { "-fwasm-exceptions" }
 
 	filter { "platforms:not Emscripten" }
 		defines { "FW_PLATFORM_STANDALONE" }

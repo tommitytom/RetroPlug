@@ -5,7 +5,7 @@ import { InspectorPanel } from './panels/InspectorPanel';
 import { SystemPanel } from './panels/SystemPanel';
 import { FileTreePanel } from './panels/FileTreePanel';
 import { RetroPlugCanvas } from "./RetroPlugCanvas";
-
+import { FileExplorer } from './components/FileExplorer';
 
 function LoadSpinner() {
 	const { isLoading } = useRetroPlug();
@@ -23,7 +23,7 @@ function LoadSpinner() {
 const panels: Panel[] = [
 	{ id: 'system', title: 'System', content: <SystemPanel /> },
 	{ id: 'inspector', title: 'Inspector', content: <InspectorPanel /> },
-	{ id: 'fileTree', title: 'File Tree', content: <FileTreePanel /> },
+	{ id: 'fileTree', title: 'File Tree', content: <FileExplorer /> },
 ];
 
 const initialLayout = {
