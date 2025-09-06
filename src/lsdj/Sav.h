@@ -188,11 +188,16 @@ namespace rp::lsdj {
 	class Project {
 	private:
 		lsdj_project_t* _project = nullptr;
+		uint8 _projectIndex = LSDJ_NO_PROJECT_AT_INDEX;
 
 	public:
 		Project() : _project(nullptr) {}
-		Project(lsdj_project_t* project) : _project(project) {}
+		Project(lsdj_project_t* project, uint8 projectIndex) : _project(project), _projectIndex(projectIndex) {}
 		Project(fw::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()) {}
+
+		uint8 getIndex() const {
+			return _projectIndex;
+		}
 
 		uint8 getVersion() const {
 			return lsdj_project_get_version(_project);
@@ -202,12 +207,24 @@ namespace rp::lsdj {
 			return std::string_view(lsdj_project_get_name(_project), lsdj_project_get_name_length(_project));
 		}
 
+		void setName(const std::string& name) {
+			lsdj_project_set_name(_project, name.c_str());
+		}
+
 		Song getSong() const {
 			return lsdj_project_get_song(_project);
 		}
 
 		bool isValid() const {
 			return _project != nullptr;
+		}
+
+		lsdj_project_t* getRaw() {
+			return _project;
+		}
+
+		const lsdj_project_t* getRaw() const {
+			return _project;
 		}
 	};
 
@@ -305,7 +322,6 @@ namespace rp::lsdj {
 
 		uint32 getProjectCount() const {
 			uint32 count = 0;
-
 			for (uint8 i = 0; i < LSDJ_SAV_PROJECT_COUNT; ++i) {
 				lsdj_project_t* proj = lsdj_sav_get_project(_sav, i);
 
@@ -318,8 +334,35 @@ namespace rp::lsdj {
 			return count;
 		}
 
+		void eraseProject(uint8 idx) {
+			lsdj_sav_erase_project(_sav, idx);
+		}
+
+		bool writeProject(Project project, uint8 idx = 255) {
+			if (idx == 255) {
+				idx = findNextEmptyProject();
+			}
+
+			if (idx == 255) {
+				return false;
+			}
+
+			lsdj_sav_set_project_copy(_sav, idx, project.getRaw(), nullptr);
+
+			return true;
+		}
+
+		uint8 findNextEmptyProject() {
+			for (uint8 i = 0; i < LSDJ_SAV_PROJECT_COUNT; ++i) {
+				if (!lsdj_sav_get_project(_sav, i)) {
+					return i;
+				}
+			}
+			return 255;
+		}
+
 		Project getProject(uint8 idx) const {
-			return lsdj_sav_get_project(_sav, idx);
+			return Project(lsdj_sav_get_project(_sav, idx),	idx);
 		}
 
 		Project getWorkingProject() const {

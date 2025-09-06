@@ -39,11 +39,11 @@ function findComponent<T>(project: IProject, componentName: string): T | undefin
 	}
 	return undefined;
 }
-``
+
 export const FileTreePanel: React.FC = () => {
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
-	const { rootNode, readPath, fileExists, writePath, createDirectory } = useOPFSStore();
+	const { readPath, fileExists, writePath, createDirectory } = useOPFSStore();
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
 		if (!project) return;
@@ -65,7 +65,6 @@ export const FileTreePanel: React.FC = () => {
 
 			project.clearSystems();
 			project.addSystem({ entries: load!.entries });
-			//project.deserialize(strData);
 		}
 
 		let romPath: string|undefined;

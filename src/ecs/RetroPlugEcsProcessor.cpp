@@ -204,7 +204,6 @@ namespace rp {
 
 		onDestroy<SameBoyStateComponent>(_registry, [](entt::registry& registry, entt::entity entity) {
 			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			SameBoyUtil::destroy(*state.state);
 			state.state = nullptr;
 			HierarchyUtil::destroyHierarchy(registry, entity, false);
 			registry.remove<SameBoyStateComponent>(entity);
@@ -216,14 +215,19 @@ namespace rp {
 			return;
 		}
 
+		std::array<SameBoyStateComponent*, 4> comps;
+
+		uint32 i = 0;
 		for (const auto& [e, s] : view.each()) {
 			SameBoyState& state = *s.state;
 			state.io = state.io ? state.io : std::make_shared<SystemIo>();
 			state.io->output.audio = std::make_shared<fw::Float32Buffer>(settings.blockSize * 2);
 			state.io->output.audio->clear();
+
+			comps[i++] = &s;
 		}
 
-		SameBoyUtil::process(view.storage().raw(), view.size(), settings.blockSize);
+		SameBoyUtil::process(comps.data(), view.size(), settings.blockSize);
 
 		f32* outL = out.getWritePointer(0);
 		f32* outR = out.getWritePointer(1);

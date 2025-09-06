@@ -241,8 +241,6 @@ namespace rp {
 	}
 
 	void RetroPlugProject::handleLoad(entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
-		spdlog::info("Handling load for entity {} of system type {}", entity, systemType);
-
 		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
 
 		_registry.emplace<SystemComponent>(entity, systemType);

@@ -138,12 +138,10 @@ export class Project {
 	}
 
 	subscribeToMemory(system: SystemId, memoryType: MemoryType) {
-		console.log(`Subscribing to memory: ${memoryType} for system: ${system}`);
 		this._project.subscribeToMemory(system, convertMemoryType(this._module, memoryType));
 	}
 
 	unsubscribeFromMemory(system: SystemId, memoryType: MemoryType) {
-		console.log(`Unsubscribing from memory: ${memoryType} for system: ${system}`);
 		this._project.unsubscribeFromMemory(system, convertMemoryType(this._module, memoryType));
 	}
 
@@ -163,8 +161,6 @@ export class Project {
 			model: convertGameBoyModel(this._module, sameboy.model || GameboyModel.Auto),
 			fastBoot: sameboy.fastBoot || true
 		});
-
-		console.log('adding system');
 
 		return e;
 	}

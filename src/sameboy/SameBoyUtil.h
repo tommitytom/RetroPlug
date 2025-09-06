@@ -6,11 +6,24 @@
 #include "core/CoreComponents.h"
 #include "core/MemoryAccessor.h"
 #include "core/System.h"
+#include "sameboy/SameBoyComponents.h"
+
+namespace rp::SameBoyUtil {
+	void destroy(SameBoyState* state);
+}
 
 namespace rp {
-	struct SameBoyComponent;
-	struct SameBoyStateComponent;
-	struct SameBoyState;
+	template <auto fn>
+	struct deleter_from_fn {
+		template <typename T>
+		constexpr void operator()(T* arg) const {
+			fn(arg);
+		}
+	};
+
+	struct SameBoyStateComponent {
+		std::unique_ptr<SameBoyState, deleter_from_fn<rp::SameBoyUtil::destroy>> state;
+	};
 }
 
 namespace rp::SameBoyUtil {
@@ -40,5 +53,5 @@ namespace rp::SameBoyUtil {
 
 	void reset(SameBoyState& state);
 
-	void destroy(SameBoyState& state);
+	//void destroy(SameBoyState* state);
 }

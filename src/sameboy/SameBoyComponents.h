@@ -33,8 +33,4 @@ namespace rp {
 		bool fastBoot = true;
 		uint32 audioFrameCount = 0;
 	};
-
-	struct SameBoyStateComponent {
-		std::unique_ptr<SameBoyState> state;
-	};
 }

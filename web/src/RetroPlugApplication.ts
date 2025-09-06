@@ -50,14 +50,6 @@ export class RetroPlugApplication {
 				}
 				return path;
 			},
-			preRun: [
-				() => {
-					console.log("WASM module pre-run");
-				},
-			],
-			onRuntimeInitialized: () => {
-				console.log("WASM runtime initialized");
-			},
 			print: (text: string) => {
 				console.log("WASM:", text);
 			},
@@ -69,8 +61,6 @@ export class RetroPlugApplication {
 		this._runner = new this._module.WebApplicationRunner();
 		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
 		this._nativeProject = this._nativeApp!.getProject()!;
-
-		console.log("WASM module loaded");
 	}
 
 	createAudioBuffer(channelCount: number, sampleCount: number, sampleRate: number) {

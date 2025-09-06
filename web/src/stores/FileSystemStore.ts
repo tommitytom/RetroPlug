@@ -1,48 +1,49 @@
-import { create } from 'zustand'
-import { subscribeWithSelector } from 'zustand/middleware'
-import * as Comlink from 'comlink'
+import * as Comlink from 'comlink';
+import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
+
+import type { ArchiveHandler, FileSystemNode, ParsedPath } from './types';
 import type { FileSystemWorkerAPI } from './worker';
-import type { FileSystemNode, ArchiveHandler, ParsedPath } from './types'
 
 interface OPFSStore {
 	// State
-	rootNode: FileSystemNode | null
-	selectedNodes: Set<string>
-	expandedNodes: Set<string>
-	loading: boolean
-	error: string | null
-	worker: Comlink.Remote<FileSystemWorkerAPI> | null
+	rootNode: FileSystemNode | null;
+	selectedNodes: Set<string>;
+	expandedNodes: Set<string>;
+	loading: boolean;
+	error: string | null;
+	worker: Comlink.Remote<FileSystemWorkerAPI> | null;
 
 	// Initialization
-	initialize: () => Promise<void>
+	initialize: () => Promise<void>;
 
 	// Archive handlers
-	registerArchiveHandler: (handler: ArchiveHandler) => Promise<void>
-	unregisterArchiveHandler: (type: string) => Promise<void>
+	registerArchiveHandler: (handler: ArchiveHandler) => Promise<void>;
+	unregisterArchiveHandler: (type: string) => Promise<void>;
 
 	// Unified path operations
-	listPath: (path: string) => Promise<FileSystemNode>
-	readPath: (path: string) => Promise<ArrayBuffer>
-	writePath: (path: string, content: ArrayBuffer | Blob | string) => Promise<void>
-	deletePath: (path: string) => Promise<void>
-	createDirectory: (path: string) => Promise<void>
-	fileExists: (path: string) => Promise<boolean>
+	listPath: (path: string) => Promise<FileSystemNode>;
+	readPath: (path: string) => Promise<ArrayBuffer>;
+	writePath: (path: string, content: ArrayBuffer | Blob | string) => Promise<void>;
+	deletePath: (path: string) => Promise<void>;
+	createDirectory: (path: string) => Promise<void>;
+	fileExists: (path: string) => Promise<boolean>;
 
 	// Copy/Move operations
-	copyPath: (source: string, destination: string) => Promise<void>
-	movePath: (source: string, destination: string) => Promise<void>
+	copyPath: (source: string, destination: string) => Promise<void>;
+	movePath: (source: string, destination: string) => Promise<void>;
 
 	// Tree operations
-	toggleNode: (nodeId: string) => void
-	selectNode: (nodeId: string, multiSelect?: boolean) => void
-	clearSelection: () => void
-	refreshNode: (path: string) => Promise<void>
+	toggleNode: (nodeId: string) => void;
+	selectNode: (nodeId: string, multiSelect?: boolean) => void;
+	clearSelection: () => void;
+	refreshNode: (path: string) => Promise<void>;
 
 	// Utility
-	parsePath: (path: string) => ParsedPath
-	getNodeByPath: (path: string) => FileSystemNode | null
-	getNodeById: (id: string) => FileSystemNode | null
-	cleanup: () => void
+	parsePath: (path: string) => ParsedPath;
+	getNodeByPath: (path: string) => FileSystemNode | null;
+	getNodeById: (id: string) => FileSystemNode | null;
+	cleanup: () => void;
 }
 
 export const useOPFSStore = create<OPFSStore>()(
@@ -56,77 +57,77 @@ export const useOPFSStore = create<OPFSStore>()(
 		worker: null,
 
 		initialize: async () => {
-			const { worker } = get()
-			if (worker) return
+			const { worker } = get();
+			if (worker) return;
 
-			set({ loading: true, error: null })
+			set({ loading: true, error: null });
 
 			try {
 				// Initialize web worker
-				const Worker = new window.Worker(
-					new URL('./worker.js', import.meta.url),
-					{ type: 'module' }
-				)
-				const workerApi = Comlink.wrap<FileSystemWorkerAPI>(Worker)
+				const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+				const workerApi = Comlink.wrap<FileSystemWorkerAPI>(worker);
 
 				// Initialize OPFS in worker
-				await workerApi.initialize()
+				await workerApi.initialize();
 
 				// Load root directory
-				const rootNode = await workerApi.listPath('/')
+				const rootNode = await workerApi.listPath('/');
 
 				set({
 					worker: workerApi,
 					rootNode,
 					loading: false,
-					expandedNodes: new Set([rootNode.id])
-				})
+					expandedNodes: new Set([rootNode.id]),
+				});
 			} catch (error) {
 				set({
 					error: error instanceof Error ? error.message : 'Failed to initialize',
-					loading: false
-				})
+					loading: false,
+				});
 			}
 		},
 
 		registerArchiveHandler: async (handler) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
 			// Transfer handler to worker
-			await worker.registerArchiveHandler({
-				type: handler.type,
-				extensions: handler.extensions
-			}, Comlink.transfer(handler, []))
+			await worker.registerArchiveHandler(
+				{
+					type: handler.type,
+					extensions: handler.extensions,
+				},
+				Comlink.transfer(handler, []),
+			);
 
 			const rootNode = await worker.listPath('/');
 			set({ rootNode });
 		},
 
 		unregisterArchiveHandler: async (type) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			await worker.unregisterArchiveHandler(type)
+			await worker.unregisterArchiveHandler(type);
 		},
 
 		parsePath: (path: string): ParsedPath => {
-			const segments = path.split('/').filter(Boolean)
+			const segments = path.split('/').filter(Boolean);
 
 			// Look for archive extensions in the path
-			const archiveExtensions = ['.zip', '.tar', '.7z', '.rar'] // Common extensions
-			let archiveIndex = -1
-			let archiveType: string | undefined
+			const archiveExtensions = ['.zip', '.tar', '.7z', '.rar']; // Common extensions
+			let archiveIndex = -1;
+			let archiveType: string | undefined;
 
 			for (let i = 0; i < segments.length; i++) {
 				for (const ext of archiveExtensions) {
 					if (segments[i].endsWith(ext)) {
-						archiveIndex = i
-						archiveType = ext.substring(1)
-						break
+						archiveIndex = i;
+						archiveType = ext.substring(1);
+						break;
 					}
 				}
-				if (archiveIndex !== -1) break
+				if (archiveIndex !== -1) break;
 			}
 
 			if (archiveIndex === -1) {
@@ -134,220 +135,220 @@ export const useOPFSStore = create<OPFSStore>()(
 				return {
 					type: 'opfs',
 					opfsPath: '/' + segments.join('/'),
-					segments
-				}
+					segments,
+				};
 			}
 
 			// Archive path
-			const opfsSegments = segments.slice(0, archiveIndex + 1)
-			const archiveSegments = segments.slice(archiveIndex + 1)
+			const opfsSegments = segments.slice(0, archiveIndex + 1);
+			const archiveSegments = segments.slice(archiveIndex + 1);
 
 			return {
 				type: 'archive',
 				opfsPath: '/' + opfsSegments.join('/'),
 				archivePath: archiveSegments.join('/'),
-				segments
-			}
+				segments,
+			};
 		},
 
 		listPath: async (path) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			set({ loading: true, error: null })
+			set({ loading: true, error: null });
 
 			try {
-				const node = await worker.listPath(path)
-				set({ loading: false })
-				return node
+				const node = await worker.listPath(path);
+				set({ loading: false });
+				return node;
 			} catch (error) {
 				set({
 					error: error instanceof Error ? error.message : 'Failed to list path',
-					loading: false
-				})
-				throw error
+					loading: false,
+				});
+				throw error;
 			}
 		},
 
 		readPath: async (path) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			return await worker.readPath(path)
+			return await worker.readPath(path);
 		},
 
 		writePath: async (path, content) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			let buffer: ArrayBuffer
+			let buffer: ArrayBuffer;
 
 			if (content instanceof ArrayBuffer) {
-				buffer = content
+				buffer = content;
 			} else if (content instanceof Blob) {
-				buffer = await content.arrayBuffer()
+				buffer = await content.arrayBuffer();
 			} else if (typeof content === 'string') {
-				buffer = new TextEncoder().encode(content).buffer
+				buffer = new TextEncoder().encode(content).buffer;
 			} else {
-				throw new Error('Invalid content type')
+				throw new Error('Invalid content type');
 			}
 
-			await worker.writePath(path, buffer)
+			await worker.writePath(path, buffer);
 
 			// Refresh parent directory
-			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
-			await get().refreshNode(parentPath)
+			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+			await get().refreshNode(parentPath);
 		},
 
 		deletePath: async (path) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			await worker.deletePath(path)
+			await worker.deletePath(path);
 
 			// Refresh parent directory
-			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
-			await get().refreshNode(parentPath)
+			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+			await get().refreshNode(parentPath);
 		},
 
 		createDirectory: async (path) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			await worker.createDirectory(path)
+			await worker.createDirectory(path);
 
 			// Refresh parent directory
-			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
-			await get().refreshNode(parentPath)
+			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+			await get().refreshNode(parentPath);
 		},
 
 		fileExists: async (path) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			return await worker.fileExists(path)
+			return await worker.fileExists(path);
 		},
 
 		copyPath: async (source, destination) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			await worker.copyPath(source, destination)
+			await worker.copyPath(source, destination);
 
 			// Refresh destination parent
-			const destParent = destination.substring(0, destination.lastIndexOf('/')) || '/'
-			await get().refreshNode(destParent)
+			const destParent = destination.substring(0, destination.lastIndexOf('/')) || '/';
+			await get().refreshNode(destParent);
 		},
 
 		movePath: async (source, destination) => {
-			const { worker } = get()
-			if (!worker) throw new Error('Worker not initialized')
+			const { worker } = get();
+			if (!worker) throw new Error('Worker not initialized');
 
-			await worker.movePath(source, destination)
+			await worker.movePath(source, destination);
 
 			// Refresh both source and destination parents
-			const sourceParent = source.substring(0, source.lastIndexOf('/')) || '/'
-			const destParent = destination.substring(0, destination.lastIndexOf('/')) || '/'
+			const sourceParent = source.substring(0, source.lastIndexOf('/')) || '/';
+			const destParent = destination.substring(0, destination.lastIndexOf('/')) || '/';
 
-			await get().refreshNode(sourceParent)
+			await get().refreshNode(sourceParent);
 			if (sourceParent !== destParent) {
-				await get().refreshNode(destParent)
+				await get().refreshNode(destParent);
 			}
 		},
 
 		toggleNode: (nodeId) => {
 			set((state) => {
-				const expanded = new Set(state.expandedNodes)
+				const expanded = new Set(state.expandedNodes);
 				if (expanded.has(nodeId)) {
-					expanded.delete(nodeId)
+					expanded.delete(nodeId);
 				} else {
-					expanded.add(nodeId)
+					expanded.add(nodeId);
 				}
-				return { expandedNodes: expanded }
-			})
+				return { expandedNodes: expanded };
+			});
 		},
 
 		selectNode: (nodeId, multiSelect = false) => {
 			set((state) => {
-				const selected = multiSelect ? new Set(state.selectedNodes) : new Set<string>()
+				const selected = multiSelect ? new Set(state.selectedNodes) : new Set<string>();
 				if (selected.has(nodeId)) {
-					selected.delete(nodeId)
+					selected.delete(nodeId);
 				} else {
-					selected.add(nodeId)
+					selected.add(nodeId);
 				}
-				return { selectedNodes: selected }
-			})
+				return { selectedNodes: selected };
+			});
 		},
 
 		clearSelection: () => {
-			set({ selectedNodes: new Set() })
+			set({ selectedNodes: new Set() });
 		},
 
 		refreshNode: async (path) => {
-			const node = get().getNodeByPath(path)
-			if (!node) return
+			const node = get().getNodeByPath(path);
+			if (!node) return;
 
-			const updatedNode = await get().listPath(path)
+			const updatedNode = await get().listPath(path);
 
 			// Update the node in the tree
 			set((state) => {
 				const updateNodeInTree = (root: FileSystemNode): FileSystemNode => {
 					if (root.path === path) {
-						return { ...root, ...updatedNode }
+						return { ...root, ...updatedNode };
 					}
 					if (root.children) {
 						return {
 							...root,
-							children: root.children.map(updateNodeInTree)
-						}
+							children: root.children.map(updateNodeInTree),
+						};
 					}
-					return root
-				}
+					return root;
+				};
 
 				return {
-					rootNode: state.rootNode ? updateNodeInTree(state.rootNode) : null
-				}
-			})
+					rootNode: state.rootNode ? updateNodeInTree(state.rootNode) : null,
+				};
+			});
 		},
 
 		getNodeByPath: (path) => {
-			const { rootNode } = get()
-			if (!rootNode) return null
+			const { rootNode } = get();
+			if (!rootNode) return null;
 
 			const findNode = (node: FileSystemNode, targetPath: string): FileSystemNode | null => {
-				if (node.path === targetPath) return node
+				if (node.path === targetPath) return node;
 				if (node.children) {
 					for (const child of node.children) {
-						const found = findNode(child, targetPath)
-						if (found) return found
+						const found = findNode(child, targetPath);
+						if (found) return found;
 					}
 				}
-				return null
-			}
+				return null;
+			};
 
-			return findNode(rootNode, path)
+			return findNode(rootNode, path);
 		},
 
 		getNodeById: (id) => {
-			const { rootNode } = get()
-			if (!rootNode) return null
+			const { rootNode } = get();
+			if (!rootNode) return null;
 
 			const findNode = (node: FileSystemNode, targetId: string): FileSystemNode | null => {
-				if (node.id === targetId) return node
+				if (node.id === targetId) return node;
 				if (node.children) {
 					for (const child of node.children) {
-						const found = findNode(child, targetId)
-						if (found) return found
+						const found = findNode(child, targetId);
+						if (found) return found;
 					}
 				}
-				return null
-			}
+				return null;
+			};
 
-			return findNode(rootNode, id)
+			return findNode(rootNode, id);
 		},
 
 		cleanup: () => {
-			const { worker } = get()
+			const { worker } = get();
 			if (worker) {
 				// Cleanup worker resources if needed
 			}
@@ -355,8 +356,8 @@ export const useOPFSStore = create<OPFSStore>()(
 				rootNode: null,
 				selectedNodes: new Set(),
 				expandedNodes: new Set(),
-				worker: null
-			})
-		}
-	}))
-)
+				worker: null,
+			});
+		},
+	})),
+);

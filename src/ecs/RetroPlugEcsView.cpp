@@ -8,6 +8,7 @@
 #include "sameboy/SameBoyComponents.h"
 #include "ecs/RetroPlugComponents.h"
 #include "ecs/HierarchyUtil.h"
+#include "ui/PanelView.h"
 //#include "ecs/LsdjInstance.h"
 
 namespace rp {
@@ -108,7 +109,10 @@ namespace rp {
 
 	void RetroPlugEcsView::onInitialize() {
 		setScale(3.0f);
-		getLayout().setOverflow(fw::FlexOverflow::Visible);
+		fw::ViewLayout& layout = getLayout();
+		layout.setFlexDirection(fw::FlexDirection::Row);
+		layout.setFlexWrap(fw::FlexWrap::Wrap);
+		//getLayout().setOverflow(fw::FlexOverflow::Visible);
 	}
 
 	bool RetroPlugEcsView::onDrop(const std::vector<std::string>& paths) {
@@ -118,14 +122,17 @@ namespace rp {
 
 	void RetroPlugEcsView::onUpdate(f32 deltaTime) {
 		_project.onUpdate(deltaTime);
+
+		if (_project.getVersion() != _version) {
+			rebuildUi();
+			_version = _project.getVersion();
+		}
 	}
 
 	void RetroPlugEcsView::onRender(fw::Canvas& canvas) {
 		canvas.fillRect(getDimensions(), fw::Color4F::red);
 
 		entt::registry& registry = getRegistry();
-
-		rebuildUi();
 
 		for (const fw::ViewPtr& child : getChildren()) {
 			auto systemView = child->asShared<EcsSystemView>();
@@ -158,43 +165,83 @@ namespace rp {
 		}
 	}
 
+	void focusSystem(const fw::ViewPtr& view) {
+		if (view->getChildCount()) {
+			view->getChild(view->getChildCount() - 1)->focus();
+		} else {
+			view->focus();
+		}
+	}
+
 	void RetroPlugEcsView::rebuildUi() {
 		entt::registry& registry = getRegistry();
 		auto view = registry.view<SameBoyComponent>();
 		entt::id_type systemType = entt::type_id<SameBoyComponent>().index();
 
-		if (view.size() != getChildCount()) {
-			this->removeChildren();
+		this->removeChildren();
 
-			uint32 i = 1;
-			for (const auto& [e, c] : view.each()) {
-				auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i++));
-				systemView->setEntity(e);
-				systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
-				systemView->focus();
+		using EcsSystemViewPtr = std::shared_ptr<EcsSystemView>;
 
-				eachHook(systemType, _project.getContext().serviceHooks, [&](const SystemHookBase& hook) {
-					fw::ViewPtr overlay = hook.onCreateOverlay(registry, e);
-					if (overlay) {
-						systemView->addChild(overlay);
-						overlay->focus();
-					}
-				});
+		uint32 i = 1;
+		entt::entity selectedSystem = entt::null;
+		std::vector<EcsSystemViewPtr> systemViews;
+		for (const auto& [e, c] : view.each()) {
+			auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i++));
+			systemView->setEntity(e);
+			systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
 
-				subscribe<fw::KeyEvent>(systemView, [this, e](const fw::KeyEvent& ev) {
-					fw::ButtonType button = mapKeyToButton(ev.key);
-					if (button == fw::ButtonType::MAX) {
-						return;
-					}
+			if (selectedSystem == entt::null || _selectedSystem == e) {
+				selectedSystem = e;
+			}
 
-					_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
-						.entity = e,
-						.button = (int)button,
-						.down = ev.down
+			eachHook(systemType, _project.getContext().serviceHooks, [&](const SystemHookBase& hook) {
+				fw::ViewPtr overlay = hook.onCreateOverlay(registry, e);
+				if (overlay) {
+					systemView->addChild(overlay);
+				}
+			});
+
+			subscribe<fw::KeyEvent>(systemView, [this, e](const fw::KeyEvent& ev) {
+				if (ev.down && ev.key == fw::VirtualKey::F5) {
+					fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
+					//_project.deserialize(archive);
+
+					entt::entity entity = _project.addSystem(SystemLoadComponent{
+						.entries = {
+							{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
+							{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
+						},
+					}, SameBoyComponent{
+						.model = GameboyModel::CgbC,
+						.fastBoot = true
 					});
+					return;
+				}
+
+				fw::ButtonType button = mapKeyToButton(ev.key);
+				if (button == fw::ButtonType::MAX) {
+					return;
+				}
+
+				_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
+					.entity = e,
+					.button = (int)button,
+					.down = ev.down
 				});
+			});
+		}
+
+		for (const EcsSystemViewPtr& systemView : systemViews) {
+			if (systemView->getEntity() == selectedSystem) {
+				focusSystem(systemView);
+			} else {
+				fw::PanelViewPtr panel = systemView->addChild<fw::PanelView>("Overlay");
+				panel->fitToParent();
+				panel->setColor(fw::Color4F(0, 0, 0, 0.5f));
 			}
 		}
+
+		_selectedSystem = selectedSystem;
 
 		fw::DimensionF dimensions{
 			160.0f * (f32)std::max((int32)view.size(), 1),
@@ -220,8 +267,6 @@ namespace rp {
 				.model = GameboyModel::CgbC,
 				.fastBoot = true
 			});
-
-			_project.subscribeToMemory(entity, MemoryType::Ram);
 
 			/*entt::entity e = SineGenerator::emplace(registry);
 

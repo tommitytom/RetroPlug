@@ -1,6 +1,10 @@
 import * as Comlink from 'comlink';
 import type { ArchiveHandler, ArchiveInstance, FileSystemNode, ParsedPath } from './types';
 import { ZipArchiveHandler } from './zip-handler';
+import { SavArchiveHandler } from './SavArchive.ts';
+import type {
+	MainModule
+} from "../native/RetroPlug.d.ts";
 
 export interface FileSystemWorkerAPI {
 	initialize: () => Promise<void>;
@@ -16,15 +20,38 @@ export interface FileSystemWorkerAPI {
 	fileExists: (path: string) => Promise<boolean>;
 }
 
+
+
 class FileSystemWorker implements FileSystemWorkerAPI {
+	private module: MainModule | null = null;
 	private opfsRoot: FileSystemDirectoryHandle | null = null;
 	private archiveHandlers = new Map<string, ArchiveHandler>();
 	private archiveCache = new Map<string, ArchiveInstance>();
 
 	async initialize(): Promise<void> {
 		this.opfsRoot = await navigator.storage.getDirectory();
-		const handler = new ZipArchiveHandler();
-		this.registerArchiveHandler({ type: handler.type, extensions: handler.extensions }, handler);
+
+		const moduleFactory = (await import("../native/RetroPlugEcs.mjs")).default;
+		this.module = (await moduleFactory({
+			locateFile: (path: string) => {
+				if (path.endsWith(".wasm")) {
+					return "/RetroPlugEcs.wasm";
+				}
+				return path;
+			},
+			print: (text: string) => {
+				console.log("WASM:", text);
+			},
+			printErr: (text: string) => {
+				console.error("WASM Error:", text);
+			},
+		})) as MainModule;
+
+		const zipHandler = new ZipArchiveHandler();
+		this.registerArchiveHandler({ type: zipHandler.type, extensions: zipHandler.extensions }, zipHandler);
+
+		const savHandler = new SavArchiveHandler(this.module);
+		this.registerArchiveHandler({ type: savHandler.type, extensions: savHandler.extensions }, savHandler);
 	}
 
 	async registerArchiveHandler(config: { type: string; extensions: string[] }, handler: ArchiveHandler): Promise<void> {
@@ -56,7 +83,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async readPath(path: string): Promise<ArrayBuffer> {
 		const parsed = this.parsePath(path);
 
-		if (parsed.type === 'opfs') {
+		if (parsed.type === 'opfs' || parsed.archivePath === '') {
 			return await this.readOPFSFile(parsed.opfsPath);
 		} else {
 			return await this.readArchiveFile(parsed.opfsPath, parsed.archivePath!);
@@ -66,7 +93,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async writePath(path: string, content: ArrayBuffer): Promise<void> {
 		const parsed = this.parsePath(path);
 
-		if (parsed.type === 'opfs') {
+		if (parsed.type === 'opfs' || parsed.archivePath === '') {
 			await this.writeOPFSFile(parsed.opfsPath, content);
 		} else {
 			await this.writeArchiveFile(parsed.opfsPath, parsed.archivePath!, content);
@@ -91,7 +118,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async deletePath(path: string): Promise<void> {
 		const parsed = this.parsePath(path);
 
-		if (parsed.type === 'opfs') {
+		if (parsed.type === 'opfs' || parsed.archivePath === '') {
 			await this.deleteOPFSNode(parsed.opfsPath);
 		} else {
 			await this.deleteArchiveFile(parsed.opfsPath, parsed.archivePath!);
@@ -126,7 +153,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 		const parsed = this.parsePath(path);
 
 		try {
-			if (parsed.type === 'opfs') {
+			if (parsed.type === 'opfs' || parsed.archivePath === '') {
 				await this.getFileHandle(parsed.opfsPath);
 				return true;
 			} else {

@@ -107,6 +107,7 @@ namespace fw::Replicator {
 		std::vector<EmplaceComponentEvent> components;
 	};
 
+	struct DestroyAtEndOfTickTag {};
 	template <typename Component> struct ComponentCreatedTag {};
 	template <typename Component> struct ComponentUpdatedTag {};
 	template <typename Component> struct ComponentDestroyedTag {};
@@ -168,7 +169,7 @@ namespace fw::Replicator {
 		assert(getContext(registry).state == ReplicatorState::Ready);
 
 		if (registry.all_of<Component>(entity)) [[likely]] {
-			registry.remove<Component>(entity);
+			registry.emplace_or_replace<DestroyAtEndOfTickTag>(entity);
 			registry.emplace_or_replace<ComponentDestroyedTag<Component>>(entity);
 		} else {
 			toggleError(registry);
@@ -248,7 +249,8 @@ namespace fw::Replicator {
 			}
 		}
 
-		registry.emplace_or_replace<ComponentDestroyedTag<Component>>(e);
+		// According to entt docs this is not safe
+		//registry.emplace_or_replace<ComponentDestroyedTag<Component>>(e);
 	}
 
 	inline void handleErrorState(ReplicatorContext& ctx) {
@@ -268,6 +270,15 @@ namespace fw::Replicator {
 	inline void endUpdate(entt::registry& registry) {
 		ReplicatorContext& ctx = getContext(registry);
 		handleErrorState(ctx);
+		ctx.receiving = false;
+	}
+
+	inline void handleDeletions(entt::registry& registry) {
+		ReplicatorContext& ctx = getContext(registry);
+		ctx.receiving = true;
+		for (entt::entity e : registry.view<DestroyAtEndOfTickTag>()) {
+			registry.destroy(e);
+		}
 		ctx.receiving = false;
 	}
 

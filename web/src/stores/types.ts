@@ -28,7 +28,6 @@ export interface ArchiveHandler {
 }
 
 export interface ArchiveInstance {
-	open: (buffer: ArrayBuffer) => Promise<void>
 	list: () => FileSystemNode[]
 	read: (path: string) => ArrayBuffer
 	write: (path: string, content: ArrayBuffer) => void

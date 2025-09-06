@@ -20,7 +20,8 @@ namespace rp {
 	}
 
 	void SameboyHooks::onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
-		SameBoyStateComponent state{std::make_unique<SameBoyState>()};
+		SameBoyStateComponent state;
+		state.state.reset(new SameBoyState());
 
 		if (!SameBoyUtil::setup(system, *state.state, 11050, load)) {
 			spdlog::error("Failed to setup SameBoy instance");

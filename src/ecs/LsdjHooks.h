@@ -23,10 +23,11 @@ namespace rp {
 	class EcsLsdjOverlay : public EcsSystemOverlay {
 		FwRegisterObject()
 	private:
+		entt::entity _entity = entt::null;
 		LsdjController _lsdj;
 
 	public:
-		EcsLsdjOverlay(LsdjController lsdj) : _lsdj(lsdj) {}
+		EcsLsdjOverlay(entt::entity e, LsdjController lsdj) : _entity(e), _lsdj(lsdj) {}
 		~EcsLsdjOverlay() = default;
 
 		bool onDrop(const std::vector<std::string>& paths) override {
@@ -51,7 +52,7 @@ namespace rp {
 				}
 			}
 
-			_lsdj.addKitComponent(entt::entity(0), std::move(comp));
+			_lsdj.addKitComponent(_entity, std::move(comp));
 
 			return true;
 		}

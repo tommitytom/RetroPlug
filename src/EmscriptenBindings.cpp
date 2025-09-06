@@ -509,10 +509,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<rp::lsdj::Project>("NativeLsdjProject")
+		//.constructor<>()
+		.constructor<fw::Uint8Buffer&>()
 		.property("version", &rp::lsdj::Project::getVersion)
 		.function("getName", &lsdjProject_getName)
+		.function("setName", &rp::lsdj::Project::setName)
 		.property("song", &rp::lsdj::Project::getSong)
 		.property("isValid", &rp::lsdj::Project::isValid)
+		.property("index", &rp::lsdj::Project::getIndex)
 	;
 
 	class_<rp::lsdj::Sav>("NativeLsdjSav")
@@ -527,6 +531,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("workingProject", &rp::lsdj::Sav::getWorkingProject)
 		.property("workingSong", &rp::lsdj::Sav::getWorkingSong)
 		.function("setWorkingProject", &rp::lsdj::Sav::setWorkingProject)
+		.function("eraseProject", &rp::lsdj::Sav::eraseProject)
+		.function("findNextEmptyProject", &rp::lsdj::Sav::findNextEmptyProject)
+		.function("writeProject", &rp::lsdj::Sav::writeProject)
 	;
 
 	class_<rp::lsdj::Rom>("NativeLsdjRom")

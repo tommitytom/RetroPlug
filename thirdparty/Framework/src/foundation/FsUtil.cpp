@@ -28,6 +28,7 @@ static void syncWebFs() {}
 
 #else
 
+void fw::FsUtil::setupFs() {}
 static void syncWebFs() {}
 
 #endif

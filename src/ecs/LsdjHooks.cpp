@@ -38,7 +38,7 @@ namespace rp {
 	fw::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
 		LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
 		if (comp) {
-			return std::make_shared<EcsLsdjOverlay>(LsdjController{ registry });
+			return std::make_shared<EcsLsdjOverlay>(entity, LsdjController{ registry });
 		}
 
 		return nullptr;

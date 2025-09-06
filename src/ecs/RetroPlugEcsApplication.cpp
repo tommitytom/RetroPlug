@@ -6,7 +6,6 @@
 
 namespace rp {
 	RetroPlugEcsApplication::RetroPlugEcsApplication(): _audioEventNode("Audio"), _project(_audioEventNode->spawn("Ui"), _audioEventNode->getId()) {
-		spdlog::info("Created RetroPlugEcsApplication. project: {}", (uintptr_t)&_project);
 		fw::FsUtil::setupFs();
 	}
 

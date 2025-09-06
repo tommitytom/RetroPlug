@@ -152,10 +152,8 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			e.preventDefault();
 			e.stopPropagation();
 			dragCounter++;
-			console.log('Native drag enter detected', dragCounter);
 
 			if (e.dataTransfer?.types.includes('Files')) {
-				console.log('Files detected, showing drop zone');
 				setIsDragOver(true);
 			}
 		};
@@ -164,7 +162,6 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			e.preventDefault();
 			e.stopPropagation();
 			dragCounter--;
-			console.log('Native drag leave detected', dragCounter);
 
 			if (dragCounter === 0) {
 				setIsDragOver(false);
@@ -213,14 +210,12 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 
 		if (!deepEqual(kits, romKits)) {
 			setRomKits(kits);
-			console.log('Kits updated!');
 		}
 
 		descs.delete();
 		lsdj.delete();
 
 		const timeTaken = timer.stop();
-		console.log(`Time taken to analyze ROM: ${timeTaken}ms`);
 	}, [project, romVersion, version, savVersion, romKits, setRomKits]);
 
 	const toggleAllKits = useCallback(() => {

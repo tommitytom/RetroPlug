@@ -20,7 +20,6 @@ extern "C" {
 #include "foundation/Math.h"
 #include "foundation/Image.h"
 #include "sameboy/Constants.h"
-#include "sameboy/SameBoyComponents.h"
 
 using namespace rp;
 
@@ -322,6 +321,7 @@ void SameBoyUtil::reset(SameBoyState& state) {
 	}
 }
 
-void SameBoyUtil::destroy(SameBoyState& state) {
-	delete state.gb;
+void SameBoyUtil::destroy(SameBoyState* state) {
+	delete state->gb;
+	delete state;
 }

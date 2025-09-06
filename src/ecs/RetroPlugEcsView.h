@@ -11,6 +11,8 @@ namespace rp {
 
 	private:
 		RetroPlugProject& _project;
+		uint32 _version = 0;
+		entt::entity _selectedSystem = entt::null;
 
 	public:
 		RetroPlugEcsView(RetroPlugProject& project);

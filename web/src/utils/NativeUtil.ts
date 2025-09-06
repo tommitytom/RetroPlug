@@ -15,8 +15,18 @@ export function fromUint8Array(module: MainModule, buffer: Uint8Array): Uint8Buf
 	return target;
 }
 
+export function fromArrayBuffer(module: MainModule, buffer: ArrayBuffer): Uint8Buffer {
+	const target = new module!.Uint8Buffer(buffer.byteLength);
+	target.data().set(new Uint8Array(buffer));
+	return target;
+}
+
 export function toUint8Array(buffer: Uint8Buffer): Uint8Array {
 	return new Uint8Array(buffer.data());
+}
+
+export function toArrayBuffer(buffer: Uint8Buffer): ArrayBuffer {
+	return toUint8Array(buffer).slice().buffer;
 }
 
 export function convertFloat32Buffer(buffer: Float32Buffer): Float32Array {
