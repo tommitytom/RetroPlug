@@ -103,6 +103,14 @@
 	opacity: 0.5;
 }
 
+.file-tree-item[data-node-type="archive"] {
+	border-left: 2px solid rgba(168, 85, 247, 0.4);
+}
+
+.file-tree-item[data-node-type="archive"]:hover {
+	border-left-color: rgba(168, 85, 247, 0.6);
+}
+
 .file-tree-container.drag-over {
 	border-color: rgb(59, 130, 246);
 	box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);

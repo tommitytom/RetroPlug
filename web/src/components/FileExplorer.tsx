@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useOPFSStore } from '../stores/FileSystemStore'
 import type { FileSystemNode } from '../stores/types'
+import { ZipArchiveHandler } from '../stores/zip-handler'
 import '../styles/FileTree.css'
 
 interface TreeNodeProps {
@@ -55,7 +56,7 @@ function TreeNode({
 		if (node.type === 'directory') {
 			return isExpanded ? '📁' : '📂'
 		} else if (node.type === 'archive') {
-			return '📦'
+			return isExpanded ? '📦' : '🗃️'
 		} else {
 			// File icons based on extension
 			const ext = node.name.split('.').pop()?.toLowerCase()
@@ -90,6 +91,7 @@ function TreeNode({
 			<div
 				className={`file-tree-item ${isSelected ? 'selected' : ''} ${isDragOver ? 'drag-over' : ''}`}
 				data-level={level}
+				data-node-type={node.type}
 				onClick={handleClick}
 				onDoubleClick={handleDoubleClick}
 				draggable={true}
@@ -99,7 +101,7 @@ function TreeNode({
 				onDragEnter={(e) => onDragEnter?.(e, node)}
 				onDragLeave={onDragLeave}
 			>
-				{node.type === 'directory' && (
+				{(node.type === 'directory' || node.type === 'archive') && (
 					<span
 						className="file-tree-item-icon file-tree-expand-icon"
 						onClick={handleToggleExpand}
@@ -119,7 +121,7 @@ function TreeNode({
 					</span>
 				)}
 			</div>
-			{node.type === 'directory' && isExpanded && node.children && (
+			{(node.type === 'directory' || node.type === 'archive') && isExpanded && node.children && (
 				<>
 					{node.children.map((child) => (
 						<TreeNode
@@ -161,7 +163,8 @@ export function FileExplorer() {
 		createDirectory,
 		movePath,
 		copyPath,
-		refreshNode
+		refreshNode,
+		registerArchiveHandler
 	} = useOPFSStore()
 
 	const [draggedNode, setDraggedNode] = useState<FileSystemNode | null>(null)
@@ -170,10 +173,13 @@ export function FileExplorer() {
 	const dropZoneRef = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
-		initialize()
+		initialize().then(() => {
+			registerArchiveHandler(new ZipArchiveHandler())
+			// Register other archive handlers as needed
+		})
 	}, [initialize])
 
-	// Load children when a directory is expanded
+	// Load children when a directory or archive is expanded
 	const handleToggleExpand = useCallback(async (nodeId: string) => {
 		const node = findNodeById(rootNode, nodeId)
 		if (!node) return
@@ -181,11 +187,11 @@ export function FileExplorer() {
 		toggleNode(nodeId)
 
 		// If expanding and no children loaded yet, load them
-		if (!expandedNodes.has(nodeId) && node.type === 'directory' && !node.children) {
+		if (!expandedNodes.has(nodeId) && (node.type === 'directory' || node.type === 'archive') && !node.children) {
 			try {
 				await refreshNode(node.path)
 			} catch (error) {
-				console.error('Failed to load directory children:', error)
+				console.error('Failed to load directory/archive children:', error)
 			}
 		}
 	}, [rootNode, expandedNodes, toggleNode, refreshNode])
@@ -208,7 +214,7 @@ export function FileExplorer() {
 	}, [selectNode])
 
 	const handleNodeDoubleClick = useCallback((node: FileSystemNode) => {
-		if (node.type === 'directory') {
+		if (node.type === 'directory' || node.type === 'archive') {
 			handleToggleExpand(node.id)
 		} else {
 			// Handle file opening here
@@ -231,7 +237,7 @@ export function FileExplorer() {
 	}, [])
 
 	const handleDragEnter = useCallback((event: React.DragEvent, node: FileSystemNode) => {
-		if (node.type === 'directory') {
+		if (node.type === 'directory' || node.type === 'archive') {
 			setDragOverNode(node.id)
 		}
 	}, [])
@@ -247,7 +253,7 @@ export function FileExplorer() {
 		event.preventDefault()
 		setDragOverNode(null)
 
-		if (targetNode.type !== 'directory') return
+		if (targetNode.type !== 'directory' && targetNode.type !== 'archive') return
 
 		// Handle dropped files from external sources
 		const files = Array.from(event.dataTransfer.files)
