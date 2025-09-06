@@ -129,6 +129,10 @@ export class Project {
 		return this._project.serializeToString();
 	}
 
+	deserialize(data: string) {
+		return this._project.deserializeFromString(data);
+	}
+
 	getLsdjController() {
 		return this._project.getLsdjController();
 	}

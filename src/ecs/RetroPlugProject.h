@@ -71,9 +71,9 @@ namespace rp {
 
 		std::string serializeToString() const;
 
-		void deserialize(const fw::Uint8Buffer& archive);
+		bool deserialize(const fw::Uint8Buffer& archive);
 
-		void deserializeFromString(std::string_view str);
+		bool deserializeFromString(std::string_view str);
 
 		uint32 getMemoryVersion(entt::entity entity, MemoryType type) const;
 

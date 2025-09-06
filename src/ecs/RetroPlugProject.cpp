@@ -285,16 +285,18 @@ namespace rp {
 		return target;
 	}
 
-	void RetroPlugProject::deserializeFromString(std::string_view str) {
+	bool RetroPlugProject::deserializeFromString(std::string_view str) {
 		ProjectSerializer::deserialize(_registry, str);
 
 		for (const auto& [e, system, load] : _registry.view<SystemComponent, SystemLoadComponent>().each()) {
 			handleLoad(e, load, system.systemType);
 		}
+
+		return true;
 	}
 
-	void RetroPlugProject::deserialize(const fw::Uint8Buffer& archive) {
+	bool RetroPlugProject::deserialize(const fw::Uint8Buffer& archive) {
 		std::string_view source((const char*)archive.data(), archive.size());
-		deserializeFromString(source);
+		return deserializeFromString(source);
 	}
 }

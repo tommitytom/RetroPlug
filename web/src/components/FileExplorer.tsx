@@ -12,6 +12,7 @@ interface TreeNodeProps {
 	selectedNodes: Set<string>
 	expandedNodes: Set<string>
 	dragOverNode: string | null
+	isFocused: boolean
 	onDragStart?: (event: React.DragEvent, node: FileSystemNode) => void
 	onDrop?: (event: React.DragEvent, targetNode: FileSystemNode) => void
 	onDragOver?: (event: React.DragEvent) => void
@@ -28,6 +29,7 @@ function TreeNode({
 	selectedNodes,
 	expandedNodes,
 	dragOverNode,
+	isFocused,
 	onDragStart,
 	onDrop,
 	onDragOver,
@@ -97,12 +99,15 @@ function TreeNode({
 		return paddingMap[Math.min(level, 5) as keyof typeof paddingMap] || 'pl-22'
 	}
 
+	const getSelectionClass = () => {
+		if (!isSelected) return ''
+		return isFocused ? 'bg-blue-600/30 text-blue-300' : 'bg-gray-600/30 text-gray-300'
+	}
+
 	return (
 		<>
 			<div
-				className={`flex items-center py-1 text-sm cursor-pointer transition-colors duration-200 text-gray-300 hover:bg-gray-700 hover:text-white ${
-					isSelected ? 'bg-blue-600/30 text-blue-300' : ''
-				} ${isDragOver ? 'bg-blue-500/30 border border-dashed border-blue-500' : ''} ${
+				className={`flex items-center py-1 text-sm cursor-pointer transition-colors duration-200 text-gray-300 hover:bg-gray-700 hover:text-white ${getSelectionClass()} ${isDragOver ? 'bg-blue-500/30 border border-dashed border-blue-500' : ''} ${
 					node.type === 'archive' ? 'border-l-2 border-purple-400/40 hover:border-purple-400/60' : ''
 				} ${getPaddingClass(level)}`}
 				onClick={handleClick}
@@ -157,6 +162,7 @@ function TreeNode({
 							selectedNodes={selectedNodes}
 							expandedNodes={expandedNodes}
 							dragOverNode={dragOverNode}
+							isFocused={isFocused}
 							onDragStart={onDragStart}
 							onDrop={onDrop}
 							onDragOver={onDragOver}
@@ -180,7 +186,7 @@ interface FileExplorerProps {
 	onDirectoryCreate?: (parentNode: FileSystemNode, name: string) => Promise<void>
 	onDirectoryExpand?: (node: FileSystemNode) => Promise<void>
 	onDirectoryCollapse?: (node: FileSystemNode) => void
-	onContextMenu?: (node: FileSystemNode, event: React.MouseEvent) => void
+	onContextMenu?: (node: FileSystemNode|null, event: React.MouseEvent) => void
 	onDragStart?: (node: FileSystemNode, event: React.DragEvent) => void
 	onDragEnd?: (node: FileSystemNode, event: React.DragEvent) => void
 	onError?: (error: string, operation?: string) => void
@@ -216,6 +222,7 @@ export function FileExplorer({
 		createDirectory,
 		movePath,
 		copyPath,
+		deletePath,
 		refreshNode,
 		registerArchiveHandler
 	} = useOPFSStore()
@@ -223,6 +230,7 @@ export function FileExplorer({
 	const [draggedNode, setDraggedNode] = useState<FileSystemNode | null>(null)
 	const [dragOverNode, setDragOverNode] = useState<string | null>(null)
 	const [isDragOverContainer, setIsDragOverContainer] = useState(false)
+	const [isFocused, setIsFocused] = useState(false)
 	const containerRef = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
@@ -285,7 +293,18 @@ export function FileExplorer({
 		return null
 	}
 
+	const handleClick = useCallback((event: React.MouseEvent) => {
+		if (event.button === 2 && onContextMenu) {
+			event.preventDefault()
+			onContextMenu(null, event)
+		} else {
+			clearSelection();
+		}
+	}, [clearSelection]);
+
 	const handleNodeClick = useCallback((node: FileSystemNode, event: React.MouseEvent) => {
+		event.stopPropagation();
+
 		const isCtrlClick = event.ctrlKey || event.metaKey
 		selectNode(node.id, isCtrlClick)
 
@@ -478,6 +497,14 @@ export function FileExplorer({
 		}
 	}, [])
 
+	const handleFocus = useCallback(() => {
+		setIsFocused(true)
+	}, [])
+
+	const handleBlur = useCallback(() => {
+		setIsFocused(false)
+	}, [])
+
 	const handleKeyDown = useCallback((event: KeyboardEvent) => {
 		// Only handle keyboard events if the FileExplorer container is focused
 		if (document.activeElement !== containerRef.current && !containerRef.current?.contains(document.activeElement)) {
@@ -501,8 +528,8 @@ export function FileExplorer({
 			} else {
 				console.log('Delete requested for:', nodesToDelete.map(n => n.path))
 				// TODO: Implement actual delete functionality if no callback provided
-				// const deletePromises = nodesToDelete.map(node => deletePath(node.path))
-				// Promise.all(deletePromises).catch(console.error)
+				const deletePromises = nodesToDelete.map(node => deletePath(node.path))
+				Promise.all(deletePromises).catch(console.error)
 			}
 		}
 		if (event.key === 'Escape') {
@@ -533,8 +560,8 @@ export function FileExplorer({
 
 	if (loading) {
 		return (
-			<div className="h-full w-full flex flex-col bg-gray-900 border border-gray-700 rounded-sm">
-				<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white border-b border-gray-700 flex items-center">
+			<div className="h-full w-full flex flex-col bg-gray-900">
+				<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white flex items-center">
 					<span className="font-mono font-medium">📁</span>
 					<span className="font-medium ml-2">File Explorer</span>
 				</div>
@@ -547,8 +574,8 @@ export function FileExplorer({
 
 	if (error) {
 		return (
-			<div className="h-full w-full flex flex-col bg-gray-900 border border-gray-700 rounded-sm">
-				<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white border-b border-gray-700 flex items-center">
+			<div className="h-full w-full flex flex-col bg-gray-900">
+				<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white flex items-center">
 					<span className="font-mono font-medium">❌</span>
 					<span className="font-medium ml-2">Error</span>
 				</div>
@@ -561,21 +588,23 @@ export function FileExplorer({
 
 	return (
 		<div
-			className={`h-full w-full flex flex-col bg-gray-900 border border-gray-700 rounded-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 outline-none ${isDragOverContainer ? 'border-blue-500 ring-2 ring-blue-500/20' : ''}`}
+			className={`h-full w-full flex flex-col bg-gray-900 outline-none ${isDragOverContainer ? 'border border-blue-500 ring-2 ring-blue-500/20' : ''}`}
 			ref={containerRef}
 			tabIndex={0}
+			onFocus={handleFocus}
+			onBlur={handleBlur}
 			onDrop={handleContainerDrop}
 			onDragOver={handleContainerDragOver}
 			onDragLeave={handleContainerDragLeave}
 		>
-			<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white border-b border-gray-700 flex items-center">
+			<div className="px-2 py-1 bg-gray-800 font-medium text-sm text-white flex items-center">
 				<span className="font-mono font-medium">📁</span>
 				<span className="font-medium ml-2">File Explorer</span>
 				<div className="ml-auto text-xs opacity-70">
 					{selectedNodes.size > 0 && `${selectedNodes.size} selected`}
 				</div>
 			</div>
-			<div className="flex-1 overflow-y-auto">
+			<div className="flex-1 overflow-y-auto" onContextMenu={handleClick} onClick={handleClick}>
 				{rootNode?.children && rootNode.children.length > 0 ? (
 					rootNode.children.map((child) => (
 						<TreeNode
@@ -588,6 +617,7 @@ export function FileExplorer({
 							selectedNodes={selectedNodes}
 							expandedNodes={expandedNodes}
 							dragOverNode={dragOverNode}
+							isFocused={isFocused}
 							onDragStart={handleDragStart}
 							onDrop={handleDrop}
 							onDragOver={handleDragOver}

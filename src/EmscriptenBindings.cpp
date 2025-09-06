@@ -209,7 +209,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("serialize", &RetroPlugProject::serialize)
 		.function("serializeToString", &RetroPlugProject::serializeToString)
 		.function("deserialize", &RetroPlugProject::deserialize)
-		//.function("deserializeFromString", &RetroPlugProject::deserializeFromString)
+		.function("deserializeFromString", +[](RetroPlugProject& project, const std::string& str) {
+			return project.deserializeFromString(str);
+		})
 		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.property("systemCount", &RetroPlugProject::getSystemCount)
 		.property("version", &RetroPlugProject::getVersion)

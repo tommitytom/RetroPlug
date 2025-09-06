@@ -1,16 +1,72 @@
 import React, { useCallback } from "react";
 
 import { FileExplorer } from '../components/FileExplorer';
+import { ContextMenu } from '../components/Menu/ContextMenu';
 import { useProject } from "../hooks/RetroPlugHooks";
 import { useOPFSStore } from "../stores/FileSystemStore";
 import type { FileSystemNode } from "../stores/types";
+import { useContextMenu } from "../hooks/useContextMenu";
+import type { MenuItem } from "../components/Menu/types";
 
+interface IComponent {
+	type: number;
+	name: string;
+	data: any;
+}
+
+interface ITypedComponent<T> extends IComponent {
+	data: T;
+}
+
+interface ISystem {
+	components: IComponent[];
+}
+
+interface IProject {
+	systems: ISystem[];
+}
+
+interface ISystemLoadComponent {
+	entries: Record<string, { path?: string, data: Uint8Array }>;
+}
+
+function findComponent<T>(project: IProject, componentName: string): T | undefined {
+	for (const system of project.systems) {
+		const component = system.components.find(c => c.name === componentName);
+		if (component) {
+			return component.data as T;
+		}
+	}
+	return undefined;
+}
+``
 export const FileTreePanel: React.FC = () => {
 	const project = useProject();
-	const { readPath, fileExists } = useOPFSStore();
+	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
+	const { rootNode, readPath, fileExists, writePath, createDirectory } = useOPFSStore();
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
 		if (!project) return;
+
+		if (node.path.endsWith('.rplg')) {
+			project.clearSystems();
+			const data = await readPath(node.path);
+			const decoder = new TextDecoder('utf-8');
+			const strData = decoder.decode(data);
+			console.log(strData);
+
+			const proj = JSON.parse(strData);
+			const load = findComponent<ISystemLoadComponent>(proj, 'rp::SystemLoadComponent')!;
+
+			for (const entryName in load.entries) {
+				const entry = load.entries[entryName];
+				entry.data = new Uint8Array(await readPath(entry.path!));
+			}
+
+			project.clearSystems();
+			project.addSystem({ entries: load!.entries });
+			//project.deserialize(strData);
+		}
 
 		let romPath: string|undefined;
 		let savPath: string|undefined;
@@ -49,12 +105,68 @@ export const FileTreePanel: React.FC = () => {
 			};
 		}
 
+		project.clearSystems();
 		project.addSystem({ entries });
+
+		const projectPath = node.path.replace(/\.gb$/i, '.rplg');
+
+		if (!await fileExists(projectPath)) {
+			await writePath(projectPath, project.serialize());
+		}
+	}, [project]);
+
+	const handleContextMenu = useCallback((node: FileSystemNode|null, event: React.MouseEvent) => {
+		event.preventDefault();
+
+		const menuItems: MenuItem[] = [];
+		if (node) {
+			menuItems.push({
+				id: '1',
+				label: 'Open',
+				disabled: false,
+				onClick: () => {
+					console.log('open');
+				}
+			}, {
+				id: '2',
+				label: 'Delete',
+				disabled: false,
+				onClick: () => {
+					console.log('delete');
+				}
+			}, {
+				id: '3',
+				label: 'Download',
+				disabled: false,
+				onClick: () => {
+					console.log('download');
+				}
+			});
+		} else {
+			menuItems.push({
+				id: '1',
+				label: 'Create Folder',
+				disabled: false,
+				onClick: () => {
+					console.log('create folder');
+				}
+			});
+		}
+
+		showContextMenu(event, menuItems);
 	}, [project]);
 
 	return <div className="h-full w-full">
 		<FileExplorer
 			onFileOpen={handleFileOpen}
+			onContextMenu={handleContextMenu}
+		/>
+		<ContextMenu
+			items={items}
+			position={position}
+			visible={isVisible}
+			onClose={hideContextMenu}
+			onItemClick={handleItemClick}
 		/>
 	</div>
 };
