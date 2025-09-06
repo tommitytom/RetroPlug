@@ -20,6 +20,18 @@ export function downloadUint8Array(data: Uint8Array, filename: string, mimeType 
 	URL.revokeObjectURL(url);
 }
 
+export function downloadArrayBuffer(buffer: ArrayBuffer, filename: string, mimeType = 'application/octet-stream'): void {
+	const blob = new Blob([buffer], { type: mimeType });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(url);
+}
+
 /**
  * Downloads a Uint8Buffer as a file
  * @param buffer - The Uint8Buffer data to download

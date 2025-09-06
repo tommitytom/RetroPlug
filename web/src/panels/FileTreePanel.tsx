@@ -6,6 +6,7 @@ import { useProject } from "../hooks/RetroPlugHooks";
 import { useOPFSStore } from "../stores/FileSystemStore";
 import type { FileSystemNode } from "../stores/types";
 import { useContextMenu } from "../hooks/useContextMenu";
+import { downloadArrayBuffer, downloadUint8Array } from "../utils/FileUtil";
 import type { MenuItem } from "../components/Menu/types";
 
 interface IComponent {
@@ -47,6 +48,8 @@ export const FileTreePanel: React.FC = () => {
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
 		if (!project) return;
+
+		console.log('Opening file:', node.path);
 
 		if (node.path.endsWith('.rplg')) {
 			project.clearSystems();
@@ -116,6 +119,7 @@ export const FileTreePanel: React.FC = () => {
 
 	const handleContextMenu = useCallback((node: FileSystemNode|null, event: React.MouseEvent) => {
 		event.preventDefault();
+		event.stopPropagation();
 
 		const menuItems: MenuItem[] = [];
 		if (node) {
@@ -137,8 +141,11 @@ export const FileTreePanel: React.FC = () => {
 				id: '3',
 				label: 'Download',
 				disabled: false,
-				onClick: () => {
-					console.log('download');
+				onClick: async () => {
+					console.log('click!');
+
+					const data = await readPath(node.path);
+					downloadArrayBuffer(data, node.name);
 				}
 			});
 		} else {
@@ -153,7 +160,7 @@ export const FileTreePanel: React.FC = () => {
 		}
 
 		showContextMenu(event, menuItems);
-	}, [project]);
+	}, [project, readPath]);
 
 	return <div className="h-full w-full">
 		<FileExplorer

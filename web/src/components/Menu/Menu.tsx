@@ -17,7 +17,6 @@ function MenuItemComponent({ item, onItemClick, depth = 0 }: MenuItemComponentPr
 		if (hasSubmenu) {
 			setIsOpen(!isOpen);
 		} else {
-			item.onClick?.();
 			onItemClick?.(item);
 		}
 	};

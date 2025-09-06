@@ -148,7 +148,6 @@ function TreeNode({
 				)}
 				<span className="mr-2 text-xs text-white">{getIcon()}</span>
 				<span className="flex-1 font-mono">{node.name}</span>
-				{node.size && <span className="ml-2 text-xs text-gray-500">{formatSize(node.size)}</span>}
 			</div>
 			{(node.type === 'directory' || node.type === 'archive') && isExpanded && node.children && (
 				<>
@@ -311,7 +310,7 @@ export function FileExplorer({
 
 	const handleNodeClick = useCallback(
 		(node: FileSystemNode, event: React.MouseEvent) => {
-			event.stopPropagation();
+			//event.stopPropagation();
 
 			const isCtrlClick = event.ctrlKey || event.metaKey;
 			selectNode(node.id, isCtrlClick);
@@ -347,15 +346,11 @@ export function FileExplorer({
 
 	const handleNodeDoubleClick = useCallback(
 		(node: FileSystemNode) => {
-			if (node.type === 'directory' || node.type === 'archive') {
-				handleToggleExpand(node.id);
+			// Handle file opening
+			if (onFileOpen) {
+				onFileOpen(node);
 			} else {
-				// Handle file opening
-				if (onFileOpen) {
-					onFileOpen(node);
-				} else {
-					console.log('Opening file:', node.path);
-				}
+				console.log('Opening file:', node.path);
 			}
 		},
 		[handleToggleExpand, onFileOpen],
@@ -626,7 +621,7 @@ export function FileExplorer({
 				<span className="ml-2 font-medium">File Explorer</span>
 				<div className="ml-auto text-xs opacity-70">{selectedNodes.size > 0 && `${selectedNodes.size} selected`}</div>
 			</div>
-			<div className="flex-1 overflow-y-auto" onContextMenu={handleClick} onClick={handleClick}>
+			<div className="flex-1 overflow-y-auto" onContextMenu={handleClick}>
 				{rootNode?.children && rootNode.children.length > 0 ? (
 					rootNode.children.map((child) => (
 						<TreeNode
