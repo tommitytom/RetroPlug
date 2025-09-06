@@ -26,6 +26,7 @@ interface OPFSStore {
 	writePath: (path: string, content: ArrayBuffer | Blob | string) => Promise<void>
 	deletePath: (path: string) => Promise<void>
 	createDirectory: (path: string) => Promise<void>
+	fileExists: (path: string) => Promise<boolean>
 
 	// Copy/Move operations
 	copyPath: (source: string, destination: string) => Promise<void>
@@ -63,7 +64,7 @@ export const useOPFSStore = create<OPFSStore>()(
 			try {
 				// Initialize web worker
 				const Worker = new window.Worker(
-					new URL('./worker.ts', import.meta.url),
+					new URL('./worker.js', import.meta.url),
 					{ type: 'module' }
 				)
 				const workerApi = Comlink.wrap<FileSystemWorkerAPI>(Worker)
@@ -97,6 +98,9 @@ export const useOPFSStore = create<OPFSStore>()(
 				type: handler.type,
 				extensions: handler.extensions
 			}, Comlink.transfer(handler, []))
+
+			const rootNode = await worker.listPath('/');
+			set({ rootNode });
 		},
 
 		unregisterArchiveHandler: async (type) => {
@@ -215,6 +219,13 @@ export const useOPFSStore = create<OPFSStore>()(
 			// Refresh parent directory
 			const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
 			await get().refreshNode(parentPath)
+		},
+
+		fileExists: async (path) => {
+			const { worker } = get()
+			if (!worker) throw new Error('Worker not initialized')
+
+			return await worker.fileExists(path)
 		},
 
 		copyPath: async (source, destination) => {

@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink';
 import type { ArchiveHandler, ArchiveInstance, FileSystemNode, ParsedPath } from './types';
+import { ZipArchiveHandler } from './zip-handler';
 
 export interface FileSystemWorkerAPI {
 	initialize: () => Promise<void>;
@@ -12,6 +13,7 @@ export interface FileSystemWorkerAPI {
 	deletePath: (path: string) => Promise<void>;
 	copyPath: (source: string, destination: string) => Promise<void>;
 	movePath: (source: string, destination: string) => Promise<void>;
+	fileExists: (path: string) => Promise<boolean>;
 }
 
 class FileSystemWorker implements FileSystemWorkerAPI {
@@ -21,6 +23,8 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 
 	async initialize(): Promise<void> {
 		this.opfsRoot = await navigator.storage.getDirectory();
+		const handler = new ZipArchiveHandler();
+		this.registerArchiveHandler({ type: handler.type, extensions: handler.extensions }, handler);
 	}
 
 	async registerArchiveHandler(config: { type: string; extensions: string[] }, handler: ArchiveHandler): Promise<void> {
@@ -116,6 +120,23 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async movePath(source: string, destination: string): Promise<void> {
 		await this.copyPath(source, destination);
 		await this.deletePath(source);
+	}
+
+	async fileExists(path: string): Promise<boolean> {
+		const parsed = this.parsePath(path);
+
+		try {
+			if (parsed.type === 'opfs') {
+				await this.getFileHandle(parsed.opfsPath);
+				return true;
+			} else {
+				const archive = await this.getOrOpenArchive(parsed.opfsPath);
+				const allNodes = archive.list();
+				return allNodes.some(node => node.path === parsed.archivePath && node.type === 'file');
+			}
+		} catch {
+			return false;
+		}
 	}
 
 	private parsePath(path: string): ParsedPath {
@@ -359,7 +380,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 		}
 
 		// Open archive
-		const archive = handler.open(buffer);
+		const archive = await handler.open(buffer);
 		this.archiveCache.set(archivePath, archive);
 
 		return archive;

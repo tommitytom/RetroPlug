@@ -23,11 +23,12 @@ export interface ArchiveHandler {
 	type: string // 'zip', 'tar', etc.
 	extensions: string[] // ['.zip', '.zipx']
 	canHandle: (buffer: ArrayBuffer) => boolean
-	open: (buffer: ArrayBuffer) => ArchiveInstance
+	open: (buffer: ArrayBuffer) => Promise<ArchiveInstance>
 	create: () => ArchiveInstance
 }
 
 export interface ArchiveInstance {
+	open: (buffer: ArrayBuffer) => Promise<void>
 	list: () => FileSystemNode[]
 	read: (path: string) => ArrayBuffer
 	write: (path: string, content: ArrayBuffer) => void

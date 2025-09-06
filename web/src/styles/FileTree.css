@@ -40,6 +40,12 @@
 	border: 1px solid rgb(55, 65, 81);
 	border-radius: 0.125rem;
 	overflow: hidden;
+	outline: none; /* Remove default focus outline */
+}
+
+.file-tree-container:focus {
+	border-color: rgb(59, 130, 246);
+	box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5);
 }
 
 .file-tree-header {

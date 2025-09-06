@@ -15,8 +15,10 @@ export class ZipArchiveHandler implements ArchiveHandler {
 		}
 	}
 
-	open(buffer: ArrayBuffer): ArchiveInstance {
-		return new ZipArchiveInstance(buffer)
+	async open(buffer: ArrayBuffer): Promise<ArchiveInstance> {
+		const archive = new ZipArchiveInstance();
+		await archive.open(buffer);
+		return archive;
 	}
 
 	create(): ArchiveInstance {
@@ -27,15 +29,14 @@ export class ZipArchiveHandler implements ArchiveHandler {
 class ZipArchiveInstance implements ArchiveInstance {
 	private zip: JSZip
 
-	constructor(buffer?: ArrayBuffer) {
+	constructor() {
 		this.zip = new JSZip()
-		if (buffer) {
-			// Note: loadAsync is async, but we're in a worker so we can block
-			// In a real implementation, you'd want to handle this properly
-			this.zip.loadAsync(buffer).then(() => {
-				// Archive loaded
-			})
-		}
+	}
+
+	open(buffer: ArrayBuffer): Promise<void> {
+		return this.zip.loadAsync(buffer).then(() => {
+			console.log(`ZIP archive opened`);
+		});
 	}
 
 	list(): FileSystemNode[] {
