@@ -63,9 +63,49 @@
 	margin-left: 0.5rem;
 }
 
+.file-tree-header-status {
+	margin-left: auto;
+	font-size: 0.75rem;
+	opacity: 0.7;
+}
+
 .file-tree-content {
 	max-height: 400px;
 	overflow-y: auto;
+}
+
+.file-tree-loading,
+.file-tree-error,
+.file-tree-empty {
+	padding: 1rem;
+	text-align: center;
+}
+
+.file-tree-error {
+	color: red;
+}
+
+.file-tree-empty {
+	opacity: 0.7;
+}
+
+.file-tree-expand-icon {
+	cursor: pointer;
+	margin-right: 4px;
+}
+
+.file-tree-item.drag-over {
+	background-color: rgba(59, 130, 246, 0.3);
+	border: 1px dashed rgb(59, 130, 246);
+}
+
+.file-tree-item.dragging {
+	opacity: 0.5;
+}
+
+.file-tree-container.drag-over {
+	border-color: rgb(59, 130, 246);
+	box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 /* Dynamic padding for different nesting levels */
