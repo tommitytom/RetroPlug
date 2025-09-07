@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { EditableText } from "../components/EditableText";
 import { EffectList } from "../components/EffectList";
@@ -30,16 +31,8 @@ export const LsdjKitEditor: React.FC<{
 	const [markers, setMarkers] = useState<number[]>([]);
 	const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
 	const [effects, setEffects] = useState<EffectInstance[]>([]);
-	const [sliceUnderCursor, setSliceUnderCursor] = useState<SliceInfo | null>(null);
-
-	/*const handleSampleClick = useCallback(
-		(sampleData: Float32Array) => {
-			if (audioContext) {
-				playSample(audioContext, sampleData, 0.25, GAMEBOY_SAMPLE_RATE);
-			}
-		},
-		[audioContext],
-	);*/
+	const [sampleUnderCursor, setSampleUnderCursor] = useState<INamedSample | null>(null);
+	const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
 
 	const handleSampleClick = (buf: Float32Array) => {};
 
@@ -109,8 +102,22 @@ export const LsdjKitEditor: React.FC<{
 	}, [audioContext, samples]);
 
 	const handleSliceMouseMove = useCallback((slice: SliceInfo | null) => {
-		setSliceUnderCursor(slice);
-	}, [setSliceUnderCursor]);
+		if (slice) {
+			setSampleUnderCursor(samples[slice.index]);
+		} else {
+			setSampleUnderCursor(null);
+		}
+	}, [samples, setSampleUnderCursor]);
+
+	const handleWaveViewMouseMove = useCallback((event: React.MouseEvent) => {
+		// Update mouse position for tooltip positioning
+		setMousePosition({ x: event.clientX, y: event.clientY });
+	}, []);
+
+	const handleWaveViewMouseLeave = useCallback(() => {
+		setMousePosition(null);
+		setSampleUnderCursor(null);
+	}, []);
 
 	return (
 		<div className="border border-gray-700 rounded-sm overflow-hidden">
@@ -216,6 +223,8 @@ export const LsdjKitEditor: React.FC<{
 					<div className="mb-2">
 						<div
 							onClick={() => handleSampleClick(kitSample)}
+							onMouseMove={handleWaveViewMouseMove}
+							onMouseLeave={handleWaveViewMouseLeave}
 							title="Click to play sample"
 						>
 							<WaveView
@@ -235,6 +244,19 @@ export const LsdjKitEditor: React.FC<{
 						/>
 					)}
 				</div>
+			)}
+			{/* Sample name tooltip - rendered at document body level */}
+			{sampleUnderCursor && mousePosition && createPortal(
+				<div
+					className="fixed z-50 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-xs text-white pointer-events-none shadow-lg"
+					style={{
+						left: `${mousePosition.x - 13}px`,
+						top: `${mousePosition.y + 25}px`
+					}}
+				>
+					{sampleUnderCursor.name}
+				</div>,
+				document.body
 			)}
 		</div>
 	);

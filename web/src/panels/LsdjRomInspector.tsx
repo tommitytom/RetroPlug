@@ -118,7 +118,6 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			}
 
 			const sample = new module.NativeLsdjSampleComponent();
-			sample.sampleId = i++;
 		  	sample.length = 0;
 		  	sample.offset = 0;
 		  	sample.name = file.name.substring(0, 3).toUpperCase();
@@ -129,7 +128,6 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 		}
 
 		const kit = new module.NativeLsdjKitComponent();
-		kit.kitId = -1;
 		kit.name = "KIT";
 		kit.samples = samples;
 		kit.effects = [{
