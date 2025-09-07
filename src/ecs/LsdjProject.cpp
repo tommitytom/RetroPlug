@@ -38,18 +38,23 @@ namespace rp {
 		return lsdj::Project();
 	}
 
-	void LsdjController::getKitDescs(entt::entity system, std::vector<LsdjKitDesc>& target, bool includeUseCount) {
+	int32 LsdjController::getNextEmptyKit(entt::entity system) {
+		lsdj::Rom rom = getLsdjRom(system);
+		if (!rom.isValid()) return -1;
+		return rom.nextEmptyKitIdx();
+	}
+
+	void LsdjController::getKitNames(entt::entity system, std::unordered_map<rp::KitIndex, std::string>& target, bool includeUseCount) {
 		const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return;
 
 		lsdj::Rom rom = getLsdjRom(system);
 		if (rom.isValid()) {
-			for (size_t i = 0; i < rom.getKitCount(); i++) {
-				if (rom.kitIsEmpty(i)) continue;
-				target.push_back({ (KitIndex)i, std::string(rom.getKitName(i)), false });
-			}
+			rom.eachKit([&](lsdj::Kit kit) {
+				target[kit.getIndex()] = std::string(kit.getName());
+			});
 		}
-
+/*
 		for (const auto& [id, kit] : lsdj->kits) {
 			LsdjKitDesc* found = findKitDesc(target, id);
 			if (found) {
@@ -82,7 +87,7 @@ namespace rp {
 					}
 				}
 			}
-		}
+		}*/
 	}
 
 	const LsdjKitComponent* LsdjController::getKitComponent(entt::entity system, uint32 kitId) const {
@@ -98,7 +103,9 @@ namespace rp {
 	}
 
 	void processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
-		for (const LsdjSampleComponent& sample : comp.samples) {
+		if (!comp.samples.has_value()) return;
+
+		for (const LsdjSampleComponent& sample : comp.samples.value()) {
 			KitUtil::SampleData sampleData = KitUtil::loadSample(sample.data());
 
 			fw::Float32Buffer resampled;
@@ -143,6 +150,25 @@ namespace rp {
 		return true;
 	}
 
+	bool LsdjController::setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples) {
+		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+		if (!lsdj) return false;
+
+		if (comp.samples.has_value()) {
+			auto samples = comp.samples.value();
+			if (samples.size() == samples.size()) {
+				for (size_t i = 0; i < samples.size(); ++i) {
+					samples[i].data = std::move(samples[i].data);
+				}
+			}
+		}
+
+		lsdj->kits[kitId] = std::move(comp);
+		updateKit(system, kitId, lsdj->kits[kitId]);
+
+		return true;
+	}
+
 	bool LsdjController::removeKitComponent(entt::entity system, uint32 kitId) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
@@ -167,6 +193,10 @@ namespace rp {
 		updateKit(system, kitId, lsdj->kits[kitId]);
 
 		return true;
+	}
+
+	LsdjComponent* LsdjController::getComponent(entt::entity system) {
+		return RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 	}
 
 	fw::Uint8Buffer LsdjController::getKitSample(entt::entity system, uint32 kitId, uint32 sampleId) {

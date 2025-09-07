@@ -8,8 +8,6 @@ import type {
 
 export interface FileSystemWorkerAPI {
 	initialize: () => Promise<void>;
-	registerArchiveHandler: (config: { type: string; extensions: string[] }, handler: any) => Promise<void>;
-	unregisterArchiveHandler: (type: string) => Promise<void>;
 	listPath: (path: string) => Promise<FileSystemNode>;
 	readPath: (path: string) => Promise<ArrayBuffer>;
 	writePath: (path: string, content: ArrayBuffer) => Promise<void>;
@@ -19,8 +17,6 @@ export interface FileSystemWorkerAPI {
 	movePath: (source: string, destination: string) => Promise<void>;
 	fileExists: (path: string) => Promise<boolean>;
 }
-
-
 
 class FileSystemWorker implements FileSystemWorkerAPI {
 	private module: MainModule | null = null;

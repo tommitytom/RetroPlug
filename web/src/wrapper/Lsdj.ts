@@ -1,6 +1,59 @@
-export const LSDJ_KIT_COUNT = 51;
-export const LSDJ_KIT_SAMPLE_COUNT = 15;
-export const GAMEBOY_SAMPLE_RATE = 11468;
+import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
+import { type IIndexedLsdjKit, type ILsdjKit, KitType } from "../types/LsdjTypes";
+import { fromUint8Array, type SystemId } from "../utils/NativeUtil";
+
+export function kitIsEditable(kit: IIndexedLsdjKit): boolean {
+	return !!kit.samples;
+}
+
+export function getKitType(kit: ILsdjKit): KitType {
+	if (kit.samples) {
+		return KitType.Editable;
+	}
+	if (kit.path) {
+		return KitType.Patched;
+	}
+
+	return KitType.Rom;
+}
+
+export class LsdjController {
+	constructor(private _module: MainModule, private _nativeController: NativeLsdjController) {}
+
+	getNextEmptyKit(system: SystemId) {
+		return this._nativeController.getNextEmptyKit(system);
+	}
+
+	setKit(system: SystemId, kitId: number, kit: ILsdjKit) {
+		if (kit.samples) {
+			const samples = new this._module.NativeUint8BufferVector();
+			for (const sample of kit.samples) {
+				if (sample.data) {
+					samples.push_back(fromUint8Array(this._module, sample.data));
+					delete sample.data;
+				}
+			}
+
+			this._nativeController.setKit(system, kitId, JSON.stringify(kit), samples);
+
+			for (let i = 0; i < samples.size(); i++) samples.get(i)?.delete();
+			samples.delete();
+		} else if (kit.data) {
+			const data = fromUint8Array(this._module, kit.data);
+			//this._nativeController.setKit(system, kitId, JSON.stringify(kit), data);
+			data.delete();
+		}
+	}
+
+	getKits(system: SystemId): Record<number, ILsdjKit> {
+		const kitsString = this._nativeController.getKitsString(system);
+		return JSON.parse(kitsString) as Record<number, ILsdjKit>;
+	}
+
+	getKitData(systemId: SystemId, kitId: number): Uint8Buffer | null {
+		return this._nativeController.getKitData(systemId, kitId);
+	}
+}
 
 // Utility function to play an audio sample using Web Audio API
 export function playSample(audioContext: AudioContext, sampleData: Float32Array, volume: number, sampleRate: number) {

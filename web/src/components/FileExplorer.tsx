@@ -224,7 +224,6 @@ export function FileExplorer({
 		copyPath,
 		deletePath,
 		refreshNode,
-		registerArchiveHandler,
 	} = useOPFSStore();
 
 	const [draggedNode, setDraggedNode] = useState<FileSystemNode | null>(null);

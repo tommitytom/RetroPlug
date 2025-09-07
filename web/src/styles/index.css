@@ -118,6 +118,41 @@ html, body, #root {
 	100% { transform: rotate(360deg); }
 }
 
+/* Custom scrollbar styling for all scrollable elements */
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+	background: rgb(31, 41, 55); /* bg-gray-800 */
+	border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: rgb(75, 85, 99); /* bg-gray-600 */
+	border-radius: 4px;
+	border: 1px solid rgb(55, 65, 81); /* bg-gray-700 border for better definition */
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: rgb(107, 114, 128); /* bg-gray-500 */
+}
+
+*::-webkit-scrollbar-thumb:active {
+	background: rgb(156, 163, 175); /* bg-gray-400 */
+}
+
+*::-webkit-scrollbar-corner {
+	background: rgb(31, 41, 55); /* bg-gray-800 */
+}
+
+/* Firefox scrollbar styling */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: rgb(75, 85, 99) rgb(31, 41, 55); /* thumb track */
+}
+
 /* Canvas that fills its container */
 .fullscreen-canvas {
 	width: 100%;

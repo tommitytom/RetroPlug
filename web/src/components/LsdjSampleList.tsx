@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
-import { GAMEBOY_SAMPLE_RATE, playSample } from "../wrapper/Lsdj";
+import { playSample } from "../wrapper/Lsdj";
 import { WaveView } from "./WaveView";
-import { INamedSample } from './types';
+import { GAMEBOY_SAMPLE_RATE, type INamedSample } from "../types/LsdjTypes";
 
 export const LsdjSampleList: React.FC<{
 	samples: INamedSample[];

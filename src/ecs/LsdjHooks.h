@@ -36,6 +36,7 @@ namespace rp {
 
 			int32 i = 0;
 			for (const std::string& path: paths) {
+				auto& samples = comp.samples.emplace();
 				if (path.ends_with(".wav")) {
 					std::string name = std::filesystem::path(path).filename().string().substr(0, 3);
 					std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
@@ -47,7 +48,7 @@ namespace rp {
 
 					fw::FsUtil::readFile(paths[0], sampleComp.data());
 
-					comp.samples.push_back(std::move(sampleComp));
+					samples.push_back(std::move(sampleComp));
 				}
 			}
 

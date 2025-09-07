@@ -1,10 +1,7 @@
-import type { Entity, MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
-import { convertAccessType, convertMemoryType, fromUint8Array } from "../utils/NativeUtil";
-import { AccessType, MemoryType, System } from "./System";
-
-export const INVALID_SYSTEM_ID = 4294967295;
-
-export type SystemId = number;
+import type { MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
+import { convertAccessType, convertMemoryType, fromUint8Array, type SystemId } from "../utils/NativeUtil";
+import { LsdjController } from "./Lsdj";
+import { AccessType, MemoryType } from "./System";
 
 interface SystemLoadComponent {
 	entries: Record<string, { path?: string; data?: Uint8Array }>;
@@ -47,11 +44,13 @@ export function convertGameBoyModel(
 export class Project {
 	private _module: MainModule;
 	private _project: NativeRetroPlugProject;
+	private _lsdjController: LsdjController;
 
 	constructor(module: MainModule, project: NativeRetroPlugProject) {
 		console.assert(!!project);
 		this._module = module;
 		this._project = project;
+		this._lsdjController = new LsdjController(module, project.getLsdjController());
 	}
 
 	get module() {
@@ -74,6 +73,10 @@ export class Project {
 	get scale(): number {
 		return 3;
 		//return this._project.scale;
+	}
+
+	get lsdj(): LsdjController {
+		return this._lsdjController;
 	}
 
 	clear(): void {
@@ -131,10 +134,6 @@ export class Project {
 
 	deserialize(data: string) {
 		return this._project.deserializeFromString(data);
-	}
-
-	getLsdjController() {
-		return this._project.getLsdjController();
 	}
 
 	subscribeToMemory(system: SystemId, memoryType: MemoryType) {

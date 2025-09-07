@@ -125,7 +125,7 @@ namespace rp::lsdj {
 
 		std::string_view getName() const {
 			std::string_view name((const char*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
-			size_t spaceOff = name.find_last_of(' ');
+			size_t spaceOff = name.find_first_of(' ');
 
 			if (spaceOff == std::string_view::npos) {
 				return name;
@@ -417,6 +417,14 @@ namespace rp::lsdj {
 
 		size_t getKitCount() const {
 			return KIT_COUNT;
+		}
+
+		void eachKit(const std::function<void(Kit)>& fn) {
+			for (size_t i = 0; i < getKitCount(); ++i) {
+				if (!kitIsEmpty(i)) {
+					fn(getKit(i));
+				}
+			}
 		}
 
 		void setKit(size_t idx, const fw::Uint8Buffer& data) {

@@ -34,6 +34,8 @@
 #include <liblsdj/liblsdj/include/lsdj/instrument.h>
 #include <liblsdj/liblsdj/include/lsdj/command.h>
 
+#include <rfl/json.hpp>
+
 using namespace emscripten;
 using namespace rp;
 
@@ -255,57 +257,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("MAX", MemoryType::MAX)
 	;
 
-	class_<LsdjSampleComponent>("NativeLsdjSampleComponent")
-		.constructor()
-		.property("length", &LsdjSampleComponent::length)
-		.property("name", &LsdjSampleComponent::name)
-		.property("offset", &LsdjSampleComponent::offset)
-		.property("path", &LsdjSampleComponent::path)
-		.function("getData", +[](LsdjSampleComponent& comp) -> fw::Uint8Buffer& { return comp.data.get(); }, return_value_policy::reference())
-		.function("setData", +[](LsdjSampleComponent& comp, const fw::Uint8Buffer& data) -> void { comp.data.set(data); })
-	;
-
-	register_vector<LsdjKitComponent>("NativeLsdjKitComponentVector");
-	register_vector<LsdjSampleComponent>("NativeLsdjSampleComponentVector");
-
-	class_<LsdjKitComponent>("NativeLsdjKitComponent")
-		.constructor()
-		.property("effects", +[](const LsdjKitComponent& kit) {
-			emscripten::val effects = emscripten::val::array();
-			for (const auto& effect : kit.effects) {
-				emscripten::val obj = emscripten::val::object();
-				obj.set("type", effect.discrimininator_);
-				effects.call<emscripten::val>("push", obj);
-			}
-			return effects;
-		}, +[](LsdjKitComponent& kit, emscripten::val effects) {
-			kit.effects.clear();
-			const size_t len = effects["length"].as<size_t>();
-			for (size_t i = 0; i < len; ++i) {
-				emscripten::val obj = effects[i];
-				if (obj.hasOwnProperty("type")) {
-					std::string type = obj["type"].as<std::string>();
-					if (type == "GainEffect") {
-						kit.effects.emplace_back(GainEffect{});
-					} else if (type == "Dither") {
-						//kit.effects.emplace_back(DitherEffect{});
-					}
-				}
-			}
-
-		})
-		.property("samples", &LsdjKitComponent::samples)
-		.property("name", &LsdjKitComponent::name)
-	;
-
-	value_object<LsdjKitDesc>("NativeLsdjKitDesc")
-		.field("id", &LsdjKitDesc::id)
-		.field("name", &LsdjKitDesc::name)
-		.field("editable", &LsdjKitDesc::editable)
-		.field("useCount", &LsdjKitDesc::useCount)
-	;
-
-	register_vector<LsdjKitDesc>("NativeLsdjKitDescVector");
+	register_map<uint32, fw::Uint8Buffer>("NativeBufferMap");
+	register_vector<fw::Uint8Buffer>("NativeUint8BufferVector");
 
 	class_<LsdjController>("NativeLsdjController")
 		.function("getLsdjSav", +[](LsdjController& controller, SystemId system) -> lsdj::Sav {
@@ -314,22 +267,36 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getLsdjProject", +[](LsdjController& controller, SystemId system) -> lsdj::Project {
 			return controller.getLsdjProject((entt::entity)system);
 		})
-		.function("getKitDescs", +[](LsdjController& controller, SystemId system, bool includeUseCount) -> std::vector<LsdjKitDesc> {
-			std::vector<LsdjKitDesc> descs;
-			controller.getKitDescs((entt::entity)system, descs, includeUseCount);
-			return descs;
+		.function("getNextEmptyKit", +[](LsdjController& controller, SystemId system) -> uint32 {
+			return controller.getNextEmptyKit((entt::entity)system);
 		})
-		.function("getKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId) -> LsdjKitComponent {
+		.function("setKit", +[](LsdjController& controller, SystemId system, uint32 kitId, const std::string& data, std::vector<fw::Uint8Buffer>&& samples) -> bool {
+			rfl::Result<LsdjKitComponent> result = rfl::json::read<LsdjKitComponent>(data);
+			return controller.setKitComponent((entt::entity)system, kitId, std::move(result.value()), std::forward<std::vector<fw::Uint8Buffer>>(samples));
+		})
+		.function("getKitsString", +[](LsdjController& controller, SystemId system) -> std::string {
+			LsdjComponent* comp = controller.getComponent((entt::entity)system);
+			if (comp) {
+				std::unordered_map<rp::KitIndex, LsdjKitComponent> kits = comp->kits;
+				lsdj::Rom rom = controller.getLsdjRom((entt::entity)system);
+				if (rom.isValid()) {
+					rom.eachKit([&](lsdj::Kit kit) { kits[kit.getIndex()].name = std::string(kit.getName()); });
+				}
+				return rfl::json::write(kits);
+			}
+			return "";
+		})
+		.function("getKitComponentString", +[](LsdjController& controller, SystemId system, uint32 kitId) -> std::string {
 			const LsdjKitComponent* comp = controller.getKitComponent((entt::entity)system, kitId);
-			if (comp) return *comp;
-			return LsdjKitComponent{};
+			if (comp) return rfl::json::write(*comp);
+			return "";
 		})
-		.function("setKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
+		/*.function("setKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
 			return controller.setKitComponent((entt::entity)system, kitId, component);
 		})
 		.function("addKitComponent", +[](LsdjController& controller, SystemId system, const LsdjKitComponent& component) -> bool {
 			return controller.addKitComponent((entt::entity)system, component);
-		})
+		})*/
 		.function("getKitData", +[](LsdjController& controller, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
 			return controller.getKitData((entt::entity)system, kitId);
 		})

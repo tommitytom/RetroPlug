@@ -30,11 +30,15 @@ namespace rp {
 
 		lsdj::Project getLsdjProject(entt::entity system);
 
-		void getKitDescs(entt::entity system, std::vector<LsdjKitDesc>& target, bool includeUseCount);
+		int32 getNextEmptyKit(entt::entity system);
+
+		void getKitNames(entt::entity system, std::unordered_map<rp::KitIndex, std::string>& target, bool includeUseCount);
 
 		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const;
 
 		bool setKitComponent(entt::entity system, uint32 kitId, const LsdjKitComponent& comp);
+
+		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples);
 
 		bool removeKitComponent(entt::entity system, uint32 kitId);
 
@@ -43,6 +47,8 @@ namespace rp {
 		fw::Uint8Buffer getKitSample(entt::entity system, uint32 kitId, uint32 sampleId);
 
 		fw::Uint8Buffer getKitData(entt::entity system, uint32 kitId);
+
+		LsdjComponent* getComponent(entt::entity system);
 
 		lsdj::Rom getLsdjRom(const SystemStateComponent& systemState) const;
 

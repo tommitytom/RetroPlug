@@ -71,8 +71,11 @@ namespace rp {
 
 	struct LsdjKitComponent {
 		std::string name;
-		std::vector<LsdjEffect> effects;
-		std::vector<LsdjSampleComponent> samples;
+		std::optional<std::string> path;
+		std::optional<std::vector<LsdjEffect>> effects;
+		std::optional<std::vector<LsdjSampleComponent>> samples;
+
+		rfl::Skip<fw::Uint8Buffer> data; // Populated on first load
 	};
 
 	struct LsdjComponent {

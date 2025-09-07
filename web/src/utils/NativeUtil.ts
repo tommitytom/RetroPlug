@@ -1,6 +1,9 @@
 import type { Float32Buffer, MainModule, NativeAccessType, NativeMemoryType, Uint8Buffer } from "../native/RetroPlug";
 import { AccessType, MemoryType } from "../wrapper/System";
 
+export const INVALID_SYSTEM_ID = 4294967295;
+export type SystemId = number;
+
 export interface NativeVector<T> {
 	size(): number;
 	get(index: number): T | undefined;

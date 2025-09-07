@@ -17,10 +17,6 @@ interface OPFSStore {
 	// Initialization
 	initialize: () => Promise<void>;
 
-	// Archive handlers
-	registerArchiveHandler: (handler: ArchiveHandler) => Promise<void>;
-	unregisterArchiveHandler: (type: string) => Promise<void>;
-
 	// Unified path operations
 	listPath: (path: string) => Promise<FileSystemNode>;
 	readPath: (path: string) => Promise<ArrayBuffer>;
@@ -86,31 +82,6 @@ export const useOPFSStore = create<OPFSStore>()(
 				});
 			}
 		},
-
-		registerArchiveHandler: async (handler) => {
-			const { worker } = get();
-			if (!worker) throw new Error('Worker not initialized');
-
-			// Transfer handler to worker
-			await worker.registerArchiveHandler(
-				{
-					type: handler.type,
-					extensions: handler.extensions,
-				},
-				Comlink.transfer(handler, []),
-			);
-
-			const rootNode = await worker.listPath('/');
-			set({ rootNode });
-		},
-
-		unregisterArchiveHandler: async (type) => {
-			const { worker } = get();
-			if (!worker) throw new Error('Worker not initialized');
-
-			await worker.unregisterArchiveHandler(type);
-		},
-
 		parsePath: (path: string): ParsedPath => {
 			const segments = path.split('/').filter(Boolean);
 
