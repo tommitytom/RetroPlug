@@ -261,7 +261,6 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("name", &LsdjSampleComponent::name)
 		.property("offset", &LsdjSampleComponent::offset)
 		.property("path", &LsdjSampleComponent::path)
-		.property("sampleId", &LsdjSampleComponent::sampleId)
 		.function("getData", +[](LsdjSampleComponent& comp) -> fw::Uint8Buffer& { return comp.data.get(); }, return_value_policy::reference())
 		.function("setData", +[](LsdjSampleComponent& comp, const fw::Uint8Buffer& data) -> void { comp.data.set(data); })
 	;
@@ -269,11 +268,34 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	register_vector<LsdjKitComponent>("NativeLsdjKitComponentVector");
 	register_vector<LsdjSampleComponent>("NativeLsdjSampleComponentVector");
 
-	value_object<LsdjKitComponent>("NativeLsdjKitComponent")
-		//.field("effects", &LsdjKitComponent::effects)
-		.field("samples", &LsdjKitComponent::samples)
-		.field("kitId", &LsdjKitComponent::kitId)
-		.field("name", &LsdjKitComponent::name)
+	class_<LsdjKitComponent>("NativeLsdjKitComponent")
+		.constructor()
+		.property("effects", +[](const LsdjKitComponent& kit) {
+			emscripten::val effects = emscripten::val::array();
+			for (const auto& effect : kit.effects) {
+				emscripten::val obj = emscripten::val::object();
+				obj.set("type", effect.discrimininator_);
+				effects.call<emscripten::val>("push", obj);
+			}
+			return effects;
+		}, +[](LsdjKitComponent& kit, emscripten::val effects) {
+			kit.effects.clear();
+			const size_t len = effects["length"].as<size_t>();
+			for (size_t i = 0; i < len; ++i) {
+				emscripten::val obj = effects[i];
+				if (obj.hasOwnProperty("type")) {
+					std::string type = obj["type"].as<std::string>();
+					if (type == "GainEffect") {
+						kit.effects.emplace_back(GainEffect{});
+					} else if (type == "Dither") {
+						//kit.effects.emplace_back(DitherEffect{});
+					}
+				}
+			}
+
+		})
+		.property("samples", &LsdjKitComponent::samples)
+		.property("name", &LsdjKitComponent::name)
 	;
 
 	value_object<LsdjKitDesc>("NativeLsdjKitDesc")

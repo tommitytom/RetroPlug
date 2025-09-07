@@ -147,7 +147,7 @@ function TreeNode({
 					</span>
 				)}
 				<span className="mr-2 text-xs text-white">{getIcon()}</span>
-				<span className="flex-1 font-mono">{node.name}</span>
+				<span className="flex-1">{node.name}</span>
 			</div>
 			{(node.type === 'directory' || node.type === 'archive') && isExpanded && node.children && (
 				<>
@@ -585,7 +585,7 @@ export function FileExplorer({
 		return (
 			<div className="flex h-full w-full flex-col bg-gray-900">
 				<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-					<span className="font-mono font-medium">📁</span>
+					<span className="font-medium">📁</span>
 					<span className="ml-2 font-medium">File Explorer</span>
 				</div>
 				<div className="flex-1 p-4 text-center">Loading...</div>
@@ -597,7 +597,7 @@ export function FileExplorer({
 		return (
 			<div className="flex h-full w-full flex-col bg-gray-900">
 				<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-					<span className="font-mono font-medium">❌</span>
+					<span className="font-medium">❌</span>
 					<span className="ml-2 font-medium">Error</span>
 				</div>
 				<div className="flex-1 p-4 text-center text-red-500">{error}</div>
@@ -617,7 +617,7 @@ export function FileExplorer({
 			onDragLeave={handleContainerDragLeave}
 		>
 			<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-				<span className="font-mono font-medium">📁</span>
+				<span className="font-medium">📁</span>
 				<span className="ml-2 font-medium">File Explorer</span>
 				<div className="ml-auto text-xs opacity-70">{selectedNodes.size > 0 && `${selectedNodes.size} selected`}</div>
 			</div>

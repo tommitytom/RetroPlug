@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
-import { EffectList } from "../components/EffectList";
 import { EditableText } from "../components/EditableText";
+import { EffectList } from "../components/EffectList";
 import { WaveView } from "../components/WaveView";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { Uint8Buffer } from "../native/RetroPlug";
@@ -9,6 +9,8 @@ import type { EffectInstance } from "../types/EffectTypes";
 import type { INamedSample } from '../types/LsdjTypes';
 import { downloadUint8Buffer, sanitizeFilename } from "../utils/FileUtil";
 import { convertFloat32Buffer } from "../utils/NativeUtil";
+import type { SliceInfo } from "./WaveViewTypes";
+import { GAMEBOY_SAMPLE_RATE, playSample } from '../wrapper/Lsdj';
 
 import "../styles/RomEditorPanel.css";
 
@@ -22,12 +24,13 @@ export const LsdjKitEditor: React.FC<{
 	onToggle: () => void;
 	onNameChange?: (newName: string) => void;
 }> = ({ id, name, kitData, editable, isExpanded, usageCount, onToggle, onNameChange }) => {
-	const { project } = useRetroPlug();
+	const { project, audioContext } = useRetroPlug();
 	const [samples, setSamples] = useState<INamedSample[]>([]);
 	const [kitSample, setKitSample] = useState<Float32Array | null>(null);
 	const [markers, setMarkers] = useState<number[]>([]);
 	const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
 	const [effects, setEffects] = useState<EffectInstance[]>([]);
+	const [sliceUnderCursor, setSliceUnderCursor] = useState<SliceInfo | null>(null);
 
 	/*const handleSampleClick = useCallback(
 		(sampleData: Float32Array) => {
@@ -98,6 +101,16 @@ export const LsdjKitEditor: React.FC<{
 			.replace(/[^A-Z0-9-]/g, '')
 			.slice(0, 6);
 	}, []);
+
+	const handleSliceClick = useCallback((slice: SliceInfo) => {
+		if (audioContext) {
+			playSample(audioContext, samples[slice.index].data, 0.25, GAMEBOY_SAMPLE_RATE);
+		}
+	}, [audioContext, samples]);
+
+	const handleSliceMouseMove = useCallback((slice: SliceInfo | null) => {
+		setSliceUnderCursor(slice);
+	}, [setSliceUnderCursor]);
 
 	return (
 		<div className="border border-gray-700 rounded-sm overflow-hidden">
@@ -203,12 +216,13 @@ export const LsdjKitEditor: React.FC<{
 					<div className="mb-2">
 						<div
 							onClick={() => handleSampleClick(kitSample)}
-							className="sample-waveform-clickable"
 							title="Click to play sample"
 						>
 							<WaveView
 								sampleData={kitSample}
 								markers={markers}
+								onSliceClick={handleSliceClick}
+								onSliceMouseMove={handleSliceMouseMove}
 								className="w-full h-[80px] bg-gray-800 border border-gray-700 rounded-sm"
 							/>
 						</div>

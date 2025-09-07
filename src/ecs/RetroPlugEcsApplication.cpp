@@ -4,6 +4,9 @@
 #include "RetroPlugEcsView.h"
 #include "foundation/FsUtil.h"
 
+#include <string>
+#include <rfl/json.hpp>
+
 namespace rp {
 	RetroPlugEcsApplication::RetroPlugEcsApplication(): _audioEventNode("Audio"), _project(_audioEventNode->spawn("Ui"), _audioEventNode->getId()) {
 		fw::FsUtil::setupFs();

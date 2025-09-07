@@ -102,6 +102,8 @@ namespace rp {
 		}
 	};
 
+	using EcsSystemViewPtr = std::shared_ptr<EcsSystemView>;
+
 	RetroPlugEcsView::RetroPlugEcsView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
 		setName(fmt::format("RetroPlug v{}", RP_VERSION));
 		setFocusPolicy(fw::FocusPolicy::Click);
@@ -165,7 +167,7 @@ namespace rp {
 		}
 	}
 
-	void focusSystem(const fw::ViewPtr& view) {
+	void RetroPlugEcsView::focusSystem(const fw::ViewPtr& view) {
 		if (view->getChildCount()) {
 			view->getChild(view->getChildCount() - 1)->focus();
 		} else {
@@ -180,19 +182,20 @@ namespace rp {
 
 		this->removeChildren();
 
-		using EcsSystemViewPtr = std::shared_ptr<EcsSystemView>;
-
-		uint32 i = 1;
-		entt::entity selectedSystem = entt::null;
+		size_t i = 0;
+		entt::entity selectedSystemEntity = entt::null;
+		size_t selectedSystemIdx = INVALID_SYSTEM_INDEX;
 		std::vector<EcsSystemViewPtr> systemViews;
-		for (const auto& [e, c] : view.each()) {
-			auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i++));
+
+		for (const auto& [e, c] : view.each()) {		
+			auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i + 1));
 			systemView->setEntity(e);
 			systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
 			systemViews.push_back(systemView);
 
-			if (selectedSystem == entt::null || _selectedSystem == e) {
-				selectedSystem = e;
+			if (selectedSystemEntity == entt::null || _selectedSystemEntity == e) {
+				selectedSystemEntity = e;
+				selectedSystemIdx = i;
 			}
 
 			eachHook(systemType, _project.getContext().serviceHooks, [&](const SystemHookBase& hook) {
@@ -202,26 +205,10 @@ namespace rp {
 				}
 			});
 
-			subscribe<fw::KeyEvent>(systemView, [this, e](const fw::KeyEvent& ev) {
-				if (ev.down && ev.key == fw::VirtualKey::F5) {
-					fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
-					//_project.deserialize(archive);
-
-					entt::entity entity = _project.addSystem(SystemLoadComponent{
-						.entries = {
-							{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
-							{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
-						},
-					}, SameBoyComponent{
-						.model = GameboyModel::CgbC,
-						.fastBoot = true
-					});
-					return;
-				}
-
+			subscribe<fw::KeyEvent>(systemView, std::function<bool(const fw::KeyEvent&)>([this, e](const fw::KeyEvent& ev) -> bool {
 				fw::ButtonType button = mapKeyToButton(ev.key);
 				if (button == fw::ButtonType::MAX) {
-					return;
+					return false;
 				}
 
 				_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
@@ -229,20 +216,17 @@ namespace rp {
 					.button = (int)button,
 					.down = ev.down
 				});
-			});
+
+				return true;
+			}));
+
+			i++;
 		}
 
-		for (const EcsSystemViewPtr& systemView : systemViews) {
-			if (systemView->getEntity() == selectedSystem) {
-				focusSystem(systemView);
-			} else {
-				fw::PanelViewPtr panel = systemView->addChild<fw::PanelView>("Overlay");
-				panel->fitToParent();
-				panel->setColor(fw::Color4F(0, 0, 0, 0.5f));
-			}
-		}
+		_selectedSystemEntity = selectedSystemEntity;
+		_selectedSystemIdx = selectedSystemIdx;
 
-		_selectedSystem = selectedSystem;
+		updateFocus();
 
 		fw::DimensionF dimensions{
 			160.0f * (f32)std::max((int32)view.size(), 1),
@@ -254,7 +238,41 @@ namespace rp {
 		getLayout().setDimensions(fw::Dimension(dimensions));
 	}
 
+	void RetroPlugEcsView::updateFocus() {
+		for (size_t i = 0; i < getChildCount(); i++) {
+			auto systemView = getChildAs<EcsSystemView>(i);
+			fw::PanelViewPtr panel = systemView->findChild<fw::PanelView>();
+
+			if (systemView->getEntity() == _selectedSystemEntity) {
+				size_t nextIndex = (i + 1) % getChildCount();
+				_selectedSystemEntity = getChildAs<EcsSystemView>(nextIndex)->getEntity();
+
+				if (panel) {
+					panel->remove();
+				}
+
+				if (systemView->getChildCount()) {
+					systemView->getChild(systemView->getChildCount() - 1)->focus();
+				} else {
+					systemView->focus();
+				}
+			} else if (!panel) {
+				fw::PanelViewPtr panel = systemView->addChild<fw::PanelView>("Overlay");
+				panel->fitToParent();
+				panel->setColor(fw::Color4F(0, 0, 0, 0.5f));
+			}
+		}
+	}
+
 	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
+		if (event.down && event.key == fw::VirtualKey::Tab) {
+			if (getChildCount()) {
+				_selectedSystemIdx = (_selectedSystemIdx + 1) % getChildCount();
+				_selectedSystemEntity =  getChildAs<EcsSystemView>(_selectedSystemIdx)->getEntity();
+				updateFocus();
+			}
+		}
+
 		if (event.down && event.key == fw::VirtualKey::F5) {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);

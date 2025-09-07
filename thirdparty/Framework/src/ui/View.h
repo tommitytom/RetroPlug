@@ -146,7 +146,7 @@ namespace fw {
 			return subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { func(v); return true; });
 		}*/
 
-		void subscribe(EventType eventType, ViewPtr source, std::function<bool(const entt::any&)>&& func) {
+		void subscribe(EventType eventType, const ViewPtr& source, std::function<bool(const entt::any&)>&& func) {
 			assert(!source->hasSubscription(eventType, sharedFromThis<View>()));
 
 			_subscriptions.push_back({ eventType, std::weak_ptr(source) });
@@ -161,7 +161,7 @@ namespace fw {
 			return subscribe(eventType, source, [func](const entt::any& v) -> bool { func(v); return true; });
 		}*/
 
-		void subscribe(EventType eventType, ViewPtr source, const std::function<bool(const entt::any&)>& func) {
+		void subscribe(EventType eventType, const ViewPtr& source, const std::function<bool(const entt::any&)>& func) {
 			assert(!source->hasSubscription(eventType, sharedFromThis<View>()));
 
 			_subscriptions.push_back({ eventType, std::weak_ptr(source) });
@@ -173,28 +173,28 @@ namespace fw {
 		}
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
-		EventType subscribe(ViewPtr source, std::function<bool()>&& func) {
+		EventType subscribe(const ViewPtr& source, std::function<bool()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { return func(); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<std::is_empty_v<T>, bool> = true>
-		EventType subscribe(ViewPtr source, std::function<void()>&& func) {
+		EventType subscribe(const ViewPtr& source, std::function<void()>&& func) {
 			EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { func(); return true; });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
-		EventType subscribe(ViewPtr source, std::function<bool(const T&)>&& func) {
+		EventType subscribe(const ViewPtr& source, std::function<bool(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { return func(entt::any_cast<const T&>(v)); });
 			return eventType;
 		}
 
 		template <typename T, std::enable_if_t<!std::is_empty_v<T>, bool> = true>
-		EventType subscribe(ViewPtr source, std::function<void(const T&)>&& func) {
+		EventType subscribe(const ViewPtr& source, std::function<void(const T&)>&& func) {
 			EventType eventType = entt::type_id<T>().index();
 			subscribe(eventType, source, [func = std::move(func)](const entt::any& v) { func(entt::any_cast<const T&>(v)); return true; });
 			return eventType;

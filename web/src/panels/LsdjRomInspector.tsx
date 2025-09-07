@@ -128,11 +128,16 @@ export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId })
 			samples.push_back(sample);
 		}
 
-		lsdj.addKitComponent(systemId, {
-			kitId: -1,
-			name: "KIT",
-			samples
-		});
+		const kit = new module.NativeLsdjKitComponent();
+		kit.kitId = -1;
+		kit.name = "KIT";
+		kit.samples = samples;
+		kit.effects = [{
+			type: "GainEffect"
+		}];
+
+		lsdj.addKitComponent(systemId, kit);
+		kit.delete();
 
 		project.resetSystem(systemId, true);
 

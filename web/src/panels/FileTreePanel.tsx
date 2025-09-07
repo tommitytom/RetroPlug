@@ -46,7 +46,7 @@ export const FileTreePanel: React.FC = () => {
 	const { focusCanvas } = useRetroPlug();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
-	const { readPath, fileExists, writePath, createDirectory } = useOPFSStore();
+	const { readPath, fileExists, writePath, deletePath, createDirectory } = useOPFSStore();
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
 		if (!project) return;
@@ -138,8 +138,9 @@ export const FileTreePanel: React.FC = () => {
 				id: '2',
 				label: 'Delete',
 				disabled: false,
-				onClick: () => {
-					console.log('delete');
+				onClick: async () => {
+					// TODO: Confirm delete?
+					await deletePath(node.path);
 				}
 			}, {
 				id: '3',

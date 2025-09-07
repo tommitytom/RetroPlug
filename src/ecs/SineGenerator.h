@@ -33,7 +33,7 @@ namespace rp {
 			}
 		}
 	};
-
+	/*
 	struct GainComponent {
 		f32 gain = 1.0f;
 	};
@@ -118,5 +118,5 @@ namespace rp {
 				}
 			}
 		}
-	};
+	};*/
 }

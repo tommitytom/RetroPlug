@@ -41,7 +41,6 @@ namespace rp {
 					std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
 
 					LsdjSampleComponent sampleComp{
-						.sampleId = i++,
 						.name = name,
 						.path = path
 					};

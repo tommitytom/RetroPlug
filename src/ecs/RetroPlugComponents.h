@@ -53,18 +53,13 @@ namespace rp {
 
 	using KitIndex = uint32;
 
-	struct LsdjKitEffect {
-		int effectType = 0;
+	struct GainEffect {
+		f32 gain = 1.0f;
 	};
 
-	struct GainEffectComponent {
-		float gain = 1.0f;
-	};
-
-	using LsdjEffect = std::variant<GainEffectComponent>;
+	using LsdjEffect = rfl::TaggedUnion<"type", GainEffect>;
 
 	struct LsdjSampleComponent {
-		int32 sampleId = -1;
 		std::string name;
 		std::string path;
 		uint32 offset = 0;
@@ -75,7 +70,6 @@ namespace rp {
 	};
 
 	struct LsdjKitComponent {
-		int32 kitId = -1;
 		std::string name;
 		std::vector<LsdjEffect> effects;
 		std::vector<LsdjSampleComponent> samples;
@@ -90,10 +84,7 @@ namespace rp {
 	using ReplicatedTypes = entt::type_list<
 		SystemComponent,
 		HierarchyComponent,
-		LsdjComponent,
-		LsdjKitComponent,
-		LsdjSampleComponent,
-		LsdjKitEffect
+		LsdjComponent
 	>;
 
 	using SerializedTypes = entt::type_list<

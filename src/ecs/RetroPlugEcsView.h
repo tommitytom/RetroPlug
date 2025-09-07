@@ -10,9 +10,12 @@ namespace rp {
 		FwRegisterObject()
 
 	private:
+		static constexpr size_t INVALID_SYSTEM_INDEX = std::numeric_limits<size_t>::max();
+
 		RetroPlugProject& _project;
 		uint32 _version = 0;
-		entt::entity _selectedSystem = entt::null;
+		entt::entity _selectedSystemEntity = entt::null;
+		size_t _selectedSystemIdx = INVALID_SYSTEM_INDEX;
 
 	public:
 		RetroPlugEcsView(RetroPlugProject& project);
@@ -30,6 +33,10 @@ namespace rp {
 
 	private:
 		void rebuildUi();
+
+		void updateFocus();
+
+		void focusSystem(const fw::ViewPtr& view);
 
 		entt::registry& getRegistry() {
 			return _project.getRegistry();
