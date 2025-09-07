@@ -43,6 +43,8 @@ namespace fw::app {
 
 		NativeWindowHandle getNativeHandle() override;
 
+		void focus() override;
+
 	private:
 		static void mouseEnterCallback(GLFWwindow* window, int entered);
 

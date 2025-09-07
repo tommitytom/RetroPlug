@@ -27,6 +27,8 @@ namespace fw::app {
 
 		void destroy();
 
+		void focusCanvas();
+
 		bool isReady() const {
 			return _app != nullptr;
 		}

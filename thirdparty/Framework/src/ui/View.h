@@ -60,7 +60,7 @@ namespace fw {
 		bool closing = true;
 	};
 
-	using EventType = entt::id_type;	
+	using EventType = entt::id_type;
 
 	struct ResizeEvent {
 		Dimension size;
@@ -136,9 +136,9 @@ namespace fw {
 		virtual ~View() { unsubscribeAll(); }
 
 		void addGlobalKeyHandler(std::function<bool(const KeyEvent&)>&& func) {
-			_shared->globalKeyHandlers.push_back(GlobalKeyHandler{ 
-				.view = sharedFromThis<View>(), 
-				.func = std::move(func) 
+			_shared->globalKeyHandlers.push_back(GlobalKeyHandler{
+				.view = sharedFromThis<View>(),
+				.func = std::move(func)
 			});
 		}
 
@@ -445,7 +445,7 @@ namespace fw {
 		virtual void onDismount() {}
 
 		virtual void onFocus() {}
-		
+
 		virtual void onLostFocus() {}
 
 		virtual void onHotReload() {}
@@ -677,16 +677,16 @@ namespace fw {
 
 			if (!view->_parent.expired()) {
 				ViewPtr parent = view->_parent.lock();
-				
+
 				if (parent == shared_from_this()) {
 					return view;
 				}
-				
+
 				parent->removeChild(view);
 			}
 
 			uint32 idx = (uint32)_children.size();
-			
+
 			YGNodeInsertChild(_layout.getNode(), view->getLayout().getNode(), idx);
 
 			view->_parent = std::weak_ptr<View>(sharedFromThis<View>());
@@ -925,7 +925,7 @@ namespace fw {
 
 		void setArea(const Rect& area) {
 			assert(area.w >= 0 && area.h >= 0);
-			
+
 			getLayout().setFlexPositionType(FlexPositionType::Absolute);
 			getLayout().setPositionEdge(FlexEdge::Left, (f32)area.x);
 			getLayout().setPositionEdge(FlexEdge::Top, (f32)area.y);

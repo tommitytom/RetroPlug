@@ -5,6 +5,7 @@ import { Project } from '../wrapper/Project';
 interface RetroPlugContextType {
 	canvasId: string | null;
 	setCanvasId: (entityId: string | null) => void;
+	focusCanvas: () => void;
 	isLoading: boolean;
 	isReady: boolean;
 	audioContext: AudioContext | null;

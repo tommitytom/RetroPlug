@@ -26,6 +26,10 @@ html, body, #root {
 	display: inline-block;
 }
 
+.canvas-element {
+	outline: none;
+}
+
 /* Loading spinner overlay */
 .loading-spinner-overlay {
 	position: absolute;

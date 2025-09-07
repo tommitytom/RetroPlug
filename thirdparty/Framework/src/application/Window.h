@@ -40,6 +40,7 @@ namespace fw::app {
 
 		virtual void onInitialize() {
 			_viewManager->addChild(_view);
+			_view->focus();
 			_viewManager->onInitialize();
 		}
 
@@ -63,6 +64,8 @@ namespace fw::app {
 		virtual bool shouldClose() = 0;
 
 		virtual NativeWindowHandle getNativeHandle() = 0;
+
+		virtual void focus() {}
 
 		virtual void setParent(NativeWindowHandle handle) {}
 

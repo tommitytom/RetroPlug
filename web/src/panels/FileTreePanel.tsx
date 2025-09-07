@@ -6,8 +6,9 @@ import { useProject } from "../hooks/RetroPlugHooks";
 import { useOPFSStore } from "../stores/FileSystemStore";
 import type { FileSystemNode } from "../stores/types";
 import { useContextMenu } from "../hooks/useContextMenu";
-import { downloadArrayBuffer, downloadUint8Array } from "../utils/FileUtil";
+import { downloadArrayBuffer } from "../utils/FileUtil";
 import type { MenuItem } from "../components/Menu/types";
+import { useRetroPlug } from "../contexts/RetroPlugContext";
 
 interface IComponent {
 	type: number;
@@ -42,6 +43,7 @@ function findComponent<T>(project: IProject, componentName: string): T | undefin
 }
 
 export const FileTreePanel: React.FC = () => {
+	const { focusCanvas } = useRetroPlug();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 	const { readPath, fileExists, writePath, createDirectory } = useOPFSStore();
@@ -68,6 +70,7 @@ export const FileTreePanel: React.FC = () => {
 
 			project.clearSystems();
 			project.addSystem({ entries: load!.entries });
+			focusCanvas();
 		}
 
 		let romPath: string|undefined;
@@ -109,6 +112,7 @@ export const FileTreePanel: React.FC = () => {
 
 		project.clearSystems();
 		project.addSystem({ entries });
+		focusCanvas();
 
 		const projectPath = node.path.replace(/\.gb$/i, '.rplg');
 

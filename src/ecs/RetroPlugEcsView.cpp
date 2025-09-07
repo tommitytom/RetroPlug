@@ -189,6 +189,7 @@ namespace rp {
 			auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i++));
 			systemView->setEntity(e);
 			systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
+			systemViews.push_back(systemView);
 
 			if (selectedSystem == entt::null || _selectedSystem == e) {
 				selectedSystem = e;
@@ -257,7 +258,7 @@ namespace rp {
 		if (event.down && event.key == fw::VirtualKey::F5) {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);
-			
+
 			entt::entity entity = _project.addSystem(SystemLoadComponent{
 				.entries = {
 					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },

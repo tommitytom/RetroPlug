@@ -1,14 +1,8 @@
-import {
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
-	type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { RetroPlugApplication } from "../RetroPlugApplication";
-import { Project } from "../wrapper/Project";
-import { RetroPlugContext } from "./RetroPlugContext";
+import { RetroPlugApplication } from '../RetroPlugApplication';
+import { Project } from '../wrapper/Project';
+import { RetroPlugContext } from './RetroPlugContext';
 
 export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const audioContextRef = useRef<AudioContext | null>(null);
@@ -17,20 +11,16 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const [project, setProject] = useState<Project | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
 	const [isReady, setIsReady] = useState<boolean>(false);
-	const [audioContextState, setAudioContextState] =
-		useState<AudioContextState>("suspended");
+	const [audioContextState, setAudioContextState] = useState<AudioContextState>('suspended');
 
 	useEffect(() => {
 		audioContextRef.current = new AudioContext();
 		setAudioContextState(audioContextRef.current.state);
 
 		document.addEventListener(
-			"click",
+			'click',
 			() => {
-				if (
-					audioContextRef.current &&
-					audioContextRef.current.state === "suspended"
-				) {
+				if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
 					audioContextRef.current.resume();
 				}
 			},
@@ -43,10 +33,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 			}
 		};
 
-		audioContextRef.current.addEventListener(
-			"statechange",
-			handleAudioContextStateChange,
-		);
+		audioContextRef.current.addEventListener('statechange', handleAudioContextStateChange);
 
 		let mounted = true;
 
@@ -66,20 +53,20 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 								// Investigate!
 								pendingApp.setupGraphics(canvasIdRef.current);
 							} catch (ex) {
-								console.error("Error setting up graphics:", ex);
+								console.error('Error setting up graphics:', ex);
 							}
 
 							setIsReady(true);
 						}
 					} catch (ex) {
-						console.error("Error setting up WASM module:", ex);
+						console.error('Error setting up WASM module:', ex);
 					}
 					setApp(pendingApp);
 					setProject(pendingApp.project);
 				}
 			})
 			.catch((err) => {
-				console.error("Error loading WASM module:", err);
+				console.error('Error loading WASM module:', err);
 			});
 
 		return () => {
@@ -91,10 +78,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 			pendingApp.destroy();
 
 			if (audioContextRef.current) {
-				audioContextRef.current.removeEventListener(
-					"statechange",
-					handleAudioContextStateChange,
-				);
+				audioContextRef.current.removeEventListener('statechange', handleAudioContextStateChange);
 				audioContextRef.current.close();
 				audioContextRef.current = null;
 			}
@@ -116,7 +100,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 					// Investigate!
 					app.setupGraphics(id);
 				} catch (ex) {
-					console.error("Error setting up graphics:", ex);
+					console.error('Error setting up graphics:', ex);
 				}
 
 				setIsReady(true);
@@ -124,6 +108,22 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		},
 		[app],
 	);
+
+	const focusCanvas = useCallback(() => {
+		const canvas = canvasIdRef.current && document.getElementById(canvasIdRef.current);
+		if (!canvas) return;
+
+		// Focus first
+		canvas.focus();
+
+		// Simulate a click to wake up GLFW
+		const clickEvent = new MouseEvent('click', {
+			bubbles: true,
+			cancelable: true,
+			view: window,
+		});
+		canvas.dispatchEvent(clickEvent);
+	}, []);
 
 	return (
 		<RetroPlugContext.Provider
@@ -136,6 +136,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 				audioContextState,
 				canvasId: canvasIdRef.current,
 				setCanvasId,
+				focusCanvas,
 			}}
 		>
 			{children}

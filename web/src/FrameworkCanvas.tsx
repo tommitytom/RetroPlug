@@ -30,7 +30,9 @@ export const FrameworkCanvas: React.FC<FrameworkCanvasProps> = ({}) => {
 				</div>
 			)}
 			<canvas
+				className="canvas-element"
 				ref={canvasRef}
+				tabIndex={0}
 				id="canvas"
 			/>
 		</div>

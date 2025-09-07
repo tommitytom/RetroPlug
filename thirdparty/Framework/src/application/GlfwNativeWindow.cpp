@@ -173,6 +173,10 @@ void GlfwNativeWindow::onCleanup() {
 	Window::onCleanup();
 }
 
+void GlfwNativeWindow::focus() {
+	glfwFocusWindow(_window);
+}
+
 void GlfwNativeWindow::onCreate() {
 	ViewManagerPtr vm = getViewManager();
 
@@ -181,6 +185,9 @@ void GlfwNativeWindow::onCreate() {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     //glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
 	emscripten_glfw_set_next_window_canvas_selector(_canvasId.c_str());
+	emscripten::glfw3::SetBrowserKeyCallback([](GLFWwindow* window, int key, int scancode, int action, int mods) {
+		return true;
+	});
 	#else
 	//glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

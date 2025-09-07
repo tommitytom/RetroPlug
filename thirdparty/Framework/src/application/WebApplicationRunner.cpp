@@ -57,6 +57,11 @@ namespace fw::app {
 		//_window = nullptr;
 	}
 
+	void WebApplicationRunner::focusCanvas() {
+		assert(_window);
+		_window->focus();
+	}
+
 	void WebApplicationRunner::start() {
 		assert(_window);
 		emscripten_set_main_loop_arg(&webFrameCallback, this, 0, true);
