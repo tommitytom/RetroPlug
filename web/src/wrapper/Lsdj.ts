@@ -30,9 +30,9 @@ export class LsdjController {
 		}
 	}
 
-	getKits(system: SystemId): Record<number, ILsdjKit> {
+	getKits(system: SystemId): ILsdjKit[] {
 		const kitsString = this._nativeController.getKitsString(system);
-		return JSON.parse(kitsString) as Record<number, ILsdjKit>;
+		return JSON.parse(kitsString) as ILsdjKit[];
 	}
 
 	getKitData(systemId: SystemId, kitId: number): Uint8Buffer | null {

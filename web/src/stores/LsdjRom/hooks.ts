@@ -1,6 +1,7 @@
-import { useContext } from "react";
+import { useContext, useEffect, useRef } from "react";
 import type { LsdjStoreState } from "./store";
 import { LsdjStoreContext } from "./context";
+import type { ILsdjKit } from "../../types/LsdjTypes";
 
 export const useLsdjStore = <T,>(selector: (state: LsdjStoreState) => T): T => {
 	const store = useContext(LsdjStoreContext);
@@ -8,4 +9,68 @@ export const useLsdjStore = <T,>(selector: (state: LsdjStoreState) => T): T => {
 		throw new Error('useLsdjStore must be used within LsdjStoreProvider');
 	}
 	return store(selector);
+};
+
+// Hook to subscribe to kit list changes
+export const useKitListChanges = (callback: (kitId: string, kit: ILsdjKit|null) => void) => {
+	const store = useContext(LsdjStoreContext);
+	const callbackRef = useRef(callback);
+	callbackRef.current = callback;
+
+	const previousKitsRef = useRef<Set<string>>(null);
+
+	useEffect(() => {
+		if (!store) return;
+
+		if (!previousKitsRef.current) {
+			const currentState = store.getState();
+			previousKitsRef.current = new Set(currentState.rom?.kits.map(kit => kit.key));
+		}
+
+		const unsubscribe = store.subscribe(
+			(state) => state.rom?.kits || [],
+			(kits) => {
+				const prev = previousKitsRef.current!;
+				const added = kits.filter(kit => !prev.has(kit.key));
+				const removed = Array.from(prev).filter(key => !kits.some(kit => kit.key === key));
+
+				added.forEach(kit => callbackRef.current(kit.key, kit));
+				removed.forEach(key => callbackRef.current(key, null));
+
+				previousKitsRef.current = new Set(kits.map(kit => kit.key));
+			},
+			{
+				equalityFn: (a, b) => a.length === b.length && a.every((kit, index) => kit.key === b[index]?.key),
+			}
+		);
+
+		return unsubscribe;
+	}, [store]);
+};
+
+// Hook to subscribe to specific kit changes
+export const useKitChanges = (kitKeys: string[], callback: (kitKey: string, kit?: ILsdjKit) => void) => {
+	const store = useContext(LsdjStoreContext);
+	const callbackRef = useRef(callback);
+	callbackRef.current = callback;
+
+	useEffect(() => {
+		if (!store || kitKeys.length === 0) return;
+
+		const unsubscribes = kitKeys.map(kitKey => {
+			return store.subscribe(
+				(state) => {
+					return state.rom!.kits.find(kit => kit.key === kitKey);
+				},
+				(kit) => callbackRef.current(kitKey, kit),
+				{
+					equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+				}
+			);
+		});
+
+		return () => {
+			unsubscribes.forEach(unsubscribe => unsubscribe());
+		};
+	}, [store, kitKeys]);
 };

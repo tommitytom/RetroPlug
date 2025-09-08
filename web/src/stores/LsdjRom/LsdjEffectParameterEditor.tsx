@@ -27,16 +27,12 @@ export const LsdjEffectParameterEditor: React.FC<LsdjEffectParameterEditorProps>
 	const updateSampleEffect = useLsdjStore((state) => state.updateSampleEffect);
 
 	const handleChange = (newValue: number | string | boolean) => {
-		console.log(`Changing ${paramName} from ${value} to ${newValue}`, kitKey);
-
 		if (sampleKey) {
 			updateSampleEffect(kitKey, sampleKey, effectKey, { [paramKey]: newValue } as any);
 		} else {
 			updateKitEffect(kitKey, effectKey, { [paramKey]: newValue } as any);
 		}
 	};
-
-	console.log(`Current value of ${paramName}:`, value);
 
 	return (
 		<div className="flex items-center space-x-2">

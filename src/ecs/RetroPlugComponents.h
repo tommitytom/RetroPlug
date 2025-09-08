@@ -70,6 +70,7 @@ namespace rp {
 	};
 
 	struct LsdjKitComponent {
+		uint32 id = std::numeric_limits<uint32>::max();
 		std::string name;
 		std::optional<std::string> path;
 		std::optional<std::vector<LsdjEffect>> effects;
@@ -81,7 +82,7 @@ namespace rp {
 	struct LsdjComponent {
 		rfl::Skip<semver::version> version;
 		rfl::Skip<std::optional<lsdj::MemoryOffsets>> ramOffsets;
-		std::unordered_map<KitIndex, LsdjKitComponent> kits;
+		std::vector<LsdjKitComponent> kits;
 	};
 
 	using ReplicatedTypes = entt::type_list<

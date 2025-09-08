@@ -3,10 +3,9 @@ import { HexEditor } from "hex-editor-react";
 import "hex-editor-react/dist/hex-editor.css";
 
 import { useProject, useSystemMemory, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import { type SystemId } from "../wrapper/Project";
 import { MemoryType } from "../wrapper/System";
-import { LsdjRomInspector } from "./LsdjRomInspector";
-import { toUint8Array } from "../utils/NativeUtil";
+import { type SystemId, toUint8Array } from "../utils/NativeUtil";
+import { LsdjRomMemoryEditor } from "../stores/LsdjRom/LsdjRomMemoryEditor";
 
 const LsdjSavInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 	const [songName, setSongName] = useState("");
@@ -74,7 +73,7 @@ const SystemInspector: React.FC<{
 			case 'sav':
 				return <LsdjSavInspector systemId={systemId} />;
 			case 'rom':
-				return <LsdjRomInspector systemId={systemId} />;
+				return <LsdjRomMemoryEditor system={systemId} />;
 			case 'ram':
 				return <LsdjRamInspector systemId={systemId} />;
 			default:

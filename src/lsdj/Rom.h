@@ -166,6 +166,32 @@ namespace rp::lsdj {
 			return fw::Uint8Buffer();
 		}
 
+		const fw::Uint8Buffer getSampleData() const {
+			// Find the highest offset to determine where sample data ends
+			size_t maxOffset = 0x4000; // Start offset for sample data
+
+			for (size_t i = 0; i < MAX_SAMPLES; ++i) {
+				size_t nameOffset = getSampleNameOffset(i);
+
+				// Check if this sample slot is used
+				if (kitData[nameOffset] != 0) {
+					size_t offset = i * 2;
+					size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
+
+					if (stop > maxOffset) {
+						maxOffset = stop;
+					}
+				}
+			}
+
+			// Return slice from start of sample data to the end of the last sample
+			if (maxOffset > 0x4000) {
+				return kitData.getBuffer().slice(0x4000 - 0x4000, maxOffset - 0x4000);
+			}
+
+			return fw::Uint8Buffer();
+		}
+
 		int32 addSample(std::string_view name, const fw::Uint8Buffer& data) {
 			size_t sampleIdx;
 			uint16 offset;
@@ -223,7 +249,7 @@ namespace rp::lsdj {
 		bool setSampleData(size_t sampleIdx, const fw::Uint8Buffer& data) {
 			if (data.size() == getSampleDataLength(sampleIdx)) {
 				// No need to rebuild offset table
-				size_t offset = getSampleOffset(sampleIdx) - 0x4000;
+				size_t offset = getSampleOffset(sampleIdx);
 				kitData.write(offset, data);
 				return true;
 			}
@@ -246,7 +272,7 @@ namespace rp::lsdj {
 
 		size_t getSampleOffset(size_t sampleIdx) const {
 			size_t offset = sampleIdx * 2;
-			return (0xFF & kitData[offset]) | ((0xFF & kitData[offset + 1]) << 8);
+			return ((0xFF & kitData[offset]) | ((0xFF & kitData[offset + 1]) << 8)) - 0x4000;
 		}
 
 		size_t getRemainingData() const {

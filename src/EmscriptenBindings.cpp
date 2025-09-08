@@ -277,10 +277,20 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getKitsString", +[](LsdjController& controller, SystemId system) -> std::string {
 			LsdjComponent* comp = controller.getComponent((entt::entity)system);
 			if (comp) {
-				std::unordered_map<rp::KitIndex, LsdjKitComponent> kits = comp->kits;
+				std::vector<LsdjKitComponent> kits = comp->kits;
 				lsdj::Rom rom = controller.getLsdjRom((entt::entity)system);
 				if (rom.isValid()) {
-					rom.eachKit([&](lsdj::Kit kit) { kits[kit.getIndex()].name = std::string(kit.getName()); });
+					rom.eachKit([&](lsdj::Kit kit) {
+						const uint32 kitIndex = (uint32)kit.getIndex();
+						const std::string name = std::string(kit.getName());
+
+						auto found = std::find_if(kits.begin(), kits.end(), [&](const LsdjKitComponent& k) { return k.id == kitIndex; });
+						if (found != kits.end()) {
+							found->name = std::move(name);
+						} else {
+							kits.push_back({ .id = kitIndex, .name = std::move(name) });
+						}
+					});
 				}
 				return rfl::json::write(kits);
 			}

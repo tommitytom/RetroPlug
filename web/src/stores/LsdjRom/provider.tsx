@@ -7,7 +7,6 @@ export interface LsdjStoreProviderProps {
 	children: ReactNode;
 	initialRom?: ILsdjRom;
 	initialKit?: ILsdjKit;
-	onChange(state: LsdjStoreState, prevState: LsdjStoreState): void;
 }
 
 export const LsdjStoreProvider: React.FC<LsdjStoreProviderProps> = ({

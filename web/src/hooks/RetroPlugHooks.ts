@@ -1,9 +1,10 @@
 import { useCallback, useRef, useSyncExternalStore } from "react";
 
 import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { Project, type SystemId } from "../wrapper/Project";
+import { Project } from "../wrapper/Project";
 import { AccessType, MemoryType } from "../wrapper/System";
 import type { MemoryAccessor } from "../native/RetroPlug";
+import type { SystemId } from "../utils/NativeUtil";
 
 export function useProject(intervalTimeout: number = 100) {
 	const { app, isReady } = useRetroPlug();

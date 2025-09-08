@@ -1,16 +1,19 @@
 import React, { useCallback, useRef, useState } from 'react';
 
-import { useLsdjStore } from './hooks';
+import { useKitChanges, useKitListChanges, useLsdjStore } from './hooks';
 import { LsdjKitEditor } from './LsdjKitEditor';
 import { sortKits } from './util';
+import type { ILsdjKit } from '../../types/LsdjTypes';
 
 import '../../styles/RomEditorPanel.css';
 
 interface LsdjRomEditorProps {
-
+	onKitAdded: (kitKey: string) => void;
+	onKitRemoved: (kitKey: string) => void;
+	onKitChanged: (kitKey: string, kit?: ILsdjKit) => void;
 }
 
-export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
+export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ onKitAdded, onKitRemoved, onKitChanged }) => {
 	const rom = useLsdjStore((state) => state.getRom());
 	const addKit = useLsdjStore((state) => state.addKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
@@ -18,18 +21,35 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('editable');
 	const [hideUnused, setHideUnused] = useState(false);
-	const [expandedKits, setExpandedKits] = useState<Set<number>>(new Set());
+	const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
+
+	useKitChanges(Array.from(expandedKits), (kitKey, kit) => {
+		onKitChanged(kitKey, kit);
+	});
+
+	useKitListChanges((kitId, kit) => {
+		if (kit) {
+			onKitAdded(kitId);
+		} else {
+			onKitRemoved(kitId);
+			setExpandedKits((prev) => {
+				const newSet = new Set(prev);
+				newSet.delete(kitId);
+				return newSet;
+			});
+		}
+	});
 
 	const sortedRomKits = sortKits(rom.kits, sortBy);
 
-	const toggleKit = useCallback((kitId: number) => {
+	const toggleKit = useCallback((kitKey: string) => {
 		setExpandedKits((prev) => {
 			const newSet = new Set(prev);
-			if (newSet.has(kitId)) {
-				newSet.delete(kitId);
+			if (newSet.has(kitKey)) {
+				newSet.delete(kitKey);
 			} else {
-				newSet.add(kitId);
+				newSet.add(kitKey);
 			}
 			return newSet;
 		});
@@ -40,7 +60,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 			setExpandedKits(new Set());
 			setAllExpanded(false);
 		} else {
-			setExpandedKits(new Set(sortedRomKits.map((kit) => kit.id)));
+			setExpandedKits(new Set(sortedRomKits.map((kit) => kit.key)));
 			setAllExpanded(true);
 		}
 	}, [allExpanded, sortedRomKits]);
@@ -92,8 +112,8 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 					<div className="space-y-2">
 						{sortedRomKits.map((kit) => (kit.key &&
 							<LsdjKitEditor
-								isExpanded={expandedKits.has(kit.id)}
-								onToggle={() => toggleKit(kit.id)}
+								isExpanded={expandedKits.has(kit.key)}
+								onToggle={() => toggleKit(kit.key)}
 								kitKey={kit.key}
 								key={kit.key}
 							/>

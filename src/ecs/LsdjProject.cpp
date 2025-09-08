@@ -94,9 +94,9 @@ namespace rp {
 		const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return nullptr;
 
-		auto found = lsdj->kits.find(kitId);
+		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
 		if (found != lsdj->kits.end()) {
-			return &found->second;
+			return &(*found);
 		}
 
 		return nullptr;
@@ -144,8 +144,15 @@ namespace rp {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 
-		lsdj->kits[kitId] = comp;
-		updateKit(system, kitId, lsdj->kits[kitId]);
+		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+
+		if (found == lsdj->kits.end()) {
+			lsdj->kits.push_back(comp);
+			updateKit(system, kitId, lsdj->kits.back());
+		} else {
+			*found = comp;
+			updateKit(system, kitId, *found);
+		}
 
 		return true;
 	}
@@ -163,8 +170,15 @@ namespace rp {
 			}
 		}
 
-		lsdj->kits[kitId] = std::move(comp);
-		updateKit(system, kitId, lsdj->kits[kitId]);
+		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+
+		if (found == lsdj->kits.end()) {
+			lsdj->kits.push_back(std::move(comp));
+			updateKit(system, kitId, lsdj->kits.back());
+		} else {
+			*found = comp;
+			updateKit(system, kitId, *found);
+		}
 
 		return true;
 	}
@@ -173,7 +187,8 @@ namespace rp {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 
-		lsdj->kits.erase(kitId);
+		std::erase_if(lsdj->kits, [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+
 		return true;
 	}
 
@@ -188,9 +203,9 @@ namespace rp {
 		if (!nextEmpty.isValid()) return false;
 
 		const rp::KitIndex kitId = nextEmpty.getIndex();
-		lsdj->kits[kitId] = comp;
+		lsdj->kits.push_back(comp);
 
-		updateKit(system, kitId, lsdj->kits[kitId]);
+		updateKit(system, kitId, lsdj->kits.back());
 
 		return true;
 	}

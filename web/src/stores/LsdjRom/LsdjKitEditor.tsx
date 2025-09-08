@@ -5,12 +5,15 @@ import { EditableText } from '../../components/EditableText';
 import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import type { ILsdjKitData } from '../../types/LsdjTypes';
+import { GAMEBOY_SAMPLE_RATE, KitType, type ILsdjKitData } from '../../types/LsdjTypes';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { fromUint8Array } from '../../utils/NativeUtil';
 import { useLsdjStore } from './hooks';
 import { LsdjEffectList } from './LsdjEffectList';
-import { extractSampleData, sanitizeKitName } from './util';
+import { extractSampleData, getKitType, sanitizeKitName } from './util';
+import { EnumUtils } from '../../utils/EnumUtil';
+import { playSample } from '../../wrapper/Lsdj';
+import { createPortal } from 'react-dom';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -19,26 +22,45 @@ interface LsdjKitEditorProps {
 }
 
 export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded, onToggle }) => {
-	const { app } = useRetroPlug();
-	const kit = useLsdjStore((state) => state.getKit(kitKey));
+	const { app, audioContext } = useRetroPlug();
+	const kit = useLsdjStore((state) => state.getKit(kitKey))!;
+	const removeKit = useLsdjStore((state) => state.removeKit);
 	const renameKit = useLsdjStore((state) => state.renameKit);
 	const addSample = useLsdjStore((state) => state.addSample);
 	const removeSample = useLsdjStore((state) => state.removeSample);
-	const [editable, setEditable] = useState(false);
 	const [isEditing, setIsEditing] = useState(false);
 	const [tempName, setTempName] = useState(kit?.name || '');
 	const [kitSampleData, setKitSampleData] = useState<ILsdjKitData | null>(null);
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
+	const [sampleUnderCursor, setSampleUnderCursor] = useState<string | null>(null);
+	const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
 
-	if (!kit) return null;
+	console.assert(!!kit);
+
+	// Helper function to get color classes based on kit type
+	const getKitTypeColorClasses = (kitType: KitType): string => {
+		switch (kitType) {
+			case KitType.Editable:
+				return 'bg-green-900/30 text-green-400';
+			case KitType.Patched:
+				return 'bg-blue-900/30 text-blue-400';
+			case KitType.Rom:
+			default:
+				return 'bg-gray-700 text-gray-400';
+		}
+	};
+
+	const kitType = getKitType(kit);
 
 	useEffect(() => {
-		if (app && kit.data) {
+		if (app && kit.data && isExpanded) {
 			const sampleData = extractSampleData(app.module!, fromUint8Array(app.module!, kit.data));
 			console.log(sampleData);
 			setKitSampleData(sampleData);
+		} else {
+			setKitSampleData(null);
 		}
-	}, [app, kit.data]);
+	}, [app, kit.data, isExpanded]);
 
 	const handleRename = () => {
 		renameKit(kitKey, tempName);
@@ -60,6 +82,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 
 	const handleRemoveSample = (sampleKey: string) => {
 		removeSample(kitKey, sampleKey);
+
 	};
 
 	const onNameChange = (newName: string) => {
@@ -67,25 +90,33 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 	};
 
 	const handleSliceClick = (slice: SliceInfo) => {
-		//if (audioContext) {
-		//playSample(audioContext, kitSampleData.sampleBuffer, slice.start, slice.end);
-		//}
+		if (audioContext && kitSampleData) {
+			playSample(audioContext, kitSampleData.sampleBuffer.slice(slice.startSample, slice.endSample), 0.25, GAMEBOY_SAMPLE_RATE);
+		}
 	};
 
-	const handleSliceMouseMove = (slice: SliceInfo | null) => {
-		//if (audioContext) {
-		//playSample(audioContext, kitSampleData.sampleBuffer, slice.start, slice.end);
-		//}
-	};
+	const handleSliceMouseMove = useCallback(
+		(slice: SliceInfo | null) => {
+			if (slice) {
+				setSampleUnderCursor(kitSampleData?.samples[slice.index]?.name || null);
+			} else {
+				setSampleUnderCursor(null);
+			}
+		},
+		[kitSampleData, setSampleUnderCursor],
+	);
 
-	const handleWaveViewMouseMove = (event: React.MouseEvent) => {
-		// Update mouse position for tooltip positioning
-		//setMousePosition({ x: event.clientX, y: event.clientY });
-	};
+	const handleWaveViewMouseMove = useCallback((event: React.MouseEvent) => {
+		setMousePosition({ x: event.clientX, y: event.clientY });
+	}, [setMousePosition]);
 
-	const handleWaveViewMouseLeave = (event: React.MouseEvent) => {
-		// Update mouse position for tooltip positioning
-		//setMousePosition({ x: event.clientX, y: event.clientY });
+	const handleWaveViewMouseLeave = useCallback(() => {
+		setMousePosition(null);
+		setSampleUnderCursor(null);
+	}, [setMousePosition, setSampleUnderCursor]);
+
+	const handleDeleteKit = () => {
+		removeKit(kitKey);
 	};
 
 	const handleDownloadClick = useCallback(
@@ -141,11 +172,9 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 						</span>
 					)*/}
 					<span
-						className={`rounded px-2 py-1 text-xs ${
-							editable ? 'bg-green-900/30 text-green-400' : 'bg-gray-700 text-gray-400'
-						}`}
+						className={`rounded px-2 py-1 text-xs ${getKitTypeColorClasses(kitType)}`}
 					>
-						{editable ? 'Editable' : 'Baked'}
+						{EnumUtils.enumToString(KitType, getKitType(kit))}
 					</span>
 					<button
 						className={`rounded-sm p-1 transition-colors duration-200 ${
@@ -175,8 +204,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 						className="rounded-sm p-1 text-red-400 transition-colors duration-200 hover:bg-red-600/20 hover:text-red-300"
 						onClick={(e) => {
 							e.stopPropagation();
-							// TODO: Add delete functionality
-							console.log('Delete kit:', kit.id, kit.name);
+							handleDeleteKit();
 						}}
 						title="Delete kit"
 					>
@@ -199,7 +227,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 				</div>
 			</div>
 			{isExpanded && kitSampleData && (
-				<div className={`bg-gray-900 ${editable ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
+				<div className={`bg-gray-900 ${kitType === KitType.Editable ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
 					<div className="mb-2">
 						<div
 							onMouseMove={handleWaveViewMouseMove}
@@ -215,17 +243,33 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 							/>
 						</div>
 					</div>
-					<div className="mb-2">
-						<LsdjEffectList
-							kitKey={kitKey}
-							isExpanded={isEffectEditorOpen}
-							onToggle={(expanded) => handleEffectToggle(expanded)}
-							title="Sample Effects"
-							key={kitKey}
-						/>
-					</div>
+					{kitType === KitType.Editable && (
+						<div className="mb-2">
+							<LsdjEffectList
+								kitKey={kitKey}
+								isExpanded={isEffectEditorOpen}
+								onToggle={(expanded) => handleEffectToggle(expanded)}
+								title="Sample Effects"
+								key={kitKey}
+							/>
+						</div>
+					)}
 				</div>
 			)}
+			{sampleUnderCursor &&
+				mousePosition &&
+				createPortal(
+					<div
+						className="pointer-events-none fixed z-50 rounded border border-gray-600 bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
+						style={{
+							left: `${mousePosition.x - 13}px`,
+							top: `${mousePosition.y + 25}px`,
+						}}
+					>
+						{sampleUnderCursor}
+					</div>,
+					document.body,
+				)}
 		</div>
 	);
 };

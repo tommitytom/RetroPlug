@@ -25,6 +25,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKe
 	const handleAddEffect = (type: string) => {
 		const effectInstance = createEffectInstance(type);
 		if (!effectInstance) {
+			console.error(`Failed to create effect instance of type: ${type}`);
 			return;
 		}
 
