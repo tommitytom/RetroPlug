@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useRetroPlug } from '../contexts/RetroPlugContext';
-import type { Uint8Buffer } from '../native/RetroPlug';
+import type { MainModule, Uint8Buffer } from '../native/RetroPlug';
 import type { EffectInstance } from '../types/EffectTypes';
 import { GAMEBOY_SAMPLE_RATE, type INamedSample } from '../types/LsdjTypes';
 import { downloadUint8Buffer, sanitizeFilename } from '../utils/FileUtil';
@@ -12,6 +12,7 @@ import { EditableText } from './EditableText';
 import { EffectList } from './EffectList';
 import { WaveView } from './WaveView';
 import type { SliceInfo } from './WaveViewTypes';
+import { extractSampleData } from '../stores/LsdjRom/util';
 
 export const LsdjKitEditor: React.FC<{
 	id: number;
@@ -40,41 +41,7 @@ export const LsdjKitEditor: React.FC<{
 			return;
 		}
 
-		const mod = project.module;
-		const kit = new mod.NativeLsdjKit(kitData, id);
-
-		const namedSamples: INamedSample[] = [];
-		const sampleCount = kit.getSampleCount();
-		for (let i = 0; i < sampleCount; ++i) {
-			const sampleName = kit.getSampleName(i);
-			if (sampleName && sampleName !== 'N/A') {
-				const sampleData = kit.getSampleData(i);
-				const target = new mod.Float32Buffer(sampleData.size());
-
-				mod.convertNibblesToF32(sampleData, target);
-
-				namedSamples.push({
-					name: sampleName,
-					data: convertFloat32Buffer(target),
-				});
-			}
-		}
-
-		kit.delete();
-
-		const markers: number[] = [];
-		const fullSampleSize = namedSamples.reduce((acc, sample) => acc + sample.data.length, 0);
-		const fullSample = new Float32Array(fullSampleSize);
-		let offset = 0;
-		for (const sample of namedSamples) {
-			fullSample.set(sample.data, offset);
-			offset += sample.data.length;
-
-			markers.push(offset);
-		}
-
-		setSamples(namedSamples);
-		setKitSample(fullSample);
+		const samples = extractSampleData(project.module, kitData);
 		setMarkers(markers);
 	}, [isExpanded, id, kitData, setSamples]);
 

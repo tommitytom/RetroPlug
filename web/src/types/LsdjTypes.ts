@@ -1,24 +1,15 @@
+import type { IEffect } from "../effects/Effect";
+
 export const LSDJ_KIT_COUNT = 51;
 export const LSDJ_KIT_SAMPLE_COUNT = 15;
 export const GAMEBOY_SAMPLE_RATE = 11468;
 
-export interface ILsdjKitEffect {
+export interface ILsdjKitEffect<T extends IEffect = IEffect> {
 	type: string;
 	id: number;
 	key: string;
+	effectInstance: T
 }
-
-export interface IGainEffect extends ILsdjKitEffect {
-	gain: number;
-}
-
-export interface IFilterEffect extends ILsdjKitEffect {
-	freq: number;
-	q: number;
-	feedback: number;
-}
-
-export type LsdjEffect = IGainEffect | IFilterEffect;
 
 export interface ILsdjKitSample {
 	name: string;
@@ -72,3 +63,15 @@ export interface LsdjKitData {
 /*export interface LsdjKit extends NativeLsdjKitDesc {
 	name: string;
 }*/
+
+
+export interface ILsdjKitDataSample {
+	name: string;
+	offset: number;
+	length: number;
+}
+
+export interface ILsdjKitData {
+	samples: ILsdjKitDataSample[];
+	sampleBuffer: Float32Array;
+}

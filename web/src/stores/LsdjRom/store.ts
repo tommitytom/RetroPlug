@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
-import type { ILsdjKit, ILsdjKitSample, ILsdjRom, LsdjEffect } from "../../types/LsdjTypes";
+import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from "../../types/LsdjTypes";
 
 export interface LsdjStoreState {
 	// State
@@ -17,24 +17,28 @@ export interface LsdjStoreState {
 
 	// Kit Actions (works for both ROM kits and standalone)
 	loadStandaloneKit: (kit: ILsdjKit) => void;
+	addKit: (kit: ILsdjKit) => void;
+	removeKit: (kitKey: string) => void;
 	updateKit: (kitKey: string, updates: Partial<ILsdjKit>) => void;
 	renameKit: (kitKey: string, name: string) => void;
 	selectKit: (kitKey: string | null) => void;
 
 	// Sample Actions
+	addSample: (kitKey: string, sample: ILsdjKitSample) => void;
+	removeSample: (kitKey: string, sampleKey: string) => void;
 	updateSample: (kitKey: string, sampleKey: string, updates: Partial<ILsdjKitSample>) => void;
 	renameSample: (kitKey: string, sampleKey: string, name: string) => void;
 	selectSample: (sampleKey: string | null) => void;
 
 	// Effect Actions for Kits
-	addKitEffect: (kitKey: string, effect: LsdjEffect) => void;
-	updateKitEffect: (kitKey: string, effectKey: string, updates: Partial<LsdjEffect>) => void;
+	addKitEffect: (kitKey: string, effect: ILsdjKitEffect) => void;
+	updateKitEffect: (kitKey: string, effectKey: string, updates: Partial<ILsdjKitEffect>) => void;
 	removeKitEffect: (kitKey: string, effectKey: string) => void;
 	reorderKitEffects: (kitKey: string, fromIndex: number, toIndex: number) => void;
 
 	// Effect Actions for Samples
-	addSampleEffect: (kitKey: string, sampleKey: string, effect: LsdjEffect) => void;
-	updateSampleEffect: (kitKey: string, sampleKey: string, effectKey: string, updates: Partial<LsdjEffect>) => void;
+	addSampleEffect: (kitKey: string, sampleKey: string, effect: ILsdjKitEffect) => void;
+	updateSampleEffect: (kitKey: string, sampleKey: string, effectKey: string, updates: Partial<ILsdjKitEffect>) => void;
 	removeSampleEffect: (kitKey: string, sampleKey: string, effectKey: string) => void;
 	reorderSampleEffects: (kitKey: string, sampleKey: string, fromIndex: number, toIndex: number) => void;
 
@@ -76,6 +80,25 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 						state.selectedKitKey = kit.key;
 					}),
 
+				addKit: (kit) =>
+					set((state) => {
+						if (state.rom) {
+							state.rom.kits.push(kit);
+						}
+					}),
+
+				removeKit: (kitKey) =>
+					set((state) => {
+						if (state.rom) {
+							state.rom.kits = state.rom.kits.filter((k) => k.key !== kitKey);
+							// Clear selection if the removed kit was selected
+							if (state.selectedKitKey === kitKey) {
+								state.selectedKitKey = null;
+								state.selectedSampleKey = null;
+							}
+						}
+					}),
+
 				updateKit: (kitKey, updates) =>
 					set((state) => {
 						if (state.rom) {
@@ -104,6 +127,29 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 					}),
 
 				// Sample Actions
+				addSample: (kitKey, sample) =>
+					set((state) => {
+						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+						if (kit) {
+							if (!kit.samples) {
+								kit.samples = [];
+							}
+							kit.samples.push(sample);
+						}
+					}),
+
+				removeSample: (kitKey, sampleKey) =>
+					set((state) => {
+						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+						if (kit && kit.samples) {
+							kit.samples = kit.samples.filter((s) => s.key !== sampleKey);
+							// Clear selection if the removed sample was selected
+							if (state.selectedSampleKey === sampleKey) {
+								state.selectedSampleKey = null;
+							}
+						}
+					}),
+
 				updateSample: (kitKey, sampleKey, updates) =>
 					set((state) => {
 						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
@@ -144,7 +190,9 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 						if (kit) {
 							const effect = kit.effects?.find((e) => e.key === effectKey);
 							if (effect) {
-								Object.assign(effect, updates);
+								for (const key in updates) {
+									effect.effectInstance[key] = updates[key];
+								}
 							}
 						}
 					}),

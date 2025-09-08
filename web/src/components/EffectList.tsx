@@ -33,7 +33,7 @@ export const EffectList: React.FC<EffectListProps> = ({
 		parameter: IEffectParameter,
 		value: number | string | boolean,
 	) => {
-		parameter.setter(value);
+		//parameter.setter(value);
 		// Force re-render by updating the effects array
 		//setEffects([...effects]);
 	};

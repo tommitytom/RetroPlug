@@ -1,21 +1,6 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
-import { type IIndexedLsdjKit, type ILsdjKit, KitType } from "../types/LsdjTypes";
+import type { ILsdjKit } from "../types/LsdjTypes";
 import { fromUint8Array, type SystemId } from "../utils/NativeUtil";
-
-export function kitIsEditable(kit: IIndexedLsdjKit): boolean {
-	return !!kit.samples;
-}
-
-export function getKitType(kit: ILsdjKit): KitType {
-	if (kit.samples) {
-		return KitType.Editable;
-	}
-	if (kit.path) {
-		return KitType.Patched;
-	}
-
-	return KitType.Rom;
-}
 
 export class LsdjController {
 	constructor(private _module: MainModule, private _nativeController: NativeLsdjController) {}

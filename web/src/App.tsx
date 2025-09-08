@@ -1,10 +1,14 @@
-import { type Panel, DockableEditor } from "./components/DockableEditor";
+import { RetroPlugProvider } from "./contexts/RetroPlugProvider";
+import { MultipleRomEditorsApp } from "./stores/LsdjRom/components";
+
+/*import { type Panel, DockableEditor } from "./components/DockableEditor";
 import { useRetroPlug } from "./contexts/RetroPlugContext";
 import { RetroPlugProvider } from "./contexts/RetroPlugProvider";
 import { InspectorPanel } from './panels/InspectorPanel';
 import { SystemPanel } from './panels/SystemPanel';
 import { FileTreePanel } from './panels/FileTreePanel';
 import { RetroPlugCanvas } from "./RetroPlugCanvas";
+import { StandaloneKitEditorApp } from "./stores/LsdjRom/components";
 
 function LoadSpinner() {
 	const { isLoading } = useRetroPlug();
@@ -32,7 +36,7 @@ const initialLayout = {
 	bottom: { id: 'bottom', panels: [], activePanel: '', size: 200 },
 };
 
-function App() {
+function AppOld() {
 	return (
 		<RetroPlugProvider>
 			<div className="app-container">
@@ -47,6 +51,14 @@ function App() {
 				/>
 				<RetroPlugCanvas />
 			</div>
+		</RetroPlugProvider>
+	);
+}
+*/
+function App() {
+	return (
+		<RetroPlugProvider>
+			<MultipleRomEditorsApp />
 		</RetroPlugProvider>
 	);
 }
