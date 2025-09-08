@@ -60,6 +60,8 @@ export const LsdjKitEditor: React.FC<{
 			}
 		}
 
+		kit.delete();
+
 		const markers: number[] = [];
 		const fullSampleSize = namedSamples.reduce((acc, sample) => acc + sample.data.length, 0);
 		const fullSample = new Float32Array(fullSampleSize);

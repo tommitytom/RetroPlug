@@ -4,23 +4,48 @@ export const GAMEBOY_SAMPLE_RATE = 11468;
 
 export interface ILsdjKitEffect {
 	type: string;
+	id: number;
+	key: string;
 }
+
+export interface IGainEffect extends ILsdjKitEffect {
+	gain: number;
+}
+
+export interface IFilterEffect extends ILsdjKitEffect {
+	freq: number;
+	q: number;
+	feedback: number;
+}
+
+export type LsdjEffect = IGainEffect | IFilterEffect;
 
 export interface ILsdjKitSample {
 	name: string;
+	id: number;
 	path: string;
 	offset: number;
 	length: number;
 	effects?: ILsdjKitEffect[];
 	data?: Uint8Array;
+	key: string;
 }
 
 export interface ILsdjKit {
 	name: string;
+	id: number;
 	path?: string;
 	samples?: ILsdjKitSample[];
 	effects?: ILsdjKitEffect[];
 	data?: Uint8Array;
+	key: string;
+}
+
+export interface ILsdjRom {
+	name: string;
+	kits: ILsdjKit[];
+	key: string;
+	id: number;
 }
 
 export enum KitType {
