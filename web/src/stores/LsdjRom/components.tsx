@@ -5,6 +5,28 @@ import type { ILsdjKit, ILsdjRom } from '../../types/LsdjTypes';
 import { LsdjKitEditor } from './LsdjKitEditor';
 import { LsdjRomEditor } from './LsdjRomEditor';
 import { LsdjStoreProvider } from './provider';
+import { ObjectUtils } from '../../utils/ObjectUtils';
+import { useEffectListChanges, useKitAdded, useKitChanges, useKitListChanges, useKitRemoved } from './hooks';
+
+interface ChangeListenerProps {
+
+}
+
+const ChangeListener: React.FC<ChangeListenerProps> = () => {
+	useKitChanges(['kit1', 'kit2'], (kitKey, kit) => {
+		console.log('Kit changed:', kitKey, kit);
+	});
+
+	useKitListChanges((kitId, kit) => {
+		if (kit) {
+			console.log('Kit added:', kit);
+		} else {
+			console.log('Kit removed:', kitId);
+		}
+	});
+
+	return <></>;
+};
 
 // ============= App Examples =============
 // Example 1: Multiple ROM Editors
@@ -57,33 +79,23 @@ export const MultipleRomEditorsApp: React.FC = () => {
 							data,
 						},
 					],
-				},
-				{
-					id: 2,
-					key: 'rom2',
-					name: 'ROM 2',
-					kits: [
-						{
-							id: 0,
-							key: 'kit2',
-							name: 'Kit 2',
-							samples: [],
-							effects: [],
-							data,
-						},
-					],
-				},
+				}
 			]);
 		});
 	}, []);
 
+	const handleChange = (state, prevState) => {
+
+	};
+
 	return (
 		<div className="app">
-			{roms.map((rom) => (
-				<LsdjStoreProvider key={rom.key} initialRom={rom}>
-					<LsdjRomEditor rom={rom} />
+			{roms.length > 0 && (
+				<LsdjStoreProvider key={roms[0].key} initialRom={roms[0]} onChange={handleChange}>
+					<ChangeListener />
+					<LsdjRomEditor />
 				</LsdjStoreProvider>
-			))}
+			)}
 		</div>
 	);
 };

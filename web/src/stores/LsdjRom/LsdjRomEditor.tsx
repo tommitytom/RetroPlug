@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 
-import type { ILsdjRom } from '../../types/LsdjTypes';
 import { useLsdjStore } from './hooks';
 import { LsdjKitEditor } from './LsdjKitEditor';
 import { sortKits } from './util';
@@ -8,27 +7,13 @@ import { sortKits } from './util';
 import '../../styles/RomEditorPanel.css';
 
 interface LsdjRomEditorProps {
-	rom: ILsdjRom;
+
 }
 
-export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ rom }) => {
+export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
+	const rom = useLsdjStore((state) => state.getRom());
 	const addKit = useLsdjStore((state) => state.addKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
-
-	const handleAddKit = () => {
-		const newKit = {
-			id: Date.now(), // Simple ID generation
-			key: `kit-${Date.now()}`,
-			name: 'New Kit',
-			samples: [],
-			effects: [],
-		};
-		addKit(newKit);
-	};
-
-	const handleRemoveKit = (kitKey: string) => {
-		removeKit(kitKey);
-	};
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('editable');
@@ -105,7 +90,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ rom }) => {
 						</div>
 					)}
 					<div className="space-y-2">
-						{sortedRomKits.map((kit) => (
+						{sortedRomKits.map((kit) => (kit.key &&
 							<LsdjKitEditor
 								isExpanded={expandedKits.has(kit.id)}
 								onToggle={() => toggleKit(kit.id)}

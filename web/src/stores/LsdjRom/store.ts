@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from "../../types/LsdjTypes";
@@ -43,6 +43,8 @@ export interface LsdjStoreState {
 	reorderSampleEffects: (kitKey: string, sampleKey: string, fromIndex: number, toIndex: number) => void;
 
 	// Utility
+	getRom: () => ILsdjRom;
+	getKits: () => ILsdjKit[] | undefined;
 	getKit: (kitKey: string) => ILsdjKit | undefined;
 	getSample: (kitKey: string, sampleKey: string) => ILsdjKitSample | undefined;
 }
@@ -51,7 +53,8 @@ export interface LsdjStoreState {
 export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 	create<LsdjStoreState>()(
 		devtools(
-			immer((set, get) => ({
+			subscribeWithSelector(
+				immer((set, get) => ({
 				// Initial State
 				rom: initialRom || null,
 				kit: initialKit || null,
@@ -221,7 +224,7 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 						if (kit) {
 							const sample = kit.samples?.find((s) => s.key === sampleKey);
 							if (sample && sample.effects) {
-								sample.effects?.push(effect);
+								sample.effects.push(effect);
 							}
 						}
 					}),
@@ -264,6 +267,16 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 					}),
 
 				// Utility
+				getRom: () => {
+					const state = get();
+					return state.rom!;
+				},
+
+				getKits: () => {
+					const state = get();
+					return state.rom?.kits;
+				},
+
 				getKit: (kitKey) => {
 					const state = get();
 					if (state.rom) {
@@ -281,6 +294,7 @@ export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 					}
 				},
 			})),
+			),
 		),
 	);
 

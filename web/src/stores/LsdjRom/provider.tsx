@@ -1,18 +1,19 @@
 import { ReactNode, useRef } from "react";
 import type { ILsdjKit, ILsdjRom } from "../../types/LsdjTypes";
-import { createLsdjStore, type LsdjStore } from "./store";
+import { createLsdjStore, type LsdjStoreState, type LsdjStore } from "./store";
 import { LsdjStoreContext } from "./context";
 
 export interface LsdjStoreProviderProps {
 	children: ReactNode;
 	initialRom?: ILsdjRom;
 	initialKit?: ILsdjKit;
+	onChange(state: LsdjStoreState, prevState: LsdjStoreState): void;
 }
 
 export const LsdjStoreProvider: React.FC<LsdjStoreProviderProps> = ({
 	children,
 	initialRom,
-	initialKit
+	initialKit,
 }) => {
 	const storeRef = useRef<LsdjStore|null>(null);
 
