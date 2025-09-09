@@ -271,20 +271,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			return controller.getNextEmptyKit((entt::entity)system);
 		})
 		.function("setKit", +[](LsdjController& controller, SystemId system, uint32 kitId, const std::string& data, std::vector<fw::Uint8Buffer>&& samples) -> bool {
-			for (const auto& sample : samples) {
-				spdlog::info("Sample size: {}", sample.size());
-				if (sample.size() == 0) {
-					spdlog::error("Sample data is empty for sample");
-					return false;
-				}
-			}
-
 			rfl::Result<LsdjKitComponent> result = rfl::json::read<LsdjKitComponent>(data);
 			if (!result.has_value()) {
 				spdlog::error(result.error().what());
 				return false;
 			}
+
 			assert(result.has_value() && result.value().samples.has_value() && result.value().samples.value().size() == samples.size());
+
 			return controller.setKitComponent((entt::entity)system, kitId, std::move(result.value()), std::forward<std::vector<fw::Uint8Buffer>>(samples));
 		})
 		.function("getKitsString", +[](LsdjController& controller, SystemId system) -> std::string {
@@ -657,7 +651,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("isStable", &BiquadEffect::isStable)
 		.function("getMagnitudeResponse", &BiquadEffect::getMagnitudeResponse)
 	;
-
+/*
 	// DitherMode enum
 	enum_<DitherMode>("NativeDitherMode")
 		.value("ErrorDiffusion", DitherMode::ErrorDiffusion)
@@ -684,7 +678,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("configureShapedTPDF2ndOrder", &DitherEffect::configureShapedTPDF2ndOrder)
 		.function("configureJJNErrorDiffusion", &DitherEffect::configureJJNErrorDiffusion)
 	;
-
+*/
 	// EffectChain class
 	class_<EffectChain>("NativeEffectChain")
 		.constructor<>()

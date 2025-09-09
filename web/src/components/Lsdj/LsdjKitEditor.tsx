@@ -5,7 +5,7 @@ import { EditableText } from '../../components/EditableText';
 import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import { useLsdjStore, useKit } from '../../hooks/LsdjStoreHooks';
 import type { ILsdjKit, ILsdjKitSample, ILsdjKitData } from '../../types/LsdjTypes';
 import { GAMEBOY_SAMPLE_RATE, KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
@@ -32,7 +32,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onError,
 }) => {
 	const { module, fileSystem, audioContext } = useRetroPlug();
-	const kit = useLsdjStore((state) => state.getKit(kitKey))!;
+	const kit = useKit(kitKey)!;
 	const addKit = useLsdjStore((state) => state.addKit);
 	const updateKit = useLsdjStore((state) => state.updateKit);
 	const patchSystemKit = useLsdjStore((state) => state.patchSystemKit);
@@ -69,7 +69,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	useEffect(() => {
 		if (kit.data && isExpanded) {
 			const sampleData = extractSampleData(module, fromUint8Array(module, kit.data));
-			console.log(sampleData);
 			setKitSampleData(sampleData);
 		} else {
 			setKitSampleData(null);
@@ -169,7 +168,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	}, []);
 
 	function getSampleNameFromPath(path: string): string {
-		return path.split('/').pop()?.split('.').shift()?.slice(0, 3) || "UNK";
+		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || "UNK";
 	}
 
 	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
@@ -219,6 +218,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			case KitType.Rom:
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
+					name: 'KIT',
 					path: paths[0],
 					effects: [],
 					samples

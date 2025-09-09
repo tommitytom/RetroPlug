@@ -13,6 +13,8 @@
 #include "foundation/StringUtil.h"
 #include "lsdj/SampleUtil.h"
 
+#include "ecs/Effects.h"
+
 using namespace rp;
 
 KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
@@ -173,15 +175,35 @@ bool processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::str
 
 		KitUtil::SampleData sampleData = KitUtil::loadSample(sample.data());
 
+		const DitherEffect* ditherEffect = nullptr;
 		if (comp.effects.has_value()) {
-			// TODO: Apply effects
+			for (const LsdjEffect& effect : comp.effects.value()) {
+				effect.visit([&](auto&& eff) {
+					if constexpr (!std::is_same_v<std::decay_t<decltype(eff)>, DitherEffect>) {
+						processEffect(eff, *sampleData.buffer, (f32)sampleData.sampleRate);
+					} else {
+						ditherEffect = &eff;
+					}
+				});
+			}
 		}
 
 		fw::Float32Buffer resampled;
 		KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, *sampleData.buffer, resampled);
 
+		if (ditherEffect) {
+			processEffect(*ditherEffect, resampled, (f32)KitUtil::GAMEBOY_SAMPLE_RATE);
+		} else {
+			f32* resampledData = resampled.data();
+			for (size_t i = 0; i < resampled.size(); ++i) {
+				// Clamp to [-1, 1], then scale to [0, 15]
+				resampledData[i] = (std::clamp(resampledData[i], -1.0f, 1.0f) + 1.0f) * 0.5f;
+				resampledData[i] = std::round(resampledData[i] * 15.0f);
+			}
+		}
+
 		fw::Uint8Buffer data;
-		lsdj::SampleUtil::convertF32ToNibbles(resampled, data, 0.0f);
+		lsdj::SampleUtil::convertScaledF32ToNibbles(resampled, data);
 
 		samples.push_back({ sample.name, std::move(data) });
 	}
@@ -197,6 +219,8 @@ bool KitUtil::patchKit2(lsdj::Kit& kit, const LsdjKitComponent& kitState) {
 
 	kit.setName(kitState.name);
 	kit.writeSamples(samples);
+
+	return true;
 }
 
 void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples) {
@@ -311,7 +335,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		}
 
 		fw::Uint8BufferPtr sampleData = std::make_shared<fw::Uint8Buffer>();
-		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData, ditherLevel);
+		lsdj::SampleUtil::convertF32ToNibbles(resampled, *sampleData);
 
 		targets.push_back(sampleData);
 		totalSampleDataSize += (uint32)sampleData->size();

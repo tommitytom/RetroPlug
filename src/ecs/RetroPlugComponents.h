@@ -10,6 +10,7 @@
 #include "sameboy/SameBoyComponents.h"
 
 #include "lsdj/Ram.h"
+#include "ecs/Effects.h"
 
 namespace rp {
 	struct SystemIoEvent {
@@ -52,17 +53,6 @@ namespace rp {
 	};
 
 	using KitIndex = uint32;
-
-	struct GainEffect {
-		f32 gain = 1.0f;
-	};
-	struct FilterEffect {
-		f32 frequency = 1000.0f;
-		f32 q = 0.0f;
-		f32 feedback = 0.0f;
-	};
-
-	using LsdjEffect = rfl::TaggedUnion<"type", GainEffect, FilterEffect>;
 
 	struct LsdjSampleComponent {
 		std::string name;

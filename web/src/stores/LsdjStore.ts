@@ -192,8 +192,6 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 
 					patchSystemKit: (kitKey: string) =>
 						set((state) => {
-							console.log('patcing kit');
-
 							const lsdj = state.controller;
 							const kit = state.rom?.kits.find((k) => k.key === kitKey);
 
@@ -203,12 +201,7 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 								lsdj.updateKit(state.systemId, kit.id, kit);
 								const kitData = lsdj.getKitData(state.systemId, kit.id)!;
 								if (kitData && kitData.size() > 0) {
-									const arrayBuffer = toUint8Array(kitData);
-									if (kit.data) {
-										kit.data?.set(arrayBuffer);
-									} else {
-										kit.data = arrayBuffer;
-									}
+									kit.data = toUint8Array(kitData);
 								}
 								console.log(timer.stop(), 'ms');
 							}

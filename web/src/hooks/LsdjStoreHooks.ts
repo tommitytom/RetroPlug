@@ -47,6 +47,48 @@ export const useKitList = () => {
 	return kits;
 };
 
+// Optimized hook for individual kit that only re-renders when basic kit properties change, not effects/samples
+export const useKit = (kitKey: string) => {
+	const store = useContext(LsdjStoreContext);
+	if (!store) {
+		throw new Error('useKit must be used within LsdjStoreProvider');
+	}
+
+	const [kit, setKit] = useState<ILsdjKit | undefined>(() => {
+		const state = store.getState();
+		return state.rom?.kits.find(k => k.key === kitKey) ||
+			   (state.kit?.key === kitKey ? state.kit : undefined);
+	});
+
+	useEffect(() => {
+		const unsubscribe = store.subscribe(
+			(state) => {
+				return state.rom?.kits.find(k => k.key === kitKey) ||
+					   (state.kit?.key === kitKey ? state.kit : undefined);
+			},
+			(newKit) => {
+				setKit(newKit);
+			},
+			{
+				equalityFn: (a, b) => {
+					// Only re-render if basic kit properties change, not effects or samples
+					if (!a && !b) return true;
+					if (!a || !b) return false;
+					return a.key === b.key &&
+						   a.id === b.id &&
+						   a.name === b.name &&
+						   a.path === b.path &&
+						   a.data === b.data;
+				}
+			}
+		);
+
+		return unsubscribe;
+	}, [store, kitKey]);
+
+	return kit;
+};
+
 // Hook to subscribe to kit list changes
 export const useKitListChanges = (callback: (kitId: string, kit: ILsdjKit|null) => void) => {
 	const store = useContext(LsdjStoreContext);

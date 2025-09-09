@@ -87,9 +87,29 @@ export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', 'Filte
 	}
 });
 
-const ALL_EFFECTS = [
+enum DitherType {
+	ErrorDiffusion = "ErrorDiffusion",
+	SierraLite = "SierraLite",
+	JJN = "JJN",
+	HighPassTPDF = "HighPassTPDF",
+	ShapedTPDF = "ShapedTPDF"
+}
+
+export interface IDitherEffect extends IEffect {
+	ditherType: DitherType;
+}
+export const DITHER_EFFECT_DESC = registerEffect<IDitherEffect>('Dither', 'DitherEffect', {
+	ditherType: {
+		type: EffectParameterType.Dropdown,
+		defaultValue: DitherType.ErrorDiffusion,
+		options: Object.values(DitherType)
+	}
+});
+
+export const ALL_EFFECTS = [
 	GAIN_EFFECT_DESC,
-	FILTER_EFFECT_DESC
+	FILTER_EFFECT_DESC,
+	DITHER_EFFECT_DESC
 ];
 
 export function findEffect(type: string) {

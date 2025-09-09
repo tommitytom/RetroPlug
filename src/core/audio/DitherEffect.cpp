@@ -1,6 +1,6 @@
 #include "DitherEffect.h"
 #include <cassert>
-
+/*
 namespace rp {
 
 DitherEffect::DitherEffect()
@@ -270,3 +270,4 @@ float DitherEffect::generateTPDFDither() {
 }
 
 } // namespace rp
+*/

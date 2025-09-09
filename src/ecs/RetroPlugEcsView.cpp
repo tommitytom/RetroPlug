@@ -187,7 +187,7 @@ namespace rp {
 		size_t selectedSystemIdx = INVALID_SYSTEM_INDEX;
 		std::vector<EcsSystemViewPtr> systemViews;
 
-		for (const auto& [e, c] : view.each()) {		
+		for (const auto& [e, c] : view.each()) {
 			auto systemView = addChild<EcsSystemView>(fmt::format("Gameboy {}", i + 1));
 			systemView->setEntity(e);
 			systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
@@ -206,6 +206,13 @@ namespace rp {
 			});
 
 			subscribe<fw::KeyEvent>(systemView, std::function<bool(const fw::KeyEvent&)>([this, e](const fw::KeyEvent& ev) -> bool {
+				if (ev.key == fw::VirtualKey::R) {
+					_project.getEventNode().trySend("Audio"_hs, ResetSystemEntityEvent{
+						.entity = e
+					});
+					return true;
+				}
+
 				fw::ButtonType button = mapKeyToButton(ev.key);
 				if (button == fw::ButtonType::MAX) {
 					return false;

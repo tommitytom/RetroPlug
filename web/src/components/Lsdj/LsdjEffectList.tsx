@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 
-import { createEffectInstance } from '../../effects/Effect';
+import { ALL_EFFECTS, createEffectInstance } from '../../effects/Effect';
 import type { ILsdjKitEffect } from '../../types/LsdjTypes';
 import { LsdjEffectEditor } from './LsdjEffectEditor';
 import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { generateKey } from '../../utils/LsdjUtil';
+import {} from '../../effects/Effect';
+import { useContextMenu } from '../../hooks/useContextMenu';
+import { ContextMenu } from '../Menu/ContextMenu';
 
 interface LsdjEffectListProps {
 	kitKey: string;
@@ -29,6 +32,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 	const sample = useLsdjStore((state) => (sampleKey ? state.getSample(kitKey, sampleKey) : undefined));
 	const addKitEffect = useLsdjStore((state) => state.addKitEffect);
 	const addSampleEffect = useLsdjStore((state) => state.addSampleEffect);
+	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 
 	const effects = sampleKey ? sample?.effects || [] : kit?.effects || [];
 
@@ -54,6 +58,27 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 		onChange();
 	};
 
+	const handleContextMenu = useCallback(
+		(event: React.MouseEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
+
+			const menuItems = ALL_EFFECTS.map(effect => {
+				return {
+					id: effect.type,
+					label: effect.name,
+					disabled: false,
+					onClick: () => {
+						handleAddEffect(effect.type);
+					},
+				};
+			});
+
+			showContextMenu(event, menuItems);
+		},
+		[showContextMenu, handleAddEffect],
+	);
+
 	return (
 		<div className="mt-2 overflow-hidden rounded-sm border border-gray-700">
 			<div
@@ -66,11 +91,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 				</div>
 				<button
 					className="rounded-sm px-2 py-1 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
-					onClick={(e) => {
-						e.stopPropagation();
-						handleAddEffect('FilterEffect');
-						onToggle(true);
-					}}
+					onClick={handleContextMenu}
 					title="Add Effect"
 				>
 					+
@@ -93,6 +114,13 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 					))}
 				</div>
 			)}
+			<ContextMenu
+				items={items}
+				position={position}
+				visible={isVisible}
+				onClose={hideContextMenu}
+				onItemClick={handleItemClick}
+			/>
 		</div>
 	);
 };
