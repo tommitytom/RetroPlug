@@ -1,13 +1,13 @@
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 
-import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { Project } from "../wrapper/Project";
-import { AccessType, MemoryType } from "../wrapper/System";
-import type { MemoryAccessor } from "../native/RetroPlug";
-import type { SystemId } from "../utils/NativeUtil";
+import { useRetroPlug } from '../contexts/RetroPlugContext';
+import type { MemoryAccessor } from '../native/RetroPlug';
+import type { SystemId } from '../utils/NativeUtil';
+import { Project } from '../wrapper/Project';
+import { AccessType, MemoryType } from '../wrapper/System';
 
 export function useProject(intervalTimeout: number = 100) {
-	const { app, isReady } = useRetroPlug();
+	const { app, module } = useRetroPlug();
 
 	// Cache to avoid unnecessary Project creation
 	const cache = useRef<{
@@ -17,13 +17,10 @@ export function useProject(intervalTimeout: number = 100) {
 
 	const subscribe = useCallback(
 		(listener: () => void) => {
-			if (!app || !isReady) return () => {};
-
 			let lastVersion = app.nativeProject.version;
 
 			const interval = setInterval(() => {
 				const currentVersion = app.nativeProject.version;
-				// Only notify if version actually changed
 				if (currentVersion !== lastVersion) {
 					lastVersion = currentVersion;
 					listener();
@@ -32,14 +29,10 @@ export function useProject(intervalTimeout: number = 100) {
 
 			return () => clearInterval(interval);
 		},
-		[app, isReady, intervalTimeout],
+		[app, intervalTimeout],
 	);
 
 	const getSnapshot = useCallback(() => {
-		if (!app || !app.module || !isReady) {
-			return null;
-		}
-
 		const currentVersion = app.nativeProject.version;
 
 		// Return cached Project if version hasn't changed
@@ -48,11 +41,11 @@ export function useProject(intervalTimeout: number = 100) {
 		}
 
 		// Create new Project only when version changes
-		const newProject = new Project(app.module, app.nativeProject);
+		const newProject = new Project(module, app.nativeProject);
 		cache.current = { version: currentVersion, project: newProject };
 
 		return newProject;
-	}, [app, isReady]);
+	}, [app, module]);
 
 	return useSyncExternalStore(subscribe, getSnapshot);
 }
@@ -62,8 +55,6 @@ export function useSystemMemoryVersion(system: SystemId, memoryType: MemoryType,
 
 	const subscribe = useCallback(
 		(listener: () => void) => {
-			if (!project) return () => {};
-
 			project.subscribeToMemory(system, memoryType);
 			let lastVersion = project.getSystemMemoryVersion(system, memoryType);
 
@@ -79,13 +70,12 @@ export function useSystemMemoryVersion(system: SystemId, memoryType: MemoryType,
 				project.unsubscribeFromMemory(system, memoryType);
 			};
 		},
-		[system, memoryType, intervalTimeout],
+		[project, system, memoryType, intervalTimeout],
 	);
 
 	const getSnapshot = useCallback(() => {
-		if (!project) return 0;
 		return project.getSystemMemoryVersion(system, memoryType);
-	}, [system, memoryType]);
+	}, [project, system, memoryType]);
 
 	return useSyncExternalStore(subscribe, getSnapshot);
 }
@@ -100,8 +90,6 @@ export function useSystemMemory(system: SystemId, memoryType: MemoryType, interv
 
 	const subscribe = useCallback(
 		(listener: () => void) => {
-			if (!project) return () => {};
-
 			project.subscribeToMemory(system, memoryType);
 			let lastVersion = project.getSystemMemoryVersion(system, memoryType);
 
@@ -118,12 +106,10 @@ export function useSystemMemory(system: SystemId, memoryType: MemoryType, interv
 				project.unsubscribeFromMemory(system, memoryType);
 			};
 		},
-		[system, memoryType, intervalTimeout],
+		[project, system, memoryType, intervalTimeout],
 	);
 
 	const getSnapshot = useCallback(() => {
-		if (!project) return null;
-
 		const currentVersion = project.getSystemMemoryVersion(system, memoryType);
 		if (cache.current.version === currentVersion && cache.current.memory) {
 			return cache.current.memory;
@@ -136,7 +122,7 @@ export function useSystemMemory(system: SystemId, memoryType: MemoryType, interv
 		cache.current.memory = memory;
 
 		return memory;
-	}, [system, memoryType]);
+	}, [project, system, memoryType]);
 
 	return useSyncExternalStore(subscribe, getSnapshot);
 }

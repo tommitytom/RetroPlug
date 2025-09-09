@@ -33,10 +33,8 @@ const LoadWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
 	const { isLoading } = useRetroPlug();
 
 	if (!isLoading) {
-		console.log('Loaded');
 		return <>{children}</>;
 	} else {
-		console.log('Loading...');
 		return <LoadSpinner />;
 	}
 };

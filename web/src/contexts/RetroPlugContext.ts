@@ -1,9 +1,10 @@
-import { createContext, useContext } from 'react';
 import * as Comlink from 'comlink';
+import { createContext, useContext } from 'react';
 
+import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import type { MainModule } from '../native/RetroPlug';
 import { RetroPlugApplication } from '../RetroPlugApplication';
 import { Project } from '../wrapper/Project';
-import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
 
 interface RetroPlugContextType {
 	canvasId: string | null;
@@ -11,9 +12,9 @@ interface RetroPlugContextType {
 	focusCanvas: () => void;
 	fileSystem: Comlink.Remote<FileSystemWorkerAPI>;
 	isLoading: boolean;
-	isReady: boolean;
 	audioContext: AudioContext | null;
 	audioContextState: AudioContextState;
+	module: MainModule;
 	app: RetroPlugApplication;
 	project: Project;
 }

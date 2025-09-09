@@ -64,8 +64,6 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 		console.log('Kit changed:', kitKey, kit);
 	};
 
-	console.log('rendering root!');
-
 	return rom ? (
 		<LsdjStoreProvider initialRom={rom}>
 			<LsdjRomEditor onKitAdded={handleKitAdded} onKitRemoved={handleKitRemoved} onKitChanged={handleKitChanged} />

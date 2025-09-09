@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as Comlink from 'comlink';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { RetroPlugApplication } from '../RetroPlugApplication';
-import { Project } from '../wrapper/Project';
-import { RetroPlugContext } from './RetroPlugContext';
 import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import { RetroPlugApplication } from '../RetroPlugApplication';
+import { RetroPlugContext } from './RetroPlugContext';
 
 function createFileSystemWorker(): Comlink.Remote<FileSystemWorkerAPI> {
 	const worker = new Worker(new URL('../filesystem/FileSystemWorker.ts', import.meta.url), { type: 'module' });
@@ -16,9 +15,8 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const canvasIdRef = useRef<string | null>(null);
 	const fileSystemRef = useRef<Comlink.Remote<FileSystemWorkerAPI> | null>(null);
 	const [app, setApp] = useState<RetroPlugApplication | null>(null);
-	const [project, setProject] = useState<Project | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
-	const [isReady, setIsReady] = useState<boolean>(false);
+	const [graphicsInitialized, setGraphicsInitialized] = useState<boolean>(false);
 	const [audioContextState, setAudioContextState] = useState<AudioContextState>('suspended');
 
 	useEffect(() => {
@@ -52,27 +50,10 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		Promise.all(proms)
 			.then(() => {
 				if (mounted) {
-					try {
-						pendingApp.setupAudio(audioContextRef.current);
-
-						if (canvasIdRef.current) {
-							try {
-								// This function seems to return fine but seemingly throws an exception after
-								// Investigate!
-								pendingApp.setupGraphics(canvasIdRef.current);
-							} catch (ex) {
-								console.error('Error setting up graphics:', ex);
-							}
-
-							setIsReady(true);
-						}
-					} catch (ex) {
-						console.error('Error setting up WASM module:', ex);
-					}
-
-					setApp(pendingApp);
-					setProject(pendingApp.project);
+					pendingApp.setupAudio(audioContextRef.current);
 					fileSystemRef.current = pendingFileSystem;
+					setApp(pendingApp);
+					updateCanvas();
 					setIsLoading(false);
 				}
 			})
@@ -84,10 +65,10 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 			mounted = false;
 
 			setIsLoading(true);
-			setIsReady(false);
+			setGraphicsInitialized(false);
 			setApp(null);
-			setProject(null);
 			fileSystemRef.current = null;
+
 			pendingApp.destroy();
 
 			if (audioContextRef.current) {
@@ -98,29 +79,30 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	const setCanvasId = useCallback(
-		(id: string | null) => {
-			if (app) {
-				app.destroyGraphics();
-				setIsReady(false);
+	const updateCanvas = () => {
+		if (!app) return;
+
+		if (graphicsInitialized) {
+			app.destroyGraphics();
+		}
+
+		if (canvasIdRef.current) {
+			try {
+				// This function seems to return fine but seemingly throws an exception after
+				// Investigate!
+				app.setupGraphics(canvasIdRef.current);
+			} catch (ex) {
+				console.error('Error setting up graphics:', ex);
 			}
 
-			canvasIdRef.current = id;
+			setGraphicsInitialized(true);
+		}
+	};
 
-			if (app && id !== null) {
-				try {
-					// This function seems to return fine but seemingly throws an exception after
-					// Investigate!
-					app.setupGraphics(id);
-				} catch (ex) {
-					console.error('Error setting up graphics:', ex);
-				}
-
-				setIsReady(true);
-			}
-		},
-		[app],
-	);
+	const setCanvasId = (id: string | null) => {
+		canvasIdRef.current = id;
+		updateCanvas();
+	};
 
 	const focusCanvas = useCallback(() => {
 		const canvas = canvasIdRef.current && document.getElementById(canvasIdRef.current);
@@ -142,11 +124,11 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		<RetroPlugContext.Provider
 			value={{
 				app: app!,
-				project: project!,
+				module: app?.module!,
+				project: app?.project!,
 				fileSystem: fileSystemRef.current!,
 				audioContext: audioContextRef.current,
 				isLoading,
-				isReady,
 				audioContextState,
 				canvasId: canvasIdRef.current,
 				setCanvasId,

@@ -1,7 +1,6 @@
 #include "RetroPlugEcsProcessor.h"
 
 #include <spdlog/spdlog.h>
-//#include <emscripten.h>
 
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
@@ -15,7 +14,6 @@
 #include "ecs/HierarchyUtil.h"
 #include "core/SystemHook.h"
 #include "core/Events.h"
-#include "foundation/EmscriptenUtil.h"
 
 namespace rp {
 	using namespace entt::literals;
