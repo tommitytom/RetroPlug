@@ -166,30 +166,24 @@ namespace rp::lsdj {
 			return fw::Uint8Buffer();
 		}
 
+		bool hasSample(size_t idx) const {
+			size_t nameOffset = getSampleNameOffset(idx);
+			return kitData[nameOffset] != 0;
+		}
+
 		const fw::Uint8Buffer getSampleData() const {
-			// Find the highest offset to determine where sample data ends
-			size_t maxOffset = 0x4000; // Start offset for sample data
+			uint16 lastOffset = 0;
 
 			for (size_t i = 0; i < MAX_SAMPLES; ++i) {
-				size_t nameOffset = getSampleNameOffset(i);
-
-				// Check if this sample slot is used
-				if (kitData[nameOffset] != 0) {
-					size_t offset = i * 2;
-					size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
-
-					if (stop > maxOffset) {
-						maxOffset = stop;
+				if (hasSample(i)) {
+					uint16 stop = getSampleOffset(i + 1);
+					if (stop > lastOffset) {
+						lastOffset = stop;
 					}
 				}
 			}
-
-			// Return slice from start of sample data to the end of the last sample
-			if (maxOffset > 0x4000) {
-				return kitData.getBuffer().slice(0x4000 - 0x4000, maxOffset - 0x4000);
-			}
-
-			return fw::Uint8Buffer();
+			
+			return kitData.getBuffer().slice(lsdj::Kit::SAMPLE_DATA_OFFSET, lastOffset);
 		}
 
 		int32 addSample(std::string_view name, const fw::Uint8Buffer& data) {
@@ -257,22 +251,25 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		size_t getSampleDataLength(size_t sampleIdx) {
-			size_t nameOffset = getSampleNameOffset(sampleIdx);
-
-			if (kitData[nameOffset] != 0) {
-				size_t offset = sampleIdx * 2;
-				size_t start = (0xFF & kitData[offset]) | ((0xFF & kitData[offset + 1]) << 8);
-				size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
+		uint16 getSampleDataLength(size_t sampleIdx) {
+			if (hasSample(sampleIdx)) {
+				uint16 start = getSampleOffset(sampleIdx);
+				uint16 stop = getSampleOffset(sampleIdx + 1);
 				return stop - start;
 			}
 
 			return 0;
 		}
 
-		size_t getSampleOffset(size_t sampleIdx) const {
-			size_t offset = sampleIdx * 2;
-			return ((0xFF & kitData[offset]) | ((0xFF & kitData[offset + 1]) << 8)) - 0x4000;
+		uint16 getSampleOffset(size_t sampleIdx) const {
+			sampleIdx *= 2;
+			return ((0xFF & kitData[sampleIdx]) | ((0xFF & kitData[sampleIdx + 1]) << 8)) - lsdj::Kit::SAMPLE_DATA_OFFSET - 0x4000;
+		}
+
+		void setSampleOffset(size_t sampleIdx, uint16 offset) {
+			sampleIdx *= 2;
+			kitData.set(sampleIdx, (uint8)(offset & 0xFF));
+			kitData.set(sampleIdx + 1, (uint8)((offset >> 8) & 0xFF));
 		}
 
 		size_t getRemainingData() const {
@@ -323,6 +320,7 @@ namespace rp::lsdj {
 
 	private:
 		size_t getSampleNameOffset(size_t sampleIdx) const {
+			assert(sampleIdx < Kit::MAX_SAMPLES);
 			return Kit::SAMPLE_NAME_OFFSET + sampleIdx * 3;
 		}
 	};

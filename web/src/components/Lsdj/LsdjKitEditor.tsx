@@ -110,7 +110,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const handleSliceMouseMove = useCallback(
 		(slice: SliceInfo | null) => {
 			if (slice) {
-				setSampleUnderCursor(kitSampleData?.samples[slice.index]?.name || null);
+				setSampleUnderCursor(kitSampleData?.samples[slice.index - 1]?.name || null);
 			} else {
 				setSampleUnderCursor(null);
 			}
@@ -324,7 +324,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						<div
 							onMouseMove={handleWaveViewMouseMove}
 							onMouseLeave={handleWaveViewMouseLeave}
-							title="Click to play sample"
 						>
 							<WaveView
 								sampleData={kitSampleData.sampleBuffer}
