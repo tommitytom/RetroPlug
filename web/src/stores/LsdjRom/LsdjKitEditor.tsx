@@ -1,27 +1,34 @@
-// components.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 
+import { createPortal } from 'react-dom';
 import { EditableText } from '../../components/EditableText';
 import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { GAMEBOY_SAMPLE_RATE, KitType, type ILsdjKitData } from '../../types/LsdjTypes';
+import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { fromUint8Array } from '../../utils/NativeUtil';
+import { playSample } from '../../wrapper/Lsdj';
 import { useLsdjStore } from './hooks';
 import { LsdjEffectList } from './LsdjEffectList';
 import { extractSampleData, getKitType, sanitizeKitName } from './util';
-import { EnumUtils } from '../../utils/EnumUtil';
-import { playSample } from '../../wrapper/Lsdj';
-import { createPortal } from 'react-dom';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
 	isExpanded: boolean;
 	onToggle: () => void;
+	onFileDropped?: (filePath: string, file?: File) => Promise<void>;
+	onError?: (error: string, operation?: string) => void;
 }
 
-export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded, onToggle }) => {
+export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
+	kitKey,
+	isExpanded,
+	onToggle,
+	onFileDropped,
+	onError,
+}) => {
 	const { app, audioContext } = useRetroPlug();
 	const kit = useLsdjStore((state) => state.getKit(kitKey))!;
 	const removeKit = useLsdjStore((state) => state.removeKit);
@@ -34,6 +41,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
 	const [sampleUnderCursor, setSampleUnderCursor] = useState<string | null>(null);
 	const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
+	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
 
@@ -82,7 +90,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 
 	const handleRemoveSample = (sampleKey: string) => {
 		removeSample(kitKey, sampleKey);
-
 	};
 
 	const onNameChange = (newName: string) => {
@@ -91,7 +98,12 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 
 	const handleSliceClick = (slice: SliceInfo) => {
 		if (audioContext && kitSampleData) {
-			playSample(audioContext, kitSampleData.sampleBuffer.slice(slice.startSample, slice.endSample), 0.25, GAMEBOY_SAMPLE_RATE);
+			playSample(
+				audioContext,
+				kitSampleData.sampleBuffer.slice(slice.startSample, slice.endSample),
+				0.25,
+				GAMEBOY_SAMPLE_RATE,
+			);
 		}
 	};
 
@@ -106,9 +118,12 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 		[kitSampleData, setSampleUnderCursor],
 	);
 
-	const handleWaveViewMouseMove = useCallback((event: React.MouseEvent) => {
-		setMousePosition({ x: event.clientX, y: event.clientY });
-	}, [setMousePosition]);
+	const handleWaveViewMouseMove = useCallback(
+		(event: React.MouseEvent) => {
+			setMousePosition({ x: event.clientX, y: event.clientY });
+		},
+		[setMousePosition],
+	);
 
 	const handleWaveViewMouseLeave = useCallback(() => {
 		setMousePosition(null);
@@ -146,14 +161,93 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 		}
 	};
 
+	// Drag and drop handlers
+	const handleDragOver = useCallback((event: React.DragEvent) => {
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'copy';
+		setIsDragOver(true);
+	}, []);
+
+	const handleDragLeave = useCallback((event: React.DragEvent) => {
+		// Only clear if we're actually leaving the element
+		if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+			setIsDragOver(false);
+		}
+	}, []);
+
+	const handleDrop = useCallback(
+		async (event: React.DragEvent) => {
+			event.preventDefault();
+			setIsDragOver(false);
+
+			try {
+				// Handle files from external sources (browser file system)
+				const files = Array.from(event.dataTransfer.files);
+				if (files.length > 0) {
+					for (const file of files) {
+						if (file.name.endsWith('.kit') || file.name.endsWith('.wav') || file.name.endsWith('.sav')) {
+							if (onFileDropped) {
+								await onFileDropped(file.name, file);
+							} else {
+								// Default behavior
+								console.log(`Dropped file: ${file.name}`);
+							}
+						}
+					}
+					return;
+				}
+
+				// Handle internal file tree drag (from FileExplorer)
+				const filePath = event.dataTransfer.getData('text/plain');
+				if (filePath) {
+					if (onFileDropped) {
+						await onFileDropped(filePath);
+					} else {
+						// Default behavior
+						console.log(`Dropped file from tree: ${filePath}`);
+					}
+				}
+			} catch (error) {
+				const errorMessage = `Failed to process dropped file: ${error}`;
+				console.error(errorMessage);
+				if (onError) {
+					onError(errorMessage, 'drop');
+				}
+			}
+		},
+		[onFileDropped, onError],
+	);
+
 	return (
-		<div className="overflow-hidden rounded-sm border border-gray-700">
+		<div
+			className={`relative overflow-hidden rounded-sm border border-gray-700 transition-all duration-200 ${
+				isDragOver ? 'border-blue-500 bg-blue-500/10 shadow-lg' : ''
+			}`}
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={handleDrop}
+		>
+			{isDragOver && (
+				<div className="absolute inset-0 z-10 flex items-center justify-center rounded-sm border-2 border-dashed border-blue-500 bg-blue-500/20">
+					<div className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-lg">
+						Drop file here to load into kit
+					</div>
+				</div>
+			)}
 			<div
-				className="hover:bg-gray-750 flex cursor-pointer items-center justify-between bg-gray-800 px-2 py-1 text-sm font-medium transition-colors duration-200"
+				className={`hover:bg-gray-750 flex cursor-pointer items-center justify-between bg-gray-800 px-2 py-1 text-sm font-medium transition-colors duration-200 ${
+					isDragOver ? 'bg-blue-600/20' : ''
+				}`}
 				onClick={onToggle}
 			>
 				<div className="flex items-center">
-					<div className="mr-2 text-xs text-white">{isExpanded ? '▼' : '▶'}</div>
+					<div className="mr-2 flex h-3 w-3 items-center justify-center">
+						{isExpanded ? (
+							<div className="h-0 w-0 border-t-6 border-r-4 border-l-4 border-t-white border-r-transparent border-l-transparent" />
+						) : (
+							<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
+						)}
+					</div>
 					<span className="font-mono font-medium text-white">{kit.id.toString(16).padStart(2, '0').toUpperCase()}</span>
 					<span className="mx-1 font-medium">-</span>
 					<EditableText
@@ -171,9 +265,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({ kitKey, isExpanded
 							Usage Count: {usageCount || 0}
 						</span>
 					)*/}
-					<span
-						className={`rounded px-2 py-1 text-xs ${getKitTypeColorClasses(kitType)}`}
-					>
+					<span className={`rounded px-2 py-1 text-xs ${getKitTypeColorClasses(kitType)}`}>
 						{EnumUtils.enumToString(KitType, getKitType(kit))}
 					</span>
 					<button

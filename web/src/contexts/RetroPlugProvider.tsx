@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import * as Comlink from 'comlink';
 
 import { RetroPlugApplication } from '../RetroPlugApplication';
 import { Project } from '../wrapper/Project';
 import { RetroPlugContext } from './RetroPlugContext';
+import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+
+function createFileSystemWorker(): Comlink.Remote<FileSystemWorkerAPI> {
+	const worker = new Worker(new URL('../filesystem/FileSystemWorker.ts', import.meta.url), { type: 'module' });
+	return Comlink.wrap<FileSystemWorkerAPI>(worker);
+}
 
 export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const canvasIdRef = useRef<string | null>(null);
+	const fileSystemRef = useRef<Comlink.Remote<FileSystemWorkerAPI> | null>(null);
 	const [app, setApp] = useState<RetroPlugApplication | null>(null);
 	const [project, setProject] = useState<Project | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -38,12 +46,12 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		let mounted = true;
 
 		const pendingApp = new RetroPlugApplication();
+		const pendingFileSystem = createFileSystemWorker();
+		const proms = [pendingApp.load(), pendingFileSystem.initialize()];
 
-		pendingApp
-			.load()
+		Promise.all(proms)
 			.then(() => {
 				if (mounted) {
-					setIsLoading(false);
 					try {
 						pendingApp.setupAudio(audioContextRef.current);
 
@@ -61,8 +69,11 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 					} catch (ex) {
 						console.error('Error setting up WASM module:', ex);
 					}
+
 					setApp(pendingApp);
 					setProject(pendingApp.project);
+					fileSystemRef.current = pendingFileSystem;
+					setIsLoading(false);
 				}
 			})
 			.catch((err) => {
@@ -72,9 +83,11 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		return () => {
 			mounted = false;
 
+			setIsLoading(true);
 			setIsReady(false);
 			setApp(null);
 			setProject(null);
+			fileSystemRef.current = null;
 			pendingApp.destroy();
 
 			if (audioContextRef.current) {
@@ -128,8 +141,9 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 	return (
 		<RetroPlugContext.Provider
 			value={{
-				app,
-				project,
+				app: app!,
+				project: project!,
+				fileSystem: fileSystemRef.current!,
 				audioContext: audioContextRef.current,
 				isLoading,
 				isReady,

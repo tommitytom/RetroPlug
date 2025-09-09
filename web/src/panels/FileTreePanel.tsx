@@ -4,11 +4,11 @@ import { FileExplorer } from '../components/FileExplorer';
 import { ContextMenu } from '../components/Menu/ContextMenu';
 import { useProject } from "../hooks/RetroPlugHooks";
 import { useOPFSStore } from "../stores/FileSystemStore";
-import type { FileSystemNode } from "../stores/types";
 import { useContextMenu } from "../hooks/useContextMenu";
 import { downloadArrayBuffer } from "../utils/FileUtil";
 import type { MenuItem } from "../components/Menu/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
+import type { FileSystemNode } from "../filesystem/types";
 
 interface IComponent {
 	type: number;

@@ -1,23 +1,11 @@
-import { type Panel, DockableEditor } from "./components/DockableEditor";
-import { useRetroPlug } from "./contexts/RetroPlugContext";
-import { RetroPlugProvider } from "./contexts/RetroPlugProvider";
+import React, { ReactNode } from 'react';
+
+import { type Panel, DockableEditor } from './components/DockableEditor';
+import { useRetroPlug } from './contexts/RetroPlugContext';
+import { RetroPlugProvider } from './contexts/RetroPlugProvider';
 import { FileTreePanel } from './panels/FileTreePanel';
 import { InspectorPanel } from './panels/InspectorPanel';
 import { SystemPanel } from './panels/SystemPanel';
-import { RetroPlugCanvas } from "./RetroPlugCanvas";
-
-function LoadSpinner() {
-	const { isLoading } = useRetroPlug();
-
-	return (
-		isLoading && (
-			<div className="loading-spinner-overlay">
-				<div className="loading-spinner"></div>
-				<div className="loading-text">Loading...</div>
-			</div>
-		)
-	);
-}
 
 const panels: Panel[] = [
 	{ id: 'system', title: 'System', content: <SystemPanel /> },
@@ -32,20 +20,41 @@ const initialLayout = {
 	bottom: { id: 'bottom', panels: [], activePanel: '', size: 200 },
 };
 
+function LoadSpinner() {
+	return (
+		<div className="loading-spinner-overlay">
+			<div className="loading-spinner"></div>
+			<div className="loading-text">Loading...</div>
+		</div>
+	);
+}
+
+const LoadWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
+	const { isLoading } = useRetroPlug();
+
+	if (!isLoading) {
+		console.log('Loaded');
+		return <>{children}</>;
+	} else {
+		console.log('Loading...');
+		return <LoadSpinner />;
+	}
+};
+
 function App() {
 	return (
 		<RetroPlugProvider>
 			<div className="app-container">
-				<LoadSpinner />
-				<DockableEditor
-					panels={panels}
-					initialLayout={initialLayout}
-					onLayoutChange={(layout) => {
-						// You can save the layout to localStorage or send to a server
-						//console.log('Layout changed:', layout);
-					}}
-				/>
-				<RetroPlugCanvas />
+				<LoadWrapper>
+					<DockableEditor
+						panels={panels}
+						initialLayout={initialLayout}
+						onLayoutChange={(layout) => {
+							// You can save the layout to localStorage or send to a server
+							//console.log('Layout changed:', layout);
+						}}
+					/>
+				</LoadWrapper>
 			</div>
 		</RetroPlugProvider>
 	);

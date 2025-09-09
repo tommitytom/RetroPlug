@@ -2,8 +2,8 @@ import * as Comlink from 'comlink';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
-import type { ArchiveHandler, FileSystemNode, ParsedPath } from './types';
-import type { FileSystemWorkerAPI } from './worker';
+import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import type { FileSystemNode, ParsedPath } from '../filesystem/types';
 
 interface OPFSStore {
 	// State
@@ -15,7 +15,7 @@ interface OPFSStore {
 	worker: Comlink.Remote<FileSystemWorkerAPI> | null;
 
 	// Initialization
-	initialize: () => Promise<void>;
+	initialize: (workerApi: Comlink.Remote<FileSystemWorkerAPI>) => Promise<void>;
 
 	// Unified path operations
 	listPath: (path: string) => Promise<FileSystemNode>;
@@ -52,21 +52,13 @@ export const useOPFSStore = create<OPFSStore>()(
 		error: null,
 		worker: null,
 
-		initialize: async () => {
+		initialize: async (workerApi: Comlink.Remote<FileSystemWorkerAPI>) => {
 			const { worker } = get();
 			if (worker) return;
 
 			set({ loading: true, error: null });
 
-			try {
-				// Initialize web worker
-				const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-				const workerApi = Comlink.wrap<FileSystemWorkerAPI>(worker);
-
-				// Initialize OPFS in worker
-				await workerApi.initialize();
-
-				// Load root directory
+			//try {
 				const rootNode = await workerApi.listPath('/');
 
 				set({
@@ -75,12 +67,12 @@ export const useOPFSStore = create<OPFSStore>()(
 					loading: false,
 					expandedNodes: new Set([rootNode.id]),
 				});
-			} catch (error) {
+			/*} catch (error) {
 				set({
 					error: error instanceof Error ? error.message : 'Failed to initialize',
 					loading: false,
 				});
-			}
+			}*/
 		},
 		parsePath: (path: string): ParsedPath => {
 			const segments = path.split('/').filter(Boolean);

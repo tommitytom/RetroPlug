@@ -202,7 +202,11 @@
 		"__split_buffer": "cpp",
 		"__tree": "cpp",
 		"__verbose_abort": "cpp",
-		"*.inc": "cpp"
+		"*.inc": "cpp",
+		"barrier": "cpp",
+		"expected": "cpp",
+		"source_location": "cpp",
+		"strstream": "cpp"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

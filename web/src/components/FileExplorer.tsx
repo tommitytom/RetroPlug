@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useRetroPlug } from '../contexts/RetroPlugContext';
+import type { FileSystemNode } from '../filesystem/types';
 import { useOPFSStore } from '../stores/FileSystemStore';
-import type { FileSystemNode } from '../stores/types';
 
 interface TreeNodeProps {
 	node: FileSystemNode;
@@ -143,7 +144,13 @@ function TreeNode({
 			>
 				{(node.type === 'directory' || node.type === 'archive') && (
 					<span className="mr-1 cursor-pointer text-xs text-white" onClick={handleToggleExpand}>
-						{isExpanded ? '▼' : '▶'}
+						<div className="mr-2 flex h-3 w-3 items-center justify-center">
+							{isExpanded ? (
+								<div className="h-0 w-0 border-t-6 border-r-4 border-l-4 border-t-white border-r-transparent border-l-transparent" />
+							) : (
+								<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
+							)}
+						</div>
 					</span>
 				)}
 				<span className="mr-2 text-xs text-white">{getIcon()}</span>
@@ -226,6 +233,7 @@ export function FileExplorer({
 		refreshNode,
 	} = useOPFSStore();
 
+	const { fileSystem } = useRetroPlug();
 	const [draggedNode, setDraggedNode] = useState<FileSystemNode | null>(null);
 	const [dragOverNode, setDragOverNode] = useState<string | null>(null);
 	const [isDragOverContainer, setIsDragOverContainer] = useState(false);
@@ -233,11 +241,8 @@ export function FileExplorer({
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		initialize().then(() => {
-			//registerArchiveHandler(new ZipArchiveHandler())
-			// Register other archive handlers as needed
-		});
-	}, [initialize]);
+		initialize(fileSystem);
+	}, [fileSystem, initialize]);
 
 	// Load children when a directory or archive is expanded
 	const handleToggleExpand = useCallback(

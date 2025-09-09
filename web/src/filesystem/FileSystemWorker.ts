@@ -1,10 +1,8 @@
 import * as Comlink from 'comlink';
 import type { ArchiveHandler, ArchiveInstance, FileSystemNode, ParsedPath } from './types';
-import { ZipArchiveHandler } from './zip-handler';
-import { SavArchiveHandler } from './SavArchive.ts';
-import type {
-	MainModule
-} from "../native/RetroPlug.d.ts";
+import { ZipArchiveHandler } from './ZipArchiveHandler';
+import { SavArchiveHandler } from './SavArchiveHandler';
+import type { MainModule } from '../native/RetroPlug.d.ts';
 
 export interface FileSystemWorkerAPI {
 	initialize: () => Promise<void>;
@@ -27,31 +25,31 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async initialize(): Promise<void> {
 		this.opfsRoot = await navigator.storage.getDirectory();
 
-		const moduleFactory = (await import("../native/RetroPlugEcs.mjs")).default;
+		const moduleFactory = (await import('../native/RetroPlugEcs.mjs')).default;
 		this.module = (await moduleFactory({
 			locateFile: (path: string) => {
-				if (path.endsWith(".wasm")) {
-					return "/RetroPlugEcs.wasm";
+				if (path.endsWith('.wasm')) {
+					return '/RetroPlugEcs.wasm';
 				}
 				return path;
 			},
 			print: (text: string) => {
-				console.log("WASM:", text);
+				console.log('WASM:', text);
 			},
 			printErr: (text: string) => {
-				console.error("WASM Error:", text);
+				console.error('WASM Error:', text);
 			},
 		})) as MainModule;
 
 		const zipHandler = new ZipArchiveHandler();
-		this.registerArchiveHandler({ type: zipHandler.type, extensions: zipHandler.extensions }, zipHandler);
+		this.registerArchiveHandler(zipHandler);
 
 		const savHandler = new SavArchiveHandler(this.module);
-		this.registerArchiveHandler({ type: savHandler.type, extensions: savHandler.extensions }, savHandler);
+		this.registerArchiveHandler(savHandler);
 	}
 
-	async registerArchiveHandler(config: { type: string; extensions: string[] }, handler: ArchiveHandler): Promise<void> {
-		this.archiveHandlers.set(config.type, handler);
+	async registerArchiveHandler(handler: ArchiveHandler): Promise<void> {
+		this.archiveHandlers.set(handler.type, handler);
 	}
 
 	async unregisterArchiveHandler(type: string): Promise<void> {
@@ -155,7 +153,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 			} else {
 				const archive = await this.getOrOpenArchive(parsed.opfsPath);
 				const allNodes = archive.list();
-				return allNodes.some(node => node.path === parsed.archivePath && node.type === 'file');
+				return allNodes.some((node) => node.path === parsed.archivePath && node.type === 'file');
 			}
 		} catch {
 			return false;
