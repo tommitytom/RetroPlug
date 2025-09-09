@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { LsdjStoreState } from "../stores/LsdjStore";
 import { LsdjStoreContext } from "../contexts/LsdjStoreContext";
 import type { ILsdjKit } from "../types/LsdjTypes";
@@ -9,6 +9,42 @@ export const useLsdjStore = <T,>(selector: (state: LsdjStoreState) => T): T => {
 		throw new Error('useLsdjStore must be used within LsdjStoreProvider');
 	}
 	return store(selector);
+};
+
+// Optimized hook for kit list that only re-renders when kit structure changes, not internal content
+export const useKitList = () => {
+	const store = useContext(LsdjStoreContext);
+	if (!store) {
+		throw new Error('useKitList must be used within LsdjStoreProvider');
+	}
+
+	const [kits, setKits] = useState<ILsdjKit[]>(() => store.getState().rom?.kits || []);
+
+	useEffect(() => {
+		const unsubscribe = store.subscribe(
+			(state) => state.rom?.kits || [],
+			(newKits) => {
+				console.log('kits changed');
+
+				setKits(newKits);
+			},
+			{
+				equalityFn: (a, b) => {
+					// Only re-render if the number of kits changes or kit identity/name changes
+					if (a.length !== b.length) return false;
+					return a.every((kitA, index) => {
+						const kitB = b[index];
+						return kitA?.key === kitB?.key &&
+							   kitA?.id === kitB?.id;
+					});
+				}
+			}
+		);
+
+		return unsubscribe;
+	}, [store]);
+
+	return kits;
 };
 
 // Hook to subscribe to kit list changes

@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useRef, useState } from 'react';
 
-import { useKitChanges, useKitListChanges, useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import { useKitChanges, useKitListChanges, useLsdjStore, useKitList } from '../../hooks/LsdjStoreHooks';
 import type { ILsdjKit } from '../../types/LsdjTypes';
 import { sortKits } from '../../utils/LsdjUtil';
 import { LsdjKitEditor } from './LsdjKitEditor';
@@ -13,7 +13,8 @@ interface LsdjRomEditorProps {
 }
 
 export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
-	const rom = useLsdjStore((state) => state.getRom());
+	// Only subscribe to the kits array with optimized equality checking
+	const kits = useKitList();
 	const addKit = useLsdjStore((state) => state.addKit);
 	const updateKit = useLsdjStore((state) => state.updateKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
@@ -24,7 +25,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
 
-	const sortedRomKits = sortKits(rom.kits, sortBy);
+	const sortedRomKits = sortKits(kits, sortBy);
 
 	const toggleKit = useCallback((kitKey: string) => {
 		setExpandedKits((prev) => {
@@ -52,7 +53,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 		<div ref={containerRef} className="relative h-full w-full bg-gray-900">
 			<div className="h-full w-full overflow-y-auto">
 				<div className="min-h-full px-3 py-4">
-					{rom.kits.length > 0 && (
+					{kits.length > 0 && (
 						<div className="mb-4 flex items-center justify-between">
 							<h1 className="text-2xl font-bold text-white">Kits</h1>
 							<div className="flex items-center gap-4">

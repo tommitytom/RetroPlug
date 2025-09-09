@@ -5,6 +5,7 @@ import { immer } from 'zustand/middleware/immer';
 import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from '../types/LsdjTypes';
 import { LsdjController } from '../wrapper/Lsdj';
 import { type SystemId, toUint8Array } from '../utils/NativeUtil';
+import { Timer } from '../utils/Timer';
 
 export interface LsdjStoreState {
 	// State
@@ -191,10 +192,14 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 
 					patchSystemKit: (kitKey: string) =>
 						set((state) => {
-							/*const lsdj = state.controller;
+							console.log('patcing kit');
+
+							const lsdj = state.controller;
 							const kit = state.rom?.kits.find((k) => k.key === kitKey);
 
 							if (kit && state.systemId !== null) {
+								const timer = new Timer();
+								timer.start();
 								lsdj.updateKit(state.systemId, kit.id, kit);
 								const kitData = lsdj.getKitData(state.systemId, kit.id)!;
 								if (kitData && kitData.size() > 0) {
@@ -205,7 +210,8 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 										kit.data = arrayBuffer;
 									}
 								}
-							}*/
+								console.log(timer.stop(), 'ms');
+							}
 						}),
 
 					// Kit Effect Actions

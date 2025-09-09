@@ -273,7 +273,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				}
 			}
 		},
-		[onFileDropped, onError, kit.data],
+		[onFileDropped, onError, kit],
 	);
 
 	const handleChange = () => {
