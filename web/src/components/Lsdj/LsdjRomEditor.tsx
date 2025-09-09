@@ -1,9 +1,9 @@
 import React, { useCallback, useRef, useState } from 'react';
 
-import { useKitChanges, useKitListChanges, useLsdjStore } from './hooks';
-import { LsdjKitEditor } from './LsdjKitEditor';
-import { sortKits } from './util';
+import { useKitChanges, useKitListChanges, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import type { ILsdjKit } from '../../types/LsdjTypes';
+import { sortKits } from '../../utils/LsdjUtil';
+import { LsdjKitEditor } from './LsdjKitEditor';
 
 import '../../styles/RomEditorPanel.css';
 
@@ -110,14 +110,17 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ onKitAdded, onKitR
 						</div>
 					)}
 					<div className="space-y-2">
-						{sortedRomKits.map((kit) => (kit.key &&
-							<LsdjKitEditor
-								isExpanded={expandedKits.has(kit.key)}
-								onToggle={() => toggleKit(kit.key)}
-								kitKey={kit.key}
-								key={kit.key}
-							/>
-						))}
+						{sortedRomKits.map(
+							(kit) =>
+								kit.key && (
+									<LsdjKitEditor
+										isExpanded={expandedKits.has(kit.key)}
+										onToggle={() => toggleKit(kit.key)}
+										kitKey={kit.key}
+										key={kit.key}
+									/>
+								),
+						)}
 					</div>
 				</div>
 			</div>

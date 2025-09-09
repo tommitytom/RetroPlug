@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef } from "react";
-import type { LsdjStoreState } from "./store";
-import { LsdjStoreContext } from "./context";
-import type { ILsdjKit } from "../../types/LsdjTypes";
+import type { LsdjStoreState } from "../stores/LsdjStore";
+import { LsdjStoreContext } from "../contexts/LsdjStoreContext";
+import type { ILsdjKit } from "../types/LsdjTypes";
 
 export const useLsdjStore = <T,>(selector: (state: LsdjStoreState) => T): T => {
 	const store = useContext(LsdjStoreContext);

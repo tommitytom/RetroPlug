@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
-import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from "../../types/LsdjTypes";
+import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from "../types/LsdjTypes";
 
 export interface LsdjStoreState {
 	// State

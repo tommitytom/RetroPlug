@@ -1,20 +1,20 @@
 import React, { useEffect, useState } from 'react';
 
+import { LsdjStoreProvider } from '../../contexts/LsdjStoreProvider';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import type { ILsdjKit, ILsdjRom } from '../../types/LsdjTypes';
+import { generateKey } from '../../utils/LsdjUtil';
 import { type SystemId, toUint8Array } from '../../utils/NativeUtil';
 import { LsdjRomEditor } from './LsdjRomEditor';
-import { LsdjStoreProvider } from './provider';
-import { generateKey } from './util';
 
 const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
-	return kits.map(kit => ({
+	return kits.map((kit) => ({
 		...kit,
 		key: generateKey(),
-		samples: kit.samples?.map(sample => ({
+		samples: kit.samples?.map((sample) => ({
 			...sample,
 			key: generateKey(),
-			effects: sample.effects?.map(effect => ({
+			effects: sample.effects?.map((effect) => ({
 				...effect,
 				key: generateKey(),
 			})),
@@ -47,7 +47,7 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 			id: 0,
 			key: generateKey(),
 			name: 'LSDj',
-			kits
+			kits,
 		});
 		//}
 	}, [project, system]);
@@ -66,10 +66,11 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 
 	console.log('rendering root!');
 
-
-	return (rom ? (
+	return rom ? (
 		<LsdjStoreProvider initialRom={rom}>
 			<LsdjRomEditor onKitAdded={handleKitAdded} onKitRemoved={handleKitRemoved} onKitChanged={handleKitChanged} />
 		</LsdjStoreProvider>
-	) : <></>);
+	) : (
+		<></>
+	);
 };

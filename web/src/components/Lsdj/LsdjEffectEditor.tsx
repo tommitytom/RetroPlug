@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
+
 import type { IEffectDescBase } from '../../effects/Effect';
 import { findEffect } from '../../effects/Effect';
 import type { ILsdjKitEffect } from '../../types/LsdjTypes';
-import { useLsdjStore } from './hooks';
 import { LsdjEffectParameterEditor } from './LsdjEffectParameterEditor';
+import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 
 interface LsdjEffectEditorProps {
 	kitKey: string;

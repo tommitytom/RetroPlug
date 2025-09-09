@@ -1,7 +1,7 @@
-import type { MainModule, Uint8Buffer } from "../../native/RetroPlug";
-import type { ILsdjKit, ILsdjKitData, ILsdjKitDataSample } from "../../types/LsdjTypes";
-import { KitType } from "../../types/LsdjTypes";
-import { convertFloat32Buffer } from "../../utils/NativeUtil";
+import type { MainModule, Uint8Buffer } from '../native/RetroPlug';
+import type { ILsdjKit, ILsdjKitData, ILsdjKitDataSample } from '../types/LsdjTypes';
+import { KitType } from '../types/LsdjTypes';
+import { convertFloat32Buffer } from './NativeUtil';
 
 export function kitIsEditable(kit: ILsdjKit): boolean {
 	return !!kit.samples;
@@ -31,19 +31,19 @@ export type SortBy = 'index' | 'editable' | 'mostUsed';
 export function sortKits(kits: ILsdjKit[], sortMethod: SortBy) {
 	let kitsCopy = [...kits];
 
-		switch (sortMethod) {
-			case 'index':
-				// Fill in gaps
-				return kitsCopy.sort((a, b) => a.id - b.id);
-			case 'editable':
-				return kitsCopy.sort((a, b) => {
-					// Editable kits first, then non-editable
-					if (kitIsEditable(a) && !kitIsEditable(b)) return -1;
-					if (!kitIsEditable(a) && kitIsEditable(b)) return 1;
-					// If both have same editable status, sort by index
-					return a.id - b.id;
-				});
-			/*case 'mostUsed':
+	switch (sortMethod) {
+		case 'index':
+			// Fill in gaps
+			return kitsCopy.sort((a, b) => a.id - b.id);
+		case 'editable':
+			return kitsCopy.sort((a, b) => {
+				// Editable kits first, then non-editable
+				if (kitIsEditable(a) && !kitIsEditable(b)) return -1;
+				if (!kitIsEditable(a) && kitIsEditable(b)) return 1;
+				// If both have same editable status, sort by index
+				return a.id - b.id;
+			});
+		/*case 'mostUsed':
 				return kitsCopy.sort((a, b) => {
 					// Sort by use count in descending order (most used first)
 					if (a.useCount !== b.useCount) {
@@ -52,13 +52,15 @@ export function sortKits(kits: ILsdjKit[], sortMethod: SortBy) {
 					// If use counts are equal, sort by index
 					return a.id - b.id;
 				});*/
-			default:
-				return kitsCopy;
-		}
+		default:
+			return kitsCopy;
+	}
 }
 
 export const generateKey = (): string => {
-	return `${Date.now()}-${Math.random().toString(36).substring(2, 2 + 9)}`;
+	return `${Date.now()}-${Math.random()
+		.toString(36)
+		.substring(2, 2 + 9)}`;
 };
 
 export function extractSampleData(module: MainModule, kitData: Uint8Buffer): ILsdjKitData {

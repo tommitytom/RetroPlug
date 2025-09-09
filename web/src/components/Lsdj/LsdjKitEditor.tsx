@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-
 import { createPortal } from 'react-dom';
+
 import { EditableText } from '../../components/EditableText';
 import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
+import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { GAMEBOY_SAMPLE_RATE, KitType, type ILsdjKitData } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
+import { extractSampleData, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
 import { fromUint8Array } from '../../utils/NativeUtil';
 import { playSample } from '../../wrapper/Lsdj';
-import { useLsdjStore } from './hooks';
 import { LsdjEffectList } from './LsdjEffectList';
-import { extractSampleData, getKitType, sanitizeKitName } from './util';
 
 interface LsdjKitEditorProps {
 	kitKey: string;

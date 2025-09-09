@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FileDropZone } from "../components/FileDropZone";
-import { LsdjKitEditor } from "../components/LsdjKitEditor";
 import { useProject, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
 import type { Uint8Buffer } from "../native/RetroPlug";
 import { LSDJ_KIT_COUNT, type IIndexedLsdjKit, type ILsdjKit } from "../types/LsdjTypes";
 import { type SystemId } from "../utils/NativeUtil";
-import { deepEqual } from "../utils/StateUtil";
-import { getKitType, kitIsEditable } from "../wrapper/Lsdj";
+import { kitIsEditable } from "../utils/LsdjUtil";
+
 import { MemoryType } from "../wrapper/System";
 
 export const LsdjRomInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {

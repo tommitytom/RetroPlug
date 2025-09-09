@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import { useLsdjStore } from './hooks';
+import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { LsdjEffectList } from './LsdjEffectList';
 
 interface LsdjSampleEditorProps {

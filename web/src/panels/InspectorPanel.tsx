@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
-import { HexEditor } from "hex-editor-react";
-import "hex-editor-react/dist/hex-editor.css";
+import { HexEditor } from 'hex-editor-react';
+import 'hex-editor-react/dist/hex-editor.css';
+import { useEffect, useState } from 'react';
 
-import { useProject, useSystemMemory, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import { MemoryType } from "../wrapper/System";
-import { type SystemId, toUint8Array } from "../utils/NativeUtil";
-import { LsdjRomMemoryEditor } from "../stores/LsdjRom/LsdjRomMemoryEditor";
+import { LsdjRomMemoryEditor } from '../components/Lsdj/LsdjRomMemoryEditor';
+import { useProject, useSystemMemory, useSystemMemoryVersion } from '../hooks/RetroPlugHooks';
+import { type SystemId, toUint8Array } from '../utils/NativeUtil';
+import { MemoryType } from '../wrapper/System';
 
 const LsdjSavInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
-	const [songName, setSongName] = useState("");
+	const [songName, setSongName] = useState('');
 	const hash = useSystemMemoryVersion(systemId, MemoryType.Sram);
 
 	useEffect(() => {
@@ -25,8 +25,6 @@ const LsdjSavInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 		</div>
 	);
 };
-
-
 
 const LsdjRamInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) => {
 	const hash = useSystemMemoryVersion(systemId, MemoryType.Ram);
@@ -54,11 +52,8 @@ const SystemMemoryInspector: React.FC<{ systemId: SystemId }> = ({ systemId }) =
 
 	return (
 		<div>
-			<HexEditor
-				data={memory ? toUint8Array(memory.getBuffer()).slice().buffer : undefined}
-			/>
+			<HexEditor data={memory ? toUint8Array(memory.getBuffer()).slice().buffer : undefined} />
 		</div>
-
 	);
 };
 
@@ -81,11 +76,7 @@ const SystemInspector: React.FC<{
 		}
 	};
 
-	return (
-		<div>
-			{renderInspector()}
-		</div>
-	);
+	return <div>{renderInspector()}</div>;
 };
 
 export const InspectorPanel: React.FC = () => {
@@ -113,14 +104,14 @@ export const InspectorPanel: React.FC = () => {
 	return (
 		<div>
 			<div className="flex items-center gap-2 px-3 py-2">
-				<label htmlFor="inspector-select" className="text-white text-sm font-medium">
+				<label htmlFor="inspector-select" className="text-sm font-medium text-white">
 					Inspector:
 				</label>
 				<select
 					id="inspector-select"
 					value={selectedInspectorType}
 					onChange={(e) => setSelectedInspectorType(e.target.value as InspectorType)}
-					className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+					className="rounded border border-gray-600 bg-gray-700 px-3 py-1 text-sm text-white focus:border-blue-500 focus:outline-none"
 				>
 					<option value="rom">ROM</option>
 					<option value="sav">SAV</option>
@@ -128,14 +119,14 @@ export const InspectorPanel: React.FC = () => {
 				</select>
 				{systemIds.length > 1 && (
 					<>
-						<label htmlFor="system-select" className="text-white text-sm font-medium ml-4">
+						<label htmlFor="system-select" className="ml-4 text-sm font-medium text-white">
 							Select System:
 						</label>
 						<select
 							id="system-select"
 							value={selectedSystemId ?? ''}
 							onChange={(e) => setSelectedSystemId(Number(e.target.value))}
-							className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+							className="rounded border border-gray-600 bg-gray-700 px-3 py-1 text-sm text-white focus:border-blue-500 focus:outline-none"
 						>
 							{systemIds.map((id) => (
 								<option key={id} value={id}>

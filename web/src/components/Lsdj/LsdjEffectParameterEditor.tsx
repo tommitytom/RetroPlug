@@ -2,7 +2,7 @@ import React from 'react';
 
 import { SliderProperty } from '../../components/SliderProperty';
 import { EffectParameterType, type IEffectParameter } from '../../effects/Effect';
-import { useLsdjStore } from './hooks';
+import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 
 interface LsdjEffectParameterEditorProps {
 	kitKey: string;
@@ -71,23 +71,4 @@ export const LsdjEffectParameterEditor: React.FC<LsdjEffectParameterEditorProps>
 			)}
 		</div>
 	);
-
-	/*
-	return (
-		<div className="parameter-editor text-white">
-			<label>
-				{paramName}:
-				<input
-					type="range"
-					min="0"
-					max={paramName === 'gain' ? 2 : paramName === 'freq' ? 20000 : 100}
-					step={0.01}
-					value={value}
-					onChange={(e) => handleChange(parseFloat(e.target.value))}
-				/>
-				<span>{value.toFixed(2)}</span>
-			</label>
-		</div>
-	);
-	*/
 };

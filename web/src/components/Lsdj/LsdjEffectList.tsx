@@ -2,9 +2,9 @@ import React from 'react';
 
 import { createEffectInstance } from '../../effects/Effect';
 import type { ILsdjKitEffect } from '../../types/LsdjTypes';
-import { useLsdjStore } from './hooks';
 import { LsdjEffectEditor } from './LsdjEffectEditor';
-import { generateKey } from './util';
+import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import { generateKey } from '../../utils/LsdjUtil';
 
 interface LsdjEffectListProps {
 	kitKey: string;
