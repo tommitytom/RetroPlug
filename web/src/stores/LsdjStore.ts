@@ -2,10 +2,14 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
-import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from "../types/LsdjTypes";
+import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from '../types/LsdjTypes';
+import { LsdjController } from '../wrapper/Lsdj';
+import { type SystemId, toUint8Array } from '../utils/NativeUtil';
 
 export interface LsdjStoreState {
 	// State
+	controller: LsdjController;
+	systemId: SystemId,
 	rom: ILsdjRom | null;
 	kit: ILsdjKit | null; // For standalone kit editing
 	selectedKitKey: string | null;
@@ -22,6 +26,7 @@ export interface LsdjStoreState {
 	updateKit: (kitKey: string, updates: Partial<ILsdjKit>) => void;
 	renameKit: (kitKey: string, name: string) => void;
 	selectKit: (kitKey: string | null) => void;
+	patchSystemKit: (kitKey: string) => void;
 
 	// Sample Actions
 	addSample: (kitKey: string, sample: ILsdjKitSample) => void;
@@ -50,250 +55,288 @@ export interface LsdjStoreState {
 }
 
 // ============= Store Creator =============
-export const createLsdjStore = (initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
+export const createLsdjStore = (controller: LsdjController, systemId: SystemId, initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
 	create<LsdjStoreState>()(
 		devtools(
 			subscribeWithSelector(
 				immer((set, get) => ({
-				// Initial State
-				rom: initialRom || null,
-				kit: initialKit || null,
-				selectedKitKey: null,
-				selectedSampleKey: null,
+					// Initial State
+					controller,
+					systemId: systemId,
+					rom: initialRom || null,
+					kit: initialKit || null,
+					selectedKitKey: null,
+					selectedSampleKey: null,
 
-				// ROM Actions
-				loadRom: (rom) =>
-					set((state) => {
-						state.rom = rom;
-						state.kit = null; // Clear standalone kit when loading ROM
-					}),
+					// ROM Actions
+					loadRom: (rom) =>
+						set((state) => {
+							state.rom = rom;
+							state.kit = null; // Clear standalone kit when loading ROM
+						}),
 
-				clearRom: () =>
-					set((state) => {
-						state.rom = null;
-						state.selectedKitKey = null;
-						state.selectedSampleKey = null;
-					}),
+					clearRom: () =>
+						set((state) => {
+							state.rom = null;
+							state.selectedKitKey = null;
+							state.selectedSampleKey = null;
+						}),
 
-				// Kit Actions
-				loadStandaloneKit: (kit) =>
-					set((state) => {
-						state.kit = kit;
-						state.rom = null; // Clear ROM when loading standalone kit
-						state.selectedKitKey = kit.key;
-					}),
+					// Kit Actions
+					loadStandaloneKit: (kit) =>
+						set((state) => {
+							state.kit = kit;
+							state.rom = null; // Clear ROM when loading standalone kit
+							state.selectedKitKey = kit.key;
+						}),
 
-				addKit: (kit) =>
-					set((state) => {
-						if (state.rom) {
-							state.rom.kits.push(kit);
-						}
-					}),
-
-				removeKit: (kitKey) =>
-					set((state) => {
-						if (state.rom) {
-							state.rom.kits = state.rom.kits.filter((k) => k.key !== kitKey);
-							// Clear selection if the removed kit was selected
-							if (state.selectedKitKey === kitKey) {
-								state.selectedKitKey = null;
-								state.selectedSampleKey = null;
+					addKit: (kit) =>
+						set((state) => {
+							if (state.rom) {
+								state.rom.kits.push(kit);
 							}
-						}
-					}),
+						}),
 
-				updateKit: (kitKey, updates) =>
-					set((state) => {
-						if (state.rom) {
-							const kit = state.rom.kits.find((k) => k.key === kitKey);
+					removeKit: (kitKey) =>
+						set((state) => {
+							if (state.rom) {
+								state.rom.kits = state.rom.kits.filter((k) => k.key !== kitKey);
+								// Clear selection if the removed kit was selected
+								if (state.selectedKitKey === kitKey) {
+									state.selectedKitKey = null;
+									state.selectedSampleKey = null;
+								}
+							}
+						}),
+
+					updateKit: (kitKey, updates) =>
+						set((state) => {
+							if (state.rom) {
+								const kit = state.rom.kits.find((k) => k.key === kitKey);
+								if (kit) {
+									Object.assign(kit, updates);
+								}
+							} else if (state.kit && state.kit.key === kitKey) {
+								Object.assign(state.kit, updates);
+							}
+						}),
+
+					renameKit: (kitKey, name) =>
+						set((state) => {
+							if (state.rom) {
+								const kit = state.rom.kits.find((k) => k.key === kitKey);
+								if (kit) kit.name = name;
+							} else if (state.kit && state.kit.key === kitKey) {
+								state.kit.name = name;
+							}
+						}),
+
+					selectKit: (kitKey) =>
+						set((state) => {
+							state.selectedKitKey = kitKey;
+						}),
+
+					// Sample Actions
+					addSample: (kitKey, sample) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
 							if (kit) {
-								Object.assign(kit, updates);
+								if (!kit.samples) {
+									kit.samples = [];
+								}
+								kit.samples.push(sample);
 							}
-						} else if (state.kit && state.kit.key === kitKey) {
-							Object.assign(state.kit, updates);
-						}
-					}),
+						}),
 
-				renameKit: (kitKey, name) =>
-					set((state) => {
-						if (state.rom) {
-							const kit = state.rom.kits.find((k) => k.key === kitKey);
-							if (kit) kit.name = name;
-						} else if (state.kit && state.kit.key === kitKey) {
-							state.kit.name = name;
-						}
-					}),
-
-				selectKit: (kitKey) =>
-					set((state) => {
-						state.selectedKitKey = kitKey;
-					}),
-
-				// Sample Actions
-				addSample: (kitKey, sample) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							if (!kit.samples) {
-								kit.samples = [];
-							}
-							kit.samples.push(sample);
-						}
-					}),
-
-				removeSample: (kitKey, sampleKey) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit && kit.samples) {
-							kit.samples = kit.samples.filter((s) => s.key !== sampleKey);
-							// Clear selection if the removed sample was selected
-							if (state.selectedSampleKey === sampleKey) {
-								state.selectedSampleKey = null;
-							}
-						}
-					}),
-
-				updateSample: (kitKey, sampleKey, updates) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample) {
-								Object.assign(sample, updates);
-							}
-						}
-					}),
-
-				renameSample: (kitKey, sampleKey, name) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample) sample.name = name;
-						}
-					}),
-
-				selectSample: (sampleKey) =>
-					set((state) => {
-						state.selectedSampleKey = sampleKey;
-					}),
-
-				// Kit Effect Actions
-				addKitEffect: (kitKey, effect) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							kit.effects?.push(effect);
-						}
-					}),
-
-				updateKitEffect: (kitKey, effectKey, updates) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const effect = kit.effects?.find((e) => e.key === effectKey);
-							if (effect) {
-								for (const key in updates) {
-									effect.effectInstance[key] = updates[key];
+					removeSample: (kitKey, sampleKey) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit && kit.samples) {
+								kit.samples = kit.samples.filter((s) => s.key !== sampleKey);
+								// Clear selection if the removed sample was selected
+								if (state.selectedSampleKey === sampleKey) {
+									state.selectedSampleKey = null;
 								}
 							}
-						}
-					}),
+						}),
 
-				removeKitEffect: (kitKey, effectKey) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit && kit.effects) {
-							kit.effects = kit.effects.filter((e) => e.key !== effectKey);
-						}
-					}),
-
-				reorderKitEffects: (kitKey, fromIndex, toIndex) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit && kit.effects && kit.effects.length > fromIndex && kit.effects.length > toIndex) {
-							const [removed] = kit.effects.splice(fromIndex, 1);
-							kit.effects.splice(toIndex, 0, removed);
-						}
-					}),
-
-				// Sample Effect Actions
-				addSampleEffect: (kitKey, sampleKey, effect) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample && sample.effects) {
-								sample.effects.push(effect);
+					updateSample: (kitKey, sampleKey, updates) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (sample) {
+									Object.assign(sample, updates);
+								}
 							}
-						}
-					}),
+						}),
 
-				updateSampleEffect: (kitKey, sampleKey, effectKey, updates) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample) {
-								const effect = sample.effects?.find((e) => e.key === effectKey);
+					renameSample: (kitKey, sampleKey, name) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (sample) sample.name = name;
+							}
+						}),
+
+					selectSample: (sampleKey) =>
+						set((state) => {
+							state.selectedSampleKey = sampleKey;
+						}),
+
+					patchSystemKit: (kitKey: string) =>
+						set((state) => {
+							/*const lsdj = state.controller;
+							const kit = state.rom?.kits.find((k) => k.key === kitKey);
+
+							if (kit && state.systemId !== null) {
+								lsdj.updateKit(state.systemId, kit.id, kit);
+								const kitData = lsdj.getKitData(state.systemId, kit.id)!;
+								if (kitData && kitData.size() > 0) {
+									const arrayBuffer = toUint8Array(kitData);
+									if (kit.data) {
+										kit.data?.set(arrayBuffer);
+									} else {
+										kit.data = arrayBuffer;
+									}
+								}
+							}*/
+						}),
+
+					// Kit Effect Actions
+					addKitEffect: (kitKey, effect) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								kit.effects?.push(effect);
+							}
+						}),
+
+					updateKitEffect: (kitKey, effectKey, updates) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const effect = kit.effects?.find((e) => e.key === effectKey);
 								if (effect) {
-									Object.assign(effect, updates);
+									for (const key in updates) {
+										effect.effect[key] = updates[key];
+									}
 								}
 							}
-						}
-					}),
+						}),
 
-				removeSampleEffect: (kitKey, sampleKey, effectKey) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample) {
-								sample.effects = sample.effects?.filter((e) => e.key !== effectKey);
+					removeKitEffect: (kitKey, effectKey) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit && kit.effects) {
+								kit.effects = kit.effects.filter((e) => e.key !== effectKey);
 							}
-						}
-					}),
+						}),
 
-				reorderSampleEffects: (kitKey, sampleKey, fromIndex, toIndex) =>
-					set((state) => {
-						const kit = state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-						if (kit) {
-							const sample = kit.samples?.find((s) => s.key === sampleKey);
-							if (sample && sample.effects && sample.effects?.length > fromIndex && sample.effects?.length > toIndex) {
-								const [removed] = sample.effects?.splice(fromIndex, 1);
-								sample.effects?.splice(toIndex, 0, removed);
+					reorderKitEffects: (kitKey, fromIndex, toIndex) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit && kit.effects && kit.effects.length > fromIndex && kit.effects.length > toIndex) {
+								const [removed] = kit.effects.splice(fromIndex, 1);
+								kit.effects.splice(toIndex, 0, removed);
 							}
+						}),
+
+					// Sample Effect Actions
+					addSampleEffect: (kitKey, sampleKey, effect) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (sample && sample.effects) {
+									sample.effects.push(effect);
+								}
+							}
+						}),
+
+					updateSampleEffect: (kitKey, sampleKey, effectKey, updates) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (sample) {
+									const effect = sample.effects?.find((e) => e.key === effectKey);
+									if (effect) {
+										Object.assign(effect, updates);
+									}
+								}
+							}
+						}),
+
+					removeSampleEffect: (kitKey, sampleKey, effectKey) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (sample) {
+									sample.effects = sample.effects?.filter((e) => e.key !== effectKey);
+								}
+							}
+						}),
+
+					reorderSampleEffects: (kitKey, sampleKey, fromIndex, toIndex) =>
+						set((state) => {
+							const kit =
+								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							if (kit) {
+								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								if (
+									sample &&
+									sample.effects &&
+									sample.effects?.length > fromIndex &&
+									sample.effects?.length > toIndex
+								) {
+									const [removed] = sample.effects?.splice(fromIndex, 1);
+									sample.effects?.splice(toIndex, 0, removed);
+								}
+							}
+						}),
+
+					// Utility
+					getRom: () => {
+						const state = get();
+						return state.rom!;
+					},
+
+					getKits: () => {
+						const state = get();
+						return state.rom?.kits;
+					},
+
+					getKit: (kitKey) => {
+						const state = get();
+						if (state.rom) {
+							return state.rom.kits.find((k) => k.key === kitKey);
+						} else if (state.kit && state.kit.key === kitKey) {
+							return state.kit;
 						}
-					}),
+						return undefined;
+					},
 
-				// Utility
-				getRom: () => {
-					const state = get();
-					return state.rom!;
-				},
-
-				getKits: () => {
-					const state = get();
-					return state.rom?.kits;
-				},
-
-				getKit: (kitKey) => {
-					const state = get();
-					if (state.rom) {
-						return state.rom.kits.find((k) => k.key === kitKey);
-					} else if (state.kit && state.kit.key === kitKey) {
-						return state.kit;
-					}
-					return undefined;
-				},
-
-				getSample: (kitKey, sampleKey) => {
-					const kit = get().getKit(kitKey);
-					if (kit?.samples) {
-						return kit.samples?.find((s) => s.key === sampleKey);
-					}
-				},
-			})),
+					getSample: (kitKey, sampleKey) => {
+						const kit = get().getKit(kitKey);
+						if (kit?.samples) {
+							return kit.samples?.find((s) => s.key === sampleKey);
+						}
+					},
+				})),
 			),
 		),
 	);

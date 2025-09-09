@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 
 import { LsdjStoreProvider } from '../../contexts/LsdjStoreProvider';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import type { ILsdjKit, ILsdjRom } from '../../types/LsdjTypes';
+import type { LsdjStore } from '../../stores/LsdjStore';
+import { type ILsdjKit, type ILsdjRom } from '../../types/LsdjTypes';
 import { generateKey } from '../../utils/LsdjUtil';
-import { type SystemId, toUint8Array } from '../../utils/NativeUtil';
+import { toUint8Array, type SystemId } from '../../utils/NativeUtil';
 import { LsdjRomEditor } from './LsdjRomEditor';
 
 const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
@@ -23,7 +24,7 @@ const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
 };
 
 export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) => {
-	const { project } = useRetroPlug();
+	const { project, fileSystem } = useRetroPlug();
 	const [rom, setRom] = useState<ILsdjRom | null>(null);
 
 	useEffect(() => {
@@ -52,21 +53,9 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 		//}
 	}, [project, system]);
 
-	const handleKitAdded = (kitKey: string, kit?: ILsdjKit) => {
-		console.log('Kit added:', kitKey, kit);
-	};
-
-	const handleKitRemoved = (kitKey: string, kit?: ILsdjKit) => {
-		console.log('Kit removed:', kitKey, kit);
-	};
-
-	const handleKitChanged = (kitKey: string, kit?: ILsdjKit) => {
-		console.log('Kit changed:', kitKey, kit);
-	};
-
 	return rom ? (
-		<LsdjStoreProvider initialRom={rom}>
-			<LsdjRomEditor onKitAdded={handleKitAdded} onKitRemoved={handleKitRemoved} onKitChanged={handleKitChanged} />
+		<LsdjStoreProvider lsdj={project.lsdj} system={system} initialRom={rom}>
+			<LsdjRomEditor />
 		</LsdjStoreProvider>
 	) : (
 		<></>

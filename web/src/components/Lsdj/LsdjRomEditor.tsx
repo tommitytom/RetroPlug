@@ -1,21 +1,21 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useContext, useRef, useState } from 'react';
 
 import { useKitChanges, useKitListChanges, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import type { ILsdjKit } from '../../types/LsdjTypes';
 import { sortKits } from '../../utils/LsdjUtil';
 import { LsdjKitEditor } from './LsdjKitEditor';
+import type { LsdjStore } from '../../stores/LsdjStore';
 
 import '../../styles/RomEditorPanel.css';
+import { LsdjStoreContext } from '../../contexts/LsdjStoreContext';
 
 interface LsdjRomEditorProps {
-	onKitAdded: (kitKey: string) => void;
-	onKitRemoved: (kitKey: string) => void;
-	onKitChanged: (kitKey: string, kit?: ILsdjKit) => void;
 }
 
-export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ onKitAdded, onKitRemoved, onKitChanged }) => {
+export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	const rom = useLsdjStore((state) => state.getRom());
 	const addKit = useLsdjStore((state) => state.addKit);
+	const updateKit = useLsdjStore((state) => state.updateKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
 
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -23,23 +23,6 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = ({ onKitAdded, onKitR
 	const [hideUnused, setHideUnused] = useState(false);
 	const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
-
-	useKitChanges(Array.from(expandedKits), (kitKey, kit) => {
-		onKitChanged(kitKey, kit);
-	});
-
-	useKitListChanges((kitId, kit) => {
-		if (kit) {
-			onKitAdded(kitId);
-		} else {
-			onKitRemoved(kitId);
-			setExpandedKits((prev) => {
-				const newSet = new Set(prev);
-				newSet.delete(kitId);
-				return newSet;
-			});
-		}
-	});
 
 	const sortedRomKits = sortKits(rom.kits, sortBy);
 

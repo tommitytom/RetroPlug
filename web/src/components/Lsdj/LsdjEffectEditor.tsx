@@ -10,6 +10,7 @@ interface LsdjEffectEditorProps {
 	kitKey: string;
 	sampleKey?: string;
 	effect: ILsdjKitEffect;
+	onParameterChanged: (paramKey: string, value: number|string|boolean) => void;
 }
 
 // Format parameter name from lowerCamelCase to Human Readable
@@ -30,17 +31,17 @@ function formatParameterName(paramName: string): string {
 	return words.join(' ');
 }
 
-export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, sampleKey, effect }) => {
+export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, sampleKey, effect, onParameterChanged }) => {
 	const removeKitEffect = useLsdjStore((state) => state.removeKitEffect);
 	const removeSampleEffect = useLsdjStore((state) => state.removeSampleEffect);
 	const [effectDesc, setEffectDesc] = useState<IEffectDescBase | null>(null);
 
 	useEffect(() => {
-		const effectDesc = findEffect(effect.type);
+		const effectDesc = findEffect(effect.effect.type);
 		if (effectDesc) {
 			setEffectDesc(effectDesc);
 		} else {
-			console.error(`Effect description not found for type: ${effect.type}`);
+			console.error(`Effect description not found for type: ${effect.effect.type}`);
 		}
 	}, [effect]);
 
@@ -75,7 +76,8 @@ export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, samp
 						paramName={formatParameterName(paramKey)}
 						paramKey={paramKey}
 						sampleKey={sampleKey}
-						value={effect.effectInstance[paramKey]}
+						value={effect.effect[paramKey]}
+						onParameterChanged={onParameterChanged}
 					/>
 				))}
 			</div>

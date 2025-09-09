@@ -28,7 +28,8 @@ namespace fw {
 				spdlog::error("Failed to load font at {}: The file contains no data", uri);
 			}
 		} else {
-			spdlog::error("Failed to load font at {}: The file does not exist", uri);
+			// TODO: This log was annoying me.. see end of UiContext.cpp
+			//spdlog::error("Failed to load font at {}: The file does not exist", uri);
 		}
 
 		return _default;

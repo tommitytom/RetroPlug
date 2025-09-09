@@ -9,17 +9,39 @@ export class LsdjController {
 		return this._nativeController.getNextEmptyKit(system);
 	}
 
-	setKit(system: SystemId, kitId: number, kit: ILsdjKit) {
+	updateKit(system: SystemId, kitId: number, kit: ILsdjKit): void {
 		if (kit.samples) {
 			const samples = new this._module.NativeUint8BufferVector();
 			for (const sample of kit.samples) {
+				console.assert(!!sample);
 				if (sample.data) {
-					samples.push_back(fromUint8Array(this._module, sample.data));
-					delete sample.data;
+					const sampleData = fromUint8Array(this._module, sample.data);
+					samples.push_back(sampleData);
 				}
 			}
 
-			this._nativeController.setKit(system, kitId, JSON.stringify(kit), samples);
+			const sanitized = {
+				...kit,
+				key: undefined,
+				samples: kit.samples?.map(sample => ({
+					...sample,
+					data: undefined,
+					key: undefined,
+					effects: sample.effects?.map(effect => ({
+						...effect.effect,
+					})),
+				})),
+				effects: kit.effects?.map(effect => ({
+					...effect.effect,
+				})),
+				data: undefined
+			};
+
+			console.log(JSON.stringify(sanitized, null, 4));
+
+			if (!this._nativeController.setKit(system, kitId, JSON.stringify(sanitized), samples)) {
+				console.error("Failed to set kit:", JSON.stringify(sanitized, null, 4));
+			}
 
 			for (let i = 0; i < samples.size(); i++) samples.get(i)?.delete();
 			samples.delete();

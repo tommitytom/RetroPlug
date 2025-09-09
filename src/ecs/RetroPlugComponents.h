@@ -56,8 +56,13 @@ namespace rp {
 	struct GainEffect {
 		f32 gain = 1.0f;
 	};
+	struct FilterEffect {
+		f32 frequency = 1000.0f;
+		f32 q = 0.0f;
+		f32 feedback = 0.0f;
+	};
 
-	using LsdjEffect = rfl::TaggedUnion<"type", GainEffect>;
+	using LsdjEffect = rfl::TaggedUnion<"type", GainEffect, FilterEffect>;
 
 	struct LsdjSampleComponent {
 		std::string name;

@@ -12,9 +12,19 @@ interface LsdjEffectListProps {
 	title: string;
 	isExpanded: boolean;
 	onToggle: (expanded?: boolean) => void;
+	onChange: () => void;
+	onParameterChanged: (name: string, value: number | string | boolean) => void;
 }
 
-export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKey, title, isExpanded, onToggle }) => {
+export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
+	kitKey,
+	sampleKey,
+	title,
+	isExpanded,
+	onToggle,
+	onChange,
+	onParameterChanged,
+}) => {
 	const kit = useLsdjStore((state) => state.getKit(kitKey));
 	const sample = useLsdjStore((state) => (sampleKey ? state.getSample(kitKey, sampleKey) : undefined));
 	const addKitEffect = useLsdjStore((state) => state.addKitEffect);
@@ -32,8 +42,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKe
 		const newEffect: ILsdjKitEffect = {
 			id: 0,
 			key: generateKey(),
-			type,
-			effectInstance,
+			effect: effectInstance,
 		};
 
 		if (sampleKey) {
@@ -41,6 +50,8 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKe
 		} else {
 			addKitEffect(kitKey, newEffect);
 		}
+
+		onChange();
 	};
 
 	return (
@@ -57,7 +68,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKe
 					className="rounded-sm px-2 py-1 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
 					onClick={(e) => {
 						e.stopPropagation();
-						handleAddEffect('Filter');
+						handleAddEffect('FilterEffect');
 						onToggle(true);
 					}}
 					title="Add Effect"
@@ -71,7 +82,13 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({ kitKey, sampleKe
 					{effects.map((effect, index) => (
 						<div key={effect.key}>
 							{index > 0 && <hr className="my-1 border-gray-600" />}
-							<LsdjEffectEditor effect={effect} kitKey={kitKey} key={kitKey} sampleKey={sampleKey} />
+							<LsdjEffectEditor
+								effect={effect}
+								kitKey={kitKey}
+								key={kitKey}
+								sampleKey={sampleKey}
+								onParameterChanged={onParameterChanged}
+							/>
 						</div>
 					))}
 				</div>

@@ -72,9 +72,12 @@ local EMSDK_RELEASE_FLAGS = {
 	"-s ELIMINATE_DUPLICATE_FUNCTIONS=1",
 	--"-s ERROR_ON_WASM_CHANGES_AFTER_LINK", -- Makes sure no JS post-processing happens after linking, to keep iteration time quick
 	--"-s MINIMAL_RUNTIME",
-	--"-g",
+	"-g",
 	"-O3",
 	"-closure",
+	--"-s SAFE_HEAP=2",
+	--"-s STACK_OVERFLOW_CHECK=1",
+	--"-s WARN_UNALIGNED=1",
 	--"-s WEBAUDIO_DEBUG=1"
 }
 

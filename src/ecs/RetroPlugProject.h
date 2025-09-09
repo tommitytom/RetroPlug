@@ -13,7 +13,7 @@
 #include "sameboy/SameBoyComponents.h"
 #include "foundation/FsUtil.h"
 #include "ecs/RetroPlugProjectContext.h"
-#include "ecs/LsdjProject.h"
+#include "ecs/LsdjController.h"
 
 namespace rp {
 	class RetroPlugProject {

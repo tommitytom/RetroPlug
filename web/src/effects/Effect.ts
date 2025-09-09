@@ -25,26 +25,30 @@ export interface IEffectParameter {
 
 export interface IEffectDescBase {
 	name: string;
+	type: string;
 	parameters: { [key: string]: IEffectParameter };
 }
 
 export interface IEffectDesc<T extends IEffect> extends IEffectDescBase {
-	parameters: { [key in keyof T]: IEffectParameter };
+	parameters: { [key in keyof Omit<T, 'type'>]: IEffectParameter };
 }
 
-function registerEffect<T extends IEffect>(name: string, parameters: { [key in keyof T]: IEffectParameter }): IEffectDesc<T> {
+function registerEffect<T extends IEffect>(name: string, type: string, parameters: { [key in keyof Omit<T, 'type'>]: IEffectParameter }): IEffectDesc<T> {
 	return {
 		name,
+		type,
 		parameters
 	};
 }
 
-export interface IEffect {}
+export interface IEffect {
+	type: string;
+}
 
 export interface IGainEffect extends IEffect {
 	gain: number;
 }
-export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', {
+export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', 'GainEffect', {
 	gain: {
 		type: EffectParameterType.Slider,
 		defaultValue: 1,
@@ -59,7 +63,7 @@ export interface IFilterEffect extends IEffect {
 	q: number;
 	feedback: number;
 }
-export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', {
+export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', 'FilterEffect', {
 	frequency: {
 		type: EffectParameterType.Slider,
 		defaultValue: 1000,
@@ -88,14 +92,14 @@ const ALL_EFFECTS = [
 	FILTER_EFFECT_DESC
 ];
 
-export function findEffect(name: string) {
-	return ALL_EFFECTS.find(effect => effect.name === name);
+export function findEffect(type: string) {
+	return ALL_EFFECTS.find(effect => effect.type === type);
 }
 
-export function createEffectInstance(name: string): IEffect | undefined {
-	const effect = findEffect(name);
+export function createEffectInstance(type: string): IEffect | undefined {
+	const effect = findEffect(type);
 	if (effect) {
-		const effectInstance = {};
+		const effectInstance = { type };
 
 		Object.entries(effect.parameters).forEach(([paramKey, param]) => {
 			effectInstance[paramKey] = param.defaultValue;

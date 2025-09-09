@@ -14,6 +14,7 @@ export interface FileSystemWorkerAPI {
 	copyPath: (source: string, destination: string) => Promise<void>;
 	movePath: (source: string, destination: string) => Promise<void>;
 	fileExists: (path: string) => Promise<boolean>;
+	isDirectory: (path: string) => Promise<boolean>;
 }
 
 class FileSystemWorker implements FileSystemWorkerAPI {
@@ -154,6 +155,23 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 				const archive = await this.getOrOpenArchive(parsed.opfsPath);
 				const allNodes = archive.list();
 				return allNodes.some((node) => node.path === parsed.archivePath && node.type === 'file');
+			}
+		} catch {
+			return false;
+		}
+	}
+
+	async isDirectory(path: string): Promise<boolean> {
+		const parsed = this.parsePath(path);
+
+		try {
+			if (parsed.type === 'opfs') {
+				const handle = await this.getDirectoryHandle(parsed.opfsPath);
+				return handle !== null;
+			} else {
+				const archive = await this.getOrOpenArchive(parsed.opfsPath);
+				const allNodes = archive.list();
+				return allNodes.some((node) => node.path === parsed.archivePath && node.type === 'directory');
 			}
 		} catch {
 			return false;

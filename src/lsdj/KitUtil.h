@@ -6,6 +6,7 @@
 #include "lsdj/LsdjModel.h"
 #include "lsdj/Rom.h"
 #include "lsdj/LsdjSettings.h"
+#include "ecs/RetroPlugComponents.h"
 
 namespace rp::KitUtil {
 	const uint32 GAMEBOY_SAMPLE_RATE = 11468;
@@ -21,6 +22,8 @@ namespace rp::KitUtil {
 	SampleData loadSample(const fw::Uint8Buffer& buffer);
 
 	void patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples);
+
+	bool patchKit2(lsdj::Kit& kit, const LsdjKitComponent& kitState);
 
 	void updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx);
 

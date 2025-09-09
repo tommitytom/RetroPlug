@@ -280,9 +280,13 @@ namespace rp::lsdj {
 			kitData.clear();
 		}
 
-		size_t writeSamples(const std::string& kitName, const std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+		void setName(std::string_view name) {
+			//kitData.write(Kit::NAME_OFFSET, name);
+			writeString((uint8*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE, name, ' ');
+		}
+
+		size_t writeSamples(const std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
 			fw::Uint8Buffer kitBuffer(kitData.getSize());
-			writeString(kitBuffer.data() + lsdj::Kit::NAME_OFFSET, lsdj::Kit::NAME_SIZE, kitName, ' ');
 
 			uint16* offsets = (uint16*)kitBuffer.data();
 			uint8* names = kitBuffer.data() + lsdj::Kit::SAMPLE_NAME_OFFSET;

@@ -49,6 +49,7 @@ KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
 }
 
 KitUtil::SampleData KitUtil::loadSample(const fw::Uint8Buffer& buffer) {
+	assert(!buffer.empty());
 	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
 
 	ma_decoder decoder;
@@ -159,6 +160,43 @@ void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const
 			target[targetPos++] = (f32)targetBuffer[i];
 		}
 	}
+}
+
+bool processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+	if (!comp.samples.has_value()) return false;
+
+	for (const LsdjSampleComponent& sample : comp.samples.value()) {
+		if (sample.data().empty()) {
+			spdlog::error("Sample data is empty for sample: {}", sample.name);
+			return false;
+		}
+
+		KitUtil::SampleData sampleData = KitUtil::loadSample(sample.data());
+
+		if (comp.effects.has_value()) {
+			// TODO: Apply effects
+		}
+
+		fw::Float32Buffer resampled;
+		KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, *sampleData.buffer, resampled);
+
+		fw::Uint8Buffer data;
+		lsdj::SampleUtil::convertF32ToNibbles(resampled, data, 0.0f);
+
+		samples.push_back({ sample.name, std::move(data) });
+	}
+
+	return true;
+}
+
+bool KitUtil::patchKit2(lsdj::Kit& kit, const LsdjKitComponent& kitState) {
+	std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
+	if (!processSamples(kitState, samples)) {
+		return false;
+	}
+
+	kit.setName(kitState.name);
+	kit.writeSamples(samples);
 }
 
 void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples) {

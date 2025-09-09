@@ -6,13 +6,15 @@ import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
-import { GAMEBOY_SAMPLE_RATE, KitType, type ILsdjKitData } from '../../types/LsdjTypes';
+import type { ILsdjKit, ILsdjKitSample, ILsdjKitData } from '../../types/LsdjTypes';
+import { GAMEBOY_SAMPLE_RATE, KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
-import { extractSampleData, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
+import { extractSampleData, generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
 import { fromUint8Array } from '../../utils/NativeUtil';
 import { playSample } from '../../wrapper/Lsdj';
 import { LsdjEffectList } from './LsdjEffectList';
+import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -29,8 +31,11 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onFileDropped,
 	onError,
 }) => {
-	const { app, audioContext } = useRetroPlug();
+	const { module, fileSystem, audioContext } = useRetroPlug();
 	const kit = useLsdjStore((state) => state.getKit(kitKey))!;
+	const addKit = useLsdjStore((state) => state.addKit);
+	const updateKit = useLsdjStore((state) => state.updateKit);
+	const patchSystemKit = useLsdjStore((state) => state.patchSystemKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
 	const renameKit = useLsdjStore((state) => state.renameKit);
 	const addSample = useLsdjStore((state) => state.addSample);
@@ -44,6 +49,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
+	console.log(kit);
 
 	// Helper function to get color classes based on kit type
 	const getKitTypeColorClasses = (kitType: KitType): string => {
@@ -61,31 +67,18 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const kitType = getKitType(kit);
 
 	useEffect(() => {
-		if (app && kit.data && isExpanded) {
-			const sampleData = extractSampleData(app.module!, fromUint8Array(app.module!, kit.data));
+		if (kit.data && isExpanded) {
+			const sampleData = extractSampleData(module, fromUint8Array(module, kit.data));
 			console.log(sampleData);
 			setKitSampleData(sampleData);
 		} else {
 			setKitSampleData(null);
 		}
-	}, [app, kit.data, isExpanded]);
+	}, [module, kit.data, isExpanded]);
 
 	const handleRename = () => {
 		renameKit(kitKey, tempName);
 		setIsEditing(false);
-	};
-
-	const handleAddSample = () => {
-		const newSample = {
-			id: Date.now(), // Simple ID generation
-			key: `sample-${Date.now()}`,
-			name: 'New Sample',
-			path: '',
-			offset: 0,
-			length: 1000,
-			effects: [],
-		};
-		addSample(kitKey, newSample);
 	};
 
 	const handleRemoveSample = (sampleKey: string) => {
@@ -175,6 +168,67 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 	}, []);
 
+	function getSampleNameFromPath(path: string): string {
+		return path.split('/').pop()?.split('.').shift()?.slice(0, 3) || "UNK";
+	}
+
+	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
+		const samples: ILsdjKitSample[] = [];
+
+		for (let i = 0; i < paths.length; i++) {
+			const path = paths[i];
+			const data = new Uint8Array(await fileSystem.readPath(path));
+
+			samples.push({
+				key: generateKey(),
+				name: getSampleNameFromPath(path),
+				offset: 0,
+				length: 0,
+				path,
+				data,
+				effects: [],
+			});
+		}
+
+		return samples;
+	}
+
+	async function handleFileDrop(paths: string[]) {
+		if (paths.length === 1 && paths[0].endsWith('.kit')) {
+			console.log('Patching kit');
+			updateKit(kitKey, {
+				path: paths[0],
+				effects: undefined,
+				samples: undefined,
+			});
+			return;
+		}
+
+		const kitType = getKitType(kit);
+		const samples = await sanitizeSamples(paths);
+
+		switch (kitType) {
+			case KitType.Editable:
+				console.log('Adding samples');
+				for (const sample of samples) {
+					addSample(kitKey, sample);
+				}
+
+				break;
+			case KitType.Patched:
+			case KitType.Rom:
+				console.log('Adding dynamic kit');
+				updateKit(kitKey, {
+					path: paths[0],
+					effects: [],
+					samples
+				});
+				break;
+		}
+
+		patchSystemKit(kitKey);
+	}
+
 	const handleDrop = useCallback(
 		async (event: React.DragEvent) => {
 			event.preventDefault();
@@ -203,8 +257,12 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 					if (onFileDropped) {
 						await onFileDropped(filePath);
 					} else {
-						// Default behavior
 						console.log(`Dropped file from tree: ${filePath}`);
+						try {
+							handleFileDrop([filePath]);
+						} catch (ex) {
+							console.error('Error handling file drop:', ex);
+						}
 					}
 				}
 			} catch (error) {
@@ -215,8 +273,12 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				}
 			}
 		},
-		[onFileDropped, onError],
+		[onFileDropped, onError, kit.data],
 	);
+
+	const handleChange = () => {
+		patchSystemKit(kitKey);
+	};
 
 	return (
 		<div
@@ -321,10 +383,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			{isExpanded && kitSampleData && (
 				<div className={`bg-gray-900 ${kitType === KitType.Editable ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
 					<div className="mb-2">
-						<div
-							onMouseMove={handleWaveViewMouseMove}
-							onMouseLeave={handleWaveViewMouseLeave}
-						>
+						<div onMouseMove={handleWaveViewMouseMove} onMouseLeave={handleWaveViewMouseLeave}>
 							<WaveView
 								sampleData={kitSampleData.sampleBuffer}
 								markers={kitSampleData.samples.map((s) => s.offset)}
@@ -342,6 +401,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 								onToggle={(expanded) => handleEffectToggle(expanded)}
 								title="Sample Effects"
 								key={kitKey}
+								onChange={handleChange}
+								onParameterChanged={() => handleChange()}
 							/>
 						</div>
 					)}

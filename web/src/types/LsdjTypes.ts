@@ -5,21 +5,19 @@ export const LSDJ_KIT_SAMPLE_COUNT = 15;
 export const GAMEBOY_SAMPLE_RATE = 11468;
 
 export interface ILsdjKitEffect<T extends IEffect = IEffect> {
-	type: string;
 	id: number;
 	key: string;
-	effectInstance: T
+	effect: T
 }
 
 export interface ILsdjKitSample {
 	name: string;
-	id: number;
 	path: string;
 	offset: number;
 	length: number;
-	effects?: ILsdjKitEffect[];
-	data?: Uint8Array;
+	effects: ILsdjKitEffect[];
 	key: string;
+	data?: Uint8Array;
 }
 
 export interface ILsdjKit {

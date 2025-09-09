@@ -5,7 +5,7 @@
 #include "sameboy/SameBoyComponents.h"
 #include "ui/View.h"
 #include "ecs/RetroPlugComponents.h"
-#include "ecs/LsdjProject.h"
+#include "ecs/LsdjController.h"
 
 #include <ctype.h>
 

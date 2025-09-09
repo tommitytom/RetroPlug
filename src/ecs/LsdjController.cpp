@@ -1,4 +1,4 @@
-#include "LsdjProject.h"
+#include "LsdjController.h"
 
 #include "lsdj/KitUtil.h"
 #include "lsdj/SampleUtil.h"
@@ -102,32 +102,12 @@ namespace rp {
 		return nullptr;
 	}
 
-	void processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
-		if (!comp.samples.has_value()) return;
-
-		for (const LsdjSampleComponent& sample : comp.samples.value()) {
-			KitUtil::SampleData sampleData = KitUtil::loadSample(sample.data());
-
-			fw::Float32Buffer resampled;
-			KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, *sampleData.buffer, resampled);
-
-			fw::Uint8Buffer data;
-			lsdj::SampleUtil::convertF32ToNibbles(resampled, data, 0.0f);
-
-			samples.push_back({ sample.name, data });
-		}
-	}
-
 	bool LsdjController::updateKit(entt::entity system, uint32 kitId, const LsdjKitComponent& comp) {
 		lsdj::Rom rom = getLsdjRom(system);
 		if (!rom.isValid()) return false; // Return true as we updated the component, even if the ROM is invalid
 
-		std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
-		processSamples(comp, samples);
-
 		lsdj::Kit kit = rom.getKit(kitId);
-		//rom.setKitName(kitId, comp.name);
-		kit.writeSamples(comp.name, samples);
+		KitUtil::patchKit2(kit, comp);
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
@@ -162,11 +142,16 @@ namespace rp {
 		if (!lsdj) return false;
 
 		if (comp.samples.has_value()) {
-			auto samples = comp.samples.value();
-			if (samples.size() == samples.size()) {
+			auto& compSamples = comp.samples.value();
+			if (compSamples.size() == samples.size()) {
 				for (size_t i = 0; i < samples.size(); ++i) {
-					samples[i].data = std::move(samples[i].data);
+					compSamples[i].data = std::move(samples[i]);
 				}
+			}
+		} else {
+			auto& compSamples = comp.samples.emplace();
+			for (size_t i = 0; i < samples.size(); ++i) {
+				compSamples[i].data = std::move(samples[i]);
 			}
 		}
 
