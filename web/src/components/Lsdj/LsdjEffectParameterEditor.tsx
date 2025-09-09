@@ -40,7 +40,7 @@ export const LsdjEffectParameterEditor: React.FC<LsdjEffectParameterEditorProps>
 
 	return (
 		<div className="flex items-center space-x-2">
-			<label className="w-16 text-sm font-medium text-gray-300">{paramName}:</label>
+			<label className="w-24 text-sm font-medium text-gray-300 text-right whitespace-nowrap">{paramName}:</label>
 			{parameter.type === EffectParameterType.Slider && (
 				<SliderProperty
 					min={parameter.min}
