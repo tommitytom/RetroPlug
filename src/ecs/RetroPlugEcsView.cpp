@@ -22,8 +22,8 @@ namespace rp {
 		"          \"name\": \"rp::SystemLoadComponent\","
 		"          \"data\": {"
 		"            \"entries\": {"
-		"              \"rom\": { \"path\": \"C:\\\\retro\\\\LSDj-v5.0.3.gb\" },"
-		"              \"sram\": { \"path\": \"C:\\\\retro\\\\LSDj-v5.0.3.sav\" }"
+		"              \"rom\": { \"path\": .\\LSDj-v5.0.3.gb\" },"
+		"              \"sram\": { \"path\": .\\LSDj-v5.0.3.sav\" }"
 		"            }"
 		"          }"
 		"        },"
@@ -118,7 +118,13 @@ namespace rp {
 	}
 
 	bool RetroPlugEcsView::onDrop(const std::vector<std::string>& paths) {
-		_project.addSystem(paths);
+		std::vector<std::filesystem::path> fsPaths;
+		for (const std::string& path : paths) {
+			fsPaths.push_back(path);
+		}
+
+		_project.loadFromPaths(fsPaths);
+
 		return true;
 	}
 
@@ -284,16 +290,18 @@ namespace rp {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);
 
+			_project.loadFromFile("C:\\retro\\LSDj-v5.0.3.rplg");
+			/*
 			entt::entity entity = _project.addSystem(SystemLoadComponent{
 				.entries = {
-					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
-					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
+					{ "rom", { ".\\LSDj-v5.0.3.gb" } },
+					{ "sram", { ".\\LSDj-v5.0.3.sav" } }
 				},
 			}, SameBoyComponent{
 				.model = GameboyModel::CgbC,
 				.fastBoot = true
 			});
-
+			*/
 			/*entt::entity e = SineGenerator::emplace(registry);
 
 			auto slider4 = addChild<fw::SliderView>("Frequency Slider");

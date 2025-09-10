@@ -28,30 +28,34 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 	const [rom, setRom] = useState<ILsdjRom | null>(null);
 
 	useEffect(() => {
-		if (!project) return;
+		if (!project || !rom) return;
 
-		const lsdj = project.lsdj;
-		let kits = lsdj.getKits(system);
-		console.log('before keys:');
-		console.log(kits);
-		kits = addKeysToKits(kits);
-		console.log('added keys:');
-		console.log(kits);
+		try {
+			const lsdj = project.lsdj;
+			let kits = lsdj.getKits(system);
+			console.log('before keys:');
+			console.log(kits);
+			kits = addKeysToKits(kits);
+			console.log('added keys:');
+			console.log(kits);
 
-		kits.map((kit) => {
-			const buffer = project.lsdj.getKitData(system, kit.id);
-			if (buffer) kit.data = toUint8Array(buffer);
-		});
+			kits.map((kit) => {
+				const buffer = project.lsdj.getKitData(system, kit.id);
+				if (buffer) kit.data = toUint8Array(buffer);
+			});
 
-		//if (!deepEqual(indexedKits, romKits)) {
-		setRom({
-			id: 0,
-			key: generateKey(),
-			name: 'LSDj',
-			kits,
-		});
-		//}
-	}, [project, system]);
+			//if (!deepEqual(indexedKits, romKits)) {
+			setRom({
+				id: 0,
+				key: generateKey(),
+				name: 'LSDj',
+				kits,
+			});
+			//}
+		} catch (ex) {
+			console.error('Failed to inspect ROM', ex);
+		}
+	}, [project, system, rom]);
 
 	return rom ? (
 		<LsdjStoreProvider lsdj={project.lsdj} system={system} initialRom={rom}>

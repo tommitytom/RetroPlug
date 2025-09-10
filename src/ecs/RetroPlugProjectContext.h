@@ -11,6 +11,10 @@ namespace fw {
 }
 
 namespace rp {
+	struct ProjectConfig {
+		f32 zoom = 3.0f;
+	};
+
 	struct RetroPlugProjectContext {
 		fw::EventNode& eventNode;
 		uint32 version = 0;

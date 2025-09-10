@@ -28,7 +28,6 @@ namespace rp::ProjectSerializer {
 		if (comp) {
 			std::string_view typeName = getTypeName<Component>();
 			yyjson_mut_val* compObj = yyjson_mut_obj(ctx.doc);
-			yyjson_mut_obj_add_uint(ctx.doc, compObj, "type", entt::type_hash<Component>::value());
 			yyjson_mut_obj_add_strn(ctx.doc, compObj, "name", typeName.data(), typeName.size());
 
 			yyjson_mut_val* data = yyjson_mut_obj(ctx.doc);
@@ -40,15 +39,18 @@ namespace rp::ProjectSerializer {
 
 	template <typename Component>
 	bool deserializeComponent(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) {
-		const entt::id_type type = (entt::id_type)yyjson_get_uint(yyjson_obj_get(ctx.componentData, "type"));
-		if (entt::type_hash<Component>::value() == type) {
+		const std::string_view name = yyjson_get_str(yyjson_obj_get(ctx.componentData, "name"));
+
+		if (getTypeName<Component>() == name) {
 			yyjson_val* data = yyjson_obj_get(ctx.componentData, "data");
 
 			auto result = JsonUtil::read<Component>(data);
 			if (!result.has_value()) {
-				spdlog::error("Failed to deserialize component data");
+				spdlog::error("Failed to deserialize component {}: {}", name, result.error().what());
 				return false;
 			}
+
+			spdlog::info("Deserialized component: {}", getTypeName<Component>());
 
 			registry.emplace_or_replace<Component>(entity, std::move(result.value()));
 			return true;

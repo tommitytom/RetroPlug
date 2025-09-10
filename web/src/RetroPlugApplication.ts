@@ -67,6 +67,7 @@ export class RetroPlugApplication {
 			const interval = setInterval(() => {
 				if (this._runner && this._runner.isFileSystemReady()) {
 					console.log('File system is ready');
+					this._nativeProject?.loadConfigs();
 					resolve();
 					clearInterval(interval);
 				}

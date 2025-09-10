@@ -53,14 +53,13 @@ export const FileTreePanel: React.FC = () => {
 	const { readPath, fileExists, writePath, deletePath, createDirectory } = useOPFSStore();
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
-		if (!project) return;
+		project.loadFromPaths([node.path])
 
-		const fullPath = "/mount" + node.path;
-		console.log('Opening file:', fullPath);
+		console.log('Opening file:', node.path);
 
 		if (node.path.endsWith('.rplg')) {
-			project.clearSystems();
-			project.loadFromFile(fullPath);
+			project.reset();
+			project.loadFromFile(node.path);
 			focusCanvas();
 		}
 
@@ -87,29 +86,21 @@ export const FileTreePanel: React.FC = () => {
 			return;
 		}
 
-		const entries: Record<string, { path?: string, data: Uint8Array }> = {};
+		const entries: Record<string, { path?: string }> = {};
 
 		entries.rom = {
 			path: romPath,
-			data: new Uint8Array(await readPath(romPath))
 		};
 
 		if (savPath) {
 			entries.sram = {
 				path: savPath,
-				data: new Uint8Array(await readPath(savPath))
 			};
 		}
 
-		project.clearSystems();
+		project.reset();
 		project.addSystem({ entries });
 		focusCanvas();
-
-		const projectPath = node.path.replace(/\.gb$/i, '.rplg');
-
-		if (!await fileExists(projectPath)) {
-			await writePath(projectPath, project.serialize());
-		}
 	}, [project]);
 
 	const handleContextMenu = useCallback((node: FileSystemNode|null, event: React.MouseEvent) => {

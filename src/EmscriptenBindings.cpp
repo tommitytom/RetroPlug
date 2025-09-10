@@ -192,8 +192,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("resetSystem", +[](RetroPlugProject& project, uint32 systemId, bool remote) {
 			return project.resetSystem(entt::entity(systemId), remote);
 		})
-		.function("clearSystems", +[](RetroPlugProject& project) {
-			project.clearSystems();
+		.function("reset", +[](RetroPlugProject& project) {
+			project.reset();
 		})
 		.function("getSystemMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type, AccessType access) -> MemoryAccessor {
 			return project.getSystemMemory(entt::entity(systemId), type, access);
@@ -209,12 +209,20 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("getLsdjController", &RetroPlugProject::getLsdjController)
 		.function("loadConfigs", &RetroPlugProject::loadConfigs)
-		.function("loadFromFile", &RetroPlugProject::loadFromFile)
-		.function("serialize", &RetroPlugProject::serialize)
-		.function("serializeToString", &RetroPlugProject::serializeToString)
-		.function("deserialize", &RetroPlugProject::deserialize)
-		.function("deserializeFromString", +[](RetroPlugProject& project, const std::string& str) {
-			return project.deserializeFromString(str);
+		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
+			return project.loadFromFile(path);
+		})
+		.function("serialize", +[](RetroPlugProject& project, fw::Uint8Buffer& archive, const std::string& rootPath) {
+			project.serialize(archive, rootPath);
+		})
+		.function("serializeToString", +[](RetroPlugProject& project, const std::string& rootPath) {
+			return project.serializeToString(rootPath);
+		})
+		.function("deserialize", +[](RetroPlugProject& project, const fw::Uint8Buffer& archive, const std::string& rootPath) {
+			return project.deserialize(archive, rootPath);
+		})
+		.function("deserializeFromString", +[](RetroPlugProject& project, const std::string& str, const std::string& rootPath) {
+			return project.deserializeFromString(str, rootPath);
 		})
 		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.property("systemCount", &RetroPlugProject::getSystemCount)

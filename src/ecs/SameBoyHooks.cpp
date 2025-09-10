@@ -1,22 +1,17 @@
 #include "SameBoyHooks.h"
 
+#include <chrono>
+
 #include "foundation/Replicator.h"
 #include "sameboy/SameBoyUtil.h"
 #include "ecs/EcsProjectSerializer.h"
 
-#include <chrono>
-
 namespace rp {
-	void SameboyHooks::onLoadRequset(entt::registry& registry, const std::vector<std::string>& paths, SystemLoadComponent& load) const {
-		for (const std::string& path : paths) {
-			if (path.ends_with(".gb") || path.ends_with(".gbc")) {
-				load.entries["rom"].path = path;
-			} else if (path.ends_with(".sav")) {
-				load.entries["sram"].path = path;
-			} else if (path.ends_with(".state")) {
-				load.entries["state"].path = path;
-			}
-		}
+	void SameboyHooks::onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
+		filterEntries(paths, entries, ".gb", "rom");
+		filterEntries(paths, entries, ".gbc", "rom");
+		filterEntries(paths, entries, ".sav", "sram");
+		filterEntries(paths, entries, ".state", "state");
 	}
 
 	void SameboyHooks::onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
@@ -36,7 +31,7 @@ namespace rp {
 			spdlog::info("Fast boot completed in {} ms", duration);
 		}
 
-		SystemStateComponent& systemState = registry.get<SystemStateComponent>(entity);
+		SystemStateComponent& systemState = registry.get_or_emplace<SystemStateComponent>(entity);
 		systemState.stateOffsets = SameBoyUtil::getStateOffsets(*state.state);
 		SameBoyUtil::saveState(*state.state, systemState.state);
 

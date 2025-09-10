@@ -64,6 +64,8 @@ namespace rp {
 
 	class LsdjHooks final : public SystemHook<SameBoyComponent> {
 	public:
+		void onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const override;
+
 		void onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const override;
 
 		fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const override;

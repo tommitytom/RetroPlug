@@ -6,6 +6,12 @@
 #include "ecs/EcsProjectSerializer.h"
 
 namespace rp {
+	void LsdjHooks::onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
+		filterEntries(paths, entries, ".lsdsng", "lsdsng");
+		filterEntries(paths, entries, ".lsdprj", "lsdprj");
+		filterEntries(paths, entries, ".kit", "kit");
+	}
+
 	void LsdjHooks::onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
 		fw::Uint8Buffer* rom = load.findData("rom");
 		if (!rom) {

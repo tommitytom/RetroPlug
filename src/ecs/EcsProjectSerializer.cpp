@@ -1,5 +1,7 @@
 #include "EcsProjectSerializer.h"
+
 #include "core/CoreComponents.h"
+#include "ecs/RetroPlugProjectContext.h"
 #include "foundation/Replicator.h"
 
 namespace rp {
@@ -28,6 +30,11 @@ namespace rp {
 			eachHook(projectCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onSerialize(registry, entity, ctx); });
 		};
 
+		const ProjectConfig& projectConfig = registry.ctx().at<ProjectConfig>();
+		yyjson_mut_val* config = yyjson_mut_obj(doc);
+		JsonUtil::write(projectConfig, doc, config);
+		yyjson_mut_obj_add_val(doc, root, "config", config);
+
 		yyjson_write_err err;
 		yyjson_write_flag _flag = rfl::json::pretty;
 		const char* json_c_str = yyjson_mut_write_opts(doc, _flag, NULL, NULL, &err);
@@ -41,10 +48,13 @@ namespace rp {
 	}
 
 	bool ProjectSerializer::deserialize(entt::registry& registry, std::string_view source) {
-		const RetroPlugProjectContext& projectCtx = registry.ctx().at<RetroPlugProjectContext>();
+		RetroPlugProjectContext& projectCtx = registry.ctx().at<RetroPlugProjectContext>();
 
 		yyjson_doc* doc = yyjson_read(source.data(), source.size(), 0);
 		yyjson_val* root = yyjson_doc_get_root(doc);
+
+		yyjson_val* config = yyjson_obj_get(root, "config");
+		registry.ctx().at<ProjectConfig>() = JsonUtil::read<ProjectConfig>(config).value_or(ProjectConfig());
 
 		yyjson_val* systems = yyjson_obj_get(root, "systems");
 
@@ -60,9 +70,7 @@ namespace rp {
 			yyjson_arr_foreach(components, componentIdx, componentMax, component) {
 				ProjectDeserializerContext ctx{ component };
 
-				if (!ProjectSerializer::deserializeComponent<SystemLoadComponent>(registry, entity, ctx)) {
-					return false;
-				}
+				ProjectSerializer::deserializeComponent<SystemLoadComponent>(registry, entity, ctx);
 
 				eachHook(projectCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
 				eachHook(projectCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });

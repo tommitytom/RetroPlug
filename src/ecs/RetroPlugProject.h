@@ -26,13 +26,22 @@ namespace rp {
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPingTime;
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPongTime;
 
+		std::filesystem::path _projectRoot;
+		std::filesystem::path _projectPath;
+
+		ProjectConfig _config;
+
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
 		~RetroPlugProject();
 
 		void loadConfigs();
 
-		bool loadFromFile(const std::string& path);
+		bool loadFromFile(std::filesystem::path path);
+
+		bool saveToFile(std::filesystem::path path);
+
+		bool loadFromPaths(const std::vector<std::filesystem::path>& paths);
 
 		template <typename T>
 		entt::entity addSystem(const SystemLoadComponent& config, const T& component) {
@@ -43,13 +52,12 @@ namespace rp {
 
 			SystemLoadComponent& load = _registry.emplace<SystemLoadComponent>(entity, config);
 			_registry.emplace<T>(entity, component);
+			_registry.emplace<SystemComponent>(entity, systemType);
 
 			handleLoad(entity, load, systemType);
 
 			return entity;
 		}
-
-		entt::entity addSystem(const std::vector<std::string>& paths);
 
 		bool resetSystem(entt::entity system, bool remote);
 
@@ -67,17 +75,17 @@ namespace rp {
 
 		void removeSystem(entt::entity entity);
 
-		void clearSystems();
+		void reset();
 
 		void onUpdate(f32 deltaTime);
 
-		void serialize(fw::Uint8Buffer& archive) const;
+		void serialize(fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) const;
 
-		std::string serializeToString() const;
+		std::string serializeToString(const std::filesystem::path& rootPath) const;
 
-		bool deserialize(const fw::Uint8Buffer& archive);
+		bool deserialize(const fw::Uint8Buffer& archive, const std::filesystem::path& rootPath);
 
-		bool deserializeFromString(std::string_view str);
+		bool deserializeFromString(std::string_view str, const std::filesystem::path& rootPath);
 
 		uint32 getMemoryVersion(entt::entity entity, MemoryType type) const;
 

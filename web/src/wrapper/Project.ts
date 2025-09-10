@@ -134,12 +134,12 @@ export class Project {
 		return out;
 	}
 
-	serialize(): string {
-		return this._project.serializeToString();
+	serialize(rootPath: string): string {
+		return this._project.serializeToString(rootPath);
 	}
 
-	deserialize(data: string) {
-		return this._project.deserializeFromString(data);
+	deserialize(data: string, rootPath: string) {
+		return this._project.deserializeFromString(data, rootPath);
 	}
 
 	subscribeToMemory(system: SystemId, memoryType: MemoryType) {
@@ -178,8 +178,8 @@ export class Project {
 		this._project.removeSystem(system);
 	}
 
-	clearSystems(): void {
-		this._project.clearSystems();
+	reset(): void {
+		this._project.reset();
 	}
 
 	loadFromFile(path: string): boolean {
