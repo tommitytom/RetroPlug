@@ -40,7 +40,7 @@ namespace rp {
 		free((void*)json_c_str);
 	}
 
-	void ProjectSerializer::deserialize(entt::registry& registry, std::string_view source) {
+	bool ProjectSerializer::deserialize(entt::registry& registry, std::string_view source) {
 		const RetroPlugProjectContext& projectCtx = registry.ctx().at<RetroPlugProjectContext>();
 
 		yyjson_doc* doc = yyjson_read(source.data(), source.size(), 0);
@@ -59,10 +59,16 @@ namespace rp {
 			yyjson_val* component;
 			yyjson_arr_foreach(components, componentIdx, componentMax, component) {
 				ProjectDeserializerContext ctx{ component };
-				ProjectSerializer::deserializeComponent<SystemLoadComponent>(registry, entity, ctx);
+
+				if (!ProjectSerializer::deserializeComponent<SystemLoadComponent>(registry, entity, ctx)) {
+					return false;
+				}
+
 				eachHook(projectCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
 				eachHook(projectCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
 			}
 		}
+
+		return true;
 	}
 }

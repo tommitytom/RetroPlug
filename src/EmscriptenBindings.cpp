@@ -208,6 +208,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			project.unsubscribeFromMemory(entt::entity(systemId), type);
 		})
 		.function("getLsdjController", &RetroPlugProject::getLsdjController)
+		.function("loadConfigs", &RetroPlugProject::loadConfigs)
+		.function("loadFromFile", &RetroPlugProject::loadFromFile)
 		.function("serialize", &RetroPlugProject::serialize)
 		.function("serializeToString", &RetroPlugProject::serializeToString)
 		.function("deserialize", &RetroPlugProject::deserialize)

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <filesystem>
 
 #include "core/SystemHook.h"
 
@@ -15,6 +16,10 @@ namespace rp {
 		uint32 version = 0;
 		std::vector<std::unique_ptr<SystemHookBase>> systemHooks;
 		std::vector<std::unique_ptr<SystemHookBase>> serviceHooks;
+
+		std::filesystem::path mountPath = "./";
+		std::filesystem::path dataPath = mountPath / "data";
+		std::filesystem::path tempPath = mountPath / "temp";
 
 		template <typename T>
 		void addSystemHook() {

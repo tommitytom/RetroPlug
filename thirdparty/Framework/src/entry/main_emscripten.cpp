@@ -36,6 +36,8 @@ EMSCRIPTEN_BINDINGS(framework) {
 
 	class_<fw::app::WebApplicationRunner>("WebApplicationRunner")
 		.constructor(&makeRunner, allow_raw_pointers())
+		.function("setupFileSystem", &fw::app::WebApplicationRunner::setupFileSystem)
+		.function("isFileSystemReady", &fw::app::WebApplicationRunner::isFileSystemReady)
 		.function("setupAudio", &fw::app::WebApplicationRunner::setupAudio)
 		.function("setupGraphics", &fw::app::WebApplicationRunner::setupGraphics)
 		.function("destroyGraphics", &fw::app::WebApplicationRunner::destroyGraphics)

@@ -3,11 +3,13 @@
 #ifdef FW_PLATFORM_WEB
 #include <emscripten/emscripten.h>
 
+#include <thread>
 #include <spdlog/spdlog.h>
 
 #include "audio/WebAudioManager.h"
 #include "graphics/gl/GlRenderContext.h"
 #include "application/GlfwNativeWindow.h"
+#include "foundation/FsUtil.h"
 
 namespace fw::app {
 	using hrc = std::chrono::high_resolution_clock;
@@ -36,6 +38,17 @@ namespace fw::app {
 		_audioManager = nullptr;
 		_uiContext = nullptr;
 		_app = nullptr;
+	}
+
+	void WebApplicationRunner::setupFileSystem() {
+		std::thread([this]() {
+			_opfsBackend = wasmfs_create_opfs_backend();
+			if (wasmfs_create_directory("/mount", 0777, _opfsBackend) < 0) {
+				spdlog::error("Failed to mount root directory");
+			} else {
+				spdlog::info("Mounted root directory");
+			}
+		}).detach();
 	}
 
 	void WebApplicationRunner::setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId) {

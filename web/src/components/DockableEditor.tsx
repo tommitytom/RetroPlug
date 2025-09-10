@@ -28,7 +28,7 @@ interface FloatingWindow {
 	height: number;
 }
 
-interface DockLayout {
+export interface DockLayout {
 	left: DockZone | null;
 	center: DockZone;
 	right: DockZone | null;

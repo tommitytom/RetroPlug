@@ -11,11 +11,17 @@
 #include "core/Events.h"
 
 namespace rp {
-	bool resolveEntries(SystemLoadComponent& load) {
+	bool resolveEntries(const RetroPlugProjectContext& ctx, SystemLoadComponent& load) {
 		bool error = false;
 
 		for (auto& [type, entry] : load.entries) {
 			if (entry.data().empty()) {
+				std::filesystem::path path(entry.path);
+
+				if (!path.is_absolute()) {
+					path = ctx.mountPath / entry.path;
+				}
+
 				if (!fw::FsUtil::readFile(entry.path, entry.data())) {
 					error = true;
 					spdlog::error("Failed to read file: {}", entry.path);
@@ -106,6 +112,25 @@ namespace rp {
 		_eventNode.unsubscribe<FetchMemoryResponse>();
 		_eventNode.unsubscribe<SystemIoEvent>();
 		fw::Replicator::shutdown(_registry);
+	}
+
+	void RetroPlugProject::loadConfigs() {
+#ifdef FW_PLATFORM_WEB
+		getContext().mountPath = "/mount";
+#endif
+	}
+
+	bool RetroPlugProject::loadFromFile(const std::string& path) {
+		spdlog::info("Loading project from file: {}", path);
+
+		std::string data = fw::FsUtil::readTextFile(path);
+		if (data.empty()) {
+			spdlog::error("Failed to read project file: {}", path);
+			return false;
+		}
+
+		spdlog::info("Deserializing project...");
+		return deserializeFromString(data);
 	}
 
 	uint32 RetroPlugProject::getMemoryVersion(entt::entity entity, MemoryType type) const {
@@ -241,12 +266,12 @@ namespace rp {
 	}
 
 	void RetroPlugProject::handleLoad(entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
-		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
+		RetroPlugProjectContext& ctx = getContext();
 
 		_registry.emplace<SystemComponent>(entity, systemType);
 		_registry.emplace<SystemStateComponent>(entity);
 
-		resolveEntries(load);
+		resolveEntries(ctx, load);
 		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onBeforeLoad(_registry, entity, load); });
 		eachHook(systemType, ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onLoad(_registry, entity, load); });
 		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onAfterLoad(_registry, entity, load); });
@@ -255,7 +280,7 @@ namespace rp {
 	}
 
 	void RetroPlugProject::removeSystem(entt::entity entity) {
-		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
+		RetroPlugProjectContext& ctx = getContext();
 
 		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
@@ -284,11 +309,21 @@ namespace rp {
 	}
 
 	bool RetroPlugProject::deserializeFromString(std::string_view str) {
-		ProjectSerializer::deserialize(_registry, str);
+		spdlog::info("Deserializing project...");
+		RetroPlugProjectContext& ctx = getContext();
+		if (!ProjectSerializer::deserialize(_registry, str)) {
+			spdlog::error("Deserializing project...");
+			return false;
+		}
 
 		for (const auto& [e, system, load] : _registry.view<SystemComponent, SystemLoadComponent>().each()) {
+			for (auto& [type, entry] : load.entries) {
+				entry.path = (ctx.mountPath / entry.path).string();
+			}
 			handleLoad(e, load, system.systemType);
 		}
+
+		spdlog::info("Project loaded");
 
 		return true;
 	}

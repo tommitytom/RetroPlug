@@ -123,8 +123,8 @@ namespace rp::JsonUtil {
 	}
 
 	template <class T, class... Ps>
-	void read(T& target, yyjson_val* root, const yyjson_read_flag _flag = 0) {
+	auto read(yyjson_val* root, const yyjson_read_flag _flag = 0) {
 		const auto r = rfl::json::Reader();
-		target = Parser<T, rfl::Processors<Ps...>>::read(r, rfl::json::InputVarType(root)).value();
+		return Parser<T, rfl::Processors<Ps...>>::read(r, rfl::json::InputVarType(root));
 	}
 }

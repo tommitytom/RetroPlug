@@ -1,4 +1,4 @@
-import { BiquadEffect } from "./effects/BiquadEffect.ts";
+import { BiquadEffect } from './effects/BiquadEffect.ts';
 import type {
 	LsdjMemoryOffsets,
 	MainModule,
@@ -7,11 +7,11 @@ import type {
 	NativeRetroPlugEcsApplication,
 	NativeRetroPlugProject,
 	Uint8Buffer,
-	WebApplicationRunner
-} from "./native/RetroPlug.d.ts";
-import { convertMemoryType } from "./utils/NativeUtil.ts";
-import { Project } from "./wrapper/Project.ts";
-import { MemoryType } from "./wrapper/System.ts";
+	WebApplicationRunner,
+} from './native/RetroPlug.d.ts';
+import { convertMemoryType } from './utils/NativeUtil.ts';
+import { Project } from './wrapper/Project.ts';
+import { MemoryType } from './wrapper/System.ts';
 
 export class RetroPlugApplication {
 	private _module: MainModule | null = null;
@@ -41,42 +41,41 @@ export class RetroPlugApplication {
 	}
 
 	async load() {
-		const moduleFactory = (await import("./native/RetroPlugEcs.mjs")).default;
+		const moduleFactory = (await import('./native/RetroPlugEcs.mjs')).default;
 
 		this._module = (await moduleFactory({
 			locateFile: (path: string) => {
-				if (path.endsWith(".wasm")) {
-					return "/RetroPlugEcs.wasm";
+				if (path.endsWith('.wasm')) {
+					return '/RetroPlugEcs.wasm';
 				}
 				return path;
 			},
 			print: (text: string) => {
-				console.log("WASM:", text);
+				console.log('WASM:', text);
 			},
 			printErr: (text: string) => {
-				console.error("WASM Error:", text);
+				console.error('WASM Error:', text);
 			},
 		})) as MainModule;
 
 		this._runner = new this._module.WebApplicationRunner();
+		this._runner.setupFileSystem();
 		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
 		this._nativeProject = this._nativeApp!.getProject()!;
+
+		return new Promise<void>((resolve) => {
+			const interval = setInterval(() => {
+				if (this._runner && this._runner.isFileSystemReady()) {
+					console.log('File system is ready');
+					resolve();
+					clearInterval(interval);
+				}
+			}, 100);
+		});
 	}
 
 	createAudioBuffer(channelCount: number, sampleCount: number, sampleRate: number) {
 		return new this._module!.NativeAudioBuffer(channelCount, sampleCount, sampleRate);
-	}
-
-	createBiquadEffect() {
-		return new BiquadEffect(this._module!, new this._module!.NativeBiquadEffect());
-	}
-
-	createDitherEffect() {
-		return new this._module!.NativeDitherEffect();
-	}
-
-	createEffectChain() {
-		return new this._module!.NativeEffectChain();
 	}
 
 	createMemoryAccessor(memoryType: MemoryType, buffer: Uint8Buffer, offset: number = 0) {
@@ -120,7 +119,7 @@ export class RetroPlugApplication {
 
 	setupAudio(audioContext: AudioContext | null) {
 		if (!this._module || !this._runner) {
-			throw new Error("WASM module is not initialized");
+			throw new Error('WASM module is not initialized');
 		}
 
 		const contextId = this._module.emscriptenRegisterAudioObject(audioContext);
@@ -129,7 +128,7 @@ export class RetroPlugApplication {
 
 	setupGraphics(canvasId: string) {
 		if (!this._module || !this._runner) {
-			throw new Error("WASM module is not initialized");
+			throw new Error('WASM module is not initialized');
 		}
 
 		this._runner.setupGraphics(canvasId);
@@ -138,7 +137,7 @@ export class RetroPlugApplication {
 
 	destroyGraphics() {
 		if (!this._module || !this._runner) {
-			throw new Error("WASM module is not initialized");
+			throw new Error('WASM module is not initialized');
 		}
 
 		this._runner.stop();

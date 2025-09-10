@@ -43,9 +43,14 @@ namespace rp::ProjectSerializer {
 		const entt::id_type type = (entt::id_type)yyjson_get_uint(yyjson_obj_get(ctx.componentData, "type"));
 		if (entt::type_hash<Component>::value() == type) {
 			yyjson_val* data = yyjson_obj_get(ctx.componentData, "data");
-			Component comp;
-			JsonUtil::read(comp, data);
-			registry.emplace_or_replace<Component>(entity, std::move(comp));
+
+			auto result = JsonUtil::read<Component>(data);
+			if (!result.has_value()) {
+				spdlog::error("Failed to deserialize component data");
+				return false;
+			}
+
+			registry.emplace_or_replace<Component>(entity, std::move(result.value()));
 			return true;
 		}
 
@@ -67,5 +72,5 @@ namespace rp::ProjectSerializer {
 
 	void serialize(const entt::registry& registry, std::string& target);
 
-	void deserialize(entt::registry& registry, std::string_view source);
+	bool deserialize(entt::registry& registry, std::string_view source);
 }

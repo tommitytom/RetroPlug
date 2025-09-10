@@ -1,7 +1,12 @@
-import type { MainModule, NativeGameboyModel, NativeRetroPlugProject } from "../native/RetroPlug";
-import { convertAccessType, convertMemoryType, fromUint8Array, type SystemId } from "../utils/NativeUtil";
-import { LsdjController } from "./Lsdj";
-import { AccessType, MemoryType } from "./System";
+import type {
+	MainModule,
+	NativeGameboyModel,
+	NativeRetroPlugProject,
+	NativeSystemLoadEntry,
+} from '../native/RetroPlug';
+import { convertAccessType, convertMemoryType, type SystemId } from '../utils/NativeUtil';
+import { LsdjController } from './Lsdj';
+import { AccessType, MemoryType } from './System';
 
 interface SystemLoadComponent {
 	entries: Record<string, { path?: string; data?: Uint8Array }>;
@@ -15,18 +20,15 @@ enum GameboyModel {
 	//Sgb2,
 	CgbC,
 	CgbE,
-	Agb
-};
+	Agb,
+}
 
 interface SameBoyComponent {
 	model?: GameboyModel;
 	fastBoot?: boolean;
 }
 
-export function convertGameBoyModel(
-	module: MainModule,
-	type: GameboyModel,
-): NativeGameboyModel {
+export function convertGameBoyModel(module: MainModule, type: GameboyModel): NativeGameboyModel {
 	switch (type) {
 		case GameboyModel.Auto:
 			return module.NativeGameboyModel.Auto;
@@ -82,7 +84,7 @@ export class Project {
 	clear(): void {
 		//this._project.clear();
 	}
-/*
+	/*
 	getNativeSystemById(id: SystemId) {
 		const system = this._project.getSystem(id);
 		if (!system) throw new Error(`System not found at id ${id}`);
@@ -115,7 +117,11 @@ export class Project {
 	}
 
 	getSystemMemory(system: SystemId, memoryType: MemoryType, accessType: AccessType) {
-		return this._project.getSystemMemory(system, convertMemoryType(this._module, memoryType), convertAccessType(this._module, accessType));
+		return this._project.getSystemMemory(
+			system,
+			convertMemoryType(this._module, memoryType),
+			convertAccessType(this._module, accessType),
+		);
 	}
 
 	getSystemIds(): SystemId[] {
@@ -147,19 +153,23 @@ export class Project {
 	addSystem(load: SystemLoadComponent, sameboy?: SameBoyComponent) {
 		sameboy = sameboy || {};
 		const nativeLoad = new this._module.NativeSystemLoadComponent();
+		const nativeEntries: NativeSystemLoadEntry[] = [];
 
 		for (const entry in load.entries) {
-			const { path, data } = load.entries[entry];
-			const systemEntry = new this._module!.NativeSystemLoadEntry();
-			if (path) systemEntry.path = path;
-			if (data) systemEntry.setData(fromUint8Array(this._module, data));
-			nativeLoad.entries.set(entry, systemEntry);
+			const { path } = load.entries[entry];
+			const nativeEntry = new this._module!.NativeSystemLoadEntry();
+			if (path) nativeEntry.path = path;
+			nativeLoad.entries.set(entry, nativeEntry);
+			nativeEntries.push(nativeEntry);
 		}
 
 		const e = this._project.addSystem(nativeLoad, {
 			model: convertGameBoyModel(this._module, sameboy.model || GameboyModel.Auto),
-			fastBoot: sameboy.fastBoot || true
+			fastBoot: sameboy.fastBoot || true,
 		});
+
+		for (const nativeEntry of nativeEntries) nativeEntry.delete();
+		nativeLoad.delete();
 
 		return e;
 	}
@@ -170,6 +180,10 @@ export class Project {
 
 	clearSystems(): void {
 		this._project.clearSystems();
+	}
+
+	loadFromFile(path: string): boolean {
+		return this._project.loadFromFile(path);
 	}
 
 	resetSystem(system: SystemId, remote: boolean = false): boolean {

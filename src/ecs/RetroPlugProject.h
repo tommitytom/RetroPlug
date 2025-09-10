@@ -30,6 +30,10 @@ namespace rp {
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
 		~RetroPlugProject();
 
+		void loadConfigs();
+
+		bool loadFromFile(const std::string& path);
+
 		template <typename T>
 		entt::entity addSystem(const SystemLoadComponent& config, const T& component) {
 			//assert(fw::Replicator::isReplicating<T>(fw::Replicator::getContext(_registry)));
