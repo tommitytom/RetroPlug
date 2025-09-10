@@ -27,6 +27,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0-rc.0",
     "@sentry/react": "^10.11.0",
+    "@sentry/vite-plugin": "^4.3.0",
     "@sentry/wasm": "^10.11.0",
     "comlink": "^4.4.2",
     "hex-editor-react": "^0.1.0",
