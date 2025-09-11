@@ -15,15 +15,19 @@ namespace rp {
 		f32 zoom = 3.0f;
 	};
 
+	struct ProjectPathContext {
+		std::filesystem::path projectPath = "";
+		std::filesystem::path projectRoot = "";
+
+		std::filesystem::path mountPath = "";
+		std::filesystem::path tempPath = mountPath / "temp";
+	};
+
 	struct RetroPlugProjectContext {
 		fw::EventNode& eventNode;
 		uint32 version = 0;
 		std::vector<std::unique_ptr<SystemHookBase>> systemHooks;
 		std::vector<std::unique_ptr<SystemHookBase>> serviceHooks;
-
-		std::filesystem::path mountPath = "./";
-		std::filesystem::path dataPath = mountPath / "data";
-		std::filesystem::path tempPath = mountPath / "temp";
 
 		template <typename T>
 		void addSystemHook() {

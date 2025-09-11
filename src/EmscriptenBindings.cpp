@@ -212,6 +212,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
 			return project.loadFromFile(path);
 		})
+		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> bool {
+			PathVector fsPaths;
+			for (const auto& path : paths) {
+				fsPaths.push_back(std::filesystem::path(path));
+			}
+
+			return project.loadFromPaths(fsPaths);
+		})
 		.function("serialize", +[](RetroPlugProject& project, fw::Uint8Buffer& archive, const std::string& rootPath) {
 			project.serialize(archive, rootPath);
 		})
@@ -225,6 +233,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			return project.deserializeFromString(str, rootPath);
 		})
 		.function("getSystemIds", &RetroPlugProject::getSystemIds)
+		.function("getMountPath", +[](RetroPlugProject& project) -> std::string {
+			return project.getMountPath().string();
+		})
 		.property("systemCount", &RetroPlugProject::getSystemCount)
 		.property("version", &RetroPlugProject::getVersion)
 	;

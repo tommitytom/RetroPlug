@@ -183,7 +183,22 @@ export class Project {
 	}
 
 	loadFromFile(path: string): boolean {
-		return this._project.loadFromFile(path);
+		const mountPath = this._project.getMountPath();
+		return this._project.loadFromFile(mountPath + path);
+	}
+
+	loadFromPaths(paths: string[]): boolean {
+		const mountPath = this._project.getMountPath();
+		const pathVec = new this._module.StringVector();
+
+		for (const path of paths) {
+			pathVec.push_back(mountPath + path);
+		}
+
+		const valid = this._project.loadFromPaths(pathVec);
+		pathVec.delete();
+
+		return valid;
 	}
 
 	resetSystem(system: SystemId, remote: boolean = false): boolean {

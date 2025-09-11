@@ -49,7 +49,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
-	console.log(kit);
+	//console.log(kit);
 
 	// Helper function to get color classes based on kit type
 	const getKitTypeColorClasses = (kitType: KitType): string => {

@@ -55,6 +55,10 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 			addKitEffect(kitKey, newEffect);
 		}
 
+		if (!isExpanded) {
+			onToggle(true);
+		}
+
 		onChange();
 	};
 
@@ -63,7 +67,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 			event.preventDefault();
 			event.stopPropagation();
 
-			const menuItems = ALL_EFFECTS.map(effect => {
+			const menuItems = ALL_EFFECTS.map((effect) => {
 				return {
 					id: effect.type,
 					label: effect.name,
@@ -86,7 +90,13 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 				onClick={() => onToggle()}
 			>
 				<div className="flex items-center">
-					<div className="mr-2 text-xs text-white">{isExpanded ? '▼' : '▶'}</div>
+					<div className="mr-2 flex h-3 w-3 items-center justify-center">
+						{isExpanded ? (
+							<div className="h-0 w-0 border-t-6 border-r-4 border-l-4 border-t-white border-r-transparent border-l-transparent" />
+						) : (
+							<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
+						)}
+					</div>
 					<span className="font-medium text-white">Effects</span>
 				</div>
 				<button

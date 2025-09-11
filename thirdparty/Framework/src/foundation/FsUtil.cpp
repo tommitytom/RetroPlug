@@ -97,6 +97,12 @@ size_t FsUtil::readFile(const std::string& path, Uint8Buffer& target) {
 
 std::vector<std::byte> FsUtil::readFile(const fs::path& path) {
 	std::vector<std::byte> target;
+
+	if (path.empty()) {
+		spdlog::warn("Failed to open file: Path is empty");
+		return target;
+	}
+
 	std::ifstream f(path.lexically_normal(), std::ios::binary);
 
 	//es_assert(f.is_open());

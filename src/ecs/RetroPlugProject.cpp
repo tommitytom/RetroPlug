@@ -12,34 +12,12 @@
 #include "ecs/RetroPlugProjectContext.h"
 
 namespace rp {
-	bool resolveEntries(const RetroPlugProjectContext& ctx, SystemLoadComponent& load, const std::filesystem::path& rootPath) {
-		bool error = false;
-
-		for (auto& [type, entry] : load.entries) {
-			if (entry.data().empty()) {
-				std::filesystem::path path(entry.path);
-
-				if (!path.is_absolute()) {
-					path = (rootPath / path).lexically_normal();
-				} else {
-					path = path.lexically_normal();
-				}
-
-				if (!fw::FsUtil::readFile(path.string(), entry.data())) {
-					error = true;
-					spdlog::error("Failed to read file: {}", path.string());
-				}
-			}
-		}
-
-		return error;
-	}
-
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
 		RetroPlugProjectContext& projectCtx = _registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		projectCtx.addSystemHook<SameboyHooks>();
 		projectCtx.addServiceHook<LsdjHooks>();
 
+		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
 
 #ifdef FW_PLATFORM_WEB
@@ -95,7 +73,6 @@ namespace rp {
 
 				VersionedMemory* memory = stateComp->find(ev.type);
 				if (!memory) {
-					spdlog::warn("Received FetchMemoryResponse for entity {} for unsubscribed memory type {}", ev.entity, (int)ev.type);
 					return;
 				}
 
@@ -128,87 +105,38 @@ namespace rp {
 	}
 
 	bool RetroPlugProject::loadFromFile(std::filesystem::path path) {
-		spdlog::info("Loading project from file: {}", path.string());
-
-		const RetroPlugProjectContext& ctx = getContext();
-		if (!ctx.mountPath.empty()) {
-			path = ctx.mountPath / path;
-		}
-
-		std::string data = fw::FsUtil::readTextFile(path);
-		if (data.empty()) {
-			spdlog::error("Failed to read project file: {}", path.string());
-			return false;
-		}
-
-		_projectPath = path;
-
-		return deserializeFromString(data, _projectPath.parent_path());
+		getContext().version++;
+		return ProjectBuilder::loadFromFile(_registry, path);
 	}
 
-	int32 indexOfExtension(const PathVector& paths, const std::string& ext) {
-		for (size_t i = 0; i < paths.size(); ++i) {
-			if (paths[i].extension() == ext) {
-				return (int32)i;
-			}
-		}
-		return -1;
-	}
-
-	bool RetroPlugProject::loadFromPaths(const PathVector& paths) {
-		spdlog::info("Loading project from the following paths:");
-		for (const auto& path : paths) { spdlog::info(" - {}", path.string()); }
-
-		const int32 projIndex = indexOfExtension(paths, ".rplg");
-		if (projIndex != -1) {
-			// Just load the project
-			return loadFromFile(paths[0]);
-		}
-
-		const RetroPlugProjectContext& ctx = getContext();
-		NamedEntryVector entries;
-
-		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onLoadRequest(_registry, paths, entries); });
-		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onLoadRequest(_registry, paths, entries); });
-
-		if (entries.empty()) {
-			spdlog::error("Unable to load: Unrecognised path");
-			return false;
-		}
-
-		return true;
+	bool RetroPlugProject::loadFromPaths(PathVector paths) {
+		getContext().version++;
+		return ProjectBuilder::loadFromPaths(_registry, paths);
 	}
 
 	bool RetroPlugProject::saveToFile(std::filesystem::path path) {
-		const RetroPlugProjectContext& ctx = getContext();
+		getContext().version++;
+		return ProjectBuilder::saveToFile(_registry, path);
+	}
 
-		if (!ctx.mountPath.empty()) {
-			path = ctx.mountPath / path;
-		}
+	bool RetroPlugProject::addSystem(SystemLoadComponent&& config) {
+		getContext().version++;
+		entt::entity entity = fw::Replicator::spawn(_registry);
+		return ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{});
+	}
 
-		_projectPath = path;
-		_projectRoot = _projectPath.parent_path();
+	void RetroPlugProject::removeSystem(entt::entity entity) {
+		RetroPlugProjectContext& ctx = getContext();
 
-		// Ensure all entries are relative to the new project root!
-		for (const auto& [e, c] : _registry.view<SystemLoadComponent>().each()) {
-			for (auto& [k, v] : c.entries) {
-				std::filesystem::path entryPath(v.path);
-				if (entryPath.is_relative()) {
-					v.path = (_projectRoot / entryPath).lexically_normal().string();
-				}
-			}
-		}
+		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
+		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 
-		std::string data = serializeToString(_projectRoot);
-		if (data.empty()) {
-			spdlog::error("Failed to serialize project");
-			return false;
-		}
-		if (!fw::FsUtil::writeTextFile(path, data)) {
-			spdlog::error("Failed to write project file: {}", path.string());
-			return false;
-		}
-		return true;
+		fw::Replicator::destroy(_registry, entity);
+		ctx.version++;
+	}
+
+	bool RetroPlugProject::resetSystem(entt::entity system, bool remote) {
+		return _eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system });
 	}
 
 	uint32 RetroPlugProject::getMemoryVersion(entt::entity entity, MemoryType type) const {
@@ -227,10 +155,6 @@ namespace rp {
 		return 0;
 	}
 
-	bool RetroPlugProject::resetSystem(entt::entity system, bool remote) {
-		return _eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system });
-	}
-
 	MemoryAccessor RetroPlugProject::getSystemMemory(entt::entity entity, MemoryType type, AccessType access) {
 		if (!_registry.valid(entity)) {
 			return MemoryAccessor();
@@ -245,17 +169,6 @@ namespace rp {
 		}
 
 		return MemoryAccessor();
-	}
-
-	std::vector<uint32> RetroPlugProject::getSystemIds() const {
-		std::vector<uint32> ids;
-		auto view = _registry.view<SystemComponent>();
-		ids.reserve(view.size());
-		for (entt::entity entity : view) {
-			ids.push_back((uint32)entity);
-		}
-
-		return ids;
 	}
 
 	void RetroPlugProject::subscribeToMemory(entt::entity entity, MemoryType type) {
@@ -294,6 +207,17 @@ namespace rp {
 		spdlog::debug("Unsubscribed from memory type {} for entity {}", (int)type, entity);
 	}
 
+	std::vector<uint32> RetroPlugProject::getSystemIds() const {
+		std::vector<uint32> ids;
+		auto view = _registry.view<SystemComponent>();
+		ids.reserve(view.size());
+		for (entt::entity entity : view) {
+			ids.push_back((uint32)entity);
+		}
+
+		return ids;
+	}
+
 	void RetroPlugProject::onUpdate(f32 deltaTime) {
 		_totalTime += deltaTime;
 
@@ -330,35 +254,13 @@ namespace rp {
 		}
 	}
 
-	void RetroPlugProject::handleLoad(entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
-		RetroPlugProjectContext& ctx = getContext();
-
-		resolveEntries(ctx, load, _projectRoot);
-		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onBeforeLoad(_registry, entity, load); });
-		eachHook(systemType, ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onLoad(_registry, entity, load); });
-		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onAfterLoad(_registry, entity, load); });
-
-		ctx.version++;
-	}
-
-	void RetroPlugProject::removeSystem(entt::entity entity) {
-		RetroPlugProjectContext& ctx = getContext();
-
-		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
-		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
-
-		fw::Replicator::destroy(_registry, entity);
-		ctx.version++;
-	}
-
 	void RetroPlugProject::reset() {
 		for (const auto& [e, system] : _registry.view<SystemComponent>().each()) {
 			removeSystem(e);
 		}
 
 		_registry.ctx().at<ProjectConfig>() = ProjectConfig();
-		_projectPath.clear();
-		_projectRoot.clear();
+		_registry.ctx().at<ProjectPathContext>() = ProjectPathContext();
 	}
 
 	void RetroPlugProject::serialize(fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) const {
@@ -368,31 +270,18 @@ namespace rp {
 		archive.write((const uint8*)target.data(), target.size());
 	}
 
-	std::string RetroPlugProject::serializeToString(const std::filesystem::path& rootPath) const {
+	std::string RetroPlugProject::serializeJson(const std::filesystem::path& rootPath) const {
 		std::string target;
 		ProjectSerializer::serialize(_registry, target);
 		return target;
 	}
 
-	bool RetroPlugProject::deserializeFromString(std::string_view str, const std::filesystem::path& rootPath) {
-		_projectRoot = rootPath;
-
-		RetroPlugProjectContext& ctx = getContext();
-		if (!ProjectSerializer::deserialize(_registry, str)) {
-			return false;
-		}
-
-		for (const auto& [e, system, load] : _registry.view<SystemComponent, SystemLoadComponent>().each()) {
-			handleLoad(e, load, system.systemType);
-		}
-
-		spdlog::info("Project loaded");
-
-		return true;
+	bool RetroPlugProject::deserializeJson(std::string_view str, const std::filesystem::path& rootPath) {
+		return ProjectBuilder::deserializeJson(_registry, str, rootPath);
 	}
 
 	bool RetroPlugProject::deserialize(const fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) {
 		std::string_view source((const char*)archive.data(), archive.size());
-		return deserializeFromString(source, rootPath);
+		return deserializeJson(source, rootPath);
 	}
 }

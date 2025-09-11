@@ -4,6 +4,7 @@ local m = {
 	r8brain = dofile("r8brain.lua"),
 	minizip = dofile("minizip.lua"),
 	reflcpp = dofile("refl-cpp.lua"),
+	enkits = dofile("enkits.lua"),
 }
 
 function m.allProjects()
@@ -12,6 +13,7 @@ function m.allProjects()
 	m.r8brain.project()
 	m.minizip.project()
 	m.reflcpp.project()
+	m.enkits.project()
 end
 
 return m

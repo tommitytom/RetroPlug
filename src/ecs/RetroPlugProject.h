@@ -14,6 +14,7 @@
 #include "foundation/FsUtil.h"
 #include "ecs/RetroPlugProjectContext.h"
 #include "ecs/LsdjController.h"
+#include "ecs/ProjectBuilder.h"
 
 namespace rp {
 	class RetroPlugProject {
@@ -25,9 +26,6 @@ namespace rp {
 		bool _doPing = true;
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPingTime;
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPongTime;
-
-		std::filesystem::path _projectRoot;
-		std::filesystem::path _projectPath;
 
 		ProjectConfig _config;
 
@@ -41,23 +39,16 @@ namespace rp {
 
 		bool saveToFile(std::filesystem::path path);
 
-		bool loadFromPaths(const std::vector<std::filesystem::path>& paths);
+		bool loadFromPaths(PathVector paths);
 
 		template <typename T>
-		entt::entity addSystem(const SystemLoadComponent& config, const T& component) {
-			//assert(fw::Replicator::isReplicating<T>(fw::Replicator::getContext(_registry)));
-
-			entt::id_type systemType = entt::type_id<T>().index();
+		bool addSystem(SystemLoadComponent&& config, const T& component) {
+			getContext().version++;
 			entt::entity entity = fw::Replicator::spawn(_registry);
-
-			SystemLoadComponent& load = _registry.emplace<SystemLoadComponent>(entity, config);
-			_registry.emplace<T>(entity, component);
-			_registry.emplace<SystemComponent>(entity, systemType);
-
-			handleLoad(entity, load, systemType);
-
-			return entity;
+			return ProjectBuilder::addSystemWithConfig<T>(_registry, entity, std::forward<SystemLoadComponent>(config), component);
 		}
+
+		bool addSystem(SystemLoadComponent&& config);
 
 		bool resetSystem(entt::entity system, bool remote);
 
@@ -81,11 +72,11 @@ namespace rp {
 
 		void serialize(fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) const;
 
-		std::string serializeToString(const std::filesystem::path& rootPath) const;
+		std::string serializeJson(const std::filesystem::path& rootPath) const;
 
 		bool deserialize(const fw::Uint8Buffer& archive, const std::filesystem::path& rootPath);
 
-		bool deserializeFromString(std::string_view str, const std::filesystem::path& rootPath);
+		bool deserializeJson(std::string_view str, const std::filesystem::path& rootPath);
 
 		uint32 getMemoryVersion(entt::entity entity, MemoryType type) const;
 
@@ -117,8 +108,9 @@ namespace rp {
 			return LsdjController(_registry);
 		}
 
-	private:
-		void handleLoad(entt::entity entity, SystemLoadComponent& load, entt::id_type systemType);
+		const std::filesystem::path& getMountPath() const {
+			return _registry.ctx().at<ProjectPathContext>().mountPath;
+		}
 	};
 
 	using RetroPlugProjectPtr = std::shared_ptr<RetroPlugProject>;

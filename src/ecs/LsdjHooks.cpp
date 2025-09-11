@@ -6,7 +6,7 @@
 #include "ecs/EcsProjectSerializer.h"
 
 namespace rp {
-	void LsdjHooks::onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
+	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
 		filterEntries(paths, entries, ".lsdsng", "lsdsng");
 		filterEntries(paths, entries, ".lsdprj", "lsdprj");
 		filterEntries(paths, entries, ".kit", "kit");

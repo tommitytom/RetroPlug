@@ -54,52 +54,6 @@ export const FileTreePanel: React.FC = () => {
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
 		project.loadFromPaths([node.path])
-
-		console.log('Opening file:', node.path);
-
-		if (node.path.endsWith('.rplg')) {
-			project.reset();
-			project.loadFromFile(node.path);
-			focusCanvas();
-		}
-
-		let romPath: string|undefined;
-		let savPath: string|undefined;
-
-		if (node.name.endsWith('.gb')) {
-			romPath = node.path;
-			const pairedSavPath = node.path.replace(/\.gb$/i, '.sav');
-
-			if (await fileExists(pairedSavPath)) {
-				savPath = pairedSavPath;
-			}
-		} else if (node.name.endsWith('.sav')) {
-			savPath = node.path;
-			const pairedRomPath = node.path.replace(/\.sav$/i, '.gb');
-
-			if (await fileExists(pairedRomPath)) {
-				romPath = pairedRomPath;
-			}
-		}
-
-		if (!romPath) {
-			return;
-		}
-
-		const entries: Record<string, { path?: string }> = {};
-
-		entries.rom = {
-			path: romPath,
-		};
-
-		if (savPath) {
-			entries.sram = {
-				path: savPath,
-			};
-		}
-
-		project.reset();
-		project.addSystem({ entries });
 		focusCanvas();
 	}, [project]);
 

@@ -10,7 +10,7 @@ namespace rp {
 	using PathVector = std::vector<std::filesystem::path>;
 	using NamedEntryVector = std::vector<std::pair<std::string, std::filesystem::path>>;
 
-	void filterEntries(const PathVector& paths, NamedEntryVector& out, const std::string& ext, const std::string& type) {
+	inline void filterEntries(const PathVector& paths, NamedEntryVector& out, const std::string& ext, const std::string& type) {
 		for (const std::filesystem::path& path : paths) {
 			if (path.extension() == ext) {
 				out.push_back({ type, path });
@@ -35,7 +35,7 @@ namespace rp {
 	public:
 		SystemHookBase(entt::id_type systemType) : HookBase(systemType) {}
 
-		virtual void onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {}
+		virtual void onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {}
 
 		virtual void onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load) const {}
 

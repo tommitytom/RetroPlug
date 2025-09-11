@@ -290,7 +290,7 @@ namespace rp {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);
 
-			_project.loadFromFile("C:\\retro\\LSDj-v5.0.3.rplg");
+			_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 			/*
 			entt::entity entity = _project.addSystem(SystemLoadComponent{
 				.entries = {

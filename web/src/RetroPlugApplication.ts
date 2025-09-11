@@ -61,7 +61,7 @@ export class RetroPlugApplication {
 		this._runner = new this._module.WebApplicationRunner();
 		this._runner.setupFileSystem();
 		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
-		this._nativeProject = this._nativeApp!.getProject()!;
+		this._nativeProject = this._nativeApp!.getProject();
 
 		return new Promise<void>((resolve) => {
 			const interval = setInterval(() => {

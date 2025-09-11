@@ -6,7 +6,7 @@
 
 namespace rp {
 	class SameboyHooks: public SystemHook<SameBoyComponent> {
-		void onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const override;
+		void onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const override;
 
 		void onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const override;
 

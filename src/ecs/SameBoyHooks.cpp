@@ -7,7 +7,7 @@
 #include "ecs/EcsProjectSerializer.h"
 
 namespace rp {
-	void SameboyHooks::onLoadRequest(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
+	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
 		filterEntries(paths, entries, ".gb", "rom");
 		filterEntries(paths, entries, ".gbc", "rom");
 		filterEntries(paths, entries, ".sav", "sram");

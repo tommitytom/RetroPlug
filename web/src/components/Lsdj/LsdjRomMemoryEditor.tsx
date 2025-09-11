@@ -28,7 +28,7 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 	const [rom, setRom] = useState<ILsdjRom | null>(null);
 
 	useEffect(() => {
-		if (!project || !rom) return;
+		if (!project) return;
 
 		try {
 			const lsdj = project.lsdj;
@@ -55,7 +55,7 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 		} catch (ex) {
 			console.error('Failed to inspect ROM', ex);
 		}
-	}, [project, system, rom]);
+	}, [project, system]);
 
 	return rom ? (
 		<LsdjStoreProvider lsdj={project.lsdj} system={system} initialRom={rom}>

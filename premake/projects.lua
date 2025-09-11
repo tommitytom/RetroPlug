@@ -224,6 +224,7 @@ function m.RetroPlug.include()
 	m.Core.include()
 	m.SameBoyPlug.include()
 	dep.liblsdj.include()
+	dep.enkits.include()
 	--dep.minizip.include()
 
 	includedirs {
@@ -255,6 +256,7 @@ function m.RetroPlug.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()
 	dep.r8brain.link()
+	dep.enkits.link()
 	--dep.minizip.link()
 
 	filter { "platforms:Emscripten" }
