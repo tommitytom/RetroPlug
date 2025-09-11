@@ -133,15 +133,15 @@ export class Project {
 
 		return out;
 	}
-
+/*
 	serialize(rootPath: string): string {
-		return this._project.serializeToString(rootPath);
+		return this._project.serializeJson(rootPath);
 	}
 
 	deserialize(data: string, rootPath: string) {
-		return this._project.deserializeFromString(data, rootPath);
+		return this._project.deserializeJson(data, rootPath);
 	}
-
+*/
 	subscribeToMemory(system: SystemId, memoryType: MemoryType) {
 		this._project.subscribeToMemory(system, convertMemoryType(this._module, memoryType));
 	}

@@ -21,7 +21,7 @@ namespace rp {
 		_registry.ctx().emplace<ProjectConfig>();
 
 #ifdef FW_PLATFORM_WEB
-		projectCtx.mountPath = "/mount";
+		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
 #endif
 
 		fw::Replicator::subscribe(_registry, _eventNode, targetNodeId, true, false);

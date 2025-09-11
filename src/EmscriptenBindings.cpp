@@ -118,8 +118,8 @@ val AudioBuffer_getReadPointer(fw::AudioBuffer& buffer, uint32 channel) {
 	return val(typed_memory_view(buffer.getSampleCount(), buffer.getReadPointer(channel)));
 }
 
-entt::entity RetroPlugProject_addSystem(RetroPlugProject& project, const SystemLoadComponent& load, const SameBoyComponent& comp) {
-	return project.addSystem(load, comp);
+bool RetroPlugProject_addSystem(RetroPlugProject& project, SystemLoadComponent&& load, const SameBoyComponent& comp) {
+	return project.addSystem(std::move(load), comp);
 }
 
 fw::Uint8Buffer SystemLoadEntry_data_get(SystemLoadEntry& entry) {
@@ -183,14 +183,26 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<RetroPlugProject>("NativeRetroPlugProject")
-		.function("addSystem", +[](RetroPlugProject& project, const SystemLoadComponent& config, const SameBoyComponent& component) -> uint32 {
-			return (uint32)project.addSystem(config, component);
+		.function("addSystem", +[](RetroPlugProject& project, SystemLoadComponent&& config, const SameBoyComponent& component) -> bool {
+			return project.addSystem(std::move(config), component);
 		})
 		.function("removeSystem", +[](RetroPlugProject& project, uint32 systemId) {
 			project.removeSystem(entt::entity(systemId));
 		})
 		.function("resetSystem", +[](RetroPlugProject& project, uint32 systemId, bool remote) {
 			return project.resetSystem(entt::entity(systemId), remote);
+		})
+		.function("loadConfigs", &RetroPlugProject::loadConfigs)
+		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
+			return project.loadFromFile(path);
+		})
+		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> bool {
+			PathVector fsPaths;
+			for (const auto& path : paths) {
+				fsPaths.push_back(std::filesystem::path(path));
+			}
+
+			return project.loadFromPaths(fsPaths);
 		})
 		.function("reset", +[](RetroPlugProject& project) {
 			project.reset();
@@ -208,34 +220,22 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			project.unsubscribeFromMemory(entt::entity(systemId), type);
 		})
 		.function("getLsdjController", &RetroPlugProject::getLsdjController)
-		.function("loadConfigs", &RetroPlugProject::loadConfigs)
-		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
-			return project.loadFromFile(path);
-		})
-		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> bool {
-			PathVector fsPaths;
-			for (const auto& path : paths) {
-				fsPaths.push_back(std::filesystem::path(path));
-			}
-
-			return project.loadFromPaths(fsPaths);
-		})
 		.function("serialize", +[](RetroPlugProject& project, fw::Uint8Buffer& archive, const std::string& rootPath) {
 			project.serialize(archive, rootPath);
 		})
-		.function("serializeToString", +[](RetroPlugProject& project, const std::string& rootPath) {
-			return project.serializeToString(rootPath);
+		.function("serializeJson", +[](RetroPlugProject& project, const std::string& rootPath) {
+			return project.serializeJson(rootPath);
 		})
 		.function("deserialize", +[](RetroPlugProject& project, const fw::Uint8Buffer& archive, const std::string& rootPath) {
 			return project.deserialize(archive, rootPath);
 		})
-		.function("deserializeFromString", +[](RetroPlugProject& project, const std::string& str, const std::string& rootPath) {
-			return project.deserializeFromString(str, rootPath);
+		.function("deserializeJson", +[](RetroPlugProject& project, const std::string& str, const std::string& rootPath) {
+			return project.deserializeJson(str, rootPath);
 		})
-		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.function("getMountPath", +[](RetroPlugProject& project) -> std::string {
 			return project.getMountPath().string();
 		})
+		.function("getSystemIds", &RetroPlugProject::getSystemIds)
 		.property("systemCount", &RetroPlugProject::getSystemCount)
 		.property("version", &RetroPlugProject::getVersion)
 	;
