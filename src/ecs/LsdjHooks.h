@@ -46,7 +46,7 @@ namespace rp {
 						.path = path
 					};
 
-					fw::FsUtil::readFile(paths[0], sampleComp.data());
+					//fw::FsUtil::readFile(paths[0], sampleComp.data());
 
 					samples.push_back(std::move(sampleComp));
 				}

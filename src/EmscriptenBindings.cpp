@@ -294,13 +294,22 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("setKit", +[](LsdjController& controller, SystemId system, uint32 kitId, const std::string& data, std::vector<fw::Uint8Buffer>&& samples) -> bool {
 			rfl::Result<LsdjKitComponent> result = rfl::json::read<LsdjKitComponent>(data);
 			if (!result.has_value()) {
-				spdlog::error(result.error().what());
+				spdlog::error("Failed to update kit: {}", result.error().what());
 				return false;
 			}
 
 			assert(result.has_value() && result.value().samples.has_value() && result.value().samples.value().size() == samples.size());
 
 			return controller.setKitComponent((entt::entity)system, kitId, std::move(result.value()), std::forward<std::vector<fw::Uint8Buffer>>(samples));
+		})
+		.function("updateKit", +[](LsdjController& controller, SystemId system, uint32 kitId, const std::string& data) -> bool {
+			rfl::Result<LsdjKitComponent> result = rfl::json::read<LsdjKitComponent>(data);
+			if (!result.has_value()) {
+				spdlog::error("Failed to update kit: {}", result.error().what());
+				return false;
+			}
+
+			return controller.setKitComponent((entt::entity)system, kitId, std::move(result.value()));
 		})
 		.function("getKitsString", +[](LsdjController& controller, SystemId system) -> std::string {
 			LsdjComponent* comp = controller.getComponent((entt::entity)system);

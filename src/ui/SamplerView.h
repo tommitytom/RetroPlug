@@ -26,7 +26,7 @@ namespace rp {
 		SamplerViewState _samplerState;
 		fw::WaveViewPtr _waveView;
 
-		std::vector<KitUtil::SampleData> _sampleBuffers;
+		std::vector<SampleData> _sampleBuffers;
 
 		LsdjCanvasViewPtr _canvasView;
 		lsdj::Ui _ui;

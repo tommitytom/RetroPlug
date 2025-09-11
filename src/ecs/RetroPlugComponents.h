@@ -11,6 +11,7 @@
 
 #include "lsdj/Ram.h"
 #include "ecs/Effects.h"
+#include "ecs/SampleCache.h"
 
 namespace rp {
 	struct SystemIoEvent {
@@ -61,7 +62,7 @@ namespace rp {
 		uint32 length = 0;
 		std::vector<LsdjEffect> effects;
 
-		rfl::Skip<fw::Uint8Buffer> data; // Populated on first load
+		rfl::Skip<fw::Float32Buffer> data; // Populated on first load
 	};
 
 	struct LsdjKitComponent {
@@ -76,8 +77,13 @@ namespace rp {
 
 	struct LsdjComponent {
 		rfl::Skip<semver::version> version;
-		rfl::Skip<std::optional<lsdj::MemoryOffsets>> ramOffsets;
 		std::vector<LsdjKitComponent> kits;
+	};
+
+	struct LsdjStateComponent {
+		std::vector<size_t> dirtyKits;
+		std::optional<lsdj::MemoryOffsets> ramOffsets;
+		std::unique_ptr<SampleCache> sampleCache;
 	};
 
 	using ReplicatedTypes = entt::type_list<

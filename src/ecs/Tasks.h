@@ -2,10 +2,11 @@
 
 #include <entt/entity/registry.hpp>
 #include <TaskScheduler.h>
-
-#include "ecs/ProjectBuilder.h"
+#include "ecs/RetroPlugComponents.h"
 
 namespace rp {
+	class SampleCache;
+
 	struct LoadSystemTask : enki::ITaskSet {
 		entt::id_type systemType;
 		entt::registry registry;
@@ -14,10 +15,7 @@ namespace rp {
 		std::atomic<bool> completed = false;
 		bool success = false;
 
-		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override {
-			success = ProjectBuilder::handleLoad(registry, entity, registry.get<SystemLoadComponent>(entity), systemType);
-			completed = true;
-		}
+		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
 	};
 
 	struct LoadProjectTask : enki::ITaskSet {
@@ -27,9 +25,17 @@ namespace rp {
 		std::atomic<bool> completed = false;
 		bool success = false;
 
-		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override {
-			success = ProjectBuilder::loadFromPaths(registry, paths);
-			completed = true;
-		}
+		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
+	};
+
+	struct PatchKitTask : enki::ITaskSet {
+		fw::Uint8Buffer kitData;
+		LsdjKitComponent kitState;
+		SampleCache* sampleCache = nullptr;
+
+		std::atomic<bool> completed = false;
+		bool success = false;
+
+		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
 	};
 }

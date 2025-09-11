@@ -31,6 +31,10 @@ namespace rp {
 			registry.emplace<LsdjComponent>(entity);
 		}
 
+		if (!registry.all_of<LsdjStateComponent>(entity)) {
+			registry.emplace<LsdjStateComponent>(entity, LsdjStateComponent{ .sampleCache = std::make_unique<SampleCache>() });
+		}		
+
 		fw::Uint8Buffer* sram = load.findData("sram");
 		if (!sram) {
 			// LSDj has to initialize the SRAM if no save data is available when it starts
@@ -43,6 +47,7 @@ namespace rp {
 
 	void LsdjHooks::onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {
 		RegistryUtil::moveComponent<LsdjComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+		RegistryUtil::moveComponent<LsdjStateComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
 	}
 
 	fw::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {

@@ -17,73 +17,6 @@
 
 using namespace rp;
 
-KitUtil::SampleData KitUtil::loadSample(std::string_view path) {
-	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
-
-	ma_decoder decoder;
-	ma_result result = ma_decoder_init_file(path.data(), &config, &decoder);
-
-	if (result != MA_SUCCESS) {
-		return KitUtil::SampleData{};
-	}
-
-	size_t blockSize = 24000;
-	size_t offset = 0;
-
-	KitUtil::SampleData sample;
-	sample.sampleRate = decoder.outputSampleRate;
-	sample.buffer = std::make_shared<fw::Float32Buffer>();
-
-	while (true) {
-		sample.buffer->resize(sample.buffer->size() + blockSize);
-
-		ma_uint64 framesRead;
-		ma_decoder_read_pcm_frames(&decoder, sample.buffer->data() + offset, blockSize, &framesRead);
-		offset += (size_t)framesRead;
-
-		if (framesRead < blockSize) {
-			sample.buffer->resize(offset);
-			break;
-		}
-	}
-
-	return sample;
-}
-
-KitUtil::SampleData KitUtil::loadSample(const fw::Uint8Buffer& buffer) {
-	assert(!buffer.empty());
-	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 0);
-
-	ma_decoder decoder;
-	ma_result result = ma_decoder_init_memory(buffer.data(), buffer.size(), &config, &decoder);
-
-	if (result != MA_SUCCESS) {
-		return KitUtil::SampleData{};
-	}
-
-	size_t blockSize = 24000;
-	size_t offset = 0;
-
-	KitUtil::SampleData sample;
-	sample.sampleRate = decoder.outputSampleRate;
-	sample.buffer = std::make_shared<fw::Float32Buffer>();
-
-	while (true) {
-		sample.buffer->resize(sample.buffer->size() + blockSize);
-
-		ma_uint64 framesRead;
-		ma_decoder_read_pcm_frames(&decoder, sample.buffer->data() + offset, blockSize, &framesRead);
-		offset += (size_t)framesRead;
-
-		if (framesRead < blockSize) {
-			sample.buffer->resize(offset);
-			break;
-		}
-	}
-
-	return sample;
-}
-
 struct BiquadCoeffs {
 	f32 b0;
 	f32 b1;
@@ -164,23 +97,22 @@ void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const
 	}
 }
 
-bool processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
 	if (!comp.samples.has_value()) return false;
 
 	for (const LsdjSampleComponent& sample : comp.samples.value()) {
-		if (sample.data().empty()) {
-			spdlog::error("Sample data is empty for sample: {}", sample.name);
-			return false;
+		SampleData* sampleData = sampleCache.getOrLoadSample(sample.path);
+		if (!sampleData) {
+			spdlog::error("Failed to load sample: {} from path: {}", sample.name, sample.path);
+			continue;
 		}
-
-		KitUtil::SampleData sampleData = KitUtil::loadSample(sample.data());
 
 		const DitherEffect* ditherEffect = nullptr;
 		if (comp.effects.has_value()) {
 			for (const LsdjEffect& effect : comp.effects.value()) {
 				effect.visit([&](auto&& eff) {
 					if constexpr (!std::is_same_v<std::decay_t<decltype(eff)>, DitherEffect>) {
-						processEffect(eff, *sampleData.buffer, (f32)sampleData.sampleRate);
+						processEffect(eff, sampleData->buffer, (f32)sampleData->sampleRate);
 					} else {
 						ditherEffect = &eff;
 					}
@@ -189,7 +121,7 @@ bool processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::str
 		}
 
 		fw::Float32Buffer resampled;
-		KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, *sampleData.buffer, resampled);
+		KitUtil::convertSamplerate((f64)sampleData->sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, sampleData->buffer, resampled);
 
 		if (ditherEffect) {
 			processEffect(*ditherEffect, resampled, (f32)KitUtil::GAMEBOY_SAMPLE_RATE);
@@ -211,9 +143,9 @@ bool processSamples(const LsdjKitComponent& comp, std::vector<std::pair<std::str
 	return true;
 }
 
-bool KitUtil::patchKit2(lsdj::Kit& kit, const LsdjKitComponent& kitState) {
+bool KitUtil::patchKit2(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState) {
 	std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
-	if (!processSamples(kitState, samples)) {
+	if (!processSamples(sampleCache, kitState, samples)) {
 		return false;
 	}
 
@@ -246,11 +178,11 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 
 		// Normalize and Apply gain
 
-		fw::Float32Buffer gainTarget(sample.buffer->size());
+		fw::Float32Buffer gainTarget(sample.buffer.size());
 
 		f32 max = 0.0f;
 		for (size_t i = 0; i < gainTarget.size(); ++i) {
-			f32 value = fabs(sample.buffer->get(i));
+			f32 value = fabs(sample.buffer.get(i));
 			if (value > max) {
 				max = value;
 			}
@@ -261,7 +193,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		f32 gainMultiplier = (f32)settings.gain;
 
 		for (size_t i = 0; i < gainTarget.size(); ++i) {
-			gainTarget.set(i, sample.buffer->get(i) * volumeGain * normalizeGain * gainMultiplier);
+			gainTarget.set(i, sample.buffer.get(i) * volumeGain * normalizeGain * gainMultiplier);
 		}
 
 		// Apply filter
@@ -398,9 +330,9 @@ void KitUtil::updateKit(SystemPtr system, LsdjServiceSettings& settings, KitInde
 		return;
 	}
 
-	std::vector<KitUtil::SampleData> sampleBuffers;
+	std::vector<SampleData> sampleBuffers;
 	for (const KitSample& sample : found->second.samples) {
-		sampleBuffers.push_back(KitUtil::loadSample(sample.path));
+		//sampleBuffers.push_back(KitUtil::loadSample(sample.path));
 	}
 
 	lsdj::Kit kit = rom.getKit(kitIdx);

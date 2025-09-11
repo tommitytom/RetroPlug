@@ -1,6 +1,7 @@
 #include "RetroPlugProject.h"
 
 #include <spdlog/spdlog.h>
+#include <TaskScheduler.h>
 
 #include "foundation/Replicator.h"
 #include "ecs/RetroPlugComponents.h"
@@ -10,6 +11,7 @@
 #include "ecs/EcsProjectSerializer.h"
 #include "core/Events.h"
 #include "ecs/RetroPlugProjectContext.h"
+#include "ecs/TaskSchedulerGlobal.h"
 
 namespace rp {
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
@@ -20,9 +22,8 @@ namespace rp {
 		_registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
-
-		_ts.Initialize(8);
-
+		_registry.ctx().emplace<enki::TaskScheduler>().Initialize(8);
+		
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
 #endif

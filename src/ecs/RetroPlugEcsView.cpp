@@ -123,7 +123,7 @@ namespace rp {
 			fsPaths.push_back(path);
 		}
 
-		_project.loadFromPaths(fsPaths);
+		//_project.loadFromPaths(fsPaths);
 
 		return true;
 	}

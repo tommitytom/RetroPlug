@@ -31,8 +31,6 @@ namespace rp {
 
 		ProjectConfig _config;
 
-		enki::TaskScheduler _ts;
-
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
 		~RetroPlugProject();
@@ -65,7 +63,7 @@ namespace rp {
 		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
 			T* ptr = task.get();
 			_registry.emplace<std::unique_ptr<T>>(entity, std::move(task));
-			_ts.AddTaskSetToPipe(ptr);
+			_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(ptr);
 		}
 
 		template <typename T>

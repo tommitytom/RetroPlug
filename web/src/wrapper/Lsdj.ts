@@ -11,15 +11,6 @@ export class LsdjController {
 
 	updateKit(system: SystemId, kitId: number, kit: ILsdjKit): void {
 		if (kit.samples) {
-			const samples = new this._module.NativeUint8BufferVector();
-			for (const sample of kit.samples) {
-				console.assert(!!sample);
-				if (sample.data) {
-					const sampleData = fromUint8Array(this._module, sample.data);
-					samples.push_back(sampleData);
-				}
-			}
-
 			const sanitized = {
 				...kit,
 				key: undefined,
@@ -38,14 +29,11 @@ export class LsdjController {
 				data: undefined
 			};
 
-			console.log(JSON.stringify(sanitized, null, 4));
+			//console.log(JSON.stringify(sanitized, null, 4));
 
-			if (!this._nativeController.setKit(system, kitId, JSON.stringify(sanitized), samples)) {
-				console.error("Failed to set kit:", JSON.stringify(sanitized, null, 4));
+			if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
+				console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));
 			}
-
-			for (let i = 0; i < samples.size(); i++) samples.get(i)?.delete();
-			samples.delete();
 		} else if (kit.data) {
 			const data = fromUint8Array(this._module, kit.data);
 			//this._nativeController.setKit(system, kitId, JSON.stringify(kit), data);

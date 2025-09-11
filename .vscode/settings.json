@@ -206,7 +206,8 @@
 		"barrier": "cpp",
 		"expected": "cpp",
 		"source_location": "cpp",
-		"strstream": "cpp"
+		"strstream": "cpp",
+		"hash_map": "cpp"
 	},
 	"Lua.runtime.version": "Lua 5.4",
 	"Lua.workspace.checkThirdParty": false

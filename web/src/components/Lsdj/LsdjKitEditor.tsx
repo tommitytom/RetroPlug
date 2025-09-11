@@ -19,7 +19,7 @@ import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 interface LsdjKitEditorProps {
 	kitKey: string;
 	isExpanded: boolean;
-	onToggle: () => void;
+	onToggle: (value?: boolean) => void;
 	onFileDropped?: (filePath: string, file?: File) => Promise<void>;
 	onError?: (error: string, operation?: string) => void;
 }
@@ -227,6 +227,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 
 		patchSystemKit(kitKey);
+
+		onToggle(true);
 	}
 
 	const handleDrop = useCallback(
@@ -300,7 +302,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				className={`hover:bg-gray-750 flex cursor-pointer items-center justify-between bg-gray-800 px-2 py-1 text-sm font-medium transition-colors duration-200 ${
 					isDragOver ? 'bg-blue-600/20' : ''
 				}`}
-				onClick={onToggle}
+				onClick={() => onToggle()}
 			>
 				<div className="flex items-center">
 					<div className="mr-2 flex h-3 w-3 items-center justify-center">

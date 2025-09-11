@@ -9,6 +9,8 @@
 #include "ecs/RegistryUtil.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
+#include "ecs/Tasks.h"
+#include "ecs/TaskSchedulerGlobal.h"
 
 namespace rp {
 	struct LsdjKitDesc {
@@ -26,6 +28,8 @@ namespace rp {
 		LsdjController(entt::registry& registry): _registry(registry) {}
 		~LsdjController() = default;
 
+		void onUpdate(f32 deltaTime);
+
 		lsdj::Sav getLsdjSav(entt::entity system);
 
 		lsdj::Project getLsdjProject(entt::entity system);
@@ -36,7 +40,7 @@ namespace rp {
 
 		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const;
 
-		bool setKitComponent(entt::entity system, uint32 kitId, const LsdjKitComponent& comp);
+		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp);
 
 		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples);
 
@@ -56,5 +60,12 @@ namespace rp {
 
 	private:
 		bool updateKit(entt::entity system, uint32 kitId, const LsdjKitComponent& comp);
+
+		template <typename T>
+		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
+			T* ptr = task.get();
+			_registry.emplace<std::unique_ptr<T>>(entity, std::move(task));
+			_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(ptr);
+		}
 	};
 }
