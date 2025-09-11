@@ -89,7 +89,8 @@ namespace rp {
 
 	bool ProjectBuilder::loadFromPaths(entt::registry& registry, PathVector paths) {
 		ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
-		const RetroPlugProjectContext& ctx = getContext(registry);
+		const HooksContext& hooksCtx = registry.ctx().at<HooksContext>();
+		//const RetroPlugProjectContext& ctx = getContext(registry);
 
 		spdlog::info("Loading project from the following path{}:", paths.size() > 1 ? "s" : "");
 		for (const auto& path : paths) {
@@ -123,8 +124,8 @@ namespace rp {
 
 		NamedEntryVector entries;
 
-		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onFilterEntries(registry, paths, entries); });
-		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onFilterEntries(registry, paths, entries); });
+		eachHook(hooksCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onFilterEntries(registry, paths, entries); });
+		eachHook(hooksCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onFilterEntries(registry, paths, entries); });
 
 		if (entries.empty()) {
 			spdlog::error("Unable to load: Unrecognised path{}:", paths.size() > 1 ? "s" : "");
@@ -187,7 +188,7 @@ namespace rp {
 	}
 
 	bool ProjectBuilder::handleLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
-		const RetroPlugProjectContext& ctx = getContext(registry);
+		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		const ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
 
 		resolveEntries(load, pathCtx.projectRoot);

@@ -13,12 +13,15 @@
 
 namespace rp {
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
-		RetroPlugProjectContext& projectCtx = _registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
-		projectCtx.addSystemHook<SameboyHooks>();
-		projectCtx.addServiceHook<LsdjHooks>();
+		HooksContext& hooksCtx = _registry.ctx().emplace<HooksContext>();
+		hooksCtx.addSystemHook<SameboyHooks>();
+		hooksCtx.addServiceHook<LsdjHooks>();
 
+		_registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
+
+		_ts.Initialize();
 
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
@@ -122,17 +125,22 @@ namespace rp {
 	bool RetroPlugProject::addSystem(SystemLoadComponent&& config) {
 		getContext().version++;
 		entt::entity entity = fw::Replicator::spawn(_registry);
-		return ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{});
+		if (ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{})) {
+			handleReplicate(entity);
+			return true;
+		}
+
+		return false;
 	}
 
 	void RetroPlugProject::removeSystem(entt::entity entity) {
-		RetroPlugProjectContext& ctx = getContext();
+		HooksContext& ctx = getHooksContext();
 
 		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 
 		fw::Replicator::destroy(_registry, entity);
-		ctx.version++;
+		getContext().version++;
 	}
 
 	bool RetroPlugProject::resetSystem(entt::entity system, bool remote) {
@@ -218,13 +226,7 @@ namespace rp {
 		return ids;
 	}
 
-	void RetroPlugProject::onUpdate(f32 deltaTime) {
-		_totalTime += deltaTime;
-
-		fw::Replicator::beginUpdate(_registry);
-		_eventNode.update();
-		fw::Replicator::endUpdate(_registry);
-
+	void RetroPlugProject::handleFetchTimers(f32 deltaTime) {
 		for (const auto& [e, system] : _registry.view<SystemStateComponent>().each()) {
 			if (system.stateFetchTimer.update(deltaTime)) {
 				// Fetching MemoryType::MAX means fetching the entire state
@@ -245,13 +247,54 @@ namespace rp {
 				}
 			}
 		}
+	}
 
+	void RetroPlugProject::handlePing() {
 		std::chrono::high_resolution_clock::time_point time = std::chrono::high_resolution_clock::now();
 
 		if (_doPing && !_lastPingTime.has_value()) {
 			_lastPingTime = time;
 			_eventNode.send("Audio"_hs, PingEvent{ .time = time });
 		}
+	}
+
+	void RetroPlugProject::handleAsyncTasks() {
+		const HooksContext& ctx = getHooksContext();
+		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadSystemTask>>().each()) {
+			if (task->completed) {
+				// Copy from temporary registry to main registry
+				RegistryUtil::moveComponent<SystemComponent>(task->registry, task->entity, _registry, e);
+				RegistryUtil::moveComponent<SystemLoadComponent>(task->registry, task->entity, _registry, e);
+				RegistryUtil::moveComponent<SystemStateComponent>(task->registry, task->entity, _registry, e);
+
+				eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(task->registry, task->entity, _registry, e); });
+				eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(task->registry, task->entity, _registry, e); });
+
+				handleReplicate(e);
+				getContext().version++;
+
+				_registry.remove<std::unique_ptr<LoadSystemTask>>(e);
+			}
+		}
+	}
+
+	void RetroPlugProject::handleReplicate(entt::entity e) {
+		const HooksContext& ctx = getHooksContext();
+		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry, e); });
+		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry, e); });
+	}
+
+	void RetroPlugProject::onUpdate(f32 deltaTime) {
+		_totalTime += deltaTime;
+
+		// Receive events from the audio thread
+		fw::Replicator::beginUpdate(_registry);
+		_eventNode.update();
+		fw::Replicator::endUpdate(_registry);
+
+		handleFetchTimers(deltaTime); // Checks if we need to request state
+		handlePing();
+		handleAsyncTasks();
 	}
 
 	void RetroPlugProject::reset() {

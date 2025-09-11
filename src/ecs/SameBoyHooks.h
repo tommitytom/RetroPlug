@@ -15,5 +15,9 @@ namespace rp {
 		void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const override;
 
 		void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const override;
+
+		void onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const override;
+
+		void onReplicate(entt::registry& registry, entt::entity entity) const override;
 	};
 }

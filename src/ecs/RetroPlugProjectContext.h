@@ -23,23 +23,26 @@ namespace rp {
 		std::filesystem::path tempPath = mountPath / "temp";
 	};
 
-	struct RetroPlugProjectContext {
-		fw::EventNode& eventNode;
-		uint32 version = 0;
-		std::vector<std::unique_ptr<SystemHookBase>> systemHooks;
-		std::vector<std::unique_ptr<SystemHookBase>> serviceHooks;
+	struct HooksContext {
+		HooksVector systemHooks;
+		HooksVector serviceHooks;
 
 		template <typename T>
 		void addSystemHook() {
 			static_assert(std::is_base_of_v<SystemHookBase, T>, "T must be derived from SystemHookBase");
-			systemHooks.push_back(std::make_unique<T>());
+			systemHooks.push_back(new T());
 		}
 
 		template <typename T>
 		void addServiceHook() {
 			static_assert(std::is_base_of_v<SystemHookBase, T>, "T must be derived from SystemHookBase");
-			serviceHooks.push_back(std::make_unique<T>());
+			serviceHooks.push_back(new T());
 		}
+	};
+
+	struct RetroPlugProjectContext {
+		fw::EventNode& eventNode;
+		uint32 version = 0;
 
 		// Delete copy operations
 		RetroPlugProjectContext(const RetroPlugProjectContext&) = delete;

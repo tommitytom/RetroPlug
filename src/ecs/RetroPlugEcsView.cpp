@@ -204,7 +204,7 @@ namespace rp {
 				selectedSystemIdx = i;
 			}
 
-			eachHook(systemType, _project.getContext().serviceHooks, [&](const SystemHookBase& hook) {
+			eachHook(systemType, _project.getHooksContext().serviceHooks, [&](const SystemHookBase& hook) {
 				fw::ViewPtr overlay = hook.onCreateOverlay(registry, e);
 				if (overlay) {
 					systemView->addChild(overlay);
@@ -290,12 +290,13 @@ namespace rp {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);
 
-			_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
+			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
+			_project.loadFromFile({ "C:\\retro\\LSDj-v5.0.3.rplg" });
 			/*
-			entt::entity entity = _project.addSystem(SystemLoadComponent{
+			_project.addSystemAsync(SystemLoadComponent{
 				.entries = {
-					{ "rom", { ".\\LSDj-v5.0.3.gb" } },
-					{ "sram", { ".\\LSDj-v5.0.3.sav" } }
+					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
+					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
 				},
 			}, SameBoyComponent{
 				.model = GameboyModel::CgbC,

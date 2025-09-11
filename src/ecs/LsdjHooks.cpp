@@ -41,6 +41,10 @@ namespace rp {
 		}
 	}
 
+	void LsdjHooks::onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {
+		RegistryUtil::moveComponent<LsdjComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+	}
+
 	fw::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
 		LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
 		if (comp) {

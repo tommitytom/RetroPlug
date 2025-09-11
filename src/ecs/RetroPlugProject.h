@@ -16,6 +16,8 @@
 #include "ecs/LsdjController.h"
 #include "ecs/ProjectBuilder.h"
 
+#include "ecs/Tasks.h"
+
 namespace rp {
 	class RetroPlugProject {
 	private:
@@ -28,6 +30,8 @@ namespace rp {
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPongTime;
 
 		ProjectConfig _config;
+
+		enki::TaskScheduler _ts;
 
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
@@ -45,7 +49,36 @@ namespace rp {
 		bool addSystem(SystemLoadComponent&& config, const T& component) {
 			getContext().version++;
 			entt::entity entity = fw::Replicator::spawn(_registry);
-			return ProjectBuilder::addSystemWithConfig<T>(_registry, entity, std::forward<SystemLoadComponent>(config), component);
+			if (ProjectBuilder::addSystemWithConfig<T>(_registry, entity, std::forward<SystemLoadComponent>(config), component)) {
+				handleReplicate(entity);
+				return true;
+			}
+
+			return false;
+		}
+
+		template <typename T>
+		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
+			T* ptr = task.get();
+			_registry.emplace<std::unique_ptr<T>>(entity, std::move(task));
+			_ts.AddTaskSetToPipe(ptr);
+		}
+
+		template <typename T>
+		entt::entity addSystemAsync(SystemLoadComponent&& config, const T& component) {
+			std::unique_ptr<LoadSystemTask> loadTask = std::make_unique<LoadSystemTask>();
+			loadTask->systemType = entt::type_id<T>().index();
+			loadTask->entity = loadTask->registry.create();
+			loadTask->registry.ctx().emplace<HooksContext>(_registry.ctx().at<HooksContext>());
+			loadTask->registry.ctx().emplace<ProjectPathContext>(_registry.ctx().at<ProjectPathContext>());
+			loadTask->registry.emplace<T>(loadTask->entity, component);
+			loadTask->registry.emplace<SystemComponent>(loadTask->entity, loadTask->systemType);
+			loadTask->registry.emplace<SystemLoadComponent>(loadTask->entity, std::move(config));
+
+			entt::entity entity = fw::Replicator::spawn(_registry);
+			addTask(entity, std::move(loadTask));
+
+			return entity;
 		}
 
 		bool addSystem(SystemLoadComponent&& config);
@@ -100,6 +133,10 @@ namespace rp {
 			return _registry.ctx().at<RetroPlugProjectContext>();
 		}
 
+		HooksContext& getHooksContext() {
+			return _registry.ctx().at<HooksContext>();
+		}
+		
 		const RetroPlugProjectContext& getContext() const {
 			return _registry.ctx().at<const RetroPlugProjectContext>();
 		}
@@ -111,6 +148,15 @@ namespace rp {
 		const std::filesystem::path& getMountPath() const {
 			return _registry.ctx().at<ProjectPathContext>().mountPath;
 		}
+
+	private:
+		void handleFetchTimers(f32 deltaTime);
+
+		void handlePing();
+
+		void handleAsyncTasks();
+
+		void handleReplicate(entt::entity e);
 	};
 
 	using RetroPlugProjectPtr = std::shared_ptr<RetroPlugProject>;

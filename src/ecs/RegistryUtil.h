@@ -11,4 +11,12 @@ namespace rp::RegistryUtil {
 
 		return registry.try_get<Component>(entity);
 	}
+
+	template <typename Component>
+	void moveComponent(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) {
+		Component* comp = sourceRegistry.try_get<Component>(sourceEntity);
+		if (comp) {
+			targetRegistry.emplace_or_replace<Component>(targetEntity, std::move(*comp));
+		}
+	}
 }

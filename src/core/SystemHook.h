@@ -52,7 +52,13 @@ namespace rp {
 		virtual void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const {}
 
 		virtual void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const {}
+
+		virtual void onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {}
+
+		virtual void onReplicate(entt::registry& registry, entt::entity entity) const {}
 	};
+
+	using HooksVector = std::vector<SystemHookBase*>;
 
 	template <typename SystemComponent>
 	class SystemHook : public SystemHookBase {
@@ -108,24 +114,24 @@ namespace rp {
 		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
 	};
 
-	inline void eachHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks, std::function<void(const SystemHookBase&)>&& func) {
-		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
+	inline void eachHook(entt::id_type systemType, const HooksVector& hooks, std::function<void(const SystemHookBase&)>&& func) {
+		for (const SystemHookBase* hook : hooks) {
 			if (hook->getType() == systemType) {
 				func(*hook);
 			}
 		}
 	}
 
-	inline void eachHook(const std::vector<std::unique_ptr<SystemHookBase>>& hooks, std::function<void(const SystemHookBase&)>&& func) {
-		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
+	inline void eachHook(const HooksVector& hooks, std::function<void(const SystemHookBase&)>&& func) {
+		for (const SystemHookBase* hook : hooks) {
 			func(*hook);
 		}
 	}
 
-	inline SystemHookBase* findHook(entt::id_type systemType, const std::vector<std::unique_ptr<SystemHookBase>>& hooks) {
-		for (const std::unique_ptr<SystemHookBase>& hook : hooks) {
+	inline const SystemHookBase* findHook(entt::id_type systemType, const HooksVector& hooks) {
+		for (const SystemHookBase* hook : hooks) {
 			if (hook->getType() == systemType) {
-				return static_cast<SystemHookBase*>(hook.get());
+				return hook;
 			}
 		}
 		return nullptr;

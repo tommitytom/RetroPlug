@@ -6,7 +6,7 @@
 
 namespace rp {
 	void ProjectSerializer::serialize(const entt::registry& registry, std::string& target) {
-		const RetroPlugProjectContext& projectCtx = registry.ctx().at<RetroPlugProjectContext>();
+		const HooksContext& hooksCtx = registry.ctx().at<HooksContext>();
 
 		yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
 		yyjson_mut_val* root = yyjson_mut_obj(doc);
@@ -26,8 +26,8 @@ namespace rp {
 
 			serializeComponent<SystemLoadComponent>(registry, entity, ctx);
 
-			eachHook(projectCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onSerialize(registry, entity, ctx); });
-			eachHook(projectCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onSerialize(registry, entity, ctx); });
+			eachHook(hooksCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onSerialize(registry, entity, ctx); });
+			eachHook(hooksCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onSerialize(registry, entity, ctx); });
 		};
 
 		const ProjectConfig& projectConfig = registry.ctx().at<ProjectConfig>();
@@ -48,7 +48,7 @@ namespace rp {
 	}
 
 	bool ProjectSerializer::deserialize(entt::registry& registry, std::string_view source) {
-		RetroPlugProjectContext& projectCtx = registry.ctx().at<RetroPlugProjectContext>();
+		const HooksContext& hooksCtx = registry.ctx().at<HooksContext>();
 
 		yyjson_doc* doc = yyjson_read(source.data(), source.size(), 0);
 		yyjson_val* root = yyjson_doc_get_root(doc);
@@ -72,8 +72,8 @@ namespace rp {
 
 				ProjectSerializer::deserializeComponent<SystemLoadComponent>(registry, entity, ctx);
 
-				eachHook(projectCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
-				eachHook(projectCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
+				eachHook(hooksCtx.systemHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
+				eachHook(hooksCtx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDeserialize(registry, entity, ctx); });
 			}
 		}
 

@@ -5,6 +5,7 @@
 #include "foundation/Replicator.h"
 #include "sameboy/SameBoyUtil.h"
 #include "ecs/EcsProjectSerializer.h"
+#include "ecs/RegistryUtil.h"
 
 namespace rp {
 	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -15,7 +16,7 @@ namespace rp {
 	}
 
 	void SameboyHooks::onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
-		SameBoyStateComponent state;
+		SameBoyStateComponent& state = registry.emplace<SameBoyStateComponent>(entity);
 		state.state.reset(new SameBoyState());
 
 		if (!SameBoyUtil::setup(system, *state.state, 11050, load)) {
@@ -48,8 +49,17 @@ namespace rp {
 				});
 			}
 		}
+	}
 
-		fw::Replicator::emplaceRemote(registry, entity, std::move(state));
+	void SameboyHooks::onReplicate(entt::registry& registry, entt::entity entity) const {
+		SameBoyStateComponent* comp = registry.try_get<SameBoyStateComponent>(entity);
+		fw::Replicator::emplaceRemote(registry, entity, std::move(*comp));
+		registry.remove<SameBoyStateComponent>(entity);
+	}
+
+	void SameboyHooks::onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {
+		RegistryUtil::moveComponent<SameBoyComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+		RegistryUtil::moveComponent<SameBoyStateComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
 	}
 
 	void SameboyHooks::onReset(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
