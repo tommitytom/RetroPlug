@@ -21,7 +21,7 @@ namespace rp {
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
 
-		_ts.Initialize();
+		_ts.Initialize(8);
 
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
@@ -109,12 +109,34 @@ namespace rp {
 
 	bool RetroPlugProject::loadFromFile(std::filesystem::path path) {
 		getContext().version++;
-		return ProjectBuilder::loadFromFile(_registry, path);
+		if (ProjectBuilder::loadFromFile(_registry, path)) {
+			handleReplicate();
+			return true;
+		}
+		return false;
+	}
+
+	entt::entity RetroPlugProject::loadFromPathsAsync(PathVector paths) {
+		std::unique_ptr<LoadProjectTask> loadTask = std::make_unique<LoadProjectTask>();
+		loadTask->paths = std::move(paths);
+		loadTask->registry.ctx().emplace<HooksContext>(_registry.ctx().at<HooksContext>());
+		loadTask->registry.ctx().emplace<ProjectPathContext>(_registry.ctx().at<ProjectPathContext>());
+		loadTask->registry.ctx().emplace<ProjectConfig>(_registry.ctx().at<ProjectConfig>());
+
+		// Create a temporary entity to track the task
+		entt::entity entity = _registry.create();
+		addTask(entity, std::move(loadTask));
+
+		return entity;
 	}
 
 	bool RetroPlugProject::loadFromPaths(PathVector paths) {
 		getContext().version++;
-		return ProjectBuilder::loadFromPaths(_registry, paths);
+		if (ProjectBuilder::loadFromPaths(_registry, paths)) {
+			handleReplicate();
+			return true;
+		}
+		return false;
 	}
 
 	bool RetroPlugProject::saveToFile(std::filesystem::path path) {
@@ -126,7 +148,7 @@ namespace rp {
 		getContext().version++;
 		entt::entity entity = fw::Replicator::spawn(_registry);
 		if (ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{})) {
-			handleReplicate(entity);
+			handleReplicate();
 			return true;
 		}
 
@@ -258,30 +280,56 @@ namespace rp {
 		}
 	}
 
+	void handleRegistryCopy(const HooksContext& hooks, entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) {
+		RegistryUtil::moveComponent<SystemComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+		RegistryUtil::moveComponent<SystemLoadComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+		RegistryUtil::moveComponent<SystemStateComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
+
+		eachHook(hooks.serviceHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(sourceRegistry, sourceEntity, targetRegistry, targetEntity); });
+		eachHook(hooks.systemHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(sourceRegistry, sourceEntity, targetRegistry, targetEntity); });
+	}
+
 	void RetroPlugProject::handleAsyncTasks() {
 		const HooksContext& ctx = getHooksContext();
-		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadSystemTask>>().each()) {
-			if (task->completed) {
-				// Copy from temporary registry to main registry
-				RegistryUtil::moveComponent<SystemComponent>(task->registry, task->entity, _registry, e);
-				RegistryUtil::moveComponent<SystemLoadComponent>(task->registry, task->entity, _registry, e);
-				RegistryUtil::moveComponent<SystemStateComponent>(task->registry, task->entity, _registry, e);
+		bool changes = false;
 
-				eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(task->registry, task->entity, _registry, e); });
-				eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(task->registry, task->entity, _registry, e); });
+		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadProjectTask>>().each()) {
+			if (!task->completed) continue;
+			if (task->success) {
+				reset();
 
-				handleReplicate(e);
-				getContext().version++;
+				for (const auto& [taskEntity, c] : task->registry.view<SystemComponent>().each()) {
+					entt::entity targetEntity = fw::Replicator::spawn(_registry);
+					handleRegistryCopy(ctx, task->registry, taskEntity, _registry, targetEntity);
+				}
 
-				_registry.remove<std::unique_ptr<LoadSystemTask>>(e);
+				changes = true;
 			}
+
+			// This entity was only created to track the task
+			fw::Replicator::destroy(_registry, e);
+		}
+
+		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadSystemTask>>().each()) {
+			if (!task->completed) continue;
+			if (task->success) {
+				// Copy from temporary registry to main registry
+				handleRegistryCopy(ctx, task->registry, task->entity, _registry, e);
+				_registry.remove<std::unique_ptr<LoadSystemTask>>(e);
+				changes = true;
+			}
+		}
+
+		if (changes) {
+			handleReplicate();
+			getContext().version++;
 		}
 	}
 
-	void RetroPlugProject::handleReplicate(entt::entity e) {
+	void RetroPlugProject::handleReplicate() {
 		const HooksContext& ctx = getHooksContext();
-		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry, e); });
-		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry, e); });
+		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry); });
+		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry); });
 	}
 
 	void RetroPlugProject::onUpdate(f32 deltaTime) {

@@ -183,8 +183,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<RetroPlugProject>("NativeRetroPlugProject")
-		.function("addSystem", +[](RetroPlugProject& project, SystemLoadComponent&& config, const SameBoyComponent& component) -> bool {
-			return project.addSystem(std::move(config), component);
+		.function("addSystem", +[](RetroPlugProject& project, SystemLoadComponent&& config, const SameBoyComponent& component) -> uint32 {
+			return (uint32)project.addSystemAsync(std::move(config), component);
 		})
 		.function("removeSystem", +[](RetroPlugProject& project, uint32 systemId) {
 			project.removeSystem(entt::entity(systemId));
@@ -194,15 +194,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("loadConfigs", &RetroPlugProject::loadConfigs)
 		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
-			return project.loadFromFile(path);
+			return project.loadFromFileAsync(path) != entt::null;
 		})
-		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> bool {
+		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> uint32 {
 			PathVector fsPaths;
 			for (const auto& path : paths) {
 				fsPaths.push_back(std::filesystem::path(path));
 			}
 
-			return project.loadFromPaths(fsPaths);
+			return (uint32)project.loadFromPathsAsync(fsPaths);
 		})
 		.function("reset", +[](RetroPlugProject& project) {
 			project.reset();

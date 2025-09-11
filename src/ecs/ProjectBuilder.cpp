@@ -62,12 +62,16 @@ namespace rp {
 		return "";
 	}
 
-	RetroPlugProjectContext& getContext(entt::registry& registry) {
-		return registry.ctx().at<RetroPlugProjectContext>();
+	ProjectPathContext& getPathContext(entt::registry& registry) {
+		return registry.ctx().at< ProjectPathContext>();
+	}
+
+	HooksContext& getHooksContext(entt::registry& registry) {
+		return registry.ctx().at< HooksContext>();
 	}
 
 	bool ProjectBuilder::loadFromFile(entt::registry& registry, std::filesystem::path path) {
-		ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
+		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		spdlog::info("Loading project from file: {}", path.string());
 
@@ -88,8 +92,8 @@ namespace rp {
 	}
 
 	bool ProjectBuilder::loadFromPaths(entt::registry& registry, PathVector paths) {
-		ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
-		const HooksContext& hooksCtx = registry.ctx().at<HooksContext>();
+		ProjectPathContext& pathCtx = getPathContext(registry);
+		const HooksContext& hooksCtx = getHooksContext(registry);
 		//const RetroPlugProjectContext& ctx = getContext(registry);
 
 		spdlog::info("Loading project from the following path{}:", paths.size() > 1 ? "s" : "");
@@ -188,8 +192,8 @@ namespace rp {
 	}
 
 	bool ProjectBuilder::handleLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
-		const HooksContext& ctx = registry.ctx().at<HooksContext>();
-		const ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
+		const HooksContext& ctx = getHooksContext(registry);
+		const ProjectPathContext& pathCtx = getPathContext(registry);
 
 		resolveEntries(load, pathCtx.projectRoot);
 		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onBeforeLoad(registry, entity, load); });
@@ -215,7 +219,7 @@ namespace rp {
 	}
 
 	bool ProjectBuilder::saveToFile(entt::registry& registry, std::filesystem::path path) {
-		ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
+		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		if (!ensureMountPath(pathCtx.mountPath, path)) {
 			spdlog::error("Path {} is not within mount path {}", path.string(), pathCtx.mountPath.string());
@@ -250,11 +254,10 @@ namespace rp {
 	}
 
 	bool ProjectBuilder::deserializeJson(entt::registry& registry, std::string_view str, const std::filesystem::path& rootPath) {
-		ProjectPathContext& pathCtx = registry.ctx().at<ProjectPathContext>();
+		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		pathCtx.projectRoot = rootPath;
 
-		RetroPlugProjectContext& ctx = getContext(registry);
 		if (!ProjectSerializer::deserialize(registry, str)) {
 			return false;
 		}

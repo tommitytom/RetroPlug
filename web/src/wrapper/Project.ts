@@ -187,7 +187,7 @@ export class Project {
 		return this._project.loadFromFile(mountPath + path);
 	}
 
-	loadFromPaths(paths: string[]): boolean {
+	loadFromPaths(paths: string[]): SystemId {
 		const mountPath = this._project.getMountPath();
 		const pathVec = new this._module.StringVector();
 

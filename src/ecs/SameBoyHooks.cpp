@@ -51,10 +51,11 @@ namespace rp {
 		}
 	}
 
-	void SameboyHooks::onReplicate(entt::registry& registry, entt::entity entity) const {
-		SameBoyStateComponent* comp = registry.try_get<SameBoyStateComponent>(entity);
-		fw::Replicator::emplaceRemote(registry, entity, std::move(*comp));
-		registry.remove<SameBoyStateComponent>(entity);
+	void SameboyHooks::onReplicate(entt::registry& registry) const {
+		for (const auto& [e, c] : registry.view<SameBoyStateComponent>().each()) {
+			fw::Replicator::emplaceRemote(registry, e, std::move(c));
+			registry.remove<SameBoyStateComponent>(e);
+		}
 	}
 
 	void SameboyHooks::onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {

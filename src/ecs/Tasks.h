@@ -12,9 +12,23 @@ namespace rp {
 		entt::entity entity = entt::null;
 
 		std::atomic<bool> completed = false;
+		bool success = false;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override {
-			ProjectBuilder::handleLoad(registry, entity, registry.get<SystemLoadComponent>(entity), systemType);
+			success = ProjectBuilder::handleLoad(registry, entity, registry.get<SystemLoadComponent>(entity), systemType);
+			completed = true;
+		}
+	};
+
+	struct LoadProjectTask : enki::ITaskSet {
+		std::vector<std::filesystem::path> paths;
+		entt::registry registry;
+
+		std::atomic<bool> completed = false;
+		bool success = false;
+
+		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override {
+			success = ProjectBuilder::loadFromPaths(registry, paths);
 			completed = true;
 		}
 	};

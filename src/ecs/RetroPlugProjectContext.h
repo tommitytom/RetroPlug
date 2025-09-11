@@ -48,10 +48,6 @@ namespace rp {
 		RetroPlugProjectContext(const RetroPlugProjectContext&) = delete;
 		RetroPlugProjectContext& operator=(const RetroPlugProjectContext&) = delete;
 
-		// Keep move operations (automatically generated)
-		//RetroPlugProjectContext(RetroPlugProjectContext&&) = default;
-		//RetroPlugProjectContext& operator=(RetroPlugProjectContext&&) = default;
-
 		RetroPlugProjectContext(fw::EventNode& eventNode_): eventNode(eventNode_) {}
 		~RetroPlugProjectContext() = default;
 	};

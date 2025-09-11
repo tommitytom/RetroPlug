@@ -7,6 +7,9 @@ import type { FileSystemNode, ParsedPath } from '../filesystem/types';
 
 interface OPFSStore {
 	// State
+	rootPath: string;
+	virtualPath: string;
+
 	rootNode: FileSystemNode | null;
 	selectedNodes: Set<string>;
 	expandedNodes: Set<string>;
@@ -45,6 +48,9 @@ interface OPFSStore {
 export const useOPFSStore = create<OPFSStore>()(
 	subscribeWithSelector((set, get) => ({
 		// Initial state
+		rootPath: '/',
+		virtualPath: '/mount',
+
 		rootNode: null,
 		selectedNodes: new Set(),
 		expandedNodes: new Set(),
@@ -59,14 +65,14 @@ export const useOPFSStore = create<OPFSStore>()(
 			set({ loading: true, error: null });
 
 			//try {
-				const rootNode = await workerApi.listPath('/');
+			const rootNode = await workerApi.listPath('/');
 
-				set({
-					worker: workerApi,
-					rootNode,
-					loading: false,
-					expandedNodes: new Set([rootNode.id]),
-				});
+			set({
+				worker: workerApi,
+				rootNode,
+				loading: false,
+				expandedNodes: new Set([rootNode.id]),
+			});
 			/*} catch (error) {
 				set({
 					error: error instanceof Error ? error.message : 'Failed to initialize',

@@ -41,6 +41,10 @@ namespace rp {
 
 		bool loadFromFile(std::filesystem::path path);
 
+		entt::entity loadFromFileAsync(std::filesystem::path path) { return loadFromPathsAsync({ std::move(path) }); }
+
+		entt::entity loadFromPathsAsync(PathVector paths);
+
 		bool saveToFile(std::filesystem::path path);
 
 		bool loadFromPaths(PathVector paths);
@@ -50,7 +54,7 @@ namespace rp {
 			getContext().version++;
 			entt::entity entity = fw::Replicator::spawn(_registry);
 			if (ProjectBuilder::addSystemWithConfig<T>(_registry, entity, std::forward<SystemLoadComponent>(config), component)) {
-				handleReplicate(entity);
+				handleReplicate();
 				return true;
 			}
 
@@ -66,16 +70,17 @@ namespace rp {
 
 		template <typename T>
 		entt::entity addSystemAsync(SystemLoadComponent&& config, const T& component) {
+			entt::entity entity = fw::Replicator::spawn(_registry);
+
 			std::unique_ptr<LoadSystemTask> loadTask = std::make_unique<LoadSystemTask>();
 			loadTask->systemType = entt::type_id<T>().index();
-			loadTask->entity = loadTask->registry.create();
+			loadTask->entity = loadTask->registry.create(entity);
 			loadTask->registry.ctx().emplace<HooksContext>(_registry.ctx().at<HooksContext>());
 			loadTask->registry.ctx().emplace<ProjectPathContext>(_registry.ctx().at<ProjectPathContext>());
 			loadTask->registry.emplace<T>(loadTask->entity, component);
 			loadTask->registry.emplace<SystemComponent>(loadTask->entity, loadTask->systemType);
 			loadTask->registry.emplace<SystemLoadComponent>(loadTask->entity, std::move(config));
 
-			entt::entity entity = fw::Replicator::spawn(_registry);
 			addTask(entity, std::move(loadTask));
 
 			return entity;
@@ -136,7 +141,7 @@ namespace rp {
 		HooksContext& getHooksContext() {
 			return _registry.ctx().at<HooksContext>();
 		}
-		
+
 		const RetroPlugProjectContext& getContext() const {
 			return _registry.ctx().at<const RetroPlugProjectContext>();
 		}
@@ -156,7 +161,7 @@ namespace rp {
 
 		void handleAsyncTasks();
 
-		void handleReplicate(entt::entity e);
+		void handleReplicate();
 	};
 
 	using RetroPlugProjectPtr = std::shared_ptr<RetroPlugProject>;

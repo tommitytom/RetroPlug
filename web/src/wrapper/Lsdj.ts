@@ -25,6 +25,7 @@ export class LsdjController {
 				key: undefined,
 				samples: kit.samples?.map(sample => ({
 					...sample,
+					path: '/mount' + sample.path,
 					data: undefined,
 					key: undefined,
 					effects: sample.effects?.map(effect => ({

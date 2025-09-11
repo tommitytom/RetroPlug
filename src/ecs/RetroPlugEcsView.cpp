@@ -291,7 +291,7 @@ namespace rp {
 			//_project.deserialize(archive);
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
-			_project.loadFromFile({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+			_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
 			/*
 			_project.addSystemAsync(SystemLoadComponent{
 				.entries = {

@@ -61,7 +61,8 @@ namespace rp {
 		size_t systemIdx, systemMax;
 		yyjson_val* system;
 		yyjson_arr_foreach(systems, systemIdx, systemMax, system) {
-			entt::entity entity = fw::Replicator::spawn(registry);
+			//entt::entity entity = fw::Replicator::spawn(registry);
+			entt::entity entity = registry.create();
 
 			yyjson_val* components = yyjson_obj_get(system, "components");
 
