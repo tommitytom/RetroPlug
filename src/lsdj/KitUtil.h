@@ -17,7 +17,7 @@ namespace rp::KitUtil {
 
 	void patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples);
 
-	bool patchKit2(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState);
+	bool createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState);
 
 	void updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx);
 

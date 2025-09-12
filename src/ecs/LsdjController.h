@@ -40,13 +40,15 @@ namespace rp {
 
 		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const;
 
+		LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId);
+
 		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp);
 
 		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples);
 
 		bool removeKitComponent(entt::entity system, uint32 kitId);
 
-		bool addKitComponent(entt::entity system, const LsdjKitComponent& comp);
+		rp::KitIndex addKitComponent(entt::entity system, LsdjKitComponent&& comp);
 
 		fw::Uint8Buffer getKitSample(entt::entity system, uint32 kitId, uint32 sampleId);
 
@@ -58,9 +60,11 @@ namespace rp {
 
 		lsdj::Rom getLsdjRom(entt::entity system) const;
 
-	private:
-		bool updateKit(entt::entity system, uint32 kitId, const LsdjKitComponent& comp);
+		bool updateKit(entt::entity system, uint32 kitId);
 
+		void setKitDirty(entt::entity system, uint32 kitId);
+
+	private:
 		template <typename T>
 		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
 			T* ptr = task.get();

@@ -203,7 +203,7 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 								if (kitData && kitData.size() > 0) {
 									kit.data = toUint8Array(kitData);
 								}
-								console.log(timer.stop(), 'ms');
+								//console.log(timer.stop(), 'ms');
 							}
 						}),
 
@@ -212,8 +212,13 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 						set((state) => {
 							const kit =
 								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-							if (kit) {
-								kit.effects?.push(effect);
+							if (kit && kit.effects) {
+								const ditherIdx = kit.effects.findIndex((e) => e.effect.type === 'DitherEffect');
+								if (ditherIdx !== -1) {
+									kit.effects.splice(ditherIdx, 0, effect); // Insert before DitherEffect
+								} else {
+									kit.effects.push(effect);
+								}
 							}
 						}),
 

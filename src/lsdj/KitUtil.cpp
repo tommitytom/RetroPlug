@@ -101,18 +101,20 @@ bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std:
 	if (!comp.samples.has_value()) return false;
 
 	for (const LsdjSampleComponent& sample : comp.samples.value()) {
-		SampleData* sampleData = sampleCache.getOrLoadSample(sample.path);
-		if (!sampleData) {
+		const SampleData* sampleDataRaw = sampleCache.getOrLoadSample(sample.path);
+		if (!sampleDataRaw) {
 			spdlog::error("Failed to load sample: {} from path: {}", sample.name, sample.path);
 			continue;
 		}
+
+		SampleData sampleData = *sampleDataRaw;
 
 		const DitherEffect* ditherEffect = nullptr;
 		if (comp.effects.has_value()) {
 			for (const LsdjEffect& effect : comp.effects.value()) {
 				effect.visit([&](auto&& eff) {
 					if constexpr (!std::is_same_v<std::decay_t<decltype(eff)>, DitherEffect>) {
-						processEffect(eff, sampleData->buffer, (f32)sampleData->sampleRate);
+						processEffect(eff, sampleData.buffer, (f32)sampleData.sampleRate);
 					} else {
 						ditherEffect = &eff;
 					}
@@ -121,7 +123,7 @@ bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std:
 		}
 
 		fw::Float32Buffer resampled;
-		KitUtil::convertSamplerate((f64)sampleData->sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, sampleData->buffer, resampled);
+		KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)KitUtil::GAMEBOY_SAMPLE_RATE, sampleData.buffer, resampled);
 
 		if (ditherEffect) {
 			processEffect(*ditherEffect, resampled, (f32)KitUtil::GAMEBOY_SAMPLE_RATE);
@@ -143,7 +145,7 @@ bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std:
 	return true;
 }
 
-bool KitUtil::patchKit2(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState) {
+bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState) {
 	std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
 	if (!processSamples(sampleCache, kitState, samples)) {
 		return false;

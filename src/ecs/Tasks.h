@@ -1,41 +1,43 @@
 #pragma once
 
 #include <entt/entity/registry.hpp>
-#include <TaskScheduler.h>
+
 #include "ecs/RetroPlugComponents.h"
+#include "ecs/TaskBase.h"
 
 namespace rp {
 	class SampleCache;
 
-	struct LoadSystemTask : enki::ITaskSet {
+	struct LoadSystemTask : public TaskBase {
 		entt::id_type systemType;
 		entt::registry registry;
 		entt::entity entity = entt::null;
 
-		std::atomic<bool> completed = false;
-		bool success = false;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
+
+		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
 	};
 
-	struct LoadProjectTask : enki::ITaskSet {
+	struct LoadProjectTask : TaskBase {
 		std::vector<std::filesystem::path> paths;
 		entt::registry registry;
 
-		std::atomic<bool> completed = false;
-		bool success = false;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
+
+		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
 	};
 
-	struct PatchKitTask : enki::ITaskSet {
+	struct PatchKitTask : TaskBase {
 		fw::Uint8Buffer kitData;
 		LsdjKitComponent kitState;
 		SampleCache* sampleCache = nullptr;
-
-		std::atomic<bool> completed = false;
-		bool success = false;
+		KitIndex kitIndex = INVALID_KIT_INDEX;
+		entt::entity system = entt::null;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
+
+		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
 	};
 }

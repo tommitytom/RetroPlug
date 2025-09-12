@@ -35,6 +35,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 
 	const effects = sampleKey ? sample?.effects || [] : kit?.effects || [];
+	const isEmpty = effects.length === 0;
 
 	const handleAddEffect = (type: string) => {
 		const effectInstance = createEffectInstance(type);
@@ -86,15 +87,19 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 	return (
 		<div className="mt-2 overflow-hidden rounded-sm border border-gray-700">
 			<div
-				className="hover:bg-gray-750 flex cursor-pointer items-center justify-between bg-gray-800 px-2 py-1 text-sm font-medium transition-colors duration-200"
-				onClick={() => onToggle()}
+				className={`hover:bg-gray-750 flex items-center justify-between bg-gray-800 px-2 py-1 text-sm font-medium transition-colors duration-200 ${
+					isEmpty ? 'cursor-default' : 'cursor-pointer'
+				}`}
+				onClick={() => !isEmpty && onToggle()}
 			>
 				<div className="flex items-center">
 					<div className="mr-2 flex h-3 w-3 items-center justify-center">
-						{isExpanded ? (
+						{!isEmpty && isExpanded ? (
 							<div className="h-0 w-0 border-t-6 border-r-4 border-l-4 border-t-white border-r-transparent border-l-transparent" />
 						) : (
-							<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
+							<div className={`h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent ${
+								isEmpty ? 'border-l-gray-500' : 'border-l-white'
+							}`} />
 						)}
 					</div>
 					<span className="font-medium text-white">Effects</span>
@@ -108,7 +113,7 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 				</button>
 			</div>
 
-			{isExpanded && (
+			{!isEmpty && isExpanded && (
 				<div className="bg-gray-900 p-2">
 					{effects.map((effect, index) => (
 						<div key={effect.key}>

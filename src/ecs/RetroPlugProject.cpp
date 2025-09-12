@@ -281,15 +281,6 @@ namespace rp {
 		}
 	}
 
-	void handleRegistryCopy(const HooksContext& hooks, entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) {
-		RegistryUtil::moveComponent<SystemComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
-		RegistryUtil::moveComponent<SystemLoadComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
-		RegistryUtil::moveComponent<SystemStateComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
-
-		eachHook(hooks.serviceHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(sourceRegistry, sourceEntity, targetRegistry, targetEntity); });
-		eachHook(hooks.systemHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(sourceRegistry, sourceEntity, targetRegistry, targetEntity); });
-	}
-
 	void RetroPlugProject::handleAsyncTasks() {
 		const HooksContext& ctx = getHooksContext();
 		bool changes = false;
@@ -298,12 +289,7 @@ namespace rp {
 			if (!task->completed) continue;
 			if (task->success) {
 				reset();
-
-				for (const auto& [taskEntity, c] : task->registry.view<SystemComponent>().each()) {
-					entt::entity targetEntity = fw::Replicator::spawn(_registry);
-					handleRegistryCopy(ctx, task->registry, taskEntity, _registry, targetEntity);
-				}
-
+				task->finalize(_registry, e);
 				changes = true;
 			}
 
@@ -314,8 +300,7 @@ namespace rp {
 		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadSystemTask>>().each()) {
 			if (!task->completed) continue;
 			if (task->success) {
-				// Copy from temporary registry to main registry
-				handleRegistryCopy(ctx, task->registry, task->entity, _registry, e);
+				task->finalize(_registry, e);
 				_registry.remove<std::unique_ptr<LoadSystemTask>>(e);
 				changes = true;
 			}
@@ -344,6 +329,8 @@ namespace rp {
 		handleFetchTimers(deltaTime); // Checks if we need to request state
 		handlePing();
 		handleAsyncTasks();
+
+		LsdjController(_registry).onUpdate(deltaTime);
 	}
 
 	void RetroPlugProject::reset() {

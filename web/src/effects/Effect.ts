@@ -53,7 +53,7 @@ export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', 'GainEffect'
 		type: EffectParameterType.Slider,
 		defaultValue: 1,
 		min: 0,
-		max: 2,
+		max: 5,
 		step: 0.01
 	}
 });

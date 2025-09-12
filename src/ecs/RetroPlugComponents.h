@@ -12,6 +12,7 @@
 #include "lsdj/Ram.h"
 #include "ecs/Effects.h"
 #include "ecs/SampleCache.h"
+#include "ecs/TaskBase.h"
 
 namespace rp {
 	struct SystemIoEvent {
@@ -54,6 +55,7 @@ namespace rp {
 	};
 
 	using KitIndex = uint32;
+	constexpr KitIndex INVALID_KIT_INDEX = std::numeric_limits<KitIndex>::max();
 
 	struct LsdjSampleComponent {
 		std::string name;
@@ -81,9 +83,19 @@ namespace rp {
 	};
 
 	struct LsdjStateComponent {
-		std::vector<size_t> dirtyKits;
+		std::unordered_set<rp::KitIndex> dirtyKits;
+		std::unordered_map<rp::KitIndex, TaskPtr> patchTasks;
 		std::optional<lsdj::MemoryOffsets> ramOffsets;
-		std::unique_ptr<SampleCache> sampleCache;
+		std::unique_ptr<SampleCache> sampleCache = std::make_unique<SampleCache>();
+
+		LsdjStateComponent(const LsdjStateComponent&) = delete;
+		LsdjStateComponent& operator=(const LsdjStateComponent&) = delete;
+
+		LsdjStateComponent(LsdjStateComponent&&) = default;
+		LsdjStateComponent& operator=(LsdjStateComponent&&) = default;
+
+		LsdjStateComponent() {}
+		~LsdjStateComponent() = default;
 	};
 
 	using ReplicatedTypes = entt::type_list<

@@ -1,16 +1,12 @@
-import React, { useCallback, useContext, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 
-import { useKitChanges, useKitListChanges, useLsdjStore, useKitList } from '../../hooks/LsdjStoreHooks';
-import type { ILsdjKit } from '../../types/LsdjTypes';
+import { useKitList, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { sortKits } from '../../utils/LsdjUtil';
 import { LsdjKitEditor } from './LsdjKitEditor';
-import type { LsdjStore } from '../../stores/LsdjStore';
 
 import '../../styles/RomEditorPanel.css';
-import { LsdjStoreContext } from '../../contexts/LsdjStoreContext';
 
-interface LsdjRomEditorProps {
-}
+interface LsdjRomEditorProps {}
 
 export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	// Only subscribe to the kits array with optimized equality checking
@@ -27,14 +23,24 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 
 	const sortedRomKits = sortKits(kits, sortBy);
 
-	const toggleKit = useCallback((kitKey: string) => {
+	const toggleKit = useCallback((kitKey: string, value?: boolean) => {
 		setExpandedKits((prev) => {
 			const newSet = new Set(prev);
-			if (newSet.has(kitKey)) {
-				newSet.delete(kitKey);
+
+			if (value === undefined) {
+				if (newSet.has(kitKey)) {
+					newSet.delete(kitKey);
+				} else {
+					newSet.add(kitKey);
+				}
 			} else {
-				newSet.add(kitKey);
+				if (value) {
+					newSet.add(kitKey);
+				} else {
+					newSet.delete(kitKey);
+				}
 			}
+
 			return newSet;
 		});
 	}, []);
@@ -99,7 +105,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 								kit.key && (
 									<LsdjKitEditor
 										isExpanded={expandedKits.has(kit.key)}
-										onToggle={() => toggleKit(kit.key)}
+										onToggle={(value) => toggleKit(kit.key, value)}
 										kitKey={kit.key}
 										key={kit.key}
 									/>

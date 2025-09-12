@@ -16,19 +16,50 @@ namespace rp {
 		return nullptr;
 	}
 
+	const LsdjKitComponent* findKit(const LsdjComponent& lsdj, KitIndex kitId) {
+		auto found = std::find_if(lsdj.kits.begin(), lsdj.kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+		if (found != lsdj.kits.end()) {
+			return &(*found);
+		}
+		return nullptr;
+	}
+
 	void LsdjController::onUpdate(f32 deltaTime) {
 		for (const auto& [system, state] : _registry.view<LsdjStateComponent>().each()) {
+			// Resolve any patching tasks
+			for (auto it = state.patchTasks.begin(); it != state.patchTasks.end(); ) {
+				if (it->second->completed) {
+					if (it->second->success) {
+						it->second->finalize(_registry, system);
+					} else {
+						spdlog::error("Failed to patch kit {}", it->first);
+					}
+					it = state.patchTasks.erase(it);
+				} else {
+					++it;
+				}
+			}
+
 			if (!state.dirtyKits.empty()) {
 				const LsdjComponent& lsdj = _registry.get<LsdjComponent>(system);
 
-				for (const size_t kitId : state.dirtyKits) {
-					std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>();
-					task->kitState = lsdj.kits[kitId];
-					task->kitData.resize(lsdj::Rom::BANK_SIZE);
-					task->sampleCache = state.sampleCache.get();
-				}
+				for (auto it = state.dirtyKits.begin(); it != state.dirtyKits.end(); ) {
+					if (!state.patchTasks.contains(*it)) {
+						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>();
+						task->system = system;
+						task->kitIndex = *it;
+						task->kitState = *findKit(lsdj, *it);
+						task->kitData.resize(lsdj::Rom::BANK_SIZE);
+						task->sampleCache = state.sampleCache.get();
+						state.patchTasks[*it] = std::move(task);
 
-				state.dirtyKits.clear();
+						_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(state.patchTasks[*it].get());
+
+						it = state.dirtyKits.erase(it);
+					} else {
+						++it;
+					}
+				}
 			}
 		}
 	}
@@ -121,20 +152,40 @@ namespace rp {
 		return nullptr;
 	}
 
-	bool LsdjController::updateKit(entt::entity system, uint32 kitId, const LsdjKitComponent& comp) {
+	LsdjKitComponent* LsdjController::getKitComponent(entt::entity system, uint32 kitId) {
+		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+		if (!lsdj) return nullptr;
+
+		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+		if (found != lsdj->kits.end()) {
+			return &(*found);
+		}
+
+		return nullptr;
+	}
+
+	void LsdjController::setKitDirty(entt::entity system, uint32 kitId) {
+		LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
+		if (!lsdjState) return;
+
+		lsdjState->dirtyKits.insert(kitId);
+	}
+
+	bool LsdjController::updateKit(entt::entity system, uint32 kitId) {
 		lsdj::Rom rom = getLsdjRom(system);
 		if (!rom.isValid()) return false; // Return true as we updated the component, even if the ROM is invalid
 
+		LsdjKitComponent* kitComponent = getKitComponent(system, kitId);
+		if (!kitComponent) return false;
+
 		LsdjStateComponent& state = _registry.get<LsdjStateComponent>(system);
 		lsdj::Kit kit = rom.getKit(kitId);
-		KitUtil::patchKit2(*state.sampleCache.get(), kit, comp);
+		KitUtil::createKit(*state.sampleCache.get(), kit, *kitComponent);
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
 		patch.data = kit.getBuffer().clone();
 		patch.offset = lsdj::Rom::KIT_LOOKUP[kitId] * lsdj::Rom::BANK_SIZE;
-
-		spdlog::info("Kit {} patched, sending MemoryPatchEvent", kitId);
 
 		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
 		return ctx.eventNode.trySend("Audio"_hs, MemoryPatchEvent{
@@ -151,14 +202,14 @@ namespace rp {
 
 		if (found == lsdj->kits.end()) {
 			lsdj->kits.push_back(std::move(comp));
-			updateKit(system, kitId, lsdj->kits.back());
 		} else {
 			*found = std::move(comp);
-			updateKit(system, kitId, *found);
 		}
 
+		//updateKit(system, kitId);
+
 		LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
-		lsdjState->dirtyKits.push_back(kitId);
+		lsdjState->dirtyKits.insert(comp.id);
 
 		return true;
 	}
@@ -185,11 +236,11 @@ namespace rp {
 
 		if (found == lsdj->kits.end()) {
 			lsdj->kits.push_back(std::move(comp));
-			updateKit(system, kitId, lsdj->kits.back());
 		} else {
 			*found = comp;
-			updateKit(system, kitId, *found);
 		}
+
+		updateKit(system, kitId);
 
 		return true;
 	}
@@ -203,22 +254,23 @@ namespace rp {
 		return true;
 	}
 
-	bool LsdjController::addKitComponent(entt::entity system, const LsdjKitComponent& comp) {
+	rp::KitIndex LsdjController::addKitComponent(entt::entity system, LsdjKitComponent&& comp) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
-		if (!lsdj) return false;
+		if (!lsdj) return INVALID_KIT_INDEX;
 
 		lsdj::Rom rom = getLsdjRom(system);
-		if (!rom.isValid()) return false;
+		if (!rom.isValid()) return INVALID_KIT_INDEX;
 
 		lsdj::Kit nextEmpty = rom.getNextEmptyKit();
-		if (!nextEmpty.isValid()) return false;
+		if (!nextEmpty.isValid()) return INVALID_KIT_INDEX;
 
 		const rp::KitIndex kitId = nextEmpty.getIndex();
-		lsdj->kits.push_back(comp);
+		comp.id = kitId;
+		lsdj->kits.push_back(std::move(comp));
 
-		updateKit(system, kitId, lsdj->kits.back());
+		updateKit(system, kitId);
 
-		return true;
+		return kitId;
 	}
 
 	LsdjComponent* LsdjController::getComponent(entt::entity system) {

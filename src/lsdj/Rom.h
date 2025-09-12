@@ -456,7 +456,7 @@ namespace rp::lsdj {
 		}
 
 		void setKit(size_t idx, const fw::Uint8Buffer& data) {
-			assert(false); // NYI
+			getKit(idx).setKitData(data);
 		}
 
 		Kit getKit(size_t idx) {

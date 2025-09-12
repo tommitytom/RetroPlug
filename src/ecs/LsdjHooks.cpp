@@ -1,9 +1,11 @@
 #include "LsdjHooks.h"
 
-#include "util/GameboyUtil.h"
+#include "ecs/EcsLsdjSystemOverlay.h"
+#include "ecs/EcsProjectSerializer.h"
+#include "ecs/LsdjController.h"
 #include "ecs/RetroPlugComponents.h"
 #include "lsdj/Sav.h"
-#include "ecs/EcsProjectSerializer.h"
+#include "util/GameboyUtil.h"
 
 namespace rp {
 	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -32,7 +34,7 @@ namespace rp {
 		}
 
 		if (!registry.all_of<LsdjStateComponent>(entity)) {
-			registry.emplace<LsdjStateComponent>(entity, LsdjStateComponent{ .sampleCache = std::make_unique<SampleCache>() });
+			registry.emplace<LsdjStateComponent>(entity, LsdjStateComponent{});
 		}		
 
 		fw::Uint8Buffer* sram = load.findData("sram");
