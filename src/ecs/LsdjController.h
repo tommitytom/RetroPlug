@@ -36,6 +36,8 @@ namespace rp {
 
 		int32 getNextEmptyKit(entt::entity system);
 
+		uint32 getKitVersion(entt::entity system, uint32 kitId);
+
 		void getKitNames(entt::entity system, std::unordered_map<rp::KitIndex, std::string>& target, bool includeUseCount);
 
 		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const;
@@ -65,11 +67,5 @@ namespace rp {
 		void setKitDirty(entt::entity system, uint32 kitId);
 
 	private:
-		template <typename T>
-		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
-			T* ptr = task.get();
-			_registry.emplace<std::unique_ptr<T>>(entity, std::move(task));
-			_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(ptr);
-		}
 	};
 }

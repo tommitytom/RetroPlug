@@ -16,28 +16,33 @@ namespace rp {
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
 
-		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
+		void finalize(entt::registry& targetRegistry) override;
 	};
 
-	struct LoadProjectTask : TaskBase {
+	struct LoadProjectTask : public TaskBase {
 		std::vector<std::filesystem::path> paths;
 		entt::registry registry;
 
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
 
-		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
+		void finalize(entt::registry& targetRegistry) override;
 	};
 
-	struct PatchKitTask : TaskBase {
-		fw::Uint8Buffer kitData;
-		LsdjKitComponent kitState;
-		SampleCache* sampleCache = nullptr;
-		KitIndex kitIndex = INVALID_KIT_INDEX;
-		entt::entity system = entt::null;
+	class PatchKitTask : public TaskBase {
+	private:
+		entt::entity _system;
+		LsdjKitComponent _kitState;
+		SampleCache& _sampleCache;
+
+		fw::Uint8Buffer _kitData;
+
+	public:
+		PatchKitTask(entt::entity system, const LsdjKitComponent& kit, SampleCache& sampleCache) : _system(system), _kitState(kit), _sampleCache(sampleCache) {}
+		~PatchKitTask() = default;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;
 
-		void finalize(entt::registry& targetRegistry, entt::entity entity) override;
+		void finalize(entt::registry& targetRegistry) override;
 	};
 }

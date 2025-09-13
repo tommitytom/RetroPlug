@@ -6,13 +6,27 @@
 
 namespace rp {
 	struct GainEffect {
+		bool normalize = true;
 		f32 gain = 1.0f;
 	};
 	inline void processEffect(const GainEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
+		f32 gain = effect.gain;
 		f32* data = target.data();
-		size_t size = target.size();
+		const size_t size = target.size();
+
+		if (effect.normalize) {
+			f32 maxAmp = 0.0f;
+			for (size_t i = 0; i < size; ++i) {
+				maxAmp = std::max(maxAmp, std::abs(data[i]));
+			}
+
+			if (maxAmp > 0.0f) {
+				gain *= 1.0f / maxAmp;
+			}
+		}
+
 		for (size_t i = 0; i < size; ++i) {
-			data[i] *= effect.gain;
+			data[i] *= gain;
 		}
 	}
 
@@ -25,7 +39,7 @@ namespace rp {
 		LowShelf,
 		HighShelf,
 		AllPass
-	};	
+	};
 	struct FilterEffect {
 		FilterType filterType = FilterType::LowPass;
 		f32 frequency = GameboyUtil::GAMEBOY_SAMPLE_RATE / 2.0f;

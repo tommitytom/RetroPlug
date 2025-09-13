@@ -1,3 +1,5 @@
+#include <entt/entity/entity.hpp>
+#include <entt/entity/registry.hpp>
 #include "application/GlfwNativeWindow.h"
 
 #ifdef _MSC_VER
@@ -193,16 +195,13 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			return project.resetSystem(entt::entity(systemId), remote);
 		})
 		.function("loadConfigs", &RetroPlugProject::loadConfigs)
-		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> bool {
-			return project.loadFromFileAsync(path) != entt::null;
+		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> TaskId {
+			return project.loadFromFileAsync(path);
 		})
-		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> uint32 {
+		.function("loadFromPaths", +[](RetroPlugProject& project, const std::vector<std::string>& paths) -> TaskId {
 			PathVector fsPaths;
-			for (const auto& path : paths) {
-				fsPaths.push_back(std::filesystem::path(path));
-			}
-
-			return (uint32)project.loadFromPathsAsync(fsPaths);
+			for (const auto& path : paths) fsPaths.push_back(std::filesystem::path(path));
+			return project.loadFromPathsAsync(fsPaths);
 		})
 		.function("reset", +[](RetroPlugProject& project) {
 			project.reset();
@@ -349,6 +348,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("getKitSample", +[](LsdjController& controller, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
 			return controller.getKitSample((entt::entity)system, kitId, sampleId);
+		})
+		.function("getKitVersion", +[](LsdjController& controller, SystemId system, uint32 kitId) -> uint32 {
+			return controller.getKitVersion((entt::entity)system, kitId);
 		})
 	;
 

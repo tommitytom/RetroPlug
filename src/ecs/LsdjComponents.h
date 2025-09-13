@@ -42,9 +42,10 @@ namespace rp {
 	};
 
 	struct LsdjStateComponent {
-		std::unordered_set<rp::KitIndex> dirtyKits;
-		std::unordered_map<rp::KitIndex, TaskPtr> patchTasks;
+		std::unordered_set<rp::KitIndex> dirtyKits; // Kits that need to be patched
+		std::unordered_set<rp::KitIndex> patchingKits; // Currently being patched in worker thread
 		std::optional<lsdj::MemoryOffsets> ramOffsets;
+		std::array<uint32, 51> kitVersions;
 		std::unique_ptr<SampleCache> sampleCache = std::make_unique<SampleCache>();
 
 		LsdjStateComponent(const LsdjStateComponent&) = delete;
@@ -53,7 +54,7 @@ namespace rp {
 		LsdjStateComponent(LsdjStateComponent&&) = default;
 		LsdjStateComponent& operator=(LsdjStateComponent&&) = default;
 
-		LsdjStateComponent() {}
+		LsdjStateComponent() { kitVersions.fill(1); }
 		~LsdjStateComponent() = default;
 	};
 }

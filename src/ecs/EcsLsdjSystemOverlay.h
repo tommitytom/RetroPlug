@@ -23,7 +23,7 @@ namespace rp {
 #ifdef FW_PLATFORM_WEB
 			return;
 #endif
-			//return;
+			return;
 			LsdjKitComponent comp;
 			comp.name = "KIT";
 
@@ -55,9 +55,7 @@ namespace rp {
 
 			//_currentKit = _lsdj.addKitComponent(_entity, std::move(comp));
 
-			_lsdj.setKitComponent(_entity, 0, LsdjKitComponent{
-				.path = "C:\\retro\\kits\\23. AMEN.kit"
-			});
+			_lsdj.setKitComponent(_entity, 0, LsdjKitComponent{ .path = "C:\\retro\\kits\\23. AMEN.kit" });
 			_currentKit = 0;
 
 			_waveView = addChild<fw::WaveView>("Waveform");

@@ -1,15 +1,48 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
 #include <entt/entity/registry.hpp>
 #include <TaskScheduler.h>
 
 namespace rp {
 	class TaskBase : public enki::ITaskSet {
-	public:
-		std::atomic<bool> completed = false;
-		bool success = false;
+	private:
+		std::atomic<bool> _completed = false;
+		bool _success = false;
+		std::string _error;
 
-		virtual void finalize(entt::registry& registry, entt::entity entity) {}
+	protected:
+		void setSuccess(bool success = true) {
+			_success = success;
+			_completed = true;
+		}
+
+		void setError(std::string&& error) {
+			_success = false;
+			_error = std::move(error);
+			spdlog::error("Task error: {}", _error);
+			_completed = true;
+		}
+
+	public:
+		//TaskBase() = default;
+		//virtual ~TaskBase() {}
+
+		bool hasFinished() const {
+			return _completed.load();
+		}
+
+		bool getSuccess() const {
+			return _success;
+		}
+
+		const std::string& getError() const {
+			return _error;
+		}
+
+		virtual void setup(const entt::registry& registry) {}
+
+		virtual void finalize(entt::registry& registry) {}
 	};
 
 	using TaskPtr = std::unique_ptr<TaskBase>;
@@ -31,13 +64,13 @@ namespace rp {
 			return id;
 		}
 
-		void resolveFinishedTasks(entt::registry& registry, entt::entity entity, std::vector<TaskId>& resolved) {
+		void resolveFinishedTasks(entt::registry& registry, std::vector<TaskId>& resolved) {
 			auto it = _tasks.begin();
 			while (it != _tasks.end()) {
 				TaskBase* task = it->second.get();
-				if (task->completed) {
-					if (task->success) {
-						task->finalize(registry, entity);
+				if (task->hasFinished()) {
+					if (task->getSuccess()) {
+						task->finalize(registry);
 					}
 
 					resolved.push_back(it->first);

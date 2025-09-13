@@ -17,64 +17,86 @@ namespace rp {
 		eachHook(hooks.systemHooks, [&](const SystemHookBase& hook) { hook.onMoveComponents(sourceRegistry, sourceEntity, targetRegistry, targetEntity); });
 	}
 
-	void LoadSystemTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
-		success = ProjectBuilder::handleLoad(registry, entity, registry.get<SystemLoadComponent>(entity), systemType);
-		completed = true;
+	void handleReplicate(entt::registry& registry) {
+		const HooksContext& ctx = registry.ctx().at<HooksContext>();
+		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onReplicate(registry); });
+		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onReplicate(registry); });
 	}
 
-	void LoadSystemTask::finalize(entt::registry& targetRegistry, entt::entity entity) {
+
+	void LoadSystemTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
+		const bool success = ProjectBuilder::handleLoad(registry, entity, registry.get<SystemLoadComponent>(entity), systemType);
+		setSuccess(success);
+	}
+
+	void LoadSystemTask::finalize(entt::registry& targetRegistry) {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		handleRegistryCopy(ctx, this->registry, this->entity, targetRegistry, entity);
+		handleReplicate(targetRegistry);
+		targetRegistry.ctx().at<RetroPlugProjectContext>().version++;
 	}
+
 
 	void LoadProjectTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
-		success = ProjectBuilder::loadFromPaths(registry, paths);
-		completed = true;
+		const bool success = ProjectBuilder::loadFromPaths(registry, paths);
+		setSuccess(success);
 	}
 
-	void LoadProjectTask::finalize(entt::registry& targetRegistry, entt::entity entity) {
+	void LoadProjectTask::finalize(entt::registry& targetRegistry) {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		for (const auto& [taskEntity, c] : this->registry.view<SystemComponent>().each()) {
 			entt::entity targetEntity = fw::Replicator::spawn(targetRegistry);
 			handleRegistryCopy(ctx, this->registry, taskEntity, targetRegistry, targetEntity);
 		}
+
+		handleReplicate(targetRegistry);
+		targetRegistry.ctx().at<RetroPlugProjectContext>().version++;
 	}
+
 
 	void PatchKitTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
-		assert(sampleCache);
-		assert(kitIndex != INVALID_KIT_INDEX);
+		assert(_kitState.id != INVALID_KIT_INDEX);
 
-		kitData.resize(lsdj::Rom::BANK_SIZE);
-		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
+		_kitData.resize(lsdj::Rom::BANK_SIZE);
+		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, _kitData.ref(), 0), -1);
 
-		if (kitState.path.has_value()) {
-			success = fw::FsUtil::readFile(kitState.path.value(), kitData);
+		bool success;
+		if (_kitState.path.has_value()) {
+			success = fw::FsUtil::readFile(_kitState.path.value(), _kitData);
 		} else {
-			success = KitUtil::createKit(*sampleCache, kit, kitState);
+			success = KitUtil::createKit(_sampleCache, kit, _kitState);
 		}
 
-		completed = true;
+		setSuccess(success);
 	}
 
-	void PatchKitTask::finalize(entt::registry& registry, entt::entity entity) {
-		SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(registry, entity);
+	void PatchKitTask::finalize(entt::registry& registry) {
+		SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(registry, _system);
 		if (!systemState) return;
 
 		VersionedMemory* romData = systemState->find(MemoryType::Rom);
 		if (!romData) return;
 
 		lsdj::Rom rom(MemoryAccessor(MemoryType::Rom, romData->data.ref(), 0));
-		rom.setKit(kitIndex, kitData);
+		rom.setKit(_kitState.id, _kitData);
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
-		patch.data = std::move(kitData);
-		patch.offset = lsdj::Rom::KIT_LOOKUP[kitIndex] * lsdj::Rom::BANK_SIZE;
+		patch.data = std::move(_kitData);
+		patch.offset = lsdj::Rom::KIT_LOOKUP[_kitState.id] * lsdj::Rom::BANK_SIZE;
 
 		RetroPlugProjectContext& ctx = registry.ctx().at<RetroPlugProjectContext>();
 		ctx.eventNode.trySend("Audio"_hs, MemoryPatchEvent{
-			.entity = system,
+			.entity = _system,
 			.patches = { patch }
 		});
+
+		LsdjStateComponent* lsdjState = registry.try_get<LsdjStateComponent>(_system);
+		if (lsdjState) {
+			lsdjState->kitVersions[_kitState.id]++;
+			lsdjState->patchingKits.erase(_kitState.id);
+		}
+
+		//spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
 	}
 }

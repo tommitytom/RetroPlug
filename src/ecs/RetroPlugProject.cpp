@@ -22,7 +22,7 @@ namespace rp {
 		_registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
-		_registry.ctx().emplace<enki::TaskScheduler>().Initialize(8);
+		_registry.ctx().emplace<TaskManager>().getScheduler().Initialize(8);
 		
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
@@ -117,18 +117,14 @@ namespace rp {
 		return false;
 	}
 
-	entt::entity RetroPlugProject::loadFromPathsAsync(PathVector paths) {
+	TaskId RetroPlugProject::loadFromPathsAsync(PathVector paths) {
 		std::unique_ptr<LoadProjectTask> loadTask = std::make_unique<LoadProjectTask>();
 		loadTask->paths = std::move(paths);
 		loadTask->registry.ctx().emplace<HooksContext>(_registry.ctx().at<HooksContext>());
 		loadTask->registry.ctx().emplace<ProjectPathContext>(_registry.ctx().at<ProjectPathContext>());
 		loadTask->registry.ctx().emplace<ProjectConfig>(_registry.ctx().at<ProjectConfig>());
 
-		// Create a temporary entity to track the task
-		entt::entity entity = _registry.create();
-		addTask(entity, std::move(loadTask));
-
-		return entity;
+		return addTask(std::move(loadTask));
 	}
 
 	bool RetroPlugProject::loadFromPaths(PathVector paths) {
@@ -282,34 +278,8 @@ namespace rp {
 	}
 
 	void RetroPlugProject::handleAsyncTasks() {
-		const HooksContext& ctx = getHooksContext();
-		bool changes = false;
-
-		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadProjectTask>>().each()) {
-			if (!task->completed) continue;
-			if (task->success) {
-				reset();
-				task->finalize(_registry, e);
-				changes = true;
-			}
-
-			// This entity was only created to track the task
-			fw::Replicator::destroy(_registry, e);
-		}
-
-		for (const auto& [e, task] : _registry.view<std::unique_ptr<LoadSystemTask>>().each()) {
-			if (!task->completed) continue;
-			if (task->success) {
-				task->finalize(_registry, e);
-				_registry.remove<std::unique_ptr<LoadSystemTask>>(e);
-				changes = true;
-			}
-		}
-
-		if (changes) {
-			handleReplicate();
-			getContext().version++;
-		}
+		TaskManager& taskManager = _registry.ctx().at<TaskManager>();
+		taskManager.resolveFinishedTasks(_registry, _finishedTasks);
 	}
 
 	void RetroPlugProject::handleReplicate() {

@@ -46,9 +46,14 @@ export interface IEffect {
 }
 
 export interface IGainEffect extends IEffect {
+	normalize: boolean;
 	gain: number;
 }
 export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', 'GainEffect', {
+	normalize: {
+		type: EffectParameterType.Toggle,
+		defaultValue: true
+	},
 	gain: {
 		type: EffectParameterType.Slider,
 		defaultValue: 1,

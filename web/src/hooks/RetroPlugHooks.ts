@@ -126,3 +126,32 @@ export function useSystemMemory(system: SystemId, memoryType: MemoryType, interv
 
 	return useSyncExternalStore(subscribe, getSnapshot);
 }
+
+
+export function useSystemKitVersion(system: SystemId, kitId: number, intervalTimeout: number = 100) {
+	const { project } = useRetroPlug();
+
+	const subscribe = useCallback(
+		(listener: () => void) => {
+			let lastVersion = project.lsdj.getKitVersion(system, kitId);
+
+			const interval = setInterval(() => {
+				const currentVersion = project.lsdj.getKitVersion(system, kitId);
+				if (currentVersion !== lastVersion) {
+					lastVersion = currentVersion;
+					listener();
+				}
+			}, intervalTimeout);
+			return () => {
+				clearInterval(interval);
+			};
+		},
+		[project, system, kitId, intervalTimeout],
+	);
+
+	const getSnapshot = useCallback(() => {
+		return project.lsdj.getKitVersion(system, kitId);
+	}, [project, system, kitId]);
+
+	return useSyncExternalStore(subscribe, getSnapshot);
+}

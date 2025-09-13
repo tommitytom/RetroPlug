@@ -26,36 +26,18 @@ namespace rp {
 
 	void LsdjController::onUpdate(f32 deltaTime) {
 		for (const auto& [system, state] : _registry.view<LsdjStateComponent>().each()) {
-			// Resolve any patching tasks
-			for (auto it = state.patchTasks.begin(); it != state.patchTasks.end(); ) {
-				if (it->second->completed) {
-					if (it->second->success) {
-						it->second->finalize(_registry, system);
-					} else {
-						spdlog::error("Failed to patch kit {}", it->first);
-					}
-					it = state.patchTasks.erase(it);
-				} else {
-					++it;
-				}
-			}
 
 			if (!state.dirtyKits.empty()) {
 				const LsdjComponent& lsdj = _registry.get<LsdjComponent>(system);
 
 				for (auto it = state.dirtyKits.begin(); it != state.dirtyKits.end(); ) {
 					assert(*it != INVALID_KIT_INDEX);
-					if (!state.patchTasks.contains(*it)) {
-						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>();
-						task->system = system;
-						task->kitIndex = *it;
-						task->kitState = *findKit(lsdj, *it);
-						task->kitData.resize(lsdj::Rom::BANK_SIZE);
-						task->sampleCache = state.sampleCache.get();
-						state.patchTasks[*it] = std::move(task);
+					if (!state.patchingKits.contains(*it)) {
+						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>(system, *findKit(lsdj, *it), *state.sampleCache);
+						TaskManager& taskManager = _registry.ctx().at<TaskManager>();
+						taskManager.addTask(std::move(task));
 
-						_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(state.patchTasks[*it].get());
-
+						state.patchingKits.insert(*it);
 						it = state.dirtyKits.erase(it);
 					} else {
 						++it;
@@ -93,6 +75,12 @@ namespace rp {
 		lsdj::Rom rom = getLsdjRom(system);
 		if (!rom.isValid()) return -1;
 		return rom.nextEmptyKitIdx();
+	}
+
+	uint32 LsdjController::getKitVersion(entt::entity system, uint32 kitId) {
+		const LsdjStateComponent *state = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
+		if (state) return state->kitVersions[kitId];
+		return 0;
 	}
 
 	void LsdjController::getKitNames(entt::entity system, std::unordered_map<rp::KitIndex, std::string>& target, bool includeUseCount) {

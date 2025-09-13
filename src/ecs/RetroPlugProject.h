@@ -30,6 +30,8 @@ namespace rp {
 		std::optional<std::chrono::high_resolution_clock::time_point> _lastPongTime;
 
 		ProjectConfig _config;
+		TaskManager _taskManager;
+		std::vector<TaskId> _finishedTasks;
 
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
@@ -39,9 +41,9 @@ namespace rp {
 
 		bool loadFromFile(std::filesystem::path path);
 
-		entt::entity loadFromFileAsync(std::filesystem::path path) { return loadFromPathsAsync({ std::move(path) }); }
+		TaskId loadFromFileAsync(std::filesystem::path path) { return loadFromPathsAsync({ std::move(path) }); }
 
-		entt::entity loadFromPathsAsync(PathVector paths);
+		TaskId loadFromPathsAsync(PathVector paths);
 
 		bool saveToFile(std::filesystem::path path);
 
@@ -60,15 +62,21 @@ namespace rp {
 		}
 
 		template <typename T>
-		void addTask(entt::entity entity, std::unique_ptr<T>&& task) {
-			T* ptr = task.get();
-			_registry.emplace<std::unique_ptr<T>>(entity, std::move(task));
-			_registry.ctx().at<enki::TaskScheduler>().AddTaskSetToPipe(ptr);
+		TaskId addTask(std::unique_ptr<T>&& task) {
+			return _registry.ctx().at<TaskManager>().addTask(std::move(task));
 		}
+
+		void getFinishedTasks(std::vector<TaskId>& outTasks) {
+			outTasks = std::move(_finishedTasks);
+			_finishedTasks.clear();
+		}
+
+		struct PendingLoadTag {};
 
 		template <typename T>
 		entt::entity addSystemAsync(SystemLoadComponent&& config, const T& component) {
 			entt::entity entity = fw::Replicator::spawn(_registry);
+			_registry.emplace<PendingLoadTag>(entity);
 
 			std::unique_ptr<LoadSystemTask> loadTask = std::make_unique<LoadSystemTask>();
 			loadTask->systemType = entt::type_id<T>().index();
@@ -79,7 +87,7 @@ namespace rp {
 			loadTask->registry.emplace<SystemComponent>(loadTask->entity, loadTask->systemType);
 			loadTask->registry.emplace<SystemLoadComponent>(loadTask->entity, std::move(config));
 
-			addTask(entity, std::move(loadTask));
+			addTask(std::move(loadTask));
 
 			return entity;
 		}

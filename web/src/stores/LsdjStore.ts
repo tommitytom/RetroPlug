@@ -27,7 +27,8 @@ export interface LsdjStoreState {
 	updateKit: (kitKey: string, updates: Partial<ILsdjKit>) => void;
 	renameKit: (kitKey: string, name: string) => void;
 	selectKit: (kitKey: string | null) => void;
-	patchSystemKit: (kitKey: string) => void;
+	fetchKitData: (kitKey: string) => void;
+	//patchSystemKit: (kitKey: string) => void;
 
 	// Sample Actions
 	addSample: (kitKey: string, sample: ILsdjKitSample) => void;
@@ -121,9 +122,11 @@ export const createLsdjStore = (
 								const kit = state.rom.kits.find((k) => k.key === kitKey);
 								if (kit) {
 									Object.assign(kit, updates);
+									state.controller.updateKit(state.systemId, kit.id, kit);
 								}
 							} else if (state.kit && state.kit.key === kitKey) {
 								Object.assign(state.kit, updates);
+								state.controller.updateKit(state.systemId, state.kit.id, state.kit);
 							}
 						}),
 
@@ -131,15 +134,29 @@ export const createLsdjStore = (
 						set((state) => {
 							if (state.rom) {
 								const kit = state.rom.kits.find((k) => k.key === kitKey);
-								if (kit) kit.name = name;
+								if (kit) {
+									kit.name = name;
+									state.controller.updateKit(state.systemId, kit.id, kit);
+								}
 							} else if (state.kit && state.kit.key === kitKey) {
 								state.kit.name = name;
+								state.controller.updateKit(state.systemId, state.kit.id, state.kit);
 							}
 						}),
 
 					selectKit: (kitKey) =>
 						set((state) => {
 							state.selectedKitKey = kitKey;
+						}),
+
+					fetchKitData: (kitKey) =>
+						set((state) => {
+							const lsdj = state.controller;
+							const kit = state.rom?.kits.find((k) => k.key === kitKey);
+							if (kit && state.systemId !== null) {
+								const kitData = lsdj.getKitData(state.systemId, kit.id)!;
+								kit.data = toUint8Array(kitData);
+							}
 						}),
 
 					// Sample Actions
@@ -152,6 +169,7 @@ export const createLsdjStore = (
 									kit.samples = [];
 								}
 								kit.samples.push(sample);
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -165,6 +183,8 @@ export const createLsdjStore = (
 								if (state.selectedSampleKey === sampleKey) {
 									state.selectedSampleKey = null;
 								}
+
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -177,6 +197,7 @@ export const createLsdjStore = (
 								if (sample) {
 									Object.assign(sample, updates);
 								}
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -187,6 +208,7 @@ export const createLsdjStore = (
 							if (kit) {
 								const sample = kit.samples?.find((s) => s.key === sampleKey);
 								if (sample) sample.name = name;
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -195,6 +217,7 @@ export const createLsdjStore = (
 							state.selectedSampleKey = sampleKey;
 						}),
 
+					/*
 					patchSystemKit: (kitKey: string) =>
 						set((state) => {
 							const lsdj = state.controller;
@@ -224,7 +247,7 @@ export const createLsdjStore = (
 								}, 1000); // Your desired delay
 							}
 						}),
-
+*/
 					// Kit Effect Actions
 					addKitEffect: (kitKey, effect) =>
 						set((state) => {
@@ -237,6 +260,8 @@ export const createLsdjStore = (
 								} else {
 									kit.effects.push(effect);
 								}
+
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -247,9 +272,8 @@ export const createLsdjStore = (
 							if (kit) {
 								const effect = kit.effects?.find((e) => e.key === effectKey);
 								if (effect) {
-									for (const key in updates) {
-										effect.effect[key] = updates[key];
-									}
+									Object.assign(effect.effect, updates);
+									state.controller.updateKit(state.systemId, kit.id, kit);
 								}
 							}
 						}),
@@ -260,6 +284,7 @@ export const createLsdjStore = (
 								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
 							if (kit && kit.effects) {
 								kit.effects = kit.effects.filter((e) => e.key !== effectKey);
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -270,6 +295,7 @@ export const createLsdjStore = (
 							if (kit && kit.effects && kit.effects.length > fromIndex && kit.effects.length > toIndex) {
 								const [removed] = kit.effects.splice(fromIndex, 1);
 								kit.effects.splice(toIndex, 0, removed);
+								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),
 
@@ -282,6 +308,7 @@ export const createLsdjStore = (
 								const sample = kit.samples?.find((s) => s.key === sampleKey);
 								if (sample && sample.effects) {
 									sample.effects.push(effect);
+									state.controller.updateKit(state.systemId, kit.id, kit);
 								}
 							}
 						}),
@@ -296,6 +323,7 @@ export const createLsdjStore = (
 									const effect = sample.effects?.find((e) => e.key === effectKey);
 									if (effect) {
 										Object.assign(effect, updates);
+										state.controller.updateKit(state.systemId, kit.id, kit);
 									}
 								}
 							}
@@ -309,6 +337,7 @@ export const createLsdjStore = (
 								const sample = kit.samples?.find((s) => s.key === sampleKey);
 								if (sample) {
 									sample.effects = sample.effects?.filter((e) => e.key !== effectKey);
+									state.controller.updateKit(state.systemId, kit.id, kit);
 								}
 							}
 						}),
@@ -327,6 +356,7 @@ export const createLsdjStore = (
 								) {
 									const [removed] = sample.effects?.splice(fromIndex, 1);
 									sample.effects?.splice(toIndex, 0, removed);
+									state.controller.updateKit(state.systemId, kit.id, kit);
 								}
 							}
 						}),

@@ -49,6 +49,10 @@ export class LsdjController {
 	getKitData(systemId: SystemId, kitId: number): Uint8Buffer | null {
 		return this._nativeController.getKitData(systemId, kitId);
 	}
+
+	getKitVersion(systemId: SystemId, kitId: number): number {
+		return this._nativeController.getKitVersion(systemId, kitId);
+	}
 }
 
 // Utility function to play an audio sample using Web Audio API
