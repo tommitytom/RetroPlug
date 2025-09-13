@@ -23,6 +23,7 @@ namespace rp {
 #ifdef FW_PLATFORM_WEB
 			return;
 #endif
+			_currentKit = 0;
 			return;
 			LsdjKitComponent comp;
 			comp.name = "KIT";
@@ -80,14 +81,24 @@ namespace rp {
 		}
 
 		void onUpdate(f32 delta) override {
-			if (!_waveView || _currentKit == INVALID_KIT_INDEX) return;
+			if (_currentKit == INVALID_KIT_INDEX) return;
 
 			lsdj::Rom rom = _lsdj.getLsdjRom(_entity);
 			fw::Uint8Buffer kitData = rom.getKitSampleData(_currentKit, 0);
+
+			rom.eachKit([&](lsdj::Kit kit) {
+				const uint32 kitIndex = (uint32)kit.getIndex();
+				const std::string name = std::string(kit.getName());
+
+				return;
+			});
+
+			if (_waveView) {
+				fw::Float32Buffer target;
+				lsdj::SampleUtil::convertNibblesToF32(kitData, target);
+				_waveView->setAudioData(std::move(target), 1);
+			}
 			
-			fw::Float32Buffer target;
-			lsdj::SampleUtil::convertNibblesToF32(kitData, target);
-			_waveView->setAudioData(std::move(target), 1);
 		}
 
 		bool onDrop(const std::vector<std::string>& paths) override {

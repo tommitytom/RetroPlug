@@ -128,25 +128,30 @@ export function useSystemMemory(system: SystemId, memoryType: MemoryType, interv
 }
 
 
-export function useSystemKitVersion(system: SystemId, kitId: number, intervalTimeout: number = 100) {
+export function useSystemKitVersion(system: SystemId, kitId: number) {
 	const { project } = useRetroPlug();
 
 	const subscribe = useCallback(
 		(listener: () => void) => {
 			let lastVersion = project.lsdj.getKitVersion(system, kitId);
+			let animationFrameId: number;
 
-			const interval = setInterval(() => {
+			const checkForUpdates = () => {
 				const currentVersion = project.lsdj.getKitVersion(system, kitId);
 				if (currentVersion !== lastVersion) {
 					lastVersion = currentVersion;
 					listener();
 				}
-			}, intervalTimeout);
+				animationFrameId = requestAnimationFrame(checkForUpdates);
+			};
+
+			animationFrameId = requestAnimationFrame(checkForUpdates);
+
 			return () => {
-				clearInterval(interval);
+				cancelAnimationFrame(animationFrameId);
 			};
 		},
-		[project, system, kitId, intervalTimeout],
+		[project, system, kitId],
 	);
 
 	const getSnapshot = useCallback(() => {

@@ -144,7 +144,7 @@ using SkipUint8Buffer = rfl::Skip<fw::Uint8Buffer>;
 EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("setupWasmFs", &setupWasmFs);
 
-	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32);
+	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32WithRotation);
 	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
 
 	enum_<SaveStateType>("SaveStateType")

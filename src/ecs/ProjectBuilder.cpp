@@ -243,10 +243,11 @@ namespace rp {
 
 				auto romPath = fs::path(sramEntry->path).replace_extension(".gb");
 				if (fs::exists(romPath)) {
-					load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
 					load.entries["rom"] = { .path = romPath.string() };
 				}
 			}
+
+			load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
 		} else if (romEntry && !sramEntry) {
 			if (!romEntry->path.empty()) {
 				auto projectPath = fs::path(romEntry->path).replace_extension(".rplg");
@@ -255,20 +256,21 @@ namespace rp {
 				auto sramPath = fs::path(romEntry->path).replace_extension(".sav");
 				if (fs::exists(sramPath)) {
 					load.entries["sram"] = { .path = sramPath.string() };
-					load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
 				}
 			}
+
+			load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
 		} else {
 			load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
 			load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
 		}
 
-		spdlog::info("Creating new project with the following entries:");
-		for (const auto& [type, entry] : load.entries) {
-			spdlog::info(" - {}: {}", type, entry.path.empty() ? "[data]" : entry.path);
-		}
+		if (romCount == 1) {
+			spdlog::info("Creating new project with the following entries:");
+			for (const auto& [type, entry] : load.entries) {
+				spdlog::info(" - {}: {}", type, entry.path.empty() ? "[data]" : entry.path);
+			}
 
-		if ((romCount == 1 && sramCount == 1) || load.entries.size() == 2) {
 			// Make project path relative to sav or rom if possible
 
 			if (load.entries.contains("sram") && !load.entries["sram"].path.empty()) {

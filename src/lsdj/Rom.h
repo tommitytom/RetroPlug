@@ -340,7 +340,7 @@ namespace rp::lsdj {
 		const uint8* _paletteData = nullptr;
 		const uint8* _fontData = nullptr;
 
-		inline constexpr static std::array<uint8, 30> NAME_CHECK = { 0x47, 0x52, 0x41, 0x59, 0, 0x49, 0x4E, 0x56, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+		inline constexpr static std::array<uint8, 15> NAME_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 		inline constexpr static std::array<uint8, 20> PALETTE_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x48, 0x48 };
 		inline constexpr static std::array<uint8, 16> FONT_CHECK = { 0, 0, 0, 0, 0xD0, 0x90, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0xD0, 0x90, 0, 0 };
 		inline constexpr static std::array<uint8, 6> VERSION_CHECK = { 0x4C, 0x53, 0x44, 0x6A, 0x2D, 0x76 };

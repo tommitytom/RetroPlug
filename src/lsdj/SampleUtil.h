@@ -8,23 +8,39 @@ namespace rp::lsdj {
 		const size_t SAMPLES_PER_BYTE_4BIT = 2;
 
 		inline void convertNibblesToF32(const fw::Uint8Buffer& input, fw::Float32Buffer& output) {
-			output.resize(input.size() * SAMPLES_PER_BYTE_4BIT);
+			output.resize(input.size() * 2);  // 2 samples per byte
 
 			for (size_t i = 0; i < input.size(); ++i) {
-				uint8 n = input[i];
-				output[i * 2] = (f32)((n & 0xF0) >> 4);
-				output[i * 2 + 1] = (f32)((n & 0xF));
-			}
+				uint8_t byte = input[i];
 
-			for (size_t i = 0; i < output.size(); ++i) {
-				f32 v = output[i] - 7.0f;
-				if (v < 0.0f) {
-					v /= 7.0f;
-				} else {
-					v /= 8.0f;
+				// Extract nibbles and convert to [-1, 1] in one step
+				// Note: The encoder inverted with (0xF - value), so we need to invert back
+				output[i * 2]     = ((0xF - (byte >> 4)) / 15.0f) * 2.0f - 1.0f;
+				output[i * 2 + 1] = ((0xF - (byte & 0xF)) / 15.0f) * 2.0f - 1.0f;
+			}
+		}
+
+		inline void convertNibblesToF32WithRotation(const fw::Uint8Buffer& input, fw::Float32Buffer& output) {
+			// Process in chunks of 16 bytes (32 samples)
+			const size_t numChunks = input.size() / 16;
+			output.resize(numChunks * 32);
+
+			for (size_t chunk = 0; chunk < numChunks; ++chunk) {
+				float samples[32];
+
+				// Unpack 16 bytes into 32 nibbles
+				for (size_t i = 0; i < 16; ++i) {
+					uint8_t byte = input[chunk * 16 + i];
+					samples[i * 2]     = 0xF - (byte >> 4);
+					samples[i * 2 + 1] = 0xF - (byte & 0xF);
 				}
 
-				output[i] = v;
+				// Undo rotation: position i contains what should be sample (i-1)
+				// Position 0 has sample 31, position 1 has sample 0, etc.
+				for (size_t i = 0; i < 32; ++i) {
+					size_t rotatedPos = (i + 1) % 32;  // Where this sample was stored
+					output[chunk * 32 + i] = (samples[rotatedPos] / 15.0f) * 2.0f - 1.0f;
+				}
 			}
 		}
 
