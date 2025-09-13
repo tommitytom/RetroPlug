@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+//#include <spdlog/spdlog.h>
 #include <liblsdj/liblsdj/include/lsdj/sav.h>
 #include <liblsdj/liblsdj/include/lsdj/chain.h>
 #include <liblsdj/liblsdj/include/lsdj/phrase.h>
@@ -126,6 +127,14 @@ namespace rp::lsdj {
 		Song(lsdj_song_t* song): _song(song) {}
 		Song(uint8* data): _song((lsdj_song_t*)data) {}
 
+		lsdj_song_t* getRaw() {
+			return _song;
+		}
+
+		const lsdj_song_t* getRaw() const {
+			return _song;
+		}
+
 		fw::Uint8Buffer getBuffer() {
 			return fw::Uint8Buffer((uint8*)_song, LSDJ_SONG_BYTE_COUNT);
 		}
@@ -189,11 +198,65 @@ namespace rp::lsdj {
 	private:
 		lsdj_project_t* _project = nullptr;
 		uint8 _projectIndex = LSDJ_NO_PROJECT_AT_INDEX;
+		bool _ownsData = false;
 
 	public:
-		Project() : _project(nullptr) {}
-		Project(lsdj_project_t* project, uint8 projectIndex) : _project(project), _projectIndex(projectIndex) {}
-		Project(fw::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()) {}
+		static Project fromLsdsng(const fw::Uint8Buffer& buffer) {
+			lsdj_project_t* project = nullptr;
+			lsdj_error_t err = lsdj_project_read_lsdsng_from_memory(buffer.data(), buffer.size(), &project, nullptr);
+			if (err != LSDJ_SUCCESS) {
+				//spdlog::warn("Failed to read .lsdsng data");
+				return Project();
+			}
+
+			return Project(project, true, LSDJ_NO_PROJECT_AT_INDEX);
+		}
+
+		Project() {}
+		Project(lsdj_project_t* project, bool ownsData, uint8 projectIndex) : _project(project), _projectIndex(projectIndex), _ownsData(ownsData) {}
+		Project(fw::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()), _ownsData(false) {}
+		~Project() {
+			if (_ownsData && _project) {
+				lsdj_project_free(_project);
+				_project = nullptr;
+			}
+		}
+
+		Project& operator=(const Project& other) {
+			if (_ownsData && _project) {
+				lsdj_project_free(_project);
+				_project = nullptr;
+				_ownsData = false;
+			}
+
+			if (other._ownsData) {
+				lsdj_error_t err = lsdj_project_copy(other._project, &_project, nullptr);
+				_ownsData = (err == LSDJ_SUCCESS);
+			} else {
+				_project = other._project;
+				_ownsData = false;
+			}
+
+			_projectIndex = other._projectIndex;
+
+			return *this;
+		}
+
+		Project(const Project& other) { *this = other; }
+
+		Project& operator=(Project&& other) noexcept {
+			if (_ownsData && _project) {
+				lsdj_project_free(_project);
+			}
+			_project = other._project;
+			_projectIndex = other._projectIndex;
+			_ownsData = other._ownsData;
+			other._project = nullptr;
+			other._projectIndex = LSDJ_NO_PROJECT_AT_INDEX;
+			other._ownsData = false;
+			return *this;
+		}
+		Project(Project&& other) noexcept { *this = std::move(other); };
 
 		uint8 getIndex() const {
 			return _projectIndex;
@@ -308,10 +371,17 @@ namespace rp::lsdj {
 			return load(data.data(), data.size());
 		}
 
-		void save(fw::Uint8Buffer& target) {
+		bool save(fw::Uint8Buffer& target) {
 			target.resize(LSDJ_SAV_SIZE);
 			size_t writeCount;
-			lsdj_sav_write_to_memory(_sav, target.data(), target.size(), &writeCount);
+			lsdj_error_t err = lsdj_sav_write_to_memory(_sav, target.data(), target.size(), &writeCount);
+
+			 if (err != LSDJ_SUCCESS) {
+				 //spdlog::error("Failed to set project at index {}: error {}", idx, lsdj_error_get_description(error));
+				 return false;
+			 }
+
+			 return true;
 		}
 
 		fw::Uint8Buffer save() {
@@ -338,23 +408,9 @@ namespace rp::lsdj {
 			lsdj_sav_erase_project(_sav, idx);
 		}
 
-		bool writeProject(Project project, uint8 idx = 255) {
-			if (idx == 255) {
-				idx = findNextEmptyProject();
-			}
-
-			if (idx == 255) {
-				return false;
-			}
-
-			lsdj_sav_set_project_copy(_sav, idx, project.getRaw(), nullptr);
-
-			return true;
-		}
-
 		uint8 findNextEmptyProject() {
 			for (uint8 i = 0; i < LSDJ_SAV_PROJECT_COUNT; ++i) {
-				if (!lsdj_sav_get_project(_sav, i)) {
+				if (!lsdj_sav_get_project_const(_sav, i)) {
 					return i;
 				}
 			}
@@ -362,7 +418,27 @@ namespace rp::lsdj {
 		}
 
 		Project getProject(uint8 idx) const {
-			return Project(lsdj_sav_get_project(_sav, idx),	idx);
+			return Project(lsdj_sav_get_project(_sav, idx),	false, idx);
+		}
+
+		bool setProject(const Project& project, uint8 idx) {
+			lsdj_error_t error = lsdj_sav_set_project_copy(_sav, idx, project.getRaw(), nullptr);
+			if (error != LSDJ_SUCCESS) {
+				//spdlog::error("Failed to set project at index {}: error {}", idx, lsdj_error_get_description(error));
+				return false;
+			}
+
+			return true;
+		}
+
+		bool addProject(const Project& project) {
+			uint8 idx = findNextEmptyProject();
+
+			if (idx == 255) {
+				return false;
+			}
+
+			return setProject(project, idx);
 		}
 
 		Project getWorkingProject() const {
@@ -378,9 +454,15 @@ namespace rp::lsdj {
 			return lsdj_sav_get_working_memory_song(_sav);
 		}
 
+		void setWorkingSong(const Song& song) {
+			lsdj_sav_set_working_memory_song(_sav, song.getRaw());
+		}
+
 		void setWorkingProject(uint8 idx) {
 			lsdj_error_t err = lsdj_sav_set_working_memory_song_from_project(_sav, idx);
-			assert(err == LSDJ_SUCCESS);
+			if (err != LSDJ_SUCCESS) {
+				//spdlog::error("Failed to set working project to index {}: error {}", idx, lsdj_error_get_description(err));
+			}
 		}
 	};
 }

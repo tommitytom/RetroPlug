@@ -183,7 +183,7 @@ void GlfwNativeWindow::onCreate() {
 	#ifdef FW_PLATFORM_WEB
 	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-    //glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 	emscripten_glfw_set_next_window_canvas_selector(_canvasId.c_str());
 	emscripten::glfw3::SetBrowserKeyCallback([](GLFWwindow* window, int key, int scancode, int action, int mods) {
 		return true;
@@ -243,8 +243,19 @@ void GlfwNativeWindow::setDimensions(Dimension dimensions) {
 	_dimensions = dimensions;
 }
 
+DimensionF lastContentScale;
+
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	const ViewManagerPtr& vm = getViewManager();
+
+	DimensionF contentScale;
+	glfwGetWindowContentScale(_window, &contentScale.w, &contentScale.h);
+	vm->setScale(contentScale.w);
+
+	if (lastContentScale!= contentScale) {
+		lastContentScale = contentScale;
+		spdlog::info("Content scale: {}, {}", contentScale.w, contentScale.h);
+	}
 
 	Dimension viewSize = vm->getDimensions();
 	viewSize = vm->getDimensions();

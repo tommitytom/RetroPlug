@@ -24,7 +24,7 @@ void biquadEffectUsageExample() {
 	biquadFilter->configureLowPass(1000.0f, 0.707f);
 
 	// Example 2: Manual configuration for high-pass filter
-	biquadFilter->setFilterType(FilterType::HighPass);
+	biquadFilter->setFilterType(FilterType3::HighPass);
 	biquadFilter->setFrequency(200.0f);  // Cut frequencies below 200 Hz
 	biquadFilter->setQ(1.0f);            // Sharper rolloff
 

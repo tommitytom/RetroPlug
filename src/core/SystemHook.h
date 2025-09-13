@@ -8,7 +8,23 @@
 
 namespace rp {
 	using PathVector = std::vector<std::filesystem::path>;
-	using NamedEntryVector = std::vector<std::pair<std::string, std::filesystem::path>>;
+
+	struct NamedEntry {
+		std::string type;
+		std::filesystem::path path;
+		fw::Uint8Buffer data;
+	};
+	using NamedEntryVector = std::vector<NamedEntry>;
+
+	inline NamedEntry* findEntry(NamedEntryVector& entries, const std::string& type) {
+		for (NamedEntry& entry : entries) {
+			if (entry.type == type) {
+				return &entry;
+			}
+		}
+
+		return nullptr;
+	}
 
 	inline void filterEntries(const PathVector& paths, NamedEntryVector& out, const std::string& ext, const std::string& type) {
 		for (const std::filesystem::path& path : paths) {

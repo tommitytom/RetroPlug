@@ -287,6 +287,7 @@ namespace rp::lsdj {
 
 		size_t writeSamples(const std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
 			fw::Uint8Buffer kitBuffer(kitData.getSize());
+			kitBuffer.slice(Kit::NAME_OFFSET, Kit::NAME_SIZE).write(kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
 
 			uint16* offsets = (uint16*)kitBuffer.data();
 			uint8* names = kitBuffer.data() + lsdj::Kit::SAMPLE_NAME_OFFSET;

@@ -5,6 +5,7 @@
 
 namespace rp::GameboyUtil {
 	const uint32 ROM_NAME_OFFSET = 0x0134;
+	const uint32 GAMEBOY_SAMPLE_RATE = 11468;
 
 	static std::string getRomName(const char* romData) {
 		std::string romName = std::string(romData + ROM_NAME_OFFSET, 15);

@@ -5,16 +5,92 @@
 #include "ecs/RetroPlugProjectContext.h"
 
 namespace rp {
-	bool ensureMountPath(const std::filesystem::path& mountPath, const std::filesystem::path& path) {
+	namespace fs = std::filesystem;
+
+	enum class FileSystemFileType {
+		Unknown,
+		File,
+		Directory,
+		Archive
+	};
+
+	struct FileSystemEntry {
+		std::string name;
+		fs::path path;
+		FileSystemFileType type = FileSystemFileType::Unknown;
+		size_t size = 0;
+	};
+
+	class FileSystemArchive;
+
+	class FileSystemArchive {
+	public:
+		FileSystemArchive() {}
+		virtual ~FileSystemArchive() = 0;
+
+		virtual bool list() { return true; }
+	};
+
+	struct ParsedPath {
+		FileSystemFileType type = FileSystemFileType::Unknown;
+		fs::path fsPath; // Path on filesystem
+		fs::path archivePath; // Path within archive
+	};
+
+	class FileSystemArchiveFactory {
+	private:
+		std::vector<fs::path> _extensions;
+
+	public:
+		FileSystemArchiveFactory(std::vector<fs::path>&& extensions) : _extensions(std::move(extensions)) {}
+		virtual ~FileSystemArchiveFactory() = 0;
+
+		virtual bool canOpen(const fs::path& path) const {
+			return std::find(_extensions.begin(), _extensions.end(), path.extension()) != _extensions.end();
+		}
+
+		virtual std::unique_ptr<FileSystemArchive> open(const fs::path& path) const = 0;
+
+		const std::vector<fs::path>& getExtensions() const {
+			return _extensions;
+		}
+	};
+
+	class FileSystem {
+	private:
+		std::vector<std::unique_ptr<FileSystemArchive>> _archiveFactories;
+		std::unordered_map<fs::path, FileSystemArchive> _openArchives;
+
+	public:
+		void listPath(const fs::path& path) {
+			
+		}
+	};
+
+
+	class SavArchive : public FileSystemArchive {
+	};
+
+	class SavArchiveFactory : public FileSystemArchiveFactory {
+	public:
+		SavArchiveFactory() : FileSystemArchiveFactory({ ".sav" }) {}
+		~SavArchiveFactory() = default;
+
+		std::unique_ptr<FileSystemArchive> open(const fs::path& path) const override {
+			return std::make_unique<SavArchive>();
+		}
+	};
+
+	bool ensureMountPath(const fs::path& mountPath, const fs::path& path) {
 		return mountPath.empty() || path.string().starts_with(mountPath.string());
 	}
 
-	bool resolveEntries(SystemLoadComponent& load, const std::filesystem::path& rootPath) {
+	bool resolveEntries(SystemLoadComponent& load, const fs::path& rootPath) {
 		bool error = false;
 
 		for (auto& [type, entry] : load.entries) {
 			if (entry.data().empty()) {
-				std::filesystem::path path(entry.path);
+				fs::path path(entry.path);
 
 				if (!path.is_absolute()) {
 					path = (rootPath / path).lexically_normal();
@@ -43,8 +119,8 @@ namespace rp {
 
 	size_t countEntries(const NamedEntryVector& entries, const std::string& type) {
 		size_t count = 0;
-		for (const auto& [t, p] : entries) {
-			if (t == type) {
+		for (const NamedEntry& entry : entries) {
+			if (entry.type == type) {
 				count++;
 			}
 		}
@@ -52,14 +128,24 @@ namespace rp {
 		return count;
 	}
 
-	std::filesystem::path getEntryPath(const NamedEntryVector& entries, const std::string& type) {
-		for (const auto& [t, p] : entries) {
-			if (t == type) {
-				return p;
+	fs::path getEntryPath(const NamedEntryVector& entries, const std::string& type) {
+		for (const NamedEntry& entry : entries) {
+			if (entry.type == type) {
+				return entry.path;
 			}
 		}
 
 		return "";
+	}
+
+	const NamedEntry* findEntry(const NamedEntryVector& entries, const std::string& type) {
+		for (const NamedEntry& entry : entries) {
+			if (entry.type == type) {
+				return &entry;
+			}
+		}
+
+		return nullptr;
 	}
 
 	ProjectPathContext& getPathContext(entt::registry& registry) {
@@ -70,14 +156,14 @@ namespace rp {
 		return registry.ctx().at< HooksContext>();
 	}
 
-	bool ProjectBuilder::loadFromFile(entt::registry& registry, std::filesystem::path path) {
+	bool ProjectBuilder::loadFromFile(entt::registry& registry, fs::path path) {
 		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		spdlog::info("Loading project from file: {}", path.string());
 
 		if (!ensureMountPath(pathCtx.mountPath, path)) {
 			spdlog::error("Path {} is not within mount path {}", path.string(), pathCtx.mountPath.string());
-			return false;
+		return false;
 		}
 
 		std::string data = fw::FsUtil::readTextFile(path);
@@ -107,8 +193,8 @@ namespace rp {
 		}
 
 		// Remove non existing paths
-		paths.erase(std::remove_if(paths.begin(), paths.end(), [](const std::filesystem::path& path) {
-			if (!std::filesystem::exists(path)) {
+		paths.erase(std::remove_if(paths.begin(), paths.end(), [](const fs::path& path) {
+			if (!fs::exists(path)) {
 				spdlog::warn("Path does not exist: {}", path.string());
 				return true;
 			}
@@ -139,44 +225,60 @@ namespace rp {
 		const size_t romCount = countEntries(entries, "rom");
 		const size_t sramCount = countEntries(entries, "sram");
 
+		// Only support single rom/sram for now
+		if (romCount > 1 || sramCount > 1) {
+			spdlog::warn("Unable to load: Multiple ROMs or SRAMs provided");
+			return false;
+		}
+
 		SystemLoadComponent load;
 
-		if (romCount == 0 && sramCount == 1) {
-			auto sramPath = getEntryPath(entries, "sram");
+		const NamedEntry* romEntry = findEntry(entries, "rom");
+		const NamedEntry* sramEntry = findEntry(entries, "sram");
 
-			auto projectPath = std::filesystem::path(sramPath).replace_extension(".rplg");
-			if (std::filesystem::exists(projectPath)) {
-				return loadFromFile(registry, projectPath);
-			}
+		if (!romEntry && sramEntry) {
+			if (!sramEntry->path.empty()) {
+				auto projectPath = fs::path(sramEntry->path).replace_extension(".rplg");
+				if (fs::exists(projectPath)) return loadFromFile(registry, projectPath);
 
-			auto romPath = std::filesystem::path(sramPath).replace_extension(".gb");
-			if (std::filesystem::exists(romPath)) {
-				load.entries["sram"] = { .path = sramPath.string() };
-				load.entries["rom"] = { .path = romPath.string() };
+				auto romPath = fs::path(sramEntry->path).replace_extension(".gb");
+				if (fs::exists(romPath)) {
+					load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
+					load.entries["rom"] = { .path = romPath.string() };
+				}
 			}
-		} else if (romCount == 1 && sramCount == 0) {
-			auto romPath = getEntryPath(entries, "rom");
+		} else if (romEntry && !sramEntry) {
+			if (!romEntry->path.empty()) {
+				auto projectPath = fs::path(romEntry->path).replace_extension(".rplg");
+				if (fs::exists(projectPath)) return loadFromFile(registry, projectPath);
 
-			auto projectPath = std::filesystem::path(romPath).replace_extension(".rplg");
-			if (std::filesystem::exists(projectPath)) {
-				return loadFromFile(registry, projectPath);
+				auto sramPath = fs::path(romEntry->path).replace_extension(".sav");
+				if (fs::exists(sramPath)) {
+					load.entries["sram"] = { .path = sramPath.string() };
+					load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
+				}
 			}
-
-			auto sramPath = std::filesystem::path(romPath).replace_extension(".sav");
-			if (std::filesystem::exists(romPath)) {
-				load.entries["sram"] = { .path = sramPath.string() };
-				load.entries["rom"] = { .path = romPath.string() };
-			}
+		} else {
+			load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
+			load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
 		}
 
 		spdlog::info("Creating new project with the following entries:");
 		for (const auto& [type, entry] : load.entries) {
-			spdlog::info(" - {}: {}", type, entry.path);
+			spdlog::info(" - {}: {}", type, entry.path.empty() ? "[data]" : entry.path);
 		}
 
 		if ((romCount == 1 && sramCount == 1) || load.entries.size() == 2) {
-			// Make project path relative to sav
-			pathCtx.projectPath = load.entries["sram"].path;
+			// Make project path relative to sav or rom if possible
+
+			if (load.entries.contains("sram") && !load.entries["sram"].path.empty()) {
+				pathCtx.projectPath = load.entries["sram"].path;
+			} else if (load.entries.contains("rom") && !load.entries["rom"].path.empty()) {
+				pathCtx.projectPath = load.entries["rom"].path;
+			} else {
+				pathCtx.projectPath = "./";
+			}
+
 			pathCtx.projectPath.replace_extension(".rplg");
 			pathCtx.projectRoot = pathCtx.projectPath.parent_path();
 
@@ -186,6 +288,8 @@ namespace rp {
 			if (system != entt::null) {
 				//saveToFile(_projectPath);
 			}
+
+			return true;
 		}
 
 		return false;
@@ -218,7 +322,7 @@ namespace rp {
 		return handleLoad(registry, entity, load, systemType);
 	}
 
-	bool ProjectBuilder::saveToFile(entt::registry& registry, std::filesystem::path path) {
+	bool ProjectBuilder::saveToFile(entt::registry& registry, fs::path path) {
 		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		if (!ensureMountPath(pathCtx.mountPath, path)) {
@@ -232,7 +336,7 @@ namespace rp {
 		// Ensure all entries are relative to the new project root!
 		for (const auto& [e, c] : registry.view<SystemLoadComponent>().each()) {
 			for (auto& [k, v] : c.entries) {
-				std::filesystem::path entryPath(v.path);
+				fs::path entryPath(v.path);
 				if (entryPath.is_relative()) {
 					v.path = (pathCtx.projectRoot / entryPath).lexically_normal().string();
 				}
@@ -253,7 +357,7 @@ namespace rp {
 		return true;
 	}
 
-	bool ProjectBuilder::deserializeJson(entt::registry& registry, std::string_view str, const std::filesystem::path& rootPath) {
+	bool ProjectBuilder::deserializeJson(entt::registry& registry, std::string_view str, const fs::path& rootPath) {
 		ProjectPathContext& pathCtx = getPathContext(registry);
 
 		pathCtx.projectRoot = rootPath;

@@ -58,32 +58,58 @@ export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', 'GainEffect'
 	}
 });
 
+const GAMEBOY_SAMPLE_RATE = 11468;
+
+export enum FilterType {
+	LowPass = 'LowPass',
+	HighPass = 'HighPass',
+	BandPass = 'BandPass',
+	BandStop = 'BandStop',
+	Peak = 'Peak',
+	LowShelf = 'LowShelf',
+	HighShelf = 'HighShelf',
+	AllPass = 'AllPass'
+};
 export interface IFilterEffect extends IEffect {
+	filterType: FilterType;
 	frequency: number;
 	q: number;
 	feedback: number;
+	gain: number;
 }
 export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', 'FilterEffect', {
+	filterType: {
+		type: EffectParameterType.Dropdown,
+		defaultValue: FilterType.LowPass,
+		options: Object.values(FilterType)
+	},
 	frequency: {
 		type: EffectParameterType.Slider,
-		defaultValue: 1000,
+		defaultValue: GAMEBOY_SAMPLE_RATE / 2,
 		min: 20,
-		max: 20000,
+		max: GAMEBOY_SAMPLE_RATE / 2,
 		step: 1
 	},
 	q: {
 		type: EffectParameterType.Slider,
 		defaultValue: 0,
-		min: 0,
+		min: 0.01,
 		max: 1,
-		step: 0.1
+		step: 0.01
 	},
 	feedback: {
 		type: EffectParameterType.Slider,
 		defaultValue: 0,
 		min: 0,
 		max: 1,
-		step: 0.1
+		step: 0.01
+	},
+	gain: {
+		type: EffectParameterType.Slider,
+		defaultValue: 0,
+		min: -12,
+		max: 12,
+		step: 0.01
 	}
 });
 

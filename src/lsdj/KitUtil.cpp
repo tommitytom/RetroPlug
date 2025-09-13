@@ -54,7 +54,7 @@ void writeString(uint8* target, size_t targetSize, std::string_view source, char
 	memcpy(target, source.data(), std::min(targetSize, source.size()));
 }
 
-enum FilterType {
+enum FilterType2 {
 	NONE,
 	LOWP,
 	HIGHP,
@@ -203,7 +203,7 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 		fw::Float32Buffer filterTarget = gainTarget.clone();
 
 		//if (settings.filter != FilterType::NONE) {
-		if (settings.filter == FilterType::LOWP) {
+		if (settings.filter == FilterType2::LOWP) {
 			f32 cutoff = settings.cutoff / 255.0f;
 			f32 q = settings.q / 255.0f;
 
@@ -213,16 +213,16 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 			BiquadCoeffs coeff;
 
 			switch (settings.filter) {
-			case FilterType::LOWP:
+			case FilterType2::LOWP:
 				lowPassCoeffs(cutoff, q, SAMPLE_RATE, coeff);
 				break;
-			case FilterType::HIGHP:
+			case FilterType2::HIGHP:
 				//lowPassCoeffs(cutoff, q, SAMPLE_RATE, coeff);
 				break;
-			case FilterType::BANDP:
+			case FilterType2::BANDP:
 				//lowPassCoeffs(cutoff, q, SAMPLE_RATE, coeff);
 				break;
-			case FilterType::ALLP:
+			case FilterType2::ALLP:
 				//lowPassCoeffs(cutoff, q, SAMPLE_RATE, coeff);
 				break;
 			}

@@ -1,7 +1,8 @@
 #pragma once
 
-#include "ecs/RetroPlugComponents.h"
+#include <rfl/TaggedUnion.hpp>
 #include "ecs/AudioDithering.h"
+#include "util/GameboyUtil.h"
 
 namespace rp {
 	struct GainEffect {
@@ -15,20 +16,24 @@ namespace rp {
 		}
 	}
 
+	enum class FilterType {
+		LowPass,
+		HighPass,
+		BandPass,
+		BandStop,
+		Peak,
+		LowShelf,
+		HighShelf,
+		AllPass
+	};	
 	struct FilterEffect {
-		f32 frequency = 1000.0f;
+		FilterType filterType = FilterType::LowPass;
+		f32 frequency = GameboyUtil::GAMEBOY_SAMPLE_RATE / 2.0f;
 		f32 q = 0.0f;
 		f32 feedback = 0.0f;
+		f32 gain = 0.0f;
 	};
-	inline void processEffect(const FilterEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
-		// Biquad coefficients
-		f32 _b0 = 1.0f, _b1 = 0.0f, _b2 = 0.0f;  // Numerator coefficients
-		f32 _a1 = 0.0f, _a2 = 0.0f;              // Denominator coefficients (a0 normalized to 1)
-
-		// Filter state (delay lines)
-		f32 _x1 = 0.0f, _x2 = 0.0f;  // Input delay line
-		f32 _y1 = 0.0f, _y2 = 0.0f;  // Output delay line
-	}
+	void processEffect(const FilterEffect& effect, fw::Float32Buffer& target, f32 sampleRate);
 
 	struct DitherEffect {
 		enum class Type {

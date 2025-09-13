@@ -49,28 +49,28 @@ void BiquadEffect::reset() {
 
 void BiquadEffect::updateCoefficients() {
 	switch (_filterType) {
-		case FilterType::LowPass:
+		case FilterType3::LowPass:
 			calculateLowPassCoefficients();
 			break;
-		case FilterType::HighPass:
+		case FilterType3::HighPass:
 			calculateHighPassCoefficients();
 			break;
-		case FilterType::BandPass:
+		case FilterType3::BandPass:
 			calculateBandPassCoefficients();
 			break;
-		case FilterType::BandStop:
+		case FilterType3::BandStop:
 			calculateBandStopCoefficients();
 			break;
-		case FilterType::Peak:
+		case FilterType3::Peak:
 			calculatePeakCoefficients();
 			break;
-		case FilterType::LowShelf:
+		case FilterType3::LowShelf:
 			calculateLowShelfCoefficients();
 			break;
-		case FilterType::HighShelf:
+		case FilterType3::HighShelf:
 			calculateHighShelfCoefficients();
 			break;
-		case FilterType::AllPass:
+		case FilterType3::AllPass:
 			calculateAllPassCoefficients();
 			break;
 	}
@@ -181,45 +181,45 @@ void BiquadEffect::calculateHighShelfCoefficients() {
 
 // Convenience functions for common filter configurations
 void BiquadEffect::configureLowPass(f32 frequency, f32 q) {
-	setFilterType(FilterType::LowPass);
+	setFilterType(FilterType3::LowPass);
 	setFrequency(frequency);
 	setQ(q);
 }
 
 void BiquadEffect::configureHighPass(f32 frequency, f32 q) {
-	setFilterType(FilterType::HighPass);
+	setFilterType(FilterType3::HighPass);
 	setFrequency(frequency);
 	setQ(q);
 }
 
 void BiquadEffect::configureBandPass(f32 frequency, f32 q) {
-	setFilterType(FilterType::BandPass);
+	setFilterType(FilterType3::BandPass);
 	setFrequency(frequency);
 	setQ(q);
 }
 
 void BiquadEffect::configureBandStop(f32 frequency, f32 q) {
-	setFilterType(FilterType::BandStop);
+	setFilterType(FilterType3::BandStop);
 	setFrequency(frequency);
 	setQ(q);
 }
 
 void BiquadEffect::configurePeaking(f32 frequency, f32 q, f32 gainDb) {
-	setFilterType(FilterType::Peak);
+	setFilterType(FilterType3::Peak);
 	setFrequency(frequency);
 	setQ(q);
 	setGain(gainDb);
 }
 
 void BiquadEffect::configureLowShelf(f32 frequency, f32 q, f32 gainDb) {
-	setFilterType(FilterType::LowShelf);
+	setFilterType(FilterType3::LowShelf);
 	setFrequency(frequency);
 	setQ(q);
 	setGain(gainDb);
 }
 
 void BiquadEffect::configureHighShelf(f32 frequency, f32 q, f32 gainDb) {
-	setFilterType(FilterType::HighShelf);
+	setFilterType(FilterType3::HighShelf);
 	setFrequency(frequency);
 	setQ(q);
 	setGain(gainDb);

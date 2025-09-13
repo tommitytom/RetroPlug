@@ -6,12 +6,40 @@
 #include "ecs/RetroPlugComponents.h"
 #include "lsdj/Sav.h"
 #include "util/GameboyUtil.h"
+#include "foundation/FsUtil.h"
 
 namespace rp {
 	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
 		filterEntries(paths, entries, ".lsdsng", "lsdsng");
 		filterEntries(paths, entries, ".lsdprj", "lsdprj");
 		filterEntries(paths, entries, ".kit", "kit");
+
+		NamedEntry* lsdsng = findEntry(entries, "lsdsng");
+		NamedEntry* sram = findEntry(entries, "sram");
+
+		if (!sram && lsdsng) {
+			lsdj::Sav sav;
+
+			fw::FsUtil::readFile(lsdsng->path.string(), lsdsng->data);
+			if (!lsdsng->data.empty()) {
+				lsdj::Project proj = lsdj::Project::fromLsdsng(lsdsng->data);
+
+				if (proj.isValid()) {
+					sav.setWorkingSong(proj.getSong());
+
+					entries.push_back({ "sram", "", fw::Uint8Buffer() });
+
+					if (!sav.save(entries.back().data)) {
+						spdlog::warn("Failed to create initial save data");
+						entries.back().data.clear();
+					}
+				} else {
+					spdlog::warn("Failed to parse .lsdsng file for initial save data");
+				}
+			} else {
+				spdlog::warn("Failed to open lsdsng at {}", lsdsng->path.string());
+			}
+		}
 	}
 
 	void LsdjHooks::onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
@@ -35,13 +63,9 @@ namespace rp {
 
 		if (!registry.all_of<LsdjStateComponent>(entity)) {
 			registry.emplace<LsdjStateComponent>(entity, LsdjStateComponent{});
-		}		
+		}
 
-		fw::Uint8Buffer* sram = load.findData("sram");
-		if (!sram) {
-			// LSDj has to initialize the SRAM if no save data is available when it starts
-			// Create an SRAM buffer from an empty save to skip this init step
-
+		if (!load.findData("sram")) {
 			lsdj::Sav sav;
 			sav.save(load.entries["sram"].data());
 		}

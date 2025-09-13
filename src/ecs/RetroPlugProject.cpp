@@ -339,7 +339,9 @@ namespace rp {
 		}
 
 		_registry.ctx().at<ProjectConfig>() = ProjectConfig();
-		_registry.ctx().at<ProjectPathContext>() = ProjectPathContext();
+		ProjectPathContext& pathContext = _registry.ctx().at<ProjectPathContext>();
+		pathContext.projectPath.clear();
+		pathContext.projectRoot.clear();
 	}
 
 	void RetroPlugProject::serialize(fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) const {

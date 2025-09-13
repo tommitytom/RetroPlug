@@ -10,7 +10,7 @@ import { Timer } from '../utils/Timer';
 export interface LsdjStoreState {
 	// State
 	controller: LsdjController;
-	systemId: SystemId,
+	systemId: SystemId;
 	rom: ILsdjRom | null;
 	kit: ILsdjKit | null; // For standalone kit editing
 	selectedKitKey: string | null;
@@ -56,7 +56,12 @@ export interface LsdjStoreState {
 }
 
 // ============= Store Creator =============
-export const createLsdjStore = (controller: LsdjController, systemId: SystemId, initialRom?: ILsdjRom, initialKit?: ILsdjKit) =>
+export const createLsdjStore = (
+	controller: LsdjController,
+	systemId: SystemId,
+	initialRom?: ILsdjRom,
+	initialKit?: ILsdjKit,
+) =>
 	create<LsdjStoreState>()(
 		devtools(
 			subscribeWithSelector(
@@ -196,14 +201,27 @@ export const createLsdjStore = (controller: LsdjController, systemId: SystemId, 
 							const kit = state.rom?.kits.find((k) => k.key === kitKey);
 
 							if (kit && state.systemId !== null) {
-								const timer = new Timer();
-								timer.start();
 								lsdj.updateKit(state.systemId, kit.id, kit);
-								const kitData = lsdj.getKitData(state.systemId, kit.id)!;
-								if (kitData && kitData.size() > 0) {
-									kit.data = toUint8Array(kitData);
-								}
-								//console.log(timer.stop(), 'ms');
+
+								// Capture values before the delay
+								const capturedSystemId = state.systemId;
+								const capturedKitId = kit.id;
+
+								setTimeout(() => {
+									// Use captured values instead of state
+									const kitData = lsdj.getKitData(capturedSystemId, capturedKitId)!;
+									if (kitData && kitData.size() > 0) {
+										// Update the store with fresh state
+										set((currentState) => {
+											const currentKit = currentState.rom?.kits.find((k) => k.key === kitKey);
+											if (currentKit) {
+												console.log('setting kit data');
+
+												currentKit.data = toUint8Array(kitData);
+											}
+										});
+									}
+								}, 1000); // Your desired delay
 							}
 						}),
 

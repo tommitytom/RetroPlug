@@ -5,8 +5,8 @@ import { EditableText } from '../../components/EditableText';
 import { WaveView } from '../../components/WaveView';
 import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { useLsdjStore, useKit } from '../../hooks/LsdjStoreHooks';
-import type { ILsdjKit, ILsdjKitSample, ILsdjKitData } from '../../types/LsdjTypes';
+import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import type { ILsdjKitData, ILsdjKitSample } from '../../types/LsdjTypes';
 import { GAMEBOY_SAMPLE_RATE, KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
@@ -14,7 +14,6 @@ import { extractSampleData, generateKey, getKitType, sanitizeKitName } from '../
 import { fromUint8Array } from '../../utils/NativeUtil';
 import { playSample } from '../../wrapper/Lsdj';
 import { LsdjEffectList } from './LsdjEffectList';
-import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -85,7 +84,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	};
 
 	const onNameChange = (newName: string) => {
-		//renameKit(kitKey, newName);
+		renameKit(kitKey, newName);
+		patchSystemKit(kitKey);
 	};
 
 	const handleSliceClick = (slice: SliceInfo) => {
@@ -200,6 +200,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				effects: undefined,
 				samples: undefined,
 			});
+			patchSystemKit(kitKey);
 			return;
 		}
 
@@ -219,7 +220,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
 					name: 'KIT',
-					path: paths[0],
 					effects: [],
 					samples
 				});

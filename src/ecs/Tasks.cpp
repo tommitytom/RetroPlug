@@ -42,10 +42,17 @@ namespace rp {
 
 	void PatchKitTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
 		assert(sampleCache);
+		assert(kitIndex != INVALID_KIT_INDEX);
 
-		kitData.clear();
+		kitData.resize(lsdj::Rom::BANK_SIZE);
 		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
-		success = KitUtil::createKit(*sampleCache, kit, kitState);
+
+		if (kitState.path.has_value()) {
+			success = fw::FsUtil::readFile(kitState.path.value(), kitData);
+		} else {
+			success = KitUtil::createKit(*sampleCache, kit, kitState);
+		}
+
 		completed = true;
 	}
 

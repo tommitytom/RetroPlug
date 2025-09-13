@@ -291,7 +291,12 @@ namespace rp {
 			//_project.deserialize(archive);
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
-			_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+
+			_project.loadFromPathsAsync({ "C:\\retro\\lsdjtest.gb", "C:\\retro\\songs\\STEPxxx.lsdsng" });
+
+			//_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+
+
 			/*
 			_project.addSystemAsync(SystemLoadComponent{
 				.entries = {

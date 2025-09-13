@@ -44,6 +44,7 @@ namespace rp {
 				const LsdjComponent& lsdj = _registry.get<LsdjComponent>(system);
 
 				for (auto it = state.dirtyKits.begin(); it != state.dirtyKits.end(); ) {
+					assert(*it != INVALID_KIT_INDEX);
 					if (!state.patchTasks.contains(*it)) {
 						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>();
 						task->system = system;
@@ -141,6 +142,7 @@ namespace rp {
 	}
 
 	const LsdjKitComponent* LsdjController::getKitComponent(entt::entity system, uint32 kitId) const {
+		assert(kitId != INVALID_KIT_INDEX);
 		const LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return nullptr;
 
@@ -153,6 +155,7 @@ namespace rp {
 	}
 
 	LsdjKitComponent* LsdjController::getKitComponent(entt::entity system, uint32 kitId) {
+		assert(kitId != INVALID_KIT_INDEX);
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return nullptr;
 
@@ -165,6 +168,7 @@ namespace rp {
 	}
 
 	void LsdjController::setKitDirty(entt::entity system, uint32 kitId) {
+		assert(kitId != INVALID_KIT_INDEX);
 		LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
 		if (!lsdjState) return;
 
@@ -178,9 +182,23 @@ namespace rp {
 		LsdjKitComponent* kitComponent = getKitComponent(system, kitId);
 		if (!kitComponent) return false;
 
-		LsdjStateComponent& state = _registry.get<LsdjStateComponent>(system);
 		lsdj::Kit kit = rom.getKit(kitId);
-		KitUtil::createKit(*state.sampleCache.get(), kit, *kitComponent);
+		if (kitComponent->path.has_value()) {
+			// Patch existing kit
+			if (kitComponent->data().empty()) {
+				if (!fw::FsUtil::readFile(kitComponent->path.value(), kitComponent->data())) {
+					spdlog::error("Failed to read kit file at {}", kitComponent->path.value());
+					return false;
+				}
+			}
+
+			spdlog::info("Patching kit {} from file {} with size {}", kitId, kitComponent->path.value(), kitComponent->data().size());
+			kit.setKitData(kitComponent->data());
+		} else {
+			// Create new kit
+			LsdjStateComponent& state = _registry.get<LsdjStateComponent>(system);
+			KitUtil::createKit(*state.sampleCache.get(), kit, *kitComponent);
+		}
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
@@ -195,8 +213,11 @@ namespace rp {
 	}
 
 	bool LsdjController::setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp) {
+		assert(kitId != INVALID_KIT_INDEX);
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
+
+		comp.id = kitId;
 
 		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
 
@@ -206,15 +227,16 @@ namespace rp {
 			*found = std::move(comp);
 		}
 
-		//updateKit(system, kitId);
-
 		LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
-		lsdjState->dirtyKits.insert(comp.id);
+		if (lsdjState) {
+			lsdjState->dirtyKits.insert(kitId);
+		}
 
 		return true;
 	}
 
 	bool LsdjController::setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples) {
+		assert(kitId != INVALID_KIT_INDEX);
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 
@@ -246,6 +268,7 @@ namespace rp {
 	}
 
 	bool LsdjController::removeKitComponent(entt::entity system, uint32 kitId) {
+		assert(kitId != INVALID_KIT_INDEX);
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 

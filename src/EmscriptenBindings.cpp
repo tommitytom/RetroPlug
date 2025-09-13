@@ -570,7 +570,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("setWorkingProject", &rp::lsdj::Sav::setWorkingProject)
 		.function("eraseProject", &rp::lsdj::Sav::eraseProject)
 		.function("findNextEmptyProject", &rp::lsdj::Sav::findNextEmptyProject)
-		.function("writeProject", &rp::lsdj::Sav::writeProject)
+		.function("setProject", &rp::lsdj::Sav::setProject)
 	;
 
 	class_<rp::lsdj::Rom>("NativeLsdjRom")
@@ -657,7 +657,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// BiquadEffect class
-	class_<BiquadEffect, base<Effect>>("NativeBiquadEffect")
+	/*class_<BiquadEffect, base<Effect>>("NativeBiquadEffect")
 		.constructor<>()
 		.function("process", &BiquadEffect::process)
 		.function("setFilterType", &BiquadEffect::setFilterType)
@@ -680,7 +680,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("configureHighShelf", &BiquadEffect::configureHighShelf)
 		.function("isStable", &BiquadEffect::isStable)
 		.function("getMagnitudeResponse", &BiquadEffect::getMagnitudeResponse)
-	;
+	;*/
 /*
 	// DitherMode enum
 	enum_<DitherMode>("NativeDitherMode")
