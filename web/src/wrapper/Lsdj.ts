@@ -10,34 +10,29 @@ export class LsdjController {
 	}
 
 	updateKit(system: SystemId, kitId: number, kit: ILsdjKit): void {
-		if (kit.samples) {
-			const sanitized = {
-				...kit,
+		const sanitized = {
+			...kit,
+			key: undefined,
+			samples: kit.samples?.map(sample => ({
+				...sample,
+				path: '/mount' + sample.path,
+				data: undefined,
 				key: undefined,
-				samples: kit.samples?.map(sample => ({
-					...sample,
-					path: '/mount' + sample.path,
-					data: undefined,
-					key: undefined,
-					effects: sample.effects?.map(effect => ({
-						...effect.effect,
-					})),
-				})),
-				effects: kit.effects?.map(effect => ({
+				effects: sample.effects?.map(effect => ({
 					...effect.effect,
 				})),
-				data: undefined
-			};
+			})),
+			effects: kit.effects?.map(effect => ({
+				...effect.effect,
+			})),
+			data: undefined,
+			path: kit.path ? '/mount' + kit.path : undefined,
+		};
 
-			//console.log(JSON.stringify(sanitized, null, 4));
+		//console.log(JSON.stringify(sanitized, null, 4));
 
-			if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
-				console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));
-			}
-		} else if (kit.data) {
-			const data = fromUint8Array(this._module, kit.data);
-			//this._nativeController.setKit(system, kitId, JSON.stringify(kit), data);
-			data.delete();
+		if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
+			console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));
 		}
 	}
 

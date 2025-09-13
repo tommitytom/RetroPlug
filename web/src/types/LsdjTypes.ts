@@ -70,6 +70,7 @@ export interface ILsdjKitDataSample {
 }
 
 export interface ILsdjKitData {
+	name: string;
 	samples: ILsdjKitDataSample[];
 	sampleBuffer: Float32Array;
 }

@@ -97,6 +97,6 @@ namespace rp {
 			lsdjState->patchingKits.erase(_kitState.id);
 		}
 
-		//spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
+		spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
 	}
 }

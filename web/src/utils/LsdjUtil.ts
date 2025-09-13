@@ -82,6 +82,8 @@ export function extractSampleData(module: MainModule, kitData: Uint8Buffer): ILs
 		// Delete sampleName?
 	}
 
+	const kitName = kit.getName();
+
 	const sampleData = kit.getSampleData();
 	const nativeSampleBuffer = new module.Float32Buffer(sampleData.size() * 2);
 	module.convertNibblesToF32(sampleData, nativeSampleBuffer);
@@ -91,5 +93,5 @@ export function extractSampleData(module: MainModule, kitData: Uint8Buffer): ILs
 	sampleData.delete();
 	kit.delete();
 
-	return { samples, sampleBuffer };
+	return { name: kitName, samples, sampleBuffer };
 }

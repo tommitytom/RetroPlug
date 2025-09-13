@@ -71,6 +71,8 @@ namespace rp {
 				if (task->hasFinished()) {
 					if (task->getSuccess()) {
 						task->finalize(registry);
+					} else {
+						spdlog::error("Task {} failed: {}", it->first, task->getError().empty() ? "(no error message)" : task->getError());
 					}
 
 					resolved.push_back(it->first);

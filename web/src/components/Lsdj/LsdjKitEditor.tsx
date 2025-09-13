@@ -1,20 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
-import { WaveView } from '../../components/WaveView';
-import type { SliceInfo } from '../../components/WaveViewTypes';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
-import type { ILsdjKitData, ILsdjKitSample } from '../../types/LsdjTypes';
-import { GAMEBOY_SAMPLE_RATE, KitType } from '../../types/LsdjTypes';
+import type { ILsdjKitEffect, ILsdjKitSample } from '../../types/LsdjTypes';
+import { KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
-import { extractSampleData, generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
-import { fromUint8Array } from '../../utils/NativeUtil';
-import { playSample } from '../../wrapper/Lsdj';
+import { generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
 import { LsdjEffectList } from './LsdjEffectList';
 import { LsdjWaveView } from './LsdjWaveView';
+import { createEffectInstance, IEffect, IGainEffect } from '../../effects/Effect';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -31,25 +27,19 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onFileDropped,
 	onError,
 }) => {
-	const { module, fileSystem, audioContext } = useRetroPlug();
+	const { fileSystem } = useRetroPlug();
 	const kit = useKit(kitKey)!;
 	const system = useLsdjStore((state) => state.systemId);
-	const addKit = useLsdjStore((state) => state.addKit);
 	const updateKit = useLsdjStore((state) => state.updateKit);
-	const fetchKitData = useLsdjStore((state) => state.fetchKitData);
 	const removeKit = useLsdjStore((state) => state.removeKit);
 	const renameKit = useLsdjStore((state) => state.renameKit);
 	const addSample = useLsdjStore((state) => state.addSample);
 	const removeSample = useLsdjStore((state) => state.removeSample);
-	const [isEditing, setIsEditing] = useState(false);
-	const [tempName, setTempName] = useState(kit?.name || '');
-
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
-
 	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
-	//console.log(kit);
+	const kitType = getKitType(kit);
 
 	// Helper function to get color classes based on kit type
 	const getKitTypeColorClasses = (kitType: KitType): string => {
@@ -64,25 +54,13 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 	};
 
-	const kitType = getKitType(kit);
-
-
-
-	const handleRename = () => {
-		renameKit(kitKey, tempName);
-		setIsEditing(false);
-	};
-
 	const handleRemoveSample = (sampleKey: string) => {
 		removeSample(kitKey, sampleKey);
 	};
 
-	const onNameChange = (newName: string) => {
-		renameKit(kitKey, newName);
-		//patchSystemKit(kitKey);
+	const onNameChange = (newName: string, triggerUpdate: boolean) => {
+		renameKit(kitKey, newName, triggerUpdate);
 	};
-
-
 
 	const handleDeleteKit = () => {
 		removeKit(kitKey);
@@ -155,14 +133,27 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	}
 
 	async function handleFileDrop(paths: string[]) {
+		const DEFAULT_EFFECTS: string[] = [ 'GainEffect', 'FilterEffect', 'DitherEffect' ];
+
 		if (paths.length === 1 && paths[0].endsWith('.kit')) {
 			console.log('Patching kit');
 			updateKit(kitKey, {
 				path: paths[0],
-				effects: undefined,
+				effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType) => {
+					const effectInstance = createEffectInstance(effectType);
+					if (!effectInstance) {
+						console.error(`Failed to create effect instance of type: ${effectType}`);
+					}
+
+					return {
+						id: 0,
+						key: generateKey(),
+						effect: effectInstance ? effectInstance : {}
+					} as ILsdjKitEffect;
+				}),
 				samples: undefined,
 			});
-			//patchSystemKit(kitKey);
+			onToggle(true);
 			return;
 		}
 
@@ -187,8 +178,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				});
 				break;
 		}
-
-		//patchSystemKit(kitKey);
 
 		onToggle(true);
 	}
@@ -278,7 +267,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 					<span className="mx-1 font-medium">-</span>
 					<EditableText
 						value={kit.name}
-						onChange={onNameChange}
+						onChange={(value) => onNameChange(value, true)}
 						className="font-medium text-white"
 						maxLength={6}
 						validator={sanitizeKitName}
@@ -347,7 +336,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			{isExpanded && (
 				<div className={`bg-gray-900 ${kitType === KitType.Editable ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
 					<div className="mb-2">
-						<LsdjWaveView system={system} kitId={kit.id} />
+						<LsdjWaveView system={system} kitId={kit.id} onNameUpdated={(name) => onNameChange(name, false)} />
 					</div>
 					{kitType === KitType.Editable && (
 						<div className="mb-2">

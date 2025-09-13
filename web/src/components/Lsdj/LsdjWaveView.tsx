@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRetroPlug } from "../../contexts/RetroPlugContext";
 import { useSystemKitVersion } from "../../hooks/RetroPlugHooks";
@@ -12,13 +12,15 @@ import { type SliceInfo } from "../WaveViewTypes";
 interface LsdjWaveViewProps {
 	system: SystemId;
 	kitId: number;
+	onNameUpdated?: (name: string) => void;
 }
 
-export const LsdjWaveView: React.FC<LsdjWaveViewProps> = ({ system, kitId }) => {
+export const LsdjWaveView: React.FC<LsdjWaveViewProps> = ({ system, kitId, onNameUpdated }) => {
 	const { module, audioContext, project } = useRetroPlug();
 	const [sampleUnderCursor, setSampleUnderCursor] = useState<string | null>(null);
 	const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
 	const [kitSampleData, setKitSampleData] = useState<ILsdjKitData | null>(null);
+	const currentNameRef = useRef<string | null>(null);
 	const kitVersion = useSystemKitVersion(system, kitId);
 
 	useEffect(() => {
@@ -26,6 +28,11 @@ export const LsdjWaveView: React.FC<LsdjWaveViewProps> = ({ system, kitId }) => 
 		if (kitData && kitData.size() > 0) {
 			const sampleData = extractSampleData(module, kitData);
 			setKitSampleData(sampleData);
+
+			if (currentNameRef.current !== sampleData.name) {
+				onNameUpdated?.(sampleData.name);
+				currentNameRef.current = sampleData.name;
+			}
 		} else {
 			setKitSampleData(null);
 		}

@@ -25,7 +25,7 @@ export interface LsdjStoreState {
 	addKit: (kit: ILsdjKit) => void;
 	removeKit: (kitKey: string) => void;
 	updateKit: (kitKey: string, updates: Partial<ILsdjKit>) => void;
-	renameKit: (kitKey: string, name: string) => void;
+	renameKit: (kitKey: string, name: string, triggerUpdate?: boolean) => void;
 	selectKit: (kitKey: string | null) => void;
 	fetchKitData: (kitKey: string) => void;
 	//patchSystemKit: (kitKey: string) => void;
@@ -130,17 +130,21 @@ export const createLsdjStore = (
 							}
 						}),
 
-					renameKit: (kitKey, name) =>
+					renameKit: (kitKey, name, triggerUpdate) =>
 						set((state) => {
 							if (state.rom) {
 								const kit = state.rom.kits.find((k) => k.key === kitKey);
 								if (kit) {
 									kit.name = name;
-									state.controller.updateKit(state.systemId, kit.id, kit);
+									if (triggerUpdate) {
+										state.controller.updateKit(state.systemId, kit.id, kit);
+									}
 								}
 							} else if (state.kit && state.kit.key === kitKey) {
 								state.kit.name = name;
-								state.controller.updateKit(state.systemId, state.kit.id, state.kit);
+								if (triggerUpdate) {
+									state.controller.updateKit(state.systemId, state.kit.id, state.kit);
+								}
 							}
 						}),
 
