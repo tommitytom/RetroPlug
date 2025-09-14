@@ -128,6 +128,8 @@ namespace rp {
 
 		std::vector<uint32> getSystemIds() const;
 
+		std::string getProjectName() const;
+
 		fw::EventNode& getEventNode() {
 			return _eventNode;
 		}

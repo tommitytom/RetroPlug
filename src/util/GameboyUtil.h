@@ -9,7 +9,7 @@ namespace rp::GameboyUtil {
 
 	static std::string getRomName(const char* romData) {
 		std::string romName = std::string(romData + ROM_NAME_OFFSET, 15);
-		
+
 		for (size_t i = 0; i < romName.size(); ++i) {
 			if (romName[i] == '\0') {
 				romName = romName.substr(0, i);

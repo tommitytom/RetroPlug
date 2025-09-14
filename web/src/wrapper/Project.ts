@@ -182,9 +182,14 @@ export class Project {
 		this._project.reset();
 	}
 
-	loadFromFile(path: string): boolean {
+	loadFromFile(path: string): number {
 		const mountPath = this._project.getMountPath();
 		return this._project.loadFromFile(mountPath + path);
+	}
+
+	getProjectName(): string {
+		return `DONK [LSDj-v5.0.3]`;
+		return this._project.getProjectName();
 	}
 
 	loadFromPaths(paths: string[]): SystemId {

@@ -33,8 +33,11 @@ namespace rp {
 				for (auto it = state.dirtyKits.begin(); it != state.dirtyKits.end(); ) {
 					assert(*it != INVALID_KIT_INDEX);
 					if (!state.patchingKits.contains(*it)) {
-						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>(system, *findKit(lsdj, *it), *state.sampleCache);
 						TaskManager& taskManager = _registry.ctx().at<TaskManager>();
+						lsdj::Rom lsdjRom = getLsdjRom(system);
+						fw::Uint8Buffer kitData = lsdjRom.getKit(*it).getBuffer().clone();
+
+						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>(system, *findKit(lsdj, *it), std::move(kitData), *state.sampleCache);
 						taskManager.addTask(std::move(task));
 
 						state.patchingKits.insert(*it);

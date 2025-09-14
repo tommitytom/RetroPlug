@@ -12,7 +12,6 @@ interface LsdjEffectParameterEditorProps {
 	paramKey: string;
 	value: number | string | boolean;
 	parameter: IEffectParameter;
-	onParameterChanged: (paramKey: string, value: number|string|boolean) => void;
 }
 
 export const LsdjEffectParameterEditor: React.FC<LsdjEffectParameterEditorProps> = ({
@@ -23,14 +22,11 @@ export const LsdjEffectParameterEditor: React.FC<LsdjEffectParameterEditorProps>
 	paramKey,
 	value,
 	parameter,
-	onParameterChanged
 }) => {
 	const updateKitEffect = useLsdjStore((state) => state.updateKitEffect);
 	const updateSampleEffect = useLsdjStore((state) => state.updateSampleEffect);
 
 	const handleChange = (newValue: number | string | boolean) => {
-		onParameterChanged(paramKey, newValue);
-
 		if (sampleKey) {
 			updateSampleEffect(kitKey, sampleKey, effectKey, { [paramKey]: newValue } as any);
 		} else {

@@ -58,7 +58,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	return (
 		<div ref={containerRef} className="relative h-full w-full bg-gray-900">
 			<div className="h-full w-full overflow-y-auto">
-				<div className="min-h-full px-3 py-4">
+				<div className="min-h-full px-2 py-1">
 					{kits.length > 0 && (
 						<div className="mb-4 flex items-center justify-between">
 							<h1 className="text-2xl font-bold text-white">Kits</h1>

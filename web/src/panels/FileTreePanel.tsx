@@ -8,8 +8,6 @@ import { useContextMenu } from "../hooks/useContextMenu";
 import { downloadArrayBuffer } from "../utils/FileUtil";
 import type { MenuItem } from "../components/Menu/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
-import { useDocument } from "../contexts/DocumentContext";
-import { useLayoutControl } from "../App";
 import type { FileSystemNode } from "../filesystem/types";
 
 interface IComponent {
@@ -46,8 +44,7 @@ function findComponent<T>(project: IProject, componentName: string): T | undefin
 
 export const FileTreePanel: React.FC = () => {
 	const { focusCanvas } = useRetroPlug();
-	const { openDocument } = useDocument();
-	const { switchToCenterPanel } = useLayoutControl();
+	//const { openDocument } = useDocument();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 	const { readPath, fileExists, writePath, deletePath, createDirectory } = useOPFSStore();
@@ -98,10 +95,10 @@ export const FileTreePanel: React.FC = () => {
 					const content = decoder.decode(data);
 
 					// Open the document in the text editor
-					openDocument(node.path, content, node.name);
+					//openDocument(node.path, content, node.name);
 
 					// Switch to the text editor panel in the center
-					switchToCenterPanel('textEditor');
+					//switchToCenterPanel('textEditor');
 				}
 			});
 		} else {

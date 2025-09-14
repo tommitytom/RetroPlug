@@ -29,7 +29,7 @@ export class LsdjController {
 			path: kit.path ? '/mount' + kit.path : undefined,
 		};
 
-		//console.log(JSON.stringify(sanitized, null, 4));
+		console.log(JSON.stringify(sanitized, null, 4));
 
 		if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
 			console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));

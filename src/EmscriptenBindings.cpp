@@ -185,6 +185,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<RetroPlugProject>("NativeRetroPlugProject")
+		.function("getProjectName", &RetroPlugProject::getProjectName)
 		.function("addSystem", +[](RetroPlugProject& project, SystemLoadComponent&& config, const SameBoyComponent& component) -> uint32 {
 			return (uint32)project.addSystemAsync(std::move(config), component);
 		})

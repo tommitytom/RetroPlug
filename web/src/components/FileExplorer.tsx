@@ -620,11 +620,6 @@ export function FileExplorer({
 			onDragOver={handleContainerDragOver}
 			onDragLeave={handleContainerDragLeave}
 		>
-			<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-				<span className="font-medium">📁</span>
-				<span className="ml-2 font-medium">File Explorer</span>
-				<div className="ml-auto text-xs opacity-70">{selectedNodes.size > 0 && `${selectedNodes.size} selected`}</div>
-			</div>
 			<div className="flex-1 overflow-y-auto" onContextMenu={handleClick}>
 				{rootNode?.children && rootNode.children.length > 0 ? (
 					rootNode.children.map((child) => (

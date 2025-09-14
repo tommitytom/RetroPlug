@@ -1,29 +1,27 @@
 import { createContext, useContext } from 'react';
+import type { Document, DocumentType, SaveHandler, SaveResult } from '../components/Layout/types';
 
-interface DocumentInfo {
-	path: string;
-	content: string;
-	language: string;
-	name: string;
-}
-
+// Document Context
 interface DocumentContextType {
-	currentDocument: DocumentInfo | null;
-	openDocument: (path: string, content: string, name: string, language?: string) => void;
-	closeDocument: () => void;
-	updateDocument: (content: string) => void;
-	saveDocument: () => Promise<void>;
-	isDirty: boolean;
+	currentDocument: Document | null;
+	setCurrentDocument: (doc: Document | null) => void;
+	updateDocument: (updates: Partial<Document>) => void;
+	markDirty: () => void;
+	markClean: () => void;
+	saveDocument: () => Promise<SaveResult>;
+	isSaving: boolean;
+	lastSaveResult: SaveResult | null;
+	registerSaveHandler: (type: DocumentType, handler: SaveHandler) => void;
 }
 
 export const DocumentContext = createContext<DocumentContextType | undefined>(undefined);
 
-export function useDocument() {
+export const useDocument = () => {
 	const context = useContext(DocumentContext);
-	if (context === undefined) {
-		throw new Error('useDocument must be used within a DocumentProvider');
+	if (!context) {
+		throw new Error('useDocument must be used within DocumentProvider');
 	}
 	return context;
-}
+};
 
-export type { DocumentInfo, DocumentContextType };
+export type { DocumentContextType };

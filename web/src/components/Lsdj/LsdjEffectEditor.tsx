@@ -10,7 +10,6 @@ interface LsdjEffectEditorProps {
 	kitKey: string;
 	sampleKey?: string;
 	effect: ILsdjKitEffect;
-	onParameterChanged: (paramKey: string, value: number|string|boolean) => void;
 }
 
 // Format parameter name from lowerCamelCase to Human Readable
@@ -31,7 +30,7 @@ function formatParameterName(paramName: string): string {
 	return words.join(' ');
 }
 
-export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, sampleKey, effect, onParameterChanged }) => {
+export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, sampleKey, effect }) => {
 	const removeKitEffect = useLsdjStore((state) => state.removeKitEffect);
 	const removeSampleEffect = useLsdjStore((state) => state.removeSampleEffect);
 	const [effectDesc, setEffectDesc] = useState<IEffectDescBase | null>(null);
@@ -76,8 +75,7 @@ export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, samp
 						paramName={formatParameterName(paramKey)}
 						paramKey={paramKey}
 						sampleKey={sampleKey}
-						value={effect.effect[paramKey]}
-						onParameterChanged={onParameterChanged}
+						value={(effect.effect as any)[paramKey]}
 					/>
 				))}
 			</div>

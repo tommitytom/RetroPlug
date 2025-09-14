@@ -50,11 +50,13 @@ export function useProject(intervalTimeout: number = 100) {
 	return useSyncExternalStore(subscribe, getSnapshot);
 }
 
-export function useSystemMemoryVersion(system: SystemId, memoryType: MemoryType, intervalTimeout: number = 100) {
+export function useSystemMemoryVersion(system: SystemId|null, memoryType: MemoryType, intervalTimeout: number = 100) {
 	const { project } = useRetroPlug();
 
 	const subscribe = useCallback(
 		(listener: () => void) => {
+			if (system === null) return () => {};
+
 			project.subscribeToMemory(system, memoryType);
 			let lastVersion = project.getSystemMemoryVersion(system, memoryType);
 
@@ -74,6 +76,7 @@ export function useSystemMemoryVersion(system: SystemId, memoryType: MemoryType,
 	);
 
 	const getSnapshot = useCallback(() => {
+		if (system === null) return null;
 		return project.getSystemMemoryVersion(system, memoryType);
 	}, [project, system, memoryType]);
 

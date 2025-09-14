@@ -7,6 +7,7 @@ import { type ILsdjKit, type ILsdjRom } from '../../types/LsdjTypes';
 import { generateKey } from '../../utils/LsdjUtil';
 import { toUint8Array, type SystemId } from '../../utils/NativeUtil';
 import { LsdjRomEditor } from './LsdjRomEditor';
+import { useProject } from '../../hooks/RetroPlugHooks';
 
 const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
 	return kits.map((kit) => ({
@@ -23,24 +24,29 @@ const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
 	}));
 };
 
-export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) => {
-	const { project, fileSystem } = useRetroPlug();
+export const LsdjRomMemoryEditor: React.FC = () => {
+	const project = useProject();
 	const [rom, setRom] = useState<ILsdjRom | null>(null);
+	const [systemIds, setSystemIds] = useState<SystemId[]>([]);
 
 	useEffect(() => {
-		if (!project) return;
+		const ids = project.getSystemIds().sort((a, b) => a - b); // Sort system IDs in ascending order
+		setSystemIds(ids);
+	}, [project, setSystemIds]);
+
+	useEffect(() => {
+		if (systemIds.length === 0) {
+			setRom(null);
+			return;
+		}
 
 		try {
 			const lsdj = project.lsdj;
-			let kits = lsdj.getKits(system);
-			console.log('before keys:');
-			console.log(kits);
+			let kits = lsdj.getKits(systemIds[0]);
 			kits = addKeysToKits(kits);
-			console.log('added keys:');
-			console.log(kits);
 
 			kits.map((kit) => {
-				const buffer = project.lsdj.getKitData(system, kit.id);
+				const buffer = project.lsdj.getKitData(systemIds[0], kit.id);
 				if (buffer) kit.data = toUint8Array(buffer);
 			});
 
@@ -55,10 +61,10 @@ export const LsdjRomMemoryEditor: React.FC<{ system: SystemId }> = ({ system }) 
 		} catch (ex) {
 			console.error('Failed to inspect ROM', ex);
 		}
-	}, [project, system]);
+	}, [project, systemIds]);
 
 	return rom ? (
-		<LsdjStoreProvider lsdj={project.lsdj} system={system} initialRom={rom}>
+		<LsdjStoreProvider lsdj={project.lsdj} system={systemIds[0]} initialRom={rom}>
 			<LsdjRomEditor />
 		</LsdjStoreProvider>
 	) : (

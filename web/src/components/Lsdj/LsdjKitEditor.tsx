@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
+import { createEffectInstance } from '../../effects/Effect';
 import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import type { ILsdjKitEffect, ILsdjKitSample } from '../../types/LsdjTypes';
 import { KitType } from '../../types/LsdjTypes';
@@ -10,7 +11,6 @@ import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
 import { LsdjEffectList } from './LsdjEffectList';
 import { LsdjWaveView } from './LsdjWaveView';
-import { createEffectInstance, IEffect, IGainEffect } from '../../effects/Effect';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -34,7 +34,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const removeKit = useLsdjStore((state) => state.removeKit);
 	const renameKit = useLsdjStore((state) => state.renameKit);
 	const addSample = useLsdjStore((state) => state.addSample);
-	const removeSample = useLsdjStore((state) => state.removeSample);
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 
@@ -52,10 +51,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			default:
 				return 'bg-gray-700 text-gray-400';
 		}
-	};
-
-	const handleRemoveSample = (sampleKey: string) => {
-		removeSample(kitKey, sampleKey);
 	};
 
 	const onNameChange = (newName: string, triggerUpdate: boolean) => {
@@ -134,6 +129,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 
 	async function handleFileDrop(paths: string[]) {
 		const DEFAULT_EFFECTS: string[] = [ 'GainEffect', 'FilterEffect', 'DitherEffect' ];
+
+		console.log('Dropped paths:', paths);
 
 		if (paths.length === 1 && paths[0].endsWith('.kit')) {
 			console.log('Patching kit');
@@ -228,10 +225,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		},
 		[onFileDropped, onError, kit],
 	);
-
-	const handleChange = () => {
-		//patchSystemKit(kitKey);
-	};
 
 	return (
 		<div
@@ -346,8 +339,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 								onToggle={(expanded) => handleEffectToggle(expanded)}
 								title="Sample Effects"
 								key={kitKey}
-								onChange={handleChange}
-								onParameterChanged={() => handleChange()}
 							/>
 						</div>
 					)}

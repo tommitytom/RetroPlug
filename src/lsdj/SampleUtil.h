@@ -31,8 +31,8 @@ namespace rp::lsdj {
 				// Unpack 16 bytes into 32 nibbles
 				for (size_t i = 0; i < 16; ++i) {
 					uint8_t byte = input[chunk * 16 + i];
-					samples[i * 2]     = 0xF - (byte >> 4);
-					samples[i * 2 + 1] = 0xF - (byte & 0xF);
+					samples[i * 2]     = (f32)(0xF - (byte >> 4));
+					samples[i * 2 + 1] = (f32)(0xF - (byte & 0xF));
 				}
 
 				// Undo rotation: position i contains what should be sample (i-1)

@@ -1,97 +1,86 @@
-import React, { useState, useCallback, ReactNode } from 'react';
-import { DocumentContext, type DocumentInfo } from './DocumentContext';
-import { useOPFSStore } from '../stores/FileSystemStore';
+import { useCallback, useState } from "react";
 
-interface DocumentProviderProps {
-	children: ReactNode;
-}
+import { DocumentContext } from "./DocumentContext";
+import type { Document, DocumentType, SaveHandler, SaveResult } from "../components/Layout/types";
+import { saveHandlers } from "./SaveHandlers";
 
-// Helper function to determine language from file extension
-function getLanguageFromPath(path: string): string {
-	const extension = path.split('.').pop()?.toLowerCase();
+export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+	const [currentDocument, setCurrentDocument] = useState<Document | null>({
+		id: '1',
+		title: '',
+		content: null,
+		type: 'emulator',
+		isDirty: false,
+	});
+	const [isSaving, setIsSaving] = useState(false);
+	const [lastSaveResult, setLastSaveResult] = useState<SaveResult | null>(null);
+	const [customSaveHandlers, setCustomSaveHandlers] = useState<Record<DocumentType, SaveHandler>>(saveHandlers);
 
-	const languageMap: Record<string, string> = {
-		'js': 'javascript',
-		'jsx': 'javascript',
-		'ts': 'typescript',
-		'tsx': 'typescript',
-		'json': 'json',
-		'rplg': 'json',
-		'html': 'html',
-		'css': 'css',
-		'scss': 'scss',
-		'sass': 'sass',
-		'md': 'markdown',
-		'py': 'python',
-		'cpp': 'cpp',
-		'c': 'c',
-		'h': 'c',
-		'hpp': 'cpp',
-		'lua': 'lua',
-		'xml': 'xml',
-		'yml': 'yaml',
-		'yaml': 'yaml',
-		'txt': 'plaintext',
-	};
-
-	return languageMap[extension || ''] || 'plaintext';
-}
-
-export const DocumentProvider: React.FC<DocumentProviderProps> = ({ children }) => {
-	const [currentDocument, setCurrentDocument] = useState<DocumentInfo | null>(null);
-	const [isDirty, setIsDirty] = useState(false);
-	const { writePath } = useOPFSStore();
-
-	const openDocument = useCallback((path: string, content: string, name: string, language?: string) => {
-		const documentLanguage = language || getLanguageFromPath(path);
-
-		setCurrentDocument({
-			path,
-			content,
-			language: documentLanguage,
-			name
-		});
-		setIsDirty(false);
+	const markDirty = useCallback(() => {
+		setCurrentDocument(prev => prev ? { ...prev, isDirty: true } : null);
 	}, []);
 
-	const closeDocument = useCallback(() => {
-		setCurrentDocument(null);
-		setIsDirty(false);
+	const markClean = useCallback(() => {
+		setCurrentDocument(prev => prev ? { ...prev, isDirty: false } : null);
 	}, []);
 
-	const updateDocument = useCallback((content: string) => {
-		if (currentDocument) {
-			setCurrentDocument(prev => prev ? { ...prev, content } : null);
-			setIsDirty(true);
+	const updateDocument = useCallback((updates: Partial<Document>) => {
+		setCurrentDocument(prev => prev ? { ...prev, ...updates } : null);
+	}, []);
+
+	const saveDocument = useCallback(async (): Promise<SaveResult> => {
+		if (!currentDocument || isSaving) {
+			return { success: false, message: 'No document to save or save in progress' };
 		}
-	}, [currentDocument]);
 
-	const saveDocument = useCallback(async () => {
-		if (currentDocument && isDirty) {
-			try {
-				const encoder = new TextEncoder();
-				const data = encoder.encode(currentDocument.content);
-				await writePath(currentDocument.path, data.buffer);
-				setIsDirty(false);
-				console.log('Document saved:', currentDocument.path);
-			} catch (error) {
-				console.error('Failed to save document:', error);
-				throw error;
+		setIsSaving(true);
+
+		try {
+			const handler = customSaveHandlers[currentDocument.type];
+			if (!handler) {
+				throw new Error(`No save handler for document type: ${currentDocument.type}`);
 			}
-		}
-	}, [currentDocument, isDirty, writePath]);
 
-	const value = {
-		currentDocument,
-		openDocument,
-		closeDocument,
-		updateDocument,
-		saveDocument,
-		isDirty
-	};
+			const result = await handler({
+				document: currentDocument,
+				markClean,
+				updateDocument
+			});
+
+			setLastSaveResult(result);
+
+			// Clear the result after 3 seconds
+			setTimeout(() => setLastSaveResult(null), 3000);
+
+			return result;
+		} catch (error) {
+			const errorResult = {
+				success: false,
+				message: error instanceof Error ? error.message : 'Save failed'
+			};
+			setLastSaveResult(errorResult);
+			return errorResult;
+		} finally {
+			setIsSaving(false);
+		}
+	}, [currentDocument, customSaveHandlers, markClean, updateDocument, isSaving]);
+
+	const registerSaveHandler = useCallback((type: DocumentType, handler: SaveHandler) => {
+		setCustomSaveHandlers(prev => ({ ...prev, [type]: handler }));
+	}, []);
 
 	return (
-		<DocumentContext.Provider value={value}>
+		<DocumentContext.Provider value={{
+			currentDocument,
+			setCurrentDocument,
+			updateDocument,
+			markDirty,
+			markClean,
+			saveDocument,
+			isSaving,
+			lastSaveResult,
+			registerSaveHandler
+		}}>
 			{children}
 		</DocumentContext.Provider>
 	);

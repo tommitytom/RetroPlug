@@ -57,14 +57,24 @@ namespace rp {
 	void PatchKitTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
 		assert(_kitState.id != INVALID_KIT_INDEX);
 
+		spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
+
 		_kitData.resize(lsdj::Rom::BANK_SIZE);
 		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, _kitData.ref(), 0), -1);
 
 		bool success;
 		if (_kitState.path.has_value()) {
 			success = fw::FsUtil::readFile(_kitState.path.value(), _kitData);
-		} else {
+			if (!success) setError("Failed to read kit file at " + _kitState.path.value());
+		} else if (_kitState.samples.has_value()) {
 			success = KitUtil::createKit(_sampleCache, kit, _kitState);
+			if (!success) setError("Failed to create kit " + std::to_string(_kitState.id));
+		} else if (!_kitState.name.empty()) {
+			kit.setName(_kitState.name);
+			success = true;
+		} else {
+			setError("No data to patch kit " + std::to_string(_kitState.id));
+			success = false;
 		}
 
 		setSuccess(success);

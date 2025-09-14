@@ -6,6 +6,7 @@
 #include "sameboy/SameBoyUtil.h"
 #include "ecs/EcsProjectSerializer.h"
 #include "ecs/RegistryUtil.h"
+#include "util/GameboyUtil.h"
 
 namespace rp {
 	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -39,6 +40,10 @@ namespace rp {
 		for (size_t i = 0; i < (size_t)MemoryType::MAX; i++) {
 			const MemoryType type = (MemoryType)i;
 			const MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, type, AccessType::Read);
+
+			if (type == MemoryType::Rom) {
+				systemState.name = GameboyUtil::getRomName(accessor.getBuffer());
+			}
 
 			if (accessor.isValid()) {
 				systemState.memory.push_back(VersionedMemory{

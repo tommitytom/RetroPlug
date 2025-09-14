@@ -15,8 +15,6 @@ interface LsdjEffectListProps {
 	title: string;
 	isExpanded: boolean;
 	onToggle: (expanded?: boolean) => void;
-	onChange: () => void;
-	onParameterChanged: (name: string, value: number | string | boolean) => void;
 }
 
 export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
@@ -25,8 +23,6 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 	title,
 	isExpanded,
 	onToggle,
-	onChange,
-	onParameterChanged,
 }) => {
 	const kit = useLsdjStore((state) => state.getKit(kitKey));
 	const sample = useLsdjStore((state) => (sampleKey ? state.getSample(kitKey, sampleKey) : undefined));
@@ -59,8 +55,6 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 		if (!isExpanded) {
 			onToggle(true);
 		}
-
-		onChange();
 	};
 
 	const handleContextMenu = useCallback(
@@ -123,7 +117,6 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 								kitKey={kitKey}
 								key={kitKey}
 								sampleKey={sampleKey}
-								onParameterChanged={onParameterChanged}
 							/>
 						</div>
 					))}

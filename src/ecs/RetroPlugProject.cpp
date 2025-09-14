@@ -23,7 +23,7 @@ namespace rp {
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
 		_registry.ctx().emplace<TaskManager>().getScheduler().Initialize(8);
-		
+
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
 #endif
@@ -286,6 +286,32 @@ namespace rp {
 		const HooksContext& ctx = getHooksContext();
 		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry); });
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onReplicate(_registry); });
+	}
+
+	std::string RetroPlugProject::getProjectName() const {
+		std::string projectName;
+
+		const ProjectPathContext& pathContext = _registry.ctx().at<ProjectPathContext>();
+		if (!pathContext.projectPath.empty()) {
+			projectName = pathContext.projectPath.stem().string();
+		}
+
+		for (const auto& [e, c] : _registry.view<SystemLoadComponent>().each()) {
+			auto found = c.entries.find("sram");
+			if (found != c.entries.end() && !found->second.path.empty()) {
+				if (projectName.size()) projectName += " - ";
+				projectName += std::filesystem::path(found->second.path).stem().string();
+			}
+		}
+
+		for (const auto& [e, c] : _registry.view<SystemStateComponent>().each()) {
+			if (!c.name.empty()) {
+				if (projectName.size()) projectName += " - ";
+				projectName += c.name;
+			}
+		}
+
+		return projectName;
 	}
 
 	void RetroPlugProject::onUpdate(f32 deltaTime) {

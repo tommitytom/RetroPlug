@@ -38,7 +38,8 @@ namespace rp {
 		fw::Uint8Buffer _kitData;
 
 	public:
-		PatchKitTask(entt::entity system, const LsdjKitComponent& kit, SampleCache& sampleCache) : _system(system), _kitState(kit), _sampleCache(sampleCache) {}
+		PatchKitTask(entt::entity system, const LsdjKitComponent& kit, fw::Uint8Buffer&& kitData, SampleCache& sampleCache)
+			: _system(system), _kitState(kit), _kitData(std::move(kitData)), _sampleCache(sampleCache) {}
 		~PatchKitTask() = default;
 
 		void ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) override;

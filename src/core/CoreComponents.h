@@ -53,6 +53,7 @@ namespace rp {
 	const f32 MEMORY_FETCH_INTERVAL = 1.0f / 60.0f;
 
 	struct SystemStateComponent {
+		std::string name;
 		std::vector<VersionedMemory> memory;
 		fw::Uint8Buffer state;
 		f32 lastStateUpdate = 0.0f;
