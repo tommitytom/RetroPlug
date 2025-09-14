@@ -118,13 +118,13 @@ export class RetroPlugApplication {
 		return new this._module!.Float32Buffer();
 	}
 
-	setupAudio(audioContext: AudioContext | null) {
+	setupAudio(audioContext: AudioContext) {
 		if (!this._module || !this._runner) {
 			throw new Error('WASM module is not initialized');
 		}
 
 		const contextId = this._module.emscriptenRegisterAudioObject(audioContext);
-		this._runner.setupAudio(contextId);
+		this._runner.setupAudio(contextId, audioContext.sampleRate);
 	}
 
 	setupGraphics(canvasId: string) {

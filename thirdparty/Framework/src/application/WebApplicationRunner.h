@@ -32,7 +32,7 @@ namespace fw::app {
 			return _opfsBackend != nullptr;
 		}
 
-		void setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId);
+		void setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId, f32 sampleRate);
 
 		void setupGraphics(const std::string& canvasId);
 

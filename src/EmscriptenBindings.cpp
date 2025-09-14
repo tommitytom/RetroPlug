@@ -132,18 +132,9 @@ void SystemLoadEntry_data_set(SystemLoadEntry& entry, fw::Uint8Buffer value) {
 	entry.data.set(value);
 }
 
-void setupWasmFs() {
-	//backend_t opfs = wasmfs_create_opfs_backend();
-	//spdlog::info("Created OPFS backend");
-	//int err = wasmfs_create_directory("/opfs", 0777, opfs);
-	//spdlog::info("Created OPFS directory: {}", err == 0 ? "success" : "failed");
-}
-
 using SkipUint8Buffer = rfl::Skip<fw::Uint8Buffer>;
 
 EMSCRIPTEN_BINDINGS(retroPlug) {
-	function("setupWasmFs", &setupWasmFs);
-
 	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32WithRotation);
 	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
 

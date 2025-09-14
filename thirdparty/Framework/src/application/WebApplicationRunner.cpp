@@ -51,8 +51,8 @@ namespace fw::app {
 		}).detach();
 	}
 
-	void WebApplicationRunner::setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId) {
-		_audioManager = std::make_shared<audio::WebAudioManager>(audioContextId);
+	void WebApplicationRunner::setupAudio(EMSCRIPTEN_WEBAUDIO_T audioContextId, f32 sampleRate) {
+		_audioManager = std::make_shared<audio::WebAudioManager>(audioContextId, sampleRate);
 		_audioManager->setProcessor(_app->onCreateAudio());
 		_audioManager->start(-1);
 	}

@@ -11,9 +11,10 @@ namespace fw::audio {
 		fw::StereoAudioBuffer _output;
 		int _audioContextId;
 		bool _running = false;
+		f32 _sampleRate = 48000.0f;
 
 	public:
-		WebAudioManager(int audioContextId);
+		WebAudioManager(int audioContextId, f32 sampleRate);
 		~WebAudioManager();
 
 		bool loadFile(std::string_view path, std::vector<f32>& target) override;

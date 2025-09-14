@@ -24,11 +24,13 @@ EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
 	fw::StereoAudioBuffer& input = manager->getInput();
 	fw::StereoAudioBuffer& output = manager->getOutput();
 	fw::AudioProcessorPtr processor = manager->getProcessor();
+	const f32 sampleRate = manager->getSampleRate();
 	assert(processor);
 
 	if (processor) {
 		input.clear();
 
+		processor->setSampleRate(sampleRate);
 		processor->onBeginUpdate(128);
 		processor->onRender(output.getSamples(), input.getSamples(), 128);
 
@@ -81,13 +83,15 @@ void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success,
 
 	WebAudioWorkletProcessorCreateOptions opts = {
 		.name = "framework-generator",
+		.numAudioParams = 0,
+		.audioParamDescriptors = nullptr
 	};
 
 	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &audioWorkletProcessorCreated, userData);
 }
 
 namespace fw::audio {
-	WebAudioManager::WebAudioManager(int audioContextId): _audioContextId(audioContextId) {
+	WebAudioManager::WebAudioManager(int audioContextId, f32 sampleRate): _audioContextId(audioContextId), _sampleRate(sampleRate) {
 		_output.resize(128);
 	}
 
@@ -119,7 +123,7 @@ namespace fw::audio {
 	}
 
 	f32 WebAudioManager::getSampleRate() {
-		return 48000;
+		return _sampleRate;
 	}
 }
 
