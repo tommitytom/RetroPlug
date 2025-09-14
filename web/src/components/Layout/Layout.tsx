@@ -8,15 +8,16 @@ import { FileMenu } from './FileMenu';
 import { ResizablePanel } from './ResizablePanel';
 import { FileTreePanel } from '../../panels/FileTreePanel';
 import { LsdjRomMemoryEditor } from '../Lsdj/LsdjRomMemoryEditor';
+import { useRetroPlug } from '../../contexts/RetroPlugContext';
 
 export const Layout: React.FC = () => {
+	const { audioContext } = useRetroPlug();
 	const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
 	const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 	const [leftPanelWidth, setLeftPanelWidth] = useState(350);
 	const [rightPanelWidth, setRightPanelWidth] = useState(650);
 	const [activeLeftTab, setActiveLeftTab] = useState('explorer');
 	const [activeRightTab, setActiveRightTab] = useState('lsdj rom');
-
 
 	return (
 		<DocumentProvider>
@@ -101,7 +102,7 @@ export const Layout: React.FC = () => {
 
 				{/* Status Bar */}
 				<div className="flex h-6 items-center border-t border-gray-700 bg-gray-900 px-2 text-xs">
-					<span className="text-gray-500">RetroPlug 0.5.0 • SameBoy 0.15.5 • 44100 Hz</span>
+					<span className="text-gray-500">RetroPlug 0.5.0 • SameBoy 0.15.5 • {audioContext?.state === 'running' ? `${audioContext.sampleRate} Hz` : 'Audio disabled'}</span>
 					<div className="flex-1" />
 					<DocumentStatusIndicator />
 				</div>

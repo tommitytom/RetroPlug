@@ -57,7 +57,7 @@ namespace rp {
 	void PatchKitTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
 		assert(_kitState.id != INVALID_KIT_INDEX);
 
-		spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
+		//spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
 
 		_kitData.resize(lsdj::Rom::BANK_SIZE);
 		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, _kitData.ref(), 0), -1);
@@ -107,6 +107,6 @@ namespace rp {
 			lsdjState->patchingKits.erase(_kitState.id);
 		}
 
-		spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
+		//spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
 	}
 }

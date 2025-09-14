@@ -53,6 +53,31 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 	};
 
+	function getSampleNameFromPath(path: string): string {
+		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || "UNK";
+	}
+
+	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
+		const samples: ILsdjKitSample[] = [];
+
+		for (let i = 0; i < paths.length; i++) {
+			const path = paths[i];
+			const data = new Uint8Array(await fileSystem.readPath(path));
+
+			samples.push({
+				key: generateKey(),
+				name: getSampleNameFromPath(path),
+				offset: 0,
+				length: 0,
+				path,
+				data,
+				effects: [],
+			});
+		}
+
+		return samples;
+	}
+
 	const onNameChange = (newName: string, triggerUpdate: boolean) => {
 		renameKit(kitKey, newName, triggerUpdate);
 	};
@@ -91,7 +116,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	// Drag and drop handlers
 	const handleDragOver = useCallback((event: React.DragEvent) => {
 		event.preventDefault();
-		event.dataTransfer.dropEffect = 'copy';
+		event.dataTransfer.dropEffect = 'move'; // Match the effectAllowed from FileExplorer
 		setIsDragOver(true);
 	}, []);
 
@@ -101,31 +126,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			setIsDragOver(false);
 		}
 	}, []);
-
-	function getSampleNameFromPath(path: string): string {
-		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || "UNK";
-	}
-
-	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
-		const samples: ILsdjKitSample[] = [];
-
-		for (let i = 0; i < paths.length; i++) {
-			const path = paths[i];
-			const data = new Uint8Array(await fileSystem.readPath(path));
-
-			samples.push({
-				key: generateKey(),
-				name: getSampleNameFromPath(path),
-				offset: 0,
-				length: 0,
-				path,
-				data,
-				effects: [],
-			});
-		}
-
-		return samples;
-	}
 
 	async function handleFileDrop(paths: string[]) {
 		const DEFAULT_EFFECTS: string[] = [ 'GainEffect', 'FilterEffect', 'DitherEffect' ];
@@ -214,6 +214,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 							console.error('Error handling file drop:', ex);
 						}
 					}
+				} else {
+					console.log('No filePath found in dataTransfer');
 				}
 			} catch (error) {
 				const errorMessage = `Failed to process dropped file: ${error}`;
