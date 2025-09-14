@@ -15,6 +15,9 @@ interface TreeNodeProps {
 	dragOverNode: string | null;
 	isFocused: boolean;
 	selectedCount: number;
+	editingNodeId: string | null;
+	onRename: (nodeId: string, newName: string) => void;
+	onCancelRename: () => void;
 	onDragStart?: (event: React.DragEvent, node: FileSystemNode) => void;
 	onDrop?: (event: React.DragEvent, targetNode: FileSystemNode) => void;
 	onDragOver?: (event: React.DragEvent) => void;
@@ -33,6 +36,9 @@ function TreeNode({
 	dragOverNode,
 	isFocused,
 	selectedCount,
+	editingNodeId,
+	onRename,
+	onCancelRename,
 	onDragStart,
 	onDrop,
 	onDragOver,
@@ -42,6 +48,30 @@ function TreeNode({
 	const isSelected = selectedNodes.has(node.id);
 	const isExpanded = expandedNodes.has(node.id);
 	const isDragOver = dragOverNode === node.id;
+	const isEditing = editingNodeId === node.id;
+	const [editValue, setEditValue] = useState('');
+	const editInputRef = useRef<HTMLInputElement>(null);
+
+	// Initialize edit value when entering edit mode
+	useEffect(() => {
+		if (isEditing) {
+			setEditValue(node.name);
+			// Focus and select the input after a brief delay to ensure it's rendered
+			setTimeout(() => {
+				if (editInputRef.current) {
+					editInputRef.current.focus();
+					// Select filename without extension
+					const name = node.name;
+					const lastDotIndex = name.lastIndexOf('.');
+					if (lastDotIndex > 0 && node.type === 'file') {
+						editInputRef.current.setSelectionRange(0, lastDotIndex);
+					} else {
+						editInputRef.current.select();
+					}
+				}
+			}, 10);
+		}
+	}, [isEditing, node.name, node.type]);
 
 	const handleClick = (event: React.MouseEvent) => {
 		onNodeClick(node, event);
@@ -54,6 +84,29 @@ function TreeNode({
 	const handleToggleExpand = (event: React.MouseEvent) => {
 		event.stopPropagation();
 		onToggleExpand(node.id);
+	};
+
+	const handleEditKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+		event.stopPropagation();
+		if (event.key === 'Enter') {
+			const trimmedValue = editValue.trim();
+			if (trimmedValue && trimmedValue !== node.name) {
+				onRename(node.id, trimmedValue);
+			} else {
+				onCancelRename();
+			}
+		} else if (event.key === 'Escape') {
+			onCancelRename();
+		}
+	};
+
+	const handleEditBlur = () => {
+		const trimmedValue = editValue.trim();
+		if (trimmedValue && trimmedValue !== node.name) {
+			onRename(node.id, trimmedValue);
+		} else {
+			onCancelRename();
+		}
 	};
 
 	const getIcon = () => {
@@ -156,7 +209,20 @@ function TreeNode({
 					</span>
 				)}
 				<span className="mr-2 text-xs text-white">{getIcon()}</span>
-				<span className="flex-1">{node.name}</span>
+				{isEditing ? (
+					<input
+						ref={editInputRef}
+						type="text"
+						value={editValue}
+						onChange={(e) => setEditValue(e.target.value)}
+						onKeyDown={handleEditKeyDown}
+						onBlur={handleEditBlur}
+						className="flex-1 bg-gray-700 text-white border border-blue-500 px-1 py-0 text-sm rounded"
+						onClick={(e) => e.stopPropagation()}
+					/>
+				) : (
+					<span className="flex-1">{node.name}</span>
+				)}
 			</div>
 			{(node.type === 'directory' || node.type === 'archive') && isExpanded && node.children && (
 				<>
@@ -173,6 +239,9 @@ function TreeNode({
 							dragOverNode={dragOverNode}
 							isFocused={isFocused}
 							selectedCount={selectedCount}
+							editingNodeId={editingNodeId}
+							onRename={onRename}
+							onCancelRename={onCancelRename}
 							onDragStart={onDragStart}
 							onDrop={onDrop}
 							onDragOver={onDragOver}
@@ -200,6 +269,12 @@ interface FileExplorerProps {
 	onDragStart?: (node: FileSystemNode, event: React.DragEvent) => void;
 	onDragEnd?: (node: FileSystemNode, event: React.DragEvent) => void;
 	onError?: (error: string, operation?: string) => void;
+	onCreateNewFile?: (parentPath: string, name: string) => Promise<void>;
+	onCreateNewFolder?: (parentPath: string, name: string) => Promise<void>;
+	onRename?: (oldPath: string, newName: string) => Promise<void>;
+	editingNodeId?: string | null;
+	onStartRename?: (nodeId: string) => void;
+	onCancelRename?: () => void;
 }
 
 export function FileExplorer({
@@ -216,6 +291,12 @@ export function FileExplorer({
 	onDragStart,
 	onDragEnd,
 	onError,
+	onCreateNewFile,
+	onCreateNewFolder,
+	onRename,
+	editingNodeId = null,
+	onStartRename,
+	onCancelRename,
 }: FileExplorerProps = {}) {
 	const {
 		rootNode,
@@ -578,6 +659,31 @@ export function FileExplorer({
 		}
 	}, []);
 
+	const handleRename = useCallback(
+		async (nodeId: string, newName: string) => {
+			const node = findNodeById(rootNode, nodeId);
+			if (!node) {
+				if (onCancelRename) onCancelRename();
+				return;
+			}
+
+			if (onRename) {
+				try {
+					await onRename(node.path, newName);
+				} catch (error) {
+					const errorMessage = `Failed to rename ${node.name}: ${error}`;
+					console.error(errorMessage);
+					if (onError) {
+						onError(errorMessage, 'rename');
+					}
+				}
+			}
+
+			if (onCancelRename) onCancelRename();
+		},
+		[rootNode, onRename, onCancelRename, onError, findNodeById]
+	);
+
 	const handleFocus = useCallback(() => {
 		setIsFocused(true);
 	}, []);
@@ -590,6 +696,11 @@ export function FileExplorer({
 		(event: KeyboardEvent) => {
 			// Only handle keyboard events if the FileExplorer container is focused
 			if (document.activeElement !== containerRef.current && !containerRef.current?.contains(document.activeElement)) {
+				return;
+			}
+
+			// Don't handle key events when editing
+			if (editingNodeId) {
 				return;
 			}
 
@@ -618,7 +729,15 @@ export function FileExplorer({
 				}
 			}
 			if (event.key === 'Escape') {
-				clearSelection();
+				if (editingNodeId && onCancelRename) {
+					onCancelRename();
+				} else {
+					clearSelection();
+				}
+			}
+			if (event.key === 'F2' && selectedNodes.size === 1 && onStartRename) {
+				const nodeId = Array.from(selectedNodes)[0];
+				onStartRename(nodeId);
 			}
 			if (event.key === 'Enter' && selectedNodes.size === 1) {
 				const nodeId = Array.from(selectedNodes)[0];
@@ -634,7 +753,7 @@ export function FileExplorer({
 				console.log('Select all requested');
 			}
 		},
-		[selectedNodes, clearSelection, rootNode, handleNodeDoubleClick, onFileDelete, onError],
+		[selectedNodes, clearSelection, rootNode, handleNodeDoubleClick, onFileDelete, onError, editingNodeId, onCancelRename, onStartRename],
 	);
 
 	useEffect(() => {
@@ -695,6 +814,9 @@ export function FileExplorer({
 							dragOverNode={dragOverNode}
 							isFocused={isFocused}
 							selectedCount={selectedNodes.size}
+							editingNodeId={editingNodeId}
+							onRename={handleRename}
+							onCancelRename={onCancelRename || (() => {})}
 							onDragStart={handleDragStart}
 							onDrop={handleDrop}
 							onDragOver={handleDragOver}
