@@ -1,4 +1,3 @@
-import { Save } from "lucide-react";
 import { useDocument } from "../../contexts/DocumentContext";
 
 export const DocumentStatusIndicator: React.FC = () => {
@@ -18,17 +17,6 @@ export const DocumentStatusIndicator: React.FC = () => {
 						</span>
 					)}
 				</span>
-			)}
-
-			{/* Save Button */}
-			{currentDocument.isDirty && !isSaving && (
-				<button
-					onClick={saveDocument}
-					className="flex items-center gap-1 hover:text-gray-300 transition-colors"
-				>
-					<Save className="w-3 h-3" />
-					<span>Save</span>
-				</button>
 			)}
 
 			{/* Saving Indicator */}

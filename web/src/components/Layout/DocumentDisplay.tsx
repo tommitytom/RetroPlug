@@ -1,4 +1,4 @@
-import { File, FileText, Gamepad2, Music } from 'lucide-react';
+import { File, FileText, Gamepad2, Music, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useDocument } from '../../contexts/DocumentContext';
 import type { Document, DocumentType } from './types';
@@ -36,7 +36,7 @@ export const DocumentDisplay: React.FC = () => {
 			case 'audio':
 				return <Music className="h-4 w-4" />;
 			case 'emulator':
-				return <Gamepad2 className="h-4 w-4" />;
+				return <Music className="h-6 w-6" />;
 			default:
 				return <File className="h-4 w-4" />;
 		}
@@ -53,6 +53,20 @@ export const DocumentDisplay: React.FC = () => {
 				{getDocumentIcon()}
 				<span className="text-sm font-medium">{currentDocument.title}</span>
 				{currentDocument.isDirty && <span className="text-xs text-yellow-500">•</span>}
+				<div className="ml-auto">
+					<button
+						onClick={currentDocument.isDirty ? saveDocument : undefined}
+						disabled={!currentDocument.isDirty}
+						title={currentDocument.isDirty ? 'Save' : 'No changes to save'}
+						className={`p-1 rounded ${
+							currentDocument.isDirty
+								? 'text-gray-300 hover:text-white hover:bg-gray-700'
+								: 'text-gray-600'
+						}`}
+					>
+						<Save className="w-4 h-4" />
+					</button>
+				</div>
 			</div>
 
 			{/* Document Content */}

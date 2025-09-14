@@ -3,6 +3,7 @@ import React, { ReactNode } from 'react';
 import { Layout } from './components/Layout/Layout';
 import { useRetroPlug } from './contexts/RetroPlugContext';
 import { RetroPlugProvider } from './contexts/RetroPlugProvider';
+import { ModalProvider } from './contexts/ModalProvider';
 
 function LoadSpinner() {
 	return (
@@ -27,7 +28,9 @@ function App() {
 	return (
 		<RetroPlugProvider>
 			<LoadWrapper>
-				<Layout />
+				<ModalProvider>
+					<Layout />
+				</ModalProvider>
 			</LoadWrapper>
 		</RetroPlugProvider>
 	);

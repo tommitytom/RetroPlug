@@ -10,6 +10,7 @@ import type { MenuItem } from "../components/Menu/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { FileSystemNode } from "../filesystem/types";
 import { useDocument } from "../contexts/DocumentContext";
+import { useModal } from "../contexts/ModalContext";
 
 interface IComponent {
 	type: number;
@@ -46,6 +47,7 @@ function findComponent<T>(project: IProject, componentName: string): T | undefin
 export const FileTreePanel: React.FC = () => {
 	const { focusCanvas } = useRetroPlug();
 	const { setCurrentDocument } = useDocument();
+	const { openConfirm } = useModal();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 	const { readPath, fileExists, writePath, deletePath, createDirectory } = useOPFSStore();
@@ -81,8 +83,15 @@ export const FileTreePanel: React.FC = () => {
 				label: 'Delete',
 				disabled: false,
 				onClick: async () => {
+					openConfirm({
+						message: `Are you sure you want to delete "${node.name}"? This action cannot be undone.`,
+						danger: true,
+						onConfirm: async () => {
+							await deletePath(node.path);
+						}
+					});
 					// TODO: Confirm delete?
-					await deletePath(node.path);
+					//await deletePath(node.path);
 				}
 			}, {
 				id: '3',

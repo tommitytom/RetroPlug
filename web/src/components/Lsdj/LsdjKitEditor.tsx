@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { use, useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
@@ -27,7 +27,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onFileDropped,
 	onError,
 }) => {
-	const { fileSystem } = useRetroPlug();
 	const kit = useKit(kitKey)!;
 	const system = useLsdjStore((state) => state.systemId);
 	const updateKit = useLsdjStore((state) => state.updateKit);
@@ -76,13 +75,13 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		return samples;
 	}
 
-	const onNameChange = (newName: string, triggerUpdate: boolean) => {
+	const onNameChange = useCallback((newName: string, triggerUpdate: boolean) => {
 		renameKit(kitKey, newName, triggerUpdate);
-	};
+	}, [kitKey, renameKit]);
 
-	const handleDeleteKit = () => {
+	const handleDeleteKit = useCallback(() => {
 		removeKit(kitKey);
-	};
+	}, [kitKey, removeKit]);
 
 	const handleDownloadClick = useCallback(
 		(e: React.MouseEvent) => {
@@ -96,34 +95,32 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				} catch (error) {
 					console.error('Download failed:', error);
 				}
-			} else {
-				console.log('No kitData available for download');
 			}
 		},
 		[kit.data],
 	);
 
-	const handleEffectToggle = (expanded?: boolean) => {
+	const handleEffectToggle = useCallback((expanded?: boolean) => {
 		if (expanded === undefined) {
 			setIsEffectEditorOpen(!isEffectEditorOpen);
 		} else {
 			setIsEffectEditorOpen(expanded);
 		}
-	};
+	}, [isEffectEditorOpen]);
 
 	// Drag and drop handlers
 	const handleDragOver = useCallback((event: React.DragEvent) => {
 		event.preventDefault();
 		event.dataTransfer.dropEffect = 'move'; // Match the effectAllowed from FileExplorer
 		setIsDragOver(true);
-	}, []);
+	}, [setIsDragOver]);
 
 	const handleDragLeave = useCallback((event: React.DragEvent) => {
 		// Only clear if we're actually leaving the element
 		if (!event.currentTarget.contains(event.relatedTarget as Node)) {
 			setIsDragOver(false);
 		}
-	}, []);
+	}, [setIsDragOver]);
 
 	async function handleFileDrop(paths: string[]) {
 		const DEFAULT_EFFECTS: string[] = ['GainEffect', 'FilterEffect', 'DitherEffect'];
@@ -328,7 +325,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						<LsdjWaveView system={system} kitId={kit.id} onNameUpdated={(name) => onNameChange(name, false)} />
 					</div>
 					{kitType === KitType.Editable && (
-						<div className="mb-2">
+						<div>
 							<LsdjEffectList
 								kitKey={kitKey}
 								isExpanded={isEffectEditorOpen}

@@ -9,21 +9,6 @@ import { toUint8Array, type SystemId } from '../../utils/NativeUtil';
 import { LsdjRomEditor } from './LsdjRomEditor';
 import { useProject } from '../../hooks/RetroPlugHooks';
 
-const addKeysToKits = (kits: ILsdjKit[]): ILsdjKit[] => {
-	return kits.map((kit) => ({
-		...kit,
-		key: generateKey(),
-		samples: kit.samples?.map((sample) => ({
-			...sample,
-			key: generateKey(),
-			effects: sample.effects?.map((effect) => ({
-				...effect,
-				key: generateKey(),
-			})),
-		})),
-	}));
-};
-
 export const LsdjRomMemoryEditor: React.FC = () => {
 	const project = useProject();
 	const [rom, setRom] = useState<ILsdjRom | null>(null);
@@ -43,12 +28,13 @@ export const LsdjRomMemoryEditor: React.FC = () => {
 		try {
 			const lsdj = project.lsdj;
 			let kits = lsdj.getKits(systemIds[0]);
-			kits = addKeysToKits(kits);
 
+			/*
 			kits.map((kit) => {
 				const buffer = project.lsdj.getKitData(systemIds[0], kit.id);
 				if (buffer) kit.data = toUint8Array(buffer);
 			});
+			*/
 
 			//if (!deepEqual(indexedKits, romKits)) {
 			setRom({

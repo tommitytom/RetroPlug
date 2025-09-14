@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { DocumentContext } from "./DocumentContext";
 import type { Document, DocumentType, SaveHandler, SaveResult } from "../components/Layout/types";
@@ -10,13 +10,32 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 	const [lastSaveResult, setLastSaveResult] = useState<SaveResult | null>(null);
 	const [customSaveHandlers, setCustomSaveHandlers] = useState<Record<DocumentType, SaveHandler>>(saveHandlers);
 
+	useEffect(() => {
+		console.log('change');
+
+		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			if (currentDocument && currentDocument.isDirty) {
+				e.preventDefault();
+				return "You have unsaved changes. Are you sure you want to leave?";
+			}
+		};
+
+		window.addEventListener('beforeunload', handleBeforeUnload);
+
+		return () => {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+		};
+	}, [currentDocument?.isDirty]);
+
 	const markDirty = useCallback(() => {
+		if (currentDocument?.isDirty) return;
 		setCurrentDocument(prev => prev ? { ...prev, isDirty: true } : null);
-	}, []);
+	}, [currentDocument?.isDirty]);
 
 	const markClean = useCallback(() => {
+		if (!currentDocument?.isDirty) return;
 		setCurrentDocument(prev => prev ? { ...prev, isDirty: false } : null);
-	}, []);
+	}, [currentDocument?.isDirty]);
 
 	const updateDocument = useCallback((updates: Partial<Document>) => {
 		setCurrentDocument(prev => prev ? { ...prev, ...updates } : null);

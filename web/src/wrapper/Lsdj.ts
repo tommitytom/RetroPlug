@@ -1,5 +1,6 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
 import type { ILsdjKit } from "../types/LsdjTypes";
+import { generateKey } from "../utils/LsdjUtil";
 import { fromUint8Array, type SystemId } from "../utils/NativeUtil";
 
 export class LsdjController {
@@ -38,7 +39,32 @@ export class LsdjController {
 
 	getKits(system: SystemId): ILsdjKit[] {
 		const kitsString = this._nativeController.getKitsString(system);
-		return JSON.parse(kitsString) as ILsdjKit[];
+		if (!kitsString || kitsString.length === 0) {
+			return [];
+		}
+
+		const kits = JSON.parse(kitsString) as ILsdjKit[];
+
+		return kits.map((kit) => ({
+			...kit,
+			key: generateKey(),
+			samples: kit.samples?.map((sample) => ({
+				...sample,
+				path: sample.path.startsWith('/mount') ? sample.path.substring(6) : sample.path,
+				key: generateKey(),
+				effects: sample.effects?.map((effect) => ({
+					effect: { ...effect },
+					key: generateKey(),
+					id: effect.id,
+				})),
+			})),
+			effects: kit.effects?.map((effect) => ({
+				effect: { ...effect },
+				key: generateKey(),
+				id: effect.id,
+			})),
+			path: kit.path?.startsWith('/mount') ? kit.path.substring(6) : kit.path,
+		})) as ILsdjKit[];
 	}
 
 	getKitData(systemId: SystemId, kitId: number): Uint8Buffer | null {
