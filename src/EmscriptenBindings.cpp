@@ -195,6 +195,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			for (const auto& path : paths) fsPaths.push_back(std::filesystem::path(path));
 			return project.loadFromPathsAsync(fsPaths);
 		})
+		.function("saveToDisk", +[](RetroPlugProject& project) -> TaskId {
+			return project.saveToFile("");
+		})
 		.function("reset", +[](RetroPlugProject& project) {
 			project.reset();
 		})

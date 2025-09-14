@@ -63,7 +63,7 @@ namespace rp {
 
 	public:
 		void listPath(const fs::path& path) {
-			
+
 		}
 	};
 
@@ -260,7 +260,7 @@ namespace rp {
 			}
 
 			load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
-		} else {
+		} else if (romEntry && sramEntry) {
 			load.entries["sram"] = { .path = sramEntry->path.string(), .data = sramEntry->data };
 			load.entries["rom"] = { .path = romEntry->path.string(), .data = romEntry->data };
 		}
@@ -327,6 +327,15 @@ namespace rp {
 	bool ProjectBuilder::saveToFile(entt::registry& registry, fs::path path) {
 		ProjectPathContext& pathCtx = getPathContext(registry);
 
+		if (path.empty()) {
+			if (pathCtx.projectPath.empty()) {
+				spdlog::error("No project path set");
+				return false;
+			}
+
+			path = pathCtx.projectPath;
+		}
+
 		if (!ensureMountPath(pathCtx.mountPath, path)) {
 			spdlog::error("Path {} is not within mount path {}", path.string(), pathCtx.mountPath.string());
 			return false;
@@ -356,6 +365,23 @@ namespace rp {
 			spdlog::error("Failed to write project file: {}", path.string());
 			return false;
 		}
+
+		spdlog::info("Project saved to file: {}", path.string());
+
+		for (const auto& [e, load, state] : registry.view<SystemLoadComponent, SystemStateComponent>().each()) {
+			auto found = load.entries.find("sram");
+			if (found != load.entries.end() && !found->second.path.empty()) {
+				const VersionedMemory* sram = state.find(MemoryType::Sram);
+				if (sram) {
+					if (!fw::FsUtil::writeFile(found->second.path, sram->data)) {
+						spdlog::error("Failed to write SRAM file: {}", found->second.path);
+					} else {
+						spdlog::info("Saved SRAM to file: {}", found->second.path);
+					}
+				}
+			}
+		}
+
 		return true;
 	}
 

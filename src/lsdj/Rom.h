@@ -363,6 +363,11 @@ namespace rp::lsdj {
 		Rom(MemoryAccessor romData) : _romData(romData) { updateOffsets(); }
 		Rom(const fw::Uint8Buffer& buffer) : Rom(MemoryAccessor(MemoryType::Rom, buffer, 0)) {}
 
+		static size_t getKitBankOffset(size_t kitIdx) {
+			assert(kitIdx < KIT_COUNT);
+			return KIT_LOOKUP[kitIdx] * BANK_SIZE;
+		}
+
 		Rom& operator=(const Rom& other) {
 			_romData = other._romData;
 			updateOffsets();

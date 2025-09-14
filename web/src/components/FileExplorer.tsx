@@ -14,6 +14,7 @@ interface TreeNodeProps {
 	expandedNodes: Set<string>;
 	dragOverNode: string | null;
 	isFocused: boolean;
+	selectedCount: number;
 	onDragStart?: (event: React.DragEvent, node: FileSystemNode) => void;
 	onDrop?: (event: React.DragEvent, targetNode: FileSystemNode) => void;
 	onDragOver?: (event: React.DragEvent) => void;
@@ -31,6 +32,7 @@ function TreeNode({
 	expandedNodes,
 	dragOverNode,
 	isFocused,
+	selectedCount,
 	onDragStart,
 	onDrop,
 	onDragOver,
@@ -170,6 +172,7 @@ function TreeNode({
 							expandedNodes={expandedNodes}
 							dragOverNode={dragOverNode}
 							isFocused={isFocused}
+							selectedCount={selectedCount}
 							onDragStart={onDragStart}
 							onDrop={onDrop}
 							onDragOver={onDragOver}
@@ -235,6 +238,7 @@ export function FileExplorer({
 
 	const { fileSystem } = useRetroPlug();
 	const [draggedNode, setDraggedNode] = useState<FileSystemNode | null>(null);
+	const [draggedNodes, setDraggedNodes] = useState<FileSystemNode[]>([]);
 	const [dragOverNode, setDragOverNode] = useState<string | null>(null);
 	const [isDragOverContainer, setIsDragOverContainer] = useState(false);
 	const [isFocused, setIsFocused] = useState(false);
@@ -362,16 +366,35 @@ export function FileExplorer({
 
 	const handleDragStart = useCallback(
 		(event: React.DragEvent, node: FileSystemNode) => {
+			// If the node being dragged is not selected, just drag this node
+			// If it is selected, drag all selected nodes
+			let nodesToDrag: FileSystemNode[];
+
+			if (selectedNodes.has(node.id)) {
+				// Node is selected, drag all selected nodes
+				nodesToDrag = Array.from(selectedNodes)
+					.map((id) => findNodeById(rootNode, id))
+					.filter(Boolean) as FileSystemNode[];
+			} else {
+				// Node is not selected, just drag this node
+				nodesToDrag = [node];
+			}
+
 			setDraggedNode(node);
+			setDraggedNodes(nodesToDrag);
 			event.dataTransfer.effectAllowed = 'move';
-			event.dataTransfer.setData('text/plain', node.path);
+
+			// Store multiple paths in the data transfer
+			const paths = nodesToDrag.map(n => n.path);
+			event.dataTransfer.setData('text/plain', JSON.stringify(paths));
+			event.dataTransfer.setData('application/retroplug-nodes', JSON.stringify(nodesToDrag.map(n => ({ id: n.id, path: n.path, name: n.name, type: n.type }))));
 
 			// Call callback
 			if (onDragStart) {
 				onDragStart(node, event);
 			}
 		},
-		[onDragStart],
+		[onDragStart, selectedNodes, rootNode, findNodeById],
 	);
 
 	const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -432,40 +455,77 @@ export function FileExplorer({
 			}
 
 			// Handle internal node movement
-			if (draggedNode && draggedNode.id !== targetNode.id) {
-				if (onFileMove) {
+			if (draggedNodes.length > 0) {
+				// Check if we have custom node data
+				const nodeData = event.dataTransfer.getData('application/retroplug-nodes');
+				let nodesToMove = draggedNodes;
+
+				if (nodeData) {
 					try {
-						await onFileMove(draggedNode, targetNode);
-					} catch (error) {
-						const errorMessage = `Failed to move file: ${error}`;
-						console.error(errorMessage);
-						if (onError) {
-							onError(errorMessage, 'move');
-						}
+						const nodeInfo = JSON.parse(nodeData);
+						// Verify these nodes still exist and get current references
+						nodesToMove = nodeInfo.map((info: any) => findNodeById(rootNode, info.id)).filter(Boolean);
+					} catch {
+						// Fall back to draggedNodes
 					}
-				} else {
-					// Default behavior
-					try {
-						const targetPath = `${targetNode.path}/${draggedNode.name}`;
-						await movePath(draggedNode.path, targetPath);
-					} catch (error) {
-						const errorMessage = `Failed to move file: ${error}`;
-						console.error(errorMessage);
-						if (onError) {
-							onError(errorMessage, 'move');
+				}
+
+				// Filter out the target node itself and any of its ancestors to prevent moving into itself
+				const validNodesToMove = nodesToMove.filter(node => {
+					if (node.id === targetNode.id) return false;
+					// Check if targetNode is a descendant of this node
+					const isDescendant = (parent: FileSystemNode, potentialChild: FileSystemNode): boolean => {
+						if (!parent.children) return false;
+						for (const child of parent.children) {
+							if (child.id === potentialChild.id) return true;
+							if (isDescendant(child, potentialChild)) return true;
+						}
+						return false;
+					};
+					return !isDescendant(node, targetNode);
+				});
+
+				if (validNodesToMove.length > 0) {
+					if (onFileMove) {
+						// For multiple files, call onFileMove for each
+						try {
+							for (const nodeToMove of validNodesToMove) {
+								await onFileMove(nodeToMove, targetNode);
+							}
+						} catch (error) {
+							const errorMessage = `Failed to move files: ${error}`;
+							console.error(errorMessage);
+							if (onError) {
+								onError(errorMessage, 'move');
+							}
+						}
+					} else {
+						// Default behavior - move all files
+						try {
+							for (const nodeToMove of validNodesToMove) {
+								const targetPath = `${targetNode.path}/${nodeToMove.name}`;
+								await movePath(nodeToMove.path, targetPath);
+							}
+						} catch (error) {
+							const errorMessage = `Failed to move files: ${error}`;
+							console.error(errorMessage);
+							if (onError) {
+								onError(errorMessage, 'move');
+							}
 						}
 					}
 				}
 			}
 
 			setDraggedNode(null);
+			setDraggedNodes([]);
 
 			// Call drag end callback
 			if (draggedNode && onDragEnd) {
 				onDragEnd(draggedNode, event);
 			}
 		},
-		[draggedNode, writePath, movePath, onFileUpload, onFileMove, onDragEnd, onError],
+		[draggedNode, draggedNodes, rootNode, writePath, movePath, onFileUpload, onFileMove, onDragEnd, onError, findNodeById],
 	);
 
 	// Handle external file drops on the entire container
@@ -634,6 +694,7 @@ export function FileExplorer({
 							expandedNodes={expandedNodes}
 							dragOverNode={dragOverNode}
 							isFocused={isFocused}
+							selectedCount={selectedNodes.size}
 							onDragStart={handleDragStart}
 							onDrop={handleDrop}
 							onDragOver={handleDragOver}

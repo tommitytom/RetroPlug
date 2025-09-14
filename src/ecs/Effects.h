@@ -43,7 +43,7 @@ namespace rp {
 	struct FilterEffect {
 		FilterType filterType = FilterType::LowPass;
 		f32 frequency = GameboyUtil::GAMEBOY_SAMPLE_RATE / 2.0f;
-		f32 q = 0.0f;
+		f32 q = 1.0f;
 		f32 feedback = 0.0f;
 		f32 gain = 0.0f;
 	};

@@ -44,6 +44,14 @@ namespace rp {
 
 	void LoadProjectTask::finalize(entt::registry& targetRegistry) {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
+		for (const auto& [e, system] : targetRegistry.view<SystemComponent>().each()) {
+			eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			fw::Replicator::destroy(targetRegistry, e);
+		}
+
+		targetRegistry.ctx().at<ProjectPathContext>() = std::move(registry.ctx().at<ProjectPathContext>());
+
 		for (const auto& [taskEntity, c] : this->registry.view<SystemComponent>().each()) {
 			entt::entity targetEntity = fw::Replicator::spawn(targetRegistry);
 			handleRegistryCopy(ctx, this->registry, taskEntity, targetRegistry, targetEntity);
@@ -59,25 +67,13 @@ namespace rp {
 
 		//spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
 
-		_kitData.resize(lsdj::Rom::BANK_SIZE);
-		lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, _kitData.ref(), 0), -1);
+		std::optional<std::string> error = KitUtil::updateKit2(_kitState, _kitData, _sampleCache);
 
-		bool success;
-		if (_kitState.path.has_value()) {
-			success = fw::FsUtil::readFile(_kitState.path.value(), _kitData);
-			if (!success) setError("Failed to read kit file at " + _kitState.path.value());
-		} else if (_kitState.samples.has_value()) {
-			success = KitUtil::createKit(_sampleCache, kit, _kitState);
-			if (!success) setError("Failed to create kit " + std::to_string(_kitState.id));
-		} else if (!_kitState.name.empty()) {
-			kit.setName(_kitState.name);
-			success = true;
+		if (error.has_value()) {
+			setError(error.value());
 		} else {
-			setError("No data to patch kit " + std::to_string(_kitState.id));
-			success = false;
+			setSuccess();
 		}
-
-		setSuccess(success);
 	}
 
 	void PatchKitTask::finalize(entt::registry& registry) {

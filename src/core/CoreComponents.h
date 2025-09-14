@@ -88,6 +88,22 @@ namespace rp {
 	struct SystemLoadComponent {
 		std::map<std::string, SystemLoadEntry> entries;
 
+		SystemLoadEntry* findEntry(const std::string& name) {
+			auto found = entries.find(name);
+			if (found != entries.end()) {
+				return &found->second;
+			}
+			return nullptr;
+		}
+
+		const SystemLoadEntry* findEntry(const std::string& name) const {
+			auto found = entries.find(name);
+			if (found != entries.end()) {
+				return &found->second;
+			}
+			return nullptr;
+		}
+
 		fw::Uint8Buffer* findData(const std::string& name) {
 			auto found = entries.find(name);
 			if (found != entries.end() && !found->second.data().empty()) {

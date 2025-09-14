@@ -51,7 +51,13 @@ export class RetroPlugApplication {
 				return path;
 			},
 			print: (text: string) => {
-				console.log('WASM:', text);
+				if (text.includes('[error]')) {
+					console.error('WASM Error:', text);
+				} else if (text.includes('[warn]')) {
+					console.warn('WASM Warning:', text);
+				} else {
+					console.log('WASM:', text);
+				}
 			},
 			printErr: (text: string) => {
 				console.error('WASM Error:', text);

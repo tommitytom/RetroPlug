@@ -254,7 +254,6 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 
 	if (lastContentScale!= contentScale) {
 		lastContentScale = contentScale;
-		spdlog::info("Content scale: {}, {}", contentScale.w, contentScale.h);
 	}
 
 	Dimension viewSize = vm->getDimensions();

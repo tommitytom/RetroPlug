@@ -5,13 +5,7 @@ import type { Document, DocumentType, SaveHandler, SaveResult } from "../compone
 import { saveHandlers } from "./SaveHandlers";
 
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-	const [currentDocument, setCurrentDocument] = useState<Document | null>({
-		id: '1',
-		title: '',
-		content: null,
-		type: 'emulator',
-		isDirty: false,
-	});
+	const [currentDocument, setCurrentDocument] = useState<Document | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [lastSaveResult, setLastSaveResult] = useState<SaveResult | null>(null);
 	const [customSaveHandlers, setCustomSaveHandlers] = useState<Record<DocumentType, SaveHandler>>(saveHandlers);

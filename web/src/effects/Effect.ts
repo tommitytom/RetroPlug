@@ -97,9 +97,9 @@ export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', 'Filte
 	},
 	q: {
 		type: EffectParameterType.Slider,
-		defaultValue: 0,
+		defaultValue: 1,
 		min: 0.01,
-		max: 1,
+		max: 10,
 		step: 0.01
 	},
 	feedback: {

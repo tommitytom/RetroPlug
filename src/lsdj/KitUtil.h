@@ -19,6 +19,8 @@ namespace rp::KitUtil {
 
 	bool createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState);
 
+	std::optional<std::string> updateKit2(const LsdjKitComponent& kitState, fw::Uint8Buffer& kitData, SampleCache& sampleCache);
+
 	void updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx);
 
 	KitIndex addKit(SystemPtr system, LsdjServiceSettings& settings, const std::string& path, KitIndex kitIdx = -1);

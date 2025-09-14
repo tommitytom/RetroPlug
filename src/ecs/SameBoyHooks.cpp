@@ -7,6 +7,7 @@
 #include "ecs/EcsProjectSerializer.h"
 #include "ecs/RegistryUtil.h"
 #include "util/GameboyUtil.h"
+#include "foundation/FsUtil.h"
 
 namespace rp {
 	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -52,6 +53,27 @@ namespace rp {
 					.version = 1,
 					.subscriberCount = 0
 				});
+			}
+		}
+
+		const SystemLoadEntry* foundSram = load.findEntry("sram");
+		if (!foundSram || (foundSram && foundSram->path.empty())) {
+			// TODO: Does this rom actually use SRAM? Test with mgb or nanoloop demo
+			const MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, MemoryType::Sram, AccessType::Read);
+			if (accessor.isValid() && !accessor.getBuffer().empty()) {
+				std::filesystem::path savPath = load.entries["rom"].path;
+				savPath.replace_extension(".sav");
+
+				if (!std::filesystem::exists(savPath)) {
+					if (!fw::FsUtil::writeFile(savPath, accessor.getBuffer())) {
+						spdlog::warn("Failed to write initial SRAM file: {}", savPath.string());
+					}
+
+					spdlog::info("Wrote initial SRAM file: {}", savPath.string());
+					load.entries["sram"] = { savPath.string() };
+				} else {
+					spdlog::error("Sav data already exists! Not overwriting with empty SRAM");
+				}
 			}
 		}
 	}

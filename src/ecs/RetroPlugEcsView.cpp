@@ -286,6 +286,10 @@ namespace rp {
 			}
 		}
 
+		if (event.down && event.key == fw::VirtualKey::S) {
+			//_project.saveToFile("C:\\retro\\test.rplg");
+		}
+
 		if (event.down && event.key == fw::VirtualKey::F5) {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);

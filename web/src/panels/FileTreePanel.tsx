@@ -9,6 +9,7 @@ import { downloadArrayBuffer } from "../utils/FileUtil";
 import type { MenuItem } from "../components/Menu/types";
 import { useRetroPlug } from "../contexts/RetroPlugContext";
 import type { FileSystemNode } from "../filesystem/types";
+import { useDocument } from "../contexts/DocumentContext";
 
 interface IComponent {
 	type: number;
@@ -44,12 +45,20 @@ function findComponent<T>(project: IProject, componentName: string): T | undefin
 
 export const FileTreePanel: React.FC = () => {
 	const { focusCanvas } = useRetroPlug();
-	//const { openDocument } = useDocument();
+	const { setCurrentDocument } = useDocument();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 	const { readPath, fileExists, writePath, deletePath, createDirectory } = useOPFSStore();
 
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
+		setCurrentDocument({
+			id: node.path,
+			title: node.name,
+			content: project,
+			type: 'emulator',
+			isDirty: false,
+		})
+
 		project.loadFromPaths([node.path])
 		focusCanvas();
 	}, [project]);

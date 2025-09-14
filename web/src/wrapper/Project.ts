@@ -192,6 +192,10 @@ export class Project {
 		return this._project.getProjectName();
 	}
 
+	saveToDisk(): void {
+		this._project.saveToDisk();
+	}
+
 	loadFromPaths(paths: string[]): SystemId {
 		const mountPath = this._project.getMountPath();
 		const pathVec = new this._module.StringVector();

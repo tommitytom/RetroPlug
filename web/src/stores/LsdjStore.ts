@@ -31,7 +31,7 @@ export interface LsdjStoreState {
 	//patchSystemKit: (kitKey: string) => void;
 
 	// Sample Actions
-	addSample: (kitKey: string, sample: ILsdjKitSample) => void;
+	addSamples: (kitKey: string, sample: ILsdjKitSample[]) => void;
 	removeSample: (kitKey: string, sampleKey: string) => void;
 	updateSample: (kitKey: string, sampleKey: string, updates: Partial<ILsdjKitSample>) => void;
 	renameSample: (kitKey: string, sampleKey: string, name: string) => void;
@@ -164,15 +164,13 @@ export const createLsdjStore = (
 						}),
 
 					// Sample Actions
-					addSample: (kitKey, sample) =>
+					addSamples: (kitKey, samples) =>
 						set((state) => {
 							const kit =
 								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
 							if (kit) {
-								if (!kit.samples) {
-									kit.samples = [];
-								}
-								kit.samples.push(sample);
+								if (!kit.samples) kit.samples = [];
+								kit.samples.push(...samples);
 								state.controller.updateKit(state.systemId, kit.id, kit);
 							}
 						}),

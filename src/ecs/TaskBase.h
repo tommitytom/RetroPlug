@@ -17,9 +17,9 @@ namespace rp {
 			_completed = true;
 		}
 
-		void setError(std::string&& error) {
+		void setError(const std::string& error) {
 			_success = false;
-			_error = std::move(error);
+			_error = error;
 			spdlog::error("Task error: {}", _error);
 			_completed = true;
 		}

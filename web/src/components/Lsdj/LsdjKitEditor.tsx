@@ -33,7 +33,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const updateKit = useLsdjStore((state) => state.updateKit);
 	const removeKit = useLsdjStore((state) => state.removeKit);
 	const renameKit = useLsdjStore((state) => state.renameKit);
-	const addSample = useLsdjStore((state) => state.addSample);
+	const addSamples = useLsdjStore((state) => state.addSamples);
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 
@@ -54,7 +54,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	};
 
 	function getSampleNameFromPath(path: string): string {
-		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || "UNK";
+		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || 'UNK';
 	}
 
 	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
@@ -62,7 +62,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 
 		for (let i = 0; i < paths.length; i++) {
 			const path = paths[i];
-			const data = new Uint8Array(await fileSystem.readPath(path));
 
 			samples.push({
 				key: generateKey(),
@@ -70,7 +69,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				offset: 0,
 				length: 0,
 				path,
-				data,
 				effects: [],
 			});
 		}
@@ -128,7 +126,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	}, []);
 
 	async function handleFileDrop(paths: string[]) {
-		const DEFAULT_EFFECTS: string[] = [ 'GainEffect', 'FilterEffect', 'DitherEffect' ];
+		const DEFAULT_EFFECTS: string[] = ['GainEffect', 'FilterEffect', 'DitherEffect'];
 
 		console.log('Dropped paths:', paths);
 
@@ -136,18 +134,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			console.log('Patching kit');
 			updateKit(kitKey, {
 				path: paths[0],
-				effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType) => {
-					const effectInstance = createEffectInstance(effectType);
-					if (!effectInstance) {
-						console.error(`Failed to create effect instance of type: ${effectType}`);
-					}
-
-					return {
-						id: 0,
-						key: generateKey(),
-						effect: effectInstance ? effectInstance : {}
-					} as ILsdjKitEffect;
-				}),
 				samples: undefined,
 			});
 			onToggle(true);
@@ -160,18 +146,26 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		switch (kitType) {
 			case KitType.Editable:
 				console.log('Adding samples');
-				for (const sample of samples) {
-					addSample(kitKey, sample);
-				}
-
+				addSamples(kitKey, samples);
 				break;
 			case KitType.Patched:
 			case KitType.Rom:
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
 					name: 'KIT',
-					effects: [],
-					samples
+					effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType, idx) => {
+						const effectInstance = createEffectInstance(effectType);
+						if (!effectInstance) {
+							console.error(`Failed to create effect instance of type: ${effectType}`);
+						}
+
+						return {
+							id: idx,
+							key: generateKey(),
+							effect: effectInstance ? effectInstance : {},
+						} as ILsdjKitEffect;
+					}),
+					samples,
 				});
 				break;
 		}
@@ -209,7 +203,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 					} else {
 						console.log(`Dropped file from tree: ${filePath}`);
 						try {
-							handleFileDrop([filePath]);
+							handleFileDrop(JSON.parse(filePath));
 						} catch (ex) {
 							console.error('Error handling file drop:', ex);
 						}

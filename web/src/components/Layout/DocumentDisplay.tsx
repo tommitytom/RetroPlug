@@ -5,7 +5,7 @@ import type { Document, DocumentType } from './types';
 import { SystemPanel } from '../../panels/SystemPanel';
 
 export const DocumentDisplay: React.FC = () => {
-	const { currentDocument, markDirty, setCurrentDocument } = useDocument();
+	const { currentDocument, markDirty, saveDocument } = useDocument();
 	const [content, setContent] = useState('');
 
 	useEffect(() => {
@@ -13,6 +13,21 @@ export const DocumentDisplay: React.FC = () => {
 			//setContent(currentDocument.content);
 		}
 	}, [currentDocument]);
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+				event.preventDefault();
+				saveDocument();
+			}
+		};
+
+		window.addEventListener('keydown', handleKeyDown);
+
+		return () => {
+			window.removeEventListener('keydown', handleKeyDown);
+		};
+	}, [saveDocument]);
 
 	const getDocumentIcon = () => {
 		switch (currentDocument?.type) {

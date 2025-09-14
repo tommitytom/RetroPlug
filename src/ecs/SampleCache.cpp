@@ -41,6 +41,7 @@ namespace rp {
 	}
 
 	SampleData* SampleCache::getOrLoadSample(const std::string& name) {
+		// Return sample if sample exists already
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			auto it = _cache.find(name);
@@ -49,14 +50,23 @@ namespace rp {
 			}
 		}
 
+		// Load sample from disk and decode
 		SampleData sample = loadSample(name);
 		if (sample.buffer.empty()) {
 			return nullptr;
 		}
 
+		// Check again to see if another thread loaded the sample in the meantime (rare)
+		// If not, write the sample to the cache
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			_cache[name] = std::move(sample);
+
+			auto it = _cache.find(name);
+			if (it != _cache.end()) {
+				return &it->second;
+			}
+
 			return &_cache[name];
 		}
 	}

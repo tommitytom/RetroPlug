@@ -1,4 +1,5 @@
 import type { DocumentType, SaveHandler } from "../components/Layout/types";
+import { Project } from "../wrapper/Project";
 
 // Individual Save Handlers for each document type
 export const saveHandlers: Record<DocumentType, SaveHandler> = {
@@ -43,28 +44,21 @@ export const saveHandlers: Record<DocumentType, SaveHandler> = {
 
 	emulator: async ({ document, markClean }) => {
 		// Emulator might save multiple files (save state, SRAM, screenshots)
-		console.log('Saving emulator state...');
-
-		document
-
-		const filesToSave = [
-			`${document.title}.sav`,
-			`${document.title}.state`,
-			`${document.title}_screenshot.png`
-		];
-
-		// Simulate saving multiple files
-		for (const file of filesToSave) {
-			console.log(`Saving ${file}...`);
-			await new Promise(resolve => setTimeout(resolve, 200));
+		const project = document.content as Project;
+		if (!project) {
+			return { success: false, message: 'No project loaded in emulator' };
 		}
+
+		console.log('Saving project to disk...');
+		project.saveToDisk();
+		console.log('Project saved.');
 
 		markClean();
 
 		return {
 			success: true,
 			message: 'Emulator state saved',
-			savedFiles: filesToSave
+			savedFiles: [project.getProjectName()]
 		};
 	},
 

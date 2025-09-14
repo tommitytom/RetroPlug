@@ -319,6 +319,27 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	//spdlog::info("sample processing time: {}", fp_ms.count());
 }
 
+std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitState, fw::Uint8Buffer& kitData, SampleCache& sampleCache) {
+	bool success = false;
+
+	kitData.resize(lsdj::Rom::BANK_SIZE);
+	lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
+
+	if (kitState.path.has_value()) {
+		success = fw::FsUtil::readFile(kitState.path.value(), kitData);
+		if (!success) return ("Failed to read kit file at " + kitState.path.value());
+	} else if (kitState.samples.has_value()) {
+		success = KitUtil::createKit(sampleCache, kit, kitState);
+		if (!success) return ("Failed to create kit " + std::to_string(kitState.id));
+	} else if (!kitState.name.empty()) {
+		kit.setName(kitState.name);
+	} else {
+		return "No data to patch kit " + std::to_string(kitState.id);
+	}
+
+	return std::nullopt;
+}
+
 void KitUtil::updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx) {
 	lsdj::Rom rom = system->getMemory(MemoryType::Rom, AccessType::Write);
 	if (!rom.isValid()) {

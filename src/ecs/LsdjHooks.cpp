@@ -7,6 +7,7 @@
 #include "lsdj/Sav.h"
 #include "util/GameboyUtil.h"
 #include "foundation/FsUtil.h"
+#include "lsdj/KitUtil.h"
 
 namespace rp {
 	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -43,26 +44,31 @@ namespace rp {
 	}
 
 	void LsdjHooks::onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
-		fw::Uint8Buffer* rom = load.findData("rom");
-		if (!rom) {
+		fw::Uint8Buffer* romData = load.findData("rom");
+		if (!romData) {
+			// This should never happen
+			spdlog::error("LSDJ system missing ROM data");
 			return;
 		}
 
-		std::string_view romName = GameboyUtil::getRomName(*rom);
+		std::string_view romName = GameboyUtil::getRomName(*romData);
 		std::string shortName = fw::StringUtil::toLower(romName).substr(0, 4);
 		if (shortName != "lsdj") {
 			return;
 		}
 
+		LsdjStateComponent& lsdjState = registry.get_or_emplace<LsdjStateComponent>(entity);
+
 		LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
 		if (comp) {
-			// TODO: Patch kits!
+			// Ensure that all kits are patched before loading
+			for (const LsdjKitComponent& kit : comp->kits) {
+				const size_t offset = lsdj::Rom::getKitBankOffset(kit.id);
+				fw::Uint8Buffer kitData = romData->slice(offset, lsdj::Rom::BANK_SIZE);
+				KitUtil::updateKit2(kit, kitData, *lsdjState.sampleCache);
+			}
 		} else {
 			registry.emplace<LsdjComponent>(entity);
-		}
-
-		if (!registry.all_of<LsdjStateComponent>(entity)) {
-			registry.emplace<LsdjStateComponent>(entity, LsdjStateComponent{});
 		}
 
 		if (!load.findData("sram")) {
