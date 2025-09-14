@@ -9,7 +9,6 @@ import '../../styles/RomEditorPanel.css';
 interface LsdjRomEditorProps {}
 
 export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
-	// Only subscribe to the kits array with optimized equality checking
 	const kits = useKitList();
 	const addKit = useLsdjStore((state) => state.addKit);
 	const updateKit = useLsdjStore((state) => state.updateKit);

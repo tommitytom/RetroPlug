@@ -1,4 +1,4 @@
-import { ReactNode, useRef } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
 
 import { createLsdjStore, type LsdjStore } from '../stores/LsdjStore';
 import type { ILsdjKit, ILsdjRom } from '../types/LsdjTypes';

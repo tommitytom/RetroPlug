@@ -153,7 +153,7 @@ namespace rp {
 	}
 
 	void RetroPlugProject::removeSystem(entt::entity entity) {
-		HooksContext& ctx = getHooksContext();
+		const HooksContext& ctx = getHooksContext();
 
 		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
@@ -290,24 +290,22 @@ namespace rp {
 
 	std::string RetroPlugProject::getProjectName() const {
 		std::string projectName;
-
-		const ProjectPathContext& pathContext = _registry.ctx().at<ProjectPathContext>();
-		if (!pathContext.projectPath.empty()) {
-			projectName = pathContext.projectPath.stem().string();
-		}
-
-		for (const auto& [e, c] : _registry.view<SystemLoadComponent>().each()) {
-			auto found = c.entries.find("sram");
-			if (found != c.entries.end() && !found->second.path.empty()) {
-				if (projectName.size()) projectName += " - ";
-				projectName += std::filesystem::path(found->second.path).stem().string();
-			}
-		}
+		const HooksContext& hooksContext = getHooksContext();
 
 		for (const auto& [e, c] : _registry.view<SystemStateComponent>().each()) {
-			if (!c.name.empty()) {
-				if (projectName.size()) projectName += " - ";
-				projectName += c.name;
+			std::string systemName;
+
+			eachHook(hooksContext.serviceHooks, [&](const SystemHookBase& hook) {
+				std::string name = hook.onGetSystemName(_registry, e);
+				if (!name.empty()) systemName = name;
+			});
+
+			if (!systemName.empty()) {
+				projectName += (projectName.empty() ? "" : " + ") + systemName;
+			} else if (!c.name.empty()) {
+				projectName += (projectName.empty() ? "" : " + ") + c.name;
+			} else {
+				projectName += (projectName.empty() ? "" : " + ") + ("System " + std::to_string((uint32)e));
 			}
 		}
 

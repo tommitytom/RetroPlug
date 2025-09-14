@@ -188,7 +188,6 @@ export class Project {
 	}
 
 	getProjectName(): string {
-		return `DONK [LSDj-v5.0.3]`;
 		return this._project.getProjectName();
 	}
 

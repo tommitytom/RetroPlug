@@ -72,6 +72,8 @@ namespace rp {
 		virtual void onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const {}
 
 		virtual void onReplicate(entt::registry& registry) const {}
+
+		virtual std::string onGetSystemName(const entt::registry& registry, entt::entity entity) const { return ""; }
 	};
 
 	using HooksVector = std::vector<SystemHookBase*>;

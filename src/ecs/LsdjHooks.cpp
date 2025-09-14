@@ -10,6 +10,45 @@
 #include "lsdj/KitUtil.h"
 
 namespace rp {
+	std::string LsdjHooks::onGetSystemName(const entt::registry& registry, entt::entity entity) const {
+		const LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
+		if (!comp) {
+			return "";
+		}
+
+		const SystemStateComponent* stateComp = registry.try_get<SystemStateComponent>(entity);
+		if (!stateComp) {
+			return "";
+		}
+
+		const VersionedMemory* sram = stateComp->find(MemoryType::Sram);
+		if (!sram || sram->data.empty()) {
+			return "";
+		}
+
+		// Get name of currently loaded song
+		lsdj::Sav sav;
+		sav.load(sram->data);
+
+		if (!sav.isValid()) {
+			return "";
+		}
+
+		lsdj::Song song = sav.getWorkingSong();
+
+		lsdj::Project project = sav.getWorkingProject();
+		if (!project.isValid()) {
+			return "";
+		}
+
+		std::string projectName = std::string(project.getName());
+		if (projectName.empty()) {
+			return "";
+		}
+
+		return fmt::format("{} [{}]", projectName, stateComp->name);
+	}
+
 	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
 		filterEntries(paths, entries, ".lsdsng", "lsdsng");
 		filterEntries(paths, entries, ".lsdprj", "lsdprj");

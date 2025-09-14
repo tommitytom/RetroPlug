@@ -197,7 +197,7 @@ namespace rp::lsdj {
 	class Project {
 	private:
 		lsdj_project_t* _project = nullptr;
-		uint8 _projectIndex = LSDJ_NO_PROJECT_AT_INDEX;
+		uint8 _projectIndex = LSDJ_SAV_NO_ACTIVE_PROJECT_INDEX;
 		bool _ownsData = false;
 
 	public:
@@ -209,7 +209,7 @@ namespace rp::lsdj {
 				return Project();
 			}
 
-			return Project(project, true, LSDJ_NO_PROJECT_AT_INDEX);
+			return Project(project, true, LSDJ_SAV_NO_ACTIVE_PROJECT_INDEX);
 		}
 
 		Project() {}
@@ -252,7 +252,7 @@ namespace rp::lsdj {
 			_projectIndex = other._projectIndex;
 			_ownsData = other._ownsData;
 			other._project = nullptr;
-			other._projectIndex = LSDJ_NO_PROJECT_AT_INDEX;
+			other._projectIndex = LSDJ_SAV_NO_ACTIVE_PROJECT_INDEX;
 			other._ownsData = false;
 			return *this;
 		}

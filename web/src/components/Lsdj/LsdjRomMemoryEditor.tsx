@@ -29,6 +29,9 @@ export const LsdjRomMemoryEditor: React.FC = () => {
 			const lsdj = project.lsdj;
 			let kits = lsdj.getKits(systemIds[0]);
 
+			console.log('got kits!', kits, systemIds[0]);
+
+
 			/*
 			kits.map((kit) => {
 				const buffer = project.lsdj.getKitData(systemIds[0], kit.id);

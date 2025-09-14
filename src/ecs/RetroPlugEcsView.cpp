@@ -290,6 +290,11 @@ namespace rp {
 			//_project.saveToFile("C:\\retro\\test.rplg");
 		}
 
+		if (event.down && event.key == fw::VirtualKey::P) {
+			std::string projectName = _project.getProjectName();
+			spdlog::info("Project name: {}", projectName);
+		}
+
 		if (event.down && event.key == fw::VirtualKey::F5) {
 			fw::Uint8Buffer archive((uint8*)json_str, strlen(json_str), false);
 			//_project.deserialize(archive);
@@ -298,9 +303,9 @@ namespace rp {
 
 			//_project.loadFromPathsAsync({ "C:\\retro\\lsdjtest.gb", "C:\\retro\\songs\\STEPxxx.lsdsng" });
 
-			_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
+			//_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
 
-			//_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+			_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
 
 
 			/*

@@ -146,7 +146,7 @@ namespace rp {
 			return _registry.ctx().at<RetroPlugProjectContext>();
 		}
 
-		HooksContext& getHooksContext() {
+		const HooksContext& getHooksContext() const {
 			return _registry.ctx().at<HooksContext>();
 		}
 

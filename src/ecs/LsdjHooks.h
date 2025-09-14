@@ -19,5 +19,7 @@ namespace rp {
 		void onDeserialize(entt::registry& registry, entt::entity entity, ProjectDeserializerContext& ctx) const override;
 
 		void onMoveComponents(entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) const override;
+
+		std::string onGetSystemName(const entt::registry& registry, entt::entity entity) const override;
 	};
 }
