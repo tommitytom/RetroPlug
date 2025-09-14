@@ -16,6 +16,10 @@ export interface LsdjStoreState {
 	selectedKitKey: string | null;
 	selectedSampleKey: string | null;
 
+	// Core System Actions
+	updateController: (controller: LsdjController, systemId: SystemId) => void;
+	updateSystem: (controller: LsdjController, systemId: SystemId, initialRom?: ILsdjRom, initialKit?: ILsdjKit) => void;
+
 	// ROM Actions
 	loadRom: (rom: ILsdjRom) => void;
 	clearRom: () => void;
@@ -74,6 +78,23 @@ export const createLsdjStore = (
 					kit: initialKit || null,
 					selectedKitKey: null,
 					selectedSampleKey: null,
+
+					// Core System Actions
+					updateController: (controller, systemId) =>
+						set((state) => {
+							state.controller = controller;
+							state.systemId = systemId;
+						}),
+
+					updateSystem: (controller, systemId, initialRom, initialKit) =>
+						set((state) => {
+							state.controller = controller;
+							state.systemId = systemId;
+							state.rom = initialRom || null;
+							state.kit = initialKit || null;
+							state.selectedKitKey = null;
+							state.selectedSampleKey = null;
+						}),
 
 					// ROM Actions
 					loadRom: (rom) =>

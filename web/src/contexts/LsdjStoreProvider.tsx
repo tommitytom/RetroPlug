@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 
 import { createLsdjStore, type LsdjStore } from '../stores/LsdjStore';
 import type { ILsdjKit, ILsdjRom } from '../types/LsdjTypes';
@@ -15,11 +15,12 @@ export interface LsdjStoreProviderProps {
 }
 
 export const LsdjStoreProvider: React.FC<LsdjStoreProviderProps> = ({ children, lsdj, system, initialRom, initialKit }) => {
-	const storeRef = useRef<LsdjStore | null>(null);
+	const [store] = useState<LsdjStore>(() => createLsdjStore(lsdj, system, initialRom, initialKit));
 
-	if (!storeRef.current) {
-		storeRef.current = createLsdjStore(lsdj, system, initialRom, initialKit);
-	}
+	// Update the store when key dependencies change
+	useEffect(() => {
+		store.getState().updateSystem(lsdj, system, initialRom, initialKit);
+	}, [store, lsdj, system, initialRom, initialKit]);
 
-	return <LsdjStoreContext.Provider value={storeRef.current}>{children}</LsdjStoreContext.Provider>;
+	return <LsdjStoreContext.Provider value={store}>{children}</LsdjStoreContext.Provider>;
 };
