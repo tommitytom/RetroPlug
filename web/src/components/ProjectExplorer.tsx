@@ -1,11 +1,52 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useRetroPlug } from '../contexts/RetroPlugContext';
-import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
-import { ContextMenu } from './Menu/ContextMenu';
-import { useContextMenu } from '../hooks/useContextMenu';
-import type { MenuItem } from './Menu/types';
+
 import { useDocument } from '../contexts/DocumentContext';
 import { useModal } from '../contexts/ModalContext';
+import { useRetroPlug } from '../contexts/RetroPlugContext';
+import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import { useContextMenu } from '../hooks/useContextMenu';
+import { RomSelectDialog } from './Dialogs/RomSelectDialog';
+import { ContextMenu } from './Menu/ContextMenu';
+import type { MenuItem } from './Menu/types';
+import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
+import { openFileCopyDialog } from '../utils/FileUtil';
+import { file } from 'jszip';
+
+const getIcon = (section: string) => {
+	switch (section) {
+		case 'roms':
+			return '▣';
+		case 'savs':
+			return '◉';
+		case 'kits':
+			return '◆';
+		case 'samples':
+			return '♪';
+		default:
+			return '▢';
+	}
+};
+
+const getFileIcon = (fileName: string) => {
+	const ext = fileName.split('.').pop()?.toLowerCase();
+	switch (ext) {
+		case 'gb':
+		case 'gbc':
+		case 'rom':
+			return '▣';
+		case 'sav':
+			return '◉';
+		case 'kit':
+			return '◆';
+		case 'wav':
+		case 'mp3':
+		case 'ogg':
+		case 'aiff':
+			return '♪';
+		default:
+			return '▢';
+	}
+};
 
 interface ISection {
 	id: string;
@@ -38,72 +79,6 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 	};
 }
 
-const RomSelectDialog: React.FC<{ savName: string; onSelect: (path: string) => void; onClose: () => void }> = ({
-	savName,
-	onSelect,
-	onClose,
-}) => {
-	const { fileSystem } = useRetroPlug();
-	const [romList, setRomList] = useState<string[]>([]);
-	const [selectedRom, setSelectedRom] = useState<string | null>(null);
-
-	useEffect(() => {
-		fileSystem.listPath('/roms').then((res) => {
-			setRomList(res.children?.map((f) => f.name) || []);
-		});
-	}, []);
-
-	const handleSubmit = (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!selectedRom) {
-			onClose();
-		} else {
-			onSelect(selectedRom);
-		}
-	};
-
-	return (
-		<div>
-			<form onSubmit={handleSubmit} className="space-y-6">
-				<div>
-					<label className="block text-sm font-medium text-white mb-3">Choose a rom for {savName}:</label>
-					<select
-						name="rom"
-						value={selectedRom || ''}
-						onChange={(e) => setSelectedRom(e.target.value)}
-						className="w-full rounded-lg bg-gray-700 border border-gray-600 px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
-					>
-						<option value="" className="bg-gray-700 text-gray-400">
-							Select a ROM...
-						</option>
-						{romList.map((rom) => (
-							<option key={rom} value={rom} className="bg-gray-700 text-white">
-								{rom}
-							</option>
-						))}
-					</select>
-				</div>
-				<div className="flex gap-3">
-					<button
-						type="button"
-						onClick={onClose}
-						className="flex-1 rounded-lg bg-gray-700 px-4 py-2 text-gray-200 transition-colors hover:bg-gray-600"
-					>
-						Cancel
-					</button>
-					<button
-						type="submit"
-						disabled={!selectedRom}
-						className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:text-gray-400"
-					>
-						Select
-					</button>
-				</div>
-			</form>
-		</div>
-	);
-};
-
 export const ProjectExplorer: React.FC = () => {
 	const { fileSystem, project } = useRetroPlug();
 	const { setCurrentDocument } = useDocument();
@@ -111,6 +86,7 @@ export const ProjectExplorer: React.FC = () => {
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(sections.map((s) => s.id)));
 	const [sectionData, setSectionData] = useState<Record<string, string[]>>({});
 	const contextMenu = useContextMenu();
+	const [version, setVersion] = useState(0);
 
 	useEffect(() => {
 		getFileList(fileSystem)
@@ -118,7 +94,7 @@ export const ProjectExplorer: React.FC = () => {
 				setSectionData(data);
 			})
 			.catch(console.error);
-	}, [fileSystem]);
+	}, [fileSystem, version]);
 
 	const toggleSection = (section: string) => {
 		setExpandedSections((prev) => {
@@ -152,7 +128,7 @@ export const ProjectExplorer: React.FC = () => {
 				// TODO: Check if the rom exists!
 
 				project.loadFromFile(`/savs/${projectFile}`);
-				setDocument(projectFile);
+				setDocument(item);
 			} else {
 				openModal({
 					title: 'Choose a rom',
@@ -166,61 +142,145 @@ export const ProjectExplorer: React.FC = () => {
 							}}
 							onClose={closeModal}
 						/>
-					)
+					),
 				});
 			}
 		}
 	}, []);
 
-	const getIcon = (section: string) => {
-		switch (section) {
-			case 'roms':
-				return '🎮';
-			case 'savs':
-				return '💾';
-			case 'kits':
-				return '🥁';
-			case 'samples':
-				return '🎵';
-			default:
-				return '📁';
-		}
-	};
-
-	const getFileIcon = (fileName: string) => {
-		const ext = fileName.split('.').pop()?.toLowerCase();
-		switch (ext) {
-			case 'gb':
-			case 'gbc':
-			case 'rom':
-				return '🎮';
-			case 'sav':
-				return '💾';
-			case 'kit':
-				return '🥁';
-			case 'wav':
-			case 'mp3':
-			case 'ogg':
-			case 'aiff':
-				return '🎵';
-			default:
-				return '📄';
-		}
-	};
-
-	const handleContextMenu = useCallback((id: string, item: string, event: React.MouseEvent) => {
+	const handleContextMenu = useCallback((id: string, item: string | null, event: React.MouseEvent) => {
 		event.preventDefault();
 		event.stopPropagation();
 
-		if (id === 'savs') {
-			const menuItems: MenuItem[] = [];
+		const menuItems: MenuItem[] = [];
+
+		if (id == 'samples' && !item) {
+			menuItems.push(
+				{
+					id: 'create-sample-folder',
+					label: 'Create Folder',
+					onClick: () => {
+						openModal({
+							title: 'Choose a name',
+							content: (
+								<CreateFolderDialog
+									onSelect={async (path) => {
+										closeModal();
+										await fileSystem.createDirectory(`/samples/${path}`);
+										setVersion((v) => v + 1);
+									}}
+									onClose={closeModal}
+								/>
+							),
+						});
+					},
+				},
+			);
+		} else if (id === 'samples' && item) {
+			menuItems.push(
+				{
+					id: 'add-samples',
+					label: 'Add Samples',
+					onClick: async () => {
+						try {
+							await openFileCopyDialog(fileSystem, `/samples/${item}`, '.wav,.mp3,.ogg,.aiff');
+							setVersion((v) => v + 1);
+						} catch (error) {
+							console.error('Error adding samples:', error);
+						}
+					}
+				}
+			);
+		} else if (id === 'savs' && item) {
+			menuItems.push(
+				{
+					id: 'package-sav',
+					label: 'Export with ROM',
+					onClick: async () => {
+						console.log('Export!');
+					}
+				},
+				{
+					id: 'render-sav',
+					label: 'Render...',
+					onClick: async () => {
+						console.log('Render SAV!');
+					}
+				}
+			);
+		} else if (id === 'savs' && !item) {
+			menuItems.push(
+				{
+					id: 'import-sav',
+					label: 'Import...',
+					onClick: async () => {
+						try {
+							await openFileCopyDialog(fileSystem, `/savs`, '.sav');
+							setVersion((v) => v + 1);
+						} catch (error) {
+							console.error('Error adding savs:', error);
+						}
+					}
+				},
+			);
+		} else if (id === 'roms' && !item) {
+			menuItems.push(
+				{
+					id: 'import-rom',
+					label: 'Import...',
+					onClick: async () => {
+						try {
+							await openFileCopyDialog(fileSystem, `/roms`, '.gb,.gbc');
+							setVersion((v) => v + 1);
+						} catch (error) {
+							console.error('Error adding roms:', error);
+						}
+					}
+				},
+			);
+		} else if (id === 'kits' && !item) {
+			menuItems.push(
+				{
+					id: 'import-kit',
+					label: 'Import...',
+					onClick: async () => {
+						try {
+							await openFileCopyDialog(fileSystem, `/kits`, '.kit');
+							setVersion((v) => v + 1);
+						} catch (error) {
+							console.error('Error adding kits:', error);
+						}
+					}
+				},
+			);
 		}
+
+		if (menuItems.length > 0) {
+			contextMenu.showContextMenu(event, menuItems);
+		}
+	}, []);
+
+	const handleDragEnd = useCallback((event: React.DragEvent) => {
+		// Remove visual feedback
+		event.currentTarget.classList.remove('opacity-50');
+	}, []);
+
+	const handleDragStart = useCallback((event: React.DragEvent, section: string, item: string) => {
+		if (section !== 'kits') return;
+
+		const filePath = `/${section}/${item}`;
+		// Set the data that will be transferred during drag
+		event.dataTransfer.setData('text/plain', JSON.stringify([filePath]));
+		event.dataTransfer.effectAllowed = 'move';
+
+		// Add visual feedback
+		event.currentTarget.classList.add('opacity-50');
 	}, []);
 
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
 			<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-				<span className="font-medium">📁</span>
+				<span className="font-medium">▢</span>
 				<span className="ml-2 font-medium">Project Explorer</span>
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -229,6 +289,7 @@ export const ProjectExplorer: React.FC = () => {
 						<div
 							className="flex cursor-pointer items-center py-1 pl-2 text-sm text-gray-300 transition-colors duration-200 hover:bg-gray-700 hover:text-white"
 							onClick={() => toggleSection(section.id)}
+							onContextMenu={(event) => handleContextMenu(section.id, null, event)}
 						>
 							<span className="mr-1 cursor-pointer text-xs text-white">
 								<div className="mr-2 flex h-3 w-3 items-center justify-center">
@@ -251,9 +312,12 @@ export const ProjectExplorer: React.FC = () => {
 								{sectionData[section.id]?.map((item, index) => (
 									<div
 										key={index}
+										draggable
 										className="flex cursor-pointer items-center py-1 pl-6 text-sm text-gray-300 transition-colors duration-200 hover:bg-gray-700 hover:text-white"
 										onDoubleClick={() => handleDoubleClick(section.id, item)}
 										onContextMenu={(event) => handleContextMenu(section.id, item, event)}
+										onDragStart={(event) => handleDragStart(event, section.id, item)}
+										onDragEnd={handleDragEnd}
 									>
 										<span className="mr-2 text-xs text-white">{getFileIcon(item)}</span>
 										<span className="flex-1">{item}</span>
