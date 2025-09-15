@@ -33,7 +33,9 @@ namespace rp {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		handleRegistryCopy(ctx, this->registry, this->entity, targetRegistry, entity);
 		handleReplicate(targetRegistry);
+
 		targetRegistry.ctx().at<RetroPlugProjectContext>().version++;
+		targetRegistry.ctx().at<ProjectPathContext>() = std::move(registry.ctx().at<ProjectPathContext>());
 	}
 
 

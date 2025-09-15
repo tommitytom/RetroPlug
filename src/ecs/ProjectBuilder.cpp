@@ -278,17 +278,23 @@ namespace rp {
 			} else if (load.entries.contains("rom") && !load.entries["rom"].path.empty()) {
 				pathCtx.projectPath = load.entries["rom"].path;
 			} else {
-				pathCtx.projectPath = "./";
+				pathCtx.projectPath = "";
 			}
 
-			pathCtx.projectPath.replace_extension(".rplg");
-			pathCtx.projectRoot = pathCtx.projectPath.parent_path();
+			if (!pathCtx.projectPath.empty()) {
+				pathCtx.projectPath.replace_extension(".rplg");
+				pathCtx.projectRoot = pathCtx.projectPath.parent_path();
+			} else {
+				pathCtx.projectRoot = "/";
+			}
 
 			entt::entity system = registry.create();
 			ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
 
-			if (system != entt::null) {
-				//saveToFile(_projectPath);
+			if (!pathCtx.projectPath.empty()) {
+				saveToFile(registry, pathCtx.projectPath);
+			} else {
+				spdlog::warn("No project path could be determined, not saving project");
 			}
 
 			return true;
