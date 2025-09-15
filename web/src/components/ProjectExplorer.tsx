@@ -193,11 +193,15 @@ export const ProjectExplorer: React.FC = () => {
 	const [sectionData, setSectionData] = useState<Record<string, FileSystemNode[]>>({});
 	const contextMenu = useContextMenu();
 	const [version, setVersion] = useState(0);
+	const [isLoaded, setIsLoaded] = useState(false);
 
 	useEffect(() => {
+		setIsLoaded(false);
 		getFileList(fileSystem)
 			.then((data) => {
 				setSectionData(data);
+				// Small delay to ensure smooth fade-in animation
+				setTimeout(() => setIsLoaded(true), 100);
 			})
 			.catch(console.error);
 	}, [fileSystem, version]);
@@ -364,7 +368,7 @@ export const ProjectExplorer: React.FC = () => {
 
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
-			<div className="flex-1 overflow-y-auto">
+			<div className={`flex-1 overflow-y-auto transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
 				{sections.map((section, idx) => (
 					<div key={section.id + section.name}>
 						<div

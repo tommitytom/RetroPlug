@@ -1,3 +1,5 @@
+import { ReactNode } from "react";
+
 // Document Types and Save Handlers
 export type DocumentType = 'text' | 'audio' | 'emulator' | 'other';
 
@@ -23,3 +25,9 @@ export interface SaveContext {
 }
 
 export type SaveHandler = (context: SaveContext) => Promise<SaveResult>;
+
+export interface TabItem {
+	id: string;
+	label: string;
+	content: ReactNode;
+}

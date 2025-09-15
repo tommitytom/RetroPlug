@@ -1,15 +1,16 @@
-import { Settings } from 'lucide-react';
 import { useState } from 'react';
 
 import { DocumentProvider } from '../../contexts/DocumentProvider';
+import { useRetroPlug } from '../../contexts/RetroPlugContext';
+import { LsdjRomMemoryEditor } from '../Lsdj/LsdjRomMemoryEditor';
+import { LsdjSavMemoryEditor } from '../Lsdj/LsdjSavMemoryEditor';
+import { ProjectExplorer } from '../ProjectExplorer';
+import { ProjectSettings } from '../ProjectSettings';
 import { DocumentDisplay } from './DocumentDisplay';
 import { DocumentStatusIndicator } from './DocumentStatusIndicator';
-import { FileMenu } from './FileMenu';
 import { ResizablePanel } from './ResizablePanel';
-import { FileTreePanel } from '../../panels/FileTreePanel';
-import { LsdjRomMemoryEditor } from '../Lsdj/LsdjRomMemoryEditor';
-import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { ProjectExplorer } from '../ProjectExplorer';
+import { TabView } from './TabView';
+import type { TabItem } from './types';
 
 export const Layout: React.FC = () => {
 	const { audioContext } = useRetroPlug();
@@ -19,6 +20,32 @@ export const Layout: React.FC = () => {
 	const [rightPanelWidth, setRightPanelWidth] = useState(650);
 	const [activeLeftTab, setActiveLeftTab] = useState('explorer');
 	const [activeRightTab, setActiveRightTab] = useState('kits');
+
+	const leftTabs: TabItem[] = [
+		{
+			id: 'explorer',
+			label: 'Explorer',
+			content: <ProjectExplorer />
+		},
+		{
+			id: 'settings',
+			label: 'Settings',
+			content: <ProjectSettings />
+		}
+	];
+
+	const rightTabs: TabItem[] = [
+		{
+			id: 'kits',
+			label: 'Kits',
+			content: <LsdjRomMemoryEditor />
+		},
+		{
+			id: 'songs',
+			label: 'Songs',
+			content: <LsdjSavMemoryEditor /> // You can replace this with a different component for Songs
+		}
+	];
 
 	return (
 		<DocumentProvider>
@@ -35,30 +62,11 @@ export const Layout: React.FC = () => {
 						minWidth={180}
 						maxWidth={400}
 					>
-						<div className="flex h-full flex-col">
-							{/* Tabs */}
-							<div className="flex border-b border-gray-700">
-								{['Explorer'].map((tab) => (
-									<button
-										key={tab}
-										onClick={() => setActiveLeftTab(tab.toLowerCase())}
-										className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-											activeLeftTab === tab.toLowerCase()
-												? 'border-b-2 border-blue-400 text-blue-400'
-												: 'text-gray-400 hover:text-gray-200'
-										}`}
-									>
-										{tab}
-									</button>
-								))}
-							</div>
-
-							{/* Tab Content */}
-							<div className="flex-1 overflow-auto p-3">
-								<ProjectExplorer />
-								{/*<FileTreePanel />*/}
-							</div>
-						</div>
+						<TabView
+							tabs={leftTabs}
+							activeTab={activeLeftTab}
+							onTabChange={setActiveLeftTab}
+						/>
 					</ResizablePanel>
 
 					{/* Center Document Area */}
@@ -76,29 +84,11 @@ export const Layout: React.FC = () => {
 						minWidth={200}
 						maxWidth={1280}
 					>
-						<div className="flex h-full flex-col">
-							{/* Tabs */}
-							<div className="flex border-b border-gray-700">
-								{['Kits', 'Songs'].map((tab) => (
-									<button
-										key={tab}
-										onClick={() => setActiveRightTab(tab.toLowerCase())}
-										className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-											activeRightTab === tab.toLowerCase()
-												? 'border-b-2 border-blue-400 text-blue-400'
-												: 'text-gray-400 hover:text-gray-200'
-										}`}
-									>
-										{tab}
-									</button>
-								))}
-							</div>
-
-							{/* Tab Content */}
-							<div className="flex-1 overflow-auto p-3">
-								<LsdjRomMemoryEditor />
-							</div>
-						</div>
+						<TabView
+							tabs={rightTabs}
+							activeTab={activeRightTab}
+							onTabChange={setActiveRightTab}
+						/>
 					</ResizablePanel>
 				</div>
 

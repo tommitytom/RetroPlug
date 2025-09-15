@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
 import { LsdjStoreProvider } from '../../contexts/LsdjStoreProvider';
-import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import type { LsdjStore } from '../../stores/LsdjStore';
-import { type ILsdjKit, type ILsdjRom } from '../../types/LsdjTypes';
-import { generateKey } from '../../utils/LsdjUtil';
-import { toUint8Array, type SystemId } from '../../utils/NativeUtil';
-import { LsdjRomEditor } from './LsdjRomEditor';
 import { useProject } from '../../hooks/RetroPlugHooks';
+import { type ILsdjRom } from '../../types/LsdjTypes';
+import { type SystemId } from '../../utils/NativeUtil';
+import { LsdjRomEditor } from './LsdjRomEditor';
 
 export const LsdjRomMemoryEditor: React.FC = () => {
 	const project = useProject();

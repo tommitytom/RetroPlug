@@ -17,6 +17,7 @@ export default defineConfig({
 		sentryVitePlugin({
 			org: 'retroplug',
 			project: 'retroplugweb',
+			telemetry: false
 		}),
 	],
 

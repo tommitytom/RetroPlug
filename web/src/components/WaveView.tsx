@@ -18,8 +18,8 @@ function renderWaveForm(
 
 	// Calculate the visible range of samples based on zoom
 	const visibleSamples = sampleData.length / zoom.scale;
-	const startSample = Math.max(0, Math.floor(zoom.offset));
-	const endSample = Math.min(sampleData.length, Math.floor(zoom.offset + visibleSamples));
+	const startSample = Math.max(0, zoom.offset);
+	const endSample = Math.min(sampleData.length, zoom.offset + visibleSamples);
 
 	// Highlight hovered slice if any
 	if (hoveredSlice !== null && markers.length > 0) {
@@ -53,31 +53,146 @@ function renderWaveForm(
 	ctx.save();
 	ctx.strokeStyle = "white";
 	ctx.lineWidth = 1;
-	ctx.beginPath();
 
 	// Calculate samples per pixel for the visible range
 	const samplesPerPixel = visibleSamples / width;
 
-	for (let x = 0; x < width; x++) {
-		// Calculate the exact sample range for this pixel
-		const pixelStartSample = startSample + Math.floor(x * samplesPerPixel);
-		const pixelEndSample = Math.min(
-			startSample + Math.floor((x + 1) * samplesPerPixel),
-			endSample
-		);
+	// Linear interpolation helper
+	const lerp = (a: number, b: number, t: number): number => {
+		return a + (b - a) * t;
+	};
 
-		if (pixelStartSample >= pixelEndSample || pixelStartSample >= sampleData.length) continue;
+	// Get sample value with interpolation if needed
+	const getSampleValue = (position: number): number => {
+		if (position < 0) return sampleData[0];
+		if (position >= sampleData.length - 1) return sampleData[sampleData.length - 1];
 
-		const sampleSlice = sampleData.subarray(pixelStartSample, pixelEndSample);
-		if (sampleSlice.length === 0) continue;
+		const index = Math.floor(position);
+		const fraction = position - index;
 
-		const min = Math.min(...sampleSlice);
-		const max = Math.max(...sampleSlice);
+		if (fraction === 0 || index >= sampleData.length - 1) {
+			return sampleData[index];
+		}
 
-		ctx.moveTo(x + 0.5, ((1 + min) * height) / 2);
-		ctx.lineTo(x + 0.5, ((1 + max) * height) / 2);
+		// Linear interpolation between samples
+		return lerp(sampleData[index], sampleData[index + 1], fraction);
+	};
+
+	if (samplesPerPixel < 1) {
+		// Interpolation mode - when zoomed in close
+		ctx.beginPath();
+
+		for (let x = 0; x < width; x++) {
+			const samplePosition = startSample + (x * samplesPerPixel);
+			const value = getSampleValue(samplePosition);
+			const y = ((1 + value) * height) / 2;
+
+			if (x === 0) {
+				ctx.moveTo(x + 0.5, y);
+			} else {
+				ctx.lineTo(x + 0.5, y);
+			}
+		}
+
+		ctx.stroke();
+	} else if (samplesPerPixel < 4) {
+		// Hybrid mode - for intermediate zoom levels
+		// Draw connected lines through actual sample points with optional min/max fills
+		ctx.beginPath();
+
+		let lastY: number | null = null;
+
+		for (let x = 0; x < width; x++) {
+			const pixelStartSample = startSample + (x * samplesPerPixel);
+			const pixelEndSample = startSample + ((x + 1) * samplesPerPixel);
+
+			const startIndex = Math.floor(pixelStartSample);
+			const endIndex = Math.min(Math.ceil(pixelEndSample), sampleData.length);
+
+			if (startIndex >= sampleData.length) continue;
+
+			// If we have very few samples in this pixel, interpolate
+			if (endIndex - startIndex <= 2) {
+				const value = getSampleValue(pixelStartSample + samplesPerPixel * 0.5);
+				const y = ((1 + value) * height) / 2;
+
+				if (lastY === null) {
+					ctx.moveTo(x + 0.5, y);
+				} else {
+					ctx.lineTo(x + 0.5, y);
+				}
+				lastY = y;
+			} else {
+				// Find min/max for this pixel
+				let min = Infinity;
+				let max = -Infinity;
+
+				for (let i = startIndex; i < endIndex; i++) {
+					const value = sampleData[i];
+					if (value < min) min = value;
+					if (value > max) max = value;
+				}
+
+				const minY = ((1 + min) * height) / 2;
+				const maxY = ((1 + max) * height) / 2;
+
+				// Connect from last point if exists
+				if (lastY !== null) {
+					// Connect to whichever is closer
+					const toMin = Math.abs(lastY - minY);
+					const toMax = Math.abs(lastY - maxY);
+					if (toMin < toMax) {
+						ctx.lineTo(x + 0.5, minY);
+						ctx.lineTo(x + 0.5, maxY);
+					} else {
+						ctx.lineTo(x + 0.5, maxY);
+						ctx.lineTo(x + 0.5, minY);
+					}
+					lastY = (minY + maxY) / 2;
+				} else {
+					ctx.moveTo(x + 0.5, minY);
+					ctx.lineTo(x + 0.5, maxY);
+					lastY = (minY + maxY) / 2;
+				}
+			}
+		}
+
+		ctx.stroke();
+	} else {
+		// Full decimation mode - when zoomed out significantly
+		ctx.beginPath();
+
+		for (let x = 0; x < width; x++) {
+			// Calculate the exact sample range for this pixel
+			const pixelStartSample = startSample + (x * samplesPerPixel);
+			const pixelEndSample = startSample + ((x + 1) * samplesPerPixel);
+
+			const startIndex = Math.floor(pixelStartSample);
+			const endIndex = Math.min(Math.ceil(pixelEndSample), sampleData.length);
+
+			if (startIndex >= endIndex || startIndex >= sampleData.length) continue;
+
+			// Find min/max in the sample range
+			let min = Infinity;
+			let max = -Infinity;
+
+			for (let i = startIndex; i < endIndex; i++) {
+				const value = sampleData[i];
+				if (value < min) min = value;
+				if (value > max) max = value;
+			}
+
+			// Draw vertical line from min to max
+			const minY = ((1 + min) * height) / 2;
+			const maxY = ((1 + max) * height) / 2;
+
+			ctx.moveTo(x + 0.5, minY);
+			ctx.lineTo(x + 0.5, maxY);
+		}
+
+		ctx.stroke();
 	}
-	ctx.stroke();
+
 	ctx.restore();
 
 	// Render markers
