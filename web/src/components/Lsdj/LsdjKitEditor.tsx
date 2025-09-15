@@ -11,6 +11,8 @@ import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
 import { LsdjEffectList } from './LsdjEffectList';
 import { LsdjWaveView } from './LsdjWaveView';
+import { useProject } from '../../hooks/RetroPlugHooks';
+import { toUint8Array } from '../../utils/NativeUtil';
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -27,6 +29,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onFileDropped,
 	onError,
 }) => {
+	const project = useProject();
 	const kit = useKit(kitKey)!;
 	const system = useLsdjStore((state) => state.systemId);
 	const updateKit = useLsdjStore((state) => state.updateKit);
@@ -88,16 +91,17 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			e.preventDefault();
 			e.stopPropagation();
 
-			if (kit.data) {
+			const kitData = project.lsdj.getKitData(system, kit.id);
+			if (kitData) {
 				try {
 					const filename = `${sanitizeFilename(kit.name)}.kit`;
-					downloadUint8Array(kit.data, filename);
+					downloadUint8Array(toUint8Array(kitData), filename);
 				} catch (error) {
 					console.error('Download failed:', error);
 				}
 			}
 		},
-		[kit.data],
+		[kit.id, project],
 	);
 
 	const handleEffectToggle = useCallback((expanded?: boolean) => {

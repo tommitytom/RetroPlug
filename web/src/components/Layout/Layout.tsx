@@ -9,6 +9,7 @@ import { ResizablePanel } from './ResizablePanel';
 import { FileTreePanel } from '../../panels/FileTreePanel';
 import { LsdjRomMemoryEditor } from '../Lsdj/LsdjRomMemoryEditor';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
+import { ProjectExplorer } from '../ProjectExplorer';
 
 export const Layout: React.FC = () => {
 	const { audioContext } = useRetroPlug();
@@ -17,7 +18,7 @@ export const Layout: React.FC = () => {
 	const [leftPanelWidth, setLeftPanelWidth] = useState(350);
 	const [rightPanelWidth, setRightPanelWidth] = useState(650);
 	const [activeLeftTab, setActiveLeftTab] = useState('explorer');
-	const [activeRightTab, setActiveRightTab] = useState('lsdj rom');
+	const [activeRightTab, setActiveRightTab] = useState('kits');
 
 	return (
 		<DocumentProvider>
@@ -54,7 +55,8 @@ export const Layout: React.FC = () => {
 
 							{/* Tab Content */}
 							<div className="flex-1 overflow-auto p-3">
-								<FileTreePanel />
+								<ProjectExplorer />
+								{/*<FileTreePanel />*/}
 							</div>
 						</div>
 					</ResizablePanel>
@@ -77,7 +79,7 @@ export const Layout: React.FC = () => {
 						<div className="flex h-full flex-col">
 							{/* Tabs */}
 							<div className="flex border-b border-gray-700">
-								{['LSDj ROM', 'Debug'].map((tab) => (
+								{['Kits', 'Songs'].map((tab) => (
 									<button
 										key={tab}
 										onClick={() => setActiveRightTab(tab.toLowerCase())}

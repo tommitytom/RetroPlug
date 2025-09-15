@@ -23,6 +23,7 @@ interface TreeNodeProps {
 	onDragOver?: (event: React.DragEvent) => void;
 	onDragEnter?: (event: React.DragEvent, node: FileSystemNode) => void;
 	onDragLeave?: (event: React.DragEvent) => void;
+	sortNodes: (nodes: FileSystemNode[]) => FileSystemNode[];
 }
 
 function TreeNode({
@@ -44,6 +45,7 @@ function TreeNode({
 	onDragOver,
 	onDragEnter,
 	onDragLeave,
+	sortNodes,
 }: TreeNodeProps) {
 	const isSelected = selectedNodes.has(node.id);
 	const isExpanded = expandedNodes.has(node.id);
@@ -224,9 +226,9 @@ function TreeNode({
 					<span className="flex-1">{node.name}</span>
 				)}
 			</div>
-			{(node.type === 'directory' || node.type === 'archive') && isExpanded && node.children && (
+			{(node.type === 'directory' || node.type === 'archive') && isExpanded && (
 				<>
-					{node.children.map((child) => (
+					{node.children && sortNodes(node.children).map((child) => (
 						<TreeNode
 							key={child.id}
 							node={child}
@@ -247,6 +249,7 @@ function TreeNode({
 							onDragOver={onDragOver}
 							onDragEnter={onDragEnter}
 							onDragLeave={onDragLeave}
+							sortNodes={sortNodes}
 						/>
 					))}
 				</>
@@ -325,6 +328,21 @@ export function FileExplorer({
 	const [isFocused, setIsFocused] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 
+	// Function to sort files and directories
+	const sortNodes = useCallback((nodes: FileSystemNode[]) => {
+		return [...nodes].sort((a, b) => {
+			// Directories (and archives) first
+			if ((a.type === 'directory' || a.type === 'archive') && b.type === 'file') {
+				return -1;
+			}
+			if (a.type === 'file' && (b.type === 'directory' || b.type === 'archive')) {
+				return 1;
+			}
+			// Then sort alphabetically by name (case-insensitive)
+			return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+		});
+	}, []);
+
 	useEffect(() => {
 		initialize(fileSystem);
 	}, [fileSystem, initialize]);
@@ -333,7 +351,9 @@ export function FileExplorer({
 	const handleToggleExpand = useCallback(
 		async (nodeId: string) => {
 			const node = findNodeById(rootNode, nodeId);
-			if (!node) return;
+			if (!node) {
+				return;
+			}
 
 			const wasExpanded = expandedNodes.has(nodeId);
 
@@ -343,8 +363,11 @@ export function FileExplorer({
 
 			toggleNode(nodeId);
 
+			// Note: toggleNode is async, so we use wasExpanded to determine the new state
+			const willBeExpanded = !wasExpanded;
+
 			// If expanding and no children loaded yet, load them
-			if (!wasExpanded && (node.type === 'directory' || node.type === 'archive') && !node.children) {
+			if (willBeExpanded && (node.type === 'directory' || node.type === 'archive') && (!node.children || node.children.length === 0)) {
 				try {
 					if (onDirectoryExpand) {
 						await onDirectoryExpand(node);
@@ -358,7 +381,7 @@ export function FileExplorer({
 						onError(errorMessage, 'expand');
 					}
 				}
-			} else if (!wasExpanded && onDirectoryExpand) {
+			} else if (willBeExpanded && onDirectoryExpand) {
 				try {
 					await onDirectoryExpand(node);
 				} catch (error) {
@@ -801,7 +824,7 @@ export function FileExplorer({
 		>
 			<div className="flex-1 overflow-y-auto" onContextMenu={handleClick}>
 				{rootNode?.children && rootNode.children.length > 0 ? (
-					rootNode.children.map((child) => (
+					sortNodes(rootNode.children).map((child) => (
 						<TreeNode
 							key={child.id}
 							node={child}
@@ -822,6 +845,7 @@ export function FileExplorer({
 							onDragOver={handleDragOver}
 							onDragEnter={handleDragEnter}
 							onDragLeave={handleDragLeave}
+							sortNodes={sortNodes}
 						/>
 					))
 				) : (

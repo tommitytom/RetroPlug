@@ -121,21 +121,30 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	}
 
 	async copyPath(source: string, destination: string): Promise<void> {
-		const content = await this.readPath(source);
-		await this.writePath(destination, content);
-
-		// If source is a directory, copy recursively
+		// Check if source is a directory first
 		try {
 			const sourceNode = await this.listPath(source);
-			if (sourceNode.type === 'directory' && sourceNode.children) {
-				for (const child of sourceNode.children) {
-					const childSource = `${source}/${child.name}`;
-					const childDest = `${destination}/${child.name}`;
-					await this.copyPath(childSource, childDest);
+			if (sourceNode.type === 'directory') {
+				// Create destination directory
+				await this.createDirectory(destination);
+
+				// Copy children recursively
+				if (sourceNode.children) {
+					for (const child of sourceNode.children) {
+						const childSource = `${source}/${child.name}`;
+						const childDest = `${destination}/${child.name}`;
+						await this.copyPath(childSource, childDest);
+					}
 				}
+			} else {
+				// It's a file, read and write
+				const content = await this.readPath(source);
+				await this.writePath(destination, content);
 			}
-		} catch {
-			// Not a directory, already copied as file
+		} catch (error) {
+			// If listPath fails, assume it's a file and try the old approach
+			const content = await this.readPath(source);
+			await this.writePath(destination, content);
 		}
 	}
 

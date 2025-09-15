@@ -50,7 +50,7 @@ export const FileTreePanel: React.FC = () => {
 	const { openConfirm } = useModal();
 	const project = useProject();
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
-	const { readPath, fileExists, writePath, deletePath, createDirectory, rootNode, refreshNode, movePath, getNodeByPath } = useOPFSStore();
+	const { readPath, fileExists, writePath, deletePath, createDirectory, rootNode, refreshNode, movePath } = useOPFSStore();
 	const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
 
 	const generateUniqueName = useCallback(async (parentPath: string, baseName: string, isFolder: boolean = false) => {
@@ -61,14 +61,9 @@ export const FileTreePanel: React.FC = () => {
 		// First check if the base name is available
 		const fullPath = `${parentPath === '/' ? '' : parentPath}/${name}`;
 
-		console.log(`Checking if ${fullPath} exists...`);
-
 		if (!(await fileExists(fullPath))) {
-			console.log(`${fullPath} does not exist, using: ${name}`);
 			return name;
 		}
-
-		console.log(`${fullPath} exists, trying numbered versions...`);
 
 		// If base name exists, try numbered versions
 		counter = 1;
@@ -76,22 +71,30 @@ export const FileTreePanel: React.FC = () => {
 			name = `${baseName} ${counter}${extension}`;
 			const numberedPath = `${parentPath === '/' ? '' : parentPath}/${name}`;
 
-			console.log(`Checking if ${numberedPath} exists...`);
-
 			if (!(await fileExists(numberedPath))) {
-				console.log(`${numberedPath} does not exist, using: ${name}`);
 				return name;
 			}
 
 			counter++;
 		} while (counter < 100); // Safety limit
 
-		console.log('Hit counter limit, using timestamp fallback');
 		// Fallback with timestamp if we hit the limit
 		return `${baseName}-${Date.now()}${extension}`;
 	}, [fileExists]);
 
+	const ALLOWED_EXTENSIONS = new Set(['gb','gbc','sav','rplg','state']);
+
 	const handleFileOpen = useCallback(async (node: FileSystemNode) => {
+		if (node.type === 'directory') {
+			// Ignore directories
+			return;
+		}
+
+		const ext = node.path.split('.').pop()?.toLowerCase() || '';
+		if (!ALLOWED_EXTENSIONS.has(ext)) {
+			return;
+		}
+
 		setCurrentDocument({
 			id: node.path,
 			title: node.name,
@@ -151,36 +154,13 @@ export const FileTreePanel: React.FC = () => {
 				throw new Error(`A file or folder with the name "${sanitizedNewName}" already exists.`);
 			}
 
-			// Get the node to determine if it's a directory
-			const node = getNodeByPath(normalizedOldPath);
-			if (node && node.type === 'directory') {
-				// For directories, we need to handle this differently
-				// The FileSystemWorker's copyPath has a bug where it tries to read directories as files
-				// As a workaround, let's create the new directory and move contents manually
-				await createDirectory(newPath);
-
-				// If the directory has children, we need to move them
-				if (node.children && node.children.length > 0) {
-					for (const child of node.children) {
-						const childOldPath = `${normalizedOldPath}/${child.name}`;
-						const childNewPath = `${newPath}/${child.name}`;
-						await movePath(childOldPath, childNewPath);
-					}
-				}
-
-				// Delete the old directory (should be empty now)
-				await deletePath(normalizedOldPath);
-			} else {
-				// For files, use the normal movePath
-				await movePath(normalizedOldPath, newPath);
-			}
+			// Now that we've fixed the FileSystemWorker bug, we can use movePath directly
+			await movePath(normalizedOldPath, newPath);
 		} catch (error) {
 			console.error('Failed to rename:', error);
 			throw error;
 		}
-	}, [fileExists, movePath, getNodeByPath, createDirectory, deletePath]);
-
-	const handleStartRename = useCallback((nodeId: string) => {
+	}, [fileExists, movePath]);	const handleStartRename = useCallback((nodeId: string) => {
 		setEditingNodeId(nodeId);
 	}, []);
 
