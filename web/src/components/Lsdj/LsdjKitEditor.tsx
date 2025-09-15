@@ -1,18 +1,72 @@
-import React, { use, useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { createEffectInstance } from '../../effects/Effect';
+import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import { useProject } from '../../hooks/RetroPlugHooks';
 import type { ILsdjKitEffect, ILsdjKitSample } from '../../types/LsdjTypes';
 import { KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
+import { toUint8Array } from '../../utils/NativeUtil';
 import { LsdjEffectList } from './LsdjEffectList';
 import { LsdjWaveView } from './LsdjWaveView';
-import { useProject } from '../../hooks/RetroPlugHooks';
-import { toUint8Array } from '../../utils/NativeUtil';
+
+// Helper function to get color classes based on kit type
+const getKitTypeColorClasses = (kitType: KitType): string => {
+	switch (kitType) {
+		case KitType.Editable:
+			return 'bg-green-900/30 text-green-400';
+		case KitType.Patched:
+			return 'bg-blue-900/30 text-blue-400';
+		case KitType.Rom:
+		default:
+			return 'bg-gray-700 text-gray-400';
+	}
+};
+
+function getSampleNameFromPath(path: string): string {
+	return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || 'UNK';
+}
+
+async function sanitizeSamples(fileSystem: FileSystemWorkerAPI, paths: string[]): Promise<{ name: string; samples: ILsdjKitSample[]}> {
+	const samples: ILsdjKitSample[] = [];
+	let kitName = 'GR8KIT';
+
+	for (let i = 0; i < paths.length; i++) {
+		const path = paths[i];
+
+		if (await fileSystem.isDirectory(path)) {
+			kitName = sanitizeKitName(path.split('/').pop() || 'GR8KIT');
+
+			const files = await fileSystem.listPath(path);
+			for (const file of files.children ?? []) {
+				samples.push({
+					key: generateKey(),
+					name: getSampleNameFromPath(file.path),
+					offset: 0,
+					length: 0,
+					path: file.path,
+					effects: [],
+				});
+			}
+		} else {
+			samples.push({
+				key: generateKey(),
+				name: getSampleNameFromPath(path),
+				offset: 0,
+				length: 0,
+				path,
+				effects: [],
+			});
+		}
+	}
+
+	return { name: kitName, samples };
+}
 
 interface LsdjKitEditorProps {
 	kitKey: string;
@@ -43,59 +97,12 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	console.assert(!!kit);
 	const kitType = getKitType(kit);
 
-	// Helper function to get color classes based on kit type
-	const getKitTypeColorClasses = (kitType: KitType): string => {
-		switch (kitType) {
-			case KitType.Editable:
-				return 'bg-green-900/30 text-green-400';
-			case KitType.Patched:
-				return 'bg-blue-900/30 text-blue-400';
-			case KitType.Rom:
-			default:
-				return 'bg-gray-700 text-gray-400';
-		}
-	};
-
-	function getSampleNameFromPath(path: string): string {
-		return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || 'UNK';
-	}
-
-	async function sanitizeSamples(paths: string[]): Promise<ILsdjKitSample[]> {
-		const samples: ILsdjKitSample[] = [];
-
-		for (let i = 0; i < paths.length; i++) {
-			const path = paths[i];
-
-			if (await fileSystem.isDirectory(path)) {
-				const files = await fileSystem.listPath(path);
-				for (const file of files.children ?? []) {
-					samples.push({
-						key: generateKey(),
-						name: getSampleNameFromPath(file.path),
-						offset: 0,
-						length: 0,
-						path,
-						effects: [],
-					});
-				}
-			} else {
-				samples.push({
-					key: generateKey(),
-					name: getSampleNameFromPath(path),
-					offset: 0,
-					length: 0,
-					path,
-					effects: [],
-				});
-			}
-		}
-
-		return samples;
-	}
-
-	const onNameChange = useCallback((newName: string, triggerUpdate: boolean) => {
-		renameKit(kitKey, newName, triggerUpdate);
-	}, [kitKey, renameKit]);
+	const onNameChange = useCallback(
+		(newName: string, triggerUpdate: boolean) => {
+			renameKit(kitKey, newName, triggerUpdate);
+		},
+		[kitKey, renameKit],
+	);
 
 	const handleDeleteKit = useCallback(() => {
 		removeKit(kitKey);
@@ -119,27 +126,36 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		[kit.id, project],
 	);
 
-	const handleEffectToggle = useCallback((expanded?: boolean) => {
-		if (expanded === undefined) {
-			setIsEffectEditorOpen(!isEffectEditorOpen);
-		} else {
-			setIsEffectEditorOpen(expanded);
-		}
-	}, [isEffectEditorOpen]);
+	const handleEffectToggle = useCallback(
+		(expanded?: boolean) => {
+			if (expanded === undefined) {
+				setIsEffectEditorOpen(!isEffectEditorOpen);
+			} else {
+				setIsEffectEditorOpen(expanded);
+			}
+		},
+		[isEffectEditorOpen],
+	);
 
 	// Drag and drop handlers
-	const handleDragOver = useCallback((event: React.DragEvent) => {
-		event.preventDefault();
-		event.dataTransfer.dropEffect = 'move'; // Match the effectAllowed from FileExplorer
-		setIsDragOver(true);
-	}, [setIsDragOver]);
+	const handleDragOver = useCallback(
+		(event: React.DragEvent) => {
+			event.preventDefault();
+			event.dataTransfer.dropEffect = 'move'; // Match the effectAllowed from FileExplorer
+			setIsDragOver(true);
+		},
+		[setIsDragOver],
+	);
 
-	const handleDragLeave = useCallback((event: React.DragEvent) => {
-		// Only clear if we're actually leaving the element
-		if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-			setIsDragOver(false);
-		}
-	}, [setIsDragOver]);
+	const handleDragLeave = useCallback(
+		(event: React.DragEvent) => {
+			// Only clear if we're actually leaving the element
+			if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+				setIsDragOver(false);
+			}
+		},
+		[setIsDragOver],
+	);
 
 	async function handleFileDrop(paths: string[]) {
 		const DEFAULT_EFFECTS: string[] = ['GainEffect', 'FilterEffect', 'DitherEffect'];
@@ -159,7 +175,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 
 		const kitType = getKitType(kit);
-		const samples = await sanitizeSamples(paths);
+		const { name: kitName, samples } = await sanitizeSamples(fileSystem, paths);
 
 		switch (kitType) {
 			case KitType.Editable:
@@ -170,7 +186,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			case KitType.Rom:
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
-					name: 'GR8KIT',
+					name: kitName,
 					effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType, idx) => {
 						const effectInstance = createEffectInstance(effectType);
 						if (!effectInstance) {
