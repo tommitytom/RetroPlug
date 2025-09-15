@@ -285,6 +285,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getNextEmptyKit", +[](LsdjController& controller, SystemId system) -> uint32 {
 			return controller.getNextEmptyKit((entt::entity)system);
 		})
+		.function("removeKit", +[](LsdjController& controller, SystemId system, uint32 kitId) -> bool {
+			return controller.removeKitComponent((entt::entity)system, kitId);
+		})
 		.function("setKit", +[](LsdjController& controller, SystemId system, uint32 kitId, const std::string& data, std::vector<fw::Uint8Buffer>&& samples) -> bool {
 			rfl::Result<LsdjKitComponent> result = rfl::json::read<LsdjKitComponent>(data);
 			if (!result.has_value()) {

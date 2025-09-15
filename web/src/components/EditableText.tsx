@@ -53,6 +53,8 @@ export const EditableText: React.FC<EditableTextProps> = ({
 
 	const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
 		if (e.key === 'Enter') {
+			e.preventDefault();
+			e.stopPropagation();
 			handleSubmit();
 		} else if (e.key === 'Escape') {
 			setIsEditing(false);

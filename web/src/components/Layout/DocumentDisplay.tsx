@@ -36,7 +36,7 @@ export const DocumentDisplay: React.FC = () => {
 			case 'audio':
 				return <Music className="h-4 w-4" />;
 			case 'emulator':
-				return <Music className="h-6 w-6" />;
+				return <Music className="h-4 w-4" />;
 			default:
 				return <File className="h-4 w-4" />;
 		}
@@ -49,10 +49,10 @@ export const DocumentDisplay: React.FC = () => {
 	return (
 		<div className="flex h-full flex-col">
 			{/* Document Header */}
-			<div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-2">
+			<div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-1">
 				{getDocumentIcon()}
 				<span className="text-sm font-medium">{currentDocument.title}</span>
-				{currentDocument.isDirty && <span className="text-xs text-yellow-500">•</span>}
+				{currentDocument.isDirty && <span className="text-sm text-yellow-500">•</span>}
 				<div className="ml-auto">
 					<button
 						onClick={currentDocument.isDirty ? saveDocument : undefined}

@@ -10,6 +10,10 @@ export class LsdjController {
 		return this._nativeController.getNextEmptyKit(system);
 	}
 
+	removeKit(system: SystemId, kitId: number): boolean {
+		return this._nativeController.removeKit(system, kitId);
+	}
+
 	updateKit(system: SystemId, kitId: number, kit: ILsdjKit): void {
 		const sanitized = {
 			...kit,
@@ -30,7 +34,7 @@ export class LsdjController {
 			path: kit.path ? '/mount' + kit.path : undefined,
 		};
 
-		//console.log(JSON.stringify(sanitized, null, 4));
+		console.log(JSON.stringify(sanitized, null, 4));
 
 		if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
 			console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));

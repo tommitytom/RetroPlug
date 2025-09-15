@@ -10,7 +10,7 @@ import { ContextMenu } from './Menu/ContextMenu';
 import type { MenuItem } from './Menu/types';
 import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
 import { openFileCopyDialog } from '../utils/FileUtil';
-import { file } from 'jszip';
+import type { FileSystemNode } from '../filesystem/types';
 
 const getIcon = (section: string) => {
 	switch (section) {
@@ -48,16 +48,107 @@ const getFileIcon = (fileName: string) => {
 	}
 };
 
+interface FileTreeNodeProps {
+	node: FileSystemNode;
+	sectionId: string;
+	depth: number;
+	basePath?: string;
+	onDoubleClick: (sectionId: string, itemName: string) => void;
+	onContextMenu: (sectionId: string, itemPath: string | null, event: React.MouseEvent) => void;
+	onDragStart: (event: React.DragEvent, sectionId: string, itemPath: string) => void;
+	onDragEnd: (event: React.DragEvent) => void;
+}
+
+const FileTreeNode: React.FC<FileTreeNodeProps> = ({
+	node,
+	sectionId,
+	depth,
+	basePath = '',
+	onDoubleClick,
+	onContextMenu,
+	onDragStart,
+	onDragEnd
+}) => {
+	const [isExpanded, setIsExpanded] = useState(false);
+	const hasChildren = node.type === 'directory' && node.children && node.children.length > 0;
+	const paddingLeft = `${2 + depth * 16}px`;
+	const currentPath = basePath ? `${basePath}/${node.name}` : node.name;
+
+	const toggleExpanded = () => {
+		if (hasChildren) {
+			setIsExpanded(!isExpanded);
+		}
+	};
+
+	const handleItemDoubleClick = () => {
+		if (node.type === 'directory') {
+			toggleExpanded();
+		} else {
+			onDoubleClick(sectionId, currentPath);
+		}
+	};
+
+	return (
+		<div>
+			<div
+				draggable={true}
+				className="flex cursor-pointer items-center py-1 text-sm text-gray-300 transition-colors duration-200 hover:bg-gray-700 hover:text-white"
+				style={{ paddingLeft }}
+				onDoubleClick={handleItemDoubleClick}
+				onContextMenu={(event) => onContextMenu(sectionId, currentPath, event)}
+				onDragStart={(event) => onDragStart(event, sectionId, currentPath)}
+				onDragEnd={onDragEnd}
+			>
+				{hasChildren && (
+					<span className="mr-1 cursor-pointer text-xs text-white" onClick={toggleExpanded}>
+						<div className="mr-2 flex h-3 w-3 items-center justify-center">
+							{isExpanded ? (
+								<div className="h-0 w-0 border-t-6 border-r-4 border-l-4 border-t-white border-r-transparent border-l-transparent" />
+							) : (
+								<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
+							)}
+						</div>
+					</span>
+				)}
+				{!hasChildren && <span className="mr-1 w-3" />}
+				<span className="mr-2 text-xs text-white">
+					{node.type === 'directory' ? '▢' : getFileIcon(node.name)}
+				</span>
+				<span className="flex-1">{node.name}</span>
+			</div>
+			{hasChildren && isExpanded && (
+				<div>
+					{node.children?.map((childNode, index) => (
+						<FileTreeNode
+							key={`${childNode.id || index}`}
+							node={childNode}
+							sectionId={sectionId}
+							depth={depth + 1}
+							basePath={currentPath}
+							onDoubleClick={onDoubleClick}
+							onContextMenu={onContextMenu}
+							onDragStart={onDragStart}
+							onDragEnd={onDragEnd}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	);
+};
+
 interface ISection {
 	id: string;
 	name: string;
+	extensions: string[];
+	recurse: boolean;
 }
 
 const sections: ISection[] = [
-	{ id: 'roms', name: 'Roms' },
-	{ id: 'savs', name: 'Savs' },
-	{ id: 'kits', name: 'Kits' },
-	{ id: 'samples', name: 'Samples' },
+	{ id: 'roms', name: 'Roms', extensions: ['.gb', '.gbc'], recurse: false },
+	{ id: 'savs', name: 'Savs', extensions: ['.sav'], recurse: false },
+	{ id: 'kits', name: 'Kits', extensions: ['.kit'], recurse: false },
+	{ id: 'samples', name: 'Samples', extensions: ['.wav', '.mp3', '.ogg', '.aiff'], recurse: true },
 ];
 
 async function ensureExists(fileSystem: FileSystemWorkerAPI, dirName: string) {
@@ -67,16 +158,31 @@ async function ensureExists(fileSystem: FileSystemWorkerAPI, dirName: string) {
 	}
 }
 
-async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<string, string[]>> {
+async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<string, FileSystemNode[]>> {
+	const result: Record<string, FileSystemNode[]> = {};
+
 	for (const section of sections) {
 		await ensureExists(fileSystem, section.id);
+		result[section.id] = (await fileSystem.listPath(`/${section.id}`, section.recurse, section.id === 'savs' ? '.sav' : undefined)).children || [];
 	}
+
 	return {
-		roms: (await fileSystem.listPath(`/roms`)).children?.map((f) => f.name) || [],
-		savs: (await fileSystem.listPath(`/savs`)).children?.map((f) => f.name)?.filter((f) => f.endsWith('.sav')) || [],
-		kits: (await fileSystem.listPath(`/kits`)).children?.map((f) => f.name) || [],
-		samples: (await fileSystem.listPath(`/samples`)).children?.map((f) => f.name) || [],
+		roms: (await fileSystem.listPath(`/roms`)).children || [],
+		savs: (await fileSystem.listPath(`/savs`, false, '.sav')).children/*?.filter((f) => f.name.endsWith('.sav'))*/ || [],
+		kits: (await fileSystem.listPath(`/kits`)).children || [],
+		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 	};
+}
+
+async function createImportDialog(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): Promise<boolean> {
+	try {
+		await openFileCopyDialog(fileSystem, `/${section}`, extensions);
+		return true;
+	} catch (error) {
+		console.error(`Error adding ${section}:`, error);
+	}
+
+	return false;
 }
 
 export const ProjectExplorer: React.FC = () => {
@@ -84,7 +190,7 @@ export const ProjectExplorer: React.FC = () => {
 	const { setCurrentDocument } = useDocument();
 	const { openModal, closeModal } = useModal();
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(sections.map((s) => s.id)));
-	const [sectionData, setSectionData] = useState<Record<string, string[]>>({});
+	const [sectionData, setSectionData] = useState<Record<string, FileSystemNode[]>>({});
 	const contextMenu = useContextMenu();
 	const [version, setVersion] = useState(0);
 
@@ -148,7 +254,35 @@ export const ProjectExplorer: React.FC = () => {
 		}
 	}, []);
 
-	const handleContextMenu = useCallback((id: string, item: string | null, event: React.MouseEvent) => {
+	function createImportMenuItem(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): MenuItem {
+		return {
+			id: `add-${section}`,
+			label: `Add ${section.charAt(0).toUpperCase() + section.slice(1)}`,
+			onClick: async () => {
+				if (await createImportDialog(fileSystem, section, extensions)) {
+					setVersion((v) => v + 1);
+				}
+			}
+		};
+	}
+
+	function createSampleFolderDialog() {
+		openModal({
+			title: 'Create sample folder',
+			content: (
+				<CreateFolderDialog
+					onSelect={async (path) => {
+						closeModal();
+						await fileSystem.createDirectory(`/samples/${path}`);
+						setVersion((v) => v + 1);
+					}}
+					onClose={closeModal}
+				/>
+			),
+		});
+	}
+
+	const handleContextMenu = useCallback((id: string, idx: number, item: string | null, event: React.MouseEvent) => {
 		event.preventDefault();
 		event.stopPropagation();
 
@@ -159,37 +293,8 @@ export const ProjectExplorer: React.FC = () => {
 				{
 					id: 'create-sample-folder',
 					label: 'Create Folder',
-					onClick: () => {
-						openModal({
-							title: 'Choose a name',
-							content: (
-								<CreateFolderDialog
-									onSelect={async (path) => {
-										closeModal();
-										await fileSystem.createDirectory(`/samples/${path}`);
-										setVersion((v) => v + 1);
-									}}
-									onClose={closeModal}
-								/>
-							),
-						});
-					},
+					onClick: createSampleFolderDialog,
 				},
-			);
-		} else if (id === 'samples' && item) {
-			menuItems.push(
-				{
-					id: 'add-samples',
-					label: 'Add Samples',
-					onClick: async () => {
-						try {
-							await openFileCopyDialog(fileSystem, `/samples/${item}`, '.wav,.mp3,.ogg,.aiff');
-							setVersion((v) => v + 1);
-						} catch (error) {
-							console.error('Error adding samples:', error);
-						}
-					}
-				}
 			);
 		} else if (id === 'savs' && item) {
 			menuItems.push(
@@ -208,67 +313,27 @@ export const ProjectExplorer: React.FC = () => {
 					}
 				}
 			);
-		} else if (id === 'savs' && !item) {
-			menuItems.push(
-				{
-					id: 'import-sav',
-					label: 'Import...',
-					onClick: async () => {
-						try {
-							await openFileCopyDialog(fileSystem, `/savs`, '.sav');
-							setVersion((v) => v + 1);
-						} catch (error) {
-							console.error('Error adding savs:', error);
-						}
-					}
-				},
-			);
 		} else if (id === 'roms' && !item) {
-			menuItems.push(
-				{
-					id: 'import-rom',
-					label: 'Import...',
-					onClick: async () => {
-						try {
-							await openFileCopyDialog(fileSystem, `/roms`, '.gb,.gbc');
-							setVersion((v) => v + 1);
-						} catch (error) {
-							console.error('Error adding roms:', error);
-						}
-					}
-				},
-			);
+			menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[idx].extensions.join(',')));
+		} else if (id === 'savs' && !item) {
+			menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[idx].extensions.join(',')));
 		} else if (id === 'kits' && !item) {
-			menuItems.push(
-				{
-					id: 'import-kit',
-					label: 'Import...',
-					onClick: async () => {
-						try {
-							await openFileCopyDialog(fileSystem, `/kits`, '.kit');
-							setVersion((v) => v + 1);
-						} catch (error) {
-							console.error('Error adding kits:', error);
-						}
-					}
-				},
-			);
+			menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[idx].extensions.join(',')));
+		} else if (id === 'samples' && item) {
+			menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[idx].extensions.join(',')));
 		}
 
 		if (menuItems.length > 0) {
 			contextMenu.showContextMenu(event, menuItems);
 		}
-	}, []);
+	}, [fileSystem, openModal, closeModal, contextMenu, setVersion]);
 
-	const handleDragEnd = useCallback((event: React.DragEvent) => {
-		// Remove visual feedback
-		event.currentTarget.classList.remove('opacity-50');
-	}, []);
+	const handleDragStart = useCallback((event: React.DragEvent, section: string, itemPath: string) => {
+		console.log(`Drag started on ${itemPath} in section ${section}`);
 
-	const handleDragStart = useCallback((event: React.DragEvent, section: string, item: string) => {
-		if (section !== 'kits') return;
+		if (section !== 'kits' && section !== 'samples') return;
 
-		const filePath = `/${section}/${item}`;
+		const filePath = `/${section}/${itemPath}`;
 		// Set the data that will be transferred during drag
 		event.dataTransfer.setData('text/plain', JSON.stringify([filePath]));
 		event.dataTransfer.effectAllowed = 'move';
@@ -277,19 +342,35 @@ export const ProjectExplorer: React.FC = () => {
 		event.currentTarget.classList.add('opacity-50');
 	}, []);
 
+	const handleDragEnd = useCallback((event: React.DragEvent) => {
+		// Remove visual feedback
+		event.currentTarget.classList.remove('opacity-50');
+	}, []);
+
+	const handleAddItemsClick = useCallback(async (event: React.MouseEvent, sectionId: number) => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		const section = sections[sectionId];
+		if (section.id === 'samples') {
+			createSampleFolderDialog();
+		} else {
+			const extensions = sections[sectionId].extensions.join(',');
+			if (await createImportDialog(fileSystem, sections[sectionId].id, extensions)) {
+				setVersion((v) => v + 1);
+			}
+		}
+	}, [setVersion, fileSystem, closeModal]);
+
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
-			<div className="flex items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white">
-				<span className="font-medium">▢</span>
-				<span className="ml-2 font-medium">Project Explorer</span>
-			</div>
 			<div className="flex-1 overflow-y-auto">
-				{sections.map((section) => (
+				{sections.map((section, idx) => (
 					<div key={section.id + section.name}>
 						<div
-							className="flex cursor-pointer items-center py-1 pl-2 text-sm text-gray-300 transition-colors duration-200 hover:bg-gray-700 hover:text-white"
+							className="flex cursor-pointer items-center bg-gray-800 px-2 py-1 text-sm font-medium text-white transition-colors duration-200 hover:bg-gray-700"
 							onClick={() => toggleSection(section.id)}
-							onContextMenu={(event) => handleContextMenu(section.id, null, event)}
+							onContextMenu={(event) => handleContextMenu(section.id, idx, null, event)}
 						>
 							<span className="mr-1 cursor-pointer text-xs text-white">
 								<div className="mr-2 flex h-3 w-3 items-center justify-center">
@@ -302,26 +383,28 @@ export const ProjectExplorer: React.FC = () => {
 							</span>
 							<span className="mr-2 text-xs text-white">{getIcon(section.id)}</span>
 							<span className="flex-1 font-medium">{section.name}</span>
-							<span className="mr-2 text-xs text-gray-500">
-								{sectionData[section.id] ? sectionData[section.id].length : 0}
-							</span>
+							<button
+								className="rounded-sm px-2 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
+								onClick={(event) => handleAddItemsClick(event, idx)}
+								title="Add Items"
+							>
+								+
+							</button>
 						</div>
 
 						{expandedSections.has(section.id) && (
 							<div>
 								{sectionData[section.id]?.map((item, index) => (
-									<div
-										key={index}
-										draggable
-										className="flex cursor-pointer items-center py-1 pl-6 text-sm text-gray-300 transition-colors duration-200 hover:bg-gray-700 hover:text-white"
-										onDoubleClick={() => handleDoubleClick(section.id, item)}
-										onContextMenu={(event) => handleContextMenu(section.id, item, event)}
-										onDragStart={(event) => handleDragStart(event, section.id, item)}
+									<FileTreeNode
+										key={`${section.id}-${item.id || index}`}
+										node={item}
+										sectionId={section.id}
+										depth={1}
+										onDoubleClick={handleDoubleClick}
+										onContextMenu={(sectionId, itemPath, event) => handleContextMenu(sectionId, idx, itemPath, event)}
+										onDragStart={handleDragStart}
 										onDragEnd={handleDragEnd}
-									>
-										<span className="mr-2 text-xs text-white">{getFileIcon(item)}</span>
-										<span className="flex-1">{item}</span>
-									</div>
+									/>
 								))}
 							</div>
 						)}

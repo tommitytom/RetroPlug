@@ -42,7 +42,7 @@ export const Layout: React.FC = () => {
 									<button
 										key={tab}
 										onClick={() => setActiveLeftTab(tab.toLowerCase())}
-										className={`px-3 py-2 text-xs font-medium transition-colors ${
+										className={`px-3 py-1.5 text-sm font-medium transition-colors ${
 											activeLeftTab === tab.toLowerCase()
 												? 'border-b-2 border-blue-400 text-blue-400'
 												: 'text-gray-400 hover:text-gray-200'
@@ -83,7 +83,7 @@ export const Layout: React.FC = () => {
 									<button
 										key={tab}
 										onClick={() => setActiveRightTab(tab.toLowerCase())}
-										className={`px-3 py-2 text-xs font-medium transition-colors ${
+										className={`px-3 py-1.5 text-sm font-medium transition-colors ${
 											activeRightTab === tab.toLowerCase()
 												? 'border-b-2 border-blue-400 text-blue-400'
 												: 'text-gray-400 hover:text-gray-200'

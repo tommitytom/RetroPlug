@@ -46,10 +46,43 @@ export function downloadUint8Buffer(buffer: Uint8Buffer, filename: string, mimeT
 /**
  * Sanitizes a filename by replacing special characters with underscores
  * @param filename - The original filename
+ * @param strict - If true, uses stricter validation for folder names (OPFS compatible)
  * @returns The sanitized filename
  */
-export function sanitizeFilename(filename: string): string {
-	return filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+export function sanitizeFilename(filename: string, strict = false): string {
+	if (strict) {
+		// Remove leading/trailing whitespace
+		let sanitized = filename.trim();
+
+		// Replace invalid characters with underscore
+		// OPFS doesn't allow: < > : " | ? * and control characters (0x00-0x1f)
+		sanitized = sanitized.replace(/[<>:"|?*\x00-\x1f]/g, '_');
+
+		// Remove leading/trailing dots and spaces (can cause issues)
+		sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');
+
+		return sanitized;
+	} else {
+		// Original less strict version - only allows alphanumeric, dots, and hyphens
+		return filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+	}
+}
+
+/**
+ * Validates a filename/folder name for filesystem compatibility
+ * @param name - The name to validate
+ * @returns Empty string if valid, error message if invalid
+ */
+export function validateFilename(name: string): string {
+	if (!name || name.length === 0) {
+		return 'Name cannot be empty';
+	}
+
+	if (name.length > 255) {
+		return 'Name is too long (max 255 characters)';
+	}
+
+	return '';
 }
 
 /**

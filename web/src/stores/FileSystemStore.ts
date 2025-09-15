@@ -21,7 +21,7 @@ interface OPFSStore {
 	initialize: (workerApi: Comlink.Remote<FileSystemWorkerAPI>) => Promise<void>;
 
 	// Unified path operations
-	listPath: (path: string) => Promise<FileSystemNode>;
+	listPath: (path: string, recurse?: boolean, filter?: string) => Promise<FileSystemNode>;
 	readPath: (path: string) => Promise<ArrayBuffer>;
 	writePath: (path: string, content: ArrayBuffer | Blob | string) => Promise<void>;
 	deletePath: (path: string) => Promise<void>;
@@ -120,14 +120,14 @@ export const useOPFSStore = create<OPFSStore>()(
 			};
 		},
 
-		listPath: async (path) => {
+		listPath: async (path, recurse, filter) => {
 			const { worker } = get();
 			if (!worker) throw new Error('Worker not initialized');
 
 			set({ loading: true, error: null });
 
 			try {
-				const node = await worker.listPath(path);
+				const node = await worker.listPath(path, recurse, filter);
 				set({ loading: false });
 				return node;
 			} catch (error) {

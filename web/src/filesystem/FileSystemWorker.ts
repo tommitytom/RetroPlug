@@ -1,12 +1,10 @@
 import * as Comlink from 'comlink';
 import type { ArchiveHandler, ArchiveInstance, FileSystemNode, ParsedPath } from './types';
-import { ZipArchiveHandler } from './ZipArchiveHandler';
-import { SavArchiveHandler } from './SavArchiveHandler';
 import type { MainModule } from '../native/RetroPlug.d.ts';
 
 export interface FileSystemWorkerAPI {
 	initialize: () => Promise<void>;
-	listPath: (path: string) => Promise<FileSystemNode>;
+	listPath: (path: string, recurse?: boolean, filter?: string) => Promise<FileSystemNode>;
 	readPath: (path: string) => Promise<ArrayBuffer>;
 	writePath: (path: string, content: ArrayBuffer) => Promise<void>;
 	createDirectory: (path: string) => Promise<void>;
@@ -41,12 +39,6 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 				console.error('WASM Error:', text);
 			},
 		})) as MainModule;
-
-		const zipHandler = new ZipArchiveHandler();
-		this.registerArchiveHandler(zipHandler);
-
-		const savHandler = new SavArchiveHandler(this.module);
-		this.registerArchiveHandler(savHandler);
 	}
 
 	async registerArchiveHandler(handler: ArchiveHandler): Promise<void> {
@@ -65,13 +57,13 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 		this.archiveHandlers.delete(type);
 	}
 
-	async listPath(path: string): Promise<FileSystemNode> {
+	async listPath(path: string, recurse = false, filter = ''): Promise<FileSystemNode> {
 		const parsed = this.parsePath(path);
 
 		if (parsed.type === 'opfs') {
-			return await this.listOPFSDirectory(parsed.opfsPath);
+			return await this.listOPFSDirectory(parsed.opfsPath, recurse, filter);
 		} else {
-			return await this.listArchiveDirectory(parsed.opfsPath, parsed.archivePath!);
+			return await this.listArchiveDirectory(parsed.opfsPath, parsed.archivePath!, recurse, filter);
 		}
 	}
 
@@ -123,7 +115,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async copyPath(source: string, destination: string): Promise<void> {
 		// Check if source is a directory first
 		try {
-			const sourceNode = await this.listPath(source);
+			const sourceNode = await this.listPath(source, true); // Use recurse=true to get all children
 			if (sourceNode.type === 'directory') {
 				// Create destination directory
 				await this.createDirectory(destination);
@@ -230,7 +222,7 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 		};
 	}
 
-	private async listOPFSDirectory(path: string): Promise<FileSystemNode> {
+	private async listOPFSDirectory(path: string, recurse = false, filter = ''): Promise<FileSystemNode> {
 		if (!this.opfsRoot) throw new Error('OPFS not initialized');
 
 		const handle = await this.getDirectoryHandle(path);
@@ -244,6 +236,11 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 
 		for await (const entry of handle.values()) {
 			const childPath = path === '/' ? `/${entry.name}` : `${path}/${entry.name}`;
+
+			// Apply filter if specified
+			if (filter && !entry.name.toLowerCase().includes(filter.toLowerCase())) {
+				continue;
+			}
 
 			if (entry.kind === 'file') {
 				const fileHandle = entry as FileSystemFileHandle;
@@ -272,20 +269,33 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 					lastModified: file.lastModified,
 				});
 			} else {
-				node.children!.push({
+				const childNode: FileSystemNode = {
 					id: childPath,
 					name: entry.name,
 					path: childPath,
 					type: 'directory',
 					children: [],
-				});
+				};
+
+				// If recurse is enabled, populate the directory's children
+				if (recurse) {
+					try {
+						const recursiveNode = await this.listOPFSDirectory(childPath, true, filter);
+						childNode.children = recursiveNode.children;
+					} catch (error) {
+						// If we can't read the directory, just add it as empty
+						console.warn(`Could not recursively list directory ${childPath}:`, error);
+					}
+				}
+
+				node.children!.push(childNode);
 			}
 		}
 
 		return node;
 	}
 
-	private async listArchiveDirectory(archivePath: string, internalPath: string): Promise<FileSystemNode> {
+	private async listArchiveDirectory(archivePath: string, internalPath: string, recurse = false, filter = ''): Promise<FileSystemNode> {
 		const archive = await this.getOrOpenArchive(archivePath);
 		const allNodes = archive.list();
 
@@ -303,28 +313,50 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 		const childrenMap = new Map<string, FileSystemNode>();
 
 		for (const item of allNodes) {
-			// Check if item is a direct child of targetPath
-			if (!targetPath || item.path.startsWith(targetPath + '/') || item.path === targetPath) {
-				const relativePath = targetPath ? item.path.substring(targetPath.length + 1) : item.path;
+			// Apply filter if specified
+			if (filter && !item.name.toLowerCase().includes(filter.toLowerCase())) {
+				continue;
+			}
 
-				if (relativePath && !relativePath.includes('/')) {
-					// Direct child
-					childrenMap.set(item.name, {
-						...item,
-						id: `${archivePath}/${item.path}`,
-						path: `${archivePath}/${item.path}`,
-					});
-				} else if (relativePath && relativePath.includes('/')) {
-					// Child directory
-					const dirName = relativePath.split('/')[0];
-					if (!childrenMap.has(dirName)) {
-						childrenMap.set(dirName, {
-							id: `${archivePath}/${targetPath}/${dirName}`,
-							name: dirName,
-							path: `${archivePath}/${targetPath}/${dirName}`,
-							type: 'directory',
-							children: [],
+			if (recurse) {
+				// For recursive mode, include all descendants that match the filter
+				if (!targetPath || item.path.startsWith(targetPath + '/') || item.path === targetPath) {
+					const relativePath = targetPath ? item.path.substring(targetPath.length + 1) : item.path;
+
+					if (relativePath) {
+						// Add the item directly to create a flat recursive structure
+						// The path will show the full hierarchy
+						childrenMap.set(item.path, {
+							...item,
+							id: `${archivePath}/${item.path}`,
+							path: `${archivePath}/${item.path}`,
 						});
+					}
+				}
+			} else {
+				// For non-recursive mode, only include direct children
+				if (!targetPath || item.path.startsWith(targetPath + '/') || item.path === targetPath) {
+					const relativePath = targetPath ? item.path.substring(targetPath.length + 1) : item.path;
+
+					if (relativePath && !relativePath.includes('/')) {
+						// Direct child
+						childrenMap.set(item.name, {
+							...item,
+							id: `${archivePath}/${item.path}`,
+							path: `${archivePath}/${item.path}`,
+						});
+					} else if (relativePath && relativePath.includes('/')) {
+						// Child directory
+						const dirName = relativePath.split('/')[0];
+						if (!childrenMap.has(dirName)) {
+							childrenMap.set(dirName, {
+								id: `${archivePath}/${targetPath}/${dirName}`,
+								name: dirName,
+								path: `${archivePath}/${targetPath}/${dirName}`,
+								type: 'directory',
+								children: [],
+							});
+						}
 					}
 				}
 			}

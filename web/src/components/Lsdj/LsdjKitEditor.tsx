@@ -30,6 +30,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onError,
 }) => {
 	const project = useProject();
+	const { fileSystem } = useRetroPlug();
 	const kit = useKit(kitKey)!;
 	const system = useLsdjStore((state) => state.systemId);
 	const updateKit = useLsdjStore((state) => state.updateKit);
@@ -65,14 +66,28 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		for (let i = 0; i < paths.length; i++) {
 			const path = paths[i];
 
-			samples.push({
-				key: generateKey(),
-				name: getSampleNameFromPath(path),
-				offset: 0,
-				length: 0,
-				path,
-				effects: [],
-			});
+			if (await fileSystem.isDirectory(path)) {
+				const files = await fileSystem.listPath(path);
+				for (const file of files.children ?? []) {
+					samples.push({
+						key: generateKey(),
+						name: getSampleNameFromPath(file.path),
+						offset: 0,
+						length: 0,
+						path,
+						effects: [],
+					});
+				}
+			} else {
+				samples.push({
+					key: generateKey(),
+					name: getSampleNameFromPath(path),
+					offset: 0,
+					length: 0,
+					path,
+					effects: [],
+				});
+			}
 		}
 
 		return samples;
@@ -135,7 +150,9 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			console.log('Patching kit');
 			updateKit(kitKey, {
 				path: paths[0],
+				//name: undefined,
 				samples: undefined,
+				effects: undefined,
 			});
 			onToggle(true);
 			return;
@@ -153,7 +170,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			case KitType.Rom:
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
-					name: 'KIT',
+					name: 'GR8KIT',
 					effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType, idx) => {
 						const effectInstance = createEffectInstance(effectType);
 						if (!effectInstance) {
@@ -167,6 +184,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						} as ILsdjKitEffect;
 					}),
 					samples,
+					path: undefined,
 				});
 				break;
 		}
@@ -180,22 +198,6 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			setIsDragOver(false);
 
 			try {
-				// Handle files from external sources (browser file system)
-				const files = Array.from(event.dataTransfer.files);
-				if (files.length > 0) {
-					for (const file of files) {
-						if (file.name.endsWith('.kit') || file.name.endsWith('.wav') || file.name.endsWith('.sav')) {
-							if (onFileDropped) {
-								await onFileDropped(file.name, file);
-							} else {
-								// Default behavior
-								console.log(`Dropped file: ${file.name}`);
-							}
-						}
-					}
-					return;
-				}
-
 				// Handle internal file tree drag (from FileExplorer)
 				const filePath = event.dataTransfer.getData('text/plain');
 				if (filePath) {
