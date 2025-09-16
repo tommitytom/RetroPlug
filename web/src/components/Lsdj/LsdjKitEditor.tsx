@@ -21,6 +21,8 @@ const getKitTypeColorClasses = (kitType: KitType): string => {
 			return 'bg-green-900/30 text-green-400';
 		case 'patched':
 			return 'bg-blue-900/30 text-blue-400';
+		case 'empty':
+			return 'bg-gray-600 text-gray-500';
 		case 'rom':
 		default:
 			return 'bg-gray-700 text-gray-400';
@@ -85,8 +87,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	onFileDropped,
 	onError,
 }) => {
-	const project = useProject();
 	const { fileSystem } = useRetroPlug();
+	const project = useProject();
 	const kit = useKit(kitKey)!;
 	const system = useLsdjStore((state) => state.systemId);
 	const updateKit = useLsdjStore((state) => state.updateKit);
@@ -183,6 +185,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				console.log('Adding samples');
 				addSamples(kitKey, samples);
 				break;
+			case 'empty':
 			case 'patched':
 			case 'rom':
 				console.log('Adding dynamic kit');
@@ -241,6 +244,28 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		[onFileDropped, onError, kit],
 	);
 
+	// For empty kits, show only the drop area
+	if (kitType === 'empty') {
+		return (
+			<div
+				className={`relative overflow-hidden rounded-sm border-2 border-dashed transition-all duration-200 ${
+					isDragOver ? 'border-blue-500 bg-blue-500/10 shadow-lg' : 'border-gray-500 bg-gray-500/10'
+				}`}
+				onDragOver={handleDragOver}
+				onDragLeave={handleDragLeave}
+				onDrop={handleDrop}
+			>
+				<div className="flex items-center justify-center px-2 py-1 text-sm font-medium">
+					<span className="font-mono font-medium text-gray-400">{kit.id.toString(16).padStart(2, '0').toUpperCase()}</span>
+					<span className="mx-1 font-medium text-gray-400">-</span>
+					<span className={`font-medium ${isDragOver ? 'text-blue-300' : 'text-gray-400'}`}>
+						{isDragOver ? 'Drop file here to load into kit' : `Empty`}
+					</span>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<div
 			className={`relative overflow-hidden rounded-sm border border-gray-700 transition-all duration-200 ${
@@ -252,9 +277,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		>
 			{isDragOver && (
 				<div className="absolute inset-0 z-10 flex items-center justify-center rounded-sm border-2 border-dashed border-blue-500 bg-blue-500/20">
-					<div className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-lg">
-						Drop file here to load into kit
-					</div>
+
 				</div>
 			)}
 			<div

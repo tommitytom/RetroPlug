@@ -15,7 +15,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	const removeKit = useLsdjStore((state) => state.removeKit);
 
 	const containerRef = useRef<HTMLDivElement>(null);
-	const [sortBy, setSortBy] = useState<'index' | 'editable' | 'mostUsed'>('editable');
+	const [sortBy, setSortBy] = useState<'index' | 'editable'>('index');
 	const [hideUnused, setHideUnused] = useState(false);
 	const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
@@ -49,7 +49,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 			setExpandedKits(new Set());
 			setAllExpanded(false);
 		} else {
-			setExpandedKits(new Set(sortedRomKits.map((kit) => kit.key)));
+			setExpandedKits(new Set(sortedRomKits.map((kit) => kit.key!)));
 			setAllExpanded(true);
 		}
 	}, [allExpanded, sortedRomKits]);
@@ -74,7 +74,6 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 									>
 										<option value="index">Index</option>
 										<option value="editable">Editable</option>
-										<option value="mostUsed">Most Used</option>
 									</select>
 								</div>
 								<div className="flex items-center gap-2">
@@ -104,7 +103,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 								kit.key && (
 									<LsdjKitEditor
 										isExpanded={expandedKits.has(kit.key)}
-										onToggle={(value) => toggleKit(kit.key, value)}
+										onToggle={(value) => toggleKit(kit.key!, value)}
 										kitKey={kit.key}
 										key={kit.key}
 									/>

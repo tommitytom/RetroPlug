@@ -1,5 +1,5 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
-import type { ILsdjEditableKit, ILsdjKit, ILsdjKitBase, ILsdjPatchedKit } from "../types/LsdjTypes";
+import { LSDJ_KIT_COUNT, type ILsdjEditableKit, type ILsdjKit, type ILsdjKitBase, type ILsdjPatchedKit } from "../types/LsdjTypes";
 import { generateKey } from "../utils/LsdjUtil";
 import { type SystemId } from "../utils/NativeUtil";
 
@@ -68,7 +68,17 @@ export class LsdjController {
 			}
 		});
 
-		console.log(kits);
+		for (let i = 0; i < LSDJ_KIT_COUNT; i++) {
+			if (!kits.find((k) => k.id === i)) {
+				kits.push({
+					id: i,
+					kit: { type: "empty" },
+					key: generateKey(),
+				});
+			}
+		}
+
+		console.log(JSON.stringify(kits, null, 4));
 
 		return kits;
 	}
