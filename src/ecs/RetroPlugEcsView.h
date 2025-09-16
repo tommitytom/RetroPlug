@@ -14,8 +14,6 @@ namespace rp {
 
 		RetroPlugProject& _project;
 		uint32 _version = 0;
-		entt::entity _selectedSystemEntity = entt::null;
-		size_t _selectedSystemIdx = INVALID_SYSTEM_INDEX;
 
 	public:
 		RetroPlugEcsView(RetroPlugProject& project);
@@ -33,10 +31,6 @@ namespace rp {
 
 	private:
 		void rebuildUi();
-
-		void updateFocus();
-
-		void focusSystem(const fw::ViewPtr& view);
 
 		entt::registry& getRegistry() {
 			return _project.getRegistry();

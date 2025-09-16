@@ -43,6 +43,7 @@ namespace rp {
 	struct RetroPlugProjectContext {
 		fw::EventNode& eventNode;
 		uint32 version = 0;
+		bool loading = false;
 
 		// Delete copy operations
 		RetroPlugProjectContext(const RetroPlugProjectContext&) = delete;

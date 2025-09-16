@@ -78,7 +78,7 @@ export class LsdjController {
 			}
 		}
 
-		console.log(JSON.stringify(kits, null, 4));
+		//console.log(JSON.stringify(kits, null, 4));
 
 		return kits;
 	}

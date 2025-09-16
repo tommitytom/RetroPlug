@@ -446,6 +446,16 @@ namespace fw {
 			h = value - y;
 		}
 
+		void setCenter(const PointT<T>& point) {
+			this->x = point.x - this->w / 2;
+			this->y = point.y - this->h / 2;
+		}
+
+		void setCenter(T x, T y) {
+			this->x = x - this->w / 2;
+			this->y = y - this->h / 2;
+		}
+
 		T right() const {
 			return x + w;
 		}

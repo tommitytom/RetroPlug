@@ -118,6 +118,9 @@ namespace rp {
 	}
 
 	TaskId RetroPlugProject::loadFromPathsAsync(PathVector paths) {
+		getContext().loading = true;
+		getContext().version++;
+
 		std::unique_ptr<LoadProjectTask> loadTask = std::make_unique<LoadProjectTask>();
 		loadTask->paths = std::move(paths);
 		loadTask->registry.ctx().emplace<HooksContext>(_registry.ctx().at<HooksContext>());

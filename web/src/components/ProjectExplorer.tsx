@@ -392,7 +392,7 @@ export const ProjectExplorer: React.FC = () => {
 
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
-			<div className={`flex-1 overflow-y-auto transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
+			<div className={`flex-1 overflow-y-auto transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
 				{sections.map((section, idx) => (
 					<div key={section.id + section.name}>
 						<div
@@ -422,18 +422,25 @@ export const ProjectExplorer: React.FC = () => {
 
 						{expandedSections.has(section.id) && (
 							<div>
-								{sectionData[section.id]?.map((item, index) => (
-									<FileTreeNode
-										key={`${section.id}-${item.id || index}`}
-										node={item}
-										sectionId={section.id}
-										depth={1}
-										onDoubleClick={handleDoubleClick}
-										onContextMenu={(sectionId, itemPath, event) => handleContextMenu(sectionId, idx, itemPath, event)}
-										onDragStart={handleDragStart}
-										onDragEnd={handleDragEnd}
-									/>
-								))}
+								{sectionData[section.id]
+									?.sort((a, b) => {
+										// Directories first, then files, both sorted alphabetically
+										if (a.type === 'directory' && b.type !== 'directory') return -1;
+										if (a.type !== 'directory' && b.type === 'directory') return 1;
+										return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+									})
+									?.map((item, index) => (
+										<FileTreeNode
+											key={`${section.id}-${item.id || index}`}
+											node={item}
+											sectionId={section.id}
+											depth={1}
+											onDoubleClick={handleDoubleClick}
+											onContextMenu={(sectionId, itemPath, event) => handleContextMenu(sectionId, idx, itemPath, event)}
+											onDragStart={handleDragStart}
+											onDragEnd={handleDragEnd}
+										/>
+									))}
 							</div>
 						)}
 					</div>

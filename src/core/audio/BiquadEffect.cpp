@@ -1,8 +1,9 @@
 #include "BiquadEffect.h"
+
 #include <cmath>
 #include <algorithm>
 
-constexpr f32 PI = 3.14159265358979323846f;
+#include "foundation/Constants.h"
 
 namespace rp {
 
@@ -77,7 +78,7 @@ void BiquadEffect::updateCoefficients() {
 }
 
 void BiquadEffect::calculateLowPassCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 alpha = sin_omega / (2.0f * _q);
@@ -91,7 +92,7 @@ void BiquadEffect::calculateLowPassCoefficients() {
 }
 
 void BiquadEffect::calculateHighPassCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 alpha = sin_omega / (2.0f * _q);
@@ -105,7 +106,7 @@ void BiquadEffect::calculateHighPassCoefficients() {
 }
 
 void BiquadEffect::calculateBandPassCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 alpha = sin_omega / (2.0f * _q);
@@ -119,7 +120,7 @@ void BiquadEffect::calculateBandPassCoefficients() {
 }
 
 void BiquadEffect::calculateBandStopCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 alpha = sin_omega / (2.0f * _q);
@@ -133,7 +134,7 @@ void BiquadEffect::calculateBandStopCoefficients() {
 }
 
 void BiquadEffect::calculatePeakCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 A = std::pow(10.0f, _gain / 40.0f);  // Convert dB to linear scale
@@ -148,7 +149,7 @@ void BiquadEffect::calculatePeakCoefficients() {
 }
 
 void BiquadEffect::calculateLowShelfCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 A = std::pow(10.0f, _gain / 40.0f);  // Convert dB to linear scale
@@ -164,7 +165,7 @@ void BiquadEffect::calculateLowShelfCoefficients() {
 }
 
 void BiquadEffect::calculateHighShelfCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 A = std::pow(10.0f, _gain / 40.0f);  // Convert dB to linear scale
@@ -235,7 +236,7 @@ bool BiquadEffect::isStable() const {
 f32 BiquadEffect::getMagnitudeResponse(f32 frequency) const {
 	if (_sampleRate <= 0.0f) return 1.0f;
 
-	f32 omega = 2.0f * PI * frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * frequency / _sampleRate;
 	f32 cos_omega = std::cos(omega);
 	f32 sin_omega = std::sin(omega);
 	f32 cos_2omega = std::cos(2.0f * omega);
@@ -257,7 +258,7 @@ f32 BiquadEffect::getMagnitudeResponse(f32 frequency) const {
 }
 
 void BiquadEffect::calculateAllPassCoefficients() {
-	f32 omega = 2.0f * PI * _frequency / _sampleRate;
+	f32 omega = 2.0f * fw::PI * _frequency / _sampleRate;
 	f32 sin_omega = std::sin(omega);
 	f32 cos_omega = std::cos(omega);
 	f32 alpha = sin_omega / (2.0f * _q);
