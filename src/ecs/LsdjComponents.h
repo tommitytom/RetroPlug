@@ -22,18 +22,31 @@ namespace rp {
 		uint32 offset = 0;
 		uint32 length = 0;
 		std::vector<LsdjEffect> effects;
+	};
 
-		rfl::Skip<fw::Float32Buffer> data; // Populated on first load
+	struct LsdjEmptyKit { using Tag = rfl::Literal<"empty", "LsdjEmptyKit">; };
+
+	struct LsdjRomKit {
+		using Tag = rfl::Literal<"rom", "LsdjRomKit">;
+		std::optional<std::string> name; // Optionally rename kit in rom
+	};
+
+	struct LsdjPatchedKit {
+		using Tag = rfl::Literal<"patched", "LsdjPatchedKit">;
+		std::string path;
+		std::optional<std::string> name; // Optionally rename kit before patching
+	};
+
+	struct LsdjEditableKit {
+		using Tag = rfl::Literal<"editable", "LsdjEditableKit">;
+		std::string name;
+		std::vector<LsdjEffect> effects;
+		std::vector<LsdjSampleComponent> samples;
 	};
 
 	struct LsdjKitComponent {
 		uint32 id = std::numeric_limits<uint32>::max();
-		std::string name;
-		std::optional<std::string> path;
-		std::optional<std::vector<LsdjEffect>> effects;
-		std::optional<std::vector<LsdjSampleComponent>> samples;
-
-		rfl::Skip<fw::Uint8Buffer> data; // Populated on first load
+		rfl::TaggedUnion<"type", LsdjEmptyKit, LsdjRomKit, LsdjPatchedKit, LsdjEditableKit> kit;
 	};
 
 	struct LsdjComponent {

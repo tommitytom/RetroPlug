@@ -4,30 +4,50 @@ export const LSDJ_KIT_COUNT = 51;
 export const LSDJ_KIT_SAMPLE_COUNT = 15;
 export const GAMEBOY_SAMPLE_RATE = 11468;
 
-export interface ILsdjKitEffect<T extends IEffect = IEffect> {
-	id: number;
-	key: string;
-	effect: T
-}
-
 export interface ILsdjKitSample {
 	name: string;
 	path: string;
 	offset: number;
 	length: number;
-	effects: ILsdjKitEffect[];
-	key: string;
+	effects: IEffect[];
+	key?: string;
 	data?: Uint8Array;
 }
 
-export interface ILsdjKit {
-	name: string;
+export type KitType = 'empty' | 'rom' | 'patched' | 'editable';
+
+export interface ILsdjKitBase {
+	type: KitType;
+}
+
+export interface ILsdjEmptyKit extends ILsdjKitBase {
+	type: "empty";
+};
+
+export interface INamedKit extends ILsdjKitBase {
+	name?: string;
+}
+
+export interface ILsdjRomKit extends INamedKit {
+	type: "rom";
+};
+
+export interface ILsdjPatchedKit extends INamedKit {
+	type: "patched";
+	path: string;
+};
+
+export interface ILsdjEditableKit extends INamedKit {
+	type: "editable";
+	effects: IEffect[];
+	samples: ILsdjKitSample[];
+};
+
+export interface ILsdjKit<T extends ILsdjKitBase = ILsdjKitBase> {
 	id: number;
-	path?: string;
-	samples?: ILsdjKitSample[];
-	effects?: ILsdjKitEffect[];
+	kit: T;
+	key?: string;
 	data?: Uint8Array;
-	key: string;
 }
 
 export interface ILsdjRom {
@@ -37,15 +57,9 @@ export interface ILsdjRom {
 	id: number;
 }
 
-export enum KitType {
-	Rom,
-	Patched,
-	Editable
-}
-
 export interface IIndexedLsdjKit extends Partial<ILsdjKit> {
 	id: number;
-	kitType?: KitType; // Unset if the kit is empty/unused
+	kitType?: 'empty' | 'rom' | 'patched' | 'editable'; // Unset if the kit is empty/unused
 }
 
 export interface INamedSample {

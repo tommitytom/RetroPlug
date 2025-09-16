@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import type { LsdjStoreState } from "../stores/LsdjStore";
 import { LsdjStoreContext } from "../contexts/LsdjStoreContext";
-import type { ILsdjKit } from "../types/LsdjTypes";
+import type { ILsdjKit, ILsdjPatchedKit, INamedKit } from "../types/LsdjTypes";
 
 export const useLsdjStore = <T,>(selector: (state: LsdjStoreState) => T): T => {
 	const store = useContext(LsdjStoreContext);
@@ -76,8 +76,9 @@ export const useKit = (kitKey: string) => {
 					if (!a || !b) return false;
 					return a.key === b.key &&
 						   a.id === b.id &&
-						   a.name === b.name &&
-						   a.path === b.path &&
+						   a.kit.type === b.kit.type &&
+						   (a.kit as INamedKit).name === (b.kit as INamedKit).name &&
+						   (a.kit as ILsdjPatchedKit).path === (b.kit as ILsdjPatchedKit).path &&
 						   a.data === b.data;
 				}
 			}
@@ -102,20 +103,20 @@ export const useKitListChanges = (callback: (kitId: string, kit: ILsdjKit|null) 
 
 		if (!previousKitsRef.current) {
 			const currentState = store.getState();
-			previousKitsRef.current = new Set(currentState.rom?.kits.map(kit => kit.key));
+			previousKitsRef.current = new Set(currentState.rom?.kits.map(kit => kit.key!));
 		}
 
 		const unsubscribe = store.subscribe(
 			(state) => state.rom?.kits || [],
 			(kits) => {
 				const prev = previousKitsRef.current!;
-				const added = kits.filter(kit => !prev.has(kit.key));
+				const added = kits.filter(kit => !prev.has(kit.key!));
 				const removed = Array.from(prev).filter(key => !kits.some(kit => kit.key === key));
 
-				added.forEach(kit => callbackRef.current(kit.key, kit));
+				added.forEach(kit => callbackRef.current(kit.key!, kit));
 				removed.forEach(key => callbackRef.current(key, null));
 
-				previousKitsRef.current = new Set(kits.map(kit => kit.key));
+				previousKitsRef.current = new Set(kits.map(kit => kit.key!));
 			},
 			{
 				equalityFn: (a, b) => a.length === b.length && a.every((kit, index) => kit.key === b[index]?.key),

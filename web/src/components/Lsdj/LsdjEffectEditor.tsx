@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
 
-import type { IEffectDescBase } from '../../effects/Effect';
+import type { IEffect, IEffectDescBase } from '../../effects/Effect';
 import { findEffect } from '../../effects/Effect';
-import type { ILsdjKitEffect } from '../../types/LsdjTypes';
 import { LsdjEffectParameterEditor } from './LsdjEffectParameterEditor';
 import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 
 interface LsdjEffectEditorProps {
 	kitKey: string;
 	sampleKey?: string;
-	effect: ILsdjKitEffect;
+	effect: IEffect;
 }
 
 // Format parameter name from lowerCamelCase to Human Readable
@@ -36,19 +35,19 @@ export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, samp
 	const [effectDesc, setEffectDesc] = useState<IEffectDescBase | null>(null);
 
 	useEffect(() => {
-		const effectDesc = findEffect(effect.effect.type);
+		const effectDesc = findEffect(effect.type);
 		if (effectDesc) {
 			setEffectDesc(effectDesc);
 		} else {
-			console.error(`Effect description not found for type: ${effect.effect.type}`);
+			console.error(`Effect description not found for type: ${effect.type}`);
 		}
 	}, [effect]);
 
 	const handleRemove = () => {
 		if (sampleKey) {
-			removeSampleEffect(kitKey, sampleKey, effect.key);
+			removeSampleEffect(kitKey, sampleKey, effect.key!);
 		} else {
-			removeKitEffect(kitKey, effect.key);
+			removeKitEffect(kitKey, effect.key!);
 		}
 	};
 
@@ -70,12 +69,12 @@ export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, samp
 					<LsdjEffectParameterEditor
 						key={`${effect.key}-${paramKey}`}
 						parameter={parameter}
-						effectKey={effect.key}
+						effectKey={effect.key!}
 						kitKey={kitKey}
 						paramName={formatParameterName(paramKey)}
 						paramKey={paramKey}
 						sampleKey={sampleKey}
-						value={(effect.effect as any)[paramKey]}
+						value={(effect as any)[paramKey]}
 					/>
 				))}
 			</div>

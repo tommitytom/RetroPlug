@@ -2,15 +2,14 @@ import React, { useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { createEffectInstance } from '../../effects/Effect';
+import { createEffectInstance, type IEffect } from '../../effects/Effect';
 import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { useProject } from '../../hooks/RetroPlugHooks';
-import type { ILsdjKitEffect, ILsdjKitSample } from '../../types/LsdjTypes';
-import { KitType } from '../../types/LsdjTypes';
+import type { ILsdjEditableKit, ILsdjKitSample, ILsdjPatchedKit, INamedKit, KitType } from '../../types/LsdjTypes';
 import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
-import { generateKey, getKitType, sanitizeKitName } from '../../utils/LsdjUtil';
+import { generateKey, sanitizeKitName } from '../../utils/LsdjUtil';
 import { toUint8Array } from '../../utils/NativeUtil';
 import { LsdjEffectList } from './LsdjEffectList';
 import { LsdjWaveView } from './LsdjWaveView';
@@ -18,11 +17,11 @@ import { LsdjWaveView } from './LsdjWaveView';
 // Helper function to get color classes based on kit type
 const getKitTypeColorClasses = (kitType: KitType): string => {
 	switch (kitType) {
-		case KitType.Editable:
+		case 'editable':
 			return 'bg-green-900/30 text-green-400';
-		case KitType.Patched:
+		case 'patched':
 			return 'bg-blue-900/30 text-blue-400';
-		case KitType.Rom:
+		case 'rom':
 		default:
 			return 'bg-gray-700 text-gray-400';
 	}
@@ -32,7 +31,10 @@ function getSampleNameFromPath(path: string): string {
 	return path.split('/').pop()?.split('.').shift()?.slice(0, 3)?.toUpperCase() || 'UNK';
 }
 
-async function sanitizeSamples(fileSystem: FileSystemWorkerAPI, paths: string[]): Promise<{ name: string; samples: ILsdjKitSample[]}> {
+async function sanitizeSamples(
+	fileSystem: FileSystemWorkerAPI,
+	paths: string[],
+): Promise<{ name: string; samples: ILsdjKitSample[] }> {
 	const samples: ILsdjKitSample[] = [];
 	let kitName = 'GR8KIT';
 
@@ -95,7 +97,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
-	const kitType = getKitType(kit);
+	const kitType = kit.kit.type;
 
 	const onNameChange = useCallback(
 		(newName: string, triggerUpdate: boolean) => {
@@ -113,10 +115,15 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			e.preventDefault();
 			e.stopPropagation();
 
+			if (kit.kit.type === 'empty') {
+				return;
+			}
+
+			const namedKit = kit.kit as INamedKit;
 			const kitData = project.lsdj.getKitData(system, kit.id);
-			if (kitData) {
+			if (kitData && namedKit.name) {
 				try {
-					const filename = `${sanitizeFilename(kit.name)}.kit`;
+					const filename = `${sanitizeFilename(namedKit.name)}.kit`;
 					downloadUint8Array(toUint8Array(kitData), filename);
 				} catch (error) {
 					console.error('Download failed:', error);
@@ -164,44 +171,37 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 
 		if (paths.length === 1 && paths[0].endsWith('.kit')) {
 			console.log('Patching kit');
-			updateKit(kitKey, {
-				path: paths[0],
-				//name: undefined,
-				samples: undefined,
-				effects: undefined,
-			});
+			updateKit(kitKey, { type: "patched", path: paths[0] } as ILsdjPatchedKit);
 			onToggle(true);
 			return;
 		}
 
-		const kitType = getKitType(kit);
 		const { name: kitName, samples } = await sanitizeSamples(fileSystem, paths);
 
-		switch (kitType) {
-			case KitType.Editable:
+		switch (kit.kit.type) {
+			case 'editable':
 				console.log('Adding samples');
 				addSamples(kitKey, samples);
 				break;
-			case KitType.Patched:
-			case KitType.Rom:
+			case 'patched':
+			case 'rom':
 				console.log('Adding dynamic kit');
 				updateKit(kitKey, {
+					type: 'editable',
 					name: kitName,
-					effects: DEFAULT_EFFECTS.map<ILsdjKitEffect>((effectType, idx) => {
+					effects: DEFAULT_EFFECTS.map<IEffect>((effectType, idx) => {
 						const effectInstance = createEffectInstance(effectType);
 						if (!effectInstance) {
 							console.error(`Failed to create effect instance of type: ${effectType}`);
+							return { id: idx, key: generateKey() } as IEffect;
 						}
 
-						return {
-							id: idx,
-							key: generateKey(),
-							effect: effectInstance ? effectInstance : {},
-						} as ILsdjKitEffect;
+						effectInstance.id = idx;
+						effectInstance.key = generateKey();
+						return effectInstance;
 					}),
 					samples,
-					path: undefined,
-				});
+				} as ILsdjEditableKit);
 				break;
 		}
 
@@ -274,7 +274,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 					<span className="font-mono font-medium text-white">{kit.id.toString(16).padStart(2, '0').toUpperCase()}</span>
 					<span className="mx-1 font-medium">-</span>
 					<EditableText
-						value={kit.name}
+						value={(kit.kit as INamedKit).name || ''}
 						onChange={(value) => onNameChange(value, true)}
 						className="font-medium text-white"
 						maxLength={6}
@@ -289,7 +289,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						</span>
 					)*/}
 					<span className={`rounded px-2 py-1 text-xs ${getKitTypeColorClasses(kitType)}`}>
-						{EnumUtils.enumToString(KitType, getKitType(kit))}
+						{kitType.charAt(0).toUpperCase() + kitType.slice(1)}
 					</span>
 					<button
 						className={`rounded-sm p-1 transition-colors duration-200 ${
@@ -342,11 +342,11 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				</div>
 			</div>
 			{isExpanded && (
-				<div className={`bg-gray-900 ${kitType === KitType.Editable ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
+				<div className={`bg-gray-900 ${kitType === 'editable' ? 'p-2' : 'px-2 pt-2 pb-1'}`}>
 					<div className="mb-2">
 						<LsdjWaveView system={system} kitId={kit.id} onNameUpdated={(name) => onNameChange(name, false)} />
 					</div>
-					{kitType === KitType.Editable && (
+					{kitType === 'editable' && (
 						<div>
 							<LsdjEffectList
 								kitKey={kitKey}

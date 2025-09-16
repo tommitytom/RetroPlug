@@ -25,7 +25,7 @@ namespace rp {
 #endif
 			_currentKit = 0;
 			return;
-			LsdjKitComponent comp;
+			/*LsdjKitComponent comp;
 			comp.name = "KIT";
 
 			std::vector<std::string> paths = { "C:\\retro\\samples\\mule\\kick.wav" };
@@ -78,6 +78,7 @@ namespace rp {
 					_lsdj.setKitDirty(_entity, _currentKit);
 				}
 			};
+			*/
 		}
 
 		void onUpdate(f32 delta) override {
@@ -102,7 +103,7 @@ namespace rp {
 		}
 
 		bool onDrop(const std::vector<std::string>& paths) override {
-			LsdjKitComponent comp;
+			/*LsdjKitComponent comp;
 			comp.name = "KIT";
 
 			int32 i = 0;
@@ -129,6 +130,9 @@ namespace rp {
 			auto slider = addChild<fw::SliderView>("Slider");
 
 			return true;
+			*/
+
+			return false;
 		}
 
 		void onRender(fw::Canvas& canvas) override {

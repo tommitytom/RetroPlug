@@ -1,13 +1,12 @@
 import React, { useCallback } from 'react';
 
 import { ALL_EFFECTS, createEffectInstance } from '../../effects/Effect';
-import type { ILsdjKitEffect } from '../../types/LsdjTypes';
 import { LsdjEffectEditor } from './LsdjEffectEditor';
 import { useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { generateKey } from '../../utils/LsdjUtil';
-import {} from '../../effects/Effect';
 import { useContextMenu } from '../../hooks/useContextMenu';
 import { ContextMenu } from '../Menu/ContextMenu';
+import type { ILsdjEditableKit, ILsdjKit } from '../../types/LsdjTypes';
 
 interface LsdjEffectListProps {
 	kitKey: string;
@@ -24,13 +23,13 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 	isExpanded,
 	onToggle,
 }) => {
-	const kit = useLsdjStore((state) => state.getKit(kitKey));
+	const kit = useLsdjStore((state) => state.getKit(kitKey)) as ILsdjKit<ILsdjEditableKit>;
 	const sample = useLsdjStore((state) => (sampleKey ? state.getSample(kitKey, sampleKey) : undefined));
 	const addKitEffect = useLsdjStore((state) => state.addKitEffect);
 	const addSampleEffect = useLsdjStore((state) => state.addSampleEffect);
 	const { isVisible, position, items, showContextMenu, hideContextMenu, handleItemClick } = useContextMenu();
 
-	const effects = sampleKey ? sample?.effects || [] : kit?.effects || [];
+	const effects = sampleKey ? sample?.effects || [] : kit?.kit.effects || [];
 	const isEmpty = effects.length === 0;
 
 	const handleAddEffect = (type: string) => {
@@ -40,16 +39,13 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 			return;
 		}
 
-		const newEffect: ILsdjKitEffect = {
-			id: 0,
-			key: generateKey(),
-			effect: effectInstance,
-		};
+		effectInstance.id = 0;
+		effectInstance.key = generateKey();
 
 		if (sampleKey) {
-			addSampleEffect(kitKey, sampleKey, newEffect);
+			addSampleEffect(kitKey, sampleKey, effectInstance);
 		} else {
-			addKitEffect(kitKey, newEffect);
+			addKitEffect(kitKey, effectInstance);
 		}
 
 		if (!isExpanded) {

@@ -1,21 +1,9 @@
 import type { MainModule, Uint8Buffer } from '../native/RetroPlug';
 import type { ILsdjKit, ILsdjKitData, ILsdjKitDataSample } from '../types/LsdjTypes';
-import { KitType } from '../types/LsdjTypes';
 import { convertFloat32Buffer } from './NativeUtil';
 
 export function kitIsEditable(kit: ILsdjKit): boolean {
-	return !!kit.samples;
-}
-
-export function getKitType(kit: ILsdjKit): KitType {
-	if (kit.samples) {
-		return KitType.Editable;
-	}
-	if (kit.path) {
-		return KitType.Patched;
-	}
-
-	return KitType.Rom;
+	return kit.kit.type === 'editable';
 }
 
 export function sanitizeKitName(input: string): string {

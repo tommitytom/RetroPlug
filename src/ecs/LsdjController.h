@@ -40,6 +40,8 @@ namespace rp {
 
 		void getKitNames(entt::entity system, std::unordered_map<rp::KitIndex, std::string>& target, bool includeUseCount);
 
+		bool getKits(entt::entity system, std::vector<LsdjKitComponent>& target);
+
 		const LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId) const;
 
 		LsdjKitComponent* getKitComponent(entt::entity system, uint32 kitId);

@@ -9,7 +9,7 @@ import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
 import type { MenuItem } from './Menu/types';
 import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
-import { openFileCopyDialog } from '../utils/FileUtil';
+import { downloadArrayBuffer, openFileCopyDialog } from '../utils/FileUtil';
 import type { FileSystemNode } from '../filesystem/types';
 
 const getIcon = (section: string) => {
@@ -286,6 +286,21 @@ export const ProjectExplorer: React.FC = () => {
 		});
 	}
 
+	function createDownloadMenuItem(section: string, item: string): MenuItem {
+		return {
+			id: `download-${section}-${item}`,
+			label: `Download`,
+			onClick: async () => {
+				try {
+					const fileData = await fileSystem.readPath(`/${section}/${item}`);
+					downloadArrayBuffer(fileData, item);
+				} catch (error) {
+					console.error(`Error downloading ${item}:`, error);
+				}
+			}
+		};
+	}
+
 	const handleContextMenu = useCallback((id: string, idx: number, item: string | null, event: React.MouseEvent) => {
 		event.preventDefault();
 		event.stopPropagation();
@@ -327,6 +342,10 @@ export const ProjectExplorer: React.FC = () => {
 			menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[idx].extensions.join(',')));
 		}
 
+		if (item) {
+			menuItems.push(createDownloadMenuItem(id, item));
+		}
+
 		if (menuItems.length > 0) {
 			contextMenu.showContextMenu(event, menuItems);
 		}
@@ -365,6 +384,11 @@ export const ProjectExplorer: React.FC = () => {
 			}
 		}
 	}, [setVersion, fileSystem, closeModal]);
+
+	const handleBackupClick = useCallback(() => {
+		// TODO: Implement backup functionality
+		console.log('Backup button clicked');
+	}, []);
 
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
@@ -414,6 +438,16 @@ export const ProjectExplorer: React.FC = () => {
 						)}
 					</div>
 				))}
+			</div>
+			<div className="border-t border-gray-700 bg-gray-900">
+				<button
+					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:outline-none focus:bg-slate-500"
+					onClick={handleBackupClick}
+					title="Create backup of project files"
+				>
+					<span className="text-white">▩</span>
+					<span>Backup</span>
+				</button>
 			</div>
 			<ContextMenu
 				items={contextMenu.items}

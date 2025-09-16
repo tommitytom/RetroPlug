@@ -1,7 +1,12 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
-import type { ILsdjKit } from "../types/LsdjTypes";
+import type { ILsdjEditableKit, ILsdjKit, ILsdjKitBase, ILsdjPatchedKit } from "../types/LsdjTypes";
 import { generateKey } from "../utils/LsdjUtil";
-import { fromUint8Array, type SystemId } from "../utils/NativeUtil";
+import { type SystemId } from "../utils/NativeUtil";
+
+export interface ILsdjApiKit<T extends ILsdjKitBase = ILsdjKitBase> {
+	id: number;
+	kit: T;
+}
 
 export class LsdjController {
 	constructor(private _module: MainModule, private _nativeController: NativeLsdjController) {}
@@ -14,30 +19,27 @@ export class LsdjController {
 		return this._nativeController.removeKit(system, kitId);
 	}
 
-	updateKit(system: SystemId, kitId: number, kit: ILsdjKit): void {
-		const sanitized = {
-			...kit,
-			key: undefined,
-			samples: kit.samples?.map(sample => ({
-				...sample,
-				path: '/mount' + sample.path,
-				data: undefined,
-				key: undefined,
-				effects: sample.effects?.map(effect => ({
-					...effect.effect,
-				})),
-			})),
-			effects: kit.effects?.map(effect => ({
-				...effect.effect,
-			})),
-			data: undefined,
-			path: kit.path ? '/mount' + kit.path : undefined,
-		};
+	updateKit(system: SystemId, kitContainer: Readonly<ILsdjKit>): void {
+		const kitData = JSON.parse(JSON.stringify(kitContainer)) as ILsdjKit;
 
-		//console.log(JSON.stringify(sanitized, null, 4));
+		kitData.key = undefined;
+		if (kitData.kit.type === "patched") {
+			const kit = kitData.kit as ILsdjPatchedKit;
+			kit.path = '/mount' + kit.path;
+		} else if (kitData.kit.type === "editable") {
+			const kit = kitData.kit as ILsdjEditableKit;
+			kit.effects.forEach((effect) => { effect.key = undefined; });
+			kit.samples.forEach((sample) => {
+				sample.path = '/mount' + sample.path;
+				sample.key = undefined;
+				sample.effects.forEach((effect) => { effect.key = undefined; });
+			});
+		}
 
-		if (!this._nativeController.updateKit(system, kitId, JSON.stringify(sanitized))) {
-			console.error("Failed to update kit:", JSON.stringify(sanitized, null, 4));
+		console.log(JSON.stringify(kitData, null, 4));
+
+		if (!this._nativeController.updateKit(system, kitData.id, JSON.stringify(kitData))) {
+			console.error("Failed to update kit:", JSON.stringify(kitData, null, 4));
 		}
 	}
 
@@ -49,26 +51,26 @@ export class LsdjController {
 
 		const kits = JSON.parse(kitsString) as ILsdjKit[];
 
-		return kits.map((kit) => ({
-			...kit,
-			key: generateKey(),
-			samples: kit.samples?.map((sample) => ({
-				...sample,
-				path: sample.path.startsWith('/mount') ? sample.path.substring(6) : sample.path,
-				key: generateKey(),
-				effects: sample.effects?.map((effect) => ({
-					effect: { ...effect },
-					key: generateKey(),
-					id: effect.id,
-				})),
-			})),
-			effects: kit.effects?.map((effect) => ({
-				effect: { ...effect },
-				key: generateKey(),
-				id: effect.id,
-			})),
-			path: kit.path?.startsWith('/mount') ? kit.path.substring(6) : kit.path,
-		})) as ILsdjKit[];
+		// Add mount to paths and generate keys
+		kits.forEach((kitContainer) => {
+			kitContainer.key = generateKey();
+			if (kitContainer.kit.type === "patched") {
+				const kit = kitContainer.kit as ILsdjPatchedKit;
+				kit.path = kit.path.startsWith('/mount') ? kit.path.substring(6) : kit.path;
+			} else if (kitContainer.kit.type === "editable") {
+				const kit = kitContainer.kit as ILsdjEditableKit;
+				kit.effects.forEach((effect) => { effect.key = generateKey(); });
+				kit.samples.forEach((sample) => {
+					sample.path = sample.path.startsWith('/mount') ? sample.path.substring(6) : sample.path;
+					sample.key = generateKey();
+					sample.effects.forEach((effect) => { effect.key = generateKey(); });
+				});
+			}
+		});
+
+		console.log(kits);
+
+		return kits;
 	}
 
 	getKitData(systemId: SystemId, kitId: number): Uint8Buffer | null {

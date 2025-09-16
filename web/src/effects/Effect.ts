@@ -42,6 +42,8 @@ function registerEffect<T extends IEffect>(name: string, type: string, parameter
 }
 
 export interface IEffect {
+	id?: number; // Will be deprecated
+	key?: string; // Will be deprecated
 	type: string;
 }
 
@@ -153,7 +155,7 @@ export function createEffectInstance(type: string): IEffect | undefined {
 		const effectInstance = { type };
 
 		Object.entries(effect.parameters).forEach(([paramKey, param]) => {
-			effectInstance[paramKey] = param.defaultValue;
+			(effectInstance as any)[paramKey] = param.defaultValue;
 		});
 
 		return effectInstance;

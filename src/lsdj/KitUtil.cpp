@@ -97,10 +97,8 @@ void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const
 	}
 }
 
-bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
-	if (!comp.samples.has_value()) return false;
-
-	for (const LsdjSampleComponent& sample : comp.samples.value()) {
+bool processSamples(SampleCache& sampleCache, const LsdjEditableKit& kit, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+	for (const LsdjSampleComponent& sample : kit.samples) {
 		const SampleData* sampleDataRaw = sampleCache.getOrLoadSample(sample.path);
 		if (!sampleDataRaw) {
 			spdlog::error("Failed to load sample: {} from path: {}", sample.name, sample.path);
@@ -110,16 +108,14 @@ bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std:
 		SampleData sampleData = *sampleDataRaw;
 
 		const DitherEffect* ditherEffect = nullptr;
-		if (comp.effects.has_value()) {
-			for (const LsdjEffect& effect : comp.effects.value()) {
-				effect.visit([&](auto&& eff) {
-					if constexpr (!std::is_same_v<std::decay_t<decltype(eff)>, DitherEffect>) {
-						processEffect(eff, sampleData.buffer, (f32)sampleData.sampleRate);
-					} else {
-						ditherEffect = &eff;
-					}
-				});
-			}
+		for (const LsdjEffect& effect : kit.effects) {
+			effect.visit([&](auto&& eff) {
+				if constexpr (!std::is_same_v<std::decay_t<decltype(eff)>, DitherEffect>) {
+					processEffect(eff, sampleData.buffer, (f32)sampleData.sampleRate);
+				} else {
+					ditherEffect = &eff;
+				}
+			});
 		}
 
 		fw::Float32Buffer resampled;
@@ -145,13 +141,13 @@ bool processSamples(SampleCache& sampleCache, const LsdjKitComponent& comp, std:
 	return true;
 }
 
-bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState) {
+bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEditableKit& kitState) {
 	std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
 	if (!processSamples(sampleCache, kitState, samples)) {
 		return false;
 	}
 
-	kit.setName(kitState.name);
+	kit.setName(kitState.name.size() ? kitState.name : "GR8KIT");
 	kit.writeSamples(samples);
 
 	return true;
@@ -319,25 +315,44 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 	//spdlog::info("sample processing time: {}", fp_ms.count());
 }
 
-std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitState, fw::Uint8Buffer& kitData, SampleCache& sampleCache) {
-	bool success = false;
-
+std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitComponent, fw::Uint8Buffer& kitData, SampleCache& sampleCache) {
 	kitData.resize(lsdj::Rom::BANK_SIZE);
-	lsdj::Kit kit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
+	lsdj::Kit targetKit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
+	std::string error;
 
-	if (kitState.path.has_value()) {
-		success = fw::FsUtil::readFile(kitState.path.value(), kitData);
-		if (!success) return ("Failed to read kit file at " + kitState.path.value());
-	} else if (kitState.samples.has_value()) {
-		success = KitUtil::createKit(sampleCache, kit, kitState);
-		if (!success) return ("Failed to create kit " + std::to_string(kitState.id));
-	} else if (!kitState.name.empty()) {
-		kit.setName(kitState.name);
-	} else {
-		return "No data to patch kit " + std::to_string(kitState.id);
+	kitComponent.kit.visit(entt::overloaded{
+		[&](const LsdjEmptyKit&) {
+			// In this case we just erase the kit
+			kitData.clear();
+		},
+		[&](const LsdjRomKit& kit) {
+			if (kit.name.has_value()) {
+				// This will just rename the existing kit
+				// TODO: Ensure the kit we're changing the name of is not empty!
+				targetKit.setName(kit.name.value());
+			}
+		},
+		[&](const LsdjPatchedKit& kit) {
+			if (!fw::FsUtil::readFile(kit.path, kitData)) {
+				error = "Failed to read kit file at " + kit.path;
+			} else {
+				if (kit.name.has_value()) {
+					targetKit.setName(kit.name.value());
+				}
+			}
+		},
+		[&](const LsdjEditableKit& kit) {
+			if (!KitUtil::createKit(sampleCache, targetKit, kit)) {
+				error = "Failed to create kit " + std::to_string(kitComponent.id);
+			}
+		}
+	});
+
+	if (error.empty()) {
+		return std::nullopt;
 	}
 
-	return std::nullopt;
+	return error;
 }
 
 void KitUtil::updateKit(SystemPtr system, LsdjServiceSettings& settings, KitIndex kitIdx) {

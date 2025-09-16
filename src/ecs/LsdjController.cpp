@@ -167,33 +167,22 @@ namespace rp {
 	}
 
 	bool LsdjController::updateKit(entt::entity system, uint32 kitId) {
-		lsdj::Rom rom = getLsdjRom(system);
-		if (!rom.isValid()) return false; // Return true as we updated the component, even if the ROM is invalid
-
 		LsdjKitComponent* kitComponent = getKitComponent(system, kitId);
 		if (!kitComponent) return false;
 
-		lsdj::Kit kit = rom.getKit(kitId);
-		if (kitComponent->path.has_value()) {
-			// Patch existing kit
-			if (kitComponent->data().empty()) {
-				if (!fw::FsUtil::readFile(kitComponent->path.value(), kitComponent->data())) {
-					spdlog::error("Failed to read kit file at {}", kitComponent->path.value());
-					return false;
-				}
-			}
+		LsdjStateComponent& lsdjState = _registry.get<LsdjStateComponent>(system);
+		SystemStateComponent& systemState = _registry.get<SystemStateComponent>(system);
+		VersionedMemory* romData = systemState.find(MemoryType::Rom);
 
-			spdlog::info("Patching kit {} from file {} with size {}", kitId, kitComponent->path.value(), kitComponent->data().size());
-			kit.setKitData(kitComponent->data());
-		} else {
-			// Create new kit
-			LsdjStateComponent& state = _registry.get<LsdjStateComponent>(system);
-			KitUtil::createKit(*state.sampleCache.get(), kit, *kitComponent);
-		}
+		const size_t offset = lsdj::Rom::getKitBankOffset(kitId);
+		fw::Uint8Buffer kitData = romData->data.slice(offset, lsdj::Rom::BANK_SIZE);
+		KitUtil::updateKit2(*kitComponent, kitData, *lsdjState.sampleCache);
+
+		romData->version++;
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
-		patch.data = kit.getBuffer().clone();
+		patch.data = kitData.clone();
 		patch.offset = lsdj::Rom::KIT_LOOKUP[kitId] * lsdj::Rom::BANK_SIZE;
 
 		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
@@ -289,6 +278,36 @@ namespace rp {
 
 	LsdjComponent* LsdjController::getComponent(entt::entity system) {
 		return RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+	}
+
+	bool LsdjController::getKits(entt::entity system, std::vector<LsdjKitComponent>& kits) {
+		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
+		if (!lsdj) return false;
+
+		kits = lsdj->kits;
+
+		lsdj::Rom rom = getLsdjRom((entt::entity)system);
+		if (rom.isValid()) {
+			rom.eachKit([&](lsdj::Kit kit) {
+				const uint32 kitIndex = (uint32)kit.getIndex();
+				const std::string name = std::string(kit.getName());
+
+				auto found = std::find_if(kits.begin(), kits.end(), [&](const LsdjKitComponent& k) { return k.id == kitIndex; });
+				if (found != kits.end()) {
+					found->kit.visit(entt::overloaded{
+						[&](LsdjRomKit& kit) { kit.name = kit.name.value_or(std::move(name)); },
+						[&](LsdjPatchedKit& kit) { kit.name = kit.name.value_or(std::move(name)); },
+						[&](const LsdjRomKit&) {},
+						[&](const LsdjEmptyKit&) {},
+						[&](const LsdjEditableKit&) {},
+					});
+				} else {
+					kits.push_back({ .id = kitIndex, .kit = LsdjRomKit{ .name = std::move(name) } });
+				}
+			});
+		}
+
+		return true;
 	}
 
 	fw::Uint8Buffer LsdjController::getKitSample(entt::entity system, uint32 kitId, uint32 sampleId) {

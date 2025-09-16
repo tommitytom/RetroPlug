@@ -1,3 +1,14 @@
+export function replaceObject<T extends Record<string, any>>(target: T, source: Partial<T>): void {
+	// Remove properties not in source
+	for (const key in target) {
+		if (!(key in source)) {
+			delete target[key];
+		}
+	}
+	// Add/update properties from source
+	Object.assign(target, source);
+}
+
 export function deepEqual<T>(a: T, b: T): boolean {
 	if (a === b) return true;
 

@@ -1,11 +1,13 @@
+import type { WritableDraft } from 'immer';
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
-import type { ILsdjKit, ILsdjKitEffect, ILsdjKitSample, ILsdjRom } from '../types/LsdjTypes';
-import { LsdjController } from '../wrapper/Lsdj';
+import type { IEffect } from '../effects/Effect';
+import type { ILsdjEditableKit, ILsdjEmptyKit, ILsdjKit, ILsdjKitBase, ILsdjKitSample, ILsdjRom, INamedKit } from '../types/LsdjTypes';
 import { type SystemId, toUint8Array } from '../utils/NativeUtil';
-import { Timer } from '../utils/Timer';
+import { replaceObject } from '../utils/ObjectUtils';
+import { LsdjController } from '../wrapper/Lsdj';
 
 export interface LsdjStoreState {
 	// State
@@ -13,8 +15,6 @@ export interface LsdjStoreState {
 	systemId: SystemId;
 	rom: ILsdjRom | null;
 	kit: ILsdjKit | null; // For standalone kit editing
-	selectedKitKey: string | null;
-	selectedSampleKey: string | null;
 
 	// Core System Actions
 	updateController: (controller: LsdjController, systemId: SystemId) => void;
@@ -28,9 +28,8 @@ export interface LsdjStoreState {
 	loadStandaloneKit: (kit: ILsdjKit) => void;
 	addKit: (kit: ILsdjKit) => void;
 	removeKit: (kitKey: string) => void;
-	updateKit: (kitKey: string, updates: Partial<ILsdjKit>) => void;
+	updateKit: (kitKey: string, updates: ILsdjKitBase) => void;
 	renameKit: (kitKey: string, name: string, triggerUpdate?: boolean) => void;
-	selectKit: (kitKey: string | null) => void;
 	fetchKitData: (kitKey: string) => void;
 	//patchSystemKit: (kitKey: string) => void;
 
@@ -39,17 +38,16 @@ export interface LsdjStoreState {
 	removeSample: (kitKey: string, sampleKey: string) => void;
 	updateSample: (kitKey: string, sampleKey: string, updates: Partial<ILsdjKitSample>) => void;
 	renameSample: (kitKey: string, sampleKey: string, name: string) => void;
-	selectSample: (sampleKey: string | null) => void;
 
 	// Effect Actions for Kits
-	addKitEffect: (kitKey: string, effect: ILsdjKitEffect) => void;
-	updateKitEffect: (kitKey: string, effectKey: string, updates: Partial<ILsdjKitEffect>) => void;
+	addKitEffect: (kitKey: string, effect: IEffect) => void;
+	updateKitEffect: (kitKey: string, effectKey: string, updates: Partial<IEffect>) => void;
 	removeKitEffect: (kitKey: string, effectKey: string) => void;
 	reorderKitEffects: (kitKey: string, fromIndex: number, toIndex: number) => void;
 
 	// Effect Actions for Samples
-	addSampleEffect: (kitKey: string, sampleKey: string, effect: ILsdjKitEffect) => void;
-	updateSampleEffect: (kitKey: string, sampleKey: string, effectKey: string, updates: Partial<ILsdjKitEffect>) => void;
+	addSampleEffect: (kitKey: string, sampleKey: string, effect: IEffect) => void;
+	updateSampleEffect: (kitKey: string, sampleKey: string, effectKey: string, updates: Partial<IEffect>) => void;
 	removeSampleEffect: (kitKey: string, sampleKey: string, effectKey: string) => void;
 	reorderSampleEffects: (kitKey: string, sampleKey: string, fromIndex: number, toIndex: number) => void;
 
@@ -58,6 +56,31 @@ export interface LsdjStoreState {
 	getKits: () => ILsdjKit[] | undefined;
 	getKit: (kitKey: string) => ILsdjKit | undefined;
 	getSample: (kitKey: string, sampleKey: string) => ILsdjKitSample | undefined;
+}
+
+function getKit(state: WritableDraft<LsdjStoreState>, kitKey: string) {
+	if (state.rom) {
+		return state.rom.kits.find((k) => k.key === kitKey);
+	} else if (state.kit && state.kit.key === kitKey) {
+		return state.kit;
+	}
+	return undefined;
+}
+
+function getEditableKit(state: WritableDraft<LsdjStoreState>, kitKey: string) {
+	const kit = getKit(state, kitKey);
+	if (kit && kit.kit.type === 'editable') {
+		return kit as ILsdjKit<ILsdjEditableKit>;
+	}
+	return undefined;
+}
+
+function getSample(state: WritableDraft<LsdjStoreState>, kitKey: string, sampleKey: string) {
+	const kitContainer = getEditableKit(state, kitKey);
+	if (kitContainer) {
+		return kitContainer.kit.samples.find((s) => s.key === sampleKey);
+	}
+	return undefined;
 }
 
 // ============= Store Creator =============
@@ -92,8 +115,6 @@ export const createLsdjStore = (
 							state.systemId = systemId;
 							state.rom = initialRom || null;
 							state.kit = initialKit || null;
-							state.selectedKitKey = null;
-							state.selectedSampleKey = null;
 						}),
 
 					// ROM Actions
@@ -106,8 +127,6 @@ export const createLsdjStore = (
 					clearRom: () =>
 						set((state) => {
 							state.rom = null;
-							state.selectedKitKey = null;
-							state.selectedSampleKey = null;
 						}),
 
 					// Kit Actions
@@ -115,7 +134,6 @@ export const createLsdjStore = (
 						set((state) => {
 							state.kit = kit;
 							state.rom = null; // Clear ROM when loading standalone kit
-							state.selectedKitKey = kit.key;
 						}),
 
 					addKit: (kit) =>
@@ -127,51 +145,30 @@ export const createLsdjStore = (
 
 					removeKit: (kitKey) =>
 						set((state) => {
-							if (state.rom) {
-								state.rom.kits = state.rom.kits.filter((k) => k.key !== kitKey);
-								// Clear selection if the removed kit was selected
-								if (state.selectedKitKey === kitKey) {
-									state.selectedKitKey = null;
-									state.selectedSampleKey = null;
-								}
-							}
+							state.updateKit(kitKey, { type: "empty" } as ILsdjEmptyKit);
 						}),
 
-					updateKit: (kitKey, updates) =>
+					updateKit: (kitKey, kit) =>
 						set((state) => {
-							if (state.rom) {
-								const kit = state.rom.kits.find((k) => k.key === kitKey);
-								if (kit) {
-									Object.assign(kit, updates);
-									state.controller.updateKit(state.systemId, kit.id, kit);
-								}
-							} else if (state.kit && state.kit.key === kitKey) {
-								Object.assign(state.kit, updates);
-								state.controller.updateKit(state.systemId, state.kit.id, state.kit);
+							const kitContainer = getKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Kit not found for update:", kitKey);
+								return;
 							}
+
+							kitContainer.kit = kit;
+							state.controller.updateKit(state.systemId, kitContainer);
 						}),
 
 					renameKit: (kitKey, name, triggerUpdate) =>
 						set((state) => {
-							if (state.rom) {
-								const kit = state.rom.kits.find((k) => k.key === kitKey);
-								if (kit) {
-									kit.name = name;
-									if (triggerUpdate) {
-										state.controller.updateKit(state.systemId, kit.id, kit);
-									}
-								}
-							} else if (state.kit && state.kit.key === kitKey) {
-								state.kit.name = name;
+							const kitContainer = getKit(state, kitKey);
+							if (kitContainer && kitContainer.kit.type !== 'empty') {
+								(kitContainer.kit as INamedKit).name = name;
 								if (triggerUpdate) {
-									state.controller.updateKit(state.systemId, state.kit.id, state.kit);
+									state.controller.updateKit(state.systemId, kitContainer);
 								}
 							}
-						}),
-
-					selectKit: (kitKey) =>
-						set((state) => {
-							state.selectedKitKey = kitKey;
 						}),
 
 					fetchKitData: (kitKey) =>
@@ -187,166 +184,129 @@ export const createLsdjStore = (
 					// Sample Actions
 					addSamples: (kitKey, samples) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-							if (kit) {
-								if (!kit.samples) kit.samples = [];
-								kit.samples.push(...samples);
-								state.controller.updateKit(state.systemId, kit.id, kit);
+							const kitContainer = getEditableKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Cannot add samples to non-editable kit");
+								return;
 							}
+
+							kitContainer.kit.samples.push(...samples);
+							state.controller.updateKit(state.systemId, kitContainer);
 						}),
 
 					removeSample: (kitKey, sampleKey) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-							if (kit && kit.samples) {
-								kit.samples = kit.samples.filter((s) => s.key !== sampleKey);
-								// Clear selection if the removed sample was selected
-								if (state.selectedSampleKey === sampleKey) {
-									state.selectedSampleKey = null;
-								}
-
-								state.controller.updateKit(state.systemId, kit.id, kit);
+							const kitContainer = getEditableKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Cannot add samples to non-editable kit");
+								return;
 							}
+
+							kitContainer.kit.samples = kitContainer.kit.samples.filter((s) => s.key !== sampleKey);
+							state.controller.updateKit(state.systemId, kitContainer);
 						}),
 
 					updateSample: (kitKey, sampleKey, updates) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
-								if (sample) {
-									Object.assign(sample, updates);
-								}
-								state.controller.updateKit(state.systemId, kit.id, kit);
+							const kitContainer = getEditableKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Cannot modify samples on a non-editable kit");
+								return;
+							}
+
+							const sample = kitContainer.kit.samples.find((s) => s.key === sampleKey);
+							if (sample) {
+								replaceObject(sample, updates);
+								state.controller.updateKit(state.systemId, kitContainer);
 							}
 						}),
 
 					renameSample: (kitKey, sampleKey, name) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
-							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
-								if (sample) sample.name = name;
-								state.controller.updateKit(state.systemId, kit.id, kit);
+							const kitContainer = getEditableKit(state, kitKey);
+							const sample = kitContainer?.kit.samples.find((s) => s.key === sampleKey);
+							if (kitContainer && sample) {
+								sample.name = name;
+								state.controller.updateKit(state.systemId, kitContainer);
 							}
 						}),
 
-					selectSample: (sampleKey) =>
-						set((state) => {
-							state.selectedSampleKey = sampleKey;
-						}),
-
-					/*
-					patchSystemKit: (kitKey: string) =>
-						set((state) => {
-							const lsdj = state.controller;
-							const kit = state.rom?.kits.find((k) => k.key === kitKey);
-
-							if (kit && state.systemId !== null) {
-								lsdj.updateKit(state.systemId, kit.id, kit);
-
-								// Capture values before the delay
-								const capturedSystemId = state.systemId;
-								const capturedKitId = kit.id;
-
-								setTimeout(() => {
-									// Use captured values instead of state
-									const kitData = lsdj.getKitData(capturedSystemId, capturedKitId)!;
-									if (kitData && kitData.size() > 0) {
-										// Update the store with fresh state
-										set((currentState) => {
-											const currentKit = currentState.rom?.kits.find((k) => k.key === kitKey);
-											if (currentKit) {
-												console.log('setting kit data');
-
-												currentKit.data = toUint8Array(kitData);
-											}
-										});
-									}
-								}, 1000); // Your desired delay
-							}
-						}),
-*/
 					// Kit Effect Actions
 					addKitEffect: (kitKey, effect) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit && kit.effects) {
-								const ditherIdx = kit.effects.findIndex((e) => e.effect.type === 'DitherEffect');
+								const ditherIdx = kit.effects.findIndex((e) => e.type === 'DitherEffect');
 								if (ditherIdx !== -1) {
 									kit.effects.splice(ditherIdx, 0, effect); // Insert before DitherEffect
 								} else {
 									kit.effects.push(effect);
 								}
 
-								state.controller.updateKit(state.systemId, kit.id, kit);
+								state.controller.updateKit(state.systemId, kitContainer);
 							}
 						}),
 
 					updateKitEffect: (kitKey, effectKey, updates) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit) {
-								const effect = kit.effects?.find((e) => e.key === effectKey);
+								const effect = kit.effects.find((e) => e.key === effectKey);
 								if (effect) {
-									Object.assign(effect.effect, updates);
-									state.controller.updateKit(state.systemId, kit.id, kit);
+									Object.assign(effect, updates);
+									state.controller.updateKit(state.systemId, kitContainer);
 								}
 							}
 						}),
 
 					removeKitEffect: (kitKey, effectKey) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit && kit.effects) {
 								kit.effects = kit.effects.filter((e) => e.key !== effectKey);
-								state.controller.updateKit(state.systemId, kit.id, kit);
+								state.controller.updateKit(state.systemId, kitContainer);
 							}
 						}),
 
 					reorderKitEffects: (kitKey, fromIndex, toIndex) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit && kit.effects && kit.effects.length > fromIndex && kit.effects.length > toIndex) {
 								const [removed] = kit.effects.splice(fromIndex, 1);
 								kit.effects.splice(toIndex, 0, removed);
-								state.controller.updateKit(state.systemId, kit.id, kit);
+								state.controller.updateKit(state.systemId, kitContainer);
 							}
 						}),
 
 					// Sample Effect Actions
 					addSampleEffect: (kitKey, sampleKey, effect) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								const sample = kit.samples.find((s) => s.key === sampleKey);
 								if (sample && sample.effects) {
 									sample.effects.push(effect);
-									state.controller.updateKit(state.systemId, kit.id, kit);
+									state.controller.updateKit(state.systemId, kitContainer);
 								}
 							}
 						}),
 
 					updateSampleEffect: (kitKey, sampleKey, effectKey, updates) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								const sample = kit.samples.find((s) => s.key === sampleKey);
 								if (sample) {
-									const effect = sample.effects?.find((e) => e.key === effectKey);
+									const effect = sample.effects.find((e) => e.key === effectKey);
 									if (effect) {
 										Object.assign(effect, updates);
-										state.controller.updateKit(state.systemId, kit.id, kit);
+										state.controller.updateKit(state.systemId, kitContainer);
 									}
 								}
 							}
@@ -354,32 +314,32 @@ export const createLsdjStore = (
 
 					removeSampleEffect: (kitKey, sampleKey, effectKey) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								const sample = kit.samples.find((s) => s.key === sampleKey);
 								if (sample) {
-									sample.effects = sample.effects?.filter((e) => e.key !== effectKey);
-									state.controller.updateKit(state.systemId, kit.id, kit);
+									sample.effects = sample.effects.filter((e) => e.key !== effectKey);
+									state.controller.updateKit(state.systemId, kitContainer);
 								}
 							}
 						}),
 
 					reorderSampleEffects: (kitKey, sampleKey, fromIndex, toIndex) =>
 						set((state) => {
-							const kit =
-								state.rom?.kits.find((k) => k.key === kitKey) || (state.kit?.key === kitKey ? state.kit : null);
+							const kitContainer = getEditableKit(state, kitKey);
+							const kit = kitContainer?.kit;
 							if (kit) {
-								const sample = kit.samples?.find((s) => s.key === sampleKey);
+								const sample = kit.samples.find((s) => s.key === sampleKey);
 								if (
 									sample &&
 									sample.effects &&
-									sample.effects?.length > fromIndex &&
-									sample.effects?.length > toIndex
+									sample.effects.length > fromIndex &&
+									sample.effects.length > toIndex
 								) {
-									const [removed] = sample.effects?.splice(fromIndex, 1);
+									const [removed] = sample.effects.splice(fromIndex, 1);
 									sample.effects?.splice(toIndex, 0, removed);
-									state.controller.updateKit(state.systemId, kit.id, kit);
+									state.controller.updateKit(state.systemId, kitContainer);
 								}
 							}
 						}),
@@ -397,18 +357,14 @@ export const createLsdjStore = (
 
 					getKit: (kitKey) => {
 						const state = get();
-						if (state.rom) {
-							return state.rom.kits.find((k) => k.key === kitKey);
-						} else if (state.kit && state.kit.key === kitKey) {
-							return state.kit;
-						}
-						return undefined;
+						return getKit(state, kitKey);
 					},
 
 					getSample: (kitKey, sampleKey) => {
-						const kit = get().getKit(kitKey);
-						if (kit?.samples) {
-							return kit.samples?.find((s) => s.key === sampleKey);
+						const state = get();
+						const kitContainer = getEditableKit(state, kitKey);
+						if (kitContainer) {
+							return kitContainer.kit.samples.find((s) => s.key === sampleKey);
 						}
 					},
 				})),

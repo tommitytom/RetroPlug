@@ -13,7 +13,7 @@ import { TabView } from './TabView';
 import type { TabItem } from './types';
 
 export const Layout: React.FC = () => {
-	const { audioContext } = useRetroPlug();
+	const { audioContext, module } = useRetroPlug();
 	const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
 	const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 	const [leftPanelWidth, setLeftPanelWidth] = useState(350);
@@ -94,7 +94,7 @@ export const Layout: React.FC = () => {
 
 				{/* Status Bar */}
 				<div className="flex h-6 items-center border-t border-gray-700 bg-gray-900 px-2 text-xs">
-					<span className="text-gray-500">RetroPlug 0.5.0 • SameBoy 0.15.5 • {audioContext?.state === 'running' ? `${audioContext.sampleRate} Hz` : 'Audio disabled'}</span>
+					<span className="text-gray-500">RetroPlug 0.5.0 • SameBoy v1.0.0 • {audioContext?.state === 'running' ? `${audioContext.sampleRate} Hz` : 'Audio disabled'}</span>
 					<div className="flex-1" />
 					<DocumentStatusIndicator />
 				</div>

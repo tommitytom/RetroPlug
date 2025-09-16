@@ -9,7 +9,7 @@
 #include "ecs/SampleCache.h"
 
 namespace rp::KitUtil {
-	const uint32 GAMEBOY_SAMPLE_RATE = 11468;	
+	const uint32 GAMEBOY_SAMPLE_RATE = 11468;
 
 	//SampleData loadSample(std::string_view path);
 
@@ -17,7 +17,7 @@ namespace rp::KitUtil {
 
 	void patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<SampleData>& samples);
 
-	bool createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjKitComponent& kitState);
+	bool createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEditableKit& kitState);
 
 	std::optional<std::string> updateKit2(const LsdjKitComponent& kitState, fw::Uint8Buffer& kitData, SampleCache& sampleCache);
 
