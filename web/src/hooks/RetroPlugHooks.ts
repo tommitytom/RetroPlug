@@ -6,6 +6,33 @@ import type { SystemId } from '../utils/NativeUtil';
 import { Project } from '../wrapper/Project';
 import { AccessType, MemoryType } from '../wrapper/System';
 
+export function useIsProjectDirty(intervalTimeout: number = 100) {
+	const { project } = useRetroPlug();
+
+	const subscribe = useCallback(
+		(listener: () => void) => {
+			let lastValue = project.isDirty;
+
+			const interval = setInterval(() => {
+				const currentValue = project.isDirty;
+				if (currentValue !== lastValue) {
+					lastValue = currentValue;
+					listener();
+				}
+			}, intervalTimeout);
+
+			return () => clearInterval(interval);
+		},
+		[project, intervalTimeout],
+	);
+
+	const getSnapshot = useCallback(() => {
+		return project.isDirty;
+	}, [project]);
+
+	return useSyncExternalStore(subscribe, getSnapshot);
+}
+
 export function useProject(intervalTimeout: number = 100) {
 	const { app, module } = useRetroPlug();
 

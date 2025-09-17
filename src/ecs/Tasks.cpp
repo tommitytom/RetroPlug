@@ -37,7 +37,7 @@ namespace rp {
 		targetRegistry.ctx().at<ProjectPathContext>() = std::move(registry.ctx().at<ProjectPathContext>());
 
 		RetroPlugProjectContext& projectCtx = targetRegistry.ctx().at<RetroPlugProjectContext>();
-		projectCtx.version++;
+		projectCtx.increaseVersion();
 		projectCtx.loading = false;
 	}
 
@@ -66,6 +66,7 @@ namespace rp {
 		RetroPlugProjectContext& projectCtx = targetRegistry.ctx().at<RetroPlugProjectContext>();
 		projectCtx.version++;
 		projectCtx.loading = false;
+		projectCtx.dirty = false;
 	}
 
 

@@ -60,8 +60,7 @@ export class Project {
 	}
 
 	get isDirty(): boolean {
-		return false;
-		//return this._project.isDirty;
+		return this._project.isDirty();
 	}
 
 	get version(): number {

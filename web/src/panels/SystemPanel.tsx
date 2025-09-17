@@ -1,27 +1,30 @@
-import { useEffect, useState } from "react";
-import { useDocument } from "../contexts/DocumentContext";
-import { useProject, useSystemMemoryVersion } from "../hooks/RetroPlugHooks";
-import { RetroPlugCanvas } from "../RetroPlugCanvas"
-import { MemoryType } from "../wrapper/System";
+import { useEffect } from 'react';
+
+import { useDocument } from '../contexts/DocumentContext';
+import { useIsProjectDirty, useProject } from '../hooks/RetroPlugHooks';
+import { RetroPlugCanvas } from '../RetroPlugCanvas';
 
 export const SystemPanel: React.FC = () => {
-	const { markDirty, updateDocument } = useDocument();
+	const { markDirty, markClean, updateDocument } = useDocument();
 	const project = useProject();
-	const [systemIds, setSystemIds] = useState<number[]>([]);
-	const savVersion = useSystemMemoryVersion(systemIds.length > 0 ? systemIds[0] : null, MemoryType.Sram);
+	const isDirty = useIsProjectDirty();
 
 	useEffect(() => {
-		const systems = project.getSystemIds();
-		setSystemIds(systems);
-		updateDocument({ title: project.getProjectName() })
+		updateDocument({ title: project.getProjectName() });
 	}, [project]);
 
 	useEffect(() => {
-		if (savVersion === null) return;
-		markDirty();
-	}, [savVersion]);
+		if (isDirty) {
+			markDirty();
+		} else {
+			markClean();
+		}
+	}, [project, isDirty]);
 
-	return <div className="w-full h-full flex items-center justify-center">
-		<RetroPlugCanvas />
-	</div>
+	return (
+		<div className="flex h-full w-full items-center justify-center">
+			<RetroPlugCanvas />
+			<span>requires reset!</span>
+		</div>
+	);
 };

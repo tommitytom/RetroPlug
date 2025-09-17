@@ -40,10 +40,22 @@ namespace rp {
 		}
 	};
 
+	struct InputConfig {
+		std::unordered_map<std::string, std::string> keyboard;
+		std::unordered_map<std::string, std::string> gamepad;
+	};
+
 	struct RetroPlugProjectContext {
 		fw::EventNode& eventNode;
 		uint32 version = 0;
+		bool dirty = false;
 		bool loading = false;
+		bool requiresReset = false;
+
+		void increaseVersion() {
+			version++;
+			dirty = true;
+		}
 
 		// Delete copy operations
 		RetroPlugProjectContext(const RetroPlugProjectContext&) = delete;

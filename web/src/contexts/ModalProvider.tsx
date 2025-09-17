@@ -113,8 +113,63 @@ export const ModalProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		[openModal, closeModal],
 	);
 
+	const openYesNoCancel = useCallback(
+		(config: {
+			title?: string;
+			message: string;
+			yesText?: string;
+			noText?: string;
+			cancelText?: string;
+			onYes: () => void;
+			onNo: () => void;
+			onCancel?: () => void;
+		}) => {
+			const content = (
+				<div>
+					<p className="mb-6 text-white">{config.message}</p>
+					<div className="flex gap-2">
+						<button
+							onClick={() => {
+								config.onCancel?.();
+								closeModal();
+							}}
+							className="flex-1 rounded-lg bg-gray-700 px-4 py-2 text-gray-200 transition-colors hover:bg-gray-600"
+						>
+							{config.cancelText || 'Cancel'}
+						</button>
+						<button
+							onClick={() => {
+								config.onNo();
+								closeModal();
+							}}
+							className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
+						>
+							{config.noText || 'No'}
+						</button>
+						<button
+							onClick={() => {
+								config.onYes();
+								closeModal();
+							}}
+							className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
+						>
+							{config.yesText || 'Yes'}
+						</button>
+					</div>
+				</div>
+			);
+
+			openModal({
+				title: config.title || 'Confirm',
+				content,
+				size: 'sm',
+			});
+		},
+		[openModal, closeModal],
+	);
+
 	return (
-		<ModalContext.Provider value={{ openModal, closeModal, openConfirm, openAlert }}>
+		<ModalContext.Provider value={{ openModal, closeModal, openConfirm, openAlert, openYesNoCancel }}>
 			{children}
 			{modalConfig && (
 				<Modal isOpen={true} onClose={closeModal} {...modalConfig}>

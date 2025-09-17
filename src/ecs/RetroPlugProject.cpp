@@ -12,6 +12,7 @@
 #include "core/Events.h"
 #include "ecs/RetroPlugProjectContext.h"
 #include "ecs/TaskSchedulerGlobal.h"
+#include "foundation/FsUtil.h"
 
 namespace rp {
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
@@ -105,11 +106,31 @@ namespace rp {
 	}
 
 	void RetroPlugProject::loadConfigs() {
+		spdlog::info("Loading configs...");
 
+		std::string data = fw::FsUtil::readTextFile("/mount/config/input.json");
+		if (data.empty()) {
+			spdlog::warn("Failed to read /mount/config/input.json");
+			return;
+		}
+
+		rfl::Result<InputConfig> result = rfl::json::read<InputConfig>(data);
+		if (!result) {
+			spdlog::warn("Failed to parse /mount/config/input.json: {}", result.error().what());
+			return;
+		}
+
+		if (_registry.ctx().contains<InputConfig>()) {
+			_registry.ctx().at<InputConfig>() = std::move(result.value());
+		} else {
+			_registry.ctx().emplace<InputConfig>(std::move(result.value()));
+		}
+
+		spdlog::info("Loaded input config");
 	}
 
 	bool RetroPlugProject::loadFromFile(std::filesystem::path path) {
-		getContext().version++;
+		getContext().increaseVersion();
 		if (ProjectBuilder::loadFromFile(_registry, path)) {
 			handleReplicate();
 			return true;
@@ -119,7 +140,7 @@ namespace rp {
 
 	TaskId RetroPlugProject::loadFromPathsAsync(PathVector paths) {
 		getContext().loading = true;
-		getContext().version++;
+		getContext().increaseVersion();
 
 		std::unique_ptr<LoadProjectTask> loadTask = std::make_unique<LoadProjectTask>();
 		loadTask->paths = std::move(paths);
@@ -131,7 +152,7 @@ namespace rp {
 	}
 
 	bool RetroPlugProject::loadFromPaths(PathVector paths) {
-		getContext().version++;
+		getContext().increaseVersion();
 		if (ProjectBuilder::loadFromPaths(_registry, paths)) {
 			handleReplicate();
 			return true;
@@ -140,12 +161,17 @@ namespace rp {
 	}
 
 	bool RetroPlugProject::saveToFile(std::filesystem::path path) {
-		getContext().version++;
-		return ProjectBuilder::saveToFile(_registry, path);
+		//getContext().increaseVersion();
+		if (ProjectBuilder::saveToFile(_registry, path)) {
+			getContext().dirty = false;
+			return true;
+		}
+
+		return false;
 	}
 
 	bool RetroPlugProject::addSystem(SystemLoadComponent&& config) {
-		getContext().version++;
+		getContext().increaseVersion();
 		entt::entity entity = fw::Replicator::spawn(_registry);
 		if (ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{})) {
 			handleReplicate();
@@ -162,11 +188,16 @@ namespace rp {
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 
 		fw::Replicator::destroy(_registry, entity);
-		getContext().version++;
+		getContext().increaseVersion();
 	}
 
 	bool RetroPlugProject::resetSystem(entt::entity system, bool remote) {
-		return _eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system });
+		if (_eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system })) {
+			getContext().requiresReset = false;
+			return true;
+		}
+
+		return false;
 	}
 
 	uint32 RetroPlugProject::getMemoryVersion(entt::entity entity, MemoryType type) const {

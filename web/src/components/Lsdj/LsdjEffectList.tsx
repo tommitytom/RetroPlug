@@ -93,9 +93,10 @@ export const LsdjEffectList: React.FC<LsdjEffectListProps> = ({
 						)}
 					</div>
 					<span className="font-medium text-white">Effects</span>
+					<span className="ml-2 text-xs text-gray-400">({effects.length})</span>
 				</div>
 				<button
-					className="rounded-sm px-2 py-1 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
+					className="rounded-sm px-2  text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
 					onClick={handleContextMenu}
 					title="Add Effect"
 				>

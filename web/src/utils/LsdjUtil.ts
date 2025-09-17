@@ -33,21 +33,20 @@ export function sortKits(kits: ILsdjKit[], sortMethod: SortBy) {
 			return kitsCopy.sort((a, b) => a.id - b.id);
 		case 'editable':
 			return kitsCopy.sort((a, b) => {
-				// Editable kits first, then non-editable
-				if (kitIsEditable(a) && !kitIsEditable(b)) return -1;
-				if (!kitIsEditable(a) && kitIsEditable(b)) return 1;
-				// If both have same editable status, sort by index
+				// Define priority order: editable, patched, rom, empty
+				const typePriority = { 'editable': 0, 'patched': 1, 'rom': 2, 'empty': 3 };
+
+				const aPriority = typePriority[a.kit.type];
+				const bPriority = typePriority[b.kit.type];
+
+				// If types are different, sort by priority
+				if (aPriority !== bPriority) {
+					return aPriority - bPriority;
+				}
+
+				// If same type, sort by index
 				return a.id - b.id;
 			});
-		/*case 'mostUsed':
-				return kitsCopy.sort((a, b) => {
-					// Sort by use count in descending order (most used first)
-					if (a.useCount !== b.useCount) {
-						return b.useCount - a.useCount;
-					}
-					// If use counts are equal, sort by index
-					return a.id - b.id;
-				});*/
 		default:
 			return kitsCopy;
 	}

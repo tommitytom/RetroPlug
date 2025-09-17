@@ -33,11 +33,13 @@ namespace rp {
 		TaskManager _taskManager;
 		std::vector<TaskId> _finishedTasks;
 
-		bool _loading = false;
-
 	public:
 		RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId);
 		~RetroPlugProject();
+
+		bool isDirty() const { return getContext().dirty; }
+
+		bool requiresReset() const { return getContext().requiresReset; }
 
 		void loadConfigs();
 

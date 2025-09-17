@@ -27,4 +27,14 @@ export interface ModalContextType {
 		buttonText?: string;
 		onClose?: () => void;
 	}) => void;
+	openYesNoCancel: (config: {
+		title?: string;
+		message: string;
+		yesText?: string;
+		noText?: string;
+		cancelText?: string;
+		onYes: () => void;
+		onNo: () => void;
+		onCancel?: () => void;
+	}) => void;
 }

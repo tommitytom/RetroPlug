@@ -179,6 +179,7 @@ namespace rp {
 		KitUtil::updateKit2(*kitComponent, kitData, *lsdjState.sampleCache);
 
 		romData->version++;
+		_registry.ctx().at<RetroPlugProjectContext>().dirty = true;
 
 		MemoryPatch patch;
 		patch.type = MemoryType::Rom;
@@ -197,52 +198,29 @@ namespace rp {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 
+		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
+
 		comp.id = kitId;
 
 		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
 
 		if (found == lsdj->kits.end()) {
+			if (found->kit.discrimininator_.string_view() == "empty") {
+				ctx.requiresReset = true;
+			}
+
 			lsdj->kits.push_back(std::move(comp));
 		} else {
 			*found = std::move(comp);
+			ctx.requiresReset = true;
 		}
+
+		ctx.dirty = true;
 
 		LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
 		if (lsdjState) {
 			lsdjState->dirtyKits.insert(kitId);
 		}
-
-		return true;
-	}
-
-	bool LsdjController::setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples) {
-		assert(kitId != INVALID_KIT_INDEX);
-		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
-		if (!lsdj) return false;
-
-		/*if (comp.samples.has_value()) {
-			auto& compSamples = comp.samples.value();
-			if (compSamples.size() == samples.size()) {
-				for (size_t i = 0; i < samples.size(); ++i) {
-					compSamples[i].data = std::move(samples[i]);
-				}
-			}
-		} else {
-			auto& compSamples = comp.samples.emplace();
-			for (size_t i = 0; i < samples.size(); ++i) {
-				compSamples[i].data = std::move(samples[i]);
-			}
-		}*/
-
-		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
-
-		if (found == lsdj->kits.end()) {
-			lsdj->kits.push_back(std::move(comp));
-		} else {
-			*found = comp;
-		}
-
-		updateKit(system, kitId);
 
 		return true;
 	}
@@ -253,6 +231,7 @@ namespace rp {
 		if (!lsdj) return false;
 
 		std::erase_if(lsdj->kits, [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
+		_registry.ctx().at<RetroPlugProjectContext>().dirty = true;
 
 		return true;
 	}

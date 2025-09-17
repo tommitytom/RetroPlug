@@ -188,7 +188,7 @@ async function createImportDialog(fileSystem: FileSystemWorkerAPI, section: stri
 export const ProjectExplorer: React.FC = () => {
 	const { fileSystem, project } = useRetroPlug();
 	const { setCurrentDocument } = useDocument();
-	const { openModal, closeModal } = useModal();
+	const { openModal, openYesNoCancel, closeModal } = useModal();
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(sections.map((s) => s.id)));
 	const [sectionData, setSectionData] = useState<Record<string, FileSystemNode[]>>({});
 	const contextMenu = useContextMenu();
@@ -232,31 +232,52 @@ export const ProjectExplorer: React.FC = () => {
 				});
 			}
 
-			// is there a project file?
-			const projectFile = item.replace('.sav', '.rplg');
-			if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
-				// TODO: Check if the rom exists!
+			async function loadProject() {
+				// is there a project file?
+				const projectFile = item.replace('.sav', '.rplg');
+				if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
+					// TODO: Check if the rom exists!
 
-				project.loadFromFile(`/savs/${projectFile}`);
-				setDocument(item);
-			} else {
-				openModal({
-					title: 'Choose a rom',
-					content: (
-						<RomSelectDialog
-							savName={item}
-							onSelect={(path) => {
-								project.loadFromPaths(['/roms/' + path, '/savs/' + item]);
-								setDocument(item);
-								closeModal();
-							}}
-							onClose={closeModal}
-						/>
-					),
+					project.loadFromFile(`/savs/${projectFile}`);
+					setDocument(item);
+				} else {
+					openModal({
+						title: 'Choose a rom',
+						content: (
+							<RomSelectDialog
+								savName={item}
+								onSelect={(path) => {
+									project.loadFromPaths(['/roms/' + path, '/savs/' + item]);
+									setDocument(item);
+									closeModal();
+								}}
+								onClose={closeModal}
+							/>
+						),
+					});
+				}
+			}
+
+			if (project.isDirty) {
+				openYesNoCancel({
+					title: "Save Changes?",
+					message: "You have unsaved changes. What would you like to do?",
+					yesText: "Save",
+					noText: "Don't Save",
+					cancelText: "Cancel",
+					onYes: () => {
+						project.saveToDisk();
+						loadProject();
+					},
+					onNo: () => {
+						loadProject();
+					}
 				});
+			} else {
+				loadProject();
 			}
 		}
-	}, []);
+	}, [fileSystem, project]);
 
 	function createImportMenuItem(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): MenuItem {
 		return {

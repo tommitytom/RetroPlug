@@ -158,7 +158,6 @@ bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEdit
 
 	kit.setName(kitState.name.size() ? kitState.name : "GR8KIT");
 	kit.writeSamples(samples);
-	uint16 offset = kit.getSampleOffset(0);
 
 	return true;
 }

@@ -11,8 +11,6 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 	const [customSaveHandlers, setCustomSaveHandlers] = useState<Record<DocumentType, SaveHandler>>(saveHandlers);
 
 	useEffect(() => {
-		console.log('change');
-
 		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
 			if (currentDocument && currentDocument.isDirty) {
 				e.preventDefault();

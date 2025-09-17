@@ -308,7 +308,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 							<div className="h-0 w-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent border-l-white" />
 						)}
 					</div>
-					<span className="font-mono font-medium text-white">{kit.id.toString(16).padStart(2, '0').toUpperCase()}</span>
+					<span className="font-mono font-medium text-white">{(kit.id + 1).toString(16).padStart(2, '0').toUpperCase()}</span>
 					<span className="mx-1 font-medium">-</span>
 					<EditableText
 						value={(kit.kit as INamedKit).name || ''}

@@ -48,8 +48,6 @@ namespace rp {
 
 		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp);
 
-		bool setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp, std::vector<fw::Uint8Buffer>&& samples);
-
 		bool removeKitComponent(entt::entity system, uint32 kitId);
 
 		rp::KitIndex addKitComponent(entt::entity system, LsdjKitComponent&& comp);
