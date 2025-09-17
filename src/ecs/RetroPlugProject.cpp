@@ -200,6 +200,16 @@ namespace rp {
 		return false;
 	}
 
+	bool RetroPlugProject::resetSystems(bool remote) {
+		for (entt::entity system : _registry.view<SystemComponent>()) {
+			_eventNode.trySend("Audio"_hs, ResetSystemEntityEvent{ .entity = system });
+		}
+
+		getContext().requiresReset = false;
+
+		return false;
+	}
+
 	uint32 RetroPlugProject::getMemoryVersion(entt::entity entity, MemoryType type) const {
 		if (!_registry.valid(entity)) {
 			return 0;

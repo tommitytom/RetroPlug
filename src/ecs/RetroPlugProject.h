@@ -100,6 +100,8 @@ namespace rp {
 
 		bool resetSystem(entt::entity system, bool remote);
 
+		bool resetSystems(bool remote);
+
 		inline size_t getSystemCount() const {
 			return _registry.view<SystemComponent>().size();
 		}

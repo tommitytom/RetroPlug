@@ -9,13 +9,18 @@ import { AccessType, MemoryType } from '../wrapper/System';
 export function useIsProjectDirty(intervalTimeout: number = 100) {
 	const { project } = useRetroPlug();
 
+	const cache = useRef<{
+		isDirty: boolean;
+		requiresReset: boolean;
+	}>({ isDirty: false, requiresReset: false });
+
 	const subscribe = useCallback(
 		(listener: () => void) => {
-			let lastValue = project.isDirty;
+			let lastValue = { requiresReset: project.requiresReset, isDirty: project.isDirty };
 
 			const interval = setInterval(() => {
-				const currentValue = project.isDirty;
-				if (currentValue !== lastValue) {
+				const currentValue = { requiresReset: project.requiresReset, isDirty: project.isDirty };
+				if (currentValue.isDirty !== lastValue.isDirty || currentValue.requiresReset !== lastValue.requiresReset) {
 					lastValue = currentValue;
 					listener();
 				}
@@ -27,7 +32,13 @@ export function useIsProjectDirty(intervalTimeout: number = 100) {
 	);
 
 	const getSnapshot = useCallback(() => {
-		return project.isDirty;
+		const currentValue = { requiresReset: project.requiresReset, isDirty: project.isDirty };
+		if (cache.current.isDirty === currentValue.isDirty && cache.current.requiresReset === currentValue.requiresReset) {
+			return cache.current;
+		}
+
+		cache.current = currentValue;
+		return cache.current;
 	}, [project]);
 
 	return useSyncExternalStore(subscribe, getSnapshot);

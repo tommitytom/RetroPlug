@@ -191,6 +191,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("resetSystem", +[](RetroPlugProject& project, uint32 systemId, bool remote) {
 			return project.resetSystem(entt::entity(systemId), remote);
 		})
+		.function("resetSystems", +[](RetroPlugProject& project, bool remote) {
+			return project.resetSystems(remote);
+		})
 		.function("loadConfigs", &RetroPlugProject::loadConfigs)
 		.function("loadFromFile", +[](RetroPlugProject& project, const std::string& path) -> TaskId {
 			return project.loadFromFileAsync(path);

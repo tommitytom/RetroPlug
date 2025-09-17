@@ -63,6 +63,10 @@ export class Project {
 		return this._project.isDirty();
 	}
 
+	get requiresReset(): boolean {
+		return this._project.requiresReset();
+	}
+
 	get version(): number {
 		return this._project.version;
 	}
@@ -210,6 +214,10 @@ export class Project {
 
 	resetSystem(system: SystemId, remote: boolean = false): boolean {
 		return this._project.resetSystem(system, remote);
+	}
+
+	resetSystems(remote: boolean = false): boolean {
+		return this._project.resetSystems(remote);
 	}
 
 	/**
