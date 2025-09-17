@@ -205,13 +205,13 @@ namespace rp {
 		auto found = std::find_if(lsdj->kits.begin(), lsdj->kits.end(), [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
 
 		if (found == lsdj->kits.end()) {
-			if (found->kit.discrimininator_.string_view() == "empty") {
-				ctx.requiresReset = true;
-			}
-
 			lsdj->kits.push_back(std::move(comp));
 		} else {
 			*found = std::move(comp);
+		}
+
+		lsdj::Rom rom = getLsdjRom(system);
+		if (rom.isValid() && rom.kitIsEmpty(kitId)) {
 			ctx.requiresReset = true;
 		}
 

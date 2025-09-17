@@ -270,7 +270,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 				onDrop={handleDrop}
 			>
 				<div className="flex items-center justify-center px-2 py-1 text-sm font-medium">
-					<span className="font-mono font-medium text-gray-400">{kit.id.toString(16).padStart(2, '0').toUpperCase()}</span>
+					<span className="font-mono font-medium text-gray-400">{(kit.id + 1).toString(16).padStart(2, '0').toUpperCase()}</span>
 					<span className="mx-1 font-medium text-gray-400">-</span>
 					<span className={`font-medium ${isDragOver ? 'text-blue-300' : 'text-gray-400'}`}>
 						{isDragOver ? 'Drop file here to load into kit' : `Empty`}
