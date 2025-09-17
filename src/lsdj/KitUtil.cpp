@@ -149,6 +149,7 @@ bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEdit
 
 	kit.setName(kitState.name.size() ? kitState.name : "GR8KIT");
 	kit.writeSamples(samples);
+	uint16 offset = kit.getSampleOffset(0);
 
 	return true;
 }
@@ -316,7 +317,12 @@ void KitUtil::patchKit(lsdj::Kit& kit, KitState& kitState, const std::vector<Sam
 }
 
 std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitComponent, fw::Uint8Buffer& kitData, SampleCache& sampleCache) {
-	kitData.resize(lsdj::Rom::BANK_SIZE);
+	if (kitData.isOwnerOfData()) {
+		kitData.resize(lsdj::Rom::BANK_SIZE);
+	} else {
+		assert(kitData.size() == lsdj::Rom::BANK_SIZE);
+	}
+
 	lsdj::Kit targetKit(MemoryAccessor(MemoryType::Rom, kitData.ref(), 0), -1);
 	std::string error;
 

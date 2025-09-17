@@ -53,6 +53,7 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.constructor(&std::make_shared<Uint8Buffer, size_t>)
 		.function("data", &Uint8Buffer_data)
 		.function("size", &Uint8Buffer::size)
+		.function("clone", &Uint8Buffer::clone)
 	;
 
 	class_<Float32Buffer>("Float32Buffer")

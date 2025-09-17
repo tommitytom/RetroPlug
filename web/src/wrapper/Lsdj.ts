@@ -36,7 +36,7 @@ export class LsdjController {
 			});
 		}
 
-		console.log(JSON.stringify(kitData, null, 4));
+		//console.log(JSON.stringify(kitData, null, 4));
 
 		if (!this._nativeController.updateKit(system, kitData.id, JSON.stringify(kitData))) {
 			console.error("Failed to update kit:", JSON.stringify(kitData, null, 4));

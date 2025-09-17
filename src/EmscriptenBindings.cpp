@@ -137,6 +137,9 @@ using SkipUint8Buffer = rfl::Skip<fw::Uint8Buffer>;
 EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32WithRotation);
 	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
+	function("upcastApplication", &upcastApplication, return_value_policy::reference());
+	function("fixRomChecksum", &GameboyUtil::fixChecksum);
+	function("getRomName", +[](fw::Uint8Buffer& buffer) { return std::string(GameboyUtil::getRomName(buffer)); });
 
 	enum_<SaveStateType>("SaveStateType")
         .value("None", SaveStateType::None)
@@ -699,6 +702,4 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("removeEffect", &EffectChain::removeEffect)
 		.function("process", &EffectChain::process)
 	;
-
-	function("upcastApplication", &upcastApplication, return_value_policy::reference());
 }

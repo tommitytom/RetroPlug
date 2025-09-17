@@ -23,14 +23,17 @@ namespace rp {
 #ifdef FW_PLATFORM_WEB
 			return;
 #endif
-			_currentKit = 0;
-			return;
-			/*LsdjKitComponent comp;
-			comp.name = "KIT";
+			//_currentKit = 0;
+			//return;
 
-			std::vector<std::string> paths = { "C:\\retro\\samples\\mule\\kick.wav" };
+			LsdjEditableKit kit{};
 
-			comp.effects = {
+			
+			kit.name = "KIT";
+
+			std::vector<std::string> paths = { "C:\\retro\\samples\\toolong.wav" };
+
+			kit.effects = {
 				GainEffect{
 					.gain = 0.5f
 				}
@@ -38,7 +41,6 @@ namespace rp {
 
 			int32 i = 0;
 			for (const std::string& path : paths) {
-				auto& samples = comp.samples.emplace();
 				if (path.ends_with(".wav")) {
 					std::string name = std::filesystem::path(path).filename().string().substr(0, 3);
 					std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
@@ -48,14 +50,12 @@ namespace rp {
 						.path = path
 					};
 
-					//fw::FsUtil::readFile(paths[0], sampleComp.data());
-
-					samples.push_back(std::move(sampleComp));
+					kit.samples.push_back(std::move(sampleComp));
 				}
 			}
 
-			//_currentKit = _lsdj.addKitComponent(_entity, std::move(comp));
-
+			_currentKit = _lsdj.addKitComponent(_entity, { .id = 0, .kit = kit });
+			/*
 			_lsdj.setKitComponent(_entity, 0, LsdjKitComponent{ .path = "C:\\retro\\kits\\23. AMEN.kit" });
 			_currentKit = 0;
 

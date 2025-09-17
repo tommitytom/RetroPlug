@@ -72,7 +72,7 @@ namespace rp {
 	void PatchKitTask::ExecuteRange(enki::TaskSetPartition range, uint32 threadnum) {
 		assert(_kitState.id != INVALID_KIT_INDEX);
 
-		spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
+		//spdlog::info("Patching kit {} for entity {}", _kitState.id, _system);
 
 		std::optional<std::string> error = KitUtil::updateKit2(_kitState, _kitData, _sampleCache);
 
@@ -110,6 +110,6 @@ namespace rp {
 			lsdjState->patchingKits.erase(_kitState.id);
 		}
 
-		spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
+		//spdlog::info("Patched kit {} for entity {}", _kitState.id, _system);
 	}
 }

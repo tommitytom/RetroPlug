@@ -7,7 +7,6 @@ import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
 import { useKit, useLsdjStore } from '../../hooks/LsdjStoreHooks';
 import { useProject } from '../../hooks/RetroPlugHooks';
 import type { ILsdjEditableKit, ILsdjKitSample, ILsdjPatchedKit, INamedKit, KitType } from '../../types/LsdjTypes';
-import { EnumUtils } from '../../utils/EnumUtil';
 import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { generateKey, sanitizeKitName } from '../../utils/LsdjUtil';
 import { toUint8Array } from '../../utils/NativeUtil';

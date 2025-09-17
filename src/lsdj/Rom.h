@@ -297,18 +297,23 @@ namespace rp::lsdj {
 			uint16 offset = 0;
 			offsets[0] = sampleDataOffset;
 
+			size_t spaceRemaining = MAX_SAMPLE_SPACE;
+
 			for (size_t i = 0; i < lsdj::Kit::MAX_SAMPLES; ++i) {
 				uint32 sampleNameOffset = (uint32)(lsdj::Kit::SAMPLE_NAME_SIZE * i);
 
-				if (i < samples.size()) {
+				if (i < samples.size() && spaceRemaining) {
+					size_t writeSize = std::min(samples[i].second.size(), spaceRemaining);
+					spaceRemaining -= writeSize;
+
 					// Write name
 					writeString(names + sampleNameOffset, lsdj::Kit::SAMPLE_NAME_SIZE, samples[i].first, '-');
 
 					// Write sample
-					memcpy(sampleData + offset, samples[i].second.data(), samples[i].second.size());
+					memcpy(sampleData + offset, samples[i].second.data(), writeSize);
 
 					// Write offset
-					offset += (uint16)samples[i].second.size();
+					offset += (uint16)writeSize;
 					offsets[i + 1] = offset + sampleDataOffset;
 				} else {
 					names[sampleNameOffset] = 0;

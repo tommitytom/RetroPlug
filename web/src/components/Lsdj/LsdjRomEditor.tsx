@@ -5,22 +5,29 @@ import { sortKits } from '../../utils/LsdjUtil';
 import { LsdjKitEditor } from './LsdjKitEditor';
 
 import '../../styles/RomEditorPanel.css';
+import { useRetroPlug } from '../../contexts/RetroPlugContext';
+import { AccessType, MemoryType } from '../../wrapper/System';
+import { downloadUint8Buffer } from '../../utils/FileUtil';
 
 interface LsdjRomEditorProps {}
 
 export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 	const kits = useKitList();
-	const addKit = useLsdjStore((state) => state.addKit);
-	const updateKit = useLsdjStore((state) => state.updateKit);
-	const removeKit = useLsdjStore((state) => state.removeKit);
+	const { module, project } = useRetroPlug();
+	const systemId = useLsdjStore((state) => state.systemId); // Force re-render on store updates
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [sortBy, setSortBy] = useState<'index' | 'editable'>('index');
-	const [hideUnused, setHideUnused] = useState(false);
+	const [hideEmpty, setHideEmpty] = useState(false);
 	const [expandedKits, setExpandedKits] = useState<Set<string>>(new Set());
 	const [allExpanded, setAllExpanded] = useState(false);
 
 	const sortedRomKits = sortKits(kits, sortBy);
+
+	// Filter out empty kits if hideEmpty is enabled
+	const filteredKits = hideEmpty
+		? sortedRomKits.filter(kit => kit.kit.type !== 'empty')
+		: sortedRomKits;
 
 	const toggleKit = useCallback((kitKey: string, value?: boolean) => {
 		setExpandedKits((prev) => {
@@ -49,10 +56,10 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 			setExpandedKits(new Set());
 			setAllExpanded(false);
 		} else {
-			setExpandedKits(new Set(sortedRomKits.map((kit) => kit.key!)));
+			setExpandedKits(new Set(filteredKits.map((kit) => kit.key!)));
 			setAllExpanded(true);
 		}
-	}, [allExpanded, sortedRomKits]);
+	}, [allExpanded, filteredKits]);
 
 	return (
 		<div ref={containerRef} className="relative h-full w-full bg-gray-900">
@@ -80,12 +87,12 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 									<input
 										type="checkbox"
 										id="hide-unused"
-										checked={hideUnused}
-										onChange={(e) => setHideUnused(e.target.checked)}
+										checked={hideEmpty}
+										onChange={(e) => setHideEmpty(e.target.checked)}
 										className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-2 focus:ring-blue-500"
 									/>
 									<label htmlFor="hide-unused" className="text-sm font-medium text-white">
-										Hide unused
+										Hide empty
 									</label>
 								</div>
 								<button
@@ -94,11 +101,25 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 								>
 									{allExpanded ? 'Collapse All' : 'Expand All'}
 								</button>
+								<button
+									onClick={() => {
+										const memory = project.getSystemMemory(systemId, MemoryType.Rom, AccessType.Read);
+										if (memory && memory.getSize() > 0) {
+											const romData = memory.getBuffer().clone();
+											module.fixRomChecksum(romData);
+											const romName = module.getRomName(romData);
+											downloadUint8Buffer(romData, romName + '.gb');
+										}
+									}}
+									className="rounded border border-green-600 bg-green-700 px-3 py-1 text-sm text-white transition-colors duration-200 hover:border-green-500 hover:bg-green-600"
+								>
+									Download
+								</button>
 							</div>
 						</div>
 					)}
 					<div className="space-y-2">
-						{sortedRomKits.map(
+						{filteredKits.map(
 							(kit) =>
 								kit.key && (
 									<LsdjKitEditor
