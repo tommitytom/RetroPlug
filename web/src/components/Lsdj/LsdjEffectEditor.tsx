@@ -65,18 +65,27 @@ export const LsdjEffectEditor: React.FC<LsdjEffectEditorProps> = ({ kitKey, samp
 			</div>
 
 			<div className="space-y-2">
-				{effectDesc && Object.entries(effectDesc.parameters).map(([paramKey, parameter]) => (
-					<LsdjEffectParameterEditor
-						key={`${effect.key}-${paramKey}`}
-						parameter={parameter}
-						effectKey={effect.key!}
-						kitKey={kitKey}
-						paramName={formatParameterName(paramKey)}
-						paramKey={paramKey}
-						sampleKey={sampleKey}
-						value={(effect as any)[paramKey]}
-					/>
-				))}
+				{effectDesc && Object.entries(effectDesc.parameters).map(([paramKey, parameter]) => {
+					// Only show parameter if shouldShow function is not defined or returns true
+					const shouldShow = !parameter.shouldShow || parameter.shouldShow(effect);
+
+					if (!shouldShow) {
+						return null;
+					}
+
+					return (
+						<LsdjEffectParameterEditor
+							key={`${effect.key}-${paramKey}`}
+							parameter={parameter}
+							effectKey={effect.key!}
+							kitKey={kitKey}
+							paramName={formatParameterName(paramKey)}
+							paramKey={paramKey}
+							sampleKey={sampleKey}
+							value={(effect as any)[paramKey]}
+						/>
+					);
+				})}
 			</div>
 		</div>
 	);

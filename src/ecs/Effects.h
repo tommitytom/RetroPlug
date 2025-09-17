@@ -44,19 +44,18 @@ namespace rp {
 		FilterType filterType = FilterType::LowPass;
 		f32 frequency = GameboyUtil::GAMEBOY_SAMPLE_RATE / 2.0f;
 		f32 q = 1.0f;
-		f32 feedback = 0.0f;
 		f32 gain = 0.0f;
 	};
 	void processEffect(const FilterEffect& effect, fw::Float32Buffer& target, f32 sampleRate);
 
 	struct DitherEffect {
 		enum class Type {
-			ErrorDiffusion,
-			SierraLite,
-			JJN,
 			HighPassTPDF,
-			ShapedTPDF
-		} ditherType = Type::ErrorDiffusion;
+			ShapedTPDF,
+			ErrorDiffusion,
+			JJN,
+			SierraLite,
+		} ditherType = Type::HighPassTPDF;
 	};
 	inline void processEffect(const DitherEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
 		AudioDithering dither;

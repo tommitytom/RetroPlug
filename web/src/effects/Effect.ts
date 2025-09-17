@@ -1,4 +1,4 @@
-import type { NativeEffect } from "../native/RetroPlug";
+import type { NativeEffect } from '../native/RetroPlug';
 
 export abstract class Effect {
 	abstract getParameters(): IEffectParameter[];
@@ -8,12 +8,12 @@ export abstract class Effect {
 export enum EffectParameterType {
 	Slider,
 	Dropdown,
-	Toggle
+	Toggle,
 }
 
 export interface IEffectParameter {
 	type: EffectParameterType;
-	defaultValue: number|string|boolean;
+	defaultValue: number | string | boolean;
 	min?: number;
 	max?: number;
 	step?: number;
@@ -21,6 +21,7 @@ export interface IEffectParameter {
 
 	getter?: () => number | string | boolean;
 	setter?: (value: number | string | boolean) => void;
+	shouldShow?(effect: IEffect): boolean;
 }
 
 export interface IEffectDescBase {
@@ -33,11 +34,15 @@ export interface IEffectDesc<T extends IEffect> extends IEffectDescBase {
 	parameters: { [key in keyof Omit<T, 'type'>]: IEffectParameter };
 }
 
-function registerEffect<T extends IEffect>(name: string, type: string, parameters: { [key in keyof Omit<T, 'type'>]: IEffectParameter }): IEffectDesc<T> {
+function registerEffect<T extends IEffect>(
+	name: string,
+	type: string,
+	parameters: { [key in keyof Omit<T, 'type'>]: IEffectParameter },
+): IEffectDesc<T> {
 	return {
 		name,
 		type,
-		parameters
+		parameters,
 	};
 }
 
@@ -54,15 +59,15 @@ export interface IGainEffect extends IEffect {
 export const GAIN_EFFECT_DESC = registerEffect<IGainEffect>('Gain', 'GainEffect', {
 	normalize: {
 		type: EffectParameterType.Toggle,
-		defaultValue: true
+		defaultValue: true,
 	},
 	gain: {
 		type: EffectParameterType.Slider,
 		defaultValue: 1,
 		min: 0,
 		max: 5,
-		step: 0.01
-	}
+		step: 0.01,
+	},
 });
 
 const GAMEBOY_SAMPLE_RATE = 11468;
@@ -75,78 +80,66 @@ export enum FilterType {
 	Peak = 'Peak',
 	LowShelf = 'LowShelf',
 	HighShelf = 'HighShelf',
-	AllPass = 'AllPass'
-};
+	AllPass = 'AllPass',
+}
 export interface IFilterEffect extends IEffect {
 	filterType: FilterType;
 	frequency: number;
 	q: number;
-	feedback: number;
 	gain: number;
 }
 export const FILTER_EFFECT_DESC = registerEffect<IFilterEffect>('Filter', 'FilterEffect', {
 	filterType: {
 		type: EffectParameterType.Dropdown,
 		defaultValue: FilterType.LowPass,
-		options: Object.values(FilterType)
+		options: Object.values(FilterType),
 	},
 	frequency: {
 		type: EffectParameterType.Slider,
 		defaultValue: GAMEBOY_SAMPLE_RATE / 2,
 		min: 20,
 		max: GAMEBOY_SAMPLE_RATE / 2,
-		step: 1
+		step: 1,
 	},
 	q: {
 		type: EffectParameterType.Slider,
 		defaultValue: 1,
 		min: 0.01,
 		max: 10,
-		step: 0.01
-	},
-	feedback: {
-		type: EffectParameterType.Slider,
-		defaultValue: 0,
-		min: 0,
-		max: 1,
-		step: 0.01
+		step: 0.01,
 	},
 	gain: {
 		type: EffectParameterType.Slider,
 		defaultValue: 0,
 		min: -12,
 		max: 12,
-		step: 0.01
-	}
+		step: 0.01,
+		shouldShow: (effect) => ['LowShelf', 'HighShelf', 'Peak'].includes((effect as IFilterEffect).filterType),
+	},
 });
 
 enum DitherType {
-	ErrorDiffusion = "ErrorDiffusion",
-	SierraLite = "SierraLite",
-	JJN = "JJN",
-	HighPassTPDF = "HighPassTPDF",
-	ShapedTPDF = "ShapedTPDF"
+	HighPassTPDF = 'HighPassTPDF',
+	ShapedTPDF = 'ShapedTPDF',
+	ErrorDiffusion = 'ErrorDiffusion',
+	JJN = 'JJN',
+	SierraLite = 'SierraLite',
 }
-
 export interface IDitherEffect extends IEffect {
 	ditherType: DitherType;
 }
 export const DITHER_EFFECT_DESC = registerEffect<IDitherEffect>('Dither', 'DitherEffect', {
 	ditherType: {
 		type: EffectParameterType.Dropdown,
-		defaultValue: DitherType.ErrorDiffusion,
-		options: Object.values(DitherType)
-	}
+		defaultValue: DitherType.HighPassTPDF,
+		options: Object.values(DitherType),
+	},
 });
 
-export const ALL_EFFECTS = [
-	GAIN_EFFECT_DESC,
-	FILTER_EFFECT_DESC,
-	DITHER_EFFECT_DESC
-];
+export const ALL_EFFECTS = [GAIN_EFFECT_DESC, FILTER_EFFECT_DESC, DITHER_EFFECT_DESC];
 
 export function findEffect(type: string) {
-	return ALL_EFFECTS.find(effect => effect.type === type);
+	return ALL_EFFECTS.find((effect) => effect.type === type);
 }
 
 export function createEffectInstance(type: string): IEffect | undefined {
