@@ -105,7 +105,16 @@ bool processSamples(SampleCache& sampleCache, const LsdjEditableKit& kit, std::v
 			continue;
 		}
 
-		SampleData sampleData = *sampleDataRaw;
+		const f32 srRatio = (f32)sampleDataRaw->sampleRate / (f32)KitUtil::GAMEBOY_SAMPLE_RATE;
+		// NOTE: It's fine if maxFrames is larger than the actual max sample size at the given sample rate
+		// since samples get clipped before writing to the kit.
+		const size_t maxFrames = (size_t)ceil((f32)lsdj::Kit::MAX_SAMPLE_FRAMES * srRatio);
+		const size_t readFrames = std::min(maxFrames, sample.length == 0 ? sampleDataRaw->buffer.size() : sample.length);
+
+		SampleData sampleData{
+			.buffer = sampleDataRaw->buffer.slice(sample.offset, readFrames).clone(),
+			.sampleRate = sampleDataRaw->sampleRate
+		};
 
 		const DitherEffect* ditherEffect = nullptr;
 		for (const LsdjEffect& effect : kit.effects) {

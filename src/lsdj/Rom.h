@@ -89,6 +89,7 @@ namespace rp::lsdj {
 	struct Kit {
 		static constexpr size_t MAX_SAMPLES = 15;
 		static constexpr size_t MAX_SAMPLE_SPACE = 0x3fa0;
+		static constexpr size_t MAX_SAMPLE_FRAMES = MAX_SAMPLE_SPACE * 2; // 4 bit samples, 2 per byte
 		static constexpr size_t NAME_OFFSET = 0x52;
 		static constexpr size_t NAME_SIZE = 6;
 		static constexpr size_t SAMPLE_NAME_OFFSET = 0x22;
@@ -182,7 +183,7 @@ namespace rp::lsdj {
 					}
 				}
 			}
-			
+
 			return kitData.getBuffer().slice(lsdj::Kit::SAMPLE_DATA_OFFSET, lastOffset);
 		}
 

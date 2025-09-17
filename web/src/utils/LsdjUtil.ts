@@ -14,6 +14,14 @@ export function sanitizeKitName(input: string): string {
 		.slice(0, 6);
 }
 
+export function sanitizeSampleName(input: string): string {
+	// Convert to uppercase, allow only alphanumeric, limit to 3 characters
+	return input
+		.toUpperCase()
+		.replace(/[^A-Z0-9]/g, '')
+		.slice(0, 3);
+}
+
 export type SortBy = 'index' | 'editable' | 'mostUsed';
 
 export function sortKits(kits: ILsdjKit[], sortMethod: SortBy) {

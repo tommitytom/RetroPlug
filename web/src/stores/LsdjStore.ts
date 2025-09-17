@@ -38,6 +38,7 @@ export interface LsdjStoreState {
 	removeSample: (kitKey: string, sampleKey: string) => void;
 	updateSample: (kitKey: string, sampleKey: string, updates: Partial<ILsdjKitSample>) => void;
 	renameSample: (kitKey: string, sampleKey: string, name: string) => void;
+	reorderSamples: (kitKey: string, fromIndex: number, toIndex: number) => void;
 
 	// Effect Actions for Kits
 	addKitEffect: (kitKey: string, effect: IEffect) => void;
@@ -229,6 +230,27 @@ export const createLsdjStore = (
 								sample.name = name;
 								state.controller.updateKit(state.systemId, kitContainer);
 							}
+						}),
+
+					reorderSamples: (kitKey, fromIndex, toIndex) =>
+						set((state) => {
+							const kitContainer = getEditableKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Cannot reorder samples on a non-editable kit");
+								return;
+							}
+
+							const samples = kitContainer.kit.samples;
+							if (fromIndex < 0 || fromIndex >= samples.length || toIndex < 0 || toIndex >= samples.length) {
+								console.error("Invalid indices for sample reordering");
+								return;
+							}
+
+							// Reorder the samples array
+							const [movedSample] = samples.splice(fromIndex, 1);
+							samples.splice(toIndex, 0, movedSample);
+
+							state.controller.updateKit(state.systemId, kitContainer);
 						}),
 
 					// Kit Effect Actions

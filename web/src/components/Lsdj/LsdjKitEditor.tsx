@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 
 import { EditableText } from '../../components/EditableText';
+import { DeleteIcon } from '../../components/DeleteIcon';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { createEffectInstance, type IEffect } from '../../effects/Effect';
 import type { FileSystemWorkerAPI } from '../../filesystem/FileSystemWorker';
@@ -11,6 +12,7 @@ import { downloadUint8Array, sanitizeFilename } from '../../utils/FileUtil';
 import { generateKey, sanitizeKitName } from '../../utils/LsdjUtil';
 import { toUint8Array } from '../../utils/NativeUtil';
 import { LsdjEffectList } from './LsdjEffectList';
+import { LsdjSampleList } from './LsdjSampleList';
 import { LsdjWaveView } from './LsdjWaveView';
 
 // Helper function to get color classes based on kit type
@@ -95,6 +97,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const renameKit = useLsdjStore((state) => state.renameKit);
 	const addSamples = useLsdjStore((state) => state.addSamples);
 	const [isEffectEditorOpen, setIsEffectEditorOpen] = useState(false);
+	const [isSampleListOpen, setIsSampleListOpen] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 
 	console.assert(!!kit);
@@ -143,6 +146,17 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 			}
 		},
 		[isEffectEditorOpen],
+	);
+
+	const handleSampleListToggle = useCallback(
+		(expanded?: boolean) => {
+			if (expanded === undefined) {
+				setIsSampleListOpen(!isSampleListOpen);
+			} else {
+				setIsSampleListOpen(expanded);
+			}
+		},
+		[isSampleListOpen],
 	);
 
 	// Drag and drop handlers
@@ -208,6 +222,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 		}
 
 		onToggle(true);
+		setIsSampleListOpen(true);
 	}
 
 	const handleDrop = useCallback(
@@ -337,30 +352,13 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 							<line x1="12" y1="15" x2="12" y2="3"></line>
 						</svg>
 					</button>
-					<button
-						className="rounded-sm p-1 text-red-400 transition-colors duration-200 hover:bg-red-600/20 hover:text-red-300"
+					<DeleteIcon
 						onClick={(e) => {
 							e.stopPropagation();
 							handleDeleteKit();
 						}}
 						title="Delete kit"
-					>
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						>
-							<polyline points="3,6 5,6 21,6"></polyline>
-							<path d="m19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"></path>
-							<line x1="10" y1="11" x2="10" y2="17"></line>
-							<line x1="14" y1="11" x2="14" y2="17"></line>
-						</svg>
-					</button>
+					/>
 				</div>
 			</div>
 			{isExpanded && (
@@ -369,13 +367,18 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						<LsdjWaveView system={system} kitId={kit.id} onNameUpdated={(name) => onNameChange(name, false)} />
 					</div>
 					{kitType === 'editable' && (
-						<div>
+						<div className="space-y-2">
+							<LsdjSampleList
+								kitKey={kitKey}
+								isExpanded={isSampleListOpen}
+								onToggle={(expanded) => handleSampleListToggle(expanded)}
+								title="Samples"
+							/>
 							<LsdjEffectList
 								kitKey={kitKey}
 								isExpanded={isEffectEditorOpen}
 								onToggle={(expanded) => handleEffectToggle(expanded)}
 								title="Sample Effects"
-								key={kitKey}
 							/>
 						</div>
 					)}
