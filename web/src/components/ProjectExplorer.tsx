@@ -4,13 +4,20 @@ import { useDocument } from '../contexts/DocumentContext';
 import { useModal } from '../contexts/ModalContext';
 import { useRetroPlug } from '../contexts/RetroPlugContext';
 import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import type { FileSystemNode } from '../filesystem/types';
 import { useContextMenu } from '../hooks/useContextMenu';
+import { downloadArrayBuffer, getFilenameFromPath, openFileCopyDialog } from '../utils/FileUtil';
+import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
 import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
 import type { MenuItem } from './Menu/types';
-import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
-import { downloadArrayBuffer, openFileCopyDialog } from '../utils/FileUtil';
-import type { FileSystemNode } from '../filesystem/types';
+
+const sortFileSystemNodes = (a: FileSystemNode, b: FileSystemNode) => {
+	// Directories first, then files, both sorted alphabetically
+	if (a.type === 'directory' && b.type !== 'directory') return -1;
+	if (a.type !== 'directory' && b.type === 'directory') return 1;
+	return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+};
 
 const getIcon = (section: string) => {
 	switch (section) {
@@ -57,6 +64,7 @@ interface FileTreeNodeProps {
 	onContextMenu: (sectionId: string, itemPath: string | null, event: React.MouseEvent) => void;
 	onDragStart: (event: React.DragEvent, sectionId: string, itemPath: string) => void;
 	onDragEnd: (event: React.DragEvent) => void;
+	onAddItemsClick: (event: React.MouseEvent, sectionId: string, itemPath: string) => void;
 }
 
 const FileTreeNode: React.FC<FileTreeNodeProps> = ({
@@ -68,6 +76,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 	onContextMenu,
 	onDragStart,
 	onDragEnd,
+	onAddItemsClick,
 }) => {
 	const [isExpanded, setIsExpanded] = useState(false);
 	const hasChildren = node.type === 'directory' && node.children && node.children.length > 0;
@@ -113,10 +122,19 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 				{!hasChildren && <span className="mr-1 w-3" />}
 				<span className="mr-2 text-xs text-white">{node.type === 'directory' ? '▢' : getFileIcon(node.name)}</span>
 				<span className="flex-1">{node.name}</span>
+				{hasChildren && (
+					<button
+						className="rounded-sm px-2 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
+						onClick={(event) => onAddItemsClick(event, sectionId, currentPath)}
+						title="Add Items"
+					>
+						+
+					</button>
+				)}
 			</div>
 			{hasChildren && isExpanded && (
 				<div>
-					{node.children?.map((childNode, index) => (
+					{node.children?.sort(sortFileSystemNodes)?.map((childNode, index) => (
 						<FileTreeNode
 							key={`${childNode.id || index}`}
 							node={childNode}
@@ -127,6 +145,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 							onContextMenu={onContextMenu}
 							onDragStart={onDragStart}
 							onDragEnd={onDragEnd}
+							onAddItemsClick={onAddItemsClick}
 						/>
 					))}
 				</div>
@@ -175,16 +194,12 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 	};
 }
 
-async function createImportDialog(
-	fileSystem: FileSystemWorkerAPI,
-	section: string,
-	extensions: string,
-): Promise<boolean> {
+async function createImportDialog(fileSystem: FileSystemWorkerAPI, path: string, extensions: string): Promise<boolean> {
 	try {
-		await openFileCopyDialog(fileSystem, `/${section}`, extensions);
+		await openFileCopyDialog(fileSystem, path, extensions);
 		return true;
 	} catch (error) {
-		console.error(`Error adding ${section}:`, error);
+		console.error(`Error adding to ${path}:`, error);
 	}
 
 	return false;
@@ -201,7 +216,6 @@ export const ProjectExplorer: React.FC = () => {
 	const [isLoaded, setIsLoaded] = useState(false);
 
 	useEffect(() => {
-		setIsLoaded(false);
 		getFileList(fileSystem)
 			.then((data) => {
 				setSectionData(data);
@@ -295,7 +309,7 @@ export const ProjectExplorer: React.FC = () => {
 			id: `add-${section}`,
 			label: `Add ${section.charAt(0).toUpperCase() + section.slice(1)}`,
 			onClick: async () => {
-				if (await createImportDialog(fileSystem, section, extensions)) {
+				if (await createImportDialog(fileSystem, '/' + section, extensions)) {
 					setVersion((v) => v + 1);
 				}
 			},
@@ -324,8 +338,14 @@ export const ProjectExplorer: React.FC = () => {
 			label: `Download`,
 			onClick: async () => {
 				try {
-					const fileData = await fileSystem.readPath(`/${section}/${item}`);
-					downloadArrayBuffer(fileData, item);
+					const fullPath = `/${section}/${item}`;
+					if (await fileSystem.isDirectory(fullPath)) {
+						console.warn(`Downloading directory ${fullPath} not supported yet.`);
+					} else {
+						const fileData = await fileSystem.readPath(fullPath);
+						const filename = getFilenameFromPath(item);
+						downloadArrayBuffer(fileData, filename);
+					}
 				} catch (error) {
 					console.error(`Error downloading ${item}:`, error);
 				}
@@ -347,7 +367,7 @@ export const ProjectExplorer: React.FC = () => {
 					onClick: createSampleFolderDialog,
 				});
 			} else if (section === 'savs' && item) {
-				menuItems.push(
+				/*menuItems.push(
 					{
 						id: 'package-sav',
 						label: 'Export with ROM',
@@ -362,15 +382,13 @@ export const ProjectExplorer: React.FC = () => {
 							console.log('Render SAV!');
 						},
 					},
-				);
+				);*/
 			} else if (section === 'roms' && !item) {
 				menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[itemIdx].extensions.join(',')));
 			} else if (section === 'savs' && !item) {
 				menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[itemIdx].extensions.join(',')));
 			} else if (section === 'kits' && !item) {
 				menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[itemIdx].extensions.join(',')));
-			} else if (section === 'samples' && item) {
-				menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[itemIdx].extensions.join(',')));
 			}
 
 			if (item) {
@@ -404,18 +422,27 @@ export const ProjectExplorer: React.FC = () => {
 	}, []);
 
 	const handleAddItemsClick = useCallback(
-		async (event: React.MouseEvent, sectionId: number) => {
+		async (event: React.MouseEvent, sectionId: string, itemPath: string) => {
 			event.preventDefault();
 			event.stopPropagation();
 
-			const section = sections[sectionId];
+			const section = sections.find((section) => section.id === sectionId);
+			if (!section) return;
+
+			const extensions = section.extensions.join(',');
+			let targetPath = `/${section.id}`;
+
 			if (section.id === 'samples') {
-				createSampleFolderDialog();
-			} else {
-				const extensions = sections[sectionId].extensions.join(',');
-				if (await createImportDialog(fileSystem, sections[sectionId].id, extensions)) {
-					setVersion((v) => v + 1);
+				if (!itemPath) {
+					createSampleFolderDialog();
+					return;
+				} else {
+					targetPath = `/samples/${itemPath}`;
 				}
+			}
+
+			if (await createImportDialog(fileSystem, targetPath, extensions)) {
+				setVersion((v) => v + 1);
 			}
 		},
 		[setVersion, fileSystem, closeModal],
@@ -451,7 +478,7 @@ export const ProjectExplorer: React.FC = () => {
 							<span className="flex-1 font-medium">{section.name}</span>
 							<button
 								className="rounded-sm px-2 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
-								onClick={(event) => handleAddItemsClick(event, idx)}
+								onClick={(event) => handleAddItemsClick(event, section.id, section.name)}
 								title="Add Items"
 							>
 								+
@@ -460,25 +487,19 @@ export const ProjectExplorer: React.FC = () => {
 
 						{expandedSections.has(section.id) && (
 							<div>
-								{sectionData[section.id]
-									?.sort((a, b) => {
-										// Directories first, then files, both sorted alphabetically
-										if (a.type === 'directory' && b.type !== 'directory') return -1;
-										if (a.type !== 'directory' && b.type === 'directory') return 1;
-										return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-									})
-									?.map((item, index) => (
-										<FileTreeNode
-											key={`${section.id}-${item.id || index}`}
-											node={item}
-											sectionId={section.id}
-											depth={1}
-											onDoubleClick={handleDoubleClick}
-											onContextMenu={(sectionId, itemPath, event) => handleContextMenu(sectionId, idx, itemPath, event)}
-											onDragStart={handleDragStart}
-											onDragEnd={handleDragEnd}
-										/>
-									))}
+								{sectionData[section.id]?.sort(sortFileSystemNodes)?.map((item, index) => (
+									<FileTreeNode
+										key={`${section.id}-${item.id || index}`}
+										node={item}
+										sectionId={section.id}
+										depth={1}
+										onDoubleClick={handleDoubleClick}
+										onContextMenu={(sectionId, itemPath, event) => handleContextMenu(sectionId, idx, itemPath, event)}
+										onDragStart={handleDragStart}
+										onDragEnd={handleDragEnd}
+										onAddItemsClick={(event, sectionId, itemPath) => handleAddItemsClick(event, sectionId, itemPath)}
+									/>
+								))}
 							</div>
 						)}
 					</div>

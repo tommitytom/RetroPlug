@@ -163,6 +163,8 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	const handleDragOver = useCallback(
 		(event: React.DragEvent) => {
 			event.preventDefault();
+			if (event.dataTransfer.effectAllowed !== 'move') return;
+
 			event.dataTransfer.dropEffect = 'move'; // Match the effectAllowed from FileExplorer
 			setIsDragOver(true);
 		},

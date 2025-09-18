@@ -84,6 +84,8 @@ export class LsdjController {
 			}
 		}
 
+		kits.sort((a, b) => a.id - b.id);
+
 		let lastEmpty = getLastEmptyKitIdx(kits);
 		if (lastEmpty < kits.length - 1) {
 			lastEmpty += 2;
@@ -91,8 +93,7 @@ export class LsdjController {
 			kits.splice(lastEmpty, deleteCount);
 		}
 
-		kits.sort((a, b) => a.id - b.id);
-		console.log(JSON.stringify(kits, null, 4));
+		//console.log(JSON.stringify(kits, null, 4));
 
 		return kits;
 	}

@@ -1,6 +1,11 @@
 import type { Uint8Buffer } from "../native/RetroPlug";
 import { toUint8Array } from "./NativeUtil";
 
+export function getFilenameFromPath(path: string): string {
+	const parts = path.split('/');
+	return parts[parts.length - 1];
+}
+
 /**
  * Downloads a Uint8Array as a file
  * @param data - The Uint8Array data to download
