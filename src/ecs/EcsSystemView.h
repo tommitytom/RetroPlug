@@ -28,20 +28,6 @@ namespace rp {
 			}
 		}
 
-		fw::ButtonType mapKeyToButton(fw::VirtualKey key) {
-			switch (key) {
-			case fw::VirtualKey::UpArrow: return fw::ButtonType::Up;
-			case fw::VirtualKey::DownArrow: return fw::ButtonType::Down;
-			case fw::VirtualKey::LeftArrow: return fw::ButtonType::Left;
-			case fw::VirtualKey::RightArrow: return fw::ButtonType::Right;
-			case fw::VirtualKey::D: return fw::ButtonType::A;
-			case fw::VirtualKey::W: return fw::ButtonType::B;
-			case fw::VirtualKey::Enter: return fw::ButtonType::Start;
-			case fw::VirtualKey::LeftShift: return fw::ButtonType::Select;
-			default: return fw::ButtonType::MAX;
-			}
-		}
-
 		bool onKey(const fw::KeyEvent& event) override {
 			if (event.key == fw::VirtualKey::R) {
 				_project.getEventNode().trySend("Audio"_hs, ResetSystemEntityEvent{
@@ -50,7 +36,21 @@ namespace rp {
 				return true;
 			}
 
-			fw::ButtonType button = mapKeyToButton(event.key);
+			const InputConfig& inputConfig = _project.getInputConfig();
+			auto found = inputConfig.keyboard.find(event.key);
+			if (found != inputConfig.keyboard.end()) {
+				spdlog::info("Key event: {} {}", fw::VirtualKeyUtil::toString(event.key), fw::PadButtonTypeUtil::toString(found->second), event.down);
+
+				_project.getEventNode().trySend("Audio"_hs, PadButtonEvent{
+					.entity = getEntity(),
+					.button = found->second,
+					.down = event.down
+				});
+
+				return true;
+			}
+
+			/*fw::ButtonType button = mapKeyToButton(event.key);
 			if (button != fw::ButtonType::MAX) {
 				_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
 					.entity = getEntity(),
@@ -59,7 +59,7 @@ namespace rp {
 				});
 
 				return true;
-			}
+			}*/
 
 			return false;
 		}

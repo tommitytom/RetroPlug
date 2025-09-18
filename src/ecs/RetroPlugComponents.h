@@ -40,11 +40,17 @@ namespace rp {
 		fw::Uint8Buffer state;
 	};
 
-	struct ButtonEvent {
+	struct PadButtonEvent {
+		entt::entity entity = entt::null;
+		fw::PadButtonType button = fw::PadButtonType::COUNT;
+		bool down = false;
+	};;
+
+	/*struct ButtonEvent {
 		entt::entity entity;
 		int button;
 		bool down;
-	};;
+	};*/
 
 	struct VideoFrameComponent {
 		fw::ImagePtr frame;

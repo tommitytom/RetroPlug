@@ -24,7 +24,7 @@ export const useKitList = () => {
 		const unsubscribe = store.subscribe(
 			(state) => state.rom?.kits || [],
 			(newKits) => {
-				console.log('kits changed', newKits);
+				//console.log('kits changed', newKits);
 				setKits(newKits);
 			},
 			{

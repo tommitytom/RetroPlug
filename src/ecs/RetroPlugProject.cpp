@@ -23,6 +23,7 @@ namespace rp {
 		_registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);
 		_registry.ctx().emplace<ProjectPathContext>();
 		_registry.ctx().emplace<ProjectConfig>();
+		_registry.ctx().emplace<InputConfig>(InputConfig::defaultConfig());
 		_registry.ctx().emplace<TaskManager>().getScheduler().Initialize(8);
 
 #ifdef FW_PLATFORM_WEB
@@ -123,19 +124,36 @@ namespace rp {
 			return;
 		}
 
-		rfl::Result<InputConfig> result = rfl::json::read<InputConfig>(data);
+		rfl::Result<InputConfigData> result = rfl::json::read<InputConfigData>(data);
 		if (!result) {
 			spdlog::warn("Failed to parse /mount/config/input.json: {}", result.error().what());
 			return;
 		}
 
-		if (_registry.ctx().contains<InputConfig>()) {
-			_registry.ctx().at<InputConfig>() = std::move(result.value());
-		} else {
-			_registry.ctx().emplace<InputConfig>(std::move(result.value()));
+		InputConfig config;
+		for (const auto& [k, v] : result.value().keyboard) {
+			fw::VirtualKey key = fw::VirtualKeyUtil::fromString(k);
+			if (key == fw::VirtualKey::COUNT) {
+				spdlog::warn("Unknown key type: {}", k);
+				continue;
+			}
+
+			fw::PadButtonType button = fw::PadButtonTypeUtil::fromString(v);
+			if (button == fw::PadButtonType::COUNT) {
+				spdlog::warn("Unknown button type: {}", v);
+				continue;
+			}
+
+			config.keyboard[key] = button;
 		}
 
+		_registry.ctx().at<InputConfig>() = std::move(config);
+
 		spdlog::info("Loaded input config");
+	}
+
+	const InputConfig& RetroPlugProject::getInputConfig() const {
+		return _registry.ctx().at<InputConfig>();
 	}
 
 	bool RetroPlugProject::loadFromFile(std::filesystem::path path) {

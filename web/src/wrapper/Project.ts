@@ -115,6 +115,10 @@ export class Project {
 	}
 */
 
+	loadConfigs(): void {
+		this._project.loadConfigs();
+	}
+
 	getSystemMemoryVersion(system: SystemId, memoryType: MemoryType) {
 		return this._project.getMemoryVersion(system, convertMemoryType(this._module, memoryType));
 	}

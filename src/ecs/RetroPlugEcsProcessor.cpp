@@ -71,6 +71,20 @@ namespace rp {
 		}
 	};
 
+	fw::ButtonType convertButtonType(fw::PadButtonType button) {
+		switch (button) {
+			case fw::PadButtonType::A: return fw::ButtonType::A;
+			case fw::PadButtonType::B: return fw::ButtonType::B;
+			case fw::PadButtonType::Select: return fw::ButtonType::Select;
+			case fw::PadButtonType::Start: return fw::ButtonType::Start;
+			case fw::PadButtonType::Up: return fw::ButtonType::Up;
+			case fw::PadButtonType::Down: return fw::ButtonType::Down;
+			case fw::PadButtonType::Left: return fw::ButtonType::Left;
+			case fw::PadButtonType::Right: return fw::ButtonType::Right;
+			default: return fw::ButtonType::MAX;
+		}
+	}
+
 	RetroPlugEcsProcessor::RetroPlugEcsProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
 		AudioHooksContext& hooks = _registry.ctx().emplace<AudioHooksContext>();
 		hooks.systemHooks.push_back(std::make_unique<SameBoyAudioHooks>());
@@ -84,7 +98,12 @@ namespace rp {
 		fw::Replicator::setupOwner(_registry, node);
 		fw::Replicator::replicate<ReplicatedTypes>(_registry);
 
-		node.receive<ButtonEvent>([this](ButtonEvent&& ev) {
+		node.receive<PadButtonEvent>([this](PadButtonEvent&& ev) {
+			fw::ButtonType button = convertButtonType(ev.button);
+			if (button == fw::ButtonType::MAX) {
+				return;
+			}
+
 			if (!_registry.valid(ev.entity)) {
 				return;
 			}
@@ -95,7 +114,7 @@ namespace rp {
 			}
 
 			state->state->io->input.buttons.push_back(fw::StreamButtonPress{
-				.button = (fw::ButtonType)ev.button,
+				.button = button,
 				.down = ev.down
 			});
 		});

@@ -40,9 +40,29 @@ namespace rp {
 		}
 	};
 
-	struct InputConfig {
+	struct InputConfigData {
 		std::unordered_map<std::string, std::string> keyboard;
 		std::unordered_map<std::string, std::string> gamepad;
+	};
+
+	struct InputConfig {
+		std::unordered_map<fw::VirtualKey, fw::PadButtonType> keyboard;
+		std::unordered_map<fw::PadButtonType, fw::PadButtonType> gamepad;
+
+		static InputConfig defaultConfig() {
+			InputConfig config;
+			config.keyboard = {
+				{ fw::VirtualKey::UpArrow, fw::PadButtonType::Up },
+				{ fw::VirtualKey::DownArrow, fw::PadButtonType::Down },
+				{ fw::VirtualKey::LeftArrow, fw::PadButtonType::Left },
+				{ fw::VirtualKey::RightArrow, fw::PadButtonType::Right },
+				{ fw::VirtualKey::D, fw::PadButtonType::A },
+				{ fw::VirtualKey::W, fw::PadButtonType::B },
+				{ fw::VirtualKey::Enter, fw::PadButtonType::Start },
+				{ fw::VirtualKey::LeftShift, fw::PadButtonType::Select }
+			};
+			return config;
+		}
 	};
 
 	struct RetroPlugProjectContext {

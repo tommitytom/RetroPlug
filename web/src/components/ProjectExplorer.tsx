@@ -334,19 +334,19 @@ export const ProjectExplorer: React.FC = () => {
 	}
 
 	const handleContextMenu = useCallback(
-		(id: string, idx: number, item: string | null, event: React.MouseEvent) => {
+		(section: string, itemIdx: number, item: string | null, event: React.MouseEvent) => {
 			event.preventDefault();
 			event.stopPropagation();
 
 			const menuItems: MenuItem[] = [];
 
-			if (id == 'samples' && !item) {
+			if (section == 'samples' && !item) {
 				menuItems.push({
 					id: 'create-sample-folder',
 					label: 'Create Folder',
 					onClick: createSampleFolderDialog,
 				});
-			} else if (id === 'savs' && item) {
+			} else if (section === 'savs' && item) {
 				menuItems.push(
 					{
 						id: 'package-sav',
@@ -363,18 +363,18 @@ export const ProjectExplorer: React.FC = () => {
 						},
 					},
 				);
-			} else if (id === 'roms' && !item) {
-				menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[idx].extensions.join(',')));
-			} else if (id === 'savs' && !item) {
-				menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[idx].extensions.join(',')));
-			} else if (id === 'kits' && !item) {
-				menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[idx].extensions.join(',')));
-			} else if (id === 'samples' && item) {
-				menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[idx].extensions.join(',')));
+			} else if (section === 'roms' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[itemIdx].extensions.join(',')));
+			} else if (section === 'savs' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[itemIdx].extensions.join(',')));
+			} else if (section === 'kits' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[itemIdx].extensions.join(',')));
+			} else if (section === 'samples' && item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[itemIdx].extensions.join(',')));
 			}
 
 			if (item) {
-				menuItems.push(createDownloadMenuItem(id, item));
+				menuItems.push(createDownloadMenuItem(section, item));
 			}
 
 			if (menuItems.length > 0) {

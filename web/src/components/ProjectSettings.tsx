@@ -1,105 +1,107 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-export interface GameBoyButton {
-	id: string;
-	name: string;
-	displayName: string;
+import { useRetroPlug } from '../contexts/RetroPlugContext';
+import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
+import { EnumUtils } from '../utils/EnumUtil';
+import { PadButtonType, toVirtualKey, VirtualKey } from '../wrapper/Input';
+import { Project } from '../wrapper/Project';
+
+const INPUT_CONFIG_VERSION = '1.0.0';
+
+export interface IInputConfig {
+	version: string;
+	keyboard: Record<string, string>;
+	gamepad: Record<string, string>;
 }
 
-export interface KeyMapping {
-	[buttonId: string]: string;
-}
-
-const DEFAULT_GAMEBOY_BUTTONS: GameBoyButton[] = [
-	{ id: 'up', name: 'RETRO_DEVICE_ID_JOYPAD_UP', displayName: 'Up' },
-	{ id: 'down', name: 'RETRO_DEVICE_ID_JOYPAD_DOWN', displayName: 'Down' },
-	{ id: 'left', name: 'RETRO_DEVICE_ID_JOYPAD_LEFT', displayName: 'Left' },
-	{ id: 'right', name: 'RETRO_DEVICE_ID_JOYPAD_RIGHT', displayName: 'Right' },
-	{ id: 'a', name: 'RETRO_DEVICE_ID_JOYPAD_A', displayName: 'A' },
-	{ id: 'b', name: 'RETRO_DEVICE_ID_JOYPAD_B', displayName: 'B' },
-	{ id: 'select', name: 'RETRO_DEVICE_ID_JOYPAD_SELECT', displayName: 'Select' },
-	{ id: 'start', name: 'RETRO_DEVICE_ID_JOYPAD_START', displayName: 'Start' },
+const GAMEBOY_BUTTONS: PadButtonType[] = [
+	PadButtonType.Up,
+	PadButtonType.Down,
+	PadButtonType.Left,
+	PadButtonType.Right,
+	PadButtonType.A,
+	PadButtonType.B,
+	PadButtonType.Select,
+	PadButtonType.Start,
 ];
 
-const DEFAULT_KEY_MAPPINGS: KeyMapping = {
-	'up': 'ArrowUp',
-	'down': 'ArrowDown',
-	'left': 'ArrowLeft',
-	'right': 'ArrowRight',
-	'a': 'KeyX',
-	'b': 'KeyZ',
-	'select': 'ShiftRight',
-	'start': 'Enter',
+const DEFAULT_KEY_MAPPINGS: VirtualKey[] = [];
+DEFAULT_KEY_MAPPINGS[PadButtonType.Up] = VirtualKey.UpArrow;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Down] = VirtualKey.DownArrow;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Left] = VirtualKey.LeftArrow;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Right] = VirtualKey.RightArrow;
+DEFAULT_KEY_MAPPINGS[PadButtonType.A] = VirtualKey.D;
+DEFAULT_KEY_MAPPINGS[PadButtonType.B] = VirtualKey.W;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Select] = VirtualKey.Shift;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Start] = VirtualKey.Enter;
+
+const getKeyDisplayName = (key: VirtualKey): string => {
+	switch (key) {
+		case VirtualKey.UpArrow:
+			return '↑';
+		case VirtualKey.DownArrow:
+			return '↓';
+		case VirtualKey.LeftArrow:
+			return '←';
+		case VirtualKey.RightArrow:
+			return '→';
+	}
+
+	return EnumUtils.enumToString(VirtualKey, key);
 };
 
-const getKeyDisplayName = (key: string): string => {
-	const keyNames: { [key: string]: string } = {
-		'ArrowUp': '↑',
-		'ArrowDown': '↓',
-		'ArrowLeft': '←',
-		'ArrowRight': '→',
-		'KeyA': 'A', 'KeyB': 'B', 'KeyC': 'C', 'KeyD': 'D', 'KeyE': 'E',
-		'KeyF': 'F', 'KeyG': 'G', 'KeyH': 'H', 'KeyI': 'I', 'KeyJ': 'J',
-		'KeyK': 'K', 'KeyL': 'L', 'KeyM': 'M', 'KeyN': 'N', 'KeyO': 'O',
-		'KeyP': 'P', 'KeyQ': 'Q', 'KeyR': 'R', 'KeyS': 'S', 'KeyT': 'T',
-		'KeyU': 'U', 'KeyV': 'V', 'KeyW': 'W', 'KeyX': 'X', 'KeyY': 'Y',
-		'KeyZ': 'Z',
-		'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',
-		'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
-		'Space': 'Space',
-		'Enter': 'Enter',
-		'ShiftLeft': 'L-Shift',
-		'ShiftRight': 'R-Shift',
-		'ControlLeft': 'L-Ctrl',
-		'ControlRight': 'R-Ctrl',
-		'AltLeft': 'L-Alt',
-		'AltRight': 'R-Alt',
-		'Tab': 'Tab',
-		'Escape': 'Esc',
-		'Backspace': 'Backspace',
-	};
-	return keyNames[key] || key;
-};
-
-interface KeyMappingRowProps {
-	button: GameBoyButton;
-	mappedKey: string;
-	isAssigning: boolean;
-	onAssign: (buttonId: string) => void;
-	onClear: (buttonId: string) => void;
+function buttonToString(button: PadButtonType): string {
+	return EnumUtils.enumToString(PadButtonType, button);
 }
 
-const KeyMappingRow: React.FC<KeyMappingRowProps> = ({
-	button,
-	mappedKey,
-	isAssigning,
-	onAssign,
-	onClear
-}) => {
+function createKeyboardMapping(keyboard: Record<string, string>): VirtualKey[] {
+	const mapping: VirtualKey[] = structuredClone(DEFAULT_KEY_MAPPINGS);
+
+	Object.entries(keyboard).map(([keyName, buttonName]) => {
+		const key = EnumUtils.stringToEnum(VirtualKey, keyName);
+		const button = EnumUtils.stringToEnum(PadButtonType, buttonName);
+
+		if (key !== undefined && button !== undefined) {
+			mapping[button] = key;
+		}
+	});
+
+	return mapping;
+}
+
+interface KeyMappingRowProps {
+	button: PadButtonType;
+	mappedKey: VirtualKey;
+	isAssigning: boolean;
+	onAssign: (buttonId: PadButtonType) => void;
+	onClear: (buttonId: PadButtonType) => void;
+}
+
+const KeyMappingRow: React.FC<KeyMappingRowProps> = ({ button, mappedKey, isAssigning, onAssign, onClear }) => {
 	return (
-		<div className="flex items-center justify-between py-1 px-2 hover:bg-gray-700 rounded-sm text-sm">
+		<div className="flex items-center justify-between rounded-sm px-2 py-1 text-sm hover:bg-gray-700">
 			<div className="flex items-center gap-2">
-				<span className="font-medium text-white min-w-[50px]">{button.displayName}</span>
+				<span className="min-w-[50px] font-medium text-white">{buttonToString(button)}</span>
 			</div>
 			<div className="flex items-center gap-1">
-				<div className={`px-2 py-1 rounded-sm text-xs font-mono min-w-[70px] text-center ${
-					isAssigning
-						? 'bg-blue-600 text-white animate-pulse'
-						: 'bg-gray-600 text-gray-200'
-				}`}>
+				<div
+					className={`min-w-[70px] rounded-sm px-2 py-1 text-center font-mono text-xs ${
+						isAssigning ? 'animate-pulse bg-blue-600 text-white' : 'bg-gray-600 text-gray-200'
+					}`}
+				>
 					{isAssigning ? 'Press key...' : getKeyDisplayName(mappedKey)}
 				</div>
 				<button
-					onClick={() => onAssign(button.id)}
+					onClick={() => onAssign(button)}
 					disabled={isAssigning}
-					className="px-2 py-1 bg-blue-700/60 hover:bg-blue-600/80 disabled:bg-gray-500 text-blue-100 hover:text-white text-xs rounded-sm transition-colors"
+					className="rounded-sm bg-blue-700/60 px-2 py-1 text-xs text-blue-100 transition-colors hover:bg-blue-600/80 hover:text-white disabled:bg-gray-500"
 				>
 					{isAssigning ? 'Listening' : 'Assign'}
 				</button>
 				<button
-					onClick={() => onClear(button.id)}
+					onClick={() => onClear(button)}
 					disabled={isAssigning}
-					className="px-2 py-1 bg-red-700/50 hover:bg-red-600/70 disabled:bg-gray-500 text-red-100 hover:text-white text-xs rounded-sm transition-colors"
+					className="rounded-sm bg-red-700/50 px-2 py-1 text-xs text-red-100 transition-colors hover:bg-red-600/70 hover:text-white disabled:bg-gray-500"
 				>
 					Clear
 				</button>
@@ -108,40 +110,113 @@ const KeyMappingRow: React.FC<KeyMappingRowProps> = ({
 	);
 };
 
-export const ProjectSettings: React.FC = () => {
-	const [keyMappings, setKeyMappings] = useState<KeyMapping>(DEFAULT_KEY_MAPPINGS);
-	const [isAssigningAll, setIsAssigningAll] = useState(false);
-	const [currentAssignButton, setCurrentAssignButton] = useState<string | null>(null);
-	const [assignAllIndex, setAssignAllIndex] = useState(0);
+const INPUT_CONFIG_PATH = '/config/input.json';
 
-	const handleKeyDown = useCallback((event: KeyboardEvent) => {
-		if (!currentAssignButton) return;
-
-		event.preventDefault();
-		event.stopPropagation();
-
-		const key = event.code;
-
-		setKeyMappings(prev => ({
-			...prev,
-			[currentAssignButton]: key
-		}));
-
-		if (isAssigningAll) {
-			const nextIndex = assignAllIndex + 1;
-			if (nextIndex < DEFAULT_GAMEBOY_BUTTONS.length) {
-				setCurrentAssignButton(DEFAULT_GAMEBOY_BUTTONS[nextIndex].id);
-				setAssignAllIndex(nextIndex);
-			} else {
-				// Finished assigning all
-				setCurrentAssignButton(null);
-				setIsAssigningAll(false);
-				setAssignAllIndex(0);
-			}
-		} else {
-			setCurrentAssignButton(null);
+async function loadConfig(fileSystem: FileSystemWorkerAPI): Promise<IInputConfig | null> {
+	try {
+		if (!(await fileSystem.fileExists(INPUT_CONFIG_PATH))) {
+			return null;
 		}
-	}, [currentAssignButton, isAssigningAll, assignAllIndex]);
+		const data = await fileSystem.readPath(INPUT_CONFIG_PATH);
+		return JSON.parse(new TextDecoder().decode(data as ArrayBuffer)) as IInputConfig;
+
+		// TODO: Check for migrations
+	} catch (ex) {
+		console.log('Failed to load input config. Loading defaults.', ex);
+		return null;
+	}
+}
+
+async function saveConfig(fileSystem: FileSystemWorkerAPI, project: Project, config: IInputConfig): Promise<void> {
+	const configData = JSON.stringify(config, null, 4);
+	const uint8Array = new TextEncoder().encode(configData);
+	const arrayBuffer = uint8Array.buffer;
+	console.log('Saving input config to ' + INPUT_CONFIG_PATH);
+	console.log(configData);
+	await fileSystem.createDirectory('/config');
+	await fileSystem.writePath(INPUT_CONFIG_PATH, arrayBuffer);
+	console.log('Saved input config');
+	project.loadConfigs();
+}
+
+function createInputConfigFromMappings(mappings: VirtualKey[]): IInputConfig {
+	const keyboard: Record<string, string> = {};
+	GAMEBOY_BUTTONS.forEach((button) => {
+		const key = mappings[button] || VirtualKey.Unknown;
+		if (key !== VirtualKey.Unknown) {
+			keyboard[EnumUtils.enumToString(VirtualKey, key)] = EnumUtils.enumToString(PadButtonType, button);
+		}
+	});
+
+	return { version: INPUT_CONFIG_VERSION, keyboard, gamepad: {} };
+}
+
+async function saveConfigFromMappings(fileSystem: FileSystemWorkerAPI, project: Project, keyMappings: VirtualKey[]): Promise<void> {
+	try {
+		const config = createInputConfigFromMappings(keyMappings);
+		await saveConfig(fileSystem, project, config);
+	} catch (ex) {
+		console.error('Failed to save input config.', ex);
+	}
+}
+
+export const ProjectSettings: React.FC = () => {
+	const { fileSystem, project } = useRetroPlug();
+	const [keyMappings, setKeyMappings] = useState<VirtualKey[]>(DEFAULT_KEY_MAPPINGS);
+	const [isAssigningAll, setIsAssigningAll] = useState(false);
+	const [currentAssignButton, setCurrentAssignButton] = useState<PadButtonType | null>(null);
+	const [assignAllIndex, setAssignAllIndex] = useState(0);
+	const [loaded, setLoaded] = useState(false);
+
+	useEffect(() => {
+		loadConfig(fileSystem).then((config) => {
+			if (config) {
+				setKeyMappings(createKeyboardMapping(config.keyboard));
+			} else {
+				setKeyMappings(structuredClone(DEFAULT_KEY_MAPPINGS));
+				saveConfigFromMappings(fileSystem, project, DEFAULT_KEY_MAPPINGS);
+			}
+
+			setLoaded(true);
+		});
+	}, [fileSystem, setKeyMappings, setLoaded]);
+
+	const handleKeyDown = useCallback(
+		(event: KeyboardEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
+
+			if (!currentAssignButton) return;
+
+			const key = toVirtualKey(event); // Just to ensure the key is valid
+			if (key === VirtualKey.Unknown) return;
+
+			const next = {
+				...keyMappings,
+				[currentAssignButton]: key,
+			};
+
+			setKeyMappings(next);
+
+			if (isAssigningAll) {
+				const nextIndex = assignAllIndex + 1;
+				if (nextIndex < GAMEBOY_BUTTONS.length) {
+					setCurrentAssignButton(GAMEBOY_BUTTONS[nextIndex]);
+					setAssignAllIndex(nextIndex);
+				} else {
+					// Finished assigning all
+					setCurrentAssignButton(null);
+					setIsAssigningAll(false);
+					setAssignAllIndex(0);
+					saveConfigFromMappings(fileSystem, project, next);
+				}
+			} else {
+				setCurrentAssignButton(null);
+				saveConfigFromMappings(fileSystem, project, next);
+			}
+		},
+		[currentAssignButton, isAssigningAll, assignAllIndex, keyMappings, setKeyMappings],
+	);
 
 	useEffect(() => {
 		if (currentAssignButton) {
@@ -150,7 +225,7 @@ export const ProjectSettings: React.FC = () => {
 		}
 	}, [currentAssignButton, handleKeyDown]);
 
-	const handleAssignSingle = (buttonId: string) => {
+	const handleAssignSingle = (buttonId: PadButtonType) => {
 		if (currentAssignButton) return; // Already assigning
 		setCurrentAssignButton(buttonId);
 		setIsAssigningAll(false);
@@ -160,20 +235,21 @@ export const ProjectSettings: React.FC = () => {
 		if (currentAssignButton) return; // Already assigning
 		setIsAssigningAll(true);
 		setAssignAllIndex(0);
-		setCurrentAssignButton(DEFAULT_GAMEBOY_BUTTONS[0].id);
+		setCurrentAssignButton(GAMEBOY_BUTTONS[0]);
 	};
 
-	const handleClear = (buttonId: string) => {
+	const handleClear = (buttonId: PadButtonType) => {
 		if (currentAssignButton) return; // Can't clear while assigning
-		setKeyMappings(prev => ({
+		setKeyMappings((prev) => ({
 			...prev,
-			[buttonId]: ''
+			[buttonId]: VirtualKey.Unknown,
 		}));
 	};
 
 	const handleResetToDefaults = () => {
 		if (currentAssignButton) return; // Can't reset while assigning
 		setKeyMappings(DEFAULT_KEY_MAPPINGS);
+		saveConfigFromMappings(fileSystem, project, DEFAULT_KEY_MAPPINGS);
 	};
 
 	const handleCancelAssignment = () => {
@@ -183,43 +259,43 @@ export const ProjectSettings: React.FC = () => {
 	};
 
 	return (
-		<div className="w-full h-full bg-gray-800 text-white p-3">
+		<div className="h-full w-full bg-gray-800 p-3 text-white">
 			<div className="max-w-xl">
-				<h2 className="text-lg font-medium mb-3">GameBoy Key Mapping</h2>
+				<h2 className="mb-3 text-lg font-medium">GameBoy Key Mapping</h2>
 
 				<div className="mb-3 flex gap-1">
 					<button
 						onClick={handleAssignAll}
 						disabled={currentAssignButton !== null}
-						className="px-3 py-1 bg-green-700/50 hover:bg-green-600/70 disabled:bg-gray-500 text-green-100 hover:text-white text-sm rounded-sm transition-colors"
+						className="rounded-sm bg-green-700/50 px-3 py-1 text-sm text-green-100 transition-colors hover:bg-green-600/70 hover:text-white disabled:bg-gray-500"
 					>
-						{isAssigningAll ? `Assign All (${assignAllIndex + 1}/${DEFAULT_GAMEBOY_BUTTONS.length})` : 'Assign All'}
+						{isAssigningAll ? `Assign All (${assignAllIndex + 1}/${GAMEBOY_BUTTONS.length})` : 'Assign All'}
 					</button>
 					<button
 						onClick={handleResetToDefaults}
 						disabled={currentAssignButton !== null}
-						className="px-3 py-1 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-500 text-gray-200 hover:text-white text-sm rounded-sm transition-colors"
+						className="rounded-sm bg-gray-600 px-3 py-1 text-sm text-gray-200 transition-colors hover:bg-gray-500 hover:text-white disabled:bg-gray-500"
 					>
 						Reset to Defaults
 					</button>
 					{currentAssignButton && (
 						<button
 							onClick={handleCancelAssignment}
-							className="px-3 py-1 bg-orange-700/50 hover:bg-orange-600/70 text-orange-100 hover:text-white text-sm rounded-sm transition-colors"
+							className="rounded-sm bg-orange-700/50 px-3 py-1 text-sm text-orange-100 transition-colors hover:bg-orange-600/70 hover:text-white"
 						>
 							Cancel
 						</button>
 					)}
 				</div>
 
-				<div className="bg-gray-900 rounded-sm border border-gray-700 overflow-hidden">
+				<div className="overflow-hidden rounded-sm border border-gray-700 bg-gray-900">
 					<div className="divide-y divide-gray-700">
-						{DEFAULT_GAMEBOY_BUTTONS.map(button => (
+						{GAMEBOY_BUTTONS.map((button) => (
 							<KeyMappingRow
-								key={button.id}
+								key={button}
 								button={button}
-								mappedKey={keyMappings[button.id] || ''}
-								isAssigning={currentAssignButton === button.id}
+								mappedKey={keyMappings[button] || VirtualKey.Unknown}
+								isAssigning={currentAssignButton === button}
 								onAssign={handleAssignSingle}
 								onClear={handleClear}
 							/>
@@ -228,10 +304,11 @@ export const ProjectSettings: React.FC = () => {
 				</div>
 
 				{isAssigningAll && (
-					<div className="mt-3 p-2 bg-blue-900/30 rounded-sm border border-blue-600/50">
+					<div className="mt-3 rounded-sm border border-blue-600/50 bg-blue-900/30 p-2">
 						<p className="text-xs text-blue-200">
-							<strong>Assign All Mode:</strong> Press a key for <strong>{DEFAULT_GAMEBOY_BUTTONS[assignAllIndex]?.displayName}</strong>
-							{assignAllIndex < DEFAULT_GAMEBOY_BUTTONS.length - 1 && `, then continue with the next button.`}
+							<strong>Assign All Mode:</strong> Press a key for{' '}
+							<strong>{buttonToString(GAMEBOY_BUTTONS[assignAllIndex])}</strong>
+							{assignAllIndex < GAMEBOY_BUTTONS.length - 1 && `, then continue with the next button.`}
 						</p>
 					</div>
 				)}

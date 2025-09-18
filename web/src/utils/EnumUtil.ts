@@ -3,12 +3,13 @@ export class EnumUtils {
 	// 1. Convert from string to enum
 	static stringToEnum<T extends Record<string | number, string | number>>(
 		enumObj: T,
-		str: string
+		str: string,
+		invalidValue?: T[keyof T]
 	): T[keyof T] | undefined {
 		if (str in enumObj && isNaN(Number(str))) {
 			return enumObj[str as keyof T];
 		}
-		return undefined;
+		return invalidValue;
 	}
 
 	// Alternative: Direct conversion (throws if invalid)

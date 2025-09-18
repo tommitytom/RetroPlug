@@ -43,6 +43,8 @@ namespace rp {
 
 		void loadConfigs();
 
+		const InputConfig& getInputConfig() const;
+
 		bool loadFromFile(std::filesystem::path path);
 
 		TaskId loadFromFileAsync(std::filesystem::path path) { return loadFromPathsAsync({ std::move(path) }); }
