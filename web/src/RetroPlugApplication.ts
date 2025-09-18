@@ -1,4 +1,3 @@
-import { BiquadEffect } from './effects/BiquadEffect.ts';
 import type {
 	LsdjMemoryOffsets,
 	MainModule,
@@ -18,6 +17,7 @@ export class RetroPlugApplication {
 	private _runner: WebApplicationRunner | null = null;
 	private _nativeApp: NativeRetroPlugEcsApplication | null = null;
 	private _nativeProject: NativeRetroPlugProject | null = null;
+	private _worker: Worker | null = null;
 
 	get module() {
 		return this._module;
@@ -68,6 +68,19 @@ export class RetroPlugApplication {
 		this._runner.setupFileSystem();
 		this._nativeApp = this._module.upcastApplication(this._runner.getApplication());
 		this._nativeProject = this._nativeApp!.getProject();
+
+		this._worker = new Worker(new URL('./TickWorker.ts', import.meta.url));
+
+		this._worker.addEventListener('message', () => this._runner?.runFrame());
+		document.addEventListener('visibilitychange', () => {
+			if (this._worker) {
+				if (document.hidden) {
+					this._worker.postMessage({ type: 'start', interval: 1000 / 60 });
+				} else {
+					this._worker.postMessage({ type: 'stop' });
+				}
+			}
+		});
 
 		return new Promise<void>((resolve) => {
 			const interval = setInterval(() => {

@@ -259,9 +259,9 @@ export const ProjectSettings: React.FC = () => {
 	};
 
 	return (
-		<div className="h-full w-full bg-gray-800 p-3 text-white">
+		<div className="h-full w-full p-3 text-white">
 			<div className="max-w-xl">
-				<h2 className="mb-3 text-lg font-medium">GameBoy Key Mapping</h2>
+				<h2 className="mb-3 text-lg font-medium">Keyboard Mapping</h2>
 
 				<div className="mb-3 flex gap-1">
 					<button

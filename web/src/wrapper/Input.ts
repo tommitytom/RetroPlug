@@ -189,7 +189,17 @@ export function toVirtualKey(ev: KeyboardEvent): VirtualKey {
 	const key = ev.key;
 	const code = ev.code;
 
-	// Handle special keys first
+	// Handle modifier keys with location specificity
+	if (code === 'ShiftLeft') return VirtualKey.LeftShift;
+	if (code === 'ShiftRight') return VirtualKey.RightShift;
+	if (code === 'ControlLeft') return VirtualKey.LeftCtrl;
+	if (code === 'ControlRight') return VirtualKey.RightCtrl;
+	if (code === 'AltLeft') return VirtualKey.LeftMenu;
+	if (code === 'AltRight') return VirtualKey.RightMenu;
+	if (code === 'MetaLeft' || code === 'OSLeft') return VirtualKey.LeftWin;
+	if (code === 'MetaRight' || code === 'OSRight') return VirtualKey.RightWin;
+
+	// Handle special keys
 	switch (key) {
 		case 'Backspace': return VirtualKey.Backspace;
 		case 'Tab': return VirtualKey.Tab;
@@ -261,16 +271,6 @@ export function toVirtualKey(ev: KeyboardEvent): VirtualKey {
 			case 'Divide': return VirtualKey.Divide;
 		}
 	}
-
-	// Handle modifier keys with location specificity
-	if (code === 'ShiftLeft') return VirtualKey.LeftShift;
-	if (code === 'ShiftRight') return VirtualKey.RightShift;
-	if (code === 'ControlLeft') return VirtualKey.LeftCtrl;
-	if (code === 'ControlRight') return VirtualKey.RightCtrl;
-	if (code === 'AltLeft') return VirtualKey.LeftMenu;
-	if (code === 'AltRight') return VirtualKey.RightMenu;
-	if (code === 'MetaLeft' || code === 'OSLeft') return VirtualKey.LeftWin;
-	if (code === 'MetaRight' || code === 'OSRight') return VirtualKey.RightWin;
 
 	// Handle special character keys
 	switch (key) {

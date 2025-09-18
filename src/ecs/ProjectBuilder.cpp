@@ -356,6 +356,12 @@ namespace rp {
 					v.path = (pathCtx.projectRoot / entryPath).lexically_normal().string();
 				}
 			}
+
+			auto foundSram = c.entries.find("sram");
+			if (foundSram != c.entries.end()) {
+				fs::path sramPath = path;
+				foundSram->second.path = sramPath.replace_extension(".sav").string();
+			}
 		}
 
 		std::string target;

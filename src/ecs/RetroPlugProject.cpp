@@ -188,7 +188,7 @@ namespace rp {
 	}
 
 	bool RetroPlugProject::saveToFile(std::filesystem::path path) {
-		//getContext().increaseVersion();
+		spdlog::info("Saving project to file: {}", path.string());
 		if (ProjectBuilder::saveToFile(_registry, path)) {
 			getContext().dirty = false;
 			return true;

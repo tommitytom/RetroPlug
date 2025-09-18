@@ -11,6 +11,7 @@ import { DocumentStatusIndicator } from './DocumentStatusIndicator';
 import { ResizablePanel } from './ResizablePanel';
 import { TabView } from './TabView';
 import type { TabItem } from './types';
+import { About } from '../About';
 
 export const Layout: React.FC = () => {
 	const { audioContext, module } = useRetroPlug();
@@ -31,6 +32,11 @@ export const Layout: React.FC = () => {
 			id: 'settings',
 			label: 'Settings',
 			content: <ProjectSettings />
+		},
+		{
+			id: 'about',
+			label: 'About',
+			content: <About />
 		}
 	];
 

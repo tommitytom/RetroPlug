@@ -198,8 +198,15 @@ export class Project {
 		return this._project.getProjectName();
 	}
 
-	saveToDisk(): void {
-		this._project.saveToDisk();
+	hasProjectPath(): boolean {
+		return this._project.hasProjectPath();
+	}
+
+	saveToDisk(path: string = ''): void {
+		if (path !== '') {
+			path = '/mount' + path;
+		}
+		this._project.saveToDisk(path);
 	}
 
 	loadFromPaths(paths: string[]): SystemId {

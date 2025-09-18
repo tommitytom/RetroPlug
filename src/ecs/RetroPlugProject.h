@@ -43,6 +43,10 @@ namespace rp {
 
 		void loadConfigs();
 
+		bool hasProjectPath() const {
+			return !_registry.ctx().at<ProjectPathContext>().projectPath.empty();
+		}
+
 		const InputConfig& getInputConfig() const;
 
 		bool loadFromFile(std::filesystem::path path);

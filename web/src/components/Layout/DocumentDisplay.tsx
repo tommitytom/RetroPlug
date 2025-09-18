@@ -1,12 +1,16 @@
-import { File, FileText, Gamepad2, Music, Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { File, FileText, Music, Save, Plus, ChevronDown } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+
 import { useDocument } from '../../contexts/DocumentContext';
-import type { Document, DocumentType } from './types';
+import { useSaveAsDialog } from '../SaveAsDialog';
 import { SystemPanel } from '../../panels/SystemPanel';
 
 export const DocumentDisplay: React.FC = () => {
-	const { currentDocument, markDirty, saveDocument } = useDocument();
+	const { currentDocument, markDirty, saveDocument, setCurrentDocument, updateDocument } = useDocument();
+	const { showSaveAsDialog } = useSaveAsDialog();
 	const [content, setContent] = useState('');
+	const [showSaveDropdown, setShowSaveDropdown] = useState(false);
+	const dropdownRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (currentDocument?.type === 'text') {
@@ -18,16 +22,48 @@ export const DocumentDisplay: React.FC = () => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if ((event.ctrlKey || event.metaKey) && event.key === 's') {
 				event.preventDefault();
-				saveDocument();
+				if (event.shiftKey) {
+					// Ctrl+Shift+S for Save As
+					handleSaveAs();
+				} else {
+					saveDocument();
+				}
+			}
+		};
+
+		const handleClickOutside = (event: MouseEvent) => {
+			if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+				setShowSaveDropdown(false);
 			}
 		};
 
 		window.addEventListener('keydown', handleKeyDown);
+		document.addEventListener('mousedown', handleClickOutside);
 
 		return () => {
 			window.removeEventListener('keydown', handleKeyDown);
+			document.removeEventListener('mousedown', handleClickOutside);
 		};
 	}, [saveDocument]);
+
+	const handleSaveAs = () => {
+		if (!currentDocument) return;
+
+		showSaveAsDialog({
+			documentType: currentDocument.type,
+			defaultFilename: currentDocument.hasFilename ? currentDocument.title : '',
+			onSave: (filename: string, location?: string) => {
+				updateDocument({
+					title: filename,
+					hasFilename: true,
+					filePath: location ? `${location}/${filename}` : filename
+				});
+				// Trigger save with new filename
+				setTimeout(() => saveDocument(), 100);
+			}
+		});
+		setShowSaveDropdown(false);
+	};
 
 	const getDocumentIcon = () => {
 		switch (currentDocument?.type) {
@@ -42,8 +78,26 @@ export const DocumentDisplay: React.FC = () => {
 		}
 	};
 
+	const createNewDocument = (type: 'text' | 'audio' | 'emulator') => {
+		const newDoc = {
+			id: Date.now().toString(),
+			title: `Untitled ${type}`,
+			type,
+			content: type === 'text' ? '' : null,
+			isDirty: false,
+			hasFilename: false, // New documents don't have filenames yet
+		};
+		setCurrentDocument(newDoc);
+	};
+
 	if (!currentDocument) {
-		return <div className="flex h-full items-center justify-center text-gray-500">No document open</div>;
+		return (
+			<div className="flex h-full items-center justify-center">
+				<div className="text-center text-gray-500">
+					<p className="mb-4">No project open</p>
+				</div>
+			</div>
+		);
 	}
 
 	return (
@@ -51,21 +105,53 @@ export const DocumentDisplay: React.FC = () => {
 			{/* Document Header */}
 			<div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-1">
 				{getDocumentIcon()}
-				<span className="text-sm font-medium">{currentDocument.title}</span>
+				<span className="text-sm font-medium">
+					{currentDocument.title}
+					{!currentDocument.hasFilename && <span className="ml-1 text-xs text-gray-500">(unsaved)</span>}
+				</span>
 				{currentDocument.isDirty && <span className="text-sm text-yellow-500">•</span>}
-				<div className="ml-auto">
-					<button
-						onClick={currentDocument.isDirty ? saveDocument : undefined}
-						disabled={!currentDocument.isDirty}
-						title={currentDocument.isDirty ? 'Save' : 'No changes to save'}
-						className={`p-1 rounded ${
-							currentDocument.isDirty
-								? 'text-gray-300 hover:text-white hover:bg-gray-700'
-								: 'text-gray-600'
-						}`}
-					>
-						<Save className="w-4 h-4" />
-					</button>
+				<div className="ml-auto flex items-center">
+					<div className="relative" ref={dropdownRef}>
+						<div className="flex">
+							<button
+								onClick={currentDocument.isDirty ? saveDocument : undefined}
+								disabled={!currentDocument.isDirty}
+								title={currentDocument.isDirty ? 'Save (Ctrl+S)' : 'No changes to save'}
+								className={`rounded-l p-1 ${
+									currentDocument.isDirty ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-600'
+								}`}
+							>
+								<Save className="h-4 w-4" />
+							</button>
+							<button
+								onClick={() => setShowSaveDropdown(!showSaveDropdown)}
+								className="rounded-r p-1 text-gray-300 hover:bg-gray-700 hover:text-white"
+								title="Save options"
+							>
+								<ChevronDown className="h-3 w-3" />
+							</button>
+						</div>
+
+						{showSaveDropdown && (
+							<div className="absolute right-0 top-full mt-1 w-32 rounded-md border border-gray-600 bg-gray-800 py-1 shadow-lg z-10">
+								<button
+									onClick={() => {
+										saveDocument();
+										setShowSaveDropdown(false);
+									}}
+									className="w-full px-3 py-1 text-left text-sm text-gray-200 hover:bg-gray-700"
+								>
+									Save
+								</button>
+								<button
+									onClick={handleSaveAs}
+									className="w-full px-3 py-1 text-left text-sm text-gray-200 hover:bg-gray-700"
+								>
+									Save As...
+								</button>
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 

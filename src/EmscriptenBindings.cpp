@@ -203,11 +203,14 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			for (const auto& path : paths) fsPaths.push_back(std::filesystem::path(path));
 			return project.loadFromPathsAsync(fsPaths);
 		})
-		.function("saveToDisk", +[](RetroPlugProject& project) -> TaskId {
-			return project.saveToFile("");
+		.function("saveToDisk", +[](RetroPlugProject& project, const std::string& path) -> TaskId {
+			return project.saveToFile(path);
 		})
 		.function("reset", +[](RetroPlugProject& project) {
 			project.reset();
+		})
+		.function("hasProjectPath", +[](RetroPlugProject& project) -> bool {
+			return project.hasProjectPath();
 		})
 		.function("getSystemMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type, AccessType access) -> MemoryAccessor {
 			return project.getSystemMemory(entt::entity(systemId), type, access);

@@ -45,6 +45,7 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.function("stop", &fw::app::WebApplicationRunner::stop)
 		.function("getView", &fw::app::WebApplicationRunner::getView)
 		.function("getApplication", &fw::app::WebApplicationRunner::getApplication, return_value_policy::reference())
+		.function("runFrame", &fw::app::WebApplicationRunner::runFrame)
 	;
 
 	class_<Uint8Buffer>("Uint8Buffer")

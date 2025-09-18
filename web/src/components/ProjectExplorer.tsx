@@ -11,6 +11,7 @@ import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
 import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
 import type { MenuItem } from './Menu/types';
+import { useSaveAsDialog } from './SaveAsDialog';
 
 const sortFileSystemNodes = (a: FileSystemNode, b: FileSystemNode) => {
 	// Directories first, then files, both sorted alphabetically
@@ -188,7 +189,7 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 	return {
 		roms: (await fileSystem.listPath(`/roms`)).children || [],
 		savs:
-			(await fileSystem.listPath(`/savs`, false, '.sav')).children /*?.filter((f) => f.name.endsWith('.sav'))*/ || [],
+			(await fileSystem.listPath(`/savs`, false, '.sav')).children || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 	};
@@ -209,6 +210,7 @@ export const ProjectExplorer: React.FC = () => {
 	const { fileSystem, project } = useRetroPlug();
 	const { setCurrentDocument } = useDocument();
 	const { openModal, openYesNoCancel, closeModal } = useModal();
+	const { showSaveAsDialog } = useSaveAsDialog();
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(sections.map((s) => s.id)));
 	const [sectionData, setSectionData] = useState<Record<string, FileSystemNode[]>>({});
 	const contextMenu = useContextMenu();
@@ -242,13 +244,14 @@ export const ProjectExplorer: React.FC = () => {
 			console.log(`Double clicked on ${item} in section ${section}`);
 
 			if (section === 'savs' || section === 'roms') {
-				function setDocument(name: string) {
+				function setDocument(name: string, hasFilename: boolean) {
 					setCurrentDocument({
 						id: name,
 						title: name,
 						content: project,
 						type: 'emulator',
 						isDirty: false,
+						hasFilename
 					});
 				}
 
@@ -258,7 +261,7 @@ export const ProjectExplorer: React.FC = () => {
 						if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
 							// TODO: Check if the rom exists!
 							project.loadFromFile(`/savs/${projectFile}`);
-							setDocument(item);
+							setDocument(item, true);
 						} else {
 							openModal({
 								title: 'Choose a rom',
@@ -267,7 +270,7 @@ export const ProjectExplorer: React.FC = () => {
 										savName={item}
 										onSelect={(path) => {
 											project.loadFromPaths(['/roms/' + path, '/savs/' + item]);
-											setDocument(item);
+											setDocument(item, true);
 											closeModal();
 										}}
 										onClose={closeModal}
@@ -277,7 +280,7 @@ export const ProjectExplorer: React.FC = () => {
 						}
 					} else if (section === 'roms') {
 						project.loadFromPaths([`/roms/${item}`]);
-						setDocument(item);
+						setDocument(item, false);
 					}
 				}
 
@@ -289,7 +292,23 @@ export const ProjectExplorer: React.FC = () => {
 						noText: "Don't Save",
 						cancelText: 'Cancel',
 						onYes: () => {
-							project.saveToDisk();
+							if (project.hasProjectPath()) {
+								project.saveToDisk();
+							} else {
+								showSaveAsDialog({
+									documentType: 'emulator',
+									onSave: (filename) => {
+										console.log(`Saving project as: ${filename}.sav`);
+										project.saveToDisk('/savs/' + filename + '.sav');
+										setDocument(filename, true);
+										loadProject();
+										closeModal();
+									},
+									onCancel: () => {
+										closeModal();
+									},
+								})
+							}
 							loadProject();
 						},
 						onNo: () => {

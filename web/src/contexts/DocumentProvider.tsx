@@ -3,8 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { DocumentContext } from "./DocumentContext";
 import type { Document, DocumentType, SaveHandler, SaveResult } from "../components/Layout/types";
 import { saveHandlers } from "./SaveHandlers";
+import { useSaveAsDialog } from "../components/SaveAsDialog";
 
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+	const { showSaveAsDialog } = useSaveAsDialog();
 	const [currentDocument, setCurrentDocument] = useState<Document | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [lastSaveResult, setLastSaveResult] = useState<SaveResult | null>(null);
@@ -55,7 +57,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 			const result = await handler({
 				document: currentDocument,
 				markClean,
-				updateDocument
+				updateDocument,
+				showSaveAsDialog
 			});
 
 			setLastSaveResult(result);
@@ -74,7 +77,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 		} finally {
 			setIsSaving(false);
 		}
-	}, [currentDocument, customSaveHandlers, markClean, updateDocument, isSaving]);
+	}, [currentDocument, customSaveHandlers, markClean, updateDocument, isSaving, showSaveAsDialog]);
 
 	const registerSaveHandler = useCallback((type: DocumentType, handler: SaveHandler) => {
 		setCustomSaveHandlers(prev => ({ ...prev, [type]: handler }));
