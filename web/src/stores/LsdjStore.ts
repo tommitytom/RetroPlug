@@ -4,10 +4,11 @@ import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 import type { IEffect } from '../effects/Effect';
-import type { ILsdjEditableKit, ILsdjEmptyKit, ILsdjKit, ILsdjKitBase, ILsdjKitSample, ILsdjRom, INamedKit } from '../types/LsdjTypes';
+import { LSDJ_KIT_COUNT, type ILsdjEditableKit, type ILsdjEmptyKit, type ILsdjKit, type ILsdjKitBase, type ILsdjKitSample, type ILsdjRom, type INamedKit } from '../types/LsdjTypes';
 import { type SystemId, toUint8Array } from '../utils/NativeUtil';
 import { replaceObject } from '../utils/ObjectUtils';
 import { LsdjController } from '../wrapper/Lsdj';
+import { generateKey, getLastEmptyKitIdx } from '../utils/LsdjUtil';
 
 export interface LsdjStoreState {
 	// State
@@ -167,8 +168,22 @@ export const createLsdjStore = (
 								return;
 							}
 
+							const originalEmpty = kitContainer.kit.type === 'empty';
+
 							kitContainer.kit = kit;
 							state.controller.updateKit(state.systemId, kitContainer);
+
+							if (originalEmpty) {
+								// Ensure that the last element is an empty kit if appropriate
+								const kits = state.rom!.kits;
+								if (kits[kits.length - 1].kit.type !== 'empty' && kits.length < LSDJ_KIT_COUNT) {
+									kits.push({
+										id: kits.length,
+										kit: { type: 'empty' },
+										key: generateKey(),
+									});
+								}
+							}
 						}),
 
 					renameKit: (kitKey, name, triggerUpdate) =>

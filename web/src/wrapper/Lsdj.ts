@@ -1,6 +1,6 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
 import { LSDJ_KIT_COUNT, type ILsdjEditableKit, type ILsdjKit, type ILsdjKitBase, type ILsdjPatchedKit } from "../types/LsdjTypes";
-import { generateKey } from "../utils/LsdjUtil";
+import { generateKey, getLastEmptyKitIdx } from "../utils/LsdjUtil";
 import { type SystemId } from "../utils/NativeUtil";
 
 export interface ILsdjApiKit<T extends ILsdjKitBase = ILsdjKitBase> {
@@ -84,6 +84,14 @@ export class LsdjController {
 			}
 		}
 
+		let lastEmpty = getLastEmptyKitIdx(kits);
+		if (lastEmpty < kits.length - 1) {
+			lastEmpty += 2;
+			const deleteCount = kits.length - lastEmpty;
+			kits.splice(lastEmpty, deleteCount);
+		}
+
+		kits.sort((a, b) => a.id - b.id);
 		console.log(JSON.stringify(kits, null, 4));
 
 		return kits;

@@ -52,6 +52,16 @@ export function sortKits(kits: ILsdjKit[], sortMethod: SortBy) {
 	}
 }
 
+export function getLastEmptyKitIdx(kits: ILsdjKit[]): number {
+	for (let i = kits.length - 1; i >= 0; i--) {
+		if (kits[i].kit.type !== 'empty') {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
 export const generateKey = (): string => {
 	return `${Date.now()}-${Math.random()
 		.toString(36)
