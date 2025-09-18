@@ -69,6 +69,7 @@ namespace rp {
 			for (size_t i = 0; i < getChildCount(); ++i) {
 				TileView* tile = getChild(i)->asRaw<TileView>();
 				if (tile->getEntity() == _selectedTileEntity) {
+					tile->focus();
 					tile->setAlpha(1.0f);
 				} else {
 					tile->setAlpha(0.5f);

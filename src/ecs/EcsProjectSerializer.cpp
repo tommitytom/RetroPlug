@@ -1,5 +1,6 @@
 #include "EcsProjectSerializer.h"
 
+#include "core/Constants.h"
 #include "core/CoreComponents.h"
 #include "ecs/RetroPlugProjectContext.h"
 #include "foundation/Replicator.h"
@@ -11,6 +12,12 @@ namespace rp {
 		yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
 		yyjson_mut_val* root = yyjson_mut_obj(doc);
 		yyjson_mut_doc_set_root(doc, root);
+
+		yyjson_mut_val* retroPlugVersion = yyjson_mut_str(doc, RP_VERSION.data());
+		yyjson_mut_obj_add_val(doc, root, "retroPlugVersion", retroPlugVersion);
+
+		yyjson_mut_val* projectVersion = yyjson_mut_str(doc, PROJECT_VERSION.data());
+		yyjson_mut_obj_add_val(doc, root, "projectVersion", projectVersion);
 
 		yyjson_mut_val* systems = yyjson_mut_arr(doc);
 		yyjson_mut_obj_add_val(doc, root, "systems", systems);
@@ -52,6 +59,11 @@ namespace rp {
 
 		yyjson_doc* doc = yyjson_read(source.data(), source.size(), 0);
 		yyjson_val* root = yyjson_doc_get_root(doc);
+
+		yyjson_val* retroPlugVersion = yyjson_obj_get(root, "retroPlugVersion");
+		yyjson_val* projectVersion = yyjson_obj_get(root, "projectVersion");
+
+		// Do migrations here if necessary
 
 		yyjson_val* config = yyjson_obj_get(root, "config");
 		registry.ctx().at<ProjectConfig>() = JsonUtil::read<ProjectConfig>(config).value_or(ProjectConfig());

@@ -358,6 +358,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 							handleDeleteKit();
 						}}
 						title="Delete kit"
+						disabled={kitType === 'rom'}
 					/>
 				</div>
 			</div>

@@ -19,6 +19,12 @@ export class LsdjController {
 		return this._nativeController.removeKit(system, kitId);
 	}
 
+	getKit(system: SystemId, kitId: number): ILsdjKit | null {
+		const kitString = this._nativeController.getKitComponentString(system, kitId);
+		const kit = kitString ? JSON.parse(kitString) as ILsdjKit : null;
+		return kit;
+	}
+
 	updateKit(system: SystemId, kitContainer: Readonly<ILsdjKit>): void {
 		const kitData = JSON.parse(JSON.stringify(kitContainer)) as ILsdjKit;
 
@@ -78,7 +84,7 @@ export class LsdjController {
 			}
 		}
 
-		//console.log(JSON.stringify(kits, null, 4));
+		console.log(JSON.stringify(kits, null, 4));
 
 		return kits;
 	}

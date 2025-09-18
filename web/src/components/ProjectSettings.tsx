@@ -235,16 +235,6 @@ export const ProjectSettings: React.FC = () => {
 						</p>
 					</div>
 				)}
-
-				<div className="mt-4 text-xs text-gray-400">
-					<p className="font-medium mb-1">Instructions:</p>
-					<ul className="list-disc list-inside space-y-0.5 leading-tight">
-						<li>Click "Assign" next to a button to set its key mapping</li>
-						<li>Click "Assign All" to set mappings for all buttons in sequence</li>
-						<li>Use "Clear" to remove a key mapping</li>
-						<li>Use "Reset to Defaults" to restore original key mappings</li>
-					</ul>
-				</div>
 			</div>
 		</div>
 	);

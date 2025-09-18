@@ -24,8 +24,7 @@ export const useKitList = () => {
 		const unsubscribe = store.subscribe(
 			(state) => state.rom?.kits || [],
 			(newKits) => {
-				console.log('kits changed');
-
+				console.log('kits changed', newKits);
 				setKits(newKits);
 			},
 			{
@@ -35,7 +34,8 @@ export const useKitList = () => {
 					return a.every((kitA, index) => {
 						const kitB = b[index];
 						return kitA?.key === kitB?.key &&
-							   kitA?.id === kitB?.id;
+							   kitA?.id === kitB?.id &&
+							   kitA?.kit.type === kitB?.kit.type;
 					});
 				}
 			}

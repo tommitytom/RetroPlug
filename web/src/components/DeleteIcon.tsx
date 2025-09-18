@@ -4,18 +4,29 @@ interface DeleteIconProps {
 	onClick: (e: React.MouseEvent) => void;
 	className?: string;
 	title?: string;
+	disabled?: boolean;
 }
 
 export const DeleteIcon: React.FC<DeleteIconProps> = ({
 	onClick,
 	className = "rounded-sm p-1 text-red-400 transition-colors duration-200 hover:bg-red-600/20 hover:text-red-300",
-	title = "Delete"
+	title = "Delete",
+	disabled = false
 }) => {
+	const handleClick = (e: React.MouseEvent) => {
+		if (disabled) {
+			e.stopPropagation();
+			return;
+		}
+		onClick(e);
+	};
+
 	return (
 		<button
-			className={className}
-			onClick={onClick}
-			title={title}
+			className={`${className} ${disabled ? 'opacity-50 hover:bg-transparent hover:text-current' : ''}`}
+			onClick={handleClick}
+			title={disabled ? 'Cannot delete this item' : title}
+			disabled={disabled}
 		>
 			<svg
 				width="12"

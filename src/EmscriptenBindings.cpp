@@ -313,7 +313,21 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getKitComponentString", +[](LsdjController& controller, SystemId system, uint32 kitId) -> std::string {
 			const LsdjKitComponent* comp = controller.getKitComponent((entt::entity)system, kitId);
 			if (comp) return rfl::json::write(*comp);
-			return "";
+
+
+			lsdj::Rom rom = controller.getLsdjRom((entt::entity)system);
+			if (rom.kitIsEmpty(kitId)) {
+				return rfl::json::write(LsdjKitComponent{.id = kitId, .kit = LsdjEmptyKit{}});
+			}
+
+			lsdj::Kit kit = rom.getKit(kitId);
+
+			try {
+				return rfl::json::write(LsdjKitComponent{.id = kitId, .kit = LsdjRomKit{.name = std::string(kit.getName())}});
+			} catch (const std::exception& e) {
+				spdlog::error("Failed to serialize ROM kit to JSON: {}", e.what());
+				return "";
+			}
 		})
 		/*.function("setKitComponent", +[](LsdjController& controller, SystemId system, uint32 kitId, const LsdjKitComponent& component) -> bool {
 			return controller.setKitComponent((entt::entity)system, kitId, component);

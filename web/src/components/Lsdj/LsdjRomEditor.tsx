@@ -1,13 +1,12 @@
 import React, { useCallback, useRef, useState } from 'react';
 
-import { useKitList, useLsdjStore } from '../../hooks/LsdjStoreHooks';
-import { sortKits } from '../../utils/LsdjUtil';
-import { LsdjKitEditor } from './LsdjKitEditor';
-
-import '../../styles/RomEditorPanel.css';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { AccessType, MemoryType } from '../../wrapper/System';
+import { useKitList, useLsdjStore } from '../../hooks/LsdjStoreHooks';
+import '../../styles/RomEditorPanel.css';
 import { downloadUint8Buffer } from '../../utils/FileUtil';
+import { sortKits } from '../../utils/LsdjUtil';
+import { AccessType, MemoryType } from '../../wrapper/System';
+import { LsdjKitEditor } from './LsdjKitEditor';
 
 interface LsdjRomEditorProps {}
 

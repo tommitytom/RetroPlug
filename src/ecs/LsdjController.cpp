@@ -195,6 +195,8 @@ namespace rp {
 
 	bool LsdjController::setKitComponent(entt::entity system, uint32 kitId, LsdjKitComponent&& comp) {
 		assert(kitId != INVALID_KIT_INDEX);
+		assert(comp.kit.discrimininator_.string_view() != "empty"); // Use removeKitComponent instead
+
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
 
@@ -232,6 +234,24 @@ namespace rp {
 
 		std::erase_if(lsdj->kits, [kitId](const LsdjKitComponent& kit) { return kit.id == kitId; });
 		_registry.ctx().at<RetroPlugProjectContext>().dirty = true;
+
+		// Replace with original kit from ROM (may be empty, thats fine too)
+
+		const SystemLoadComponent& load = _registry.get<SystemLoadComponent>(system);
+		const SystemLoadEntry* entry = load.findEntry("rom");
+		assert(entry);
+		if (!entry) return false;
+
+		lsdj::Rom sourceRom(entry->data());
+		if (!sourceRom.isValid()) return false;
+
+		lsdj::Rom targetRom = getLsdjRom(system);
+		if (!targetRom.isValid()) return false;
+
+		targetRom.getKit(kitId).setKitData(sourceRom.getKit(kitId).getBuffer());
+
+		LsdjStateComponent *state = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
+		if (state) state->kitVersions[kitId]++;
 
 		return true;
 	}

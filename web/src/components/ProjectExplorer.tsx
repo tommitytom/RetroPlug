@@ -67,7 +67,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 	onDoubleClick,
 	onContextMenu,
 	onDragStart,
-	onDragEnd
+	onDragEnd,
 }) => {
 	const [isExpanded, setIsExpanded] = useState(false);
 	const hasChildren = node.type === 'directory' && node.children && node.children.length > 0;
@@ -111,9 +111,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 					</span>
 				)}
 				{!hasChildren && <span className="mr-1 w-3" />}
-				<span className="mr-2 text-xs text-white">
-					{node.type === 'directory' ? '▢' : getFileIcon(node.name)}
-				</span>
+				<span className="mr-2 text-xs text-white">{node.type === 'directory' ? '▢' : getFileIcon(node.name)}</span>
 				<span className="flex-1">{node.name}</span>
 			</div>
 			{hasChildren && isExpanded && (
@@ -163,18 +161,25 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 
 	for (const section of sections) {
 		await ensureExists(fileSystem, section.id);
-		result[section.id] = (await fileSystem.listPath(`/${section.id}`, section.recurse, section.id === 'savs' ? '.sav' : undefined)).children || [];
+		result[section.id] =
+			(await fileSystem.listPath(`/${section.id}`, section.recurse, section.id === 'savs' ? '.sav' : undefined))
+				.children || [];
 	}
 
 	return {
 		roms: (await fileSystem.listPath(`/roms`)).children || [],
-		savs: (await fileSystem.listPath(`/savs`, false, '.sav')).children/*?.filter((f) => f.name.endsWith('.sav'))*/ || [],
+		savs:
+			(await fileSystem.listPath(`/savs`, false, '.sav')).children /*?.filter((f) => f.name.endsWith('.sav'))*/ || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 	};
 }
 
-async function createImportDialog(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): Promise<boolean> {
+async function createImportDialog(
+	fileSystem: FileSystemWorkerAPI,
+	section: string,
+	extensions: string,
+): Promise<boolean> {
 	try {
 		await openFileCopyDialog(fileSystem, `/${section}`, extensions);
 		return true;
@@ -218,66 +223,72 @@ export const ProjectExplorer: React.FC = () => {
 		});
 	};
 
-	const handleDoubleClick = useCallback(async (section: string, item: string) => {
-		console.log(`Double clicked on ${item} in section ${section}`);
+	const handleDoubleClick = useCallback(
+		async (section: string, item: string) => {
+			console.log(`Double clicked on ${item} in section ${section}`);
 
-		if (section === 'savs') {
-			function setDocument(name: string) {
-				setCurrentDocument({
-					id: name,
-					title: name,
-					content: project,
-					type: 'emulator',
-					isDirty: false,
-				});
-			}
-
-			async function loadProject() {
-				// is there a project file?
-				const projectFile = item.replace('.sav', '.rplg');
-				if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
-					// TODO: Check if the rom exists!
-
-					project.loadFromFile(`/savs/${projectFile}`);
-					setDocument(item);
-				} else {
-					openModal({
-						title: 'Choose a rom',
-						content: (
-							<RomSelectDialog
-								savName={item}
-								onSelect={(path) => {
-									project.loadFromPaths(['/roms/' + path, '/savs/' + item]);
-									setDocument(item);
-									closeModal();
-								}}
-								onClose={closeModal}
-							/>
-						),
+			if (section === 'savs' || section === 'roms') {
+				function setDocument(name: string) {
+					setCurrentDocument({
+						id: name,
+						title: name,
+						content: project,
+						type: 'emulator',
+						isDirty: false,
 					});
 				}
-			}
 
-			if (project.isDirty) {
-				openYesNoCancel({
-					title: "Save Changes?",
-					message: "You have unsaved changes. What would you like to do?",
-					yesText: "Save",
-					noText: "Don't Save",
-					cancelText: "Cancel",
-					onYes: () => {
-						project.saveToDisk();
-						loadProject();
-					},
-					onNo: () => {
-						loadProject();
+				async function loadProject() {
+					if (section === 'savs') {
+						const projectFile = item.replace('.sav', '.rplg');
+						if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
+							// TODO: Check if the rom exists!
+							project.loadFromFile(`/savs/${projectFile}`);
+							setDocument(item);
+						} else {
+							openModal({
+								title: 'Choose a rom',
+								content: (
+									<RomSelectDialog
+										savName={item}
+										onSelect={(path) => {
+											project.loadFromPaths(['/roms/' + path, '/savs/' + item]);
+											setDocument(item);
+											closeModal();
+										}}
+										onClose={closeModal}
+									/>
+								),
+							});
+						}
+					} else if (section === 'roms') {
+						project.loadFromPaths([`/roms/${item}`]);
+						setDocument(item);
 					}
-				});
-			} else {
-				loadProject();
+				}
+
+				if (project.isDirty) {
+					openYesNoCancel({
+						title: 'Save Changes?',
+						message: 'You have unsaved changes. What would you like to do?',
+						yesText: 'Save',
+						noText: "Don't Save",
+						cancelText: 'Cancel',
+						onYes: () => {
+							project.saveToDisk();
+							loadProject();
+						},
+						onNo: () => {
+							loadProject();
+						},
+					});
+				} else {
+					loadProject();
+				}
 			}
-		}
-	}, [fileSystem, project]);
+		},
+		[fileSystem, project],
+	);
 
 	function createImportMenuItem(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): MenuItem {
 		return {
@@ -287,7 +298,7 @@ export const ProjectExplorer: React.FC = () => {
 				if (await createImportDialog(fileSystem, section, extensions)) {
 					setVersion((v) => v + 1);
 				}
-			}
+			},
 		};
 	}
 
@@ -318,59 +329,60 @@ export const ProjectExplorer: React.FC = () => {
 				} catch (error) {
 					console.error(`Error downloading ${item}:`, error);
 				}
-			}
+			},
 		};
 	}
 
-	const handleContextMenu = useCallback((id: string, idx: number, item: string | null, event: React.MouseEvent) => {
-		event.preventDefault();
-		event.stopPropagation();
+	const handleContextMenu = useCallback(
+		(id: string, idx: number, item: string | null, event: React.MouseEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
 
-		const menuItems: MenuItem[] = [];
+			const menuItems: MenuItem[] = [];
 
-		if (id == 'samples' && !item) {
-			menuItems.push(
-				{
+			if (id == 'samples' && !item) {
+				menuItems.push({
 					id: 'create-sample-folder',
 					label: 'Create Folder',
 					onClick: createSampleFolderDialog,
-				},
-			);
-		} else if (id === 'savs' && item) {
-			menuItems.push(
-				{
-					id: 'package-sav',
-					label: 'Export with ROM',
-					onClick: async () => {
-						console.log('Export!');
-					}
-				},
-				{
-					id: 'render-sav',
-					label: 'Render...',
-					onClick: async () => {
-						console.log('Render SAV!');
-					}
-				}
-			);
-		} else if (id === 'roms' && !item) {
-			menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[idx].extensions.join(',')));
-		} else if (id === 'savs' && !item) {
-			menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[idx].extensions.join(',')));
-		} else if (id === 'kits' && !item) {
-			menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[idx].extensions.join(',')));
-		} else if (id === 'samples' && item) {
-			menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[idx].extensions.join(',')));
-		}
+				});
+			} else if (id === 'savs' && item) {
+				menuItems.push(
+					{
+						id: 'package-sav',
+						label: 'Export with ROM',
+						onClick: async () => {
+							console.log('Export!');
+						},
+					},
+					{
+						id: 'render-sav',
+						label: 'Render...',
+						onClick: async () => {
+							console.log('Render SAV!');
+						},
+					},
+				);
+			} else if (id === 'roms' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'roms', sections[idx].extensions.join(',')));
+			} else if (id === 'savs' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'savs', sections[idx].extensions.join(',')));
+			} else if (id === 'kits' && !item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'kits', sections[idx].extensions.join(',')));
+			} else if (id === 'samples' && item) {
+				menuItems.push(createImportMenuItem(fileSystem, 'samples', sections[idx].extensions.join(',')));
+			}
 
-		if (item) {
-			menuItems.push(createDownloadMenuItem(id, item));
-		}
+			if (item) {
+				menuItems.push(createDownloadMenuItem(id, item));
+			}
 
-		if (menuItems.length > 0) {
-			contextMenu.showContextMenu(event, menuItems);
-		}
-	}, [fileSystem, openModal, closeModal, contextMenu, setVersion]);
+			if (menuItems.length > 0) {
+				contextMenu.showContextMenu(event, menuItems);
+			}
+		},
+		[fileSystem, openModal, closeModal, contextMenu, setVersion],
+	);
 
 	const handleDragStart = useCallback((event: React.DragEvent, section: string, itemPath: string) => {
 		console.log(`Drag started on ${itemPath} in section ${section}`);
@@ -391,20 +403,23 @@ export const ProjectExplorer: React.FC = () => {
 		event.currentTarget.classList.remove('opacity-50');
 	}, []);
 
-	const handleAddItemsClick = useCallback(async (event: React.MouseEvent, sectionId: number) => {
-		event.preventDefault();
-		event.stopPropagation();
+	const handleAddItemsClick = useCallback(
+		async (event: React.MouseEvent, sectionId: number) => {
+			event.preventDefault();
+			event.stopPropagation();
 
-		const section = sections[sectionId];
-		if (section.id === 'samples') {
-			createSampleFolderDialog();
-		} else {
-			const extensions = sections[sectionId].extensions.join(',');
-			if (await createImportDialog(fileSystem, sections[sectionId].id, extensions)) {
-				setVersion((v) => v + 1);
+			const section = sections[sectionId];
+			if (section.id === 'samples') {
+				createSampleFolderDialog();
+			} else {
+				const extensions = sections[sectionId].extensions.join(',');
+				if (await createImportDialog(fileSystem, sections[sectionId].id, extensions)) {
+					setVersion((v) => v + 1);
+				}
 			}
-		}
-	}, [setVersion, fileSystem, closeModal]);
+		},
+		[setVersion, fileSystem, closeModal],
+	);
 
 	const handleBackupClick = useCallback(() => {
 		// TODO: Implement backup functionality
@@ -413,7 +428,9 @@ export const ProjectExplorer: React.FC = () => {
 
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
-			<div className={`flex-1 overflow-y-auto transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
+			<div
+				className={`flex-1 overflow-y-auto transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+			>
 				{sections.map((section, idx) => (
 					<div key={section.id + section.name}>
 						<div
@@ -469,7 +486,7 @@ export const ProjectExplorer: React.FC = () => {
 			</div>
 			<div className="border-t border-gray-700 bg-gray-900">
 				<button
-					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:outline-none focus:bg-slate-500"
+					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:bg-slate-500 focus:outline-none"
 					onClick={handleBackupClick}
 					title="Create backup of project files"
 				>

@@ -146,7 +146,17 @@ export const createLsdjStore = (
 
 					removeKit: (kitKey) =>
 						set((state) => {
-							state.updateKit(kitKey, { type: "empty" } as ILsdjEmptyKit);
+							const kitContainer = getKit(state, kitKey);
+							if (!kitContainer) {
+								console.error("Kit not found for update:", kitKey);
+								return;
+							}
+
+							state.controller.removeKit(state.systemId, kitContainer.id);
+							const kitres = state.controller.getKit(state.systemId, kitContainer.id);
+							if (kitres) {
+								kitContainer.kit = kitres.kit;
+							}
 						}),
 
 					updateKit: (kitKey, kit) =>
