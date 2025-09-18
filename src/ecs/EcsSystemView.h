@@ -39,8 +39,6 @@ namespace rp {
 			const InputConfig& inputConfig = _project.getInputConfig();
 			auto found = inputConfig.keyboard.find(event.key);
 			if (found != inputConfig.keyboard.end()) {
-				spdlog::info("Key event: {} {}", fw::VirtualKeyUtil::toString(event.key), fw::PadButtonTypeUtil::toString(found->second), event.down);
-
 				_project.getEventNode().trySend("Audio"_hs, PadButtonEvent{
 					.entity = getEntity(),
 					.button = found->second,
@@ -49,17 +47,6 @@ namespace rp {
 
 				return true;
 			}
-
-			/*fw::ButtonType button = mapKeyToButton(event.key);
-			if (button != fw::ButtonType::MAX) {
-				_project.getEventNode().trySend("Audio"_hs, ButtonEvent{
-					.entity = getEntity(),
-					.button = (int)button,
-					.down = event.down
-				});
-
-				return true;
-			}*/
 
 			return false;
 		}

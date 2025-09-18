@@ -271,12 +271,10 @@ namespace rp {
 				spdlog::info(" - {}: {}", type, entry.path.empty() ? "[data]" : entry.path);
 			}
 
-			// Make project path relative to sav or rom if possible
+			// Make project path relative to sav if possible
 
 			if (load.entries.contains("sram") && !load.entries["sram"].path.empty()) {
 				pathCtx.projectPath = load.entries["sram"].path;
-			} else if (load.entries.contains("rom") && !load.entries["rom"].path.empty()) {
-				pathCtx.projectPath = load.entries["rom"].path;
 			} else {
 				pathCtx.projectPath = "";
 			}
@@ -292,7 +290,7 @@ namespace rp {
 			ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
 
 			if (!pathCtx.projectPath.empty()) {
-				saveToFile(registry, pathCtx.projectPath);
+				//saveToFile(registry, pathCtx.projectPath);
 			} else {
 				spdlog::warn("No project path could be determined, not saving project");
 			}

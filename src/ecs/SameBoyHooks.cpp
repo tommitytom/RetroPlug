@@ -56,6 +56,10 @@ namespace rp {
 			}
 		}
 
+		// The following writes out a sav if one doesn't exist.
+		// Deciding not to do this for now since it's perfectly valid to have an unsaved project
+		// with no path decided yet
+		/*
 		const SystemLoadEntry* foundSram = load.findEntry("sram");
 		if (!foundSram || (foundSram && foundSram->path.empty())) {
 			// TODO: Does this rom actually use SRAM? Test with mgb or nanoloop demo
@@ -76,6 +80,7 @@ namespace rp {
 				}
 			}
 		}
+		*/
 	}
 
 	void SameboyHooks::onReplicate(entt::registry& registry) const {
