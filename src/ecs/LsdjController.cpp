@@ -346,6 +346,7 @@ namespace rp {
 	lsdj::Rom LsdjController::getLsdjRom(const SystemStateComponent& systemState) const {
 		const VersionedMemory* romData = systemState.find(MemoryType::Rom);
 		if (romData) {
+			assert(romData->data.size() == lsdj::Rom::ROM_SIZE);
 			return lsdj::Rom(MemoryAccessor(MemoryType::Rom, romData->data.ref(), 0));
 		}
 

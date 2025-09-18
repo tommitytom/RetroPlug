@@ -53,6 +53,7 @@ namespace rp {
 			}
 
 			if (ev.type == MemoryType::MAX) {
+				// Received whole state - split into memory sections if offsets are available
 				stateComp->state = std::move(ev.state);
 				stateComp->stateFetchTimer = STATE_FETCH_INTERVAL;
 				stateComp->lastStateUpdate = _totalTime;
@@ -62,13 +63,17 @@ namespace rp {
 
 					for (size_t i = 0; i < (size_t)MemoryType::MAX; i++) {
 						const MemoryType type = (MemoryType)i;
-						VersionedMemory* memory = stateComp->find(ev.type);
-						if (memory) {
+						VersionedMemory* memory = stateComp->find(type);
+						if (memory && offsets[i].size > 0) {
 							fw::Uint8Buffer slice = stateComp->state.slice(offsets[i].offset, offsets[i].size);
 							if (slice != memory->data) {
 								memory->data.resize(slice.size());
 								memory->data.write(slice);
 								memory->version++;
+
+								if (type == MemoryType::Sram) {
+									getContext().dirty = true;
+								}
 							}
 						}
 					}
@@ -85,6 +90,10 @@ namespace rp {
 					memory->data.resize(ev.state.size());
 					memory->data.write(ev.state);
 					memory->version++;
+
+					if (ev.type == MemoryType::Sram) {
+						getContext().dirty = true;
+					}
 				}
 
 				memory->lastUpdate = _totalTime;
