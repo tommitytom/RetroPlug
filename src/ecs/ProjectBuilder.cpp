@@ -250,7 +250,19 @@ namespace rp {
 		load.entries["rom"] = { .path = paths[romIndex].string() };
 
 		entt::entity system = registry.create();
-		return ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
+		bool valid = ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
+		if (!valid) {
+			return false;
+		}
+
+		if (!pathCtx.projectPath.empty()) {
+			saveToFile(registry, pathCtx.projectPath);
+		} else {
+			spdlog::warn("No project path could be determined, not saving project");
+		}
+
+		return true;
+
 /*
 		if (stateIndex != -1) {
 			// Just load the project

@@ -37,19 +37,19 @@ namespace rp {
 			if (_registry.valid(ev.entity)) {
 				_registry.emplace_or_replace<VideoFrameComponent>(ev.entity, std::move(ev.io->output.video));
 			} else {
-				spdlog::warn("Received SystemIoEvent for invalid entity {}", ev.entity);
+				//spdlog::warn("Received SystemIoEvent for invalid entity {}", ev.entity);
 			}
 		});
 
 		_eventNode.receive<FetchMemoryResponse>([this](FetchMemoryResponse&& ev) {
 			if (!_registry.valid(ev.entity)) {
-				spdlog::warn("Received FetchMemoryResponse for invalid entity {}", ev.entity);
+				//spdlog::warn("Received FetchMemoryResponse for invalid entity {}", ev.entity);
 				return;
 			}
 
 			SystemStateComponent* stateComp = _registry.try_get<SystemStateComponent>(ev.entity);
 			if (!stateComp) {
-				spdlog::warn("Received FetchMemoryResponse for entity {} without SystemStateComponent", ev.entity);
+				//spdlog::warn("Received FetchMemoryResponse for entity {} without SystemStateComponent", ev.entity);
 				return;
 			}
 
