@@ -184,10 +184,7 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 	async function handleFileDrop(paths: string[]) {
 		const DEFAULT_EFFECTS: string[] = ['GainEffect', 'FilterEffect', 'DitherEffect'];
 
-		console.log('Dropped paths:', paths);
-
 		if (paths.length === 1 && paths[0].endsWith('.kit')) {
-			console.log('Patching kit');
 			updateKit(kitKey, { type: "patched", path: paths[0] } as ILsdjPatchedKit);
 			onToggle(true);
 			return;

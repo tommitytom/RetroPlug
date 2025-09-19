@@ -1,33 +1,20 @@
-import { File, FileText, Music, Save, Plus, ChevronDown } from 'lucide-react';
-import { useEffect, useState, useRef } from 'react';
+import { ChevronDown, File, FileText, Music, Save } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useDocument } from '../../contexts/DocumentContext';
-import { useSaveAsDialog } from '../SaveAsDialog';
 import { SystemPanel } from '../../panels/SystemPanel';
 
 export const DocumentDisplay: React.FC = () => {
-	const { currentDocument, markDirty, saveDocument, setCurrentDocument, updateDocument } = useDocument();
-	const { showSaveAsDialog } = useSaveAsDialog();
+	const { currentDocument, markDirty, saveDocument } = useDocument();
 	const [content, setContent] = useState('');
 	const [showSaveDropdown, setShowSaveDropdown] = useState(false);
 	const dropdownRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (currentDocument?.type === 'text') {
-			//setContent(currentDocument.content);
-		}
-	}, [currentDocument]);
-
-	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if ((event.ctrlKey || event.metaKey) && event.key === 's') {
 				event.preventDefault();
-				if (event.shiftKey) {
-					// Ctrl+Shift+S for Save As
-					handleSaveAs();
-				} else {
-					saveDocument();
-				}
+				saveDocument(event.shiftKey); // Ctrl+Shift+S for Save As
 			}
 		};
 
@@ -46,25 +33,6 @@ export const DocumentDisplay: React.FC = () => {
 		};
 	}, [saveDocument]);
 
-	const handleSaveAs = () => {
-		if (!currentDocument) return;
-
-		showSaveAsDialog({
-			documentType: currentDocument.type,
-			defaultFilename: currentDocument.hasFilename ? currentDocument.title : '',
-			onSave: (filename: string, location?: string) => {
-				updateDocument({
-					title: filename,
-					hasFilename: true,
-					filePath: location ? `${location}/${filename}` : filename
-				});
-				// Trigger save with new filename
-				setTimeout(() => saveDocument(), 100);
-			}
-		});
-		setShowSaveDropdown(false);
-	};
-
 	const getDocumentIcon = () => {
 		switch (currentDocument?.type) {
 			case 'text':
@@ -76,18 +44,6 @@ export const DocumentDisplay: React.FC = () => {
 			default:
 				return <File className="h-4 w-4" />;
 		}
-	};
-
-	const createNewDocument = (type: 'text' | 'audio' | 'emulator') => {
-		const newDoc = {
-			id: Date.now().toString(),
-			title: `Untitled ${type}`,
-			type,
-			content: type === 'text' ? '' : null,
-			isDirty: false,
-			hasFilename: false, // New documents don't have filenames yet
-		};
-		setCurrentDocument(newDoc);
 	};
 
 	if (!currentDocument) {
@@ -114,7 +70,7 @@ export const DocumentDisplay: React.FC = () => {
 					<div className="relative" ref={dropdownRef}>
 						<div className="flex">
 							<button
-								onClick={currentDocument.isDirty ? saveDocument : undefined}
+								onClick={currentDocument.isDirty ? () => saveDocument() : undefined}
 								disabled={!currentDocument.isDirty}
 								title={currentDocument.isDirty ? 'Save (Ctrl+S)' : 'No changes to save'}
 								className={`rounded-l p-1 ${
@@ -144,7 +100,10 @@ export const DocumentDisplay: React.FC = () => {
 									Save
 								</button>
 								<button
-									onClick={handleSaveAs}
+									onClick={() => {
+										saveDocument(true);
+										setShowSaveDropdown(false);
+									}}
 									className="w-full px-3 py-1 text-left text-sm text-gray-200 hover:bg-gray-700"
 								>
 									Save As...

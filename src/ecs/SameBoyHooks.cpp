@@ -44,9 +44,15 @@ namespace rp {
 
 			if (type == MemoryType::Rom) {
 				systemState.name = GameboyUtil::getRomName(accessor.getBuffer());
+			} else if (type == MemoryType::Sram) {
+				if (accessor.isValid() && !accessor.getBuffer().empty()) {
+					systemState.saveType = SaveType::Sram;
+				} else {
+					systemState.saveType = SaveType::State;
+				}
 			}
 
-			if (accessor.isValid()) {
+			if (accessor.isValid() && !accessor.getBuffer().empty()) {
 				systemState.memory.push_back(VersionedMemory{
 					.type = type,
 					.data = accessor.getBuffer().clone(),

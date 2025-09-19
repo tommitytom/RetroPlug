@@ -6,6 +6,17 @@ export function getFilenameFromPath(path: string): string {
 	return parts[parts.length - 1];
 }
 
+export function removeExtension(filename: string): string {
+	const lastDotIndex = filename.lastIndexOf('.');
+	if (lastDotIndex === -1) return filename;
+	return filename.substring(0, lastDotIndex);
+}
+
+export function replaceExtension(filename: string, newExtension: string): string {
+	const baseName = removeExtension(filename);
+	return `${baseName}${newExtension}`;
+}
+
 /**
  * Downloads a Uint8Array as a file
  * @param data - The Uint8Array data to download
@@ -135,3 +146,12 @@ export async function openFileCopyDialog(
 		input.click();
 	});
 }
+
+export function formatSavDialogFilePath(filename: string) {
+	if (filename.endsWith('.sav') || filename.endsWith('.state')) {
+		filename = filename.replace(/\.(sav|state)$/i, '.rplg');
+	} else {
+		filename = filename + '.rplg';
+	}
+	return '/savs/' + filename;
+};

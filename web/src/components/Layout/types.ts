@@ -4,7 +4,7 @@ import { ReactNode } from "react";
 export type DocumentType = 'text' | 'audio' | 'emulator' | 'other';
 
 export interface Document {
-	id: string;
+	//id: string;
 	title: string;
 	type: DocumentType;
 	content: any;
@@ -33,7 +33,7 @@ export interface SaveContext {
 	}) => void;
 }
 
-export type SaveHandler = (context: SaveContext) => Promise<SaveResult>;
+export type SaveHandler = (context: SaveContext, forceDialog?: boolean) => Promise<SaveResult>;
 
 export interface TabItem {
 	id: string;

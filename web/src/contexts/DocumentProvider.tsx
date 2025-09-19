@@ -41,16 +41,19 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 		setCurrentDocument(prev => prev ? { ...prev, ...updates } : null);
 	}, []);
 
-	const saveDocument = useCallback(async (): Promise<SaveResult> => {
+	const saveDocument = useCallback(async (forceDialog?: boolean): Promise<SaveResult> => {
 		if (!currentDocument || isSaving) {
 			return { success: false, message: 'No document to save or save in progress' };
 		}
 
 		setIsSaving(true);
 
+		console.log('saveDocument called for', currentDocument.title);
+
 		try {
 			const handler = customSaveHandlers[currentDocument.type];
 			if (!handler) {
+				setIsSaving(false);
 				throw new Error(`No save handler for document type: ${currentDocument.type}`);
 			}
 
@@ -59,12 +62,14 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 				markClean,
 				updateDocument,
 				showSaveAsDialog
-			});
+			}, forceDialog);
 
 			setLastSaveResult(result);
 
 			// Clear the result after 3 seconds
 			setTimeout(() => setLastSaveResult(null), 3000);
+
+			setIsSaving(false);
 
 			return result;
 		} catch (error) {

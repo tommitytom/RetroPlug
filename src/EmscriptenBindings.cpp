@@ -212,6 +212,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("hasProjectPath", +[](RetroPlugProject& project) -> bool {
 			return project.hasProjectPath();
 		})
+		.function("getProjectPath", +[](RetroPlugProject& project) -> std::string {
+			return project.getProjectPath().string();
+		})
 		.function("getSystemMemory", +[](RetroPlugProject& project, uint32 systemId, MemoryType type, AccessType access) -> MemoryAccessor {
 			return project.getSystemMemory(entt::entity(systemId), type, access);
 		})
@@ -346,6 +349,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("getKitVersion", +[](LsdjController& controller, SystemId system, uint32 kitId) -> uint32 {
 			return controller.getKitVersion((entt::entity)system, kitId);
+		})
+		.function("isLsdjLoaded", +[](LsdjController& controller, SystemId system) -> bool {
+			return controller.getComponent((entt::entity)system) != nullptr;
 		})
 	;
 

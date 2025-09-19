@@ -29,16 +29,22 @@ namespace rp {
 		}
 
 		bool onKey(const fw::KeyEvent& event) override {
-			if (event.key == fw::VirtualKey::R) {
+			/*if (event.key == fw::VirtualKey::R) {
 				_project.getEventNode().trySend("Audio"_hs, ResetSystemEntityEvent{
 					.entity = getEntity()
 				});
+
 				return true;
-			}
+			}*/
 
 			const InputConfig& inputConfig = _project.getInputConfig();
 			auto found = inputConfig.keyboard.find(event.key);
 			if (found != inputConfig.keyboard.end()) {
+				// If there is no SRAM, we should probably mark the state as dirty
+				if (!_project.hasSystemMemory(getEntity(), MemoryType::Sram)) {
+					_project.getContext().dirty = true;
+				}
+
 				_project.getEventNode().trySend("Audio"_hs, PadButtonEvent{
 					.entity = getEntity(),
 					.button = found->second,

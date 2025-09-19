@@ -248,9 +248,6 @@ bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint3
 		}
 	}
 
-	//_romName = GameboyUtil::getRomName((const char*)loadConfig.romBuffer->data());
-	//SameBoyUtil::spinMs(gb, 500.0f); // Skip bootrom
-
 	return true;
 }
 

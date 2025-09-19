@@ -105,6 +105,10 @@ export class LsdjController {
 	getKitVersion(systemId: SystemId, kitId: number): number {
 		return this._nativeController.getKitVersion(systemId, kitId);
 	}
+
+	isLsdjLoaded(systemId: SystemId): boolean {
+		return this._nativeController.isLsdjLoaded(systemId);
+	}
 }
 
 // Utility function to play an audio sample using Web Audio API

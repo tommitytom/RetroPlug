@@ -253,6 +253,12 @@ namespace rp {
 		return 0;
 	}
 
+	bool RetroPlugProject::hasSystemMemory(entt::entity entity, MemoryType type) const {
+		if (!_registry.valid(entity)) return false;
+		const SystemStateComponent* state = _registry.try_get<SystemStateComponent>(entity);
+		return state && state->find(type) != nullptr;
+	}
+
 	MemoryAccessor RetroPlugProject::getSystemMemory(entt::entity entity, MemoryType type, AccessType access) {
 		if (!_registry.valid(entity)) {
 			return MemoryAccessor();
@@ -378,6 +384,11 @@ namespace rp {
 			} else {
 				projectName += (projectName.empty() ? "" : " + ") + ("System " + std::to_string((uint32)e));
 			}
+		}
+
+		fs::path projectPath = _registry.ctx().at<ProjectPathContext>().projectPath;
+		if (!projectPath.empty()) {
+			projectName = projectPath.filename().replace_extension("").string() + " | " + (projectName.empty() ? "" : projectName);
 		}
 
 		return projectName;

@@ -16,7 +16,7 @@ export const useSaveAsDialog = () => {
 			onCancel?: () => void;
 		}) => {
 			openModal({
-				title: config.title || `Save ${config.documentType} as...`,
+				title: config.title || `Save project as...`,
 				content: (
 					<SaveAsDialog
 						documentType={config.documentType}

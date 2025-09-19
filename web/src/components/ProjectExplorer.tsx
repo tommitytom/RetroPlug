@@ -6,7 +6,7 @@ import { useRetroPlug } from '../contexts/RetroPlugContext';
 import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
 import type { FileSystemNode } from '../filesystem/types';
 import { useContextMenu } from '../hooks/useContextMenu';
-import { downloadArrayBuffer, getFilenameFromPath, openFileCopyDialog } from '../utils/FileUtil';
+import { downloadArrayBuffer, formatSavDialogFilePath, getFilenameFromPath, openFileCopyDialog, removeExtension, replaceExtension } from '../utils/FileUtil';
 import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
 import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
@@ -123,7 +123,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 				{!hasChildren && <span className="mr-1 w-3" />}
 				<span className="mr-2 text-xs text-white">{node.type === 'directory' ? '▢' : getFileIcon(node.name)}</span>
 				<span className="flex-1">{node.name}</span>
-				{hasChildren && (
+				{node.type === 'directory' && (
 					<button
 						className="rounded-sm px-2 text-sm font-bold text-green-400 transition-colors duration-200 hover:bg-green-600/20 hover:text-green-300"
 						onClick={(event) => onAddItemsClick(event, sectionId, currentPath)}
@@ -189,7 +189,7 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 	return {
 		roms: (await fileSystem.listPath(`/roms`)).children || [],
 		savs:
-			(await fileSystem.listPath(`/savs`, false, '.sav')).children || [],
+			(await fileSystem.listPath(`/savs`, false)).children?.filter((child) => child.name.endsWith('.sav') || child.name.endsWith('.state')) || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 	};
@@ -208,7 +208,7 @@ async function createImportDialog(fileSystem: FileSystemWorkerAPI, path: string,
 
 export const ProjectExplorer: React.FC = () => {
 	const { fileSystem, project } = useRetroPlug();
-	const { setCurrentDocument } = useDocument();
+	const { setCurrentDocument, saveDocument, lastSaveResult } = useDocument();
 	const { openModal, openYesNoCancel, closeModal } = useModal();
 	const { showSaveAsDialog } = useSaveAsDialog();
 	const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(sections.map((s) => s.id)));
@@ -225,7 +225,7 @@ export const ProjectExplorer: React.FC = () => {
 				setTimeout(() => setIsLoaded(true), 100);
 			})
 			.catch(console.error);
-	}, [fileSystem, version]);
+	}, [fileSystem, version, lastSaveResult]);
 
 	const toggleSection = (section: string) => {
 		setExpandedSections((prev) => {
@@ -241,12 +241,10 @@ export const ProjectExplorer: React.FC = () => {
 
 	const handleDoubleClick = useCallback(
 		async (section: string, item: string) => {
-			console.log(`Double clicked on ${item} in section ${section}`);
-
 			if (section === 'savs' || section === 'roms') {
 				function setDocument(name: string, hasFilename: boolean) {
 					setCurrentDocument({
-						id: name,
+						//id: name,
 						title: name,
 						content: project,
 						type: 'emulator',
@@ -257,7 +255,8 @@ export const ProjectExplorer: React.FC = () => {
 
 				async function loadProject() {
 					if (section === 'savs') {
-						const projectFile = item.replace('.sav', '.rplg');
+						const projectFile = replaceExtension(item, '.rplg');
+
 						if (await fileSystem.fileExists(`/savs/${projectFile}`)) {
 							// TODO: Check if the rom exists!
 							project.loadFromFile(`/savs/${projectFile}`);
@@ -292,24 +291,14 @@ export const ProjectExplorer: React.FC = () => {
 						noText: "Don't Save",
 						cancelText: 'Cancel',
 						onYes: () => {
-							if (project.hasProjectPath()) {
-								project.saveToDisk();
-							} else {
-								showSaveAsDialog({
-									documentType: 'emulator',
-									onSave: (filename) => {
-										console.log(`Saving project as: ${filename}.sav`);
-										project.saveToDisk('/savs/' + filename + '.sav');
-										setDocument(filename, true);
-										loadProject();
-										closeModal();
-									},
-									onCancel: () => {
-										closeModal();
-									},
-								})
-							}
-							loadProject();
+							setTimeout(async () => {
+								const result = await saveDocument();
+								if (result.success) {
+									loadProject();
+								} else {
+									console.error(`Error saving project: ${result.message}`);
+								}
+							}, 100);
 						},
 						onNo: () => {
 							loadProject();
@@ -320,7 +309,7 @@ export const ProjectExplorer: React.FC = () => {
 				}
 			}
 		},
-		[fileSystem, project],
+		[fileSystem, project, saveDocument, setCurrentDocument, openModal, closeModal, openYesNoCancel, showSaveAsDialog],
 	);
 
 	function createImportMenuItem(fileSystem: FileSystemWorkerAPI, section: string, extensions: string): MenuItem {
@@ -411,7 +400,9 @@ export const ProjectExplorer: React.FC = () => {
 			}
 
 			if (item) {
-				menuItems.push(createDownloadMenuItem(section, item));
+				if (section !== 'samples' || (section === 'samples' && item.includes('/'))) {
+					menuItems.push(createDownloadMenuItem(section, item));
+				}
 			}
 
 			if (menuItems.length > 0) {
@@ -422,8 +413,6 @@ export const ProjectExplorer: React.FC = () => {
 	);
 
 	const handleDragStart = useCallback((event: React.DragEvent, section: string, itemPath: string) => {
-		console.log(`Drag started on ${itemPath} in section ${section}`);
-
 		if (section !== 'kits' && section !== 'samples') return;
 
 		const filePath = `/${section}/${itemPath}`;
@@ -452,7 +441,7 @@ export const ProjectExplorer: React.FC = () => {
 			let targetPath = `/${section.id}`;
 
 			if (section.id === 'samples') {
-				if (!itemPath) {
+				if (!itemPath || itemPath === 'Samples') {
 					createSampleFolderDialog();
 					return;
 				} else {
@@ -524,7 +513,7 @@ export const ProjectExplorer: React.FC = () => {
 					</div>
 				))}
 			</div>
-			<div className="border-t border-gray-700 bg-gray-900">
+			{/*<div className="border-t border-gray-700 bg-gray-900">
 				<button
 					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:bg-slate-500 focus:outline-none"
 					onClick={handleBackupClick}
@@ -533,7 +522,7 @@ export const ProjectExplorer: React.FC = () => {
 					<span className="text-white">▩</span>
 					<span>Backup</span>
 				</button>
-			</div>
+			</div>*/}
 			<ContextMenu
 				items={contextMenu.items}
 				position={contextMenu.position}

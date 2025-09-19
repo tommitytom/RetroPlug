@@ -32,7 +32,7 @@ DEFAULT_KEY_MAPPINGS[PadButtonType.Left] = VirtualKey.LeftArrow;
 DEFAULT_KEY_MAPPINGS[PadButtonType.Right] = VirtualKey.RightArrow;
 DEFAULT_KEY_MAPPINGS[PadButtonType.A] = VirtualKey.D;
 DEFAULT_KEY_MAPPINGS[PadButtonType.B] = VirtualKey.W;
-DEFAULT_KEY_MAPPINGS[PadButtonType.Select] = VirtualKey.Shift;
+DEFAULT_KEY_MAPPINGS[PadButtonType.Select] = VirtualKey.LeftShift;
 DEFAULT_KEY_MAPPINGS[PadButtonType.Start] = VirtualKey.Enter;
 
 const getKeyDisplayName = (key: VirtualKey): string => {

@@ -66,7 +66,7 @@ namespace rp {
 		RetroPlugProjectContext& projectCtx = targetRegistry.ctx().at<RetroPlugProjectContext>();
 		projectCtx.version++;
 		projectCtx.loading = false;
-		projectCtx.dirty = false;
+		projectCtx.dirty = targetRegistry.ctx().at<ProjectPathContext>().projectPath.empty();
 	}
 
 

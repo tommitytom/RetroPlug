@@ -55,13 +55,10 @@ export const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
 						value={filename}
 						onChange={(e) => setFilename(e.target.value)}
 						onKeyDown={handleKeyDown}
-						placeholder={`Untitled${getFileExtension(documentType)}`}
+						placeholder={`Untitled`}
 						className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
 						autoFocus
 					/>
-					<p className="mt-1 text-xs text-gray-400">
-						File will be saved with {getFileExtension(documentType)} extension
-					</p>
 				</div>
 			</div>
 

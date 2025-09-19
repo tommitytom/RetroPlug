@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { DocumentProvider } from '../../contexts/DocumentProvider';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
@@ -12,46 +12,59 @@ import { ResizablePanel } from './ResizablePanel';
 import { TabView } from './TabView';
 import type { TabItem } from './types';
 import { About } from '../About';
+import { useProject } from '../../hooks/RetroPlugHooks';
 
 export const Layout: React.FC = () => {
-	const { audioContext, module } = useRetroPlug();
+	const { audioContext } = useRetroPlug();
+	const project = useProject();
 	const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
 	const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 	const [leftPanelWidth, setLeftPanelWidth] = useState(350);
 	const [rightPanelWidth, setRightPanelWidth] = useState(650);
 	const [activeLeftTab, setActiveLeftTab] = useState('explorer');
 	const [activeRightTab, setActiveRightTab] = useState('kits');
+	const [rightTabs, setRightTabs] = useState<TabItem[]>([]);
 
 	const leftTabs: TabItem[] = [
 		{
 			id: 'explorer',
 			label: 'Explorer',
-			content: <ProjectExplorer />
+			content: <ProjectExplorer />,
 		},
 		{
 			id: 'settings',
 			label: 'Settings',
-			content: <ProjectSettings />
+			content: <ProjectSettings />,
 		},
 		{
 			id: 'about',
 			label: 'About',
-			content: <About />
-		}
+			content: <About />,
+		},
 	];
 
-	const rightTabs: TabItem[] = [
-		{
-			id: 'kits',
-			label: 'Kits',
-			content: <LsdjRomMemoryEditor />
-		},
-		{
-			id: 'songs',
-			label: 'Songs',
-			content: <LsdjSavMemoryEditor /> // You can replace this with a different component for Songs
+	useEffect(() => {
+		const ids = project.getSystemIds().sort((a, b) => a - b); // Sort system IDs in ascending order
+
+		if (ids.length > 0 && project.lsdj.isLsdjLoaded(ids[0])) {
+			setRightTabs([
+				{
+					id: 'kits',
+					label: 'Kits',
+					content: <LsdjRomMemoryEditor />,
+				},
+				{
+					id: 'songs',
+					label: 'Songs',
+					content: <LsdjSavMemoryEditor />, // You can replace this with a different component for Songs
+				},
+			]);
+			setActiveRightTab('kits');
+		} else {
+			setRightTabs([]);
+			setActiveRightTab('');
 		}
-	];
+	}, [project, setRightTabs, setActiveRightTab]);
 
 	return (
 		<DocumentProvider>
@@ -68,11 +81,7 @@ export const Layout: React.FC = () => {
 						minWidth={180}
 						maxWidth={400}
 					>
-						<TabView
-							tabs={leftTabs}
-							activeTab={activeLeftTab}
-							onTabChange={setActiveLeftTab}
-						/>
+						<TabView tabs={leftTabs} activeTab={activeLeftTab} onTabChange={setActiveLeftTab} />
 					</ResizablePanel>
 
 					{/* Center Document Area */}
@@ -90,17 +99,16 @@ export const Layout: React.FC = () => {
 						minWidth={200}
 						maxWidth={1280}
 					>
-						<TabView
-							tabs={rightTabs}
-							activeTab={activeRightTab}
-							onTabChange={setActiveRightTab}
-						/>
+						<TabView tabs={rightTabs} activeTab={activeRightTab} onTabChange={setActiveRightTab} />
 					</ResizablePanel>
 				</div>
 
 				{/* Status Bar */}
 				<div className="flex h-6 items-center border-t border-gray-700 bg-gray-900 px-2 text-xs">
-					<span className="text-gray-500">RetroPlug 0.5.0 • SameBoy v1.0.0 • {audioContext?.state === 'running' ? `${audioContext.sampleRate} Hz` : 'Audio disabled'}</span>
+					<span className="text-gray-500">
+						RetroPlug 0.5.0 • SameBoy v1.0.0 •{' '}
+						{audioContext?.state === 'running' ? `${audioContext.sampleRate} Hz` : 'Audio disabled'}
+					</span>
 					<div className="flex-1" />
 					<DocumentStatusIndicator />
 				</div>

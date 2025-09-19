@@ -1,7 +1,7 @@
 import { useDocument } from "../../contexts/DocumentContext";
 
 export const DocumentStatusIndicator: React.FC = () => {
-	const { currentDocument, saveDocument, isSaving, lastSaveResult } = useDocument();
+	const { currentDocument, isSaving, lastSaveResult } = useDocument();
 
 	if (!currentDocument) return null;
 

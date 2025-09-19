@@ -202,6 +202,10 @@ export class Project {
 		return this._project.hasProjectPath();
 	}
 
+	getProjectPath(): string {
+		return this._project.getProjectPath();
+	}
+
 	saveToDisk(path: string = ''): void {
 		if (path !== '') {
 			path = '/mount' + path;

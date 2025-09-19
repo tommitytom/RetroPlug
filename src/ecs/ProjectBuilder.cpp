@@ -163,7 +163,7 @@ namespace rp {
 
 		if (!ensureMountPath(pathCtx.mountPath, path)) {
 			spdlog::error("Path {} is not within mount path {}", path.string(), pathCtx.mountPath.string());
-		return false;
+			return false;
 		}
 
 		std::string data = fw::FsUtil::readTextFile(path);
@@ -177,12 +177,21 @@ namespace rp {
 		return deserializeJson(registry, data, pathCtx.projectPath.parent_path());
 	}
 
+	fs::path getAdjacentProject(fs::path path) {
+		return path.replace_extension(".rplg");
+		if (fs::exists(path)) {
+			return path;
+		}
+
+		return "";
+	}
+
 	bool ProjectBuilder::loadFromPaths(entt::registry& registry, PathVector paths) {
 		ProjectPathContext& pathCtx = getPathContext(registry);
 		const HooksContext& hooksCtx = getHooksContext(registry);
 		//const RetroPlugProjectContext& ctx = getContext(registry);
 
-		spdlog::info("Loading project from the following path{}:", paths.size() > 1 ? "s" : "");
+		/*spdlog::info("Loading project from the following path{}:", paths.size() > 1 ? "s" : "");
 		for (const auto& path : paths) {
 			if (ensureMountPath(pathCtx.mountPath, path)) {
 				spdlog::info(" - {}", path.string());
@@ -190,7 +199,7 @@ namespace rp {
 				spdlog::error(" - {} (outside mount path {})", path.string(), pathCtx.mountPath.string());
 				return false;
 			}
-		}
+		}*/
 
 		// Remove non existing paths
 		paths.erase(std::remove_if(paths.begin(), paths.end(), [](const fs::path& path) {
@@ -206,8 +215,44 @@ namespace rp {
 			return false;
 		}
 
+		pathCtx.projectPath.clear();
+		pathCtx.projectRoot.clear();
+
 		const int32 projIndex = indexOfExtension(paths, ".rplg");
 		if (projIndex != -1) {
+			// Just load the project
+			return loadFromFile(registry, paths[0]);
+		}
+
+		const int32 stateIndex = indexOfExtension(paths, ".state");
+		const int32 savIndex = indexOfExtension(paths, ".sav");
+		const int32 romIndex = indexOfExtension(paths, ".gb");
+
+		SystemLoadComponent load;
+
+		if (stateIndex != -1) {
+			fs::path projPath = getAdjacentProject(paths[stateIndex]);
+			if (fs::exists(projPath)) return loadFromFile(registry, projPath);
+			load.entries["state"] = { .path = paths[stateIndex].string() };
+			pathCtx.projectPath = projPath;
+		} else if (savIndex != -1) {
+			fs::path projPath = getAdjacentProject(paths[savIndex]);
+			if (fs::exists(projPath)) return loadFromFile(registry, projPath);
+			load.entries["sram"] = { .path = paths[savIndex].string() };
+			pathCtx.projectPath = projPath;
+		}
+
+		if (romIndex == -1) {
+			spdlog::error("Unable to load: No ROM provided");
+			return false;
+		}
+
+		load.entries["rom"] = { .path = paths[romIndex].string() };
+
+		entt::entity system = registry.create();
+		return ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
+/*
+		if (stateIndex != -1) {
 			// Just load the project
 			return loadFromFile(registry, paths[0]);
 		}
@@ -298,7 +343,7 @@ namespace rp {
 			return true;
 		}
 
-		return false;
+		return false;*/
 	}
 
 	bool ProjectBuilder::handleLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
@@ -361,6 +406,15 @@ namespace rp {
 			if (foundSram != c.entries.end()) {
 				fs::path sramPath = path;
 				foundSram->second.path = sramPath.replace_extension(".sav").string();
+			} else {
+				auto foundState = c.entries.find("state");
+				if (foundState != c.entries.end()) {
+					fs::path statePath = path;
+					foundState->second.path = statePath.replace_extension(".state").string();
+				} else {
+					fs::path statePath = path;
+					c.entries["state"] = { .path = statePath.replace_extension(".state").string() };
+				}
 			}
 		}
 
@@ -379,15 +433,32 @@ namespace rp {
 		spdlog::info("Project saved to file: {}", path.string());
 
 		for (const auto& [e, load, state] : registry.view<SystemLoadComponent, SystemStateComponent>().each()) {
-			auto found = load.entries.find("sram");
-			if (found != load.entries.end() && !found->second.path.empty()) {
-				const VersionedMemory* sram = state.find(MemoryType::Sram);
-				if (sram) {
-					if (!fw::FsUtil::writeFile(found->second.path, sram->data)) {
-						spdlog::error("Failed to write SRAM file: {}", found->second.path);
+			if (state.saveType == SaveType::Sram) {
+				auto found = load.entries.find("sram");
+				if (found != load.entries.end() && !found->second.path.empty()) {
+					const VersionedMemory* sram = state.find(MemoryType::Sram);
+					if (sram) {
+						if (!fw::FsUtil::writeFile(found->second.path, sram->data)) {
+							spdlog::error("Failed to write SRAM file: {}", found->second.path);
+						} else {
+							spdlog::info("Saved SRAM to file: {}", found->second.path);
+						}
 					} else {
-						spdlog::info("Saved SRAM to file: {}", found->second.path);
+						spdlog::warn("Not saving SRAM file, no SRAM data present");
 					}
+				} else {
+					spdlog::warn("Not saving SRAM file, no SRAM path present");
+				}
+			} else {
+				if (state.state.size()) {
+					fs::path statePath = path.replace_extension(".state");
+					if (!fw::FsUtil::writeFile(statePath, state.state)) {
+						spdlog::error("Failed to write state file: {}", statePath.string());
+					} else {
+						spdlog::info("Saved state to file: {}", statePath.string());
+					}
+				} else {
+					spdlog::warn("Not saving state file, no state data present");
 				}
 			}
 		}

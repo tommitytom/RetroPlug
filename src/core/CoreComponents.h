@@ -52,6 +52,11 @@ namespace rp {
 	const f32 STATE_FETCH_INTERVAL = 1.0f;
 	const f32 MEMORY_FETCH_INTERVAL = 1.0f / 60.0f;
 
+	enum class SaveType {
+		Sram,
+		State
+	};
+
 	struct SystemStateComponent {
 		std::string name;
 		std::vector<VersionedMemory> memory;
@@ -60,6 +65,7 @@ namespace rp {
 		CountdownTimer stateFetchTimer = STATE_FETCH_INTERVAL;
 		CountdownTimer memoryFetchTimer = MEMORY_FETCH_INTERVAL;
 		std::optional<SystemStateOffsets> stateOffsets;
+		SaveType saveType = SaveType::Sram;
 
 		VersionedMemory* find(MemoryType type) {
 			auto found = std::find_if(memory.begin(), memory.end(), [type](const VersionedMemory& mem) { return mem.type == type; });

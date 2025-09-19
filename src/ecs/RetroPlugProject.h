@@ -47,6 +47,10 @@ namespace rp {
 			return !_registry.ctx().at<ProjectPathContext>().projectPath.empty();
 		}
 
+		std::filesystem::path getProjectPath() const {
+			return _registry.ctx().at<ProjectPathContext>().projectPath;
+		}
+
 		const InputConfig& getInputConfig() const;
 
 		bool loadFromFile(std::filesystem::path path);
@@ -133,6 +137,8 @@ namespace rp {
 		bool deserialize(const fw::Uint8Buffer& archive, const std::filesystem::path& rootPath);
 
 		bool deserializeJson(std::string_view str, const std::filesystem::path& rootPath);
+
+		bool hasSystemMemory(entt::entity entity, MemoryType type) const;
 
 		uint32 getMemoryVersion(entt::entity entity, MemoryType type) const;
 

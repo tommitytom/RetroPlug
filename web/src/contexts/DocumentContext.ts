@@ -8,7 +8,7 @@ interface DocumentContextType {
 	updateDocument: (updates: Partial<Document>) => void;
 	markDirty: () => void;
 	markClean: () => void;
-	saveDocument: () => Promise<SaveResult>;
+	saveDocument: (forceDialog?: boolean) => Promise<SaveResult>;
 	isSaving: boolean;
 	lastSaveResult: SaveResult | null;
 	registerSaveHandler: (type: DocumentType, handler: SaveHandler) => void;
