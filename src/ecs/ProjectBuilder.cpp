@@ -257,8 +257,6 @@ namespace rp {
 
 		if (!pathCtx.projectPath.empty()) {
 			saveToFile(registry, pathCtx.projectPath);
-		} else {
-			spdlog::warn("No project path could be determined, not saving project");
 		}
 
 		return true;

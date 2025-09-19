@@ -120,7 +120,7 @@ namespace rp {
 
 		std::string data = fw::FsUtil::readTextFile("/mount/config/input.json");
 		if (data.empty()) {
-			spdlog::warn("Failed to read /mount/config/input.json");
+			//spdlog::warn("Failed to read /mount/config/input.json");
 			return;
 		}
 
