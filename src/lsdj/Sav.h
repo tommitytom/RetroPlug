@@ -126,6 +126,11 @@ namespace rp::lsdj {
 		Song() {}
 		Song(lsdj_song_t* song): _song(song) {}
 		Song(uint8* data): _song((lsdj_song_t*)data) {}
+		Song(fw::Uint8Buffer& data) : _song((lsdj_song_t*)data.data()) {}
+
+		bool isValid() const {
+			return _song != nullptr;
+		}
 
 		lsdj_song_t* getRaw() {
 			return _song;

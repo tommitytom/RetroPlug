@@ -627,7 +627,7 @@ namespace rp::lsdj {
 			return move != 0;
 		}
 
-		void render(const Song& song, const Ram& state);
+		void render(const Rom& rom, const Song& song, const Ram& state);
 
 		void renderSong(const Song& song, const Ram& state, uint32 rowOffset = 0);
 
@@ -637,13 +637,13 @@ namespace rp::lsdj {
 
 		void renderChainData(const Chain& chain, const Ram& state, uint8 channel);
 
-		void renderPhrase(const Song& song, const Ram& state, uint8 channel);
+		void renderPhrase(const Rom& rom, const Song& song, const Ram& state, uint8 channel);
 
-		void renderPhraseData(const Phrase& phrase, uint8 playbackOffset);
+		void renderPhraseData(const Rom& rom, const Phrase& phrase, uint8 playbackOffset);
 
-		void renderMode1(const Song& song, const Ram& state);
+		void renderMode1(const Rom& rom, const Song& song, const Ram& state);
 
-		void renderMode2(const Song& song, const Ram& state);
+		void renderMode2(const Rom& rom, const Song& song, const Ram& state);
 
 	private:
 		void renderBase(const Ram& state, uint8 channel, ScreenType screenType = ScreenType::Unknown);

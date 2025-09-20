@@ -8,6 +8,7 @@
 #include "util/GameboyUtil.h"
 #include "foundation/FsUtil.h"
 #include "lsdj/KitUtil.h"
+#include "lsdj/OffsetLookup.h"
 
 namespace rp {
 	std::string LsdjHooks::onGetSystemName(const entt::registry& registry, entt::entity entity) const {
@@ -113,6 +114,18 @@ namespace rp {
 		if (!load.findData("sram")) {
 			lsdj::Sav sav;
 			sav.save(load.entries["sram"].data());
+		}
+
+		MemoryAccessor buffer(MemoryType::Ram, romData->ref(), 0);
+		lsdj::Rom rom(buffer);
+
+		if (rom.isValid()) {
+			lsdj::MemoryOffsets ramOffsets;
+			if (lsdj::OffsetLookup::findOffsets(buffer.getBuffer(), ramOffsets, false)) {
+				lsdjState.ramOffsets = ramOffsets;
+			} else {
+				spdlog::warn("Failed to find ROM offsets");
+			}
 		}
 	}
 

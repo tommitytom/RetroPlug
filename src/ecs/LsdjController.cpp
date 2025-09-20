@@ -62,6 +62,21 @@ namespace rp {
 		return lsdj::Sav();
 	}
 
+	lsdj::Ram LsdjController::getLsdjRam(entt::entity system) {
+		const SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(_registry, system);
+		const LsdjStateComponent* lsdjState = RegistryUtil::tryGet<LsdjStateComponent>(_registry, system);
+
+		if (systemState && lsdjState && lsdjState->ramOffsets.has_value()) {
+			const VersionedMemory* ramData = systemState->find(MemoryType::Ram);
+			if (ramData) {
+				MemoryAccessor accessor(MemoryType::Ram, ramData->data.ref(), 0);
+				return lsdj::Ram(accessor, lsdjState->ramOffsets.value());
+			}
+		}
+
+		return lsdj::Ram();
+	}
+
 	lsdj::Project LsdjController::getLsdjProject(entt::entity system) {
 		SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(_registry, system);
 		if (systemState) {
@@ -72,6 +87,18 @@ namespace rp {
 		}
 
 		return lsdj::Project();
+	}
+
+	lsdj::Song LsdjController::getLsdjWorkingSong(entt::entity system) {
+		SystemStateComponent* systemState = RegistryUtil::tryGet<SystemStateComponent>(_registry, system);
+		if (systemState) {
+			VersionedMemory* savData = systemState->find(MemoryType::Sram);
+			if (savData) {
+				return lsdj::Song(savData->data);
+			}
+		}
+
+		return lsdj::Song();
 	}
 
 	int32 LsdjController::getNextEmptyKit(entt::entity system) {
@@ -289,7 +316,7 @@ namespace rp {
 		if (rom.isValid()) {
 			rom.eachKit([&](lsdj::Kit kit) {
 				const uint32 kitIndex = (uint32)kit.getIndex();
-				const std::string name = std::string(kit.getName());
+				std::string name = std::string(kit.getName());
 
 				auto found = std::find_if(kits.begin(), kits.end(), [&](const LsdjKitComponent& k) { return k.id == kitIndex; });
 				if (found != kits.end()) {

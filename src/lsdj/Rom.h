@@ -348,7 +348,7 @@ namespace rp::lsdj {
 
 		inline constexpr static std::array<uint8, 15> NAME_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 		inline constexpr static std::array<uint8, 20> PALETTE_CHECK = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x48, 0x48 };
-		inline constexpr static std::array<uint8, 16> FONT_CHECK = { 1, 46, 0, 1 };
+		inline constexpr static std::array<uint8, 16> FONT_CHECK = { 0, 0, 0, 0, 0xD0, 0x90, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0xD0, 0x90, 0, 0 };
 		inline constexpr static std::array<uint8, 6> VERSION_CHECK = { 0x4C, 0x53, 0x44, 0x6A, 0x2D, 0x76 };
 
 	public:
@@ -421,9 +421,9 @@ namespace rp::lsdj {
 			int32 version = findOffset(0, VERSION_CHECK, 6);
 			int32 names = findOffset(27, NAME_CHECK, 0);
 			int32 palettes = findOffset(1, PALETTE_CHECK, -((int32)PALETTE_COUNT * (int32)Palette::SIZE));
-			int32 fonts = findOffset(30, FONT_CHECK, 2 + 8 * 16);
+			int32 fonts = findOffset(30, FONT_CHECK, 16);
 
-			if (version == -1 || names == -1 || palettes == -1/* || fonts == -1*/) {
+			if (version == -1 || names == -1 || palettes == -1) {
 				return;
 			}
 
@@ -432,7 +432,9 @@ namespace rp::lsdj {
 			_paletteNames = d + names + 30;
 			_paletteData = d + palettes;
 			_fontNames = d + names - 15;
-			//_fontData = d + fonts;
+			if (fonts != -1) {
+				_fontData = d + fonts;
+			}
 			_valid = true;
 		}
 

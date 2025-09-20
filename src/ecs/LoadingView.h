@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ui/View.h"
 #include "foundation/Constants.h"
+#include "ecs/RootContainer.h"
 
 namespace rp {
-	class LoadingView : public fw::View {
+	class LoadingView : public RootContainer {
 		FwRegisterObject()
 	private:
 		f32 _rotation = 0.0f;

@@ -65,8 +65,10 @@ namespace rp {
 				if (sramAccessor.isValid() && ramAccessor.isValid()) {
 					lsdj::Sav sram(sramAccessor.getBuffer());
 					lsdj::Ram ram(ramAccessor, state.ramOffsets);
+					lsdj::Rom rom;
+					assert(false);
 
-					_ui.renderMode2(sram.getWorkingSong(), ram);
+					_ui.renderMode2(rom, sram.getWorkingSong(), ram);
 				}
 			}
 		}

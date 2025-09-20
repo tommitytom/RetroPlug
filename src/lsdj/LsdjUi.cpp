@@ -10,7 +10,7 @@
 using namespace rp;
 using namespace rp::lsdj;
 
-void Ui::render(const Song& song, const Ram& state) {
+void Ui::render(const Rom& rom, const Song& song, const Ram& state) {
 	switch (state.getScreen()) {
 	case ScreenType::Song:
 		renderSong(song, state);
@@ -19,7 +19,7 @@ void Ui::render(const Song& song, const Ram& state) {
 		renderChain(song, state, 0);
 		break;
 	case ScreenType::Phrase:
-		renderPhrase(song, state, 0);
+		renderPhrase(rom, song, state, 0);
 		break;
 	}
 }
@@ -155,7 +155,7 @@ void formatNote(uint8 note, FontTiles* target) {
 	target[2] = findNumberTile(octave + 3);
 }
 
-void Ui::renderPhraseData(const Phrase& phrase, uint8 playbackOffset) {
+void Ui::renderPhraseData(const Rom& rom, const Phrase& phrase, uint8 playbackOffset) {
 	if (phrase.isValid()) {
 		for (uint32 i = 0; i < 16; ++i) {
 			uint8 step = (uint8)i;
@@ -173,7 +173,6 @@ void Ui::renderPhraseData(const Phrase& phrase, uint8 playbackOffset) {
 			uint32 instrumentOffset = 0;
 			uint32 commandOffset = 3;
 			bool drawn = false;
-			Rom rom;
 
 			if (instrument.isValid()) {
 				if (instrument.getType() == LSDJ_INSTRUMENT_TYPE_KIT) {
@@ -253,7 +252,7 @@ void Ui::renderPhraseData(const Phrase& phrase, uint8 playbackOffset) {
 	}
 }
 
-void Ui::renderPhrase(const Song& song, const Ram& state, uint8 channel) {
+void Ui::renderPhrase(const Rom& rom, const Song& song, const Ram& state, uint8 channel) {
 	renderBase(state, channel, ScreenType::Phrase);
 
 	Chain chain = song.getChain(channel, state.getSongPosition(channel));
@@ -274,7 +273,7 @@ void Ui::renderPhrase(const Song& song, const Ram& state, uint8 channel) {
 	}
 
 	_c.translate(1, 2);
-	renderPhraseData(phrase, state.isChannelActive(channel) ? state.getPhrasePosition(channel) : 0xFF);
+	renderPhraseData(rom, phrase, state.isChannelActive(channel) ? state.getPhrasePosition(channel) : 0xFF);
 	_c.untranslate();
 }
 
@@ -320,17 +319,17 @@ void Ui::renderSong(const Song& song, const Ram& state, uint32 rowOffset) {
 	_c.untranslate();
 }
 
-void Ui::renderMode1(const Song& song, const Ram& state) {
+void Ui::renderMode1(const Rom& rom, const Song& song, const Ram& state) {
 	for (uint32 i = 0; i < 4; ++i) {
 		_c.setTranslation(i, 0);
 		renderChain(song, state, (uint8)i);
 
 		_c.setTranslation(i, 1);
-		renderPhrase(song, state, (uint8)i);
+		renderPhrase(rom, song, state, (uint8)i);
 	}
 }
 
-void Ui::renderMode2(const Song& song, const Ram& state) {
+void Ui::renderMode2(const Rom& rom, const Song& song, const Ram& state) {
 	_c.setTranslation(0, 0);
 
 	uint8 num = 255;
@@ -390,7 +389,11 @@ void Ui::renderMode2(const Song& song, const Ram& state) {
 		_c.text(0, 0, "PHRASE", ColorSets::Normal);
 
 		if (chain.isValid()) {
-			phraseIndex = chain.getPhraseIndex(state.getChainPosition(channel));
+			uint8 chainPos = state.getChainPosition(channel);
+			if (chainPos == 0xFF) {
+				chainPos = 0;
+			}
+			phraseIndex = chain.getPhraseIndex(chainPos);
 			_c.hexNumber(7, 0, phraseIndex, ColorSets::Normal);
 		}
 
@@ -414,12 +417,12 @@ void Ui::renderMode2(const Song& song, const Ram& state) {
 						phraseOffset = phrase.getIndex() == phraseIndex ? state.getPhrasePosition(channel) : 0xFF;
 					}
 
-					renderPhraseData(phrase, phraseOffset);
+					renderPhraseData(rom, phrase, phraseOffset);
 				} else {
-					renderPhraseData(Phrase(), 0xFF);
+					renderPhraseData(rom, Phrase(), 0xFF);
 				}
 			} else {
-				renderPhraseData(Phrase(), 0xFF);
+				renderPhraseData(rom, Phrase(), 0xFF);
 			}
 		}
 	}

@@ -4,6 +4,7 @@
 #include "core/Constants.h"
 
 #include "RetroPlugProject.h"
+#include "ecs/RootContainer.h"
 
 namespace rp {
 	class RetroPlugEcsView final : public fw::View {
@@ -12,6 +13,7 @@ namespace rp {
 	private:
 		static constexpr size_t INVALID_SYSTEM_INDEX = std::numeric_limits<size_t>::max();
 
+		std::shared_ptr<RootContainer> _rootContainer;
 		RetroPlugProject& _project;
 		uint32 _version = 0;
 
@@ -28,6 +30,8 @@ namespace rp {
 		void onRender(fw::Canvas& canvas) override;
 
 		bool onKey(const fw::KeyEvent& event) override;
+
+		void setRootContainer(const std::shared_ptr<RootContainer>& container);
 
 	private:
 		void rebuildUi();

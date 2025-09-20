@@ -15,6 +15,10 @@
 #include "ecs/TaskBase.h"
 
 namespace rp {
+	struct ErrorComponent {
+		std::string error;
+	};
+
 	struct SystemIoEvent {
 		entt::entity entity;
 		SystemIoPtr io;

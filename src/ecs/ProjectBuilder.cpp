@@ -360,11 +360,30 @@ namespace rp {
 	bool ProjectBuilder::handleLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, entt::id_type systemType) {
 		const HooksContext& ctx = getHooksContext(registry);
 		const ProjectPathContext& pathCtx = getPathContext(registry);
+		const ErrorComponent* error = nullptr;
 
 		resolveEntries(load, pathCtx.projectRoot);
+
 		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onBeforeLoad(registry, entity, load); });
+		error = registry.try_get<ErrorComponent>(entity);
+		if (error) {
+			spdlog::error("Failed onBeforeLoad hooks for entity {}: {}", (uint32)entity, error->error);
+			return false;
+		}
+
 		eachHook(systemType, ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onLoad(registry, entity, load); });
+		error = registry.try_get<ErrorComponent>(entity);
+		if (error) {
+			spdlog::error("Failed onLoad hooks for entity {}", (uint32)entity, error->error);
+			return false;
+		}
+
 		eachHook(systemType, ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onAfterLoad(registry, entity, load); });
+		error = registry.try_get<ErrorComponent>(entity);
+		if (error) {
+			spdlog::error("Failed onAfterLoad hooks for entity {}", (uint32)entity, error->error);
+			return false;
+		}
 
 		return true;
 	}

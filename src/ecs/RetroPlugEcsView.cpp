@@ -12,7 +12,7 @@
 #include "ecs/EcsSystemView.h"
 #include "ecs/LoadingView.h"
 #include "ecs/TileGrid.h"
-//#include "ecs/LsdjInstance.h"
+#include "ecs/LsdjHdPlayerEcs.h"
 
 namespace rp {
 	RetroPlugEcsView::RetroPlugEcsView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
@@ -21,7 +21,7 @@ namespace rp {
 	}
 
 	void RetroPlugEcsView::onInitialize() {
-		setScale(3.0f);
+		setScale(2.0f);
 		fw::ViewLayout& layout = getLayout();
 		layout.setFlexDirection(fw::FlexDirection::Row);
 		layout.setFlexWrap(fw::FlexWrap::Wrap);
@@ -46,9 +46,23 @@ namespace rp {
 		_project.onUpdate(deltaTime);
 
 		if (_project.getVersion() != _version) {
+			spdlog::info(_project.getContext().loading);
 			rebuildUi();
 			_version = _project.getVersion();
 		}
+
+		fw::DimensionF dimensions{
+			160.0f,
+			144.0f
+		};
+
+		if (_rootContainer) {
+			dimensions = _rootContainer->getDimensionsF();
+		}
+
+		dimensions *= getScale();
+
+		getLayout().setDimensions(fw::Dimension(dimensions));
 	}
 
 	void RetroPlugEcsView::onRender(fw::Canvas& canvas) {
@@ -63,32 +77,34 @@ namespace rp {
 		projectName += fmt::format("RetroPlug v{}", RP_VERSION);
 		setName(projectName);
 
-		bool loadScreenVisible = getChildCount() == 1 && getChild(0)->isType<LoadingView>();
+		bool loadScreenVisible = _rootContainer && _rootContainer->isType<LoadingView>();
 		bool projectLoading = _project.getContext().loading;
 
 		if (loadScreenVisible != projectLoading) {
 			removeChildren();
 
 			if (projectLoading) {
-				addChild<LoadingView>("Loading Screen");
+				_rootContainer = addChild<LoadingView>("Loading Screen");
+			} else if (loadScreenVisible) {
+				_rootContainer->remove();
+				_rootContainer = nullptr;
 			}
 
 			loadScreenVisible = projectLoading;
 		}
 
 		const size_t systemCount = _project.getRegistry().view<SystemComponent>().size();
-		if (getChildCount() == 0 && systemCount > 0) {
-			addChild(std::make_shared<TileGrid>(_project));
+		if (!_rootContainer && systemCount > 0) {
+			_rootContainer = addChild(std::make_shared<TileGrid>(_project));
 		}
+	}
 
-		fw::DimensionF dimensions{
-			160.0f,
-			144.0f
-		};
-
-		dimensions *= getScale();
-
-		getLayout().setDimensions(fw::Dimension(dimensions));
+	void RetroPlugEcsView::setRootContainer(const std::shared_ptr<RootContainer>& container) {
+		_rootContainer = container;
+		this->removeChildren();
+		if (_rootContainer) {
+			this->addChild(_rootContainer);
+		}
 	}
 
 	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
@@ -96,16 +112,25 @@ namespace rp {
 			//_project.saveToFile("C:\\retro\\test.rplg");
 		}
 
+		auto systemIds = _project.getSystemIds();
+		if (event.down && event.key == fw::VirtualKey::H && systemIds.size() > 0) {
+			if (_rootContainer) {
+				_rootContainer->remove();
+			}
+
+			_rootContainer = addChild(std::make_unique<LsdjHdPlayerEcs>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayerEcs>();
+		}
+
 		if (event.down && event.key == fw::VirtualKey::F6) {
 			//_project.deserialize(archive);
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
-			_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gb", "C:\\retro\\lsdj942bitbrigade_1.sav" });
+			//_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gbc", "C:\\retro\\lsdj942bitbrigade_1.sav" });
 
 			//_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
 
-			//_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+			_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
 
 
 			/*

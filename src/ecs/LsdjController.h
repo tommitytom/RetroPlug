@@ -30,9 +30,17 @@ namespace rp {
 
 		void onUpdate(f32 deltaTime);
 
+		entt::registry& getRegistry() { return _registry; }
+
+		const entt::registry& getRegistry() const { return _registry; }
+
 		lsdj::Sav getLsdjSav(entt::entity system);
 
+		lsdj::Ram getLsdjRam(entt::entity system);
+
 		lsdj::Project getLsdjProject(entt::entity system);
+
+		lsdj::Song getLsdjWorkingSong(entt::entity system);
 
 		int32 getNextEmptyKit(entt::entity system);
 

@@ -3,11 +3,12 @@
 #include "ui/View.h"
 #include "ecs/RetroPlugProject.h"
 #include "ecs/EcsSystemView.h"
+#include "ecs/RootContainer.h"
 
 namespace rp {
 	constexpr size_t INVALID_TILE_INDEX = -1;
 
-	class TileGrid : public fw::View {
+	class TileGrid : public RootContainer {
 		FwRegisterObject()
 	private:
 		RetroPlugProject& _project;
@@ -75,6 +76,13 @@ namespace rp {
 					tile->setAlpha(0.5f);
 				}
 			}
+
+			fw::DimensionF dimensions{
+				160.0f * (f32)std::max((int32)getChildCount(), 1),
+				144.0f
+			};
+
+			getLayout().setDimensions(fw::Dimension(dimensions));
 		}
 
 		void onRender(fw::Canvas& canvas) override {
@@ -106,16 +114,6 @@ namespace rp {
 			}
 
 			_selectedTileEntity = selectedTileEntity;
-
-			fw::DimensionF dimensions{
-				160.0f * (f32)std::max((int32)getChildCount(), 1),
-				144.0f
-			};
-
-			dimensions *= getScale();
-
-			getLayout().setDimensions(fw::Dimension(dimensions));
-
 			_version = _project.getVersion();
 		}
 	};

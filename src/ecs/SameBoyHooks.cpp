@@ -8,6 +8,7 @@
 #include "ecs/RegistryUtil.h"
 #include "util/GameboyUtil.h"
 #include "foundation/FsUtil.h"
+#include "ecs/RetroPlugComponents.h"
 
 namespace rp {
 	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -22,7 +23,8 @@ namespace rp {
 		state.state.reset(new SameBoyState());
 
 		if (!SameBoyUtil::setup(system, *state.state, 11050, load)) {
-			spdlog::error("Failed to setup SameBoy instance");
+			registry.remove<SameBoyStateComponent>(entity);
+			registry.emplace<ErrorComponent>(entity, "Failed to setup SameBoy instance");
 			return;
 		}
 

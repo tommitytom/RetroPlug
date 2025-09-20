@@ -23,7 +23,7 @@ namespace rp {
 #ifdef FW_PLATFORM_WEB
 			return;
 #endif
-			_currentKit = 0;
+			//_currentKit = 0;
 			return;
 
 			LsdjEditableKit kit{};
@@ -79,6 +79,14 @@ namespace rp {
 				}
 			};
 			*/
+		}
+
+		bool onKey(const fw::KeyEvent& event) override {
+			if (event.down && event.key == fw::VirtualKey::H) {
+				
+			}
+
+			return false;
 		}
 
 		void onUpdate(f32 delta) override {
