@@ -23,8 +23,8 @@ namespace rp {
 #ifdef FW_PLATFORM_WEB
 			return;
 #endif
-			//_currentKit = 0;
-			//return;
+			_currentKit = 0;
+			return;
 
 			LsdjEditableKit kit{};
 
@@ -86,6 +86,9 @@ namespace rp {
 
 			lsdj::Rom rom = _lsdj.getLsdjRom(_entity);
 			fw::Uint8Buffer kitData = rom.getKitSampleData(_currentKit, 0);
+
+			std::vector<LsdjKitComponent> kits;
+			_lsdj.getKits(_entity, kits);
 
 			rom.eachKit([&](lsdj::Kit kit) {
 				const uint32 kitIndex = (uint32)kit.getIndex();

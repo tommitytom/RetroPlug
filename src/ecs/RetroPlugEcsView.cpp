@@ -29,14 +29,17 @@ namespace rp {
 	}
 
 	bool RetroPlugEcsView::onDrop(const std::vector<std::string>& paths) {
+#ifndef FW_PLATFORM_WEB
 		std::vector<std::filesystem::path> fsPaths;
 		for (const std::string& path : paths) {
 			fsPaths.push_back(path);
 		}
 
-		//_project.loadFromPaths(fsPaths);
-
+		_project.loadFromPaths(fsPaths);
 		return true;
+#endif
+
+		return false;
 	}
 
 	void RetroPlugEcsView::onUpdate(f32 deltaTime) {
@@ -98,7 +101,7 @@ namespace rp {
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
-			//_project.loadFromPathsAsync({ "C:\\retro\\lsdjtest.gb", "C:\\retro\\songs\\STEPxxx.lsdsng" });
+			_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gb", "C:\\retro\\lsdj942bitbrigade_1.sav" });
 
 			//_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
 

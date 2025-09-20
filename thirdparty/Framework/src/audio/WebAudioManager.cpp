@@ -5,14 +5,22 @@
 #include <emscripten.h>
 #include <emscripten/em_math.h>
 #include <emscripten/webaudio.h>
+#include "foundation/EmscriptenUtil.h"
 
 uint8_t audioThreadStack[4096];
+
+bool g_isActive = false;
 
 EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       int numOutputs, AudioSampleFrame *outputs,
                       int numParams, const AudioParamFrame *params,
                       void *userData)
 {
+	if (!g_isActive) {
+		fw::EmscriptenUtil::doLog("Audio thread active");
+		g_isActive = true;
+	}
+
 	/*for(int i = 0; i < numOutputs; ++i) {
 		for(int j = 0; j < 128*outputs[i].numberOfChannels; ++j) {
 			outputs[i].data[j] = emscripten_random() * 0.2 - 0.1; // Warning: scale down audio volume by factor of 0.2, raw noise can be really loud otherwise

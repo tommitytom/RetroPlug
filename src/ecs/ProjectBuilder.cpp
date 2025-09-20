@@ -224,9 +224,10 @@ namespace rp {
 			return loadFromFile(registry, paths[0]);
 		}
 
-		const int32 stateIndex = indexOfExtension(paths, ".state");
+	const int32 stateIndex = indexOfExtension(paths, ".state");
 		const int32 savIndex = indexOfExtension(paths, ".sav");
-		const int32 romIndex = indexOfExtension(paths, ".gb");
+		int32 romIndex = indexOfExtension(paths, ".gb");
+		if (romIndex == -1) romIndex = indexOfExtension(paths, ".gbc");
 
 		SystemLoadComponent load;
 

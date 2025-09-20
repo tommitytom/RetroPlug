@@ -87,8 +87,8 @@ export class RetroPlugApplication {
 				if (this._runner && this._runner.isFileSystemReady()) {
 					console.log('File system is ready');
 					this._nativeProject?.loadConfigs();
-					resolve();
 					clearInterval(interval);
+					resolve();
 				}
 			}, 100);
 		});
