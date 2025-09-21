@@ -29,7 +29,7 @@ namespace fw::app {
 
 		GLFWwindow* getWindow() const { return _window; }
 
-		void makeCurrent();
+		void makeCurrent() override;
 
 		void setDimensions(Dimension dimensions) override;
 
