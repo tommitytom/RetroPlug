@@ -11,19 +11,25 @@ namespace fw::app {
 	private:
 		std::string _canvasId;
 		GLFWwindow* _window = nullptr;
+		GLFWwindow* _share = nullptr;
 		Point _lastMousePosition;
 		Dimension _dimensions;
 
 		GLFWcursor* _cursor = nullptr;
 
 	public:
-		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId)
+		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId, GLFWwindow* share)
 			: Window(resourceManager, fontManager, view, id),
 			_dimensions(view->getDimensions()),
-			_canvasId(canvasId)
+			_canvasId(canvasId),
+			_share(share)
 		{}
 
 		~GlfwNativeWindow();
+
+		GLFWwindow* getWindow() const { return _window; }
+
+		void makeCurrent();
 
 		void setDimensions(Dimension dimensions) override;
 
@@ -34,6 +40,8 @@ namespace fw::app {
 		void onCreate() override;
 
 		void onUpdate(f32 delta) override;
+
+		void onRender(fw::Canvas& canvas) override;
 
 		void onCleanup() override;
 
@@ -82,7 +90,12 @@ namespace fw::app {
 		void update(std::vector<WindowPtr>& created) override;
 
 		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) override {
-			WindowPtr window = std::make_shared<GlfwNativeWindow>(_resourceManager.get(), _fontManager.get(), view, std::numeric_limits<uint32>::max(), canvasId);
+			GLFWwindow* share = nullptr;
+			if (getWindows().size()) {
+				share = std::static_pointer_cast<GlfwNativeWindow>(getWindows().at(0))->getWindow();
+			}
+
+			WindowPtr window = std::make_shared<GlfwNativeWindow>(_resourceManager.get(), _fontManager.get(), view, std::numeric_limits<uint32>::max(), canvasId, share);
 			addWindow(window);
 
 			_pollInput = true;

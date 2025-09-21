@@ -479,12 +479,14 @@ void Canvas::writeText(PointF pos, std::string_view text, const Color4F& color) 
 	checkSurface(RenderPrimitive::Triangles, font.getTexture());
 	ftgl::texture_font_t* textureFont = font.getTextureFont();
 
-	uint32 agbr = toUint32Abgr(color);
+	const uint32 agbr = toUint32Abgr(color);
+	const char spaceChar = ' ';
+	const ftgl::texture_glyph_t* spaceGlyph = ftgl::texture_font_get_glyph(textureFont, &spaceChar);
 
 	pos = _transform * pos;
 	
 	for (size_t i = 0; i < text.size(); ++i) {
-		ftgl::texture_glyph_t* glyph = ftgl::texture_font_get_glyph(textureFont, text.data() + i);
+		const ftgl::texture_glyph_t* glyph = ftgl::texture_font_find_glyph(textureFont, text.data() + i);
 
 		if (glyph) {
 			if (i > 0) {
@@ -517,7 +519,8 @@ void Canvas::writeText(PointF pos, std::string_view text, const Color4F& color) 
 			getTopSurface().indexCount += 6;
 
 			pos.x += glyph->advance_x;
+		} else if (spaceGlyph) {
+			pos.x += spaceGlyph->advance_x;
 		}
 	}
 }
-

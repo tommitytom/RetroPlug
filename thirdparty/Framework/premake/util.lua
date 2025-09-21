@@ -35,7 +35,7 @@ function util.setupWorkspace()
 	characterset "MBCS"
 	cppdialect "c++20"
 	vectorextensions "SSE2"
-	editAndContinue "off"
+	editAndContinue "on"
 
 	filter "platforms:x86"
 		architecture "x86"
@@ -139,9 +139,10 @@ function util.setupWorkspace()
 end
 
 function util.liveppCompat()
-	filter { "action:vs*" }
+	--[[filter { "action:vs*" }
 		editAndContinue "off"
 		symbols "Full"
+		]]
 	filter {}
 end
 

@@ -38,6 +38,8 @@ namespace fw::app {
 
 		virtual void onCreate() {}
 
+		virtual void makeCurrent() {}
+
 		virtual void onInitialize() {
 			_viewManager->addChild(_view);
 			_view->focus();

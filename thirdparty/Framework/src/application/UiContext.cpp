@@ -7,7 +7,7 @@
 
 namespace fw::app {
 	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager) :
-		_resourceManager(windowManager->getResourceManager()), 
+		_resourceManager(windowManager->getResourceManager()),
 		_fontManager(windowManager->getFontManager())
 	{
 		_windowManager = std::move(windowManager);
@@ -20,7 +20,7 @@ namespace fw::app {
 
 		_renderContext->cleanup();
 		_mainWindow->onCleanup();
-		
+
 		_defaultFont = nullptr;
 		_defaultTexture = nullptr;
 		_defaultProgram = nullptr;
@@ -30,7 +30,7 @@ namespace fw::app {
 		_resourceManager->cleanup();
 		_resourceManager = nullptr;
 		_renderContext = nullptr;
-		
+
 		_windowManager = nullptr;
 	}
 
@@ -39,6 +39,52 @@ namespace fw::app {
 			ViewManagerPtr vm = _mainWindow->getViewManager();
 			vm->onHotReload();
 		}
+	}
+
+	WindowPtr UiContext::setup(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) {
+		WindowPtr window = _windowManager->createWindow(view, parent, canvasId);
+		initRenderContext(window);
+
+		ViewManagerPtr vm = window->getViewManager();
+		vm->setResourceManager(_resourceManager.get(), _fontManager.get());
+		vm->createState(entt::forward_as_any(*_windowManager));
+
+		if (!_mainWindow) {
+			_mainWindow = window;
+		}
+
+		return window;
+	}
+
+	WindowPtr UiContext::createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) {
+		WindowPtr window = _windowManager->createWindow(view, parent, canvasId);
+
+		ViewManagerPtr vm = window->getViewManager();
+		vm->setResourceManager(_resourceManager.get(), _fontManager.get());
+		vm->createState(entt::forward_as_any(*_windowManager));
+
+		if (!_mainWindow) {
+			_mainWindow = window;
+		}
+
+		return window;
+	}
+
+	WindowPtr UiContext::setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
+		WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, _fontManager, view, std::numeric_limits<uint32>::max());
+		_windowManager->addWindow(window);
+
+		initRenderContext(window);
+
+		ViewManagerPtr vm = window->getViewManager();
+		vm->setResourceManager(_resourceManager.get(), _fontManager.get());
+		vm->createState(entt::forward_as_any(*_windowManager));
+
+		if (!_mainWindow) {
+			_mainWindow = window;
+		}
+
+		return window;
 	}
 
 	bool UiContext::runFrame(f32 deltaTime) {
@@ -62,11 +108,17 @@ namespace fw::app {
 				WindowPtr w = *it;
 
 				if (!w->shouldClose()) {
+					w->makeCurrent();
+
+					fw::ViewManager* vm = w->getViewManager().get();
 					Canvas& canvas = w->getCanvas();
 					canvas.setDefaults(_defaultTexture, _defaultProgram, _defaultFont);
-					canvas.setDimensions(w->getViewManager()->getDimensions(), 1.0f);
+					canvas.setDimensions(vm->getDimensions(), 1.0f);
 
-					w->getViewManager()->setResourceManager(_resourceManager.get(), _fontManager.get());
+					vm->setResourceManager(_resourceManager.get(), _fontManager.get());
+					if (!vm->tryGetState<WindowManager>()) {
+						vm->createState(entt::forward_as_any(*_windowManager));
+					}
 
 					w->onUpdate(deltaTime);
 
@@ -92,7 +144,7 @@ namespace fw::app {
 
 	void UiContext::initRenderContext(WindowPtr window) {
 		_renderContext->initialize(window->getNativeHandle(), window->getViewManager()->getDimensions());
-		
+
 		_resourceManager->addProvider<Font, FontProvider>();
 		_resourceManager->addProvider<TextureAtlas, TextureAtlasProvider>();
 		_resourceManager->addProvider<FontFace>(std::make_unique<FtglFontFaceProvider>(*_resourceManager));

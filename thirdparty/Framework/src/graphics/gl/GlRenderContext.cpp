@@ -8,7 +8,7 @@
 #include <glad/gl.h>
 #endif
 
-//#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 
 #include "foundation/ResourceManager.h"
 
@@ -107,6 +107,14 @@ namespace fw {
 		}
 		_frameBuffers.clear();*/
 
+		// Clean up per-context VAOs
+		for (const ContextVAO& contextVAO : _contextVAOs) {
+			// Note: We should make each context current before deleting its VAO,
+			// but since we're shutting down, we'll just delete them all
+			glDeleteVertexArrays(1, &contextVAO.vao);
+		}
+		_contextVAOs.clear();
+
 		if (_arrayBuffer != 0) {
 			glDeleteVertexArrays(1, &_arrayBuffer);
 			glDeleteBuffers(1, &_vertexBuffer);
@@ -141,6 +149,43 @@ namespace fw {
 		return GL_INVALID_ENUM;
 	}
 
+	void GlRenderContext::ensureVAOSetup() {
+		// Get the current OpenGL context to use as an identifier
+		// In a multi-window setup, each window has its own context
+		void* currentContext = glfwGetCurrentContext();
+
+		// Check if we already have a VAO for this context
+		for (const ContextVAO& contextVAO : _contextVAOs) {
+			if (contextVAO.window == currentContext) {
+				// VAO already exists for this context, just bind it
+				glBindVertexArray(contextVAO.vao);
+				return;
+			}
+		}
+
+		// VAO doesn't exist for this context, create a new one
+		GLuint newVAO;
+		glGenVertexArrays(1, &newVAO);
+		glBindVertexArray(newVAO);
+
+		// Bind the shared buffers (these ARE shared between contexts)
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _indexBuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
+
+		// Set up vertex attributes (this needs to be done per context)
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(CanvasVertex), (void*)offsetof(CanvasVertex, pos));
+		glEnableVertexAttribArray(0);
+
+		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(CanvasVertex), (void*)offsetof(CanvasVertex, abgr));
+		glEnableVertexAttribArray(1);
+
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_TRUE, sizeof(CanvasVertex), (void*)offsetof(CanvasVertex, uv));
+		glEnableVertexAttribArray(2);
+
+		// Cache the VAO for this context
+		_contextVAOs.push_back({currentContext, newVAO});
+	}
+
 	void GlRenderContext::renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) {
 		const fw::CanvasGeometry& geom = canvas.getGeometry();
 		uint32 nextViewOffset = _viewOffset;
@@ -158,18 +203,21 @@ namespace fw {
 			frameBuffer = acquireFrameBuffer(window, canvas.getDimensions());
 		}*/
 
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+		// Ensure VAO is set up for the current context (VAOs are not shared between contexts)
+		ensureVAOSetup();
+
 		if (geom.vertices.size()) {
 			const uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
 			const uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
 
-			glBindVertexArray(_arrayBuffer);
-
+			// The VAO is already set up and bound by ensureVAOSetup()
+			// Just need to bind the buffers for data upload
 			glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
 
 			if (vertSize <= _vertexBufferSize) {
@@ -231,8 +279,7 @@ namespace fw {
 					glUniform1i(uniforms.textureUniform, 0);
 					glUniformMatrix4fv(uniforms.projUniform, 1, GL_FALSE, projMtx);
 
-					glBindVertexArray(_arrayBuffer);
-
+					// VAO is already bound from ensureVAOSetup()
 					glDrawElements(primitive, (GLsizei)surface.indexCount, GL_UNSIGNED_INT, (void*)(surface.indexOffset * sizeof(uint32)));
 
 					nextViewOffset = batchViewId + 1;

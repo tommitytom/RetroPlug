@@ -201,7 +201,10 @@ void GlfwNativeWindow::onCreate() {
 	#endif
 
 	Dimension dimensions = vm->getDimensions();
-	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, NULL);
+	if (dimensions == Dimension::zero) {
+		dimensions = { 100, 100 };
+	}
+	_window = glfwCreateWindow(dimensions.w, dimensions.h, vm->getName().data(), NULL, _share);
 	assert(_window);
 
 	glfwMakeContextCurrent(_window);
@@ -239,6 +242,10 @@ void GlfwNativeWindow::onFrame() {
 	glfwSwapBuffers(_window);
 }
 
+void GlfwNativeWindow::makeCurrent() {
+	glfwMakeContextCurrent(_window);
+}
+
 void GlfwNativeWindow::setDimensions(Dimension dimensions) {
 	_dimensions = dimensions;
 }
@@ -247,6 +254,8 @@ DimensionF lastContentScale;
 
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	const ViewManagerPtr& vm = getViewManager();
+
+	glfwMakeContextCurrent(_window);
 
 	DimensionF contentScale;
 	glfwGetWindowContentScale(_window, &contentScale.w, &contentScale.h);
@@ -305,6 +314,18 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 
 		shared.cursorChanged = false;
 	}
+}
+
+void GlfwNativeWindow::onRender(fw::Canvas& canvas) {
+	glfwMakeContextCurrent(_window);
+
+    // Add error checking
+    GLFWwindow* current = glfwGetCurrentContext();
+    if (current != _window) {
+        spdlog::error("Failed to make window context current!");
+    }
+
+	getViewManager()->onRender(canvas);
 }
 
 bool GlfwNativeWindow::shouldClose() {

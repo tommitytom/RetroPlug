@@ -1,5 +1,11 @@
 #pragma once
 
+#ifdef FW_PLATFORM_WEB
+#include <glad/gles2.h>
+#else
+#include <glad/gl.h>
+#endif
+
 #include "foundation/Math.h"
 #include "graphics/Canvas.h"
 #include "graphics/RenderContext.h"
@@ -24,7 +30,13 @@ namespace fw {
 			int32 resolutionUniform = -1;
 		};
 
+		struct ContextVAO {
+			NativeWindowHandle window;
+			GLuint vao;
+		};
+
 		std::vector<std::pair<uint32, ShaderUniforms>> _shaderUniforms;
+		std::vector<ContextVAO> _contextVAOs;
 
 		NativeWindowHandle _mainWindow = nullptr;
 		Dimension _resolution;
@@ -67,5 +79,7 @@ namespace fw {
 		uint32 acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);
 
 		const ShaderUniforms& getShaderUniforms(uint32 programHandle);
+
+		void ensureVAOSetup();
 	};
 }
