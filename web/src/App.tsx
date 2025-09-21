@@ -1,5 +1,6 @@
 import React, { ReactNode } from 'react';
 
+import { BrowserCompatibility } from './components/BrowserCompatibility';
 import { Layout } from './components/Layout/Layout';
 import { useRetroPlug } from './contexts/RetroPlugContext';
 import { RetroPlugProvider } from './contexts/RetroPlugProvider';
@@ -26,13 +27,15 @@ const LoadWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
 
 function App() {
 	return (
-		<RetroPlugProvider>
-			<LoadWrapper>
-				<ModalProvider>
-					<Layout />
-				</ModalProvider>
-			</LoadWrapper>
-		</RetroPlugProvider>
+		<BrowserCompatibility>
+			<RetroPlugProvider>
+				<LoadWrapper>
+					<ModalProvider>
+						<Layout />
+					</ModalProvider>
+				</LoadWrapper>
+			</RetroPlugProvider>
+		</BrowserCompatibility>
 	);
 }
 
