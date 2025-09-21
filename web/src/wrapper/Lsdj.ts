@@ -93,7 +93,7 @@ export class LsdjController {
 			kits.splice(lastEmpty, deleteCount);
 		}
 
-		console.log(JSON.stringify(kits, null, 4));
+		//console.log(JSON.stringify(kits, null, 4));
 
 		return kits;
 	}
@@ -108,6 +108,10 @@ export class LsdjController {
 
 	isLsdjLoaded(systemId: SystemId): boolean {
 		return this._nativeController.isLsdjLoaded(systemId);
+	}
+
+	invalidateSampleCacheItem(path: string): void {
+		this._nativeController.invalidateSampleCacheItem('/mount' + path);
 	}
 }
 

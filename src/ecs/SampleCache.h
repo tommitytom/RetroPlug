@@ -27,5 +27,7 @@ namespace rp {
 		}
 
 		SampleData* getOrLoadSample(const std::string& name);
+
+		void erase(const std::string& path);
 	};
 }

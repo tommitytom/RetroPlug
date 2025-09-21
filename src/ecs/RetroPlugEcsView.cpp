@@ -21,7 +21,7 @@ namespace rp {
 	}
 
 	void RetroPlugEcsView::onInitialize() {
-		setScale(2.0f);
+		setScale(3.0f);
 		fw::ViewLayout& layout = getLayout();
 		layout.setFlexDirection(fw::FlexDirection::Row);
 		layout.setFlexWrap(fw::FlexWrap::Wrap);
@@ -112,14 +112,14 @@ namespace rp {
 			//_project.saveToFile("C:\\retro\\test.rplg");
 		}
 
-		auto systemIds = _project.getSystemIds();
+		/*auto systemIds = _project.getSystemIds();
 		if (event.down && event.key == fw::VirtualKey::H && systemIds.size() > 0) {
 			if (_rootContainer) {
 				_rootContainer->remove();
 			}
 
 			_rootContainer = addChild(std::make_unique<LsdjHdPlayerEcs>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayerEcs>();
-		}
+		}*/
 
 		if (event.down && event.key == fw::VirtualKey::F6) {
 			//_project.deserialize(archive);

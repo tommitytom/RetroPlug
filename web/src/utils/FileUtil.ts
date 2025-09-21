@@ -114,8 +114,8 @@ export async function openFileCopyDialog(
 	targetPath: string,
 	accept?: string,
 	multiple = true
-): Promise<void> {
-	return new Promise((resolve, reject) => {
+): Promise<string[]|null> {
+	return new Promise<string[]|null>((resolve, reject) => {
 		const input = document.createElement('input');
 		input.type = 'file';
 		input.multiple = multiple;
@@ -126,23 +126,25 @@ export async function openFileCopyDialog(
 		input.onchange = async (e) => {
 			const files = (e.target as HTMLInputElement).files;
 			if (!files) {
-				resolve();
+				resolve(null);
 				return;
 			}
 
 			try {
+				const paths: string[] = [];
 				for (const file of Array.from(files)) {
 					const arrayBuffer = await file.arrayBuffer();
 					const filePath = `${targetPath}/${file.name}`;
 					await fileSystem.writePath(filePath, arrayBuffer);
+					paths.push(filePath);
 				}
-				resolve();
+				resolve(paths);
 			} catch (error) {
 				reject(error);
 			}
 		};
 
-		input.oncancel = () => resolve();
+		input.oncancel = () => resolve(null);
 		input.click();
 	});
 }

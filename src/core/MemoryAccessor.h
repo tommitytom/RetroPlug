@@ -148,5 +148,9 @@ namespace rp {
 		const fw::Uint8Buffer& getBuffer() const {
 			return _data;
 		}
+
+		fw::Uint8Buffer& getBuffer() {
+			return _data;
+		}
 	};
 }

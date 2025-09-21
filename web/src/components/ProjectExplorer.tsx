@@ -6,7 +6,12 @@ import { useRetroPlug } from '../contexts/RetroPlugContext';
 import type { FileSystemWorkerAPI } from '../filesystem/FileSystemWorker';
 import type { FileSystemNode } from '../filesystem/types';
 import { useContextMenu } from '../hooks/useContextMenu';
-import { downloadArrayBuffer, formatSavDialogFilePath, getFilenameFromPath, openFileCopyDialog, removeExtension, replaceExtension } from '../utils/FileUtil';
+import {
+	downloadArrayBuffer,
+	getFilenameFromPath,
+	openFileCopyDialog,
+	replaceExtension
+} from '../utils/FileUtil';
 import { CreateFolderDialog } from './Dialogs/CreateFolderDialog';
 import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
@@ -189,21 +194,25 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 	return {
 		roms: (await fileSystem.listPath(`/roms`)).children || [],
 		savs:
-			(await fileSystem.listPath(`/savs`, false)).children?.filter((child) => child.name.endsWith('.sav') || child.name.endsWith('.state')) || [],
+			(await fileSystem.listPath(`/savs`, false)).children?.filter(
+				(child) => child.name.endsWith('.sav') || child.name.endsWith('.state'),
+			) || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 	};
 }
 
-async function createImportDialog(fileSystem: FileSystemWorkerAPI, path: string, extensions: string): Promise<boolean> {
+async function createImportDialog(
+	fileSystem: FileSystemWorkerAPI,
+	path: string,
+	extensions: string,
+): Promise<string[] | null> {
 	try {
-		await openFileCopyDialog(fileSystem, path, extensions);
-		return true;
+		return await openFileCopyDialog(fileSystem, path, extensions);
 	} catch (error) {
 		console.error(`Error adding to ${path}:`, error);
+		return null;
 	}
-
-	return false;
 }
 
 export const ProjectExplorer: React.FC = () => {
@@ -249,7 +258,7 @@ export const ProjectExplorer: React.FC = () => {
 						content: project,
 						type: 'emulator',
 						isDirty: false,
-						hasFilename
+						hasFilename,
 					});
 				}
 
@@ -449,9 +458,14 @@ export const ProjectExplorer: React.FC = () => {
 				}
 			}
 
-			if (await createImportDialog(fileSystem, targetPath, extensions)) {
-				setVersion((v) => v + 1);
+			const addedPaths = await createImportDialog(fileSystem, targetPath, extensions);
+			if (addedPaths) {
+				for (const path of addedPaths) {
+					project.lsdj.invalidateSampleCacheItem(path);
+				}
 			}
+
+			setVersion((v) => v + 1);
 		},
 		[setVersion, fileSystem, closeModal],
 	);

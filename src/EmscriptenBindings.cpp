@@ -149,7 +149,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	class_<MemoryAccessor>("MemoryAccessor")
 		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
-		.function("getBuffer", &MemoryAccessor::getBuffer)
+		.function("getBuffer", select_overload<fw::Uint8Buffer&()>(&MemoryAccessor::getBuffer))
 		.function("getSize", &MemoryAccessor::getSize)
 		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
 	;
@@ -352,6 +352,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		})
 		.function("isLsdjLoaded", +[](LsdjController& controller, SystemId system) -> bool {
 			return controller.getComponent((entt::entity)system) != nullptr;
+		})
+		.function("invalidateSampleCacheItem", +[](LsdjController& controller, const std::string& path) {
+			controller.invalidateSampleCacheItem(path);
 		})
 	;
 

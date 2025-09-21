@@ -42,6 +42,8 @@ namespace rp {
 
 		lsdj::Song getLsdjWorkingSong(entt::entity system);
 
+		void invalidateSampleCacheItem(const std::string& path);
+
 		int32 getNextEmptyKit(entt::entity system);
 
 		uint32 getKitVersion(entt::entity system, uint32 kitId);

@@ -306,6 +306,29 @@ namespace rp {
 		return RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 	}
 
+	void LsdjController::invalidateSampleCacheItem(const std::string& path) {
+		for (const auto& [e, lsdj, state] : _registry.view<LsdjComponent, LsdjStateComponent>().each()) {
+			spdlog::info("Invalidating LSDJ sample cache item: {}", path);
+			state.sampleCache->erase(path);
+
+			for (const LsdjKitComponent& kit : lsdj.kits) {
+				kit.kit.visit([&](const auto& field) {
+					using Type = std::decay_t<decltype(field)>;
+					if constexpr (std::is_same<Type, LsdjEditableKit>()) {
+						const std::vector<LsdjSampleComponent>& samples = field.samples;
+						auto found = std::find_if(samples.begin(), samples.end(), [&](const LsdjSampleComponent& sample) {
+							return sample.path == path;
+						});
+
+						if (found != samples.end()) {
+							state.dirtyKits.insert(kit.id);
+						}
+					}
+				});
+			}
+		}
+	}
+
 	bool LsdjController::getKits(entt::entity system, std::vector<LsdjKitComponent>& kits) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;
