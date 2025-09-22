@@ -102,6 +102,10 @@ export class LsdjController {
 		return this._nativeController.getKitData(systemId, kitId);
 	}
 
+	getSynthData(systemId: SystemId, synthId: number): Uint8Buffer | null {
+		return this._nativeController.getSynthData(systemId, synthId);
+	}
+
 	getKitVersion(systemId: SystemId, kitId: number): number {
 		return this._nativeController.getKitVersion(systemId, kitId);
 	}

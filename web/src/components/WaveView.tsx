@@ -265,6 +265,8 @@ type WaveViewProps = {
 	minZoom?: number;
 	maxZoom?: number;
 	zoomSensitivity?: number;
+	alwaysUpdate?: boolean;
+	onClick?: (e: MouseEvent) => void;
 	onSliceClick?: (slice: SliceInfo) => void;
 	onSliceMouseMove?: (slice: SliceInfo | null) => void;
 };
@@ -276,6 +278,8 @@ export const WaveView: React.FC<WaveViewProps> = ({
 	minZoom = 1,
 	maxZoom = 100,
 	zoomSensitivity = 0.001,
+	alwaysUpdate = false,
+	onClick,
 	onSliceClick,
 	onSliceMouseMove,
 }) => {
@@ -296,6 +300,10 @@ export const WaveView: React.FC<WaveViewProps> = ({
 
 	// Handle mouse click
 	const handleClick = useCallback((e: MouseEvent) => {
+		if (onClick) {
+			onClick(e);
+		}
+
 		if (!sampleData || !canvasRef.current || !markers || markers.length === 0) return;
 
 		const canvas = canvasRef.current;
@@ -434,22 +442,43 @@ export const WaveView: React.FC<WaveViewProps> = ({
 		const canvas = canvasRef.current;
 		if (!canvas || !sampleData) return;
 
-		const dpr = window.devicePixelRatio || 1;
-		const width = canvas.clientWidth;
-		const height = canvas.clientHeight;
-		if (width === 0 || height === 0) return;
+		const renderFrame = () => {
+			const dpr = window.devicePixelRatio || 1;
+			const width = canvas.clientWidth;
+			const height = canvas.clientHeight;
+			if (width === 0 || height === 0) return;
 
-		canvas.width = width * dpr;
-		canvas.height = height * dpr;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
 
-		const ctx = canvas.getContext("2d");
-		if (ctx) {
-			ctx.setTransform(1, 0, 0, 1, 0, 0);
-			ctx.scale(dpr, dpr);
+			const ctx = canvas.getContext("2d");
+			if (ctx) {
+				ctx.setTransform(1, 0, 0, 1, 0, 0);
+				ctx.scale(dpr, dpr);
+			}
+
+			renderWaveForm(canvas, sampleData, markers || [], zoom, hoveredSlice);
+		};
+
+		if (alwaysUpdate) {
+			// Use requestAnimationFrame for continuous rendering
+			let animationId: number;
+
+			const animate = () => {
+				renderFrame();
+				animationId = requestAnimationFrame(animate);
+			};
+
+			animate();
+
+			return () => {
+				cancelAnimationFrame(animationId);
+			};
+		} else {
+			// Render once
+			renderFrame();
 		}
-
-		renderWaveForm(canvas, sampleData, markers || [], zoom, hoveredSlice);
-	}, [sampleData, markers, canvasSize, zoom, hoveredSlice]);
+	}, [sampleData, markers, canvasSize, zoom, hoveredSlice, alwaysUpdate]);
 
 	return (
 		<canvas

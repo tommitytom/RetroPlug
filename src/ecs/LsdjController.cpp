@@ -329,6 +329,12 @@ namespace rp {
 		}
 	}
 
+	fw::Uint8Buffer LsdjController::getSynthData(entt::entity system, uint32 synthId) {
+		lsdj::Song song = getLsdjWorkingSong(system);
+		if (!song.isValid()) return fw::Uint8Buffer();
+		return song.getSynthData((uint8)synthId);
+	}
+
 	bool LsdjController::getKits(entt::entity system, std::vector<LsdjKitComponent>& kits) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
 		if (!lsdj) return false;

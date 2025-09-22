@@ -4,6 +4,10 @@ export const LSDJ_KIT_COUNT = 51;
 export const LSDJ_KIT_SAMPLE_COUNT = 15;
 export const GAMEBOY_SAMPLE_RATE = 11468;
 
+export const LSDJ_WAVE_COUNT = 0xFF;
+export const LSDJ_WAVE_PER_SYNTH_COUNT = 0xF;
+export const LSDJ_SYNTH_COUNT = LSDJ_WAVE_COUNT / LSDJ_WAVE_PER_SYNTH_COUNT;
+
 export interface ILsdjKitSample {
 	name: string;
 	path: string;

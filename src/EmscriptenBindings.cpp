@@ -344,6 +344,9 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("getKitData", +[](LsdjController& controller, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
 			return controller.getKitData((entt::entity)system, kitId);
 		})
+		.function("getSynthData", +[](LsdjController& controller, SystemId system, uint32 synthId) -> fw::Uint8Buffer {
+			return controller.getSynthData((entt::entity)system, synthId);
+		})
 		.function("getKitSample", +[](LsdjController& controller, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
 			return controller.getKitSample((entt::entity)system, kitId, sampleId);
 		})

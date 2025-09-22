@@ -68,7 +68,15 @@ export const generateKey = (): string => {
 		.substring(2, 2 + 9)}`;
 };
 
-export function extractSampleData(module: MainModule, kitData: Uint8Buffer): ILsdjKitData {
+export function convertSampleData(module: MainModule, data: Uint8Buffer): Float32Array {
+	const nativeSampleBuffer = new module.Float32Buffer(data.size() * 2);
+	module.convertNibblesToF32(data, nativeSampleBuffer);
+	const sampleBuffer = convertFloat32Buffer(nativeSampleBuffer);
+	nativeSampleBuffer.delete();
+	return sampleBuffer;
+}
+
+export function extractKitSampleData(module: MainModule, kitData: Uint8Buffer): ILsdjKitData {
 	const kit = new module.NativeLsdjKit(kitData, 0);
 
 	const samples: ILsdjKitDataSample[] = [];
@@ -90,11 +98,7 @@ export function extractSampleData(module: MainModule, kitData: Uint8Buffer): ILs
 	const kitName = kit.getName();
 
 	const sampleData = kit.getSampleData();
-	const nativeSampleBuffer = new module.Float32Buffer(sampleData.size() * 2);
-	module.convertNibblesToF32(sampleData, nativeSampleBuffer);
-	const sampleBuffer = convertFloat32Buffer(nativeSampleBuffer);
-
-	nativeSampleBuffer.delete();
+	const sampleBuffer = convertSampleData(module, sampleData);
 	sampleData.delete();
 	kit.delete();
 

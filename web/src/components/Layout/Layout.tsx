@@ -54,9 +54,9 @@ export const Layout: React.FC = () => {
 					content: <LsdjRomMemoryEditor />,
 				},
 				{
-					id: 'songs',
-					label: 'Songs',
-					content: <LsdjSavMemoryEditor />, // You can replace this with a different component for Songs
+					id: 'synths',
+					label: 'Synths',
+					content: <LsdjSavMemoryEditor />,
 				},
 			]);
 			setActiveRightTab('kits');

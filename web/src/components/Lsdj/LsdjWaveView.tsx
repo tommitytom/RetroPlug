@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useRetroPlug } from "../../contexts/RetroPlugContext";
 import { useSystemKitVersion } from "../../hooks/RetroPlugHooks";
 import { GAMEBOY_SAMPLE_RATE, type ILsdjKitData } from "../../types/LsdjTypes";
-import { extractSampleData } from "../../utils/LsdjUtil";
+import { extractKitSampleData } from "../../utils/LsdjUtil";
 import { type SystemId } from "../../utils/NativeUtil";
 import { playSample } from "../../wrapper/Lsdj";
 import { WaveView } from "../WaveView";
@@ -26,7 +26,7 @@ export const LsdjWaveView: React.FC<LsdjWaveViewProps> = ({ system, kitId, onNam
 	useEffect(() => {
 		const kitData = project.lsdj.getKitData(system, kitId);
 		if (kitData && kitData.size() > 0) {
-			const sampleData = extractSampleData(module, kitData);
+			const sampleData = extractKitSampleData(module, kitData);
 			setKitSampleData(sampleData);
 
 			if (currentNameRef.current !== sampleData.name) {

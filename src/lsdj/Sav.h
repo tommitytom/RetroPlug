@@ -145,7 +145,7 @@ namespace rp::lsdj {
 		}
 
 		fw::Uint8Buffer getSynthData(uint8 synth) const {
-			return fw::Uint8Buffer(lsdj_wave_get_bytes(_song, synth * LSDJ_WAVE_PER_SYNTH_COUNT), LSDJ_WAVE_PER_SYNTH_COUNT * LSDJ_WAVE_BYTE_COUNT);
+			return fw::Uint8Buffer(lsdj_wave_get_bytes(_song, synth * (LSDJ_WAVE_PER_SYNTH_COUNT + 1)), (LSDJ_WAVE_PER_SYNTH_COUNT + 1) * LSDJ_WAVE_BYTE_COUNT);
 		}
 
 		void setSynthData(uint8 synth, const fw::Uint8Buffer& buffer) {
