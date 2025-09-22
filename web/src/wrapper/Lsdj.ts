@@ -1,7 +1,7 @@
 import type { MainModule, NativeLsdjController, Uint8Buffer } from "../native/RetroPlug";
 import { LSDJ_KIT_COUNT, type ILsdjEditableKit, type ILsdjKit, type ILsdjKitBase, type ILsdjPatchedKit } from "../types/LsdjTypes";
 import { generateKey, getLastEmptyKitIdx } from "../utils/LsdjUtil";
-import { type SystemId } from "../utils/NativeUtil";
+import { fromArrayBuffer, fromUint8Array, type SystemId } from "../utils/NativeUtil";
 
 export interface ILsdjApiKit<T extends ILsdjKitBase = ILsdjKitBase> {
 	id: number;
@@ -104,6 +104,11 @@ export class LsdjController {
 
 	getSynthData(systemId: SystemId, synthId: number): Uint8Buffer | null {
 		return this._nativeController.getSynthData(systemId, synthId);
+	}
+
+	setSynthData(systemId: SystemId, synthId: number, data: ArrayBuffer): boolean {
+		const nativeData = fromArrayBuffer(this._module, data);
+		return this._nativeController.setSynthData(systemId, synthId, nativeData);
 	}
 
 	getKitVersion(systemId: SystemId, kitId: number): number {

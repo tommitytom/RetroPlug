@@ -5,6 +5,7 @@
 #include "ecs/RetroPlugProjectContext.h"
 #include "ecs/Tasks.h"
 #include "foundation/Event.h"
+#include <liblsdj/liblsdj/src/song_offsets.h>
 
 namespace rp {
 	inline LsdjKitDesc* findKitDesc(std::vector<LsdjKitDesc>& target, uint32 id) {
@@ -333,6 +334,33 @@ namespace rp {
 		lsdj::Song song = getLsdjWorkingSong(system);
 		if (!song.isValid()) return fw::Uint8Buffer();
 		return song.getSynthData((uint8)synthId);
+	}
+
+	bool LsdjController::setSynthData(entt::entity system, uint32 synthId, const fw::Uint8Buffer& data) {
+		lsdj::Song song = getLsdjWorkingSong(system);
+		if (!song.isValid()) return false;
+		song.setSynthData((uint8)synthId, data);
+
+		const size_t index = synthId * (LSDJ_WAVE_PER_SYNTH_COUNT + 1) * LSDJ_WAVE_BYTE_COUNT;
+		assert(index < 4096);
+
+		MemoryPatch patch;
+		patch.type = MemoryType::Sram;
+		patch.data = data;
+		patch.offset = WAVES_OFFSET + index;
+
+		MemoryPatch owPatch;
+		owPatch.type = MemoryType::Sram;
+		owPatch.data = song.getBuffer()[SYNTH_OVERWRITES_OFFSET + synthId / 8];
+		owPatch.offset = SYNTH_OVERWRITES_OFFSET + synthId / 8;
+
+		RetroPlugProjectContext& ctx = _registry.ctx().at<RetroPlugProjectContext>();
+		return ctx.eventNode.trySend("Audio"_hs, MemoryPatchEvent{
+			.entity = system,
+			.patches = { patch, owPatch }
+		});
+
+		return true;
 	}
 
 	bool LsdjController::getKits(entt::entity system, std::vector<LsdjKitComponent>& kits) {

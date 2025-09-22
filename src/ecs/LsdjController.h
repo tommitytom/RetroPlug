@@ -68,6 +68,8 @@ namespace rp {
 
 		fw::Uint8Buffer getSynthData(entt::entity system, uint32 synthId);
 
+		bool setSynthData(entt::entity system, uint32 synthId, const fw::Uint8Buffer& data);
+
 		LsdjComponent* getComponent(entt::entity system);
 
 		lsdj::Rom getLsdjRom(const SystemStateComponent& systemState) const;

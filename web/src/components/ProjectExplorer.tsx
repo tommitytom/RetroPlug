@@ -33,6 +33,8 @@ const getIcon = (section: string) => {
 			return '◉';
 		case 'kits':
 			return '◆';
+		case 'synths':
+			return '♪';
 		case 'samples':
 			return '♪';
 		default:
@@ -171,6 +173,7 @@ const sections: ISection[] = [
 	{ id: 'roms', name: 'Roms', extensions: ['.gb', '.gbc'], recurse: false },
 	{ id: 'savs', name: 'Savs', extensions: ['.sav'], recurse: false },
 	{ id: 'kits', name: 'Kits', extensions: ['.kit'], recurse: false },
+	{ id: 'synths', name: 'Synths', extensions: ['.snt'], recurse: false },
 	{ id: 'samples', name: 'Samples', extensions: ['.wav', '.mp3', '.ogg', '.aiff'], recurse: true },
 ];
 
@@ -199,6 +202,7 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 			) || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
+		synths: (await fileSystem.listPath(`/synths`)).children || [],
 	};
 }
 
@@ -422,7 +426,7 @@ export const ProjectExplorer: React.FC = () => {
 	);
 
 	const handleDragStart = useCallback((event: React.DragEvent, section: string, itemPath: string) => {
-		if (section !== 'kits' && section !== 'samples') return;
+		if (section !== 'kits' && section !== 'samples' && section !== 'synths') return;
 
 		const filePath = `/${section}/${itemPath}`;
 		// Set the data that will be transferred during drag

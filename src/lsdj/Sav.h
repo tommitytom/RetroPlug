@@ -149,9 +149,8 @@ namespace rp::lsdj {
 		}
 
 		void setSynthData(uint8 synth, const fw::Uint8Buffer& buffer) {
-			size_t writeSize = std::min(buffer.size(), (size_t)(LSDJ_WAVE_PER_SYNTH_COUNT * LSDJ_WAVE_BYTE_COUNT));
-			uint8* data = lsdj_wave_get_bytes(_song, synth * LSDJ_WAVE_PER_SYNTH_COUNT);
-			memcpy(data, buffer.data(), writeSize);
+			assert(buffer.size() == 256);
+			lsdj_wave_set_bytes(_song, synth * (LSDJ_WAVE_PER_SYNTH_COUNT + 1), buffer.data());
 		}
 
 		uint8 getChainIndex(lsdj_channel_t channel, uint8 row) const {
