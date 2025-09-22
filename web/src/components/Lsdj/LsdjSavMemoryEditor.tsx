@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 
-import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { useProject } from '../../hooks/RetroPlugHooks';
 import { LSDJ_SYNTH_COUNT } from '../../types/LsdjTypes';
 import { type SystemId } from '../../utils/NativeUtil';
-import { LsdjSynthView } from './LsdjSynthView';
 import { MemoryType } from '../../wrapper/System';
+import { LsdjSynthView } from './LsdjSynthView';
 
 export const LsdjSavMemoryEditor: React.FC = () => {
 	const project = useProject();
