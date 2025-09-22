@@ -472,7 +472,7 @@ MouseButton convertMouseButton(int button) {
 }
 
 void errorCallback(int error, const char* description) {
-	//spdlog::error("GLFW error {}: {}", error, description);
+	spdlog::error("GLFW error {}: {}", error, description);
 }
 
 GlfwWindowManager::GlfwWindowManager(ResourceManagerPtr resourceManager, FontManagerPtr fontManager) : WindowManager(resourceManager, fontManager) {

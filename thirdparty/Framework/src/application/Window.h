@@ -30,7 +30,7 @@ namespace fw::app {
 
 			_canvas.setDimensions(view->getDimensions(), 1.0f);
 		}
-		~Window() = default;
+		virtual ~Window() {}
 
 		virtual void setDimensions(Dimension dimensions) = 0;
 

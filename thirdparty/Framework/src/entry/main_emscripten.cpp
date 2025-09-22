@@ -31,6 +31,10 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.smart_ptr<std::shared_ptr<fw::View>>("ViewPtr")
 	;
 
+	class_<fw::app::Window>("Window")
+		.smart_ptr<std::shared_ptr<fw::app::Window>>("WindowPtr")
+	;
+
 	class_<fw::app::Application>("NativeApplication")
 	;
 
@@ -41,6 +45,7 @@ EMSCRIPTEN_BINDINGS(framework) {
 		.function("setupAudio", &fw::app::WebApplicationRunner::setupAudio)
 		.function("setupGraphics", &fw::app::WebApplicationRunner::setupGraphics)
 		.function("destroyGraphics", &fw::app::WebApplicationRunner::destroyGraphics)
+		.function("createNamedView", &fw::app::WebApplicationRunner::createNamedView)
 		.function("start", &fw::app::WebApplicationRunner::start)
 		.function("stop", &fw::app::WebApplicationRunner::stop)
 		.function("getView", &fw::app::WebApplicationRunner::getView)

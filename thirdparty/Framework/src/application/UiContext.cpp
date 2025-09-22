@@ -105,7 +105,7 @@ namespace fw::app {
 			_renderContext->beginFrame(deltaTime);
 
 			for (auto it = windows.begin(); it != windows.end(); ++it) {
-				WindowPtr w = *it;
+				Window* w = it->get();
 
 				if (!w->shouldClose()) {
 					w->makeCurrent();

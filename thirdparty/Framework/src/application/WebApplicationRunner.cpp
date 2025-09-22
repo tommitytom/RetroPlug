@@ -66,6 +66,20 @@ namespace fw::app {
 		//viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
 	}
 
+	WindowPtr WebApplicationRunner::createNamedView(const std::string& name, const std::string& canvasId) {
+		ViewPtr view = _app->onCreateNamedView(name);
+		if (view) {
+			WindowPtr window = _uiContext->createWindow(view, nullptr, "#" + canvasId);
+			ViewManagerPtr viewManager = window->getViewManager();
+			viewManager->createState<audio::AudioManagerPtr>(_audioManager);
+			return window;
+		} else {
+			spdlog::error("Failed to create named view: {}", name);
+		}
+
+		return nullptr;
+	}
+
 	void WebApplicationRunner::destroyGraphics() {
 		//_window = nullptr;
 	}

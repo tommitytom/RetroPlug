@@ -36,6 +36,8 @@ namespace fw::app {
 
 		void setupGraphics(const std::string& canvasId);
 
+		WindowPtr createNamedView(const std::string& name, const std::string& canvasId);
+
 		void destroyGraphics();
 
 		void destroy();

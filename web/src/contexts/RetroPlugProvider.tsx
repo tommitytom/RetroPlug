@@ -50,7 +50,7 @@ export function RetroPlugProvider({ children }: { children: ReactNode }) {
 		Promise.all(proms)
 			.then(() => {
 				if (mounted) {
-					pendingApp.setupAudio(audioContextRef.current);
+					pendingApp.setupAudio(audioContextRef.current!);
 					fileSystemRef.current = pendingFileSystem;
 					setApp(pendingApp);
 					updateCanvas();

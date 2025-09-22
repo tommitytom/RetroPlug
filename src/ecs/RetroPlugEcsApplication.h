@@ -17,6 +17,8 @@ namespace rp {
 
 		fw::AudioProcessorPtr onCreateAudio() override;
 
+		fw::ViewPtr onCreateNamedView(const std::string& name) override;
+
 		void onUpdate(f32 deltaTime) override;
 
 		RetroPlugProject& getProject() {

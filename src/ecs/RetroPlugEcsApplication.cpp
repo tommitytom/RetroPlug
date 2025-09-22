@@ -3,6 +3,7 @@
 #include "RetroPlugEcsProcessor.h"
 #include "RetroPlugEcsView.h"
 #include "foundation/FsUtil.h"
+#include "ecs/HexEditor.h"
 
 namespace rp {
 	RetroPlugEcsApplication::RetroPlugEcsApplication(): _audioEventNode("Audio"), _project(_audioEventNode->spawn("Ui"), _audioEventNode->getId()) {
@@ -11,6 +12,13 @@ namespace rp {
 
 	fw::ViewPtr RetroPlugEcsApplication::onCreateUi() {
 		return std::make_shared<RetroPlugEcsView>(getProject());
+	}
+
+	fw::ViewPtr RetroPlugEcsApplication::onCreateNamedView(const std::string& name) {
+		if (name == "HexEditor") {
+			return std::make_shared<HexEditor>();
+		}
+		return nullptr;
 	}
 
 	fw::AudioProcessorPtr RetroPlugEcsApplication::onCreateAudio() {

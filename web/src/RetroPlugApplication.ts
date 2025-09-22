@@ -155,6 +155,14 @@ export class RetroPlugApplication {
 		this._runner.start();
 	}
 
+	createNamedView(name: string, canvasId: string) {
+		if (!this._module || !this._runner) {
+			throw new Error('WASM module is not initialized');
+		}
+
+		return this._runner.createNamedView(name, canvasId);
+	}
+
 	destroyGraphics() {
 		if (!this._module || !this._runner) {
 			throw new Error('WASM module is not initialized');

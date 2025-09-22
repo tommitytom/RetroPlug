@@ -12,6 +12,8 @@ namespace fw::app {
 
 		virtual fw::ViewPtr onCreateUi() { return nullptr; }
 
+		virtual fw::ViewPtr onCreateNamedView(const std::string& name) { return nullptr; }
+
 		virtual fw::AudioProcessorPtr onCreateAudio() { return nullptr; }
 
 		virtual void onUpdate(f32 deltaTime) {}
@@ -32,7 +34,7 @@ namespace fw::app {
 			if constexpr (!std::is_same_v<AudioT, void>) {
 				return std::make_shared<AudioT>();
 			}
-			
+
 			return std::make_shared<fw::NullAudioProcessor>();
 		}
 	};
