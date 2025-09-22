@@ -69,7 +69,7 @@ namespace fw::app {
 	WindowPtr WebApplicationRunner::createNamedView(const std::string& name, const std::string& canvasId) {
 		ViewPtr view = _app->onCreateNamedView(name);
 		if (view) {
-			WindowPtr window = _uiContext->createWindow(view, nullptr, "#" + canvasId);
+			WindowPtr window = _uiContext->createWindow(view, nullptr, canvasId);
 			ViewManagerPtr viewManager = window->getViewManager();
 			viewManager->createState<audio::AudioManagerPtr>(_audioManager);
 			return window;

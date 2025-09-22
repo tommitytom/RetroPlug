@@ -59,11 +59,11 @@ export const Layout: React.FC = () => {
 					label: 'Synths',
 					content: <LsdjSavMemoryEditor />,
 				},
-				{
+				/*{
 					id: 'hex-editor',
 					label: 'Hex',
 					content: <FrameworkWindow name='HexEditor' />,
-				}
+				}*/
 			]);
 			setActiveRightTab('kits');
 		} else {

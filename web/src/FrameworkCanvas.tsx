@@ -13,7 +13,7 @@ export const FrameworkCanvas: React.FC<FrameworkCanvasProps> = ({}) => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	useEffect(() => {
 		if (canvasRef.current) {
-			setCanvasId(canvasRef.current.id);
+			setCanvasId('#' + canvasRef.current.id);
 		}
 	}, []);
 
