@@ -21,6 +21,7 @@ export const FrameworkWindow: React.FC<FrameworkWindowProps> = ({ name, width, h
 		const window = app.createNamedView(name, '#' + canvasRef.current.id);
 
 		return () => {
+			window?.requestClose();
 			window?.delete();
 		};
 	}, [app, name]);

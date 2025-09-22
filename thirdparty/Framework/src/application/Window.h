@@ -63,6 +63,8 @@ namespace fw::app {
 
 		virtual void show() {}
 
+		virtual void requestClose() {}
+
 		virtual bool shouldClose() = 0;
 
 		virtual NativeWindowHandle getNativeHandle() = 0;

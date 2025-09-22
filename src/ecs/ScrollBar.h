@@ -52,7 +52,7 @@ namespace rp {
 			if (_dragContext.active) {
 				fw::DimensionF dim = getDimensionsF();
 				f32 scrollSize = std::round(dim.h * _scrollSize);
-				f32 deltaY = pos.y - _dragContext.startPosition.y;
+				f32 deltaY = (f32)(pos.y - _dragContext.startPosition.y);
 				f32 scrollableHeight = dim.h - scrollSize;
 				if (scrollableHeight > 0) {
 					f32 scrollDelta = deltaY / scrollableHeight;

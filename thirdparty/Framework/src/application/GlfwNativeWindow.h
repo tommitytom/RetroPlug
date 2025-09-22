@@ -47,6 +47,8 @@ namespace fw::app {
 
 		void onFrame() override;
 
+		void requestClose() override;
+
 		bool shouldClose() override;
 
 		NativeWindowHandle getNativeHandle() override;

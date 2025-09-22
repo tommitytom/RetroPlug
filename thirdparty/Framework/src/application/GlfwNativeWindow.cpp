@@ -328,6 +328,10 @@ void GlfwNativeWindow::onRender(fw::Canvas& canvas) {
 	getViewManager()->onRender(canvas);
 }
 
+void GlfwNativeWindow::requestClose() {
+	glfwSetWindowShouldClose(_window, GLFW_TRUE);
+}
+
 bool GlfwNativeWindow::shouldClose() {
 	const ViewManagerPtr& vm = getViewManager();
 	auto& shared = vm->getShared();

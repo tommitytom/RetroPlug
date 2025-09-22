@@ -33,6 +33,7 @@ EMSCRIPTEN_BINDINGS(framework) {
 
 	class_<fw::app::Window>("Window")
 		.smart_ptr<std::shared_ptr<fw::app::Window>>("WindowPtr")
+		.function("requestClose", &fw::app::Window::requestClose)
 	;
 
 	class_<fw::app::Application>("NativeApplication")
