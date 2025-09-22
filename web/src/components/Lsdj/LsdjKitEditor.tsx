@@ -328,13 +328,9 @@ export const LsdjKitEditor: React.FC<LsdjKitEditorProps> = ({
 						{kitType.charAt(0).toUpperCase() + kitType.slice(1)}
 					</span>
 					<button
-						className={`rounded-sm p-1 transition-colors duration-200 ${
-							kit.data
-								? 'text-blue-400 hover:bg-blue-600/20 hover:text-blue-300'
-								: 'text-gray-500 hover:bg-gray-600/20 hover:text-gray-400'
-						}`}
+						className={`rounded-sm p-1 transition-colors duration-200 text-blue-400 hover:bg-blue-600/20 hover:text-blue-300`}
 						onClick={handleDownloadClick}
-						title={kit.data ? 'Download kit' : 'Kit data not available'}
+						title={'Download kit'}
 					>
 						<svg
 							width="12"

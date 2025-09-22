@@ -28,22 +28,22 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 	const { module, project, fileSystem } = useRetroPlug();
 	const [sampleBuffer, setSampleBuffer] = useState<Float32Array | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
-	const synthDataRef = useRef<Uint8Buffer | null>(null);
 
 	useEffect(() => {
 		const lsdj = project.lsdj;
-		synthDataRef.current = lsdj.getSynthData(system, synthId)!;
-		const sampleData = convertSampleData(module, synthDataRef.current);
+		const synthData = lsdj.getSynthData(system, synthId)!;
+		const sampleData = convertSampleData(module, synthData);
 		setSampleBuffer(sampleData);
-	}, [project, synthId, system, module]);
+	}, [project, synthId, system, module, isExpanded]);
 
 	useEffect(() => {
-		if (!sampleBuffer || !synthDataRef.current) return;
+		if (!sampleBuffer) return;
 
 		let animationId: number;
 
 		const updateWaveform = () => {
-			const sampleData = convertSampleData(module, synthDataRef.current!);
+			const synthData = project.lsdj.getSynthData(system, synthId)!;
+			const sampleData = convertSampleData(module, synthData);
 			sampleBuffer.set(sampleData);
 			animationId = requestAnimationFrame(updateWaveform);
 		};
@@ -53,7 +53,7 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 		return () => {
 			cancelAnimationFrame(animationId);
 		};
-	}, [sampleBuffer, module]);
+	}, [sampleBuffer, module, project]);
 
 	// Drag and drop handlers
 	const handleDragOver = useCallback(
@@ -96,14 +96,9 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 								console.log(`Dropped .snt file: ${paths[0]}`);
 
 								const fileData = await fileSystem.readPath(paths[0]);
-								console.log('setting synth data', fileData.byteLength);
-
 								if (!project.lsdj.setSynthData(system, synthId, fileData)) {
 									console.error(`Failed to set synth data for synth ID ${synthId}`);
 								}
-								// TODO: Implement synth loading logic here
-								// This would typically load the synth data from the file
-								// and update the current synth
 							} else {
 								console.warn('Only .snt files are supported for synth drops');
 							}
@@ -136,7 +131,8 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 			e.preventDefault();
 			e.stopPropagation();
 
-			if (!synthDataRef.current) {
+			const synthData = project.lsdj.getSynthData(system, synthId);
+			if (!synthData) {
 				return;
 			}
 
@@ -147,7 +143,7 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 				// Convert the synth data to a downloadable format
 				// For now, we'll download the raw synth data - this might need adjustment
 				// depending on the actual format you want
-				downloadUint8Array(toUint8Array(synthDataRef.current), filename);
+				downloadUint8Array(toUint8Array(synthData), filename);
 			} catch (error) {
 				console.error('Download failed:', error);
 			}
@@ -195,12 +191,12 @@ export const LsdjSynthView: React.FC<LsdjSynthViewProps> = ({
 					</span>
 					<button
 						className={`rounded-sm p-1 transition-colors duration-200 ${
-							synthDataRef.current
+							sampleBuffer
 								? 'text-blue-400 hover:bg-blue-600/20 hover:text-blue-300'
 								: 'text-gray-500 hover:bg-gray-600/20 hover:text-gray-400'
 						}`}
 						onClick={handleDownloadClick}
-						title={synthDataRef.current ? 'Download synth' : 'Synth data not available'}
+						title={sampleBuffer ? 'Download synth' : 'Synth data not available'}
 					>
 						<svg
 							width="12"
