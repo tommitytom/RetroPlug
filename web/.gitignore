@@ -14,7 +14,8 @@
 
 node_modules/
 dist/
-public/
+public/*.mjs
+public/*.wasm
 src/native/
 
 # Sentry Config File
