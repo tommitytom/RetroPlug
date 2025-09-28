@@ -13,6 +13,8 @@
 #include "ecs/LoadingView.h"
 #include "ecs/TileGrid.h"
 #include "ecs/LsdjHdPlayerEcs.h"
+#include "ecs/HexEditor.h"
+#include "application/WindowManager.h"
 
 namespace rp {
 	RetroPlugEcsView::RetroPlugEcsView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
@@ -46,7 +48,6 @@ namespace rp {
 		_project.onUpdate(deltaTime);
 
 		if (_project.getVersion() != _version) {
-			spdlog::info(_project.getContext().loading);
 			rebuildUi();
 			_version = _project.getVersion();
 		}
@@ -108,7 +109,20 @@ namespace rp {
 	}
 
 	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
+#ifdef FW_PLATFORM_WEB
+		return false;
+#endif
+
 		if (event.down && event.key == fw::VirtualKey::S) {
+			auto systemIds = _project.getSystemIds();
+			if (systemIds.empty()) return false;
+
+			auto systemMemory = _project.getSystemMemory(entt::entity(systemIds[0]), MemoryType::Ram, AccessType::Read);
+
+			HexEditorPtr hexWindow = std::make_shared<HexEditor>();
+			hexWindow->setData(systemMemory.getBuffer().ref());
+
+			getState<fw::app::WindowManager>().createWindow(hexWindow, nullptr, "");
 			//_project.saveToFile("C:\\retro\\test.rplg");
 		}
 
@@ -121,16 +135,28 @@ namespace rp {
 			_rootContainer = addChild(std::make_unique<LsdjHdPlayerEcs>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayerEcs>();
 		}*/
 
+		if (event.down && event.key == fw::VirtualKey::F7) {
+			_project.addSystemAsync(SystemLoadComponent{
+				.entries = {
+					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
+					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
+				},
+			}, SameBoyComponent{
+				.model = GameboyModel::CgbC,
+				.fastBoot = true
+			});
+		}
+
 		if (event.down && event.key == fw::VirtualKey::F6) {
 			//_project.deserialize(archive);
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
-			//_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gbc", "C:\\retro\\lsdj942bitbrigade_1.sav" });
+			_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gbc", "C:\\retro\\lsdj942bitbrigade_1.sav" });
 
 			//_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
 
-			_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
+			//_project.loadFromFileAsync({ "C:\\retro\\LSDj-v5.0.3.rplg" });
 
 
 			/*

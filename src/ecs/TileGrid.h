@@ -24,6 +24,10 @@ namespace rp {
 			_requestedTileEntity = entity;
 		}
 
+		void onInitialize() override {
+			getLayout().setFlexDirection(fw::FlexDirection::Row);
+		}
+
 		bool onKey(const fw::KeyEvent& event) override {
 			if (event.down && event.key == fw::VirtualKey::Tab) {
 				for (size_t i = 0; i < getChildCount(); ++i) {

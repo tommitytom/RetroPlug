@@ -1,7 +1,7 @@
 export interface ModalConfig {
 	title?: string;
 	content: React.ReactNode;
-	size?: 'sm' | 'md' | 'lg' | 'xl';
+	size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
 	showCloseButton?: boolean;
 	closeOnBackdrop?: boolean;
 	closeOnEscape?: boolean;

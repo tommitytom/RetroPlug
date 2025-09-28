@@ -29,6 +29,7 @@
 #include "lsdj/Sav.h"
 #include "lsdj/LsdjSettings.h"
 #include "lsdj/SampleUtil.h"
+#include "lsdj/OffsetLookup.h"
 
 // Additional includes for LSDJ enums
 #include <liblsdj/liblsdj/include/lsdj/error.h>
@@ -140,6 +141,24 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("upcastApplication", &upcastApplication, return_value_policy::reference());
 	function("fixRomChecksum", &GameboyUtil::fixChecksum);
 	function("getRomName", +[](fw::Uint8Buffer& buffer) { return std::string(GameboyUtil::getRomName(buffer)); });
+	function("getLsdjRomInfo", &rp::lsdj::OffsetLookup::getRomInfo);
+
+	class_<semver::version>("SemverVersion")
+		.constructor<>()
+		.property("major", &semver::version::major)
+		.property("minor", &semver::version::minor)
+		.property("patch", &semver::version::patch)
+		//.property("prerelease_type", &semver::version::prerelease_type)
+		//.property("prerelease_number", &semver::version::prerelease_number)
+	;
+
+	class_<rp::lsdj::RomInfo>("LsdjRomInfo")
+		.property("name", &rp::lsdj::RomInfo::name)
+		.property("version", &rp::lsdj::RomInfo::version)
+		.property("tags", &rp::lsdj::RomInfo::tags)
+		.property("hash", &rp::lsdj::RomInfo::hash)
+		.property("isStock", &rp::lsdj::RomInfo::isStock)
+	;
 
 	enum_<SaveStateType>("SaveStateType")
         .value("None", SaveStateType::None)
@@ -575,7 +594,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("isValid", &rp::lsdj::Sav::isValid)
 		.function("load", select_overload<lsdj_error_t(const fw::Uint8Buffer&)>(&rp::lsdj::Sav::load))
 		.function("save", select_overload<fw::Uint8Buffer()>(&rp::lsdj::Sav::save))
-		.property("projectCount", &rp::lsdj::Sav::getProjectCount)
+		.property("activeProjectCount", &rp::lsdj::Sav::getProjectCount)
+		.property("totalProjectCount", &rp::lsdj::Sav::getTotalProjectCount)
 		.function("getProject", &rp::lsdj::Sav::getProject)
 		.property("workingProject", &rp::lsdj::Sav::getWorkingProject)
 		.property("workingSong", &rp::lsdj::Sav::getWorkingSong)

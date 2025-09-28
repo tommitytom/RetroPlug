@@ -28,7 +28,7 @@ namespace rp {
 
 	inline void filterEntries(const PathVector& paths, NamedEntryVector& out, const std::string& ext, const std::string& type) {
 		for (const std::filesystem::path& path : paths) {
-			if (path.extension() == ext) {
+			if (fw::StringUtil::toLower(path.extension().string()) == ext) {
 				out.push_back({ type, path });
 			}
 		}

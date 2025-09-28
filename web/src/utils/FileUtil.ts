@@ -150,7 +150,7 @@ export async function openFileCopyDialog(
 }
 
 export function formatSavDialogFilePath(filename: string) {
-	if (filename.endsWith('.sav') || filename.endsWith('.state')) {
+	if (filename.toLowerCase().endsWith('.sav') || filename.toLowerCase().endsWith('.state')) {
 		filename = filename.replace(/\.(sav|state)$/i, '.rplg');
 	} else {
 		filename = filename + '.rplg';

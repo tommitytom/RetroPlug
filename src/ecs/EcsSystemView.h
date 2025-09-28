@@ -28,6 +28,23 @@ namespace rp {
 			}
 		}
 
+		bool onButton(const fw::ButtonEvent& event) override {
+			fw::PadButtonType button = event.button;
+
+			if (button == fw::PadButtonType::LeftStickDown) button = fw::PadButtonType::Down;
+			if (button == fw::PadButtonType::LeftStickUp) button = fw::PadButtonType::Up;
+			if (button == fw::PadButtonType::LeftStickLeft) button = fw::PadButtonType::Left;
+			if (button == fw::PadButtonType::LeftStickRight) button = fw::PadButtonType::Right;
+
+			_project.getEventNode().trySend("Audio"_hs, PadButtonEvent{
+					.entity = getEntity(),
+					.button = button,
+					.down = event.down
+				});
+
+			return true;
+		}
+
 		bool onKey(const fw::KeyEvent& event) override {
 			/*if (event.key == fw::VirtualKey::R) {
 				_project.getEventNode().trySend("Audio"_hs, ResetSystemEntityEvent{

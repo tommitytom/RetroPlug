@@ -5,6 +5,7 @@
 
 struct GLFWwindow;
 struct GLFWcursor;
+struct GLFWgamepadstate;
 
 namespace fw::app {
 	class GlfwNativeWindow : public Window {
@@ -12,19 +13,18 @@ namespace fw::app {
 		std::string _canvasId;
 		GLFWwindow* _window = nullptr;
 		GLFWwindow* _share = nullptr;
-		Point _lastMousePosition;
+		Point _lastMousePosition = Point{0, 0};
 		Dimension _dimensions;
 
 		GLFWcursor* _cursor = nullptr;
 
-	public:
-		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId, GLFWwindow* share)
-			: Window(resourceManager, fontManager, view, id),
-			_dimensions(view->getDimensions()),
-			_canvasId(canvasId),
-			_share(share)
-		{}
+		size_t _currentStateIdx = 0;
+		GLFWgamepadstate* _gamepadState;
+		f32 _axisButtonThreshold = 0.1f;
+		bool _axisButtons[5 * 2] = { false }; // GLFW_GAMEPAD_AXIS_LAST = 5
 
+	public:
+		GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId, GLFWwindow* share);
 		~GlfwNativeWindow();
 
 		GLFWwindow* getWindow() const { return _window; }

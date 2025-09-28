@@ -394,6 +394,11 @@ namespace rp::lsdj {
 			return data;
 		}
 
+		uint32 getTotalProjectCount() const {
+			return LSDJ_SAV_PROJECT_COUNT;
+		}
+
+		// TODO: Rename this to getActiveProjectCount. Iterating over this and accessing by index would be bad!
 		uint32 getProjectCount() const {
 			uint32 count = 0;
 			for (uint8 i = 0; i < LSDJ_SAV_PROJECT_COUNT; ++i) {

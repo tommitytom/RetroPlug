@@ -125,7 +125,7 @@ namespace fw {
 		bool onButton(const ButtonEvent& ev) override {
 			ViewPtr current = _shared->focused.lock();
 
-			while (current) {
+			while (current && current.get() != this) {
 				bool handled = current->onButton(ev);
 				handled |= current->emit(ev);
 

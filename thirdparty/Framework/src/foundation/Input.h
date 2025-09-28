@@ -524,7 +524,7 @@ namespace fw {
 	};
 
 	struct ButtonEvent {
-		ButtonType button;
+		PadButtonType button;
 		bool down;
 	};
 

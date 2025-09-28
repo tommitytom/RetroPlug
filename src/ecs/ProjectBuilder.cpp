@@ -110,7 +110,7 @@ namespace rp {
 
 	int32 indexOfExtension(const PathVector& paths, const std::string& ext) {
 		for (size_t i = 0; i < paths.size(); ++i) {
-			if (paths[i].extension() == ext) {
+			if (fw::StringUtil::toLower(paths[i].extension().string()) == ext) {
 				return (int32)i;
 			}
 		}

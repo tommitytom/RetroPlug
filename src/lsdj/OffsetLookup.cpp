@@ -36,6 +36,30 @@ std::string formatTags(std::string_view tags) {
 	return "";
 }
 
+rp::lsdj::RomInfo OffsetLookup::getRomInfo(const fw::Uint8Buffer& romData) {
+	rp::lsdj::RomInfo info;
+
+	info.name = GameboyUtil::getRomName((const char*)romData.data());
+	info.hash = XXH64(romData.data(), 0x4000, 0);
+
+	auto found = VERSION_LOOKUP.find((uint32)info.hash);
+	if (found != VERSION_LOOKUP.end()) {
+		const RomVersionDesc& romDesc = found->second;
+
+		info.version = romDesc.version;
+		info.tags = std::string(romDesc.tags);
+		info.isStock = true;
+	} else {
+		std::string version;
+
+		if (LsdjUtil::getVersionFromName(info.name, version)) {
+			info.version = LsdjUtil::getSemVerFromVersion(version);
+		}
+	}
+
+	return info;
+}
+
 bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate) {
 	std::string romName = GameboyUtil::getRomName((const char*)romData.data());
 

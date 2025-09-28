@@ -47,7 +47,7 @@ projects.RetroPlug.project()
 group "4 - Applications"
 
 fwProjects.Application.create({
-	version = "0.5.0",
+	version = "0.6.0",
 	name = "RetroPlugEcs",
 	namespace = "rp::",
 	header = "ecs/RetroPlugEcsApplication.h",

@@ -17,6 +17,7 @@ import { RomSelectDialog } from './Dialogs/RomSelectDialog';
 import { ContextMenu } from './Menu/ContextMenu';
 import type { MenuItem } from './Menu/types';
 import { useSaveAsDialog } from './SaveAsDialog';
+import { SaveImporterDialog } from './Dialogs/SaveImporterDialog';
 
 const sortFileSystemNodes = (a: FileSystemNode, b: FileSystemNode) => {
 	// Directories first, then files, both sorted alphabetically
@@ -479,6 +480,14 @@ export const ProjectExplorer: React.FC = () => {
 		console.log('Backup button clicked');
 	}, []);
 
+	const handleImportClick = useCallback(() => {
+		openModal({
+			title: 'Import',
+			content: <SaveImporterDialog onImport={() => {}} onClose={closeModal} />,
+			size: '4xl',
+		})
+	}, []);
+
 	return (
 		<div className="flex h-full w-full flex-col bg-gray-900">
 			<div
@@ -531,7 +540,7 @@ export const ProjectExplorer: React.FC = () => {
 					</div>
 				))}
 			</div>
-			{/*<div className="border-t border-gray-700 bg-gray-900">
+			<div className="border-t border-gray-700 bg-gray-900">
 				<button
 					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:bg-slate-500 focus:outline-none"
 					onClick={handleBackupClick}
@@ -540,7 +549,17 @@ export const ProjectExplorer: React.FC = () => {
 					<span className="text-white">▩</span>
 					<span>Backup</span>
 				</button>
-			</div>*/}
+			</div>
+			<div className="border-t border-gray-700 bg-gray-900">
+				<button
+					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:bg-slate-500 focus:outline-none"
+					onClick={handleImportClick}
+					title="Create backup of project files"
+				>
+					<span className="text-white">▩</span>
+					<span>Import</span>
+				</button>
+			</div>
 			<ContextMenu
 				items={contextMenu.items}
 				position={contextMenu.position}

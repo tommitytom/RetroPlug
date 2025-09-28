@@ -378,9 +378,7 @@ namespace fw {
 
 		virtual void onRender(fw::Canvas& canvas) {}
 
-		virtual bool onButton(const ButtonEvent& ev) { return onButton(ev.button, ev.down); }
-
-		virtual bool onButton(ButtonType button, bool down) { return false; }
+		virtual bool onButton(const ButtonEvent& ev) { return false; }
 
 		virtual bool onChar(const CharEvent& ev) { return false; }
 

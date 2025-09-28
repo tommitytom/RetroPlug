@@ -163,10 +163,23 @@ EMSCRIPTEN_RESULT touchcancel_callback(int eventType, const EmscriptenTouchEvent
 }
 #endif*/
 
+GlfwNativeWindow::GlfwNativeWindow(ResourceManager* resourceManager, FontManager* fontManager, ViewPtr view, uint32 id, const std::string& canvasId, GLFWwindow* share)
+	: Window(resourceManager, fontManager, view, id),
+	_dimensions(view->getDimensions()),
+	_canvasId(canvasId),
+	_share(share)
+{
+	_gamepadState = new GLFWgamepadstate[2];
+	_gamepadState[0] = {};
+	_gamepadState[1] = {};
+}
+
 GlfwNativeWindow::~GlfwNativeWindow() {
 	if (_window) {
 		glfwDestroyWindow(_window);
 	}
+
+	delete[] _gamepadState;
 }
 
 void GlfwNativeWindow::onCleanup() {
@@ -175,6 +188,14 @@ void GlfwNativeWindow::onCleanup() {
 
 void GlfwNativeWindow::focus() {
 	glfwFocusWindow(_window);
+}
+
+void GlfwNativeWindow::joystickCallback(int jid, int event) {
+	if (event == GLFW_CONNECTED) {
+		// The joystick was connected
+	} else if (event == GLFW_DISCONNECTED) {
+		// The joystick was disconnected
+	}
 }
 
 void GlfwNativeWindow::onCreate() {
@@ -211,7 +232,6 @@ void GlfwNativeWindow::onCreate() {
 
 	glfwSetWindowUserPointer(_window, this);
 
-	//glfwSetJoystick
 	//glfwSetJoystickCallback(joystickCallback);
 
 	glfwSetKeyCallback(_window, keyCallback);
@@ -252,10 +272,91 @@ void GlfwNativeWindow::setDimensions(Dimension dimensions) {
 
 DimensionF lastContentScale;
 
+PadButtonType convertPadButton(size_t button) {
+	switch (button) {
+	case GLFW_GAMEPAD_BUTTON_A: return PadButtonType::A;
+	case GLFW_GAMEPAD_BUTTON_B: return PadButtonType::B;
+	case GLFW_GAMEPAD_BUTTON_X: return PadButtonType::X;
+	case GLFW_GAMEPAD_BUTTON_Y: return PadButtonType::Y;
+	case GLFW_GAMEPAD_BUTTON_BACK: return PadButtonType::Select;
+	case GLFW_GAMEPAD_BUTTON_START: return PadButtonType::Start;
+	case GLFW_GAMEPAD_BUTTON_DPAD_UP: return PadButtonType::Up;
+	case GLFW_GAMEPAD_BUTTON_DPAD_DOWN: return PadButtonType::Down;
+	case GLFW_GAMEPAD_BUTTON_DPAD_LEFT: return PadButtonType::Left;
+	case GLFW_GAMEPAD_BUTTON_DPAD_RIGHT: return PadButtonType::Right;
+	case GLFW_GAMEPAD_BUTTON_LEFT_BUMPER: return PadButtonType::L1;
+	case GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER: return PadButtonType::R1;
+	case GLFW_GAMEPAD_BUTTON_LEFT_THUMB: return PadButtonType::L3;
+	case GLFW_GAMEPAD_BUTTON_RIGHT_THUMB: return PadButtonType::R3;
+	default: return PadButtonType::COUNT;
+	}
+}
+
+PadButtonType convertPadAxisButton(size_t button) {
+	return (PadButtonType)button;
+}
+
 void GlfwNativeWindow::onUpdate(f32 delta) {
 	const ViewManagerPtr& vm = getViewManager();
 
 	glfwMakeContextCurrent(_window);
+
+	if (glfwJoystickIsGamepad(GLFW_JOYSTICK_1)) {
+		const GLFWgamepadstate& prev = _gamepadState[1 - _currentStateIdx];
+		GLFWgamepadstate& state = _gamepadState[_currentStateIdx];
+		_currentStateIdx = 1 - _currentStateIdx;
+
+		if (glfwGetGamepadState(GLFW_JOYSTICK_1, &state)) {
+			for (size_t i = 0; i < GLFW_GAMEPAD_BUTTON_LAST + 1; ++i) {
+				if (state.buttons[i] != prev.buttons[i]) {
+					spdlog::info("Button {} is {}", i, state.buttons[i] ? "pressed" : "released");
+
+					vm->onButton(ButtonEvent{
+						.button = convertPadButton(i),
+						.down = state.buttons[i] != 0
+					});
+				}
+			}
+
+			for (size_t i = 0; i < 4; ++i) {
+				f32 val = state.axes[i];
+				size_t l = i * 2;
+				size_t r = i * 2 + 1;
+
+				if (val < -_axisButtonThreshold) {
+					if (_axisButtons[l] == false) {
+						if (_axisButtons[r] == true) {
+							_axisButtons[r] = false;
+							vm->onButton(ButtonEvent{ .button = convertPadAxisButton(r), .down = false });
+						}
+
+						_axisButtons[l] = true;
+						vm->onButton(ButtonEvent{ .button = convertPadAxisButton(l), .down = true });
+					}
+				} else if (val > _axisButtonThreshold) {
+					if (_axisButtons[r] == false) {
+						if (_axisButtons[l] == true) {
+							_axisButtons[l] = false;
+							vm->onButton(ButtonEvent{ .button = convertPadAxisButton(l), .down = false });
+						}
+
+						_axisButtons[r] = true;
+						vm->onButton(ButtonEvent{ .button = convertPadAxisButton(r), .down = true });
+					}
+				} else {
+					if (_axisButtons[l] == true) {
+						_axisButtons[l] = false;
+						vm->onButton(ButtonEvent{ .button = convertPadAxisButton(l), .down = false });
+					}
+
+					if (_axisButtons[r] == true) {
+						_axisButtons[r] = false;
+						vm->onButton(ButtonEvent{ .button = convertPadAxisButton(r), .down = false });
+					}
+				}
+			}
+		}
+	}
 
 	DimensionF contentScale;
 	glfwGetWindowContentScale(_window, &contentScale.w, &contentScale.h);
