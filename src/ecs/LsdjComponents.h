@@ -11,6 +11,7 @@
 #include "ecs/SampleCache.h"
 #include "ecs/TaskBase.h"
 #include "lsdj/Ram.h"
+#include "lsdj/LsdjSettings.h"
 
 namespace rp {
 	using KitIndex = uint32;
@@ -70,4 +71,16 @@ namespace rp {
 		LsdjStateComponent() { kitVersions.fill(1); }
 		~LsdjStateComponent() = default;
 	};
+
+	struct LsdjAudioComponent {
+		LsdjSyncMode syncMode = LsdjSyncMode::Off;
+		bool autoPlay = false;
+	};
+
+	struct LsdjAudioStateComponent {
+		uint32 tempoDivisor = 1;
+		bool arduinoboyPlaying = false;
+		uint8 keyboardOctave = 4;
+		int32 lastRow = -1;
+	};;
 }

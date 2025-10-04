@@ -2,11 +2,8 @@
 
 #include "audio/MidiMessage.h"
 #include "core/Forward.h"
-#include "core/System.h"
-#include "core/SystemService.h"
-#include "core/SystemServiceProvider.h"
 #include "util/GameboyUtil.h"
-
+/*
 namespace rp {
 	const SystemServiceType MGB_SERVICE_TYPE = 0x80B80B80;
 
@@ -39,3 +36,4 @@ namespace rp {
 		}
 	};
 }
+*/

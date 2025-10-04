@@ -3,61 +3,19 @@
 #include <chrono>
 
 #include "foundation/DataBuffer.h"
-#include "core/ProjectState.h"
-#include "core/System.h"
 #include "core/SystemSettings.h"
 #include "core/RetroPlugConfig.h"
 
 namespace rp {
-	struct AddSystemEvent {
-		SystemPtr system;
-	};
-	
-	struct RemoveSystemEvent {
-		SystemId systemId;
+	struct PingEvent {
+		std::chrono::high_resolution_clock::time_point time;
 	};
 
-	struct RemoveAllSystemsEvent {};
-
-	struct ReplaceSystemEvent {
-		SystemPtr system;
+	struct PongEvent {
+		std::chrono::high_resolution_clock::time_point time;
 	};
 
-	struct SwapSystemEvent {
-		SystemPtr system;
-	};
-
-	struct ResetSystemEvent {
-		SystemId systemId;
-	};
-
-	struct CollectSystemEvent {
-		SystemPtr system;
-	};
-
-	struct FetchStateRequest {};
-
-	struct SetProjectState {
-		ProjectState project;
-	};
-
-	struct SystemStateResponse {
-		SystemType type = 0;
-		SystemId id = INVALID_SYSTEM_ID;
-		std::string romName;
-		SystemDesc desc;
-		SystemStateOffsets stateOffsets;
-		fw::Uint8Buffer state;
-		fw::Uint8Buffer rom;
-		fw::DimensionU32 resolution;
-		std::vector<std::pair<SystemServiceType, entt::any>> services;
-	};
-
-	struct FetchStateResponse {
-		RetroPlugConfig config;
-		ProjectState project;
-		std::vector<SystemStateResponse> systems;
-	};
+	/*struct FetchStateRequest {};
 
 	struct FetchSaveStateRequest {
 		SystemId systemId = INVALID_SYSTEM_ID;
@@ -88,21 +46,15 @@ namespace rp {
 		fw::Uint8Buffer stateBuffer;
 	};
 
-	struct PingEvent {
-		std::chrono::high_resolution_clock::time_point time;
-	};
-
-	struct PongEvent {
-		std::chrono::high_resolution_clock::time_point time;
-	};
+	
 
 	struct SetSettingsEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
 		SystemSettings settings;
-	};;
+	};
 
 	struct SetDescEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
 		SystemDesc desc;
-	};;
+	};*/
 }

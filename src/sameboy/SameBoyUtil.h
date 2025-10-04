@@ -5,7 +5,6 @@
 #include "foundation/DataBuffer.h"
 #include "core/CoreComponents.h"
 #include "core/MemoryAccessor.h"
-#include "core/System.h"
 #include "sameboy/SameBoyComponents.h"
 
 namespace rp::SameBoyUtil {

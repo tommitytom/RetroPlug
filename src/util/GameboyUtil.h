@@ -2,6 +2,7 @@
 
 #include <string>
 #include "foundation/Types.h"
+#include "util/GameboyUtil.h"
 
 namespace rp::GameboyUtil {
 	const uint32 ROM_NAME_OFFSET = 0x0134;

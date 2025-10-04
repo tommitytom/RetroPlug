@@ -5,7 +5,6 @@
 
 #include <defs.h>
 
-#include "core/System.h"
 #include "core/SystemTypes.h"
 #include "sameboy/Constants.h"
 #include "sameboy/SameboyConfig.h"

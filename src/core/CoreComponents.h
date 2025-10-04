@@ -7,9 +7,16 @@
 
 #include "foundation/DataBuffer.h"
 #include "core/MemoryAccessor.h"
-#include "core/System.h"
 
 namespace rp {
+	struct SystemStateOffset {
+		uint32 offset = 0;
+		uint32 size = 0;
+	};
+
+	using SystemStateOffsets = std::array<SystemStateOffset, 5>;
+	using SystemStateHashes = std::array<uint64, 5>;
+
 	struct SystemComponent {
 		entt::id_type systemType = entt::null;
 	};

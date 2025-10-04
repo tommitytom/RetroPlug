@@ -7,7 +7,7 @@
 namespace rp::lsdj {
 	struct RomInfo {
 		std::string name;
-		semver::version version;
+		semver::version version{0, 0, 0};
 		std::string tags;
 		uint64 hash = 0;
 		bool isStock = false;

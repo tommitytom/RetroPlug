@@ -6,7 +6,6 @@
 
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
-#include "core/Project.h"
 #include "application/WebApplicationRunner.h"
 #include "entry/ApplicationFactory.h"
 #include "ui/View.h"

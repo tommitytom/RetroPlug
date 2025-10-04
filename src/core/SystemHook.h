@@ -5,6 +5,8 @@
 #include "ui/View.h"
 #include "ecs/ProjectSerializerContext.h"
 #include "core/CoreComponents.h"
+#include "audio/TimeInfo.h"
+#include "audio/MidiMessage.h"
 
 namespace rp {
 	using PathVector = std::vector<std::filesystem::path>;
@@ -130,7 +132,13 @@ namespace rp {
 		virtual MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const { return MemoryAccessor(); }
 		virtual void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {}
 		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
+		virtual void onTransportChange(entt::registry& registry, entt::entity entity, bool running) const {}
+		virtual void onTransportUpdate(entt::registry& registry, entt::entity entity, const fw::TimeInfo& timeInfo) const {}
+		virtual void onMidi(entt::registry& registry, entt::entity entity, const fw::MidiMessage& message) const {}
+		virtual void onMidiClock(entt::registry& registry, entt::entity entity) const {}
 	};
+
+	using AudioHooksVector = std::vector<AudioSystemHook*>;
 
 	inline void eachHook(entt::id_type systemType, const HooksVector& hooks, std::function<void(const SystemHookBase&)>&& func) {
 		for (const SystemHookBase* hook : hooks) {
@@ -142,6 +150,12 @@ namespace rp {
 
 	inline void eachHook(const HooksVector& hooks, std::function<void(const SystemHookBase&)>&& func) {
 		for (const SystemHookBase* hook : hooks) {
+			func(*hook);
+		}
+	}
+
+	inline void eachHook(const AudioHooksVector& hooks, std::function<void(const AudioSystemHook&)>&& func) {
+		for (const AudioSystemHook* hook : hooks) {
 			func(*hook);
 		}
 	}

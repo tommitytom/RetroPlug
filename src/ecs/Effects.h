@@ -1,7 +1,7 @@
 #pragma once
 
 #include <rfl/TaggedUnion.hpp>
-#include "ecs/AudioDithering.h"
+#include "core/audio/AudioDithering.h"
 #include "util/GameboyUtil.h"
 
 namespace rp {

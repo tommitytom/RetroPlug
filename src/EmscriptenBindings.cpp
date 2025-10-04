@@ -10,17 +10,10 @@
 #include <emscripten/bind.h>
 
 #include "foundation/DataBuffer.h"
-#include "ui/RetroPlugView.h"
 
-#include "core/Project.h"
-#include "core/ProxySystem.h"
-#include "core/ProxySystemService.h"
-#include "core/audio/Effect.h"
-#include "core/audio/BiquadEffect.h"
-#include "core/audio/DitherEffect.h"
-#include "core/audio/EffectChain.h"
 #include "sameboy/Constants.h"
 
+#include "audio/AudioBuffer.h"
 #include "ecs/RetroPlugEcsView.h"
 #include "ecs/RetroPlugProject.h"
 #include "ecs/LsdjController.h"
@@ -57,11 +50,6 @@ RetroPlugEcsApplication* upcastApplication(fw::app::Application& app) {
 
 emscripten::val lsdjProject_getName(rp::lsdj::Project& project) {
 	std::string name = std::string(project.getName());
-	return emscripten::val::u8string(name.c_str());
-}
-
-emscripten::val system_getRomName(rp::System& system) {
-	std::string name = std::string(system.getRomName());
 	return emscripten::val::u8string(name.c_str());
 }
 
@@ -159,12 +147,6 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("hash", &rp::lsdj::RomInfo::hash)
 		.property("isStock", &rp::lsdj::RomInfo::isStock)
 	;
-
-	enum_<SaveStateType>("SaveStateType")
-        .value("None", SaveStateType::None)
-        .value("Sram", SaveStateType::Sram)
-        .value("State", SaveStateType::State)
-    ;
 
 	class_<MemoryAccessor>("MemoryAccessor")
 		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
@@ -668,84 +650,5 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("sizeInBytes", &fw::AudioBuffer::getSizeInBytes)
 		.property("sampleRate", &fw::AudioBuffer::getSampleRate, &fw::AudioBuffer::setSampleRate)
 		.function("isEmpty", &fw::AudioBuffer::isEmpty)
-	;
-
-	// Effect base class
-	class_<Effect>("NativeEffect")
-		.smart_ptr<std::shared_ptr<Effect>>("NativeEffectPtr")
-		.function("process", &Effect::process, pure_virtual())
-	;
-
-	// FilterType enum
-	enum_<FilterType>("NativeFilterType")
-		.value("LowPass", FilterType::LowPass)
-		.value("HighPass", FilterType::HighPass)
-		.value("BandPass", FilterType::BandPass)
-		.value("BandStop", FilterType::BandStop)
-		.value("Peak", FilterType::Peak)
-		.value("LowShelf", FilterType::LowShelf)
-		.value("HighShelf", FilterType::HighShelf)
-		.value("AllPass", FilterType::AllPass)
-	;
-
-	// BiquadEffect class
-	/*class_<BiquadEffect, base<Effect>>("NativeBiquadEffect")
-		.constructor<>()
-		.function("process", &BiquadEffect::process)
-		.function("setFilterType", &BiquadEffect::setFilterType)
-		.function("setFrequency", &BiquadEffect::setFrequency)
-		.function("setQ", &BiquadEffect::setQ)
-		.function("setGain", &BiquadEffect::setGain)
-		.function("setSampleRate", &BiquadEffect::setSampleRate)
-		.function("getFilterType", &BiquadEffect::getFilterType)
-		.function("getFrequency", &BiquadEffect::getFrequency)
-		.function("getQ", &BiquadEffect::getQ)
-		.function("getGain", &BiquadEffect::getGain)
-		.function("getSampleRate", &BiquadEffect::getSampleRate)
-		.function("reset", &BiquadEffect::reset)
-		.function("configureLowPass", &BiquadEffect::configureLowPass)
-		.function("configureHighPass", &BiquadEffect::configureHighPass)
-		.function("configureBandPass", &BiquadEffect::configureBandPass)
-		.function("configureBandStop", &BiquadEffect::configureBandStop)
-		.function("configurePeaking", &BiquadEffect::configurePeaking)
-		.function("configureLowShelf", &BiquadEffect::configureLowShelf)
-		.function("configureHighShelf", &BiquadEffect::configureHighShelf)
-		.function("isStable", &BiquadEffect::isStable)
-		.function("getMagnitudeResponse", &BiquadEffect::getMagnitudeResponse)
-	;*/
-/*
-	// DitherMode enum
-	enum_<DitherMode>("NativeDitherMode")
-		.value("ErrorDiffusion", DitherMode::ErrorDiffusion)
-		.value("SierraLite", DitherMode::SierraLite)
-		.value("HighPassTPDF", DitherMode::HighPassTPDF)
-		.value("ShapedTPDF2ndOrder", DitherMode::ShapedTPDF2ndOrder)
-		.value("JJNErrorDiffusion", DitherMode::JJNErrorDiffusion)
-	;
-
-	// DitherEffect class
-	class_<DitherEffect, base<Effect>>("NativeDitherEffect")
-		.constructor<>()
-		.function("process", &DitherEffect::process)
-		.function("setMode", &DitherEffect::setMode)
-		.function("setBitDepth", &DitherEffect::setBitDepth)
-		.function("setEnabled", &DitherEffect::setEnabled)
-		.function("getMode", &DitherEffect::getMode)
-		.function("getBitDepth", &DitherEffect::getBitDepth)
-		.function("isEnabled", &DitherEffect::isEnabled)
-		.function("reset", &DitherEffect::reset)
-		.function("configureErrorDiffusion", &DitherEffect::configureErrorDiffusion)
-		.function("configureSierraLite", &DitherEffect::configureSierraLite)
-		.function("configureHighPassTPDF", &DitherEffect::configureHighPassTPDF)
-		.function("configureShapedTPDF2ndOrder", &DitherEffect::configureShapedTPDF2ndOrder)
-		.function("configureJJNErrorDiffusion", &DitherEffect::configureJJNErrorDiffusion)
-	;
-*/
-	// EffectChain class
-	class_<EffectChain>("NativeEffectChain")
-		.constructor<>()
-		.function("addEffect", &EffectChain::addEffect)
-		.function("removeEffect", &EffectChain::removeEffect)
-		.function("process", &EffectChain::process)
 	;
 }
