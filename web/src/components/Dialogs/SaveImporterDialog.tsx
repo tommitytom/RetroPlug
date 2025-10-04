@@ -1,13 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
 import { fromArrayBuffer } from '../../utils/NativeUtil';
 
 interface RomInfo {
 	fileName: string;
 	name: string;
-	version: string;
-	tags: string;
-	isStock: boolean;
+	version?: string;
+	tags?: string;
+	isStock?: boolean;
 }
 
 interface SongInfo {
@@ -26,12 +26,73 @@ export const SaveImporterDialog: React.FC<{
 	onImport: (roms: RomInfo[], songs: SongInfo[]) => void;
 	onClose: () => void;
 }> = ({ onImport, onClose }) => {
-	const { module } = useRetroPlug();
+	const { module, fileSystem } = useRetroPlug();
 	const [files, setFiles] = useState<FileInfo[]>([]);
 	const [roms, setRoms] = useState<RomInfo[]>([]);
 	const [songs, setSongs] = useState<SongInfo[]>([]);
+	const [existingRoms, setExistingRoms] = useState<RomInfo[]>([]);
+	const [duplicateRoms, setDuplicateRoms] = useState<RomInfo[]>([]);
+	const [showDuplicates, setShowDuplicates] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// Extract ROM information from filesystem data
+	const extractRomInfoFromData = async (fileName: string, data: ArrayBuffer): Promise<RomInfo> => {
+		const romData = fromArrayBuffer(module, data);
+		const romName = module.getRomName(romData);
+		const isLsdj = romName.toLowerCase().includes('lsdj');
+		const romInfo = module.getLsdjRomInfo(romData);
+
+		let extractedRom: RomInfo;
+
+		if (isLsdj) {
+			extractedRom = {
+				fileName: fileName,
+				name: romInfo.name,
+				version: romInfo.version.major + '.' + romInfo.version.minor + '.' + romInfo.version.patch,
+				tags: romInfo.tags,
+				isStock: romInfo.isStock,
+			};
+		} else {
+			extractedRom = {
+				fileName: fileName,
+				name: romName,
+			};
+		}
+
+		romInfo.delete();
+		romData.delete();
+
+		return extractedRom;
+	};
+
+	// Load existing ROMs from filesystem
+	const loadExistingRoms = async (): Promise<void> => {
+		try {
+			const romsListing = await fileSystem.listPath('/roms');
+			const items = romsListing?.children;
+
+			if (!items) return;
+
+			const existingRomInfos: RomInfo[] = [];
+
+			for (const item of items) {
+				if (item.name.toLowerCase().endsWith('.gb')) {
+					try {
+						const data = await fileSystem.readPath(`/roms/${item.name}`);
+						const romInfo = await extractRomInfoFromData(item.name, data);
+						existingRomInfos.push(romInfo);
+					} catch (error) {
+						console.warn(`Failed to read ROM ${item.name}:`, error);
+					}
+				}
+			}
+
+			setExistingRoms(existingRomInfos);
+		} catch (error) {
+			console.warn('Failed to load existing ROMs:', error);
+		}
+	};
 
 	// Extract ROM information
 	const extractRomInfo = async (file: File): Promise<RomInfo> => {
@@ -82,17 +143,38 @@ export const SaveImporterDialog: React.FC<{
 		return extractedSongs;
 	};
 
+	// Load existing ROMs when component mounts
+	useEffect(() => {
+		loadExistingRoms();
+	}, []);
+
 	const processFile = async (file: FileInfo): Promise<void> => {
 		if (file.type === 'rom') {
 			const romInfo = await extractRomInfo(file.file);
-			// Check for duplicate ROMs (same name and version)
-			setRoms(prev => {
-				const isDuplicate = prev.some(existingRom =>
-					existingRom.fileName === romInfo.fileName &&
-					existingRom.version === romInfo.version
-				);
-				return isDuplicate ? prev : [...prev, romInfo];
-			});
+			// Check for duplicate ROMs (same name and version) against both imported ROMs and existing filesystem ROMs
+			const isDuplicateInImported = roms.some(existingRom =>
+				existingRom.fileName === romInfo.fileName &&
+				existingRom.version === romInfo.version
+			);
+			const isDuplicateInFilesystem = existingRoms.some(existingRom =>
+				existingRom.fileName === romInfo.fileName &&
+				existingRom.version === romInfo.version
+			);
+			const isDuplicate = isDuplicateInImported || isDuplicateInFilesystem;
+
+			if (isDuplicate) {
+				// Add to duplicates list instead of ignoring
+				setDuplicateRoms(prev => {
+					const alreadyInDuplicates = prev.some(dupRom =>
+						dupRom.fileName === romInfo.fileName &&
+						dupRom.version === romInfo.version
+					);
+					return alreadyInDuplicates ? prev : [...prev, romInfo];
+				});
+			} else {
+				// Add to regular ROMs list
+				setRoms(prev => [...prev, romInfo]);
+			}
 		} else {
 			const songInfos = await extractSavInfo(file.file);
 			// Filter out duplicate songs (same name and version)
@@ -171,11 +253,17 @@ export const SaveImporterDialog: React.FC<{
 		setRoms(prev => prev.filter((_, i) => i !== index));
 	};
 
+	const removeDuplicateRom = (rom: RomInfo) => {
+		setDuplicateRoms(prev => prev.filter(dupRom =>
+			!(dupRom.fileName === rom.fileName && dupRom.version === rom.version)
+		));
+	};
+
 	const removeSongGroup = (songName: string) => {
 		setSongs(prev => prev.filter(song => song.name !== songName));
 	};
 
-	const hasFiles = roms.length > 0 || songs.length > 0;
+	const hasFiles = roms.length > 0 || songs.length > 0 || duplicateRoms.length > 0;
 
 	return (
 		<div
@@ -246,81 +334,118 @@ export const SaveImporterDialog: React.FC<{
 			)}
 
 			{/* ROMs and Songs Lists - Side by Side */}
-			{(roms.length > 0 || Object.keys(groupedSongs).length > 0) && (
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+			{(roms.length > 0 || duplicateRoms.length > 0 || Object.keys(groupedSongs).length > 0) && (
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
 					{/* ROMs List */}
-					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-white">ROMs ({roms.length})</h3>
-						<div className="bg-gray-800 rounded-lg overflow-hidden">
-							<div className="max-h-64 overflow-y-auto">
-								{roms.length > 0 ? roms.map((rom, index) => (
-									<div key={index} className="flex items-center justify-between p-3 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
-										<div className="flex items-center gap-4 flex-1 min-w-0">
-											<span className="px-2 py-1 text-xs rounded font-medium bg-green-600 text-white flex-shrink-0">
-												ROM
-											</span>
-											<span className="text-white font-medium truncate">{rom.fileName}</span>
-											<span className="text-gray-300 text-sm">
-												LSDj v{rom.version} {rom.tags && `(${rom.tags})`}
-											</span>
-											<span className={`px-2 py-1 text-xs rounded flex-shrink-0 ${
-												rom.isStock
-													? 'bg-blue-600 text-white'
-													: 'bg-orange-600 text-white'
-											}`}>
-												{rom.isStock ? 'Stock' : 'Modified'}
-											</span>
-										</div>
-										<button
-											onClick={() => removeRom(index)}
-											className="text-gray-400 hover:text-red-400 transition-colors p-1 flex-shrink-0"
-											title="Remove ROM"
-										>
-											✕
-										</button>
-									</div>
-								)) : (
-									<div className="p-4 text-gray-400 text-sm text-center">No ROMs imported</div>
-								)}
+					<div className="space-y-2">
+						<div className="flex items-center justify-between">
+							<h3 className="text-sm font-medium text-white">
+								ROMs ({roms.length}{duplicateRoms.length > 0 ? ` + ${duplicateRoms.length} duplicates` : ''})
+							</h3>
+							{duplicateRoms.length > 0 && (
+								<label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={showDuplicates}
+										onChange={(e) => setShowDuplicates(e.target.checked)}
+										className="w-3 h-3"
+									/>
+									Show Duplicates
+								</label>
+							)}
+						</div>
+						<div className="bg-gray-800 rounded border border-gray-700 overflow-hidden">
+							<div className="max-h-80 overflow-y-auto">
+								{(() => {
+									const displayRoms = showDuplicates ? [...roms, ...duplicateRoms] : roms;
+									return displayRoms.length > 0 ? displayRoms.map((rom, index) => {
+										const isDuplicate = duplicateRoms.includes(rom);
+										const actualIndex = isDuplicate ? -1 : roms.indexOf(rom); // -1 for duplicates so remove button is disabled
+
+										return (
+											<div key={`${rom.fileName}-${index}`} className={`flex items-center justify-between px-2 py-1 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/30 transition-colors ${isDuplicate ? 'opacity-60' : ''}`}>
+												<div className="flex items-center gap-2 flex-1 min-w-0">
+													<span className={`px-1.5 py-0.5 text-xs font-medium rounded flex-shrink-0 ${
+														isDuplicate
+															? 'bg-yellow-600 text-white'
+															: 'bg-green-600 text-white'
+													}`}>
+														{isDuplicate ? 'DUP' : 'ROM'}
+													</span>
+													<div className="flex flex-col min-w-0 flex-1">
+														<span className="text-white text-xs font-medium truncate">{rom.fileName}</span>
+														<div className="flex items-center gap-1 text-xs">
+															<span className="text-gray-300">
+																{rom.name}
+															</span>
+															{rom.tags && (
+																<span className="text-gray-400">({rom.tags})</span>
+															)}
+
+															{isDuplicate && (
+																<span className="px-1 py-0.5 text-xs rounded bg-red-600/80 text-white">
+																	Will be ignored
+																</span>
+															)}
+														</div>
+													</div>
+												</div>
+												{!isDuplicate && (
+													<button
+														onClick={() => removeRom(actualIndex)}
+														className="text-gray-400 hover:text-red-400 transition-colors p-0.5 flex-shrink-0 text-sm"
+														title="Remove ROM"
+													>
+														✕
+													</button>
+												)}
+											</div>
+										);
+									}) : (
+										<div className="p-3 text-gray-400 text-xs text-center">No ROMs imported</div>
+									);
+								})()}
 							</div>
 						</div>
 					</div>
 
 					{/* Songs List */}
-					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-white">Songs ({songs.length} total, {Object.keys(groupedSongs).length} unique)</h3>
-						<div className="bg-gray-800 rounded-lg overflow-hidden">
-							<div className="max-h-64 overflow-y-auto">
+					<div className="space-y-2">
+						<h3 className="text-sm font-medium text-white">Songs ({songs.length} total, {Object.keys(groupedSongs).length} unique)</h3>
+						<div className="bg-gray-800 rounded border border-gray-700 overflow-hidden">
+							<div className="max-h-80 overflow-y-auto">
 								{Object.keys(groupedSongs).length > 0 ? Object.entries(groupedSongs).map(([songName, versions]) => (
-									<div key={songName} className="flex items-center justify-between p-3 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
-										<div className="flex items-center gap-4 flex-1 min-w-0">
-											<span className="px-2 py-1 text-xs rounded font-medium bg-blue-600 text-white flex-shrink-0">
+									<div key={songName} className="flex items-center justify-between px-2 py-1 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/30 transition-colors">
+										<div className="flex items-center gap-2 flex-1 min-w-0">
+											<span className="px-1.5 py-0.5 text-xs font-medium bg-blue-600 text-white rounded flex-shrink-0">
 												SONG
 											</span>
-											<span className="text-white font-medium truncate">{songName}</span>
-											<div className="flex items-center gap-2 text-sm text-gray-300">
-												{versions.length > 1 ? (
-													<span className="px-2 py-1 text-xs rounded bg-yellow-600 text-white">
-														{versions.length} versions (v{Math.min(...versions.map(v => v.version))}-v{Math.max(...versions.map(v => v.version))})
+											<div className="flex flex-col min-w-0 flex-1">
+												<span className="text-white text-xs font-medium truncate">{songName}</span>
+												<div className="flex items-center gap-1 text-xs">
+													{versions.length > 1 ? (
+														<span className="px-1 py-0.5 text-xs rounded bg-yellow-600/80 text-white">
+															{versions.length} versions (v{Math.min(...versions.map(v => v.version))}-v{Math.max(...versions.map(v => v.version))})
+														</span>
+													) : (
+														<span className="text-gray-300">v{versions[0].version}</span>
+													)}
+													<span className="text-gray-400 text-xs">
+														from {versions.length === 1 ? versions[0].sourceFile : `${versions.length} files`}
 													</span>
-												) : (
-													<span>v{versions[0].version}</span>
-												)}
-												<span className="text-gray-400">
-													from {versions.length === 1 ? versions[0].sourceFile : `${versions.length} files`}
-												</span>
+												</div>
 											</div>
 										</div>
 										<button
 											onClick={() => removeSongGroup(songName)}
-											className="text-gray-400 hover:text-red-400 transition-colors p-1 flex-shrink-0"
+											className="text-gray-400 hover:text-red-400 transition-colors p-0.5 flex-shrink-0 text-sm"
 											title="Remove all versions of this song"
 										>
 											✕
 										</button>
 									</div>
 								)) : (
-									<div className="p-4 text-gray-400 text-sm text-center">No songs imported</div>
+									<div className="p-3 text-gray-400 text-xs text-center">No songs imported</div>
 								)}
 							</div>
 						</div>

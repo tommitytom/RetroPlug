@@ -173,6 +173,7 @@ interface ISection {
 const sections: ISection[] = [
 	{ id: 'roms', name: 'Roms', extensions: ['.gb', '.gbc'], recurse: false },
 	{ id: 'savs', name: 'Savs', extensions: ['.sav'], recurse: false },
+	{ id: 'songs', name: 'Songs', extensions: [], recurse: false },
 	{ id: 'kits', name: 'Kits', extensions: ['.kit'], recurse: false },
 	{ id: 'synths', name: 'Synths', extensions: ['.snt'], recurse: false },
 	{ id: 'samples', name: 'Samples', extensions: ['.wav', '.mp3', '.ogg', '.aiff'], recurse: true },
@@ -201,6 +202,7 @@ async function getFileList(fileSystem: FileSystemWorkerAPI): Promise<Record<stri
 			(await fileSystem.listPath(`/savs`, false)).children?.filter(
 				(child) => child.name.endsWith('.sav') || child.name.endsWith('.state'),
 			) || [],
+		songs: (await fileSystem.listPath(`/songs`)).children || [],
 		kits: (await fileSystem.listPath(`/kits`)).children || [],
 		samples: (await fileSystem.listPath(`/samples`, true)).children || [],
 		synths: (await fileSystem.listPath(`/synths`)).children || [],
