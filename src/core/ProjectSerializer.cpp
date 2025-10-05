@@ -1,8 +1,8 @@
-#include "EcsProjectSerializer.h"
+#include "ProjectSerializer.h"
 
 #include "core/Constants.h"
 #include "core/CoreComponents.h"
-#include "ecs/RetroPlugProjectContext.h"
+#include "core/RetroPlugProjectContext.h"
 #include "foundation/Replicator.h"
 
 namespace rp {

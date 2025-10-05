@@ -1,18 +1,18 @@
-#include "RetroPlugProject.h"
+#include "core/RetroPlugProject.h"
 
 #include <spdlog/spdlog.h>
 #include <TaskScheduler.h>
 
-#include "foundation/Replicator.h"
-#include "ecs/RetroPlugComponents.h"
-#include "sameboy/SameBoyComponents.h"
-#include "ecs/SameBoyHooks.h"
-#include "ecs/LsdjHooks.h"
-#include "ecs/EcsProjectSerializer.h"
-#include "core/Events.h"
-#include "ecs/RetroPlugProjectContext.h"
-#include "ecs/TaskSchedulerGlobal.h"
 #include "foundation/FsUtil.h"
+#include "foundation/Replicator.h"
+#include "core/Events.h"
+#include "core/ProjectSerializer.h"
+#include "core/RetroPlugComponents.h"
+#include "core/RetroPlugProjectContext.h"
+#include "core/SameBoyHooks.h"
+#include "core/TaskSchedulerGlobal.h"
+#include "sameboy/SameBoyComponents.h"
+#include "lsdj/LsdjHooks.h"
 
 namespace rp {
 	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {

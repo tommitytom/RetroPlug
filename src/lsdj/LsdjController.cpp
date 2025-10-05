@@ -1,11 +1,12 @@
 #include "LsdjController.h"
 
+#include <liblsdj/liblsdj/src/song_offsets.h>
+
+#include "foundation/Event.h"
+#include "core/RetroPlugProjectContext.h"
+#include "lsdj/LsdjTasks.h"
 #include "lsdj/KitUtil.h"
 #include "lsdj/SampleUtil.h"
-#include "ecs/RetroPlugProjectContext.h"
-#include "ecs/Tasks.h"
-#include "foundation/Event.h"
-#include <liblsdj/liblsdj/src/song_offsets.h>
 
 namespace rp {
 	inline LsdjKitDesc* findKitDesc(std::vector<LsdjKitDesc>& target, uint32 id) {

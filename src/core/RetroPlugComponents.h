@@ -5,14 +5,12 @@
 
 #include "core/CoreComponents.h"
 #include "core/SystemTypes.h"
-#include "ecs/HierarchyComponents.h"
+#include "core/HierarchyComponents.h"
 #include "sameboy/SameBoyComponents.h"
-#include "ecs/LsdjComponents.h"
 
-#include "lsdj/Ram.h"
-#include "ecs/Effects.h"
-#include "ecs/SampleCache.h"
-#include "ecs/TaskBase.h"
+#include "core/Effects.h"
+#include "core/SampleCache.h"
+#include "core/TaskBase.h"
 
 namespace rp {
 	struct ErrorComponent {
@@ -63,6 +61,8 @@ namespace rp {
 	struct SystemNameComponent {
 		std::string name;
 	};
+
+	struct LsdjComponent;
 
 	using ReplicatedTypes = entt::type_list<
 		SystemComponent,

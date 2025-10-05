@@ -2,10 +2,10 @@
 
 #include "ui/View.h"
 #include "foundation/Image.h"
-#include "ecs/TileView.h"
+#include "ui/TileView.h"
 
 namespace rp {
-	class EcsSystemView : public TileView {
+	class SystemView : public TileView {
 		FwRegisterObject()
 	private:
 		RetroPlugProject& _project;
@@ -13,7 +13,7 @@ namespace rp {
 		fw::TextureHandle _texture;
 
 	public:
-		EcsSystemView(RetroPlugProject& project, entt::entity entity): TileView(entity), _project(project) {
+		SystemView(RetroPlugProject& project, entt::entity entity): TileView(entity), _project(project) {
 			setFocusPolicy(fw::FocusPolicy::Click);
 		}
 
@@ -111,5 +111,5 @@ namespace rp {
 		}
 	};
 
-	using EcsSystemViewPtr = std::shared_ptr<EcsSystemView>;
+	using SystemViewPtr = std::shared_ptr<SystemView>;
 }

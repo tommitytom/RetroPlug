@@ -1,28 +1,29 @@
-#include "RetroPlugEcsView.h"
+#include "RetroPlugView.h"
 
 #include "foundation/Replicator.h"
-#include "ui/SliderView.h"
-#include "ui/TextureView.h"
-#include "Components.h"
-#include "SineGenerator.h"
-#include "sameboy/SameBoyComponents.h"
-#include "ecs/RetroPlugComponents.h"
-#include "ecs/HierarchyUtil.h"
+#include "core/RetroPlugComponents.h"
+#include "core/HierarchyUtil.h"
+
+#include "ui/HexEditor.h"
+#include "ui/LsdjHdPlayer.h"
+#include "ui/LoadingView.h"
 #include "ui/PanelView.h"
-#include "ecs/EcsSystemView.h"
-#include "ecs/LoadingView.h"
-#include "ecs/TileGrid.h"
-#include "ecs/LsdjHdPlayerEcs.h"
-#include "ecs/HexEditor.h"
+#include "ui/SliderView.h"
+#include "ui/SystemView.h"
+#include "ui/TextureView.h"
+#include "ui/TileGrid.h"
+
 #include "application/WindowManager.h"
 
+#include "sameboy/SameBoyComponents.h"
+
 namespace rp {
-	RetroPlugEcsView::RetroPlugEcsView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
+	RetroPlugView::RetroPlugView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
 		setName(fmt::format("RetroPlug v{}", RP_VERSION));
 		setFocusPolicy(fw::FocusPolicy::Click);
 	}
 
-	void RetroPlugEcsView::onInitialize() {
+	void RetroPlugView::onInitialize() {
 		setScale(3.0f);
 		fw::ViewLayout& layout = getLayout();
 		layout.setFlexDirection(fw::FlexDirection::Row);
@@ -30,7 +31,7 @@ namespace rp {
 		//getLayout().setOverflow(fw::FlexOverflow::Visible);
 	}
 
-	bool RetroPlugEcsView::onDrop(const std::vector<std::string>& paths) {
+	bool RetroPlugView::onDrop(const std::vector<std::string>& paths) {
 #ifndef FW_PLATFORM_WEB
 		std::vector<std::filesystem::path> fsPaths;
 		for (const std::string& path : paths) {
@@ -44,7 +45,7 @@ namespace rp {
 		return false;
 	}
 
-	void RetroPlugEcsView::onUpdate(f32 deltaTime) {
+	void RetroPlugView::onUpdate(f32 deltaTime) {
 		_project.onUpdate(deltaTime);
 
 		if (_project.getVersion() != _version) {
@@ -66,11 +67,11 @@ namespace rp {
 		getLayout().setDimensions(fw::Dimension(dimensions));
 	}
 
-	void RetroPlugEcsView::onRender(fw::Canvas& canvas) {
+	void RetroPlugView::onRender(fw::Canvas& canvas) {
 		canvas.fillRect(getDimensions(), fw::Color4F::red);
 	}
 
-	void RetroPlugEcsView::rebuildUi() {
+	void RetroPlugView::rebuildUi() {
 		entt::registry& registry = getRegistry();
 
 		std::string projectName = _project.getProjectName();
@@ -100,7 +101,7 @@ namespace rp {
 		}
 	}
 
-	void RetroPlugEcsView::setRootContainer(const std::shared_ptr<RootContainer>& container) {
+	void RetroPlugView::setRootContainer(const std::shared_ptr<RootContainer>& container) {
 		_rootContainer = container;
 		this->removeChildren();
 		if (_rootContainer) {
@@ -108,7 +109,7 @@ namespace rp {
 		}
 	}
 
-	bool RetroPlugEcsView::onKey(const fw::KeyEvent& event) {
+	bool RetroPlugView::onKey(const fw::KeyEvent& event) {
 #ifdef FW_PLATFORM_WEB
 		return false;
 #endif
@@ -132,7 +133,7 @@ namespace rp {
 				_rootContainer->remove();
 			}
 
-			_rootContainer = addChild(std::make_unique<LsdjHdPlayerEcs>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayerEcs>();
+			_rootContainer = addChild(std::make_unique<LsdjHdPlayer>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayer>();
 		}*/
 
 		if (event.down && event.key == fw::VirtualKey::F7) {

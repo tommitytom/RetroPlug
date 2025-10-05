@@ -5,12 +5,15 @@
 #include <entt/entity/registry.hpp>
 
 #include "foundation/Types.h"
-#include "ecs/RetroPlugComponents.h"
-#include "ecs/RegistryUtil.h"
+#include "core/RegistryUtil.h"
+#include "core/RetroPlugComponents.h"
+#include "core/Tasks.h"
+#include "core/TaskSchedulerGlobal.h"
+#include "lsdj/LsdjComponents.h"
+#include "lsdj/LsdjSettings.h"
+#include "lsdj/Ram.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
-#include "ecs/Tasks.h"
-#include "ecs/TaskSchedulerGlobal.h"
 
 namespace rp {
 	struct LsdjKitDesc {

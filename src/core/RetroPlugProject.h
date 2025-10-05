@@ -7,16 +7,16 @@
 #include "foundation/Event.h"
 #include "foundation/DataBuffer.h"
 #include "foundation/Replicator.h"
-#include "ecs/RetroPlugComponents.h"
+#include "core/RetroPlugComponents.h"
 
 #include "core/SystemHook.h"
 #include "sameboy/SameBoyComponents.h"
 #include "foundation/FsUtil.h"
-#include "ecs/RetroPlugProjectContext.h"
-#include "ecs/LsdjController.h"
-#include "ecs/ProjectBuilder.h"
+#include "core/RetroPlugProjectContext.h"
+#include "lsdj/LsdjController.h"
+#include "core/ProjectBuilder.h"
 
-#include "ecs/Tasks.h"
+#include "core/Tasks.h"
 
 namespace rp {
 	class RetroPlugProject {

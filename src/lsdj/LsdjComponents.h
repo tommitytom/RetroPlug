@@ -7,9 +7,9 @@
 #include "sameboy/semver.hpp"
 
 #include "foundation/Types.h"
-#include "ecs/Effects.h"
-#include "ecs/SampleCache.h"
-#include "ecs/TaskBase.h"
+#include "core/Effects.h"
+#include "core/SampleCache.h"
+#include "core/TaskBase.h"
 #include "lsdj/Ram.h"
 #include "lsdj/LsdjSettings.h"
 

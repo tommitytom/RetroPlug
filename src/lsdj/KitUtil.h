@@ -3,10 +3,11 @@
 #include <string_view>
 
 #include "foundation/DataBuffer.h"
-#include "lsdj/Rom.h"
+#include "core/RetroPlugComponents.h"
+#include "core/SampleCache.h"
+#include "lsdj/LsdjComponents.h"
 #include "lsdj/LsdjSettings.h"
-#include "ecs/RetroPlugComponents.h"
-#include "ecs/SampleCache.h"
+#include "lsdj/Rom.h"
 
 namespace rp::KitUtil {
 	bool createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEditableKit& kitState);

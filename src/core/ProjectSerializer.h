@@ -2,9 +2,9 @@
 
 #include <entt/entity/registry.hpp>
 
-#include "ecs/JsonUtil.h"
-#include "ecs/RetroPlugProjectContext.h"
-#include "ecs/ProjectSerializerContext.h"
+#include "core/JsonUtil.h"
+#include "core/RetroPlugProjectContext.h"
+#include "core/ProjectSerializerContext.h"
 
 namespace rp::ProjectSerializer {
 	template <typename T>

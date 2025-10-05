@@ -1,9 +1,9 @@
 #include "LsdjHooks.h"
 
-#include "ecs/EcsLsdjSystemOverlay.h"
-#include "ecs/EcsProjectSerializer.h"
-#include "ecs/LsdjController.h"
-#include "ecs/RetroPlugComponents.h"
+#include "lsdj/LsdjSystemOverlay.h"
+#include "core/ProjectSerializer.h"
+#include "lsdj/LsdjController.h"
+#include "core/RetroPlugComponents.h"
 #include "lsdj/Sav.h"
 #include "util/GameboyUtil.h"
 #include "foundation/FsUtil.h"
@@ -137,7 +137,7 @@ namespace rp {
 	fw::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
 		LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
 		if (comp) {
-			return std::make_shared<EcsLsdjOverlay>(entity, LsdjController{ registry });
+			return std::make_shared<LsdjSystemOverlay>(entity, LsdjController{ registry });
 		}
 
 		return nullptr;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ecs/HierarchyUtil.h"
-#include "ecs/RetroPlugComponents.h"
+#include "core/HierarchyUtil.h"
+#include "core/RetroPlugComponents.h"
 /*
 namespace rp {
 	class ReplicatedHierarhcyAccessor {

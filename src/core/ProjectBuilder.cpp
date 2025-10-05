@@ -1,8 +1,8 @@
 #include "ProjectBuilder.h"
 
 #include "foundation/FsUtil.h"
-#include "ecs/EcsProjectSerializer.h"
-#include "ecs/RetroPlugProjectContext.h"
+#include "core/ProjectSerializer.h"
+#include "core/RetroPlugProjectContext.h"
 
 namespace rp {
 	namespace fs = std::filesystem;

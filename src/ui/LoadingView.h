@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/Constants.h"
-#include "ecs/RootContainer.h"
+#include "ui/RootContainer.h"
 
 namespace rp {
 	class LoadingView : public RootContainer {

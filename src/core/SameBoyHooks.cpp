@@ -4,11 +4,11 @@
 
 #include "foundation/Replicator.h"
 #include "sameboy/SameBoyUtil.h"
-#include "ecs/EcsProjectSerializer.h"
-#include "ecs/RegistryUtil.h"
+#include "core/ProjectSerializer.h"
+#include "core/RegistryUtil.h"
 #include "util/GameboyUtil.h"
 #include "foundation/FsUtil.h"
-#include "ecs/RetroPlugComponents.h"
+#include "core/RetroPlugComponents.h"
 
 namespace rp {
 	void SameboyHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {

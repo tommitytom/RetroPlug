@@ -3,7 +3,7 @@
 #include "audio/PpqUtil.h"
 #include "core/SystemTypes.h"
 #include "lsdj/LsdjSettings.h"
-#include "ecs/LsdjComponents.h"
+#include "lsdj/LsdjComponents.h"
 #include "sameboy/SameBoyUtil.h"
 
 namespace rp {

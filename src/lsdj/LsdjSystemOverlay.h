@@ -1,13 +1,13 @@
 #pragma once
 
-#include "ecs/EcsSystemOverlay.h"
-#include "ecs/LsdjController.h"
+#include "ui/SystemOverlay.h"
+#include "lsdj/LsdjController.h"
 #include "ui/SliderView.h"
 #include "ui/WaveView.h"
 #include "lsdj/SampleUtil.h"
 
 namespace rp {
-	class EcsLsdjOverlay : public EcsSystemOverlay {
+	class LsdjSystemOverlay : public SystemOverlay {
 		FwRegisterObject()
 	private:
 		entt::entity _entity = entt::null;
@@ -16,8 +16,8 @@ namespace rp {
 		KitIndex _currentKit = INVALID_KIT_INDEX;
 
 	public:
-		EcsLsdjOverlay(entt::entity e, LsdjController lsdj) : _entity(e), _lsdj(lsdj) {}
-		~EcsLsdjOverlay() = default;
+		LsdjSystemOverlay(entt::entity e, LsdjController lsdj) : _entity(e), _lsdj(lsdj) {}
+		~LsdjSystemOverlay() = default;
 
 		void onInitialize() override {
 #ifdef FW_PLATFORM_WEB

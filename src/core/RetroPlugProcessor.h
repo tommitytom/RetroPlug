@@ -6,13 +6,13 @@
 #include "audio/AudioBuffer.h"
 
 namespace rp {
-	class RetroPlugEcsProcessor final : public fw::AudioProcessor {
+	class RetroPlugProcessor final : public fw::AudioProcessor {
 	private:
 		entt::registry _registry;
 
 	public:
-		RetroPlugEcsProcessor(fw::EventNode&& eventNode);
-		~RetroPlugEcsProcessor();
+		RetroPlugProcessor(fw::EventNode&& eventNode);
+		~RetroPlugProcessor();
 
 		void onBeginUpdate(uint32 frameCount) override;
 

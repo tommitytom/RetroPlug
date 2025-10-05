@@ -3,7 +3,7 @@
 #include "core/CoreComponents.h"
 #include "core/SystemHook.h"
 #include "sameboy/SameBoyComponents.h"
-#include "ecs/RetroPlugComponents.h"
+#include "core/RetroPlugComponents.h"
 
 namespace rp {
 	class LsdjHooks final : public SystemHook<SameBoyComponent> {

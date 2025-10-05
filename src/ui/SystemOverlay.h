@@ -3,10 +3,10 @@
 #include "ui/View.h"
 
 namespace rp {
-	class EcsSystemOverlay : public fw::View {
+	class SystemOverlay : public fw::View {
 		FwRegisterObject()
 	public:
-		EcsSystemOverlay() {
+		SystemOverlay() {
 			//fitToParent();
 			getLayout().setDimensions(100_pc);
 			setFocusPolicy(fw::FocusPolicy::Click);

@@ -104,6 +104,7 @@ function m.Core.include()
 	--dep.minizip.include()
 	dep.SameBoy.include()
 	dep.reflcpp.include()
+	dep.enkits.include()
 
 	includedirs {
 		"thirdparty",
@@ -134,6 +135,7 @@ function m.Core.link()
 	--dep.minizip.link()
 	dep.SameBoy.link()
 	dep.reflcpp.link()
+	dep.enkits.link()
 end
 
 function m.Core.project()
@@ -225,7 +227,6 @@ function m.RetroPlug.include()
 	m.Core.include()
 	m.SameBoyPlug.include()
 	dep.liblsdj.include()
-	dep.enkits.include()
 	--dep.minizip.include()
 
 	includedirs {

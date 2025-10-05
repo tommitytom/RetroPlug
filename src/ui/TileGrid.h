@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ui/View.h"
-#include "ecs/RetroPlugProject.h"
-#include "ecs/EcsSystemView.h"
-#include "ecs/RootContainer.h"
+#include "core/RetroPlugProject.h"
+#include "ui/SystemView.h"
+#include "ui/RootContainer.h"
 
 namespace rp {
 	constexpr size_t INVALID_TILE_INDEX = -1;
@@ -100,7 +100,7 @@ namespace rp {
 			entt::entity selectedTileEntity = entt::null;
 
 			for (const auto& [e, system] : registry.view<SystemComponent>().each()) {
-				auto systemView = addChild(std::make_shared<EcsSystemView>(_project, e));
+				auto systemView = addChild(std::make_shared<SystemView>(_project, e));
 				systemView->getLayout().setDimensions(fw::Dimension{ 160, 144 });
 
 				if (selectedTileEntity == entt::null || _selectedTileEntity == e) {

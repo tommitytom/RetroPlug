@@ -1,12 +1,12 @@
-#include "LsdjHdPlayerEcs.h"
+#include "LsdjHdPlayer.h"
 
-#include "ecs/RetroPlugProjectContext.h"
+#include "core/RetroPlugProjectContext.h"
 
 namespace rp {
 	constexpr fw::Dimension DIMENSIONS{ 776, 576 };
 	constexpr fw::DimensionF DIMENSIONSF{ (f32)DIMENSIONS.w, (f32)DIMENSIONS.h };
 
-	LsdjHdPlayerEcs::LsdjHdPlayerEcs(RetroPlugProject& project, entt::entity system)
+	LsdjHdPlayer::LsdjHdPlayer(RetroPlugProject& project, entt::entity system)
 		: _project(project),
 		_lsdj(project.getRegistry()),
 		_canvasView(std::make_shared<LsdjCanvasView>(DIMENSIONS)),
@@ -20,17 +20,17 @@ namespace rp {
 		setSystem(system);
 	}
 
-	LsdjHdPlayerEcs::~LsdjHdPlayerEcs() {
+	LsdjHdPlayer::~LsdjHdPlayer() {
 		if (_system != entt::null && _project.getRegistry().valid(_system)) {
 			_project.unsubscribeFromMemory(_system, MemoryType::Ram);
 		}
 	}
 
-	void LsdjHdPlayerEcs::onInitialize() {
+	void LsdjHdPlayer::onInitialize() {
 		this->addChild(_canvasView);
 	}
 
-	void LsdjHdPlayerEcs::setSystem(entt::entity system) {
+	void LsdjHdPlayer::setSystem(entt::entity system) {
 		if (_system != entt::null && _project.getRegistry().valid(_system)) {
 			_project.unsubscribeFromMemory(_system, MemoryType::Ram);
 		}
@@ -49,7 +49,7 @@ namespace rp {
 		_project.subscribeToMemory(_system, MemoryType::Ram);
 	}
 
-	bool LsdjHdPlayerEcs::onKey(const fw::KeyEvent& ev) {
+	bool LsdjHdPlayer::onKey(const fw::KeyEvent& ev) {
 		if (ev.key == fw::VirtualKey::Esc && ev.down) {
 			this->remove();
 			return true;
@@ -70,7 +70,7 @@ namespace rp {
 		return false;
 	}
 
-	void LsdjHdPlayerEcs::onRender(fw::Canvas& canvas) {
+	void LsdjHdPlayer::onRender(fw::Canvas& canvas) {
 		_canvasView->getCanvas().clear();
 
 		lsdj::Song song = _lsdj.getLsdjWorkingSong(_system);

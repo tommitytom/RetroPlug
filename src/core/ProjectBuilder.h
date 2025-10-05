@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 #include <entt/entity/registry.hpp>
-#include "ecs/RetroPlugComponents.h"
+#include "core/RetroPlugComponents.h"
 #include "core/SystemHook.h"
 
 namespace rp::ProjectBuilder {

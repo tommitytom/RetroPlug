@@ -1,17 +1,17 @@
 #pragma once
 
 #include "application/Application.h"
-#include "RetroPlugProject.h"
+#include "core/RetroPlugProject.h"
 
 namespace rp {
-	class RetroPlugEcsApplication : public fw::app::Application {
+	class RetroPlugApplication : public fw::app::Application {
 	private:
 		std::optional<fw::EventNode> _audioEventNode = std::nullopt;
 		RetroPlugProject _project;
 
 	public:
-		RetroPlugEcsApplication();
-		~RetroPlugEcsApplication() = default;
+		RetroPlugApplication();
+		~RetroPlugApplication() = default;
 
 		fw::ViewPtr onCreateUi() override;
 

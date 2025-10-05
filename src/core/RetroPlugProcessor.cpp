@@ -1,4 +1,4 @@
-#include "RetroPlugEcsProcessor.h"
+#include "RetroPlugProcessor.h"
 
 #include <spdlog/spdlog.h>
 
@@ -10,10 +10,11 @@
 #include "sameboy/SameBoyComponents.h"
 #include "sameboy/SameBoyUtil.h"
 #include "foundation/FsUtil.h"
-#include "ecs/RetroPlugComponents.h"
-#include "ecs/HierarchyUtil.h"
+#include "core/RetroPlugComponents.h"
+#include "core/HierarchyUtil.h"
 #include "core/SystemHook.h"
 #include "core/Events.h"
+#include "lsdj/LsdjComponents.h"
 
 namespace rp {
 	using namespace entt::literals;
@@ -85,7 +86,7 @@ namespace rp {
 		}
 	}
 
-	RetroPlugEcsProcessor::RetroPlugEcsProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
+	RetroPlugProcessor::RetroPlugProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
 		AudioHooksContext& hooks = _registry.ctx().emplace<AudioHooksContext>();
 		hooks.systemHooks.push_back(std::make_unique<SameBoyAudioHooks>());
 
@@ -192,23 +193,23 @@ namespace rp {
 		});
 	}
 
-	RetroPlugEcsProcessor::~RetroPlugEcsProcessor() {
+	RetroPlugProcessor::~RetroPlugProcessor() {
 		fw::Replicator::shutdown(_registry);
 	}
 
-	void RetroPlugEcsProcessor::onTransportChange(bool playing) {
+	void RetroPlugProcessor::onTransportChange(bool playing) {
 	}
 
-	void RetroPlugEcsProcessor::onTransportUpdate(const fw::TimeInfo& timeInfo) {
+	void RetroPlugProcessor::onTransportUpdate(const fw::TimeInfo& timeInfo) {
 	}
 
-	void RetroPlugEcsProcessor::onBeginUpdate(uint32 frameCount) {
+	void RetroPlugProcessor::onBeginUpdate(uint32 frameCount) {
 		fw::Replicator::beginUpdate(_registry);
 		getEventNode().update();
 		fw::Replicator::endUpdate(_registry);
 	}
 
-	void RetroPlugEcsProcessor::onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in) {
+	void RetroPlugProcessor::onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in) {
 		AudioSettingsContext& settings = _registry.ctx().at<AudioSettingsContext>();
 		settings.sampleRate = out.getSampleRate();
 		settings.blockSize = out.getSampleCount();
@@ -272,7 +273,7 @@ namespace rp {
 		}
 	}
 
-	void RetroPlugEcsProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
+	void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
 		AudioEffectContext& effectCtx = _registry.ctx().emplace<AudioEffectContext>();
 		fw::AudioBuffer outBuffer(2, frameCount, getSampleRate());
 		fw::AudioBuffer inBuffer;
@@ -302,9 +303,9 @@ namespace rp {
 		outBuffer.toInterleaved(output, 2, frameCount);
 	}
 
-	void RetroPlugEcsProcessor::onMidi(const fw::MidiMessage& message) {
+	void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
 	}
 
-	void RetroPlugEcsProcessor::onSampleRateChange(f32 sampleRate) {
+	void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {
 	}
 }

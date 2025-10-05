@@ -14,7 +14,7 @@
 #include "sameboy/Constants.h"
 
 #include "audio/AudioBuffer.h"
-#include "ecs/RetroPlugEcsView.h"
+#include "ecs/RetroPlugView.h"
 #include "ecs/RetroPlugProject.h"
 #include "ecs/LsdjController.h"
 #include "lsdj/Ram.h"
@@ -38,10 +38,10 @@ using namespace rp;
 
 #include <emscripten/wasmfs.h>
 
-#include "ecs/RetroPlugEcsApplication.h"
+#include "ecs/RetroPlugApplication.h"
 
-RetroPlugEcsApplication* upcastApplication(fw::app::Application& app) {
-	return (RetroPlugEcsApplication*)&app;
+RetroPlugApplication* upcastApplication(fw::app::Application& app) {
+	return (RetroPlugApplication*)&app;
 }
 
 /*std::string lsdjProject_getName(rp::lsdj::Project& project) {
@@ -265,11 +265,11 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.field("fastBoot", &SameBoyComponent::fastBoot)
 	;
 
-	class_<RetroPlugEcsView, base<fw::View>>("RetroPlugEcsView")
+	class_<RetroPlugView, base<fw::View>>("RetroPlugView")
 	;
 
-	class_<RetroPlugEcsApplication>("NativeRetroPlugEcsApplication")
-		.function("getProject", &RetroPlugEcsApplication::getProjectPtr, allow_raw_pointers())
+	class_<RetroPlugApplication>("NativeRetroPlugApplication")
+		.function("getProject", &RetroPlugApplication::getProjectPtr, allow_raw_pointers())
 	;
 
 	enum_<AccessType>("NativeAccessType")

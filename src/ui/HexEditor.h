@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ui/View.h"
 #include "foundation/DataBuffer.h"
-#include "ecs/RootContainer.h"
-#include "ecs/HexGrid.h"
-#include "ecs/ScrollBar.h"
+#include "ui/View.h"
+#include "ui/HexGrid.h"
+#include "ui/RootContainer.h"
+#include "ui/ScrollBar.h"
 
 namespace rp {
 	class HexEditor : public RootContainer {

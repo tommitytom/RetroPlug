@@ -3,11 +3,11 @@
 #include "ui/View.h"
 #include "core/Constants.h"
 
-#include "RetroPlugProject.h"
-#include "ecs/RootContainer.h"
+#include "core/RetroPlugProject.h"
+#include "ui/RootContainer.h"
 
 namespace rp {
-	class RetroPlugEcsView final : public fw::View {
+	class RetroPlugView final : public fw::View {
 		FwRegisterObject()
 
 	private:
@@ -18,8 +18,8 @@ namespace rp {
 		uint32 _version = 0;
 
 	public:
-		RetroPlugEcsView(RetroPlugProject& project);
-		~RetroPlugEcsView() = default;
+		RetroPlugView(RetroPlugProject& project);
+		~RetroPlugView() = default;
 
 		void onInitialize() override;
 

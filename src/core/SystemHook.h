@@ -3,7 +3,7 @@
 #include <functional>
 #include <entt/entity/registry.hpp>
 #include "ui/View.h"
-#include "ecs/ProjectSerializerContext.h"
+#include "core/ProjectSerializerContext.h"
 #include "core/CoreComponents.h"
 #include "audio/TimeInfo.h"
 #include "audio/MidiMessage.h"
