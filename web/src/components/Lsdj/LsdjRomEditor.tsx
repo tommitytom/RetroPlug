@@ -112,7 +112,7 @@ export const LsdjRomEditor: React.FC<LsdjRomEditorProps> = () => {
 									}}
 									className="rounded border border-green-600 bg-green-700 px-3 py-1 text-sm text-white transition-colors duration-200 hover:border-green-500 hover:bg-green-600"
 								>
-									Download
+									Download ROM
 								</button>
 							</div>
 						</div>
