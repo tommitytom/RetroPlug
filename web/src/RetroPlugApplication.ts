@@ -3,7 +3,7 @@ import type {
 	MainModule,
 	MemoryAccessor,
 	NativeLsdjRom,
-	NativeRetroPlugEcsApplication,
+	NativeRetroPlugApplication,
 	NativeRetroPlugProject,
 	Uint8Buffer,
 	WebApplicationRunner,
@@ -15,7 +15,7 @@ import { MemoryType } from './wrapper/System.ts';
 export class RetroPlugApplication {
 	private _module: MainModule | null = null;
 	private _runner: WebApplicationRunner | null = null;
-	private _nativeApp: NativeRetroPlugEcsApplication | null = null;
+	private _nativeApp: NativeRetroPlugApplication | null = null;
 	private _nativeProject: NativeRetroPlugProject | null = null;
 	private _worker: Worker | null = null;
 

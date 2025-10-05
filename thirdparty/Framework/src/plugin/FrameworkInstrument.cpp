@@ -54,7 +54,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 			viewManager->createState(_audioManager.get());
 			viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
 
-			FrameworkView* frameworkView = new FrameworkView(uiContext, window, [&]() { _editorOpen = false; });
+			FrameworkView* frameworkView = new FrameworkView(*_app, uiContext, window, [&]() { _editorOpen = false; });
 			pGraphics->AttachControl(frameworkView);
 
 			fw::Dimension dimensions = viewManager->getDimensions();

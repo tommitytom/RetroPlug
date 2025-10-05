@@ -1,44 +1,40 @@
-#include <entt/entity/entity.hpp>
-#include <entt/entity/registry.hpp>
-#include "application/GlfwNativeWindow.h"
-
 #ifdef _MSC_VER
 	#define __attribute__(x)
 #endif
 
+#include <entt/entity/entity.hpp>
+#include <entt/entity/registry.hpp>
+
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
+#include <emscripten/wasmfs.h>
+// Additional includes for LSDJ enums
+#include <liblsdj/liblsdj/include/lsdj/error.h>
+#include <liblsdj/liblsdj/include/lsdj/channel.h>
+#include <liblsdj/liblsdj/include/lsdj/instrument.h>
+#include <liblsdj/liblsdj/include/lsdj/command.h>
+#include <rfl/json.hpp>
+
+#include "application/GlfwNativeWindow.h"
 
 #include "foundation/DataBuffer.h"
 
 #include "sameboy/Constants.h"
 
 #include "audio/AudioBuffer.h"
-#include "ecs/RetroPlugView.h"
-#include "ecs/RetroPlugProject.h"
-#include "ecs/LsdjController.h"
+#include "ui/RetroPlugView.h"
+#include "core/RetroPlugProject.h"
+#include "lsdj/LsdjController.h"
 #include "lsdj/Ram.h"
 #include "lsdj/Rom.h"
 #include "lsdj/Sav.h"
 #include "lsdj/LsdjSettings.h"
 #include "lsdj/SampleUtil.h"
 #include "lsdj/OffsetLookup.h"
-
-// Additional includes for LSDJ enums
-#include <liblsdj/liblsdj/include/lsdj/error.h>
-#include <liblsdj/liblsdj/include/lsdj/channel.h>
-#include <liblsdj/liblsdj/include/lsdj/instrument.h>
-#include <liblsdj/liblsdj/include/lsdj/command.h>
-
-#include <rfl/json.hpp>
+#include "RetroPlugApplication.h"
 
 using namespace emscripten;
 using namespace rp;
-
-
-#include <emscripten/wasmfs.h>
-
-#include "ecs/RetroPlugApplication.h"
 
 RetroPlugApplication* upcastApplication(fw::app::Application& app) {
 	return (RetroPlugApplication*)&app;

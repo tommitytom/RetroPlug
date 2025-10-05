@@ -7,8 +7,13 @@
 
 using namespace fw;
 
-FrameworkView::FrameworkView(fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc) :
+using hrc = std::chrono::high_resolution_clock;
+using delta_duration = std::chrono::duration<f32>;
+
+FrameworkView::FrameworkView(fw::app::Application& app, fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc) :
 	IControl(IRECT(0.0f, 0.0f, window->getViewManager()->getDimensionsF().w, window->getViewManager()->getDimensionsF().h)), 
+	_app(app),
+	_lastTime(hrc::now()),
 	_closeFunc(std::move(closeFunc)),
 	_uiContext(uiContext),
 	_window(window),
@@ -146,7 +151,16 @@ void FrameworkView::OnResize() {
 }
 
 void FrameworkView::Draw(IGraphics& g) {
-	_uiContext->runFrame();
+	hrc::time_point time = hrc::now();
+	std::chrono::nanoseconds nanoDelta = time - _lastTime;
+	f32 delta = std::chrono::duration_cast<delta_duration>(nanoDelta).count();
+	_lastTime = time;
+
+	_app.onUpdate(delta);
+
+	if (_uiContext) {
+		_uiContext->runFrame(delta);
+	}
 
 	Dimension currentWindow = Dimension((int32)GetRECT().W(), (int32)GetRECT().H());
 	

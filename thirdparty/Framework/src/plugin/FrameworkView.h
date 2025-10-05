@@ -20,10 +20,12 @@ private:
 	fw::app::WindowPtr _window;
 	fw::ViewManagerPtr _vm;
 	bool _mouseOver = false;
+	fw::app::Application& _app;
+	std::chrono::high_resolution_clock::time_point _lastTime;
 	ViewCloseFunc _closeFunc;
 
 public:
-	FrameworkView(fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc);
+	FrameworkView(fw::app::Application& app, fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc);
 	~FrameworkView();
 
 	void OnInit() override;

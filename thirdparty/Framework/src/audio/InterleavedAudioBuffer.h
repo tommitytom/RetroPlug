@@ -1,5 +1,7 @@
 #pragma once
 
+#include "foundation/DataBuffer.h"
+
 namespace fw {
 	using AudioSampleT = f32;
 
