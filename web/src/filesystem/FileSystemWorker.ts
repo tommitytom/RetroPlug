@@ -24,11 +24,11 @@ class FileSystemWorker implements FileSystemWorkerAPI {
 	async initialize(): Promise<void> {
 		this.opfsRoot = await navigator.storage.getDirectory();
 
-		const moduleFactory = (await import('../native/RetroPlugEcs.mjs')).default;
+		const moduleFactory = (await import('../native/RetroPlug.mjs')).default;
 		this.module = (await moduleFactory({
 			locateFile: (path: string) => {
 				if (path.endsWith('.wasm')) {
-					return '/RetroPlugEcs.wasm';
+					return '/RetroPlug.wasm';
 				}
 				return path;
 			},

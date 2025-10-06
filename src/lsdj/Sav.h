@@ -293,6 +293,18 @@ namespace rp::lsdj {
 		const lsdj_project_t* getRaw() const {
 			return _project;
 		}
+
+		bool toLsdsng(fw::Uint8Buffer& target) const {
+			target.resize(LSDSNG_MAX_SIZE);
+			size_t writeCount = 0;
+			lsdj_error_t err = lsdj_project_write_lsdsng_to_memory(_project, target.data(), &writeCount);
+			if (err == LSDJ_SUCCESS) {
+				target.resize(writeCount);
+				return true;
+			}
+
+			return false;
+		}
 	};
 
 	class Sav {

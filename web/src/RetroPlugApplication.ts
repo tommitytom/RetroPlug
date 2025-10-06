@@ -41,12 +41,12 @@ export class RetroPlugApplication {
 	}
 
 	async load() {
-		const moduleFactory = (await import('./native/RetroPlugEcs.mjs')).default;
+		const moduleFactory = (await import('./native/RetroPlug.mjs')).default;
 
 		this._module = (await moduleFactory({
 			locateFile: (path: string) => {
 				if (path.endsWith('.wasm')) {
-					return '/RetroPlugEcs.wasm';
+					return '/RetroPlug.wasm';
 				}
 				return path;
 			},

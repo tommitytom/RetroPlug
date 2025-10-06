@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRetroPlug } from '../../contexts/RetroPlugContext';
-import { fromArrayBuffer } from '../../utils/NativeUtil';
+import { fromArrayBuffer, toUint8Array } from '../../utils/NativeUtil';
+import type { Uint8Buffer } from '../../native/RetroPlug';
+import { createLoaderProject } from '../../utils/ProjectUtil';
 
 interface RomInfo {
 	fileName: string;
@@ -14,6 +16,7 @@ interface SongInfo {
 	name: string;
 	version: number;
 	sourceFile: string;
+	data: Uint8Buffer;
 }
 
 interface FileInfo {
@@ -130,6 +133,7 @@ export const SaveImporterDialog: React.FC<{
 						name: projectName,
 						version: projectVersion,
 						sourceFile: file.name,
+						data: project.toLsdsng(),
 					});
 				}
 
@@ -234,9 +238,93 @@ export const SaveImporterDialog: React.FC<{
 		setFiles(prev => prev.filter((_, i) => i !== index));
 	};
 
-	const handleImport = () => {
-		if (roms.length > 0 || songs.length > 0) {
+	const handleImport = async () => {
+		if (roms.length === 0 && songs.length === 0) {
+			return;
+		}
+
+		try {
+			// Ensure /roms directory exists and write ROMs
+			if (roms.length > 0) {
+				console.log('Creating /roms directory...');
+				try {
+					await fileSystem.createDirectory('/roms');
+					console.log('Created /roms directory');
+				} catch (error) {
+					console.log('/roms directory already exists');
+				}
+
+				console.log(`Writing ${roms.length} ROM files...`);
+				for (const rom of roms) {
+					const romFile = files.find(f => f.name === rom.fileName && f.type === 'rom')?.file;
+					if (romFile) {
+						const romData = await romFile.arrayBuffer();
+						const romPath = `/roms/${rom.fileName}`;
+						console.log(`Writing ROM: ${romPath} (${romData.byteLength} bytes)`);
+						await fileSystem.writePath(romPath, romData);
+						console.log(`Successfully wrote ROM: ${romPath}`);
+					}
+				}
+			}
+
+			// Write songs to /songs directory with version folders
+			const songGroups = songs.reduce((acc, song) => {
+				if (!acc[song.name]) {
+					acc[song.name] = [];
+				}
+				acc[song.name].push(song);
+				return acc;
+			}, {} as Record<string, SongInfo[]>);
+
+			if (Object.keys(songGroups).length > 0) {
+				// Ensure /songs directory exists
+				console.log('Creating /songs directory...');
+				try {
+					await fileSystem.createDirectory('/songs');
+					console.log('Created /songs directory');
+				} catch (error) {
+					console.log('/songs directory already exists');
+				}
+
+				console.log(`Writing songs for ${Object.keys(songGroups).length} unique song names...`);
+				for (const [songName, songVersions] of Object.entries(songGroups)) {
+					// Create song folder
+					const songFolderPath = `/songs/${songName}.rplgsng`;
+					console.log(`Creating song directory: ${songFolderPath}`);
+					try {
+						await fileSystem.createDirectory(songFolderPath);
+						console.log(`Created song directory: ${songFolderPath}`);
+					} catch (error) {
+						console.log(`Song directory already exists: ${songFolderPath}`);
+					}
+
+					console.log(`Writing ${songVersions.length} versions for song "${songName}"`);
+					for (const song of songVersions) {
+						// Write .lsdsng file
+						const lsdsngPath = `${songFolderPath}/v${song.version}.lsdsng`;
+						const songData = toUint8Array(song.data);
+						const songBuffer = songData.slice().buffer as ArrayBuffer;
+						console.log(`Writing song file: ${lsdsngPath} (${songBuffer.byteLength} bytes)`);
+						await fileSystem.writePath(lsdsngPath, songBuffer);
+						console.log(`Successfully wrote song file: ${lsdsngPath}`);
+
+						// Write .rplg file (empty JSON for now)
+						const rplgPath = `${songFolderPath}/v${song.version}.rplg`;
+						const emptyConfig = JSON.stringify({});
+						const configData = new TextEncoder().encode(emptyConfig);
+						const configBuffer = configData.slice().buffer as ArrayBuffer;
+						console.log(`Writing config file: ${rplgPath} (${configBuffer.byteLength} bytes)`);
+						await fileSystem.writePath(rplgPath, configBuffer);
+						console.log(`Successfully wrote config file: ${rplgPath}`);
+					}
+				}
+			}
+
+			console.log('Import completed successfully!');
 			onImport(roms, songs);
+		} catch (error) {
+			console.error('Failed to import files:', error);
+			// You might want to show an error message to the user here
 		}
 	};
 
@@ -463,7 +551,7 @@ export const SaveImporterDialog: React.FC<{
 					Cancel
 				</button>
 				<button
-					onClick={handleImport}
+					onClick={() => handleImport()}
 					disabled={roms.length === 0 && songs.length === 0}
 					className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400"
 				>

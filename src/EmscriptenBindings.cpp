@@ -560,6 +560,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.property("version", &rp::lsdj::Project::getVersion)
 		.function("getName", &lsdjProject_getName)
 		.function("setName", &rp::lsdj::Project::setName)
+		.function("toLsdsng", +[](rp::lsdj::Project& project) -> fw::Uint8Buffer {
+			fw::Uint8Buffer buffer;
+			if (!project.toLsdsng(buffer)) {
+				spdlog::error("Failed to convert project to lsdsng");
+				return fw::Uint8Buffer();
+			}
+
+			return buffer;
+		})
 		.property("song", &rp::lsdj::Project::getSong)
 		.property("isValid", &rp::lsdj::Project::isValid)
 		.property("index", &rp::lsdj::Project::getIndex)
