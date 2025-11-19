@@ -2,19 +2,21 @@
 
 #include <spdlog/spdlog.h>
 
-#include "foundation/Replicator.h"
-#include "audio/AudioBuffer.h"
-#include "Components.h"
-#include "AudioEffect.h"
-#include "SineGenerator.h"
+#include "sameboy/SameBoyAudioHooks.h"
 #include "sameboy/SameBoyComponents.h"
 #include "sameboy/SameBoyUtil.h"
 #include "foundation/FsUtil.h"
-#include "core/RetroPlugComponents.h"
-#include "core/HierarchyUtil.h"
-#include "core/SystemHook.h"
+#include "foundation/Replicator.h"
+#include "audio/AudioBuffer.h"
 #include "core/Events.h"
+#include "core/HierarchyUtil.h"
+#include "core/RetroPlugComponents.h"
+#include "core/SystemHook.h"
 #include "lsdj/LsdjComponents.h"
+
+#include "AudioEffect.h"
+#include "Components.h"
+#include "SineGenerator.h"
 
 namespace rp {
 	using namespace entt::literals;
@@ -38,38 +40,6 @@ namespace rp {
 
 		AudioHooksContext() = default;
 		~AudioHooksContext() = default;
-	};
-
-	class SameBoyAudioHooks : public AudioSystemHook {
-	public:
-		SameBoyAudioHooks() : AudioSystemHook(entt::type_id<SameBoyComponent>().index()) {}
-
-		void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const override {
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			SameBoyUtil::saveState(*state.state, target);
-		}
-
-		MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const override {
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			return SameBoyUtil::getMemory(*state.state, type, access);
-		}
-
-		void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const override {
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			MemoryAccessor accessor = SameBoyUtil::getMemory(*state.state, patch.type, AccessType::Write);
-
-			std::visit(entt::overloaded{
-				[&](uint8 val) { accessor.set(patch.offset, val); },
-				[&](uint16 val) { accessor.write(patch.offset, val); },
-				[&](uint32 val) { accessor.write(patch.offset, val); },
-				[&](const fw::Uint8Buffer& val) { accessor.write(patch.offset, val); },
-			}, patch.data);
-		}
-
-		void onReset(entt::registry& registry, entt::entity entity) const override {
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			SameBoyUtil::reset(*state.state);
-		}
 	};
 
 	fw::ButtonType convertButtonType(fw::PadButtonType button) {

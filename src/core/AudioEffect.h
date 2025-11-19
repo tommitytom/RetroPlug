@@ -2,8 +2,10 @@
 
 #include <functional>
 #include <entt/entity/registry.hpp>
-#include "audio/AudioBuffer.h"
+
 #include "foundation/Replicator.h"
+#include "audio/AudioBuffer.h"
+#include "core/Components.h"
 
 namespace rp {
 	using ComponentLifetimeFunction = std::function<void(entt::registry&, entt::entity)>;
