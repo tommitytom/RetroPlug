@@ -1,4 +1,4 @@
-local root = ";C:\\projects\\code\\RetroPlug\\thirdparty\\Framework\\src\\scripts\\ui\\"
+local root = ";C:\\projects\\code\\RetroPlug\\thirdparty\\orb\\src\\scripts\\ui\\"
 package.path = package.path .. root .. "?.lua"
 package.path = package.path .. root .. "?\\init.lua"
 

@@ -25,7 +25,7 @@ val Float32Buffer_data(Float32Buffer& buffer) {
 	return val(typed_memory_view(buffer.size(), buffer.data()));
 }
 
-EMSCRIPTEN_BINDINGS(framework) {
+EMSCRIPTEN_BINDINGS(orb) {
 	class_<orb::View>("View")
 		.smart_ptr<std::shared_ptr<orb::View>>("ViewPtr")
 	;

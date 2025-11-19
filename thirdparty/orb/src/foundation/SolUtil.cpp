@@ -3,7 +3,7 @@
 #include <sol/sol.hpp>
 #include <spdlog/spdlog.h>
 
-#include "framework-generated/CompiledScripts.h"
+#include "orb-generated/CompiledScripts.h"
 
 using namespace orb;
 

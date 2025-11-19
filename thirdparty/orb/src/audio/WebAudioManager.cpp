@@ -75,7 +75,7 @@ void audioWorkletProcessorCreated(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL su
 	// Create node
 	EMSCRIPTEN_AUDIO_WORKLET_NODE_T wasmAudioWorklet = emscripten_create_wasm_audio_worklet_node(
 		audioContext,
-    	"framework-generator",
+    	"orb-generator",
 		&options,
 		&generateAudio,
 		userData
@@ -90,7 +90,7 @@ void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success,
 	assert(userData);
 
 	WebAudioWorkletProcessorCreateOptions opts = {
-		.name = "framework-generator",
+		.name = "orb-generator",
 		.numAudioParams = 0,
 		.audioParamDescriptors = nullptr
 	};

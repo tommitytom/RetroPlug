@@ -11,7 +11,7 @@ newoption {
 
 util.disableFastUpToDateCheck({ "generator", "configure" })
 
-workspace "Framework"
+workspace "orb"
 	util.setupWorkspace()
 
 util.createConfigureProject()
@@ -38,7 +38,7 @@ end
 group "1 - Dependencies"
 dep.allProjects()
 
-group "2 - Framework"
+group "2 - orb"
 projects.Foundation.project()
 projects.Graphics.project()
 projects.Ui.project()

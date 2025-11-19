@@ -17,7 +17,7 @@ namespace fw {
 		~CanvasTest() = default;
 
 		void onInitialize() override {
-			_circle = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlugNext\\thirdparty\\Framework\\resources\\textures\\circle-512.png");
+			_circle = getResourceManager().load<Texture>("C:\\projects\\code\\RetroPlugNext\\thirdparty\\orb\\resources\\textures\\circle-512.png");
 		}
 
 		void onUpdate(f32 delta) override {

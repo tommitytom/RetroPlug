@@ -1,8 +1,8 @@
 local dep = dofile("dep/index.lua")
-local util = dofile("thirdparty/Framework/premake/util.lua")
-local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
-local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
-local iplug2 = dofile("thirdparty/Framework/premake/dep/iplug2.lua")
+local util = dofile("thirdparty/orb/premake/util.lua")
+local fwProjects = dofile("thirdparty/orb/premake/projects.lua")
+local fwDeps = dofile("thirdparty/orb/premake/dep/index.lua")
+local iplug2 = dofile("thirdparty/orb/premake/dep/iplug2.lua")
 
 local EMSDK_FLAGS = {
 	--"-s TOTAL_MEMORY=512MB",
@@ -108,7 +108,7 @@ function m.Core.include()
 
 	includedirs {
 		"thirdparty",
-		"thirdparty/Framework/src",
+		"thirdparty/orb/src",
 	}
 
 	includedirs {
@@ -161,7 +161,7 @@ function m.SameBoyPlug.include()
 
 	includedirs {
 		"thirdparty",
-		"thirdparty/Framework/src",
+		"thirdparty/orb/src",
 	}
 
 	includedirs {

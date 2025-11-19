@@ -15,7 +15,7 @@ mkdir -p ${BUILD_CONFIG}
 #--always-make --dry-run
 make config=${BUILD_CONFIG}_x64 -j$(nproc) ScriptCompiler
 
-cd ../../thirdparty/Framework
+cd ../../thirdparty/orb
 ../../build/gmake2/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
 
 cd ../..

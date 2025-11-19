@@ -61,9 +61,9 @@ local function application(name)
 
 end
 
-workspace "Framework"
+workspace "orb"
 	dependencies {
-		"thirdparty/Framework"
+		"thirdparty/orb"
 	}
 
 	projects {

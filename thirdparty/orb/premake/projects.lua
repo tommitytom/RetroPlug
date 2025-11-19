@@ -74,8 +74,8 @@ function m.Foundation.project()
 	files {
 		paths.SRC_ROOT .. "foundation/**.h",
 		paths.SRC_ROOT .. "foundation/**.cpp",
-		paths.SRC_ROOT .. "framework-generated/*.h",
-		paths.SRC_ROOT .. "framework-generated/*_%{cfg.architecture}.cpp",
+		paths.SRC_ROOT .. "orb-generated/*.h",
+		paths.SRC_ROOT .. "orb-generated/*_%{cfg.architecture}.cpp",
 	}
 
 	filter "platforms:Emscripten"

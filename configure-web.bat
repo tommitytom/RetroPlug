@@ -1,2 +1,2 @@
 .\configure.bat
-emconfigure thirdparty\Framework\thirdparty\bin\premake5 --emscripten gmake2
+emconfigure thirdparty\orb\thirdparty\bin\premake5 --emscripten gmake2

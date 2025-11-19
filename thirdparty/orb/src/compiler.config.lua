@@ -1,6 +1,6 @@
 return {
 	settings = {
-		outDir = "framework-generated",
+		outDir = "orb-generated",
 		namespace = "orb::"
 	},
 	modules = {

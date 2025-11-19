@@ -182,7 +182,7 @@ Updating to a new verison of LSDj can be quite cumbersome when your ROM is patch
 
 ## Dependencies
 - [SameBoy](https://github.com/LIJI32/SameBoy) - The emulator itself
-- [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin framework
+- [iPlug2](https://github.com/iPlug2/iPlug2) - Audio plugin orb
 - [libsdj](https://github.com/stijnfrishert/liblsdj) - Adds the functionality to manipulate LSDj save files
 - [gainput](https://github.com/jkuhlmann/gainput) - Gamepad input
 - [minizip](https://github.com/zlib-ng/minizip-ng) - Zip compression for project files (containing roms, savs, states, etc)

@@ -447,7 +447,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	//constant("LSDJ_FONT_COUNT", rp::lsdj::Rom::FONT_COUNT);
 	//constant("LSDJ_KIT_COUNT", rp::lsdj::Rom::KIT_COUNT);
 
-	// Framework struct bindings
+	// orb struct bindings
 	value_object<orb::Color3>("Color3")
 		.field("r", &orb::Color3::r)
 		.field("g", &orb::Color3::g)
