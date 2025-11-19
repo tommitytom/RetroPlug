@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/ClangClIntellisense.h"
 #include "core/CoreComponents.h"
 #include "core/SystemHook.h"
 #include "sameboy/SameBoyComponents.h"

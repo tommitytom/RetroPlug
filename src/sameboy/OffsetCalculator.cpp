@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <memory>
 #include <sstream>
+#include <filesystem>
 
 #include "semver.hpp"
 
@@ -29,6 +30,7 @@ using namespace rp;
 using namespace rp::lsdj;
 using namespace rp::lsdj::OffsetCalculator;
 namespace chrono = std::chrono;
+namespace fs = std::filesystem;
 
 struct Buffer {
 	char* data = nullptr;

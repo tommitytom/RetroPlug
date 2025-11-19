@@ -25,7 +25,7 @@ namespace rp {
 			[&](uint16 val) { accessor.write(patch.offset, val); },
 			[&](uint32 val) { accessor.write(patch.offset, val); },
 			[&](const fw::Uint8Buffer& val) { accessor.write(patch.offset, val); },
-			}, patch.data);
+		}, patch.data);
 	}
 
 	void SameBoyAudioHooks::onReset(entt::registry& registry, entt::entity entity) const {

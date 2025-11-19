@@ -1,5 +1,7 @@
 #pragma once
 
+#include "foundation/ClangClIntellisense.h"
+
 #include <defs.h>
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
