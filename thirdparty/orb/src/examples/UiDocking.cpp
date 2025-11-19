@@ -26,7 +26,7 @@
 //#include "node/NodeGraph.h"
 //#include "node/AudioGraph.h"
 
-using namespace fw;
+using namespace orb;
 
 /*void testNodeGraph() {
 	NodeGraph<AudioGraphProcessor> nodeGraph;
@@ -110,7 +110,7 @@ public:
 
 UiDocking::UiDocking() : View({ 1500, 1000 }) {
 	EngineModule::setup();
-	
+
 	setType<UiDocking>();
 	setName("Example Application");
 	setSizingPolicy(SizingPolicy::FitToParent);
@@ -134,7 +134,7 @@ void UiDocking::onUpdate(f32 delta) {
 
 				EngineUtil::visitComponents(*ref.first, ref.second, [&](const entt::type_info info) {
 					entt::meta_type type = entt::resolve(info);
-					
+
 					if (type) {
 
 					} else {

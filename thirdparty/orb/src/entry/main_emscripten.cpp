@@ -11,7 +11,7 @@
 #include "ui/View.h"
 
 using namespace emscripten;
-using namespace fw;
+using namespace orb;
 
 orb::app::WebApplicationRunner* makeRunner() {
 	return new orb::app::WebApplicationRunner(orb::ApplicationFactory::create());

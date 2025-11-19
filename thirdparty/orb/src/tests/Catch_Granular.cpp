@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-using namespace fw;
+using namespace orb;
 /*
 TEST_CASE("Grain Stream", "[Granular]") {
 	const uint32 frameCount = 50;
@@ -20,7 +20,7 @@ TEST_CASE("Grain Stream", "[Granular]") {
 	for (uint32 i = 0; i < frameCount; ++i) {
 		std::cout << i << " :: " << input.getSample(i, 0) << ", " << input.getSample(i, 1) << std::endl;
 	}
-	
+
 	GrainStream stream;
 	stream.add(Grain{ .buffer = input.ref(), .window = generateWindow(Envelopes::none, grainSize) });
 	stream.add(Grain{ .buffer = input.ref(), .window = generateWindow(Envelopes::none, grainSize), .delay = grainSize });

@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useRetroPlug } from './contexts/RetroPlugContext';
 
-interface FrameworkCanvasProps {
+interface OrbCanvasProps {
 	width?: number;
 	height?: number;
 	className?: string;
 }
 
-export const FrameworkCanvas: React.FC<FrameworkCanvasProps> = ({}) => {
+export const OrbCanvas: React.FC<OrbCanvasProps> = ({}) => {
 	const { setCanvasId, audioContextState } = useRetroPlug();
 
 	const canvasRef = useRef<HTMLCanvasElement>(null);

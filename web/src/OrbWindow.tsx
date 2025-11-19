@@ -1,14 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { useRetroPlug } from './contexts/RetroPlugContext';
 
-interface FrameworkWindowProps {
+interface OrbWindowProps {
 	name: string;
 	width?: number;
 	height?: number;
 	className?: string;
 }
 
-export const FrameworkWindow: React.FC<FrameworkWindowProps> = ({ name, width, height, className }) => {
+export const OrbWindow: React.FC<OrbWindowProps> = ({ name, width, height, className }) => {
 	const { app } = useRetroPlug();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 

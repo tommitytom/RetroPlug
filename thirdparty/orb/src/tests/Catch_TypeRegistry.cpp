@@ -7,7 +7,7 @@
 #include "foundation/TypeRegistry.h"
 #include "foundation/LuaSerializer.h"
 
-using namespace fw;
+using namespace orb;
 
 struct Bar {
 	std::string baz;
@@ -47,7 +47,7 @@ TEST_CASE("Type Registry", "[TypeRegistry]") {
 
 	reg.addType<Bar>()
 		.addField<&Bar::baz>("baz");
-	
+
 	reg.addType<Foo>()
 		.addField<&Foo::value>("value", Bar())
 		.addField<&Foo::f>("f")
@@ -113,7 +113,7 @@ TEST_CASE("Lua serialization", "[LuaSerializer]") {
 
 		Foo fooTarget;
 		bool ok = LuaSerializer::deserializeFromString(reg, str, fooTarget);
-		
+
 		REQUIRE(ok);
 		REQUIRE(fooTarget.value == 100);
 		//REQUIRE(fooTarget == foo);
@@ -127,7 +127,7 @@ TEST_CASE("Lua serialization", "[LuaSerializer]") {
 				f = 134.1,
 				bar = {
 					baz = "weeeeeee"
-				}	
+				}
 			}
 		)");
 
