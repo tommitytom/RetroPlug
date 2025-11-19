@@ -30,7 +30,7 @@ void populateMemoryOffsets(const OffsetDesc& desc, MemoryOffsets& offsets) {
 
 std::string formatTags(std::string_view tags) {
 	if (tags.size() > 0) {
-		return fmt::format(" - {}", tags);
+		return std::format(" - {}", tags);
 	}
 
 	return "";

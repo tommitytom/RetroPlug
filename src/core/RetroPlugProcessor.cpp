@@ -155,7 +155,7 @@ namespace rp {
 
 		node.receive<MemoryPatchEvent>([this](MemoryPatchEvent&& ev) {
 			if (!_registry.valid(ev.entity)) {
-				spdlog::warn("Received MemoryPatchEvent for invalid entity {}", ev.entity);
+				spdlog::warn("Received MemoryPatchEvent for invalid entity {}", (size_t)ev.entity);
 				return;
 			}
 

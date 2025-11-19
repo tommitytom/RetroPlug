@@ -107,7 +107,7 @@ namespace fw {
 
 				return ResourceHandle(state);
 			} else {
-				spdlog::error("Failed to load resource {}. A resource provider for type {} could not be found", resourceType);
+				spdlog::error("Failed to load resource {}. A resource provider for type {} could not be found", uri, resourceType);
 			}
 
 			return ResourceHandle();

@@ -1,5 +1,6 @@
 #include "Canvas.h"
 
+#include <array>
 #include <fstream>
 
 #include <freetype-gl/texture-atlas.h>

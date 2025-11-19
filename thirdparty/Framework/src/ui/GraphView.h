@@ -67,7 +67,7 @@ namespace fw {
 
 			size_t i = 0;
 			for (NodePtr node : _graph->getNodes()) {
-				NodeViewPtr view = _overlay->addChild<NodeView>(fmt::format("Node {}", i));
+				NodeViewPtr view = _overlay->addChild<NodeView>(std::format("Node {}", i));
 				view->setNode(node);
 			}
 		}

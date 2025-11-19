@@ -23,7 +23,7 @@ namespace rp {
 		ma_result result = ma_decoder_init_memory(fileData.data(), fileData.size(), &config, &decoder);
 
 		if (result != MA_SUCCESS) {
-			spdlog::error("Failed to decode file: {}", result);
+			spdlog::error("Failed to decode file: {}", (int)result);
 			return SampleData{};
 		}
 

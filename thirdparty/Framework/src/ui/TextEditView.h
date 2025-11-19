@@ -21,7 +21,7 @@ namespace fw {
 
 	public:
 		std::function<void(const std::string&)> TextChangeEvent;
-		
+
 		TextEditBaseView() {
 			this->setFocusPolicy(FocusPolicy::Click);
 		}
@@ -39,7 +39,7 @@ namespace fw {
 			_fontSize = size;
 		}
 
-		bool setText(const std::string& text) {	
+		bool setText(const std::string& text) {
 			if (!_validator || _validator(text)) {
 				_text = text;
 				if (TextChangeEvent) { TextChangeEvent(text); }
@@ -53,7 +53,7 @@ namespace fw {
 		std::string getText() const {
 			return _text;
 		}
-		
+
 		virtual void onTextUpdated(const std::string& value) {}
 
 		bool onKey(const KeyEvent& ev) override {
@@ -85,18 +85,18 @@ namespace fw {
 					break;
 				}
 			}
-			
+
 			return ev.key != VirtualKey::UpArrow && ev.key != VirtualKey::DownArrow;
 		}
 
 		bool onChar(const CharEvent& ev) override {
 			std::string text = _text;
 			text.insert(_cursorOffset, 1, (char)ev.keyCode);
-			
+
 			if (setText(text)) {
 				_cursorOffset++;
 			}
-			
+
 			return true;
 		}
 
@@ -140,12 +140,12 @@ namespace fw {
 	private:
 		FlexValue _value;
 
-	public:		
+	public:
 		std::function<void(const FlexValue&)> ValueChangeEvent;
-		
+
 		FlexValueEditView() {
 			setPlaceholder("auto");
-			
+
 			setValidator([](const std::string& text) -> bool {
 				if (text.empty()) {
 					return true;
@@ -166,7 +166,7 @@ namespace fw {
 					unit = FlexUnit::Percent;
 					number = std::string_view(text.data(), text.size() - 1);
 				}
-                
+
                 return false;
 
 				/*f32 v;
@@ -188,7 +188,7 @@ namespace fw {
 
 			FlexUnit unit = FlexUnit::Point;
 			std::string_view number = value;
-			
+
 			if (value.back() == '%') {
 				unit = FlexUnit::Percent;
 				number = std::string_view(value.data(), value.size() - 1);
@@ -196,14 +196,14 @@ namespace fw {
 
 			/*f32 v;
 			std::from_chars_result res = std::from_chars(number.data(), number.data() + number.size(), v);
-			
+
 			if (res.ec != std::errc()) {
 				spdlog::error("Failed to convert '{}' to float", number);
 				return;
 			}
 
 			_value = FlexValue(unit, v);
-			
+
 			if (ValueChangeEvent) {
 				ValueChangeEvent(_value);
 			}*/
@@ -211,13 +211,13 @@ namespace fw {
 
 		void setValue(const FlexValue& value) override {
 			_value = value;
-			
+
 			switch (value.getUnit()) {
 			case FlexUnit::Point:
-				setText(fmt::format("{}", value.getValue()));
+				setText(std::format("{}", value.getValue()));
 				break;
 			case FlexUnit::Percent:
-				setText(fmt::format("{}%", value.getValue()));
+				setText(std::format("{}%", value.getValue()));
 				break;
 			default:
 				setText("");

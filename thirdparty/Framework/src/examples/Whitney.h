@@ -87,7 +87,7 @@ namespace fw {
 		SliderViewPtr _positionSlider;
 
 		std::vector<Dot> _dots;
-		
+
 	public:
 		Whitney() : View({ 1024, 768 }) {
 			setFocusPolicy(FocusPolicy::Click);
@@ -126,9 +126,9 @@ namespace fw {
 
 				if constexpr (is_writable(member)/* && refl::descriptor::has_attribute<serializable>(member)*/) {
 					std::string fieldName = StringUtil::formatMemberName(get_display_name(member));
-					
+
 					_modTargetNames.push_back(fieldName);
-					
+
 					_modTargets.push_back(PropertyModulator::Target{
 						.name = std::move(fieldName),
 						.source = entt::any(member(_baseSettings)),
@@ -187,7 +187,7 @@ namespace fw {
 			ObjectInspectorUtil::reflect(_objectInspector, _baseSettings);
 
 			for (size_t i = 0; i < _modulators.size(); ++i) {
-				_objectInspector->pushGroup(fmt::format("Modulator {}", i + 1));
+				_objectInspector->pushGroup(std::format("Modulator {}", i + 1));
 
 				DropDownMenuViewPtr modTarget = _objectInspector->addProperty<DropDownMenuView>("Target");
 				modTarget->setItems(_modTargetNames);

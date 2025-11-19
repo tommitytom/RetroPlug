@@ -9,7 +9,7 @@
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugComponents.h"
 #include "core/RetroPlugProjectContext.h"
-#include "core/SameBoyHooks.h"
+#include "sameboy/SameBoyHooks.h"
 #include "core/TaskSchedulerGlobal.h"
 #include "sameboy/SameBoyComponents.h"
 #include "lsdj/LsdjHooks.h"
@@ -289,7 +289,7 @@ namespace rp {
 			.subscriberCount = 1
 		});
 
-		spdlog::debug("Subscribed to memory type {} for entity {}", (int)type, entity);
+		spdlog::debug("Subscribed to memory type {} for entity {}", (int)type, (size_t)entity);
 	}
 
 	void RetroPlugProject::unsubscribeFromMemory(entt::entity entity, MemoryType type) {
@@ -297,7 +297,7 @@ namespace rp {
 
 		auto found = std::find_if(state.memory.begin(), state.memory.end(), [type](const VersionedMemory& mem) { return mem.type == type; });
 		if (found == state.memory.end()) {
-			spdlog::warn("Attempted to unsubscribe from memory type {} for entity {} which is not subscribed", (int)type, entity);
+			spdlog::warn("Attempted to unsubscribe from memory type {} for entity {} which is not subscribed", (int)type, (size_t)entity);
 			return;
 		}
 
@@ -308,7 +308,7 @@ namespace rp {
 
 		state.memory.erase(found);
 
-		spdlog::debug("Unsubscribed from memory type {} for entity {}", (int)type, entity);
+		spdlog::debug("Unsubscribed from memory type {} for entity {}", (int)type, (size_t)entity);
 	}
 
 	std::vector<uint32> RetroPlugProject::getSystemIds() const {

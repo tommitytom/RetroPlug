@@ -13,7 +13,7 @@ namespace fw {
 		int32 _selectedIndex = -1;
 		std::vector<std::pair<std::string, entt::any>> _items;
 
-	public:		
+	public:
 		std::function<void(int32)> ValueChangeEvent;
 
 		DropDownMenuView() {
@@ -129,7 +129,7 @@ namespace fw {
 			canvas
 				.fillRect(getDimensions(), hasFocus() ? Color4F(0.3f, 0.3f, 0.3f, 1.0f) : Color4F::darkGrey)
 				.setTextAlign(TextAlignFlags::Top | TextAlignFlags::Left)
-				.text(0.0f, 0.0f, fmt::format("{} - {}", _selectedIndex, text));
+				.text(0.0f, 0.0f, std::format("{} - {}", _selectedIndex, text));
 		}
 	};
 

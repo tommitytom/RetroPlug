@@ -62,10 +62,10 @@ namespace rp {
 					}
 
 					if (!found) {
-						spdlog::error("Tried to select a tile for an invalid entity {}", _requestedTileEntity);
+						spdlog::error("Tried to select a tile for an invalid entity {}", (size_t)_requestedTileEntity);
 					}
 				} else {
-					spdlog::error("Tried to select a tile for an invalid entity {}", _requestedTileEntity);
+					spdlog::error("Tried to select a tile for an invalid entity {}", (size_t)_requestedTileEntity);
 				}
 
 				_requestedTileEntity = entt::null;

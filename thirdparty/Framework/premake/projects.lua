@@ -24,12 +24,10 @@ function m.Foundation.include()
 
 	includedirs {
 		paths.DEP_ROOT,
-		paths.DEP_ROOT .. "spdlog/include"
 	}
 
 	includedirs {
 		"thirdparty",
-		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 	}
 
@@ -40,6 +38,7 @@ function m.Foundation.include()
 	}
 
 	dep.lua.include()
+	dep.spdlog.include()
 
 	filter { "platforms:Emscripten" }
 		disablewarnings { "deprecated-literal-operator", "unknown-warning-option" }
@@ -57,6 +56,7 @@ function m.Foundation.link()
 	links { "Foundation" }
 
 	dep.lua.link()
+	dep.spdlog.link()
 
 	filter { "platforms:not Emscripten" }
 		dep.simplefilewatcher.link()

@@ -47,7 +47,7 @@ namespace rp {
 			return "";
 		}
 
-		return fmt::format("{} [{}]", projectName, stateComp->name);
+		return std::format("{} [{}]", projectName, stateComp->name);
 	}
 
 	void LsdjHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {

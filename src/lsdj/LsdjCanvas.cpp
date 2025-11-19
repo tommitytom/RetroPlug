@@ -285,8 +285,8 @@ void Canvas::hexNumber(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, b
 
 void Canvas::number(uint32 x, uint32 y, uint8 value, ColorSets colorSetIdx, bool pad, bool dimmed) {
 	if (pad) {
-		text(x, y, fmt::format("{:03}", value), colorSetIdx, dimmed);
+		text(x, y, std::format("{:03}", value), colorSetIdx, dimmed);
 	} else {
-		text(x, y, fmt::format("{}", value), colorSetIdx, dimmed);
+		text(x, y, std::format("{}", value), colorSetIdx, dimmed);
 	}
 }

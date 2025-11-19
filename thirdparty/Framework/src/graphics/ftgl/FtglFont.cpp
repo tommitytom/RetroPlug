@@ -37,7 +37,7 @@ std::shared_ptr<FontFace> createTextureFont(ResourceManager& resourceManager, co
 	std::vector<uint8> data(dataSize);
 	memcpy(data.data(), atlas->data, dataSize);
 
-	TextureHandle texture = resourceManager.create<Texture>(fmt::format("fonts/{}/{}/texture", name, fontSize), TextureDesc{
+	TextureHandle texture = resourceManager.create<Texture>(std::format("fonts/{}/{}/texture", name, fontSize), TextureDesc{
 		.dimensions = atlasSize,
 		.depth = 4,
 		.data = std::move(data)

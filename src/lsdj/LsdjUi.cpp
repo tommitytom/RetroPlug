@@ -296,7 +296,7 @@ void Ui::renderSongData(const Song& song, const Ram& state, uint32 rowOffset) {
 			}
 
 			if (idx != 0xFF) {
-				_c.text(xOff + 1, y, fmt::format("{:02x}", idx), colorSet);
+				_c.text(xOff + 1, y, std::format("{:02x}", idx), colorSet);
 			} else {
 				_c.text(xOff + 1, y, "--", colorSet);
 			}
@@ -311,7 +311,7 @@ void Ui::renderSong(const Song& song, const Ram& state, uint32 rowOffset) {
 
 	uint32 songRowCount = (uint32)ROW_COUNT - 2;
 	for (uint32 y = 0; y < songRowCount; y++) {
-		_c.text(0, y + 2, fmt::format("{:02x}", y + rowOffset), ColorSets::Alternate);
+		_c.text(0, y + 2, std::format("{:02x}", y + rowOffset), ColorSets::Alternate);
 	}
 
 	_c.translate(2, 2);
@@ -343,7 +343,7 @@ void Ui::renderMode2(const Rom& rom, const Song& song, const Ram& state) {
 	uint32 rowOffset = 0;
 
 	for (uint32 y = 0; y < songRowCount; y++) {
-		_c.text(0, y + 2, fmt::format("{:02x}", y + rowOffset), ColorSets::Alternate);
+		_c.text(0, y + 2, std::format("{:02x}", y + rowOffset), ColorSets::Alternate);
 	}
 
 	uint32 chainOffsetX = 17;

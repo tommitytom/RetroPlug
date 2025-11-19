@@ -109,7 +109,6 @@ function m.Core.include()
 	includedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
-		"thirdparty/spdlog/include",
 	}
 
 	includedirs {
@@ -163,7 +162,6 @@ function m.SameBoyPlug.include()
 	includedirs {
 		"thirdparty",
 		"thirdparty/Framework/src",
-		"thirdparty/spdlog/include",
 	}
 
 	includedirs {
@@ -231,7 +229,6 @@ function m.RetroPlug.include()
 
 	includedirs {
 		"thirdparty",
-		"thirdparty/spdlog/include",
 		"thirdparty/sol",
 	}
 

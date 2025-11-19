@@ -8,7 +8,7 @@
 using namespace fw;
 
 void SolUtil::addIncludePath(sol::state& s, std::string_view path) {
-	s["package"]["path"] = fmt::format("{};{}/?.lua", s["package"]["path"].get<std::string>(), path);
+	s["package"]["path"] = std::format("{};{}/?.lua", s["package"]["path"].get<std::string>(), path);
 }
 
 void SolUtil::prepareState(sol::state& s) {

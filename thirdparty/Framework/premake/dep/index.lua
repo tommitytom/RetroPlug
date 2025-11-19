@@ -1,4 +1,5 @@
 local m = {
+	spdlog = dofile("spdlog.lua"),
 	glfw = 	dofile("glfw.lua"),
 	lua = dofile("lua.lua"),
 	zlib = dofile("zlib.lua"),
@@ -15,6 +16,7 @@ local m = {
 }
 
 function m.allProjects()
+	m.spdlog.project()
 	m.lua.project()
 	m.zlib.project()
 	m.freetype.project()

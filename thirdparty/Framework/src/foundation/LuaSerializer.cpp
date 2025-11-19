@@ -35,7 +35,7 @@ namespace fw {
 				}
 
 				if (count > names.size()) {
-					fieldName += fmt::format(" + {}", count - names.size());
+					fieldName += std::format(" + {}", count - names.size());
 				}
 
 				return fieldName;
@@ -267,7 +267,7 @@ namespace fw {
 
 				if (sourceValue.has_value() && sourceValue.value().get_type() != sol::type::lua_nil) {
 					entt::any targetValue = field.get(target);
-					assert(!targetValue.owner());			
+					assert(!targetValue.owner());
 
 					if (!deserializeItem(registry, sourceValue.value(), targetValue, fieldStack)) {
 						valid = false;
@@ -364,7 +364,7 @@ namespace fw {
 		}
 
 		return false;
-	}	
+	}
 
 	bool deserializeEnum(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
 		const fw::TypeInfo& type = registry.getTypeInfo(target);
@@ -456,14 +456,14 @@ namespace fw {
 			return valid;
 		} else {
 			spdlog::error("FAIL");
-		}		
+		}
 
 		return false;
 	}
 
 	bool deserializeItem(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
 		const fw::TypeInfo* type = registry.findTypeInfo(target);
-		
+
 		if (type) {
 			if (type->isSequenceContainer()) {
 				return deserializeSequence(registry, source, target, fieldStack);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <format>
 #include "ui/View.h"
 #include "foundation/MathUtil.h"
 #include "ui/Property.h"
@@ -19,7 +20,7 @@ namespace fw {
 	private:
 		const f32 ARROW_STEP_COUNT = 10.0f;
 		const f32 ARROW_STEP_SIZE = 1.0f / ARROW_STEP_COUNT;
-		
+
 		f32 _min = 0;
 		f32 _max = 1;
 		f32 _stepSize = 0;
@@ -213,7 +214,7 @@ namespace fw {
 			if (_showValueLabel) {
 				f32 value = getValueAt(_lastEditedValue);
 				canvas.setTextAlign(TextAlignFlags::Left | TextAlignFlags::Middle);
-				canvas.text(RectF({ 0, 0 }, dim), fmt::format(_labelFormat, value), fw::Color4F::black);
+				canvas.text(RectF({ 0, 0 }, dim), std::vformat(_labelFormat, std::make_format_args(value)), fw::Color4F::black);
 			}
 		}
 
@@ -245,7 +246,7 @@ namespace fw {
 				_handleAreas[i] = RectF(_values[i] * _handleRange, 0, handleWidth, dim.h);
 			}
 		}
-		
+
 		void setHandleValue(size_t idx, f32 value, bool emitEvents) {
 			_values[idx] = MathUtil::clamp(value, 0.0f, 1.0f);
 			_lastEditedValue = 0;
@@ -260,7 +261,7 @@ namespace fw {
 
 			updateHandleArea();
 		}
-		
+
 		void dragHandle(Point pos) {
 			DimensionF dim = getDimensionsF();
 			f32 handleWidth = (f32)getTheme<SliderTheme>().handleWidth;
@@ -269,7 +270,7 @@ namespace fw {
 			pos.x -= (int32)(handleWidth / 2);
 
 			setHandleValue(0, (f32)pos.x / dim.w, true);
-		}		
+		}
 	};
 
 	using SliderViewPtr = std::shared_ptr<SliderView>;

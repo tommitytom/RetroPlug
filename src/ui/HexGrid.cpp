@@ -47,7 +47,7 @@ namespace rp {
 		canvas.fillRect(getDimensionsF(), fw::Color4F::black);
 
 		row[0] += "Offset (h)  ";
-		for (size_t i = 0; i < _bytesPerRow; ++i) row[0] += fmt::format("{:02X} ", i);
+		for (size_t i = 0; i < _bytesPerRow; ++i) row[0] += std::format("{:02X} ", i);
 		row[0] += " Decoded text";
 
 		canvas.text(tileDim.h, tileDim.h, row[0], fw::Color4F::green);
@@ -67,9 +67,9 @@ namespace rp {
 
 			const size_t offset = i * _bytesPerRow;
 
-			canvas.text(tileDim.h, rowPos, fmt::format("{:010X}  ", offset), fw::Color4F::green);
+			canvas.text(tileDim.h, rowPos, std::format("{:010X}  ", offset), fw::Color4F::green);
 
-			for (size_t j = 0; j < _bytesPerRow; ++j) row[j % 2] += fmt::format("{:02X}    ", buffer[offset + j]);
+			for (size_t j = 0; j < _bytesPerRow; ++j) row[j % 2] += std::format("{:02X}    ", buffer[offset + j]);
 			row[0] += " ";
 			for (size_t j = 0; j < _bytesPerRow; ++j) row[0] += formatChar(buffer[offset + j]);
 

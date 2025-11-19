@@ -71,7 +71,7 @@ namespace fw {
 				_handleOffsets.push_back(offset);
 			}
 
-			PanelViewPtr panel = addChild<PanelView>(fmt::format("Panel [{}]", view->getName()));
+			PanelViewPtr panel = addChild<PanelView>(std::format("Panel [{}]", view->getName()));
 			panel->setColor(Color4(40, 40, 40, 255));
 			panel->addChild(view);
 

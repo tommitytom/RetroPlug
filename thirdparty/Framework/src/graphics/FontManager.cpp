@@ -9,7 +9,7 @@ using namespace fw;
 
 
 FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {
-	std::string fontFaceUri = fmt::format("{}/{}", fontUri, size);
+	std::string fontFaceUri = std::format("{}/{}", fontUri, size);
 
 	FontFaceHandle fontFace = _resourceManager->get<FontFace>(fontFaceUri);
 	if (fontFace.isValid()) {

@@ -2,7 +2,7 @@ Checks: 'cppcoreguidelines-*,
 performance-*,
 modernize-*,
 google-*,
-misc-*,
+misc-*
 cert-*,
 readability-*,
 clang-analyzer-*,
@@ -27,7 +27,6 @@ clang-analyzer-*,
 
 WarningsAsErrors: ''
 HeaderFilterRegex: '*spdlog/[^f].*'
-AnalyzeTemporaryDtors: false
 FormatStyle:     none
 
 CheckOptions:    

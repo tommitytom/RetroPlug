@@ -32,7 +32,7 @@ namespace fw {
 			getLayout().setFlexWrap(FlexWrap::Wrap);
 			getLayout().setPadding(FlexRect{ 10.0f, 10.0f, 10.0f, 10.0f });
 			refresh();
-		}		
+		}
 
 		TreeViewNode& getRootNode() {
 			return _rootNode;
@@ -51,7 +51,7 @@ namespace fw {
 
 	private:
 		void addNode(const TreeViewNode& node, uint32 indent) {
-			LabelViewPtr label = addChild<LabelView>(fmt::format("{} Label", node.name));
+			LabelViewPtr label = addChild<LabelView>(std::format("{} Label", node.name));
 
 			label->setText(node.name);
 			//label->getLayout().setMarginEdge(FlexEdge::Left, indent * 15.0f);

@@ -19,7 +19,7 @@
 
 namespace rp {
 	RetroPlugView::RetroPlugView(RetroPlugProject& project) : View({ 480, 432 }), _project(project) {
-		setName(fmt::format("RetroPlug v{}", RP_VERSION));
+		setName(std::format("RetroPlug v{}", RP_VERSION));
 		setFocusPolicy(fw::FocusPolicy::Click);
 	}
 
@@ -76,7 +76,7 @@ namespace rp {
 
 		std::string projectName = _project.getProjectName();
 		if (!projectName.empty()) projectName += " | ";
-		projectName += fmt::format("RetroPlug v{}", RP_VERSION);
+		projectName += std::format("RetroPlug v{}", RP_VERSION);
 		setName(projectName);
 
 		bool loadScreenVisible = _rootContainer && _rootContainer->isType<LoadingView>();

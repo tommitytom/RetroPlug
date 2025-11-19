@@ -57,9 +57,9 @@ namespace fw {
 		}
 
 		Group& pushGroup(std::string_view name) {
-			LabelViewPtr label = addChild<LabelView>(fmt::format("{} Label", name));
+			LabelViewPtr label = addChild<LabelView>(std::format("{} Label", name));
 
-			label->setText(fmt::format("> {}", name));
+			label->setText(std::format("> {}", name));
 			label->getLayout().setJustifyContent(FlexJustify::FlexStart);
 			label->getLayout().setFlexAlignItems(FlexAlign::Stretch);
 			label->getLayout().setFlexAlignSelf(FlexAlign::Auto);
@@ -70,7 +70,7 @@ namespace fw {
 				.width = FlexValue(FlexUnit::Percent, 100.0f),
 				.height = FlexValue((f32)_rowHeight)
 			});
-			
+
 			_groups.push_back(Group{
 				.label = label
 			});
@@ -82,9 +82,9 @@ namespace fw {
 			if (_groups.empty()) {
 				pushGroup("Properties");
 			}
-			
+
 			Prop prop = {
-				.label = addChild<LabelView>(fmt::format("{} Label", name)),
+				.label = addChild<LabelView>(std::format("{} Label", name)),
 				.editor = addChild<PropertyEditorBase>(editor)
 			};
 
@@ -213,7 +213,7 @@ namespace fw {
 
 		void updateLayout(Dimension dim) {
 			int32 separatorX = getSeperatorX();
-			
+
 			Rect labelOffset(0, 0, separatorX, _rowHeight);
 			Rect propOffset(separatorX + 1, 0, dim.w - separatorX - 1, _rowHeight);
 
