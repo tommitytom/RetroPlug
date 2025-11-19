@@ -1,0 +1,36 @@
+Wehn import is clicked:
+
+Use filesystem to write the roms in to the /roms directory
+
+for each song/ create a folder in /songs. the folder should be the name of the song, and it should contain all versions of a song, with a .rplg file for each song. for instance:
+a song called DONK, that has verisons 1 and 2, the following files would be written:
+/songs/DONK/v1.lsdsng
+/songs/DONK/v1.rplg
+/songs/DONK/v2.lsdsng
+/songs/DONK/v2.rplg
+
+get the .lsdsng from SongInfo.data. it can be converted to a uint8array with toUint8Array in NativeUtil.ts. the .rplg files should just be empty json files for now, just containing {}.
+
+patched kit download has wrong filename when saving.
+does the last synth exist?
+filenames with non lowercase extensions (.Sav, .SAV, etc)
+
+save manager - dialog based!
+game pad support - add mapping config
+multi lsdj!
+volume sliders
+
+individual sample editing:
+pitch change
+trim
+
+
+backup button!
+reorder effects
+upgrade sameboya
+
+rendering
+auto reset on patch
+move to new repo?
+open lsdsng and lsdprj directly
+high dpi screens - kinda
