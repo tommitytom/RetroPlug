@@ -1,9 +1,9 @@
 #pragma once
 
-namespace fw {
+namespace orb {
 	class TypeRegistry;
 }
 
-namespace fw::UiReflect {
-	void reflect(fw::TypeRegistry& registry);
+namespace orb::UiReflect {
+	void reflect(orb::TypeRegistry& registry);
 }

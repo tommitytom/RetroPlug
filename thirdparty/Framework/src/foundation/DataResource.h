@@ -6,7 +6,7 @@
 //#include "foundation/ResourceHandle.h"
 #include "foundation/ResourceProvider.h"
 
-namespace fw {
+namespace orb {
 	struct DataResourceDesc {
 		std::string uri;
 		Uint8Buffer data;
@@ -65,7 +65,7 @@ namespace fw {
 			if (fs::exists(uri)) {
 				Uint8Buffer data;
 				
-				if (fw::FsUtil::readFile(uri, &data)) {
+				if (orb::FsUtil::readFile(uri, &data)) {
 					return std::make_shared<T>(DataResourceDesc {
 						.uri = std::string(uri),
 						.data = std::move(data)
@@ -90,6 +90,6 @@ namespace fw {
 }
 
 #define DefineDataResourceType(T, exts) \
-	class T##Resource : public fw::DataResource<T##Resource> {}; \
-	class T##Provider : public fw::DataResourceProvider<T##Resource>{ public: T##Provider() : fw::DataResourceProvider<T##Resource>(exts) {} }; \
-	using T##Handle = fw::TypedResourceHandle<T##Resource>; \
+	class T##Resource : public orb::DataResource<T##Resource> {}; \
+	class T##Provider : public orb::DataResourceProvider<T##Resource>{ public: T##Provider() : orb::DataResourceProvider<T##Resource>(exts) {} }; \
+	using T##Handle = orb::TypedResourceHandle<T##Resource>; \

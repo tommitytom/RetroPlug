@@ -3,7 +3,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
 
-namespace fw {
+namespace orb {
 	class GlTexture : public Texture {
 	private:
 		uint32 _handle = 0;

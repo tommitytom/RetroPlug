@@ -14,7 +14,7 @@
 
 #include "foundation/TypeRegistry.h"
 
-namespace fw {
+namespace orb {
 	class EventNode {
 	public:
 		using NodeId = entt::id_type;

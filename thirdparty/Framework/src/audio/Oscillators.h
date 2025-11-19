@@ -5,7 +5,7 @@
 #include "foundation/Types.h"
 #include "foundation/Math.h"
 
-namespace fw {
+namespace orb {
 	class SineOsc {
 	private:
 		f32 _frequency = 200.0f;

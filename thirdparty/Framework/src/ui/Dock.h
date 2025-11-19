@@ -4,7 +4,7 @@
 
 #include "DockOverlay.h"
 
-namespace fw {
+namespace orb {
 	class Dock : public View {
 		FwRegisterObject();
 	private:

@@ -13,7 +13,7 @@
 #include "lsdj/SampleUtil.h"
 
 namespace rp {
-	void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const fw::Float32Buffer& buffer, fw::Float32Buffer& target) {
+	void KitUtil::convertSamplerate(f64 inputSampleRate, f64 outputSampleRate, const orb::Float32Buffer& buffer, orb::Float32Buffer& target) {
 		const size_t inBufCapacity = 1024;
 		r8b::CFixedBuffer<f64> inBuf;
 		inBuf.alloc((int)buffer.size());
@@ -48,7 +48,7 @@ namespace rp {
 		}
 	}
 
-	bool processSamples(SampleCache& sampleCache, const LsdjEditableKit& kit, std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
+	bool processSamples(SampleCache& sampleCache, const LsdjEditableKit& kit, std::vector<std::pair<std::string, orb::Uint8Buffer>>& samples) {
 		for (const LsdjSampleComponent& sample : kit.samples) {
 			const SampleData* sampleDataRaw = sampleCache.getOrLoadSample(sample.path);
 			if (!sampleDataRaw) {
@@ -78,7 +78,7 @@ namespace rp {
 				});
 			}
 
-			fw::Float32Buffer resampled;
+			orb::Float32Buffer resampled;
 			KitUtil::convertSamplerate((f64)sampleData.sampleRate, (f64)GameboyUtil::GAMEBOY_SAMPLE_RATE, sampleData.buffer, resampled);
 
 			if (ditherEffect) {
@@ -92,7 +92,7 @@ namespace rp {
 				}
 			}
 
-			fw::Uint8Buffer data;
+			orb::Uint8Buffer data;
 			lsdj::SampleUtil::convertScaledF32ToNibbles(resampled, data);
 
 			samples.push_back({ sample.name, std::move(data) });
@@ -102,7 +102,7 @@ namespace rp {
 	}
 
 	bool KitUtil::createKit(SampleCache& sampleCache, lsdj::Kit& kit, const LsdjEditableKit& kitState) {
-		std::vector<std::pair<std::string, fw::Uint8Buffer>> samples;
+		std::vector<std::pair<std::string, orb::Uint8Buffer>> samples;
 		if (!processSamples(sampleCache, kitState, samples)) {
 			return false;
 		}
@@ -113,7 +113,7 @@ namespace rp {
 		return true;
 	}
 
-	std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitComponent, fw::Uint8Buffer& kitData, SampleCache& sampleCache) {
+	std::optional<std::string> KitUtil::updateKit2(const LsdjKitComponent& kitComponent, orb::Uint8Buffer& kitData, SampleCache& sampleCache) {
 		if (kitData.isOwnerOfData()) {
 			kitData.resize(lsdj::Rom::BANK_SIZE);
 		} else {
@@ -136,7 +136,7 @@ namespace rp {
 			}
 		},
 		[&](const LsdjPatchedKit& kit) {
-			if (!fw::FsUtil::readFile(kit.path, kitData)) {
+			if (!orb::FsUtil::readFile(kit.path, kitData)) {
 				error = "Failed to read kit file at " + kit.path;
 			} else {
 				if (kit.name.has_value()) {

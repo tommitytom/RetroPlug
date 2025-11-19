@@ -3,7 +3,7 @@
 #include "application/Application.h"
 #include "application/UiContext.h"
 
-namespace fw::app {
+namespace orb::app {
 	class ApplicationRunner {
 	private:
 		audio::AudioManagerPtr _audioManager;

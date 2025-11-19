@@ -76,7 +76,7 @@ void dumpRam(Context& ctx, const fs::path& path) {
 	size_t size;
 	uint16 bank;
 	void* data = GB_get_direct_access(ctx.gb, GB_DIRECT_ACCESS_RAM, &size, &bank);
-	fw::FsUtil::writeFile(DUMP_PATH / path, (const char*)data, size);
+	orb::FsUtil::writeFile(DUMP_PATH / path, (const char*)data, size);
 }
 
 BufferPtr dumpRam(Context& ctx) {

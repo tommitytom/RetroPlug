@@ -3,7 +3,7 @@
 #include "foundation/Curves.h"
 #include "foundation/MathUtil.h"
 
-namespace fw {
+namespace orb {
 	class PropertyBase {
 	private:
 		uint32 _version = 0;

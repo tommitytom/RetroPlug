@@ -1,7 +1,7 @@
 return {
 	settings = {
 		outDir = "framework-generated",
-		namespace = "fw::"
+		namespace = "orb::"
 	},
 	modules = {
 		utils = { path = "scripts/utils" }

@@ -10,7 +10,7 @@
 
 #include "Resource.h"
 
-namespace fw {
+namespace orb {
 	struct ResourceHandleState {
 		std::shared_ptr<Resource> resource;
 		std::string uri;

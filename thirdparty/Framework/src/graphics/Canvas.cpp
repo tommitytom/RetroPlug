@@ -9,7 +9,7 @@
 
 #include "graphics/ftgl/FtglFont.h"
 
-using namespace fw;
+using namespace orb;
 
 namespace fs = std::filesystem;
 

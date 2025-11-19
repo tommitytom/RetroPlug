@@ -6,7 +6,7 @@
 #include "foundation/Types.h"
 #include "AudioProcessor.h"
 
-namespace fw::audio {
+namespace orb::audio {
 	using AudioCallback = std::function<void(f32* output, const f32* input, uint32 frameCount)>;
 
 	class AudioManager {

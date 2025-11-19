@@ -9,22 +9,22 @@
 
 #if defined(FW_RENDERER_GL)
 #include "graphics/gl/GlRenderContext.h"
-using RenderContextT = fw::GlRenderContext;
+using RenderContextT = orb::GlRenderContext;
 #else
 #include "graphics/gl/GlRenderContext.h"
-using RenderContextT = fw::GlRenderContext;
+using RenderContextT = orb::GlRenderContext;
 #endif
 
 
 #if defined(FW_PLATFORM_WEB)
 #include "audio/WebAudioManager.h"
-using AudioManagerT = fw::audio::WebAudioManager;
+using AudioManagerT = orb::audio::WebAudioManager;
 #elif defined(FW_PLATFORM_PLUGIN)
 #include "audio/AudioManager.h"
-using AudioManagerT = fw::audio::AudioManager;
+using AudioManagerT = orb::audio::AudioManager;
 #else
 #include "audio/MiniAudioManager.h"
-using AudioManagerT = fw::audio::MiniAudioManager;
+using AudioManagerT = orb::audio::MiniAudioManager;
 #endif
 
 
@@ -36,7 +36,7 @@ EM_ASYNC_JS(void, setupWebFs, (), {
 });
 #endif
 
-fw::app::ApplicationRunner runner;
+orb::app::ApplicationRunner runner;
 
 #ifdef FW_PLATFORM_WEB
 extern "C" {

@@ -19,7 +19,7 @@
 
 namespace fs = std::filesystem;
 
-namespace fw {
+namespace orb {
 	void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
 		spdlog::error("GL error: {}", message);
 		//fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
@@ -126,7 +126,7 @@ namespace fw {
 		}
 	}
 
-	std::pair<fw::ShaderDesc, fw::ShaderDesc> GlRenderContext::getDefaultShaders() {
+	std::pair<orb::ShaderDesc, orb::ShaderDesc> GlRenderContext::getDefaultShaders() {
 		return getDefaultGlShaders();
 	}
 
@@ -136,14 +136,14 @@ namespace fw {
 		_viewOffset = 0;
 	}
 
-	GLenum getGlPrimitive(fw::RenderPrimitive primitive) {
+	GLenum getGlPrimitive(orb::RenderPrimitive primitive) {
 		switch (primitive) {
-		case fw::RenderPrimitive::Triangles: return GL_TRIANGLES;
-		case fw::RenderPrimitive::TriangleFan: return GL_TRIANGLE_FAN;
-		case fw::RenderPrimitive::TriangleStrip: return GL_TRIANGLE_STRIP;
-		case fw::RenderPrimitive::LineList: return GL_LINES;
-		case fw::RenderPrimitive::LineStrip: return GL_LINE_STRIP;
-		case fw::RenderPrimitive::Points: return GL_POINTS;
+		case orb::RenderPrimitive::Triangles: return GL_TRIANGLES;
+		case orb::RenderPrimitive::TriangleFan: return GL_TRIANGLE_FAN;
+		case orb::RenderPrimitive::TriangleStrip: return GL_TRIANGLE_STRIP;
+		case orb::RenderPrimitive::LineList: return GL_LINES;
+		case orb::RenderPrimitive::LineStrip: return GL_LINE_STRIP;
+		case orb::RenderPrimitive::Points: return GL_POINTS;
 		}
 
 		return GL_INVALID_ENUM;
@@ -186,8 +186,8 @@ namespace fw {
 		_contextVAOs.push_back({currentContext, newVAO});
 	}
 
-	void GlRenderContext::renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) {
-		const fw::CanvasGeometry& geom = canvas.getGeometry();
+	void GlRenderContext::renderCanvas(orb::Canvas& canvas, NativeWindowHandle window) {
+		const orb::CanvasGeometry& geom = canvas.getGeometry();
 		uint32 nextViewOffset = _viewOffset;
 
 		/*bgfx::FrameBufferHandle frameBuffer;
@@ -213,7 +213,7 @@ namespace fw {
 		ensureVAOSetup();
 
 		if (geom.vertices.size()) {
-			const uint32 vertSize = (uint32)geom.vertices.size() * sizeof(fw::CanvasVertex);
+			const uint32 vertSize = (uint32)geom.vertices.size() * sizeof(orb::CanvasVertex);
 			const uint32 indexSize = (uint32)geom.indices.size() * sizeof(uint32);
 
 			// The VAO is already set up and bound by ensureVAOSetup()
@@ -240,7 +240,7 @@ namespace fw {
 
 			f32 _pixelRatio = 1.0f;
 
-			for (const fw::CanvasBatch& batch : geom.batches) {
+			for (const orb::CanvasBatch& batch : geom.batches) {
 				uint32 batchViewId = _viewOffset + batch.viewId;
 				assert(batchViewId <= 255);
 
@@ -258,7 +258,7 @@ namespace fw {
 
 				//bgfx::setViewFrameBuffer(batchViewId, frameBuffer);
 
-				for (const fw::CanvasSurface& surface : batch.surfaces) {
+				for (const orb::CanvasSurface& surface : batch.surfaces) {
 					assert(surface.program.isValid());
 					assert(surface.texture.isValid());
 

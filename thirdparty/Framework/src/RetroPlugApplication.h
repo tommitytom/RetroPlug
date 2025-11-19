@@ -32,10 +32,10 @@ namespace fw {
 
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 
 		}
 	};
 
-	using RetroPlugApplication = fw::app::BasicApplication<RetroPlug, void>;
+	using RetroPlugApplication = orb::app::BasicApplication<RetroPlug, void>;
 }

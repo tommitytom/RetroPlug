@@ -3,7 +3,7 @@
 #include <functional>
 #include "foundation/Types.h"
 
-namespace fw::Curves {
+namespace orb::Curves {
 	using Func = std::function<f32(f32)>;
 
 	static f32 linear(f32 v) { return v; }

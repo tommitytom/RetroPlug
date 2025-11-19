@@ -7,7 +7,7 @@
 #include "ui/RootContainer.h"
 
 namespace rp {
-	class RetroPlugView final : public fw::View {
+	class RetroPlugView final : public orb::View {
 		FwRegisterObject()
 
 	private:
@@ -27,9 +27,9 @@ namespace rp {
 
 		void onUpdate(f32 deltaTime) override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
-		bool onKey(const fw::KeyEvent& event) override;
+		bool onKey(const orb::KeyEvent& event) override;
 
 		void setRootContainer(const std::shared_ptr<RootContainer>& container);
 

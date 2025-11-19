@@ -7,7 +7,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	// Helper template to check inheritance at compile time
 	template<typename... Bases>
 	struct BaseChecker {
@@ -73,5 +73,5 @@ namespace fw {
 	virtual entt::type_info getTypeInfo() const override { return entt::type_id<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>(); } \
 	virtual uint32 getTypeId() const override { return entt::type_hash<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
 	virtual std::string_view getTypeName() const override { return entt::type_name<std::remove_const_t<std::remove_pointer_t<std::decay_t<decltype(this)>>>>::value(); } \
-	virtual bool isDerivedFromTypeInfo(entt::type_info typeInfo) const override { return getTypeInfo() == typeInfo || fw::BaseChecker<__VA_ARGS__>::checkType(typeInfo); } \
+	virtual bool isDerivedFromTypeInfo(entt::type_info typeInfo) const override { return getTypeInfo() == typeInfo || orb::BaseChecker<__VA_ARGS__>::checkType(typeInfo); } \
 	private:

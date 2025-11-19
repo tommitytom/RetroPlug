@@ -46,13 +46,13 @@ void main() {
 }
 )";
 
-fw::Uint8Buffer stringToBuffer(const std::string& str) {
-	fw::Uint8Buffer buffer(str.size());
+orb::Uint8Buffer stringToBuffer(const std::string& str) {
+	orb::Uint8Buffer buffer(str.size());
 	buffer.write((const uint8*)str.data(), str.size());
 	return buffer;
 }
 
-namespace fw {
+namespace orb {
 	std::pair<ShaderDesc, ShaderDesc> getDefaultGlShaders() {
 		#ifdef FW_PLATFORM_WEB
 		std::string vertexData = std::string(esVertexHeader) + std::string(vertexShaderBase);

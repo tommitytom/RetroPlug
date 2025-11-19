@@ -6,7 +6,7 @@
 #include "foundation/Constants.h"
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	struct Color3 {
 		uint8 r = 0;
 		uint8 g = 0;

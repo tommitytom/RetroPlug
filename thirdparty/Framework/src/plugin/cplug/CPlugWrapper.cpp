@@ -9,34 +9,34 @@
 #include "graphics/gl/GlRenderContext.h"
 
 struct CPlugPlugin {
-	std::unique_ptr<fw::app::Application> app;
-	fw::audio::AudioManagerPtr audioManager;
+	std::unique_ptr<orb::app::Application> app;
+	orb::audio::AudioManagerPtr audioManager;
 
-	fw::StereoAudioBuffer input;
-	fw::StereoAudioBuffer output;
+	orb::StereoAudioBuffer input;
+	orb::StereoAudioBuffer output;
 
 	uint32 _maxBlockSize = 0;
 	bool transportRunning = false;
 };
 
 struct CPlugGui {
-	std::unique_ptr<fw::app::UiContext> uiContext;
+	std::unique_ptr<orb::app::UiContext> uiContext;
 	CPlugPlugin* plugin;
 
 	PuglWorld* puglWorld;
 	PuglView* puglView;
 
-	fw::ViewPtr appView;
+	orb::ViewPtr appView;
 
-	std::optional<fw::EventNode> eventNode;
+	std::optional<orb::EventNode> eventNode;
 };
 
-static fw::MouseButton convertMouseButton(uint32 button) {
+static orb::MouseButton convertMouseButton(uint32 button) {
 	switch (button) {
-	case 0: return fw::MouseButton::Left;
-	case 1: return fw::MouseButton::Right;
-	case 2: return fw::MouseButton::Middle;
-	default: return fw::MouseButton::Unknown;
+	case 0: return orb::MouseButton::Left;
+	case 1: return orb::MouseButton::Right;
+	case 2: return orb::MouseButton::Middle;
+	default: return orb::MouseButton::Unknown;
 	}
 }
 
@@ -135,8 +135,8 @@ extern "C" {
 	void* cplug_createPlugin() {
 		freopen("C:\\temp\\vstlog.txt", "a", stderr);
 
-		fw::audio::AudioManagerPtr audioManager = std::make_shared<fw::audio::AudioManager>();
-		std::unique_ptr<fw::app::Application> app = fw::ApplicationFactory::create();
+		orb::audio::AudioManagerPtr audioManager = std::make_shared<orb::audio::AudioManager>();
+		std::unique_ptr<orb::app::Application> app = orb::ApplicationFactory::create();
 		audioManager->setProcessor(app->onCreateAudio());
 
 		CPlugPlugin* plugin = new CPlugPlugin{ 
@@ -235,7 +235,7 @@ extern "C" {
 			}
 		}
 
-		processor->onTransportUpdate(fw::TimeInfo{
+		processor->onTransportUpdate(orb::TimeInfo{
 			.sampleRate = plugin->audioManager->getSampleRate(),
 			.tempo = ctx->bpm,
 			//.samplePos = ctx->playheadBeats,
@@ -275,7 +275,7 @@ extern "C" {
 			}
 			case CPLUG_EVENT_MIDI:
 			{
-				plugin->audioManager->getProcessor()->onMidi(fw::MidiMessage{
+				plugin->audioManager->getProcessor()->onMidi(orb::MidiMessage{
 					.status = event.midi.status,
 					.data1 = event.midi.data1,
 					.data2 = event.midi.data2
@@ -314,14 +314,14 @@ extern "C" {
 	// State management
 	void cplug_saveState(void* userPlugin, const void* stateCtx, cplug_writeProc writeProc) {
 		CPlugPlugin* plugin = static_cast<CPlugPlugin*>(userPlugin);
-		fw::Uint8Buffer buffer;
+		orb::Uint8Buffer buffer;
 		plugin->app->onSerialize(buffer);
 		writeProc(stateCtx, buffer.data(), buffer.size());
 	}
 
 	void cplug_loadState(void* userPlugin, const void* stateCtx, cplug_readProc readProc) {
 		CPlugPlugin* plugin = static_cast<CPlugPlugin*>(userPlugin);
-		fw::Uint8Buffer buffer(1024 * 1024);
+		orb::Uint8Buffer buffer(1024 * 1024);
 		int64_t readSize = readProc(stateCtx, buffer.data(), buffer.size());
 		buffer.resize((size_t)readSize);
 		plugin->app->onDeserialize(buffer);
@@ -329,17 +329,17 @@ extern "C" {
 
 	static PuglStatus onPuglEvent(PuglView* view, const PuglEvent* event) {
 		CPlugGui* gui = static_cast<CPlugGui*>(puglGetHandle(view));
-		fw::app::WindowPtr window = gui->uiContext ? gui->uiContext->getMainWindow() : nullptr;
-		fw::ViewManagerPtr viewManager = window ? window->getViewManager() : nullptr;
+		orb::app::WindowPtr window = gui->uiContext ? gui->uiContext->getMainWindow() : nullptr;
+		orb::ViewManagerPtr viewManager = window ? window->getViewManager() : nullptr;
 
 		switch (event->type) {
 		case PUGL_REALIZE: {
-			fw::ResourceManagerPtr resourceManager = std::make_shared<fw::ResourceManager>();
-			std::unique_ptr<fw::app::UiContext> uiContext = std::make_unique<fw::app::UiContext>(
-				std::make_unique<fw::GlRenderContext>(false),
-				std::make_unique<fw::app::WrappedWindowManager>(
+			orb::ResourceManagerPtr resourceManager = std::make_shared<orb::ResourceManager>();
+			std::unique_ptr<orb::app::UiContext> uiContext = std::make_unique<orb::app::UiContext>(
+				std::make_unique<orb::GlRenderContext>(false),
+				std::make_unique<orb::app::WrappedWindowManager>(
 					resourceManager,
-					std::make_shared<fw::FontManager>(resourceManager)
+					std::make_shared<orb::FontManager>(resourceManager)
 				)
 			);
 
@@ -347,7 +347,7 @@ extern "C" {
 			
 			viewManager = window->getViewManager();
 			viewManager->createState(gui->plugin->audioManager.get());
-			viewManager->createState<fw::EventNode>(std::move(gui->eventNode.value()));
+			viewManager->createState<orb::EventNode>(std::move(gui->eventNode.value()));
 
 			gui->uiContext = std::move(uiContext);
 			
@@ -357,7 +357,7 @@ extern "C" {
 			gui->uiContext = nullptr;
 			break;
 		case PUGL_CONFIGURE:
-			window->setDimensions(fw::Dimension{ event->configure.width, event->configure.height });
+			window->setDimensions(orb::Dimension{ event->configure.width, event->configure.height });
 			break;
 		case PUGL_EXPOSE:
 			gui->uiContext->runFrame();
@@ -380,23 +380,23 @@ extern "C" {
 			break;
 
 		case PUGL_MOTION:
-			viewManager->onMouseMove(fw::Point{ (int32)event->motion.x, (int32)event->motion.y });
+			viewManager->onMouseMove(orb::Point{ (int32)event->motion.x, (int32)event->motion.y });
 			break;
 
 		case PUGL_BUTTON_PRESS:
 		case PUGL_BUTTON_RELEASE: 
-			viewManager->onMouseButton(fw::MouseButtonEvent{
+			viewManager->onMouseButton(orb::MouseButtonEvent{
 				.button = convertMouseButton(event->button.button),
 				.down = event->type == PUGL_BUTTON_PRESS,
-				.position = fw::Point{ (int32)event->button.x, (int32)event->button.y }
+				.position = orb::Point{ (int32)event->button.x, (int32)event->button.y }
 			});
 			break;
 
 		case PUGL_KEY_PRESS:
 		case PUGL_KEY_RELEASE:
-			viewManager->onKey(fw::KeyEvent{
-				.action = event->type == PUGL_KEY_PRESS ? fw::KeyAction::Press : fw::KeyAction::Release,
-				.key = static_cast<fw::VirtualKey>(event->key.keycode),
+			viewManager->onKey(orb::KeyEvent{
+				.action = event->type == PUGL_KEY_PRESS ? orb::KeyAction::Press : orb::KeyAction::Release,
+				.key = static_cast<orb::VirtualKey>(event->key.keycode),
 				.down = event->type == PUGL_KEY_PRESS,
 			});
 			break;
@@ -420,7 +420,7 @@ extern "C" {
 			.appView = plugin->app->onCreateUi(),
 		};
 
-		fw::EventNode& audioNode = plugin->audioManager->getProcessor()->getEventNode();
+		orb::EventNode& audioNode = plugin->audioManager->getProcessor()->getEventNode();
 		audioNode.update();
 		gui->eventNode = audioNode.spawn("Ui");
 
@@ -489,18 +489,18 @@ extern "C" {
 
 	void cplug_onKeyDown(void* userGUI, const int16_t key_char, const int16_t key_code, const int16_t modifiers) {
 		CPlugGui* gui = static_cast<CPlugGui*>(userGUI);
-		gui->uiContext->getMainWindow()->getViewManager()->onKey(fw::KeyEvent{
-			.action = fw::KeyAction::Press,
-			.key = static_cast<fw::VirtualKey>(VSTKeyCodeToVK(key_code, key_char)),
+		gui->uiContext->getMainWindow()->getViewManager()->onKey(orb::KeyEvent{
+			.action = orb::KeyAction::Press,
+			.key = static_cast<orb::VirtualKey>(VSTKeyCodeToVK(key_code, key_char)),
 			.down = true,
 		});
 	}
 
 	void cplug_onKeyUp(void* userGUI, const int16_t key_char, const int16_t key_code, const int16_t modifiers) {
 		CPlugGui* gui = static_cast<CPlugGui*>(userGUI);
-		gui->uiContext->getMainWindow()->getViewManager()->onKey(fw::KeyEvent{
-			.action = fw::KeyAction::Release,
-			.key = static_cast<fw::VirtualKey>(VSTKeyCodeToVK(key_code, key_char)),
+		gui->uiContext->getMainWindow()->getViewManager()->onKey(orb::KeyEvent{
+			.action = orb::KeyAction::Release,
+			.key = static_cast<orb::VirtualKey>(VSTKeyCodeToVK(key_code, key_char)),
 			.down = false,
 		});
 	}
@@ -508,7 +508,7 @@ extern "C" {
 	void cplug_getSize(void* userGUI, uint32_t* width, uint32_t* height) {
 		CPlugGui* gui = static_cast<CPlugGui*>(userGUI);
 		if (gui->appView) {
-			fw::Dimension dim = gui->appView->getDimensions();
+			orb::Dimension dim = gui->appView->getDimensions();
 			*width = dim.w;
 			*height = dim.h;
 		}
@@ -517,7 +517,7 @@ extern "C" {
 	bool cplug_setSize(void* userGUI, uint32_t width, uint32_t height) {
 		CPlugGui* gui = static_cast<CPlugGui*>(userGUI);
 		if (gui->uiContext) {
-			gui->uiContext->getMainWindow()->setDimensions(fw::Dimension{ (int)width, (int)height });
+			gui->uiContext->getMainWindow()->setDimensions(orb::Dimension{ (int)width, (int)height });
 		}
 		return true;
 	}

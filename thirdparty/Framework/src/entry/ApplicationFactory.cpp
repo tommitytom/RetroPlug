@@ -4,7 +4,7 @@
 
 #include INCLUDE_APPLICATION(APPLICATION_HEADER)
 
-namespace fw {
+namespace orb {
 	std::unique_ptr<app::Application> ApplicationFactory::create() {
 		return std::make_unique<APPLICATION_IMPL>();
 	}

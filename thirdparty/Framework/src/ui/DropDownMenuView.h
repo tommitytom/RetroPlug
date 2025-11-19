@@ -4,7 +4,7 @@
 #include "foundation/MathUtil.h"
 #include "ui/Property.h"
 
-namespace fw {
+namespace orb {
 	class DropDownMenuView : public TypedPropertyEditor<int32> {
 		FwRegisterObject()
 	private:
@@ -121,7 +121,7 @@ namespace fw {
 
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			DimensionF dim = getDimensionsF();
 
 			std::string text = _selectedIndex != -1 ? _items[_selectedIndex].first : "";

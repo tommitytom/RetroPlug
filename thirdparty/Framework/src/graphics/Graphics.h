@@ -9,7 +9,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	class Font {
 	private:
 		struct SizedFont {

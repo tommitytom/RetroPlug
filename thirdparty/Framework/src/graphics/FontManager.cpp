@@ -5,7 +5,7 @@
 
 #include "graphics/ftgl/FtglFont.h"
 
-using namespace fw;
+using namespace orb;
 
 
 FontFaceHandle FontManager::loadFont(std::string_view fontUri, f32 size) {

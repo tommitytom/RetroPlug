@@ -65,13 +65,13 @@ namespace rp {
 
 		rp::KitIndex addKitComponent(entt::entity system, LsdjKitComponent&& comp);
 
-		fw::Uint8Buffer getKitSample(entt::entity system, uint32 kitId, uint32 sampleId);
+		orb::Uint8Buffer getKitSample(entt::entity system, uint32 kitId, uint32 sampleId);
 
-		fw::Uint8Buffer getKitData(entt::entity system, uint32 kitId);
+		orb::Uint8Buffer getKitData(entt::entity system, uint32 kitId);
 
-		fw::Uint8Buffer getSynthData(entt::entity system, uint32 synthId);
+		orb::Uint8Buffer getSynthData(entt::entity system, uint32 synthId);
 
-		bool setSynthData(entt::entity system, uint32 synthId, const fw::Uint8Buffer& data);
+		bool setSynthData(entt::entity system, uint32 synthId, const orb::Uint8Buffer& data);
 
 		LsdjComponent* getComponent(entt::entity system);
 

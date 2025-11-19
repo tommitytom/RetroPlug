@@ -3,10 +3,10 @@
 
 #include <LivePP/API/LPP_API_x64_CPP.h>
 
-static fw::app::Application* app;
+static orb::app::Application* app;
 
 void initMain(int argc, char** argv) {
-	app = new fw::app::Application();
+	app = new orb::app::Application();
 	app->setup<RetroPlug>();
 }
 

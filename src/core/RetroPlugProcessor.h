@@ -6,25 +6,25 @@
 #include "audio/AudioBuffer.h"
 
 namespace rp {
-	class RetroPlugProcessor final : public fw::AudioProcessor {
+	class RetroPlugProcessor final : public orb::AudioProcessor {
 	private:
 		entt::registry _registry;
 
 	public:
-		RetroPlugProcessor(fw::EventNode&& eventNode);
+		RetroPlugProcessor(orb::EventNode&& eventNode);
 		~RetroPlugProcessor();
 
 		void onBeginUpdate(uint32 frameCount) override;
 
 		void onRender(f32* output, const f32* input, uint32 frameCount) override;
 
-		void onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in);
+		void onRenderFull(orb::AudioBuffer& out, const orb::AudioBuffer& in);
 
-		void onMidi(const fw::MidiMessage& message) override;
+		void onMidi(const orb::MidiMessage& message) override;
 
 		void onTransportChange(bool playing) override;
 
-		void onTransportUpdate(const fw::TimeInfo& timeInfo) override;
+		void onTransportUpdate(const orb::TimeInfo& timeInfo) override;
 
 		void onSampleRateChange(f32 sampleRate) override;
 	};

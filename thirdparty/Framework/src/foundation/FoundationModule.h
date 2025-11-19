@@ -6,7 +6,7 @@
 #include "foundation/MetaFactory.h"
 #include "foundation/MetaUtil.h"
 
-namespace fw::FoundationModule {
+namespace orb::FoundationModule {
 	void setup() {
 		MetaUtil::registerType<bool>("bool");
 		MetaUtil::registerType<int8>("int8");

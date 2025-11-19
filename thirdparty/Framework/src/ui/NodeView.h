@@ -3,7 +3,7 @@
 #include "ui/View.h"
 #include "foundation/node/NodeGraph.h"
 
-namespace fw {	
+namespace orb {	
 	const int32 PORT_HEIGHT = 10;
 	const int32 TITLE_HEIGHT = 20;
 	const int32 PORT_SPACING = 30;
@@ -25,7 +25,7 @@ namespace fw {
 
 	public:
 		NodePortView() {
-			setFocusPolicy(fw::FocusPolicy::Click);
+			setFocusPolicy(orb::FocusPolicy::Click);
 		}
 
 		void setPortType(uint32 type, PortDirection direction) {
@@ -94,23 +94,23 @@ namespace fw {
 			return area;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			Rect portArea = getPortAreaLocal();
 			Rect portHandle = portArea.shrink(2);
 			
 			if (_direction == PortDirection::Input) {
-				canvas.text((PointF)portArea.topRight(), getName(), fw::Color4F::black);
+				canvas.text((PointF)portArea.topRight(), getName(), orb::Color4F::black);
 				portHandle.x = 0;
 			} else {
 				PointF pos = (PointF)portArea.position;
 				pos.x -= canvas.measureText(getName()).w;
-				canvas.text(pos, getName(), fw::Color4F::black);
+				canvas.text(pos, getName(), orb::Color4F::black);
 				portHandle.x = getDimensions().w - portHandle.w;
 			}
 
-			fw::Color4F handleColor = fw::Color4F::black;
+			orb::Color4F handleColor = orb::Color4F::black;
 			if (_mouseOver) {
-				handleColor = fw::Color4F::red;
+				handleColor = orb::Color4F::red;
 			}
 
 			canvas.fillRect(portHandle, handleColor);
@@ -132,7 +132,7 @@ namespace fw {
 
 	public:
 		NodeView() { 
-			setFocusPolicy(fw::FocusPolicy::Click);
+			setFocusPolicy(orb::FocusPolicy::Click);
 		}
 
 		bool onMouseButton(MouseButton button, bool down, Point position) override {
@@ -241,7 +241,7 @@ namespace fw {
 			}
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			auto dim = getDimensionsF();
 
 			canvas.fillRect(dim, Color4F::lightGrey);
@@ -249,8 +249,8 @@ namespace fw {
 			canvas.fillRect(dim, Color4F(0.55f, 0.55f, 0.55f, 1.0f));
 
 			PointF nodePos(0, 2.0f);
-			canvas.setTextAlign(fw::TextAlignFlags::Top);
-			canvas.text(nodePos, _node->getName(), fw::Color4F::black);
+			canvas.setTextAlign(orb::TextAlignFlags::Top);
+			canvas.text(nodePos, _node->getName(), orb::Color4F::black);
 		}
 
 		uint32 getNodeIndex() const {
@@ -429,7 +429,7 @@ namespace fw {
 			return true; 
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			canvas.setFont("Karla-Regular", 11.75f);
 			canvas.fillRect(getDimensionsF(), Color4F::darkGrey);
 
@@ -452,7 +452,7 @@ namespace fw {
 				Point startPoint(outputArea.right(), outputArea.y + outputArea.h / 2);
 				Point endPoint(inputArea.x, inputArea.y + inputArea.h / 2);
 
-				canvas.line(startPoint, endPoint, fw::Color4F::white);
+				canvas.line(startPoint, endPoint, orb::Color4F::white);
 
 				//assert(input.type == output.type);
 			}
@@ -460,11 +460,11 @@ namespace fw {
 			if (_selectedIndex != -1) {
 				auto selected = _nodes[_selectedIndex];
 				auto highlightArea = selected->getArea().grow(3);
-				canvas.strokeRect(RectF(highlightArea), fw::Color4F::green);
+				canvas.strokeRect(RectF(highlightArea), orb::Color4F::green);
 			}
 
 			if (_draggingLine.has_value()) {
-				canvas.line(_draggingLine.value().first, _draggingLine.value().second, fw::Color4F::white);
+				canvas.line(_draggingLine.value().first, _draggingLine.value().second, orb::Color4F::white);
 			}
 
 			for (int32 y = 0; y < getDimensions().h; ++y) {

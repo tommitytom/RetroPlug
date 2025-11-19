@@ -4,7 +4,7 @@
 #include <array>
 #include "foundation/Input.h"
 
-namespace fw {
+namespace orb {
 	struct StreamButtonPress {
 		ButtonType button;
 		bool down;
@@ -93,8 +93,8 @@ namespace fw {
 			return _defaultDelay;
 		}
 
-		const std::vector<fw::StreamButtonPress>& data() const { return _stream; }
+		const std::vector<orb::StreamButtonPress>& data() const { return _stream; }
 
-		std::vector<fw::StreamButtonPress>& data() { return _stream; }
+		std::vector<orb::StreamButtonPress>& data() { return _stream; }
 	};
 }

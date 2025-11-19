@@ -7,7 +7,7 @@
 #include "foundation/FsUtil.h"
 #include "graphics/gl/GlUtil.h"
 
-namespace fw {
+namespace orb {
 	GLenum getGlShaderType(ShaderType type) {
 		switch (type) {
 			case ShaderType::Fragment: return GL_FRAGMENT_SHADER;
@@ -36,7 +36,7 @@ namespace fw {
 
 	std::shared_ptr<Resource> GlShaderProvider::load(std::string_view uri) {
 		if (fs::exists(uri)) {
-			std::vector<std::byte> fileData = fw::FsUtil::readFile(uri);
+			std::vector<std::byte> fileData = orb::FsUtil::readFile(uri);
 
 			if (fileData.size() > 0) {
 				ShaderType shaderType = getShaderType(FsUtil::getFileExt(uri));

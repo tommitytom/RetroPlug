@@ -6,7 +6,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	enum class TypeId : uint32 {};
 	enum class NameHash : uint32 {};
 

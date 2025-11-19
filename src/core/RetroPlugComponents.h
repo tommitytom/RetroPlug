@@ -39,12 +39,12 @@ namespace rp {
 	struct FetchMemoryResponse {
 		entt::entity entity;
 		MemoryType type;
-		fw::Uint8Buffer state;
+		orb::Uint8Buffer state;
 	};
 
 	struct PadButtonEvent {
 		entt::entity entity = entt::null;
-		fw::PadButtonType button = fw::PadButtonType::COUNT;
+		orb::PadButtonType button = orb::PadButtonType::COUNT;
 		bool down = false;
 	};;
 
@@ -55,7 +55,7 @@ namespace rp {
 	};*/
 
 	struct VideoFrameComponent {
-		fw::ImagePtr frame;
+		orb::ImagePtr frame;
 	};
 
 	struct SystemNameComponent {

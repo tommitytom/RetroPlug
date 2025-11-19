@@ -14,13 +14,13 @@
 
 namespace rp::lsdj {
 	struct InputState {
-		std::vector<fw::ButtonType> buttonPresses;
-		std::vector<fw::ButtonType> buttonReleases;
-		std::array<bool, static_cast<int>(fw::ButtonType::MAX)> buttonStates = { false };
+		std::vector<orb::ButtonType> buttonPresses;
+		std::vector<orb::ButtonType> buttonReleases;
+		std::array<bool, static_cast<int>(orb::ButtonType::MAX)> buttonStates = { false };
 
-		std::vector<fw::VirtualKey> keyPresses;
-		std::vector<fw::VirtualKey> keyReleases;
-		std::array<bool, static_cast<int>(fw::VirtualKey::COUNT)> keyStates = { false };
+		std::vector<orb::VirtualKey> keyPresses;
+		std::vector<orb::VirtualKey> keyReleases;
+		std::array<bool, static_cast<int>(orb::VirtualKey::COUNT)> keyStates = { false };
 	};
 
 	struct UiState {
@@ -197,28 +197,28 @@ namespace rp::lsdj {
 			_state.colRowCounts = _state.nextColRowCounts;
 		}
 
-		void pressKey(fw::VirtualKey key) {
+		void pressKey(orb::VirtualKey key) {
 			_state.input.keyStates[static_cast<int>(key)] = true;
 			_state.input.keyPresses.push_back(key);
 		}
 
-		void releaseKey(fw::VirtualKey key) {
+		void releaseKey(orb::VirtualKey key) {
 			_state.input.keyStates[static_cast<int>(key)] = false;
 			_state.input.keyReleases.push_back(key);
 		}
 
-		void pressButton(fw::ButtonType button) {
+		void pressButton(orb::ButtonType button) {
 			_state.input.buttonStates[static_cast<int>(button)] = true;
 			_state.input.buttonPresses.push_back(button);
 		}
 
-		void releaseButton(fw::ButtonType button) {
+		void releaseButton(orb::ButtonType button) {
 			_state.input.buttonStates[static_cast<int>(button)] = false;
 			_state.input.buttonReleases.push_back(button);
 		}
 
-		bool keyPressed(fw::VirtualKey key) {
-			for (fw::VirtualKey k : _state.input.keyPresses) {
+		bool keyPressed(orb::VirtualKey key) {
+			for (orb::VirtualKey k : _state.input.keyPresses) {
 				if (k == key) {
 					return true;
 				}
@@ -227,8 +227,8 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool keyReleased(fw::VirtualKey key) {
-			for (fw::VirtualKey k : _state.input.keyReleases) {
+		bool keyReleased(orb::VirtualKey key) {
+			for (orb::VirtualKey k : _state.input.keyReleases) {
 				if (k == key) {
 					return true;
 				}
@@ -237,12 +237,12 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool keyDown(fw::VirtualKey key) const {
+		bool keyDown(orb::VirtualKey key) const {
 			return _state.input.keyStates[static_cast<int>(key)];
 		}
 
-		bool buttonPressed(fw::ButtonType button) {
-			for (fw::ButtonType b : _state.input.buttonPresses) {
+		bool buttonPressed(orb::ButtonType button) {
+			for (orb::ButtonType b : _state.input.buttonPresses) {
 				if (b == button) {
 					return true;
 				}
@@ -251,8 +251,8 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool buttonReleased(fw::ButtonType button) {
-			for (fw::ButtonType b : _state.input.buttonReleases) {
+		bool buttonReleased(orb::ButtonType button) {
+			for (orb::ButtonType b : _state.input.buttonReleases) {
 				if (b == button) {
 					return true;
 				}
@@ -261,28 +261,28 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool buttonDown(fw::ButtonType button) const {
+		bool buttonDown(orb::ButtonType button) const {
 			return _state.input.buttonStates[static_cast<int>(button)];
 		}
 
 		void handleNavigation() {
-			if (!buttonDown(fw::ButtonType::A) && !buttonDown(fw::ButtonType::B) && !buttonDown(fw::ButtonType::Select)) {
+			if (!buttonDown(orb::ButtonType::A) && !buttonDown(orb::ButtonType::B) && !buttonDown(orb::ButtonType::Select)) {
 				if (_state.verticalNav) {
-					if (buttonPressed(fw::ButtonType::Up)) {
+					if (buttonPressed(orb::ButtonType::Up)) {
 						moveFocusUp();
 					}
 
-					if (buttonPressed(fw::ButtonType::Down)) {
+					if (buttonPressed(orb::ButtonType::Down)) {
 						moveFocusDown();
 					}
 				}
 
 				if (_state.horizontalNav) {
-					if (buttonPressed(fw::ButtonType::Left)) {
+					if (buttonPressed(orb::ButtonType::Left)) {
 						moveFocusLeft();
 					}
 
-					if (buttonPressed(fw::ButtonType::Right)) {
+					if (buttonPressed(orb::ButtonType::Right)) {
 						moveFocusRight();
 					}
 				}
@@ -339,12 +339,12 @@ namespace rp::lsdj {
 			if (hasFocus()) {
 				setNavigationEnabled(false, true);
 
-				if (buttonPressed(fw::ButtonType::Up) && selected > 0) {
+				if (buttonPressed(orb::ButtonType::Up) && selected > 0) {
 					selected--;
 					changed = true;
 				}
 
-				if (buttonPressed(fw::ButtonType::Down) && selected < (int32)itemCount - 1) {
+				if (buttonPressed(orb::ButtonType::Down) && selected < (int32)itemCount - 1) {
 					selected++;
 					changed = true;
 				}
@@ -366,54 +366,54 @@ namespace rp::lsdj {
 			std::string initialValue;
 		};
 
-		bool convertKeyPress(fw::VirtualKey key, char& out) {
+		bool convertKeyPress(orb::VirtualKey key, char& out) {
 			switch (key) {
-			case fw::VirtualKey::A: out = 'A'; return true;
-			case fw::VirtualKey::B: out = 'B'; return true;
-			case fw::VirtualKey::C: out = 'C'; return true;
-			case fw::VirtualKey::D: out = 'D'; return true;
-			case fw::VirtualKey::E: out = 'E'; return true;
-			case fw::VirtualKey::F: out = 'F'; return true;
-			case fw::VirtualKey::G: out = 'G'; return true;
-			case fw::VirtualKey::H: out = 'H'; return true;
-			case fw::VirtualKey::I: out = 'I'; return true;
-			case fw::VirtualKey::J: out = 'J'; return true;
-			case fw::VirtualKey::K: out = 'K'; return true;
-			case fw::VirtualKey::L: out = 'L'; return true;
-			case fw::VirtualKey::M: out = 'M'; return true;
-			case fw::VirtualKey::N: out = 'N'; return true;
-			case fw::VirtualKey::O: out = 'O'; return true;
-			case fw::VirtualKey::P: out = 'P'; return true;
-			case fw::VirtualKey::Q: out = 'Q'; return true;
-			case fw::VirtualKey::R: out = 'R'; return true;
-			case fw::VirtualKey::S: out = 'S'; return true;
-			case fw::VirtualKey::T: out = 'T'; return true;
-			case fw::VirtualKey::U: out = 'U'; return true;
-			case fw::VirtualKey::V: out = 'V'; return true;
-			case fw::VirtualKey::W: out = 'W'; return true;
-			case fw::VirtualKey::X: out = 'X'; return true;
-			case fw::VirtualKey::Y: out = 'Y'; return true;
-			case fw::VirtualKey::Z: out = 'Z'; return true;
-			case fw::VirtualKey::Num0: out = '0'; return true;
-			case fw::VirtualKey::Num1: out = '1'; return true;
-			case fw::VirtualKey::Num2: out = '2'; return true;
-			case fw::VirtualKey::Num3: out = '3'; return true;
-			case fw::VirtualKey::Num4: out = '4'; return true;
-			case fw::VirtualKey::Num5: out = '5'; return true;
-			case fw::VirtualKey::Num6: out = '6'; return true;
-			case fw::VirtualKey::Num7: out = '7'; return true;
-			case fw::VirtualKey::Num8: out = '8'; return true;
-			case fw::VirtualKey::Num9: out = '9'; return true;
-			case fw::VirtualKey::NumPad0: out = '0'; return true;
-			case fw::VirtualKey::NumPad1: out = '1'; return true;
-			case fw::VirtualKey::NumPad2: out = '2'; return true;
-			case fw::VirtualKey::NumPad3: out = '3'; return true;
-			case fw::VirtualKey::NumPad4: out = '4'; return true;
-			case fw::VirtualKey::NumPad5: out = '5'; return true;
-			case fw::VirtualKey::NumPad6: out = '6'; return true;
-			case fw::VirtualKey::NumPad7: out = '7'; return true;
-			case fw::VirtualKey::NumPad8: out = '8'; return true;
-			case fw::VirtualKey::NumPad9: out = '9'; return true;
+			case orb::VirtualKey::A: out = 'A'; return true;
+			case orb::VirtualKey::B: out = 'B'; return true;
+			case orb::VirtualKey::C: out = 'C'; return true;
+			case orb::VirtualKey::D: out = 'D'; return true;
+			case orb::VirtualKey::E: out = 'E'; return true;
+			case orb::VirtualKey::F: out = 'F'; return true;
+			case orb::VirtualKey::G: out = 'G'; return true;
+			case orb::VirtualKey::H: out = 'H'; return true;
+			case orb::VirtualKey::I: out = 'I'; return true;
+			case orb::VirtualKey::J: out = 'J'; return true;
+			case orb::VirtualKey::K: out = 'K'; return true;
+			case orb::VirtualKey::L: out = 'L'; return true;
+			case orb::VirtualKey::M: out = 'M'; return true;
+			case orb::VirtualKey::N: out = 'N'; return true;
+			case orb::VirtualKey::O: out = 'O'; return true;
+			case orb::VirtualKey::P: out = 'P'; return true;
+			case orb::VirtualKey::Q: out = 'Q'; return true;
+			case orb::VirtualKey::R: out = 'R'; return true;
+			case orb::VirtualKey::S: out = 'S'; return true;
+			case orb::VirtualKey::T: out = 'T'; return true;
+			case orb::VirtualKey::U: out = 'U'; return true;
+			case orb::VirtualKey::V: out = 'V'; return true;
+			case orb::VirtualKey::W: out = 'W'; return true;
+			case orb::VirtualKey::X: out = 'X'; return true;
+			case orb::VirtualKey::Y: out = 'Y'; return true;
+			case orb::VirtualKey::Z: out = 'Z'; return true;
+			case orb::VirtualKey::Num0: out = '0'; return true;
+			case orb::VirtualKey::Num1: out = '1'; return true;
+			case orb::VirtualKey::Num2: out = '2'; return true;
+			case orb::VirtualKey::Num3: out = '3'; return true;
+			case orb::VirtualKey::Num4: out = '4'; return true;
+			case orb::VirtualKey::Num5: out = '5'; return true;
+			case orb::VirtualKey::Num6: out = '6'; return true;
+			case orb::VirtualKey::Num7: out = '7'; return true;
+			case orb::VirtualKey::Num8: out = '8'; return true;
+			case orb::VirtualKey::Num9: out = '9'; return true;
+			case orb::VirtualKey::NumPad0: out = '0'; return true;
+			case orb::VirtualKey::NumPad1: out = '1'; return true;
+			case orb::VirtualKey::NumPad2: out = '2'; return true;
+			case orb::VirtualKey::NumPad3: out = '3'; return true;
+			case orb::VirtualKey::NumPad4: out = '4'; return true;
+			case orb::VirtualKey::NumPad5: out = '5'; return true;
+			case orb::VirtualKey::NumPad6: out = '6'; return true;
+			case orb::VirtualKey::NumPad7: out = '7'; return true;
+			case orb::VirtualKey::NumPad8: out = '8'; return true;
+			case orb::VirtualKey::NumPad9: out = '9'; return true;
 			}
 
 			return false;
@@ -436,7 +436,7 @@ namespace rp::lsdj {
 			if (hasFocus()) {
 				if (editable) {
 					if (state.editing) {
-						if (keyPressed(fw::VirtualKey::Backspace)) {
+						if (keyPressed(orb::VirtualKey::Backspace)) {
 							if (state.cursorPos > 0) {
 								if (text[state.cursorPos] == ' ') {
 									state.cursorPos--;
@@ -447,7 +447,7 @@ namespace rp::lsdj {
 								changed = true;
 							}
 						} else {
-							for (fw::VirtualKey key : _state.input.keyPresses) {
+							for (orb::VirtualKey key : _state.input.keyPresses) {
 								// Convert to LSDJ char
 								char ch;
 								if (convertKeyPress(key, ch)) {
@@ -462,18 +462,18 @@ namespace rp::lsdj {
 							}
 						}
 
-						if (buttonPressed(fw::ButtonType::Start)) {
+						if (buttonPressed(orb::ButtonType::Start)) {
 							state.editing = false;
 							state.initialValue.clear();
 						}
 
-						if (buttonPressed(fw::ButtonType::Down)) {
+						if (buttonPressed(orb::ButtonType::Down)) {
 							state.editing = false;
 							state.initialValue.clear();
 							moveFocusDown();
 						}
 					} else {
-						if (buttonDown(fw::ButtonType::A) || buttonDown(fw::ButtonType::Start)) {
+						if (buttonDown(orb::ButtonType::A) || buttonDown(orb::ButtonType::Start)) {
 							state.editing = true;
 							state.initialValue = text;
 
@@ -529,14 +529,14 @@ namespace rp::lsdj {
 			bool dimmed = options & SelectOptions::Dimmed;
 
 			if (hasFocus() && editable) {
-				if (buttonDown(fw::ButtonType::A) && buttonPressed(fw::ButtonType::Left)) {
+				if (buttonDown(orb::ButtonType::A) && buttonPressed(orb::ButtonType::Left)) {
 					if (selected > 0) {
 						selected--;
 						changed = true;
 					}
 				}
 
-				if (buttonDown(fw::ButtonType::A) && buttonPressed(fw::ButtonType::Right)) {
+				if (buttonDown(orb::ButtonType::A) && buttonPressed(orb::ButtonType::Right)) {
 					if (selected < (int32)itemCount - 1) {
 						selected++;
 						changed = true;
@@ -581,20 +581,20 @@ namespace rp::lsdj {
 			if (hasFocus() && editable) {
 				int32 range = max - min;
 
-				if (buttonDown(fw::ButtonType::A)) {
-					if (buttonPressed(fw::ButtonType::Up)) {
+				if (buttonDown(orb::ButtonType::A)) {
+					if (buttonPressed(orb::ButtonType::Up)) {
 						move = 0x10;
 					}
 
-					if (buttonPressed(fw::ButtonType::Down)) {
+					if (buttonPressed(orb::ButtonType::Down)) {
 						move = -0x10;
 					}
 
-					if (buttonPressed(fw::ButtonType::Left)) {
+					if (buttonPressed(orb::ButtonType::Left)) {
 						move = -0x01;
 					}
 
-					if (buttonPressed(fw::ButtonType::Right)) {
+					if (buttonPressed(orb::ButtonType::Right)) {
 						move = 0x01;
 					}
 

@@ -10,7 +10,7 @@
 #include "Crc32.h"
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	template <typename T>
 	class DataBuffer {
 	private:

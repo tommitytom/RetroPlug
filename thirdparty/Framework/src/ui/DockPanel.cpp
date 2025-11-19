@@ -4,7 +4,7 @@
 
 #include "graphics/Canvas.h"
 
-using namespace fw;
+using namespace orb;
 
 class DockWindow;
 
@@ -93,7 +93,7 @@ bool DockPanel::onDrop(DragContext& ctx, Point position) {
 	return true;
 }
 
-void DockPanel::onRender(fw::Canvas& canvas) {
+void DockPanel::onRender(orb::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 
 	if (_showHeader) {

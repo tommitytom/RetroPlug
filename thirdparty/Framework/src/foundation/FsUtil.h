@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 
-namespace fw::FsUtil {
+namespace orb::FsUtil {
 	void setupFs();
 
 	inline std::string_view getFilename(std::string_view path) {

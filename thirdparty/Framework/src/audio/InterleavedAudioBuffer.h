@@ -2,7 +2,7 @@
 
 #include "foundation/DataBuffer.h"
 
-namespace fw {
+namespace orb {
 	using AudioSampleT = f32;
 
 	template <const uint32 _ChannelCount, typename T = AudioSampleT>

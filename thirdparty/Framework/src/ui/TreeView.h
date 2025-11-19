@@ -3,7 +3,7 @@
 #include "ui/LabelView.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	struct TreeViewNode {
 		std::string name;
 		std::vector<TreeViewNode> children;

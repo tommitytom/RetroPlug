@@ -26,7 +26,7 @@ namespace ftgl {
 	struct texture_font_t;
 }
 
-namespace fw {
+namespace orb {
 	enum TextAlignFlags {
 		Left = 1 << 0,
 		Center = 1 << 1,
@@ -388,4 +388,4 @@ namespace fw {
 	};
 }
 
-//using namespace fw;
+//using namespace orb;

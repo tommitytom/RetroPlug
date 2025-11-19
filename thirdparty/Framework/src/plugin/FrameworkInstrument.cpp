@@ -9,11 +9,11 @@
 
 #include "graphics/gl/GlRenderContext.h"
 
-using namespace fw;
+using namespace orb;
 
 FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 	Plugin(info, MakeConfig(0, 0)),
-	_audioManager(std::make_shared<fw::audio::AudioManager>())
+	_audioManager(std::make_shared<orb::audio::AudioManager>())
 {
 	_app = ApplicationFactory::create();
 	_audioManager->setSampleRate((f32)GetSampleRate());
@@ -34,12 +34,12 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 		if (view) {
 			IGraphicsFramework* gfx = static_cast<IGraphicsFramework*>(pGraphics);
 
-			fw::ResourceManagerPtr resourceManager = std::make_shared<fw::ResourceManager>();
-			std::shared_ptr<fw::app::UiContext> uiContext = std::make_shared<fw::app::UiContext>(
-				std::make_unique<fw::GlRenderContext>(false),
-				std::make_unique<fw::app::WrappedWindowManager>(
+			orb::ResourceManagerPtr resourceManager = std::make_shared<orb::ResourceManager>();
+			std::shared_ptr<orb::app::UiContext> uiContext = std::make_shared<orb::app::UiContext>(
+				std::make_unique<orb::GlRenderContext>(false),
+				std::make_unique<orb::app::WrappedWindowManager>(
 					resourceManager,
-					std::make_shared<fw::FontManager>(resourceManager)
+					std::make_shared<orb::FontManager>(resourceManager)
 				)
 			);
 			
@@ -48,7 +48,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 			pGraphics->AttachPanelBackground(COLOR_GRAY);
 
 			NativeWindowHandle nativeWindowHandle = gfx->GetNativeWindowHandle();
-			fw::app::WindowPtr window = uiContext->setupNativeWindow(view, nativeWindowHandle, fw::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
+			orb::app::WindowPtr window = uiContext->setupNativeWindow(view, nativeWindowHandle, orb::Dimension{ PLUG_WIDTH, PLUG_HEIGHT });
 
 			ViewManagerPtr viewManager = window->getViewManager();
 			viewManager->createState(_audioManager.get());
@@ -57,7 +57,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 			FrameworkView* frameworkView = new FrameworkView(*_app, uiContext, window, [&]() { _editorOpen = false; });
 			pGraphics->AttachControl(frameworkView);
 
-			fw::Dimension dimensions = viewManager->getDimensions();
+			orb::Dimension dimensions = viewManager->getDimensions();
 			pGraphics->Resize(dimensions.w, dimensions.h, 1.0f);
 			//frameworkView->SetRECT(IRECT(0.0f, 0.0f, (f32)dimensions.w, (f32)dimensions.h));
 
@@ -79,7 +79,7 @@ void FrameworkInstrument::ProcessBlock(sample** inputs, sample** outputs, int nF
 	checkTransportRunning();
 
 	if (_transportRunning && processor) {
-		processor->onTransportUpdate(fw::TimeInfo{
+		processor->onTransportUpdate(orb::TimeInfo{
 			.sampleRate = GetSampleRate(),
 			.tempo = mTimeInfo.mTempo,
 			//.samplePos = mTimeInfo.mSamplePos,
@@ -125,7 +125,7 @@ void FrameworkInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 
 	checkTransportRunning();
 
-	_audioManager->getProcessor()->onMidi(fw::MidiMessage{
+	_audioManager->getProcessor()->onMidi(orb::MidiMessage{
 		.status = msg.mStatus,
 		.data1 = msg.mData1,
 		.data2 = msg.mData2
@@ -169,7 +169,7 @@ bool FrameworkInstrument::OnKeyUp(const IKeyPress& key) {
 bool FrameworkInstrument::SerializeState(IByteChunk& chunk) const {
 	assert(_audioManager->getProcessor());
 	
-	fw::Uint8Buffer target;
+	orb::Uint8Buffer target;
 	_app->onSerialize(target);
 
 	uint32 size = target.size();
@@ -189,7 +189,7 @@ int FrameworkInstrument::UnserializeState(const IByteChunk& chunk, int pos) {
 	pos = chunk.Get(&size, pos);
 
 	if (size <= chunk.Size() - pos) {
-		fw::Uint8Buffer source((uint8*)chunk.GetData() + pos, size);
+		orb::Uint8Buffer source((uint8*)chunk.GetData() + pos, size);
 		_app->onDeserialize(source);
 		return pos + size;
 	}

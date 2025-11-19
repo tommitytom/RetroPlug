@@ -10,10 +10,10 @@
 namespace fw {
 	class Vst3PluginView : public Steinberg::CPluginView, public Steinberg::IPlugViewContentScaleSupport {
 	private:
-		fw::ViewPtr _view;
+		orb::ViewPtr _view;
 
 	public:
-		Vst3PluginView(const fw::ViewPtr& view) : _view(view) {}
+		Vst3PluginView(const orb::ViewPtr& view) : _view(view) {}
 		~Vst3PluginView() = default;
 
 		Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString type) override {
@@ -40,7 +40,7 @@ namespace fw {
 
 		Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect* pSize) override {
 			if (_view) {
-				fw::Dimension dim = _view->getDimensions();
+				orb::Dimension dim = _view->getDimensions();
 				*pSize = Steinberg::ViewRect(0, 0, dim.w, dim.h);
 				return Steinberg::kResultTrue;
 			} else {

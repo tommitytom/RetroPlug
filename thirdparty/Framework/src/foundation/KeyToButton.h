@@ -2,7 +2,7 @@
 
 #include "foundation/Input.h"
 
-namespace fw {
+namespace orb {
 	static ButtonType keyToButton(VirtualKey key) {
 		ButtonType button = ButtonType::MAX;
 

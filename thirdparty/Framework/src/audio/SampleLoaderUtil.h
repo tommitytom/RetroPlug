@@ -7,7 +7,7 @@
 #define MA_LOG_LEVEL MA_LOG_LEVEL_VERBOSE
 #include <miniaudio/miniaudio.h>
 
-namespace fw::SampleLoaderUtil {
+namespace orb::SampleLoaderUtil {
 	template <const uint32 ChannelCount>
 	bool loadSampleFromFile(std::string_view path, InterleavedAudioBuffer<ChannelCount>& target) {
 		ma_decoder_config config = ma_decoder_config_init(ma_format_f32, ChannelCount, 0);
@@ -39,7 +39,7 @@ namespace fw::SampleLoaderUtil {
 	}
 
 	template <const uint32 ChannelCount>
-	bool loadSampleFromBuffer(fw::Uint8Buffer& buffer, InterleavedAudioBuffer<ChannelCount>& target) {
+	bool loadSampleFromBuffer(orb::Uint8Buffer& buffer, InterleavedAudioBuffer<ChannelCount>& target) {
 		ma_decoder_config config = ma_decoder_config_init(ma_format_f32, ChannelCount, 0);
 
 		ma_decoder decoder;

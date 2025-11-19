@@ -5,7 +5,7 @@
 #include <string_view>
 #include <entt/core/type_info.hpp>
 
-namespace fw {
+namespace orb {
 	using UriHash = entt::id_type;
 
 	namespace ResourceUtil {

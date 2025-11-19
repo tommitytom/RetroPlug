@@ -7,7 +7,7 @@
 #include "GamepadManager.h"
 #include "foundation/Input.h"
 
-namespace fw {
+namespace orb {
 	enum class AxisButton {
 		LeftStickLeft = 0,
 		LeftStickRight = 1,
@@ -45,14 +45,14 @@ namespace fw {
 		gainput::InputManager& manager;
 	};
 
-	class GainputGamepadManager : public fw::GamepadManager {
+	class GainputGamepadManager : public orb::GamepadManager {
 	public:
-		using ButtonCallback = std::function<void(fw::PadButtonType, bool)>;
+		using ButtonCallback = std::function<void(orb::PadButtonType, bool)>;
 
 	private:
 		gainput::InputManager _padManager;
 		gainput::DeviceId _padId;
-		bool _padButtons[(int)fw::PadButtonType::COUNT] = { false };
+		bool _padButtons[(int)orb::PadButtonType::COUNT] = { false };
 		float _axisButtonThreshold = 0.0f;
 		ButtonCallback _buttonCallback;
 

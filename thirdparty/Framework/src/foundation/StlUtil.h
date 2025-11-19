@@ -4,7 +4,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw::StlUtil {
+namespace orb::StlUtil {
 	template <typename T>
 	static bool vectorContains(const std::vector<T>& vec, const T& item) {
 		for (size_t i = 0; i < vec.size(); ++i) {

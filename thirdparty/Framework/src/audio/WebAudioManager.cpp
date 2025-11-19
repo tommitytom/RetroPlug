@@ -17,7 +17,7 @@ EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
                       void *userData)
 {
 	if (!g_isActive) {
-		fw::EmscriptenUtil::doLog("Audio thread active");
+		orb::EmscriptenUtil::doLog("Audio thread active");
 		g_isActive = true;
 	}
 
@@ -28,10 +28,10 @@ EM_BOOL generateAudio(int numInputs, const AudioSampleFrame *inputs,
 	}*/
 
 	assert(userData);
-	fw::audio::WebAudioManager* manager = reinterpret_cast<fw::audio::WebAudioManager*>(userData);
-	fw::StereoAudioBuffer& input = manager->getInput();
-	fw::StereoAudioBuffer& output = manager->getOutput();
-	fw::AudioProcessorPtr processor = manager->getProcessor();
+	orb::audio::WebAudioManager* manager = reinterpret_cast<orb::audio::WebAudioManager*>(userData);
+	orb::StereoAudioBuffer& input = manager->getInput();
+	orb::StereoAudioBuffer& output = manager->getOutput();
+	orb::AudioProcessorPtr processor = manager->getProcessor();
 	const f32 sampleRate = manager->getSampleRate();
 	assert(processor);
 
@@ -98,7 +98,7 @@ void audioThreadInitialized(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success,
 	emscripten_create_wasm_audio_worklet_processor_async(audioContext, &opts, &audioWorkletProcessorCreated, userData);
 }
 
-namespace fw::audio {
+namespace orb::audio {
 	WebAudioManager::WebAudioManager(int audioContextId, f32 sampleRate): _audioContextId(audioContextId), _sampleRate(sampleRate) {
 		_output.resize(128);
 	}

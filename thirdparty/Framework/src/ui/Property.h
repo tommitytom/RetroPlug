@@ -3,7 +3,7 @@
 #include <entt/core/any.hpp>
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class PropertyEditorBase : public View {
 		FwRegisterObject();
 	private:

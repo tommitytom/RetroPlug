@@ -6,7 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace fw {
+namespace orb {
 	void consoleLog(LogLevels level, const std::string& msg) {
 #ifdef FW_OS_WINDOWS
 		OutputDebugStringA((msg + "\r\n").c_str());

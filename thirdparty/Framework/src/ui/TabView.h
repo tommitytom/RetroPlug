@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class TabView : public View {
 		FwRegisterObject();
 	private:
@@ -53,7 +53,7 @@ namespace fw {
 			return _dragStartPosition;
 		}
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
 		void onResize(const ResizeEvent& ev) override {
 			updateLayout();

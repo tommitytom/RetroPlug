@@ -6,7 +6,7 @@
 
 #include "foundation/Math.h"
 
-namespace fw {
+namespace orb {
 	enum class MouseButton : unsigned int {
 		Unknown,
 		Left,

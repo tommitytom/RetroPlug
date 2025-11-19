@@ -202,12 +202,12 @@ public:
 
 // Usage example:
 /*
-class View : public fw::Object<View> {
+class View : public orb::Object<View> {
 public:
 	void render() { }
 };
 
-class SliderView : public fw::Object<SliderView, View> {
+class SliderView : public orb::Object<SliderView, View> {
 public:
 	float value = 0.5f;
 };
@@ -217,15 +217,15 @@ void example() {
 	auto slider = std::make_unique<SliderView>();
 
 	// Create observers (lightweight, no refcounting)
-	fw::ObserverPtr<SliderView> observer1(slider.get());
-	fw::ObserverPtr<SliderView> observer2 = observer1;
+	orb::ObserverPtr<SliderView> observer1(slider.get());
+	orb::ObserverPtr<SliderView> observer2 = observer1;
 
 	// Observers automatically nulled when object destroyed
 	slider.reset();
 	assert(!observer1);  // Automatically cleared!
 
 	// Option 2: Arena allocation (super fast, batch deallocation)
-	fw::Arena<SliderView> arena;
+	orb::Arena<SliderView> arena;
 
 	// Create many objects with no allocation overhead
 	std::vector<SliderView*> sliders;

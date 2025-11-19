@@ -4,7 +4,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Shader.h"
 
-namespace fw {
+namespace orb {
 	class GlShader : public Shader {
 	private:
 		uint32 _handle = 0;

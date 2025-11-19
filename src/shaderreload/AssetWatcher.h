@@ -6,7 +6,7 @@
 #include "foundation/ProcessUtil.h"
 
 namespace rp {
-	class AssetWatcherListener final : public FW::FileWatchListener {
+	class AssetWatcherListener final : public orb::FileWatchListener {
 	private:
 		ResourceManager* _resourceManager = nullptr;
 
@@ -15,7 +15,7 @@ namespace rp {
 			_resourceManager = resourceManager;
 		}
 
-		void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) override {
+		void handleFileAction(orb::WatchID watchid, const orb::String& dir, const orb::String& filename, orb::Action action) override {
 			std::filesystem::path path = std::filesystem::path(dir) / std::filesystem::path(filename);
 			std::filesystem::path outputPath = _resourceManager->getRootPath() / filename;
 
@@ -52,8 +52,8 @@ namespace rp {
 	private:
 		ResourceManager* _resourceManager = nullptr;
 
-		FW::FileWatcher _watcher;
-		std::vector<FW::WatchID> _watches;
+		orb::FileWatcher _watcher;
+		std::vector<orb::WatchID> _watches;
 		AssetWatcherListener _listener;
 
 	public:

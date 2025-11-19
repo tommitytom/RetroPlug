@@ -2,8 +2,8 @@
 
 #include <cmath>
 
-namespace fw {
-	void PpqUtil::eachTick(const fw::TimeInfo& time, uint32 resolution, std::function<void(uint32 ppq, uint32 offset)>&& func) {
+namespace orb {
+	void PpqUtil::eachTick(const orb::TimeInfo& time, uint32 resolution, std::function<void(uint32 ppq, uint32 offset)>&& func) {
 		const f64 samplesPerMs = time.sampleRate / 1000.0;
 		const f64 beatLenMs = (60000.0 / time.tempo);
 		const f64 beatLenSamples = beatLenMs * samplesPerMs;

@@ -10,7 +10,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	
 
 	/*template <typename T>

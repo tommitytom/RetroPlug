@@ -6,7 +6,7 @@
 #include "foundation/Properties.h"
 #include "foundation/TypeRegistry.h"
 
-namespace fw {
+namespace orb {
 	struct PropertyModulator {
 	public:
 		enum class Type {
@@ -29,7 +29,7 @@ namespace fw {
 
 		struct Target {
 			std::string name;
-			//const fw::Field* field = nullptr;
+			//const orb::Field* field = nullptr;
 			entt::any source;
 			entt::any target;
 			

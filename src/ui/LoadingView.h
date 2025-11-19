@@ -11,24 +11,24 @@ namespace rp {
 
 	public:
 		LoadingView() {
-			getLayout().setDimensions(fw::Dimension{ 160, 144 });
+			getLayout().setDimensions(orb::Dimension{ 160, 144 });
 		}
 		~LoadingView() {}
 
 		void onUpdate(f32 delta) override {
-			_rotation = fmodf(_rotation + delta, fw::PI2);
+			_rotation = fmodf(_rotation + delta, orb::PI2);
 		}
 
-		void onRender(fw::Canvas& canvas) override {
-			fw::DimensionF dimensions = getDimensionsF();
-			canvas.fillRect(dimensions, fw::Color4F::black);
+		void onRender(orb::Canvas& canvas) override {
+			orb::DimensionF dimensions = getDimensionsF();
+			canvas.fillRect(dimensions, orb::Color4F::black);
 
 			//canvas.translate({ dimensions.w / 2.0f, dimensions.h / 2.0f });
 			//canvas.setRotation(_rotation);
-			//canvas.fillRect(dimensions / 2.0f, fw::Color4::white);
+			//canvas.fillRect(dimensions / 2.0f, orb::Color4::white);
 
-			canvas.setTextAlign(fw::TextAlignFlags::Center | fw::TextAlignFlags::Middle);
-			canvas.text(getDimensionsF(), "Loading...", fw::Color4F::white);
+			canvas.setTextAlign(orb::TextAlignFlags::Center | orb::TextAlignFlags::Middle);
+			canvas.text(getDimensionsF(), "Loading...", orb::Color4F::white);
 		}
 	};
 }

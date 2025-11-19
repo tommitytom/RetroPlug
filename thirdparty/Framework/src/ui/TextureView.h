@@ -3,7 +3,7 @@
 #include "ui/View.h"
 #include "graphics/Texture.h"
 
-namespace fw {
+namespace orb {
 	class Image;
 
 	class TextureView : public View {
@@ -39,7 +39,7 @@ namespace fw {
 
 		void onInitialize() override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 	};
 
 	using TextureViewPtr = std::shared_ptr<TextureView>;

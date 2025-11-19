@@ -5,7 +5,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	enum class DropTargetType {
 		Center,
 		Top,
@@ -105,7 +105,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
 		bool onMouseMove(Point pos) override {
 			_mouseOverHeader = _titleArea.contains(pos);

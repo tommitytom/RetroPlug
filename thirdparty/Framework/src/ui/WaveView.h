@@ -4,7 +4,7 @@
 #include "ui/View.h"
 #include "WaveformUtil.h"
 
-namespace fw {
+namespace orb {
 	const f32 WAVEFORM_SCALE = 1.0f;
 
 	struct ZoomChangedEvent {
@@ -55,7 +55,7 @@ namespace fw {
 
 		size_t pixelToSample(f32 pixel);
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
 		void onResize(const ResizeEvent& ev) override {
 			updateSlice(ev.size);
@@ -265,7 +265,7 @@ namespace fw {
 			return _editing;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			WaveViewPtr parent = getSuper();
 
 			// Draw outline

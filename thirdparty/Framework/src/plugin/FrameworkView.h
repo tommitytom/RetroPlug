@@ -16,16 +16,16 @@ using ViewCloseFunc = std::function<void()>;
 
 class FrameworkView : public IControl {
 private:
-	fw::app::UiContextPtr _uiContext;
-	fw::app::WindowPtr _window;
-	fw::ViewManagerPtr _vm;
+	orb::app::UiContextPtr _uiContext;
+	orb::app::WindowPtr _window;
+	orb::ViewManagerPtr _vm;
 	bool _mouseOver = false;
-	fw::app::Application& _app;
+	orb::app::Application& _app;
 	std::chrono::high_resolution_clock::time_point _lastTime;
 	ViewCloseFunc _closeFunc;
 
 public:
-	FrameworkView(fw::app::Application& app, fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc);
+	FrameworkView(orb::app::Application& app, orb::app::UiContextPtr uiContext, orb::app::WindowPtr window, ViewCloseFunc&& closeFunc);
 	~FrameworkView();
 
 	void OnInit() override;

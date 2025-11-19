@@ -10,7 +10,7 @@
 #include "graphics/Canvas.h"
 #include "graphics/RenderContext.h"
 
-namespace fw {
+namespace orb {
 	class ResourceManager;
 	using NativeWindowHandle = void*;
 
@@ -65,7 +65,7 @@ namespace fw {
 
 		void beginFrame(f32 delta) override;
 
-		void renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) override;
+		void renderCanvas(orb::Canvas& canvas, NativeWindowHandle window) override;
 
 		void endFrame() override;
 
@@ -73,7 +73,7 @@ namespace fw {
 
 		void shutdown() override {}
 
-		std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() override;
+		std::pair<orb::ShaderDesc, orb::ShaderDesc> getDefaultShaders() override;
 
 	private:
 		uint32 acquireFrameBuffer(NativeWindowHandle nwh, Dimension dimensions);

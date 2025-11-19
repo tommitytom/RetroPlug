@@ -8,7 +8,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace fw {
+namespace orb {
 	enum class MenuItemType {
 		None,
 		SubMenu,

@@ -2,8 +2,8 @@
 
 #include <spdlog/spdlog.h>
 
-namespace fw {
-	bool sendState(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId target) {
+namespace orb {
+	bool sendState(entt::registry& registry, orb::EventNode& eventNode, orb::EventNode::NodeId target) {
 		using namespace Replicator;
 
 		ReplicatorContext& ctx = getContext(registry);
@@ -20,7 +20,7 @@ namespace fw {
 		return eventNode.trySend(target, std::move(response));
 	}
 
-	void setupMutators(entt::registry& registry, fw::EventNode& eventNode) {
+	void setupMutators(entt::registry& registry, orb::EventNode& eventNode) {
 		using namespace Replicator;
 
 		ReplicatorContext& ctx = getContext(registry);
@@ -99,7 +99,7 @@ namespace fw {
 		});
 	}
 
-	void Replicator::setupOwner(entt::registry& registry, fw::EventNode& eventNode) {
+	void Replicator::setupOwner(entt::registry& registry, orb::EventNode& eventNode) {
 		ReplicatorContext& ctx = registry.ctx().emplace<ReplicatorContext>(eventNode, true, true, ReplicatorState::Ready);
 
 		eventNode.receive<RegistrySubscribeEvent>([&registry, &ctx](RegistrySubscribeEvent&& ev) {
@@ -118,7 +118,7 @@ namespace fw {
 		setupMutators(registry, eventNode);
 	}
 
-	bool Replicator::subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate, bool requestState) {
+	bool Replicator::subscribe(entt::registry& registry, orb::EventNode& eventNode, orb::EventNode::NodeId targetNodeId, bool canMutate, bool requestState) {
 		if (requestState) {
 			if (!eventNode.trySend(targetNodeId, RegistrySubscribeEvent{ .nodeId = eventNode.getId() })) {
 				spdlog::error("Failed to send subscribe event to node {}", targetNodeId);
@@ -150,7 +150,7 @@ namespace fw {
 		return true;
 	}
 
-	bool Replicator::unsubscribe(entt::registry& registry, fw::EventNode::NodeId ownerNodeId) {
+	bool Replicator::unsubscribe(entt::registry& registry, orb::EventNode::NodeId ownerNodeId) {
 		ReplicatorContext& ctx = getContext(registry);
 		assert(ctx.state == ReplicatorState::Ready);
 
@@ -170,7 +170,7 @@ namespace fw {
 
 		const entt::entity e = registry.create();
 
-		for (const fw::EventNode::NodeId target : ctx.targets) {
+		for (const orb::EventNode::NodeId target : ctx.targets) {
 			ctx.eventNode.send(target, CreateEntityEvent{
 				.entity = e
 			});
@@ -184,7 +184,7 @@ namespace fw {
 		assert(!ctx.receiving);
 		assert(registry.valid(entity));
 
-		for (const fw::EventNode::NodeId target : ctx.targets) {
+		for (const orb::EventNode::NodeId target : ctx.targets) {
 			ctx.eventNode.send(target, DestroyEntityEvent{
 				.entity = entity
 			});

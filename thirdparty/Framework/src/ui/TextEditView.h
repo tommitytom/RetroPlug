@@ -5,7 +5,7 @@
 #include "ui/Property.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	template <typename T>
 	class TextEditBaseView : public TypedPropertyEditor<T> {
 	private:
@@ -108,7 +108,7 @@ namespace fw {
 			return true;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			std::string_view text = !_text.empty() ? _text : _placeholder;
 
 			canvas.setFont(_fontName, _fontSize);

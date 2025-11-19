@@ -1,6 +1,6 @@
 #include "DockOverlay.h"
 
-using namespace fw;
+using namespace orb;
 
 void DockOverlay::onUpdate(f32 delta) {
 	const DragContext& ctx = getDragContext();
@@ -18,7 +18,7 @@ void DockOverlay::onUpdate(f32 delta) {
 	// Check if any of them are in drag/drop mode
 }
 
-void DockOverlay::onRender(fw::Canvas& canvas) {
+void DockOverlay::onRender(orb::Canvas& canvas) {
 	/*if (!_dragOver) {
 		return;
 	}

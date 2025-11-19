@@ -4,11 +4,11 @@
 #include "AudioManager.h"
 #include "AudioBuffer.h"
 
-namespace fw::audio {
+namespace orb::audio {
 	class WebAudioManager final : public AudioManager {
 	private:
-		fw::StereoAudioBuffer _input;
-		fw::StereoAudioBuffer _output;
+		orb::StereoAudioBuffer _input;
+		orb::StereoAudioBuffer _output;
 		int _audioContextId;
 		bool _running = false;
 		f32 _sampleRate = 48000.0f;
@@ -27,11 +27,11 @@ namespace fw::audio {
 
 		bool setAudioDevice(int32 idx) override;
 
-		fw::StereoAudioBuffer& getInput() {
+		orb::StereoAudioBuffer& getInput() {
 			return _input;
 		}
 
-		fw::StereoAudioBuffer& getOutput() {
+		orb::StereoAudioBuffer& getOutput() {
 			return _output;
 		}
 	};

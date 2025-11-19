@@ -7,7 +7,7 @@
 #include "audio/MidiMessage.h"
 #include "audio/TimeInfo.h"
 
-namespace fw {
+namespace orb {
 	class AudioProcessor {
 	private:
 		EventNode _eventNode;
@@ -25,7 +25,7 @@ namespace fw {
 
 		virtual void onTransportUpdate(const TimeInfo& timeInfo) {}
 
-		virtual void onMidi(const fw::MidiMessage& message) {}
+		virtual void onMidi(const orb::MidiMessage& message) {}
 
 		virtual void onSampleRateChange(f32 sampleRate) {}
 
@@ -50,7 +50,7 @@ namespace fw {
 	class NullAudioProcessor : public AudioProcessor {
 	public:
 		void onRender(f32* output, const f32* input, uint32 frameCount) override {
-			fw::StereoAudioBuffer out((StereoAudioBuffer::Frame*)output, frameCount, getSampleRate());
+			orb::StereoAudioBuffer out((StereoAudioBuffer::Frame*)output, frameCount, getSampleRate());
 			out.clear();
 		}
 	};

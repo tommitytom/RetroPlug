@@ -2,7 +2,7 @@
 
 #include "ui/StyleProperties.h"
 
-namespace fw
+namespace orb
 {
 	// Margin
 

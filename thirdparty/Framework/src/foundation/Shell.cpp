@@ -4,7 +4,7 @@
 
 #include <windows.h>
 
-namespace fw {
+namespace orb {
 	void openShellFolder(const std::string& path) {
 		ShellExecuteA(NULL, NULL, path.c_str(), NULL, NULL, SW_SHOWNORMAL);
 	}
@@ -12,7 +12,7 @@ namespace fw {
 
 #else
 
-namespace fw {
+namespace orb {
 	void openShellFolder(const std::string& path) {}
 }
 

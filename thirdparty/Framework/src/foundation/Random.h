@@ -7,7 +7,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	const uint32 SEED_MAX = UINT32_MAX / 2;
 	const uint32 MID_POINT = SEED_MAX / 2;
 	const std::string_view RANDOM_STRING_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

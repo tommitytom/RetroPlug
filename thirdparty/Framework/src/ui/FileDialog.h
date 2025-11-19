@@ -13,7 +13,7 @@
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 
-namespace fw {
+namespace orb {
 	struct FileDialogFilter {
 		std::string name;
 		std::vector<std::string> extensions;
@@ -36,7 +36,7 @@ namespace fw {
 	class File {
 	public:
 		std::string path;
-		fw::Uint8Buffer data;
+		orb::Uint8Buffer data;
 	};
 
 	namespace FileDialog {
@@ -46,6 +46,6 @@ namespace fw {
 		bool openFileAsync(const std::vector<FileDialogFilter>& filters, bool multiSelect, bool foldersOnly, Callback&& cb);
 
 		bool saveFile(std::string& target, const std::vector<FileDialogFilter>& filters, const std::string& fileName = "");
-		bool saveFileData(const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName = "");
+		bool saveFileData(const orb::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName = "");
 	}
 }

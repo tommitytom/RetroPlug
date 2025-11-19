@@ -2,7 +2,7 @@
 
 #include "Event.h"
 
-namespace fw {
+namespace orb {
 	class EventRouter;
 	using RouterNodeId = entt::id_type;
 	constexpr RouterNodeId INVALID_ROUTER_NODE_ID = -1;
@@ -21,8 +21,8 @@ namespace fw {
 	class EventRouterNode : public std::enable_shared_from_this<EventRouterNode> {
 	protected:
 		RouterNodeId _id = INVALID_ROUTER_NODE_ID;
-		fw::EventNode& _node;
-		fw::EventNode::NodeId _targetNode = 0;
+		orb::EventNode& _node;
+		orb::EventNode::NodeId _targetNode = 0;
 
 	public:
 		EventRouterNode(EventRouter& router): _node(router.getNode()) {
@@ -106,21 +106,21 @@ namespace fw {
 
 	class EventRouter {
 	private:
-		fw::EventNode& _node;
+		orb::EventNode& _node;
 		std::vector<std::weak_ptr<EventRouterNode>> _nodes;
 
 	public:
-		EventRouter(fw::EventNode& node): _node(node) {}
+		EventRouter(orb::EventNode& node): _node(node) {}
 		~EventRouter() = default;
 
-		fw::EventNode& getNode() {
+		orb::EventNode& getNode() {
 			return _node;
 		}
 	};
 }
 
-namespace fw {
-	void test(fw::EventNode& node) {
+namespace orb {
+	void test(orb::EventNode& node) {
 		EventRouter router(node);
 	}
 }

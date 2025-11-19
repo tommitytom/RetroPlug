@@ -8,7 +8,7 @@
 #include "ui/PanelView.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class DockWindow;
 	class DockPanel;
 	class Dock;
@@ -191,7 +191,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			auto res = getDimensions();
 
 			canvas.fillRect(res, RP_COLOR_BACKGROUND);

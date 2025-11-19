@@ -2,31 +2,31 @@
 
 #include "ui/ObjectInspectorView.h"
 
-namespace fw {
-	class UiEditOverlay : public fw::View {
+namespace orb {
+	class UiEditOverlay : public orb::View {
 		FwRegisterObject();
 	private:
-		std::weak_ptr<fw::View> _view;
-		std::weak_ptr<fw::View> _mouseOver;
-		fw::ObjectInspectorViewPtr _inspector;
-		const fw::TypeRegistry& _typeRegistry;
+		std::weak_ptr<orb::View> _view;
+		std::weak_ptr<orb::View> _mouseOver;
+		orb::ObjectInspectorViewPtr _inspector;
+		const orb::TypeRegistry& _typeRegistry;
 
 	public:
-		UiEditOverlay(const fw::TypeRegistry& typeRegistry, fw::ObjectInspectorViewPtr inspector) : _typeRegistry(typeRegistry), _inspector(inspector) {
+		UiEditOverlay(const orb::TypeRegistry& typeRegistry, orb::ObjectInspectorViewPtr inspector) : _typeRegistry(typeRegistry), _inspector(inspector) {
 			setName("UI Edit Overlay");
 		}
 
-		void setView(std::weak_ptr<fw::View> view) {
+		void setView(std::weak_ptr<orb::View> view) {
 			_view = view;
 		}
 
-		bool onMouseButton(const fw::MouseButtonEvent& ev) override {
-			if (_view.expired() || !ev.down || ev.button != fw::MouseButton::Left) {
+		bool onMouseButton(const orb::MouseButtonEvent& ev) override {
+			if (_view.expired() || !ev.down || ev.button != orb::MouseButton::Left) {
 				return false;
 			}
 
 			uint32 depth = 0;
-			std::shared_ptr<fw::View> view = viewAt(_view.lock(), (fw::PointF)ev.position, depth);
+			std::shared_ptr<orb::View> view = viewAt(_view.lock(), (orb::PointF)ev.position, depth);
 			if (!view) {
 				_mouseOver.reset();
 				return false;
@@ -41,13 +41,13 @@ namespace fw {
 			return true;
 		}
 
-		bool onMouseMove(fw::Point pos) override {
+		bool onMouseMove(orb::Point pos) override {
 			if (_view.expired()) {
 				return false;
 			}
 
 			uint32 depth = 0;
-			std::shared_ptr<fw::View> view = viewAt(_view.lock(), (fw::PointF)pos, depth);
+			std::shared_ptr<orb::View> view = viewAt(_view.lock(), (orb::PointF)pos, depth);
 			if (!view) {
 				_mouseOver.reset();
 				return false;
@@ -61,20 +61,20 @@ namespace fw {
 			_mouseOver.reset();
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			auto over = _mouseOver.lock();
 			if (!over) {
 				return;
 			}
 
-			fw::RectF area = over->getScaledAreaF();
-			canvas.strokeRect(area, fw::Color4F(0, 1, 0, 1));
+			orb::RectF area = over->getScaledAreaF();
+			canvas.strokeRect(area, orb::Color4F(0, 1, 0, 1));
 		}
 
-		fw::ViewPtr viewAt(const fw::ViewPtr& view, fw::PointF pos, uint32& depth) {
+		orb::ViewPtr viewAt(const orb::ViewPtr& view, orb::PointF pos, uint32& depth) {
 			for (auto child : view->getChildren()) {
 				if (child->getScaledAreaF().contains(pos)) {
-					fw::ViewPtr found = viewAt(child, pos - (view->getPositionF() * view->getWorldScale()), depth);
+					orb::ViewPtr found = viewAt(child, pos - (view->getPositionF() * view->getWorldScale()), depth);
 
 					if (found) {
 						return found;

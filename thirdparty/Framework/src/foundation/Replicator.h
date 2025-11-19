@@ -9,7 +9,7 @@
 
 #include "foundation/Event.h"
 
-namespace fw::Replicator {
+namespace orb::Replicator {
 	template<typename T, typename M>
 	concept MemberPointerOf = requires {
 		requires std::is_member_object_pointer_v<M>;
@@ -48,23 +48,23 @@ namespace fw::Replicator {
 	};
 
 	struct ReplicatorContext {
-		fw::EventNode& eventNode;
+		orb::EventNode& eventNode;
 		bool owner = false;
 		bool canMutate = false;
 
 		ReplicatorState state = ReplicatorState::Unsubscribed;
 		bool receiving = false;
 
-		std::vector<fw::EventNode::NodeId> targets;
+		std::vector<orb::EventNode::NodeId> targets;
 		std::unordered_map<entt::id_type, ReplicatorSubscription> replicators;
 	};
 
 	struct RegistrySubscribeEvent {
-		fw::EventNode::NodeId nodeId;
+		orb::EventNode::NodeId nodeId;
 	};
 
 	struct RegistryUnsubscribeEvent {
-		fw::EventNode::NodeId nodeId;
+		orb::EventNode::NodeId nodeId;
 	};
 
 	struct CreateEntityEvent {
@@ -99,7 +99,7 @@ namespace fw::Replicator {
 	};
 
 	struct StateRequestEvent {
-		fw::EventNode::NodeId nodeId;
+		orb::EventNode::NodeId nodeId;
 	};
 
 	struct StateResponseEvent {
@@ -193,7 +193,7 @@ namespace fw::Replicator {
 	void handleConstruct(entt::registry& registry, entt::entity e) {
 		ReplicatorContext& ctx = getContext(registry);
 		if (!ctx.receiving) {
-			for (const fw::EventNode::NodeId target : ctx.targets) {
+			for (const orb::EventNode::NodeId target : ctx.targets) {
 				ctx.eventNode.send(target, EmplaceComponentEvent{
 					.entity = e,
 					.data = entt::make_any<Component>(registry.get<Component>(e)),
@@ -209,7 +209,7 @@ namespace fw::Replicator {
 	void handleUpdate(entt::registry& registry, entt::entity e) {
 		ReplicatorContext& ctx = getContext(registry);
 		if (!ctx.receiving) {
-			for (const fw::EventNode::NodeId target : ctx.targets) {
+			for (const orb::EventNode::NodeId target : ctx.targets) {
 				ctx.eventNode.send(target, UpdateComponentEvent{
 					.entity = e,
 					.data = entt::make_any<Component>(registry.get<Component>(e)),
@@ -225,7 +225,7 @@ namespace fw::Replicator {
 	void handleFieldPatch(entt::registry& registry, entt::entity e, const FieldType& data) {
 		ReplicatorContext& ctx = getContext(registry);
 		if (!ctx.receiving) {
-			for (const fw::EventNode::NodeId target : ctx.targets) {
+			for (const orb::EventNode::NodeId target : ctx.targets) {
 				ctx.eventNode.send(target, PatchComponentFieldEvent{
 					.entity = e,
 					.data = entt::any(data),
@@ -241,7 +241,7 @@ namespace fw::Replicator {
 	void handleDestroy(entt::registry& registry, entt::entity e) {
 		ReplicatorContext& ctx = getContext(registry);
 		if (!ctx.receiving) {
-			for (const fw::EventNode::NodeId target : ctx.targets) {
+			for (const orb::EventNode::NodeId target : ctx.targets) {
 				ctx.eventNode.send(target, DestroyComponentEvent{
 					.entity = e,
 					.destroyer = componentDestroyer<Component>
@@ -282,11 +282,11 @@ namespace fw::Replicator {
 		ctx.receiving = false;
 	}
 
-	void setupOwner(entt::registry& registry, fw::EventNode& eventNode);
+	void setupOwner(entt::registry& registry, orb::EventNode& eventNode);
 
-	bool subscribe(entt::registry& registry, fw::EventNode& eventNode, fw::EventNode::NodeId targetNodeId, bool canMutate, bool requestState = true);
+	bool subscribe(entt::registry& registry, orb::EventNode& eventNode, orb::EventNode::NodeId targetNodeId, bool canMutate, bool requestState = true);
 
-	bool unsubscribe(entt::registry& registry, fw::EventNode::NodeId ownerNodeId);
+	bool unsubscribe(entt::registry& registry, orb::EventNode::NodeId ownerNodeId);
 
 	template <typename Component>
 	void replicate(entt::registry& registry);

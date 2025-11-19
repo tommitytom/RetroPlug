@@ -3,7 +3,7 @@
 #include "foundation/ResourceManager.h"
 #include "graphics/Font.h"
 
-namespace fw {
+namespace orb {
 	class FontManager {
 	private:
 		std::shared_ptr<ResourceManager> _resourceManager;

@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	template <typename T>
 	class ContextProvider : public View {
 		FwRegisterObject()

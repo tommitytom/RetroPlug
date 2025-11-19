@@ -3,7 +3,7 @@
 #include <yoga/Yoga.h>
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	enum class CursorType {
 		None,
 		Arrow,

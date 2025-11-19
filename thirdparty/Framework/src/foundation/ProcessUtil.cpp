@@ -19,7 +19,7 @@
 
 #include "foundation/StringUtil.h"
 
-using namespace fw;
+using namespace orb;
 
 std::string quoteIfNecessary(const std::string& toQuote) {
 	if (toQuote.find(" ") != std::string::npos) {

@@ -5,7 +5,7 @@
 #include "WaveformUtil.h"
 #include "foundation/Curves.h"
 
-using namespace fw;
+using namespace orb;
 
 const f32 MIN_SAMPLES_VIEWABLE = 100.0f;
 const f32 ZOOM_STEP_COUNT = 20.0f;
@@ -92,7 +92,7 @@ struct WaveFormSection {
 	Color4F color;
 };
 
-void WaveView::onRender(fw::Canvas& canvas) {
+void WaveView::onRender(orb::Canvas& canvas) {
 	f32 scaleFactor = getWorldScale();
 	RectF area = { 0, 0, (f32)getDimensions().w, (f32)getDimensions().h };
 	f32 pixelWidth = 1.0f / scaleFactor;

@@ -3,7 +3,7 @@
 #include "ui/View.h"
 #include "graphics/FontManager.h"
 
-namespace fw {
+namespace orb {
 	class LabelView : public View {
 		FwRegisterObject()
 	private:
@@ -86,7 +86,7 @@ namespace fw {
 			_alignment = flags;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			canvas.setFont(_fontName, _fontSize);
 			_alignment = TextAlignFlags::Middle | TextAlignFlags::Left;
 			

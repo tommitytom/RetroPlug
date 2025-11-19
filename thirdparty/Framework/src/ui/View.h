@@ -17,9 +17,9 @@
 #include "ui/TypeDataLookup.h"
 #include "ui/ViewLayout.h"
 
-using namespace fw::literals;
+using namespace orb::literals;
 
-namespace fw {
+namespace orb {
 	namespace engine {
 		class Canvas;
 		class FontManager;
@@ -93,7 +93,7 @@ namespace fw {
 			TypeDataLookup state;
 			TypeDataLookup themeLookup;
 
-			fw::FontManager* fontManager = nullptr;
+			orb::FontManager* fontManager = nullptr;
 			ResourceManager* resourceManager = nullptr;
 
 			CursorType cursor = CursorType::Arrow;
@@ -334,13 +334,13 @@ namespace fw {
 			return *_shared->resourceManager;
 		}
 
-		fw::FontManager& getFontManager() {
+		orb::FontManager& getFontManager() {
 			assert(_shared);
 			assert(_shared->fontManager);
 			return *_shared->fontManager;
 		}
 
-		const fw::FontManager& getFontManager() const {
+		const orb::FontManager& getFontManager() const {
 			assert(_shared);
 			assert(_shared->fontManager);
 			return *_shared->fontManager;
@@ -376,7 +376,7 @@ namespace fw {
 
 		virtual void onUpdate(f32 delta) {}
 
-		virtual void onRender(fw::Canvas& canvas) {}
+		virtual void onRender(orb::Canvas& canvas) {}
 
 		virtual bool onButton(const ButtonEvent& ev) { return false; }
 

@@ -5,7 +5,7 @@
 #include "foundation/Curves.h"
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	class UriBrowser {
 	private:
 		std::vector<entt::type_info> _items;

@@ -4,7 +4,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	struct MidiMessage {
 		uint32 offset = 0;
 		uint8 status = 0;

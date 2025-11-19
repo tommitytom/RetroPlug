@@ -6,7 +6,7 @@
 
 #include "core/SystemHook.h"
 
-namespace fw {
+namespace orb {
 	class EventNode;
 }
 
@@ -46,27 +46,27 @@ namespace rp {
 	};
 
 	struct InputConfig {
-		std::unordered_map<fw::VirtualKey, fw::PadButtonType> keyboard;
-		std::unordered_map<fw::PadButtonType, fw::PadButtonType> gamepad;
+		std::unordered_map<orb::VirtualKey, orb::PadButtonType> keyboard;
+		std::unordered_map<orb::PadButtonType, orb::PadButtonType> gamepad;
 
 		static InputConfig defaultConfig() {
 			InputConfig config;
 			config.keyboard = {
-				{ fw::VirtualKey::UpArrow, fw::PadButtonType::Up },
-				{ fw::VirtualKey::DownArrow, fw::PadButtonType::Down },
-				{ fw::VirtualKey::LeftArrow, fw::PadButtonType::Left },
-				{ fw::VirtualKey::RightArrow, fw::PadButtonType::Right },
-				{ fw::VirtualKey::D, fw::PadButtonType::A },
-				{ fw::VirtualKey::W, fw::PadButtonType::B },
-				{ fw::VirtualKey::Enter, fw::PadButtonType::Start },
-				{ fw::VirtualKey::LeftShift, fw::PadButtonType::Select }
+				{ orb::VirtualKey::UpArrow, orb::PadButtonType::Up },
+				{ orb::VirtualKey::DownArrow, orb::PadButtonType::Down },
+				{ orb::VirtualKey::LeftArrow, orb::PadButtonType::Left },
+				{ orb::VirtualKey::RightArrow, orb::PadButtonType::Right },
+				{ orb::VirtualKey::D, orb::PadButtonType::A },
+				{ orb::VirtualKey::W, orb::PadButtonType::B },
+				{ orb::VirtualKey::Enter, orb::PadButtonType::Start },
+				{ orb::VirtualKey::LeftShift, orb::PadButtonType::Select }
 			};
 			return config;
 		}
 	};
 
 	struct RetroPlugProjectContext {
-		fw::EventNode& eventNode;
+		orb::EventNode& eventNode;
 		uint32 version = 0;
 		bool dirty = false;
 		bool loading = false;
@@ -81,7 +81,7 @@ namespace rp {
 		RetroPlugProjectContext(const RetroPlugProjectContext&) = delete;
 		RetroPlugProjectContext& operator=(const RetroPlugProjectContext&) = delete;
 
-		RetroPlugProjectContext(fw::EventNode& eventNode_): eventNode(eventNode_) {}
+		RetroPlugProjectContext(orb::EventNode& eventNode_): eventNode(eventNode_) {}
 		~RetroPlugProjectContext() = default;
 	};
 }

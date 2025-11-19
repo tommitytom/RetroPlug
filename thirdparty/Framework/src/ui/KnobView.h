@@ -4,7 +4,7 @@
 #include "ui/View.h"
 #include "graphics/Texture.h"
 
-namespace fw {
+namespace orb {
 	struct ControllerChangedEvent {
 		f32 value = 0.0f;
 	};
@@ -79,7 +79,7 @@ namespace fw {
 			_value = (value - _min) / (_max - _min);
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			int32 tileOffset = (int32)(_value * (_tileCount - 1));
 			Rect tile(0, tileOffset * _tileSize.h, _tileSize.w, _tileSize.h);
 			f32 h = (f32)_texture.getResource().getDesc().dimensions.h;

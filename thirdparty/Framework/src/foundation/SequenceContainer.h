@@ -7,7 +7,7 @@
 
 #include "foundation/MetaTypes.h"
 
-namespace fw {
+namespace orb {
 	/*! @brief Proxy object for sequence containers. */
 	class SequenceContainer {
 		class meta_iterator final {
@@ -190,5 +190,5 @@ namespace fw {
 namespace entt {
 	template<typename Type, typename... Args>
 	struct meta_sequence_container_traits<std::vector<Type, Args...>>
-		: fw::BasicSequenceContainerTraits<std::vector<Type, Args...>> {};
+		: orb::BasicSequenceContainerTraits<std::vector<Type, Args...>> {};
 }

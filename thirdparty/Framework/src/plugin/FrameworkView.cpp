@@ -5,12 +5,12 @@
 #include "config.h"
 #include "foundation/MacroTools.h"
 
-using namespace fw;
+using namespace orb;
 
 using hrc = std::chrono::high_resolution_clock;
 using delta_duration = std::chrono::duration<f32>;
 
-FrameworkView::FrameworkView(fw::app::Application& app, fw::app::UiContextPtr uiContext, fw::app::WindowPtr window, ViewCloseFunc&& closeFunc) :
+FrameworkView::FrameworkView(orb::app::Application& app, orb::app::UiContextPtr uiContext, orb::app::WindowPtr window, ViewCloseFunc&& closeFunc) :
 	IControl(IRECT(0.0f, 0.0f, window->getViewManager()->getDimensionsF().w, window->getViewManager()->getDimensionsF().h)), 
 	_app(app),
 	_lastTime(hrc::now()),
@@ -31,7 +31,7 @@ void FrameworkView::OnInit() {
 }
 
 bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
-	return _vm->onKey(fw::KeyEvent{
+	return _vm->onKey(orb::KeyEvent{
 		.action = KeyAction::Press,
 		.key = (VirtualKey)key.VK,
 		.down = true
@@ -39,7 +39,7 @@ bool FrameworkView::OnKeyDown(float x, float y, const IKeyPress& key) {
 }
 
 bool FrameworkView::OnKeyUp(float x, float y, const IKeyPress& key) {
-	return _vm->onKey(fw::KeyEvent{
+	return _vm->onKey(orb::KeyEvent{
 		.action = KeyAction::Release,
 		.key = (VirtualKey)key.VK,
 		.down = false
@@ -63,11 +63,11 @@ MouseButton getMouseButton(const IMouseMod& mod) {
 void FrameworkView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 	//OnMouseOver(x, y, mod);
 
-	fw::Point pos = fw::Point((int32)x, (int32)y);
+	orb::Point pos = orb::Point((int32)x, (int32)y);
 	MouseButton button = getMouseButton(mod);
 
 	if (button != MouseButton::Unknown) {
-		_vm->onMouseButton(fw::MouseButtonEvent{
+		_vm->onMouseButton(orb::MouseButtonEvent{
 			.button = button,
 			.down = true,
 			.position = pos
@@ -78,11 +78,11 @@ void FrameworkView::OnMouseDown(float x, float y, const IMouseMod& mod) {
 void FrameworkView::OnMouseUp(float x, float y, const IMouseMod& mod) {
 	//OnMouseOver(x, y, mod);
 
-	fw::Point pos = fw::Point((int32)x, (int32)y);
+	orb::Point pos = orb::Point((int32)x, (int32)y);
 	MouseButton button = getMouseButton(mod);
 
 	if (button != MouseButton::Unknown) {
-		_vm->onMouseButton(fw::MouseButtonEvent{
+		_vm->onMouseButton(orb::MouseButtonEvent{
 			.button = button,
 			.down = false,
 			.position = pos
@@ -91,24 +91,24 @@ void FrameworkView::OnMouseUp(float x, float y, const IMouseMod& mod) {
 }
 
 void FrameworkView::OnMouseDblClick(float x, float y, const IMouseMod& mod) {
-	fw::Point pos = fw::Point((int32)x, (int32)y);
+	orb::Point pos = orb::Point((int32)x, (int32)y);
 	MouseButton button = getMouseButton(mod);
 
-	_vm->onMouseDoubleClick(fw::MouseDoubleClickEvent{
+	_vm->onMouseDoubleClick(orb::MouseDoubleClickEvent{
 		.button = button,
 		.position = pos
 	});
 }
 
 void FrameworkView::OnMouseWheel(float x, float y, const IMouseMod& mod, float d) {
-	_vm->onMouseScroll(fw::MouseScrollEvent{
-		.delta = fw::PointF(0.0f, d),
-		.position = fw::Point((int32)x, (int32)y)
+	_vm->onMouseScroll(orb::MouseScrollEvent{
+		.delta = orb::PointF(0.0f, d),
+		.position = orb::Point((int32)x, (int32)y)
 	});
 }
 
 void FrameworkView::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) {
-	fw::Point pos((int32)x, (int32)y);
+	orb::Point pos((int32)x, (int32)y);
 
 	if (_mouseOver == false) {
 		_vm->onMouseEnter(pos);
@@ -119,7 +119,7 @@ void FrameworkView::OnMouseDrag(float x, float y, float dX, float dY, const IMou
 }
 
 void FrameworkView::OnMouseOver(float x, float y, const IMouseMod& mod) {
-	fw::Point pos((int32)x, (int32)y);
+	orb::Point pos((int32)x, (int32)y);
 
 	if (_mouseOver == false) {
 		_vm->onMouseEnter(pos);

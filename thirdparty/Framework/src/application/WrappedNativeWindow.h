@@ -5,16 +5,16 @@
 
 #include "foundation/ResourceProvider.h"
 
-namespace fw::app {
+namespace orb::app {
 	class WrappedNativeWindow : public Window {
 	private:
 		NativeWindowHandle _nativeWindowHandle = nullptr;
 		Point _lastMousePosition;
 
-		fw::Dimension _size;
+		orb::Dimension _size;
 
 	public:
-		WrappedNativeWindow(NativeWindowHandle nwh, fw::Dimension size, ResourceManagerPtr resourceManager, FontManagerPtr fontManager, ViewPtr view, uint32 id)
+		WrappedNativeWindow(NativeWindowHandle nwh, orb::Dimension size, ResourceManagerPtr resourceManager, FontManagerPtr fontManager, ViewPtr view, uint32 id)
 			: Window(resourceManager.get(), fontManager.get(), view, id), _nativeWindowHandle(nwh), _size(size) { }
 		~WrappedNativeWindow() = default;
 
@@ -30,7 +30,7 @@ namespace fw::app {
 
 		void* getNativeHandle() override { return _nativeWindowHandle; }
 
-		fw::Dimension getSize() const {
+		orb::Dimension getSize() const {
 			return _size;
 		}
 
@@ -38,7 +38,7 @@ namespace fw::app {
 			return _size;
 		}
 
-		void setSize(fw::Dimension size) {
+		void setSize(orb::Dimension size) {
 			_size = size;
 		}
 	};

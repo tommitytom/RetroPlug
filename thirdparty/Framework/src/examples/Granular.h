@@ -391,7 +391,7 @@ namespace fw {
 			_highlights.clear();
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			for (auto& hl : _highlights) {
 				if (hl.second.w > 0) {
 					canvas.fillRect(hl.second, Color4F(1, 1, 1, 0.5f));
@@ -454,7 +454,7 @@ namespace fw {
 
 		void onInitialize() override {
 			getLayout().setDimensions(100_pc);
-			
+
 			EventNode& eventNode = getState<EventNode>();
 
 			_defaultParameters.amp = 1.0f;
@@ -467,7 +467,7 @@ namespace fw {
 				note.parameters = _defaultParameters;
 			}
 
-			fw::Uint8Buffer amenBuffer(amen, amen_len);
+			orb::Uint8Buffer amenBuffer(amen, amen_len);
 			SampleLoaderUtil::loadSampleFromBuffer(amenBuffer, _sampleData);
 
 			_notes[0].buffer = _sampleData.ref();
@@ -642,7 +642,7 @@ namespace fw {
 				}
 			});*/
 
-			
+
 		}
 
 		void onUpdate(f32 delta) override {
@@ -698,4 +698,4 @@ namespace fw {
 	};
 }
 
-using GranularApplication = fw::app::BasicApplication<fw::Granular, fw::GranularAudioProcessor>;
+using GranularApplication = orb::app::BasicApplication<orb::Granular, orb::GranularAudioProcessor>;

@@ -7,7 +7,7 @@
 #include "foundation/ResourceHandle.h"
 #include "foundation/DataBuffer.h"
 
-namespace fw {
+namespace orb {
 	enum class ShaderType {
 		Unknown,
 		Fragment,

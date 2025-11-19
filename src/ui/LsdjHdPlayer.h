@@ -35,10 +35,10 @@ namespace rp {
 
 		void onInitialize() override;
 
-		bool onKey(const fw::KeyEvent& ev) override;
+		bool onKey(const orb::KeyEvent& ev) override;
 
 		void onUpdate(f32 delta) override {}
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 	};
 }

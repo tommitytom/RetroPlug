@@ -6,7 +6,7 @@
 #include "ui/Property.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class PropertyEditorView : public View {
 		FwRegisterObject();
 	protected:
@@ -237,7 +237,7 @@ namespace fw {
 			//updateLayout(ev.size);
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			//int32 separatorX = getSeperatorX();
 			Dimension dim = getDimensions();
 			canvas.fillRect(dim, Color4F::darkGrey);

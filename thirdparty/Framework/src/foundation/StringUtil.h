@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fw::StringUtil {
+namespace orb::StringUtil {
 	inline const char* WHITESPACE_CHARS = " \t\n\r\f\v";
 
 	std::string formatClassName(std::string_view className);

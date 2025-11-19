@@ -3,7 +3,7 @@
 #include "foundation/FsUtil.h"
 #include <portable-file-dialogs.h>
 
-using namespace fw;
+using namespace orb;
 
 #ifdef FW_PLATFORM_WEB
 
@@ -29,12 +29,12 @@ EM_ASYNC_JS(void, saveWebFileDialog, (const char* filePath), {
 	await saveFileDialog(filePath);
 });
 
-bool FileDialog::saveFileData(const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFileData(const orb::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string filePath = "/.file-save-dialog/" + fileName;
 
 	fs::create_directories("/.file-save-dialog/");
 
-	if (!fw::FsUtil::writeFile(filePath, data)) {
+	if (!orb::FsUtil::writeFile(filePath, data)) {
 		spdlog::error("Failed to save {}", filePath);
 		return false;
 	}
@@ -90,10 +90,10 @@ bool FileDialog::saveFile(std::string& target, const std::vector<FileDialogFilte
 
 #else
 
-bool FileDialog::saveFileData(const fw::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
+bool FileDialog::saveFileData(const orb::Uint8Buffer& data, const std::vector<FileDialogFilter>& filters, const std::string& fileName) {
 	std::string target;
 	if (FileDialog::saveFile(target, filters, fileName)) {
-		return fw::FsUtil::writeFile(target, data);
+		return orb::FsUtil::writeFile(target, data);
 	}
 
 	return false;

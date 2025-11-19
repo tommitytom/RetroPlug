@@ -10,7 +10,7 @@ namespace rp {
 		getLayout().setMinDimensions({ 1280, 720 });
 	}
 
-	void HexGrid::setData(fw::Uint8Buffer&& data) {
+	void HexGrid::setData(orb::Uint8Buffer&& data) {
 		_data = std::move(data);
 		_totalRowCount = (_data.size() + _bytesPerRow - 1) / _bytesPerRow;
 		_visibleRowCount = 32;
@@ -18,9 +18,9 @@ namespace rp {
 
 	void HexGrid::onInitialize() {
 		setName("Hex Editor");
-		setFocusPolicy(fw::FocusPolicy::Click);
+		setFocusPolicy(orb::FocusPolicy::Click);
 		_font = getFontManager().loadFont("Vera.ttf", 15.0f);
-		//fw::FsUtil::readFile("C:\\Users\\Tom\\Downloads\\KIT.kit", _data);
+		//orb::FsUtil::readFile("C:\\Users\\Tom\\Downloads\\KIT.kit", _data);
 	}
 
 	char formatChar(uint8 val) {
@@ -31,26 +31,26 @@ namespace rp {
 		return (char)val;
 	}
 
-	void HexGrid::onRender(fw::Canvas& canvas) {
+	void HexGrid::onRender(orb::Canvas& canvas) {
 		canvas.setFont(_font);
 
 		std::string row[2];
 		row[0].reserve(12 + _bytesPerRow * 5);
 		row[1].reserve(12 + _bytesPerRow * 5);
 
-		fw::FtglFontFace& font = _font.getResourceAs<fw::FtglFontFace>();
+		orb::FtglFontFace& font = _font.getResourceAs<orb::FtglFontFace>();
 		ftgl::texture_font_t* textureFont = font.getTextureFont();
-		fw::DimensionF tileDim = canvas.measureText(" ");
+		orb::DimensionF tileDim = canvas.measureText(" ");
 		tileDim.h = textureFont->height + 4;
 
-		canvas.setTextAlign(fw::TextAlignFlags::Left | fw::TextAlignFlags::Top);
-		canvas.fillRect(getDimensionsF(), fw::Color4F::black);
+		canvas.setTextAlign(orb::TextAlignFlags::Left | orb::TextAlignFlags::Top);
+		canvas.fillRect(getDimensionsF(), orb::Color4F::black);
 
 		row[0] += "Offset (h)  ";
 		for (size_t i = 0; i < _bytesPerRow; ++i) row[0] += std::format("{:02X} ", i);
 		row[0] += " Decoded text";
 
-		canvas.text(tileDim.h, tileDim.h, row[0], fw::Color4F::green);
+		canvas.text(tileDim.h, tileDim.h, row[0], orb::Color4F::green);
 
 		const uint8* buffer = _data.data();
 
@@ -67,18 +67,18 @@ namespace rp {
 
 			const size_t offset = i * _bytesPerRow;
 
-			canvas.text(tileDim.h, rowPos, std::format("{:010X}  ", offset), fw::Color4F::green);
+			canvas.text(tileDim.h, rowPos, std::format("{:010X}  ", offset), orb::Color4F::green);
 
 			for (size_t j = 0; j < _bytesPerRow; ++j) row[j % 2] += std::format("{:02X}    ", buffer[offset + j]);
 			row[0] += " ";
 			for (size_t j = 0; j < _bytesPerRow; ++j) row[0] += formatChar(buffer[offset + j]);
 
-			canvas.text(tileDim.h + tileDim.w * 11, rowPos, row[0], fw::Color4F::white);
-			canvas.text(tileDim.h + tileDim.w * 11, rowPos, row[1], fw::Color4F::lightGrey);
+			canvas.text(tileDim.h + tileDim.w * 11, rowPos, row[0], orb::Color4F::white);
+			canvas.text(tileDim.h + tileDim.w * 11, rowPos, row[1], orb::Color4F::lightGrey);
 		}
 	}
 
-	bool HexGrid::onMouseScroll(const fw::MouseScrollEvent& ev) {
+	bool HexGrid::onMouseScroll(const orb::MouseScrollEvent& ev) {
 		if (ev.delta.y > 0) {
 			if (_rowOffset > 0) {
 				_rowOffset--;

@@ -1,6 +1,6 @@
 #pragma once
 /*
-namespace fw::DspUtil {
+namespace orb::DspUtil {
 	// Apply gain to range of samples
 	template <typename SampleType>
 	void applyGainRamp(size_t channel, size_t startSample, size_t _sampleCountToRamp,

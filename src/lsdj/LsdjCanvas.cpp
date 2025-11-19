@@ -3,12 +3,12 @@
 using namespace rp;
 using namespace rp::lsdj;
 
-Canvas::Canvas(fw::DimensionT<uint32> dimensions) : _renderTarget((fw::Dimension)dimensions), _dimensions(dimensions) {
-	_tileBuffer = new fw::Color4[TILE_BUFFER_SIZE];
+Canvas::Canvas(orb::DimensionT<uint32> dimensions) : _renderTarget((orb::Dimension)dimensions), _dimensions(dimensions) {
+	_tileBuffer = new orb::Color4[TILE_BUFFER_SIZE];
 }
 
-Canvas::Canvas(fw::DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette) {
-	_tileBuffer = new fw::Color4[TILE_BUFFER_SIZE];
+Canvas::Canvas(orb::DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette) {
+	_tileBuffer = new orb::Color4[TILE_BUFFER_SIZE];
 	_font = font;
 	_palette = palette;
 }
@@ -17,15 +17,15 @@ Canvas::~Canvas() {
 	delete[] _tileBuffer;
 }
 
-fw::Color3 blendColors(fw::Color3 color1, fw::Color3 color2) {
-	return fw::Color3{
+orb::Color3 blendColors(orb::Color3 color1, orb::Color3 color2) {
+	return orb::Color3{
 		.r = (uint8)((color1.r + color2.r) / 2),
 		.g = (uint8)((color1.g + color2.g) / 2),
 		.b = (uint8)((color1.b + color2.b) / 2)
 	};
 }
 
-fw::Color3 getPixelColor(uint32 pixel, Palette::ColorSet colorSet) {
+orb::Color3 getPixelColor(uint32 pixel, Palette::ColorSet colorSet) {
 	switch (pixel) {
 	case 0:
 		return colorSet.first;
@@ -42,7 +42,7 @@ void Canvas::updateTileTexture() {
 	uint32 xOffset = 0;
 	uint32 yOffset = 0;
 
-	memset((void*)_tileBuffer, 0, TILE_BUFFER_SIZE * sizeof(fw::Color4));
+	memset((void*)_tileBuffer, 0, TILE_BUFFER_SIZE * sizeof(orb::Color4));
 
 	for (uint32 colorSetIdx = 0; colorSetIdx < 10; ++colorSetIdx) {
 		const Palette::ColorSet& colorSet = _palette.sets[colorSetIdx % 5];
@@ -90,7 +90,7 @@ void Canvas::updateTileTexture() {
 					paletteOffset = 1;
 				}
 
-				fw::Color3 pixel = getPixelColor(tile.pixels[pixelOffset], colorSet);
+				orb::Color3 pixel = getPixelColor(tile.pixels[pixelOffset], colorSet);
 				_renderTarget.setPixel(x + tileX, y + tileY, pixel);
 			}
 		}
@@ -170,9 +170,9 @@ void Canvas::fill(uint32 x, uint32 y, uint32 w, uint32 h, ColorSets colorSetIdx,
 		}
 
 		if (w > 0 && h > 0) {
-			fw::Color4 source = getPixelColor(colorSetIdx, paletteIdx);
-			fw::Color4* target = _renderTarget.getData() + y * _renderTarget.w() + x;
-			size_t rowBytes = w * sizeof(fw::Color4);
+			orb::Color4 source = getPixelColor(colorSetIdx, paletteIdx);
+			orb::Color4* target = _renderTarget.getData() + y * _renderTarget.w() + x;
+			size_t rowBytes = w * sizeof(orb::Color4);
 
 			for (uint32 tileX = 0; tileX < w; ++tileX) {
 				target[tileX] = source;
@@ -186,8 +186,8 @@ void Canvas::fill(uint32 x, uint32 y, uint32 w, uint32 h, ColorSets colorSetIdx,
 	}
 }
 
-fw::Color4 Canvas::getPixelColor(const Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha) {
-	fw::Color3 val;
+orb::Color4 Canvas::getPixelColor(const Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha) {
+	orb::Color3 val;
 	switch (pixel) {
 	case 0:
 		val = colorSet.first;
@@ -206,7 +206,7 @@ fw::Color4 Canvas::getPixelColor(const Palette::ColorSet& colorSet, uint32 pixel
 	return val;
 }
 
-fw::Color4 Canvas::getPixelColor(ColorSets colorSetIdx, uint32 pixel, uint8 alpha) {
+orb::Color4 Canvas::getPixelColor(ColorSets colorSetIdx, uint32 pixel, uint8 alpha) {
 	return getPixelColor(_palette.sets[(uint32)colorSetIdx], pixel, alpha);
 }
 
@@ -225,11 +225,11 @@ void Canvas::drawTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetI
 	}
 
 	if (x < w && y < h) {
-		fw::Color4* source = _tileBuffer + ((uint32)colorSetIdx * FONT_PIXEL_COUNT) + ((uint32)tileIdx * FONT_TILE_PIXEL_COUNT);
-		fw::Color4* target = _renderTarget.getData() + y * w + x;
+		orb::Color4* source = _tileBuffer + ((uint32)colorSetIdx * FONT_PIXEL_COUNT) + ((uint32)tileIdx * FONT_TILE_PIXEL_COUNT);
+		orb::Color4* target = _renderTarget.getData() + y * w + x;
 
 		for (uint32 tileY = 0; tileY < Font::TILE_HEIGHT; ++tileY) {
-			memcpy((void*)target, source, Font::TILE_WIDTH * sizeof(fw::Color4));
+			memcpy((void*)target, source, Font::TILE_WIDTH * sizeof(orb::Color4));
 			target += w;
 			source += Font::TILE_WIDTH;
 		}

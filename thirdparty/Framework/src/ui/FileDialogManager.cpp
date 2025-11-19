@@ -1,6 +1,6 @@
 #include "FileDialogManager.h"
 
-namespace fw {
+namespace orb {
 	void FileDialogManager::openFile(const std::vector<FileDialogFilter>& filters, pfd::opt options, Callback&& callback) {
 		assert(!_currentDialog.has_value());
 

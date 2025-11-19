@@ -6,7 +6,7 @@
 #include "audio/InterleavedAudioBuffer.h"
 #include <iostream>
 
-namespace fw {
+namespace orb {
 	namespace Envelopes {
 		using Func = AudioSampleT(*)(AudioSampleT);
 

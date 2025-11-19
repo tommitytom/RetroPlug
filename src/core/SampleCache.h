@@ -6,7 +6,7 @@
 
 namespace rp {
 	struct SampleData {
-		fw::Float32Buffer buffer;
+		orb::Float32Buffer buffer;
 		uint32 sampleRate;
 	};
 
@@ -16,7 +16,7 @@ namespace rp {
 		std::mutex _mutex;
 
 	public:
-		void addSample(const std::string& name, fw::Float32Buffer&& data, uint32 sampleRate) {
+		void addSample(const std::string& name, orb::Float32Buffer&& data, uint32 sampleRate) {
 			std::lock_guard<std::mutex> lock(_mutex);
 			_cache[name] = { std::move(data), sampleRate };
 		}

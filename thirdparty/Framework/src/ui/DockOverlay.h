@@ -2,7 +2,7 @@
 
 #include "DockPanel.h"
 
-namespace fw {
+namespace orb {
 	class DockOverlay : public View {
 		FwRegisterObject();
 	private:
@@ -40,7 +40,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 	};
 
 	using DockOverlayPtr = std::shared_ptr<DockOverlay>;

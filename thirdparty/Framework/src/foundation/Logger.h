@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace fw {
+namespace orb {
 	enum LogLevels {
 		Debug = 0,
 		Info = 1,

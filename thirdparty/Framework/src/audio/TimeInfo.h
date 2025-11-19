@@ -2,7 +2,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	struct TimeInfo {
 		f64 sampleRate = 44100.0;
 		f64 tempo = 120.0;

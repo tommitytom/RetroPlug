@@ -8,7 +8,7 @@
 #include "graphics/resources/Karla-Regular.h"
 #include "graphics/resources/Roboto-Regular.h"
 
-using namespace fw;
+using namespace orb;
 
 
 const std::string_view DEFAULT_CODEPOINTS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&:;'*()[]_-+,.<> |\\/";

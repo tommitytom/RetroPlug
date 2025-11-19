@@ -1,6 +1,6 @@
 #include "Dock.h"
 
-using namespace fw;
+using namespace orb;
 
 void Dock::onInitialize() {
 	_dockedRoot = addChild<View>("Docked Windows");

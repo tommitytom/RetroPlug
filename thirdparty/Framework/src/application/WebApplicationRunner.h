@@ -12,7 +12,7 @@
 #include "application/UiContext.h"
 #include "audio/WebAudioManager.h"
 
-namespace fw::app {
+namespace orb::app {
 	class WebApplicationRunner {
 	private:
 		audio::WebAudioManagerPtr _audioManager;

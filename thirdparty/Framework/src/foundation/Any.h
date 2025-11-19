@@ -3,7 +3,7 @@
 #include "foundation/Types.h"
 #include "foundation/MetaTypes.h"
 
-namespace fw {
+namespace orb {
 	class AnyRef {
 	private:
 		struct VTableBase {
@@ -18,7 +18,7 @@ namespace fw {
 
 		template <typename T>
 		struct VTable : public VTableBase {
-			VTable() : VTableBase(fw::getTypeId<T>(), sizeof(T)) {}
+			VTable() : VTableBase(orb::getTypeId<T>(), sizeof(T)) {}
 
 			bool compare(const AnyRef& lhs, const AnyRef& rhs) const override {
 				assert(lhs.getType() == rhs.getType());
@@ -105,14 +105,14 @@ namespace fw {
 		template <typename T>
 		T& getValue() {
 			assert(isValid());
-			assert(getType() == fw::getTypeId<T>());
+			assert(getType() == orb::getTypeId<T>());
 			return *reinterpret_cast<T*>(_data);
 		}
 
 		template <typename T>
 		const T& getValue() const {
 			assert(isValid());
-			assert(getType() == fw::getTypeId<T>());
+			assert(getType() == orb::getTypeId<T>());
 			return *reinterpret_cast<const T*>(_data);
 		}
 
@@ -163,7 +163,7 @@ namespace fw {
 
 		template <typename T>
 		struct VTable : public VTableBase {
-			VTable() : VTableBase(fw::getTypeId<T>(), sizeof(T)) {}
+			VTable() : VTableBase(orb::getTypeId<T>(), sizeof(T)) {}
 
 			bool compare(const BaseAny& lhs, const BaseAny& rhs) const override {
 				assert(lhs.getType() == rhs.getType());
@@ -261,14 +261,14 @@ namespace fw {
 		template <typename T>
 		T& getValue() {
 			assert(isValid());
-			assert(getType() == fw::getTypeId<T>());
+			assert(getType() == orb::getTypeId<T>());
 			return *reinterpret_cast<T*>(_data);
 		}
 
 		template <typename T>
 		const T& getValue() const {
 			assert(isValid());
-			assert(getType() == fw::getTypeId<T>());
+			assert(getType() == orb::getTypeId<T>());
 			return *reinterpret_cast<const T*>(_data);
 		}
 

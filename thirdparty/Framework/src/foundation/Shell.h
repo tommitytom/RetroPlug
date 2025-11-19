@@ -2,6 +2,6 @@
 
 #include <string>
 
-namespace fw {
+namespace orb {
 	void openShellFolder(const std::string& path);
 }

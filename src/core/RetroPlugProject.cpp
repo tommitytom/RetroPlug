@@ -15,7 +15,7 @@
 #include "lsdj/LsdjHooks.h"
 
 namespace rp {
-	RetroPlugProject::RetroPlugProject(fw::EventNode&& eventNode, fw::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
+	RetroPlugProject::RetroPlugProject(orb::EventNode&& eventNode, orb::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
 		HooksContext& hooksCtx = _registry.ctx().emplace<HooksContext>();
 		hooksCtx.addSystemHook<SameboyHooks>();
 		hooksCtx.addServiceHook<LsdjHooks>();
@@ -30,8 +30,8 @@ namespace rp {
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
 #endif
 
-		fw::Replicator::subscribe(_registry, _eventNode, targetNodeId, true, false);
-		fw::Replicator::replicate<ReplicatedTypes>(_registry);
+		orb::Replicator::subscribe(_registry, _eventNode, targetNodeId, true, false);
+		orb::Replicator::replicate<ReplicatedTypes>(_registry);
 
 		_eventNode.receive<SystemIoEvent>([this](SystemIoEvent&& ev) {
 			if (_registry.valid(ev.entity)) {
@@ -66,7 +66,7 @@ namespace rp {
 						const MemoryType type = (MemoryType)i;
 						VersionedMemory* memory = stateComp->find(type);
 						if (memory && offsets[i].size > 0) {
-							fw::Uint8Buffer slice = stateComp->state.slice(offsets[i].offset, offsets[i].size);
+							orb::Uint8Buffer slice = stateComp->state.slice(offsets[i].offset, offsets[i].size);
 							if (slice != memory->data) {
 								memory->data.resize(slice.size());
 								memory->data.write(slice);
@@ -112,13 +112,13 @@ namespace rp {
 		_eventNode.unsubscribe<PongEvent>();
 		_eventNode.unsubscribe<FetchMemoryResponse>();
 		_eventNode.unsubscribe<SystemIoEvent>();
-		fw::Replicator::shutdown(_registry);
+		orb::Replicator::shutdown(_registry);
 	}
 
 	void RetroPlugProject::loadConfigs() {
 		spdlog::info("Loading configs...");
 
-		std::string data = fw::FsUtil::readTextFile("/mount/config/input.json");
+		std::string data = orb::FsUtil::readTextFile("/mount/config/input.json");
 		if (data.empty()) {
 			//spdlog::warn("Failed to read /mount/config/input.json");
 			return;
@@ -132,14 +132,14 @@ namespace rp {
 
 		InputConfig config;
 		for (const auto& [k, v] : result.value().keyboard) {
-			fw::VirtualKey key = fw::VirtualKeyUtil::fromString(k);
-			if (key == fw::VirtualKey::COUNT) {
+			orb::VirtualKey key = orb::VirtualKeyUtil::fromString(k);
+			if (key == orb::VirtualKey::COUNT) {
 				spdlog::warn("Unknown key type: {}", k);
 				continue;
 			}
 
-			fw::PadButtonType button = fw::PadButtonTypeUtil::fromString(v);
-			if (button == fw::PadButtonType::COUNT) {
+			orb::PadButtonType button = orb::PadButtonTypeUtil::fromString(v);
+			if (button == orb::PadButtonType::COUNT) {
 				spdlog::warn("Unknown button type: {}", v);
 				continue;
 			}
@@ -199,7 +199,7 @@ namespace rp {
 
 	bool RetroPlugProject::addSystem(SystemLoadComponent&& config) {
 		getContext().increaseVersion();
-		entt::entity entity = fw::Replicator::spawn(_registry);
+		entt::entity entity = orb::Replicator::spawn(_registry);
 		if (ProjectBuilder::addSystemWithConfig<SameBoyComponent>(_registry, entity, std::forward<SystemLoadComponent>(config), SameBoyComponent{})) {
 			handleReplicate();
 			return true;
@@ -214,7 +214,7 @@ namespace rp {
 		eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 		eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(_registry, entity); });
 
-		fw::Replicator::destroy(_registry, entity);
+		orb::Replicator::destroy(_registry, entity);
 		getContext().increaseVersion();
 	}
 
@@ -398,9 +398,9 @@ namespace rp {
 		_totalTime += deltaTime;
 
 		// Receive events from the audio thread
-		fw::Replicator::beginUpdate(_registry);
+		orb::Replicator::beginUpdate(_registry);
 		_eventNode.update();
-		fw::Replicator::endUpdate(_registry);
+		orb::Replicator::endUpdate(_registry);
 
 		handleFetchTimers(deltaTime); // Checks if we need to request state
 		handlePing();
@@ -420,7 +420,7 @@ namespace rp {
 		pathContext.projectRoot.clear();
 	}
 
-	void RetroPlugProject::serialize(fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) const {
+	void RetroPlugProject::serialize(orb::Uint8Buffer& archive, const std::filesystem::path& rootPath) const {
 		std::string target;
 		ProjectSerializer::serialize(_registry, target);
 		archive.resize(target.size());
@@ -437,7 +437,7 @@ namespace rp {
 		return ProjectBuilder::deserializeJson(_registry, str, rootPath);
 	}
 
-	bool RetroPlugProject::deserialize(const fw::Uint8Buffer& archive, const std::filesystem::path& rootPath) {
+	bool RetroPlugProject::deserialize(const orb::Uint8Buffer& archive, const std::filesystem::path& rootPath) {
 		std::string_view source((const char*)archive.data(), archive.size());
 		return deserializeJson(source, rootPath);
 	}

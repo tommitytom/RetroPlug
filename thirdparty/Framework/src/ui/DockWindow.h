@@ -4,7 +4,7 @@
 
 #include "DockPanel.h"
 
-namespace fw {
+namespace orb {
 	class DockWindow : public View {
 		FwRegisterObject();
 	private:
@@ -39,7 +39,7 @@ namespace fw {
 			updateLayout();
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			canvas.fillRect(getDimensions(), Color4(100, 100, 100, 255));
 		}
 

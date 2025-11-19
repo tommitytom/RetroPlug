@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	struct ButtonClickEvent {};
 
 	class ButtonView : public View {
@@ -47,7 +47,7 @@ namespace fw {
 			_mouseOver = false;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			Color4F bgColor = Color4F::darkGrey;
 			if (_mouseOver) { bgColor = Color4F::lightGrey; }
 			if (_mouseDown) { bgColor = Color4F(0.4f, 0.4f, 0.4f, 1.0f); }

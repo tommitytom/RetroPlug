@@ -3,12 +3,12 @@
 #include "entry/ApplicationFactory.h"
 #include "application/GlfwNativeWindow.h"
 
-using namespace fw;
+using namespace orb;
 
-fw::app::ApplicationRunner runner;
+orb::app::ApplicationRunner runner;
 
 #include "graphics/gl/GlRenderContext.h"
-using RenderContextT = fw::GlRenderContext;
+using RenderContextT = orb::GlRenderContext;
 
 #if defined(FW_PLATFORM_WEB)
 #error "Web platform is not supported"
@@ -16,16 +16,16 @@ using RenderContextT = fw::GlRenderContext;
 
 #if defined(FW_PLATFORM_PLUGIN)
 #include "audio/AudioManager.h"
-using AudioManagerT = fw::audio::AudioManager;
+using AudioManagerT = orb::audio::AudioManager;
 #else
 #include "audio/MiniAudioManager.h"
-using AudioManagerT = fw::audio::MiniAudioManager;
+using AudioManagerT = orb::audio::MiniAudioManager;
 #endif
 
 void initMain(int argc, char** argv) {
-	fw::ResourceManagerPtr resourceManager = std::make_shared<ResourceManager>();
-	std::shared_ptr<fw::FontManager> fontManager = std::make_shared<fw::FontManager>(resourceManager);
-	runner.setup(ApplicationFactory::create(), std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager), std::make_unique<RenderContextT>(), std::make_unique<AudioManagerT>());
+	orb::ResourceManagerPtr resourceManager = std::make_shared<ResourceManager>();
+	std::shared_ptr<orb::FontManager> fontManager = std::make_shared<orb::FontManager>(resourceManager);
+	runner.setup(ApplicationFactory::create(), std::make_unique<orb::app::GlfwWindowManager>(resourceManager, fontManager), std::make_unique<RenderContextT>(), std::make_unique<AudioManagerT>());
 }
 
 bool mainLoop() {

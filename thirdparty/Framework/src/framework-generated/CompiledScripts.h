@@ -10,7 +10,7 @@
 
 typedef struct lua_State lua_State;
 
-namespace fw::CompiledScripts {
+namespace orb::CompiledScripts {
 
 namespace utils {
 	int loader(lua_State* state);

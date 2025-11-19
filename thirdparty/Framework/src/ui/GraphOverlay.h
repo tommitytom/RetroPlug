@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class GraphOverlay : public View {
 		FwRegisterObject();
 	public:
@@ -10,7 +10,7 @@ namespace fw {
 		GraphOverlay(Dimension dimensions) : View(dimensions) {}
 		~GraphOverlay() { }
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 
 		}
 	};

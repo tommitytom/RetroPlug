@@ -6,7 +6,7 @@
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-namespace fw::app {
+namespace orb::app {
 	Application::Application() {
 #ifdef FW_OS_WINDOWS
 		auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

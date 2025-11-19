@@ -2,7 +2,7 @@
 
 #include "ui/Colors.h"
 
-using namespace fw;
+using namespace orb;
 
 void TabView::onChildAdded(ViewPtr child) {
 	_panels.push_back(child);
@@ -83,7 +83,7 @@ bool TabView::onMouseButton(MouseButton button, bool down, Point position) {
 	return false;
 }
 
-void TabView::onRender(fw::Canvas& canvas) {
+void TabView::onRender(orb::Canvas& canvas) {
 	canvas.fillRect(getDimensions(), RP_COLOR_BACKGROUND);
 
 	if (_showHeader) {

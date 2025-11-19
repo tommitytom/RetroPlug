@@ -7,7 +7,7 @@
 #include "audio/MiniAudioManager.h"
 #endif
 
-namespace fw::app {
+namespace orb::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
 

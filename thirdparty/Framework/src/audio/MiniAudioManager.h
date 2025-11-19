@@ -2,7 +2,7 @@
 
 #include "AudioManager.h"
 
-namespace fw::audio {
+namespace orb::audio {
 	class MiniAudioManager final : public AudioManager {
 	private:
 		struct State;

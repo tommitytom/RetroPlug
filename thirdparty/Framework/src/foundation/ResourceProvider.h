@@ -6,7 +6,7 @@
 
 #include "ResourceHandle.h"
 
-namespace fw {
+namespace orb {
 	class Resource;
 
 	class ResourceProvider {

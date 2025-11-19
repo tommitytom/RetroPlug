@@ -32,10 +32,10 @@ namespace fw {
 
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 
 		}
 	};
 
-	using ${name}Application = fw::app::BasicApplication<${name}, void>;
+	using ${name}Application = orb::app::BasicApplication<${name}, void>;
 }

@@ -2,6 +2,6 @@
 
 #include "foundation/DataBuffer.h"
 
-namespace fw::AudioLoaderUtil {
+namespace orb::AudioLoaderUtil {
 	bool load(std::string_view path, Float32Buffer& target);
 }

@@ -5,7 +5,7 @@
 #include "foundation/SolUtil.h"
 #include "foundation/AssociativeContainer.h"
 
-namespace fw {
+namespace orb {
 	struct FieldStack {
 		std::array<std::string_view, 5> names;
 		size_t count = 0;
@@ -63,10 +63,10 @@ namespace fw {
 		return "unknown";
 	}
 
-	sol::object serializeItem(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack);
+	sol::object serializeItem(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack);
 
-	sol::object serializeInteger(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeInteger(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 
 		// Ordered by most (likely) common
 		if (type.id == getTypeId<bool>()) { return sol::make_object(lua, entt::any_cast<bool>(source)); }
@@ -86,8 +86,8 @@ namespace fw {
 		return sol::make_object(lua, sol::lua_nil);
 	}
 
-	sol::object serializeFloat(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeFloat(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 
 		if (type.id == getTypeId<f32>()) { return sol::make_object(lua, entt::any_cast<f32>(source)); }
 		if (type.id == getTypeId<f64>()) { return sol::make_object(lua, entt::any_cast<f64>(source)); }
@@ -98,13 +98,13 @@ namespace fw {
 		return sol::make_object(lua, sol::lua_nil);
 	}
 
-	sol::object serializeString(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+	sol::object serializeString(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
 		return sol::make_object(lua, entt::any_cast<const std::string&>(source));
 	}
 
-	sol::object serializeAny(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+	sol::object serializeAny(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
 		const entt::any& anyValue = entt::any_cast<const entt::any&>(source);
-		const fw::TypeInfo* valueType = registry.findTypeInfo(anyValue);
+		const orb::TypeInfo* valueType = registry.findTypeInfo(anyValue);
 
 		if (valueType) {
 			return lua.create_table_with(
@@ -119,11 +119,11 @@ namespace fw {
 		return sol::make_object(lua, sol::lua_nil);
 	}
 
-	sol::object serializeEnum(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeEnum(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 
 		if (type.fields.size()) {
-			for (const fw::Field& field : type.fields) {
+			for (const orb::Field& field : type.fields) {
 				if (field.get({}) == source) {
 					return sol::make_object(lua, field.name);
 				}
@@ -142,11 +142,11 @@ namespace fw {
 		return sol::make_object(lua, sol::lua_nil);
 	}
 
-	sol::object serializeClass(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeClass(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 		sol::table target = lua.create_table(0, (int)type.fields.size());
 
-		for (const fw::Field& field : type.fields) {
+		for (const orb::Field& field : type.fields) {
 			fieldStack.push(field.name);
 
 			entt::any fieldData = field.get(source);
@@ -158,8 +158,8 @@ namespace fw {
 		return target;
 	}
 
-	sol::object serializeSequence(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeSequence(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 		assert(type.createSequenceContainer);
 
 		SequenceContainer container = type.createSequenceContainer(source.as_ref());
@@ -175,8 +175,8 @@ namespace fw {
 		return target;
 	}
 
-	sol::object serializeAssociative(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(source);
+	sol::object serializeAssociative(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(source);
 		assert(type.createAssociativeContainer);
 
 		AssociativeContainer container = type.createAssociativeContainer(source.as_ref());
@@ -194,8 +194,8 @@ namespace fw {
 		return target;
 	}
 
-	sol::object serializeItem(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
-		const fw::TypeInfo* type = registry.findTypeInfo(source);
+	sol::object serializeItem(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source, FieldStack& fieldStack) {
+		const orb::TypeInfo* type = registry.findTypeInfo(source);
 
 		if (type) {
 			if (type->isFloat()) {
@@ -226,12 +226,12 @@ namespace fw {
 		return sol::make_object(lua, sol::lua_nil);
 	}
 
-	sol::object LuaSerializer::serializeToObject(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source) {
+	sol::object LuaSerializer::serializeToObject(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source) {
 		FieldStack fieldStack;
 		return serializeItem(registry, lua, source, fieldStack);
 	}
 
-	std::string LuaSerializer::serializeToString(const fw::TypeRegistry& registry, sol::state& lua, const entt::any& source) {
+	std::string LuaSerializer::serializeToString(const orb::TypeRegistry& registry, sol::state& lua, const entt::any& source) {
 		FieldStack fieldStack;
 		sol::object obj = serializeItem(registry, lua, source, fieldStack);
 
@@ -241,26 +241,26 @@ namespace fw {
 		return str;
 	}
 
-	std::string LuaSerializer::serializeToString(const fw::TypeRegistry& registry, const entt::any& obj) {
+	std::string LuaSerializer::serializeToString(const orb::TypeRegistry& registry, const entt::any& obj) {
 		sol::state s;
 		SolUtil::prepareState(s);
 		return LuaSerializer::serializeToString(registry, s, obj);
 	}
 
-	bool deserializeItem(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack);
+	bool deserializeItem(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack);
 
 	void logDeserializeTypeError(sol::type sourceType, std::string_view targetName, const FieldStack& fieldStack) {
 		spdlog::error("Lua deserialization: Tried to deserialize field '{}' of type '{}' in to a '{}'", fieldStack.getFieldPath(), toString(sourceType), targetName);
 	}
 
-	bool deserializeClass(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeClass(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::table) {
 			bool valid = true;
 			sol::table table = source.as<sol::table>();
 
-			for (const fw::Field& field : type.fields) {
+			for (const orb::Field& field : type.fields) {
 				fieldStack.push(field.name);
 
 				std::optional<sol::object> sourceValue = table[field.name];
@@ -288,8 +288,8 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeInteger(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeInteger(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::number || source.get_type() == sol::type::boolean) {
 			TypeId targetType = getTypeId(target);
@@ -314,8 +314,8 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeFloat(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeFloat(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::number) {
 			TypeId targetType = getTypeId(target);
@@ -331,8 +331,8 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeString(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeString(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::string) {
 			return target.assign(source.as<std::string>());
@@ -343,14 +343,14 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeAny(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeAny(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::table) {
 			sol::table sourceTable = source.as<sol::table>();
 			std::string typeName = sourceTable["type"];
 
-			const fw::TypeInfo* typeInfo = registry.findTypeInfo(std::string_view(typeName));
+			const orb::TypeInfo* typeInfo = registry.findTypeInfo(std::string_view(typeName));
 
 			if (typeInfo) {
 				entt::any& inner = entt::any_cast<entt::any&>(target);
@@ -366,8 +366,8 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeEnum(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo& type = registry.getTypeInfo(target);
+	bool deserializeEnum(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::string) {
 			std::string value = source.as<std::string>();
@@ -393,7 +393,7 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeSequence(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+	bool deserializeSequence(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
 		const TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::table) {
@@ -424,7 +424,7 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeAssociative(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+	bool deserializeAssociative(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
 		const TypeInfo& type = registry.getTypeInfo(target);
 
 		if (source.get_type() == sol::type::table) {
@@ -461,8 +461,8 @@ namespace fw {
 		return false;
 	}
 
-	bool deserializeItem(const fw::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
-		const fw::TypeInfo* type = registry.findTypeInfo(target);
+	bool deserializeItem(const orb::TypeRegistry& registry, const sol::object& source, entt::any& target, FieldStack& fieldStack) {
+		const orb::TypeInfo* type = registry.findTypeInfo(target);
 
 		if (type) {
 			if (type->isSequenceContainer()) {
@@ -470,9 +470,9 @@ namespace fw {
 			} else if (type->isAssociativeContainer()) {
 				return deserializeAssociative(registry, source, target, fieldStack);
 			} else if (type->isClass()) {
-				if (type->id == fw::getTypeId<std::string>()) {
+				if (type->id == orb::getTypeId<std::string>()) {
 					return deserializeString(registry, source, target, fieldStack);
-				} else if (type->id == fw::getTypeId<entt::any>()) {
+				} else if (type->id == orb::getTypeId<entt::any>()) {
 					return deserializeAny(registry, source, target, fieldStack);
 				} else {
 					return deserializeClass(registry, source, target, fieldStack);
@@ -493,12 +493,12 @@ namespace fw {
 		return false;
 	}
 
-	bool LuaSerializer::deserialize(const fw::TypeRegistry& registry, const sol::object& source, fw::TypeInstance target) {
+	bool LuaSerializer::deserialize(const orb::TypeRegistry& registry, const sol::object& source, orb::TypeInstance target) {
 		FieldStack fieldStack;
 		return deserializeItem(registry, source, target.getValue(), fieldStack);
 	}
 
-	bool LuaSerializer::deserializeFromString(const fw::TypeRegistry& registry, std::string_view source, TypeInstance target) {
+	bool LuaSerializer::deserializeFromString(const orb::TypeRegistry& registry, std::string_view source, TypeInstance target) {
 		sol::state lua;
 		SolUtil::prepareState(lua);
 
@@ -513,7 +513,7 @@ namespace fw {
 		return false;
 	}
 
-	bool LuaSerializer::deserializeFromBuffer(const fw::TypeRegistry& registry, const fw::Uint8Buffer& source, TypeInstance target) {
+	bool LuaSerializer::deserializeFromBuffer(const orb::TypeRegistry& registry, const orb::Uint8Buffer& source, TypeInstance target) {
 		return LuaSerializer::deserializeFromString(registry, std::string_view((const char*)source.data(), source.size()), std::move(target));
 	}
 }

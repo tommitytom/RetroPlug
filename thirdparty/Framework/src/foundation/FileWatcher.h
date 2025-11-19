@@ -8,7 +8,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw {
+namespace orb {
 	enum class WatchAction {
 		Added,
 		Modified,
@@ -53,11 +53,11 @@ namespace fw {
 		void update() override {}
 	};
 /*
-	class SimpleFileWatcher : public FW::FileWatchListener, public FileWatcher {
+	class SimpleFileWatcher : public orb::FileWatchListener, public FileWatcher {
 	private:
 		std::vector<Watch> _watches;
 		WatchId _nextWatchId = 1;
-		FW::FileWatcher _watcher;
+		orb::FileWatcher _watcher;
 
 	public:
 		WatchId add(const std::string& path, WatchCallbackFunc&& callback) {
@@ -71,7 +71,7 @@ namespace fw {
 
 			Watch* existing = findWatch(watchPath);
 			if (!existing) {
-				FW::WatchID watchId = _watcher.addWatch(watchPath, this);
+				orb::WatchID watchId = _watcher.addWatch(watchPath, this);
 				_reloaders.push_back({ watchId, watchPath });
 				existing = &_reloaders.back();
 			}
@@ -93,7 +93,7 @@ namespace fw {
 
 	Watch* existing = findWatch(watchPath);
 	if (!existing) {
-		FW::WatchID watchId = _watcher.addWatch(watchPath, this);
+		orb::WatchID watchId = _watcher.addWatch(watchPath, this);
 		_reloaders.push_back({ watchId, watchPath });
 		existing = &_reloaders.back();
 	}
@@ -105,7 +105,7 @@ namespace fw {
 		}
 
 		#ifndef FW_PLATFORM_WEB
-		void handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) override;
+		void handleFileAction(orb::WatchID watchid, const orb::String& dir, const orb::String& filename, orb::Action action) override;
 #endif
 
 Watch* findWatch(const std::string& path) {
@@ -119,7 +119,7 @@ Watch* findWatch(const std::string& path) {
 		}
 	};
 
-	void FileManager::handleFileAction(FW::WatchID watchid, const FW::String& dir, const FW::String& filename, FW::Action action) {
+	void FileManager::handleFileAction(orb::WatchID watchid, const orb::String& dir, const orb::String& filename, orb::Action action) {
 	spdlog::debug("File action: {} {} {}", dir, filename, action);
 	std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
 	for (Watch& watch : _reloaders) {

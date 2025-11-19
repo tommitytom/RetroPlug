@@ -34,11 +34,11 @@ namespace fw {
 }
 
 REFL_AUTO(
-	type(fw::WhitneySettings),
-	field(dotCount, fw::reflutil::RangeAttribute(2, 20000)),
-	field(duration, fw::reflutil::RangeAttribute(10.0f, 20000)/*, fw::CurveAttribute(Curves::pow2)*/),
-	field(minSize, fw::reflutil::RangeAttribute(0.01f, 50.0f)),
-	field(maxSize, fw::reflutil::RangeAttribute(0.01f, 50.0f)),
+	type(orb::WhitneySettings),
+	field(dotCount, orb::reflutil::RangeAttribute(2, 20000)),
+	field(duration, orb::reflutil::RangeAttribute(10.0f, 20000)/*, orb::CurveAttribute(Curves::pow2)*/),
+	field(minSize, orb::reflutil::RangeAttribute(0.01f, 50.0f)),
+	field(maxSize, orb::reflutil::RangeAttribute(0.01f, 50.0f)),
 	field(dotAlpha),
 	field(lineAlpha),
 	field(hueOffset),
@@ -48,7 +48,7 @@ REFL_AUTO(
 )
 
 REFL_AUTO(
-	type(fw::PropertyModulator),
+	type(orb::PropertyModulator),
 	field(type),
 	field(mode),
 	field(timing),
@@ -140,7 +140,7 @@ namespace fw {
 				}
 			});
 
-			/*for (const fw::Field& field : _typeRegistry.getTypeInfo<Settings>().fields) {
+			/*for (const orb::Field& field : _typeRegistry.getTypeInfo<Settings>().fields) {
 				if (field.type != getTypeId<f32>()) {
 					continue;
 				}
@@ -341,7 +341,7 @@ namespace fw {
 			}
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			if (_settings.dotsOverLines) {
 				if (_settings.drawLines) { renderLines(canvas); }
 				if (_settings.drawDots) { renderDots(canvas); }
@@ -352,7 +352,7 @@ namespace fw {
 		}
 
 	private:
-		void renderLines(fw::Canvas& canvas) const {
+		void renderLines(orb::Canvas& canvas) const {
 			std::vector<PointF> points(_dots.size());
 
 			for (size_t i = 0; i < _dots.size() - 1; ++i) {
@@ -362,7 +362,7 @@ namespace fw {
 			}
 		}
 
-		void renderDots(fw::Canvas& canvas) const {
+		void renderDots(orb::Canvas& canvas) const {
 			for (size_t i = 0; i < _dots.size(); ++i) {
 				canvas.texture(_circle, _dots[i].area, _dots[i].dotColor);
 			}
@@ -377,9 +377,9 @@ namespace fw {
 		}
 	};
 
-	using WhitneyApplication = fw::app::BasicApplication<Whitney>;
+	using WhitneyApplication = orb::app::BasicApplication<Whitney>;
 }
 
 REFL_AUTO(
-	type(fw::Whitney, bases<fw::View>)
+	type(orb::Whitney, bases<orb::View>)
 )

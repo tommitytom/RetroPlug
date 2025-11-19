@@ -4,6 +4,6 @@
 #include "foundation/DataResource.h"
 #include "foundation/ResourceHandle.h"
 
-namespace fw {
+namespace orb {
 	//DefineDataResourceType(LuaScript, { ".lua" });
 }

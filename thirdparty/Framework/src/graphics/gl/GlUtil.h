@@ -2,7 +2,7 @@
 
 #include "foundation/Types.h"
 
-namespace fw::GlUtil {
+namespace orb::GlUtil {
 	bool checkShaderCompileError(uint32 program);
 
 	bool checkProgramLinkError(uint32 program);

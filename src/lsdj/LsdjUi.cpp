@@ -333,7 +333,7 @@ void Ui::renderMode2(const Rom& rom, const Song& song, const Ram& state) {
 	_c.setTranslation(0, 0);
 
 	uint8 num = 255;
-	fw::DimensionT<uint32> dimensionTiles(_c.getDimensions().w / TILE_WIDTH, _c.getDimensions().h / TILE_HEIGHT);
+	orb::DimensionT<uint32> dimensionTiles(_c.getDimensions().w / TILE_WIDTH, _c.getDimensions().h / TILE_HEIGHT);
 
 	_c.fill(0, 0, dimensionTiles.w, dimensionTiles.h, ColorSets::Normal, 0);
 
@@ -444,7 +444,7 @@ void drawProperty(lsdj::Ui& ui, std::string_view name) {
 
 }
 
-void decodeSamples(fw::Uint8Buffer input, std::vector<f32>& output) {
+void decodeSamples(orb::Uint8Buffer input, std::vector<f32>& output) {
 	output.resize(input.size() * 2);
 
 	for (size_t i = 0; i < input.size(); ++i) {

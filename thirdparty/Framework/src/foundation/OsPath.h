@@ -2,6 +2,6 @@
 
 #include <string>
 
-namespace fw::OsPath {
+namespace orb::OsPath {
 	std::string getContentPath();
 }

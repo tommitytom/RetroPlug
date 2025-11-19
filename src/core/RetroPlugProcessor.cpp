@@ -42,21 +42,21 @@ namespace rp {
 		~AudioHooksContext() = default;
 	};
 
-	fw::ButtonType convertButtonType(fw::PadButtonType button) {
+	orb::ButtonType convertButtonType(orb::PadButtonType button) {
 		switch (button) {
-			case fw::PadButtonType::A: return fw::ButtonType::A;
-			case fw::PadButtonType::B: return fw::ButtonType::B;
-			case fw::PadButtonType::Select: return fw::ButtonType::Select;
-			case fw::PadButtonType::Start: return fw::ButtonType::Start;
-			case fw::PadButtonType::Up: return fw::ButtonType::Up;
-			case fw::PadButtonType::Down: return fw::ButtonType::Down;
-			case fw::PadButtonType::Left: return fw::ButtonType::Left;
-			case fw::PadButtonType::Right: return fw::ButtonType::Right;
-			default: return fw::ButtonType::MAX;
+			case orb::PadButtonType::A: return orb::ButtonType::A;
+			case orb::PadButtonType::B: return orb::ButtonType::B;
+			case orb::PadButtonType::Select: return orb::ButtonType::Select;
+			case orb::PadButtonType::Start: return orb::ButtonType::Start;
+			case orb::PadButtonType::Up: return orb::ButtonType::Up;
+			case orb::PadButtonType::Down: return orb::ButtonType::Down;
+			case orb::PadButtonType::Left: return orb::ButtonType::Left;
+			case orb::PadButtonType::Right: return orb::ButtonType::Right;
+			default: return orb::ButtonType::MAX;
 		}
 	}
 
-	RetroPlugProcessor::RetroPlugProcessor(fw::EventNode&& eventNode) : fw::AudioProcessor(std::move(eventNode))  {
+	RetroPlugProcessor::RetroPlugProcessor(orb::EventNode&& eventNode) : orb::AudioProcessor(std::move(eventNode))  {
 		AudioHooksContext& hooks = _registry.ctx().emplace<AudioHooksContext>();
 		hooks.systemHooks.push_back(std::make_unique<SameBoyAudioHooks>());
 
@@ -65,13 +65,13 @@ namespace rp {
 
 		effectCtx.effects.push_back(std::make_unique<SineGenerator>());
 
-		fw::EventNode& node = getEventNode();
-		fw::Replicator::setupOwner(_registry, node);
-		fw::Replicator::replicate<ReplicatedTypes>(_registry);
+		orb::EventNode& node = getEventNode();
+		orb::Replicator::setupOwner(_registry, node);
+		orb::Replicator::replicate<ReplicatedTypes>(_registry);
 
 		node.receive<PadButtonEvent>([this](PadButtonEvent&& ev) {
-			fw::ButtonType button = convertButtonType(ev.button);
-			if (button == fw::ButtonType::MAX) {
+			orb::ButtonType button = convertButtonType(ev.button);
+			if (button == orb::ButtonType::MAX) {
 				return;
 			}
 
@@ -84,7 +84,7 @@ namespace rp {
 				return;
 			}
 
-			state->state->io->input.buttons.push_back(fw::StreamButtonPress{
+			state->state->io->input.buttons.push_back(orb::StreamButtonPress{
 				.button = button,
 				.down = ev.down
 			});
@@ -104,7 +104,7 @@ namespace rp {
 			AudioSystemHook* hook = findHook(system->systemType, hooks.systemHooks);
 			assert(hook);
 
-			fw::Uint8Buffer target;
+			orb::Uint8Buffer target;
 
 			if (ev.type == MemoryType::MAX) {
 				hook->onSaveState(_registry, ev.entity, target);
@@ -164,22 +164,22 @@ namespace rp {
 	}
 
 	RetroPlugProcessor::~RetroPlugProcessor() {
-		fw::Replicator::shutdown(_registry);
+		orb::Replicator::shutdown(_registry);
 	}
 
 	void RetroPlugProcessor::onTransportChange(bool playing) {
 	}
 
-	void RetroPlugProcessor::onTransportUpdate(const fw::TimeInfo& timeInfo) {
+	void RetroPlugProcessor::onTransportUpdate(const orb::TimeInfo& timeInfo) {
 	}
 
 	void RetroPlugProcessor::onBeginUpdate(uint32 frameCount) {
-		fw::Replicator::beginUpdate(_registry);
+		orb::Replicator::beginUpdate(_registry);
 		getEventNode().update();
-		fw::Replicator::endUpdate(_registry);
+		orb::Replicator::endUpdate(_registry);
 	}
 
-	void RetroPlugProcessor::onRenderFull(fw::AudioBuffer& out, const fw::AudioBuffer& in) {
+	void RetroPlugProcessor::onRenderFull(orb::AudioBuffer& out, const orb::AudioBuffer& in) {
 		AudioSettingsContext& settings = _registry.ctx().at<AudioSettingsContext>();
 		settings.sampleRate = out.getSampleRate();
 		settings.blockSize = out.getSampleCount();
@@ -210,7 +210,7 @@ namespace rp {
 		for (const auto& [e, s] : view.each()) {
 			SameBoyState& state = *s.state;
 			state.io = state.io ? state.io : std::make_shared<SystemIo>();
-			state.io->output.audio = std::make_shared<fw::Float32Buffer>(settings.blockSize * 2);
+			state.io->output.audio = std::make_shared<orb::Float32Buffer>(settings.blockSize * 2);
 			state.io->output.audio->clear();
 
 			comps[i++] = &s;
@@ -245,8 +245,8 @@ namespace rp {
 
 	void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
 		AudioEffectContext& effectCtx = _registry.ctx().emplace<AudioEffectContext>();
-		fw::AudioBuffer outBuffer(2, frameCount, getSampleRate());
-		fw::AudioBuffer inBuffer;
+		orb::AudioBuffer outBuffer(2, frameCount, getSampleRate());
+		orb::AudioBuffer inBuffer;
 
 		outBuffer.clear();
 
@@ -273,7 +273,7 @@ namespace rp {
 		outBuffer.toInterleaved(output, 2, frameCount);
 	}
 
-	void RetroPlugProcessor::onMidi(const fw::MidiMessage& message) {
+	void RetroPlugProcessor::onMidi(const orb::MidiMessage& message) {
 	}
 
 	void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {

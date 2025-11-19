@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	template <typename ParentT>
 	class Overlay : public View {
 		FwRegisterObject();

@@ -3,7 +3,7 @@
 #include <sol/forward.hpp>
 #include <string>
 
-namespace fw::SolUtil {
+namespace orb::SolUtil {
 	void prepareState(sol::state& s);
 
 	void addIncludePath(sol::state& s, std::string_view path);

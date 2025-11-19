@@ -4,7 +4,7 @@
 #include "foundation/MathUtil.h"
 #include "audio/InterleavedAudioBuffer.h"
 
-namespace fw {
+namespace orb {
 	struct Waveform {
 		std::vector<PointF> linePoints;
 
@@ -24,7 +24,7 @@ namespace fw {
 	};
 }
 
-namespace fw::WaveformUtil {
+namespace orb::WaveformUtil {
 	void generate(const Float32Buffer& samples, Waveform& target, size_t targetSize, size_t channel, size_t channelCount);
 	
 	template <const uint32 ChannelCount>

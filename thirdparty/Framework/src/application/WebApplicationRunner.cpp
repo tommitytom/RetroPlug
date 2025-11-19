@@ -11,7 +11,7 @@
 #include "application/GlfwNativeWindow.h"
 #include "foundation/FsUtil.h"
 
-namespace fw::app {
+namespace orb::app {
 	using hrc = std::chrono::high_resolution_clock;
 	using delta_duration = std::chrono::duration<f32>;
 
@@ -22,9 +22,9 @@ namespace fw::app {
 
 	WebApplicationRunner::WebApplicationRunner(std::unique_ptr<Application>&& app) : _app(std::move(app)) {
 		auto resourceManager = std::make_shared<ResourceManager>();
-		auto fontManager = std::make_shared<fw::FontManager>(resourceManager);
-		auto windowManager = std::make_unique<fw::app::GlfwWindowManager>(resourceManager, fontManager);
-		auto renderContext = std::make_unique<fw::GlRenderContext>(false);
+		auto fontManager = std::make_shared<orb::FontManager>(resourceManager);
+		auto windowManager = std::make_unique<orb::app::GlfwWindowManager>(resourceManager, fontManager);
+		auto renderContext = std::make_unique<orb::GlRenderContext>(false);
 		_uiContext = std::make_unique<UiContext>(std::move(renderContext), std::move(windowManager));
 		_lastTime = hrc::now();
 	}

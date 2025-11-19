@@ -2,7 +2,7 @@
 
 #include "ui/TabView.h"
 
-namespace fw {
+namespace orb {
 	class DockTabView : public TabView {
 		FwRegisterObject();
 	public:

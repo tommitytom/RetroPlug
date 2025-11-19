@@ -7,7 +7,7 @@ struct GLFWwindow;
 struct GLFWcursor;
 struct GLFWgamepadstate;
 
-namespace fw::app {
+namespace orb::app {
 	class GlfwNativeWindow : public Window {
 	private:
 		std::string _canvasId;
@@ -41,7 +41,7 @@ namespace fw::app {
 
 		void onUpdate(f32 delta) override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
 		void onCleanup() override;
 

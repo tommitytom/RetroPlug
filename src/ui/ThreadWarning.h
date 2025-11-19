@@ -4,7 +4,7 @@
 #include "ui/PanelView.h"
 
 namespace rp {
-	class ThreadWarning : public fw::PanelView {
+	class ThreadWarning : public orb::PanelView {
 		FwRegisterObject()
 	public:
 		ThreadWarning();

@@ -12,14 +12,14 @@
 
 #include "application/Config.h"
 
-namespace fw::app {
+namespace orb::app {
 	class UiContext {
 	private:
 		std::unique_ptr<WindowManager> _windowManager;
 		std::unique_ptr<RenderContext> _renderContext;
 
-		fw::ResourceManagerPtr _resourceManager;
-		fw::FontManagerPtr _fontManager;
+		orb::ResourceManagerPtr _resourceManager;
+		orb::FontManagerPtr _fontManager;
 
 		FontFaceHandle _defaultFont;
 		TextureHandle _defaultTexture;
@@ -41,7 +41,7 @@ namespace fw::app {
 
 		WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent = nullptr, const std::string& canvasId = "");
 
-		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions);
+		WindowPtr setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, orb::Dimension dimensions);
 
 		WindowManager& getWindowManager() {
 			return *_windowManager;

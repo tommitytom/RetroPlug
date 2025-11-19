@@ -9,7 +9,7 @@
 
 #include "ui/ViewManager.h"
 
-namespace fw::app {
+namespace orb::app {
 	using NativeWindowHandle = void*;
 
 	class Window {
@@ -50,7 +50,7 @@ namespace fw::app {
 			_viewManager->onUpdate(delta);
 		}
 
-		virtual void onRender(fw::Canvas& canvas) {
+		virtual void onRender(orb::Canvas& canvas) {
 			_viewManager->onRender(canvas);
 		}
 

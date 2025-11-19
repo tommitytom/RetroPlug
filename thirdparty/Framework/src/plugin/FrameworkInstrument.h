@@ -13,11 +13,11 @@ using namespace igraphics;
 
 class FrameworkInstrument final : public Plugin {
 private:
-	fw::audio::AudioManagerPtr _audioManager;
-	std::unique_ptr<fw::app::Application> _app;
+	orb::audio::AudioManagerPtr _audioManager;
+	std::unique_ptr<orb::app::Application> _app;
 
-	fw::StereoAudioBuffer _input;
-	fw::StereoAudioBuffer _output;
+	orb::StereoAudioBuffer _input;
+	orb::StereoAudioBuffer _output;
 
 	// This vector contains ascii keys that are currently held.  It is to work around a bug
 	// in Ableton Live, where it doesn't tell is what key is being released during a key up event.

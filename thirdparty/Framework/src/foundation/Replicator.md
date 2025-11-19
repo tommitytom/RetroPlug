@@ -42,14 +42,14 @@ Each registry maintains a `ReplicatorContext` that tracks:
 
 #### `setupOwner`
 ```cpp
-void setupOwner(entt::registry& registry, fw::EventNode& eventNode)
+void setupOwner(entt::registry& registry, orb::EventNode& eventNode)
 ```
 Configures a registry as the authoritative owner. The owner accepts subscriptions and broadcasts changes to all subscribers.
 
 #### `subscribe`
 ```cpp
-bool subscribe(entt::registry& registry, fw::EventNode& eventNode,
-               fw::EventNode::NodeId targetNodeId, bool canMutate)
+bool subscribe(entt::registry& registry, orb::EventNode& eventNode,
+               orb::EventNode::NodeId targetNodeId, bool canMutate)
 ```
 Subscribes a registry to an owner registry.
 - **canMutate**: If true, allows this subscriber to make changes that replicate back to the owner
@@ -57,7 +57,7 @@ Subscribes a registry to an owner registry.
 
 #### `unsubscribe`
 ```cpp
-bool unsubscribe(entt::registry& registry, fw::EventNode::NodeId ownerNodeId)
+bool unsubscribe(entt::registry& registry, orb::EventNode::NodeId ownerNodeId)
 ```
 Disconnects a subscriber from the replication network.
 
@@ -154,8 +154,8 @@ void fullUpdate(entt::registry& registry) {
 
 int main() {
     // Create event nodes for thread communication
-    fw::EventNode masterNode("master");
-    fw::EventNode workerNode = masterNode.spawn("worker");
+    orb::EventNode masterNode("master");
+    orb::EventNode workerNode = masterNode.spawn("worker");
 
     // Create registries
     entt::registry masterRegistry;
@@ -199,8 +199,8 @@ int main() {
 
 ```cpp
 void setupBidirectionalReplication() {
-    fw::EventNode serverNode("server");
-    fw::EventNode clientNode = serverNode.spawn("client");
+    orb::EventNode serverNode("server");
+    orb::EventNode clientNode = serverNode.spawn("client");
 
     entt::registry serverRegistry;
     entt::registry clientRegistry;
@@ -236,10 +236,10 @@ void setupBidirectionalReplication() {
 ```cpp
 void setupMultipleSubscribers() {
     // Create network topology
-    fw::EventNode hostNode("host");
-    fw::EventNode playerNode1 = hostNode.spawn("player1");
-    fw::EventNode playerNode2 = hostNode.spawn("player2");
-    fw::EventNode spectatorNode = hostNode.spawn("spectator");
+    orb::EventNode hostNode("host");
+    orb::EventNode playerNode1 = hostNode.spawn("player1");
+    orb::EventNode playerNode2 = hostNode.spawn("player2");
+    orb::EventNode spectatorNode = hostNode.spawn("spectator");
 
     // Create registries
     entt::registry hostRegistry;

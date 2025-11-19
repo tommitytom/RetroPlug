@@ -17,7 +17,7 @@
 #include <GLFW/glfw3native.h>
 #endif
 
-namespace fw::app {
+namespace orb::app {
 
 MouseButton convertMouseButton(int button);
 VirtualKey convertKey(int key);
@@ -417,7 +417,7 @@ void GlfwNativeWindow::onUpdate(f32 delta) {
 	}
 }
 
-void GlfwNativeWindow::onRender(fw::Canvas& canvas) {
+void GlfwNativeWindow::onRender(orb::Canvas& canvas) {
 	glfwMakeContextCurrent(_window);
 
     // Add error checking

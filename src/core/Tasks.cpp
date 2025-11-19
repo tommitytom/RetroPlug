@@ -51,13 +51,13 @@ namespace rp {
 		for (const auto& [e, system] : targetRegistry.view<SystemComponent>().each()) {
 			eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
 			eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
-			fw::Replicator::destroy(targetRegistry, e);
+			orb::Replicator::destroy(targetRegistry, e);
 		}
 
 		targetRegistry.ctx().at<ProjectPathContext>() = std::move(registry.ctx().at<ProjectPathContext>());
 
 		for (const auto& [taskEntity, c] : this->registry.view<SystemComponent>().each()) {
-			entt::entity targetEntity = fw::Replicator::spawn(targetRegistry);
+			entt::entity targetEntity = orb::Replicator::spawn(targetRegistry);
 			handleRegistryCopy(ctx, this->registry, taskEntity, targetRegistry, targetEntity);
 		}
 

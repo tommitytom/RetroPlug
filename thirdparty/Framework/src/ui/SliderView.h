@@ -6,7 +6,7 @@
 #include "ui/Property.h"
 #include "foundation/Curves.h"
 
-namespace fw {
+namespace orb {
 	struct SliderTheme {
 		uint32 handleWidth = 4;
 	};
@@ -194,7 +194,7 @@ namespace fw {
 			updateHandleArea();
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			DimensionF dim = getDimensionsF();
 			//f32 mid = floor(dim.h * 0.5f);
 			//f32 half = (dim.w - _handleRange) * 0.5f;
@@ -214,7 +214,7 @@ namespace fw {
 			if (_showValueLabel) {
 				f32 value = getValueAt(_lastEditedValue);
 				canvas.setTextAlign(TextAlignFlags::Left | TextAlignFlags::Middle);
-				canvas.text(RectF({ 0, 0 }, dim), std::vformat(_labelFormat, std::make_format_args(value)), fw::Color4F::black);
+				canvas.text(RectF({ 0, 0 }, dim), std::vformat(_labelFormat, std::make_format_args(value)), orb::Color4F::black);
 			}
 		}
 

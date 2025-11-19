@@ -8,7 +8,7 @@
 
 #include "node/NodeGraph.h"
 
-namespace fw {
+namespace orb {
 	class GraphView : public View {
 		FwRegisterObject();
 	private:
@@ -50,7 +50,7 @@ namespace fw {
 			return false;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			if (!_graph) {
 				return;
 			}

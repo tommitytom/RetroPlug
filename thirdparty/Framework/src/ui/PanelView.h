@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class PanelView : public View {
 		FwRegisterObject()
 	private:
@@ -36,7 +36,7 @@ namespace fw {
 			return _color;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			if (_color.a > 0.0f) {
 				canvas.fillRect((Rect)getDimensions(), _color);
 			}

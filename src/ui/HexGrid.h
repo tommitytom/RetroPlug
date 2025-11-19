@@ -9,11 +9,11 @@ namespace rp {
 		f32 position = 0.0f;
 	};
 
-	class HexGrid : public fw::View {
+	class HexGrid : public orb::View {
 		FwRegisterObject()
 	private:
-		fw::Uint8Buffer _data;
-		fw::FontFaceHandle _font;
+		orb::Uint8Buffer _data;
+		orb::FontFaceHandle _font;
 
 		size_t _bytesPerRow = 16;
 		size_t _rowOffset = 0;
@@ -38,13 +38,13 @@ namespace rp {
 			}
 		}
 
-		void setData(fw::Uint8Buffer&& data);
+		void setData(orb::Uint8Buffer&& data);
 
 		void onInitialize() override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
-		bool onMouseScroll(const fw::MouseScrollEvent& ev) override;
+		bool onMouseScroll(const orb::MouseScrollEvent& ev) override;
 	};
 
 	using HexGridPtr = std::shared_ptr<HexGrid>;

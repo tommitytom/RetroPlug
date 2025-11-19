@@ -5,7 +5,7 @@
 
 #include "framework-generated/CompiledScripts.h"
 
-using namespace fw;
+using namespace orb;
 
 void SolUtil::addIncludePath(sol::state& s, std::string_view path) {
 	s["package"]["path"] = std::format("{};{}/?.lua", s["package"]["path"].get<std::string>(), path);

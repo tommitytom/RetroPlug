@@ -3,7 +3,7 @@
 #include <cmath>
 #include "foundation/Types.h"
 
-namespace fw::MathUtil {
+namespace orb::MathUtil {
 	template <typename T>
 	static T clamp(T value, T min, T max) {
 		if (value < min) {

@@ -12,12 +12,12 @@
 #include "ui/PropertyEditorView.h"
 #include "ui/SliderView.h"
 
-namespace fw {
+namespace orb {
 	class ObjectInspectorView : public PropertyEditorView {
 		FwRegisterObject();
 	private:
 		struct FieldWrapper {
-			const fw::Field& field;
+			const orb::Field& field;
 			entt::any value;
 			PropertyEditorBasePtr editor;
 		};
@@ -37,7 +37,7 @@ namespace fw {
 		}
 		
 		template <typename T>
-		std::shared_ptr<T> findEditor(const fw::Field& field) {
+		std::shared_ptr<T> findEditor(const orb::Field& field) {
 			for (const FieldGroup& group : _fieldGroups) {
 				for (const FieldWrapper& wrapper : group.fields) {
 					if (wrapper.field.type == field.type) {
@@ -49,30 +49,30 @@ namespace fw {
 			return nullptr;
 		}
 
-		void addView(const fw::TypeRegistry& reg, ViewPtr view) {
+		void addView(const orb::TypeRegistry& reg, ViewPtr view) {
 			addObject(reg, view->getName() + " Layout", view->getLayout());
 		}
 
-		void addObject(const fw::TypeRegistry& reg, std::string_view name, fw::TypeInstance objInstance) {
+		void addObject(const orb::TypeRegistry& reg, std::string_view name, orb::TypeInstance objInstance) {
 			size_t fieldId = 0;
 			size_t groupId = _fieldGroups.size();
 			
 			entt::any& obj = objInstance.getValue();
 			assert(!obj.owner());
 
-			const fw::TypeInfo* objType = reg.findTypeInfo(obj);
+			const orb::TypeInfo* objType = reg.findTypeInfo(obj);
 			assert(objType);
 
 			//Group& group = pushGroup(name);
 			FieldGroup fieldGroup;
 
-			for (const fw::Field& field : objType->fields) {
+			for (const orb::Field& field : objType->fields) {
 				FieldWrapper fieldWrap = {
 					.field = field,
 					.value = field.get(obj)
 				};
 
-				const fw::TypeInfo& fieldType = reg.getTypeInfo(field.type);
+				const orb::TypeInfo& fieldType = reg.getTypeInfo(field.type);
 				
 				if (fieldType.isEnum()) {
 					fieldWrap.editor = createDropDown(reg, field.name, field, fieldWrap.value, groupId, fieldId);
@@ -105,7 +105,7 @@ namespace fw {
 			_fieldGroups.push_back(std::move(fieldGroup));
 		}
 
-		PropertyEditorBasePtr getPropertyEditor(const fw::Field& field) {
+		PropertyEditorBasePtr getPropertyEditor(const orb::Field& field) {
 			for (const FieldGroup& group : _fieldGroups) {
 				for (const FieldWrapper& wrapper : group.fields) {
 					if (wrapper.field == field) {
@@ -121,29 +121,29 @@ namespace fw {
 		T anyToNumber(entt::any& value) {
 			static_assert(std::is_arithmetic_v<T>);
 
-			fw::TypeId typeId = fw::getTypeId(value);
+			orb::TypeId typeId = orb::getTypeId(value);
 
-			if (typeId == fw::getTypeId<f32>()) {
+			if (typeId == orb::getTypeId<f32>()) {
 				return static_cast<T>(entt::any_cast<f32>(value));
-			} else if (typeId == fw::getTypeId<f64>()) {
+			} else if (typeId == orb::getTypeId<f64>()) {
 				return static_cast<T>(entt::any_cast<f64>(value));
-			} else if (typeId == fw::getTypeId<int8>()) {
+			} else if (typeId == orb::getTypeId<int8>()) {
 				return static_cast<T>(entt::any_cast<int8>(value));
-			} else if (typeId == fw::getTypeId<int16>()) {
+			} else if (typeId == orb::getTypeId<int16>()) {
 				return static_cast<T>(entt::any_cast<int16>(value));
-			} else if (typeId == fw::getTypeId<int32>()) {
+			} else if (typeId == orb::getTypeId<int32>()) {
 				return static_cast<T>(entt::any_cast<int32>(value));
-			} else if (typeId == fw::getTypeId<int64>()) {
+			} else if (typeId == orb::getTypeId<int64>()) {
 				return static_cast<T>(entt::any_cast<int64>(value));
-			} else if (typeId == fw::getTypeId<uint8>()) {
+			} else if (typeId == orb::getTypeId<uint8>()) {
 				return static_cast<T>(entt::any_cast<uint8>(value));
-			} else if (typeId == fw::getTypeId<uint16>()) {
+			} else if (typeId == orb::getTypeId<uint16>()) {
 				return static_cast<T>(entt::any_cast<uint16>(value));
-			} else if (typeId == fw::getTypeId<uint32>()) {
+			} else if (typeId == orb::getTypeId<uint32>()) {
 				return static_cast<T>(entt::any_cast<uint32>(value));
-			} else if (typeId == fw::getTypeId<uint64>()) {
+			} else if (typeId == orb::getTypeId<uint64>()) {
 				return static_cast<T>(entt::any_cast<uint64>(value));
-			} else if (typeId == fw::getTypeId<bool>()) {
+			} else if (typeId == orb::getTypeId<bool>()) {
 				return static_cast<T>(entt::any_cast<bool>(value));
 			}
 			
@@ -156,27 +156,27 @@ namespace fw {
 		entt::any numberToAny(T num, TypeId targetType) {
 			static_assert(std::is_arithmetic_v<T>);
 
-			if (targetType == fw::getTypeId<f32>()) {
+			if (targetType == orb::getTypeId<f32>()) {
 				return entt::any(static_cast<f32>(num));
-			} else if (targetType == fw::getTypeId<f64>()) {
+			} else if (targetType == orb::getTypeId<f64>()) {
 				return entt::any(static_cast<f64>(num));
-			} else if (targetType == fw::getTypeId<int8>()) {
+			} else if (targetType == orb::getTypeId<int8>()) {
 				return entt::any(static_cast<int8>(num));
-			} else if (targetType == fw::getTypeId<int16>()) {
+			} else if (targetType == orb::getTypeId<int16>()) {
 				return entt::any(static_cast<int16>(num));
-			} else if (targetType == fw::getTypeId<int32>()) {
+			} else if (targetType == orb::getTypeId<int32>()) {
 				return entt::any(static_cast<int32>(num));
-			} else if (targetType == fw::getTypeId<int64>()) {
+			} else if (targetType == orb::getTypeId<int64>()) {
 				return entt::any(static_cast<int64>(num));
-			} else if (targetType == fw::getTypeId<uint8>()) {
+			} else if (targetType == orb::getTypeId<uint8>()) {
 				return entt::any(static_cast<uint8>(num));
-			} else if (targetType == fw::getTypeId<uint16>()) {
+			} else if (targetType == orb::getTypeId<uint16>()) {
 				return entt::any(static_cast<uint16>(num));
-			} else if (targetType == fw::getTypeId<uint32>()) {
+			} else if (targetType == orb::getTypeId<uint32>()) {
 				return entt::any(static_cast<uint32>(num));
-			} else if (targetType == fw::getTypeId<uint64>()) {
+			} else if (targetType == orb::getTypeId<uint64>()) {
 				return entt::any(static_cast<uint64>(num));
-			} else if (targetType == fw::getTypeId<bool>()) {
+			} else if (targetType == orb::getTypeId<bool>()) {
 				return entt::any(static_cast<bool>(num));
 			}
 
@@ -185,7 +185,7 @@ namespace fw {
 			return 0;
 		}
 
-		SliderViewPtr createSlider(std::string_view nameView, const fw::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
+		SliderViewPtr createSlider(std::string_view nameView, const orb::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
 			assert(!value.owner());
 
 			std::string name;
@@ -224,14 +224,14 @@ namespace fw {
 			return slider;
 		}
 
-		DropDownMenuViewPtr createDropDown(const TypeRegistry& reg, std::string_view nameView, const fw::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
+		DropDownMenuViewPtr createDropDown(const TypeRegistry& reg, std::string_view nameView, const orb::Field& field, entt::any& value, size_t groupId, size_t fieldId) {
 			assert(reg.getTypeInfo(field.type).isEnum());
 
 			std::vector<std::string> items;
 
-			const fw::TypeInfo& enumType = reg.getTypeInfo(field.type);
+			const orb::TypeInfo& enumType = reg.getTypeInfo(field.type);
 
-			for (const fw::Field& enumField : enumType.fields) {
+			for (const orb::Field& enumField : enumType.fields) {
 				std::string enumFieldName = StringUtil::formatMemberName(enumField.name);
 				items.push_back(enumFieldName);
 			}
@@ -257,7 +257,7 @@ namespace fw {
 				entt::any val = _fieldGroups[groupId].fields[fieldId].value.as_ref();
 				assert(!val.owner());
 
-				bool valid = val.assign(numberToAny(v, fw::getTypeId(val)));
+				bool valid = val.assign(numberToAny(v, orb::getTypeId(val)));
 				assert(valid);
 				assert(!val.owner());
 

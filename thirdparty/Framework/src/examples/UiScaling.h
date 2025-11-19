@@ -42,7 +42,7 @@ namespace fw {
 			_label->setFont("PlatNomor.ttf", 40);
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			canvas.fillRect((Rect)getDimensions(), Color4F(0, 0, 0, 1));
 		}
 	};

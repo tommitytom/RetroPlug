@@ -19,7 +19,7 @@
 #include "foundation/AssociativeContainer.h"
 #include "foundation/SequenceContainer.h"
 
-namespace fw {
+namespace orb {
 	enum class EnTest {
 		One,
 		Two
@@ -213,7 +213,7 @@ namespace fw {
 	template <typename T>
 	struct TypedAttribute : public Attribute {
 		const T& getValue() const {
-			assert(type == fw::getTypeId<T>());
+			assert(type == orb::getTypeId<T>());
 			return entt::any_cast<const T&>(value);
 		}
 	};
@@ -262,7 +262,7 @@ namespace fw {
 
 		template <typename T>
 		const TypedAttribute<T>* findAttribute() const {
-			return static_cast<const TypedAttribute<T>*>(findAttribute(fw::getTypeId<T>()));
+			return static_cast<const TypedAttribute<T>*>(findAttribute(orb::getTypeId<T>()));
 		}
 
 		const Attribute& getAttribute(TypeId typeId) const {
@@ -354,7 +354,7 @@ namespace fw {
 
 		template <typename T>
 		const TypedAttribute<T>* findAttribute() const {
-			return static_cast<const TypedAttribute<T>*>(findAttribute(fw::getTypeId<T>()));
+			return static_cast<const TypedAttribute<T>*>(findAttribute(orb::getTypeId<T>()));
 		}
 
 		const Attribute& getAttribute(TypeId typeId) const {

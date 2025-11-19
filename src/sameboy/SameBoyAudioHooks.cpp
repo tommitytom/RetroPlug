@@ -6,7 +6,7 @@
 namespace rp {
 	SameBoyAudioHooks::SameBoyAudioHooks() : AudioSystemHook(entt::type_id<SameBoyComponent>().index()) {}
 
-	void SameBoyAudioHooks::onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {
+	void SameBoyAudioHooks::onSaveState(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const {
 		SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
 		SameBoyUtil::saveState(*state.state, target);
 	}
@@ -24,7 +24,7 @@ namespace rp {
 			[&](uint8 val) { accessor.set(patch.offset, val); },
 			[&](uint16 val) { accessor.write(patch.offset, val); },
 			[&](uint32 val) { accessor.write(patch.offset, val); },
-			[&](const fw::Uint8Buffer& val) { accessor.write(patch.offset, val); },
+			[&](const orb::Uint8Buffer& val) { accessor.write(patch.offset, val); },
 		}, patch.data);
 	}
 

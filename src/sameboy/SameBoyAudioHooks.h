@@ -8,7 +8,7 @@ namespace rp {
 	public:
 		SameBoyAudioHooks();
 
-		void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const override;
+		void onSaveState(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const override;
 
 		MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const override;
 

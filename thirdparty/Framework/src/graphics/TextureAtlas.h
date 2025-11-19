@@ -5,7 +5,7 @@
 #include "foundation/ResourceProvider.h"
 #include "graphics/Texture.h"
 
-namespace fw {
+namespace orb {
 	struct TextureAtlasDesc {
 		TextureHandle texture;
 		std::vector<std::pair<std::string, Rect>> tiles;

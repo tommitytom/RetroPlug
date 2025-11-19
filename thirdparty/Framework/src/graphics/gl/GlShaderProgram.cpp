@@ -9,7 +9,7 @@
 #include "graphics/gl/GlShader.h"
 #include "graphics/gl/GlUtil.h"
 
-namespace fw {
+namespace orb {
 	GlShaderProgram::~GlShaderProgram() {
 		glDeleteProgram(_handle);
 		_handle = 0;

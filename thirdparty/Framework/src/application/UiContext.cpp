@@ -5,7 +5,7 @@
 #include "graphics/TextureAtlas.h"
 #include "graphics/ftgl/FtglFont.h"
 
-namespace fw::app {
+namespace orb::app {
 	UiContext::UiContext(std::unique_ptr<RenderContext>&& renderContext, std::unique_ptr<WindowManager>&& windowManager) :
 		_resourceManager(windowManager->getResourceManager()),
 		_fontManager(windowManager->getFontManager())
@@ -70,7 +70,7 @@ namespace fw::app {
 		return window;
 	}
 
-	WindowPtr UiContext::setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, fw::Dimension dimensions) {
+	WindowPtr UiContext::setupNativeWindow(ViewPtr view, NativeWindowHandle nativeWindowHandle, orb::Dimension dimensions) {
 		WindowPtr window = std::make_shared<WrappedNativeWindow>(nativeWindowHandle, dimensions, _resourceManager, _fontManager, view, std::numeric_limits<uint32>::max());
 		_windowManager->addWindow(window);
 
@@ -110,7 +110,7 @@ namespace fw::app {
 				if (!w->shouldClose()) {
 					w->makeCurrent();
 
-					fw::ViewManager* vm = w->getViewManager().get();
+					orb::ViewManager* vm = w->getViewManager().get();
 					Canvas& canvas = w->getCanvas();
 					canvas.setDefaults(_defaultTexture, _defaultProgram, _defaultFont);
 					canvas.setDimensions(vm->getDimensions(), 1.0f);
@@ -162,8 +162,8 @@ namespace fw::app {
 
 		auto shaderDescs = _renderContext->getDefaultShaders();
 
-		_resourceManager->create<fw::Shader>("shaders/CanvasVertex", shaderDescs.first);
-		_resourceManager->create<fw::Shader>("shaders/CanvasFragment", shaderDescs.second);
+		_resourceManager->create<orb::Shader>("shaders/CanvasVertex", shaderDescs.first);
+		_resourceManager->create<orb::Shader>("shaders/CanvasFragment", shaderDescs.second);
 
 		_defaultProgram = _resourceManager->create<ShaderProgram>("shaders/CanvasDefault", {
 			"shaders/CanvasVertex",

@@ -13,8 +13,8 @@
 using namespace emscripten;
 using namespace fw;
 
-fw::app::WebApplicationRunner* makeRunner() {
-	return new fw::app::WebApplicationRunner(fw::ApplicationFactory::create());
+orb::app::WebApplicationRunner* makeRunner() {
+	return new orb::app::WebApplicationRunner(orb::ApplicationFactory::create());
 }
 
 val Uint8Buffer_data(Uint8Buffer& buffer) {
@@ -26,31 +26,31 @@ val Float32Buffer_data(Float32Buffer& buffer) {
 }
 
 EMSCRIPTEN_BINDINGS(framework) {
-	class_<fw::View>("View")
-		.smart_ptr<std::shared_ptr<fw::View>>("ViewPtr")
+	class_<orb::View>("View")
+		.smart_ptr<std::shared_ptr<orb::View>>("ViewPtr")
 	;
 
-	class_<fw::app::Window>("Window")
-		.smart_ptr<std::shared_ptr<fw::app::Window>>("WindowPtr")
-		.function("requestClose", &fw::app::Window::requestClose)
+	class_<orb::app::Window>("Window")
+		.smart_ptr<std::shared_ptr<orb::app::Window>>("WindowPtr")
+		.function("requestClose", &orb::app::Window::requestClose)
 	;
 
-	class_<fw::app::Application>("NativeApplication")
+	class_<orb::app::Application>("NativeApplication")
 	;
 
-	class_<fw::app::WebApplicationRunner>("WebApplicationRunner")
+	class_<orb::app::WebApplicationRunner>("WebApplicationRunner")
 		.constructor(&makeRunner, allow_raw_pointers())
-		.function("setupFileSystem", &fw::app::WebApplicationRunner::setupFileSystem)
-		.function("isFileSystemReady", &fw::app::WebApplicationRunner::isFileSystemReady)
-		.function("setupAudio", &fw::app::WebApplicationRunner::setupAudio)
-		.function("setupGraphics", &fw::app::WebApplicationRunner::setupGraphics)
-		.function("destroyGraphics", &fw::app::WebApplicationRunner::destroyGraphics)
-		.function("createNamedView", &fw::app::WebApplicationRunner::createNamedView)
-		.function("start", &fw::app::WebApplicationRunner::start)
-		.function("stop", &fw::app::WebApplicationRunner::stop)
-		.function("getView", &fw::app::WebApplicationRunner::getView)
-		.function("getApplication", &fw::app::WebApplicationRunner::getApplication, return_value_policy::reference())
-		.function("runFrame", &fw::app::WebApplicationRunner::runFrame)
+		.function("setupFileSystem", &orb::app::WebApplicationRunner::setupFileSystem)
+		.function("isFileSystemReady", &orb::app::WebApplicationRunner::isFileSystemReady)
+		.function("setupAudio", &orb::app::WebApplicationRunner::setupAudio)
+		.function("setupGraphics", &orb::app::WebApplicationRunner::setupGraphics)
+		.function("destroyGraphics", &orb::app::WebApplicationRunner::destroyGraphics)
+		.function("createNamedView", &orb::app::WebApplicationRunner::createNamedView)
+		.function("start", &orb::app::WebApplicationRunner::start)
+		.function("stop", &orb::app::WebApplicationRunner::stop)
+		.function("getView", &orb::app::WebApplicationRunner::getView)
+		.function("getApplication", &orb::app::WebApplicationRunner::getApplication, return_value_policy::reference())
+		.function("runFrame", &orb::app::WebApplicationRunner::runFrame)
 	;
 
 	class_<Uint8Buffer>("Uint8Buffer")

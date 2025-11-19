@@ -20,7 +20,7 @@ namespace rp {
 		// Error Diffusion Dithering (Floyd-Steinberg style)
 		// Input: normalized f32 samples [-1, 1]
 		// Output: f32 samples quantized to [0, 2^bitDepth - 1] levels
-		void errorDiffusion(fw::Float32Buffer& buffer, int32 bitDepth = 4) {
+		void errorDiffusion(orb::Float32Buffer& buffer, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;  // 2^bitDepth
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const f32 halfScale = maxValue / 2.0f;
@@ -50,13 +50,13 @@ namespace rp {
 		}
 
 		// Sierra Lite Error Diffusion (lighter weight variant)
-		void sierraLiteErrorDiffusion(fw::Float32Buffer& input, int32 bitDepth = 4) {
+		void sierraLiteErrorDiffusion(orb::Float32Buffer& input, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const f32 halfScale = maxValue / 2.0f;
 			const size_t inputSize = input.size();
 
-			fw::Float32Buffer paddedBuffer(inputSize + 2);
+			orb::Float32Buffer paddedBuffer(inputSize + 2);
 			f32* inputData = input.data();
 			f32* paddedData = paddedBuffer.data();
 
@@ -88,7 +88,7 @@ namespace rp {
 		}
 
 		// High-Pass TPDF (Triangular Probability Density Function) Dithering
-		void highPassTPDF(fw::Float32Buffer& input, int32 bitDepth = 4) {
+		void highPassTPDF(orb::Float32Buffer& input, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const f32 halfScale = maxValue / 2.0f;
@@ -129,7 +129,7 @@ namespace rp {
 		}
 
 		// Shaped TPDF with 2nd order noise shaping
-		void shapedTPDF2ndOrder(fw::Float32Buffer& input, int32 bitDepth = 4) {
+		void shapedTPDF2ndOrder(orb::Float32Buffer& input, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const f32 halfScale = maxValue / 2.0f;
@@ -167,7 +167,7 @@ namespace rp {
 
 		// Alternative: Jarvis-Judice-Ninke error diffusion
 		// Distributes error across more samples for smoother results
-		void jjnErrorDiffusion(fw::Float32Buffer& input, int32 bitDepth = 4) {
+		void jjnErrorDiffusion(orb::Float32Buffer& input, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const f32 halfScale = maxValue / 2.0f;
@@ -175,7 +175,7 @@ namespace rp {
 
 			// Create working buffer with padding
 			const size_t width = input.size();
-			fw::Float32Buffer buffer(width + 4);
+			orb::Float32Buffer buffer(width + 4);
 			f32* bufferData = buffer.data();
 
 			// Convert input to [0, maxValue] range
@@ -211,7 +211,7 @@ namespace rp {
 		}
 
 		// Helper function to convert quantized values back to normalized f32 [-1, 1]
-		void toNormalized(fw::Float32Buffer& buffer, int32 bitDepth = 4) {
+		void toNormalized(orb::Float32Buffer& buffer, int32 bitDepth = 4) {
 			const int32 levels = 1 << bitDepth;
 			const f32 maxValue = static_cast<f32>(levels - 1);
 			const size_t size = buffer.size();

@@ -10,7 +10,7 @@
 
 using namespace entt::literals;
 
-namespace fw::MetaUtil {
+namespace orb::MetaUtil {
 	inline std::string_view getTypeName(entt::id_type typeId) {
 		entt::meta_type type = entt::resolve(typeId);
 
@@ -64,7 +64,7 @@ namespace fw::MetaUtil {
 			std::string name(getName(data));
 
 			if (formatted) {
-				name = fw::StringUtil::formatMemberName(name);
+				name = orb::StringUtil::formatMemberName(name);
 			}
 
 			ret.push_back(std::move(name));

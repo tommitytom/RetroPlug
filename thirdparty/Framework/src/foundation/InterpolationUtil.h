@@ -5,7 +5,7 @@
 #include "foundation/DataBuffer.h"
 #include "foundation/MathUtil.h"
 
-namespace fw::InterpolationUtil {
+namespace orb::InterpolationUtil {
 	static f32 interpolateValue(const f32* values, size_t valueCount, f32 offset, size_t stride = 1) {
 		size_t sampleCount = valueCount * stride;
 

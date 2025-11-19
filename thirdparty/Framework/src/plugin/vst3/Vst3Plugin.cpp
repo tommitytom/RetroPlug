@@ -133,7 +133,7 @@ bool DeinitModule() {
 }
 
 static Steinberg::FUnknown* createInstance(void*) {
-	return (Steinberg::Vst::IAudioProcessor*)new fw::Vst3Plugin(fw::ApplicationFactory::create());
+	return (Steinberg::Vst::IAudioProcessor*)new orb::Vst3Plugin(orb::ApplicationFactory::create());
 }
 
 #define PLUG_MFR "AcmeInc"

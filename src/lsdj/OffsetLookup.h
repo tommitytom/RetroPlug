@@ -14,8 +14,8 @@ namespace rp::lsdj {
 	};
 
 	namespace OffsetLookup {
-		bool findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate = false);
+		bool findOffsets(const orb::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate = false);
 
-		RomInfo getRomInfo(const fw::Uint8Buffer& romData);
+		RomInfo getRomInfo(const orb::Uint8Buffer& romData);
 	}
 }

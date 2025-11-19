@@ -4,7 +4,7 @@
 #include "graphics/Shader.h"
 #include "graphics/Texture.h"
 
-namespace fw {
+namespace orb {
 	class ResourceManager;
 	using ResourceManagerPtr = std::shared_ptr<ResourceManager>;
 	using NativeWindowHandle = void*;
@@ -22,7 +22,7 @@ namespace fw {
 
 		virtual void beginFrame(f32 delta) = 0;
 
-		virtual void renderCanvas(fw::Canvas& canvas, NativeWindowHandle window) = 0;
+		virtual void renderCanvas(orb::Canvas& canvas, NativeWindowHandle window) = 0;
 
 		virtual void endFrame() = 0;
 
@@ -30,7 +30,7 @@ namespace fw {
 
 		virtual void shutdown() = 0;
 
-		virtual std::pair<fw::ShaderDesc, fw::ShaderDesc> getDefaultShaders() = 0;
+		virtual std::pair<orb::ShaderDesc, orb::ShaderDesc> getDefaultShaders() = 0;
 
 		bool requiresFlip() const {
 			return _flip;

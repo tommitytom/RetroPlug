@@ -14,7 +14,7 @@ namespace rp {
 	struct NamedEntry {
 		std::string type;
 		std::filesystem::path path;
-		fw::Uint8Buffer data;
+		orb::Uint8Buffer data;
 	};
 	using NamedEntryVector = std::vector<NamedEntry>;
 
@@ -30,7 +30,7 @@ namespace rp {
 
 	inline void filterEntries(const PathVector& paths, NamedEntryVector& out, const std::string& ext, const std::string& type) {
 		for (const std::filesystem::path& path : paths) {
-			if (fw::StringUtil::toLower(path.extension().string()) == ext) {
+			if (orb::StringUtil::toLower(path.extension().string()) == ext) {
 				out.push_back({ type, path });
 			}
 		}
@@ -65,7 +65,7 @@ namespace rp {
 
 		virtual void onDestroy(entt::registry& registry, entt::entity entity) const {}
 
-		virtual fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const { return nullptr; }
+		virtual orb::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const { return nullptr; }
 
 		virtual void onSerialize(const entt::registry& registry, entt::entity entity, ProjectSerializerContext& ctx) const {}
 
@@ -115,11 +115,11 @@ namespace rp {
 
 		virtual void onDestroy(entt::registry& registry, entt::entity entity, SystemComponent& component) const {}
 
-		fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const override {
+		orb::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity) const override {
 			return onCreateOverlay(registry, entity, registry.get<SystemComponent>(entity));
 		}
 
-		virtual fw::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity, SystemComponent& system) const { return nullptr; }
+		virtual orb::ViewPtr onCreateOverlay(entt::registry& registry, entt::entity entity, SystemComponent& system) const { return nullptr; }
 	};
 
 	class AudioSystemHook : public HookBase {
@@ -127,14 +127,14 @@ namespace rp {
 		AudioSystemHook(entt::id_type systemType): HookBase(systemType) {}
 		virtual ~AudioSystemHook() {}
 
-		virtual void onSaveSram(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
-		virtual void onSaveState(entt::registry& registry, entt::entity entity, fw::Uint8Buffer& target) const {}
+		virtual void onSaveSram(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const {}
+		virtual void onSaveState(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const {}
 		virtual MemoryAccessor onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const { return MemoryAccessor(); }
 		virtual void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {}
 		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
 		virtual void onTransportChange(entt::registry& registry, entt::entity entity, bool running) const {}
-		virtual void onTransportUpdate(entt::registry& registry, entt::entity entity, const fw::TimeInfo& timeInfo) const {}
-		virtual void onMidi(entt::registry& registry, entt::entity entity, const fw::MidiMessage& message) const {}
+		virtual void onTransportUpdate(entt::registry& registry, entt::entity entity, const orb::TimeInfo& timeInfo) const {}
+		virtual void onMidi(entt::registry& registry, entt::entity entity, const orb::MidiMessage& message) const {}
 		virtual void onMidiClock(entt::registry& registry, entt::entity entity) const {}
 	};
 

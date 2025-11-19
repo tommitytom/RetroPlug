@@ -4,20 +4,20 @@
 #include "core/RetroPlugProject.h"
 
 namespace rp {
-	class RetroPlugApplication : public fw::app::Application {
+	class RetroPlugApplication : public orb::app::Application {
 	private:
-		std::optional<fw::EventNode> _audioEventNode = std::nullopt;
+		std::optional<orb::EventNode> _audioEventNode = std::nullopt;
 		RetroPlugProject _project;
 
 	public:
 		RetroPlugApplication();
 		~RetroPlugApplication() = default;
 
-		fw::ViewPtr onCreateUi() override;
+		orb::ViewPtr onCreateUi() override;
 
-		fw::AudioProcessorPtr onCreateAudio() override;
+		orb::AudioProcessorPtr onCreateAudio() override;
 
-		fw::ViewPtr onCreateNamedView(const std::string& name) override;
+		orb::ViewPtr onCreateNamedView(const std::string& name) override;
 
 		void onUpdate(f32 deltaTime) override;
 

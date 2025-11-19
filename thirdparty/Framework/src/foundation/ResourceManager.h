@@ -9,7 +9,7 @@
 #include "ResourceHandle.h"
 #include "ResourceProvider.h"
 
-namespace fw {
+namespace orb {
 	class ResourceManager {
 	private:
 		std::unordered_map<entt::id_type, std::shared_ptr<ResourceProvider>> _providers;

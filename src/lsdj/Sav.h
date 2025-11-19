@@ -126,7 +126,7 @@ namespace rp::lsdj {
 		Song() {}
 		Song(lsdj_song_t* song): _song(song) {}
 		Song(uint8* data): _song((lsdj_song_t*)data) {}
-		Song(fw::Uint8Buffer& data) : _song((lsdj_song_t*)data.data()) {}
+		Song(orb::Uint8Buffer& data) : _song((lsdj_song_t*)data.data()) {}
 
 		bool isValid() const {
 			return _song != nullptr;
@@ -140,15 +140,15 @@ namespace rp::lsdj {
 			return _song;
 		}
 
-		fw::Uint8Buffer getBuffer() {
-			return fw::Uint8Buffer((uint8*)_song, LSDJ_SONG_BYTE_COUNT);
+		orb::Uint8Buffer getBuffer() {
+			return orb::Uint8Buffer((uint8*)_song, LSDJ_SONG_BYTE_COUNT);
 		}
 
-		fw::Uint8Buffer getSynthData(uint8 synth) const {
-			return fw::Uint8Buffer(lsdj_wave_get_bytes(_song, synth * (LSDJ_WAVE_PER_SYNTH_COUNT + 1)), (LSDJ_WAVE_PER_SYNTH_COUNT + 1) * LSDJ_WAVE_BYTE_COUNT);
+		orb::Uint8Buffer getSynthData(uint8 synth) const {
+			return orb::Uint8Buffer(lsdj_wave_get_bytes(_song, synth * (LSDJ_WAVE_PER_SYNTH_COUNT + 1)), (LSDJ_WAVE_PER_SYNTH_COUNT + 1) * LSDJ_WAVE_BYTE_COUNT);
 		}
 
-		void setSynthData(uint8 synth, const fw::Uint8Buffer& buffer) {
+		void setSynthData(uint8 synth, const orb::Uint8Buffer& buffer) {
 			assert(buffer.size() == 256);
 			lsdj_wave_set_bytes(_song, synth * (LSDJ_WAVE_PER_SYNTH_COUNT + 1), buffer.data());
 		}
@@ -205,7 +205,7 @@ namespace rp::lsdj {
 		bool _ownsData = false;
 
 	public:
-		static Project fromLsdsng(const fw::Uint8Buffer& buffer) {
+		static Project fromLsdsng(const orb::Uint8Buffer& buffer) {
 			lsdj_project_t* project = nullptr;
 			lsdj_error_t err = lsdj_project_read_lsdsng_from_memory(buffer.data(), buffer.size(), &project, nullptr);
 			if (err != LSDJ_SUCCESS) {
@@ -218,7 +218,7 @@ namespace rp::lsdj {
 
 		Project() {}
 		Project(lsdj_project_t* project, bool ownsData, uint8 projectIndex) : _project(project), _projectIndex(projectIndex), _ownsData(ownsData) {}
-		Project(fw::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()), _ownsData(false) {}
+		Project(orb::Uint8Buffer& buffer) : _project((lsdj_project_t*)buffer.data()), _ownsData(false) {}
 		~Project() {
 			if (_ownsData && _project) {
 				lsdj_project_free(_project);
@@ -294,7 +294,7 @@ namespace rp::lsdj {
 			return _project;
 		}
 
-		bool toLsdsng(fw::Uint8Buffer& target) const {
+		bool toLsdsng(orb::Uint8Buffer& target) const {
 			target.resize(LSDSNG_MAX_SIZE);
 			size_t writeCount = 0;
 			lsdj_error_t err = lsdj_project_write_lsdsng_to_memory(_project, target.data(), &writeCount);
@@ -316,7 +316,7 @@ namespace rp::lsdj {
 			lsdj_sav_new(&_sav, nullptr);
 		}
 
-		Sav(const fw::Uint8Buffer& data) {
+		Sav(const orb::Uint8Buffer& data) {
 			load(data);
 		}
 
@@ -383,11 +383,11 @@ namespace rp::lsdj {
 			return lsdj_sav_read_from_memory(data, size, &_sav, nullptr);
 		}
 
-		lsdj_error_t load(const fw::Uint8Buffer& data) {
+		lsdj_error_t load(const orb::Uint8Buffer& data) {
 			return load(data.data(), data.size());
 		}
 
-		bool save(fw::Uint8Buffer& target) {
+		bool save(orb::Uint8Buffer& target) {
 			target.resize(LSDJ_SAV_SIZE);
 			size_t writeCount;
 			lsdj_error_t err = lsdj_sav_write_to_memory(_sav, target.data(), target.size(), &writeCount);
@@ -400,8 +400,8 @@ namespace rp::lsdj {
 			 return true;
 		}
 
-		fw::Uint8Buffer save() {
-			fw::Uint8Buffer data;
+		orb::Uint8Buffer save() {
+			orb::Uint8Buffer data;
 			save(data);
 			return data;
 		}

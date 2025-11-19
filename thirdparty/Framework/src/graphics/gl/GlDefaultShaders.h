@@ -4,6 +4,6 @@
 
 #include "graphics/Shader.h"
 
-namespace fw {
+namespace orb {
 	std::pair<ShaderDesc, ShaderDesc> getDefaultGlShaders();
 }

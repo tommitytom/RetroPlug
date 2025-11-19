@@ -3,7 +3,7 @@
 #include "foundation/Types.h"
 #include "foundation/DataBuffer.h"
 
-namespace fw {
+namespace orb {
 	class Image {
 	private:
 		Color4Buffer _buffer;

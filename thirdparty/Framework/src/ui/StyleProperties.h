@@ -28,7 +28,7 @@ enum class CssKeyword : uint8 {
 	};\
 	inline const propType propType::Initial = propType();
 
-namespace fw {
+namespace orb {
 	struct AnimatableTag {};
 	struct InheritedTag {};
 	struct LayoutDirtyTag {};
@@ -126,8 +126,8 @@ namespace fw {
 	};
 }
 
-namespace fw::styles {
-	DefineStyleProperty("cursor", Cursor, fw::CursorType, InheritedTag);
+namespace orb::styles {
+	DefineStyleProperty("cursor", Cursor, orb::CursorType, InheritedTag);
 	DefineStyleProperty("color", Color, Color4F, AnimatableTag, InheritedTag);
 	DefineStyleProperty("background-color", BackgroundColor, Color4F, AnimatableTag);
 	
@@ -155,23 +155,23 @@ namespace fw::styles {
 	DefineStyleProperty("border-right-style", BorderRightStyle, BorderStyleType);
 
 	// flex-flow
-	DefineStyleProperty("flex-direction", FlexDirection, fw::FlexDirection);
-	DefineStyleProperty("flex-wrap", FlexWrap, fw::FlexWrap);
+	DefineStyleProperty("flex-direction", FlexDirection, orb::FlexDirection);
+	DefineStyleProperty("flex-wrap", FlexWrap, orb::FlexWrap);
 	
 	DefineStyleProperty("flex-basis", FlexBasis, FlexValue);
 	DefineStyleProperty("flex-grow", FlexGrow, f32);
 	DefineStyleProperty("flex-shrink", FlexShrink, f32);
-	DefineStyleProperty("align-items", AlignItems, fw::FlexAlign);
-	DefineStyleProperty("align-content", AlignContent, fw::FlexAlign);
-	DefineStyleProperty("align-self", AlignSelf, fw::FlexAlign);
-	DefineStyleProperty("justify-content", JustifyContent, fw::FlexJustify);
-	DefineStyleProperty("overflow", Overflow, fw::FlexOverflow);
+	DefineStyleProperty("align-items", AlignItems, orb::FlexAlign);
+	DefineStyleProperty("align-content", AlignContent, orb::FlexAlign);
+	DefineStyleProperty("align-self", AlignSelf, orb::FlexAlign);
+	DefineStyleProperty("justify-content", JustifyContent, orb::FlexJustify);
+	DefineStyleProperty("overflow", Overflow, orb::FlexOverflow);
 
-	DefineStyleProperty("position", Position, fw::FlexPositionType);
-	DefineStyleProperty("top", Top, fw::FlexValue, AnimatableTag);
-	DefineStyleProperty("left", Left, fw::FlexValue, AnimatableTag);
-	DefineStyleProperty("bottom", Bottom, fw::FlexValue, AnimatableTag);
-	DefineStyleProperty("right", Right, fw::FlexValue, AnimatableTag);
+	DefineStyleProperty("position", Position, orb::FlexPositionType);
+	DefineStyleProperty("top", Top, orb::FlexValue, AnimatableTag);
+	DefineStyleProperty("left", Left, orb::FlexValue, AnimatableTag);
+	DefineStyleProperty("bottom", Bottom, orb::FlexValue, AnimatableTag);
+	DefineStyleProperty("right", Right, orb::FlexValue, AnimatableTag);
 
 	DefineStyleProperty("width", Width, FlexValue, AnimatableTag);
 	DefineStyleProperty("height", Height, FlexValue, AnimatableTag);

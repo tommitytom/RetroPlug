@@ -5,7 +5,7 @@
 
 #include "Window.h"
 
-namespace fw::app {
+namespace orb::app {
 	class WindowManager {
 	private:
 		std::vector<WindowPtr> _windows;
@@ -14,15 +14,15 @@ namespace fw::app {
 		std::stack<uint32> _availableIds;
 
 	protected:
-		fw::ResourceManagerPtr _resourceManager;
-		fw::FontManagerPtr _fontManager;
+		orb::ResourceManagerPtr _resourceManager;
+		orb::FontManagerPtr _fontManager;
 
 	public:
-		WindowManager(fw::ResourceManagerPtr resourceManager, fw::FontManagerPtr fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
+		WindowManager(orb::ResourceManagerPtr resourceManager, orb::FontManagerPtr fontManager): _resourceManager(resourceManager), _fontManager(fontManager) {}
 		virtual ~WindowManager() {}
 
-		const fw::ResourceManagerPtr& getResourceManager() { return _resourceManager; }
-		const fw::FontManagerPtr& getFontManager() { return _fontManager; }
+		const orb::ResourceManagerPtr& getResourceManager() { return _resourceManager; }
+		const orb::FontManagerPtr& getFontManager() { return _fontManager; }
 
 		virtual WindowPtr createWindow(ViewPtr view, NativeWindowHandle parent, const std::string& canvasId) = 0;
 

@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <entt/core/any.hpp>
 
-namespace fw {
+namespace orb {
 	// Maps a type to a piece of data of that type
 	class TypeDataLookup {
 	private:

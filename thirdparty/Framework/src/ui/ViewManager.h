@@ -7,7 +7,7 @@
 #include "graphics/Canvas.h"
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class ViewManager final : public View {
 		FwRegisterObject();
 	private:
@@ -88,7 +88,7 @@ namespace fw {
 		}
 
 		bool onKey(const KeyEvent& ev) override {
-			if (ev.key == fw::VirtualKey::T) {
+			if (ev.key == orb::VirtualKey::T) {
 				printHierarchy();
 			}
 
@@ -243,11 +243,11 @@ namespace fw {
 
 		void onResize(const ResizeEvent& ev) override {
 			/*switch (getSizingPolicy()) {
-			case fw::SizingPolicy::None:
+			case orb::SizingPolicy::None:
 				break;
-			case fw::SizingPolicy::FitToContent:
+			case orb::SizingPolicy::FitToContent:
 				break;
-			case fw::SizingPolicy::FitToParent:
+			case orb::SizingPolicy::FitToParent:
 				_area.dimensions = ev.size;
 				setLayoutDirty();
 				calculateLayout();
@@ -271,7 +271,7 @@ namespace fw {
 			this->setArea(getChild(0)->getArea());
 		}
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			propagateRender(canvas, getChildren());
 		}
 
@@ -291,7 +291,7 @@ namespace fw {
 	private:
 		void propagatePrint(std::vector<ViewPtr>& views, std::string indent) {
 			for (ViewPtr view : views) {
-				fw::Rect worldArea = view->getWorldArea();
+				orb::Rect worldArea = view->getWorldArea();
 				spdlog::debug("{}- {} [{}, {}, {}, {}]", indent, view->getName(), worldArea.x, worldArea.y, worldArea.w, worldArea.h);
 				propagatePrint(view->getChildren(), indent + '\t');
 			}
@@ -576,7 +576,7 @@ namespace fw {
 			}
 		}
 
-		void propagateRender(fw::Canvas& canvas, std::vector<ViewPtr>& views) {
+		void propagateRender(orb::Canvas& canvas, std::vector<ViewPtr>& views) {
 			for (ViewPtr& view : views) {
 				if (view->isVisible()) {
 					FlexOverflow overflow = view->getLayout().getOverflow();

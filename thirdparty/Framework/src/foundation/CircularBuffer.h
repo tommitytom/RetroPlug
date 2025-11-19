@@ -2,7 +2,7 @@
 
 #include "foundation/DataBuffer.h"
 
-namespace fw {
+namespace orb {
 	template <typename T>
 	class CircularBuffer {
 	private:

@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class PlotView final : public View {
 		FwRegisterObject();
 	public:
@@ -30,7 +30,7 @@ namespace fw {
 		void onInitialize() override { updatePoints(getDimensions()); }
 		void onResize(const ResizeEvent& ev) override { updatePoints(ev.size); }
 
-		void onRender(fw::Canvas& canvas) override {
+		void onRender(orb::Canvas& canvas) override {
 			canvas.fillRect(getDimensionsF(), _theme.background);
 
 			if (_points.size() > 2) {

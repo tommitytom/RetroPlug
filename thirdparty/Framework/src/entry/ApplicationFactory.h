@@ -2,6 +2,6 @@
 
 #include "application/Application.h"
 
-namespace fw::ApplicationFactory {
-	std::unique_ptr<fw::app::Application> create();
+namespace orb::ApplicationFactory {
+	std::unique_ptr<orb::app::Application> create();
 }

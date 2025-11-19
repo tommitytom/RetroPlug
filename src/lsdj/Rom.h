@@ -30,17 +30,17 @@ namespace rp::lsdj {
 		static const size_t SIZE = COLOR_SET_COUNT * COLOR_SET_SIZE;
 
 		struct ColorSet {
-			fw::Color3 first;
-			fw::Color3 second;
+			orb::Color3 first;
+			orb::Color3 second;
 		};
 
 		char name[NAME_SIZE] = { '\n' };
 		ColorSet sets[COLOR_SET_COUNT];
 
-		fw::Color3 getColor(ColorSets colorSet, uint32 pixel) const {
+		orb::Color3 getColor(ColorSets colorSet, uint32 pixel) const {
 			ColorSet set = sets[(int)colorSet];
 
-			fw::Color3 val;
+			orb::Color3 val;
 			switch (pixel) {
 			case 0:
 				val = set.first;
@@ -60,8 +60,8 @@ namespace rp::lsdj {
 		}
 
 	private:
-		fw::Color3 blendColors(fw::Color3 color1, fw::Color3 color2) const {
-			return fw::Color3{
+		orb::Color3 blendColors(orb::Color3 color1, orb::Color3 color2) const {
+			return orb::Color3{
 				.r = (uint8)((color1.r + color2.r) / 2),
 				.g = (uint8)((color1.g + color2.g) / 2),
 				.b = (uint8)((color1.b + color2.b) / 2)
@@ -106,7 +106,7 @@ namespace rp::lsdj {
 
 		Kit() {}
 		Kit(MemoryAccessor _kitData, int32 idx): kitData(_kitData), _idx(idx) {}
-		Kit(const fw::Uint8Buffer& buffer, int32 idx): Kit(MemoryAccessor(MemoryType::Rom, buffer, 0), idx) {}
+		Kit(const orb::Uint8Buffer& buffer, int32 idx): Kit(MemoryAccessor(MemoryType::Rom, buffer, 0), idx) {}
 
 		int32 getIndex() const {
 			return _idx;
@@ -120,7 +120,7 @@ namespace rp::lsdj {
 			return Kit::MAX_SAMPLES;
 		}
 
-		const fw::Uint8Buffer& getBuffer() const {
+		const orb::Uint8Buffer& getBuffer() const {
 			return kitData.getBuffer();
 		}
 
@@ -135,7 +135,7 @@ namespace rp::lsdj {
 			return name.substr(0, spaceOff);
 		}
 
-		void setKitData(const fw::Uint8Buffer& buffer) {
+		void setKitData(const orb::Uint8Buffer& buffer) {
 			kitData.write(0, buffer);
 		}
 
@@ -149,7 +149,7 @@ namespace rp::lsdj {
 			return std::string_view("N/A");
 		}
 
-		const fw::Uint8Buffer getSampleData(size_t sampleIdx) const {
+		const orb::Uint8Buffer getSampleData(size_t sampleIdx) const {
 			size_t nameOffset = getSampleNameOffset(sampleIdx);
 
 			if (kitData[nameOffset] != 0) {
@@ -164,7 +164,7 @@ namespace rp::lsdj {
 				}
 			}
 
-			return fw::Uint8Buffer();
+			return orb::Uint8Buffer();
 		}
 
 		bool hasSample(size_t idx) const {
@@ -172,7 +172,7 @@ namespace rp::lsdj {
 			return kitData[nameOffset] != 0;
 		}
 
-		const fw::Uint8Buffer getSampleData() const {
+		const orb::Uint8Buffer getSampleData() const {
 			uint16 lastOffset = 0;
 
 			for (size_t i = 0; i < MAX_SAMPLES; ++i) {
@@ -187,7 +187,7 @@ namespace rp::lsdj {
 			return kitData.getBuffer().slice(lsdj::Kit::SAMPLE_DATA_OFFSET, lastOffset);
 		}
 
-		int32 addSample(std::string_view name, const fw::Uint8Buffer& data) {
+		int32 addSample(std::string_view name, const orb::Uint8Buffer& data) {
 			size_t sampleIdx;
 			uint16 offset;
 
@@ -241,7 +241,7 @@ namespace rp::lsdj {
 			return false;
 		}
 
-		bool setSampleData(size_t sampleIdx, const fw::Uint8Buffer& data) {
+		bool setSampleData(size_t sampleIdx, const orb::Uint8Buffer& data) {
 			if (data.size() == getSampleDataLength(sampleIdx)) {
 				// No need to rebuild offset table
 				size_t offset = getSampleOffset(sampleIdx);
@@ -286,8 +286,8 @@ namespace rp::lsdj {
 			writeString((uint8*)kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE, name, ' ');
 		}
 
-		size_t writeSamples(const std::vector<std::pair<std::string, fw::Uint8Buffer>>& samples) {
-			fw::Uint8Buffer kitBuffer(kitData.getSize());
+		size_t writeSamples(const std::vector<std::pair<std::string, orb::Uint8Buffer>>& samples) {
+			orb::Uint8Buffer kitBuffer(kitData.getSize());
 			kitBuffer.slice(Kit::NAME_OFFSET, Kit::NAME_SIZE).write(kitData.getData() + Kit::NAME_OFFSET, Kit::NAME_SIZE);
 
 			uint16* offsets = (uint16*)kitBuffer.data();
@@ -367,7 +367,7 @@ namespace rp::lsdj {
 
 		Rom() {}
 		Rom(MemoryAccessor romData) : _romData(romData) { updateOffsets(); }
-		Rom(const fw::Uint8Buffer& buffer) : Rom(MemoryAccessor(MemoryType::Rom, buffer, 0)) {}
+		Rom(const orb::Uint8Buffer& buffer) : Rom(MemoryAccessor(MemoryType::Rom, buffer, 0)) {}
 
 		static size_t getKitBankOffset(size_t kitIdx) {
 			assert(kitIdx < KIT_COUNT);
@@ -469,7 +469,7 @@ namespace rp::lsdj {
 			}
 		}
 
-		void setKit(size_t idx, const fw::Uint8Buffer& data) {
+		void setKit(size_t idx, const orb::Uint8Buffer& data) {
 			getKit(idx).setKitData(data);
 		}
 
@@ -535,7 +535,7 @@ namespace rp::lsdj {
 			return kitData[nameOffset] != 0;
 		}
 
-		fw::Uint8Buffer getKitSampleData(size_t kitIdx, size_t sampleIdx) const {
+		orb::Uint8Buffer getKitSampleData(size_t kitIdx, size_t sampleIdx) const {
 			size_t bankIdx = KIT_LOOKUP[kitIdx];
 			const uint8* kitData = getBankData(bankIdx);
 			size_t nameOffset = Kit::SAMPLE_NAME_OFFSET + sampleIdx * 3;
@@ -546,11 +546,11 @@ namespace rp::lsdj {
 				size_t stop = (0xFF & kitData[offset + 2]) | ((0xFF & kitData[offset + 3]) << 8);
 
 				if (stop > start) {
-					return fw::Uint8Buffer((uint8*)kitData + (start - BANK_SIZE), stop - start, false);
+					return orb::Uint8Buffer((uint8*)kitData + (start - BANK_SIZE), stop - start, false);
 				}
 			}
 
-			return fw::Uint8Buffer();
+			return orb::Uint8Buffer();
 		}
 
 		std::string_view getFontName(size_t idx) const {
@@ -623,11 +623,11 @@ namespace rp::lsdj {
 		}
 
 	private:
-		bool bankIsKit(const fw::Uint8Buffer& bankData) const {
+		bool bankIsKit(const orb::Uint8Buffer& bankData) const {
 			return bankData[0] == 0x60 && bankData[1] == 0x40;
 		}
 
-		bool bankIsEmptyKit(const fw::Uint8Buffer& bankData) const {
+		bool bankIsEmptyKit(const orb::Uint8Buffer& bankData) const {
 			return bankData[0] == 0xFF && bankData[1] == 0xFF;
 		}
 
@@ -641,14 +641,14 @@ namespace rp::lsdj {
 			return bankData[BANK_VERSION_OFFSET];
 		}
 
-		fw::Color3 unpackColor(const uint8* data) const {
-			fw::Color3 col = {
+		orb::Color3 unpackColor(const uint8* data) const {
+			orb::Color3 col = {
 				.r = (uint8)(data[0] & 0x1F),
 				.g = (uint8)(((data[1] & 3) << 3) | ((data[0] & 0xE0) >> 5)),
 				.b = (uint8)(data[1] >> 2)
 			};
 
-			return fw::Color3 {
+			return orb::Color3 {
 				.r = (uint8)(((col.r << 3) * 255) / 0xF8),
 				.g = (uint8)(((col.g << 3) * 255) / 0xF8),
 				.b = (uint8)(((col.b << 3) * 255) / 0xF8),

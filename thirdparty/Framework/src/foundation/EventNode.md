@@ -33,10 +33,10 @@ The EventNode system is a thread-safe, lock-free message passing library for C++
 
 ```cpp
 // Create a root node
-fw::EventNode audioNode("audio");
+orb::EventNode audioNode("audio");
 
 // Spawn a child node (shares topology)
-fw::EventNode uiNode = audioNode.spawn("ui");
+orb::EventNode uiNode = audioNode.spawn("ui");
 
 // Nodes are automatically cleaned up on destruction
 ```
@@ -137,13 +137,13 @@ struct Result {
 };
 
 // Producer thread
-fw::EventNode producer("producer");
+orb::EventNode producer("producer");
 producer.subscribe<Result>([](const Result& r) {
     std::cout << "Task " << r.taskId << " completed: " << r.success << std::endl;
 });
 
 // Consumer thread
-fw::EventNode consumer = producer.spawn("consumer");
+orb::EventNode consumer = producer.spawn("consumer");
 consumer.subscribe<Task>([&consumer](Task&& task) {
     // Process task
     bool success = processTask(task);
@@ -166,10 +166,10 @@ while (running) {
 
 ```cpp
 // Audio system with multiple components
-fw::EventNode masterNode("master");
-fw::EventNode synthNode = masterNode.spawn("synth");
-fw::EventNode effectsNode = masterNode.spawn("effects");
-fw::EventNode outputNode = masterNode.spawn("output");
+orb::EventNode masterNode("master");
+orb::EventNode synthNode = masterNode.spawn("synth");
+orb::EventNode effectsNode = masterNode.spawn("effects");
+orb::EventNode outputNode = masterNode.spawn("output");
 
 // All audio processors subscribe to timing events
 struct ClockTick { uint64_t sample; };
@@ -218,7 +218,7 @@ enum class ProcessorMode { Effects, Analysis, Bypass };
 
 struct ModeChange { ProcessorMode newMode; };
 
-fw::EventNode processor("processor");
+orb::EventNode processor("processor");
 
 void configureMode(ProcessorMode mode) {
     // Clear all existing subscriptions

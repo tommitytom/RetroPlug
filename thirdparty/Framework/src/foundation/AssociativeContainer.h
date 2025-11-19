@@ -8,7 +8,7 @@
 
 #include "foundation/MetaTypes.h"
 
-namespace fw {
+namespace orb {
 	/*! @brief Proxy object for associative containers. */
 	class AssociativeContainer {
 	private:
@@ -155,7 +155,7 @@ namespace fw {
 
 	template<typename Type>
 	struct BasicAssociativeContainerTraits {
-		using iterator = fw::AssociativeContainer::iterator;
+		using iterator = orb::AssociativeContainer::iterator;
 		using size_type = std::size_t;
 
 		static constexpr auto key_only = is_key_only_meta_associative_container<Type>::value;
@@ -210,9 +210,9 @@ namespace fw {
 namespace entt {
 	template<typename Key, typename Value, typename... Args>
 	struct meta_associative_container_traits<std::unordered_map<Key, Value, Args...>>
-		: fw::BasicAssociativeContainerTraits<std::unordered_map<Key, Value, Args...>> {};
+		: orb::BasicAssociativeContainerTraits<std::unordered_map<Key, Value, Args...>> {};
 
 	template<typename Key, typename Value, typename... Args>
 	struct meta_associative_container_traits<std::map<Key, Value, Args...>>
-		: fw::BasicAssociativeContainerTraits<std::map<Key, Value, Args...>> {};
+		: orb::BasicAssociativeContainerTraits<std::map<Key, Value, Args...>> {};
 }

@@ -5,7 +5,7 @@
 
 #include "graphics/ftgl/FtglFont.h"
 
-namespace fw {
+namespace orb {
 	DimensionF FontUtil::measureText(std::string_view text, FontFaceHandle handle) {
 		FtglFontFace& font = handle.getResourceAs<FtglFontFace>();
 		ftgl::texture_font_t* textureFont = font.getTextureFont();

@@ -12,11 +12,11 @@
 namespace fw {
 	class Vst3Plugin : public Steinberg::Vst::SingleComponentEffect, public Steinberg::Vst::IMidiMapping, public Steinberg::Vst::ChannelContext::IInfoListener {
 	private:
-		std::unique_ptr<fw::app::Application> _app;
-		fw::AudioProcessorPtr _processor;
+		std::unique_ptr<orb::app::Application> _app;
+		orb::AudioProcessorPtr _processor;
 
 	public:
-		Vst3Plugin(std::unique_ptr<fw::app::Application> app) : _app(std::move(app)) {}
+		Vst3Plugin(std::unique_ptr<orb::app::Application> app) : _app(std::move(app)) {}
 		~Vst3Plugin() = default;
 
 		// AudioEffect
@@ -81,7 +81,7 @@ namespace fw {
 			return bus;
 		}
 
-		// Interface    
+		// Interface
 		OBJ_METHODS(Vst3Plugin, SingleComponentEffect)
 			DEFINE_INTERFACES
 			DEF_INTERFACE(IMidiMapping)

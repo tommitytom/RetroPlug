@@ -1,7 +1,7 @@
 #include "WrappedNativeWindow.h"
 
-using namespace fw;
-using namespace fw::app;
+using namespace orb;
+using namespace orb::app;
 
 void WrappedNativeWindow::onCreate() {
 

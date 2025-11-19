@@ -3,7 +3,7 @@
 #include "foundation/Image.h"
 #include "foundation/ResourceManager.h"
 
-using namespace fw;
+using namespace orb;
 
 void TextureView::loadImage(const std::filesystem::path& path) {
 	
@@ -45,7 +45,7 @@ void TextureView::onInitialize() {
 	}
 }
 
-void TextureView::onRender(fw::Canvas& canvas) {
+void TextureView::onRender(orb::Canvas& canvas) {
 	if (_texture.isValid()) {
 		canvas.texture(_texture, getDimensionsF(), Color4F(1, 1, 1, getAlpha()));
 	} else {

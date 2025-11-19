@@ -6,7 +6,7 @@
 
 using namespace std::placeholders; // for _1, _2 etc.
 
-namespace fw {
+namespace orb {
 	class ResourceReloader {
 	private:
 		using ResourceReloadCallback = std::function<void(ResourceHandle)>;

@@ -3,7 +3,7 @@
 #include <glad/gl.h>
 #include <spdlog/spdlog.h>
 
-namespace fw {
+namespace orb {
 	std::string getShaderInfoLog(uint32 shader) {
 		GLint maxLength = 0;
 		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);

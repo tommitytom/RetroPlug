@@ -2,7 +2,7 @@
 
 #include "ui/View.h"
 
-namespace fw {
+namespace orb {
 	class SplitterView : public View {
 		FwRegisterObject()
 	private:

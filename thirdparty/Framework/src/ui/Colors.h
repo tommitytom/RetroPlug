@@ -2,7 +2,7 @@
 
 #include "foundation/Math.h"
 
-namespace fw {
+namespace orb {
 	const Color4F RP_COLOR_WHITE = Color4(255, 255, 255, 255);
 	const Color4F RP_COLOR_BLACK = Color4(0, 0, 0, 255);
 	const Color4F RP_COLOR_BACKGROUND = Color4(37, 37, 38, 255);

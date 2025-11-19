@@ -6,7 +6,7 @@
 #include "fonts/Karla-Regular.h"
 #include "fonts/Monaco.h"
 
-namespace fw {
+namespace orb {
 	FontProvider::FontProvider() {
 		std::vector<std::byte> data;
 		//data.resize(Karla_Regular_len);
@@ -20,7 +20,7 @@ namespace fw {
 	std::shared_ptr<Resource> FontProvider::load(std::string_view uri) {
 		if (fs::exists(uri)) {
 			uintmax_t fileSize = fs::file_size(uri);
-			std::vector<std::byte> fileData = fw::FsUtil::readFile(uri);
+			std::vector<std::byte> fileData = orb::FsUtil::readFile(uri);
 
 			if (fileData.size() > 0) {
 				return std::make_shared<Font>(std::move(fileData));

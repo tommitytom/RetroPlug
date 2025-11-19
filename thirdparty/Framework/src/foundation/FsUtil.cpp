@@ -9,7 +9,7 @@
 #include <emscripten/wasmfs.h>
 #include <iostream>
 
-void fw::FsUtil::setupFs() {
+void orb::FsUtil::setupFs() {
 	/*backend_t opfs = wasmfs_create_opfs_backend();
 	int err = wasmfs_create_directory("/share", 0777, opfs);
 	if (err) {
@@ -28,12 +28,12 @@ static void syncWebFs() {}
 
 #else
 
-void fw::FsUtil::setupFs() {}
+void orb::FsUtil::setupFs() {}
 static void syncWebFs() {}
 
 #endif
 
-using namespace fw;
+using namespace orb;
 
 std::string FsUtil::readTextFile(const fs::path& path) {
 	std::ifstream file(path);

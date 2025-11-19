@@ -4,7 +4,7 @@
 
 #include "foundation/InterpolationUtil.h"
 
-using namespace fw;
+using namespace orb;
 
 void WaveformUtil::generate(const Float32Buffer& samples, Waveform& waveform, size_t targetSize, size_t channel, size_t channelCount) {
 	assert((samples.size() % channelCount) == 0);
