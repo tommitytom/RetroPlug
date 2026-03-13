@@ -85,6 +85,7 @@ local EMSDK_RELEASE_FLAGS = {
 local m = {
 	Core = {},
 	SameBoyPlug = {},
+	MesenPlug = {},
 	RetroPlug = {},
 	Application = {},
 	OffsetCalculator = {},
@@ -219,11 +220,44 @@ function m.SameBoyPlug.project()
 	--util.liveppCompat()
 end
 
+function m.MesenPlug.include()
+	dependson { "configure" }
+
+	dep.mesen.include()
+	m.Core.include()
+end
+
+function m.MesenPlug.link()
+	m.MesenPlug.include()
+
+	links { "MesenPlug" }
+
+	m.Core.link()
+	dep.mesen.link()
+end
+
+function m.MesenPlug.project()
+	project "MesenPlug"
+	kind "StaticLib"
+
+	m.MesenPlug.include()
+
+	filter {}
+
+	files {
+		"src/mesen/**.h",
+		"src/mesen/**.cpp",
+	}
+
+	filter {}
+end
+
 function m.RetroPlug.include()
 	dependson { "configure" }
 
 	m.Core.include()
 	m.SameBoyPlug.include()
+	m.MesenPlug.include()
 	dep.liblsdj.include()
 	--dep.minizip.include()
 
@@ -251,6 +285,7 @@ function m.RetroPlug.link()
 	links { "RetroPlug" }
 
 	m.SameBoyPlug.link()
+	m.MesenPlug.link()
 	fwDeps.glfw.link()
 	dep.liblsdj.link()
 	fwDeps.lua.link()

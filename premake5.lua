@@ -42,6 +42,7 @@ fwProjects.Application.project()
 group "3 - Modules"
 projects.Core.project()
 projects.SameBoyPlug.project()
+projects.MesenPlug.project()
 projects.RetroPlug.project()
 
 group "4 - Applications"

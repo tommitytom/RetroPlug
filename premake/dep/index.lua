@@ -5,6 +5,7 @@ local m = {
 	minizip = dofile("minizip.lua"),
 	reflcpp = dofile("refl-cpp.lua"),
 	enkits = dofile("enkits.lua"),
+	mesen = dofile("mesen.lua")
 }
 
 function m.allProjects()
@@ -14,6 +15,7 @@ function m.allProjects()
 	m.minizip.project()
 	m.reflcpp.project()
 	m.enkits.project()
+	m.mesen.project()
 end
 
 return m
