@@ -3,8 +3,6 @@
 #include <spdlog/spdlog.h>
 
 #include "sameboy/SameBoyAudioHooks.h"
-#include "sameboy/SameBoyComponents.h"
-#include "sameboy/SameBoyUtil.h"
 #include "foundation/FsUtil.h"
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
@@ -17,14 +15,10 @@
 #include "AudioEffect.h"
 #include "Components.h"
 #include "SineGenerator.h"
+#include "AudioSettingsContext.h"
 
 namespace rp {
 	using namespace entt::literals;
-
-	struct AudioSettingsContext {
-		f32 sampleRate = 48000.0f;
-		uint32 blockSize = 512;
-	};
 
 	struct AudioHooksContext {
 		std::vector<std::unique_ptr<AudioSystemHook>> systemHooks;
@@ -79,12 +73,12 @@ namespace rp {
 				return;
 			}
 
-			SameBoyStateComponent* state = _registry.try_get<SameBoyStateComponent>(ev.entity);
+			SystemIoComponent* state = _registry.try_get<SystemIoComponent>(ev.entity);
 			if (!state) {
 				return;
 			}
 
-			state->state->io->input.buttons.push_back(orb::StreamButtonPress{
+			state->io->input.buttons.push_back(orb::StreamButtonPress{
 				.button = button,
 				.down = ev.down
 			});
@@ -184,53 +178,33 @@ namespace rp {
 		settings.sampleRate = out.getSampleRate();
 		settings.blockSize = out.getSampleCount();
 
-		onCreate<SameBoyStateComponent>(_registry, [](entt::registry& registry, entt::entity entity) {
-			const AudioSettingsContext& settings = registry.ctx().at<AudioSettingsContext>();
-			SameBoyState& state = *registry.get<SameBoyStateComponent>(entity).state;
-			SameBoyUtil::setSampleRate(state, (uint32)settings.sampleRate);
-			state.io = std::make_shared<SystemIo>();
+		_registry.view<SystemComponent>(entt::exclude_t<SystemIoComponent>()).each([&](entt::entity e, const SystemComponent& system) {
+			_registry.emplace<SystemIoComponent>(e, std::make_shared<SystemIo>());
 		});
 
-		onDestroy<SameBoyStateComponent>(_registry, [](entt::registry& registry, entt::entity entity) {
-			SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
-			state.state = nullptr;
-			HierarchyUtil::destroyHierarchy(registry, entity, false);
-			registry.remove<SameBoyStateComponent>(entity);
-		});
+		for (const auto& [e, state] : _registry.view<SystemIoComponent>().each()) {
+			if (!state.io) {
+				state.io = std::make_shared<SystemIo>();
+			}
 
-		auto view = _registry.view<SameBoyStateComponent>();
-		const size_t systemCount = view.size();
-		if (!systemCount) {
-			return;
-		}
-
-		std::array<SameBoyStateComponent*, 4> comps;
-
-		uint32 i = 0;
-		for (const auto& [e, s] : view.each()) {
-			SameBoyState& state = *s.state;
-			state.io = state.io ? state.io : std::make_shared<SystemIo>();
 			state.io->output.audio = std::make_shared<orb::Float32Buffer>(settings.blockSize * 2);
 			state.io->output.audio->clear();
-
-			comps[i++] = &s;
 		}
 
-		SameBoyUtil::process(comps.data(), view.size(), settings.blockSize);
+		AudioHooksContext& hooks = _registry.ctx().at<AudioHooksContext>();
+		for (const auto& hook : hooks.systemHooks) {
+			hook->onProcess(_registry, out, in);
+		}
 
 		f32* outL = out.getWritePointer(0);
 		f32* outR = out.getWritePointer(1);
 
-		for (const auto& [e, s] : view.each()) {
-			SameBoyState& state = *s.state;
+		for (const auto& [e, state] : _registry.view<SystemIoComponent>().each()) {
 			const f32* buffer = state.io->output.audio->data();
-
 			for (uint32 i = 0; i < settings.blockSize; ++i) {
 				outL[i] += buffer[i * 2 + 0];
 				outR[i] += buffer[i * 2 + 1];
 			}
-
-			state.io->output.audio = nullptr;
 
 			if (state.io->output.video) {
 				getEventNode().trySend("Ui"_hs, SystemIoEvent{

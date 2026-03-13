@@ -15,5 +15,7 @@ namespace rp {
 		void onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const override;
 
 		void onReset(entt::registry& registry, entt::entity entity) const override;
+
+		void onProcess(entt::registry& registry, orb::AudioBuffer& out, const orb::AudioBuffer& in) const override;
 	};
 }

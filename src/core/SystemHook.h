@@ -7,6 +7,7 @@
 #include "core/CoreComponents.h"
 #include "audio/TimeInfo.h"
 #include "audio/MidiMessage.h"
+#include "audio/AudioBuffer.h"
 
 namespace rp {
 	using PathVector = std::vector<std::filesystem::path>;
@@ -136,6 +137,7 @@ namespace rp {
 		virtual void onTransportUpdate(entt::registry& registry, entt::entity entity, const orb::TimeInfo& timeInfo) const {}
 		virtual void onMidi(entt::registry& registry, entt::entity entity, const orb::MidiMessage& message) const {}
 		virtual void onMidiClock(entt::registry& registry, entt::entity entity) const {}
+		virtual void onProcess(entt::registry& registry, orb::AudioBuffer& out, const orb::AudioBuffer& in) const {}
 	};
 
 	using AudioHooksVector = std::vector<AudioSystemHook*>;

@@ -7,6 +7,7 @@
 
 #include "foundation/DataBuffer.h"
 #include "core/MemoryAccessor.h"
+#include "core/SystemTypes.h"
 
 namespace rp {
 	struct SystemStateOffset {
@@ -91,6 +92,10 @@ namespace rp {
 
 			return nullptr;
 		}
+	};
+
+	struct SystemIoComponent {
+		SystemIoPtr io;
 	};
 
 	struct SystemLoadEntry {
