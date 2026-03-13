@@ -1,0 +1,350 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Patches">
+      <UniqueIdentifier>{6d519bc1-7c40-448a-95d2-9ad94cd20644}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Video">
+      <UniqueIdentifier>{954e8e7b-1ee6-4ab4-a197-3154ce63061e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Audio">
+      <UniqueIdentifier>{cde7b53f-be5e-4201-8194-0352d00216aa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NTSC">
+      <UniqueIdentifier>{8b0e23bf-1bd9-4cc1-8046-784fd01e8688}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="xBRZ">
+      <UniqueIdentifier>{34df7dd9-5f1b-4aec-9212-1b70f1fada59}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HQX">
+      <UniqueIdentifier>{c29925fd-7698-4db8-a328-73ef7f8993a9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="KreedSaiEagle">
+      <UniqueIdentifier>{8e159744-fb91-4e16-aa82-8d8703ba2762}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scale2x">
+      <UniqueIdentifier>{87329bd1-28ac-4ced-a4c2-b51777018d16}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Audio\ymfm">
+      <UniqueIdentifier>{82a19ba0-fe04-4284-bb06-5ac16dd58487}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="xBRZ\config.h">
+      <Filter>xBRZ</Filter>
+    </ClInclude>
+    <ClInclude Include="xBRZ\xbrz.h">
+      <Filter>xBRZ</Filter>
+    </ClInclude>
+    <ClInclude Include="HQX\hqx.h">
+      <Filter>HQX</Filter>
+    </ClInclude>
+    <ClInclude Include="HQX\common.h">
+      <Filter>HQX</Filter>
+    </ClInclude>
+    <ClInclude Include="Scale2x\scale2x.h">
+      <Filter>Scale2x</Filter>
+    </ClInclude>
+    <ClInclude Include="Scale2x\scale3x.h">
+      <Filter>Scale2x</Filter>
+    </ClInclude>
+    <ClInclude Include="Scale2x\scalebit.h">
+      <Filter>Scale2x</Filter>
+    </ClInclude>
+    <ClInclude Include="KreedSaiEagle\SaiEagle.h">
+      <Filter>KreedSaiEagle</Filter>
+    </ClInclude>
+    <ClInclude Include="PNGHelper.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\WavReader.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\blip_buf.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\CrossFeedFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\HermiteResampler.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\LowPassFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ReverbFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\stb_vorbis.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\AviRecorder.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\AviWriter.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\ZmbvCodec.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Patches\UpsPatcher.h">
+      <Filter>Patches</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\StereoCombFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\StereoDelayFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\StereoPanningFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\nes_ntsc.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\nes_ntsc_config.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\nes_ntsc_impl.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\snes_ntsc_impl.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\snes_ntsc_config.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\snes_ntsc.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\RawCodec.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\orfanidis_eq.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\IVideoRecorder.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Patches\IpsPatcher.h">
+      <Filter>Patches</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\gif.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\GifRecorder.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\CamstudioCodec.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\Equalizer.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Patches\BpsPatcher.h">
+      <Filter>Patches</Filter>
+    </ClInclude>
+    <ClInclude Include="Video\BaseCodec.h">
+      <Filter>Video</Filter>
+    </ClInclude>
+    <ClInclude Include="ArchiveReader.h" />
+    <ClInclude Include="miniz.h" />
+    <ClInclude Include="SZReader.h" />
+    <ClInclude Include="ZipReader.h" />
+    <ClInclude Include="ZipWriter.h" />
+    <ClInclude Include="AutoResetEvent.h" />
+    <ClInclude Include="Base64.h" />
+    <ClInclude Include="FastString.h" />
+    <ClInclude Include="FolderUtilities.h" />
+    <ClInclude Include="HexUtilities.h" />
+    <ClInclude Include="ISerializable.h" />
+    <ClInclude Include="kissfft.h" />
+    <ClInclude Include="PlatformUtilities.h" />
+    <ClInclude Include="RandomHelper.h" />
+    <ClInclude Include="safe_ptr.h" />
+    <ClInclude Include="Serializer.h" />
+    <ClInclude Include="SimpleLock.h" />
+    <ClInclude Include="Socket.h" />
+    <ClInclude Include="spng.h" />
+    <ClInclude Include="StringUtilities.h" />
+    <ClInclude Include="Timer.h" />
+    <ClInclude Include="UPnPPortMapper.h" />
+    <ClInclude Include="UTF8Util.h" />
+    <ClInclude Include="VirtualFile.h" />
+    <ClInclude Include="CRC32.h" />
+    <ClInclude Include="md5.h" />
+    <ClInclude Include="sha1.h" />
+    <ClInclude Include="magic_enum.hpp" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="CompressionHelper.h" />
+    <ClInclude Include="NTSC\sms_ntsc_impl.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\sms_ntsc.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="NTSC\sms_ntsc_config.h">
+      <Filter>NTSC</Filter>
+    </ClInclude>
+    <ClInclude Include="BitUtilities.h" />
+    <ClInclude Include="StaticFor.h" />
+    <ClInclude Include="Audio\OnePoleLowPassFilter.h">
+      <Filter>Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_fm.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_fm.ipp">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_misc.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_opn.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_ssg.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+    <ClInclude Include="Audio\ymfm\ymfm_adpcm.h">
+      <Filter>Audio\ymfm</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="xBRZ\xbrz.cpp">
+      <Filter>xBRZ</Filter>
+    </ClCompile>
+    <ClCompile Include="HQX\hq2x.cpp">
+      <Filter>HQX</Filter>
+    </ClCompile>
+    <ClCompile Include="HQX\hq3x.cpp">
+      <Filter>HQX</Filter>
+    </ClCompile>
+    <ClCompile Include="HQX\hq4x.cpp">
+      <Filter>HQX</Filter>
+    </ClCompile>
+    <ClCompile Include="HQX\init.cpp">
+      <Filter>HQX</Filter>
+    </ClCompile>
+    <ClCompile Include="Scale2x\scale2x.cpp">
+      <Filter>Scale2x</Filter>
+    </ClCompile>
+    <ClCompile Include="Scale2x\scale3x.cpp">
+      <Filter>Scale2x</Filter>
+    </ClCompile>
+    <ClCompile Include="Scale2x\scalebit.cpp">
+      <Filter>Scale2x</Filter>
+    </ClCompile>
+    <ClCompile Include="KreedSaiEagle\SuperEagle.cpp">
+      <Filter>KreedSaiEagle</Filter>
+    </ClCompile>
+    <ClCompile Include="KreedSaiEagle\Super2xSai.cpp">
+      <Filter>KreedSaiEagle</Filter>
+    </ClCompile>
+    <ClCompile Include="KreedSaiEagle\2xSai.cpp">
+      <Filter>KreedSaiEagle</Filter>
+    </ClCompile>
+    <ClCompile Include="PNGHelper.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="spng.c" />
+    <ClCompile Include="Audio\blip_buf.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\CrossFeedFilter.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\Equalizer.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\HermiteResampler.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\ReverbFilter.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\stb_vorbis.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\StereoCombFilter.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\StereoDelayFilter.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\StereoPanningFilter.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\WavReader.cpp">
+      <Filter>Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="Video\ZmbvCodec.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="Video\GifRecorder.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="Video\CamstudioCodec.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="Video\AviWriter.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="Video\AviRecorder.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
+    <ClCompile Include="Patches\BpsPatcher.cpp">
+      <Filter>Patches</Filter>
+    </ClCompile>
+    <ClCompile Include="Patches\IpsPatcher.cpp">
+      <Filter>Patches</Filter>
+    </ClCompile>
+    <ClCompile Include="Patches\UpsPatcher.cpp">
+      <Filter>Patches</Filter>
+    </ClCompile>
+    <ClCompile Include="NTSC\nes_ntsc.cpp">
+      <Filter>NTSC</Filter>
+    </ClCompile>
+    <ClCompile Include="NTSC\snes_ntsc.cpp">
+      <Filter>NTSC</Filter>
+    </ClCompile>
+    <ClCompile Include="ArchiveReader.cpp" />
+    <ClCompile Include="miniz.cpp" />
+    <ClCompile Include="SZReader.cpp" />
+    <ClCompile Include="ZipReader.cpp" />
+    <ClCompile Include="ZipWriter.cpp" />
+    <ClCompile Include="AutoResetEvent.cpp" />
+    <ClCompile Include="FolderUtilities.cpp" />
+    <ClCompile Include="HexUtilities.cpp" />
+    <ClCompile Include="PlatformUtilities.cpp" />
+    <ClCompile Include="Serializer.cpp" />
+    <ClCompile Include="SimpleLock.cpp" />
+    <ClCompile Include="Socket.cpp" />
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="Timer.cpp" />
+    <ClCompile Include="UPnPPortMapper.cpp" />
+    <ClCompile Include="UTF8Util.cpp" />
+    <ClCompile Include="VirtualFile.cpp" />
+    <ClCompile Include="CRC32.cpp" />
+    <ClCompile Include="md5.cpp" />
+    <ClCompile Include="sha1.cpp" />
+    <ClCompile Include="NTSC\sms_ntsc.cpp">
+      <Filter>NTSC</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\ymfm\ymfm_misc.cpp">
+      <Filter>Audio\ymfm</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\ymfm\ymfm_opn.cpp">
+      <Filter>Audio\ymfm</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\ymfm\ymfm_ssg.cpp">
+      <Filter>Audio\ymfm</Filter>
+    </ClCompile>
+    <ClCompile Include="Audio\ymfm\ymfm_adpcm.cpp">
+      <Filter>Audio\ymfm</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
