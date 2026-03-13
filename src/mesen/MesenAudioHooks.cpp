@@ -1,7 +1,7 @@
 #include "MesenAudioHooks.h"
 
 #include "MesenComponents.h"
-//#include "MesenUtil.h"
+#include "MesenAudioDevice.h"
 #include "core/AudioEffect.h"
 #include "core/AudioSettingsContext.h"
 #include "core/HierarchyUtil.h"
@@ -11,6 +11,10 @@
 #include "Core/NES/APU/NesApu.h"
 #include "Core/NES/NesSoundMixer.h"
 #include "Core/NES/BaseNesPpu.h"
+#include "Core/Shared/Audio/SoundMixer.h"
+#include "Core/Shared/Emulator.h"
+#include "Core/Shared/EmuSettings.h"
+#include "Core/Shared/SettingTypes.h"
 
 namespace rp {
 	double		_sampleRate = 44100.0;
@@ -20,74 +24,57 @@ namespace rp {
 
 	void MesenAudioHooks::onSaveState(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-		//MesenUtil::saveState(*state.state, target);
 	}
 
 	MemoryAccessor MesenAudioHooks::onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-		//return MesenUtil::getMemory(*state.state, type, access);
 		return MemoryAccessor();
 	}
 
 	void MesenAudioHooks::onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-		/*MemoryAccessor accessor = MesenUtil::getMemory(*state.state, patch.type, AccessType::Write);
-
-		std::visit(entt::overloaded{
-			[&](uint8 val) { accessor.set(patch.offset, val); },
-			[&](uint16 val) { accessor.write(patch.offset, val); },
-			[&](uint32 val) { accessor.write(patch.offset, val); },
-			[&](const orb::Uint8Buffer& val) { accessor.write(patch.offset, val); },
-		}, patch.data);*/
 	}
 
 	void MesenAudioHooks::onReset(entt::registry& registry, entt::entity entity) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
 		state.emulator->Reset();
 		state.blockStartCycle = 0;
-		//MesenUtil::reset(*state.state);
-	}
-
-	int stepCpu(NesCpu* cpu, BaseNesPpu* ppu) {
-		uint64_t before = cpu->GetCycleCount();
-
-		// Execute one instruction
-		// ⚠ May be named Step(), RunOnce(), or Exec() — verify
-		cpu->Exec();
-
-		uint64_t after = cpu->GetCycleCount();
-		int		 delta = (int)(after - before);
-
-		// Advance PPU to stay in sync.
-		// The PPU must tick even though we never render — mapper IRQs
-		// (MMC3 scanline counter, etc.) depend on PPU cycle timing.
-		// ⚠ Verify RunTo() / Run() signature in NesPpu.h
-		ppu->Run(after * PPU_DIVIDER);
-
-		return delta;
 	}
 
 	void MesenAudioHooks::onProcess(entt::registry& registry, orb::AudioBuffer& out, const orb::AudioBuffer& in) const {
-		// These should be hooks in the same vein as the system hooks, but this is easier for now
 		onCreate<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
 			const AudioSettingsContext& settings = registry.ctx().at<AudioSettingsContext>();
-			//MesenState& state = *registry.get<MesenStateComponent>(entity).state;
-			//MesenUtil::setSampleRate(state, (uint32)settings.sampleRate);
+			MesenStateComponent& s = registry.get<MesenStateComponent>(entity);
+
+			// Create and register our capture device with the emulator's SoundMixer.
+			s.audioDevice = std::make_shared<MesenAudioDevice>();
+			s.emulator->GetSoundMixer()->RegisterAudioDevice(s.audioDevice.get());
+
+			// Tell Mesen to render at the plugin's sample rate so we receive
+			// samples at exactly the rate the host expects.
+			AudioConfig audioCfg = s.emulator->GetSettings()->GetAudioConfig();
+			audioCfg.SampleRate = (uint32_t)settings.sampleRate;
+			s.emulator->GetSettings()->SetAudioConfig(audioCfg);
 		});
 
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
 			MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-			//state.state = nullptr;
-			//HierarchyUtil::destroyHierarchy(registry, entity, false);
 			registry.remove<MesenStateComponent>(entity);
 		});
 
 		const AudioSettingsContext& settings = registry.ctx().at<AudioSettingsContext>();
 
-		uint32 i = 0;
 		for (const auto& [e, s] : registry.view<MesenStateComponent>().each()) {
-			// Interleaved audio buffer for mixed output (stereo)
+			if (!s.audioDevice) {
+				continue;
+			}
+
 			orb::Float32BufferPtr outSamples = registry.get<SystemIoComponent>(e).io->output.audio;
+			if (!outSamples) {
+				continue;
+			}
+
+			//s.emulator->Run();
 
 			auto console = dynamic_cast<NesConsole*>(s.emulator->GetConsole().get());
 			if (!console) {
@@ -95,36 +82,27 @@ namespace rp {
 			}
 
 			auto cpu = console->GetCpu();
-			auto ppu = console->GetPpu();
-			auto apu = console->GetApu();
-			auto soundMixer = console->GetSoundMixer();
+			const uint32_t blockSize = settings.blockSize;
 
-			int32_t	samplesOut = 0;
-
-			while (samplesOut < (int32_t)settings.blockSize) {
-				uint64_t currentCycle = cpu->GetCycleCount();
-
-				// ---- Step one CPU instruction ----
-				stepCpu(cpu, ppu);
-
-				// ---- Check how many samples the APU has accumulated ----
-				//
-				// The APU writes into Blip_Buffer as it runs alongside the CPU.
-				// We check after each instruction rather than after each cycle
-				// because the APU typically emits samples at ~44100Hz while the
-				// CPU runs at ~1.79MHz — samples are sparse relative to instructions.
-				//
-				// ⚠ Verify the sample count / read API in NesApu.h or SoundMixer.h.
-				//   It may be _soundMixer->GetBufferedSampleCount() instead.
-				//samplesOut = (int32_t)apu->GetBufferedSampleCount();
+			// Step one CPU instruction at a time.
+			//
+			// cpu->Exec() internally calls StartCpuCycle() for every clock cycle
+			// of the instruction, which:
+			//   - advances the PPU (keeping mapper IRQ timing correct)
+			//   - calls NesApu::Exec() each cycle
+			//
+			// The APU auto-flushes into MesenAudioDevice every CycleLength
+			// (10,000) APU cycles via NesApu::EndFrame() -> PlayAudioBuffer().
+			// At ~1.79 MHz CPU / 44100 Hz that yields ~227 samples per flush,
+			// so blockSize samples are ready well within one PPU frame.
+			while (s.audioDevice->availableFrames() < blockSize) {
+				cpu->Exec();
 			}
 
-			// ---- Read mixed output ----
-			// ⚠ Verify signature — may take a frame count or use a callback
-			//_soundMixer->ReadSamples(channels.mixed, needed);
+			// Drain exactly blockSize stereo frames into the output buffer as
+			// normalised float32. Any excess samples remain buffered for the
+			// next block, keeping the CPU/audio clocks in lock-step.
+			s.audioDevice->drain(outSamples->data(), blockSize);
 		}
-
-		
-		//MesenUtil::process(comps.data(), view.size(), settings.blockSize);
 	}
 }

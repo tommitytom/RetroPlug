@@ -3,6 +3,7 @@
 #include "foundation/FsUtil.h"
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugProjectContext.h"
+#include "mesen/MesenComponents.h"
 
 namespace rp {
 	namespace fs = std::filesystem;
@@ -224,10 +225,11 @@ namespace rp {
 			return loadFromFile(registry, paths[0]);
 		}
 
-	const int32 stateIndex = indexOfExtension(paths, ".state");
+		const int32 stateIndex = indexOfExtension(paths, ".state");
 		const int32 savIndex = indexOfExtension(paths, ".sav");
 		int32 romIndex = indexOfExtension(paths, ".gb");
 		if (romIndex == -1) romIndex = indexOfExtension(paths, ".gbc");
+		if (romIndex == -1) romIndex = indexOfExtension(paths, ".nes");
 
 		SystemLoadComponent load;
 
@@ -251,7 +253,7 @@ namespace rp {
 		load.entries["rom"] = { .path = paths[romIndex].string() };
 
 		entt::entity system = registry.create();
-		bool valid = ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
+		bool valid = ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), MesenComponent{});
 		if (!valid) {
 			return false;
 		}

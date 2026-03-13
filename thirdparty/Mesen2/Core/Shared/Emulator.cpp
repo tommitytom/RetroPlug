@@ -91,8 +91,8 @@ void Emulator::Initialize(bool enableShortcuts)
 		_notificationManager->RegisterNotificationListener(_shortcutKeyHandler);
 	}
 
-	_videoDecoder->StartThread();
-	_videoRenderer->StartThread();
+	//_videoDecoder->StartThread();
+	//_videoRenderer->StartThread();
 }
 
 void Emulator::Release()

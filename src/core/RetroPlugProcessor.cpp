@@ -2,7 +2,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include "sameboy/SameBoyAudioHooks.h"
 #include "foundation/FsUtil.h"
 #include "foundation/Replicator.h"
 #include "audio/AudioBuffer.h"
@@ -10,6 +9,10 @@
 #include "core/HierarchyUtil.h"
 #include "core/RetroPlugComponents.h"
 #include "core/SystemHook.h"
+
+#include "sameboy/SameBoyAudioHooks.h"
+#include "mesen/MesenAudioHooks.h"
+
 #include "lsdj/LsdjComponents.h"
 
 #include "AudioEffect.h"
@@ -53,6 +56,7 @@ namespace rp {
 	RetroPlugProcessor::RetroPlugProcessor(orb::EventNode&& eventNode) : orb::AudioProcessor(std::move(eventNode))  {
 		AudioHooksContext& hooks = _registry.ctx().emplace<AudioHooksContext>();
 		hooks.systemHooks.push_back(std::make_unique<SameBoyAudioHooks>());
+		hooks.systemHooks.push_back(std::make_unique<MesenAudioHooks>());
 
 		_registry.ctx().emplace<AudioSettingsContext>();
 		AudioEffectContext& effectCtx = _registry.ctx().emplace<AudioEffectContext>();

@@ -9,15 +9,19 @@
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugComponents.h"
 #include "core/RetroPlugProjectContext.h"
-#include "sameboy/SameBoyHooks.h"
 #include "core/TaskSchedulerGlobal.h"
-#include "sameboy/SameBoyComponents.h"
+
+#include "sameboy/SameBoyHooks.h"
+//#include "sameboy/SameBoyComponents.h"
+#include "mesen/MesenHooks.h"
+
 #include "lsdj/LsdjHooks.h"
 
 namespace rp {
 	RetroPlugProject::RetroPlugProject(orb::EventNode&& eventNode, orb::EventNode::NodeId targetNodeId) : _eventNode(std::move(eventNode)) {
 		HooksContext& hooksCtx = _registry.ctx().emplace<HooksContext>();
 		hooksCtx.addSystemHook<SameboyHooks>();
+		hooksCtx.addSystemHook<MesenHooks>();
 		hooksCtx.addServiceHook<LsdjHooks>();
 
 		_registry.ctx().emplace<RetroPlugProjectContext>(_eventNode);

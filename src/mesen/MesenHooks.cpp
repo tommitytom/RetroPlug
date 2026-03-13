@@ -1,4 +1,5 @@
 #include "MesenHooks.h"
+#include "MesenAudioDevice.h"
 
 #include <chrono>
 
@@ -16,18 +17,18 @@
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesTypes.h"
 #include "Core/NES/APU/NesApu.h"
+#include "Utilities/FolderUtilities.h"
 //#include "Core/NES/APU/ApuChannel.h"		// ⚠ verify: per-channel blip access
 
 namespace rp {
 	void MesenHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
 		filterEntries(paths, entries, ".nes", "rom");
-		filterEntries(paths, entries, ".gbc", "rom");
-		filterEntries(paths, entries, ".sav", "sram");
-		filterEntries(paths, entries, ".state", "state");
 	}
 
 	void MesenHooks::onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, MesenComponent& system) const {
 		auto emu = std::make_unique<Emulator>();
+		emu->Initialize();
+		FolderUtilities::SetHomeFolder("C:\\Users\\Tom\\Documents\\Mesen2");
 
 		// Disable video output — we never need to render pixels.
 		// This avoids allocating a framebuffer and skips the PPU
