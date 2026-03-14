@@ -2,6 +2,7 @@
 
 #include "MesenComponents.h"
 #include "MesenAudioDevice.h"
+#include "MesenVideoDevice.h"
 #include "core/AudioEffect.h"
 #include "core/AudioSettingsContext.h"
 #include "core/HierarchyUtil.h"
@@ -12,14 +13,13 @@
 #include "Core/NES/NesSoundMixer.h"
 #include "Core/NES/BaseNesPpu.h"
 #include "Core/Shared/Audio/SoundMixer.h"
+#include "Core/Shared/Video/VideoRenderer.h"
+#include "Core/Shared/Video/VideoDecoder.h"
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/SettingTypes.h"
 
 namespace rp {
-	double		_sampleRate = 44100.0;
-	double		_cyclesPerSample = CPU_CLOCK_RATE / 44100.0;
-
 	MesenAudioHooks::MesenAudioHooks() : AudioSystemHook(entt::type_id<MesenComponent>().index()) {}
 
 	void MesenAudioHooks::onSaveState(entt::registry& registry, entt::entity entity, orb::Uint8Buffer& target) const {
@@ -50,20 +50,18 @@ namespace rp {
 			s.audioDevice = std::make_shared<MesenAudioDevice>();
 			s.emulator->GetSoundMixer()->RegisterAudioDevice(s.audioDevice.get());
 
+			// Create and register our video capture device with the emulator's VideoRenderer.
+			s.videoDevice = std::make_shared<MesenVideoDevice>();
+			s.emulator->GetVideoRenderer()->RegisterRenderingDevice(s.videoDevice.get());
+
 			EmuSettings* emuSettings = s.emulator->GetSettings();
 
-			NesConfig& nesConfig = emuSettings->GetNesConfig();
-			nesConfig.ChannelVolumes[0] = 100;
-			nesConfig.ChannelVolumes[1] = 100;
-			nesConfig.ChannelVolumes[2] = 100;
-			nesConfig.ChannelVolumes[3] = 100;
-			nesConfig.ChannelVolumes[4] = 100;
-			nesConfig.ChannelVolumes[5] = 100;
-			nesConfig.ChannelVolumes[6] = 100;
-			nesConfig.ChannelVolumes[7] = 100;
-			nesConfig.ChannelVolumes[8] = 100;
-			nesConfig.ChannelVolumes[9] = 100;
-			nesConfig.ChannelVolumes[10] = 100;
+			NesConfig nesConfig{
+				.UserPalette = { 0xFF666666, 0xFF002A88, 0xFF1412A7, 0xFF3B00A4, 0xFF5C007E, 0xFF6E0040, 0xFF6C0600, 0xFF561D00, 0xFF333500, 0xFF0B4800, 0xFF005200, 0xFF004F08, 0xFF00404D, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFADADAD, 0xFF155FD9, 0xFF4240FF, 0xFF7527FE, 0xFFA01ACC, 0xFFB71E7B, 0xFFB53120, 0xFF994E00, 0xFF6B6D00, 0xFF388700, 0xFF0C9300, 0xFF008F32, 0xFF007C8D, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFFFFEFF, 0xFF64B0FF, 0xFF9290FF, 0xFFC676FF, 0xFFF36AFF, 0xFFFE6ECC, 0xFFFE8170, 0xFFEA9E22, 0xFFBCBE00, 0xFF88D800, 0xFF5CE430, 0xFF45E082, 0xFF48CDDE, 0xFF4F4F4F, 0xFF000000, 0xFF000000, 0xFFFFFEFF, 0xFFC0DFFF, 0xFFD3D2FF, 0xFFE8C8FF, 0xFFFBC2FF, 0xFFFEC4EA, 0xFFFECCC5, 0xFFF7D8A5, 0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000 },
+				.ChannelVolumes = { 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100 },
+			};
+
+			emuSettings->SetNesConfig(nesConfig);
 
 			// Tell Mesen to render at the plugin's sample rate so we receive
 			// samples at exactly the rate the host expects.
@@ -79,6 +77,9 @@ namespace rp {
 
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
 			MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
+			if (state.videoDevice) {
+				state.emulator->GetVideoRenderer()->UnregisterRenderingDevice(state.videoDevice.get());
+			}
 			registry.remove<MesenStateComponent>(entity);
 		});
 
@@ -123,7 +124,13 @@ namespace rp {
 			// next block, keeping the CPU/audio clocks in lock-step.
 			s.audioDevice->drain(outSamples->data(), blockSize);
 
-			// Write video frames to io.output.video when they are available			
+			// Write the latest decoded video frame to io.output.video if one
+			// became available during the CPU execution above.
+			if (s.videoDevice) {
+				if (orb::ImagePtr frame = s.videoDevice->takeFrame()) {
+					io.output.video = std::move(frame);
+				}
+			}
 		}
 	}
 }
