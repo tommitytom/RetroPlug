@@ -250,18 +250,20 @@ void Emulator::OnBeforeSendFrame()
 void Emulator::ProcessEndOfFrame()
 {
 	if(!_isRunAheadFrame) {
-		_frameLimiter->ProcessFrame();
-		while(_frameLimiter->WaitForNextFrame()) {
-			if(_stopFlag || _frameDelay != GetFrameDelay() || _paused || _pauseOnNextFrame || _lockCounter > 0) {
-				//Need to process another event, stop sleeping
-				break;
+		if(_frameLimiter) {
+			_frameLimiter->ProcessFrame();
+			while(_frameLimiter->WaitForNextFrame()) {
+				if(_stopFlag || _frameDelay != GetFrameDelay() || _paused || _pauseOnNextFrame || _lockCounter > 0) {
+					//Need to process another event, stop sleeping
+					break;
+				}
 			}
-		}
 
-		double newFrameDelay = GetFrameDelay();
-		if(newFrameDelay != _frameDelay) {
-			_frameDelay = newFrameDelay;
-			_frameLimiter->SetDelay(_frameDelay);
+			double newFrameDelay = GetFrameDelay();
+			if(newFrameDelay != _frameDelay) {
+				_frameDelay = newFrameDelay;
+				_frameLimiter->SetDelay(_frameDelay);
+			}
 		}
 
 		_console->GetControlManager()->ProcessEndOfFrame();

@@ -220,6 +220,7 @@ public:
 	Debugger* InternalGetDebugger() { return _debugger.get(); }
 
 	thread::id GetEmulationThreadId() { return _emulationThreadId; }
+	void SetEmulationThreadId(thread::id id) { _emulationThreadId = id; }
 	bool IsEmulationThread();
 
 	int32_t GetStopCode() { return _stopCode; }

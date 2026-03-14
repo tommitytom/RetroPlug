@@ -1,7 +1,5 @@
 #pragma once
 
-//#include "Core/Shared/Emulator.h"
-
 class Emulator;
 
 namespace rp {

@@ -15,7 +15,7 @@ enum class ConsoleRegion;
 class NesSoundMixer : public ISerializable
 {
 public:
-	static constexpr uint32_t CycleLength = 10000;
+	static constexpr uint32_t CycleLength = 5000;
 	static constexpr uint32_t BitsPerSample = 16;
 
 private:

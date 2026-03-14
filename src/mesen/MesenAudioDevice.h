@@ -14,11 +14,10 @@ namespace rp {
 		// PlayBuffer is called by SoundMixer after resampling.
 		// samples: interleaved stereo int16, count = number of stereo frames.
 		void PlayBuffer(int16_t* samples, uint32_t count, uint32_t sampleRate, bool isStereo) override {
-			_counter += count;
-			/*std::lock_guard<std::mutex> lock(_mutex);
+			std::lock_guard<std::mutex> lock(_mutex);
 			size_t base = _buffer.size();
 			_buffer.resize(base + count * 2);
-			memcpy(_buffer.data() + base, samples, count * 2 * sizeof(int16_t));*/
+			memcpy(_buffer.data() + base, samples, count * 2 * sizeof(int16_t));
 		}
 
 		void Stop() override {}
@@ -30,15 +29,14 @@ namespace rp {
 
 		// Returns how many stereo frames are currently buffered.
 		size_t availableFrames() const {
-			//std::lock_guard<std::mutex> lock(_mutex);
-			//return _buffer.size() / 2;
-			return _counter;
+			std::lock_guard<std::mutex> lock(_mutex);
+			return _buffer.size() / 2;
 		}
 
 		// Drain up to `frameCount` stereo frames into `dest` as normalised float32.
 		// Returns the number of frames actually written.
 		uint32_t drain(float* dest, uint32_t frameCount) {
-			/*std::lock_guard<std::mutex> lock(_mutex);
+			std::lock_guard<std::mutex> lock(_mutex);
 			uint32_t have = (uint32_t)(_buffer.size() / 2);
 			uint32_t take = std::min(have, frameCount);
 			constexpr float kScale = 1.0f / 32768.0f;
@@ -46,16 +44,10 @@ namespace rp {
 				dest[i] = _buffer[i] * kScale;
 			}
 			_buffer.erase(_buffer.begin(), _buffer.begin() + take * 2);
-			return take;*/
-
-			size_t take = std::min(_counter, static_cast<size_t>(frameCount));
-			_counter -= take;
-			//memset(dest, 0, frameCount * sizeof(float));
-			return frameCount;
+			return take;
 		}
 
 	private:
-		size_t _counter = 0;
 		mutable std::mutex		_mutex;
 		std::vector<int16_t>	_buffer;
 	};

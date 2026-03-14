@@ -50,11 +50,31 @@ namespace rp {
 			s.audioDevice = std::make_shared<MesenAudioDevice>();
 			s.emulator->GetSoundMixer()->RegisterAudioDevice(s.audioDevice.get());
 
+			EmuSettings* emuSettings = s.emulator->GetSettings();
+
+			NesConfig& nesConfig = emuSettings->GetNesConfig();
+			nesConfig.ChannelVolumes[0] = 100;
+			nesConfig.ChannelVolumes[1] = 100;
+			nesConfig.ChannelVolumes[2] = 100;
+			nesConfig.ChannelVolumes[3] = 100;
+			nesConfig.ChannelVolumes[4] = 100;
+			nesConfig.ChannelVolumes[5] = 100;
+			nesConfig.ChannelVolumes[6] = 100;
+			nesConfig.ChannelVolumes[7] = 100;
+			nesConfig.ChannelVolumes[8] = 100;
+			nesConfig.ChannelVolumes[9] = 100;
+			nesConfig.ChannelVolumes[10] = 100;
+
 			// Tell Mesen to render at the plugin's sample rate so we receive
 			// samples at exactly the rate the host expects.
-			AudioConfig audioCfg = s.emulator->GetSettings()->GetAudioConfig();
+			AudioConfig audioCfg = emuSettings->GetAudioConfig();
 			audioCfg.SampleRate = (uint32_t)settings.sampleRate;
-			s.emulator->GetSettings()->SetAudioConfig(audioCfg);
+			emuSettings->SetAudioConfig(audioCfg);
+
+			// Register the audio thread as the emulation thread so that
+			// IsEmulationThread() returns true throughout Mesen's internals
+			// (e.g. NesApu::PeekRam, debug guards) when we drive cpu->Exec().
+			s.emulator->SetEmulationThreadId(std::this_thread::get_id());
 		});
 
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
@@ -69,12 +89,11 @@ namespace rp {
 				continue;
 			}
 
-			orb::Float32BufferPtr outSamples = registry.get<SystemIoComponent>(e).io->output.audio;
+			SystemIo& io = *registry.get<SystemIoComponent>(e).io;
+			orb::Float32BufferPtr outSamples = io.output.audio;
 			if (!outSamples) {
 				continue;
 			}
-
-			//s.emulator->Run();
 
 			auto console = dynamic_cast<NesConsole*>(s.emulator->GetConsole().get());
 			if (!console) {
@@ -103,6 +122,8 @@ namespace rp {
 			// normalised float32. Any excess samples remain buffered for the
 			// next block, keeping the CPU/audio clocks in lock-step.
 			s.audioDevice->drain(outSamples->data(), blockSize);
+
+			// Write video frames to io.output.video when they are available			
 		}
 	}
 }
