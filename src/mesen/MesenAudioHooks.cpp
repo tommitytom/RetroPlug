@@ -8,13 +8,16 @@
 #include "core/HierarchyUtil.h"
 
 #include "Core/NES/NesConsole.h"
+#include "Core/NES/Input/NesController.h"
 #include "Core/NES/NesCpu.h"
 #include "Core/NES/APU/NesApu.h"
 #include "Core/NES/NesSoundMixer.h"
 #include "Core/NES/BaseNesPpu.h"
+#include "Core/Shared/BaseControlManager.h"
+#include "Core/Shared/BaseControlDevice.h"
+#include "Core/Shared/EventType.h"
 #include "Core/Shared/Audio/SoundMixer.h"
 #include "Core/Shared/Video/VideoRenderer.h"
-#include "Core/Shared/Video/VideoDecoder.h"
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/SettingTypes.h"
@@ -41,27 +44,27 @@ namespace rp {
 		state.blockStartCycle = 0;
 	}
 
+	std::optional<NesController::Buttons> toNesButton(orb::ButtonType button) {
+		switch (button) {
+		case orb::ButtonType::Right: return NesController::Buttons::Right;
+		case orb::ButtonType::Left: return NesController::Buttons::Left;
+		case orb::ButtonType::Up: return NesController::Buttons::Up;
+		case orb::ButtonType::Down: return NesController::Buttons::Down;
+		case orb::ButtonType::A: return NesController::Buttons::A;
+		case orb::ButtonType::B: return NesController::Buttons::B;
+		case orb::ButtonType::Select: return NesController::Buttons::Select;
+		case orb::ButtonType::Start: return NesController::Buttons::Start;
+		}
+
+		return std::nullopt;
+	}
+
 	void MesenAudioHooks::onProcess(entt::registry& registry, orb::AudioBuffer& out, const orb::AudioBuffer& in) const {
 		onCreate<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
 			const AudioSettingsContext& settings = registry.ctx().at<AudioSettingsContext>();
 			MesenStateComponent& s = registry.get<MesenStateComponent>(entity);
 
-			// Create and register our capture device with the emulator's SoundMixer.
-			s.audioDevice = std::make_shared<MesenAudioDevice>();
-			s.emulator->GetSoundMixer()->RegisterAudioDevice(s.audioDevice.get());
-
-			// Create and register our video capture device with the emulator's VideoRenderer.
-			s.videoDevice = std::make_shared<MesenVideoDevice>();
-			s.emulator->GetVideoRenderer()->RegisterRenderingDevice(s.videoDevice.get());
-
 			EmuSettings* emuSettings = s.emulator->GetSettings();
-
-			NesConfig nesConfig{
-				.UserPalette = { 0xFF666666, 0xFF002A88, 0xFF1412A7, 0xFF3B00A4, 0xFF5C007E, 0xFF6E0040, 0xFF6C0600, 0xFF561D00, 0xFF333500, 0xFF0B4800, 0xFF005200, 0xFF004F08, 0xFF00404D, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFADADAD, 0xFF155FD9, 0xFF4240FF, 0xFF7527FE, 0xFFA01ACC, 0xFFB71E7B, 0xFFB53120, 0xFF994E00, 0xFF6B6D00, 0xFF388700, 0xFF0C9300, 0xFF008F32, 0xFF007C8D, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFFFFEFF, 0xFF64B0FF, 0xFF9290FF, 0xFFC676FF, 0xFFF36AFF, 0xFFFE6ECC, 0xFFFE8170, 0xFFEA9E22, 0xFFBCBE00, 0xFF88D800, 0xFF5CE430, 0xFF45E082, 0xFF48CDDE, 0xFF4F4F4F, 0xFF000000, 0xFF000000, 0xFFFFFEFF, 0xFFC0DFFF, 0xFFD3D2FF, 0xFFE8C8FF, 0xFFFBC2FF, 0xFFFEC4EA, 0xFFFECCC5, 0xFFF7D8A5, 0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000 },
-				.ChannelVolumes = { 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100 },
-			};
-
-			emuSettings->SetNesConfig(nesConfig);
 
 			// Tell Mesen to render at the plugin's sample rate so we receive
 			// samples at exactly the rate the host expects.
@@ -100,6 +103,17 @@ namespace rp {
 			if (!console) {
 				continue;
 			}
+
+			auto controller = console->GetControlManager()->GetControlDeviceByIndex(0);
+
+			for (const auto& press : io.input.buttons) {
+				auto nesButton = toNesButton(press.button);
+				if (controller && nesButton) {
+					controller->SetBitValue(*nesButton, press.down);
+				}
+			}
+
+			s.emulator->ProcessEvent(EventType::InputPolled, CpuType::Nes);
 
 			auto cpu = console->GetCpu();
 			const uint32_t blockSize = settings.blockSize;

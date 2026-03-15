@@ -82,8 +82,8 @@ namespace rp {
 			}
 
 			orb::DimensionF dimensions{
-				160.0f * (f32)std::max((int32)getChildCount(), 1),
-				144.0f
+				256.0f * (f32)std::max((int32)getChildCount(), 1),
+				240.0f
 			};
 
 			getLayout().setDimensions(orb::Dimension(dimensions));
@@ -101,7 +101,7 @@ namespace rp {
 
 			for (const auto& [e, system] : registry.view<SystemComponent>().each()) {
 				auto systemView = addChild(std::make_shared<SystemView>(_project, e));
-				systemView->getLayout().setDimensions(orb::Dimension{ 160, 144 });
+				systemView->getLayout().setDimensions(orb::Dimension{ 256, 240 });
 
 				if (selectedTileEntity == entt::null || _selectedTileEntity == e) {
 					selectedTileEntity = e;

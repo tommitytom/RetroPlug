@@ -1388,7 +1388,7 @@ template<class T> void NesPpu<T>::ProcessScanlineFirstCycle()
 
 	if(_scanline == _console->GetNesConfig().InputScanline) {
 		_console->GetControlManager()->UpdateControlDevices();
-		_console->GetControlManager()->UpdateInputState();
+		//_console->GetControlManager()->UpdateInputState();
 	}
 
 	//Cycle = 0

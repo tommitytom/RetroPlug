@@ -54,8 +54,8 @@ namespace rp {
 		}
 
 		orb::DimensionF dimensions{
-			160.0f,
-			144.0f
+			256.0f,
+			240.0f
 		};
 
 		if (_rootContainer) {
@@ -136,7 +136,7 @@ namespace rp {
 			_rootContainer = addChild(std::make_unique<LsdjHdPlayer>(_project, entt::entity(systemIds[0])))->asShared<LsdjHdPlayer>();
 		}*/
 
-		if (event.down && event.key == orb::VirtualKey::F7) {
+		if (event.down && event.key == orb::VirtualKey::F8) {
 			_project.addSystemAsync(SystemLoadComponent{
 				.entries = {
 					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
@@ -146,6 +146,10 @@ namespace rp {
 				.model = GameboyModel::CgbC,
 				.fastBoot = true
 			});
+		}
+
+		if (event.down && event.key == orb::VirtualKey::F7) {
+			_project.loadFromPathsAsync({ "C:\\retro\\Lagrange Point (J).nes" });
 		}
 
 		if (event.down && event.key == orb::VirtualKey::F6) {
