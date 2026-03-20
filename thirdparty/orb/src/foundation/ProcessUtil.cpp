@@ -75,7 +75,7 @@ int32 ProcessUtil::runProcess(const std::string& path, const std::vector<std::st
 			0,
 			NULL);
 
-		spdlog::error("CreateProcess({}) failed with error {}: {}", cmdLine, lasterror, strErrorMessage);
+		//spdlog::error("CreateProcess({}) failed with error {}: {}", cmdLine, lasterror, strErrorMessage);
 		return -1;
 	}
 

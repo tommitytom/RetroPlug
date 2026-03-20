@@ -18,6 +18,7 @@
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Core/Shared/Video/VideoDecoder.h"
 #include "Core/NES/NesConsole.h"
+#include "Core/NES/NesMemoryManager.h"
 #include "Core/NES/NesTypes.h"
 #include "Core/NES/APU/NesApu.h"
 #include "Utilities/FolderUtilities.h"
@@ -25,6 +26,7 @@
 
 #include "MesenAudioDevice.h"
 #include "MesenVideoDevice.h"
+#include "NesEverdriveFifo.h"
 
 namespace rp {
 	void MesenHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -79,6 +81,11 @@ namespace rp {
 		// Create and register our video capture device with the emulator's VideoRenderer.
 		s.videoDevice = std::make_shared<MesenVideoDevice>();
 		s.emulator->GetVideoRenderer()->RegisterRenderingDevice(s.videoDevice.get());
+
+		s.fifo = std::make_shared<NesEverdriveFifo>();
+		auto* nesConsole = dynamic_cast<NesConsole*>(s.emulator->GetConsole().get());
+		nesConsole->GetMemoryManager()->RegisterIODevice(s.fifo.get());
+
 	}
 
 	void MesenHooks::onReplicate(entt::registry& registry) const {

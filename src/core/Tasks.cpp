@@ -5,6 +5,7 @@
 #include "foundation/Replicator.h"
 #include "core/RegistryUtil.h"
 #include "core/CoreComponents.h"
+#include "core/FileWatcherContext.h"
 
 namespace rp {
 	void handleRegistryCopy(const HooksContext& hooks, entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) {
@@ -29,6 +30,8 @@ namespace rp {
 	}
 
 	void LoadSystemTask::finalize(entt::registry& targetRegistry) {
+		const SystemLoadComponent load = registry.get<SystemLoadComponent>(entity);
+
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		handleRegistryCopy(ctx, this->registry, this->entity, targetRegistry, entity);
 		handleReplicate(targetRegistry);

@@ -2,9 +2,12 @@
 
 #include <functional>
 
-//#ifndef FW_PLATFORM_WEB
-//#include <FileWatcher/FileWatcher.h>
-//#endif
+#ifndef FW_PLATFORM_WEB
+#include <efsw/FileSystem.hpp>
+#include <efsw/System.hpp>
+#include <efsw/efsw.hpp>
+#include <filesystem>
+#endif
 
 #include "foundation/Types.h"
 
@@ -15,7 +18,7 @@ namespace orb {
 		Removed
 	};
 
-	using WatchId = uint32;
+	using WatchId = int32;
 	using WatchCallbackFunc = std::function<void(const std::string&, WatchAction)>;
 
 	struct Watch {
@@ -47,69 +50,94 @@ namespace orb {
 			return 0;
 		}
 
-		void remove(WatchId id) override {
-		}
+		void remove(WatchId id) override {}
 
 		void update() override {}
 	};
-/*
-	class SimpleFileWatcher : public orb::FileWatchListener, public FileWatcher {
+
+	class UpdateListener : public efsw::FileWatchListener {
+	private:
+		std::vector<Watch>& _watches;
+	public:
+		UpdateListener(std::vector<Watch>& watches) : _watches(watches) {}
+		~UpdateListener() {}
+
+		void handleFileAction(efsw::WatchID watchid, const std::string& dir, const std::string& filename, efsw::Action action, std::string oldFilename) override {
+			spdlog::debug("File action: {} {} {}", dir, filename, (int)action);
+
+			std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
+			for (Watch& watch : _watches) {
+				if (watch.watchId == watchid) {
+					for (const auto& callback : watch.callbacks) {
+						if (callback.first == fullPath || callback.first == dir) {
+							callback.second.func(fullPath, toWatchAction(action));
+						}
+					}
+					return;
+				}
+			}
+		}
+
+	private:
+		WatchAction toWatchAction(efsw::Action action) {
+			switch (action) {
+				case efsw::Actions::Add:
+					return WatchAction::Added;
+				case efsw::Actions::Modified:
+					return WatchAction::Modified;
+				case efsw::Actions::Delete:
+					return WatchAction::Removed;
+				default:
+					return WatchAction::Modified;
+			}
+		}
+	};
+
+	class EfswFileWatcher : public orb::FileWatcher {
 	private:
 		std::vector<Watch> _watches;
 		WatchId _nextWatchId = 1;
-		orb::FileWatcher _watcher;
+		efsw::FileWatcher _watcher;
+		UpdateListener _listener{ _watches };
 
 	public:
-		WatchId add(const std::string& path, WatchCallbackFunc&& callback) {
+		EfswFileWatcher(): _watcher(false) {
+			_watcher.watch();
+		}
+
+		void update() override {
+			
+		}
+
+		WatchId add(const std::string& path, WatchCallbackFunc&& callback) override {
 			std::string watchPath;
 
 			if (std::filesystem::is_directory(path)) {
-				watchPath = path.string();
+				watchPath = path;
 			} else {
-				watchPath = path.parent_path().string();
+				watchPath = std::filesystem::path(path).parent_path().string();
 			}
 
 			Watch* existing = findWatch(watchPath);
 			if (!existing) {
-				orb::WatchID watchId = _watcher.addWatch(watchPath, this);
-				_reloaders.push_back({ watchId, watchPath });
-				existing = &_reloaders.back();
+				WatchId watchId = _watcher.addWatch(watchPath, &_listener);
+				_watches.push_back({ watchId, watchPath });
+				existing = &_watches.back();
 			}
 
-			Watch::Id id = _nextWatchId++;
-			existing->callbacks.insert({ path.string(), Watch::Callback { .id = id, .func = std::move(func) } });
+			WatchId id = _nextWatchId++;
+			existing->callbacks.insert({ path, Watch::Callback { .id = id, .func = std::move(callback) } });
 
 			return id;
 		}
 
-		void remove(WatchId id) {
-			std::string watchPath;
+		void remove(WatchId id) override {
 
-	if (std::filesystem::is_directory(path)) {
-		watchPath = path.string();
-	} else {
-		watchPath = path.parent_path().string();
-	}
-
-	Watch* existing = findWatch(watchPath);
-	if (!existing) {
-		orb::WatchID watchId = _watcher.addWatch(watchPath, this);
-		_reloaders.push_back({ watchId, watchPath });
-		existing = &_reloaders.back();
-	}
-
-	Watch::Id id = _nextWatchId++;
-	existing->callbacks.insert({ path.string(), Watch::Callback { .id = id, .func = std::move(func) } });
-
-	return id;
 		}
 
-		#ifndef FW_PLATFORM_WEB
-		void handleFileAction(orb::WatchID watchid, const orb::String& dir, const orb::String& filename, orb::Action action) override;
-#endif
-
-Watch* findWatch(const std::string& path) {
-			for (Watch& watch : _reloaders) {
+	private:
+		Watch* findWatch(const std::string& path) {
+			for (Watch& watch : _watches) {
 				if (watch.path == path) {
 					return &watch;
 				}
@@ -118,20 +146,4 @@ Watch* findWatch(const std::string& path) {
 			return nullptr;
 		}
 	};
-
-	void FileManager::handleFileAction(orb::WatchID watchid, const orb::String& dir, const orb::String& filename, orb::Action action) {
-	spdlog::debug("File action: {} {} {}", dir, filename, action);
-	std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
-	for (Watch& watch : _reloaders) {
-		if (watch.watchId == watchid) {
-			for (const auto& callback : watch.callbacks) {
-				if (callback.first == fullPath || callback.first == dir) {
-					callback.second.func(fullPath, action);
-				}
-			}
-			return;
-		}
-	}
-}
-	*/
 }

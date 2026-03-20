@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "ui/View.h"
@@ -5,6 +6,7 @@
 
 #include "core/RetroPlugProject.h"
 #include "ui/RootContainer.h"
+#include "foundation/FileWatcher.h"
 
 namespace rp {
 	class RetroPlugView final : public orb::View {
@@ -16,6 +18,7 @@ namespace rp {
 		std::shared_ptr<RootContainer> _rootContainer;
 		RetroPlugProject& _project;
 		uint32 _version = 0;
+		orb::EfswFileWatcher _watcher;
 
 	public:
 		RetroPlugView(RetroPlugProject& project);

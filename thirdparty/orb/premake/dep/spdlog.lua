@@ -6,7 +6,7 @@ local m = {}
 
 function m.include()
 	filter{}
-	defines { "SPDLOG_COMPILED_LIB", "SPDLOG_USE_STD_FORMAT", "FMT_UNICODE=0" }
+	defines { "SPDLOG_COMPILED_LIB", "SPDLOG_USE_STD_FORMAT", "FMT_UNICODE=1" }
 	includedirs {
 		SPDLOG_DIR .. "/include",
 	}

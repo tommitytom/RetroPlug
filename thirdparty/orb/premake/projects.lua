@@ -45,7 +45,7 @@ function m.Foundation.include()
 
 	filter { "platforms:not Emscripten" }
 		dep.gainput.include()
-		dep.simplefilewatcher.include()
+		dep.efsw.include()
 
 	filter {}
 end
@@ -59,7 +59,7 @@ function m.Foundation.link()
 	dep.spdlog.link()
 
 	filter { "platforms:not Emscripten" }
-		dep.simplefilewatcher.link()
+		dep.efsw.link()
 		dep.gainput.link()
 
 	filter {}
@@ -521,7 +521,7 @@ end
 	m.Graphics.link()
 	m.Engine.link()
 	m.Application.link()
-	dep.simplefilewatcher.link()
+	dep.efsw.link()
 
 	includedirs {
 		"thirdparty",

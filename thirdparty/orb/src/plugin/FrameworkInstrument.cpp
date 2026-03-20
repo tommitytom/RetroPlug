@@ -52,7 +52,7 @@ FrameworkInstrument::FrameworkInstrument(const InstanceInfo& info) :
 
 			ViewManagerPtr viewManager = window->getViewManager();
 			viewManager->createState(_audioManager.get());
-			viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
+			//viewManager->createState<EventNode>(_audioManager->getProcessor()->getEventNode().spawn("Ui"));
 
 			FrameworkView* frameworkView = new FrameworkView(*_app, uiContext, window, [&]() { _editorOpen = false; });
 			pGraphics->AttachControl(frameworkView);

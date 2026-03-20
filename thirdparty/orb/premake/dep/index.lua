@@ -5,7 +5,7 @@ local m = {
 	zlib = dofile("zlib.lua"),
 	freetype = dofile("freetype.lua"),
 	freetypeGl = dofile("freetype-gl.lua"),
-	simplefilewatcher = dofile("simplefilewatcher.lua"),
+	efsw = dofile("efsw.lua"),
 	iplug2 = dofile("iplug2.lua"),
 	glad = dofile("glad.lua"),
 	bin2h = dofile("bin2h.lua"),
@@ -31,7 +31,7 @@ function m.allProjects()
 		m.glfw.project()
 		m.pugl.project()
 		m.gainput.project()
-		m.simplefilewatcher.project()
+		m.efsw.project()
 	end
 end
 

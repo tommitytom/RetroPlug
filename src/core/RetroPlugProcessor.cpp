@@ -252,6 +252,26 @@ namespace rp {
 	}
 
 	void RetroPlugProcessor::onMidi(const orb::MidiMessage& message) {
+		for (const auto& [e, state] : _registry.view<SystemIoComponent>().each()) {
+			if (!state.io) {
+				state.io = std::make_shared<SystemIo>();
+			}
+
+			state.io->input.serial.tryPush(TimedByte{
+				.byte = message.status,
+				.audioFrameOffset = message.offset
+			});
+
+			state.io->input.serial.tryPush(TimedByte{
+				.byte = message.data1,
+				.audioFrameOffset = message.offset
+			});
+
+			state.io->input.serial.tryPush(TimedByte{
+				.byte = message.data2,
+				.audioFrameOffset = message.offset
+			});
+		}
 	}
 
 	void RetroPlugProcessor::onSampleRateChange(f32 sampleRate) {

@@ -21,6 +21,7 @@
 */
 
 #include <FileWatcher/FileWatcherWin32.h>
+#include <algorithm>
 
 #if FILEWATCHER_PLATFORM == FILEWATCHER_PLATFORM_WIN32
 
@@ -80,7 +81,7 @@ namespace FW
 #			if defined(UNICODE)
 				{
 					lstrcpynW(szFile, pNotify->FileName,
-						min(MAX_PATH, pNotify->FileNameLength / sizeof(WCHAR) + 1));
+						std::min((int)MAX_PATH, (int)(pNotify->FileNameLength / sizeof(WCHAR) + 1)));
 				}
 #			else
 				{

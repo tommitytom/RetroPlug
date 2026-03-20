@@ -149,7 +149,7 @@ namespace rp {
 		}
 
 		if (event.down && event.key == orb::VirtualKey::F7) {
-			_project.loadFromPathsAsync({ "C:\\retro\\Lagrange Point (J).nes" });
+			_project.loadFromPathsAsync({ "C:\\retro\\Akumajou Densetsu (J).nes" });
 		}
 
 		if (event.down && event.key == orb::VirtualKey::F6) {
@@ -157,7 +157,15 @@ namespace rp {
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
-			_project.loadFromPathsAsync({ "C:\\retro\\tj.nes" });
+			//_project.loadFromPathsAsync({ "C:\\retro\\tj.nes" });
+			_project.loadFromPathsAsync({ "C:\\projects\\code\\edn8-pro-pub\\edio-n8\\edio-n8.nes" });
+			_watcher.add("C:\\projects\\code\\edn8-pro-pub\\edio-n8\\edio-n8.nes", [this](const std::string& path, orb::WatchAction action) {
+				if (action == orb::WatchAction::Modified) {
+					spdlog::info("File modified: {}", path);
+					_project.loadFromPathsAsync({ path });
+				}
+			});
+			
 
 			//_project.loadFromPathsAsync({ "C:\\retro\\lsdj942bitbrigade_1.gbc", "C:\\retro\\lsdj942bitbrigade_1.sav" });
 

@@ -3,6 +3,8 @@
 #include "MesenComponents.h"
 #include "MesenAudioDevice.h"
 #include "MesenVideoDevice.h"
+#include "NesEverdriveFifo.h"
+
 #include "core/AudioEffect.h"
 #include "core/AudioSettingsContext.h"
 #include "core/HierarchyUtil.h"
@@ -22,6 +24,16 @@
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/SettingTypes.h"
 
+MemoryType getNesMemoryType(rp::MemoryType type) {
+	switch (type) {
+	case rp::MemoryType::Ram: return MemoryType::NesInternalRam;
+	case rp::MemoryType::Rom: return MemoryType::NesPrgRom;
+	case rp::MemoryType::Sram: return MemoryType::NesSaveRam;
+	case rp::MemoryType::Vram: return MemoryType::NesChrRam;
+	default: return MemoryType::None;
+	}
+}
+
 namespace rp {
 	MesenAudioHooks::MesenAudioHooks() : AudioSystemHook(entt::type_id<MesenComponent>().index()) {}
 
@@ -29,9 +41,11 @@ namespace rp {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
 	}
 
-	MemoryAccessor MesenAudioHooks::onGetMemory(entt::registry& registry, entt::entity entity, MemoryType type, AccessType access) const {
+	MemoryAccessor MesenAudioHooks::onGetMemory(entt::registry& registry, entt::entity entity, rp::MemoryType type, AccessType access) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-		return MemoryAccessor();
+		auto nesType = getNesMemoryType(type);
+		ConsoleMemoryInfo memoryInfo = state.emulator->GetMemory(nesType);
+		return MemoryAccessor(type, orb::Uint8Buffer(static_cast<uint8*>(memoryInfo.Memory), static_cast<size_t>(memoryInfo.Size)), 0);
 	}
 
 	void MesenAudioHooks::onPatchMemory(entt::registry& registry, entt::entity entity, const MemoryPatch& patch) const {
@@ -115,6 +129,12 @@ namespace rp {
 
 			s.emulator->ProcessEvent(EventType::InputPolled, CpuType::Nes);
 
+			constexpr double kNesCpuHz = 1789773.0;
+			const double cyclesPerSample = kNesCpuHz / settings.sampleRate;
+			const uint64_t cyclesAtBlockStart = console->GetCpu()->GetCycleCount();
+
+			auto serial = io.input.serial;
+
 			auto cpu = console->GetCpu();
 			const uint32_t blockSize = settings.blockSize;
 
@@ -130,6 +150,18 @@ namespace rp {
 			// At ~1.79 MHz CPU / 44100 Hz that yields ~227 samples per flush,
 			// so blockSize samples are ready well within one PPU frame.
 			while (s.audioDevice->availableFrames() < blockSize) {
+				const uint64_t currentCycle = console->GetCpu()->GetCycleCount();
+
+				while (serial.count()) {
+					const TimedByte& b = serial.front();
+					const uint64_t targetCycle = cyclesAtBlockStart + static_cast<uint64_t>(static_cast<double>(b.audioFrameOffset) * cyclesPerSample);
+
+					if (currentCycle >= targetCycle) {
+						s.fifo->pushByte(b.byte);
+						serial.pop();
+					}
+				}
+
 				cpu->Exec();
 			}
 

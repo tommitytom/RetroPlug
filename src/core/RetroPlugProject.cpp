@@ -6,6 +6,7 @@
 #include "foundation/FsUtil.h"
 #include "foundation/Replicator.h"
 #include "core/Events.h"
+#include "core/FileWatcherContext.h"
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugComponents.h"
 #include "core/RetroPlugProjectContext.h"
@@ -32,6 +33,8 @@ namespace rp {
 
 #ifdef FW_PLATFORM_WEB
 		_registry.ctx().at<ProjectPathContext>().mountPath = "/mount";
+#else
+		_registry.ctx().emplace<FileWatcherContext>();
 #endif
 
 		orb::Replicator::subscribe(_registry, _eventNode, targetNodeId, true, false);

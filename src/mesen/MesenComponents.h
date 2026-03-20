@@ -5,6 +5,7 @@ class Emulator;
 namespace rp {
 	class MesenAudioDevice;
 	class MesenVideoDevice;
+	class NesEverdriveFifo;
 
 	static constexpr double	CPU_CLOCK_RATE = 1789773.0;
 	static constexpr int	PPU_DIVIDER = 3;		// PPU runs at 3x CPU clock (NTSC)
@@ -18,6 +19,7 @@ namespace rp {
 		std::unique_ptr<Emulator>          emulator;
 		std::shared_ptr<MesenAudioDevice>  audioDevice;
 		std::shared_ptr<MesenVideoDevice>  videoDevice;
+		std::shared_ptr<NesEverdriveFifo>  fifo;
 
 		// Cycle count at the start of the current audio block.
 		// Used to convert per-block sample offsets to absolute cycles.
