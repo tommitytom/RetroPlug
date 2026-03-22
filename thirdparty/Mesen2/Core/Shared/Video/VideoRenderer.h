@@ -30,10 +30,7 @@ class VideoRenderer
 private:
 	Emulator* _emu;
 
-	AutoResetEvent _waitForRender;
-	unique_ptr<std::thread> _renderThread;
 	IRenderingDevice* _renderer = nullptr;
-	atomic<bool> _stopFlag;
 	SimpleLock _stopStartLock;
 
 	uint32_t _rendererWidth = 512;

@@ -26,6 +26,8 @@ namespace rp {
 
 		void onInitialize() override;
 
+		bool onDragMove(orb::DragContext& ctx, orb::Point position) override { return true; }
+
 		bool onDrop(const std::vector<std::string>& paths) override;
 
 		void onUpdate(f32 deltaTime) override;

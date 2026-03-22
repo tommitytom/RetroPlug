@@ -7,6 +7,7 @@
 #include <efsw/System.hpp>
 #include <efsw/efsw.hpp>
 #include <filesystem>
+#include <moodycamel/readerwriterqueue.h>
 #endif
 
 #include "foundation/Types.h"
@@ -20,6 +21,12 @@ namespace orb {
 
 	using WatchId = int32;
 	using WatchCallbackFunc = std::function<void(const std::string&, WatchAction)>;
+
+	struct WatchEvent {
+		WatchId id;
+		std::string path;
+		WatchAction action;
+	};;
 
 	struct Watch {
 		struct Callback {
@@ -57,25 +64,18 @@ namespace orb {
 
 	class UpdateListener : public efsw::FileWatchListener {
 	private:
-		std::vector<Watch>& _watches;
+		moodycamel::ReaderWriterQueue<WatchEvent>& _events;
+
 	public:
-		UpdateListener(std::vector<Watch>& watches) : _watches(watches) {}
+		UpdateListener(moodycamel::ReaderWriterQueue<WatchEvent>& events) : _events(events) {}
 		~UpdateListener() {}
 
 		void handleFileAction(efsw::WatchID watchid, const std::string& dir, const std::string& filename, efsw::Action action, std::string oldFilename) override {
-			spdlog::debug("File action: {} {} {}", dir, filename, (int)action);
-
-			std::string fullPath = (std::filesystem::path(dir) / std::filesystem::path(filename)).string();
-			for (Watch& watch : _watches) {
-				if (watch.watchId == watchid) {
-					for (const auto& callback : watch.callbacks) {
-						if (callback.first == fullPath || callback.first == dir) {
-							callback.second.func(fullPath, toWatchAction(action));
-						}
-					}
-					return;
-				}
-			}
+			_events.enqueue(WatchEvent{ 
+				.id = watchid, 
+				.path = (std::filesystem::path(dir) / std::filesystem::path(filename)).string(), 
+				.action = toWatchAction(action) 
+			});
 		}
 
 	private:
@@ -98,7 +98,8 @@ namespace orb {
 		std::vector<Watch> _watches;
 		WatchId _nextWatchId = 1;
 		efsw::FileWatcher _watcher;
-		UpdateListener _listener{ _watches };
+		moodycamel::ReaderWriterQueue<WatchEvent> _events;
+		UpdateListener _listener{ _events };
 
 	public:
 		EfswFileWatcher(): _watcher(false) {
@@ -106,7 +107,21 @@ namespace orb {
 		}
 
 		void update() override {
-			
+			WatchEvent ev;
+			while (_events.try_dequeue(ev)) {
+				spdlog::debug("File action: {} {}", ev.path, (int)ev.action);
+
+				for (Watch& watch : _watches) {
+					if (watch.watchId == ev.id) {
+						for (const auto& callback : watch.callbacks) {
+							if (callback.first == ev.path/* || callback.first == dir*/) {
+								callback.second.func(ev.path, ev.action);
+							}
+						}
+						break;
+					}
+				}
+			}
 		}
 
 		WatchId add(const std::string& path, WatchCallbackFunc&& callback) override {

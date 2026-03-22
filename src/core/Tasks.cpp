@@ -52,8 +52,8 @@ namespace rp {
 	void LoadProjectTask::finalize(entt::registry& targetRegistry) {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		for (const auto& [e, system] : targetRegistry.view<SystemComponent>().each()) {
-			eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
-			eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			//eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			//eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
 			orb::Replicator::destroy(targetRegistry, e);
 		}
 

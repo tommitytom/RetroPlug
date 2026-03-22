@@ -15,7 +15,6 @@
 VideoRenderer::VideoRenderer(Emulator* emu)
 {
 	_emu = emu;
-	_stopFlag = false;
 
 	_rendererHud.reset(new DebugHud());
 	_systemHud.reset(new SystemHud(_emu));
@@ -24,7 +23,6 @@ VideoRenderer::VideoRenderer(Emulator* emu)
 
 VideoRenderer::~VideoRenderer()
 {
-	_stopFlag = true;
 	StopThread();
 }
 
@@ -44,32 +42,15 @@ void VideoRenderer::SetRendererSize(uint32_t width, uint32_t height)
 
 void VideoRenderer::StartThread()
 {
-	if(!_renderThread) {
-		auto lock = _stopStartLock.AcquireSafe();
-		if(!_renderThread) {
-			_stopFlag = false;
-			_waitForRender.Reset();
-
-			_renderThread.reset(new std::thread(&VideoRenderer::RenderThread, this));
-		}
-	}
 }
 
 void VideoRenderer::StopThread()
 {
-	_stopFlag = true;
-	if(_renderThread) {
-		auto lock = _stopStartLock.AcquireSafe();
-		if(_renderThread) {
-			_renderThread->join();
-			_renderThread.reset();
-		}
-	}
 }
 
 void VideoRenderer::RenderThread()
 {
-	if(_renderer) {
+	/*if (_renderer) {
 		_renderer->OnRendererThreadStarted();
 	}
 
@@ -105,7 +86,7 @@ void VideoRenderer::RenderThread()
 				_renderer->Render(_emuHudSurface, _scriptHudSurface);
 			}
 		}
-	}
+	}*/
 }
 
 FrameInfo VideoRenderer::GetEmuHudSize(FrameInfo baseFrameSize)
@@ -176,7 +157,6 @@ void VideoRenderer::UpdateFrame(RenderedFrame& frame)
 	if(_renderer) {
 		_renderer->UpdateFrame(frame);
 		_needRedraw = true;
-		_waitForRender.Signal();
 	}
 }
 

@@ -88,6 +88,21 @@ namespace rp {
 			});
 		});
 
+		node.receive<MidiEvent>([this](MidiEvent&& ev) {
+			if (!_registry.valid(ev.entity)) {
+				return;
+			}
+
+			SystemIoComponent* state = _registry.try_get<SystemIoComponent>(ev.entity);
+			if (!state) {
+				return;
+			}
+
+			state->io->input.serial.push(TimedByte{ .byte = ev.message.status, .audioFrameOffset = 0 });
+			state->io->input.serial.push(TimedByte{ .byte = ev.message.data1, .audioFrameOffset = 0 });
+			state->io->input.serial.push(TimedByte{ .byte = ev.message.data2, .audioFrameOffset = 0 });
+		});
+
 		node.receive<FetchMemoryRequest>([this](FetchMemoryRequest&& ev){
 			if (!_registry.valid(ev.entity)) {
 				return;
@@ -222,6 +237,25 @@ namespace rp {
 	}
 
 	void RetroPlugProcessor::onRender(f32* output, const f32* input, uint32 frameCount) {
+		// Quick and dirty MIDI note test: play a short note every ~0.5s
+		static uint32 testFrameCounter = 0;
+		static bool testNoteOn = false;
+		const uint32 noteOnInterval = static_cast<uint32>(getSampleRate() * 0.5f);
+		const uint32 noteOnDuration = static_cast<uint32>(getSampleRate() * 0.1f);
+		const uint8 testNote = 60;
+		const uint8 testVelocity = 100;
+
+		if (!testNoteOn && testFrameCounter >= noteOnInterval) {
+			//onMidi(orb::MidiMessage{ .offset = 0, .status = 0x90, .data1 = testNote, .data2 = testVelocity });
+			testNoteOn = true;
+			testFrameCounter = 0;
+		} else if (testNoteOn && testFrameCounter >= noteOnDuration) {
+			//onMidi(orb::MidiMessage{ .offset = 0, .status = 0x80, .data1 = testNote, .data2 = 0 });
+			testNoteOn = false;
+			testFrameCounter = 0;
+		}
+		testFrameCounter += frameCount;
+
 		AudioEffectContext& effectCtx = _registry.ctx().emplace<AudioEffectContext>();
 		orb::AudioBuffer outBuffer(2, frameCount, getSampleRate());
 		orb::AudioBuffer inBuffer;

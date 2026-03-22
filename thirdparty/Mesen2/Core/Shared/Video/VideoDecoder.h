@@ -18,13 +18,6 @@ private:
 
 	ConsoleType _consoleType = ConsoleType::Snes;
 
-	unique_ptr<thread> _decodeThread;
-
-	SimpleLock _stopStartLock;
-	AutoResetEvent _waitForFrame;
-	
-	atomic<bool> _frameChanged;
-	atomic<bool> _stopFlag;
 	uint32_t _frameCount = 0;
 	bool _forceFilterUpdate = false;
 
@@ -40,8 +33,6 @@ private:
 	unique_ptr<RotateFilter> _rotateFilter;
 
 	void UpdateVideoFilter();
-
-	void DecodeThread();
 
 public:
 	VideoDecoder(Emulator* console);

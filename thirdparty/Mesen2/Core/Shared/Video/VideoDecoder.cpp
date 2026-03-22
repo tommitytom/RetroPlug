@@ -20,15 +20,13 @@
 VideoDecoder::VideoDecoder(Emulator* emu)
 {
 	_emu = emu;
-	_frameChanged = false;
-	_stopFlag = false;
 	_baseFrameSize = { 256, 239 };
 	_lastFrameSize = _baseFrameSize;
 }
 
 VideoDecoder::~VideoDecoder()
 {
-	StopThread();
+	
 }
 
 void VideoDecoder::Init()
@@ -145,24 +143,6 @@ void VideoDecoder::DecodeFrame(bool forRewind)
 	
 	//Rewind manager will take care of sending the correct frame to the video renderer
 	_emu->GetRewindManager()->SendFrame(convertedFrame, forRewind);
-
-	_frameChanged = false;
-}
-
-void VideoDecoder::DecodeThread()
-{
-	//This thread will decode the PPU's output (color ID to RGB, intensify r/g/b and produce a HD version of the frame if needed)
-	while(!_stopFlag.load()) {
-		//DecodeFrame returns the final ARGB frame we want to display in the emulator window
-		while(!_frameChanged) {
-			_waitForFrame.Wait();
-			if(_stopFlag.load()) {
-				return;
-			}
-		}
-
-		DecodeFrame();
-	}
 }
 
 uint32_t VideoDecoder::GetFrameCount()
@@ -172,10 +152,10 @@ uint32_t VideoDecoder::GetFrameCount()
 
 void VideoDecoder::WaitForAsyncFrameDecode()
 {
-	while(_frameChanged) {
+	//while(_frameChanged) {
 		//Spin until decode is done
-		std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(15));
-	}
+		//std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(15));
+	//}
 }
 
 void VideoDecoder::UpdateFrame(RenderedFrame frame, bool sync, bool forRewind)
@@ -184,62 +164,31 @@ void VideoDecoder::UpdateFrame(RenderedFrame frame, bool sync, bool forRewind)
 		return;
 	}
 
-	if(_frameChanged) {
-		//Last frame isn't done decoding yet - sometimes Signal() introduces a 25-30ms delay
-		while(_frameChanged) {
-			//Spin until decode is done
-		}
-		//At this point, we are sure that the decode thread is no longer busy
-	}
-
 	_emu->OnBeforeSendFrame();
 
 	_frame = frame;
-	if(sync) {
-		DecodeFrame(forRewind);
-	} else {
-		_frameChanged = true;
-		_waitForFrame.Signal();
-	}
+	DecodeFrame(forRewind);
 	_frameCount++;
 }
 
 void VideoDecoder::StartThread()
 {
-	auto lock = _stopStartLock.AcquireSafe();
-	if(!_decodeThread) {
-		_videoFilter.reset();
-		UpdateVideoFilter();
-		_videoFilter->SetBaseFrameInfo(_baseFrameSize);
-		_stopFlag = false;
-		_frameChanged = false;
-		_frameCount = 0;
-		_waitForFrame.Reset();
-		
-		_emu->GetVideoRenderer()->ClearFrame();
+	_videoFilter.reset();
+	UpdateVideoFilter();
+	_videoFilter->SetBaseFrameInfo(_baseFrameSize);
+	_frameCount = 0;
 
-		_decodeThread.reset(new thread(&VideoDecoder::DecodeThread, this));
-	}
+	_emu->GetVideoRenderer()->ClearFrame();
 }
 
 void VideoDecoder::StopThread()
 {
-	auto lock = _stopStartLock.AcquireSafe();
-	_stopFlag = true;
-	if(_decodeThread) {
-		_waitForFrame.Signal();
-		_decodeThread->join();
-
-		_decodeThread.reset();
-
-		//Clear whole screen
-		_emu->GetVideoRenderer()->ClearFrame();
-	}
+	_emu->GetVideoRenderer()->ClearFrame();
 }
 
 bool VideoDecoder::IsRunning()
 {
-	return _decodeThread != nullptr;
+	return true;
 }
 
 void VideoDecoder::TakeScreenshot()

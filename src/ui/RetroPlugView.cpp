@@ -38,7 +38,7 @@ namespace rp {
 			fsPaths.push_back(path);
 		}
 
-		_project.loadFromPaths(fsPaths);
+		_project.loadFromPathsAsync(fsPaths);
 		return true;
 #endif
 
@@ -46,6 +46,8 @@ namespace rp {
 	}
 
 	void RetroPlugView::onUpdate(f32 deltaTime) {
+		_watcher.update();
+
 		_project.onUpdate(deltaTime);
 
 		if (_project.getVersion() != _version) {
@@ -158,8 +160,8 @@ namespace rp {
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
 			//_project.loadFromPathsAsync({ "C:\\retro\\tj.nes" });
-			_project.loadFromPathsAsync({ "C:\\projects\\code\\edn8-pro-pub\\edio-n8\\edio-n8.nes" });
-			_watcher.add("C:\\projects\\code\\edn8-pro-pub\\edio-n8\\edio-n8.nes", [this](const std::string& path, orb::WatchAction action) {
+			_project.loadFromPathsAsync({ "C:\\projects\\code\\evermidi\\rom\\n8-midi.nes" });
+			_watcher.add("C:\\projects\\code\\evermidi\\rom\\n8-midi.nes", [this](const std::string& path, orb::WatchAction action) {
 				if (action == orb::WatchAction::Modified) {
 					spdlog::info("File modified: {}", path);
 					_project.loadFromPathsAsync({ path });

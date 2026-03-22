@@ -58,6 +58,16 @@ namespace rp {
 			return _items[_front];
 		}
 
+		T& at(size_t index) {
+			assert(_front + index < _back);
+			return _items[_front + index];
+		}
+
+		const T& at(size_t index) const {
+			assert(_front + index < _back);
+			return _items[_front + index];
+		}
+
 		size_t count() const {
 			return _back - _front;
 		}

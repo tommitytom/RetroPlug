@@ -4,6 +4,7 @@
 #include "MesenAudioDevice.h"
 #include "MesenVideoDevice.h"
 #include "NesEverdriveFifo.h"
+#include "EdioProxy.h"
 
 #include "core/AudioEffect.h"
 #include "core/AudioSettingsContext.h"
@@ -55,7 +56,6 @@ namespace rp {
 	void MesenAudioHooks::onReset(entt::registry& registry, entt::entity entity) const {
 		MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
 		state.emulator->Reset();
-		state.blockStartCycle = 0;
 	}
 
 	std::optional<NesController::Buttons> toNesButton(orb::ButtonType button) {
@@ -95,8 +95,10 @@ namespace rp {
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
 			MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
 			if (state.videoDevice) {
-				state.emulator->GetVideoRenderer()->UnregisterRenderingDevice(state.videoDevice.get());
+				//state.emulator->GetVideoRenderer()->UnregisterRenderingDevice(state.videoDevice.get());
+				//state.videoDevice = nullptr;
 			}
+			state.emulator->Release();
 			registry.remove<MesenStateComponent>(entity);
 		});
 
@@ -134,6 +136,13 @@ namespace rp {
 			const uint64_t cyclesAtBlockStart = console->GetCpu()->GetCycleCount();
 
 			auto serial = io.input.serial;
+
+			if (s.edioProxy) {
+				for (size_t i = 0; i < serial.count(); i++) {
+					const TimedByte& b = serial.at(i);
+					s.edioProxy->sendCommand(EdioSerialCommand{ b.byte, 1 });
+				}
+			}
 
 			auto cpu = console->GetCpu();
 			const uint32_t blockSize = settings.blockSize;

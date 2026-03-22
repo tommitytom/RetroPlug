@@ -224,6 +224,7 @@ function m.MesenPlug.include()
 	dependson { "configure" }
 
 	dep.mesen.include()
+	dep.serial.include()
 	m.Core.include()
 end
 
@@ -234,6 +235,7 @@ function m.MesenPlug.link()
 
 	m.Core.link()
 	dep.mesen.link()
+	dep.serial.link()
 end
 
 function m.MesenPlug.project()
