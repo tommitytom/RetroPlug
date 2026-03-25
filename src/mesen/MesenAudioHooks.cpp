@@ -93,12 +93,6 @@ namespace rp {
 		});
 
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {
-			MesenStateComponent& state = registry.get<MesenStateComponent>(entity);
-			if (state.videoDevice) {
-				//state.emulator->GetVideoRenderer()->UnregisterRenderingDevice(state.videoDevice.get());
-				//state.videoDevice = nullptr;
-			}
-			state.emulator->Release();
 			registry.remove<MesenStateComponent>(entity);
 		});
 
