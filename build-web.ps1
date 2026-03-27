@@ -13,11 +13,15 @@ if ($ExtraDebug)
     $Configure = $true
 }
 
-$EMSCRIPTEN_VERSION = "sdk-upstream-main-64bit"
+$EMSCRIPTEN_VERSION = "latest"
 
 function InstallEmscripten() {
 
     Write-Host "`nInstall Emscripten toolchain version $EMSCRIPTEN_VERSION...`n" -ForegroundColor DarkMagenta
+
+    # Keep downloads so that if the server drops the connection mid-transfer
+    # (a known emsdk issue), a manually-resumed curl download is reused.
+    $env:EMSDK_KEEP_DOWNLOADS = 1
 
     .\thirdparty\emsdk\emsdk.ps1 update # Fetch all versions to make sure install can find the correct version.
     .\thirdparty\emsdk\emsdk.ps1 install $EMSCRIPTEN_VERSION
