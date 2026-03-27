@@ -542,7 +542,7 @@ export const ProjectExplorer: React.FC = () => {
 					</div>
 				))}
 			</div>
-			<div className="border-t border-gray-700 bg-gray-900">
+			{/* <div className="border-t border-gray-700 bg-gray-900">
 				<button
 					className="flex w-full items-center justify-center gap-2 bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors duration-200 hover:bg-slate-500 focus:bg-slate-500 focus:outline-none"
 					onClick={handleBackupClick}
@@ -561,7 +561,7 @@ export const ProjectExplorer: React.FC = () => {
 					<span className="text-white">▩</span>
 					<span>Import</span>
 				</button>
-			</div>
+			</div> */}
 			<ContextMenu
 				items={contextMenu.items}
 				position={contextMenu.position}

@@ -37,6 +37,7 @@ local useWasmFs = true;
 if useWasmFs then
 	table.insert(EMSDK_FLAGS, "-s WASMFS=1")
 	table.insert(EMSDK_FLAGS, "-s JSPI=1")
+	table.insert(EMSDK_FLAGS, "-s JSPI_EXPORTS=_emscripten_check_mailbox,_emscripten_proxy_execute_queue")
 	table.insert(EMSDK_FLAGS, "-fwasm-exceptions")
 else
 	table.insert(EMSDK_FLAGS, "-lidbfs.js")
