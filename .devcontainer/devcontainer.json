@@ -1,8 +1,8 @@
 {
-	"name": "Retro Plug",
+	"name": "RetroPlug",
 
 	"build": {
-		"dockerfile": "Dockerfile",
+		"dockerfile": "Dockerfile"
 	},
 
 	"runArgs": [
@@ -19,22 +19,24 @@
 	//"postCreateCommand": "echo 'PATH=$PATH:/emsdk/upstream/bin' >> /home/emscripten/.bashrc && sudo nginx -c /workspaces/RetroPlugNext/.devcontainer/nginx/default.conf",
 
 	// Set *default* container specific settings.json values on container create.
-	"settings": {
-		"terminal.integrated.shell.linux": "/bin/zsh"
-	},
-
 	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": [
-		"dbaeumer.vscode-eslint",
-		"ms-vscode.cpptools",
-		"dtsvet.vscode-wasm",
-		"firefox-devtools.vscode-firefox-debug",
-		"ms-edgedevtools.vscode-edge-devtools",
-		"mutantdino.resourcemonitor",
-		"sumneko.lua",
-		"eamodio.gitlens",
-		"mhutchie.git-graph"
-	],
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"terminal.integrated.shell.linux": "/bin/zsh"
+			},
+			"extensions": [
+				"dbaeumer.vscode-eslint",
+				"ms-vscode.cpptools",
+				"dtsvet.vscode-wasm",
+				"firefox-devtools.vscode-firefox-debug",
+				"ms-edgedevtools.vscode-edge-devtools",
+				"mutantdino.resourcemonitor",
+				"sumneko.lua",
+				"mhutchie.git-graph"
+			]
+		}
+	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [
@@ -47,5 +49,5 @@
 	},
 
 	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
-	"remoteUser": "emscripten"
+	"remoteUser": "ubuntu"
 }

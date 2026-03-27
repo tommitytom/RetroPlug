@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include "foundation/DataBuffer.h"
 
 namespace fw {
