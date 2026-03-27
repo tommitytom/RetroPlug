@@ -1,4 +1,4 @@
-FROM emscripten/emsdk:3.1.32
+FROM emscripten/emsdk:5.0.4
 
 # [Option] Install zsh
 ARG INSTALL_ZSH="true"
