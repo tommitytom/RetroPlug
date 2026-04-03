@@ -36,3 +36,5 @@ src/retroplug/luawrapper/generated
 thirdparty/lib
 thirdparty/build
 thirdparty/LivePP
+
+core.*

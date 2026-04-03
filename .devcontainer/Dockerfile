@@ -27,6 +27,18 @@ RUN bash /tmp/library-scripts/setup-apt-mirrors.sh
 
 RUN bash /tmp/library-scripts/common-debian.sh "${INSTALL_ZSH}" "${USERNAME}" "${USER_UID}" "${USER_GID}" "${UPGRADE_PACKAGES}" \
 	&& apt-get update \
-	&& apt-get install -y dos2unix gdb nginx libssl-dev g++-multilib libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev mesa-common-dev libssl-dev gnupg clang  \
+	&& apt-get install -y dos2unix gdb nginx libssl-dev g++-multilib libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev mesa-common-dev libssl-dev gnupg clang \
 	&& npm install -g eslint ts-node typescript \
 	&& apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* /root/.gnupg /tmp/library-scripts
+
+# Build and install CC65
+# ARG is placed here so changing CC65_VERSION only invalidates this layer,
+# not the expensive apt-get/npm layer above.
+ARG CC65_REF=master
+RUN set -eux; \
+	BUILD_DIR=$(mktemp -d); \
+	git clone --depth 1 --branch "${CC65_REF}" https://github.com/cc65/cc65.git "$BUILD_DIR/cc65"; \
+	cd "$BUILD_DIR/cc65"; \
+	env PREFIX=/usr/local make -j$(nproc); \
+	env PREFIX=/usr/local make install; \
+	rm -rf "$BUILD_DIR"
