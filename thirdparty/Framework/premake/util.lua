@@ -85,6 +85,9 @@ function util.setupWorkspace()
 		toolset "clang"
 		defines { "FW_OS_LINUX" }
 
+	filter { "system:linux", "kind:not StaticLib" }
+		linkgroups "On"
+
 	filter { "system:linux" }
 		defines { "FW_COMPILER_CLANG" }
 		buildoptions { "-Wfatal-errors" }

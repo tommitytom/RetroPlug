@@ -10,16 +10,16 @@ set -e
 
 #./configure-linux.sh
 
-cd build/gmake2
+cd build/gmake
 mkdir -p ${BUILD_CONFIG}
 #--always-make --dry-run
 make config=${BUILD_CONFIG}_x64 -j$(nproc) ScriptCompiler
 
 cd ../../thirdparty/Framework
-../../build/gmake2/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
+../../build/gmake/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
 
 cd ../..
-./build/gmake2/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
+./build/gmake/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
 
-cd build/gmake2
+cd build/gmake
 CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-app

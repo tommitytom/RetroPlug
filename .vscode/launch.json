@@ -15,7 +15,7 @@
             "name": "Debug RetroPlug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/gmake2/bin/x64/Debug/RetroPlugApp",
+            "program": "${workspaceFolder}/build/gmake/bin/x64/Debug/RetroPlugApp",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

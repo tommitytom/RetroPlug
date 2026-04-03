@@ -2,7 +2,20 @@
 	"name": "RetroPlug",
 
 	"build": {
-		"dockerfile": "Dockerfile"
+		"dockerfile": "Dockerfile",
+		"args": {
+			"CONTAINER_APT_PROXY": "${localEnv:CONTAINER_APT_PROXY}"
+		}
+	},
+
+	"mounts": [
+		"source=/run/user/1000/wayland-1,target=/run/user/1000/wayland-1,type=bind",
+		"source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+	],
+	"containerEnv": {
+		"WAYLAND_DISPLAY": "wayland-1",
+		"XDG_RUNTIME_DIR": "/run/user/1000",
+		"DISPLAY": ":0"
 	},
 
 	"runArgs": [
@@ -12,13 +25,6 @@
 		"--net=host"
 	],
 
-	// Run command on the host machine before starting docker
-	//"initializeCommand": "mkdir -p build/emscripten/debug && mkdir -p build/emscripten/development && mkdir -p build/emscripten/release && mkdir -p build/emscripten/dist",
-
-	// Run commands after the container is created.
-	//"postCreateCommand": "echo 'PATH=$PATH:/emsdk/upstream/bin' >> /home/emscripten/.bashrc && sudo nginx -c /workspaces/RetroPlugNext/.devcontainer/nginx/default.conf",
-
-	// Set *default* editor settings and extensions on container create.
 	"customizations": {
 		"vscode": {
 			"settings": {
@@ -41,11 +47,6 @@
 	"forwardPorts": [
 		1338
 	],
-
-	"remoteEnv": {
-		"DISPLAY": "172.30.96.1:0"  // Windows / Mac OS
-		//"DISPLAY": ":0"                      // Linux
-	},
 
 	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "ubuntu"

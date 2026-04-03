@@ -1,11 +1,11 @@
 FROM emscripten/emsdk:5.0.4
 
 # Accept proxy as build argument
-ARG APT_PROXY="http://192.168.0.100:3142"
+ARG CONTAINER_APT_PROXY
 
 # Configure proxy if provided
-RUN if [ -n "$APT_PROXY" ]; then \
-	echo "Acquire::http::Proxy \"$APT_PROXY\";" > /etc/apt/apt.conf.d/01proxy; \
+RUN if [ -n "$CONTAINER_APT_PROXY" ]; then \
+	echo "Acquire::http::Proxy \"$CONTAINER_APT_PROXY\";" > /etc/apt/apt.conf.d/01proxy; \
 fi
 
 # [Option] Install zsh
@@ -22,9 +22,6 @@ WORKDIR /app
 
 COPY library-scripts/common-debian.sh /tmp/library-scripts/
 COPY library-scripts/setup-apt-mirrors.sh /tmp/library-scripts/
-COPY library-scripts/setup-emscripten.sh /tmp/library-scripts/
-COPY library-scripts/update-alternatives-clang.sh /tmp/library-scripts/
-COPY library-scripts/setup-clang.sh /tmp/library-scripts/
 
 RUN bash /tmp/library-scripts/setup-apt-mirrors.sh
 

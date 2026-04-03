@@ -35,7 +35,7 @@
 			"type": "shell",
 			"command": "light-server -p 8080 -s .",
 			"options": {
-				"cwd": "${workspaceFolder}/build/gmake2/release"
+				"cwd": "${workspaceFolder}/build/gmake/release"
 			},
 			"isBackground": true
 		}

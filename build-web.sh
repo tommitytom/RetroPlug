@@ -10,11 +10,11 @@ if [ "$2" = "--configure" ]; then
 fi
 
 WORKING_DIR="$PWD"
-BUILD_DIR="${WORKING_DIR}/build/gmake2"
+BUILD_DIR="${WORKING_DIR}/build/gmake"
 BUILD_CONFIG_DIR="${BUILD_DIR}/${BUILD_CONFIG}"
 
 if [ "$CONFIGURE" = true ]; then
-	emconfigure ./thirdparty/bin/premake5 --emscripten gmake2
+	emconfigure ./thirdparty/bin/premake5 --emscripten gmake
 fi
 
 mkdir -p "${BUILD_CONFIG_DIR}"

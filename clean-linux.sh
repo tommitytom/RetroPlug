@@ -2,4 +2,4 @@
 
 set -e
 
-rm -rf build/gmake2
+rm -rf build/gmake
