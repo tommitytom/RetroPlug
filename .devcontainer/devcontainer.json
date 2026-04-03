@@ -18,8 +18,7 @@
 	// Run commands after the container is created.
 	//"postCreateCommand": "echo 'PATH=$PATH:/emsdk/upstream/bin' >> /home/emscripten/.bashrc && sudo nginx -c /workspaces/RetroPlugNext/.devcontainer/nginx/default.conf",
 
-	// Set *default* container specific settings.json values on container create.
-	// Add the IDs of extensions you want installed when the container is created.
+	// Set *default* editor settings and extensions on container create.
 	"customizations": {
 		"vscode": {
 			"settings": {

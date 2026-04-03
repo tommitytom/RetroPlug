@@ -268,6 +268,45 @@
 
 
   {
+    "id": "cmake",
+    "version": "4.2.0-rc3",
+    "bitness": 64,
+    "arch": "x86_64",
+    "activated_cfg": "EMSDK_CMAKE='%installation_dir%/bin/cmake%.exe%'",
+    "activated_path": "%installation_dir%/bin",
+    "windows_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-windows-x86_64.zip",
+    "linux_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-linux-x86_64.tar.gz"
+  },
+  {
+    "id": "cmake",
+    "version": "4.2.0-rc3",
+    "bitness": 64,
+    "arch": "x86_64",
+    "activated_cfg": "EMSDK_CMAKE='%installation_dir%/CMake.app/Contents/bin/cmake%.exe%'",
+    "activated_path": "%installation_dir%/CMake.app/Contents/bin",
+    "macos_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-macos-universal.tar.gz"
+  },
+  {
+    "id": "cmake",
+    "version": "4.2.0-rc3",
+    "bitness": 64,
+    "arch": "arm64",
+    "activated_cfg": "EMSDK_CMAKE='%installation_dir%/bin/cmake%.exe%'",
+    "activated_path": "%installation_dir%/bin",
+    "windows_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-windows-arm64.zip",
+    "linux_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-linux-aarch64.tar.gz"
+  },
+  {
+    "id": "cmake",
+    "version": "4.2.0-rc3",
+    "bitness": 64,
+    "arch": "arm64",
+    "activated_cfg": "EMSDK_CMAKE='%installation_dir%/CMake.app/Contents/bin/cmake%.exe%'",
+    "activated_path": "%installation_dir%/CMake.app/Contents/bin",
+    "macos_url": "https://github.com/Kitware/CMake/releases/download/v4.2.0-rc3/cmake-4.2.0-rc3-macos-universal.tar.gz"
+  },
+
+  {
     "id": "python",
     "version": "3.9.2-nuget",
     "bitness": 64,
@@ -339,6 +378,119 @@
     "macos_url": "python-3.13.3-0-macos-arm64.tar.gz",
     "activated_cfg": "PYTHON='%installation_dir%/bin/python3'",
     "activated_env": "EMSDK_PYTHON=%installation_dir%/bin/python3;SSL_CERT_FILE=%installation_dir%/lib/python3.13/site-packages/certifi/cacert.pem"
+  },
+
+  {
+    "id": "firefox",
+    "version": "68.12.0esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "is_old": true
+  },
+  {
+    "id": "firefox",
+    "version": "78.15.0esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "is_old": true
+  },
+  {
+    "id": "firefox",
+    "version": "91.13.0esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "is_old": true
+  },
+  {
+    "id": "firefox",
+    "version": "102.15.1esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "is_old": true
+  },
+  {
+    "id": "firefox",
+    "version": "115.28.0esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "is_old": true
+  },
+  {
+    "id": "firefox",
+    "version": "128.14.0esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox"
+  },
+  {
+    "id": "firefox",
+    "version": "140.3.1esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox"
+  },
+  {
+    "id": "firefox",
+    "version": "latest",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "git_branch": "dummy field, to instruct emsdk to attempt to reinstall this tool even if it is installed, to check for new version",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "custom_is_installed_script": "is_firefox_installed"
+  },
+  {
+    "id": "firefox",
+    "version": "latest-esr",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "git_branch": "dummy field, to instruct emsdk to attempt to reinstall this tool even if it is installed, to check for new version",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "custom_is_installed_script": "is_firefox_installed"
+  },
+  {
+    "id": "firefox",
+    "version": "latest-beta",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "git_branch": "dummy field, to instruct emsdk to attempt to reinstall this tool even if it is installed, to check for new version",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "custom_is_installed_script": "is_firefox_installed"
+  },
+  {
+    "id": "firefox",
+    "version": "nightly",
+    "bitness": 64,
+    "url": "downloaded via mozdownload script, but a dummy directive is placed here so emsdk understands this Tool to be downloaded from the web",
+    "git_branch": "dummy field, to instruct emsdk to attempt to reinstall this tool even if it is installed, to check for new version",
+    "activated_cfg": "EMSDK_ACTIVATED_TEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "activated_env": "EMTEST_BROWSER=%actual_installation_dir%/%macos_app_bundle_prefix%firefox%.exe%",
+    "custom_install_script": "download_firefox",
+    "custom_is_installed_script": "is_firefox_installed"
   },
 
   {
