@@ -72,7 +72,7 @@ namespace orb {
 
 		void handleFileAction(efsw::WatchID watchid, const std::string& dir, const std::string& filename, efsw::Action action, std::string oldFilename) override {
 			_events.enqueue(WatchEvent{ 
-				.id = watchid, 
+				.id = static_cast<WatchId>(watchid), 
 				.path = (std::filesystem::path(dir) / std::filesystem::path(filename)).string(), 
 				.action = toWatchAction(action) 
 			});
@@ -135,7 +135,7 @@ namespace orb {
 
 			Watch* existing = findWatch(watchPath);
 			if (!existing) {
-				WatchId watchId = _watcher.addWatch(watchPath, &_listener);
+				WatchId watchId = static_cast<WatchId>(_watcher.addWatch(watchPath, &_listener));
 				_watches.push_back({ watchId, watchPath });
 				existing = &_watches.back();
 			}

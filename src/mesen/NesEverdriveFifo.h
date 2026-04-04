@@ -9,7 +9,7 @@
 #include <string>
 #include <functional>
 
-#include "Core/SystemTypes.h"
+#include "core/SystemTypes.h"
 #include "Core/NES/INesMemoryHandler.h"
 
 namespace rp {

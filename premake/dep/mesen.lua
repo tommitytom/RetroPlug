@@ -41,7 +41,12 @@ end
 
 function m.link()
 	m.include()
-	links { "mesen", "winmm" }
+	links { "mesen" }
+
+	filter { "system:windows" }
+		links { "winmm" }
+
+	filter {}
 end
 
 function m.project()

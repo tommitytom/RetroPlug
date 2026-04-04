@@ -19,6 +19,12 @@ function m.source()
 			SERIAL_DIR .. "/src/impl/**win.cc"
 		}
 
+	filter "system:linux"
+		files {
+			SERIAL_DIR .. "/src/impl/**unix.cc",
+			SERIAL_DIR .. "/src/impl/**linux.cc"
+		}
+
 	filter {}
 end
 
