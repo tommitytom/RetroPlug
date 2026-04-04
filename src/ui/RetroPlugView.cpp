@@ -153,7 +153,7 @@ namespace rp {
 
 			//_project.loadFromPaths({ "C:\\retro\\LSDj-v5.0.3.sav" });
 
-			_project.loadFromPathsAsync({ "~/retro/lsdj942bitbrigade_1.gbc", "~/retro/lsdj942bitbrigade_1.sav" });
+			_project.loadFromPathsAsync({ "/workspaces/retro/lsdj942bitbrigade_1.gbc", "/workspaces/retro/lsdj942bitbrigade_1.sav" });
 
 			//_project.loadFromPathsAsync({ "C:\\Users\\Tom\\Downloads\\lsdj9_4_2\\lsdj9_4_2.gb" });
 

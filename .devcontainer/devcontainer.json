@@ -9,13 +9,22 @@
 	},
 
 	"mounts": [
+		// Wayland
 		"source=/run/user/1000/wayland-1,target=/run/user/1000/wayland-1,type=bind",
-		"source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+		// X11 fallback
+		"source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+		// Audio
+		"source=/run/user/1000/pipewire-0,target=/run/user/1000/pipewire-0,type=bind",
+		"source=/run/user/1000/pulse,target=/run/user/1000/pulse,type=bind",
+
+		"source=${localEnv:HOME}/retro,target=/workspaces/retro,type=bind"
 	],
 	"containerEnv": {
 		"WAYLAND_DISPLAY": "wayland-1",
+		"DISPLAY": ":0",
 		"XDG_RUNTIME_DIR": "/run/user/1000",
-		"DISPLAY": ":0"
+		"PIPEWIRE_REMOTE": "/run/user/1000/pipewire-0",
+		"PULSE_SERVER": "unix:/run/user/1000/pulse/native"
 	},
 
 	"runArgs": [

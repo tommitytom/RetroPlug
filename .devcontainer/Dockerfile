@@ -27,7 +27,7 @@ RUN bash /tmp/library-scripts/setup-apt-mirrors.sh
 
 RUN bash /tmp/library-scripts/common-debian.sh "${INSTALL_ZSH}" "${USERNAME}" "${USER_UID}" "${USER_GID}" "${UPGRADE_PACKAGES}" \
 	&& apt-get update \
-	&& apt-get install -y dos2unix gdb nginx libssl-dev g++-multilib libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev mesa-common-dev libssl-dev gnupg clang \
+	&& apt-get install -y dos2unix gdb nginx libssl-dev g++-multilib libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev mesa-common-dev libssl-dev gnupg clang libpulse0 \
 	&& npm install -g eslint ts-node typescript \
 	&& apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* /root/.gnupg /tmp/library-scripts
 
