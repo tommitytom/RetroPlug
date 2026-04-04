@@ -90,10 +90,10 @@ static void vblankHandler(GB_gameboy_t* gb, GB_vblank_type_t type) {
 
 		if (s.io) {
 			if (!s.io->output.video) {
-				s.io->output.video = std::make_shared<fw::Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
+				s.io->output.video = std::make_shared<orb::Image>(PIXEL_WIDTH, PIXEL_HEIGHT);
 			}
 
-			s.io->output.video->write((const fw::Color4*)s.frameBuffer, PIXEL_COUNT);
+			s.io->output.video->write((const orb::Color4*)s.frameBuffer, PIXEL_COUNT);
 		}
 	}
 }
@@ -116,7 +116,7 @@ static void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
 	}*/
 
 	if (s.io) {
-		fw::Float32Buffer* buffer = s.io->output.audio.get();
+		orb::Float32Buffer* buffer = s.io->output.audio.get();
 		f32* target = buffer->data();
 
 		if (buffer) {
@@ -146,8 +146,8 @@ void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t type) {
 	GB_load_boot_rom_from_buffer(gb, (const unsigned char*)bootRom.data(), bootRom.size());
 }
 
-void processButtons(const std::vector<fw::StreamButtonPress>& source, std::queue<OffsetButton>& target, f32 timeScale) {
-	for (const fw::StreamButtonPress& press : source) {
+void processButtons(const std::vector<orb::StreamButtonPress>& source, std::queue<OffsetButton>& target, f32 timeScale) {
+	for (const orb::StreamButtonPress& press : source) {
 		int offset = 0;
 		if (target.size() > 0) {
 			offset = target.back().offset + target.back().duration;
@@ -203,7 +203,7 @@ static void serialStart(GB_gameboy_t* gb, bool bit_received) {}
 static bool serialEnd(GB_gameboy_t* gb) { return true; }
 
 bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint32 sampleRate, const SystemLoadComponent& load) {
-	const fw::Uint8Buffer* rom = load.findData("rom");
+	const orb::Uint8Buffer* rom = load.findData("rom");
 	if (!rom) {
 		std::cerr << "Failed to find ROM data" << std::endl;
 		return false;
@@ -236,12 +236,12 @@ bool SameBoyUtil::setup(const SameBoyComponent& comp, SameBoyState& state, uint3
 	GB_set_color_correction_mode(gb, GB_COLOR_CORRECTION_DISABLED);
 	GB_set_highpass_filter_mode(gb, GB_HIGHPASS_ACCURATE);
 
-	const fw::Uint8Buffer* sram = load.findData("sram");
+	const orb::Uint8Buffer* sram = load.findData("sram");
 	if (sram) {
 		GB_load_battery_from_buffer(state.gb, (const uint8_t*)sram->data(), sram->size());
 	}
 
-	const fw::Uint8Buffer* stateBuffer = load.findData("state");
+	const orb::Uint8Buffer* stateBuffer = load.findData("state");
 	if (stateBuffer) {
 		if (GB_load_state_from_buffer(state.gb, stateBuffer->data(), stateBuffer->size()) != 0) {
 			//std::cerr << "Failed to load state buffer" << std::endl;
@@ -266,13 +266,13 @@ MemoryAccessor SameBoyUtil::getMemory(SameBoyState& state, MemoryType type, Acce
 		size_t memSize;
 		uint16 memBank;
 		void* memData = GB_get_direct_access(state.gb, sameboyType, &memSize, &memBank);
-		return MemoryAccessor(type, fw::Uint8Buffer((uint8*)memData, memSize, false), 0, nullptr);
+		return MemoryAccessor(type, orb::Uint8Buffer((uint8*)memData, memSize, false), 0, nullptr);
 	}
 
 	return MemoryAccessor();
 }
 
-void SameBoyUtil::saveState(SameBoyState& state, fw::Uint8Buffer& target) {
+void SameBoyUtil::saveState(SameBoyState& state, orb::Uint8Buffer& target) {
 	if (state.gb) {
 		size_t size = GB_get_save_state_size(state.gb);
 		target.resize(size);

@@ -5,6 +5,7 @@
 #include "foundation/Replicator.h"
 #include "core/RegistryUtil.h"
 #include "core/CoreComponents.h"
+#include "core/FileWatcherContext.h"
 
 namespace rp {
 	void handleRegistryCopy(const HooksContext& hooks, entt::registry& sourceRegistry, entt::entity sourceEntity, entt::registry& targetRegistry, entt::entity targetEntity) {
@@ -29,6 +30,8 @@ namespace rp {
 	}
 
 	void LoadSystemTask::finalize(entt::registry& targetRegistry) {
+		const SystemLoadComponent load = registry.get<SystemLoadComponent>(entity);
+
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		handleRegistryCopy(ctx, this->registry, this->entity, targetRegistry, entity);
 		handleReplicate(targetRegistry);
@@ -49,15 +52,15 @@ namespace rp {
 	void LoadProjectTask::finalize(entt::registry& targetRegistry) {
 		const HooksContext& ctx = registry.ctx().at<HooksContext>();
 		for (const auto& [e, system] : targetRegistry.view<SystemComponent>().each()) {
-			eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
-			eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
-			fw::Replicator::destroy(targetRegistry, e);
+			//eachHook(ctx.serviceHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			//eachHook(ctx.systemHooks, [&](const SystemHookBase& hook) { hook.onDestroy(targetRegistry, e); });
+			orb::Replicator::destroy(targetRegistry, e);
 		}
 
 		targetRegistry.ctx().at<ProjectPathContext>() = std::move(registry.ctx().at<ProjectPathContext>());
 
 		for (const auto& [taskEntity, c] : this->registry.view<SystemComponent>().each()) {
-			entt::entity targetEntity = fw::Replicator::spawn(targetRegistry);
+			entt::entity targetEntity = orb::Replicator::spawn(targetRegistry);
 			handleRegistryCopy(ctx, this->registry, taskEntity, targetRegistry, targetEntity);
 		}
 

@@ -5,7 +5,7 @@
 namespace rp {
 	class TileGrid;
 
-	class TileView : public fw::View {
+	class TileView : public orb::View {
 		FwRegisterObject()
 	private:
 		entt::entity _entity;

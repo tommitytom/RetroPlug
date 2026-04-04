@@ -9,7 +9,7 @@ namespace rp {
 		bool normalize = true;
 		f32 gain = 1.0f;
 	};
-	inline void processEffect(const GainEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
+	inline void processEffect(const GainEffect& effect, orb::Float32Buffer& target, f32 sampleRate) {
 		f32 gain = effect.gain;
 		f32* data = target.data();
 		const size_t size = target.size();
@@ -46,7 +46,7 @@ namespace rp {
 		f32 q = 1.0f;
 		f32 gain = 0.0f;
 	};
-	void processEffect(const FilterEffect& effect, fw::Float32Buffer& target, f32 sampleRate);
+	void processEffect(const FilterEffect& effect, orb::Float32Buffer& target, f32 sampleRate);
 
 	struct DitherEffect {
 		enum class Type {
@@ -57,7 +57,7 @@ namespace rp {
 			SierraLite,
 		} ditherType = Type::HighPassTPDF;
 	};
-	inline void processEffect(const DitherEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
+	inline void processEffect(const DitherEffect& effect, orb::Float32Buffer& target, f32 sampleRate) {
 		AudioDithering dither;
 
 		switch (effect.ditherType) {

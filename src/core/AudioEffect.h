@@ -30,17 +30,17 @@ namespace rp {
 
 	template <typename Component>
 	inline bool onCreate(entt::registry& registry, ComponentLifetimeFunction&& func) {
-		return onLifetimeUpdate<Component, fw::Replicator::ComponentCreatedTag<Component>>(registry, std::move(func), true);
+		return onLifetimeUpdate<Component, orb::Replicator::ComponentCreatedTag<Component>>(registry, std::move(func), true);
 	}
 
 	template <typename Component>
 	inline bool onUpdate(entt::registry& registry, ComponentLifetimeFunction&& func) {
-		return onLifetimeUpdate<Component, fw::Replicator::ComponentUpdatedTag<Component>>(registry, std::move(func), true);
+		return onLifetimeUpdate<Component, orb::Replicator::ComponentUpdatedTag<Component>>(registry, std::move(func), true);
 	}
 
 	template <typename Component>
 	inline bool onDestroy(entt::registry& registry, ComponentLifetimeFunction&& func) {
-		return onLifetimeUpdate<Component, fw::Replicator::ComponentDestroyedTag<Component>>(registry, std::move(func), false);
+		return onLifetimeUpdate<Component, orb::Replicator::ComponentDestroyedTag<Component>>(registry, std::move(func), false);
 	}
 
 	template <typename Component, typename ...StateComponents>
@@ -64,7 +64,7 @@ namespace rp {
 	public:
 		virtual ~AudioEffectBase() = default;
 		virtual bool update(entt::registry& registry) { return false; }
-		virtual void process(entt::registry& registry, entt::entity e, fw::AudioBuffer& out, const fw::AudioBuffer& in) = 0;
+		virtual void process(entt::registry& registry, entt::entity e, orb::AudioBuffer& out, const orb::AudioBuffer& in) = 0;
 	};
 
 	template<typename Component, typename... StateComponents>
@@ -80,7 +80,7 @@ namespace rp {
 
 		static entt::entity emplace(entt::registry& registry, entt::entity entity = entt::null) {
 			if (entity == entt::null) {
-				entity = fw::Replicator::spawn(registry);
+				entity = orb::Replicator::spawn(registry);
 			}
 			registry.emplace<Component>(entity, Component{});
 			return entity;
@@ -90,14 +90,14 @@ namespace rp {
 			return createEffectUpdate<Component, StateComponents...>(registry, this);
 		}
 
-		void process(entt::registry& registry, entt::entity e, fw::AudioBuffer& out, const fw::AudioBuffer& in) final override {
+		void process(entt::registry& registry, entt::entity e, orb::AudioBuffer& out, const orb::AudioBuffer& in) final override {
 			auto comps = registry.get<const Component, StateComponents...>(e);
 			std::apply([this](auto&... args) {
 				this->process(args...);
 			}, std::tuple_cat(std::make_tuple(std::ref(out)), comps));
 		}
 
-		virtual void process(fw::AudioBuffer& out, const Component& comp, StateComponents&...) = 0;
+		virtual void process(orb::AudioBuffer& out, const Component& comp, StateComponents&...) = 0;
 
 		entt::registry& getRegistry() {
 			assert(_registry);
@@ -124,7 +124,7 @@ namespace rp {
 
 		static entt::entity emplace(entt::registry& registry, entt::entity entity = entt::null) {
 			if (entity == entt::null) {
-				entity = fw::Replicator::spawn(registry);
+				entity = orb::Replicator::spawn(registry);
 			}
 			registry.emplace<Component>(entity, Component{});
 			return entity;
@@ -134,14 +134,14 @@ namespace rp {
 			return createEffectUpdate<Component, StateComponents...>(registry, this);
 		}
 
-		void process(entt::registry& registry, entt::entity e, fw::AudioBuffer& out, const fw::AudioBuffer& in) final override {
+		void process(entt::registry& registry, entt::entity e, orb::AudioBuffer& out, const orb::AudioBuffer& in) final override {
 			auto comps = registry.get<const Component, StateComponents...>(e);
 			std::apply([this](auto&... args) {
 				this->process(args...);
 			}, std::tuple_cat(std::make_tuple(std::ref(out)), comps));
 		}
 
-		virtual void process(fw::AudioBuffer& out, const Component& comp, StateComponents&...) = 0;
+		virtual void process(orb::AudioBuffer& out, const Component& comp, StateComponents&...) = 0;
 
 		entt::registry& getRegistry() {
 			assert(_registry);

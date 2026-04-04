@@ -13,7 +13,7 @@ import { TabView } from './TabView';
 import type { TabItem } from './types';
 import { About } from '../About';
 import { useProject } from '../../hooks/RetroPlugHooks';
-import { FrameworkWindow } from '../../FrameworkWindow';
+import { OrbWindow } from '../../OrbWindow';
 
 export const Layout: React.FC = () => {
 	const { audioContext } = useRetroPlug();
@@ -62,7 +62,7 @@ export const Layout: React.FC = () => {
 				/*{
 					id: 'hex-editor',
 					label: 'Hex',
-					content: <FrameworkWindow name='HexEditor' />,
+					content: <OrbWindow name='HexEditor' />,
 				}*/
 			]);
 			setActiveRightTab('kits');

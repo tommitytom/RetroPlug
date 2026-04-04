@@ -61,14 +61,14 @@ namespace rp {
 		if (!sram && lsdsng) {
 			lsdj::Sav sav;
 
-			fw::FsUtil::readFile(lsdsng->path.string(), lsdsng->data);
+			orb::FsUtil::readFile(lsdsng->path.string(), lsdsng->data);
 			if (!lsdsng->data.empty()) {
 				lsdj::Project proj = lsdj::Project::fromLsdsng(lsdsng->data);
 
 				if (proj.isValid()) {
 					sav.setWorkingSong(proj.getSong());
 
-					entries.push_back({ "sram", "", fw::Uint8Buffer() });
+					entries.push_back({ "sram", "", orb::Uint8Buffer() });
 
 					if (!sav.save(entries.back().data)) {
 						spdlog::warn("Failed to create initial save data");
@@ -84,7 +84,7 @@ namespace rp {
 	}
 
 	void LsdjHooks::onBeforeLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, SameBoyComponent& system) const {
-		fw::Uint8Buffer* romData = load.findData("rom");
+		orb::Uint8Buffer* romData = load.findData("rom");
 		if (!romData) {
 			// This should never happen
 			spdlog::error("LSDJ system missing ROM data");
@@ -92,7 +92,7 @@ namespace rp {
 		}
 
 		std::string_view romName = GameboyUtil::getRomName(*romData);
-		std::string shortName = fw::StringUtil::toLower(romName).substr(0, 4);
+		std::string shortName = orb::StringUtil::toLower(romName).substr(0, 4);
 		if (shortName != "lsdj") {
 			return;
 		}
@@ -104,7 +104,7 @@ namespace rp {
 			// Ensure that all kits are patched before loading
 			for (const LsdjKitComponent& kit : comp->kits) {
 				const size_t offset = lsdj::Rom::getKitBankOffset(kit.id);
-				fw::Uint8Buffer kitData = romData->slice(offset, lsdj::Rom::BANK_SIZE);
+				orb::Uint8Buffer kitData = romData->slice(offset, lsdj::Rom::BANK_SIZE);
 				KitUtil::updateKit2(kit, kitData, *lsdjState.sampleCache);
 			}
 		} else {
@@ -134,7 +134,7 @@ namespace rp {
 		RegistryUtil::moveComponent<LsdjStateComponent>(sourceRegistry, sourceEntity, targetRegistry, targetEntity);
 	}
 
-	fw::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
+	orb::ViewPtr LsdjHooks::onCreateOverlay(entt::registry& registry, entt::entity entity, SameBoyComponent& system) const {
 		LsdjComponent* comp = registry.try_get<LsdjComponent>(entity);
 		if (comp) {
 			return std::make_shared<LsdjSystemOverlay>(entity, LsdjController{ registry });

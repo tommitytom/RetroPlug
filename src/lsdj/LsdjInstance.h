@@ -21,7 +21,7 @@ namespace rp {
 
 		template <typename Component>
 		void spawnChild(entt::entity parent, const Component& comp) {
-			entt::entity e = fw::Replicator::spawn(_registry);
+			entt::entity e = orb::Replicator::spawn(_registry);
 			_registry.emplace<Component>(e, comp);
 			HierarchyUtil::addChild(_registry, parent, e);
 		}

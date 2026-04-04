@@ -1,5 +1,5 @@
 local MINIZIP_DIR = "thirdparty/minizip-ng"
-local ZLIB_DIR = "thirdparty/Framework/thirdparty/zlib"
+local ZLIB_DIR = "thirdparty/orb/thirdparty/zlib"
 --local LZMA_DIR = MINIZIP_DIR .. "/lib/liblzma/src"
 
 local m = {}

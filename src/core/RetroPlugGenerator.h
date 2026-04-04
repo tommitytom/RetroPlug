@@ -15,6 +15,6 @@ namespace rp {
 
 	class RetroPlugGenerator : public AudioGenerator<RetroPlugComponent, RetroPlugStateComponent> {
 	public:
-		void process(fw::AudioBuffer& out, const RetroPlugComponent& comp, RetroPlugStateComponent&) override;
+		void process(orb::AudioBuffer& out, const RetroPlugComponent& comp, RetroPlugStateComponent&) override;
 	};
 }

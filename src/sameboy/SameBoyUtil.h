@@ -40,7 +40,7 @@ namespace rp::SameBoyUtil {
 
 	MemoryAccessor getMemory(SameBoyState& state, MemoryType type, AccessType access = AccessType::ReadWrite);
 
-	void saveState(SameBoyState& state, fw::Uint8Buffer& target);
+	void saveState(SameBoyState& state, orb::Uint8Buffer& target);
 
 	void setSampleRate(SameBoyState& state, uint32 sampleRate);
 

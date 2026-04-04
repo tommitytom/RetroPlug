@@ -4,16 +4,16 @@
 #include "lsdj/LsdjCanvas.h"
 
 namespace rp {
-	class LsdjCanvasView : public fw::TextureView {
+	class LsdjCanvasView : public orb::TextureView {
 		FwRegisterObject();
 	protected:
 		lsdj::Canvas _canvas;
 
 	public:
-		LsdjCanvasView(fw::Dimension dimensions = { 100, 100 }) : fw::TextureView(), _canvas((fw::DimensionU32)dimensions) {
+		LsdjCanvasView(orb::Dimension dimensions = { 100, 100 }) : orb::TextureView(), _canvas((orb::DimensionU32)dimensions) {
 		}
 
-		LsdjCanvasView(fw::Dimension dimensions, const lsdj::Font& font, const lsdj::Palette& palette) : fw::TextureView(), _canvas((fw::DimensionU32)dimensions, font, palette) {
+		LsdjCanvasView(orb::Dimension dimensions, const lsdj::Font& font, const lsdj::Palette& palette) : orb::TextureView(), _canvas((orb::DimensionU32)dimensions, font, palette) {
 		}
 
 		~LsdjCanvasView() {}
@@ -22,9 +22,9 @@ namespace rp {
 			return _canvas;
 		}
 
-		virtual void onRender(fw::Canvas& canvas) override {
+		virtual void onRender(orb::Canvas& canvas) override {
 			setImage(_canvas.getRenderTarget());
-			fw::TextureView::onRender(canvas);
+			orb::TextureView::onRender(canvas);
 		}
 	};
 

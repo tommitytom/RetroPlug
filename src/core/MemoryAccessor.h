@@ -24,21 +24,21 @@ namespace rp {
 
 	struct MemoryPatch {
 		MemoryType type;
-		std::variant<uint8, uint16, uint32, fw::Uint8Buffer> data;
+		std::variant<uint8, uint16, uint32, orb::Uint8Buffer> data;
 		size_t offset;
 	};
 
 	class MemoryAccessor {
 	private:
 		MemoryType _type = MemoryType::MAX;
-		fw::Uint8Buffer _data;
+		orb::Uint8Buffer _data;
 		size_t _offset = 0;
 		std::vector<MemoryPatch>* _patches = nullptr;
 
 	public:
 		MemoryAccessor() {}
-		MemoryAccessor(MemoryType type, fw::Uint8Buffer data, size_t offset) : _type(type), _data(data), _offset(offset), _patches(nullptr) {}
-		MemoryAccessor(MemoryType type, fw::Uint8Buffer data, size_t offset, std::vector<MemoryPatch>* patches) : _type(type), _data(data), _offset(offset), _patches(patches) {}
+		MemoryAccessor(MemoryType type, orb::Uint8Buffer data, size_t offset) : _type(type), _data(data), _offset(offset), _patches(nullptr) {}
+		MemoryAccessor(MemoryType type, orb::Uint8Buffer data, size_t offset, std::vector<MemoryPatch>* patches) : _type(type), _data(data), _offset(offset), _patches(patches) {}
 
 		std::vector<MemoryPatch>* getPatches() {
 			return _patches;
@@ -74,7 +74,7 @@ namespace rp {
 			}
 		}
 
-		void write(size_t pos, fw::Uint8Buffer&& buffer) {
+		void write(size_t pos, orb::Uint8Buffer&& buffer) {
 			assert(isValid());
 			assert(pos + buffer.size() <= _data.size());
 
@@ -89,7 +89,7 @@ namespace rp {
 			}
 		}
 
-		void write(size_t pos, const fw::Uint8Buffer& buffer) {
+		void write(size_t pos, const orb::Uint8Buffer& buffer) {
 			assert(isValid());
 			assert(pos + buffer.size() <= _data.size());
 
@@ -105,11 +105,11 @@ namespace rp {
 		}
 
 		void write(size_t pos, std::string_view text) {
-			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
+			write(pos, orb::Uint8Buffer((uint8*)text.data(), text.size()));
 		}
 
 		void write(size_t pos, const std::string& text) {
-			write(pos, fw::Uint8Buffer((uint8*)text.data(), text.size()));
+			write(pos, orb::Uint8Buffer((uint8*)text.data(), text.size()));
 		}
 
 		void clear(uint8 value = 0) {
@@ -145,11 +145,11 @@ namespace rp {
 			return _data.size();
 		}
 
-		const fw::Uint8Buffer& getBuffer() const {
+		const orb::Uint8Buffer& getBuffer() const {
 			return _data;
 		}
 
-		fw::Uint8Buffer& getBuffer() {
+		orb::Uint8Buffer& getBuffer() {
 			return _data;
 		}
 	};

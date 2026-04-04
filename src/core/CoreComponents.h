@@ -7,6 +7,7 @@
 
 #include "foundation/DataBuffer.h"
 #include "core/MemoryAccessor.h"
+#include "core/SystemTypes.h"
 
 namespace rp {
 	struct SystemStateOffset {
@@ -23,7 +24,7 @@ namespace rp {
 
 	struct VersionedMemory {
 		MemoryType type = MemoryType::MAX;
-		fw::Uint8Buffer data;
+		orb::Uint8Buffer data;
 		uint32 version = 0;
 		f32 lastUpdate = 0;
 		size_t subscriberCount = 0;
@@ -67,7 +68,7 @@ namespace rp {
 	struct SystemStateComponent {
 		std::string name;
 		std::vector<VersionedMemory> memory;
-		fw::Uint8Buffer state;
+		orb::Uint8Buffer state;
 		f32 lastStateUpdate = 0.0f;
 		CountdownTimer stateFetchTimer = STATE_FETCH_INTERVAL;
 		CountdownTimer memoryFetchTimer = MEMORY_FETCH_INTERVAL;
@@ -93,9 +94,13 @@ namespace rp {
 		}
 	};
 
+	struct SystemIoComponent {
+		SystemIoPtr io;
+	};
+
 	struct SystemLoadEntry {
 		std::string path;
-		rfl::Skip<fw::Uint8Buffer> data;
+		rfl::Skip<orb::Uint8Buffer> data;
 	};
 
 	struct SystemLoadComponent {
@@ -117,7 +122,7 @@ namespace rp {
 			return nullptr;
 		}
 
-		fw::Uint8Buffer* findData(const std::string& name) {
+		orb::Uint8Buffer* findData(const std::string& name) {
 			auto found = entries.find(name);
 			if (found != entries.end() && !found->second.data().empty()) {
 				return &found->second.data();
@@ -126,7 +131,7 @@ namespace rp {
 			return nullptr;
 		}
 
-		const fw::Uint8Buffer* findData(const std::string& name) const {
+		const orb::Uint8Buffer* findData(const std::string& name) const {
 			auto found = entries.find(name);
 			if (found != entries.end() && !found->second.data().empty()) {
 				return &found->second.data();

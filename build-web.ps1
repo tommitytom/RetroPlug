@@ -46,7 +46,7 @@ function GenerateSolution() {
 
 
     $extraFlags = if ($ExtraDebug) { "--em-extra-debug" } else { "" }
-    .\thirdparty\Framework\thirdparty\bin\premake5 --emscripten gmake $extraFlags
+    .\thirdparty\orb\thirdparty\bin\premake5 --emscripten gmake $extraFlags
 
     if (!$? -or ($LastExitCode -ne 0)) {
     }

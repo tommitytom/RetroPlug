@@ -1,0 +1,50 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  Linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget
+        wget https://github.com/premake/premake-core/releases/download/v5.0.0-beta2/premake-5.0.0-beta2-linux.tar.gz
+        tar xvzf premake-5.0.0-beta2-linux.tar.gz
+    - name: Build
+      run: |
+        ./premake5 --verbose gmake2
+        cd make/linux
+        make all
+  MacOS:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies
+      run: |
+        brew install premake
+    - name: Build
+      run: |
+        premake5 --verbose gmake2
+        make -C make/macosx/ -j$(sysctl -n hw.ncpu) all
+  Windows:
+    runs-on: windows-latest
+    env:
+      MSBUILD_PATH: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v5.0.0-beta2/premake-5.0.0-beta2-windows.zip" -OutFile "premake-5.0.0-beta2-windows.zip"
+        Expand-Archive -DestinationPath . -Path premake-5.0.0-beta2-windows.zip
+    - name: Create project
+      shell: powershell
+      run: |
+        ./premake5.exe --verbose vs2022
+    - name: Build
+      shell: cmd
+      run: |
+        "%MSBUILD_PATH%\MSBuild.exe" .\make\windows\efsw.sln -m /p:Platform="x64"

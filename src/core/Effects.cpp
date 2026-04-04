@@ -16,7 +16,7 @@ namespace rp {
 	};
 
 	void calculateLowPassCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 alpha = sin_omega / (2.0f * effect.q);
@@ -30,7 +30,7 @@ namespace rp {
 	}
 
 	void calculateHighPassCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 alpha = sin_omega / (2.0f * effect.q);
@@ -44,7 +44,7 @@ namespace rp {
 	}
 
 	void calculateBandPassCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 alpha = sin_omega / (2.0f * effect.q);
@@ -58,7 +58,7 @@ namespace rp {
 	}
 
 	void calculateBandStopCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 alpha = sin_omega / (2.0f * effect.q);
@@ -72,7 +72,7 @@ namespace rp {
 	}
 
 	void calculatePeakCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 A = std::pow(10.0f, effect.gain / 40.0f);  // Convert dB to linear scale
@@ -87,7 +87,7 @@ namespace rp {
 	}
 
 	void calculateLowShelfCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 A = std::pow(10.0f, effect.gain / 40.0f);  // Convert dB to linear scale
@@ -103,7 +103,7 @@ namespace rp {
 	}
 
 	void calculateHighShelfCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 A = std::pow(10.0f, effect.gain / 40.0f);  // Convert dB to linear scale
@@ -119,7 +119,7 @@ namespace rp {
 	}
 
 	void calculateAllPassCoefficients(const FilterEffect& effect, FilterState& state) {
-		f32 omega = 2.0f * fw::PI * effect.frequency / state.sampleRate;
+		f32 omega = 2.0f * orb::PI * effect.frequency / state.sampleRate;
 		f32 sin_omega = std::sin(omega);
 		f32 cos_omega = std::cos(omega);
 		f32 alpha = sin_omega / (2.0f * effect.q);
@@ -161,7 +161,7 @@ namespace rp {
 		}
 	}
 
-	void processEffect(const FilterEffect& effect, fw::Float32Buffer& target, f32 sampleRate) {
+	void processEffect(const FilterEffect& effect, orb::Float32Buffer& target, f32 sampleRate) {
 		FilterState state;
 
 		updateCoefficients(effect, state);

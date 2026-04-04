@@ -7,7 +7,7 @@ namespace rp::lsdj {
 	namespace SampleUtil {
 		const size_t SAMPLES_PER_BYTE_4BIT = 2;
 
-		inline void convertNibblesToF32(const fw::Uint8Buffer& input, fw::Float32Buffer& output) {
+		inline void convertNibblesToF32(const orb::Uint8Buffer& input, orb::Float32Buffer& output) {
 			output.resize(input.size() * 2);  // 2 samples per byte
 
 			for (size_t i = 0; i < input.size(); ++i) {
@@ -20,7 +20,7 @@ namespace rp::lsdj {
 			}
 		}
 
-		inline void convertNibblesToF32WithRotation(const fw::Uint8Buffer& input, fw::Float32Buffer& output) {
+		inline void convertNibblesToF32WithRotation(const orb::Uint8Buffer& input, orb::Float32Buffer& output) {
 			// Process in chunks of 16 bytes (32 samples)
 			const size_t numChunks = input.size() / 16;
 			output.resize(numChunks * 32);
@@ -45,7 +45,7 @@ namespace rp::lsdj {
 		}
 
 		// Presumes that input is scaled to [0, 15] range
-		inline void convertScaledF32ToNibbles(const fw::Float32Buffer& input, fw::Uint8Buffer& output) {
+		inline void convertScaledF32ToNibbles(const orb::Float32Buffer& input, orb::Uint8Buffer& output) {
 			const size_t numChunks = input.size() / 32;
 			output.resize(numChunks * 16);
 
@@ -70,7 +70,7 @@ namespace rp::lsdj {
 			}
 		}
 
-		inline void convertF32ToNibbles(const fw::Float32Buffer& input, fw::Uint8Buffer& output) {
+		inline void convertF32ToNibbles(const orb::Float32Buffer& input, orb::Uint8Buffer& output) {
 			// Process in chunks of 32 samples (16 bytes when packed)
 			const size_t numChunks = input.size() / 32;
 			output.resize(numChunks * 16);
@@ -101,7 +101,7 @@ namespace rp::lsdj {
 		}
 
 		/*
-		inline void convertF32ToNibbles(const fw::Float32Buffer& input, fw::Uint8Buffer& output) {
+		inline void convertF32ToNibbles(const orb::Float32Buffer& input, orb::Uint8Buffer& output) {
 			output.resize(input.size() / SAMPLES_PER_BYTE_4BIT);
 
 			int offset = 0;

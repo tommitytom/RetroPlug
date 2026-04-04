@@ -1,0 +1,55 @@
+{
+	"name": "orb",
+
+	"build": {
+		"dockerfile": "Dockerfile",
+	},
+
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--security-opt",
+		"seccomp=unconfined",
+		"--net=host"
+	],
+
+	// Run command on the host machine before starting docker
+	//"initializeCommand": "mkdir -p build/emscripten/debug && mkdir -p build/emscripten/development && mkdir -p build/emscripten/release && mkdir -p build/emscripten/dist",
+
+	// Run commands after the container is created.
+	//"postCreateCommand": "emrun --no_browser --port 1338 ./build/gmake2",
+
+	// Set *default* container specific settings.json values on container create.
+	"settings": {
+		"terminal.integrated.shell.linux": "/bin/zsh"
+	},
+
+	// Add the IDs of extensions you want installed when the container is created.
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"dbaeumer.vscode-eslint",
+				"ms-vscode.cpptools",
+				"dtsvet.vscode-wasm",
+				"firefox-devtools.vscode-firefox-debug",
+				"ms-edgedevtools.vscode-edge-devtools",
+				"mutantdino.resourcemonitor",
+				"sumneko.lua",
+				"eamodio.gitlens",
+				"mhutchie.git-graph"
+			]
+		}
+	},
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	"forwardPorts": [
+		1338
+	],
+
+	"remoteEnv": {
+		"DISPLAY": "172.30.96.1:0"  // Windows / Mac OS
+		//"DISPLAY": ":0"                      // Linux
+	},
+
+	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "emscripten"
+}

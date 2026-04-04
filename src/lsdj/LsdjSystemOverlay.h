@@ -12,7 +12,7 @@ namespace rp {
 	private:
 		entt::entity _entity = entt::null;
 		LsdjController _lsdj;
-		fw::WaveViewPtr _waveView;
+		orb::WaveViewPtr _waveView;
 		KitIndex _currentKit = INVALID_KIT_INDEX;
 
 	public:
@@ -59,10 +59,10 @@ namespace rp {
 			_lsdj.setKitComponent(_entity, 0, LsdjKitComponent{ .path = "C:\\retro\\kits\\23. AMEN.kit" });
 			_currentKit = 0;
 
-			_waveView = addChild<fw::WaveView>("Waveform");
-			_waveView->getLayout().setDimensions(fw::Dimension{ 256, 64 });
+			_waveView = addChild<orb::WaveView>("Waveform");
+			_waveView->getLayout().setDimensions(orb::Dimension{ 256, 64 });
 			_waveView->setScale(0.3333f);
-			auto slider = addChild<fw::SliderView>("Slider");
+			auto slider = addChild<orb::SliderView>("Slider");
 			slider->setScale(0.3333f);
 
 			slider->ValueChangeEvent = [this](f32 val) {
@@ -81,8 +81,8 @@ namespace rp {
 			*/
 		}
 
-		bool onKey(const fw::KeyEvent& event) override {
-			if (event.down && event.key == fw::VirtualKey::H) {
+		bool onKey(const orb::KeyEvent& event) override {
+			if (event.down && event.key == orb::VirtualKey::H) {
 				
 			}
 
@@ -93,7 +93,7 @@ namespace rp {
 			if (_currentKit == INVALID_KIT_INDEX) return;
 
 			lsdj::Rom rom = _lsdj.getLsdjRom(_entity);
-			fw::Uint8Buffer kitData = rom.getKitSampleData(_currentKit, 0);
+			orb::Uint8Buffer kitData = rom.getKitSampleData(_currentKit, 0);
 
 			std::vector<LsdjKitComponent> kits;
 			_lsdj.getKits(_entity, kits);
@@ -106,7 +106,7 @@ namespace rp {
 			});
 
 			if (_waveView) {
-				fw::Float32Buffer target;
+				orb::Float32Buffer target;
 				lsdj::SampleUtil::convertNibblesToF32(kitData, target);
 				_waveView->setAudioData(std::move(target), 1);
 			}
@@ -129,7 +129,7 @@ namespace rp {
 						.path = path
 					};
 
-					//fw::FsUtil::readFile(paths[0], sampleComp.data());
+					//orb::FsUtil::readFile(paths[0], sampleComp.data());
 
 					samples.push_back(std::move(sampleComp));
 				}
@@ -137,8 +137,8 @@ namespace rp {
 
 			_lsdj.addKitComponent(_entity, std::move(comp));
 
-			auto waveView = addChild<fw::WaveView>("Waveform");
-			auto slider = addChild<fw::SliderView>("Slider");
+			auto waveView = addChild<orb::WaveView>("Waveform");
+			auto slider = addChild<orb::SliderView>("Slider");
 
 			return true;
 			*/
@@ -146,8 +146,8 @@ namespace rp {
 			return false;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
-			//canvas.fillRect(getDimensionsF(), fw::Color4F(0, 0, 0, 0.5f * getAlpha()));
+		void onRender(orb::Canvas& canvas) override {
+			//canvas.fillRect(getDimensionsF(), orb::Color4F(0, 0, 0, 0.5f * getAlpha()));
 		}
 	};
 }

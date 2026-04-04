@@ -24,7 +24,7 @@ namespace rp {
 
 		struct Input {
 			FixedQueue<TimedByte, 16> serial;
-			std::vector<fw::StreamButtonPress> buttons;
+			std::vector<orb::StreamButtonPress> buttons;
 			std::vector<MemoryPatch> patches;
 
 			void reset() {
@@ -36,8 +36,8 @@ namespace rp {
 
 		struct Output {
 			std::vector<TimedByte> serial;
-			fw::ImagePtr video;
-			fw::Float32BufferPtr audio;
+			orb::ImagePtr video;
+			orb::Float32BufferPtr audio;
 
 			void reset() {
 				serial.clear();
@@ -51,7 +51,7 @@ namespace rp {
 				input.serial.tryPush(other.input.serial.pop());
 			}
 
-			for (const fw::StreamButtonPress& press : other.input.buttons) {
+			for (const orb::StreamButtonPress& press : other.input.buttons) {
 				input.buttons.push_back(press);
 			}
 

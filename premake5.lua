@@ -1,5 +1,5 @@
-local util = dofile("thirdparty/Framework/premake/util.lua")
-require("thirdparty/Framework/premake/emscripten")
+local util = dofile("thirdparty/orb/premake/util.lua")
+require("thirdparty/orb/premake/emscripten")
 
 newoption {
 	trigger = "emscripten",
@@ -19,11 +19,11 @@ workspace "RetroPlug"
 util.createConfigureProject()
 util.createGeneratorProject({
 	_MAIN_SCRIPT_DIR .. "/src/compiler.config.lua",
-	_MAIN_SCRIPT_DIR .. "/thirdparty/Framework/src/compiler.config.lua",
+	_MAIN_SCRIPT_DIR .. "/thirdparty/orb/src/compiler.config.lua",
 })
 
-local fwProjects = dofile("thirdparty/Framework/premake/projects.lua")
-local fwDeps = dofile("thirdparty/Framework/premake/dep/index.lua")
+local fwProjects = dofile("thirdparty/orb/premake/projects.lua")
+local fwDeps = dofile("thirdparty/orb/premake/dep/index.lua")
 local projects = dofile("premake/projects.lua")
 local deps = dofile("premake/dep/index.lua")
 
@@ -31,7 +31,7 @@ group "1 - Dependencies"
 fwDeps.allProjects()
 deps.allProjects()
 
-group "2 - Framework"
+group "2 - orb"
 fwProjects.Foundation.project()
 fwProjects.Graphics.project()
 fwProjects.Ui.project()
@@ -42,6 +42,7 @@ fwProjects.Application.project()
 group "3 - Modules"
 projects.Core.project()
 projects.SameBoyPlug.project()
+projects.MesenPlug.project()
 projects.RetroPlug.project()
 
 group "4 - Applications"
@@ -105,9 +106,9 @@ if _OPTIONS["emscripten"] == nil then
 	group "5 - Utils"
 		project "ScriptCompiler"
 			kind "ConsoleApp"
-			includedirs { "thirdparty/Framework/thirdparty", "thirdparty/Framework/thirdparty/lua/src" }
-			includedirs { "thirdparty/Framework/src/compiler" }
-			files { "thirdparty/Framework/src/compiler/**.h", "thirdparty/Framework/src/compiler/**.c", "thirdparty/Framework/src/compiler/**.cpp" }
+			includedirs { "thirdparty/orb/thirdparty", "thirdparty/orb/thirdparty/lua/src" }
+			includedirs { "thirdparty/orb/src/compiler" }
+			files { "thirdparty/orb/src/compiler/**.h", "thirdparty/orb/src/compiler/**.c", "thirdparty/orb/src/compiler/**.cpp" }
 
 			links { "lua" }
 

@@ -7,12 +7,12 @@ namespace rp {
 		f32 position;
 	};
 
-	class ScrollBar : public fw::View {
+	class ScrollBar : public orb::View {
 		FwRegisterObject()
 	private:
 		struct DragContext {
 			bool active = false;
-			fw::Point startPosition;
+			orb::Point startPosition;
 			f32 startScrollPosition = 0.0f;
 		} _dragContext;
 
@@ -21,7 +21,7 @@ namespace rp {
 
 	public:
 		ScrollBar() {
-			setFocusPolicy(fw::FocusPolicy::Click);
+			setFocusPolicy(orb::FocusPolicy::Click);
 		}
 
 		void setSize(f32 size) {
@@ -32,8 +32,8 @@ namespace rp {
 			_scrollPosition = std::clamp(position, 0.0f, 1.0f);
 		}
 
-		bool onMouseButton(const fw::MouseButtonEvent& ev) override {
-			if (ev.button == fw::MouseButton::Left) {
+		bool onMouseButton(const orb::MouseButtonEvent& ev) override {
+			if (ev.button == orb::MouseButton::Left) {
 				if (ev.down) {
 					_dragContext.active = true;
 					_dragContext.startPosition = ev.position;
@@ -48,9 +48,9 @@ namespace rp {
 			return false;
 		}
 
-		bool onMouseMove(fw::Point pos) override {
+		bool onMouseMove(orb::Point pos) override {
 			if (_dragContext.active) {
-				fw::DimensionF dim = getDimensionsF();
+				orb::DimensionF dim = getDimensionsF();
 				f32 scrollSize = std::round(dim.h * _scrollSize);
 				f32 deltaY = (f32)(pos.y - _dragContext.startPosition.y);
 				f32 scrollableHeight = dim.h - scrollSize;
@@ -66,14 +66,14 @@ namespace rp {
 			return false;
 		}
 
-		void onRender(fw::Canvas& canvas) override {
-			fw::DimensionF dim = getDimensionsF();
-			canvas.fillRect(dim, fw::Color4F::darkGrey);
+		void onRender(orb::Canvas& canvas) override {
+			orb::DimensionF dim = getDimensionsF();
+			canvas.fillRect(dim, orb::Color4F::darkGrey);
 
 			f32 scrollSize = std::round(dim.h * _scrollSize);
 			f32 scrollPos = std::round((dim.h - scrollSize) * _scrollPosition);
 
-			canvas.fillRect(fw::RectF(0, scrollPos, dim.w, scrollSize), fw::Color4F::lightGrey);
+			canvas.fillRect(orb::RectF(0, scrollPos, dim.w, scrollSize), orb::Color4F::lightGrey);
 		}
 	};
 

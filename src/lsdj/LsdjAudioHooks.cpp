@@ -72,9 +72,9 @@ namespace rp {
 			return octave;
 		}
 
-		void processSync(SameBoyStateComponent& state, const fw::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value) {
+		void processSync(SameBoyStateComponent& state, const orb::TimeInfo& timeInfo, int32 tempoDivisor, uint8 value) {
 			auto& serial = state.state->io->input.serial;
-			fw::PpqUtil::eachTick(timeInfo, 24 / tempoDivisor, [&serial, value](uint32 ppq, uint32 offset) {
+			orb::PpqUtil::eachTick(timeInfo, 24 / tempoDivisor, [&serial, value](uint32 ppq, uint32 offset) {
 				sendSerialByte(serial, value, offset);
 			});
 		}
@@ -96,11 +96,11 @@ namespace rp {
 
 		if (lsdj.autoPlay) {
 			// TODO: Determine if lsdj is already playing
-			state.state->io->input.buttons.push_back(fw::StreamButtonPress{ fw::ButtonType::Start, true, 30 });
+			state.state->io->input.buttons.push_back(orb::StreamButtonPress{ orb::ButtonType::Start, true, 30 });
 		}
 	}
 
-	void LsdjAudioHooks::onTransportUpdate(entt::registry& registry, entt::entity entity, const fw::TimeInfo& timeInfo) const {
+	void LsdjAudioHooks::onTransportUpdate(entt::registry& registry, entt::entity entity, const orb::TimeInfo& timeInfo) const {
 		if (timeInfo.transportIsRunning) {
 			const LsdjAudioComponent& lsdj = registry.get<LsdjAudioComponent>(entity);
 			LsdjAudioStateComponent& lsdjState = registry.get<LsdjAudioStateComponent>(entity);
@@ -122,7 +122,7 @@ namespace rp {
 		}
 	}
 
-	void LsdjAudioHooks::onMidi(entt::registry& registry, entt::entity entity, const fw::MidiMessage& message) const {
+	void LsdjAudioHooks::onMidi(entt::registry& registry, entt::entity entity, const orb::MidiMessage& message) const {
 		const LsdjAudioComponent& lsdj = registry.get<LsdjAudioComponent>(entity);
 		LsdjAudioStateComponent& lsdjState = registry.get<LsdjAudioStateComponent>(entity);
 		SameBoyStateComponent& state = registry.get<SameBoyStateComponent>(entity);
@@ -131,7 +131,7 @@ namespace rp {
 
 		switch (lsdj.syncMode) {
 		case LsdjSyncMode::KeyboardMidi:
-			if (message.getStatusMsg() == fw::MidiMessage::StatusMessage::NoteOn) {
+			if (message.getStatusMsg() == orb::MidiMessage::StatusMessage::NoteOn) {
 				uint8 note = (uint8)message.getNoteNumber();
 
 				if (note >= KEYBOARD_NODE_START) {
@@ -161,7 +161,7 @@ namespace rp {
 			}
 			break;
 		case LsdjSyncMode::MidiSyncArduinoboy:
-			if (message.getStatusMsg() == fw::MidiMessage::StatusMessage::NoteOn) {
+			if (message.getStatusMsg() == orb::MidiMessage::StatusMessage::NoteOn) {
 				switch (message.getNoteNumber()) {
 				case 24: lsdjState.arduinoboyPlaying = true; break;
 				case 25: lsdjState.arduinoboyPlaying = false; break;
@@ -179,7 +179,7 @@ namespace rp {
 			break;
 		case LsdjSyncMode::MidiMap:
 			switch (message.getStatusMsg()) {
-			case fw::MidiMessage::StatusMessage::NoteOn:
+			case orb::MidiMessage::StatusMessage::NoteOn:
 			{
 				int32 rowIdx = midiMapRowNumber(message.getChannel(), message.getNoteNumber());
 				if (rowIdx != -1) {
@@ -189,7 +189,7 @@ namespace rp {
 
 				break;
 			}
-			case fw::MidiMessage::StatusMessage::NoteOff:
+			case orb::MidiMessage::StatusMessage::NoteOff:
 			{
 				int32 rowIdx = midiMapRowNumber(message.getChannel(), message.getNoteNumber());
 				if (rowIdx == lsdjState.lastRow) {

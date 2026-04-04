@@ -3,8 +3,8 @@
 #include "core/RetroPlugProjectContext.h"
 
 namespace rp {
-	constexpr fw::Dimension DIMENSIONS{ 776, 576 };
-	constexpr fw::DimensionF DIMENSIONSF{ (f32)DIMENSIONS.w, (f32)DIMENSIONS.h };
+	constexpr orb::Dimension DIMENSIONS{ 776, 576 };
+	constexpr orb::DimensionF DIMENSIONSF{ (f32)DIMENSIONS.w, (f32)DIMENSIONS.h };
 
 	LsdjHdPlayer::LsdjHdPlayer(RetroPlugProject& project, entt::entity system)
 		: _project(project),
@@ -13,7 +13,7 @@ namespace rp {
 		_ui(_canvasView->getCanvas())
 	{
 		setName("LSDJ HD Player");
-		setFocusPolicy(fw::FocusPolicy::Click);
+		setFocusPolicy(orb::FocusPolicy::Click);
 		getLayout().setMinDimensions({ DIMENSIONSF.w, DIMENSIONSF.h });
 		_canvasView->getLayout().setMinDimensions({ DIMENSIONSF.w, DIMENSIONSF.h });
 
@@ -49,8 +49,8 @@ namespace rp {
 		_project.subscribeToMemory(_system, MemoryType::Ram);
 	}
 
-	bool LsdjHdPlayer::onKey(const fw::KeyEvent& ev) {
-		if (ev.key == fw::VirtualKey::Esc && ev.down) {
+	bool LsdjHdPlayer::onKey(const orb::KeyEvent& ev) {
+		if (ev.key == orb::VirtualKey::Esc && ev.down) {
 			this->remove();
 			return true;
 		}
@@ -70,7 +70,7 @@ namespace rp {
 		return false;
 	}
 
-	void LsdjHdPlayer::onRender(fw::Canvas& canvas) {
+	void LsdjHdPlayer::onRender(orb::Canvas& canvas) {
 		_canvasView->getCanvas().clear();
 
 		lsdj::Song song = _lsdj.getLsdjWorkingSong(_system);

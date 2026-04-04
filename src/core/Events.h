@@ -23,7 +23,7 @@ namespace rp {
 
 	struct FetchSaveStateResponse {
 		SystemId systemId = INVALID_SYSTEM_ID;
-		fw::Uint8Buffer state;
+		orb::Uint8Buffer state;
 	};
 
 	struct LoadEvent {
@@ -33,17 +33,17 @@ namespace rp {
 
 	struct LoadSramEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
-		fw::Uint8Buffer sramBuffer;
+		orb::Uint8Buffer sramBuffer;
 	};
 
 	struct LoadRomEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
-		fw::Uint8Buffer romBuffer;
+		orb::Uint8Buffer romBuffer;
 	};
 
 	struct LoadStateEvent {
 		SystemId systemId = INVALID_SYSTEM_ID;
-		fw::Uint8Buffer stateBuffer;
+		orb::Uint8Buffer stateBuffer;
 	};
 
 	

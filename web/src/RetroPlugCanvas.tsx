@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 
 import { useRetroPlug } from "./contexts/RetroPlugContext";
-import { FrameworkCanvas } from "./FrameworkCanvas";
+import { OrbCanvas } from "./OrbCanvas";
 import { RetroPlugApplication } from "./RetroPlugApplication";
 
 async function onDrop(event: DragEvent, app: RetroPlugApplication) {
@@ -63,7 +63,7 @@ export const RetroPlugCanvas: React.FC = () => {
 
 	return (
 		<div ref={containerRef}>
-			<FrameworkCanvas />
+			<OrbCanvas />
 		</div>
 	);
 };

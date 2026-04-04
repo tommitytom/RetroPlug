@@ -15,10 +15,10 @@ namespace rp {
 		LsdjKitComponent _kitState;
 		SampleCache& _sampleCache;
 
-		fw::Uint8Buffer _kitData;
+		orb::Uint8Buffer _kitData;
 
 	public:
-		PatchKitTask(entt::entity system, const LsdjKitComponent& kit, fw::Uint8Buffer&& kitData, SampleCache& sampleCache)
+		PatchKitTask(entt::entity system, const LsdjKitComponent& kit, orb::Uint8Buffer&& kitData, SampleCache& sampleCache)
 			: _system(system), _kitState(kit), _kitData(std::move(kitData)), _sampleCache(sampleCache) {
 		}
 		~PatchKitTask() = default;

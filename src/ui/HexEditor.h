@@ -12,17 +12,17 @@ namespace rp {
 	private:
 		HexGridPtr _hexGrid;
 		ScrollBarPtr _scrollBar;
-		fw::Uint8Buffer _pendingData;
+		orb::Uint8Buffer _pendingData;
 
 	public:
 		HexEditor();
 		~HexEditor() = default;
 
-		void setData(fw::Uint8Buffer&& data);
+		void setData(orb::Uint8Buffer&& data);
 
 		void onInitialize() override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 	};
 
 	using HexEditorPtr = std::shared_ptr<HexEditor>;

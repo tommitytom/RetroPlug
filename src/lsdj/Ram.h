@@ -86,12 +86,12 @@ namespace rp::lsdj {
 			return _data[_offsets.channels[channel].phrasePosition];
 		}
 
-		void setCursorPosition(fw::PointT<uint8> pos) {
+		void setCursorPosition(orb::PointT<uint8> pos) {
 			_data.set(_offsets.cursorX, pos.x);
 			_data.set(_offsets.cursorY, pos.y);
 		}
 
-		fw::PointT<uint8> getCursorPosition() const {
+		orb::PointT<uint8> getCursorPosition() const {
 			return { _data[_offsets.cursorX], _data[_offsets.cursorY] };
 		}
 

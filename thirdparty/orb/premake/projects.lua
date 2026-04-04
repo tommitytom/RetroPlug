@@ -1,0 +1,557 @@
+local paths = dofile("paths.lua")
+local dep = dofile(paths.SCRIPT_ROOT .. "dep/index.lua")
+local iplug2 = dofile(paths.SCRIPT_ROOT .. "dep/iplug2.lua")
+local util = dofile(paths.SCRIPT_ROOT .. "util.lua")
+local emscripten = dofile(paths.SCRIPT_ROOT .. "emscripten.lua")
+
+local m = {
+	Foundation = {},
+	Graphics = {},
+	Ui = {},
+	Audio = {},
+	Engine = {},
+	Application = {
+		test2 = function ()
+
+		end
+	},
+	ExampleApplication = {},
+	Tests = {}
+}
+
+function m.Foundation.include()
+	dependson { "configure" }
+
+	includedirs {
+		paths.DEP_ROOT,
+	}
+
+	includedirs {
+		"thirdparty",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		paths.SRC_ROOT,
+		paths.GENERATED_ROOT,
+		paths.RESOURCES_ROOT
+	}
+
+	dep.lua.include()
+	dep.spdlog.include()
+
+	filter { "platforms:Emscripten" }
+		disablewarnings { "deprecated-literal-operator", "unknown-warning-option" }
+
+	filter { "platforms:not Emscripten" }
+		dep.gainput.include()
+		dep.efsw.include()
+
+	filter {}
+end
+
+function m.Foundation.link()
+	m.Foundation.include()
+
+	links { "Foundation" }
+
+	dep.lua.link()
+	dep.spdlog.link()
+
+	filter { "platforms:not Emscripten" }
+		dep.efsw.link()
+		dep.gainput.link()
+
+	filter {}
+end
+
+function m.Foundation.project()
+	project "Foundation"
+	kind "StaticLib"
+
+	m.Foundation.include()
+
+	files {
+		paths.SRC_ROOT .. "foundation/**.h",
+		paths.SRC_ROOT .. "foundation/**.cpp",
+		paths.SRC_ROOT .. "orb-generated/*.h",
+		paths.SRC_ROOT .. "orb-generated/*_%{cfg.architecture}.cpp",
+	}
+
+	filter "platforms:Emscripten"
+		excludes { paths.SRC_ROOT .. "foundation/GainputGamepadManager.*" }
+
+	filter {}
+
+	util.liveppCompat()
+end
+
+
+function m.Graphics.include()
+	dependson { "configure" }
+
+	m.Foundation.include()
+	dep.stb.include()
+	dep.glfw.include()
+	dep.glad.include()
+	dep.freetype.include()
+	dep.freetypeGl.include()
+
+	filter {}
+end
+
+function m.Graphics.link()
+	m.Graphics.include()
+
+	links { "Graphics" }
+
+	m.Foundation.link()
+	dep.stb.link()
+	dep.glad.link()
+	dep.freetype.link()
+	dep.freetypeGl.link()
+end
+
+function m.Graphics.project()
+	project "Graphics"
+	kind "StaticLib"
+
+	m.Graphics.include()
+
+	files {
+		paths.SRC_ROOT .. "graphics/**.h",
+		paths.SRC_ROOT .. "graphics/**.cpp",
+		--paths.RESOURCES_ROOT .. "fonts/**.ttf"
+	}
+
+	filter("files:**.ttf")
+		buildmessage 'Compiling resource: %{file.relpath}'
+
+		-- One or more commands to run (required)
+		buildcommands {
+			'luac -o "%{cfg.objdir}/%{file.basename}.out" "%{file.relpath}"'
+		}
+
+		buildoutputs { '%{cfg.objdir}/%{file.basename}.h' }
+
+	filter{}
+
+	util.liveppCompat()
+end
+
+
+
+function m.Ui.include()
+	dependson { "configure" }
+
+	m.Graphics.include()
+	dep.yoga.include()
+
+	filter {}
+end
+
+function m.Ui.link()
+	m.Ui.include()
+
+	links { "Ui" }
+
+	m.Graphics.link()
+	dep.yoga.link()
+	--dep.csspp.link()
+end
+
+function m.Ui.project()
+	project "Ui"
+	kind "StaticLib"
+
+	m.Ui.include()
+	--dep.csspp.include()
+
+	files {
+		paths.SRC_ROOT .. "ui/*.h",
+		paths.SRC_ROOT .. "ui/*.cpp"
+	}
+
+	filter { "action:vs*" }
+		buildoptions { "/bigobj" }
+		files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+	filter {}
+
+	util.liveppCompat()
+end
+
+
+
+function m.Audio.include()
+	dependson { "configure" }
+
+	m.Foundation.include()
+
+	filter {}
+end
+
+function m.Audio.link()
+	m.Audio.include()
+
+	links { "Audio" }
+
+	m.Foundation.link()
+end
+
+function m.Audio.project()
+	project "Audio"
+		kind "StaticLib"
+
+		m.Audio.include()
+
+		files {
+			paths.SRC_ROOT .. "audio/**.h",
+			paths.SRC_ROOT .. "audio/**.cpp"
+		}
+
+		util.liveppCompat()
+end
+
+function m.Application.include()
+	dependson { "configure" }
+
+	m.Graphics.include()
+	m.Audio.include()
+	dep.glfw.include()
+
+	filter { "platforms:not Emscripten" }
+		dep.pugl.include()
+
+	filter {}
+end
+
+function m.Application.link()
+	m.Application.include()
+
+	links { "Application" }
+
+	m.Graphics.link()
+	m.Audio.link()
+	dep.glfw.link()
+
+	filter { "platforms:not Emscripten" }
+		--dep.pugl.link()
+
+	filter {}
+end
+
+function m.Application.project()
+	project "Application"
+		kind "StaticLib"
+
+		m.Application.include()
+
+		files {
+			paths.SRC_ROOT .. "application/**.h",
+			paths.SRC_ROOT .. "application/**.cpp"
+		}
+
+		util.liveppCompat()
+end
+
+local function tableContains(table, element)
+	for _, value in pairs(table) do
+		if value == element then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function createStandalone(config, impl)
+	project (config.name .. "-app")
+		kind "ConsoleApp"
+
+		impl()
+
+		defines {
+			"FW_USE_GLFW",
+			"FW_USE_MINIAUDIO"
+		}
+
+		filter { "platforms:not Emscripten" }
+			files {
+				paths.SRC_ROOT .. "entry/main.cpp",
+				paths.SRC_ROOT .. "entry/mainloop.cpp"
+			}
+
+		filter { "platforms:Emscripten" }
+			buildoptions { "-gsource-map", "-matomics", "-mbulk-memory" }
+			linkoptions { "-o %{string.lower(cfg.buildcfg)}/" .. config.name .. ".mjs", }
+			files {
+				paths.SRC_ROOT .. "entry/main_emscripten.cpp"
+			}
+
+		filter { "platforms:Emscripten", "configurations:Debug*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.debug) }
+
+		filter { "platforms:Emscripten", "configurations:Development*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.development) }
+
+		filter { "platforms:Emscripten", "configurations:Release*" }
+			linkoptions { util.joinFlags(emscripten.flags.base, emscripten.flags.release) }
+		filter {}
+end
+
+local function createClap(config, impl)
+	local dep = paths.DEP_ROOT .. "CPLUG"
+	project (config.name .. "-clap")
+		language "C++"
+		kind "SharedLib"
+		targetextension ".clap"
+
+		includedirs {
+			dep .. "/src"
+		}
+
+		forceincludes {
+			paths.SRC_ROOT .. "/plugin/cplug/config.h"
+		}
+
+		files {
+			dep .. "/src/cplug.h",
+			dep .. "/src/cplug_clap.c",
+			dep .. "/src/clap/**",
+			paths.SRC_ROOT .. "/plugin/cplug/**"
+		}
+
+		impl()
+
+		filter { "options:admin", "system:windows" }
+			targetdir "C:/Program Files/Common Files/CLAP"
+
+		filter {}
+end
+
+local function createVst3(config, impl)
+	local dep = paths.DEP_ROOT .. "CPLUG"
+	project (config.name .. "-vst3")
+		language "C++"
+		kind "SharedLib"
+		targetextension ".vst3"
+
+		includedirs {
+			dep .. "/src"
+		}
+
+		forceincludes {
+			paths.SRC_ROOT .. "/plugin/cplug/config.h"
+		}
+
+		files {
+			dep .. "/src/cplug.h",
+			dep .. "/src/cplug_vst3.c",
+			dep .. "/src/vst3_c_api.h",
+			paths.SRC_ROOT .. "/plugin/cplug/**"
+		}
+
+		impl()
+
+		filter { "options:admin", "system:windows" }
+			targetdir "C:/Program Files/Common Files/VST3"
+
+		filter "system:windows"
+			disablewarnings { "4244", "4018", "4267" }
+
+		filter {}
+end
+
+--[[
+local function createVst3(config, impl)
+	local dep = paths.DEP_ROOT .. "vst3"
+	project (config.name .. "-vst3")
+		kind "SharedLib"
+
+		includedirs {
+			dep
+		}
+
+		files {
+			dep .. "/public.sdk/source/main/dllmain.cpp",
+			paths.SRC_ROOT .. "/plugin/vst3/**"
+		}
+
+		links { "vst3" }
+
+		impl()
+
+		filter {}
+end
+]]
+
+local function createLivePp(config, impl)
+	project (config.name .. "-live++")
+		kind "ConsoleApp"
+
+		impl()
+
+		defines {
+			"FW_USE_MINIAUDIO"
+		}
+
+		files {
+			paths.SRC_ROOT .. "entry/mainlivepp.cpp",
+			paths.SRC_ROOT .. "entry/mainloop.cpp"
+		}
+
+		util.liveppCompatLink()
+end
+
+function m.Application.create(config, impl)
+	local crc32 = dofile(paths.SCRIPT_ROOT .. "dep/crc32.lua")
+
+	if config.header == nil then
+		config.header = config.name .. "Application.h"
+	end
+
+	if config.plugin ~= nil then
+		if config.plugin.uniqueId == nil then
+			config.plugin.uniqueId = string.format("%x", crc32(config.name)):sub(1, 4)
+		end
+	end
+
+	-- Create project files if they don't exist
+	local fullHeaderPath = paths.SRC_ROOT .. config.header
+	if os.isfile(fullHeaderPath) == false then
+		print("Creating project: " .. config.name)
+		local header = io.readfile(paths.SRC_ROOT .. "templates/ApplicationTemplate.h")
+		local source = io.readfile(paths.SRC_ROOT .. "templates/ApplicationTemplate.cpp")
+		io.writefile(fullHeaderPath, util.interp(header, { name = config.name }))
+		io.writefile(string.gsub(fullHeaderPath, ".h", ".cpp"), util.interp(source, { name = config.name }))
+	end
+
+	local function wrappedImpl()
+		m.Application.link()
+		m.Ui.link()
+
+		local namespace = config.namespace or ""
+
+		defines {
+			"APPLICATION_HEADER=" .. config.header,
+			"APPLICATION_IMPL=" .. namespace .. config.name .. "Application",
+		}
+
+		files {
+			paths.SRC_ROOT .. "entry/ApplicationFactory.*"
+		}
+
+		impl()
+	end
+
+	if tableContains(config.targets, "standalone") then createStandalone(config, wrappedImpl) end
+	--if tableContains(config.targets, "standalone-livepp") then createLivePp(config, wrappedImpl) end
+
+	if tableContains(config.targets, "standalone-iplug") then iplug2.createApp(config); wrappedImpl() end
+	if tableContains(config.targets, "vst2") then iplug2.createVst2(config); wrappedImpl() end
+	--if tableContains(config.targets, "vst3") then iplug2.createVst3(config); wrappedImpl() end
+	if tableContains(config.targets, "vst3") then createVst3(config, wrappedImpl); end
+	--if tableContains(config.targets, "clap") then createClap(config, wrappedImpl); end
+	--if tableContains(config.targets, "aax") then iplug2.createAax(config); wrappedImpl() end
+	--if tableContains(config.targets, "au") then iplug2.createAu(config); wrappedImpl() end
+end
+
+function m.ExampleApplication.project(name)
+	m.Application.create({
+		version = "0.0.1",
+		name = name,
+		header = "examples/" .. name .. ".h",
+		author = "tommitytom",
+		url = "https://tommitytom.co.uk",
+		email = "fw@tommitytom.co.uk",
+		copyright = "Tom Yaxley",
+		targets = {
+			"vst2",
+			"vst3",
+			"standalone",
+			"standalone-livepp",
+			"standalone-iplug",
+			"au",
+			"aax",
+			"web"
+		},
+
+		audio = {
+			inputs = 0,
+			outputs = 2,
+			midiIn = true,
+			midiOut = false,
+			latency = 0,
+			stateChunks = true,
+		},
+
+		graphics = {
+			width = 1024,
+			height = 768,
+			fps = 60,
+			vsync = true
+		},
+
+		plugin = {
+			authorId = "tmtt",
+			type = "synth",
+			sharedResources = false,
+		}
+	}, function()
+		includedirs {
+			paths.SRC_ROOT .. "examples"
+		}
+
+		files {
+			paths.SRC_ROOT .. "examples/" .. name .. ".*",
+		}
+
+		filter { "action:vs*" }
+			buildoptions { "/bigobj" }
+			files { paths.DEP_ROOT .. "entt/natvis/entt/*.natvis" }
+	end)
+end
+
+
+
+--[[function m.ShaderReload.project()
+	project "ShaderReload"
+	kind "ConsoleApp"
+
+	m.Graphics.link()
+	m.Engine.link()
+	m.Application.link()
+	dep.efsw.link()
+
+	includedirs {
+		"thirdparty",
+		"thirdparty/spdlog/include",
+		"thirdparty/sol",
+	}
+
+	includedirs {
+		"src",
+		"generated",
+		"resources"
+	}
+
+	files {
+		"src/shaderreload/**.h",
+		"src/shaderreload/**.cpp"
+	}
+end]]
+
+
+function m.Tests.project()
+	project "Tests"
+	kind "ConsoleApp"
+
+	m.Application.link()
+	m.Engine.link()
+
+	files {
+		paths.SRC_ROOT .. "tests/**.cpp"
+	}
+end
+
+return m

@@ -9,17 +9,17 @@ namespace rp {
 	HexEditor::HexEditor() {
 		auto& layout = getLayout();
 		layout.setMinDimensions({ 1280, 720 });
-		layout.setFlexDirection(fw::FlexDirection::Row);
+		layout.setFlexDirection(orb::FlexDirection::Row);
 	}
 
 	void HexEditor::onInitialize() {
 		_hexGrid = addChild<HexGrid>("Hex Grid");
 		_scrollBar = addChild<ScrollBar>("Scroll Bar");
-		_scrollBar->getLayout().setDimensions(fw::Dimension{ 20, 720 });
+		_scrollBar->getLayout().setDimensions(orb::Dimension{ 20, 720 });
 
 		if (_pendingData.size() > 0) {
 			_hexGrid->setData(std::move(_pendingData));
-			_pendingData = fw::Uint8Buffer();
+			_pendingData = orb::Uint8Buffer();
 		}
 
 		_scrollBar->setSize(_hexGrid->getViewablePercent());
@@ -33,7 +33,7 @@ namespace rp {
 		});
 	}
 
-	void HexEditor::setData(fw::Uint8Buffer&& data) {
+	void HexEditor::setData(orb::Uint8Buffer&& data) {
 		if (_hexGrid) {
 			_hexGrid->setData(std::move(data));
 		} else {
@@ -41,7 +41,7 @@ namespace rp {
 		}
 	}
 
-	void HexEditor::onRender(fw::Canvas& canvas) {
-		canvas.fillRect(getDimensionsF(), fw::Color4F::red);
+	void HexEditor::onRender(orb::Canvas& canvas) {
+		canvas.fillRect(getDimensionsF(), orb::Color4F::red);
 	}
 }

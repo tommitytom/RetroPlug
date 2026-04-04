@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "ui/View.h"
@@ -5,9 +6,10 @@
 
 #include "core/RetroPlugProject.h"
 #include "ui/RootContainer.h"
+#include "foundation/FileWatcher.h"
 
 namespace rp {
-	class RetroPlugView final : public fw::View {
+	class RetroPlugView final : public orb::View {
 		FwRegisterObject()
 
 	private:
@@ -16,6 +18,7 @@ namespace rp {
 		std::shared_ptr<RootContainer> _rootContainer;
 		RetroPlugProject& _project;
 		uint32 _version = 0;
+		orb::EfswFileWatcher _watcher;
 
 	public:
 		RetroPlugView(RetroPlugProject& project);
@@ -23,13 +26,15 @@ namespace rp {
 
 		void onInitialize() override;
 
+		bool onDragMove(orb::DragContext& ctx, orb::Point position) override { return true; }
+
 		bool onDrop(const std::vector<std::string>& paths) override;
 
 		void onUpdate(f32 deltaTime) override;
 
-		void onRender(fw::Canvas& canvas) override;
+		void onRender(orb::Canvas& canvas) override;
 
-		bool onKey(const fw::KeyEvent& event) override;
+		bool onKey(const orb::KeyEvent& event) override;
 
 		void setRootContainer(const std::shared_ptr<RootContainer>& container);
 

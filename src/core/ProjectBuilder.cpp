@@ -3,6 +3,7 @@
 #include "foundation/FsUtil.h"
 #include "core/ProjectSerializer.h"
 #include "core/RetroPlugProjectContext.h"
+#include "mesen/MesenComponents.h"
 
 namespace rp {
 	namespace fs = std::filesystem;
@@ -98,7 +99,7 @@ namespace rp {
 					path = path.lexically_normal();
 				}
 
-				if (!fw::FsUtil::readFile(path.string(), entry.data())) {
+				if (!orb::FsUtil::readFile(path.string(), entry.data())) {
 					error = true;
 					spdlog::error("Failed to read file: {}", path.string());
 				}
@@ -110,7 +111,7 @@ namespace rp {
 
 	int32 indexOfExtension(const PathVector& paths, const std::string& ext) {
 		for (size_t i = 0; i < paths.size(); ++i) {
-			if (fw::StringUtil::toLower(paths[i].extension().string()) == ext) {
+			if (orb::StringUtil::toLower(paths[i].extension().string()) == ext) {
 				return (int32)i;
 			}
 		}
@@ -166,7 +167,7 @@ namespace rp {
 			return false;
 		}
 
-		std::string data = fw::FsUtil::readTextFile(path);
+		std::string data = orb::FsUtil::readTextFile(path);
 		if (data.empty()) {
 			spdlog::error("Failed to read project file: {}", path.string());
 			return false;
@@ -224,10 +225,11 @@ namespace rp {
 			return loadFromFile(registry, paths[0]);
 		}
 
-	const int32 stateIndex = indexOfExtension(paths, ".state");
+		const int32 stateIndex = indexOfExtension(paths, ".state");
 		const int32 savIndex = indexOfExtension(paths, ".sav");
 		int32 romIndex = indexOfExtension(paths, ".gb");
 		if (romIndex == -1) romIndex = indexOfExtension(paths, ".gbc");
+		if (romIndex == -1) romIndex = indexOfExtension(paths, ".nes");
 
 		SystemLoadComponent load;
 
@@ -251,7 +253,7 @@ namespace rp {
 		load.entries["rom"] = { .path = paths[romIndex].string() };
 
 		entt::entity system = registry.create();
-		bool valid = ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), SameBoyComponent{});
+		bool valid = ProjectBuilder::addSystemWithConfig(registry, system, std::forward<SystemLoadComponent>(load), MesenComponent{});
 		if (!valid) {
 			return false;
 		}
@@ -455,7 +457,7 @@ namespace rp {
 			spdlog::error("Failed to serialize project");
 			return false;
 		}
-		if (!fw::FsUtil::writeTextFile(path, target)) {
+		if (!orb::FsUtil::writeTextFile(path, target)) {
 			spdlog::error("Failed to write project file: {}", path.string());
 			return false;
 		}
@@ -468,7 +470,7 @@ namespace rp {
 				if (found != load.entries.end() && !found->second.path.empty()) {
 					const VersionedMemory* sram = state.find(MemoryType::Sram);
 					if (sram) {
-						if (!fw::FsUtil::writeFile(found->second.path, sram->data)) {
+						if (!orb::FsUtil::writeFile(found->second.path, sram->data)) {
 							spdlog::error("Failed to write SRAM file: {}", found->second.path);
 						} else {
 							spdlog::info("Saved SRAM to file: {}", found->second.path);
@@ -482,7 +484,7 @@ namespace rp {
 			} else {
 				if (state.state.size()) {
 					fs::path statePath = path.replace_extension(".state");
-					if (!fw::FsUtil::writeFile(statePath, state.state)) {
+					if (!orb::FsUtil::writeFile(statePath, state.state)) {
 						spdlog::error("Failed to write state file: {}", statePath.string());
 					} else {
 						spdlog::info("Saved state to file: {}", statePath.string());

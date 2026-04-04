@@ -36,7 +36,7 @@
 using namespace emscripten;
 using namespace rp;
 
-RetroPlugApplication* upcastApplication(fw::app::Application& app) {
+RetroPlugApplication* upcastApplication(orb::app::Application& app) {
 	return (RetroPlugApplication*)&app;
 }
 
@@ -81,7 +81,7 @@ emscripten::val lsdjRom_getPaletteName(rp::lsdj::Rom& rom, size_t idx) {
 }
 
 // LSDJ string_view parameter wrapper functions
-int32 lsdjKit_addSample(rp::lsdj::Kit& kit, const std::string& name, const fw::Uint8Buffer& data) {
+int32 lsdjKit_addSample(rp::lsdj::Kit& kit, const std::string& name, const orb::Uint8Buffer& data) {
 	return kit.addSample(std::string_view(name), data);
 }
 
@@ -97,11 +97,11 @@ void lsdjRom_setKitSampleName(rp::lsdj::Rom& rom, size_t kitIdx, size_t sampleId
 	rom.setKitSampleName(kitIdx, sampleIdx, std::string_view(name));
 }
 
-val AudioBuffer_getWritePointer(fw::AudioBuffer& buffer, uint32 channel) {
+val AudioBuffer_getWritePointer(orb::AudioBuffer& buffer, uint32 channel) {
 	return val(typed_memory_view(buffer.getSampleCount(), buffer.getWritePointer(channel)));
 }
 
-val AudioBuffer_getReadPointer(fw::AudioBuffer& buffer, uint32 channel) {
+val AudioBuffer_getReadPointer(orb::AudioBuffer& buffer, uint32 channel) {
 	return val(typed_memory_view(buffer.getSampleCount(), buffer.getReadPointer(channel)));
 }
 
@@ -109,22 +109,22 @@ bool RetroPlugProject_addSystem(RetroPlugProject& project, SystemLoadComponent&&
 	return project.addSystem(std::move(load), comp);
 }
 
-fw::Uint8Buffer SystemLoadEntry_data_get(SystemLoadEntry& entry) {
+orb::Uint8Buffer SystemLoadEntry_data_get(SystemLoadEntry& entry) {
 	return entry.data();
 }
 
-void SystemLoadEntry_data_set(SystemLoadEntry& entry, fw::Uint8Buffer value) {
+void SystemLoadEntry_data_set(SystemLoadEntry& entry, orb::Uint8Buffer value) {
 	entry.data.set(value);
 }
 
-using SkipUint8Buffer = rfl::Skip<fw::Uint8Buffer>;
+using SkipUint8Buffer = rfl::Skip<orb::Uint8Buffer>;
 
 EMSCRIPTEN_BINDINGS(retroPlug) {
 	function("convertNibblesToF32", rp::lsdj::SampleUtil::convertNibblesToF32WithRotation);
 	function("convertF32ToNibbles", rp::lsdj::SampleUtil::convertF32ToNibbles);
 	function("upcastApplication", &upcastApplication, return_value_policy::reference());
 	function("fixRomChecksum", &GameboyUtil::fixChecksum);
-	function("getRomName", +[](fw::Uint8Buffer& buffer) { return std::string(GameboyUtil::getRomName(buffer)); });
+	function("getRomName", +[](orb::Uint8Buffer& buffer) { return std::string(GameboyUtil::getRomName(buffer)); });
 	function("getLsdjRomInfo", &rp::lsdj::OffsetLookup::getRomInfo);
 
 	class_<semver::version>("SemverVersion")
@@ -145,10 +145,10 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	class_<MemoryAccessor>("MemoryAccessor")
-		.constructor<MemoryType, fw::Uint8Buffer, size_t>()
-		.function("getBuffer", select_overload<fw::Uint8Buffer&()>(&MemoryAccessor::getBuffer))
+		.constructor<MemoryType, orb::Uint8Buffer, size_t>()
+		.function("getBuffer", select_overload<orb::Uint8Buffer&()>(&MemoryAccessor::getBuffer))
 		.function("getSize", &MemoryAccessor::getSize)
-		//.function("write", select_overload<size_t, const fw::Uint8Buffer&>(&MemoryAccessor::write))
+		//.function("write", select_overload<size_t, const orb::Uint8Buffer&>(&MemoryAccessor::write))
 	;
 
 	value_object<LsdjServiceSettings>("NativeLsdjServiceSettings")
@@ -225,13 +225,13 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 			project.unsubscribeFromMemory(entt::entity(systemId), type);
 		})
 		.function("getLsdjController", &RetroPlugProject::getLsdjController)
-		.function("serialize", +[](RetroPlugProject& project, fw::Uint8Buffer& archive, const std::string& rootPath) {
+		.function("serialize", +[](RetroPlugProject& project, orb::Uint8Buffer& archive, const std::string& rootPath) {
 			project.serialize(archive, rootPath);
 		})
 		.function("serializeJson", +[](RetroPlugProject& project, const std::string& rootPath) {
 			return project.serializeJson(rootPath);
 		})
-		.function("deserialize", +[](RetroPlugProject& project, const fw::Uint8Buffer& archive, const std::string& rootPath) {
+		.function("deserialize", +[](RetroPlugProject& project, const orb::Uint8Buffer& archive, const std::string& rootPath) {
 			return project.deserialize(archive, rootPath);
 		})
 		.function("deserializeJson", +[](RetroPlugProject& project, const std::string& str, const std::string& rootPath) {
@@ -261,7 +261,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.field("fastBoot", &SameBoyComponent::fastBoot)
 	;
 
-	class_<RetroPlugView, base<fw::View>>("RetroPlugView")
+	class_<RetroPlugView, base<orb::View>>("RetroPlugView")
 	;
 
 	class_<RetroPlugApplication>("NativeRetroPlugApplication")
@@ -283,8 +283,8 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.value("MAX", MemoryType::MAX)
 	;
 
-	register_map<uint32, fw::Uint8Buffer>("NativeBufferMap");
-	register_vector<fw::Uint8Buffer>("NativeUint8BufferVector");
+	register_map<uint32, orb::Uint8Buffer>("NativeBufferMap");
+	register_vector<orb::Uint8Buffer>("NativeUint8BufferVector");
 
 	class_<LsdjController>("NativeLsdjController")
 		.function("getLsdjSav", +[](LsdjController& controller, SystemId system) -> lsdj::Sav {
@@ -338,16 +338,16 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 		.function("addKitComponent", +[](LsdjController& controller, SystemId system, const LsdjKitComponent& component) -> bool {
 			return controller.addKitComponent((entt::entity)system, component);
 		})*/
-		.function("getKitData", +[](LsdjController& controller, SystemId system, uint32 kitId) -> fw::Uint8Buffer {
+		.function("getKitData", +[](LsdjController& controller, SystemId system, uint32 kitId) -> orb::Uint8Buffer {
 			return controller.getKitData((entt::entity)system, kitId);
 		})
-		.function("getSynthData", +[](LsdjController& controller, SystemId system, uint32 synthId) -> fw::Uint8Buffer {
+		.function("getSynthData", +[](LsdjController& controller, SystemId system, uint32 synthId) -> orb::Uint8Buffer {
 			return controller.getSynthData((entt::entity)system, synthId);
 		})
-		.function("setSynthData", +[](LsdjController& controller, SystemId system, uint32 synthId, const fw::Uint8Buffer& data) -> bool {
+		.function("setSynthData", +[](LsdjController& controller, SystemId system, uint32 synthId, const orb::Uint8Buffer& data) -> bool {
 			return controller.setSynthData((entt::entity)system, synthId, data);
 		})
-		.function("getKitSample", +[](LsdjController& controller, SystemId system, uint32 kitId, uint32 sampleId) -> fw::Uint8Buffer {
+		.function("getKitSample", +[](LsdjController& controller, SystemId system, uint32 kitId, uint32 sampleId) -> orb::Uint8Buffer {
 			return controller.getKitSample((entt::entity)system, kitId, sampleId);
 		})
 		.function("getKitVersion", +[](LsdjController& controller, SystemId system, uint32 kitId) -> uint32 {
@@ -447,16 +447,16 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	//constant("LSDJ_FONT_COUNT", rp::lsdj::Rom::FONT_COUNT);
 	//constant("LSDJ_KIT_COUNT", rp::lsdj::Rom::KIT_COUNT);
 
-	// Framework struct bindings
-	value_object<fw::Color3>("Color3")
-		.field("r", &fw::Color3::r)
-		.field("g", &fw::Color3::g)
-		.field("b", &fw::Color3::b)
+	// orb struct bindings
+	value_object<orb::Color3>("Color3")
+		.field("r", &orb::Color3::r)
+		.field("g", &orb::Color3::g)
+		.field("b", &orb::Color3::b)
 	;
 
-	value_object<fw::PointT<uint8>>("PointU8")
-		.field("x", &fw::PointT<uint8>::x)
-		.field("y", &fw::PointT<uint8>::y)
+	value_object<orb::PointT<uint8>>("PointU8")
+		.field("x", &orb::PointT<uint8>::x)
+		.field("y", &orb::PointT<uint8>::y)
 	;
 
 	// LSDJ Rom struct bindings
@@ -478,15 +478,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	class_<rp::lsdj::Kit>("NativeLsdjKit")
 		.constructor<>()
 		//.constructor<MemoryAccessor, int32>()
-		.constructor<const fw::Uint8Buffer&, int32>()
+		.constructor<const orb::Uint8Buffer&, int32>()
 		.property("index", &rp::lsdj::Kit::getIndex)
 		.property("isValid", &rp::lsdj::Kit::isValid)
 		.property("buffer", &rp::lsdj::Kit::getBuffer)
 		.function("getName", &lsdjKit_getName)
 		.function("setKitData", &rp::lsdj::Kit::setKitData)
 		.function("getSampleName", &lsdjKit_getSampleName)
-		.function("getSampleData", select_overload<const fw::Uint8Buffer() const>(&rp::lsdj::Kit::getSampleData))
-		.function("getSampleData", select_overload<const fw::Uint8Buffer(size_t) const>(&rp::lsdj::Kit::getSampleData))
+		.function("getSampleData", select_overload<const orb::Uint8Buffer() const>(&rp::lsdj::Kit::getSampleData))
+		.function("getSampleData", select_overload<const orb::Uint8Buffer(size_t) const>(&rp::lsdj::Kit::getSampleData))
 		.function("addSample", &lsdjKit_addSample)
 		.function("setSampleName", &lsdjKit_setSampleName)
 		.function("setSampleData", &rp::lsdj::Kit::setSampleData)
@@ -556,15 +556,15 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	class_<rp::lsdj::Project>("NativeLsdjProject")
 		//.constructor<>()
-		.constructor<fw::Uint8Buffer&>()
+		.constructor<orb::Uint8Buffer&>()
 		.property("version", &rp::lsdj::Project::getVersion)
 		.function("getName", &lsdjProject_getName)
 		.function("setName", &rp::lsdj::Project::setName)
-		.function("toLsdsng", +[](rp::lsdj::Project& project) -> fw::Uint8Buffer {
-			fw::Uint8Buffer buffer;
+		.function("toLsdsng", +[](rp::lsdj::Project& project) -> orb::Uint8Buffer {
+			orb::Uint8Buffer buffer;
 			if (!project.toLsdsng(buffer)) {
 				spdlog::error("Failed to convert project to lsdsng");
-				return fw::Uint8Buffer();
+				return orb::Uint8Buffer();
 			}
 
 			return buffer;
@@ -576,11 +576,11 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 
 	class_<rp::lsdj::Sav>("NativeLsdjSav")
 		.constructor<>()
-		.constructor<const fw::Uint8Buffer&>()
+		.constructor<const orb::Uint8Buffer&>()
 		.function("free", &rp::lsdj::Sav::free)
 		.property("isValid", &rp::lsdj::Sav::isValid)
-		.function("load", select_overload<lsdj_error_t(const fw::Uint8Buffer&)>(&rp::lsdj::Sav::load))
-		.function("save", select_overload<fw::Uint8Buffer()>(&rp::lsdj::Sav::save))
+		.function("load", select_overload<lsdj_error_t(const orb::Uint8Buffer&)>(&rp::lsdj::Sav::load))
+		.function("save", select_overload<orb::Uint8Buffer()>(&rp::lsdj::Sav::save))
 		.property("activeProjectCount", &rp::lsdj::Sav::getProjectCount)
 		.property("totalProjectCount", &rp::lsdj::Sav::getTotalProjectCount)
 		.function("getProject", &rp::lsdj::Sav::getProject)
@@ -595,7 +595,7 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	class_<rp::lsdj::Rom>("NativeLsdjRom")
 		.constructor<>()
 		//.constructor<MemoryAccessor>()
-		.constructor<const fw::Uint8Buffer&>()
+		.constructor<const orb::Uint8Buffer&>()
 		.property("isValid", &rp::lsdj::Rom::isValid)
 		.function("getBankAccessor", &rp::lsdj::Rom::getBankAccessor)
 		.function("getAccessor", &rp::lsdj::Rom::getAccessor, return_value_policy::reference())
@@ -638,22 +638,22 @@ EMSCRIPTEN_BINDINGS(retroPlug) {
 	;
 
 	// Audio Buffer bindings
-	class_<fw::AudioBuffer>("NativeAudioBuffer")
+	class_<orb::AudioBuffer>("NativeAudioBuffer")
 		.constructor<uint32, uint32, f32>()
-		.function("resize", &fw::AudioBuffer::resize)
+		.function("resize", &orb::AudioBuffer::resize)
 		.function("getReadPointer", &AudioBuffer_getReadPointer)
 		.function("getWritePointer", &AudioBuffer_getWritePointer)
-		.function("clear", &fw::AudioBuffer::clear)
-		.function("clearChannel", &fw::AudioBuffer::clearChannel)
-		.function("clearSamples", &fw::AudioBuffer::clearSamples)
-		.function("copyFrom", select_overload<void(const fw::AudioBuffer&, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
-		.function("copyFromRange", select_overload<void(const fw::AudioBuffer&, uint32, uint32, uint32, uint32)>(&fw::AudioBuffer::copyFrom))
-		.function("addFrom", &fw::AudioBuffer::addFrom)
-		//.function("applyGain", &fw::AudioBuffer::applyGain)
-		.property("channelCount", &fw::AudioBuffer::getChannelCount)
-		.property("sampleCount", &fw::AudioBuffer::getSampleCount)
-		.property("sizeInBytes", &fw::AudioBuffer::getSizeInBytes)
-		.property("sampleRate", &fw::AudioBuffer::getSampleRate, &fw::AudioBuffer::setSampleRate)
-		.function("isEmpty", &fw::AudioBuffer::isEmpty)
+		.function("clear", &orb::AudioBuffer::clear)
+		.function("clearChannel", &orb::AudioBuffer::clearChannel)
+		.function("clearSamples", &orb::AudioBuffer::clearSamples)
+		.function("copyFrom", select_overload<void(const orb::AudioBuffer&, uint32, uint32)>(&orb::AudioBuffer::copyFrom))
+		.function("copyFromRange", select_overload<void(const orb::AudioBuffer&, uint32, uint32, uint32, uint32)>(&orb::AudioBuffer::copyFrom))
+		.function("addFrom", &orb::AudioBuffer::addFrom)
+		//.function("applyGain", &orb::AudioBuffer::applyGain)
+		.property("channelCount", &orb::AudioBuffer::getChannelCount)
+		.property("sampleCount", &orb::AudioBuffer::getSampleCount)
+		.property("sizeInBytes", &orb::AudioBuffer::getSizeInBytes)
+		.property("sampleRate", &orb::AudioBuffer::getSampleRate, &orb::AudioBuffer::setSampleRate)
+		.function("isEmpty", &orb::AudioBuffer::isEmpty)
 	;
 }

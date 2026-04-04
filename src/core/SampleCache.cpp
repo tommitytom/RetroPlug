@@ -13,8 +13,8 @@ namespace rp {
 
 		spdlog::info("Loading sample from {}", path);
 
-		fw::Uint8Buffer fileData;
-		if (!fw::FsUtil::readFile(std::string(path), fileData)) {
+		orb::Uint8Buffer fileData;
+		if (!orb::FsUtil::readFile(std::string(path), fileData)) {
 			spdlog::error("Failed to read file from disk: {}", path);
 			return SampleData{};
 		}

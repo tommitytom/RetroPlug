@@ -36,7 +36,7 @@ std::string formatTags(std::string_view tags) {
 	return "";
 }
 
-rp::lsdj::RomInfo OffsetLookup::getRomInfo(const fw::Uint8Buffer& romData) {
+rp::lsdj::RomInfo OffsetLookup::getRomInfo(const orb::Uint8Buffer& romData) {
 	rp::lsdj::RomInfo info;
 
 	info.name = GameboyUtil::getRomName((const char*)romData.data());
@@ -60,7 +60,7 @@ rp::lsdj::RomInfo OffsetLookup::getRomInfo(const fw::Uint8Buffer& romData) {
 	return info;
 }
 
-bool OffsetLookup::findOffsets(const fw::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate) {
+bool OffsetLookup::findOffsets(const orb::Uint8Buffer& romData, MemoryOffsets& offsets, bool forceCalculate) {
 	std::string romName = GameboyUtil::getRomName((const char*)romData.data());
 
 	if (!forceCalculate) {

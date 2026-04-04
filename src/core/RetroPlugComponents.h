@@ -6,6 +6,7 @@
 #include "core/CoreComponents.h"
 #include "core/SystemTypes.h"
 #include "core/HierarchyComponents.h"
+#include "audio/MidiMessage.h"
 #include "sameboy/SameBoyComponents.h"
 
 #include "core/Effects.h"
@@ -39,14 +40,19 @@ namespace rp {
 	struct FetchMemoryResponse {
 		entt::entity entity;
 		MemoryType type;
-		fw::Uint8Buffer state;
+		orb::Uint8Buffer state;
 	};
 
 	struct PadButtonEvent {
 		entt::entity entity = entt::null;
-		fw::PadButtonType button = fw::PadButtonType::COUNT;
+		orb::PadButtonType button = orb::PadButtonType::COUNT;
 		bool down = false;
 	};;
+
+	struct MidiEvent {
+		entt::entity entity = entt::null;
+		orb::MidiMessage message;
+	};
 
 	/*struct ButtonEvent {
 		entt::entity entity;
@@ -55,7 +61,7 @@ namespace rp {
 	};*/
 
 	struct VideoFrameComponent {
-		fw::ImagePtr frame;
+		orb::ImagePtr frame;
 	};
 
 	struct SystemNameComponent {

@@ -77,7 +77,7 @@ namespace rp {
 				savPath.replace_extension(".sav");
 
 				if (!std::filesystem::exists(savPath)) {
-					if (!fw::FsUtil::writeFile(savPath, accessor.getBuffer())) {
+					if (!orb::FsUtil::writeFile(savPath, accessor.getBuffer())) {
 						spdlog::warn("Failed to write initial SRAM file: {}", savPath.string());
 					}
 
@@ -93,7 +93,7 @@ namespace rp {
 
 	void SameboyHooks::onReplicate(entt::registry& registry) const {
 		for (const auto& [e, c] : registry.view<SameBoyStateComponent>().each()) {
-			fw::Replicator::emplaceRemote(registry, e, std::move(c));
+			orb::Replicator::emplaceRemote(registry, e, std::move(c));
 			registry.remove<SameBoyStateComponent>(e);
 		}
 	}

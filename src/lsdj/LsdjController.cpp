@@ -37,7 +37,7 @@ namespace rp {
 					if (!state.patchingKits.contains(*it)) {
 						TaskManager& taskManager = _registry.ctx().at<TaskManager>();
 						lsdj::Rom lsdjRom = getLsdjRom(system);
-						fw::Uint8Buffer kitData = lsdjRom.getKit(*it).getBuffer().clone();
+						orb::Uint8Buffer kitData = lsdjRom.getKit(*it).getBuffer().clone();
 
 						std::unique_ptr<PatchKitTask> task = std::make_unique<PatchKitTask>(system, *findKit(lsdj, *it), std::move(kitData), *state.sampleCache);
 						taskManager.addTask(std::move(task));
@@ -204,7 +204,7 @@ namespace rp {
 		VersionedMemory* romData = systemState.find(MemoryType::Rom);
 
 		const size_t offset = lsdj::Rom::getKitBankOffset(kitId);
-		fw::Uint8Buffer kitData = romData->data.slice(offset, lsdj::Rom::BANK_SIZE);
+		orb::Uint8Buffer kitData = romData->data.slice(offset, lsdj::Rom::BANK_SIZE);
 		KitUtil::updateKit2(*kitComponent, kitData, *lsdjState.sampleCache);
 
 		romData->version++;
@@ -331,13 +331,13 @@ namespace rp {
 		}
 	}
 
-	fw::Uint8Buffer LsdjController::getSynthData(entt::entity system, uint32 synthId) {
+	orb::Uint8Buffer LsdjController::getSynthData(entt::entity system, uint32 synthId) {
 		lsdj::Song song = getLsdjWorkingSong(system);
-		if (!song.isValid()) return fw::Uint8Buffer();
+		if (!song.isValid()) return orb::Uint8Buffer();
 		return song.getSynthData((uint8)synthId);
 	}
 
-	bool LsdjController::setSynthData(entt::entity system, uint32 synthId, const fw::Uint8Buffer& data) {
+	bool LsdjController::setSynthData(entt::entity system, uint32 synthId, const orb::Uint8Buffer& data) {
 		lsdj::Song song = getLsdjWorkingSong(system);
 		if (!song.isValid()) return false;
 		song.setSynthData((uint8)synthId, data);
@@ -394,38 +394,38 @@ namespace rp {
 		return true;
 	}
 
-	fw::Uint8Buffer LsdjController::getKitSample(entt::entity system, uint32 kitId, uint32 sampleId) {
+	orb::Uint8Buffer LsdjController::getKitSample(entt::entity system, uint32 kitId, uint32 sampleId) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
-		if (!lsdj) return fw::Uint8Buffer();
+		if (!lsdj) return orb::Uint8Buffer();
 
 		lsdj::Rom rom = getLsdjRom(system);
 		if (rom.isValid()) {
-			if (kitId >= rom.getKitCount()) return fw::Uint8Buffer();
+			if (kitId >= rom.getKitCount()) return orb::Uint8Buffer();
 
 			lsdj::Kit kit = rom.getKit(kitId);
-			if (!kit.isValid()) return fw::Uint8Buffer();
+			if (!kit.isValid()) return orb::Uint8Buffer();
 
 			return kit.getSampleData(sampleId);
 		}
 
-		return fw::Uint8Buffer();
+		return orb::Uint8Buffer();
 	}
 
-	fw::Uint8Buffer LsdjController::getKitData(entt::entity system, uint32 kitId) {
+	orb::Uint8Buffer LsdjController::getKitData(entt::entity system, uint32 kitId) {
 		LsdjComponent* lsdj = RegistryUtil::tryGet<LsdjComponent>(_registry, system);
-		if (!lsdj) return fw::Uint8Buffer();
+		if (!lsdj) return orb::Uint8Buffer();
 
 		lsdj::Rom rom = getLsdjRom(system);
 		if (rom.isValid()) {
-			if (kitId >= rom.getKitCount()) return fw::Uint8Buffer();
+			if (kitId >= rom.getKitCount()) return orb::Uint8Buffer();
 
 			lsdj::Kit kit = rom.getKit(kitId);
-			if (!kit.isValid()) return fw::Uint8Buffer();
+			if (!kit.isValid()) return orb::Uint8Buffer();
 
 			return kit.getBuffer();
 		}
 
-		return fw::Uint8Buffer();
+		return orb::Uint8Buffer();
 	}
 
 	lsdj::Rom LsdjController::getLsdjRom(const SystemStateComponent& systemState) const {

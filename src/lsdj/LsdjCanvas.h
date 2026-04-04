@@ -99,22 +99,22 @@ namespace rp::lsdj {
 		lsdj::Font _font;
 		lsdj::Palette _palette;
 
-		fw::Color4* _tileBuffer = nullptr;
+		orb::Color4* _tileBuffer = nullptr;
 
-		fw::Image _renderTarget;
-		fw::DimensionT<uint32> _dimensions;
-		fw::PointT<uint32> _translation = { 0, 0 };
+		orb::Image _renderTarget;
+		orb::DimensionT<uint32> _dimensions;
+		orb::PointT<uint32> _translation = { 0, 0 };
 
-		std::stack<fw::PointT<uint32>> _translationStack;
+		std::stack<orb::PointT<uint32>> _translationStack;
 
 		int _textureHandle = -1;
 
 	public:
-		Canvas(fw::DimensionT<uint32> dimensions);
-		Canvas(fw::DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
+		Canvas(orb::DimensionT<uint32> dimensions);
+		Canvas(orb::DimensionT<uint32> dimensions, const lsdj::Font& font, const lsdj::Palette& palette);
 		~Canvas();
 
-		void translate(fw::PointT<uint32> translation) {
+		void translate(orb::PointT<uint32> translation) {
 			_translationStack.push(_translation);
 			_translation += translation;
 		}
@@ -154,19 +154,19 @@ namespace rp::lsdj {
 
 		void number(uint32 x, uint32 y, uint8 value, lsdj::ColorSets colorSetIdx, bool pad = true, bool dimmed = false);
 
-		fw::Color4 getPixelColor(lsdj::ColorSets colorSetIdx, uint32 paletteIdx, uint8 alpha = 255);
+		orb::Color4 getPixelColor(lsdj::ColorSets colorSetIdx, uint32 paletteIdx, uint8 alpha = 255);
 
-		fw::Color4 getPixelColor(const lsdj::Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha = 255);
+		orb::Color4 getPixelColor(const lsdj::Palette::ColorSet& colorSet, uint32 pixel, uint8 alpha = 255);
 
 		//void drawDimmedTile(uint32 x, uint32 y, const Font::Tile& tile, Palette::ColorSet colorSet);
 
 		//void drawDimmedTile(uint32 x, uint32 y, FontTiles tileIdx, ColorSets colorSetIdx);
 
-		fw::DimensionT<uint32> getDimensions() const {
+		orb::DimensionT<uint32> getDimensions() const {
 			return _dimensions;
 		}
 
-		fw::Image& getRenderTarget() {
+		orb::Image& getRenderTarget() {
 			return _renderTarget;
 		}
 

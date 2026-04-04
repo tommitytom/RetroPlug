@@ -21,7 +21,7 @@ namespace rp::GameboyUtil {
 		return romName;
 	}
 
-	inline std::string_view getRomName(const fw::Uint8Buffer& romData) {
+	inline std::string_view getRomName(const orb::Uint8Buffer& romData) {
 		std::string_view romName((const char*)romData.data() + ROM_NAME_OFFSET, 15);
 
 		for (size_t i = 0; i < romName.size(); ++i) {
@@ -34,7 +34,7 @@ namespace rp::GameboyUtil {
 		return romName;
 	}
 
-	inline void fixChecksum(fw::Uint8Buffer& romData) {
+	inline void fixChecksum(orb::Uint8Buffer& romData) {
 		int checksum014D = 0;
         for (int i = 0x134; i < 0x14D; ++i) {
             checksum014D = checksum014D - romData[i] - 1;
