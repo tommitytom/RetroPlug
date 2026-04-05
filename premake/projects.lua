@@ -89,6 +89,7 @@ local m = {
 	MesenPlug = {},
 	RetroPlug = {},
 	Application = {},
+	Cli = {},
 	OffsetCalculator = {},
 	Plugin = {},
 	Tests = {}
@@ -338,6 +339,18 @@ function m.RetroPlug.project()
 	filter{}
 
 	util.liveppCompat()
+end
+
+function m.Cli.project()
+	project "RetroPlug-cli"
+	kind "ConsoleApp"
+
+	m.RetroPlug.link()
+
+	files {
+		"src/cli/**.h",
+		"src/cli/**.cpp",
+	}
 end
 
 function m.OffsetCalculator.project()

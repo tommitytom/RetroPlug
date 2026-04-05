@@ -47,6 +47,8 @@ projects.RetroPlug.project()
 
 group "4 - Applications"
 
+projects.Cli.project()
+
 fwProjects.Application.create({
 	version = "0.6.0",
 	name = "RetroPlug",

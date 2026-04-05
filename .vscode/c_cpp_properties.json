@@ -20,8 +20,8 @@
                 "GB_INTERNAL",
                 "GB_DISABLE_TIMEKEEPING",
                 "GB_DISABLE_DEBUGGER",
-                "FW_OS_LINUX",
-                "FW_PLATFORM_WEB"
+                "FW_OS_LINUX"
+                //"FW_PLATFORM_WEB"
             ],
             "cStandard": "c17",
             "cppStandard": "c++20",

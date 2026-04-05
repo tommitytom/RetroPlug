@@ -451,12 +451,17 @@ void Edio::delRecord(const std::string& path) {
 	checkStatus();
 }
 
-constexpr std::string_view N8_PORT_ID = "USB\\VID_38DF&PID_0017&REV_0200";
+constexpr std::string_view N8_PORT_ID_WIN = "USB\\VID_38DF&PID_0017&REV_0200";
+constexpr std::string_view N8_PORT_ID_LIN = "USB VID:PID=38df:0017 SNR=00000000001A";
 
 std::string Edio::findN8Port() {
 	std::vector<serial::PortInfo> devicesFound = serial::list_ports();
 	auto found = std::find_if(devicesFound.begin(), devicesFound.end(), [](const serial::PortInfo& device) {
-		return device.hardware_id == N8_PORT_ID;
+#if defined(FW_OS_WINDOWS)
+		return device.hardware_id == N8_PORT_ID_WIN;
+#else
+		return device.hardware_id == N8_PORT_ID_LIN;
+#endif
 	});
 
 	if (found != devicesFound.end()) {

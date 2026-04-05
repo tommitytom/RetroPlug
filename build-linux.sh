@@ -23,3 +23,4 @@ cd ../..
 
 cd build/gmake
 CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-app
+CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-cli

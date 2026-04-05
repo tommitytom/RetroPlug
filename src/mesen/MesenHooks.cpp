@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "foundation/Replicator.h"
+#include "foundation/OsPath.h"
 #include "core/ProjectSerializer.h"
 #include "core/RegistryUtil.h"
 #include "foundation/FsUtil.h"
@@ -60,7 +61,10 @@ namespace rp {
 	}
 
 	void MesenHooks::onLoad(entt::registry& registry, entt::entity entity, SystemLoadComponent& load, MesenComponent& system) const {
-		FolderUtilities::SetHomeFolder("C:\\Users\\Tom\\Documents\\Mesen2");
+		std::string contentPath = orb::OsPath::getContentPath();
+		contentPath += "./retroplug";
+
+		FolderUtilities::SetHomeFolder(contentPath + "/mesen2");
 		MessageManager::SetOptions(false, true);
 
 		auto entry = load.findEntry("rom");
