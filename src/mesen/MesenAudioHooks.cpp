@@ -4,7 +4,11 @@
 #include "MesenAudioDevice.h"
 #include "MesenVideoDevice.h"
 #include "NesEverdriveFifo.h"
+
+#ifndef FW_PLATFORM_WEB
 #include "EdioProxy.h"
+#include "core/EverdriveComponents.h"
+#endif
 
 #include "core/AudioEffect.h"
 #include "core/AudioSettingsContext.h"
@@ -131,12 +135,15 @@ namespace rp {
 
 			auto serial = io.input.serial;
 
-			if (s.edioProxy) {
+			#ifndef FW_PLATFORM_WEB
+			EverdriveComponent* everdrive = registry.try_get<EverdriveComponent>(e);
+			if (everdrive && everdrive->edioProxy) {
 				for (size_t i = 0; i < serial.count(); i++) {
 					const TimedByte& b = serial.at(i);
-					s.edioProxy->sendCommand(EdioSerialCommand{ b.byte, 1 });
+					everdrive->edioProxy->sendCommand(EdioSerialCommand{ b.byte, 1 });
 				}
 			}
+			#endif
 
 			auto cpu = console->GetCpu();
 			const uint32_t blockSize = settings.blockSize;

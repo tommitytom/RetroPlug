@@ -42,3 +42,6 @@ RUN set -eux; \
 	env PREFIX=/usr/local make -j$(nproc); \
 	env PREFIX=/usr/local make install; \
 	rm -rf "$BUILD_DIR"
+
+# Workaround for emit-tsd: https://github.com/emscripten-core/emscripten/issues/26534
+RUN cd /emsdk/upstream/emscripten && npm i

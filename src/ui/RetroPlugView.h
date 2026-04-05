@@ -18,13 +18,17 @@ namespace rp {
 		std::shared_ptr<RootContainer> _rootContainer;
 		RetroPlugProject& _project;
 		uint32 _version = 0;
+		#ifdef FW_PLATFORM_WEB
+		orb::DummyFileWatcher _watcher;
+		#else
 		orb::EfswFileWatcher _watcher;
+		#endif
 
 	public:
 		RetroPlugView(RetroPlugProject& project);
 		~RetroPlugView() = default;
 
-		void onInitialize() override;
+	void onInitialize() override;
 
 		bool onDragMove(orb::DragContext& ctx, orb::Point position) override { return true; }
 

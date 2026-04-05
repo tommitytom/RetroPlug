@@ -27,7 +27,11 @@
 #include "MesenAudioDevice.h"
 #include "MesenVideoDevice.h"
 #include "NesEverdriveFifo.h"
+
+#ifndef FW_PLATFORM_WEB
 #include "EdioProxy.h"
+#include "core/EverdriveComponents.h"
+#endif
 
 namespace rp {
 	void MesenHooks::onFilterEntries(entt::registry& registry, const PathVector& paths, NamedEntryVector& entries) const {
@@ -75,7 +79,7 @@ namespace rp {
 
 		if (systemType == MesenSystemType::Nes) {
 			setupNes(*emu);
-		}		
+		}
 
 		// Mesen wraps file access in VirtualFile
 		VirtualFile romFile(entry->path);
@@ -112,12 +116,19 @@ namespace rp {
 
 			// Use the directory containing the ROM as the SD card root.
 			std::filesystem::path romDir = std::filesystem::path(entry->path).parent_path();
-			s.fifo->setSdRoot("C:\\retro\\n8sd");
+			fs::path contentPath = fs::path(orb::OsPath::getContentPath()) / "retroplug" / "n8sd";
+			if (!fs::exists(contentPath)) {
+				fs::create_directories(contentPath);
+			}
+
+			s.fifo->setSdRoot(contentPath.string());
 
 			auto* nesConsole = dynamic_cast<NesConsole*>(s.emulator->GetConsole().get());
 			nesConsole->GetMemoryManager()->RegisterIODevice(s.fifo.get());
 
-			s.edioProxy = std::make_shared<EdioProxy>();
+			#ifndef FW_PLATFORM_WEB
+			registry.emplace<EverdriveComponent>(entity, std::make_shared<EdioProxy>());
+			#endif
 		}
 	}
 

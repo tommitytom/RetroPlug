@@ -40,6 +40,7 @@ end
 
 function m.project()
 	project "serial"
+		removeplatforms { "Emscripten" }
 		kind "StaticLib"
 
 		m.source()

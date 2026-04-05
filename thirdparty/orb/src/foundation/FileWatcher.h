@@ -61,7 +61,8 @@ namespace orb {
 
 		void update() override {}
 	};
-
+	
+#ifndef FW_PLATFORM_WEB
 	class UpdateListener : public efsw::FileWatchListener {
 	private:
 		moodycamel::ReaderWriterQueue<WatchEvent>& _events;
@@ -161,4 +162,5 @@ namespace orb {
 			return nullptr;
 		}
 	};
+#endif
 }

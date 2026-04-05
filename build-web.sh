@@ -10,7 +10,7 @@ if [ "$2" = "--configure" ]; then
 fi
 
 WORKING_DIR="$PWD"
-BUILD_DIR="${WORKING_DIR}/build/gmake"
+BUILD_DIR="${WORKING_DIR}/build/emscripten"
 BUILD_CONFIG_DIR="${BUILD_DIR}/${BUILD_CONFIG}"
 
 if [ "$CONFIGURE" = true ]; then

@@ -14,7 +14,7 @@ end
 function util.setupWorkspace()
 	local buildFolder = _ACTION
 
-	if _OPTIONS["web"] then
+	if _OPTIONS["emscripten"] then
 		buildFolder = "emscripten"
 	end
 
