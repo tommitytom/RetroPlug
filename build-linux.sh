@@ -22,5 +22,4 @@ cd ../..
 ./build/gmake/bin/x64/Debug/ScriptCompiler ./src/compiler.config.lua x64
 
 cd build/gmake
-CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-app
-CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-cli
+CC=/usr/bin/clang CXX=/usr/bin/clang++ make config=${BUILD_CONFIG}_x64 -j$(nproc) RetroPlug-app RetroPlug-cli
