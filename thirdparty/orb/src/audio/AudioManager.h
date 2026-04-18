@@ -2,9 +2,12 @@
 
 #include <functional>
 #include <cassert>
+#include <iostream>
+#include <spdlog/spdlog.h>
 
 #include "foundation/Types.h"
-#include "AudioProcessor.h"
+#include "audio/AudioProcessor.h"
+#include "midi/MidiManager.h"
 
 namespace orb::audio {
 	using AudioCallback = std::function<void(f32* output, const f32* input, uint32 frameCount)>;
@@ -12,11 +15,24 @@ namespace orb::audio {
 	class AudioManager {
 	protected:
 		std::shared_ptr<AudioProcessor> _processor;
+		std::shared_ptr<midi::MidiManager> _midiManager;
 		f32 _sampleRate = 48000;
 
 	public:
-		AudioManager() {}
-		~AudioManager() {}
+		AudioManager();
+		~AudioManager();
+
+		void setMidiManager(std::shared_ptr<midi::MidiManager> midiManager);
+
+		midi::MidiManager* getMidiManager() {
+			return _midiManager.get();
+		}
+
+		void process(f32* output, const f32* input, uint32 frameCount);
+
+		virtual bool start(int32 idx) { return false; }
+
+		virtual void stop() {}
 
 		void setProcessor(std::shared_ptr<AudioProcessor> processor) {
 			_processor = processor;
@@ -26,14 +42,6 @@ namespace orb::audio {
 		const std::shared_ptr<AudioProcessor>& getProcessor() const {
 			return _processor;
 		}
-
-		void process(f32* output, const f32* input, uint32 frameCount) {
-			_processor->onRender(output, input, frameCount);
-		}
-
-		virtual bool start(int32 idx) { return false; }
-
-		virtual void stop() {}
 
 		virtual void setSampleRate(f32 sampleRate) { 
 			_sampleRate = sampleRate;

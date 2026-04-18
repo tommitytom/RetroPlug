@@ -32,7 +32,10 @@
 		"--security-opt",
 		"seccomp=unconfined",
 		"--net=host",
-		"--device=/dev/ttyACM0"
+		"--device=/dev/ttyACM0",
+		// MIDI: expose ALSA sound devices (sequencer, raw MIDI)
+		"--device=/dev/snd",
+		"--group-add=audio"
 	],
 
 	"customizations": {

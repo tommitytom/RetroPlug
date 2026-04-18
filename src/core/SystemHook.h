@@ -6,7 +6,7 @@
 #include "core/ProjectSerializerContext.h"
 #include "core/CoreComponents.h"
 #include "audio/TimeInfo.h"
-#include "audio/MidiMessage.h"
+#include "midi/MidiMessage.h"
 #include "audio/AudioBuffer.h"
 
 namespace rp {
@@ -135,7 +135,7 @@ namespace rp {
 		virtual void onReset(entt::registry& registry, entt::entity entity) const {}
 		virtual void onTransportChange(entt::registry& registry, entt::entity entity, bool running) const {}
 		virtual void onTransportUpdate(entt::registry& registry, entt::entity entity, const orb::TimeInfo& timeInfo) const {}
-		virtual void onMidi(entt::registry& registry, entt::entity entity, const orb::MidiMessage& message) const {}
+		virtual void onMidi(entt::registry& registry, entt::entity entity, const orb::midi::MidiMessage& message) const {}
 		virtual void onMidiClock(entt::registry& registry, entt::entity entity) const {}
 		virtual void onProcess(entt::registry& registry, orb::AudioBuffer& out, const orb::AudioBuffer& in) const {}
 	};

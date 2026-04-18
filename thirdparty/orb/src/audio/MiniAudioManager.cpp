@@ -10,12 +10,7 @@ using namespace orb::audio;
 
 static void callback(ma_device* pDevice, void* pOutput, const void* pInput, uint32 frameCount) {
 	MiniAudioManager* m = (MiniAudioManager*)pDevice->pUserData;
-
-	orb::AudioProcessorPtr processor = m->getProcessor();
-	if (processor) {
-		processor->onBeginUpdate(frameCount);
-		processor->onRender((f32*)pOutput, (const f32*)pInput, frameCount);
-	}
+	m->process((f32*)pOutput, (const f32*)pInput, frameCount);
 }
 
 struct MiniAudioManager::State {

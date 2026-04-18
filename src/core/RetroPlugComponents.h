@@ -6,7 +6,7 @@
 #include "core/CoreComponents.h"
 #include "core/SystemTypes.h"
 #include "core/HierarchyComponents.h"
-#include "audio/MidiMessage.h"
+#include "midi/MidiMessage.h"
 #include "sameboy/SameBoyComponents.h"
 
 #include "core/Effects.h"
@@ -51,7 +51,7 @@ namespace rp {
 
 	struct MidiEvent {
 		entt::entity entity = entt::null;
-		orb::MidiMessage message;
+		orb::midi::MidiMessage message;
 	};
 
 	/*struct ButtonEvent {

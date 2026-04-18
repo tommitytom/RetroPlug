@@ -275,7 +275,7 @@ extern "C" {
 			}
 			case CPLUG_EVENT_MIDI:
 			{
-				plugin->audioManager->getProcessor()->onMidi(orb::MidiMessage{
+				plugin->audioManager->getProcessor()->onMidi(orb::midi::MidiMessage{
 					.status = event.midi.status,
 					.data1 = event.midi.data1,
 					.data2 = event.midi.data2

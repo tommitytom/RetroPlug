@@ -6,6 +6,7 @@ local m = {
 	reflcpp = dofile("refl-cpp.lua"),
 	enkits = dofile("enkits.lua"),
 	mesen = dofile("mesen.lua"),
+	rtmidi = dofile("rtmidi.lua"),
 	serial = dofile("serial.lua")
 }
 
@@ -17,6 +18,7 @@ function m.allProjects()
 	m.reflcpp.project()
 	m.enkits.project()
 	m.mesen.project()
+	m.rtmidi.project()
 	m.serial.project()
 end
 

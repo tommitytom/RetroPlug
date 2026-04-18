@@ -20,7 +20,7 @@ namespace rp {
 
 		void onRenderFull(orb::AudioBuffer& out, const orb::AudioBuffer& in);
 
-		void onMidi(const orb::MidiMessage& message) override;
+		void onMidi(const orb::midi::MidiMessage& message) override;
 
 		void onTransportChange(bool playing) override;
 

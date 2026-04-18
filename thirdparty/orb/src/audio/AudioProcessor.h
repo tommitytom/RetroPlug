@@ -4,7 +4,7 @@
 #include "foundation/Event.h"
 #include "foundation/Types.h"
 #include "audio/InterleavedAudioBuffer.h"
-#include "audio/MidiMessage.h"
+#include "midi/MidiMessage.h"
 #include "audio/TimeInfo.h"
 
 namespace orb {
@@ -25,7 +25,7 @@ namespace orb {
 
 		virtual void onTransportUpdate(const TimeInfo& timeInfo) {}
 
-		virtual void onMidi(const orb::MidiMessage& message) {}
+		virtual void onMidi(const orb::midi::MidiMessage& message) {}
 
 		virtual void onSampleRateChange(f32 sampleRate) {}
 

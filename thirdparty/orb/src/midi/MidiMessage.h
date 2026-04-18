@@ -4,12 +4,12 @@
 
 #include "foundation/Types.h"
 
-namespace orb {
+namespace orb::midi {
 	struct MidiMessage {
-		uint32 offset = 0;
 		uint8 status = 0;
 		uint8 data1 = 0;
 		uint8 data2 = 0;
+		uint32 offset = 0;
 
 		enum class StatusMessage {
 			None = 0,

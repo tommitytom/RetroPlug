@@ -8,7 +8,7 @@
 			"type": "shell",
 			"command": "./build-linux.sh",
 			"args": [
-				"debug"
+				"release"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"

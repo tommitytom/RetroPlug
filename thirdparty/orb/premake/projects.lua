@@ -9,6 +9,7 @@ local m = {
 	Graphics = {},
 	Ui = {},
 	Audio = {},
+	Midi = {},
 	Engine = {},
 	Application = {
 		test2 = function ()
@@ -212,6 +213,39 @@ function m.Audio.project()
 		util.liveppCompat()
 end
 
+
+function m.Midi.include()
+	dependson { "configure" }
+
+	m.Foundation.include()
+
+	filter {}
+end
+
+function m.Midi.link()
+	m.Midi.include()
+
+	links { "Midi" }
+
+	m.Foundation.link()
+end
+
+function m.Midi.project()
+	project "Midi"
+		kind "StaticLib"
+
+		m.Midi.include()
+
+		files {
+			paths.SRC_ROOT .. "midi/**.h",
+			paths.SRC_ROOT .. "midi/**.cpp"
+		}
+
+		util.liveppCompat()
+end
+
+
+
 function m.Application.include()
 	dependson { "configure" }
 
@@ -232,6 +266,7 @@ function m.Application.link()
 
 	m.Graphics.link()
 	m.Audio.link()
+	m.Midi.link()
 	dep.glfw.link()
 
 	filter { "platforms:not Emscripten" }

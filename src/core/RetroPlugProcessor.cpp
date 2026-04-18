@@ -246,11 +246,11 @@ namespace rp {
 		const uint8 testVelocity = 100;
 
 		if (!testNoteOn && testFrameCounter >= noteOnInterval) {
-			//onMidi(orb::MidiMessage{ .offset = 0, .status = 0x90, .data1 = testNote, .data2 = testVelocity });
+			//onMidi(orb::midi::MidiMessage{ .offset = 0, .status = 0x90, .data1 = testNote, .data2 = testVelocity });
 			testNoteOn = true;
 			testFrameCounter = 0;
 		} else if (testNoteOn && testFrameCounter >= noteOnDuration) {
-			//onMidi(orb::MidiMessage{ .offset = 0, .status = 0x80, .data1 = testNote, .data2 = 0 });
+			//onMidi(orb::midi::MidiMessage{ .offset = 0, .status = 0x80, .data1 = testNote, .data2 = 0 });
 			testNoteOn = false;
 			testFrameCounter = 0;
 		}
@@ -285,7 +285,7 @@ namespace rp {
 		outBuffer.toInterleaved(output, 2, frameCount);
 	}
 
-	void RetroPlugProcessor::onMidi(const orb::MidiMessage& message) {
+	void RetroPlugProcessor::onMidi(const orb::midi::MidiMessage& message) {
 		for (const auto& [e, state] : _registry.view<SystemIoComponent>().each()) {
 			if (!state.io) {
 				state.io = std::make_shared<SystemIo>();

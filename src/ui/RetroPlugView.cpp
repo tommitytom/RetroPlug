@@ -141,8 +141,8 @@ namespace rp {
 		if (event.down && event.key == orb::VirtualKey::F8) {
 			_project.addSystemAsync(SystemLoadComponent{
 				.entries = {
-					{ "rom", { "C:\\retro\\LSDj-v5.0.3.gb" } },
-					{ "sram", { "C:\\retro\\LSDj-v5.0.3.sav" } }
+					{ "rom", { "/workspaces/retro/lsdj942bitbrigade_1.gbc" } },
+					{ "sram", { "/workspaces/retro/lsdj942bitbrigade_1.sav" } }
 				},
 			}, SameBoyComponent{
 				.model = GameboyModel::CgbC,

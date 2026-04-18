@@ -775,7 +775,7 @@ void main(void)
 
 /* ===== MIDI parser ===== */
 
-const int LOG_MIDI = 0;
+/* #define LOG_MIDI */
 
 void midiRead(void)
 {
@@ -827,15 +827,15 @@ void midiRead(void)
 #endif
 				}
 				_lastNotes[stateIdx] = note;
-				if (LOG_MIDI) {
-					gConsPrint("On  ch");
-					gAppendNum((u32)(channel + 1));
-					gAppendString(" n=");
-					gAppendNum((u32)note);
-					gAppendString(" v=");
-					gAppendNum((u32)vel);
-					gRepaint();
-				}
+#ifdef LOG_MIDI
+				gConsPrint("On  ch");
+				gAppendNum((u32)(channel + 1));
+				gAppendString(" n=");
+				gAppendNum((u32)note);
+				gAppendString(" v=");
+				gAppendNum((u32)vel);
+				gRepaint();
+#endif
 			} else {                            /* vel=0 is Note Off */
 				if (_lastNotes[stateIdx] != note) continue;
 				switch (channel) {
@@ -866,13 +866,13 @@ void midiRead(void)
 				case MIDI_CH_VRC6_SAW: vrc6_saw_note_off();  break;
 #endif
 				}
-				if (LOG_MIDI) {
-					gConsPrint("Off ch");
-					gAppendNum((u32)(channel + 1));
-					gAppendString(" n=");
-					gAppendNum((u32)note);
-					gRepaint();
-				}
+#ifdef LOG_MIDI
+				gConsPrint("Off ch");
+				gAppendNum((u32)(channel + 1));
+				gAppendString(" n=");
+				gAppendNum((u32)note);
+				gRepaint();
+#endif
 			}
 
 		} else if ((status & 0xF0) == 0x80) {   /* Note Off */
@@ -910,13 +910,13 @@ void midiRead(void)
 			case MIDI_CH_VRC6_SAW: vrc6_saw_note_off();  break;
 #endif
 			}
-			if (LOG_MIDI) {
-				gConsPrint("Off ch");
-				gAppendNum((u32)(channel + 1));
-				gAppendString(" n=");
-				gAppendNum((u32)note);
-				gRepaint();
-			}
+#ifdef LOG_MIDI
+			gConsPrint("Off ch");
+			gAppendNum((u32)(channel + 1));
+			gAppendString(" n=");
+			gAppendNum((u32)note);
+			gRepaint();
+#endif
 
 		} else if ((status & 0xF0) == 0xB0) {   /* Control Change */
 			fifo_read_byte(&cc);
@@ -950,15 +950,15 @@ void midiRead(void)
 			case MIDI_CH_VRC6_SAW: handle_cc_vrc6_saw(cc, ccval);       break;
 #endif
 			}
-			if (LOG_MIDI) {
-				gConsPrint("CC  ch");
-				gAppendNum((u32)(channel + 1));
-				gAppendString(" cc");
-				gAppendNum((u32)cc);
-				gAppendString("=");
-				gAppendNum((u32)ccval);
-				gRepaint();
-			}
+#ifdef LOG_MIDI
+			gConsPrint("CC  ch");
+			gAppendNum((u32)(channel + 1));
+			gAppendString(" cc");
+			gAppendNum((u32)cc);
+			gAppendString("=");
+			gAppendNum((u32)ccval);
+			gRepaint();
+#endif
 
 		} else if ((status & 0xF0) == 0xE0 ||
 		           (status & 0xF0) == 0xA0) {    /* Pitch Bend / Poly AT */

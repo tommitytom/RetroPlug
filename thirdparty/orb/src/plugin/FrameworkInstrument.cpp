@@ -125,7 +125,7 @@ void FrameworkInstrument::ProcessMidiMsg(const IMidiMsg& msg) {
 
 	checkTransportRunning();
 
-	_audioManager->getProcessor()->onMidi(orb::MidiMessage{
+	_audioManager->getProcessor()->onMidi(orb::midi::MidiMessage{
 		.status = msg.mStatus,
 		.data1 = msg.mData1,
 		.data2 = msg.mData2

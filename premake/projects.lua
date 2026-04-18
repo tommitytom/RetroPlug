@@ -138,6 +138,10 @@ function m.Core.link()
 	dep.SameBoy.link()
 	dep.reflcpp.link()
 	dep.enkits.link()
+
+	filter { "platforms:not Emscripten" }
+		dep.rtmidi.link()
+	filter {}
 end
 
 function m.Core.project()

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio/MidiMessage.h"
+#include "midi/MidiMessage.h"
 #include "core/Forward.h"
 #include "util/GameboyUtil.h"
 /*
@@ -12,7 +12,7 @@ namespace rp {
 		MgbService() : SystemService(MGB_SERVICE_TYPE) {}
 		~MgbService() = default;
 
-		void onMidi(System& system, const orb::MidiMessage& message) override {
+		void onMidi(System& system, const orb::midi::MidiMessage& message) override {
 			auto& queue = system.getIo()->input.serial;
 			queue.tryPush(TimedByte{ .byte = message.status, .audioFrameOffset = message.offset });
 			queue.tryPush(TimedByte{ .byte = message.data1, .audioFrameOffset = message.offset });

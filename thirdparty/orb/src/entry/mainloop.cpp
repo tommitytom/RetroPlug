@@ -19,13 +19,20 @@ using RenderContextT = orb::GlRenderContext;
 using AudioManagerT = orb::audio::AudioManager;
 #else
 #include "audio/MiniAudioManager.h"
+#include "midi/RtMidiManager.h"
 using AudioManagerT = orb::audio::MiniAudioManager;
 #endif
 
 void initMain(int argc, char** argv) {
 	orb::ResourceManagerPtr resourceManager = std::make_shared<ResourceManager>();
 	std::shared_ptr<orb::FontManager> fontManager = std::make_shared<orb::FontManager>(resourceManager);
-	runner.setup(ApplicationFactory::create(), std::make_unique<orb::app::GlfwWindowManager>(resourceManager, fontManager), std::make_unique<RenderContextT>(), std::make_unique<AudioManagerT>());
+	std::shared_ptr<orb::audio::AudioManager> audioManager = std::make_shared<AudioManagerT>();
+	
+#ifndef FW_PLATFORM_PLUGIN
+	audioManager->setMidiManager(std::make_shared<orb::midi::RtMidiManager>());
+#endif
+
+	runner.setup(ApplicationFactory::create(), std::make_unique<orb::app::GlfwWindowManager>(resourceManager, fontManager), std::make_unique<RenderContextT>(), audioManager);
 }
 
 bool mainLoop() {

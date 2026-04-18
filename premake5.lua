@@ -36,6 +36,7 @@ fwProjects.Foundation.project()
 fwProjects.Graphics.project()
 fwProjects.Ui.project()
 fwProjects.Audio.project()
+fwProjects.Midi.project()
 fwProjects.Application.project()
 --fwProjects.Engine.project()
 
