@@ -34,6 +34,7 @@ namespace rp {
 
 		void stop() {
 			if (_running) {
+				spdlog::info("Stopping EdioProxy thread...");
 				_running = false;
 				_queue.enqueue(EdioSerialCommand{}); // Unblock the thread if it's waiting
 				_edioThread.join();

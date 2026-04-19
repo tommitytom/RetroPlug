@@ -94,6 +94,8 @@ namespace rp {
 			// IsEmulationThread() returns true throughout Mesen's internals
 			// (e.g. NesApu::PeekRam, debug guards) when we drive cpu->Exec().
 			s.emulator->SetEmulationThreadId(std::this_thread::get_id());
+
+			registry.emplace<EverdriveComponent>(entity, std::make_shared<EdioProxy>());
 		});
 
 		onDestroy<MesenStateComponent>(registry, [](entt::registry& registry, entt::entity entity) {

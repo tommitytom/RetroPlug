@@ -14,6 +14,9 @@ function m.source()
 		RTMIDI_DIR .. "/RtMidi.cpp"
 	}
 
+	filter "system:windows"
+		defines { "__WINDOWS_MM__" }
+
 	filter "system:linux"
 		defines {
 			"__LINUX_ALSA__",

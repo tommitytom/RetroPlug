@@ -127,7 +127,7 @@ namespace rp {
 			nesConsole->GetMemoryManager()->RegisterIODevice(s.fifo.get());
 
 			#ifndef FW_PLATFORM_WEB
-			registry.emplace<EverdriveComponent>(entity, std::make_shared<EdioProxy>());
+			//registry.emplace<EverdriveComponent>(entity, std::make_shared<EdioProxy>());
 			#endif
 		}
 	}
