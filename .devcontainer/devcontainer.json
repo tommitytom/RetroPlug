@@ -1,0 +1,38 @@
+{
+  "name": "lvgl-template-plugin",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "CONTAINER_APT_PROXY": "${localEnv:CONTAINER_APT_PROXY}"
+    }
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": false
+    }
+  },
+
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind,consistency=cached"
+  ],
+
+  "runArgs": ["--init"],
+
+  "postCreateCommand": "git submodule update --init --recursive",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": true,
+        "cmake.generator": "Ninja"
+      }
+    }
+  }
+}

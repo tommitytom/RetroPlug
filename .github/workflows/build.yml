@@ -1,0 +1,76 @@
+name: build
+
+on:
+  push:
+
+jobs:
+  linux:
+    strategy:
+      matrix:
+        target: [linux-arm64, linux-armhf, linux-i686, linux-riscv64, linux-x86_64]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          dpf_path: ./deps/dpf
+          target: ${{ matrix.target }}
+
+  macos:
+    strategy:
+      matrix:
+        target: [macos-intel, macos-universal]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-cmake-action@v1
+        env:
+          MACOS_APP_CERTIFICATE: ${{ secrets.MACOS_APP_CERTIFICATE }}
+          MACOS_INSTALLER_CERTIFICATE: ${{ secrets.MACOS_INSTALLER_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARIZATION_USER: ${{ secrets.MACOS_NOTARIZATION_USER }}
+          MACOS_NOTARIZATION_PASS: ${{ secrets.MACOS_NOTARIZATION_PASS }}
+          MACOS_NOTARIZATION_TEAM: ${{ secrets.MACOS_NOTARIZATION_TEAM }}
+        with:
+          dpf_path: ./deps/dpf
+          target: ${{ matrix.target }}
+
+  windows:
+    strategy:
+      matrix:
+        target: [win32, win64]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          dpf_path: ./deps/dpf
+          target: ${{ matrix.target }}
+
+  pluginval:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          dpf_path: ./deps/dpf
+          target: pluginval
+
+  source:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          dpf_path: ./deps/dpf
+          target: source

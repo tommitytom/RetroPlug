@@ -1,0 +1,17 @@
+# build target dir
+/bin/
+/build/
+
+# cmake temp files that remain around
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+node_modules
+# legacy: bundle now lives under build/ui/
+ui/bundle.js
+# generic temp files
+*.a
+*.exe
+_dpf_empty.c
+lv2_ttl_generator
