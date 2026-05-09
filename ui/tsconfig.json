@@ -11,8 +11,10 @@
         "forceConsistentCasingInFileNames": true,
         "noEmit": true,
         "paths": {
-            "lvgljs-ui": ["../deps/lv_binding_js/src/render/react"],
-            "lvgljs":    ["../runtime/lvgljs"]
+            "lvgljs-ui":         ["../deps/lv_binding_js/src/render/react"],
+            "lvgljs":            ["../runtime/lvgljs"],
+            "react":             ["../deps/lv_binding_js/node_modules/@types/react"],
+            "react/jsx-runtime": ["../deps/lv_binding_js/node_modules/@types/react/jsx-runtime"]
         }
     },
     "include": ["**/*.ts", "**/*.tsx", "../runtime/**/*.ts", "../runtime/**/*.tsx"],
