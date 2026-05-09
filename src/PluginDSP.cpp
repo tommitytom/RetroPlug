@@ -67,7 +67,7 @@ protected:
     */
     const char* getLabel() const noexcept override
     {
-        return "SimpleGain";
+        return "RetroPlug";
     }
 
    /**
@@ -112,7 +112,7 @@ protected:
     */
     int64_t getUniqueId() const noexcept override
     {
-        return d_cconst('d', 'I', 'm', 'G');
+        return d_cconst('R', 'P', 'l', 'g');
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -193,10 +193,13 @@ protected:
     }
 
    /**
-      Run/process function for plugins without MIDI input.
-      @note Some parameters might be null if there are no audio inputs or outputs.
+      Run/process function for plugins with MIDI input.
+      MIDI events are accepted but currently unused — the oscillator is driven
+      entirely by parameters. They're plumbed through so the plugin presents a
+      MIDI input port to the host.
     */
-    void run(const float**, float** outputs, uint32_t frames) override
+    void run(const float**, float** outputs, uint32_t frames,
+             const MidiEvent*, uint32_t) override
     {
         float* const outL = outputs[0];
         float* const outR = outputs[1];

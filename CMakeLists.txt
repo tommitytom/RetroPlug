@@ -5,8 +5,8 @@
 cmake_minimum_required(VERSION 3.14...3.31)
 
 # setup project
-set(CMAKE_CXX_STANDARD 14)
-set(NAME lvgl-demo-plugin)
+set(CMAKE_CXX_STANDARD 20)
+set(NAME retroplug)
 project(${NAME})
 
 # tell LVGL where to find its config file
@@ -21,6 +21,9 @@ add_subdirectory(deps/lv_binding_js/deps/lvgl)
 # --- txiki.js (QuickJS + libuv + libwebsockets + ffi runtime) ---
 set(BUILD_WITH_MIMALLOC OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/lv_binding_js/deps/txiki EXCLUDE_FROM_ALL)
+
+# --- rpcpp: header-only JSON-RPC 2.0 server, used by PluginJsBridge ---
+add_subdirectory(deps/rpcpp)
 
 # --- lvgl-js-native: the native C++ component bridge ---
 set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
@@ -113,6 +116,7 @@ set_target_properties(mbedx509 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(mbedcrypto PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(ada PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(miniz PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(reflectcpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
@@ -153,6 +157,7 @@ target_include_directories(${NAME} PUBLIC src)
 target_include_directories(${NAME} PUBLIC deps/dpf-widgets/generic)
 target_link_libraries(${NAME} PUBLIC lvgl::lvgl $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC lvgl-js-native)
+target_link_libraries(${NAME} PUBLIC rpcpp)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)

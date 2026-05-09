@@ -41,7 +41,7 @@ regenerates the embedded C array, and relinks the plugin. Output plugins land in
 For tighter UI feedback, set the override env var when launching the host:
 
 ```bash
-LVGL_PLUGIN_BUNDLE_PATH=$PWD/build/ui/bundle.js jalv build/bin/lvgl-demo-plugin.lv2
+LVGL_PLUGIN_BUNDLE_PATH=$PWD/build/ui/bundle.js jalv build/bin/retroplug.lv2
 ```
 
 Then `node tools/build-ui.js $PWD/build/ui/bundle.js` rewrites the bundle and the

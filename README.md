@@ -119,11 +119,11 @@ Edit `ui/PluginUI.tsx`, re-run `node ui/build.js`, and relaunch the plugin — n
 
 | Format | Output |
 |--------|--------|
-| JACK | `build/bin/lvgl-demo-plugin` (standalone) |
-| CLAP | `build/bin/lvgl-demo-plugin.clap` |
-| VST2 | `build/bin/lvgl-demo-plugin-vst2.so` |
-| VST3 | `build/bin/lvgl-demo-plugin.vst3/` |
-| LV2 | `build/bin/lvgl-demo-plugin.lv2/` |
+| JACK | `build/bin/retroplug` (standalone) |
+| CLAP | `build/bin/retroplug.clap` |
+| VST2 | `build/bin/retroplug-vst2.so` |
+| VST3 | `build/bin/retroplug.vst3/` |
+| LV2 | `build/bin/retroplug.lv2/` |
 
 ## Dependencies
 

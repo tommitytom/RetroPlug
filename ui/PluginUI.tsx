@@ -2,6 +2,7 @@ import { View, Text, Slider, Button, Mask, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParameter, createGroup, setKeyboardGroup } from "lvgljs";
 import { Waveform } from "./Waveform";
+import { rpcCall } from "./rpc";
 
 const MENU_ITEMS = ["Reset", "About", "Cancel"];
 
@@ -135,6 +136,22 @@ function PluginUI() {
         setShape(0);
     }, [setGain, setFreqHz, setShape]);
 
+    const [greetResult, setGreetResult] = useState("");
+    const [slowResult, setSlowResult] = useState("");
+
+    const onGreet = useCallback(() => {
+        rpcCall<string>("greet", ["World"])
+            .then(setGreetResult)
+            .catch((e) => setGreetResult(`error: ${e?.message ?? e}`));
+    }, []);
+
+    const onGreetSlow = useCallback(() => {
+        setSlowResult("waiting...");
+        rpcCall<string>("greetSlow", ["World"])
+            .then(setSlowResult)
+            .catch((e) => setSlowResult(`error: ${e?.message ?? e}`));
+    }, []);
+
     return (
         <View
             style={{
@@ -155,7 +172,7 @@ function PluginUI() {
                     "font-size": 24,
                 }}
             >
-                LVGL Test Tone
+                RetroPlug
             </Text>
 
             <Waveform />
@@ -241,6 +258,50 @@ function PluginUI() {
                     Menu
                 </Text>
             </Button>
+
+            <View
+                style={{
+                    width: 400,
+                    "background-opacity": 0,
+                    "border-opacity": 0,
+                    display: "flex",
+                    "flex-direction": "row",
+                    "justify-content": "space-around",
+                }}
+            >
+                <Button
+                    style={{
+                        width: 140,
+                        height: 36,
+                        "background-color": "#4fc3f7",
+                        "border-radius": 8,
+                    }}
+                    onClick={onGreet}
+                >
+                    <Text style={{ "text-color": "#1a1a2e", "font-size": 14 }}>
+                        Greet (sync)
+                    </Text>
+                </Button>
+                <Button
+                    style={{
+                        width: 160,
+                        height: 36,
+                        "background-color": "#f7a14f",
+                        "border-radius": 8,
+                    }}
+                    onClick={onGreetSlow}
+                >
+                    <Text style={{ "text-color": "#1a1a2e", "font-size": 14 }}>
+                        Greet (slow async)
+                    </Text>
+                </Button>
+            </View>
+            <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
+                {greetResult || "(no sync result)"}
+            </Text>
+            <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
+                {slowResult || "(no async result)"}
+            </Text>
 
             {menuOpen && <MenuOverlay onSelect={onMenuSelect} onClose={() => setMenuOpen(false)} />}
         </View>
