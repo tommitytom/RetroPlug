@@ -1,16 +1,9 @@
-import { View, Text, Slider, Button, Mask, Render, ELvKey } from "lvgljs-ui";
+import { View, Text, Slider, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParameter, createGroup, setKeyboardGroup } from "lvgljs";
-import { Waveform } from "./Waveform";
-import { rpcCall } from "./rpc";
 
 const MENU_ITEMS = ["Reset", "About", "Cancel"];
 
-// lvgljs-ui components are declared as React.ComponentType<Props> with no
-// `ref` in their prop types, but at runtime the bridge returns each tagName
-// as a host component string and react-reconciler routes refs through
-// getPublicInstance. Cast through `any` so we can collect refs to focus-
-// group children.
 const TextAny = Text as any;
 
 function MenuOverlay({ onSelect, onClose }: { onSelect: (label: string) => void; onClose: () => void }) {
@@ -53,60 +46,41 @@ function MenuOverlay({ onSelect, onClose }: { onSelect: (label: string) => void;
     }, [focusedIndex, onClose]);
 
     return (
-        <Mask>
-            <View
-                style={{
-                    width: "100%",
-                    height: "100%",
-                    "background-opacity": 0,
-                    "border-opacity": 0,
-                    display: "flex",
-                    "flex-direction": "column",
-                    "align-items": "center",
-                    "justify-content": "center",
-                }}
-            >
-                {MENU_ITEMS.map((label, i) => (
-                    <TextAny
-                        key={label}
-                        ref={(r: any) => { itemRefs.current[i] = r; }}
-                        style={{
-                            "text-color": focusedIndex === i ? "#4fc3f7" : "#ffffff",
-                            "font-size": 18,
-                            padding: 8,
-                        }}
-                        onFocus={() => setFocusedIndex(i)}
-                        onKey={onItemKey}
-                        onClick={() => onSelect(label)}
-                    >
-                        {label}
-                    </TextAny>
-                ))}
-            </View>
-        </Mask>
-    );
-}
-
-const FREQ_MIN = 20;
-const FREQ_MAX = 20000;
-const FREQ_SLIDER_STEPS = 1000;
-
-// Log mapping between linear slider position [0..FREQ_SLIDER_STEPS] and Hz [FREQ_MIN..FREQ_MAX].
-function sliderToHz(pos: number): number {
-    const ratio = pos / FREQ_SLIDER_STEPS;
-    return FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, ratio);
-}
-function hzToSlider(hz: number): number {
-    const clamped = Math.max(FREQ_MIN, Math.min(FREQ_MAX, hz));
-    return Math.round(
-        FREQ_SLIDER_STEPS * (Math.log(clamped / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN))
+        <View
+            style={{
+                width: "100%",
+                height: "100%",
+                "background-color": "#000000",
+                "background-opacity": 180,
+                "border-opacity": 0,
+                display: "flex",
+                "flex-direction": "column",
+                "align-items": "center",
+                "justify-content": "center",
+            }}
+        >
+            {MENU_ITEMS.map((label, i) => (
+                <TextAny
+                    key={label}
+                    ref={(r: any) => { itemRefs.current[i] = r; }}
+                    style={{
+                        "text-color": focusedIndex === i ? "#4fc3f7" : "#ffffff",
+                        "font-size": 18,
+                        padding: 8,
+                    }}
+                    onFocus={() => setFocusedIndex(i)}
+                    onKey={onItemKey}
+                    onClick={() => onSelect(label)}
+                >
+                    {label}
+                </TextAny>
+            ))}
+        </View>
     );
 }
 
 function PluginUI() {
-    const [gain, setGain] = useParameter("gain", -50);
-    const [freqHz, setFreqHz] = useParameter("freq", 440);
-    const [shape, setShape] = useParameter("shape", 0);
+    const [gain, setGain] = useParameter("gain", 0);
     const [menuOpen, setMenuOpen] = useState(false);
 
     const onMenuSelect = useCallback((label: string) => {
@@ -119,38 +93,6 @@ function PluginUI() {
     }, []);
 
     const onGainChange = useCallback((e: any) => setGain(e.value), [setGain]);
-
-    const onFreqChange = useCallback(
-        (e: any) => setFreqHz(sliderToHz(e.value)),
-        [setFreqHz],
-    );
-
-    const onToggleShape = useCallback(
-        () => setShape(shape > 0.5 ? 0 : 1),
-        [shape, setShape],
-    );
-
-    const onReset = useCallback(() => {
-        setGain(-50);
-        setFreqHz(440);
-        setShape(0);
-    }, [setGain, setFreqHz, setShape]);
-
-    const [greetResult, setGreetResult] = useState("");
-    const [slowResult, setSlowResult] = useState("");
-
-    const onGreet = useCallback(() => {
-        rpcCall<string>("greet", ["World"])
-            .then(setGreetResult)
-            .catch((e) => setGreetResult(`error: ${e?.message ?? e}`));
-    }, []);
-
-    const onGreetSlow = useCallback(() => {
-        setSlowResult("waiting...");
-        rpcCall<string>("greetSlow", ["World"])
-            .then(setSlowResult)
-            .catch((e) => setSlowResult(`error: ${e?.message ?? e}`));
-    }, []);
 
     return (
         <View
@@ -175,7 +117,17 @@ function PluginUI() {
                 RetroPlug
             </Text>
 
-            <Waveform />
+            {/* Vertical spacer where the C++-owned framebuffer overlay sits.
+                The lv_image is positioned by PluginUI.cpp to align with the
+                top of the window — leave room for it before the gain slider. */}
+            <View
+                style={{
+                    width: 320,
+                    height: 290,
+                    "background-opacity": 0,
+                    "border-opacity": 0,
+                }}
+            />
 
             <Text
                 style={{
@@ -183,7 +135,7 @@ function PluginUI() {
                     "font-size": 18,
                 }}
             >
-                {`Gain: ${gain.toFixed(1)} dB`}
+                {`Master Gain: ${gain.toFixed(1)} dB`}
             </Text>
 
             <Slider
@@ -192,116 +144,10 @@ function PluginUI() {
                     height: 10,
                     "background-color": "#2d2d44",
                 }}
-                range={[-90, 30]}
+                range={[-90, 12]}
                 value={gain}
                 onChange={onGainChange}
             />
-
-            <Text
-                style={{
-                    "text-color": "#4fc3f7",
-                    "font-size": 18,
-                }}
-            >
-                {`Freq: ${freqHz < 1000 ? freqHz.toFixed(1) + " Hz" : (freqHz / 1000).toFixed(2) + " kHz"}`}
-            </Text>
-
-            <Slider
-                style={{
-                    width: 400,
-                    height: 10,
-                    "background-color": "#2d2d44",
-                }}
-                range={[0, FREQ_SLIDER_STEPS]}
-                value={hzToSlider(freqHz)}
-                onChange={onFreqChange}
-            />
-
-            <Button
-                style={{
-                    width: 160,
-                    height: 40,
-                    "background-color": shape < 0.5 ? "#4fc3f7" : "#f7a14f",
-                    "border-radius": 8,
-                }}
-                onClick={onToggleShape}
-            >
-                <Text style={{ "text-color": "#1a1a2e", "font-size": 14 }}>
-                    {shape < 0.5 ? "Shape: Sine" : "Shape: Square"}
-                </Text>
-            </Button>
-
-            <Button
-                style={{
-                    width: 120,
-                    height: 40,
-                    "background-color": "#2d2d44",
-                    "border-radius": 8,
-                }}
-                onClick={onReset}
-            >
-                <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
-                    Reset
-                </Text>
-            </Button>
-
-            <Button
-                style={{
-                    width: 120,
-                    height: 40,
-                    "background-color": "#3a3a55",
-                    "border-radius": 8,
-                }}
-                onClick={() => setMenuOpen(true)}
-            >
-                <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
-                    Menu
-                </Text>
-            </Button>
-
-            <View
-                style={{
-                    width: 400,
-                    "background-opacity": 0,
-                    "border-opacity": 0,
-                    display: "flex",
-                    "flex-direction": "row",
-                    "justify-content": "space-around",
-                }}
-            >
-                <Button
-                    style={{
-                        width: 140,
-                        height: 36,
-                        "background-color": "#4fc3f7",
-                        "border-radius": 8,
-                    }}
-                    onClick={onGreet}
-                >
-                    <Text style={{ "text-color": "#1a1a2e", "font-size": 14 }}>
-                        Greet (sync)
-                    </Text>
-                </Button>
-                <Button
-                    style={{
-                        width: 160,
-                        height: 36,
-                        "background-color": "#f7a14f",
-                        "border-radius": 8,
-                    }}
-                    onClick={onGreetSlow}
-                >
-                    <Text style={{ "text-color": "#1a1a2e", "font-size": 14 }}>
-                        Greet (slow async)
-                    </Text>
-                </Button>
-            </View>
-            <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
-                {greetResult || "(no sync result)"}
-            </Text>
-            <Text style={{ "text-color": "#e0e0e0", "font-size": 14 }}>
-                {slowResult || "(no async result)"}
-            </Text>
 
             {menuOpen && <MenuOverlay onSelect={onMenuSelect} onClose={() => setMenuOpen(false)} />}
         </View>

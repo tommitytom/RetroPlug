@@ -25,6 +25,9 @@ add_subdirectory(deps/lv_binding_js/deps/txiki EXCLUDE_FROM_ALL)
 # --- rpcpp: header-only JSON-RPC 2.0 server, used by PluginJsBridge ---
 add_subdirectory(deps/rpcpp)
 
+# --- SameBoy: Game Boy emulator core, vendored under deps/sameboy ---
+add_subdirectory(deps/sameboy)
+
 # --- lvgl-js-native: the native C++ component bridge ---
 set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
 add_library(lvgl-js-native STATIC
@@ -146,6 +149,8 @@ dpf_add_plugin(${NAME}
   TARGETS au clap jack lv2 vst2 vst3
   FILES_DSP
       src/PluginDSP.cpp
+      src/project/Project.cpp
+      src/system/sameboy/SameBoySystem.cpp
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
@@ -158,6 +163,7 @@ target_include_directories(${NAME} PUBLIC deps/dpf-widgets/generic)
 target_link_libraries(${NAME} PUBLIC lvgl::lvgl $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC lvgl-js-native)
 target_link_libraries(${NAME} PUBLIC rpcpp)
+target_link_libraries(${NAME} PUBLIC sameboy)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)

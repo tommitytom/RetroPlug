@@ -1,6 +1,6 @@
 #pragma once
 
-#include "extra/RingBuffer.hpp"
+#include "project/Project.hpp"
 
 // Both PluginDSP.cpp (via DistrhoPlugin.hpp) and PluginUI.cpp (via DistrhoUI.hpp)
 // pull DistrhoDetails.hpp before this header, which is what defines the
@@ -8,20 +8,16 @@
 
 START_NAMESPACE_DISTRHO
 
-// Shared data between DSP and UI for direct-access data transfer.
-// Owned by the DSP plugin, accessed by the UI via getPluginInstancePointer().
-// Only works for in-process plugin formats (VST2/3, CLAP, AU, JACK).
+// Direct-access channel between DSP and UI for in-process plugin formats
+// (VST2/3, CLAP, AU, JACK). The UI calls getSharedDSPData() with its
+// getPluginInstancePointer() to reach the DSP-owned Project — and from there,
+// each SystemBase's FrameBufferTriple. LV2 has no shared pointer, so the UI
+// gets nullptr and renders a placeholder.
 struct SharedDSPData {
-    static constexpr uint32_t kWaveformPoints = 256;
-    HeapRingBuffer waveformRing;
-
-    SharedDSPData() {
-        waveformRing.createBuffer(kWaveformPoints * sizeof(float) * 8);
-    }
+    Project* project = nullptr;
 };
 
 // Implemented in PluginDSP.cpp — returns the SharedDSPData from the plugin instance.
-// Only valid for in-process plugin formats where DSP and UI share a binary.
 SharedDSPData* getSharedDSPData(void* pluginPtr);
 
 // Single source of truth for the plugin's parameters. Consumed by both
@@ -40,12 +36,8 @@ struct ParamSpec {
 };
 
 constexpr ParamSpec kPluginParameters[] = {
-    { "gain",  "Gain",      "Gain",  "dB", -90.0f, 30.0f,    -50.0f,
+    { "gain", "Master Gain", "Gain", "dB", -90.0f, 12.0f, 0.0f,
       kParameterIsAutomatable },
-    { "freq",  "Frequency", "Freq",  "Hz",  20.0f, 20000.0f, 440.0f,
-      kParameterIsAutomatable | kParameterIsLogarithmic },
-    { "shape", "Shape",     "Shape", "",    0.0f,  1.0f,     0.0f,
-      kParameterIsAutomatable | kParameterIsInteger | kParameterIsBoolean },
 };
 
 constexpr uint32_t kPluginParameterCount =

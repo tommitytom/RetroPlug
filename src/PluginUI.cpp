@@ -1,7 +1,5 @@
 /*
- * LVGL plugin example
- * Copyright (C) 2021 Jean Pierre Cimalando <jp-dev@inbox.ru>
- * Copyright (C) 2021-2022 Filipe Coelho <falktx@falktx.com>
+ * RetroPlug UI — Step 1: SameBoy framebuffer + master gain.
  * SPDX-License-Identifier: ISC
  */
 
@@ -12,7 +10,17 @@
 #include "PluginShared.hpp"
 
 #include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <vector>
+
+extern "C" {
+    #include "lvgl.h"
+}
+
+#include "project/Project.hpp"
+#include "system/SystemBase.hpp"
+#include "transport/FrameBufferTriple.hpp"
 
 extern "C" {
     extern const unsigned char ui_bundle_js[];
@@ -21,10 +29,9 @@ extern "C" {
 
 START_NAMESPACE_DISTRHO
 
-// Fallback for plugin formats where DSP and UI are in separate binaries (e.g. LV2).
-// The real implementation lives in PluginDSP.cpp. When linked together (VST, CLAP, etc.),
-// the strong definition wins. For LV2-UI (separate .so), this weak definition provides
-// a safe fallback that returns nullptr.
+// Fallback for plugin formats where DSP and UI live in separate binaries (LV2).
+// The strong definition is in PluginDSP.cpp; for the LV2-UI .so this weak one
+// keeps the link working and just returns nullptr (UI shows a placeholder).
 __attribute__((weak))
 SharedDSPData* getSharedDSPData(void*) { return nullptr; }
 
@@ -33,16 +40,65 @@ SharedDSPData* getSharedDSPData(void*) { return nullptr; }
 class LVGLPluginUI : public UI
 {
     float fGain = 0.0f;
-    float fFreq = 440.0f;
-    int fShape = 0;
     ResizeHandle fResizeHandle;
     LvglJsEngine jsEngine;
     std::unique_ptr<PluginJsBridge> bridge;
     SharedDSPData* shared = nullptr;
-    float waveformBuf[256];
-    uint32_t waveformPoints = 0;
 
-    // ----------------------------------------------------------------------------------------------------------------
+    // Direct-draw framebuffer surface. lv_image widget with a persistent
+    // descriptor pointing at `frameBuffer_`. uiIdle() copies the latest
+    // FrameBufferTriple snapshot into this buffer and invalidates the widget.
+    // For Step 1 this is C++-owned; a React-side <EmulatorTile/> is a follow-up.
+    lv_obj_t*               fbWidget    = nullptr;
+    lv_image_dsc_t          fbDsc{};
+    std::vector<std::uint8_t> fbStorage;
+    SystemBase*             trackedSystem = nullptr;
+    static constexpr int    kFbScale     = 2;
+
+    void ensureFramebufferWidget()
+    {
+        if (fbWidget) return;
+        if (!shared || !shared->project) return;
+
+        Project& proj = *shared->project;
+        if (proj.systems().empty()) return;
+
+        SystemBase* sys = proj.systems().front().get();
+        if (!sys) return;
+        FrameBufferTriple* fb = sys->framebuffer();
+        if (!fb) return;
+
+        const std::uint32_t w = fb->width();
+        const std::uint32_t h = fb->height();
+        fbStorage.assign(std::size_t(w) * h * 4, 0u);
+
+        std::memset(&fbDsc, 0, sizeof(fbDsc));
+        fbDsc.header.cf       = LV_COLOR_FORMAT_NATIVE; // XRGB8888 with LV_COLOR_DEPTH=32
+        fbDsc.header.w        = w;
+        fbDsc.header.h        = h;
+        fbDsc.header.stride   = w * 4;
+        fbDsc.data_size       = std::uint32_t(fbStorage.size());
+        fbDsc.data            = fbStorage.data();
+
+        fbWidget = lv_image_create(lv_screen_active());
+        lv_image_set_src(fbWidget, &fbDsc);
+        lv_image_set_scale(fbWidget, 256 * kFbScale); // 256 = 1.0x scale
+        lv_obj_align(fbWidget, LV_ALIGN_TOP_MID, 0, 24);
+
+        trackedSystem = sys;
+    }
+
+    void refreshFramebuffer()
+    {
+        if (!fbWidget || !trackedSystem) return;
+        FrameBufferTriple* fb = trackedSystem->framebuffer();
+        if (!fb) return;
+        const std::uint32_t pixels = fb->width() * fb->height();
+        if (fb->readInto(reinterpret_cast<std::uint32_t*>(fbStorage.data()), pixels)) {
+            lv_image_cache_drop(&fbDsc);
+            lv_obj_invalidate(fbWidget);
+        }
+    }
 
 public:
     LVGLPluginUI()
@@ -64,16 +120,14 @@ public:
         if (isResizable())
             fResizeHandle.hide();
 
-        // Get direct access to the DSP instance's shared data (in-process formats only)
-        void* dspPtr = getPluginInstancePointer();
-        if (dspPtr)
+        // In-process plugin formats: reach the DSP-owned Project via the shared
+        // pointer. LV2-UI returns nullptr; the framebuffer simply doesn't render
+        // (audio still works via the DSP binary).
+        if (void* dspPtr = getPluginInstancePointer())
             shared = getSharedDSPData(dspPtr);
 
         if (jsEngine.init())
         {
-            // Generic parameter machinery is owned by the engine. Wire up the
-            // host-write callback and register parameter names so JS can
-            // address them by name (and typos throw at the JS layer).
             jsEngine.setParamWriteCallback(
                 [this](uint32_t idx, float val) {
                     editParameter(idx, true);
@@ -83,16 +137,11 @@ public:
             for (uint32_t i = 0; i < kPluginParameterCount; ++i)
                 jsEngine.registerParameter(i, kPluginParameters[i].symbol);
 
-            // Plugin-specific JS bridge: place to add custom DSP↔UI bridges
-            // (e.g. waveform). Must exist before evalModule so React's
-            // useEffect hooks can register handlers via lvgljs.on() at module
-            // load.
-            bridge = std::make_unique<PluginJsBridge>(jsEngine);
+            // Plugin-specific JS bridge. Must exist before evalModule so
+            // useEffect handlers can register before the bundle's first render.
+            Project* proj = shared ? shared->project : nullptr;
+            bridge = std::make_unique<PluginJsBridge>(jsEngine, proj);
 
-            // Dev override: load from a file on disk if LVGL_PLUGIN_BUNDLE_PATH is set.
-            // Otherwise use the bundle embedded into this binary at build time.
-            // Note: some DAWs sanitize the env, especially on macOS — the override is
-            // intended for jalv/Carla/Reaper-style dev workflows.
             const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
             if (devPath && *devPath)
             {
@@ -110,6 +159,10 @@ public:
                 else
                     d_stdout("LvglJsEngine: React UI loaded (embedded)");
             }
+
+            // Create the framebuffer widget after the React tree exists so the
+            // image sits on top in z-order.
+            ensureFramebufferWidget();
         }
         else
         {
@@ -120,38 +173,17 @@ public:
 protected:
     void parameterChanged(uint32_t index, float value) override
     {
-        switch (index)
-        {
-        case 0: fGain  = value; break;
-        case 1: fFreq  = value; break;
-        case 2: fShape = (value > 0.5f) ? 1 : 0; break;
-        default: return;
-        }
+        if (index == 0) fGain = value;
         jsEngine.pushParameter(index, value);
         repaint();
     }
 
     void uiIdle() override
     {
-        // Drain waveform data from DSP ring buffer
-        if (shared != nullptr)
-        {
-            HeapRingBuffer& ring = shared->waveformRing;
-
-            // Read latest snapshot, skip older ones
-            while (ring.isDataAvailableForReading())
-            {
-                const uint32_t count = ring.readUInt();
-                if (count == 0 || count > 256)
-                    break;
-                ring.readCustomData(waveformBuf, count * sizeof(float));
-                waveformPoints = count;
-            }
-
-            if (waveformPoints > 0 && bridge)
-                bridge->pushWaveform(waveformBuf, waveformPoints);
-        }
-
+        // If the system was bootstrapped after the UI mounted (e.g. async ROM
+        // load in the future), set up the widget now.
+        if (!fbWidget) ensureFramebufferWidget();
+        refreshFramebuffer();
         jsEngine.tick();
     }
 
