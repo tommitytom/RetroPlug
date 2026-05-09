@@ -63,6 +63,14 @@ esbuild
 
 function writeEmbed(outPath, bytes, symbol) {
     // 16 bytes per line for readability; bundle is ~280KB → ~1.5MB of text.
+    //
+    // We append a trailing 0x00 byte to the array but exclude it from the
+    // reported length. txiki.js / QuickJS's JS_Eval requires the source
+    // buffer to be null-terminated even when a length is supplied
+    // (txiki's own file-loader path does the same — see
+    // deps/lv_binding_js/deps/txiki/src/vm.c, "/* Add null termination,
+    // required by JS_Eval. */"). Without it, the parser reads one byte
+    // past the buffer end and reports a UTF-8 error at a phantom line/col.
     const parts = ["/* auto-generated; do not edit */\n#include <stddef.h>\n\n"];
     parts.push(`const unsigned char ${symbol}[] = {\n`);
     for (let i = 0; i < bytes.length; i += 16) {
@@ -72,6 +80,7 @@ function writeEmbed(outPath, bytes, symbol) {
         }
         parts.push("    " + chunk.join(", ") + ",\n");
     }
+    parts.push("    0x00 /* null terminator for JS_Eval; not counted in _len */\n");
     parts.push("};\n");
     parts.push(`const unsigned int ${symbol}_len = ${bytes.length};\n`);
     fs.writeFileSync(outPath, parts.join(""));

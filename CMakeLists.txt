@@ -147,6 +147,7 @@ add_custom_command(
 # create plugin build target
 dpf_add_plugin(${NAME}
   TARGETS au clap jack lv2 vst2 vst3
+  USE_FILE_BROWSER
   FILES_DSP
       src/PluginDSP.cpp
       src/project/Project.cpp
@@ -154,6 +155,13 @@ dpf_add_plugin(${NAME}
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
+      # SameBoySystem is constructed on the UI thread (loadRomFromPath); the
+      # symbols must be linked into the UI binary as well, not just the DSP.
+      # In in-process formats (VST3/CLAP/...) DSP+UI share a binary so this
+      # is a no-op duplicate; for LV2 the UI binary needs its own copy
+      # (though at runtime the LV2-UI never actually constructs one because
+      # shared DSP state is unreachable).
+      src/system/sameboy/SameBoySystem.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
 

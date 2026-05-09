@@ -8,6 +8,7 @@
 #include "PluginShared.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "transport/CommandQueue.hpp"
+#include "transport/EventQueue.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -32,17 +34,6 @@ constexpr float DB_CO(float g) {
     return g > -90.0f ? std::pow(10.0f, g * 0.05f) : 0.0f;
 }
 
-// Default ROM path for Step 1 dev convenience. RETROPLUG_ROM_PATH env-var
-// override wins. Replaced by a UI picker in Step 3.
-constexpr const char* kDefaultRomPath = "/home/tommitytom/retro/LSDj-v5.0.3.gb";
-
-std::string resolveRomPath() {
-    if (const char* env = std::getenv("RETROPLUG_ROM_PATH")) {
-        if (env[0] != '\0') return env;
-    }
-    return kDefaultRomPath;
-}
-
 } // namespace
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -57,36 +48,34 @@ class LVGLPluginDSP : public Plugin {
     ExponentialValueSmoother fSmoothGain;
 
 public:
-    SharedDSPData shared;
-    Project       project;
-    CommandQueue  commands;
+    SharedDSPData       shared;
+    Project             project;
+    CommandQueue        commands;
+    EventQueue          events;
+    std::atomic<double> sampleRateAtomic{44100.0};
 
     LVGLPluginDSP()
         : Plugin(kPluginParameterCount, 0, 0)
     {
         fSampleRate = getSampleRate();
+        sampleRateAtomic.store(fSampleRate, std::memory_order_release);
+
         fSmoothGain.setSampleRate(fSampleRate);
         fSmoothGain.setTargetValue(DB_CO(0.0f));
         fSmoothGain.setTimeConstant(0.020f);
 
-        shared.project  = &project;
-        shared.commands = &commands;
+        // Pre-reserve so adoptSystem in run() never reallocates. 16 instances
+        // is well over what the multi-instance step targets.
+        project.reserve(16);
 
-        // Bootstrap one SameBoy slot from the dev ROM path. setState (called
-        // by hosts that have saved a project) will replace this on load.
-        SameBoyConfig sb;
-        sb.romPath = resolveRomPath();
-        const SystemConfig cfg = sb;
-        const SystemId id = project.addSystem(cfg);
-        if (id == 0) {
-            std::fprintf(stderr,
-                "[RetroPlug] could not bootstrap SameBoy from '%s'; running silent\n",
-                sb.romPath.c_str());
-        } else {
-            std::fprintf(stderr,
-                "[RetroPlug] bootstrap SameBoy id=%u rom='%s'\n",
-                id, sb.romPath.c_str());
-        }
+        shared.project    = &project;
+        shared.commands   = &commands;
+        shared.events     = &events;
+        shared.sampleRate = &sampleRateAtomic;
+
+        // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser
+        // (Step 3). DPF setState (Step 4) will populate the project from a
+        // saved host project where applicable.
     }
 
 protected:
@@ -156,7 +145,9 @@ protected:
              const MidiEvent*, uint32_t) override
     {
         // Drain UI commands before running emulators so any keypresses queued
-        // since the last block land at the right place in this one.
+        // since the last block land at the right place in this one. The loop
+        // body MUST NOT allocate or free — heap ownership transfers happen
+        // through raw pointers in the command/event queues.
         Command cmd;
         while (commands.tryPop(cmd)) {
             switch (cmd.kind) {
@@ -165,6 +156,29 @@ protected:
                     if (SystemBase* sys = project.findSystem(bp.systemId))
                         sys->pressButton(bp.button, bp.down);
                 } break;
+
+                case Command::Kind::LoadRom: {
+                    SystemBase* incoming = cmd.payload.loadRom.newSystem;
+                    if (!incoming) break;
+                    SystemBase* released = nullptr;
+                    if (project.systems().empty()) {
+                        // No system yet — adopt directly. project.reserve()
+                        // in the ctor keeps this allocation-free.
+                        project.adoptSystem(incoming);
+                    } else {
+                        // Replace slot 0 (single-instance MVP).
+                        // swapSystem returns the displaced raw pointer.
+                        SystemBase* slot0 = project.systems().front().get();
+                        released = project.swapSystem(slot0->id(), incoming);
+                    }
+                    if (released) {
+                        // Ship back to UI for off-thread free. If the event
+                        // queue is full we'd rather leak than free here.
+                        if (!events.tryPush(Event::makeSystemReleased(released)))
+                            d_stderr("event queue full; leaking displaced system");
+                    }
+                } break;
+
                 case Command::Kind::None:
                 default:
                     break;
@@ -192,6 +206,7 @@ protected:
     void sampleRateChanged(double newSampleRate) override
     {
         fSampleRate = newSampleRate;
+        sampleRateAtomic.store(newSampleRate, std::memory_order_release);
         fSmoothGain.setSampleRate(newSampleRate);
         project.onSampleRateChanged(newSampleRate);
     }

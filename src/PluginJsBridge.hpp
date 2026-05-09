@@ -1,35 +1,46 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
-#include <thread>
 
 #include "LvglJsEngine.hpp"
-
-#include "TypedRpcServer.h"
-#include "codecs/JsonCodec.h"
-#include "transports/QueueTransport.h"
 
 extern "C" {
     #include <quickjs.h>
 }
 
 class Project;
+class CommandQueue;
+class EventQueue;
 
-// Plugin-specific glue between LvglJsEngine and DPF. Generic parameter handling
-// (lvgljs.setParameter, name<->index lookup, "parameter" event push) lives in
-// LvglJsEngine itself; this class is the place to add JS bridges that only
-// make sense for *this* plugin — the framebuffer accessor and the JSON-RPC
-// bridge to plugin-specific C++ services.
+// Plugin-specific JS surface. Generic parameter handling (setParameter,
+// name<->index lookup, "parameter" event) lives in LvglJsEngine. This class
+// owns the bridges that only make sense for *this* plugin:
+//
+//   plugin.getFrame(systemId)        — direct read of the latest framebuffer
+//   plugin.openRomBrowser()          — pop a system file dialog (UI thread)
+//   plugin.loadRomFromPath(path)     — synchronous load from a known path
+//
+// All file IO and SameBoySystem construction happens on the UI thread inside
+// `loadRomFromPath`. The fully-built system is shipped to the DSP via the
+// command queue as a raw pointer; ownership transfers back to the UI for
+// `delete` through the event queue when displaced. The DSP performs no
+// allocation, free, or file IO.
 //
 // Lifetime: must be destroyed before the LvglJsEngine it references.
 class PluginJsBridge {
 public:
-    // `project` may be nullptr (LV2-UI: DSP+UI live in separate binaries, so
-    // getPluginInstancePointer() is null and there's no shared Project pointer).
-    // The bridge handles that gracefully — plugin.getFrame returns null.
-    PluginJsBridge(LvglJsEngine& engine, Project* project);
+    // Any of the pointers may be nullptr in LV2-UI (separate-binary UI;
+    // getPluginInstancePointer() is null, there is no shared DSP state). The
+    // bridge degrades — getFrame returns null, loadRom returns an error.
+    PluginJsBridge(LvglJsEngine& engine,
+                   Project* project,
+                   CommandQueue* commands,
+                   EventQueue* events,
+                   std::atomic<double>* sampleRate);
     ~PluginJsBridge();
 
     PluginJsBridge(const PluginJsBridge&)            = delete;
@@ -37,24 +48,39 @@ public:
 
     Project* project() const { return project_; }
 
-    // Hello-world RPC service — kept for now as scaffolding; remove at Step 3.
-    class HelloService {
-    public:
-        std::string greet(std::string name);
-        void greetSlow(std::string name, rpcpp::Resolver<std::string> resolver);
-    };
+    // PluginUI passes a callback that opens DPF's native file browser.
+    // The bridge's openRomBrowser JS function calls this; the UI's
+    // uiFileBrowserSelected then calls back into loadRomFromPath.
+    using OpenRomBrowserFn = std::function<void()>;
+    void setOpenRomBrowserCallback(OpenRomBrowserFn fn) { openRomBrowser_ = std::move(fn); }
+
+    // PluginUI sets this to a callback that flips its "UI captures keyboard"
+    // flag. When true, PluginUI::onKeyboard stops mapping keys to GameboyButton
+    // and returns false for everything except Esc, letting LVGL route arrows
+    // / Enter / etc. to the focused React widget. The React MenuOverlay
+    // raises this flag on mount and lowers it on unmount.
+    using SetUiCapturesKeyboardFn = std::function<void(bool)>;
+    void setUiCapturesKeyboardCallback(SetUiCapturesKeyboardFn fn) { uiCapturesKeyboard_ = std::move(fn); }
+
+    // Synchronous: read the file, build a SameBoySystem (calling onActivate
+    // at the current sample rate), push a LoadRom command. Returns true on
+    // success. Emits a "rom-loaded" or "rom-error" JS event for the React UI.
+    // Safe to call on the UI thread; not safe from any other thread.
+    bool loadRomFromPath(const std::string& path);
 
 private:
     // JS bindings attached under globalThis[Symbol.for("plugin")].
-    static JSValue js_rpcSend(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
-    static JSValue js_rpcPoll(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_getFrame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_openRomBrowser(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_loadRomFromPath(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_setUiCapturesKeyboard(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
-    LvglJsEngine& engine;
-    Project*      project_ = nullptr;
-
-    HelloService                                          hello;
-    rpcpp::QueueTransport<rpcpp::JsonCodec>               transport;
-    rpcpp::TypedRpcServer<HelloService, rpcpp::JsonCodec> server;
-    JSValue pluginNamespace = JS_UNDEFINED;
+    LvglJsEngine&            engine;
+    Project*                 project_    = nullptr;
+    CommandQueue*            commands_   = nullptr;
+    EventQueue*              events_     = nullptr;
+    std::atomic<double>*     sampleRate_ = nullptr;
+    OpenRomBrowserFn         openRomBrowser_;
+    SetUiCapturesKeyboardFn  uiCapturesKeyboard_;
+    JSValue                  pluginNamespace = JS_UNDEFINED;
 };

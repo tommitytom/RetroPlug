@@ -1,7 +1,10 @@
 #pragma once
 
+#include <atomic>
+
 #include "project/Project.hpp"
 #include "transport/CommandQueue.hpp"
+#include "transport/EventQueue.hpp"
 
 // Both PluginDSP.cpp (via DistrhoPlugin.hpp) and PluginUI.cpp (via DistrhoUI.hpp)
 // pull DistrhoDetails.hpp before this header, which is what defines the
@@ -11,12 +14,17 @@ START_NAMESPACE_DISTRHO
 
 // Direct-access channel between DSP and UI for in-process plugin formats
 // (VST2/3, CLAP, AU, JACK). The UI calls getSharedDSPData() with its
-// getPluginInstancePointer() to reach the DSP-owned Project — and from there,
-// each SystemBase's FrameBufferTriple. LV2 has no shared pointer, so the UI
-// gets nullptr and renders a placeholder.
+// getPluginInstancePointer() to reach the DSP-owned project + transports.
+// LV2 (separate-binary UI) returns nullptr; UI degrades gracefully.
 struct SharedDSPData {
-    Project*      project  = nullptr;
-    CommandQueue* commands = nullptr;
+    Project*             project    = nullptr;
+    CommandQueue*        commands   = nullptr;
+    EventQueue*          events     = nullptr;
+    // DSP writes on activate / sampleRateChanged. UI reads when constructing
+    // a SameBoySystem off the audio thread so onActivate can configure
+    // GB_set_sample_rate at the right rate. Atomic because UI may read
+    // concurrently with DSP-side updates.
+    std::atomic<double>* sampleRate = nullptr;
 };
 
 // Implemented in PluginDSP.cpp — returns the SharedDSPData from the plugin instance.

@@ -1,8 +1,19 @@
 import { View, Text, Slider, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParameter, createGroup, setKeyboardGroup } from "lvgljs";
+import { useParameter, createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
-const MENU_ITEMS = ["Reset", "About", "Cancel"];
+const MENU_ITEMS = ["Load ROM", "Reset", "About", "Cancel"];
+
+// Minimal typed view of the plugin-specific JS surface set up by
+// PluginJsBridge. globalThis[Symbol.for("plugin")] is populated at engine init.
+interface PluginNamespace {
+    openRomBrowser?: () => void;
+    loadRomFromPath?: (path: string) => boolean;
+    getFrame?: (systemId: number) => unknown;
+    setUiCapturesKeyboard?: (captured: boolean) => void;
+}
+const plugin: PluginNamespace =
+    (globalThis as any)[Symbol.for("plugin")] ?? {};
 
 const TextAny = Text as any;
 
@@ -26,7 +37,11 @@ function MenuOverlay({ gain, onGainChange, onSelect, onClose }: MenuOverlayProps
         }
         if (itemRefs.current[0]) group.focus(itemRefs.current[0]);
         setKeyboardGroup(group);
+        // Tell C++ we own keyboard input — arrows/Enter route to LVGL, not
+        // to the emulator's button queue, until the menu unmounts.
+        plugin.setUiCapturesKeyboard?.(true);
         return () => {
+            plugin.setUiCapturesKeyboard?.(false);
             setKeyboardGroup(null);
             group.destroy();
             groupRef.current = null;
@@ -111,12 +126,26 @@ function PluginUI() {
     const [menuOpen, setMenuOpen] = useState(false);
 
     const onMenuSelect = useCallback((label: string) => {
-        console.log(`menu: ${label} selected`);
+        switch (label) {
+            case "Load ROM":
+                plugin.openRomBrowser?.();
+                break;
+            case "Reset":
+            case "About":
+            case "Cancel":
+            default:
+                break;
+        }
         setMenuOpen(false);
     }, []);
 
-    const onRootKey = useCallback((e: { key: number }) => {
-        if (e.key === ELvKey.LV_KEY_ESC) setMenuOpen(true);
+    // C++ emits "esc-pressed" from PluginUI::onKeyboard. We can't rely on
+    // LVGL's focus-routed key delivery here because the root View isn't
+    // focusable, so Esc would be dropped while the menu is closed.
+    useEffect(() => {
+        const onEsc = () => setMenuOpen(open => !open);
+        on("esc-pressed", onEsc);
+        return () => off("esc-pressed", onEsc);
     }, []);
 
     const onGainChange = useCallback((e: any) => setGain(e.value), [setGain]);
@@ -134,7 +163,6 @@ function PluginUI() {
                 "border-opacity": 0,
                 "arc-rounded": false,
             }}
-            onKey={onRootKey}
         >
             {menuOpen && (
                 <MenuOverlay

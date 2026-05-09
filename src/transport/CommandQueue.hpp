@@ -7,14 +7,20 @@
 #include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
 
+class SystemBase;
+
 // SPSC command queue: UI thread → DSP thread.
 //
 // Hand-rolled bounded ring of POD Command records; no allocation on either
 // thread once constructed. Commands are small tagged-union structs so a
 // variant-of-trivially-copyable types isn't needed.
 //
-// Step 2 inhabitants: ButtonPressCommand (keyboard → emulator buttons).
-// Future steps add LoadRom, SetSetting, ResetSystem, etc.
+// Audio-thread invariant: the DSP must never allocate, free, or block when
+// processing commands. `LoadRom` therefore carries a fully-constructed
+// `SystemBase*` (the UI thread did `make_unique` + onActivate then released
+// the unique_ptr); the DSP just swaps it into the project. The displaced
+// system, if any, is shipped back through the EventQueue for the UI to
+// `delete`.
 
 struct ButtonPressCommand {
     SystemId      systemId;
@@ -22,15 +28,26 @@ struct ButtonPressCommand {
     bool          down;
 };
 
+struct LoadRomCommand {
+    // Ownership transferred to DSP — DSP must either install via
+    // Project::swapSystem (which doesn't alloc/free) or, on failure, ship it
+    // back through the EventQueue for the UI thread to delete. In Step 3 the
+    // single inhabitant always replaces slot 0 (single-instance MVP);
+    // multi-instance routing comes in Step 5.
+    SystemBase* newSystem;
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
         None        = 0,
         ButtonPress = 1,
+        LoadRom     = 2,
     };
 
     Kind kind = Kind::None;
     union Payload {
         ButtonPressCommand buttonPress;
+        LoadRomCommand     loadRom;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -40,6 +57,13 @@ struct Command {
         Command c;
         c.kind = Kind::ButtonPress;
         c.payload.buttonPress = ButtonPressCommand{id, b, down};
+        return c;
+    }
+
+    static Command makeLoadRom(SystemBase* newSystem) {
+        Command c;
+        c.kind = Kind::LoadRom;
+        c.payload.loadRom = LoadRomCommand{newSystem};
         return c;
     }
 };

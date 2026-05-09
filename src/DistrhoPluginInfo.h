@@ -38,6 +38,12 @@
 #define DISTRHO_PLUGIN_HAS_UI 1
 
 /**
+   Enable DPF's built-in native file browser. PluginUI uses this for the
+   "Load ROM" flow (see porting/03-rom-picker.md).
+ */
+#define DISTRHO_UI_FILE_BROWSER 1
+
+/**
    Whether the plugin processing is realtime-safe.@n
    TODO - list rtsafe requirements
  */
