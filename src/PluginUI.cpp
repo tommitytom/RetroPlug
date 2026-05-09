@@ -48,18 +48,34 @@ class LVGLPluginUI : public UI
     SharedDSPData* shared = nullptr;
 
     // Direct-draw framebuffer surface. lv_image widget with a persistent
-    // descriptor pointing at `frameBuffer_`. uiIdle() copies the latest
+    // descriptor pointing at `fbStorage`. uiIdle() copies the latest
     // FrameBufferTriple snapshot into this buffer and invalidates the widget.
     // For Step 1 this is C++-owned; a React-side <EmulatorTile/> is a follow-up.
+    //
+    // Sizing/scaling: the widget is sized to the full LVGL screen and uses
+    // LV_IMAGE_ALIGN_CONTAIN to scale the framebuffer to the largest size
+    // that fits while preserving aspect ratio. Antialiasing disabled for
+    // crisp nearest-neighbor pixels.
     lv_obj_t*               fbWidget    = nullptr;
     lv_image_dsc_t          fbDsc{};
     std::vector<std::uint8_t> fbStorage;
     SystemBase*             trackedSystem = nullptr;
-    static constexpr int    kFbScale     = 2;
 
     // Cached default-system id so onKeyboard doesn't need to walk the project.
     // For Step 2 this is the only system; multi-instance refocus comes later.
     SystemId                trackedSystemId = 0;
+
+    void resizeFramebufferWidgetToScreen()
+    {
+        if (!fbWidget) return;
+        lv_obj_t* screen = lv_screen_active();
+        if (!screen) return;
+        const lv_coord_t w = lv_obj_get_width(screen);
+        const lv_coord_t h = lv_obj_get_height(screen);
+        lv_obj_set_size(fbWidget, w, h);
+        lv_obj_set_pos(fbWidget, 0, 0);
+        lv_obj_invalidate(fbWidget);
+    }
 
     void ensureFramebufferWidget()
     {
@@ -88,8 +104,18 @@ class LVGLPluginUI : public UI
 
         fbWidget = lv_image_create(lv_screen_active());
         lv_image_set_src(fbWidget, &fbDsc);
-        lv_image_set_scale(fbWidget, 256 * kFbScale); // 256 = 1.0x scale
-        lv_obj_align(fbWidget, LV_ALIGN_TOP_MID, 0, 24);
+        // Nearest-neighbor — keep emulator pixels crisp.
+        lv_image_set_antialias(fbWidget, false);
+        // CONTAIN: scale image to the largest size that fits inside the
+        // widget while preserving aspect ratio (letterbox/pillarbox if the
+        // window aspect doesn't match the GB's 10:9).
+        lv_image_set_inner_align(fbWidget, LV_IMAGE_ALIGN_CONTAIN);
+        // Don't let lv_obj layout move us off-screen.
+        lv_obj_remove_flag(fbWidget, LV_OBJ_FLAG_SCROLLABLE);
+        // Lock pivot at top-left so set_size + set_pos behave predictably.
+        lv_image_set_pivot(fbWidget, 0, 0);
+
+        resizeFramebufferWidgetToScreen();
 
         trackedSystem   = sys;
         trackedSystemId = sys->id();
@@ -170,6 +196,13 @@ public:
             Project* proj = shared ? shared->project : nullptr;
             bridge = std::make_unique<PluginJsBridge>(jsEngine, proj);
 
+            // Create the framebuffer widget BEFORE the React bundle loads so
+            // the React widget tree z-orders above the framebuffer (LVGL
+            // draws siblings in creation order). React uses a transparent
+            // root so the framebuffer shows through; menu overlays still
+            // appear on top.
+            ensureFramebufferWidget();
+
             const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
             if (devPath && *devPath)
             {
@@ -187,10 +220,6 @@ public:
                 else
                     d_stdout("LvglJsEngine: React UI loaded (embedded)");
             }
-
-            // Create the framebuffer widget after the React tree exists so the
-            // image sits on top in z-order.
-            ensureFramebufferWidget();
         }
         else
         {
@@ -213,6 +242,15 @@ protected:
         if (!fbWidget) ensureFramebufferWidget();
         refreshFramebuffer();
         jsEngine.tick();
+    }
+
+    void onResize(const ResizeEvent& ev) override
+    {
+        // DPF's UI::onResize chain forwards to LVGLWidget<TopLevelWidget>::onResize
+        // which updates lv_display's resolution. Run that first; then re-fit
+        // our framebuffer widget to the new screen size.
+        UI::onResize(ev);
+        resizeFramebufferWidgetToScreen();
     }
 
     bool onKeyboard(const KeyboardEvent& ev) override

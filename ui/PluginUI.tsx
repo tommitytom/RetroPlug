@@ -6,7 +6,14 @@ const MENU_ITEMS = ["Reset", "About", "Cancel"];
 
 const TextAny = Text as any;
 
-function MenuOverlay({ onSelect, onClose }: { onSelect: (label: string) => void; onClose: () => void }) {
+interface MenuOverlayProps {
+    gain: number;
+    onGainChange: (e: any) => void;
+    onSelect: (label: string) => void;
+    onClose: () => void;
+}
+
+function MenuOverlay({ gain, onGainChange, onSelect, onClose }: MenuOverlayProps) {
     const itemRefs = useRef<any[]>([]);
     const groupRef = useRef<any>(null);
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -59,6 +66,26 @@ function MenuOverlay({ onSelect, onClose }: { onSelect: (label: string) => void;
                 "justify-content": "center",
             }}
         >
+            <Text
+                style={{
+                    "text-color": "#4fc3f7",
+                    "font-size": 18,
+                    padding: 4,
+                }}
+            >
+                {`Master Gain: ${gain.toFixed(1)} dB`}
+            </Text>
+            <Slider
+                style={{
+                    width: 320,
+                    height: 10,
+                    "background-color": "#2d2d44",
+                }}
+                range={[-90, 12]}
+                value={gain}
+                onChange={onGainChange}
+            />
+
             {MENU_ITEMS.map((label, i) => (
                 <TextAny
                     key={label}
@@ -95,61 +122,28 @@ function PluginUI() {
     const onGainChange = useCallback((e: any) => setGain(e.value), [setGain]);
 
     return (
+        // Transparent root so the C++-owned framebuffer (created BEFORE this
+        // React tree on the LVGL screen) shows through. Master gain control
+        // moved into the menu overlay so the emulator owns the window
+        // surface. Esc still toggles the menu.
         <View
             style={{
                 width: "100%",
                 height: "100%",
-                "background-color": "#1a1a2e",
-                display: "flex",
-                "flex-direction": "column",
-                "align-items": "center",
-                padding: 20,
-                "arc-rounded": false
+                "background-opacity": 0,
+                "border-opacity": 0,
+                "arc-rounded": false,
             }}
             onKey={onRootKey}
         >
-            <Text
-                style={{
-                    "text-color": "#e0e0e0",
-                    "font-size": 24,
-                }}
-            >
-                RetroPlug
-            </Text>
-
-            {/* Vertical spacer where the C++-owned framebuffer overlay sits.
-                The lv_image is positioned by PluginUI.cpp to align with the
-                top of the window — leave room for it before the gain slider. */}
-            <View
-                style={{
-                    width: 320,
-                    height: 290,
-                    "background-opacity": 0,
-                    "border-opacity": 0,
-                }}
-            />
-
-            <Text
-                style={{
-                    "text-color": "#4fc3f7",
-                    "font-size": 18,
-                }}
-            >
-                {`Master Gain: ${gain.toFixed(1)} dB`}
-            </Text>
-
-            <Slider
-                style={{
-                    width: 400,
-                    height: 10,
-                    "background-color": "#2d2d44",
-                }}
-                range={[-90, 12]}
-                value={gain}
-                onChange={onGainChange}
-            />
-
-            {menuOpen && <MenuOverlay onSelect={onMenuSelect} onClose={() => setMenuOpen(false)} />}
+            {menuOpen && (
+                <MenuOverlay
+                    gain={gain}
+                    onGainChange={onGainChange}
+                    onSelect={onMenuSelect}
+                    onClose={() => setMenuOpen(false)}
+                />
+            )}
         </View>
     );
 }
