@@ -1,6 +1,7 @@
 #pragma once
 
 #include "project/Project.hpp"
+#include "transport/CommandQueue.hpp"
 
 // Both PluginDSP.cpp (via DistrhoPlugin.hpp) and PluginUI.cpp (via DistrhoUI.hpp)
 // pull DistrhoDetails.hpp before this header, which is what defines the
@@ -14,7 +15,8 @@ START_NAMESPACE_DISTRHO
 // each SystemBase's FrameBufferTriple. LV2 has no shared pointer, so the UI
 // gets nullptr and renders a placeholder.
 struct SharedDSPData {
-    Project* project = nullptr;
+    Project*      project  = nullptr;
+    CommandQueue* commands = nullptr;
 };
 
 // Implemented in PluginDSP.cpp — returns the SharedDSPData from the plugin instance.

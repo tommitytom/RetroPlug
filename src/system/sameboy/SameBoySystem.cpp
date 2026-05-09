@@ -102,6 +102,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     }
 
     sampleRate_ = sampleRate;
+    buttonSpacingSamples_ = static_cast<std::uint32_t>(sampleRate * 0.010); // 10 ms spacing
     audioFrameCount_ = 0;
 
     gb_ = new GB_gameboy_t();
@@ -146,6 +147,7 @@ void SameBoySystem::onDeactivate() {
 
 void SameBoySystem::onSampleRateChanged(double sampleRate) {
     sampleRate_ = sampleRate;
+    buttonSpacingSamples_ = static_cast<std::uint32_t>(sampleRate * 0.010); // 10 ms
     if (gb_) {
         GB_set_sample_rate(gb_, static_cast<unsigned>(sampleRate));
     }
@@ -156,6 +158,19 @@ void SameBoySystem::onReset() {
         GB_reset(gb_);
         audioFrameCount_ = 0;
     }
+    pendingButtons_.clear();
+}
+
+void SameBoySystem::pressButton(GameboyButton button, bool down) {
+    // Append to the back of the queue, advancing the offset by buttonSpacing
+    // from the previous entry. This stops a press+release pair sent in the
+    // same UI tick from collapsing onto a single sample (which the joypad
+    // debouncer would simply miss). Mirrors the old SameBoyUtil::processButtons
+    // logic at old/src/sameboy/SameBoyUtil.cpp:149-163.
+    std::uint32_t offset = 0;
+    if (!pendingButtons_.empty())
+        offset = pendingButtons_.back().offset + buttonSpacingSamples_;
+    pendingButtons_.push_back(PendingButton{offset, button, down});
 }
 
 void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
@@ -191,8 +206,22 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
 
     audioFrameCount_ = 0;
 
+    // Drive the emulator until enough samples are produced, applying any
+    // queued button transitions whose offset is reached before that sample.
     while (audioFrameCount_ < frames) {
+        while (!pendingButtons_.empty() &&
+               pendingButtons_.front().offset <= audioFrameCount_) {
+            const auto& pb = pendingButtons_.front();
+            GB_set_key_state(gb_, static_cast<GB_key_t>(pb.button), pb.down);
+            pendingButtons_.pop_front();
+        }
         GB_run(gb_);
+    }
+
+    // Any button transitions that didn't land in this block stay queued; shift
+    // their offsets back so the relative ordering (and timing) is preserved.
+    for (auto& pb : pendingButtons_) {
+        pb.offset = (pb.offset > frames) ? pb.offset - frames : 0;
     }
 
     // Sum interleaved stereo into the planar L/R outputs (DPF planar buffers).

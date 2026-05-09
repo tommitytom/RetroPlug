@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/SystemConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
@@ -36,6 +37,11 @@ public:
     virtual void onProcess(const AudioBlockInfo& info, float* const* outs) = 0;
 
     virtual void onMidi(const void* /*events*/, std::uint32_t /*count*/) {}
+
+    // Audio-thread: enqueue a button transition. The system applies it at the
+    // next opportunity (typically: spread across the next audio block so
+    // multi-press sequences don't all collapse to one sample).
+    virtual void pressButton(GameboyButton /*button*/, bool /*down*/) {}
 
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }

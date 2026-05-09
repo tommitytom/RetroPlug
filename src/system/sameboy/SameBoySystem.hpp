@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <vector>
 
+#include "system/InputTypes.hpp"
 #include "system/RomRole.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -33,6 +35,11 @@ public:
     void onReset() override;
     void onProcess(const AudioBlockInfo& info, float* const* outs) override;
 
+    // Queue a button transition. Called from DSP-thread command-drain at the
+    // top of each block. Pending transitions are spread across the block in
+    // applyPending() (port of old SameBoyUtil.cpp:149-163).
+    void pressButton(GameboyButton button, bool down) override;
+
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
     SystemConfig snapshotConfig() const override;
@@ -55,6 +62,20 @@ public:
 
     bool                      activated_  = false;
     double                    sampleRate_ = 44100.0;
+
+    // Pending button transitions, ordered by sample offset within the block.
+    // Spread across each block so a press+release pair doesn't collapse to
+    // zero duration (which the SameBoy joypad debouncer would miss).
+    struct PendingButton {
+        std::uint32_t offset;   // samples from block start
+        GameboyButton button;
+        bool          down;
+    };
+    std::deque<PendingButton> pendingButtons_;
+
+    // Default per-press duration (samples) used to space queued transitions.
+    // Mirrors the old code's "10 ms at sampleRate" default.
+    std::uint32_t buttonSpacingSamples_ = 0;
 
     std::vector<std::unique_ptr<RomRole>> roles_;
 };

@@ -19,7 +19,9 @@ extern "C" {
 }
 
 #include "project/Project.hpp"
+#include "system/InputTypes.hpp"
 #include "system/SystemBase.hpp"
+#include "transport/CommandQueue.hpp"
 #include "transport/FrameBufferTriple.hpp"
 
 extern "C" {
@@ -55,6 +57,10 @@ class LVGLPluginUI : public UI
     SystemBase*             trackedSystem = nullptr;
     static constexpr int    kFbScale     = 2;
 
+    // Cached default-system id so onKeyboard doesn't need to walk the project.
+    // For Step 2 this is the only system; multi-instance refocus comes later.
+    SystemId                trackedSystemId = 0;
+
     void ensureFramebufferWidget()
     {
         if (fbWidget) return;
@@ -85,7 +91,29 @@ class LVGLPluginUI : public UI
         lv_image_set_scale(fbWidget, 256 * kFbScale); // 256 = 1.0x scale
         lv_obj_align(fbWidget, LV_ALIGN_TOP_MID, 0, 24);
 
-        trackedSystem = sys;
+        trackedSystem   = sys;
+        trackedSystemId = sys->id();
+    }
+
+    // Map a DPF KeyboardEvent's `key` (Unicode point or kKey* sentinel) to a
+    // GameboyButton. Returns false for keys we don't bind (caller forwards
+    // them to the React UI for menu navigation, etc.). The mapping mirrors a
+    // typical GB emulator front-end.
+    static bool mapKeyToGameboyButton(uint key, GameboyButton& out)
+    {
+        switch (key) {
+            case kKeyLeft:      out = GameboyButton::Left;   return true;
+            case kKeyRight:     out = GameboyButton::Right;  return true;
+            case kKeyUp:        out = GameboyButton::Up;     return true;
+            case kKeyDown:      out = GameboyButton::Down;   return true;
+            case kKeyEnter:     out = GameboyButton::Start;  return true;
+            case kKeyShiftR:
+            case kKeyShiftL:
+            case kKeyBackspace: out = GameboyButton::Select; return true;
+            case 'z': case 'Z': out = GameboyButton::A;      return true;
+            case 'x': case 'X': out = GameboyButton::B;      return true;
+            default:                                          return false;
+        }
     }
 
     void refreshFramebuffer()
@@ -185,6 +213,21 @@ protected:
         if (!fbWidget) ensureFramebufferWidget();
         refreshFramebuffer();
         jsEngine.tick();
+    }
+
+    bool onKeyboard(const KeyboardEvent& ev) override
+    {
+        // Translate to a Game Boy button and ship to the DSP. Unmapped keys
+        // (Esc, Tab, etc.) return false so DPF/LVGL still routes them — the
+        // React UI uses Esc to toggle the menu, for instance.
+        GameboyButton button;
+        if (!mapKeyToGameboyButton(ev.key, button))
+            return false;
+        if (shared && shared->commands) {
+            shared->commands->tryPush(
+                Command::makeButtonPress(trackedSystemId, button, ev.press));
+        }
+        return true; // event consumed
     }
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LVGLPluginUI)

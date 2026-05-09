@@ -15,6 +15,7 @@
 
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "transport/CommandQueue.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -58,6 +59,7 @@ class LVGLPluginDSP : public Plugin {
 public:
     SharedDSPData shared;
     Project       project;
+    CommandQueue  commands;
 
     LVGLPluginDSP()
         : Plugin(kPluginParameterCount, 0, 0)
@@ -67,7 +69,8 @@ public:
         fSmoothGain.setTargetValue(DB_CO(0.0f));
         fSmoothGain.setTimeConstant(0.020f);
 
-        shared.project = &project;
+        shared.project  = &project;
+        shared.commands = &commands;
 
         // Bootstrap one SameBoy slot from the dev ROM path. setState (called
         // by hosts that have saved a project) will replace this on load.
@@ -152,6 +155,22 @@ protected:
     void run(const float**, float** outputs, uint32_t frames,
              const MidiEvent*, uint32_t) override
     {
+        // Drain UI commands before running emulators so any keypresses queued
+        // since the last block land at the right place in this one.
+        Command cmd;
+        while (commands.tryPop(cmd)) {
+            switch (cmd.kind) {
+                case Command::Kind::ButtonPress: {
+                    auto& bp = cmd.payload.buttonPress;
+                    if (SystemBase* sys = project.findSystem(bp.systemId))
+                        sys->pressButton(bp.button, bp.down);
+                } break;
+                case Command::Kind::None:
+                default:
+                    break;
+            }
+        }
+
         float* const outL = outputs[0];
         float* const outR = outputs[1];
         std::memset(outL, 0, frames * sizeof(float));
