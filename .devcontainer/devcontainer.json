@@ -1,5 +1,5 @@
 {
-  "name": "lvgl-template-plugin",
+  "name": "RetroPlug2",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
@@ -18,9 +18,13 @@
     "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind,consistency=cached"
   ],
 
-  "runArgs": ["--init"],
+  "runArgs": [
+    "--init",
+    "--shm-size=512m",
+    "--ulimit", "memlock=-1:-1"
+  ],
 
-  "postCreateCommand": "git submodule update --init --recursive",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
 
   "customizations": {
     "vscode": {
@@ -31,7 +35,7 @@
       ],
       "settings": {
         "cmake.configureOnOpen": true,
-        "cmake.generator": "Ninja"
+        "cmake.generator": "Unix Makefiles"
       }
     }
   }
