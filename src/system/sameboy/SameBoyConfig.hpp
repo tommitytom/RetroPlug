@@ -38,6 +38,12 @@ struct SameBoyConfig {
     std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
     Base64Bytes               romBytes;   // populated when embedRom (snapshotConfig)
+    // Cartridge battery RAM (.sav contents). Path-based ROM loads slurp the
+    // sibling `<rom>.sav` once and stash it here; subsequent host-project
+    // saves serialize whatever the running emulator currently has, so the
+    // SRAM is portable. Loaded into the emulator BEFORE `savestate`, so a
+    // savestate's embedded SRAM still wins when both are set.
+    Base64Bytes               sram;
     Base64Bytes               savestate;  // optional, populated when persisting
 
     // Roles attached to this system (LSDJ sync, MGB passthrough, etc.).

@@ -181,6 +181,9 @@ TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, link
     a.romPath     = "/a.gb";
     a.gainDb      = -3.5f;
     a.linkGroupId = 1;
+    a.sram        = Base64Bytes(std::vector<std::uint8_t>{
+        0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
+        0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80});
 
     SameBoyConfig b;
     b.romPath     = "/b.gb";
@@ -215,6 +218,9 @@ TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, link
     CHECK(sa->linkGroupId == 1);
     CHECK(sb->linkGroupId == 1);
     CHECK(sc->linkGroupId == 0);
+    CHECK(sa->sram        == a.sram);
+    CHECK(sb->sram.empty());
+    CHECK(sc->sram.empty());
 }
 
 TEST_CASE("Project::reserve does not create systems", "[Project]") {

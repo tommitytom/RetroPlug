@@ -11,10 +11,12 @@ import {
     useKeyboard,
 } from "../runtime/lvgljs/input";
 
-// "Load ROM" replaces the focused tile (or appends if no focus).
-// "Add instance" always appends a new tile.
-// "Remove instance" removes the focused tile.
-const MENU_ITEMS = ["Load ROM", "Add instance", "Remove instance", "Reset", "About", "Cancel"];
+// Menu structure. "Link group: N" cycles 0..LINK_GROUP_MAX-1 on each click;
+// 0 = standalone. The label re-renders to show the focused instance's
+// current group; clicking it does NOT close the menu (so users can cycle
+// without re-opening every time).
+const LINK_GROUP_LABEL = "Link group:";
+const LINK_GROUP_MAX   = 4;
 
 interface PluginNamespace {
     openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
@@ -23,6 +25,7 @@ interface PluginNamespace {
     setFocus?: (systemId: number) => boolean;
     getFocus?: () => number;
     removeSystem?: (systemId: number) => boolean;
+    setLinkGroupId?: (systemId: number, groupId: number) => boolean;
     setWindowSize?: (w: number, h: number) => boolean;
     isWindowSizeControlled?: () => boolean;
 }
@@ -33,11 +36,12 @@ const TextAny = Text as any;
 
 interface MenuOverlayProps {
     gain: number;
+    items: string[];
     onGainChange: (e: any) => void;
     onSelect: (label: string) => void;
 }
 
-function MenuOverlay({ gain, onGainChange, onSelect }: MenuOverlayProps) {
+function MenuOverlay({ gain, items, onGainChange, onSelect }: MenuOverlayProps) {
     const itemRefs = useRef<any[]>([]);
     const groupRef = useRef<any>(null);
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -116,9 +120,9 @@ function MenuOverlay({ gain, onGainChange, onSelect }: MenuOverlayProps) {
                 onChange={onGainChange}
             />
 
-            {MENU_ITEMS.map((label, i) => (
+            {items.map((label, i) => (
                 <TextAny
-                    key={label}
+                    key={i}
                     ref={(r: any) => { itemRefs.current[i] = r; }}
                     style={{
                         "text-color": focusedIndex === i ? "#4fc3f7" : "#ffffff",
@@ -227,7 +231,33 @@ function PluginUI() {
         if (button !== null) plugin.pressButton?.(button, press);
     }, []));
 
+    // Build the menu items with the focused instance's link group baked
+    // into the label. Re-computed every render so the cycling Link group
+    // entry shows the current value without an explicit refresh hop.
+    const focusedSystem = systems.find((s) => s.id === focusedId);
+    const linkGroupSuffix = focusedSystem
+        ? String(focusedSystem.linkGroupId ?? 0)
+        : "-";
+    const menuItems = [
+        "Load ROM",
+        "Add instance",
+        "Remove instance",
+        `${LINK_GROUP_LABEL} ${linkGroupSuffix}`,
+        "Reset",
+        "About",
+        "Cancel",
+    ];
+
     const onMenuSelect = useCallback((label: string) => {
+        // Cycling the link group must not close the menu — users typically
+        // want to hit it a few times in a row.
+        if (label.startsWith(LINK_GROUP_LABEL)) {
+            const sys = systemsRef.current.find((s) => s.id === focusedIdRef.current);
+            if (!sys) return;
+            const next = (((sys.linkGroupId ?? 0) + 1) % LINK_GROUP_MAX);
+            plugin.setLinkGroupId?.(sys.id, next);
+            return;
+        }
         switch (label) {
             case "Load ROM":
                 plugin.openRomBrowser?.({ mode: "replace" });
@@ -282,6 +312,7 @@ function PluginUI() {
             {menuOpen ? (
                 <MenuOverlay
                     gain={gain}
+                    items={menuItems}
                     onGainChange={onGainChange}
                     onSelect={onMenuSelect}
                 />

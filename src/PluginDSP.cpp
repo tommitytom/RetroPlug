@@ -17,6 +17,7 @@
 #include "project/ProjectSerialization.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/SameBoySystem.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 
@@ -280,6 +281,17 @@ protected:
                         focusedSystemAtomic.store(next, std::memory_order_release);
                     }
                     projectMutated = true;
+                } break;
+
+                case Command::Kind::SetLinkGroup: {
+                    auto& slg = cmd.payload.setLinkGroup;
+                    if (SystemBase* sys = project.findSystem(slg.id)) {
+                        if (auto* sb = dynamic_cast<SameBoySystem*>(sys)) {
+                            sb->config_.linkGroupId = slg.groupId;
+                            project.rebuildLinkGroups();
+                            projectMutated = true;
+                        }
+                    }
                 } break;
 
                 case Command::Kind::None:

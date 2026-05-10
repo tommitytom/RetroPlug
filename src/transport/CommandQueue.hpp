@@ -57,6 +57,14 @@ struct ReplaceSystemCommand {
     SystemBase* newSystem;
 };
 
+// Move a system into a serial-link group (0 = standalone). The DSP
+// rebuilds link-group membership on receipt; UI gets a ConfigChanged so
+// the menu chrome updates.
+struct SetLinkGroupCommand {
+    SystemId     id;
+    std::uint8_t groupId;
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
         None          = 0,
@@ -65,6 +73,7 @@ struct Command {
         AddSystem     = 3,
         RemoveSystem  = 4,
         ReplaceSystem = 5,
+        SetLinkGroup  = 6,
     };
 
     Kind kind = Kind::None;
@@ -74,6 +83,7 @@ struct Command {
         AddSystemCommand     addSystem;
         RemoveSystemCommand  removeSystem;
         ReplaceSystemCommand replaceSystem;
+        SetLinkGroupCommand  setLinkGroup;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -111,6 +121,13 @@ struct Command {
         Command c;
         c.kind = Kind::ReplaceSystem;
         c.payload.replaceSystem = ReplaceSystemCommand{id, newSystem};
+        return c;
+    }
+
+    static Command makeSetLinkGroup(SystemId id, std::uint8_t groupId) {
+        Command c;
+        c.kind = Kind::SetLinkGroup;
+        c.payload.setLinkGroup = SetLinkGroupCommand{id, groupId};
         return c;
     }
 };

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string_view>
@@ -101,6 +102,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_getFocus, "getFocus", 0));
     JS_SetPropertyStr(ctx, ns, "pressButton",
                       JS_NewCFunction(ctx, js_pressButton, "pressButton", 3));
+    JS_SetPropertyStr(ctx, ns, "setLinkGroupId",
+                      JS_NewCFunction(ctx, js_setLinkGroupId, "setLinkGroupId", 2));
     JS_SetPropertyStr(ctx, ns, "setWindowSize",
                       JS_NewCFunction(ctx, js_setWindowSize, "setWindowSize", 2));
     JS_SetPropertyStr(ctx, ns, "isWindowSizeControlled",
@@ -140,6 +143,18 @@ SameBoySystem* PluginJsBridge::buildSystemFromPath(const std::string& path) {
     cfg.romPath  = path;
     cfg.model    = GameboyModel::CgbC;
     cfg.fastBoot = true;
+
+    // Optional sibling .sav (cartridge battery RAM). Slurp once on path-
+    // based load — from here on the SRAM lives in cfg.sram and rides with
+    // the project state. Missing file is not an error; the cart just starts
+    // with blank battery, like in any standalone emulator.
+    {
+        std::filesystem::path sav = std::filesystem::path(path);
+        sav.replace_extension(".sav");
+        std::vector<std::uint8_t> sramBytes = slurp(sav.string());
+        if (!sramBytes.empty())
+            cfg.sram = Base64Bytes(std::move(sramBytes));
+    }
 
     const SystemId id = project_->nextSystemId();
     auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(bytes));
@@ -399,6 +414,23 @@ JSValue PluginJsBridge::js_getFocus(JSContext* ctx, JSValueConst, int, JSValueCo
     PluginJsBridge* self = bridgeFromContext();
     if (!self || !self->focusedSystemId_) return JS_NewUint32(ctx, 0);
     return JS_NewUint32(ctx, self->focusedSystemId_->load(std::memory_order_acquire));
+}
+
+JSValue PluginJsBridge::js_setLinkGroupId(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2)
+        return JS_ThrowTypeError(ctx, "plugin.setLinkGroupId: expected (id, groupId)");
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->commands_) return JS_FALSE;
+
+    int32_t id = 0, groupId = 0;
+    if (JS_ToInt32(ctx, &id,      argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &groupId, argv[1]) < 0) return JS_EXCEPTION;
+    if (groupId < 0 || groupId > 255) return JS_FALSE;
+
+    return self->commands_->tryPush(
+        Command::makeSetLinkGroup(static_cast<SystemId>(id),
+                                  static_cast<std::uint8_t>(groupId)))
+        ? JS_TRUE : JS_FALSE;
 }
 
 JSValue PluginJsBridge::js_setWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {

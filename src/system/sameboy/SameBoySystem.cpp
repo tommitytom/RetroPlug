@@ -153,6 +153,21 @@ void SameBoySystem::onActivate(double sampleRate) {
 
     GB_load_rom_from_buffer(gb_, rom_.data(), rom_.size());
 
+    // Cartridge battery RAM. Apply BEFORE savestate so that, when both are
+    // present, the savestate's embedded SRAM wins (same convention the
+    // legacy build used in old/src/sameboy/SameBoyHooks.cpp).
+    if (!config_.sram.empty()) {
+        const int expected = GB_save_battery_size(gb_);
+        if (expected > 0) {
+            // SameBoy's load doesn't bounds-check the buffer it reads from.
+            // Pad the slurped data to the expected size so a short .sav
+            // can't make it read past the end. Truncate too-large.
+            std::vector<std::uint8_t> sram = config_.sram.bytes();
+            sram.resize(static_cast<std::size_t>(expected), 0);
+            GB_load_battery_from_buffer(gb_, sram.data(), sram.size());
+        }
+    }
+
     if (!config_.savestate.empty()) {
         const auto& save = config_.savestate.bytes();
         if (GB_load_state_from_buffer(gb_, save.data(), save.size()) != 0) {
@@ -325,8 +340,23 @@ SystemConfig SameBoySystem::snapshotConfig() const {
         std::vector<std::uint8_t> save(saveSize);
         GB_save_state_to_buffer((GB_gameboy_t*)gb_, save.data());
         out.savestate = Base64Bytes(std::move(save));
+
+        // Capture cartridge battery RAM. Returns 0 for carts without a
+        // battery (RTC-only or none) — those simply don't carry an `sram`.
+        const int sramSize = GB_save_battery_size((GB_gameboy_t*)gb_);
+        if (sramSize > 0) {
+            std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
+            if (GB_save_battery_to_buffer((GB_gameboy_t*)gb_, sram.data(), sram.size()) == 0) {
+                out.sram = Base64Bytes(std::move(sram));
+            } else {
+                out.sram = Base64Bytes{};
+            }
+        } else {
+            out.sram = Base64Bytes{};
+        }
     } else {
         out.savestate = Base64Bytes{};
+        out.sram      = Base64Bytes{};
     }
     return out;
 }
