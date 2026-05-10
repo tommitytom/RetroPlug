@@ -21,12 +21,17 @@
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
 
+#include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <vector>
 
 extern "C" {
     #include "lvgl.h"
 }
+
+#include "native/core/img/png/lodepng.h"
 
 #include "transport/EventQueue.hpp"
 
@@ -50,6 +55,48 @@ class LVGLPluginUI : public UI
     LvglJsEngine jsEngine;
     std::unique_ptr<PluginJsBridge> bridge;
     SharedDSPData* shared = nullptr;
+
+    // Screenshot hook (env-var triggered). When RETROPLUG_SCREENSHOT_PATH is
+    // set, periodically dump the current LVGL screen as PNG. Cadence is
+    // RETROPLUG_SCREENSHOT_INTERVAL_MS (default 1000). All work happens on
+    // the UI thread inside uiIdle.
+    std::string screenshotPath_;
+    std::chrono::milliseconds screenshotInterval_{1000};
+    std::chrono::steady_clock::time_point screenshotLast_{};
+
+    void maybeWriteScreenshot()
+    {
+        if (screenshotPath_.empty()) return;
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now - screenshotLast_ < screenshotInterval_) return;
+        screenshotLast_ = now;
+
+        lv_obj_t* screen = lv_screen_active();
+        if (!screen) return;
+
+        lv_draw_buf_t* snap = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+        if (!snap) return;
+
+        const uint32_t w = snap->header.w;
+        const uint32_t h = snap->header.h;
+        std::vector<unsigned char> rgb(static_cast<size_t>(w) * h * 3);
+        // ARGB8888 in memory is B,G,R,A on little-endian; transcode to RGB.
+        const uint8_t* src = snap->data;
+        for (size_t i = 0, n = static_cast<size_t>(w) * h; i < n; ++i) {
+            rgb[i * 3 + 0] = src[i * 4 + 2];
+            rgb[i * 3 + 1] = src[i * 4 + 1];
+            rgb[i * 3 + 2] = src[i * 4 + 0];
+        }
+
+        const unsigned err = lodepng_encode24_file(screenshotPath_.c_str(),
+                                                   rgb.data(), w, h);
+        if (err)
+            d_stderr("Screenshot lodepng error %u: %s",
+                     err, lodepng_error_text(err));
+
+        lv_draw_buf_destroy(snap);
+    }
 
     // Drain SystemReleased events: the DSP shipped a displaced SystemBase
     // back so the UI thread can free it. Must run before anything else that
@@ -89,6 +136,17 @@ public:
 
         if (isResizable())
             fResizeHandle.hide();
+
+        if (const char* p = std::getenv("RETROPLUG_SCREENSHOT_PATH"); p && *p) {
+            screenshotPath_ = p;
+            if (const char* iv = std::getenv("RETROPLUG_SCREENSHOT_INTERVAL_MS"); iv && *iv) {
+                if (int ms = std::atoi(iv); ms > 0)
+                    screenshotInterval_ = std::chrono::milliseconds(ms);
+            }
+            d_stdout("Screenshot hook enabled: %s every %lld ms",
+                     screenshotPath_.c_str(),
+                     static_cast<long long>(screenshotInterval_.count()));
+        }
 
         // In-process plugin formats: reach the DSP-owned Project via the shared
         // pointer. LV2-UI returns nullptr; the bridge degrades gracefully.
@@ -165,6 +223,7 @@ protected:
         }
 
         jsEngine.tick();
+        maybeWriteScreenshot();
     }
 
     void uiFileBrowserSelected(const char* filename) override

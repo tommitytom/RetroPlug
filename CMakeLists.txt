@@ -177,3 +177,44 @@ target_link_libraries(${NAME} PUBLIC sameboy)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)
+
+# --- Tests (Catch2) ----------------------------------------------------------
+# Gated so the default build stays small; opt in with -DBUILD_TESTING=ON.
+option(BUILD_TESTING "Build the Catch2 unit tests" OFF)
+if(BUILD_TESTING)
+    add_subdirectory(deps/catch2)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
+# --- CLI tool ---------------------------------------------------------------
+# Headless renderer + scripted-input runner. Useful for fast LSDJ renders
+# and agent-driven workflows.
+option(BUILD_CLI "Build the retroplug-cli headless renderer" ON)
+if(BUILD_CLI)
+    add_subdirectory(cli)
+endif()
+
+# --- Convenience targets for headless agent workflows -----------------------
+# `make screenshot` -> launch standalone under Xvfb + dummy jackd, capture
+# /tmp/retroplug.png after a few seconds.
+add_custom_target(screenshot
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/run-standalone.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS retroplug
+    USES_TERMINAL
+    COMMENT "Capturing standalone screenshot via Xvfb + dummy jackd"
+)
+
+# `make cli-smoke` -> render the example LSDJ script to ./out.wav.
+if(BUILD_CLI)
+    add_custom_target(cli-smoke
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_smoke.json
+                --out ${CMAKE_BINARY_DIR}/cli-smoke.wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Rendering examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav"
+    )
+endif()

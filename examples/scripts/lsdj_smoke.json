@@ -1,0 +1,14 @@
+{
+  "rom": "old/resources/roms/mGB.gb",
+  "duration_ms": 5000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "out.wav",
+  "events": [
+    { "at_ms": 200,  "tap": "Start", "hold_ms": 50 },
+    { "at_ms": 1000, "button": "A", "down": true },
+    { "at_ms": 1100, "button": "A", "down": false },
+    { "at_ms": 1500, "tap": "Right", "hold_ms": 50 },
+    { "at_ms": 2000, "tap": "B", "hold_ms": 50 }
+  ]
+}

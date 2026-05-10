@@ -73,3 +73,67 @@ the environment, so this trick works most reliably with jalv/Carla/standalone.
 ## Testing
 
 Load any of the built artifacts under `build/bin/` in a host (Carla, Reaper, Bitwig, jalv for LV2). The plugin currently generates a sine/square test tone — there's no input-processing path. Use the in-plugin sliders or host automation to verify both directions of parameter sync.
+
+## Agent workflows
+
+### Headless rendering via `retroplug-cli`
+
+`build/bin/retroplug-cli` runs the SameBoy DSP path at full speed (no DPF
+wrapper, no UI thread, no real-time scheduling). Drives input from a JSON
+script and optionally writes a 16-bit PCM stereo WAV. Useful for quick
+behavioral checks and high-speed LSDJ track renders.
+
+```bash
+./build/bin/retroplug-cli --script examples/scripts/lsdj_smoke.json
+./build/bin/retroplug-cli --script s.json --rom path.gb --out out.wav --duration 10000
+```
+
+The script schema (`cli/Script.hpp`) accepts two event forms:
+
+- Explicit: `{"at_ms": 100, "button": "A", "down": true}`
+- Shorthand: `{"at_ms": 100, "tap": "A", "hold_ms": 50}` — expands to a
+  down/up pair.
+
+Button names are case-insensitive: `Right Left Up Down A B Select Start`.
+
+Build target: `make retroplug-cli` (gated by `-DBUILD_CLI=ON`, default ON).
+
+### UI inspection via screenshot env var
+
+The standalone (`build/bin/retroplug`, JACK target) periodically dumps the
+LVGL screen to PNG when `RETROPLUG_SCREENSHOT_PATH` is set. Cadence is
+controlled by `RETROPLUG_SCREENSHOT_INTERVAL_MS` (default 1000). Cost is
+zero when the env var is unset.
+
+For agent (or otherwise headless) use, `tools/run-standalone.sh` wraps the
+whole flow: launches Xvfb on a free display, starts a dummy-backend `jackd`,
+runs the standalone with the screenshot hook armed, and tears everything
+down on exit. One-time setup:
+
+```bash
+sudo apt-get install xvfb jackd2 xdotool
+```
+
+Then:
+
+```bash
+tools/run-standalone.sh                      # /tmp/retroplug.png after 3s
+tools/run-standalone.sh /tmp/x.png 5         # custom path + 5s run
+tools/run-standalone.sh /tmp/x.png 5 250     # 250ms screenshot cadence
+```
+
+To drive the UI mid-run, share the DISPLAY env and use
+`tools/standalone-key.sh`:
+
+```bash
+# In one shell:
+DISPLAY=:99 tools/run-standalone.sh /tmp/menu.png 4 500 &
+# In another (or after a small sleep in the same script):
+DISPLAY=:99 tools/standalone-key.sh Escape Down Down Return
+```
+
+`Escape` opens the menu; arrow keys navigate; `Return` activates. The
+screenshot is captured continuously, so any state will land in the PNG.
+
+For non-headless local dev you can ignore the wrapper and run
+`./build/bin/retroplug` directly under your normal X server / JACK setup.
