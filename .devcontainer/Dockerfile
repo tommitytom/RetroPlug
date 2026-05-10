@@ -44,4 +44,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ffmpeg \
 	# --- VCS ---------------------------------------------------------------
 	git \
+	# --- Plugin-format validators need these to download/extract -----------
+	curl \
+	unzip \
+	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+
+# --- Plugin-format validators -----------------------------------------------
+# Pinned versions; both ship as single-binary releases on GitHub. pluginval
+# covers VST3/AU/LV2/LADSPA; clap-validator covers CLAP. See
+# tools/validate-plugins.sh and the `make validate` target for usage.
+ARG PLUGINVAL_VERSION=v1.0.4
+ARG CLAP_VALIDATOR_VERSION=0.3.2
+RUN set -eux; \
+	mkdir -p /tmp/validators && cd /tmp/validators; \
+	curl -fsSL "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Linux.zip" -o pv.zip; \
+	unzip -q pv.zip; \
+	install -m 0755 pluginval /usr/local/bin/pluginval; \
+	curl -fsSL "https://github.com/free-audio/clap-validator/releases/download/${CLAP_VALIDATOR_VERSION}/clap-validator-${CLAP_VALIDATOR_VERSION}-ubuntu-18.04.tar.gz" -o cv.tgz; \
+	tar -xzf cv.tgz; \
+	install -m 0755 clap-validator /usr/local/bin/clap-validator; \
+	cd / && rm -rf /tmp/validators; \
+	pluginval --version; \
+	clap-validator --version

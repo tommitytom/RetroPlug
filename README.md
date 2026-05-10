@@ -1,134 +1,194 @@
-# DPF + LVGL + React/JS template plugin
+# RetroPlug2
 
-An audio plugin template using [DPF](https://github.com/DISTRHO/DPF) (DISTRHO Plugin Framework) with [LVGL](https://github.com/lvgl/lvgl) for rendering and a React/JavaScript UI layer powered by [lv_binding_js](https://github.com/tommitytom/lv_binding_js).
+A Game Boy emulator running as an audio plugin — modern reboot of the original
+[RetroPlug](https://github.com/tommitytom/RetroPlug). Built for using LSDJ,
+mGB, and other Game Boy music software inside a DAW, with the same playback
+experience as a real DMG/CGB but as a normal track in your project.
 
-Plugin UIs can be written in **TSX/JSX** using React components that map to native LVGL widgets, or directly in C++ with the LVGL API.
+Built on:
 
-![Screenshot](Screenshot.png "Screenshot")
+- [DPF](https://github.com/DISTRHO/DPF) — cross-platform audio plugin framework
+  (LV2 / VST2 / VST3 / CLAP / JACK)
+- [SameBoy](https://github.com/LIJI32/SameBoy) — high-accuracy Game Boy
+  emulator core
+- A React + TypeScript UI on top of LVGL via QuickJS — the framework slice is
+  documented separately in [dpfjs.md](dpfjs.md)
 
-## How it works
+## Status
 
-```
-TSX/JSX  →  esbuild  →  bundle.js  →  QuickJS (txiki.js)  →  LVGL native widgets  →  OpenGL texture  →  plugin window
-```
+Early reboot. The SameBoy MVP boots ROMs, audio plays at the host sample rate,
+the LVGL menu overlay opens on Esc, and the file picker loads ROMs.
 
-- **React reconciler** diffs the virtual DOM and creates/updates native LVGL objects
-- **txiki.js** (QuickJS + libuv) runs JavaScript non-blockingly via `UV_RUN_NOWAIT` in DPF's idle callback
-- **LVGL** renders to a framebuffer, which DPF composites as an OpenGL texture
-- Each plugin instance has its own JS runtime and LVGL display (multi-instance safe)
-
-## Example UI (TSX)
-
-```tsx
-import { View, Text, Slider, Button, Render } from "lvgljs-ui";
-import React, { useState } from "react";
-
-function PluginUI() {
-    const [gain, setGain] = useState(0);
-
-    return (
-        <View style={{
-            width: "100%", height: "100%",
-            "background-color": "#1a1a2e",
-            display: "flex", "flex-direction": "column",
-            "align-items": "center", "justify-content": "center",
-        }}>
-            <Text style={{ "text-color": "#4fc3f7", "font-size": 24 }}>
-                {`Gain: ${gain.toFixed(1)} dB`}
-            </Text>
-            <Slider
-                style={{ width: 400, height: 10, "margin-top": 30 }}
-                range={[-90, 30]}
-                value={gain}
-                onChange={(e) => setGain(e.value)}
-            />
-            <Button
-                style={{ width: 120, height: 50, "background-color": "#4fc3f7" }}
-                onClick={() => setGain(0)}
-            >
-                <Text style={{ "text-color": "#1a1a2e" }}>Reset</Text>
-            </Button>
-        </View>
-    );
-}
-
-Render.render(<PluginUI />);
-```
+The original RetroPlug's deeper features — multi-instance routing, save-state
+slots, MIDI control, mGB role, LSDJ sync / Arduinoboy / kit patching, the LSDJ
+HD player — are tracked as ordered migration steps under [`porting/`](porting/).
+Step 1 is in; steps 2 and 3 are partly in (basic input + file picker work, full
+ROM-picker UI not yet); the rest are TODO.
 
 ## Building
 
-### Prerequisites
-
-- CMake 3.14+
-- C/C++ compiler (GCC, Clang, or MSVC)
-- Node.js (for bundling TSX)
-- OpenGL development headers
-- libcurl, libffi development headers
-
-### Clone with submodules
+Requires CMake 3.14+, a C++20 compiler, Node.js (for the esbuild UI bundle),
+and a handful of X11 / OpenGL / audio dev libraries — see
+[.devcontainer/Dockerfile](.devcontainer/Dockerfile) for the canonical apt
+list, or just use the devcontainer (below).
 
 ```bash
-git clone --recursive https://github.com/tommitytom/lvgl-template-plugin.git
-cd lvgl-template-plugin
-```
-
-### Build the plugin
-
-```bash
+git clone --recursive <repo-url>
+cd RetroPlug2
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-This produces plugins in `build/bin/` for all supported formats: JACK (standalone), CLAP, VST2, VST3, LV2.
+Output:
 
-### Build the JS bundle
-
-```bash
-cd deps/lv_binding_js
-pnpm install          # install React, esbuild, etc.
-cd ../..
-node ui/build.js      # bundle ui/PluginUI.tsx → ui/bundle.js
-```
-
-Edit `ui/PluginUI.tsx`, re-run `node ui/build.js`, and relaunch the plugin — no C++ recompilation needed.
-
-## Project structure
-
-```
-├── src/
-│   ├── PluginDSP.cpp          # Audio processing (gain example)
-│   ├── PluginUI.cpp            # UI host: initializes JS engine, loads bundle
-│   ├── LvglJsEngine.cpp/hpp   # Embeds txiki.js, drives libuv from DPF idle callback
-│   ├── DistrhoPluginInfo.h     # Plugin metadata
-│   └── lv_conf.h               # LVGL configuration
-├── ui/
-│   ├── PluginUI.tsx            # React UI source
-│   ├── build.js                # esbuild bundler config
-│   └── bundle.js               # Built JS bundle (not committed)
-├── deps/
-│   ├── dpf/                    # DISTRHO Plugin Framework
-│   ├── dpf-widgets/            # DPF LVGL widget integration
-│   └── lv_binding_js/          # JS/React LVGL bindings (fork with v9 port)
-│       ├── deps/lvgl/          # LVGL v9.5.0 (single source of truth)
-│       ├── deps/txiki/         # txiki.js v26.4.0 (QuickJS + libuv + ...)
-│       └── src/render/native/  # C++ component bridge (LVGL ↔ QuickJS)
-└── CMakeLists.txt
-```
-
-## Plugin formats
-
-| Format | Output |
-|--------|--------|
-| JACK | `build/bin/retroplug` (standalone) |
+| Format | Path |
+|--------|------|
+| JACK standalone | `build/bin/retroplug` |
 | CLAP | `build/bin/retroplug.clap` |
 | VST2 | `build/bin/retroplug-vst2.so` |
 | VST3 | `build/bin/retroplug.vst3/` |
 | LV2 | `build/bin/retroplug.lv2/` |
+| Headless renderer | `build/bin/retroplug-cli` |
 
-## Dependencies
+### Devcontainer
 
-- [DPF](https://github.com/DISTRHO/DPF) — Cross-platform audio plugin framework
-- [DPF-Widgets](https://github.com/DISTRHO/DPF-Widgets) — LVGL integration for DPF
-- [lv_binding_js](https://github.com/tommitytom/lv_binding_js) — React/JS bindings for LVGL (v9 fork)
-  - [LVGL v9.5.0](https://github.com/lvgl/lvgl) — UI toolkit
-  - [txiki.js v26.4.0](https://github.com/saghul/txiki.js) — JavaScript runtime (QuickJS + libuv)
+VS Code: open the repo and "Reopen in Container". The image bakes in every
+build dep, the headless agent tooling (`xvfb`, `jackd2`, `xdotool`,
+`pluginval`, `clap-validator`, `ffmpeg`, Node.js), and persists Claude Code
+state in a Docker named volume.
+
+## Headless workflows
+
+A few make targets exist for testing without a DAW. All of them run cleanly
+inside the devcontainer.
+
+```bash
+make -C build cli-smoke   # render examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav
+make -C build screenshot  # capture standalone UI -> /tmp/retroplug.png
+make -C build validate    # clap-validator + pluginval against the built artifacts
+```
+
+### `retroplug-cli` — scripted DSP renders
+
+`build/bin/retroplug-cli` runs the SameBoy DSP path at full speed (no DPF
+wrapper, no UI thread, no real-time scheduling). Drives input from a JSON
+script and optionally writes a 16-bit PCM stereo WAV. Useful for behavioural
+checks, deterministic regression tests, and high-speed LSDJ track renders.
+
+```bash
+./build/bin/retroplug-cli --script examples/scripts/lsdj_smoke.json
+./build/bin/retroplug-cli --script s.json --rom path.gb --out out.wav --duration 10000
+```
+
+The script schema ([cli/Script.hpp](cli/Script.hpp)) accepts two event forms:
+
+- Explicit: `{"at_ms": 100, "button": "A", "down": true}`
+- Shorthand: `{"at_ms": 100, "tap": "A", "hold_ms": 50}` — expands to a
+  down/up pair.
+
+Button names are case-insensitive: `Right Left Up Down A B Select Start`.
+
+### Standalone screenshot tooling
+
+The standalone (`build/bin/retroplug`, JACK target) periodically dumps the
+LVGL screen to PNG when `RETROPLUG_SCREENSHOT_PATH` is set. Cadence is
+controlled by `RETROPLUG_SCREENSHOT_INTERVAL_MS` (default 1000). Cost is zero
+when the env var is unset.
+
+For headless use, [tools/run-standalone.sh](tools/run-standalone.sh) wraps the
+whole flow — launches Xvfb on a free display, starts a dummy-backend `jackd`,
+runs the standalone with the screenshot hook armed, and tears everything down
+on exit. One-time setup on a host without the devcontainer:
+
+```bash
+sudo apt-get install xvfb jackd2 xdotool
+```
+
+Then:
+
+```bash
+tools/run-standalone.sh                      # /tmp/retroplug.png after 3s
+tools/run-standalone.sh /tmp/x.png 5         # custom path + 5s run
+tools/run-standalone.sh /tmp/x.png 5 250     # 250ms screenshot cadence
+```
+
+To drive the UI mid-run, share the `DISPLAY` env and use
+[tools/standalone-key.sh](tools/standalone-key.sh):
+
+```bash
+DISPLAY=:99 tools/run-standalone.sh /tmp/menu.png 4 500 &
+DISPLAY=:99 tools/standalone-key.sh Escape Down Down Return
+```
+
+`Escape` opens the menu, arrow keys navigate, `Return` activates.
+
+### Plugin-format validation
+
+`make -C build validate` runs format-compliance validators against the built
+`.clap` and `.vst3` artifacts:
+
+- [clap-validator](https://github.com/free-audio/clap-validator) — CLAP
+  protocol tests (state save/restore, parameter handling, MIDI, threading)
+- [pluginval](https://github.com/Tracktion/pluginval) — VST3 / AU / LV2
+  protocol tests (strictness 5 by default; bumpable in
+  [tools/validate-plugins.sh](tools/validate-plugins.sh))
+
+Both binaries are baked into the devcontainer image. On a host without the
+devcontainer, install them manually:
+
+```bash
+curl -fsSL https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip -o pv.zip && unzip pv.zip && sudo install -m 0755 pluginval /usr/local/bin/
+curl -fsSL https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz | tar -xz && sudo install -m 0755 clap-validator /usr/local/bin/
+```
+
+Format validation catches DPF wrapper regressions, ABI bugs, and parameter /
+state-restore drift — it does NOT exercise the GameBoy DSP. Behavioural
+checks remain the job of `retroplug-cli`.
+
+## Project layout
+
+```
+src/
+  PluginDSP.cpp                      DSP class; runs SameBoy at host sample rate
+  PluginUI.cpp                       UI class; owns JS engine + bridge
+  PluginJsBridge.{hpp,cpp}           plugin.* JS bindings (getFrame, pressButton, …)
+  PluginShared.hpp                   parameter spec + SharedDSPData (in-process)
+  LvglJsEngine.{hpp,cpp}             txiki.js runtime wrapper
+  project/
+    Project.{hpp,cpp}                DSP-thread runtime container; system table + config
+    ProjectConfig.hpp                reflectcpp-serializable settings
+  system/
+    SystemBase.hpp                   polymorphic emulator base class
+    InputTypes.hpp                   GameboyButton enum
+    sameboy/
+      SameBoySystem.{hpp,cpp}        SameBoy lifecycle + audio + framebuffer
+      SameBoyConfig.hpp              per-system config (model, savestate, …)
+  transport/
+    CommandQueue.hpp                 SPSC ring: UI → DSP (button presses, ROM swap)
+    EventQueue.hpp                   SPSC ring: DSP → UI (released SystemBase pointers)
+    FrameBufferTriple.hpp            seqlock-protected triple-buffer for video
+ui/                                  React/TSX UI source (esbuild-bundled)
+  PluginUI.tsx                       React entry point
+  EmulatorTile.tsx                   Canvas widget that renders SameBoy frames
+  MenuOverlay.tsx                    LVGL-focused menu (Esc to open)
+runtime/lvgljs/                      typed JS-side bridge into the native runtime
+cli/                                 retroplug-cli source (Wav, Script, main)
+test/                                Catch2 unit tests (transport, project, fb)
+examples/scripts/                    sample retroplug-cli JSON inputs
+porting/                             ordered migration roadmap from old RetroPlug
+tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
+deps/                                vendored: dpf, dpf-widgets, sameboy, lv_binding_js, rpcpp, catch2
+```
+
+For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
+SameBoy specific), see [dpfjs.md](dpfjs.md). For the migration plan, see
+[porting/README.md](porting/README.md).
+
+## Acknowledgements
+
+- [SameBoy](https://github.com/LIJI32/SameBoy) — accuracy-first Game Boy
+  emulator
+- [DPF](https://github.com/DISTRHO/DPF) — the audio-plugin framework
+- [LVGL](https://github.com/lvgl/lvgl) and
+  [lv_binding_js](https://github.com/tommitytom/lv_binding_js) — UI toolkit
+  and React/JS bindings

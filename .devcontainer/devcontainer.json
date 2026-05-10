@@ -6,14 +6,12 @@
       "CONTAINER_APT_PROXY": "${localEnv:CONTAINER_APT_PROXY}"
     }
   },
-
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
       "configureZshAsDefaultShell": false
     }
   },
-
   // Persist Claude Code state in a Docker named volume that's independent of
   // the host's ~/.claude config. Survives container rebuilds, isolated from
   // anything the user runs on the host. Symlinks into the volume are wired up
@@ -21,15 +19,13 @@
   "mounts": [
     "source=retroplug2-claude-state,target=/var/claude-state,type=volume"
   ],
-
   "runArgs": [
     "--init",
     "--shm-size=512m",
-    "--ulimit", "memlock=-1:-1"
+    "--ulimit",
+    "memlock=-1:-1"
   ],
-
   "postCreateCommand": "bash .devcontainer/post-create.sh",
-
   "customizations": {
     "vscode": {
       "extensions": [

@@ -1,139 +1,47 @@
 # Agent guide
 
-A DPF audio plugin with an LVGL UI driven by React running in txiki.js (QuickJS). Single-instance template; built via CMake into LV2 / VST2 / VST3 / CLAP / JACK targets.
+The substantive docs live in two files; both are short and worth reading
+before starting:
 
-## Layout
+- [README.md](README.md) — RetroPlug2: what it is, build, headless tooling,
+  layout, roadmap pointer.
+- [dpfjs.md](dpfjs.md) — the DPF + lv_binding_js + React framework slice
+  (architecture, parameter sync, JS API, hot reload, validation). This will
+  eventually move out into its own template repo; treat it as portable.
 
-- `src/` — C++ plugin code
-  - `PluginDSP.cpp` — DSP class (`run()`, parameters, oscillator state)
-  - `PluginUI.cpp` — DPF UI subclass; owns the JS engine and forwards parameters
-  - `PluginShared.hpp` — `SharedDSPData` (ring buffer; in-process formats only) and `kPluginParameters` (single source of truth for parameter spec, consumed by both DSP and UI)
-  - `PluginJsBridge.{hpp,cpp}` — plugin-specific JS bridges. Currently only `pushWaveform`; this is where to add custom DSP↔UI JS APIs for your plugin.
-  - `LvglJsEngine.{hpp,cpp}` — txiki.js runtime wrapper, JS↔native bridge. Owns generic parameter machinery (`setParamWriteCallback`, `registerParameter`, `pushParameter`).
-  - `DistrhoPluginInfo.h` — plugin metadata, I/O config, format categories
-  - `lv_conf.h` — LVGL configuration (note: `LV_USE_FLOAT = 1`)
-- `ui/` — plugin-author React/TSX code
-  - `PluginUI.tsx` — React UI entry point. Add as many `.ts`/`.tsx` files as you like and import them from here; esbuild bundles transitively.
-  - `tsconfig.json` — TS language-server config. Mirrors the esbuild aliases so the IDE resolves `"lvgljs"` and `"lvgljs-ui"`.
-- `runtime/` — framework-provided JS-side runtime (not plugin-author code)
-  - `lvgljs/index.ts` — typed front door for the native bridge. Exports `setParameter`, `on`, `off`, and the `useParameter` React hook. Plugin code should `import { ... } from "lvgljs"` rather than reaching into `globalThis[Symbol.for("lvgljs")]`.
-- `tools/`
-  - `build-ui.js` — esbuild script. CMake invokes it as `node build-ui.js <bundle.js> <bundle_data.c> <bundle.d>`; running with no args writes `../build/ui/bundle.js` for ad-hoc dev.
-- Bundle is **not committed**. CMake produces `build/ui/bundle.js` plus `build/ui/bundle_data.c` (C byte array) on every plugin build, and links the latter into the plugin so the UI is embedded.
-- `deps/` — submodules
-  - `dpf/` — DISTRHO Plugin Framework
-  - `dpf-widgets/` — `LVGLWidget` integration (calls `lv_timer_handler` from `idleCallback`)
-  - `lv_binding_js/` — forked v9 port at `tommitytom/lv_binding_js` branch `lvgl-v9-port`
+Most of what an agent needs day-to-day is in those two. The rules below are
+the parts that don't naturally fit either.
 
-## Build
+## Workflow rules
 
-```bash
-cd build && make -j$(nproc)
-```
+- Don't push to remotes or open PRs without an explicit ask. The user pushes
+  their own work.
+- Don't commit changes to `deps/lv_binding_js` or
+  `deps/lv_binding_js/deps/txiki` from the parent repo without checking —
+  the submodule pointers are managed deliberately.
+- Don't `rm -rf build` to "fix" CMake — investigate first. The configured
+  build dir is load-bearing for the development loop.
+- Treat the embedded UI bundle as derived; never check in
+  `build/ui/bundle.js` or `build/ui/bundle_data.c`.
 
-That's it — CMake watches `ui/*.ts*` and `runtime/*.ts*` (via `CONFIGURE_DEPENDS` glob)
-and esbuild's metafile-derived depfile, so editing any TS/TSX file rebuilds the bundle,
-regenerates the embedded C array, and relinks the plugin. Output plugins land in
-`build/bin/`.
+## Verification loop for code changes
 
-### Dev iteration without relinking
+The headless tooling described in README.md's "Headless workflows" section
+exists for agents to verify their own work without bothering the user. In
+order of preference:
 
-For tighter UI feedback, set the override env var when launching the host:
+1. **DSP / behaviour change** — `make -C build cli-smoke` or run
+   `retroplug-cli` with a custom script. Bypasses the plugin format
+   entirely; tests the same code path that ends up in every wrapper.
+2. **UI change** — `make -C build screenshot` (writes
+   `/tmp/retroplug.png`); read the PNG via the Read tool. Combine with
+   `tools/standalone-key.sh` to drive input mid-run.
+3. **DPF wrapper / format change** — `make -C build validate` (runs
+   `clap-validator` + `pluginval`). Catches ABI / state-restore /
+   threading regressions in the format adapters.
+4. **Pure C++ logic change** — `make -C build retroplug-tests &&
+   build/test/retroplug-tests` (Catch2). Covers transport queues,
+   `Project`, framebuffer.
 
-```bash
-LVGL_PLUGIN_BUNDLE_PATH=$PWD/build/ui/bundle.js jalv build/bin/retroplug.lv2
-```
-
-Then `node tools/build-ui.js $PWD/build/ui/bundle.js` rewrites the bundle and the
-host picks it up next time it loads the UI. Some DAWs (notably on macOS) sanitize
-the environment, so this trick works most reliably with jalv/Carla/standalone.
-
-## Architecture notes
-
-**DSP → UI waveform path**: `LVGLPluginDSP::run()` writes peak-downsampled samples into `SharedDSPData::waveformRing`. `LVGLPluginUI::uiIdle()` drains the ring and calls `PluginJsBridge::pushWaveform()`, which emits a "waveform" event via `LvglJsEngine::emit()`. The React `Waveform` component subscribes via `on("waveform", ...)` from `"lvgljs"` and calls `setPoints` to re-render an `<Line>`.
-
-**Parameter sync (bidirectional)** — generic, owned by `LvglJsEngine`:
-- DSP → UI: host `parameterChanged()` → `LvglJsEngine::pushParameter(idx, value)` → emits "parameter" event → `useParameter` hook updates React state.
-- UI → DSP: React's `setGain(value)` (returned by `useParameter`) → `lvgljs.setParameter(idx, value)` C function → `paramWrite` callback set via `setParamWriteCallback` → DPF `editParameter` / `setParameterValue`.
-
-**Parameter spec is single-source-of-truth in `PluginShared.hpp`**: `kPluginParameters[]` defines symbol/name/range/hints. `PluginDSP::initParameter` copies fields onto DPF's `Parameter` struct; `PluginUI` loops over the same array calling `jsEngine.registerParameter(i, kPluginParameters[i].symbol)`. Add a parameter by appending one row to the table (and a `case` in DSP `getParameterValue`/`setParameterValue`).
-
-**JS API surface**: plugin TS code imports from `"lvgljs"` (aliased in `tools/build-ui.js` and `ui/tsconfig.json`). Available exports: `setParameter(name|index, value)`, `on/off(channel, handler)`, and the `useParameter(name, initial)` React hook. The hook throws at mount on unknown parameter names. The native bridge is still registered under `globalThis[Symbol.for("lvgljs")]`, but plugin code should not reach into it directly — `runtime/lvgljs/index.ts` is the supported front door.
-
-**`SharedDSPData` only works for in-process formats** (VST2/3, CLAP, AU, JACK). For LV2 the UI/DSP run in separate binaries; `getPluginInstancePointer()` returns null and a weak fallback in `PluginUI.cpp` makes `getSharedDSPData()` return null. The waveform display is silently disabled in that case. Parameter sync still works in all formats.
-
-**Bundle is embedded into the plugin** at build time. Loading is buffer-based via `LvglJsEngine::evalModuleBuffer`, which calls `TJS_EvalModuleContent` directly — same semantics as the file-based path (`import.meta.url`, `load` event, `tjs:*` import resolution all work). The plugin is fully relocatable.
-
-## Workflow conventions
-
-- Don't push to remotes or open PRs without an explicit ask. The user pushes their own work.
-- Don't commit changes to `deps/lv_binding_js` or `deps/txiki` from the parent repo without checking — the submodule pointers are managed deliberately.
-- Building requires the existing `build/` directory to be configured already; don't `rm -rf build` to "fix" CMake — investigate first.
-
-## Testing
-
-Load any of the built artifacts under `build/bin/` in a host (Carla, Reaper, Bitwig, jalv for LV2). The plugin currently generates a sine/square test tone — there's no input-processing path. Use the in-plugin sliders or host automation to verify both directions of parameter sync.
-
-## Agent workflows
-
-### Headless rendering via `retroplug-cli`
-
-`build/bin/retroplug-cli` runs the SameBoy DSP path at full speed (no DPF
-wrapper, no UI thread, no real-time scheduling). Drives input from a JSON
-script and optionally writes a 16-bit PCM stereo WAV. Useful for quick
-behavioral checks and high-speed LSDJ track renders.
-
-```bash
-./build/bin/retroplug-cli --script examples/scripts/lsdj_smoke.json
-./build/bin/retroplug-cli --script s.json --rom path.gb --out out.wav --duration 10000
-```
-
-The script schema (`cli/Script.hpp`) accepts two event forms:
-
-- Explicit: `{"at_ms": 100, "button": "A", "down": true}`
-- Shorthand: `{"at_ms": 100, "tap": "A", "hold_ms": 50}` — expands to a
-  down/up pair.
-
-Button names are case-insensitive: `Right Left Up Down A B Select Start`.
-
-Build target: `make retroplug-cli` (gated by `-DBUILD_CLI=ON`, default ON).
-
-### UI inspection via screenshot env var
-
-The standalone (`build/bin/retroplug`, JACK target) periodically dumps the
-LVGL screen to PNG when `RETROPLUG_SCREENSHOT_PATH` is set. Cadence is
-controlled by `RETROPLUG_SCREENSHOT_INTERVAL_MS` (default 1000). Cost is
-zero when the env var is unset.
-
-For agent (or otherwise headless) use, `tools/run-standalone.sh` wraps the
-whole flow: launches Xvfb on a free display, starts a dummy-backend `jackd`,
-runs the standalone with the screenshot hook armed, and tears everything
-down on exit. One-time setup:
-
-```bash
-sudo apt-get install xvfb jackd2 xdotool
-```
-
-Then:
-
-```bash
-tools/run-standalone.sh                      # /tmp/retroplug.png after 3s
-tools/run-standalone.sh /tmp/x.png 5         # custom path + 5s run
-tools/run-standalone.sh /tmp/x.png 5 250     # 250ms screenshot cadence
-```
-
-To drive the UI mid-run, share the DISPLAY env and use
-`tools/standalone-key.sh`:
-
-```bash
-# In one shell:
-DISPLAY=:99 tools/run-standalone.sh /tmp/menu.png 4 500 &
-# In another (or after a small sleep in the same script):
-DISPLAY=:99 tools/standalone-key.sh Escape Down Down Return
-```
-
-`Escape` opens the menu; arrow keys navigate; `Return` activates. The
-screenshot is captured continuously, so any state will land in the PNG.
-
-For non-headless local dev you can ignore the wrapper and run
-`./build/bin/retroplug` directly under your normal X server / JACK setup.
+Trust but verify: an agent's claim that "tests pass" should be backed by an
+actual exit-zero from one of these commands.

@@ -206,6 +206,16 @@ add_custom_target(screenshot
     COMMENT "Capturing standalone screenshot via Xvfb + dummy jackd"
 )
 
+# `make validate` -> run pluginval (VST3) + clap-validator (CLAP) against the
+# built artifacts. Useful for CI / agent-driven regression checks.
+add_custom_target(validate
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/validate-plugins.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS retroplug-clap retroplug-vst3
+    USES_TERMINAL
+    COMMENT "Running plugin-format validators (clap-validator + pluginval)"
+)
+
 # `make cli-smoke` -> render the example LSDJ script to ./out.wav.
 if(BUILD_CLI)
     add_custom_target(cli-smoke
