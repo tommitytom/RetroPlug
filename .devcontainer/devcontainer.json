@@ -14,8 +14,12 @@
     }
   },
 
+  // Persist Claude Code state in a Docker named volume that's independent of
+  // the host's ~/.claude config. Survives container rebuilds, isolated from
+  // anything the user runs on the host. Symlinks into the volume are wired up
+  // by post-create.sh on first boot.
   "mounts": [
-    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind,consistency=cached"
+    "source=retroplug2-claude-state,target=/var/claude-state,type=volume"
   ],
 
   "runArgs": [

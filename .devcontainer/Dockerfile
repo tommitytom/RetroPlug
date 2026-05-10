@@ -9,6 +9,10 @@ RUN if [ -n "$CONTAINER_APT_PROXY" ]; then \
 	echo "Acquire::https::Proxy \"DIRECT\";" >> /etc/apt/apt.conf.d/01proxy; \
 fi
 
+# Pre-create the Claude state volume mount point with open permissions so the
+# named volume initialises with a writable directory on first boot.
+RUN mkdir -p /var/claude-state && chmod 777 /var/claude-state
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- C/C++ build toolchain ---------------------------------------------
 	cmake \

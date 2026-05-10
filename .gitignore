@@ -15,6 +15,7 @@ ui/bundle.js
 *.exe
 _dpf_empty.c
 lv2_ttl_generator
+.claude/settings.local.json
 
 # core dumps
 core
