@@ -3,8 +3,11 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "project/Project.hpp"
+#include "project/ProjectConfig.hpp"
+#include "project/ProjectSerialization.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -121,6 +124,55 @@ TEST_CASE("Project::adoptSystem returns 0 for null input", "[Project]") {
     Project proj;
     REQUIRE(proj.adoptSystem(nullptr) == 0);
     REQUIRE(proj.systems().empty());
+}
+
+TEST_CASE("ProjectConfig round-trips an empty project through JSON", "[ProjectSerialization]") {
+    ProjectConfig cfg;
+    const std::string json = projectConfigToJson(cfg);
+    REQUIRE(!json.empty());
+
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->schemaVersion == "1.0");
+    REQUIRE(parsed->systems.empty());
+}
+
+TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", "[ProjectSerialization]") {
+    SameBoyConfig sb;
+    sb.model    = GameboyModel::DmgB;
+    sb.fastBoot = false;
+    sb.embedRom = true;
+    sb.romPath  = "/path/to/lsdj.gb";
+    sb.romBytes = Base64Bytes(std::vector<std::uint8_t>{
+        0x00, 0xFF, 0x10, 0x20, 0x42, 0x99, 0xAB, 0xCD,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88});
+    sb.savestate = Base64Bytes(std::vector<std::uint8_t>{0x01, 0x02, 0x03});
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJson(cfg);
+    INFO(json);
+
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->systems.size() == 1);
+
+    const auto* roundtripped = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(roundtripped != nullptr);
+    CHECK(roundtripped->model    == GameboyModel::DmgB);
+    CHECK(roundtripped->fastBoot == false);
+    CHECK(roundtripped->embedRom == true);
+    CHECK(roundtripped->romPath  == "/path/to/lsdj.gb");
+    CHECK(roundtripped->romBytes == sb.romBytes);
+    CHECK(roundtripped->savestate == sb.savestate);
+}
+
+TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectSerialization]") {
+    REQUIRE_FALSE(projectConfigFromJson("{ this is not json").has_value());
+    REQUIRE_FALSE(projectConfigFromJson("").has_value());
 }
 
 TEST_CASE("Project::reserve does not create systems", "[Project]") {

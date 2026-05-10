@@ -20,10 +20,12 @@ target_include_directories(retroplug-tests PRIVATE
 
 target_link_libraries(retroplug-tests PRIVATE
     Catch2::Catch2WithMain
+    rpcpp
 )
 
-# Project header transitively pulls in SystemConfig.hpp which uses std::variant —
-# nothing else is required.
+# rpcpp is INTERFACE-linked here for its transitive reflectcpp + yyjson — used
+# by ProjectSerialization (rfl::json::read/write) and the TaggedUnion in
+# SystemConfig.hpp.
 
 include(Catch)
 catch_discover_tests(retroplug-tests)

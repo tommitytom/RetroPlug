@@ -5,6 +5,8 @@
 #include <fstream>
 #include <vector>
 
+#include "rfl/Variant.hpp"
+
 #include "system/sameboy/SameBoySystem.hpp"
 
 namespace {
@@ -36,10 +38,15 @@ SystemId Project::addSystem(const SystemConfig& config) {
     // Dispatch on the variant alternative. Each branch constructs the matching
     // runtime SystemBase subclass and pushes both into `systems_` and the
     // canonical `config_.systems`.
-    if (auto* sb = std::get_if<SameBoyConfig>(&config)) {
-        std::vector<std::uint8_t> rom = slurpFile(sb->romPath);
+    if (const auto* sb = rfl::get_if<SameBoyConfig>(&config.variant())) {
+        // Prefer embedded ROM bytes (round-tripped through DPF state) over
+        // re-reading from disk. Only fall back to slurpFile when bytes are
+        // absent — covers legacy/dev paths and the embedRom=false opt-out.
+        std::vector<std::uint8_t> rom = sb->romBytes.bytes();
+        if (rom.empty())
+            rom = slurpFile(sb->romPath);
         if (rom.empty()) {
-            std::fprintf(stderr, "[Project] empty ROM for SameBoy id=%u path='%s'\n",
+            std::fprintf(stderr, "[Project] no ROM bytes/path for SameBoy id=%u path='%s'\n",
                          id, sb->romPath.c_str());
             return 0;
         }

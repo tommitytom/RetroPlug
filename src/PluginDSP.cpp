@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "project/ProjectSerialization.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "transport/CommandQueue.hpp"
@@ -55,7 +56,7 @@ public:
     std::atomic<double> sampleRateAtomic{44100.0};
 
     LVGLPluginDSP()
-        : Plugin(kPluginParameterCount, 0, 0)
+        : Plugin(kPluginParameterCount, 0, /*states=*/1)
     {
         fSampleRate = getSampleRate();
         sampleRateAtomic.store(fSampleRate, std::memory_order_release);
@@ -104,6 +105,62 @@ protected:
         parameter.ranges.max  = spec.max;
         parameter.ranges.def  = spec.def;
         parameter.hints       = spec.hints;
+    }
+
+    void initState(uint32_t index, State& state) override
+    {
+        if (index != 0) return;
+        state.hints        = kStateIsHostReadable | kStateIsHostWritable;
+        state.key          = "project";
+        state.label        = "Project";
+        state.description  = "Serialized RetroPlug project (JSON).";
+        state.defaultValue = "";
+    }
+
+    String getState(const char* key) const override
+    {
+        if (std::strcmp(key, "project") != 0) return String();
+        try {
+            const std::string json = projectConfigToJson(project.snapshotConfig());
+            return String(json.c_str());
+        } catch (const std::exception& e) {
+            d_stderr("[PluginDSP] getState serialization failed: %s", e.what());
+            return String();
+        }
+    }
+
+    void setState(const char* key, const char* value) override
+    {
+        if (std::strcmp(key, "project") != 0) return;
+        if (value == nullptr || value[0] == '\0') return;
+
+        std::optional<ProjectConfig> parsed;
+        try {
+            parsed = projectConfigFromJson(std::string_view(value));
+        } catch (const std::exception& e) {
+            d_stderr("[PluginDSP] setState parse exception: %s", e.what());
+            return;
+        }
+        if (!parsed) {
+            d_stderr("[PluginDSP] setState: failed to parse project JSON");
+            return;
+        }
+
+        // Tear down current systems off the audio thread (setState runs DSP-side
+        // but BEFORE activate(), so no realtime constraint binds here).
+        project.onDeactivate();
+        project.systems().clear();
+        project.config() = ProjectConfig{};
+
+        for (const auto& sysConfig : parsed->systems) {
+            if (project.addSystem(sysConfig) == 0) {
+                d_stderr("[PluginDSP] setState: addSystem failed for one entry");
+            }
+        }
+
+        // Notify the UI (if attached) so it drops its cached project view.
+        if (!events.tryPush(Event::makeConfigChanged()))
+            d_stderr("[PluginDSP] setState: event queue full; dropping ConfigChanged");
     }
 
     // ----------------------------------------------------------------------------------------------------------------

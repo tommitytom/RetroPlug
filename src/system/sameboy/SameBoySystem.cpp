@@ -127,7 +127,8 @@ void SameBoySystem::onActivate(double sampleRate) {
     GB_load_rom_from_buffer(gb_, rom_.data(), rom_.size());
 
     if (!config_.savestate.empty()) {
-        if (GB_load_state_from_buffer(gb_, config_.savestate.data(), config_.savestate.size()) != 0) {
+        const auto& save = config_.savestate.bytes();
+        if (GB_load_state_from_buffer(gb_, save.data(), save.size()) != 0) {
             std::fprintf(stderr, "[SameBoySystem] failed to load savestate\n");
         }
     }
@@ -243,10 +244,18 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
 
 SystemConfig SameBoySystem::snapshotConfig() const {
     SameBoyConfig out = config_;
+    if (out.embedRom) {
+        out.romBytes = Base64Bytes(rom_);
+    } else {
+        out.romBytes = Base64Bytes{};
+    }
     if (gb_) {
         const std::size_t saveSize = GB_get_save_state_size((GB_gameboy_t*)gb_);
-        out.savestate.resize(saveSize);
-        GB_save_state_to_buffer((GB_gameboy_t*)gb_, out.savestate.data());
+        std::vector<std::uint8_t> save(saveSize);
+        GB_save_state_to_buffer((GB_gameboy_t*)gb_, save.data());
+        out.savestate = Base64Bytes(std::move(save));
+    } else {
+        out.savestate = Base64Bytes{};
     }
     return out;
 }

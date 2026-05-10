@@ -12,10 +12,10 @@ class SystemBase;
 // events at the top of run() (or wherever it makes sense in a non-allocating
 // realtime context) and the UI drains them in uiIdle.
 //
-// The single inhabitant in Step 3 is `SystemReleased` — when the DSP swaps a
-// running system out, ownership of the old `SystemBase*` is shipped back here
-// so the UI can `delete` it off the audio thread. Future steps add
-// `SystemReady`, `SystemErrored`, `ConfigChanged`, etc.
+// `SystemReleased` ships ownership of an unwanted `SystemBase*` back to the
+// UI for off-thread `delete`. `ConfigChanged` is a payload-less "the project
+// tree has been swapped out" signal — the UI drops its cache and re-fetches.
+// Emitted by setState (DPF state restore).
 
 struct SystemReleasedEvent {
     SystemBase* system; // ownership; UI deletes
@@ -25,6 +25,7 @@ struct Event {
     enum class Kind : std::uint8_t {
         None            = 0,
         SystemReleased  = 1,
+        ConfigChanged   = 2,
     };
 
     Kind kind = Kind::None;
@@ -39,6 +40,12 @@ struct Event {
         Event e;
         e.kind = Kind::SystemReleased;
         e.payload.systemReleased = SystemReleasedEvent{sys};
+        return e;
+    }
+
+    static Event makeConfigChanged() {
+        Event e;
+        e.kind = Kind::ConfigChanged;
         return e;
     }
 };

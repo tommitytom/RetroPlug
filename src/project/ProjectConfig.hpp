@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "system/SystemConfig.hpp"
@@ -15,6 +16,9 @@ struct ProjectSettings {
 };
 
 struct ProjectConfig {
+    // Locked spelling — bump on breaking schema changes. Treat unknown
+    // variant alternatives as forward-compatible no-ops.
+    std::string               schemaVersion = "1.0";
     ProjectSettings           settings;
     std::vector<SystemConfig> systems;
 };
