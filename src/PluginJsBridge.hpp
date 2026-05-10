@@ -54,14 +54,6 @@ public:
     using OpenRomBrowserFn = std::function<void()>;
     void setOpenRomBrowserCallback(OpenRomBrowserFn fn) { openRomBrowser_ = std::move(fn); }
 
-    // PluginUI sets this to a callback that flips its "UI captures keyboard"
-    // flag. When true, PluginUI::onKeyboard stops mapping keys to GameboyButton
-    // and returns false for everything except Esc, letting LVGL route arrows
-    // / Enter / etc. to the focused React widget. The React MenuOverlay
-    // raises this flag on mount and lowers it on unmount.
-    using SetUiCapturesKeyboardFn = std::function<void(bool)>;
-    void setUiCapturesKeyboardCallback(SetUiCapturesKeyboardFn fn) { uiCapturesKeyboard_ = std::move(fn); }
-
     // Synchronous: read the file, build a SameBoySystem (calling onActivate
     // at the current sample rate), push a LoadRom command. Returns true on
     // success. Emits a "rom-loaded" or "rom-error" JS event for the React UI.
@@ -73,14 +65,13 @@ private:
     static JSValue js_getFrame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_openRomBrowser(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_loadRomFromPath(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
-    static JSValue js_setUiCapturesKeyboard(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_pressButton(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
-    LvglJsEngine&            engine;
-    Project*                 project_    = nullptr;
-    CommandQueue*            commands_   = nullptr;
-    EventQueue*              events_     = nullptr;
-    std::atomic<double>*     sampleRate_ = nullptr;
-    OpenRomBrowserFn         openRomBrowser_;
-    SetUiCapturesKeyboardFn  uiCapturesKeyboard_;
-    JSValue                  pluginNamespace = JS_UNDEFINED;
+    LvglJsEngine&        engine;
+    Project*             project_    = nullptr;
+    CommandQueue*        commands_   = nullptr;
+    EventQueue*          events_     = nullptr;
+    std::atomic<double>* sampleRate_ = nullptr;
+    OpenRomBrowserFn     openRomBrowser_;
+    JSValue              pluginNamespace = JS_UNDEFINED;
 };

@@ -59,6 +59,8 @@ add_library(lvgl-js-native STATIC
     ${LVGL_JS_NATIVE_DIR}/components/button/button_wrap.cpp
     ${LVGL_JS_NATIVE_DIR}/components/image/image.cpp
     ${LVGL_JS_NATIVE_DIR}/components/image/image_wrap.cpp
+    ${LVGL_JS_NATIVE_DIR}/components/canvas/canvas.cpp
+    ${LVGL_JS_NATIVE_DIR}/components/canvas/canvas_wrap.cpp
     ${LVGL_JS_NATIVE_DIR}/components/slider/slider.cpp
     ${LVGL_JS_NATIVE_DIR}/components/slider/slider_wrap.cpp
     ${LVGL_JS_NATIVE_DIR}/components/switch/switch.cpp

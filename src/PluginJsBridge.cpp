@@ -12,6 +12,7 @@ extern "C" {
 }
 
 #include "project/Project.hpp"
+#include "system/InputTypes.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -75,8 +76,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_openRomBrowser, "openRomBrowser", 0));
     JS_SetPropertyStr(ctx, ns, "loadRomFromPath",
                       JS_NewCFunction(ctx, js_loadRomFromPath, "loadRomFromPath", 1));
-    JS_SetPropertyStr(ctx, ns, "setUiCapturesKeyboard",
-                      JS_NewCFunction(ctx, js_setUiCapturesKeyboard, "setUiCapturesKeyboard", 1));
+    JS_SetPropertyStr(ctx, ns, "pressButton",
+                      JS_NewCFunction(ctx, js_pressButton, "pressButton", 2));
 
     pluginNamespace = JS_DupValue(ctx, ns);
 
@@ -194,13 +195,26 @@ JSValue PluginJsBridge::js_openRomBrowser(JSContext* ctx, JSValueConst, int, JSV
     return JS_TRUE;
 }
 
-JSValue PluginJsBridge::js_setUiCapturesKeyboard(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+JSValue PluginJsBridge::js_pressButton(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->uiCapturesKeyboard_) return JS_UNDEFINED;
-    bool captured = false;
-    if (argc >= 1) captured = JS_ToBool(ctx, argv[0]) != 0;
-    self->uiCapturesKeyboard_(captured);
-    return JS_UNDEFINED;
+    if (!self || !self->commands_ || !self->project_) return JS_FALSE;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "plugin.pressButton: expected (button, down)");
+
+    int32_t buttonInt = 0;
+    if (JS_ToInt32(ctx, &buttonInt, argv[0]) < 0) return JS_EXCEPTION;
+    bool down = JS_ToBool(ctx, argv[1]) != 0;
+
+    // Single-instance MVP: always route to slot 0. The system's id is
+    // unstable across ROM swaps (each swap allocates a fresh id), so we
+    // resolve at send time. Multi-instance focus tracking arrives at step 5.
+    const auto& systems = self->project_->systems();
+    if (systems.empty() || !systems.front()) return JS_FALSE;
+    const SystemId id = systems.front()->id();
+
+    Command cmd = Command::makeButtonPress(id,
+                                           static_cast<GameboyButton>(buttonInt),
+                                           down);
+    return self->commands_->tryPush(cmd) ? JS_TRUE : JS_FALSE;
 }
 
 JSValue PluginJsBridge::js_loadRomFromPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {

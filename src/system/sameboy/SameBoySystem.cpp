@@ -208,6 +208,8 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
 
     // Drive the emulator until enough samples are produced, applying any
     // queued button transitions whose offset is reached before that sample.
+    // Drive the emulator until enough samples are produced, applying any
+    // queued button transitions whose offset is reached before that sample.
     while (audioFrameCount_ < frames) {
         while (!pendingButtons_.empty() &&
                pendingButtons_.front().offset <= audioFrameCount_) {
