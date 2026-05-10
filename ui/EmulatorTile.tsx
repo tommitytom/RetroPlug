@@ -1,15 +1,18 @@
-import { Canvas, Text, View } from "lvgljs-ui";
-import { useEffect, useRef, useState } from "react";
+import { Canvas, View } from "lvgljs-ui";
+import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
+import { TILE_W, TILE_H } from "./layout";
+
 // Mirrors LV_IMAGE_ALIGN values from lvgl/src/widgets/image/lv_image.h.
-// Defined here so we don't pull in the whole LV constants table.
 const LV_IMAGE_ALIGN_CONTAIN = 14;
 
-// Plugin-specific JS surface set up by PluginJsBridge.
+// Cast around lvgljs-ui's Canvas type which doesn't expose a ref prop in
+// its public typings. Same trick PluginUI uses for Text.
+const CanvasAny = Canvas as any;
+
 interface PluginNamespace {
     getFrame?: (systemId: number) => { width: number; height: number; buffer: ArrayBuffer } | null;
-    removeSystem?: (systemId: number) => boolean;
     setFocus?: (systemId: number) => boolean;
 }
 const plugin: PluginNamespace =
@@ -21,20 +24,20 @@ interface EmulatorTileProps {
 }
 
 /**
- * Renders one emulator's framebuffer in a Canvas widget. Subscribes to the
- * "frame" tick emitted from PluginUI::uiIdle and pulls the latest frame via
- * plugin.getFrame on every tick. Aspect ratio is preserved (CONTAIN);
- * scaling is nearest-neighbor for crisp pixels.
+ * Renders one emulator's framebuffer in a fixed-size Canvas. Subscribes to
+ * the "frame" tick from PluginUI::uiIdle and pulls the latest frame on each
+ * tick. Aspect ratio is preserved (CONTAIN); scaling is nearest-neighbor.
  *
- * Multi-instance: when `focused` is false the tile dims to 0.5 alpha (legacy
- * parity). A small ✕ in the top-right calls plugin.removeSystem.
+ * Multi-instance: when `focused` is false the whole tile dims to ~50%
+ * opacity (legacy parity, alpha-only — no border, no glow). With N=1 the
+ * single tile is always focused so the dim never appears.
  *
- * Renders a "no signal" placeholder until the first frame arrives — this is
- * the state right after a fresh add, before a ROM has been activated.
+ * No "no signal" placeholder: a tile only exists once a system is
+ * registered; until the first frame arrives the canvas just renders black,
+ * which matches the surrounding window.
  */
 export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
     const canvasRef = useRef<any>(null);
-    const [hasFrame, setHasFrame] = useState(false);
 
     useEffect(() => {
         const onFrame = () => {
@@ -43,58 +46,45 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
             const canvas = canvasRef.current;
             if (!canvas) return;
             canvas.setBuffer(frame.buffer, frame.width, frame.height);
-            if (!hasFrame) setHasFrame(true);
         };
         on("frame", onFrame);
         return () => off("frame", onFrame);
-    }, [systemId, hasFrame]);
+    }, [systemId]);
 
     return (
         <View
             style={{
-                width: "100%",
-                height: "100%",
-                "background-opacity": 0,
-                "border-color": focused ? "#4fc3f7" : "#1a1a2e",
-                "border-width": 2,
-                "border-opacity": 255,
+                width:  TILE_W,
+                height: TILE_H,
+                "background-color": "#000000",
+                "background-opacity": 255,
+                "border-width": 0,
+                "border-opacity": 0,
+                "border-radius": 0,
+                "padding-left":  0,
+                "padding-right": 0,
+                "padding-top":   0,
+                "padding-bottom":0,
                 opacity: focused ? 255 : 128,
+                overflow: "hidden",
             }}
             onClick={() => plugin.setFocus?.(systemId)}
         >
-            <Canvas
-                ref={canvasRef as any}
+            <CanvasAny
+                ref={canvasRef}
                 style={{
-                    width: "100%",
-                    height: "100%",
+                    width:  TILE_W,
+                    height: TILE_H,
+                    "border-width": 0,
+                    "border-radius": 0,
+                    "padding-left":  0,
+                    "padding-right": 0,
+                    "padding-top":   0,
+                    "padding-bottom":0,
                 }}
                 nearestNeighbor={true}
                 innerAlign={LV_IMAGE_ALIGN_CONTAIN}
             />
-            {!hasFrame && (
-                <Text
-                    style={{
-                        "text-color": "#666",
-                        "font-size": 16,
-                    }}
-                    align={{ type: 0x09 /* LV_ALIGN_CENTER */, pos: [0, 0] }}
-                >
-                    No ROM loaded - press Esc, Load ROM
-                </Text>
-            )}
-            <Text
-                style={{
-                    "text-color": "#ffffff",
-                    "background-color": "#000000",
-                    "background-opacity": 180,
-                    "font-size": 14,
-                    padding: 4,
-                }}
-                align={{ type: 0x03 /* LV_ALIGN_TOP_RIGHT */, pos: [-4, 4] }}
-                onClick={() => plugin.removeSystem?.(systemId)}
-            >
-                X
-            </Text>
         </View>
     );
 }

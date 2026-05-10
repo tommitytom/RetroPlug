@@ -56,6 +56,14 @@ class LVGLPluginUI : public UI
     std::unique_ptr<PluginJsBridge> bridge;
     SharedDSPData* shared = nullptr;
 
+    // Track the last setSize request so we can detect a tiled-WM clamp.
+    // Once `wmControlled_` flips true (compositor returned a different
+    // size than we asked for) we leave it true — the WM owns geometry
+    // for the rest of the session.
+    uint requestedW_     = 0;
+    uint requestedH_     = 0;
+    bool wmControlled_   = false;
+
     // Screenshot hook (env-var triggered). When RETROPLUG_SCREENSHOT_PATH is
     // set, periodically dump the current LVGL screen as PNG. Cadence is
     // RETROPLUG_SCREENSHOT_INTERVAL_MS (default 1000). All work happens on
@@ -128,10 +136,29 @@ class LVGLPluginUI : public UI
     }
 
 public:
+    bool requestWindowSize(uint w, uint h)
+    {
+        if (w == 0 || h == 0) return wmControlled_;
+        requestedW_ = w;
+        requestedH_ = h;
+        if (wmControlled_) return true; // don't fight the compositor
+        setSize(w, h);
+        return wmControlled_;
+    }
+
+    bool isWindowSizeControlled() const { return wmControlled_; }
+
     LVGLPluginUI()
         : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT),
           fResizeHandle(this)
     {
+        // Seed the requested-size baseline. The WM may already have decided
+        // a different size by the time onResize fires (Hyprland tiles us
+        // before the UI initializes); without this, the detection branch
+        // would skip because the guard `requestedW_ != 0` was false.
+        requestedW_ = DISTRHO_UI_DEFAULT_WIDTH;
+        requestedH_ = DISTRHO_UI_DEFAULT_HEIGHT;
+
         const double scaleFactor = getScaleFactor();
 
         if (d_isNotEqual(scaleFactor, 1.0))
@@ -165,6 +192,26 @@ public:
 
         if (jsEngine.init())
         {
+            // Force the LVGL screen background to black. Without this the
+            // default-light theme leaks a light grey/white through any gap
+            // not covered by the React tree (visible especially on tiled
+            // WMs that pad the window beyond our requested size).
+            if (lv_obj_t* screen = lv_screen_active()) {
+                lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
+                lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+            }
+
+            // lv_binding_js's WindowInit() pins the React-tree root's
+            // width/height to the LVGL display's CURRENT pixel size. That
+            // captures the initial 480x432 and never updates when the
+            // compositor resizes us, so React's "100%" stays bound to
+            // 480x432 forever. Switch to lv_pct(100) so the root tracks
+            // the active screen — which IS resized by lv_display_set_resolution.
+            if (lv_obj_t* win = GetWindowInstance()) {
+                lv_obj_set_style_width(win, lv_pct(100), 0);
+                lv_obj_set_style_height(win, lv_pct(100), 0);
+            }
+
             jsEngine.setParamWriteCallback(
                 [this](uint32_t idx, float val) {
                     editParameter(idx, true);
@@ -189,6 +236,15 @@ public:
                 FileBrowserOptions opts;
                 opts.title = "Open Game Boy ROM";
                 openFileBrowser(opts);
+            });
+
+            // Window-size plumbing: JS asks the UI to resize; the UI relays
+            // to DPF. The query callback lets JS detect tiled-WM clamping.
+            bridge->setWindowSizeCallback([this](uint w, uint h) {
+                requestWindowSize(w, h);
+            });
+            bridge->setIsWindowSizeControlledQuery([this]() {
+                return isWindowSizeControlled();
             });
 
             const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
@@ -242,6 +298,23 @@ protected:
         if (!filename || !*filename) return; // user cancelled
         if (!bridge) return;
         bridge->onFileBrowserSelected(filename);
+    }
+
+    void onResize(const ResizeEvent& ev) override
+    {
+        UI::onResize(ev);
+        const uint w = ev.size.getWidth();
+        const uint h = ev.size.getHeight();
+        d_stderr("[PluginUI] onResize %ux%u (asked %ux%u, wmControlled=%d)",
+                 w, h, requestedW_, requestedH_, wmControlled_ ? 1 : 0);
+        if (!wmControlled_ && requestedW_ != 0 && requestedH_ != 0) {
+            if (w != requestedW_ || h != requestedH_) {
+                wmControlled_ = true;
+                d_stderr("[PluginUI] window-size compositor-controlled (asked %ux%u, got %ux%u); "
+                         "JS will center content from now on",
+                         requestedW_, requestedH_, w, h);
+            }
+        }
     }
 
     bool onKeyboard(const KeyboardEvent& ev) override

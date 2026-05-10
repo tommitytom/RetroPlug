@@ -151,7 +151,11 @@
 
    When this macro is defined, the companion DISTRHO_UI_DEFAULT_HEIGHT macro must be defined as well.
  */
-#define DISTRHO_UI_DEFAULT_WIDTH 750
+// Game Boy native (160x144) at 3x integer zoom. The shell expands to
+// N_systems * 480 wide as instances are added. Tiled WMs (Hyprland) ignore
+// our resize requests; PluginUI detects that case and JS centers the
+// content inside whatever size the WM picked.
+#define DISTRHO_UI_DEFAULT_WIDTH 480
 
 /**
    Default UI height to use when creating initial and temporary windows.@n
@@ -162,7 +166,7 @@
 
    When this macro is defined, the companion DISTRHO_UI_DEFAULT_WIDTH macro must be defined as well.
  */
-#define DISTRHO_UI_DEFAULT_HEIGHT 650
+#define DISTRHO_UI_DEFAULT_HEIGHT 432
 
 /**
    Whether the %UI uses NanoVG for drawing instead of the default raw OpenGL calls.@n

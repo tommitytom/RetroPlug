@@ -1,6 +1,7 @@
-import { Text, View } from "lvgljs-ui";
+import { View } from "lvgljs-ui";
 
 import { EmulatorTile } from "./EmulatorTile";
+import { autoShape, GridShape, TILE_W, TILE_H } from "./layout";
 
 // Tile arrangement options. Mirrors C++ SystemLayout enum
 // (src/project/ProjectConfig.hpp).
@@ -24,101 +25,96 @@ interface SystemGridProps {
     layout?:    SystemLayout;
 }
 
-interface GridShape {
-    cols: number;
-    rows: number;
-}
-
-// Auto-layout heuristic. Matches the legacy "looks reasonable for N" rule:
-// 1=center, 2=row, 3-4=2x2, 5-9=3x3, 10-16=4x4. For N>16 fall back to a
-// square-ish grid.
-function autoShape(count: number): GridShape {
-    if (count <= 1) return { cols: 1, rows: 1 };
-    if (count === 2) return { cols: 2, rows: 1 };
-    if (count <= 4) return { cols: 2, rows: 2 };
-    if (count <= 9) return { cols: 3, rows: 3 };
-    if (count <= 16) return { cols: 4, rows: 4 };
-    const cols = Math.ceil(Math.sqrt(count));
-    return { cols, rows: Math.ceil(count / cols) };
-}
-
 function shapeFor(layout: SystemLayout, count: number): GridShape {
     switch (layout) {
         case SystemLayout.Row:    return { cols: count, rows: 1 };
         case SystemLayout.Column: return { cols: 1, rows: count };
         case SystemLayout.Grid:   return autoShape(count);
         case SystemLayout.Auto:
-        default:
-            return autoShape(count);
+        default:                  return autoShape(count);
     }
 }
 
+// Compute the pixel size of the content area for a given system count
+// and layout. Exported so PluginUI can pass it to plugin.setWindowSize.
+export function gridContentSize(systems: SystemEntry[], layout: SystemLayout = SystemLayout.Auto)
+    : { width: number; height: number; shape: GridShape } {
+    const shape = shapeFor(layout, Math.max(systems.length, 1));
+    return {
+        width:  shape.cols * TILE_W,
+        height: shape.rows * TILE_H,
+        shape,
+    };
+}
+
 /**
- * Multi-instance tile container. Arranges N <EmulatorTile/>s in a grid
- * driven by `layout`. Renders an "Esc → Load ROM" placeholder when empty.
+ * Multi-instance tile container. Renders the tiles edge-to-edge in a
+ * fixed-pixel-size box and centers that box inside whatever space the
+ * window provides. No padding, no border, no rounded corners — and no
+ * empty-state placeholder; when there are no systems, the React tree
+ * is just a black background and the menu (rendered above by
+ * PluginUI) covers the whole window.
  */
 export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: SystemGridProps) {
-    if (systems.length === 0) {
-        return (
-            <View
-                style={{
-                    width: "100%",
-                    height: "100%",
-                    "background-opacity": 0,
-                    "border-opacity": 0,
-                    display: "flex",
-                    "align-items": "center",
-                    "justify-content": "center",
-                }}
-            >
-                <Text style={{ "text-color": "#888", "font-size": 18 }}>
-                    No instances - press Esc, Load ROM
-                </Text>
-            </View>
-        );
-    }
+    if (systems.length === 0) return null;
 
-    const shape = shapeFor(layout, systems.length);
+    const { width, height, shape } = gridContentSize(systems, layout);
     const rows: SystemEntry[][] = [];
     for (let r = 0; r < shape.rows; r++) {
         rows.push(systems.slice(r * shape.cols, (r + 1) * shape.cols));
     }
 
+    // Centered by the parent's flex layout (PluginUI root). This component
+    // just lays out tiles in a fixed-pixel-size grid; positioning is the
+    // parent's job.
     return (
         <View
             style={{
-                width: "100%",
-                height: "100%",
-                "background-opacity": 0,
+                width:  width,
+                height: height,
+                "background-color": "#000000",
+                "background-opacity": 255,
+                "border-width": 0,
                 "border-opacity": 0,
+                "border-radius": 0,
+                "padding-left":  0,
+                "padding-right": 0,
+                "padding-top":   0,
+                "padding-bottom":0,
                 display: "flex",
                 "flex-direction": "column",
+                "row-spacing": 0,
+                "column-spacing": 0,
+                overflow: "hidden",
             }}
         >
             {rows.map((row, ri) => (
                 <View
                     key={`row-${ri}`}
                     style={{
-                        width: "100%",
-                        height: `${100 / shape.rows}%`,
+                        width:  shape.cols * TILE_W,
+                        height: TILE_H,
                         "background-opacity": 0,
+                        "border-width": 0,
                         "border-opacity": 0,
+                        "border-radius": 0,
+                        "padding-left":  0,
+                        "padding-right": 0,
+                        "padding-top":   0,
+                        "padding-bottom":0,
                         display: "flex",
                         "flex-direction": "row",
+                        "row-spacing": 0,
+                        "column-spacing": 0,
+                        overflow: "hidden",
                     }}
                 >
                     {row.map((sys) => (
-                        <View
+                        <EmulatorTile
                             key={`tile-${sys.id}`}
-                            style={{
-                                width: `${100 / shape.cols}%`,
-                                height: "100%",
-                                "background-opacity": 0,
-                                "border-opacity": 0,
-                            }}
-                        >
-                            <EmulatorTile systemId={sys.id} focused={sys.id === focusedId} />
-                        </View>
+                            systemId={sys.id}
+                            focused={sys.id === focusedId || systems.length === 1}
+                        />
                     ))}
                 </View>
             ))}

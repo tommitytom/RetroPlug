@@ -56,6 +56,14 @@ public:
     using OpenRomBrowserFn = std::function<void()>;
     void setOpenRomBrowserCallback(OpenRomBrowserFn fn) { openRomBrowser_ = std::move(fn); }
 
+    // Window-size plumbing. The UI binds these so JS can request a resize
+    // (or query whether the WM is overriding requests). Bridge stays
+    // agnostic of the DPF UI class; this is just a function pointer pair.
+    using SetWindowSizeFn         = std::function<void(unsigned w, unsigned h)>;
+    using IsWindowSizeControlledFn = std::function<bool()>;
+    void setWindowSizeCallback(SetWindowSizeFn fn) { setWindowSize_ = std::move(fn); }
+    void setIsWindowSizeControlledQuery(IsWindowSizeControlledFn fn) { isWindowSizeControlled_ = std::move(fn); }
+
     // Called from PluginUI::uiFileBrowserSelected. Routes to load- or
     // add- depending on the mode the JS side requested via openRomBrowser.
     void onFileBrowserSelected(const char* path);
@@ -89,16 +97,20 @@ private:
     static JSValue js_setFocus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_getFocus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_pressButton(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_setWindowSize(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_isWindowSizeControlled(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
     enum class PendingRomMode { Replace, Add };
 
-    LvglJsEngine&          engine;
-    Project*               project_         = nullptr;
-    CommandQueue*          commands_        = nullptr;
-    EventQueue*            events_          = nullptr;
-    std::atomic<double>*   sampleRate_      = nullptr;
-    std::atomic<SystemId>* focusedSystemId_ = nullptr;
-    OpenRomBrowserFn       openRomBrowser_;
-    PendingRomMode         pendingRomMode_  = PendingRomMode::Replace;
-    JSValue                pluginNamespace = JS_UNDEFINED;
+    LvglJsEngine&            engine;
+    Project*                 project_                = nullptr;
+    CommandQueue*            commands_               = nullptr;
+    EventQueue*              events_                 = nullptr;
+    std::atomic<double>*     sampleRate_             = nullptr;
+    std::atomic<SystemId>*   focusedSystemId_        = nullptr;
+    OpenRomBrowserFn         openRomBrowser_;
+    SetWindowSizeFn          setWindowSize_;
+    IsWindowSizeControlledFn isWindowSizeControlled_;
+    PendingRomMode           pendingRomMode_         = PendingRomMode::Replace;
+    JSValue                  pluginNamespace         = JS_UNDEFINED;
 };

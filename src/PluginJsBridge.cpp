@@ -101,6 +101,10 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_getFocus, "getFocus", 0));
     JS_SetPropertyStr(ctx, ns, "pressButton",
                       JS_NewCFunction(ctx, js_pressButton, "pressButton", 3));
+    JS_SetPropertyStr(ctx, ns, "setWindowSize",
+                      JS_NewCFunction(ctx, js_setWindowSize, "setWindowSize", 2));
+    JS_SetPropertyStr(ctx, ns, "isWindowSizeControlled",
+                      JS_NewCFunction(ctx, js_isWindowSizeControlled, "isWindowSizeControlled", 0));
 
     pluginNamespace = JS_DupValue(ctx, ns);
 
@@ -395,4 +399,24 @@ JSValue PluginJsBridge::js_getFocus(JSContext* ctx, JSValueConst, int, JSValueCo
     PluginJsBridge* self = bridgeFromContext();
     if (!self || !self->focusedSystemId_) return JS_NewUint32(ctx, 0);
     return JS_NewUint32(ctx, self->focusedSystemId_->load(std::memory_order_acquire));
+}
+
+JSValue PluginJsBridge::js_setWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "plugin.setWindowSize: expected (w, h)");
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->setWindowSize_) return JS_FALSE;
+
+    int32_t w = 0, h = 0;
+    if (JS_ToInt32(ctx, &w, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &h, argv[1]) < 0) return JS_EXCEPTION;
+    if (w <= 0 || h <= 0) return JS_FALSE;
+
+    self->setWindowSize_(static_cast<unsigned>(w), static_cast<unsigned>(h));
+    return JS_TRUE;
+}
+
+JSValue PluginJsBridge::js_isWindowSizeControlled(JSContext*, JSValueConst, int, JSValueConst*) {
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->isWindowSizeControlled_) return JS_FALSE;
+    return self->isWindowSizeControlled_() ? JS_TRUE : JS_FALSE;
 }

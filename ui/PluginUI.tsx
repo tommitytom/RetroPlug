@@ -2,7 +2,7 @@ import { View, Text, Slider, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParameter, createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
-import { SystemGrid, SystemEntry, SystemLayout } from "./SystemGrid";
+import { SystemGrid, SystemEntry, SystemLayout, gridContentSize } from "./SystemGrid";
 import {
     GameboyButton,
     KEY_ESCAPE,
@@ -23,6 +23,8 @@ interface PluginNamespace {
     setFocus?: (systemId: number) => boolean;
     getFocus?: () => number;
     removeSystem?: (systemId: number) => boolean;
+    setWindowSize?: (w: number, h: number) => boolean;
+    isWindowSizeControlled?: () => boolean;
 }
 const plugin: PluginNamespace =
     (globalThis as any)[Symbol.for("plugin")] ?? {};
@@ -79,12 +81,19 @@ function MenuOverlay({ gain, onGainChange, onSelect }: MenuOverlayProps) {
                 width: "100%",
                 height: "100%",
                 "background-color": "#000000",
-                "background-opacity": 180,
+                "background-opacity": 255,
+                "border-width": 0,
                 "border-opacity": 0,
+                "border-radius": 0,
+                "padding-left":  0,
+                "padding-right": 0,
+                "padding-top":   0,
+                "padding-bottom":0,
                 display: "flex",
                 "flex-direction": "column",
                 "align-items": "center",
                 "justify-content": "center",
+                overflow: "hidden",
             }}
         >
             <Text
@@ -129,7 +138,10 @@ function MenuOverlay({ gain, onGainChange, onSelect }: MenuOverlayProps) {
 
 function PluginUI() {
     const [gain, setGain] = useParameter("gain", 0);
-    const [menuOpen, setMenuOpen] = useState(false);
+    // Menu starts open — empty project shows the start menu. The empty-
+    // project-implies-open invariant is enforced in the [systems.length]
+    // effect below, so we just need a sensible initial value here.
+    const [menuOpen, setMenuOpen] = useState(true);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
 
@@ -143,12 +155,11 @@ function PluginUI() {
     useEffect(() => { focusedIdRef.current = focusedId; }, [focusedId]);
 
     // Pull the current system list and focus from C++. Called on mount and
-    // every "config-changed" tick from PluginUI::drainEvents.
+    // every "config-changed" tick (after the DSP commits a project mutation).
     const refreshSystems = useCallback(() => {
         const list = plugin.listSystems?.() ?? [];
         setSystems(list);
         const f = plugin.getFocus?.() ?? 0;
-        // If C++ has a valid focus, use it. Otherwise auto-focus first system.
         if (f !== 0 && list.some((s) => s.id === f)) {
             setFocusedId(f);
         } else if (list.length > 0) {
@@ -162,21 +173,38 @@ function PluginUI() {
     useEffect(() => {
         refreshSystems();
         const handler = () => refreshSystems();
-        // Drives off ConfigChanged emitted by the DSP after a project mutation
-        // is actually committed (see PluginDSP.cpp::run). rom-loaded fires
-        // before the DSP has drained, so listSystems would race; not used here.
         on("config-changed", handler);
-        return () => {
-            off("config-changed", handler);
-        };
+        return () => off("config-changed", handler);
     }, [refreshSystems]);
+
+    // Menu visibility invariant: empty project => menu always open. Adding
+    // the first system auto-closes the menu so the user sees the new tile.
+    useEffect(() => {
+        if (systems.length === 0) {
+            setMenuOpen(true);
+        } else if (menuOpenRef.current) {
+            setMenuOpen(false);
+        }
+    }, [systems.length]);
+
+    // Window resizing: ask the host/WM for a window that fits the current
+    // grid at native zoom. On a tiled WM (Hyprland) the request is silently
+    // ignored — the C++ side detects that via onResize and we stop asking.
+    useEffect(() => {
+        if (systems.length === 0) return;
+        if (plugin.isWindowSizeControlled?.()) return;
+        const { width, height } = gridContentSize(systems, SystemLayout.Auto);
+        plugin.setWindowSize?.(width, height);
+    }, [systems.length]);
 
     // Single source of truth for keyboard routing. C++ forwards every key
     // event to JS via the "key" channel; this handler decides whether it
     // becomes a menu toggle, a Tab cycle, a Game Boy button, or is ignored.
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
-            if (press) setMenuOpen(o => !o);
+            // Esc with empty project does nothing — the menu must stay open.
+            if (press && systemsRef.current.length > 0)
+                setMenuOpen(o => !o);
             return;
         }
         if (menuOpenRef.current) {
@@ -196,7 +224,6 @@ function PluginUI() {
             return;
         }
         const button = mapKeyToGameboyButton(key);
-        // pressButton omits systemId → C++ uses the focused id.
         if (button !== null) plugin.pressButton?.(button, press);
     }, []));
 
@@ -217,29 +244,49 @@ function PluginUI() {
             default:
                 break;
         }
-        setMenuOpen(false);
+        // Don't force-close here; the empty-project effect will keep the
+        // menu open if Remove emptied the project.
+        if (systemsRef.current.length > 0) setMenuOpen(false);
     }, []);
 
     const onGainChange = useCallback((e: any) => setGain(e.value), [setGain]);
 
+    // Root is a flex-centered black canvas. The menu and the grid are
+    // mutually exclusive children — when menu is open, only the menu
+    // renders (it covers the whole window opaquely anyway, so painting
+    // the grid behind it would just waste cycles). When menu is closed,
+    // only the grid renders, centered in whatever size the WM gave us.
     return (
         <View
             style={{
                 width: "100%",
                 height: "100%",
-                "background-color": "#1a1a2e",
+                "background-color": "#000000",
+                "background-opacity": 255,
+                "border-width": 0,
                 "border-opacity": 0,
-                "arc-rounded": false,
+                "border-radius": 0,
+                "padding-left":  0,
+                "padding-right": 0,
+                "padding-top":   0,
+                "padding-bottom":0,
+                display: "flex",
+                "flex-direction": "row",
+                "align-items": "center",
+                "justify-content": "center",
+                "row-spacing": 0,
+                "column-spacing": 0,
+                overflow: "hidden",
             }}
         >
-            <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />
-
-            {menuOpen && (
+            {menuOpen ? (
                 <MenuOverlay
                     gain={gain}
                     onGainChange={onGainChange}
                     onSelect={onMenuSelect}
                 />
+            ) : (
+                <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />
             )}
         </View>
     );
