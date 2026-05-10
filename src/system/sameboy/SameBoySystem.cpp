@@ -1,6 +1,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string_view>
@@ -72,10 +73,21 @@ void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t /*type*/) {
     GB_load_boot_rom_from_buffer(gb, (const unsigned char*)boot.data(), boot.size());
 }
 
-// SameBoy requires serial-bit start/end callbacks even when we don't use the
-// link cable; provide trivial no-ops (matches old behavior).
-void serialStart(GB_gameboy_t*, bool) {}
-bool serialEnd(GB_gameboy_t*) { return true; }
+// Serial-link bit ferrying. When this system has no peers the callbacks are
+// effectively no-ops (return true => idle high). With peers, every received
+// bit is broadcast to all peers and the next-bit-to-read comes from the first
+// peer. See LinkGroup.hpp for the lockstep stepping policy that pairs with
+// these callbacks.
+void serialStart(GB_gameboy_t* gb, bool bit_received) {
+    self(gb).serialBitReceived(bit_received);
+}
+bool serialEnd(GB_gameboy_t* gb) {
+    SameBoySystem& s = self(gb);
+    if (s.linkPeers_.empty()) return true;
+    const bool ret = s.serialBitFromPeer();
+    s.serialBroadcastBit();
+    return ret;
+}
 
 constexpr float s16ToF32(int16_t v) {
     return v < 0 ? float(v) / 32768.0f : float(v) / 32767.0f;
@@ -83,12 +95,23 @@ constexpr float s16ToF32(int16_t v) {
 
 } // namespace
 
+namespace {
+// dB → linear gain (kill below -90 dB so trim-to-mute is a hard zero).
+inline float dbToLin(float dB) {
+    return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
+}
+} // namespace
+
 SameBoySystem::SameBoySystem(SystemId id,
                              SameBoyConfig config,
                              std::vector<std::uint8_t> romBytes)
     : SystemBase(id),
       config_(std::move(config)),
-      rom_(std::move(romBytes)) {}
+      rom_(std::move(romBytes)) {
+    linkPeers_.reserve(8);
+    gainSmoother_.setTimeConstant(0.020f); // 20 ms — matches master gain
+    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+}
 
 SameBoySystem::~SameBoySystem() {
     onDeactivate();
@@ -104,6 +127,10 @@ void SameBoySystem::onActivate(double sampleRate) {
     sampleRate_ = sampleRate;
     buttonSpacingSamples_ = static_cast<std::uint32_t>(sampleRate * 0.010); // 10 ms spacing
     audioFrameCount_ = 0;
+
+    gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
+    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+    gainSmoother_.clearToTargetValue();
 
     gb_ = new GB_gameboy_t();
     GB_init(gb_, toSameBoyModel(config_.model));
@@ -149,8 +176,31 @@ void SameBoySystem::onDeactivate() {
 void SameBoySystem::onSampleRateChanged(double sampleRate) {
     sampleRate_ = sampleRate;
     buttonSpacingSamples_ = static_cast<std::uint32_t>(sampleRate * 0.010); // 10 ms
+    gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
     if (gb_) {
         GB_set_sample_rate(gb_, static_cast<unsigned>(sampleRate));
+    }
+}
+
+void SameBoySystem::setGainDb(float dB) {
+    config_.gainDb = dB;
+    gainSmoother_.setTargetValue(dbToLin(dB));
+}
+
+void SameBoySystem::serialBitReceived(bool bit) {
+    bitToSend_ = bit;
+}
+
+bool SameBoySystem::serialBitFromPeer() const {
+    if (linkPeers_.empty() || !linkPeers_.front()->gb_) return true;
+    return GB_serial_get_data_bit(linkPeers_.front()->gb_);
+}
+
+void SameBoySystem::serialBroadcastBit() const {
+    for (auto* peer : linkPeers_) {
+        if (peer && peer->gb_) {
+            GB_serial_set_data_bit(peer->gb_, bitToSend_);
+        }
     }
 }
 
@@ -194,7 +244,7 @@ void SameBoySystem::onVblank() {
     }
 }
 
-void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
     if (!activated_ || !gb_) return;
 
     const std::uint32_t frames = info.frames;
@@ -206,20 +256,29 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     }
 
     audioFrameCount_ = 0;
+}
 
-    // Drive the emulator until enough samples are produced, applying any
-    // queued button transitions whose offset is reached before that sample.
-    // Drive the emulator until enough samples are produced, applying any
-    // queued button transitions whose offset is reached before that sample.
-    while (audioFrameCount_ < frames) {
-        while (!pendingButtons_.empty() &&
-               pendingButtons_.front().offset <= audioFrameCount_) {
-            const auto& pb = pendingButtons_.front();
-            GB_set_key_state(gb_, static_cast<GB_key_t>(pb.button), pb.down);
-            pendingButtons_.pop_front();
-        }
-        GB_run(gb_);
+bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
+    if (!activated_ || !gb_) return false;
+    if (audioFrameCount_ >= framesNeeded) return false;
+
+    // Drain queued button transitions whose offset has been reached. Inside
+    // the inner loop so a press+release pair sent in the same UI tick lands
+    // at distinct sample offsets (joypad debouncer would miss zero-duration).
+    while (!pendingButtons_.empty() &&
+           pendingButtons_.front().offset <= audioFrameCount_) {
+        const auto& pb = pendingButtons_.front();
+        GB_set_key_state(gb_, static_cast<GB_key_t>(pb.button), pb.down);
+        pendingButtons_.pop_front();
     }
+    GB_run(gb_);
+    return audioFrameCount_ < framesNeeded;
+}
+
+void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) {
+    if (!activated_ || !gb_) return;
+
+    const std::uint32_t frames = info.frames;
 
     // Any button transitions that didn't land in this block stay queued; shift
     // their offsets back so the relative ordering (and timing) is preserved.
@@ -227,12 +286,13 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
         pb.offset = (pb.offset > frames) ? pb.offset - frames : 0;
     }
 
-    // Sum interleaved stereo into the planar L/R outputs (DPF planar buffers).
+    // Sum interleaved stereo into the planar L/R outputs with smoothed gain.
     float* outL = outs[0];
     float* outR = outs[1];
     for (std::uint32_t i = 0; i < frames; ++i) {
-        outL[i] += stereoAccum_[std::size_t(i) * 2 + 0];
-        outR[i] += stereoAccum_[std::size_t(i) * 2 + 1];
+        const float g = gainSmoother_.next();
+        outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
+        outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
     }
 
     audioFrameCount_ = 0;
@@ -240,6 +300,17 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     for (auto& role : roles_) {
         role->onProcessBlock(*this, info);
     }
+}
+
+void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+    // Linked systems are driven by LinkGroup::onProcess; bail so we don't
+    // race-step them ahead of their peers. The link group will call
+    // prepareForBlock / stepIfBelowTarget / finishBlock in lockstep.
+    if (!linkPeers_.empty()) return;
+
+    prepareForBlock(info);
+    while (stepIfBelowTarget(info.frames)) {}
+    finishBlock(info, outs);
 }
 
 SystemConfig SameBoySystem::snapshotConfig() const {

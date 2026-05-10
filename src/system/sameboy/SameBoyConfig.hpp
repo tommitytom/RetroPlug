@@ -29,6 +29,13 @@ struct SameBoyConfig {
     // file moves. When false, only `romPath` is persisted and the ROM is
     // re-read from disk on load.
     bool                      embedRom = true;
+    // Per-system trim, dB. Smoothed at audio rate inside SameBoySystem::mixInto.
+    float                     gainDb   = 0.0f;
+    // Serial-link group. 0 = standalone (default). Same nonzero id on multiple
+    // systems puts them in the same LinkGroup so their serial ports are
+    // ferried bit-for-bit and they step in instruction-level lockstep. See
+    // src/system/sameboy/LinkGroup.hpp.
+    std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
     Base64Bytes               romBytes;   // populated when embedRom (snapshotConfig)
     Base64Bytes               savestate;  // optional, populated when persisting

@@ -153,6 +153,7 @@ dpf_add_plugin(${NAME}
   FILES_DSP
       src/PluginDSP.cpp
       src/project/Project.cpp
+      src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/SameBoySystem.cpp
   FILES_UI
       src/PluginUI.cpp
@@ -163,6 +164,7 @@ dpf_add_plugin(${NAME}
       # is a no-op duplicate; for LV2 the UI binary needs its own copy
       # (though at runtime the LV2-UI never actually constructs one because
       # shared DSP state is unreachable).
+      src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/SameBoySystem.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)

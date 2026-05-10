@@ -31,23 +31,49 @@ struct ButtonPressCommand {
 struct LoadRomCommand {
     // Ownership transferred to DSP — DSP must either install via
     // Project::swapSystem (which doesn't alloc/free) or, on failure, ship it
-    // back through the EventQueue for the UI thread to delete. In Step 3 the
-    // single inhabitant always replaces slot 0 (single-instance MVP);
-    // multi-instance routing comes in Step 5.
+    // back through the EventQueue for the UI thread to delete. Replaces
+    // slot 0 if the project is empty; otherwise replaces the focused
+    // system (or, if none focused, slot 0 fallback).
+    SystemBase* newSystem;
+};
+
+// Append a new system to the project. UI built it (full make_unique +
+// onActivate); DSP adopts the raw pointer with no allocation.
+struct AddSystemCommand {
+    SystemBase* newSystem;
+};
+
+// Remove the system identified by `id`. The displaced pointer is shipped
+// back through the EventQueue (`SystemReleased`) for off-thread delete.
+struct RemoveSystemCommand {
+    SystemId id;
+};
+
+// Replace one specific system by id (used by "Replace ROM" on a focused
+// tile). Same ownership rules as LoadRom; the displaced ptr returns via
+// the EventQueue.
+struct ReplaceSystemCommand {
+    SystemId    id;
     SystemBase* newSystem;
 };
 
 struct Command {
     enum class Kind : std::uint8_t {
-        None        = 0,
-        ButtonPress = 1,
-        LoadRom     = 2,
+        None          = 0,
+        ButtonPress   = 1,
+        LoadRom       = 2,
+        AddSystem     = 3,
+        RemoveSystem  = 4,
+        ReplaceSystem = 5,
     };
 
     Kind kind = Kind::None;
     union Payload {
-        ButtonPressCommand buttonPress;
-        LoadRomCommand     loadRom;
+        ButtonPressCommand   buttonPress;
+        LoadRomCommand       loadRom;
+        AddSystemCommand     addSystem;
+        RemoveSystemCommand  removeSystem;
+        ReplaceSystemCommand replaceSystem;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -64,6 +90,27 @@ struct Command {
         Command c;
         c.kind = Kind::LoadRom;
         c.payload.loadRom = LoadRomCommand{newSystem};
+        return c;
+    }
+
+    static Command makeAddSystem(SystemBase* newSystem) {
+        Command c;
+        c.kind = Kind::AddSystem;
+        c.payload.addSystem = AddSystemCommand{newSystem};
+        return c;
+    }
+
+    static Command makeRemoveSystem(SystemId id) {
+        Command c;
+        c.kind = Kind::RemoveSystem;
+        c.payload.removeSystem = RemoveSystemCommand{id};
+        return c;
+    }
+
+    static Command makeReplaceSystem(SystemId id, SystemBase* newSystem) {
+        Command c;
+        c.kind = Kind::ReplaceSystem;
+        c.payload.replaceSystem = ReplaceSystemCommand{id, newSystem};
         return c;
     }
 };

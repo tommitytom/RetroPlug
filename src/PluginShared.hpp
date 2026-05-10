@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include "project/Project.hpp"
+#include "system/SystemTypes.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 
@@ -25,6 +26,11 @@ struct SharedDSPData {
     // GB_set_sample_rate at the right rate. Atomic because UI may read
     // concurrently with DSP-side updates.
     std::atomic<double>* sampleRate = nullptr;
+    // Multi-instance focus: the system id that currently owns keyboard input.
+    // 0 = no focus / empty project. Written by the UI thread (Tab cycling,
+    // tile click) and read by the UI thread for chrome plus by the bridge
+    // when routing pressButton commands without an explicit systemId arg.
+    std::atomic<SystemId>* focusedSystemId = nullptr;
 };
 
 // Implemented in PluginDSP.cpp — returns the SharedDSPData from the plugin instance.

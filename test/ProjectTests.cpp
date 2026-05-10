@@ -175,6 +175,48 @@ TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectS
     REQUIRE_FALSE(projectConfigFromJson("").has_value());
 }
 
+TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, linkGroupId)",
+          "[ProjectSerialization][multi]") {
+    SameBoyConfig a;
+    a.romPath     = "/a.gb";
+    a.gainDb      = -3.5f;
+    a.linkGroupId = 1;
+
+    SameBoyConfig b;
+    b.romPath     = "/b.gb";
+    b.gainDb      =  2.0f;
+    b.linkGroupId = 1;
+
+    SameBoyConfig c;
+    c.romPath     = "/c.gb";
+    c.linkGroupId = 0; // standalone
+
+    ProjectConfig cfg;
+    cfg.settings.layout = SystemLayout::Grid;
+    cfg.systems.push_back(a);
+    cfg.systems.push_back(b);
+    cfg.systems.push_back(c);
+
+    const std::string json = projectConfigToJson(cfg);
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->settings.layout == SystemLayout::Grid);
+    REQUIRE(parsed->systems.size() == 3);
+
+    auto getSb = [](const SystemConfig& s) {
+        return rfl::get_if<SameBoyConfig>(&s.variant());
+    };
+    const auto* sa = getSb(parsed->systems[0]);
+    const auto* sb = getSb(parsed->systems[1]);
+    const auto* sc = getSb(parsed->systems[2]);
+    REQUIRE(sa); REQUIRE(sb); REQUIRE(sc);
+    CHECK(sa->gainDb      == -3.5f);
+    CHECK(sb->gainDb      ==  2.0f);
+    CHECK(sa->linkGroupId == 1);
+    CHECK(sb->linkGroupId == 1);
+    CHECK(sc->linkGroupId == 0);
+}
+
 TEST_CASE("Project::reserve does not create systems", "[Project]") {
     Project proj;
     proj.reserve(16);

@@ -6,6 +6,7 @@
 #include "project/ProjectConfig.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
+#include "system/sameboy/LinkGroup.hpp"
 
 // DSP-thread runtime container. Holds:
 //  - the polymorphic emulator instances
@@ -24,7 +25,19 @@ public:
     // rate.
     SystemId addSystem(const SystemConfig& config);
 
+    // Removes the system identified by `id`. Returns the displaced raw
+    // pointer (caller-owned, dispose off the audio thread) or nullptr if
+    // not found. The internal `config_.systems` mirror is also updated.
+    SystemBase* removeSystemAndRelease(SystemId id);
+
+    // Pre-Step-5 convenience that destroys the system in-place. Kept for
+    // the existing callers in tests and Project's own setState path; not
+    // used on the audio thread.
     void removeSystem(SystemId id);
+
+    // Wipe all systems (after onDeactivate). Used by setState before
+    // rebuilding from a saved project.
+    void clearSystems();
 
     // Realtime-safe swap. Caller passes a fully-built SystemBase* (already
     // onActivate'd on a non-realtime thread). The DSP slot identified by
@@ -83,6 +96,19 @@ public:
     void onDeactivate();
     void onSampleRateChanged(double sampleRate);
 
+    // Audio-thread per-block dispatcher. Calls per-system onProcess on
+    // unlinked systems and per-group onProcess on each LinkGroup. Replaces
+    // the bare loop that lived in PluginDSP::run.
+    void onProcess(const AudioBlockInfo& info, float* const* outs);
+
+    // Rebuild `linkGroups_` from current systems' linkGroupId. Updates each
+    // SameBoySystem's linkPeers_ cache. Single member groups are dissolved
+    // (linkPeers_ left empty so the standalone path runs). Call after any
+    // mutation that changes membership: addSystem, removeSystem, swapSystem,
+    // and after setState repopulates the project. Realtime-safe under the
+    // pre-reserved capacities of the relevant vectors.
+    void rebuildLinkGroups();
+
     const std::vector<std::unique_ptr<SystemBase>>& systems() const { return systems_; }
     std::vector<std::unique_ptr<SystemBase>>&       systems()       { return systems_; }
 
@@ -96,5 +122,6 @@ public:
 private:
     SystemId nextId_ = 1;
     std::vector<std::unique_ptr<SystemBase>> systems_;
-    ProjectConfig config_;
+    std::vector<LinkGroup>                   linkGroups_;
+    ProjectConfig                            config_;
 };

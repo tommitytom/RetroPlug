@@ -34,6 +34,7 @@ export enum GameboyButton {
 // up at 0xE05x — easy to confuse, double-check the header before adding more.
 // ASCII keys (Z, X, etc.) just use their character code directly.
 export const KEY_BACKSPACE = 0x00000008;
+export const KEY_TAB       = 0x00000009;
 export const KEY_ENTER     = 0x0000000D;
 export const KEY_ESCAPE    = 0x0000001B;
 export const KEY_LEFT      = 0xE035;

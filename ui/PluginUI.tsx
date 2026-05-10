@@ -1,23 +1,28 @@
 import { View, Text, Slider, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParameter, createGroup, setKeyboardGroup } from "lvgljs";
+import { useParameter, createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
-import { EmulatorTile } from "./EmulatorTile";
+import { SystemGrid, SystemEntry, SystemLayout } from "./SystemGrid";
 import {
     GameboyButton,
     KEY_ESCAPE,
+    KEY_TAB,
     mapKeyToGameboyButton,
     useKeyboard,
 } from "../runtime/lvgljs/input";
 
-const MENU_ITEMS = ["Load ROM", "Reset", "About", "Cancel"];
-// Single-instance MVP: EmulatorTile renders slot 0; pressButton routes to
-// slot 0 in C++. Multi-instance focus tracking arrives at step 5.
-const PRIMARY_SYSTEM_ID = 1;
+// "Load ROM" replaces the focused tile (or appends if no focus).
+// "Add instance" always appends a new tile.
+// "Remove instance" removes the focused tile.
+const MENU_ITEMS = ["Load ROM", "Add instance", "Remove instance", "Reset", "About", "Cancel"];
 
 interface PluginNamespace {
-    openRomBrowser?: () => void;
-    pressButton?: (button: GameboyButton, down: boolean) => boolean;
+    openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
+    pressButton?: (button: GameboyButton, down: boolean, systemId?: number) => boolean;
+    listSystems?: () => SystemEntry[];
+    setFocus?: (systemId: number) => boolean;
+    getFocus?: () => number;
+    removeSystem?: (systemId: number) => boolean;
 }
 const plugin: PluginNamespace =
     (globalThis as any)[Symbol.for("plugin")] ?? {};
@@ -125,13 +130,50 @@ function MenuOverlay({ gain, onGainChange, onSelect }: MenuOverlayProps) {
 function PluginUI() {
     const [gain, setGain] = useParameter("gain", 0);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [systems, setSystems] = useState<SystemEntry[]>([]);
+    const [focusedId, setFocusedId] = useState<number>(0);
+
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
 
+    const systemsRef = useRef(systems);
+    useEffect(() => { systemsRef.current = systems; }, [systems]);
+
+    const focusedIdRef = useRef(focusedId);
+    useEffect(() => { focusedIdRef.current = focusedId; }, [focusedId]);
+
+    // Pull the current system list and focus from C++. Called on mount and
+    // every "config-changed" tick from PluginUI::drainEvents.
+    const refreshSystems = useCallback(() => {
+        const list = plugin.listSystems?.() ?? [];
+        setSystems(list);
+        const f = plugin.getFocus?.() ?? 0;
+        // If C++ has a valid focus, use it. Otherwise auto-focus first system.
+        if (f !== 0 && list.some((s) => s.id === f)) {
+            setFocusedId(f);
+        } else if (list.length > 0) {
+            setFocusedId(list[0].id);
+            plugin.setFocus?.(list[0].id);
+        } else {
+            setFocusedId(0);
+        }
+    }, []);
+
+    useEffect(() => {
+        refreshSystems();
+        const handler = () => refreshSystems();
+        // Drives off ConfigChanged emitted by the DSP after a project mutation
+        // is actually committed (see PluginDSP.cpp::run). rom-loaded fires
+        // before the DSP has drained, so listSystems would race; not used here.
+        on("config-changed", handler);
+        return () => {
+            off("config-changed", handler);
+        };
+    }, [refreshSystems]);
+
     // Single source of truth for keyboard routing. C++ forwards every key
     // event to JS via the "key" channel; this handler decides whether it
-    // becomes a menu toggle, a Game Boy button, or is ignored (LVGL focus
-    // already routed it to a focused menu item).
+    // becomes a menu toggle, a Tab cycle, a Game Boy button, or is ignored.
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
             if (press) setMenuOpen(o => !o);
@@ -142,14 +184,32 @@ function PluginUI() {
             // item; nothing for us to do here.
             return;
         }
+        if (key === KEY_TAB) {
+            if (!press) return;
+            const list = systemsRef.current;
+            if (list.length < 2) return;
+            const cur = focusedIdRef.current;
+            const idx = list.findIndex((s) => s.id === cur);
+            const next = list[(idx + 1) % list.length];
+            setFocusedId(next.id);
+            plugin.setFocus?.(next.id);
+            return;
+        }
         const button = mapKeyToGameboyButton(key);
+        // pressButton omits systemId → C++ uses the focused id.
         if (button !== null) plugin.pressButton?.(button, press);
     }, []));
 
     const onMenuSelect = useCallback((label: string) => {
         switch (label) {
             case "Load ROM":
-                plugin.openRomBrowser?.();
+                plugin.openRomBrowser?.({ mode: "replace" });
+                break;
+            case "Add instance":
+                plugin.openRomBrowser?.({ mode: "add" });
+                break;
+            case "Remove instance":
+                if (focusedIdRef.current !== 0) plugin.removeSystem?.(focusedIdRef.current);
                 break;
             case "Reset":
             case "About":
@@ -172,7 +232,7 @@ function PluginUI() {
                 "arc-rounded": false,
             }}
         >
-            <EmulatorTile systemId={PRIMARY_SYSTEM_ID} />
+            <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />
 
             {menuOpen && (
                 <MenuOverlay

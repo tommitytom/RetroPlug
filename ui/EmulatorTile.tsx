@@ -9,12 +9,15 @@ const LV_IMAGE_ALIGN_CONTAIN = 14;
 // Plugin-specific JS surface set up by PluginJsBridge.
 interface PluginNamespace {
     getFrame?: (systemId: number) => { width: number; height: number; buffer: ArrayBuffer } | null;
+    removeSystem?: (systemId: number) => boolean;
+    setFocus?: (systemId: number) => boolean;
 }
 const plugin: PluginNamespace =
     (globalThis as any)[Symbol.for("plugin")] ?? {};
 
 interface EmulatorTileProps {
     systemId: number;
+    focused: boolean;
 }
 
 /**
@@ -23,10 +26,13 @@ interface EmulatorTileProps {
  * plugin.getFrame on every tick. Aspect ratio is preserved (CONTAIN);
  * scaling is nearest-neighbor for crisp pixels.
  *
+ * Multi-instance: when `focused` is false the tile dims to 0.5 alpha (legacy
+ * parity). A small ✕ in the top-right calls plugin.removeSystem.
+ *
  * Renders a "no signal" placeholder until the first frame arrives — this is
- * the state right after plugin instantiation, before a ROM has been loaded.
+ * the state right after a fresh add, before a ROM has been activated.
  */
-export function EmulatorTile({ systemId }: EmulatorTileProps) {
+export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
     const canvasRef = useRef<any>(null);
     const [hasFrame, setHasFrame] = useState(false);
 
@@ -49,8 +55,12 @@ export function EmulatorTile({ systemId }: EmulatorTileProps) {
                 width: "100%",
                 height: "100%",
                 "background-opacity": 0,
-                "border-opacity": 0,
+                "border-color": focused ? "#4fc3f7" : "#1a1a2e",
+                "border-width": 2,
+                "border-opacity": 255,
+                opacity: focused ? 255 : 128,
             }}
+            onClick={() => plugin.setFocus?.(systemId)}
         >
             <Canvas
                 ref={canvasRef as any}
@@ -69,9 +79,22 @@ export function EmulatorTile({ systemId }: EmulatorTileProps) {
                     }}
                     align={{ type: 0x09 /* LV_ALIGN_CENTER */, pos: [0, 0] }}
                 >
-                    No ROM loaded — press Esc → Load ROM
+                    No ROM loaded - press Esc, Load ROM
                 </Text>
             )}
+            <Text
+                style={{
+                    "text-color": "#ffffff",
+                    "background-color": "#000000",
+                    "background-opacity": 180,
+                    "font-size": 14,
+                    padding: 4,
+                }}
+                align={{ type: 0x03 /* LV_ALIGN_TOP_RIGHT */, pos: [-4, 4] }}
+                onClick={() => plugin.removeSystem?.(systemId)}
+            >
+                X
+            </Text>
         </View>
     );
 }

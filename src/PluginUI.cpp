@@ -98,23 +98,33 @@ class LVGLPluginUI : public UI
         lv_draw_buf_destroy(snap);
     }
 
-    // Drain SystemReleased events: the DSP shipped a displaced SystemBase
-    // back so the UI thread can free it. Must run before anything else that
-    // could observe a stale system pointer.
+    // Drain DSP→UI events:
+    //  - SystemReleased: the DSP shipped a displaced SystemBase back so the
+    //    UI thread can free it. Must run before anything else that could
+    //    observe a stale system pointer.
+    //  - ConfigChanged: project tree changed (setState reload, add/remove,
+    //    swap). Re-emitted to JS as "config-changed" so React re-queries
+    //    plugin.listSystems().
     void drainEvents()
     {
         if (!shared || !shared->events) return;
+        bool configChanged = false;
         Event ev;
         while (shared->events->tryPop(ev)) {
             switch (ev.kind) {
                 case Event::Kind::SystemReleased:
                     delete ev.payload.systemReleased.system;
                     break;
+                case Event::Kind::ConfigChanged:
+                    configChanged = true;
+                    break;
                 case Event::Kind::None:
                 default:
                     break;
             }
         }
+        if (configChanged && jsEngine.getContext())
+            jsEngine.emit("config-changed", 0, nullptr);
     }
 
 public:
@@ -168,10 +178,11 @@ public:
             // useEffect handlers can register before the bundle's first render.
             bridge = std::make_unique<PluginJsBridge>(
                 jsEngine,
-                shared ? shared->project    : nullptr,
-                shared ? shared->commands   : nullptr,
-                shared ? shared->events     : nullptr,
-                shared ? shared->sampleRate : nullptr);
+                shared ? shared->project         : nullptr,
+                shared ? shared->commands        : nullptr,
+                shared ? shared->events          : nullptr,
+                shared ? shared->sampleRate      : nullptr,
+                shared ? shared->focusedSystemId : nullptr);
 
             // The bridge calls this when JS invokes plugin.openRomBrowser.
             bridge->setOpenRomBrowserCallback([this]() {
@@ -230,7 +241,7 @@ protected:
     {
         if (!filename || !*filename) return; // user cancelled
         if (!bridge) return;
-        bridge->loadRomFromPath(filename);
+        bridge->onFileBrowserSelected(filename);
     }
 
     bool onKeyboard(const KeyboardEvent& ev) override

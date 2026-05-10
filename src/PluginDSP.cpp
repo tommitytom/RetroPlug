@@ -49,11 +49,12 @@ class LVGLPluginDSP : public Plugin {
     ExponentialValueSmoother fSmoothGain;
 
 public:
-    SharedDSPData       shared;
-    Project             project;
-    CommandQueue        commands;
-    EventQueue          events;
-    std::atomic<double> sampleRateAtomic{44100.0};
+    SharedDSPData         shared;
+    Project               project;
+    CommandQueue          commands;
+    EventQueue            events;
+    std::atomic<double>   sampleRateAtomic{44100.0};
+    std::atomic<SystemId> focusedSystemAtomic{0};
 
     LVGLPluginDSP()
         : Plugin(kPluginParameterCount, 0, /*states=*/1)
@@ -69,10 +70,11 @@ public:
         // is well over what the multi-instance step targets.
         project.reserve(16);
 
-        shared.project    = &project;
-        shared.commands   = &commands;
-        shared.events     = &events;
-        shared.sampleRate = &sampleRateAtomic;
+        shared.project         = &project;
+        shared.commands        = &commands;
+        shared.events          = &events;
+        shared.sampleRate      = &sampleRateAtomic;
+        shared.focusedSystemId = &focusedSystemAtomic;
 
         // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser
         // (Step 3). DPF setState (Step 4) will populate the project from a
@@ -148,15 +150,19 @@ protected:
 
         // Tear down current systems off the audio thread (setState runs DSP-side
         // but BEFORE activate(), so no realtime constraint binds here).
-        project.onDeactivate();
-        project.systems().clear();
+        project.clearSystems();
         project.config() = ProjectConfig{};
 
+        SystemId firstAdded = 0;
         for (const auto& sysConfig : parsed->systems) {
-            if (project.addSystem(sysConfig) == 0) {
+            const SystemId id = project.addSystem(sysConfig);
+            if (id == 0) {
                 d_stderr("[PluginDSP] setState: addSystem failed for one entry");
+                continue;
             }
+            if (firstAdded == 0) firstAdded = id;
         }
+        focusedSystemAtomic.store(firstAdded, std::memory_order_release);
 
         // Notify the UI (if attached) so it drops its cached project view.
         if (!events.tryPush(Event::makeConfigChanged()))
@@ -201,6 +207,14 @@ protected:
     void run(const float**, float** outputs, uint32_t frames,
              const MidiEvent*, uint32_t) override
     {
+        auto sendBack = [this](SystemBase* released) {
+            if (!released) return;
+            if (!events.tryPush(Event::makeSystemReleased(released)))
+                d_stderr("event queue full; leaking displaced system");
+        };
+
+        bool projectMutated = false;
+
         // Drain UI commands before running emulators so any keypresses queued
         // since the last block land at the right place in this one. The loop
         // body MUST NOT allocate or free — heap ownership transfers happen
@@ -215,25 +229,57 @@ protected:
                 } break;
 
                 case Command::Kind::LoadRom: {
+                    // Step-5 semantics: empty project → adopt as first system;
+                    // otherwise replace the focused tile (or fall back to slot
+                    // 0 if no focus is set).
                     SystemBase* incoming = cmd.payload.loadRom.newSystem;
                     if (!incoming) break;
-                    SystemBase* released = nullptr;
                     if (project.systems().empty()) {
-                        // No system yet — adopt directly. project.reserve()
-                        // in the ctor keeps this allocation-free.
                         project.adoptSystem(incoming);
+                        focusedSystemAtomic.store(incoming->id(), std::memory_order_release);
                     } else {
-                        // Replace slot 0 (single-instance MVP).
-                        // swapSystem returns the displaced raw pointer.
-                        SystemBase* slot0 = project.systems().front().get();
-                        released = project.swapSystem(slot0->id(), incoming);
+                        SystemId target = focusedSystemAtomic.load(std::memory_order_acquire);
+                        if (!project.findSystem(target))
+                            target = project.systems().front()->id();
+                        sendBack(project.swapSystem(target, incoming));
+                        focusedSystemAtomic.store(incoming->id(), std::memory_order_release);
                     }
-                    if (released) {
-                        // Ship back to UI for off-thread free. If the event
-                        // queue is full we'd rather leak than free here.
-                        if (!events.tryPush(Event::makeSystemReleased(released)))
-                            d_stderr("event queue full; leaking displaced system");
+                    project.rebuildLinkGroups();
+                    projectMutated = true;
+                } break;
+
+                case Command::Kind::AddSystem: {
+                    SystemBase* incoming = cmd.payload.addSystem.newSystem;
+                    if (!incoming) break;
+                    project.adoptSystem(incoming);
+                    project.rebuildLinkGroups();
+                    // Auto-focus the first system we add to an empty project.
+                    if (focusedSystemAtomic.load(std::memory_order_relaxed) == 0)
+                        focusedSystemAtomic.store(incoming->id(), std::memory_order_release);
+                    projectMutated = true;
+                } break;
+
+                case Command::Kind::ReplaceSystem: {
+                    auto& rs = cmd.payload.replaceSystem;
+                    if (!rs.newSystem) break;
+                    sendBack(project.swapSystem(rs.id, rs.newSystem));
+                    project.rebuildLinkGroups();
+                    if (focusedSystemAtomic.load(std::memory_order_relaxed) == rs.id)
+                        focusedSystemAtomic.store(rs.newSystem->id(), std::memory_order_release);
+                    projectMutated = true;
+                } break;
+
+                case Command::Kind::RemoveSystem: {
+                    const SystemId removedId = cmd.payload.removeSystem.id;
+                    sendBack(project.removeSystemAndRelease(removedId));
+                    if (focusedSystemAtomic.load(std::memory_order_relaxed) == removedId) {
+                        // Move focus to whatever's left, or 0 if empty.
+                        const SystemId next = project.systems().empty()
+                            ? SystemId{0}
+                            : project.systems().front()->id();
+                        focusedSystemAtomic.store(next, std::memory_order_release);
                     }
+                    projectMutated = true;
                 } break;
 
                 case Command::Kind::None:
@@ -242,21 +288,35 @@ protected:
             }
         }
 
+        // Notify the UI exactly once per block when the project tree changed.
+        // The UI listens for ConfigChanged and re-queries listSystems() —
+        // without this, the bridge's "rom-loaded" event fires before the DSP
+        // has drained the command, so React would see a stale (empty) project.
+        if (projectMutated) {
+            if (!events.tryPush(Event::makeConfigChanged()))
+                d_stderr("event queue full; UI will miss a ConfigChanged tick");
+        }
+
         float* const outL = outputs[0];
         float* const outR = outputs[1];
         std::memset(outL, 0, frames * sizeof(float));
         std::memset(outR, 0, frames * sizeof(float));
 
         AudioBlockInfo info{ frames, fSampleRate };
-        for (auto& sys : project.systems()) {
-            if (sys) sys->onProcess(info, outputs);
-        }
+        project.onProcess(info, outputs);
 
-        // Apply (smoothed) master gain to the mixed output.
+        // Master gain → soft-clip output limiter. The clipper is x/(1+|x|),
+        // a simple unit-bounded saturator with no allocations and a smooth
+        // transition near 1.0; it's not a creative effect, just a guard
+        // against N>1 emulators summing past full scale.
         for (uint32_t i = 0; i < frames; ++i) {
             const float g = fSmoothGain.next();
-            outL[i] *= g;
-            outR[i] *= g;
+            float l = outL[i] * g;
+            float r = outR[i] * g;
+            l = l / (1.0f + std::fabs(l));
+            r = r / (1.0f + std::fabs(r));
+            outL[i] = l;
+            outR[i] = r;
         }
     }
 

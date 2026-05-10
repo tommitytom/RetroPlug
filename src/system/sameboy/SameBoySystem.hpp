@@ -11,6 +11,7 @@
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "transport/FrameBufferTriple.hpp"
+#include "util/ExpSmoother.hpp"
 
 // Forward declare the C type so this header doesn't drag <gb.h> into the
 // rest of the codebase.
@@ -44,10 +45,28 @@ public:
 
     SystemConfig snapshotConfig() const override;
 
+    // Per-block driver split out of onProcess so LinkGroup can interleave
+    // GB_run() across linked peers. Standalone path: onProcess() calls
+    // prepareForBlock → spin stepIfBelowTarget → finishBlock. Linked path:
+    // LinkGroup does the same but interleaves stepIfBelowTarget across all
+    // members.
+    ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
+    void prepareForBlock(const AudioBlockInfo& info);
+    bool stepIfBelowTarget(std::uint32_t framesNeeded);
+    void finishBlock(const AudioBlockInfo& info, float* const* outs);
+
+    // Set the per-system gain target (dB). Smoothed at audio rate inside
+    // finishBlock so live edits don't click. Not realtime-safe to call from
+    // the audio thread, but a simple atomic store would make it so if needed.
+    void setGainDb(float dB);
+
     // Internal hooks invoked from the C callbacks (made public so the
     // free-function trampolines can reach them; not part of the public API).
     void writeAudioSample(int16_t left, int16_t right);
     void onVblank();
+    void serialBitReceived(bool bit);
+    bool serialBitFromPeer() const;
+    void serialBroadcastBit() const;
 
     // Fields accessed by the C callbacks. Public for callback access only.
     SameBoyConfig             config_;
@@ -77,5 +96,16 @@ public:
     // Mirrors the old code's "10 ms at sampleRate" default.
     std::uint32_t buttonSpacingSamples_ = 0;
 
+    // Serial-link state. Empty => standalone (no linking). Populated by
+    // Project::rebuildLinkGroups when this system shares a nonzero
+    // SameBoyConfig::linkGroupId with one or more peers. Pointers are owned
+    // by Project; lifetime matches the linked peers' lifetimes inside the
+    // same Project. See LinkGroup.hpp for the runtime stepping policy.
+    std::vector<SameBoySystem*> linkPeers_;
+    bool                        bitToSend_ = false;
+
     std::vector<std::unique_ptr<RomRole>> roles_;
+
+private:
+    ExpSmoother gainSmoother_;
 };
