@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
@@ -65,6 +66,15 @@ struct SetLinkGroupCommand {
     std::uint8_t groupId;
 };
 
+// Replace the current project from a JSON blob (same format as DPF
+// setState). The bridge heap-allocates the string on the UI thread and
+// transfers ownership; the DSP frees it after parsing. Used by the
+// standalone "Load project" feature so a fresh launch can restore a
+// 2-instance link configuration without re-doing the whole menu dance.
+struct LoadProjectCommand {
+    std::string* json;
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
         None          = 0,
@@ -74,6 +84,7 @@ struct Command {
         RemoveSystem  = 4,
         ReplaceSystem = 5,
         SetLinkGroup  = 6,
+        LoadProject   = 7,
     };
 
     Kind kind = Kind::None;
@@ -84,6 +95,7 @@ struct Command {
         RemoveSystemCommand  removeSystem;
         ReplaceSystemCommand replaceSystem;
         SetLinkGroupCommand  setLinkGroup;
+        LoadProjectCommand   loadProject;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -128,6 +140,13 @@ struct Command {
         Command c;
         c.kind = Kind::SetLinkGroup;
         c.payload.setLinkGroup = SetLinkGroupCommand{id, groupId};
+        return c;
+    }
+
+    static Command makeLoadProject(std::string* json) {
+        Command c;
+        c.kind = Kind::LoadProject;
+        c.payload.loadProject = LoadProjectCommand{json};
         return c;
     }
 };

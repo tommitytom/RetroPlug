@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include "project/Project.hpp"
+#include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -36,6 +37,28 @@ std::vector<std::uint8_t> slurp(const std::string& path) {
     if (!in.read(reinterpret_cast<char*>(buf.data()), size))
         return {};
     return buf;
+}
+
+// Read a file as a UTF-8 string. Returns empty string on any failure.
+std::string slurpString(const std::string& path) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) return {};
+    const std::streamsize size = in.tellg();
+    if (size <= 0) return {};
+    in.seekg(0, std::ios::beg);
+    std::string out(static_cast<std::size_t>(size), '\0');
+    if (!in.read(out.data(), size))
+        return {};
+    return out;
+}
+
+// Write a string to a file (binary mode — JSON is UTF-8 ASCII anyway).
+// Returns true on success.
+bool spillString(const std::string& path, const std::string& data) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out.write(data.data(), static_cast<std::streamsize>(data.size()));
+    return out.good();
 }
 
 // Helper: resolve the bridge instance bound to the current LVGL display.
@@ -86,6 +109,10 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_getFrame, "getFrame", 1));
     JS_SetPropertyStr(ctx, ns, "openRomBrowser",
                       JS_NewCFunction(ctx, js_openRomBrowser, "openRomBrowser", 0));
+    JS_SetPropertyStr(ctx, ns, "openSaveProjectBrowser",
+                      JS_NewCFunction(ctx, js_openSaveProjectBrowser, "openSaveProjectBrowser", 0));
+    JS_SetPropertyStr(ctx, ns, "openLoadProjectBrowser",
+                      JS_NewCFunction(ctx, js_openLoadProjectBrowser, "openLoadProjectBrowser", 0));
     JS_SetPropertyStr(ctx, ns, "loadRomFromPath",
                       JS_NewCFunction(ctx, js_loadRomFromPath, "loadRomFromPath", 1));
     JS_SetPropertyStr(ctx, ns, "addRomFromPath",
@@ -199,6 +226,57 @@ bool PluginJsBridge::addRomFromPath(const std::string& path) {
     return true;
 }
 
+bool PluginJsBridge::saveProjectToPath(const std::string& path) {
+    if (!project_) {
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    // UI thread reads project_; same accepted race as listSystems / getFrame.
+    // Snapshotting the entire project (including each system's GB savestate)
+    // while audio runs could in principle pick up a torn frame, but in
+    // practice the data is consistent enough for debug round-trips. If this
+    // ever bites, swap to a command-based snapshot.
+    std::string json;
+    try {
+        json = projectConfigToJson(project_->snapshotConfig());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    if (!spillString(path, json)) {
+        std::fprintf(stderr, "saveProjectToPath: write failed for '%s'\n", path.c_str());
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    emitRomEvent(engine, "project-saved", path);
+    return true;
+}
+
+bool PluginJsBridge::loadProjectFromPath(const std::string& path) {
+    if (!commands_) {
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    std::string json = slurpString(path);
+    if (json.empty()) {
+        std::fprintf(stderr, "loadProjectFromPath: empty / unreadable '%s'\n", path.c_str());
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    // Heap-allocate the JSON string, transfer ownership to the DSP via the
+    // command queue. The DSP frees it after parsing.
+    auto* heap = new std::string(std::move(json));
+    if (!commands_->tryPush(Command::makeLoadProject(heap))) {
+        std::fprintf(stderr, "loadProjectFromPath: command queue full\n");
+        delete heap;
+        emitRomEvent(engine, "project-error", path);
+        return false;
+    }
+    emitRomEvent(engine, "project-loaded", path);
+    return true;
+}
+
 bool PluginJsBridge::replaceRomFromPath(SystemId id, const std::string& path) {
     if (!commands_) {
         emitRomEvent(engine, "rom-error", path);
@@ -255,33 +333,54 @@ JSValue PluginJsBridge::js_getFrame(JSContext* ctx, JSValueConst, int argc, JSVa
 
 JSValue PluginJsBridge::js_openRomBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->openRomBrowser_) {
+    if (!self || !self->openFileBrowser_) {
         std::fprintf(stderr, "plugin.openRomBrowser: no open-browser callback registered\n");
         return JS_FALSE;
     }
     // Optional first arg: { mode: "add" | "replace" }. Defaults to replace.
-    self->pendingRomMode_ = PendingRomMode::Replace;
+    self->pendingFileMode_ = PendingFileMode::LoadRom;
     if (argc >= 1 && JS_IsObject(argv[0])) {
         JSValue modeVal = JS_GetPropertyStr(ctx, argv[0], "mode");
         if (JS_IsString(modeVal)) {
             const char* s = JS_ToCString(ctx, modeVal);
             if (s) {
                 if (std::string_view(s) == "add")
-                    self->pendingRomMode_ = PendingRomMode::Add;
+                    self->pendingFileMode_ = PendingFileMode::AddRom;
                 JS_FreeCString(ctx, s);
             }
         }
         JS_FreeValue(ctx, modeVal);
     }
-    self->openRomBrowser_();
+    self->openFileBrowser_("Open Game Boy ROM", false, nullptr);
+    return JS_TRUE;
+}
+
+JSValue PluginJsBridge::js_openSaveProjectBrowser(JSContext*, JSValueConst, int, JSValueConst*) {
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->openFileBrowser_) return JS_FALSE;
+    self->pendingFileMode_ = PendingFileMode::SaveProject;
+    self->openFileBrowser_("Save RetroPlug project", true, "project.rplg");
+    return JS_TRUE;
+}
+
+JSValue PluginJsBridge::js_openLoadProjectBrowser(JSContext*, JSValueConst, int, JSValueConst*) {
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->openFileBrowser_) return JS_FALSE;
+    self->pendingFileMode_ = PendingFileMode::LoadProject;
+    self->openFileBrowser_("Load RetroPlug project", false, nullptr);
     return JS_TRUE;
 }
 
 void PluginJsBridge::onFileBrowserSelected(const char* path) {
     if (!path || !*path) return;
-    if (pendingRomMode_ == PendingRomMode::Add) addRomFromPath(path);
-    else                                        loadRomFromPath(path);
-    pendingRomMode_ = PendingRomMode::Replace;
+    switch (pendingFileMode_) {
+        case PendingFileMode::AddRom:      addRomFromPath(path);     break;
+        case PendingFileMode::LoadProject: loadProjectFromPath(path); break;
+        case PendingFileMode::SaveProject: saveProjectToPath(path);   break;
+        case PendingFileMode::LoadRom:
+        default:                           loadRomFromPath(path);    break;
+    }
+    pendingFileMode_ = PendingFileMode::LoadRom;
 }
 
 JSValue PluginJsBridge::js_pressButton(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {

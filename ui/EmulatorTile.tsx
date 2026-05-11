@@ -51,6 +51,16 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
         return () => off("frame", onFrame);
     }, [systemId]);
 
+    // The "dim unfocused" trick: render a translucent black overlay on top
+    // of the canvas. Setting `opacity` on the tile View or `img-opacity` on
+    // the Canvas both fall flat:
+    //   - LV_STYLE_OPA on a parent only dims that parent's own bg/border;
+    //     it does NOT propagate to image children.
+    //   - lvgl-js's OpacityStyle pipe only routes `opacity` → `img-opacity`
+    //     when `compName === "Image"`. Canvas's compName is "Canvas", so
+    //     setting `opacity` (or `img-opacity` directly) gets dropped.
+    // A black overlay at 50% opa is portable, doesn't touch lv_binding_js,
+    // and exactly matches the legacy alpha-only dim convention.
     return (
         <View
             style={{
@@ -65,7 +75,6 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
                 "padding-right": 0,
                 "padding-top":   0,
                 "padding-bottom":0,
-                opacity: focused ? 255 : 128,
                 overflow: "hidden",
             }}
             onClick={() => plugin.setFocus?.(systemId)}
@@ -85,6 +94,30 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
                 nearestNeighbor={true}
                 innerAlign={LV_IMAGE_ALIGN_CONTAIN}
             />
+            {!focused && (
+                <View
+                    style={{
+                        width:  TILE_W,
+                        height: TILE_H,
+                        "background-color": "#000000",
+                        // lvgl-js's NormalizeOpacity expects 0..1 floats:
+                        // anything > 1 is clamped to 255. So we pass 0.5
+                        // (= LV_OPA_50) for a half-dim overlay rather than
+                        // the natural-looking `128`. The neighboring `255` /
+                        // `0` calls elsewhere in this file happen to be
+                        // correct because they're at the clamp extremes.
+                        "background-opacity": 0.5,
+                        "border-width": 0,
+                        "border-opacity": 0,
+                        "border-radius": 0,
+                        "padding-left":  0,
+                        "padding-right": 0,
+                        "padding-top":   0,
+                        "padding-bottom":0,
+                    }}
+                    align={{ type: 0x09 /* LV_ALIGN_CENTER */, pos: [0, 0] }}
+                />
+            )}
         </View>
     );
 }

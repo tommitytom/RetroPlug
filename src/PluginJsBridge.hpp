@@ -51,10 +51,13 @@ public:
     Project* project() const { return project_; }
 
     // PluginUI passes a callback that opens DPF's native file browser.
-    // The bridge's openRomBrowser JS function calls this; the UI's
-    // uiFileBrowserSelected then calls back into onFileBrowserSelected.
-    using OpenRomBrowserFn = std::function<void()>;
-    void setOpenRomBrowserCallback(OpenRomBrowserFn fn) { openRomBrowser_ = std::move(fn); }
+    // The bridge calls this with title/saving/defaultName so a single
+    // callback covers both "Open ROM" and "Save / Load project". The UI
+    // builds DPF's FileBrowserOptions from these args.
+    using OpenFileBrowserFn = std::function<void(const char* title,
+                                                 bool saving,
+                                                 const char* defaultName)>;
+    void setOpenFileBrowserCallback(OpenFileBrowserFn fn) { openFileBrowser_ = std::move(fn); }
 
     // Window-size plumbing. The UI binds these so JS can request a resize
     // (or query whether the WM is overriding requests). Bridge stays
@@ -81,6 +84,13 @@ public:
     // Replace one specific system's ROM (used by per-tile "Replace ROM").
     bool replaceRomFromPath(SystemId id, const std::string& path);
 
+    // Standalone-friendly project save/load. UI thread reads project_ for
+    // save (same race rules as listSystems — accepted for debug). Load
+    // ships the JSON to the DSP via Command::LoadProject and lets DSP do
+    // the swap during command drain.
+    bool saveProjectToPath(const std::string& path);
+    bool loadProjectFromPath(const std::string& path);
+
 private:
     // Build a fully-activated SameBoySystem from a ROM path. Returns nullptr
     // on failure (and emits a "rom-error" event so React can react).
@@ -100,8 +110,11 @@ private:
     static JSValue js_setLinkGroupId(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_setWindowSize(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_isWindowSizeControlled(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_openSaveProjectBrowser(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_openLoadProjectBrowser(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
-    enum class PendingRomMode { Replace, Add };
+    // What the next file-browser callback should do with the path.
+    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject };
 
     LvglJsEngine&            engine;
     Project*                 project_                = nullptr;
@@ -109,9 +122,9 @@ private:
     EventQueue*              events_                 = nullptr;
     std::atomic<double>*     sampleRate_             = nullptr;
     std::atomic<SystemId>*   focusedSystemId_        = nullptr;
-    OpenRomBrowserFn         openRomBrowser_;
+    OpenFileBrowserFn        openFileBrowser_;
     SetWindowSizeFn          setWindowSize_;
     IsWindowSizeControlledFn isWindowSizeControlled_;
-    PendingRomMode           pendingRomMode_         = PendingRomMode::Replace;
+    PendingFileMode          pendingFileMode_        = PendingFileMode::LoadRom;
     JSValue                  pluginNamespace         = JS_UNDEFINED;
 };

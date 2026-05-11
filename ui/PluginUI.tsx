@@ -20,6 +20,8 @@ const LINK_GROUP_MAX   = 4;
 
 interface PluginNamespace {
     openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
+    openSaveProjectBrowser?: () => void;
+    openLoadProjectBrowser?: () => void;
     pressButton?: (button: GameboyButton, down: boolean, systemId?: number) => boolean;
     listSystems?: () => SystemEntry[];
     setFocus?: (systemId: number) => boolean;
@@ -243,6 +245,8 @@ function PluginUI() {
         "Add instance",
         "Remove instance",
         `${LINK_GROUP_LABEL} ${linkGroupSuffix}`,
+        "Save project",
+        "Load project",
         "Reset",
         "About",
         "Cancel",
@@ -267,6 +271,12 @@ function PluginUI() {
                 break;
             case "Remove instance":
                 if (focusedIdRef.current !== 0) plugin.removeSystem?.(focusedIdRef.current);
+                break;
+            case "Save project":
+                plugin.openSaveProjectBrowser?.();
+                break;
+            case "Load project":
+                plugin.openLoadProjectBrowser?.();
                 break;
             case "Reset":
             case "About":

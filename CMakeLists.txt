@@ -158,12 +158,14 @@ dpf_add_plugin(${NAME}
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
-      # SameBoySystem is constructed on the UI thread (loadRomFromPath); the
+      # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
+      # snapshotConfig is referenced by the bridge's Save project path; the
       # symbols must be linked into the UI binary as well, not just the DSP.
       # In in-process formats (VST3/CLAP/...) DSP+UI share a binary so this
       # is a no-op duplicate; for LV2 the UI binary needs its own copy
       # (though at runtime the LV2-UI never actually constructs one because
       # shared DSP state is unreachable).
+      src/project/Project.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/SameBoySystem.cpp
       ${UI_BUNDLE_C}

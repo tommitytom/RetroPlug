@@ -135,22 +135,34 @@ protected:
     void setState(const char* key, const char* value) override
     {
         if (std::strcmp(key, "project") != 0) return;
-        if (value == nullptr || value[0] == '\0') return;
+        applyProjectFromJson(value);
+    }
+
+    // Replace the running project with one parsed from a JSON blob. Shared by
+    // DPF setState (host-driven save/restore) and Command::LoadProject (the
+    // user-driven "Load project" menu entry, fed in via the UI thread).
+    // Caller is responsible for the threading context — setState runs DSP-side
+    // before activate; Command::LoadProject runs DSP-side during the run-loop
+    // command drain, same window AddSystem/etc. already mutate the project.
+    void applyProjectFromJson(const char* json)
+    {
+        if (json == nullptr || json[0] == '\0') return;
 
         std::optional<ProjectConfig> parsed;
         try {
-            parsed = projectConfigFromJson(std::string_view(value));
+            parsed = projectConfigFromJson(std::string_view(json));
         } catch (const std::exception& e) {
-            d_stderr("[PluginDSP] setState parse exception: %s", e.what());
+            d_stderr("[PluginDSP] applyProjectFromJson parse exception: %s", e.what());
             return;
         }
         if (!parsed) {
-            d_stderr("[PluginDSP] setState: failed to parse project JSON");
+            d_stderr("[PluginDSP] applyProjectFromJson: failed to parse project JSON");
             return;
         }
 
-        // Tear down current systems off the audio thread (setState runs DSP-side
-        // but BEFORE activate(), so no realtime constraint binds here).
+        // Tear down current systems. Non-RT (deletes GB instances) — same
+        // category of work AddSystem/RemoveSystem already do during command
+        // drain.
         project.clearSystems();
         project.config() = ProjectConfig{};
 
@@ -158,7 +170,7 @@ protected:
         for (const auto& sysConfig : parsed->systems) {
             const SystemId id = project.addSystem(sysConfig);
             if (id == 0) {
-                d_stderr("[PluginDSP] setState: addSystem failed for one entry");
+                d_stderr("[PluginDSP] applyProjectFromJson: addSystem failed for one entry");
                 continue;
             }
             if (firstAdded == 0) firstAdded = id;
@@ -167,7 +179,7 @@ protected:
 
         // Notify the UI (if attached) so it drops its cached project view.
         if (!events.tryPush(Event::makeConfigChanged()))
-            d_stderr("[PluginDSP] setState: event queue full; dropping ConfigChanged");
+            d_stderr("[PluginDSP] applyProjectFromJson: event queue full; dropping ConfigChanged");
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -291,6 +303,24 @@ protected:
                             project.rebuildLinkGroups();
                             projectMutated = true;
                         }
+                    }
+                } break;
+
+                case Command::Kind::LoadProject: {
+                    std::string* json = cmd.payload.loadProject.json;
+                    if (json) {
+                        applyProjectFromJson(json->c_str());
+                        // applyProjectFromJson constructs SameBoySystems via
+                        // Project::addSystem but doesn't activate them — the
+                        // setState path relies on DPF calling activate() after
+                        // setState, but Command::LoadProject runs mid-run()
+                        // with no following activate. Activate now so the new
+                        // systems actually start emulating; SameBoySystem's
+                        // onActivate is idempotent for already-active systems.
+                        project.onActivate(fSampleRate);
+                        delete json;
+                        // applyProjectFromJson already pushes ConfigChanged.
+                        // Don't double-emit by setting projectMutated.
                     }
                 } break;
 

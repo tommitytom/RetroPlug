@@ -231,10 +231,17 @@ public:
                 shared ? shared->sampleRate      : nullptr,
                 shared ? shared->focusedSystemId : nullptr);
 
-            // The bridge calls this when JS invokes plugin.openRomBrowser.
-            bridge->setOpenRomBrowserCallback([this]() {
+            // The bridge invokes this for any file-browser action — Open ROM,
+            // Add instance, Save project, Load project. The flags map to
+            // DPF's FileBrowserOptions: `saving=true` flips the dialog into
+            // save mode, `defaultName` pre-fills the filename field.
+            bridge->setOpenFileBrowserCallback([this](const char* title,
+                                                      bool saving,
+                                                      const char* defaultName) {
                 FileBrowserOptions opts;
-                opts.title = "Open Game Boy ROM";
+                opts.title       = title ? title : "";
+                opts.saving      = saving;
+                opts.defaultName = defaultName ? defaultName : "";
                 openFileBrowser(opts);
             });
 
@@ -246,6 +253,15 @@ public:
             bridge->setIsWindowSizeControlledQuery([this]() {
                 return isWindowSizeControlled();
             });
+
+            // Auto-load a project on startup. Useful for fast debug loops
+            // and for headless agent verification of LoadProject (the
+            // alternative is driving the native file dialog under Xvfb
+            // which doesn't reliably work).
+            if (const char* p = std::getenv("RETROPLUG_AUTOLOAD_PROJECT"); p && *p) {
+                d_stdout("[PluginUI] auto-loading project: %s", p);
+                bridge->loadProjectFromPath(p);
+            }
 
             const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
             if (devPath && *devPath)
