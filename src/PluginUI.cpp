@@ -287,6 +287,22 @@ public:
         }
     }
 
+    ~LVGLPluginUI() override
+    {
+        // Tear down the LVGL widget tree (React-managed views, canvases,
+        // event handlers) WHILE the JS engine is still alive. Otherwise the
+        // base UI destructor walks the widget tree after member destruction
+        // — by which point jsEngine has freed the JSContext — and any event
+        // that fires during deletion (DEFOCUSED on the focused menu item,
+        // CHILD_DELETED bubbling up, etc.) hits lv_binding_js's FireEventToJS
+        // which does `qrt->ctx` with no null check. Cleaning the screen here
+        // drains all those events with a valid context. Renoise close-while-
+        // probing reproduces this; carla and pluginval happen to close in a
+        // different order and don't trip it.
+        if (lv_obj_t* screen = lv_screen_active())
+            lv_obj_clean(screen);
+    }
+
 protected:
     void parameterChanged(uint32_t index, float value) override
     {

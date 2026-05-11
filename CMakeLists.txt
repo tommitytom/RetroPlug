@@ -9,6 +9,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(NAME retroplug)
 project(${NAME})
 
+# Force a non-executable stack on Linux ELF outputs. Without this, one
+# unmarked assembly object in WAMR (txiki's wasm runtime —
+# invokeNative_em64_simd.s) leaks the "needs executable stack" attribute
+# into every plugin .so we link. Renoise refuses to dlopen such modules
+# with "cannot enable executable stack as shared object requires". The
+# linker warning we've been seeing on every build is the same root cause.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_link_options(-Wl,-z,noexecstack)
+endif()
+
 # tell LVGL where to find its config file
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/src/lv_conf.h" CACHE PATH "")
 
