@@ -39,11 +39,12 @@ const TextAny = Text as any;
 interface MenuOverlayProps {
     gain: number;
     items: string[];
+    sinkGroup: any;
     onGainChange: (e: any) => void;
     onSelect: (label: string) => void;
 }
 
-function MenuOverlay({ gain, items, onGainChange, onSelect }: MenuOverlayProps) {
+function MenuOverlay({ gain, items, sinkGroup, onGainChange, onSelect }: MenuOverlayProps) {
     const itemRefs = useRef<any[]>([]);
     const groupRef = useRef<any>(null);
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -57,11 +58,16 @@ function MenuOverlay({ gain, items, onGainChange, onSelect }: MenuOverlayProps) 
         if (itemRefs.current[0]) group.focus(itemRefs.current[0]);
         setKeyboardGroup(group);
         return () => {
-            setKeyboardGroup(null);
+            // Hand keyboard back to the parent's empty sink group rather
+            // than passing `null` — lvgl-js falls back to the default group
+            // on null, which contains every tile View and would let LVGL
+            // route arrows / Enter to those tiles instead of leaving the
+            // keys for our JS handler.
+            setKeyboardGroup(sinkGroup ?? null);
             group.destroy();
             groupRef.current = null;
         };
-    }, []);
+    }, [sinkGroup]);
 
     // Arrow nav within the menu's own focus group. Esc is handled at the
     // PluginUI root via useKeyboard — we deliberately don't handle it here so
@@ -160,6 +166,26 @@ function PluginUI() {
     const focusedIdRef = useRef(focusedId);
     useEffect(() => { focusedIdRef.current = focusedId; }, [focusedId]);
 
+    // Empty "input sink" group, claimed as the keyboard group whenever the
+    // menu isn't open. lv_binding_js's setKeyboardGroup(null) falls back to
+    // lv_group_get_default() — which contains every tile View (every lvgl-js
+    // View is unconditionally added) and is CLICK_FOCUSABLE, so LVGL would
+    // happily route arrows / Enter / Tab to those tiles, fire LV_EVENT_PRESSED
+    // on Enter (= "click the focused tile"), and generally mangle game-mode
+    // input. Pointing the keypad at an empty group leaves keys for our JS
+    // handler with no LVGL side-effects.
+    const sinkGroupRef = useRef<any>(null);
+    useEffect(() => {
+        const sink = createGroup();
+        sinkGroupRef.current = sink;
+        setKeyboardGroup(sink);
+        return () => {
+            setKeyboardGroup(null);
+            sink.destroy();
+            sinkGroupRef.current = null;
+        };
+    }, []);
+
     // Pull the current system list and focus from C++. Called on mount and
     // every "config-changed" tick (after the DSP commits a project mutation).
     const refreshSystems = useCallback(() => {
@@ -203,6 +229,13 @@ function PluginUI() {
         plugin.setWindowSize?.(width, height);
     }, [systems.length]);
 
+    // Records which system each currently-held DPF key was pressed against,
+    // so the release always goes to the same instance (even after a Tab cycle
+    // changes focus mid-hold). Survives renders via useRef. Also gates
+    // OS key-repeat: a second `press=true` for an already-held key is
+    // ignored — the GB joypad samples state, no need to re-fire.
+    const keyTargetRef = useRef<Map<number, number>>(new Map());
+
     // Single source of truth for keyboard routing. C++ forwards every key
     // event to JS via the "key" channel; this handler decides whether it
     // becomes a menu toggle, a Tab cycle, a Game Boy button, or is ignored.
@@ -230,7 +263,26 @@ function PluginUI() {
             return;
         }
         const button = mapKeyToGameboyButton(key);
-        if (button !== null) plugin.pressButton?.(button, press);
+        if (button === null) return;
+
+        const targets = keyTargetRef.current;
+        if (press) {
+            // Already-held key: ignore the repeat. The GB joypad already
+            // sees this button as pressed; firing again would route a
+            // duplicate to the same instance (harmless but pointless).
+            if (targets.has(key)) return;
+            const target = focusedIdRef.current;
+            if (target === 0) return;
+            targets.set(key, target);
+            plugin.pressButton?.(button, true, target);
+        } else {
+            // Route the release to whichever instance got the original
+            // press — never to whatever happens to be focused right now.
+            const target = targets.get(key);
+            if (target === undefined) return; // spurious release
+            targets.delete(key);
+            plugin.pressButton?.(button, false, target);
+        }
     }, []));
 
     // Build the menu items with the focused instance's link group baked
@@ -323,6 +375,7 @@ function PluginUI() {
                 <MenuOverlay
                     gain={gain}
                     items={menuItems}
+                    sinkGroup={sinkGroupRef.current}
                     onGainChange={onGainChange}
                     onSelect={onMenuSelect}
                 />
