@@ -80,7 +80,7 @@
    Whether the plugin wants MIDI output.
    @see Plugin::writeMidiEvent(const MidiEvent&)
  */
-#define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 0
+#define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
 
 /**
    Whether the plugin wants to change its own parameter inputs.@n

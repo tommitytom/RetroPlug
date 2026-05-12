@@ -1,11 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/SystemConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
+#include "transport/MidiTypes.hpp"
 
 // Polymorphic runtime representation of one emulator instance. Owned by the
 // DSP thread inside Project. Concrete subclasses: SameBoySystem (Step 1),
@@ -36,7 +38,11 @@ public:
     // overwrite, so multiple systems can mix into a single output pair.
     virtual void onProcess(const AudioBlockInfo& info, float* const* outs) = 0;
 
-    virtual void onMidi(const void* /*events*/, std::uint32_t /*count*/) {}
+    // Audio-thread MIDI delivery. Project::dispatchMidi calls this once per
+    // batch with the routing-filtered events that target this system. Default
+    // is a no-op; concrete systems override to fan out to roles or to drive
+    // their serial buffer.
+    virtual void onMidi(const ::MidiEvent* /*events*/, std::uint32_t /*count*/) {}
 
     // Audio-thread: enqueue a button transition. The system applies it at the
     // next opportunity (typically: spread across the next audio block so
@@ -46,9 +52,19 @@ public:
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }
 
+    // Per-block MIDI output, drained by PluginDSP into DPF's writeMidiEvent
+    // after onProcess. Roles are expected to push into this in onProcessBlock
+    // (step 09+). The audio-thread driver is responsible for clearing it at
+    // the top of each block. Empty until step 09 fills it.
+    std::vector<::MidiEvent>&       midiOut()       { return midiOut_; }
+    const std::vector<::MidiEvent>& midiOut() const { return midiOut_; }
+
     // Round-trips current state back to a plain-data config. Called from
     // Plugin::getState (rare; off-path). May allocate.
     virtual SystemConfig snapshotConfig() const = 0;
+
+protected:
+    std::vector<::MidiEvent> midiOut_;
 
 private:
     SystemId id_;

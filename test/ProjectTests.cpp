@@ -11,6 +11,7 @@
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "transport/MidiTypes.hpp"
 
 namespace {
 
@@ -32,11 +33,30 @@ public:
     void onActivate(double) override {}
     void onSampleRateChanged(double) override {}
     void onProcess(const AudioBlockInfo&, float* const*) override {}
+    void onMidi(const MidiEvent* events, std::uint32_t count) override {
+        for (std::uint32_t i = 0; i < count; ++i)
+            received.push_back(events[i]);
+    }
     SystemConfig snapshotConfig() const override { return SameBoyConfig{}; }
+
+    std::vector<MidiEvent> received;
 
 private:
     std::atomic<int>* aliveCounter_;
 };
+
+// Minimal channel-message helper: status nibble + channel (0-15) + two data
+// bytes, encoded as a 3-byte event with no offset.
+MidiEvent makeChannelMsg(std::uint8_t statusNibble, std::uint8_t chan,
+                         std::uint8_t d1 = 0, std::uint8_t d2 = 0) {
+    MidiEvent ev;
+    ev.frame   = 0;
+    ev.size    = 3;
+    ev.data[0] = static_cast<std::uint8_t>((statusNibble & 0xF0) | (chan & 0x0F));
+    ev.data[1] = d1;
+    ev.data[2] = d2;
+    return ev;
+}
 
 } // namespace
 
@@ -221,6 +241,149 @@ TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, link
     CHECK(sa->sram        == a.sram);
     CHECK(sb->sram.empty());
     CHECK(sc->sram.empty());
+}
+
+TEST_CASE("dispatchMidi SendToAll broadcasts every event to every system",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId());
+    auto* b = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+
+    MidiEvent ev = makeChannelMsg(0x90, /*chan=*/5, 60, 100);
+    proj.dispatchMidi(&ev, 1, MidiRouting::SendToAll);
+
+    REQUIRE(a->received.size() == 1);
+    REQUIRE(b->received.size() == 1);
+    CHECK(a->received[0].data[0] == ev.data[0]); // channel preserved
+    CHECK(b->received[0].data[0] == ev.data[0]);
+}
+
+TEST_CASE("dispatchMidi FourChannelsPerInstance maps channel band to instance, channel preserved",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId()); // channels 1-4
+    auto* b = new FakeSystem(proj.nextSystemId()); // channels 5-8
+    auto* c = new FakeSystem(proj.nextSystemId()); // channels 9-12
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+    proj.adoptSystem(c);
+
+    // chan=0 (logical ch1) → band 0 → instance 0
+    MidiEvent ev0 = makeChannelMsg(0x90, 0,  60, 100);
+    // chan=6 (logical ch7) → band 1 → instance 1
+    MidiEvent ev1 = makeChannelMsg(0x90, 6,  61, 100);
+    // chan=11 (logical ch12) → band 2 → instance 2
+    MidiEvent ev2 = makeChannelMsg(0x90, 11, 62, 100);
+
+    proj.dispatchMidi(&ev0, 1, MidiRouting::FourChannelsPerInstance);
+    proj.dispatchMidi(&ev1, 1, MidiRouting::FourChannelsPerInstance);
+    proj.dispatchMidi(&ev2, 1, MidiRouting::FourChannelsPerInstance);
+
+    REQUIRE(a->received.size() == 1);
+    REQUIRE(b->received.size() == 1);
+    REQUIRE(c->received.size() == 1);
+    CHECK(a->received[0].data[0] == ev0.data[0]);
+    CHECK(b->received[0].data[0] == ev1.data[0]);
+    CHECK(c->received[0].data[0] == ev2.data[0]);
+}
+
+TEST_CASE("dispatchMidi FourChannelsPerInstance wraps for 5+ instance bands",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId());
+    auto* b = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+
+    // chan=8 (band 2) with N=2 wraps to instance 0; chan=15 (band 3) wraps to b.
+    MidiEvent toA = makeChannelMsg(0x90, 8);
+    MidiEvent toB = makeChannelMsg(0x90, 15);
+    proj.dispatchMidi(&toA, 1, MidiRouting::FourChannelsPerInstance);
+    proj.dispatchMidi(&toB, 1, MidiRouting::FourChannelsPerInstance);
+
+    REQUIRE(a->received.size() == 1);
+    REQUIRE(b->received.size() == 1);
+}
+
+TEST_CASE("dispatchMidi OneChannelPerInstance routes by channel index, preserves channel",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId());
+    auto* b = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+
+    MidiEvent toA = makeChannelMsg(0x90, 0); // chan=0 -> instance 0
+    MidiEvent toB = makeChannelMsg(0x90, 1); // chan=1 -> instance 1
+    MidiEvent wrapA = makeChannelMsg(0x90, 2); // chan=2 wraps -> instance 0
+    proj.dispatchMidi(&toA,   1, MidiRouting::OneChannelPerInstance);
+    proj.dispatchMidi(&toB,   1, MidiRouting::OneChannelPerInstance);
+    proj.dispatchMidi(&wrapA, 1, MidiRouting::OneChannelPerInstance);
+
+    REQUIRE(a->received.size() == 2);
+    REQUIRE(b->received.size() == 1);
+    CHECK(a->received[0].data[0] == toA.data[0]);   // unchanged
+    CHECK(b->received[0].data[0] == toB.data[0]);
+    CHECK(a->received[1].data[0] == wrapA.data[0]); // unchanged
+}
+
+TEST_CASE("dispatchMidi MidiChannelToInstance routes by channel and rewrites to ch1",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId());
+    auto* b = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+
+    MidiEvent ev = makeChannelMsg(0x90, /*chan=*/1, 60, 100);
+    proj.dispatchMidi(&ev, 1, MidiRouting::MidiChannelToInstance);
+
+    REQUIRE(a->received.empty());
+    REQUIRE(b->received.size() == 1);
+    // Status nibble preserved (0x90), channel rewritten to 0 (= MIDI ch1).
+    CHECK(b->received[0].data[0] == 0x90);
+    // Data bytes untouched.
+    CHECK(b->received[0].data[1] == 60);
+    CHECK(b->received[0].data[2] == 100);
+}
+
+TEST_CASE("dispatchMidi broadcasts system messages (status >= 0xF0) regardless of routing",
+          "[Project][midi]") {
+    Project proj;
+    auto* a = new FakeSystem(proj.nextSystemId());
+    auto* b = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+    proj.adoptSystem(b);
+
+    MidiEvent clock; // 0xF8 — MIDI clock, no channel
+    clock.frame   = 0;
+    clock.size    = 1;
+    clock.data[0] = 0xF8;
+
+    proj.dispatchMidi(&clock, 1, MidiRouting::OneChannelPerInstance);
+
+    REQUIRE(a->received.size() == 1);
+    REQUIRE(b->received.size() == 1);
+    CHECK(a->received[0].data[0] == 0xF8);
+    CHECK(b->received[0].data[0] == 0xF8);
+}
+
+TEST_CASE("dispatchMidi is a no-op for empty arrays / empty projects", "[Project][midi]") {
+    Project proj;
+    MidiEvent ev = makeChannelMsg(0x90, 0);
+
+    // Empty project — must not crash.
+    proj.dispatchMidi(&ev, 1, MidiRouting::SendToAll);
+
+    auto* a = new FakeSystem(proj.nextSystemId());
+    proj.adoptSystem(a);
+
+    // Null pointer / zero count — no-ops.
+    proj.dispatchMidi(nullptr, 1, MidiRouting::SendToAll);
+    proj.dispatchMidi(&ev, 0, MidiRouting::SendToAll);
+    REQUIRE(a->received.empty());
 }
 
 TEST_CASE("Project::reserve does not create systems", "[Project]") {

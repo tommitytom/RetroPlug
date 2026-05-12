@@ -36,6 +36,11 @@ public:
     void onReset() override;
     void onProcess(const AudioBlockInfo& info, float* const* outs) override;
 
+    // Append the routed events to `pendingMidi_` (cleared at the top of each
+    // onProcess) and fan them out to every attached role. Roles that care
+    // about timing read MidiEvent::frame from the events themselves.
+    void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
+
     // Queue a button transition. Called from DSP-thread command-drain at the
     // top of each block. Pending transitions are spread across the block in
     // applyPending() (port of old SameBoyUtil.cpp:149-163).
@@ -105,6 +110,10 @@ public:
     bool                        bitToSend_ = false;
 
     std::vector<std::unique_ptr<RomRole>> roles_;
+
+    // MIDI events that landed on this system in the current block. Cleared
+    // at the top of onProcess; drained by roles inside onProcessBlock.
+    std::vector<::MidiEvent> pendingMidi_;
 
 private:
     ExpSmoother gainSmoother_;

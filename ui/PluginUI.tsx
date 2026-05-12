@@ -18,6 +18,16 @@ import {
 const LINK_GROUP_LABEL = "Link group:";
 const LINK_GROUP_MAX   = 4;
 
+// Project-wide MIDI routing. Same cycling pattern as Link group — mode names
+// map 1:1 onto the C++ MidiRouting enum (see src/project/ProjectConfig.hpp).
+const MIDI_ROUTING_LABEL = "MIDI routing:";
+const MIDI_ROUTING_NAMES = [
+    "Send to all",
+    "4 ch / inst",
+    "1 ch / inst",
+    "ch → inst",
+];
+
 interface PluginNamespace {
     openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
     openSaveProjectBrowser?: () => void;
@@ -28,6 +38,8 @@ interface PluginNamespace {
     getFocus?: () => number;
     removeSystem?: (systemId: number) => boolean;
     setLinkGroupId?: (systemId: number, groupId: number) => boolean;
+    getMidiRouting?: () => number;
+    setMidiRouting?: (routing: number) => boolean;
     setWindowSize?: (w: number, h: number) => boolean;
     isWindowSizeControlled?: () => boolean;
 }
@@ -156,6 +168,7 @@ function PluginUI() {
     const [menuOpen, setMenuOpen] = useState(true);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
+    const [midiRouting, setMidiRouting] = useState<number>(() => plugin.getMidiRouting?.() ?? 0);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -200,6 +213,7 @@ function PluginUI() {
         } else {
             setFocusedId(0);
         }
+        setMidiRouting(plugin.getMidiRouting?.() ?? 0);
     }, []);
 
     useEffect(() => {
@@ -292,11 +306,13 @@ function PluginUI() {
     const linkGroupSuffix = focusedSystem
         ? String(focusedSystem.linkGroupId ?? 0)
         : "-";
+    const routingName = MIDI_ROUTING_NAMES[midiRouting] ?? MIDI_ROUTING_NAMES[0];
     const menuItems = [
         "Load ROM",
         "Add instance",
         "Remove instance",
         `${LINK_GROUP_LABEL} ${linkGroupSuffix}`,
+        `${MIDI_ROUTING_LABEL} ${routingName}`,
         "Save project",
         "Load project",
         "Reset",
@@ -312,6 +328,16 @@ function PluginUI() {
             if (!sys) return;
             const next = (((sys.linkGroupId ?? 0) + 1) % LINK_GROUP_MAX);
             plugin.setLinkGroupId?.(sys.id, next);
+            return;
+        }
+        // Same cycling behaviour for the MIDI routing label.
+        if (label.startsWith(MIDI_ROUTING_LABEL)) {
+            const cur = plugin.getMidiRouting?.() ?? 0;
+            const next = (cur + 1) % MIDI_ROUTING_NAMES.length;
+            plugin.setMidiRouting?.(next);
+            // Optimistically update so the label flips immediately; the
+            // ConfigChanged event will reconcile shortly after.
+            setMidiRouting(next);
             return;
         }
         switch (label) {

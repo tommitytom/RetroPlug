@@ -20,6 +20,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
+#include "transport/MidiTypes.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -218,7 +219,7 @@ protected:
     }
 
     void run(const float**, float** outputs, uint32_t frames,
-             const MidiEvent*, uint32_t) override
+             const MidiEvent* midiEvents, uint32_t midiEventCount) override
     {
         auto sendBack = [this](SystemBase* released) {
             if (!released) return;
@@ -306,6 +307,14 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::SetMidiRouting: {
+                    const MidiRouting r = cmd.payload.setMidiRouting.routing;
+                    if (project.config().settings.midiRouting != r) {
+                        project.config().settings.midiRouting = r;
+                        projectMutated = true;
+                    }
+                } break;
+
                 case Command::Kind::LoadProject: {
                     std::string* json = cmd.payload.loadProject.json;
                     if (json) {
@@ -339,6 +348,21 @@ protected:
                 d_stderr("event queue full; UI will miss a ConfigChanged tick");
         }
 
+        // Translate DPF MidiEvents to the shell type and dispatch through the
+        // current routing rule. Done one event at a time so we never need to
+        // allocate a translation buffer; dispatchMidi is internally a simple
+        // loop, so per-event calls cost the same as a batched array.
+        const MidiRouting routing = project.config().settings.midiRouting;
+        for (uint32_t i = 0; i < midiEventCount; ++i) {
+            const MidiEvent& src = midiEvents[i];
+            ::MidiEvent shell;
+            shell.frame = src.frame;
+            shell.size  = src.size;
+            std::memcpy(shell.data, src.data, ::MidiEvent::kDataSize);
+            shell.dataExt = src.dataExt;
+            project.dispatchMidi(&shell, 1, routing);
+        }
+
         float* const outL = outputs[0];
         float* const outR = outputs[1];
         std::memset(outL, 0, frames * sizeof(float));
@@ -346,6 +370,23 @@ protected:
 
         AudioBlockInfo info{ frames, fSampleRate };
         project.onProcess(info, outputs);
+
+        // Drain per-system MIDI output back to the host. Empty until step 09
+        // wires the first MIDI-emitting role; the loop is here now so step 09
+        // doesn't need to revisit the run() boundary.
+        for (auto& sys : project.systems()) {
+            if (!sys) continue;
+            auto& outBuf = sys->midiOut();
+            for (const auto& ev : outBuf) {
+                MidiEvent dpfEv{};
+                dpfEv.frame = ev.frame;
+                dpfEv.size  = ev.size;
+                std::memcpy(dpfEv.data, ev.data, ::MidiEvent::kDataSize);
+                dpfEv.dataExt = ev.dataExt;
+                writeMidiEvent(dpfEv);
+            }
+            outBuf.clear();
+        }
 
         // Master gain → soft-clip output limiter. The clipper is x/(1+|x|),
         // a simple unit-bounded saturator with no allocations and a smooth

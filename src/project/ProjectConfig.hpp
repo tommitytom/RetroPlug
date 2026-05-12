@@ -19,12 +19,23 @@ enum class SystemLayout : std::uint8_t {
     Grid   = 3,
 };
 
+// How host MIDI is split across multiple instances. Modes that map a
+// channel onto a single instance wrap with `% N`, so a project with 5+
+// instances stays well-defined under FourChannelsPerInstance.
+//   SendToAll               broadcast every event to every system; channel preserved.
+//   FourChannelsPerInstance instance N receives channels (4N+1)..(4N+4) (1-indexed).
+//   OneChannelPerInstance   instance N receives only channel N+1 (1-indexed).
+//   MidiChannelToInstance   like OneChannelPerInstance but channel is rewritten to 1.
+enum class MidiRouting : std::uint8_t {
+    SendToAll               = 0,
+    FourChannelsPerInstance = 1,
+    OneChannelPerInstance   = 2,
+    MidiChannelToInstance   = 3,
+};
+
 struct ProjectSettings {
-    SystemLayout layout = SystemLayout::Auto;
-    // Empty placeholder for additions — audio routing, MIDI routing, save
-    // policy, zoom, autosave. Reflectcpp serializes even an empty struct,
-    // so adding fields later is a non-breaking change as long as defaults
-    // survive an absent JSON key.
+    SystemLayout layout       = SystemLayout::Auto;
+    MidiRouting  midiRouting  = MidiRouting::SendToAll;
 };
 
 struct ProjectConfig {

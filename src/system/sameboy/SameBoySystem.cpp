@@ -227,6 +227,14 @@ void SameBoySystem::onReset() {
     pendingButtons_.clear();
 }
 
+void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
+    if (events == nullptr || count == 0) return;
+    pendingMidi_.insert(pendingMidi_.end(), events, events + count);
+    for (auto& role : roles_) {
+        if (role) role->onMidi(*this, events, count);
+    }
+}
+
 void SameBoySystem::pressButton(GameboyButton button, bool down) {
     // Append to the back of the queue, advancing the offset by buttonSpacing
     // from the previous entry. This stops a press+release pair sent in the
@@ -315,6 +323,11 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
     for (auto& role : roles_) {
         role->onProcessBlock(*this, info);
     }
+
+    // Roles have had their chance to consume this block's MIDI; clear so the
+    // next block starts empty. midiOut_ is drained by PluginDSP after
+    // Project::onProcess returns.
+    pendingMidi_.clear();
 }
 
 void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {

@@ -108,6 +108,8 @@ private:
     static JSValue js_getFocus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_pressButton(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_setLinkGroupId(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_getMidiRouting(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    static JSValue js_setMidiRouting(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_setWindowSize(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_isWindowSizeControlled(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_openSaveProjectBrowser(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);

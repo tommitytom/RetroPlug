@@ -1,6 +1,6 @@
 # Step 05 — Multi-instance + tile grid
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

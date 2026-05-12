@@ -4,6 +4,8 @@
 #include <string_view>
 #include <variant>
 
+#include "transport/MidiTypes.hpp"
+
 // Forward decl to avoid circularity with SameBoySystem.hpp.
 class SameBoySystem;
 struct AudioBlockInfo;
@@ -11,14 +13,14 @@ struct AudioBlockInfo;
 // Audio-thread-bound per-ROM-type behavior, composed onto a SameBoySystem.
 // LSDJ sync, Arduinoboy emulation, MGB MIDI passthrough, etc. become RomRole
 // subclasses; one system can own many. The first concrete role lands at
-// Step 6 (MGB) — this header is the placeholder seam.
+// Step 7 (MGB) — this header is the placeholder seam.
 class RomRole {
 public:
     virtual ~RomRole() = default;
 
     virtual void onAttach(SameBoySystem&) {}
     virtual void onMidi(SameBoySystem&,
-                        const void* /*midiEvents*/,
+                        const ::MidiEvent* /*events*/,
                         std::uint32_t /*count*/) {}
     virtual void onProcessBlock(SameBoySystem&, const AudioBlockInfo&) {}
     virtual void onTransportChange(bool /*playing*/) {}

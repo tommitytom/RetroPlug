@@ -1,6 +1,6 @@
 # Step 04 — Project state (DPF setState/getState)
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

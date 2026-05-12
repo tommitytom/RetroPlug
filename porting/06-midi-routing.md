@@ -1,6 +1,6 @@
 # Step 06 — MIDI input/output routing
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

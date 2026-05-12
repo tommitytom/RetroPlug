@@ -1,6 +1,6 @@
 # Step 03 — ROM picker UI
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

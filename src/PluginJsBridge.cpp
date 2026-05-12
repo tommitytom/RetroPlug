@@ -131,6 +131,10 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_pressButton, "pressButton", 3));
     JS_SetPropertyStr(ctx, ns, "setLinkGroupId",
                       JS_NewCFunction(ctx, js_setLinkGroupId, "setLinkGroupId", 2));
+    JS_SetPropertyStr(ctx, ns, "getMidiRouting",
+                      JS_NewCFunction(ctx, js_getMidiRouting, "getMidiRouting", 0));
+    JS_SetPropertyStr(ctx, ns, "setMidiRouting",
+                      JS_NewCFunction(ctx, js_setMidiRouting, "setMidiRouting", 1));
     JS_SetPropertyStr(ctx, ns, "setWindowSize",
                       JS_NewCFunction(ctx, js_setWindowSize, "setWindowSize", 2));
     JS_SetPropertyStr(ctx, ns, "isWindowSizeControlled",
@@ -529,6 +533,31 @@ JSValue PluginJsBridge::js_setLinkGroupId(JSContext* ctx, JSValueConst, int argc
     return self->commands_->tryPush(
         Command::makeSetLinkGroup(static_cast<SystemId>(id),
                                   static_cast<std::uint8_t>(groupId)))
+        ? JS_TRUE : JS_FALSE;
+}
+
+JSValue PluginJsBridge::js_getMidiRouting(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->project_)
+        return JS_NewUint32(ctx, static_cast<std::uint32_t>(MidiRouting::SendToAll));
+    return JS_NewUint32(ctx,
+        static_cast<std::uint32_t>(self->project_->config().settings.midiRouting));
+}
+
+JSValue PluginJsBridge::js_setMidiRouting(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "plugin.setMidiRouting: expected (routing)");
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->commands_) return JS_FALSE;
+
+    int32_t r = 0;
+    if (JS_ToInt32(ctx, &r, argv[0]) < 0) return JS_EXCEPTION;
+    // Reject out-of-range values rather than narrowing into a meaningful enum
+    // by accident — the JS side needs to stay in sync with the C++ enum.
+    if (r < 0 || r > static_cast<int32_t>(MidiRouting::MidiChannelToInstance))
+        return JS_FALSE;
+
+    return self->commands_->tryPush(
+        Command::makeSetMidiRouting(static_cast<MidiRouting>(r)))
         ? JS_TRUE : JS_FALSE;
 }
 

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 
+#include "project/ProjectConfig.hpp"
 #include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
 
@@ -75,27 +76,35 @@ struct LoadProjectCommand {
     std::string* json;
 };
 
+// Project-wide MIDI routing change. Applied to ProjectConfig::settings on
+// the DSP thread; UI is notified via Event::ConfigChanged so menus refresh.
+struct SetMidiRoutingCommand {
+    MidiRouting routing;
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
-        None          = 0,
-        ButtonPress   = 1,
-        LoadRom       = 2,
-        AddSystem     = 3,
-        RemoveSystem  = 4,
-        ReplaceSystem = 5,
-        SetLinkGroup  = 6,
-        LoadProject   = 7,
+        None           = 0,
+        ButtonPress    = 1,
+        LoadRom        = 2,
+        AddSystem      = 3,
+        RemoveSystem   = 4,
+        ReplaceSystem  = 5,
+        SetLinkGroup   = 6,
+        LoadProject    = 7,
+        SetMidiRouting = 8,
     };
 
     Kind kind = Kind::None;
     union Payload {
-        ButtonPressCommand   buttonPress;
-        LoadRomCommand       loadRom;
-        AddSystemCommand     addSystem;
-        RemoveSystemCommand  removeSystem;
-        ReplaceSystemCommand replaceSystem;
-        SetLinkGroupCommand  setLinkGroup;
-        LoadProjectCommand   loadProject;
+        ButtonPressCommand    buttonPress;
+        LoadRomCommand        loadRom;
+        AddSystemCommand      addSystem;
+        RemoveSystemCommand   removeSystem;
+        ReplaceSystemCommand  replaceSystem;
+        SetLinkGroupCommand   setLinkGroup;
+        LoadProjectCommand    loadProject;
+        SetMidiRoutingCommand setMidiRouting;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -147,6 +156,13 @@ struct Command {
         Command c;
         c.kind = Kind::LoadProject;
         c.payload.loadProject = LoadProjectCommand{json};
+        return c;
+    }
+
+    static Command makeSetMidiRouting(MidiRouting routing) {
+        Command c;
+        c.kind = Kind::SetMidiRouting;
+        c.payload.setMidiRouting = SetMidiRoutingCommand{routing};
         return c;
     }
 };
