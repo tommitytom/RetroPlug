@@ -36,6 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- Node.js for the esbuild UI bundler --------------------------------
 	nodejs \
 	npm \
+	# --- Python for tools/ (LSDj manual indexer + ad-hoc agent scripts) ---
+	python3-pip \
+	python3-venv \
 	# --- Headless agent runtime: virtual X + dummy JACK + keystroke tool ---
 	xvfb \
 	jackd2 \

@@ -8,8 +8,13 @@
 // Usage:
 //   retroplug-cli --script path/to/script.json
 //   retroplug-cli --script s.json --rom other.gb --out out.wav --duration 10000
+//   retroplug-cli --script sync.json --screenshot-dir /tmp --final-screenshot
 //
 // CLI overrides take precedence over fields in the script JSON.
+//
+// Note: SameBoy plays a short boot sequence (white screen + beep) for ~1.5 s
+// after reset before the cartridge actually runs. Schedule screenshots at
+// `at_ms` >= 2000 to capture LSDJ rather than the boot logo.
 
 #include <algorithm>
 #include <chrono>
@@ -17,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
@@ -26,10 +32,14 @@
 
 #include <rfl/json.hpp>
 
+#include "native/core/img/png/lodepng.h"
+
 #include "project/Project.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/SameBoyConstants.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transport/FrameBufferTriple.hpp"
 
 #include "Script.hpp"
 #include "Wav.hpp"
@@ -41,16 +51,20 @@ struct CliArgs {
     std::string romOverride;
     std::string outOverride;
     std::optional<std::uint32_t> durationOverride;
+    std::optional<std::string>   screenshotDir;
+    bool                         finalScreenshot = false;
 };
 
 void printUsage(const char* argv0) {
     std::fprintf(stderr,
-        "Usage: %s --script PATH [--rom ROM] [--out WAV] [--duration MS]\n"
+        "Usage: %s --script PATH [options]\n"
         "\n"
-        "  --script   JSON file describing rom + timed input events\n"
-        "  --rom      override the script's `rom` path\n"
-        "  --out      override the script's `out_wav` path\n"
-        "  --duration override the script's `duration_ms`\n",
+        "  --script           JSON file describing rom(s) + timed events\n"
+        "  --rom PATH         override the script's `rom` (single-system only)\n"
+        "  --out PATH         override the script's `out_wav`\n"
+        "  --duration MS      override the script's `duration_ms`\n"
+        "  --screenshot-dir D directory for screenshot PNGs (default: out_wav's dir, then cwd)\n"
+        "  --final-screenshot capture every system once at script end as `<stem>_final_sys<N>.png`\n",
         argv0);
 }
 
@@ -65,10 +79,12 @@ CliArgs parseArgs(int argc, char** argv) {
             }
             return argv[++i];
         };
-        if      (arg == "--script")   a.scriptPath  = need("--script");
-        else if (arg == "--rom")      a.romOverride = need("--rom");
-        else if (arg == "--out")      a.outOverride = need("--out");
-        else if (arg == "--duration") a.durationOverride = static_cast<std::uint32_t>(std::atoi(need("--duration")));
+        if      (arg == "--script")            a.scriptPath  = need("--script");
+        else if (arg == "--rom")               a.romOverride = need("--rom");
+        else if (arg == "--out")               a.outOverride = need("--out");
+        else if (arg == "--duration")          a.durationOverride = static_cast<std::uint32_t>(std::atoi(need("--duration")));
+        else if (arg == "--screenshot-dir")    a.screenshotDir    = std::string(need("--screenshot-dir"));
+        else if (arg == "--final-screenshot")  a.finalScreenshot  = true;
         else if (arg == "-h" || arg == "--help") { printUsage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
@@ -104,52 +120,150 @@ std::vector<std::uint8_t> slurpBytes(const std::string& path) {
     return buf;
 }
 
+// Snapshot a system's framebuffer to <dir>/<scriptStem>_<name>_sys<idx>.png.
+// FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X bytes); we
+// transcode to RGB24 in-place to match lodepng_encode24_file's expected
+// layout — same pattern as src/PluginUI.cpp:91-101.
+bool dumpFramebuffer(SameBoySystem& sys,
+                     const std::string& dir,
+                     const std::string& scriptStem,
+                     const std::string& name,
+                     std::uint32_t      systemIndex) {
+    FrameBufferTriple* fb = sys.framebuffer();
+    if (!fb) return false;
+    const std::uint32_t w = fb->width();
+    const std::uint32_t h = fb->height();
+    const std::size_t pixels = static_cast<std::size_t>(w) * h;
+
+    std::vector<std::uint32_t> xrgb(pixels);
+    if (!fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels))) {
+        std::fprintf(stderr,
+            "[screenshot] no frame published yet for system %u (name=%s) — skipping\n",
+            systemIndex, name.c_str());
+        return false;
+    }
+
+    std::vector<unsigned char> rgb(pixels * 3);
+    const std::uint8_t* src = reinterpret_cast<const std::uint8_t*>(xrgb.data());
+    for (std::size_t i = 0; i < pixels; ++i) {
+        rgb[i * 3 + 0] = src[i * 4 + 2]; // R
+        rgb[i * 3 + 1] = src[i * 4 + 1]; // G
+        rgb[i * 3 + 2] = src[i * 4 + 0]; // B
+    }
+
+    std::filesystem::path out = std::filesystem::path(dir) /
+        (scriptStem + "_" + name + "_sys" + std::to_string(systemIndex) + ".png");
+    std::error_code ec;
+    std::filesystem::create_directories(out.parent_path(), ec);
+
+    const unsigned err = lodepng_encode24_file(out.string().c_str(),
+                                               rgb.data(), w, h);
+    if (err) {
+        std::fprintf(stderr, "[screenshot] lodepng error %u writing %s: %s\n",
+                     err, out.string().c_str(), lodepng_error_text(err));
+        return false;
+    }
+    std::fprintf(stderr, "[screenshot] wrote %s\n", out.string().c_str());
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) try {
     const CliArgs args = parseArgs(argc, argv);
 
-    // 1. Parse script JSON.
+    // 1. Parse + normalize script JSON.
     const std::string json = slurpText(args.scriptPath);
     auto parsed = rfl::json::read<Script>(json);
     if (!parsed) {
-        std::fprintf(stderr, "JSON parse error: %s\n", parsed.error().what());
+        std::fprintf(stderr, "JSON parse error: %s\n", parsed.error().what().c_str());
         return 1;
     }
     Script script = std::move(parsed.value());
 
-    if (!args.romOverride.empty())          script.rom         = args.romOverride;
     if (!args.outOverride.empty())          script.out_wav     = args.outOverride;
     if (args.durationOverride)              script.duration_ms = *args.durationOverride;
 
-    if (script.rom.empty()) {
-        std::fprintf(stderr, "script: 'rom' is required\n");
+    // Normalize into a single `systems` list. `--rom` overrides the legacy
+    // top-level `rom` field; `systems: [...]` in the JSON wins over both if
+    // present, but `--rom` is only valid when the script is single-system.
+    if (!args.romOverride.empty()) {
+        if (script.systems && script.systems->size() > 1) {
+            std::fprintf(stderr,
+                "--rom can only override a single-system script (got %zu systems)\n",
+                script.systems->size());
+            return 1;
+        }
+        if (script.systems && script.systems->size() == 1)
+            script.systems->front().rom = args.romOverride;
+        else
+            script.rom = args.romOverride;
+    }
+    std::vector<ScriptSystem> systemsList;
+    if (script.systems && !script.systems->empty()) {
+        systemsList = std::move(*script.systems);
+    } else if (script.rom && !script.rom->empty()) {
+        systemsList.push_back({*script.rom, std::nullopt});
+    } else {
+        std::fprintf(stderr, "script: must set either 'rom' or 'systems[]'\n");
         return 1;
     }
+
     if (script.duration_ms == 0) {
         std::fprintf(stderr, "script: 'duration_ms' must be > 0\n");
         return 1;
     }
 
-    // 2. Build the runtime: Project + activated SameBoySystem.
+    const MidiRouting routing = script.midi_routing
+        ? parseMidiRouting(*script.midi_routing)
+        : MidiRouting::SendToAll;
+
+    const std::uint32_t systemCount = static_cast<std::uint32_t>(systemsList.size());
+
+    // Resolve screenshot directory. Prefer --screenshot-dir, else the dir of
+    // out_wav, else the current directory.
+    std::string screenshotDir = ".";
+    if (args.screenshotDir) {
+        screenshotDir = *args.screenshotDir;
+    } else if (script.out_wav) {
+        std::filesystem::path p(*script.out_wav);
+        if (p.has_parent_path() && !p.parent_path().empty())
+            screenshotDir = p.parent_path().string();
+    }
+    const std::string scriptStem = std::filesystem::path(args.scriptPath).stem().string();
+
+    // 2. Build the runtime: Project + N activated SameBoySystems.
     Project project;
-    project.reserve(1);
+    project.reserve(systemCount);
 
-    SameBoyConfig cfg;
-    cfg.romPath  = script.rom;
-    cfg.model    = GameboyModel::CgbC;
-    cfg.fastBoot = true;
+    std::vector<SameBoySystem*> systems;
+    systems.reserve(systemCount);
+    for (std::uint32_t i = 0; i < systemCount; ++i) {
+        const auto& s = systemsList[i];
+        if (s.rom.empty()) {
+            std::fprintf(stderr, "script: systems[%u].rom is required\n", i);
+            return 1;
+        }
 
-    auto bytes = slurpBytes(script.rom);
-    auto sys = std::make_unique<SameBoySystem>(
-        project.nextSystemId(), cfg, std::move(bytes));
-    sys->onActivate(static_cast<double>(script.sample_rate));
-    SameBoySystem* sysRaw = sys.get();
-    project.adoptSystem(sys.release());
+        SameBoyConfig cfg;
+        cfg.romPath     = s.rom;
+        cfg.model       = GameboyModel::CgbC;
+        cfg.fastBoot    = true;
+        cfg.linkGroupId = s.link_group.value_or(0);
 
-    // 3. Flatten event lists to sorted (sample, ...) streams.
-    const auto timed     = flattenEvents(script.events, script.sample_rate);
-    const auto timedMidi = flattenMidi  (script.events, script.sample_rate);
+        auto bytes = slurpBytes(s.rom);
+        auto sys = std::make_unique<SameBoySystem>(
+            project.nextSystemId(), cfg, std::move(bytes));
+        sys->onActivate(static_cast<double>(script.sample_rate));
+        systems.push_back(sys.get());
+        project.adoptSystem(sys.release());
+    }
+    project.rebuildLinkGroups();
+
+    // 3. Flatten event lists. Validation runs once per event in each pass.
+    const auto timedButtons     = flattenEvents     (script.events, script.sample_rate, systemCount);
+    const auto timedMidi        = flattenMidi       (script.events, script.sample_rate);
+    const auto timedScreenshots = flattenScreenshots(script.events, script.sample_rate, systemCount);
 
     // 4. Render loop.
     const std::uint64_t totalSamples =
@@ -162,32 +276,51 @@ int main(int argc, char** argv) try {
         wav.emplace(*script.out_wav, script.sample_rate, 2);
 
     const auto t0 = std::chrono::steady_clock::now();
-    std::size_t eventCursor = 0;
-    std::size_t midiCursor  = 0;
+    std::size_t btnCursor  = 0;
+    std::size_t midiCursor = 0;
+    std::size_t shotCursor = 0;
 
     for (std::uint64_t s = 0; s < totalSamples; s += script.block_size) {
         const std::uint32_t frames =
             static_cast<std::uint32_t>(std::min<std::uint64_t>(script.block_size, totalSamples - s));
 
-        while (eventCursor < timed.size() && timed[eventCursor].sample <= s) {
-            sysRaw->pressButton(timed[eventCursor].button, timed[eventCursor].down);
-            ++eventCursor;
+        while (btnCursor < timedButtons.size() && timedButtons[btnCursor].sample <= s) {
+            const auto& ev = timedButtons[btnCursor];
+            systems[ev.systemIndex]->pressButton(ev.button, ev.down);
+            ++btnCursor;
         }
 
-        // MIDI events go straight to onMidi (single-system CLI; no routing
-        // policy needed). Roles attached via the sniffer pick them up and
-        // push bytes into the system's serial queue.
+        // MIDI is routed through Project::dispatchMidi so the CLI exercises
+        // the same routing logic the plugin uses (system messages broadcast,
+        // channel messages routed per `midi_routing`).
         while (midiCursor < timedMidi.size() && timedMidi[midiCursor].sample <= s) {
-            sysRaw->onMidi(&timedMidi[midiCursor].event, 1);
+            project.dispatchMidi(&timedMidi[midiCursor].event, 1, routing);
             ++midiCursor;
         }
 
         std::fill_n(outL.data(), frames, 0.0f);
         std::fill_n(outR.data(), frames, 0.0f);
         AudioBlockInfo info{ frames, static_cast<double>(script.sample_rate) };
-        sysRaw->onProcess(info, outs);
+        project.onProcess(info, outs);
+
+        // Drain screenshot events whose target sample is now in the past.
+        // Done after onProcess so the screenshot reflects the just-completed
+        // frame (the framebuffer publish happens on vblank during GB_run).
+        while (shotCursor < timedScreenshots.size() &&
+               timedScreenshots[shotCursor].sample <= s + frames) {
+            const auto& shot = timedScreenshots[shotCursor];
+            dumpFramebuffer(*systems[shot.systemIndex], screenshotDir,
+                            scriptStem, shot.name, shot.systemIndex);
+            ++shotCursor;
+        }
 
         if (wav) wav->writeBlockFloatPlanar(outs, frames);
+    }
+
+    if (args.finalScreenshot) {
+        for (std::uint32_t i = 0; i < systemCount; ++i) {
+            dumpFramebuffer(*systems[i], screenshotDir, scriptStem, "final", i);
+        }
     }
 
     const auto t1 = std::chrono::steady_clock::now();
@@ -196,8 +329,8 @@ int main(int argc, char** argv) try {
     const double xrt      = (wallSec > 0.0) ? (audioSec / wallSec) : 0.0;
 
     std::fprintf(stderr,
-        "rendered %.2fs of audio in %.2fs wall (%.1fx realtime)%s%s\n",
-        audioSec, wallSec, xrt,
+        "rendered %.2fs of audio across %u system(s) in %.2fs wall (%.1fx realtime)%s%s\n",
+        audioSec, systemCount, wallSec, xrt,
         script.out_wav ? "; out=" : "",
         script.out_wav ? script.out_wav->c_str() : "");
 

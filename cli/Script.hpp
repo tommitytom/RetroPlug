@@ -8,17 +8,27 @@
 #include <string>
 #include <vector>
 
+#include "project/ProjectConfig.hpp"
 #include "system/InputTypes.hpp"
 #include "transport/MidiTypes.hpp"
 
 // JSON-driven scripted input + render parameters for retroplug-cli.
 //
-// Three forms are accepted per event:
-//   {"at_ms": N, "button": "A", "down": true|false}    (explicit button)
-//   {"at_ms": N, "tap": "A", "hold_ms": 50}            (button shorthand)
-//   {"at_ms": N, "midi": [144, 60, 100]}               (raw MIDI bytes, 1..4)
+// Event forms (mutually exclusive — exactly one must be set):
+//   {"at_ms": N, "button": "A", "down": true|false, "system": 0}  (explicit)
+//   {"at_ms": N, "tap": "A", "hold_ms": 50, "system": 0}          (shorthand)
+//   {"at_ms": N, "midi": [144, 60, 100]}                          (routed)
+//   {"at_ms": N, "screenshot": "boot", "system": 0}               (PNG dump)
 //
-// Validation rejects events that mix forms or set none.
+// `system` defaults to 0. For `midi` events it is ignored — MIDI is routed
+// through `Project::dispatchMidi` using the project-level `midi_routing`
+// mode so it behaves the same way as the plugin.
+//
+// Top-level forms:
+//   - Legacy single-system: `rom` at top level.
+//   - Multi-system: `systems: [{ rom, link_group }, ...]`. Same nonzero
+//     `link_group` puts instances into a shared LinkGroup (lockstep serial).
+
 struct ScriptEvent {
     std::uint32_t                       at_ms = 0;
     std::optional<std::string>          button;
@@ -26,19 +36,32 @@ struct ScriptEvent {
     std::optional<std::string>          tap;
     std::optional<std::uint32_t>        hold_ms;
     std::optional<std::vector<std::uint8_t>> midi;
+    std::optional<std::string>          screenshot;
+    std::optional<std::uint32_t>        system;
+};
+
+struct ScriptSystem {
+    std::string                  rom;
+    std::optional<std::uint8_t>  link_group;   // 0 / unset = standalone
 };
 
 struct Script {
-    std::string                rom;
-    std::uint32_t              duration_ms = 0;
-    std::uint32_t              sample_rate = 44100;
-    std::uint32_t              block_size  = 1024;
-    std::optional<std::string> out_wav;
-    std::vector<ScriptEvent>   events;
+    // Legacy single-system field. If non-empty AND `systems` is empty/unset,
+    // it is promoted to a one-element `systems` array at load time. Optional
+    // so multi-system scripts can omit it cleanly.
+    std::optional<std::string>                rom;
+    std::optional<std::vector<ScriptSystem>>  systems;
+    std::optional<std::string>                midi_routing;
+    std::uint32_t                             duration_ms = 0;
+    std::uint32_t                             sample_rate = 44100;
+    std::uint32_t                             block_size  = 1024;
+    std::optional<std::string>                out_wav;
+    std::vector<ScriptEvent>                  events;
 };
 
 struct TimedButton {
     std::uint64_t sample;
+    std::uint32_t systemIndex;
     GameboyButton button;
     bool          down;
 };
@@ -46,6 +69,12 @@ struct TimedButton {
 struct TimedMidi {
     std::uint64_t sample;
     MidiEvent     event;
+};
+
+struct TimedScreenshot {
+    std::uint64_t sample;
+    std::uint32_t systemIndex;
+    std::string   name;
 };
 
 inline GameboyButton parseButtonName(const std::string& s) {
@@ -63,10 +92,41 @@ inline GameboyButton parseButtonName(const std::string& s) {
     throw std::runtime_error("unknown button name: " + s);
 }
 
-// Flatten ScriptEvents into a sorted vector of TimedButton transitions
-// (sample-offset, button, down). Performs validation and `tap` expansion.
+inline MidiRouting parseMidiRouting(const std::string& s) {
+    if (s == "SendToAll")               return MidiRouting::SendToAll;
+    if (s == "FourChannelsPerInstance") return MidiRouting::FourChannelsPerInstance;
+    if (s == "OneChannelPerInstance")   return MidiRouting::OneChannelPerInstance;
+    if (s == "MidiChannelToInstance")   return MidiRouting::MidiChannelToInstance;
+    throw std::runtime_error("unknown midi_routing: " + s);
+}
+
+// Reject events that don't have exactly one input form. Returns the form
+// name found ("button", "tap", "midi", "screenshot") so the caller can
+// branch without re-checking the optionals.
+inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
+    const int n = (e.button.has_value()     ? 1 : 0)
+                + (e.tap.has_value()        ? 1 : 0)
+                + (e.midi.has_value()       ? 1 : 0)
+                + (e.screenshot.has_value() ? 1 : 0);
+    if (n == 0)
+        throw std::runtime_error("event #" + std::to_string(index) +
+                                 " has no 'button'/'tap'/'midi'/'screenshot'");
+    if (n > 1)
+        throw std::runtime_error("event #" + std::to_string(index) +
+                                 " mixes multiple input forms");
+    if (e.button)     return "button";
+    if (e.tap)        return "tap";
+    if (e.midi)       return "midi";
+    return "screenshot";
+}
+
+// Flatten button/tap events into a sorted vector of TimedButton transitions
+// keyed by (sample, systemIndex). MIDI and screenshot events are skipped
+// (they have their own flatten passes). `systemCount` bounds the `system`
+// index check; pass 1 for legacy scripts.
 inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& events,
-                                              std::uint32_t sampleRate) {
+                                              std::uint32_t sampleRate,
+                                              std::uint32_t systemCount) {
     std::vector<TimedButton> out;
     out.reserve(events.size() * 2);
 
@@ -76,30 +136,27 @@ inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& ev
 
     for (std::size_t i = 0; i < events.size(); ++i) {
         const auto& e = events[i];
-        const bool hasButton = e.button.has_value();
-        const bool hasTap    = e.tap.has_value();
-        const bool hasMidi   = e.midi.has_value();
+        const char* form = validateEventForm(e, i);
+        if (std::string_view(form) != "button" && std::string_view(form) != "tap")
+            continue;
 
-        // MIDI events are flattened separately; ignore them here.
-        if (hasMidi && !hasButton && !hasTap) continue;
-
-        if (hasButton && hasTap)
+        const std::uint32_t sysIdx = e.system.value_or(0);
+        if (sysIdx >= systemCount)
             throw std::runtime_error("event #" + std::to_string(i) +
-                                     " has both 'button' and 'tap'");
-        if (!hasButton && !hasTap)
-            throw std::runtime_error("event #" + std::to_string(i) +
-                                     " has neither 'button' nor 'tap' nor 'midi'");
+                                     " 'system' index " + std::to_string(sysIdx) +
+                                     " is out of range (have " +
+                                     std::to_string(systemCount) + ")");
 
-        if (hasButton) {
+        if (std::string_view(form) == "button") {
             if (!e.down.has_value())
                 throw std::runtime_error("event #" + std::to_string(i) +
-                                         " is missing 'down'");
-            out.push_back({toSample(e.at_ms), parseButtonName(*e.button), *e.down});
+                                         " 'button' form requires 'down'");
+            out.push_back({toSample(e.at_ms), sysIdx, parseButtonName(*e.button), *e.down});
         } else {
             const std::uint32_t hold = e.hold_ms.value_or(50);
             const auto btn = parseButtonName(*e.tap);
-            out.push_back({toSample(e.at_ms),         btn, true});
-            out.push_back({toSample(e.at_ms + hold),  btn, false});
+            out.push_back({toSample(e.at_ms),         sysIdx, btn, true});
+            out.push_back({toSample(e.at_ms + hold),  sysIdx, btn, false});
         }
     }
 
@@ -134,6 +191,36 @@ inline std::vector<TimedMidi> flattenMidi(const std::vector<ScriptEvent>& events
 
     std::stable_sort(out.begin(), out.end(),
                      [](const TimedMidi& a, const TimedMidi& b) {
+                         return a.sample < b.sample;
+                     });
+    return out;
+}
+
+inline std::vector<TimedScreenshot> flattenScreenshots(const std::vector<ScriptEvent>& events,
+                                                      std::uint32_t sampleRate,
+                                                      std::uint32_t systemCount) {
+    std::vector<TimedScreenshot> out;
+    auto toSample = [sampleRate](std::uint32_t ms) -> std::uint64_t {
+        return (static_cast<std::uint64_t>(ms) * sampleRate) / 1000u;
+    };
+
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const auto& e = events[i];
+        if (!e.screenshot.has_value()) continue;
+        const std::uint32_t sysIdx = e.system.value_or(0);
+        if (sysIdx >= systemCount)
+            throw std::runtime_error("event #" + std::to_string(i) +
+                                     " 'system' index " + std::to_string(sysIdx) +
+                                     " is out of range (have " +
+                                     std::to_string(systemCount) + ")");
+        if (e.screenshot->empty())
+            throw std::runtime_error("event #" + std::to_string(i) +
+                                     " 'screenshot' name must be non-empty");
+        out.push_back({toSample(e.at_ms), sysIdx, *e.screenshot});
+    }
+
+    std::stable_sort(out.begin(), out.end(),
+                     [](const TimedScreenshot& a, const TimedScreenshot& b) {
                          return a.sample < b.sample;
                      });
     return out;

@@ -255,4 +255,20 @@ if(BUILD_CLI)
         USES_TERMINAL
         COMMENT "Rendering examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav"
     )
+
+    # `make cli-sync-smoke` -> boot two LSDJ instances on link_group 1 and
+    # write per-instance PNGs + a stereo WAV. Exists so agents can verify the
+    # multi-instance + GB-framebuffer screenshot path end-to-end without
+    # touching the plugin formats.
+    add_custom_target(cli-sync-smoke
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_smoke.json
+                --out ${CMAKE_BINARY_DIR}/lsdj-sync-smoke.wav
+                --screenshot-dir ${CMAKE_BINARY_DIR}
+                --final-screenshot
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Rendering examples/scripts/lsdj_sync_smoke.json -> build/lsdj-sync-smoke.wav + PNGs"
+    )
 endif()

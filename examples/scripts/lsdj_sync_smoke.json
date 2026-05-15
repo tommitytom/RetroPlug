@@ -1,0 +1,18 @@
+{
+  "duration_ms": 20000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "lsdj-sync-smoke.wav",
+  "systems": [
+    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 },
+    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 }
+  ],
+  "midi_routing": "SendToAll",
+  "events": [
+    { "at_ms": 15000, "screenshot": "post_boot", "system": 0 },
+    { "at_ms": 15000, "screenshot": "post_boot", "system": 1 },
+    { "at_ms": 15500, "tap": "Start", "hold_ms": 80, "system": 0 },
+    { "at_ms": 19000, "screenshot": "after_start", "system": 0 },
+    { "at_ms": 19000, "screenshot": "after_start", "system": 1 }
+  ]
+}
