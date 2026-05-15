@@ -11,6 +11,7 @@
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/roles/MgbPassthroughRole.hpp"
 #include "transport/MidiTypes.hpp"
 
 namespace {
@@ -193,6 +194,28 @@ TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", 
 TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectSerialization]") {
     REQUIRE_FALSE(projectConfigFromJson("{ this is not json").has_value());
     REQUIRE_FALSE(projectConfigFromJson("").has_value());
+}
+
+TEST_CASE("SameBoyConfig round-trips an attached MgbRoleConfig role",
+          "[ProjectSerialization][role]") {
+    SameBoyConfig sb;
+    sb.romPath = "/some/path/mGB.gb";
+    sb.roles.emplace_back(MgbRoleConfig{});
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJson(cfg);
+    INFO(json);
+
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->systems.size() == 1);
+
+    const auto* roundtripped = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(roundtripped != nullptr);
+    REQUIRE(roundtripped->roles.size() == 1);
+    REQUIRE(rfl::get_if<MgbRoleConfig>(&roundtripped->roles.front().variant()) != nullptr);
 }
 
 TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, linkGroupId)",

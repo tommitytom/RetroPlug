@@ -7,7 +7,9 @@ add_executable(retroplug-cli
     main.cpp
     ${PROJECT_SOURCE_DIR}/src/project/Project.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/sameboy/RomSniffer.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/MgbPassthroughRole.cpp
 )
 
 target_include_directories(retroplug-cli PRIVATE

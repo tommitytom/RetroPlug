@@ -12,6 +12,8 @@ add_executable(retroplug-tests
     EventQueueTests.cpp
     FrameBufferTripleTests.cpp
     ProjectTests.cpp
+    RomSnifferTests.cpp
+    ../src/system/sameboy/RomSniffer.cpp
 )
 
 target_include_directories(retroplug-tests PRIVATE

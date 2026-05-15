@@ -9,20 +9,23 @@
 #include <vector>
 
 #include "system/InputTypes.hpp"
+#include "transport/MidiTypes.hpp"
 
 // JSON-driven scripted input + render parameters for retroplug-cli.
 //
-// Two forms are accepted per event:
-//   {"at_ms": N, "button": "A", "down": true|false}    (explicit)
-//   {"at_ms": N, "tap": "A", "hold_ms": 50}            (shorthand)
+// Three forms are accepted per event:
+//   {"at_ms": N, "button": "A", "down": true|false}    (explicit button)
+//   {"at_ms": N, "tap": "A", "hold_ms": 50}            (button shorthand)
+//   {"at_ms": N, "midi": [144, 60, 100]}               (raw MIDI bytes, 1..4)
 //
-// Validation rejects events that mix or omit both forms.
+// Validation rejects events that mix forms or set none.
 struct ScriptEvent {
-    std::uint32_t              at_ms = 0;
-    std::optional<std::string> button;
-    std::optional<bool>        down;
-    std::optional<std::string> tap;
-    std::optional<std::uint32_t> hold_ms;
+    std::uint32_t                       at_ms = 0;
+    std::optional<std::string>          button;
+    std::optional<bool>                 down;
+    std::optional<std::string>          tap;
+    std::optional<std::uint32_t>        hold_ms;
+    std::optional<std::vector<std::uint8_t>> midi;
 };
 
 struct Script {
@@ -38,6 +41,11 @@ struct TimedButton {
     std::uint64_t sample;
     GameboyButton button;
     bool          down;
+};
+
+struct TimedMidi {
+    std::uint64_t sample;
+    MidiEvent     event;
 };
 
 inline GameboyButton parseButtonName(const std::string& s) {
@@ -70,13 +78,17 @@ inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& ev
         const auto& e = events[i];
         const bool hasButton = e.button.has_value();
         const bool hasTap    = e.tap.has_value();
+        const bool hasMidi   = e.midi.has_value();
+
+        // MIDI events are flattened separately; ignore them here.
+        if (hasMidi && !hasButton && !hasTap) continue;
 
         if (hasButton && hasTap)
             throw std::runtime_error("event #" + std::to_string(i) +
                                      " has both 'button' and 'tap'");
         if (!hasButton && !hasTap)
             throw std::runtime_error("event #" + std::to_string(i) +
-                                     " has neither 'button' nor 'tap'");
+                                     " has neither 'button' nor 'tap' nor 'midi'");
 
         if (hasButton) {
             if (!e.down.has_value())
@@ -93,6 +105,35 @@ inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& ev
 
     std::stable_sort(out.begin(), out.end(),
                      [](const TimedButton& a, const TimedButton& b) {
+                         return a.sample < b.sample;
+                     });
+    return out;
+}
+
+inline std::vector<TimedMidi> flattenMidi(const std::vector<ScriptEvent>& events,
+                                          std::uint32_t sampleRate) {
+    std::vector<TimedMidi> out;
+    auto toSample = [sampleRate](std::uint32_t ms) -> std::uint64_t {
+        return (static_cast<std::uint64_t>(ms) * sampleRate) / 1000u;
+    };
+
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const auto& e = events[i];
+        if (!e.midi.has_value()) continue;
+        const auto& bytes = *e.midi;
+        if (bytes.empty() || bytes.size() > MidiEvent::kDataSize)
+            throw std::runtime_error("event #" + std::to_string(i) +
+                                     " 'midi' must have 1.." +
+                                     std::to_string(MidiEvent::kDataSize) + " bytes");
+        MidiEvent ev;
+        ev.frame = 0;
+        ev.size  = static_cast<std::uint32_t>(bytes.size());
+        for (std::size_t b = 0; b < bytes.size(); ++b) ev.data[b] = bytes[b];
+        out.push_back({toSample(e.at_ms), ev});
+    }
+
+    std::stable_sort(out.begin(), out.end(),
+                     [](const TimedMidi& a, const TimedMidi& b) {
                          return a.sample < b.sample;
                      });
     return out;

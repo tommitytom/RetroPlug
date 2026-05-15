@@ -4,6 +4,16 @@
 
 cmake_minimum_required(VERSION 3.14...3.31)
 
+# Default to Release when the user hasn't asked for a specific build type.
+# Without this the project compiles at -O0 (no opt flags), which makes the
+# DSP path 3-4x slower than necessary and the standalone visibly chug. Set
+# before project() so the cache value is in scope by the time subprojects
+# pick up CMAKE_BUILD_TYPE.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING
+        "Build type (Release, Debug, RelWithDebInfo, MinSizeRel)" FORCE)
+endif()
+
 # setup project
 set(CMAKE_CXX_STANDARD 20)
 set(NAME retroplug)
@@ -164,7 +174,9 @@ dpf_add_plugin(${NAME}
       src/PluginDSP.cpp
       src/project/Project.cpp
       src/system/sameboy/LinkGroup.cpp
+      src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/MgbPassthroughRole.cpp
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
@@ -177,7 +189,9 @@ dpf_add_plugin(${NAME}
       # shared DSP state is unreachable).
       src/project/Project.cpp
       src/system/sameboy/LinkGroup.cpp
+      src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/MgbPassthroughRole.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
 

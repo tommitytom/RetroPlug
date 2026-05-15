@@ -6,6 +6,11 @@
 #include <cstring>
 #include <string_view>
 
+#include "rfl/Variant.hpp"
+
+#include "system/sameboy/RomSniffer.hpp"
+#include "system/sameboy/roles/MgbPassthroughRole.hpp"
+
 extern "C" {
 #define GB_INTERNAL
 #include <gb.h>
@@ -83,7 +88,7 @@ void serialStart(GB_gameboy_t* gb, bool bit_received) {
 }
 bool serialEnd(GB_gameboy_t* gb) {
     SameBoySystem& s = self(gb);
-    if (s.linkPeers_.empty()) return true;
+    if (s.linkPeers_.empty()) return s.nextSerialInBit();
     const bool ret = s.serialBitFromPeer();
     s.serialBroadcastBit();
     return ret;
@@ -175,6 +180,22 @@ void SameBoySystem::onActivate(double sampleRate) {
         }
     }
 
+    // Stored config is the source of truth. Empty roles → ask the sniffer
+    // for a default; user edits later overwrite both the sniff and any role
+    // already attached. Only Mgb is a known kind today; other kinds are
+    // step 08+ inhabitants.
+    if (config_.roles.empty()) {
+        switch (detectRomKind(rom_)) {
+            case RomKind::Mgb:
+                config_.roles.emplace_back(MgbRoleConfig{});
+                break;
+            case RomKind::Generic:
+            default:
+                break;
+        }
+    }
+    instantiateRoles();
+
     activated_ = true;
 }
 
@@ -225,6 +246,38 @@ void SameBoySystem::onReset() {
         audioFrameCount_ = 0;
     }
     pendingButtons_.clear();
+}
+
+void SameBoySystem::instantiateRoles() {
+    roles_.clear();
+    serialIn_.clear();
+    serialBitsRemaining_ = 0;
+    for (const auto& rc : config_.roles) {
+        if (rfl::get_if<MgbRoleConfig>(&rc.variant())) {
+            auto role = std::make_unique<MgbPassthroughRole>();
+            role->onAttach(*this);
+            roles_.push_back(std::move(role));
+            std::fprintf(stderr, "[RetroPlug] attached MGB passthrough role to system %u\n", id());
+        }
+    }
+}
+
+bool SameBoySystem::nextSerialInBit() {
+    if (serialIn_.empty()) return true; // idle high
+
+    if (serialBitsRemaining_ == 0) {
+        serialBitsRemaining_ = 8;
+    }
+
+    const std::uint8_t byte = serialIn_.front();
+    const int bitIndex = serialBitsRemaining_ - 1; // MSB-first: 7..0
+    const bool bit = ((byte >> bitIndex) & 1u) != 0;
+
+    --serialBitsRemaining_;
+    if (serialBitsRemaining_ == 0) {
+        serialIn_.pop_front();
+    }
+    return bit;
 }
 
 void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
@@ -294,6 +347,25 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
         GB_set_key_state(gb_, static_cast<GB_key_t>(pb.button), pb.down);
         pendingButtons_.pop_front();
     }
+
+    // Slave-mode serial pump. mGB and other "MIDI-listener" ROMs hold SC at
+    // 0x80 (transfer enabled, external clock) waiting for a master to clock
+    // bytes in. SameBoy's GB_serial_set_data_bit shifts one bit into SB and,
+    // after the 8th call, clears SC bit 7 + raises the serial interrupt — so
+    // 8 calls = one delivered byte. Only push when SC bit 7 is set (the GB is
+    // ready) AND bit 0 is clear (external clock = slave). Linked GBs route
+    // bits via serialBitFromPeer/Broadcast instead, so skip when peers exist.
+    if (linkPeers_.empty() && !serialIn_.empty()) {
+        const std::uint8_t sc = GB_safe_read_memory(gb_, 0xFF02);
+        if ((sc & 0x80) && !(sc & 0x01)) {
+            const std::uint8_t byte = serialIn_.front();
+            serialIn_.pop_front();
+            for (int b = 7; b >= 0; --b) {
+                GB_serial_set_data_bit(gb_, ((byte >> b) & 1u) != 0);
+            }
+        }
+    }
+
     GB_run(gb_);
     return audioFrameCount_ < framesNeeded;
 }

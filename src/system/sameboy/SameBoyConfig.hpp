@@ -6,6 +6,7 @@
 
 #include "rfl/Literal.hpp"
 
+#include "system/RoleConfig.hpp"
 #include "util/Base64Bytes.hpp"
 
 // Plain-data, reflectcpp-friendly config for a SameBoy system slot.
@@ -47,6 +48,8 @@ struct SameBoyConfig {
     Base64Bytes               savestate;  // optional, populated when persisting
 
     // Roles attached to this system (LSDJ sync, MGB passthrough, etc.).
-    // The variant has no inhabitants in step 1; the field exists so the type is in place.
-    // std::vector<RoleConfig>   roles;
+    // Round-trips through reflectcpp; SameBoySystem::onActivate replays it
+    // into runtime `RomRole` instances. Empty after a fresh ROM load triggers
+    // RomSniffer to fill in a default suggestion.
+    std::vector<RoleConfig>   roles;
 };

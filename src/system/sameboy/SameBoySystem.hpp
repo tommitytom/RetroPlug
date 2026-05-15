@@ -36,6 +36,16 @@ public:
     void onReset() override;
     void onProcess(const AudioBlockInfo& info, float* const* outs) override;
 
+    // Build runtime `RomRole` instances from `config_.roles`. Called once at
+    // the end of onActivate (after the sniffer has had a chance to fill in
+    // defaults). Idempotent: clears `roles_` first.
+    void instantiateRoles();
+
+    // Pop the next bit (MSB-first) from `serialIn_` and return it. Returns
+    // `true` (idle high) when the queue is empty. Called from the SameBoy
+    // serial-end callback in standalone mode.
+    bool nextSerialInBit();
+
     // Append the routed events to `pendingMidi_` (cleared at the top of each
     // onProcess) and fan them out to every attached role. Roles that care
     // about timing read MidiEvent::frame from the events themselves.
@@ -114,6 +124,13 @@ public:
     // MIDI events that landed on this system in the current block. Cleared
     // at the top of onProcess; drained by roles inside onProcessBlock.
     std::vector<::MidiEvent> pendingMidi_;
+
+    // Bytes queued by roles for the GB serial port. Drained one bit at a
+    // time (MSB first) by `nextSerialInBit()` from the SameBoy serial-end
+    // callback. `serialBitsRemaining_` counts how many bits are left in the
+    // current front byte (8 → fresh byte, 0 → next call pops & reloads).
+    std::deque<std::uint8_t> serialIn_;
+    int                      serialBitsRemaining_ = 0;
 
 private:
     ExpSmoother gainSmoother_;

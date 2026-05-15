@@ -147,8 +147,9 @@ int main(int argc, char** argv) try {
     SameBoySystem* sysRaw = sys.get();
     project.adoptSystem(sys.release());
 
-    // 3. Flatten event list to sorted (sample, button, down) triples.
-    const auto timed = flattenEvents(script.events, script.sample_rate);
+    // 3. Flatten event lists to sorted (sample, ...) streams.
+    const auto timed     = flattenEvents(script.events, script.sample_rate);
+    const auto timedMidi = flattenMidi  (script.events, script.sample_rate);
 
     // 4. Render loop.
     const std::uint64_t totalSamples =
@@ -162,6 +163,7 @@ int main(int argc, char** argv) try {
 
     const auto t0 = std::chrono::steady_clock::now();
     std::size_t eventCursor = 0;
+    std::size_t midiCursor  = 0;
 
     for (std::uint64_t s = 0; s < totalSamples; s += script.block_size) {
         const std::uint32_t frames =
@@ -170,6 +172,14 @@ int main(int argc, char** argv) try {
         while (eventCursor < timed.size() && timed[eventCursor].sample <= s) {
             sysRaw->pressButton(timed[eventCursor].button, timed[eventCursor].down);
             ++eventCursor;
+        }
+
+        // MIDI events go straight to onMidi (single-system CLI; no routing
+        // policy needed). Roles attached via the sniffer pick them up and
+        // push bytes into the system's serial queue.
+        while (midiCursor < timedMidi.size() && timedMidi[midiCursor].sample <= s) {
+            sysRaw->onMidi(&timedMidi[midiCursor].event, 1);
+            ++midiCursor;
         }
 
         std::fill_n(outL.data(), frames, 0.0f);
