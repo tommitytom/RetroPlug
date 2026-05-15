@@ -39,6 +39,7 @@
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/FrameBufferTriple.hpp"
 
 #include "Script.hpp"
@@ -70,6 +71,18 @@ void printUsage(const char* argv0) {
         "                     (the mix WAV at `out_wav` is still produced). Required when you\n"
         "                     want to verify audible sync between linked instances.\n",
         argv0);
+}
+
+LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
+    if (s == "Off")                return LsdjSyncMode::Off;
+    if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
+    if (s == "MidiSyncArduinoboy") return LsdjSyncMode::MidiSyncArduinoboy;
+    if (s == "MidiMap")            return LsdjSyncMode::MidiMap;
+    if (s == "Keyboard")           return LsdjSyncMode::Keyboard;
+    if (s == "KeyboardMidi")       return LsdjSyncMode::KeyboardMidi;
+    if (s == "MidiPassthrough")    return LsdjSyncMode::MidiPassthrough;
+    if (s == "ArduinoboyMaster")   return LsdjSyncMode::ArduinoboyMaster;
+    throw std::runtime_error("unknown lsdj_sync_mode: " + s);
 }
 
 CliArgs parseArgs(int argc, char** argv) {
@@ -255,6 +268,13 @@ int main(int argc, char** argv) try {
         cfg.model       = GameboyModel::CgbC;
         cfg.fastBoot    = true;
         cfg.linkGroupId = s.link_group.value_or(0);
+        // Pre-seed the LSDJ role config so the sniffer fallback is skipped.
+        // The system's onActivate only runs the sniffer when roles is empty.
+        if (s.lsdj_sync_mode) {
+            LsdjSyncConfig lsdj;
+            lsdj.mode = parseLsdjSyncMode(*s.lsdj_sync_mode);
+            cfg.roles.emplace_back(lsdj);
+        }
 
         auto bytes = slurpBytes(s.rom);
         auto sys = std::make_unique<SameBoySystem>(
@@ -277,6 +297,19 @@ int main(int argc, char** argv) try {
     double cliBpm       = script.bpm.value_or(120.0);
     bool   cliTransport = script.transport_running.value_or(false);
     double cliPpq       = 0.0;
+
+    // Per-system MIDI output log. Step 09 is the first step where roles emit
+    // MIDI back to the host (Arduinoboy master mode). The plugin drains
+    // sys->midiOut() into DPF's writeMidiEvent; the CLI doesn't have a host,
+    // so we capture each block's events into a buffer keyed by absolute
+    // sample position. Dumped to `<scriptStem>_midi_sys<N>.txt` after the
+    // render finishes — test scripts grep this for expected clock streams.
+    struct MidiLogEntry {
+        std::uint64_t sample;
+        std::uint32_t size;
+        std::uint8_t  bytes[::MidiEvent::kDataSize];
+    };
+    std::vector<std::vector<MidiLogEntry>> midiLog(systemCount);
 
     // 4. Render loop.
     const std::uint64_t totalSamples =
@@ -404,11 +437,55 @@ int main(int argc, char** argv) try {
                 perSysWav[i].writeBlockFloatPlanar(perSysOuts[i].data(), frames);
         }
 
+        // Drain each system's midiOut into the log. The plugin's equivalent
+        // is in PluginDSP::run after onProcess; mirror the behavior here so
+        // CLI tests of master-out roles (Arduinoboy MI.OUT) can verify the
+        // emitted byte stream.
+        for (std::uint32_t i = 0; i < systemCount; ++i) {
+            auto& buf = systems[i]->midiOut();
+            for (const auto& ev : buf) {
+                MidiLogEntry e{};
+                e.sample = s + ev.frame;
+                e.size   = ev.size > ::MidiEvent::kDataSize ? ::MidiEvent::kDataSize : ev.size;
+                std::memcpy(e.bytes, ev.data, e.size);
+                midiLog[i].push_back(e);
+            }
+            buf.clear();
+        }
+
         // Advance simulated PPQ for the next block based on the frames we
         // actually rendered (the last block may be short).
         if (cliTransport) {
             cliPpq += (cliBpm / 60.0) * (static_cast<double>(frames) /
                                          static_cast<double>(script.sample_rate));
+        }
+    }
+
+    // Persist the per-system MIDI log next to the WAV (or in the screenshot
+    // dir if there's no out_wav). One line per event: "<sample> <bytes>".
+    {
+        std::filesystem::path baseDir;
+        if (script.out_wav) baseDir = std::filesystem::path(*script.out_wav).parent_path();
+        if (baseDir.empty()) baseDir = std::filesystem::path(screenshotDir);
+        for (std::uint32_t i = 0; i < systemCount; ++i) {
+            if (midiLog[i].empty()) continue;
+            const std::filesystem::path out = baseDir /
+                (scriptStem + "_midi_sys" + std::to_string(i) + ".txt");
+            std::ofstream f(out);
+            if (!f) {
+                std::fprintf(stderr, "[midi-log] failed to open %s for write\n",
+                             out.string().c_str());
+                continue;
+            }
+            for (const auto& e : midiLog[i]) {
+                f << e.sample;
+                for (std::uint32_t b = 0; b < e.size; ++b) {
+                    f << ' ' << std::hex << static_cast<unsigned>(e.bytes[b]) << std::dec;
+                }
+                f << '\n';
+            }
+            std::fprintf(stderr, "[midi-log] sys%u -> %s (%zu events)\n",
+                         i, out.string().c_str(), midiLog[i].size());
         }
     }
 

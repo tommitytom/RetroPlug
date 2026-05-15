@@ -82,29 +82,41 @@ struct SetMidiRoutingCommand {
     MidiRouting routing;
 };
 
+// Edit the LSDJ sync mode + tempo divisor on a specific system's LsdjSyncRole
+// config. Keeping the command narrow (rather than passing a whole RoleConfig)
+// preserves the union's POD-trivial property; if more role kinds need
+// per-system editors a generic mechanism arrives later.
+struct SetLsdjSyncConfigCommand {
+    SystemId      id;
+    std::uint32_t mode;          // matches LsdjSyncMode underlying type
+    std::uint8_t  tempoDivisor;  // 1/2/4/8
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
-        None           = 0,
-        ButtonPress    = 1,
-        LoadRom        = 2,
-        AddSystem      = 3,
-        RemoveSystem   = 4,
-        ReplaceSystem  = 5,
-        SetLinkGroup   = 6,
-        LoadProject    = 7,
-        SetMidiRouting = 8,
+        None              = 0,
+        ButtonPress       = 1,
+        LoadRom           = 2,
+        AddSystem         = 3,
+        RemoveSystem      = 4,
+        ReplaceSystem     = 5,
+        SetLinkGroup      = 6,
+        LoadProject       = 7,
+        SetMidiRouting    = 8,
+        SetLsdjSyncConfig = 9,
     };
 
     Kind kind = Kind::None;
     union Payload {
-        ButtonPressCommand    buttonPress;
-        LoadRomCommand        loadRom;
-        AddSystemCommand      addSystem;
-        RemoveSystemCommand   removeSystem;
-        ReplaceSystemCommand  replaceSystem;
-        SetLinkGroupCommand   setLinkGroup;
-        LoadProjectCommand    loadProject;
-        SetMidiRoutingCommand setMidiRouting;
+        ButtonPressCommand       buttonPress;
+        LoadRomCommand           loadRom;
+        AddSystemCommand         addSystem;
+        RemoveSystemCommand      removeSystem;
+        ReplaceSystemCommand     replaceSystem;
+        SetLinkGroupCommand      setLinkGroup;
+        LoadProjectCommand       loadProject;
+        SetMidiRoutingCommand    setMidiRouting;
+        SetLsdjSyncConfigCommand setLsdjSyncConfig;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -163,6 +175,15 @@ struct Command {
         Command c;
         c.kind = Kind::SetMidiRouting;
         c.payload.setMidiRouting = SetMidiRoutingCommand{routing};
+        return c;
+    }
+
+    static Command makeSetLsdjSyncConfig(SystemId id,
+                                         std::uint32_t mode,
+                                         std::uint8_t tempoDivisor) {
+        Command c;
+        c.kind = Kind::SetLsdjSyncConfig;
+        c.payload.setLsdjSyncConfig = SetLsdjSyncConfigCommand{id, mode, tempoDivisor};
         return c;
     }
 };

@@ -83,6 +83,12 @@ public:
     bool serialBitFromPeer() const;
     void serialBroadcastBit() const;
 
+    // True when any attached role wants LSDJ's outgoing serial bytes (e.g.
+    // the Arduinoboy MI.OUT decoder). Cached on each instantiateRoles() so
+    // the per-bit serial callback doesn't re-walk roles_.
+    bool serialOutCaptureEnabled() const { return serialOutEnabled_; }
+    void captureSerialOutBit(bool bit);
+
     // Fields accessed by the C callbacks. Public for callback access only.
     SameBoyConfig             config_;
     std::vector<std::uint8_t> rom_;
@@ -131,6 +137,13 @@ public:
     // current front byte (8 → fresh byte, 0 → next call pops & reloads).
     std::deque<std::uint8_t> serialIn_;
     int                      serialBitsRemaining_ = 0;
+
+    // Outgoing-serial byte accumulator. Bits arrive MSB-first from the GB;
+    // on every 8th bit we fan the assembled byte out via
+    // RomRole::onSerialOutByte for the master-mode decoder (step 09).
+    std::uint8_t serialOutByte_ = 0;
+    int          serialOutBits_ = 0;
+    bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
 
 private:
     ExpSmoother gainSmoother_;

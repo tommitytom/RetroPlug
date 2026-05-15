@@ -17,6 +17,11 @@ export interface SystemEntry {
     kind?: string;
     gainDb?: number;
     linkGroupId?: number;
+    // Present only when the system has an LSDJ sync role attached (i.e. an
+    // LSDJ-titled ROM is loaded). Used by PluginUI to surface the mode picker
+    // menu entry conditionally.
+    lsdjSyncMode?: number;
+    lsdjTempoDivisor?: number;
 }
 
 interface SystemGridProps {

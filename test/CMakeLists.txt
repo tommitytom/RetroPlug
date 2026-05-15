@@ -8,12 +8,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(retroplug-tests
+    ArduinoboyMasterTests.cpp
     CommandQueueTests.cpp
     EventQueueTests.cpp
     FrameBufferTripleTests.cpp
     ProjectTests.cpp
     RomSnifferTests.cpp
     ../src/system/sameboy/RomSniffer.cpp
+    ../src/system/sameboy/roles/ArduinoboyMaster.cpp
 )
 
 target_include_directories(retroplug-tests PRIVATE

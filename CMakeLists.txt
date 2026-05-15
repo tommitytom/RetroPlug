@@ -176,6 +176,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
   FILES_UI
@@ -192,6 +193,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       ${UI_BUNDLE_C}
@@ -306,6 +308,75 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Running the LSDJ host-MIDI-sync demo (PNGs + per-system WAV)"
+    )
+
+    # `make cli-lsdj-arduinoboy` -> exercises LsdjSyncRole's Arduinoboy slave
+    # mode. Pre-sets `lsdj_sync_mode: MidiSyncArduinoboy` on the system so the
+    # role's onMidi handles Arduinoboy note commands (24/25 play toggle,
+    # 26-29 tempo divisor, 30+ row trigger). Uses the Arduinoboy-build ROM.
+    add_custom_target(cli-lsdj-arduinoboy
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_input.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-arduinoboy
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ Arduinoboy slave-mode input demo"
+    )
+
+    # `make cli-lsdj-midimap` -> exercises MidiMap mode (channel + note → row
+    # index byte + 0xFE NoteOff handshake). Uses the Arduinoboy-build ROM.
+    add_custom_target(cli-lsdj-midimap
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midimap.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-midimap
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ MidiMap-mode demo"
+    )
+
+    # `make cli-lsdj-keyboardmidi` -> exercises KeyboardMidi mode (MIDI notes
+    # mapped to PS/2 scancodes via LSDJ's keyboard map).
+    add_custom_target(cli-lsdj-keyboardmidi
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_keyboardmidi.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-keyboardmidi
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ KeyboardMidi-mode demo"
+    )
+
+    # `make cli-lsdj-passthrough` -> exercises MidiPassthrough mode (raw
+    # 3-byte MIDI bytes forwarded to LSDJ's serial port, MGB-style).
+    add_custom_target(cli-lsdj-passthrough
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_passthrough.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-passthrough
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ MidiPassthrough-mode demo"
+    )
+
+    # `make cli-lsdj-arduinoboy-master` -> the master-out path. LSDJ's MI.OUT
+    # mode emits serial bytes that the role's ArduinoboyMaster decoder
+    # translates to host MIDI events. The per-system MIDI log next to the WAV
+    # captures the decoded stream (look for 0xF8 clock + 0xFA/0xFC transport).
+    add_custom_target(cli-lsdj-arduinoboy-master
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_master.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ Arduinoboy-master demo (MI.OUT → host MIDI)"
     )
 
     # `make cli-lsdj-sync-negative` -> control test (no SYNC=LSDJ set). Used

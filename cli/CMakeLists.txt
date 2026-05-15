@@ -9,6 +9,7 @@ add_executable(retroplug-cli
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/RomSniffer.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/ArduinoboyMaster.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/LsdjSyncRole.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/MgbPassthroughRole.cpp
     # lodepng (vendored under lv_binding_js). Compiled directly so the CLI

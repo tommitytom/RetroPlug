@@ -1,6 +1,9 @@
 # Step 09 — LSDJ Arduinoboy modes
 
-**Status:** Pending.
+**Status:** Done. Input-side modes (MidiSyncArduinoboy, MidiMap, KeyboardMidi,
+MidiPassthrough) + ArduinoboyMaster (MI.OUT byte decoder) + UI mode picker
+all shipped. Raw `Keyboard` mode is enum-only (logs unimplemented). Autoplay
+flag still scaffolded; RAM-based detection lands with step 10.
 
 ## Goal
 

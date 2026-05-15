@@ -19,6 +19,7 @@ extern "C" {
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 #include "transport/FrameBufferTriple.hpp"
@@ -135,6 +136,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                       JS_NewCFunction(ctx, js_getMidiRouting, "getMidiRouting", 0));
     JS_SetPropertyStr(ctx, ns, "setMidiRouting",
                       JS_NewCFunction(ctx, js_setMidiRouting, "setMidiRouting", 1));
+    JS_SetPropertyStr(ctx, ns, "setLsdjSyncConfig",
+                      JS_NewCFunction(ctx, js_setLsdjSyncConfig, "setLsdjSyncConfig", 3));
     JS_SetPropertyStr(ctx, ns, "setWindowSize",
                       JS_NewCFunction(ctx, js_setWindowSize, "setWindowSize", 2));
     JS_SetPropertyStr(ctx, ns, "isWindowSizeControlled",
@@ -496,6 +499,18 @@ JSValue PluginJsBridge::js_listSystems(JSContext* ctx, JSValueConst, int, JSValu
             JS_SetPropertyStr(ctx, entry, "kind",        JS_NewString(ctx, "sameboy"));
             JS_SetPropertyStr(ctx, entry, "gainDb",      JS_NewFloat64(ctx, sb->config_.gainDb));
             JS_SetPropertyStr(ctx, entry, "linkGroupId", JS_NewUint32(ctx, sb->config_.linkGroupId));
+
+            // Surface the LSDJ sync role config when present so the UI can
+            // render a mode picker only for LSDJ-loaded slots.
+            for (const auto& rc : sb->config_.roles) {
+                if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
+                    JS_SetPropertyStr(ctx, entry, "lsdjSyncMode",
+                                      JS_NewUint32(ctx, static_cast<std::uint32_t>(lsdj->mode)));
+                    JS_SetPropertyStr(ctx, entry, "lsdjTempoDivisor",
+                                      JS_NewUint32(ctx, lsdj->tempoDivisor));
+                    break;
+                }
+            }
         }
         JS_SetPropertyUint32(ctx, arr, i++, entry);
     }
@@ -558,6 +573,31 @@ JSValue PluginJsBridge::js_setMidiRouting(JSContext* ctx, JSValueConst, int argc
 
     return self->commands_->tryPush(
         Command::makeSetMidiRouting(static_cast<MidiRouting>(r)))
+        ? JS_TRUE : JS_FALSE;
+}
+
+JSValue PluginJsBridge::js_setLsdjSyncConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 3)
+        return JS_ThrowTypeError(ctx, "plugin.setLsdjSyncConfig: expected (id, mode, tempoDivisor)");
+    PluginJsBridge* self = bridgeFromContext();
+    if (!self || !self->commands_) return JS_FALSE;
+
+    int32_t id = 0, mode = 0, divisor = 0;
+    if (JS_ToInt32(ctx, &id,      argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &mode,    argv[1]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &divisor, argv[2]) < 0) return JS_EXCEPTION;
+
+    // Keep the bridge in lockstep with LsdjSyncMode's value range — out-of-
+    // range writes are dropped rather than narrowed into a meaningful mode by
+    // accident. Range: Off (0) through ArduinoboyMaster (7).
+    if (mode < 0 || mode > static_cast<int32_t>(LsdjSyncMode::ArduinoboyMaster))
+        return JS_FALSE;
+    if (divisor < 1 || divisor > 8) return JS_FALSE;
+
+    return self->commands_->tryPush(
+        Command::makeSetLsdjSyncConfig(static_cast<SystemId>(id),
+                                       static_cast<std::uint32_t>(mode),
+                                       static_cast<std::uint8_t>(divisor)))
         ? JS_TRUE : JS_FALSE;
 }
 

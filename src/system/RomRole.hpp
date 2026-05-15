@@ -24,6 +24,15 @@ public:
                         std::uint32_t /*count*/) {}
     virtual void onProcessBlock(SameBoySystem&, const AudioBlockInfo&) {}
     virtual void onTransportChange(bool /*playing*/) {}
+
+    // Roles that consume LSDJ's serial-out byte stream (step 09's
+    // ArduinoboyMaster MI.OUT decoder) opt in here. The SameBoySystem checks
+    // this each block; when true AND no link peer is wired, the system's
+    // serialEnd callback accumulates bits into bytes and fans each completed
+    // byte out to roles via `onSerialOutByte`.
+    virtual bool wantsSerialOut() const { return false; }
+    virtual void onSerialOutByte(SameBoySystem&, std::uint8_t /*byte*/) {}
+
     virtual std::string_view kind() const = 0;
 };
 

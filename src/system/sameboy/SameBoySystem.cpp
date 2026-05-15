@@ -89,7 +89,16 @@ void serialStart(GB_gameboy_t* gb, bool bit_received) {
 }
 bool serialEnd(GB_gameboy_t* gb) {
     SameBoySystem& s = self(gb);
-    if (s.linkPeers_.empty()) return s.nextSerialInBit();
+    if (s.linkPeers_.empty()) {
+        // Capture the bit LSDJ is shifting out (only meaningful when no link
+        // peer exists; in linked mode the bit is broadcast to peers instead).
+        // The role-side cost of opting in is per-byte, so check cheaply per-bit
+        // and bail when no role wants the stream.
+        if (s.serialOutCaptureEnabled()) {
+            s.captureSerialOutBit(GB_serial_get_data_bit(gb));
+        }
+        return s.nextSerialInBit();
+    }
     const bool ret = s.serialBitFromPeer();
     s.serialBroadcastBit();
     return ret;
@@ -258,6 +267,8 @@ void SameBoySystem::instantiateRoles() {
     roles_.clear();
     serialIn_.clear();
     serialBitsRemaining_ = 0;
+    serialOutByte_ = 0;
+    serialOutBits_ = 0;
     for (const auto& rc : config_.roles) {
         if (rfl::get_if<MgbRoleConfig>(&rc.variant())) {
             auto role = std::make_unique<MgbPassthroughRole>();
@@ -270,6 +281,28 @@ void SameBoySystem::instantiateRoles() {
             roles_.push_back(std::move(role));
             std::fprintf(stderr, "[RetroPlug] attached LSDJ sync role to system %u\n", id());
         }
+    }
+    // Recompute the serial-out capture gate now that roles_ is settled.
+    serialOutEnabled_ = false;
+    for (const auto& role : roles_) {
+        if (role && role->wantsSerialOut()) {
+            serialOutEnabled_ = true;
+            break;
+        }
+    }
+}
+
+void SameBoySystem::captureSerialOutBit(bool bit) {
+    // MSB-first to match nextSerialInBit / standard GB serial shift order.
+    serialOutByte_ = static_cast<std::uint8_t>(
+        (serialOutByte_ << 1) | (bit ? 1u : 0u));
+    if (++serialOutBits_ < 8) return;
+
+    const std::uint8_t completed = serialOutByte_;
+    serialOutByte_ = 0;
+    serialOutBits_ = 0;
+    for (auto& role : roles_) {
+        if (role) role->onSerialOutByte(*this, completed);
     }
 }
 

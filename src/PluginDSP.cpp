@@ -18,6 +18,7 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 #include "transport/MidiTypes.hpp"
@@ -311,6 +312,31 @@ protected:
                     const MidiRouting r = cmd.payload.setMidiRouting.routing;
                     if (project.config().settings.midiRouting != r) {
                         project.config().settings.midiRouting = r;
+                        projectMutated = true;
+                    }
+                } break;
+
+                case Command::Kind::SetLsdjSyncConfig: {
+                    auto& sc = cmd.payload.setLsdjSyncConfig;
+                    auto* sys = project.findSystem(sc.id);
+                    auto* sb  = dynamic_cast<SameBoySystem*>(sys);
+                    if (!sb) break;
+                    // Locate the lsdj-sync RoleConfig in the system's config
+                    // and mutate it in place. Then reinstantiate roles so the
+                    // live LsdjSyncRole picks up the new cfg_ snapshot
+                    // (transient state — arduinoboyPlaying_, lastRow_, etc. —
+                    // resets, which is the desired behavior on a mode flip).
+                    bool found = false;
+                    for (auto& rc : sb->config_.roles) {
+                        if (auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
+                            lsdj->mode         = static_cast<LsdjSyncMode>(sc.mode);
+                            lsdj->tempoDivisor = sc.tempoDivisor > 0 ? sc.tempoDivisor : 1;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        sb->instantiateRoles();
                         projectMutated = true;
                     }
                 } break;

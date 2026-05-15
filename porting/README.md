@@ -110,8 +110,10 @@ The features that actually make this a music plugin.
 - [08: LSDJ sync role](./08-lsdj-sync.md) — **DONE**. Simplest LSDJ MIDI sync
   mode (MidiSync only): host PPQ → 0xF8 → LSDJ serial. Offset table + autoplay
   RAM detection deferred to step 09 where Arduinoboy needs them anyway.
-- [09: LSDJ Arduinoboy modes](./09-lsdj-arduinoboy.md) — Full Arduinoboy
-  protocol support: master/song/keyboard modes.
+- [09: LSDJ Arduinoboy modes](./09-lsdj-arduinoboy.md) — **DONE**. Full
+  Arduinoboy slave + MI.OUT master, MidiMap, KeyboardMidi, MidiPassthrough,
+  UI mode picker, ROM-build (stock vs aboy) detection. CLI MIDI output drain
+  for headless verification. Raw `Keyboard` mode is enum-only.
 - [10: LSDJ kit patching](./10-lsdj-kit-patching.md) — Sample/kit upload via
   memory-patch path.
 

@@ -59,7 +59,13 @@ struct ScriptEvent {
 
 struct ScriptSystem {
     std::string                  rom;
-    std::optional<std::uint8_t>  link_group;   // 0 / unset = standalone
+    std::optional<std::uint8_t>  link_group;     // 0 / unset = standalone
+    // Pre-set the LSDJ sync mode for this system, bypassing the sniffer
+    // default (MidiSync). Accepts the name of any LsdjSyncMode enumerator
+    // ("Off", "MidiSync", "MidiSyncArduinoboy", "MidiMap", "Keyboard",
+    // "KeyboardMidi", "MidiPassthrough", "ArduinoboyMaster"). Only meaningful
+    // when the ROM is sniffed as LSDJ; ignored otherwise.
+    std::optional<std::string>   lsdj_sync_mode;
 };
 
 struct Script {

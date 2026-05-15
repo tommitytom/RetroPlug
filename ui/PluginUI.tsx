@@ -28,6 +28,22 @@ const MIDI_ROUTING_NAMES = [
     "ch → inst",
 ];
 
+// LSDJ sync mode picker. Visible only when the focused system has an LSDJ
+// sync role (i.e. an LSDJ ROM is loaded). Names index 1:1 onto the C++
+// LsdjSyncMode enum (src/system/sameboy/roles/LsdjSyncRole.hpp); the enum
+// is append-only so this array can be safely indexed by value.
+const LSDJ_MODE_LABEL = "LSDJ mode:";
+const LSDJ_MODE_NAMES = [
+    "Off",
+    "MidiSync",
+    "Arduinoboy",
+    "MidiMap",
+    "Keyboard",
+    "KeyboardMidi",
+    "Passthrough",
+    "MI.OUT",
+];
+
 interface PluginNamespace {
     openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
     openSaveProjectBrowser?: () => void;
@@ -40,6 +56,7 @@ interface PluginNamespace {
     setLinkGroupId?: (systemId: number, groupId: number) => boolean;
     getMidiRouting?: () => number;
     setMidiRouting?: (routing: number) => boolean;
+    setLsdjSyncConfig?: (systemId: number, mode: number, tempoDivisor: number) => boolean;
     setWindowSize?: (w: number, h: number) => boolean;
     isWindowSizeControlled?: () => boolean;
 }
@@ -307,12 +324,17 @@ function PluginUI() {
         ? String(focusedSystem.linkGroupId ?? 0)
         : "-";
     const routingName = MIDI_ROUTING_NAMES[midiRouting] ?? MIDI_ROUTING_NAMES[0];
+    const hasLsdjRole = focusedSystem?.lsdjSyncMode !== undefined;
+    const lsdjModeName = hasLsdjRole
+        ? LSDJ_MODE_NAMES[focusedSystem!.lsdjSyncMode ?? 0] ?? LSDJ_MODE_NAMES[0]
+        : "";
     const menuItems = [
         "Load ROM",
         "Add instance",
         "Remove instance",
         `${LINK_GROUP_LABEL} ${linkGroupSuffix}`,
         `${MIDI_ROUTING_LABEL} ${routingName}`,
+        ...(hasLsdjRole ? [`${LSDJ_MODE_LABEL} ${lsdjModeName}`] : []),
         "Save project",
         "Load project",
         "Reset",
@@ -338,6 +360,15 @@ function PluginUI() {
             // Optimistically update so the label flips immediately; the
             // ConfigChanged event will reconcile shortly after.
             setMidiRouting(next);
+            return;
+        }
+        // LSDJ sync mode cycle. Reads through to the most recent systems
+        // snapshot (refresh on ConfigChanged) so the label tracks the picker.
+        if (label.startsWith(LSDJ_MODE_LABEL)) {
+            const sys = systemsRef.current.find((s) => s.id === focusedIdRef.current);
+            if (!sys || sys.lsdjSyncMode === undefined) return;
+            const next = (sys.lsdjSyncMode + 1) % LSDJ_MODE_NAMES.length;
+            plugin.setLsdjSyncConfig?.(sys.id, next, sys.lsdjTempoDivisor ?? 1);
             return;
         }
         switch (label) {
