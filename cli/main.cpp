@@ -53,6 +53,7 @@ struct CliArgs {
     std::optional<std::uint32_t> durationOverride;
     std::optional<std::string>   screenshotDir;
     bool                         finalScreenshot = false;
+    bool                         perSystemWav    = false;
 };
 
 void printUsage(const char* argv0) {
@@ -64,7 +65,10 @@ void printUsage(const char* argv0) {
         "  --out PATH         override the script's `out_wav`\n"
         "  --duration MS      override the script's `duration_ms`\n"
         "  --screenshot-dir D directory for screenshot PNGs (default: out_wav's dir, then cwd)\n"
-        "  --final-screenshot capture every system once at script end as `<stem>_final_sys<N>.png`\n",
+        "  --final-screenshot capture every system once at script end as `<stem>_final_sys<N>.png`\n"
+        "  --per-system-wav   also write per-system WAVs as `<out_wav stem>_sys<N>.wav`\n"
+        "                     (the mix WAV at `out_wav` is still produced). Required when you\n"
+        "                     want to verify audible sync between linked instances.\n",
         argv0);
 }
 
@@ -85,6 +89,7 @@ CliArgs parseArgs(int argc, char** argv) {
         else if (arg == "--duration")          a.durationOverride = static_cast<std::uint32_t>(std::atoi(need("--duration")));
         else if (arg == "--screenshot-dir")    a.screenshotDir    = std::string(need("--screenshot-dir"));
         else if (arg == "--final-screenshot")  a.finalScreenshot  = true;
+        else if (arg == "--per-system-wav")    a.perSystemWav     = true;
         else if (arg == "-h" || arg == "--help") { printUsage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
@@ -275,6 +280,37 @@ int main(int argc, char** argv) try {
     if (script.out_wav)
         wav.emplace(*script.out_wav, script.sample_rate, 2);
 
+    // Per-system WAV plumbing. Allocated only when --per-system-wav is set.
+    // The mix WAV (above) is also produced so the audible result is
+    // verifiable; the per-system files isolate each instance for sync
+    // analysis (cross-correlation, peak-time comparison, etc.).
+    std::vector<WavWriter>          perSysWav;
+    std::vector<std::vector<float>> perSysL, perSysR;
+    std::vector<std::array<float*, 2>> perSysOuts;
+    if (args.perSystemWav) {
+        if (!script.out_wav) {
+            std::fprintf(stderr,
+                "--per-system-wav requires an out_wav (set `out_wav` in the script or pass --out)\n");
+            return 1;
+        }
+        std::filesystem::path base(*script.out_wav);
+        const std::string stem = base.stem().string();
+        const std::string ext  = base.extension().string().empty() ? ".wav" : base.extension().string();
+        const std::filesystem::path dir =
+            base.has_parent_path() && !base.parent_path().empty()
+                ? base.parent_path() : std::filesystem::path(".");
+        perSysWav.reserve(systemCount);
+        perSysL .assign(systemCount, std::vector<float>(script.block_size));
+        perSysR .assign(systemCount, std::vector<float>(script.block_size));
+        perSysOuts.resize(systemCount);
+        for (std::uint32_t i = 0; i < systemCount; ++i) {
+            const auto p = (dir / (stem + "_sys" + std::to_string(i) + ext)).string();
+            perSysWav.emplace_back(p, script.sample_rate, 2);
+            perSysOuts[i] = { perSysL[i].data(), perSysR[i].data() };
+            std::fprintf(stderr, "[per-system-wav] sys%u -> %s\n", i, p.c_str());
+        }
+    }
+
     const auto t0 = std::chrono::steady_clock::now();
     std::size_t btnCursor  = 0;
     std::size_t midiCursor = 0;
@@ -301,7 +337,34 @@ int main(int argc, char** argv) try {
         std::fill_n(outL.data(), frames, 0.0f);
         std::fill_n(outR.data(), frames, 0.0f);
         AudioBlockInfo info{ frames, static_cast<double>(script.sample_rate) };
-        project.onProcess(info, outs);
+
+        if (args.perSystemWav) {
+            // Manual orchestration mirroring Project::onProcess + LinkGroup
+            // round-robin, but with per-system outs buffers so we can write
+            // each instance's audio to its own WAV. Works for linked and
+            // unlinked systems alike: the step loop interleaves them, which
+            // is exactly what LinkGroup does internally.
+            for (auto* sys : systems) sys->prepareForBlock(info);
+            bool anyBelow = true;
+            while (anyBelow) {
+                anyBelow = false;
+                for (auto* sys : systems) {
+                    if (sys->stepIfBelowTarget(info.frames)) anyBelow = true;
+                }
+            }
+            for (std::uint32_t i = 0; i < systemCount; ++i) {
+                std::fill_n(perSysL[i].data(), frames, 0.0f);
+                std::fill_n(perSysR[i].data(), frames, 0.0f);
+                systems[i]->finishBlock(info, perSysOuts[i].data());
+                // Sum into the mix WAV.
+                for (std::uint32_t f = 0; f < frames; ++f) {
+                    outL[f] += perSysL[i][f];
+                    outR[f] += perSysR[i][f];
+                }
+            }
+        } else {
+            project.onProcess(info, outs);
+        }
 
         // Drain screenshot events whose target sample is now in the past.
         // Done after onProcess so the screenshot reflects the just-completed
@@ -315,6 +378,10 @@ int main(int argc, char** argv) try {
         }
 
         if (wav) wav->writeBlockFloatPlanar(outs, frames);
+        if (args.perSystemWav) {
+            for (std::uint32_t i = 0; i < systemCount; ++i)
+                perSysWav[i].writeBlockFloatPlanar(perSysOuts[i].data(), frames);
+        }
     }
 
     if (args.finalScreenshot) {

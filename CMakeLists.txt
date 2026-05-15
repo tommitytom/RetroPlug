@@ -271,4 +271,34 @@ if(BUILD_CLI)
         USES_TERMINAL
         COMMENT "Rendering examples/scripts/lsdj_sync_smoke.json -> build/lsdj-sync-smoke.wav + PNGs"
     )
+
+    # `make cli-lsdj-sync` -> the full LSDJ link-cable sync demo: two
+    # instances, both configured SYNC=LSDJ in the PROJECT screen, a one-note
+    # pattern entered on each, then START on instance 0. Writes per-system
+    # WAVs so audible sync can be cross-correlated. Use this as a regression
+    # test for the LinkGroup serial-bit ferrying and as the reference for
+    # how to drive LSDJ from a script.
+    add_custom_target(cli-lsdj-sync
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_pattern.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-sync
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ two-instance sync demo (PNGs + per-system WAVs)"
+    )
+
+    # `make cli-lsdj-sync-negative` -> control test (no SYNC=LSDJ set). Used
+    # to confirm that LEAD/SYNC indicators only appear when sync is properly
+    # configured — pair with cli-lsdj-sync when investigating sync issues.
+    add_custom_target(cli-lsdj-sync-negative
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_negative.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-sync-negative
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ no-sync control test (PNGs)"
+    )
 endif()

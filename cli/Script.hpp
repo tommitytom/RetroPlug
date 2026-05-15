@@ -17,6 +17,7 @@
 // Event forms (mutually exclusive — exactly one must be set):
 //   {"at_ms": N, "button": "A", "down": true|false, "system": 0}  (explicit)
 //   {"at_ms": N, "tap": "A", "hold_ms": 50, "system": 0}          (shorthand)
+//   {"at_ms": N, "chord": ["Select", "Up"], "system": 0}          (modifier + key)
 //   {"at_ms": N, "midi": [144, 60, 100]}                          (routed)
 //   {"at_ms": N, "screenshot": "boot", "system": 0}               (PNG dump)
 //
@@ -24,20 +25,32 @@
 // through `Project::dispatchMidi` using the project-level `midi_routing`
 // mode so it behaves the same way as the plugin.
 //
+// The `chord` form encodes the LSDJ chord-timing rule: the modifier (first
+// element) must be pressed ~200 ms BEFORE the key (second element), otherwise
+// LSDJ may miss the chord. Optional `stagger_ms` (default 200) controls the
+// gap; `hold_ms` (default 200) controls how long the key is held. Expands to
+//   modifier.down @ at_ms
+//   key.down      @ at_ms + stagger_ms
+//   key.up        @ at_ms + stagger_ms + hold_ms
+//   modifier.up   @ at_ms + 2*stagger_ms + hold_ms
+// — exactly what works reliably for SELECT+CURSOR and A+CURSOR.
+//
 // Top-level forms:
 //   - Legacy single-system: `rom` at top level.
 //   - Multi-system: `systems: [{ rom, link_group }, ...]`. Same nonzero
 //     `link_group` puts instances into a shared LinkGroup (lockstep serial).
 
 struct ScriptEvent {
-    std::uint32_t                       at_ms = 0;
-    std::optional<std::string>          button;
-    std::optional<bool>                 down;
-    std::optional<std::string>          tap;
-    std::optional<std::uint32_t>        hold_ms;
+    std::uint32_t                            at_ms = 0;
+    std::optional<std::string>               button;
+    std::optional<bool>                      down;
+    std::optional<std::string>               tap;
+    std::optional<std::uint32_t>             hold_ms;
+    std::optional<std::vector<std::string>>  chord;       // 2 buttons: [modifier, key]
+    std::optional<std::uint32_t>             stagger_ms;  // chord only; default 200
     std::optional<std::vector<std::uint8_t>> midi;
-    std::optional<std::string>          screenshot;
-    std::optional<std::uint32_t>        system;
+    std::optional<std::string>               screenshot;
+    std::optional<std::uint32_t>             system;
 };
 
 struct ScriptSystem {
@@ -101,21 +114,23 @@ inline MidiRouting parseMidiRouting(const std::string& s) {
 }
 
 // Reject events that don't have exactly one input form. Returns the form
-// name found ("button", "tap", "midi", "screenshot") so the caller can
-// branch without re-checking the optionals.
+// name found ("button", "tap", "chord", "midi", "screenshot") so the caller
+// can branch without re-checking the optionals.
 inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
     const int n = (e.button.has_value()     ? 1 : 0)
                 + (e.tap.has_value()        ? 1 : 0)
+                + (e.chord.has_value()      ? 1 : 0)
                 + (e.midi.has_value()       ? 1 : 0)
                 + (e.screenshot.has_value() ? 1 : 0);
     if (n == 0)
         throw std::runtime_error("event #" + std::to_string(index) +
-                                 " has no 'button'/'tap'/'midi'/'screenshot'");
+                                 " has no 'button'/'tap'/'chord'/'midi'/'screenshot'");
     if (n > 1)
         throw std::runtime_error("event #" + std::to_string(index) +
                                  " mixes multiple input forms");
     if (e.button)     return "button";
     if (e.tap)        return "tap";
+    if (e.chord)      return "chord";
     if (e.midi)       return "midi";
     return "screenshot";
 }
@@ -136,8 +151,8 @@ inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& ev
 
     for (std::size_t i = 0; i < events.size(); ++i) {
         const auto& e = events[i];
-        const char* form = validateEventForm(e, i);
-        if (std::string_view(form) != "button" && std::string_view(form) != "tap")
+        const std::string_view form = validateEventForm(e, i);
+        if (form != "button" && form != "tap" && form != "chord")
             continue;
 
         const std::uint32_t sysIdx = e.system.value_or(0);
@@ -147,16 +162,29 @@ inline std::vector<TimedButton> flattenEvents(const std::vector<ScriptEvent>& ev
                                      " is out of range (have " +
                                      std::to_string(systemCount) + ")");
 
-        if (std::string_view(form) == "button") {
+        if (form == "button") {
             if (!e.down.has_value())
                 throw std::runtime_error("event #" + std::to_string(i) +
                                          " 'button' form requires 'down'");
             out.push_back({toSample(e.at_ms), sysIdx, parseButtonName(*e.button), *e.down});
-        } else {
+        } else if (form == "tap") {
             const std::uint32_t hold = e.hold_ms.value_or(50);
             const auto btn = parseButtonName(*e.tap);
             out.push_back({toSample(e.at_ms),         sysIdx, btn, true});
             out.push_back({toSample(e.at_ms + hold),  sysIdx, btn, false});
+        } else { // "chord"
+            if (e.chord->size() != 2)
+                throw std::runtime_error("event #" + std::to_string(i) +
+                                         " 'chord' must have exactly 2 buttons (modifier, key)");
+            const std::uint32_t stagger = e.stagger_ms.value_or(200);
+            const std::uint32_t hold    = e.hold_ms.value_or(200);
+            const auto mod = parseButtonName((*e.chord)[0]);
+            const auto key = parseButtonName((*e.chord)[1]);
+            // Modifier down, then key down, key up, modifier up.
+            out.push_back({toSample(e.at_ms),                          sysIdx, mod, true});
+            out.push_back({toSample(e.at_ms + stagger),                sysIdx, key, true});
+            out.push_back({toSample(e.at_ms + stagger + hold),         sysIdx, key, false});
+            out.push_back({toSample(e.at_ms + 2 * stagger + hold),     sysIdx, mod, false});
         }
     }
 
