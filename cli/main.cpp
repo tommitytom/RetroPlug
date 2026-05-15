@@ -269,6 +269,14 @@ int main(int argc, char** argv) try {
     const auto timedButtons     = flattenEvents     (script.events, script.sample_rate, systemCount);
     const auto timedMidi        = flattenMidi       (script.events, script.sample_rate);
     const auto timedScreenshots = flattenScreenshots(script.events, script.sample_rate, systemCount);
+    const auto timedTransport   = flattenTransport  (script.events, script.sample_rate);
+
+    // Simulated host transport state, fed into AudioBlockInfo each block.
+    // Mirrors what DPF surfaces from a DAW so LsdjSyncRole and friends can
+    // generate MIDI clock byte streams the same way in CLI as in the plugin.
+    double cliBpm       = script.bpm.value_or(120.0);
+    bool   cliTransport = script.transport_running.value_or(false);
+    double cliPpq       = 0.0;
 
     // 4. Render loop.
     const std::uint64_t totalSamples =
@@ -315,6 +323,7 @@ int main(int argc, char** argv) try {
     std::size_t btnCursor  = 0;
     std::size_t midiCursor = 0;
     std::size_t shotCursor = 0;
+    std::size_t xportCursor = 0;
 
     for (std::uint64_t s = 0; s < totalSamples; s += script.block_size) {
         const std::uint32_t frames =
@@ -334,9 +343,21 @@ int main(int argc, char** argv) try {
             ++midiCursor;
         }
 
+        // Apply transport / BPM edits whose target sample falls inside this
+        // block. Done before the AudioBlockInfo is built so the new state
+        // takes effect immediately for the block they were scheduled in.
+        while (xportCursor < timedTransport.size() &&
+               timedTransport[xportCursor].sample < s + frames) {
+            const auto& tx = timedTransport[xportCursor];
+            if (tx.setBpm)       cliBpm       = *tx.setBpm;
+            if (tx.setTransport) cliTransport = *tx.setTransport;
+            ++xportCursor;
+        }
+
         std::fill_n(outL.data(), frames, 0.0f);
         std::fill_n(outR.data(), frames, 0.0f);
-        AudioBlockInfo info{ frames, static_cast<double>(script.sample_rate) };
+        AudioBlockInfo info{ frames, static_cast<double>(script.sample_rate),
+                             cliBpm, cliPpq, cliTransport };
 
         if (args.perSystemWav) {
             // Manual orchestration mirroring Project::onProcess + LinkGroup
@@ -381,6 +402,13 @@ int main(int argc, char** argv) try {
         if (args.perSystemWav) {
             for (std::uint32_t i = 0; i < systemCount; ++i)
                 perSysWav[i].writeBlockFloatPlanar(perSysOuts[i].data(), frames);
+        }
+
+        // Advance simulated PPQ for the next block based on the frames we
+        // actually rendered (the last block may be short).
+        if (cliTransport) {
+            cliPpq += (cliBpm / 60.0) * (static_cast<double>(frames) /
+                                         static_cast<double>(script.sample_rate));
         }
     }
 

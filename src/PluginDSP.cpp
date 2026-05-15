@@ -368,7 +368,23 @@ protected:
         std::memset(outL, 0, frames * sizeof(float));
         std::memset(outR, 0, frames * sizeof(float));
 
-        AudioBlockInfo info{ frames, fSampleRate };
+        // Host timing from DPF. When bbt is valid, compute continuous PPQ
+        // position from bar/beat/tick; otherwise (host without BBT support)
+        // approximate from sample frame at the default tempo. Step 09 may
+        // expose a manual BPM override for hosts that play without BBT.
+        const TimePosition& tp = getTimePosition();
+        double bpm = 120.0;
+        double ppq = 0.0;
+        if (tp.bbt.valid) {
+            bpm = tp.bbt.beatsPerMinute;
+            // bbt.beat is 1-based per DistrhoDetails.hpp.
+            ppq = (tp.bbt.barStartTick
+                 + (tp.bbt.beat - 1) * tp.bbt.ticksPerBeat
+                 + tp.bbt.tick) / tp.bbt.ticksPerBeat;
+        } else if (tp.playing) {
+            ppq = (static_cast<double>(tp.frame) / fSampleRate) * (bpm / 60.0);
+        }
+        AudioBlockInfo info{ frames, fSampleRate, bpm, ppq, tp.playing };
         project.onProcess(info, outputs);
 
         // Drain per-system MIDI output back to the host. Empty until step 09

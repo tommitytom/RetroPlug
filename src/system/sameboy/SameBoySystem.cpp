@@ -9,6 +9,7 @@
 #include "rfl/Variant.hpp"
 
 #include "system/sameboy/RomSniffer.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "system/sameboy/roles/MgbPassthroughRole.hpp"
 
 extern "C" {
@@ -182,12 +183,17 @@ void SameBoySystem::onActivate(double sampleRate) {
 
     // Stored config is the source of truth. Empty roles → ask the sniffer
     // for a default; user edits later overwrite both the sniff and any role
-    // already attached. Only Mgb is a known kind today; other kinds are
-    // step 08+ inhabitants.
+    // already attached.
     if (config_.roles.empty()) {
         switch (detectRomKind(rom_)) {
             case RomKind::Mgb:
                 config_.roles.emplace_back(MgbRoleConfig{});
+                break;
+            case RomKind::Lsdj:
+                // Default to MidiSync mode so LSDJ syncs to host transport
+                // out of the box. Role-config editing UI (step 09) can flip
+                // this to Off or to the Arduinoboy modes per project.
+                config_.roles.emplace_back(LsdjSyncConfig{});
                 break;
             case RomKind::Generic:
             default:
@@ -258,6 +264,11 @@ void SameBoySystem::instantiateRoles() {
             role->onAttach(*this);
             roles_.push_back(std::move(role));
             std::fprintf(stderr, "[RetroPlug] attached MGB passthrough role to system %u\n", id());
+        } else if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
+            auto role = std::make_unique<LsdjSyncRole>(*lsdj);
+            role->onAttach(*this);
+            roles_.push_back(std::move(role));
+            std::fprintf(stderr, "[RetroPlug] attached LSDJ sync role to system %u\n", id());
         }
     }
 }

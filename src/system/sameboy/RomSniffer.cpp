@@ -26,5 +26,7 @@ RomKind detectRomKind(const std::vector<std::uint8_t>& rom) {
         reinterpret_cast<const char*>(rom.data() + kTitleOffset), kTitleSize));
 
     if (title == "MGB") return RomKind::Mgb;
+    // LSDJ ROM titles include the version suffix, e.g. "LSDj-v9.4.2".
+    if (title.starts_with("LSDj")) return RomKind::Lsdj;
     return RomKind::Generic;
 }

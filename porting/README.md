@@ -107,7 +107,9 @@ The features that actually make this a music plugin.
   routing modes from the old project.
 - [07: MGB passthrough role](./07-mgb-role.md) — First concrete `RomRole`. ROM
   sniffer registers it. Validates the role abstraction.
-- [08: LSDJ sync role](./08-lsdj-sync.md) — Simplest LSDJ MIDI sync mode.
+- [08: LSDJ sync role](./08-lsdj-sync.md) — **DONE**. Simplest LSDJ MIDI sync
+  mode (MidiSync only): host PPQ → 0xF8 → LSDJ serial. Offset table + autoplay
+  RAM detection deferred to step 09 where Arduinoboy needs them anyway.
 - [09: LSDJ Arduinoboy modes](./09-lsdj-arduinoboy.md) — Full Arduinoboy
   protocol support: master/song/keyboard modes.
 - [10: LSDJ kit patching](./10-lsdj-kit-patching.md) — Sample/kit upload via

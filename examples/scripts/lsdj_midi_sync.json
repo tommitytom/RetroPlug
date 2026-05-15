@@ -1,0 +1,55 @@
+{
+  "duration_ms": 40000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/lsdj-midi-sync.wav",
+  "bpm": 120.0,
+  "transport_running": false,
+  "systems": [
+    { "rom": "resources/roms/lsdj9_4_2.gb" }
+  ],
+  "events": [
+    { "at_ms": 15000, "screenshot": "00_post_boot", "system": 0 },
+
+    { "at_ms": 15500, "chord": ["Select", "Up"], "system": 0 },
+
+    { "at_ms": 16500, "tap": "Down", "hold_ms": 100, "system": 0 },
+    { "at_ms": 16800, "tap": "Down", "hold_ms": 100, "system": 0 },
+
+    { "at_ms": 17200, "screenshot": "01_on_sync_field", "system": 0 },
+
+    { "at_ms": 17600, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 18400, "chord": ["A", "Right"], "system": 0 },
+
+    { "at_ms": 19200, "screenshot": "02_sync_midi_set", "system": 0 },
+
+    { "at_ms": 19800, "chord": ["Select", "Down"], "system": 0 },
+
+    { "at_ms": 20800, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 21300, "screenshot": "03_chain_added", "system": 0 },
+
+    { "at_ms": 21800, "chord": ["Select", "Right"], "system": 0 },
+
+    { "at_ms": 22800, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 23300, "screenshot": "04_phrase_added", "system": 0 },
+
+    { "at_ms": 23800, "chord": ["Select", "Right"], "system": 0 },
+
+    { "at_ms": 24800, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 25300, "screenshot": "05_note_added", "system": 0 },
+
+    { "at_ms": 25800, "chord": ["Select", "Left"], "system": 0 },
+    { "at_ms": 26800, "chord": ["Select", "Left"], "system": 0 },
+
+    { "at_ms": 27800, "screenshot": "06_pre_transport", "system": 0 },
+
+    { "at_ms": 28500, "set_transport": true },
+
+    { "at_ms": 29500, "screenshot": "07_after_transport_on", "system": 0 },
+    { "at_ms": 33000, "screenshot": "08_4s_in", "system": 0 },
+    { "at_ms": 37000, "screenshot": "09_8s_in", "system": 0 },
+
+    { "at_ms": 38000, "set_transport": false },
+    { "at_ms": 39500, "screenshot": "10_after_transport_off", "system": 0 }
+  ]
+}

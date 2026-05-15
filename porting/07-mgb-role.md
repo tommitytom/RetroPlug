@@ -1,6 +1,6 @@
 # Step 07 — MGB passthrough role
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

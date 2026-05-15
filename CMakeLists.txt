@@ -176,6 +176,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
   FILES_UI
       src/PluginUI.cpp
@@ -191,6 +192,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
+      src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
@@ -287,6 +289,23 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Running the LSDJ two-instance sync demo (PNGs + per-system WAVs)"
+    )
+
+    # `make cli-lsdj-midi-sync` -> drive a single LSDJ instance from a
+    # simulated host transport. Sets SYNC=MIDI in PROJECT, builds a one-note
+    # chain/phrase, then toggles `set_transport: true` so AudioBlockInfo
+    # carries a running transport. LsdjSyncRole generates 0xF8 clock bytes
+    # from the host PPQ position; LSDJ syncs against them just as it would
+    # against a DAW's transport.
+    add_custom_target(cli-lsdj-midi-sync
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midi_sync.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-midi-sync
+                --per-system-wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ host-MIDI-sync demo (PNGs + per-system WAV)"
     )
 
     # `make cli-lsdj-sync-negative` -> control test (no SYNC=LSDJ set). Used

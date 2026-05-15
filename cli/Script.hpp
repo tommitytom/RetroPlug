@@ -20,6 +20,8 @@
 //   {"at_ms": N, "chord": ["Select", "Up"], "system": 0}          (modifier + key)
 //   {"at_ms": N, "midi": [144, 60, 100]}                          (routed)
 //   {"at_ms": N, "screenshot": "boot", "system": 0}               (PNG dump)
+//   {"at_ms": N, "set_transport": true|false}                     (host xport)
+//   {"at_ms": N, "set_bpm": 140.0}                                (host tempo)
 //
 // `system` defaults to 0. For `midi` events it is ignored — MIDI is routed
 // through `Project::dispatchMidi` using the project-level `midi_routing`
@@ -51,6 +53,8 @@ struct ScriptEvent {
     std::optional<std::vector<std::uint8_t>> midi;
     std::optional<std::string>               screenshot;
     std::optional<std::uint32_t>             system;
+    std::optional<bool>                      set_transport;  // simulate host start/stop
+    std::optional<double>                    set_bpm;        // simulate host tempo change
 };
 
 struct ScriptSystem {
@@ -69,6 +73,11 @@ struct Script {
     std::uint32_t                             sample_rate = 44100;
     std::uint32_t                             block_size  = 1024;
     std::optional<std::string>                out_wav;
+    // Initial host transport state, fed into AudioBlockInfo each block until a
+    // `set_transport` / `set_bpm` event changes it. The CLI advances ppqPos
+    // internally so LsdjSyncRole sees the same tempo the DAW would.
+    std::optional<double>                     bpm;                // default 120
+    std::optional<bool>                       transport_running;  // default false
     std::vector<ScriptEvent>                  events;
 };
 
@@ -88,6 +97,15 @@ struct TimedScreenshot {
     std::uint64_t sample;
     std::uint32_t systemIndex;
     std::string   name;
+};
+
+// Simulated host-transport edit applied before a block begins. The render
+// loop drains these in `[blockStartSample, blockEndSample)` order and updates
+// the local cliTransport / cliBpm state used to populate AudioBlockInfo.
+struct TimedTransport {
+    std::uint64_t        sample;
+    std::optional<bool>  setTransport;
+    std::optional<double> setBpm;
 };
 
 inline GameboyButton parseButtonName(const std::string& s) {
@@ -114,17 +132,20 @@ inline MidiRouting parseMidiRouting(const std::string& s) {
 }
 
 // Reject events that don't have exactly one input form. Returns the form
-// name found ("button", "tap", "chord", "midi", "screenshot") so the caller
-// can branch without re-checking the optionals.
+// name found ("button", "tap", "chord", "midi", "screenshot", "transport")
+// so the caller can branch without re-checking the optionals. A "transport"
+// event may carry either or both of set_transport / set_bpm.
 inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
+    const bool isTransport = e.set_transport.has_value() || e.set_bpm.has_value();
     const int n = (e.button.has_value()     ? 1 : 0)
                 + (e.tap.has_value()        ? 1 : 0)
                 + (e.chord.has_value()      ? 1 : 0)
                 + (e.midi.has_value()       ? 1 : 0)
-                + (e.screenshot.has_value() ? 1 : 0);
+                + (e.screenshot.has_value() ? 1 : 0)
+                + (isTransport              ? 1 : 0);
     if (n == 0)
         throw std::runtime_error("event #" + std::to_string(index) +
-                                 " has no 'button'/'tap'/'chord'/'midi'/'screenshot'");
+                                 " has no 'button'/'tap'/'chord'/'midi'/'screenshot'/'set_transport'/'set_bpm'");
     if (n > 1)
         throw std::runtime_error("event #" + std::to_string(index) +
                                  " mixes multiple input forms");
@@ -132,7 +153,8 @@ inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
     if (e.tap)        return "tap";
     if (e.chord)      return "chord";
     if (e.midi)       return "midi";
-    return "screenshot";
+    if (e.screenshot) return "screenshot";
+    return "transport";
 }
 
 // Flatten button/tap events into a sorted vector of TimedButton transitions
@@ -249,6 +271,25 @@ inline std::vector<TimedScreenshot> flattenScreenshots(const std::vector<ScriptE
 
     std::stable_sort(out.begin(), out.end(),
                      [](const TimedScreenshot& a, const TimedScreenshot& b) {
+                         return a.sample < b.sample;
+                     });
+    return out;
+}
+
+inline std::vector<TimedTransport> flattenTransport(const std::vector<ScriptEvent>& events,
+                                                    std::uint32_t sampleRate) {
+    std::vector<TimedTransport> out;
+    auto toSample = [sampleRate](std::uint32_t ms) -> std::uint64_t {
+        return (static_cast<std::uint64_t>(ms) * sampleRate) / 1000u;
+    };
+
+    for (const auto& e : events) {
+        if (!e.set_transport.has_value() && !e.set_bpm.has_value()) continue;
+        out.push_back({toSample(e.at_ms), e.set_transport, e.set_bpm});
+    }
+
+    std::stable_sort(out.begin(), out.end(),
+                     [](const TimedTransport& a, const TimedTransport& b) {
                          return a.sample < b.sample;
                      });
     return out;

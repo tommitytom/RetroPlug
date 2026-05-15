@@ -1,6 +1,6 @@
 # Step 08 — LSDJ minimal sync
 
-**Status:** Pending.
+**Status:** Done. MidiSync mode only; offset table + autoplay deferred to step 09.
 
 ## Goal
 

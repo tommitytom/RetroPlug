@@ -24,11 +24,17 @@ TEST_CASE("detectRomKind returns Mgb for a header titled \"MGB\"", "[RomSniffer]
     REQUIRE(detectRomKind(makeRom("MGB")) == RomKind::Mgb);
 }
 
+TEST_CASE("detectRomKind returns Lsdj for any \"LSDj\"-prefixed title", "[RomSniffer]") {
+    REQUIRE(detectRomKind(makeRom("LSDj"))         == RomKind::Lsdj);
+    REQUIRE(detectRomKind(makeRom("LSDj-v9.4.2"))  == RomKind::Lsdj);
+    REQUIRE(detectRomKind(makeRom("LSDj-v5.0.3"))  == RomKind::Lsdj);
+}
+
 TEST_CASE("detectRomKind returns Generic for unknown titles", "[RomSniffer]") {
     REQUIRE(detectRomKind(makeRom(""))             == RomKind::Generic);
-    REQUIRE(detectRomKind(makeRom("LSDj"))         == RomKind::Generic);
     REQUIRE(detectRomKind(makeRom("POKEMON RED"))  == RomKind::Generic);
     REQUIRE(detectRomKind(makeRom("MGBSOMETHING")) == RomKind::Generic);
+    REQUIRE(detectRomKind(makeRom("lsdj"))         == RomKind::Generic); // case-sensitive
 }
 
 TEST_CASE("detectRomKind tolerates short ROM buffers without reading past the end",

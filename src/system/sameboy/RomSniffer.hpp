@@ -7,10 +7,11 @@
 // Used at SameBoySystem::onActivate time to pick a default RomRole when the
 // stored config has none — the user's explicit role list always wins.
 //
-// LSDJ joins this enum at step 08; Mesen-side ROMs use a separate sniffer.
+// Mesen-side ROMs use a separate sniffer.
 enum class RomKind : std::uint8_t {
     Generic = 0,
     Mgb     = 1,
+    Lsdj    = 2,
 };
 
 // Reads the 15-byte title field at 0x0134 (cartridge header) and matches it

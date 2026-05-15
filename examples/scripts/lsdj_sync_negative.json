@@ -1,0 +1,45 @@
+{
+  "duration_ms": 32000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/lsdj-sync-negative.wav",
+  "systems": [
+    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 },
+    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 }
+  ],
+  "events": [
+    { "at_ms": 16000, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 16000, "tap": "A", "hold_ms": 100, "system": 1 },
+
+    { "at_ms": 17000, "chord": ["Select", "Right"], "system": 0 },
+    { "at_ms": 17000, "chord": ["Select", "Right"], "system": 1 },
+
+    { "at_ms": 18200, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 18200, "tap": "A", "hold_ms": 100, "system": 1 },
+
+    { "at_ms": 19200, "chord": ["Select", "Right"], "system": 0 },
+    { "at_ms": 19200, "chord": ["Select", "Right"], "system": 1 },
+
+    { "at_ms": 20500, "tap": "A", "hold_ms": 100, "system": 0 },
+    { "at_ms": 20500, "tap": "A", "hold_ms": 100, "system": 1 },
+
+    { "at_ms": 21500, "chord": ["Select", "Left"], "system": 0 },
+    { "at_ms": 21500, "chord": ["Select", "Left"], "system": 1 },
+    { "at_ms": 22500, "chord": ["Select", "Left"], "system": 0 },
+    { "at_ms": 22500, "chord": ["Select", "Left"], "system": 1 },
+
+    { "at_ms": 23800, "screenshot": "ready_no_sync", "system": 0 },
+    { "at_ms": 23800, "screenshot": "ready_no_sync", "system": 1 },
+
+    { "at_ms": 24500, "tap": "Start", "hold_ms": 100, "system": 0 },
+
+    { "at_ms": 25500, "screenshot": "after_start_nosync", "system": 0 },
+    { "at_ms": 25500, "screenshot": "after_start_nosync", "system": 1 },
+
+    { "at_ms": 28000, "screenshot": "later_nosync", "system": 0 },
+    { "at_ms": 28000, "screenshot": "later_nosync", "system": 1 },
+
+    { "at_ms": 31500, "screenshot": "end_nosync", "system": 0 },
+    { "at_ms": 31500, "screenshot": "end_nosync", "system": 1 }
+  ]
+}
