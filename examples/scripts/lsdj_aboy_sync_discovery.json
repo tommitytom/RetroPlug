@@ -1,0 +1,41 @@
+{
+  "duration_ms": 30000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/lsdj-aboy-sync-discovery.wav",
+  "systems": [
+    { "rom": "resources/roms/lsdj9_3_3-arduinoboy.gb" }
+  ],
+  "events": [
+    { "at_ms": 15000, "screenshot": "00_post_boot", "system": 0 },
+
+    { "at_ms": 15500, "chord": ["Select", "Up"], "system": 0 },
+    { "at_ms": 16500, "tap": "Down", "hold_ms": 100, "system": 0 },
+    { "at_ms": 16800, "tap": "Down", "hold_ms": 100, "system": 0 },
+    { "at_ms": 17200, "screenshot": "01_on_sync_off", "system": 0 },
+
+    { "at_ms": 17800, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 18700, "screenshot": "02_after_press_1", "system": 0 },
+
+    { "at_ms": 19200, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 20100, "screenshot": "03_after_press_2", "system": 0 },
+
+    { "at_ms": 20600, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 21500, "screenshot": "04_after_press_3", "system": 0 },
+
+    { "at_ms": 22000, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 22900, "screenshot": "05_after_press_4", "system": 0 },
+
+    { "at_ms": 23400, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 24300, "screenshot": "06_after_press_5", "system": 0 },
+
+    { "at_ms": 24800, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 25700, "screenshot": "07_after_press_6", "system": 0 },
+
+    { "at_ms": 26200, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 27100, "screenshot": "08_after_press_7", "system": 0 },
+
+    { "at_ms": 27600, "chord": ["A", "Right"], "system": 0 },
+    { "at_ms": 28500, "screenshot": "09_after_press_8", "system": 0 }
+  ]
+}

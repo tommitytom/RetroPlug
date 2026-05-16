@@ -273,3 +273,144 @@ The setup script creates `tools/.venv`, installs `pymupdf`, `fastembed`,
 Pick `--mode fts` for exact LSDj terminology ("FX command", "groove",
 "R command"), `--mode vec` for paraphrased / vague questions, default
 `hybrid` when in doubt.
+
+## LSDJ Arduinoboy build (aboy)
+
+[resources/roms/](resources/roms/) ships two LSDJ ROMs. They behave differently
+and the two `LsdjSyncMode` families need different ROMs:
+
+| ROM | Title @0x134 | Supported `lsdj_sync_mode` values |
+| --- | --- | --- |
+| `lsdj9_4_2.gb` | `LSDj-v9.4.2` (stock) | `Off`, `MidiSync`, `MidiMap`, `KeyboardMidi`, `MidiPassthrough` |
+| `lsdj9_3_3-arduinoboy.gb` | `LSDj-v9.3.3aboy` | All of the above plus `MidiSyncArduinoboy` and `ArduinoboyMaster` |
+
+The sniffer ([src/system/sameboy/RomSniffer.cpp](src/system/sameboy/RomSniffer.cpp))
+treats both ROMs as `RomKind::Lsdj` (any title starting with `LSDj`). The role's
+`onAttach` logs `build=stock` vs `build=arduinoboy` based on whether the title
+contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
+(mode=…, build=…)` to confirm which build is loaded.
+
+### PROJECT-screen SYNC cycle (aboy v9.3.3)
+
+Empirically mapped via [examples/scripts/lsdj_aboy_sync_discovery.json](examples/scripts/lsdj_aboy_sync_discovery.json)
+(see `make -C build cli-lsdj-aboy-sync-discovery` — each A+Right with a
+screenshot after). Starting from `OFF`, each `chord: ["A", "Right"]` (on
+the SYNC field in PROJECT) cycles forward:
+
+| Cycle # | SYNC value | Extra row visible |
+| --- | --- | --- |
+| 0 | OFF       | — |
+| 1 | LSDJ      | — |
+| 2 | MIDI      | — |
+| 3 | KEYBD     | PS/2 DELAY 06 |
+| 4 | ANA.IN    | TICKS/STEP 06 |
+| 5 | AN.OUT    | TICKS/STEP 06 |
+| 6 | MI.MAP    | — |
+| 7 | MI.OUT    | — |
+
+Note: stock LSDJ's manual (v9.2.6) does NOT document MI.OUT / MI.MAP — those are
+aboy-specific. PRELISTEN row reads `ON` for OFF / LSDJ / KEYBD / MI.MAP /
+MI.OUT and `N/A` for MIDI / ANA.IN / AN.OUT — so PRELISTEN is NOT a reliable
+"is a sync mode selected" indicator on the aboy build. Read the SYNC field
+text directly.
+
+### Master mode (MI.OUT) verification
+
+The CLI captures LSDJ's serial-out byte stream when a role opts into it via
+`RomRole::wantsSerialOut()`. The `LsdjSyncRole` enables this when its config
+is `ArduinoboyMaster`. Two artifacts land next to the WAV:
+
+- `<scriptStem>_serial_sys<N>.txt` — every completed serial-out byte, one per
+  line as `<absSample> 0x<hex>`. **Ground truth: whatever LSDJ actually wrote
+  to its SB register.** Inspect first.
+- `<scriptStem>_midi_sys<N>.txt` — the `ArduinoboyMaster` decoder's output
+  (one MIDI event per line, raw bytes hex). Empty when the decoder doesn't
+  recognize any of the raw bytes — that's expected to evolve as more of the
+  protocol gets implemented.
+
+### Synthetic Arduinoboy clock (subtle but load-bearing)
+
+LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode
+(`SC=0x80`). Real Arduinoboy hardware provides the clock pulses that shift the
+GB's SB register. SameBoy by default does nothing here — the GB just sits
+waiting. To make this verifiable headlessly,
+[src/system/sameboy/SameBoySystem.cpp](src/system/sameboy/SameBoySystem.cpp)
+drives one bit per audio sample in `writeAudioSample` whenever
+`(SC & 0x81) == 0x80` and serial-out capture is enabled:
+
+```cpp
+const auto sc = gb_->io_registers[GB_IO_SC];
+if ((sc & 0x81) == 0x80) {
+    const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+    captureSerialOutBit(outBit);
+    GB_serial_set_data_bit(gb_, true);
+}
+```
+
+This runs ~5.5 kHz faster than real Arduinoboy (which clocks at GB hardware
+serial rate, ~8 kHz) but the byte protocol is rate-independent so the
+captured bytes are correct.
+
+**Pitfall:** the bit-start callback gives the outgoing bit as its `bit_received`
+parameter; this is the bit being SENT (the peer receives it). Do NOT read
+`GB_serial_get_data_bit` in the bit-end callback — by then SB has shifted and
+the MSB is the next bit to send, giving every captured byte a one-bit offset.
+
+### Arduinoboy MI.OUT byte protocol
+
+Reference: [Mode_LSDJ_Midiout.ino](https://github.com/trash80/Arduinoboy/blob/master/Arduinoboy/Mode_LSDJ_Midiout.ino)
+in the trash80/Arduinoboy firmware. (Don't confuse with `Mode_LSDJ_MasterSync.ino`
+— that's a simpler "send one row byte + clock ticks" mode used for sync
+slaves driving LSDJ; MI.OUT is the per-channel-note protocol.)
+
+The MI.OUT byte stream uses 7-bit values (high bit always 0). Decoder rules:
+
+| Byte range | Meaning |
+| --- | --- |
+| `0x00..0x6F` | Value byte. Completes the most recent pending command. |
+| `0x70..0x73` | Command: NoteOn channel (byte-0x70). Next byte = note number (0 = NoteOff). |
+| `0x74..0x77` | Command: Control Change channel (byte-0x74). Next byte = CC value. |
+| `0x78..0x7B` | Command: Program Change channel (byte-0x78). Next byte = patch. |
+| `0x7C` | Reserved / no-op. The firmware consumes the value byte but does nothing. |
+| `0x7D` | Transport start — emit `0xFA`. |
+| `0x7E` | Transport stop — emit `0xFC`. |
+| `0x7F` | Clock tick — emit `0xF8`. |
+| `0x80+` | NOT part of MI.OUT. Captured in `_serial_sys<N>.txt` for diagnostics but the decoder ignores them. |
+
+LSDJ-side effect commands that drive this protocol (placed in note/table cells
+in the LSDJ song editor):
+
+- **Nxx** — sends a NoteOn absolute (N00 = NoteOff, N01–N6F = MIDI notes 1–112).
+- **Qxx** — sends a NoteOn relative to the channel's current pitch.
+- **Xxx** — sends a CC. (Arduinoboy hardware supports several CC-encoding modes:
+  high-nibble CC# + low-nibble value, single CC scaled 0x00..0x6F, seven CCs.
+  The [ArduinoboyMaster](src/system/sameboy/roles/ArduinoboyMaster.cpp)
+  decoder uses the simplest mapping `CC# = m` for clarity; refine when there's
+  a use case.)
+- **Yxx** — sends a Program/Patch change.
+
+The decoder is unit-tested in
+[test/ArduinoboyMasterTests.cpp](test/ArduinoboyMasterTests.cpp) (11 cases
+covering each protocol byte). **End-to-end with LSDJ is NOT yet headlessly
+verified** because the master demo can't reliably navigate the aboy ROM to
+MI.OUT (see "Known gotcha" below). The decoder matches the firmware spec,
+which is the closest verification path available.
+
+### Known gotcha: cycling SYNC past position 3 (KEYBD) via script
+
+Each `A+Right` chord in the SYNC field reliably cycles 0→1, 1→2, 2→3
+(OFF → LSDJ → MIDI → KEYBD), but the 4th and subsequent chord events appear
+to be dropped in scripts that fire the chord pattern straight through (gaps
+of 1000–1500 ms). The same chord sequence DOES advance through all positions
+in [lsdj_aboy_sync_discovery.json](examples/scripts/lsdj_aboy_sync_discovery.json)
+— the only obvious difference is intermediate screenshots between chords.
+The current [lsdj_arduinoboy_master.json](examples/scripts/lsdj_arduinoboy_master.json)
+documents this limitation and lands on KEYBD; a follow-up agent should either:
+1. Reproduce the discovery script's exact pattern (chord + screenshot + 1400 ms
+   gap) inside the master script.
+2. Ship a pre-configured savestate fixture where LSDJ is already in MI.OUT,
+   bypassing UI navigation entirely.
+
+Until then, **MI.OUT end-to-end is verified via unit tests + the discovery
+script + the serial-out diagnostic log**, not via the master demo's automated
+playback.

@@ -145,6 +145,15 @@ public:
     int          serialOutBits_ = 0;
     bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
 
+    // Step 09 follow-up diagnostic. Every completed serial-out byte while
+    // serialOutEnabled_ is also appended here keyed by the in-block sample
+    // offset at byte-completion time (approximated by audioFrameCount_).
+    // The CLI drains this per block into a per-system raw byte log so
+    // master-mode verification has ground truth even when the byte→MIDI
+    // decoder doesn't yet translate a given LSDJ output value.
+    // Cleared at block boundaries inside prepareForBlock.
+    std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
+
 private:
     ExpSmoother gainSmoother_;
 };

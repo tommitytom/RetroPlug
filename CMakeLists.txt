@@ -364,6 +364,21 @@ if(BUILD_CLI)
         COMMENT "Running the LSDJ MidiPassthrough-mode demo"
     )
 
+    # `make cli-lsdj-aboy-sync-discovery` -> diagnostic that cycles the
+    # PROJECT-screen SYNC value 8 times with a screenshot after each press,
+    # so an agent can empirically map the aboy build's SYNC value order.
+    # Run once whenever the bundled aboy LSDJ ROM changes, then update the
+    # AGENTS.md cycle table. Not part of the normal verification loop.
+    add_custom_target(cli-lsdj-aboy-sync-discovery
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_aboy_sync_discovery.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-aboy-sync-discovery
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the aboy-LSDJ SYNC value cycle discovery (screenshots only)"
+    )
+
     # `make cli-lsdj-arduinoboy-master` -> the master-out path. LSDJ's MI.OUT
     # mode emits serial bytes that the role's ArduinoboyMaster decoder
     # translates to host MIDI events. The per-system MIDI log next to the WAV

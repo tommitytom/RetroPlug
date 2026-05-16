@@ -6,34 +6,38 @@
 #include "transport/MidiTypes.hpp"
 
 // Decodes the byte stream LSDJ emits on its serial port when SYNC is set to
-// MI.OUT in the PROJECT screen (Arduinoboy "master" mode). Each byte from
-// LSDJ encodes either a clock tick, a song-start/stop, or per-channel note
-// data. The hardware Arduinoboy firmware translates these bytes into real
-// MIDI events; this class does the same job in software, emitting
-// `::MidiEvent`s that the caller pushes to the per-system `midiOut_` queue.
+// MI.OUT in the PROJECT screen (Arduinoboy "Mode_LSDJ_Midiout" mode).
 //
-// Protocol reference: Arduinoboy firmware, `Mode_LSDJ_Master.ino` at
-// https://github.com/trash80/Arduinoboy. The decoder is isolated here (no
-// SameBoySystem dependency) so it can be exercised from unit tests against
-// recorded byte fixtures, then trusted as a black box from `LsdjSyncRole`.
+// Protocol — verbatim from the Arduinoboy firmware at
+// https://github.com/trash80/Arduinoboy/blob/master/Arduinoboy/Mode_LSDJ_Midiout.ino
 //
-// Encoding (verbatim from the firmware comments):
+//   Value bytes (0x00..0x6F): completes a previously-seen command byte.
+//   Command bytes (0x70..0x7C): m = byte - 0x70. The next byte is the value:
+//     m < 4         → NoteOn  channel m         (value=0 → NoteOff)
+//     4 <= m < 8    → CC      channel m-4       (default mapping; the real
+//                                                Arduinoboy supports several
+//                                                CC-encoding modes that we
+//                                                do NOT emulate here)
+//     8 <= m < 0xC  → PC      channel m-8
+//   Realtime commands (single-byte):
+//     0x7D → transport start (emit 0xFA)
+//     0x7E → transport stop  (emit 0xFC)
+//     0x7F → clock tick      (emit 0xF8)
 //
-//   value < 0x7F → clock-driven note data for a song channel. The lower nibble
-//   carries channel (0..3 = pulse1/pulse2/wave/noise); the upper nibble plus
-//   a follow-up byte form a 7-bit note number for that channel. (This is the
-//   only multi-byte command in the protocol — one tag byte + one note byte.)
+// Bytes with the high bit set (>= 0x80) are not part of the MI.OUT protocol
+// per the firmware (the firmware's `default` case effectively ignores them
+// because `byte - 0x70` lands outside the 0..11 command-id range). The
+// decoder treats them as "ignore" for safety. The CLI's per-system raw
+// `_serial_sys<N>.txt` log captures them anyway for diagnosis.
 //
-//   value 0x7F .. 0xFE → "tagged" commands:
-//     0x7F → instrument table command (rarely useful from a DAW)
-//     0xB0..0xBF → channel mute toggles
-//     0xC0..0xCF → channel pan controls
-//   Clock + transport are handled separately via 0xFF, 0xFA, 0xFC bytes.
-//
-//   Important: the simplest-and-correct implementation for step 09 forwards
-//   the documented transport bytes (0xFA start, 0xFC stop, 0xF8 clock when
-//   present in the LSDJ output) directly as host-bound MIDI. The richer
-//   per-channel decoding can land in a follow-up if needed.
+// LSDJ's effect commands that drive this protocol (placed in note/table
+// cells in the LSDJ song editor):
+//   Nxx — sends a NoteOn absolute to xx (N00 = NoteOff)
+//   Qxx — sends a NoteOn relative to the channel's current pitch
+//   Xxx — sends a CC
+//   Yxx — sends a Program Change
+// All four route through this byte protocol; the receiver doesn't see N/Q/X/Y
+// distinctly — N and Q both end up as a NoteOn command.
 class ArduinoboyMaster {
 public:
     // Feed one serial-out byte from LSDJ. Pushes decoded `::MidiEvent`s into
@@ -45,13 +49,10 @@ public:
     void reset();
 
 private:
-    // Some commands are two bytes (tag + note). When we've consumed a tag we
-    // wait for the second byte here.
-    enum class Pending : std::uint8_t {
-        None  = 0,
-        Note  = 1,  // expecting note number after a per-channel tag byte
-    };
-
-    Pending      pending_     = Pending::None;
-    std::uint8_t pendingChan_ = 0;
+    // True once we've seen a 0x70..0x7C command byte and are waiting for the
+    // matching value byte. Stored separately rather than overloading
+    // pendingCmd_ so an out-of-band realtime byte during the wait can't
+    // confuse us.
+    bool         pendingValueExpected_ = false;
+    std::uint8_t pendingCmd_           = 0; // m = byte - 0x70 from the spec
 };

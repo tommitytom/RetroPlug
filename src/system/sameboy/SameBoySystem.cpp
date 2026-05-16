@@ -85,20 +85,21 @@ void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t /*type*/) {
 // peer. See LinkGroup.hpp for the lockstep stepping policy that pairs with
 // these callbacks.
 void serialStart(GB_gameboy_t* gb, bool bit_received) {
-    self(gb).serialBitReceived(bit_received);
+    SameBoySystem& s = self(gb);
+    s.serialBitReceived(bit_received);
+    // The SameBoy `bit_received` parameter is the bit this GB is SENDING
+    // (the peer receives it). For standalone master-mode capture — where
+    // no link peer exists to consume the bit — this is the outgoing bit
+    // LSDJ is putting on the wire. Reading it in `serialEnd` instead would
+    // be one-bit-off because by then SB has already shifted, so MSB(SB)
+    // is the NEXT bit to send.
+    if (s.linkPeers_.empty() && s.serialOutCaptureEnabled()) {
+        s.captureSerialOutBit(bit_received);
+    }
 }
 bool serialEnd(GB_gameboy_t* gb) {
     SameBoySystem& s = self(gb);
-    if (s.linkPeers_.empty()) {
-        // Capture the bit LSDJ is shifting out (only meaningful when no link
-        // peer exists; in linked mode the bit is broadcast to peers instead).
-        // The role-side cost of opting in is per-byte, so check cheaply per-bit
-        // and bail when no role wants the stream.
-        if (s.serialOutCaptureEnabled()) {
-            s.captureSerialOutBit(GB_serial_get_data_bit(gb));
-        }
-        return s.nextSerialInBit();
-    }
+    if (s.linkPeers_.empty()) return s.nextSerialInBit();
     const bool ret = s.serialBitFromPeer();
     s.serialBroadcastBit();
     return ret;
@@ -301,6 +302,9 @@ void SameBoySystem::captureSerialOutBit(bool bit) {
     const std::uint8_t completed = serialOutByte_;
     serialOutByte_ = 0;
     serialOutBits_ = 0;
+    // Diagnostic capture before fan-out so even decoder-internal exceptions
+    // wouldn't drop the raw log entry.
+    serialOutLog_.emplace_back(audioFrameCount_, completed);
     for (auto& role : roles_) {
         if (role) role->onSerialOutByte(*this, completed);
     }
@@ -353,6 +357,23 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // Overproduction beyond the block size is silently discarded (matches the
     // old behavior in old/src/sameboy/SameBoyUtil.cpp; ≤1 sample/block click).
     ++audioFrameCount_;
+
+    // Synthetic Arduinoboy clock for master-mode roles. LSDJ in MI.OUT sets
+    // SC=0x80 (transfer enable + external clock) and waits for a clock source
+    // to shift its byte out. Real Arduinoboy hardware drives the clock; we
+    // emulate that here by shifting one bit per audio sample whenever LSDJ
+    // has a transfer pending and external clock is selected. The outgoing bit
+    // is read from SB.bit7 BEFORE the shift; the incoming bit is idle-high
+    // (1), matching the GB's pull-up behavior on the SIN line.
+    // Bypassed when a link peer exists (LinkGroup handles that path).
+    if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
+        const auto sc = gb_->io_registers[GB_IO_SC];
+        if ((sc & 0x81) == 0x80) {
+            const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+            captureSerialOutBit(outBit);
+            GB_serial_set_data_bit(gb_, true);
+        }
+    }
 }
 
 void SameBoySystem::onVblank() {
@@ -376,6 +397,7 @@ void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
     }
 
     audioFrameCount_ = 0;
+    serialOutLog_.clear();
 }
 
 bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {

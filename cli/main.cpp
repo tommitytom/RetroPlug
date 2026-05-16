@@ -311,6 +311,17 @@ int main(int argc, char** argv) try {
     };
     std::vector<std::vector<MidiLogEntry>> midiLog(systemCount);
 
+    // Per-system raw serial-out log. Captures every byte LSDJ writes to its
+    // serial port when the role opted into serial-out capture (Arduinoboy
+    // master mode in step 09). The MIDI log shows what the byte→MIDI decoder
+    // produced; this raw log shows what LSDJ actually emitted, so a mismatch
+    // is diagnosable instead of silent.
+    struct SerialLogEntry {
+        std::uint64_t sample;
+        std::uint8_t  byte;
+    };
+    std::vector<std::vector<SerialLogEntry>> serialLog(systemCount);
+
     // 4. Render loop.
     const std::uint64_t totalSamples =
         (static_cast<std::uint64_t>(script.duration_ms) * script.sample_rate) / 1000ull;
@@ -451,6 +462,15 @@ int main(int argc, char** argv) try {
                 midiLog[i].push_back(e);
             }
             buf.clear();
+
+            // Diagnostic raw serial-out byte log (step 09 follow-up). Only
+            // non-empty when a role opted into serial-out capture; otherwise
+            // a no-op that doesn't touch the file at script end.
+            auto& raw = systems[i]->serialOutLog_;
+            for (const auto& [frame, byte] : raw) {
+                serialLog[i].push_back(SerialLogEntry{s + frame, byte});
+            }
+            raw.clear();
         }
 
         // Advance simulated PPQ for the next block based on the frames we
@@ -463,29 +483,49 @@ int main(int argc, char** argv) try {
 
     // Persist the per-system MIDI log next to the WAV (or in the screenshot
     // dir if there's no out_wav). One line per event: "<sample> <bytes>".
+    // Also persist the raw serial-out log so master-mode runs have ground
+    // truth alongside the decoded MIDI events.
     {
         std::filesystem::path baseDir;
         if (script.out_wav) baseDir = std::filesystem::path(*script.out_wav).parent_path();
         if (baseDir.empty()) baseDir = std::filesystem::path(screenshotDir);
         for (std::uint32_t i = 0; i < systemCount; ++i) {
-            if (midiLog[i].empty()) continue;
-            const std::filesystem::path out = baseDir /
-                (scriptStem + "_midi_sys" + std::to_string(i) + ".txt");
-            std::ofstream f(out);
-            if (!f) {
-                std::fprintf(stderr, "[midi-log] failed to open %s for write\n",
-                             out.string().c_str());
-                continue;
-            }
-            for (const auto& e : midiLog[i]) {
-                f << e.sample;
-                for (std::uint32_t b = 0; b < e.size; ++b) {
-                    f << ' ' << std::hex << static_cast<unsigned>(e.bytes[b]) << std::dec;
+            if (!midiLog[i].empty()) {
+                const std::filesystem::path out = baseDir /
+                    (scriptStem + "_midi_sys" + std::to_string(i) + ".txt");
+                std::ofstream f(out);
+                if (!f) {
+                    std::fprintf(stderr, "[midi-log] failed to open %s for write\n",
+                                 out.string().c_str());
+                } else {
+                    for (const auto& e : midiLog[i]) {
+                        f << e.sample;
+                        for (std::uint32_t b = 0; b < e.size; ++b) {
+                            f << ' ' << std::hex << static_cast<unsigned>(e.bytes[b]) << std::dec;
+                        }
+                        f << '\n';
+                    }
+                    std::fprintf(stderr, "[midi-log] sys%u -> %s (%zu events)\n",
+                                 i, out.string().c_str(), midiLog[i].size());
                 }
-                f << '\n';
             }
-            std::fprintf(stderr, "[midi-log] sys%u -> %s (%zu events)\n",
-                         i, out.string().c_str(), midiLog[i].size());
+            if (!serialLog[i].empty()) {
+                const std::filesystem::path out = baseDir /
+                    (scriptStem + "_serial_sys" + std::to_string(i) + ".txt");
+                std::ofstream f(out);
+                if (!f) {
+                    std::fprintf(stderr, "[serial-log] failed to open %s for write\n",
+                                 out.string().c_str());
+                } else {
+                    f << std::hex;
+                    for (const auto& e : serialLog[i]) {
+                        f << std::dec << e.sample << ' ' << std::hex
+                          << "0x" << static_cast<unsigned>(e.byte) << '\n';
+                    }
+                    std::fprintf(stderr, "[serial-log] sys%u -> %s (%zu bytes)\n",
+                                 i, out.string().c_str(), serialLog[i].size());
+                }
+            }
         }
     }
 
