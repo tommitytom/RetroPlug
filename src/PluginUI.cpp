@@ -262,6 +262,14 @@ public:
                 d_stdout("[PluginUI] auto-loading project: %s", p);
                 bridge->loadProjectFromPath(p);
             }
+            // Diagnostic shortcut for framebuffer verification: load a ROM
+            // directly without going through the file dialog. Mirrors the
+            // _PROJECT path above. Plain debug aid — not part of the public
+            // env var surface.
+            if (const char* p = std::getenv("RETROPLUG_AUTOLOAD_ROM"); p && *p) {
+                d_stdout("[PluginUI] auto-loading ROM: %s", p);
+                bridge->loadRomFromPath(p);
+            }
 
             const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
             if (devPath && *devPath)

@@ -5,6 +5,8 @@
 #include <span>
 #include <utility>
 
+#include "RpcEnvelope.h"
+
 extern "C" {
     #include <quickjs.h>
 }
@@ -138,6 +140,18 @@ JSValue PluginJsBridge::js_rpcSend(JSContext* ctx, JSValueConst, int argc, JSVal
     JS_FreeValue(ctx, ab);
 
     if (!reply) return JS_NULL;
+
+    // Surface server-side JSON-RPC error envelopes on stderr. The JS
+    // client drops error replies whose id is null/undefined (which is
+    // every notification reply), so without this hook a typed-handler
+    // exception in C++ shows up as "nothing happens" on the UI side.
+    if (auto err = rpcpp::MsgpackCodec::read<rpcpp::RpcError>(
+            std::span<const char>{reply->data(), reply->size()});
+        err) {
+        std::fprintf(stderr, "[rpc] error %d: %s\n",
+                     err->error.code, err->error.message.c_str());
+    }
+
     return JS_NewArrayBufferCopy(ctx,
         reinterpret_cast<const uint8_t*>(reply->data()),
         reply->size());

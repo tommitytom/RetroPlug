@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <rfl/Bytestring.hpp>
+
 #include "system/SystemTypes.hpp"
 
 class Project;
@@ -34,7 +36,12 @@ public:
     struct FrameResponse {
         std::uint32_t width;
         std::uint32_t height;
-        std::vector<std::uint8_t> buffer;  // RGBA, row-major. msgpack BIN.
+        // RGBA, row-major. rfl::Bytestring (= std::vector<std::byte>) is
+        // the only vector type reflect-cpp's parser routes to msgpack BIN;
+        // std::vector<std::uint8_t> would go through VectorParser and end
+        // up as a msgpack array of integers (~5× wire size + JS decoded as
+        // a number Array instead of Uint8Array).
+        rfl::Bytestring buffer;
     };
 
     struct SystemEntry {
