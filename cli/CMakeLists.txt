@@ -12,6 +12,9 @@ add_executable(retroplug-cli
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/ArduinoboyMaster.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/LsdjSyncRole.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/MgbPassthroughRole.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenSystem.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
     # lodepng (vendored under lv_binding_js). Compiled directly so the CLI
     # doesn't have to pull in the full lvgl-js-native static lib for one
     # PNG encoder.
@@ -27,6 +30,7 @@ target_include_directories(retroplug-cli PRIVATE
 
 target_link_libraries(retroplug-cli PRIVATE
     sameboy
+    mesen
     rpcpp     # transitively pulls reflectcpp
 )
 

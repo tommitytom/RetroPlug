@@ -1,6 +1,8 @@
 #include "PluginJsBridge.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -17,6 +19,8 @@ extern "C" {
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
 #include "system/SystemBase.hpp"
+#include "system/mesen/MesenConfig.hpp"
+#include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
@@ -161,7 +165,7 @@ PluginJsBridge::~PluginJsBridge() {
     }
 }
 
-SameBoySystem* PluginJsBridge::buildSystemFromPath(const std::string& path) {
+SystemBase* PluginJsBridge::buildSystemFromPath(const std::string& path) {
     if (!project_ || !sampleRate_) {
         std::fprintf(stderr, "buildSystemFromPath: shared DSP state unavailable (LV2-UI?)\n");
         return nullptr;
@@ -173,9 +177,30 @@ SameBoySystem* PluginJsBridge::buildSystemFromPath(const std::string& path) {
         return nullptr;
     }
 
+    // Extension dispatch: .nes → MesenSystem, anything else → SameBoy.
+    // Mirrors cli/main.cpp's isNesPath dispatch so the plugin and CLI agree
+    // on which backend handles which file.
+    auto extLower = [](const std::string& p) {
+        const auto ext = std::filesystem::path(p).extension().string();
+        std::string out(ext.size(), '\0');
+        std::transform(ext.begin(), ext.end(), out.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return out;
+    };
+    const SystemId id = project_->nextSystemId();
+    const double sr = sampleRate_->load(std::memory_order_acquire);
+
+    if (extLower(path) == ".nes") {
+        MesenConfig cfg;
+        cfg.romPath = path;
+        auto sys = std::make_unique<MesenSystem>(id, cfg, std::move(bytes));
+        sys->onActivate(sr);
+        return sys.release();
+    }
+
     SameBoyConfig cfg;
     cfg.romPath  = path;
-    cfg.model    = GameboyModel::CgbC;
+    cfg.model    = SameBoyModel::CgbC;
     cfg.fastBoot = true;
 
     // Optional sibling .sav (cartridge battery RAM). Slurp once on path-
@@ -190,9 +215,7 @@ SameBoySystem* PluginJsBridge::buildSystemFromPath(const std::string& path) {
             cfg.sram = Base64Bytes(std::move(sramBytes));
     }
 
-    const SystemId id = project_->nextSystemId();
     auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(bytes));
-    const double sr = sampleRate_->load(std::memory_order_acquire);
     sys->onActivate(sr);
     return sys.release();
 }
@@ -202,7 +225,7 @@ bool PluginJsBridge::loadRomFromPath(const std::string& path) {
         emitRomEvent(engine, "rom-error", path);
         return false;
     }
-    SameBoySystem* sys = buildSystemFromPath(path);
+    SystemBase* sys = buildSystemFromPath(path);
     if (!sys) return false;
 
     if (!commands_->tryPush(Command::makeLoadRom(sys))) {
@@ -220,7 +243,7 @@ bool PluginJsBridge::addRomFromPath(const std::string& path) {
         emitRomEvent(engine, "rom-error", path);
         return false;
     }
-    SameBoySystem* sys = buildSystemFromPath(path);
+    SystemBase* sys = buildSystemFromPath(path);
     if (!sys) return false;
 
     if (!commands_->tryPush(Command::makeAddSystem(sys))) {
@@ -289,7 +312,7 @@ bool PluginJsBridge::replaceRomFromPath(SystemId id, const std::string& path) {
         emitRomEvent(engine, "rom-error", path);
         return false;
     }
-    SameBoySystem* sys = buildSystemFromPath(path);
+    SystemBase* sys = buildSystemFromPath(path);
     if (!sys) return false;
 
     if (!commands_->tryPush(Command::makeReplaceSystem(id, sys))) {
@@ -358,7 +381,10 @@ JSValue PluginJsBridge::js_openRomBrowser(JSContext* ctx, JSValueConst, int argc
         }
         JS_FreeValue(ctx, modeVal);
     }
-    self->openFileBrowser_("Open Game Boy ROM", false, nullptr);
+    // DPF's FileBrowserOptions doesn't expose an extension filter on Linux;
+    // the title is the only thing we control. ROM dispatch happens
+    // post-selection in buildSystemFromPath based on the extension.
+    self->openFileBrowser_("Open ROM (Game Boy or NES)", false, nullptr);
     return JS_TRUE;
 }
 
@@ -414,8 +440,12 @@ JSValue PluginJsBridge::js_pressButton(JSContext* ctx, JSValueConst, int argc, J
         target = systems.front()->id();
     }
 
+    // The byte is reinterpreted by the target system (SameBoy → GameboyButton,
+    // Mesen → NesButton). Both enums are position-aligned for the eight
+    // standard buttons so the JS side can pass a single int regardless of
+    // which system it's targeting.
     Command cmd = Command::makeButtonPress(target,
-                                           static_cast<GameboyButton>(buttonInt),
+                                           static_cast<std::uint8_t>(buttonInt),
                                            down);
     return self->commands_->tryPush(cmd) ? JS_TRUE : JS_FALSE;
 }
@@ -493,8 +523,10 @@ JSValue PluginJsBridge::js_listSystems(JSContext* ctx, JSValueConst, int, JSValu
         JSValue entry = JS_NewObject(ctx);
         JS_SetPropertyStr(ctx, entry, "id", JS_NewUint32(ctx, sys->id()));
 
-        // Pull config fields when available. Other system kinds (future Mesen)
-        // get id-only.
+        // Pull config fields when available, per kind. NES (Mesen) currently
+        // only surfaces the kind tag — there's no per-system Mesen config
+        // exposed to the UI yet (gain trim etc. land with the savestate work
+        // in step 16).
         if (auto* sb = dynamic_cast<const SameBoySystem*>(sys.get())) {
             JS_SetPropertyStr(ctx, entry, "kind",        JS_NewString(ctx, "sameboy"));
             JS_SetPropertyStr(ctx, entry, "gainDb",      JS_NewFloat64(ctx, sb->config_.gainDb));
@@ -511,6 +543,8 @@ JSValue PluginJsBridge::js_listSystems(JSContext* ctx, JSValueConst, int, JSValu
                     break;
                 }
             }
+        } else if (sys->kind() == SystemKind::Mesen) {
+            JS_SetPropertyStr(ctx, entry, "kind", JS_NewString(ctx, "mesen"));
         }
         JS_SetPropertyUint32(ctx, arr, i++, entry);
     }

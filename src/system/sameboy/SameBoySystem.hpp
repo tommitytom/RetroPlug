@@ -52,9 +52,10 @@ public:
     void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
 
     // Queue a button transition. Called from DSP-thread command-drain at the
-    // top of each block. Pending transitions are spread across the block in
-    // applyPending() (port of old SameBoyUtil.cpp:149-163).
-    void pressButton(GameboyButton button, bool down) override;
+    // top of each block. The byte is reinterpreted as GameboyButton; pending
+    // transitions are spread across the block in applyPending() (port of old
+    // SameBoyUtil.cpp:149-163).
+    void pressButton(std::uint8_t button, bool down) override;
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
@@ -108,7 +109,7 @@ public:
     // zero duration (which the SameBoy joypad debouncer would miss).
     struct PendingButton {
         std::uint32_t offset;   // samples from block start
-        GameboyButton button;
+        GameboyButton button;   // reinterpreted from the uint8_t opcode
         bool          down;
     };
     std::deque<PendingButton> pendingButtons_;

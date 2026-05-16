@@ -1,0 +1,17 @@
+{
+  "duration_ms": 5000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/multi-nes-gb.wav",
+  "systems": [
+    { "rom": "resources/roms/n8-midi.nes" },
+    { "rom": "resources/roms/lsdj9_4_2.gb" }
+  ],
+  "midi_routing": "OneChannelPerInstance",
+  "events": [
+    { "at_ms": 1000, "midi": [144, 60, 100] },
+    { "at_ms": 1400, "midi": [128, 60,   0] },
+    { "at_ms": 4500, "screenshot": "settled", "system": 0 },
+    { "at_ms": 4500, "screenshot": "settled", "system": 1 }
+  ]
+}

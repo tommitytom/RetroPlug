@@ -47,7 +47,12 @@ public:
     // Audio-thread: enqueue a button transition. The system applies it at the
     // next opportunity (typically: spread across the next audio block so
     // multi-press sequences don't all collapse to one sample).
-    virtual void pressButton(GameboyButton /*button*/, bool /*down*/) {}
+    //
+    // `button` is a kind-specific opcode: SameBoySystem casts to GameboyButton,
+    // MesenSystem casts to NesButton. The two enums are position-aligned for
+    // the eight standard buttons so callers (CLI script, JS bridge) can pass
+    // a single byte without knowing the target system kind.
+    virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }

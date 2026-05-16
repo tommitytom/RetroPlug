@@ -160,7 +160,7 @@ TEST_CASE("ProjectConfig round-trips an empty project through JSON", "[ProjectSe
 
 TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", "[ProjectSerialization]") {
     SameBoyConfig sb;
-    sb.model    = GameboyModel::DmgB;
+    sb.model    = SameBoyModel::DmgB;
     sb.fastBoot = false;
     sb.embedRom = true;
     sb.romPath  = "/path/to/lsdj.gb";
@@ -183,7 +183,7 @@ TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", 
 
     const auto* roundtripped = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
     REQUIRE(roundtripped != nullptr);
-    CHECK(roundtripped->model    == GameboyModel::DmgB);
+    CHECK(roundtripped->model    == SameBoyModel::DmgB);
     CHECK(roundtripped->fastBoot == false);
     CHECK(roundtripped->embedRom == true);
     CHECK(roundtripped->romPath  == "/path/to/lsdj.gb");

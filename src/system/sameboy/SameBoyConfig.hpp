@@ -12,7 +12,7 @@
 // Plain-data, reflectcpp-friendly config for a SameBoy system slot.
 // Lives in the DSP-owned ProjectConfig tree; mirrored to the UI cache.
 
-enum class GameboyModel : std::uint32_t {
+enum class SameBoyModel : std::uint32_t {
     Auto = 0,
     DmgB = 1,
     CgbC = 2,
@@ -24,7 +24,7 @@ struct SameBoyConfig {
     // On-disk variant discriminator (`"kind":"sameboy"`). Locked spelling.
     using Tag = rfl::Literal<"sameboy">;
 
-    GameboyModel              model    = GameboyModel::CgbC;
+    SameBoyModel              model    = SameBoyModel::CgbC;
     bool                      fastBoot = true;
     // When true (default), saves embed `romBytes` so projects survive ROM
     // file moves. When false, only `romPath` is persisted and the ROM is

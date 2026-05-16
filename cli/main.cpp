@@ -36,6 +36,8 @@
 
 #include "project/Project.hpp"
 #include "system/SystemBase.hpp"
+#include "system/mesen/MesenConfig.hpp"
+#include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -142,7 +144,10 @@ std::vector<std::uint8_t> slurpBytes(const std::string& path) {
 // FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X bytes); we
 // transcode to RGB24 in-place to match lodepng_encode24_file's expected
 // layout — same pattern as src/PluginUI.cpp:91-101.
-bool dumpFramebuffer(SameBoySystem& sys,
+//
+// Polymorphic on SystemBase so any backend (SameBoy 160x144, Mesen 256x240,
+// future) just works: width/height are queried from the FrameBufferTriple.
+bool dumpFramebuffer(SystemBase& sys,
                      const std::string& dir,
                      const std::string& scriptStem,
                      const std::string& name,
@@ -250,11 +255,22 @@ int main(int argc, char** argv) try {
     }
     const std::string scriptStem = std::filesystem::path(args.scriptPath).stem().string();
 
-    // 2. Build the runtime: Project + N activated SameBoySystems.
+    // 2. Build the runtime: Project + N activated systems. ROM extension
+    // picks the backend: `.nes` → MesenSystem, anything else → SameBoySystem
+    // (Game Boy ROM extensions: .gb, .gbc, plus the bundled LSDJ ROMs).
     Project project;
     project.reserve(systemCount);
 
-    std::vector<SameBoySystem*> systems;
+    auto isNesPath = [](const std::string& p) {
+        if (p.size() < 4) return false;
+        const auto ext = std::filesystem::path(p).extension().string();
+        std::string lower(ext.size(), '\0');
+        std::transform(ext.begin(), ext.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return lower == ".nes";
+    };
+
+    std::vector<SystemBase*> systems;
     systems.reserve(systemCount);
     for (std::uint32_t i = 0; i < systemCount; ++i) {
         const auto& s = systemsList[i];
@@ -263,22 +279,37 @@ int main(int argc, char** argv) try {
             return 1;
         }
 
-        SameBoyConfig cfg;
-        cfg.romPath     = s.rom;
-        cfg.model       = GameboyModel::CgbC;
-        cfg.fastBoot    = true;
-        cfg.linkGroupId = s.link_group.value_or(0);
-        // Pre-seed the LSDJ role config so the sniffer fallback is skipped.
-        // The system's onActivate only runs the sniffer when roles is empty.
-        if (s.lsdj_sync_mode) {
-            LsdjSyncConfig lsdj;
-            lsdj.mode = parseLsdjSyncMode(*s.lsdj_sync_mode);
-            cfg.roles.emplace_back(lsdj);
-        }
-
         auto bytes = slurpBytes(s.rom);
-        auto sys = std::make_unique<SameBoySystem>(
-            project.nextSystemId(), cfg, std::move(bytes));
+        std::unique_ptr<SystemBase> sys;
+        if (isNesPath(s.rom)) {
+            if (s.link_group.value_or(0) != 0) {
+                std::fprintf(stderr, "script: systems[%u] is NES; link_group not supported\n", i);
+                return 1;
+            }
+            if (s.lsdj_sync_mode) {
+                std::fprintf(stderr, "script: systems[%u] is NES; lsdj_sync_mode not applicable\n", i);
+                return 1;
+            }
+            MesenConfig cfg;
+            cfg.romPath = s.rom;
+            sys = std::make_unique<MesenSystem>(
+                project.nextSystemId(), cfg, std::move(bytes));
+        } else {
+            SameBoyConfig cfg;
+            cfg.romPath     = s.rom;
+            cfg.model       = SameBoyModel::CgbC;
+            cfg.fastBoot    = true;
+            cfg.linkGroupId = s.link_group.value_or(0);
+            // Pre-seed the LSDJ role config so the sniffer fallback is skipped.
+            // The system's onActivate only runs the sniffer when roles is empty.
+            if (s.lsdj_sync_mode) {
+                LsdjSyncConfig lsdj;
+                lsdj.mode = parseLsdjSyncMode(*s.lsdj_sync_mode);
+                cfg.roles.emplace_back(lsdj);
+            }
+            sys = std::make_unique<SameBoySystem>(
+                project.nextSystemId(), cfg, std::move(bytes));
+        }
         sys->onActivate(static_cast<double>(script.sample_rate));
         systems.push_back(sys.get());
         project.adoptSystem(sys.release());
@@ -407,20 +438,38 @@ int main(int argc, char** argv) try {
             // Manual orchestration mirroring Project::onProcess + LinkGroup
             // round-robin, but with per-system outs buffers so we can write
             // each instance's audio to its own WAV. Works for linked and
-            // unlinked systems alike: the step loop interleaves them, which
+            // unlinked SameBoys alike: the step loop interleaves them, which
             // is exactly what LinkGroup does internally.
-            for (auto* sys : systems) sys->prepareForBlock(info);
+            //
+            // SameBoy-only because Mesen doesn't expose the same per-block
+            // step primitives. Per-system-wav for NES would mean rendering
+            // each Mesen system standalone into its own buffer (no link-cable
+            // story to support); not yet wired — caller using --per-system-wav
+            // with a NES system gets a hard error, not silent zeros.
+            std::vector<SameBoySystem*> sbSystems;
+            sbSystems.reserve(systemCount);
+            for (auto* sys : systems) {
+                auto* sb = dynamic_cast<SameBoySystem*>(sys);
+                if (!sb) {
+                    std::fprintf(stderr,
+                        "--per-system-wav is currently SameBoy-only (system %u is not).\n",
+                        static_cast<unsigned>(sbSystems.size()));
+                    return 1;
+                }
+                sbSystems.push_back(sb);
+            }
+            for (auto* sys : sbSystems) sys->prepareForBlock(info);
             bool anyBelow = true;
             while (anyBelow) {
                 anyBelow = false;
-                for (auto* sys : systems) {
+                for (auto* sys : sbSystems) {
                     if (sys->stepIfBelowTarget(info.frames)) anyBelow = true;
                 }
             }
             for (std::uint32_t i = 0; i < systemCount; ++i) {
                 std::fill_n(perSysL[i].data(), frames, 0.0f);
                 std::fill_n(perSysR[i].data(), frames, 0.0f);
-                systems[i]->finishBlock(info, perSysOuts[i].data());
+                sbSystems[i]->finishBlock(info, perSysOuts[i].data());
                 // Sum into the mix WAV.
                 for (std::uint32_t f = 0; f < frames; ++f) {
                     outL[f] += perSysL[i][f];
@@ -465,12 +514,15 @@ int main(int argc, char** argv) try {
 
             // Diagnostic raw serial-out byte log (step 09 follow-up). Only
             // non-empty when a role opted into serial-out capture; otherwise
-            // a no-op that doesn't touch the file at script end.
-            auto& raw = systems[i]->serialOutLog_;
-            for (const auto& [frame, byte] : raw) {
-                serialLog[i].push_back(SerialLogEntry{s + frame, byte});
+            // a no-op that doesn't touch the file at script end. SameBoy-only;
+            // Mesen has no GB-style serial port.
+            if (auto* sb = dynamic_cast<SameBoySystem*>(systems[i])) {
+                auto& raw = sb->serialOutLog_;
+                for (const auto& [frame, byte] : raw) {
+                    serialLog[i].push_back(SerialLogEntry{s + frame, byte});
+                }
+                raw.clear();
             }
-            raw.clear();
         }
 
         // Advance simulated PPQ for the next block based on the frames we

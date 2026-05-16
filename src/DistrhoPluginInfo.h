@@ -118,7 +118,7 @@
    Whether the plugin wants time position information from the host.
    @see Plugin::getTimePosition()
  */
-#define DISTRHO_PLUGIN_WANT_TIMEPOS 0
+#define DISTRHO_PLUGIN_WANT_TIMEPOS 1
 
 /**
    Whether the %UI uses a custom toolkit implementation based on OpenGL.@n

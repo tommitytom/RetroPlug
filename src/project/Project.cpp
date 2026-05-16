@@ -7,6 +7,7 @@
 
 #include "rfl/Variant.hpp"
 
+#include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
 namespace {
@@ -53,6 +54,24 @@ SystemId Project::addSystem(const SystemConfig& config) {
         auto sys = std::make_unique<SameBoySystem>(id, *sb, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(*sb);
+        rebuildLinkGroups();
+        return id;
+    }
+
+    if (const auto* mb = rfl::get_if<MesenConfig>(&config.variant())) {
+        std::vector<std::uint8_t> rom = mb->romBytes.bytes();
+        if (rom.empty())
+            rom = slurpFile(mb->romPath);
+        if (rom.empty()) {
+            std::fprintf(stderr, "[Project] no ROM bytes/path for Mesen id=%u path='%s'\n",
+                         id, mb->romPath.c_str());
+            return 0;
+        }
+        auto sys = std::make_unique<MesenSystem>(id, *mb, std::move(rom));
+        systems_.push_back(std::move(sys));
+        config_.systems.push_back(*mb);
+        // Mesen systems don't participate in LinkGroups (no GB serial); the
+        // call is still safe — it just leaves any existing GB groups intact.
         rebuildLinkGroups();
         return id;
     }

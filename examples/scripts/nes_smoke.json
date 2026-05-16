@@ -1,0 +1,11 @@
+{
+  "rom": "resources/roms/n8-midi.nes",
+  "duration_ms": 5000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/nes-smoke.wav",
+  "events": [
+    { "at_ms": 100,  "screenshot": "first",  "system": 0 },
+    { "at_ms": 4500, "screenshot": "settled", "system": 0 }
+  ]
+}

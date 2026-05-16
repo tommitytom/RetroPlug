@@ -14,13 +14,13 @@ TEST_CASE("CommandQueue is empty on construction", "[CommandQueue]") {
 
 TEST_CASE("CommandQueue round-trips a single command", "[CommandQueue]") {
     CommandQueue q;
-    REQUIRE(q.tryPush(Command::makeButtonPress(7, GameboyButton::A, true)));
+    REQUIRE(q.tryPush(Command::makeButtonPress(7, static_cast<std::uint8_t>(GameboyButton::A), true)));
 
     Command out;
     REQUIRE(q.tryPop(out));
     REQUIRE(out.kind == Command::Kind::ButtonPress);
     REQUIRE(out.payload.buttonPress.systemId == 7);
-    REQUIRE(out.payload.buttonPress.button == GameboyButton::A);
+    REQUIRE(out.payload.buttonPress.button == static_cast<std::uint8_t>(GameboyButton::A));
     REQUIRE(out.payload.buttonPress.down == true);
 
     REQUIRE_FALSE(q.tryPop(out));
@@ -29,7 +29,7 @@ TEST_CASE("CommandQueue round-trips a single command", "[CommandQueue]") {
 TEST_CASE("CommandQueue preserves FIFO order", "[CommandQueue]") {
     CommandQueue q;
     for (uint32_t i = 0; i < 10; ++i)
-        REQUIRE(q.tryPush(Command::makeButtonPress(i, GameboyButton::B, i % 2 == 0)));
+        REQUIRE(q.tryPush(Command::makeButtonPress(i, static_cast<std::uint8_t>(GameboyButton::B), i % 2 == 0)));
 
     for (uint32_t i = 0; i < 10; ++i) {
         Command out;
@@ -45,7 +45,7 @@ TEST_CASE("CommandQueue rejects pushes when full", "[CommandQueue]") {
     constexpr std::size_t maxFill = CommandQueue::kCapacity - 1;
 
     std::size_t pushed = 0;
-    while (q.tryPush(Command::makeButtonPress(0, GameboyButton::A, true)))
+    while (q.tryPush(Command::makeButtonPress(0, static_cast<std::uint8_t>(GameboyButton::A), true)))
         ++pushed;
 
     REQUIRE(pushed == maxFill);
@@ -53,7 +53,7 @@ TEST_CASE("CommandQueue rejects pushes when full", "[CommandQueue]") {
     // After draining one, push should succeed again.
     Command out;
     REQUIRE(q.tryPop(out));
-    REQUIRE(q.tryPush(Command::makeButtonPress(0, GameboyButton::A, true)));
+    REQUIRE(q.tryPush(Command::makeButtonPress(0, static_cast<std::uint8_t>(GameboyButton::A), true)));
 }
 
 TEST_CASE("CommandQueue wraps around correctly", "[CommandQueue]") {
@@ -61,7 +61,7 @@ TEST_CASE("CommandQueue wraps around correctly", "[CommandQueue]") {
     // Push and pop more than capacity to exercise the index-wrap path.
     constexpr uint32_t total = CommandQueue::kCapacity * 3;
     for (uint32_t i = 0; i < total; ++i) {
-        REQUIRE(q.tryPush(Command::makeButtonPress(i, GameboyButton::A, true)));
+        REQUIRE(q.tryPush(Command::makeButtonPress(i, static_cast<std::uint8_t>(GameboyButton::A), true)));
         Command out;
         REQUIRE(q.tryPop(out));
         REQUIRE(out.payload.buttonPress.systemId == i);
@@ -105,7 +105,7 @@ TEST_CASE("CommandQueue is safe across one producer and one consumer", "[Command
             // tryPush may transiently fail when the queue is full; spin
             // until the consumer drains. This is the realistic UI→DSP shape:
             // backpressure rather than drop on full.
-            while (!q.tryPush(Command::makeButtonPress(i, GameboyButton::A, false))) {
+            while (!q.tryPush(Command::makeButtonPress(i, static_cast<std::uint8_t>(GameboyButton::A), false))) {
                 /* spin */
             }
         }

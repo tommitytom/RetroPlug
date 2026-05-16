@@ -90,7 +90,7 @@ struct Script {
 struct TimedButton {
     std::uint64_t sample;
     std::uint32_t systemIndex;
-    GameboyButton button;
+    std::uint8_t  button;   // SameBoy: GameboyButton; Mesen: NesButton (cast)
     bool          down;
 };
 
@@ -114,18 +114,21 @@ struct TimedTransport {
     std::optional<double> setBpm;
 };
 
-inline GameboyButton parseButtonName(const std::string& s) {
+// Returns a button opcode as a raw uint8_t. Both GameboyButton and NesButton
+// are position-aligned (Right=0..Start=7) so the same name table works for
+// either system kind; the receiving system reinterprets the byte.
+inline std::uint8_t parseButtonName(const std::string& s) {
     std::string lower(s.size(), '\0');
     std::transform(s.begin(), s.end(), lower.begin(),
                    [](unsigned char c) { return std::tolower(c); });
-    if (lower == "right")  return GameboyButton::Right;
-    if (lower == "left")   return GameboyButton::Left;
-    if (lower == "up")     return GameboyButton::Up;
-    if (lower == "down")   return GameboyButton::Down;
-    if (lower == "a")      return GameboyButton::A;
-    if (lower == "b")      return GameboyButton::B;
-    if (lower == "select") return GameboyButton::Select;
-    if (lower == "start")  return GameboyButton::Start;
+    if (lower == "right")  return static_cast<std::uint8_t>(GameboyButton::Right);
+    if (lower == "left")   return static_cast<std::uint8_t>(GameboyButton::Left);
+    if (lower == "up")     return static_cast<std::uint8_t>(GameboyButton::Up);
+    if (lower == "down")   return static_cast<std::uint8_t>(GameboyButton::Down);
+    if (lower == "a")      return static_cast<std::uint8_t>(GameboyButton::A);
+    if (lower == "b")      return static_cast<std::uint8_t>(GameboyButton::B);
+    if (lower == "select") return static_cast<std::uint8_t>(GameboyButton::Select);
+    if (lower == "start")  return static_cast<std::uint8_t>(GameboyButton::Start);
     throw std::runtime_error("unknown button name: " + s);
 }
 

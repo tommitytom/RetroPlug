@@ -28,13 +28,13 @@ extern "C" {
 
 namespace {
 
-GB_model_t toSameBoyModel(GameboyModel model) {
+GB_model_t toSameBoyModel(SameBoyModel model) {
     switch (model) {
-        case GameboyModel::DmgB: return GB_MODEL_DMG_B;
-        case GameboyModel::CgbC: return GB_MODEL_CGB_C;
-        case GameboyModel::CgbE: return GB_MODEL_CGB_E;
-        case GameboyModel::Agb:  return GB_MODEL_AGB;
-        case GameboyModel::Auto: // fallthrough
+        case SameBoyModel::DmgB: return GB_MODEL_DMG_B;
+        case SameBoyModel::CgbC: return GB_MODEL_CGB_C;
+        case SameBoyModel::CgbE: return GB_MODEL_CGB_E;
+        case SameBoyModel::Agb:  return GB_MODEL_AGB;
+        case SameBoyModel::Auto: // fallthrough
         default:                  return GB_MODEL_CGB_C;
     }
 }
@@ -336,7 +336,7 @@ void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     }
 }
 
-void SameBoySystem::pressButton(GameboyButton button, bool down) {
+void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     // Append to the back of the queue, advancing the offset by buttonSpacing
     // from the previous entry. This stops a press+release pair sent in the
     // same UI tick from collapsing onto a single sample (which the joypad
@@ -345,7 +345,7 @@ void SameBoySystem::pressButton(GameboyButton button, bool down) {
     std::uint32_t offset = 0;
     if (!pendingButtons_.empty())
         offset = pendingButtons_.back().offset + buttonSpacingSamples_;
-    pendingButtons_.push_back(PendingButton{offset, button, down});
+    pendingButtons_.push_back(PendingButton{offset, static_cast<GameboyButton>(button), down});
 }
 
 void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {

@@ -1,0 +1,19 @@
+{
+  "rom": "resources/roms/n8-midi.nes",
+  "duration_ms": 6000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/n8-midi-input.wav",
+  "midi_routing": "SendToAll",
+  "events": [
+    { "at_ms": 1000, "midi": [144,   60, 100] },
+    { "at_ms": 1400, "midi": [128,   60,   0] },
+    { "at_ms": 1500, "midi": [145,   64, 100] },
+    { "at_ms": 1900, "midi": [129,   64,   0] },
+    { "at_ms": 2000, "midi": [146,   55,   1] },
+    { "at_ms": 2400, "midi": [130,   55,   0] },
+    { "at_ms": 2500, "midi": [147,   48, 100] },
+    { "at_ms": 2900, "midi": [131,   48,   0] },
+    { "at_ms": 5500, "screenshot": "after-notes", "system": 0 }
+  ]
+}

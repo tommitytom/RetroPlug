@@ -92,9 +92,11 @@ public:
     bool loadProjectFromPath(const std::string& path);
 
 private:
-    // Build a fully-activated SameBoySystem from a ROM path. Returns nullptr
-    // on failure (and emits a "rom-error" event so React can react).
-    class SameBoySystem* buildSystemFromPath(const std::string& path);
+    // Build a fully-activated SystemBase from a ROM path. ROM extension
+    // selects the backend: `.nes` → MesenSystem, anything else → SameBoy.
+    // Returns nullptr on failure (and emits a "rom-error" event so React
+    // can react).
+    class SystemBase* buildSystemFromPath(const std::string& path);
 
     // JS bindings attached under globalThis[Symbol.for("plugin")].
     static JSValue js_getFrame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);

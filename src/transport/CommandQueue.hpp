@@ -25,9 +25,9 @@ class SystemBase;
 // `delete`.
 
 struct ButtonPressCommand {
-    SystemId      systemId;
-    GameboyButton button;
-    bool          down;
+    SystemId     systemId;
+    std::uint8_t button;   // SameBoy: GameboyButton; Mesen: NesButton (cast)
+    bool         down;
 };
 
 struct LoadRomCommand {
@@ -122,7 +122,7 @@ struct Command {
 
     Command() = default;
 
-    static Command makeButtonPress(SystemId id, GameboyButton b, bool down) {
+    static Command makeButtonPress(SystemId id, std::uint8_t b, bool down) {
         Command c;
         c.kind = Kind::ButtonPress;
         c.payload.buttonPress = ButtonPressCommand{id, b, down};

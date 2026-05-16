@@ -48,6 +48,9 @@ add_subdirectory(deps/rpcpp)
 # --- SameBoy: Game Boy emulator core, vendored under deps/sameboy ---
 add_subdirectory(deps/sameboy)
 
+# --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
+add_subdirectory(deps/mesen)
+
 # --- lvgl-js-native: the native C++ component bridge ---
 set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
 add_library(lvgl-js-native STATIC
@@ -179,6 +182,9 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
+      src/system/mesen/MesenSystem.cpp
+      src/system/mesen/MesenVideoDevice.cpp
+      src/system/mesen/roles/NesN8MidiRole.cpp
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
@@ -196,6 +202,9 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
+      src/system/mesen/MesenSystem.cpp
+      src/system/mesen/MesenVideoDevice.cpp
+      src/system/mesen/roles/NesN8MidiRole.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
 
@@ -206,6 +215,7 @@ target_link_libraries(${NAME} PUBLIC lvgl::lvgl $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC lvgl-js-native)
 target_link_libraries(${NAME} PUBLIC rpcpp)
 target_link_libraries(${NAME} PUBLIC sameboy)
+target_link_libraries(${NAME} PUBLIC mesen)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)
@@ -258,6 +268,34 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Rendering examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav"
+    )
+
+    # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenSystem,
+    # render 5 s, capture a final screenshot. First end-to-end verification of
+    # the Mesen backend + NES ROM dispatch (step 17 / Phase B).
+    add_custom_target(cli-nes-smoke
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/nes_smoke.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/nes-smoke
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Rendering examples/scripts/nes_smoke.json -> /tmp/nes-smoke.wav + boot.png"
+    )
+
+    # `make cli-n8-midi` -> end-to-end MIDI-input test for the n8-midi ROM.
+    # Pumps note-ons across the four standard NES channels (pulse1=ch0,
+    # pulse2=ch1, triangle=ch2, noise=ch3) into the FIFO and captures the
+    # WAV. Audio should contain audible notes (the smoke target produces
+    # silence by comparison since n8-midi only emits sound on MIDI input).
+    add_custom_target(cli-n8-midi
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/n8_midi_input.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/n8-midi
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the n8-midi MIDI-input demo (host MIDI -> FIFO -> NES audio)"
     )
 
     # `make cli-sync-smoke` -> boot two LSDJ instances on link_group 1 and
