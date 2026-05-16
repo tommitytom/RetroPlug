@@ -41,6 +41,7 @@ GB_model_t toSameBoyModel(SameBoyModel model) {
 
 std::string_view findBootRom(GB_model_t model, bool fastBoot) {
     switch (model) {
+        // TODO: Support more bootroms?
         case GB_MODEL_DMG_B: return std::string_view((const char*)dmg_boot, dmg_boot_len);
         case GB_MODEL_AGB:   return std::string_view((const char*)agb_boot, agb_boot_len);
         default:
@@ -141,6 +142,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     }
 
     sampleRate_ = sampleRate;
+    // TODO: Investigate button spacing. Is it adding lag to keypresses? Is it needed?
     buttonSpacingSamples_ = static_cast<std::uint32_t>(sampleRate * 0.010); // 10 ms spacing
     audioFrameCount_ = 0;
 
@@ -270,6 +272,8 @@ void SameBoySystem::instantiateRoles() {
     serialBitsRemaining_ = 0;
     serialOutByte_ = 0;
     serialOutBits_ = 0;
+
+    // TODO: This could be nicer. Also does it belong in here? This stuff is gameboy specific, not necessarily SameBoy.
     for (const auto& rc : config_.roles) {
         if (rfl::get_if<MgbRoleConfig>(&rc.variant())) {
             auto role = std::make_unique<MgbPassthroughRole>();
@@ -336,6 +340,8 @@ void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     }
 }
 
+// TODO: Remove references to old code in comments
+
 void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     // Append to the back of the queue, advancing the offset by buttonSpacing
     // from the previous entry. This stops a press+release pair sent in the
@@ -357,6 +363,8 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // Overproduction beyond the block size is silently discarded (matches the
     // old behavior in old/src/sameboy/SameBoyUtil.cpp; ≤1 sample/block click).
     ++audioFrameCount_;
+
+    // TODO: Does this belong here?
 
     // Synthetic Arduinoboy clock for master-mode roles. LSDJ in MI.OUT sets
     // SC=0x80 (transfer enable + external clock) and waits for a clock source

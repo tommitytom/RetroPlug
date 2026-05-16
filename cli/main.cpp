@@ -60,6 +60,7 @@ struct CliArgs {
     std::optional<std::string>   screenshotDir;
     bool                         finalScreenshot = false;
     bool                         perSystemWav    = false;
+    std::optional<std::string>   eventLogDir;
 };
 
 void printUsage(const char* argv0) {
@@ -74,7 +75,10 @@ void printUsage(const char* argv0) {
         "  --final-screenshot capture every system once at script end as `<stem>_final_sys<N>.png`\n"
         "  --per-system-wav   also write per-system WAVs as `<out_wav stem>_sys<N>.wav`\n"
         "                     (the mix WAV at `out_wav` is still produced). Required when you\n"
-        "                     want to verify audible sync between linked instances.\n",
+        "                     want to verify audible sync between linked instances.\n"
+        "  --event-logs DIR   emit per-system `_midi_sys<N>.txt` / `_serial_sys<N>.txt` event\n"
+        "                     logs into DIR (default: off). Logs are only populated when a\n"
+        "                     system runs LsdjSyncMode::ArduinoboyMaster.\n",
         argv0);
 }
 
@@ -108,6 +112,7 @@ CliArgs parseArgs(int argc, char** argv) {
         else if (arg == "--screenshot-dir")    a.screenshotDir    = std::string(need("--screenshot-dir"));
         else if (arg == "--final-screenshot")  a.finalScreenshot  = true;
         else if (arg == "--per-system-wav")    a.perSystemWav     = true;
+        else if (arg == "--event-logs")        a.eventLogDir      = std::string(need("--event-logs"));
         else if (arg == "-h" || arg == "--help") { printUsage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
@@ -550,14 +555,12 @@ int main(int argc, char** argv) try {
         }
     }
 
-    // Persist the per-system MIDI log next to the WAV (or in the screenshot
-    // dir if there's no out_wav). One line per event: "<sample> <bytes>".
-    // Also persist the raw serial-out log so master-mode runs have ground
-    // truth alongside the decoded MIDI events.
-    {
-        std::filesystem::path baseDir;
-        if (script.out_wav) baseDir = std::filesystem::path(*script.out_wav).parent_path();
-        if (baseDir.empty()) baseDir = std::filesystem::path(screenshotDir);
+    // Persist the per-system MIDI log into the dir given by --event-logs.
+    // One line per event: "<sample> <bytes>". Also persist the raw serial-out
+    // log so master-mode runs have ground truth alongside the decoded MIDI
+    // events. Opt-in: nothing is written unless --event-logs DIR was passed.
+    if (args.eventLogDir) {
+        const std::filesystem::path baseDir = *args.eventLogDir;
         for (std::uint32_t i = 0; i < systemCount; ++i) {
             if (!midiLog[i].empty()) {
                 const std::filesystem::path out = baseDir /

@@ -11,6 +11,8 @@
 
 class SystemBase;
 
+// TODO: Ensure DSP thread is running (sometimes isn't if the host doesn't have a valid audio device)
+
 // SPSC command queue: UI thread → DSP thread.
 //
 // Hand-rolled bounded ring of POD Command records; no allocation on either
@@ -72,6 +74,7 @@ struct SetLinkGroupCommand {
 // transfers ownership; the DSP frees it after parsing. Used by the
 // standalone "Load project" feature so a fresh launch can restore a
 // 2-instance link configuration without re-doing the whole menu dance.
+// TODO: Maybe do the delete on the UI thread? std::unique_ptr too?
 struct LoadProjectCommand {
     std::string* json;
 };

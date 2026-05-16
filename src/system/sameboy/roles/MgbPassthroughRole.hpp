@@ -16,9 +16,6 @@ struct MgbRoleConfig {
 
 // Forwards every received MIDI byte verbatim to the GB's serial-in queue.
 // SameBoy's serial-end callback drains those bytes bit-by-bit (MSB first).
-// No timing alignment to MidiEvent::frame — bytes go in as the events arrive
-// and are clocked out at GB hardware rate. Mirrors the legacy
-// LsdjSyncMode::MidiPassthrough push path.
 class MgbPassthroughRole final : public RomRole {
 public:
     void onAttach(SameBoySystem&) override {}

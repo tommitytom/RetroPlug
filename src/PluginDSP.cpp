@@ -52,6 +52,7 @@ class LVGLPluginDSP : public Plugin {
     ExponentialValueSmoother fSmoothGain;
 
 public:
+    // TODO: No public members
     SharedDSPData         shared;
     Project               project;
     CommandQueue          commands;

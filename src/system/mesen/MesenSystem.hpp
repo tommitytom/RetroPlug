@@ -14,6 +14,8 @@ class MesenAudioDevice;
 class MesenVideoDevice;
 class NesN8MidiRole;
 
+// TODO: Rename to MesenNesSystem
+
 // NES (Mesen) system. Mirrors SameBoySystem's shape: per-block onProcess
 // drives the emulator until enough samples are queued in MesenAudioDevice,
 // then drains them into the planar L/R outs with smoothed gain. Native NES

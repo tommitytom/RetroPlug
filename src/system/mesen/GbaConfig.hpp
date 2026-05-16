@@ -36,7 +36,6 @@ struct GbaSystemConfig {
     // empty, Mesen falls back to a zeroed boot ROM (HLE).
     std::string   biosPath;
 
-    // Reserved for future Mesen-side GBA roles. Empty in Phase 1; included
-    // for schema symmetry with SameBoyConfig / MesenConfig.
+    // Reserved for future Mesen-side GBA roles.
     std::vector<RoleConfig> roles;
 };

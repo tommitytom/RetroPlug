@@ -19,24 +19,6 @@ class SameBoySystem;
 // serialEnd, which read/write peer state via the per-system `linkPeers_`
 // cache. The cache is populated by Project::rebuildLinkGroups, called
 // whenever the system list or any linkGroupId changes.
-//
-// This mirrors the legacy build's pattern (preserved here for traceability):
-//
-//   static void serialStart(GB_gameboy_t* gb, bool bit_received) {
-//       SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
-//       s->bitToSend = bit_received;
-//   }
-//
-//   static bool serialEnd(GB_gameboy_t* gb) {
-//       SameBoyPlugState* s = (SameBoyPlugState*)GB_get_user_data(gb);
-//       bool ret = s->linkTargets.size() > 0
-//           ? GB_serial_get_data_bit(s->linkTargets[0]->gb)
-//           : true;
-//       for (SameBoyPlugState* linkTarget : s->linkTargets) {
-//           GB_serial_set_data_bit(linkTarget->gb, s->bitToSend);
-//       }
-//       return ret;
-//   }
 class LinkGroup {
 public:
     explicit LinkGroup(std::uint8_t id) : id_(id) { members_.reserve(8); }

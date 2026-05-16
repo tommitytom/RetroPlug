@@ -8,8 +8,7 @@
 
 #include "system/RomRole.hpp"
 
-// LSDJ MIDI sync modes. Step 08 shipped `Off` + `MidiSync`. Step 09 adds the
-// Arduinoboy family. Enum values are append-only — the on-disk schema relies
+// LSDJ MIDI sync modes. Enum values are append-only — the on-disk schema relies
 // on the numeric ordering, so reordering or removing a value would break
 // project state round-trips.
 enum class LsdjSyncMode : std::uint32_t {
@@ -27,8 +26,7 @@ struct LsdjSyncConfig {
     using Tag = rfl::Literal<"lsdj-sync">;
 
     // Default-on for sniffed LSDJ ROMs so LSDJ syncs to the host out of the
-    // box. Users can override per project via the LSDJ-mode menu cycle
-    // (step 09).
+    // box. Users can override per project via the LSDJ-mode menu cycle.
     LsdjSyncMode mode = LsdjSyncMode::MidiSync;
 
     // 1/2/4/8. Used by MidiSync + MidiSyncArduinoboy to subdivide the 24-PPQN
@@ -44,7 +42,7 @@ struct LsdjSyncConfig {
 // every translation unit that includes this header.
 class ArduinoboyMaster;
 
-// Per-mode handler. In step 09 modes are configuration on a single role
+// Per-mode handler. Modes are configuration on a single role
 // rather than separate roles — they share enough transient state
 // (arduinoboyPlaying_, effectiveDivisor_, lastRow_, keyboardOctave_) that
 // splitting them just multiplies bookkeeping.
@@ -58,7 +56,7 @@ public:
                        const ::MidiEvent* events, std::uint32_t count) override;
     void onProcessBlock(SameBoySystem& system, const AudioBlockInfo& info) override;
 
-    // Step 09: ArduinoboyMaster mode needs to consume LSDJ's serial-out bytes
+    // ArduinoboyMaster mode needs to consume LSDJ's serial-out bytes
     // when no link peer is wired. SameBoySystem polls this each block to know
     // whether to enable the serial-out byte accumulator.
     bool wantsSerialOut() const override;

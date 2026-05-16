@@ -18,6 +18,7 @@ class SystemBase;
 // Emitted by setState (DPF state restore).
 
 struct SystemReleasedEvent {
+    // TODO: std::unique_ptr?
     SystemBase* system; // ownership; UI deletes
 };
 

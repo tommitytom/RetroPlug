@@ -5,10 +5,10 @@
 
 #include "system/SystemTypes.hpp"
 
-// Port of old/thirdparty/orb/src/audio/PpqUtil.cpp:5-40. Walks the PPQ
-// boundaries that fall inside this block at `resolution` ticks per quarter
-// note (24 for MIDI clock), calling `fn(ppqTickIndex, sampleOffsetInBlock)`
-// for each. No-op when the transport is not running.
+// Walks the PPQ boundaries that fall inside this block at `resolution` 
+// ticks per quarter note (24 for MIDI clock), calling 
+// `fn(ppqTickIndex, sampleOffsetInBlock)` for each. No-op when the 
+// transport is not running.
 namespace PpqUtil {
 
 template <typename Fn>
@@ -29,7 +29,6 @@ inline void eachTick(const AudioBlockInfo& info, std::uint32_t resolution, Fn&& 
 
     while (nextPpq < framePpqEnd) {
         offset += beatLenSamplesRes * (nextPpq - lastPpq);
-        // Clamp on overshoot (legacy parity: PpqUtil.cpp:26-29).
         if (offset >= static_cast<double>(info.frames))
             offset = static_cast<double>(info.frames) - 1.0;
         if (offset < 0.0)

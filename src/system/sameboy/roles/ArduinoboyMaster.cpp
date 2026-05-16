@@ -14,6 +14,8 @@ constexpr std::uint8_t kMidiNoteOffBase = 0x80;
 constexpr std::uint8_t kMidiCcBase      = 0xB0;
 constexpr std::uint8_t kMidiPcBase      = 0xC0;
 
+// TODO: Assess the names of these are correct
+
 inline void pushRealtime(std::vector<::MidiEvent>& out, std::uint8_t status) {
     ::MidiEvent ev{};
     ev.frame   = 0;

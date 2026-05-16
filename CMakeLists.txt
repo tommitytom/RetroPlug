@@ -434,12 +434,14 @@ if(BUILD_CLI)
 
     # `make cli-lsdj-arduinoboy-master` -> the master-out path. LSDJ's MI.OUT
     # mode emits serial bytes that the role's ArduinoboyMaster decoder
-    # translates to host MIDI events. The per-system MIDI log next to the WAV
-    # captures the decoded stream (look for 0xF8 clock + 0xFA/0xFC transport).
+    # translates to host MIDI events. The per-system MIDI log (enabled via
+    # `--event-logs`) captures the decoded stream (look for 0xF8 clock +
+    # 0xFA/0xFC transport).
     add_custom_target(cli-lsdj-arduinoboy-master
         COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
                 --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_master.json
                 --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master
+                --event-logs ${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master
                 --per-system-wav
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         DEPENDS retroplug-cli

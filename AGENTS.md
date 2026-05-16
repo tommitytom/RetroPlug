@@ -318,7 +318,10 @@ text directly.
 
 The CLI captures LSDJ's serial-out byte stream when a role opts into it via
 `RomRole::wantsSerialOut()`. The `LsdjSyncRole` enables this when its config
-is `ArduinoboyMaster`. Two artifacts land next to the WAV:
+is `ArduinoboyMaster`. The capture buffers are populated in memory on every
+run that exercises that mode, but the on-disk artifacts are **opt-in**: pass
+`--event-logs DIR` to `retroplug-cli` and the two files below land under
+`DIR` (omit the flag and nothing is written, even when bytes are captured).
 
 - `<scriptStem>_serial_sys<N>.txt` — every completed serial-out byte, one per
   line as `<absSample> 0x<hex>`. **Ground truth: whatever LSDJ actually wrote
@@ -327,6 +330,10 @@ is `ArduinoboyMaster`. Two artifacts land next to the WAV:
   (one MIDI event per line, raw bytes hex). Empty when the decoder doesn't
   recognize any of the raw bytes — that's expected to evolve as more of the
   protocol gets implemented.
+
+The `cli-lsdj-arduinoboy-master` make target passes `--event-logs` pointing
+at `${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master`, so the artifacts always
+appear there for that target.
 
 ### Synthetic Arduinoboy clock (subtle but load-bearing)
 

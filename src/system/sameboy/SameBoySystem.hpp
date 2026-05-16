@@ -90,6 +90,8 @@ public:
     bool serialOutCaptureEnabled() const { return serialOutEnabled_; }
     void captureSerialOutBit(bool bit);
 
+    // TODO: Not a fan of the public vars
+
     // Fields accessed by the C callbacks. Public for callback access only.
     SameBoyConfig             config_;
     std::vector<std::uint8_t> rom_;
@@ -145,6 +147,8 @@ public:
     std::uint8_t serialOutByte_ = 0;
     int          serialOutBits_ = 0;
     bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
+
+    // TODO: Remove references to porting steps.
 
     // Step 09 follow-up diagnostic. Every completed serial-out byte while
     // serialOutEnabled_ is also appended here keyed by the in-block sample

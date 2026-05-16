@@ -5,6 +5,8 @@
 
 #include "transport/MidiTypes.hpp"
 
+// TODO: Fully test and reassess documentation for Arduinoboy.
+
 // Decodes the byte stream LSDJ emits on its serial port when SYNC is set to
 // MI.OUT in the PROJECT screen (Arduinoboy "Mode_LSDJ_Midiout" mode).
 //

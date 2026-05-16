@@ -13,13 +13,13 @@ class Emulator;
 class MesenAudioDevice;
 class MesenVideoDevice;
 
+// TODO: Rename to MesenGbaSystem
+
 // GBA (Mesen2) system. Mirrors MesenSystem's (NES) shape: per-block onProcess
 // drives the CPU until enough samples are queued in the audio device, then
 // drains them into the planar L/R outs with smoothed gain. Native GBA
 // resolution: 240x160. Audio runs at the host sample rate (Mesen's
 // SoundMixer resamples GBA's native ~32 kHz APU stream internally).
-//
-// Phase 1 scope: ROM load + video + audio + keyboard input. No MIDI roles.
 class GbaSystem final : public SystemBase {
 public:
     GbaSystem(SystemId id,

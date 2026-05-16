@@ -3,9 +3,7 @@
 #include <cmath>
 
 // Tiny dependency-free one-pole exponential value smoother. API mirrors DPF's
-// ExponentialValueSmoother so call sites that previously used the DPF version
-// continue to work; the implementation is independent so non-DPF embedders
-// (CLI, future hosts) don't pull DPF headers in.
+// ExponentialValueSmoother.
 class ExpSmoother {
 public:
     void setSampleRate(float newSampleRate) noexcept {

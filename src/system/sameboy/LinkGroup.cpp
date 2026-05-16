@@ -12,6 +12,8 @@ void LinkGroup::onProcess(const AudioBlockInfo& info, float* const* outs) {
     for (auto* sys : members_) {
         if (sys) sys->prepareForBlock(info);
     }
+    
+    // TODO: This might be overkill
 
     // Round-robin GB_run() across members. Each call advances one CPU
     // instruction (~2–32 cycles), well below the LSDJ serial-bit timing
