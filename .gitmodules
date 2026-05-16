@@ -15,3 +15,7 @@
 	path = deps/catch2
 	url = https://github.com/catchorg/Catch2.git
 	branch = devel
+[submodule "deps/msgpack-c"]
+	path = deps/msgpack-c
+	url = https://github.com/msgpack/msgpack-c.git
+	branch = c_master

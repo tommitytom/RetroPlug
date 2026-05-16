@@ -42,11 +42,23 @@ add_subdirectory(deps/lv_binding_js/deps/lvgl)
 set(BUILD_WITH_MIMALLOC OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/lv_binding_js/deps/txiki EXCLUDE_FROM_ALL)
 
+# --- msgpack-c: C library for the msgpack codec used by rpcpp/reflect-cpp.
+# Vendored + statically linked so plugin binaries don't depend on a system
+# libmsgpackc.so / msgpack-c.dll the host won't have. Upstream's CMakeLists
+# creates a single `msgpack-c` target whose type follows BUILD_SHARED_LIBS;
+# we're a STATIC build, so this lands as a static archive. Must be added
+# before deps/rpcpp so reflect-cpp's `if (NOT TARGET msgpack-c)` short-
+# circuits its find_package call and links our vendored target instead.
+set(MSGPACK_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(MSGPACK_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MSGPACK_ENABLE_SHARED  OFF CACHE BOOL "" FORCE)
+set(MSGPACK_ENABLE_STATIC  ON  CACHE BOOL "" FORCE)
+add_subdirectory(deps/msgpack-c EXCLUDE_FROM_ALL)
+# Static lib ends up inside shared plugin .so / .dylib outputs — needs PIC.
+# No-op on Windows (PE format is always position-independent).
+set_target_properties(msgpack-c PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- rpcpp: header-only JSON-RPC 2.0 server, used by PluginJsBridge ---
-# msgpack codec required for the framebuffer hot path — JSON would multiply
-# ~92KB-per-frame RGBA traffic by 5-7x. reflect-cpp's CMake calls
-# find_package(msgpack-c ... NAMES msgpack msgpack-c msgpackc); on Ubuntu
-# 24.04 the C dev headers + matching CMake config land via libmsgpack-dev.
 set(RPCPP_BUILD_MSGPACK ON CACHE BOOL "" FORCE)
 add_subdirectory(deps/rpcpp)
 
