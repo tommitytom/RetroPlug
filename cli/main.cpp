@@ -35,6 +35,7 @@
 #include "native/core/img/png/lodepng.h"
 
 #include "project/Project.hpp"
+#include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenConfig.hpp"
 #include "system/mesen/MesenSystem.hpp"
@@ -255,20 +256,13 @@ int main(int argc, char** argv) try {
     }
     const std::string scriptStem = std::filesystem::path(args.scriptPath).stem().string();
 
-    // 2. Build the runtime: Project + N activated systems. ROM extension
-    // picks the backend: `.nes` → MesenSystem, anything else → SameBoySystem
-    // (Game Boy ROM extensions: .gb, .gbc, plus the bundled LSDJ ROMs).
+    // 2. Build the runtime: Project + N activated systems. ROM file contents
+    // pick the backend: iNES magic → MesenSystem, GB Nintendo-logo → SameBoy.
+    // Anything else is rejected — feeding garbage to either backend produces
+    // "GB CPU executes random bytes and spams RAM-Mirror writes" or the NES
+    // equivalent.
     Project project;
     project.reserve(systemCount);
-
-    auto isNesPath = [](const std::string& p) {
-        if (p.size() < 4) return false;
-        const auto ext = std::filesystem::path(p).extension().string();
-        std::string lower(ext.size(), '\0');
-        std::transform(ext.begin(), ext.end(), lower.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        return lower == ".nes";
-    };
 
     std::vector<SystemBase*> systems;
     systems.reserve(systemCount);
@@ -280,8 +274,15 @@ int main(int argc, char** argv) try {
         }
 
         auto bytes = slurpBytes(s.rom);
+        const RomFormat fmt = detectRomFormat(bytes);
         std::unique_ptr<SystemBase> sys;
-        if (isNesPath(s.rom)) {
+        if (fmt == RomFormat::Unknown) {
+            std::fprintf(stderr,
+                "script: systems[%u].rom '%s' is not a recognised Game Boy or NES ROM\n",
+                i, s.rom.c_str());
+            return 1;
+        }
+        if (fmt == RomFormat::Mesen) {
             if (s.link_group.value_or(0) != 0) {
                 std::fprintf(stderr, "script: systems[%u] is NES; link_group not supported\n", i);
                 return 1;

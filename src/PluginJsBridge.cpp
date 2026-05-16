@@ -18,6 +18,7 @@ extern "C" {
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
+#include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenConfig.hpp"
 #include "system/mesen/MesenSystem.hpp"
@@ -177,20 +178,28 @@ SystemBase* PluginJsBridge::buildSystemFromPath(const std::string& path) {
         return nullptr;
     }
 
-    // Extension dispatch: .nes → MesenSystem, anything else → SameBoy.
-    // Mirrors cli/main.cpp's isNesPath dispatch so the plugin and CLI agree
-    // on which backend handles which file.
-    auto extLower = [](const std::string& p) {
-        const auto ext = std::filesystem::path(p).extension().string();
-        std::string out(ext.size(), '\0');
-        std::transform(ext.begin(), ext.end(), out.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        return out;
-    };
+    // Content-based dispatch: iNES magic → MesenSystem, Game Boy Nintendo
+    // logo → SameBoySystem, anything else → reject. Matching by magic bytes
+    // (not extension) means a mislabelled ROM still goes to the right
+    // backend, and totally unrelated files (a .sh script, a JPEG, …)
+    // surface as "rom-error" instead of being executed as instructions
+    // by whichever backend caught them. The pre-detector code fell through
+    // to SameBoy for anything not ending in `.nes`, which produced a stream
+    // of "Wrote XX to YYYY (RAM Mirror)" log spam from the GB CPU
+    // executing garbage.
+    const RomFormat fmt = detectRomFormat(bytes);
+    if (fmt == RomFormat::Unknown) {
+        std::fprintf(stderr,
+            "buildSystemFromPath: '%s' is not a recognised Game Boy or NES ROM\n",
+            path.c_str());
+        emitRomEvent(engine, "rom-error", path);
+        return nullptr;
+    }
+
     const SystemId id = project_->nextSystemId();
     const double sr = sampleRate_->load(std::memory_order_acquire);
 
-    if (extLower(path) == ".nes") {
+    if (fmt == RomFormat::Mesen) {
         MesenConfig cfg;
         cfg.romPath = path;
         auto sys = std::make_unique<MesenSystem>(id, cfg, std::move(bytes));
