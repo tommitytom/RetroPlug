@@ -354,6 +354,11 @@ void GbaConsole::ProcessEndOfFrame()
 {
 	_controlManager->UpdateControlDevices();
 	_controlManager->UpdateInputState();
+	// RetroPlug: GbaControlManager::UpdateInputState() has been modified to
+	// skip the BaseControlManager::UpdateInputState() clobbering call (which
+	// would wipe SetBitValue from the host) but still refresh _state.
+	// ActiveKeys from the controller bits, so the CPU's read of $4000130
+	// sees host-driven button changes.
 }
 
 BaseControlManager* GbaConsole::GetControlManager()

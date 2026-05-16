@@ -37,6 +37,8 @@
 #include "project/Project.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
+#include "system/mesen/GbaConfig.hpp"
+#include "system/mesen/GbaSystem.hpp"
 #include "system/mesen/MesenConfig.hpp"
 #include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -278,7 +280,7 @@ int main(int argc, char** argv) try {
         std::unique_ptr<SystemBase> sys;
         if (fmt == RomFormat::Unknown) {
             std::fprintf(stderr,
-                "script: systems[%u].rom '%s' is not a recognised Game Boy or NES ROM\n",
+                "script: systems[%u].rom '%s' is not a recognised Game Boy, NES, or GBA ROM\n",
                 i, s.rom.c_str());
             return 1;
         }
@@ -294,6 +296,20 @@ int main(int argc, char** argv) try {
             MesenConfig cfg;
             cfg.romPath = s.rom;
             sys = std::make_unique<MesenSystem>(
+                project.nextSystemId(), cfg, std::move(bytes));
+        } else if (fmt == RomFormat::Gba) {
+            if (s.link_group.value_or(0) != 0) {
+                std::fprintf(stderr, "script: systems[%u] is GBA; link_group not supported\n", i);
+                return 1;
+            }
+            if (s.lsdj_sync_mode) {
+                std::fprintf(stderr, "script: systems[%u] is GBA; lsdj_sync_mode not applicable\n", i);
+                return 1;
+            }
+            GbaSystemConfig cfg;
+            cfg.romPath = s.rom;
+            if (s.bios_path) cfg.biosPath = *s.bios_path;
+            sys = std::make_unique<GbaSystem>(
                 project.nextSystemId(), cfg, std::move(bytes));
         } else {
             SameBoyConfig cfg;

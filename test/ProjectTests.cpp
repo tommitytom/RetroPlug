@@ -10,6 +10,7 @@
 #include "project/ProjectSerialization.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
+#include "system/mesen/GbaConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/roles/MgbPassthroughRole.hpp"
 #include "transport/MidiTypes.hpp"
@@ -189,6 +190,43 @@ TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", 
     CHECK(roundtripped->romPath  == "/path/to/lsdj.gb");
     CHECK(roundtripped->romBytes == sb.romBytes);
     CHECK(roundtripped->savestate == sb.savestate);
+}
+
+TEST_CASE("ProjectConfig round-trips a GBA system with embedded ROM bytes + biosPath", "[ProjectSerialization]") {
+    GbaSystemConfig gb;
+    gb.embedRom        = true;
+    gb.skipBootScreen  = true;
+    gb.gainDb          = -1.5f;
+    gb.romPath         = "/path/to/nanoloop.gba";
+    gb.biosPath        = "/some/firmware/gba_bios.bin";
+    gb.romBytes = Base64Bytes(std::vector<std::uint8_t>{
+        0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21,
+        0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
+        0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21});
+    gb.sram      = Base64Bytes(std::vector<std::uint8_t>{0xCA, 0xFE});
+    gb.savestate = Base64Bytes(std::vector<std::uint8_t>{0x01, 0x02, 0x03});
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(gb);
+
+    const std::string json = projectConfigToJson(cfg);
+    INFO(json);
+
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->systems.size() == 1);
+
+    const auto* roundtripped = rfl::get_if<GbaSystemConfig>(&parsed->systems.front().variant());
+    REQUIRE(roundtripped != nullptr);
+    CHECK(roundtripped->embedRom       == true);
+    CHECK(roundtripped->skipBootScreen == true);
+    CHECK(roundtripped->gainDb         == -1.5f);
+    CHECK(roundtripped->romPath        == "/path/to/nanoloop.gba");
+    CHECK(roundtripped->biosPath       == "/some/firmware/gba_bios.bin");
+    CHECK(roundtripped->romBytes       == gb.romBytes);
+    CHECK(roundtripped->sram           == gb.sram);
+    CHECK(roundtripped->savestate      == gb.savestate);
+    CHECK(roundtripped->roles.empty());
 }
 
 TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectSerialization]") {

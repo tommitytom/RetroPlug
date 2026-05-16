@@ -66,6 +66,12 @@ struct ScriptSystem {
     // "KeyboardMidi", "MidiPassthrough", "ArduinoboyMaster"). Only meaningful
     // when the ROM is sniffed as LSDJ; ignored otherwise.
     std::optional<std::string>   lsdj_sync_mode;
+    // GBA-only: path to a real GBA BIOS file (16384 bytes; filename can be
+    // anything — Mesen requires it to be named gba_bios.bin so GbaSystem
+    // copies it into its firmware folder on activate). Without it most ROMs
+    // hang at the first BIOS SWI; the Cult-of-GBA open-source BIOS works as
+    // a drop-in for the smoke test. Ignored for SameBoy / NES ROMs.
+    std::optional<std::string>   bios_path;
 };
 
 struct Script {
@@ -90,7 +96,7 @@ struct Script {
 struct TimedButton {
     std::uint64_t sample;
     std::uint32_t systemIndex;
-    std::uint8_t  button;   // SameBoy: GameboyButton; Mesen: NesButton (cast)
+    std::uint8_t  button;   // SameBoy: GameboyButton; Mesen: NesButton; Gba: GbaButton (cast)
     bool          down;
 };
 
@@ -114,9 +120,13 @@ struct TimedTransport {
     std::optional<double> setBpm;
 };
 
-// Returns a button opcode as a raw uint8_t. Both GameboyButton and NesButton
-// are position-aligned (Right=0..Start=7) so the same name table works for
-// either system kind; the receiving system reinterprets the byte.
+// Returns a button opcode as a raw uint8_t. GameboyButton, NesButton, and
+// GbaButton all use the same position-aligned encoding (Right=0..Start=7)
+// for the shared eight buttons, so a single name table works for any
+// system kind; the receiving system reinterprets the byte. L and R are
+// GBA-only (wire bytes 8 and 9 from GbaButton); pressing them at a
+// SameBoy or Mesen system is a no-op (their toXButton switches return A
+// for unknown values).
 inline std::uint8_t parseButtonName(const std::string& s) {
     std::string lower(s.size(), '\0');
     std::transform(s.begin(), s.end(), lower.begin(),
@@ -129,6 +139,8 @@ inline std::uint8_t parseButtonName(const std::string& s) {
     if (lower == "b")      return static_cast<std::uint8_t>(GameboyButton::B);
     if (lower == "select") return static_cast<std::uint8_t>(GameboyButton::Select);
     if (lower == "start")  return static_cast<std::uint8_t>(GameboyButton::Start);
+    if (lower == "l")      return static_cast<std::uint8_t>(GbaButton::L);
+    if (lower == "r")      return static_cast<std::uint8_t>(GbaButton::R);
     throw std::runtime_error("unknown button name: " + s);
 }
 

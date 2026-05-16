@@ -184,6 +184,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
+      src/system/mesen/GbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
   FILES_UI
       src/PluginUI.cpp
@@ -204,6 +205,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
+      src/system/mesen/GbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
@@ -281,6 +283,19 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Rendering examples/scripts/nes_smoke.json -> /tmp/nes-smoke.wav + boot.png"
+    )
+
+    # `make cli-gba-smoke` -> boot the nanoloop demo GBA ROM under GbaSystem,
+    # render 5 s, capture two screenshots. End-to-end verification of the
+    # Mesen-backed GBA dispatch (audio + video + boot).
+    add_custom_target(cli-gba-smoke
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/gba_smoke.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/gba-smoke
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Rendering examples/scripts/gba_smoke.json -> /tmp/gba-smoke.wav + boot.png"
     )
 
     # `make cli-n8-midi` -> end-to-end MIDI-input test for the n8-midi ROM.

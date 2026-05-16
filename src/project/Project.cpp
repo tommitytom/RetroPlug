@@ -7,6 +7,7 @@
 
 #include "rfl/Variant.hpp"
 
+#include "system/mesen/GbaSystem.hpp"
 #include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
@@ -72,6 +73,22 @@ SystemId Project::addSystem(const SystemConfig& config) {
         config_.systems.push_back(*mb);
         // Mesen systems don't participate in LinkGroups (no GB serial); the
         // call is still safe — it just leaves any existing GB groups intact.
+        rebuildLinkGroups();
+        return id;
+    }
+
+    if (const auto* gb = rfl::get_if<GbaSystemConfig>(&config.variant())) {
+        std::vector<std::uint8_t> rom = gb->romBytes.bytes();
+        if (rom.empty())
+            rom = slurpFile(gb->romPath);
+        if (rom.empty()) {
+            std::fprintf(stderr, "[Project] no ROM bytes/path for GBA id=%u path='%s'\n",
+                         id, gb->romPath.c_str());
+            return 0;
+        }
+        auto sys = std::make_unique<GbaSystem>(id, *gb, std::move(rom));
+        systems_.push_back(std::move(sys));
+        config_.systems.push_back(*gb);
         rebuildLinkGroups();
         return id;
     }

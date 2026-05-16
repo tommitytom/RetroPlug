@@ -23,7 +23,15 @@ GbaControlManagerState& GbaControlManager::GetState()
 
 void GbaControlManager::UpdateInputState()
 {
-	BaseControlManager::UpdateInputState();
+	// RetroPlug: BaseControlManager::UpdateInputState() calls
+	// device->ClearState() + SetStateFromInput() on every poll, which
+	// reads from host KeyMappings and would wipe any bits the host set
+	// via SetBitValue. The host (CLI script / JS bridge / DAW plugin)
+	// is the source of truth for input; Mesen's keyboard-polling path
+	// is unused. Skip the base call and just refresh the ActiveKeys
+	// cache from the controller's current bits so the CPU's read of
+	// $4000130 sees host-driven button changes.
+	//BaseControlManager::UpdateInputState();
 	_state.ActiveKeys = (ReadController(0) | (ReadController(1) << 8));
 	CheckForIrq();
 }

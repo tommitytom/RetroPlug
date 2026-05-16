@@ -20,6 +20,8 @@ extern "C" {
 #include "system/InputTypes.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
+#include "system/mesen/GbaConfig.hpp"
+#include "system/mesen/GbaSystem.hpp"
 #include "system/mesen/MesenConfig.hpp"
 #include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -178,19 +180,17 @@ SystemBase* PluginJsBridge::buildSystemFromPath(const std::string& path) {
         return nullptr;
     }
 
-    // Content-based dispatch: iNES magic → MesenSystem, Game Boy Nintendo
-    // logo → SameBoySystem, anything else → reject. Matching by magic bytes
-    // (not extension) means a mislabelled ROM still goes to the right
-    // backend, and totally unrelated files (a .sh script, a JPEG, …)
-    // surface as "rom-error" instead of being executed as instructions
-    // by whichever backend caught them. The pre-detector code fell through
-    // to SameBoy for anything not ending in `.nes`, which produced a stream
-    // of "Wrote XX to YYYY (RAM Mirror)" log spam from the GB CPU
-    // executing garbage.
+    // Content-based dispatch: iNES magic → MesenSystem, GBA Nintendo logo
+    // at $0004 → GbaSystem, Game Boy Nintendo logo at $0104 → SameBoySystem,
+    // anything else → reject. Matching by magic bytes (not extension) means
+    // a mislabelled ROM still goes to the right backend, and totally
+    // unrelated files (a .sh script, a JPEG, …) surface as "rom-error"
+    // instead of being executed as instructions by whichever backend caught
+    // them.
     const RomFormat fmt = detectRomFormat(bytes);
     if (fmt == RomFormat::Unknown) {
         std::fprintf(stderr,
-            "buildSystemFromPath: '%s' is not a recognised Game Boy or NES ROM\n",
+            "buildSystemFromPath: '%s' is not a recognised Game Boy, NES, or GBA ROM\n",
             path.c_str());
         emitRomEvent(engine, "rom-error", path);
         return nullptr;
@@ -203,6 +203,20 @@ SystemBase* PluginJsBridge::buildSystemFromPath(const std::string& path) {
         MesenConfig cfg;
         cfg.romPath = path;
         auto sys = std::make_unique<MesenSystem>(id, cfg, std::move(bytes));
+        sys->onActivate(sr);
+        return sys.release();
+    }
+
+    if (fmt == RomFormat::Gba) {
+        GbaSystemConfig cfg;
+        cfg.romPath = path;
+        // BIOS lookup: pass through anything the host has dropped into the
+        // build firmware dir. If absent, GbaSystem falls back to HLE
+        // (Mesen-zeroed boot ROM) and most non-trivial ROMs will hang on
+        // their first BIOS SWI. Plumbing a UI-side BIOS picker is a
+        // follow-up.
+        cfg.biosPath = "build/firmware/gba_bios.bin";
+        auto sys = std::make_unique<GbaSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
         return sys.release();
     }

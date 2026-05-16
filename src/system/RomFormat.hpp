@@ -14,17 +14,38 @@ enum class RomFormat : std::uint8_t {
     Unknown = 0,  // bytes don't look like any supported ROM
     SameBoy = 1,  // Game Boy / Game Boy Color (DMG/CGB)
     Mesen   = 2,  // NES (iNES header)
+    Gba     = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F)
 };
 
 // Returns Mesen if `bytes` starts with the iNES magic ("NES\x1A").
-// Returns SameBoy if `bytes` contains the Nintendo boot-logo bytes at the
-// Game Boy cartridge header location ($0104..$0133).
-// Returns Unknown otherwise. Empty / short buffers are Unknown.
+// Returns Gba if `bytes` contains the GBA Nintendo logo at offset $0004.
+// Returns SameBoy if `bytes` contains the Game Boy Nintendo logo at offset
+// $0104. Returns Unknown otherwise. Empty / short buffers are Unknown.
 inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
     // iNES: 'N','E','S',0x1A at offset 0
     if (bytes.size() >= 4 &&
         bytes[0] == 'N' && bytes[1] == 'E' && bytes[2] == 'S' && bytes[3] == 0x1A) {
         return RomFormat::Mesen;
+    }
+
+    // GBA: Nintendo logo at $0004..$009F. Every licensed GBA cart contains
+    // these bytes verbatim — the boot ROM CRC-checks them and refuses to
+    // start the cart otherwise. The first 32 bytes are unique enough to use
+    // as a signature; the full logo is 156 bytes.
+    static constexpr std::uint8_t kGbaLogo[] = {
+        0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21,
+        0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
+        0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21,
+        0xA3, 0x52, 0xBE, 0x19, 0x93, 0x09, 0xCE, 0x20,
+    };
+    constexpr std::size_t kGbaLogoOffset = 0x04;
+    constexpr std::size_t kGbaLogoSize   = sizeof(kGbaLogo);
+    if (bytes.size() >= kGbaLogoOffset + kGbaLogoSize) {
+        bool match = true;
+        for (std::size_t i = 0; i < kGbaLogoSize; ++i) {
+            if (bytes[kGbaLogoOffset + i] != kGbaLogo[i]) { match = false; break; }
+        }
+        if (match) return RomFormat::Gba;
     }
 
     // Game Boy: Nintendo logo at $0104..$0133. Every licensed (and most
