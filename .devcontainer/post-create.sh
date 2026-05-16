@@ -22,6 +22,10 @@ sudo chown -R "$(id -u):$(id -g)" /var/claude-state
 ln -sfn  /var/claude-state/data        "${HOME}/.claude"
 ln -sfn  /var/claude-state/config.json "${HOME}/.claude.json"
 
+echo "==> Configuring git-lfs..."
+git lfs install
+git lfs pull
+
 echo "==> Initializing git submodules..."
 git submodule update --init --recursive
 

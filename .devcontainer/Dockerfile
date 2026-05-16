@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ffmpeg \
 	# --- VCS ---------------------------------------------------------------
 	git \
+	git-lfs \
 	# --- Plugin-format validators need these to download/extract -----------
 	curl \
 	unzip \
