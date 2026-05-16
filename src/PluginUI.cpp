@@ -17,6 +17,7 @@
 
 #include "DistrhoUI.hpp"
 #include "ResizeHandle.hpp"
+#include "GamepadManager.hpp"
 #include "LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
@@ -54,6 +55,7 @@ class LVGLPluginUI : public UI
     ResizeHandle fResizeHandle;
     LvglJsEngine jsEngine;
     std::unique_ptr<PluginJsBridge> bridge;
+    retroplug::GamepadManager gamepad;
     SharedDSPData* shared = nullptr;
 
     // Track the last setSize request so we can detect a tiled-WM clamp.
@@ -333,10 +335,63 @@ protected:
         // redraw — host-throttled when the window isn't visible.
         if (JSContext* ctx = jsEngine.getContext()) {
             jsEngine.emit("frame", 0, nullptr);
+            pumpGamepad(ctx);
         }
 
         jsEngine.tick();
         maybeWriteScreenshot();
+    }
+
+    // Poll SDL game controllers and forward press / release / axis / hot-
+    // plug events to the JS bridge using per-event channels. Mirrors the
+    // keyboard pattern at onKeyboard() below: C++ owns the device read,
+    // TS owns the policy (key/button → GameboyButton, menu nav, etc.).
+    void pumpGamepad(JSContext* ctx)
+    {
+        gamepad.update([this, ctx](const retroplug::GamepadEvent& ev) {
+            switch (ev.kind) {
+                case retroplug::GamepadEvent::Kind::Connected: {
+                    JSValue args[2] = {
+                        JS_NewInt32(ctx, ev.pad),
+                        JS_NewString(ctx, ev.name ? ev.name : ""),
+                    };
+                    jsEngine.emit("gamepad-connected", 2, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Disconnected: {
+                    JSValue args[1] = { JS_NewInt32(ctx, ev.pad) };
+                    jsEngine.emit("gamepad-disconnected", 1, args);
+                    JS_FreeValue(ctx, args[0]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Button: {
+                    JSValue args[3] = {
+                        JS_NewInt32(ctx, ev.pad),
+                        JS_NewString(ctx, ev.button ? ev.button : ""),
+                        JS_NewBool(ctx, ev.pressed),
+                    };
+                    jsEngine.emit("gamepad-button", 3, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    JS_FreeValue(ctx, args[2]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Axis: {
+                    JSValue args[3] = {
+                        JS_NewInt32(ctx, ev.pad),
+                        JS_NewString(ctx, ev.axis ? ev.axis : ""),
+                        JS_NewFloat64(ctx, ev.value),
+                    };
+                    jsEngine.emit("gamepad-axis", 3, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    JS_FreeValue(ctx, args[2]);
+                    break;
+                }
+            }
+        });
     }
 
     void uiFileBrowserSelected(const char* filename) override

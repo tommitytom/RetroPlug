@@ -33,6 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libssl-dev \
+	# --- SDL2: gamepad / game controller backend (UI side, all variants) --
+	libsdl2-dev \
 	# --- Node.js for the esbuild UI bundler --------------------------------
 	nodejs \
 	npm \

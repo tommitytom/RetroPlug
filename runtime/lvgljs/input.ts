@@ -88,3 +88,86 @@ export function useKeyboard(handler: (key: number, press: boolean) => void) {
         return () => off("key", wrapped);
     }, [handler]);
 }
+
+// --- Gamepad / SDL game controller input -----------------------------------
+//
+// PluginUI::pumpGamepad polls SDL_GameController state every uiIdle and emits
+// per-event channels:
+//   "gamepad-connected"    (pad: number, name: string)
+//   "gamepad-disconnected" (pad: number)
+//   "gamepad-button"       (pad: number, button: string, pressed: boolean)
+//   "gamepad-axis"         (pad: number, axis: string, value: number)
+// `pad` is SDL_JoystickID (stable across hot-plug). Button / axis names are
+// SDL's canonical strings ("a", "b", "dpup", "leftx", "righttrigger", …) —
+// they're label-based, so "a" is whichever face button reads as A on the
+// pad's own labels (the bottom face on Xbox layout, the right face on
+// Nintendo). Values mean the same thing as the JS Gamepad API:
+//   buttons: pressed = true on press, false on release (already de-bounced
+//            by the C++ side — no auto-repeat).
+//   axes:    -1.0 to 1.0, with a small dead-zone clipped to 0.
+
+/**
+ * Default mapping for SDL game-controller buttons → Game Boy buttons.
+ * D-pad is the obvious choice; the rest mirror the keyboard defaults
+ * (right face button = A, bottom face button = B, Start, Back = Select).
+ *
+ * Returns null for unmapped buttons (sticks click, shoulder buttons,
+ * Guide, paddles, etc.) — let JS handle those for UI nav if it wants.
+ */
+export function mapGamepadButtonToGameboyButton(button: string): GameboyButton | null {
+    switch (button) {
+        case "dpleft":  return GameboyButton.Left;
+        case "dpright": return GameboyButton.Right;
+        case "dpup":    return GameboyButton.Up;
+        case "dpdown":  return GameboyButton.Down;
+        case "a":       return GameboyButton.A;
+        case "b":       return GameboyButton.B;
+        case "start":   return GameboyButton.Start;
+        case "back":    return GameboyButton.Select;
+        default:        return null;
+    }
+}
+
+/** React hook: subscribe to the "gamepad-button" event channel. */
+export function useGamepadButton(
+    handler: (pad: number, button: string, pressed: boolean) => void,
+) {
+    useEffect(() => {
+        const wrapped = (pad: number, button: string, pressed: boolean) =>
+            handler(pad, button, pressed);
+        on("gamepad-button", wrapped);
+        return () => off("gamepad-button", wrapped);
+    }, [handler]);
+}
+
+/** React hook: subscribe to the "gamepad-axis" event channel. */
+export function useGamepadAxis(
+    handler: (pad: number, axis: string, value: number) => void,
+) {
+    useEffect(() => {
+        const wrapped = (pad: number, axis: string, value: number) =>
+            handler(pad, axis, value);
+        on("gamepad-axis", wrapped);
+        return () => off("gamepad-axis", wrapped);
+    }, [handler]);
+}
+
+/**
+ * React hook: subscribe to gamepad hot-plug notifications. Either callback
+ * may be omitted. Useful for showing a "Controller connected" banner.
+ */
+export function useGamepadConnections(opts: {
+    onConnected?:    (pad: number, name: string) => void,
+    onDisconnected?: (pad: number) => void,
+}) {
+    useEffect(() => {
+        const c = opts.onConnected;
+        const d = opts.onDisconnected;
+        if (c) on("gamepad-connected", c);
+        if (d) on("gamepad-disconnected", d);
+        return () => {
+            if (c) off("gamepad-connected", c);
+            if (d) off("gamepad-disconnected", d);
+        };
+    }, [opts.onConnected, opts.onDisconnected]);
+}

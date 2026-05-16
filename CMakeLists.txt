@@ -35,6 +35,14 @@ set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/src/lv_conf.h" CACHE PATH "")
 # include DPF
 add_subdirectory(deps/dpf)
 
+# --- SDL2: used for gamepad/game-controller input across every plugin
+# variant (and the standalone). DPF's own SDL2 detection is gated to the
+# JACK target only (audio backend fallback), so we find SDL2 ourselves at
+# the parent scope and link it into every variant after dpf_add_plugin.
+# Only SDL_INIT_GAMECONTROLLER is initialised — see src/GamepadManager.cpp.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+
 # Use LVGL from lv_binding_js (single source of truth)
 add_subdirectory(deps/lv_binding_js/deps/lvgl)
 
@@ -246,6 +254,7 @@ dpf_add_plugin(${NAME}
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
       src/PluginRpcService.cpp
+      src/GamepadManager.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the
       # symbols must be linked into the UI binary as well, not just the DSP.
@@ -278,6 +287,13 @@ target_link_libraries(${NAME} PUBLIC mesen)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)
+
+# SDL2 lands on ${NAME}-ui — the aggregator DPF creates for every UI-
+# bearing variant (retroplug-vst3, -clap, -au, -jack, -lv2-ui, etc. all
+# link this PUBLIC/PRIVATE, so SDL2 propagates to each .so/.vst3/.clap
+# without needing a per-variant loop). DSP-only outputs (the LV2 split's
+# -dsp half) never link UI sources and thus never see SDL.
+target_link_libraries(${NAME}-ui PUBLIC PkgConfig::SDL2)
 
 # --- Tests (Catch2) ----------------------------------------------------------
 # Gated so the default build stays small; opt in with -DBUILD_TESTING=ON.

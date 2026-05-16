@@ -8,7 +8,9 @@ import {
     GameboyButton,
     KEY_ESCAPE,
     KEY_TAB,
+    mapGamepadButtonToGameboyButton,
     mapKeyToGameboyButton,
+    useGamepadButton,
     useKeyboard,
 } from "../runtime/lvgljs/input";
 
@@ -308,6 +310,32 @@ function PluginUI() {
             const target = targets.get(key);
             if (target === undefined) return; // spurious release
             targets.delete(key);
+            void plugin.$notify("pressButton", button, false, target);
+        }
+    }, []));
+
+    // Same release-to-original-target bookkeeping as keyTargetRef above, but
+    // keyed by `${padId}:${buttonName}` since a single button is unique per
+    // pad. Lets multiple pads drive independently without one's release
+    // hijacking another's hold.
+    const padTargetRef = useRef<Map<string, number>>(new Map());
+
+    useGamepadButton(useCallback((pad: number, buttonName: string, press: boolean) => {
+        if (menuOpenRef.current) return;
+        const button = mapGamepadButtonToGameboyButton(buttonName);
+        if (button === null) return;
+        const slot = `${pad}:${buttonName}`;
+        const targets = padTargetRef.current;
+        if (press) {
+            if (targets.has(slot)) return;
+            const target = focusedIdRef.current;
+            if (target === 0) return;
+            targets.set(slot, target);
+            void plugin.$notify("pressButton", button, true, target);
+        } else {
+            const target = targets.get(slot);
+            if (target === undefined) return;
+            targets.delete(slot);
             void plugin.$notify("pressButton", button, false, target);
         }
     }, []));
