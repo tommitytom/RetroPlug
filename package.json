@@ -1,0 +1,9 @@
+{
+  "name": "retroplug2-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build-time JS deps for the UI bundle that aren't already provided by deps/lv_binding_js/node_modules.",
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0"
+  }
+}

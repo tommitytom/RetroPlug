@@ -314,6 +314,12 @@ protected:
     {
         drainEvents();
 
+        // Drain the rpcpp transport's outgoing queue — async/notification
+        // frames land in `engine.emit("rpc-message", ...)` for the JS
+        // transport to forward to its onFrame handler. No-op while only
+        // sync handlers are registered.
+        if (bridge) bridge->pumpAsync();
+
         // Emit a per-tick "frame" event so React's <EmulatorTile> knows to
         // poll plugin.getFrame. One emit per UI idle ties cadence to LVGL's
         // redraw — host-throttled when the window isn't visible.

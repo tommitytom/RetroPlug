@@ -43,6 +43,11 @@ set(BUILD_WITH_MIMALLOC OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/lv_binding_js/deps/txiki EXCLUDE_FROM_ALL)
 
 # --- rpcpp: header-only JSON-RPC 2.0 server, used by PluginJsBridge ---
+# msgpack codec required for the framebuffer hot path — JSON would multiply
+# ~92KB-per-frame RGBA traffic by 5-7x. reflect-cpp's CMake calls
+# find_package(msgpack-c ... NAMES msgpack msgpack-c msgpackc); on Ubuntu
+# 24.04 the C dev headers + matching CMake config land via libmsgpack-dev.
+set(RPCPP_BUILD_MSGPACK ON CACHE BOOL "" FORCE)
 add_subdirectory(deps/rpcpp)
 
 # --- SameBoy: Game Boy emulator core, vendored under deps/sameboy ---
@@ -146,12 +151,50 @@ set_target_properties(ada PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(miniz PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(reflectcpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# --- rpc-schema-dump: prints PluginRpcService's OpenRPC schema for codegen ---
+# Standalone executable so the codegen step doesn't need to start the plugin
+# (or wire up the rest of its dependency graph). Constructs the service with
+# all-null state; the schema generator only inspects reflect-cpp's
+# compile-time type info, no methods are actually called.
+add_executable(rpc-schema-dump
+    src/RpcSchemaDump.cpp
+    src/PluginRpcService.cpp
+    src/project/Project.cpp
+    src/system/sameboy/LinkGroup.cpp
+    src/system/sameboy/RomSniffer.cpp
+    src/system/sameboy/SameBoySystem.cpp
+    src/system/sameboy/roles/ArduinoboyMaster.cpp
+    src/system/sameboy/roles/LsdjSyncRole.cpp
+    src/system/sameboy/roles/MgbPassthroughRole.cpp
+    src/system/mesen/MesenSystem.cpp
+    src/system/mesen/MesenVideoDevice.cpp
+    src/system/mesen/GbaSystem.cpp
+    src/system/mesen/roles/NesN8MidiRole.cpp)
+target_include_directories(rpc-schema-dump PRIVATE src)
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen)
+
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
 
 set(UI_BUNDLE_JS  "${CMAKE_BINARY_DIR}/ui/bundle.js")
 set(UI_BUNDLE_C   "${CMAKE_BINARY_DIR}/ui/bundle_data.c")
 set(UI_BUNDLE_DEP "${CMAKE_BINARY_DIR}/ui/bundle.d")
+set(UI_RPC_TS     "${CMAKE_BINARY_DIR}/ui/generated/PluginService.ts")
+
+# Generated TypeScript client for PluginRpcService. The rpc-schema-dump
+# executable prints the OpenRPC document; gen-rpc-ts.js bundles
+# @rpcpp/codegen via esbuild and runs writeService on it. Both sit under
+# build/ — never committed.
+add_custom_command(
+    OUTPUT  ${UI_RPC_TS}
+    COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
+            $<TARGET_FILE:rpc-schema-dump>
+            ${UI_RPC_TS}
+    DEPENDS rpc-schema-dump
+            ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
+    COMMENT "Generating typed RPC client from OpenRPC schema"
+    VERBATIM)
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/ui/*.ts"
@@ -164,7 +207,7 @@ add_custom_command(
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/build-ui.js
             ${UI_BUNDLE_JS} ${UI_BUNDLE_C} ${UI_BUNDLE_DEP}
-    DEPENDS ${UI_SOURCES} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
+    DEPENDS ${UI_SOURCES} ${UI_RPC_TS} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
     DEPFILE ${UI_BUNDLE_DEP}
     COMMENT "Building UI bundle"
     VERBATIM)
@@ -175,6 +218,7 @@ dpf_add_plugin(${NAME}
   USE_FILE_BROWSER
   FILES_DSP
       src/PluginDSP.cpp
+      src/PluginRpcService.cpp
       src/project/Project.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
@@ -189,6 +233,7 @@ dpf_add_plugin(${NAME}
   FILES_UI
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
+      src/PluginRpcService.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the
       # symbols must be linked into the UI binary as well, not just the DSP.

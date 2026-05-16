@@ -23,6 +23,10 @@ the parts that don't naturally fit either.
   build dir is load-bearing for the development loop.
 - Treat the embedded UI bundle as derived; never check in
   `build/ui/bundle.js` or `build/ui/bundle_data.c`.
+- The typed RPC client at `build/ui/generated/PluginService.ts` is also
+  derived (regenerated from `PluginRpcService`'s OpenRPC schema by
+  `tools/gen-rpc-ts.js` whenever the service signatures change). Never
+  commit it.
 - Always build in parallel: pass `-j$(nproc)` (or `-j` followed by the core
   count) to `cmake --build`. The default is single-threaded and turns a
   full build into a multi-minute serial slog.

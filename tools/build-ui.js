@@ -2,7 +2,10 @@ const fs = require("fs");
 const path = require("path");
 
 // Resolve esbuild from lv_binding_js's node_modules
-const LV_BINDING_DIR = path.resolve(__dirname, "../deps/lv_binding_js");
+const REPO_ROOT       = path.resolve(__dirname, "..");
+const LV_BINDING_DIR  = path.join(REPO_ROOT, "deps/lv_binding_js");
+const RPCPP_TS_DIR    = path.join(REPO_ROOT, "deps/rpcpp/clients/typescript");
+const GENERATED_RPC_TS = path.join(REPO_ROOT, "build/ui/generated/PluginService.ts");
 const esbuild = require(path.join(LV_BINDING_DIR, "node_modules/esbuild"));
 const aliasPlugin = require(path.join(LV_BINDING_DIR, "node_modules/esbuild-plugin-alias"));
 
@@ -26,12 +29,26 @@ esbuild
         external: ["tjs:path"],
         jsx: "automatic",
         outfile: bundlePath,
-        nodePaths: [path.join(LV_BINDING_DIR, "node_modules")],
+        nodePaths: [
+            path.join(LV_BINDING_DIR, "node_modules"),
+            path.join(REPO_ROOT, "node_modules"),  // for @msgpack/msgpack
+        ],
         // Read the renderer source directly, bypassing pnpm's file:-dep copy.
         plugins: [
             aliasPlugin({
-                "lvgljs-ui": path.join(LV_BINDING_DIR, "src/render/react/index.ts"),
-                "lvgljs":    path.resolve(__dirname, "../runtime/lvgljs/index.ts"),
+                "lvgljs-ui":      path.join(LV_BINDING_DIR, "src/render/react/index.ts"),
+                "lvgljs":         path.resolve(__dirname, "../runtime/lvgljs/index.ts"),
+                // Pull rpcpp client pieces directly from the package's src
+                // (not its index, which re-exports the Node-only Stdio
+                // transport family and trips esbuild on node:child_process).
+                "@rpcpp/createClient":  path.join(RPCPP_TS_DIR, "client/src/createClient.ts"),
+                "@rpcpp/MsgpackCodec":  path.join(RPCPP_TS_DIR, "client/src/codecs/MsgpackCodec.ts"),
+                "@rpcpp/transport":     path.join(RPCPP_TS_DIR, "client/src/transport.ts"),
+                // esbuild 0.14 vendored in lv_binding_js doesn't pick up
+                // @msgpack/msgpack's .cjs/.mjs main fields under
+                // platform: "neutral". Point straight at the ESM bundle.
+                "@msgpack/msgpack":     path.join(REPO_ROOT, "node_modules/@msgpack/msgpack/dist.esm/index.mjs"),
+                "plugin-service": GENERATED_RPC_TS,
             }),
         ],
         define: {

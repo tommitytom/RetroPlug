@@ -2,6 +2,7 @@ import { View } from "lvgljs-ui";
 
 import { EmulatorTile } from "./EmulatorTile";
 import { autoShape, GridShape, TILE_W, TILE_H } from "./layout";
+import type { SystemEntry } from "./plugin/client";
 
 // Tile arrangement options. Mirrors C++ SystemLayout enum
 // (src/project/ProjectConfig.hpp).
@@ -12,17 +13,11 @@ export enum SystemLayout {
     Grid   = 3,
 }
 
-export interface SystemEntry {
-    id: number;
-    kind?: string;
-    gainDb?: number;
-    linkGroupId?: number;
-    // Present only when the system has an LSDJ sync role attached (i.e. an
-    // LSDJ-titled ROM is loaded). Used by PluginUI to surface the mode picker
-    // menu entry conditionally.
-    lsdjSyncMode?: number;
-    lsdjTempoDivisor?: number;
-}
+// Re-exported from plugin/client so callers can `import { SystemEntry }
+// from "./SystemGrid"` as before — but the underlying type comes from the
+// generated RPC schema. The lsdjSyncMode / lsdjTempoDivisor fields are
+// present only when the system has an LSDJ sync role attached.
+export type { SystemEntry };
 
 interface SystemGridProps {
     systems:    SystemEntry[];

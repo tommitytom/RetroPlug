@@ -2,6 +2,7 @@ import { Canvas, View } from "lvgljs-ui";
 import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
+import { plugin } from "./plugin/client";
 import { TILE_W, TILE_H } from "./layout";
 
 // Mirrors LV_IMAGE_ALIGN values from lvgl/src/widgets/image/lv_image.h.
@@ -10,13 +11,6 @@ const LV_IMAGE_ALIGN_CONTAIN = 14;
 // Cast around lvgljs-ui's Canvas type which doesn't expose a ref prop in
 // its public typings. Same trick PluginUI uses for Text.
 const CanvasAny = Canvas as any;
-
-interface PluginNamespace {
-    getFrame?: (systemId: number) => { width: number; height: number; buffer: ArrayBuffer } | null;
-    setFocus?: (systemId: number) => boolean;
-}
-const plugin: PluginNamespace =
-    (globalThis as any)[Symbol.for("plugin")] ?? {};
 
 interface EmulatorTileProps {
     systemId: number;
@@ -40,15 +34,34 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
     const canvasRef = useRef<any>(null);
 
     useEffect(() => {
+        // pending guards against piling up Promises if the C++ side is
+        // momentarily slow — we drop frames rather than queue them, which
+        // matches the cadence of the existing sync getFrame path.
+        let pending = false;
+        let cancelled = false;
         const onFrame = () => {
-            const frame = plugin.getFrame?.(systemId);
-            if (!frame) return;
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            canvas.setBuffer(frame.buffer, frame.width, frame.height);
+            if (pending) return;
+            pending = true;
+            (async () => {
+                try {
+                    const frame = await plugin.getFrame(systemId);
+                    if (cancelled || !frame) return;
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    // msgpack-javascript decodes BIN as a Uint8Array.subarray
+                    // view into the wire buffer; slice() gives us a fresh
+                    // ArrayBuffer of exactly the framebuffer bytes for
+                    // canvas.setBuffer (which JS_GetArrayBuffer treats as
+                    // a whole-buffer object).
+                    canvas.setBuffer(frame.buffer.slice().buffer,
+                                     frame.width, frame.height);
+                } finally {
+                    pending = false;
+                }
+            })();
         };
         on("frame", onFrame);
-        return () => off("frame", onFrame);
+        return () => { cancelled = true; off("frame", onFrame); };
     }, [systemId]);
 
     // The "dim unfocused" trick: render a translucent black overlay on top
@@ -77,7 +90,7 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
                 "padding-bottom":0,
                 overflow: "hidden",
             }}
-            onClick={() => plugin.setFocus?.(systemId)}
+            onClick={() => { void plugin.$notify("setFocus", systemId); }}
         >
             <CanvasAny
                 ref={canvasRef}

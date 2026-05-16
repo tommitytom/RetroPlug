@@ -29,6 +29,14 @@ git lfs pull
 echo "==> Initializing git submodules..."
 git submodule update --init --recursive
 
+echo "==> Installing workspace npm deps..."
+# Top-level package.json holds the few packages used by the UI bundle that
+# aren't already present in deps/lv_binding_js/node_modules — primarily
+# @msgpack/msgpack for the rpcpp client's MsgpackCodec.
+if [ ! -d node_modules ]; then
+    npm install --no-audit --no-fund --silent
+fi
+
 echo "==> Configuring CMake..."
 mkdir -p build
 cmake -S . -B build

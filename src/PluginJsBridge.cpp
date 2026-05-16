@@ -1,87 +1,20 @@
 #include "PluginJsBridge.hpp"
 
-#include <algorithm>
-#include <atomic>
-#include <cctype>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
 #include <memory>
-#include <string_view>
+#include <span>
 #include <utility>
-#include <vector>
 
 extern "C" {
     #include <quickjs.h>
 }
 
-#include "project/Project.hpp"
-#include "project/ProjectSerialization.hpp"
-#include "system/InputTypes.hpp"
-#include "system/RomFormat.hpp"
-#include "system/SystemBase.hpp"
-#include "system/mesen/GbaConfig.hpp"
-#include "system/mesen/GbaSystem.hpp"
-#include "system/mesen/MesenConfig.hpp"
-#include "system/mesen/MesenSystem.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
-#include "system/sameboy/SameBoySystem.hpp"
-#include "system/sameboy/roles/LsdjSyncRole.hpp"
-#include "transport/CommandQueue.hpp"
-#include "transport/EventQueue.hpp"
-#include "transport/FrameBufferTriple.hpp"
-
 namespace {
 
-// File slurper. Runs on the UI thread (called from loadRomFromPath). Returns
-// an empty vector on any failure; caller logs.
-std::vector<std::uint8_t> slurp(const std::string& path) {
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in) return {};
-    const std::streamsize size = in.tellg();
-    if (size <= 0) return {};
-    in.seekg(0, std::ios::beg);
-    std::vector<std::uint8_t> buf(static_cast<std::size_t>(size));
-    if (!in.read(reinterpret_cast<char*>(buf.data()), size))
-        return {};
-    return buf;
-}
-
-// Read a file as a UTF-8 string. Returns empty string on any failure.
-std::string slurpString(const std::string& path) {
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in) return {};
-    const std::streamsize size = in.tellg();
-    if (size <= 0) return {};
-    in.seekg(0, std::ios::beg);
-    std::string out(static_cast<std::size_t>(size), '\0');
-    if (!in.read(out.data(), size))
-        return {};
-    return out;
-}
-
-// Write a string to a file (binary mode — JSON is UTF-8 ASCII anyway).
-// Returns true on success.
-bool spillString(const std::string& path, const std::string& data) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out.write(data.data(), static_cast<std::streamsize>(data.size()));
-    return out.good();
-}
-
-// Helper: resolve the bridge instance bound to the current LVGL display.
-// Mirrors the existing pattern used by js_getFrame.
+// Resolve the bridge instance bound to the current LVGL display.
 PluginJsBridge* bridgeFromContext() {
     DpfJsDisplayData* data = DpfJsDisplayData::get();
     return (data && data->bridge) ? static_cast<PluginJsBridge*>(data->bridge) : nullptr;
-}
-
-void emitRomEvent(LvglJsEngine& engine, const char* event, const std::string& payload) {
-    JSContext* ctx = engine.getContext();
-    if (!ctx) return;
-    JSValue v = JS_NewString(ctx, payload.c_str());
-    engine.emit(event, 1, &v);
-    JS_FreeValue(ctx, v);
 }
 
 } // namespace
@@ -93,16 +26,50 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                std::atomic<double>* sampleRate,
                                std::atomic<SystemId>* focusedSystemId)
     : engine(eng),
-      project_(project),
-      commands_(commands),
-      events_(events),
-      sampleRate_(sampleRate),
-      focusedSystemId_(focusedSystemId) {
+      project_(project) {
     if (DpfJsDisplayData* data = DpfJsDisplayData::get())
         data->bridge = this;
 
-    // Build globalThis[Symbol.for("plugin")] and attach the plugin's JS
-    // surface: framebuffer access + ROM loading + multi-instance plumbing.
+    // Stand up the rpcpp server stack. The service holds the shared-state
+    // pointers from PluginUI; the transport buffers async/notification frames
+    // for `pumpAsync` to fan out via engine.emit.
+    rpcService_   = std::make_unique<PluginRpcService>(project, commands, events,
+                                                       sampleRate, focusedSystemId);
+    rpcTransport_ = std::make_unique<RpcTransport>();
+    rpcServer_    = std::make_unique<RpcServer>(*rpcService_, *rpcTransport_);
+
+    rpcServer_->addMethod<&PluginRpcService::getFrame>();
+    rpcServer_->addMethod<&PluginRpcService::openRomBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::openSaveProjectBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::openLoadProjectBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::loadRomFromPath>();
+    rpcServer_->addMethod<&PluginRpcService::addRomFromPath>();
+    rpcServer_->addMethod<&PluginRpcService::replaceRomFromPath>();
+    rpcServer_->addMethod<&PluginRpcService::removeSystem>();
+    rpcServer_->addMethod<&PluginRpcService::listSystems>();
+    rpcServer_->addMethod<&PluginRpcService::setFocus>();
+    rpcServer_->addMethod<&PluginRpcService::getFocus>();
+    rpcServer_->addMethod<&PluginRpcService::pressButton>();
+    rpcServer_->addMethod<&PluginRpcService::setLinkGroupId>();
+    rpcServer_->addMethod<&PluginRpcService::getMidiRouting>();
+    rpcServer_->addMethod<&PluginRpcService::setMidiRouting>();
+    rpcServer_->addMethod<&PluginRpcService::setLsdjSyncConfig>();
+    rpcServer_->addMethod<&PluginRpcService::setWindowSize>();
+    rpcServer_->addMethod<&PluginRpcService::isWindowSizeControlled>();
+    rpcServer_->addDiscoveryMethod();
+
+    // Service emits string-payload JS events through the existing engine
+    // channel mechanism (on/off in runtime/lvgljs/index.ts).
+    rpcService_->setEmitEventCallback(
+        [this](const std::string& channel, const std::string& payload) {
+            JSContext* ctx = engine.getContext();
+            if (!ctx) return;
+            JSValue v = JS_NewStringLen(ctx, payload.data(), payload.size());
+            engine.emit(channel.c_str(), 1, &v);
+            JS_FreeValue(ctx, v);
+        });
+
+    // Expose the JS side's plugin namespace with the single sync RPC entry.
     JSContext* ctx = engine.getContext();
     if (!ctx) return;
 
@@ -113,42 +80,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
 
     JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
 
-    JS_SetPropertyStr(ctx, ns, "getFrame",
-                      JS_NewCFunction(ctx, js_getFrame, "getFrame", 1));
-    JS_SetPropertyStr(ctx, ns, "openRomBrowser",
-                      JS_NewCFunction(ctx, js_openRomBrowser, "openRomBrowser", 0));
-    JS_SetPropertyStr(ctx, ns, "openSaveProjectBrowser",
-                      JS_NewCFunction(ctx, js_openSaveProjectBrowser, "openSaveProjectBrowser", 0));
-    JS_SetPropertyStr(ctx, ns, "openLoadProjectBrowser",
-                      JS_NewCFunction(ctx, js_openLoadProjectBrowser, "openLoadProjectBrowser", 0));
-    JS_SetPropertyStr(ctx, ns, "loadRomFromPath",
-                      JS_NewCFunction(ctx, js_loadRomFromPath, "loadRomFromPath", 1));
-    JS_SetPropertyStr(ctx, ns, "addRomFromPath",
-                      JS_NewCFunction(ctx, js_addRomFromPath, "addRomFromPath", 1));
-    JS_SetPropertyStr(ctx, ns, "replaceRomFromPath",
-                      JS_NewCFunction(ctx, js_replaceRomFromPath, "replaceRomFromPath", 2));
-    JS_SetPropertyStr(ctx, ns, "removeSystem",
-                      JS_NewCFunction(ctx, js_removeSystem, "removeSystem", 1));
-    JS_SetPropertyStr(ctx, ns, "listSystems",
-                      JS_NewCFunction(ctx, js_listSystems, "listSystems", 0));
-    JS_SetPropertyStr(ctx, ns, "setFocus",
-                      JS_NewCFunction(ctx, js_setFocus, "setFocus", 1));
-    JS_SetPropertyStr(ctx, ns, "getFocus",
-                      JS_NewCFunction(ctx, js_getFocus, "getFocus", 0));
-    JS_SetPropertyStr(ctx, ns, "pressButton",
-                      JS_NewCFunction(ctx, js_pressButton, "pressButton", 3));
-    JS_SetPropertyStr(ctx, ns, "setLinkGroupId",
-                      JS_NewCFunction(ctx, js_setLinkGroupId, "setLinkGroupId", 2));
-    JS_SetPropertyStr(ctx, ns, "getMidiRouting",
-                      JS_NewCFunction(ctx, js_getMidiRouting, "getMidiRouting", 0));
-    JS_SetPropertyStr(ctx, ns, "setMidiRouting",
-                      JS_NewCFunction(ctx, js_setMidiRouting, "setMidiRouting", 1));
-    JS_SetPropertyStr(ctx, ns, "setLsdjSyncConfig",
-                      JS_NewCFunction(ctx, js_setLsdjSyncConfig, "setLsdjSyncConfig", 3));
-    JS_SetPropertyStr(ctx, ns, "setWindowSize",
-                      JS_NewCFunction(ctx, js_setWindowSize, "setWindowSize", 2));
-    JS_SetPropertyStr(ctx, ns, "isWindowSizeControlled",
-                      JS_NewCFunction(ctx, js_isWindowSizeControlled, "isWindowSizeControlled", 0));
+    JS_SetPropertyStr(ctx, ns, "__rpcSend",
+                      JS_NewCFunction(ctx, js_rpcSend, "__rpcSend", 1));
 
     pluginNamespace = JS_DupValue(ctx, ns);
 
@@ -168,512 +101,57 @@ PluginJsBridge::~PluginJsBridge() {
     }
 }
 
-SystemBase* PluginJsBridge::buildSystemFromPath(const std::string& path) {
-    if (!project_ || !sampleRate_) {
-        std::fprintf(stderr, "buildSystemFromPath: shared DSP state unavailable (LV2-UI?)\n");
-        return nullptr;
-    }
-    std::vector<std::uint8_t> bytes = slurp(path);
-    if (bytes.empty()) {
-        std::fprintf(stderr, "buildSystemFromPath: failed to read '%s'\n", path.c_str());
-        emitRomEvent(engine, "rom-error", path);
-        return nullptr;
-    }
-
-    // Content-based dispatch: iNES magic → MesenSystem, GBA Nintendo logo
-    // at $0004 → GbaSystem, Game Boy Nintendo logo at $0104 → SameBoySystem,
-    // anything else → reject. Matching by magic bytes (not extension) means
-    // a mislabelled ROM still goes to the right backend, and totally
-    // unrelated files (a .sh script, a JPEG, …) surface as "rom-error"
-    // instead of being executed as instructions by whichever backend caught
-    // them.
-    const RomFormat fmt = detectRomFormat(bytes);
-    if (fmt == RomFormat::Unknown) {
-        std::fprintf(stderr,
-            "buildSystemFromPath: '%s' is not a recognised Game Boy, NES, or GBA ROM\n",
-            path.c_str());
-        emitRomEvent(engine, "rom-error", path);
-        return nullptr;
-    }
-
-    const SystemId id = project_->nextSystemId();
-    const double sr = sampleRate_->load(std::memory_order_acquire);
-
-    if (fmt == RomFormat::Mesen) {
-        MesenConfig cfg;
-        cfg.romPath = path;
-        auto sys = std::make_unique<MesenSystem>(id, cfg, std::move(bytes));
-        sys->onActivate(sr);
-        return sys.release();
-    }
-
-    if (fmt == RomFormat::Gba) {
-        GbaSystemConfig cfg;
-        cfg.romPath = path;
-        // BIOS lookup: pass through anything the host has dropped into the
-        // build firmware dir. If absent, GbaSystem falls back to HLE
-        // (Mesen-zeroed boot ROM) and most non-trivial ROMs will hang on
-        // their first BIOS SWI. Plumbing a UI-side BIOS picker is a
-        // follow-up.
-        cfg.biosPath = "build/firmware/gba_bios.bin";
-        auto sys = std::make_unique<GbaSystem>(id, cfg, std::move(bytes));
-        sys->onActivate(sr);
-        return sys.release();
-    }
-
-    SameBoyConfig cfg;
-    cfg.romPath  = path;
-    cfg.model    = SameBoyModel::CgbC;
-    cfg.fastBoot = true;
-
-    // Optional sibling .sav (cartridge battery RAM). Slurp once on path-
-    // based load — from here on the SRAM lives in cfg.sram and rides with
-    // the project state. Missing file is not an error; the cart just starts
-    // with blank battery, like in any standalone emulator.
-    {
-        std::filesystem::path sav = std::filesystem::path(path);
-        sav.replace_extension(".sav");
-        std::vector<std::uint8_t> sramBytes = slurp(sav.string());
-        if (!sramBytes.empty())
-            cfg.sram = Base64Bytes(std::move(sramBytes));
-    }
-
-    auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(bytes));
-    sys->onActivate(sr);
-    return sys.release();
-}
-
-bool PluginJsBridge::loadRomFromPath(const std::string& path) {
-    if (!commands_) {
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    SystemBase* sys = buildSystemFromPath(path);
-    if (!sys) return false;
-
-    if (!commands_->tryPush(Command::makeLoadRom(sys))) {
-        std::fprintf(stderr, "loadRomFromPath: command queue full\n");
-        delete sys;
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    emitRomEvent(engine, "rom-loaded", path);
-    return true;
-}
-
-bool PluginJsBridge::addRomFromPath(const std::string& path) {
-    if (!commands_) {
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    SystemBase* sys = buildSystemFromPath(path);
-    if (!sys) return false;
-
-    if (!commands_->tryPush(Command::makeAddSystem(sys))) {
-        std::fprintf(stderr, "addRomFromPath: command queue full\n");
-        delete sys;
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    emitRomEvent(engine, "rom-loaded", path);
-    return true;
-}
-
-bool PluginJsBridge::saveProjectToPath(const std::string& path) {
-    if (!project_) {
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    // UI thread reads project_; same accepted race as listSystems / getFrame.
-    // Snapshotting the entire project (including each system's GB savestate)
-    // while audio runs could in principle pick up a torn frame, but in
-    // practice the data is consistent enough for debug round-trips. If this
-    // ever bites, swap to a command-based snapshot.
-    std::string json;
-    try {
-        json = projectConfigToJson(project_->snapshotConfig());
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    if (!spillString(path, json)) {
-        std::fprintf(stderr, "saveProjectToPath: write failed for '%s'\n", path.c_str());
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    emitRomEvent(engine, "project-saved", path);
-    return true;
-}
-
-bool PluginJsBridge::loadProjectFromPath(const std::string& path) {
-    if (!commands_) {
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    std::string json = slurpString(path);
-    if (json.empty()) {
-        std::fprintf(stderr, "loadProjectFromPath: empty / unreadable '%s'\n", path.c_str());
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    // Heap-allocate the JSON string, transfer ownership to the DSP via the
-    // command queue. The DSP frees it after parsing.
-    auto* heap = new std::string(std::move(json));
-    if (!commands_->tryPush(Command::makeLoadProject(heap))) {
-        std::fprintf(stderr, "loadProjectFromPath: command queue full\n");
-        delete heap;
-        emitRomEvent(engine, "project-error", path);
-        return false;
-    }
-    emitRomEvent(engine, "project-loaded", path);
-    return true;
-}
-
-bool PluginJsBridge::replaceRomFromPath(SystemId id, const std::string& path) {
-    if (!commands_) {
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    SystemBase* sys = buildSystemFromPath(path);
-    if (!sys) return false;
-
-    if (!commands_->tryPush(Command::makeReplaceSystem(id, sys))) {
-        std::fprintf(stderr, "replaceRomFromPath: command queue full\n");
-        delete sys;
-        emitRomEvent(engine, "rom-error", path);
-        return false;
-    }
-    emitRomEvent(engine, "rom-loaded", path);
-    return true;
-}
-
-JSValue PluginJsBridge::js_getFrame(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+JSValue PluginJsBridge::js_rpcSend(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->project_) return JS_NULL;
-
-    int32_t systemIdInt = 0;
-    if (argc >= 1) {
-        if (JS_ToInt32(ctx, &systemIdInt, argv[0]) < 0)
-            return JS_EXCEPTION;
-    }
-
-    SystemBase* sys = self->project_->findSystem(static_cast<SystemId>(systemIdInt));
-    if (!sys) return JS_NULL;
-
-    FrameBufferTriple* fb = sys->framebuffer();
-    if (!fb) return JS_NULL;
-
-    const uint32_t w      = fb->width();
-    const uint32_t h      = fb->height();
-    const size_t   pixels = size_t(w) * h;
-
-    std::vector<uint32_t> staging(pixels, 0u);
-    if (!fb->readInto(staging.data(), w * h))
-        return JS_NULL;
-
-    JSValue buf = JS_NewArrayBufferCopy(ctx,
-        reinterpret_cast<const uint8_t*>(staging.data()),
-        pixels * sizeof(uint32_t));
-    if (JS_IsException(buf)) return buf;
-
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "width",  JS_NewUint32(ctx, w));
-    JS_SetPropertyStr(ctx, obj, "height", JS_NewUint32(ctx, h));
-    JS_SetPropertyStr(ctx, obj, "buffer", buf);
-    return obj;
-}
-
-JSValue PluginJsBridge::js_openRomBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->openFileBrowser_) {
-        std::fprintf(stderr, "plugin.openRomBrowser: no open-browser callback registered\n");
-        return JS_FALSE;
-    }
-    // Optional first arg: { mode: "add" | "replace" }. Defaults to replace.
-    self->pendingFileMode_ = PendingFileMode::LoadRom;
-    if (argc >= 1 && JS_IsObject(argv[0])) {
-        JSValue modeVal = JS_GetPropertyStr(ctx, argv[0], "mode");
-        if (JS_IsString(modeVal)) {
-            const char* s = JS_ToCString(ctx, modeVal);
-            if (s) {
-                if (std::string_view(s) == "add")
-                    self->pendingFileMode_ = PendingFileMode::AddRom;
-                JS_FreeCString(ctx, s);
-            }
-        }
-        JS_FreeValue(ctx, modeVal);
-    }
-    // DPF's FileBrowserOptions doesn't expose an extension filter on Linux;
-    // the title is the only thing we control. ROM dispatch happens
-    // post-selection in buildSystemFromPath based on the extension.
-    self->openFileBrowser_("Open ROM (Game Boy or NES)", false, nullptr);
-    return JS_TRUE;
-}
-
-JSValue PluginJsBridge::js_openSaveProjectBrowser(JSContext*, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->openFileBrowser_) return JS_FALSE;
-    self->pendingFileMode_ = PendingFileMode::SaveProject;
-    self->openFileBrowser_("Save RetroPlug project", true, "project.rplg");
-    return JS_TRUE;
-}
-
-JSValue PluginJsBridge::js_openLoadProjectBrowser(JSContext*, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->openFileBrowser_) return JS_FALSE;
-    self->pendingFileMode_ = PendingFileMode::LoadProject;
-    self->openFileBrowser_("Load RetroPlug project", false, nullptr);
-    return JS_TRUE;
-}
-
-void PluginJsBridge::onFileBrowserSelected(const char* path) {
-    if (!path || !*path) return;
-    switch (pendingFileMode_) {
-        case PendingFileMode::AddRom:      addRomFromPath(path);     break;
-        case PendingFileMode::LoadProject: loadProjectFromPath(path); break;
-        case PendingFileMode::SaveProject: saveProjectToPath(path);   break;
-        case PendingFileMode::LoadRom:
-        default:                           loadRomFromPath(path);    break;
-    }
-    pendingFileMode_ = PendingFileMode::LoadRom;
-}
-
-JSValue PluginJsBridge::js_pressButton(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->commands_ || !self->project_) return JS_FALSE;
-    if (argc < 2) return JS_ThrowTypeError(ctx, "plugin.pressButton: expected (button, down [, systemId])");
-
-    int32_t buttonInt = 0;
-    if (JS_ToInt32(ctx, &buttonInt, argv[0]) < 0) return JS_EXCEPTION;
-    const bool down = JS_ToBool(ctx, argv[1]) != 0;
-
-    // Resolve target system: explicit arg wins, then focused, then first.
-    SystemId target = 0;
-    if (argc >= 3 && !JS_IsUndefined(argv[2]) && !JS_IsNull(argv[2])) {
-        int32_t idInt = 0;
-        if (JS_ToInt32(ctx, &idInt, argv[2]) < 0) return JS_EXCEPTION;
-        target = static_cast<SystemId>(idInt);
-    }
-    if (target == 0 && self->focusedSystemId_)
-        target = self->focusedSystemId_->load(std::memory_order_acquire);
-    if (target == 0) {
-        const auto& systems = self->project_->systems();
-        if (systems.empty() || !systems.front()) return JS_FALSE;
-        target = systems.front()->id();
-    }
-
-    // The byte is reinterpreted by the target system (SameBoy → GameboyButton,
-    // Mesen → NesButton). Both enums are position-aligned for the eight
-    // standard buttons so the JS side can pass a single int regardless of
-    // which system it's targeting.
-    Command cmd = Command::makeButtonPress(target,
-                                           static_cast<std::uint8_t>(buttonInt),
-                                           down);
-    return self->commands_->tryPush(cmd) ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_loadRomFromPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (!self || !self->rpcServer_)
+        return JS_ThrowInternalError(ctx, "plugin.__rpcSend: bridge unavailable");
     if (argc < 1)
-        return JS_ThrowTypeError(ctx, "plugin.loadRomFromPath: expected path string");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self) return JS_FALSE;
+        return JS_ThrowTypeError(ctx, "plugin.__rpcSend: expected (bytes: Uint8Array)");
 
-    size_t len = 0;
-    const char* cs = JS_ToCStringLen(ctx, &len, argv[0]);
-    if (!cs) return JS_EXCEPTION;
-    std::string path(cs, len);
-    JS_FreeCString(ctx, cs);
-
-    return self->loadRomFromPath(path) ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_addRomFromPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "plugin.addRomFromPath: expected path string");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self) return JS_FALSE;
-
-    size_t len = 0;
-    const char* cs = JS_ToCStringLen(ctx, &len, argv[0]);
-    if (!cs) return JS_EXCEPTION;
-    std::string path(cs, len);
-    JS_FreeCString(ctx, cs);
-
-    return self->addRomFromPath(path) ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_replaceRomFromPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "plugin.replaceRomFromPath: expected (id, path)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self) return JS_FALSE;
-
-    int32_t idInt = 0;
-    if (JS_ToInt32(ctx, &idInt, argv[0]) < 0) return JS_EXCEPTION;
-
-    size_t len = 0;
-    const char* cs = JS_ToCStringLen(ctx, &len, argv[1]);
-    if (!cs) return JS_EXCEPTION;
-    std::string path(cs, len);
-    JS_FreeCString(ctx, cs);
-
-    return self->replaceRomFromPath(static_cast<SystemId>(idInt), path) ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_removeSystem(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "plugin.removeSystem: expected (id)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->commands_) return JS_FALSE;
-
-    int32_t idInt = 0;
-    if (JS_ToInt32(ctx, &idInt, argv[0]) < 0) return JS_EXCEPTION;
-
-    return self->commands_->tryPush(Command::makeRemoveSystem(static_cast<SystemId>(idInt)))
-        ? JS_TRUE
-        : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_listSystems(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->project_) return JS_NewArray(ctx);
-
-    JSValue arr = JS_NewArray(ctx);
-    uint32_t i = 0;
-    for (const auto& sys : self->project_->systems()) {
-        if (!sys) continue;
-        JSValue entry = JS_NewObject(ctx);
-        JS_SetPropertyStr(ctx, entry, "id", JS_NewUint32(ctx, sys->id()));
-
-        // Pull config fields when available, per kind. NES (Mesen) currently
-        // only surfaces the kind tag — there's no per-system Mesen config
-        // exposed to the UI yet (gain trim etc. land with the savestate work
-        // in step 16).
-        if (auto* sb = dynamic_cast<const SameBoySystem*>(sys.get())) {
-            JS_SetPropertyStr(ctx, entry, "kind",        JS_NewString(ctx, "sameboy"));
-            JS_SetPropertyStr(ctx, entry, "gainDb",      JS_NewFloat64(ctx, sb->config_.gainDb));
-            JS_SetPropertyStr(ctx, entry, "linkGroupId", JS_NewUint32(ctx, sb->config_.linkGroupId));
-
-            // Surface the LSDJ sync role config when present so the UI can
-            // render a mode picker only for LSDJ-loaded slots.
-            for (const auto& rc : sb->config_.roles) {
-                if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
-                    JS_SetPropertyStr(ctx, entry, "lsdjSyncMode",
-                                      JS_NewUint32(ctx, static_cast<std::uint32_t>(lsdj->mode)));
-                    JS_SetPropertyStr(ctx, entry, "lsdjTempoDivisor",
-                                      JS_NewUint32(ctx, lsdj->tempoDivisor));
-                    break;
-                }
-            }
-        } else if (sys->kind() == SystemKind::Mesen) {
-            JS_SetPropertyStr(ctx, entry, "kind", JS_NewString(ctx, "mesen"));
-        }
-        JS_SetPropertyUint32(ctx, arr, i++, entry);
+    // Accept either a TypedArray view (Uint8Array, the common case from the
+    // JS client) or a raw ArrayBuffer. JS_GetTypedArrayBuffer returns the
+    // underlying ArrayBuffer plus the view's offset/length so we don't
+    // accidentally read past the slice.
+    size_t byteOffset = 0;
+    size_t byteLength = 0;
+    size_t arrayLen   = 0;
+    JSValue ab = JS_GetTypedArrayBuffer(ctx, argv[0],
+                                        &byteOffset, &byteLength, nullptr);
+    uint8_t* data = nullptr;
+    if (!JS_IsException(ab)) {
+        data = JS_GetArrayBuffer(ctx, &arrayLen, ab);
+    } else {
+        JS_FreeValue(ctx, ab);
+        data = JS_GetArrayBuffer(ctx, &arrayLen, argv[0]);
+        byteOffset = 0;
+        byteLength = arrayLen;
+        ab = JS_DupValue(ctx, argv[0]);
     }
-    return arr;
+    if (!data) {
+        JS_FreeValue(ctx, ab);
+        return JS_ThrowTypeError(ctx, "plugin.__rpcSend: argument is not bytes");
+    }
+
+    std::span<const char> bytes(reinterpret_cast<const char*>(data + byteOffset),
+                                byteLength);
+    auto reply = self->rpcServer_->processMessage(bytes);
+    JS_FreeValue(ctx, ab);
+
+    if (!reply) return JS_NULL;
+    return JS_NewArrayBufferCopy(ctx,
+        reinterpret_cast<const uint8_t*>(reply->data()),
+        reply->size());
 }
 
-JSValue PluginJsBridge::js_setFocus(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 1) return JS_ThrowTypeError(ctx, "plugin.setFocus: expected (id)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->focusedSystemId_) return JS_FALSE;
-
-    int32_t idInt = 0;
-    if (JS_ToInt32(ctx, &idInt, argv[0]) < 0) return JS_EXCEPTION;
-    self->focusedSystemId_->store(static_cast<SystemId>(idInt), std::memory_order_release);
-    return JS_TRUE;
-}
-
-JSValue PluginJsBridge::js_getFocus(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->focusedSystemId_) return JS_NewUint32(ctx, 0);
-    return JS_NewUint32(ctx, self->focusedSystemId_->load(std::memory_order_acquire));
-}
-
-JSValue PluginJsBridge::js_setLinkGroupId(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "plugin.setLinkGroupId: expected (id, groupId)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->commands_) return JS_FALSE;
-
-    int32_t id = 0, groupId = 0;
-    if (JS_ToInt32(ctx, &id,      argv[0]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &groupId, argv[1]) < 0) return JS_EXCEPTION;
-    if (groupId < 0 || groupId > 255) return JS_FALSE;
-
-    return self->commands_->tryPush(
-        Command::makeSetLinkGroup(static_cast<SystemId>(id),
-                                  static_cast<std::uint8_t>(groupId)))
-        ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_getMidiRouting(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->project_)
-        return JS_NewUint32(ctx, static_cast<std::uint32_t>(MidiRouting::SendToAll));
-    return JS_NewUint32(ctx,
-        static_cast<std::uint32_t>(self->project_->config().settings.midiRouting));
-}
-
-JSValue PluginJsBridge::js_setMidiRouting(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 1) return JS_ThrowTypeError(ctx, "plugin.setMidiRouting: expected (routing)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->commands_) return JS_FALSE;
-
-    int32_t r = 0;
-    if (JS_ToInt32(ctx, &r, argv[0]) < 0) return JS_EXCEPTION;
-    // Reject out-of-range values rather than narrowing into a meaningful enum
-    // by accident — the JS side needs to stay in sync with the C++ enum.
-    if (r < 0 || r > static_cast<int32_t>(MidiRouting::MidiChannelToInstance))
-        return JS_FALSE;
-
-    return self->commands_->tryPush(
-        Command::makeSetMidiRouting(static_cast<MidiRouting>(r)))
-        ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_setLsdjSyncConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 3)
-        return JS_ThrowTypeError(ctx, "plugin.setLsdjSyncConfig: expected (id, mode, tempoDivisor)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->commands_) return JS_FALSE;
-
-    int32_t id = 0, mode = 0, divisor = 0;
-    if (JS_ToInt32(ctx, &id,      argv[0]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &mode,    argv[1]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &divisor, argv[2]) < 0) return JS_EXCEPTION;
-
-    // Keep the bridge in lockstep with LsdjSyncMode's value range — out-of-
-    // range writes are dropped rather than narrowed into a meaningful mode by
-    // accident. Range: Off (0) through ArduinoboyMaster (7).
-    if (mode < 0 || mode > static_cast<int32_t>(LsdjSyncMode::ArduinoboyMaster))
-        return JS_FALSE;
-    if (divisor < 1 || divisor > 8) return JS_FALSE;
-
-    return self->commands_->tryPush(
-        Command::makeSetLsdjSyncConfig(static_cast<SystemId>(id),
-                                       static_cast<std::uint32_t>(mode),
-                                       static_cast<std::uint8_t>(divisor)))
-        ? JS_TRUE : JS_FALSE;
-}
-
-JSValue PluginJsBridge::js_setWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 2) return JS_ThrowTypeError(ctx, "plugin.setWindowSize: expected (w, h)");
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->setWindowSize_) return JS_FALSE;
-
-    int32_t w = 0, h = 0;
-    if (JS_ToInt32(ctx, &w, argv[0]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[1]) < 0) return JS_EXCEPTION;
-    if (w <= 0 || h <= 0) return JS_FALSE;
-
-    self->setWindowSize_(static_cast<unsigned>(w), static_cast<unsigned>(h));
-    return JS_TRUE;
-}
-
-JSValue PluginJsBridge::js_isWindowSizeControlled(JSContext*, JSValueConst, int, JSValueConst*) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->isWindowSizeControlled_) return JS_FALSE;
-    return self->isWindowSizeControlled_() ? JS_TRUE : JS_FALSE;
+void PluginJsBridge::pumpAsync() {
+    if (!rpcTransport_) return;
+    JSContext* ctx = engine.getContext();
+    if (!ctx) return;
+    while (auto frame = rpcTransport_->tryReceive()) {
+        JSValue ab = JS_NewArrayBufferCopy(ctx,
+            reinterpret_cast<const uint8_t*>(frame->data()),
+            frame->size());
+        engine.emit("rpc-message", 1, &ab);
+        JS_FreeValue(ctx, ab);
+    }
 }

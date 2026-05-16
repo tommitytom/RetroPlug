@@ -2,6 +2,7 @@ import { View, Text, Slider, Render, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParameter, createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
+import { plugin } from "./plugin/client";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize } from "./SystemGrid";
 import {
     GameboyButton,
@@ -43,25 +44,6 @@ const LSDJ_MODE_NAMES = [
     "Passthrough",
     "MI.OUT",
 ];
-
-interface PluginNamespace {
-    openRomBrowser?: (opts?: { mode?: "add" | "replace" }) => void;
-    openSaveProjectBrowser?: () => void;
-    openLoadProjectBrowser?: () => void;
-    pressButton?: (button: GameboyButton, down: boolean, systemId?: number) => boolean;
-    listSystems?: () => SystemEntry[];
-    setFocus?: (systemId: number) => boolean;
-    getFocus?: () => number;
-    removeSystem?: (systemId: number) => boolean;
-    setLinkGroupId?: (systemId: number, groupId: number) => boolean;
-    getMidiRouting?: () => number;
-    setMidiRouting?: (routing: number) => boolean;
-    setLsdjSyncConfig?: (systemId: number, mode: number, tempoDivisor: number) => boolean;
-    setWindowSize?: (w: number, h: number) => boolean;
-    isWindowSizeControlled?: () => boolean;
-}
-const plugin: PluginNamespace =
-    (globalThis as any)[Symbol.for("plugin")] ?? {};
 
 const TextAny = Text as any;
 
@@ -185,7 +167,10 @@ function PluginUI() {
     const [menuOpen, setMenuOpen] = useState(true);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
-    const [midiRouting, setMidiRouting] = useState<number>(() => plugin.getMidiRouting?.() ?? 0);
+    // Seeded to 0 and replaced by the first refreshSystems(). The brief
+    // 0-flash before that arrives is acceptable — the menu is open at
+    // mount and the routing label only matters once a tile exists.
+    const [midiRouting, setMidiRouting] = useState<number>(0);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -218,24 +203,30 @@ function PluginUI() {
 
     // Pull the current system list and focus from C++. Called on mount and
     // every "config-changed" tick (after the DSP commits a project mutation).
-    const refreshSystems = useCallback(() => {
-        const list = plugin.listSystems?.() ?? [];
+    // Async because the migrated bridge returns Promises; we serialise the
+    // three reads so a `config-changed` burst doesn't fire setState with
+    // stale data from a slower listSystems racing a fast getFocus.
+    const refreshSystems = useCallback(async () => {
+        const [list, f, routing] = await Promise.all([
+            plugin.listSystems(),
+            plugin.getFocus(),
+            plugin.getMidiRouting(),
+        ]);
         setSystems(list);
-        const f = plugin.getFocus?.() ?? 0;
         if (f !== 0 && list.some((s) => s.id === f)) {
             setFocusedId(f);
         } else if (list.length > 0) {
             setFocusedId(list[0].id);
-            plugin.setFocus?.(list[0].id);
+            void plugin.$notify("setFocus", list[0].id);
         } else {
             setFocusedId(0);
         }
-        setMidiRouting(plugin.getMidiRouting?.() ?? 0);
+        setMidiRouting(routing);
     }, []);
 
     useEffect(() => {
-        refreshSystems();
-        const handler = () => refreshSystems();
+        void refreshSystems();
+        const handler = () => { void refreshSystems(); };
         on("config-changed", handler);
         return () => off("config-changed", handler);
     }, [refreshSystems]);
@@ -255,9 +246,11 @@ function PluginUI() {
     // ignored — the C++ side detects that via onResize and we stop asking.
     useEffect(() => {
         if (systems.length === 0) return;
-        if (plugin.isWindowSizeControlled?.()) return;
-        const { width, height } = gridContentSize(systems, SystemLayout.Auto);
-        plugin.setWindowSize?.(width, height);
+        void (async () => {
+            if (await plugin.isWindowSizeControlled()) return;
+            const { width, height } = gridContentSize(systems, SystemLayout.Auto);
+            await plugin.setWindowSize(width, height);
+        })();
     }, [systems.length]);
 
     // Records which system each currently-held DPF key was pressed against,
@@ -290,12 +283,15 @@ function PluginUI() {
             const idx = list.findIndex((s) => s.id === cur);
             const next = list[(idx + 1) % list.length];
             setFocusedId(next.id);
-            plugin.setFocus?.(next.id);
+            void plugin.$notify("setFocus", next.id);
             return;
         }
-        const button = mapKeyToGameboyButton(key);
+        const button: GameboyButton | null = mapKeyToGameboyButton(key);
         if (button === null) return;
 
+        // pressButton is a notification ($notify): no response, no Promise
+        // round-trip per keystroke. Keyboard input runs on the hot LVGL
+        // dispatch path and we don't want a microtask per key event.
         const targets = keyTargetRef.current;
         if (press) {
             // Already-held key: ignore the repeat. The GB joypad already
@@ -305,14 +301,14 @@ function PluginUI() {
             const target = focusedIdRef.current;
             if (target === 0) return;
             targets.set(key, target);
-            plugin.pressButton?.(button, true, target);
+            void plugin.$notify("pressButton", button, true, target);
         } else {
             // Route the release to whichever instance got the original
             // press — never to whatever happens to be focused right now.
             const target = targets.get(key);
             if (target === undefined) return; // spurious release
             targets.delete(key);
-            plugin.pressButton?.(button, false, target);
+            void plugin.$notify("pressButton", button, false, target);
         }
     }, []));
 
@@ -324,7 +320,9 @@ function PluginUI() {
         ? String(focusedSystem.linkGroupId ?? 0)
         : "-";
     const routingName = MIDI_ROUTING_NAMES[midiRouting] ?? MIDI_ROUTING_NAMES[0];
-    const hasLsdjRole = focusedSystem?.lsdjSyncMode !== undefined;
+    // msgpack absent-optional decodes to `null`, not `undefined` — `!= null`
+    // catches both. (Was `!== undefined` pre-RPC.)
+    const hasLsdjRole = focusedSystem?.lsdjSyncMode != null;
     const lsdjModeName = hasLsdjRole
         ? LSDJ_MODE_NAMES[focusedSystem!.lsdjSyncMode ?? 0] ?? LSDJ_MODE_NAMES[0]
         : "";
@@ -349,43 +347,43 @@ function PluginUI() {
             const sys = systemsRef.current.find((s) => s.id === focusedIdRef.current);
             if (!sys) return;
             const next = (((sys.linkGroupId ?? 0) + 1) % LINK_GROUP_MAX);
-            plugin.setLinkGroupId?.(sys.id, next);
+            void plugin.$notify("setLinkGroupId", sys.id, next);
             return;
         }
         // Same cycling behaviour for the MIDI routing label.
         if (label.startsWith(MIDI_ROUTING_LABEL)) {
-            const cur = plugin.getMidiRouting?.() ?? 0;
-            const next = (cur + 1) % MIDI_ROUTING_NAMES.length;
-            plugin.setMidiRouting?.(next);
+            const next = (midiRouting + 1) % MIDI_ROUTING_NAMES.length;
             // Optimistically update so the label flips immediately; the
             // ConfigChanged event will reconcile shortly after.
             setMidiRouting(next);
+            void plugin.$notify("setMidiRouting", next);
             return;
         }
         // LSDJ sync mode cycle. Reads through to the most recent systems
         // snapshot (refresh on ConfigChanged) so the label tracks the picker.
         if (label.startsWith(LSDJ_MODE_LABEL)) {
             const sys = systemsRef.current.find((s) => s.id === focusedIdRef.current);
-            if (!sys || sys.lsdjSyncMode === undefined) return;
+            if (!sys || sys.lsdjSyncMode == null) return;
             const next = (sys.lsdjSyncMode + 1) % LSDJ_MODE_NAMES.length;
-            plugin.setLsdjSyncConfig?.(sys.id, next, sys.lsdjTempoDivisor ?? 1);
+            void plugin.$notify("setLsdjSyncConfig", sys.id, next, sys.lsdjTempoDivisor ?? 1);
             return;
         }
         switch (label) {
             case "Load ROM":
-                plugin.openRomBrowser?.({ mode: "replace" });
+                void plugin.$notify("openRomBrowser", { mode: "replace" });
                 break;
             case "Add instance":
-                plugin.openRomBrowser?.({ mode: "add" });
+                void plugin.$notify("openRomBrowser", { mode: "add" });
                 break;
             case "Remove instance":
-                if (focusedIdRef.current !== 0) plugin.removeSystem?.(focusedIdRef.current);
+                if (focusedIdRef.current !== 0)
+                    void plugin.$notify("removeSystem", focusedIdRef.current);
                 break;
             case "Save project":
-                plugin.openSaveProjectBrowser?.();
+                void plugin.$notify("openSaveProjectBrowser");
                 break;
             case "Load project":
-                plugin.openLoadProjectBrowser?.();
+                void plugin.$notify("openLoadProjectBrowser");
                 break;
             case "Reset":
             case "About":
@@ -396,7 +394,7 @@ function PluginUI() {
         // Don't force-close here; the empty-project effect will keep the
         // menu open if Remove emptied the project.
         if (systemsRef.current.length > 0) setMenuOpen(false);
-    }, []);
+    }, [midiRouting]);
 
     const onGainChange = useCallback((e: any) => setGain(e.value), [setGain]);
 

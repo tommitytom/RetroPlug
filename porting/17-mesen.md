@@ -1,6 +1,6 @@
 # Step 17 — Mesen NES support
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

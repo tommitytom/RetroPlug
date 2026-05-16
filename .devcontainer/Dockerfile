@@ -21,6 +21,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- DPF / LVGL plugin link-time deps ---------------------------------
 	libgl-dev \
 	libglu1-mesa-dev \
+	# --- msgpack: required by rpcpp's msgpack codec. libmsgpack-dev pulls
+	#     in both the C headers (which reflect-cpp #includes directly) and
+	#     the matching `msgpack` CMake target (find_package(msgpack-c ...
+	#     NAMES msgpack msgpack-c msgpackc) hits this).
+	libmsgpack-dev \
 	libx11-dev \
 	libxcursor-dev \
 	libxrandr-dev \
