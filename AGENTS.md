@@ -91,8 +91,8 @@ routing, LSDj link-cable sync), use the `systems: [...]` form:
 {
   "duration_ms": 20000,
   "systems": [
-    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 },
-    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 }
+    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 },
+    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 }
   ],
   "midi_routing": "SendToAll",
   "events": [
@@ -266,13 +266,17 @@ tools/lsdj-search --show-images "PROJECT screen"
 The setup script creates `tools/.venv`, installs `pymupdf`, `fastembed`,
 `sqlite-vec`, `numpy`, then runs `tools/lsdj-manual.py index` to produce:
 
-- `resources/manuals/lsdj_manual.md` — readable markdown (Read + grep
+- `../resources/manuals/lsdj_manual.md` — readable markdown (Read + grep
   fallback if the search index is missing)
-- `resources/manuals/lsdj_manual_images/` — page images extracted from the
+- `../resources/manuals/lsdj_manual_images/` — page images extracted from the
   PDF (LSDj UI screens and diagrams). `--show-images` returns paths the agent
   can `Read` directly.
-- `resources/manuals/lsdj_index.db` — SQLite with FTS5 BM25 + sqlite-vec
+- `../resources/manuals/lsdj_index.db` — SQLite with FTS5 BM25 + sqlite-vec
   cosine, fused via reciprocal-rank fusion in hybrid (default) mode.
+
+These artifacts live in a sibling `resources/` directory outside the repo
+(default `../resources/` relative to the repo root). Override with
+`RETROPLUG_RESOURCES_DIR=/some/path` if your layout differs.
 
 Pick `--mode fts` for exact LSDj terminology ("FX command", "groove",
 "R command"), `--mode vec` for paraphrased / vague questions, default
@@ -280,8 +284,9 @@ Pick `--mode fts` for exact LSDj terminology ("FX command", "groove",
 
 ## LSDJ Arduinoboy build (aboy)
 
-[resources/roms/](resources/roms/) ships two LSDJ ROMs. They behave differently
-and the two `LsdjSyncMode` families need different ROMs:
+The sibling [../resources/roms/](../resources/roms/) directory (outside the
+repo) ships two LSDJ ROMs plus a Nanoloop GBA ROM. The two `LsdjSyncMode`
+families need different ROMs:
 
 | ROM | Title @0x134 | Supported `lsdj_sync_mode` values |
 | --- | --- | --- |
