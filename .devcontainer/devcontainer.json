@@ -6,6 +6,9 @@
       "CONTAINER_APT_PROXY": "${localEnv:CONTAINER_APT_PROXY}"
     }
   },
+  "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "shutdownAction": "none",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
@@ -17,7 +20,7 @@
   // anything the user runs on the host. Symlinks into the volume are wired up
   // by post-create.sh on first boot.
   "mounts": [
-    "source=retroplug2-claude-state,target=/var/claude-state,type=volume"
+    "source=retroplug-claude-state,target=/var/claude-state,type=volume"
   ],
   "runArgs": [
     "--init",
@@ -35,7 +38,7 @@
         "anthropic.claude-code"
       ],
       "settings": {
-        "cmake.configureOnOpen": true,
+        "cmake.configureOnOpen": false,
         "cmake.generator": "Unix Makefiles"
       }
     }
