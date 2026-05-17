@@ -20,6 +20,7 @@ extern "C" {
 class Project;
 class CommandQueue;
 class EventQueue;
+class UserConfig;
 
 // Thin shim between the QuickJS runtime and the rpcpp-typed
 // PluginRpcService. The bridge:
@@ -45,7 +46,8 @@ public:
                    CommandQueue* commands,
                    EventQueue* events,
                    std::atomic<double>* sampleRate,
-                   std::atomic<SystemId>* focusedSystemId);
+                   std::atomic<SystemId>* focusedSystemId,
+                   UserConfig* userConfig = nullptr);
     ~PluginJsBridge();
 
     PluginJsBridge(const PluginJsBridge&)            = delete;

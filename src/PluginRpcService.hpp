@@ -10,6 +10,7 @@
 #include <memory>
 #include <rfl/Bytestring.hpp>
 
+#include "config/UserConfigSerialization.hpp"
 #include "lsdj/Effects.hpp"
 #include "system/SystemTypes.hpp"
 
@@ -17,6 +18,7 @@ class Project;
 class CommandQueue;
 class EventQueue;
 class SystemBase;
+class UserConfig;
 
 namespace rp::lsdj { class KitCompiler; }
 
@@ -116,11 +118,15 @@ public:
 
     // Construction ----------------------------------------------------------
 
+    // `userConfig` is optional (nullptr in LV2-UI and in rpc-schema-dump).
+    // When null, getUserConfig() returns a default-initialised DTO and
+    // setActiveBindings() is a no-op.
     PluginRpcService(Project*,
                      CommandQueue*,
                      EventQueue*,
                      std::atomic<double>*       sampleRate,
-                     std::atomic<SystemId>*     focusedSystemId);
+                     std::atomic<SystemId>*     focusedSystemId,
+                     UserConfig*                userConfig = nullptr);
     ~PluginRpcService();
 
     PluginRpcService(const PluginRpcService&)            = delete;
@@ -183,6 +189,10 @@ public:
     // Promise around it. Matches the event-style flow openRomBrowser uses.
     bool             openSampleBrowser();
 
+    // User config / key-pad bindings. See src/config/UserConfig.hpp.
+    UserConfigDto getUserConfig();
+    bool          setActiveBindings(std::string name);
+
 private:
     // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
     // because the service owns the file IO + system construction.
@@ -204,6 +214,7 @@ private:
     EventQueue*               events_               = nullptr;
     std::atomic<double>*      sampleRate_           = nullptr;
     std::atomic<SystemId>*    focusedSystemId_      = nullptr;
+    UserConfig*               userConfig_           = nullptr;
 
     // Lazy-allocated; constructed on first kit-related call so a project
     // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool

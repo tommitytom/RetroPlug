@@ -26,7 +26,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                CommandQueue* commands,
                                EventQueue* events,
                                std::atomic<double>* sampleRate,
-                               std::atomic<SystemId>* focusedSystemId)
+                               std::atomic<SystemId>* focusedSystemId,
+                               UserConfig* userConfig)
     : engine(eng),
       project_(project) {
     if (DpfJsDisplayData* data = DpfJsDisplayData::get())
@@ -36,7 +37,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     // pointers from PluginUI; the transport buffers async/notification frames
     // for `pumpAsync` to fan out via engine.emit.
     rpcService_   = std::make_unique<PluginRpcService>(project, commands, events,
-                                                       sampleRate, focusedSystemId);
+                                                       sampleRate, focusedSystemId,
+                                                       userConfig);
     rpcTransport_ = std::make_unique<RpcTransport>();
     rpcServer_    = std::make_unique<RpcServer>(*rpcService_, *rpcTransport_);
 
@@ -63,6 +65,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::auditionSample>();
     rpcServer_->addMethod<&PluginRpcService::eraseKit>();
     rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::getUserConfig>();
+    rpcServer_->addMethod<&PluginRpcService::setActiveBindings>();
     rpcServer_->addDiscoveryMethod();
 
     // Service emits string-payload JS events through the existing engine

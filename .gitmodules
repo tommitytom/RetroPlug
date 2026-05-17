@@ -19,3 +19,6 @@
 	path = deps/msgpack-c
 	url = https://github.com/msgpack/msgpack-c.git
 	branch = c_master
+[submodule "deps/efsw"]
+	path = deps/efsw
+	url = https://github.com/SpartanJ/efsw.git
