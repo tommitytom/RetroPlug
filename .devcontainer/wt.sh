@@ -167,7 +167,25 @@ echo "==> Initializing git submodules..."
 git -C "$WT_DIR" submodule update --init --recursive
 
 echo ""
+echo "==> Installing workspace npm deps..."
+# Top-level package.json holds the few packages used by the UI bundle that
+# aren't already present in deps/lv_binding_js/node_modules — primarily
+# @msgpack/msgpack for the rpcpp client's MsgpackCodec.
+if [ ! -d "$WT_DIR/node_modules" ]; then
+    (cd "$WT_DIR" && npm install --no-audit --no-fund --silent)
+fi
+
+echo ""
+echo "==> Installing deps/lv_binding_js npm deps..."
+# tools/gen-rpc-ts.js and tools/build-ui.js resolve esbuild (and
+# esbuild-plugin-alias) from deps/lv_binding_js/node_modules. Without this
+# install the first cmake --build invocation fails with MODULE_NOT_FOUND.
+if [ ! -d "$WT_DIR/deps/lv_binding_js/node_modules" ]; then
+    (cd "$WT_DIR/deps/lv_binding_js" && npm install --no-audit --no-fund --silent)
+fi
+
+echo ""
 echo "==> Configuring CMake..."
-mkdir -p build
-cmake -S . -B build
+mkdir -p "$WT_DIR/build"
+cmake -S "$WT_DIR" -B "$WT_DIR/build"
 echo "Worktree ready: $WT_DIR"
