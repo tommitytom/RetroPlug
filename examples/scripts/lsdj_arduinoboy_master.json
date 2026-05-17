@@ -33,7 +33,7 @@
   "out_wav": "/tmp/lsdj-arduinoboy-master.wav",
   "systems": [
     {
-      "rom": "resources/roms/lsdj9_3_3-arduinoboy.gb",
+      "rom": "../resources/roms/lsdj9_3_3-arduinoboy.gb",
       "lsdj_sync_mode": "ArduinoboyMaster"
     }
   ],

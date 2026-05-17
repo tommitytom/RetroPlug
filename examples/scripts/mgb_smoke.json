@@ -1,5 +1,5 @@
 {
-  "rom": "old/resources/roms/mGB.gb",
+  "rom": "resources/roms/mGB.gb",
   "duration_ms": 4000,
   "sample_rate": 44100,
   "block_size": 1024,

@@ -1,7 +1,7 @@
 {
   "systems": [
     {
-      "rom": "resources/roms/nanoloop287d.gba",
+      "rom": "../resources/roms/nanoloop287d.gba",
       "bios_path": "build/firmware/gba_bios.bin"
     }
   ],

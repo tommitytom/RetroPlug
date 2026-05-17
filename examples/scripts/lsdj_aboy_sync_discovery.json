@@ -4,7 +4,7 @@
   "block_size": 1024,
   "out_wav": "/tmp/lsdj-aboy-sync-discovery.wav",
   "systems": [
-    { "rom": "resources/roms/lsdj9_3_3-arduinoboy.gb" }
+    { "rom": "../resources/roms/lsdj9_3_3-arduinoboy.gb" }
   ],
   "events": [
     { "at_ms": 15000, "screenshot": "00_post_boot", "system": 0 },

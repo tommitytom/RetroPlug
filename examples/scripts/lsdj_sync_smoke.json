@@ -4,8 +4,8 @@
   "block_size": 1024,
   "out_wav": "lsdj-sync-smoke.wav",
   "systems": [
-    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 },
-    { "rom": "resources/roms/lsdj9_4_2.gb", "link_group": 1 }
+    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 },
+    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 }
   ],
   "midi_routing": "SendToAll",
   "events": [
