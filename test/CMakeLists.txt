@@ -33,3 +33,32 @@ target_link_libraries(retroplug-tests PRIVATE
 
 include(Catch)
 catch_discover_tests(retroplug-tests)
+
+# -----------------------------------------------------------------------------
+# retroplug-mesen-tests — diagnostic probes of Mesen's process-global state
+# under multi-instance use. Separate binary so retroplug-tests stays free of
+# the heavy Mesen static lib (see comment at top of file).
+# -----------------------------------------------------------------------------
+add_executable(retroplug-mesen-tests
+    MesenSingletonsTests.cpp
+    MesenMultiInstanceTests.cpp
+    ../src/system/mesen/MesenSystem.cpp
+    ../src/system/mesen/MesenVideoDevice.cpp
+    ../src/system/mesen/roles/NesN8MidiRole.cpp
+)
+
+target_include_directories(retroplug-mesen-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_compile_definitions(retroplug-mesen-tests PRIVATE
+    RETROPLUG_TEST_ROM_DIR="${CMAKE_SOURCE_DIR}/resources/roms"
+)
+
+target_link_libraries(retroplug-mesen-tests PRIVATE
+    Catch2::Catch2WithMain
+    rpcpp
+    mesen
+)
+
+catch_discover_tests(retroplug-mesen-tests)
