@@ -118,5 +118,4 @@ RUN set -eux; \
 	clap-validator --version
 
 # Install wt (git worktree helper)
-COPY wt.sh /usr/local/bin/wt
-RUN chmod +x /usr/local/bin/wt
+RUN ln -s /workspaces/RetroPlug-main/.devcontainer/wt.sh /usr/local/bin/wt

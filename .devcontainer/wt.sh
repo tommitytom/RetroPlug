@@ -163,4 +163,11 @@ else
 fi
 
 echo ""
+echo "==> Initializing git submodules..."
+git -C "$WT_DIR" submodule update --init --recursive
+
+echo ""
+echo "==> Configuring CMake..."
+mkdir -p build
+cmake -S . -B build
 echo "Worktree ready: $WT_DIR"
