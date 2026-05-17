@@ -9,12 +9,14 @@
 
 #include <rfl/Bytestring.hpp>
 
+#include "config/UserConfigSerialization.hpp"
 #include "system/SystemTypes.hpp"
 
 class Project;
 class CommandQueue;
 class EventQueue;
 class SystemBase;
+class UserConfig;
 
 // rpcpp service surface. Plain reflect-cpp-friendly methods — no QuickJS
 // or LVGL references. PluginJsBridge wraps an instance of this class in a
@@ -59,11 +61,15 @@ public:
 
     // Construction ----------------------------------------------------------
 
+    // `userConfig` is optional (nullptr in LV2-UI and in rpc-schema-dump).
+    // When null, getUserConfig() returns a default-initialised DTO and
+    // setActiveBindings() is a no-op.
     PluginRpcService(Project*,
                      CommandQueue*,
                      EventQueue*,
                      std::atomic<double>*       sampleRate,
-                     std::atomic<SystemId>*     focusedSystemId);
+                     std::atomic<SystemId>*     focusedSystemId,
+                     UserConfig*                userConfig = nullptr);
 
     PluginRpcService(const PluginRpcService&)            = delete;
     PluginRpcService& operator=(const PluginRpcService&) = delete;
@@ -112,6 +118,10 @@ public:
     bool setWindowSize(std::uint32_t w, std::uint32_t h);
     bool isWindowSizeControlled();
 
+    // User config / key-pad bindings. See src/config/UserConfig.hpp.
+    UserConfigDto getUserConfig();
+    bool          setActiveBindings(std::string name);
+
 private:
     // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
     // because the service owns the file IO + system construction.
@@ -133,6 +143,7 @@ private:
     EventQueue*               events_               = nullptr;
     std::atomic<double>*      sampleRate_           = nullptr;
     std::atomic<SystemId>*    focusedSystemId_      = nullptr;
+    UserConfig*               userConfig_           = nullptr;
 
     EmitEventFn               emitEvent_;
     OpenFileBrowserFn         openFileBrowser_;

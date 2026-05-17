@@ -8,6 +8,7 @@ import {
     GameboyButton,
     KEY_ESCAPE,
     KEY_TAB,
+    installBindings,
     mapGamepadButtonToGameboyButton,
     mapKeyToGameboyButton,
     useGamepadButton,
@@ -232,6 +233,25 @@ function PluginUI() {
         on("config-changed", handler);
         return () => off("config-changed", handler);
     }, [refreshSystems]);
+
+    // User-config / bindings: fetch on mount, rebuild the runtime key+pad
+    // maps. The C++ side emits "user-config-changed" whenever the watcher
+    // detects a JSON edit (or setActiveBindings is called); we refetch and
+    // reinstall so the next keystroke uses the new map.
+    useEffect(() => {
+        const apply = async () => {
+            try {
+                const cfg = await plugin.getUserConfig();
+                if (cfg && cfg.bindings) installBindings(cfg.bindings);
+            } catch (e) {
+                console.warn("[bindings] getUserConfig failed", e);
+            }
+        };
+        void apply();
+        const handler = () => { void apply(); };
+        on("user-config-changed", handler);
+        return () => off("user-config-changed", handler);
+    }, []);
 
     // Menu visibility invariant: empty project => menu always open. Adding
     // the first system auto-closes the menu so the user sees the new tile.

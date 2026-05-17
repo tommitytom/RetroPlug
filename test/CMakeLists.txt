@@ -14,6 +14,9 @@ add_executable(retroplug-tests
     FrameBufferTripleTests.cpp
     ProjectTests.cpp
     RomSnifferTests.cpp
+    UserConfigTests.cpp
+    ../src/config/UserConfig.cpp
+    ../src/config/UserConfigPaths.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ../src/system/sameboy/roles/ArduinoboyMaster.cpp
 )
@@ -25,6 +28,7 @@ target_include_directories(retroplug-tests PRIVATE
 target_link_libraries(retroplug-tests PRIVATE
     Catch2::Catch2WithMain
     rpcpp
+    efsw
 )
 
 # rpcpp is INTERFACE-linked here for its transitive reflectcpp + yyjson — used

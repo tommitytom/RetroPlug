@@ -21,6 +21,7 @@
 #include "LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
+#include "config/UserConfig.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -60,6 +61,10 @@ class LVGLPluginUI : public UI
     std::unique_ptr<PluginJsBridge> bridge;
     retroplug::GamepadManager gamepad;
     SharedDSPData* shared = nullptr;
+    // Declared AFTER bridge so it destructs FIRST: stops the efsw watcher
+    // before bridge/jsEngine tear down, so a stray bg-thread file event
+    // can't race into a half-destroyed JS context.
+    UserConfig userConfig;
 
     // Track the last setSize request so we can detect a tiled-WM clamp.
     // Once `wmControlled_` flips true (compositor returned a different
@@ -226,6 +231,16 @@ public:
             for (uint32_t i = 0; i < kPluginParameterCount; ++i)
                 jsEngine.registerParameter(i, kPluginParameters[i].symbol);
 
+            // Spin up the per-user config + bindings watcher BEFORE the
+            // bridge so the bridge can hand a non-null pointer to the RPC
+            // service. The reload callback emits "user-config-changed" so
+            // the JS side knows to refetch and rebuild its key map.
+            userConfig.setOnReload([this]() {
+                if (jsEngine.getContext())
+                    jsEngine.emit("user-config-changed", 0, nullptr);
+            });
+            userConfig.start();
+
             // Plugin-specific JS bridge. Must exist before evalModule so
             // useEffect handlers can register before the bundle's first render.
             bridge = std::make_unique<PluginJsBridge>(
@@ -234,7 +249,8 @@ public:
                 shared ? shared->commands        : nullptr,
                 shared ? shared->events          : nullptr,
                 shared ? shared->sampleRate      : nullptr,
-                shared ? shared->focusedSystemId : nullptr);
+                shared ? shared->focusedSystemId : nullptr,
+                &userConfig);
 
             // The bridge invokes this for any file-browser action — Open ROM,
             // Add instance, Save project, Load project. The flags map to
@@ -324,6 +340,11 @@ protected:
     void uiIdle() override
     {
         drainEvents();
+
+        // Drain the user-config watcher's dirty flag on the UI thread.
+        // efsw fires on a bg thread but only flips an atomic; the parse +
+        // RPC-event emit lives here.
+        userConfig.pumpReloadsOnUiThread();
 
         // Drain the rpcpp transport's outgoing queue — async/notification
         // frames land in `engine.emit("rpc-message", ...)` for the JS
