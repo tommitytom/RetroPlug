@@ -1,0 +1,11 @@
+# UI source files. Git's binary-file heuristic occasionally trips on UTF-8
+# comments (em-dashes, arrows) in our TSX, classifying the file as binary
+# and hiding the real diff. Pin them as text so `git diff` and `git blame`
+# stay readable.
+*.ts    diff
+*.tsx   diff
+*.js    diff
+*.cpp   diff
+*.hpp   diff
+*.h     diff
+*.md    diff
