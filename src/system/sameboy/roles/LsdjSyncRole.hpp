@@ -13,7 +13,7 @@
 // project state round-trips.
 enum class LsdjSyncMode : std::uint32_t {
     Off                = 0,
-    MidiSync           = 1,  // host PPQ → 0xF8 stream → LSDJ serial (step 08)
+    MidiSync           = 1,  // host PPQ → 0xF8 stream → LSDJ serial
     MidiSyncArduinoboy = 2,  // input: notes 24/25 toggle play, 26-29 set divisor, 30+ → row byte
     MidiMap            = 3,  // input: ch0 NoteOn → row byte; ch1 → row+128; NoteOff → 0xFE
     Keyboard           = 4,  // placeholder; raw PC keyboard mapping is not implemented yet
@@ -34,7 +34,7 @@ struct LsdjSyncConfig {
     std::uint8_t tempoDivisor = 1;
 
     // Scaffolded. Real implementation needs RAM access (offset table +
-    // MemoryAccessor) which lands in step 10.
+    // MemoryAccessor) which is not wired yet.
     bool autoplay = false;
 };
 

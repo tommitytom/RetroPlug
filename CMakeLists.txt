@@ -76,6 +76,21 @@ add_subdirectory(deps/sameboy)
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 add_subdirectory(deps/mesen)
 
+# --- r8brain-free: high-quality SRC for LSDJ kit compilation (step 10).
+# Also used at step 15 for non-44.1 kHz host-rate sync accuracy.
+add_subdirectory(deps/r8brain)
+
+# --- enkiTS: task scheduler. Drives per-sample parallel work in the LSDJ
+# kit compiler so a 16-sample kit can recompile across cores instead of
+# blocking the UI rpcpp thread on a serial loop.
+add_subdirectory(deps/enkiTS)
+
+# --- miniaudio: single-header audio file decoder (WAV / MP3 / FLAC).
+# Used by SampleCache to load source samples for kit compilation.
+# Header-only — no library, just an include path.
+add_library(miniaudio INTERFACE)
+target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
+
 # --- lvgl-js-native: the native C++ component bridge ---
 set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
 add_library(lvgl-js-native STATIC
@@ -180,18 +195,23 @@ add_executable(rpc-schema-dump
     src/RpcSchemaDump.cpp
     src/PluginRpcService.cpp
     src/project/Project.cpp
+    src/lsdj/Effects.cpp
+    src/lsdj/KitUtil.cpp
+    src/lsdj/SampleCache.cpp
+    src/lsdj/KitCompiler.cpp
     src/system/sameboy/LinkGroup.cpp
     src/system/sameboy/RomSniffer.cpp
     src/system/sameboy/SameBoySystem.cpp
     src/system/sameboy/roles/ArduinoboyMaster.cpp
     src/system/sameboy/roles/LsdjSyncRole.cpp
+    src/system/sameboy/roles/LsdjKitPatchRole.cpp
     src/system/sameboy/roles/MgbPassthroughRole.cpp
     src/system/mesen/MesenSystem.cpp
     src/system/mesen/MesenVideoDevice.cpp
     src/system/mesen/GbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE src)
-target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen)
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio)
 
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
@@ -279,11 +299,16 @@ dpf_add_plugin(${NAME}
       src/PluginDSP.cpp
       src/PluginRpcService.cpp
       src/project/Project.cpp
+      src/lsdj/Effects.cpp
+      src/lsdj/KitUtil.cpp
+      src/lsdj/SampleCache.cpp
+      src/lsdj/KitCompiler.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
       src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
+      src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
@@ -302,11 +327,16 @@ dpf_add_plugin(${NAME}
       # (though at runtime the LV2-UI never actually constructs one because
       # shared DSP state is unreachable).
       src/project/Project.cpp
+      src/lsdj/Effects.cpp
+      src/lsdj/KitUtil.cpp
+      src/lsdj/SampleCache.cpp
+      src/lsdj/KitCompiler.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
       src/system/sameboy/roles/ArduinoboyMaster.cpp
       src/system/sameboy/roles/LsdjSyncRole.cpp
+      src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
@@ -323,6 +353,9 @@ target_link_libraries(${NAME} PUBLIC lvgl-js-native)
 target_link_libraries(${NAME} PUBLIC rpcpp)
 target_link_libraries(${NAME} PUBLIC sameboy)
 target_link_libraries(${NAME} PUBLIC mesen)
+target_link_libraries(${NAME} PUBLIC r8brain)
+target_link_libraries(${NAME} PUBLIC enkiTS)
+target_link_libraries(${NAME} PUBLIC miniaudio)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)
@@ -572,5 +605,20 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Running the LSDJ no-sync control test (PNGs)"
+    )
+
+    # `make cli-lsdj-kit-patch` -> end-to-end kit-patching smoke. Loads LSDJ,
+    # patches kit slot 0 with the mule drum samples (kick/snare/hat) at +100
+    # ms, then screenshots LSDJ's boot screen and the post-patch state. The
+    # boot screen confirms LSDJ is up; the post_patch screenshot verifies the
+    # patched kit name appears in the kit selector.
+    add_custom_target(cli-lsdj-kit-patch
+        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
+                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_kit_patch_smoke.json
+                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-kit-patch
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-cli
+        USES_TERMINAL
+        COMMENT "Running the LSDJ kit-patching smoke (loads ROM + drum samples; PNGs + WAV)"
     )
 endif()

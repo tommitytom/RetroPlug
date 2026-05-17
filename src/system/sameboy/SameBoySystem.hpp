@@ -143,20 +143,18 @@ public:
 
     // Outgoing-serial byte accumulator. Bits arrive MSB-first from the GB;
     // on every 8th bit we fan the assembled byte out via
-    // RomRole::onSerialOutByte for the master-mode decoder (step 09).
+    // RomRole::onSerialOutByte for the master-mode decoder.
     std::uint8_t serialOutByte_ = 0;
     int          serialOutBits_ = 0;
     bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
 
-    // TODO: Remove references to porting steps.
-
-    // Step 09 follow-up diagnostic. Every completed serial-out byte while
-    // serialOutEnabled_ is also appended here keyed by the in-block sample
-    // offset at byte-completion time (approximated by audioFrameCount_).
-    // The CLI drains this per block into a per-system raw byte log so
-    // master-mode verification has ground truth even when the byte→MIDI
-    // decoder doesn't yet translate a given LSDJ output value.
-    // Cleared at block boundaries inside prepareForBlock.
+    // Diagnostic raw-byte log. Every completed serial-out byte while
+    // serialOutEnabled_ is also appended here keyed by the in-block
+    // sample offset at byte-completion time (approximated by
+    // audioFrameCount_). The CLI drains this per block into a per-system
+    // raw byte log so master-mode verification has ground truth even
+    // when the byte→MIDI decoder doesn't yet translate a given LSDJ
+    // output value. Cleared at block boundaries inside prepareForBlock.
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
 
 private:

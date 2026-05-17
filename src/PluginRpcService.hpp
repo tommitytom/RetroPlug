@@ -7,14 +7,18 @@
 #include <string>
 #include <vector>
 
+#include <memory>
 #include <rfl/Bytestring.hpp>
 
+#include "lsdj/Effects.hpp"
 #include "system/SystemTypes.hpp"
 
 class Project;
 class CommandQueue;
 class EventQueue;
 class SystemBase;
+
+namespace rp::lsdj { class KitCompiler; }
 
 // rpcpp service surface. Plain reflect-cpp-friendly methods — no QuickJS
 // or LVGL references. PluginJsBridge wraps an instance of this class in a
@@ -51,6 +55,59 @@ public:
         std::optional<std::uint32_t> linkGroupId;
         std::optional<std::uint32_t> lsdjSyncMode;
         std::optional<std::uint32_t> lsdjTempoDivisor;
+        // True when an LsdjKitPatchRole is attached (sniffer auto-attaches
+        // it on every LSDJ ROM, so this lights up the Kit Editor menu
+        // entry whenever an LSDJ ROM is loaded).
+        std::optional<bool>          hasLsdjKitRole;
+    };
+
+    // --- LSDJ kit-patch DTOs ----------------------------------------------
+    //
+    // Per-sample input for compileAndPatchKit. Mirrors `LsdjSampleConfig`
+    // in [system/sameboy/roles/LsdjKitPatchRole.hpp] but with the
+    // `effects` vector typed as the same reflectcpp variant. Kept here
+    // so the rpc layer doesn't drag the role header into every TU.
+    struct KitSampleSpec {
+        std::string                       path;
+        std::string                       name;
+        std::optional<std::size_t>        offset;       // skip N source frames
+        std::optional<std::size_t>        length;       // 0/missing = use all
+        std::vector<rp::lsdj::LsdjEffect> effects;
+        std::optional<std::uint8_t>       pitch;        // stored, not yet applied
+        std::optional<std::uint8_t>       volume;       // stored, not yet applied
+    };
+
+    struct KitSampleEntry {
+        std::string                       path;
+        std::string                       name;
+        std::uint8_t                      pitch  = 0x7F;
+        std::uint8_t                      volume = 0xFF;
+        std::uint64_t                     sourceHash = 0;
+        std::vector<rp::lsdj::LsdjEffect> effects;
+    };
+    struct KitEntry {
+        std::uint8_t                  slot;
+        std::string                   name;
+        std::uint64_t                 compiledHash = 0;
+        std::size_t                   compiledSize = 0;       // raw bytes; lets the UI skip a base64 decode
+        std::vector<KitSampleEntry>   samples;
+    };
+    struct KitsResponse {
+        // Empty when the system has no LsdjKitPatchRole attached.
+        std::vector<KitEntry> kits;
+    };
+
+    struct CompileKitResult {
+        bool            ok = false;
+        std::string     error;
+        std::uint64_t   compiledHash = 0;
+        rfl::Bytestring compiledBytes;        // 16 KB on success
+    };
+
+    struct AuditionResponse {
+        bool            ok = false;
+        std::uint32_t   sampleRate = 0;
+        rfl::Bytestring pcmF32;               // mono float32 LE
     };
 
     struct OpenRomOpts {
@@ -64,6 +121,7 @@ public:
                      EventQueue*,
                      std::atomic<double>*       sampleRate,
                      std::atomic<SystemId>*     focusedSystemId);
+    ~PluginRpcService();
 
     PluginRpcService(const PluginRpcService&)            = delete;
     PluginRpcService& operator=(const PluginRpcService&) = delete;
@@ -112,6 +170,19 @@ public:
     bool setWindowSize(std::uint32_t w, std::uint32_t h);
     bool isWindowSizeControlled();
 
+    // LSDJ kit patching.
+    KitsResponse     getKitsConfig(std::uint32_t systemId);
+    CompileKitResult compileAndPatchKit(std::uint32_t systemId,
+                                        std::uint8_t  kitIndex,
+                                        std::string   kitName,
+                                        std::vector<KitSampleSpec> samples);
+    AuditionResponse auditionSample(std::string path);
+    bool             eraseKit(std::uint32_t systemId, std::uint8_t kitIndex);
+    // Opens the native file browser; the chosen path is delivered to JS via
+    // a one-shot "sample-path-selected" event so the UI can resolve a
+    // Promise around it. Matches the event-style flow openRomBrowser uses.
+    bool             openSampleBrowser();
+
 private:
     // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
     // because the service owns the file IO + system construction.
@@ -124,7 +195,7 @@ private:
 
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
-    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject };
+    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, LoadSample };
 
     bool saveProjectToPath(const std::string& path);
 
@@ -133,6 +204,11 @@ private:
     EventQueue*               events_               = nullptr;
     std::atomic<double>*      sampleRate_           = nullptr;
     std::atomic<SystemId>*    focusedSystemId_      = nullptr;
+
+    // Lazy-allocated; constructed on first kit-related call so a project
+    // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool
+    // spin-up cost.
+    std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_;
 
     EmitEventFn               emitEvent_;
     OpenFileBrowserFn         openFileBrowser_;

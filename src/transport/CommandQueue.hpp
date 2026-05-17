@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "project/ProjectConfig.hpp"
 #include "system/InputTypes.hpp"
@@ -95,6 +96,17 @@ struct SetLsdjSyncConfigCommand {
     std::uint8_t  tempoDivisor;  // 1/2/4/8
 };
 
+// Patch one LSDJ kit slot on a specific system. `bytes` is heap-allocated
+// on the UI thread (rpcpp `compileAndPatchKit` handler) and ownership
+// transfers to the DSP, which applies the patch via the system's
+// `LsdjKitPatchRole` and frees the vector. Same ownership model as
+// `LoadProjectCommand::json`.
+struct PatchKitCommand {
+    SystemId                   id;
+    std::uint8_t               kitIndex;
+    std::vector<std::uint8_t>* bytes;       // exactly Kit::kSize on the wire
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
         None              = 0,
@@ -107,6 +119,7 @@ struct Command {
         LoadProject       = 7,
         SetMidiRouting    = 8,
         SetLsdjSyncConfig = 9,
+        PatchKit          = 10,
     };
 
     Kind kind = Kind::None;
@@ -120,6 +133,7 @@ struct Command {
         LoadProjectCommand       loadProject;
         SetMidiRoutingCommand    setMidiRouting;
         SetLsdjSyncConfigCommand setLsdjSyncConfig;
+        PatchKitCommand          patchKit;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -187,6 +201,14 @@ struct Command {
         Command c;
         c.kind = Kind::SetLsdjSyncConfig;
         c.payload.setLsdjSyncConfig = SetLsdjSyncConfigCommand{id, mode, tempoDivisor};
+        return c;
+    }
+
+    static Command makePatchKit(SystemId id, std::uint8_t kitIndex,
+                                std::vector<std::uint8_t>* bytes) {
+        Command c;
+        c.kind = Kind::PatchKit;
+        c.payload.patchKit = PatchKitCommand{id, kitIndex, bytes};
         return c;
     }
 };

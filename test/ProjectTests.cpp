@@ -12,6 +12,8 @@
 #include "system/SystemConfig.hpp"
 #include "system/mesen/GbaConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "system/sameboy/roles/MgbPassthroughRole.hpp"
 #include "transport/MidiTypes.hpp"
 
@@ -461,4 +463,93 @@ TEST_CASE("Project::reserve does not create systems", "[Project]") {
         proj.adoptSystem(new FakeSystem(proj.nextSystemId()));
     }
     REQUIRE(&proj.systems()[0] == slotAddr);
+}
+
+// ----- LsdjKitPatchConfig round-trip -----------------------------------------
+
+TEST_CASE("SameBoyConfig round-trips an attached LsdjKitPatchConfig role",
+          "[ProjectSerialization][role][kit]") {
+    // Fabricate a 16 KB kit bank as if compileKit had produced it. Real
+    // kit bytes are arbitrary; we only need the round-trip to preserve them
+    // bit-for-bit so the runtime role can re-apply on project load.
+    std::vector<std::uint8_t> bank(0x4000, 0);
+    for (std::size_t i = 0; i < bank.size(); ++i) {
+        bank[i] = static_cast<std::uint8_t>((i * 31u) & 0xFF);
+    }
+
+    rp::lsdj::LsdjKitPatchConfig kit;
+    rp::lsdj::LsdjKitConfig slot0;
+    slot0.slot          = 0;
+    slot0.name          = "DRUMS";
+    slot0.compiledBytes = Base64Bytes(bank);
+    slot0.compiledHash  = 0xDEADBEEFCAFEBABEULL;
+    rp::lsdj::LsdjSampleConfig kick;
+    kick.path       = "/some/path/kick.wav";
+    kick.name       = "KIK";
+    kick.pitch      = 0x7F;
+    kick.volume     = 0xFF;
+    kick.sourceHash = 0xAA55AA55ULL;
+    slot0.samples.push_back(kick);
+    kit.kits.push_back(slot0);
+
+    SameBoyConfig sb;
+    sb.romPath = "/some/path/lsdj.gb";
+    sb.roles.emplace_back(std::move(kit));
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJson(cfg);
+    INFO(json);
+    auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->systems.size() == 1);
+
+    const auto* sbOut = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(sbOut != nullptr);
+    REQUIRE(sbOut->roles.size() == 1);
+    const auto* kitOut = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&sbOut->roles.front().variant());
+    REQUIRE(kitOut != nullptr);
+    REQUIRE(kitOut->kits.size() == 1);
+
+    const auto& s0 = kitOut->kits.front();
+    REQUIRE(s0.slot          == 0);
+    REQUIRE(s0.name          == "DRUMS");
+    REQUIRE(s0.compiledHash  == 0xDEADBEEFCAFEBABEULL);
+    REQUIRE(s0.compiledBytes.size() == bank.size());
+    REQUIRE(s0.compiledBytes.bytes() == bank);  // bit-for-bit
+
+    REQUIRE(s0.samples.size() == 1);
+    REQUIRE(s0.samples[0].path       == "/some/path/kick.wav");
+    REQUIRE(s0.samples[0].name       == "KIK");
+    REQUIRE(s0.samples[0].pitch      == 0x7F);
+    REQUIRE(s0.samples[0].volume     == 0xFF);
+    REQUIRE(s0.samples[0].sourceHash == 0xAA55AA55ULL);
+}
+
+TEST_CASE("LsdjKitPatchConfig coexists with LsdjSyncConfig on the same system",
+          "[ProjectSerialization][role][kit]") {
+    // The sniffer attaches BOTH roles when an LSDJ ROM is loaded — they're
+    // orthogonal. Verify the variant carries them through JSON intact.
+    SameBoyConfig sb;
+    sb.romPath = "/some/path/lsdj.gb";
+    sb.roles.emplace_back(LsdjSyncConfig{LsdjSyncMode::MidiSync, 1, false});
+    sb.roles.emplace_back(rp::lsdj::LsdjKitPatchConfig{});  // empty kits is valid
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    auto parsed = projectConfigFromJson(projectConfigToJson(cfg));
+    REQUIRE(parsed.has_value());
+    const auto* sbOut = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(sbOut != nullptr);
+    REQUIRE(sbOut->roles.size() == 2);
+
+    bool sawSync = false, sawKit = false;
+    for (const auto& rc : sbOut->roles) {
+        if (rfl::get_if<LsdjSyncConfig>(&rc.variant()))                    sawSync = true;
+        if (rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant()))      sawKit  = true;
+    }
+    REQUIRE(sawSync);
+    REQUIRE(sawKit);
 }

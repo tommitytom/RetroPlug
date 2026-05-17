@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParameter, createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
 import { plugin } from "./plugin/client";
+import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize } from "./SystemGrid";
 import {
     GameboyButton,
@@ -35,6 +36,7 @@ const MIDI_ROUTING_NAMES = [
 // sync role (i.e. an LSDJ ROM is loaded). Names index 1:1 onto the C++
 // LsdjSyncMode enum (src/system/sameboy/roles/LsdjSyncRole.hpp); the enum
 // is append-only so this array can be safely indexed by value.
+const KIT_EDITOR_LABEL = "Kit Editor";
 const LSDJ_MODE_LABEL = "LSDJ mode:";
 const LSDJ_MODE_NAMES = [
     "Off",
@@ -167,6 +169,10 @@ function PluginUI() {
     // project-implies-open invariant is enforced in the [systems.length]
     // effect below, so we just need a sensible initial value here.
     const [menuOpen, setMenuOpen] = useState(true);
+    // Kit editor overlays the system grid and menu when open. Esc closes
+    // the editor first; only after it's closed does Esc fall through to
+    // the menu toggle. Reachable from the main menu's "Kit Editor" item.
+    const [kitEditorOpen, setKitEditorOpen] = useState(false);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
     // Seeded to 0 and replaced by the first refreshSystems(). The brief
@@ -265,13 +271,23 @@ function PluginUI() {
     // Single source of truth for keyboard routing. C++ forwards every key
     // event to JS via the "key" channel; this handler decides whether it
     // becomes a menu toggle, a Tab cycle, a Game Boy button, or is ignored.
+    const kitEditorOpenRef = useRef(kitEditorOpen);
+    useEffect(() => { kitEditorOpenRef.current = kitEditorOpen; }, [kitEditorOpen]);
+
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
+            // Esc closes the kit editor before falling through to menu.
+            if (press && kitEditorOpenRef.current) {
+                setKitEditorOpen(false);
+                return;
+            }
             // Esc with empty project does nothing — the menu must stay open.
             if (press && systemsRef.current.length > 0)
                 setMenuOpen(o => !o);
             return;
         }
+        // Kit editor consumes its own key events through its child group.
+        if (kitEditorOpenRef.current) return;
         if (menuOpenRef.current) {
             // Menu is open — LVGL focus group routes the key to the focused
             // item; nothing for us to do here.
@@ -351,6 +367,7 @@ function PluginUI() {
     // msgpack absent-optional decodes to `null`, not `undefined` — `!= null`
     // catches both. (Was `!== undefined` pre-RPC.)
     const hasLsdjRole = focusedSystem?.lsdjSyncMode != null;
+    const hasKitRole  = focusedSystem?.hasLsdjKitRole === true;
     const lsdjModeName = hasLsdjRole
         ? LSDJ_MODE_NAMES[focusedSystem!.lsdjSyncMode ?? 0] ?? LSDJ_MODE_NAMES[0]
         : "";
@@ -361,6 +378,7 @@ function PluginUI() {
         `${LINK_GROUP_LABEL} ${linkGroupSuffix}`,
         `${MIDI_ROUTING_LABEL} ${routingName}`,
         ...(hasLsdjRole ? [`${LSDJ_MODE_LABEL} ${lsdjModeName}`] : []),
+        ...(hasKitRole  ? [KIT_EDITOR_LABEL]                     : []),
         "Save project",
         "Load project",
         "Reset",
@@ -413,6 +431,11 @@ function PluginUI() {
             case "Load project":
                 void plugin.$notify("openLoadProjectBrowser");
                 break;
+            case KIT_EDITOR_LABEL:
+                // Close the menu and open the editor over the system grid.
+                setMenuOpen(false);
+                setKitEditorOpen(true);
+                return;
             case "Reset":
             case "About":
             case "Cancel":
@@ -461,6 +484,11 @@ function PluginUI() {
                     sinkGroup={sinkGroupRef.current}
                     onGainChange={onGainChange}
                     onSelect={onMenuSelect}
+                />
+            ) : kitEditorOpen ? (
+                <KitEditor
+                    systemId={focusedId}
+                    onClose={() => setKitEditorOpen(false)}
                 />
             ) : (
                 <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />

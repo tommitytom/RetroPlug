@@ -1,0 +1,22 @@
+{
+  "_doc": "LSDJ kit-patching smoke test. Boots LSDJ (the cartridge self-test takes ~15s on a fresh ROM — patching before that finishes makes the self-test fail), then patches a custom drum kit (mule kick/snare/hat from resources/samples/) into kit slot 0. Two screenshots: one of the song screen right after boot, one after the patch is applied. The PROJECT screen's KIT row should show 'TEST' as the slot-0 name on the second screenshot.",
+  "rom": "../resources/roms/lsdj9_4_2.gb",
+  "duration_ms": 25000,
+  "sample_rate": 44100,
+  "block_size": 1024,
+  "out_wav": "/tmp/lsdj-kit-patch-smoke.wav",
+  "events": [
+    { "at_ms": 16000, "screenshot": "boot",       "system": 0 },
+    { "at_ms": 17000, "patch_kit": {
+        "slot": 0,
+        "name": "TEST",
+        "samples": [
+          { "path": "../resources/samples/mule/kick.wav",  "name": "KIK" },
+          { "path": "../resources/samples/mule/snare.wav", "name": "SNR" },
+          { "path": "../resources/samples/mule/hat.wav",   "name": "HAT" }
+        ]
+      }
+    },
+    { "at_ms": 20000, "screenshot": "post_patch", "system": 0 }
+  ]
+}
