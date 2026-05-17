@@ -95,8 +95,20 @@ esbuild.buildSync({
         return m.replace(/__(.)/g, (_, c) => c.toUpperCase());
     });
 
-    fs.writeFileSync(outPath, src);
-    console.log(`Generated ${path.relative(REPO_ROOT, outPath)}`);
+    // Idempotent write: only touch the file when bytes actually change.
+    // writeService is documented idempotent, but the regex post-process
+    // above unconditionally produces a new buffer — without this guard
+    // the mtime bumps every build and esbuild rebuilds bundle.js for
+    // nothing. (CMake's copy_if_different on bundle_data.c still
+    // backstops the cascade, but quietness here is cheap.)
+    let prior = null;
+    try { prior = fs.readFileSync(outPath, 'utf8'); } catch (_) { /* missing */ }
+    if (prior !== src) {
+        fs.writeFileSync(outPath, src);
+        console.log(`Generated ${path.relative(REPO_ROOT, outPath)}`);
+    } else {
+        console.log(`Up-to-date ${path.relative(REPO_ROOT, outPath)}`);
+    }
 
     function stripMangle(s) {
         return s.replace(/__(.)/g, (_, c) => c.toUpperCase())

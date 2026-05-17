@@ -221,52 +221,9 @@ set(UI_BUNDLE_C   "${CMAKE_BINARY_DIR}/ui/bundle_data.c")
 set(UI_BUNDLE_DEP "${CMAKE_BINARY_DIR}/ui/bundle.d")
 set(UI_RPC_TS     "${CMAKE_BINARY_DIR}/ui/generated/PluginService.ts")
 
-# Generated TypeScript client for PluginRpcService. The rpc-schema-dump
-# executable prints the OpenRPC document; gen-rpc-ts.js bundles
-# @rpcpp/codegen via esbuild and runs writeService on it. Both sit under
-# build/ — never committed.
-add_custom_command(
-    OUTPUT  ${UI_RPC_TS}
-    COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
-            $<TARGET_FILE:rpc-schema-dump>
-            ${UI_RPC_TS}
-    DEPENDS rpc-schema-dump
-            ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
-    COMMENT "Generating typed RPC client from OpenRPC schema"
-    VERBATIM)
-
-file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/ui/*.ts"
-    "${CMAKE_SOURCE_DIR}/ui/*.tsx"
-    "${CMAKE_SOURCE_DIR}/runtime/*.ts"
-    "${CMAKE_SOURCE_DIR}/runtime/*.tsx")
-
-add_custom_command(
-    OUTPUT  ${UI_BUNDLE_JS}
-    COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-            ${UI_BUNDLE_JS} ${UI_BUNDLE_DEP}
-    DEPENDS ${UI_SOURCES} ${UI_RPC_TS} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-    DEPFILE ${UI_BUNDLE_DEP}
-    COMMENT "Building UI bundle"
-    VERBATIM)
-
-# Compile the JS bundle to QuickJS bytecode and embed it as a C byte array.
-# We reuse txiki's `tjsc` binary (added with EXCLUDE_FROM_ALL in
-# deps/lv_binding_js/deps/txiki/CMakeLists.txt — the DEPENDS below forces
-# it to be built when the UI bundle rule fires).
-#
-# Output symbols are `ui_bundle[N]` / `ui_bundle_size` (uint8_t / uint32_t).
-# Flags:
-#   -m  force module mode — the runtime loads the bundle as a module.
-#   -s  strip source (keeps debug line info; -ss would also drop debug).
-#   -p  prefix for emitted C identifiers.
-#
-# Cross-compile note: tjsc is built with the project toolchain. For
-# host != target builds the user must point TJSC_EXECUTABLE at a host-built
-# tjsc binary. The bytecode itself is consumed by the same vendored QuickJS-ng
-# tree, so version skew can't happen unless someone runs a different tjsc.
+# Cross-compile knob for tjsc (bytecode compiler). Set BEFORE the
+# ui-regenerate target so the COMMAND substitution resolves at the right
+# expansion time.
 set(TJSC_EXECUTABLE "" CACHE FILEPATH
     "Path to a host-built tjsc/qjsc for bytecode compilation. \
 Leave empty to use the in-tree tjsc target.")
@@ -281,15 +238,54 @@ else()
     set(_TJSC_DEP tjsc)
 endif()
 
-add_custom_command(
-    OUTPUT  ${UI_BUNDLE_C}
+# UI regeneration chain — always runs, every build.
+#
+# We deliberately don't use timestamp-tracked add_custom_command(OUTPUT ...)
+# rules here. The three steps below (schema → TS client, TSX → bundle.js,
+# bundle.js → bytecode) have a long history of going stale: new TSX files
+# need a reconfigure to enter the glob, the rpc-schema-dump dependency
+# doesn't always propagate through CMake's timestamp comparison, and
+# even when bundle_data.c does refresh the per-variant .o sometimes lags.
+# Symptoms: builds linking against last week's RPC surface.
+#
+# Trading those failure modes for ~1–2 s of unconditional regen each
+# build is the user-stated preference. Incrementalism is preserved at
+# the C compile step via `copy_if_different`: tjsc writes to .new, we
+# only refresh bundle_data.c if the bytes actually changed, so the .o
+# only rebuilds on real content changes.
+#
+# tools/gen-rpc-ts.js     → ${UI_RPC_TS}
+# tools/build-ui.js       → ${UI_BUNDLE_JS}   (esbuild)
+# tjsc                    → ${UI_BUNDLE_C}.new
+# copy_if_different       → ${UI_BUNDLE_C}    (guards .o rebuild)
+add_custom_target(ui-regenerate ALL
+    BYPRODUCTS ${UI_RPC_TS}
+               ${UI_BUNDLE_JS}
+               ${UI_BUNDLE_DEP}
+               ${UI_BUNDLE_C}
+               ${UI_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
+            $<TARGET_FILE:rpc-schema-dump>
+            ${UI_RPC_TS}
+    COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/build-ui.js
+            ${UI_BUNDLE_JS} ${UI_BUNDLE_DEP}
     COMMAND ${_TJSC_COMMAND}
             -m -s -p ui_
-            -o ${UI_BUNDLE_C}
+            -o ${UI_BUNDLE_C}.new
             ${UI_BUNDLE_JS}
-    DEPENDS ${UI_BUNDLE_JS} ${_TJSC_DEP}
-    COMMENT "Compiling UI bundle to QuickJS bytecode"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
+    COMMENT "Regenerating UI artifacts (RPC client + bundle + bytecode)"
     VERBATIM)
+add_dependencies(ui-regenerate rpc-schema-dump ${_TJSC_DEP})
+
+# Declare bundle_data.c as a generated source so dpf_add_plugin doesn't
+# error out when the file is missing on a from-scratch build. The
+# ui-regenerate target produces it; the GENERATED property tells CMake
+# "trust me, this file will exist before compile time".
+set_source_files_properties(${UI_BUNDLE_C} PROPERTIES GENERATED TRUE)
 
 # create plugin build target
 dpf_add_plugin(${NAME}
@@ -356,6 +352,12 @@ target_link_libraries(${NAME} PUBLIC mesen)
 target_link_libraries(${NAME} PUBLIC r8brain)
 target_link_libraries(${NAME} PUBLIC enkiTS)
 target_link_libraries(${NAME} PUBLIC miniaudio)
+
+# Force UI artifacts to refresh before any plugin variant compiles
+# bundle_data.c. retroplug-ui is DPF's UI aggregator (every UI-bearing
+# variant inherits from it), so this single edge covers all of clap /
+# vst3 / lv2 / jack / vst2.
+add_dependencies(${NAME}-ui ui-regenerate)
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)
