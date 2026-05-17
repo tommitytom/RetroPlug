@@ -76,8 +76,8 @@ add_subdirectory(deps/sameboy)
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 add_subdirectory(deps/mesen)
 
-# --- r8brain-free: high-quality SRC for LSDJ kit compilation (step 10).
-# Also used at step 15 for non-44.1 kHz host-rate sync accuracy.
+# --- r8brain-free: high-quality SRC for LSDJ kit compilation.
+# Also used for non-44.1 kHz host-rate sync accuracy.
 add_subdirectory(deps/r8brain)
 
 # --- enkiTS: task scheduler. Drives per-sample parallel work in the LSDJ
@@ -90,6 +90,15 @@ add_subdirectory(deps/enkiTS)
 # Header-only — no library, just an include path.
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
+
+# --- efsw: cross-platform file watcher (inotify / FSEvents / Win32) used by
+# src/config/UserConfig to live-reload key/pad bindings JSON. Built as a single
+# static lib (BUILD_SHARED_LIBS=OFF) and the duplicate efsw-static target is
+# suppressed (BUILD_STATIC_LIBS=OFF). EFSW_INSTALL / BUILD_TEST_APP default to
+# OFF when efsw is added as a subdirectory (not the main project).
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build efsw as static" FORCE)
+set(BUILD_STATIC_LIBS OFF CACHE BOOL "Skip duplicate efsw-static target" FORCE)
+add_subdirectory(deps/efsw EXCLUDE_FROM_ALL)
 
 # --- lvgl-js-native: the native C++ component bridge ---
 set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
@@ -185,6 +194,7 @@ set_target_properties(mbedcrypto PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(ada PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(miniz PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(reflectcpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(efsw PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- rpc-schema-dump: prints PluginRpcService's OpenRPC schema for codegen ---
 # Standalone executable so the codegen step doesn't need to start the plugin
@@ -194,6 +204,8 @@ set_target_properties(reflectcpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_executable(rpc-schema-dump
     src/RpcSchemaDump.cpp
     src/PluginRpcService.cpp
+    src/config/UserConfig.cpp
+    src/config/UserConfigPaths.cpp
     src/project/Project.cpp
     src/lsdj/Effects.cpp
     src/lsdj/KitUtil.cpp
@@ -211,7 +223,7 @@ add_executable(rpc-schema-dump
     src/system/mesen/GbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE src)
-target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio)
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw)
 
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
@@ -294,6 +306,8 @@ dpf_add_plugin(${NAME}
   FILES_DSP
       src/PluginDSP.cpp
       src/PluginRpcService.cpp
+      src/config/UserConfig.cpp
+      src/config/UserConfigPaths.cpp
       src/project/Project.cpp
       src/lsdj/Effects.cpp
       src/lsdj/KitUtil.cpp
@@ -314,6 +328,8 @@ dpf_add_plugin(${NAME}
       src/PluginUI.cpp
       src/PluginJsBridge.cpp
       src/PluginRpcService.cpp
+      src/config/UserConfig.cpp
+      src/config/UserConfigPaths.cpp
       src/GamepadManager.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the
@@ -352,6 +368,11 @@ target_link_libraries(${NAME} PUBLIC mesen)
 target_link_libraries(${NAME} PUBLIC r8brain)
 target_link_libraries(${NAME} PUBLIC enkiTS)
 target_link_libraries(${NAME} PUBLIC miniaudio)
+# efsw lands on the umbrella target so both DSP and UI sub-targets get the
+# static lib. The DSP doesn't actually use the watcher at runtime, but
+# PluginRpcService.cpp (shared between FILES_DSP and FILES_UI) references
+# UserConfig symbols and we don't split the .cpp.
+target_link_libraries(${NAME} PUBLIC efsw)
 
 # Force UI artifacts to refresh before any plugin variant compiles
 # bundle_data.c. retroplug-ui is DPF's UI aggregator (every UI-bearing

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "config/UserConfig.hpp"
 #include "lsdj/KitCompiler.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
@@ -69,12 +70,14 @@ PluginRpcService::PluginRpcService(Project* project,
                                    CommandQueue* commands,
                                    EventQueue* events,
                                    std::atomic<double>* sampleRate,
-                                   std::atomic<SystemId>* focusedSystemId)
+                                   std::atomic<SystemId>* focusedSystemId,
+                                   UserConfig* userConfig)
     : project_(project),
       commands_(commands),
       events_(events),
       sampleRate_(sampleRate),
-      focusedSystemId_(focusedSystemId) {}
+      focusedSystemId_(focusedSystemId),
+      userConfig_(userConfig) {}
 
 // Defined here (not in the header) so the std::unique_ptr<KitCompiler>
 // destructor can see the complete KitCompiler type.
@@ -630,4 +633,22 @@ bool PluginRpcService::eraseKit(std::uint32_t systemId, std::uint8_t kitIndex) {
         return false;
     }
     return true;
+}
+
+UserConfigDto PluginRpcService::getUserConfig() {
+    if (!userConfig_) {
+        // No watcher attached (LV2-UI, rpc-schema-dump). Hand back the
+        // hardcoded defaults so the JS side still has a working binding
+        // map to install.
+        UserConfigDto out;
+        out.activeBindings = "default";
+        out.bindings       = defaultBindingMap();
+        return out;
+    }
+    return userConfig_->snapshot();
+}
+
+bool PluginRpcService::setActiveBindings(std::string name) {
+    if (!userConfig_) return false;
+    return userConfig_->setActiveBindings(std::move(name));
 }
