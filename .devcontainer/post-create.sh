@@ -41,6 +41,14 @@ if [ ! -d node_modules ]; then
     npm install --no-audit --no-fund --silent
 fi
 
+echo "==> Installing deps/lv_binding_js npm deps..."
+# tools/gen-rpc-ts.js and tools/build-ui.js resolve esbuild (and
+# esbuild-plugin-alias) from deps/lv_binding_js/node_modules. Without this
+# install the first cmake --build invocation fails with MODULE_NOT_FOUND.
+if [ ! -d deps/lv_binding_js/node_modules ]; then
+    (cd deps/lv_binding_js && npm install --no-audit --no-fund --silent)
+fi
+
 echo "==> Configuring CMake..."
 mkdir -p build
 cmake -S . -B build
