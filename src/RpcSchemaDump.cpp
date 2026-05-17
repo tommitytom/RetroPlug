@@ -36,6 +36,11 @@ int main() {
     server.addMethod<&PluginRpcService::setLsdjSyncConfig>();
     server.addMethod<&PluginRpcService::setWindowSize>();
     server.addMethod<&PluginRpcService::isWindowSizeControlled>();
+    server.addMethod<&PluginRpcService::getKitsConfig>();
+    server.addMethod<&PluginRpcService::compileAndPatchKit>();
+    server.addMethod<&PluginRpcService::auditionSample>();
+    server.addMethod<&PluginRpcService::eraseKit>();
+    server.addMethod<&PluginRpcService::openSampleBrowser>();
     server.addDiscoveryMethod();
 
     std::cout << server.dumpSchema() << std::endl;

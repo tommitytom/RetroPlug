@@ -12,10 +12,14 @@ add_executable(retroplug-tests
     CommandQueueTests.cpp
     EventQueueTests.cpp
     FrameBufferTripleTests.cpp
+    KitUtilTests.cpp
     ProjectTests.cpp
     RomSnifferTests.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ../src/system/sameboy/roles/ArduinoboyMaster.cpp
+    # LSDJ kit-compile chain — pure C++, links r8brain for resampling.
+    ../src/lsdj/Effects.cpp
+    ../src/lsdj/KitUtil.cpp
 )
 
 target_include_directories(retroplug-tests PRIVATE
@@ -25,6 +29,7 @@ target_include_directories(retroplug-tests PRIVATE
 target_link_libraries(retroplug-tests PRIVATE
     Catch2::Catch2WithMain
     rpcpp
+    r8brain
 )
 
 # rpcpp is INTERFACE-linked here for its transitive reflectcpp + yyjson — used

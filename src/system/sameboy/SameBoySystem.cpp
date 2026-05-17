@@ -9,6 +9,7 @@
 #include "rfl/Variant.hpp"
 
 #include "system/sameboy/RomSniffer.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "system/sameboy/roles/MgbPassthroughRole.hpp"
 
@@ -203,9 +204,14 @@ void SameBoySystem::onActivate(double sampleRate) {
                 break;
             case RomKind::Lsdj:
                 // Default to MidiSync mode so LSDJ syncs to host transport
-                // out of the box. Role-config editing UI (step 09) can flip
-                // this to Off or to the Arduinoboy modes per project.
+                // out of the box. The UI's LSDJ-mode picker can flip this
+                // to Off or to the Arduinoboy modes per project.
                 config_.roles.emplace_back(LsdjSyncConfig{});
+                // Kit-patching role attaches alongside sync: orthogonal
+                // concerns, both wanted on every LSDJ ROM. Starts empty
+                // (no kits patched); the rpc layer's `patchKit` mutates
+                // `config_.roles[..]` via this role's runtime state.
+                config_.roles.emplace_back(rp::lsdj::LsdjKitPatchConfig{});
                 break;
             case RomKind::Generic:
             default:
@@ -285,6 +291,17 @@ void SameBoySystem::instantiateRoles() {
             role->onAttach(*this);
             roles_.push_back(std::move(role));
             std::fprintf(stderr, "[RetroPlug] attached LSDJ sync role to system %u\n", id());
+        } else if (const auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
+            auto role = std::make_unique<LsdjKitPatchRole>();
+            role->onAttach(*this);
+            // Replay any persisted kit bytes through the role so the
+            // running emulator sees them after a project load. The role
+            // applies pending patches at the top of the next process
+            // block (sniffer-attached default with no kits is a no-op).
+            role->queueAllFromConfig(*kitCfg);
+            roles_.push_back(std::move(role));
+            std::fprintf(stderr, "[RetroPlug] attached LSDJ kit-patch role to system %u (%zu kits)\n",
+                         id(), kitCfg->kits.size());
         }
     }
     // Recompute the serial-out capture gate now that roles_ is settled.

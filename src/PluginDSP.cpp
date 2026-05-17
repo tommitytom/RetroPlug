@@ -1,5 +1,5 @@
 /*
- * RetroPlug DSP — Step 1: SameBoy single-instance MVP.
+ * RetroPlug DSP — SameBoy / Mesen / GBA host.
  * SPDX-License-Identifier: ISC
  */
 
@@ -14,10 +14,12 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "lsdj/SampleCache.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
@@ -80,9 +82,9 @@ public:
         shared.sampleRate      = &sampleRateAtomic;
         shared.focusedSystemId = &focusedSystemAtomic;
 
-        // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser
-        // (Step 3). DPF setState (Step 4) will populate the project from a
-        // saved host project where applicable.
+        // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser,
+        // and DPF setState populates the project from a saved host project
+        // where applicable.
     }
 
 protected:
@@ -90,7 +92,7 @@ protected:
     // Information
 
     const char* getLabel()       const noexcept override { return "RetroPlug"; }
-    const char* getDescription() const          override { return "Game Boy emulator host (Step 1: SameBoy MVP)"; }
+    const char* getDescription() const          override { return "Multi-system retro emulator host (Game Boy / NES / GBA)"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "ISC"; }
     uint32_t    getVersion()     const noexcept override { return d_version(0, 1, 0); }
@@ -342,6 +344,53 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::PatchKit: {
+                    auto& pk = cmd.payload.patchKit;
+                    // Ownership lands here; release at scope exit even on
+                    // early bailout so we never leak the heap-allocated
+                    // 16 KB vector the UI hands us.
+                    std::unique_ptr<std::vector<std::uint8_t>> owned(pk.bytes);
+                    if (!owned) break;
+
+                    auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(pk.id));
+                    if (!sb) break;
+
+                    // Update both the runtime role (for live emulator
+                    // patching) and the per-system config (so project
+                    // saves round-trip the patched kit).
+                    LsdjKitPatchRole* role = nullptr;
+                    for (auto& r : sb->roles_) {
+                        if (r && r->kind() == "lsdj-kit-patch") {
+                            role = static_cast<LsdjKitPatchRole*>(r.get());
+                            break;
+                        }
+                    }
+                    if (role) role->queuePatch(pk.kitIndex, *owned);
+
+                    for (auto& rc : sb->config_.roles) {
+                        auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant());
+                        if (!kitCfg) continue;
+                        // Find-or-create the slot entry; the UI controls
+                        // the per-sample metadata, but we own the bytes
+                        // and hash on the DSP side.
+                        rp::lsdj::LsdjKitConfig* slot = nullptr;
+                        for (auto& k : kitCfg->kits) {
+                            if (k.slot == pk.kitIndex) { slot = &k; break; }
+                        }
+                        if (!slot) {
+                            rp::lsdj::LsdjKitConfig fresh;
+                            fresh.slot = pk.kitIndex;
+                            kitCfg->kits.push_back(std::move(fresh));
+                            slot = &kitCfg->kits.back();
+                        }
+                        slot->compiledBytes = Base64Bytes(*owned);
+                        slot->compiledHash  =
+                            rp::lsdj::SampleCache::hashBytes(owned->data(), owned->size());
+                        break;
+                    }
+                    projectMutated = true;
+                } break;
+
                 case Command::Kind::LoadProject: {
                     std::string* json = cmd.payload.loadProject.json;
                     if (json) {
@@ -397,8 +446,8 @@ protected:
 
         // Host timing from DPF. When bbt is valid, compute continuous PPQ
         // position from bar/beat/tick; otherwise (host without BBT support)
-        // approximate from sample frame at the default tempo. Step 09 may
-        // expose a manual BPM override for hosts that play without BBT.
+        // approximate from sample frame at the default tempo. A manual BPM
+        // override for hosts without BBT could be wired here later.
         const TimePosition& tp = getTimePosition();
         double bpm = 120.0;
         double ppq = 0.0;
@@ -414,9 +463,8 @@ protected:
         AudioBlockInfo info{ frames, fSampleRate, bpm, ppq, tp.playing };
         project.onProcess(info, outputs);
 
-        // Drain per-system MIDI output back to the host. Empty until step 09
-        // wires the first MIDI-emitting role; the loop is here now so step 09
-        // doesn't need to revisit the run() boundary.
+        // Drain per-system MIDI output back to the host. Populated by
+        // MIDI-emitting roles (e.g. ArduinoboyMaster's MI.OUT decoder).
         for (auto& sys : project.systems()) {
             if (!sys) continue;
             auto& outBuf = sys->midiOut();

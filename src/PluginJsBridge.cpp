@@ -58,6 +58,11 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::setLsdjSyncConfig>();
     rpcServer_->addMethod<&PluginRpcService::setWindowSize>();
     rpcServer_->addMethod<&PluginRpcService::isWindowSizeControlled>();
+    rpcServer_->addMethod<&PluginRpcService::getKitsConfig>();
+    rpcServer_->addMethod<&PluginRpcService::compileAndPatchKit>();
+    rpcServer_->addMethod<&PluginRpcService::auditionSample>();
+    rpcServer_->addMethod<&PluginRpcService::eraseKit>();
+    rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
     rpcServer_->addDiscoveryMethod();
 
     // Service emits string-payload JS events through the existing engine

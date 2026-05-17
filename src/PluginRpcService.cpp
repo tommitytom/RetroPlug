@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "lsdj/KitCompiler.hpp"
+#include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
@@ -21,6 +23,7 @@
 #include "system/mesen/MesenSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
@@ -72,6 +75,10 @@ PluginRpcService::PluginRpcService(Project* project,
       events_(events),
       sampleRate_(sampleRate),
       focusedSystemId_(focusedSystemId) {}
+
+// Defined here (not in the header) so the std::unique_ptr<KitCompiler>
+// destructor can see the complete KitCompiler type.
+PluginRpcService::~PluginRpcService() = default;
 
 void PluginRpcService::emit(const std::string& channel, const std::string& payload) const {
     if (emitEvent_) emitEvent_(channel, payload);
@@ -243,11 +250,12 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
 void PluginRpcService::onFileBrowserSelected(const char* path) {
     if (!path || !*path) return;
     switch (pendingFileMode_) {
-        case PendingFileMode::AddRom:      addRomFromPath(path);      break;
-        case PendingFileMode::LoadProject: loadProjectFromPath(path); break;
-        case PendingFileMode::SaveProject: saveProjectToPath(path);   break;
+        case PendingFileMode::AddRom:      addRomFromPath(path);             break;
+        case PendingFileMode::LoadProject: loadProjectFromPath(path);        break;
+        case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
+        case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
         case PendingFileMode::LoadRom:
-        default:                           loadRomFromPath(path);     break;
+        default:                           loadRomFromPath(path);            break;
     }
     pendingFileMode_ = PendingFileMode::LoadRom;
 }
@@ -328,7 +336,8 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
                 if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
                     entry.lsdjSyncMode     = static_cast<std::uint32_t>(lsdj->mode);
                     entry.lsdjTempoDivisor = lsdj->tempoDivisor;
-                    break;
+                } else if (rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
+                    entry.hasLsdjKitRole = true;
                 }
             }
         } else if (sys->kind() == SystemKind::Mesen) {
@@ -424,4 +433,201 @@ bool PluginRpcService::setWindowSize(std::uint32_t w, std::uint32_t h) {
 bool PluginRpcService::isWindowSizeControlled() {
     if (!isWindowSizeControlled_) return false;
     return isWindowSizeControlled_();
+}
+
+// ----- LSDJ kit patching ----------------------------------------------------
+
+namespace {
+
+const rp::lsdj::LsdjKitPatchConfig*
+findKitConfig(const SameBoySystem& sb) {
+    for (const auto& rc : sb.config_.roles) {
+        if (const auto* k = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant()))
+            return k;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+PluginRpcService::KitsResponse
+PluginRpcService::getKitsConfig(std::uint32_t systemId) {
+    KitsResponse out;
+    if (!project_) return out;
+    auto* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    auto* sb  = dynamic_cast<const SameBoySystem*>(sys);
+    if (!sb) return out;
+    const auto* cfg = findKitConfig(*sb);
+    if (!cfg) return out;
+
+    out.kits.reserve(cfg->kits.size());
+    for (const auto& k : cfg->kits) {
+        KitEntry entry;
+        entry.slot         = k.slot;
+        entry.name         = k.name;
+        entry.compiledHash = k.compiledHash;
+        entry.compiledSize = k.compiledBytes.size();
+        entry.samples.reserve(k.samples.size());
+        for (const auto& s : k.samples) {
+            KitSampleEntry e;
+            e.path       = s.path;
+            e.name       = s.name;
+            e.pitch      = s.pitch;
+            e.volume     = s.volume;
+            e.sourceHash = s.sourceHash;
+            // Effects don't currently round-trip with the per-sample
+            // metadata — they're applied at compile time and not stored
+            // on the role config. UI re-edit recompiles whatever the
+            // current effect picker shows.
+            entry.samples.push_back(std::move(e));
+        }
+        out.kits.push_back(std::move(entry));
+    }
+    return out;
+}
+
+PluginRpcService::CompileKitResult
+PluginRpcService::compileAndPatchKit(std::uint32_t systemId,
+                                     std::uint8_t  kitIndex,
+                                     std::string   kitName,
+                                     std::vector<KitSampleSpec> samples) {
+    CompileKitResult result;
+    if (!project_ || !commands_) {
+        result.error = "service not wired up";
+        return result;
+    }
+    if (kitIndex >= LsdjKitPatchRole::kSlotCount) {
+        result.error = "kitIndex out of range (0..15)";
+        return result;
+    }
+    auto* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    auto* sb  = dynamic_cast<SameBoySystem*>(sys);
+    if (!sb) {
+        result.error = "system not found / not SameBoy";
+        return result;
+    }
+    if (!findKitConfig(*sb)) {
+        result.error = "system has no lsdj-kit-patch role";
+        return result;
+    }
+
+    // Translate the rpc spec into the compile-pipeline's input type. The
+    // two are deliberately structurally identical — they differ only in
+    // how optional fields are surfaced (rpcpp uses std::optional; the
+    // compiler uses defaulted plain values).
+    std::vector<rp::lsdj::CompileSampleSpec> compileSpecs;
+    compileSpecs.reserve(samples.size());
+    for (auto& s : samples) {
+        rp::lsdj::CompileSampleSpec c;
+        c.path    = std::move(s.path);
+        c.name    = std::move(s.name);
+        c.offset  = s.offset.value_or(0);
+        c.length  = s.length.value_or(0);
+        c.effects = std::move(s.effects);
+        compileSpecs.push_back(std::move(c));
+    }
+
+    if (!kitCompiler_) {
+        kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
+    }
+
+    auto compiled = kitCompiler_->compileKit(kitName, compileSpecs);
+    if (!compiled.ok || compiled.bytes.size() != rp::lsdj::Kit::kSize) {
+        result.error = compiled.error.empty() ? "kit compile failed" : compiled.error;
+        return result;
+    }
+
+    // Stash per-sample metadata on the project config now so it survives
+    // a save before the DSP processes the patch command. (The DSP writes
+    // the *bytes* there too; this UI write doesn't race because both
+    // happen on different fields and Project mutations are serialised
+    // by the DSP's command drain — but rfl's vector ops aren't atomic,
+    // so keep the writes confined to UI here.)
+    for (auto& rc : sb->config_.roles) {
+        auto* cfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant());
+        if (!cfg) continue;
+        rp::lsdj::LsdjKitConfig* slot = nullptr;
+        for (auto& k : cfg->kits) {
+            if (k.slot == kitIndex) { slot = &k; break; }
+        }
+        if (!slot) {
+            rp::lsdj::LsdjKitConfig fresh;
+            fresh.slot = kitIndex;
+            cfg->kits.push_back(std::move(fresh));
+            slot = &cfg->kits.back();
+        }
+        slot->name = kitName;
+        slot->samples.clear();
+        slot->samples.reserve(samples.size());
+        for (const auto& s : samples) {
+            rp::lsdj::LsdjSampleConfig out;
+            out.path   = s.path;   // moved-from above on the copy used by compileSpecs
+            out.name   = s.name;
+            out.pitch  = s.pitch.value_or(0x7F);
+            out.volume = s.volume.value_or(0xFF);
+            slot->samples.push_back(std::move(out));
+        }
+        break;
+    }
+
+    // Heap-allocate the bytes for transfer to DSP. The DSP-side handler
+    // takes ownership (via std::unique_ptr) and frees after applying.
+    auto* heapBytes = new std::vector<std::uint8_t>(std::move(compiled.bytes));
+    if (!commands_->tryPush(Command::makePatchKit(static_cast<SystemId>(systemId),
+                                                   kitIndex, heapBytes))) {
+        delete heapBytes;
+        result.error = "command queue full";
+        return result;
+    }
+
+    result.ok           = true;
+    result.compiledHash = compiled.hash;
+    // Send a copy back so the UI can hash for dirty tracking + preview the
+    // freshly-patched bytes. Bytestring is std::byte; reinterpret cast is
+    // safe (same width, both POD).
+    result.compiledBytes.resize(heapBytes->size());
+    std::memcpy(result.compiledBytes.data(), heapBytes->data(), heapBytes->size());
+    return result;
+}
+
+PluginRpcService::AuditionResponse
+PluginRpcService::auditionSample(std::string path) {
+    AuditionResponse out;
+    if (!kitCompiler_) {
+        kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
+    }
+    const auto* data = kitCompiler_->cache().getOrLoad(path);
+    if (!data || data->buffer.empty()) {
+        return out;
+    }
+    out.ok         = true;
+    out.sampleRate = data->sampleRate;
+    out.pcmF32.resize(data->buffer.size() * sizeof(float));
+    std::memcpy(out.pcmF32.data(),
+                data->buffer.data(),
+                data->buffer.size() * sizeof(float));
+    return out;
+}
+
+bool PluginRpcService::openSampleBrowser() {
+    if (!openFileBrowser_) return false;
+    pendingFileMode_ = PendingFileMode::LoadSample;
+    openFileBrowser_("Load sample (WAV / MP3 / FLAC)", false, nullptr);
+    return true;
+}
+
+bool PluginRpcService::eraseKit(std::uint32_t systemId, std::uint8_t kitIndex) {
+    if (!commands_ || !project_) return false;
+    if (kitIndex >= LsdjKitPatchRole::kSlotCount) return false;
+
+    // Erase semantics: patch the slot with a freshly-zeroed kit bank. The
+    // role applies it the same way as any other patch, and the kit slot
+    // ends up looking "empty" in LSDJ (offset table cleared, no samples).
+    auto* heapBytes = new std::vector<std::uint8_t>(rp::lsdj::Kit::kSize, 0);
+    if (!commands_->tryPush(Command::makePatchKit(static_cast<SystemId>(systemId),
+                                                   kitIndex, heapBytes))) {
+        delete heapBytes;
+        return false;
+    }
+    return true;
 }

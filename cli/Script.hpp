@@ -42,6 +42,23 @@
 //   - Multi-system: `systems: [{ rom, link_group }, ...]`. Same nonzero
 //     `link_group` puts instances into a shared LinkGroup (lockstep serial).
 
+// LSDJ kit-patch sample spec. One per slot in the kit.
+//   path:   filesystem path to a miniaudio-decodable WAV / MP3 / FLAC.
+//   name:   3-char (max) uppercase name shown in LSDJ.
+struct ScriptKitSample {
+    std::string path;
+    std::string name;
+};
+
+// Top-level form for a `patch_kit` event. Resolves to a synchronous
+// kit-compile + role->queuePatch call from the CLI's event drain. Output
+// is the same 16 KB bank a UI compileAndPatchKit would produce.
+struct ScriptKitPatch {
+    std::uint8_t                slot = 0;       // 0..15
+    std::string                 name;           // up to 6-char kit name
+    std::vector<ScriptKitSample> samples;
+};
+
 struct ScriptEvent {
     std::uint32_t                            at_ms = 0;
     std::optional<std::string>               button;
@@ -55,6 +72,7 @@ struct ScriptEvent {
     std::optional<std::uint32_t>             system;
     std::optional<bool>                      set_transport;  // simulate host start/stop
     std::optional<double>                    set_bpm;        // simulate host tempo change
+    std::optional<ScriptKitPatch>            patch_kit;
 };
 
 struct ScriptSystem {
@@ -163,10 +181,11 @@ inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
                 + (e.chord.has_value()      ? 1 : 0)
                 + (e.midi.has_value()       ? 1 : 0)
                 + (e.screenshot.has_value() ? 1 : 0)
+                + (e.patch_kit.has_value()  ? 1 : 0)
                 + (isTransport              ? 1 : 0);
     if (n == 0)
         throw std::runtime_error("event #" + std::to_string(index) +
-                                 " has no 'button'/'tap'/'chord'/'midi'/'screenshot'/'set_transport'/'set_bpm'");
+                                 " has no 'button'/'tap'/'chord'/'midi'/'screenshot'/'patch_kit'/'set_transport'/'set_bpm'");
     if (n > 1)
         throw std::runtime_error("event #" + std::to_string(index) +
                                  " mixes multiple input forms");
@@ -175,6 +194,7 @@ inline const char* validateEventForm(const ScriptEvent& e, std::size_t index) {
     if (e.chord)      return "chord";
     if (e.midi)       return "midi";
     if (e.screenshot) return "screenshot";
+    if (e.patch_kit)  return "patch_kit";
     return "transport";
 }
 
@@ -292,6 +312,43 @@ inline std::vector<TimedScreenshot> flattenScreenshots(const std::vector<ScriptE
 
     std::stable_sort(out.begin(), out.end(),
                      [](const TimedScreenshot& a, const TimedScreenshot& b) {
+                         return a.sample < b.sample;
+                     });
+    return out;
+}
+
+// patch_kit events trigger a synchronous kit-compile + role-patch on the
+// target system at their `at_ms`. We flatten timing here so the driver
+// walks them in order alongside the rest of the event forms; the compile
+// itself (~50 ms for a 16-sample kit) happens inline on the event drain.
+struct TimedKitPatch {
+    std::uint64_t  sample;
+    std::uint32_t  systemIndex;
+    ScriptKitPatch patch;
+};
+
+inline std::vector<TimedKitPatch> flattenKitPatches(const std::vector<ScriptEvent>& events,
+                                                    std::uint32_t sampleRate,
+                                                    std::uint32_t systemCount) {
+    std::vector<TimedKitPatch> out;
+    auto toSample = [sampleRate](std::uint32_t ms) -> std::uint64_t {
+        return (static_cast<std::uint64_t>(ms) * sampleRate) / 1000u;
+    };
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const auto& e = events[i];
+        if (!e.patch_kit.has_value()) continue;
+        const std::uint32_t sysIdx = e.system.value_or(0);
+        if (sysIdx >= systemCount)
+            throw std::runtime_error("event #" + std::to_string(i) +
+                                     " 'system' index " + std::to_string(sysIdx) +
+                                     " is out of range");
+        if (e.patch_kit->slot >= 16)
+            throw std::runtime_error("event #" + std::to_string(i) +
+                                     " 'patch_kit.slot' must be 0..15");
+        out.push_back({toSample(e.at_ms), sysIdx, *e.patch_kit});
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [](const TimedKitPatch& a, const TimedKitPatch& b) {
                          return a.sample < b.sample;
                      });
     return out;

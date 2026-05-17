@@ -34,6 +34,8 @@
 
 #include "native/core/img/png/lodepng.h"
 
+#include "lsdj/KitCompiler.hpp"
+#include "lsdj/KitUtil.hpp"
 #include "project/Project.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
@@ -44,6 +46,7 @@
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/FrameBufferTriple.hpp"
 
@@ -343,6 +346,7 @@ int main(int argc, char** argv) try {
     const auto timedMidi        = flattenMidi       (script.events, script.sample_rate);
     const auto timedScreenshots = flattenScreenshots(script.events, script.sample_rate, systemCount);
     const auto timedTransport   = flattenTransport  (script.events, script.sample_rate);
+    const auto timedKitPatches  = flattenKitPatches (script.events, script.sample_rate, systemCount);
 
     // Simulated host transport state, fed into AudioBlockInfo each block.
     // Mirrors what DPF surfaces from a DAW so LsdjSyncRole and friends can
@@ -351,12 +355,12 @@ int main(int argc, char** argv) try {
     bool   cliTransport = script.transport_running.value_or(false);
     double cliPpq       = 0.0;
 
-    // Per-system MIDI output log. Step 09 is the first step where roles emit
-    // MIDI back to the host (Arduinoboy master mode). The plugin drains
-    // sys->midiOut() into DPF's writeMidiEvent; the CLI doesn't have a host,
-    // so we capture each block's events into a buffer keyed by absolute
-    // sample position. Dumped to `<scriptStem>_midi_sys<N>.txt` after the
-    // render finishes — test scripts grep this for expected clock streams.
+    // Per-system MIDI output log. Roles like Arduinoboy MI.OUT emit MIDI
+    // back to the host; the plugin drains sys->midiOut() into DPF's
+    // writeMidiEvent. The CLI has no host, so we capture each block's
+    // events into a buffer keyed by absolute sample position. Dumped to
+    // `<scriptStem>_midi_sys<N>.txt` after the render finishes — test
+    // scripts grep this for expected clock streams.
     struct MidiLogEntry {
         std::uint64_t sample;
         std::uint32_t size;
@@ -365,10 +369,10 @@ int main(int argc, char** argv) try {
     std::vector<std::vector<MidiLogEntry>> midiLog(systemCount);
 
     // Per-system raw serial-out log. Captures every byte LSDJ writes to its
-    // serial port when the role opted into serial-out capture (Arduinoboy
-    // master mode in step 09). The MIDI log shows what the byte→MIDI decoder
-    // produced; this raw log shows what LSDJ actually emitted, so a mismatch
-    // is diagnosable instead of silent.
+    // serial port when the role opted into serial-out capture (e.g. the
+    // Arduinoboy master mode). The MIDI log shows what the byte→MIDI
+    // decoder produced; this raw log shows what LSDJ actually emitted, so
+    // a mismatch is diagnosable instead of silent.
     struct SerialLogEntry {
         std::uint64_t sample;
         std::uint8_t  byte;
@@ -421,6 +425,12 @@ int main(int argc, char** argv) try {
     std::size_t midiCursor = 0;
     std::size_t shotCursor = 0;
     std::size_t xportCursor = 0;
+    std::size_t kitCursor  = 0;
+
+    // KitCompiler is shared across all patch_kit events so per-sample
+    // SampleCache hits accumulate over the script run (e.g. patching slot
+    // 0 then slot 1 with overlapping samples skips re-decode work).
+    std::unique_ptr<rp::lsdj::KitCompiler> cliKitCompiler;
 
     for (std::uint64_t s = 0; s < totalSamples; s += script.block_size) {
         const std::uint32_t frames =
@@ -430,6 +440,56 @@ int main(int argc, char** argv) try {
             const auto& ev = timedButtons[btnCursor];
             systems[ev.systemIndex]->pressButton(ev.button, ev.down);
             ++btnCursor;
+        }
+
+        // patch_kit events. Compile the kit synchronously here (cli only —
+        // the plugin RPC path heap-allocates + queues; we have no command
+        // queue in the headless renderer), then look up the system's
+        // LsdjKitPatchRole and queue the bytes. The role applies them at
+        // the top of the next process block via onProcessBlock.
+        while (kitCursor < timedKitPatches.size() &&
+               timedKitPatches[kitCursor].sample <= s) {
+            const auto& kp = timedKitPatches[kitCursor];
+            ++kitCursor;
+            auto* sb = dynamic_cast<SameBoySystem*>(systems[kp.systemIndex]);
+            if (!sb) {
+                std::fprintf(stderr,
+                    "[patch_kit] system %u is not SameBoy; skipping\n", kp.systemIndex);
+                continue;
+            }
+            if (!cliKitCompiler) cliKitCompiler = std::make_unique<rp::lsdj::KitCompiler>();
+            std::vector<rp::lsdj::CompileSampleSpec> specs;
+            specs.reserve(kp.patch.samples.size());
+            for (const auto& sample : kp.patch.samples) {
+                rp::lsdj::CompileSampleSpec spec;
+                spec.path = sample.path;
+                spec.name = sample.name;
+                specs.push_back(std::move(spec));
+            }
+            auto compiled = cliKitCompiler->compileKit(kp.patch.name, specs);
+            if (!compiled.ok || compiled.bytes.size() != rp::lsdj::Kit::kSize) {
+                std::fprintf(stderr, "[patch_kit] compile failed: %s\n",
+                             compiled.error.c_str());
+                continue;
+            }
+            LsdjKitPatchRole* role = nullptr;
+            for (auto& r : sb->roles_) {
+                if (r && r->kind() == "lsdj-kit-patch") {
+                    role = static_cast<LsdjKitPatchRole*>(r.get());
+                    break;
+                }
+            }
+            if (!role) {
+                std::fprintf(stderr,
+                    "[patch_kit] system %u has no lsdj-kit-patch role; skipping\n",
+                    kp.systemIndex);
+                continue;
+            }
+            role->queuePatch(kp.patch.slot, std::move(compiled.bytes));
+            std::fprintf(stderr,
+                "[patch_kit] sys=%u slot=%u name='%s' (hash=%016llx) queued\n",
+                kp.systemIndex, kp.patch.slot, kp.patch.name.c_str(),
+                static_cast<unsigned long long>(compiled.hash));
         }
 
         // MIDI is routed through Project::dispatchMidi so the CLI exercises
@@ -534,10 +594,10 @@ int main(int argc, char** argv) try {
             }
             buf.clear();
 
-            // Diagnostic raw serial-out byte log (step 09 follow-up). Only
-            // non-empty when a role opted into serial-out capture; otherwise
-            // a no-op that doesn't touch the file at script end. SameBoy-only;
-            // Mesen has no GB-style serial port.
+            // Diagnostic raw serial-out byte log. Only non-empty when a
+            // role opted into serial-out capture; otherwise a no-op that
+            // doesn't touch the file at script end. SameBoy-only; Mesen
+            // has no GB-style serial port.
             if (auto* sb = dynamic_cast<SameBoySystem*>(systems[i])) {
                 auto& raw = sb->serialOutLog_;
                 for (const auto& [frame, byte] : raw) {
