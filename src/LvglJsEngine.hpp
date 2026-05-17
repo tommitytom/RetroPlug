@@ -42,6 +42,7 @@ public:
     void shutdown();
     int evalModule(const char* filename);
     int evalModuleBuffer(const char* code, size_t len, const char* name);
+    int evalModuleBytecode(const uint8_t* bytecode, size_t len);
     int evalString(const char* code);
     JSContext* getContext() const;
 

@@ -10,10 +10,11 @@ const esbuild = require(path.join(LV_BINDING_DIR, "node_modules/esbuild"));
 const aliasPlugin = require(path.join(LV_BINDING_DIR, "node_modules/esbuild-plugin-alias"));
 
 // Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
-//   node build-ui.js <bundle.js> [bundle_data.c] [bundle.d]
+//   node build-ui.js <bundle.js> [bundle.d]
+// Bytecode compilation (bundle.js → bundle_data.c) is a separate step
+// driven by CMake via txiki's `tjsc` binary.
 const bundleArg = process.argv[2];
-const embedArg  = process.argv[3];
-const depArg    = process.argv[4];
+const depArg    = process.argv[3];
 
 const bundlePath = bundleArg
     ? path.resolve(bundleArg)
@@ -59,14 +60,6 @@ esbuild
     .then((result) => {
         console.log(`UI bundle built: ${bundlePath}`);
 
-        if (embedArg) {
-            const embedPath = path.resolve(embedArg);
-            fs.mkdirSync(path.dirname(embedPath), { recursive: true });
-            const bytes = fs.readFileSync(bundlePath);
-            writeEmbed(embedPath, bytes, "ui_bundle_js");
-            console.log(`UI bundle embedded: ${embedPath} (${bytes.length} bytes)`);
-        }
-
         if (depArg) {
             const depPath = path.resolve(depArg);
             fs.mkdirSync(path.dirname(depPath), { recursive: true });
@@ -77,31 +70,6 @@ esbuild
         console.error(e);
         process.exit(1);
     });
-
-function writeEmbed(outPath, bytes, symbol) {
-    // 16 bytes per line for readability; bundle is ~280KB → ~1.5MB of text.
-    //
-    // We append a trailing 0x00 byte to the array but exclude it from the
-    // reported length. txiki.js / QuickJS's JS_Eval requires the source
-    // buffer to be null-terminated even when a length is supplied
-    // (txiki's own file-loader path does the same — see
-    // deps/lv_binding_js/deps/txiki/src/vm.c, "/* Add null termination,
-    // required by JS_Eval. */"). Without it, the parser reads one byte
-    // past the buffer end and reports a UTF-8 error at a phantom line/col.
-    const parts = ["/* auto-generated; do not edit */\n#include <stddef.h>\n\n"];
-    parts.push(`const unsigned char ${symbol}[] = {\n`);
-    for (let i = 0; i < bytes.length; i += 16) {
-        const chunk = [];
-        for (let j = i; j < i + 16 && j < bytes.length; j++) {
-            chunk.push("0x" + bytes[j].toString(16).padStart(2, "0"));
-        }
-        parts.push("    " + chunk.join(", ") + ",\n");
-    }
-    parts.push("    0x00 /* null terminator for JS_Eval; not counted in _len */\n");
-    parts.push("};\n");
-    parts.push(`const unsigned int ${symbol}_len = ${bytes.length};\n`);
-    fs.writeFileSync(outPath, parts.join(""));
-}
 
 function writeDepfile(depPath, target, metafile) {
     // Make-style depfile: `<target>: <input1> <input2> ...`

@@ -223,13 +223,52 @@ file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/runtime/*.tsx")
 
 add_custom_command(
-    OUTPUT  ${UI_BUNDLE_JS} ${UI_BUNDLE_C}
+    OUTPUT  ${UI_BUNDLE_JS}
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-            ${UI_BUNDLE_JS} ${UI_BUNDLE_C} ${UI_BUNDLE_DEP}
+            ${UI_BUNDLE_JS} ${UI_BUNDLE_DEP}
     DEPENDS ${UI_SOURCES} ${UI_RPC_TS} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
     DEPFILE ${UI_BUNDLE_DEP}
     COMMENT "Building UI bundle"
+    VERBATIM)
+
+# Compile the JS bundle to QuickJS bytecode and embed it as a C byte array.
+# We reuse txiki's `tjsc` binary (added with EXCLUDE_FROM_ALL in
+# deps/lv_binding_js/deps/txiki/CMakeLists.txt — the DEPENDS below forces
+# it to be built when the UI bundle rule fires).
+#
+# Output symbols are `ui_bundle[N]` / `ui_bundle_size` (uint8_t / uint32_t).
+# Flags:
+#   -m  force module mode — the runtime loads the bundle as a module.
+#   -s  strip source (keeps debug line info; -ss would also drop debug).
+#   -p  prefix for emitted C identifiers.
+#
+# Cross-compile note: tjsc is built with the project toolchain. For
+# host != target builds the user must point TJSC_EXECUTABLE at a host-built
+# tjsc binary. The bytecode itself is consumed by the same vendored QuickJS-ng
+# tree, so version skew can't happen unless someone runs a different tjsc.
+set(TJSC_EXECUTABLE "" CACHE FILEPATH
+    "Path to a host-built tjsc/qjsc for bytecode compilation. \
+Leave empty to use the in-tree tjsc target.")
+if(CMAKE_CROSSCOMPILING AND NOT TJSC_EXECUTABLE)
+    message(FATAL_ERROR "Cross-compiling: set -DTJSC_EXECUTABLE=/path/to/host-tjsc")
+endif()
+if(TJSC_EXECUTABLE)
+    set(_TJSC_COMMAND "${TJSC_EXECUTABLE}")
+    set(_TJSC_DEP "${TJSC_EXECUTABLE}")
+else()
+    set(_TJSC_COMMAND "$<TARGET_FILE:tjsc>")
+    set(_TJSC_DEP tjsc)
+endif()
+
+add_custom_command(
+    OUTPUT  ${UI_BUNDLE_C}
+    COMMAND ${_TJSC_COMMAND}
+            -m -s -p ui_
+            -o ${UI_BUNDLE_C}
+            ${UI_BUNDLE_JS}
+    DEPENDS ${UI_BUNDLE_JS} ${_TJSC_DEP}
+    COMMENT "Compiling UI bundle to QuickJS bytecode"
     VERBATIM)
 
 # create plugin build target
