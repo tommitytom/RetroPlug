@@ -10,6 +10,10 @@
 
 set -e
 
+# Allow the current user to create sibling worktrees
+sudo chmod 775 /workspaces
+sudo chown "$(id -u):$(id -g)" /workspaces
+
 cd "$(dirname "$0")/.."
 
 # Wire Claude Code state into the named volume mounted at /var/claude-state.
