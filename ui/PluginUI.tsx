@@ -488,6 +488,7 @@ function PluginUI() {
             ) : kitEditorOpen ? (
                 <KitEditor
                     systemId={focusedId}
+                    sinkGroup={sinkGroupRef.current}
                     onClose={() => setKitEditorOpen(false)}
                 />
             ) : (
