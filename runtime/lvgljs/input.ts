@@ -9,8 +9,11 @@
 //     SameBoy's GB_key_t — values must stay in sync)
 //   - the useKeyboard React hook for subscribing to the event channel
 //
-// Plugins or extensions can rebind by editing this file; the JS bundle hot-
-// reloads, no C++ rebuild needed.
+// Bindings are runtime-configurable. The startup defaults below mirror the
+// previous hardcoded set so the bundle still works before installBindings()
+// is called. Plugin code in ui/PluginUI.tsx calls plugin.getUserConfig() on
+// mount and pipes the result through installBindings(); a subsequent
+// "user-config-changed" event from C++ re-fetches and re-installs.
 
 import { useEffect } from "react";
 import { on, off } from "lvgljs";
@@ -29,6 +32,18 @@ export enum GameboyButton {
     Start  = 7,
 }
 
+// Stable name → enum table so JSON config can refer to buttons by name.
+const BUTTON_BY_NAME: Record<string, GameboyButton> = {
+    Right:  GameboyButton.Right,
+    Left:   GameboyButton.Left,
+    Up:     GameboyButton.Up,
+    Down:   GameboyButton.Down,
+    A:      GameboyButton.A,
+    B:      GameboyButton.B,
+    Select: GameboyButton.Select,
+    Start:  GameboyButton.Start,
+};
+
 // DPF key constants (deps/dpf/dgl/Base.hpp). Only the ones we currently use.
 // Arrows live in the 0xE03x band (after PageUp/Down/End/Home); modifiers are
 // up at 0xE05x — easy to confuse, double-check the header before adding more.
@@ -44,6 +59,119 @@ export const KEY_DOWN      = 0xE038;
 export const KEY_SHIFT_L   = 0xE051;
 export const KEY_SHIFT_R   = 0xE052;
 
+// Symbolic key name (as used in JSON config files) → DPF key code.
+// Single-char ASCII names ("Z", "x", "1") are resolved by charCodeAt below
+// without needing an entry here — the table only carries the named keys.
+const KEY_NAME_TO_DPF: Record<string, number> = {
+    Backspace: KEY_BACKSPACE,
+    Tab:       KEY_TAB,
+    Enter:     KEY_ENTER,
+    Return:    KEY_ENTER,
+    Escape:    KEY_ESCAPE,
+    Left:      KEY_LEFT,
+    Up:        KEY_UP,
+    Right:     KEY_RIGHT,
+    Down:      KEY_DOWN,
+    ShiftL:    KEY_SHIFT_L,
+    ShiftR:    KEY_SHIFT_R,
+};
+
+function resolveKeyName(name: string): number | null {
+    if (name in KEY_NAME_TO_DPF) return KEY_NAME_TO_DPF[name];
+    if (name.length === 1) return name.charCodeAt(0);
+    return null;
+}
+
+// Runtime maps populated either from the hardcoded defaults below (initial
+// state) or from a user JSON profile (after installBindings runs).
+let keyMap_: Map<number, GameboyButton> = new Map();
+let padMap_: Map<string, GameboyButton> = new Map();
+
+// The default profile — also written to bindings/default.json on first run
+// by the C++ side (see src/config/UserConfigSerialization.hpp). Kept here
+// too so JS works before any RPC hop completes.
+const DEFAULT_KEYBOARD: Record<string, string[]> = {
+    Right:  ["Right"],
+    Left:   ["Left"],
+    Up:     ["Up"],
+    Down:   ["Down"],
+    A:      ["Z", "z"],
+    B:      ["X", "x"],
+    Start:  ["Enter"],
+    Select: ["ShiftL", "ShiftR", "Backspace"],
+};
+
+const DEFAULT_GAMEPAD: Record<string, string[]> = {
+    Right:  ["dpright"],
+    Left:   ["dpleft"],
+    Up:     ["dpup"],
+    Down:   ["dpdown"],
+    A:      ["a"],
+    B:      ["b"],
+    Start:  ["start"],
+    Select: ["back"],
+};
+
+function rebuildKeyboardMap(spec: Record<string, string[]>): Map<number, GameboyButton> {
+    const out = new Map<number, GameboyButton>();
+    for (const [buttonName, keyNames] of Object.entries(spec)) {
+        const button = BUTTON_BY_NAME[buttonName];
+        if (button === undefined) {
+            console.warn(`[bindings] unknown Game Boy button "${buttonName}" — skipped`);
+            continue;
+        }
+        for (const k of keyNames) {
+            const code = resolveKeyName(k);
+            if (code === null) {
+                console.warn(`[bindings] unknown key name "${k}" for button ${buttonName} — skipped`);
+                continue;
+            }
+            out.set(code, button);
+        }
+    }
+    return out;
+}
+
+function rebuildGamepadMap(spec: Record<string, string[]>): Map<string, GameboyButton> {
+    const out = new Map<string, GameboyButton>();
+    for (const [buttonName, padNames] of Object.entries(spec)) {
+        const button = BUTTON_BY_NAME[buttonName];
+        if (button === undefined) {
+            console.warn(`[bindings] unknown Game Boy button "${buttonName}" — skipped`);
+            continue;
+        }
+        // SDL canonical button names are strings — no lookup table needed.
+        for (const n of padNames) out.set(n, button);
+    }
+    return out;
+}
+
+// Initial population — overridden once the JS side fetches user config.
+keyMap_ = rebuildKeyboardMap(DEFAULT_KEYBOARD);
+padMap_ = rebuildGamepadMap(DEFAULT_GAMEPAD);
+
+// Shape used by installBindings() — matches BindingMapJson on the C++ side
+// (src/config/UserConfigSerialization.hpp). The schemaVersion / name fields
+// are present in the wire DTO but irrelevant to the runtime maps.
+export interface BindingsSpec {
+    keyboard: Record<string, string[]>;
+    gamepad:  Record<string, string[]>;
+}
+
+/**
+ * Rebuild the keyboard + gamepad runtime maps from a bindings spec.
+ * Called once on UI mount with the result of plugin.getUserConfig(), and
+ * again whenever the C++ side emits "user-config-changed".
+ *
+ * Unknown key names or button names are logged and skipped — they don't
+ * fail the whole install. Missing entries fall through to no mapping (so
+ * a button left out of the JSON simply becomes unbound, not defaulted).
+ */
+export function installBindings(spec: BindingsSpec): void {
+    keyMap_ = rebuildKeyboardMap(spec.keyboard ?? {});
+    padMap_ = rebuildGamepadMap(spec.gamepad ?? {});
+}
+
 /**
  * Map a DPF key code to a Game Boy button. Returns null for unmapped keys.
  *
@@ -54,26 +182,12 @@ export const KEY_SHIFT_R   = 0xE052;
  *   Enter       → Start
  *   Shift / Backspace → Select
  *
- * Edit here to rebind — no C++ rebuild required.
+ * Edit ~/.config/retroplug/bindings/default.json (or the platform-equivalent)
+ * to rebind without a rebuild — see src/config/UserConfig.hpp.
  */
 export function mapKeyToGameboyButton(key: number): GameboyButton | null {
-    switch (key) {
-        case KEY_LEFT:           return GameboyButton.Left;
-        case KEY_RIGHT:          return GameboyButton.Right;
-        case KEY_UP:             return GameboyButton.Up;
-        case KEY_DOWN:           return GameboyButton.Down;
-        case KEY_ENTER:          return GameboyButton.Start;
-        case KEY_SHIFT_L:
-        case KEY_SHIFT_R:
-        case KEY_BACKSPACE:      return GameboyButton.Select;
-        case 0x7A: // 'z'
-        case 0x5A: // 'Z'
-            return GameboyButton.A;
-        case 0x78: // 'x'
-        case 0x58: // 'X'
-            return GameboyButton.B;
-        default:                 return null;
-    }
+    const b = keyMap_.get(key);
+    return b === undefined ? null : b;
 }
 
 /**
@@ -115,17 +229,8 @@ export function useKeyboard(handler: (key: number, press: boolean) => void) {
  * Guide, paddles, etc.) — let JS handle those for UI nav if it wants.
  */
 export function mapGamepadButtonToGameboyButton(button: string): GameboyButton | null {
-    switch (button) {
-        case "dpleft":  return GameboyButton.Left;
-        case "dpright": return GameboyButton.Right;
-        case "dpup":    return GameboyButton.Up;
-        case "dpdown":  return GameboyButton.Down;
-        case "a":       return GameboyButton.A;
-        case "b":       return GameboyButton.B;
-        case "start":   return GameboyButton.Start;
-        case "back":    return GameboyButton.Select;
-        default:        return null;
-    }
+    const b = padMap_.get(button);
+    return b === undefined ? null : b;
 }
 
 /** React hook: subscribe to the "gamepad-button" event channel. */
