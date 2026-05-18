@@ -391,6 +391,18 @@ protected:
                     projectMutated = true;
                 } break;
 
+                case Command::Kind::SubscribeMemory: {
+                    auto& sm = cmd.payload.subscribeMemory;
+                    if (SystemBase* sys = project.findSystem(sm.systemId))
+                        sys->enableMemorySnapshot(sm.type);
+                } break;
+
+                case Command::Kind::UnsubscribeMemory: {
+                    auto& um = cmd.payload.unsubscribeMemory;
+                    if (SystemBase* sys = project.findSystem(um.systemId))
+                        sys->disableMemorySnapshot(um.type);
+                } break;
+
                 case Command::Kind::LoadProject: {
                     std::string* json = cmd.payload.loadProject.json;
                     if (json) {

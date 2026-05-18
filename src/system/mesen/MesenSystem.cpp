@@ -20,6 +20,7 @@
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/EventType.h"
+#include "Core/Shared/MemoryType.h"
 #include "Core/Shared/MessageManager.h"
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
@@ -243,6 +244,46 @@ void MesenSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
         outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
         outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
     }
+
+    // Tear-free memory snapshots for any UI subscriptions. End-of-block =
+    // internally consistent state because the CPU isn't mid-instruction.
+    publishMemorySnapshots();
+}
+
+rp::MemoryAccessor MesenSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+    if (!emu_) return rp::MemoryAccessor{};
+
+    ::MemoryType native;
+    switch (type) {
+        case rp::MemoryType::Ram:          native = ::MemoryType::NesInternalRam;  break;
+        case rp::MemoryType::Rom:          native = ::MemoryType::NesPrgRom;       break;
+        case rp::MemoryType::Sram:         native = ::MemoryType::NesSaveRam;      break;
+        case rp::MemoryType::OAM:          native = ::MemoryType::NesSpriteRam;    break;
+        case rp::MemoryType::NametableRam: native = ::MemoryType::NesNametableRam; break;
+        case rp::MemoryType::Vram: {
+            // NES carts ship either CHR-ROM (fixed graphics) or CHR-RAM
+            // (writable graphics). Prefer the RAM view; fall through to ROM
+            // when the cart has no CHR-RAM region.
+            ConsoleMemoryInfo info = emu_->GetMemory(::MemoryType::NesChrRam);
+            if (info.Memory && info.Size > 0) {
+                return rp::MemoryAccessor{type, access,
+                                          static_cast<std::uint8_t*>(info.Memory),
+                                          info.Size};
+            }
+            native = ::MemoryType::NesChrRom;
+            break;
+        }
+        case rp::MemoryType::IORegisters:
+        case rp::MemoryType::HRam:
+        case rp::MemoryType::ExtWorkRam:
+        default: return rp::MemoryAccessor{};
+    }
+
+    ConsoleMemoryInfo info = emu_->GetMemory(native);
+    if (!info.Memory || info.Size == 0) return rp::MemoryAccessor{};
+    return rp::MemoryAccessor{type, access,
+                              static_cast<std::uint8_t*>(info.Memory),
+                              info.Size};
 }
 
 SystemConfig MesenSystem::snapshotConfig() const {

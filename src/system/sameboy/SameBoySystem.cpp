@@ -491,6 +491,10 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
     // next block starts empty. midiOut_ is drained by PluginDSP after
     // Project::onProcess returns.
     pendingMidi_.clear();
+
+    // Tear-free memory snapshots for any UI subscriptions. Done AFTER role
+    // processing so kit patches applied this block are visible immediately.
+    publishMemorySnapshots();
 }
 
 void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
@@ -502,6 +506,30 @@ void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}
     finishBlock(info, outs);
+}
+
+rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+    if (!gb_) return rp::MemoryAccessor{};
+
+    GB_direct_access_t native;
+    switch (type) {
+        case rp::MemoryType::Ram:         native = GB_DIRECT_ACCESS_RAM;       break;
+        case rp::MemoryType::Rom:         native = GB_DIRECT_ACCESS_ROM;       break;
+        case rp::MemoryType::Sram:        native = GB_DIRECT_ACCESS_CART_RAM;  break;
+        case rp::MemoryType::Vram:        native = GB_DIRECT_ACCESS_VRAM;      break;
+        case rp::MemoryType::IORegisters: native = GB_DIRECT_ACCESS_IO;        break;
+        case rp::MemoryType::HRam:        native = GB_DIRECT_ACCESS_HRAM;      break;
+        case rp::MemoryType::OAM:         native = GB_DIRECT_ACCESS_OAM;       break;
+        case rp::MemoryType::NametableRam:
+        case rp::MemoryType::ExtWorkRam:
+        default:                          return rp::MemoryAccessor{};
+    }
+
+    std::size_t   size = 0;
+    std::uint16_t bank = 0; // unused; full buffer is returned linearly
+    void* data = GB_get_direct_access(gb_, native, &size, &bank);
+    if (!data || size == 0) return rp::MemoryAccessor{};
+    return rp::MemoryAccessor{type, access, static_cast<std::uint8_t*>(data), size};
 }
 
 SystemConfig SameBoySystem::snapshotConfig() const {

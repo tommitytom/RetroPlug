@@ -8,6 +8,7 @@
 
 #include "project/ProjectConfig.hpp"
 #include "system/InputTypes.hpp"
+#include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
 
 class SystemBase;
@@ -107,6 +108,21 @@ struct PatchKitCommand {
     std::vector<std::uint8_t>* bytes;       // exactly Kit::kSize on the wire
 };
 
+// Refcounted live-memory-snapshot subscription. The UI-side registry on
+// PluginRpcService sends Subscribe on the 0→1 refcount transition and
+// Unsubscribe on the 1→0 transition; the DSP allocates / frees the
+// per-(system, type) MemorySnapshotTriple between blocks. After this lands
+// the system's onProcess publishes the region to UI-readable triple-buffers.
+struct SubscribeMemoryCommand {
+    SystemId       systemId;
+    rp::MemoryType type;
+};
+
+struct UnsubscribeMemoryCommand {
+    SystemId       systemId;
+    rp::MemoryType type;
+};
+
 struct Command {
     enum class Kind : std::uint8_t {
         None              = 0,
@@ -120,6 +136,8 @@ struct Command {
         SetMidiRouting    = 8,
         SetLsdjSyncConfig = 9,
         PatchKit          = 10,
+        SubscribeMemory   = 11,
+        UnsubscribeMemory = 12,
     };
 
     Kind kind = Kind::None;
@@ -134,6 +152,8 @@ struct Command {
         SetMidiRoutingCommand    setMidiRouting;
         SetLsdjSyncConfigCommand setLsdjSyncConfig;
         PatchKitCommand          patchKit;
+        SubscribeMemoryCommand   subscribeMemory;
+        UnsubscribeMemoryCommand unsubscribeMemory;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -209,6 +229,20 @@ struct Command {
         Command c;
         c.kind = Kind::PatchKit;
         c.payload.patchKit = PatchKitCommand{id, kitIndex, bytes};
+        return c;
+    }
+
+    static Command makeSubscribeMemory(SystemId id, rp::MemoryType type) {
+        Command c;
+        c.kind = Kind::SubscribeMemory;
+        c.payload.subscribeMemory = SubscribeMemoryCommand{id, type};
+        return c;
+    }
+
+    static Command makeUnsubscribeMemory(SystemId id, rp::MemoryType type) {
+        Command c;
+        c.kind = Kind::UnsubscribeMemory;
+        c.payload.unsubscribeMemory = UnsubscribeMemoryCommand{id, type};
         return c;
     }
 };

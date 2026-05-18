@@ -51,6 +51,10 @@ public:
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
+    // MemoryType → Mesen MemoryType. Maps to Nes* regions; returns invalid
+    // for IORegisters / HRam / ExtWorkRam (GB / GBA only).
+    rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+
     SystemConfig snapshotConfig() const override;
 
     void setGainDb(float dB);

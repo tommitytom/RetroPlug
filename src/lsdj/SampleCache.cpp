@@ -4,6 +4,8 @@
 #include <fstream>
 #include <ios>
 
+#include "util/Hash.hpp"
+
 // miniaudio's decoder API only — no playback / device init. Defining the
 // minimum set of MA flags keeps the implementation translation unit small.
 #define MA_NO_DEVICE_IO
@@ -65,13 +67,7 @@ SampleData decode(const std::vector<std::uint8_t>& fileData) {
 } // namespace
 
 std::uint64_t SampleCache::hashBytes(const std::uint8_t* data, std::size_t size) {
-    // FNV-1a 64-bit. Not cryptographic, but plenty for dedupe + dirty tracking.
-    std::uint64_t h = 0xcbf29ce484222325ULL;
-    for (std::size_t i = 0; i < size; ++i) {
-        h ^= static_cast<std::uint64_t>(data[i]);
-        h *= 0x100000001b3ULL;
-    }
-    return h;
+    return rp::hash::fnv1a64(data, size);
 }
 
 const SampleData* SampleCache::getOrLoad(const std::string& path) {

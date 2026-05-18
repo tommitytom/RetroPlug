@@ -101,6 +101,13 @@ public:
     // are registered, but required if any future method goes async.
     void pumpAsync();
 
+    // Walks the service's live-memory subscription registry, reads the
+    // latest tear-free snapshot for each, hashes for dedup, and emits a
+    // `"memory"` event with (systemId, type, ArrayBuffer, version) when
+    // the snapshot has changed since the last emit. Called from
+    // PluginUI::uiIdle; cheap when there are no active subscriptions.
+    void pumpMemorySnapshots();
+
 private:
     // rpcpp transport — single sync entry point exposed to QuickJS. Body
     // calls rpcServer_->processMessage and returns either the inline

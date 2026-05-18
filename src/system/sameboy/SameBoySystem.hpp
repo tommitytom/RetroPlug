@@ -59,6 +59,12 @@ public:
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
+    // MemoryType → GB_DIRECT_ACCESS_* mapping. Returns invalid for
+    // NametableRam / ExtWorkRam (NES / GBA only). For ROM/SRAM the returned
+    // accessor spans the full backing buffer; the current banking window
+    // is not reflected.
+    rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+
     SystemConfig snapshotConfig() const override;
 
     // Per-block driver split out of onProcess so LinkGroup can interleave
