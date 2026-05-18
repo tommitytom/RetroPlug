@@ -75,7 +75,13 @@ TEST_CASE("MemorySnapshotTriple raw readInto rejects too-small destination", "[M
 
 TEST_CASE("MemorySnapshotTriple stress: concurrent writes and reads stay tear-free",
           "[MemorySnapshotTriple]") {
-    constexpr std::size_t kStressIterations = 10000;
+    // Single-reader / single-writer race. Mirrors the FrameBufferTriple
+    // stress pattern: count torn vs good reads with atomics and assert
+    // ONLY from the main thread after both worker threads have joined —
+    // Catch2 REQUIRE from a non-main thread isn't reliable.
+    //
+    // Each slot encodes its frame value v in byte 0, v+1 in byte 1, etc.
+    // A torn snapshot would mix bytes from two different v values.
     MemorySnapshotTriple m(kSize);
 
     // Prime first publish so the reader's "before == 0" guard doesn't bail.
@@ -83,33 +89,35 @@ TEST_CASE("MemorySnapshotTriple stress: concurrent writes and reads stay tear-fr
     m.publish();
 
     std::atomic<bool> stop{false};
-    std::atomic<std::uint64_t> readsOk{0};
+    std::atomic<std::uint64_t> tornReads{0};
+    std::atomic<std::uint64_t> goodReads{0};
 
     std::thread writer([&] {
-        for (std::size_t i = 0; i < kStressIterations; ++i) {
-            const std::uint8_t v = static_cast<std::uint8_t>(i & 0xFF);
-            fillSlot(m.writeSlot(), kSize, v);
+        for (std::uint32_t v = 1; !stop.load(std::memory_order_acquire); ++v) {
+            const std::uint8_t base = static_cast<std::uint8_t>(v & 0xFF);
+            fillSlot(m.writeSlot(), kSize, base);
             m.publish();
         }
-        stop.store(true);
     });
 
     std::thread reader([&] {
         std::vector<std::uint8_t> dst(kSize, 0);
-        while (!stop.load()) {
+        for (std::uint64_t r = 0; r < 100'000; ++r) {
             if (!m.readInto(dst)) continue;
-            // Every byte must be (base + offset) for SOME consistent base.
             const std::uint8_t base = dst[0];
-            bool ok = true;
-            for (std::size_t i = 0; i < kSize; ++i) {
-                if (dst[i] != static_cast<std::uint8_t>(base + i)) { ok = false; break; }
+            bool torn = false;
+            for (std::size_t i = 1; i < kSize; ++i) {
+                if (dst[i] != static_cast<std::uint8_t>(base + i)) { torn = true; break; }
             }
-            REQUIRE(ok);
-            if (ok) ++readsOk;
+            if (torn) tornReads.fetch_add(1, std::memory_order_relaxed);
+            else      goodReads.fetch_add(1, std::memory_order_relaxed);
         }
+        stop.store(true, std::memory_order_release);
     });
 
-    writer.join();
     reader.join();
-    REQUIRE(readsOk.load() > 0);
+    writer.join();
+
+    REQUIRE(goodReads.load() > 0);
+    REQUIRE(tornReads.load() == 0);
 }

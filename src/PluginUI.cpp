@@ -346,17 +346,19 @@ protected:
         // RPC-event emit lives here.
         userConfig.pumpReloadsOnUiThread();
 
-        // Drain the rpcpp transport's outgoing queue — async/notification
-        // frames land in `engine.emit("rpc-message", ...)` for the JS
-        // transport to forward to its onFrame handler. No-op while only
-        // sync handlers are registered.
-        if (bridge) bridge->pumpAsync();
-
         // Walk live memory subscriptions, read tear-free snapshots from the
-        // DSP-published triple-buffers, hash for dedup, emit "memory" events
-        // for any region that changed since the last tick. Cheap when no
-        // subscriptions are active.
+        // DSP-published triple-buffers, hash for dedup, push "memory"
+        // notifications through the rpcpp transport for any region that
+        // changed since the last tick. Cheap when no subscriptions are
+        // active. Runs BEFORE pumpAsync so notifications added here drain
+        // in the same uiIdle tick rather than landing on the next one.
         if (bridge) bridge->pumpMemorySnapshots();
+
+        // Drain the rpcpp transport's outgoing queue — async resolver
+        // responses AND notification frames (incl. memory snapshots) land
+        // in `engine.emit("rpc-message", ...)` for the JS transport to
+        // forward to its onFrame handler.
+        if (bridge) bridge->pumpAsync();
 
         // Emit a per-tick "frame" event so React's <EmulatorTile> knows to
         // poll plugin.getFrame. One emit per UI idle ties cadence to LVGL's
