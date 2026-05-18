@@ -2,10 +2,13 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <span>
 #include <utility>
 #include <vector>
+
+#include <rfl/Bytestring.hpp>
 
 #include "RpcEnvelope.h"
 #include "project/Project.hpp"
@@ -16,6 +19,21 @@
 extern "C" {
     #include <quickjs.h>
 }
+
+namespace {
+
+// Wire shape of a `"memory"` JSON-RPC notification. Mirrored on the JS side
+// by the useMemory hook in ui/plugin/memory.ts. The struct is reflected by
+// rpcpp's TypedRpcServer::writeNotification<T> path so bytes ride msgpack BIN
+// without going through rfl::Generic.
+struct MemoryNotificationPayload {
+    std::uint32_t   systemId;
+    std::uint32_t   type;
+    rfl::Bytestring bytes;
+    std::uint32_t   version;
+};
+
+} // namespace
 
 namespace {
 
@@ -189,12 +207,9 @@ void PluginJsBridge::pumpAsync() {
 }
 
 void PluginJsBridge::pumpMemorySnapshots() {
-    if (!rpcService_ || !project_) return;
+    if (!rpcService_ || !rpcServer_ || !project_) return;
     auto& subs = rpcService_->memorySubs();
     if (subs.empty()) return;
-
-    JSContext* ctx = engine.getContext();
-    if (!ctx) return;
 
     const auto nowNs = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -226,15 +241,22 @@ void PluginJsBridge::pumpMemorySnapshots() {
         state.lastEmitNs = nowNs;
         ++state.version;
 
-        JSValue argv[4] = {
-            JS_NewUint32(ctx, key.systemId),
-            JS_NewUint32(ctx, static_cast<std::uint32_t>(key.type)),
-            JS_NewArrayBufferCopy(ctx,
-                buf.data(),
-                buf.size()),
-            JS_NewUint32(ctx, state.version),
-        };
-        engine.emit("memory", 4, argv);
-        for (JSValue& v : argv) JS_FreeValue(ctx, v);
+        // Push a JSON-RPC notification through the rpcpp transport. pumpAsync
+        // (called immediately after this method in PluginUI::uiIdle) drains
+        // the transport into engine.emit("rpc-message", ab); the JS-side
+        // rpcpp client decodes the frame, sees an isNotification envelope,
+        // and dispatches to plugin.$on("memory", ...) subscribers. Keeps
+        // this entire path off the QuickJS-direct API so the web port can
+        // swap QueueTransport for a postMessage transport with no further
+        // changes.
+        MemoryNotificationPayload payload;
+        payload.systemId = key.systemId;
+        payload.type     = static_cast<std::uint32_t>(key.type);
+        payload.bytes.resize(buf.size());
+        if (!buf.empty()) {
+            std::memcpy(payload.bytes.data(), buf.data(), buf.size());
+        }
+        payload.version  = state.version;
+        rpcServer_->writeNotification("memory", payload);
     }
 }

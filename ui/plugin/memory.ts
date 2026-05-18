@@ -5,7 +5,6 @@
 // stay in sync with the C++ enum.
 
 import { useEffect, useState } from "react";
-import { on, off } from "lvgljs";
 
 import { plugin } from "./client";
 
@@ -24,6 +23,17 @@ export enum MemoryType {
 export interface MemorySnapshot {
     bytes:   Uint8Array;
     version: number;
+}
+
+// Wire shape of the `"memory"` JSON-RPC notification pushed from the C++
+// DSP. Mirrors `MemoryNotificationPayload` in src/PluginJsBridge.cpp.
+// Fields arrive as a structured msgpack map; `bytes` rides msgpack BIN
+// (decoded as Uint8Array by MsgpackCodec on this side).
+interface MemoryNotification {
+    systemId: number;
+    type:     number;
+    bytes:    Uint8Array;
+    version:  number;
 }
 
 /**
@@ -50,17 +60,17 @@ export function useMemory(
     useEffect(() => {
         let cancelled = false;
 
-        const handler = (
-            sysId: number,
-            memType: number,
-            bytes: ArrayBuffer,
-            version: number,
-        ) => {
+        // Server-pushed notification via rpcpp. The C++ side calls
+        // RpcServer::writeNotification("memory", payload); the JS rpcpp
+        // client decodes it and dispatches here. Single-arg payload is
+        // the params object the C++ struct serializes to.
+        const handler = (params: unknown) => {
             if (cancelled) return;
-            if (sysId !== systemId || memType !== type) return;
-            setSnapshot({ bytes: new Uint8Array(bytes), version });
+            const p = params as MemoryNotification;
+            if (p.systemId !== systemId || p.type !== type) return;
+            setSnapshot({ bytes: p.bytes, version: p.version });
         };
-        on("memory", handler);
+        plugin.$on("memory", handler);
 
         plugin.subscribeMemory(systemId, type, hz).catch((err) => {
             console.error("[useMemory] subscribeMemory failed", err);
@@ -68,7 +78,7 @@ export function useMemory(
 
         return () => {
             cancelled = true;
-            off("memory", handler);
+            plugin.$off("memory", handler);
             plugin.unsubscribeMemory(systemId, type).catch((err) => {
                 console.error("[useMemory] unsubscribeMemory failed", err);
             });
