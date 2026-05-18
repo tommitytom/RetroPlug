@@ -14,6 +14,7 @@
 #include "transports/QueueTransport.h"
 
 int main() {
+    // TODO: This is duplicated, they should come from the same source
     PluginRpcService service(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     rpcpp::QueueTransport<rpcpp::MsgpackCodec> transport;
     rpcpp::TypedRpcServer<PluginRpcService, rpcpp::MsgpackCodec> server(service, transport);
@@ -43,6 +44,9 @@ int main() {
     server.addMethod<&PluginRpcService::openSampleBrowser>();
     server.addMethod<&PluginRpcService::getUserConfig>();
     server.addMethod<&PluginRpcService::setActiveBindings>();
+    server.addMethod<&PluginRpcService::getMemory>();
+    server.addMethod<&PluginRpcService::subscribeMemory>();
+    server.addMethod<&PluginRpcService::unsubscribeMemory>();
     server.addDiscoveryMethod();
 
     std::cout << server.dumpSchema() << std::endl;

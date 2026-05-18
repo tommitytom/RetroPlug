@@ -13,6 +13,8 @@ add_executable(retroplug-tests
     EventQueueTests.cpp
     FrameBufferTripleTests.cpp
     KitUtilTests.cpp
+    MemoryAccessorTests.cpp
+    MemorySnapshotTripleTests.cpp
     ProjectTests.cpp
     RomSnifferTests.cpp
     UserConfigTests.cpp
@@ -51,6 +53,7 @@ catch_discover_tests(retroplug-tests)
 add_executable(retroplug-mesen-tests
     MesenSingletonsTests.cpp
     MesenMultiInstanceTests.cpp
+    ../src/system/SystemBase.cpp
     ../src/system/mesen/MesenSystem.cpp
     ../src/system/mesen/MesenVideoDevice.cpp
     ../src/system/mesen/roles/NesN8MidiRole.cpp

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 
 #include "config/UserConfigSerialization.hpp"
 #include "lsdj/Effects.hpp"
+#include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
 
 class Project;
@@ -112,6 +114,16 @@ public:
         rfl::Bytestring pcmF32;               // mono float32 LE
     };
 
+    // Cold-path memory read response. `regionSize` is the full size of the
+    // requested region (independent of the caller's length); `bytes` is the
+    // sliced window. Empty / nullopt = unknown system / unsupported type /
+    // out-of-range offset.
+    struct MemorySnapshotResponse {
+        rfl::Bytestring bytes;
+        std::uint64_t   hash       = 0;
+        std::uint32_t   regionSize = 0;
+    };
+
     struct OpenRomOpts {
         std::optional<std::string> mode;  // "add" | "replace" (default replace)
     };
@@ -193,6 +205,49 @@ public:
     UserConfigDto getUserConfig();
     bool          setActiveBindings(std::string name);
 
+    // -- Memory snapshot API ----------------------------------------------
+    //
+    // One-shot read of an emulator region. Torn reads from live memory are
+    // accepted for this cold path. Large regions (ROM, GBA EWRAM, large
+    // SRAM) are allowed — no size cap.
+    std::optional<MemorySnapshotResponse> getMemory(
+        std::uint32_t systemId,
+        std::uint32_t type,
+        std::uint32_t offset,
+        std::uint32_t length);
+
+    // Refcounted live-stream subscription. The DSP allocates a per-(system,
+    // type) triple-buffer on the first subscriber and frees it on the last.
+    // Returns false if the type is unsupported on the target system or the
+    // region exceeds the streamable size cap (use one-shot getMemory then).
+    bool subscribeMemory(std::uint32_t systemId,
+                         std::uint32_t type,
+                         std::uint32_t hz);
+
+    bool unsubscribeMemory(std::uint32_t systemId,
+                           std::uint32_t type);
+
+    // PluginJsBridge integration. The bridge calls pumpMemorySnapshots from
+    // uiIdle; this struct holds the per-sub state it needs (hz throttle,
+    // dedup hash, monotonic version counter for React memoization).
+    struct MemorySubKey {
+        SystemId       systemId;
+        rp::MemoryType type;
+        bool operator<(const MemorySubKey& other) const {
+            if (systemId != other.systemId) return systemId < other.systemId;
+            return static_cast<std::uint8_t>(type) < static_cast<std::uint8_t>(other.type);
+        }
+    };
+    struct MemorySubState {
+        std::uint32_t hz         = 0;   // 0 = no cadence cap
+        std::uint64_t lastEmitNs = 0;   // steady_clock since-epoch
+        std::uint64_t lastHash   = 0;
+        std::uint32_t version    = 0;   // 0 = nothing emitted yet
+    };
+    using MemorySubRegistry = std::map<MemorySubKey, MemorySubState>;
+    MemorySubRegistry&       memorySubs()       { return memorySubs_; }
+    const MemorySubRegistry& memorySubs() const { return memorySubs_; }
+
 private:
     // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
     // because the service owns the file IO + system construction.
@@ -227,4 +282,6 @@ private:
     IsWindowSizeControlledFn  isWindowSizeControlled_;
 
     PendingFileMode           pendingFileMode_      = PendingFileMode::LoadRom;
+
+    MemorySubRegistry         memorySubs_;
 };

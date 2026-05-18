@@ -1,21 +1,15 @@
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 
 #include <cstdio>
-#include <cstring>
 
 #include "lsdj/KitUtil.hpp"
 #include "lsdj/OffsetLookup.hpp"
+#include "system/MemoryAccessor.hpp"
+#include "system/MemoryType.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
-
-extern "C" {
-#define GB_INTERNAL
-#include <gb.h>
-}
 
 namespace {
 
-// SameBoy stores each ROM bank at offset `bank * 0x4000` in its internal
-// ROM buffer. Same layout as our `rom_` mirror, so the offsets align.
 constexpr std::size_t kBankSize = rp::lsdj::Kit::kSize;
 
 void applyOne(SameBoySystem& system,
@@ -30,25 +24,15 @@ void applyOne(SameBoySystem& system,
     const std::size_t bank   = rp::lsdj::OffsetLookup::kitBankForSlot(kitIndex);
     const std::size_t offset = bank * kBankSize;
 
-    // Mirror copy so SameBoySystem::snapshotConfig sees the patched ROM
-    // on project save.
-    if (system.rom_.size() >= offset + kBankSize) {
-        std::memcpy(system.rom_.data() + offset, bytes.data(), kBankSize);
-    }
-
-    // Live emulator: poke the byte under the running CPU. GB_get_direct_access
-    // returns the ROM buffer SameBoy actually reads from, so a memcpy here
-    // affects subsequent reads with no further coordination. Safe under the
-    // DSP thread because we're inside `onProcessBlock` between GB_run steps.
-    if (system.gb_) {
-        std::size_t romSize = 0;
-        std::uint16_t b = 0;
-        void* rom = GB_get_direct_access(system.gb_, GB_DIRECT_ACCESS_ROM, &romSize, &b);
-        if (rom && romSize >= offset + kBankSize) {
-            std::memcpy(static_cast<std::uint8_t*>(rom) + offset,
-                        bytes.data(), kBankSize);
-        }
-    }
+    // Live emulator ROM. The accessor wraps SameBoy's internal ROM buffer
+    // (via GB_get_direct_access); writing here affects subsequent CPU
+    // reads. Safe under the DSP thread because we're inside onProcessBlock
+    // between GB_run steps. `system.rom_` is the immutable base ROM and is
+    // left untouched — the patched bytes are persisted via
+    // LsdjKitConfig::compiledBytes and re-applied on project reload.
+    rp::MemoryAccessor rom = system.getMemory(rp::MemoryType::Rom, rp::AccessType::ReadWrite);
+    if (!rom.valid()) return;
+    rom.write(offset, bytes.data(), bytes.size());
 }
 
 } // namespace

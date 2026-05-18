@@ -10,6 +10,7 @@ add_executable(retroplug-cli
     ${PROJECT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/RomSniffer.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp

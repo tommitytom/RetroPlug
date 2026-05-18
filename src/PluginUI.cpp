@@ -352,6 +352,12 @@ protected:
         // sync handlers are registered.
         if (bridge) bridge->pumpAsync();
 
+        // Walk live memory subscriptions, read tear-free snapshots from the
+        // DSP-published triple-buffers, hash for dedup, emit "memory" events
+        // for any region that changed since the last tick. Cheap when no
+        // subscriptions are active.
+        if (bridge) bridge->pumpMemorySnapshots();
+
         // Emit a per-tick "frame" event so React's <EmulatorTile> knows to
         // poll plugin.getFrame. One emit per UI idle ties cadence to LVGL's
         // redraw — host-throttled when the window isn't visible.

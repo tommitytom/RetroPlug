@@ -43,6 +43,11 @@ public:
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
+    // MemoryType → Mesen MemoryType. Maps to Gba* regions; returns invalid
+    // for IORegisters / HRam / NametableRam (GB / NES only). Ram = IWRAM
+    // (32KB, fast on-chip); ExtWorkRam = EWRAM (256KB, slower off-chip).
+    rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+
     SystemConfig snapshotConfig() const override;
 
     void setGainDb(float dB);

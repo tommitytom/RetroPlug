@@ -211,6 +211,7 @@ add_executable(rpc-schema-dump
     src/lsdj/KitUtil.cpp
     src/lsdj/SampleCache.cpp
     src/lsdj/KitCompiler.cpp
+    src/system/SystemBase.cpp
     src/system/sameboy/LinkGroup.cpp
     src/system/sameboy/RomSniffer.cpp
     src/system/sameboy/SameBoySystem.cpp
@@ -313,6 +314,7 @@ dpf_add_plugin(${NAME}
       src/lsdj/KitUtil.cpp
       src/lsdj/SampleCache.cpp
       src/lsdj/KitCompiler.cpp
+      src/system/SystemBase.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp
@@ -343,6 +345,7 @@ dpf_add_plugin(${NAME}
       src/lsdj/KitUtil.cpp
       src/lsdj/SampleCache.cpp
       src/lsdj/KitCompiler.cpp
+      src/system/SystemBase.cpp
       src/system/sameboy/LinkGroup.cpp
       src/system/sameboy/RomSniffer.cpp
       src/system/sameboy/SameBoySystem.cpp

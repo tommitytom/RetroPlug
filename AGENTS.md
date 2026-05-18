@@ -30,6 +30,12 @@ the parts that don't naturally fit either.
 - Always build in parallel: pass `-j$(nproc)` (or `-j` followed by the core
   count) to `cmake --build`. The default is single-threaded and turns a
   full build into a multi-minute serial slog.
+- Nothing has been released yet. Don't write migration code, version-gating,
+  or backwards-compatibility shims for on-disk formats (project state, DPF
+  state, kit-patch persistence, config schemas, etc.). When changing a
+  serialized shape, just change it — no "fall back to old format" branches,
+  no `version: 2` fields, no read-old / write-new. Saved projects from the
+  pre-release period are expected to break.
 
 ## Verification loop for code changes
 

@@ -1,11 +1,17 @@
 #include "PluginJsBridge.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "RpcEnvelope.h"
+#include "project/Project.hpp"
+#include "system/SystemBase.hpp"
+#include "transport/MemorySnapshotTriple.hpp"
+#include "util/Hash.hpp"
 
 extern "C" {
     #include <quickjs.h>
@@ -67,6 +73,9 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
     rpcServer_->addMethod<&PluginRpcService::getUserConfig>();
     rpcServer_->addMethod<&PluginRpcService::setActiveBindings>();
+    rpcServer_->addMethod<&PluginRpcService::getMemory>();
+    rpcServer_->addMethod<&PluginRpcService::subscribeMemory>();
+    rpcServer_->addMethod<&PluginRpcService::unsubscribeMemory>();
     rpcServer_->addDiscoveryMethod();
 
     // Service emits string-payload JS events through the existing engine
@@ -176,5 +185,56 @@ void PluginJsBridge::pumpAsync() {
             frame->size());
         engine.emit("rpc-message", 1, &ab);
         JS_FreeValue(ctx, ab);
+    }
+}
+
+void PluginJsBridge::pumpMemorySnapshots() {
+    if (!rpcService_ || !project_) return;
+    auto& subs = rpcService_->memorySubs();
+    if (subs.empty()) return;
+
+    JSContext* ctx = engine.getContext();
+    if (!ctx) return;
+
+    const auto nowNs = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+
+    std::vector<std::uint8_t> buf;
+
+    for (auto& [key, state] : subs) {
+        SystemBase* sys = project_->findSystem(key.systemId);
+        if (!sys) continue;
+        MemorySnapshotTriple* triple = sys->memorySnapshot(key.type);
+        if (!triple) continue;
+
+        // Per-sub hz cap. 0 means no cap (run at uiIdle rate).
+        if (state.hz > 0 && state.lastEmitNs != 0) {
+            const std::uint64_t periodNs = 1000000000ULL / state.hz;
+            if (nowNs - state.lastEmitNs < periodNs) continue;
+        }
+
+        if (!triple->readInto(buf)) continue;
+
+        const std::uint64_t hash = rp::hash::fnv1a64(buf.data(), buf.size());
+        // Skip when the snapshot hasn't changed AND at least one prior emit
+        // has happened (so the very first sample always lands even if its
+        // hash matches the zero-initialized lastHash).
+        if (hash == state.lastHash && state.version != 0) continue;
+
+        state.lastHash   = hash;
+        state.lastEmitNs = nowNs;
+        ++state.version;
+
+        JSValue argv[4] = {
+            JS_NewUint32(ctx, key.systemId),
+            JS_NewUint32(ctx, static_cast<std::uint32_t>(key.type)),
+            JS_NewArrayBufferCopy(ctx,
+                buf.data(),
+                buf.size()),
+            JS_NewUint32(ctx, state.version),
+        };
+        engine.emit("memory", 4, argv);
+        for (JSValue& v : argv) JS_FreeValue(ctx, v);
     }
 }

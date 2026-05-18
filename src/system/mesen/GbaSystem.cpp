@@ -20,6 +20,7 @@
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/EventType.h"
+#include "Core/Shared/MemoryType.h"
 #include "Core/Shared/MessageManager.h"
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
@@ -249,6 +250,34 @@ void GbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
         outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
         outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
     }
+
+    // Tear-free memory snapshots for any UI subscriptions. End-of-block =
+    // internally consistent state because the CPU isn't mid-instruction.
+    publishMemorySnapshots();
+}
+
+rp::MemoryAccessor GbaSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+    if (!emu_) return rp::MemoryAccessor{};
+
+    ::MemoryType native;
+    switch (type) {
+        case rp::MemoryType::Ram:        native = ::MemoryType::GbaIntWorkRam; break;
+        case rp::MemoryType::Rom:        native = ::MemoryType::GbaPrgRom;     break;
+        case rp::MemoryType::Sram:       native = ::MemoryType::GbaSaveRam;    break;
+        case rp::MemoryType::Vram:       native = ::MemoryType::GbaVideoRam;   break;
+        case rp::MemoryType::OAM:        native = ::MemoryType::GbaSpriteRam;  break;
+        case rp::MemoryType::ExtWorkRam: native = ::MemoryType::GbaExtWorkRam; break;
+        case rp::MemoryType::IORegisters:
+        case rp::MemoryType::HRam:
+        case rp::MemoryType::NametableRam:
+        default: return rp::MemoryAccessor{};
+    }
+
+    ConsoleMemoryInfo info = emu_->GetMemory(native);
+    if (!info.Memory || info.Size == 0) return rp::MemoryAccessor{};
+    return rp::MemoryAccessor{type, access,
+                              static_cast<std::uint8_t*>(info.Memory),
+                              info.Size};
 }
 
 SystemConfig GbaSystem::snapshotConfig() const {

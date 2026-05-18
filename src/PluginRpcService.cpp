@@ -16,6 +16,7 @@
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
+#include "system/MemoryAccessor.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/GbaConfig.hpp"
@@ -29,6 +30,7 @@
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 #include "transport/FrameBufferTriple.hpp"
+#include "util/Hash.hpp"
 
 namespace {
 
@@ -651,4 +653,84 @@ UserConfigDto PluginRpcService::getUserConfig() {
 bool PluginRpcService::setActiveBindings(std::string name) {
     if (!userConfig_) return false;
     return userConfig_->setActiveBindings(std::move(name));
+}
+
+// ----- Memory snapshot API --------------------------------------------------
+
+std::optional<PluginRpcService::MemorySnapshotResponse>
+PluginRpcService::getMemory(std::uint32_t systemId,
+                            std::uint32_t type,
+                            std::uint32_t offset,
+                            std::uint32_t length) {
+    if (!project_) return std::nullopt;
+    if (type >= rp::kMemoryTypeCount) return std::nullopt;
+
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return std::nullopt;
+
+    rp::MemoryAccessor accessor = sys->getMemory(static_cast<rp::MemoryType>(type),
+                                                 rp::AccessType::Read);
+    if (!accessor.valid()) return std::nullopt;
+
+    if (offset > accessor.size()) return std::nullopt;
+    const std::size_t available = accessor.size() - offset;
+    const std::size_t count = (length == 0 || length > available) ? available : length;
+
+    MemorySnapshotResponse out;
+    out.regionSize = static_cast<std::uint32_t>(accessor.size());
+    out.bytes.resize(count);
+    if (count > 0) {
+        std::memcpy(out.bytes.data(), accessor.data() + offset, count);
+        out.hash = rp::hash::fnv1a64(accessor.data() + offset, count);
+    }
+    return out;
+}
+
+bool PluginRpcService::subscribeMemory(std::uint32_t systemId,
+                                       std::uint32_t type,
+                                       std::uint32_t hz) {
+    if (!project_ || !commands_) return false;
+    if (type >= rp::kMemoryTypeCount) return false;
+
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+
+    const auto memType = static_cast<rp::MemoryType>(type);
+
+    // Reject unsupported types and oversized regions up front so the JS
+    // caller gets a synchronous false instead of a silent dropped sub.
+    rp::MemoryAccessor probe = sys->getMemory(memType, rp::AccessType::Read);
+    if (!probe.valid()) return false;
+    if (probe.size() > SystemBase::kMaxStreamableBytes) return false;
+
+    MemorySubKey key{static_cast<SystemId>(systemId), memType};
+    auto it = memorySubs_.find(key);
+    if (it != memorySubs_.end()) {
+        // Already streaming — re-subscribe just updates the cadence cap.
+        it->second.hz = hz;
+        return true;
+    }
+
+    if (!commands_->tryPush(Command::makeSubscribeMemory(key.systemId, memType)))
+        return false;
+
+    MemorySubState state;
+    state.hz = hz;
+    memorySubs_.emplace(key, state);
+    return true;
+}
+
+bool PluginRpcService::unsubscribeMemory(std::uint32_t systemId,
+                                         std::uint32_t type) {
+    if (!commands_) return false;
+    if (type >= rp::kMemoryTypeCount) return false;
+
+    const auto memType = static_cast<rp::MemoryType>(type);
+    MemorySubKey key{static_cast<SystemId>(systemId), memType};
+    auto it = memorySubs_.find(key);
+    if (it == memorySubs_.end()) return false;
+
+    memorySubs_.erase(it);
+    commands_->tryPush(Command::makeUnsubscribeMemory(key.systemId, memType));
+    return true;
 }
