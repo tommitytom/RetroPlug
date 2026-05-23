@@ -23,6 +23,11 @@ interface SystemGridProps {
     systems:    SystemEntry[];
     focusedId:  number;
     layout?:    SystemLayout;
+    // Optional overlay rendered as the last child of the grid container.
+    // Used by PluginUI to anchor the menu in the grid's coordinate space
+    // (so tile-local bounds from getTileBounds() can be used directly as
+    // the menu's `align` pos).
+    overlay?:   React.ReactNode;
 }
 
 function shapeFor(layout: SystemLayout, count: number): GridShape {
@@ -47,6 +52,18 @@ export function gridContentSize(systems: SystemEntry[], layout: SystemLayout = S
     };
 }
 
+// Tile screen rect (in grid-local coordinates) for the system at `index`.
+// Returns coordinates inside the grid's content box; the grid itself is
+// flex-centered by its parent, so callers that need window-coordinates
+// must add the grid's centering offset.
+export function getTileBounds(index: number, count: number, layout: SystemLayout = SystemLayout.Auto)
+    : { x: number; y: number; w: number; h: number } {
+    const shape = shapeFor(layout, Math.max(count, 1));
+    const col = index % shape.cols;
+    const row = Math.floor(index / shape.cols);
+    return { x: col * TILE_W, y: row * TILE_H, w: TILE_W, h: TILE_H };
+}
+
 /**
  * Multi-instance tile container. Renders the tiles edge-to-edge in a
  * fixed-pixel-size box and centers that box inside whatever space the
@@ -55,7 +72,7 @@ export function gridContentSize(systems: SystemEntry[], layout: SystemLayout = S
  * is just a black background and the menu (rendered above by
  * PluginUI) covers the whole window.
  */
-export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: SystemGridProps) {
+export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, overlay }: SystemGridProps) {
     if (systems.length === 0) return null;
 
     const { width, height, shape } = gridContentSize(systems, layout);
@@ -118,6 +135,7 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: S
                     ))}
                 </View>
             ))}
+            {overlay}
         </View>
     );
 }

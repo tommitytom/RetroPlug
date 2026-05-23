@@ -1,6 +1,6 @@
 # Step 11 — Memory snapshot API
 
-**Status:** Pending.
+**Status:** Done.
 
 ## Goal
 

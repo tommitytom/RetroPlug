@@ -203,6 +203,33 @@ export function useKeyboard(handler: (key: number, press: boolean) => void) {
     }, [handler]);
 }
 
+// DPF mouse button constants (deps/dpf/dgl/Base.hpp::MouseButton). Button
+// indices start at 1.
+export const MOUSE_BUTTON_LEFT   = 1;
+export const MOUSE_BUTTON_RIGHT  = 2;
+export const MOUSE_BUTTON_MIDDLE = 3;
+
+/**
+ * React hook: subscribe to the C++ "mouse" event channel. The handler
+ * receives (button, press, x, y) where button is the DPF MouseButton index
+ * (1 = left, 2 = right, 3 = middle), and (x, y) are widget-relative pixels.
+ *
+ * LVGL itself only sees a single binary "pressed" state for the pointer,
+ * which is enough for the framework's onClick / focus routing. This channel
+ * exists so TS can implement button-aware policy (e.g. right-click opens
+ * the per-instance menu).
+ */
+export function useMouse(
+    handler: (button: number, press: boolean, x: number, y: number) => void,
+) {
+    useEffect(() => {
+        const wrapped = (button: number, press: boolean, x: number, y: number) =>
+            handler(button, press, x, y);
+        on("mouse", wrapped);
+        return () => off("mouse", wrapped);
+    }, [handler]);
+}
+
 // --- Gamepad / SDL game controller input -----------------------------------
 //
 // PluginUI::pumpGamepad polls SDL_GameController state every uiIdle and emits
