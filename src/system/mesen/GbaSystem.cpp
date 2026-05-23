@@ -2,7 +2,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <sstream>
 #include <thread>
 
 #include "system/InputTypes.hpp"
@@ -22,6 +24,7 @@
 #include "Core/Shared/EventType.h"
 #include "Core/Shared/MemoryType.h"
 #include "Core/Shared/MessageManager.h"
+#include "Core/Shared/SaveStateManager.h"
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/FolderUtilities.h"
@@ -141,6 +144,20 @@ void GbaSystem::onActivate(double sampleRate) {
     videoDevice_ = std::make_shared<MesenVideoDevice>();
     videoDevice_->setFramebuffer(&frames_);
     emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
+
+    // Restore persisted battery RAM / savestate. Write directly into the
+    // GbaSaveRam region rather than going through Mesen's BatteryManager.
+    if (!config_.sram.empty()) {
+        auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
+        if (accessor.valid() && accessor.size() > 0) {
+            const auto bytes = config_.sram.bytes();
+            const std::size_t n = std::min(bytes.size(), accessor.size());
+            if (n > 0) std::memcpy(accessor.data(), bytes.data(), n);
+        }
+    }
+    if (!config_.savestate.empty()) {
+        loadStateBytes(config_.savestate.bytes());
+    }
 
     activated_ = true;
 }
@@ -287,7 +304,61 @@ SystemConfig GbaSystem::snapshotConfig() const {
     } else {
         out.romBytes = Base64Bytes{};
     }
-    // Savestate/SRAM round-trip plumbing is deferred — fields exist for
-    // forward compat (Phase 1 just snapshots static config + ROM bytes).
+    auto liveSram = saveSramBytes();
+    out.sram = liveSram.empty() ? Base64Bytes{} : Base64Bytes(std::move(liveSram));
+    auto liveState = saveStateBytes();
+    out.savestate = liveState.empty() ? Base64Bytes{} : Base64Bytes(std::move(liveState));
+    return out;
+}
+
+void GbaSystem::setFastBoot(bool on) {
+    if (config_.skipBootScreen == on) return;
+    config_.skipBootScreen = on;
+    if (emu_) configureGba(*emu_, on);
+}
+
+std::vector<std::uint8_t> GbaSystem::saveSramBytes() const {
+    if (!emu_) return {};
+    auto* self = const_cast<GbaSystem*>(this);
+    auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    if (!accessor.valid() || accessor.size() == 0) return {};
+    return std::vector<std::uint8_t>(accessor.data(),
+                                     accessor.data() + accessor.size());
+}
+
+void GbaSystem::clearSram() {
+    if (!emu_) return;
+    auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
+    if (!accessor.valid() || accessor.size() == 0) return;
+    std::memset(accessor.data(), 0, accessor.size());
+    config_.sram = Base64Bytes{};
+}
+
+std::vector<std::uint8_t> GbaSystem::saveStateBytes() const {
+    if (!emu_) return {};
+    std::stringstream ss(std::ios::out | std::ios::binary);
+    emu_->GetSaveStateManager()->SaveState(ss);
+    const std::string str = ss.str();
+    return std::vector<std::uint8_t>(str.begin(), str.end());
+}
+
+bool GbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+    if (!emu_ || bytes.empty()) return false;
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    ss.write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+    ss.seekg(0);
+    return emu_->GetSaveStateManager()->LoadState(ss);
+}
+
+std::unique_ptr<SystemBase> GbaSystem::clone(SystemId newId, double sampleRate) const {
+    GbaSystemConfig cfg = config_;
+    auto sramBytes = saveSramBytes();
+    if (!sramBytes.empty()) cfg.sram = Base64Bytes(std::move(sramBytes));
+    auto stateBytes = saveStateBytes();
+    if (!stateBytes.empty()) cfg.savestate = Base64Bytes(std::move(stateBytes));
+    std::vector<std::uint8_t> romCopy = rom_;
+    auto out = std::make_unique<GbaSystem>(newId, std::move(cfg), std::move(romCopy));
+    out->onActivate(sampleRate);
     return out;
 }

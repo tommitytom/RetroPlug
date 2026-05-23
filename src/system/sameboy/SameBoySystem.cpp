@@ -322,6 +322,19 @@ bool SameBoySystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     return GB_load_state_from_buffer(gb_, bytes.data(), bytes.size()) == 0;
 }
 
+std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRate) const {
+    SameBoyConfig cfg = config_;
+    cfg.linkGroupId   = 0;
+    auto sramBytes  = saveSramBytes();
+    if (!sramBytes.empty())  cfg.sram      = Base64Bytes(std::move(sramBytes));
+    auto stateBytes = saveStateBytes();
+    if (!stateBytes.empty()) cfg.savestate = Base64Bytes(std::move(stateBytes));
+    std::vector<std::uint8_t> romCopy = rom_;
+    auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
+    out->onActivate(sampleRate);
+    return out;
+}
+
 void SameBoySystem::instantiateRoles() {
     roles_.clear();
     serialIn_.clear();

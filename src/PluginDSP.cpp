@@ -342,18 +342,18 @@ protected:
                 } break;
 
                 case Command::Kind::NewSram: {
-                    if (auto* sb = dynamic_cast<SameBoySystem*>(
-                            project.findSystem(cmd.payload.newSram.id))) {
-                        sb->clearSram();
+                    if (SystemBase* sys = project.findSystem(cmd.payload.newSram.id)) {
+                        sys->clearSram();
                         projectMutated = true;
                     }
                 } break;
 
                 case Command::Kind::SetFastBoot: {
                     auto& fb = cmd.payload.setFastBoot;
-                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(fb.id))) {
-                        if (sb->config_.fastBoot != fb.enabled) {
-                            sb->config_.fastBoot = fb.enabled;
+                    if (SystemBase* sys = project.findSystem(fb.id)) {
+                        const auto cur = sys->fastBoot();
+                        if (cur && *cur != fb.enabled) {
+                            sys->setFastBoot(fb.enabled);
                             projectMutated = true;
                         }
                     }
@@ -373,9 +373,9 @@ protected:
 
                 case Command::Kind::SetReloadOnRomChange: {
                     auto& sr = cmd.payload.setReloadOnRomChange;
-                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(sr.id))) {
-                        if (sb->config_.reloadOnRomChange != sr.enabled) {
-                            sb->config_.reloadOnRomChange = sr.enabled;
+                    if (SystemBase* sys = project.findSystem(sr.id)) {
+                        if (sys->wantsRomReload() != sr.enabled) {
+                            sys->setRomReload(sr.enabled);
                             projectMutated = true;
                         }
                     }

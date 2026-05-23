@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "system/InputTypes.hpp"
@@ -60,6 +62,48 @@ public:
     // Round-trips current state back to a plain-data config. Called from
     // Plugin::getState (rare; off-path). May allocate.
     virtual SystemConfig snapshotConfig() const = 0;
+
+    // -- Per-system menu actions --------------------------------------------
+    //
+    // Surfaces used by the UI menu (Save SRAM, Save State, Duplicate, etc.).
+    // Default returns mean "this backend doesn't support the feature" — the
+    // UI gates the menu row off when appropriate.
+
+    // Source ROM path. Empty when the system was constructed from embedded
+    // bytes only (no file on disk).
+    virtual const std::string& romPath() const {
+        static const std::string empty;
+        return empty;
+    }
+
+    // Boot-time toggle. SameBoy maps this to fastBoot; GBA to skipBootScreen.
+    // Mesen returns nullopt → the UI hides the Fast boot row.
+    virtual std::optional<bool> fastBoot() const { return std::nullopt; }
+    virtual void                setFastBoot(bool /*on*/) {}
+
+    // "Reload when the ROM file changes on disk" — polled by
+    // PluginRpcService::pumpRomWatchers.
+    virtual bool wantsRomReload() const  { return false; }
+    virtual void setRomReload(bool /*on*/) {}
+
+    // Cartridge battery RAM. Empty vector when the cartridge has no battery
+    // or the backend doesn't yet support snapshotting.
+    virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
+    virtual void                       clearSram() {}
+
+    // Savestate, byte-for-byte. False on unsupported backends or malformed
+    // buffers.
+    virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
+    virtual bool loadStateBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
+
+    // Deep clone for Duplicate. Caller supplies the new SystemId and the
+    // current sample rate; the returned system has already been onActivate'd.
+    // Returns nullptr if the backend can't clone (rare; shouldn't happen on
+    // a constructed instance).
+    virtual std::unique_ptr<SystemBase> clone(SystemId /*newId*/,
+                                              double  /*sampleRate*/) const {
+        return nullptr;
+    }
 
     // -- Memory access -------------------------------------------------------
 
