@@ -72,14 +72,15 @@ struct SetLinkGroupCommand {
     std::uint8_t groupId;
 };
 
-// Replace the current project from a JSON blob (same format as DPF
-// setState). The bridge heap-allocates the string on the UI thread and
-// transfers ownership; the DSP frees it after parsing. Used by the
-// standalone "Load project" feature so a fresh launch can restore a
-// 2-instance link configuration without re-doing the whole menu dance.
+// Replace the current project from a fully-parsed ProjectConfig. The UI
+// thread reads the .rplg zip blob from disk, decompresses it, and
+// heap-allocates a ProjectConfig; ownership transfers to the DSP, which
+// applies it and deletes. Used by the standalone "Load project" feature so
+// a fresh launch can restore a 2-instance link configuration without
+// re-doing the whole menu dance.
 // TODO: Maybe do the delete on the UI thread? std::unique_ptr too?
 struct LoadProjectCommand {
-    std::string* json;
+    ProjectConfig* config;
 };
 
 // Project-wide MIDI routing change. Applied to ProjectConfig::settings on
@@ -263,10 +264,10 @@ struct Command {
         return c;
     }
 
-    static Command makeLoadProject(std::string* json) {
+    static Command makeLoadProject(ProjectConfig* config) {
         Command c;
         c.kind = Kind::LoadProject;
-        c.payload.loadProject = LoadProjectCommand{json};
+        c.payload.loadProject = LoadProjectCommand{config};
         return c;
     }
 

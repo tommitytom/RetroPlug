@@ -9,7 +9,6 @@
 #include "rfl/Literal.hpp"
 
 #include "system/RomRole.hpp"
-#include "util/Base64Bytes.hpp"
 
 namespace rp::lsdj {
 
@@ -29,12 +28,14 @@ struct LsdjSampleConfig {
 
 // One kit slot's persisted state. The 16 KB `compiledBytes` is the
 // emulator-side truth — what the running LSDJ ROM sees in the bank for
-// `slot`. `compiledHash` matches `Base64Bytes`'s decoded contents and is
-// what the UI compares against to decide whether a re-patch is needed.
+// `slot`. `compiledHash` matches `compiledBytes` and is what the UI
+// compares against to decide whether a re-patch is needed. The bytes live
+// in the .rplg zip as a raw entry (see ProjectBinaries); the field
+// serializes as `[]` in project.json.
 struct LsdjKitConfig {
     std::uint8_t  slot = 0;                          // 0..15
     std::string   name;                              // 6-char kit name (matches LSDJ UI)
-    Base64Bytes   compiledBytes;                     // 16 KB; empty == "no kit"
+    std::vector<std::uint8_t> compiledBytes;         // 16 KB; empty == "no kit"
     std::uint64_t compiledHash = 0;                  // FNV-64 of compiledBytes
     std::vector<LsdjSampleConfig> samples;
 };

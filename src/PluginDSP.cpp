@@ -17,6 +17,7 @@
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/SystemTypes.hpp"
+#include "util/Base64.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
@@ -129,8 +130,13 @@ protected:
     {
         if (std::strcmp(key, "project") != 0) return String();
         try {
-            const std::string json = projectConfigToJson(project.snapshotConfig());
-            return String(json.c_str());
+            const auto zip = projectConfigToZip(project.snapshotConfig());
+            // DPF state is a NUL-terminated UTF-8 string, so the binary zip
+            // blob is wrapped in base64. The inner zip is already deflated,
+            // so the base64 layer's 33% overhead applies to compressed bytes
+            // — still a large net win over today's JSON+inline-base64.
+            const std::string encoded = base64::encode(zip);
+            return String(encoded.c_str());
         } catch (const std::exception& e) {
             d_stderr("[PluginDSP] getState serialization failed: %s", e.what());
             return String();
@@ -140,31 +146,25 @@ protected:
     void setState(const char* key, const char* value) override
     {
         if (std::strcmp(key, "project") != 0) return;
-        applyProjectFromJson(value);
+        if (value == nullptr || value[0] == '\0') return;
+        const auto decoded = base64::decode(value);
+        auto parsed = projectConfigFromZip(decoded);
+        if (!parsed) {
+            d_stderr("[PluginDSP] setState: failed to parse project zip");
+            return;
+        }
+        applyProjectFromConfig(*parsed);
     }
 
-    // Replace the running project with one parsed from a JSON blob. Shared by
-    // DPF setState (host-driven save/restore) and Command::LoadProject (the
-    // user-driven "Load project" menu entry, fed in via the UI thread).
-    // Caller is responsible for the threading context — setState runs DSP-side
-    // before activate; Command::LoadProject runs DSP-side during the run-loop
-    // command drain, same window AddSystem/etc. already mutate the project.
-    void applyProjectFromJson(const char* json)
+    // Replace the running project with a fully-parsed config. Shared by DPF
+    // setState (host-driven save/restore) and Command::LoadProject (the
+    // user-driven "Load project" menu entry, fed in via the UI thread which
+    // does the file IO and zip parse). Caller is responsible for the
+    // threading context — setState runs DSP-side before activate;
+    // Command::LoadProject runs DSP-side during the run-loop command drain,
+    // same window AddSystem/etc. already mutate the project.
+    void applyProjectFromConfig(const ProjectConfig& parsed)
     {
-        if (json == nullptr || json[0] == '\0') return;
-
-        std::optional<ProjectConfig> parsed;
-        try {
-            parsed = projectConfigFromJson(std::string_view(json));
-        } catch (const std::exception& e) {
-            d_stderr("[PluginDSP] applyProjectFromJson parse exception: %s", e.what());
-            return;
-        }
-        if (!parsed) {
-            d_stderr("[PluginDSP] applyProjectFromJson: failed to parse project JSON");
-            return;
-        }
-
         // Tear down current systems. Non-RT (deletes GB instances) — same
         // category of work AddSystem/RemoveSystem already do during command
         // drain.
@@ -172,10 +172,10 @@ protected:
         project.config() = ProjectConfig{};
 
         SystemId firstAdded = 0;
-        for (const auto& sysConfig : parsed->systems) {
+        for (const auto& sysConfig : parsed.systems) {
             const SystemId id = project.addSystem(sysConfig);
             if (id == 0) {
-                d_stderr("[PluginDSP] applyProjectFromJson: addSystem failed for one entry");
+                d_stderr("[PluginDSP] applyProjectFromConfig: addSystem failed for one entry");
                 continue;
             }
             if (firstAdded == 0) firstAdded = id;
@@ -184,7 +184,7 @@ protected:
 
         // Notify the UI (if attached) so it drops its cached project view.
         if (!events.tryPush(Event::makeConfigChanged()))
-            d_stderr("[PluginDSP] applyProjectFromJson: event queue full; dropping ConfigChanged");
+            d_stderr("[PluginDSP] applyProjectFromConfig: event queue full; dropping ConfigChanged");
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -445,7 +445,7 @@ protected:
                             kitCfg->kits.push_back(std::move(fresh));
                             slot = &kitCfg->kits.back();
                         }
-                        slot->compiledBytes = Base64Bytes(*owned);
+                        slot->compiledBytes = *owned;
                         slot->compiledHash  =
                             rp::lsdj::SampleCache::hashBytes(owned->data(), owned->size());
                         break;
@@ -466,10 +466,10 @@ protected:
                 } break;
 
                 case Command::Kind::LoadProject: {
-                    std::string* json = cmd.payload.loadProject.json;
-                    if (json) {
-                        applyProjectFromJson(json->c_str());
-                        // applyProjectFromJson constructs SameBoySystems via
+                    ProjectConfig* config = cmd.payload.loadProject.config;
+                    if (config) {
+                        applyProjectFromConfig(*config);
+                        // applyProjectFromConfig constructs SameBoySystems via
                         // Project::addSystem but doesn't activate them — the
                         // setState path relies on DPF calling activate() after
                         // setState, but Command::LoadProject runs mid-run()
@@ -477,8 +477,8 @@ protected:
                         // systems actually start emulating; SameBoySystem's
                         // onActivate is idempotent for already-active systems.
                         project.onActivate(fSampleRate);
-                        delete json;
-                        // applyProjectFromJson already pushes ConfigChanged.
+                        delete config;
+                        // applyProjectFromConfig already pushes ConfigChanged.
                         // Don't double-emit by setting projectMutated.
                     }
                 } break;

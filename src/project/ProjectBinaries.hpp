@@ -1,0 +1,144 @@
+#pragma once
+
+#include <cstddef>
+#include <string>
+#include <utility>
+
+#include "rfl/TaggedUnion.hpp"
+
+#include "project/ProjectConfig.hpp"
+#include "system/SystemConfig.hpp"
+#include "system/RoleConfig.hpp"
+#include "system/mesen/GbaConfig.hpp"
+#include "system/mesen/MesenConfig.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
+#include "util/MinizZip.hpp"
+
+// Visit every binary blob inside a ProjectConfig and route its bytes
+// through a zip writer / reader. Used by ProjectSerialization to keep the
+// JSON entry small — the blobs (ROMs, SRAM, savestates, LSDj kits) live as
+// separate zip entries at deterministic keys.
+//
+// Key shape:
+//   systems/{i}/rom
+//   systems/{i}/sram
+//   systems/{i}/state
+//   systems/{i}/roles/{r}/kits/{k}/compiled
+
+namespace project_binaries {
+
+namespace detail {
+
+inline std::string key(const std::string& prefix, const char* suffix) {
+    return prefix + suffix;
+}
+
+// Strip a single blob into the zip, then empty it on the source.
+inline bool stripBlob(MinizWriter& zip,
+                      const std::string& name,
+                      std::vector<std::uint8_t>& blob) {
+    if (blob.empty()) return true;
+    if (!zip.add(name, blob)) return false;
+    blob.clear();
+    blob.shrink_to_fit();
+    return true;
+}
+
+inline bool restoreBlob(const MinizReader& zip,
+                        const std::string& name,
+                        std::vector<std::uint8_t>& blob) {
+    if (!zip.has(name)) return true;
+    blob = zip.read(name);
+    return true;
+}
+
+inline bool stripRoles(MinizWriter& zip,
+                       const std::string& prefix,
+                       std::vector<RoleConfig>& roles) {
+    for (std::size_t r = 0; r < roles.size(); ++r) {
+        auto& rc = roles[r];
+        if (auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
+            const std::string rolePrefix =
+                prefix + "roles/" + std::to_string(r) + "/";
+            for (std::size_t k = 0; k < kitCfg->kits.size(); ++k) {
+                const std::string kitKey =
+                    rolePrefix + "kits/" + std::to_string(k) + "/compiled";
+                if (!stripBlob(zip, kitKey, kitCfg->kits[k].compiledBytes))
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+inline bool restoreRoles(const MinizReader& zip,
+                         const std::string& prefix,
+                         std::vector<RoleConfig>& roles) {
+    for (std::size_t r = 0; r < roles.size(); ++r) {
+        auto& rc = roles[r];
+        if (auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
+            const std::string rolePrefix =
+                prefix + "roles/" + std::to_string(r) + "/";
+            for (std::size_t k = 0; k < kitCfg->kits.size(); ++k) {
+                const std::string kitKey =
+                    rolePrefix + "kits/" + std::to_string(k) + "/compiled";
+                if (!restoreBlob(zip, kitKey, kitCfg->kits[k].compiledBytes))
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+} // namespace detail
+
+inline bool strip(MinizWriter& zip, ProjectConfig& cfg) {
+    for (std::size_t i = 0; i < cfg.systems.size(); ++i) {
+        const std::string prefix = "systems/" + std::to_string(i) + "/";
+        auto& sys = cfg.systems[i];
+        if (auto* sb = rfl::get_if<SameBoyConfig>(&sys.variant())) {
+            if (!detail::stripBlob(zip, detail::key(prefix, "rom"),   sb->romBytes))   return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  sb->sram))       return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "state"), sb->savestate))  return false;
+            if (!detail::stripRoles(zip, prefix, sb->roles))                           return false;
+        } else if (auto* mb = rfl::get_if<MesenConfig>(&sys.variant())) {
+            if (!detail::stripBlob(zip, detail::key(prefix, "rom"),   mb->romBytes))   return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  mb->sram))       return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "state"), mb->savestate))  return false;
+            if (!detail::stripRoles(zip, prefix, mb->roles))                           return false;
+        } else if (auto* gb = rfl::get_if<GbaSystemConfig>(&sys.variant())) {
+            if (!detail::stripBlob(zip, detail::key(prefix, "rom"),   gb->romBytes))   return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  gb->sram))       return false;
+            if (!detail::stripBlob(zip, detail::key(prefix, "state"), gb->savestate))  return false;
+            if (!detail::stripRoles(zip, prefix, gb->roles))                           return false;
+        }
+    }
+    return true;
+}
+
+inline bool restore(const MinizReader& zip, ProjectConfig& cfg) {
+    for (std::size_t i = 0; i < cfg.systems.size(); ++i) {
+        const std::string prefix = "systems/" + std::to_string(i) + "/";
+        auto& sys = cfg.systems[i];
+        if (auto* sb = rfl::get_if<SameBoyConfig>(&sys.variant())) {
+            if (!detail::restoreBlob(zip, detail::key(prefix, "rom"),   sb->romBytes))   return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  sb->sram))       return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "state"), sb->savestate))  return false;
+            if (!detail::restoreRoles(zip, prefix, sb->roles))                           return false;
+        } else if (auto* mb = rfl::get_if<MesenConfig>(&sys.variant())) {
+            if (!detail::restoreBlob(zip, detail::key(prefix, "rom"),   mb->romBytes))   return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  mb->sram))       return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "state"), mb->savestate))  return false;
+            if (!detail::restoreRoles(zip, prefix, mb->roles))                           return false;
+        } else if (auto* gb = rfl::get_if<GbaSystemConfig>(&sys.variant())) {
+            if (!detail::restoreBlob(zip, detail::key(prefix, "rom"),   gb->romBytes))   return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  gb->sram))       return false;
+            if (!detail::restoreBlob(zip, detail::key(prefix, "state"), gb->savestate))  return false;
+            if (!detail::restoreRoles(zip, prefix, gb->roles))                           return false;
+        }
+    }
+    return true;
+}
+
+} // namespace project_binaries

@@ -7,7 +7,6 @@
 #include "rfl/Literal.hpp"
 
 #include "system/RoleConfig.hpp"
-#include "util/Base64Bytes.hpp"
 
 // Plain-data, reflectcpp-friendly config for a SameBoy system slot.
 // Lives in the DSP-owned ProjectConfig tree; mirrored to the UI cache.
@@ -42,14 +41,17 @@ struct SameBoyConfig {
     // src/system/sameboy/LinkGroup.hpp.
     std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
-    Base64Bytes               romBytes;   // populated when embedRom (snapshotConfig)
+    // Binary blobs live in the .rplg zip as raw entries (see ProjectBinaries).
+    // In project.json they always serialize as `[]` because ProjectSerialization
+    // strips them before the JSON pass.
+    std::vector<std::uint8_t> romBytes;   // populated when embedRom (snapshotConfig)
     // Cartridge battery RAM (.sav contents). Path-based ROM loads slurp the
     // sibling `<rom>.sav` once and stash it here; subsequent host-project
     // saves serialize whatever the running emulator currently has, so the
     // SRAM is portable. Loaded into the emulator BEFORE `savestate`, so a
     // savestate's embedded SRAM still wins when both are set.
-    Base64Bytes               sram;
-    Base64Bytes               savestate;  // optional, populated when persisting
+    std::vector<std::uint8_t> sram;
+    std::vector<std::uint8_t> savestate;  // optional, populated when persisting
 
     // Roles attached to this system (LSDJ sync, MGB passthrough, etc.).
     // Round-trips through reflectcpp; SameBoySystem::onActivate replays it

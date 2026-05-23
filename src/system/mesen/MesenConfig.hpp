@@ -7,7 +7,6 @@
 #include "rfl/Literal.hpp"
 
 #include "system/RoleConfig.hpp"
-#include "util/Base64Bytes.hpp"
 
 // Plain-data, reflectcpp-friendly config for a Mesen system slot.
 // Mirrors SameBoyConfig's shape so the two are interchangeable through the
@@ -25,9 +24,10 @@ struct MesenConfig {
     bool          reloadOnRomChange = false;
     float         gainDb   = 0.0f;
     std::string   romPath;
-    Base64Bytes   romBytes;
-    Base64Bytes   sram;
-    Base64Bytes   savestate;
+    // Binary blobs live in the .rplg zip as raw entries — see ProjectBinaries.
+    std::vector<std::uint8_t> romBytes;
+    std::vector<std::uint8_t> sram;
+    std::vector<std::uint8_t> savestate;
 
     // Roles attached to this system. Mesen-side roles will land in step 17C
     // (NesN8MidiRole). Empty triggers the NES sniffer to fill in a default.

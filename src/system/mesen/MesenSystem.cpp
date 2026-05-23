@@ -142,13 +142,12 @@ void MesenSystem::onActivate(double sampleRate) {
     if (!config_.sram.empty()) {
         auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
         if (accessor.valid() && accessor.size() > 0) {
-            const auto bytes = config_.sram.bytes();
-            const std::size_t n = std::min(bytes.size(), accessor.size());
-            if (n > 0) std::memcpy(accessor.data(), bytes.data(), n);
+            const std::size_t n = std::min(config_.sram.size(), accessor.size());
+            if (n > 0) std::memcpy(accessor.data(), config_.sram.data(), n);
         }
     }
     if (!config_.savestate.empty()) {
-        loadStateBytes(config_.savestate.bytes());
+        loadStateBytes(config_.savestate);
     }
 
     activated_ = true;
@@ -308,14 +307,12 @@ rp::MemoryAccessor MesenSystem::getMemory(rp::MemoryType type, rp::AccessType ac
 SystemConfig MesenSystem::snapshotConfig() const {
     MesenConfig out = config_;
     if (out.embedRom) {
-        out.romBytes = Base64Bytes(rom_);
+        out.romBytes = rom_;
     } else {
-        out.romBytes = Base64Bytes{};
+        out.romBytes.clear();
     }
-    auto liveSram = saveSramBytes();
-    out.sram = liveSram.empty() ? Base64Bytes{} : Base64Bytes(std::move(liveSram));
-    auto liveState = saveStateBytes();
-    out.savestate = liveState.empty() ? Base64Bytes{} : Base64Bytes(std::move(liveState));
+    out.sram      = saveSramBytes();
+    out.savestate = saveStateBytes();
     return out;
 }
 
@@ -333,7 +330,7 @@ void MesenSystem::clearSram() {
     auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
     if (!accessor.valid() || accessor.size() == 0) return;
     std::memset(accessor.data(), 0, accessor.size());
-    config_.sram = Base64Bytes{};
+    config_.sram.clear();
 }
 
 std::vector<std::uint8_t> MesenSystem::saveStateBytes() const {
@@ -356,9 +353,9 @@ bool MesenSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
 std::unique_ptr<SystemBase> MesenSystem::clone(SystemId newId, double sampleRate) const {
     MesenConfig cfg = config_;
     auto sramBytes = saveSramBytes();
-    if (!sramBytes.empty()) cfg.sram = Base64Bytes(std::move(sramBytes));
+    if (!sramBytes.empty()) cfg.sram = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
-    if (!stateBytes.empty()) cfg.savestate = Base64Bytes(std::move(stateBytes));
+    if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<MesenSystem>(newId, std::move(cfg), std::move(romCopy));
     out->onActivate(sampleRate);

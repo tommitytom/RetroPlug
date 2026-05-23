@@ -34,16 +34,22 @@ target_include_directories(retroplug-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
+target_include_directories(retroplug-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
+)
+
 target_link_libraries(retroplug-tests PRIVATE
     Catch2::Catch2WithMain
     rpcpp
     r8brain
     efsw
+    miniz
 )
 
 # rpcpp is INTERFACE-linked here for its transitive reflectcpp + yyjson — used
 # by ProjectSerialization (rfl::json::read/write) and the TaggedUnion in
-# SystemConfig.hpp.
+# SystemConfig.hpp. miniz is linked for ProjectSerialization's zip writer /
+# reader (see src/util/MinizZip.hpp).
 
 include(Catch)
 catch_discover_tests(retroplug-tests)
