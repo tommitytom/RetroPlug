@@ -22,7 +22,7 @@
    Number of audio outputs the plugin has.
    @note This macro is required.
  */
-#define DISTRHO_PLUGIN_NUM_OUTPUTS 2
+#define DISTRHO_PLUGIN_NUM_OUTPUTS 8
 
 /**
    The plugin URI when exporting in LV2 format.

@@ -181,6 +181,12 @@ public:
     const std::vector<std::unique_ptr<SystemBase>>& systems() const { return systems_; }
     std::vector<std::unique_ptr<SystemBase>>&       systems()       { return systems_; }
 
+    // Read access to the resolved link-group set. Used by PluginDSP's
+    // multi-out audio path to drive each linked member's finishBlock against
+    // its routed output channels (something LinkGroup::onProcess can't do
+    // because it hard-codes outs[0]/[1] for every member).
+    const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
+
     const ProjectConfig& config() const { return config_; }
     ProjectConfig&       config()       { return config_; }
 

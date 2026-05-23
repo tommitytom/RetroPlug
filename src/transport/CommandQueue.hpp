@@ -101,6 +101,11 @@ struct SetLayoutCommand {
     SystemLayout layout;
 };
 
+// Project-wide audio routing change. Same pattern as SetMidiRouting.
+struct SetAudioRoutingCommand {
+    AudioRouting routing;
+};
+
 // Soft-reset of a single system (the GB equivalent of pressing the reset
 // button). DSP thread calls SystemBase::onReset on the matching slot.
 struct ResetSystemCommand {
@@ -194,6 +199,7 @@ struct Command {
         SetFastBoot       = 17,
         SetModel          = 18,
         SetReloadOnRomChange = 19,
+        SetAudioRouting   = 20,
     };
 
     Kind kind = Kind::None;
@@ -217,6 +223,7 @@ struct Command {
         SetFastBootCommand       setFastBoot;
         SetModelCommand          setModel;
         SetReloadOnRomChangeCommand setReloadOnRomChange;
+        SetAudioRoutingCommand   setAudioRouting;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -355,6 +362,13 @@ struct Command {
         Command c;
         c.kind = Kind::SetReloadOnRomChange;
         c.payload.setReloadOnRomChange = SetReloadOnRomChangeCommand{id, enabled};
+        return c;
+    }
+
+    static Command makeSetAudioRouting(AudioRouting routing) {
+        Command c;
+        c.kind = Kind::SetAudioRouting;
+        c.payload.setAudioRouting = SetAudioRoutingCommand{routing};
         return c;
     }
 };

@@ -33,13 +33,26 @@ enum class MidiRouting : std::uint8_t {
     MidiChannelToInstance   = 3,
 };
 
+// How per-system audio fans out across the 8 plugin output channels. The
+// plugin always declares 8 outputs (DISTRHO_PLUGIN_NUM_OUTPUTS); modes
+// pick which of those get written, the rest are zero.
+//   Stereo          all systems sum into outs 0/1; outs 2..7 silent.
+//   TwoPerInstance  system i writes to outs (2i % 8)/(2i % 8 + 1).
+//   OnePerInstance  system i writes a mono mix to out (i % 8).
+enum class AudioRouting : std::uint8_t {
+    Stereo         = 0,
+    TwoPerInstance = 1,
+    OnePerInstance = 2,
+};
+
 struct ProjectSettings {
-    SystemLayout layout       = SystemLayout::Auto;
-    MidiRouting  midiRouting  = MidiRouting::SendToAll;
+    SystemLayout layout        = SystemLayout::Auto;
+    MidiRouting  midiRouting   = MidiRouting::SendToAll;
+    AudioRouting audioRouting  = AudioRouting::Stereo;
     // 0 = inherit UserConfig::defaultZoom; 1..6 = explicit per-project value.
     // PluginRpcService::getZoom() resolves the inheritance; setZoom always
     // writes 1..6 here.
-    std::uint8_t zoom         = 0;
+    std::uint8_t zoom          = 0;
 };
 
 struct ProjectConfig {

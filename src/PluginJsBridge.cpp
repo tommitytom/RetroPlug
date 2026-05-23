@@ -84,6 +84,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::setLinkGroupId>();
     rpcServer_->addMethod<&PluginRpcService::getMidiRouting>();
     rpcServer_->addMethod<&PluginRpcService::setMidiRouting>();
+    rpcServer_->addMethod<&PluginRpcService::getAudioRouting>();
+    rpcServer_->addMethod<&PluginRpcService::setAudioRouting>();
     rpcServer_->addMethod<&PluginRpcService::getZoom>();
     rpcServer_->addMethod<&PluginRpcService::setZoom>();
     rpcServer_->addMethod<&PluginRpcService::getLayout>();

@@ -102,6 +102,41 @@ protected:
     // ----------------------------------------------------------------------------------------------------------------
     // Init
 
+    // Name the 8 outputs as four stereo pairs and tag each pair with a
+    // sequential custom port group (IDs 0..3, per DPF's contract) so DAWs
+    // that honour port grouping show them as Out 1..4 stereo pairs rather
+    // than eight loose mono ports. Hosts that ignore groupId fall back to
+    // the per-port name.
+    void initAudioPort(bool input, uint32_t index, AudioPort& port) override
+    {
+        if (input) {
+            Plugin::initAudioPort(input, index, port);
+            return;
+        }
+        const uint32_t pair = index / 2;
+        const bool     left = (index % 2) == 0;
+        char nameBuf[16];
+        char symBuf [16];
+        std::snprintf(nameBuf, sizeof(nameBuf), "Out %u%c", pair + 1, left ? 'L' : 'R');
+        std::snprintf(symBuf,  sizeof(symBuf),  "out_%u_%c", pair + 1, left ? 'l' : 'r');
+        port.hints   = 0;
+        port.name    = nameBuf;
+        port.symbol  = symBuf;
+        port.groupId = pair;
+    }
+
+    void initPortGroup(uint32_t groupId, PortGroup& portGroup) override
+    {
+        constexpr uint32_t kPairCount = DISTRHO_PLUGIN_NUM_OUTPUTS / 2;
+        if (groupId >= kPairCount) return;
+        char nameBuf[16];
+        char symBuf [16];
+        std::snprintf(nameBuf, sizeof(nameBuf), "Out %u", groupId + 1);
+        std::snprintf(symBuf,  sizeof(symBuf),  "out_%u", groupId + 1);
+        portGroup.name   = nameBuf;
+        portGroup.symbol = symBuf;
+    }
+
     void initParameter(uint32_t index, Parameter& parameter) override
     {
         if (index >= kPluginParameterCount) return;
@@ -336,6 +371,14 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::SetAudioRouting: {
+                    const AudioRouting r = cmd.payload.setAudioRouting.routing;
+                    if (project.config().settings.audioRouting != r) {
+                        project.config().settings.audioRouting = r;
+                        projectMutated = true;
+                    }
+                } break;
+
                 case Command::Kind::ResetSystem: {
                     if (SystemBase* sys = project.findSystem(cmd.payload.resetSystem.id))
                         sys->onReset();
@@ -513,10 +556,12 @@ protected:
             project.dispatchMidi(&shell, 1, routing);
         }
 
-        float* const outL = outputs[0];
-        float* const outR = outputs[1];
-        std::memset(outL, 0, frames * sizeof(float));
-        std::memset(outR, 0, frames * sizeof(float));
+        // Zero every output channel up front. Stereo mode only writes to
+        // outs[0]/[1], so outs[2..7] stay silent; multi-out modes also
+        // start from zero and only the systems mapped to each channel
+        // contribute audio.
+        for (uint32_t c = 0; c < DISTRHO_PLUGIN_NUM_OUTPUTS; ++c)
+            std::memset(outputs[c], 0, frames * sizeof(float));
 
         // Host timing from DPF. When bbt is valid, compute continuous PPQ
         // position from bar/beat/tick; otherwise (host without BBT support)
@@ -535,7 +580,86 @@ protected:
             ppq = (static_cast<double>(tp.frame) / fSampleRate) * (bpm / 60.0);
         }
         AudioBlockInfo info{ frames, fSampleRate, bpm, ppq, tp.playing };
-        project.onProcess(info, outputs);
+
+        // Audio routing — pick which output channels each system writes to.
+        //   Stereo:         all systems sum into outs[0]/[1] (existing path).
+        //   TwoPerInstance: system i writes to outs[(2i)%N]/[(2i+1)%N].
+        //   OnePerInstance: system i writes its (L+R) mono mix to outs[i%N].
+        //                   Passing the same buffer for both finishBlock
+        //                   channels makes SameBoySystem sum L and R into
+        //                   that single channel for free.
+        const AudioRouting audioRouting = project.config().settings.audioRouting;
+        if (audioRouting == AudioRouting::Stereo) {
+            project.onProcess(info, outputs);
+        } else {
+            constexpr uint32_t kNumOuts = DISTRHO_PLUGIN_NUM_OUTPUTS;
+            auto outsForIndex = [&](std::size_t i, float** dst) {
+                if (audioRouting == AudioRouting::OnePerInstance) {
+                    dst[0] = outputs[i % kNumOuts];
+                    dst[1] = outputs[i % kNumOuts];
+                } else {
+                    const std::size_t p = (2 * i) % kNumOuts;
+                    dst[0] = outputs[p];
+                    dst[1] = outputs[(p + 1) % kNumOuts];
+                }
+            };
+
+            const auto& systems = project.systems();
+
+            // Index lookup for linked SameBoy members — they need their
+            // outs slice computed from the system's slot in the project,
+            // not their position within the link group.
+            auto indexOf = [&systems](const SameBoySystem* needle) -> std::size_t {
+                for (std::size_t i = 0; i < systems.size(); ++i) {
+                    if (systems[i].get() == needle) return i;
+                }
+                return SIZE_MAX;
+            };
+
+            // Unlinked systems: SameBoySystem::onProcess bails when
+            // linkPeers_ is non-empty, so this loop only drives the
+            // standalone ones. Non-SameBoy systems (Mesen, GBA) flow
+            // through here too — their onProcess writes to the per-system
+            // outs slice with no further routing logic needed.
+            for (std::size_t i = 0; i < systems.size(); ++i) {
+                auto* sys = systems[i].get();
+                if (!sys) continue;
+                float* perSysOuts[2];
+                outsForIndex(i, perSysOuts);
+                sys->onProcess(info, perSysOuts);
+            }
+
+            // Linked SameBoy groups: round-robin step in lockstep (the
+            // serial-bit ferrying inside SameBoySystem::serialStart/end
+            // needs members to advance together), then finishBlock each
+            // into its routed outs slice. LinkGroup::onProcess can't do
+            // this directly because it hard-codes outs[0]/[1] for every
+            // member.
+            for (const auto& group : project.linkGroups()) {
+                const auto& members = group.members();
+                if (members.empty()) continue;
+
+                for (auto* sb : members) {
+                    if (sb) sb->prepareForBlock(info);
+                }
+                bool anyBelow = true;
+                while (anyBelow) {
+                    anyBelow = false;
+                    for (auto* sb : members) {
+                        if (sb && sb->stepIfBelowTarget(info.frames))
+                            anyBelow = true;
+                    }
+                }
+                for (auto* sb : members) {
+                    if (!sb) continue;
+                    const std::size_t idx = indexOf(sb);
+                    if (idx == SIZE_MAX) continue;
+                    float* perSysOuts[2];
+                    outsForIndex(idx, perSysOuts);
+                    sb->finishBlock(info, perSysOuts);
+                }
+            }
+        }
 
         // Drain per-system MIDI output back to the host. Populated by
         // MIDI-emitting roles (e.g. ArduinoboyMaster's MI.OUT decoder).
@@ -556,15 +680,16 @@ protected:
         // Master gain → soft-clip output limiter. The clipper is x/(1+|x|),
         // a simple unit-bounded saturator with no allocations and a smooth
         // transition near 1.0; it's not a creative effect, just a guard
-        // against N>1 emulators summing past full scale.
+        // against N>1 emulators summing past full scale. Applied uniformly
+        // to all 8 channels — silent ones (Stereo mode's outs[2..7]) pass
+        // through as zeros, the smoother advances at the same per-sample
+        // rate as before.
         for (uint32_t i = 0; i < frames; ++i) {
             const float g = fSmoothGain.next();
-            float l = outL[i] * g;
-            float r = outR[i] * g;
-            l = l / (1.0f + std::fabs(l));
-            r = r / (1.0f + std::fabs(r));
-            outL[i] = l;
-            outR[i] = r;
+            for (uint32_t c = 0; c < DISTRHO_PLUGIN_NUM_OUTPUTS; ++c) {
+                float s = outputs[c][i] * g;
+                outputs[c][i] = s / (1.0f + std::fabs(s));
+            }
         }
     }
 

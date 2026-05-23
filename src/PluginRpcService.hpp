@@ -207,6 +207,8 @@ public:
     bool setLinkGroupId(std::uint32_t id, std::uint32_t groupId);
     std::uint32_t getMidiRouting();
     bool setMidiRouting(std::uint32_t routing);
+    std::uint32_t getAudioRouting();
+    bool setAudioRouting(std::uint32_t routing);
     // Returns the resolved zoom (1..6): per-project value if set, otherwise
     // the user-config default. setZoom always writes 1..6 to the project.
     std::uint32_t getZoom();

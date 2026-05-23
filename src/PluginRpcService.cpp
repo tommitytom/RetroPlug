@@ -488,6 +488,19 @@ bool PluginRpcService::setMidiRouting(std::uint32_t routing) {
         Command::makeSetMidiRouting(static_cast<MidiRouting>(routing)));
 }
 
+std::uint32_t PluginRpcService::getAudioRouting() {
+    if (!project_) return static_cast<std::uint32_t>(AudioRouting::Stereo);
+    return static_cast<std::uint32_t>(project_->config().settings.audioRouting);
+}
+
+bool PluginRpcService::setAudioRouting(std::uint32_t routing) {
+    if (!commands_) return false;
+    if (routing > static_cast<std::uint32_t>(AudioRouting::OnePerInstance))
+        return false;
+    return commands_->tryPush(
+        Command::makeSetAudioRouting(static_cast<AudioRouting>(routing)));
+}
+
 std::uint32_t PluginRpcService::getZoom() {
     // 0 in ProjectSettings means "inherit from UserConfig::defaultZoom".
     std::uint8_t z = 0;

@@ -42,6 +42,8 @@ export interface MenuContext {
     systems:        SystemEntry[];
     focusedSystem?: SystemEntry;
     midiRouting:    number;
+    // AudioRouting enum value (0=Stereo, 1=TwoPerInstance, 2=OnePerInstance).
+    audioRouting:   number;
     // SystemLayout enum value (0=Auto, 1=Row, 2=Column, 3=Grid).
     layout:         number;
     // Resolved zoom level 1..6 (project setting or user-config default).
@@ -65,6 +67,15 @@ const MIDI_ROUTING_NAMES = [
     "4 ch / inst",
     "1 ch / inst",
     "ch -> inst",
+];
+
+// Mirrors C++ AudioRouting enum (src/project/ProjectConfig.hpp). Plugin
+// declares 8 outs; "2 ch / inst" pairs each system into a stereo slot,
+// "1 ch / inst" mixes each system's L+R into a single mono channel.
+const AUDIO_ROUTING_NAMES = [
+    "Stereo",
+    "2 ch / inst",
+    "1 ch / inst",
 ];
 
 // Mirrors C++ SystemLayout enum (src/project/ProjectConfig.hpp).
@@ -199,8 +210,9 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
 }
 
 function projectChildren(ctx: MenuContext): MenuItem[] {
-    const routingName = MIDI_ROUTING_NAMES[ctx.midiRouting] ?? MIDI_ROUTING_NAMES[0];
-    const layoutName  = LAYOUT_NAMES[ctx.layout]            ?? LAYOUT_NAMES[0];
+    const routingName      = MIDI_ROUTING_NAMES [ctx.midiRouting]  ?? MIDI_ROUTING_NAMES [0];
+    const audioRoutingName = AUDIO_ROUTING_NAMES[ctx.audioRouting] ?? AUDIO_ROUTING_NAMES[0];
+    const layoutName       = LAYOUT_NAMES       [ctx.layout]       ?? LAYOUT_NAMES       [0];
     const items: MenuItem[] = [];
     // Save is meaningless without systems to serialize — hide it on the start screen.
     if (ctx.systems.length > 0) {
@@ -231,7 +243,15 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
         { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
           onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
           onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
-        { id: "audioRouting", label: "Audio routing: -", kind: "action", onSelect: stub("Audio routing"), keepOpen: true },
+        { id: "audioRouting", label: `Audio routing: ${audioRoutingName}`, kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, 1);
+              void plugin.$notify("setAudioRouting", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, dir);
+              void plugin.$notify("setAudioRouting", next);
+          } },
         { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
     );
     return items;
