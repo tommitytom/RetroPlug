@@ -75,6 +75,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::addRomFromPath>();
     rpcServer_->addMethod<&PluginRpcService::replaceRomFromPath>();
     rpcServer_->addMethod<&PluginRpcService::removeSystem>();
+    rpcServer_->addMethod<&PluginRpcService::clearCurrentProjectPath>();
     rpcServer_->addMethod<&PluginRpcService::listSystems>();
     rpcServer_->addMethod<&PluginRpcService::setFocus>();
     rpcServer_->addMethod<&PluginRpcService::getFocus>();

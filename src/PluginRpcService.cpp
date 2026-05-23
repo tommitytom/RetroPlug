@@ -232,6 +232,7 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
         return false;
     }
     if (recentFiles_) recentFiles_->add(path, "project");
+    currentProjectPath_ = path;
     emit("project-saved", path);
     return true;
 }
@@ -256,6 +257,7 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         return false;
     }
     if (recentFiles_) recentFiles_->add(path, "project");
+    currentProjectPath_ = path;
     emit("project-loaded", path);
     return true;
 }
@@ -314,7 +316,12 @@ bool PluginRpcService::openRomBrowser(OpenRomOpts opts) {
 bool PluginRpcService::openSaveProjectBrowser() {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::SaveProject;
-    openFileBrowser_("Save RetroPlug project", true, "project.rplg");
+    std::string defaultName = "project.rplg";
+    if (!currentProjectPath_.empty()) {
+        auto name = std::filesystem::path(currentProjectPath_).filename();
+        if (!name.empty()) defaultName = name.string();
+    }
+    openFileBrowser_("Save RetroPlug project", true, defaultName.c_str());
     return true;
 }
 
@@ -328,6 +335,11 @@ bool PluginRpcService::openLoadProjectBrowser() {
 bool PluginRpcService::removeSystem(std::uint32_t id) {
     if (!commands_) return false;
     return commands_->tryPush(Command::makeRemoveSystem(static_cast<SystemId>(id)));
+}
+
+bool PluginRpcService::clearCurrentProjectPath() {
+    currentProjectPath_.clear();
+    return true;
 }
 
 std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {

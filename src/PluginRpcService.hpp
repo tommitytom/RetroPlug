@@ -188,6 +188,10 @@ public:
     bool addRomFromPath(std::string path);
     bool replaceRomFromPath(std::uint32_t id, std::string path);
     bool removeSystem(std::uint32_t id);
+    // Drops the path remembered from the last load/save. Called by the UI when
+    // the system list transitions to empty, so a follow-up Save dialog doesn't
+    // default to the previously loaded project's filename.
+    bool clearCurrentProjectPath();
     std::vector<SystemEntry> listSystems();
     bool setFocus(std::uint32_t id);
     std::uint32_t getFocus();
@@ -302,6 +306,11 @@ private:
     IsWindowSizeControlledFn  isWindowSizeControlled_;
 
     PendingFileMode           pendingFileMode_      = PendingFileMode::LoadRom;
+
+    // Path of the most recent load/save. Used as the file-browser default name
+    // so subsequent saves target the same file. Cleared when the project
+    // becomes empty so a fresh session can't accidentally overwrite it.
+    std::string               currentProjectPath_;
 
     MemorySubRegistry         memorySubs_;
 };
