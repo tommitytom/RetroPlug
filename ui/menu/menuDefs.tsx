@@ -137,9 +137,13 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
 
 function projectChildren(ctx: MenuContext): MenuItem[] {
     const routingName = MIDI_ROUTING_NAMES[ctx.midiRouting] ?? MIDI_ROUTING_NAMES[0];
-    return [
-        { id: "saveProject", label: "Save project", kind: "action",
-          onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } },
+    const items: MenuItem[] = [];
+    // Save is meaningless without systems to serialize — hide it on the start screen.
+    if (ctx.systems.length > 0) {
+        items.push({ id: "saveProject", label: "Save project", kind: "action",
+                     onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } });
+    }
+    items.push(
         { id: "loadProject", label: "Load project", kind: "action",
           onSelect: () => { void plugin.$notify("openLoadProjectBrowser"); } },
         { id: "midiRouting", label: `MIDI routing: ${routingName}`, kind: "action", keepOpen: true,
@@ -157,7 +161,8 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
           onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
         { id: "audioRouting", label: "Audio routing: -", kind: "action", onSelect: stub("Audio routing"), keepOpen: true },
         { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
-    ];
+    );
+    return items;
 }
 
 function settingsChildren(): MenuItem[] {

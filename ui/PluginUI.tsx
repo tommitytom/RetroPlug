@@ -145,12 +145,19 @@ function PluginUI() {
 
     // Menu visibility invariant: empty project => menu always open. Adding
     // the first system auto-closes the menu so the user sees the new tile.
+    // Removing the last system also drops any remembered project path so a
+    // subsequent Save dialog can't default-target the previously loaded file.
+    const prevSystemsLenRef = useRef(systems.length);
     useEffect(() => {
         if (systems.length === 0) {
             setMenuOpen(true);
+            if (prevSystemsLenRef.current > 0) {
+                void plugin.$notify("clearCurrentProjectPath");
+            }
         } else if (menuOpenRef.current) {
             setMenuOpen(false);
         }
+        prevSystemsLenRef.current = systems.length;
     }, [systems.length]);
 
     // Window resizing: ask the host/WM for a window that fits the current

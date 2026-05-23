@@ -27,6 +27,7 @@ int main() {
     server.addMethod<&PluginRpcService::addRomFromPath>();
     server.addMethod<&PluginRpcService::replaceRomFromPath>();
     server.addMethod<&PluginRpcService::removeSystem>();
+    server.addMethod<&PluginRpcService::clearCurrentProjectPath>();
     server.addMethod<&PluginRpcService::listSystems>();
     server.addMethod<&PluginRpcService::setFocus>();
     server.addMethod<&PluginRpcService::getFocus>();
