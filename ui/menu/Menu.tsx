@@ -2,140 +2,220 @@ import { View, Text, ELvKey } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createGroup, setKeyboardGroup } from "lvgljs";
 
-import type { MenuItem, MenuPane } from "./menuDefs";
+import type { MenuItem, MenuTree } from "./menuDefs";
 
 // Cast around lvgljs-ui's Text type — it doesn't expose ref / onFocus / onKey
-// in its public typings. Same trick the KitEditor and the old MenuOverlay use.
+// in its public typings. Same trick the KitEditor and old MenuOverlay use.
 const TextAny = Text as any;
 
 interface MenuProps {
-    // Panel size in pixels. When `x`/`y` are provided the panel is placed
-    // absolutely via LV_ALIGN_TOP_LEFT — used when anchoring over a focused
-    // tile. When `x`/`y` are omitted, no `align` prop is emitted and the
-    // parent's flex layout positions the panel (used by StartScreen, where
-    // we want a centered panel in an empty window).
-    x?:     number;
-    y?:     number;
-    width:  number;
-    height: number;
-
-    // All available panes; the one with id == currentPaneId is rendered.
-    // Recomputed by the parent every render so labels with live state
-    // (link group, MIDI routing, LSDJ mode) refresh as they cycle.
-    panes:         Record<string, MenuPane>;
-    currentPaneId: string;
-
-    // Back-stack ops, lifted into the parent so Esc (handled in PluginUI's
-    // useKeyboard hook) can pop one level before falling through to close.
-    onPush: (paneId: string) => void;
-    onPop:  () => void;
-
-    // Called when the user picks an action item that isn't `keepOpen`. The
-    // action itself is fired by Menu; this just tells the parent the user
-    // is done and the menu can close.
-    onClose: () => void;
-
-    // The parent's empty input-sink group. Restored as the keyboard group
-    // when the Menu unmounts so LVGL doesn't fall back to the default group
-    // (which contains every clickable View and would mangle game input).
+    width:     number;
+    height:    number;
+    tree:      MenuTree;
+    onClose:   () => void;
     sinkGroup: any;
 }
 
-export function Menu({
-    x, y, width, height,
-    panes, currentPaneId,
-    onPush, onPop, onClose, sinkGroup,
-}: MenuProps) {
-    const pane = panes[currentPaneId] ?? panes["root"];
-    const items = pane.items;
+interface FlatEntry {
+    item:  MenuItem;
+    depth: number;
+}
 
-    const itemRefs = useRef<any[]>([]);
-    itemRefs.current = [];
+// Indent constants. depth=0 (top level) sits flush with the left padding;
+// each deeper level adds INDENT_STEP pixels. Tuned to roughly match v0.5's
+// 10 px indent at native zoom (we're scaled up).
+const BASE_PAD_LEFT = 4;
+const INDENT_STEP   = 16;
+
+export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
+    const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
+    // Visual highlight state. Updated by LV_EVENT_FOCUSED via onItemFocus so
+    // the blue text-color tracks whichever widget LVGL actually has focused.
+    const [focusedIdx, setFocusedIdx] = useState(0);
+    // Authoritative navigation cursor. ONLY moved by explicit user actions
+    // (arrow nav, click) and by the rebuild useEffect. Specifically NOT
+    // touched by onItemFocus, because expanding/collapsing a submenu causes
+    // LVGL to fire stray LV_EVENT_FOCUSED events during the React mutation
+    // phase: every newly-created Text widget auto-joins lv_group_get_default
+    // (see deps/.../components/text/text.cpp:9), which juggles the default
+    // group's focused obj. If we let those events drive the ref, the next
+    // useEffect read would clamp to whatever junk widget LVGL landed on (in
+    // practice always 0), making submenu-expand jump focus to the top item.
+    const focusedIdxRef = useRef(0);
+    // Suppresses onItemFocus side-effects while a submenu toggle is in
+    // flight. Set true by `activate` before setOpenItems, cleared by the
+    // group-rebuild useEffect once the new group is wired up. Starts true so
+    // initial mount's creation-time focus events are also ignored.
+    const isRebuildingRef = useRef(true);
+    const onItemFocus = useCallback((idx: number) => {
+        if (isRebuildingRef.current) return;
+        setFocusedIdx(idx);
+    }, []);
+
+    // Flatten the tree: walk depth-first, including children of any submenu
+    // whose id is in `openItems`. The resulting flat list is what the user
+    // actually sees (and navigates with arrows).
+    const flat: FlatEntry[] = [];
+    (function walk(items: MenuItem[], depth: number) {
+        for (const item of items) {
+            flat.push({ item, depth });
+            if (item.kind === "submenu" && openItems.has(item.id) && item.children) {
+                walk(item.children, depth + 1);
+            }
+        }
+    })(tree.items, 0);
+
+    // Stable string key for the currently-visible item set — used as the
+    // focus-group rebuild dependency. Whenever the visible items change
+    // (expand/collapse) we need to rebuild the LVGL group with the new refs.
+    const visibleKey = flat.map(f => f.item.id).join(",");
+
+    // Refs keyed by stable item.id, NOT by array index. Persists across
+    // renders so stray re-renders (e.g. from setFocusedIdx in useEffect)
+    // don't wipe the ref table by re-running an array-reset in the render
+    // body. Old refs are cleared by their own null-callback on unmount.
+    const refsByIdRef = useRef<Map<string, any>>(new Map());
+
+    // flat is captured by the render closure. Mirror it into a ref so
+    // onItemKey (useCallback with []) can recompute the ordered ref list
+    // from the latest flat without re-creating the callback identity.
+    const flatRef = useRef<FlatEntry[]>(flat);
+    flatRef.current = flat;
+
+    // Translate the current flat list into an ordered array of LVGL widget
+    // refs, dropping any null entries (items whose ref callback hasn't
+    // fired yet — shouldn't happen post-commit, but defensive).
+    const getOrderedRefs = useCallback((): any[] => {
+        const refs: any[] = [];
+        for (const f of flatRef.current) {
+            const r = refsByIdRef.current.get(f.item.id);
+            if (r) refs.push(r);
+        }
+        return refs;
+    }, []);
 
     const groupRef = useRef<any>(null);
-    const [focusedIdx, setFocusedIdx] = useState(0);
-    const focusedIdxRef = useRef(focusedIdx);
-    useEffect(() => { focusedIdxRef.current = focusedIdx; }, [focusedIdx]);
 
-    // Rebuild the focus group whenever the pane changes (item set differs).
-    // Same lifecycle as KitEditor.tsx — claim keyboard on entry, restore the
-    // parent's sink group on unmount / re-population.
+    console.log("[menu] render flat.length=", flat.length, "openItems=", [...openItems].join(","));
+
+    // Rebuild the focus group whenever the visible items change. Pattern
+    // mirrors KitEditor.tsx — claim the keypad on mount, restore the
+    // parent's sink group on unmount / before rebuild.
     useEffect(() => {
         const group = createGroup();
         groupRef.current = group;
-        for (const ref of itemRefs.current) {
-            if (ref) group.add(ref);
-        }
-        // Land focus on the first non-back item so Esc-to-pop and Down-arrow
-        // don't both start on "◂ Back" (which would be slightly awkward).
-        const firstNonBack = items.findIndex((it) => it.kind !== "back");
-        const initial = firstNonBack >= 0 ? firstNonBack : 0;
-        if (itemRefs.current[initial]) group.focus(itemRefs.current[initial]);
-        focusedIdxRef.current = initial;
-        setFocusedIdx(initial);
+        const orderedRefs = getOrderedRefs();
+        for (const ref of orderedRefs) group.add(ref);
+        // Clamp the existing focus index into the new bounds; LVGL focuses
+        // whatever widget is at that index. If nothing's there (empty list)
+        // we skip the focus call entirely.
+        const clamped = Math.min(focusedIdxRef.current, orderedRefs.length - 1);
+        const idx = clamped < 0 ? 0 : clamped;
+        focusedIdxRef.current = idx;
+        // Re-enable focus-event handling BEFORE the focus call so the
+        // resulting LV_EVENT_FOCUSED updates the visual highlight.
+        isRebuildingRef.current = false;
+        if (orderedRefs[idx]) group.focus(orderedRefs[idx]);
+        // Defensive: synchronous setFocusedIdx in case the focus event
+        // didn't fire (e.g. orderedRefs[idx] was null).
+        setFocusedIdx(idx);
         setKeyboardGroup(group);
+        console.log("[menu] group built, refs=", orderedRefs.length, "focused=", idx);
         return () => {
             setKeyboardGroup(sinkGroup ?? null);
             group.destroy();
             groupRef.current = null;
         };
-    }, [currentPaneId, sinkGroup, items.length]);
+        // visibleKey changes whenever the set of rendered items changes (an
+        // expand / collapse / tree rebuild). sinkGroup is included so that
+        // if the parent's sink ref settles after first paint, we re-claim
+        // the keypad correctly.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visibleKey, sinkGroup]);
 
+    // Up / Down nav. No wrap-around — v0.5 doesn't wrap, and wrap on a
+    // potentially long scrollable list is disorienting.
+    //
+    // Stop bubbling: lv_binding_js sets LV_OBJ_FLAG_EVENT_BUBBLE on every
+    // Text widget (see deps/.../components/text/text.cpp), so an unhandled
+    // LV_EVENT_KEY would bubble up to the scrollable inner View and LVGL's
+    // default key handler would scroll it instead of moving focus. We stop
+    // the bubble for every key we see — Enter doesn't go through onKey
+    // (it's PRESSED → CLICKED via onClick), so this is safe.
+    //
+    // Note: lv_binding_js's public TS type names the method `stopPropogation`
+    // (with a typo) but the native binding actually exposes `stopPropagation`
+    // (correct spelling) — see deps/.../core/event/key/key.cpp:37. We cast
+    // around the typed mismatch.
     const onItemKey = useCallback((e: { key: number }) => {
-        const refs = itemRefs.current;
+        (e as any).stopPropagation?.();
+        const refs = getOrderedRefs();
         const group = groupRef.current;
+        console.log("[menu] onKey", e.key, "cur=", focusedIdxRef.current, "refsLen=", refs.length);
         if (!group || refs.length === 0) return;
-        let next = focusedIdxRef.current;
+        const cur = focusedIdxRef.current;
+        let next = cur;
         if (e.key === ELvKey.LV_KEY_DOWN || e.key === ELvKey.LV_KEY_RIGHT) {
-            next = (focusedIdxRef.current + 1) % refs.length;
+            if (cur >= refs.length - 1) return;
+            next = cur + 1;
         } else if (e.key === ELvKey.LV_KEY_UP || e.key === ELvKey.LV_KEY_LEFT) {
-            next = (focusedIdxRef.current - 1 + refs.length) % refs.length;
+            if (cur <= 0) return;
+            next = cur - 1;
         } else {
             return;
         }
+        // Set the ref synchronously BEFORE asking LVGL to move focus, so even
+        // if the LV_EVENT_FOCUSED → onItemFocus chain races a subsequent
+        // keystroke, the next onItemKey reads the correct `cur`.
+        focusedIdxRef.current = next;
         if (refs[next]) group.focus(refs[next]);
     }, []);
 
-    const activate = useCallback((item: MenuItem) => {
-        if (item.kind === "back") {
-            onPop();
-            return;
-        }
-        if (item.kind === "submenu" && item.submenu) {
-            onPush(item.submenu);
+    const activate = useCallback((i: number, item: MenuItem) => {
+        // Remember which item the user is acting on so the rebuild useEffect
+        // restores focus to the same row (the submenu header keeps the same
+        // index since it doesn't move when its children appear/disappear
+        // below it).
+        focusedIdxRef.current = i;
+        if (item.kind === "submenu") {
+            // Suppress the stray LV_EVENT_FOCUSED events that fire during
+            // the impending mutation phase — see isRebuildingRef comment.
+            isRebuildingRef.current = true;
+            setOpenItems(prev => {
+                const nextSet = new Set(prev);
+                if (nextSet.has(item.id)) nextSet.delete(item.id);
+                else nextSet.add(item.id);
+                return nextSet;
+            });
             return;
         }
         item.onSelect?.();
         if (!item.keepOpen) onClose();
-    }, [onPush, onPop, onClose]);
+    }, [onClose]);
 
-    const panelStyle: Record<string, unknown> = {
-        width:  width,
-        height: height,
-        "background-color": "#000000",
-        "background-opacity": 255,
-        "border-width": 1,
-        "border-color": "#4fc3f7",
-        "border-opacity": 255,
-        "border-radius": 0,
-        "padding-left":  8,
-        "padding-right": 8,
-        "padding-top":   6,
-        "padding-bottom":6,
-        display: "flex",
-        "flex-direction": "column",
-        "align-items": "stretch",
-        "justify-content": "flex-start",
-        "row-spacing": 0,
-        "column-spacing": 0,
-        overflow: "hidden",
-    };
-    const anchored = x != null && y != null;
-    const ViewAny = View as any;
     return (
-        <ViewAny
-            style={panelStyle}
-            {...(anchored ? { align: { type: 0x01 /* LV_ALIGN_TOP_LEFT */, pos: [x, y] } } : {})}
+        <View
+            style={{
+                width:  width,
+                height: height,
+                "background-color": "#000000",
+                "background-opacity": 255,
+                "border-width": 1,
+                "border-color": "#4fc3f7",
+                "border-opacity": 255,
+                "border-radius": 0,
+                "padding-left":  8,
+                "padding-right": 8,
+                "padding-top":   6,
+                "padding-bottom":6,
+                display: "flex",
+                "flex-direction": "column",
+                "align-items": "stretch",
+                "justify-content": "flex-start",
+                "row-spacing": 0,
+                "column-spacing": 0,
+                overflow: "hidden",
+            }}
         >
             <Text
                 style={{
@@ -144,9 +224,20 @@ export function Menu({
                     "padding-bottom": 4,
                 }}
             >
-                {pane.title}
+                {tree.title}
             </Text>
             <View
+                // Re-keying on the visible set forces a full unmount/remount
+                // of the inner View whenever a submenu opens or closes. This
+                // is a workaround for lv_binding_js: its `insertChildBefore`
+                // implementation
+                // (deps/lv_binding_js/src/render/native/core/basic/comp.cpp:38)
+                // ignores the `beforeChild` argument and effectively just
+                // appends — so newly-inserted submenu children end up at the
+                // bottom of the LVGL widget list, visually misordered.
+                // Remounting from scratch lets every Text child mount via
+                // appendChild in JSX order, producing the correct LVGL order.
+                key={visibleKey}
                 style={{
                     width:  "100%",
                     height: height - 36,
@@ -165,26 +256,40 @@ export function Menu({
                     overflow: "auto",
                 }}
             >
-                {items.map((item, i) => (
-                    <TextAny
-                        key={item.id}
-                        ref={(r: any) => { itemRefs.current[i] = r; }}
-                        style={{
-                            "text-color": focusedIdx === i ? "#4fc3f7" : "#ffffff",
-                            "font-size": 18,
-                            "padding-top":    4,
-                            "padding-bottom": 4,
-                            "padding-left":   4,
-                            "padding-right":  4,
-                        }}
-                        onFocus={() => setFocusedIdx(i)}
-                        onKey={onItemKey}
-                        onClick={() => activate(item)}
-                    >
-                        {item.label}
-                    </TextAny>
-                ))}
+                {flat.map(({ item, depth }, i) => {
+                    const isSubmenu = item.kind === "submenu";
+                    const isOpen    = isSubmenu && openItems.has(item.id);
+                    // Submenu items always show a hint glyph. `>` collapsed,
+                    // `v` expanded. Children appearing inline below ALSO
+                    // signals expanded state, but the glyph helps users
+                    // who're scanning quickly.
+                    const label = isSubmenu
+                        ? `${item.label} ${isOpen ? "v" : ">"}`
+                        : item.label;
+                    return (
+                        <TextAny
+                            key={item.id}
+                            ref={(r: any) => {
+                                if (r) refsByIdRef.current.set(item.id, r);
+                                else refsByIdRef.current.delete(item.id);
+                            }}
+                            style={{
+                                "text-color": focusedIdx === i ? "#4fc3f7" : "#ffffff",
+                                "font-size": 18,
+                                "padding-top":    4,
+                                "padding-bottom": 4,
+                                "padding-left":   BASE_PAD_LEFT + depth * INDENT_STEP,
+                                "padding-right":  4,
+                            }}
+                            onFocus={() => { console.log("[menu] onFocus", i); onItemFocus(i); }}
+                            onKey={onItemKey}
+                            onClick={() => activate(i, item)}
+                        >
+                            {label}
+                        </TextAny>
+                    );
+                })}
             </View>
-        </ViewAny>
+        </View>
     );
 }

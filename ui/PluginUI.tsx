@@ -5,9 +5,9 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 import { plugin } from "./plugin/client";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
+import { TILE_W, TILE_H } from "./layout";
 import { Menu } from "./menu/Menu";
 import { StartScreen } from "./menu/StartScreen";
-import { useMenuStack } from "./menu/MenuStack";
 import { buildInstanceMenu } from "./menu/menuDefs";
 import {
     GameboyButton,
@@ -38,12 +38,6 @@ function PluginUI() {
     // mount and the routing label only matters once a tile exists.
     const [midiRouting, setMidiRouting] = useState<number>(0);
 
-    // Menu back-stack. Lifted into PluginUI (rather than living inside the
-    // Menu component) so the Esc handler can pop one level before falling
-    // through to "close the menu" — Esc lives in the global useKeyboard
-    // handler below.
-    const menu = useMenuStack("root");
-
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
 
@@ -52,9 +46,6 @@ function PluginUI() {
 
     const focusedIdRef = useRef(focusedId);
     useEffect(() => { focusedIdRef.current = focusedId; }, [focusedId]);
-
-    const menuCanPopRef = useRef(menu.canPop);
-    useEffect(() => { menuCanPopRef.current = menu.canPop; }, [menu.canPop]);
 
     // Empty "input sink" group, claimed as the keyboard group whenever the
     // menu isn't open. lv_binding_js's setKeyboardGroup(null) falls back to
@@ -127,7 +118,6 @@ function PluginUI() {
     useEffect(() => {
         if (systems.length === 0) {
             setMenuOpen(true);
-            menu.reset();
         } else if (menuOpenRef.current) {
             setMenuOpen(false);
         }
@@ -163,20 +153,12 @@ function PluginUI() {
                 return;
             }
             if (!press) return;
-            // Esc with empty project does nothing — the menu must stay open.
+            // Start screen (no instances): Esc is a no-op. The menu must
+            // stay open per the empty-project invariant, and submenu
+            // expand/collapse is handled inline by activating the header.
             if (systemsRef.current.length === 0) return;
-            // Menu open + on a submenu → pop one level. Menu open + at
-            // root → close. Menu closed → open at root.
-            if (menuOpenRef.current) {
-                if (menuCanPopRef.current) {
-                    menu.pop();
-                } else {
-                    setMenuOpen(false);
-                }
-            } else {
-                menu.reset();
-                setMenuOpen(true);
-            }
+            // Per-instance: Esc toggles the menu.
+            setMenuOpen(o => !o);
             return;
         }
         // Kit editor consumes its own key events through its child group.
@@ -216,24 +198,17 @@ function PluginUI() {
             targets.delete(key);
             void plugin.$notify("pressButton", button, false, target);
         }
-    }, [menu]));
+    }, []));
 
-    // Right-click on a tile: focus the tile + open the menu over it. Position
-    // resolution: getTileBounds gives the tile's rect inside the grid; the
-    // grid is flex-centered by the root, so the same hit-test applies after
-    // subtracting the grid's centering offset from the cursor coordinates.
+    // Right-click on a tile: focus the tile + open the menu. Position
+    // resolution: getTileBounds gives the tile's rect inside the grid; we
+    // assume window coords ≈ grid coords (true at native zoom on most WMs
+    // because we drive setWindowSize to match the grid content size).
     useMouse(useCallback((button: number, press: boolean, x: number, y: number) => {
         if (button !== MOUSE_BUTTON_RIGHT || !press) return;
         if (kitEditorOpenRef.current) return;
         const list = systemsRef.current;
         if (list.length === 0) return;
-        // Hit-test against the grid's local coordinate system. We don't
-        // know the window size in JS, but the grid is centered in whatever
-        // size DPF gave us — and at native zoom, when the WM honors our
-        // setWindowSize request, the grid fills the window exactly so
-        // window coords == grid coords. On a tiled WM the menu may be
-        // slightly off; we accept that for now rather than plumbing a
-        // window-size RPC just for hit-test math.
         for (let i = 0; i < list.length; i++) {
             const b = getTileBounds(i, list.length, SystemLayout.Auto);
             if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
@@ -242,19 +217,11 @@ function PluginUI() {
                     setFocusedId(sys.id);
                     void plugin.$notify("setFocus", sys.id);
                 }
-                if (!menuOpenRef.current) {
-                    menu.reset();
-                    setMenuOpen(true);
-                } else {
-                    // Re-anchoring: focus changed but menu was already
-                    // open. Reset the back-stack so the new instance's
-                    // menu starts at root.
-                    menu.reset();
-                }
+                if (!menuOpenRef.current) setMenuOpen(true);
                 return;
             }
         }
-    }, [menu]));
+    }, []));
 
     // Same release-to-original-target bookkeeping as keyTargetRef above, but
     // keyed by `${padId}:${buttonName}` since a single button is unique per
@@ -285,8 +252,9 @@ function PluginUI() {
     const focusedSystem = systems.find((s) => s.id === focusedId);
 
     const closeMenu = useCallback(() => {
-        // Don't force-close here if removing the last instance emptied the
-        // project; the [systems.length] effect re-opens the menu in that case.
+        // Don't force-close if there are no instances (start screen's empty-
+        // project invariant). The [systems.length] effect re-opens the menu
+        // when length goes back to 0.
         if (systemsRef.current.length > 0) setMenuOpen(false);
     }, []);
 
@@ -295,21 +263,10 @@ function PluginUI() {
         setKitEditorOpen(true);
     }, []);
 
-    // Compute the focused tile's bounds for menu anchoring. Falls back to
-    // (0, 0) if there's no focus yet — the empty-project branch renders
-    // StartScreen instead, so the menu in this case never reads x/y.
-    const focusedIndex = focusedSystem
-        ? systems.findIndex((s) => s.id === focusedSystem.id)
-        : -1;
-    const tileBounds = focusedIndex >= 0
-        ? getTileBounds(focusedIndex, systems.length, SystemLayout.Auto)
-        : null;
-
-    const instancePanes = buildInstanceMenu({
+    const instanceTree = buildInstanceMenu({
         systems,
         focusedSystem,
         midiRouting,
-        closeMenu,
         openKitEditor,
     });
 
@@ -345,31 +302,18 @@ function PluginUI() {
             ) : systems.length === 0 ? (
                 <StartScreen
                     midiRouting={midiRouting}
-                    currentPaneId={menu.currentId}
-                    onPush={menu.push}
-                    onPop={menu.pop}
+                    sinkGroup={sinkGroupRef.current}
+                />
+            ) : menuOpen ? (
+                <Menu
+                    width={TILE_W}
+                    height={TILE_H}
+                    tree={instanceTree}
+                    onClose={closeMenu}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : (
-                <SystemGrid
-                    systems={systems}
-                    focusedId={focusedId}
-                    layout={SystemLayout.Auto}
-                    overlay={menuOpen && tileBounds ? (
-                        <Menu
-                            x={tileBounds.x}
-                            y={tileBounds.y}
-                            width={tileBounds.w}
-                            height={tileBounds.h}
-                            panes={instancePanes}
-                            currentPaneId={menu.currentId}
-                            onPush={menu.push}
-                            onPop={menu.pop}
-                            onClose={closeMenu}
-                            sinkGroup={sinkGroupRef.current}
-                        />
-                    ) : undefined}
-                />
+                <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />
             )}
         </View>
     );
