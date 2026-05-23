@@ -19,6 +19,10 @@ export interface MenuItem {
     kind:      MenuItemKind;
     children?: MenuItem[];      // present iff kind === "submenu"
     onSelect?: () => void;      // present iff kind === "action"
+    // Right/Left arrow handler for multi-option items (Zoom, MIDI routing,
+    // Link group, LSDJ mode). Direction is +1 (Right = next value) or -1
+    // (Left = previous). Items without onCycle are no-op on Right/Left.
+    onCycle?:  (direction: 1 | -1) => void;
     // True = activating this item should NOT close the menu (e.g. cycling
     // labels like "Link group" / "MIDI routing" / "LSDJ mode").
     keepOpen?: boolean;
@@ -67,6 +71,16 @@ function stub(label: string): () => void {
     };
 }
 
+// Wraps `current` within [min, max] inclusive. `+1` past max returns min;
+// `-1` below min returns max. Used by every multi-option item below so the
+// Enter-cycles-forward (onSelect) and Right/Left-cycle-either-direction
+// (onCycle) paths share the same modulo math.
+function cycleInt(current: number, min: number, max: number,
+                  dir: 1 | -1): number {
+    if (dir > 0) return current >= max ? min : current + 1;
+    return current <= min ? max : current - 1;
+}
+
 function recentChildren(): MenuItem[] {
     return [
         { id: "recentEmpty", label: "(no recent files)", kind: "action",
@@ -101,15 +115,17 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => { void plugin.$notify("openLoadProjectBrowser"); } },
         { id: "midiRouting", label: `MIDI routing: ${routingName}`, kind: "action", keepOpen: true,
           onSelect: () => {
-              const next = (ctx.midiRouting + 1) % MIDI_ROUTING_NAMES.length;
+              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1);
+              void plugin.$notify("setMidiRouting", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
               void plugin.$notify("setMidiRouting", next);
           } },
         { id: "layout",       label: "Layout: -",        kind: "action", onSelect: stub("Layout"),        keepOpen: true },
         { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = ctx.zoom >= 6 ? 1 : ctx.zoom + 1;
-              void plugin.$notify("setZoom", next);
-          } },
+          onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
+          onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
         { id: "audioRouting", label: "Audio routing: -", kind: "action", onSelect: stub("Audio routing"), keepOpen: true },
         { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
     ];
@@ -149,7 +165,12 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         { id: "linkGroup", label: `Link group: ${linkSuffix}`, kind: "action", keepOpen: true,
           onSelect: () => {
               if (!sys) return;
-              const next = (((sys.linkGroupId ?? 0) + 1) % LINK_GROUP_MAX);
+              const next = cycleInt(sys.linkGroupId ?? 0, 0, LINK_GROUP_MAX - 1, 1);
+              void plugin.$notify("setLinkGroupId", sys.id, next);
+          },
+          onCycle: (dir) => {
+              if (!sys) return;
+              const next = cycleInt(sys.linkGroupId ?? 0, 0, LINK_GROUP_MAX - 1, dir);
               void plugin.$notify("setLinkGroupId", sys.id, next);
           } },
     ];
@@ -159,7 +180,12 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             id: "lsdjMode", label: `LSDJ mode: ${lsdjMode}`, kind: "action", keepOpen: true,
             onSelect: () => {
                 if (!sys || sys.lsdjSyncMode == null) return;
-                const next = (sys.lsdjSyncMode + 1) % LSDJ_MODE_NAMES.length;
+                const next = cycleInt(sys.lsdjSyncMode, 0, LSDJ_MODE_NAMES.length - 1, 1);
+                void plugin.$notify("setLsdjSyncConfig", sys.id, next, sys.lsdjTempoDivisor ?? 1);
+            },
+            onCycle: (dir) => {
+                if (!sys || sys.lsdjSyncMode == null) return;
+                const next = cycleInt(sys.lsdjSyncMode, 0, LSDJ_MODE_NAMES.length - 1, dir);
                 void plugin.$notify("setLsdjSyncConfig", sys.id, next, sys.lsdjTempoDivisor ?? 1);
             },
         });

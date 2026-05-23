@@ -239,11 +239,25 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         const group = groupRef.current;
         if (!group || refs.length === 0) return;
         const cur = focusedIdxRef.current;
+
+        // Right/Left cycle the focused item's value (Zoom, MIDI routing,
+        // Link group, LSDJ mode). Items without onCycle are no-op — focus
+        // does NOT move on Right/Left, matching the v0.5 / desktop-app
+        // convention where horizontal arrows manipulate the current row.
+        if (e.key === ELvKey.LV_KEY_RIGHT) {
+            flatRef.current[cur]?.item.onCycle?.(1);
+            return;
+        }
+        if (e.key === ELvKey.LV_KEY_LEFT) {
+            flatRef.current[cur]?.item.onCycle?.(-1);
+            return;
+        }
+
         let next = cur;
-        if (e.key === ELvKey.LV_KEY_DOWN || e.key === ELvKey.LV_KEY_RIGHT) {
+        if (e.key === ELvKey.LV_KEY_DOWN) {
             if (cur >= refs.length - 1) return;
             next = cur + 1;
-        } else if (e.key === ELvKey.LV_KEY_UP || e.key === ELvKey.LV_KEY_LEFT) {
+        } else if (e.key === ELvKey.LV_KEY_UP) {
             if (cur <= 0) return;
             next = cur - 1;
         } else {
