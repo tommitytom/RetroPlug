@@ -70,8 +70,8 @@ set_target_properties(msgpack-c PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(RPCPP_BUILD_MSGPACK ON CACHE BOOL "" FORCE)
 add_subdirectory(deps/rpcpp)
 
-# --- SameBoy: Game Boy emulator core, vendored under deps/sameboy ---
-add_subdirectory(deps/sameboy)
+# --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
+include(cmake/sameboy.cmake)
 
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 add_subdirectory(deps/mesen)
