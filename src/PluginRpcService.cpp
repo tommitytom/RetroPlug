@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "lsdj/KitCompiler.hpp"
 #include "lsdj/SampleCache.hpp"
@@ -73,13 +74,15 @@ PluginRpcService::PluginRpcService(Project* project,
                                    EventQueue* events,
                                    std::atomic<double>* sampleRate,
                                    std::atomic<SystemId>* focusedSystemId,
-                                   UserConfig* userConfig)
+                                   UserConfig* userConfig,
+                                   RecentFiles* recentFiles)
     : project_(project),
       commands_(commands),
       events_(events),
       sampleRate_(sampleRate),
       focusedSystemId_(focusedSystemId),
-      userConfig_(userConfig) {}
+      userConfig_(userConfig),
+      recentFiles_(recentFiles) {}
 
 // Defined here (not in the header) so the std::unique_ptr<KitCompiler>
 // destructor can see the complete KitCompiler type.
@@ -167,6 +170,7 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
+    if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
 }
@@ -185,6 +189,7 @@ bool PluginRpcService::addRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
+    if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
 }
@@ -203,6 +208,7 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
         emit("rom-error", path);
         return false;
     }
+    if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
 }
@@ -225,6 +231,7 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
+    if (recentFiles_) recentFiles_->add(path, "project");
     emit("project-saved", path);
     return true;
 }
@@ -248,6 +255,7 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
+    if (recentFiles_) recentFiles_->add(path, "project");
     emit("project-loaded", path);
     return true;
 }
@@ -674,6 +682,17 @@ UserConfigDto PluginRpcService::getUserConfig() {
 bool PluginRpcService::setActiveBindings(std::string name) {
     if (!userConfig_) return false;
     return userConfig_->setActiveBindings(std::move(name));
+}
+
+std::vector<PluginRpcService::RecentFileDto> PluginRpcService::getRecentFiles() {
+    std::vector<RecentFileDto> out;
+    if (!recentFiles_) return out;
+    auto snap = recentFiles_->snapshot();
+    out.reserve(snap.size());
+    for (auto& e : snap) {
+        out.push_back(RecentFileDto{std::move(e.path), std::move(e.kind)});
+    }
+    return out;
 }
 
 // ----- Memory snapshot API --------------------------------------------------

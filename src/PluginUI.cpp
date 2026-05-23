@@ -21,6 +21,7 @@
 #include "LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
+#include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 
 #include <chrono>
@@ -65,6 +66,9 @@ class LVGLPluginUI : public UI
     // before bridge/jsEngine tear down, so a stray bg-thread file event
     // can't race into a half-destroyed JS context.
     UserConfig userConfig;
+    // Recent ROMs + projects. UI-thread owned, no watcher — the load/save
+    // RPC handlers are the only writers.
+    RecentFiles recentFiles;
 
     // Track the last setSize request so we can detect a tiled-WM clamp.
     // Once `wmControlled_` flips true (compositor returned a different
@@ -241,6 +245,14 @@ public:
             });
             userConfig.start();
 
+            // Recent files. Same pattern as userConfig: the change callback
+            // emits "recent-files-changed" so the UI can refetch.
+            recentFiles.setOnChange([this]() {
+                if (jsEngine.getContext())
+                    jsEngine.emit("recent-files-changed", 0, nullptr);
+            });
+            recentFiles.start();
+
             // Plugin-specific JS bridge. Must exist before evalModule so
             // useEffect handlers can register before the bundle's first render.
             bridge = std::make_unique<PluginJsBridge>(
@@ -250,7 +262,8 @@ public:
                 shared ? shared->events          : nullptr,
                 shared ? shared->sampleRate      : nullptr,
                 shared ? shared->focusedSystemId : nullptr,
-                &userConfig);
+                &userConfig,
+                &recentFiles);
 
             // The bridge invokes this for any file-browser action — Open ROM,
             // Add instance, Save project, Load project. The flags map to

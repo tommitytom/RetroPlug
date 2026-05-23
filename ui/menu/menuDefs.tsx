@@ -33,12 +33,19 @@ export interface MenuTree {
     items: MenuItem[];
 }
 
+export interface RecentEntry {
+    path: string;
+    kind: "rom" | "project";
+}
+
 export interface MenuContext {
     systems:        SystemEntry[];
     focusedSystem?: SystemEntry;
     midiRouting:    number;
     // Resolved zoom level 1..6 (project setting or user-config default).
     zoom:           number;
+    // Most-recent first. Sourced from C++ via plugin.getRecentFiles().
+    recentFiles:    RecentEntry[];
     // Called by Menu when the user picks Kit Editor.
     openKitEditor:  () => void;
 }
@@ -81,11 +88,33 @@ function cycleInt(current: number, min: number, max: number,
     return current <= min ? max : current - 1;
 }
 
-function recentChildren(): MenuItem[] {
-    return [
-        { id: "recentEmpty", label: "(no recent files)", kind: "action",
-          onSelect: stub("Recent file load"), keepOpen: true },
-    ];
+// Filename component, handling both `/` and `\\` separators so paths recorded
+// on either platform render cleanly. C++ side canonicalises before storing,
+// so duplicates are already gone — the basename is purely cosmetic.
+function basename(path: string): string {
+    const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
+function recentChildren(ctx: MenuContext): MenuItem[] {
+    if (ctx.recentFiles.length === 0) {
+        return [
+            { id: "recentEmpty", label: "(no recent files)", kind: "action",
+              onSelect: () => {}, keepOpen: true },
+        ];
+    }
+    return ctx.recentFiles.map((entry, i) => ({
+        id:    `recent:${i}`,
+        label: basename(entry.path),
+        kind:  "action",
+        onSelect: () => {
+            if (entry.kind === "project") {
+                void plugin.$notify("loadProjectFromPath", entry.path);
+            } else {
+                void plugin.$notify("loadRomFromPath", entry.path);
+            }
+        },
+    }));
 }
 
 function systemChildren(ctx: MenuContext): MenuItem[] {
@@ -155,7 +184,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         : "";
 
     const items: MenuItem[] = [
-        { id: "recent", label: "Recent", kind: "submenu", children: recentChildren() },
+        { id: "recent", label: "Recent", kind: "submenu", children: recentChildren(ctx) },
         { id: "loadRom",        label: "Load ROM...",    kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
         { id: "addInstance",    label: "Add instance",   kind: "action",
@@ -216,7 +245,7 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
         items: [
             { id: "load", label: "Load...", kind: "action",
               onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
-            { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren() },
+            { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren(ctx) },
             { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
             { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren() },
             { id: "about",    label: "About",    kind: "action",  onSelect: stub("About") },

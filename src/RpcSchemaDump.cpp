@@ -46,6 +46,7 @@ int main() {
     server.addMethod<&PluginRpcService::openSampleBrowser>();
     server.addMethod<&PluginRpcService::getUserConfig>();
     server.addMethod<&PluginRpcService::setActiveBindings>();
+    server.addMethod<&PluginRpcService::getRecentFiles>();
     server.addMethod<&PluginRpcService::getMemory>();
     server.addMethod<&PluginRpcService::subscribeMemory>();
     server.addMethod<&PluginRpcService::unsubscribeMemory>();

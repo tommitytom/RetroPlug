@@ -21,6 +21,7 @@ class Project;
 class CommandQueue;
 class EventQueue;
 class UserConfig;
+class RecentFiles;
 
 // Thin shim between the QuickJS runtime and the rpcpp-typed
 // PluginRpcService. The bridge:
@@ -47,7 +48,8 @@ public:
                    EventQueue* events,
                    std::atomic<double>* sampleRate,
                    std::atomic<SystemId>* focusedSystemId,
-                   UserConfig* userConfig = nullptr);
+                   UserConfig* userConfig = nullptr,
+                   RecentFiles* recentFiles = nullptr);
     ~PluginJsBridge();
 
     PluginJsBridge(const PluginJsBridge&)            = delete;

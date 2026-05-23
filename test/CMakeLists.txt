@@ -16,8 +16,10 @@ add_executable(retroplug-tests
     MemoryAccessorTests.cpp
     MemorySnapshotTripleTests.cpp
     ProjectTests.cpp
+    RecentFilesTests.cpp
     RomSnifferTests.cpp
     UserConfigTests.cpp
+    ../src/config/RecentFiles.cpp
     ../src/config/UserConfig.cpp
     ../src/config/UserConfigPaths.cpp
     ../src/system/sameboy/RomSniffer.cpp
