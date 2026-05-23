@@ -18,6 +18,7 @@ add_executable(retroplug-tests
     ProjectTests.cpp
     RecentFilesTests.cpp
     RomSnifferTests.cpp
+    SystemBaseDefaultsTests.cpp
     UserConfigTests.cpp
     ../src/config/RecentFiles.cpp
     ../src/config/UserConfig.cpp
@@ -77,3 +78,49 @@ target_link_libraries(retroplug-mesen-tests PRIVATE
 )
 
 catch_discover_tests(retroplug-mesen-tests)
+
+# -----------------------------------------------------------------------------
+# retroplug-sameboy-tests — direct tests of SameBoySystem's SystemBase
+# overrides (clone, SRAM/state I/O, restartEmulator, fast-boot toggle, reload-
+# on-rom-change). Mirrors retroplug-mesen-tests; isolated binary so the main
+# retroplug-tests stays free of SameBoy linkage.
+#
+# Requires a Game Boy ROM at the path baked into RETROPLUG_TEST_GB_ROM. The
+# default is the sibling resources tree (`../resources/roms/lsdj9_4_2.gb`)
+# documented in AGENTS.md. Tests skip gracefully when the file is missing.
+# -----------------------------------------------------------------------------
+add_executable(retroplug-sameboy-tests
+    SameBoySystemBaseTests.cpp
+    ../src/system/SystemBase.cpp
+    ../src/system/sameboy/LinkGroup.cpp
+    ../src/system/sameboy/RomSniffer.cpp
+    ../src/system/sameboy/SameBoySystem.cpp
+    ../src/system/sameboy/roles/ArduinoboyMaster.cpp
+    ../src/system/sameboy/roles/LsdjSyncRole.cpp
+    ../src/system/sameboy/roles/LsdjKitPatchRole.cpp
+    ../src/system/sameboy/roles/MgbPassthroughRole.cpp
+    ../src/lsdj/Effects.cpp
+    ../src/lsdj/KitUtil.cpp
+)
+
+target_include_directories(retroplug-sameboy-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+set(_RETROPLUG_TEST_GB_ROM
+    "${CMAKE_SOURCE_DIR}/../resources/roms/lsdj9_4_2.gb"
+    CACHE FILEPATH
+    "Path to a Game Boy ROM used by retroplug-sameboy-tests. Default is the \
+sibling resources tree documented in AGENTS.md.")
+target_compile_definitions(retroplug-sameboy-tests PRIVATE
+    RETROPLUG_TEST_GB_ROM="${_RETROPLUG_TEST_GB_ROM}"
+)
+
+target_link_libraries(retroplug-sameboy-tests PRIVATE
+    Catch2::Catch2WithMain
+    rpcpp
+    r8brain
+    sameboy
+)
+
+catch_discover_tests(retroplug-sameboy-tests)
