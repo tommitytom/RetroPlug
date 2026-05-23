@@ -36,6 +36,8 @@ int main() {
     server.addMethod<&PluginRpcService::setLinkGroupId>();
     server.addMethod<&PluginRpcService::getMidiRouting>();
     server.addMethod<&PluginRpcService::setMidiRouting>();
+    server.addMethod<&PluginRpcService::getAudioRouting>();
+    server.addMethod<&PluginRpcService::setAudioRouting>();
     server.addMethod<&PluginRpcService::getZoom>();
     server.addMethod<&PluginRpcService::setZoom>();
     server.addMethod<&PluginRpcService::getLayout>();

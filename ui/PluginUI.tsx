@@ -39,6 +39,7 @@ function PluginUI() {
     // 0-flash before that arrives is acceptable — the menu is open at
     // mount and the routing label only matters once a tile exists.
     const [midiRouting, setMidiRouting] = useState<number>(0);
+    const [audioRouting, setAudioRouting] = useState<number>(0);
     const [layout, setLayout] = useState<number>(0);
     // Integer zoom 1..6. Initialized to DEFAULT_ZOOM; replaced by the first
     // getZoom() in refreshSystems (which resolves project setting and
@@ -84,10 +85,11 @@ function PluginUI() {
     // Pull the current system list and focus from C++. Called on mount and
     // every "config-changed" tick (after the DSP commits a project mutation).
     const refreshSystems = useCallback(async () => {
-        const [list, f, routing, z, l] = await Promise.all([
+        const [list, f, routing, audio, z, l] = await Promise.all([
             plugin.listSystems(),
             plugin.getFocus(),
             plugin.getMidiRouting(),
+            plugin.getAudioRouting(),
             plugin.getZoom(),
             plugin.getLayout(),
         ]);
@@ -101,6 +103,7 @@ function PluginUI() {
             setFocusedId(0);
         }
         setMidiRouting(routing);
+        setAudioRouting(audio);
         setLayout(l);
         setZoom(z >= 1 && z <= 6 ? z : DEFAULT_ZOOM);
     }, []);
@@ -336,6 +339,7 @@ function PluginUI() {
         systems,
         focusedSystem,
         midiRouting,
+        audioRouting,
         layout,
         zoom,
         recentFiles,
@@ -387,6 +391,7 @@ function PluginUI() {
             ) : systems.length === 0 ? (
                 <StartScreen
                     midiRouting={midiRouting}
+                    audioRouting={audioRouting}
                     layout={layout}
                     zoom={zoom}
                     recentFiles={recentFiles}

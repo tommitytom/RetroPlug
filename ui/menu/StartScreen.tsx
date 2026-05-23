@@ -6,6 +6,7 @@ import { buildStartMenu, type RecentEntry } from "./menuDefs";
 
 interface StartScreenProps {
     midiRouting:            number;
+    audioRouting:           number;
     layout:                 number;
     zoom:                   number;
     recentFiles:            RecentEntry[];
@@ -22,7 +23,7 @@ interface StartScreenProps {
 // Submenu navigation is in-place (children expand inline below their parent
 // — see Menu.tsx). No pane-stack, no Back item.
 export function StartScreen({
-    midiRouting, layout, zoom, recentFiles, openAbout,
+    midiRouting, audioRouting, layout, zoom, recentFiles, openAbout,
     availableProfiles, activeKeyboardBindings, activeGamepadBindings,
     sinkGroup,
 }: StartScreenProps) {
@@ -36,6 +37,7 @@ export function StartScreen({
         systems:       [],
         focusedSystem: undefined,
         midiRouting,
+        audioRouting,
         layout,
         zoom,
         recentFiles,
