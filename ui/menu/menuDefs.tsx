@@ -33,6 +33,8 @@ export interface MenuContext {
     systems:        SystemEntry[];
     focusedSystem?: SystemEntry;
     midiRouting:    number;
+    // Resolved zoom level 1..6 (project setting or user-config default).
+    zoom:           number;
     // Called by Menu when the user picks Kit Editor.
     openKitEditor:  () => void;
 }
@@ -103,7 +105,11 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               void plugin.$notify("setMidiRouting", next);
           } },
         { id: "layout",       label: "Layout: -",        kind: "action", onSelect: stub("Layout"),        keepOpen: true },
-        { id: "zoom",         label: "Zoom: -",          kind: "action", onSelect: stub("Zoom"),          keepOpen: true },
+        { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = ctx.zoom >= 6 ? 1 : ctx.zoom + 1;
+              void plugin.$notify("setZoom", next);
+          } },
         { id: "audioRouting", label: "Audio routing: -", kind: "action", onSelect: stub("Audio routing"), keepOpen: true },
         { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
     ];

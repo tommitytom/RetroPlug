@@ -36,6 +36,10 @@ enum class MidiRouting : std::uint8_t {
 struct ProjectSettings {
     SystemLayout layout       = SystemLayout::Auto;
     MidiRouting  midiRouting  = MidiRouting::SendToAll;
+    // 0 = inherit UserConfig::defaultZoom; 1..6 = explicit per-project value.
+    // PluginRpcService::getZoom() resolves the inheritance; setZoom always
+    // writes 1..6 here.
+    std::uint8_t zoom         = 0;
 };
 
 struct ProjectConfig {

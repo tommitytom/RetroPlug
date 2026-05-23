@@ -1,13 +1,23 @@
-// Shared layout constants for the React shell. Tile pixel dimensions are
-// Game Boy native (160x144) at the integer ZOOM. Promoting ZOOM to a
-// ProjectSettings field is a future task — for now it's a single source
-// of truth for the TS layer.
+// Shared layout constants for the React shell. The integer zoom factor
+// is now a runtime value (1..6) sourced from ProjectSettings.zoom with a
+// user-config fallback (PluginRpcService::getZoom resolves the inheritance).
+// PluginUI owns the state and threads it down as a `zoom` prop; helpers
+// below compute pixel dimensions from a zoom argument.
 
-export const ZOOM = 3;
 export const GB_NATIVE_W = 160;
 export const GB_NATIVE_H = 144;
-export const TILE_W = GB_NATIVE_W * ZOOM;
-export const TILE_H = GB_NATIVE_H * ZOOM;
+
+// Fallback used before the first RPC resolves. Matches the historical
+// constant and also serves as the user-config default in C++.
+export const DEFAULT_ZOOM = 3;
+
+export function tileWidth(zoom: number): number {
+    return GB_NATIVE_W * zoom;
+}
+
+export function tileHeight(zoom: number): number {
+    return GB_NATIVE_H * zoom;
+}
 
 export interface GridShape {
     cols: number;

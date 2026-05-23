@@ -414,6 +414,27 @@ bool PluginRpcService::setMidiRouting(std::uint32_t routing) {
         Command::makeSetMidiRouting(static_cast<MidiRouting>(routing)));
 }
 
+std::uint32_t PluginRpcService::getZoom() {
+    // 0 in ProjectSettings means "inherit from UserConfig::defaultZoom".
+    std::uint8_t z = 0;
+    if (project_) z = project_->config().settings.zoom;
+    if (z == 0) {
+        std::uint8_t def = 3;
+        if (userConfig_) def = userConfig_->snapshot().defaultZoom;
+        z = def;
+    }
+    if (z < 1) z = 1;
+    if (z > 6) z = 6;
+    return z;
+}
+
+bool PluginRpcService::setZoom(std::uint32_t zoom) {
+    if (!commands_) return false;
+    if (zoom < 1u || zoom > 6u) return false;
+    return commands_->tryPush(
+        Command::makeSetZoom(static_cast<std::uint8_t>(zoom)));
+}
+
 bool PluginRpcService::setLsdjSyncConfig(std::uint32_t id,
                                          std::uint32_t mode,
                                          std::uint32_t divisor) {

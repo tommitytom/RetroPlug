@@ -34,6 +34,8 @@ int main() {
     server.addMethod<&PluginRpcService::setLinkGroupId>();
     server.addMethod<&PluginRpcService::getMidiRouting>();
     server.addMethod<&PluginRpcService::setMidiRouting>();
+    server.addMethod<&PluginRpcService::getZoom>();
+    server.addMethod<&PluginRpcService::setZoom>();
     server.addMethod<&PluginRpcService::setLsdjSyncConfig>();
     server.addMethod<&PluginRpcService::setWindowSize>();
     server.addMethod<&PluginRpcService::isWindowSizeControlled>();

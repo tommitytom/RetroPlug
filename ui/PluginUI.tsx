@@ -5,7 +5,7 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 import { plugin } from "./plugin/client";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
-import { TILE_W, TILE_H } from "./layout";
+import { DEFAULT_ZOOM, tileWidth, tileHeight } from "./layout";
 import { Menu } from "./menu/Menu";
 import { StartScreen } from "./menu/StartScreen";
 import { buildInstanceMenu } from "./menu/menuDefs";
@@ -37,6 +37,10 @@ function PluginUI() {
     // 0-flash before that arrives is acceptable — the menu is open at
     // mount and the routing label only matters once a tile exists.
     const [midiRouting, setMidiRouting] = useState<number>(0);
+    // Integer zoom 1..6. Initialized to DEFAULT_ZOOM; replaced by the first
+    // getZoom() in refreshSystems (which resolves project setting and
+    // user-config default on the C++ side).
+    const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -46,6 +50,11 @@ function PluginUI() {
 
     const focusedIdRef = useRef(focusedId);
     useEffect(() => { focusedIdRef.current = focusedId; }, [focusedId]);
+
+    // Mirror zoom into a ref so the mouse-hit-test useCallback (deps [])
+    // can read the current value without being recreated on every zoom change.
+    const zoomRef = useRef(DEFAULT_ZOOM);
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
     // Empty "input sink" group, claimed as the keyboard group whenever the
     // menu isn't open. lv_binding_js's setKeyboardGroup(null) falls back to
@@ -70,10 +79,11 @@ function PluginUI() {
     // Pull the current system list and focus from C++. Called on mount and
     // every "config-changed" tick (after the DSP commits a project mutation).
     const refreshSystems = useCallback(async () => {
-        const [list, f, routing] = await Promise.all([
+        const [list, f, routing, z] = await Promise.all([
             plugin.listSystems(),
             plugin.getFocus(),
             plugin.getMidiRouting(),
+            plugin.getZoom(),
         ]);
         setSystems(list);
         if (f !== 0 && list.some((s) => s.id === f)) {
@@ -85,6 +95,7 @@ function PluginUI() {
             setFocusedId(0);
         }
         setMidiRouting(routing);
+        setZoom(z >= 1 && z <= 6 ? z : DEFAULT_ZOOM);
     }, []);
 
     useEffect(() => {
@@ -124,16 +135,18 @@ function PluginUI() {
     }, [systems.length]);
 
     // Window resizing: ask the host/WM for a window that fits the current
-    // grid at native zoom. On a tiled WM (Hyprland) the request is silently
-    // ignored — the C++ side detects that via onResize and we stop asking.
+    // grid at the current zoom. On a tiled WM (Hyprland) the request is
+    // silently ignored — the C++ side detects that via onResize and we
+    // stop asking. Zoom changes flow through here too — the dep array
+    // includes `zoom` so the menu's "Zoom: Nx" cycle resizes the window.
     useEffect(() => {
         if (systems.length === 0) return;
         void (async () => {
             if (await plugin.isWindowSizeControlled()) return;
-            const { width, height } = gridContentSize(systems, SystemLayout.Auto);
+            const { width, height } = gridContentSize(systems, SystemLayout.Auto, zoom);
             await plugin.setWindowSize(width, height);
         })();
-    }, [systems.length]);
+    }, [systems.length, zoom]);
 
     // Records which system each currently-held DPF key was pressed against,
     // so the release always goes to the same instance (even after a Tab cycle
@@ -210,7 +223,7 @@ function PluginUI() {
         const list = systemsRef.current;
         if (list.length === 0) return;
         for (let i = 0; i < list.length; i++) {
-            const b = getTileBounds(i, list.length, SystemLayout.Auto);
+            const b = getTileBounds(i, list.length, SystemLayout.Auto, zoomRef.current);
             if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
                 const sys = list[i];
                 if (sys.id !== focusedIdRef.current) {
@@ -267,6 +280,7 @@ function PluginUI() {
         systems,
         focusedSystem,
         midiRouting,
+        zoom,
         openKitEditor,
     });
 
@@ -302,18 +316,20 @@ function PluginUI() {
             ) : systems.length === 0 ? (
                 <StartScreen
                     midiRouting={midiRouting}
+                    zoom={zoom}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : menuOpen ? (
                 <Menu
-                    width={TILE_W}
-                    height={TILE_H}
+                    width={tileWidth(zoom)}
+                    height={tileHeight(zoom)}
+                    zoom={zoom}
                     tree={instanceTree}
                     onClose={closeMenu}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : (
-                <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} />
+                <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} zoom={zoom} />
             )}
         </View>
     );

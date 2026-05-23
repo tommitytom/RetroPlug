@@ -1,7 +1,7 @@
 import { View } from "lvgljs-ui";
 
 import { EmulatorTile } from "./EmulatorTile";
-import { autoShape, GridShape, TILE_W, TILE_H } from "./layout";
+import { autoShape, GridShape, tileWidth, tileHeight } from "./layout";
 import type { SystemEntry } from "./plugin/client";
 
 // Tile arrangement options. Mirrors C++ SystemLayout enum
@@ -23,6 +23,8 @@ interface SystemGridProps {
     systems:    SystemEntry[];
     focusedId:  number;
     layout?:    SystemLayout;
+    // Integer zoom 1..6. Drives every tile / grid dimension below.
+    zoom:       number;
 }
 
 function shapeFor(layout: SystemLayout, count: number): GridShape {
@@ -35,14 +37,16 @@ function shapeFor(layout: SystemLayout, count: number): GridShape {
     }
 }
 
-// Compute the pixel size of the content area for a given system count
-// and layout. Exported so PluginUI can pass it to plugin.setWindowSize.
-export function gridContentSize(systems: SystemEntry[], layout: SystemLayout = SystemLayout.Auto)
+// Compute the pixel size of the content area for a given system count,
+// layout, and zoom. Exported so PluginUI can pass it to plugin.setWindowSize.
+export function gridContentSize(systems: SystemEntry[],
+                                layout: SystemLayout = SystemLayout.Auto,
+                                zoom: number)
     : { width: number; height: number; shape: GridShape } {
     const shape = shapeFor(layout, Math.max(systems.length, 1));
     return {
-        width:  shape.cols * TILE_W,
-        height: shape.rows * TILE_H,
+        width:  shape.cols * tileWidth(zoom),
+        height: shape.rows * tileHeight(zoom),
         shape,
     };
 }
@@ -51,12 +55,17 @@ export function gridContentSize(systems: SystemEntry[], layout: SystemLayout = S
 // Returns coordinates inside the grid's content box; the grid itself is
 // flex-centered by its parent, so callers that need window-coordinates
 // must add the grid's centering offset.
-export function getTileBounds(index: number, count: number, layout: SystemLayout = SystemLayout.Auto)
+export function getTileBounds(index: number,
+                              count: number,
+                              layout: SystemLayout = SystemLayout.Auto,
+                              zoom: number)
     : { x: number; y: number; w: number; h: number } {
     const shape = shapeFor(layout, Math.max(count, 1));
     const col = index % shape.cols;
     const row = Math.floor(index / shape.cols);
-    return { x: col * TILE_W, y: row * TILE_H, w: TILE_W, h: TILE_H };
+    const w = tileWidth(zoom);
+    const h = tileHeight(zoom);
+    return { x: col * w, y: row * h, w, h };
 }
 
 /**
@@ -67,10 +76,12 @@ export function getTileBounds(index: number, count: number, layout: SystemLayout
  * is just a black background and the menu (rendered above by
  * PluginUI) covers the whole window.
  */
-export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: SystemGridProps) {
+export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoom }: SystemGridProps) {
     if (systems.length === 0) return null;
 
-    const { width, height, shape } = gridContentSize(systems, layout);
+    const { width, height, shape } = gridContentSize(systems, layout, zoom);
+    const tw = tileWidth(zoom);
+    const th = tileHeight(zoom);
     const rows: SystemEntry[][] = [];
     for (let r = 0; r < shape.rows; r++) {
         rows.push(systems.slice(r * shape.cols, (r + 1) * shape.cols));
@@ -104,8 +115,8 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: S
                 <View
                     key={`row-${ri}`}
                     style={{
-                        width:  shape.cols * TILE_W,
-                        height: TILE_H,
+                        width:  shape.cols * tw,
+                        height: th,
                         "background-opacity": 0,
                         "border-width": 0,
                         "border-opacity": 0,
@@ -126,6 +137,7 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: S
                             key={`tile-${sys.id}`}
                             systemId={sys.id}
                             focused={sys.id === focusedId || systems.length === 1}
+                            zoom={zoom}
                         />
                     ))}
                 </View>

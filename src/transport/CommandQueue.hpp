@@ -87,6 +87,13 @@ struct SetMidiRoutingCommand {
     MidiRouting routing;
 };
 
+// Project-wide zoom change (1..6). Applied to ProjectConfig::settings on
+// the DSP thread; UI is notified via Event::ConfigChanged so layout and
+// window size update.
+struct SetZoomCommand {
+    std::uint8_t zoom;
+};
+
 // Edit the LSDJ sync mode + tempo divisor on a specific system's LsdjSyncRole
 // config. Keeping the command narrow (rather than passing a whole RoleConfig)
 // preserves the union's POD-trivial property; if more role kinds need
@@ -138,6 +145,7 @@ struct Command {
         PatchKit          = 10,
         SubscribeMemory   = 11,
         UnsubscribeMemory = 12,
+        SetZoom           = 13,
     };
 
     Kind kind = Kind::None;
@@ -154,6 +162,7 @@ struct Command {
         PatchKitCommand          patchKit;
         SubscribeMemoryCommand   subscribeMemory;
         UnsubscribeMemoryCommand unsubscribeMemory;
+        SetZoomCommand           setZoom;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -243,6 +252,13 @@ struct Command {
         Command c;
         c.kind = Kind::UnsubscribeMemory;
         c.payload.unsubscribeMemory = UnsubscribeMemoryCommand{id, type};
+        return c;
+    }
+
+    static Command makeSetZoom(std::uint8_t zoom) {
+        Command c;
+        c.kind = Kind::SetZoom;
+        c.payload.setZoom = SetZoomCommand{zoom};
         return c;
     }
 };

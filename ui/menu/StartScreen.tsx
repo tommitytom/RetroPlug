@@ -1,11 +1,12 @@
 import { useCallback } from "react";
 
-import { TILE_W, TILE_H } from "../layout";
+import { tileWidth, tileHeight } from "../layout";
 import { Menu } from "./Menu";
 import { buildStartMenu } from "./menuDefs";
 
 interface StartScreenProps {
     midiRouting: number;
+    zoom:        number;
     sinkGroup:   any;
 }
 
@@ -14,7 +15,7 @@ interface StartScreenProps {
 //
 // Submenu navigation is in-place (children expand inline below their parent
 // — see Menu.tsx). No pane-stack, no Back item.
-export function StartScreen({ midiRouting, sinkGroup }: StartScreenProps) {
+export function StartScreen({ midiRouting, zoom, sinkGroup }: StartScreenProps) {
     // Esc on the start screen must NOT close the menu (the empty-project
     // invariant — see PluginUI's useKeyboard handler, which short-circuits
     // Esc when systems.length === 0). Defence in depth: even if some code
@@ -25,13 +26,15 @@ export function StartScreen({ midiRouting, sinkGroup }: StartScreenProps) {
         systems:       [],
         focusedSystem: undefined,
         midiRouting,
+        zoom,
         openKitEditor: () => { /* unreachable from start menu */ },
     });
 
     return (
         <Menu
-            width={TILE_W}
-            height={TILE_H}
+            width={tileWidth(zoom)}
+            height={tileHeight(zoom)}
+            zoom={zoom}
             tree={tree}
             onClose={onClose}
             sinkGroup={sinkGroup}

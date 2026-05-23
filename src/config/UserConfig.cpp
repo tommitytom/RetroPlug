@@ -108,6 +108,13 @@ bool UserConfig::setActiveBindings(std::string name) {
     UserConfigJson cfg;
     cfg.schemaVersion  = 1;
     cfg.activeBindings = std::move(name);
+    {
+        // Preserve any other top-level fields the user may have set
+        // (e.g. defaultZoom) — writing a fresh UserConfigJson would
+        // otherwise reset them to defaults.
+        std::lock_guard<std::mutex> lock(mu_);
+        cfg.defaultZoom = current_.defaultZoom;
+    }
 
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -134,6 +141,11 @@ void UserConfig::reloadFromDisk() {
     if (auto cfgText = slurp(configFile_); !cfgText.empty()) {
         if (auto cfg = userConfigFromJson(cfgText)) {
             next.activeBindings = cfg->activeBindings;
+            // Clamp to the supported zoom range; out-of-range values
+            // fall back to 3 rather than producing a broken layout.
+            std::uint8_t z = cfg->defaultZoom;
+            if (z < 1 || z > 6) z = 3;
+            next.defaultZoom = z;
         } else {
             std::fprintf(stderr,
                 "[user-config] %s parse failed — keeping previous activeBindings='%s'\n",
