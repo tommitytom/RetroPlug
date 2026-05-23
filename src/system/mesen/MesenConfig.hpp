@@ -20,6 +20,9 @@ struct MesenConfig {
     using Tag = rfl::Literal<"mesen">;
 
     bool          embedRom = true;
+    // Watch `romPath` on disk; the UI thread reloads the system when the
+    // file's mtime advances. No-op when romPath is empty.
+    bool          reloadOnRomChange = false;
     float         gainDb   = 0.0f;
     std::string   romPath;
     Base64Bytes   romBytes;

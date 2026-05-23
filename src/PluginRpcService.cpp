@@ -348,27 +348,15 @@ bool PluginRpcService::removeSystem(std::uint32_t id) {
 
 bool PluginRpcService::duplicateSystem(std::uint32_t id) {
     if (!project_ || !commands_ || !sampleRate_) return false;
-    auto* src = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(id)));
+    SystemBase* src = project_->findSystem(static_cast<SystemId>(id));
     if (!src) return false;
 
-    // Copy config and snapshot live SRAM / savestate into it. linkGroupId
-    // reset so the clone starts standalone — the user explicitly re-pairs
-    // via the Link group menu if they want that.
-    SameBoyConfig cfg = src->config_;
-    cfg.linkGroupId   = 0;
-    auto sramBytes = src->saveSramBytes();
-    if (!sramBytes.empty()) cfg.sram = Base64Bytes(std::move(sramBytes));
-    auto stateBytes = src->saveStateBytes();
-    if (!stateBytes.empty()) cfg.savestate = Base64Bytes(std::move(stateBytes));
-
-    std::vector<std::uint8_t> romCopy = src->rom_;
     const SystemId newId = project_->nextSystemId();
-    const double sr = sampleRate_->load(std::memory_order_acquire);
+    const double   sr    = sampleRate_->load(std::memory_order_acquire);
+    auto clone = src->clone(newId, sr);
+    if (!clone) return false;
 
-    auto clone = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
-    clone->onActivate(sr);
-
-    SameBoySystem* released = clone.release();
+    SystemBase* released = clone.release();
     if (!commands_->tryPush(Command::makeAddSystem(released))) {
         std::fprintf(stderr, "duplicateSystem: command queue full\n");
         delete released;
@@ -398,8 +386,6 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
             entry.gainDb      = sb->config_.gainDb;
             entry.linkGroupId = sb->config_.linkGroupId;
             entry.model       = static_cast<std::uint32_t>(sb->config_.model);
-            entry.fastBoot    = sb->config_.fastBoot;
-            entry.reloadOnRomChange = sb->config_.reloadOnRomChange;
             for (const auto& rc : sb->config_.roles) {
                 if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
                     entry.lsdjSyncMode     = static_cast<std::uint32_t>(lsdj->mode);
@@ -413,6 +399,11 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
         } else {
             entry.kind = "gba";
         }
+        // Kind-agnostic fields. fastBoot is nullopt on Mesen (returns no
+        // value); reloadOnRomChange defaults to false on backends that
+        // don't override.
+        if (auto fb = sys->fastBoot()) entry.fastBoot = *fb;
+        entry.reloadOnRomChange = sys->wantsRomReload();
         out.push_back(std::move(entry));
     }
     return out;
@@ -544,62 +535,63 @@ void PluginRpcService::pumpRomWatchers() {
     if (!project_ || !commands_ || !sampleRate_) return;
 
     // First pass: prune entries whose system no longer exists or whose flag
-    // is now off. Done in two passes so we don't mutate while iterating.
+    // is now off. Two passes so we don't mutate while iterating.
     std::vector<SystemId> toDrop;
     for (const auto& [sysId, _] : romWatchers_) {
-        auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(sysId));
-        if (!sb || !sb->config_.reloadOnRomChange) toDrop.push_back(sysId);
+        SystemBase* sys = project_->findSystem(sysId);
+        if (!sys || !sys->wantsRomReload()) toDrop.push_back(sysId);
     }
     for (SystemId id : toDrop) romWatchers_.erase(id);
 
-    // Second pass: walk live SameBoy systems with the flag set. New entries
-    // record current mtime without triggering a reload; existing entries
-    // diff and trigger.
+    // Second pass: walk live systems with the flag set. New entries record
+    // current mtime without triggering a reload; existing entries diff and
+    // trigger via buildSystemFromPath (already format-agnostic — picks
+    // SameBoy / Mesen / GBA based on file content).
     for (const auto& sys : project_->systems()) {
-        auto* sb = dynamic_cast<SameBoySystem*>(sys.get());
-        if (!sb || !sb->config_.reloadOnRomChange) continue;
-        if (sb->config_.romPath.empty()) continue;
+        if (!sys || !sys->wantsRomReload()) continue;
+        const std::string& romPath = sys->romPath();
+        if (romPath.empty()) continue;
 
         std::error_code ec;
-        const auto mtime = std::filesystem::last_write_time(sb->config_.romPath, ec);
+        const auto mtime = std::filesystem::last_write_time(romPath, ec);
         if (ec) continue;
 
-        auto it = romWatchers_.find(sb->id());
+        auto it = romWatchers_.find(sys->id());
         if (it == romWatchers_.end()) {
-            romWatchers_.emplace(sb->id(), RomWatchEntry{sb->config_.romPath, mtime});
+            romWatchers_.emplace(sys->id(), RomWatchEntry{romPath, mtime});
             continue;
         }
-
-        // Path changed (different ROM in this slot now) — just rebase
-        // without reloading.
-        if (it->second.path != sb->config_.romPath) {
-            it->second.path  = sb->config_.romPath;
+        if (it->second.path != romPath) {
+            it->second.path  = romPath;
             it->second.mtime = mtime;
             continue;
         }
         if (mtime == it->second.mtime) continue;
 
-        // mtime advanced — rebuild the system with the new bytes, keep
-        // current SRAM, drop savestate.
-        std::vector<std::uint8_t> newRom = slurp(sb->config_.romPath);
-        if (newRom.empty()) {
-            it->second.mtime = mtime;  // skip until next change
+        // Rebuild from disk via the format-agnostic loader.
+        auto liveSram = sys->saveSramBytes();
+        SystemBase* rebuilt = buildSystemFromPath(romPath);
+        if (!rebuilt) {
+            it->second.mtime = mtime;
             continue;
         }
-
-        SameBoyConfig cfg = sb->config_;
-        auto liveSram = sb->saveSramBytes();
-        if (!liveSram.empty()) cfg.sram = Base64Bytes(std::move(liveSram));
-        cfg.savestate = Base64Bytes{};
-
-        const double sr = sampleRate_->load(std::memory_order_acquire);
-        auto rebuilt = std::make_unique<SameBoySystem>(sb->id(), std::move(cfg), std::move(newRom));
-        rebuilt->onActivate(sr);
-
-        SameBoySystem* released = rebuilt.release();
-        if (!commands_->tryPush(Command::makeReplaceSystem(sb->id(), released))) {
+        // Fold the live SRAM forward into the rebuilt system so in-game
+        // progress survives the reload. Savestate intentionally drops.
+        if (!liveSram.empty()) {
+            auto acc = rebuilt->getMemory(rp::MemoryType::Sram,
+                                          rp::AccessType::ReadWrite);
+            if (acc.valid() && acc.size() > 0) {
+                const std::size_t n = std::min(liveSram.size(), acc.size());
+                std::memcpy(acc.data(), liveSram.data(), n);
+            }
+        }
+        // ReplaceSystem swaps the slot keyed by the old id; the rebuilt
+        // system has its own id from nextSystemId(). The DSP handler
+        // updates focusedSystemAtomic if the focused id was the swapped
+        // one.
+        if (!commands_->tryPush(Command::makeReplaceSystem(sys->id(), rebuilt))) {
             std::fprintf(stderr, "pumpRomWatchers: command queue full\n");
-            delete released;
+            delete rebuilt;
             continue;
         }
         it->second.mtime = mtime;
@@ -854,9 +846,10 @@ bool PluginRpcService::setActiveGamepadBindings(std::string name) {
 }
 
 namespace {
-std::string defaultSavePath(const SameBoySystem& sb, const char* ext) {
-    if (sb.config_.romPath.empty()) return {};
-    std::filesystem::path p(sb.config_.romPath);
+std::string defaultSavePath(const SystemBase& sys, const char* ext) {
+    const std::string& romPath = sys.romPath();
+    if (romPath.empty()) return {};
+    std::filesystem::path p(romPath);
     p.replace_extension(ext);
     return p.string();
 }
@@ -873,9 +866,9 @@ bool spillBytes(const std::string& path, const std::vector<std::uint8_t>& bytes)
 
 bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string& path) {
     if (!project_ || path.empty()) return false;
-    auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)));
-    if (!sb) return false;
-    auto bytes = sb->saveSramBytes();
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+    auto bytes = sys->saveSramBytes();
     if (bytes.empty()) {
         emit("sram-error", path);
         return false;
@@ -890,9 +883,9 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
 
 bool PluginRpcService::saveStateToPath(std::uint32_t systemId, const std::string& path) {
     if (!project_ || path.empty()) return false;
-    auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)));
-    if (!sb) return false;
-    auto bytes = sb->saveStateBytes();
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+    auto bytes = sys->saveStateBytes();
     if (bytes.empty()) {
         emit("state-error", path);
         return false;
@@ -907,10 +900,10 @@ bool PluginRpcService::saveStateToPath(std::uint32_t systemId, const std::string
 
 bool PluginRpcService::loadStateFromPath(std::uint32_t systemId, const std::string& path) {
     if (!project_ || path.empty()) return false;
-    auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)));
-    if (!sb) return false;
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
     auto bytes = slurp(path);
-    if (bytes.empty() || !sb->loadStateBytes(bytes)) {
+    if (bytes.empty() || !sys->loadStateBytes(bytes)) {
         emit("state-error", path);
         return false;
     }
@@ -920,9 +913,9 @@ bool PluginRpcService::loadStateFromPath(std::uint32_t systemId, const std::stri
 
 bool PluginRpcService::saveSram(std::uint32_t systemId) {
     if (!project_) return false;
-    auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)));
-    if (!sb) return false;
-    const std::string path = defaultSavePath(*sb, ".sav");
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+    const std::string path = defaultSavePath(*sys, ".sav");
     if (path.empty()) {
         // No romPath — fall back to the file dialog so the user picks a target.
         return openSaveSramBrowser(systemId);
@@ -935,9 +928,9 @@ bool PluginRpcService::openSaveSramBrowser(std::uint32_t systemId) {
     pendingFileMode_     = PendingFileMode::SaveSram;
     pendingFileSystemId_ = systemId;
     std::string defaultName = "sram.sav";
-    if (auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)))) {
-        if (!sb->config_.romPath.empty()) {
-            auto name = std::filesystem::path(sb->config_.romPath).filename();
+    if (SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId))) {
+        if (!sys->romPath().empty()) {
+            auto name = std::filesystem::path(sys->romPath()).filename();
             name.replace_extension(".sav");
             defaultName = name.string();
         }
@@ -948,9 +941,9 @@ bool PluginRpcService::openSaveSramBrowser(std::uint32_t systemId) {
 
 bool PluginRpcService::saveState(std::uint32_t systemId) {
     if (!project_) return false;
-    auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)));
-    if (!sb) return false;
-    const std::string path = defaultSavePath(*sb, ".ss0");
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+    const std::string path = defaultSavePath(*sys, ".ss0");
     if (path.empty()) {
         return openSaveStateBrowser(systemId);
     }
@@ -962,9 +955,9 @@ bool PluginRpcService::openSaveStateBrowser(std::uint32_t systemId) {
     pendingFileMode_     = PendingFileMode::SaveState;
     pendingFileSystemId_ = systemId;
     std::string defaultName = "savestate.ss0";
-    if (auto* sb = dynamic_cast<SameBoySystem*>(project_->findSystem(static_cast<SystemId>(systemId)))) {
-        if (!sb->config_.romPath.empty()) {
-            auto name = std::filesystem::path(sb->config_.romPath).filename();
+    if (SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId))) {
+        if (!sys->romPath().empty()) {
+            auto name = std::filesystem::path(sys->romPath()).filename();
             name.replace_extension(".ss0");
             defaultName = name.string();
         }

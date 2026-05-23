@@ -145,11 +145,9 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
 
 function systemChildren(ctx: MenuContext): MenuItem[] {
     const sys = ctx.focusedSystem;
-    const modelIdx   = sys?.model ?? 0;
-    const modelLabel = sys != null ? `Model: ${MODEL_NAMES[modelIdx] ?? MODEL_NAMES[0]}` : "Model: -";
-    const fastBootOn = sys?.fastBoot === true;
-    const fastBootLabel = `Fast boot: ${fastBootOn ? "On" : "Off"}`;
-    return [
+    const items: MenuItem[] = [];
+
+    items.push(
         { id: "reset",      label: "Reset",                kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("resetSystem", sys.id); } },
         { id: "saveSram",   label: "Save SRAM",            kind: "action",
@@ -169,20 +167,35 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
               if (!sys) return;
               void plugin.$notify("setReloadOnRomChange", sys.id, !sys.reloadOnRomChange);
           } },
-        { id: "model",      label: modelLabel,             kind: "action", keepOpen: true,
-          onSelect: () => {
-              if (!sys || sys.model == null) return;
-              const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, 1);
-              void plugin.$notify("setModel", sys.id, next);
-          },
-          onCycle: (dir) => {
-              if (!sys || sys.model == null) return;
-              const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, dir);
-              void plugin.$notify("setModel", sys.id, next);
-          } },
-        { id: "fastBoot",   label: fastBootLabel,          kind: "action", keepOpen: true,
-          onSelect: () => { if (sys) void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } },
-    ];
+    );
+
+    // Model is SameBoy-only (no equivalent enum on Mesen NES or GBA).
+    if (sys?.kind === "sameboy") {
+        const modelIdx   = sys.model ?? 0;
+        const modelLabel = `Model: ${MODEL_NAMES[modelIdx] ?? MODEL_NAMES[0]}`;
+        items.push({ id: "model", label: modelLabel, kind: "action", keepOpen: true,
+            onSelect: () => {
+                if (sys.model == null) return;
+                const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, 1);
+                void plugin.$notify("setModel", sys.id, next);
+            },
+            onCycle: (dir) => {
+                if (sys.model == null) return;
+                const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, dir);
+                void plugin.$notify("setModel", sys.id, next);
+            } });
+    }
+
+    // Fast boot: present on SameBoy + GBA, hidden on Mesen (no equivalent).
+    // SystemEntry.fastBoot is nullopt on Mesen.
+    if (sys != null && sys.fastBoot != null) {
+        const fastBootOn = sys.fastBoot === true;
+        items.push({ id: "fastBoot", label: `Fast boot: ${fastBootOn ? "On" : "Off"}`,
+            kind: "action", keepOpen: true,
+            onSelect: () => { void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } });
+    }
+
+    return items;
 }
 
 function projectChildren(ctx: MenuContext): MenuItem[] {

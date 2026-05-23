@@ -57,6 +57,16 @@ public:
 
     SystemConfig snapshotConfig() const override;
 
+    // SystemBase virtuals — see base class for contracts.
+    const std::string&        romPath() const override        { return config_.romPath; }
+    bool                      wantsRomReload() const override { return config_.reloadOnRomChange; }
+    void                      setRomReload(bool on) override  { config_.reloadOnRomChange = on; }
+    std::vector<std::uint8_t> saveSramBytes() const override;
+    void                      clearSram() override;
+    std::vector<std::uint8_t> saveStateBytes() const override;
+    bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+    std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
+
     void setGainDb(float dB);
 
     // NES native resolution (256x240). Public so callers can construct a

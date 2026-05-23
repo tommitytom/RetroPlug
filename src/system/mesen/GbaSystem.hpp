@@ -50,6 +50,18 @@ public:
 
     SystemConfig snapshotConfig() const override;
 
+    // SystemBase virtuals — see base class for contracts.
+    const std::string&        romPath() const override        { return config_.romPath; }
+    std::optional<bool>       fastBoot() const override       { return config_.skipBootScreen; }
+    void                      setFastBoot(bool on) override;
+    bool                      wantsRomReload() const override { return config_.reloadOnRomChange; }
+    void                      setRomReload(bool on) override  { config_.reloadOnRomChange = on; }
+    std::vector<std::uint8_t> saveSramBytes() const override;
+    void                      clearSram() override;
+    std::vector<std::uint8_t> saveStateBytes() const override;
+    bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+    std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
+
     void setGainDb(float dB);
 
     // GBA native resolution (240x160). Public so callers can construct a
