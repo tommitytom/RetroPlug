@@ -22,3 +22,6 @@
 [submodule "deps/efsw"]
 	path = deps/efsw
 	url = https://github.com/SpartanJ/efsw.git
+[submodule "deps/sameboy"]
+	path = deps/sameboy
+	url = https://github.com/LIJI32/SameBoy.git

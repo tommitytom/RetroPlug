@@ -177,7 +177,7 @@ test/                                Catch2 unit tests (transport, project, fb)
 examples/scripts/                    sample retroplug-cli JSON inputs
 porting/                             ordered migration roadmap from old RetroPlug
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
-deps/                                vendored: dpf, dpf-widgets, sameboy, lv_binding_js, rpcpp, catch2
+deps/                                submodules: dpf, dpf-widgets, sameboy, lv_binding_js, rpcpp, catch2
 ```
 
 For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
