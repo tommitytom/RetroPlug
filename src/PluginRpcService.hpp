@@ -64,6 +64,10 @@ public:
         // it on every LSDJ ROM, so this lights up the Kit Editor menu
         // entry whenever an LSDJ ROM is loaded).
         std::optional<bool>          hasLsdjKitRole;
+        // SameBoy-only. Values mirror SameBoyModel.
+        std::optional<std::uint32_t> model;
+        std::optional<bool>          fastBoot;
+        std::optional<bool>          reloadOnRomChange;
     };
 
     // --- LSDJ kit-patch DTOs ----------------------------------------------
@@ -188,6 +192,10 @@ public:
     bool addRomFromPath(std::string path);
     bool replaceRomFromPath(std::uint32_t id, std::string path);
     bool removeSystem(std::uint32_t id);
+    // Clone the selected system (same ROM, current SRAM, current savestate).
+    // New instance is appended; linkGroupId is reset to 0 so the clone
+    // doesn't inherit the source's link membership.
+    bool duplicateSystem(std::uint32_t id);
     // Drops the path remembered from the last load/save. Called by the UI when
     // the system list transitions to empty, so a follow-up Save dialog doesn't
     // default to the previously loaded project's filename.
@@ -203,6 +211,19 @@ public:
     // the user-config default. setZoom always writes 1..6 to the project.
     std::uint32_t getZoom();
     bool setZoom(std::uint32_t zoom);
+    std::uint32_t getLayout();
+    bool setLayout(std::uint32_t layout);
+    bool resetSystem(std::uint32_t id);
+    bool newSram(std::uint32_t id);
+    bool setFastBoot(std::uint32_t id, bool enabled);
+    bool setModel(std::uint32_t id, std::uint32_t model);
+    bool setReloadOnRomChange(std::uint32_t id, bool enabled);
+
+    // Poll the romPath of every SameBoy system whose `reloadOnRomChange` is
+    // true; if the file's mtime has advanced since the last poll, reload
+    // it (replacing the slot, preserving SRAM, dropping savestate). Called
+    // from PluginUI::uiIdle.
+    void pumpRomWatchers();
     bool setLsdjSyncConfig(std::uint32_t id, std::uint32_t mode, std::uint32_t divisor);
     bool setWindowSize(std::uint32_t w, std::uint32_t h);
     bool isWindowSizeControlled();
@@ -222,7 +243,21 @@ public:
 
     // User config / key-pad bindings. See src/config/UserConfig.hpp.
     UserConfigDto getUserConfig();
-    bool          setActiveBindings(std::string name);
+    bool          setActiveKeyboardBindings(std::string name);
+    bool          setActiveGamepadBindings(std::string name);
+    // Launch the platform file manager on the user config directory. False if
+    // we have no UserConfig wired or the shell-out call fails.
+    bool          openSettingsFolder();
+
+    // Cartridge battery RAM I/O. saveSram writes to `<romPath>.sav`.
+    // openSaveSramBrowser / openSaveStateBrowser / openLoadStateBrowser
+    // dispatch the chosen path back via onFileBrowserSelected the same
+    // way openSaveProjectBrowser does.
+    bool saveSram(std::uint32_t systemId);
+    bool openSaveSramBrowser(std::uint32_t systemId);
+    bool saveState(std::uint32_t systemId);
+    bool openSaveStateBrowser(std::uint32_t systemId);
+    bool openLoadStateBrowser(std::uint32_t systemId);
 
     // Recently-loaded ROMs and projects. Most-recent first; capped at
     // RecentFiles::kMaxEntries. See src/config/RecentFiles.hpp.
@@ -283,7 +318,8 @@ private:
 
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
-    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, LoadSample };
+    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, LoadSample,
+                                 SaveSram, SaveState, LoadState };
 
     bool saveProjectToPath(const std::string& path);
 
@@ -306,6 +342,14 @@ private:
     IsWindowSizeControlledFn  isWindowSizeControlled_;
 
     PendingFileMode           pendingFileMode_      = PendingFileMode::LoadRom;
+    // System id remembered for SaveSram / SaveState / LoadState while the
+    // file dialog is up. 0 = none.
+    std::uint32_t             pendingFileSystemId_  = 0;
+
+    // Common helpers used by saveSram / saveState / loadState.
+    bool saveSramToPath(std::uint32_t systemId, const std::string& path);
+    bool saveStateToPath(std::uint32_t systemId, const std::string& path);
+    bool loadStateFromPath(std::uint32_t systemId, const std::string& path);
 
     // Path of the most recent load/save. Used as the file-browser default name
     // so subsequent saves target the same file. Cleared when the project
@@ -313,4 +357,13 @@ private:
     std::string               currentProjectPath_;
 
     MemorySubRegistry         memorySubs_;
+
+    // Per-system romPath mtime cache for the reload-on-change watcher.
+    // Entries are added/refreshed on first observation of an enabled flag
+    // and dropped when the flag clears or the system disappears.
+    struct RomWatchEntry {
+        std::string                     path;
+        std::filesystem::file_time_type mtime{};
+    };
+    std::map<SystemId, RomWatchEntry> romWatchers_;
 };

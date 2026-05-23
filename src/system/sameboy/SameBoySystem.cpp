@@ -272,6 +272,56 @@ void SameBoySystem::onReset() {
     pendingButtons_.clear();
 }
 
+void SameBoySystem::restartEmulator() {
+    if (!gb_) return;
+    const int sramSize = GB_save_battery_size(gb_);
+    if (sramSize > 0) {
+        std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
+        if (GB_save_battery_to_buffer(gb_, sram.data(), sram.size()) == 0) {
+            config_.sram = Base64Bytes(std::move(sram));
+        }
+    }
+    config_.savestate = Base64Bytes{};
+    const double sr = sampleRate_;
+    onDeactivate();
+    onActivate(sr);
+}
+
+void SameBoySystem::clearSram() {
+    if (!gb_) return;
+    const int sramSize = GB_save_battery_size(gb_);
+    if (sramSize <= 0) return;
+    std::vector<std::uint8_t> zeros(static_cast<std::size_t>(sramSize), 0);
+    GB_load_battery_from_buffer(gb_, zeros.data(), zeros.size());
+    config_.sram = Base64Bytes{};
+}
+
+std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
+    if (!gb_) return {};
+    const int sramSize = GB_save_battery_size(const_cast<GB_gameboy_t*>(gb_));
+    if (sramSize <= 0) return {};
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(sramSize));
+    if (GB_save_battery_to_buffer(const_cast<GB_gameboy_t*>(gb_),
+                                  out.data(), out.size()) != 0) {
+        return {};
+    }
+    return out;
+}
+
+std::vector<std::uint8_t> SameBoySystem::saveStateBytes() const {
+    if (!gb_) return {};
+    const std::size_t size = GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_));
+    if (size == 0) return {};
+    std::vector<std::uint8_t> out(size);
+    GB_save_state_to_buffer(const_cast<GB_gameboy_t*>(gb_), out.data());
+    return out;
+}
+
+bool SameBoySystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+    if (!gb_ || bytes.empty()) return false;
+    return GB_load_state_from_buffer(gb_, bytes.data(), bytes.size()) == 0;
+}
+
 void SameBoySystem::instantiateRoles() {
     roles_.clear();
     serialIn_.clear();

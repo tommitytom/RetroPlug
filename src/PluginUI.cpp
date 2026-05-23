@@ -367,6 +367,11 @@ protected:
         // in the same uiIdle tick rather than landing on the next one.
         if (bridge) bridge->pumpMemorySnapshots();
 
+        // ROM-file watcher tick: triggers replaceRomFromPath when a watched
+        // ROM's mtime has changed since the last poll. Cheap when no
+        // system has the flag enabled.
+        if (bridge) bridge->pumpRomWatchers();
+
         // Drain the rpcpp transport's outgoing queue — async resolver
         // responses AND notification frames (incl. memory snapshots) land
         // in `engine.emit("rpc-message", ...)` for the JS transport to

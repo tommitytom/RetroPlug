@@ -19,11 +19,15 @@
 // `UserConfigDto` is the merged form shipped over RPC and held in memory.
 
 struct UserConfigJson {
-    int          schemaVersion  = 1;
-    std::string  activeBindings = "default";
+    int          schemaVersion          = 1;
+    // Two independent active profiles. Keyboard input picks bindings from
+    // `bindings/<activeKeyboardBindings>.json`'s `.keyboard` block;
+    // gamepad input from `<activeGamepadBindings>.json`'s `.gamepad`.
+    std::string  activeKeyboardBindings = "default";
+    std::string  activeGamepadBindings  = "default";
     // Default zoom level for fresh projects (1..6). Per-project zoom set
     // via the menu overrides this; see ProjectSettings::zoom.
-    std::uint8_t defaultZoom    = 3;
+    std::uint8_t defaultZoom            = 3;
 };
 
 // Key = GameboyButton name ("Right" "Left" "Up" "Down" "A" "B" "Select" "Start").
@@ -35,9 +39,12 @@ struct BindingMapJson {
     std::map<std::string, std::vector<std::string>> gamepad;
 };
 
-// Snapshot used both as the RPC payload and the in-memory state.
+// Snapshot used both as the RPC payload and the in-memory state. `bindings`
+// is synthesized: its `.keyboard` map comes from the active keyboard
+// profile, `.gamepad` from the active gamepad profile.
 struct UserConfigDto {
-    std::string              activeBindings;
+    std::string              activeKeyboardBindings;
+    std::string              activeGamepadBindings;
     BindingMapJson           bindings;
     std::vector<std::string> availableProfiles;
     std::uint8_t             defaultZoom = 3;

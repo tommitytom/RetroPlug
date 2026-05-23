@@ -35,8 +35,9 @@ UserConfig::UserConfig(fs::path rootOverride)
     // even before start() has finished parsing — and if start() fails
     // outright (read-only home dir, missing permissions) the UI still
     // works with hardcoded defaults.
-    current_.activeBindings = "default";
-    current_.bindings       = defaultBindingMap();
+    current_.activeKeyboardBindings = "default";
+    current_.activeGamepadBindings  = "default";
+    current_.bindings               = defaultBindingMap();
 }
 
 UserConfig::~UserConfig() {
@@ -102,29 +103,41 @@ UserConfigDto UserConfig::snapshot() const {
     return current_;
 }
 
-bool UserConfig::setActiveBindings(std::string name) {
+bool UserConfig::setActiveKeyboardBindings(std::string name) {
     if (!started_.load()) return false;
-
     UserConfigJson cfg;
-    cfg.schemaVersion  = 1;
-    cfg.activeBindings = std::move(name);
+    cfg.schemaVersion = 1;
     {
-        // Preserve any other top-level fields the user may have set
-        // (e.g. defaultZoom) — writing a fresh UserConfigJson would
-        // otherwise reset them to defaults.
         std::lock_guard<std::mutex> lock(mu_);
-        cfg.defaultZoom = current_.defaultZoom;
+        cfg.activeKeyboardBindings = std::move(name);
+        cfg.activeGamepadBindings  = current_.activeGamepadBindings;
+        cfg.defaultZoom            = current_.defaultZoom;
     }
-
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
                      configFile_.string().c_str());
         return false;
     }
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
 
-    // Don't wait for efsw to round-trip the change we just made. Update
-    // synchronously so the caller sees the new state immediately; the
-    // subsequent efsw fire becomes an idempotent reload.
+bool UserConfig::setActiveGamepadBindings(std::string name) {
+    if (!started_.load()) return false;
+    UserConfigJson cfg;
+    cfg.schemaVersion = 1;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
+        cfg.activeGamepadBindings  = std::move(name);
+        cfg.defaultZoom            = current_.defaultZoom;
+    }
+    if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
+        std::fprintf(stderr, "[user-config] failed to write %s\n",
+                     configFile_.string().c_str());
+        return false;
+    }
     reloadFromDisk();
     if (onReload_) onReload_();
     return true;
@@ -137,10 +150,11 @@ void UserConfig::reloadFromDisk() {
         next = current_;
     }
 
-    // config.json: keep previous activeBindings on parse failure.
+    // config.json: keep previous active profiles on parse failure.
     if (auto cfgText = slurp(configFile_); !cfgText.empty()) {
         if (auto cfg = userConfigFromJson(cfgText)) {
-            next.activeBindings = cfg->activeBindings;
+            next.activeKeyboardBindings = cfg->activeKeyboardBindings;
+            next.activeGamepadBindings  = cfg->activeGamepadBindings;
             // Clamp to the supported zoom range; out-of-range values
             // fall back to 3 rather than producing a broken layout.
             std::uint8_t z = cfg->defaultZoom;
@@ -148,22 +162,36 @@ void UserConfig::reloadFromDisk() {
             next.defaultZoom = z;
         } else {
             std::fprintf(stderr,
-                "[user-config] %s parse failed — keeping previous activeBindings='%s'\n",
-                configFile_.string().c_str(), next.activeBindings.c_str());
+                "[user-config] %s parse failed — keeping previous active profiles\n",
+                configFile_.string().c_str());
         }
     }
 
-    // bindings/<active>.json: same — keep previous bindings on failure.
-    const fs::path bindPath = bindingsDir_ / (next.activeBindings + ".json");
-    if (auto bindText = slurp(bindPath); !bindText.empty()) {
-        if (auto bind = bindingMapFromJson(bindText)) {
-            next.bindings = std::move(*bind);
-        } else {
+    // bindings/<keyboardProfile>.json supplies .keyboard;
+    // bindings/<gamepadProfile>.json supplies .gamepad. The two may be the
+    // same file (the common case). On parse failure, retain the previous
+    // value of that channel.
+    auto loadBlock = [this](const std::string& profile)
+        -> std::optional<BindingMapJson> {
+        const fs::path p = bindingsDir_ / (profile + ".json");
+        auto text = slurp(p);
+        if (text.empty()) return std::nullopt;
+        auto parsed = bindingMapFromJson(text);
+        if (!parsed) {
             std::fprintf(stderr,
                 "[user-config] %s parse failed — keeping previous bindings\n",
-                bindPath.string().c_str());
+                p.string().c_str());
+            return std::nullopt;
         }
+        return parsed;
+    };
+    if (auto kb = loadBlock(next.activeKeyboardBindings)) {
+        next.bindings.keyboard = std::move(kb->keyboard);
     }
+    if (auto gp = loadBlock(next.activeGamepadBindings)) {
+        next.bindings.gamepad = std::move(gp->gamepad);
+    }
+    next.bindings.name = next.activeKeyboardBindings;
 
     // Profile list: enumerate every *.json under bindings/.
     next.availableProfiles.clear();
@@ -185,7 +213,8 @@ void UserConfig::reloadFromDisk() {
 void UserConfig::writeDefaultsIfMissing() {
     if (!fs::exists(configFile_)) {
         UserConfigJson cfg;
-        cfg.activeBindings = "default";
+        cfg.activeKeyboardBindings = "default";
+        cfg.activeGamepadBindings  = "default";
         atomicWrite(configFile_, userConfigToJson(cfg));
     }
 

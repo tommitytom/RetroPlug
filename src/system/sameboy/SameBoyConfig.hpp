@@ -26,6 +26,10 @@ struct SameBoyConfig {
 
     SameBoyModel              model    = SameBoyModel::CgbC;
     bool                      fastBoot = true;
+    // When true, the UI thread watches `romPath` and triggers a reload
+    // (preserving current SRAM, dropping savestate) when the file changes.
+    // No-op when `romPath` is empty (embed-only project).
+    bool                      reloadOnRomChange = false;
     // When true (default), saves embed `romBytes` so projects survive ROM
     // file moves. When false, only `romPath` is persisted and the ROM is
     // re-read from disk on load.

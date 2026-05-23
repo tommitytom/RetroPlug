@@ -82,6 +82,30 @@ public:
     // the audio thread, but a simple atomic store would make it so if needed.
     void setGainDb(float dB);
 
+    // Tear down `gb_` and rebuild it with the current `config_`. Snapshots
+    // SRAM through `config_.sram` so it survives the cycle; clears
+    // `config_.savestate` (model-specific). Called from the DSP command
+    // drain when the user changes Model from the menu — the allocations
+    // inside `GB_init` are the same ones a fresh Load Project does, so
+    // accepting them on the audio thread for an explicit user action is
+    // consistent with that precedent.
+    void restartEmulator();
+
+    // Wipe cartridge battery RAM in the live emulator. Pads to
+    // `GB_save_battery_size` so SameBoy's load doesn't read past the end.
+    void clearSram();
+
+    // Serialize current SRAM / savestate to a byte buffer. Empty vector if
+    // the cartridge has no battery (saveSram) or the emulator isn't
+    // active. Called from the UI thread when the user picks Save SRAM /
+    // Save State — racy with DSP-thread mutation but acceptable for these
+    // user-driven snapshots, mirroring snapshotConfig's existing pattern.
+    std::vector<std::uint8_t> saveSramBytes() const;
+    std::vector<std::uint8_t> saveStateBytes() const;
+    // Deserialize a savestate buffer into the live emulator. Returns false
+    // if the buffer is malformed or doesn't match this model.
+    bool loadStateBytes(const std::vector<std::uint8_t>& bytes);
+
     // Internal hooks invoked from the C callbacks (made public so the
     // free-function trampolines can reach them; not part of the public API).
     void writeAudioSample(int16_t left, int16_t right);

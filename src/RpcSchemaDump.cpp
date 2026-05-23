@@ -27,6 +27,7 @@ int main() {
     server.addMethod<&PluginRpcService::addRomFromPath>();
     server.addMethod<&PluginRpcService::replaceRomFromPath>();
     server.addMethod<&PluginRpcService::removeSystem>();
+    server.addMethod<&PluginRpcService::duplicateSystem>();
     server.addMethod<&PluginRpcService::clearCurrentProjectPath>();
     server.addMethod<&PluginRpcService::listSystems>();
     server.addMethod<&PluginRpcService::setFocus>();
@@ -37,6 +38,13 @@ int main() {
     server.addMethod<&PluginRpcService::setMidiRouting>();
     server.addMethod<&PluginRpcService::getZoom>();
     server.addMethod<&PluginRpcService::setZoom>();
+    server.addMethod<&PluginRpcService::getLayout>();
+    server.addMethod<&PluginRpcService::setLayout>();
+    server.addMethod<&PluginRpcService::resetSystem>();
+    server.addMethod<&PluginRpcService::newSram>();
+    server.addMethod<&PluginRpcService::setFastBoot>();
+    server.addMethod<&PluginRpcService::setModel>();
+    server.addMethod<&PluginRpcService::setReloadOnRomChange>();
     server.addMethod<&PluginRpcService::setLsdjSyncConfig>();
     server.addMethod<&PluginRpcService::setWindowSize>();
     server.addMethod<&PluginRpcService::isWindowSizeControlled>();
@@ -46,7 +54,14 @@ int main() {
     server.addMethod<&PluginRpcService::eraseKit>();
     server.addMethod<&PluginRpcService::openSampleBrowser>();
     server.addMethod<&PluginRpcService::getUserConfig>();
-    server.addMethod<&PluginRpcService::setActiveBindings>();
+    server.addMethod<&PluginRpcService::setActiveKeyboardBindings>();
+    server.addMethod<&PluginRpcService::setActiveGamepadBindings>();
+    server.addMethod<&PluginRpcService::openSettingsFolder>();
+    server.addMethod<&PluginRpcService::saveSram>();
+    server.addMethod<&PluginRpcService::openSaveSramBrowser>();
+    server.addMethod<&PluginRpcService::saveState>();
+    server.addMethod<&PluginRpcService::openSaveStateBrowser>();
+    server.addMethod<&PluginRpcService::openLoadStateBrowser>();
     server.addMethod<&PluginRpcService::getRecentFiles>();
     server.addMethod<&PluginRpcService::getMemory>();
     server.addMethod<&PluginRpcService::subscribeMemory>();

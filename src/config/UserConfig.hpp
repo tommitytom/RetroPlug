@@ -57,10 +57,11 @@ public:
     // Resolved config directory. Available after start() — empty before.
     const std::filesystem::path& rootDir() const { return rootDir_; }
 
-    // Switch the active profile. Writes config.json and immediately
-    // updates the in-memory snapshot (without waiting for efsw to
-    // round-trip the change). Returns false on write failure.
-    bool setActiveBindings(std::string name);
+    // Switch the active keyboard / gamepad profile. Writes config.json and
+    // immediately updates the in-memory snapshot (without waiting for efsw
+    // to round-trip the change). Returns false on write failure.
+    bool setActiveKeyboardBindings(std::string name);
+    bool setActiveGamepadBindings(std::string name);
 
     // efsw callback — runs on a background thread. Only flips dirty_.
     void handleFileAction(efsw::WatchID,

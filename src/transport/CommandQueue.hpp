@@ -10,6 +10,7 @@
 #include "system/InputTypes.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
 
 class SystemBase;
 
@@ -94,6 +95,46 @@ struct SetZoomCommand {
     std::uint8_t zoom;
 };
 
+// Project-wide layout change. Same pattern as SetMidiRouting.
+struct SetLayoutCommand {
+    SystemLayout layout;
+};
+
+// Soft-reset of a single system (the GB equivalent of pressing the reset
+// button). DSP thread calls SystemBase::onReset on the matching slot.
+struct ResetSystemCommand {
+    SystemId id;
+};
+
+// Zero the cartridge battery RAM and reload it into the emulator. Only
+// SameBoy systems carry battery RAM; the handler no-ops for others.
+struct NewSramCommand {
+    SystemId id;
+};
+
+// Toggle SameBoyConfig::fastBoot. Mutation only — applies on the next
+// reset / boot since the boot ROM is only consulted then.
+struct SetFastBootCommand {
+    SystemId id;
+    bool     enabled;
+};
+
+// Change SameBoyConfig::model. Triggers an emulator restart on the DSP
+// thread so the new model takes effect immediately. SRAM is preserved
+// across the restart; savestate is dropped (model-specific).
+struct SetModelCommand {
+    SystemId     id;
+    SameBoyModel model;
+};
+
+// Toggle the per-system "watch the ROM file for changes" flag. The actual
+// watcher lives on the UI thread; this command just mutates config so the
+// state persists.
+struct SetReloadOnRomChangeCommand {
+    SystemId id;
+    bool     enabled;
+};
+
 // Edit the LSDJ sync mode + tempo divisor on a specific system's LsdjSyncRole
 // config. Keeping the command narrow (rather than passing a whole RoleConfig)
 // preserves the union's POD-trivial property; if more role kinds need
@@ -146,6 +187,12 @@ struct Command {
         SubscribeMemory   = 11,
         UnsubscribeMemory = 12,
         SetZoom           = 13,
+        SetLayout         = 14,
+        ResetSystem       = 15,
+        NewSram           = 16,
+        SetFastBoot       = 17,
+        SetModel          = 18,
+        SetReloadOnRomChange = 19,
     };
 
     Kind kind = Kind::None;
@@ -163,6 +210,12 @@ struct Command {
         SubscribeMemoryCommand   subscribeMemory;
         UnsubscribeMemoryCommand unsubscribeMemory;
         SetZoomCommand           setZoom;
+        SetLayoutCommand         setLayout;
+        ResetSystemCommand       resetSystem;
+        NewSramCommand           newSram;
+        SetFastBootCommand       setFastBoot;
+        SetModelCommand          setModel;
+        SetReloadOnRomChangeCommand setReloadOnRomChange;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -259,6 +312,48 @@ struct Command {
         Command c;
         c.kind = Kind::SetZoom;
         c.payload.setZoom = SetZoomCommand{zoom};
+        return c;
+    }
+
+    static Command makeSetLayout(SystemLayout layout) {
+        Command c;
+        c.kind = Kind::SetLayout;
+        c.payload.setLayout = SetLayoutCommand{layout};
+        return c;
+    }
+
+    static Command makeResetSystem(SystemId id) {
+        Command c;
+        c.kind = Kind::ResetSystem;
+        c.payload.resetSystem = ResetSystemCommand{id};
+        return c;
+    }
+
+    static Command makeNewSram(SystemId id) {
+        Command c;
+        c.kind = Kind::NewSram;
+        c.payload.newSram = NewSramCommand{id};
+        return c;
+    }
+
+    static Command makeSetFastBoot(SystemId id, bool enabled) {
+        Command c;
+        c.kind = Kind::SetFastBoot;
+        c.payload.setFastBoot = SetFastBootCommand{id, enabled};
+        return c;
+    }
+
+    static Command makeSetModel(SystemId id, SameBoyModel model) {
+        Command c;
+        c.kind = Kind::SetModel;
+        c.payload.setModel = SetModelCommand{id, model};
+        return c;
+    }
+
+    static Command makeSetReloadOnRomChange(SystemId id, bool enabled) {
+        Command c;
+        c.kind = Kind::SetReloadOnRomChange;
+        c.payload.setReloadOnRomChange = SetReloadOnRomChangeCommand{id, enabled};
         return c;
     }
 };

@@ -71,7 +71,8 @@ TEST_CASE("UserConfig writes defaults on first run", "[user-config]") {
     REQUIRE(fs::exists(dir / "bindings" / "default.json"));
 
     auto snap = cfg.snapshot();
-    REQUIRE(snap.activeBindings == "default");
+    REQUIRE(snap.activeKeyboardBindings == "default");
+    REQUIRE(snap.activeGamepadBindings  == "default");
     REQUIRE_FALSE(snap.bindings.keyboard.empty());
     REQUIRE(snap.bindings.keyboard.at("A") == std::vector<std::string>{"Z", "z"});
     REQUIRE(snap.bindings.gamepad.at("Start") == std::vector<std::string>{"start"});
@@ -110,7 +111,7 @@ TEST_CASE("UserConfig preserves existing files on second run", "[user-config]") 
     fs::remove_all(dir);
 }
 
-TEST_CASE("UserConfig::setActiveBindings switches profile synchronously", "[user-config]") {
+TEST_CASE("UserConfig::setActiveKeyboardBindings switches profile synchronously", "[user-config]") {
     auto dir = makeTempDir("set-active");
 
     UserConfig cfg(dir);
@@ -124,10 +125,10 @@ TEST_CASE("UserConfig::setActiveBindings switches profile synchronously", "[user
     alt.keyboard["Start"] = {"Enter"};
     writeFile(dir / "bindings" / "alt.json", bindingMapToJson(alt));
 
-    REQUIRE(cfg.setActiveBindings("alt"));
+    REQUIRE(cfg.setActiveKeyboardBindings("alt"));
 
     auto snap = cfg.snapshot();
-    REQUIRE(snap.activeBindings == "alt");
+    REQUIRE(snap.activeKeyboardBindings == "alt");
     REQUIRE(snap.bindings.keyboard.at("A") == std::vector<std::string>{"j"});
 
     // config.json on disk now records the switch.

@@ -110,6 +110,11 @@ public:
     // PluginUI::uiIdle; cheap when there are no active subscriptions.
     void pumpMemorySnapshots();
 
+    // Per-uiIdle: stat the ROM paths of every system whose
+    // `reloadOnRomChange` config flag is set and dispatch a reload when the
+    // mtime advances.
+    void pumpRomWatchers() { if (rpcService_) rpcService_->pumpRomWatchers(); }
+
 private:
     // rpcpp transport — single sync entry point exposed to QuickJS. Body
     // calls rpcServer_->processMessage and returns either the inline
