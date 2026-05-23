@@ -52,3 +52,8 @@ set_target_properties(sameboy PROPERTIES
     C_STANDARD 11
     POSITION_INDEPENDENT_CODE ON
 )
+
+# Boot ROMs are assembled from the submodule's BootROMs/*.asm sources via
+# RGBDS at build time; the generated headers are placed under the build
+# tree and exposed as a PUBLIC include of the `sameboy` target.
+include("${CMAKE_SOURCE_DIR}/cmake/sameboy_bootroms.cmake")

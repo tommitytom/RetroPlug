@@ -99,6 +99,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 
+# --- RGBDS: assembles SameBoy's boot ROMs from BootROMs/*.asm at build time.
+# Pinned single-binary release. See cmake/sameboy_bootroms.cmake.
+ARG RGBDS_VERSION=v1.0.1
+RUN set -eux; \
+	mkdir -p /tmp/rgbds && cd /tmp/rgbds; \
+	curl -fsSL "https://github.com/gbdev/rgbds/releases/download/${RGBDS_VERSION}/rgbds-linux-x86_64.tar.xz" -o rgbds.tar.xz; \
+	tar -xJf rgbds.tar.xz; \
+	install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/; \
+	cd / && rm -rf /tmp/rgbds; \
+	rgbasm --version
+
 # --- Plugin-format validators -----------------------------------------------
 # Pinned versions; both ship as single-binary releases on GitHub. pluginval
 # covers VST3/AU/LV2/LADSPA; clap-validator covers CLAP. See
