@@ -81,6 +81,50 @@ TEST_CASE("CommandQueue carries LoadRom payload", "[CommandQueue]") {
     REQUIRE(out.payload.loadRom.newSystem == sentinel);
 }
 
+TEST_CASE("CommandQueue makers cover the per-system + project-wide menu actions", "[CommandQueue]") {
+    CommandQueue q;
+
+    // Project-wide layout change.
+    REQUIRE(q.tryPush(Command::makeSetLayout(SystemLayout::Grid)));
+    // Per-system actions.
+    REQUIRE(q.tryPush(Command::makeResetSystem(11)));
+    REQUIRE(q.tryPush(Command::makeNewSram(12)));
+    REQUIRE(q.tryPush(Command::makeSetFastBoot(13, false)));
+    REQUIRE(q.tryPush(Command::makeSetModel(14, SameBoyModel::DmgB)));
+    REQUIRE(q.tryPush(Command::makeSetReloadOnRomChange(15, true)));
+
+    Command out;
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::SetLayout);
+    REQUIRE(out.payload.setLayout.layout == SystemLayout::Grid);
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::ResetSystem);
+    REQUIRE(out.payload.resetSystem.id == 11);
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::NewSram);
+    REQUIRE(out.payload.newSram.id == 12);
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::SetFastBoot);
+    REQUIRE(out.payload.setFastBoot.id == 13);
+    REQUIRE(out.payload.setFastBoot.enabled == false);
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::SetModel);
+    REQUIRE(out.payload.setModel.id == 14);
+    REQUIRE(out.payload.setModel.model == SameBoyModel::DmgB);
+
+    REQUIRE(q.tryPop(out));
+    REQUIRE(out.kind == Command::Kind::SetReloadOnRomChange);
+    REQUIRE(out.payload.setReloadOnRomChange.id == 15);
+    REQUIRE(out.payload.setReloadOnRomChange.enabled == true);
+
+    REQUIRE_FALSE(q.tryPop(out));
+}
+
 TEST_CASE("CommandQueue is safe across one producer and one consumer", "[CommandQueue][threading]") {
     CommandQueue q;
     constexpr uint32_t kMessages = 10'000;
