@@ -377,11 +377,28 @@ target_link_libraries(${NAME} PUBLIC miniaudio)
 # UserConfig symbols and we don't split the .cpp.
 target_link_libraries(${NAME} PUBLIC efsw)
 
-# Force UI artifacts to refresh before any plugin variant compiles
-# bundle_data.c. retroplug-ui is DPF's UI aggregator (every UI-bearing
-# variant inherits from it), so this single edge covers all of clap /
-# vst3 / lv2 / jack / vst2.
-add_dependencies(${NAME}-ui ui-regenerate)
+# Force UI artifacts to refresh before any consumer of bundle_data.c
+# builds. Wiring only ${NAME}-ui (DPF's static-lib aggregator) is not
+# enough: CMake doesn't propagate add_dependencies through library link
+# edges, so `make retroplug-jack` / `make screenshot` / `make validate`
+# were observed skipping ui-regenerate entirely. Add a direct edge to
+# every UI-bearing variant and the umbrella aggregator.
+#
+# copy_if_different on bundle_data.c (see the ui-regenerate target above)
+# keeps the C compile + plugin link incremental when content is unchanged,
+# so this is free on no-op rebuilds and ~1–2 s otherwise.
+set(_RP_UI_VARIANTS ui jack clap vst2 vst3 lv2-ui au)
+foreach(_v IN LISTS _RP_UI_VARIANTS)
+    if(TARGET ${NAME}-${_v})
+        add_dependencies(${NAME}-${_v} ui-regenerate)
+    endif()
+endforeach()
+# The umbrella ${NAME} target is what convenience targets like screenshot
+# and validate DEPENDS on; wire it directly so the regen fires even when
+# they don't transit through a specific variant.
+if(TARGET ${NAME})
+    add_dependencies(${NAME} ui-regenerate)
+endif()
 
 # NOTICE you probably do not want this on your final plugin
 target_link_libraries(${NAME} PUBLIC lvgl::demos)

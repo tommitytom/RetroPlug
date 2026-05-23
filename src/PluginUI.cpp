@@ -5,8 +5,8 @@
  *  - DPF lifecycle (constructor sizing, uiIdle, onResize, parameterChanged,
  *    uiFileBrowserSelected).
  *  - JS engine + bridge ownership.
- *  - Forward DPF keyboard events to LVGL focus AND to JS via the "key"
- *    event channel. Routing decisions live in TS.
+ *  - Forward DPF keyboard and mouse events to LVGL focus AND to JS via the
+ *    "key" and "mouse" event channels. Routing decisions live in TS.
  *  - Drain DSP→UI events (free released SystemBase pointers off the audio
  *    thread) and emit a per-tick "frame" event for React.
  *
@@ -466,6 +466,32 @@ protected:
             jsEngine.emit("key", 2, args);
             JS_FreeValue(ctx, args[0]);
             JS_FreeValue(ctx, args[1]);
+        }
+        return true;
+    }
+
+    bool onMouse(const MouseEvent& ev) override
+    {
+        // Forward to LVGL so the framework's pointer routing (focus, onClick,
+        // press style) still works. LVGL itself only sees a single binary
+        // "is pressed" state regardless of which mouse button — fine for the
+        // existing left-click-to-focus path on tiles.
+        UI::onMouse(ev);
+
+        // Mirror to JS so TS can implement button-aware policy (right-click
+        // opens the per-instance menu). Same pattern as onKeyboard above.
+        if (JSContext* ctx = jsEngine.getContext()) {
+            JSValue args[4] = {
+                JS_NewUint32(ctx, ev.button),
+                JS_NewBool(ctx, ev.press),
+                JS_NewFloat64(ctx, ev.pos.getX()),
+                JS_NewFloat64(ctx, ev.pos.getY()),
+            };
+            jsEngine.emit("mouse", 4, args);
+            JS_FreeValue(ctx, args[0]);
+            JS_FreeValue(ctx, args[1]);
+            JS_FreeValue(ctx, args[2]);
+            JS_FreeValue(ctx, args[3]);
         }
         return true;
     }
