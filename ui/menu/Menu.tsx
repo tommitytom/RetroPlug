@@ -52,6 +52,13 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         setFocusedIdx(idx);
     }, []);
 
+    // Inner scrollable View ref + cached item height. The scroll-follow effect
+    // (further down) drives this so the focused row stays at the viewport
+    // midpoint, matching v0.5's UX. Cached after the first measurement —
+    // item height is determined by font-size + padding, which are constants.
+    const innerViewRef = useRef<any>(null);
+    const itemHeightRef = useRef<number>(0);
+
     // Flatten the tree: walk depth-first, including children of any submenu
     // whose id is in `openItems`. The resulting flat list is what the user
     // actually sees (and navigates with arrows).
@@ -96,8 +103,6 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
 
     const groupRef = useRef<any>(null);
 
-    console.log("[menu] render flat.length=", flat.length, "openItems=", [...openItems].join(","));
-
     // Rebuild the focus group whenever the visible items change. Pattern
     // mirrors KitEditor.tsx — claim the keypad on mount, restore the
     // parent's sink group on unmount / before rebuild.
@@ -120,7 +125,6 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         // didn't fire (e.g. orderedRefs[idx] was null).
         setFocusedIdx(idx);
         setKeyboardGroup(group);
-        console.log("[menu] group built, refs=", orderedRefs.length, "focused=", idx);
         return () => {
             setKeyboardGroup(sinkGroup ?? null);
             group.destroy();
@@ -132,6 +136,46 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         // the keypad correctly.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visibleKey, sinkGroup]);
+
+    // Programmatic scroll-follow: keep the focused row at the viewport
+    // midpoint as the user navigates. Once focus crosses the midpoint, each
+    // step advances scroll by one row so the selection visually stays in
+    // place. At list ends the formula clamps (top: scroll=0; bottom:
+    // scroll=maxScroll, focus rides the edge). Mirrors v0.5's MenuView UX.
+    //
+    // Driven by focusedIdx (covers arrow nav + click), visibleKey (covers
+    // submenu expand/collapse — inner View remounts so we resync scroll),
+    // and height (window resize). Effects run after commit so refs are
+    // populated and getBoundingClientRect returns a real number.
+    useEffect(() => {
+        const view = innerViewRef.current;
+        if (!view || flat.length === 0) return;
+
+        // Measure once; item height is fixed (font-size + padding constants).
+        if (itemHeightRef.current === 0) {
+            const firstRef = refsByIdRef.current.get(flat[0].item.id);
+            if (firstRef?.getBoundingClientRect) {
+                itemHeightRef.current = firstRef.getBoundingClientRect().height;
+            }
+        }
+        const itemH = itemHeightRef.current;
+        if (itemH <= 0) return;
+
+        const viewportH   = height - 36;  // matches inner View's height calc
+        const visibleRows = Math.max(1, Math.floor(viewportH / itemH));
+        const midpoint    = Math.floor((visibleRows - 1) / 2);
+        const totalH      = flat.length * itemH;
+        const maxScroll   = Math.max(0, totalH - viewportH);
+        const target      = Math.min(
+            Math.max(0, (focusedIdx - midpoint) * itemH),
+            maxScroll,
+        );
+        // LV_ANIM_OFF so rapid Down-holds don't lag behind the cursor.
+        view.scrollToY(target, false);
+        // flat.length is captured implicitly via the focusedIdx/visibleKey deps
+        // — visibleKey changes whenever flat changes shape.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusedIdx, visibleKey, height]);
 
     // Up / Down nav. No wrap-around — v0.5 doesn't wrap, and wrap on a
     // potentially long scrollable list is disorienting.
@@ -151,7 +195,6 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         (e as any).stopPropagation?.();
         const refs = getOrderedRefs();
         const group = groupRef.current;
-        console.log("[menu] onKey", e.key, "cur=", focusedIdxRef.current, "refsLen=", refs.length);
         if (!group || refs.length === 0) return;
         const cur = focusedIdxRef.current;
         let next = cur;
@@ -238,6 +281,7 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
                 // Remounting from scratch lets every Text child mount via
                 // appendChild in JSX order, producing the correct LVGL order.
                 key={visibleKey}
+                ref={innerViewRef}
                 style={{
                     width:  "100%",
                     height: height - 36,
@@ -281,7 +325,7 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
                                 "padding-left":   BASE_PAD_LEFT + depth * INDENT_STEP,
                                 "padding-right":  4,
                             }}
-                            onFocus={() => { console.log("[menu] onFocus", i); onItemFocus(i); }}
+                            onFocus={() => onItemFocus(i)}
                             onKey={onItemKey}
                             onClick={() => activate(i, item)}
                         >
