@@ -55,6 +55,7 @@ catch_discover_tests(retroplug-tests)
 add_executable(retroplug-mesen-tests
     MesenSingletonsTests.cpp
     MesenMultiInstanceTests.cpp
+    MesenSystemBaseTests.cpp
     ../src/system/SystemBase.cpp
     ../src/system/mesen/MesenSystem.cpp
     ../src/system/mesen/MesenVideoDevice.cpp
