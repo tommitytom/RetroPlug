@@ -225,7 +225,8 @@ add_executable(rpc-schema-dump
     src/system/mesen/GbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE src)
-target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw)
+target_include_directories(rpc-schema-dump PRIVATE deps/lv_binding_js/deps/txiki/deps/miniz)
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz)
 
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
@@ -379,6 +380,11 @@ target_link_libraries(${NAME} PUBLIC miniaudio)
 # PluginRpcService.cpp (shared between FILES_DSP and FILES_UI) references
 # UserConfig symbols and we don't split the .cpp.
 target_link_libraries(${NAME} PUBLIC efsw)
+# Project files are PKZIP blobs (project.json + raw binary entries); miniz
+# provides the in-memory writer/reader. The target is built as part of txiki
+# but we link + include directly so src/util/MinizZip.hpp can #include "miniz.h".
+target_link_libraries(${NAME} PUBLIC miniz)
+target_include_directories(${NAME} PUBLIC deps/lv_binding_js/deps/txiki/deps/miniz)
 
 # Force UI artifacts to refresh before any consumer of bundle_data.c
 # builds. Wiring only ${NAME}-ui (DPF's static-lib aggregator) is not

@@ -295,7 +295,7 @@ TEST_CASE("MesenSystem::snapshotConfig captures live SRAM and savestate",
     auto liveSram = sys.saveSramBytes();
     CHECK((m->sram.empty() == liveSram.empty()));
     if (!liveSram.empty()) {
-        CHECK(m->sram.bytes() == liveSram);
+        CHECK(m->sram == liveSram);
     }
 
     // Round-tripping the savestate via a fresh instance should restore RAM
@@ -339,9 +339,9 @@ TEST_CASE("MesenSystem honours config_.sram and config_.savestate at onActivate"
 
     // Second system: hydrate from the captured state + SRAM via config_.
     MesenConfig restoreCfg = cfg;
-    restoreCfg.savestate = Base64Bytes(std::move(stateBytes));
+    restoreCfg.savestate = std::move(stateBytes);
     if (!sramPattern.empty()) {
-        restoreCfg.sram = Base64Bytes(sramPattern);
+        restoreCfg.sram = sramPattern;
     }
     MesenSystem restored{SystemId{2}, restoreCfg, romBytes};
     restored.onActivate(kSampleRate);

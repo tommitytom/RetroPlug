@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "project/Project.hpp"
 #include "project/ProjectConfig.hpp"
 #include "project/ProjectSerialization.hpp"
+#include "util/MinizZip.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/mesen/GbaConfig.hpp"
@@ -150,12 +152,16 @@ TEST_CASE("Project::adoptSystem returns 0 for null input", "[Project]") {
     REQUIRE(proj.systems().empty());
 }
 
-TEST_CASE("ProjectConfig round-trips an empty project through JSON", "[ProjectSerialization]") {
+TEST_CASE("ProjectConfig round-trips an empty project through zip", "[ProjectSerialization]") {
     ProjectConfig cfg;
-    const std::string json = projectConfigToJson(cfg);
-    REQUIRE(!json.empty());
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
+    // PKZIP local file header magic: 0x50 0x4B 0x03 0x04
+    REQUIRE(blob.size() >= 4);
+    REQUIRE(blob[0] == 0x50);
+    REQUIRE(blob[1] == 0x4B);
 
-    auto parsed = projectConfigFromJson(json);
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->schemaVersion == "1.0");
     REQUIRE(parsed->systems.empty());
@@ -167,20 +173,20 @@ TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", 
     sb.fastBoot = false;
     sb.embedRom = true;
     sb.romPath  = "/path/to/lsdj.gb";
-    sb.romBytes = Base64Bytes(std::vector<std::uint8_t>{
+    sb.romBytes = {
         0x00, 0xFF, 0x10, 0x20, 0x42, 0x99, 0xAB, 0xCD,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
         0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88});
-    sb.savestate = Base64Bytes(std::vector<std::uint8_t>{0x01, 0x02, 0x03});
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+    sb.savestate = {0x01, 0x02, 0x03};
 
     ProjectConfig cfg;
     cfg.systems.push_back(sb);
 
-    const std::string json = projectConfigToJson(cfg);
-    INFO(json);
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
 
-    auto parsed = projectConfigFromJson(json);
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->systems.size() == 1);
 
@@ -201,20 +207,20 @@ TEST_CASE("ProjectConfig round-trips a GBA system with embedded ROM bytes + bios
     gb.gainDb          = -1.5f;
     gb.romPath         = "/path/to/nanoloop.gba";
     gb.biosPath        = "/some/firmware/gba_bios.bin";
-    gb.romBytes = Base64Bytes(std::vector<std::uint8_t>{
+    gb.romBytes = {
         0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21,
         0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
-        0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21});
-    gb.sram      = Base64Bytes(std::vector<std::uint8_t>{0xCA, 0xFE});
-    gb.savestate = Base64Bytes(std::vector<std::uint8_t>{0x01, 0x02, 0x03});
+        0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21};
+    gb.sram      = {0xCA, 0xFE};
+    gb.savestate = {0x01, 0x02, 0x03};
 
     ProjectConfig cfg;
     cfg.systems.push_back(gb);
 
-    const std::string json = projectConfigToJson(cfg);
-    INFO(json);
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
 
-    auto parsed = projectConfigFromJson(json);
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->systems.size() == 1);
 
@@ -236,6 +242,80 @@ TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectS
     REQUIRE_FALSE(projectConfigFromJson("").has_value());
 }
 
+TEST_CASE("projectConfigFromZip reports failure for malformed input", "[ProjectSerialization]") {
+    REQUIRE_FALSE(projectConfigFromZip(std::span<const std::uint8_t>{}).has_value());
+    const std::uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    REQUIRE_FALSE(projectConfigFromZip(std::span<const std::uint8_t>(garbage, sizeof(garbage))).has_value());
+}
+
+// Tag with `[.diag]` so this is hidden from the default test run (Catch2
+// treats tags beginning with a dot as hidden). Invoke explicitly to dump a
+// representative project to /tmp/sanity.rplg + /tmp/sanity.json so an
+// external `unzip -l` can confirm the on-disk format.
+TEST_CASE("zip vs JSON size for a representative project",
+          "[.diag-zip-write]") {
+    SameBoyConfig sb;
+    sb.romPath   = "/path/to/lsdj.gb";
+    sb.romBytes  = std::vector<std::uint8_t>(1024 * 1024, 0x42);
+    sb.sram      = std::vector<std::uint8_t>(32 * 1024, 0xAA);
+    sb.savestate = std::vector<std::uint8_t>(64 * 1024, 0x33);
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const auto json = projectConfigToJson(cfg);
+    const auto zip  = projectConfigToZip(cfg);
+
+    {
+        std::ofstream f("/tmp/sanity.rplg", std::ios::binary);
+        f.write(reinterpret_cast<const char*>(zip.data()), zip.size());
+    }
+    {
+        std::ofstream f("/tmp/sanity.json", std::ios::binary);
+        f << json;
+    }
+
+    UNSCOPED_INFO("json size: " << json.size() << " bytes");
+    UNSCOPED_INFO("zip  size: " << zip.size()  << " bytes");
+    INFO("ratio: " << (100.0 * zip.size() / json.size()) << "%");
+    CHECK(zip.size() < json.size() / 2); // expect >2x shrinkage
+}
+
+TEST_CASE("projectConfigToZip writes binaries to per-system zip entries",
+          "[ProjectSerialization][zip]") {
+    // Pin down the on-disk entry contract: project.json plus
+    // systems/{i}/{rom,sram,state} per system that supplies bytes. The
+    // JSON entry must NOT contain the raw blobs (stripped before write).
+    SameBoyConfig sb;
+    sb.romPath  = "/r.gb";
+    sb.romBytes = {0xAA, 0xBB, 0xCC, 0xDD};
+    sb.sram     = {0x11, 0x22};
+    // savestate intentionally empty — must NOT produce an entry.
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
+
+    MinizReader zip(blob);
+    REQUIRE(zip.valid());
+    REQUIRE(zip.has("project.json"));
+    REQUIRE(zip.has("systems/0/rom"));
+    REQUIRE(zip.has("systems/0/sram"));
+    REQUIRE_FALSE(zip.has("systems/0/state"));
+
+    const auto rom = zip.read("systems/0/rom");
+    REQUIRE(rom == std::vector<std::uint8_t>{0xAA, 0xBB, 0xCC, 0xDD});
+    const auto sram = zip.read("systems/0/sram");
+    REQUIRE(sram == std::vector<std::uint8_t>{0x11, 0x22});
+
+    // project.json carries metadata only — binary fields serialize as
+    // empty arrays after the stripping pass.
+    const std::string json = zip.readString("project.json");
+    REQUIRE(json.find("\"romBytes\":[]") != std::string::npos);
+}
+
 TEST_CASE("SameBoyConfig round-trips an attached MgbRoleConfig role",
           "[ProjectSerialization][role]") {
     SameBoyConfig sb;
@@ -245,10 +325,10 @@ TEST_CASE("SameBoyConfig round-trips an attached MgbRoleConfig role",
     ProjectConfig cfg;
     cfg.systems.push_back(sb);
 
-    const std::string json = projectConfigToJson(cfg);
-    INFO(json);
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
 
-    auto parsed = projectConfigFromJson(json);
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->systems.size() == 1);
 
@@ -264,9 +344,9 @@ TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, link
     a.romPath     = "/a.gb";
     a.gainDb      = -3.5f;
     a.linkGroupId = 1;
-    a.sram        = Base64Bytes(std::vector<std::uint8_t>{
+    a.sram        = {
         0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
-        0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80});
+        0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80};
 
     SameBoyConfig b;
     b.romPath     = "/b.gb";
@@ -283,8 +363,8 @@ TEST_CASE("ProjectConfig round-trips multi-instance fields (layout, gainDb, link
     cfg.systems.push_back(b);
     cfg.systems.push_back(c);
 
-    const std::string json = projectConfigToJson(cfg);
-    auto parsed = projectConfigFromJson(json);
+    const auto blob = projectConfigToZip(cfg);
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->settings.layout == SystemLayout::Grid);
     REQUIRE(parsed->systems.size() == 3);
@@ -481,7 +561,7 @@ TEST_CASE("SameBoyConfig round-trips an attached LsdjKitPatchConfig role",
     rp::lsdj::LsdjKitConfig slot0;
     slot0.slot          = 0;
     slot0.name          = "DRUMS";
-    slot0.compiledBytes = Base64Bytes(bank);
+    slot0.compiledBytes = bank;
     slot0.compiledHash  = 0xDEADBEEFCAFEBABEULL;
     rp::lsdj::LsdjSampleConfig kick;
     kick.path       = "/some/path/kick.wav";
@@ -499,9 +579,9 @@ TEST_CASE("SameBoyConfig round-trips an attached LsdjKitPatchConfig role",
     ProjectConfig cfg;
     cfg.systems.push_back(sb);
 
-    const std::string json = projectConfigToJson(cfg);
-    INFO(json);
-    auto parsed = projectConfigFromJson(json);
+    const auto blob = projectConfigToZip(cfg);
+    REQUIRE(!blob.empty());
+    auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->systems.size() == 1);
 
@@ -517,7 +597,7 @@ TEST_CASE("SameBoyConfig round-trips an attached LsdjKitPatchConfig role",
     REQUIRE(s0.name          == "DRUMS");
     REQUIRE(s0.compiledHash  == 0xDEADBEEFCAFEBABEULL);
     REQUIRE(s0.compiledBytes.size() == bank.size());
-    REQUIRE(s0.compiledBytes.bytes() == bank);  // bit-for-bit
+    REQUIRE(s0.compiledBytes == bank);  // bit-for-bit
 
     REQUIRE(s0.samples.size() == 1);
     REQUIRE(s0.samples[0].path       == "/some/path/kick.wav");
@@ -539,7 +619,7 @@ TEST_CASE("LsdjKitPatchConfig coexists with LsdjSyncConfig on the same system",
     ProjectConfig cfg;
     cfg.systems.push_back(sb);
 
-    auto parsed = projectConfigFromJson(projectConfigToJson(cfg));
+    auto parsed = projectConfigFromZip(projectConfigToZip(cfg));
     REQUIRE(parsed.has_value());
     const auto* sbOut = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
     REQUIRE(sbOut != nullptr);

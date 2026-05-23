@@ -66,8 +66,7 @@ void LsdjKitPatchRole::queuePatch(std::uint8_t kitIndex,
 void LsdjKitPatchRole::queueAllFromConfig(const rp::lsdj::LsdjKitPatchConfig& config) {
     for (const auto& kit : config.kits) {
         if (kit.slot >= kSlotCount) continue;
-        const auto& bytes = kit.compiledBytes.bytes();
-        if (bytes.empty()) continue;
-        pending_[kit.slot] = bytes;
+        if (kit.compiledBytes.empty()) continue;
+        pending_[kit.slot] = kit.compiledBytes;
     }
 }

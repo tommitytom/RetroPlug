@@ -276,7 +276,7 @@ TEST_CASE("SameBoySystem::restartEmulator preserves SRAM and drops savestate",
     sys.onActivate(kSampleRate);
 
     // Seed a savestate field on the config so we can prove restart wipes it.
-    sys.config_.savestate = Base64Bytes(std::vector<std::uint8_t>{1, 2, 3, 4});
+    sys.config_.savestate = {1, 2, 3, 4};
 
     // Stamp a known pattern into SRAM. After restart it should still be there
     // (battery RAM survives a power cycle on real hardware).
@@ -320,7 +320,7 @@ TEST_CASE("SameBoySystem honours config_.savestate at onActivate",
     original.onDeactivate();
 
     SameBoyConfig restoreCfg = cfg;
-    restoreCfg.savestate = Base64Bytes(std::move(stateBytes));
+    restoreCfg.savestate = std::move(stateBytes);
     SameBoySystem restored{SystemId{2}, restoreCfg, romBytes};
     restored.onActivate(kSampleRate);
 
@@ -355,7 +355,7 @@ TEST_CASE("SameBoySystem honours config_.sram at onActivate (without savestate)"
     // — per SameBoySystem.cpp:175 a savestate's embedded SRAM wins when
     // both are set, which would mask the test).
     SameBoyConfig cfg = probe;
-    cfg.sram = Base64Bytes(sramPattern);
+    cfg.sram = sramPattern;
     SameBoySystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 

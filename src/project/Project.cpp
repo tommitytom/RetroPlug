@@ -44,7 +44,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         // Prefer embedded ROM bytes (round-tripped through DPF state) over
         // re-reading from disk. Only fall back to slurpFile when bytes are
         // absent — covers legacy/dev paths and the embedRom=false opt-out.
-        std::vector<std::uint8_t> rom = sb->romBytes.bytes();
+        std::vector<std::uint8_t> rom = sb->romBytes;
         if (rom.empty())
             rom = slurpFile(sb->romPath);
         if (rom.empty()) {
@@ -60,7 +60,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
     }
 
     if (const auto* mb = rfl::get_if<MesenConfig>(&config.variant())) {
-        std::vector<std::uint8_t> rom = mb->romBytes.bytes();
+        std::vector<std::uint8_t> rom = mb->romBytes;
         if (rom.empty())
             rom = slurpFile(mb->romPath);
         if (rom.empty()) {
@@ -78,7 +78,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
     }
 
     if (const auto* gb = rfl::get_if<GbaSystemConfig>(&config.variant())) {
-        std::vector<std::uint8_t> rom = gb->romBytes.bytes();
+        std::vector<std::uint8_t> rom = gb->romBytes;
         if (rom.empty())
             rom = slurpFile(gb->romPath);
         if (rom.empty()) {

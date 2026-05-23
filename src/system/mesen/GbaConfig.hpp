@@ -7,7 +7,6 @@
 #include "rfl/Literal.hpp"
 
 #include "system/RoleConfig.hpp"
-#include "util/Base64Bytes.hpp"
 
 // Plain-data, reflectcpp-friendly config for a GBA (Mesen2) system slot.
 // Mirrors MesenConfig's shape so the three configs are interchangeable
@@ -29,9 +28,10 @@ struct GbaSystemConfig {
     bool          reloadOnRomChange = false;
     float         gainDb          = 0.0f;
     std::string   romPath;
-    Base64Bytes   romBytes;
-    Base64Bytes   sram;
-    Base64Bytes   savestate;
+    // Binary blobs live in the .rplg zip as raw entries — see ProjectBinaries.
+    std::vector<std::uint8_t> romBytes;
+    std::vector<std::uint8_t> sram;
+    std::vector<std::uint8_t> savestate;
 
     // Optional path to a real GBA BIOS file. When set, GbaSystem::onActivate
     // copies it into Mesen's firmware search path (`<home>/Firmware/

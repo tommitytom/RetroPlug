@@ -181,14 +181,14 @@ void SameBoySystem::onActivate(double sampleRate) {
             // SameBoy's load doesn't bounds-check the buffer it reads from.
             // Pad the slurped data to the expected size so a short .sav
             // can't make it read past the end. Truncate too-large.
-            std::vector<std::uint8_t> sram = config_.sram.bytes();
+            std::vector<std::uint8_t> sram = config_.sram;
             sram.resize(static_cast<std::size_t>(expected), 0);
             GB_load_battery_from_buffer(gb_, sram.data(), sram.size());
         }
     }
 
     if (!config_.savestate.empty()) {
-        const auto& save = config_.savestate.bytes();
+        const auto& save = config_.savestate;
         if (GB_load_state_from_buffer(gb_, save.data(), save.size()) != 0) {
             std::fprintf(stderr, "[SameBoySystem] failed to load savestate\n");
         }
@@ -278,10 +278,10 @@ void SameBoySystem::restartEmulator() {
     if (sramSize > 0) {
         std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
         if (GB_save_battery_to_buffer(gb_, sram.data(), sram.size()) == 0) {
-            config_.sram = Base64Bytes(std::move(sram));
+            config_.sram = std::move(sram);
         }
     }
-    config_.savestate = Base64Bytes{};
+    config_.savestate.clear();
     const double sr = sampleRate_;
     onDeactivate();
     onActivate(sr);
@@ -293,7 +293,7 @@ void SameBoySystem::clearSram() {
     if (sramSize <= 0) return;
     std::vector<std::uint8_t> zeros(static_cast<std::size_t>(sramSize), 0);
     GB_load_battery_from_buffer(gb_, zeros.data(), zeros.size());
-    config_.sram = Base64Bytes{};
+    config_.sram.clear();
 }
 
 std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
@@ -326,9 +326,9 @@ std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRa
     SameBoyConfig cfg = config_;
     cfg.linkGroupId   = 0;
     auto sramBytes  = saveSramBytes();
-    if (!sramBytes.empty())  cfg.sram      = Base64Bytes(std::move(sramBytes));
+    if (!sramBytes.empty())  cfg.sram      = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
-    if (!stateBytes.empty()) cfg.savestate = Base64Bytes(std::move(stateBytes));
+    if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
     out->onActivate(sampleRate);
@@ -598,15 +598,15 @@ rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType 
 SystemConfig SameBoySystem::snapshotConfig() const {
     SameBoyConfig out = config_;
     if (out.embedRom) {
-        out.romBytes = Base64Bytes(rom_);
+        out.romBytes = rom_;
     } else {
-        out.romBytes = Base64Bytes{};
+        out.romBytes.clear();
     }
     if (gb_) {
         const std::size_t saveSize = GB_get_save_state_size((GB_gameboy_t*)gb_);
         std::vector<std::uint8_t> save(saveSize);
         GB_save_state_to_buffer((GB_gameboy_t*)gb_, save.data());
-        out.savestate = Base64Bytes(std::move(save));
+        out.savestate = std::move(save);
 
         // Capture cartridge battery RAM. Returns 0 for carts without a
         // battery (RTC-only or none) — those simply don't carry an `sram`.
@@ -614,16 +614,16 @@ SystemConfig SameBoySystem::snapshotConfig() const {
         if (sramSize > 0) {
             std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
             if (GB_save_battery_to_buffer((GB_gameboy_t*)gb_, sram.data(), sram.size()) == 0) {
-                out.sram = Base64Bytes(std::move(sram));
+                out.sram = std::move(sram);
             } else {
-                out.sram = Base64Bytes{};
+                out.sram.clear();
             }
         } else {
-            out.sram = Base64Bytes{};
+            out.sram.clear();
         }
     } else {
-        out.savestate = Base64Bytes{};
-        out.sram      = Base64Bytes{};
+        out.savestate.clear();
+        out.sram.clear();
     }
     return out;
 }

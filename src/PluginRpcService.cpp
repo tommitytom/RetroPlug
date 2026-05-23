@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -65,6 +66,14 @@ bool spillString(const std::string& path, const std::string& data) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return false;
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
+    return out.good();
+}
+
+bool spillBytes(const std::string& path, std::span<const std::uint8_t> data) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out.write(reinterpret_cast<const char*>(data.data()),
+              static_cast<std::streamsize>(data.size()));
     return out.good();
 }
 
@@ -149,7 +158,7 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
         sav.replace_extension(".sav");
         std::vector<std::uint8_t> sramBytes = slurp(sav.string());
         if (!sramBytes.empty())
-            cfg.sram = Base64Bytes(std::move(sramBytes));
+            cfg.sram = std::move(sramBytes);
     }
 
     auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(bytes));
@@ -219,15 +228,20 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
-    std::string json;
+    std::vector<std::uint8_t> zip;
     try {
-        json = projectConfigToJson(project_->snapshotConfig());
+        zip = projectConfigToZip(project_->snapshotConfig());
     } catch (const std::exception& e) {
         std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
         emit("project-error", path);
         return false;
     }
-    if (!spillString(path, json)) {
+    if (zip.empty()) {
+        std::fprintf(stderr, "saveProjectToPath: zip serialization produced empty buffer\n");
+        emit("project-error", path);
+        return false;
+    }
+    if (!spillBytes(path, zip)) {
         std::fprintf(stderr, "saveProjectToPath: write failed for '%s'\n", path.c_str());
         emit("project-error", path);
         return false;
@@ -243,14 +257,20 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
-    std::string json = slurpString(path);
-    if (json.empty()) {
+    const auto bytes = slurp(path);
+    if (bytes.empty()) {
         std::fprintf(stderr, "loadProjectFromPath: empty / unreadable '%s'\n", path.c_str());
         emit("project-error", path);
         return false;
     }
-    // Heap-allocate the JSON; DSP frees after parsing.
-    auto* heap = new std::string(std::move(json));
+    auto parsed = projectConfigFromZip(bytes);
+    if (!parsed) {
+        std::fprintf(stderr, "loadProjectFromPath: failed to parse zip '%s'\n", path.c_str());
+        emit("project-error", path);
+        return false;
+    }
+    // Heap-allocate the parsed config; DSP frees after applying.
+    auto* heap = new ProjectConfig(std::move(*parsed));
     if (!commands_->tryPush(Command::makeLoadProject(heap))) {
         std::fprintf(stderr, "loadProjectFromPath: command queue full\n");
         delete heap;
