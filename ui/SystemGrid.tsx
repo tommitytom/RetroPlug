@@ -23,11 +23,6 @@ interface SystemGridProps {
     systems:    SystemEntry[];
     focusedId:  number;
     layout?:    SystemLayout;
-    // Optional overlay rendered as the last child of the grid container.
-    // Used by PluginUI to anchor the menu in the grid's coordinate space
-    // (so tile-local bounds from getTileBounds() can be used directly as
-    // the menu's `align` pos).
-    overlay?:   React.ReactNode;
 }
 
 function shapeFor(layout: SystemLayout, count: number): GridShape {
@@ -72,7 +67,7 @@ export function getTileBounds(index: number, count: number, layout: SystemLayout
  * is just a black background and the menu (rendered above by
  * PluginUI) covers the whole window.
  */
-export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, overlay }: SystemGridProps) {
+export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto }: SystemGridProps) {
     if (systems.length === 0) return null;
 
     const { width, height, shape } = gridContentSize(systems, layout);
@@ -135,7 +130,6 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, ove
                     ))}
                 </View>
             ))}
-            {overlay}
         </View>
     );
 }
