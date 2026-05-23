@@ -1,5 +1,5 @@
 import { View, Text, ELvKey } from "lvgljs-ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createGroup, setKeyboardGroup } from "lvgljs";
 
 import type { MenuItem, MenuTree } from "./menuDefs";
@@ -106,7 +106,13 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
     // Rebuild the focus group whenever the visible items change. Pattern
     // mirrors KitEditor.tsx — claim the keypad on mount, restore the
     // parent's sink group on unmount / before rebuild.
-    useEffect(() => {
+    //
+    // useLayoutEffect (not useEffect) so the focus state lands before the
+    // next LVGL paint. The lvgljs reconciler schedules passive effects via
+    // queueMicrotask, but LVGL's paint timers (30 ms libuv / 60 fps DPF
+    // idle) can fire between commit and that microtask, producing a brief
+    // "blip" frame on submenu toggle. Running synchronously eliminates it.
+    useLayoutEffect(() => {
         const group = createGroup();
         groupRef.current = group;
         const orderedRefs = getOrderedRefs();
@@ -145,9 +151,12 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
     //
     // Driven by focusedIdx (covers arrow nav + click), visibleKey (covers
     // submenu expand/collapse — inner View remounts so we resync scroll),
-    // and height (window resize). Effects run after commit so refs are
-    // populated and getBoundingClientRect returns a real number.
-    useEffect(() => {
+    // and height (window resize). useLayoutEffect (not useEffect) so the
+    // scroll position is applied synchronously before the next LVGL paint,
+    // matching the rebuild effect above. Otherwise the just-remounted inner
+    // View paints once at scroll=0 before our scrollToY runs, creating a
+    // visible "blip" on submenu toggle.
+    useLayoutEffect(() => {
         const view = innerViewRef.current;
         if (!view || flat.length === 0) return;
 
