@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
 import { plugin } from "./plugin/client";
-import { TILE_W, TILE_H } from "./layout";
+import { tileWidth, tileHeight } from "./layout";
 
 // Mirrors LV_IMAGE_ALIGN values from lvgl/src/widgets/image/lv_image.h.
 const LV_IMAGE_ALIGN_CONTAIN = 14;
@@ -15,6 +15,9 @@ const CanvasAny = Canvas as any;
 interface EmulatorTileProps {
     systemId: number;
     focused: boolean;
+    // Integer zoom 1..6. Drives the canvas pixel size; the C++ framebuffer
+    // is always native 160x144 and LVGL's nearest-neighbor scaler upscales.
+    zoom: number;
 }
 
 /**
@@ -30,8 +33,10 @@ interface EmulatorTileProps {
  * registered; until the first frame arrives the canvas just renders black,
  * which matches the surrounding window.
  */
-export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
+export function EmulatorTile({ systemId, focused, zoom }: EmulatorTileProps) {
     const canvasRef = useRef<any>(null);
+    const tw = tileWidth(zoom);
+    const th = tileHeight(zoom);
 
     useEffect(() => {
         // pending guards against piling up Promises if the C++ side is
@@ -77,8 +82,8 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
     return (
         <View
             style={{
-                width:  TILE_W,
-                height: TILE_H,
+                width:  tw,
+                height: th,
                 "background-color": "#000000",
                 "background-opacity": 255,
                 "border-width": 0,
@@ -95,8 +100,8 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
             <CanvasAny
                 ref={canvasRef}
                 style={{
-                    width:  TILE_W,
-                    height: TILE_H,
+                    width:  tw,
+                    height: th,
                     "border-width": 0,
                     "border-radius": 0,
                     "padding-left":  0,
@@ -110,8 +115,8 @@ export function EmulatorTile({ systemId, focused }: EmulatorTileProps) {
             {!focused && (
                 <View
                     style={{
-                        width:  TILE_W,
-                        height: TILE_H,
+                        width:  tw,
+                        height: th,
                         "background-color": "#000000",
                         // lvgl-js's NormalizeOpacity expects 0..1 floats:
                         // anything > 1 is clamped to 255. So we pass 0.5

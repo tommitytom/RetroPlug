@@ -11,6 +11,9 @@ const TextAny = Text as any;
 interface MenuProps {
     width:     number;
     height:    number;
+    // Integer zoom 1..6. All internal pixel constants are scaled by zoom/3
+    // so the menu's typography and padding match the panel size.
+    zoom:      number;
     tree:      MenuTree;
     onClose:   () => void;
     sinkGroup: any;
@@ -21,13 +24,42 @@ interface FlatEntry {
     depth: number;
 }
 
-// Indent constants. depth=0 (top level) sits flush with the left padding;
-// each deeper level adds INDENT_STEP pixels. Tuned to roughly match v0.5's
-// 10 px indent at native zoom (we're scaled up).
+// Indent constants AT ZOOM=3 (the historical default). At runtime every
+// pixel value is multiplied by `zoom/3` so the menu visually scales with
+// the panel. depth=0 (top level) sits flush with the left padding; each
+// deeper level adds INDENT_STEP px. Tuned to roughly match v0.5's 10 px
+// indent at native zoom (we're scaled up).
 const BASE_PAD_LEFT = 4;
 const INDENT_STEP   = 16;
 
-export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
+// Font / spacing baselines at zoom=3. Centralised so the scaling math
+// below stays readable. Border-width stays at 1 regardless of zoom — a
+// visual accent that shouldn't bloat at high zooms.
+const TITLE_FONT_BASE      = 16;
+const TITLE_PAD_BOTTOM_BASE = 4;
+// Title region height (title font + padding-bottom + outer padding-top).
+// Was hard-coded as `36` in `height - 36`. Now derived from zoom.
+const TITLE_REGION_BASE    = 36;
+const ITEM_FONT_BASE       = 18;
+const ITEM_PAD_VERT_BASE   = 4;
+const ITEM_PAD_RIGHT_BASE  = 4;
+const OUTER_PAD_LR_BASE    = 8;
+const OUTER_PAD_TB_BASE    = 6;
+
+export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProps) {
+    // Linear scale relative to the historical zoom=3 baseline.
+    const s = zoom / 3;
+    const r = (x: number) => Math.round(x * s);
+    const titleFont      = r(TITLE_FONT_BASE);
+    const titlePadBottom = r(TITLE_PAD_BOTTOM_BASE);
+    const titleRegionH   = r(TITLE_REGION_BASE);
+    const itemFont       = r(ITEM_FONT_BASE);
+    const itemPadVert    = r(ITEM_PAD_VERT_BASE);
+    const itemPadRight   = r(ITEM_PAD_RIGHT_BASE);
+    const basePadLeft    = r(BASE_PAD_LEFT);
+    const indentStep     = r(INDENT_STEP);
+    const outerPadLR     = r(OUTER_PAD_LR_BASE);
+    const outerPadTB     = r(OUTER_PAD_TB_BASE);
     const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
     // Visual highlight state. Updated by LV_EVENT_FOCUSED via onItemFocus so
     // the blue text-color tracks whichever widget LVGL actually has focused.
@@ -160,17 +192,17 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         const view = innerViewRef.current;
         if (!view || flat.length === 0) return;
 
-        // Measure once; item height is fixed (font-size + padding constants).
-        if (itemHeightRef.current === 0) {
-            const firstRef = refsByIdRef.current.get(flat[0].item.id);
-            if (firstRef?.getBoundingClientRect) {
-                itemHeightRef.current = firstRef.getBoundingClientRect().height;
-            }
+        // Item height depends on zoom (font + padding scale linearly).
+        // Re-measure whenever this effect runs to avoid a stale cache
+        // surviving a zoom change.
+        const firstRef = refsByIdRef.current.get(flat[0].item.id);
+        if (firstRef?.getBoundingClientRect) {
+            itemHeightRef.current = firstRef.getBoundingClientRect().height;
         }
         const itemH = itemHeightRef.current;
         if (itemH <= 0) return;
 
-        const viewportH   = height - 36;  // matches inner View's height calc
+        const viewportH   = height - titleRegionH;  // matches inner View's height calc
         const visibleRows = Math.max(1, Math.floor(viewportH / itemH));
         const midpoint    = Math.floor((visibleRows - 1) / 2);
         const totalH      = flat.length * itemH;
@@ -182,9 +214,10 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
         // LV_ANIM_OFF so rapid Down-holds don't lag behind the cursor.
         view.scrollToY(target, false);
         // flat.length is captured implicitly via the focusedIdx/visibleKey deps
-        // — visibleKey changes whenever flat changes shape.
+        // — visibleKey changes whenever flat changes shape. `zoom` is in the
+        // deps because typography + viewport height both depend on it.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [focusedIdx, visibleKey, height]);
+    }, [focusedIdx, visibleKey, height, zoom]);
 
     // Up / Down nav. No wrap-around — v0.5 doesn't wrap, and wrap on a
     // potentially long scrollable list is disorienting.
@@ -256,10 +289,10 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
                 "border-color": "#4fc3f7",
                 "border-opacity": 255,
                 "border-radius": 0,
-                "padding-left":  8,
-                "padding-right": 8,
-                "padding-top":   6,
-                "padding-bottom":6,
+                "padding-left":  outerPadLR,
+                "padding-right": outerPadLR,
+                "padding-top":   outerPadTB,
+                "padding-bottom":outerPadTB,
                 display: "flex",
                 "flex-direction": "column",
                 "align-items": "stretch",
@@ -272,8 +305,8 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
             <Text
                 style={{
                     "text-color": "#4fc3f7",
-                    "font-size": 16,
-                    "padding-bottom": 4,
+                    "font-size": titleFont,
+                    "padding-bottom": titlePadBottom,
                 }}
             >
                 {tree.title}
@@ -293,7 +326,7 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
                 ref={innerViewRef}
                 style={{
                     width:  "100%",
-                    height: height - 36,
+                    height: height - titleRegionH,
                     "background-opacity": 0,
                     "border-width": 0,
                     "border-opacity": 0,
@@ -328,11 +361,11 @@ export function Menu({ width, height, tree, onClose, sinkGroup }: MenuProps) {
                             }}
                             style={{
                                 "text-color": focusedIdx === i ? "#4fc3f7" : "#ffffff",
-                                "font-size": 18,
-                                "padding-top":    4,
-                                "padding-bottom": 4,
-                                "padding-left":   BASE_PAD_LEFT + depth * INDENT_STEP,
-                                "padding-right":  4,
+                                "font-size": itemFont,
+                                "padding-top":    itemPadVert,
+                                "padding-bottom": itemPadVert,
+                                "padding-left":   basePadLeft + depth * indentStep,
+                                "padding-right":  itemPadRight,
                             }}
                             onFocus={() => onItemFocus(i)}
                             onKey={onItemKey}

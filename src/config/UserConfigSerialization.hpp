@@ -19,8 +19,11 @@
 // `UserConfigDto` is the merged form shipped over RPC and held in memory.
 
 struct UserConfigJson {
-    int         schemaVersion  = 1;
-    std::string activeBindings = "default";
+    int          schemaVersion  = 1;
+    std::string  activeBindings = "default";
+    // Default zoom level for fresh projects (1..6). Per-project zoom set
+    // via the menu overrides this; see ProjectSettings::zoom.
+    std::uint8_t defaultZoom    = 3;
 };
 
 // Key = GameboyButton name ("Right" "Left" "Up" "Down" "A" "B" "Select" "Start").
@@ -37,6 +40,7 @@ struct UserConfigDto {
     std::string              activeBindings;
     BindingMapJson           bindings;
     std::vector<std::string> availableProfiles;
+    std::uint8_t             defaultZoom = 3;
 };
 
 inline std::string userConfigToJson(const UserConfigJson& cfg) {

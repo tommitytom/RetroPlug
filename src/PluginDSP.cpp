@@ -319,6 +319,15 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::SetZoom: {
+                    const std::uint8_t z = cmd.payload.setZoom.zoom;
+                    if (z >= 1 && z <= 6 &&
+                        project.config().settings.zoom != z) {
+                        project.config().settings.zoom = z;
+                        projectMutated = true;
+                    }
+                } break;
+
                 case Command::Kind::SetLsdjSyncConfig: {
                     auto& sc = cmd.payload.setLsdjSyncConfig;
                     auto* sys = project.findSystem(sc.id);
