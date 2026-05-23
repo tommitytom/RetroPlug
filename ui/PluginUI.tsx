@@ -8,7 +8,7 @@ import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds }
 import { DEFAULT_ZOOM, tileWidth, tileHeight } from "./layout";
 import { Menu } from "./menu/Menu";
 import { StartScreen } from "./menu/StartScreen";
-import { buildInstanceMenu } from "./menu/menuDefs";
+import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
 import {
     GameboyButton,
     KEY_ESCAPE,
@@ -41,6 +41,8 @@ function PluginUI() {
     // getZoom() in refreshSystems (which resolves project setting and
     // user-config default on the C++ side).
     const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM);
+    // Recent ROMs + projects. Fetched on mount and on "recent-files-changed".
+    const [recentFiles, setRecentFiles] = useState<RecentEntry[]>([]);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -122,6 +124,23 @@ function PluginUI() {
         const handler = () => { void apply(); };
         on("user-config-changed", handler);
         return () => off("user-config-changed", handler);
+    }, []);
+
+    // Recent files. Same pattern as user-config: fetch on mount, refetch
+    // when C++ emits "recent-files-changed" after a successful load/save.
+    useEffect(() => {
+        const apply = async () => {
+            try {
+                const list = await plugin.getRecentFiles();
+                setRecentFiles(list as RecentEntry[]);
+            } catch (e) {
+                console.warn("[recent-files] getRecentFiles failed", e);
+            }
+        };
+        void apply();
+        const handler = () => { void apply(); };
+        on("recent-files-changed", handler);
+        return () => off("recent-files-changed", handler);
     }, []);
 
     // Menu visibility invariant: empty project => menu always open. Adding
@@ -281,6 +300,7 @@ function PluginUI() {
         focusedSystem,
         midiRouting,
         zoom,
+        recentFiles,
         openKitEditor,
     });
 
@@ -317,6 +337,7 @@ function PluginUI() {
                 <StartScreen
                     midiRouting={midiRouting}
                     zoom={zoom}
+                    recentFiles={recentFiles}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : menuOpen ? (

@@ -21,6 +21,7 @@ class CommandQueue;
 class EventQueue;
 class SystemBase;
 class UserConfig;
+class RecentFiles;
 
 namespace rp::lsdj { class KitCompiler; }
 
@@ -128,17 +129,27 @@ public:
         std::optional<std::string> mode;  // "add" | "replace" (default replace)
     };
 
+    // One entry of the recent-files list. Surfaced over RPC verbatim — the
+    // UI uses `kind` to dispatch to loadRomFromPath vs loadProjectFromPath.
+    struct RecentFileDto {
+        std::string path;
+        std::string kind;   // "rom" | "project"
+    };
+
     // Construction ----------------------------------------------------------
 
-    // `userConfig` is optional (nullptr in LV2-UI and in rpc-schema-dump).
-    // When null, getUserConfig() returns a default-initialised DTO and
-    // setActiveBindings() is a no-op.
+    // `userConfig` and `recentFiles` are optional (nullptr in LV2-UI and
+    // in rpc-schema-dump). When null, getUserConfig() returns a default-
+    // initialised DTO, setActiveBindings() is a no-op, getRecentFiles()
+    // returns an empty list, and load handlers skip the recent-files
+    // bookkeeping.
     PluginRpcService(Project*,
                      CommandQueue*,
                      EventQueue*,
                      std::atomic<double>*       sampleRate,
                      std::atomic<SystemId>*     focusedSystemId,
-                     UserConfig*                userConfig = nullptr);
+                     UserConfig*                userConfig  = nullptr,
+                     RecentFiles*               recentFiles = nullptr);
     ~PluginRpcService();
 
     PluginRpcService(const PluginRpcService&)            = delete;
@@ -209,6 +220,10 @@ public:
     UserConfigDto getUserConfig();
     bool          setActiveBindings(std::string name);
 
+    // Recently-loaded ROMs and projects. Most-recent first; capped at
+    // RecentFiles::kMaxEntries. See src/config/RecentFiles.hpp.
+    std::vector<RecentFileDto> getRecentFiles();
+
     // -- Memory snapshot API ----------------------------------------------
     //
     // One-shot read of an emulator region. Torn reads from live memory are
@@ -274,6 +289,7 @@ private:
     std::atomic<double>*      sampleRate_           = nullptr;
     std::atomic<SystemId>*    focusedSystemId_      = nullptr;
     UserConfig*               userConfig_           = nullptr;
+    RecentFiles*              recentFiles_          = nullptr;
 
     // Lazy-allocated; constructed on first kit-related call so a project
     // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool

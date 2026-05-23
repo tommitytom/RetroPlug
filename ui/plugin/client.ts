@@ -28,10 +28,15 @@ export interface FrameResponse extends Omit<PluginRpcServiceFrameResponse, "buff
 export type SystemEntry  = PluginRpcServiceSystemEntry;
 export type OpenRomOpts  = PluginRpcServiceOpenRomOpts;
 
+export interface RecentFileDto { path: string; kind: string; }
+
 // Tighten the generated service interface where the codegen can't infer
-// the actual runtime shape (msgpack BIN → Uint8Array).
+// the actual runtime shape (msgpack BIN → Uint8Array). `getRecentFiles`
+// is declared here so the IDE has the symbol before the build regenerates
+// PluginService.ts; the generated signature matches this shape.
 export type PluginClient = Omit<PluginService, "getFrame"> & {
     getFrame(systemId: number): Promise<FrameResponse | null>;
+    getRecentFiles(): Promise<RecentFileDto[]>;
 } & ClientControl;
 
 export const plugin: PluginClient = createClient<PluginClient>({

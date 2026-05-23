@@ -206,6 +206,7 @@ add_executable(rpc-schema-dump
     src/PluginRpcService.cpp
     src/config/UserConfig.cpp
     src/config/UserConfigPaths.cpp
+    src/config/RecentFiles.cpp
     src/project/Project.cpp
     src/lsdj/Effects.cpp
     src/lsdj/KitUtil.cpp
@@ -309,6 +310,7 @@ dpf_add_plugin(${NAME}
       src/PluginRpcService.cpp
       src/config/UserConfig.cpp
       src/config/UserConfigPaths.cpp
+      src/config/RecentFiles.cpp
       src/project/Project.cpp
       src/lsdj/Effects.cpp
       src/lsdj/KitUtil.cpp
@@ -332,6 +334,7 @@ dpf_add_plugin(${NAME}
       src/PluginRpcService.cpp
       src/config/UserConfig.cpp
       src/config/UserConfigPaths.cpp
+      src/config/RecentFiles.cpp
       src/GamepadManager.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the

@@ -51,7 +51,8 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                EventQueue* events,
                                std::atomic<double>* sampleRate,
                                std::atomic<SystemId>* focusedSystemId,
-                               UserConfig* userConfig)
+                               UserConfig* userConfig,
+                               RecentFiles* recentFiles)
     : engine(eng),
       project_(project) {
     if (DpfJsDisplayData* data = DpfJsDisplayData::get())
@@ -62,7 +63,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     // for `pumpAsync` to fan out via engine.emit.
     rpcService_   = std::make_unique<PluginRpcService>(project, commands, events,
                                                        sampleRate, focusedSystemId,
-                                                       userConfig);
+                                                       userConfig, recentFiles);
     rpcTransport_ = std::make_unique<RpcTransport>();
     rpcServer_    = std::make_unique<RpcServer>(*rpcService_, *rpcTransport_);
 
@@ -93,6 +94,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
     rpcServer_->addMethod<&PluginRpcService::getUserConfig>();
     rpcServer_->addMethod<&PluginRpcService::setActiveBindings>();
+    rpcServer_->addMethod<&PluginRpcService::getRecentFiles>();
     rpcServer_->addMethod<&PluginRpcService::getMemory>();
     rpcServer_->addMethod<&PluginRpcService::subscribeMemory>();
     rpcServer_->addMethod<&PluginRpcService::unsubscribeMemory>();
