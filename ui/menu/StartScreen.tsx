@@ -5,10 +5,15 @@ import { Menu } from "./Menu";
 import { buildStartMenu, type RecentEntry } from "./menuDefs";
 
 interface StartScreenProps {
-    midiRouting: number;
-    zoom:        number;
-    recentFiles: RecentEntry[];
-    sinkGroup:   any;
+    midiRouting:            number;
+    layout:                 number;
+    zoom:                   number;
+    recentFiles:            RecentEntry[];
+    openAbout:              () => void;
+    availableProfiles:      string[];
+    activeKeyboardBindings: string;
+    activeGamepadBindings:  string;
+    sinkGroup:              any;
 }
 
 // Empty-project landing. Renders the start menu inside a tile-sized panel,
@@ -16,7 +21,11 @@ interface StartScreenProps {
 //
 // Submenu navigation is in-place (children expand inline below their parent
 // — see Menu.tsx). No pane-stack, no Back item.
-export function StartScreen({ midiRouting, zoom, recentFiles, sinkGroup }: StartScreenProps) {
+export function StartScreen({
+    midiRouting, layout, zoom, recentFiles, openAbout,
+    availableProfiles, activeKeyboardBindings, activeGamepadBindings,
+    sinkGroup,
+}: StartScreenProps) {
     // Esc on the start screen must NOT close the menu (the empty-project
     // invariant — see PluginUI's useKeyboard handler, which short-circuits
     // Esc when systems.length === 0). Defence in depth: even if some code
@@ -27,9 +36,14 @@ export function StartScreen({ midiRouting, zoom, recentFiles, sinkGroup }: Start
         systems:       [],
         focusedSystem: undefined,
         midiRouting,
+        layout,
         zoom,
         recentFiles,
         openKitEditor: () => { /* unreachable from start menu */ },
+        openAbout,
+        availableProfiles,
+        activeKeyboardBindings,
+        activeGamepadBindings,
     });
 
     return (

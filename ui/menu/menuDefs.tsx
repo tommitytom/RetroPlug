@@ -42,12 +42,21 @@ export interface MenuContext {
     systems:        SystemEntry[];
     focusedSystem?: SystemEntry;
     midiRouting:    number;
+    // SystemLayout enum value (0=Auto, 1=Row, 2=Column, 3=Grid).
+    layout:         number;
     // Resolved zoom level 1..6 (project setting or user-config default).
     zoom:           number;
     // Most-recent first. Sourced from C++ via plugin.getRecentFiles().
     recentFiles:    RecentEntry[];
     // Called by Menu when the user picks Kit Editor.
     openKitEditor:  () => void;
+    // Called by Menu when the user picks About.
+    openAbout:      () => void;
+    // Bindings profile state (sourced from plugin.getUserConfig()). Empty
+    // arrays / strings before the first fetch lands.
+    availableProfiles:       string[];
+    activeKeyboardBindings:  string;
+    activeGamepadBindings:   string;
 }
 
 // Mirrors C++ MidiRouting enum (src/project/ProjectConfig.hpp).
@@ -56,6 +65,23 @@ const MIDI_ROUTING_NAMES = [
     "4 ch / inst",
     "1 ch / inst",
     "ch -> inst",
+];
+
+// Mirrors C++ SystemLayout enum (src/project/ProjectConfig.hpp).
+const LAYOUT_NAMES = [
+    "Auto",
+    "Row",
+    "Column",
+    "Grid",
+];
+
+// Mirrors C++ SameBoyModel enum (src/system/sameboy/SameBoyConfig.hpp).
+const MODEL_NAMES = [
+    "Auto",
+    "DMG-B",
+    "CGB-C",
+    "CGB-E",
+    "AGB",
 ];
 
 // Mirrors C++ LsdjSyncMode enum (src/system/sameboy/roles/LsdjSyncRole.hpp).
@@ -119,24 +145,49 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
 
 function systemChildren(ctx: MenuContext): MenuItem[] {
     const sys = ctx.focusedSystem;
-    const gainLabel = sys?.gainDb != null ? `Gain: ${sys.gainDb.toFixed(1)} dB` : "Gain: -";
+    const modelIdx   = sys?.model ?? 0;
+    const modelLabel = sys != null ? `Model: ${MODEL_NAMES[modelIdx] ?? MODEL_NAMES[0]}` : "Model: -";
+    const fastBootOn = sys?.fastBoot === true;
+    const fastBootLabel = `Fast boot: ${fastBootOn ? "On" : "Off"}`;
     return [
-        { id: "reset",      label: "Reset",                kind: "action", onSelect: stub("Reset") },
-        { id: "saveSram",   label: "Save SRAM",            kind: "action", onSelect: stub("Save SRAM") },
-        { id: "saveSramAs", label: "Save SRAM As...",      kind: "action", onSelect: stub("Save SRAM As") },
-        { id: "saveState",  label: "Save State",           kind: "action", onSelect: stub("Save State") },
-        { id: "saveStateAs",label: "Save State As...",     kind: "action", onSelect: stub("Save State As") },
-        { id: "newSram",    label: "New SRAM",             kind: "action", onSelect: stub("New SRAM") },
-        { id: "duplicate",  label: "Duplicate",            kind: "action", onSelect: stub("Duplicate") },
-        { id: "reloadRom",  label: "Reload on ROM change", kind: "action", onSelect: stub("Reload on ROM change"), keepOpen: true },
-        { id: "gain",       label: gainLabel,              kind: "action", onSelect: stub("Gain"),                keepOpen: true },
-        { id: "model",      label: "Model: -",             kind: "action", onSelect: stub("Model"),               keepOpen: true },
-        { id: "fastBoot",   label: "Fast boot",            kind: "action", onSelect: stub("Fast boot"),           keepOpen: true },
+        { id: "reset",      label: "Reset",                kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("resetSystem", sys.id); } },
+        { id: "saveSram",   label: "Save SRAM",            kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("saveSram", sys.id); } },
+        { id: "saveSramAs", label: "Save SRAM As...",      kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("openSaveSramBrowser", sys.id); } },
+        { id: "saveState",  label: "Save State",           kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("saveState", sys.id); } },
+        { id: "saveStateAs",label: "Save State As...",     kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("openSaveStateBrowser", sys.id); } },
+        { id: "loadState",  label: "Load State...",        kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("openLoadStateBrowser", sys.id); } },
+        { id: "newSram",    label: "New SRAM",             kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("newSram", sys.id); } },
+        { id: "reloadRom",  label: `Reload on ROM change: ${sys?.reloadOnRomChange ? "On" : "Off"}`, kind: "action", keepOpen: true,
+          onSelect: () => {
+              if (!sys) return;
+              void plugin.$notify("setReloadOnRomChange", sys.id, !sys.reloadOnRomChange);
+          } },
+        { id: "model",      label: modelLabel,             kind: "action", keepOpen: true,
+          onSelect: () => {
+              if (!sys || sys.model == null) return;
+              const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, 1);
+              void plugin.$notify("setModel", sys.id, next);
+          },
+          onCycle: (dir) => {
+              if (!sys || sys.model == null) return;
+              const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, dir);
+              void plugin.$notify("setModel", sys.id, next);
+          } },
+        { id: "fastBoot",   label: fastBootLabel,          kind: "action", keepOpen: true,
+          onSelect: () => { if (sys) void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } },
     ];
 }
 
 function projectChildren(ctx: MenuContext): MenuItem[] {
     const routingName = MIDI_ROUTING_NAMES[ctx.midiRouting] ?? MIDI_ROUTING_NAMES[0];
+    const layoutName  = LAYOUT_NAMES[ctx.layout]            ?? LAYOUT_NAMES[0];
     const items: MenuItem[] = [];
     // Save is meaningless without systems to serialize — hide it on the start screen.
     if (ctx.systems.length > 0) {
@@ -155,7 +206,15 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
               void plugin.$notify("setMidiRouting", next);
           } },
-        { id: "layout",       label: "Layout: -",        kind: "action", onSelect: stub("Layout"),        keepOpen: true },
+        { id: "layout", label: `Layout: ${layoutName}`, kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, 1);
+              void plugin.$notify("setLayout", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, dir);
+              void plugin.$notify("setLayout", next);
+          } },
         { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
           onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
           onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
@@ -165,12 +224,45 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     return items;
 }
 
-function settingsChildren(): MenuItem[] {
+function settingsChildren(ctx: MenuContext): MenuItem[] {
+    const profiles = ctx.availableProfiles;
+    const kbActive = ctx.activeKeyboardBindings;
+    const padActive = ctx.activeGamepadBindings;
+    const cycleProfile = (current: string, dir: 1 | -1): string => {
+        if (profiles.length === 0) return current;
+        const idx = profiles.indexOf(current);
+        const len = profiles.length;
+        const next = idx < 0
+            ? (dir > 0 ? 0 : len - 1)
+            : cycleInt(idx, 0, len - 1, dir);
+        return profiles[next];
+    };
     return [
-        { id: "keyboardProfile", label: "Keyboard profile: -", kind: "action", onSelect: stub("Keyboard profile"), keepOpen: true },
-        { id: "padProfile",      label: "Pad profile: -",      kind: "action", onSelect: stub("Pad profile"),      keepOpen: true },
+        { id: "keyboardProfile",
+          label: `Keyboard profile: ${kbActive || "-"}`,
+          kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = cycleProfile(kbActive, 1);
+              if (next !== kbActive) void plugin.$notify("setActiveKeyboardBindings", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleProfile(kbActive, dir);
+              if (next !== kbActive) void plugin.$notify("setActiveKeyboardBindings", next);
+          } },
+        { id: "padProfile",
+          label: `Pad profile: ${padActive || "-"}`,
+          kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = cycleProfile(padActive, 1);
+              if (next !== padActive) void plugin.$notify("setActiveGamepadBindings", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleProfile(padActive, dir);
+              if (next !== padActive) void plugin.$notify("setActiveGamepadBindings", next);
+          } },
         { id: "audioDevice",     label: "Audio device: -",     kind: "action", onSelect: stub("Audio device"),     keepOpen: true },
-        { id: "openSettings",    label: "Open settings folder", kind: "action", onSelect: stub("Open settings folder") },
+        { id: "openSettings",    label: "Open settings folder", kind: "action",
+          onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];
 }
 
@@ -194,6 +286,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
         { id: "addInstance",    label: "Add instance",   kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "add" }); } },
+        { id: "duplicate",      label: "Duplicate instance", kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("duplicateSystem", sys.id); } },
         { id: "removeInstance", label: "Remove instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("removeSystem", sys.id); } },
         { id: "linkGroup", label: `Link group: ${linkSuffix}`, kind: "action", keepOpen: true,
@@ -234,8 +328,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
     items.push(
         { id: "system",   label: "System",   kind: "submenu", children: systemChildren(ctx) },
         { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
-        { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren() },
-        { id: "about",    label: "About",    kind: "action",  onSelect: stub("About") },
+        { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren(ctx) },
+        { id: "about",    label: "About",    kind: "action",  onSelect: () => ctx.openAbout() },
     );
 
     const title = sys ? `RetroPlug - System #${sys.id}` : "RetroPlug";
@@ -252,8 +346,8 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
               onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
             { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren(ctx) },
             { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
-            { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren() },
-            { id: "about",    label: "About",    kind: "action",  onSelect: stub("About") },
+            { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren(ctx) },
+            { id: "about",    label: "About",    kind: "action",  onSelect: () => ctx.openAbout() },
         ],
     };
 }

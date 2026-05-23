@@ -8,6 +8,7 @@ import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds }
 import { DEFAULT_ZOOM, tileWidth, tileHeight } from "./layout";
 import { Menu } from "./menu/Menu";
 import { StartScreen } from "./menu/StartScreen";
+import { AboutPanel } from "./menu/AboutPanel";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
 import {
     GameboyButton,
@@ -31,12 +32,14 @@ function PluginUI() {
     // the editor first; only after it's closed does Esc fall through to
     // the menu toggle. Reachable from the main menu's "Kit Editor" item.
     const [kitEditorOpen, setKitEditorOpen] = useState(false);
+    const [aboutOpen, setAboutOpen] = useState(false);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
     // Seeded to 0 and replaced by the first refreshSystems(). The brief
     // 0-flash before that arrives is acceptable — the menu is open at
     // mount and the routing label only matters once a tile exists.
     const [midiRouting, setMidiRouting] = useState<number>(0);
+    const [layout, setLayout] = useState<number>(0);
     // Integer zoom 1..6. Initialized to DEFAULT_ZOOM; replaced by the first
     // getZoom() in refreshSystems (which resolves project setting and
     // user-config default on the C++ side).
@@ -81,11 +84,12 @@ function PluginUI() {
     // Pull the current system list and focus from C++. Called on mount and
     // every "config-changed" tick (after the DSP commits a project mutation).
     const refreshSystems = useCallback(async () => {
-        const [list, f, routing, z] = await Promise.all([
+        const [list, f, routing, z, l] = await Promise.all([
             plugin.listSystems(),
             plugin.getFocus(),
             plugin.getMidiRouting(),
             plugin.getZoom(),
+            plugin.getLayout(),
         ]);
         setSystems(list);
         if (f !== 0 && list.some((s) => s.id === f)) {
@@ -97,6 +101,7 @@ function PluginUI() {
             setFocusedId(0);
         }
         setMidiRouting(routing);
+        setLayout(l);
         setZoom(z >= 1 && z <= 6 ? z : DEFAULT_ZOOM);
     }, []);
 
@@ -116,6 +121,11 @@ function PluginUI() {
             try {
                 const cfg = await plugin.getUserConfig();
                 if (cfg && cfg.bindings) installBindings(cfg.bindings);
+                if (cfg) {
+                    setActiveKeyboardBindings(cfg.activeKeyboardBindings ?? "");
+                    setActiveGamepadBindings(cfg.activeGamepadBindings ?? "");
+                    setAvailableProfiles(cfg.availableProfiles ?? []);
+                }
             } catch (e) {
                 console.warn("[bindings] getUserConfig failed", e);
             }
@@ -125,6 +135,12 @@ function PluginUI() {
         on("user-config-changed", handler);
         return () => off("user-config-changed", handler);
     }, []);
+
+    // Active bindings profiles + the list available for cycling in the menu.
+    // Updated alongside installBindings on user-config-changed.
+    const [activeKeyboardBindings, setActiveKeyboardBindings] = useState<string>("");
+    const [activeGamepadBindings,  setActiveGamepadBindings]  = useState<string>("");
+    const [availableProfiles,      setAvailableProfiles]      = useState<string[]>([]);
 
     // Recent files. Same pattern as user-config: fetch on mount, refetch
     // when C++ emits "recent-files-changed" after a successful load/save.
@@ -184,11 +200,19 @@ function PluginUI() {
     const kitEditorOpenRef = useRef(kitEditorOpen);
     useEffect(() => { kitEditorOpenRef.current = kitEditorOpen; }, [kitEditorOpen]);
 
+    const aboutOpenRef = useRef(aboutOpen);
+    useEffect(() => { aboutOpenRef.current = aboutOpen; }, [aboutOpen]);
+
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
             // Esc closes the kit editor before falling through to menu.
             if (press && kitEditorOpenRef.current) {
                 setKitEditorOpen(false);
+                return;
+            }
+            if (press && aboutOpenRef.current) {
+                setAboutOpen(false);
+                if (systemsRef.current.length === 0) setMenuOpen(true);
                 return;
             }
             if (!press) return;
@@ -200,8 +224,9 @@ function PluginUI() {
             setMenuOpen(o => !o);
             return;
         }
-        // Kit editor consumes its own key events through its child group.
+        // Kit editor / About consume their own key events through their child group.
         if (kitEditorOpenRef.current) return;
+        if (aboutOpenRef.current) return;
         if (menuOpenRef.current) {
             // Menu is open — LVGL focus group routes the key to the focused
             // item; nothing for us to do here.
@@ -302,13 +327,23 @@ function PluginUI() {
         setKitEditorOpen(true);
     }, []);
 
+    const openAbout = useCallback(() => {
+        setMenuOpen(false);
+        setAboutOpen(true);
+    }, []);
+
     const instanceTree = buildInstanceMenu({
         systems,
         focusedSystem,
         midiRouting,
+        layout,
         zoom,
         recentFiles,
         openKitEditor,
+        openAbout,
+        availableProfiles,
+        activeKeyboardBindings,
+        activeGamepadBindings,
     });
 
     return (
@@ -340,11 +375,25 @@ function PluginUI() {
                     sinkGroup={sinkGroupRef.current}
                     onClose={() => setKitEditorOpen(false)}
                 />
+            ) : aboutOpen ? (
+                <AboutPanel
+                    zoom={zoom}
+                    onClose={() => {
+                        setAboutOpen(false);
+                        if (systemsRef.current.length === 0) setMenuOpen(true);
+                    }}
+                    sinkGroup={sinkGroupRef.current}
+                />
             ) : systems.length === 0 ? (
                 <StartScreen
                     midiRouting={midiRouting}
+                    layout={layout}
                     zoom={zoom}
                     recentFiles={recentFiles}
+                    openAbout={openAbout}
+                    availableProfiles={availableProfiles}
+                    activeKeyboardBindings={activeKeyboardBindings}
+                    activeGamepadBindings={activeGamepadBindings}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : menuOpen ? (

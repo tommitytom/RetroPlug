@@ -328,6 +328,59 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::SetLayout: {
+                    const SystemLayout l = cmd.payload.setLayout.layout;
+                    if (project.config().settings.layout != l) {
+                        project.config().settings.layout = l;
+                        projectMutated = true;
+                    }
+                } break;
+
+                case Command::Kind::ResetSystem: {
+                    if (SystemBase* sys = project.findSystem(cmd.payload.resetSystem.id))
+                        sys->onReset();
+                } break;
+
+                case Command::Kind::NewSram: {
+                    if (auto* sb = dynamic_cast<SameBoySystem*>(
+                            project.findSystem(cmd.payload.newSram.id))) {
+                        sb->clearSram();
+                        projectMutated = true;
+                    }
+                } break;
+
+                case Command::Kind::SetFastBoot: {
+                    auto& fb = cmd.payload.setFastBoot;
+                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(fb.id))) {
+                        if (sb->config_.fastBoot != fb.enabled) {
+                            sb->config_.fastBoot = fb.enabled;
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
+                case Command::Kind::SetModel: {
+                    auto& sm = cmd.payload.setModel;
+                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(sm.id))) {
+                        if (sb->config_.model != sm.model) {
+                            sb->config_.model = sm.model;
+                            sb->restartEmulator();
+                            project.rebuildLinkGroups();
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
+                case Command::Kind::SetReloadOnRomChange: {
+                    auto& sr = cmd.payload.setReloadOnRomChange;
+                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(sr.id))) {
+                        if (sb->config_.reloadOnRomChange != sr.enabled) {
+                            sb->config_.reloadOnRomChange = sr.enabled;
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
                 case Command::Kind::SetLsdjSyncConfig: {
                     auto& sc = cmd.payload.setLsdjSyncConfig;
                     auto* sys = project.findSystem(sc.id);

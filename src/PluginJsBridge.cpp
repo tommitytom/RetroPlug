@@ -75,6 +75,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::addRomFromPath>();
     rpcServer_->addMethod<&PluginRpcService::replaceRomFromPath>();
     rpcServer_->addMethod<&PluginRpcService::removeSystem>();
+    rpcServer_->addMethod<&PluginRpcService::duplicateSystem>();
     rpcServer_->addMethod<&PluginRpcService::clearCurrentProjectPath>();
     rpcServer_->addMethod<&PluginRpcService::listSystems>();
     rpcServer_->addMethod<&PluginRpcService::setFocus>();
@@ -85,6 +86,13 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::setMidiRouting>();
     rpcServer_->addMethod<&PluginRpcService::getZoom>();
     rpcServer_->addMethod<&PluginRpcService::setZoom>();
+    rpcServer_->addMethod<&PluginRpcService::getLayout>();
+    rpcServer_->addMethod<&PluginRpcService::setLayout>();
+    rpcServer_->addMethod<&PluginRpcService::resetSystem>();
+    rpcServer_->addMethod<&PluginRpcService::newSram>();
+    rpcServer_->addMethod<&PluginRpcService::setFastBoot>();
+    rpcServer_->addMethod<&PluginRpcService::setModel>();
+    rpcServer_->addMethod<&PluginRpcService::setReloadOnRomChange>();
     rpcServer_->addMethod<&PluginRpcService::setLsdjSyncConfig>();
     rpcServer_->addMethod<&PluginRpcService::setWindowSize>();
     rpcServer_->addMethod<&PluginRpcService::isWindowSizeControlled>();
@@ -94,7 +102,14 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::eraseKit>();
     rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
     rpcServer_->addMethod<&PluginRpcService::getUserConfig>();
-    rpcServer_->addMethod<&PluginRpcService::setActiveBindings>();
+    rpcServer_->addMethod<&PluginRpcService::setActiveKeyboardBindings>();
+    rpcServer_->addMethod<&PluginRpcService::setActiveGamepadBindings>();
+    rpcServer_->addMethod<&PluginRpcService::openSettingsFolder>();
+    rpcServer_->addMethod<&PluginRpcService::saveSram>();
+    rpcServer_->addMethod<&PluginRpcService::openSaveSramBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::saveState>();
+    rpcServer_->addMethod<&PluginRpcService::openSaveStateBrowser>();
+    rpcServer_->addMethod<&PluginRpcService::openLoadStateBrowser>();
     rpcServer_->addMethod<&PluginRpcService::getRecentFiles>();
     rpcServer_->addMethod<&PluginRpcService::getMemory>();
     rpcServer_->addMethod<&PluginRpcService::subscribeMemory>();
