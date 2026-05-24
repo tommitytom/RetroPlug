@@ -209,6 +209,8 @@ protected:
     {
         if (std::strcmp(key, "project") != 0) return;
         if (value == nullptr || value[0] == '\0') return;
+        if (std::getenv("RETROPLUG_TRACE_LIFECYCLE"))
+            d_stderr("[PluginDSP] setState (%zu chars)", std::strlen(value));
         const auto decoded = base64::decode(value);
         auto parsed = projectConfigFromZip(decoded);
         if (!parsed) {
@@ -275,12 +277,16 @@ protected:
 
     void activate() override
     {
+        if (std::getenv("RETROPLUG_TRACE_LIFECYCLE"))
+            d_stderr("[PluginDSP] activate (sr=%g)", fSampleRate);
         fSmoothGain.clearToTargetValue();
         project.onActivate(fSampleRate);
     }
 
     void deactivate() override
     {
+        if (std::getenv("RETROPLUG_TRACE_LIFECYCLE"))
+            d_stderr("[PluginDSP] deactivate");
         project.onDeactivate();
     }
 

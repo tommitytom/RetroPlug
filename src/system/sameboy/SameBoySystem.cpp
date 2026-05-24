@@ -241,6 +241,25 @@ void SameBoySystem::onActivate(double sampleRate) {
 void SameBoySystem::onDeactivate() {
     if (!activated_) return;
     if (gb_) {
+        // Snapshot live state so the next onActivate (e.g. on Reaper's
+        // transport-play or output-channel change) resumes from where
+        // we left off instead of cold-rebooting from the original
+        // .rplg savestate. Without this, hosts that toggle
+        // deactivate/activate around transport edges (Reaper does)
+        // visibly reset the GB on every play.
+        const std::size_t saveSize = GB_get_save_state_size(gb_);
+        if (saveSize > 0) {
+            std::vector<std::uint8_t> save(saveSize);
+            GB_save_state_to_buffer(gb_, save.data());
+            config_.savestate = std::move(save);
+        }
+        const int sramSize = GB_save_battery_size(gb_);
+        if (sramSize > 0) {
+            std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
+            if (GB_save_battery_to_buffer(gb_, sram.data(), sram.size()) == 0) {
+                config_.sram = std::move(sram);
+            }
+        }
         GB_free(gb_);
         delete gb_;
         gb_ = nullptr;
@@ -296,9 +315,11 @@ void SameBoySystem::restartEmulator() {
             config_.sram = std::move(sram);
         }
     }
-    config_.savestate.clear();
     const double sr = sampleRate_;
     onDeactivate();
+    // Discard the savestate onDeactivate just captured — a new GB
+    // model can't restore a savestate from the old one.
+    config_.savestate.clear();
     onActivate(sr);
 }
 
