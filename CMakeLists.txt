@@ -781,4 +781,37 @@ if(BUILD_CLI)
         USES_TERMINAL
         COMMENT "Reaper timing test: LSDj vs metronome (Arduinoboy slave)"
     )
+
+    # `make reaper-lsdj-midi-author` -> regenerate the stock-LSDj
+    # MidiSync fixture. Bootstrap script boots stock LSDj, sets
+    # SYNC=MIDI, builds a chain+phrase+note, then presses START to arm
+    # LSDj's "WAIT for clock" state — captured in the savestate so the
+    # .RPP is self-contained.
+    add_custom_target(reaper-lsdj-midi-author
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_midi_metro.rpp
+                ${CMAKE_BINARY_DIR}
+                ${CMAKE_SOURCE_DIR}/tools/reaper-lsdj-midi-author.lua
+                ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midi_metro_setup.json
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3 retroplug-cli
+        USES_TERMINAL
+        COMMENT "Re-author examples/reaper/lsdj_midi_metro.rpp via headless Reaper"
+    )
+
+    # `make reaper-lsdj-midi-metro` -> render + analyze the stock-LSDj
+    # MidiSync timing project. Counterpart to reaper-lsdj-arduinoboy-metro;
+    # comparing the two startup-latency numbers tells us whether the
+    # observed delay is in the Arduinoboy-slave emulation path or in
+    # LSDj itself (which is also reachable via the simpler MidiSync mode).
+    add_custom_target(reaper-lsdj-midi-metro
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-render.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_midi_metro.rpp
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-timing-analyze.py
+                ${CMAKE_BINARY_DIR}/reaper-lsdj-midi-metro.wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3
+        USES_TERMINAL
+        COMMENT "Reaper timing test: LSDj vs metronome (stock MidiSync)"
+    )
 endif()
