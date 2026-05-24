@@ -11,6 +11,7 @@
 
 #include <rfl/Bytestring.hpp>
 
+#include "PluginRpcRegistration.hpp"
 #include "RpcEnvelope.h"
 #include "project/Project.hpp"
 #include "system/SystemBase.hpp"
@@ -68,57 +69,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcTransport_ = std::make_unique<RpcTransport>();
     rpcServer_    = std::make_unique<RpcServer>(*rpcService_, *rpcTransport_);
 
-    rpcServer_->addMethod<&PluginRpcService::getFrame>();
-    rpcServer_->addMethod<&PluginRpcService::openRomBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::openSaveProjectBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::openLoadProjectBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::loadRomFromPath>();
-    rpcServer_->addMethod<&PluginRpcService::addRomFromPath>();
-    rpcServer_->addMethod<&PluginRpcService::replaceRomFromPath>();
-    rpcServer_->addMethod<&PluginRpcService::removeSystem>();
-    rpcServer_->addMethod<&PluginRpcService::duplicateSystem>();
-    rpcServer_->addMethod<&PluginRpcService::clearCurrentProjectPath>();
-    rpcServer_->addMethod<&PluginRpcService::listSystems>();
-    rpcServer_->addMethod<&PluginRpcService::setFocus>();
-    rpcServer_->addMethod<&PluginRpcService::getFocus>();
-    rpcServer_->addMethod<&PluginRpcService::pressButton>();
-    rpcServer_->addMethod<&PluginRpcService::setLinkGroupId>();
-    rpcServer_->addMethod<&PluginRpcService::getMidiRouting>();
-    rpcServer_->addMethod<&PluginRpcService::setMidiRouting>();
-    rpcServer_->addMethod<&PluginRpcService::getAudioRouting>();
-    rpcServer_->addMethod<&PluginRpcService::setAudioRouting>();
-    rpcServer_->addMethod<&PluginRpcService::getZoom>();
-    rpcServer_->addMethod<&PluginRpcService::setZoom>();
-    rpcServer_->addMethod<&PluginRpcService::getLayout>();
-    rpcServer_->addMethod<&PluginRpcService::setLayout>();
-    rpcServer_->addMethod<&PluginRpcService::resetSystem>();
-    rpcServer_->addMethod<&PluginRpcService::newSram>();
-    rpcServer_->addMethod<&PluginRpcService::setFastBoot>();
-    rpcServer_->addMethod<&PluginRpcService::setModel>();
-    rpcServer_->addMethod<&PluginRpcService::setHighpass>();
-    rpcServer_->addMethod<&PluginRpcService::setReloadOnRomChange>();
-    rpcServer_->addMethod<&PluginRpcService::setLsdjSyncConfig>();
-    rpcServer_->addMethod<&PluginRpcService::setWindowSize>();
-    rpcServer_->addMethod<&PluginRpcService::isWindowSizeControlled>();
-    rpcServer_->addMethod<&PluginRpcService::getKitsConfig>();
-    rpcServer_->addMethod<&PluginRpcService::compileAndPatchKit>();
-    rpcServer_->addMethod<&PluginRpcService::auditionSample>();
-    rpcServer_->addMethod<&PluginRpcService::eraseKit>();
-    rpcServer_->addMethod<&PluginRpcService::openSampleBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::getUserConfig>();
-    rpcServer_->addMethod<&PluginRpcService::setActiveKeyboardBindings>();
-    rpcServer_->addMethod<&PluginRpcService::setActiveGamepadBindings>();
-    rpcServer_->addMethod<&PluginRpcService::openSettingsFolder>();
-    rpcServer_->addMethod<&PluginRpcService::saveSram>();
-    rpcServer_->addMethod<&PluginRpcService::openSaveSramBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::saveState>();
-    rpcServer_->addMethod<&PluginRpcService::openSaveStateBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::openLoadStateBrowser>();
-    rpcServer_->addMethod<&PluginRpcService::getRecentFiles>();
-    rpcServer_->addMethod<&PluginRpcService::getMemory>();
-    rpcServer_->addMethod<&PluginRpcService::subscribeMemory>();
-    rpcServer_->addMethod<&PluginRpcService::unsubscribeMemory>();
-    rpcServer_->addDiscoveryMethod();
+    registerPluginRpcMethods(*rpcServer_);
 
     // Service emits string-payload JS events through the existing engine
     // channel mechanism (on/off in runtime/lvgljs/index.ts).
