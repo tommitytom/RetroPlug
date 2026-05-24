@@ -457,6 +457,16 @@ add_custom_target(validate
     COMMENT "Running plugin-format validators (clap-validator + pluginval)"
 )
 
+# `make reaper-headless` -> launch Reaper under Xvfb + dummy jackd. Useful
+# for driving Reaper via ReaScript / xdotool when the MCP server's static
+# analysis isn't enough. Long-running: Ctrl-C to exit.
+add_custom_target(reaper-headless
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-headless.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    USES_TERMINAL
+    COMMENT "Launching Reaper headless (Xvfb + dummy jackd)"
+)
+
 # `make cli-smoke` -> render the example LSDJ script to ./out.wav.
 if(BUILD_CLI)
     add_custom_target(cli-smoke
@@ -672,5 +682,31 @@ if(BUILD_CLI)
         DEPENDS retroplug-cli
         USES_TERMINAL
         COMMENT "Running the LSDJ kit-patching smoke (loads ROM + drum samples; PNGs + WAV)"
+    )
+
+    # `make reaper-analyze-smoke` -> render cli-smoke and stage the WAV in
+    # the reaper-mcp-server's projects dir. The MCP server's audio-analysis
+    # tools (loudness/frequency/dynamics/stereo) can then be invoked
+    # against cli-smoke.wav by name.
+    add_custom_target(reaper-analyze-smoke
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-stage.sh
+                ${CMAKE_BINARY_DIR}/cli-smoke.wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS cli-smoke
+        USES_TERMINAL
+        COMMENT "Staging cli-smoke.wav for reaper-mcp-server analysis"
+    )
+
+    # `make reaper-analyze-lsdj-sync` -> render the LSDJ two-instance sync
+    # demo and stage both per-system WAVs. Useful for asking the MCP server
+    # to compare loudness / dynamics across the two synced instances.
+    add_custom_target(reaper-analyze-lsdj-sync
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-stage.sh
+                ${CMAKE_BINARY_DIR}/lsdj-sync/lsdj_sync_pattern_sys0.wav
+                ${CMAKE_BINARY_DIR}/lsdj-sync/lsdj_sync_pattern_sys1.wav
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS cli-lsdj-sync
+        USES_TERMINAL
+        COMMENT "Staging LSDJ-sync per-system WAVs for reaper-mcp-server analysis"
     )
 endif()
