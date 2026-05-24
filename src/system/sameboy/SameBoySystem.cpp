@@ -31,21 +31,36 @@ namespace {
 
 GB_model_t toSameBoyModel(SameBoyModel model) {
     switch (model) {
-        case SameBoyModel::DmgB: return GB_MODEL_DMG_B;
-        case SameBoyModel::CgbC: return GB_MODEL_CGB_C;
-        case SameBoyModel::CgbE: return GB_MODEL_CGB_E;
-        case SameBoyModel::Agb:  return GB_MODEL_AGB;
+        case SameBoyModel::DmgB:   return GB_MODEL_DMG_B;
+        case SameBoyModel::Mgb:    return GB_MODEL_MGB;
+        case SameBoyModel::Sgb:    return GB_MODEL_SGB_NTSC_NO_SFC;
+        case SameBoyModel::SgbPal: return GB_MODEL_SGB_PAL_NO_SFC;
+        case SameBoyModel::Sgb2:   return GB_MODEL_SGB2_NO_SFC;
+        case SameBoyModel::Cgb0:   return GB_MODEL_CGB_0;
+        case SameBoyModel::CgbA:   return GB_MODEL_CGB_A;
+        case SameBoyModel::CgbB:   return GB_MODEL_CGB_B;
+        case SameBoyModel::CgbC:   return GB_MODEL_CGB_C;
+        case SameBoyModel::CgbD:   return GB_MODEL_CGB_D;
+        case SameBoyModel::CgbE:   return GB_MODEL_CGB_E;
+        case SameBoyModel::Agb:    return GB_MODEL_AGB;
+        case SameBoyModel::Gbp:    return GB_MODEL_GBP;
         case SameBoyModel::Auto: // fallthrough
-        default:                  return GB_MODEL_CGB_C;
+        default:                   return GB_MODEL_CGB_C;
     }
 }
 
 std::string_view findBootRom(GB_model_t model, bool fastBoot) {
     switch (model) {
-        // TODO: Support more bootroms?
-        case GB_MODEL_DMG_B: return std::string_view((const char*)dmg_boot, dmg_boot_len);
-        case GB_MODEL_AGB:   return std::string_view((const char*)agb_boot, agb_boot_len);
+        case GB_MODEL_DMG_B:           return std::string_view((const char*)dmg_boot, dmg_boot_len);
+        case GB_MODEL_MGB:             return std::string_view((const char*)mgb_boot, mgb_boot_len);
+        case GB_MODEL_SGB_NTSC_NO_SFC:
+        case GB_MODEL_SGB_PAL_NO_SFC:  return std::string_view((const char*)sgb_boot, sgb_boot_len);
+        case GB_MODEL_SGB2_NO_SFC:     return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
+        case GB_MODEL_CGB_0:           return std::string_view((const char*)cgb0_boot, cgb0_boot_len);
+        case GB_MODEL_AGB:
+        case GB_MODEL_GBP:             return std::string_view((const char*)agb_boot, agb_boot_len);
         default:
+            // CGB-A/B/C/D/E share the stock CGB boot ROM.
             if (fastBoot)
                 return std::string_view((const char*)cgb_boot_fast, cgb_boot_fast_len);
             return std::string_view((const char*)cgb_boot, cgb_boot_len);

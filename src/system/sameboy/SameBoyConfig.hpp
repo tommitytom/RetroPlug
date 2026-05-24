@@ -13,10 +13,19 @@
 
 enum class SameBoyModel : std::uint32_t {
     Auto = 0,
-    DmgB = 1,
-    CgbC = 2,
-    CgbE = 3,
-    Agb  = 4,
+    DmgB,    // Game Boy             (GB_MODEL_DMG_B)
+    Mgb,     // Game Boy Pocket      (GB_MODEL_MGB)
+    Sgb,     // Super Game Boy NTSC  (GB_MODEL_SGB_NTSC_NO_SFC)
+    SgbPal,  // Super Game Boy PAL   (GB_MODEL_SGB_PAL_NO_SFC)
+    Sgb2,    // Super Game Boy 2     (GB_MODEL_SGB2_NO_SFC)
+    Cgb0,    // Game Boy Color CPU-0 (GB_MODEL_CGB_0)
+    CgbA,    // Game Boy Color CPU-A (GB_MODEL_CGB_A)
+    CgbB,    // Game Boy Color CPU-B (GB_MODEL_CGB_B)
+    CgbC,    // Game Boy Color CPU-C (GB_MODEL_CGB_C)
+    CgbD,    // Game Boy Color CPU-D (GB_MODEL_CGB_D)
+    CgbE,    // Game Boy Color CPU-E (GB_MODEL_CGB_E)
+    Agb,     // Game Boy Advance     (GB_MODEL_AGB)
+    Gbp,     // Game Boy Player      (GB_MODEL_GBP)
 };
 
 // Audio highpass filter mode. Mirrors SameBoy's GB_highpass_mode_t.

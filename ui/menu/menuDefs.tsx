@@ -98,9 +98,18 @@ const LAYOUT_NAMES = [
 const MODEL_NAMES = [
     "Auto",
     "DMG-B",
+    "MGB",
+    "SGB",
+    "SGB PAL",
+    "SGB2",
+    "CGB-0",
+    "CGB-A",
+    "CGB-B",
     "CGB-C",
+    "CGB-D",
     "CGB-E",
     "AGB",
+    "GBP",
 ];
 
 // Mirrors C++ SameBoyHighpass enum (src/system/sameboy/SameBoyConfig.hpp).
