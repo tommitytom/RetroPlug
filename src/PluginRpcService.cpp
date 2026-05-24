@@ -553,7 +553,7 @@ bool PluginRpcService::setFastBoot(std::uint32_t id, bool enabled) {
 
 bool PluginRpcService::setModel(std::uint32_t id, std::uint32_t model) {
     if (!commands_) return false;
-    if (model > static_cast<std::uint32_t>(SameBoyModel::Agb)) return false;
+    if (model > static_cast<std::uint32_t>(SameBoyModel::Gbp)) return false;
     return commands_->tryPush(
         Command::makeSetModel(static_cast<SystemId>(id),
                               static_cast<SameBoyModel>(model)));
