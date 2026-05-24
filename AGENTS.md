@@ -115,6 +115,36 @@ order of preference:
    `/opt/reaper-mcp-server`; the projects dir defaults to
    `../resources/reaper/projects/` (override with `RETROPLUG_REAPER_DIR`,
    same convention as `RETROPLUG_RESOURCES_DIR`).
+6. **VST3 plugin host check** — `make -C build reaper-mgb-smoke` renders
+   [examples/reaper/mgb_smoke.rpp](examples/reaper/mgb_smoke.rpp)
+   headlessly through real Reaper 7.x: instantiates retroplug.vst3, plays
+   a C-major chord through mGB, writes `build/reaper-mgb-smoke.wav`.
+   First end-to-end proof that the plugin works inside a DAW host (not
+   just `retroplug-cli` which bypasses DPF). Headless plumbing lives in
+   `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd + EULA
+   auto-dismiss). The .RPP is self-contained — the plugin chunk embeds
+   the mGB ROM via getState() — and is regenerated with
+   `make -C build reaper-mgb-author` when `examples/scripts/mgb_smoke.json`
+   or [tools/reaper-mgb-author.lua](tools/reaper-mgb-author.lua) change.
+
+## Reaper headless: env-var autoload
+
+The plugin honours `RETROPLUG_AUTOLOAD_PROJECT=path/to/foo.rplg` at
+construction: if set, the .rplg (pure PKZIP from `projectConfigToZip` —
+no base64) is loaded as the initial project. Lets a host instantiate the
+plugin with a preconfigured ROM without authoring the DPF state chunk
+by hand. Used by `tools/run-reaper-author.sh` to bake mGB into the
+fixture, and available for any new Reaper-driven test:
+
+```sh
+build/bin/retroplug-cli --script examples/scripts/<your>.json \
+    --save-rplg build/<your>.rplg
+RETROPLUG_AUTOLOAD_PROJECT=build/<your>.rplg \
+    tools/run-reaper-render.sh your_project.rpp
+```
+
+Without the env var, the plugin starts empty (matches normal DAW
+behaviour).
 
 Trust but verify: an agent's claim that "tests pass" should be backed by an
 actual exit-zero from one of these commands.

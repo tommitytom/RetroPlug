@@ -33,6 +33,8 @@ target_include_directories(retroplug-cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     # `native/core/img/png/lodepng.h` lives under this root.
     ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/src/render
+    # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
+    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
 )
 
 target_link_libraries(retroplug-cli PRIVATE
@@ -42,6 +44,7 @@ target_link_libraries(retroplug-cli PRIVATE
     r8brain   # used by KitUtil for resampling
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
+    miniz     # used by projectConfigToZip for --save-rplg
 )
 
 set_target_properties(retroplug-cli PROPERTIES

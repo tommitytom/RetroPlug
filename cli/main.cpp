@@ -37,6 +37,7 @@
 #include "lsdj/KitCompiler.hpp"
 #include "lsdj/KitUtil.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectSerialization.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/GbaConfig.hpp"
@@ -64,6 +65,7 @@ struct CliArgs {
     bool                         finalScreenshot = false;
     bool                         perSystemWav    = false;
     std::optional<std::string>   eventLogDir;
+    std::optional<std::string>   saveRplgPath;
 };
 
 void printUsage(const char* argv0) {
@@ -81,7 +83,11 @@ void printUsage(const char* argv0) {
         "                     want to verify audible sync between linked instances.\n"
         "  --event-logs DIR   emit per-system `_midi_sys<N>.txt` / `_serial_sys<N>.txt` event\n"
         "                     logs into DIR (default: off). Logs are only populated when a\n"
-        "                     system runs LsdjSyncMode::ArduinoboyMaster.\n",
+        "                     system runs LsdjSyncMode::ArduinoboyMaster.\n"
+        "  --save-rplg PATH   build the project from --script, write it as a .rplg (PKZIP)\n"
+        "                     to PATH, and exit without running the event loop. Used to\n"
+        "                     produce fixtures for headless DAW tests via the plugin's\n"
+        "                     RETROPLUG_AUTOLOAD_PROJECT env-var hook.\n",
         argv0);
 }
 
@@ -116,6 +122,7 @@ CliArgs parseArgs(int argc, char** argv) {
         else if (arg == "--final-screenshot")  a.finalScreenshot  = true;
         else if (arg == "--per-system-wav")    a.perSystemWav     = true;
         else if (arg == "--event-logs")        a.eventLogDir      = std::string(need("--event-logs"));
+        else if (arg == "--save-rplg")         a.saveRplgPath     = std::string(need("--save-rplg"));
         else if (arg == "-h" || arg == "--help") { printUsage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
@@ -340,6 +347,31 @@ int main(int argc, char** argv) try {
         project.adoptSystem(sys.release());
     }
     project.rebuildLinkGroups();
+
+    // --save-rplg: snapshot the configured project to a .rplg file (pure
+    // PKZIP, no DPF base64 wrapper) and exit. Used as a fixture-builder for
+    // the plugin's RETROPLUG_AUTOLOAD_PROJECT hook in DAW tests.
+    if (args.saveRplgPath) {
+        const auto zip = projectConfigToZip(project.snapshotConfig());
+        if (zip.empty()) {
+            std::fprintf(stderr, "--save-rplg: projectConfigToZip returned empty\n");
+            return 1;
+        }
+        std::ofstream out(*args.saveRplgPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            std::fprintf(stderr, "--save-rplg: cannot open %s for write\n", args.saveRplgPath->c_str());
+            return 1;
+        }
+        out.write(reinterpret_cast<const char*>(zip.data()),
+                  static_cast<std::streamsize>(zip.size()));
+        if (!out) {
+            std::fprintf(stderr, "--save-rplg: write to %s failed\n", args.saveRplgPath->c_str());
+            return 1;
+        }
+        std::fprintf(stderr, "[save-rplg] wrote %s (%zu bytes)\n",
+                     args.saveRplgPath->c_str(), zip.size());
+        return 0;
+    }
 
     // 3. Flatten event lists. Validation runs once per event in each pass.
     const auto timedButtons     = flattenEvents     (script.events, script.sample_rate, systemCount);
