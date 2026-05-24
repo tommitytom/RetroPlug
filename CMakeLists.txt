@@ -721,4 +721,31 @@ if(BUILD_CLI)
         USES_TERMINAL
         COMMENT "Staging LSDJ-sync per-system WAVs for reaper-mcp-server analysis"
     )
+
+    # `make reaper-mgb-smoke` -> render the committed Reaper project that
+    # loads RetroPlug VST3i + mGB and plays a C-major chord. First
+    # end-to-end test that the plugin works inside a real DAW host.
+    # Output: build/reaper-mgb-smoke.wav.
+    add_custom_target(reaper-mgb-smoke
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-render.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/mgb_smoke.rpp
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3
+        USES_TERMINAL
+        COMMENT "Reaper headless render: mGB + MIDI -> build/reaper-mgb-smoke.wav"
+    )
+
+    # `make reaper-mgb-author` -> regenerate the committed .RPP fixture
+    # from scratch via a ReaScript that builds the project + bakes the
+    # mGB ROM into the plugin chunk. Only re-run when mgb_smoke.json or
+    # the author script change.
+    add_custom_target(reaper-mgb-author
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/mgb_smoke.rpp
+                ${CMAKE_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3 retroplug-cli
+        USES_TERMINAL
+        COMMENT "Re-author examples/reaper/mgb_smoke.rpp via headless Reaper"
+    )
 endif()

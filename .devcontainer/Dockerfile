@@ -88,6 +88,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	xvfb \
 	jackd2 \
 	xdotool \
+	# --- Reaper runtime: libSwell.so links against libgdk-3 ----------------
+	libgtk-3-0t64 \
+	# --- openbox: minimal WM. Reaper's EULA dialog only respects keyboard
+	# focus when _NET_ACTIVE_WINDOW is supported; Xvfb alone doesn't.
+	openbox \
 	# --- Audio inspection (for examining WAV outputs from retroplug-cli) ---
 	ffmpeg \
 	# --- VCS ---------------------------------------------------------------
@@ -146,8 +151,8 @@ RUN set -eux; \
 # --- uv: Python package/venv manager. Used to install reaper-mcp-server.
 ARG UV_VERSION=0.5.11
 RUN set -eux; \
-	UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 \
-		curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh; \
+	curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+		| UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh; \
 	uv --version
 
 # --- reaper-mcp-server: file-based MCP server that parses .RPP files and

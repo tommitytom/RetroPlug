@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectSerialization.hpp"
@@ -86,6 +87,32 @@ public:
         // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser,
         // and DPF setState populates the project from a saved host project
         // where applicable.
+
+        // Headless test hook: load a .rplg file (raw PKZIP) at construction
+        // when RETROPLUG_AUTOLOAD_PROJECT is set. Lets `reaper -renderproject`
+        // (and friends) host the plugin with a preconfigured ROM without
+        // requiring the .RPP to embed a DPF state chunk. If the host later
+        // calls setState with non-empty data, that path replaces this one.
+        if (const char* autoloadPath = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {
+            std::ifstream in(autoloadPath, std::ios::binary | std::ios::ate);
+            if (in) {
+                const std::streamsize size = in.tellg();
+                if (size > 0) {
+                    in.seekg(0, std::ios::beg);
+                    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+                    if (in.read(reinterpret_cast<char*>(bytes.data()), size)) {
+                        if (auto parsed = projectConfigFromZip(bytes)) {
+                            applyProjectFromConfig(*parsed);
+                            d_stderr("[PluginDSP] autoloaded project from %s", autoloadPath);
+                        } else {
+                            d_stderr("[PluginDSP] RETROPLUG_AUTOLOAD_PROJECT: failed to parse %s", autoloadPath);
+                        }
+                    }
+                }
+            } else {
+                d_stderr("[PluginDSP] RETROPLUG_AUTOLOAD_PROJECT: cannot open %s", autoloadPath);
+            }
+        }
     }
 
 protected:
