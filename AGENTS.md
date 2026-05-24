@@ -37,6 +37,50 @@ the parts that don't naturally fit either.
   no `version: 2` fields, no read-old / write-new. Saved projects from the
   pre-release period are expected to break.
 
+## Known framework gotchas
+
+These are non-obvious behaviours that have eaten time in prior debug
+sessions. Search this section before assuming your code is wrong.
+
+### `lv_binding_js` ignores `insertChildBefore` (always appends)
+
+React reorders children at LVGL widget level by calling
+`insertChildBefore`, but `deps/lv_binding_js/src/render/native/core/basic/comp.cpp:38`
+**ignores the `beforeChild` argument and always appends**. Consequences:
+
+- Swapping a component type at a stable React position (e.g. replacing
+  one `<EmulatorTile>` in a row with `<Menu>`) leaves the new component
+  at the END of the LVGL child list, not in its React source position.
+  Visually the swap appears in the wrong slot.
+- Mid-list inserts (adding a row to a grid) also land last regardless
+  of position.
+
+Two known workarounds, both already in the codebase:
+
+- **Stable per-id wrapper Views**: wrap each swappable item in a
+  fixed-key `<View>` whose position in the parent never changes. Only
+  the wrapper's single child swaps — `appendChild` lands correctly
+  when the parent has at most one existing child. Example:
+  [ui/SystemGrid.tsx](ui/SystemGrid.tsx)'s `slot-${sys.id}` wrapper.
+- **Re-key the parent on the visible set** to force a full unmount /
+  remount: every child mounts fresh via `appendChild` in JSX order.
+  Example: [ui/menu/Menu.tsx:329-339](ui/menu/Menu.tsx#L329-L339).
+
+If you see a tile / row / menu rendering in a confusingly different
+position than its React source suggests, this is almost certainly why.
+
+### `cmake --build build --target retroplug` does NOT rebuild the standalone
+
+The umbrella `retroplug` target builds the static plugin library and
+runs `ui-regenerate` — but `bin/retroplug` (the standalone) is produced
+by `retroplug-jack`. Building `--target retroplug` after a UI change
+will regenerate `bundle.js` but leave `bin/retroplug` linked against
+the previous bytecode. Symptom: screenshots show old behaviour even
+though the bundle is fresh.
+
+Use bare `cmake --build build -j$(nproc)` (no `--target`) when
+verifying UI changes, or `--target retroplug-jack` for standalone-only.
+
 ## Verification loop for code changes
 
 The headless tooling described in README.md's "Headless workflows" section
@@ -47,8 +91,14 @@ order of preference:
    `retroplug-cli` with a custom script. Bypasses the plugin format
    entirely; tests the same code path that ends up in every wrapper.
 2. **UI change** — `make -C build screenshot` (writes
-   `/tmp/retroplug.png`); read the PNG via the Read tool. Combine with
-   `tools/standalone-key.sh` to drive input mid-run.
+   `/tmp/retroplug.png`); read the PNG via the Read tool. Drive input
+   mid-run with `tools/standalone-key.sh` (keyboard) or
+   `tools/standalone-mouse.sh` (mouse). JS-side `console.log/warn/error`
+   calls surface as `[js:<level>] ...` lines on the standalone's stderr
+   (`/tmp/retroplug-stdout.log` when launched via run-standalone.sh).
+   Set `RETROPLUG_DEBUG_OVERLAY=1` in the env to render each tile's
+   system id as a red overlay — useful for confirming visual position
+   matches `systems[]` order.
 3. **DPF wrapper / format change** — `make -C build validate` (runs
    `clap-validator` + `pluginval`). Catches ABI / state-restore /
    threading regressions in the format adapters.
