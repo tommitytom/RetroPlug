@@ -1,28 +1,42 @@
 #!/usr/bin/env bash
 #
-# Author the mgb_smoke Reaper project from scratch: launches Reaper
-# headlessly with reaper-mgb-author.lua, which builds a track + VST3i +
-# MIDI item and saves the .RPP at $REAPER_AUTHOR_DEST. This is the
-# one-time bootstrap that produces examples/reaper/mgb_smoke.rpp — the
-# rendering path (tools/run-reaper-render.sh) reads that .RPP back.
+# Author a Reaper project from scratch by running a ReaScript inside
+# headless Reaper. Optionally runs retroplug-cli first to produce a
+# .rplg fixture that the plugin auto-loads at construction, so the
+# saved .RPP captures a configured RetroPlug state in its chunk.
 #
 # Usage:
-#   tools/run-reaper-author.sh OUTPUT.RPP [RENDER_DIR]
+#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [BOOTSTRAP.json]
 #
-# Same Xvfb + dummy-jackd + isolated-config + VST3-symlink setup as
-# run-reaper-render.sh.
+# OUTPUT.RPP     where the lua script writes the project (REAPER_AUTHOR_DEST)
+# RENDER_DIR     absolute dir for the project's render output
+#                (REAPER_AUTHOR_RENDER_DIR; the lua passes this to RENDER_FILE)
+# AUTHOR.lua     ReaScript that builds + saves the project
+# BOOTSTRAP.json optional retroplug-cli script; if given, its --save-rplg
+#                output becomes the plugin's RETROPLUG_AUTOLOAD_PROJECT so
+#                the .RPP chunk captures the configured state
+#
+# Same Xvfb + openbox + dummy-jackd + isolated-config + VST3-symlink
+# setup as tools/run-reaper-render.sh.
 
 set -euo pipefail
 
-if [ $# -lt 1 ]; then
-    echo "usage: $0 OUTPUT.RPP [RENDER_DIR]" >&2
+if [ $# -lt 3 ]; then
+    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [BOOTSTRAP.json]" >&2
     exit 2
 fi
 
 DEST="$1"
-RENDER_DIR="${2:-}"
+RENDER_DIR="$2"
+AUTHOR_LUA="$3"
+BOOTSTRAP="${4:-}"
 
-for cmd in Xvfb jackd reaper; do
+if [ ! -f "$AUTHOR_LUA" ]; then
+    echo "error: author lua script not found: $AUTHOR_LUA" >&2
+    exit 1
+fi
+
+for cmd in Xvfb jackd reaper openbox xdotool; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "error: '$cmd' not installed" >&2
         exit 1
@@ -46,19 +60,27 @@ ln -sfn "$REPO_DIR/build/bin/retroplug.vst3" "$HOME/.vst3/retroplug.vst3"
 export REAPER_AUTHOR_DEST="$DEST"
 export REAPER_AUTHOR_RENDER_DIR="$RENDER_DIR"
 
-# Generate the .rplg fixture so the plugin loads mGB at construction;
-# Reaper's getState() then captures it into the .RPP chunk, making the
-# committed project file self-contained (no env var needed to play it
-# back). Requires retroplug-cli to be built.
-RPLG="$REPO_DIR/build/mgb_smoke_author.rplg"
-if [ ! -x "$REPO_DIR/build/bin/retroplug-cli" ]; then
-    echo "error: build/bin/retroplug-cli missing; build it first" >&2
-    exit 1
+# Optional bootstrap: run the CLI to capture a configured project state
+# into a .rplg, then point the plugin at it via the autoload env var.
+# Naming: <bootstrap-stem>_author.rplg under build/ keeps fixtures from
+# different tests separate.
+if [ -n "$BOOTSTRAP" ]; then
+    if [ ! -f "$BOOTSTRAP" ]; then
+        echo "error: bootstrap script not found: $BOOTSTRAP" >&2
+        exit 1
+    fi
+    if [ ! -x "$REPO_DIR/build/bin/retroplug-cli" ]; then
+        echo "error: build/bin/retroplug-cli missing; build it first" >&2
+        exit 1
+    fi
+    STEM=$(basename "$BOOTSTRAP" .json)
+    RPLG="$REPO_DIR/build/${STEM}_author.rplg"
+    echo "bootstrap: $BOOTSTRAP -> $RPLG"
+    "$REPO_DIR/build/bin/retroplug-cli" \
+        --script "$BOOTSTRAP" \
+        --save-rplg "$RPLG" >/dev/null
+    export RETROPLUG_AUTOLOAD_PROJECT="$RPLG"
 fi
-"$REPO_DIR/build/bin/retroplug-cli" \
-    --script "$REPO_DIR/examples/scripts/mgb_smoke.json" \
-    --save-rplg "$RPLG" >/dev/null
-export RETROPLUG_AUTOLOAD_PROJECT="$RPLG"
 
 # Force isolation from any host X11 / Wayland forwarding the devcontainer
 # may be doing. Without this, GTK inside Reaper prefers WAYLAND_DISPLAY
@@ -91,20 +113,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "reaper author: DISPLAY=$DISPLAY dest=$DEST"
+echo "reaper author: DISPLAY=$DISPLAY dest=$DEST lua=$AUTHOR_LUA"
 echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/retroplug.vst3)"
+[ -n "${RETROPLUG_AUTOLOAD_PROJECT:-}" ] && echo "  autoload=$RETROPLUG_AUTOLOAD_PROJECT"
 
 reaper -cfgfile "$REAPER_CFG/reaper.ini" \
        -nosplash \
-       "$REPO_DIR/tools/reaper-mgb-author.lua" \
+       "$AUTHOR_LUA" \
        >/tmp/reaper-author.log 2>&1 &
 REAPER_PID=$!
 
-# Dismiss dialog stack from a fresh Reaper config: first the EULA (Tab
-# Tab Tab Space lands on "I agree"), then the "About REAPER" splash
-# (Escape), then any other modal we don't know about (Escape again).
-# Polls for ~15s — Reaper opens these as the lua script is still
-# parsing, so we have to keep checking.
+# Background dialog dismisser — fresh Reaper config triggers EULA + About.
 for _ in $(seq 1 30); do
     sleep 0.5
     EULA=$(xdotool search --name "EVALUATION LICENSE" 2>/dev/null | head -1 || true)
@@ -119,8 +138,6 @@ for _ in $(seq 1 30); do
         sleep 0.2
         xdotool key Escape
     fi
-    # Reaper opens the ReaScript console as a non-modal info window
-    # when the script writes to it. Leave it alone.
 done &
 DISMISS_PID=$!
 

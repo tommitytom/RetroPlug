@@ -126,6 +126,28 @@ order of preference:
    the mGB ROM via getState() — and is regenerated with
    `make -C build reaper-mgb-author` when `examples/scripts/mgb_smoke.json`
    or [tools/reaper-mgb-author.lua](tools/reaper-mgb-author.lua) change.
+7. **Arduinoboy startup-sync latency** —
+   `make -C build reaper-lsdj-arduinoboy-metro` renders
+   [examples/reaper/lsdj_arduinoboy_metro.rpp](examples/reaper/lsdj_arduinoboy_metro.rpp)
+   — a 2-track project with LSDj (panned hard-L, configured for
+   `LsdjSyncMode::MidiSyncArduinoboy` via the autoload .rplg) and a
+   ReaSynth click track (panned hard-R, one note per quarter beat at
+   120 BPM). Then runs
+   [tools/reaper-timing-analyze.py](tools/reaper-timing-analyze.py)
+   which detects the first onset in each channel and reports the
+   offset between host transport start (click[0]) and LSDj's first
+   audible sample. Pass/fail threshold: ±50 ms (one 24 PPQN tick at
+   120 BPM ≈ 21 ms, plus envelope attack + one plugin block at
+   1024/44100 ≈ 23 ms). Surfaces drift in `PpqUtil::eachTick()` and
+   in `LsdjSyncRole`'s startup byte sequence (0xFA + first 0xF8).
+   Per-beat sync drift is *not* covered — default LSDj instrument 00
+   sustains the first row's note across the whole phrase, masking
+   subsequent retriggers; envelope-edit nav in the bootstrap script
+   would be needed to surface those. Regenerate the fixture with
+   `make -C build reaper-lsdj-arduinoboy-author` when
+   [examples/scripts/lsdj_arduinoboy_metro_setup.json](examples/scripts/lsdj_arduinoboy_metro_setup.json)
+   or [tools/reaper-lsdj-arduinoboy-author.lua](tools/reaper-lsdj-arduinoboy-author.lua)
+   change.
 
 ## Reaper headless: env-var autoload
 
