@@ -95,7 +95,6 @@ export function EmulatorTile({ systemId, focused, zoom }: EmulatorTileProps) {
                 "padding-bottom":0,
                 overflow: "hidden",
             }}
-            onClick={() => { void plugin.$notify("setFocus", systemId); }}
         >
             <CanvasAny
                 ref={canvasRef}
