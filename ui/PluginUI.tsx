@@ -202,9 +202,12 @@ function PluginUI() {
 
     // Records which system each currently-held DPF key was pressed against,
     // so the release always goes to the same instance (even after a Tab cycle
-    // changes focus mid-hold). Survives renders via useRef. Also gates
-    // OS key-repeat: a second `press=true` for an already-held key is
-    // ignored — the GB joypad samples state, no need to re-fire.
+    // changes focus mid-hold). Survives renders via useRef. Also gates OS
+    // key-repeat: every platform delivers a stream of `press=true` events
+    // while a key is held (Win32/macOS natively; X11 too once pugl enables
+    // detectable auto-repeat in puglInitWorldInternals — see x11.c). We
+    // drop the repeats here because the GB joypad samples state and only
+    // needs one transition per physical press.
     const keyTargetRef = useRef<Map<number, number>>(new Map());
 
     const kitEditorOpenRef = useRef(kitEditorOpen);
