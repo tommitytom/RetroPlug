@@ -101,6 +101,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- Plugin-format validators need these to download/extract -----------
 	curl \
 	unzip \
+	# --- 7zip: bundling standalone + plugin artefacts for release ----------
+	p7zip-full \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 

@@ -372,25 +372,53 @@ reports the offset of the first differing byte.
 
 ## LSDj manual lookup
 
-The LSDj 9.2.6 manual is indexed for keyword + semantic search:
+Every English LSDj manual (1.0b → 9.2.6) plus the upstream `CHANGELOG.txt`
+is indexed for keyword + semantic search:
 
 ```
 tools/lsdj-manual-setup.sh                # one-time: venv + deps + index
 tools/lsdj-search "midi sync mode"
 tools/lsdj-search --mode vec "how do two units stay in time"
 tools/lsdj-search --show-images "PROJECT screen"
+tools/lsdj-search --lsdj-version 6.0.0 "midi sync"   # docs relevant to v6.0.0
+tools/lsdj-search --only-changelog "noise table"     # changelog-only
+tools/lsdj-manual.py versions             # list every indexed source
 ```
+
+`--lsdj-version <ver>` picks the **most recent manual whose version is ≤
+<ver>** — for LSDj 9.4.2 that's `LSDj_9_2_6.pdf` (the newest English
+manual), for 6.0.0 it's `LSDj_5_8_4.pdf`. The changelog is always
+included alongside (suppress with `--no-changelog`).
 
 The setup script creates `tools/.venv`, installs `pymupdf`, `fastembed`,
 `sqlite-vec`, `numpy`, then runs `tools/lsdj-manual.py index` to produce:
 
-- `../resources/manuals/lsdj_manual.md` — readable markdown (Read + grep
-  fallback if the search index is missing)
-- `../resources/manuals/lsdj_manual_images/` — page images extracted from the
-  PDF (LSDj UI screens and diagrams). `--show-images` returns paths the agent
-  can `Read` directly.
+- `../resources/manuals/lsdj_manual.md` — readable markdown built from the
+  highest-version manual only (Read + grep fallback when the search index
+  is missing).
+- `../resources/manuals/lsdj_manual_images/<ver>/` — per-version PDF page
+  images. `--show-images` returns paths the agent can `Read` directly.
 - `../resources/manuals/lsdj_index.db` — SQLite with FTS5 BM25 + sqlite-vec
-  cosine, fused via reciprocal-rank fusion in hybrid (default) mode.
+  cosine, fused via reciprocal-rank fusion in hybrid (default) mode. Schema
+  has a `sources` table (one row per indexed PDF + one for the changelog)
+  and a `chunks` table that references it.
+- `../resources/manuals/lsdj_embed_cache.db` — sha256(chunk_text) →
+  embedding cache. Re-running `index` after a no-op manual change is fast
+  (no re-embedding); changes only re-embed affected chunks.
+
+To populate the full archive (~35 PDFs + CHANGELOG.txt + ~550 ROM ZIPs):
+
+```
+python3 ../resources/download_lsdj.py                           # everything
+python3 ../resources/download_lsdj.py --no-roms --dry-run       # preview
+python3 ../resources/download_lsdj.py --variant stable          # subset
+```
+
+The downloader is stdlib-only (no venv) and auto-invokes
+`tools/lsdj-manual.py index` after it finishes (skip with `--no-index`).
+Japanese / French manual variants are deliberately excluded — the search
+index is English-only. Downloads are idempotent: re-running skips files
+already on disk unless `--force` is passed.
 
 These artifacts live in a sibling `resources/` directory outside the repo
 (default `../resources/` relative to the repo root). Override with
@@ -403,13 +431,18 @@ Pick `--mode fts` for exact LSDj terminology ("FX command", "groove",
 ## LSDJ Arduinoboy build (aboy)
 
 The sibling [../resources/roms/](../resources/roms/) directory (outside the
-repo) ships two LSDJ ROMs plus a Nanoloop GBA ROM. The two `LsdjSyncMode`
-families need different ROMs:
+repo) ships two LSDJ ROMs plus a Nanoloop GBA ROM by default. The two
+`LsdjSyncMode` families need different ROMs:
 
 | ROM | Title @0x134 | Supported `lsdj_sync_mode` values |
 | --- | --- | --- |
 | `lsdj9_4_2.gb` | `LSDj-v9.4.2` (stock) | `Off`, `MidiSync`, `MidiMap`, `KeyboardMidi`, `MidiPassthrough` |
 | `lsdj9_3_3-arduinoboy.gb` | `LSDj-v9.3.3aboy` | All of the above plus `MidiSyncArduinoboy` and `ArduinoboyMaster` |
+
+Running `python3 ../resources/download_lsdj.py` (see §"LSDj manual lookup")
+adds every published LSDj build alongside these — stable releases land as
+`lsdj<ver>.gb`, arduinoboy variants as `lsdj<ver>-arduinoboy.gb`, develop
+snapshots as `lsdj<ver>-develop.gb`.
 
 The sniffer ([src/system/sameboy/RomSniffer.cpp](src/system/sameboy/RomSniffer.cpp))
 treats both ROMs as `RomKind::Lsdj` (any title starting with `LSDj`). The role's
