@@ -1,3 +1,5 @@
+import "./runtime/console";
+
 import { View, Render, Dimensions } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createGroup, setKeyboardGroup, on, off } from "lvgljs";

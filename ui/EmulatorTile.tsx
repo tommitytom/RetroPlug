@@ -1,4 +1,4 @@
-import { Canvas, View } from "lvgljs-ui";
+import { Canvas, Text, View } from "lvgljs-ui";
 import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
@@ -11,6 +11,12 @@ const LV_IMAGE_ALIGN_CONTAIN = 14;
 // Cast around lvgljs-ui's Canvas type which doesn't expose a ref prop in
 // its public typings. Same trick PluginUI uses for Text.
 const CanvasAny = Canvas as any;
+
+// RETROPLUG_DEBUG_OVERLAY env var. Read at engine init by PluginJsBridge
+// (src/PluginJsBridge.cpp) and surfaced as a boolean on the plugin
+// namespace. When true, EmulatorTile renders a red `id=N` label so
+// screenshots make the visual-position → systemId mapping obvious.
+const DEBUG_OVERLAY: boolean = !!(globalThis as any)[Symbol.for("plugin")]?.debugOverlay;
 
 interface EmulatorTileProps {
     systemId: number;
@@ -134,6 +140,18 @@ export function EmulatorTile({ systemId, focused, zoom }: EmulatorTileProps) {
                     }}
                     align={{ type: 0x09 /* LV_ALIGN_CENTER */, pos: [0, 0] }}
                 />
+            )}
+            {DEBUG_OVERLAY && (
+                <Text
+                    style={{
+                        "text-color": "#FF0000",
+                        "font-size": 24,
+                        "padding-left": 6,
+                        "padding-top": 4,
+                    }}
+                >
+                    {`id=${systemId}${focused ? " *" : ""}`}
+                </Text>
             )}
         </View>
     );

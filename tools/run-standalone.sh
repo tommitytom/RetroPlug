@@ -81,7 +81,10 @@ sleep "$DURATION"
 # trap cleanup runs
 
 if [ -f "$OUT" ]; then
-    echo "screenshot: $OUT ($(stat -c '%s bytes' "$OUT"))"
+    # sha1 catches the trap where two PNGs are byte-identical in size but
+    # differ in content (LSDJ boot screens compress to identical lengths).
+    SHA=$(sha1sum "$OUT" | cut -c1-12)
+    echo "screenshot: $OUT ($(stat -c '%s bytes' "$OUT"), sha1 $SHA)"
 else
     echo "warning: no screenshot produced at $OUT" >&2
     echo "check stdout: /tmp/retroplug-stdout.log" >&2

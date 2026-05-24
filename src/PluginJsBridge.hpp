@@ -121,6 +121,12 @@ private:
     // response (as ArrayBuffer) or null for notifications.
     static JSValue js_rpcSend(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
+    // Console-stderr shim. Called by the JS-side polyfill in
+    // ui/runtime/console.ts: `__log(level: string, msg: string)`. Writes
+    // one line per call to stderr. tjs has no native console, so without
+    // this every console.log/warn/error in the bundle is a no-op.
+    static JSValue js_log(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+
     using RpcTransport = rpcpp::QueueTransport<rpcpp::MsgpackCodec>;
     using RpcServer    = rpcpp::TypedRpcServer<PluginRpcService, rpcpp::MsgpackCodec>;
 

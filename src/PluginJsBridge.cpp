@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -142,6 +143,10 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
 
     JS_SetPropertyStr(ctx, ns, "__rpcSend",
                       JS_NewCFunction(ctx, js_rpcSend, "__rpcSend", 1));
+    JS_SetPropertyStr(ctx, ns, "__log",
+                      JS_NewCFunction(ctx, js_log, "__log", 2));
+    JS_SetPropertyStr(ctx, ns, "debugOverlay",
+                      JS_NewBool(ctx, std::getenv("RETROPLUG_DEBUG_OVERLAY") != nullptr));
 
     pluginNamespace = JS_DupValue(ctx, ns);
 
@@ -213,6 +218,17 @@ JSValue PluginJsBridge::js_rpcSend(JSContext* ctx, JSValueConst, int argc, JSVal
     return JS_NewArrayBufferCopy(ctx,
         reinterpret_cast<const uint8_t*>(reply->data()),
         reply->size());
+}
+
+JSValue PluginJsBridge::js_log(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    const char* level = (argc >= 1) ? JS_ToCString(ctx, argv[0]) : nullptr;
+    const char* msg   = (argc >= 2) ? JS_ToCString(ctx, argv[1]) : nullptr;
+    std::fprintf(stderr, "[js:%s] %s\n",
+                 level ? level : "log",
+                 msg   ? msg   : "");
+    if (level) JS_FreeCString(ctx, level);
+    if (msg)   JS_FreeCString(ctx, msg);
+    return JS_UNDEFINED;
 }
 
 void PluginJsBridge::pumpAsync() {
