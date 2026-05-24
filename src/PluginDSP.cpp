@@ -414,6 +414,17 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::SetHighpass: {
+                    auto& sh = cmd.payload.setHighpass;
+                    if (auto* sb = dynamic_cast<SameBoySystem*>(project.findSystem(sh.id))) {
+                        if (sb->config_.highpass != sh.mode) {
+                            sb->config_.highpass = sh.mode;
+                            sb->applyHighpassMode();
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
                 case Command::Kind::SetReloadOnRomChange: {
                     auto& sr = cmd.payload.setReloadOnRomChange;
                     if (SystemBase* sys = project.findSystem(sr.id)) {

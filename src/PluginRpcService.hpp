@@ -68,6 +68,8 @@ public:
         std::optional<std::uint32_t> model;
         std::optional<bool>          fastBoot;
         std::optional<bool>          reloadOnRomChange;
+        // SameBoy-only. Values mirror SameBoyHighpass: 0=Off, 1=Accurate, 2=RemoveDcOffset.
+        std::optional<std::uint32_t> highpass;
     };
 
     // --- LSDJ kit-patch DTOs ----------------------------------------------
@@ -219,6 +221,7 @@ public:
     bool newSram(std::uint32_t id);
     bool setFastBoot(std::uint32_t id, bool enabled);
     bool setModel(std::uint32_t id, std::uint32_t model);
+    bool setHighpass(std::uint32_t id, std::uint32_t mode);
     bool setReloadOnRomChange(std::uint32_t id, bool enabled);
 
     // Poll the romPath of every SameBoy system whose `reloadOnRomChange` is

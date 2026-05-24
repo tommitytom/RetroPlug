@@ -95,6 +95,7 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
     rpcServer_->addMethod<&PluginRpcService::newSram>();
     rpcServer_->addMethod<&PluginRpcService::setFastBoot>();
     rpcServer_->addMethod<&PluginRpcService::setModel>();
+    rpcServer_->addMethod<&PluginRpcService::setHighpass>();
     rpcServer_->addMethod<&PluginRpcService::setReloadOnRomChange>();
     rpcServer_->addMethod<&PluginRpcService::setLsdjSyncConfig>();
     rpcServer_->addMethod<&PluginRpcService::setWindowSize>();

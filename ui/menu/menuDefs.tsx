@@ -95,6 +95,13 @@ const MODEL_NAMES = [
     "AGB",
 ];
 
+// Mirrors C++ SameBoyHighpass enum (src/system/sameboy/SameBoyConfig.hpp).
+const HIGHPASS_NAMES = [
+    "Off",
+    "Accurate",
+    "DC-block",
+];
+
 // Mirrors C++ LsdjSyncMode enum (src/system/sameboy/roles/LsdjSyncRole.hpp).
 const LSDJ_MODE_NAMES = [
     "Off",
@@ -194,6 +201,20 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
                 if (sys.model == null) return;
                 const next = cycleInt(sys.model, 0, MODEL_NAMES.length - 1, dir);
                 void plugin.$notify("setModel", sys.id, next);
+            } });
+
+        const hpIdx   = sys.highpass ?? 1;
+        const hpLabel = `Highpass: ${HIGHPASS_NAMES[hpIdx] ?? HIGHPASS_NAMES[1]}`;
+        items.push({ id: "highpass", label: hpLabel, kind: "action", keepOpen: true,
+            onSelect: () => {
+                if (sys.highpass == null) return;
+                const next = cycleInt(sys.highpass, 0, HIGHPASS_NAMES.length - 1, 1);
+                void plugin.$notify("setHighpass", sys.id, next);
+            },
+            onCycle: (dir) => {
+                if (sys.highpass == null) return;
+                const next = cycleInt(sys.highpass, 0, HIGHPASS_NAMES.length - 1, dir);
+                void plugin.$notify("setHighpass", sys.id, next);
             } });
     }
 

@@ -46,6 +46,7 @@ int main() {
     server.addMethod<&PluginRpcService::newSram>();
     server.addMethod<&PluginRpcService::setFastBoot>();
     server.addMethod<&PluginRpcService::setModel>();
+    server.addMethod<&PluginRpcService::setHighpass>();
     server.addMethod<&PluginRpcService::setReloadOnRomChange>();
     server.addMethod<&PluginRpcService::setLsdjSyncConfig>();
     server.addMethod<&PluginRpcService::setWindowSize>();

@@ -19,11 +19,21 @@ enum class SameBoyModel : std::uint32_t {
     Agb  = 4,
 };
 
+// Audio highpass filter mode. Mirrors SameBoy's GB_highpass_mode_t.
+// `Accurate` models the real GB's analog HPF (~120 Hz); `RemoveDcOffset` is
+// a stronger HPF that softens release transients at the cost of authenticity.
+enum class SameBoyHighpass : std::uint32_t {
+    Off            = 0,
+    Accurate       = 1,
+    RemoveDcOffset = 2,
+};
+
 struct SameBoyConfig {
     // On-disk variant discriminator (`"kind":"sameboy"`). Locked spelling.
     using Tag = rfl::Literal<"sameboy">;
 
     SameBoyModel              model    = SameBoyModel::CgbC;
+    SameBoyHighpass           highpass = SameBoyHighpass::Accurate;
     bool                      fastBoot = true;
     // When true, the UI thread watches `romPath` and triggers a reload
     // (preserving current SRAM, dropping savestate) when the file changes.

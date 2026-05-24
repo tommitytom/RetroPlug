@@ -168,7 +168,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     GB_set_background_rendering_disabled(gb_, false);
     GB_set_object_rendering_disabled(gb_, false);
     GB_set_color_correction_mode(gb_, GB_COLOR_CORRECTION_DISABLED);
-    GB_set_highpass_filter_mode(gb_, GB_HIGHPASS_ACCURATE);
+    applyHighpassMode();
 
     GB_load_rom_from_buffer(gb_, rom_.data(), rom_.size());
 
@@ -421,6 +421,17 @@ void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
 }
 
 // TODO: Remove references to old code in comments
+
+void SameBoySystem::applyHighpassMode() {
+    if (!gb_) return;
+    GB_highpass_mode_t mode = GB_HIGHPASS_ACCURATE;
+    switch (config_.highpass) {
+        case SameBoyHighpass::Off:            mode = GB_HIGHPASS_OFF;             break;
+        case SameBoyHighpass::Accurate:       mode = GB_HIGHPASS_ACCURATE;        break;
+        case SameBoyHighpass::RemoveDcOffset: mode = GB_HIGHPASS_REMOVE_DC_OFFSET; break;
+    }
+    GB_set_highpass_filter_mode(gb_, mode);
+}
 
 void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     // Append to the back of the queue, advancing the offset by buttonSpacing

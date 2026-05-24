@@ -406,6 +406,7 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
             entry.gainDb      = sb->config_.gainDb;
             entry.linkGroupId = sb->config_.linkGroupId;
             entry.model       = static_cast<std::uint32_t>(sb->config_.model);
+            entry.highpass    = static_cast<std::uint32_t>(sb->config_.highpass);
             for (const auto& rc : sb->config_.roles) {
                 if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
                     entry.lsdjSyncMode     = static_cast<std::uint32_t>(lsdj->mode);
@@ -556,6 +557,14 @@ bool PluginRpcService::setModel(std::uint32_t id, std::uint32_t model) {
     return commands_->tryPush(
         Command::makeSetModel(static_cast<SystemId>(id),
                               static_cast<SameBoyModel>(model)));
+}
+
+bool PluginRpcService::setHighpass(std::uint32_t id, std::uint32_t mode) {
+    if (!commands_) return false;
+    if (mode > static_cast<std::uint32_t>(SameBoyHighpass::RemoveDcOffset)) return false;
+    return commands_->tryPush(
+        Command::makeSetHighpass(static_cast<SystemId>(id),
+                                 static_cast<SameBoyHighpass>(mode)));
 }
 
 bool PluginRpcService::setReloadOnRomChange(std::uint32_t id, bool enabled) {
