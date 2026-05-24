@@ -11,6 +11,8 @@ interface StartScreenProps {
     zoom:                   number;
     recentFiles:            RecentEntry[];
     openAbout:              () => void;
+    openKeyboardEditor:     () => void;
+    openGamepadEditor:      () => void;
     availableProfiles:      string[];
     activeKeyboardBindings: string;
     activeGamepadBindings:  string;
@@ -24,6 +26,7 @@ interface StartScreenProps {
 // — see Menu.tsx). No pane-stack, no Back item.
 export function StartScreen({
     midiRouting, audioRouting, layout, zoom, recentFiles, openAbout,
+    openKeyboardEditor, openGamepadEditor,
     availableProfiles, activeKeyboardBindings, activeGamepadBindings,
     sinkGroup,
 }: StartScreenProps) {
@@ -43,6 +46,8 @@ export function StartScreen({
         recentFiles,
         openKitEditor: () => { /* unreachable from start menu */ },
         openAbout,
+        openKeyboardEditor,
+        openGamepadEditor,
         availableProfiles,
         activeKeyboardBindings,
         activeGamepadBindings,

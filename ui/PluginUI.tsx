@@ -6,6 +6,7 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
 import { plugin } from "./plugin/client";
 import { KitEditor } from "./KitEditor";
+import { BindingsEditor } from "./BindingsEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
 import { DEFAULT_ZOOM } from "./layout";
 import { StartScreen } from "./menu/StartScreen";
@@ -40,6 +41,12 @@ function PluginUI() {
     // the menu toggle. Reachable from the main menu's "Kit Editor" item.
     const [kitEditorOpen, setKitEditorOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
+    // Bindings editor (separate modals for keyboard and gamepad — see
+    // ui/BindingsEditor.tsx). Like kitEditor / aboutPanel, both consume
+    // keyboard / gamepad events themselves while open, so PluginUI must
+    // not also dispatch game button presses for those events below.
+    const [keyboardEditorOpen, setKeyboardEditorOpen] = useState(false);
+    const [gamepadEditorOpen,  setGamepadEditorOpen]  = useState(false);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
     // Seeded to 0 and replaced by the first refreshSystems(). The brief
@@ -216,7 +223,20 @@ function PluginUI() {
     const aboutOpenRef = useRef(aboutOpen);
     useEffect(() => { aboutOpenRef.current = aboutOpen; }, [aboutOpen]);
 
+    const keyboardEditorOpenRef = useRef(keyboardEditorOpen);
+    useEffect(() => { keyboardEditorOpenRef.current = keyboardEditorOpen; }, [keyboardEditorOpen]);
+
+    const gamepadEditorOpenRef = useRef(gamepadEditorOpen);
+    useEffect(() => { gamepadEditorOpenRef.current = gamepadEditorOpen; }, [gamepadEditorOpen]);
+
     useKeyboard(useCallback((key: number, press: boolean) => {
+        // Bindings editor owns its own keyboard handling (capture mode,
+        // prompt input, Esc routing). Bail out early so nothing here
+        // intercepts keystrokes meant for it. Closing the editor via Esc
+        // is handled inside the editor itself.
+        if (keyboardEditorOpenRef.current || gamepadEditorOpenRef.current) {
+            return;
+        }
         if (key === KEY_ESCAPE) {
             // Esc closes the kit editor before falling through to menu.
             if (press && kitEditorOpenRef.current) {
@@ -326,6 +346,9 @@ function PluginUI() {
 
     useGamepadButton(useCallback((pad: number, buttonName: string, press: boolean) => {
         if (menuOpenRef.current) return;
+        // Bindings editor needs raw gamepad events for capture mode and
+        // must not also see them turn into game-button presses.
+        if (keyboardEditorOpenRef.current || gamepadEditorOpenRef.current) return;
         const button = mapGamepadButtonToGameboyButton(buttonName);
         if (button === null) return;
         const slot = `${pad}:${buttonName}`;
@@ -366,6 +389,16 @@ function PluginUI() {
         setAboutOpen(true);
     }, []);
 
+    const openKeyboardEditor = useCallback(() => {
+        setMenuOpen(false);
+        setKeyboardEditorOpen(true);
+    }, []);
+
+    const openGamepadEditor = useCallback(() => {
+        setMenuOpen(false);
+        setGamepadEditorOpen(true);
+    }, []);
+
     const instanceTree = buildInstanceMenu({
         systems,
         focusedSystem,
@@ -376,6 +409,8 @@ function PluginUI() {
         recentFiles,
         openKitEditor,
         openAbout,
+        openKeyboardEditor,
+        openGamepadEditor,
         availableProfiles,
         activeKeyboardBindings,
         activeGamepadBindings,
@@ -410,6 +445,26 @@ function PluginUI() {
                     sinkGroup={sinkGroupRef.current}
                     onClose={() => setKitEditorOpen(false)}
                 />
+            ) : keyboardEditorOpen ? (
+                <BindingsEditor
+                    kind="keyboard"
+                    zoom={zoom}
+                    sinkGroup={sinkGroupRef.current}
+                    onClose={() => {
+                        setKeyboardEditorOpen(false);
+                        if (systemsRef.current.length === 0) setMenuOpen(true);
+                    }}
+                />
+            ) : gamepadEditorOpen ? (
+                <BindingsEditor
+                    kind="gamepad"
+                    zoom={zoom}
+                    sinkGroup={sinkGroupRef.current}
+                    onClose={() => {
+                        setGamepadEditorOpen(false);
+                        if (systemsRef.current.length === 0) setMenuOpen(true);
+                    }}
+                />
             ) : aboutOpen ? (
                 <AboutPanel
                     zoom={zoom}
@@ -427,6 +482,8 @@ function PluginUI() {
                     zoom={zoom}
                     recentFiles={recentFiles}
                     openAbout={openAbout}
+                    openKeyboardEditor={openKeyboardEditor}
+                    openGamepadEditor={openGamepadEditor}
                     availableProfiles={availableProfiles}
                     activeKeyboardBindings={activeKeyboardBindings}
                     activeGamepadBindings={activeGamepadBindings}

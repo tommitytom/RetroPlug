@@ -5,7 +5,9 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <string_view>
 
 #include <efsw/efsw.hpp>
 
@@ -62,6 +64,32 @@ public:
     // to round-trip the change). Returns false on write failure.
     bool setActiveKeyboardBindings(std::string name);
     bool setActiveGamepadBindings(std::string name);
+
+    // Read a single profile file from disk. Returns nullopt if the file
+    // doesn't exist or fails to parse. Used by the in-app bindings editor
+    // so it can edit one channel (keyboard or gamepad) of a profile
+    // without clobbering the other when saving.
+    std::optional<BindingMapJson> loadProfile(std::string_view name) const;
+
+    // Profile management used by the in-app bindings editor. All three
+    // validate `name` (and `newName`) as `[A-Za-z0-9_-]+`, refuse reserved
+    // stems ("config"), and refresh the in-memory snapshot synchronously
+    // before returning.
+    //
+    // saveProfile   — overwrites bindings/<name>.json (creates if missing).
+    // renameProfile — fs::rename; if `oldName` is the active keyboard or
+    //                 gamepad profile, config.json is rewritten to point
+    //                 at `newName` so the active reference stays valid.
+    // deleteProfile — refuses if `name` matches either active profile
+    //                 (caller must switch first); otherwise unlinks.
+    bool saveProfile  (std::string name, BindingMapJson bindings);
+    bool renameProfile(std::string oldName, std::string newName);
+    bool deleteProfile(std::string name);
+
+    // Validate a profile name: non-empty, contains only [A-Za-z0-9_-], and
+    // not equal to a reserved stem. Exposed for the RPC layer so the UI can
+    // surface the rejection without round-tripping a write.
+    static bool isValidProfileName(std::string_view name);
 
     // efsw callback — runs on a background thread. Only flips dirty_.
     void handleFileAction(efsw::WatchID,
