@@ -62,6 +62,9 @@ export interface MenuContext {
     openKitEditor:  () => void;
     // Called by Menu when the user picks About.
     openAbout:      () => void;
+    // Called by the Settings submenu's bindings-editor entries.
+    openKeyboardEditor: () => void;
+    openGamepadEditor:  () => void;
     // Bindings profile state (sourced from plugin.getUserConfig()). Empty
     // arrays / strings before the first fetch lands.
     availableProfiles:       string[];
@@ -339,6 +342,10 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
           } },
         { id: "audioDevice",     label: "Audio device: -",     kind: "action", onSelect: stub("Audio device"),     keepOpen: true },
         sep(),
+        { id: "editKeyboard",    label: "Keyboard bindings...", kind: "action",
+          onSelect: () => ctx.openKeyboardEditor() },
+        { id: "editGamepad",     label: "Gamepad bindings...",  kind: "action",
+          onSelect: () => ctx.openGamepadEditor() },
         { id: "openSettings",    label: "Open settings folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];

@@ -250,6 +250,13 @@ public:
     UserConfigDto getUserConfig();
     bool          setActiveKeyboardBindings(std::string name);
     bool          setActiveGamepadBindings(std::string name);
+    // In-app bindings editor surface. Validation rules live in
+    // UserConfig::isValidProfileName; all four return false / nullopt when
+    // userConfig_ is null (LV2-UI / rpc-schema-dump).
+    std::optional<BindingMapJson> getBindingProfile(std::string name);
+    bool          saveBindingProfile  (std::string name, BindingMapJson bindings);
+    bool          renameBindingProfile(std::string oldName, std::string newName);
+    bool          deleteBindingProfile(std::string name);
     // Launch the platform file manager on the user config directory. False if
     // we have no UserConfig wired or the shell-out call fails.
     bool          openSettingsFolder();

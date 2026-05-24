@@ -82,6 +82,42 @@ function resolveKeyName(name: string): number | null {
     return null;
 }
 
+// Inverse of resolveKeyName: DPF key code → preferred symbolic name. Used
+// by the in-app bindings editor so that the user pressing e.g. KEY_ENTER
+// in capture mode lands "Enter" in the JSON (canonical) rather than
+// "Return" (synonym). Returns null for keys we don't know how to name.
+//
+// Multiple entries in KEY_NAME_TO_DPF collide on the same code (Enter /
+// Return both = 0x0D); the preferred-name table below picks one.
+const DPF_TO_KEY_NAME: Record<number, string> = {
+    [KEY_BACKSPACE]: "Backspace",
+    [KEY_TAB]:       "Tab",
+    [KEY_ENTER]:     "Enter",
+    [KEY_ESCAPE]:    "Escape",
+    [KEY_LEFT]:      "Left",
+    [KEY_UP]:        "Up",
+    [KEY_RIGHT]:     "Right",
+    [KEY_DOWN]:      "Down",
+    [KEY_SHIFT_L]:   "ShiftL",
+    [KEY_SHIFT_R]:   "ShiftR",
+};
+
+export function dpfKeyToName(code: number): string | null {
+    if (code in DPF_TO_KEY_NAME) return DPF_TO_KEY_NAME[code];
+    // Printable ASCII: keep case (so "Z" and "z" remain distinguishable).
+    if (code >= 0x20 && code <= 0x7E) return String.fromCharCode(code);
+    return null;
+}
+
+// List of every symbolic key name the loader understands, plus a single
+// representative of the printable-ASCII range. Useful for the editor's
+// "unbind / clear" affordance when the underlying file is multi-bind.
+export const KNOWN_KEY_NAMES: readonly string[] = [
+    "Backspace", "Tab", "Enter", "Escape",
+    "Left", "Up", "Right", "Down",
+    "ShiftL", "ShiftR",
+];
+
 // Runtime maps populated either from the hardcoded defaults below (initial
 // state) or from a user JSON profile (after installBindings runs).
 let keyMap_: Map<number, GameboyButton> = new Map();

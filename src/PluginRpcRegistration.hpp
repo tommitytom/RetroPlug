@@ -50,6 +50,10 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::getUserConfig>();
     server.template addMethod<&PluginRpcService::setActiveKeyboardBindings>();
     server.template addMethod<&PluginRpcService::setActiveGamepadBindings>();
+    server.template addMethod<&PluginRpcService::getBindingProfile>();
+    server.template addMethod<&PluginRpcService::saveBindingProfile>();
+    server.template addMethod<&PluginRpcService::renameBindingProfile>();
+    server.template addMethod<&PluginRpcService::deleteBindingProfile>();
     server.template addMethod<&PluginRpcService::openSettingsFolder>();
     server.template addMethod<&PluginRpcService::saveSram>();
     server.template addMethod<&PluginRpcService::openSaveSramBrowser>();

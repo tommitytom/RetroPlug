@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -163,6 +164,109 @@ TEST_CASE("UserConfig live-reloads when bindings file changes on disk", "[user-c
 
     REQUIRE(sawSwap);
     REQUIRE(reloaded);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("UserConfig::saveProfile writes a new profile file", "[user-config]") {
+    auto dir = makeTempDir("save-profile");
+    UserConfig cfg(dir);
+    cfg.start();
+
+    BindingMapJson b;
+    b.keyboard["A"] = {"q"};
+    b.gamepad ["A"] = {"y"};
+    REQUIRE(cfg.saveProfile("custom", b));
+
+    REQUIRE(fs::exists(dir / "bindings" / "custom.json"));
+    auto loaded = cfg.loadProfile("custom");
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->keyboard.at("A") == std::vector<std::string>{"q"});
+    REQUIRE(loaded->gamepad .at("A") == std::vector<std::string>{"y"});
+    REQUIRE(loaded->name == "custom");
+
+    auto snap = cfg.snapshot();
+    const auto& list = snap.availableProfiles;
+    REQUIRE(std::find(list.begin(), list.end(), std::string("custom")) != list.end());
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("UserConfig::saveProfile rejects invalid names", "[user-config]") {
+    auto dir = makeTempDir("save-invalid");
+    UserConfig cfg(dir);
+    cfg.start();
+
+    BindingMapJson b;
+    REQUIRE_FALSE(cfg.saveProfile("",        b));
+    REQUIRE_FALSE(cfg.saveProfile("config",  b));     // reserved
+    REQUIRE_FALSE(cfg.saveProfile("../etc",  b));     // path traversal
+    REQUIRE_FALSE(cfg.saveProfile("a b",     b));     // whitespace
+    REQUIRE_FALSE(cfg.saveProfile("a.b",     b));     // dot
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("UserConfig::renameProfile moves the file and updates active references", "[user-config]") {
+    auto dir = makeTempDir("rename-profile");
+    UserConfig cfg(dir);
+    cfg.start();
+
+    BindingMapJson b;
+    b.keyboard["A"] = {"j"};
+    REQUIRE(cfg.saveProfile("alpha", b));
+    REQUIRE(cfg.setActiveKeyboardBindings("alpha"));
+    REQUIRE(cfg.snapshot().activeKeyboardBindings == "alpha");
+
+    REQUIRE(cfg.renameProfile("alpha", "beta"));
+    REQUIRE_FALSE(fs::exists(dir / "bindings" / "alpha.json"));
+    REQUIRE(fs::exists(dir / "bindings" / "beta.json"));
+
+    auto snap = cfg.snapshot();
+    REQUIRE(snap.activeKeyboardBindings == "beta");
+    REQUIRE(snap.bindings.keyboard.at("A") == std::vector<std::string>{"j"});
+
+    // The renamed file's own `name` field was rewritten to match.
+    auto loaded = cfg.loadProfile("beta");
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->name == "beta");
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("UserConfig::renameProfile refuses to clobber an existing file", "[user-config]") {
+    auto dir = makeTempDir("rename-conflict");
+    UserConfig cfg(dir);
+    cfg.start();
+
+    BindingMapJson b;
+    REQUIRE(cfg.saveProfile("alpha", b));
+    REQUIRE(cfg.saveProfile("beta",  b));
+
+    REQUIRE_FALSE(cfg.renameProfile("alpha", "beta"));
+    REQUIRE(fs::exists(dir / "bindings" / "alpha.json"));
+    REQUIRE(fs::exists(dir / "bindings" / "beta.json"));
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("UserConfig::deleteProfile refuses the active profile", "[user-config]") {
+    auto dir = makeTempDir("delete-active");
+    UserConfig cfg(dir);
+    cfg.start();
+
+    BindingMapJson b;
+    REQUIRE(cfg.saveProfile("alt", b));
+    REQUIRE(cfg.setActiveKeyboardBindings("alt"));
+
+    // Active keyboard profile — refused.
+    REQUIRE_FALSE(cfg.deleteProfile("alt"));
+    REQUIRE(fs::exists(dir / "bindings" / "alt.json"));
+
+    // Switch back, then delete succeeds.
+    REQUIRE(cfg.setActiveKeyboardBindings("default"));
+    REQUIRE(cfg.deleteProfile("alt"));
+    REQUIRE_FALSE(fs::exists(dir / "bindings" / "alt.json"));
 
     fs::remove_all(dir);
 }

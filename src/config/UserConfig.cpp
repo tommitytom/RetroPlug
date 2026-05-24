@@ -143,6 +143,118 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
     return true;
 }
 
+std::optional<BindingMapJson> UserConfig::loadProfile(std::string_view name) const {
+    if (!isValidProfileName(name)) return std::nullopt;
+    const fs::path p = bindingsDir_ / (std::string(name) + ".json");
+    auto text = slurp(p);
+    if (text.empty()) return std::nullopt;
+    return bindingMapFromJson(text);
+}
+
+bool UserConfig::isValidProfileName(std::string_view name) {
+    if (name.empty()) return false;
+    if (name == "config") return false;       // would collide with config.json
+    for (char c : name) {
+        const bool ok = (c >= 'a' && c <= 'z')
+                     || (c >= 'A' && c <= 'Z')
+                     || (c >= '0' && c <= '9')
+                     ||  c == '_' || c == '-';
+        if (!ok) return false;
+    }
+    return true;
+}
+
+bool UserConfig::saveProfile(std::string name, BindingMapJson bindings) {
+    if (!started_.load()) return false;
+    if (!isValidProfileName(name)) return false;
+    bindings.schemaVersion = 1;
+    bindings.name          = name;
+    const fs::path target  = bindingsDir_ / (name + ".json");
+    if (!atomicWrite(target, bindingMapToJson(bindings))) {
+        std::fprintf(stderr, "[user-config] failed to write %s\n",
+                     target.string().c_str());
+        return false;
+    }
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
+
+bool UserConfig::renameProfile(std::string oldName, std::string newName) {
+    if (!started_.load()) return false;
+    if (!isValidProfileName(oldName) || !isValidProfileName(newName)) return false;
+    if (oldName == newName) return true;
+    const fs::path src = bindingsDir_ / (oldName + ".json");
+    const fs::path dst = bindingsDir_ / (newName + ".json");
+    std::error_code ec;
+    if (!fs::exists(src, ec)) return false;
+    if (fs::exists(dst, ec)) return false;     // refuse to clobber
+
+    // If the source carries an embedded `name` field, rewrite it so the
+    // file's content matches its new filename (cosmetic — the loader uses
+    // the filename, not the field). Keeps hand-inspection sane.
+    if (auto text = slurp(src); !text.empty()) {
+        if (auto parsed = bindingMapFromJson(text)) {
+            parsed->name = newName;
+            const fs::path tmpRename = src.string() + ".renaming";
+            if (!atomicWrite(tmpRename, bindingMapToJson(*parsed))) return false;
+            fs::rename(tmpRename, src, ec);
+            if (ec) { fs::remove(tmpRename, ec); return false; }
+        }
+    }
+
+    fs::rename(src, dst, ec);
+    if (ec) return false;
+
+    // Repoint active profile references in config.json if needed.
+    bool rewrote = false;
+    UserConfigJson cfg;
+    cfg.schemaVersion = 1;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
+        cfg.activeGamepadBindings  = current_.activeGamepadBindings;
+        cfg.defaultZoom            = current_.defaultZoom;
+        if (cfg.activeKeyboardBindings == oldName) {
+            cfg.activeKeyboardBindings = newName;
+            rewrote = true;
+        }
+        if (cfg.activeGamepadBindings == oldName) {
+            cfg.activeGamepadBindings = newName;
+            rewrote = true;
+        }
+    }
+    if (rewrote) {
+        if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
+            std::fprintf(stderr, "[user-config] failed to update %s after rename\n",
+                         configFile_.string().c_str());
+            return false;
+        }
+    }
+
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
+
+bool UserConfig::deleteProfile(std::string name) {
+    if (!started_.load()) return false;
+    if (!isValidProfileName(name)) return false;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (name == current_.activeKeyboardBindings) return false;
+        if (name == current_.activeGamepadBindings)  return false;
+    }
+    const fs::path target = bindingsDir_ / (name + ".json");
+    std::error_code ec;
+    if (!fs::exists(target, ec)) return false;
+    fs::remove(target, ec);
+    if (ec) return false;
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
+
 void UserConfig::reloadFromDisk() {
     UserConfigDto next;
     {

@@ -887,6 +887,26 @@ bool PluginRpcService::setActiveGamepadBindings(std::string name) {
     return userConfig_->setActiveGamepadBindings(std::move(name));
 }
 
+std::optional<BindingMapJson> PluginRpcService::getBindingProfile(std::string name) {
+    if (!userConfig_) return std::nullopt;
+    return userConfig_->loadProfile(name);
+}
+
+bool PluginRpcService::saveBindingProfile(std::string name, BindingMapJson bindings) {
+    if (!userConfig_) return false;
+    return userConfig_->saveProfile(std::move(name), std::move(bindings));
+}
+
+bool PluginRpcService::renameBindingProfile(std::string oldName, std::string newName) {
+    if (!userConfig_) return false;
+    return userConfig_->renameProfile(std::move(oldName), std::move(newName));
+}
+
+bool PluginRpcService::deleteBindingProfile(std::string name) {
+    if (!userConfig_) return false;
+    return userConfig_->deleteProfile(std::move(name));
+}
+
 namespace {
 std::string defaultSavePath(const SystemBase& sys, const char* ext) {
     const std::string& romPath = sys.romPath();
