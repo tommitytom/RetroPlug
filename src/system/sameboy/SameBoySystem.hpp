@@ -91,6 +91,11 @@ public:
     // consistent with that precedent.
     void restartEmulator();
 
+    // Push `config_.highpass` into the SameBoy core. Safe to call at runtime
+    // (the filter samples its mode every audio frame). Called from
+    // `onActivate` and from the SetHighpass command handler.
+    void applyHighpassMode();
+
     // SystemBase virtuals — see base class for contracts.
     const std::string&        romPath() const override          { return config_.romPath; }
     std::optional<bool>       fastBoot() const override         { return config_.fastBoot; }

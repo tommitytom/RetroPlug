@@ -133,6 +133,13 @@ struct SetModelCommand {
     SameBoyModel model;
 };
 
+// Change SameBoyConfig::highpass. Applied live by SameBoySystem::applyHighpassMode
+// — no emulator restart, no LinkGroup rebuild.
+struct SetHighpassCommand {
+    SystemId        id;
+    SameBoyHighpass mode;
+};
+
 // Toggle the per-system "watch the ROM file for changes" flag. The actual
 // watcher lives on the UI thread; this command just mutates config so the
 // state persists.
@@ -200,6 +207,7 @@ struct Command {
         SetModel          = 18,
         SetReloadOnRomChange = 19,
         SetAudioRouting   = 20,
+        SetHighpass       = 21,
     };
 
     Kind kind = Kind::None;
@@ -224,6 +232,7 @@ struct Command {
         SetModelCommand          setModel;
         SetReloadOnRomChangeCommand setReloadOnRomChange;
         SetAudioRoutingCommand   setAudioRouting;
+        SetHighpassCommand       setHighpass;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -369,6 +378,13 @@ struct Command {
         Command c;
         c.kind = Kind::SetAudioRouting;
         c.payload.setAudioRouting = SetAudioRoutingCommand{routing};
+        return c;
+    }
+
+    static Command makeSetHighpass(SystemId id, SameBoyHighpass mode) {
+        Command c;
+        c.kind = Kind::SetHighpass;
+        c.payload.setHighpass = SetHighpassCommand{id, mode};
         return c;
     }
 };
