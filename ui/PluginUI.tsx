@@ -1,4 +1,4 @@
-import { View, Render } from "lvgljs-ui";
+import { View, Render, Dimensions } from "lvgljs-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
@@ -14,6 +14,7 @@ import {
     GameboyButton,
     KEY_ESCAPE,
     KEY_TAB,
+    MOUSE_BUTTON_LEFT,
     MOUSE_BUTTON_RIGHT,
     installBindings,
     mapGamepadButtonToGameboyButton,
@@ -267,24 +268,36 @@ function PluginUI() {
         }
     }, []));
 
-    // Right-click on a tile: focus the tile + open the menu. Position
-    // resolution: getTileBounds gives the tile's rect inside the grid; we
-    // assume window coords ≈ grid coords (true at native zoom on most WMs
-    // because we drive setWindowSize to match the grid content size).
+    // Click on a tile: focus it. Right-click also opens the menu. The mouse
+    // event delivers window-relative coords, but getTileBounds is grid-local.
+    // The root View flex-centers the grid in the window, so when the
+    // compositor gives us a window bigger than gridContentSize (tiled WM,
+    // host-clamped resize) there's a centering offset we must subtract.
     useMouse(useCallback((button: number, press: boolean, x: number, y: number) => {
-        if (button !== MOUSE_BUTTON_RIGHT || !press) return;
+        if (!press) return;
+        if (button !== MOUSE_BUTTON_LEFT && button !== MOUSE_BUTTON_RIGHT) return;
         if (kitEditorOpenRef.current) return;
+        if (button === MOUSE_BUTTON_LEFT && menuOpenRef.current) return;
         const list = systemsRef.current;
         if (list.length === 0) return;
+        const z = zoomRef.current;
+        const grid = gridContentSize(list, SystemLayout.Auto, z);
+        const win = Dimensions.window;
+        const offX = Math.max(0, (win.width  - grid.width)  / 2);
+        const offY = Math.max(0, (win.height - grid.height) / 2);
+        const gx = x - offX;
+        const gy = y - offY;
         for (let i = 0; i < list.length; i++) {
-            const b = getTileBounds(i, list.length, SystemLayout.Auto, zoomRef.current);
-            if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
+            const b = getTileBounds(i, list.length, SystemLayout.Auto, z);
+            if (gx >= b.x && gx < b.x + b.w && gy >= b.y && gy < b.y + b.h) {
                 const sys = list[i];
                 if (sys.id !== focusedIdRef.current) {
                     setFocusedId(sys.id);
                     void plugin.$notify("setFocus", sys.id);
                 }
-                if (!menuOpenRef.current) setMenuOpen(true);
+                if (button === MOUSE_BUTTON_RIGHT && !menuOpenRef.current) {
+                    setMenuOpen(true);
+                }
                 return;
             }
         }
