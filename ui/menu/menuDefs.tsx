@@ -11,7 +11,7 @@
 
 import { plugin, type SystemEntry } from "../plugin/client";
 
-export type MenuItemKind = "action" | "submenu";
+export type MenuItemKind = "action" | "submenu" | "separator";
 
 export interface MenuItem {
     id:        string;
@@ -26,6 +26,14 @@ export interface MenuItem {
     // True = activating this item should NOT close the menu (e.g. cycling
     // labels like "Link group" / "MIDI routing" / "LSDJ mode").
     keepOpen?: boolean;
+}
+
+// Per-build counter so each separator gets a unique id within a single
+// menu tree. React keys + Menu's focus-tracking-by-id both rely on item
+// ids being unique within a render.
+let sepCounter = 0;
+function sep(): MenuItem {
+    return { id: `sep:${sepCounter++}`, label: "", kind: "separator" };
 }
 
 export interface MenuTree {
@@ -168,18 +176,21 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
     items.push(
         { id: "reset",      label: "Reset",                kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("resetSystem", sys.id); } },
-        { id: "saveSram",   label: "Save SRAM",            kind: "action",
-          onSelect: () => { if (sys) void plugin.$notify("saveSram", sys.id); } },
-        { id: "saveSramAs", label: "Save SRAM As...",      kind: "action",
-          onSelect: () => { if (sys) void plugin.$notify("openSaveSramBrowser", sys.id); } },
+        sep(),
         { id: "saveState",  label: "Save State",           kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("saveState", sys.id); } },
         { id: "saveStateAs",label: "Save State As...",     kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("openSaveStateBrowser", sys.id); } },
         { id: "loadState",  label: "Load State...",        kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("openLoadStateBrowser", sys.id); } },
+        sep(),
+        { id: "saveSram",   label: "Save SRAM",            kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("saveSram", sys.id); } },
+        { id: "saveSramAs", label: "Save SRAM As...",      kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("openSaveSramBrowser", sys.id); } },
         { id: "newSram",    label: "New SRAM",             kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("newSram", sys.id); } },
+        sep(),
         { id: "reloadRom",  label: `Reload on ROM change: ${sys?.reloadOnRomChange ? "On" : "Off"}`, kind: "action", keepOpen: true,
           onSelect: () => {
               if (!sys) return;
@@ -243,15 +254,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     items.push(
         { id: "loadProject", label: "Load project", kind: "action",
           onSelect: () => { void plugin.$notify("openLoadProjectBrowser"); } },
-        { id: "midiRouting", label: `MIDI routing: ${routingName}`, kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1);
-              void plugin.$notify("setMidiRouting", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
-              void plugin.$notify("setMidiRouting", next);
-          } },
+        sep(),
         { id: "layout", label: `Layout: ${layoutName}`, kind: "action", keepOpen: true,
           onSelect: () => {
               const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, 1);
@@ -264,6 +267,16 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
         { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
           onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
           onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
+        sep(),
+        { id: "midiRouting", label: `MIDI routing: ${routingName}`, kind: "action", keepOpen: true,
+          onSelect: () => {
+              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1);
+              void plugin.$notify("setMidiRouting", next);
+          },
+          onCycle: (dir) => {
+              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
+              void plugin.$notify("setMidiRouting", next);
+          } },
         { id: "audioRouting", label: `Audio routing: ${audioRoutingName}`, kind: "action", keepOpen: true,
           onSelect: () => {
               const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, 1);
@@ -273,6 +286,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, dir);
               void plugin.$notify("setAudioRouting", next);
           } },
+        sep(),
         { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
     );
     return items;
@@ -315,6 +329,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
               if (next !== padActive) void plugin.$notify("setActiveGamepadBindings", next);
           } },
         { id: "audioDevice",     label: "Audio device: -",     kind: "action", onSelect: stub("Audio device"),     keepOpen: true },
+        sep(),
         { id: "openSettings",    label: "Open settings folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];
@@ -338,12 +353,14 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         { id: "recent", label: "Recent", kind: "submenu", children: recentChildren(ctx) },
         { id: "loadRom",        label: "Load ROM...",    kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
+        sep(),
         { id: "addInstance",    label: "Add instance",   kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "add" }); } },
         { id: "duplicate",      label: "Duplicate instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("duplicateSystem", sys.id); } },
         { id: "removeInstance", label: "Remove instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("removeSystem", sys.id); } },
+        sep(),
         { id: "linkGroup", label: `Link group: ${linkSuffix}`, kind: "action", keepOpen: true,
           onSelect: () => {
               if (!sys) return;
@@ -380,9 +397,11 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
     }
 
     items.push(
+        sep(),
         { id: "system",   label: "System",   kind: "submenu", children: systemChildren(ctx) },
         { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
         { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren(ctx) },
+        sep(),
         { id: "about",    label: "About",    kind: "action",  onSelect: () => ctx.openAbout() },
     );
 
@@ -399,8 +418,10 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
             { id: "load", label: "Load...", kind: "action",
               onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
             { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren(ctx) },
+            sep(),
             { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
             { id: "settings", label: "Settings", kind: "submenu", children: settingsChildren(ctx) },
+            sep(),
             { id: "about",    label: "About",    kind: "action",  onSelect: () => ctx.openAbout() },
         ],
     };

@@ -63,7 +63,10 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
     // Visual highlight state. Updated by LV_EVENT_FOCUSED via onItemFocus so
     // the blue text-color tracks whichever widget LVGL actually has focused.
-    const [focusedIdx, setFocusedIdx] = useState(0);
+    // Tracked by item id (not flat-array index) so non-focusable separator
+    // rows can sit in the flat list without breaking the index alignment
+    // between rendered rows and LVGL refs.
+    const [focusedItemId, setFocusedItemId] = useState<string>("");
     // Authoritative navigation cursor. ONLY moved by explicit user actions
     // (arrow nav, click) and by the rebuild useEffect. Specifically NOT
     // touched by onItemFocus, because expanding/collapsing a submenu causes
@@ -71,17 +74,17 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     // phase: every newly-created Text widget auto-joins lv_group_get_default
     // (see deps/.../components/text/text.cpp:9), which juggles the default
     // group's focused obj. If we let those events drive the ref, the next
-    // useEffect read would clamp to whatever junk widget LVGL landed on (in
-    // practice always 0), making submenu-expand jump focus to the top item.
-    const focusedIdxRef = useRef(0);
+    // useEffect read would clamp to whatever junk widget LVGL landed on,
+    // making submenu-expand jump focus.
+    const focusedItemIdRef = useRef<string>("");
     // Suppresses onItemFocus side-effects while a submenu toggle is in
     // flight. Set true by `activate` before setOpenItems, cleared by the
     // group-rebuild useEffect once the new group is wired up. Starts true so
     // initial mount's creation-time focus events are also ignored.
     const isRebuildingRef = useRef(true);
-    const onItemFocus = useCallback((idx: number) => {
+    const onItemFocus = useCallback((id: string) => {
         if (isRebuildingRef.current) return;
-        setFocusedIdx(idx);
+        setFocusedItemId(id);
     }, []);
 
     // Inner scrollable View ref + cached item height. The scroll-follow effect
@@ -149,19 +152,24 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         groupRef.current = group;
         const orderedRefs = getOrderedRefs();
         for (const ref of orderedRefs) group.add(ref);
-        // Clamp the existing focus index into the new bounds; LVGL focuses
-        // whatever widget is at that index. If nothing's there (empty list)
-        // we skip the focus call entirely.
-        const clamped = Math.min(focusedIdxRef.current, orderedRefs.length - 1);
-        const idx = clamped < 0 ? 0 : clamped;
-        focusedIdxRef.current = idx;
+        // Keep focus on the previously-focused item if it still exists;
+        // otherwise fall back to the first focusable (non-separator) item.
+        const focusableIds = flatRef.current
+            .filter(f => f.item.kind !== "separator")
+            .map(f => f.item.id);
+        let targetId = focusedItemIdRef.current;
+        if (!focusableIds.includes(targetId)) {
+            targetId = focusableIds[0] ?? "";
+        }
+        focusedItemIdRef.current = targetId;
         // Re-enable focus-event handling BEFORE the focus call so the
         // resulting LV_EVENT_FOCUSED updates the visual highlight.
         isRebuildingRef.current = false;
-        if (orderedRefs[idx]) group.focus(orderedRefs[idx]);
-        // Defensive: synchronous setFocusedIdx in case the focus event
-        // didn't fire (e.g. orderedRefs[idx] was null).
-        setFocusedIdx(idx);
+        const targetRef = targetId ? refsByIdRef.current.get(targetId) : null;
+        if (targetRef) group.focus(targetRef);
+        // Defensive: synchronous setFocusedItemId in case the focus event
+        // didn't fire (e.g. ref wasn't registered yet).
+        setFocusedItemId(targetId);
         setKeyboardGroup(group);
         return () => {
             setKeyboardGroup(sinkGroup ?? null);
@@ -181,7 +189,7 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     // place. At list ends the formula clamps (top: scroll=0; bottom:
     // scroll=maxScroll, focus rides the edge). Mirrors v0.5's MenuView UX.
     //
-    // Driven by focusedIdx (covers arrow nav + click), visibleKey (covers
+    // Driven by focusedItemId (covers arrow nav + click), visibleKey (covers
     // submenu expand/collapse — inner View remounts so we resync scroll),
     // and height (window resize). useLayoutEffect (not useEffect) so the
     // scroll position is applied synchronously before the next LVGL paint,
@@ -192,15 +200,19 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         const view = innerViewRef.current;
         if (!view || flat.length === 0) return;
 
-        // Item height depends on zoom (font + padding scale linearly).
-        // Re-measure whenever this effect runs to avoid a stale cache
-        // surviving a zoom change.
-        const firstRef = refsByIdRef.current.get(flat[0].item.id);
+        // Use the first focusable row for height measurement — separators
+        // are thinner than items and would skew the cache.
+        const firstItem = flat.find(f => f.item.kind !== "separator");
+        const firstRef = firstItem
+            ? refsByIdRef.current.get(firstItem.item.id) : null;
         if (firstRef?.getBoundingClientRect) {
             itemHeightRef.current = firstRef.getBoundingClientRect().height;
         }
         const itemH = itemHeightRef.current;
         if (itemH <= 0) return;
+
+        const focusedFlatIdx = flat.findIndex(f => f.item.id === focusedItemId);
+        if (focusedFlatIdx < 0) return;
 
         const viewportH   = height - titleRegionH;  // matches inner View's height calc
         const visibleRows = Math.max(1, Math.floor(viewportH / itemH));
@@ -208,16 +220,16 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         const totalH      = flat.length * itemH;
         const maxScroll   = Math.max(0, totalH - viewportH);
         const target      = Math.min(
-            Math.max(0, (focusedIdx - midpoint) * itemH),
+            Math.max(0, (focusedFlatIdx - midpoint) * itemH),
             maxScroll,
         );
         // LV_ANIM_OFF so rapid Down-holds don't lag behind the cursor.
         view.scrollToY(target, false);
-        // flat.length is captured implicitly via the focusedIdx/visibleKey deps
-        // — visibleKey changes whenever flat changes shape. `zoom` is in the
-        // deps because typography + viewport height both depend on it.
+        // flat.length is captured implicitly via the focusedItemId/visibleKey
+        // deps — visibleKey changes whenever flat changes shape. `zoom` is
+        // in the deps because typography + viewport height both depend on it.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [focusedIdx, visibleKey, height, zoom]);
+    }, [focusedItemId, visibleKey, height, zoom]);
 
     // Up / Down nav. No wrap-around — v0.5 doesn't wrap, and wrap on a
     // potentially long scrollable list is disorienting.
@@ -235,47 +247,51 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     // around the typed mismatch.
     const onItemKey = useCallback((e: { key: number }) => {
         (e as any).stopPropagation?.();
-        const refs = getOrderedRefs();
         const group = groupRef.current;
-        if (!group || refs.length === 0) return;
-        const cur = focusedIdxRef.current;
+        const entries = flatRef.current;
+        if (!group || entries.length === 0) return;
+        const curId = focusedItemIdRef.current;
+        const cur   = entries.findIndex(f => f.item.id === curId);
+        if (cur < 0) return;
 
         // Right/Left cycle the focused item's value (Zoom, MIDI routing,
         // Link group, LSDJ mode). Items without onCycle are no-op — focus
         // does NOT move on Right/Left, matching the v0.5 / desktop-app
         // convention where horizontal arrows manipulate the current row.
         if (e.key === ELvKey.LV_KEY_RIGHT) {
-            flatRef.current[cur]?.item.onCycle?.(1);
+            entries[cur]?.item.onCycle?.(1);
             return;
         }
         if (e.key === ELvKey.LV_KEY_LEFT) {
-            flatRef.current[cur]?.item.onCycle?.(-1);
+            entries[cur]?.item.onCycle?.(-1);
             return;
         }
 
-        let next = cur;
-        if (e.key === ELvKey.LV_KEY_DOWN) {
-            if (cur >= refs.length - 1) return;
-            next = cur + 1;
-        } else if (e.key === ELvKey.LV_KEY_UP) {
-            if (cur <= 0) return;
-            next = cur - 1;
-        } else {
-            return;
+        let dir: 1 | -1;
+        if      (e.key === ELvKey.LV_KEY_DOWN) dir = 1;
+        else if (e.key === ELvKey.LV_KEY_UP)   dir = -1;
+        else return;
+        // Walk past any separator rows so navigation skips them.
+        let next = cur + dir;
+        while (next >= 0 && next < entries.length
+               && entries[next].item.kind === "separator") {
+            next += dir;
         }
+        if (next < 0 || next >= entries.length) return;
+        const nextId = entries[next].item.id;
         // Set the ref synchronously BEFORE asking LVGL to move focus, so even
         // if the LV_EVENT_FOCUSED → onItemFocus chain races a subsequent
         // keystroke, the next onItemKey reads the correct `cur`.
-        focusedIdxRef.current = next;
-        if (refs[next]) group.focus(refs[next]);
+        focusedItemIdRef.current = nextId;
+        const nextRef = refsByIdRef.current.get(nextId);
+        if (nextRef) group.focus(nextRef);
     }, []);
 
-    const activate = useCallback((i: number, item: MenuItem) => {
+    const activate = useCallback((item: MenuItem) => {
         // Remember which item the user is acting on so the rebuild useEffect
         // restores focus to the same row (the submenu header keeps the same
-        // index since it doesn't move when its children appear/disappear
-        // below it).
-        focusedIdxRef.current = i;
+        // id when its children appear/disappear below it).
+        focusedItemIdRef.current = item.id;
         if (item.kind === "submenu") {
             // Suppress the stray LV_EVENT_FOCUSED events that fire during
             // the impending mutation phase — see isRebuildingRef comment.
@@ -356,7 +372,49 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                     overflow: "auto",
                 }}
             >
-                {flat.map(({ item, depth }, i) => {
+                {flat.map(({ item, depth }) => {
+                    if (item.kind === "separator") {
+                        // Thin dark-grey line between groups. Not focusable,
+                        // not clickable — naturally excluded from the LVGL
+                        // group since it registers no ref. Outer wrapper is
+                        // transparent and provides vertical breathing room
+                        // via padding (lvgljs has no `margin`); inner View
+                        // is the actual coloured line. Outer height must be
+                        // explicit — lvgljs Views without `height` stretch
+                        // to fill remaining flex space.
+                        const padTB     = r(4);
+                        const lineH     = Math.max(1, r(1));
+                        const wrapperH  = padTB * 2 + lineH;
+                        return (
+                            <View
+                                key={item.id}
+                                style={{
+                                    width: "100%",
+                                    height: wrapperH,
+                                    "background-opacity": 0,
+                                    "border-width": 0,
+                                    "padding-left":  0,
+                                    "padding-right": 0,
+                                    "padding-top":    padTB,
+                                    "padding-bottom": padTB,
+                                }}
+                            >
+                                <View
+                                    style={{
+                                        width: "100%",
+                                        height: lineH,
+                                        "background-color": "#444444",
+                                        "background-opacity": 255,
+                                        "border-width": 0,
+                                        "padding-left":  0,
+                                        "padding-right": 0,
+                                        "padding-top":   0,
+                                        "padding-bottom":0,
+                                    }}
+                                />
+                            </View>
+                        );
+                    }
                     const isSubmenu = item.kind === "submenu";
                     const isOpen    = isSubmenu && openItems.has(item.id);
                     // Submenu items always show a hint glyph. `>` collapsed,
@@ -374,16 +432,16 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                                 else refsByIdRef.current.delete(item.id);
                             }}
                             style={{
-                                "text-color": focusedIdx === i ? "#4fc3f7" : "#ffffff",
+                                "text-color": focusedItemId === item.id ? "#4fc3f7" : "#ffffff",
                                 "font-size": itemFont,
                                 "padding-top":    itemPadVert,
                                 "padding-bottom": itemPadVert,
                                 "padding-left":   basePadLeft + depth * indentStep,
                                 "padding-right":  itemPadRight,
                             }}
-                            onFocus={() => onItemFocus(i)}
+                            onFocus={() => onItemFocus(item.id)}
                             onKey={onItemKey}
-                            onClick={() => activate(i, item)}
+                            onClick={() => activate(item)}
                         >
                             {label}
                         </TextAny>
