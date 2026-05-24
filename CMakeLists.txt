@@ -41,7 +41,19 @@ add_subdirectory(deps/dpf)
 # the parent scope and link it into every variant after dpf_add_plugin.
 # Only SDL_INIT_GAMECONTROLLER is initialised — see src/GamepadManager.cpp.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+if(APPLE)
+    # SDL2.framework from /Library/Frameworks. find_library picks the right
+    # arch slice for each value of CMAKE_OSX_ARCHITECTURES automatically,
+    # so the same universal framework satisfies both single-arch and
+    # universal builds without per-arch wiring.
+    find_library(SDL2_FRAMEWORK SDL2 REQUIRED)
+    add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
+    target_link_libraries(PkgConfig::SDL2 INTERFACE ${SDL2_FRAMEWORK})
+    target_include_directories(PkgConfig::SDL2 INTERFACE
+        ${SDL2_FRAMEWORK}/Headers)
+else()
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+endif()
 
 # Use LVGL from lv_binding_js (single source of truth)
 add_subdirectory(deps/lv_binding_js/deps/lvgl)
