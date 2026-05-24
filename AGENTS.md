@@ -105,6 +105,16 @@ order of preference:
 4. **Pure C++ logic change** — `make -C build retroplug-tests &&
    build/test/retroplug-tests` (Catch2). Covers transport queues,
    `Project`, framebuffer.
+5. **Audio-quality check on a render** — `make -C build reaper-analyze-smoke`
+   (or `reaper-analyze-lsdj-sync`) stages the WAV into the
+   reaper-mcp-server's projects dir; then ask the `reaper` MCP server for
+   loudness/LUFS, frequency content, dynamics, stereo imaging. Use this to
+   catch regressions that aren't "no audio produced" but "audio is wrong"
+   (clipping, channel imbalance, DC offset, spectrum shift). The MCP
+   server itself is installed in the devcontainer image at
+   `/opt/reaper-mcp-server`; the projects dir defaults to
+   `../resources/reaper/projects/` (override with `RETROPLUG_REAPER_DIR`,
+   same convention as `RETROPLUG_RESOURCES_DIR`).
 
 Trust but verify: an agent's claim that "tests pass" should be backed by an
 actual exit-zero from one of these commands.

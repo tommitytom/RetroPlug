@@ -128,5 +128,39 @@ RUN set -eux; \
 	pluginval --version; \
 	clap-validator --version
 
+# --- Reaper: DAW used as an audio-analysis surface via reaper-mcp-server,
+# and as a headless host for ReaScript-driven fixture generation. The Linux
+# build is a self-contained tarball — extract to /opt and symlink the binary.
+ARG REAPER_VERSION=7.73
+RUN set -eux; \
+	REAPER_DIGITS="$(echo "${REAPER_VERSION}" | tr -d '.')"; \
+	mkdir -p /tmp/reaper && cd /tmp/reaper; \
+	curl -fsSL "https://www.reaper.fm/files/${REAPER_VERSION%.*}.x/reaper${REAPER_DIGITS}_linux_x86_64.tar.xz" -o reaper.tar.xz; \
+	tar -xJf reaper.tar.xz; \
+	mkdir -p /opt; \
+	mv reaper_linux_x86_64 /opt/REAPER; \
+	ln -s /opt/REAPER/REAPER/reaper /usr/local/bin/reaper; \
+	cd / && rm -rf /tmp/reaper; \
+	reaper -v || true
+
+# --- uv: Python package/venv manager. Used to install reaper-mcp-server.
+ARG UV_VERSION=0.5.11
+RUN set -eux; \
+	UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 \
+		curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh; \
+	uv --version
+
+# --- reaper-mcp-server: file-based MCP server that parses .RPP files and
+# analyses audio (loudness/frequency/dynamics/stereo). Installed system-wide
+# into /opt with its own venv so it survives container restarts without a
+# per-workspace setup step. tools/reaper-mcp-launch.sh execs it.
+ARG REAPER_MCP_REF=main
+RUN set -eux; \
+	git clone https://github.com/dschuler36/reaper-mcp-server.git /opt/reaper-mcp-server; \
+	cd /opt/reaper-mcp-server; \
+	git checkout "${REAPER_MCP_REF}"; \
+	uv venv --python python3 /opt/reaper-mcp-server/.venv; \
+	uv pip install --python /opt/reaper-mcp-server/.venv/bin/python -e .
+
 # Install wt (git worktree helper)
 RUN ln -s /workspaces/RetroPlug-main/.devcontainer/wt.sh /usr/local/bin/wt
