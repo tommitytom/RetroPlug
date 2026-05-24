@@ -2,6 +2,8 @@ import { View } from "lvgljs-ui";
 
 import { EmulatorTile } from "./EmulatorTile";
 import { autoShape, GridShape, tileWidth, tileHeight } from "./layout";
+import { Menu } from "./menu/Menu";
+import type { MenuTree } from "./menu/menuDefs";
 import type { SystemEntry } from "./plugin/client";
 
 // Tile arrangement options. Mirrors C++ SystemLayout enum
@@ -25,6 +27,13 @@ interface SystemGridProps {
     layout?:    SystemLayout;
     // Integer zoom 1..6. Drives every tile / grid dimension below.
     zoom:       number;
+    // When set, the tile whose id matches is replaced by <Menu> in place,
+    // keeping siblings rendered around it. menuTree/onMenuClose/sinkGroup
+    // must be supplied alongside.
+    menuSystemId?: number | null;
+    menuTree?:     MenuTree;
+    onMenuClose?:  () => void;
+    sinkGroup?:    any;
 }
 
 function shapeFor(layout: SystemLayout, count: number): GridShape {
@@ -76,7 +85,8 @@ export function getTileBounds(index: number,
  * is just a black background and the menu (rendered above by
  * PluginUI) covers the whole window.
  */
-export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoom }: SystemGridProps) {
+export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoom,
+                             menuSystemId, menuTree, onMenuClose, sinkGroup }: SystemGridProps) {
     if (systems.length === 0) return null;
 
     const { width, height, shape } = gridContentSize(systems, layout, zoom);
@@ -133,12 +143,46 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoo
                     }}
                 >
                     {row.map((sys) => (
-                        <EmulatorTile
-                            key={`tile-${sys.id}`}
-                            systemId={sys.id}
-                            focused={sys.id === focusedId || systems.length === 1}
-                            zoom={zoom}
-                        />
+                        // Stable per-system slot wrapper. The slot's position
+                        // in the LVGL row never changes for a given sys.id; we
+                        // swap the slot's single child between EmulatorTile
+                        // and Menu. This dodges lv_binding_js's broken
+                        // insertChildBefore (see Menu.tsx for the full note) —
+                        // appendChild lands in the right place when there's
+                        // at most one existing child.
+                        <View
+                            key={`slot-${sys.id}`}
+                            style={{
+                                width:  tw,
+                                height: th,
+                                "background-opacity": 0,
+                                "border-width": 0,
+                                "border-opacity": 0,
+                                "border-radius": 0,
+                                "padding-left":  0,
+                                "padding-right": 0,
+                                "padding-top":   0,
+                                "padding-bottom":0,
+                                overflow: "hidden",
+                            }}
+                        >
+                            {sys.id === menuSystemId && menuTree && onMenuClose ? (
+                                <Menu
+                                    width={tw}
+                                    height={th}
+                                    zoom={zoom}
+                                    tree={menuTree}
+                                    onClose={onMenuClose}
+                                    sinkGroup={sinkGroup}
+                                />
+                            ) : (
+                                <EmulatorTile
+                                    systemId={sys.id}
+                                    focused={sys.id === focusedId || systems.length === 1}
+                                    zoom={zoom}
+                                />
+                            )}
+                        </View>
                     ))}
                 </View>
             ))}

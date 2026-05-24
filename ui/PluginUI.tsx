@@ -5,8 +5,7 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 import { plugin } from "./plugin/client";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
-import { DEFAULT_ZOOM, tileWidth, tileHeight } from "./layout";
-import { Menu } from "./menu/Menu";
+import { DEFAULT_ZOOM } from "./layout";
 import { StartScreen } from "./menu/StartScreen";
 import { AboutPanel } from "./menu/AboutPanel";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
@@ -29,6 +28,11 @@ function PluginUI() {
     // project-implies-open invariant is enforced in the [systems.length]
     // effect below, so we just need a sensible initial value here.
     const [menuOpen, setMenuOpen] = useState(true);
+    // When the menu is open over a specific tile, this is its system id;
+    // null otherwise. The grid swaps that tile's EmulatorTile for <Menu>
+    // so siblings keep rendering. Stays null on the start screen (no tile
+    // exists to anchor to) — that path renders <StartScreen> instead.
+    const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
     // Kit editor overlays the system grid and menu when open. Esc closes
     // the editor first; only after it's closed does Esc fall through to
     // the menu toggle. Reachable from the main menu's "Kit Editor" item.
@@ -224,8 +228,13 @@ function PluginUI() {
             // stay open per the empty-project invariant, and submenu
             // expand/collapse is handled inline by activating the header.
             if (systemsRef.current.length === 0) return;
-            // Per-instance: Esc toggles the menu.
-            setMenuOpen(o => !o);
+            // Per-instance: Esc toggles the menu. Opening via Esc anchors
+            // it to the currently focused tile; closing leaves the id —
+            // closeMenu / the next opener will overwrite.
+            setMenuOpen(o => {
+                if (!o) setMenuSystemId(focusedIdRef.current);
+                return !o;
+            });
             return;
         }
         // Kit editor / About consume their own key events through their child group.
@@ -296,6 +305,7 @@ function PluginUI() {
                     void plugin.$notify("setFocus", sys.id);
                 }
                 if (button === MOUSE_BUTTON_RIGHT && !menuOpenRef.current) {
+                    setMenuSystemId(sys.id);
                     setMenuOpen(true);
                 }
                 return;
@@ -335,7 +345,10 @@ function PluginUI() {
         // Don't force-close if there are no instances (start screen's empty-
         // project invariant). The [systems.length] effect re-opens the menu
         // when length goes back to 0.
-        if (systemsRef.current.length > 0) setMenuOpen(false);
+        if (systemsRef.current.length > 0) {
+            setMenuOpen(false);
+            setMenuSystemId(null);
+        }
     }, []);
 
     const openKitEditor = useCallback(() => {
@@ -414,17 +427,17 @@ function PluginUI() {
                     activeGamepadBindings={activeGamepadBindings}
                     sinkGroup={sinkGroupRef.current}
                 />
-            ) : menuOpen ? (
-                <Menu
-                    width={tileWidth(zoom)}
-                    height={tileHeight(zoom)}
+            ) : (
+                <SystemGrid
+                    systems={systems}
+                    focusedId={focusedId}
+                    layout={SystemLayout.Auto}
                     zoom={zoom}
-                    tree={instanceTree}
-                    onClose={closeMenu}
+                    menuSystemId={menuOpen ? menuSystemId : null}
+                    menuTree={instanceTree}
+                    onMenuClose={closeMenu}
                     sinkGroup={sinkGroupRef.current}
                 />
-            ) : (
-                <SystemGrid systems={systems} focusedId={focusedId} layout={SystemLayout.Auto} zoom={zoom} />
             )}
         </View>
     );
