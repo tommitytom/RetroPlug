@@ -10,8 +10,42 @@
 // has no RPC for them yet. See the menu redesign plan for the follow-up list.
 
 import { plugin, type SystemEntry } from "../plugin/client";
+import {
+    GB_BUTTONS, formatBindingList, type BindingsEditor,
+} from "../useBindingsEditor";
 
-export type MenuItemKind = "action" | "submenu" | "separator";
+export type MenuItemKind =
+    | "action"     // simple onSelect
+    | "submenu"    // expandable parent with children
+    | "separator"  // visual divider, not focusable
+    | "capture"    // press Enter to bind next key / gamepad button
+    | "prompt";    // press Enter to open inline text-input overlay
+
+export interface CaptureSpec {
+    // Which event channel to listen on while capturing.
+    kind:      "keyboard" | "gamepad";
+    // String to show after the item label (e.g. current binding list).
+    value:     string;
+    // Called when a key / button is captured.
+    onCapture: (source: string) => void;
+    // Called when Delete / Backspace is pressed on the focused row.
+    onClear:   () => void;
+}
+
+export interface PromptSpec {
+    // Heading shown above the input / confirmation message.
+    title:        string;
+    // Initial text-input value (ignored for confirm prompts).
+    initial?:     string;
+    // Hint shown below the input. Defaults to "Enter to confirm | Esc to cancel".
+    hint?:        string;
+    // Synchronous validation before submit. Return error string or null.
+    validate?:    (value: string) => string | null;
+    // Called on Enter. Return error string (keeps prompt open) or null (closes).
+    onConfirm:    (value: string) => Promise<string | null> | string | null;
+    // True = yes/no prompt (no text input). Enter confirms, Esc cancels.
+    confirm?:     boolean;
+}
 
 export interface MenuItem {
     id:        string;
@@ -24,8 +58,11 @@ export interface MenuItem {
     // (Left = previous). Items without onCycle are no-op on Right/Left.
     onCycle?:  (direction: 1 | -1) => void;
     // True = activating this item should NOT close the menu (e.g. cycling
-    // labels like "Link group" / "MIDI routing" / "LSDJ mode").
+    // labels like "Link group" / "MIDI routing" / "LSDJ mode"). Implicit
+    // for capture / prompt / submenu / separator items.
     keepOpen?: boolean;
+    capture?:  CaptureSpec;      // present iff kind === "capture"
+    prompt?:   PromptSpec;       // present iff kind === "prompt"
 }
 
 // Per-build counter so each separator gets a unique id within a single
@@ -62,14 +99,13 @@ export interface MenuContext {
     openKitEditor:  () => void;
     // Called by Menu when the user picks About.
     openAbout:      () => void;
-    // Called by the Settings submenu's bindings-editor entries.
-    openKeyboardEditor: () => void;
-    openGamepadEditor:  () => void;
-    // Bindings profile state (sourced from plugin.getUserConfig()). Empty
-    // arrays / strings before the first fetch lands.
-    availableProfiles:       string[];
-    activeKeyboardBindings:  string;
-    activeGamepadBindings:   string;
+    // Bindings editors (one per channel). Own all of their own state +
+    // RPC calls — see ui/useBindingsEditor.ts. The Settings submenu
+    // builds two inline submenus from these (one for keyboard, one for
+    // gamepad). `availableProfiles` / `activeKeyboardBindings` /
+    // `activeGamepadBindings` are present on each editor object.
+    keyboardEditor: BindingsEditor;
+    gamepadEditor:  BindingsEditor;
 }
 
 // Mirrors C++ MidiRouting enum (src/project/ProjectConfig.hpp).
@@ -304,49 +340,97 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     return items;
 }
 
-function settingsChildren(ctx: MenuContext): MenuItem[] {
-    const profiles = ctx.availableProfiles;
-    const kbActive = ctx.activeKeyboardBindings;
-    const padActive = ctx.activeGamepadBindings;
-    const cycleProfile = (current: string, dir: 1 | -1): string => {
-        if (profiles.length === 0) return current;
-        const idx = profiles.indexOf(current);
-        const len = profiles.length;
-        const next = idx < 0
-            ? (dir > 0 ? 0 : len - 1)
-            : cycleInt(idx, 0, len - 1, dir);
-        return profiles[next];
-    };
-    return [
-        { id: "keyboardProfile",
-          label: `Keyboard profile: ${kbActive || "-"}`,
+// Build a "Keyboard bindings" / "Gamepad bindings" submenu from one
+// BindingsEditor instance. The submenu contains:
+//   1. Profile cycler (Left/Right cycles browsed profile, Enter makes
+//      it the live-active profile).
+//   2. One capture row per GB button (8 total). Enter opens capture
+//      mode; Backspace/Delete clears the binding.
+//   3. Save / Revert / Save As / Rename / Duplicate / Delete actions.
+function bindingsSubmenu(editor: BindingsEditor): MenuItem {
+    const k = editor.kind;
+    const idp = `bindings:${k}`;
+    const title = k === "keyboard" ? "Keyboard bindings" : "Gamepad bindings";
+    const isActive  = editor.profileName === editor.activeProfile && !!editor.profileName;
+    const activeTag = isActive ? " [active]" : "";
+    const dirtyTag  = editor.dirty ? "  *" : "";
+    const profileLabel = `Profile: ${editor.profileName || "-"}${activeTag}${dirtyTag}`;
+
+    const children: MenuItem[] = [
+        { id: `${idp}:profile`, label: profileLabel,
           kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleProfile(kbActive, 1);
-              if (next !== kbActive) void plugin.$notify("setActiveKeyboardBindings", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleProfile(kbActive, dir);
-              if (next !== kbActive) void plugin.$notify("setActiveKeyboardBindings", next);
-          } },
-        { id: "padProfile",
-          label: `Pad profile: ${padActive || "-"}`,
-          kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleProfile(padActive, 1);
-              if (next !== padActive) void plugin.$notify("setActiveGamepadBindings", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleProfile(padActive, dir);
-              if (next !== padActive) void plugin.$notify("setActiveGamepadBindings", next);
-          } },
-        { id: "audioDevice",     label: "Audio device: -",     kind: "action", onSelect: stub("Audio device"),     keepOpen: true },
+          onSelect: () => { void editor.makeActive(); },
+          onCycle: editor.cycleProfile },
         sep(),
-        { id: "editKeyboard",    label: "Keyboard bindings...", kind: "action",
-          onSelect: () => ctx.openKeyboardEditor() },
-        { id: "editGamepad",     label: "Gamepad bindings...",  kind: "action",
-          onSelect: () => ctx.openGamepadEditor() },
-        { id: "openSettings",    label: "Open settings folder", kind: "action",
+    ];
+
+    for (const btn of GB_BUTTONS) {
+        const display = formatBindingList(editor.channel[btn]);
+        children.push({
+            id: `${idp}:btn:${btn}`,
+            label: `${btn}: ${display}`,
+            kind: "capture", keepOpen: true,
+            capture: {
+                kind: k,
+                value: display,
+                onCapture: (source) => editor.applyCapture(btn, source),
+                onClear:   ()        => editor.clearBinding(btn),
+            },
+        });
+    }
+
+    children.push(
+        sep(),
+        { id: `${idp}:save`, label: editor.dirty ? "Save  *" : "Save",
+          kind: "action", keepOpen: true,
+          onSelect: () => { void editor.save(); } },
+        { id: `${idp}:revert`, label: "Revert",
+          kind: "action", keepOpen: true,
+          onSelect: () => { editor.revert(); } },
+        { id: `${idp}:saveAs`, label: "Save as...",
+          kind: "prompt", keepOpen: true,
+          prompt: {
+              title: `Save ${k} bindings as:`,
+              initial: "",
+              onConfirm: (v) => editor.saveAs(v.trim()),
+          } },
+        { id: `${idp}:rename`, label: "Rename...",
+          kind: "prompt", keepOpen: true,
+          prompt: {
+              title: `Rename "${editor.profileName}" to:`,
+              initial: editor.profileName,
+              onConfirm: (v) => editor.rename(v.trim()),
+          } },
+        { id: `${idp}:duplicate`, label: "Duplicate",
+          kind: "action", keepOpen: true,
+          onSelect: () => { void editor.duplicate(); } },
+        { id: `${idp}:delete`,
+          label: editor.canDelete
+              ? `Delete "${editor.profileName}"...`
+              : `Delete (switch active first)`,
+          kind: editor.canDelete ? "prompt" : "action", keepOpen: true,
+          // Hint pressing this row when disabled does nothing useful.
+          onSelect: editor.canDelete ? undefined : () => {},
+          prompt: editor.canDelete ? {
+              title: `Delete profile "${editor.profileName}"?`,
+              hint:  `Enter to delete  |  Esc to cancel`,
+              confirm: true,
+              onConfirm: () => editor.deleteProfile(),
+          } : undefined,
+        },
+    );
+
+    return { id: idp, label: title, kind: "submenu", children };
+}
+
+function settingsChildren(ctx: MenuContext): MenuItem[] {
+    return [
+        bindingsSubmenu(ctx.keyboardEditor),
+        bindingsSubmenu(ctx.gamepadEditor),
+        sep(),
+        { id: "audioDevice",  label: "Audio device: -", kind: "action",
+          onSelect: stub("Audio device"), keepOpen: true },
+        { id: "openSettings", label: "Open settings folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];
 }

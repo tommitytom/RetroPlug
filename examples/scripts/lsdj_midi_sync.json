@@ -6,7 +6,7 @@
   "bpm": 120.0,
   "transport_running": false,
   "systems": [
-    { "rom": "../resources/roms/lsdj9_4_2.gb" }
+    { "rom": "../resources/roms/lsdj/lsdj9_4_2.gb" }
   ],
   "events": [
     { "at_ms": 15000, "screenshot": "00_post_boot", "system": 0 },

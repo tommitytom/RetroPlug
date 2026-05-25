@@ -1,8 +1,12 @@
 import { View, Text, ELvKey } from "lvgljs-ui";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { createGroup, setKeyboardGroup } from "lvgljs";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createGroup, off, on, setKeyboardGroup } from "lvgljs";
 
-import type { MenuItem, MenuTree } from "./menuDefs";
+import type { MenuItem, MenuTree, PromptSpec } from "./menuDefs";
+import {
+    KEY_BACKSPACE, KEY_ENTER, KEY_ESCAPE, dpfKeyToName,
+} from "../../runtime/lvgljs/input";
+import { isValidProfileChar } from "../useBindingsEditor";
 
 // Cast around lvgljs-ui's Text type — it doesn't expose ref / onFocus / onKey
 // in its public typings. Same trick the KitEditor and old MenuOverlay use.
@@ -46,6 +50,14 @@ const ITEM_PAD_RIGHT_BASE  = 4;
 const OUTER_PAD_LR_BASE    = 8;
 const OUTER_PAD_TB_BASE    = 6;
 
+interface PromptState {
+    itemId:   string;
+    spec:     PromptSpec;
+    value:    string;
+    error:    string;
+    pending:  boolean;
+}
+
 export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProps) {
     // Linear scale relative to the historical zoom=3 baseline.
     const s = zoom / 3;
@@ -61,6 +73,15 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     const outerPadLR     = r(OUTER_PAD_LR_BASE);
     const outerPadTB     = r(OUTER_PAD_TB_BASE);
     const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
+    // Capture mode: id of the capture-kind item that's listening for the
+    // next "key" / "gamepad-button" event. Null otherwise.
+    const [capturingId, setCapturingId] = useState<string | null>(null);
+    const capturingIdRef = useRef<string | null>(null);
+    useEffect(() => { capturingIdRef.current = capturingId; }, [capturingId]);
+    // Inline prompt overlay state. Null = no overlay.
+    const [promptState, setPromptState] = useState<PromptState | null>(null);
+    const promptStateRef = useRef<PromptState | null>(null);
+    useEffect(() => { promptStateRef.current = promptState; }, [promptState]);
     // Visual highlight state. Updated by LV_EVENT_FOCUSED via onItemFocus so
     // the blue text-color tracks whichever widget LVGL actually has focused.
     // Tracked by item id (not flat-array index) so non-focusable separator
@@ -247,12 +268,23 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     // around the typed mismatch.
     const onItemKey = useCallback((e: { key: number }) => {
         (e as any).stopPropagation?.();
+        // Modal: ignore arrow nav while capture / prompt is active. The
+        // global "key" subscriber already handles input for those modes.
+        if (capturingIdRef.current || promptStateRef.current) return;
         const group = groupRef.current;
         const entries = flatRef.current;
         if (!group || entries.length === 0) return;
         const curId = focusedItemIdRef.current;
         const cur   = entries.findIndex(f => f.item.id === curId);
         if (cur < 0) return;
+
+        // Capture rows: Backspace / Delete clears the binding in place.
+        const focused = entries[cur]?.item;
+        if (focused?.kind === "capture" && focused.capture
+            && (e.key === ELvKey.LV_KEY_DEL || e.key === ELvKey.LV_KEY_BACKSPACE)) {
+            focused.capture.onClear();
+            return;
+        }
 
         // Right/Left cycle the focused item's value (Zoom, MIDI routing,
         // Link group, LSDJ mode). Items without onCycle are no-op — focus
@@ -287,7 +319,34 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         if (nextRef) group.focus(nextRef);
     }, []);
 
+    // Mirror the most recent tree into a ref so the "key" subscriber (which
+    // is mounted once with [] deps) can find capture/prompt items by id
+    // without itself being recreated on every parent re-render.
+    const treeRef = useRef<MenuTree>(tree);
+    treeRef.current = tree;
+
+    // Walks both the open and unopened branches — capture/prompt items the
+    // user activated must still be findable while their submenu is open.
+    const findItem = useCallback((id: string): MenuItem | null => {
+        const walk = (items: MenuItem[]): MenuItem | null => {
+            for (const it of items) {
+                if (it.id === id) return it;
+                if (it.children) {
+                    const found = walk(it.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        return walk(treeRef.current.items);
+    }, []);
+
     const activate = useCallback((item: MenuItem) => {
+        // Capture / prompt mode owns input; click-events on focused rows
+        // (Enter → LVGL CLICKED → here) are swallowed so the just-captured
+        // key doesn't immediately re-arm capture for the same item.
+        if (capturingIdRef.current || promptStateRef.current) return;
+
         // Remember which item the user is acting on so the rebuild useEffect
         // restores focus to the same row (the submenu header keeps the same
         // id when its children appear/disappear below it).
@@ -304,9 +363,144 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
             });
             return;
         }
+        if (item.kind === "capture" && item.capture) {
+            setCapturingId(item.id);
+            return;
+        }
+        if (item.kind === "prompt" && item.prompt) {
+            setPromptState({
+                itemId:  item.id,
+                spec:    item.prompt,
+                value:   item.prompt.initial ?? "",
+                error:   "",
+                pending: false,
+            });
+            return;
+        }
         item.onSelect?.();
-        if (!item.keepOpen) onClose();
+        const implicitKeepOpen = item.kind === "capture" || item.kind === "prompt";
+        if (!item.keepOpen && !implicitKeepOpen) onClose();
     }, [onClose]);
+
+    // Confirm the current prompt. Runs validate() synchronously, then
+    // onConfirm() (which may be async). On success closes the overlay;
+    // on error updates `error` and leaves the overlay open. `pending`
+    // gates re-entrancy so repeated Enter presses don't fire concurrent
+    // RPCs.
+    const confirmPrompt = useCallback(async () => {
+        const ps = promptStateRef.current;
+        if (!ps || ps.pending) return;
+        const v = ps.value;
+        if (ps.spec.validate) {
+            const err = ps.spec.validate(v);
+            if (err) {
+                setPromptState(p => p ? { ...p, error: err } : null);
+                return;
+            }
+        }
+        setPromptState(p => p ? { ...p, pending: true } : null);
+        try {
+            const err = await ps.spec.onConfirm(v);
+            if (err) {
+                setPromptState(p => p ? { ...p, error: err, pending: false } : null);
+                return;
+            }
+            setPromptState(null);
+        } catch (e) {
+            console.warn("[menu:prompt] onConfirm threw", e);
+            setPromptState(p => p ? { ...p, error: "Unexpected error.", pending: false } : null);
+        }
+    }, []);
+
+    // Global key channel: Esc routing + capture-mode binding + prompt
+    // editing. Mounted once with a stable wrapper that always reads the
+    // latest closure via refs (same pattern as the rest of the codebase
+    // for raw DPF events).
+    const keyHandlerRef = useRef<(key: number, press: boolean) => void>(() => {});
+    keyHandlerRef.current = (key, press) => {
+        if (!press) return;
+
+        // 1. Prompt overlay owns input.
+        const ps = promptStateRef.current;
+        if (ps) {
+            if (key === KEY_ESCAPE) { setPromptState(null); return; }
+            if (key === KEY_ENTER)  { void confirmPrompt();  return; }
+            if (key === KEY_BACKSPACE) {
+                if (ps.spec.confirm) return;
+                setPromptState(p => p
+                    ? { ...p, value: p.value.slice(0, -1), error: "" }
+                    : null);
+                return;
+            }
+            if (ps.spec.confirm) return;   // confirm dialogs: Y/N only
+            if (key >= 0x20 && key <= 0x7E) {
+                const ch = String.fromCharCode(key);
+                if (isValidProfileChar(ch)) {
+                    setPromptState(p => p
+                        ? { ...p, value: (p.value + ch).slice(0, 48), error: "" }
+                        : null);
+                }
+            }
+            return;
+        }
+
+        // 2. Capture mode: next key becomes the binding (keyboard only).
+        const capId = capturingIdRef.current;
+        if (capId) {
+            if (key === KEY_ESCAPE) { setCapturingId(null); return; }
+            const item = findItem(capId);
+            if (!item?.capture) { setCapturingId(null); return; }
+            if (item.capture.kind !== "keyboard") return;  // wait for gamepad
+            const name = dpfKeyToName(key);
+            if (!name) return;
+            item.capture.onCapture(name);
+            setCapturingId(null);
+            return;
+        }
+
+        // 3. Idle: Esc closes the menu. The Esc-opens-the-menu path lives
+        //    in PluginUI; here we handle the close half so capture / prompt
+        //    can intercept Esc before it ever reaches the parent.
+        if (key === KEY_ESCAPE) onClose();
+    };
+
+    const padHandlerRef = useRef<(pad: number, button: string, pressed: boolean) => void>(() => {});
+    padHandlerRef.current = (_pad, button, pressed) => {
+        if (!pressed) return;
+        const capId = capturingIdRef.current;
+        if (!capId) return;
+        const item = findItem(capId);
+        if (!item?.capture || item.capture.kind !== "gamepad") return;
+        item.capture.onCapture(button);
+        setCapturingId(null);
+    };
+
+    useEffect(() => {
+        const keyWrap = (k: number, p: boolean) => keyHandlerRef.current(k, p);
+        const padWrap = (p: number, b: string, pr: boolean) => padHandlerRef.current(p, b, pr);
+        on("key", keyWrap);
+        on("gamepad-button", padWrap);
+        return () => {
+            off("key", keyWrap);
+            off("gamepad-button", padWrap);
+        };
+    }, []);
+
+    // True when Menu is "modal" — capture or prompt is active and Esc
+    // shouldn't propagate to PluginUI's menu-toggle. Exposed via a ref so
+    // PluginUI can check it without subscribing to Menu state. Currently
+    // PluginUI defers Esc handling whenever the menu is open at all, so
+    // this isn't strictly needed — kept here for future read-out.
+    const isModal = capturingId != null || promptState != null;
+    void isModal;
+
+    // Clear capture mode on row navigation or when the focused item changes
+    // — leaving capture armed on an off-screen row is confusing.
+    useEffect(() => {
+        if (capturingId && focusedItemId !== capturingId) {
+            setCapturingId(null);
+        }
+    }, [focusedItemId, capturingId]);
 
     return (
         <View
@@ -417,13 +611,30 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                     }
                     const isSubmenu = item.kind === "submenu";
                     const isOpen    = isSubmenu && openItems.has(item.id);
+                    const isCapturing = item.kind === "capture"
+                        && capturingId === item.id;
                     // Submenu items always show a hint glyph. `>` collapsed,
                     // `v` expanded. Children appearing inline below ALSO
                     // signals expanded state, but the glyph helps users
-                    // who're scanning quickly.
-                    const label = isSubmenu
-                        ? `${item.label} ${isOpen ? "v" : ">"}`
-                        : item.label;
+                    // who're scanning quickly. Capture items in capture mode
+                    // swap their stored value for a "Press a key..." prompt
+                    // so the user can see what's expected.
+                    let label = item.label;
+                    if (isSubmenu) {
+                        label = `${item.label} ${isOpen ? "v" : ">"}`;
+                    } else if (isCapturing && item.capture) {
+                        // Strip the value suffix (everything after the first
+                        // ": ") and replace with the capture prompt.
+                        const colonIdx = item.label.indexOf(": ");
+                        const head = colonIdx >= 0 ? item.label.slice(0, colonIdx) : item.label;
+                        label = `${head}: Press a ${item.capture.kind === "keyboard" ? "key" : "button"}...`;
+                    }
+                    // Capture-mode rows render in orange to distinguish them
+                    // from a plain focused row (which is the same cyan as
+                    // every other selection in the menu).
+                    const textColor = isCapturing
+                        ? "#ffb74d"
+                        : (focusedItemId === item.id ? "#4fc3f7" : "#ffffff");
                     return (
                         <TextAny
                             key={item.id}
@@ -432,7 +643,7 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                                 else refsByIdRef.current.delete(item.id);
                             }}
                             style={{
-                                "text-color": focusedItemId === item.id ? "#4fc3f7" : "#ffffff",
+                                "text-color": textColor,
                                 "font-size": itemFont,
                                 "padding-top":    itemPadVert,
                                 "padding-bottom": itemPadVert,
@@ -448,6 +659,78 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                     );
                 })}
             </View>
+            {promptState && (() => {
+                // Inline modal overlay anchored top-centre, sized to the
+                // menu width minus a small inset. Same colour palette as
+                // the rest of the menu (cyan accent + neutral panels).
+                const promptW = Math.max(120, width - r(32));
+                const promptH = r(promptState.spec.confirm ? 72 : 96);
+                const promptX = Math.max(0, Math.floor((width  - promptW) / 2));
+                const promptY = titleRegionH + r(8);
+                const fontSize = r(14);
+                const rowH     = r(22);
+                const sp = promptState.spec;
+                const hint = sp.hint
+                    ?? (sp.confirm
+                        ? "Enter to confirm  |  Esc to cancel"
+                        : "Enter to confirm  |  Esc to cancel  |  Backspace to erase");
+                return (
+                    <View
+                        style={{
+                            position: "absolute",
+                            left: promptX,
+                            top:  promptY,
+                            width:  promptW,
+                            height: promptH,
+                            "background-color": "#161628",
+                            "background-opacity": 255,
+                            "border-width": 1,
+                            "border-color": "#4fc3f7",
+                            "border-opacity": 255,
+                            "padding-left":  r(8),
+                            "padding-right": r(8),
+                            "padding-top":   r(6),
+                            "padding-bottom":r(6),
+                            display: "flex",
+                            "flex-direction": "column",
+                            "row-spacing": r(4),
+                        }}
+                    >
+                        <Text style={{
+                            "text-color": "#4fc3f7",
+                            "font-size":  fontSize,
+                            width:        "100%",
+                            height:       rowH,
+                        }}>
+                            {sp.title}
+                        </Text>
+                        {!sp.confirm && (
+                            <Text style={{
+                                "text-color": "#ffffff",
+                                "background-color": "#1a1a2e",
+                                "background-opacity": 255,
+                                "font-size": fontSize,
+                                width:       "100%",
+                                height:      rowH,
+                                "padding-left":  r(4),
+                                "padding-right": r(4),
+                                "padding-top":   r(2),
+                                "padding-bottom":r(2),
+                            }}>
+                                {promptState.value + "_"}
+                            </Text>
+                        )}
+                        <Text style={{
+                            "text-color": promptState.error ? "#ef5350" : "#888888",
+                            "font-size":  fontSize,
+                            width:        "100%",
+                            height:       rowH,
+                        }}>
+                            {promptState.error || hint}
+                        </Text>
+                    </View>
+                );
+            })()}
         </View>
     );
 }

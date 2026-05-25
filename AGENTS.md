@@ -209,8 +209,8 @@ routing, LSDj link-cable sync), use the `systems: [...]` form:
 {
   "duration_ms": 20000,
   "systems": [
-    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 },
-    { "rom": "../resources/roms/lsdj9_4_2.gb", "link_group": 1 }
+    { "rom": "../resources/roms/lsdj/lsdj9_4_2.gb", "link_group": 1 },
+    { "rom": "../resources/roms/lsdj/lsdj9_4_2.gb", "link_group": 1 }
   ],
   "midi_routing": "SendToAll",
   "events": [
@@ -430,19 +430,20 @@ Pick `--mode fts` for exact LSDj terminology ("FX command", "groove",
 
 ## LSDJ Arduinoboy build (aboy)
 
-The sibling [../resources/roms/](../resources/roms/) directory (outside the
-repo) ships two LSDJ ROMs plus a Nanoloop GBA ROM by default. The two
-`LsdjSyncMode` families need different ROMs:
+All LSDj ROMs live under [../resources/roms/lsdj/](../resources/roms/lsdj/)
+(outside the repo). Two canonical builds are required for the headless test
+matrix; the two `LsdjSyncMode` families need different ROMs:
 
 | ROM | Title @0x134 | Supported `lsdj_sync_mode` values |
 | --- | --- | --- |
-| `lsdj9_4_2.gb` | `LSDj-v9.4.2` (stock) | `Off`, `MidiSync`, `MidiMap`, `KeyboardMidi`, `MidiPassthrough` |
-| `lsdj9_3_3-arduinoboy.gb` | `LSDj-v9.3.3aboy` | All of the above plus `MidiSyncArduinoboy` and `ArduinoboyMaster` |
+| `lsdj/lsdj9_4_2.gb` | `LSDj-v9.4.2` (stock) | `Off`, `MidiSync`, `MidiMap`, `KeyboardMidi`, `MidiPassthrough` |
+| `lsdj/lsdj9_3_3-arduinoboy.gb` | `LSDj-v9.3.3aboy` | All of the above plus `MidiSyncArduinoboy` and `ArduinoboyMaster` |
 
 Running `python3 ../resources/download_lsdj.py` (see §"LSDj manual lookup")
-adds every published LSDj build alongside these — stable releases land as
+populates the full archive into the same directory — stable releases as
 `lsdj<ver>.gb`, arduinoboy variants as `lsdj<ver>-arduinoboy.gb`, develop
-snapshots as `lsdj<ver>-develop.gb`.
+snapshots as `lsdj<ver>-develop.gb`. Non-LSDj ROMs (e.g. Nanoloop GBA, mGB,
+n8-midi) live one level up at `../resources/roms/`.
 
 The sniffer ([src/system/sameboy/RomSniffer.cpp](src/system/sameboy/RomSniffer.cpp))
 treats both ROMs as `RomKind::Lsdj` (any title starting with `LSDj`). The role's
