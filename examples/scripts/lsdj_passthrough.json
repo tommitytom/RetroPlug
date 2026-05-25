@@ -5,7 +5,7 @@
   "out_wav": "/tmp/lsdj-passthrough.wav",
   "systems": [
     {
-      "rom": "../resources/roms/lsdj9_4_2.gb",
+      "rom": "../resources/roms/lsdj/lsdj9_4_2.gb",
       "lsdj_sync_mode": "MidiPassthrough"
     }
   ],

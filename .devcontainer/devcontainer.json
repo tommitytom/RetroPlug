@@ -22,6 +22,9 @@
   "mounts": [
     "source=retroplug-claude-state,target=/var/claude-state,type=volume"
   ],
+  "containerEnv": {
+    "TZ": "${localEnv:TZ}"
+  },
   "runArgs": [
     "--init",
     "--shm-size=512m",

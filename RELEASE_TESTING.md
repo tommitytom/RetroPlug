@@ -20,7 +20,7 @@ ploughing through.
 ## 1. Plugin formats load
 
 In your DAW of choice, scan plugins and instantiate each format. For
-each, load `lsdj9_4_2.gb`, hit play in the DAW, confirm audio.
+each, load `roms/lsdj/lsdj9_4_2.gb`, hit play in the DAW, confirm audio.
 
 - [ ] CLAP
 - [ ] VST3
@@ -34,8 +34,8 @@ In one instance, swap through each ROM kind via the menu. Each should
 boot, render frames, and (where applicable) make sound.
 
 - [ ] Generic GB ROM (any game)
-- [ ] LSDJ stock (`lsdj9_4_2.gb`)
-- [ ] LSDJ aboy (`lsdj9_3_3-arduinoboy.gb`)
+- [ ] LSDJ stock (`roms/lsdj/lsdj9_4_2.gb`)
+- [ ] LSDJ aboy (`roms/lsdj/lsdj9_3_3-arduinoboy.gb`)
 - [ ] mGB
 - [ ] GBA ROM
 - [ ] NES ROM (Mesen)

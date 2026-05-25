@@ -7,7 +7,7 @@
   "transport_running": false,
   "systems": [
     {
-      "rom": "../resources/roms/lsdj9_3_3-arduinoboy.gb",
+      "rom": "../resources/roms/lsdj/lsdj9_3_3-arduinoboy.gb",
       "lsdj_sync_mode": "MidiSyncArduinoboy"
     }
   ],

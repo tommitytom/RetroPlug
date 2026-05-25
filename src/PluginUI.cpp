@@ -488,6 +488,51 @@ protected:
         return true;
     }
 
+    // Desktop wheel-to-scroll. The default LVGLWidget path feeds the wheel
+    // into an ENCODER indev — LVGL interprets ticks as group-focus
+    // navigation, which bounces focus through unrelated <View>s instead of
+    // scrolling the panel under the pointer. Hit-test directly, find the
+    // nearest scrollable ancestor with content overflow, scroll it.
+    bool onScroll(const ScrollEvent& ev) override
+    {
+        lv_obj_t* const scr = lv_screen_active();
+        if (scr != nullptr) {
+            lv_point_t p = {
+                static_cast<int32_t>(ev.pos.getX()),
+                static_cast<int32_t>(ev.pos.getY()),
+            };
+            lv_obj_t* hit = lv_indev_search_obj(scr, &p);
+            const int32_t step = 24;
+            const int32_t dy   = static_cast<int32_t>(ev.delta.getY() * step);
+            const int32_t dx   = static_cast<int32_t>(ev.delta.getX() * step);
+            for (lv_obj_t* it = hit; it != nullptr; it = lv_obj_get_parent(it)) {
+                if (!lv_obj_has_flag(it, LV_OBJ_FLAG_SCROLLABLE)) continue;
+                const int32_t st = lv_obj_get_scroll_top(it);
+                const int32_t sb = lv_obj_get_scroll_bottom(it);
+                const int32_t sl = lv_obj_get_scroll_left(it);
+                const int32_t sr = lv_obj_get_scroll_right(it);
+                const bool vScroll = (dy != 0) && (st + sb > 0);
+                const bool hScroll = (dx != 0) && (sl + sr > 0);
+                if (vScroll || hScroll) {
+                    // Sign convention: scroll_by_bounded's dy is opposite of
+                    // the visible scroll direction (positive dy = scroll
+                    // up). DPF delta.y > 0 = wheel up = pass dy as-is. X is
+                    // opposite again (DPF delta.x > 0 = scroll right = LVGL
+                    // negative dx).
+                    lv_obj_scroll_by_bounded(it,
+                                             hScroll ? -dx : 0,
+                                             vScroll ?  dy : 0,
+                                             LV_ANIM_OFF);
+                    return true;
+                }
+            }
+        }
+        // Nothing scrollable under the cursor — swallow rather than fall
+        // through to UI::onScroll, which would feed the encoder indev and
+        // shuffle group focus across unrelated widgets.
+        return true;
+    }
+
     bool onMouse(const MouseEvent& ev) override
     {
         // Forward to LVGL so the framework's pointer routing (focus, onClick,

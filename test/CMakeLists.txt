@@ -92,7 +92,7 @@ catch_discover_tests(retroplug-mesen-tests)
 # retroplug-tests stays free of SameBoy linkage.
 #
 # Requires a Game Boy ROM at the path baked into RETROPLUG_TEST_GB_ROM. The
-# default is the sibling resources tree (`../resources/roms/lsdj9_4_2.gb`)
+# default is the sibling resources tree (`../resources/roms/lsdj/lsdj9_4_2.gb`)
 # documented in AGENTS.md. Tests skip gracefully when the file is missing.
 # -----------------------------------------------------------------------------
 add_executable(retroplug-sameboy-tests
@@ -114,7 +114,7 @@ target_include_directories(retroplug-sameboy-tests PRIVATE
 )
 
 set(_RETROPLUG_TEST_GB_ROM
-    "${CMAKE_SOURCE_DIR}/../resources/roms/lsdj9_4_2.gb"
+    "${CMAKE_SOURCE_DIR}/../resources/roms/lsdj/lsdj9_4_2.gb"
     CACHE FILEPATH
     "Path to a Game Boy ROM used by retroplug-sameboy-tests. Default is the \
 sibling resources tree documented in AGENTS.md.")

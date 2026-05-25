@@ -3,20 +3,18 @@ import { useCallback } from "react";
 import { tileWidth, tileHeight } from "../layout";
 import { Menu } from "./Menu";
 import { buildStartMenu, type RecentEntry } from "./menuDefs";
+import type { BindingsEditor } from "../useBindingsEditor";
 
 interface StartScreenProps {
-    midiRouting:            number;
-    audioRouting:           number;
-    layout:                 number;
-    zoom:                   number;
-    recentFiles:            RecentEntry[];
-    openAbout:              () => void;
-    openKeyboardEditor:     () => void;
-    openGamepadEditor:      () => void;
-    availableProfiles:      string[];
-    activeKeyboardBindings: string;
-    activeGamepadBindings:  string;
-    sinkGroup:              any;
+    midiRouting:     number;
+    audioRouting:    number;
+    layout:          number;
+    zoom:            number;
+    recentFiles:     RecentEntry[];
+    openAbout:       () => void;
+    keyboardEditor:  BindingsEditor;
+    gamepadEditor:   BindingsEditor;
+    sinkGroup:       any;
 }
 
 // Empty-project landing. Renders the start menu inside a tile-sized panel,
@@ -26,9 +24,7 @@ interface StartScreenProps {
 // — see Menu.tsx). No pane-stack, no Back item.
 export function StartScreen({
     midiRouting, audioRouting, layout, zoom, recentFiles, openAbout,
-    openKeyboardEditor, openGamepadEditor,
-    availableProfiles, activeKeyboardBindings, activeGamepadBindings,
-    sinkGroup,
+    keyboardEditor, gamepadEditor, sinkGroup,
 }: StartScreenProps) {
     // Esc on the start screen must NOT close the menu (the empty-project
     // invariant — see PluginUI's useKeyboard handler, which short-circuits
@@ -46,11 +42,8 @@ export function StartScreen({
         recentFiles,
         openKitEditor: () => { /* unreachable from start menu */ },
         openAbout,
-        openKeyboardEditor,
-        openGamepadEditor,
-        availableProfiles,
-        activeKeyboardBindings,
-        activeGamepadBindings,
+        keyboardEditor,
+        gamepadEditor,
     });
 
     return (
