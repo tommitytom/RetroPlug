@@ -110,10 +110,10 @@ export interface MenuContext {
 
 // Mirrors C++ MidiRouting enum (src/project/ProjectConfig.hpp).
 const MIDI_ROUTING_NAMES = [
-    "Send to all",
-    "4 ch / inst",
-    "1 ch / inst",
-    "ch -> inst",
+    "Send to All",
+    "4 Ch / Inst",
+    "1 Ch / Inst",
+    "Ch -> Inst",
 ];
 
 // Mirrors C++ AudioRouting enum (src/project/ProjectConfig.hpp). Plugin
@@ -121,8 +121,8 @@ const MIDI_ROUTING_NAMES = [
 // "1 ch / inst" mixes each system's L+R into a single mono channel.
 const AUDIO_ROUTING_NAMES = [
     "Stereo",
-    "2 ch / inst",
-    "1 ch / inst",
+    "2 Ch / Inst",
+    "1 Ch / Inst",
 ];
 
 // Mirrors C++ SystemLayout enum (src/project/ProjectConfig.hpp).
@@ -155,7 +155,7 @@ const MODEL_NAMES = [
 const HIGHPASS_NAMES = [
     "Off",
     "Accurate",
-    "DC-block",
+    "DC-Block",
 ];
 
 // Mirrors C++ LsdjSyncMode enum (src/system/sameboy/roles/LsdjSyncRole.hpp).
@@ -199,7 +199,7 @@ function basename(path: string): string {
 function recentChildren(ctx: MenuContext): MenuItem[] {
     if (ctx.recentFiles.length === 0) {
         return [
-            { id: "recentEmpty", label: "(no recent files)", kind: "action",
+            { id: "recentEmpty", label: "(No Recent Files)", kind: "action",
               onSelect: () => {}, keepOpen: true },
         ];
     }
@@ -239,7 +239,7 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
         { id: "newSram",    label: "New SRAM",             kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("newSram", sys.id); } },
         sep(),
-        { id: "reloadRom",  label: `Reload on ROM change: ${sys?.reloadOnRomChange ? "On" : "Off"}`, kind: "action", keepOpen: true,
+        { id: "reloadRom",  label: `Reload on ROM Change: ${sys?.reloadOnRomChange ? "On" : "Off"}`, kind: "action", keepOpen: true,
           onSelect: () => {
               if (!sys) return;
               void plugin.$notify("setReloadOnRomChange", sys.id, !sys.reloadOnRomChange);
@@ -281,7 +281,7 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
     // SystemEntry.fastBoot is nullopt on Mesen.
     if (sys != null && sys.fastBoot != null) {
         const fastBootOn = sys.fastBoot === true;
-        items.push({ id: "fastBoot", label: `Fast boot: ${fastBootOn ? "On" : "Off"}`,
+        items.push({ id: "fastBoot", label: `Fast Boot: ${fastBootOn ? "On" : "Off"}`,
             kind: "action", keepOpen: true,
             onSelect: () => { void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } });
     }
@@ -296,11 +296,11 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     const items: MenuItem[] = [];
     // Save is meaningless without systems to serialize — hide it on the start screen.
     if (ctx.systems.length > 0) {
-        items.push({ id: "saveProject", label: "Save project", kind: "action",
+        items.push({ id: "saveProject", label: "Save Project", kind: "action",
                      onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } });
     }
     items.push(
-        { id: "loadProject", label: "Load project", kind: "action",
+        { id: "loadProject", label: "Load Project", kind: "action",
           onSelect: () => { void plugin.$notify("openLoadProjectBrowser"); } },
         sep(),
         { id: "layout", label: `Layout: ${layoutName}`, kind: "action", keepOpen: true,
@@ -316,7 +316,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
           onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
         sep(),
-        { id: "midiRouting", label: `MIDI routing: ${routingName}`, kind: "action", keepOpen: true,
+        { id: "midiRouting", label: `MIDI Routing: ${routingName}`, kind: "action", keepOpen: true,
           onSelect: () => {
               const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1);
               void plugin.$notify("setMidiRouting", next);
@@ -325,7 +325,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
               void plugin.$notify("setMidiRouting", next);
           } },
-        { id: "audioRouting", label: `Audio routing: ${audioRoutingName}`, kind: "action", keepOpen: true,
+        { id: "audioRouting", label: `Audio Routing: ${audioRoutingName}`, kind: "action", keepOpen: true,
           onSelect: () => {
               const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, 1);
               void plugin.$notify("setAudioRouting", next);
@@ -335,7 +335,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               void plugin.$notify("setAudioRouting", next);
           } },
         sep(),
-        { id: "autoSave",     label: "Auto save",        kind: "action", onSelect: stub("Auto save"),     keepOpen: true },
+        { id: "autoSave",     label: "Auto Save",        kind: "action", onSelect: stub("Auto Save"),     keepOpen: true },
     );
     return items;
 }
@@ -350,9 +350,9 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
 function bindingsSubmenu(editor: BindingsEditor): MenuItem {
     const k = editor.kind;
     const idp = `bindings:${k}`;
-    const title = k === "keyboard" ? "Keyboard bindings" : "Gamepad bindings";
+    const title = k === "keyboard" ? "Keyboard Bindings" : "Gamepad Bindings";
     const isActive  = editor.profileName === editor.activeProfile && !!editor.profileName;
-    const activeTag = isActive ? " [active]" : "";
+    const activeTag = isActive ? " [Active]" : "";
     const dirtyTag  = editor.dirty ? "  *" : "";
     const profileLabel = `Profile: ${editor.profileName || "-"}${activeTag}${dirtyTag}`;
 
@@ -387,7 +387,7 @@ function bindingsSubmenu(editor: BindingsEditor): MenuItem {
         { id: `${idp}:revert`, label: "Revert",
           kind: "action", keepOpen: true,
           onSelect: () => { editor.revert(); } },
-        { id: `${idp}:saveAs`, label: "Save as...",
+        { id: `${idp}:saveAs`, label: "Save As...",
           kind: "prompt", keepOpen: true,
           prompt: {
               title: `Save ${k} bindings as:`,
@@ -407,7 +407,7 @@ function bindingsSubmenu(editor: BindingsEditor): MenuItem {
         { id: `${idp}:delete`,
           label: editor.canDelete
               ? `Delete "${editor.profileName}"...`
-              : `Delete (switch active first)`,
+              : `Delete (Switch Active First)`,
           kind: editor.canDelete ? "prompt" : "action", keepOpen: true,
           // Hint pressing this row when disabled does nothing useful.
           onSelect: editor.canDelete ? undefined : () => {},
@@ -428,9 +428,9 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
         bindingsSubmenu(ctx.keyboardEditor),
         bindingsSubmenu(ctx.gamepadEditor),
         sep(),
-        { id: "audioDevice",  label: "Audio device: -", kind: "action",
-          onSelect: stub("Audio device"), keepOpen: true },
-        { id: "openSettings", label: "Open settings folder", kind: "action",
+        { id: "audioDevice",  label: "Audio Device: -", kind: "action",
+          onSelect: stub("Audio Device"), keepOpen: true },
+        { id: "openSettings", label: "Open Settings Folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];
 }
@@ -444,7 +444,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         ? "-"
         : linkGroupId === 0 ? "Off" : String(linkGroupId);
     const hasLsdjRole = sys?.lsdjSyncMode != null;
-    const hasKitRole  = sys?.hasLsdjKitRole === true;
     const lsdjMode    = hasLsdjRole
         ? LSDJ_MODE_NAMES[sys!.lsdjSyncMode ?? 0] ?? LSDJ_MODE_NAMES[0]
         : "";
@@ -454,14 +453,14 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         { id: "loadRom",        label: "Load ROM...",    kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
         sep(),
-        { id: "addInstance",    label: "Add instance",   kind: "action",
+        { id: "addInstance",    label: "Add Instance",   kind: "action",
           onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "add" }); } },
-        { id: "duplicate",      label: "Duplicate instance", kind: "action",
+        { id: "duplicate",      label: "Duplicate Instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("duplicateSystem", sys.id); } },
-        { id: "removeInstance", label: "Remove instance", kind: "action",
+        { id: "removeInstance", label: "Remove Instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("removeSystem", sys.id); } },
         sep(),
-        { id: "linkGroup", label: `Link group: ${linkSuffix}`, kind: "action", keepOpen: true,
+        { id: "linkGroup", label: `Link Group: ${linkSuffix}`, kind: "action", keepOpen: true,
           onSelect: () => {
               if (!sys) return;
               const next = cycleInt(sys.linkGroupId ?? 0, 0, LINK_GROUP_MAX - 1, 1);
@@ -476,7 +475,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
 
     if (hasLsdjRole) {
         items.push({
-            id: "lsdjMode", label: `LSDJ mode: ${lsdjMode}`, kind: "action", keepOpen: true,
+            id: "lsdjMode", label: `LSDJ Mode: ${lsdjMode}`, kind: "action", keepOpen: true,
             onSelect: () => {
                 if (!sys || sys.lsdjSyncMode == null) return;
                 const next = cycleInt(sys.lsdjSyncMode, 0, LSDJ_MODE_NAMES.length - 1, 1);
@@ -489,13 +488,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             },
         });
     }
-    if (hasKitRole) {
-        items.push({
-            id: "kitEditor", label: "Kit Editor", kind: "action",
-            onSelect: () => ctx.openKitEditor(),
-        });
-    }
-
     items.push(
         sep(),
         { id: "system",   label: "System",   kind: "submenu", children: systemChildren(ctx) },
