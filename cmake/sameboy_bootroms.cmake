@@ -21,10 +21,24 @@ file(MAKE_DIRECTORY "${BR_OUT}")
 
 # pb12 logo compressor (host-native helper).
 add_executable(sameboy_pb12 "${BR_SRC}/pb12.c")
-set_target_properties(sameboy_pb12 PROPERTIES
+
+set(_sameboy_pb12_properties
     C_STANDARD 99
     RUNTIME_OUTPUT_DIRECTORY "${BR_OBJ}"
 )
+if(APPLE AND CMAKE_OSX_ARCHITECTURES AND CMAKE_HOST_SYSTEM_PROCESSOR)
+    set(_sameboy_pb12_host_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    if(_sameboy_pb12_host_arch STREQUAL "aarch64")
+        set(_sameboy_pb12_host_arch "arm64")
+    endif()
+    set(_sameboy_pb12_supported_archs x86_64 arm64)
+    if(_sameboy_pb12_host_arch IN_LIST _sameboy_pb12_supported_archs)
+        list(APPEND _sameboy_pb12_properties
+            OSX_ARCHITECTURES "${_sameboy_pb12_host_arch}"
+        )
+    endif()
+endif()
+set_target_properties(sameboy_pb12 PROPERTIES ${_sameboy_pb12_properties})
 
 # SameBoyLogo PNG -> 2bpp -> pb12. Both intermediates live in BR_OBJ where
 # the rgbasm --include path will look for SameBoyLogo.pb12.

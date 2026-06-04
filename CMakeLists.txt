@@ -46,11 +46,18 @@ if(APPLE)
     # arch slice for each value of CMAKE_OSX_ARCHITECTURES automatically,
     # so the same universal framework satisfies both single-arch and
     # universal builds without per-arch wiring.
-    find_library(SDL2_FRAMEWORK SDL2 REQUIRED)
-    add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
-    target_link_libraries(PkgConfig::SDL2 INTERFACE ${SDL2_FRAMEWORK})
-    target_include_directories(PkgConfig::SDL2 INTERFACE
-        ${SDL2_FRAMEWORK}/Headers)
+    find_library(SDL2_FRAMEWORK SDL2
+        PATHS /Library/Frameworks "$ENV{HOME}/Library/Frameworks"
+        NO_DEFAULT_PATH)
+    if(SDL2_FRAMEWORK AND SDL2_FRAMEWORK MATCHES "\\.framework$")
+        add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
+        target_link_libraries(PkgConfig::SDL2 INTERFACE ${SDL2_FRAMEWORK})
+        target_include_directories(PkgConfig::SDL2 INTERFACE
+            ${SDL2_FRAMEWORK}/Headers)
+    else()
+        # Homebrew installs SDL2 as a dylib plus sdl2.pc, not as a framework.
+        pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    endif()
 else()
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 endif()
@@ -248,21 +255,53 @@ set(UI_BUNDLE_C   "${CMAKE_BINARY_DIR}/ui/bundle_data.c")
 set(UI_BUNDLE_DEP "${CMAKE_BINARY_DIR}/ui/bundle.d")
 set(UI_RPC_TS     "${CMAKE_BINARY_DIR}/ui/generated/PluginService.ts")
 
+set(_RETROPLUG_NEEDS_HOST_TOOLS OFF)
+if(APPLE AND CMAKE_OSX_ARCHITECTURES AND CMAKE_HOST_SYSTEM_PROCESSOR)
+    set(_RETROPLUG_HOST_ARCH "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    if(_RETROPLUG_HOST_ARCH STREQUAL "aarch64")
+        set(_RETROPLUG_HOST_ARCH "arm64")
+    endif()
+    set(_RETROPLUG_TARGET_ARCHS ${CMAKE_OSX_ARCHITECTURES})
+    list(FIND _RETROPLUG_TARGET_ARCHS "${_RETROPLUG_HOST_ARCH}" _RETROPLUG_HOST_ARCH_INDEX)
+    if(_RETROPLUG_HOST_ARCH_INDEX EQUAL -1)
+        set(_RETROPLUG_NEEDS_HOST_TOOLS ON)
+    endif()
+endif()
+
+set(RPC_SCHEMA_DUMP_EXECUTABLE "" CACHE FILEPATH
+    "Path to a host-built rpc-schema-dump for RPC code generation. \
+Leave empty to use the in-tree rpc-schema-dump target.")
+if(_RETROPLUG_NEEDS_HOST_TOOLS AND NOT RPC_SCHEMA_DUMP_EXECUTABLE)
+    message(FATAL_ERROR
+        "This Apple build does not include the host architecture in "
+        "CMAKE_OSX_ARCHITECTURES. Set "
+        "-DRPC_SCHEMA_DUMP_EXECUTABLE=/path/to/host/rpc-schema-dump.")
+endif()
+if(RPC_SCHEMA_DUMP_EXECUTABLE)
+    set(_RPC_SCHEMA_DUMP_COMMAND "${RPC_SCHEMA_DUMP_EXECUTABLE}")
+    list(APPEND _UI_REGENERATE_FILE_DEPS "${RPC_SCHEMA_DUMP_EXECUTABLE}")
+else()
+    set(_RPC_SCHEMA_DUMP_COMMAND "$<TARGET_FILE:rpc-schema-dump>")
+    list(APPEND _UI_REGENERATE_TARGET_DEPS rpc-schema-dump)
+endif()
+
 # Cross-compile knob for tjsc (bytecode compiler). Set BEFORE the
 # ui-regenerate target so the COMMAND substitution resolves at the right
 # expansion time.
 set(TJSC_EXECUTABLE "" CACHE FILEPATH
     "Path to a host-built tjsc/qjsc for bytecode compilation. \
 Leave empty to use the in-tree tjsc target.")
-if(CMAKE_CROSSCOMPILING AND NOT TJSC_EXECUTABLE)
-    message(FATAL_ERROR "Cross-compiling: set -DTJSC_EXECUTABLE=/path/to/host-tjsc")
+if((CMAKE_CROSSCOMPILING OR _RETROPLUG_NEEDS_HOST_TOOLS) AND NOT TJSC_EXECUTABLE)
+    message(FATAL_ERROR
+        "Cross-compiling or building for Apple architectures that do not "
+        "include the host: set -DTJSC_EXECUTABLE=/path/to/host-tjsc")
 endif()
 if(TJSC_EXECUTABLE)
     set(_TJSC_COMMAND "${TJSC_EXECUTABLE}")
-    set(_TJSC_DEP "${TJSC_EXECUTABLE}")
+    list(APPEND _UI_REGENERATE_FILE_DEPS "${TJSC_EXECUTABLE}")
 else()
     set(_TJSC_COMMAND "$<TARGET_FILE:tjsc>")
-    set(_TJSC_DEP tjsc)
+    list(APPEND _UI_REGENERATE_TARGET_DEPS tjsc)
 endif()
 
 # UI regeneration chain — always runs, every build.
@@ -293,7 +332,7 @@ add_custom_target(ui-regenerate ALL
                ${UI_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
-            $<TARGET_FILE:rpc-schema-dump>
+            ${_RPC_SCHEMA_DUMP_COMMAND}
             ${UI_RPC_TS}
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/build-ui.js
@@ -304,9 +343,10 @@ add_custom_target(ui-regenerate ALL
             ${UI_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
+    DEPENDS ${_UI_REGENERATE_FILE_DEPS}
     COMMENT "Regenerating UI artifacts (RPC client + bundle + bytecode)"
     VERBATIM)
-add_dependencies(ui-regenerate rpc-schema-dump ${_TJSC_DEP})
+add_dependencies(ui-regenerate ${_UI_REGENERATE_TARGET_DEPS})
 
 # Declare bundle_data.c as a generated source so dpf_add_plugin doesn't
 # error out when the file is missing on a from-scratch build. The
