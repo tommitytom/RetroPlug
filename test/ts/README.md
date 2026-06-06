@@ -22,15 +22,39 @@ runtime per file = isolation). TAP goes to stdout; `console.log/warn/error`
 goes to stderr as `[js:<level>] …`, so the TAP stream stays clean. The build
 stops on the first failing file (nonzero exit).
 
-Run one bundle by hand (paths are relative to the repo root):
+Run a single test by its target (slug = path under `test/ts/`, `/` → `-`):
 
 ```sh
-node tools/build-test.js test/ts/smoke.test.ts build/test-js/smoke.js
-build/bin/retroplug-cli --test build/test-js/smoke.js
+make -C build cli-ts-test-gb-smoke        # test/ts/gb/smoke.test.ts
+make -C build cli-ts-test-nes-cpu         # test/ts/nes/cpu.test.ts
+make -C build cli-ts-test-gb-lsdj-sav     # test/ts/gb/lsdj/sav.test.ts
 ```
 
-> Adding a new `*.test.ts` requires a CMake reconfigure (the target globs the
-> directory with `CONFIGURE_DEPENDS`) — just re-run `make`.
+Or by hand (paths relative to the repo root):
+
+```sh
+node tools/build-test.js test/ts/gb/smoke.test.ts build/test-js/gb/smoke.js
+build/bin/retroplug-cli --test build/test-js/gb/smoke.js
+```
+
+> Adding a new `*.test.ts` requires a CMake reconfigure (the target globs
+> `test/ts/**` recursively with `CONFIGURE_DEPENDS`) — just re-run `make`.
+
+## Layout
+
+Tests are organised by emulated platform; LSDJ-specific tests nest under `gb/lsdj/`.
+ROM paths inside tests are relative to the **repo root** (the run working dir),
+not the test file, so files can move between folders freely.
+
+```
+test/ts/
+  gb/                 Game Boy (SameBoy): cpu, smoke, capture
+    lsdj/             LSDJ-specific: sav codec, sav-authored fixtures (arduinoboy metro, …)
+  nes/                NES (Mesen): cpu, debug, observe, profile
+  gba/                GBA (Mesen): cpu
+  fixtures/           shared fixtures (e.g. n8-midi.dbg cc65 symbols)
+  harness alias       "harness" -> test/harness/index.ts (works from any depth)
+```
 
 ## Writing a test
 

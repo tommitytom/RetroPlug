@@ -8,7 +8,7 @@ import { test, expect, emu, Mem } from "harness";
 import {
   KitInstrumentSchema,
   PhraseSchema,
-} from "../../build/ui/generated/SavSchema";
+} from "../../../../build/ui/generated/SavSchema";
 
 const LSDJ = "../resources/roms/lsdj/lsdj9_4_2.gb";
 

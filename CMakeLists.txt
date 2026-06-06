@@ -521,14 +521,20 @@ if(BUILD_CLI)
     # per file = test isolation). TAP on stdout; the build stops on the first
     # nonzero exit. Adding a new *.test.ts requires a reconfigure (CONFIGURE_
     # DEPENDS re-globs), matching the repo's existing glob convention.
-    file(GLOB TS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/test/ts/*.test.ts)
+    # Recursive glob: tests are organised by platform — test/ts/{gb,nes,gba}/...
+    # (e.g. gb/cpu.test.ts, gb/lsdj/sav.test.ts). The path under test/ts becomes
+    # a slug ("gb/lsdj/sav") used for the bundle path and (with / -> -) the
+    # per-test target name (cli-ts-test-gb-lsdj-sav), so same-named tests in
+    # different platforms don't collide.
+    file(GLOB_RECURSE TS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/test/ts/*.test.ts)
     add_custom_target(cli-ts-test
         COMMENT "Running TypeScript harness tests (TAP)")
     foreach(_ts ${TS_TEST_SOURCES})
-        get_filename_component(_name ${_ts} NAME)
-        string(REGEX REPLACE "\\.test\\.ts$" "" _stem ${_name})
-        set(_js  ${CMAKE_BINARY_DIR}/test-js/${_stem}.js)
-        set(_dep ${CMAKE_BINARY_DIR}/test-js/${_stem}.js.d)
+        file(RELATIVE_PATH _rel ${CMAKE_SOURCE_DIR}/test/ts ${_ts})
+        string(REGEX REPLACE "\\.test\\.ts$" "" _slug ${_rel})  # e.g. gb/lsdj/sav
+        string(REPLACE "/" "-" _tgt ${_slug})                   # target-name-safe
+        set(_js  ${CMAKE_BINARY_DIR}/test-js/${_slug}.js)
+        set(_dep ${CMAKE_BINARY_DIR}/test-js/${_slug}.js.d)
         add_custom_command(
             OUTPUT  ${_js}
             COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-test.js
@@ -537,15 +543,15 @@ if(BUILD_CLI)
                     ${CMAKE_SOURCE_DIR}/test/harness/index.ts
                     ${CMAKE_SOURCE_DIR}/tools/build-test.js
             DEPFILE ${_dep}
-            COMMENT "esbuild ${_name} -> test-js/${_stem}.js"
+            COMMENT "esbuild ${_rel} -> test-js/${_slug}.js"
             VERBATIM)
-        add_custom_target(cli-ts-test-${_stem}
+        add_custom_target(cli-ts-test-${_tgt}
             COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli --test ${_js}
             DEPENDS ${_js} retroplug-cli
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             USES_TERMINAL
-            COMMENT "retroplug-cli --test test-js/${_stem}.js")
-        add_dependencies(cli-ts-test cli-ts-test-${_stem})
+            COMMENT "retroplug-cli --test test-js/${_slug}.js")
+        add_dependencies(cli-ts-test cli-ts-test-${_tgt})
     endforeach()
 
     # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenNesSystem,
