@@ -68,6 +68,7 @@ struct CliArgs {
     bool                         perSystemWav    = false;
     std::optional<std::string>   eventLogDir;
     std::optional<std::string>   saveRplgPath;
+    std::optional<std::string>   saveSavPath;
 };
 
 void printUsage(const char* argv0) {
@@ -90,7 +91,11 @@ void printUsage(const char* argv0) {
         "                     project state to PATH as a .rplg (PKZIP). Captures the\n"
         "                     GB savestate so scripts that keyboard-nav LSDj into a\n"
         "                     specific screen/song produce reusable fixtures. Loaded\n"
-        "                     back by the plugin via RETROPLUG_AUTOLOAD_PROJECT.\n",
+        "                     back by the plugin via RETROPLUG_AUTOLOAD_PROJECT.\n"
+        "  --save-sav PATH    after the script's event loop runs, dump system 0's\n"
+        "                     cartridge SRAM (battery RAM) to PATH. For a fresh LSDj\n"
+        "                     boot this is the initialised .sav once the SRAM self-test\n"
+        "                     has run (give `duration_ms` >= ~20000 to let it finish).\n",
         argv0);
 }
 
@@ -126,6 +131,7 @@ CliArgs parseArgs(int argc, char** argv) {
         else if (arg == "--per-system-wav")    a.perSystemWav     = true;
         else if (arg == "--event-logs")        a.eventLogDir      = std::string(need("--event-logs"));
         else if (arg == "--save-rplg")         a.saveRplgPath     = std::string(need("--save-rplg"));
+        else if (arg == "--save-sav")          a.saveSavPath      = std::string(need("--save-sav"));
         else if (arg == "-h" || arg == "--help") { printUsage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
@@ -704,6 +710,34 @@ int main(int argc, char** argv) try {
         }
         std::fprintf(stderr, "[save-rplg] wrote %s (%zu bytes)\n",
                      args.saveRplgPath->c_str(), zip.size());
+    }
+
+    // --save-sav: dump system 0's cartridge battery RAM (the .sav image). For a
+    // fresh LSDj boot with a long-enough duration this is the SRAM the self-test
+    // initialised — i.e. a valid blank sav that skips the 10-12s init next time.
+    if (args.saveSavPath) {
+        const auto sram = systems.front()->saveSramBytes();
+        if (sram.empty()) {
+            std::fprintf(stderr,
+                "--save-sav: system 0 has no battery RAM (cartridge not battery-backed, "
+                "or SRAM not yet initialised)\n");
+            return 1;
+        }
+        std::ofstream sav(*args.saveSavPath, std::ios::binary | std::ios::trunc);
+        if (!sav) {
+            std::fprintf(stderr, "--save-sav: cannot open %s for write\n",
+                         args.saveSavPath->c_str());
+            return 1;
+        }
+        sav.write(reinterpret_cast<const char*>(sram.data()),
+                  static_cast<std::streamsize>(sram.size()));
+        if (!sav) {
+            std::fprintf(stderr, "--save-sav: write to %s failed\n",
+                         args.saveSavPath->c_str());
+            return 1;
+        }
+        std::fprintf(stderr, "[save-sav] wrote %s (%zu bytes)\n",
+                     args.saveSavPath->c_str(), sram.size());
     }
 
     return 0;
