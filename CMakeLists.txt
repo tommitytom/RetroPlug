@@ -241,8 +241,30 @@ target_include_directories(rpc-schema-dump PRIVATE src)
 target_include_directories(rpc-schema-dump PRIVATE deps/lv_binding_js/deps/txiki/deps/miniz)
 target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz)
 
+# --- sav-schema-dump: prints the LSDj Sav model's JSON Schema for zod/TS gen ---
+# Header-only model + reflect-cpp (via rpcpp); no codec sources needed since
+# to_schema only inspects the struct definitions.
+add_executable(sav-schema-dump tools/SavSchemaDump.cpp)
+target_include_directories(sav-schema-dump PRIVATE src)
+target_link_libraries(sav-schema-dump PRIVATE rpcpp)
+set_target_properties(sav-schema-dump PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
+
+# --- sav-regenerate: emit zod + TS for the LSDj Sav model (on demand) ---
+# Derived artifacts (build/ui/generated/SavSchema.ts + SavTypes.ts); never
+# committed. Not part of ALL — invoked via `make sav-regenerate` (and wired into
+# the UI build later, when the UI consumes the schema).
+add_custom_target(sav-regenerate
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen-sav-ts.js
+            $<TARGET_FILE:sav-schema-dump> ${CMAKE_BINARY_DIR}/ui/generated
+    DEPENDS sav-schema-dump
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/ui/generated/SavSchema.ts
+               ${CMAKE_BINARY_DIR}/ui/generated/SavTypes.ts
+    COMMENT "Regenerating LSDj Sav zod/TS schema")
 
 set(UI_BUNDLE_JS  "${CMAKE_BINARY_DIR}/ui/bundle.js")
 set(UI_BUNDLE_C   "${CMAKE_BINARY_DIR}/ui/bundle_data.c")
