@@ -10,7 +10,11 @@
 
 // Native namespace bound by TestHarness.cpp on Symbol.for("retroplug").
 interface NativeRp {
-  loadRom(path: string): number;
+  // Optional `sav` (an ArrayBuffer of cartridge SRAM, e.g. from savFromJson)
+  // boots the system from that .sav image.
+  loadRom(path: string, sav?: ArrayBuffer): number;
+  // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture.
+  savFromJson(json: string): ArrayBuffer;
   runMs(ms: number): void;
   press(sys: number, button: number, down: boolean): void;
   sendMidi(sys: number, bytes: number[]): void;
@@ -110,9 +114,16 @@ export type MemType = (typeof Mem)[keyof typeof Mem];
 export interface ChordOpts { staggerMs?: number; holdMs?: number; }
 
 export const emu = {
-  /** Load a Game Boy ROM; returns the new system id. */
-  loadRom(path: string): number {
-    return rp.loadRom(path);
+  /** Load a Game Boy ROM; returns the new system id. An optional `sav`
+   *  ArrayBuffer (e.g. from savFromJson) boots the system from that .sav. */
+  loadRom(path: string, sav?: ArrayBuffer): number {
+    return rp.loadRom(path, sav);
+  },
+  /** Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON
+   *  fixture — missing fields take model defaults. Feed the result to
+   *  loadRom(rom, sav) to boot LSDj from an authored song. */
+  savFromJson(json: string): ArrayBuffer {
+    return rp.savFromJson(json);
   },
   /** Advance every loaded system by `ms` of emulated time. */
   runMs(ms: number): void {

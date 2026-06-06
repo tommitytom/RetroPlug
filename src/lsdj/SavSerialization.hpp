@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include <rfl/DefaultIfMissing.hpp>
 #include <rfl/Result.hpp>
 #include <rfl/json.hpp>
 
@@ -24,6 +25,17 @@ inline std::string songToJson(const model::Song& song) { return rfl::json::write
 
 inline rfl::Result<model::Song> songFromJson(const std::string& json) {
     return rfl::json::read<model::Song>(json);
+}
+
+// Lenient variants for test fixtures: missing fields take their model defaults,
+// so a fixture can specify only the fields it cares about
+// (e.g. {"workingSong":{"settings":{"tempo":150}}}).
+inline rfl::Result<model::Sav> savFromJsonFixture(const std::string& json) {
+    return rfl::json::read<model::Sav, rfl::DefaultIfMissing>(json);
+}
+
+inline rfl::Result<model::Song> songFromJsonFixture(const std::string& json) {
+    return rfl::json::read<model::Song, rfl::DefaultIfMissing>(json);
 }
 
 } // namespace rp::lsdj

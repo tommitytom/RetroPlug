@@ -4,6 +4,7 @@
   "private": true,
   "description": "Build-time JS deps for the UI bundle that aren't already provided by deps/lv_binding_js/node_modules.",
   "dependencies": {
-    "@msgpack/msgpack": "^3.0.0"
+    "@msgpack/msgpack": "^3.0.0",
+    "zod": "^4.4.3"
   }
 }

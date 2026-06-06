@@ -336,3 +336,17 @@ TEST_CASE("JSON fixture authoring round-trips (no template)", "[lsdj-sav]") {
     CHECK(song3.value().settings.syncMode == SyncMode::Midi);
     REQUIRE(song3.value().instruments[1]);
 }
+
+TEST_CASE("DefaultIfMissing enables partial fixtures", "[lsdj-sav]") {
+    // A fixture specifies only what it cares about; everything else defaults.
+    auto sav = savFromJsonFixture(R"({"workingSong":{"settings":{"tempo":150}}})");
+    if (!sav) FAIL("savFromJsonFixture failed: " << sav.error().what());
+    CHECK(sav.value().workingSong.settings.tempo == 150);    // specified
+    CHECK(sav.value().workingSong.formatVersion == 22);      // model default
+    CHECK(sav.value().activeProjectIndex == 0xFF);           // model default
+
+    auto song = songFromJsonFixture(R"({"settings":{"syncMode":"Lsdj"}})");
+    if (!song) FAIL("songFromJsonFixture failed: " << song.error().what());
+    CHECK(song.value().settings.syncMode == model::SyncMode::Lsdj); // specified
+    CHECK(song.value().settings.tempo == 128);                      // default
+}

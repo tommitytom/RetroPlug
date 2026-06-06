@@ -33,6 +33,8 @@ extern "C" {
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "lsdj/SavSerialization.hpp"
+#include "lsdj/codec/SavCodec.hpp"
 
 // Guard the hand-mirrored TypeScript enums in test/harness/index.ts. The wire
 // values are load-bearing; if a C++ renumber drifts from the TS Button/Mem
@@ -112,7 +114,8 @@ struct TestHarness::Impl {
 
     // -- emu surface (called from the static JS trampolines) ----------------
 
-    std::uint32_t loadRom(const std::string& path) {
+    std::uint32_t loadRom(const std::string& path,
+                          const std::vector<std::uint8_t>* sram = nullptr) {
         auto bytes = slurpBytes(path);
         const RomFormat fmt = detectRomFormat(bytes);
 
@@ -123,6 +126,10 @@ struct TestHarness::Impl {
                 cfg.romPath  = path;
                 cfg.model    = SameBoyModel::CgbC;
                 cfg.fastBoot = true;
+                // Optional cartridge SRAM (a .sav image): loaded on activate so
+                // a fixture can boot LSDj from a synthetic sav (skipping the
+                // SRAM self-test) — mirrors the plugin's sibling-.sav load.
+                if (sram) cfg.sram = *sram;
                 sys = std::make_unique<SameBoySystem>(
                     project->nextSystemId(), cfg, std::move(bytes));
                 break;
@@ -261,8 +268,16 @@ JSValue jsLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_ThrowTypeError(ctx, "loadRom(path) requires a path");
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_EXCEPTION;
+    // Optional 2nd arg: an ArrayBuffer of cartridge SRAM (a .sav image).
+    std::vector<std::uint8_t> sram;
+    bool hasSram = false;
+    if (argc >= 2 && !JS_IsUndefined(argv[1]) && !JS_IsNull(argv[1])) {
+        std::size_t len = 0;
+        std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[1]);
+        if (buf) { sram.assign(buf, buf + len); hasSram = true; }
+    }
     try {
-        const std::uint32_t id = h->loadRom(path);
+        const std::uint32_t id = h->loadRom(path, hasSram ? &sram : nullptr);
         JS_FreeCString(ctx, path);
         return JS_NewInt32(ctx, static_cast<int32_t>(id));
     } catch (const std::exception& e) {
@@ -270,6 +285,20 @@ JSValue jsLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
         JS_FreeCString(ctx, path);
         return err;
     }
+}
+
+// savFromJson(json) -> ArrayBuffer: build a 128 KiB sav image from a (possibly
+// partial) Sav-model JSON fixture. Missing fields take model defaults, so a
+// fixture can specify only what it cares about.
+JSValue jsSavFromJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "savFromJson(json) requires a json string");
+    const char* json = JS_ToCString(ctx, argv[0]);
+    if (!json) return JS_EXCEPTION;
+    auto sav = rp::lsdj::savFromJsonFixture(json);
+    JS_FreeCString(ctx, json);
+    if (!sav) return JS_ThrowTypeError(ctx, "savFromJson: %s", sav.error().what().c_str());
+    const auto bytes = rp::lsdj::codec::encodeSav(sav.value());
+    return JS_NewArrayBufferCopy(ctx, bytes.data(), bytes.size());
 }
 
 JSValue jsRunMs(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -834,6 +863,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
         JS_SetPropertyStr(ctx, ns, name, JS_NewCFunction(ctx, fn, name, argc));
     };
     bind("loadRom",      jsLoadRom,      1);
+    bind("savFromJson",  jsSavFromJson,  1);
     bind("runMs",        jsRunMs,        1);
     bind("press",        jsPress,        3);
     bind("sendMidi",     jsSendMidi,     2);
