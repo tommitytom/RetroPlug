@@ -7,6 +7,7 @@
 #include <span>
 #include <vector>
 
+#include "lsdj/SavSerialization.hpp"
 #include "lsdj/codec/Compression.hpp"
 #include "lsdj/codec/Regions.hpp"
 #include "lsdj/codec/SavCodec.hpp"
@@ -290,4 +291,48 @@ TEST_CASE("sav with a stored project round-trips at the model level", "[lsdj-sav
     REQUIRE(m.projects[0]->song.instruments[0]);
     CHECK(m.activeProjectIndex == 0);
     for (std::size_t i = 1; i < 32; ++i) CHECK_FALSE(m.projects[i]);
+}
+
+// ---- JSON (the headline) ----------------------------------------------------
+
+TEST_CASE("sav <-> JSON is lossless (re-encodes identically)", "[lsdj-sav]") {
+    const fs::path sav = kSavDir / "lsdj9_4_2.sav";
+    if (!fs::exists(sav)) { WARN("corpus sav missing"); return; }
+    const auto bytes = slurp(sav);
+    REQUIRE(bytes.size() == codec::kSavSize);
+    std::span<const std::uint8_t> orig(bytes.data(), bytes.size());
+
+    auto sav1 = codec::decodeSav(orig);
+    if (!sav1) FAIL("decodeSav failed: " << sav1.error().what());
+
+    const std::string json = savToJson(sav1.value());
+    CHECK(json.size() > 0);
+    auto sav2 = savFromJson(json);
+    if (!sav2) FAIL("savFromJson failed: " << sav2.error().what());
+
+    // model -> JSON -> model is lossless iff both re-encode to the same bytes.
+    const auto b1 = codec::encodeSav(sav1.value(), orig);
+    const auto b2 = codec::encodeSav(sav2.value(), orig);
+    CHECK(b1 == b2);
+}
+
+TEST_CASE("JSON fixture authoring round-trips (no template)", "[lsdj-sav]") {
+    using namespace rp::lsdj::model;
+    // Author a song the way a test fixture would, purely in the model.
+    Song song;
+    song.settings.tempo = 175;
+    song.settings.syncMode = SyncMode::Midi;
+    WaveInstrument w; w.synth = 2; w.playMode = WavePlayMode::PingPong; w.speed = 6;
+    song.instruments[1] = w;
+
+    const std::string json = songToJson(song);
+    auto song2 = songFromJson(json);
+    if (!song2) FAIL("songFromJson failed: " << song2.error().what());
+    // Authoring path: encode with no template, decode, re-serialize -> stable.
+    const auto bytes = codec::encodeSong(song2.value());
+    auto song3 = codec::decodeSong(bytes);
+    if (!song3) FAIL("decode failed: " << song3.error().what());
+    CHECK(song3.value().settings.tempo == 175);
+    CHECK(song3.value().settings.syncMode == SyncMode::Midi);
+    REQUIRE(song3.value().instruments[1]);
 }
