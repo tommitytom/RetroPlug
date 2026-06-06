@@ -51,6 +51,22 @@ MemorySnapshotTriple* SystemBase::memorySnapshot(rp::MemoryType type) {
     return snapshots_[idx].triple.get();
 }
 
+bool SystemBase::runUntilPc(std::uint32_t target, std::uint64_t maxCycles) {
+    std::optional<std::uint32_t> pc = getProgramCounter();
+    if (!pc) return false;            // backend has no CPU / no program counter
+    if (*pc == target) return true;
+
+    std::uint64_t cycles = 0;
+    while (cycles < maxCycles) {
+        const std::uint64_t ran = stepInstruction();
+        if (ran == 0) return false;   // backend can't instruction-step
+        cycles += ran;
+        pc = getProgramCounter();
+        if (pc && *pc == target) return true;
+    }
+    return false;
+}
+
 void SystemBase::publishMemorySnapshots() {
     for (std::size_t i = 0; i < rp::kMemoryTypeCount; ++i) {
         auto& entry = snapshots_[i];

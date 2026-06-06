@@ -304,6 +304,66 @@ rp::MemoryAccessor MesenNesSystem::getMemory(rp::MemoryType type, rp::AccessType
                               info.Size};
 }
 
+// -- CPU state ---------------------------------------------------------------
+
+namespace {
+NesCpu* nesCpu(Emulator* emu) {
+    if (!emu) return nullptr;
+    auto* console = dynamic_cast<NesConsole*>(emu->GetConsole().get());
+    return console ? console->GetCpu() : nullptr;
+}
+} // namespace
+
+std::vector<rp::CpuRegister> MesenNesSystem::getCpuRegisters() const {
+    NesCpu* cpu = nesCpu(emu_.get());
+    if (!cpu) return {};
+    const NesCpuState& s = cpu->GetState();
+    return {
+        { "a",  s.A,  8 },
+        { "x",  s.X,  8 },
+        { "y",  s.Y,  8 },
+        { "sp", s.SP, 8 },
+        { "ps", s.PS, 8 },
+        { "pc", s.PC, 16 },
+    };
+}
+
+bool MesenNesSystem::setCpuRegister(std::string_view name, std::uint32_t value) {
+    NesCpu* cpu = nesCpu(emu_.get());
+    if (!cpu) return false;
+    NesCpuState s = cpu->GetState();
+    if      (name == "a")  s.A  = static_cast<std::uint8_t>(value);
+    else if (name == "x")  s.X  = static_cast<std::uint8_t>(value);
+    else if (name == "y")  s.Y  = static_cast<std::uint8_t>(value);
+    else if (name == "sp") s.SP = static_cast<std::uint8_t>(value);
+    else if (name == "ps") s.PS = static_cast<std::uint8_t>(value);
+    else if (name == "pc") s.PC = static_cast<std::uint16_t>(value);
+    else return false;
+    cpu->SetState(s);
+    return true;
+}
+
+std::optional<std::uint32_t> MesenNesSystem::getProgramCounter() const {
+    NesCpu* cpu = nesCpu(emu_.get());
+    if (!cpu) return std::nullopt;
+    return cpu->GetState().PC;
+}
+
+std::uint64_t MesenNesSystem::stepInstruction() {
+    NesCpu* cpu = nesCpu(emu_.get());
+    if (!cpu) return 0;
+    // Exec() relies on Mesen's IsEmulationThread() check; ensure the thread id
+    // is set even if step is called before the first onProcess.
+    if (!threadIdSet_) {
+        emu_->SetEmulationThreadId(std::this_thread::get_id());
+        threadIdSet_ = true;
+    }
+    const std::uint64_t before = cpu->GetState().CycleCount;
+    cpu->Exec();
+    const std::uint64_t after = cpu->GetState().CycleCount;
+    return after - before;
+}
+
 SystemConfig MesenNesSystem::snapshotConfig() const {
     MesenNesConfig out = config_;
     if (out.embedRom) {

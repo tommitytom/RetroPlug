@@ -25,6 +25,10 @@ extern "C" {
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/MemoryType.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
@@ -109,17 +113,37 @@ struct TestHarness::Impl {
     std::uint32_t loadRom(const std::string& path) {
         auto bytes = slurpBytes(path);
         const RomFormat fmt = detectRomFormat(bytes);
-        if (fmt != RomFormat::SameBoy)
-            throw std::runtime_error("loadRom: '" + path +
-                "' is not a Game Boy ROM (CPU-state harness is SameBoy-only)");
 
-        SameBoyConfig cfg;
-        cfg.romPath  = path;
-        cfg.model    = SameBoyModel::CgbC;
-        cfg.fastBoot = true;
+        std::unique_ptr<SystemBase> sys;
+        switch (fmt) {
+            case RomFormat::SameBoy: {
+                SameBoyConfig cfg;
+                cfg.romPath  = path;
+                cfg.model    = SameBoyModel::CgbC;
+                cfg.fastBoot = true;
+                sys = std::make_unique<SameBoySystem>(
+                    project->nextSystemId(), cfg, std::move(bytes));
+                break;
+            }
+            case RomFormat::MesenNes: {
+                MesenNesConfig cfg;
+                cfg.romPath = path;
+                sys = std::make_unique<MesenNesSystem>(
+                    project->nextSystemId(), cfg, std::move(bytes));
+                break;
+            }
+            case RomFormat::MesenGba: {
+                MesenGbaConfig cfg;
+                cfg.romPath = path; // no biosPath -> Mesen falls back to HLE BIOS
+                sys = std::make_unique<MesenGbaSystem>(
+                    project->nextSystemId(), cfg, std::move(bytes));
+                break;
+            }
+            default:
+                throw std::runtime_error("loadRom: '" + path +
+                    "' is not a recognised Game Boy, NES, or GBA ROM");
+        }
 
-        auto sys = std::make_unique<SameBoySystem>(
-            project->nextSystemId(), cfg, std::move(bytes));
         sys->onActivate(sampleRate);
         const SystemId id = sys->id();
         project->adoptSystem(sys.release());
@@ -131,14 +155,14 @@ struct TestHarness::Impl {
         return project->findSystem(static_cast<SystemId>(id));
     }
 
-    // CPU-state access is SameBoy-only (NES/GBA register files differ).
-    SameBoySystem* sameboy(std::uint32_t id) {
+    // Resolve a system + require it expose CPU state (non-empty register file).
+    // No dynamic_cast: every backend answers the SystemBase CPU virtuals.
+    SystemBase* cpuSystem(std::uint32_t id) {
         SystemBase* sys = system(id);
         if (!sys) throw std::runtime_error("unknown system id");
-        auto* sb = dynamic_cast<SameBoySystem*>(sys);
-        if (!sb)
-            throw std::runtime_error("CPU state is only available for SameBoy systems");
-        return sb;
+        if (sys->getCpuRegisters().empty())
+            throw std::runtime_error("CPU state is not available for this system");
+        return sys;
     }
 
     void runMs(double ms) {
@@ -299,15 +323,14 @@ JSValue jsGetRegisters(JSContext* ctx, JSValueConst, int argc, JSValueConst* arg
     if (argc < 1) return JS_ThrowTypeError(ctx, "getRegisters(id)");
     if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
     try {
-        const rp::CpuRegisters r =
-            h->sameboy(static_cast<std::uint32_t>(id))->getCpuRegisters();
+        // Name-keyed register file — each backend reports its own CPU's set.
+        const std::vector<rp::CpuRegister> regs =
+            h->cpuSystem(static_cast<std::uint32_t>(id))->getCpuRegisters();
         JSValue obj = JS_NewObject(ctx);
-        JS_SetPropertyStr(ctx, obj, "af", JS_NewInt32(ctx, r.af));
-        JS_SetPropertyStr(ctx, obj, "bc", JS_NewInt32(ctx, r.bc));
-        JS_SetPropertyStr(ctx, obj, "de", JS_NewInt32(ctx, r.de));
-        JS_SetPropertyStr(ctx, obj, "hl", JS_NewInt32(ctx, r.hl));
-        JS_SetPropertyStr(ctx, obj, "sp", JS_NewInt32(ctx, r.sp));
-        JS_SetPropertyStr(ctx, obj, "pc", JS_NewInt32(ctx, r.pc));
+        for (const auto& r : regs) {
+            JS_SetPropertyStr(ctx, obj, r.name.c_str(),
+                              JS_NewInt64(ctx, static_cast<int64_t>(r.value)));
+        }
         return obj;
     } catch (const std::exception& e) {
         return JS_ThrowTypeError(ctx, "getRegisters: %s", e.what());
@@ -317,18 +340,28 @@ JSValue jsGetRegisters(JSContext* ctx, JSValueConst, int argc, JSValueConst* arg
 JSValue jsSetRegister(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     auto* h = g_activeImpl;
     if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
-    int32_t id = 0, reg = 0, value = 0;
-    if (argc < 3) return JS_ThrowTypeError(ctx, "setRegister(id, reg, value)");
+    int32_t id = 0;
+    int64_t value = 0;
+    if (argc < 3) return JS_ThrowTypeError(ctx, "setRegister(id, name, value)");
     if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &reg, argv[1]) < 0) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &value, argv[2]) < 0) return JS_EXCEPTION;
-    if (reg < 0 || reg > 5) return JS_ThrowRangeError(ctx, "setRegister: reg 0..5");
+    const char* name = JS_ToCString(ctx, argv[1]);
+    if (!name) return JS_EXCEPTION;
+    if (JS_ToInt64(ctx, &value, argv[2]) < 0) { JS_FreeCString(ctx, name); return JS_EXCEPTION; }
     try {
-        h->sameboy(static_cast<std::uint32_t>(id))->setCpuRegister(
-            static_cast<rp::CpuReg>(reg), static_cast<std::uint16_t>(value));
+        const bool ok = h->cpuSystem(static_cast<std::uint32_t>(id))
+            ->setCpuRegister(name, static_cast<std::uint32_t>(value));
+        if (!ok) {
+            JSValue err = JS_ThrowTypeError(ctx,
+                "setRegister: unknown or read-only register '%s'", name);
+            JS_FreeCString(ctx, name);
+            return err;
+        }
+        JS_FreeCString(ctx, name);
         return JS_UNDEFINED;
     } catch (const std::exception& e) {
-        return JS_ThrowTypeError(ctx, "setRegister: %s", e.what());
+        JSValue err = JS_ThrowTypeError(ctx, "setRegister: %s", e.what());
+        JS_FreeCString(ctx, name);
+        return err;
     }
 }
 
@@ -340,9 +373,14 @@ JSValue jsReadCpu(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
     if (JS_ToInt32(ctx, &addr, argv[1]) < 0) return JS_EXCEPTION;
     try {
-        const std::uint8_t b = h->sameboy(static_cast<std::uint32_t>(id))
-            ->readCpuByte(static_cast<std::uint16_t>(addr));
-        return JS_NewInt32(ctx, b);
+        const std::optional<std::uint8_t> b =
+            h->cpuSystem(static_cast<std::uint32_t>(id))
+                ->readCpuByte(static_cast<std::uint32_t>(addr));
+        if (!b)
+            throw std::runtime_error(
+                "side-effect-free CPU peek is not supported for this system "
+                "(use readMemory)");
+        return JS_NewInt32(ctx, *b);
     } catch (const std::exception& e) {
         return JS_ThrowTypeError(ctx, "readCpu: %s", e.what());
     }
@@ -355,8 +393,9 @@ JSValue jsStep(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_ThrowTypeError(ctx, "step(id)");
     if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
     try {
+        // 0 = backend can't instruction-step (e.g. GBA without the debugger).
         const std::uint64_t cycles =
-            h->sameboy(static_cast<std::uint32_t>(id))->stepInstruction();
+            h->cpuSystem(static_cast<std::uint32_t>(id))->stepInstruction();
         return JS_NewInt64(ctx, static_cast<int64_t>(cycles));
     } catch (const std::exception& e) {
         return JS_ThrowTypeError(ctx, "step: %s", e.what());
@@ -374,8 +413,8 @@ JSValue jsRunUntilPc(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
     if (JS_ToInt64(ctx, &maxCycles, argv[2]) < 0) return JS_EXCEPTION;
     if (maxCycles <= 0) return JS_ThrowRangeError(ctx, "runUntilPc: maxCycles must be > 0");
     try {
-        const bool hit = h->sameboy(static_cast<std::uint32_t>(id))->runUntilPc(
-            static_cast<std::uint16_t>(target),
+        const bool hit = h->cpuSystem(static_cast<std::uint32_t>(id))->runUntilPc(
+            static_cast<std::uint32_t>(target),
             static_cast<std::uint64_t>(maxCycles));
         return JS_NewBool(ctx, hit);
     } catch (const std::exception& e) {

@@ -5,8 +5,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "system/CpuState.hpp"
 #include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
 #include "system/MemoryType.hpp"
@@ -117,6 +119,52 @@ public:
     virtual rp::MemoryAccessor getMemory(rp::MemoryType /*type*/, rp::AccessType /*access*/) {
         return rp::MemoryAccessor{};
     }
+
+    // -- CPU state ----------------------------------------------------------
+    //
+    // Optional, like getMemory: the default implementations report "this
+    // backend doesn't expose CPU state" (empty list / false / nullopt / 0) so
+    // systems compile cleanly until they override. Concrete backends report
+    // their own (heterogeneous) register files by name; every supported
+    // backend includes a "pc" register and a getProgramCounter().
+    //
+    // SameBoy implements all of these. The Mesen backends (NES/GBA) implement
+    // registers + PC + register writes; instruction stepping and the
+    // side-effect-free readCpuByte are gated on the Mesen debugger and ship
+    // later (see porting/19-mesen-debugger.md) — until then they return the
+    // unsupported defaults (0 / nullopt).
+
+    // Live register file (empty when unsupported). Names are canonical lower
+    // case ("pc", "sp", "a", "af", "r15", "cpsr", …).
+    virtual std::vector<rp::CpuRegister> getCpuRegisters() const { return {}; }
+
+    // Write one register by name. False on unsupported backend / unknown name.
+    virtual bool setCpuRegister(std::string_view /*name*/, std::uint32_t /*value*/) {
+        return false;
+    }
+
+    // The program counter — the one register meaningful across every CPU.
+    // nullopt when unsupported. Used by runUntilPc().
+    virtual std::optional<std::uint32_t> getProgramCounter() const {
+        return std::nullopt;
+    }
+
+    // Side-effect-free read of one byte of the CPU's address space (banking
+    // aware where the backend supports it). nullopt when unsupported.
+    virtual std::optional<std::uint8_t> readCpuByte(std::uint32_t /*addr*/) const {
+        return std::nullopt;
+    }
+
+    // Execute one CPU instruction; returns the cycles it consumed. Returns 0
+    // when the backend can't instruction-step (the "unsupported" signal — no
+    // real instruction costs zero cycles).
+    virtual std::uint64_t stepInstruction() { return 0; }
+
+    // Run until PC == target or `maxCycles` elapse. Returns true if the target
+    // PC was reached. Implemented once here on top of stepInstruction() +
+    // getProgramCounter(); returns false immediately if the backend can't step
+    // or has no program counter. Not virtual — identical for every backend.
+    bool runUntilPc(std::uint32_t target, std::uint64_t maxCycles);
 
     // -- Live memory snapshots ----------------------------------------------
     //

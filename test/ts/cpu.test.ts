@@ -1,7 +1,7 @@
-// CPU-state harness coverage (SameBoy-only): registers, banking-aware reads,
-// instruction stepping, and run-until-PC.
+// CPU-state harness coverage (SameBoy): name-keyed registers, banking-aware
+// reads, instruction stepping, and run-until-PC.
 
-import { test, expect, emu, Mem, CpuReg } from "harness";
+import { test, expect, emu, Mem } from "harness";
 
 const LSDJ = "../resources/roms/lsdj/lsdj9_4_2.gb";
 
@@ -28,7 +28,7 @@ test("stepInstruction advances PC and returns cycles", () => {
 test("setRegister writes are observable", () => {
   const sys = emu.loadRom(LSDJ);
   emu.runMs(2500);
-  emu.setRegister(sys, CpuReg.BC, 0x1234);
+  emu.setRegister(sys, "bc", 0x1234);
   expect(emu.getRegisters(sys).bc).toBe(0x1234);
 });
 

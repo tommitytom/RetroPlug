@@ -296,6 +296,65 @@ rp::MemoryAccessor MesenGbaSystem::getMemory(rp::MemoryType type, rp::AccessType
                               info.Size};
 }
 
+// -- CPU state ---------------------------------------------------------------
+
+namespace {
+GbaCpu* gbaCpu(Emulator* emu) {
+    if (!emu) return nullptr;
+    auto* console = dynamic_cast<GbaConsole*>(emu->GetConsole().get());
+    return console ? console->GetCpu() : nullptr;
+}
+
+// Parse "r0".."r15" -> 0..15, else -1.
+int parseArmReg(std::string_view name) {
+    if (name.size() < 2 || name[0] != 'r') return -1;
+    int idx = 0;
+    for (std::size_t i = 1; i < name.size(); ++i) {
+        if (name[i] < '0' || name[i] > '9') return -1;
+        idx = idx * 10 + (name[i] - '0');
+    }
+    return (idx >= 0 && idx <= 15) ? idx : -1;
+}
+} // namespace
+
+std::vector<rp::CpuRegister> MesenGbaSystem::getCpuRegisters() const {
+    GbaCpu* cpu = gbaCpu(emu_.get());
+    if (!cpu) return {};
+    const GbaCpuState& s = cpu->GetState();
+    std::vector<rp::CpuRegister> out;
+    out.reserve(18);
+    for (int i = 0; i < 16; ++i) {
+        out.push_back({ "r" + std::to_string(i), s.R[i], 32 });
+    }
+    out.push_back({ "cpsr", const_cast<GbaCpuFlags&>(s.CPSR).ToInt32(), 32 });
+    out.push_back({ "pc", s.R[15], 32 }); // alias of r15, per the "pc" contract
+    return out;
+}
+
+bool MesenGbaSystem::setCpuRegister(std::string_view name, std::uint32_t value) {
+    GbaCpu* cpu = gbaCpu(emu_.get());
+    if (!cpu) return false;
+    GbaCpuState& s = cpu->GetState();
+    if (name == "pc" || name == "r15") {
+        // PC writes must reload the pipeline; keep the current ARM/Thumb mode.
+        cpu->SetProgramCounter(value, s.CPSR.Thumb);
+        return true;
+    }
+    const int idx = parseArmReg(name);
+    if (idx >= 0 && idx <= 14) {
+        s.R[idx] = value;
+        return true;
+    }
+    // cpsr write is deferred (no FromInt32 on GbaCpuFlags); unknown names fail.
+    return false;
+}
+
+std::optional<std::uint32_t> MesenGbaSystem::getProgramCounter() const {
+    GbaCpu* cpu = gbaCpu(emu_.get());
+    if (!cpu) return std::nullopt;
+    return cpu->GetProgramCounter();
+}
+
 SystemConfig MesenGbaSystem::snapshotConfig() const {
     MesenGbaConfig out = config_;
     if (out.embedRom) {

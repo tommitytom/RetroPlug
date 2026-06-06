@@ -51,6 +51,17 @@ public:
     // for IORegisters / HRam / ExtWorkRam (GB / GBA only).
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
 
+    // -- CPU state (SystemBase virtuals) -------------------------------------
+    //
+    // NES (6502): registers a/x/y/sp/ps (8-bit) + pc (16-bit), register writes,
+    // and native single-step via NesCpu::Exec(). readCpuByte (side-effect-free
+    // peek) is deferred to the Mesen debugger (porting/19-mesen-debugger.md) —
+    // until then it returns the base nullopt; inspect memory via getMemory().
+    std::vector<rp::CpuRegister> getCpuRegisters() const override;
+    bool setCpuRegister(std::string_view name, std::uint32_t value) override;
+    std::optional<std::uint32_t> getProgramCounter() const override;
+    std::uint64_t stepInstruction() override;
+
     SystemConfig snapshotConfig() const override;
 
     // SystemBase virtuals — see base class for contracts.

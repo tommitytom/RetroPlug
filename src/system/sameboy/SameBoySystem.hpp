@@ -10,7 +10,6 @@
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
-#include "system/sameboy/SameBoyCpuState.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
 
@@ -66,26 +65,15 @@ public:
     // is not reflected.
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
 
-    // -- CPU state (SameBoy-only; drives the TypeScript test harness) --------
+    // -- CPU state (SystemBase virtuals; see base for contracts) -------------
     //
-    // All read live SM83 state; valid only while activated (gb_ != nullptr).
-    // Register layouts are GB-specific, so these are not SystemBase virtuals —
-    // the harness bridge dynamic_casts to SameBoySystem and errors for other
-    // backends.
-
-    // Snapshot the 16-bit register file (af/bc/de/hl/sp/pc).
-    rp::CpuRegisters getCpuRegisters() const;
-    // Write one 16-bit register.
-    void             setCpuRegister(rp::CpuReg reg, std::uint16_t value);
-    // Read one byte of the CPU's 16-bit address space, banking-aware and
-    // side-effect free (distinct from getMemory's linear region buffers).
-    std::uint8_t     readCpuByte(std::uint16_t addr) const;
-    // Advance the core by one GB_run() boundary; returns the cycles it ran.
-    std::uint64_t    stepInstruction();
-    // Run until PC == target or `maxCycles` (8 MHz units) elapse. Returns true
-    // if the target PC was reached, false on the cycle cap. Native predicate —
-    // no per-instruction JS callback.
-    bool             runUntilPc(std::uint16_t target, std::uint64_t maxCycles);
+    // Live SM83 state, valid only while activated (gb_ != nullptr). SameBoy
+    // supports the full set; runUntilPc is provided by the base class.
+    std::vector<rp::CpuRegister> getCpuRegisters() const override;
+    bool setCpuRegister(std::string_view name, std::uint32_t value) override;
+    std::optional<std::uint32_t> getProgramCounter() const override;
+    std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
+    std::uint64_t                stepInstruction() override;
 
     SystemConfig snapshotConfig() const override;
 

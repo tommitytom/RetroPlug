@@ -644,51 +644,46 @@ rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType 
 
 // -- CPU state ---------------------------------------------------------------
 
-rp::CpuRegisters SameBoySystem::getCpuRegisters() const {
-    rp::CpuRegisters out;
-    if (!gb_) return out;
+std::vector<rp::CpuRegister> SameBoySystem::getCpuRegisters() const {
+    if (!gb_) return {};
     const GB_registers_t* r = GB_get_registers(gb_);
-    out.af = r->af;
-    out.bc = r->bc;
-    out.de = r->de;
-    out.hl = r->hl;
-    out.sp = r->sp;
-    out.pc = r->pc;
-    return out;
+    return {
+        { "af", r->af, 16 },
+        { "bc", r->bc, 16 },
+        { "de", r->de, 16 },
+        { "hl", r->hl, 16 },
+        { "sp", r->sp, 16 },
+        { "pc", r->pc, 16 },
+    };
 }
 
-void SameBoySystem::setCpuRegister(rp::CpuReg reg, std::uint16_t value) {
-    if (!gb_) return;
+bool SameBoySystem::setCpuRegister(std::string_view name, std::uint32_t value) {
+    if (!gb_) return false;
     GB_registers_t* r = GB_get_registers(gb_);
-    switch (reg) {
-        case rp::CpuReg::AF: r->af = value; break;
-        case rp::CpuReg::BC: r->bc = value; break;
-        case rp::CpuReg::DE: r->de = value; break;
-        case rp::CpuReg::HL: r->hl = value; break;
-        case rp::CpuReg::SP: r->sp = value; break;
-        case rp::CpuReg::PC: r->pc = value; break;
-    }
+    const std::uint16_t v = static_cast<std::uint16_t>(value);
+    if      (name == "af") r->af = v;
+    else if (name == "bc") r->bc = v;
+    else if (name == "de") r->de = v;
+    else if (name == "hl") r->hl = v;
+    else if (name == "sp") r->sp = v;
+    else if (name == "pc") r->pc = v;
+    else return false;
+    return true;
 }
 
-std::uint8_t SameBoySystem::readCpuByte(std::uint16_t addr) const {
-    if (!gb_) return 0;
-    return GB_safe_read_memory(gb_, addr);
+std::optional<std::uint32_t> SameBoySystem::getProgramCounter() const {
+    if (!gb_) return std::nullopt;
+    return GB_get_registers(gb_)->pc;
+}
+
+std::optional<std::uint8_t> SameBoySystem::readCpuByte(std::uint32_t addr) const {
+    if (!gb_) return std::nullopt;
+    return GB_safe_read_memory(gb_, static_cast<std::uint16_t>(addr));
 }
 
 std::uint64_t SameBoySystem::stepInstruction() {
     if (!gb_) return 0;
     return static_cast<std::uint64_t>(GB_run(gb_));
-}
-
-bool SameBoySystem::runUntilPc(std::uint16_t target, std::uint64_t maxCycles) {
-    if (!gb_) return false;
-    if (GB_get_registers(gb_)->pc == target) return true;
-    std::uint64_t cycles = 0;
-    while (cycles < maxCycles) {
-        cycles += static_cast<std::uint64_t>(GB_run(gb_));
-        if (GB_get_registers(gb_)->pc == target) return true;
-    }
-    return false;
 }
 
 SystemConfig SameBoySystem::snapshotConfig() const {

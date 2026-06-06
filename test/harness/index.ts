@@ -18,7 +18,7 @@ interface NativeRp {
   screenshot(sys: number, path: string): boolean;
   getAudio(ms: number): ArrayBuffer;
   getRegisters(sys: number): CpuRegisters;
-  setRegister(sys: number, reg: number, value: number): void;
+  setRegister(sys: number, name: string, value: number): void;
   readCpu(sys: number, addr: number): number;
   step(sys: number): number;
   runUntilPc(sys: number, pc: number, maxCycles: number): boolean;
@@ -28,13 +28,10 @@ interface NativeRp {
   log(level: number, message: string): void;
 }
 
-// SameBoy SM83 register file (16-bit). CPU state is SameBoy-only.
-export interface CpuRegisters {
-  af: number; bc: number; de: number; hl: number; sp: number; pc: number;
-}
-
-// setRegister() target ids — mirror rp::CpuReg in SameBoyCpuState.hpp.
-export const CpuReg = { AF: 0, BC: 1, DE: 2, HL: 3, SP: 4, PC: 5 } as const;
+// Name-keyed CPU register file. The set differs per backend — every supported
+// system includes a "pc". SameBoy: af,bc,de,hl,sp,pc. NES: a,x,y,sp,ps,pc.
+// GBA: r0..r15,cpsr,pc. (See src/system/CpuState.hpp.)
+export type CpuRegisters = Record<string, number>;
 
 const rp: NativeRp = (globalThis as any)[Symbol.for("retroplug")];
 
@@ -77,23 +74,24 @@ export const emu = {
   readMemory(sys: number, type: number): Uint8Array {
     return new Uint8Array(rp.readMemory(sys, type));
   },
-  /** Snapshot the SM83 register file (SameBoy only; throws otherwise). */
+  /** Name-keyed CPU register file (throws if the system has no CPU state). */
   getRegisters(sys: number): CpuRegisters {
     return rp.getRegisters(sys);
   },
-  /** Write one 16-bit CPU register (use CpuReg.*). */
-  setRegister(sys: number, reg: number, value: number): void {
-    rp.setRegister(sys, reg, value);
+  /** Write one CPU register by name, e.g. setRegister(sys, "pc", 0x150). */
+  setRegister(sys: number, name: string, value: number): void {
+    rp.setRegister(sys, name, value);
   },
-  /** Banking-aware, side-effect-free read of one CPU address-space byte. */
+  /** Side-effect-free read of one CPU address-space byte (throws if the
+   *  backend doesn't support it — use readMemory regions instead). */
   readCpu(sys: number, addr: number): number {
     return rp.readCpu(sys, addr);
   },
-  /** Advance one GB_run() boundary; returns cycles run. */
+  /** Advance one instruction; returns cycles run (0 = backend can't step). */
   step(sys: number): number {
     return rp.step(sys);
   },
-  /** Run until PC === target or maxCycles elapse. Returns true if PC hit. */
+  /** Run until PC === target or maxCycles elapse. False if hit cap / can't step. */
   runUntilPc(sys: number, pc: number, maxCycles: number): boolean {
     return rp.runUntilPc(sys, pc, maxCycles);
   },
