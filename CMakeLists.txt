@@ -628,37 +628,9 @@ if(BUILD_CLI)
         COMMENT "Running the LSDJ two-instance sync demo (PNGs + per-system WAVs)"
     )
 
-    # `make cli-lsdj-midi-sync` -> drive a single LSDJ instance from a
-    # simulated host transport. Sets SYNC=MIDI in PROJECT, builds a one-note
-    # chain/phrase, then toggles `set_transport: true` so AudioBlockInfo
-    # carries a running transport. LsdjSyncRole generates 0xF8 clock bytes
-    # from the host PPQ position; LSDJ syncs against them just as it would
-    # against a DAW's transport.
-    add_custom_target(cli-lsdj-midi-sync
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midi_sync.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-midi-sync
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ host-MIDI-sync demo (PNGs + per-system WAV)"
-    )
-
-    # `make cli-lsdj-arduinoboy` -> exercises LsdjSyncRole's Arduinoboy slave
-    # mode. Pre-sets `lsdj_sync_mode: MidiSyncArduinoboy` on the system so the
-    # role's onMidi handles Arduinoboy note commands (24/25 play toggle,
-    # 26-29 tempo divisor, 30+ row trigger). Uses the Arduinoboy-build ROM.
-    add_custom_target(cli-lsdj-arduinoboy
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_input.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-arduinoboy
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ Arduinoboy slave-mode input demo"
-    )
+    # Host-MIDI-sync (SYNC=MIDI, MidiSync role) is covered by
+    # test/ts/gb/lsdj/midi_sync.test.ts; the functional host-clock->playback path
+    # is covered by test/ts/gb/lsdj/arduinoboy_input.test.ts (cli-ts-test).
 
     # MidiMap mode is covered by test/ts/gb/lsdj/midimap.test.ts (cli-ts-test).
 

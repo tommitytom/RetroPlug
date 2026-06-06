@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -119,6 +120,23 @@ struct TestHarness::Impl {
     std::uint32_t blockSize = 1024;
     std::vector<float> scratchL, scratchR;
 
+    // Simulated host transport, fed into AudioBlockInfo each block (mirrors
+    // cli/main.cpp's cliBpm/cliTransport/cliPpq). LsdjSyncRole and friends read
+    // these to generate MIDI-clock byte streams the same way as in the plugin.
+    double        bpm              = 120.0;
+    bool          transportPlaying = false;
+    double        ppq              = 0.0;
+    std::uint64_t sampleClock      = 0; // absolute sample pos across runMs calls
+
+    // Per-system captures drained after each processed block. midiOut is what a
+    // role emitted back to the host (e.g. Arduinoboy MI.OUT); serialOut is the
+    // raw GB serial byte stream (master mode). Keyed by SystemId.
+    struct MidiOutRec { std::uint64_t sample; std::vector<std::uint8_t> bytes; };
+    struct SerialRec  { std::uint64_t sample; std::uint8_t byte; };
+    std::vector<SystemBase*> sysList; // load order; pointers owned by `project`
+    std::unordered_map<SystemId, std::vector<MidiOutRec>> midiOutLog;
+    std::unordered_map<SystemId, std::vector<SerialRec>>  serialOutLog;
+
     // TAP state.
     int  testIndex   = 0;
     int  failures    = 0;
@@ -131,7 +149,8 @@ struct TestHarness::Impl {
 
     std::uint32_t loadRom(const std::string& path,
                           const std::vector<std::uint8_t>* sram = nullptr,
-                          const std::string& lsdjSyncMode = "") {
+                          const std::string& lsdjSyncMode = "",
+                          std::uint8_t linkGroup = 0) {
         auto bytes = slurpBytes(path);
         const RomFormat fmt = detectRomFormat(bytes);
 
@@ -154,6 +173,9 @@ struct TestHarness::Impl {
                     lsdj.mode = parseLsdjSyncMode(lsdjSyncMode);
                     cfg.roles.emplace_back(lsdj);
                 }
+                // Same nonzero linkGroup puts instances in a shared LinkGroup
+                // for lockstep serial-bit ferrying (LSDj link-cable sync).
+                cfg.linkGroupId = linkGroup;
                 sys = std::make_unique<SameBoySystem>(
                     project->nextSystemId(), cfg, std::move(bytes));
                 break;
@@ -179,7 +201,9 @@ struct TestHarness::Impl {
 
         sys->onActivate(sampleRate);
         const SystemId id = sys->id();
+        SystemBase* raw = sys.get();
         project->adoptSystem(sys.release());
+        sysList.push_back(raw);
         project->rebuildLinkGroups();
         return static_cast<std::uint32_t>(id);
     }
@@ -208,19 +232,63 @@ struct TestHarness::Impl {
         return d;
     }
 
+    // Drain each system's role outputs for the block just processed into the
+    // per-system logs (absolute sample = sampleClock + event frame). Mirrors
+    // the midiOut/serialOut drain in cli/main.cpp's render loop.
+    void drainCaptures() {
+        for (SystemBase* sys : sysList) {
+            const SystemId id = sys->id();
+            auto& mo = sys->midiOut();
+            if (!mo.empty()) {
+                auto& dst = midiOutLog[id];
+                for (const auto& ev : mo) {
+                    const std::uint32_t n =
+                        std::min<std::uint32_t>(ev.size, ::MidiEvent::kDataSize);
+                    dst.push_back(MidiOutRec{ sampleClock + ev.frame,
+                        std::vector<std::uint8_t>(ev.data, ev.data + n) });
+                }
+                mo.clear();
+            }
+            if (auto* sb = dynamic_cast<SameBoySystem*>(sys)) {
+                auto& raw = sb->serialOutLog_;
+                if (!raw.empty()) {
+                    auto& dst = serialOutLog[id];
+                    for (const auto& [frame, byte] : raw)
+                        dst.push_back(SerialRec{ sampleClock + frame, byte });
+                    raw.clear();
+                }
+            }
+        }
+    }
+
+    // One render block: build the AudioBlockInfo from the simulated transport,
+    // process, optionally capture the mixed stereo output, drain role outputs,
+    // then advance the transport clock.
+    void stepBlock(std::uint32_t frames, std::vector<float>* capture) {
+        float* outs[2] = { scratchL.data(), scratchR.data() };
+        std::fill_n(scratchL.data(), frames, 0.0f);
+        std::fill_n(scratchR.data(), frames, 0.0f);
+        AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
+        project->onProcess(info, outs);
+        if (capture) {
+            for (std::uint32_t f = 0; f < frames; ++f) {
+                capture->push_back(scratchL[f]);
+                capture->push_back(scratchR[f]);
+            }
+        }
+        drainCaptures();
+        sampleClock += frames;
+        if (transportPlaying)
+            ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
+    }
+
     void runMs(double ms) {
         if (ms <= 0.0) return;
         const std::uint64_t total =
             static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
-        float* outs[2] = { scratchL.data(), scratchR.data() };
-        for (std::uint64_t s = 0; s < total; s += blockSize) {
-            const std::uint32_t frames = static_cast<std::uint32_t>(
-                std::min<std::uint64_t>(blockSize, total - s));
-            std::fill_n(scratchL.data(), frames, 0.0f);
-            std::fill_n(scratchR.data(), frames, 0.0f);
-            AudioBlockInfo info{ frames, sampleRate, 120.0, 0.0, false };
-            project->onProcess(info, outs);
-        }
+        for (std::uint64_t s = 0; s < total; s += blockSize)
+            stepBlock(static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(blockSize, total - s)), nullptr);
     }
 
     // Like runMs but retains the mixed stereo output interleaved (L,R,L,R…).
@@ -230,24 +298,39 @@ struct TestHarness::Impl {
         const std::uint64_t total =
             static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
         out.reserve(total * 2);
-        float* outs[2] = { scratchL.data(), scratchR.data() };
-        for (std::uint64_t s = 0; s < total; s += blockSize) {
-            const std::uint32_t frames = static_cast<std::uint32_t>(
-                std::min<std::uint64_t>(blockSize, total - s));
-            std::fill_n(scratchL.data(), frames, 0.0f);
-            std::fill_n(scratchR.data(), frames, 0.0f);
-            AudioBlockInfo info{ frames, sampleRate, 120.0, 0.0, false };
-            project->onProcess(info, outs);
-            for (std::uint32_t f = 0; f < frames; ++f) {
-                out.push_back(scratchL[f]);
-                out.push_back(scratchR[f]);
-            }
-        }
+        for (std::uint64_t s = 0; s < total; s += blockSize)
+            stepBlock(static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(blockSize, total - s)), &out);
         return out;
     }
 
+    // Take + clear the accumulated role outputs for a system.
+    std::vector<MidiOutRec> takeMidi(std::uint32_t id) {
+        auto it = midiOutLog.find(static_cast<SystemId>(id));
+        if (it == midiOutLog.end()) return {};
+        std::vector<MidiOutRec> v = std::move(it->second);
+        it->second.clear();
+        return v;
+    }
+    std::vector<SerialRec> takeSerial(std::uint32_t id) {
+        auto it = serialOutLog.find(static_cast<SystemId>(id));
+        if (it == serialOutLog.end()) return {};
+        std::vector<SerialRec> v = std::move(it->second);
+        it->second.clear();
+        return v;
+    }
+
     // Fresh Project per test() case so cases can't bleed emulator state.
-    void beginCase() { project = std::make_unique<Project>(); }
+    void beginCase() {
+        project = std::make_unique<Project>();
+        sysList.clear();
+        midiOutLog.clear();
+        serialOutLog.clear();
+        bpm = 120.0;
+        transportPlaying = false;
+        ppq = 0.0;
+        sampleClock = 0;
+    }
 
     void report(const std::string& name, bool ok, const std::string& msg) {
         ++testIndex;
@@ -306,8 +389,13 @@ JSValue jsLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
         const char* sm = JS_ToCString(ctx, argv[2]);
         if (sm) { syncMode = sm; JS_FreeCString(ctx, sm); }
     }
+    // Optional 4th arg: link-group id (same nonzero value = lockstep serial).
+    int32_t linkGroup = 0;
+    if (argc >= 4 && !JS_IsUndefined(argv[3]) && !JS_IsNull(argv[3]))
+        JS_ToInt32(ctx, &linkGroup, argv[3]);
     try {
-        const std::uint32_t id = h->loadRom(path, hasSram ? &sram : nullptr, syncMode);
+        const std::uint32_t id = h->loadRom(path, hasSram ? &sram : nullptr,
+            syncMode, static_cast<std::uint8_t>(linkGroup));
         JS_FreeCString(ctx, path);
         return JS_NewInt32(ctx, static_cast<int32_t>(id));
     } catch (const std::exception& e) {
@@ -520,6 +608,70 @@ JSValue jsSendMidi(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     } catch (const std::exception& e) {
         return JS_ThrowTypeError(ctx, "sendMidi: %s", e.what());
     }
+}
+
+// setTransport(running): start/stop the simulated host transport. While running,
+// ppq advances each block so LsdjSyncRole (SYNC=MIDI) emits clock like a DAW.
+JSValue jsSetTransport(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "setTransport(running)");
+    const int running = JS_ToBool(ctx, argv[0]);
+    if (running < 0) return JS_EXCEPTION;
+    h->transportPlaying = (running == 1);
+    return JS_UNDEFINED;
+}
+
+// setBpm(bpm): set the simulated host tempo (default 120).
+JSValue jsSetBpm(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    double bpm = 0.0;
+    if (argc < 1 || JS_ToFloat64(ctx, &bpm, argv[0]) < 0) return JS_EXCEPTION;
+    if (bpm <= 0.0) return JS_ThrowRangeError(ctx, "setBpm: bpm must be > 0");
+    h->bpm = bpm;
+    return JS_UNDEFINED;
+}
+
+// drainMidi(id) -> [{ sample, bytes: number[] }]: take + clear the MIDI a role
+// emitted back to the host since the last drain (e.g. Arduinoboy MI.OUT clock).
+JSValue jsDrainMidi(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "drainMidi(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    const auto recs = h->takeMidi(static_cast<std::uint32_t>(id));
+    JSValue arr = JS_NewArray(ctx);
+    for (std::uint32_t i = 0; i < recs.size(); ++i) {
+        JSValue o = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, o, "sample", JS_NewInt64(ctx, (int64_t)recs[i].sample));
+        JSValue b = JS_NewArray(ctx);
+        for (std::uint32_t j = 0; j < recs[i].bytes.size(); ++j)
+            JS_SetPropertyUint32(ctx, b, j, JS_NewInt32(ctx, recs[i].bytes[j]));
+        JS_SetPropertyStr(ctx, o, "bytes", b);
+        JS_SetPropertyUint32(ctx, arr, i, o);
+    }
+    return arr;
+}
+
+// drainSerial(id) -> [{ sample, byte }]: take + clear the raw GB serial-out
+// byte stream captured since the last drain (Arduinoboy master mode).
+JSValue jsDrainSerial(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "drainSerial(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    const auto recs = h->takeSerial(static_cast<std::uint32_t>(id));
+    JSValue arr = JS_NewArray(ctx);
+    for (std::uint32_t i = 0; i < recs.size(); ++i) {
+        JSValue o = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, o, "sample", JS_NewInt64(ctx, (int64_t)recs[i].sample));
+        JS_SetPropertyStr(ctx, o, "byte",   JS_NewInt32(ctx, recs[i].byte));
+        JS_SetPropertyUint32(ctx, arr, i, o);
+    }
+    return arr;
 }
 
 JSValue jsBeginProfile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -897,6 +1049,10 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("runMs",        jsRunMs,        1);
     bind("press",        jsPress,        3);
     bind("sendMidi",     jsSendMidi,     2);
+    bind("setTransport", jsSetTransport, 1);
+    bind("setBpm",       jsSetBpm,       1);
+    bind("drainMidi",    jsDrainMidi,    1);
+    bind("drainSerial",  jsDrainSerial,  1);
     bind("readMemory",   jsReadMemory,   2);
     bind("getRegisters", jsGetRegisters, 1);
     bind("setRegister",  jsSetRegister,  3);

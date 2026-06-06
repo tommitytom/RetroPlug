@@ -13,12 +13,17 @@ interface NativeRp {
   // Optional `sav` (an ArrayBuffer of cartridge SRAM, e.g. from savFromJson)
   // boots the system from that .sav image. Optional `lsdjSyncMode` (e.g.
   // "MidiMap", "MidiPassthrough", "ArduinoboyMaster") pre-seeds the LSDj role.
-  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string): number;
+  // Optional `linkGroup` (same nonzero value) links instances for LSDj sync.
+  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string, linkGroup?: number): number;
   // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture.
   savFromJson(json: string): ArrayBuffer;
   runMs(ms: number): void;
   press(sys: number, button: number, down: boolean): void;
   sendMidi(sys: number, bytes: number[]): void;
+  setTransport(running: boolean): void;
+  setBpm(bpm: number): void;
+  drainMidi(sys: number): MidiOutEvent[];
+  drainSerial(sys: number): SerialOutByte[];
   readMemory(sys: number, type: number): ArrayBuffer;
   getFrame(sys: number): { width: number; height: number; published: boolean; data: ArrayBuffer };
   screenshot(sys: number, path: string): boolean;
@@ -67,6 +72,12 @@ export interface ProfiledFunction {
 export interface DisasmLine { address: number; text: string; bytes: string; }
 export interface TraceLine { pc: number; text: string; }
 export interface CallFrame { address: number; label: string; }
+
+// One MIDI message a role emitted back to the host (e.g. Arduinoboy MI.OUT).
+// `sample` is the absolute sample position since the system was loaded.
+export interface MidiOutEvent { sample: number; bytes: number[]; }
+// One raw GB serial-out byte captured in Arduinoboy master mode.
+export interface SerialOutByte { sample: number; byte: number; }
 
 export interface BreakpointSpec {
   type: "execute" | "read" | "write";
@@ -118,9 +129,10 @@ export const emu = {
   /** Load a Game Boy ROM; returns the new system id. An optional `sav`
    *  ArrayBuffer (e.g. from savFromJson) boots the system from that .sav.
    *  Optional `lsdjSyncMode` ("MidiSync"/"MidiMap"/"MidiPassthrough"/
-   *  "ArduinoboyMaster"/...) pre-seeds the LSDj sync role. */
-  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string): number {
-    return rp.loadRom(path, sav, lsdjSyncMode);
+   *  "ArduinoboyMaster"/...) pre-seeds the LSDj sync role. Optional `linkGroup`
+   *  (same nonzero value on two systems) links them for LSDj link-cable sync. */
+  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string, linkGroup?: number): number {
+    return rp.loadRom(path, sav, lsdjSyncMode, linkGroup);
   },
   /** Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON
    *  fixture — missing fields take model defaults. Feed the result to
@@ -141,6 +153,25 @@ export const emu = {
    *  with sendMidi exercises the ROM's note-handling path, not just the idle loop. */
   sendMidi(sys: number, bytes: number[]): void {
     rp.sendMidi(sys, bytes);
+  },
+  /** Start/stop the simulated host transport. While running, ppq advances each
+   *  block so an LSDj SYNC=MIDI role emits MIDI clock like a DAW would. */
+  setTransport(running: boolean): void {
+    rp.setTransport(running);
+  },
+  /** Set the simulated host tempo in BPM (default 120). */
+  setBpm(bpm: number): void {
+    rp.setBpm(bpm);
+  },
+  /** Take + clear the MIDI a role emitted back to the host since the last drain
+   *  (e.g. Arduinoboy MI.OUT clock/notes). Call after runMs. */
+  drainMidi(sys: number): MidiOutEvent[] {
+    return rp.drainMidi(sys);
+  },
+  /** Take + clear the raw GB serial-out bytes captured since the last drain
+   *  (Arduinoboy master mode). Call after runMs. */
+  drainSerial(sys: number): SerialOutByte[] {
+    return rp.drainSerial(sys);
   },
   /** Read a whole memory region as a copy (never a live view). */
   readMemory(sys: number, type: number): Uint8Array {
