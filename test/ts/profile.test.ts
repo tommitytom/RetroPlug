@@ -59,6 +59,22 @@ test("loadLabels names the hot function in the profile (cc65 .dbg)", () => {
   expect(hot!.label).toBe("midiIdleLoop");
 });
 
+test("sendMidi exercises evermidi's MIDI path (more functions profiled)", () => {
+  const sys = emu.loadRom(NES);
+  emu.runMs(1500); // boot
+  emu.beginProfile(sys);
+  // Note on/off bursts feed the N8 MIDI FIFO -> evermidi's handlers run.
+  for (let i = 0; i < 8; i++) {
+    emu.sendMidi(sys, [0x90, 0x3c + i, 0x7f]); // note on
+    emu.runMs(40);
+    emu.sendMidi(sys, [0x80, 0x3c + i, 0x00]); // note off
+    emu.runMs(20);
+  }
+  const fns = emu.readProfile(sys).filter((f) => f.exclusiveCycles > 0);
+  // The idle loop alone profiles ~2 functions; driving MIDI exercises many more.
+  expect(fns.length).toBeGreaterThan(5);
+});
+
 test("profiler is unsupported on SameBoy (clear error)", () => {
   const sys = emu.loadRom("../resources/roms/lsdj/lsdj9_4_2.gb");
   emu.runMs(100);

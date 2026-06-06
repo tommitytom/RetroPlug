@@ -13,6 +13,7 @@ interface NativeRp {
   loadRom(path: string): number;
   runMs(ms: number): void;
   press(sys: number, button: number, down: boolean): void;
+  sendMidi(sys: number, bytes: number[]): void;
   readMemory(sys: number, type: number): ArrayBuffer;
   getFrame(sys: number): { width: number; height: number; published: boolean; data: ArrayBuffer };
   screenshot(sys: number, path: string): boolean;
@@ -120,6 +121,12 @@ export const emu = {
   /** Set a single button's state on a system. */
   press(sys: number, button: number, down: boolean): void {
     rp.press(sys, button, down);
+  },
+  /** Deliver a MIDI message (1-4 bytes, e.g. [0x90, note, vel]) to a system —
+   *  queued for the next runMs. On NES it feeds the N8 MIDI FIFO, so profiling
+   *  with sendMidi exercises the ROM's note-handling path, not just the idle loop. */
+  sendMidi(sys: number, bytes: number[]): void {
+    rp.sendMidi(sys, bytes);
   },
   /** Read a whole memory region as a copy (never a live view). */
   readMemory(sys: number, type: number): Uint8Array {

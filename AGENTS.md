@@ -91,11 +91,15 @@ order of preference:
    `retroplug-cli` with a custom script. Bypasses the plugin format
    entirely; tests the same code path that ends up in every wrapper.
    For checks that need to **read emulator state and branch on it** —
-   memory regions, SM83 CPU registers, instruction stepping, audio/frame
-   capture — beyond what a write-once JSON script can express, write a
-   TypeScript test and run `make -C build cli-ts-test` (TAP output, nonzero
-   exit on failure). The harness embeds the txiki/QuickJS runtime in
-   `retroplug-cli --test`; see [test/ts/README.md](test/ts/README.md).
+   memory regions, CPU registers (SameBoy/NES/GBA), instruction stepping,
+   audio/frame capture — beyond what a write-once JSON script can express,
+   write a TypeScript test and run `make -C build cli-ts-test` (TAP output,
+   nonzero exit on failure). The harness embeds the txiki/QuickJS runtime in
+   `retroplug-cli --test`. It also exposes Mesen's NES debugger headlessly —
+   **profiling** (`emu.beginProfile`/`readProfile` + cc65 `.dbg` symbols via
+   `loadLabels`), disassembly, trace, call stack, and conditional
+   breakpoints/watchpoints/stepping — for finding bottlenecks / debugging the
+   evermidi NES ROM. See [test/ts/README.md](test/ts/README.md).
 2. **UI change** — `make -C build screenshot` (writes
    `/tmp/retroplug.png`); read the PNG via the Read tool. Drive input
    mid-run with `tools/standalone-key.sh` (keyboard) or

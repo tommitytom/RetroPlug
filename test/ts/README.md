@@ -58,9 +58,10 @@ including from a native `emu` call — fails that case as TAP `not ok`.
 | `emu.press(sys, Button.X, down)` | Set one button's state |
 | `emu.tap(sys, Button.X, holdMs?)` | A single tap |
 | `emu.chord(sys, [Button.Select, Button.Up])` | LSDJ-timed chord (modifier leads) |
+| `emu.sendMidi(sys, [0x90, note, vel])` | Deliver a 1–4 byte MIDI message (queued for the next `runMs`) |
 | `emu.readMemory(sys, Mem.Ram) → Uint8Array` | Copy of a memory region |
-| `emu.getRegisters(sys) → {af,bc,de,hl,sp,pc}` | SM83 register file (SameBoy only) |
-| `emu.setRegister(sys, CpuReg.PC, 0x150)` | Write one 16-bit register |
+| `emu.getRegisters(sys) → {pc, …}` | Name-keyed registers (GB af/bc/…, NES a/x/y/ps, GBA r0–r15/cpsr) |
+| `emu.setRegister(sys, "pc", 0x150)` | Write one register by name |
 | `emu.readCpu(sys, addr) → byte` | Banking-aware, side-effect-free byte read |
 | `emu.step(sys) → cycles` | Advance one instruction boundary |
 | `emu.runUntilPc(sys, pc, maxCycles) → bool` | Run until PC hit (or cap) |
@@ -76,13 +77,58 @@ including from a native `emu` call — fails that case as TAP `not ok`.
 - **Boot timing.** SameBoy plays ~1.5 s of boot logo, and a fresh LSDJ ROM runs
   a 12–15 s cartridge self-test. `runMs(>=2000)` before reading state; for the
   LSDJ song screen, advance ≥ 15000 ms or preload a savestate.
-- **CPU state is SameBoy-only.** `getRegisters`/`setRegister`/`readCpu`/`step`/
-  `runUntilPc` throw for NES/GBA systems (register files differ). The 9 memory
-  regions (`Mem.*`) work on every backend.
+- **CPU state is generic** across SameBoy / NES / GBA — `getRegisters` returns a
+  name-keyed object (the sets differ; every backend has `pc`), and `setRegister`
+  / `readCpu` / `step` / `runUntilPc` work on all three. Only GBA can't yet
+  single-step (`step` returns 0) and GBA `cpsr` is read-only. `getRegisters`
+  throws on a system with no CPU-state support.
 - **`runUntilPc` always needs a `maxCycles` cap** — it returns `false` rather
   than spinning if the PC is never reached.
 - **Reads are copies.** `readMemory`/`getFrame` hand back snapshots, never live
   emulator pointers.
+
+## Profiling & debugging (Mesen NES)
+
+The NES backend exposes Mesen's debugger headlessly — the priority being
+**performance profiling**. evermidi (`old/evermidi/rom`) builds to the committed
+`resources/roms/n8-midi.nes`, so you can profile it directly.
+
+```ts
+import { test, expect, emu, printProfile } from "harness";
+
+test("profile evermidi's MIDI handling", () => {
+  const sys = emu.loadRom("resources/roms/n8-midi.nes");
+  // Names need a cc65 .dbg: build with `make -C old/evermidi/rom` (the Makefile
+  // emits -g + --dbgfile build/n8-midi.dbg) then point loadLabels at it.
+  emu.loadLabels(sys, "old/evermidi/rom/build/n8-midi.dbg");
+  emu.runMs(1500);
+  emu.beginProfile(sys);
+  emu.sendMidi(sys, [0x90, 0x3c, 0x7f]); // drive the code you care about
+  emu.runMs(500);
+  console.log(printProfile(emu.readProfile(sys), 15)); // hottest functions
+  expect(emu.readProfile(sys).length).toBeGreaterThan(0);
+});
+```
+
+| Call | Purpose |
+| --- | --- |
+| `emu.beginProfile(sys)` | Init the debugger + reset the profiler |
+| `emu.readProfile(sys) → ProfiledFunction[]` | Per-function cycles + call counts, hottest first |
+| `emu.loadLabels(sys, "*.dbg") → bool` | Load cc65 symbols so output is named |
+| `emu.disassemble(sys, addr, n)` | Disassembled instructions (symbol-resolved) |
+| `emu.getCallStack(sys)` | Current call stack (named) |
+| `emu.setTrace(sys, on)` / `emu.readTrace(sys, n)` | Execution trace logger |
+| `emu.setBreakpoints(sys, [{type, start, end?, condition?}])` | Execute/read/write breakpoints (optional Mesen condition expr) |
+| `emu.runUntilBreak(sys, maxCycles) → {broke, pc, breakpointId}` | Run until a breakpoint fires |
+| `emu.stepInto/stepOver/stepOut(sys) → BreakInfo` | Single-step |
+
+- Mesen **NES only** (SameBoy / GBA have no `debugTarget`); the calls throw with
+  a clear message otherwise.
+- **Don't mix `runMs` with active breakpoints** — drive with `runUntilBreak`.
+  `runUntilBreak` reports the *triggering* address; execution stops just **after**
+  that instruction (single-threaded model), so the registers reflect its effect.
+- `printProfile(fns, top?)` formats a hot-function table for `console.log`
+  (which goes to stderr, keeping the TAP stream clean).
 - The harness shim is `test/harness/index.ts`; the native bridge is
   `cli/TestHarness.cpp`. The `Button`/`Mem` enum values are guarded by
   `static_assert`s in `TestHarness.cpp` against the C++ headers.

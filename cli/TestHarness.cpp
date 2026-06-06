@@ -26,6 +26,7 @@ extern "C" {
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/MemoryType.hpp"
+#include "transport/MidiTypes.hpp"
 #include "system/mesen/MesenGbaConfig.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -433,6 +434,35 @@ JSValue jsRunUntilPc(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
     }
 }
 
+JSValue jsSendMidi(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "sendMidi(id, bytes)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    JSValue lenv = JS_GetPropertyStr(ctx, argv[1], "length");
+    int32_t len = 0; JS_ToInt32(ctx, &len, lenv); JS_FreeValue(ctx, lenv);
+    if (len < 1 || len > (int32_t)::MidiEvent::kDataSize)
+        return JS_ThrowRangeError(ctx, "sendMidi: expected 1..%u bytes",
+                                  (unsigned)::MidiEvent::kDataSize);
+    try {
+        SystemBase* sys = h->system(static_cast<std::uint32_t>(id));
+        if (!sys) throw std::runtime_error("unknown system id");
+        ::MidiEvent ev{};
+        ev.frame = 0;
+        ev.size  = static_cast<std::uint32_t>(len);
+        for (int32_t i = 0; i < len; ++i) {
+            JSValue b = JS_GetPropertyUint32(ctx, argv[1], (uint32_t)i);
+            int32_t v = 0; JS_ToInt32(ctx, &v, b); JS_FreeValue(ctx, b);
+            ev.data[i] = static_cast<std::uint8_t>(v);
+        }
+        sys->onMidi(&ev, 1); // queued for the next runMs (NES: into the N8 FIFO)
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "sendMidi: %s", e.what());
+    }
+}
+
 JSValue jsBeginProfile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     auto* h = g_activeImpl;
     if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
@@ -806,6 +836,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("loadRom",      jsLoadRom,      1);
     bind("runMs",        jsRunMs,        1);
     bind("press",        jsPress,        3);
+    bind("sendMidi",     jsSendMidi,     2);
     bind("readMemory",   jsReadMemory,   2);
     bind("getRegisters", jsGetRegisters, 1);
     bind("setRegister",  jsSetRegister,  3);
