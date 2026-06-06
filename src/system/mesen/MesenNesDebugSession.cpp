@@ -48,10 +48,8 @@ Debugger* MesenNesDebugSession::ensureDebugger() {
         if (Debugger* dbg = emu_->InternalGetDebugger()) {
             // This build drives the CPU manually on one thread (Emulator::Run()
             // is never called, so there is no emulation thread). Mesen's break
-            // model assumes a second thread to resume it; headless mode makes a
-            // break capture + return instead of blocking. Required here, not
-            // optional.
-            dbg->SetHeadlessMode(true);
+            // model is single-threaded here: a break sets the stop flag + records
+            // the event instead of blocking for a UI thread (see Debugger.cpp).
             dbg->Run(); // clear any power-on/reset break -> free-run
         }
     }
@@ -152,7 +150,7 @@ rp::BreakInfo execLoop(Debugger* dbg, NesCpu* cpu, std::uint64_t maxCycles,
         const std::uint64_t cBefore  = cpu->GetState().CycleCount;
         cpu->Exec();
         cyc += cpu->GetState().CycleCount - cBefore;
-        if (dbg->IsHeadlessStopped()) {
+        if (dbg->IsExecutionStopped()) {
             bi.broke = true;
             bi.pc = reportPcBefore ? pcBefore : cpu->GetState().PC;
             bi.breakpointId = dbg->GetLastBreakEvent().BreakpointId;
@@ -165,7 +163,6 @@ rp::BreakInfo execLoop(Debugger* dbg, NesCpu* cpu, std::uint64_t maxCycles,
 }
 
 rp::BreakInfo doStep(Debugger* dbg, NesCpu* cpu, StepType type) {
-    dbg->SetHeadlessMode(true);
     dbg->ResumeFromBreak();
     dbg->Step(CpuType::Nes, 1, type);
     // Generous cap: a single step is one instruction; StepOut/StepOver can run
@@ -198,7 +195,6 @@ rp::BreakInfo MesenNesDebugSession::runUntilBreak(std::uint64_t maxCycles) {
     Debugger* dbg = ensureDebugger();
     NesCpu* cpu = nesCpuOf(emu_);
     if (!dbg || !cpu) return {};
-    dbg->SetHeadlessMode(true);
     dbg->ResumeFromBreak();
     dbg->Run(); // free-run (no pending step); breakpoints still fire
     return execLoop(dbg, cpu, maxCycles, /*reportPcBefore*/ true);

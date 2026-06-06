@@ -138,9 +138,10 @@ Debugger::~Debugger()
 
 void Debugger::Release()
 {
-	while(_executionStopped) {
-		Run();
-	}
+	//Single-threaded: just clear the break flag. (Upstream spun here calling
+	//Run() until the UI thread cleared the flag via the blocking SleepUntilResume
+	//loop, which no longer exists.)
+	_executionStopped = false;
 }
 
 void Debugger::Reset()
@@ -465,74 +466,25 @@ void Debugger::ProcessPpuCycle()
 
 void Debugger::SleepUntilResume(CpuType sourceCpu, BreakSource source, MemoryOperationInfo *operation, int breakpointId)
 {
-	if(_suspendRequestCount) {
-		return;
-	} else if(_breakRequestCount > 0 && (sourceCpu != _mainCpuType || !_debuggers[(int)sourceCpu].Debugger->AllowChangeProgramCounter)) {
-		//When a break is requested by e.g a debugger call, load/save state, etc. always
-		//break in-between 2 instructions of the main CPU, ensuring the state can be saved/loaded safely
-		//If SleepUntilResume was called outside of ProcessInstruction, keep running
-		return;
-	} else if(IsBreakpointForbidden(source, sourceCpu, operation)) {
+	if(IsBreakpointForbidden(source, sourceCpu, operation)) {
 		ClearPendingBreakExceptions();
 		return;
 	}
 
+	//Single-threaded driver (RetroPlug): there is no separate UI thread to resume
+	//us, so a break does NOT block — capture it and return, leaving
+	//_executionStopped set. The caller's Exec() loop polls IsExecutionStopped(),
+	//reads GetLastBreakEvent(), then calls ResumeFromBreak(). (Upstream Mesen
+	//blocked here in a spin-loop waiting for the UI thread to resume; that whole
+	//two-thread break/resume path is gone — see porting/20-mesen-single-thread-runloop.md.)
 	_executionStopped = true;
-
-	if(_headlessMode) {
-		//Headless single-threaded driver (RetroPlug CLI): capture the break and
-		//return WITHOUT blocking (and without clearing _executionStopped). The
-		//caller's Exec() loop polls IsExecutionStopped(), reads
-		//GetLastBreakEvent(), then calls ResumeFromBreak().
-		_lastBreak = {};
-		_lastBreak.Source = source;
-		_lastBreak.SourceCpu = sourceCpu;
-		_lastBreak.BreakpointId = breakpointId;
-		if(operation) {
-			_lastBreak.Operation = *operation;
-		}
-		return;
+	_lastBreak = {};
+	_lastBreak.Source = source;
+	_lastBreak.SourceCpu = sourceCpu;
+	_lastBreak.BreakpointId = breakpointId;
+	if(operation) {
+		_lastBreak.Operation = *operation;
 	}
-
-	bool notificationSent = false;
-	if(source != BreakSource::Unspecified || _breakRequestCount == 0) {
-		GetMainDebugger()->OnBeforeBreak(sourceCpu);
-		_emu->OnBeforePause(false);
-
-		if(_settings->GetDebugConfig().SingleBreakpointPerInstruction) {
-			_debuggers[(int)sourceCpu].Debugger->IgnoreBreakpoints = true;
-		}
-
-		if(_settings->GetDebugConfig().DrawPartialFrame) {
-			_debuggers[(int)sourceCpu].Debugger->DrawPartialFrame();
-		}
-
-		//Only trigger code break event if the pause was caused by user action
-		BreakEvent evt = {};
-		evt.SourceCpu = sourceCpu;
-		evt.BreakpointId = breakpointId;
-		evt.Source = source;
-		if(operation) {
-			evt.Operation = *operation;
-		}
-
-		_waitForBreakResume = true;
-		_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::CodeBreak, &evt);
-		ProcessEvent(EventType::CodeBreak, sourceCpu);
-		notificationSent = true;
-		PlatformUtilities::EnableScreensaver();
-	}
-
-	while((_waitForBreakResume && !_suspendRequestCount) || _breakRequestCount) {
-		std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(_breakRequestCount ? 1 : 10));
-	}
-
-	if(notificationSent) {
-		PlatformUtilities::DisableScreensaver();
-		_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::DebuggerResumed);
-	}
-
-	_executionStopped = false;
 }
 
 bool Debugger::IsBreakpointForbidden(BreakSource source, CpuType sourceCpu, MemoryOperationInfo* operation)
@@ -552,7 +504,7 @@ template<uint8_t accessWidth>
 void Debugger::ProcessBreakConditions(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo)
 {
 	int breakpointId = bpManager->CheckBreakpoint<accessWidth>(operation, addressInfo, true);
-	if(_breakRequestCount || _waitForBreakResume || ((int)step.BreakNeeded && (!_debuggers[(int)sourceCpu].Debugger->IgnoreBreakpoints || step.Type == StepType::CpuCycleStep))) {
+	if(_breakRequestCount || ((int)step.BreakNeeded && (!_debuggers[(int)sourceCpu].Debugger->IgnoreBreakpoints || step.Type == StepType::CpuCycleStep))) {
 		SleepUntilResume(sourceCpu, step.GetBreakSource());
 	} else {
 		if(breakpointId >= 0 && !_debuggers[(int)sourceCpu].Debugger->IgnoreBreakpoints) {
@@ -689,7 +641,6 @@ void Debugger::Run()
 			_debuggers[i].Debugger->Run();
 		}
 	}
-	_waitForBreakResume = false;
 }
 
 void Debugger::ClearPendingBreakExceptions()
@@ -738,17 +689,16 @@ void Debugger::Step(CpuType cpuType, int32_t stepCount, StepType type, BreakSour
 		}
 	}
 
-	_waitForBreakResume = false;
 }
 
 bool Debugger::IsPaused()
 {
-	return _waitForBreakResume;
+	return _executionStopped;
 }
 
 bool Debugger::IsExecutionStopped()
 {
-	return _executionStopped || _emu->IsThreadPaused();
+	return _executionStopped;
 }
 
 bool Debugger::HasBreakRequest()
