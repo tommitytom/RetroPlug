@@ -41,6 +41,13 @@ CHANGELOG_TXT  = MANUAL_DIR / "CHANGELOG.txt"
 
 EMBED_MODEL     = "BAAI/bge-small-en-v1.5"  # 384-dim, ONNX, ~80MB on first run
 EMBED_DIM       = 384
+
+# fastembed defaults its model cache to $TMPDIR/fastembed_cache, which in the
+# devcontainer is /tmp — wiped on every rebuild, forcing a re-download (and a
+# HF_HUB_OFFLINE=0 override) each time. Pin it to a persistent folder one level
+# above the repo root, alongside `resources/`. Override with RETROPLUG_FASTEMBED_CACHE.
+FASTEMBED_CACHE = Path(os.environ.get("RETROPLUG_FASTEMBED_CACHE",
+                                      REPO_ROOT.parent / ".cache" / "fastembed"))
 CHUNK_TOKEN_CAP = 500
 CHUNK_OVERLAP   = 50
 
@@ -376,7 +383,7 @@ def embed_with_cache(texts: list[str], use_cache: bool
         print(f"    embedding {len(missing_idx)}/{n} chunks "
               f"({n - len(missing_idx)} cache hits)",
               file=sys.stderr)
-        model = TextEmbedding(model_name=EMBED_MODEL)
+        model = TextEmbedding(model_name=EMBED_MODEL, cache_dir=str(FASTEMBED_CACHE))
         vectors = list(model.embed([texts[i] for i in missing_idx]))
         for idx, vec in zip(missing_idx, vectors):
             tup = tuple(float(x) for x in vec)
@@ -661,7 +668,7 @@ def vec_search(conn: sqlite3.Connection, query: str, limit: int,
     if not allowed:
         return []
     from fastembed import TextEmbedding
-    model = TextEmbedding(model_name=EMBED_MODEL)
+    model = TextEmbedding(model_name=EMBED_MODEL, cache_dir=str(FASTEMBED_CACHE))
     qvec = next(iter(model.query_embed([query])))
     blob = struct.pack(f"{EMBED_DIM}f", *qvec)
     cur = conn.cursor()
