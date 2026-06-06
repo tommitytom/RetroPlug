@@ -15,13 +15,9 @@
       "configureZshAsDefaultShell": false
     }
   },
-  // Persist Claude Code state in a Docker named volume that's independent of
-  // the host's ~/.claude config. Survives container rebuilds, isolated from
-  // anything the user runs on the host. Symlinks into the volume are wired up
-  // by post-create.sh on first boot.
-  "mounts": [
-    "source=retroplug-claude-state,target=/var/claude-state,type=volume"
-  ],
+  // Claude Code state lives in /workspaces/.claude on the host (the workspace
+  // bind mount one level above the repo), so it survives rebuilds without a
+  // Docker volume. post-create.sh symlinks ~/.claude and ~/.claude.json to it.
   "containerEnv": {
     "TZ": "${localEnv:TZ}"
   },

@@ -171,3 +171,10 @@ RUN set -eux; \
 
 # Install wt (git worktree helper)
 RUN ln -s /workspaces/RetroPlug-main/.devcontainer/wt.sh /usr/local/bin/wt
+
+# The terminal `claude` CLI is installed per-user in post-create.sh via the
+# official native installer (~/.local/bin, self-updating) so it matches the
+# VSCode extension's version and shares ~/.claude. Put ~/.local/bin on PATH for
+# all shells (login and non-login) so `claude` resolves everywhere, not only in
+# interactive terminals where the installer edits the shell rc files.
+ENV PATH="/home/vscode/.local/bin:${PATH}"
