@@ -18,6 +18,7 @@ add_executable(retroplug-tests
     ProjectTests.cpp
     RecentFilesTests.cpp
     RomSnifferTests.cpp
+    SavCodecTests.cpp
     SystemBaseDefaultsTests.cpp
     UserConfigTests.cpp
     ../src/config/RecentFiles.cpp
@@ -28,10 +29,18 @@ add_executable(retroplug-tests
     # LSDJ kit-compile chain — pure C++, links r8brain for resampling.
     ../src/lsdj/Effects.cpp
     ../src/lsdj/KitUtil.cpp
+    # LSDJ sav codec (pure C++; reflectcpp via rpcpp).
+    ../src/lsdj/codec/SongCodec.cpp
 )
 
 target_include_directories(retroplug-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+)
+
+# Directory holding the generated per-version golden .sav corpus (sibling
+# resources tree; see AGENTS.md). SavCodecTests decodes against it.
+target_compile_definitions(retroplug-tests PRIVATE
+    RETROPLUG_LSDJ_SAV_DIR="${CMAKE_SOURCE_DIR}/../resources/roms/lsdj"
 )
 
 target_include_directories(retroplug-tests PRIVATE
