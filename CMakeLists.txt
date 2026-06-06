@@ -491,6 +491,38 @@ if(BUILD_CLI)
         COMMENT "Rendering examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav"
     )
 
+    # `make cli-ts-test` -> transpile every test/ts/*.test.ts with esbuild and
+    # run each as its OWN `retroplug-cli --test` process (one QuickJS runtime
+    # per file = test isolation). TAP on stdout; the build stops on the first
+    # nonzero exit. Adding a new *.test.ts requires a reconfigure (CONFIGURE_
+    # DEPENDS re-globs), matching the repo's existing glob convention.
+    file(GLOB TS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/test/ts/*.test.ts)
+    add_custom_target(cli-ts-test
+        COMMENT "Running TypeScript harness tests (TAP)")
+    foreach(_ts ${TS_TEST_SOURCES})
+        get_filename_component(_name ${_ts} NAME)
+        string(REGEX REPLACE "\\.test\\.ts$" "" _stem ${_name})
+        set(_js  ${CMAKE_BINARY_DIR}/test-js/${_stem}.js)
+        set(_dep ${CMAKE_BINARY_DIR}/test-js/${_stem}.js.d)
+        add_custom_command(
+            OUTPUT  ${_js}
+            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-test.js
+                    ${_ts} ${_js} ${_dep}
+            DEPENDS ${_ts}
+                    ${CMAKE_SOURCE_DIR}/test/harness/index.ts
+                    ${CMAKE_SOURCE_DIR}/tools/build-test.js
+            DEPFILE ${_dep}
+            COMMENT "esbuild ${_name} -> test-js/${_stem}.js"
+            VERBATIM)
+        add_custom_target(cli-ts-test-${_stem}
+            COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli --test ${_js}
+            DEPENDS ${_js} retroplug-cli
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            USES_TERMINAL
+            COMMENT "retroplug-cli --test test-js/${_stem}.js")
+        add_dependencies(cli-ts-test cli-ts-test-${_stem})
+    endforeach()
+
     # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenSystem,
     # render 5 s, capture a final screenshot. First end-to-end verification of
     # the Mesen backend + NES ROM dispatch (step 17 / Phase B).

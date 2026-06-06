@@ -5,6 +5,7 @@
 
 add_executable(retroplug-cli
     main.cpp
+    TestHarness.cpp  # embedded QuickJS TypeScript test harness (--test)
     ${PROJECT_SOURCE_DIR}/src/project/Project.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
@@ -35,6 +36,12 @@ target_include_directories(retroplug-cli PRIVATE
     ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/src/render
     # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
     ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
+    # txiki.js / QuickJS runtime headers for the embedded JS test harness.
+    # `tjs.h` + internal `private.h` (TJS_EvalModuleContent / TJS_GetLoop /
+    # tjs__execute_jobs); `quickjs.h` arrives transitively via the `tjs` link
+    # but is listed for clarity.
+    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/src
+    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/quickjs
 )
 
 target_link_libraries(retroplug-cli PRIVATE
@@ -45,6 +52,8 @@ target_link_libraries(retroplug-cli PRIVATE
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
+    tjs       # txiki.js/QuickJS runtime for the embedded TS test harness
+              # (transitively brings qjs + libuv)
 )
 
 set_target_properties(retroplug-cli PROPERTIES

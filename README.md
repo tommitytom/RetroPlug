@@ -88,6 +88,29 @@ The script schema ([cli/Script.hpp](cli/Script.hpp)) accepts two event forms:
 
 Button names are case-insensitive: `Right Left Up Down A B Select Start`.
 
+### `retroplug-cli --test` — TypeScript tests
+
+For tests that need to **read emulator state and branch on it** — memory
+regions, SM83 CPU registers, instruction stepping, framebuffer/audio capture —
+beyond the write-once JSON model, write tests in TypeScript. They run in-process
+in the embedded txiki/QuickJS runtime (no Node, no DAW) and emit TAP:
+
+```bash
+make -C build cli-ts-test     # transpile + run every test/ts/*.test.ts
+```
+
+```ts
+import { test, expect, emu, Button, Mem } from "harness";
+
+test("LSDJ boots and writes to WRAM", () => {
+  const sys = emu.loadRom("../resources/roms/lsdj/lsdj9_4_2.gb");
+  emu.runMs(2500);
+  expect(emu.readMemory(sys, Mem.Ram).length).toBe(0x8000);
+});
+```
+
+See [test/ts/README.md](test/ts/README.md) for the full `emu` API.
+
 ### Standalone screenshot tooling
 
 The standalone (`build/bin/retroplug`, JACK target) periodically dumps the

@@ -51,7 +51,9 @@
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/FrameBufferTriple.hpp"
 
+#include "Screenshot.hpp"
 #include "Script.hpp"
+#include "TestHarness.hpp"
 #include "Wav.hpp"
 
 namespace {
@@ -171,38 +173,15 @@ bool dumpFramebuffer(SystemBase& sys,
                      const std::string& scriptStem,
                      const std::string& name,
                      std::uint32_t      systemIndex) {
-    FrameBufferTriple* fb = sys.framebuffer();
-    if (!fb) return false;
-    const std::uint32_t w = fb->width();
-    const std::uint32_t h = fb->height();
-    const std::size_t pixels = static_cast<std::size_t>(w) * h;
-
-    std::vector<std::uint32_t> xrgb(pixels);
-    if (!fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels))) {
-        std::fprintf(stderr,
-            "[screenshot] no frame published yet for system %u (name=%s) — skipping\n",
-            systemIndex, name.c_str());
-        return false;
-    }
-
-    std::vector<unsigned char> rgb(pixels * 3);
-    const std::uint8_t* src = reinterpret_cast<const std::uint8_t*>(xrgb.data());
-    for (std::size_t i = 0; i < pixels; ++i) {
-        rgb[i * 3 + 0] = src[i * 4 + 2]; // R
-        rgb[i * 3 + 1] = src[i * 4 + 1]; // G
-        rgb[i * 3 + 2] = src[i * 4 + 0]; // B
-    }
-
     std::filesystem::path out = std::filesystem::path(dir) /
         (scriptStem + "_" + name + "_sys" + std::to_string(systemIndex) + ".png");
     std::error_code ec;
     std::filesystem::create_directories(out.parent_path(), ec);
 
-    const unsigned err = lodepng_encode24_file(out.string().c_str(),
-                                               rgb.data(), w, h);
-    if (err) {
-        std::fprintf(stderr, "[screenshot] lodepng error %u writing %s: %s\n",
-                     err, out.string().c_str(), lodepng_error_text(err));
+    if (!rpcli::writeFramebufferPng(sys, out.string())) {
+        std::fprintf(stderr,
+            "[screenshot] no frame published yet (or encode failed) for system "
+            "%u (name=%s) — skipping\n", systemIndex, name.c_str());
         return false;
     }
     std::fprintf(stderr, "[screenshot] wrote %s\n", out.string().c_str());
@@ -212,6 +191,20 @@ bool dumpFramebuffer(SystemBase& sys,
 } // namespace
 
 int main(int argc, char** argv) try {
+    // TypeScript test harness: `--test <bundle.js>` runs an esbuild-produced JS
+    // test module in the embedded QuickJS runtime and emits TAP. Bypasses the
+    // JSON --script render path entirely.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--test") == 0) {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--test requires a JS file argument\n");
+                return 2;
+            }
+            TestHarness harness;
+            return harness.runFile(argv[i + 1]);
+        }
+    }
+
     const CliArgs args = parseArgs(argc, argv);
 
     // 1. Parse + normalize script JSON.
