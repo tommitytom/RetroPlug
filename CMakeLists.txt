@@ -662,18 +662,7 @@ if(BUILD_CLI)
 
     # MidiMap mode is covered by test/ts/gb/lsdj/midimap.test.ts (cli-ts-test).
 
-    # `make cli-lsdj-keyboardmidi` -> exercises KeyboardMidi mode (MIDI notes
-    # mapped to PS/2 scancodes via LSDJ's keyboard map).
-    add_custom_target(cli-lsdj-keyboardmidi
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_keyboardmidi.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-keyboardmidi
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ KeyboardMidi-mode demo"
-    )
+    # KeyboardMidi mode is covered by test/ts/gb/lsdj/keyboardmidi.test.ts (cli-ts-test).
 
     # MidiPassthrough is covered by test/ts/gb/lsdj/passthrough.test.ts (cli-ts-test).
 
