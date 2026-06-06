@@ -1,81 +1,77 @@
-# 19 — Mesen debugger: GBA stepping + side-effect-free CPU peek
+# 19 — Mesen CPU introspection (and when you'd actually need the debugger)
 
-**Status:** deferred. The generic CPU-state interface (step 18-era harness work)
-ships with two capabilities stubbed out on the Mesen backends. This document is
-the implementation guide for wiring them up later — no interface change is
-needed, only method bodies.
+**Status:** done. The CPU-state interface
+([src/system/CpuState.hpp](../src/system/CpuState.hpp) + the `SystemBase`
+virtuals) is fully implemented on all three backends, including the two
+capabilities originally pencilled in as "deferred to the Mesen debugger" — but
+**without** initialising the debugger. This note records why, and sketches the
+real debugger path for the day a feature genuinely needs it.
 
-## What's missing and why
+## What shipped, and how (no debugger)
 
-The cross-emulator CPU interface lives on `SystemBase` (see
-[src/system/CpuState.hpp](../src/system/CpuState.hpp) and the `getCpuRegisters` /
-`setCpuRegister` / `getProgramCounter` / `readCpuByte` / `stepInstruction`
-virtuals). SameBoy implements all of it via the SameBoy core. The Mesen backends
-([MesenNesSystem](../src/system/mesen/MesenNesSystem.cpp),
-[MesenGbaSystem](../src/system/mesen/MesenGbaSystem.cpp)) implement registers +
-PC + register writes directly off the typed CPU (`NesCpu`/`GbaCpu`), but two
-things require Mesen's **debugger**, which the wrappers don't initialise:
+The first pass at this assumed GBA instruction-stepping and side-effect-free
+CPU peek required Mesen's debugger. They don't — Mesen exposes both directly:
 
-| Capability | NES today | GBA today | Needs |
-| --- | --- | --- | --- |
-| `stepInstruction()` | ✓ `NesCpu::Exec()` | **0 (deferred)** | `Debugger::Step` |
-| `readCpuByte()` (no side effects) | **nullopt (deferred)** | **nullopt (deferred)** | `MemoryDumper::GetMemoryValue` |
+| Capability | Implementation | Reachable from |
+| --- | --- | --- |
+| `stepInstruction()` (NES) | `NesCpu::Exec()` + `CycleCount` delta | `NesConsole::GetCpu()` |
+| `stepInstruction()` (GBA) | `GbaCpu::Exec<false,false>()` + `CycleCount` delta | `GbaConsole::GetCpu()` |
+| `readCpuByte()` (NES) | `NesMemoryManager::DebugRead(addr)` | `NesConsole::GetMemoryManager()` |
+| `readCpuByte()` (GBA) | `GbaMemoryManager::DebugRead(addr)` | `GbaConsole::GetMemoryManager()` |
 
-NES already single-steps without the debugger (`Exec()` runs exactly one
-instruction). GBA can't — ARM/Thumb are variable-width and the wrapper drives
-the core a frame at a time (`GbaConsole::RunFrame`), so instruction stepping
-needs the debugger's stepper. The side-effect-free peek needs the debugger's
-`MemoryDumper` on both NES and GBA (the raw `Emulator::GetMemory` buffer has I/O
-side effects and doesn't follow CPU-address banking).
+`GbaCpu::Exec<inlineHalt, debuggerEnabled>()` is the same public per-instruction
+method `GbaConsole::RunFrame()` loops on (with `debuggerEnabled = false` when
+`!IsDebugging()`), so stepping one ARM/Thumb instruction is just one `Exec`
+call — exactly analogous to NES. `DebugRead` is the memory managers' existing
+banking-aware, side-effect-free read (`disableSideEffects` is implicit). Both
+avoid the heavyweight debugger entirely, so the normal render path
+(`cli-smoke` / `cli-nes-smoke` / `cli-gba-smoke`) pays nothing.
 
-## The Mesen APIs
+See [MesenNesSystem.cpp](../src/system/mesen/MesenNesSystem.cpp) and
+[MesenGbaSystem.cpp](../src/system/mesen/MesenGbaSystem.cpp) (the `-- CPU state`
+sections), covered by [test/ts/cpu_nes.test.ts](../test/ts/cpu_nes.test.ts) and
+[test/ts/cpu_gba.test.ts](../test/ts/cpu_gba.test.ts).
 
-All reachable from the wrapper's `emu_` (`std::unique_ptr<Emulator>`):
+## When you'd actually need the Mesen debugger
 
-- **Init (once):** `emu_->InitDebugger()` then
-  `DebuggerRequest req = emu_->GetDebugger(true);` → `Debugger* dbg = req.GetDebugger();`
-  (`Emulator.h` `InitDebugger` / `GetDebugger`; `DebuggerRequest.h`). The
-  `DebuggerRequest` is a refcounting handle — hold it (or re-acquire) for the
-  system's lifetime; release on `onDeactivate`.
-- **Step one instruction:** `dbg->Step(cpuType, 1, StepType::Step);`
-  (`Debugger.h`). `cpuType` is `CpuType::Nes` or `CpuType::Gba`
-  (`Core/Shared/CpuType.h`). For the `stepInstruction()` return value (cycles),
-  diff `GbaCpuState::CycleCount` (or `NesCpuState::CycleCount`) before/after.
-- **Side-effect-free peek:**
-  `dbg->GetMemoryDumper()->GetMemoryValue(memType, addr, /*disableSideEffects=*/true);`
-  (`MemoryDumper.h`). `memType` is the CPU-address-space memory type
-  (`MemoryType::NesMemory` / `MemoryType::GbaMemory`) so banking is honoured.
+`Exec` + `DebugRead` cover register/PC/step/peek. The full debugger is only
+worth its cost for capabilities the current interface doesn't expose:
 
-## Wiring it in
+- **Breakpoints / watchpoints** — run-until-(memory write to X) / (PC hits X
+  with a condition), execution/read/write watchpoints. `runUntilPc()` today is
+  a brute-force step loop; a real PC breakpoint would be far faster and could
+  express conditions.
+- **Trace logging / disassembly** — per-instruction disassembly + a trace
+  buffer for "what did the CPU just do".
+- **cpsr (and other status-register) writes** on GBA — currently unsupported
+  (`GbaCpuFlags` has `ToInt32` but no `FromInt32`); the debugger's register-set
+  path handles these.
 
-1. **Init at activate, tear down at deactivate.** In each Mesen wrapper's
-   `onActivate`, after `LoadRom`, call `InitDebugger()` + cache the
-   `DebuggerRequest`. In `onDeactivate`, release it before `emu_.reset()`.
-   **Cost:** the debugger allocates breakpoint managers, a trace logger, call
-   stacks, etc. — heavyweight, and it slows `Exec()`/`RunFrame()` because every
-   instruction now goes through the debugger hook. Acceptable for the test
-   harness (not realtime); if it regresses `cli-smoke`/`gba_smoke` render speed,
-   gate init behind a flag set only by the harness (e.g. a `Mesen*Config`
-   `enableDebugger` field, off by default).
-2. **`MesenGbaSystem::stepInstruction()`** — override (currently inherits the
-   base `0`): set the emulation thread id (as `onProcess` does), read
-   `CycleCount`, `dbg->Step(CpuType::Gba, 1, StepType::Step)`, return the cycle
-   delta. With this, the base `runUntilPc()` starts working on GBA for free.
-3. **`readCpuByte()`** — override on both Mesen wrappers (currently inherit the
-   base `nullopt`): return
-   `dbg->GetMemoryDumper()->GetMemoryValue(MemoryType::{Nes,Gba}Memory, addr, true)`.
-   NES could optionally route through the debugger for `stepInstruction` too for
-   consistency, but `Exec()` is cheaper and already correct — leave it.
+### The debugger API (sketch)
 
-## Verifying once wired
+All reachable from `emu_` (`std::unique_ptr<Emulator>`):
 
-- Flip the deferred assertions in
-  [test/ts/cpu_gba.test.ts](../test/ts/cpu_gba.test.ts): `emu.step(sys)` should
-  now return `> 0`, and `runUntilPc` should reach a nearby PC.
-- Flip the "unsupported" assertion in
-  [test/ts/cpu_nes.test.ts](../test/ts/cpu_nes.test.ts): `emu.readCpu(sys, addr)`
-  should return a byte that agrees with `getMemory` for RAM addresses, and read
-  PPU/IO addresses without side effects.
-- Add a GBA `readCpu` test mirroring the NES one.
-- Regression: `make -C build cli-smoke gba_smoke cli-nes-smoke` must stay green
-  (watch render-speed if the debugger is always-on rather than harness-gated).
+- **Init (lazy, once):** `DebuggerRequest req = emu_->GetDebugger(/*autoInit=*/true);`
+  → `Debugger* dbg = req.GetDebugger();`. `GetDebugger` only returns a live
+  debugger when `IsRunning()` (true after `LoadRom`) and creates `_debugger`
+  on first call; it persists until `emu_->StopDebugger()`. `DebuggerRequest`
+  only refcounts in-flight calls (`_debugRequestCount`) — it does **not** own
+  the debugger's lifetime, so a short-lived stack `DebuggerRequest` per call is
+  fine; call `StopDebugger()` in `onDeactivate` if you ever init it.
+  (`Core/Shared/Emulator.{h,cpp}`, `Core/Shared/DebuggerRequest.{h,cpp}`.)
+- **Step (alternative to `Exec`):** `dbg->Step(CpuType::Nes|Gba, 1, StepType::Step)`
+  (`Core/Debugger/Debugger.h`). Designed around Mesen's threaded run-loop
+  (break-on-count); integrating it with the harness's manual drive needs care —
+  prefer `Exec` for plain stepping, reach for `Step` only for typed step modes
+  (step-over / step-out / run-to-IRQ).
+- **Breakpoints:** `dbg->GetBreakpointManager()` / `SetBreakpoints(...)`.
+- **Side-effect-free peek (already covered by `DebugRead`):**
+  `dbg->GetMemoryDumper()->GetMemoryValue(MemoryType::NesMemory|GbaMemory, addr, true)`
+  (`Core/Debugger/MemoryDumper.h`) — equivalent to `DebugRead`, no reason to
+  switch unless you're already holding the debugger for breakpoints.
+
+**Cost:** `InitDebugger()` allocates breakpoint managers, a trace logger, call
+stacks, etc. and routes every instruction through the debugger hook
+(`Exec<*, true>`), slowing emulation. If a future feature needs it, init it
+**lazily on first use** and gate it so the render path stays on
+`Exec<*, false>` — or expose it behind a harness-only flag.

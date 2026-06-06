@@ -349,6 +349,14 @@ std::optional<std::uint32_t> MesenNesSystem::getProgramCounter() const {
     return cpu->GetState().PC;
 }
 
+std::optional<std::uint8_t> MesenNesSystem::readCpuByte(std::uint32_t addr) const {
+    if (!emu_) return std::nullopt;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return std::nullopt;
+    // Banking-aware, side-effect-free read of the 6502 address space.
+    return console->GetMemoryManager()->DebugRead(static_cast<std::uint16_t>(addr));
+}
+
 std::uint64_t MesenNesSystem::stepInstruction() {
     NesCpu* cpu = nesCpu(emu_.get());
     if (!cpu) return 0;

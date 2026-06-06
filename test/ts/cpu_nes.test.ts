@@ -47,10 +47,11 @@ test("NES RAM is readable via getMemory regions", () => {
   expect(ram.length).toBe(0x800);
 });
 
-test("readCpu (side-effect-free peek) is unsupported on NES today", () => {
+test("NES readCpu (side-effect-free peek) agrees with the RAM region", () => {
   const sys = emu.loadRom(NES);
   emu.runMs(1000);
-  let threw = false;
-  try { emu.readCpu(sys, 0x0000); } catch { threw = true; }
-  expect(threw).toBeTruthy(); // deferred to the Mesen debugger
+  const ram = emu.readMemory(sys, Mem.Ram); // NesInternalRam, CPU $0000-$07FF
+  for (const addr of [0x0000, 0x0010, 0x00ff, 0x0400, 0x07ff]) {
+    expect(emu.readCpu(sys, addr)).toBe(ram[addr]);
+  }
 });

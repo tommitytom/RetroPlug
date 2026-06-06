@@ -1,7 +1,5 @@
 // CPU-state harness coverage for the Mesen GBA (ARM7) backend. Boots on
-// Mesen's HLE BIOS (no real gba_bios.bin needed). Instruction stepping +
-// side-effect-free peek are deferred to the Mesen debugger
-// (porting/19-mesen-debugger.md), so this asserts the graceful "unsupported".
+// Mesen's HLE BIOS (no real gba_bios.bin needed).
 
 import { test, expect, emu, Mem } from "harness";
 
@@ -25,18 +23,27 @@ test("GBA setRegister writes a general register", () => {
   expect(emu.getRegisters(sys).r0).toBe(0x1234abcd);
 });
 
-test("GBA instruction stepping is deferred (step=0, runUntilPc=false)", () => {
+test("GBA single-steps via Exec (cycles > 0)", () => {
   const sys = emu.loadRom(GBA);
   emu.runMs(1000);
-  // No Mesen debugger yet -> stepInstruction returns 0 and runUntilPc bails.
-  expect(emu.step(sys)).toBe(0);
-  const pc = emu.getRegisters(sys).pc;
-  expect(emu.runUntilPc(sys, pc + 4, 100000)).toBeFalsy();
+  expect(emu.step(sys)).toBeGreaterThan(0);
 });
 
-test("GBA IWRAM is readable via getMemory regions", () => {
+test("GBA runUntilPc steps back to a PC seen in the execution loop", () => {
+  const sys = emu.loadRom(GBA);
+  emu.runMs(2000); // settle into the main/idle loop
+  emu.step(sys);
+  const target = emu.getRegisters(sys).pc;
+  emu.step(sys); // move off it; the loop returns here
+  expect(emu.runUntilPc(sys, target, 5_000_000)).toBeTruthy();
+});
+
+test("GBA readCpu (side-effect-free peek) agrees with the IWRAM region", () => {
   const sys = emu.loadRom(GBA);
   emu.runMs(1000);
-  const iwram = emu.readMemory(sys, Mem.Ram); // GbaIntWorkRam = 32 KiB
-  expect(iwram.length).toBe(0x8000);
+  const iwram = emu.readMemory(sys, Mem.Ram); // GbaIntWorkRam @ 0x03000000
+  expect(iwram.length).toBe(0x8000); // 32 KiB
+  for (const off of [0x0, 0x10, 0x100, 0x1000]) {
+    expect(emu.readCpu(sys, 0x03000000 + off)).toBe(iwram[off]);
+  }
 });

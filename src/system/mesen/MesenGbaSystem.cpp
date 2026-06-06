@@ -14,6 +14,7 @@
 #include "Core/GBA/APU/GbaApu.h"
 #include "Core/GBA/GbaConsole.h"
 #include "Core/GBA/GbaCpu.h"
+#include "Core/GBA/GbaMemoryManager.h"
 #include "Core/GBA/Input/GbaController.h"
 #include "Core/Shared/Audio/SoundMixer.h"
 #include "Core/Shared/BaseControlDevice.h"
@@ -353,6 +354,31 @@ std::optional<std::uint32_t> MesenGbaSystem::getProgramCounter() const {
     GbaCpu* cpu = gbaCpu(emu_.get());
     if (!cpu) return std::nullopt;
     return cpu->GetProgramCounter();
+}
+
+std::optional<std::uint8_t> MesenGbaSystem::readCpuByte(std::uint32_t addr) const {
+    if (!emu_) return std::nullopt;
+    auto* console = dynamic_cast<GbaConsole*>(emu_->GetConsole().get());
+    if (!console) return std::nullopt;
+    // Banking-aware, side-effect-free read of the ARM7 address space.
+    return console->GetMemoryManager()->DebugRead(addr);
+}
+
+std::uint64_t MesenGbaSystem::stepInstruction() {
+    GbaCpu* cpu = gbaCpu(emu_.get());
+    if (!cpu) return 0;
+    // Exec() relies on Mesen's IsEmulationThread() check; ensure the thread id
+    // is set even if step is called before the first onProcess.
+    if (!threadIdSet_) {
+        emu_->SetEmulationThreadId(std::this_thread::get_id());
+        threadIdSet_ = true;
+    }
+    // One ARM/Thumb instruction, no debugger (the same Exec() RunFrame loops on
+    // when IsDebugging() is false). Cycles via the CycleCount delta.
+    const std::uint64_t before = cpu->GetState().CycleCount;
+    cpu->Exec<false, false>();
+    const std::uint64_t after = cpu->GetState().CycleCount;
+    return after - before;
 }
 
 SystemConfig MesenGbaSystem::snapshotConfig() const {

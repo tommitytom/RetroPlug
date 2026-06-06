@@ -48,15 +48,15 @@ public:
 
     // -- CPU state (SystemBase virtuals) -------------------------------------
     //
-    // GBA (ARM7): registers r0..r15 + cpsr (32-bit) + pc (= r15), and register
-    // writes (pc/r15 via SetProgramCounter; cpsr write unsupported). Instruction
-    // stepping and side-effect-free readCpuByte are deferred to the Mesen
-    // debugger (porting/19-mesen-debugger.md), so stepInstruction()/readCpuByte()
-    // fall through to the base "unsupported" defaults (0 / nullopt) and
-    // runUntilPc() therefore returns false. Inspect memory via getMemory().
+    // GBA (ARM7): registers r0..r15 + cpsr (32-bit) + pc (= r15), register
+    // writes (pc/r15 via SetProgramCounter; cpsr write unsupported), single-step
+    // via GbaCpu::Exec(), and side-effect-free CPU-address reads via
+    // GbaMemoryManager::DebugRead(). Inspect memory regions via getMemory().
     std::vector<rp::CpuRegister> getCpuRegisters() const override;
     bool setCpuRegister(std::string_view name, std::uint32_t value) override;
     std::optional<std::uint32_t> getProgramCounter() const override;
+    std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
+    std::uint64_t stepInstruction() override;
 
     SystemConfig snapshotConfig() const override;
 
