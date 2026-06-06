@@ -232,9 +232,9 @@ add_executable(rpc-schema-dump
     src/system/sameboy/roles/LsdjSyncRole.cpp
     src/system/sameboy/roles/LsdjKitPatchRole.cpp
     src/system/sameboy/roles/MgbPassthroughRole.cpp
-    src/system/mesen/MesenSystem.cpp
+    src/system/mesen/MesenNesSystem.cpp
     src/system/mesen/MesenVideoDevice.cpp
-    src/system/mesen/GbaSystem.cpp
+    src/system/mesen/MesenGbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE src)
 target_include_directories(rpc-schema-dump PRIVATE deps/lv_binding_js/deps/txiki/deps/miniz)
@@ -337,9 +337,9 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
-      src/system/mesen/MesenSystem.cpp
+      src/system/mesen/MesenNesSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
-      src/system/mesen/GbaSystem.cpp
+      src/system/mesen/MesenGbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
   FILES_UI
       src/PluginUI.cpp
@@ -369,9 +369,9 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/LsdjSyncRole.cpp
       src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
-      src/system/mesen/MesenSystem.cpp
+      src/system/mesen/MesenNesSystem.cpp
       src/system/mesen/MesenVideoDevice.cpp
-      src/system/mesen/GbaSystem.cpp
+      src/system/mesen/MesenGbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
       ${UI_BUNDLE_C}
       deps/dpf-widgets/generic/LVGL.cpp)
@@ -523,9 +523,9 @@ if(BUILD_CLI)
         add_dependencies(cli-ts-test cli-ts-test-${_stem})
     endforeach()
 
-    # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenSystem,
-    # render 5 s, capture a final screenshot. First end-to-end verification of
-    # the Mesen backend + NES ROM dispatch (step 17 / Phase B).
+    # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenNesSystem,
+    # render 5 s, capture a final screenshot. End-to-end verification of
+    # the Mesen backend + NES ROM dispatch.
     add_custom_target(cli-nes-smoke
         COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
                 --script ${CMAKE_SOURCE_DIR}/examples/scripts/nes_smoke.json
@@ -536,7 +536,7 @@ if(BUILD_CLI)
         COMMENT "Rendering examples/scripts/nes_smoke.json -> /tmp/nes-smoke.wav + boot.png"
     )
 
-    # `make cli-gba-smoke` -> boot the nanoloop demo GBA ROM under GbaSystem,
+    # `make cli-gba-smoke` -> boot the nanoloop demo GBA ROM under MesenGbaSystem,
     # render 5 s, capture two screenshots. End-to-end verification of the
     # Mesen-backed GBA dispatch (audio + video + boot).
     add_custom_target(cli-gba-smoke

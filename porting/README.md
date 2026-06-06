@@ -43,7 +43,8 @@ ownership cannot live in the UI — see [step 4](./04-project-state.md).
 
 1. **Runtime side (polymorphic).** DSP owns
    `std::vector<std::unique_ptr<SystemBase>>`. Concrete subclasses
-   (`SameBoySystem`, later `MesenSystem`) hold live emulator state. Per-ROM
+   (`SameBoySystem`, later `MesenNesSystem` / `MesenGbaSystem`) hold live
+   emulator state. Per-ROM
    behavior (LSDJ, MGB, Arduinoboy, user-added) is a vector of composed
    `std::unique_ptr<RomRole>` members on each system; multiple roles can run on
    the same ROM.
@@ -139,7 +140,7 @@ Audio fidelity, mid-session savestates, second emulator backend, web target.
   accuracy at non-44.1 kHz host rates.
 - [16: Savestate slots](./16-savestate-slots.md) — Mid-session save/load
   (distinct from project state which only saves once).
-- [17: Mesen NES support](./17-mesen.md) — `MesenSystem`. Validates that
+- [17: Mesen NES support](./17-mesen.md) — `MesenNesSystem`. Validates that
   `SystemBase` was the right interface.
 - [18: Web/Emscripten port](./18-web-port.md) — DSP+UI to WASM. C++ core
   unchanged because no shared-memory IPC assumption was baked in.

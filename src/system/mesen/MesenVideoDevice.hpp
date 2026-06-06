@@ -9,7 +9,7 @@ class FrameBufferTriple;
 
 // IRenderingDevice implementation that copies the most recently decoded video
 // frame into the system's lock-free FrameBufferTriple. The triple-buffer is
-// owned by MesenSystem; we just hold a non-owning pointer set at activation.
+// owned by MesenNesSystem; we just hold a non-owning pointer set at activation.
 //
 // Mesen emits 0xAARRGGBB pixels (32-bit ARGB packed); FrameBufferTriple stores
 // uint32_t in LVGL-native byte order (B,G,R,X for LV_COLOR_DEPTH=32, written as

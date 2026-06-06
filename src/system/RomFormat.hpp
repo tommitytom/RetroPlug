@@ -11,21 +11,21 @@
 // say) is rejected cleanly instead of being fed to SameBoy as garbage.
 
 enum class RomFormat : std::uint8_t {
-    Unknown = 0,  // bytes don't look like any supported ROM
-    SameBoy = 1,  // Game Boy / Game Boy Color (DMG/CGB)
-    Mesen   = 2,  // NES (iNES header)
-    Gba     = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F)
+    Unknown  = 0,  // bytes don't look like any supported ROM
+    SameBoy  = 1,  // Game Boy / Game Boy Color (DMG/CGB)
+    MesenNes = 2,  // NES (iNES header), via the Mesen backend
+    MesenGba = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F), via Mesen
 };
 
-// Returns Mesen if `bytes` starts with the iNES magic ("NES\x1A").
-// Returns Gba if `bytes` contains the GBA Nintendo logo at offset $0004.
+// Returns MesenNes if `bytes` starts with the iNES magic ("NES\x1A").
+// Returns MesenGba if `bytes` contains the GBA Nintendo logo at offset $0004.
 // Returns SameBoy if `bytes` contains the Game Boy Nintendo logo at offset
 // $0104. Returns Unknown otherwise. Empty / short buffers are Unknown.
 inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
     // iNES: 'N','E','S',0x1A at offset 0
     if (bytes.size() >= 4 &&
         bytes[0] == 'N' && bytes[1] == 'E' && bytes[2] == 'S' && bytes[3] == 0x1A) {
-        return RomFormat::Mesen;
+        return RomFormat::MesenNes;
     }
 
     // GBA: Nintendo logo at $0004..$009F. Every licensed GBA cart contains
@@ -45,7 +45,7 @@ inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
         for (std::size_t i = 0; i < kGbaLogoSize; ++i) {
             if (bytes[kGbaLogoOffset + i] != kGbaLogo[i]) { match = false; break; }
         }
-        if (match) return RomFormat::Gba;
+        if (match) return RomFormat::MesenGba;
     }
 
     // Game Boy: Nintendo logo at $0104..$0133. Every licensed (and most

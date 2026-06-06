@@ -38,7 +38,7 @@ enum class SameBoyHighpass : std::uint32_t {
 };
 
 struct SameBoyConfig {
-    // On-disk variant discriminator (`"kind":"sameboy"`). Locked spelling.
+    // On-disk variant discriminator (`"kind":"sameboy"`).
     using Tag = rfl::Literal<"sameboy">;
 
     SameBoyModel              model    = SameBoyModel::CgbC;

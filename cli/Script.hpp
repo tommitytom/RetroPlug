@@ -85,7 +85,7 @@ struct ScriptSystem {
     // when the ROM is sniffed as LSDJ; ignored otherwise.
     std::optional<std::string>   lsdj_sync_mode;
     // GBA-only: path to a real GBA BIOS file (16384 bytes; filename can be
-    // anything — Mesen requires it to be named gba_bios.bin so GbaSystem
+    // anything — Mesen requires it to be named gba_bios.bin so MesenGbaSystem
     // copies it into its firmware folder on activate). Without it most ROMs
     // hang at the first BIOS SWI; the Cult-of-GBA open-source BIOS works as
     // a drop-in for the smoke test. Ignored for SameBoy / NES ROMs.

@@ -5,9 +5,9 @@
 using SystemId = std::uint32_t;
 
 enum class SystemKind : std::uint32_t {
-    SameBoy = 0,
-    Mesen   = 1,
-    Gba     = 2,
+    SameBoy  = 0,
+    MesenNes = 1,  // NES, via the Mesen backend
+    MesenGba = 2,  // GBA, via the Mesen backend
 };
 
 // Per-block context handed to SystemBase::onProcess. Audio thread only.

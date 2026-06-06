@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "system/SystemBase.hpp"
-#include "system/mesen/GbaConfig.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
 
@@ -13,21 +13,19 @@ class Emulator;
 class MesenAudioDevice;
 class MesenVideoDevice;
 
-// TODO: Rename to MesenGbaSystem
-
-// GBA (Mesen2) system. Mirrors MesenSystem's (NES) shape: per-block onProcess
-// drives the CPU until enough samples are queued in the audio device, then
-// drains them into the planar L/R outs with smoothed gain. Native GBA
+// GBA system, via the Mesen backend. Mirrors MesenNesSystem's shape: per-block
+// onProcess drives the CPU until enough samples are queued in the audio device,
+// then drains them into the planar L/R outs with smoothed gain. Native GBA
 // resolution: 240x160. Audio runs at the host sample rate (Mesen's
 // SoundMixer resamples GBA's native ~32 kHz APU stream internally).
-class GbaSystem final : public SystemBase {
+class MesenGbaSystem final : public SystemBase {
 public:
-    GbaSystem(SystemId id,
-              GbaSystemConfig config,
-              std::vector<std::uint8_t> romBytes);
-    ~GbaSystem() override;
+    MesenGbaSystem(SystemId id,
+                   MesenGbaConfig config,
+                   std::vector<std::uint8_t> romBytes);
+    ~MesenGbaSystem() override;
 
-    SystemKind kind() const override { return SystemKind::Gba; }
+    SystemKind kind() const override { return SystemKind::MesenGba; }
 
     void onActivate(double sampleRate) override;
     void onDeactivate() override;
@@ -70,7 +68,7 @@ public:
     static constexpr std::uint32_t kPixelHeight = 160;
 
 private:
-    GbaSystemConfig                   config_;
+    MesenGbaConfig                   config_;
     std::vector<std::uint8_t>         rom_;
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;

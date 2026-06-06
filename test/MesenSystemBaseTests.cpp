@@ -1,9 +1,9 @@
-// Tests for the SystemBase virtuals as implemented by MesenSystem — the new
+// Tests for the SystemBase virtuals as implemented by MesenNesSystem — the new
 // SRAM / savestate / clone / fastBoot / reload-on-rom-change surface lifted
 // out of SameBoy-only territory. See plan at
 // /home/vscode/.claude/plans/find-all-stubbed-menu-eager-starlight.md.
 //
-// Each test boots a real MesenSystem against the in-repo n8-midi.nes ROM
+// Each test boots a real MesenNesSystem against the in-repo n8-midi.nes ROM
 // (RETROPLUG_TEST_ROM_DIR). The companion MesenMultiInstanceTests exercises
 // the audio path side-by-side; here we focus on the menu-action virtuals.
 
@@ -19,8 +19,8 @@
 #include "system/MemoryType.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
-#include "system/mesen/MesenConfig.hpp"
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 
 #ifndef RETROPLUG_TEST_ROM_DIR
 #  error "RETROPLUG_TEST_ROM_DIR must be defined by CMake"
@@ -45,7 +45,7 @@ const std::string kRomPath = std::string(RETROPLUG_TEST_ROM_DIR) + "/n8-midi.nes
 // Step the emulator forward by `blocks` audio blocks so internal state has
 // advanced (CPU PC has moved, RAM has been touched). Without running, a
 // savestate diff between "fresh" and "stepped" would be empty.
-void runBlocks(MesenSystem& sys, int blocks = 4, std::uint32_t blockSize = 256) {
+void runBlocks(MesenNesSystem& sys, int blocks = 4, std::uint32_t blockSize = 256) {
     std::vector<float> l(blockSize), r(blockSize);
     float* outs[2] = { l.data(), r.data() };
     AudioBlockInfo info{};
@@ -66,7 +66,7 @@ void runBlocks(MesenSystem& sys, int blocks = 4, std::uint32_t blockSize = 256) 
 // bytes embed compressed video data and may differ across save → load → save
 // round-trips, but the underlying RAM at the point load() restored to is
 // the actual semantic state. Compares can be done with `==`.
-std::vector<std::uint8_t> snapshotRam(MesenSystem& sys) {
+std::vector<std::uint8_t> snapshotRam(MesenNesSystem& sys) {
     auto acc = sys.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
     if (!acc.valid() || acc.size() == 0) return {};
     return std::vector<std::uint8_t>(acc.data(), acc.data() + acc.size());
@@ -74,12 +74,12 @@ std::vector<std::uint8_t> snapshotRam(MesenSystem& sys) {
 
 } // namespace
 
-TEST_CASE("MesenSystem::fastBoot returns nullopt (no GBA-style boot toggle on NES)",
+TEST_CASE("MesenNesSystem::fastBoot returns nullopt (no GBA-style boot toggle on NES)",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     CHECK(!sys.fastBoot().has_value());
@@ -91,12 +91,12 @@ TEST_CASE("MesenSystem::fastBoot returns nullopt (no GBA-style boot toggle on NE
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem::wantsRomReload defaults false and toggles via setRomReload",
+TEST_CASE("MesenNesSystem::wantsRomReload defaults false and toggles via setRomReload",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     CHECK_FALSE(sys.wantsRomReload());
@@ -108,12 +108,12 @@ TEST_CASE("MesenSystem::wantsRomReload defaults false and toggles via setRomRelo
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem::romPath returns the configured path",
+TEST_CASE("MesenNesSystem::romPath returns the configured path",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     CHECK(sys.romPath() == kRomPath);
@@ -121,12 +121,12 @@ TEST_CASE("MesenSystem::romPath returns the configured path",
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem SRAM round-trip via getMemory + saveSramBytes",
+TEST_CASE("MesenNesSystem SRAM round-trip via getMemory + saveSramBytes",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     auto accessor = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
@@ -159,12 +159,12 @@ TEST_CASE("MesenSystem SRAM round-trip via getMemory + saveSramBytes",
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem savestate round-trip restores internal RAM",
+TEST_CASE("MesenNesSystem savestate round-trip restores internal RAM",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     // Capture state A at the start (after a couple of warm-up blocks).
@@ -183,7 +183,7 @@ TEST_CASE("MesenSystem savestate round-trip restores internal RAM",
     // Two captures at different timepoints differ at SOME byte in the
     // savestate stream too — proof that SaveState is actually capturing
     // mutable state, not a fixed header. (Byte-identity ACROSS a load+save
-    // cycle isn't asserted — see [MesenSystem savestate is not byte-stable
+    // cycle isn't asserted — see [MesenNesSystem savestate is not byte-stable
     // across load/save] below.)
     CHECK(stateA != stateB);
 
@@ -204,7 +204,7 @@ TEST_CASE("MesenSystem savestate round-trip restores internal RAM",
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem savestate is not byte-stable across load+save (documented)",
+TEST_CASE("MesenNesSystem savestate is not byte-stable across load+save (documented)",
           "[MesenSystemBase]") {
     // Pinning the actual non-stability: Mesen's GetSaveStateHeader writes a
     // compressed snapshot of the current PpuFrameInfo into the stream
@@ -213,9 +213,9 @@ TEST_CASE("MesenSystem savestate is not byte-stable across load+save (documented
     // identical. Documenting this here so the round-trip test above can
     // rely on RAM-based equality instead of bytes.
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
     runBlocks(sys, 2);
 
@@ -229,12 +229,12 @@ TEST_CASE("MesenSystem savestate is not byte-stable across load+save (documented
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem::clone produces an independent instance at matching state",
+TEST_CASE("MesenNesSystem::clone produces an independent instance at matching state",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem src{SystemId{1}, cfg, romBytes};
+    MesenNesSystem src{SystemId{1}, cfg, romBytes};
     src.onActivate(kSampleRate);
 
     runBlocks(src, 10);
@@ -249,7 +249,7 @@ TEST_CASE("MesenSystem::clone produces an independent instance at matching state
     // RAM-level equality immediately after the clone — true "identical
     // state" check (savestate bytes aren't reliable, see the
     // not-byte-stable test above).
-    auto* clonedSys = dynamic_cast<MesenSystem*>(cloned.get());
+    auto* clonedSys = dynamic_cast<MesenNesSystem*>(cloned.get());
     REQUIRE(clonedSys);
     auto srcRam   = snapshotRam(src);
     auto cloneRam = snapshotRam(*clonedSys);
@@ -271,19 +271,19 @@ TEST_CASE("MesenSystem::clone produces an independent instance at matching state
     // cloned's destructor runs onDeactivate.
 }
 
-TEST_CASE("MesenSystem::snapshotConfig captures live SRAM and savestate",
+TEST_CASE("MesenNesSystem::snapshotConfig captures live SRAM and savestate",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem sys{SystemId{1}, cfg, romBytes};
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
     sys.onActivate(kSampleRate);
 
     runBlocks(sys, 5);
     auto ramAtSnap = snapshotRam(sys);
 
     auto snap = sys.snapshotConfig();
-    const MesenConfig* m = rfl::get_if<MesenConfig>(&snap.variant());
+    const MesenNesConfig* m = rfl::get_if<MesenNesConfig>(&snap.variant());
     REQUIRE(m != nullptr);
 
     // savestate is always populated for an active emulator (state size > 0).
@@ -300,8 +300,8 @@ TEST_CASE("MesenSystem::snapshotConfig captures live SRAM and savestate",
 
     // Round-tripping the savestate via a fresh instance should restore RAM
     // to what was live at snapshot time — the meaningful contract.
-    MesenConfig roundtripCfg = *m;
-    MesenSystem roundtrip{SystemId{99}, roundtripCfg, romBytes};
+    MesenNesConfig roundtripCfg = *m;
+    MesenNesSystem roundtrip{SystemId{99}, roundtripCfg, romBytes};
     roundtrip.onActivate(kSampleRate);
     CHECK(snapshotRam(roundtrip) == ramAtSnap);
     roundtrip.onDeactivate();
@@ -309,14 +309,14 @@ TEST_CASE("MesenSystem::snapshotConfig captures live SRAM and savestate",
     sys.onDeactivate();
 }
 
-TEST_CASE("MesenSystem honours config_.sram and config_.savestate at onActivate",
+TEST_CASE("MesenNesSystem honours config_.sram and config_.savestate at onActivate",
           "[MesenSystemBase]") {
     auto romBytes = loadRom(kRomPath);
 
     // Build a system, write a known SRAM pattern, capture its state + RAM.
-    MesenConfig cfg{};
+    MesenNesConfig cfg{};
     cfg.romPath = kRomPath;
-    MesenSystem original{SystemId{1}, cfg, romBytes};
+    MesenNesSystem original{SystemId{1}, cfg, romBytes};
     original.onActivate(kSampleRate);
     runBlocks(original, 8);
 
@@ -338,12 +338,12 @@ TEST_CASE("MesenSystem honours config_.sram and config_.savestate at onActivate"
     original.onDeactivate();
 
     // Second system: hydrate from the captured state + SRAM via config_.
-    MesenConfig restoreCfg = cfg;
+    MesenNesConfig restoreCfg = cfg;
     restoreCfg.savestate = std::move(stateBytes);
     if (!sramPattern.empty()) {
         restoreCfg.sram = sramPattern;
     }
-    MesenSystem restored{SystemId{2}, restoreCfg, romBytes};
+    MesenNesSystem restored{SystemId{2}, restoreCfg, romBytes};
     restored.onActivate(kSampleRate);
 
     // The restored emulator should be at the same semantic state — RAM

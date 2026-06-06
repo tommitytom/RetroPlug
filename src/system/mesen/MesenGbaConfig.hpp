@@ -9,16 +9,16 @@
 #include "system/RoleConfig.hpp"
 
 // Plain-data, reflectcpp-friendly config for a GBA (Mesen2) system slot.
-// Mirrors MesenConfig's shape so the three configs are interchangeable
+// Mirrors MesenNesConfig's shape so the three configs are interchangeable
 // through the SystemConfig tagged union.
 
-// Named GbaSystemConfig (not GbaConfig) to avoid colliding with Mesen's own
+// Named MesenGbaConfig (not GbaConfig) to avoid colliding with Mesen's own
 // `struct GbaConfig` in deps/mesen/Core/Shared/SettingTypes.h — both live at
 // global scope and any TU that needs to call settings->SetGbaConfig() would
 // otherwise see two definitions of the same name. The on-disk JSON tag is
 // still "gba"; the rename is internal only.
-struct GbaSystemConfig {
-    // On-disk variant discriminator (`"kind":"gba"`). Locked spelling.
+struct MesenGbaConfig {
+    // On-disk variant discriminator (`"kind":"gba"`).
     using Tag = rfl::Literal<"gba">;
 
     bool          embedRom        = true;
@@ -33,7 +33,7 @@ struct GbaSystemConfig {
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;
 
-    // Optional path to a real GBA BIOS file. When set, GbaSystem::onActivate
+    // Optional path to a real GBA BIOS file. When set, MesenGbaSystem::onActivate
     // copies it into Mesen's firmware search path (`<home>/Firmware/
     // gba_bios.bin`) so FirmwareHelper::LoadGbaBootRom picks it up. When
     // empty, Mesen falls back to a zeroed boot ROM (HLE).

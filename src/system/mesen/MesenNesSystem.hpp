@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "system/SystemBase.hpp"
-#include "system/mesen/MesenConfig.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
 
@@ -14,24 +14,20 @@ class MesenAudioDevice;
 class MesenVideoDevice;
 class NesN8MidiRole;
 
-// TODO: Rename to MesenNesSystem
-
-// NES (Mesen) system. Mirrors SameBoySystem's shape: per-block onProcess
-// drives the emulator until enough samples are queued in MesenAudioDevice,
-// then drains them into the planar L/R outs with smoothed gain. Native NES
-// resolution: 256x240. Audio runs at the host sample rate (Mesen's
-// SoundMixer resamples internally).
-//
-// Phase A scope: ROM load + video + audio only. Per-system button enum
-// (NesButton) and the N8 FIFO RomRole land in Phase B and Phase C.
-class MesenSystem final : public SystemBase {
+// NES system, via the Mesen backend. Mirrors SameBoySystem's shape: per-block
+// onProcess drives the emulator until enough samples are queued in
+// MesenAudioDevice, then drains them into the planar L/R outs with smoothed
+// gain. Native NES resolution: 256x240. Audio runs at the host sample rate
+// (Mesen's SoundMixer resamples internally). Input arrives as NesButton; host
+// MIDI is forwarded to the N8 FIFO RomRole.
+class MesenNesSystem final : public SystemBase {
 public:
-    MesenSystem(SystemId id,
-                MesenConfig config,
-                std::vector<std::uint8_t> romBytes);
-    ~MesenSystem() override;
+    MesenNesSystem(SystemId id,
+                   MesenNesConfig config,
+                   std::vector<std::uint8_t> romBytes);
+    ~MesenNesSystem() override;
 
-    SystemKind kind() const override { return SystemKind::Mesen; }
+    SystemKind kind() const override { return SystemKind::MesenNes; }
 
     void onActivate(double sampleRate) override;
     void onDeactivate() override;
@@ -75,7 +71,7 @@ public:
     static constexpr std::uint32_t kPixelHeight = 240;
 
 private:
-    MesenConfig                       config_;
+    MesenNesConfig                       config_;
     std::vector<std::uint8_t>         rom_;
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;

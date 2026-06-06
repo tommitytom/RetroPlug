@@ -20,7 +20,7 @@ enum class GameboyButton : std::uint8_t {
 };
 
 // NES controller buttons. Values match Mesen's NesController::Buttons enum
-// (see deps/mesen/Core/NES/Input/NesController.h) so MesenSystem can pass
+// (see deps/mesen/Core/NES/Input/NesController.h) so MesenNesSystem can pass
 // them through without a translation layer. SystemBase::pressButton takes
 // a uint8_t so the same command queue can carry either enum; each system
 // casts back to its own kind in the override.
@@ -47,7 +47,7 @@ enum class NesButton : std::uint8_t {
 //
 // Note: Mesen's own GbaController::Buttons enum has a different order
 // (Up=0, Down=1, Left=2, Right=3, Start=4, Select=5, B=6, A=7, L=8, R=9 —
-// see deps/mesen/Core/GBA/Input/GbaController.h). GbaSystem::pressButton
+// see deps/mesen/Core/GBA/Input/GbaController.h). MesenGbaSystem::pressButton
 // does the explicit remap from this wire byte to Mesen's native enum.
 enum class GbaButton : std::uint8_t {
     Right  = 0,

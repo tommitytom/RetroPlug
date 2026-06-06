@@ -12,11 +12,11 @@ namespace rp {
 //
 // Lives in the `rp` namespace so the type doesn't collide with Mesen's
 // global `enum class MemoryType` in TUs that pull in both
-// (MesenSystem.cpp / GbaSystem.cpp).
+// (MesenNesSystem.cpp / MesenGbaSystem.cpp).
 //
 // Per-system support matrix (concrete subclasses):
 //
-//   MemoryType     SameBoy (GB)     Mesen (NES)        GBA (Mesen)
+//   MemoryType     SameBoy (GB)     NES (Mesen)        GBA (Mesen)
 //   ------------   --------------   ----------------   ------------------
 //   Ram            DIRECT_ACCESS_   NesInternalRam     GbaIntWorkRam (IWRAM)
 //                   RAM (WRAM)

@@ -23,12 +23,14 @@ NES only (the legacy project stopped there).
   [old/thirdparty/Mesen2/](../old/thirdparty/Mesen2/) to `deps/mesen/`. Mesen
   is C++ and substantially heavier than SameBoy — a new CMake target with a
   curated source list (NES-only subset to keep build time sane).
-- **`MesenSystem : SystemBase`** at `src/system/mesen/MesenSystem.{hpp,cpp}`.
+- **`MesenNesSystem : SystemBase`** at `src/system/mesen/MesenNesSystem.{hpp,cpp}`.
   Mirrors the SameBoy port shape: framebuffer triple-buffer at
   256×240, audio sample callback writes into a per-system stereo accumulator,
   `onProcess` drives the emulator until enough samples accumulate.
-- **`MesenConfig`** — variant alternative in `SystemConfig`. Fields:
-  ROM path/bytes, console type (initially fixed to NES), savestate.
+  (Backend-prefixed: the Mesen-backed GBA system that landed later is
+  `MesenGbaSystem`.)
+- **`MesenNesConfig`** — variant alternative in `SystemConfig`, on-disk tag
+  `"nes"`. Fields: ROM path/bytes, savestate.
 - **Per-system button enums.** `NesButton` with values matching Mesen's
   internal enum. The `Command::Kind::ButtonPress` payload becomes
   `std::variant<GameboyButton, NesButton>` — or a flat `uint8_t button` plus
@@ -46,7 +48,7 @@ NES only (the legacy project stopped there).
 
 1. Vendor Mesen NES core. Aggressively prune unused bits (debugger, GUI
    pieces).
-2. Implement `MesenSystem` mirroring `SameBoySystem`'s shape. Pay close
+2. Implement `MesenNesSystem` mirroring `SameBoySystem`'s shape. Pay close
    attention to the per-block sample-accuracy invariants.
 3. Update the `Command::ButtonPress` payload to be system-kind-aware.
 4. Update `LVGLPluginUI::onKeyboard` to pick the right button enum for the

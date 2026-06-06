@@ -17,8 +17,8 @@
 #include "transport/MidiTypes.hpp"
 
 // Polymorphic runtime representation of one emulator instance. Owned by the
-// DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenSystem
-// (NES), GbaSystem.
+// DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenNesSystem
+// (NES), MesenGbaSystem.
 //
 // Persistence: snapshotConfig() returns a plain-data SystemConfig that the
 // DSP can serialize via reflectcpp from getState(). The runtime polymorphic
@@ -109,7 +109,7 @@ public:
 
     // Cross-system memory region view. The default returns an invalid
     // accessor (so systems that don't yet implement memory access compile
-    // cleanly); SameBoySystem / MesenSystem / GbaSystem override.
+    // cleanly); SameBoySystem / MesenNesSystem / MesenGbaSystem override.
     //
     // Lifetime: the returned accessor's backing pointer is the live
     // emulator region. Don't store it across activation boundaries (cart

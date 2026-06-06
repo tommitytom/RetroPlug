@@ -67,7 +67,8 @@ this, even on a single-instance plugin.
   to bytes** with an opt-out via `SameBoyConfig::romPath` only mode. Match the
   old project's behavior here — check what it did.
 - **Schema evolution.** Plain `std::variant` tagged-union round-tripping
-  breaks if a "kind" string is renamed. Lock the spelling now (`"sameboy"`,
-  `"mesen"`, `"lsdj-sync"`, etc.).
+  breaks if a "kind" string is renamed (`"sameboy"`, `"nes"`, `"gba"`,
+  `"lsdj-sync"`, etc.). Pre-release these can still change freely — saved
+  projects from this period are expected to break, so no migration shims.
 - **Migration of legacy projects.** No hard requirement — old RetroPlug
   projects use a different format. Document that old projects don't import.

@@ -1,5 +1,5 @@
 // Direct probes of the Mesen-side process-global state that
-// `MesenSystem::onActivate` reaches into. These are diagnostic — each test
+// `MesenNesSystem::onActivate` reaches into. These are diagnostic — each test
 // documents one observable property of one singleton so future changes
 // produce a precise failure rather than a vague "something's off when two
 // plugins coexist".
@@ -12,7 +12,7 @@
 //      MessageManager::_log                   (deps/mesen/Core/Shared/MessageManager.cpp:84)
 //   4. GameDatabase::_gameDatabase et al      (deps/mesen/Core/NES/GameDatabase.cpp:12-15)
 //
-// Integration with real MesenSystem instances lives in
+// Integration with real MesenNesSystem instances lives in
 // MesenMultiInstanceTests.cpp.
 
 #include <catch2/catch_test_macros.hpp>
@@ -59,7 +59,7 @@ struct ScopedHandler {
 // ---------------------------------------------------------------------------
 // 1. FolderUtilities::SetHomeFolder is last-writer-wins.
 // ---------------------------------------------------------------------------
-// In practice MesenSystem hard-codes "/tmp/retroplug-mesen" so two instances
+// In practice MesenNesSystem hard-codes "/tmp/retroplug-mesen" so two instances
 // write the same value — benign today. The hazard is latent: any future
 // per-instance home folder will silently lose to whichever onActivate fires
 // last.
@@ -72,7 +72,7 @@ TEST_CASE("FolderUtilities::SetHomeFolder is last-writer-wins (singleton)",
     REQUIRE(FolderUtilities::GetHomeFolder() == "/tmp/retroplug-mesen-test-B");
 
     // Restore the shared default so subsequent tests start from the same
-    // state MesenSystem::onActivate would have left.
+    // state MesenNesSystem::onActivate would have left.
     FolderUtilities::SetHomeFolder("/tmp/retroplug-mesen");
 }
 
@@ -127,7 +127,7 @@ TEST_CASE("FolderUtilities concurrent SetHomeFolder stress (known race)",
 // ---------------------------------------------------------------------------
 // With _osdEnabled=true, DisplayMessage forwards to the registered handler.
 // With _osdEnabled=false, DisplayMessage falls back to Log() instead. Each
-// MesenSystem::onActivate calls SetOptions(false, true) — so a future
+// MesenNesSystem::onActivate calls SetOptions(false, true) — so a future
 // instance that wanted OSD on would be silently overridden.
 TEST_CASE("MessageManager::SetOptions is last-writer-wins (singleton)",
           "[MesenSingleton][MessageManager]") {
@@ -140,7 +140,7 @@ TEST_CASE("MessageManager::SetOptions is last-writer-wins (singleton)",
     REQUIRE(handler.count == 1);
     REQUIRE(handler.last == "t1|m1");
 
-    // The same call MesenSystem makes. Now OSD is off; DisplayMessage routes
+    // The same call MesenNesSystem makes. Now OSD is off; DisplayMessage routes
     // to Log() instead of the handler.
     MessageManager::SetOptions(/*osdEnabled=*/false, /*outputToStdout=*/false);
     MessageManager::DisplayMessage("t2", "m2");

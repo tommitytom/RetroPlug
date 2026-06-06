@@ -64,7 +64,7 @@ add_executable(retroplug-mesen-tests
     MesenMultiInstanceTests.cpp
     MesenSystemBaseTests.cpp
     ../src/system/SystemBase.cpp
-    ../src/system/mesen/MesenSystem.cpp
+    ../src/system/mesen/MesenNesSystem.cpp
     ../src/system/mesen/MesenVideoDevice.cpp
     ../src/system/mesen/roles/NesN8MidiRole.cpp
 )

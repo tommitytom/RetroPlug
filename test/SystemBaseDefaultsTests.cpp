@@ -17,7 +17,7 @@
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/SystemTypes.hpp"
-#include "system/mesen/MesenConfig.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
 
 namespace {
 
@@ -27,11 +27,11 @@ namespace {
 class DefaultsOnlySystem final : public SystemBase {
 public:
     using SystemBase::SystemBase;
-    SystemKind kind() const override { return SystemKind::Mesen; }
+    SystemKind kind() const override { return SystemKind::MesenNes; }
     void onActivate(double) override {}
     void onSampleRateChanged(double) override {}
     void onProcess(const AudioBlockInfo&, float* const*) override {}
-    SystemConfig snapshotConfig() const override { return MesenConfig{}; }
+    SystemConfig snapshotConfig() const override { return MesenNesConfig{}; }
 };
 
 } // namespace

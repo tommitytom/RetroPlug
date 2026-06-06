@@ -9,11 +9,11 @@ class NesConsole;
 
 // EverDrive N8 Pro FIFO emulator wrapper. Attaches to a NesConsole's memory
 // manager so the ROM's reads/writes at $40F0/$40F1 reach the FIFO; pumps
-// host MIDI bytes (delivered by Project::dispatchMidi → MesenSystem::onMidi)
+// host MIDI bytes (delivered by Project::dispatchMidi → MesenNesSystem::onMidi)
 // into the FIFO's RX queue so n8-midi.nes's `midiRead()` polling loop sees
 // them.
 //
-// Currently the only Mesen-side "role". Always attached when MesenSystem
+// Currently the only Mesen-side "role". Always attached when MesenNesSystem
 // activates with a NES ROM — the FIFO is benign if the ROM never touches
 // $40F0/$40F1 (most NES homebrew). If non-N8 NES ROMs become a real concern,
 // gate attachment on an iNES mapper-byte sniffer.
@@ -24,7 +24,7 @@ public:
 
     // Register the FIFO with `console`'s memory manager so memory accesses at
     // $40F0/$40F1 are routed through it. Called once, on the audio thread,
-    // from MesenSystem::onActivate after the ROM has loaded.
+    // from MesenNesSystem::onActivate after the ROM has loaded.
     void onAttach(NesConsole& console);
 
     // Audio-thread: forward each event's bytes to the FIFO RX queue. The ROM

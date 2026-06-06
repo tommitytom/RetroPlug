@@ -22,10 +22,10 @@
 #include "system/MemoryAccessor.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
-#include "system/mesen/GbaConfig.hpp"
-#include "system/mesen/GbaSystem.hpp"
-#include "system/mesen/MesenConfig.hpp"
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
@@ -114,8 +114,8 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
         return nullptr;
     }
 
-    // Content-based dispatch: iNES magic → MesenSystem, GBA Nintendo logo
-    // at $0004 → GbaSystem, Game Boy Nintendo logo at $0104 → SameBoySystem,
+    // Content-based dispatch: iNES magic → MesenNesSystem, GBA Nintendo logo
+    // at $0004 → MesenGbaSystem, Game Boy Nintendo logo at $0104 → SameBoySystem,
     // anything else → reject. Mislabelled extensions still route correctly;
     // unrelated files surface as "rom-error" instead of being executed.
     const RomFormat fmt = detectRomFormat(bytes);
@@ -130,19 +130,19 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
     const SystemId id = project_->nextSystemId();
     const double sr = sampleRate_->load(std::memory_order_acquire);
 
-    if (fmt == RomFormat::Mesen) {
-        MesenConfig cfg;
+    if (fmt == RomFormat::MesenNes) {
+        MesenNesConfig cfg;
         cfg.romPath = path;
-        auto sys = std::make_unique<MesenSystem>(id, cfg, std::move(bytes));
+        auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
         return sys.release();
     }
 
-    if (fmt == RomFormat::Gba) {
-        GbaSystemConfig cfg;
+    if (fmt == RomFormat::MesenGba) {
+        MesenGbaConfig cfg;
         cfg.romPath = path;
         cfg.biosPath = "build/firmware/gba_bios.bin";
-        auto sys = std::make_unique<GbaSystem>(id, cfg, std::move(bytes));
+        auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
         return sys.release();
     }
@@ -399,8 +399,8 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
         SystemEntry entry;
         entry.id = sys->id();
 
-        // Per-kind fields. NES (Mesen) currently surfaces only the kind tag
-        // — there's no per-system Mesen config exposed to the UI yet.
+        // Per-kind fields. The Mesen-backed kinds (NES/GBA) currently surface
+        // only the kind tag — there's no per-system config exposed to the UI yet.
         if (auto* sb = dynamic_cast<const SameBoySystem*>(sys.get())) {
             entry.kind        = "sameboy";
             entry.gainDb      = sb->config_.gainDb;
@@ -415,8 +415,8 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
                     entry.hasLsdjKitRole = true;
                 }
             }
-        } else if (sys->kind() == SystemKind::Mesen) {
-            entry.kind = "mesen";
+        } else if (sys->kind() == SystemKind::MesenNes) {
+            entry.kind = "nes";
         } else {
             entry.kind = "gba";
         }

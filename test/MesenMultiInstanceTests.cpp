@@ -1,11 +1,11 @@
-// Smoke-test the Mesen singletons via two real MesenSystem instances on a
+// Smoke-test the Mesen singletons via two real MesenNesSystem instances on a
 // real NES ROM. If FolderUtilities / MessageManager / GameDatabase are
 // genuinely hostile to multi-instance use we expect to see it here: crash,
 // hang, or zero audio out of one of the two systems.
 //
 // Paired with MesenSingletonsTests.cpp which probes each singleton in
 // isolation; this test proves the singleton path is actually exercised by
-// the activation flow at MesenSystem.cpp:80-135.
+// the activation flow at MesenNesSystem.cpp:80-135.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,8 +19,8 @@
 #include "Utilities/FolderUtilities.h"
 
 #include "system/SystemTypes.hpp"
-#include "system/mesen/MesenConfig.hpp"
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 
 #ifndef RETROPLUG_TEST_ROM_DIR
 #  error "RETROPLUG_TEST_ROM_DIR must be defined by CMake — points at resources/roms"
@@ -41,7 +41,7 @@ std::vector<std::uint8_t> loadRom(const std::string& path) {
 
 } // namespace
 
-TEST_CASE("Two MesenSystem instances boot side-by-side and stay isolated",
+TEST_CASE("Two MesenNesSystem instances boot side-by-side and stay isolated",
           "[MesenMultiInstance]") {
     const std::string romPath =
         std::string(RETROPLUG_TEST_ROM_DIR) + "/n8-midi.nes";
@@ -52,13 +52,13 @@ TEST_CASE("Two MesenSystem instances boot side-by-side and stay isolated",
     constexpr std::uint32_t kBlockSize  = 256;
     constexpr int           kBlocks     = 10;
 
-    MesenConfig cfgA{};
+    MesenNesConfig cfgA{};
     cfgA.romPath = romPath;
     cfgA.gainDb  = 0.0f;
-    MesenConfig cfgB = cfgA;
+    MesenNesConfig cfgB = cfgA;
 
-    MesenSystem sysA{SystemId{0}, cfgA, romBytes};
-    MesenSystem sysB{SystemId{1}, cfgB, romBytes};
+    MesenNesSystem sysA{SystemId{0}, cfgA, romBytes};
+    MesenNesSystem sysB{SystemId{1}, cfgB, romBytes};
 
     sysA.onActivate(kSampleRate);
     sysB.onActivate(kSampleRate);
@@ -114,7 +114,7 @@ TEST_CASE("Two MesenSystem instances boot side-by-side and stay isolated",
     }
     CHECK(firstDiff == aMix.size());
     if (firstDiff != aMix.size()) {
-        WARN("MesenSystem outputs diverged at sample " << firstDiff
+        WARN("MesenNesSystem outputs diverged at sample " << firstDiff
              << " — possible singleton-mediated state leak");
     }
 

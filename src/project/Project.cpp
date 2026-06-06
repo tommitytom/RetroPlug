@@ -7,8 +7,8 @@
 
 #include "rfl/Variant.hpp"
 
-#include "system/mesen/GbaSystem.hpp"
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
 namespace {
@@ -59,7 +59,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         return id;
     }
 
-    if (const auto* mb = rfl::get_if<MesenConfig>(&config.variant())) {
+    if (const auto* mb = rfl::get_if<MesenNesConfig>(&config.variant())) {
         std::vector<std::uint8_t> rom = mb->romBytes;
         if (rom.empty())
             rom = slurpFile(mb->romPath);
@@ -68,7 +68,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
                          id, mb->romPath.c_str());
             return 0;
         }
-        auto sys = std::make_unique<MesenSystem>(id, *mb, std::move(rom));
+        auto sys = std::make_unique<MesenNesSystem>(id, *mb, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(*mb);
         // Mesen systems don't participate in LinkGroups (no GB serial); the
@@ -77,7 +77,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         return id;
     }
 
-    if (const auto* gb = rfl::get_if<GbaSystemConfig>(&config.variant())) {
+    if (const auto* gb = rfl::get_if<MesenGbaConfig>(&config.variant())) {
         std::vector<std::uint8_t> rom = gb->romBytes;
         if (rom.empty())
             rom = slurpFile(gb->romPath);
@@ -86,7 +86,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
                          id, gb->romPath.c_str());
             return 0;
         }
-        auto sys = std::make_unique<GbaSystem>(id, *gb, std::move(rom));
+        auto sys = std::make_unique<MesenGbaSystem>(id, *gb, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(*gb);
         rebuildLinkGroups();

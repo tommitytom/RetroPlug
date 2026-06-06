@@ -1,4 +1,4 @@
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -67,8 +67,8 @@ constexpr double kNesCpuHz = 1789773.0;
 
 } // namespace
 
-MesenSystem::MesenSystem(SystemId id,
-                         MesenConfig config,
+MesenNesSystem::MesenNesSystem(SystemId id,
+                         MesenNesConfig config,
                          std::vector<std::uint8_t> romBytes)
     : SystemBase(id),
       config_(std::move(config)),
@@ -77,14 +77,14 @@ MesenSystem::MesenSystem(SystemId id,
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
 }
 
-MesenSystem::~MesenSystem() {
+MesenNesSystem::~MesenNesSystem() {
     onDeactivate();
 }
 
-void MesenSystem::onActivate(double sampleRate) {
+void MesenNesSystem::onActivate(double sampleRate) {
     if (activated_) return;
     if (rom_.empty()) {
-        std::fprintf(stderr, "[MesenSystem] no ROM bytes; not activating\n");
+        std::fprintf(stderr, "[MesenNesSystem] no ROM bytes; not activating\n");
         return;
     }
 
@@ -111,7 +111,7 @@ void MesenSystem::onActivate(double sampleRate) {
     // stopRom=false: keep Mesen from spawning its internal _emuThread. We
     // drive cpu->Exec() ourselves from the audio thread.
     if (!emu_->LoadRom(romFile, VirtualFile(), /*stopRom=*/false)) {
-        std::fprintf(stderr, "[MesenSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
+        std::fprintf(stderr, "[MesenNesSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
         emu_.reset();
         return;
     }
@@ -153,7 +153,7 @@ void MesenSystem::onActivate(double sampleRate) {
     activated_ = true;
 }
 
-void MesenSystem::onDeactivate() {
+void MesenNesSystem::onDeactivate() {
     if (!activated_) return;
     // Order matters: the role holds a reference to the FIFO that was
     // registered with Mesen's NesMemoryManager. Drop the role (and thus the
@@ -165,7 +165,7 @@ void MesenSystem::onDeactivate() {
     activated_ = false;
 }
 
-void MesenSystem::onSampleRateChanged(double sampleRate) {
+void MesenNesSystem::onSampleRateChanged(double sampleRate) {
     sampleRate_ = sampleRate;
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
     if (emu_) {
@@ -175,20 +175,20 @@ void MesenSystem::onSampleRateChanged(double sampleRate) {
     }
 }
 
-void MesenSystem::onReset() {
+void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
 }
 
-void MesenSystem::setGainDb(float dB) {
+void MesenNesSystem::setGainDb(float dB) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
 }
 
-void MesenSystem::pressButton(std::uint8_t button, bool down) {
+void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
     pendingButtons_.push_back({ button, down });
 }
 
-void MesenSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
+void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (n8Role_) {
         n8Role_->onMidi(events, count);
     }
@@ -210,7 +210,7 @@ NesController::Buttons toNesButton(std::uint8_t b) {
 }
 } // namespace
 
-void MesenSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+void MesenNesSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     if (!activated_ || !emu_) return;
 
     // First call from the audio thread: tell Mesen this is the emulation
@@ -268,7 +268,7 @@ void MesenSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     publishMemorySnapshots();
 }
 
-rp::MemoryAccessor MesenSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+rp::MemoryAccessor MesenNesSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
     if (!emu_) return rp::MemoryAccessor{};
 
     ::MemoryType native;
@@ -304,8 +304,8 @@ rp::MemoryAccessor MesenSystem::getMemory(rp::MemoryType type, rp::AccessType ac
                               info.Size};
 }
 
-SystemConfig MesenSystem::snapshotConfig() const {
-    MesenConfig out = config_;
+SystemConfig MesenNesSystem::snapshotConfig() const {
+    MesenNesConfig out = config_;
     if (out.embedRom) {
         out.romBytes = rom_;
     } else {
@@ -316,16 +316,16 @@ SystemConfig MesenSystem::snapshotConfig() const {
     return out;
 }
 
-std::vector<std::uint8_t> MesenSystem::saveSramBytes() const {
+std::vector<std::uint8_t> MesenNesSystem::saveSramBytes() const {
     if (!emu_) return {};
-    auto* self = const_cast<MesenSystem*>(this);
+    auto* self = const_cast<MesenNesSystem*>(this);
     auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
     if (!accessor.valid() || accessor.size() == 0) return {};
     return std::vector<std::uint8_t>(accessor.data(),
                                      accessor.data() + accessor.size());
 }
 
-void MesenSystem::clearSram() {
+void MesenNesSystem::clearSram() {
     if (!emu_) return;
     auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
     if (!accessor.valid() || accessor.size() == 0) return;
@@ -333,7 +333,7 @@ void MesenSystem::clearSram() {
     config_.sram.clear();
 }
 
-std::vector<std::uint8_t> MesenSystem::saveStateBytes() const {
+std::vector<std::uint8_t> MesenNesSystem::saveStateBytes() const {
     if (!emu_) return {};
     std::stringstream ss(std::ios::out | std::ios::binary);
     emu_->GetSaveStateManager()->SaveState(ss);
@@ -341,7 +341,7 @@ std::vector<std::uint8_t> MesenSystem::saveStateBytes() const {
     return std::vector<std::uint8_t>(str.begin(), str.end());
 }
 
-bool MesenSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     if (!emu_ || bytes.empty()) return false;
     std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
     ss.write(reinterpret_cast<const char*>(bytes.data()),
@@ -350,14 +350,14 @@ bool MesenSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 
-std::unique_ptr<SystemBase> MesenSystem::clone(SystemId newId, double sampleRate) const {
-    MesenConfig cfg = config_;
+std::unique_ptr<SystemBase> MesenNesSystem::clone(SystemId newId, double sampleRate) const {
+    MesenNesConfig cfg = config_;
     auto sramBytes = saveSramBytes();
     if (!sramBytes.empty()) cfg.sram = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
     if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
-    auto out = std::make_unique<MesenSystem>(newId, std::move(cfg), std::move(romCopy));
+    auto out = std::make_unique<MesenNesSystem>(newId, std::move(cfg), std::move(romCopy));
     out->onActivate(sampleRate);
     return out;
 }

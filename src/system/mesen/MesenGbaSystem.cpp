@@ -1,4 +1,4 @@
-#include "system/mesen/GbaSystem.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -41,7 +41,7 @@ constexpr const char* kMesenHomeFolder = "/tmp/retroplug-mesen";
 void configureGba(Emulator& emu, bool skipBootScreen) {
     EmuSettings* settings = emu.GetSettings();
     // ::GbaConfig here refers to Mesen's struct in SettingTypes.h
-    // (RetroPlug's wrapping config is GbaSystemConfig — see GbaConfig.hpp).
+    // (RetroPlug's wrapping config is MesenGbaConfig — see MesenGbaConfig.hpp).
     GbaConfig cfg{};
     cfg.Controller = ControllerConfig{ .Type = ControllerType::GbaController };
     cfg.SkipBootScreen = skipBootScreen;
@@ -66,7 +66,7 @@ void installGbaBios(const std::string& biosPath) {
     std::error_code ec;
     fs::path src(biosPath);
     if (!fs::exists(src, ec)) {
-        std::fprintf(stderr, "[GbaSystem] biosPath '%s' does not exist; falling back to HLE\n",
+        std::fprintf(stderr, "[MesenGbaSystem] biosPath '%s' does not exist; falling back to HLE\n",
                      biosPath.c_str());
         return;
     }
@@ -75,15 +75,15 @@ void installGbaBios(const std::string& biosPath) {
     fs::path dst = dstDir / "gba_bios.bin";
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
     if (ec) {
-        std::fprintf(stderr, "[GbaSystem] failed to install BIOS '%s' -> '%s': %s\n",
+        std::fprintf(stderr, "[MesenGbaSystem] failed to install BIOS '%s' -> '%s': %s\n",
                      biosPath.c_str(), dst.string().c_str(), ec.message().c_str());
     }
 }
 
 } // namespace
 
-GbaSystem::GbaSystem(SystemId id,
-                     GbaSystemConfig config,
+MesenGbaSystem::MesenGbaSystem(SystemId id,
+                     MesenGbaConfig config,
                      std::vector<std::uint8_t> romBytes)
     : SystemBase(id),
       config_(std::move(config)),
@@ -92,14 +92,14 @@ GbaSystem::GbaSystem(SystemId id,
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
 }
 
-GbaSystem::~GbaSystem() {
+MesenGbaSystem::~MesenGbaSystem() {
     onDeactivate();
 }
 
-void GbaSystem::onActivate(double sampleRate) {
+void MesenGbaSystem::onActivate(double sampleRate) {
     if (activated_) return;
     if (rom_.empty()) {
-        std::fprintf(stderr, "[GbaSystem] no ROM bytes; not activating\n");
+        std::fprintf(stderr, "[MesenGbaSystem] no ROM bytes; not activating\n");
         return;
     }
 
@@ -110,7 +110,7 @@ void GbaSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Shared with MesenSystem (NES). The home folder is per-process; both
+    // Shared with MesenNesSystem (NES). The home folder is per-process; both
     // kinds coexist because their firmware filenames don't collide.
     FolderUtilities::SetHomeFolder(kMesenHomeFolder);
     MessageManager::SetOptions(false, true);
@@ -127,7 +127,7 @@ void GbaSystem::onActivate(double sampleRate) {
     // stopRom=false: keep Mesen from spawning its internal _emuThread. We
     // drive cpu->Exec() ourselves from the audio thread.
     if (!emu_->LoadRom(romFile, VirtualFile(), /*stopRom=*/false)) {
-        std::fprintf(stderr, "[GbaSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
+        std::fprintf(stderr, "[MesenGbaSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
         emu_.reset();
         return;
     }
@@ -161,7 +161,7 @@ void GbaSystem::onActivate(double sampleRate) {
     activated_ = true;
 }
 
-void GbaSystem::onDeactivate() {
+void MesenGbaSystem::onDeactivate() {
     if (!activated_) return;
     emu_.reset();
     audioDevice_.reset();
@@ -169,7 +169,7 @@ void GbaSystem::onDeactivate() {
     activated_ = false;
 }
 
-void GbaSystem::onSampleRateChanged(double sampleRate) {
+void MesenGbaSystem::onSampleRateChanged(double sampleRate) {
     sampleRate_ = sampleRate;
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
     if (emu_) {
@@ -179,16 +179,16 @@ void GbaSystem::onSampleRateChanged(double sampleRate) {
     }
 }
 
-void GbaSystem::onReset() {
+void MesenGbaSystem::onReset() {
     if (emu_) emu_->Reset();
 }
 
-void GbaSystem::setGainDb(float dB) {
+void MesenGbaSystem::setGainDb(float dB) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
 }
 
-void GbaSystem::pressButton(std::uint8_t button, bool down) {
+void MesenGbaSystem::pressButton(std::uint8_t button, bool down) {
     pendingButtons_.push_back({ button, down });
 }
 
@@ -213,7 +213,7 @@ GbaController::Buttons toGbaButton(std::uint8_t wire) {
 }
 } // namespace
 
-void GbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+void MesenGbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     if (!activated_ || !emu_) return;
 
     // First call from the audio thread: tell Mesen this is the emulation
@@ -258,7 +258,7 @@ void GbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     audioDevice_->drain(stereoAccum_.data(), blockSize);
 
     // Sum interleaved stereo into the planar L/R outputs with smoothed gain
-    // (matches MesenSystem::onProcess so multi-system mixes are uniform).
+    // (matches MesenNesSystem::onProcess so multi-system mixes are uniform).
     float* outL = outs[0];
     float* outR = outs[1];
     for (std::uint32_t i = 0; i < blockSize; ++i) {
@@ -272,7 +272,7 @@ void GbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     publishMemorySnapshots();
 }
 
-rp::MemoryAccessor GbaSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+rp::MemoryAccessor MesenGbaSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
     if (!emu_) return rp::MemoryAccessor{};
 
     ::MemoryType native;
@@ -296,8 +296,8 @@ rp::MemoryAccessor GbaSystem::getMemory(rp::MemoryType type, rp::AccessType acce
                               info.Size};
 }
 
-SystemConfig GbaSystem::snapshotConfig() const {
-    GbaSystemConfig out = config_;
+SystemConfig MesenGbaSystem::snapshotConfig() const {
+    MesenGbaConfig out = config_;
     if (out.embedRom) {
         out.romBytes = rom_;
     } else {
@@ -308,22 +308,22 @@ SystemConfig GbaSystem::snapshotConfig() const {
     return out;
 }
 
-void GbaSystem::setFastBoot(bool on) {
+void MesenGbaSystem::setFastBoot(bool on) {
     if (config_.skipBootScreen == on) return;
     config_.skipBootScreen = on;
     if (emu_) configureGba(*emu_, on);
 }
 
-std::vector<std::uint8_t> GbaSystem::saveSramBytes() const {
+std::vector<std::uint8_t> MesenGbaSystem::saveSramBytes() const {
     if (!emu_) return {};
-    auto* self = const_cast<GbaSystem*>(this);
+    auto* self = const_cast<MesenGbaSystem*>(this);
     auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
     if (!accessor.valid() || accessor.size() == 0) return {};
     return std::vector<std::uint8_t>(accessor.data(),
                                      accessor.data() + accessor.size());
 }
 
-void GbaSystem::clearSram() {
+void MesenGbaSystem::clearSram() {
     if (!emu_) return;
     auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
     if (!accessor.valid() || accessor.size() == 0) return;
@@ -331,7 +331,7 @@ void GbaSystem::clearSram() {
     config_.sram.clear();
 }
 
-std::vector<std::uint8_t> GbaSystem::saveStateBytes() const {
+std::vector<std::uint8_t> MesenGbaSystem::saveStateBytes() const {
     if (!emu_) return {};
     std::stringstream ss(std::ios::out | std::ios::binary);
     emu_->GetSaveStateManager()->SaveState(ss);
@@ -339,7 +339,7 @@ std::vector<std::uint8_t> GbaSystem::saveStateBytes() const {
     return std::vector<std::uint8_t>(str.begin(), str.end());
 }
 
-bool GbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+bool MesenGbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     if (!emu_ || bytes.empty()) return false;
     std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
     ss.write(reinterpret_cast<const char*>(bytes.data()),
@@ -348,14 +348,14 @@ bool GbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 
-std::unique_ptr<SystemBase> GbaSystem::clone(SystemId newId, double sampleRate) const {
-    GbaSystemConfig cfg = config_;
+std::unique_ptr<SystemBase> MesenGbaSystem::clone(SystemId newId, double sampleRate) const {
+    MesenGbaConfig cfg = config_;
     auto sramBytes = saveSramBytes();
     if (!sramBytes.empty()) cfg.sram = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
     if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
-    auto out = std::make_unique<GbaSystem>(newId, std::move(cfg), std::move(romCopy));
+    auto out = std::make_unique<MesenGbaSystem>(newId, std::move(cfg), std::move(romCopy));
     out->onActivate(sampleRate);
     return out;
 }

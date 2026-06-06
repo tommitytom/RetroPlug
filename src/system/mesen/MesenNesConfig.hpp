@@ -8,15 +8,13 @@
 
 #include "system/RoleConfig.hpp"
 
-// Plain-data, reflectcpp-friendly config for a Mesen system slot.
+// Plain-data, reflectcpp-friendly config for a Mesen-backed NES system slot.
 // Mirrors SameBoyConfig's shape so the two are interchangeable through the
-// SystemConfig tagged union. Console kind is fixed to NES for now (the legacy
-// project never shipped anything else); future SNES/PCE/etc. would either
-// gain alternative configs or a `consoleType` enum on this struct.
+// SystemConfig tagged union.
 
-struct MesenConfig {
-    // On-disk variant discriminator (`"kind":"mesen"`). Locked spelling.
-    using Tag = rfl::Literal<"mesen">;
+struct MesenNesConfig {
+    // On-disk variant discriminator (`"kind":"nes"`).
+    using Tag = rfl::Literal<"nes">;
 
     bool          embedRom = true;
     // Watch `romPath` on disk; the UI thread reloads the system when the
@@ -29,7 +27,7 @@ struct MesenConfig {
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;
 
-    // Roles attached to this system. Mesen-side roles will land in step 17C
-    // (NesN8MidiRole). Empty triggers the NES sniffer to fill in a default.
+    // Roles attached to this system (currently NesN8MidiRole). Empty triggers
+    // the NES sniffer to fill in a default.
     std::vector<RoleConfig> roles;
 };

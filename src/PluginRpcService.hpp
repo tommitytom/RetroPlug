@@ -55,7 +55,7 @@ public:
 
     struct SystemEntry {
         std::uint32_t id;
-        std::string   kind;                          // "sameboy" | "mesen" | "gba"
+        std::string   kind;                          // "sameboy" | "nes" | "gba"
         std::optional<double>        gainDb;
         std::optional<std::uint32_t> linkGroupId;
         std::optional<std::uint32_t> lsdjSyncMode;

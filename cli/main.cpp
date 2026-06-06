@@ -40,10 +40,10 @@
 #include "project/ProjectSerialization.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
-#include "system/mesen/GbaConfig.hpp"
-#include "system/mesen/GbaSystem.hpp"
-#include "system/mesen/MesenConfig.hpp"
-#include "system/mesen/MesenSystem.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -268,7 +268,7 @@ int main(int argc, char** argv) try {
     const std::string scriptStem = std::filesystem::path(args.scriptPath).stem().string();
 
     // 2. Build the runtime: Project + N activated systems. ROM file contents
-    // pick the backend: iNES magic → MesenSystem, GB Nintendo-logo → SameBoy.
+    // pick the backend: iNES magic → MesenNesSystem, GB Nintendo-logo → SameBoy.
     // Anything else is rejected — feeding garbage to either backend produces
     // "GB CPU executes random bytes and spams RAM-Mirror writes" or the NES
     // equivalent.
@@ -293,7 +293,7 @@ int main(int argc, char** argv) try {
                 i, s.rom.c_str());
             return 1;
         }
-        if (fmt == RomFormat::Mesen) {
+        if (fmt == RomFormat::MesenNes) {
             if (s.link_group.value_or(0) != 0) {
                 std::fprintf(stderr, "script: systems[%u] is NES; link_group not supported\n", i);
                 return 1;
@@ -302,11 +302,11 @@ int main(int argc, char** argv) try {
                 std::fprintf(stderr, "script: systems[%u] is NES; lsdj_sync_mode not applicable\n", i);
                 return 1;
             }
-            MesenConfig cfg;
+            MesenNesConfig cfg;
             cfg.romPath = s.rom;
-            sys = std::make_unique<MesenSystem>(
+            sys = std::make_unique<MesenNesSystem>(
                 project.nextSystemId(), cfg, std::move(bytes));
-        } else if (fmt == RomFormat::Gba) {
+        } else if (fmt == RomFormat::MesenGba) {
             if (s.link_group.value_or(0) != 0) {
                 std::fprintf(stderr, "script: systems[%u] is GBA; link_group not supported\n", i);
                 return 1;
@@ -315,10 +315,10 @@ int main(int argc, char** argv) try {
                 std::fprintf(stderr, "script: systems[%u] is GBA; lsdj_sync_mode not applicable\n", i);
                 return 1;
             }
-            GbaSystemConfig cfg;
+            MesenGbaConfig cfg;
             cfg.romPath = s.rom;
             if (s.bios_path) cfg.biosPath = *s.bios_path;
-            sys = std::make_unique<GbaSystem>(
+            sys = std::make_unique<MesenGbaSystem>(
                 project.nextSystemId(), cfg, std::move(bytes));
         } else {
             SameBoyConfig cfg;

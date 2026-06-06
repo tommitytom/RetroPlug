@@ -12,7 +12,7 @@
 #include "util/MinizZip.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemConfig.hpp"
-#include "system/mesen/GbaConfig.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
@@ -201,7 +201,7 @@ TEST_CASE("ProjectConfig round-trips a SameBoy system with embedded ROM bytes", 
 }
 
 TEST_CASE("ProjectConfig round-trips a GBA system with embedded ROM bytes + biosPath", "[ProjectSerialization]") {
-    GbaSystemConfig gb;
+    MesenGbaConfig gb;
     gb.embedRom        = true;
     gb.skipBootScreen  = true;
     gb.gainDb          = -1.5f;
@@ -224,7 +224,7 @@ TEST_CASE("ProjectConfig round-trips a GBA system with embedded ROM bytes + bios
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->systems.size() == 1);
 
-    const auto* roundtripped = rfl::get_if<GbaSystemConfig>(&parsed->systems.front().variant());
+    const auto* roundtripped = rfl::get_if<MesenGbaConfig>(&parsed->systems.front().variant());
     REQUIRE(roundtripped != nullptr);
     CHECK(roundtripped->embedRom       == true);
     CHECK(roundtripped->skipBootScreen == true);

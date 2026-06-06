@@ -9,7 +9,7 @@
 
 // IAudioDevice implementation that captures rendered samples into an
 // in-process ring buffer. Mesen's SoundMixer feeds us int16 stereo at the
-// rate we ask for; MesenSystem drains them as float32 once enough samples
+// rate we ask for; MesenNesSystem drains them as float32 once enough samples
 // for the current audio block have accumulated.
 //
 // Lifted from old/src/mesen/MesenAudioDevice.h verbatim (no orb deps to fix).

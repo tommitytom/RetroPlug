@@ -9,8 +9,8 @@
 #include "project/ProjectConfig.hpp"
 #include "system/SystemConfig.hpp"
 #include "system/RoleConfig.hpp"
-#include "system/mesen/GbaConfig.hpp"
-#include "system/mesen/MesenConfig.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "util/MinizZip.hpp"
@@ -102,12 +102,12 @@ inline bool strip(MinizWriter& zip, ProjectConfig& cfg) {
             if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  sb->sram))       return false;
             if (!detail::stripBlob(zip, detail::key(prefix, "state"), sb->savestate))  return false;
             if (!detail::stripRoles(zip, prefix, sb->roles))                           return false;
-        } else if (auto* mb = rfl::get_if<MesenConfig>(&sys.variant())) {
+        } else if (auto* mb = rfl::get_if<MesenNesConfig>(&sys.variant())) {
             if (!detail::stripBlob(zip, detail::key(prefix, "rom"),   mb->romBytes))   return false;
             if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  mb->sram))       return false;
             if (!detail::stripBlob(zip, detail::key(prefix, "state"), mb->savestate))  return false;
             if (!detail::stripRoles(zip, prefix, mb->roles))                           return false;
-        } else if (auto* gb = rfl::get_if<GbaSystemConfig>(&sys.variant())) {
+        } else if (auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) {
             if (!detail::stripBlob(zip, detail::key(prefix, "rom"),   gb->romBytes))   return false;
             if (!detail::stripBlob(zip, detail::key(prefix, "sram"),  gb->sram))       return false;
             if (!detail::stripBlob(zip, detail::key(prefix, "state"), gb->savestate))  return false;
@@ -126,12 +126,12 @@ inline bool restore(const MinizReader& zip, ProjectConfig& cfg) {
             if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  sb->sram))       return false;
             if (!detail::restoreBlob(zip, detail::key(prefix, "state"), sb->savestate))  return false;
             if (!detail::restoreRoles(zip, prefix, sb->roles))                           return false;
-        } else if (auto* mb = rfl::get_if<MesenConfig>(&sys.variant())) {
+        } else if (auto* mb = rfl::get_if<MesenNesConfig>(&sys.variant())) {
             if (!detail::restoreBlob(zip, detail::key(prefix, "rom"),   mb->romBytes))   return false;
             if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  mb->sram))       return false;
             if (!detail::restoreBlob(zip, detail::key(prefix, "state"), mb->savestate))  return false;
             if (!detail::restoreRoles(zip, prefix, mb->roles))                           return false;
-        } else if (auto* gb = rfl::get_if<GbaSystemConfig>(&sys.variant())) {
+        } else if (auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) {
             if (!detail::restoreBlob(zip, detail::key(prefix, "rom"),   gb->romBytes))   return false;
             if (!detail::restoreBlob(zip, detail::key(prefix, "sram"),  gb->sram))       return false;
             if (!detail::restoreBlob(zip, detail::key(prefix, "state"), gb->savestate))  return false;
