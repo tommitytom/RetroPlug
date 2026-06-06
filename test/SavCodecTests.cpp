@@ -293,6 +293,17 @@ TEST_CASE("sav with a stored project round-trips at the model level", "[lsdj-sav
     for (std::size_t i = 1; i < 32; ++i) CHECK_FALSE(m.projects[i]);
 }
 
+TEST_CASE("32 KiB early-SRAM sav decodes as working-song-only", "[lsdj-sav]") {
+    const fs::path sav = kSavDir / "lsdj2_6_3-develop.sav";
+    if (!fs::exists(sav)) { WARN("32KiB corpus sav missing"); return; }
+    const auto bytes = slurp(sav);
+    REQUIRE(bytes.size() == 0x8000); // 32 KiB
+    auto res = codec::decodeSav(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+    if (!res) FAIL("decodeSav(32KiB) failed: " << res.error().what());
+    CHECK(res.value().activeProjectIndex == 0xFF); // no header
+    for (const auto& p : res.value().projects) CHECK_FALSE(p); // no archive
+}
+
 // ---- JSON (the headline) ----------------------------------------------------
 
 TEST_CASE("sav <-> JSON is lossless (re-encodes identically)", "[lsdj-sav]") {

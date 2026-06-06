@@ -34,7 +34,18 @@ std::string readName(std::span<const std::uint8_t> b, std::size_t off) {
 } // namespace
 
 rfl::Result<model::Sav> decodeSav(std::span<const std::uint8_t> savBytes) {
-    if (savBytes.size() < kSavSize) return rfl::error("sav smaller than 128 KiB");
+    // Early LSDJ used a 32 KiB SRAM: the whole image is the working-memory song,
+    // with no 512-byte header and no stored-project archive. Decode it as a
+    // working-song-only sav. (Best-effort: liblsdj can't validate this — it
+    // assumes a 128 KiB image — and re-encoding produces a modern 128 KiB sav.)
+    if (savBytes.size() < kSavSize) {
+        if (savBytes.size() < kSongBytes) return rfl::error("sav smaller than 0x8000 bytes");
+        model::Sav sav;
+        auto ws = decodeSong(savBytes.subspan(kWorkingSong, kSongBytes));
+        if (!ws) return rfl::error(ws.error().what());
+        sav.workingSong = std::move(ws.value());
+        return sav; // activeProjectIndex stays 0xFF, no projects, reserved zeroed
+    }
     if (savBytes[kInit] != 'j' || savBytes[kInit + 1] != 'k')
         return rfl::error("missing 'jk' SRAM init magic");
 
