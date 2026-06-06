@@ -7,7 +7,9 @@
 #include <span>
 #include <vector>
 
+#include "lsdj/codec/Compression.hpp"
 #include "lsdj/codec/Regions.hpp"
+#include "lsdj/codec/SavCodec.hpp"
 #include "lsdj/codec/SongCodec.hpp"
 
 namespace fs = std::filesystem;
@@ -210,4 +212,82 @@ TEST_CASE("instrument encode/decode are mutual inverses", "[lsdj-sav]") {
             FAIL("instrument 0 decoded as the wrong variant");
         }
     });
+}
+
+// ---- SavCodec: full 128 KiB image -------------------------------------------
+
+TEST_CASE("full sav round-trip is byte-identical (corpus)", "[lsdj-sav]") {
+    if (!fs::exists(kSavDir)) { WARN("corpus dir missing"); return; }
+    std::size_t total = 0, decoded = 0, identical = 0, unreadable = 0;
+    std::string firstFail;
+    for (const auto& entry : fs::directory_iterator(kSavDir)) {
+        if (entry.path().extension() != ".sav") continue;
+        const auto bytes = slurp(entry.path());
+        if (bytes.size() != codec::kSavSize) continue; // 128 KiB images only
+        ++total;
+        std::span<const std::uint8_t> orig(bytes.data(), bytes.size());
+        auto res = codec::decodeSav(orig);
+        if (!res) { ++unreadable; continue; } // non-standard early savs lacking 'jk'
+        ++decoded;
+        const auto out = codec::encodeSav(res.value(), orig);
+        const std::size_t d = firstDiff(orig, out);
+        if (d == std::string::npos) {
+            ++identical;
+        } else if (firstFail.empty()) {
+            char buf[16]; std::snprintf(buf, sizeof buf, "0x%zx", d);
+            firstFail = entry.path().filename().string() + " @" + buf;
+        }
+    }
+    UNSCOPED_INFO("full-sav: " << identical << "/" << decoded << " decodable round-trip byte-identical; "
+                  << unreadable << " unreadable (no 'jk')"
+                  << (firstFail.empty() ? "" : ("; first fail " + firstFail)));
+    CHECK(total > 100);
+    CHECK(identical == decoded);   // everything we can decode round-trips exactly
+    CHECK(unreadable <= 5);        // only a couple of non-standard early develop savs
+}
+
+TEST_CASE("compression is a mutual inverse", "[lsdj-sav]") {
+    // Use a real working song as representative content.
+    const fs::path sav = kSavDir / "lsdj9_4_2.sav";
+    if (!fs::exists(sav)) { WARN("corpus sav missing"); return; }
+    const auto bytes = slurp(sav);
+    REQUIRE(bytes.size() >= kSongBytes);
+    std::vector<std::uint8_t> song(bytes.begin(), bytes.begin() + kSongBytes);
+
+    auto comp = codec::compressProject(song, /*startBlock 1-based*/ 1);
+    if (!comp) FAIL("compress failed: " << comp.error().what());
+    REQUIRE(comp.value().bytes.size() % codec::kBlockSize == 0);
+    INFO("compressed into " << comp.value().blockCount << " blocks");
+
+    // Lay the compressed stream into a block area and decompress from block 0.
+    std::vector<std::uint8_t> blockArea(codec::kBlockCount * codec::kBlockSize, 0);
+    std::memcpy(blockArea.data(), comp.value().bytes.data(), comp.value().bytes.size());
+    auto round = codec::decompressProject(blockArea, /*0-based*/ 0);
+    if (!round) FAIL("decompress failed: " << round.error().what());
+    CHECK(round.value() == song);
+}
+
+TEST_CASE("sav with a stored project round-trips at the model level", "[lsdj-sav]") {
+    using namespace rp::lsdj::model;
+    Sav sav;
+    sav.activeProjectIndex = 0;
+    StoredProject proj;
+    proj.name = "TEST";
+    proj.version = 3;
+    proj.song.settings.tempo = 150;
+    proj.song.instruments[0] = KitInstrument{}; // a non-default allocated instrument
+    sav.projects[0] = proj;
+
+    const auto img = codec::encodeSav(sav);
+    auto res = codec::decodeSav(img);
+    if (!res) FAIL("decodeSav failed: " << res.error().what());
+    const Sav& m = res.value();
+
+    REQUIRE(m.projects[0]);
+    CHECK(m.projects[0]->name == "TEST");
+    CHECK(m.projects[0]->version == 3);
+    CHECK(m.projects[0]->song.settings.tempo == 150);
+    REQUIRE(m.projects[0]->song.instruments[0]);
+    CHECK(m.activeProjectIndex == 0);
+    for (std::size_t i = 1; i < 32; ++i) CHECK_FALSE(m.projects[i]);
 }

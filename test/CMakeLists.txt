@@ -31,6 +31,8 @@ add_executable(retroplug-tests
     ../src/lsdj/KitUtil.cpp
     # LSDJ sav codec (pure C++; reflectcpp via rpcpp).
     ../src/lsdj/codec/SongCodec.cpp
+    ../src/lsdj/codec/Compression.cpp
+    ../src/lsdj/codec/SavCodec.cpp
 )
 
 target_include_directories(retroplug-tests PRIVATE
